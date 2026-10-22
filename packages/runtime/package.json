@@ -1,0 +1,25 @@
+{
+  "name": "@momonga/runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.5",
+    "@momonga/config": "*",
+    "@momonga/context": "*",
+    "@momonga/foundation": "*",
+    "@momonga/gateway": "*",
+    "@momonga/mcp": "*",
+    "@momonga/observability": "*",
+    "@momonga/policy": "*",
+    "@momonga/protocol": "*",
+    "@momonga/sandbox": "*",
+    "@momonga/skills": "*",
+    "@momonga/store": "*",
+    "@momonga/tools": "*",
+    "hono": "4.13.13"
+  }
+}

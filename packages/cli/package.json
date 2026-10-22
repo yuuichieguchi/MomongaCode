@@ -1,0 +1,26 @@
+{
+  "name": "momonga",
+  "version": "0.0.0",
+  "type": "module",
+  "bin": {
+    "momonga": "./dist/main.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "devDependencies": {
+    "@momonga/config": "*",
+    "@momonga/foundation": "*",
+    "@momonga/gateway": "*",
+    "@momonga/protocol": "*",
+    "@momonga/runtime": "*",
+    "commander": "15.0.0",
+    "eventsource-parser": "4.1.2",
+    "ink": "8.0.0",
+    "react": "19.3.1",
+    "undici": "8.12.3"
+  },
+  "engines": {
+    "node": ">=24.22.1"
+  }
+}

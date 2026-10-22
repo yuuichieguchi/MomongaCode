@@ -1,0 +1,19 @@
+{
+  "name": "@momonga/tools",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@momonga/foundation": "*",
+    "@momonga/policy": "*",
+    "@momonga/protocol": "*",
+    "@momonga/sandbox": "*",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "ignore": "7.0.13",
+    "picomatch": "4.0.7"
+  }
+}

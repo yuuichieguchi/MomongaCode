@@ -1,0 +1,14 @@
+{
+  "name": "@momonga/policy",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@momonga/config": "*",
+    "@momonga/protocol": "*",
+    "picomatch": "4.0.7"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@momonga/gateway",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.5",
+    "@momonga/config": "*",
+    "@momonga/foundation": "*",
+    "@momonga/observability": "*",
+    "@momonga/protocol": "*",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "eventsource-parser": "4.1.2",
+    "hono": "4.13.13",
+    "undici": "8.12.3"
+  }
+}
