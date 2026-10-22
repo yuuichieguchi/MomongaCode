@@ -20,3 +20,17 @@ export type {
 } from './fake-chat-completions.ts';
 export { generateInstance, collectAllowedNames, findUsedKeywords } from './schema-instance.ts';
 export type { JsonSchema, InstancePreferences } from './schema-instance.ts';
+export { createFakeClock } from './fake-clock.ts';
+export type { FakeClock } from './fake-clock.ts';
+export {
+  FIXTURE_RUN_ID,
+  FIXTURE_SESSION_ID,
+  RECORDED_RUNS,
+  approvalWaitResumeRun,
+  cancelRun,
+  compactionRun,
+  finalAnswerRun,
+  materializeEvents,
+  toolRoundTripRun,
+} from './run-event-fixtures.ts';
+export type { RecordedRun } from './run-event-fixtures.ts';

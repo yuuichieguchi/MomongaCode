@@ -1,0 +1,192 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { sha256Hex } from './canonical-json.ts';
+
+const DEFAULT_BUSY_TIMEOUT_MS = 5000;
+const PRIVATE_DIRECTORY_MODE = 0o700;
+const PRIVATE_FILE_MODE = 0o600;
+
+export type OpenDatabaseOptions = { busyTimeoutMs?: number };
+
+export type Migration = { version: number; name: string; sql: string };
+
+export type MigrateResult = { applied: number[] };
+
+const formatMode = (mode: number): string => (mode & 0o777).toString(8).padStart(4, '0');
+
+const assertPrivateDirectory = (dir: string): void => {
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(dir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new Error(`database directory ${dir} does not exist; create it with: mkdir -m 700 ${dir}`, { cause: error });
+    }
+    throw error;
+  }
+  if (!stat.isDirectory()) throw new Error(`database directory ${dir} is not a directory`);
+  if ((stat.mode & 0o777) !== PRIVATE_DIRECTORY_MODE) {
+    throw new Error(`database directory ${dir} has mode ${formatMode(stat.mode)} but must be 0700; run: chmod 700 ${dir}`);
+  }
+};
+
+const ensurePrivateFile = (file: string): void => {
+  let fd: number;
+  try {
+    fd = fs.openSync(file, 'wx', PRIVATE_FILE_MODE);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    const stat = fs.statSync(file);
+    if ((stat.mode & 0o777) !== PRIVATE_FILE_MODE) {
+      throw new Error(`database file ${file} has mode ${formatMode(stat.mode)} but must be 0600; run: chmod 600 ${file}`, { cause: error });
+    }
+    return;
+  }
+  try {
+    fs.fchmodSync(fd, PRIVATE_FILE_MODE);
+  } finally {
+    fs.closeSync(fd);
+  }
+};
+
+export const openDatabase = (file: string, options: OpenDatabaseOptions = {}): DatabaseSync => {
+  const busyTimeoutMs = options.busyTimeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS;
+  if (!Number.isInteger(busyTimeoutMs) || busyTimeoutMs < 0) {
+    throw new RangeError(`openDatabase: busyTimeoutMs must be a non-negative integer, got ${busyTimeoutMs}`);
+  }
+  assertPrivateDirectory(path.dirname(file));
+  ensurePrivateFile(file);
+  const db = new DatabaseSync(file, { timeout: busyTimeoutMs, enableForeignKeyConstraints: true });
+  try {
+    const journal = db.prepare('PRAGMA journal_mode = WAL').get();
+    if (journal?.['journal_mode'] !== 'wal') {
+      throw new Error(`database ${file} could not enable WAL journal mode (got ${String(journal?.['journal_mode'])})`);
+    }
+    db.exec('PRAGMA synchronous = NORMAL');
+    db.exec('PRAGMA foreign_keys = ON');
+  } catch (error) {
+    db.close();
+    throw error;
+  }
+  return db;
+};
+
+const isPromiseLike = (value: unknown): value is PromiseLike<unknown> =>
+  (typeof value === 'object' || typeof value === 'function') && value !== null && typeof (value as { then?: unknown }).then === 'function';
+
+const rollback = (db: DatabaseSync, cause: unknown): never => {
+  if (db.isTransaction) {
+    try {
+      db.exec('ROLLBACK');
+    } catch (rollbackError) {
+      throw new AggregateError([cause, rollbackError], 'transaction failed and ROLLBACK also failed');
+    }
+  }
+  throw cause;
+};
+
+export const immediateTx = <T>(db: DatabaseSync, fn: () => T): T => {
+  if (db.isTransaction) throw new Error('immediateTx cannot be nested: a transaction is already open on this connection');
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const result = fn();
+    if (isPromiseLike(result)) throw new TypeError('immediateTx callback must be synchronous; it returned a Promise');
+    db.exec('COMMIT');
+    return result;
+  } catch (error) {
+    return rollback(db, error);
+  }
+};
+
+export const readTx = <T>(db: DatabaseSync, fn: () => T): T => {
+  if (db.isTransaction) throw new Error('readTx cannot be nested: a transaction is already open on this connection');
+  db.exec('BEGIN');
+  try {
+    const result = fn();
+    if (isPromiseLike(result)) throw new TypeError('readTx callback must be synchronous; it returned a Promise');
+    db.exec('COMMIT');
+    return result;
+  } catch (error) {
+    return rollback(db, error);
+  }
+};
+
+type AppliedRow = { version: number; name: string; checksum: string };
+
+const readApplied = (db: DatabaseSync): AppliedRow[] =>
+  db
+    .prepare('SELECT version, name, checksum FROM schema_migrations ORDER BY version')
+    .all()
+    .map((row) => {
+      const { version, name, checksum } = row;
+      if (typeof version !== 'number' || typeof name !== 'string' || typeof checksum !== 'string') {
+        throw new Error(`schema_migrations contains a malformed row: ${JSON.stringify(row)}`);
+      }
+      return { version, name, checksum };
+    });
+
+const checksumMismatch = (version: number, name: string): Error =>
+  new Error(
+    `migration version ${version} (${name}) was applied with different SQL than this build contains; ` +
+      'the database was created by a different build, so refusing to continue',
+  );
+
+const validateMigrations = (migrations: readonly Migration[]): Migration[] => {
+  const sorted = [...migrations].sort((left, right) => left.version - right.version);
+  sorted.forEach((migration, index) => {
+    if (!Number.isInteger(migration.version) || migration.version < 1) {
+      throw new Error(`migration "${migration.name}" has invalid version ${migration.version}; versions are integers from 1`);
+    }
+    const previous = sorted[index - 1];
+    if (previous !== undefined && previous.version === migration.version) {
+      throw new Error(`duplicate migration version ${migration.version} ("${previous.name}" and "${migration.name}")`);
+    }
+    const expected = index + 1;
+    if (migration.version !== expected) {
+      throw new Error(`migration gap: expected version ${expected} but found ${migration.version} ("${migration.name}")`);
+    }
+  });
+  return sorted;
+};
+
+export const migrate = (db: DatabaseSync, migrations: readonly Migration[]): MigrateResult => {
+  const sorted = validateMigrations(migrations);
+  immediateTx(db, () => {
+    db.exec(
+      'CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL)',
+    );
+  });
+  const known = new Map(sorted.map((migration) => [migration.version, migration]));
+  for (const row of readApplied(db)) {
+    const migration = known.get(row.version);
+    if (migration === undefined) {
+      throw new Error(
+        `database has migration version ${row.version} (${row.name}) which this build does not know; it was created by a newer build`,
+      );
+    }
+    if (row.checksum !== sha256Hex(migration.sql)) throw checksumMismatch(row.version, row.name);
+  }
+  const applied: number[] = [];
+  const selectChecksum = db.prepare('SELECT checksum FROM schema_migrations WHERE version = ?');
+  const insert = db.prepare('INSERT INTO schema_migrations (version, name, checksum) VALUES (?, ?, ?)');
+  for (const migration of sorted) {
+    const checksum = sha256Hex(migration.sql);
+    const didApply = immediateTx(db, () => {
+      const existing = selectChecksum.get(migration.version);
+      if (existing !== undefined) {
+        if (existing['checksum'] !== checksum) throw checksumMismatch(migration.version, migration.name);
+        return false;
+      }
+      try {
+        db.exec(migration.sql);
+      } catch (error) {
+        throw new Error(`migration version ${migration.version} (${migration.name}) failed: ${(error as Error).message}`, { cause: error });
+      }
+      insert.run(migration.version, migration.name, checksum);
+      return true;
+    });
+    if (didApply) applied.push(migration.version);
+  }
+  return { applied };
+};
