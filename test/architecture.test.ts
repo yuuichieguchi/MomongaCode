@@ -1,0 +1,245 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+const root = path.resolve(import.meta.dirname, '..');
+const packagesDir = path.join(root, 'packages');
+
+const ALL_PACKAGES = [
+  'protocol',
+  'foundation',
+  'config',
+  'store',
+  'observability',
+  'gateway',
+  'policy',
+  'sandbox',
+  'tools',
+  'mcp',
+  'context',
+  'skills',
+  'runtime',
+  'cli',
+  'testkit',
+] as const;
+
+interface PackageRule {
+  static: readonly string[];
+  dynamic: readonly string[];
+}
+
+const rule = (staticDeps: readonly string[], dynamicDeps: readonly string[] = []): PackageRule => ({
+  static: staticDeps,
+  dynamic: dynamicDeps,
+});
+
+const MATRIX: Record<string, PackageRule> = {
+  protocol: rule([]),
+  foundation: rule([]),
+  config: rule(['protocol', 'foundation']),
+  store: rule(['protocol', 'foundation']),
+  observability: rule(['foundation']),
+  gateway: rule(['protocol', 'foundation', 'config', 'observability']),
+  policy: rule(['protocol', 'config']),
+  sandbox: rule(['foundation']),
+  tools: rule(['protocol', 'foundation', 'policy', 'sandbox']),
+  mcp: rule(['protocol', 'foundation', 'config', 'tools']),
+  context: rule(['protocol', 'foundation']),
+  skills: rule(['protocol', 'foundation', 'config', 'tools']),
+  runtime: rule(ALL_PACKAGES.filter((name) => name !== 'runtime' && name !== 'cli' && name !== 'testkit')),
+  cli: rule(['protocol', 'foundation', 'config'], ['runtime', 'gateway']),
+  testkit: rule(['protocol', 'foundation']),
+};
+
+export interface ImportSpecifier {
+  specifier: string;
+  dynamic: boolean;
+}
+
+export interface Violation {
+  file: string;
+  specifier: string;
+  reason: string;
+}
+
+const STATIC_PATTERNS = [
+  /\b(?:import|export)\s+(?:type\s+)?[^'";]*?\bfrom\s*['"]([^'"]+)['"]/g,
+  /\bimport\s*['"]([^'"]+)['"]/g,
+];
+const DYNAMIC_PATTERN = /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+
+export const extractImports = (source: string): ImportSpecifier[] => {
+  const found: ImportSpecifier[] = [];
+  for (const pattern of STATIC_PATTERNS) {
+    for (const match of source.matchAll(pattern)) found.push({ specifier: match[1] as string, dynamic: false });
+  }
+  for (const match of source.matchAll(DYNAMIC_PATTERN)) found.push({ specifier: match[1] as string, dynamic: true });
+  return found;
+};
+
+const internalPackageOf = (specifier: string): string | undefined => {
+  const match = /^@momonga\/([^/]+)/.exec(specifier);
+  return match?.[1];
+};
+
+export const checkFile = (packageName: string, filePath: string, source: string): Violation[] => {
+  const packageRule = MATRIX[packageName];
+  if (packageRule === undefined) return [{ file: filePath, specifier: '', reason: `unknown package ${packageName}` }];
+  const violations: Violation[] = [];
+  const packageRoot = path.join(packagesDir, packageName);
+  for (const { specifier, dynamic } of extractImports(source)) {
+    if (specifier.startsWith('.')) {
+      const resolved = path.resolve(path.dirname(filePath), specifier);
+      if (resolved !== packageRoot && !resolved.startsWith(packageRoot + path.sep)) {
+        violations.push({ file: filePath, specifier, reason: 'relative import escapes the package' });
+      }
+      continue;
+    }
+    const target = internalPackageOf(specifier);
+    if (target === undefined || target === packageName) continue;
+    if (target === 'testkit') {
+      violations.push({ file: filePath, specifier, reason: 'only testkit may import @momonga/testkit' });
+      continue;
+    }
+    const allowed = packageRule.static.includes(target) || (dynamic && packageRule.dynamic.includes(target));
+    if (!allowed) {
+      violations.push({
+        file: filePath,
+        specifier,
+        reason: `${packageName} may not ${dynamic ? 'dynamically ' : ''}import ${target}`,
+      });
+    }
+  }
+  return violations;
+};
+
+export const checkManifest = (packageName: string, dependencies: Record<string, string>): string[] => {
+  const packageRule = MATRIX[packageName];
+  if (packageRule === undefined) return [`unknown package ${packageName}`];
+  const allowed = new Set([...packageRule.static, ...packageRule.dynamic]);
+  return Object.keys(dependencies)
+    .map(internalPackageOf)
+    .filter((target): target is string => target !== undefined && target !== packageName && !allowed.has(target))
+    .map((target) => `${packageName} must not depend on @momonga/${target}`);
+};
+
+const listSourceFiles = (dir: string): string[] => {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) return listSourceFiles(full);
+    return /\.tsx?$/.test(entry.name) ? [full] : [];
+  });
+};
+
+const packageNames = fs
+  .readdirSync(packagesDir, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name)
+  .sort();
+
+describe('architecture: dependency matrix', () => {
+  it('knows every package in the workspace', () => {
+    expect(packageNames).toEqual([...ALL_PACKAGES].sort());
+  });
+
+  it.each(packageNames)('%s src imports respect the matrix', (packageName) => {
+    const violations = listSourceFiles(path.join(packagesDir, packageName, 'src')).flatMap((file) =>
+      checkFile(packageName, file, fs.readFileSync(file, 'utf8')),
+    );
+    expect(violations).toEqual([]);
+  });
+
+  it.each(packageNames)('%s package.json internal dependencies respect the matrix', (packageName) => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(packagesDir, packageName, 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>;
+      peerDependencies?: Record<string, string>;
+      optionalDependencies?: Record<string, string>;
+    };
+    const dependencies = {
+      ...manifest.dependencies,
+      ...manifest.peerDependencies,
+      ...manifest.optionalDependencies,
+    };
+    expect(checkManifest(packageName, dependencies)).toEqual([]);
+  });
+});
+
+describe('architecture: checker self-test', () => {
+  const fileIn = (packageName: string): string => path.join(packagesDir, packageName, 'src', 'index.ts');
+
+  it('extracts static, type-only, side-effect, re-export and dynamic specifiers', () => {
+    const source = [
+      "import { a } from '@momonga/a';",
+      "import type { B } from '@momonga/b';",
+      "import '@momonga/c';",
+      "export * from '@momonga/d';",
+      "export { e } from '@momonga/e';",
+      "const f = await import('@momonga/f');",
+      'import {\n  g,\n  h,\n} from "@momonga/g";',
+    ].join('\n');
+    expect(extractImports(source)).toEqual(
+      expect.arrayContaining([
+        { specifier: '@momonga/a', dynamic: false },
+        { specifier: '@momonga/b', dynamic: false },
+        { specifier: '@momonga/c', dynamic: false },
+        { specifier: '@momonga/d', dynamic: false },
+        { specifier: '@momonga/e', dynamic: false },
+        { specifier: '@momonga/f', dynamic: true },
+        { specifier: '@momonga/g', dynamic: false },
+      ]),
+    );
+  });
+
+  it('flags a leaf package importing another package', () => {
+    expect(checkFile('protocol', fileIn('protocol'), "import { x } from '@momonga/foundation';")).toHaveLength(1);
+  });
+
+  it('flags gateway importing store', () => {
+    expect(checkFile('gateway', fileIn('gateway'), "import { s } from '@momonga/store';")).toHaveLength(1);
+  });
+
+  it('flags type-only and re-export violations', () => {
+    expect(checkFile('foundation', fileIn('foundation'), "import type { T } from '@momonga/protocol';")).toHaveLength(1);
+    expect(checkFile('policy', fileIn('policy'), "export * from '@momonga/tools';")).toHaveLength(1);
+  });
+
+  it('flags runtime importing cli', () => {
+    expect(checkFile('runtime', fileIn('runtime'), "import '@momonga/cli';")).toHaveLength(1);
+  });
+
+  it('allows cli to import runtime and gateway only dynamically', () => {
+    expect(checkFile('cli', fileIn('cli'), "const r = await import('@momonga/runtime');")).toEqual([]);
+    expect(checkFile('cli', fileIn('cli'), "const g = await import('@momonga/gateway');")).toEqual([]);
+    expect(checkFile('cli', fileIn('cli'), "import { run } from '@momonga/runtime';")).toHaveLength(1);
+    expect(checkFile('cli', fileIn('cli'), "import { g } from '@momonga/gateway';")).toHaveLength(1);
+    expect(checkFile('cli', fileIn('cli'), "const s = await import('@momonga/store');")).toHaveLength(1);
+    expect(checkFile('cli', fileIn('cli'), "import { c } from '@momonga/config';")).toEqual([]);
+  });
+
+  it('forbids @momonga/testkit everywhere except testkit', () => {
+    expect(checkFile('runtime', fileIn('runtime'), "import { f } from '@momonga/testkit';")).toHaveLength(1);
+    expect(checkFile('cli', fileIn('cli'), "const t = await import('@momonga/testkit');")).toHaveLength(1);
+    expect(checkFile('testkit', fileIn('testkit'), "import { f } from '@momonga/testkit';")).toEqual([]);
+  });
+
+  it('flags relative imports that escape the package', () => {
+    expect(checkFile('gateway', fileIn('gateway'), "import { s } from '../../store/src/index.ts';")).toHaveLength(1);
+    expect(checkFile('gateway', fileIn('gateway'), "import { s } from './probe.ts';")).toEqual([]);
+    expect(checkFile('cli', path.join(packagesDir, 'cli', 'src', 'main.ts'), "import p from '../package.json';")).toEqual([]);
+  });
+
+  it('allows permitted imports and external packages', () => {
+    expect(
+      checkFile('gateway', fileIn('gateway'), "import { a } from '@momonga/foundation';\nimport { Agent } from 'undici';"),
+    ).toEqual([]);
+  });
+
+  it('flags manifest dependencies outside the matrix', () => {
+    expect(checkManifest('gateway', { '@momonga/store': '*', undici: '1' })).toEqual([
+      'gateway must not depend on @momonga/store',
+    ]);
+    expect(checkManifest('cli', { '@momonga/runtime': '*', '@momonga/gateway': '*' })).toEqual([]);
+    expect(checkManifest('tools', { '@momonga/testkit': '*' })).toHaveLength(1);
+  });
+});

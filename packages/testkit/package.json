@@ -12,5 +12,8 @@
     "@momonga/foundation": "*",
     "@momonga/protocol": "*",
     "hono": "4.13.13"
+  },
+  "devDependencies": {
+    "ajv": "8.20.0"
   }
 }

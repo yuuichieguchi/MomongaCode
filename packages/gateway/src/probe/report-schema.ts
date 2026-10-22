@@ -1,0 +1,92 @@
+import Ajv2020 from 'ajv/dist/2020.js';
+import type { JSONSchemaType } from 'ajv';
+import type { ProbeReport } from '@momonga/protocol';
+
+const bool = { type: 'boolean' } as const;
+const anyJson = {} as never;
+const rate = { type: 'number', minimum: 0, maximum: 1 } as const;
+
+const reportSchema: JSONSchemaType<ProbeReport> = {
+  type: 'object',
+  required: [
+    'probedAt',
+    'health',
+    'modelId',
+    'contextWindow',
+    'streaming',
+    'usageReported',
+    'nativeTools',
+    'constrained',
+    'keywordSupport',
+    'stopSequences',
+    'maxConcurrency',
+    'imageInputAccepted',
+    'guardrail',
+  ],
+  properties: {
+    probedAt: { type: 'string' },
+    health: {
+      type: 'object',
+      required: ['ok'],
+      properties: {
+        ok: bool,
+        reason: { type: 'string', enum: ['not_running', 'unhealthy', 'precondition_failed'], nullable: true },
+        detail: { type: 'string', nullable: true },
+        remediation: { type: 'string', nullable: true },
+      },
+    },
+    modelId: { type: 'string' },
+    contextWindow: {
+      type: 'object',
+      required: ['value', 'method'],
+      properties: {
+        value: { type: 'integer', minimum: 1 },
+        method: { type: 'string', enum: ['reported', 'searched'] },
+        overflowErrorShape: anyJson,
+      },
+    },
+    streaming: {
+      type: 'object',
+      required: ['supported', 'doneSentinel', 'usageInStream'],
+      properties: { supported: bool, doneSentinel: bool, usageInStream: bool },
+    },
+    usageReported: bool,
+    nativeTools: {
+      type: 'object',
+      required: ['accepted', 'validRate', 'roundTripOk'],
+      properties: { accepted: bool, validRate: rate, roundTripOk: bool },
+    },
+    constrained: {
+      type: 'object',
+      required: ['accepted', 'validRate'],
+      properties: { accepted: bool, validRate: rate },
+    },
+    keywordSupport: {
+      type: 'object',
+      required: ['enum', 'anyOf', 'const', 'pattern', 'minimum', 'nested', 'additionalProperties'],
+      properties: {
+        enum: bool,
+        anyOf: bool,
+        const: bool,
+        pattern: bool,
+        minimum: bool,
+        nested: bool,
+        additionalProperties: bool,
+      },
+    },
+    stopSequences: bool,
+    maxConcurrency: { type: 'integer', minimum: 1 },
+    imageInputAccepted: bool,
+    guardrail: { type: 'object', required: [], properties: { errorShape: anyJson } },
+    tokenCalibration: {
+      type: 'object',
+      nullable: true,
+      required: ['ratio', 'errorBound'],
+      properties: { ratio: { type: 'number' }, errorBound: { type: 'number', minimum: 0 } },
+    },
+  },
+};
+
+const validate = new Ajv2020.default({ strict: false }).compile(reportSchema);
+
+export const isProbeReport = (value: unknown): value is ProbeReport => validate(value);

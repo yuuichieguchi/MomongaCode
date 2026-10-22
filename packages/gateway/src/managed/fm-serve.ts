@@ -1,0 +1,492 @@
+import { execFile, spawn as nodeSpawn } from 'node:child_process';
+import fs from 'node:fs';
+import { createUdsClient, isUnixSocketLive, type UdsClient } from '@momonga/foundation';
+import type { HealthResult } from '@momonga/protocol';
+
+export interface ExecResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
+
+export interface FmChild {
+  kill(signal?: NodeJS.Signals): boolean;
+  once(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown;
+  once(event: 'error', listener: (error: Error) => void): unknown;
+}
+
+export type ExecFn = (file: string, args: readonly string[]) => Promise<ExecResult>;
+export type SpawnFn = (file: string, args: readonly string[]) => FmChild;
+
+export interface FmServeTimers {
+  setTimeout(callback: () => void, ms: number): unknown;
+  clearTimeout(handle: unknown): void;
+  now(): number;
+}
+
+export interface FmServeOptions {
+  binary: string;
+  socketPath: string;
+  healthTimeoutMs: number;
+  restartBackoffMs: number;
+  stopGraceMs: number;
+  maxRestarts: number;
+  restartResetMs: number;
+  preconditionTtlMs: number;
+  exec?: ExecFn;
+  spawn?: SpawnFn;
+  timers?: FmServeTimers;
+}
+
+export interface FmServeEndpoint {
+  kind: 'unix';
+  socketPath: string;
+}
+
+export interface FmServe {
+  readonly restarts: number;
+  start(): Promise<FmServeEndpoint>;
+  stop(): Promise<void>;
+  health(): Promise<HealthResult>;
+}
+
+export type FmServeFailureReason = 'unhealthy' | 'precondition_failed' | 'not_running';
+
+export class FmServeError extends Error {
+  readonly reason: FmServeFailureReason;
+  readonly detail: string | undefined;
+  readonly remediation: string | undefined;
+
+  constructor(
+    reason: FmServeFailureReason,
+    message: string,
+    detail: string | undefined,
+    remediation: string | undefined,
+  ) {
+    super(message);
+    this.name = 'FmServeError';
+    this.reason = reason;
+    this.detail = detail;
+    this.remediation = remediation;
+  }
+}
+
+const LICENSE_NOT_ACCEPTED_EXIT_CODE = 69;
+const HEALTH_POLL_INTERVAL_MS = 25;
+
+const nodeExec: ExecFn = (file, args) =>
+  new Promise((resolve, reject) => {
+    execFile(file, [...args], (error, stdout, stderr) => {
+      if (error === null) {
+        resolve({ exitCode: 0, stdout, stderr });
+        return;
+      }
+      if (typeof error.code === 'number') {
+        resolve({ exitCode: error.code, stdout, stderr });
+        return;
+      }
+      reject(error);
+    });
+  });
+
+const defaultSpawn: SpawnFn = (file, args) => nodeSpawn(file, [...args], { stdio: 'ignore' });
+
+const defaultTimers: FmServeTimers = {
+  setTimeout: (callback, ms) => setTimeout(callback, ms),
+  clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout),
+  now: () => Date.now(),
+};
+
+const CONNECTION_FAILURE_CODES = new Set(['ECONNREFUSED', 'ENOENT', 'ECONNRESET', 'EPIPE']);
+
+const isConnectionFailure = (error: unknown): boolean => {
+  if (!(error instanceof Error)) return false;
+  if (error.name === 'AbortError') return true;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' && (CONNECTION_FAILURE_CODES.has(code) || code.startsWith('UND_ERR'));
+};
+
+const outputOf = (result: ExecResult): string => `${result.stdout}\n${result.stderr}`.trim();
+
+type State = 'idle' | 'starting' | 'running' | 'restarting' | 'failed' | 'precondition_failed' | 'stopped';
+
+interface CachedPreconditions {
+  failure: HealthResult | undefined;
+  checkedAt: number;
+}
+
+interface ManagedChild {
+  readonly process: FmChild;
+  exited: boolean;
+  error: Error | undefined;
+  exitWaiters: Array<() => void>;
+  terminating: Promise<void> | undefined;
+}
+
+const NOT_RUNNING: HealthResult = { ok: false, reason: 'not_running' };
+
+export const createFmServe = (options: FmServeOptions): FmServe => {
+  const exec = options.exec ?? nodeExec;
+  const spawn = options.spawn ?? defaultSpawn;
+  const timers = options.timers ?? defaultTimers;
+  const argv = ['serve', '--socket', options.socketPath] as const;
+
+  let state: State = 'idle';
+  let generation = 0;
+  let current: ManagedChild | undefined;
+  let client: UdsClient | undefined;
+  let startPromise: Promise<FmServeEndpoint> | undefined;
+  let restartRun: Promise<void> | undefined;
+  let restartTimer: unknown;
+  let totalRestarts = 0;
+  let consecutiveFailures = 0;
+  let stableTimer: unknown;
+  let failure: HealthResult = NOT_RUNNING;
+  let preconditionCache: CachedPreconditions | undefined;
+
+  interface WaitDeadline {
+    readonly signal: AbortSignal;
+    readonly expired: boolean;
+    dispose(): void;
+  }
+
+  const createDeadline = (ms: number): WaitDeadline => {
+    const controller = new AbortController();
+    const handle = timers.setTimeout(() => controller.abort(), ms);
+    return {
+      signal: controller.signal,
+      get expired(): boolean {
+        return controller.signal.aborted;
+      },
+      dispose: () => timers.clearTimeout(handle),
+    };
+  };
+
+  const sleep = (ms: number): Promise<void> => new Promise((resolve) => timers.setTimeout(resolve, ms));
+
+  const clearStableTimer = (): void => {
+    if (stableTimer !== undefined) {
+      timers.clearTimeout(stableTimer);
+      stableTimer = undefined;
+    }
+  };
+
+  const runPreconditionChecks = async (): Promise<HealthResult | undefined> => {
+    const license = await exec(options.binary, ['license', '--status']);
+    if (license.exitCode === LICENSE_NOT_ACCEPTED_EXIT_CODE) {
+      return {
+        ok: false,
+        reason: 'precondition_failed',
+        detail: outputOf(license),
+        remediation: 'sudo fm license',
+      };
+    }
+    if (license.exitCode !== 0) {
+      return { ok: false, reason: 'precondition_failed', detail: outputOf(license) };
+    }
+    const available = await exec(options.binary, ['available']);
+    if (available.exitCode !== 0) {
+      return { ok: false, reason: 'precondition_failed', detail: outputOf(available) };
+    }
+    return undefined;
+  };
+
+  const checkPreconditions = async (useCache: boolean): Promise<HealthResult | undefined> => {
+    if (useCache && preconditionCache !== undefined) {
+      if (timers.now() - preconditionCache.checkedAt < options.preconditionTtlMs) return preconditionCache.failure;
+    }
+    const result = await runPreconditionChecks();
+    preconditionCache = { failure: result, checkedAt: timers.now() };
+    return result;
+  };
+
+  const claimSocketPath = async (): Promise<void> => {
+    const existing = await fs.promises.lstat(options.socketPath).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return undefined;
+      throw error;
+    });
+    if (existing === undefined) return;
+    if (!existing.isSocket()) {
+      throw new FmServeError(
+        'unhealthy',
+        'fm serve socket path is occupied',
+        `${options.socketPath} exists and is not a socket`,
+        undefined,
+      );
+    }
+    if (await isUnixSocketLive(options.socketPath)) {
+      throw new FmServeError(
+        'unhealthy',
+        'fm serve socket path is occupied',
+        `another process owns the socket ${options.socketPath}`,
+        undefined,
+      );
+    }
+    await fs.promises.rm(options.socketPath, { force: true });
+  };
+
+  const onChildEnd = (managed: ManagedChild, error: Error | undefined): void => {
+    if (managed.exited) return;
+    managed.exited = true;
+    managed.error = error;
+    preconditionCache = undefined;
+    clearStableTimer();
+    const waiters = managed.exitWaiters;
+    managed.exitWaiters = [];
+    for (const waiter of waiters) waiter();
+    if (state === 'running' && current === managed) {
+      state = 'restarting';
+      scheduleRestart();
+    }
+  };
+
+  const launch = (): ManagedChild => {
+    const managed: ManagedChild = {
+      process: spawn(options.binary, argv),
+      exited: false,
+      error: undefined,
+      exitWaiters: [],
+      terminating: undefined,
+    };
+    current = managed;
+    managed.process.once('exit', () => onChildEnd(managed, undefined));
+    managed.process.once('error', (error) => onChildEnd(managed, error));
+    return managed;
+  };
+
+  const waitForExit = (managed: ManagedChild, timeoutMs: number | undefined): Promise<boolean> =>
+    new Promise((resolve) => {
+      if (managed.exited) {
+        resolve(true);
+        return;
+      }
+      let timer: unknown;
+      const waiter = (): void => {
+        if (timer !== undefined) timers.clearTimeout(timer);
+        resolve(true);
+      };
+      managed.exitWaiters.push(waiter);
+      if (timeoutMs !== undefined) {
+        timer = timers.setTimeout(() => {
+          managed.exitWaiters = managed.exitWaiters.filter((candidate) => candidate !== waiter);
+          resolve(false);
+        }, timeoutMs);
+      }
+    });
+
+  const terminate = (managed: ManagedChild): Promise<void> => {
+    if (managed.exited) return Promise.resolve();
+    managed.terminating ??= (async () => {
+      managed.process.kill('SIGTERM');
+      if (await waitForExit(managed, options.stopGraceMs)) return;
+      managed.process.kill('SIGKILL');
+      await waitForExit(managed, undefined);
+    })();
+    return managed.terminating;
+  };
+
+  const probeHealth = async (healthClient: UdsClient, signal: AbortSignal): Promise<boolean> => {
+    try {
+      const response = await healthClient.request({ method: 'GET', path: '/health', signal });
+      await response.text();
+      return response.status === 200;
+    } catch (error) {
+      if (isConnectionFailure(error)) return false;
+      throw error;
+    }
+  };
+
+  const waitUntilHealthy = async (managed: ManagedChild, healthClient: UdsClient): Promise<void> => {
+    const deadline = createDeadline(options.healthTimeoutMs);
+    try {
+      while (!deadline.expired) {
+        if (managed.exited) {
+          if (managed.error !== undefined) {
+            throw new FmServeError('not_running', 'fm serve could not be run', managed.error.message, undefined);
+          }
+          throw new FmServeError('unhealthy', 'fm serve exited before becoming healthy', undefined, undefined);
+        }
+        if (await probeHealth(healthClient, deadline.signal)) return;
+        await sleep(HEALTH_POLL_INTERVAL_MS);
+      }
+      throw new FmServeError(
+        'unhealthy',
+        `fm serve did not become healthy within ${options.healthTimeoutMs} ms`,
+        undefined,
+        undefined,
+      );
+    } finally {
+      deadline.dispose();
+    }
+  };
+
+  const closeClient = async (closing: UdsClient): Promise<void> => {
+    if (client === closing) client = undefined;
+    await closing.close();
+  };
+
+  const enterFailed = (reason: 'unhealthy' | 'not_running', detail: string | undefined): void => {
+    state = 'failed';
+    failure = { ok: false, reason, ...(detail === undefined ? {} : { detail }) };
+  };
+
+  const scheduleRestart = (): void => {
+    if (consecutiveFailures >= options.maxRestarts) {
+      enterFailed('unhealthy', `fm serve exceeded ${options.maxRestarts} restarts`);
+      return;
+    }
+    const delay = options.restartBackoffMs * 2 ** consecutiveFailures;
+    const scheduledGeneration = generation;
+    restartTimer = timers.setTimeout(() => {
+      restartTimer = undefined;
+      const run = runRestart(scheduledGeneration);
+      restartRun = run;
+      void run.then(() => {
+        if (restartRun === run) restartRun = undefined;
+      });
+    }, delay);
+  };
+
+  const armStableTimer = (stable: ManagedChild, stableGeneration: number): void => {
+    clearStableTimer();
+    stableTimer = timers.setTimeout(() => {
+      stableTimer = undefined;
+      if (current === stable && !stable.exited && generation === stableGeneration) consecutiveFailures = 0;
+    }, options.restartResetMs);
+  };
+
+  const runRestart = async (restartGeneration: number): Promise<void> => {
+    const restartClient = client;
+    let launched: ManagedChild | undefined;
+    try {
+      if (restartClient === undefined) throw new Error('fm serve client is not open');
+      const unmet = await checkPreconditions(false);
+      if (generation !== restartGeneration) return;
+      if (unmet !== undefined) {
+        state = 'precondition_failed';
+        failure = unmet;
+        await closeClient(restartClient);
+        return;
+      }
+      totalRestarts += 1;
+      consecutiveFailures += 1;
+      await claimSocketPath();
+      if (generation !== restartGeneration) return;
+      launched = launch();
+      await waitUntilHealthy(launched, restartClient);
+      if (generation !== restartGeneration) {
+        await terminate(launched);
+        return;
+      }
+      state = 'running';
+      armStableTimer(launched, restartGeneration);
+    } catch (error) {
+      if (launched !== undefined) await terminate(launched);
+      if (generation !== restartGeneration) return;
+      if (error instanceof FmServeError) {
+        scheduleRestart();
+        if (state === 'failed' && restartClient !== undefined) await closeClient(restartClient);
+        return;
+      }
+      enterFailed('unhealthy', error instanceof Error ? error.message : String(error));
+      if (restartClient !== undefined) await closeClient(restartClient);
+    }
+  };
+
+  const stoppedDuringStart = (): FmServeError =>
+    new FmServeError('not_running', 'fm serve was stopped while starting', undefined, undefined);
+
+  const performStart = async (startGeneration: number): Promise<FmServeEndpoint> => {
+    const stale = client;
+    if (stale !== undefined) await closeClient(stale);
+    const startClient = createUdsClient(options.socketPath);
+    client = startClient;
+    let launched: ManagedChild | undefined;
+    try {
+      const unmet = await checkPreconditions(false);
+      if (generation !== startGeneration) throw stoppedDuringStart();
+      if (unmet !== undefined) {
+        state = 'precondition_failed';
+        failure = unmet;
+        throw new FmServeError('precondition_failed', 'fm preconditions are not satisfied', unmet.detail, unmet.remediation);
+      }
+      await claimSocketPath();
+      if (generation !== startGeneration) throw stoppedDuringStart();
+      launched = launch();
+      await waitUntilHealthy(launched, startClient);
+      if (generation !== startGeneration) throw stoppedDuringStart();
+    } catch (error) {
+      if (launched !== undefined) await terminate(launched);
+      await closeClient(startClient);
+      if (generation !== startGeneration) throw stoppedDuringStart();
+      if (error instanceof FmServeError && error.reason !== 'precondition_failed') {
+        enterFailed(error.reason, error.detail);
+      } else if (!(error instanceof FmServeError)) {
+        state = 'idle';
+      }
+      throw error;
+    }
+    state = 'running';
+    return { kind: 'unix', socketPath: options.socketPath };
+  };
+
+  const begin = (): Promise<FmServeEndpoint> => {
+    state = 'starting';
+    generation += 1;
+    totalRestarts = 0;
+    consecutiveFailures = 0;
+    clearStableTimer();
+    failure = NOT_RUNNING;
+    const started = performStart(generation);
+    startPromise = started;
+    const clear = (): void => {
+      if (startPromise === started) startPromise = undefined;
+    };
+    started.then(clear, clear);
+    return started;
+  };
+
+  return {
+    get restarts(): number {
+      return totalRestarts;
+    },
+
+    start(): Promise<FmServeEndpoint> {
+      if (state === 'starting' && startPromise !== undefined) return startPromise;
+      if (state === 'running' || state === 'restarting') return Promise.reject(new Error('fm serve is already started'));
+      if (startPromise !== undefined) {
+        return startPromise.then(undefined, () => undefined).then(() => begin());
+      }
+      return begin();
+    },
+
+    async stop(): Promise<void> {
+      state = 'stopped';
+      generation += 1;
+      clearStableTimer();
+      if (restartTimer !== undefined) {
+        timers.clearTimeout(restartTimer);
+        restartTimer = undefined;
+      }
+      const stopping = current;
+      const closing = client;
+      if (stopping !== undefined) await terminate(stopping);
+      const pendingStart = startPromise;
+      if (pendingStart !== undefined) await pendingStart.then(undefined, () => undefined);
+      const pendingRestart = restartRun;
+      if (pendingRestart !== undefined) await pendingRestart;
+      if (closing !== undefined) await closeClient(closing);
+    },
+
+    async health(): Promise<HealthResult> {
+      const unmet = await checkPreconditions(true);
+      if (unmet !== undefined) return unmet;
+      if (state === 'failed') return failure;
+      const healthClient = client;
+      if (state !== 'running' || current === undefined || current.exited || healthClient === undefined) return NOT_RUNNING;
+      const deadline = createDeadline(options.healthTimeoutMs);
+      const healthy = await probeHealth(healthClient, deadline.signal).finally(() => deadline.dispose());
+      return healthy ? { ok: true } : { ok: false, reason: 'unhealthy' };
+    },
+  };
+};
