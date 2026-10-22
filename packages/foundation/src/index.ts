@@ -1,5 +1,15 @@
+export { computeBackoff, parseRetryAfter } from './backoff.ts';
+export type { BackoffOptions } from './backoff.ts';
+export { canonicalJson, sha256Hex } from './canonical-json.ts';
+export { CircuitBreaker } from './circuit-breaker.ts';
+export type { CircuitBreakerOptions, CircuitState } from './circuit-breaker.ts';
+export { systemClock } from './clock.ts';
+export type { Clock } from './clock.ts';
 export { Deadline } from './deadline.ts';
+export { immediateTx, migrate, openDatabase, readTx } from './sqlite.ts';
+export type { MigrateResult, Migration, OpenDatabaseOptions } from './sqlite.ts';
 export { decodeSse, encodeSse } from './sse.ts';
 export type { SseEvent } from './sse.ts';
 export { createUdsClient, isUnixSocketLive, listenUnix } from './uds.ts';
 export type { UdsClient, UdsRequestOptions, UdsResponse } from './uds.ts';
+export { uuidv7 } from './uuidv7.ts';

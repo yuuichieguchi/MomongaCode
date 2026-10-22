@@ -1,0 +1,252 @@
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import { RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES } from '@momonga/protocol';
+import type {
+  ModelResponse,
+  PermissionMode,
+  PermissionOption,
+  RunEvent,
+  RunEventPayload,
+  RunState,
+  RunStatus,
+  StopReason,
+  TerminalStatus,
+  ToolKind,
+} from '@momonga/protocol';
+
+type Flat<T> = { [K in keyof T]: T[K] };
+type Payload<T extends RunEventPayload['type']> = Flat<Extract<RunEventPayload, { type: T }>>;
+
+describe('run status constants', () => {
+  it('lists every run status in lifecycle order', () => {
+    expect(RUN_STATUSES).toEqual([
+      'QUEUED',
+      'RUNNING',
+      'WAITING_TOOL',
+      'WAITING_HUMAN',
+      'CANCELLING',
+      'COMPLETED',
+      'STOPPED',
+      'FAILED',
+      'CANCELLED',
+    ]);
+  });
+
+  it('lists the terminal statuses', () => {
+    expect(TERMINAL_STATUSES).toEqual(['COMPLETED', 'STOPPED', 'FAILED', 'CANCELLED']);
+  });
+
+  it('lists the stop reasons', () => {
+    expect(STOP_REASONS).toEqual(['max_steps', 'budget', 'max_tokens', 'timeout', 'loop', 'approval_timeout', 'refusal']);
+  });
+});
+
+describe('run status types', () => {
+  it('defines RunStatus, TerminalStatus and StopReason', () => {
+    expectTypeOf<RunStatus>().toEqualTypeOf<
+      'QUEUED' | 'RUNNING' | 'WAITING_TOOL' | 'WAITING_HUMAN' | 'CANCELLING' | 'COMPLETED' | 'STOPPED' | 'FAILED' | 'CANCELLED'
+    >();
+    expectTypeOf<TerminalStatus>().toEqualTypeOf<'COMPLETED' | 'STOPPED' | 'FAILED' | 'CANCELLED'>();
+    expectTypeOf<StopReason>().toEqualTypeOf<
+      'max_steps' | 'budget' | 'max_tokens' | 'timeout' | 'loop' | 'approval_timeout' | 'refusal'
+    >();
+    expectTypeOf<PermissionMode>().toEqualTypeOf<'default' | 'acceptEdits' | 'plan' | 'auto' | 'bypassPermissions'>();
+    expectTypeOf<ToolKind>().toEqualTypeOf<
+      'read' | 'edit' | 'delete' | 'move' | 'search' | 'execute' | 'think' | 'fetch' | 'switch_mode' | 'other'
+    >();
+  });
+});
+
+describe('run event payloads', () => {
+  it('discriminates on exactly these types', () => {
+    expectTypeOf<RunEventPayload['type']>().toEqualTypeOf<
+      | 'user.message'
+      | 'run.started'
+      | 'run.status'
+      | 'model.requested'
+      | 'model.responded'
+      | 'agent.message.delta'
+      | 'agent.thought.delta'
+      | 'tool.call'
+      | 'tool.permission.requested'
+      | 'tool.permission.resolved'
+      | 'tool.started'
+      | 'tool.updated'
+      | 'tool.completed'
+      | 'tool.reconciled'
+      | 'plan.updated'
+      | 'mode.changed'
+      | 'usage.updated'
+      | 'context.compacted'
+      | 'context.truncated'
+      | 'instructions.loaded'
+      | 'notice'
+    >();
+  });
+
+  it('defines the conversation and lifecycle payloads', () => {
+    expectTypeOf<Payload<'user.message'>>().toEqualTypeOf<{ type: 'user.message'; text: string }>();
+    expectTypeOf<Payload<'run.started'>>().toEqualTypeOf<{
+      type: 'run.started';
+      attempt: number;
+      now: number;
+      pins: Record<string, unknown>;
+    }>();
+    expectTypeOf<Payload<'run.status'>>().toEqualTypeOf<{
+      type: 'run.status';
+      from: RunStatus;
+      to: RunStatus;
+      reason?: string;
+    }>();
+  });
+
+  it('defines the model payloads with a loose response that 1.4 can tighten', () => {
+    expectTypeOf<ModelResponse>().toEqualTypeOf<{
+      output: unknown[];
+      usage: { input_tokens: number; output_tokens: number; total_tokens: number };
+    }>();
+    expectTypeOf<Payload<'model.requested'>>().toEqualTypeOf<{
+      type: 'model.requested';
+      step: number;
+      attempt: number;
+      digest: string;
+      body: unknown;
+    }>();
+    expectTypeOf<Payload<'model.responded'>>().toEqualTypeOf<{
+      type: 'model.responded';
+      step: number;
+      attempt: number;
+      response: ModelResponse;
+    }>();
+    expectTypeOf<Payload<'agent.message.delta'>>().toEqualTypeOf<{
+      type: 'agent.message.delta';
+      step: number;
+      attempt: number;
+      itemId: string;
+      text: string;
+    }>();
+    expectTypeOf<Payload<'agent.thought.delta'>>().toEqualTypeOf<{
+      type: 'agent.thought.delta';
+      step: number;
+      attempt: number;
+      itemId: string;
+      text: string;
+    }>();
+  });
+
+  it('defines the tool payloads', () => {
+    expectTypeOf<PermissionOption>().toEqualTypeOf<{
+      optionId: string;
+      name: string;
+      kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';
+    }>();
+    expectTypeOf<Payload<'tool.call'>>().toEqualTypeOf<{
+      type: 'tool.call';
+      callId: string;
+      providerCallId: string;
+      name: string;
+      kind: ToolKind;
+      title: string;
+      rawInput: unknown;
+      locations?: { path: string; line?: number }[];
+    }>();
+    expectTypeOf<Payload<'tool.permission.requested'>>().toEqualTypeOf<{
+      type: 'tool.permission.requested';
+      approvalId: string;
+      callId: string;
+      options: PermissionOption[];
+    }>();
+    expectTypeOf<Payload<'tool.permission.resolved'>>().toEqualTypeOf<{
+      type: 'tool.permission.resolved';
+      approvalId: string;
+      optionId: string;
+      rulePersisted?: boolean;
+    }>();
+    expectTypeOf<Payload<'tool.started'>>().toEqualTypeOf<{ type: 'tool.started'; callId: string; idemKey: string }>();
+    expectTypeOf<Payload<'tool.updated'>>().toEqualTypeOf<{ type: 'tool.updated'; callId: string; content: unknown[] }>();
+    expectTypeOf<Payload<'tool.completed'>>().toEqualTypeOf<{
+      type: 'tool.completed';
+      callId: string;
+      status: 'completed' | 'failed';
+      output: string;
+      content?: unknown[];
+      truncated?: boolean;
+    }>();
+    expectTypeOf<Payload<'tool.reconciled'>>().toEqualTypeOf<{
+      type: 'tool.reconciled';
+      callId: string;
+      outcome: 'already_applied' | 'not_applied' | 'unknown';
+      output: string;
+    }>();
+  });
+
+  it('defines the session and context payloads', () => {
+    expectTypeOf<Payload<'plan.updated'>>().toEqualTypeOf<{
+      type: 'plan.updated';
+      entries: { content: string; priority: 'high' | 'medium' | 'low'; status: 'pending' | 'in_progress' | 'completed' }[];
+    }>();
+    expectTypeOf<Payload<'mode.changed'>>().toEqualTypeOf<{ type: 'mode.changed'; mode: PermissionMode }>();
+    expectTypeOf<Payload<'usage.updated'>>().toEqualTypeOf<{
+      type: 'usage.updated';
+      inputTokens: number;
+      outputTokens: number;
+      totalTokens: number;
+    }>();
+    expectTypeOf<Payload<'context.compacted'>>().toEqualTypeOf<{
+      type: 'context.compacted';
+      summary: string;
+      replacedThroughItem: number;
+    }>();
+    expectTypeOf<Payload<'context.truncated'>>().toEqualTypeOf<{ type: 'context.truncated'; callId: string; handle: string }>();
+    expectTypeOf<Payload<'instructions.loaded'>>().toEqualTypeOf<{ type: 'instructions.loaded'; path: string; content: string }>();
+    expectTypeOf<Payload<'notice'>>().toEqualTypeOf<{
+      type: 'notice';
+      level: 'info' | 'warning' | 'error';
+      message: string;
+    }>();
+  });
+
+  it('wraps a payload with its envelope in RunEvent', () => {
+    expectTypeOf<Flat<Extract<RunEvent, { type: 'notice' }>>>().toEqualTypeOf<{
+      type: 'notice';
+      level: 'info' | 'warning' | 'error';
+      message: string;
+      id: number;
+      runId: string;
+      sessionId: string;
+      seq: number;
+      step: number;
+      leaseToken: number;
+      createdAt: number;
+    }>();
+  });
+});
+
+describe('RunState', () => {
+  it('defines the folded recovery state', () => {
+    expectTypeOf<RunState>().toEqualTypeOf<{
+      runId: string;
+      sessionId: string;
+      status: RunStatus;
+      stopReason?: StopReason;
+      step: number;
+      attempt: number;
+      usage: { inputTokens: number; outputTokens: number; totalTokens: number };
+      items: unknown[];
+      pendingCalls: Record<
+        string,
+        {
+          name: string;
+          providerCallId: string;
+          arguments: unknown;
+          status: 'requested' | 'awaiting_approval' | 'started' | 'completed' | 'reconciled';
+          idemKey?: string;
+          approvalId?: string;
+        }
+      >;
+      inFlightModelRequest?: { step: number; attempt: number; digest: string; body: unknown };
+      notes: { level: 'info' | 'warning' | 'error'; message: string }[];
+      toolCallCounts: Record<string, number>;
+      lastSeq: number;
+    }>();
+  });
+});
