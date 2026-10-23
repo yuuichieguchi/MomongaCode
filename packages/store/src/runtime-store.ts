@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { canonicalJson, immediateTx, migrate, openDatabase, readTx, uuidv7 } from '@momonga/foundation';
+import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, readTx, uuidv7 } from '@momonga/foundation';
 import { TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
 import type { PermissionMode, RunEventPayload, RunStatus, SessionEventPayload } from '@momonga/protocol';
 import { createApprovalStore } from './approvals.ts';
@@ -680,6 +680,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       try {
         current = fs.statSync(options.path);
       } catch (error) {
+        if (isTransientErrno(error)) throw error;
         throw new StoreIdentityError(`database ${options.path} is no longer present`, { cause: error });
       }
       if (current.dev !== identity.dev || current.ino !== identity.ino) {

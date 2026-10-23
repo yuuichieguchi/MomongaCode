@@ -4,7 +4,7 @@ import { isTransientErrno } from '@momonga/foundation';
 const errnoError = (code: string): NodeJS.ErrnoException => Object.assign(new Error(`${code}: injected`), { code });
 
 describe('isTransientErrno', () => {
-  it.each(['EMFILE', 'ENFILE', 'EIO', 'EAGAIN', 'EBUSY', 'ENOMEM', 'EINTR', 'ETIMEDOUT'])('is true for %s', (code) => {
+  it.each(['EMFILE', 'ENFILE', 'EIO', 'EAGAIN', 'EBUSY', 'ENOMEM', 'EINTR', 'ETIMEDOUT', 'ENOSPC', 'EDQUOT'])('is true for %s', (code) => {
     expect(isTransientErrno(errnoError(code))).toBe(true);
   });
 

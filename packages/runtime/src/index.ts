@@ -53,3 +53,8 @@ export { createPolicyFor } from './process/tool-policy.ts';
 export type { PolicyForOptions } from './process/tool-policy.ts';
 export { createToolRuntime } from './process/tool-runtime.ts';
 export type { ToolRuntime, ToolRuntimeOptions } from './process/tool-runtime.ts';
+export { RUNTIME_ABORT_BUDGET_MS, RUNTIME_TEARDOWN_BUDGET_MS } from './process/constants.ts';
+export { runtimeMaxCloseMs } from './process/close-budget.ts';
+export { RuntimeAlreadyRunningError } from './process/errors.ts';
+export { startRuntimeProcess } from './process/start-runtime-process.ts';
+export type { RuntimeCloseResult, RuntimeProcess, StartRuntimeProcessOptions } from './process/start-runtime-process.ts';

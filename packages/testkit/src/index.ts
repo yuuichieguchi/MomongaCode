@@ -16,6 +16,7 @@ export type {
   FakeChatCompletionsOptions,
   FakeChatCompletionsServer,
   FakeScenario,
+  FakeResponseHold,
   FakeScriptedReply,
   FakeStreamChunk,
   RecordedRequest,
@@ -40,6 +41,7 @@ export {
   toolRoundTripRun,
 } from './run-event-fixtures.ts';
 export type { RecordedRun } from './run-event-fixtures.ts';
+export { fakeReapTiming } from './fake-reap-timing.ts';
 export { createFakeTimers } from './fake-timers.ts';
 export type { FakeTimers, PendingTimer } from './fake-timers.ts';
 export { waitFor } from './wait-for.ts';

@@ -1,0 +1,347 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as runtime from '@momonga/runtime';
+import { sweepSessionTmp, sweepSpawnTmp } from '../../src/process/tmp-sweep.ts';
+import { createSession, makeDir, makeLogger, makeTempHome, openStore, START_MS } from './helpers.ts';
+import type { TempHome } from './helpers.ts';
+
+const DAY_MS = 86_400_000;
+const NOW = START_MS + 30 * DAY_MS;
+const REMOVING_NAME = /^\.removing-[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+const sessionId = (n: number): string => `01900000-0000-7000-8000-${String(n).padStart(12, '0')}`;
+
+type Activity = { lastActivityAt: number; hasActiveRun: boolean };
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+const activityStore = (activities: Record<string, Activity | (() => Activity | undefined)>) => {
+  const calls: string[] = [];
+  return {
+    calls,
+    sessionActivity: (id: string): Activity | undefined => {
+      calls.push(id);
+      const entry = activities[id];
+      return typeof entry === 'function' ? entry() : entry;
+    },
+  };
+};
+
+const idle = (ageMs: number): Activity => ({ lastActivityAt: NOW - ageMs, hasActiveRun: false });
+
+const warnings = () => {
+  const messages: string[] = [];
+  return { messages, onWarning: (message: string) => void messages.push(message) };
+};
+
+const sessionDir = (temp: TempHome, id: string, file = 'note.txt'): string => {
+  const dir = makeDir(temp.paths.tmp.sessions, id);
+  fs.writeFileSync(path.join(dir, file), 'x');
+  return dir;
+};
+
+const exists = (target: string): boolean => {
+  try {
+    fs.lstatSync(target);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const sweep = (temp: TempHome, store: { sessionActivity(id: string): Activity | undefined }, hasInMemoryState: (id: string) => boolean = () => false) => {
+  const warned = warnings();
+  return { warned, result: sweepSessionTmp({ root: temp.paths.tmp.sessions, store, now: NOW, hasInMemoryState, onWarning: warned.onWarning }) };
+};
+
+describe('sweepSpawnTmp (fake clock, fake timers, none armed)', () => {
+  it('removes spawn dirs at start', async () => {
+    const temp = await makeTempHome();
+    const spawnRoot = temp.paths.tmp.spawn;
+    fs.writeFileSync(path.join(makeDir(spawnRoot, 'rg-1', 'nested'), 'f'), 'x');
+    makeDir(spawnRoot, 'rg-2');
+    fs.writeFileSync(path.join(spawnRoot, 'stray-file'), 'x');
+    const warned = warnings();
+
+    await sweepSpawnTmp({ dir: spawnRoot, onWarning: warned.onWarning });
+
+    expect(fs.readdirSync(spawnRoot)).toEqual([]);
+    expect(warned.messages).toEqual([]);
+  });
+
+  it('unlinks a symlink in spawn without following it', async () => {
+    const temp = await makeTempHome();
+    const outside = makeDir(temp.root, 'outside');
+    fs.writeFileSync(path.join(outside, 'keep.txt'), 'kept');
+    fs.symlinkSync(outside, path.join(temp.paths.tmp.spawn, 'link'));
+
+    await sweepSpawnTmp({ dir: temp.paths.tmp.spawn, onWarning: warnings().onWarning });
+
+    expect(fs.readdirSync(temp.paths.tmp.spawn)).toEqual([]);
+    expect(fs.readFileSync(path.join(outside, 'keep.txt'), 'utf8')).toBe('kept');
+  });
+});
+
+describe('sweepSessionTmp (fake clock, fake timers, none armed)', () => {
+  it('a missing sessions root removes and keeps nothing', async () => {
+    const temp = await makeTempHome();
+    fs.rmSync(temp.paths.tmp.sessions, { recursive: true });
+
+    const { result } = sweep(temp, activityStore({}));
+
+    expect(await result).toEqual({ removed: 0, kept: 0 });
+  });
+
+  it('removes the dir of an unknown session', async () => {
+    const temp = await makeTempHome();
+    const dir = sessionDir(temp, sessionId(1));
+
+    const { result, warned } = sweep(temp, activityStore({}));
+
+    expect(await result).toEqual({ removed: 1, kept: 0 });
+    expect(exists(dir)).toBe(false);
+    expect(fs.readdirSync(temp.paths.tmp.sessions)).toEqual([]);
+    expect(warned.messages).toEqual([]);
+  });
+
+  it('removes a session dir idle for exactly 7 days', async () => {
+    const temp = await makeTempHome();
+    const dir = sessionDir(temp, sessionId(1));
+
+    const { result } = sweep(temp, activityStore({ [sessionId(1)]: idle(7 * DAY_MS) }));
+
+    expect(await result).toEqual({ removed: 1, kept: 0 });
+    expect(exists(dir)).toBe(false);
+  });
+
+  it('keeps one with a non-terminal run', async () => {
+    const temp = await makeTempHome();
+    const dir = sessionDir(temp, sessionId(1));
+
+    const { result } = sweep(temp, activityStore({ [sessionId(1)]: { lastActivityAt: NOW - 30 * DAY_MS, hasActiveRun: true } }));
+
+    expect(await result).toEqual({ removed: 0, kept: 1 });
+    expect(fs.readFileSync(path.join(dir, 'note.txt'), 'utf8')).toBe('x');
+  });
+
+  it('keeps a recent one (idle one millisecond less than 7 days)', async () => {
+    const temp = await makeTempHome();
+    const dir = sessionDir(temp, sessionId(1));
+
+    const { result } = sweep(temp, activityStore({ [sessionId(1)]: idle(7 * DAY_MS - 1) }));
+
+    expect(await result).toEqual({ removed: 0, kept: 1 });
+    expect(exists(dir)).toBe(true);
+  });
+
+  it('keeps a session with in-memory state', async () => {
+    const temp = await makeTempHome();
+    const dir = sessionDir(temp, sessionId(1));
+    const store = activityStore({});
+
+    const { result } = sweep(temp, store, (id) => id === sessionId(1));
+
+    expect(await result).toEqual({ removed: 0, kept: 1 });
+    expect(exists(dir)).toBe(true);
+  });
+
+  it('unlinks file entries of removable names', async () => {
+    const temp = await makeTempHome();
+    const file = path.join(temp.paths.tmp.sessions, sessionId(1));
+    fs.writeFileSync(file, 'stray');
+
+    const { result } = sweep(temp, activityStore({}));
+
+    expect(await result).toEqual({ removed: 1, kept: 0 });
+    expect(exists(file)).toBe(false);
+  });
+
+  it('a symlink entry of a live session is kept untouched (in-memory state)', async () => {
+    const temp = await makeTempHome();
+    const outside = makeDir(temp.root, 'outside');
+    fs.writeFileSync(path.join(outside, 'keep.txt'), 'kept');
+    const link = path.join(temp.paths.tmp.sessions, sessionId(1));
+    fs.symlinkSync(outside, link);
+
+    const { result } = sweep(temp, activityStore({}), (id) => id === sessionId(1));
+
+    expect(await result).toEqual({ removed: 0, kept: 1 });
+    expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(fs.readlinkSync(link)).toBe(outside);
+    expect(fs.readFileSync(path.join(outside, 'keep.txt'), 'utf8')).toBe('kept');
+  });
+
+  it('a symlink entry of a live session is kept untouched (an active run)', async () => {
+    const temp = await makeTempHome();
+    const outside = makeDir(temp.root, 'outside');
+    const link = path.join(temp.paths.tmp.sessions, sessionId(1));
+    fs.symlinkSync(outside, link);
+
+    const { result } = sweep(temp, activityStore({ [sessionId(1)]: { lastActivityAt: NOW - 30 * DAY_MS, hasActiveRun: true } }));
+
+    expect(await result).toEqual({ removed: 0, kept: 1 });
+    expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+  });
+
+  it('a symlink or file entry of an unknown session is unlinked without being followed', async () => {
+    const temp = await makeTempHome();
+    const outside = makeDir(temp.root, 'outside');
+    fs.writeFileSync(path.join(outside, 'keep.txt'), 'kept');
+    const outsideFile = path.join(temp.root, 'outside-file');
+    fs.writeFileSync(outsideFile, 'kept too');
+    fs.symlinkSync(outside, path.join(temp.paths.tmp.sessions, sessionId(1)));
+    fs.symlinkSync(outsideFile, path.join(temp.paths.tmp.sessions, sessionId(2)));
+    fs.writeFileSync(path.join(temp.paths.tmp.sessions, sessionId(3)), 'stray');
+
+    const { result } = sweep(temp, activityStore({}));
+
+    expect(await result).toEqual({ removed: 3, kept: 0 });
+    expect(fs.readdirSync(temp.paths.tmp.sessions)).toEqual([]);
+    expect(fs.readFileSync(path.join(outside, 'keep.txt'), 'utf8')).toBe('kept');
+    expect(fs.readFileSync(outsideFile, 'utf8')).toBe('kept too');
+  });
+
+  it('an unremovable entry is a warning and the sweep continues with the other entries', async () => {
+    const temp = await makeTempHome();
+    const stuck = sessionDir(temp, sessionId(1));
+    const locked = makeDir(stuck, 'locked');
+    fs.writeFileSync(path.join(locked, 'pinned'), 'x');
+    fs.chmodSync(locked, 0o500);
+    const other = sessionDir(temp, sessionId(2));
+
+    const { result, warned } = sweep(temp, activityStore({}));
+    await result;
+
+    expect(warned.messages.length).toBeGreaterThanOrEqual(1);
+    expect(exists(other)).toBe(false);
+  });
+
+  it('a store error from sessionActivity propagates', async () => {
+    const temp = await makeTempHome();
+    sessionDir(temp, sessionId(1));
+    const failure = Object.assign(new Error('database disk image is malformed'), { code: 'SQLITE_CORRUPT' });
+
+    const { result } = sweep(
+      temp,
+      activityStore({
+        [sessionId(1)]: () => {
+          throw failure;
+        },
+      }),
+    );
+
+    await expect(result).rejects.toBe(failure);
+  });
+
+  it('a session that gains in-memory state between the listing and the removal is kept', async () => {
+    const temp = await makeTempHome();
+    const dir = sessionDir(temp, sessionId(1));
+    let checks = 0;
+
+    const { result } = sweep(temp, activityStore({}), () => {
+      checks += 1;
+      return checks > 1;
+    });
+
+    expect(await result).toEqual({ removed: 0, kept: 1 });
+    expect(checks).toBe(2);
+    expect(fs.readFileSync(path.join(dir, 'note.txt'), 'utf8')).toBe('x');
+  });
+
+  it('a session that gains an active run between the listing and the removal is kept', async () => {
+    const temp = await makeTempHome();
+    const dir = sessionDir(temp, sessionId(1));
+    let lookups = 0;
+
+    const { result } = sweep(
+      temp,
+      activityStore({
+        [sessionId(1)]: () => {
+          lookups += 1;
+          return lookups === 1 ? idle(8 * DAY_MS) : { lastActivityAt: NOW, hasActiveRun: true };
+        },
+      }),
+    );
+
+    expect(await result).toEqual({ removed: 0, kept: 1 });
+    expect(lookups).toBe(2);
+    expect(fs.readFileSync(path.join(dir, 'note.txt'), 'utf8')).toBe('x');
+  });
+
+  it('a removable dir is renamed to .removing-<uuidv7> before it is removed, and a policyFor after the rename creates a fresh dir', async () => {
+    const temp = await makeTempHome();
+    const { store: realStore, clock } = openStore(temp);
+    const session = createSession(realStore, temp.project);
+    const dir = sessionDir(temp, session.id, 'old.txt');
+    const policyFor = runtime.createPolicyFor({ paths: temp.paths, home: temp.home, sessionStates: runtime.createSessionStates({ clock, store: realStore, logger: makeLogger() }) });
+    const renames: Array<[string, string]> = [];
+    const originalRename = fs.renameSync;
+    vi.spyOn(fs, 'renameSync').mockImplementation(((from: fs.PathLike, to: fs.PathLike) => {
+      renames.push([String(from), String(to)]);
+      originalRename(from, to);
+    }) as typeof fs.renameSync);
+    const originalRm = fs.promises.rm;
+    let policyRan = false;
+    vi.spyOn(fs.promises, 'rm').mockImplementation(async (target, options) => {
+      if (!policyRan) {
+        policyRan = true;
+        await policyFor(session, { env: Object.freeze({ PLAIN: '1' }) });
+      }
+      return originalRm(target, options);
+    });
+
+    const { result } = sweep(temp, activityStore({}));
+
+    expect(await result).toEqual({ removed: 1, kept: 0 });
+    expect(renames).toHaveLength(1);
+    const [from, to] = renames[0] as [string, string];
+    expect(from).toBe(dir);
+    expect(path.dirname(to)).toBe(temp.paths.tmp.sessions);
+    expect(path.basename(to)).toMatch(REMOVING_NAME);
+    expect(policyRan).toBe(true);
+    expect(exists(to)).toBe(false);
+    expect(fs.statSync(dir).isDirectory()).toBe(true);
+    expect(fs.readdirSync(dir)).toEqual([]);
+    expect(fs.readdirSync(temp.paths.tmp.sessions)).toEqual([session.id]);
+  });
+
+  it('a leftover .removing-* entry is removed in place at the next sweep', async () => {
+    const temp = await makeTempHome();
+    const leftover = path.join(temp.paths.tmp.sessions, '.removing-01900000-0000-7000-8000-000000000009');
+    fs.writeFileSync(path.join(makeDir(leftover, 'deep'), 'f'), 'x');
+    const renameSpy = vi.spyOn(fs, 'renameSync');
+    const store = activityStore({});
+
+    const { result } = sweep(temp, store);
+
+    expect(await result).toEqual({ removed: 1, kept: 0 });
+    expect(exists(leftover)).toBe(false);
+    expect(renameSpy).not.toHaveBeenCalled();
+  });
+
+  it('removability is decided before lstat (a spy asserts no lstat for a kept entry)', async () => {
+    const temp = await makeTempHome();
+    const live = sessionDir(temp, sessionId(1));
+    const active = sessionDir(temp, sessionId(2));
+    const lstatted: string[] = [];
+    const originalLstatSync = fs.lstatSync;
+    const originalLstat = fs.promises.lstat;
+    vi.spyOn(fs, 'lstatSync').mockImplementation(((target: fs.PathLike, ...rest: unknown[]) => {
+      lstatted.push(String(target));
+      return (originalLstatSync as (...args: unknown[]) => unknown)(target, ...rest);
+    }) as typeof fs.lstatSync);
+    vi.spyOn(fs.promises, 'lstat').mockImplementation(((target: fs.PathLike, ...rest: unknown[]) => {
+      lstatted.push(String(target));
+      return (originalLstat as (...args: unknown[]) => Promise<unknown>)(target, ...rest);
+    }) as typeof fs.promises.lstat);
+
+    const { result } = sweep(temp, activityStore({ [sessionId(2)]: { lastActivityAt: NOW - 30 * DAY_MS, hasActiveRun: true } }), (id) => id === sessionId(1));
+
+    expect(await result).toEqual({ removed: 0, kept: 2 });
+    expect(lstatted).not.toContain(live);
+    expect(lstatted).not.toContain(active);
+  });
+});

@@ -56,9 +56,15 @@ export interface RecordedRequest {
   body: unknown;
 }
 
+export interface FakeResponseHold {
+  waitForRequest(): Promise<RecordedRequest>;
+  release(): void;
+}
+
 export interface FakeChatCompletionsServer {
   socketPath: string;
   requests: RecordedRequest[];
+  hold(): FakeResponseHold;
   openConnections(): number;
   disconnects(): number;
   close(): Promise<void>;
@@ -213,6 +219,23 @@ export const startFakeChatCompletions = async (
   let nativeInvalidCount = 0;
   let constrainedIndex = 0;
   let constrainedInvalidCount = 0;
+  type PendingHold = { arrived(request: RecordedRequest): void; released: Promise<void>; release(): void };
+  const holds: PendingHold[] = [];
+  const createdHolds: PendingHold[] = [];
+  const createHold = (): FakeResponseHold => {
+    let arrived: (request: RecordedRequest) => void = () => undefined;
+    const request = new Promise<RecordedRequest>((resolve) => {
+      arrived = resolve;
+    });
+    let release: () => void = () => undefined;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const pending = { arrived, released, release };
+    holds.push(pending);
+    createdHolds.push(pending);
+    return { waitForRequest: () => request, release };
+  };
 
   const nativeCompletion = (body: Json, lastText: string): CompletionOut | undefined => {
     const tools = Array.isArray(body['tools']) ? body['tools'] : [];
@@ -476,6 +499,12 @@ export const startFakeChatCompletions = async (
         response.once('close', () => {
           if (!response.writableFinished) disconnectCount += 1;
         });
+        const held = holds.shift();
+        if (held !== undefined) {
+          held.arrived(requests[requests.length - 1] as RecordedRequest);
+          await held.released;
+          if (response.destroyed) return;
+        }
         const scripted = script.shift();
         if (scripted !== undefined) {
           await serveScripted(scripted, response);
@@ -547,9 +576,12 @@ export const startFakeChatCompletions = async (
     requests,
     openConnections: () => sockets.size,
     disconnects: () => disconnectCount,
+    hold: createHold,
     close: async () => {
       if (closed) return;
       closed = true;
+      holds.length = 0;
+      for (const pending of createdHolds) pending.release();
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
       if (ownedDir !== undefined) fs.rmSync(ownedDir, { recursive: true, force: true });
