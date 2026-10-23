@@ -1,0 +1,111 @@
+import { describe, expect, it } from 'vitest';
+import { loadMcpServers } from '@momonga/config';
+import {
+  distrusting,
+  localSettingsPath,
+  makeTree,
+  mcpJsonPath,
+  projectSettingsPath,
+  trusting,
+  userSettingsPath,
+  writeJson,
+  writeText,
+} from './helpers.ts';
+
+const ENV = { HOME_BIN: '/opt/bin', TOKEN_VALUE: 'abc', PLAIN_VALUE: 'abc', PORT: '9000' };
+
+describe('loadMcpServers', () => {
+  it('expands ${VAR} and ${VAR:-default} in command, args, env, url and headers', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), {
+      mcpServers: {
+        remote: { type: 'http', url: 'http://127.0.0.1:${PORT}/mcp', headers: { Authorization: 'Bearer ${TOKEN_VALUE}' } },
+      },
+    });
+    writeJson(localSettingsPath(tree), { enabledMcpjsonServers: ['tools'] });
+    writeJson(mcpJsonPath(tree), {
+      mcpServers: {
+        tools: {
+          command: '${HOME_BIN}/server',
+          args: ['--level', '${LEVEL:-info}', '--port=${PORT}'],
+          env: { KEY: '${PLAIN_VALUE}', MODE: '${MODE:-dev}' },
+          cwd: '${CWD:-.}',
+        },
+      },
+    });
+    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV });
+    expect(result.enabled).toEqual([
+      {
+        name: 'remote',
+        scope: 'user',
+        config: { type: 'http', url: 'http://127.0.0.1:9000/mcp', headers: { Authorization: 'Bearer abc' } },
+      },
+      {
+        name: 'tools',
+        scope: 'project',
+        config: { command: '/opt/bin/server', args: ['--level', 'info', '--port=9000'], env: { KEY: 'abc', MODE: 'dev' }, cwd: '.' },
+      },
+    ]);
+    expect(result.pendingApproval).toEqual([]);
+  });
+
+  it('fails naming the server and variable when ${VAR} is unset without default', async () => {
+    const tree = makeTree();
+    writeJson(localSettingsPath(tree), { enableAllProjectMcpServers: true });
+    writeJson(mcpJsonPath(tree), { mcpServers: { db: { command: 'db-mcp', args: ['${DATABASE_URL}'] } } });
+    const failure = loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV });
+    await expect(failure).rejects.toThrow('db');
+    await expect(failure).rejects.toThrow('DATABASE_URL');
+  });
+
+  it('rejects invalid server names', async () => {
+    const tree = makeTree();
+    writeJson(mcpJsonPath(tree), { mcpServers: { 'bad name!': { command: 'x' } } });
+    await expect(loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV })).rejects.toThrow(
+      'bad name!',
+    );
+  });
+
+  it('reports malformed .mcp.json with file and line', async () => {
+    const tree = makeTree();
+    const file = writeText(mcpJsonPath(tree), '{\n  "mcpServers": {\n    "a": }\n}\n');
+    const failure = loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV });
+    await expect(failure).rejects.toThrow(file);
+    await expect(failure).rejects.toThrow(/line 3/);
+  });
+
+  it('puts project servers in pendingApproval unless enabled by user or local settings', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { enabledMcpjsonServers: ['a'] });
+    writeJson(projectSettingsPath(tree), { enabledMcpjsonServers: ['b'], enableAllProjectMcpServers: true });
+    writeJson(localSettingsPath(tree), { enabledMcpjsonServers: ['c'], disabledMcpjsonServers: ['a'] });
+    writeJson(mcpJsonPath(tree), {
+      mcpServers: { a: { command: 'a' }, b: { command: 'b' }, c: { command: 'c' }, d: { command: 'd' } },
+    });
+    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV });
+    expect(result.enabled.map((s) => s.name)).toEqual(['c']);
+    expect(result.pendingApproval.map((s) => s.name)).toEqual(['a', 'b', 'd']);
+  });
+
+  it('enables all project servers with enableAllProjectMcpServers from user settings except disabled ones', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { enableAllProjectMcpServers: true, disabledMcpjsonServers: ['x'] });
+    writeJson(mcpJsonPath(tree), { mcpServers: { x: { command: 'x' }, y: { command: 'y' } } });
+    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV });
+    expect(result.enabled.map((s) => s.name)).toEqual(['y']);
+    expect(result.pendingApproval.map((s) => s.name)).toEqual(['x']);
+  });
+
+  it('does not read .mcp.json in an untrusted project and warns naming it', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), {
+      enableAllProjectMcpServers: true,
+      mcpServers: { mine: { command: 'mine' } },
+    });
+    const file = writeJson(mcpJsonPath(tree), { mcpServers: { evil: { command: 'evil' } } });
+    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: distrusting(), env: ENV });
+    expect(result.enabled.map((s) => s.name)).toEqual(['mine']);
+    expect(result.pendingApproval).toEqual([]);
+    expect(result.warnings.some((w) => w.includes(file))).toBe(true);
+  });
+});
