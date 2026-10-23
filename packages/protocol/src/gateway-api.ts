@@ -1,5 +1,5 @@
 import type { Capabilities, HealthResult } from './capabilities.ts';
-import type { InputItem } from './open-responses.ts';
+import type { FunctionTool, InputItem } from './open-responses.ts';
 
 export const MOMONGA_EVENT_PREFIX = 'momonga:' as const;
 
@@ -11,6 +11,7 @@ export type CountTokensRequest = {
   model: string;
   input: string | InputItem[];
   instructions?: string | null;
+  tools?: FunctionTool[];
 };
 
 export type CountTokensResult = {

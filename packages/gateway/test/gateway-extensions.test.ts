@@ -30,6 +30,89 @@ describe('POST /v1/momonga/count_tokens', () => {
     expect(bigger.input_tokens).toBeGreaterThan(first.input_tokens);
   });
 
+  it('passes tools through to adapter.countTokens', async () => {
+    const primary = createScriptedAdapter({ calls: [], countTokens: { input_tokens: 42, method: 'calibrated', error_bound: 3 } });
+    const { client } = await startGateway({ adapters: { primary } });
+    const tools = [{ type: 'function', name: 'Read', description: 'Read a file', parameters: { type: 'object', properties: {} } }];
+    const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'fast', input: userInput('count me'), tools }));
+    expect(response.status).toBe(200);
+    expect(primary.countCalls[0]?.request.tools).toEqual(tools);
+  });
+
+  it('counts tools in the fallback estimator', async () => {
+    const primary = createScriptedAdapter({ calls: [] });
+    const { client } = await startGateway({ adapters: { primary } });
+    const input = userInput('short');
+    const tools = [{ type: 'function', name: 'Read', description: 'Read a file '.repeat(40), parameters: { type: 'object', properties: {} } }];
+    const without = (await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'fast', input }))).body;
+    const withTools = (await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'fast', input, tools }))).body;
+    expect(withTools.input_tokens).toBeGreaterThan(without.input_tokens);
+  });
+
+  it.each([
+    ['not an array', { type: 'function', name: 'Read' }],
+    ['missing name', [{ type: 'function', parameters: {} }]],
+    ['wrong type', [{ type: 'web_search', name: 'Read' }]],
+    ['non-object parameters', [{ type: 'function', name: 'Read', parameters: 'x' }]],
+  ])('rejects invalid tools (%s) with 400 invalid_request', async (_label, tools) => {
+    const primary = createScriptedAdapter({ calls: [], countTokens: { input_tokens: 42, method: 'calibrated', error_bound: 3 } });
+    const { client } = await startGateway({ adapters: { primary } });
+    const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'fast', input: 'x', tools }));
+    expect(response.status).toBe(400);
+    expect(response.body.error.type).toBe('invalid_request');
+    expect(String(response.body.error.param)).toMatch(/^tools/);
+    expect(primary.countCalls).toHaveLength(0);
+  });
+
+  const countWithTools = async (tools: unknown) => {
+    const primary = createScriptedAdapter({ calls: [], countTokens: { input_tokens: 42, method: 'calibrated', error_bound: 3 } });
+    const { client } = await startGateway({ adapters: { primary } });
+    const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'fast', input: 'x', tools }));
+    return { response, primary };
+  };
+  const toolNamed = (name: string, parameters: Record<string, unknown> = { type: 'object' }) => ({ type: 'function', name, parameters });
+  const PARAMETERS_LIMIT = 65536;
+  const parametersOfCanonicalLength = (length: number) => ({ description: 'p'.repeat(length - '{"description":""}'.length) });
+
+  it('accepts exactly 128 tools', async () => {
+    const { response, primary } = await countWithTools(Array.from({ length: 128 }, (_, index) => toolNamed(`t${index}`)));
+    expect(response.status).toBe(200);
+    expect(primary.countCalls[0]?.request.tools).toHaveLength(128);
+  });
+
+  it('rejects 129 tools with param tools', async () => {
+    const { response, primary } = await countWithTools(Array.from({ length: 129 }, (_, index) => toolNamed(`t${index}`)));
+    expect(response.status).toBe(400);
+    expectErrorBody(response.body, { type: 'invalid_request', code: 'invalid_body', param: 'tools' });
+    expect(primary.countCalls).toHaveLength(0);
+  });
+
+  it('accepts parameters whose canonical JSON is exactly 64 KiB', async () => {
+    const { response } = await countWithTools([toolNamed('Read', parametersOfCanonicalLength(PARAMETERS_LIMIT))]);
+    expect(response.status).toBe(200);
+  });
+
+  it('rejects parameters one byte over 64 KiB with param tools[i].parameters', async () => {
+    const tools = [toolNamed('Read'), toolNamed('Big', parametersOfCanonicalLength(PARAMETERS_LIMIT + 1))];
+    const { response, primary } = await countWithTools(tools);
+    expect(response.status).toBe(400);
+    expectErrorBody(response.body, { type: 'invalid_request', code: 'invalid_body', param: 'tools[1].parameters' });
+    expect(primary.countCalls).toHaveLength(0);
+  });
+
+  it('rejects duplicate tool names with param tools[i].name', async () => {
+    const { response, primary } = await countWithTools([toolNamed('Read'), toolNamed('Bash'), toolNamed('Read')]);
+    expect(response.status).toBe(400);
+    expectErrorBody(response.body, { type: 'invalid_request', code: 'invalid_body', param: 'tools[2].name' });
+    expect(primary.countCalls).toHaveLength(0);
+  });
+
+  it('names the offending field of a malformed tool', async () => {
+    const { response } = await countWithTools([toolNamed('Read'), { type: 'function', parameters: {} }]);
+    expect(response.status).toBe(400);
+    expectErrorBody(response.body, { type: 'invalid_request', code: 'invalid_body', param: 'tools[1].name' });
+  });
+
   it('rejects an unknown alias with 404 model_not_found', async () => {
     const primary = createScriptedAdapter({ calls: [] });
     const { client } = await startGateway({ adapters: { primary } });

@@ -62,7 +62,7 @@ export const createUnaryService = (services: Services, validator: RequestValidat
     );
     const countTokens = target.adapter.countTokens;
     if (countTokens === undefined) {
-      const inputTokens = estimateInputTokens({ input: resolved.forAdapter, instructions: request.instructions });
+      const inputTokens = estimateInputTokens({ input: resolved.forAdapter, instructions: request.instructions, tools: request.tools });
       return { input_tokens: inputTokens, method: 'estimated', error_bound: errorBoundFor(inputTokens) };
     }
     const outcome = await callTargets(services, [target], signal, deadlineAt, (chosen, attemptNumber, guarded) =>
@@ -72,6 +72,7 @@ export const createUnaryService = (services: Services, validator: RequestValidat
           model: chosen.model,
           input: countable,
           ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
+          ...(request.tools === undefined ? {} : { tools: request.tools }),
         },
         { signal: guarded, target: { name: chosen.name, model: chosen.model }, attempt: attemptNumber },
       ),

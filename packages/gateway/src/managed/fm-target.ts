@@ -1,3 +1,4 @@
+import { canonicalJson } from '@momonga/foundation';
 import type {
   AdapterTarget,
   Capabilities,
@@ -96,7 +97,10 @@ const textOfItem = (item: InputItem): string => {
 
 const countedText = (request: CountTokensRequest): string => {
   const items = typeof request.input === 'string' ? [request.input] : request.input.map(textOfItem);
-  return [...(request.instructions === undefined || request.instructions === null ? [] : [request.instructions]), ...items]
+  const tools = (request.tools ?? []).map((tool) =>
+    canonicalJson({ name: tool.name, description: tool.description ?? null, parameters: tool.parameters ?? null }),
+  );
+  return [...(request.instructions === undefined || request.instructions === null ? [] : [request.instructions]), ...tools, ...items]
     .filter((part) => part !== '')
     .join('\n');
 };
