@@ -17,7 +17,7 @@ export { forceKillGroup, groupAlive, signalGroup, terminateGroup, waitForGroupGo
 export type { ForceKillGroupOptions, TerminateGroupOptions, TerminateOutcome } from './process-group.ts';
 export { ProcessLockHeldError, acquireProcessLock } from './process-lock.ts';
 export type { DescribeHolder, ProcessLock } from './process-lock.ts';
-export { ensureMomongaDirs, ensureSessionTmpDir, momongaLayout, momongaPaths } from './momonga-paths.ts';
+export { SessionTmpDirError, ensureMomongaDirs, ensureSessionTmpDir, momongaLayout, momongaPaths } from './momonga-paths.ts';
 export type { MomongaPaths } from './momonga-paths.ts';
 export { secretKeyFile } from './secret-key-file.ts';
 export type { SecretKeyFileOptions } from './secret-key-file.ts';
@@ -39,4 +39,5 @@ export { isProcessAlive } from './process-alive.ts';
 export type { SignalSender } from './process-alive.ts';
 export { SOCKET_PATH_LIMIT, assertSocketPathLength } from './socket-path.ts';
 export { canonicalDirectory, canonicalPath, comparableContains, comparableFromParts, comparablePath, containsByComponents, setCaseSensitivityProbe, volumeIsCaseInsensitive } from './path-compare.ts';
-export type { CanonicalDirectoryResult, CaseSensitivityProbe, PathParts } from './path-compare.ts';
+export type { CanonicalDirectoryFailureCode, CanonicalDirectoryResult, CaseSensitivityProbe, PathParts } from './path-compare.ts';
+export { isTransientErrno } from './transient-errno.ts';

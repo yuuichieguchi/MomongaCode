@@ -195,6 +195,21 @@ const publicEventVariant = (type: keyof typeof PAYLOAD_SCHEMAS): JsonSchema => {
 
 const EVENT_TYPES = Object.keys(PAYLOAD_SCHEMAS) as (keyof typeof PAYLOAD_SCHEMAS)[];
 
+const trustView = closed(
+  { path: string, decision: { anyOf: [enumOf(['trusted', 'untrusted']), { type: 'null' }] }, inheritedFrom: string },
+  ['path', 'decision'],
+);
+
+export type RunHealth = {
+  status: 'ok';
+  version: string;
+  apiVersion: 1;
+  pid: number;
+  startedAt: string;
+  state: 'running' | 'draining';
+  sandbox: 'seatbelt' | 'none';
+};
+
 export const RUN_API_SCHEMAS = {
   CreateSessionRequest: root(
     closed(
@@ -220,7 +235,20 @@ export const RUN_API_SCHEMAS = {
     ),
   ),
   ResolveApprovalRequest: root(closed({ optionId: { type: 'string', minLength: 1 } }, ['optionId'])),
-  Health: root(closed({ status: constant('ok'), version: string, apiVersion: { type: 'integer', const: 1 } }, ['status', 'version', 'apiVersion'])),
+  Health: root(
+    closed(
+      {
+        status: constant('ok'),
+        version: string,
+        apiVersion: { type: 'integer', const: 1 },
+        pid: integer,
+        startedAt: string,
+        state: enumOf(['running', 'draining']),
+        sandbox: enumOf(['seatbelt', 'none']),
+      },
+      ['status', 'version', 'apiVersion', 'pid', 'startedAt', 'state', 'sandbox'],
+    ),
+  ),
   SessionView: root(
     closed(
       {
@@ -233,10 +261,14 @@ export const RUN_API_SCHEMAS = {
         envKeys: { type: 'array', items: string },
         activeRunId: nullable(string),
         latestRunId: nullable(string),
+        additionalDirectories: { type: 'array', items: string },
       },
-      ['id', 'cwd', 'permissionMode', 'modelAlias', 'bypassAllowed', 'createdAt', 'envKeys', 'activeRunId', 'latestRunId'],
+      ['id', 'cwd', 'permissionMode', 'modelAlias', 'bypassAllowed', 'createdAt', 'envKeys', 'activeRunId', 'latestRunId', 'additionalDirectories'],
     ),
   ),
+  TrustView: root(trustView),
+  TrustResponse: root(closed({ trust: trustView }, ['trust'])),
+  PutTrustRequest: root(closed({ path: { type: 'string', minLength: 1 }, decision: enumOf(['trusted', 'untrusted']) }, ['path', 'decision'])),
   RunView: root(
     closed(
       {

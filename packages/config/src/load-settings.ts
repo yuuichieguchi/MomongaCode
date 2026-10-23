@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { PermissionMode } from '@momonga/protocol';
 import { canonicalDirectory, comparableContains } from '@momonga/foundation';
-import { ConfigError, toConfigError } from './config-error.ts';
+import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import { loadLayers, rejectAutoMode } from './layers.ts';
 import type { Layer, TrustOracle, UserLayer } from './layers.ts';
 import { parseRule, RuleParseError } from './rule.ts';
@@ -75,7 +75,13 @@ const resolveDirectory = (directory: string, layer: Layer, home: string): string
 };
 
 export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: string, projectDir: string, warnings: string[]): ResolvedSettings => {
-  const projectReal = fs.realpathSync.native(projectDir);
+  let projectReal: string;
+  try {
+    projectReal = fs.realpathSync.native(projectDir);
+  } catch (error) {
+    rethrowIfTransient(error);
+    throw toConfigError(error);
+  }
   const merged: ResolvedSettings = {
     permissions: { allow: [], ask: [], deny: [], additionalDirectories: [] },
     env: {},
@@ -121,6 +127,7 @@ export const loadSettings = async ({ home, projectDir, cli, trust, user }: LoadS
     cliSettings = assertSettings(cli, 'cli');
     rejectAutoMode(cliSettings, 'cli');
   } catch (error) {
+    rethrowIfTransient(error);
     throw toConfigError(error);
   }
   if (cliSettings.models !== undefined) throw new ConfigError('cli: models settings are only honored in user settings');

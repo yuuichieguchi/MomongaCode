@@ -1,14 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import type { Clock } from '@momonga/foundation';
+import { comparableContains, type Clock } from '@momonga/foundation';
 import { expectOneOf, readerFor } from './rows.ts';
 import type { TrustDecision, TrustStore } from './types.ts';
 
 const DECISIONS = ['trusted', 'untrusted'] as const;
-
-const isAncestorOrSelf = (candidate: string, descendant: string): boolean =>
-  candidate === descendant || descendant.startsWith(candidate.endsWith(path.sep) ? candidate : candidate + path.sep);
 
 export const createTrustStore = (db: DatabaseSync, clock: Clock, home: string): TrustStore => {
   const select = db.prepare('SELECT * FROM trust WHERE path = :path');
@@ -33,7 +30,7 @@ export const createTrustStore = (db: DatabaseSync, clock: Clock, home: string): 
       }
       for (let current = start; ; current = path.dirname(current)) {
         const decision = decisionAt(current);
-        const exactOnly = isAncestorOrSelf(current, home);
+        const exactOnly = comparableContains(current, home);
         if (decision !== undefined && (current === start || !exactOnly)) {
           return current === start ? { decision } : { decision, inheritedFrom: current };
         }

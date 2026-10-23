@@ -4,6 +4,7 @@ import type {
   HealthResult,
   ProbeKeyword,
   ProbeReport,
+  RunHealth,
   ToolCallingMode,
   ToolCallingSetting,
 } from '@momonga/protocol';
@@ -61,6 +62,20 @@ describe('protocol capability types', () => {
       imageInputAccepted: boolean;
       guardrail: { errorShape?: unknown };
       tokenCalibration?: { ratio: number; errorBound: number };
+    }>();
+  });
+});
+
+describe('run api types', () => {
+  it('RunHealth spells the health body with its own literals', () => {
+    expectTypeOf<RunHealth>().toEqualTypeOf<{
+      status: 'ok';
+      version: string;
+      apiVersion: 1;
+      pid: number;
+      startedAt: string;
+      state: 'running' | 'draining';
+      sandbox: 'seatbelt' | 'none';
     }>();
   });
 });

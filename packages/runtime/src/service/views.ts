@@ -30,6 +30,7 @@ export const toSessionView = (store: RuntimeStore, session: Session) => {
     bypassAllowed: session.bypassAllowed,
     createdAt: session.createdAt,
     envKeys: Object.keys(session.env),
+    additionalDirectories: [...session.additionalDirectories],
     activeRunId: runs.find((run) => !isTerminalStatus(run.status))?.id ?? null,
     latestRunId: runs.at(-1)?.id ?? null,
   };

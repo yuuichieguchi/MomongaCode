@@ -4,7 +4,7 @@ export { decodeCompactionSummary } from './compaction-summary.ts';
 export { PROBE_KEYWORDS } from './probe.ts';
 export type { ProbeKeyword, ProbeReport } from './probe.ts';
 export { RUN_API_SCHEMAS, toPublicRunEvent } from './run-api.ts';
-export type { JsonSchema, PublicRunEvent } from './run-api.ts';
+export type { JsonSchema, PublicRunEvent, RunHealth } from './run-api.ts';
 export { APPROVAL_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS } from './run-types.ts';
 export type {
   ApprovalStatus,

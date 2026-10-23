@@ -1,12 +1,14 @@
-import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { getRequestListener } from '@hono/node-server';
-import { listenUnix } from '@momonga/foundation';
+import { canonicalPath, comparableContains, listenUnix } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
+import { isFatalStoreError } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
+import { asError } from '../process/as-error.ts';
+import type { SandboxKind } from '../process/sandbox-kind.ts';
 import { createRunApp } from './app.ts';
-import type { RunLimitDefaults, SessionSettings } from './app.ts';
+import type { RunLimitDefaults, SessionCreateSettings } from './app.ts';
 import type { RunNotifier } from './notifier.ts';
 import { startDataVersionPoll } from './data-version-poll.ts';
 import { startApprovalSweeper } from './sweeper.ts';
@@ -22,10 +24,13 @@ export type RunServiceOptions = {
   home: string;
   version: string;
   socketPath: string;
+  pid: number;
+  startedAt: string;
+  sandboxKind: SandboxKind;
+  protectedRootAreas: readonly string[];
   notifier: RunNotifier;
-  credentialEnvNames: () => readonly string[];
   modelAliases: () => Promise<readonly string[]>;
-  settingsFor: (cwd: string) => Promise<SessionSettings>;
+  sessionCreateSettings: (cwd: string) => Promise<SessionCreateSettings>;
   defaults: { modelAlias: string; runTimeoutMs?: number; limits: RunLimitDefaults };
   timers?: ServiceTimers;
   keepAliveMs?: number;
@@ -34,20 +39,21 @@ export type RunServiceOptions = {
   maxBodyBytes?: number;
   cancelUpstream?: (runId: string) => Promise<void>;
   onError?: (error: unknown) => void;
+  onFatal?: (error: Error) => void;
 };
 
-export type RunService = { socketPath: string; close(): Promise<void> };
+export type RunService = { socketPath: string; beginDraining(): void; close(): Promise<void> };
 
 const reportToStderr = (error: unknown): void => {
   console.error(error);
 };
 
-const assertInsideMomongaHome = async (home: string, socketPath: string): Promise<void> => {
-  const realHome = await fs.promises.realpath(home);
-  const realParent = await fs.promises.realpath(path.dirname(socketPath));
-  const allowed = path.join(realHome, '.momonga');
-  if (realParent !== allowed && !realParent.startsWith(`${allowed}${path.sep}`)) {
-    throw new Error(`the run socket must live under ${allowed}, but ${socketPath} resolves to ${realParent}`);
+const assertInsideMomongaHome = (home: string, socketPath: string): void => {
+  const canonicalHome = canonicalPath(home);
+  const socketDirectory = canonicalPath(path.dirname(socketPath));
+  const allowed = path.join(canonicalHome, '.momonga');
+  if (!comparableContains(allowed, socketDirectory)) {
+    throw new Error(`the run socket must live under ${allowed}, but ${socketPath} resolves to ${socketDirectory}`);
   }
 };
 
@@ -61,18 +67,27 @@ const closeServer = (server: http.Server): Promise<void> =>
   });
 
 export const createRunService = async (options: RunServiceOptions): Promise<RunService> => {
-  await assertInsideMomongaHome(options.home, options.socketPath);
+  if (!path.isAbsolute(options.home)) throw new TypeError(`home must be an absolute path, received ${JSON.stringify(options.home)}`);
+  assertInsideMomongaHome(options.home, options.socketPath);
 
   const timers = options.timers ?? systemTimers;
   const onError = options.onError ?? reportToStderr;
+  const { onFatal } = options;
+  const report = (error: unknown): void => {
+    if (onFatal !== undefined && isFatalStoreError(error)) onFatal(asError(error));
+    else onError(error);
+  };
   const closeController = new AbortController();
+  let draining = false;
   const app = createRunApp({
     store: options.store,
     clock: options.clock,
     version: options.version,
-    credentialEnvNames: options.credentialEnvNames,
     modelAliases: options.modelAliases,
-    settingsFor: options.settingsFor,
+    sessionCreateSettings: options.sessionCreateSettings,
+    isDraining: () => draining,
+    health: { pid: options.pid, startedAt: options.startedAt, sandbox: options.sandboxKind },
+    protectedRootAreas: options.protectedRootAreas,
     defaults: { modelAlias: options.defaults.modelAlias, runTimeoutMs: options.defaults.runTimeoutMs ?? SIX_HOURS_MS, limits: options.defaults.limits },
     notifier: options.notifier,
     timers,
@@ -80,40 +95,56 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     maxBodyBytes: options.maxBodyBytes ?? TWO_MIB,
     closeSignal: closeController.signal,
     ...(options.cancelUpstream === undefined ? {} : { cancelUpstream: options.cancelUpstream }),
-    onError,
+    onError: report,
   });
 
   const server = http.createServer(getRequestListener((request, env) => app.fetch(request, env)));
   await listenUnix(server, options.socketPath);
 
-  const sweeper = startApprovalSweeper({
-    store: options.store,
-    clock: options.clock,
-    timers,
-    intervalMs: options.sweepIntervalMs ?? 1000,
-    onError,
-  });
+  let sweeper: { close(): void } | undefined;
+  let poll: { close(): void } | undefined;
+  const stop = async (): Promise<void> => {
+    sweeper?.close();
+    poll?.close();
+    closeController.abort();
+    const closed = closeServer(server);
+    server.closeAllConnections();
+    await closed;
+  };
 
-  const poll = startDataVersionPoll({
-    store: options.store,
-    notifier: options.notifier,
-    timers,
-    intervalMs: options.dataVersionPollMs ?? 1000,
-    onError,
-  });
+  try {
+    server.on('error', (error) => {
+      if (onFatal !== undefined) onFatal(asError(error));
+      else onError(error);
+    });
+    sweeper = startApprovalSweeper({
+      store: options.store,
+      clock: options.clock,
+      timers,
+      intervalMs: options.sweepIntervalMs ?? 1000,
+      onError: report,
+    });
+    poll = startDataVersionPoll({
+      store: options.store,
+      notifier: options.notifier,
+      timers,
+      intervalMs: options.dataVersionPollMs ?? 1000,
+      onError: report,
+    });
+  } catch (error) {
+    await stop();
+    throw error;
+  }
+
   let closing: Promise<void> | undefined;
 
   return {
     socketPath: options.socketPath,
+    beginDraining: () => {
+      draining = true;
+    },
     close: () => {
-      closing ??= (async () => {
-        sweeper.close();
-        poll.close();
-        closeController.abort();
-        const closed = closeServer(server);
-        server.closeAllConnections();
-        await closed;
-      })();
+      closing ??= stop();
       return closing;
     },
   };
