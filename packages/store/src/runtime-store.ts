@@ -1,29 +1,35 @@
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, migrate, openDatabase, readTx, uuidv7 } from '@momonga/foundation';
-import { TERMINAL_STATUSES } from '@momonga/protocol';
-import type { RunEventPayload, RunStatus } from '@momonga/protocol';
+import { TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
+import type { PermissionMode, RunEventPayload, RunStatus, SessionEventPayload } from '@momonga/protocol';
 import { createApprovalStore } from './approvals.ts';
 import { createBlobStore, prepareBlobDirectory } from './blobs.ts';
-import { decodeEvent, decodeRun, decodeRunState, decodeSession, encodeRunState } from './codec.ts';
+import { decodeEvent, decodeRun, decodeRunEvents, decodeRunState, decodeSession, encodeRunState } from './codec.ts';
 import { createIdempotencyStore } from './idempotency.ts';
-import { corrupt, expectOneOf, readerFor } from './rows.ts';
+import { corrupt, expectOneOf, expectRecord, isRecord, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
 import { MIGRATIONS } from './schema.ts';
 import { createTrustStore } from './trust.ts';
 import type {
+  Approval,
+  ApprovalView,
   Claim,
   ClaimStatus,
   Conflict,
+  CreateRunResult,
   HeartbeatResult,
   LeaseLost,
   LoadedRun,
   Run,
   RequestApprovalResult,
+  RequestCancelResult,
+  ResolveApprovalResult,
   RunMutationResult,
   RuntimeStore,
   RuntimeStoreOptions,
   ServiceMutationResult,
+  SetPermissionModeResult,
   StatusPatch,
 } from './types.ts';
 
@@ -88,11 +94,11 @@ const CLAIM_ORDER = 'ORDER BY r.available_at, r.created_at, r.rowid';
 
 const RUN_INSERT_SQL = `
   INSERT INTO runs (
-    id, session_id, ordinal, idempotency_key, status, version, lease_token, available_at, attempts, failed_attempts,
-    cancel_requested, deadline_at, limits_json, usage_json, step, last_seq, pins, dead_letter, created_at
+    id, session_id, ordinal, idempotency_key, request_digest, previous_run_id, status, version, lease_token, available_at, attempts,
+    failed_attempts, cancel_requested, deadline_at, limits_json, usage_json, step, last_seq, pins, dead_letter, created_at
   ) VALUES (
-    :id, :sessionId, :ordinal, :idempotencyKey, 'QUEUED', 0, 0, :availableAt, 0, 0,
-    0, :deadlineAt, :limits, :usage, 0, 0, :pins, 0, :createdAt
+    :id, :sessionId, :ordinal, :idempotencyKey, :requestDigest, :previousRunId, 'QUEUED', 0, 0, :availableAt, 0,
+    0, 0, :deadlineAt, :limits, :usage, 0, 0, :pins, 0, :createdAt
   )
 `;
 
@@ -124,20 +130,40 @@ const FENCE_SQL = `
 
 const prepareStatements = (db: DatabaseSync) => ({
   insertSession: db.prepare(
-    `INSERT INTO sessions (id, cwd, env_json, permission_mode, model_alias, created_at)
-     VALUES (:id, :cwd, :env, :permissionMode, :modelAlias, :createdAt)`,
+    `INSERT INTO sessions (id, cwd, env_json, permission_mode, model_alias, bypass_allowed, created_at)
+     VALUES (:id, :cwd, :env, :permissionMode, :modelAlias, :bypassAllowed, :createdAt)`,
   ),
+  updateSessionMode: db.prepare('UPDATE sessions SET permission_mode = :permissionMode WHERE id = :id'),
+  sessionMaxEventId: db.prepare('SELECT COALESCE(MAX(id), 0) AS max_id FROM events WHERE session_id = :sessionId'),
   selectSession: db.prepare('SELECT * FROM sessions WHERE id = :id'),
   listSessions: db.prepare('SELECT * FROM sessions ORDER BY created_at, rowid'),
   listSessionsByCwd: db.prepare('SELECT * FROM sessions WHERE cwd = :cwd ORDER BY created_at, rowid'),
+  dataVersion: db.prepare('PRAGMA data_version'),
   selectRun: db.prepare('SELECT * FROM runs WHERE id = :id'),
   selectRunByKey: db.prepare('SELECT * FROM runs WHERE session_id = :sessionId AND idempotency_key = :key'),
+  listRuns: db.prepare('SELECT * FROM runs WHERE session_id = :sessionId ORDER BY ordinal'),
+  latestRunOfSession: db.prepare('SELECT id FROM runs WHERE session_id = :sessionId ORDER BY ordinal DESC LIMIT 1'),
   nextOrdinal: db.prepare('SELECT COALESCE(MAX(ordinal), 0) + 1 AS next FROM runs WHERE session_id = :sessionId'),
   insertRun: db.prepare(RUN_INSERT_SQL),
   writeRun: db.prepare(RUN_WRITE_SQL),
   insertEvent: db.prepare(
     `INSERT INTO events (run_id, session_id, seq, step, lease_token, created_at, type, payload_json)
      VALUES (:runId, :sessionId, :seq, :step, :leaseToken, :createdAt, :type, :payload)`,
+  ),
+  dueWaitingRuns: db.prepare(
+    `SELECT r.id FROM runs r
+     WHERE r.status = 'WAITING_HUMAN'
+       AND (
+         r.deadline_at <= :nowMs
+         OR EXISTS (SELECT 1 FROM approvals a WHERE a.run_id = r.id AND a.status = 'pending' AND a.expires_at <= :nowMs)
+       )
+     ORDER BY r.created_at, r.rowid`,
+  ),
+  toolCallEvent: db.prepare(
+    "SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.call' AND json_extract(payload_json, '$.callId') = :callId LIMIT 1",
+  ),
+  requestedEvent: db.prepare(
+    "SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.permission.requested' AND json_extract(payload_json, '$.approvalId') = :approvalId LIMIT 1",
   ),
   runEvents: db.prepare('SELECT * FROM events WHERE run_id = :runId AND seq > :after ORDER BY seq LIMIT :limit'),
   sessionEvents: db.prepare('SELECT * FROM events WHERE session_id = :sessionId AND id > :after ORDER BY id LIMIT :limit'),
@@ -218,6 +244,56 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   }
   const sql = statements;
   const approvalOps = createApprovalStore(db, clock);
+  const touched = new Map<string, { runId?: string; sessionId: string }>();
+
+  const recordTouch = (sessionId: string, runId: string | null): void => {
+    if (options.onCommit === undefined) return;
+    touched.set(`${sessionId}\n${runId ?? ''}`, runId === null ? { sessionId } : { runId, sessionId });
+  };
+
+  const announceCommit = (): void => {
+    const onCommit = options.onCommit;
+    if (onCommit === undefined || touched.size === 0) return;
+    const announced = [...touched.values()];
+    touched.clear();
+    queueMicrotask(() => onCommit(announced));
+  };
+
+  const transaction = <T>(fn: () => T): T => {
+    try {
+      const result = immediateTx(db, fn);
+      announceCommit();
+      return result;
+    } catch (error) {
+      touched.clear();
+      throw error;
+    }
+  };
+
+  const insertEvent = (event: {
+    runId: string | null;
+    sessionId: string;
+    seq: number | null;
+    step: number | null;
+    leaseToken: number | null;
+    createdAt: number;
+    payload: RunEventPayload | SessionEventPayload;
+  }): void => {
+    sql.insertEvent.run({
+      runId: event.runId,
+      sessionId: event.sessionId,
+      seq: event.seq,
+      step: event.step,
+      leaseToken: event.leaseToken,
+      createdAt: event.createdAt,
+      type: event.payload.type,
+      payload: canonicalJson(event.payload),
+    });
+    recordTouch(event.sessionId, event.runId);
+  };
+
+  const approvalAnnounced = (runId: string, approvalId: string): boolean =>
+    sql.requestedEvent.get({ runId, approvalId }) !== undefined;
 
   const requireRun = (runId: string): Run => {
     const row = sql.selectRun.get({ id: runId });
@@ -253,16 +329,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     for (const payload of payloads) {
       const step = Math.max(current.step, payloadStep(payload));
       const seq = current.lastSeq + 1;
-      sql.insertEvent.run({
-        runId: run.id,
-        sessionId: run.sessionId,
-        seq,
-        step,
-        leaseToken: run.leaseToken,
-        createdAt,
-        type: payload.type,
-        payload: canonicalJson(payload),
-      });
+      insertEvent({ runId: run.id, sessionId: run.sessionId, seq, step, leaseToken: run.leaseToken, createdAt, payload });
       const usage =
         payload.type === 'model.responded'
           ? {
@@ -276,12 +343,19 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return current;
   };
 
+  const withdrawPendingApprovals = (runId: string): RunEventPayload[] =>
+    approvalOps.store.listPending(runId).flatMap((approval): RunEventPayload[] => {
+      approvalOps.end(approval.id, 'withdrawn');
+      return approvalAnnounced(runId, approval.id) ? [{ type: 'tool.permission.cancelled', approvalId: approval.id, reason: 'withdrawn' }] : [];
+    });
+
   const changeStatus = (run: Run, to: RunStatus, change: StatusChange, leadingEvents: readonly RunEventPayload[] = []): Run => {
     if (!change.edges[run.status].includes(to)) throw new Error(`run ${run.id} has no permitted edge ${run.status} -> ${to}`);
     const patch = change.patch ?? {};
     const reason = patch.stopReason ?? patch.error?.code;
     const statusEvent: RunEventPayload = { type: 'run.status', from: run.status, to, ...(reason === undefined ? {} : { reason }) };
-    const appended = appendPayloads(run, [...leadingEvents, statusEvent]);
+    const withdrawal = isTerminal(to) || to === 'CANCELLING' ? withdrawPendingApprovals(run.id) : [];
+    const appended = appendPayloads(run, [...leadingEvents, ...withdrawal, statusEvent]);
     const keepsLease = to === 'RUNNING' || to === 'CANCELLING';
     const wakesNow = to === 'QUEUED' || (to === 'CANCELLING' && run.leaseOwner === null);
     const next: Run = {
@@ -323,25 +397,132 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
   const conflict = (reason: string): Conflict => ({ kind: 'conflict', reason });
 
+  const moveWorker = (
+    run: Run,
+    from: readonly RunStatus[],
+    to: RunStatus,
+    change: Omit<StatusChange, 'edges' | 'resetFailures'>,
+  ): RunMutationResult => {
+    if (!from.includes(run.status)) {
+      return conflict(`run ${run.id} is ${run.status}, expected one of ${from.join(', ')}`);
+    }
+    if (!WORKER_TRANSITIONS[run.status].includes(to)) return conflict(`run ${run.id} cannot move from ${run.status} to ${to}`);
+    return { kind: 'ok', run: changeStatus(run, to, { ...change, edges: WORKER_TRANSITIONS, resetFailures: true }) };
+  };
+
   const workerTransition = (
     claim: Claim,
     from: readonly RunStatus[],
     to: RunStatus,
     change: Omit<StatusChange, 'edges' | 'resetFailures'>,
   ): RunMutationResult =>
-    immediateTx<RunMutationResult>(db, () => {
+    transaction<RunMutationResult>(() => {
       const run = fenced(claim);
-      if (run === undefined) return leaseLost;
-      if (!from.includes(run.status)) {
-        return conflict(`run ${run.id} is ${run.status}, expected one of ${from.join(', ')}`);
-      }
-      if (!WORKER_TRANSITIONS[run.status].includes(to)) return conflict(`run ${run.id} cannot move from ${run.status} to ${to}`);
-      return { kind: 'ok', run: changeStatus(run, to, { ...change, edges: WORKER_TRANSITIONS, resetFailures: true }) };
+      return run === undefined ? leaseLost : moveWorker(run, from, to, change);
     });
+
+  const expireApproval = (runId: string, approval: Approval): RunEventPayload[] => {
+    approvalOps.end(approval.id, 'expired');
+    const notice: RunEventPayload = { type: 'notice', level: 'warning', message: `The approval for ${approval.callId} expired.` };
+    return approvalAnnounced(runId, approval.id)
+      ? [{ type: 'tool.permission.cancelled', approvalId: approval.id, reason: 'expired' }, notice]
+      : [notice];
+  };
+
+  const stopWaitingRun = (run: Run, nowMs: number): boolean => {
+    if (run.status !== 'WAITING_HUMAN') return false;
+    const due = approvalOps.listPendingDue(run.id, nowMs);
+    if (due.length > 0) {
+      const leading = due.flatMap((approval) => expireApproval(run.id, approval));
+      changeStatus(run, 'STOPPED', { edges: SERVICE_TRANSITIONS, patch: { stopReason: 'approval_timeout' } }, leading);
+      return true;
+    }
+    if (run.deadlineAt <= nowMs) {
+      changeStatus(run, 'STOPPED', { edges: SERVICE_TRANSITIONS, patch: { stopReason: 'timeout' } });
+      return true;
+    }
+    return false;
+  };
+
+  const resolveInTransaction = (approvalId: string, optionId: string): ResolveApprovalResult => {
+    const approval = approvalOps.store.get(approvalId);
+    if (approval === undefined) return { kind: 'not_found' };
+    if (approval.status !== 'pending') return { kind: 'approval_not_pending', status: approval.status };
+    if (!approvalAnnounced(approval.runId, approval.id)) return { kind: 'request_missing' };
+    const now = clock.now();
+    const run = requireRun(approval.runId);
+    if (approval.expiresAt <= now) {
+      stopWaitingRun(run, now);
+      return { kind: 'approval_not_pending', status: 'expired' };
+    }
+    if (run.cancelRequested) return { kind: 'run_cancelled' };
+    if (!approval.options.some((option) => option.optionId === optionId)) return { kind: 'option_not_offered' };
+    const resolved = approvalOps.markResolved(approval.id, optionId);
+    const event: RunEventPayload = { type: 'tool.permission.resolved', approvalId: approval.id, optionId };
+    const settled = run.status === 'WAITING_HUMAN' && approvalOps.store.listPending(run.id).length === 0;
+    if (settled) {
+      changeStatus(run, 'QUEUED', { edges: SERVICE_TRANSITIONS, availableAt: now }, [event]);
+    } else {
+      writeRun({ ...appendPayloads(run, [event]), version: run.version + 1 });
+    }
+    return { kind: 'ok', approval: resolved, run: requireRun(run.id) };
+  };
+
+  const decodeLocations = (identity: string, value: unknown): { path: string; line?: number }[] => {
+    if (!Array.isArray(value)) throw corrupt('events', identity, 'tool.call payload locations must be an array');
+    return value.map((entry: unknown) => {
+      if (!isRecord(entry) || typeof entry['path'] !== 'string' || (entry['line'] !== undefined && typeof entry['line'] !== 'number')) {
+        throw corrupt('events', identity, 'tool.call payload holds a malformed location');
+      }
+      return { path: entry['path'], ...(entry['line'] === undefined ? {} : { line: entry['line'] }) };
+    });
+  };
+
+  const toolCallOf = (approval: Approval): ApprovalView['toolCall'] => {
+    const row = sql.toolCallEvent.get({ runId: approval.runId, callId: approval.callId });
+    if (row === undefined) throw corrupt('approvals', approval.id, `run ${approval.runId} has no tool.call event for call ${approval.callId}`);
+    const payload = expectRecord('events', approval.id, 'payload_json', readerFor('events', approval.id, row).json('payload_json'));
+    const { name, title, kind, locations } = payload;
+    if (typeof name !== 'string' || typeof title !== 'string' || typeof kind !== 'string') {
+      throw corrupt('events', approval.id, 'tool.call payload must hold string name, title and kind');
+    }
+    return {
+      callId: approval.callId,
+      name,
+      title,
+      kind: expectOneOf('events', approval.id, 'kind', TOOL_KINDS, kind),
+      rawInput: payload['rawInput'],
+      ...(locations === undefined ? {} : { locations: decodeLocations(approval.id, locations) }),
+    };
+  };
+
+  const suggestedRuleOf = (approval: Approval): string | undefined => {
+    const row = sql.requestedEvent.get({ runId: approval.runId, approvalId: approval.id });
+    if (row === undefined) return undefined;
+    const payload = expectRecord('events', approval.id, 'payload_json', readerFor('events', approval.id, row).json('payload_json'));
+    const rule = payload['suggestedRule'];
+    if (rule !== undefined && typeof rule !== 'string') throw corrupt('events', approval.id, 'suggestedRule must be a string');
+    return rule;
+  };
+
+  const viewOf = (approval: Approval): ApprovalView => {
+    const suggestedRule = suggestedRuleOf(approval);
+    return {
+      id: approval.id,
+      runId: approval.runId,
+      callId: approval.callId,
+      status: approval.status,
+      options: approval.options,
+      expiresAt: approval.expiresAt,
+      createdAt: approval.createdAt,
+      ...(suggestedRule === undefined ? {} : { suggestedRule }),
+      toolCall: toolCallOf(approval),
+    };
+  };
 
   const store: RuntimeStore = {
     createSession: (input) =>
-      immediateTx(db, () => {
+      transaction(() => {
         const id = uuidv7(clock);
         sql.insertSession.run({
           id,
@@ -349,6 +530,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           env: canonicalJson(input.env),
           permissionMode: input.permissionMode,
           modelAlias: input.modelAlias,
+          bypassAllowed: input.bypassAllowed === true ? 1 : 0,
           createdAt: clock.now(),
         });
         const row = sql.selectSession.get({ id });
@@ -364,16 +546,33 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     listSessions: (filter) =>
       (filter?.cwd === undefined ? sql.listSessions.all() : sql.listSessionsByCwd.all({ cwd: filter.cwd })).map(decodeSession),
 
+    setPermissionMode: (sessionId, mode: PermissionMode) =>
+      transaction<SetPermissionModeResult>(() => {
+        const row = sql.selectSession.get({ id: sessionId });
+        if (row === undefined) return { kind: 'not_found' };
+        const session = decodeSession(row);
+        if (session.permissionMode === mode) return { kind: 'ok', session, changed: false };
+        sql.updateSessionMode.run({ id: sessionId, permissionMode: mode });
+        insertEvent({ runId: null, sessionId, seq: null, step: null, leaseToken: null, createdAt: clock.now(), payload: { type: 'mode.changed', mode } });
+        return { kind: 'ok', session: { ...session, permissionMode: mode }, changed: true };
+      }),
+
     createRunAndEnqueue: (sessionId, input) =>
-      immediateTx(db, () => {
-        if (sql.selectSession.get({ id: sessionId }) === undefined) throw new Error(`unknown session ${sessionId}`);
+      transaction<CreateRunResult>(() => {
+        if (sql.selectSession.get({ id: sessionId }) === undefined) return { kind: 'not_found' };
         if (input.idempotencyKey !== undefined) {
           const existing = sql.selectRunByKey.get({ sessionId, key: input.idempotencyKey });
-          if (existing !== undefined) return decodeRun(existing);
+          if (existing !== undefined) {
+            const storedDigest = readerFor('runs', String(existing['id']), existing).nullableString('request_digest');
+            return storedDigest !== null && storedDigest === input.requestDigest
+              ? { kind: 'existing', run: decodeRun(existing) }
+              : { kind: 'key_reused' };
+          }
         }
         const ordinalRow = sql.nextOrdinal.get({ sessionId });
         if (ordinalRow === undefined) throw new Error(`could not compute the next run ordinal for session ${sessionId}`);
         const ordinal = readerFor('runs', sessionId, ordinalRow).number('next');
+        const previous = sql.latestRunOfSession.get({ sessionId });
         const id = uuidv7(clock);
         const now = clock.now();
         sql.insertRun.run({
@@ -381,8 +580,10 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           sessionId,
           ordinal,
           idempotencyKey: input.idempotencyKey ?? null,
+          requestDigest: input.requestDigest ?? null,
+          previousRunId: previous === undefined ? null : readerFor('runs', sessionId, previous).string('id'),
           availableAt: now,
-          deadlineAt: input.deadlineAt,
+          deadlineAt: now + input.timeoutMs,
           limits: canonicalJson(input.limits),
           usage: canonicalJson({ inputTokens: 0, outputTokens: 0, totalTokens: 0 }),
           pins: canonicalJson(input.pins),
@@ -390,8 +591,14 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         });
         const inserted = appendPayloads(requireRun(id), [{ type: 'user.message', text: input.input }]);
         writeRun(inserted);
-        return requireRun(id);
+        return { kind: 'created', run: requireRun(id) };
       }),
+
+    listRuns: (sessionId, statuses) =>
+      sql.listRuns
+        .all({ sessionId })
+        .map(decodeRun)
+        .filter((run) => statuses === undefined || statuses.includes(run.status)),
 
     getRun: (id) => {
       const row = sql.selectRun.get({ id });
@@ -399,7 +606,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     },
 
     claim: (workerId) =>
-      immediateTx(db, () => {
+      transaction(() => {
         const now = clock.now();
         for (;;) {
           const exhausted = sql.selectExhausted.get({ now, maxAttempts, maxTotalAttempts });
@@ -414,7 +621,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       }),
 
     heartbeat: (claim) =>
-      immediateTx<HeartbeatResult>(db, () => {
+      transaction<HeartbeatResult>( () => {
         const row = sql.heartbeat.get({
           runId: claim.runId,
           leaseToken: claim.leaseToken,
@@ -431,7 +638,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       }),
 
     append: (claim, events) =>
-      immediateTx(db, () => {
+      transaction(() => {
         const run = fenced(claim);
         if (run === undefined) return leaseLost;
         if (events.length === 0) return { kind: 'ok', lastSeq: run.lastSeq } as const;
@@ -443,19 +650,28 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     transition: (claim, from, to, patch) => workerTransition(claim, from, to, patch === undefined ? {} : { patch }),
 
     release: (claim, to, availableAt) =>
-      workerTransition(claim, CLAIM_STATUSES, to, availableAt === undefined ? {} : { availableAt }),
+      transaction<RunMutationResult>(() => {
+        const run = fenced(claim);
+        if (run === undefined) return leaseLost;
+        if (to === 'WAITING_HUMAN' && approvalOps.store.listPending(run.id).length === 0) {
+          return moveWorker(run, CLAIM_STATUSES, 'QUEUED', { availableAt: clock.now() });
+        }
+        return moveWorker(run, CLAIM_STATUSES, to, availableAt === undefined ? {} : { availableAt });
+      }),
 
     requestCancel: (runId) =>
-      immediateTx(db, () => {
-        const run = requireRun(runId);
-        if (isTerminal(run.status) || run.status === 'CANCELLING') return run;
+      transaction<RequestCancelResult>(() => {
+        const row = sql.selectRun.get({ id: runId });
+        if (row === undefined) return { kind: 'not_found' };
+        const run = decodeRun(row);
+        if (isTerminal(run.status) || run.status === 'CANCELLING') return { kind: 'ok', run, changed: false };
         const to: RunStatus = run.status === 'QUEUED' || run.status === 'WAITING_HUMAN' ? 'CANCELLED' : 'CANCELLING';
         if (!SERVICE_TRANSITIONS[run.status].includes(to)) throw new Error(`run ${runId} in status ${run.status} cannot be cancelled`);
-        return changeStatus(run, to, { edges: SERVICE_TRANSITIONS });
+        return { kind: 'ok', run: changeStatus(run, to, { edges: SERVICE_TRANSITIONS }), changed: true };
       }),
 
     appendAsService: (runId, expectedVersion, to, events, patch) =>
-      immediateTx<ServiceMutationResult>(db, () => {
+      transaction<ServiceMutationResult>( () => {
         const run = requireRun(runId);
         if (run.version !== expectedVersion) {
           return conflict(`run ${runId} is at version ${run.version}, expected ${expectedVersion}`);
@@ -471,54 +687,81 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         return { kind: 'ok', run: changeStatus(run, to, change, events) };
       }),
 
-    readRunEvents: (runId, afterSeq, limit) => sql.runEvents.all({ runId, after: afterSeq, limit }).map(decodeEvent),
+    readRunEvents: (runId, afterSeq, limit) => decodeRunEvents(sql.runEvents.all({ runId, after: afterSeq, limit })),
 
     readSessionEvents: (sessionId, afterId, limit) =>
       sql.sessionEvents.all({ sessionId, after: afterId, limit }).map(decodeEvent),
+
+    sessionMaxEventId: (sessionId) => {
+      const row = sql.sessionMaxEventId.get({ sessionId });
+      if (row === undefined) throw new Error(`could not compute the maximum event id of session ${sessionId}`);
+      return readerFor('events', sessionId, row).number('max_id');
+    },
 
     load: (runId) =>
       readTx(db, (): LoadedRun => {
         requireRun(runId);
         const row: Row | undefined = sql.latestSnapshot.get({ runId });
-        if (row === undefined) return { tail: sql.runEvents.all({ runId, after: 0, limit: -1 }).map(decodeEvent) };
+        if (row === undefined) return { tail: decodeRunEvents(sql.runEvents.all({ runId, after: 0, limit: -1 })) };
         const identity = `${runId}@${String(row['seq'])}`;
         const reader = readerFor('snapshots', identity, row);
         const seq = reader.number('seq');
         const state = decodeRunState(identity, reader.json('state_json'));
-        if (state === undefined) return { tail: sql.runEvents.all({ runId, after: 0, limit: -1 }).map(decodeEvent) };
+        if (state === undefined) return { tail: decodeRunEvents(sql.runEvents.all({ runId, after: 0, limit: -1 })) };
         if (state.runId !== runId) throw corrupt('snapshots', identity, `state belongs to run ${state.runId}`);
-        return { snapshot: { seq, state }, tail: sql.runEvents.all({ runId, after: seq, limit: -1 }).map(decodeEvent) };
+        return { snapshot: { seq, state }, tail: decodeRunEvents(sql.runEvents.all({ runId, after: seq, limit: -1 })) };
       }),
 
     requestApproval: (claim, input) =>
-      immediateTx<RequestApprovalResult>(db, () => {
+      transaction<RequestApprovalResult>(() => {
         const run = fenced(claim);
         if (run === undefined) return leaseLost;
-        const created = approvalOps.createWithinTransaction({
+        const requested = approvalOps.request({
           runId: run.id,
           callId: input.callId,
           options: input.options,
           expiresAt: input.expiresAt,
-          renewal: true,
           subjectDigest: input.event.subjectDigest,
-        }, true);
-        if (created.kind === 'conflict') return created;
-        if (created.created || !sql.approvalRequested.get({ runId: run.id, approvalId: created.approval.id })) {
-          const event: RunEventPayload = {
+        });
+        const events: RunEventPayload[] = [];
+        if (requested.superseded !== undefined && approvalAnnounced(run.id, requested.superseded.id)) {
+          events.push({ type: 'tool.permission.cancelled', approvalId: requested.superseded.id, reason: 'superseded' });
+        }
+        if (requested.created || !approvalAnnounced(run.id, requested.approval.id)) {
+          events.push({
             type: 'tool.permission.requested',
-            approvalId: created.approval.id,
+            approvalId: requested.approval.id,
             callId: input.callId,
             options: input.options,
             subjectDigest: input.event.subjectDigest,
             ...(input.event.suggestedRule === undefined ? {} : { suggestedRule: input.event.suggestedRule }),
-          };
-          writeRun(appendPayloads(run, [event]));
+          });
         }
-        return { kind: 'ok', approval: created.approval };
+        if (events.length > 0) writeRun(appendPayloads(run, events));
+        return { kind: 'ok', approval: requested.approval };
       }),
 
+    resolveApproval: (approvalId, optionId) => transaction<ResolveApprovalResult>(() => resolveInTransaction(approvalId, optionId)),
+
+    expireApprovals: (nowMs) => {
+      const stopped: string[] = [];
+      for (const row of sql.dueWaitingRuns.all({ nowMs })) {
+        const runId = readerFor('runs', 'due', row).string('id');
+        const didStop = transaction(() => stopWaitingRun(requireRun(runId), nowMs));
+        if (didStop) stopped.push(runId);
+      }
+      return stopped;
+    },
+
+    approvalView: (approvalId) => {
+      const approval = approvalOps.store.get(approvalId);
+      return approval === undefined ? undefined : viewOf(approval);
+    },
+
+    pendingApprovalViews: (runId) => approvalOps.store.listPending(runId).map(viewOf),
+
     writeSnapshot: (claim, seq, state) =>
-      immediateTx(db, () => {
+      transaction(() => {
         const run = fenced(claim);
         if (run === undefined) return leaseLost;
         if (state.runId !== run.id) throw new Error(`snapshot state belongs to run ${state.runId}, not ${run.id}`);
@@ -537,6 +780,12 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     approvals: approvalOps.store,
     blobs: createBlobStore(db, clock, blobDirectory),
     trust: createTrustStore(db, clock),
+
+    dataVersion: () => {
+      const row = sql.dataVersion.get();
+      if (row === undefined) throw new Error('PRAGMA data_version returned no row');
+      return readerFor('pragma', 'data_version', row).number('data_version');
+    },
 
     close: () => {
       if (db.isOpen) db.close();

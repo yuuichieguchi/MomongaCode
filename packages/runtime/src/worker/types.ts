@@ -17,6 +17,8 @@ export type WorkerBlobs = {
 
 export type WorkerErrorContext = { runId?: string; workerId: string };
 
+export type WorkerWake = { subscribe(listener: () => void): () => void };
+
 export type WorkerOptions = {
   store: RuntimeStore;
   gateway: GatewayPort;
@@ -35,6 +37,7 @@ export type WorkerOptions = {
   blobs: WorkerBlobs;
   instructionReader: InstructionReader;
   onError?: (error: unknown, context: WorkerErrorContext) => void;
+  wake?: WorkerWake;
 };
 
 export type Worker = {

@@ -53,7 +53,7 @@ describe('worker cancel', () => {
     const env = await makeEnv();
     const run = env.enqueue('Work');
     env.seed(run.id, [], 'crash');
-    expect(env.store.requestCancel(run.id).status).toBe('CANCELLING');
+    expect(env.cancel(run.id).status).toBe('CANCELLING');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 

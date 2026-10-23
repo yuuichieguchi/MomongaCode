@@ -68,16 +68,19 @@ describe('approval subject digest and supersede', () => {
     const { store, claim } = setup();
     const first = request(store, claim, OPTIONS, FIRST);
     request(store, claim, OPTIONS, SECOND);
-    expect(store.approvals.resolve(first.id, { optionId: 'allow_once' }).kind).toBe('conflict');
+    expect(store.resolveApproval(first.id, 'allow_once')).toEqual({ kind: 'approval_not_pending', status: 'superseded' });
     expect(store.approvals.get(first.id)).not.toHaveProperty('optionId');
   });
 
-  it('leaves superseded approvals out of listExpired', () => {
-    const { clock, store, claim } = setup();
+  it('leaves superseded approvals superseded when the pending one expires', () => {
+    const { store, runId, claim } = setup();
     const first = request(store, claim, OPTIONS, FIRST);
     const second = request(store, claim, OPTIONS, SECOND);
-    clock.advance(EXPIRES - START_MS + 1);
-    expect(store.approvals.listExpired(clock.now()).map((approval) => approval.id)).toEqual([second.id]);
-    expect(first.id).not.toBe(second.id);
+    expect(store.release(claim, 'WAITING_HUMAN').kind).toBe('ok');
+
+    expect(store.expireApprovals(EXPIRES)).toEqual([runId]);
+
+    expect(store.approvals.get(first.id)?.status).toBe('superseded');
+    expect(store.approvals.get(second.id)?.status).toBe('expired');
   });
 });

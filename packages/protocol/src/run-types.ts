@@ -18,12 +18,15 @@ export const STOP_REASONS = ['max_steps', 'budget', 'max_tokens', 'timeout', 'lo
 
 export const PERMISSION_MODES = ['default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions'] as const;
 
+export const APPROVAL_STATUSES = ['pending', 'resolved', 'superseded', 'expired', 'withdrawn'] as const;
+
 export const TOOL_KINDS = ['read', 'edit', 'delete', 'move', 'search', 'execute', 'think', 'fetch', 'switch_mode', 'other'] as const;
 
 export type RunStatus = (typeof RUN_STATUSES)[number];
 export type TerminalStatus = (typeof TERMINAL_STATUSES)[number];
 export type StopReason = (typeof STOP_REASONS)[number];
 export type PermissionMode = (typeof PERMISSION_MODES)[number];
+export type ApprovalStatus = (typeof APPROVAL_STATUSES)[number];
 export type ToolKind = (typeof TOOL_KINDS)[number];
 
 export type PermissionOption = {
@@ -66,6 +69,7 @@ export type RunEventPayload =
       suggestedRule?: string;
     }
   | { type: 'tool.permission.resolved'; approvalId: string; optionId: string; rulePersisted?: boolean }
+  | { type: 'tool.permission.cancelled'; approvalId: string; reason: 'expired' | 'withdrawn' | 'superseded' }
   | { type: 'tool.started'; callId: string; idemKey: string }
   | { type: 'tool.updated'; callId: string; content: unknown[] }
   | {
@@ -82,13 +86,16 @@ export type RunEventPayload =
       type: 'plan.updated';
       entries: { content: string; priority: 'high' | 'medium' | 'low'; status: 'pending' | 'in_progress' | 'completed' }[];
     }
-  | { type: 'mode.changed'; mode: PermissionMode }
   | { type: 'usage.updated'; inputTokens: number; outputTokens: number; totalTokens: number }
   | { type: 'context.compacted'; item: CompactionInputItem; summary: string; replacedThroughSeq: number }
   | { type: 'context.truncated'; callId: string; handle: string; kind: 'omitted' | 'truncated' }
   | { type: 'instructions.loaded'; path: string; content: string }
   | { type: 'approval.rule.persisted'; approvalId: string; effect: 'allow' | 'deny'; rule: string }
   | { type: 'notice'; level: 'info' | 'warning' | 'error'; message: string };
+
+export type SessionEventPayload = { type: 'mode.changed'; mode: PermissionMode };
+
+export type SessionEvent = SessionEventPayload & { id: number; sessionId: string; createdAt: number };
 
 export type RunEventEnvelope = {
   id: number;

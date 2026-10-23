@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { readJsonFile } from './json-file.ts';
-import { CREDENTIAL_KEY, loadLayers } from './layers.ts';
+import { looksLikeCredentialName } from './credential-env.ts';
+import { loadLayers } from './layers.ts';
 import type { TrustOracle } from './layers.ts';
 import { assertMcpServer, assertMcpServersFile } from './settings.ts';
 import type { McpServerConfig, Settings } from './settings.ts';
@@ -129,7 +130,7 @@ export const loadMcpServers = async ({ home, projectDir, trust, env }: LoadMcpSe
   }
 
   const protectedNames = credentialVariableNames(userSettings?.settings);
-  const refuseCredentialVariable: VariableGuard = (variable) => CREDENTIAL_KEY.test(variable) || SENSITIVE_VARIABLE.test(variable) || protectedNames.has(variable);
+  const refuseCredentialVariable: VariableGuard = (variable) => looksLikeCredentialName(variable) || SENSITIVE_VARIABLE.test(variable) || protectedNames.has(variable);
   const read = await readJsonFile(mcpJson, { confineTo: projectDir });
   if (!read.found) return { enabled, pendingApproval, warnings };
   const file = assertMcpServersFile(read.value, mcpJson);

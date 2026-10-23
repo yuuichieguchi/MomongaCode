@@ -1,5 +1,6 @@
 export { appendPermissionRule } from './append-rule.ts';
 export type { AppendPermissionRuleOptions } from './append-rule.ts';
+export { isCredentialEnvName, stripCredentialEnv } from './credential-env.ts';
 export { loadSettings } from './load-settings.ts';
 export type { LoadSettingsOptions, LoadSettingsResult, ResolvedPermissions, ResolvedSettings } from './load-settings.ts';
 export { loadMcpServers } from './mcp-servers.ts';

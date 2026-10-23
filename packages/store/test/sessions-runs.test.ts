@@ -42,7 +42,7 @@ describe('createRunAndEnqueue', () => {
       leaseExpiresAt: null,
       cancelRequested: false,
       deadLetter: false,
-      deadlineAt: START_MS + 3_600_000,
+      deadlineAt: START_MS + 10 + 3_600_000,
       limits: { maxSteps: 10 },
       pins: { model: 'fm' },
       step: 0,
@@ -106,7 +106,9 @@ describe('createRunAndEnqueue', () => {
 
   it('rejects an unknown session', () => {
     const { store } = harness();
-    expect(() => enqueue(store, 'no-such-session')).toThrow(/no-such-session/);
+    expect(
+      store.createRunAndEnqueue('no-such-session', { input: 'x', timeoutMs: 1000, limits: {}, pins: {} }),
+    ).toEqual({ kind: 'not_found' });
   });
 });
 
@@ -137,12 +139,12 @@ describe('event reads', () => {
     enqueue(store, other.id, 'elsewhere');
     const r2 = enqueue(store, session.id, 'two');
     const all = store.readSessionEvents(session.id, 0, 100);
-    expect(all.map((event) => [event.runId, event.seq])).toEqual([
+    expect(all.map((event) => ('runId' in event ? [event.runId, event.seq] : []))).toEqual([
       [r1.id, 1],
       [r2.id, 1],
     ]);
     expect(all[1]!.id).toBeGreaterThan(all[0]!.id);
-    expect(store.readSessionEvents(session.id, all[0]!.id, 100).map((event) => event.runId)).toEqual([r2.id]);
+    expect(store.readSessionEvents(session.id, all[0]!.id, 100).map((event) => ('runId' in event ? event.runId : null))).toEqual([r2.id]);
     expect(store.readSessionEvents(session.id, 0, 1)).toHaveLength(1);
   });
 });

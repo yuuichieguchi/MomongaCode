@@ -20,6 +20,8 @@
     "@momonga/skills": "*",
     "@momonga/store": "*",
     "@momonga/tools": "*",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
     "hono": "4.13.13"
   }
 }

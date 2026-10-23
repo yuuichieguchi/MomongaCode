@@ -67,21 +67,19 @@ const requireSuggestedRule = (callId: string, call: PendingCall): string => {
   return rule;
 };
 
-const requestApproval = (ctx: ClaimContext, outcome: NeedsApprovalOutcome): 'done' => {
+const requestApproval = (ctx: ClaimContext, outcome: NeedsApprovalOutcome): void => {
   const { options, journal } = ctx;
   const created = options.store.requestApproval(ctx.claim, {
     callId: outcome.callId,
     options: approvalOptions(outcome.suggestedRule),
-    expiresAt: options.clock.now() + ctx.limits.approvalTtlMs,
+    expiresAt: Math.min(options.clock.now() + ctx.limits.approvalTtlMs, ctx.run.deadlineAt),
     event: {
       subjectDigest: outcome.subjectDigest,
       ...(outcome.suggestedRule === undefined ? {} : { suggestedRule: outcome.suggestedRule }),
     },
   });
   if (created.kind === 'lease_lost') ctx.control.lost();
-  if (created.kind === 'conflict') throw new Error(`approval for call ${outcome.callId} could not be created: ${created.reason ?? 'conflict'}`);
   journal.sync();
-  return ctx.terminals.yieldTo('WAITING_HUMAN');
 };
 
 const persistRule = async (
@@ -177,7 +175,8 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   for (const span of spans.values()) span.end();
   if (ctx.control.leaseLost()) ctx.control.lost();
 
-  const asking = outcomes.find((outcome): outcome is NeedsApprovalOutcome => outcome.kind === 'needs_approval');
-  if (asking !== undefined) return requestApproval(ctx, asking);
-  return 'continue';
+  const asking = outcomes.filter((outcome): outcome is NeedsApprovalOutcome => outcome.kind === 'needs_approval');
+  if (asking.length === 0) return 'continue';
+  for (const outcome of asking) requestApproval(ctx, outcome);
+  return ctx.terminals.yieldTo('WAITING_HUMAN');
 };

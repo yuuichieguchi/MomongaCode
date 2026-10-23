@@ -576,9 +576,14 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
 
     let approvalAsked = false;
 
-    const deferFrom = (start: number): void => {
+    const surfaceApprovalsFrom = (start: number): void => {
       for (let later = start; later < calls.length; later += 1) {
-        outcomes[later] = { callId: (calls[later] as ToolCall).callId, kind: 'deferred' };
+        const call = calls[later] as ToolCall;
+        const admission = admit(call, batch);
+        outcomes[later] =
+          admission.kind === 'outcome' && admission.outcome.kind === 'needs_approval'
+            ? admission.outcome
+            : { callId: call.callId, kind: 'deferred' };
       }
     };
 
@@ -596,7 +601,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
         }
         if (approvalAsked) {
           release?.();
-          deferFrom(index);
+          surfaceApprovalsFrom(index);
           return;
         }
 
@@ -614,7 +619,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
           announce(admission.outcome);
           if (admission.outcome.kind === 'needs_approval') {
             await drain();
-            deferFrom(index + 1);
+            surfaceApprovalsFrom(index + 1);
             return;
           }
           continue;
@@ -625,7 +630,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
           outcomes[index] = performed;
           announce(performed);
           if (performed.kind === 'needs_approval') {
-            deferFrom(index + 1);
+            surfaceApprovalsFrom(index + 1);
             return;
           }
           continue;

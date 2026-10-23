@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { RUN_STATUSES } from '@momonga/protocol';
+import { RUN_STATUSES, TERMINAL_STATUSES } from '@momonga/protocol';
 import type { RunStatus } from '@momonga/protocol';
 import type { Claim, Run, RuntimeStore } from '@momonga/store';
 import { enqueue, harness, mustClaim, mustRun, newSession } from './helpers.ts';
+import { parkWaitingHuman } from './approval-fixture.ts';
 
 const ALLOWED: Record<RunStatus, readonly RunStatus[]> = {
   QUEUED: ['CANCELLED'],
@@ -39,6 +40,9 @@ const arrange = (from: RunStatus): Fixture => {
     case 'CANCELLED':
       store.requestCancel(created.id);
       return { store, run: mustRun(store, created.id) };
+    case 'WAITING_HUMAN':
+      parkWaitingHuman(store, claimIt());
+      return { store, run: mustRun(store, created.id) };
     default: {
       const claim = claimIt();
       expect(store.release(claim, from).kind).toBe('ok');
@@ -67,10 +71,12 @@ describe('transition table', () => {
     const after = mustRun(fixture.store, fixture.run.id);
     expect(after.status).toBe(to);
     expect(after.version).toBe(fixture.run.version + 1);
-    expect(after.lastSeq).toBe(fixture.run.lastSeq + 1);
     const events = fixture.store.readRunEvents(fixture.run.id, fixture.run.lastSeq, 10);
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ type: 'run.status', from, to, seq: fixture.run.lastSeq + 1 });
+    if (TERMINAL_STATUSES.some((terminal) => terminal === to)) expect(fixture.store.approvals.listPending(fixture.run.id)).toEqual([]);
+    const leading = events.slice(0, -1);
+    expect(leading.map((event) => event.type)).toEqual(leading.map(() => 'tool.permission.cancelled'));
+    expect(after.lastSeq).toBe(fixture.run.lastSeq + events.length);
+    expect(events.at(-1)).toMatchObject({ type: 'run.status', from, to, seq: after.lastSeq });
   });
 
   it.each(cases.filter(([, , allowed]) => !allowed))('%s -> %s is rejected as a conflict and writes nothing', (from, to) => {
@@ -145,7 +151,7 @@ describe('appendAsService', () => {
   it('appends events without a status change', () => {
     const fixture = arrange('QUEUED');
     const result = fixture.store.appendAsService(fixture.run.id, fixture.run.version, null, [
-      { type: 'mode.changed', mode: 'plan' },
+      { type: 'notice', level: 'info', message: 'service note' },
     ]);
     expect(result).toMatchObject({ kind: 'ok', run: { status: 'QUEUED', lastSeq: fixture.run.lastSeq + 1 } });
   });
@@ -170,7 +176,7 @@ describe('appendAsService', () => {
 
   it('bumps the version on every service append', () => {
     const fixture = arrange('QUEUED');
-    const result = fixture.store.appendAsService(fixture.run.id, fixture.run.version, null, [{ type: 'mode.changed', mode: 'plan' }]);
+    const result = fixture.store.appendAsService(fixture.run.id, fixture.run.version, null, [{ type: 'notice', level: 'info', message: 'service note' }]);
     expect(result).toMatchObject({ kind: 'ok', run: { version: fixture.run.version + 1 } });
   });
 
@@ -179,6 +185,6 @@ describe('appendAsService', () => {
     const current = mustRun(fixture.store, fixture.run.id);
     expect(fixture.store.append(fixture.claim!, [{ type: 'notice', level: 'info', message: 'from worker' }]).kind).toBe('ok');
     expect(mustRun(fixture.store, fixture.run.id).version).toBe(current.version);
-    expect(fixture.store.appendAsService(current.id, current.version, null, [{ type: 'mode.changed', mode: 'plan' }]).kind).toBe('ok');
+    expect(fixture.store.appendAsService(current.id, current.version, null, [{ type: 'notice', level: 'info', message: 'service note' }]).kind).toBe('ok');
   });
 });

@@ -1,13 +1,13 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, uuidv7 } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
+import { APPROVAL_STATUSES } from '@momonga/protocol';
 import type { PermissionOption } from '@momonga/protocol';
 import { corrupt, expectOneOf, isRecord, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
-import type { Approval, ApprovalCreateResult, Conflict, ApprovalResolveResult, ApprovalStore } from './types.ts';
+import type { Approval, ApprovalStore } from './types.ts';
 
 const PERMISSION_KINDS = ['allow_once', 'allow_always', 'reject_once', 'reject_always'] as const;
-const APPROVAL_STATUSES = ['pending', 'resolved', 'superseded'] as const;
 
 const decodeOptions = (identity: string, value: unknown): PermissionOption[] => {
   if (!Array.isArray(value)) throw corrupt('approvals', identity, 'column options_json must be a JSON array');
@@ -43,9 +43,14 @@ const decodeApproval = (row: Row): Approval => {
   };
 };
 
+export type ApprovalRequest = { runId: string; callId: string; options: PermissionOption[]; expiresAt: number; subjectDigest: string };
+
 export type ApprovalOps = {
   store: ApprovalStore;
-  createWithinTransaction(input: Parameters<ApprovalStore['create']>[0], supersedeOnChange?: true): { kind: 'ok'; approval: Approval; created: boolean } | Conflict;
+  request(input: ApprovalRequest): { approval: Approval; created: boolean; superseded?: Approval };
+  listPendingDue(runId: string, nowMs: number): Approval[];
+  markResolved(id: string, optionId: string): Approval;
+  end(id: string, status: 'expired' | 'withdrawn'): void;
 };
 
 export const createApprovalStore = (db: DatabaseSync, clock: Clock): ApprovalOps => {
@@ -55,75 +60,72 @@ export const createApprovalStore = (db: DatabaseSync, clock: Clock): ApprovalOps
      VALUES (:id, :runId, :callId, 'pending', :options, :expiresAt, :createdAt, :subjectDigest)`,
   );
   const selectPendingByCall = db.prepare("SELECT * FROM approvals WHERE run_id = :runId AND call_id = :callId AND status = 'pending'");
-  const selectLatestByCall = db.prepare(
-    'SELECT * FROM approvals WHERE run_id = :runId AND call_id = :callId ORDER BY created_at DESC, rowid DESC LIMIT 1',
-  );
   const supersede = db.prepare("UPDATE approvals SET status = 'superseded' WHERE id = :id AND status = 'pending'");
   const selectById = db.prepare('SELECT * FROM approvals WHERE id = :id');
   const resolve = db.prepare(
     "UPDATE approvals SET status = 'resolved', option_id = :optionId, resolved_at = :resolvedAt WHERE id = :id AND status = 'pending'",
   );
+  const finish = db.prepare("UPDATE approvals SET status = :status WHERE id = :id AND status = 'pending'");
   const listPending = db.prepare("SELECT * FROM approvals WHERE run_id = :runId AND status = 'pending' ORDER BY created_at, rowid");
-  const listExpired = db.prepare("SELECT * FROM approvals WHERE status = 'pending' AND expires_at <= :nowMs ORDER BY expires_at, rowid");
+  const listPendingDue = db.prepare(
+    "SELECT * FROM approvals WHERE run_id = :runId AND status = 'pending' AND expires_at <= :nowMs ORDER BY expires_at, rowid",
+  );
 
   const get = (id: string): Approval | undefined => {
     const row = selectById.get({ id });
     return row === undefined ? undefined : decodeApproval(row);
   };
 
-  const createWithinTransaction: ApprovalOps['createWithinTransaction'] = (input, supersedeOnChange) => {
+  const mustGet = (id: string): Approval => {
+    const approval = get(id);
+    if (approval === undefined) throw new Error(`approval ${id} vanished`);
+    return approval;
+  };
+
+  const insertPending = (input: ApprovalRequest): Approval => {
+    const id = uuidv7(clock);
+    insert.run({
+      id,
+      runId: input.runId,
+      callId: input.callId,
+      options: canonicalJson(input.options),
+      expiresAt: input.expiresAt,
+      createdAt: clock.now(),
+      subjectDigest: input.subjectDigest,
+    });
+    return mustGet(id);
+  };
+
+  const request: ApprovalOps['request'] = (input) => {
     if (runExists.get({ runId: input.runId }) === undefined) throw new Error(`cannot create approval: unknown run ${input.runId}`);
-    let pending = selectPendingByCall.get({ runId: input.runId, callId: input.callId });
-    if (pending !== undefined && supersedeOnChange === true) {
-      const current = decodeApproval(pending);
-      if (canonicalJson(current.options) !== canonicalJson(input.options) || (current.subjectDigest ?? null) !== (input.subjectDigest ?? null)) {
-        supersede.run({ id: current.id });
-        pending = undefined;
+    const pendingRow = selectPendingByCall.get({ runId: input.runId, callId: input.callId });
+    if (pendingRow !== undefined) {
+      const current = decodeApproval(pendingRow);
+      if (canonicalJson(current.options) === canonicalJson(input.options) && current.subjectDigest === input.subjectDigest) {
+        return { approval: current, created: false };
       }
+      supersede.run({ id: current.id });
+      return { approval: insertPending(input), created: true, superseded: mustGet(current.id) };
     }
-    if (pending === undefined) {
-      const latest = selectLatestByCall.get({ runId: input.runId, callId: input.callId });
-      if (latest !== undefined && input.renewal !== true) {
-        return { kind: 'conflict', reason: `approval ${String(latest['id'])} for run ${input.runId} call ${input.callId} is already resolved` };
-      }
-      insert.run({
-        id: uuidv7(clock),
-        runId: input.runId,
-        callId: input.callId,
-        options: canonicalJson(input.options),
-        expiresAt: input.expiresAt,
-        createdAt: clock.now(),
-        subjectDigest: input.subjectDigest ?? null,
-      });
-    }
-    const row = selectPendingByCall.get({ runId: input.runId, callId: input.callId });
-    if (row === undefined) throw new Error(`approval for run ${input.runId} call ${input.callId} vanished during create`);
-    const approval = decodeApproval(row);
-    if (canonicalJson(approval.options) !== canonicalJson(input.options)) {
-      return { kind: 'conflict', reason: `approval ${approval.id} for run ${input.runId} call ${input.callId} is pending with different options` };
-    }
-    return { kind: 'ok', approval, created: pending === undefined };
+    return { approval: insertPending(input), created: true };
   };
 
   const store: ApprovalStore = {
-    create: (input) => immediateTx<ApprovalCreateResult>(db, () => createWithinTransaction(input)),
     get,
-    resolve: (id, resolution) =>
-      immediateTx<ApprovalResolveResult>(db, () => {
-        const current = get(id);
-        if (current === undefined) return { kind: 'conflict', reason: `unknown approval ${id}` };
-        if (current.status !== 'pending') return { kind: 'conflict', reason: `approval ${id} is already resolved` };
-        if (!current.options.some((option) => option.optionId === resolution.optionId)) {
-          return { kind: 'conflict', reason: `approval ${id} did not offer option "${resolution.optionId}"` };
-        }
-        const result = resolve.run({ id, optionId: resolution.optionId, resolvedAt: clock.now() });
-        if (Number(result.changes) !== 1) throw new Error(`approval ${id} could not be resolved`);
-        const approval = get(id);
-        if (approval === undefined) throw new Error(`approval ${id} vanished during resolve`);
-        return { kind: 'ok', approval };
-      }),
     listPending: (runId) => listPending.all({ runId }).map(decodeApproval),
-    listExpired: (nowMs) => listExpired.all({ nowMs }).map(decodeApproval),
   };
-  return { store, createWithinTransaction };
+  return {
+    store,
+    request,
+    listPendingDue: (runId, nowMs) => listPendingDue.all({ runId, nowMs }).map(decodeApproval),
+    markResolved: (id, optionId) => {
+      const result = resolve.run({ id, optionId, resolvedAt: clock.now() });
+      if (Number(result.changes) !== 1) throw new Error(`approval ${id} could not be resolved`);
+      return mustGet(id);
+    },
+    end: (id, status) => {
+      const result = finish.run({ id, status });
+      if (Number(result.changes) !== 1) throw new Error(`approval ${id} could not be marked ${status}`);
+    },
+  };
 };

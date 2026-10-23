@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { initialRunState } from '@momonga/store';
 import type { Claim, RuntimeStore } from '@momonga/store';
-import { LEASE_MS, START_MS, enqueue, harness, mustClaim, mustRun, newSession, openStoreAt, rawDb } from './helpers.ts';
+import { LEASE_MS, START_MS, cancel, enqueue, harness, mustClaim, mustRun, newSession, openStoreAt, rawDb } from './helpers.ts';
+import { parkWaitingHuman } from './approval-fixture.ts';
 
 describe('claim', () => {
   it('returns null when nothing is queued', () => {
@@ -71,7 +72,7 @@ describe('claim', () => {
     const c1 = mustClaim(store, 'w1');
     expect(c1.runId).toBe(r1.id);
     expect(store.claim('w2')).toBeNull();
-    expect(store.release(c1, 'WAITING_HUMAN').kind).toBe('ok');
+    parkWaitingHuman(store, c1);
     expect(store.claim('w2')).toBeNull();
     const queued = mustRun(store, r1.id);
     expect(store.appendAsService(r1.id, queued.version, 'QUEUED', []).kind).toBe('ok');
@@ -97,7 +98,7 @@ describe('claim', () => {
     const { clock, store } = harness();
     const run = enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
-    expect(store.requestCancel(run.id).status).toBe('CANCELLING');
+    expect(cancel(store, run.id).status).toBe('CANCELLING');
     clock.advance(LEASE_MS);
     const claim = mustClaim(store, 'w2');
     expect(claim.status).toBe('CANCELLING');
@@ -145,7 +146,8 @@ describe('attempt accounting', () => {
       expect(store.release(claim, 'QUEUED').kind).toBe('ok');
       return;
     }
-    expect(store.release(claim, via).kind).toBe('ok');
+    if (via === 'WAITING_HUMAN') parkWaitingHuman(store, claim);
+    else expect(store.release(claim, via).kind).toBe('ok');
     const parked = mustRun(store, runId);
     expect(store.appendAsService(runId, parked.version, 'QUEUED', []).kind).toBe('ok');
   };
@@ -370,7 +372,7 @@ describe('requestCancel', () => {
   it('cancels a QUEUED run directly', () => {
     const { store } = harness();
     const run = enqueue(store, newSession(store).id);
-    const cancelled = store.requestCancel(run.id);
+    const cancelled = cancel(store, run.id);
     expect(cancelled).toMatchObject({ id: run.id, status: 'CANCELLED' });
     expect(store.readRunEvents(run.id, 0, 10).at(-1)).toMatchObject({ type: 'run.status', from: 'QUEUED', to: 'CANCELLED' });
     expect(store.claim('w1')).toBeNull();
@@ -379,15 +381,15 @@ describe('requestCancel', () => {
   it('cancels a WAITING_HUMAN run directly', () => {
     const { store } = harness();
     const run = enqueue(store, newSession(store).id);
-    store.release(mustClaim(store, 'w1'), 'WAITING_HUMAN');
-    expect(store.requestCancel(run.id).status).toBe('CANCELLED');
+    parkWaitingHuman(store, mustClaim(store, 'w1'));
+    expect(cancel(store, run.id).status).toBe('CANCELLED');
   });
 
   it('moves a RUNNING run to CANCELLING with cancel_requested', () => {
     const { store } = harness();
     const run = enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
-    expect(store.requestCancel(run.id)).toMatchObject({ status: 'CANCELLING', cancelRequested: true, leaseOwner: 'w1' });
+    expect(cancel(store, run.id)).toMatchObject({ status: 'CANCELLING', cancelRequested: true, leaseOwner: 'w1' });
   });
 
   it('moves a WAITING_TOOL run to CANCELLING and makes it claimable now', () => {
@@ -395,7 +397,7 @@ describe('requestCancel', () => {
     const run = enqueue(store, newSession(store).id);
     store.release(mustClaim(store, 'w1'), 'WAITING_TOOL', START_MS + 1_000_000);
     clock.advance(7);
-    expect(store.requestCancel(run.id)).toMatchObject({
+    expect(cancel(store, run.id)).toMatchObject({
       status: 'CANCELLING',
       cancelRequested: true,
       availableAt: START_MS + 7,
@@ -410,13 +412,13 @@ describe('requestCancel', () => {
     store.release(mustClaim(store, 'w1'), 'COMPLETED');
     const before = mustRun(store, run.id);
     const lastSeq = store.readRunEvents(run.id, 0, 100).length;
-    expect(store.requestCancel(run.id)).toEqual(before);
+    expect(store.requestCancel(run.id)).toEqual({ kind: 'ok', changed: false, run: before });
     expect(store.readRunEvents(run.id, 0, 100)).toHaveLength(lastSeq);
   });
 
-  it('throws for an unknown run', () => {
+  it('returns not_found for an unknown run', () => {
     const { store } = harness();
-    expect(() => store.requestCancel('nope')).toThrow(/nope/);
+    expect(store.requestCancel('nope')).toEqual({ kind: 'not_found' });
   });
 });
 

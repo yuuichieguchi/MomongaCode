@@ -6,7 +6,9 @@ import type {
   RunEventPayload,
   RunState,
   RunStatus,
+  SessionEvent,
   StopReason,
+  ToolKind,
 } from '@momonga/protocol';
 
 export type Session = {
@@ -15,6 +17,7 @@ export type Session = {
   env: Record<string, string>;
   permissionMode: PermissionMode;
   modelAlias: string;
+  bypassAllowed: boolean;
   createdAt: number;
 };
 
@@ -23,6 +26,7 @@ export type CreateSessionInput = {
   env: Record<string, string>;
   permissionMode: PermissionMode;
   modelAlias: string;
+  bypassAllowed?: boolean;
 };
 
 export type RunError = { code: string; message: string };
@@ -55,7 +59,8 @@ export type Run = {
 export type CreateRunInput = {
   input: string;
   idempotencyKey?: string;
-  deadlineAt: number;
+  requestDigest?: string;
+  timeoutMs: number;
   limits: Record<string, unknown>;
   pins: Record<string, unknown>;
 };
@@ -74,11 +79,24 @@ export type Claim = {
 export type LeaseLost = { kind: 'lease_lost' };
 export type Conflict = { kind: 'conflict'; reason?: string };
 
+export type NotFound = { kind: 'not_found' };
+
+export type CreateRunResult = { kind: 'created' | 'existing'; run: Run } | NotFound | { kind: 'key_reused' };
+export type RequestCancelResult = { kind: 'ok'; run: Run; changed: boolean } | NotFound;
+export type SetPermissionModeResult = { kind: 'ok'; session: Session; changed: boolean } | NotFound;
+export type ResolveApprovalResult =
+  | { kind: 'ok'; approval: Approval; run: Run }
+  | NotFound
+  | { kind: 'approval_not_pending'; status: Approval['status'] }
+  | { kind: 'request_missing' }
+  | { kind: 'run_cancelled' }
+  | { kind: 'option_not_offered' };
+
 export type HeartbeatResult = { kind: 'ok'; cancelRequested: boolean; status: ClaimStatus } | LeaseLost;
 export type AppendResult = { kind: 'ok'; lastSeq: number } | LeaseLost;
 export type RunMutationResult = { kind: 'ok'; run: Run } | LeaseLost | Conflict;
 export type ServiceMutationResult = { kind: 'ok'; run: Run } | Conflict;
-export type RequestApprovalResult = { kind: 'ok'; approval: Approval } | LeaseLost | Conflict;
+export type RequestApprovalResult = { kind: 'ok'; approval: Approval } | LeaseLost;
 export type SnapshotResult = { kind: 'ok' } | LeaseLost | Conflict;
 
 export type StatusPatch = { stopReason?: StopReason; error?: RunError };
@@ -119,7 +137,7 @@ export type Approval = {
   id: string;
   runId: string;
   callId: string;
-  status: 'pending' | 'resolved' | 'superseded';
+  status: 'pending' | 'resolved' | 'superseded' | 'expired' | 'withdrawn';
   options: PermissionOption[];
   expiresAt: number;
   createdAt: number;
@@ -128,15 +146,28 @@ export type Approval = {
   subjectDigest?: string;
 };
 
-export type ApprovalCreateResult = { kind: 'ok'; approval: Approval } | Conflict;
-export type ApprovalResolveResult = { kind: 'ok'; approval: Approval } | Conflict;
+export type ApprovalView = {
+  id: string;
+  runId: string;
+  callId: string;
+  status: Approval['status'];
+  options: PermissionOption[];
+  expiresAt: number;
+  createdAt: number;
+  suggestedRule?: string;
+  toolCall: {
+    callId: string;
+    name: string;
+    title: string;
+    kind: ToolKind;
+    rawInput: unknown;
+    locations?: { path: string; line?: number }[];
+  };
+};
 
 export type ApprovalStore = {
-  create(input: { runId: string; callId: string; options: PermissionOption[]; expiresAt: number; renewal?: true; subjectDigest?: string }): ApprovalCreateResult;
   get(id: string): Approval | undefined;
-  resolve(id: string, resolution: { optionId: string }): ApprovalResolveResult;
   listPending(runId: string): Approval[];
-  listExpired(nowMs: number): Approval[];
 };
 
 export type BlobRef = { handle: string; sha256: string; byteLength: number; lineCount: number };
@@ -162,14 +193,16 @@ export type RuntimeStore = {
   createSession(input: CreateSessionInput): Session;
   getSession(id: string): Session | undefined;
   listSessions(filter?: { cwd?: string }): Session[];
-  createRunAndEnqueue(sessionId: string, input: CreateRunInput): Run;
+  createRunAndEnqueue(sessionId: string, input: CreateRunInput): CreateRunResult;
   getRun(id: string): Run | undefined;
   claim(workerId: string): Claim | null;
   heartbeat(claim: Claim): HeartbeatResult;
   append(claim: Claim, events: readonly RunEventPayload[]): AppendResult;
   transition(claim: Claim, from: readonly RunStatus[], to: RunStatus, patch?: StatusPatch): RunMutationResult;
   release(claim: Claim, to: RunStatus, availableAt?: number): RunMutationResult;
-  requestCancel(runId: string): Run;
+  requestCancel(runId: string): RequestCancelResult;
+  setPermissionMode(sessionId: string, mode: PermissionMode): SetPermissionModeResult;
+  listRuns(sessionId: string, statuses?: readonly RunStatus[]): Run[];
   appendAsService(
     runId: string,
     expectedVersion: number,
@@ -178,7 +211,8 @@ export type RuntimeStore = {
     patch?: StatusPatch,
   ): ServiceMutationResult;
   readRunEvents(runId: string, afterSeq: number, limit: number): RunEvent[];
-  readSessionEvents(sessionId: string, afterId: number, limit: number): RunEvent[];
+  readSessionEvents(sessionId: string, afterId: number, limit: number): (RunEvent | SessionEvent)[];
+  sessionMaxEventId(sessionId: string): number;
   load(runId: string): LoadedRun;
   requestApproval(
     claim: Claim,
@@ -189,7 +223,12 @@ export type RuntimeStore = {
       event: { subjectDigest: string; suggestedRule?: string };
     },
   ): RequestApprovalResult;
+  resolveApproval(approvalId: string, optionId: string): ResolveApprovalResult;
+  expireApprovals(nowMs: number): string[];
+  approvalView(approvalId: string): ApprovalView | undefined;
+  pendingApprovalViews(runId: string): ApprovalView[];
   writeSnapshot(claim: Claim, seq: number, state: RunState): SnapshotResult;
+  dataVersion(): number;
   idempotency: IdempotencyStore;
   approvals: ApprovalStore;
   blobs: BlobStore;
@@ -203,4 +242,5 @@ export type RuntimeStoreOptions = {
   leaseMs: number;
   maxAttempts: number;
   maxTotalAttempts: number;
+  onCommit?: (touched: { runId?: string; sessionId: string }[]) => void;
 };

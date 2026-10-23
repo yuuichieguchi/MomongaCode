@@ -15,7 +15,14 @@ export type IdempotencyRegistry = {
 };
 
 const reusedError = (key: string) =>
-  invalidRequest('idempotency_key_reused', `idempotency key "${key}" was already used with a different request body`);
+  invalidRequest('idempotency_key_reused', `idempotency key "${key}" was already used with a different request body`, null, 422);
+
+const SF_STRING = /^"((?:[^"\\]|\\["\\])*)"$/;
+
+export const normalizeIdempotencyKey = (header: string): string => {
+  const quoted = SF_STRING.exec(header);
+  return quoted?.[1] === undefined ? header : quoted[1].replace(/\\(["\\])/g, '$1');
+};
 
 export const createIdempotencyRegistry = (services: Services): IdempotencyRegistry => {
   const inflight = new Map<string, { digest: string; run: SharedRun }>();

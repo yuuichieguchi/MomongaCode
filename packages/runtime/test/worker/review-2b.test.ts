@@ -4,7 +4,7 @@ import type { RunEventPayload } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 import { defineTool } from '@momonga/tools';
 import { waitUntil, within } from './deferred.ts';
-import { DEADLINE_MS, START_MS, makeEnv, toolKey } from './harness.ts';
+import { DEADLINE_MS, START_MS, makeEnv, toolKey, createdRun } from './harness.ts';
 import { MODEL_ALIAS, functionCallItem, textStep } from './scripts.ts';
 
 describe('worker recovery of a not_applied call under the current policy', () => {
@@ -69,7 +69,7 @@ describe('worker reporter with a throwing onError hook', () => {
     const env = await makeEnv();
     const failing = env.enqueue('Fails to load');
     const other = env.store.createSession({ cwd: env.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, permissionMode: 'default', modelAlias: MODEL_ALIAS });
-    const healthy = env.store.createRunAndEnqueue(other.id, { input: 'Say hello', deadlineAt: DEADLINE_MS, limits: {}, pins: {} });
+    const healthy = createdRun(env.store.createRunAndEnqueue(other.id, { input: 'Say hello', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {} }));
     env.gateway.script.push(textStep('Hello.'));
     const store: RuntimeStore = {
       ...env.store,

@@ -3,8 +3,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
+import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import type { RunEventPayload } from '@momonga/protocol';
 import { openRuntimeStore } from '@momonga/store';
-import type { Claim, Run, RuntimeStore } from '@momonga/store';
+import type { Claim, Run, RuntimeStore, RuntimeStoreOptions } from '@momonga/store';
 import { createFakeClock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 
@@ -28,17 +30,21 @@ export const makeStoreDir = (mode = 0o700): string => {
   return dir;
 };
 
-export const openStoreAt = (
-  dbPath: string,
-  clock: FakeClock,
-  options: { leaseMs?: number; maxAttempts?: number; maxTotalAttempts?: number } = {},
-): RuntimeStore => {
+export type StoreOptions = {
+  leaseMs?: number;
+  maxAttempts?: number;
+  maxTotalAttempts?: number;
+  onCommit?: RuntimeStoreOptions['onCommit'];
+};
+
+export const openStoreAt = (dbPath: string, clock: FakeClock, options: StoreOptions = {}): RuntimeStore => {
   const store = openRuntimeStore({
     path: dbPath,
     clock,
     leaseMs: options.leaseMs ?? LEASE_MS,
     maxAttempts: options.maxAttempts ?? 5,
     maxTotalAttempts: options.maxTotalAttempts ?? 1000,
+    ...(options.onCommit === undefined ? {} : { onCommit: options.onCommit }),
   });
   registerCleanup(() => store.close());
   return store;
@@ -46,7 +52,7 @@ export const openStoreAt = (
 
 export type Harness = { dir: string; dbPath: string; clock: FakeClock; store: RuntimeStore };
 
-export const harness = (options: { leaseMs?: number; maxAttempts?: number; maxTotalAttempts?: number } = {}): Harness => {
+export const harness = (options: StoreOptions = {}): Harness => {
   const dir = makeStoreDir();
   const dbPath = path.join(dir, 'runtime.db');
   const clock = createFakeClock(START_MS);
@@ -66,14 +72,42 @@ export const rawDb = (dbPath: string): DatabaseSync => {
 export const newSession = (store: RuntimeStore, cwd = '/work/a') =>
   store.createSession({ cwd, env: { PATH: '/usr/bin' }, permissionMode: 'default', modelAlias: 'fm' });
 
-export const enqueue = (store: RuntimeStore, sessionId: string, input = 'hello', idempotencyKey?: string): Run =>
-  store.createRunAndEnqueue(sessionId, {
+export const TIMEOUT_MS = 3_600_000;
+export const DEADLINE_MS = START_MS + TIMEOUT_MS;
+
+export const enqueue = (store: RuntimeStore, sessionId: string, input = 'hello', idempotencyKey?: string): Run => {
+  const result = store.createRunAndEnqueue(sessionId, {
     input,
-    ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
-    deadlineAt: START_MS + 3_600_000,
+    ...(idempotencyKey === undefined ? {} : { idempotencyKey, requestDigest: sha256Hex(canonicalJson({ input })) }),
+    timeoutMs: TIMEOUT_MS,
     limits: { maxSteps: 10 },
     pins: { model: 'fm' },
   });
+  if (result.kind !== 'created' && result.kind !== 'existing') throw new Error(`expected a run, got ${result.kind}`);
+  return result.run;
+};
+
+export const cancel = (store: RuntimeStore, runId: string): Run => {
+  const result = store.requestCancel(runId);
+  if (result.kind !== 'ok') throw new Error(`expected run ${runId} to exist, got ${result.kind}`);
+  return result.run;
+};
+
+export const ENVELOPE_KEYS = ['id', 'runId', 'sessionId', 'seq', 'step', 'leaseToken', 'createdAt'] as const;
+
+export const payloadOf = (event: object): Record<string, unknown> =>
+  Object.fromEntries(Object.entries(event).filter(([key]) => !(ENVELOPE_KEYS as readonly string[]).includes(key)));
+
+export const callEvent = (callId: string): Extract<RunEventPayload, { type: 'tool.call' }> => ({
+  type: 'tool.call',
+  callId,
+  providerCallId: callId,
+  name: 'Write',
+  kind: 'edit',
+  title: `Write ${callId}`,
+  rawInput: { file_path: `/work/a/${callId}.txt` },
+  locations: [{ path: `/work/a/${callId}.txt` }],
+});
 
 export const mustClaim = (store: RuntimeStore, workerId: string): Claim => {
   const claim = store.claim(workerId);

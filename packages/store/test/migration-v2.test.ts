@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { migrate } from '@momonga/foundation';
 import { createFakeClock } from '@momonga/testkit';
 import { MIGRATIONS } from '../src/schema.ts';
-import { START_MS, makeStoreDir, openStoreAt } from './helpers.ts';
+import { START_MS, makeStoreDir, openStoreAt, rawDb } from './helpers.ts';
 
 const OPTIONS_JSON = '[{"kind":"allow_once","name":"Allow once","optionId":"allow_once"},{"kind":"reject_once","name":"Reject","optionId":"reject_once"}]';
 
@@ -50,20 +50,23 @@ describe('migration v2 on a populated v1 database', () => {
     expect(store.approvals.listPending('run-1').map((approval) => approval.id)).toEqual(['appr-pending']);
     expect(store.approvals.get('appr-pending')?.subjectDigest ?? null).toBeNull();
     expect(store.approvals.get('appr-resolved')?.subjectDigest ?? null).toBeNull();
-    const options = store.approvals.get('appr-resolved')?.options ?? [];
-    const renewed = store.approvals.create({ runId: 'run-1', callId: 'call_1', options, expiresAt: START_MS + 120_000, renewal: true });
-    if (renewed.kind !== 'ok') throw new Error('expected the renewal to succeed after migration');
+    rawDb(dbPath)
+      .prepare(
+        `INSERT INTO approvals (id, run_id, call_id, status, options_json, option_id, expires_at, created_at, resolved_at)
+         VALUES ('appr-renewed', 'run-1', 'call_1', 'pending', ?, NULL, ?, ?, NULL)`,
+      )
+      .run(OPTIONS_JSON, START_MS + 120_000, START_MS + 100);
     expect(store.approvals.listPending('run-1').map((approval) => approval.callId).sort()).toEqual(['call_1', 'call_2']);
   });
 
-  it('records both migrations and still refuses a second pending approval for one call', () => {
+  it('records the migrations and still refuses a second pending approval for one call', () => {
     const dbPath = path.join(makeStoreDir(), 'runtime.db');
     populateV1(dbPath);
     openStoreAt(dbPath, createFakeClock(START_MS + 100)).close();
 
     const db = new DatabaseSync(dbPath);
     try {
-      expect(db.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => Number(row['version']))).toEqual([1, 2]);
+      expect(db.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => Number(row['version']))).toEqual([1, 2, 3]);
       expect(db.prepare('SELECT id, subject_digest FROM approvals ORDER BY id').all().map((row) => [row['id'], row['subject_digest']])).toEqual([
         ['appr-pending', null],
         ['appr-resolved', null],

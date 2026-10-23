@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { looksLikeCredentialName } from './credential-env.ts';
 import { readJsonFile } from './json-file.ts';
 import { localSettingsFile } from './local-settings.ts';
 import type { RuleOrigin } from './rule.ts';
@@ -13,8 +14,6 @@ export type Layer = { origin: RuleOrigin; source: string; root: string; settings
 export type LoadedLayers = { layers: Layer[]; files: string[]; warnings: string[] };
 
 export type LayerOptions = { home: string; projectDir: string; trust: TrustOracle };
-
-export const CREDENTIAL_KEY = /(KEY|TOKEN|SECRET|PASSW(OR)?D|CREDENTIAL|AUTH|COOKIE|SESSION|PRIVATE)/i;
 
 const PROJECT_ENV_ALLOWLIST: ReadonlySet<string> = new Set([
   'NODE_ENV', 'RUST_LOG', 'RUST_BACKTRACE', 'LOG_LEVEL', 'DEBUG', 'TZ', 'LANG', 'LANGUAGE', 'CI', 'FORCE_COLOR', 'NO_COLOR', 'TERM',
@@ -41,7 +40,7 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
   if (settings.env !== undefined) {
     const kept: Record<string, string> = {};
     for (const [key, value] of Object.entries(settings.env)) {
-      if (CREDENTIAL_KEY.test(key)) warnings.push(`${source}: env key ${key} looks like a credential and is only honored in user settings; discarded`);
+      if (looksLikeCredentialName(key)) warnings.push(`${source}: env key ${key} looks like a credential and is only honored in user settings; discarded`);
       else if (!isProjectEnvAllowed(key)) warnings.push(`${source}: env key ${key} is not on the project env allowlist and is only honored in user settings; discarded`);
       else kept[key] = value;
     }
