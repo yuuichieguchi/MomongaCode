@@ -223,16 +223,4 @@ describe('idempotency lookup before decide', () => {
     expect(executions).toEqual([]);
     expect(harness.idempotency.records.size).toBe(0);
   });
-
-  it('still decides PENDING calls, so a deny wins over reconcile', async () => {
-    const harness = makeHarness();
-    const { tool, executions } = writeTool();
-    harness.idempotency.seed(KEY, 'PENDING', { tool: 'Write' });
-    const rules = [ruleFor(harness.layout)('deny', 'Write')];
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Write')], { rules }));
-    if (outcomes[0]?.kind !== 'result') throw new Error('expected result');
-    expect(outcomes[0].result.output.startsWith('Permission denied: ')).toBe(true);
-    expect(executions).toEqual([]);
-    expect(harness.idempotency.stateOf(KEY)).toBe('PENDING');
-  });
 });

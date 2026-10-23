@@ -1,6 +1,6 @@
 import { findDanglingOutput } from '@momonga/protocol';
 import type { FunctionCallOutputInputItem, InputItem, MessageInputItem } from '@momonga/protocol';
-import { budgetFor } from './budget.ts';
+import { budgetFor, itemCapFor } from './budget.ts';
 import { chainTail, digestChain, frozenItem } from './digests.ts';
 import { ContextOverflowError, PinnedOverflowError, PrefixChangedError } from './errors.ts';
 import { discoverInstructions } from './instructions.ts';
@@ -16,8 +16,6 @@ import type {
 
 const DEFAULT_KEEP_RECENT_TURNS = 3;
 const DEFAULT_COMPACT_AT = 0.7;
-const ITEM_CAP_RATIO = 0.25;
-const MIN_ITEM_CAP = 64;
 const ASSUMED_HANDLE = 'x'.repeat(36);
 const BLOB_MEDIA_TYPE = 'text/plain';
 
@@ -101,7 +99,7 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
   const summaryItems: InputItem[] = sources.summary === undefined ? [] : [frozenItem(sources.summary.item)];
   const prefixDigest = chainTail(digestChain({ scope: 'prefix', tools }, [...layers, ...summaryItems]));
 
-  const itemCap = Math.max(MIN_ITEM_CAP, Math.floor(ITEM_CAP_RATIO * budgetFor(capabilities, 0).I));
+  const itemCap = itemCapFor(capabilities);
   const reports = new Map<string, ContextEviction>();
 
   const ensureHandle = async (state: OutputState): Promise<boolean> => {

@@ -5,6 +5,8 @@ const MIN_OUTPUT_RESERVE = 256;
 const OUTPUT_RESERVE_RATIO = 0.25;
 const MAX_OUTPUT_WINDOW_RATIO = 0.5;
 const MARGIN_RATIO = 0.02;
+const ITEM_CAP_RATIO = 0.25;
+const MIN_ITEM_CAP = 64;
 const MIN_MARGIN = 32;
 
 export const budgetFor = (capabilities: Capabilities, errorBound: number): ContextBudget => {
@@ -17,3 +19,6 @@ export const budgetFor = (capabilities: Capabilities, errorBound: number): Conte
   const margin = Math.max(Math.ceil(MARGIN_RATIO * W), MIN_MARGIN) + errorBound;
   return { W, R, margin, I: Math.max(0, W - R - margin) };
 };
+
+export const itemCapFor = (capabilities: Capabilities): number =>
+  Math.max(MIN_ITEM_CAP, Math.floor(ITEM_CAP_RATIO * budgetFor(capabilities, 0).I));

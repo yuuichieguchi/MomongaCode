@@ -67,6 +67,8 @@ describe('initialRunState', () => {
       pendingCalls: {},
       notes: [],
       toolCallCounts: {},
+      steps: {},
+      loadedInstructions: [],
       lastSeq: 0,
     });
   });
@@ -79,6 +81,9 @@ describe('foldRunState on recorded runs', () => {
       status: 'COMPLETED',
       step: 1,
       attempt: 1,
+      pins: { model: 'fm' },
+      lastResponse: { step: 1, incomplete: false, refusal: false, callIds: [] },
+      steps: {},
       usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12 },
       history: [entry(1, userItem('say hi')), entry(2, assistantItem('m1', 'hi'))],
       nextItemSeq: 3,
@@ -92,6 +97,10 @@ describe('foldRunState on recorded runs', () => {
       status: 'COMPLETED',
       step: 2,
       attempt: 1,
+      pins: { model: 'fm' },
+      lastResponse: { step: 2, incomplete: false, refusal: false, callIds: [] },
+      steps: {},
+      loadedInstructions: [{ path: '/w/AGENTS.md', textSha256: 'b0d336336bae9756708102764ccc977778d8c408df38d7050d69f9e4d22c9a43' }],
       usage: { inputTokens: 50, outputTokens: 9, totalTokens: 59 },
       history: [
         entry(1, userItem('read a.txt')),
@@ -250,7 +259,7 @@ describe('foldRunState details', () => {
       type: 'model.responded',
       step: 1,
       attempt: 2,
-      response: { output: [], usage: { input_tokens: 0, output_tokens: 0, total_tokens: 0 } },
+      response: { status: 'completed', output: [], usage: { input_tokens: 0, output_tokens: 0, total_tokens: 0 } },
     });
     expect(stray.inFlightModelRequest).toEqual(requested.inFlightModelRequest);
     expect(foldAll(events.slice(4, 7), requested).inFlightModelRequest).toBeUndefined();
@@ -270,6 +279,7 @@ describe('foldRunState details', () => {
 
   const reusedProviderIdPayloads = (): RunEventPayload[] => {
     const response = (callId: string) => ({
+      status: 'completed' as const,
       output: [callItem('call_0', 'Read', { path: callId })],
       usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
     });
@@ -335,7 +345,7 @@ const toolPrelude = (callId: string): RunEventPayload[] => [
     type: 'model.responded',
     step: 1,
     attempt: 1,
-    response: { output: [callItem(callId, 'Read', { path: 'a' })], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } },
+    response: { status: 'completed', output: [callItem(callId, 'Read', { path: 'a' })], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } },
   },
   { type: 'tool.call', callId, providerCallId: callId, name: 'Read', kind: 'read', title: 'Read a', rawInput: { path: 'a' } },
   { type: 'tool.started', callId, idemKey: `k-${callId}` },
@@ -343,7 +353,7 @@ const toolPrelude = (callId: string): RunEventPayload[] => [
 
 const responded = (step: number, output: unknown[]): RunEventPayload[] => [
   { type: 'model.requested', step, attempt: 1, digest: `d${step}`, body: {} },
-  { type: 'model.responded', step, attempt: 1, response: { output, usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } },
+  { type: 'model.responded', step, attempt: 1, response: { status: 'completed', output, usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } },
 ];
 
 describe('history seqs', () => {

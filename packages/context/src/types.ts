@@ -108,6 +108,7 @@ export type LoadedInstruction = {
   realPath: string;
   scope: InstructionScope;
   truncated: boolean;
+  text: string;
   textSha256: string;
 };
 

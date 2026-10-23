@@ -81,6 +81,7 @@ describe('run event payloads', () => {
       | 'context.compacted'
       | 'context.truncated'
       | 'instructions.loaded'
+      | 'approval.rule.persisted'
       | 'notice'
     >();
   });
@@ -103,6 +104,8 @@ describe('run event payloads', () => {
 
   it('defines the model payloads with a loose response that 1.4 can tighten', () => {
     expectTypeOf<ModelResponse>().toEqualTypeOf<{
+      status: 'completed' | 'incomplete';
+      incompleteReason?: string;
       output: unknown[];
       usage: { input_tokens: number; output_tokens: number; total_tokens: number };
     }>();
@@ -157,6 +160,7 @@ describe('run event payloads', () => {
       callId: string;
       options: PermissionOption[];
       subjectDigest: string;
+      suggestedRule?: string;
     }>();
     expectTypeOf<Payload<'tool.permission.resolved'>>().toEqualTypeOf<{
       type: 'tool.permission.resolved';
@@ -245,6 +249,7 @@ describe('RunState', () => {
       nextItemSeq: number;
       summary?: { item: CompactionInputItem; summary: string; replacedThroughSeq: number };
       evicted: string[];
+      pins?: Record<string, unknown>;
       pendingCalls: Record<
         string,
         {
@@ -256,16 +261,22 @@ describe('RunState', () => {
           approvalId?: string;
           subjectDigest?: string;
           options?: PermissionOption[];
+          suggestedRule?: string;
           resolution?: {
             optionId: string;
             kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';
             subjectDigest: string;
+            suggestedRule?: string;
+            rulePersisted?: true;
           };
         }
       >;
       inFlightModelRequest?: { step: number; attempt: number; digest: string; body: unknown };
       notes: { level: 'info' | 'warning' | 'error'; message: string }[];
       toolCallCounts: Record<string, number>;
+      steps: Record<number, { toolChoice: string; summary: boolean }>;
+      lastResponse?: { step: number; incomplete: boolean; incompleteReason?: string; refusal: boolean; callIds: string[] };
+      loadedInstructions: { path: string; textSha256: string }[];
       lastSeq: number;
     }>();
   });

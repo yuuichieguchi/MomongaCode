@@ -89,6 +89,7 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   'context.compacted': true,
   'context.truncated': true,
   'instructions.loaded': true,
+  'approval.rule.persisted': true,
   notice: true,
 };
 
@@ -143,6 +144,7 @@ const isPendingCall = (value: unknown): boolean =>
   typeof value['providerCallId'] === 'string' &&
   PENDING_STATUSES.some((status) => status === value['status']) &&
   (value['subjectDigest'] === undefined || typeof value['subjectDigest'] === 'string') &&
+  (value['suggestedRule'] === undefined || typeof value['suggestedRule'] === 'string') &&
   (value['options'] === undefined ||
     (Array.isArray(value['options']) &&
       value['options'].every((option) => isRecord(option) && typeof option['optionId'] === 'string' && isPermissionKind(option['kind'])))) &&
@@ -150,7 +152,23 @@ const isPendingCall = (value: unknown): boolean =>
     (isRecord(value['resolution']) &&
       typeof value['resolution']['optionId'] === 'string' &&
       isPermissionKind(value['resolution']['kind']) &&
-      typeof value['resolution']['subjectDigest'] === 'string'));
+      typeof value['resolution']['subjectDigest'] === 'string' &&
+      (value['resolution']['suggestedRule'] === undefined || typeof value['resolution']['suggestedRule'] === 'string') &&
+      (value['resolution']['rulePersisted'] === undefined || value['resolution']['rulePersisted'] === true)));
+
+const isStep = (value: unknown): boolean => isRecord(value) && typeof value['toolChoice'] === 'string' && typeof value['summary'] === 'boolean';
+
+const isLastResponse = (value: unknown): boolean =>
+  isRecord(value) &&
+  Number.isInteger(value['step']) &&
+  typeof value['incomplete'] === 'boolean' &&
+  typeof value['refusal'] === 'boolean' &&
+  Array.isArray(value['callIds']) &&
+  value['callIds'].every((callId: unknown) => typeof callId === 'string') &&
+  (value['incompleteReason'] === undefined || typeof value['incompleteReason'] === 'string');
+
+const isLoadedInstruction = (value: unknown): boolean =>
+  isRecord(value) && typeof value['path'] === 'string' && typeof value['textSha256'] === 'string';
 
 const hasConsistentSeqs = (history: readonly unknown[], nextItemSeq: unknown, summary: unknown): boolean => {
   const seqs = history.map((entry) => (entry as { seq: number }).seq);
@@ -161,7 +179,7 @@ const hasConsistentSeqs = (history: readonly unknown[], nextItemSeq: unknown, su
   return true;
 };
 
-export const SNAPSHOT_STATE_VERSION = 2;
+export const SNAPSHOT_STATE_VERSION = 3;
 
 export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
 
@@ -188,12 +206,18 @@ export const decodeRunState = (identity: string, value: unknown): RunState | und
     history.every(isHistoryEntry) &&
     (state['summary'] === undefined || isSummary(state['summary'])) &&
     hasConsistentSeqs(history, state['nextItemSeq'], state['summary']) &&
+    (state['pins'] === undefined || isRecord(state['pins'])) &&
     Array.isArray(evicted) &&
     evicted.every((callId) => typeof callId === 'string') &&
     Array.isArray(state['notes']) &&
     isRecord(state['pendingCalls']) &&
     Object.values(state['pendingCalls']).every(isPendingCall) &&
-    isRecord(state['toolCallCounts']);
+    isRecord(state['toolCallCounts']) &&
+    isRecord(state['steps']) &&
+    (state['lastResponse'] === undefined || isLastResponse(state['lastResponse'])) &&
+    Object.values(state['steps']).every(isStep) &&
+    Array.isArray(state['loadedInstructions']) &&
+    state['loadedInstructions'].every(isLoadedInstruction);
   if (!valid) throw corrupt('snapshots', identity, 'column state_json does not hold a RunState');
   return state as RunState;
 };

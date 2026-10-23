@@ -1,3 +1,4 @@
+export { itemCapFor } from './budget.ts';
 export { buildContext } from './build-context.ts';
 export { ContextOverflowError, PinnedOverflowError, PrefixChangedError } from './errors.ts';
 export { createFsInstructionReader } from './fs-instruction-reader.ts';
