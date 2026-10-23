@@ -2,6 +2,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import type { ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import type { AnyTool } from './types.ts';
+import { compileUntrustedSchema } from './untrusted-schema.ts';
 
 const MAX_REPORTED_ERRORS = 20;
 
@@ -13,7 +14,7 @@ const compiled = new WeakMap<Record<string, unknown>, ValidateFunction>();
 export const compileInputSchema = (tool: AnyTool): ValidateFunction => {
   const cached = compiled.get(tool.inputSchema);
   if (cached !== undefined) return cached;
-  const validate = ajv.compile(tool.inputSchema);
+  const validate = tool.schemaMode === 'lenient' ? compileUntrustedSchema(tool.inputSchema) : ajv.compile(tool.inputSchema);
   compiled.set(tool.inputSchema, validate);
   return validate;
 };

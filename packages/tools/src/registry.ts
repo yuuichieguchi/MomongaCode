@@ -7,7 +7,9 @@ import type { AnyTool } from './types.ts';
 
 const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
-export type ToolSource = { id: string; list(): Promise<AnyTool[]> };
+export type ToolSourceListing = { tools: AnyTool[]; notices: string[] };
+
+export type ToolSource = { id: string; list(): Promise<AnyTool[]>; listWithNotices?(): Promise<ToolSourceListing> };
 
 export type ToolSet = {
   readonly digest: string;
@@ -70,7 +72,13 @@ export const createToolRegistry = (): ToolRegistry => {
       for (const source of sources) {
         let listed: AnyTool[];
         try {
-          listed = await source.list();
+          if (source.listWithNotices === undefined) {
+            listed = await source.list();
+          } else {
+            const listing = await source.listWithNotices();
+            listed = listing.tools;
+            for (const notice of listing.notices) notices.push(`Tool source ${JSON.stringify(source.id)}: ${notice}`);
+          }
         } catch (error) {
           notices.push(`Tool source ${JSON.stringify(source.id)} failed to list tools: ${error instanceof Error ? error.message : String(error)}`);
           continue;
