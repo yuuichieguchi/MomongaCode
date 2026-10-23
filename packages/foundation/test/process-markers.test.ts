@@ -324,7 +324,9 @@ describe('reconcileProcessGroup structured result', () => {
     spawnedGroups.push(pid);
     expect(await waitUntil(() => fs.existsSync(ready), 10_000)).toBe(true);
     expect(holdersOf(marker)).toContain(pid);
-    const result = await reconcileProcessGroup({ pgid: pid, marker }, { killGraceMs: 3000 });
+    const { signals, kill } = recordingKill();
+    const result = await reconcileProcessGroup({ pgid: pid, marker }, { killGraceMs: 3000, kill });
+    expect(signals.filter(([, signal]) => signal === 'SIGTERM')).toEqual([[-pid, 'SIGTERM']]);
     expect(result.leftAlonePids).toContain(pid);
     expect(alive(pid)).toBe(true);
     expect(holdersOf(marker)).toEqual([]);
