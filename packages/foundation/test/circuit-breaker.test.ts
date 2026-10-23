@@ -137,4 +137,34 @@ describe('CircuitBreaker', () => {
   it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])('rejects openMs %s', (openMs) => {
     expect(() => new CircuitBreaker({ failureThreshold: 3, openMs, clock: createFakeClock(0) })).toThrow(/openMs/);
   });
+  describe('onNeutral', () => {
+    it('leaves a closed breaker and its failure count untouched', () => {
+      const { breaker } = make();
+      breaker.onFailure();
+      breaker.onFailure();
+      breaker.onNeutral();
+      expect(breaker.state).toBe('closed');
+      breaker.onFailure();
+      expect(breaker.state).toBe('open');
+    });
+
+    it('leaves an open breaker open', () => {
+      const { breaker } = make();
+      tripOpen(breaker);
+      breaker.onNeutral();
+      expect(breaker.state).toBe('open');
+      expect(breaker.canPass()).toBe(false);
+    });
+
+    it('releases the half-open trial slot without closing or reopening', () => {
+      const { clock, breaker } = make();
+      tripOpen(breaker);
+      clock.advance(5000);
+      expect(breaker.canPass()).toBe(true);
+      expect(breaker.canPass()).toBe(false);
+      breaker.onNeutral();
+      expect(breaker.state).toBe('half-open');
+      expect(breaker.canPass()).toBe(true);
+    });
+  });
 });

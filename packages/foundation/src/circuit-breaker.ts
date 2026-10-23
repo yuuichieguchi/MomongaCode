@@ -53,6 +53,10 @@ export class CircuitBreaker {
     this.consecutiveFailures = 0;
   }
 
+  onNeutral(): void {
+    if (this.current === 'half-open') this.trialStartedAt = Number.NEGATIVE_INFINITY;
+  }
+
   onFailure(): void {
     if (this.current === 'half-open') {
       this.trip();
