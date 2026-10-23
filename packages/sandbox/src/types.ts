@@ -1,0 +1,31 @@
+export interface SandboxPolicy {
+  writableRoots: readonly string[];
+  writeDenied: readonly string[];
+  readDenied: readonly string[];
+  network: 'deny' | 'allow';
+}
+
+export interface SandboxCommand {
+  argv: readonly string[];
+  cwd: string;
+  env: Readonly<Record<string, string>>;
+}
+
+export interface SandboxExit {
+  code: number | null;
+  signal: string | null;
+  killedBy?: 'abort' | 'grace-kill';
+}
+
+export interface SandboxedProcess {
+  pid: number;
+  pgid: number;
+  stdout: AsyncIterable<Uint8Array>;
+  stderr: AsyncIterable<Uint8Array>;
+  exited: Promise<SandboxExit>;
+}
+
+export interface Sandbox {
+  kind: 'seatbelt' | 'none';
+  spawn(command: SandboxCommand, policy: SandboxPolicy, signal: AbortSignal): SandboxedProcess;
+}

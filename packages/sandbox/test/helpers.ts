@@ -1,0 +1,51 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import type { SandboxedProcess } from '@momonga/sandbox';
+
+export function makeTempDir(): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'mm-'));
+}
+
+export async function collect(stream: AsyncIterable<Uint8Array>): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+export async function run(proc: SandboxedProcess): Promise<{
+  stdout: string;
+  stderr: string;
+  code: number | null;
+  signal: string | null;
+  killedBy?: 'abort' | 'grace-kill';
+}> {
+  const [stdout, stderr, exit] = await Promise.all([collect(proc.stdout), collect(proc.stderr), proc.exited]);
+  return { stdout, stderr, ...exit };
+}
+
+export function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+export async function waitUntilDead(pids: number[], timeoutMs: number): Promise<boolean> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (pids.every((pid) => !isAlive(pid))) return true;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return pids.every((pid) => !isAlive(pid));
+}
+
+export function killGroup(pgid: number): void {
+  try {
+    process.kill(-pgid, 'SIGKILL');
+  } catch {
+    return;
+  }
+}
