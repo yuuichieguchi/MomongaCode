@@ -1,5 +1,5 @@
 import readline from 'node:readline';
-import { LEGACY_FIXTURE_PROTOCOL_VERSION } from './mcp-fixtures.ts';
+import { FIXTURE_EXTRA_TOOLS_ENV, LEGACY_FIXTURE_PROTOCOL_VERSION, requestedExtraTools, withIdInputSchema, withIdOutputSchema } from './mcp-fixtures.ts';
 
 type JsonRpcRequest = { jsonrpc: '2.0'; id?: number | string; method: string; params?: Record<string, unknown> };
 
@@ -14,7 +14,13 @@ const TOOLS = [
     description: 'Add two numbers',
     inputSchema: { type: 'object', properties: { a: { type: 'number' }, b: { type: 'number' } }, required: ['a', 'b'] },
   },
+  { name: 'bare', inputSchema: { type: 'object', properties: {} } },
 ];
+
+const WITH_ID_TOOL = { name: 'with_id', description: 'Input and output schemas carry $id', inputSchema: withIdInputSchema(), outputSchema: withIdOutputSchema() };
+
+const listedTools = (): Array<Record<string, unknown>> =>
+  requestedExtraTools(process.env[FIXTURE_EXTRA_TOOLS_ENV]).includes('with_id') ? [...TOOLS, WITH_ID_TOOL] : TOOLS;
 
 const write = (message: Record<string, unknown>): void => {
   process.stdout.write(`${JSON.stringify(message)}\n`);
@@ -32,6 +38,10 @@ const callTool = (params: Record<string, unknown>): Record<string, unknown> => {
       return { content: [{ type: 'text', text: String(args['text']) }] };
     case 'add':
       return { content: [{ type: 'text', text: String(Number(args['a']) + Number(args['b'])) }] };
+    case 'with_id':
+      return { content: [], structuredContent: { v: String(args['v']) } };
+    case 'bare':
+      return { content: [{ type: 'text', text: 'bare' }] };
     default:
       return { content: [{ type: 'text', text: `unknown tool ${String(params['name'])}` }], isError: true };
   }
@@ -51,7 +61,7 @@ const handle = (request: JsonRpcRequest): void => {
       respond(request.id, {});
       return;
     case 'tools/list':
-      respond(request.id, { tools: TOOLS });
+      respond(request.id, { tools: listedTools() });
       return;
     case 'tools/call':
       respond(request.id, callTool(request.params ?? {}));

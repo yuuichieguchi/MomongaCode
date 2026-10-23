@@ -3,11 +3,24 @@ import fs from 'node:fs';
 import { type CallToolResult, Server, type Tool } from '@modelcontextprotocol/server';
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import {
+  FIXTURE_EXTRA_TOOLS_ENV,
+  FIXTURE_HOSTILE_TITLE,
+  FIXTURE_HOSTILE_TITLE_DESCRIPTION,
+  nestedNotSchema,
+  requestedExtraTools,
+  withIdInputSchema,
+  withIdOutputSchema,
+  MODERN_FIXTURE_AUDIO_BYTES,
+  MODERN_FIXTURE_BLOB_BYTES,
   MODERN_FIXTURE_GRANDCHILD_ENV,
+  MODERN_FIXTURE_HOSTILE_DESCRIPTION,
   MODERN_FIXTURE_IMAGE_BYTES,
+  MODERN_FIXTURE_LIST_TTL_ENV,
   MODERN_FIXTURE_LONG_TOOL_NAME,
+  MODERN_FIXTURE_OVERSIZED_DESCRIPTION_CHARS,
   MODERN_FIXTURE_PAGE_SIZE,
   MODERN_FIXTURE_RECORD_ENV,
+  MODERN_FIXTURE_STDERR_ENV,
   type ModernFixtureRecord,
 } from './mcp-fixtures.ts';
 
@@ -64,7 +77,131 @@ const BASE_TOOLS: Tool[] = [
     inputSchema: objectSchema({}, []),
     outputSchema: objectSchema({ value: { type: 'string', pattern: '^(a+)+$' } }, ['value']),
   },
+  {
+    name: 'content_kinds',
+    description: MODERN_FIXTURE_HOSTILE_DESCRIPTION,
+    inputSchema: objectSchema(
+      {
+        kind: {
+          type: 'string',
+          enum: ['audio', 'resource_link', 'embedded_text', 'embedded_blob', 'empty', 'mixed', 'error', 'text_and_structured', 'unsorted_structured', 'image_and_structured'],
+        },
+      },
+      ['kind'],
+    ),
+    annotations: { readOnlyHint: true, destructiveHint: false },
+  },
+  {
+    name: 'patterned',
+    title: 'Patterned Tool',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        code: { type: 'string', pattern: '^[0-9]+$' },
+        when: { type: 'string', format: 'vendor-date' },
+        nested: { type: 'object', properties: { inner: { type: 'string', pattern: '^z$' } }, additionalProperties: false },
+      },
+      patternProperties: { '^x-': { type: 'number' } },
+      additionalProperties: false,
+      required: ['code'],
+    },
+    annotations: { readOnlyHint: true, destructiveHint: true },
+  },
+  {
+    name: 'oversized',
+    description: 'A tool whose input schema exceeds 64 KiB',
+    inputSchema: objectSchema({ blob: { type: 'string', description: 'o'.repeat(MODERN_FIXTURE_OVERSIZED_DESCRIPTION_CHARS) } }, []),
+  },
+  {
+    name: 'uncompilable',
+    description: 'A tool whose input schema cannot compile',
+    inputSchema: { type: 'object', properties: { a: { type: 'strin' } } } as unknown as Tool['inputSchema'],
+  },
+  { name: 'dotted_name_with-slash', description: 'Collides with dotted.name/with-slash after normalization', inputSchema: objectSchema({}, []) },
 ];
+
+const EXTRA_TOOLS: Record<string, Tool> = {
+  with_id: {
+    name: 'with_id',
+    description: 'Input and output schemas carry $id',
+    inputSchema: withIdInputSchema() as Tool['inputSchema'],
+    outputSchema: withIdOutputSchema() as Tool['outputSchema'],
+  },
+  deep_not_3000: { name: 'deep_not_3000', description: 'A 3000-level not chain', inputSchema: nestedNotSchema(3000) as Tool['inputSchema'] },
+  deep_64: { name: 'deep_64', description: 'Nesting depth 64', inputSchema: nestedNotSchema(64) as Tool['inputSchema'] },
+  deep_65: { name: 'deep_65', description: 'Nesting depth 65', inputSchema: nestedNotSchema(65) as Tool['inputSchema'] },
+  hostile_title: {
+    name: 'hostile_title',
+    title: FIXTURE_HOSTILE_TITLE,
+    description: FIXTURE_HOSTILE_TITLE_DESCRIPTION,
+    inputSchema: objectSchema({}, []),
+  },
+  hostile_text_more: {
+    name: 'hostile_text_more',
+    title: 'T\udc00U\u009b1mV',
+    description: 'A\u009b31mB\ud800C\u001b[31',
+    inputSchema: objectSchema({}, []),
+  },
+  'a.b': { name: 'a.b', description: 'dot', inputSchema: objectSchema({}, []) },
+  'a/b': { name: 'a/b', description: 'slash', inputSchema: objectSchema({}, []) },
+  a_b: { name: 'a_b', description: 'underscore', inputSchema: objectSchema({}, []) },
+};
+
+const extraTools = (): Tool[] =>
+  requestedExtraTools(process.env[FIXTURE_EXTRA_TOOLS_ENV]).flatMap((name) => {
+    const tool = EXTRA_TOOLS[name];
+    return tool === undefined ? [] : [tool];
+  });
+
+const base64 = (value: string): string => Buffer.from(value).toString('base64');
+
+const contentKind = (kind: unknown): CallToolResult => {
+  switch (kind) {
+    case 'audio':
+      return { content: [{ type: 'audio', data: base64(MODERN_FIXTURE_AUDIO_BYTES), mimeType: 'audio/wav' }] };
+    case 'resource_link':
+      return { content: [{ type: 'resource_link', uri: 'file:///fixture/link.txt', name: 'link.txt' }] };
+    case 'embedded_text':
+      return { content: [{ type: 'resource', resource: { uri: 'file:///fixture/embedded.txt', mimeType: 'text/plain', text: 'embedded text' } }] };
+    case 'embedded_blob':
+      return {
+        content: [
+          { type: 'resource', resource: { uri: 'file:///fixture/blob.bin', mimeType: 'application/octet-stream', blob: base64(MODERN_FIXTURE_BLOB_BYTES) } },
+        ],
+      };
+    case 'empty':
+      return { content: [] };
+    case 'mixed':
+      return {
+        content: [
+          { type: 'text', text: 'first' },
+          { type: 'image', data: base64(MODERN_FIXTURE_IMAGE_BYTES), mimeType: 'image/png' },
+          { type: 'text', text: 'second' },
+        ],
+      };
+    case 'error':
+      return {
+        content: [
+          { type: 'text', text: 'bad' },
+          { type: 'text', text: 'worse' },
+        ],
+        isError: true,
+      };
+    case 'text_and_structured':
+      return { content: [{ type: 'text', text: 'summary' }], structuredContent: { z: 1, a: 2 } };
+    case 'unsorted_structured':
+      return { content: [], structuredContent: { z: 1, a: { d: 2, c: 3 } } };
+    case 'image_and_structured':
+      return { content: [{ type: 'image', data: base64(MODERN_FIXTURE_IMAGE_BYTES), mimeType: 'image/png' }], structuredContent: { b: 1, a: 2 } };
+    default:
+      return { content: [{ type: 'text', text: `unknown kind ${String(kind)}` }], isError: true };
+  }
+};
+
+const listTtlMs = (): number | undefined => {
+  const raw = process.env[MODERN_FIXTURE_LIST_TTL_ENV];
+  return raw === undefined || raw === '' ? undefined : Number(raw);
+};
 
 const recordFile = process.env[MODERN_FIXTURE_RECORD_ENV];
 
@@ -75,7 +212,7 @@ const record = (entry: ModernFixtureRecord): void => {
 const text = (value: string): CallToolResult => ({ content: [{ type: 'text', text: value }] });
 
 const createFixtureServer = (): Server => {
-  const tools = [...BASE_TOOLS];
+  const tools = [...BASE_TOOLS, ...extraTools()];
   const server = new Server(
     { name: 'momonga-modern-fixture', version: '1.0.0' },
     {
@@ -90,7 +227,9 @@ const createFixtureServer = (): Server => {
     const start = cursor === undefined ? 0 : Number(cursor);
     const page = tools.slice(start, start + MODERN_FIXTURE_PAGE_SIZE);
     const next = start + MODERN_FIXTURE_PAGE_SIZE;
-    return next < tools.length ? { tools: page, nextCursor: String(next) } : { tools: page };
+    const ttlMs = listTtlMs();
+    const cache = ttlMs === undefined ? {} : { ttlMs, cacheScope: 'private' as const };
+    return next < tools.length ? { tools: page, nextCursor: String(next), ...cache } : { tools: page, ...cache };
   });
 
   server.setRequestHandler('tools/call', async (request, ctx) => {
@@ -143,8 +282,28 @@ const createFixtureServer = (): Server => {
         return text('long');
       case 'catastrophic_output':
         return { content: [], structuredContent: { value: `${'a'.repeat(36)}!` } };
+      case 'content_kinds':
+        return contentKind(args['kind']);
+      case 'patterned':
+        return text(JSON.stringify(args));
+      case 'oversized':
+      case 'uncompilable':
+        return text(name);
+      case 'dotted_name_with-slash':
+        return text('dotted collision');
       case 'added_later':
         return text('added later');
+      case 'with_id':
+        return { content: [], structuredContent: { v: String(args['v']) } };
+      case 'hostile_title':
+      case 'hostile_text_more':
+      case 'deep_64':
+      case 'deep_65':
+      case 'deep_not_3000':
+      case 'a.b':
+      case 'a/b':
+      case 'a_b':
+        return text(name);
       default:
         return { content: [{ type: 'text', text: `unknown tool ${name}` }], isError: true };
     }
@@ -154,6 +313,8 @@ const createFixtureServer = (): Server => {
 };
 
 const runServer = (): void => {
+  const stderrLine = process.env[MODERN_FIXTURE_STDERR_ENV];
+  if (stderrLine !== undefined && stderrLine !== '') process.stderr.write(`${stderrLine}\n`);
   if (process.env[MODERN_FIXTURE_GRANDCHILD_ENV] === '1') {
     const grandchild = spawn('sleep', ['600'], { stdio: 'ignore' });
     record({ type: 'grandchild', pid: grandchild.pid ?? -1 });

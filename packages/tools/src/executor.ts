@@ -44,6 +44,7 @@ export type BatchInput = {
   deadlineAt: number;
   signal: AbortSignal;
   protectedPaths: readonly string[];
+  traceparentFor?(callId: string): { traceparent: string; tracestate?: string } | undefined;
   onStarted?(callId: string, idemKey: string): void | Promise<void>;
   onUpdate?(callId: string, content: ToolContent[]): void;
 };
@@ -288,6 +289,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
     let timer: NodeJS.Timeout | undefined;
 
     try {
+      const trace = batch.traceparentFor?.(callId);
       const ctx: ToolContext = {
         cwd: batch.session.cwd,
         home: batch.home,
@@ -298,6 +300,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
         idemKey: key,
         outputBudgetChars: maxInlineOutputChars,
         ...(tool.sideEffect === 'exec' ? { processMarker } : {}),
+        ...(trace === undefined ? {} : { traceparent: trace.traceparent }),
+        ...(trace?.tracestate === undefined ? {} : { tracestate: trace.tracestate }),
         env: batch.env,
         signal: controller.signal,
         deadlineAt: batch.deadlineAt,

@@ -39,6 +39,8 @@ export type ToolContext = SubjectContext & {
   idemKey: string;
   outputBudgetChars: number;
   processMarker?: string;
+  traceparent?: string;
+  tracestate?: string;
   env: Readonly<Record<string, string>>;
   signal: AbortSignal;
   deadlineAt: number;
@@ -63,6 +65,7 @@ export type ToolDefinition<Input> = {
   sideEffect: SideEffect;
   inputSchema: Record<string, unknown>;
   pagesOutput?: true;
+  schemaMode?: 'strict' | 'lenient';
   timeoutMs: number | ((input: Input) => number);
   title(input: Input): string;
   locations?(input: Input): { path: string; line?: number }[];

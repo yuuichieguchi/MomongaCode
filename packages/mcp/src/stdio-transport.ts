@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { Readable, Writable } from 'node:stream';
+import type { Readable, Stream, Writable } from 'node:stream';
 import { deserializeMessage, serializeMessage, type JSONRPCMessage, type Transport } from '@modelcontextprotocol/client';
 import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
 import type { McpStdioServerConfig } from '@momonga/config';
@@ -97,6 +97,14 @@ class StdioTransportImpl implements StdioTransport {
 
   get pgid(): number | undefined {
     return this.child?.pid;
+  }
+
+  get pid(): number | undefined {
+    return this.child?.pid;
+  }
+
+  get stderr(): Stream | null {
+    return null;
   }
 
   diagnostics(): StdioTransportDiagnostics {

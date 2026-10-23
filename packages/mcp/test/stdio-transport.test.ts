@@ -18,7 +18,15 @@ const FAKE_SECRET = 'not-a-real-key';
 const cleanups: Array<() => Promise<void> | void> = [];
 
 afterEach(async () => {
-  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+  const failures: unknown[] = [];
+  for (const cleanup of cleanups.splice(0).reverse()) {
+    try {
+      await cleanup();
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length > 0) throw new AggregateError(failures, 'test cleanup failed');
 });
 
 const pidAlive = (pid: number): boolean => {
