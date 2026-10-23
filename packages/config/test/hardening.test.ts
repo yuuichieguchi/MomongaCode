@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { appendPermissionRule, loadMcpServers, loadSettings } from '@momonga/config';
+import { ConfigError, appendPermissionRule, loadMcpServers, loadSettings } from '@momonga/config';
 import {
   localSettingsDir,
   localSettingsPath,
@@ -148,10 +148,12 @@ describe('S6 credential variables in project .mcp.json', () => {
   it('refuses to expand credential-looking variables in project servers', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { enableAllProjectMcpServers: true });
-    writeJson(mcpJsonPath(tree), { mcpServers: { gh: { command: 'gh-mcp', env: { T: '${GITHUB_TOKEN}' } } } });
-    const failure = loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { GITHUB_TOKEN: 'secret' } });
-    await expect(failure).rejects.toThrow('gh');
-    await expect(failure).rejects.toThrow('GITHUB_TOKEN');
+    writeJson(mcpJsonPath(tree), { mcpServers: { gh: { command: 'gh-mcp', env: { T: '${GITHUB_TOKEN}' } }, ok: { command: 'ok' } } });
+    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { GITHUB_TOKEN: 'secret' } });
+    expect(result.enabled.map((s) => s.name)).toEqual(['ok']);
+    expect(result.pendingApproval).toEqual([]);
+    expect(JSON.stringify(result)).not.toContain('secret');
+    expect(result.warnings.filter((w) => w.includes('"gh"') && w.includes('GITHUB_TOKEN'))).toHaveLength(1);
   });
 
   it('refuses variables named by apiKeyEnv in user model targets', async () => {
@@ -172,8 +174,10 @@ describe('S6 credential variables in project .mcp.json', () => {
       },
     });
     writeJson(mcpJsonPath(tree), { mcpServers: { s: { command: 's', args: ['${ACME_CRED}'] } } });
-    const failure = loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { ACME_CRED: 'v' } });
-    await expect(failure).rejects.toThrow('ACME_CRED');
+    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { ACME_CRED: 'v' } });
+    expect(result.enabled).toEqual([]);
+    expect(result.pendingApproval).toEqual([]);
+    expect(result.warnings.filter((w) => w.includes('"s"') && w.includes('ACME_CRED'))).toHaveLength(1);
   });
 
   it('still lets user-scope servers expand credentials', async () => {
@@ -181,6 +185,14 @@ describe('S6 credential variables in project .mcp.json', () => {
     writeJson(userSettingsPath(tree), { mcpServers: { gh: { command: 'gh-mcp', env: { T: '${GITHUB_TOKEN}' } } } });
     const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { GITHUB_TOKEN: 's' } });
     expect(result.enabled[0]?.config).toMatchObject({ env: { T: 's' } });
+  });
+
+  it('throws ConfigError for an invalid expansion in a user-scope server', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { mcpServers: { gh: { command: 'gh-mcp', args: ['${1BAD}'] } } });
+    const failure = loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
+    await expect(failure).rejects.toBeInstanceOf(ConfigError);
+    await expect(failure).rejects.toThrow('"gh"');
   });
 });
 
@@ -196,9 +208,10 @@ describe('N1 prototype-pollution keys', () => {
   it('rejects __proto__ in .mcp.json', async () => {
     const tree = makeTree();
     const file = writeText(mcpJsonPath(tree), '{"mcpServers": {"a": {"command": "x", "__proto__": {"polluted": true}}}}');
-    const failure = loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
-    await expect(failure).rejects.toThrow(file);
-    await expect(failure).rejects.toThrow('/mcpServers/a/__proto__');
+    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
+    expect(result.enabled).toEqual([]);
+    expect(result.pendingApproval).toEqual([]);
+    expect(result.warnings.filter((w) => w.includes(file) && w.includes('/mcpServers/a/__proto__'))).toHaveLength(1);
   });
 });
 
@@ -220,11 +233,14 @@ describe('N2 file type checks', () => {
     await expect(load(tree)).rejects.toThrow(/outside the project/);
   });
 
-  it('refuses a .mcp.json symlink that points outside the project', async () => {
+  it('refuses a .mcp.json symlink that points outside the project with a warning', async () => {
     const tree = makeTree();
-    const outside = writeJson(path.join(makeDir(), 'm.json'), { mcpServers: {} });
+    const outside = writeJson(path.join(makeDir(), 'm.json'), { mcpServers: { a: { command: 'a' } } });
     fs.symlinkSync(outside, mcpJsonPath(tree));
-    await expect(loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} })).rejects.toThrow(/outside the project/);
+    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
+    expect(result.enabled).toEqual([]);
+    expect(result.pendingApproval).toEqual([]);
+    expect(result.warnings.filter((w) => w.includes(mcpJsonPath(tree)) && /outside the project/.test(w))).toHaveLength(1);
   });
 
   it('accepts a user settings symlink to a regular file', async () => {
@@ -261,8 +277,9 @@ describe('S6 follow-up: sensitive variable names in project .mcp.json', () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { enableAllProjectMcpServers: true });
     writeJson(mcpJsonPath(tree), { mcpServers: { s: { command: 's', args: [`\${${variable}}`] } } });
-    const failure = loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { [variable]: 'v' } });
-    await expect(failure).rejects.toThrow(variable);
-    await expect(failure).rejects.toThrow('"s"');
+    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { [variable]: 'v' } });
+    expect(result.enabled).toEqual([]);
+    expect(result.pendingApproval).toEqual([]);
+    expect(result.warnings.filter((w) => w.includes('"s"') && w.includes(variable))).toHaveLength(1);
   });
 });

@@ -186,7 +186,9 @@ export type TrustDecision = 'trusted' | 'untrusted';
 
 export type TrustStore = {
   get(path: string): TrustDecision | undefined;
+  decisionFor(path: string): { decision: TrustDecision | null; inheritedFrom?: string };
   set(path: string, decision: TrustDecision): void;
+  clear(path: string): void;
 };
 
 export type RuntimeStore = {
@@ -239,6 +241,7 @@ export type RuntimeStore = {
 
 export type RuntimeStoreOptions = {
   path: string;
+  home: string;
   clock: Clock;
   leaseMs: number;
   maxAttempts: number;

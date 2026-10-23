@@ -40,7 +40,7 @@ const MATRIX: Record<string, PackageRule> = {
   store: rule(['protocol', 'foundation']),
   observability: rule(['foundation']),
   gateway: rule(['protocol', 'foundation', 'config', 'observability']),
-  policy: rule(['protocol', 'config']),
+  policy: rule(['protocol', 'foundation', 'config']),
   sandbox: rule(['foundation']),
   tools: rule(['protocol', 'foundation', 'policy', 'sandbox']),
   mcp: rule(['protocol', 'foundation', 'config', 'tools']),

@@ -29,6 +29,7 @@ export const reconcileStartedCalls = async ({ options, run, session, journal, co
     rules: await options.settings.rules(session),
     home: options.home,
     roots: policy.roots,
+    tmpDir: policy.tmpDir,
     env: session.env,
     session: options.tools.sessionState(session),
     sandbox: options.tools.sandbox,

@@ -5,7 +5,7 @@ import { afterEach, expect } from 'vitest';
 import { killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
-import { buildSandboxPolicy, createBuiltinTools } from '@momonga/tools';
+import { buildSandboxPolicy, createBuiltinTools, protectedPathsFor } from '@momonga/tools';
 import type { BatchInput, CallOutcome, NeedsApprovalOutcome, ResultOutcome, ToolSet } from '@momonga/tools';
 import type { PermissionRule } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
@@ -80,12 +80,13 @@ export type Builtins = Awaited<ReturnType<typeof makeBuiltins>>;
 export const makeBuiltins = async (options: { maxInlineOutputChars?: number; realSandbox?: boolean } = {}) => {
   const harness = makeHarness(options.maxInlineOutputChars === undefined ? {} : { maxInlineOutputChars: options.maxInlineOutputChars });
   const { layout } = harness;
-  const tmpDir = path.join(layout.root, 'tmp');
+  const sessionsTmpRoot = path.join(layout.root, 'sessions');
+  const tmpDir = path.join(sessionsTmpRoot, 'session-0');
   const sandboxTmpRoot = path.join(layout.root, 'sandbox-tmp');
-  fs.mkdirSync(tmpDir);
+  fs.mkdirSync(tmpDir, { recursive: true });
   fs.mkdirSync(sandboxTmpRoot);
   const toolSet: ToolSet = await toolSetOf(...createBuiltinTools());
-  const sandboxPolicy: SandboxPolicy = buildSandboxPolicy({ roots: [layout.project], home: layout.home, tmpDir });
+  const sandboxPolicy: SandboxPolicy = buildSandboxPolicy({ roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot });
   const sandbox: Sandbox | undefined = options.realSandbox === true ? createSeatbeltSandbox({ tmpRoot: sandboxTmpRoot, killGraceMs: 300 }) : undefined;
   let counter = 0;
   const nextCallId = (): string => {
@@ -96,6 +97,8 @@ export const makeBuiltins = async (options: { maxInlineOutputChars?: number; rea
     harness.input(toolSet, [call(callId, name, args, approval)], {
       env: BASE_ENV,
       sandboxPolicy,
+      protectedPaths: protectedPathsFor([layout.project]),
+      ...(extra.sandboxPolicy === undefined ? { tmpDir } : {}),
       ...(sandbox === undefined ? {} : { sandbox }),
       ...extra,
     });

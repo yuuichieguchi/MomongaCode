@@ -123,6 +123,60 @@ export const ensureMomongaDirs = async (paths: MomongaPaths): Promise<void> => {
   }
 };
 
+const assertSessionId = (sessionId: string): void => {
+  if (sessionId === '' || sessionId === '.' || sessionId === '..' || /[/\\\0]/.test(sessionId)) {
+    throw new Error(`invalid session id: ${JSON.stringify(sessionId)}`);
+  }
+};
+
+const assertOwnedDirectory = (directory: string, stat: fsSync.Stats, uid: number): void => {
+  if (stat.isSymbolicLink()) throw new Error(`${directory} is a symlink; refusing to use it`);
+  if (!stat.isDirectory()) throw new Error(`${directory} exists and is not a directory`);
+  if (stat.uid !== uid) {
+    throw new Error(`${directory} is owned by uid ${stat.uid}, but the current user is uid ${uid}; the directory must be owned by the current user`);
+  }
+};
+
+const sameInode = (left: fsSync.Stats, right: fsSync.Stats): boolean => left.dev === right.dev && left.ino === right.ino;
+
+export const ensureSessionTmpDir = async (paths: MomongaPaths, sessionId: string): Promise<string> => {
+  assertSessionId(sessionId);
+  const uid = process.getuid?.();
+  if (uid === undefined) throw new Error('process.getuid is required to verify directory ownership');
+  const openFlags = fsSync.constants.O_RDONLY | fsSync.constants.O_DIRECTORY | fsSync.constants.O_NOFOLLOW;
+  const directory = path.join(paths.tmp.sessions, sessionId);
+  let rootHandle: fs.FileHandle | undefined;
+  let childHandle: fs.FileHandle | undefined;
+  try {
+    rootHandle = await fs.open(paths.tmp.sessions, openFlags);
+    const rootStat = await rootHandle.stat();
+    assertOwnedDirectory(paths.tmp.sessions, rootStat, uid);
+    try {
+      await fs.mkdir(directory, { mode: 0o700 });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    }
+    childHandle = await fs.open(directory, openFlags);
+    const childStat = await childHandle.stat();
+    assertOwnedDirectory(directory, childStat, uid);
+    if (!sameInode(await fs.lstat(paths.tmp.sessions), rootStat)) {
+      throw new Error(`${paths.tmp.sessions} was replaced while preparing ${directory}`);
+    }
+    const canonicalDirectory = await fs.realpath(directory);
+    if (!sameInode(await fs.stat(canonicalDirectory), childStat)) {
+      throw new Error(`${directory} was replaced while it was being prepared`);
+    }
+    if (!sameInode(await fs.stat(path.dirname(canonicalDirectory)), rootStat)) {
+      throw new Error(`${directory} does not live directly in the sessions root ${paths.tmp.sessions}`);
+    }
+    if ((childStat.mode & 0o777) !== 0o700) await childHandle.chmod(0o700);
+  } finally {
+    await childHandle?.close();
+    await rootHandle?.close();
+  }
+  return directory;
+};
+
 const lstatIfPresent = async (target: string): Promise<fsSync.Stats | undefined> => {
   try {
     return await fs.lstat(target);

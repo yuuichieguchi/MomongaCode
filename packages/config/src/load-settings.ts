@@ -6,7 +6,7 @@ import type { Layer, TrustOracle } from './layers.ts';
 import { parseRule, RuleParseError } from './rule.ts';
 import type { PermissionRule, RuleEffect, RuleOrigin } from './rule.ts';
 import { assertSettings } from './settings.ts';
-import type { McpServerConfig, Settings } from './settings.ts';
+import type { McpServerConfig, SandboxSetting, Settings } from './settings.ts';
 import type { ResolvedModels } from './models.ts';
 
 
@@ -28,6 +28,7 @@ export type ResolvedSettings = {
   mcpServers: Record<string, McpServerConfig>;
   models: ResolvedModels;
   autoUpdates: boolean;
+  sandbox: SandboxSetting;
 };
 
 export type LoadSettingsOptions = {
@@ -88,9 +89,10 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     mcpServers: {},
     models,
     autoUpdates: true,
+    sandbox: 'seatbelt',
   };
   for (const layer of layers) {
-    const { permissions, env, enabledMcpjsonServers, disabledMcpjsonServers, enableAllProjectMcpServers, mcpServers, autoUpdates } =
+    const { permissions, env, enabledMcpjsonServers, disabledMcpjsonServers, enableAllProjectMcpServers, mcpServers, autoUpdates, sandbox } =
       layer.settings;
     if (permissions?.defaultMode !== undefined) {
       merged.permissions.defaultMode = permissions.defaultMode;
@@ -112,6 +114,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     if (enableAllProjectMcpServers !== undefined) merged.enableAllProjectMcpServers = enableAllProjectMcpServers;
     Object.assign(merged.mcpServers, mcpServers);
     if (autoUpdates !== undefined) merged.autoUpdates = autoUpdates;
+    if (sandbox !== undefined) merged.sandbox = sandbox;
   }
   return merged;
 };

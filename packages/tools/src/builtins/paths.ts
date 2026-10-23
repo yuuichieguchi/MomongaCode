@@ -1,5 +1,6 @@
 import path from 'node:path';
-import { canonicalizePath, isInside } from '@momonga/policy';
+import { comparableContains } from '@momonga/foundation';
+import { canonicalizePath } from '@momonga/policy';
 import { ToolInputError } from '../types.ts';
 
 export const requireAbsolute = (field: string, value: string): string => {
@@ -14,7 +15,7 @@ export const canonicalPathOf = (field: string, value: string): string => {
 };
 
 export const insideAny = (candidate: string, directories: readonly string[]): boolean =>
-  directories.some((directory) => isInside(candidate, directory));
+  directories.some((directory) => comparableContains(directory, candidate));
 
 export const canonicalDirectories = (directories: readonly string[]): string[] =>
   directories.map((directory) => canonicalizePath(directory) ?? path.resolve(directory));

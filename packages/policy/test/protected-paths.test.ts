@@ -175,11 +175,39 @@ describe('protected paths', () => {
       expect(decide(input(layout, BASH, subject, 'bypassPermissions', [gitDir]))).toMatchObject({ kind: 'ask', source: 'protected' });
     });
 
-    it('fails closed for a dangling symlink whose target is outside protected paths', () => {
-      const { layout, gitDir } = setup();
+    const danglingOutside = (layout: Layout): { link: string; target: string } => {
       const link = path.join(layout.project, 'elsewhere');
-      fs.symlinkSync(path.join(layout.outside, 'nothing', 'here.txt'), link);
-      expect(decide(input(layout, WRITE, writeSubject('Write', link), 'bypassPermissions', [gitDir]))).toMatchObject({ kind: 'ask', source: 'protected' });
+      const target = path.join(layout.outside, 'nothing', 'here.txt');
+      fs.symlinkSync(target, link);
+      return { link, target };
+    };
+
+    const verdict = (decision: { kind: string; source?: string }) => ({ kind: decision.kind, source: decision.source });
+
+    it('decides a dangling symlink outside protected paths like a direct write to its target in bypassPermissions', () => {
+      const { layout, gitDir } = setup();
+      const { link, target } = danglingOutside(layout);
+      const viaLink = decide(input(layout, WRITE, writeSubject('Write', link), 'bypassPermissions', [gitDir]));
+      const direct = decide(input(layout, WRITE, writeSubject('Write', target), 'bypassPermissions', [gitDir]));
+      expect(verdict(viaLink)).toEqual(verdict(direct));
+      expect(viaLink.source).not.toBe('protected');
+    });
+
+    it('asks for a dangling symlink whose target is outside the roots in default mode', () => {
+      const { layout, gitDir } = setup();
+      const { link, target } = danglingOutside(layout);
+      const viaLink = decide(input(layout, WRITE, writeSubject('Write', link), 'default', [gitDir]));
+      expect(viaLink.kind).toBe('ask');
+      expect(verdict(viaLink)).toEqual(verdict(decide(input(layout, WRITE, writeSubject('Write', target), 'default', [gitDir]))));
+    });
+
+    it('fails closed for a symlink loop', () => {
+      const { layout, gitDir } = setup();
+      const a = path.join(layout.project, 'a');
+      const b = path.join(layout.project, 'b');
+      fs.symlinkSync(b, a);
+      fs.symlinkSync(a, b);
+      expect(decide(input(layout, WRITE, writeSubject('Write', a), 'bypassPermissions', [gitDir]))).toMatchObject({ kind: 'ask', source: 'protected' });
     });
 
     it('lets deny rules win over the fail-closed ask', () => {

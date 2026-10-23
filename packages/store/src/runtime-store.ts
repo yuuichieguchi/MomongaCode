@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, migrate, openDatabase, readTx, uuidv7 } from '@momonga/foundation';
@@ -270,6 +271,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       `openRuntimeStore: maxTotalAttempts (${options.maxTotalAttempts}) must be at least maxAttempts (${options.maxAttempts})`,
     );
   }
+  if (typeof options.home !== 'string') throw new TypeError('openRuntimeStore: home is required');
+  const home = fs.realpathSync.native(options.home);
   const { clock, leaseMs, maxAttempts, maxTotalAttempts } = options;
   const db = openDatabase(options.path);
   let statements: Statements;
@@ -846,7 +849,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     idempotency: createIdempotencyStore(db, clock),
     approvals: approvalOps.store,
     blobs: createBlobStore(db, clock, blobDirectory),
-    trust: createTrustStore(db, clock),
+    trust: createTrustStore(db, clock, home),
 
     dataVersion: () => {
       const row = sql.dataVersion.get();

@@ -81,22 +81,34 @@ describe('protectedPathsFor', () => {
 });
 
 describe('buildSandboxPolicy', () => {
+  const sortedWriteDenied = (policy: { writeDenied: readonly string[] }): string[] => [...policy.writeDenied].sort();
+
   it('builds writable roots, protected writes and default read denials', () => {
-    expect(buildSandboxPolicy({ roots: ['/w/a', '/w/b'], home: '/Users/me', tmpDir: '/tmp/mm' })).toEqual({
-      writableRoots: ['/w/a', '/w/b', '/tmp/mm'],
-      writeDenied: protectedPathsFor(['/w/a', '/w/b']),
-      readDenied: [path.join('/Users/me', '.momonga'), path.join('/Users/me', 'Library', 'Keychains')],
+    const policy = buildSandboxPolicy({ roots: ['/w/a', '/w/b'], home: '/Users/me', tmpDir: '/s/sessions/one', sessionsTmpRoot: '/s/sessions' });
+    expect({ ...policy, writeDenied: sortedWriteDenied(policy) }).toEqual({
+      writableRoots: ['/w/a', '/w/b', '/s/sessions/one'],
+      writeDenied: [...protectedPathsFor(['/w/a', '/w/b']), '/Users/me/.momonga', '/Users/me/Library/Keychains', '/s/sessions'].sort(),
+      readDenied: [path.join('/Users/me', '.momonga'), path.join('/Users/me', 'Library', 'Keychains'), '/s/sessions'],
+      readAllowed: ['/s/sessions/one'],
       network: 'deny',
     });
   });
 
   it('appends extra writable and read-denied paths and honors the network setting', () => {
-    expect(
-      buildSandboxPolicy({ roots: ['/w/a'], home: '/h', tmpDir: '/t', network: 'allow', extraWritable: ['/cache'], extraReadDenied: ['/h/.ssh'] }),
-    ).toEqual({
-      writableRoots: ['/w/a', '/t', '/cache'],
-      writeDenied: defaultProtectedPaths('/w/a'),
-      readDenied: ['/h/.momonga', '/h/Library/Keychains', '/h/.ssh'],
+    const policy = buildSandboxPolicy({
+      roots: ['/w/a'],
+      home: '/h',
+      tmpDir: '/s/sessions/one',
+      sessionsTmpRoot: '/s/sessions',
+      network: 'allow',
+      extraWritable: ['/cache'],
+      extraReadDenied: ['/h/.ssh'],
+    });
+    expect({ ...policy, writeDenied: sortedWriteDenied(policy) }).toEqual({
+      writableRoots: ['/w/a', '/s/sessions/one', '/cache'],
+      writeDenied: [...defaultProtectedPaths('/w/a'), '/h/.momonga', '/h/Library/Keychains', '/s/sessions'].sort(),
+      readDenied: ['/h/.momonga', '/h/Library/Keychains', '/s/sessions', '/h/.ssh'],
+      readAllowed: ['/s/sessions/one'],
       network: 'allow',
     });
   });

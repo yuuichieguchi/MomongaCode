@@ -1,9 +1,10 @@
 import path from 'node:path';
+import { comparableContains } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import type { PermissionMode } from '@momonga/protocol';
 import { commandCoveredByAllowRules } from './command-match.ts';
 import { matchRule, matchStrength, ruleCoversToolName } from './match-rule.ts';
-import { absoluteFrom, canonicalizePath, isInside, volumeIsCaseInsensitive } from './path-match.ts';
+import { absoluteFrom, canonicalizePath } from './path-match.ts';
 import { allReads, allRedirects, analyzeCommand, changesDirectory, looseRedirectTargets } from './shell.ts';
 import type { RedirectTarget } from './shell.ts';
 import type { DecisionKind, PermissionSubject, PolicyTool } from './types.ts';
@@ -41,10 +42,8 @@ const byRule = (kind: DecisionKind, rule: PermissionRule, verb: string): Decisio
 
 const byMode = (kind: DecisionKind, reason: string): Decision => ({ kind, source: 'mode', reason });
 
-const comparable = (value: string): string => (volumeIsCaseInsensitive ? value.toLowerCase() : value);
-
 const resolveGuard = (guard: string, cwd: string): string =>
-  comparable(canonicalizePath(absoluteFrom(guard, cwd)) ?? path.resolve(cwd, guard));
+  canonicalizePath(absoluteFrom(guard, cwd)) ?? path.resolve(cwd, guard);
 
 const protectedWriteReason = (input: DecideInput, subject: PermissionSubject): string | undefined => {
   if (subject.kind !== 'path' || subject.access !== 'write') return undefined;
@@ -54,8 +53,7 @@ const protectedWriteReason = (input: DecideInput, subject: PermissionSubject): s
   for (const target of subject.paths) {
     const canonical = canonicalizePath(absoluteFrom(target, input.cwd));
     if (canonical === null) return `writing to ${target} requires approval because its real location cannot be resolved and protected paths exist`;
-    const resolvedTarget = comparable(canonical);
-    const hit = guards.find(({ resolved }) => isInside(resolvedTarget, resolved));
+    const hit = guards.find(({ resolved }) => comparableContains(resolved, canonical));
     if (hit !== undefined) return `writing to protected path ${hit.guard} requires approval`;
   }
   return undefined;
@@ -66,7 +64,7 @@ const insideRoots = (paths: readonly string[], roots: string[], cwd: string): bo
   const canonicalRoots = roots.map((root) => canonicalizePath(absoluteFrom(root, cwd))).filter((root): root is string => root !== null);
   return paths.every((target) => {
     const real = canonicalizePath(absoluteFrom(target, cwd));
-    return real !== null && canonicalRoots.some((root) => isInside(real, root));
+    return real !== null && canonicalRoots.some((root) => comparableContains(root, real));
   });
 };
 

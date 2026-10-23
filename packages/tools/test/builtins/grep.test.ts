@@ -170,7 +170,7 @@ describe.each(backends)('Grep (%s backend)', (_name, envPath, available, realSan
       const tree = await makeTree(realSandbox);
       const vault = path.join(tree.tools.layout.project, 'vault');
       put(tree.tools, 'vault/secret.ts', 'alpha secret\n', 8);
-      const sandboxPolicy = { ...tree.tools.sandboxPolicy, readDenied: [vault] };
+      const sandboxPolicy = { ...tree.tools.sandboxPolicy, readDenied: [...tree.tools.sandboxPolicy.readDenied, vault] };
       const result = await grepIn(tree, envPath)({ pattern: 'alpha', path: vault }, { sandboxPolicy, mode: 'bypassPermissions' });
       expect(result).toEqual({ status: 'failed', output: `Permission denied: ${vault} is blocked by the sandbox policy` });
     });

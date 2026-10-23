@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { isLoopbackHost, momongaLayout } from '@momonga/foundation';
+import { isLoopbackHost } from '@momonga/foundation';
+import { layoutOf } from './layout.ts';
 import type {
   ChatCompletionsTarget,
   FmTarget,
@@ -61,9 +62,9 @@ const checkBaseUrl = (baseUrl: string, where: string): void => {
 
 const checkSocketPath = (socketPath: string, home: string, where: string): void => {
   if (!path.isAbsolute(socketPath)) throw new Error(`${where}: socketPath ${JSON.stringify(socketPath)} must be an absolute path`);
-  const runDirectory = realpathThroughMissing(momongaLayout(home).run);
+  const runDirectory = realpathThroughMissing(layoutOf(home).run);
   if (isInside(realpathThroughMissing(socketPath), runDirectory)) {
-    throw new Error(`${where}: socketPath ${socketPath} must not be inside ${momongaLayout(home).run}`);
+    throw new Error(`${where}: socketPath ${socketPath} must not be inside ${layoutOf(home).run}`);
   }
 };
 

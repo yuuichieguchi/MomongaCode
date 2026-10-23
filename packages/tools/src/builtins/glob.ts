@@ -49,6 +49,7 @@ export const globTool = defineTool<GlobInput>({
     for await (const entry of walkFiles({
       root,
       readDenied: ctx.sandboxPolicy.readDenied,
+      readAllowed: ctx.sandboxPolicy.readAllowed,
       includeSymlinkedFiles: true,
       signal: ctx.signal,
       onUnreadable: () => undefined,

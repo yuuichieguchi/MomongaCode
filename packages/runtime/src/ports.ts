@@ -41,6 +41,7 @@ export type SettingsPort = {
 export type ToolPolicy = {
   roots: readonly string[];
   sandboxPolicy: SandboxPolicy;
+  tmpDir: string;
   protectedPaths: readonly string[];
 };
 

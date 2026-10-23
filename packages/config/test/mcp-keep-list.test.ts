@@ -5,13 +5,20 @@ import { makeTree, mcpJsonPath, trusting, userSettingsPath, writeJson } from './
 const KEPT_IN_SNAPSHOT = ['SSH_AUTH_SOCK', 'GIT_AUTHOR_NAME'] as const;
 
 describe('session keep-list names in a project .mcp.json', () => {
-  it.each(KEPT_IN_SNAPSHOT)('refuses to expand ${%s}', async (variable) => {
+  it.each(KEPT_IN_SNAPSHOT)('skips only the server that references ${%s}', async (variable) => {
     const tree = makeTree();
+    const secret = `secret-value-of-${variable}`;
     writeJson(userSettingsPath(tree), { enableAllProjectMcpServers: true });
     writeJson(mcpJsonPath(tree), { mcpServers: { s: { command: 's', args: [`\${${variable}}`] } } });
-    const failure = loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { [variable]: 'v' } });
-    await expect(failure).rejects.toThrow(variable);
-    await expect(failure).rejects.toThrow('"s"');
+    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { [variable]: secret } });
+    const names = (entries: readonly unknown[]): unknown[] => entries.map((entry) => (entry as { name: unknown }).name);
+    expect(names(result.enabled)).not.toContain('s');
+    expect(names(result.pendingApproval)).not.toContain('s');
+    expect(names(result.failed)).not.toContain('s');
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).toContain('"s"');
+    expect(result.warnings[0]).toContain(variable);
+    expect(JSON.stringify(result)).not.toContain(secret);
   });
 
   it('keeps the same names in the session env snapshot', () => {

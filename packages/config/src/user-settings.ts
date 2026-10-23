@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { momongaLayout } from '@momonga/foundation';
+import { layoutOf } from './layout.ts';
 import { readUserLayer } from './layers.ts';
 import { mergeLayers } from './load-settings.ts';
 import type { ResolvedSettings } from './load-settings.ts';
@@ -45,7 +45,7 @@ const changeKeyOf = (file: string): string => {
 };
 
 export const createUserSettingsCache = ({ home, onWarning }: UserSettingsCacheOptions): UserSettingsCache => {
-  const file = momongaLayout(home).settingsFile;
+  const file = layoutOf(home).settingsFile;
   let current: ResolvedSettings | undefined;
   let seenKey: string | undefined;
   const reload = (): ResolvedSettings => {

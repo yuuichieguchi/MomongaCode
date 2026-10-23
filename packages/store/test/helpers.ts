@@ -35,11 +35,13 @@ export type StoreOptions = {
   maxAttempts?: number;
   maxTotalAttempts?: number;
   onCommit?: RuntimeStoreOptions['onCommit'];
+  home?: string;
 };
 
 export const openStoreAt = (dbPath: string, clock: FakeClock, options: StoreOptions = {}): RuntimeStore => {
   const store = openRuntimeStore({
     path: dbPath,
+    home: options.home ?? path.dirname(dbPath),
     clock,
     leaseMs: options.leaseMs ?? LEASE_MS,
     maxAttempts: options.maxAttempts ?? 5,

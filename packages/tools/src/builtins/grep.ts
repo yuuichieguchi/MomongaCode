@@ -1,15 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import picomatch from 'picomatch';
-import { canonicalizePath, isInside } from '@momonga/policy';
 import type { SandboxPolicy } from '@momonga/sandbox';
+import { createReadAccessMatcher } from '../read-access.ts';
+import type { ReadAccessMatcher } from '../read-access.ts';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import type { ToolContext } from '../types.ts';
 import { extensionsForType } from './file-types.ts';
 import { looksBinary, regularFileProblem, statIfExists } from './files.ts';
 import { sortByMtimeThenPath } from './glob.ts';
 import { canonicalPathOf } from './paths.ts';
-import { isPermissionError, walkFiles } from './walk.ts';
+import { isPermissionError, reachableAllowedRoots, walkFiles } from './walk.ts';
 
 type OutputMode = 'content' | 'files_with_matches' | 'count';
 
@@ -56,17 +57,15 @@ const resolveRipgrep = (envPath: string | undefined): string | undefined => {
 
 const escapeGlob = (value: string): string => value.replace(/[\\[\]*?{}!]/g, '\\$&');
 
-const deniedGlobs = (readDenied: readonly string[], target: string, isDirectory: boolean): string[] => {
+const deniedGlobs = (access: ReadAccessMatcher, target: string, isDirectory: boolean): string[] => {
   if (!isDirectory) return [];
-  return readDenied.flatMap((entry) => {
-    const resolved = canonicalizePath(entry) ?? path.resolve(entry);
-    if (resolved === target || !isInside(resolved, target)) return [];
+  return access.deniedWithin(target).flatMap((resolved) => {
     const relative = escapeGlob(path.relative(target, resolved));
-    return ['--glob', `!${relative}`, '--glob', `!${relative}/**`];
+    return access.leadsToAllowed(resolved) ? ['--glob', `!${relative}`] : ['--glob', `!${relative}`, '--glob', `!${relative}/**`];
   });
 };
 
-const ripgrepArguments = (input: GrepInput, mode: OutputMode, target: string, readDenied: readonly string[], isDirectory: boolean): string[] => {
+const ripgrepArguments = (input: GrepInput, mode: OutputMode, target: string, access: ReadAccessMatcher, isDirectory: boolean, allowedRoots: readonly string[]): string[] => {
   const { before, after } = contextOf(input);
   return [
     '--no-config',
@@ -92,11 +91,12 @@ const ripgrepArguments = (input: GrepInput, mode: OutputMode, target: string, re
     ...(input.multiline === true ? ['-U', '--multiline-dotall'] : []),
     ...(input.type === undefined ? [] : [...extensionsForType(input.type).flatMap((extension) => ['--type-add', `momonga:*.${extension}`]), '--type', 'momonga']),
     ...(input.glob === undefined ? [] : ['--glob', input.glob]),
-    ...deniedGlobs(readDenied, target, isDirectory),
+    ...deniedGlobs(access, target, isDirectory),
     '-e',
     input.pattern,
     '--',
     target,
+    ...allowedRoots,
   ];
 };
 
@@ -116,8 +116,14 @@ const searchWithRipgrep = async (
   isDirectory: boolean,
   ctx: ToolContext,
 ): Promise<SearchResult> => {
-  const policy: SandboxPolicy = { writableRoots: [], writeDenied: [], readDenied: ctx.sandboxPolicy.readDenied, network: 'deny' };
-  const child = ctx.sandbox.spawn({ argv: [ripgrep, ...ripgrepArguments(input, mode, target, ctx.sandboxPolicy.readDenied, isDirectory)], cwd: isDirectory ? target : path.dirname(target), env: ctx.env }, policy, ctx.signal);
+  const { readDenied, readAllowed } = ctx.sandboxPolicy;
+  const access = createReadAccessMatcher({ readDenied, readAllowed });
+  const allowedRoots: string[] = [];
+  if (isDirectory) {
+    for await (const root of reachableAllowedRoots(target, '', [], { signal: ctx.signal, onUnreadable: () => undefined }, access)) allowedRoots.push(root.absolute);
+  }
+  const policy: SandboxPolicy = { writableRoots: [], writeDenied: [], readDenied, ...(readAllowed === undefined ? {} : { readAllowed }), network: 'deny' };
+  const child = ctx.sandbox.spawn({ argv: [ripgrep, ...ripgrepArguments(input, mode, target, access, isDirectory, allowedRoots)], cwd: isDirectory ? target : path.dirname(target), env: ctx.env }, policy, ctx.signal);
   const [stdout, stderr, exit] = await Promise.all([collect(child.stdout), collect(child.stderr), child.exited]);
   if (exit.code === 1 && stdout === '') return { entries: [], unreadable: false };
   if (exit.code === 0) return { entries: lineList(stdout), unreadable: false };
@@ -212,6 +218,7 @@ const searchWithJavaScript = async (input: GrepInput, mode: OutputMode, target: 
     for await (const entry of walkFiles({
       root: target,
       readDenied: ctx.sandboxPolicy.readDenied,
+      readAllowed: ctx.sandboxPolicy.readAllowed,
       includeSymlinkedFiles: false,
       signal: ctx.signal,
       onUnreadable: () => void (unreadable = true),

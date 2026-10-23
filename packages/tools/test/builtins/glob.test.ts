@@ -101,7 +101,7 @@ describe('Glob', () => {
     const tools = await makeBuiltins();
     const vault = path.join(tools.layout.project, 'vault');
     touch(tools, 'vault/secret.txt', 1);
-    const sandboxPolicy = { ...tools.sandboxPolicy, readDenied: [vault] };
+    const sandboxPolicy = { ...tools.sandboxPolicy, readDenied: [...tools.sandboxPolicy.readDenied, vault] };
     const result = resultOf(await tools.run('Glob', { pattern: '**/*', path: vault }, { sandboxPolicy, mode: 'bypassPermissions' }));
     expect(result).toEqual({ status: 'failed', output: `Permission denied: ${vault} is blocked by the sandbox policy` });
   });
