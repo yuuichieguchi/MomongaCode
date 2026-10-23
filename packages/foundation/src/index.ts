@@ -13,3 +13,5 @@ export type { SseEvent } from './sse.ts';
 export { createUdsClient, isUnixSocketLive, listenUnix } from './uds.ts';
 export type { UdsClient, UdsClientOptions, UdsRequestOptions, UdsResponse } from './uds.ts';
 export { uuidv7 } from './uuidv7.ts';
+export { groupAlive, signalGroup, terminateGroup, waitForGroupGone } from './process-group.ts';
+export type { TerminateGroupOptions, TerminateOutcome } from './process-group.ts';
