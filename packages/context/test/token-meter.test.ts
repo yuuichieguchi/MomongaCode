@@ -5,10 +5,13 @@ import {
   MODEL,
   READ_TOOL,
   assistant,
+  budgetFor,
+  call,
   capabilitiesFor,
   fakeCounter,
   harness,
   inputFor,
+  output,
   sourcesWith,
   tokensOfItems,
   tokensOfTools,
@@ -113,29 +116,33 @@ describe('TokenMeter error bound', () => {
   it('tracks the maximum relative error against observed usage over the last 20 observations', async () => {
     const meter = createTokenMeter({ counter: fakeCounter(), model: MODEL, capabilities: capabilitiesFor(200000) });
     const first = await meter.count({ input: prefix, tools: [] });
-    meter.observe({ inputDigest: first.inputDigest, inputTokens: first.inputTokens * 2 });
-    expect(meter.relativeError()).toBeCloseTo(0.5, 10);
+    meter.observe({ inputDigest: first.inputDigest, inputTokens: Math.round(first.inputTokens * 1.5) });
+    const expectedError = (Math.round(first.inputTokens * 1.5) - first.inputTokens) / first.inputTokens;
+    expect(meter.relativeError()).toBeCloseTo(expectedError, 10);
     const other = await meter.count({ input: suffix, tools: [] });
-    expect(other.errorBound).toBe(Math.ceil(0.5 * other.inputTokens));
+    expect(other.errorBound).toBe(Math.ceil(expectedError * other.inputTokens));
     for (let index = 0; index < 19; index += 1) {
       const counted = await meter.count({ input: [message(`m${index}`, `exact ${index}`)], tools: [] });
       meter.observe({ inputDigest: counted.inputDigest, inputTokens: counted.inputTokens });
     }
-    expect(meter.relativeError()).toBeCloseTo(0.5, 10);
+    expect(meter.relativeError()).toBeCloseTo(expectedError, 10);
     const last = await meter.count({ input: [message('m-last', 'exact last')], tools: [] });
     meter.observe({ inputDigest: last.inputDigest, inputTokens: last.inputTokens });
     expect(meter.relativeError()).toBe(0);
   });
 
-  it('replaces the estimated-mode default once observations exist', async () => {
+  it('widens but never lowers the estimated-mode floor with observations', async () => {
     const meter = createTokenMeter({
       counter: fakeCounter(0, 'estimated'),
       model: MODEL,
       capabilities: capabilitiesFor(200000, { tokenCounting: 'estimated' }),
     });
-    const counted = await meter.count({ input: prefix, tools: [] });
-    meter.observe({ inputDigest: counted.inputDigest, inputTokens: counted.inputTokens });
-    expect(meter.relativeError()).toBe(0);
+    const exact = await meter.count({ input: prefix, tools: [] });
+    meter.observe({ inputDigest: exact.inputDigest, inputTokens: exact.inputTokens });
+    expect(meter.relativeError()).toBe(0.1);
+    const high = await meter.count({ input: [message('hi', 'h'.repeat(400))], tools: [] });
+    meter.observe({ inputDigest: high.inputDigest, inputTokens: high.inputTokens * 1.5 });
+    expect(meter.relativeError()).toBe(0.5);
   });
 });
 
@@ -169,8 +176,146 @@ describe('TokenMeter inside buildContext', () => {
       inputFor(capabilities, { sources: sourcesWith({ systemPrompt: 'another prompt' }) }),
       ports,
     );
-    expect(second.budget.margin).toBe(4000 + Math.ceil(0.5 * second.inputTokens));
+    expect(second.budget.margin).toBe(4000 + Math.ceil(1.0 * second.inputTokens));
     expect(second.budget.I).toBe(200000 - 8192 - second.budget.margin);
+  });
+});
+
+describe('TokenMeter directional error correction', () => {
+  const exactMeter = () => createTokenMeter({ counter: fakeCounter(), model: MODEL, capabilities: capabilitiesFor(200000) });
+
+  it('records no error when usage reports far fewer tokens than the estimate', async () => {
+    const meter = exactMeter();
+    const first = await meter.count({ input: prefix, tools: [] });
+    meter.observe({ inputDigest: first.inputDigest, inputTokens: 10 });
+    expect(meter.relativeError()).toBe(0);
+    const recounted = await meter.count({ input: prefix, tools: [] });
+    expect(recounted.inputTokens).toBe(first.inputTokens);
+    expect(recounted.errorBound).toBe(0);
+  });
+
+  it('keeps the estimated-mode floor after a low usage report', async () => {
+    const meter = createTokenMeter({
+      counter: fakeCounter(0, 'estimated'),
+      model: MODEL,
+      capabilities: capabilitiesFor(200000, { tokenCounting: 'estimated' }),
+    });
+    const first = await meter.count({ input: prefix, tools: [] });
+    meter.observe({ inputDigest: first.inputDigest, inputTokens: 10 });
+    expect(meter.relativeError()).toBe(0.1);
+    const recounted = await meter.count({ input: prefix, tools: [] });
+    expect(recounted.inputTokens).toBe(first.inputTokens);
+    expect(recounted.errorBound).toBe(Math.ceil(0.1 * first.inputTokens));
+  });
+
+  it('gives an observed digest the same bound after it leaves the counted cache', async () => {
+    const meter = createTokenMeter({ counter: fakeCounter(13), model: MODEL, capabilities: capabilitiesFor(200000) });
+    const first = await meter.count({ input: prefix, tools: [] });
+    meter.observe({ inputDigest: first.inputDigest, inputTokens: first.inputTokens * 2 });
+    const cached = await meter.count({ input: prefix, tools: [] });
+    expect(cached.errorBound).toBe(first.inputTokens * 2 + 13);
+    for (let index = 0; index < 1100; index += 1) {
+      await meter.count({ input: [message(`filler${index}`, `f${index}`)], tools: [] });
+    }
+    const reread = await meter.count({ input: prefix, tools: [] });
+    expect(reread.inputTokens).toBe(first.inputTokens * 2);
+    expect(reread.errorBound).toBe(cached.errorBound);
+  });
+
+  it('keeps an earlier under-estimate when a later report is low', async () => {
+    const meter = exactMeter();
+    const first = await meter.count({ input: prefix, tools: [] });
+    meter.observe({ inputDigest: first.inputDigest, inputTokens: first.inputTokens * 2 });
+    const other = await meter.count({ input: suffix, tools: [] });
+    meter.observe({ inputDigest: other.inputDigest, inputTokens: 1 });
+    expect(meter.relativeError()).toBe(1);
+  });
+
+  it('measures the error relative to the estimate and adopts the higher observed count', async () => {
+    const meter = exactMeter();
+    const first = await meter.count({ input: prefix, tools: [] });
+    meter.observe({ inputDigest: first.inputDigest, inputTokens: first.inputTokens * 2 });
+    expect(meter.relativeError()).toBe(1);
+    const recounted = await meter.count({ input: prefix, tools: [] });
+    expect(recounted.inputTokens).toBe(first.inputTokens * 2);
+    expect(recounted.errorBound).toBe(first.inputTokens * 2);
+  });
+
+  it('caps the relative error at 1.0', async () => {
+    const meter = exactMeter();
+    const first = await meter.count({ input: prefix, tools: [] });
+    meter.observe({ inputDigest: first.inputDigest, inputTokens: first.inputTokens * 100 });
+    expect(meter.relativeError()).toBe(1);
+    const recounted = await meter.count({ input: prefix, tools: [] });
+    expect(recounted.inputTokens).toBe(first.inputTokens * 100);
+    const other = await meter.count({ input: suffix, tools: [] });
+    expect(other.errorBound).toBe(other.inputTokens);
+  });
+
+  it('extends a low-observed digest from the estimate, not from the low report', async () => {
+    const meter = exactMeter();
+    const first = await meter.count({ input: prefix, tools: [] });
+    meter.observe({ inputDigest: first.inputDigest, inputTokens: 10 });
+    const appended = await meter.count({ input: [...prefix, ...suffix], tools: [] });
+    expect(appended.inputTokens).toBe(first.inputTokens + tokensOfItems(suffix));
+  });
+
+  it('extends a high-observed digest from the observed count', async () => {
+    const meter = exactMeter();
+    const first = await meter.count({ input: prefix, tools: [] });
+    meter.observe({ inputDigest: first.inputDigest, inputTokens: first.inputTokens * 2 });
+    const appended = await meter.count({ input: [...prefix, ...suffix], tools: [] });
+    expect(appended.inputTokens).toBe(first.inputTokens * 2 + tokensOfItems(suffix));
+  });
+
+  it('extends a low-observed digest with tools without double-counting the baseline', async () => {
+    const meter = exactMeter();
+    const first = await meter.count({ input: prefix, tools: [READ_TOOL] });
+    meter.observe({ inputDigest: first.inputDigest, inputTokens: 10 });
+    const appended = await meter.count({ input: [...prefix, ...suffix], tools: [READ_TOOL] });
+    expect(appended.inputTokens).toBe(first.inputTokens + tokensOfItems(suffix));
+  });
+});
+
+describe('TokenMeter estimated-mode bound', () => {
+  const estimatedMeter = (counterBound: number) =>
+    createTokenMeter({
+      counter: fakeCounter(counterBound, 'estimated'),
+      model: MODEL,
+      capabilities: capabilitiesFor(200000, { tokenCounting: 'estimated' }),
+    });
+
+  it('uses the relative floor when it exceeds the gateway bound', async () => {
+    const counted = await estimatedMeter(1).count({ input: prefix, tools: [] });
+    expect(Math.ceil(0.1 * counted.inputTokens)).toBeGreaterThan(1);
+    expect(counted.errorBound).toBe(Math.ceil(0.1 * counted.inputTokens));
+  });
+
+  it('uses the gateway bound when it exceeds the relative floor', async () => {
+    const counted = await estimatedMeter(500).count({ input: prefix, tools: [] });
+    expect(Math.ceil(0.1 * counted.inputTokens)).toBeLessThan(500);
+    expect(counted.errorBound).toBe(500);
+  });
+});
+
+describe('TokenMeter low usage inside buildContext', () => {
+  it('keeps the input budget after a low usage report on a small window', async () => {
+    const capabilities = capabilitiesFor(8192, { maxOutputTokens: 1024 });
+    const { ports, meter } = harness(capabilities);
+    const systemPrompt = 'pinned context line. '.repeat(370);
+    const first = await buildContext(inputFor(capabilities, { sources: sourcesWith({ systemPrompt }) }), ports);
+    expect(first.inputTokens).toBeGreaterThan(1900);
+    expect(first.inputTokens).toBeLessThan(2100);
+    meter.observe({ inputDigest: first.inputDigest, inputTokens: 10 });
+    const second = await buildContext(
+      inputFor(capabilities, {
+        sources: sourcesWith({ systemPrompt, history: [call(1, 'call_1'), output(2, 'call_1', 'file contents')] }),
+      }),
+      ports,
+    );
+    expect(second.budget.I).toBeGreaterThan(first.inputTokens);
+    expect(second.budget.margin).toBe(budgetFor(8192, 1024).margin + Math.ceil(meter.relativeError() * second.inputTokens));
+    expect(second.inputTokens).toBe(first.inputTokens + tokensOfItems(second.input.slice(first.input.length)));
   });
 });
 
