@@ -3,28 +3,20 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 import { reconcileProcessGroup } from '@momonga/tools';
 
 const spawnedGroups: number[] = [];
 const spawnedPids: number[] = [];
 const tempDirs: string[] = [];
 
-afterEach(() => {
-  for (const pgid of spawnedGroups.splice(0)) {
-    try {
-      process.kill(-pgid, 'SIGKILL');
-    } catch {
-      continue;
-    }
+afterEach(async () => {
+  try {
+    await killGroupsForCleanup(spawnedGroups.splice(0));
+  } finally {
+    killPidsForCleanup(spawnedPids.splice(0));
+    for (const dir of tempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
   }
-  for (const pid of spawnedPids.splice(0)) {
-    try {
-      process.kill(pid, 'SIGKILL');
-    } catch {
-      continue;
-    }
-  }
-  for (const dir of tempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
 const holdersOf = (file: string): number[] => {
@@ -110,7 +102,7 @@ const startEscapedHolder = (marker: string): number => {
 };
 
 const deadGroup = async (dir: string): Promise<number> => {
-  const group = await startGroup(dir, `touch "$DIR/ready"; sleep 60`);
+  const group = await startGroup(dir, `touch "$DIR/ready"; exec sleep 60`);
   process.kill(-group.pgid, 'SIGKILL');
   await group.leaderReaped;
   expect(await waitUntil(() => !alive(-group.pgid), 5000)).toBe(true);

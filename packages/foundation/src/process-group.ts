@@ -47,6 +47,19 @@ export async function waitForGroupGone(pgid: number, deadline: number): Promise<
   return true;
 }
 
+export interface ForceKillGroupOptions {
+  deadline: number;
+}
+
+export async function forceKillGroup(pgid: number, { deadline }: ForceKillGroupOptions): Promise<boolean> {
+  while (groupAlive(pgid)) {
+    signalGroup(pgid, 'SIGKILL');
+    if (Date.now() >= deadline) return false;
+    await sleep(POLL_INTERVAL_MS);
+  }
+  return true;
+}
+
 export async function terminateGroup(pgid: number, options: TerminateGroupOptions): Promise<TerminateOutcome> {
   if (!groupAlive(pgid)) return 'gone';
   let termDeadline = options.termDeadline;
@@ -55,8 +68,7 @@ export async function terminateGroup(pgid: number, options: TerminateGroupOption
     signalGroup(pgid, 'SIGTERM');
   }
   if (await waitForGroupGone(pgid, termDeadline)) return 'terminated';
-  signalGroup(pgid, 'SIGKILL');
-  if (!(await waitForGroupGone(pgid, Date.now() + Math.max(options.graceMs, MIN_KILL_WAIT_MS)))) {
+  if (!(await forceKillGroup(pgid, { deadline: Date.now() + Math.max(options.graceMs, MIN_KILL_WAIT_MS) }))) {
     throw new Error(`process group ${pgid} did not terminate after SIGKILL`);
   }
   return 'killed';

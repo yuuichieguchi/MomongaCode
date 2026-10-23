@@ -3,21 +3,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { groupAlive, signalGroup, terminateGroup, waitForGroupGone } from '@momonga/foundation';
+import { forceKillGroup, groupAlive, signalGroup, terminateGroup, waitForGroupGone } from '@momonga/foundation';
+import { killGroupsForCleanup } from '@momonga/testkit';
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
-
-const forceKillGroup = (pgid: number): void => {
-  try {
-    process.kill(-pgid, 'SIGKILL');
-  } catch {
-    return;
-  }
-};
 
 const pidAlive = (pid: number): boolean => {
   try {
@@ -56,7 +49,7 @@ const spawnGroup = async (mode: 'normal' | 'ignore-term'): Promise<SpawnedGroup>
   const child = spawn(process.execPath, ['-e', GROUP_SCRIPT, mode], { detached: true, stdio: ['ignore', 'pipe', 'inherit'] });
   const pgid = child.pid;
   if (pgid === undefined) throw new Error('spawn failed');
-  cleanups.push(() => forceKillGroup(pgid));
+  cleanups.push(() => killGroupsForCleanup([pgid]));
   const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
     child.once('exit', (code, signal) => resolve({ code, signal }));
   });
@@ -91,6 +84,45 @@ const rootOwnedGroup = (): number => {
 const reapedGroupId = (): number => {
   const result = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' });
   return Number(result.stdout);
+};
+
+const FORK_LOOP_ITERATIONS = 30;
+
+const READY_WAIT_MS = 5000;
+const LEADER_REAP_WAIT_MS = 5000;
+
+const settlesWithin = async (promise: Promise<unknown>, ms: number): Promise<boolean> => {
+  let timer: NodeJS.Timeout | undefined;
+  const timedOut = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), ms);
+  });
+  try {
+    return await Promise.race([promise.then(() => true), timedOut]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const spawnForkLoopGroup = async (): Promise<{ pgid: number; exited: Promise<void> }> => {
+  const dir = makeDir();
+  const readyFile = path.join(dir, 'ready');
+  const child = spawn('/bin/sh', ['-c', `trap '' TERM; touch "$DIR/ready"; while :; do /bin/sleep 60 & done`], {
+    detached: true,
+    stdio: 'ignore',
+    env: { PATH: '/usr/bin:/bin', DIR: dir },
+  });
+  const pgid = child.pid;
+  if (pgid === undefined) throw new Error('spawn failed');
+  cleanups.push(() => killGroupsForCleanup([pgid]));
+  const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
+  const readyDeadline = Date.now() + READY_WAIT_MS;
+  while (!fs.existsSync(readyFile)) {
+    if (Date.now() >= readyDeadline) {
+      throw new Error(`fork-loop group ${pgid} did not write ${readyFile} within ${READY_WAIT_MS}ms (group alive: ${groupAlive(pgid)}, dir: ${fs.readdirSync(dir).join(', ')})`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  return { pgid, exited };
 };
 
 describe('groupAlive', () => {
@@ -185,7 +217,7 @@ describe('terminateGroup', () => {
     );
     const pgid = child.pid;
     if (pgid === undefined) throw new Error('spawn failed');
-    cleanups.push(() => forceKillGroup(pgid));
+    cleanups.push(() => killGroupsForCleanup([pgid]));
     const exited = new Promise<NodeJS.Signals | null>((resolve) => child.once('exit', (_code, signal) => resolve(signal)));
     await new Promise<void>((resolve) => {
       const watcher = fs.watch(dir, () => {
@@ -202,5 +234,47 @@ describe('terminateGroup', () => {
     expect(await terminateGroup(pgid, { graceMs: 5000 })).toBe('terminated');
     expect(await exited).toBe('SIGTERM');
     expect(groupAlive(pgid)).toBe(false);
+  });
+
+  it('kills every member of a group that keeps forking while SIGKILL is delivered', { timeout: 120_000 }, async () => {
+    const iterations = FORK_LOOP_ITERATIONS;
+    const outcomes: string[] = [];
+    for (let iteration = 0; iteration < iterations; iteration += 1) {
+      const { pgid, exited } = await spawnForkLoopGroup();
+      const outcome = await terminateGroup(pgid, { graceMs: 50 }).catch((error: Error) => error.message);
+      if (!(await settlesWithin(exited, LEADER_REAP_WAIT_MS))) outcomes.push(`${outcome} (leader not reaped)`);
+      else outcomes.push(groupAlive(pgid) ? `${outcome} (group still alive)` : outcome);
+      await killGroupsForCleanup([pgid]);
+    }
+    expect(outcomes).toEqual(Array.from({ length: iterations }, () => 'killed'));
+  });
+});
+
+describe('forceKillGroup', () => {
+  it('returns true once every member of a group that keeps forking is gone', { timeout: 120_000 }, async () => {
+    const outcomes: string[] = [];
+    for (let iteration = 0; iteration < FORK_LOOP_ITERATIONS; iteration += 1) {
+      const { pgid, exited } = await spawnForkLoopGroup();
+      const gone = await forceKillGroup(pgid, { deadline: Date.now() + 1000 });
+      const reaped = await settlesWithin(exited, LEADER_REAP_WAIT_MS);
+      outcomes.push(`gone=${gone} alive=${reaped ? groupAlive(pgid) : 'leader not reaped'}`);
+    }
+    expect(outcomes).toEqual(Array.from({ length: FORK_LOOP_ITERATIONS }, () => 'gone=true alive=false'));
+  });
+
+  it('signals a live group at least once even when the deadline has already passed', { timeout: 20_000 }, async () => {
+    const group = await spawnGroup('normal');
+    await forceKillGroup(group.pgid, { deadline: Date.now() - 1 });
+    expect(await settlesWithin(group.exited, LEADER_REAP_WAIT_MS)).toBe(true);
+    expect(await group.exited).toEqual({ code: null, signal: 'SIGKILL' });
+    expect(await waitForGroupGone(group.pgid, Date.now() + 5000)).toBe(true);
+  });
+
+  it('returns true without signalling for a group that is already gone', async () => {
+    expect(await forceKillGroup(reapedGroupId(), { deadline: Date.now() })).toBe(true);
+  });
+
+  it.each([0, 1, -5, 2.5])('refuses the unsafe group id %s', async (pgid) => {
+    await expect(forceKillGroup(pgid, { deadline: Date.now() + 100 })).rejects.toThrow(/refusing to signal process group/);
   });
 });
