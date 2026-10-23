@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { RunEvent, RunEventPayload } from '@momonga/protocol';
 
 export type RecordedRun = {
@@ -51,6 +52,13 @@ const functionCall = (callId: string, name: string, args: unknown) => ({
   name,
   arguments: JSON.stringify(args),
 });
+
+export const fixtureSubjectDigest = (label: string): string => createHash('sha256').update(label, 'utf8').digest('hex');
+
+export const fixtureCompactionContent = (summary: string): string =>
+  `${Buffer.from(JSON.stringify({ v: 1, summary }), 'utf8').toString('base64url')}.${Buffer.from('fixture-mac', 'utf8').toString('base64url')}`;
+
+export const fixtureCompactionItem = (id: string, summary: string) => ({ type: 'compaction' as const, id, encrypted_content: fixtureCompactionContent(summary) });
 
 const started = (attempt: number): RunEventPayload[] => [
   { type: 'run.status', from: 'QUEUED', to: 'RUNNING' },
@@ -115,6 +123,7 @@ export const approvalWaitResumeRun: RecordedRun = {
         { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
         { optionId: 'reject_once', name: 'Reject', kind: 'reject_once' },
       ],
+      subjectDigest: fixtureSubjectDigest('rm -r tmp'),
     },
     { type: 'run.status', from: 'RUNNING', to: 'WAITING_HUMAN' },
     { type: 'tool.permission.resolved', approvalId: 'a1', optionId: 'allow_once' },
@@ -167,12 +176,60 @@ export const compactionRun: RecordedRun = {
     { type: 'tool.call', callId: 'c1', providerCallId: 'c1', name: 'Grep', kind: 'search', title: 'Grep x', rawInput: { pattern: 'x' } },
     { type: 'tool.started', callId: 'c1', idemKey: 'k1' },
     { type: 'tool.completed', callId: 'c1', status: 'completed', output: 'head...tail', truncated: true },
-    { type: 'context.truncated', callId: 'c1', handle: 'blob-1' },
-    { type: 'context.compacted', summary: 'searched for x', replacedThroughItem: 2 },
+    { type: 'context.truncated', callId: 'c1', handle: 'blob-1', kind: 'truncated' },
+    { type: 'context.compacted', item: fixtureCompactionItem('cmp-1', 'searched for x'), summary: 'searched for x', replacedThroughSeq: 3 },
     { type: 'model.requested', step: 2, attempt: 1, digest: 'd2', body: { input: 'summary' } },
     { type: 'agent.thought.delta', step: 2, attempt: 1, itemId: 'r2', text: 'thinking' },
     { type: 'model.responded', step: 2, attempt: 1, response: { output: [assistantText('m2', 'found x')], usage: usage(20, 3) } },
     { type: 'run.status', from: 'RUNNING', to: 'STOPPED', reason: 'max_steps' },
+  ],
+};
+
+export const evictionAndRejectionRun: RecordedRun = {
+  name: 'eviction and rejection',
+  payloads: [
+    { type: 'user.message', text: 'inspect logs' },
+    ...started(1),
+    { type: 'model.requested', step: 1, attempt: 1, digest: 'd1', body: { input: 'inspect logs' } },
+    {
+      type: 'model.responded',
+      step: 1,
+      attempt: 1,
+      response: {
+        output: [functionCall('c2', 'Read', { path: 'b.log' }), functionCall('c1', 'Read', { path: 'a.log' })],
+        usage: usage(30, 6),
+      },
+    },
+    { type: 'tool.call', callId: 'c2', providerCallId: 'c2', name: 'Read', kind: 'read', title: 'Read b.log', rawInput: { path: 'b.log' } },
+    { type: 'tool.call', callId: 'c1', providerCallId: 'c1', name: 'Read', kind: 'read', title: 'Read a.log', rawInput: { path: 'a.log' } },
+    { type: 'tool.started', callId: 'c2', idemKey: 'k2' },
+    { type: 'tool.completed', callId: 'c2', status: 'completed', output: 'B head...', truncated: true, handle: 'blob-b' },
+    { type: 'tool.started', callId: 'c1', idemKey: 'k1' },
+    { type: 'tool.completed', callId: 'c1', status: 'completed', output: 'A' },
+    { type: 'context.truncated', callId: 'c2', handle: 'blob-b', kind: 'omitted' },
+    { type: 'context.truncated', callId: 'c1', handle: 'blob-a', kind: 'omitted' },
+    { type: 'context.truncated', callId: 'c2', handle: 'blob-b', kind: 'omitted' },
+    { type: 'model.requested', step: 2, attempt: 1, digest: 'd2', body: { input: 'logs read' } },
+    {
+      type: 'model.responded',
+      step: 2,
+      attempt: 1,
+      response: { output: [functionCall('c3', 'Bash', { command: 'rm b.log' })], usage: usage(20, 4) },
+    },
+    { type: 'tool.call', callId: 'c3', providerCallId: 'c3', name: 'Bash', kind: 'execute', title: 'rm b.log', rawInput: { command: 'rm b.log' } },
+    {
+      type: 'tool.permission.requested',
+      approvalId: 'a3',
+      callId: 'c3',
+      options: [
+        { optionId: 'yes', name: 'Allow once', kind: 'allow_once' },
+        { optionId: 'never', name: 'Reject always', kind: 'reject_always' },
+      ],
+      subjectDigest: fixtureSubjectDigest('rm b.log'),
+    },
+    { type: 'run.status', from: 'RUNNING', to: 'WAITING_HUMAN' },
+    { type: 'tool.permission.resolved', approvalId: 'a3', optionId: 'never', rulePersisted: true },
+    { type: 'run.status', from: 'WAITING_HUMAN', to: 'QUEUED' },
   ],
 };
 
@@ -182,4 +239,5 @@ export const RECORDED_RUNS: readonly RecordedRun[] = [
   approvalWaitResumeRun,
   cancelRun,
   compactionRun,
+  evictionAndRejectionRun,
 ];

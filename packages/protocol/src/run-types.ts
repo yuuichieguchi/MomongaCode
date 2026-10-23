@@ -1,3 +1,5 @@
+import type { CompactionInputItem, InputItem } from './open-responses.ts';
+
 export const RUN_STATUSES = [
   'QUEUED',
   'RUNNING',
@@ -53,7 +55,7 @@ export type RunEventPayload =
       rawInput: unknown;
       locations?: { path: string; line?: number }[];
     }
-  | { type: 'tool.permission.requested'; approvalId: string; callId: string; options: PermissionOption[] }
+  | { type: 'tool.permission.requested'; approvalId: string; callId: string; options: PermissionOption[]; subjectDigest: string }
   | { type: 'tool.permission.resolved'; approvalId: string; optionId: string; rulePersisted?: boolean }
   | { type: 'tool.started'; callId: string; idemKey: string }
   | { type: 'tool.updated'; callId: string; content: unknown[] }
@@ -64,6 +66,7 @@ export type RunEventPayload =
       output: string;
       content?: unknown[];
       truncated?: boolean;
+      handle?: string;
     }
   | { type: 'tool.reconciled'; callId: string; outcome: 'already_applied' | 'not_applied' | 'unknown'; output: string }
   | {
@@ -72,8 +75,8 @@ export type RunEventPayload =
     }
   | { type: 'mode.changed'; mode: PermissionMode }
   | { type: 'usage.updated'; inputTokens: number; outputTokens: number; totalTokens: number }
-  | { type: 'context.compacted'; summary: string; replacedThroughItem: number }
-  | { type: 'context.truncated'; callId: string; handle: string }
+  | { type: 'context.compacted'; item: CompactionInputItem; summary: string; replacedThroughSeq: number }
+  | { type: 'context.truncated'; callId: string; handle: string; kind: 'omitted' | 'truncated' }
   | { type: 'instructions.loaded'; path: string; content: string }
   | { type: 'notice'; level: 'info' | 'warning' | 'error'; message: string };
 
@@ -99,7 +102,10 @@ export type RunState = {
   step: number;
   attempt: number;
   usage: { inputTokens: number; outputTokens: number; totalTokens: number };
-  items: unknown[];
+  history: { seq: number; item: InputItem; callId?: string; handle?: string }[];
+  nextItemSeq: number;
+  summary?: { item: CompactionInputItem; summary: string; replacedThroughSeq: number };
+  evicted: string[];
   pendingCalls: Record<
     string,
     {
@@ -109,6 +115,9 @@ export type RunState = {
       status: PendingCallStatus;
       idemKey?: string;
       approvalId?: string;
+      options?: PermissionOption[];
+      subjectDigest?: string;
+      resolution?: { optionId: string; kind: PermissionOption['kind']; subjectDigest: string };
     }
   >;
   inFlightModelRequest?: { step: number; attempt: number; digest: string; body: unknown };

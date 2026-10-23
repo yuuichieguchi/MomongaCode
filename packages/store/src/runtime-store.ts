@@ -5,7 +5,7 @@ import { TERMINAL_STATUSES } from '@momonga/protocol';
 import type { RunEventPayload, RunStatus } from '@momonga/protocol';
 import { createApprovalStore } from './approvals.ts';
 import { createBlobStore, prepareBlobDirectory } from './blobs.ts';
-import { decodeEvent, decodeRun, decodeRunState, decodeSession } from './codec.ts';
+import { decodeEvent, decodeRun, decodeRunState, decodeSession, encodeRunState } from './codec.ts';
 import { createIdempotencyStore } from './idempotency.ts';
 import { corrupt, expectOneOf, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
@@ -480,6 +480,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         const reader = readerFor('snapshots', identity, row);
         const seq = reader.number('seq');
         const state = decodeRunState(identity, reader.json('state_json'));
+        if (state === undefined) return { tail: sql.runEvents.all({ runId, after: 0, limit: -1 }).map(decodeEvent) };
         if (state.runId !== runId) throw corrupt('snapshots', identity, `state belongs to run ${state.runId}`);
         return { snapshot: { seq, state }, tail: sql.runEvents.all({ runId, after: seq, limit: -1 }).map(decodeEvent) };
       }),
@@ -495,7 +496,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         if (latest !== undefined && readerFor('snapshots', run.id, latest).number('seq') > seq) {
           return conflict(`run ${run.id} already has a newer snapshot than seq ${seq}`);
         }
-        sql.upsertSnapshot.run({ runId: run.id, seq, state: canonicalJson(state), createdAt: clock.now() });
+        sql.upsertSnapshot.run({ runId: run.id, seq, state: canonicalJson(encodeRunState(state)), createdAt: clock.now() });
         sql.pruneSnapshots.run({ runId: run.id, seq });
         return { kind: 'ok' } as const;
       }),

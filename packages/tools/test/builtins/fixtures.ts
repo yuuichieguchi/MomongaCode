@@ -6,7 +6,7 @@ import { killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { buildSandboxPolicy, createBuiltinTools } from '@momonga/tools';
-import type { BatchInput, CallOutcome, NeedsApprovalOutcome, ResultOutcome, ToolSet } from '@momonga/tools';
+import type { BatchInput, CallOutcome, NeedsApprovalOutcome, ResultOutcome, ToolCall, ToolSet } from '@momonga/tools';
 import type { PermissionRule } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
 import { call, makeHarness, toolSetOf } from '../harness.ts';
@@ -91,7 +91,7 @@ export const makeBuiltins = async (options: { maxInlineOutputChars?: number; rea
     counter += 1;
     return `call-${counter}`;
   };
-  const batch = (name: string, args: unknown, extra: RunExtra = {}, approval?: 'allow_once' | 'allow_always', callId = nextCallId()): BatchInput =>
+  const batch = (name: string, args: unknown, extra: RunExtra = {}, approval?: ToolCall['approval'], callId = nextCallId()): BatchInput =>
     harness.input(toolSet, [call(callId, name, args, approval)], {
       env: BASE_ENV,
       sandboxPolicy,
@@ -102,7 +102,7 @@ export const makeBuiltins = async (options: { maxInlineOutputChars?: number; rea
     name: string,
     args: unknown,
     extra: RunExtra = {},
-    approval?: 'allow_once' | 'allow_always',
+    approval?: ToolCall['approval'],
     callId?: string,
   ): Promise<CallOutcome | undefined> => {
     const [outcome] = await harness.executor.runBatch(batch(name, args, extra, approval, callId));

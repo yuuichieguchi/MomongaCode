@@ -102,11 +102,86 @@ describe('executor pipeline early exits', () => {
         title: 'Run make',
         toolKind: 'execute',
         locations: [{ path: '/work/Makefile', line: 3 }],
+        subjectDigest: sha256Hex(canonicalJson({ subject, cwd: harness.layout.project })),
       },
     ]);
     expect(suggestAllowRule({ name: 'Bash', ...BASH }, subject, { cwd: harness.layout.project, home: harness.layout.home })).toBe('Bash(make build)');
     expect(probe.calls).toEqual([]);
     expect(harness.idempotency.records.size).toBe(0);
+  });
+
+  it('asks again when the same command is resent with an approval bound to a different cwd', async () => {
+    const harness = makeHarness();
+    const probe = counting();
+    const dirA = path.join(harness.layout.project, 'a');
+    const dirB = path.join(harness.layout.project, 'b');
+    fs.mkdirSync(dirA);
+    fs.mkdirSync(dirB);
+    const tool = makeTool('Bash', { ...BASH, subject: () => ({ kind: 'command', tool: 'Bash', command: 'rm -r tmp' }), execute: probe.execute });
+    const toolSet = await toolSetOf(tool);
+    harness.session.cwd = dirA;
+    const [first] = await harness.executor.runBatch(harness.input(toolSet, [call('c1', 'Bash')]));
+    if (first?.kind !== 'needs_approval') throw new Error('expected needs_approval');
+    harness.session.cwd = dirB;
+    const [again] = await harness.executor.runBatch(
+      harness.input(toolSet, [call('c1', 'Bash', {}, { kind: 'allow_once', subjectDigest: first.subjectDigest })]),
+    );
+    expect(again?.kind).toBe('needs_approval');
+    if (again?.kind !== 'needs_approval') throw new Error('expected needs_approval');
+    expect(again.subjectDigest).not.toBe(first.subjectDigest);
+    expect(probe.calls).toEqual([]);
+  });
+
+  const withUnresolvableCwd = async (run: (cwd: string) => Promise<void>): Promise<void> => {
+    const harness = makeHarness();
+    const locked = path.join(harness.layout.project, 'locked');
+    const cwd = path.join(locked, 'cwd');
+    fs.mkdirSync(cwd, { recursive: true });
+    fs.chmodSync(locked, 0o000);
+    try {
+      await run(cwd);
+    } finally {
+      fs.chmodSync(locked, 0o700);
+    }
+  };
+
+  it('fails only the command call when the session cwd cannot be canonicalized for its digest', async () => {
+    const harness = makeHarness();
+    const locked = path.join(harness.layout.project, 'locked');
+    const cwd = path.join(locked, 'cwd');
+    fs.mkdirSync(cwd, { recursive: true });
+    const probe = counting();
+    const reader = makeTool('Read', { execute: async () => ({ status: 'completed', output: 'read ok' }) });
+    const bash = makeTool('Bash', { ...BASH, subject: () => ({ kind: 'command', tool: 'Bash', command: 'rm -r tmp' }), execute: probe.execute });
+    const toolSet = await toolSetOf(reader, bash);
+    harness.session.cwd = cwd;
+    fs.chmodSync(locked, 0o000);
+    try {
+      const outcomes = await harness.executor.runBatch(harness.input(toolSet, [call('r1', 'Read'), call('b1', 'Bash')]));
+      expect(outcomes.map((outcome) => outcome.callId)).toEqual(['r1', 'b1']);
+      expect(outcomes[0]).toMatchObject({ kind: 'result', result: { status: 'completed', output: 'read ok' } });
+      expect(outcomes[1]?.kind).toBe('result');
+      if (outcomes[1]?.kind !== 'result') throw new Error('expected result');
+      expect(outcomes[1].result.status).toBe('failed');
+      expect(outcomes[1].result.output.startsWith('Permission check failed: session cwd')).toBe(true);
+      expect(probe.calls).toEqual([]);
+    } finally {
+      fs.chmodSync(locked, 0o700);
+    }
+  });
+
+  it('runs an allowed sandboxed command call without needing the cwd digest', async () => {
+    await withUnresolvableCwd(async (cwd) => {
+      const harness = makeHarness();
+      const probe = counting();
+      const bash = makeTool('Bash', { ...BASH, subject: () => ({ kind: 'command', tool: 'Bash', command: 'make build' }), execute: probe.execute });
+      harness.session.cwd = cwd;
+      const [outcome] = await harness.executor.runBatch(
+        harness.input(await toolSetOf(bash), [call('b1', 'Bash')], { rules: [ruleFor(harness.layout)('allow', 'Bash(make build)')] }),
+      );
+      expect(outcome).toMatchObject({ callId: 'b1', kind: 'result', result: { status: 'completed', output: 'done' } });
+      expect(probe.calls).toEqual(['execute']);
+    });
   });
 
   it('omits the suggested rule when the ask comes from a protected path', async () => {

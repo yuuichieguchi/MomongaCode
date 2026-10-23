@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { canonicalJson, computeBackoff, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import { decide, suggestAllowRule } from '@momonga/policy';
+import { absoluteFrom, canonicalizePath, decide, suggestAllowRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject } from '@momonga/policy';
 import type { PermissionMode, ToolKind } from '@momonga/protocol';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
@@ -25,7 +25,7 @@ export type ToolCall = {
   callId: string;
   name: string;
   arguments: string | unknown;
-  approval?: 'allow_once' | 'allow_always';
+  approval?: { kind: 'allow_once' | 'allow_always'; subjectDigest: string } | 'allow_once' | 'allow_always';
 };
 
 export type BatchInput = {
@@ -61,6 +61,7 @@ export type NeedsApprovalOutcome = {
   callId: string;
   kind: 'needs_approval';
   decision: Decision;
+  subjectDigest: string;
   suggestedRule?: string;
   title: string;
   toolKind: ToolKind;
@@ -109,6 +110,24 @@ const readDeniedPath = (subject: PermissionSubject, readDenied: readonly string[
   if (subject.kind !== 'path' || readDenied.length === 0) return undefined;
   const matcher = createReadDeniedMatcher(readDenied, cwd);
   return subject.paths.find((target) => matcher.blocks(target));
+};
+
+const digestSubject = (subject: PermissionSubject, cwd: string): unknown => {
+  if (subject.kind === 'path') {
+    return {
+      ...subject,
+      paths: subject.paths.map((target) => {
+        const absolute = absoluteFrom(target, cwd);
+        return canonicalizePath(absolute) ?? absolute;
+      }),
+    };
+  }
+  if (subject.kind === 'command') {
+    const canonicalCwd = canonicalizePath(cwd);
+    if (canonicalCwd === null) throw new Error(`session cwd ${cwd} cannot be resolved to a real location`);
+    return { subject, cwd: canonicalCwd };
+  }
+  return subject;
 };
 
 const failedOutcome = (callId: string, output: string): ResultOutcome => ({
@@ -248,22 +267,32 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
     });
     if (decision.kind === 'deny') return outcome(failedOutcome(call.callId, `Permission denied: ${decision.reason}`));
     const unsandboxedExec = decision.kind === 'allow' && tool.sideEffect === 'exec' && batch.sandbox.kind === 'none';
-    if ((decision.kind === 'ask' || unsandboxedExec) && call.approval === undefined) {
-      const effective: Decision = unsandboxedExec
-        ? { kind: 'ask', source: 'mode', reason: 'no sandbox is available, so command execution requires approval' }
-        : decision;
-      const suggestedRule =
-        unsandboxedExec || decision.source === 'protected' ? undefined : suggestAllowRule(policyTool, subject, { cwd, home: batch.home });
-      const locations = tool.locations?.(input);
-      return outcome({
-        callId: call.callId,
-        kind: 'needs_approval',
-        decision: effective,
-        ...(suggestedRule === undefined ? {} : { suggestedRule }),
-        title: tool.title(input),
-        toolKind: tool.kind,
-        ...(locations === undefined ? {} : { locations }),
-      });
+    const { approval } = call;
+    if ((decision.kind === 'ask' || unsandboxedExec) && typeof approval !== 'string') {
+      let subjectDigest: string;
+      try {
+        subjectDigest = sha256Hex(canonicalJson(digestSubject(subject, cwd)));
+      } catch (error) {
+        return outcome(failedOutcome(call.callId, `Permission check failed: ${error instanceof Error ? error.message : String(error)}`));
+      }
+      if (approval?.subjectDigest !== subjectDigest) {
+        const effective: Decision = unsandboxedExec
+          ? { kind: 'ask', source: 'mode', reason: 'no sandbox is available, so command execution requires approval' }
+          : decision;
+        const suggestedRule =
+          unsandboxedExec || decision.source === 'protected' ? undefined : suggestAllowRule(policyTool, subject, { cwd, home: batch.home });
+        const locations = tool.locations?.(input);
+        return outcome({
+          callId: call.callId,
+          kind: 'needs_approval',
+          decision: effective,
+          subjectDigest,
+          ...(suggestedRule === undefined ? {} : { suggestedRule }),
+          title: tool.title(input),
+          toolKind: tool.kind,
+          ...(locations === undefined ? {} : { locations }),
+        });
+      }
     }
     const recovered = existing?.s === 'PENDING' || existing?.s === 'UNKNOWN' ? existing.rec : undefined;
     return { kind: 'run', plan: { call, tool, input, key, batch, ...(recovered === undefined ? {} : { recovered }) } };
