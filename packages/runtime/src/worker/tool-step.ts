@@ -133,7 +133,9 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   if (calls.length === 0) return 'continue';
 
   const step = journal.state.step;
+  if (ctx.control.yieldRequested()) return ctx.terminals.yieldLease();
   const rules = await options.settings.rules(session);
+  const policy = await options.tools.policyFor(session);
   const spans = new Map<string, TraceSpan>();
   let outcomes: CallOutcome[];
   try {
@@ -145,15 +147,15 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
       mode: session.permissionMode,
       rules,
       home: options.home,
-      roots: [session.cwd],
+      roots: policy.roots,
       env: session.env,
       session: options.tools.sessionState(session),
       sandbox: options.tools.sandbox,
-      sandboxPolicy: options.tools.sandboxPolicy,
+      sandboxPolicy: policy.sandboxPolicy,
       deadlineAt: run.deadlineAt,
       signal: ctx.control.signal,
-      leaseLost: () => ctx.control.leaseLost(),
-      protectedPaths: options.tools.protectedPaths,
+      leaseLost: () => ctx.control.leaseLost() || ctx.control.shuttingDown(),
+      protectedPaths: policy.protectedPaths,
       maxInlineOutputChars: ctx.inlineLimit,
       traceparentFor: (callId) => {
         const existing = spans.get(callId);
@@ -174,6 +176,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   }
   for (const span of spans.values()) span.end();
   if (ctx.control.leaseLost()) ctx.control.lost();
+  if (ctx.control.shuttingDown()) return ctx.terminals.yieldLease();
 
   const asking = outcomes.filter((outcome): outcome is NeedsApprovalOutcome => outcome.kind === 'needs_approval');
   if (asking.length === 0) return 'continue';

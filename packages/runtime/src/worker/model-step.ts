@@ -10,6 +10,8 @@ import type { ModelResult } from './model-stream.ts';
 import { recordCalls, settleCalls } from './tool-step.ts';
 
 const MODEL_ATTEMPT = 1;
+const DEADLINE_CODE = 'deadline_exceeded';
+const RESTART_SCAN_CHUNK = 1000;
 const REFUSAL_CODES = ['guardrail_violation', 'refusal', 'content_filter'];
 
 type LimitReason = 'max_steps' | 'budget';
@@ -80,6 +82,7 @@ const handleResult = async (
       journal.append([{ type: 'notice', level: 'warning', message: `The model refused the request: ${result.message}` }]);
       return terminals.finish('STOPPED', { stopReason: 'refusal' });
     }
+    if (result.code === DEADLINE_CODE) return terminals.finish('STOPPED', { stopReason: 'timeout' });
     throw new GatewayFailureError(`${result.code ?? 'error'}: ${result.message}`);
   }
   const { response, incomplete } = result;
@@ -105,8 +108,25 @@ const handleResult = async (
       totalTokens: before.totalTokens + usage.total_tokens,
     },
   ]);
+  ctx.memory.streak = 0;
+  ctx.memory.interruptions = 0;
   if (observation !== undefined) ctx.meter.observe({ inputDigest: observation.inputDigest, inputTokens: usage.input_tokens });
   return decideAfterResponse(ctx);
+};
+
+const DELTA_TYPES: readonly string[] = ['agent.message.delta', 'agent.thought.delta'];
+
+const streamedBeforeRestart = (ctx: ClaimContext, position: { step: number; attempt: number }, requestedSeq: number): boolean => {
+  let streamed = false;
+  for (let after = requestedSeq; ; ) {
+    const events = ctx.options.store.readRunEvents(ctx.run.id, after, RESTART_SCAN_CHUNK);
+    for (const event of events) {
+      if (event.type === 'model.stream.restarted' && event.step === position.step && event.attempt === position.attempt) streamed = false;
+      else if (DELTA_TYPES.includes(event.type) && 'attempt' in event && event.step === position.step && event.attempt === position.attempt) streamed = true;
+    }
+    if (events.length < RESTART_SCAN_CHUNK) return streamed;
+    after = events[events.length - 1]?.seq ?? after;
+  }
 };
 
 export const resumeInFlight = async (ctx: ClaimContext): Promise<Flow> => {
@@ -114,6 +134,8 @@ export const resumeInFlight = async (ctx: ClaimContext): Promise<Flow> => {
   if (inFlight === undefined) return 'continue';
   if (!isRequestBody(inFlight.body)) throw new Error(`the recorded model request of step ${inFlight.step} is not a response body`);
   const position = { step: inFlight.step, attempt: inFlight.attempt };
+  if (ctx.control.yieldRequested()) return ctx.terminals.yieldLease();
+  if (streamedBeforeRestart(ctx, position, inFlight.requestedSeq)) ctx.journal.append([{ type: 'model.stream.restarted', step: position.step, attempt: position.attempt }]);
   const result = await streamModel(ctx, inFlight.body, modelKey(ctx.run.id, position.step, position.attempt), position);
   return handleResult(ctx, result, position, undefined);
 };
@@ -121,12 +143,14 @@ export const resumeInFlight = async (ctx: ClaimContext): Promise<Flow> => {
 export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   const { journal, terminals, options } = ctx;
   if (options.clock.now() >= ctx.run.deadlineAt) return terminals.finish('STOPPED', { stopReason: 'timeout' });
+  if (ctx.control.yieldRequested()) return terminals.yieldLease();
   const limit = limitReached(ctx);
   const outcome = await buildNext(ctx);
   if (outcome.kind === 'done') return 'done';
   const { built } = outcome;
   const input: InputItem[] =
     limit === undefined ? built.input : [...built.input, { type: 'message', role: 'developer', content: summaryInstruction(limit) }];
+  const step = journal.state.step + 1;
   const body: CreateResponseBody = {
     model: ctx.alias,
     input,
@@ -136,9 +160,10 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
     max_output_tokens: built.maxOutputTokens,
     store: false,
     stream: true,
+    metadata: { run_id: ctx.run.id, step: String(step) },
   };
   if (cancelIfInterrupted(ctx) === 'done') return 'done';
-  const position = { step: journal.state.step + 1, attempt: MODEL_ATTEMPT };
+  const position = { step, attempt: MODEL_ATTEMPT };
   journal.append([{ type: 'model.requested', step: position.step, attempt: position.attempt, digest: sha256Hex(canonicalJson(body)), body }]);
   const result = await streamModel(ctx, body, modelKey(ctx.run.id, position.step, position.attempt), position);
   return handleResult(ctx, result, position, limit === undefined ? { inputDigest: built.inputDigest } : undefined);

@@ -32,6 +32,7 @@ export type RunServiceOptions = {
   sweepIntervalMs?: number;
   dataVersionPollMs?: number;
   maxBodyBytes?: number;
+  cancelUpstream?: (runId: string) => Promise<void>;
   onError?: (error: unknown) => void;
 };
 
@@ -78,6 +79,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     keepAliveMs: options.keepAliveMs ?? 15_000,
     maxBodyBytes: options.maxBodyBytes ?? TWO_MIB,
     closeSignal: closeController.signal,
+    ...(options.cancelUpstream === undefined ? {} : { cancelUpstream: options.cancelUpstream }),
     onError,
   });
 

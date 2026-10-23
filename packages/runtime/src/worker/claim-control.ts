@@ -6,6 +6,12 @@ export type ClaimControl = {
   lost(): never;
   leaseLost(): boolean;
   cancelRequested(): boolean;
+  shuttingDown(): boolean;
+  readonly shutdownRequested: Promise<void>;
+  shutdown(): void;
+  requestYield(): void;
+  yieldRequested(): boolean;
+  readonly inFlight: { modelKey?: string; compactionKey?: string };
   fail(error: unknown): void;
   recordingRaised<T>(pending: Promise<T>): Promise<T>;
   raisedDuringCancel(error: unknown): boolean;
@@ -24,10 +30,15 @@ export const startClaimControl = ({ store, claim, heartbeatMs, cancelPollMs }: C
   const controller = new AbortController();
   let leaseLost = false;
   let cancelRequested = false;
+  let shuttingDown = false;
+  let yieldRequested = false;
+  const recovering = claim.status === 'CANCELLING';
+  const shutdownRequested = Promise.withResolvers<void>();
+  const inFlight: { modelKey?: string; compactionKey?: string } = {};
   let failure: unknown;
   const raisedAfterCancel = new Set<unknown>();
 
-  const abortFor = (reason: 'lease_lost' | 'cancel' | 'failure'): void => {
+  const abortFor = (reason: 'lease_lost' | 'cancel' | 'failure' | 'shutdown'): void => {
     if (!controller.signal.aborted) controller.abort(reason);
   };
 
@@ -39,7 +50,13 @@ export const startClaimControl = ({ store, claim, heartbeatMs, cancelPollMs }: C
   const markCancel = (): void => {
     if (leaseLost) return;
     cancelRequested = true;
-    abortFor('cancel');
+    if (!recovering) abortFor('cancel');
+  };
+
+  const shutdown = (): void => {
+    shuttingDown = true;
+    abortFor('shutdown');
+    shutdownRequested.resolve();
   };
 
   const fail = (error: unknown): void => {
@@ -84,6 +101,14 @@ export const startClaimControl = ({ store, claim, heartbeatMs, cancelPollMs }: C
     },
     leaseLost: () => leaseLost,
     cancelRequested: () => cancelRequested,
+    shuttingDown: () => shuttingDown,
+    shutdownRequested: shutdownRequested.promise,
+    shutdown,
+    requestYield: () => {
+      yieldRequested = true;
+    },
+    yieldRequested: () => yieldRequested || shuttingDown,
+    inFlight,
     fail,
     recordingRaised: async (pending) => {
       try {

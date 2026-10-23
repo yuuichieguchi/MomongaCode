@@ -1,0 +1,406 @@
+import type { ServerResponse } from 'node:http';
+import { describe, expect, it } from 'vitest';
+import { waitFor } from '@momonga/testkit';
+import {
+  START_MS,
+  TRACEPARENT,
+  USER_AGENT,
+  callOptions,
+  collect,
+  completedEvent,
+  createdEvent,
+  deltaEvent,
+  expectGatewayError,
+  fakeClock,
+  makeClient,
+  openSse,
+  registerCleanup,
+  settle,
+  sseFrame,
+  startRawHttpFake,
+  streamBody,
+} from './fixtures.ts';
+
+const COUNT_REQUEST = { model: 'default', input: [{ type: 'message' as const, role: 'user' as const, content: [{ type: 'input_text' as const, text: 'hi' }] }] };
+const COMPACT_REQUEST = { model: 'default', input: COUNT_REQUEST.input };
+
+const sseReply = (frames: string[]) => (_request: unknown, response: ServerResponse) => {
+  openSse(response);
+  response.end(frames.join(''));
+};
+
+describe('gateway client request headers', () => {
+  it('streams events in order and sends the key, deadline, traceparent, user agent and JSON content type', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond(sseReply([sseFrame(createdEvent), sseFrame(deltaEvent), sseFrame(completedEvent)]));
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock);
+
+    const events = await collect(client.stream(streamBody(), callOptions(clock, { idempotencyKey: 'key-1', deadlineInMs: 2500, traceparent: TRACEPARENT })));
+
+    expect(events).toEqual([createdEvent, deltaEvent, completedEvent]);
+    expect(fake.requests).toHaveLength(1);
+    const [request] = fake.requests;
+    expect(request).toMatchObject({ method: 'POST', url: '/v1/responses' });
+    expect(request?.headers['idempotency-key']).toBe('"key-1"');
+    expect(request?.headers['momonga-deadline-ms']).toBe('2500');
+    expect(request?.headers['traceparent']).toBe(TRACEPARENT);
+    expect(request?.headers['user-agent']).toBe(USER_AGENT);
+    expect(request?.headers['content-type']).toBe('application/json');
+    expect(JSON.parse(request?.body ?? '')).toMatchObject({ model: 'default', input: streamBody().input });
+  });
+
+  it('serialises the idempotency key as an sf-string, escaping quotes and backslashes', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond(sseReply([sseFrame(completedEvent)]));
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock);
+
+    await collect(client.stream(streamBody(), callOptions(clock, { idempotencyKey: 'a"b\\c' })));
+
+    expect(fake.requests[0]?.headers['idempotency-key']).toBe('"a\\"b\\\\c"');
+  });
+
+  it('omits traceparent when none is given', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond(sseReply([sseFrame(completedEvent)]));
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock);
+
+    await collect(client.stream(streamBody(), callOptions(clock)));
+
+    expect(fake.requests[0]?.headers).not.toHaveProperty('traceparent');
+  });
+
+  it('sends GET requests for models and health without a content type', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond((request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      if (request.url === '/v1/momonga/models') {
+        response.end(JSON.stringify({ object: 'list', data: [{ id: 'default', object: 'model', targets: ['primary'], capabilities: { contextWindow: 8192 } }] }));
+      } else {
+        response.end(JSON.stringify({ version: '1.0.0', apiVersion: 1, pid: 1, startedAt: 'x', state: 'running' }));
+      }
+    });
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock);
+
+    expect(await client.models()).toEqual([{ id: 'default', capabilities: { contextWindow: 8192 } }]);
+    expect(await client.health()).toMatchObject({ version: '1.0.0', state: 'running' });
+
+    expect(fake.requests.map((request) => [request.method, request.url])).toEqual([
+      ['GET', '/v1/momonga/models'],
+      ['GET', '/v1/momonga/health'],
+    ]);
+    for (const request of fake.requests) {
+      expect(request.headers).not.toHaveProperty('content-type');
+      expect(request.headers['user-agent']).toBe(USER_AGENT);
+    }
+  });
+
+  it('sends cancel as a body-less POST with the key and returns whether the gateway cancelled', async () => {
+    const fake = await startRawHttpFake();
+    let answer = true;
+    fake.respond((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ cancelled: answer }));
+    });
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock);
+
+    expect(await client.cancel('key-9', { signal: new AbortController().signal })).toBe(true);
+    answer = false;
+    expect(await client.cancel('key-9', { signal: new AbortController().signal })).toBe(false);
+
+    const [request] = fake.requests;
+    expect(request).toMatchObject({ method: 'POST', url: '/v1/momonga/responses/cancel', body: '' });
+    expect(request?.headers['idempotency-key']).toBe('"key-9"');
+    expect(request?.headers).not.toHaveProperty('content-type');
+  });
+
+  it('sends compact with the key and deadline and parses the resource', async () => {
+    const fake = await startRawHttpFake();
+    const resource = { id: 'cmp_1', object: 'response.compaction', output: [] };
+    fake.respond((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify(resource));
+    });
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock);
+
+    expect(await client.compact(COMPACT_REQUEST, callOptions(clock, { idempotencyKey: 'cmp', deadlineInMs: 900 }))).toEqual(resource);
+
+    const [request] = fake.requests;
+    expect(request).toMatchObject({ method: 'POST', url: '/v1/responses/compact' });
+    expect(request?.headers['idempotency-key']).toBe('"cmp"');
+    expect(request?.headers['momonga-deadline-ms']).toBe('900');
+    expect(request?.headers['content-type']).toBe('application/json');
+  });
+});
+
+describe('gateway client pre-send deadline check', () => {
+  it('throws deadline_exceeded without sending when the deadline has passed', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond(sseReply([sseFrame(completedEvent)]));
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock);
+
+    const error = await settle(collect(client.stream(streamBody(), { ...callOptions(clock), deadlineAt: START_MS - 1 })));
+    expectGatewayError(error, { status: 0, type: 'transport', code: 'deadline_exceeded' });
+
+    const compactError = await settle(client.compact(COMPACT_REQUEST, { ...callOptions(clock), deadlineAt: START_MS - 1 }));
+    expectGatewayError(compactError, { status: 0, type: 'transport', code: 'deadline_exceeded' });
+    expect(fake.requests).toEqual([]);
+  });
+});
+
+describe('gateway client error mapping', () => {
+  it('parses a JSON error body and retry-after in seconds', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond((_request, response) => {
+      response.writeHead(429, { 'content-type': 'application/json', 'retry-after': '3' });
+      response.end(JSON.stringify({ error: { message: 'slow down', type: 'too_many_requests', param: null, code: 'rate_limited' } }));
+    });
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock);
+
+    const error = await settle(collect(client.stream(streamBody(), callOptions(clock))));
+
+    expectGatewayError(error, { status: 429, type: 'too_many_requests', code: 'rate_limited', message: 'slow down', retryAfterMs: 3000 });
+  });
+
+  it('parses retry-after as an HTTP date relative to the clock and keeps param', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond((_request, response) => {
+      response.writeHead(503, { 'content-type': 'application/json', 'retry-after': new Date(START_MS + 30_000).toUTCString() });
+      response.end(JSON.stringify({ error: { message: 'closing', type: 'server_error', param: 'model', code: 'gateway_closed' } }));
+    });
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock);
+
+    const error = await settle(client.countTokens(COUNT_REQUEST, { signal: new AbortController().signal }));
+
+    expectGatewayError(error, { status: 503, type: 'server_error', code: 'gateway_closed', param: 'model', retryAfterMs: 30_000 });
+  });
+
+  it('maps a non-JSON 5xx body to server_error http_<status>', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond((_request, response) => {
+      response.writeHead(502, { 'content-type': 'text/plain' });
+      response.end('Bad gateway');
+    });
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock);
+
+    const error = await settle(client.health());
+
+    expectGatewayError(error, { status: 502, type: 'server_error', code: 'http_502' });
+    expect((error as { retryAfterMs?: number }).retryAfterMs).toBeUndefined();
+  });
+
+  it('maps an empty 4xx body to invalid_request http_<status>', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond((_request, response) => {
+      response.writeHead(404);
+      response.end();
+    });
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock);
+
+    const error = await settle(collect(client.stream(streamBody(), callOptions(clock))));
+
+    expectGatewayError(error, { status: 404, type: 'invalid_request', code: 'http_404' });
+  });
+
+  it('rejects a non-SSE reply to a stream request with unexpected_content_type', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify(completedEvent.response));
+    });
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock);
+
+    const error = await settle(collect(client.stream(streamBody(), callOptions(clock))));
+
+    expectGatewayError(error, { status: 0, type: 'transport', code: 'unexpected_content_type' });
+  });
+});
+
+describe('gateway client bounds', () => {
+  it('times out a unary call after unaryTimeoutMs', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond(() => {});
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock, { unaryTimeoutMs: 100 });
+
+    const error = await settle(client.countTokens(COUNT_REQUEST, { signal: new AbortController().signal }));
+
+    expectGatewayError(error, { status: 0, type: 'transport', code: 'gateway_timeout' });
+  });
+
+  it('bounds a unary call by the deadline when it is sooner than unaryTimeoutMs', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond(() => {});
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock, { unaryTimeoutMs: 600_000 });
+
+    const error = await settle(client.compact(COMPACT_REQUEST, callOptions(clock, { deadlineInMs: 100 })));
+
+    expectGatewayError(error, { status: 0, type: 'transport', code: 'deadline_exceeded' });
+  });
+
+  it('times out cancel after cancelTimeoutMs', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond(() => {});
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock, { cancelTimeoutMs: 100, unaryTimeoutMs: 600_000 });
+
+    const error = await settle(client.cancel('key-1', { signal: new AbortController().signal }));
+
+    expectGatewayError(error, { status: 0, type: 'transport', code: 'gateway_timeout' });
+  });
+
+  it('lets the smaller of the deadline and unaryTimeoutMs decide the timeout code', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond(() => {});
+    const clock = fakeClock();
+    const capFirst = makeClient(fake.socketPath, clock, { unaryTimeoutMs: 100 });
+    const deadlineFirst = makeClient(fake.socketPath, clock, { unaryTimeoutMs: 400 });
+
+    const [capError, deadlineError] = await Promise.all([
+      settle(capFirst.compact(COMPACT_REQUEST, callOptions(clock, { idempotencyKey: 'cap', deadlineInMs: 400 }))),
+      settle(deadlineFirst.compact(COMPACT_REQUEST, callOptions(clock, { idempotencyKey: 'dl', deadlineInMs: 100 }))),
+    ]);
+
+    expectGatewayError(capError, { status: 0, type: 'transport', code: 'gateway_timeout' });
+    expectGatewayError(deadlineError, { status: 0, type: 'transport', code: 'deadline_exceeded' });
+  });
+
+  it('interrupts a stream that stays silent for streamIdleTimeoutMs', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond((_request, response) => {
+      openSse(response);
+      response.write(sseFrame(createdEvent));
+    });
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock, { streamIdleTimeoutMs: 150 });
+    const seen: unknown[] = [];
+
+    const error = await settle(
+      (async () => {
+        for await (const event of client.stream(streamBody(), callOptions(clock))) seen.push(event);
+      })(),
+    );
+
+    expect(seen).toEqual([createdEvent]);
+    expectGatewayError(error, { status: 0, type: 'transport', code: 'stream_interrupted' });
+  });
+
+  it('treats keep-alive comments as activity', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond((_request, response) => {
+      openSse(response);
+      response.write(sseFrame(createdEvent));
+      const pings = setInterval(() => response.write(': ping\n\n'), 50);
+      const finish = setTimeout(() => {
+        clearInterval(pings);
+        response.end(sseFrame(completedEvent));
+      }, 450);
+      registerCleanup(() => {
+        clearInterval(pings);
+        clearTimeout(finish);
+      });
+    });
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock, { streamIdleTimeoutMs: 150 });
+
+    expect(await collect(client.stream(streamBody(), callOptions(clock)))).toEqual([createdEvent, completedEvent]);
+  });
+});
+
+describe('gateway client aborts and teardown', () => {
+  it("rejects with the caller's string reason 'cancel' unchanged", async () => {
+    const fake = await startRawHttpFake();
+    fake.respond(() => {});
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock);
+    const controller = new AbortController();
+
+    const pending = settle(collect(client.stream(streamBody(), callOptions(clock, { signal: controller.signal }))));
+    await waitFor(() => fake.requests.length === 1, { description: 'the stream request to arrive' });
+    controller.abort('cancel');
+
+    expect(await pending).toBe('cancel');
+  });
+
+  it('rejects mid-stream with the exact abort reason object', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond((_request, response) => {
+      openSse(response);
+      response.write(sseFrame(createdEvent));
+    });
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock);
+    const controller = new AbortController();
+    const reason = new DOMException('stop now', 'AbortError');
+
+    const error = await settle(
+      (async () => {
+        for await (const _event of client.stream(streamBody(), callOptions(clock, { signal: controller.signal }))) controller.abort(reason);
+      })(),
+    );
+
+    expect(error).toBe(reason);
+  });
+
+  it('rejects a unary call with the abort reason unchanged', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond(() => {});
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock);
+    const controller = new AbortController();
+    const reason = new Error('caller gave up');
+
+    const pending = settle(client.countTokens(COUNT_REQUEST, { signal: controller.signal }));
+    await waitFor(() => fake.requests.length === 1, { description: 'the count request to arrive' });
+    controller.abort(reason);
+
+    expect(await pending).toBe(reason);
+  });
+
+  it('closes the connection when the consumer stops iterating', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond((_request, response) => {
+      openSse(response);
+      response.write(sseFrame(createdEvent));
+    });
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock);
+
+    for await (const event of client.stream(streamBody(), callOptions(clock))) {
+      expect(event).toEqual(createdEvent);
+      break;
+    }
+
+    await waitFor(() => fake.closedConnections() === 1, { description: 'the stream connection to close' });
+    expect(fake.closedConnections()).toBe(1);
+  });
+
+  it('rejects an open stream with client_destroyed when the client is destroyed', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond((_request, response) => {
+      openSse(response);
+      response.write(sseFrame(createdEvent));
+    });
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock);
+    const iterator = client.stream(streamBody(), callOptions(clock))[Symbol.asyncIterator]();
+    expect(await iterator.next()).toEqual({ done: false, value: createdEvent });
+    const next = settle(iterator.next());
+
+    await client.destroy();
+
+    expectGatewayError(await next, { status: 0, type: 'transport', code: 'client_destroyed' });
+  });
+});

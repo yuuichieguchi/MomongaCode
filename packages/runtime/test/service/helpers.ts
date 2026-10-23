@@ -360,6 +360,7 @@ export type ServiceOverrides = {
   maxAttempts?: number;
   clock?: FakeClock;
   wrapStore?: (store: RuntimeStore) => RuntimeStore;
+  cancelUpstream?: (runId: string) => Promise<void>;
 };
 
 export type Notifier = { onCommit(touched: { runId?: string; sessionId: string }[]): void; subscriberCount(): number };
@@ -406,6 +407,7 @@ export const serviceOptions = (
   dataVersionPollMs: overrides.dataVersionPollMs ?? (overrides.timers === undefined ? 20 : 1000),
   ...(overrides.maxBodyBytes === undefined ? {} : { maxBodyBytes: overrides.maxBodyBytes }),
   ...(overrides.timers === undefined ? {} : { timers: overrides.timers }),
+  ...(overrides.cancelUpstream === undefined ? {} : { cancelUpstream: overrides.cancelUpstream }),
   onError: (error: unknown) => base.errors.push(error),
 });
 
@@ -582,8 +584,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
     },
     executor,
     sandbox: fakeSandbox,
-    sandboxPolicy,
-    protectedPaths: [],
+    policyFor: async (target: Session) => ({ roots: [target.cwd], sandboxPolicy, protectedPaths: [] }),
     sessionState: (target: Session) => {
       const existing = sessionStates.get(target.id);
       if (existing !== undefined) return existing;

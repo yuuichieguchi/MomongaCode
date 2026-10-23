@@ -68,7 +68,8 @@ describe('worker final answer', () => {
     expect(requested.digest).toBe(bodyDigest(requested.body));
 
     const body = stream.body;
-    expect(Object.keys(body).sort()).toEqual(['input', 'max_output_tokens', 'model', 'parallel_tool_calls', 'store', 'stream', 'tool_choice', 'tools']);
+    expect(Object.keys(body).sort()).toEqual(['input', 'max_output_tokens', 'metadata', 'model', 'parallel_tool_calls', 'store', 'stream', 'tool_choice', 'tools']);
+    expect(body.metadata).toEqual({ run_id: run.id, step: '1' });
     expect(body.model).toBe(MODEL_ALIAS);
     expect(body.tool_choice).toBe('auto');
     expect(body.parallel_tool_calls).toBe(false);

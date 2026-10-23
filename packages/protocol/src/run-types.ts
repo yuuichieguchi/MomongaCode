@@ -50,6 +50,7 @@ export type RunEventPayload =
   | { type: 'model.responded'; step: number; attempt: number; response: ModelResponse }
   | { type: 'agent.message.delta'; step: number; attempt: number; itemId: string; text: string }
   | { type: 'agent.thought.delta'; step: number; attempt: number; itemId: string; text: string }
+  | { type: 'model.stream.restarted'; step: number; attempt: number }
   | {
       type: 'tool.call';
       callId: string;
@@ -139,7 +140,7 @@ export type RunState = {
       resolution?: { optionId: string; kind: PermissionOption['kind']; subjectDigest: string; suggestedRule?: string; rulePersisted?: true };
     }
   >;
-  inFlightModelRequest?: { step: number; attempt: number; digest: string; body: unknown };
+  inFlightModelRequest?: { step: number; attempt: number; digest: string; body: unknown; requestedSeq: number };
   notes: { level: 'info' | 'warning' | 'error'; message: string }[];
   toolCallCounts: Record<string, number>;
   steps: Record<number, { toolChoice: string; summary: boolean }>;

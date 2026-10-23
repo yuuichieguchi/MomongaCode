@@ -19,6 +19,7 @@ export const reconcileStartedCalls = async ({ options, run, session, journal, co
     .map(([callId, call]) => ({ callId, name: call.name, arguments: call.arguments }));
   if (calls.length === 0) return;
   const toolSet = await options.tools.toolSet(run.id);
+  const policy = await options.tools.policyFor(session);
   await options.tools.executor.runBatch({
     calls,
     toolSet,
@@ -27,16 +28,16 @@ export const reconcileStartedCalls = async ({ options, run, session, journal, co
     mode: session.permissionMode,
     rules: await options.settings.rules(session),
     home: options.home,
-    roots: [session.cwd],
+    roots: policy.roots,
     env: session.env,
     session: options.tools.sessionState(session),
     sandbox: options.tools.sandbox,
-    sandboxPolicy: options.tools.sandboxPolicy,
+    sandboxPolicy: policy.sandboxPolicy,
     deadlineAt: run.deadlineAt,
-    signal: new AbortController().signal,
-    protectedPaths: options.tools.protectedPaths,
+    signal: control.signal,
+    protectedPaths: policy.protectedPaths,
     recoverOnly: true,
-    leaseLost: () => control.leaseLost(),
+    leaseLost: () => control.leaseLost() || control.shuttingDown(),
     onOutcome: (outcome) => journal.append(outcomePayloads(outcome)),
   });
 };

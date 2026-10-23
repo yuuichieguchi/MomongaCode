@@ -34,6 +34,10 @@ export type RecordedCompact = {
 
 export type RecordedCount = { request: CountTokensRequest; signal: AbortSignal | undefined };
 
+export type RecordedCapabilities = { alias: string; signal: AbortSignal | undefined };
+
+export type RecordedCancel = { idempotencyKey: string; signal: AbortSignal | undefined };
+
 export type GatewayHook<R> = (request: R, signal: AbortSignal | undefined) => Promise<void>;
 
 export const AUTO_OUTPUT_TOKENS = 10;
@@ -99,6 +103,11 @@ export type FakeGateway = GatewayPort & {
   countHook: GatewayHook<CountTokensRequest> | undefined;
   compactHook: GatewayHook<CompactRequest> | undefined;
   capabilityRequests: string[];
+  capabilitiesCalls: RecordedCapabilities[];
+  capabilitiesHook: GatewayHook<string> | undefined;
+  cancels: RecordedCancel[];
+  cancelHook: GatewayHook<string> | undefined;
+  cancelResult: boolean;
   generations: Map<string, number>;
   compactSummaries: string[];
   capabilitiesValue: Capabilities;
@@ -179,6 +188,11 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
     countHook: undefined,
     compactHook: undefined,
     capabilityRequests: [],
+    capabilitiesCalls: [],
+    capabilitiesHook: undefined,
+    cancels: [],
+    cancelHook: undefined,
+    cancelResult: true,
     generations: new Map(),
     compactSummaries: [],
     capabilitiesValue: capabilities,
@@ -237,9 +251,17 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
       return { input_tokens: instructions + input + tools, method: 'exact', error_bound: 0 };
     },
 
-    capabilities: async (alias) => {
+    capabilities: async (alias, options) => {
       gateway.capabilityRequests.push(alias);
+      gateway.capabilitiesCalls.push({ alias, signal: options?.signal });
+      await gateway.capabilitiesHook?.(alias, options?.signal);
       return gateway.capabilitiesValue;
+    },
+
+    cancel: async (idempotencyKey, options) => {
+      gateway.cancels.push({ idempotencyKey, signal: options?.signal });
+      await gateway.cancelHook?.(idempotencyKey, options?.signal);
+      return gateway.cancelResult;
     },
 
     releaseAll: () => {

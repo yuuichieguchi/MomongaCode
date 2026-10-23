@@ -72,6 +72,8 @@ export const streamModel = async (
 ): Promise<ModelResult> => {
   const buffer = createDeltaBuffer((payloads) => ctx.journal.append(payloads), position, (error) => ctx.control.fail(error));
   let terminal: ModelResult | undefined;
+  ctx.journal.verifyLease();
+  ctx.control.inFlight.modelKey = idempotencyKey;
   try {
     await ctx.control.recordingRaised(
       (async (): Promise<void> => {
@@ -115,6 +117,7 @@ export const streamModel = async (
   }
   const failure = ctx.control.failure();
   if (failure !== undefined) throw failure;
+  delete ctx.control.inFlight.modelKey;
   if (terminal === undefined) throw new GatewayFailureError('the model stream ended without a terminal event');
   buffer.flush();
   return terminal;

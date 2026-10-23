@@ -12,8 +12,9 @@ export type Flow = 'continue' | 'done';
 
 export type Terminals = {
   finish(to: 'COMPLETED' | 'STOPPED' | 'FAILED', patch?: StatusPatch): 'done';
-  yieldTo(to: 'WAITING_HUMAN' | 'QUEUED', availableAt?: number): 'done';
+  yieldTo(to: 'WAITING_HUMAN' | 'QUEUED', availableAt?: number, options?: { refundAttempt: true }): 'done';
   cancel(): 'done';
+  yieldLease(): 'done';
 };
 
 export type ClaimContext = {
@@ -33,4 +34,7 @@ export type ClaimContext = {
   agentSpan: TraceSpan;
   meter: TokenMeter;
   pinnedDigest: { value: string | undefined };
+  memory: RunMemory;
 };
+
+export type RunMemory = { streak: number; interruptions: number; deadlineAt: number };

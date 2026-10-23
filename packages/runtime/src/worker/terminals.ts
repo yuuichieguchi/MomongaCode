@@ -1,3 +1,4 @@
+import type { Clock } from '@momonga/foundation';
 import type { Claim, RunMutationResult, RuntimeStore } from '@momonga/store';
 import type { Terminals } from './claim-context.ts';
 import type { ClaimControl } from './claim-control.ts';
@@ -8,9 +9,10 @@ export type TerminalsOptions = {
   claim: Claim;
   journal: Journal;
   control: ClaimControl;
+  clock: Clock;
 };
 
-export const createTerminals = ({ store, claim, journal, control }: TerminalsOptions): Terminals => {
+export const createTerminals = ({ store, claim, journal, control, clock }: TerminalsOptions): Terminals => {
   const cancel = (): 'done' => {
     journal.snapshot();
     const result = store.transition(claim, ['CANCELLING'], 'CANCELLED');
@@ -33,10 +35,15 @@ export const createTerminals = ({ store, claim, journal, control }: TerminalsOpt
       journal.snapshot();
       return settle(store.transition(claim, ['RUNNING'], to, patch));
     },
-    yieldTo: (to, availableAt) => {
+    yieldTo: (to, availableAt, options) => {
       journal.snapshot();
-      return settle(store.release(claim, to, availableAt));
+      return settle(store.release(claim, to, availableAt, options));
     },
     cancel,
+    yieldLease: () => {
+      const result = store.releaseLease(claim, { availableAt: clock.now(), refundAttempt: true });
+      if (result.kind === 'conflict') throw new Error(`run ${claim.runId} could not release its lease: ${result.reason ?? 'conflict'}`);
+      return 'done';
+    },
   };
 };

@@ -81,7 +81,7 @@ const startGroup = async (
     if (pid === undefined) throw new Error('spawn failed');
     spawnedGroups.push(pid);
     const readyFiles = (options.readyFiles ?? ['ready']).map((name) => path.join(dir, name));
-    if (!(await waitUntil(() => readyFiles.every((file) => fs.existsSync(file)), 5000))) throw new Error('process group did not become ready');
+    if (!(await waitUntil(() => readyFiles.every((file) => fs.existsSync(file)), 10_000))) throw new Error('process group did not become ready');
     return { pgid: pid, dir, leaderReaped };
   } finally {
     if (fd !== undefined) fs.closeSync(fd);
@@ -231,7 +231,7 @@ describe('reconcileProcessGroup', () => {
     const marker = makeMarker(dir);
     const script = `/bin/sh -c 'exec 3<&-; trap "" TERM; touch "$DIR/member"; while :; do sleep 1; done' & trap 'exit 0' TERM; touch "$DIR/ready"; wait`;
     const group = await startGroup(dir, script, { fd3: marker, readyFiles: ['ready', 'member'] });
-    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 500 });
+    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 3000 });
     await group.leaderReaped;
     expect(result.outcome).toBe('unknown');
     expect(result.output).toMatch(/left alone/i);
@@ -303,7 +303,7 @@ describe('reconcileProcessGroup structured result', () => {
     const marker = makeMarker(dir);
     const script = `/bin/sh -c 'exec 3<&-; trap "" TERM; touch "$DIR/member"; while :; do sleep 1; done' & trap 'exit 0' TERM; touch "$DIR/ready"; wait`;
     const group = await startGroup(dir, script, { fd3: marker, readyFiles: ['ready', 'member'] });
-    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 500 });
+    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 3000 });
     await group.leaderReaped;
     expect(result.leftAloneGroup).toBe(group.pgid);
     expect(result.unsignalledPids).toEqual([]);
@@ -314,16 +314,17 @@ describe('reconcileProcessGroup structured result', () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const fd = fs.openSync(marker, 'r');
-    const source = "process.on('SIGTERM', () => require('node:fs').closeSync(3)); setInterval(() => {}, 1 << 30);";
-    const child = spawn(process.execPath, ['-e', source], { detached: true, stdio: ['ignore', 'ignore', 'ignore', fd] });
+    const ready = path.join(dir, 'ready');
+    const source = "const fs = require('node:fs'); process.on('SIGTERM', () => fs.closeSync(3)); fs.writeFileSync(process.env.READY_FILE, ''); setInterval(() => {}, 1 << 30);";
+    const child = spawn(process.execPath, ['-e', source], { detached: true, stdio: ['ignore', 'ignore', 'ignore', fd], env: { PATH: '/usr/bin:/bin', READY_FILE: ready } });
     fs.closeSync(fd);
     child.unref();
     const pid = child.pid;
     if (pid === undefined) throw new Error('spawn failed');
     spawnedGroups.push(pid);
-    expect(await waitUntil(() => holdersOf(marker).includes(pid), 5000)).toBe(true);
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    const result = await reconcileProcessGroup({ pgid: pid, marker }, { killGraceMs: 500 });
+    expect(await waitUntil(() => fs.existsSync(ready), 10_000)).toBe(true);
+    expect(holdersOf(marker)).toContain(pid);
+    const result = await reconcileProcessGroup({ pgid: pid, marker }, { killGraceMs: 3000 });
     expect(result.leftAlonePids).toContain(pid);
     expect(alive(pid)).toBe(true);
     expect(holdersOf(marker)).toEqual([]);

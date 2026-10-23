@@ -14,7 +14,7 @@ import type { Claim, Run, RuntimeStore, Session } from '@momonga/store';
 import { createFakeClock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 import { createToolExecutor, createToolRegistry } from '@momonga/tools';
-import type { AnyTool, ToolSessionState, ToolSet } from '@momonga/tools';
+import type { AnyTool, ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
 import { within } from './deferred.ts';
 import { createFakeGateway } from './fake-gateway.ts';
 import type { FakeGateway } from './fake-gateway.ts';
@@ -29,6 +29,7 @@ import { MODEL_ALIAS } from './scripts.ts';
 export const START_MS = 1_800_000_000_000;
 export const LEASE_MS = 30_000;
 export const DEADLINE_MS = START_MS + 3_600_000;
+export const EXTRA_ROOT = '/opt/momonga-extra-root';
 export const TEST_PROMPT_PREFIX = 'You are the MomongaCode test agent working in';
 
 export const testSystemPrompt = ({ cwd }: { cwd: string; platform: string }): string => `${TEST_PROMPT_PREFIX} ${cwd}.`;
@@ -99,6 +100,8 @@ export type EnvOptions = {
   maxTotalAttempts?: number;
 };
 
+export type BatchInput = Parameters<ToolExecutor['runBatch']>[0];
+
 export type WorkerOverrides = Partial<Omit<WorkerOptions, 'tools'>> & { tools?: Partial<ToolRuntimePort>; toolList?: () => AnyTool[] };
 
 export type Env = Awaited<ReturnType<typeof makeEnv>>;
@@ -126,7 +129,15 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const tracer: FakeTracer = createFakeTracer();
   const toolbox: FakeToolbox = createFakeToolbox();
   const instructions = createFakeInstructions();
-  const executor = createToolExecutor({ idempotency: store.idempotency, blobs: store.blobs, clock, processMarkerDir: markers });
+  const realExecutor = createToolExecutor({ idempotency: store.idempotency, blobs: store.blobs, clock, processMarkerDir: markers });
+  const batches: BatchInput[] = [];
+  const executor: ToolExecutor = {
+    ...realExecutor,
+    runBatch: (input) => {
+      batches.push(input);
+      return realExecutor.runBatch(input);
+    },
+  };
   const sandboxPolicy: SandboxPolicy = { writableRoots: [project], writeDenied: [], readDenied: [], network: 'deny' };
   const sessionStates = new Map<string, ToolSessionState>();
   const workers: Worker[] = [];
@@ -159,8 +170,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     toolSet: async () => snapshotTools(toolList()),
     executor,
     sandbox: fakeSandbox,
-    sandboxPolicy,
-    protectedPaths: [],
+    policyFor: async (target: Session) => ({ roots: [target.cwd, EXTRA_ROOT], sandboxPolicy, protectedPaths: [] }),
     sessionState: (target: Session) => {
       const existing = sessionStates.get(target.id);
       if (existing !== undefined) return existing;
@@ -284,6 +294,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     toolbox,
     instructions,
     executor,
+    batches,
     session,
     worker,
     runOnce,

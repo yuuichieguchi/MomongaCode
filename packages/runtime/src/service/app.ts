@@ -46,6 +46,7 @@ export type RunAppDeps = {
   keepAliveMs: number;
   maxBodyBytes: number;
   closeSignal: AbortSignal;
+  cancelUpstream?: (runId: string) => Promise<void>;
   onError: (error: unknown) => void;
 };
 
@@ -195,8 +196,13 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
 
   const cancelRun: Handler = (context) => {
     const id = context.req.param('id') ?? '';
+    const before = store.getRun(id);
     const result = store.requestCancel(id);
     if (result.kind === 'not_found') throw notFound(`run ${id} does not exist`);
+    if (deps.cancelUpstream !== undefined && before?.status === 'QUEUED' && result.changed && result.run.status === 'CANCELLED') {
+      const cancelUpstream = deps.cancelUpstream;
+      void (async () => cancelUpstream(id))().catch(deps.onError);
+    }
     const settled = isTerminalStatus(result.run.status) && !result.changed;
     return json({ run: toRunView(result.run) }, settled ? 200 : 202);
   };
