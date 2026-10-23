@@ -3,9 +3,10 @@ import path from 'node:path';
 import { canonicalJson, computeBackoff, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { decide, suggestAllowRule } from '@momonga/policy';
-import type { Decision, PermissionRule } from '@momonga/policy';
+import type { Decision, PermissionRule, PermissionSubject } from '@momonga/policy';
 import type { PermissionMode, ToolKind } from '@momonga/protocol';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
+import { createReadDeniedMatcher } from './read-denied.ts';
 import type { BlobPort, IdempotencyPort, ToolIdempotencyRecord } from './ports.ts';
 import type { ToolSet } from './registry.ts';
 import { MINIMUM_INLINE_OUTPUT_CHARS, truncateOutput } from './truncate.ts';
@@ -82,7 +83,7 @@ export type ToolExecutorOptions = {
 
 export type ToolExecutor = { runBatch(input: BatchInput): Promise<CallOutcome[]> };
 
-type RunPlan = { call: ToolCall; tool: AnyTool; input: unknown; key: string; batch: BatchInput };
+type RunPlan = { call: ToolCall; tool: AnyTool; input: unknown; key: string; batch: BatchInput; recovered?: ToolIdempotencyRecord };
 
 type Admission = { kind: 'outcome'; outcome: CallOutcome } | { kind: 'run'; plan: RunPlan };
 
@@ -101,6 +102,12 @@ const isStoredResultOutcome = (value: unknown): value is ResultOutcome =>
 const storedOutcome = (stored: unknown): ResultOutcome => {
   if (!isStoredResultOutcome(stored)) throw new TypeError('idempotency record holds a malformed completed outcome');
   return stored;
+};
+
+const readDeniedPath = (subject: PermissionSubject, readDenied: readonly string[], cwd: string): string | undefined => {
+  if (subject.kind !== 'path' || readDenied.length === 0) return undefined;
+  const matcher = createReadDeniedMatcher(readDenied, cwd);
+  return subject.paths.find((target) => matcher.blocks(target));
 };
 
 const failedOutcome = (callId: string, output: string): ResultOutcome => ({
@@ -186,8 +193,11 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
   const retry = options.readOnlyRetry ?? DEFAULT_READ_ONLY_RETRY;
   const maxParallel = options.maxParallel ?? DEFAULT_MAX_PARALLEL;
 
-  const finalizeResult = (result: ToolResult): ResultOutcome['result'] => {
-    const truncated = truncateOutput(result.output, maxInlineOutputChars, blobs);
+  const finalizeResult = (result: ToolResult, tool: AnyTool): ResultOutcome['result'] => {
+    const truncated =
+      tool.pagesOutput === true && result.output.length <= maxInlineOutputChars
+        ? { output: result.output }
+        : truncateOutput(result.output, maxInlineOutputChars, blobs);
     return {
       status: result.status,
       output: truncated.output,
@@ -221,6 +231,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
     const existing = idempotency.get(key);
     if (existing?.s === 'COMPLETED') return outcome(storedOutcome(existing.result));
 
+    const blockedPath = readDeniedPath(subject, batch.sandboxPolicy.readDenied, cwd);
+    if (blockedPath !== undefined) return outcome(failedOutcome(call.callId, `Permission denied: ${blockedPath} is blocked by the sandbox policy`));
+
     const policyTool = { name: tool.name, kind: tool.kind, sideEffect: tool.sideEffect };
     const decision = decide({
       tool: policyTool,
@@ -233,24 +246,30 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
       protectedPaths: batch.protectedPaths,
     });
     if (decision.kind === 'deny') return outcome(failedOutcome(call.callId, `Permission denied: ${decision.reason}`));
-    if (decision.kind === 'ask' && call.approval === undefined) {
-      const suggestedRule = decision.source === 'protected' ? undefined : suggestAllowRule(policyTool, subject, { cwd, home: batch.home });
+    const unsandboxedExec = decision.kind === 'allow' && tool.sideEffect === 'exec' && batch.sandbox.kind === 'none';
+    if ((decision.kind === 'ask' || unsandboxedExec) && call.approval === undefined) {
+      const effective: Decision = unsandboxedExec
+        ? { kind: 'ask', source: 'mode', reason: 'no sandbox is available, so command execution requires approval' }
+        : decision;
+      const suggestedRule =
+        unsandboxedExec || decision.source === 'protected' ? undefined : suggestAllowRule(policyTool, subject, { cwd, home: batch.home });
       const locations = tool.locations?.(input);
       return outcome({
         callId: call.callId,
         kind: 'needs_approval',
-        decision,
+        decision: effective,
         ...(suggestedRule === undefined ? {} : { suggestedRule }),
         title: tool.title(input),
         toolKind: tool.kind,
         ...(locations === undefined ? {} : { locations }),
       });
     }
-    return { kind: 'run', plan: { call, tool, input, key, batch } };
+    const recovered = existing?.s === 'PENDING' || existing?.s === 'UNKNOWN' ? existing.rec : undefined;
+    return { kind: 'run', plan: { call, tool, input, key, batch, ...(recovered === undefined ? {} : { recovered }) } };
   };
 
   const perform = async (plan: RunPlan): Promise<CallOutcome> => {
-    const { call, tool, input, key, batch } = plan;
+    const { call, tool, input, key, batch, recovered } = plan;
     const { callId } = call;
     if (batch.signal.aborted) return failedOutcome(callId, `${tool.name} was cancelled`);
     if (batch.deadlineAt - clock.now() <= 0) return failedOutcome(callId, `Run deadline exceeded before ${tool.name} could start`);
@@ -277,6 +296,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
         step: batch.step,
         callId,
         idemKey: key,
+        outputBudgetChars: maxInlineOutputChars,
         ...(tool.sideEffect === 'exec' ? { processMarker } : {}),
         env: batch.env,
         signal: controller.signal,
@@ -291,7 +311,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
       };
 
       let prepared: Record<string, unknown> | undefined;
-      if (tool.prepare !== undefined) {
+      if (recovered !== undefined) {
+        const stored = recovered.meta['prepared'];
+        prepared = isRecord(stored) ? stored : undefined;
+      } else if (tool.prepare !== undefined) {
         try {
           prepared = await tool.prepare(input, ctx);
         } catch (error) {
@@ -352,7 +375,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
         timer = setTimeout(() => abortWith('timeout'), timeoutMs);
         const running = runTool();
         const result = await Promise.race([running, aborted.then(() => undefined)]);
-        if (abortReason === undefined && result !== undefined) return complete(finalizeResult(result), reconciled);
+        if (abortReason === undefined && result !== undefined) return complete(finalizeResult(result, tool), reconciled);
         await settleWithin(running, ABORT_SETTLE_LIMIT_MS);
         const output = abortReason === 'timeout' ? timedOutOutput(tool, timeoutMs) : cancelledOutput(tool);
         return complete({ status: 'failed', output }, reconciled);
@@ -371,7 +394,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
       }
       if (reconcileOutcome.outcome === 'not_applied') return await execute('not_applied');
       const status = reconcileOutcome.outcome === 'already_applied' ? 'completed' : 'failed';
-      return complete(finalizeResult({ status, output: reconcileOutcome.output }), reconcileOutcome.outcome);
+      return complete(finalizeResult({ status, output: reconcileOutcome.output }, tool), reconcileOutcome.outcome);
     } finally {
       clearTimeout(timer);
       if (recordCompleted && tool.sideEffect === 'exec') fs.rmSync(processMarker, { force: true });

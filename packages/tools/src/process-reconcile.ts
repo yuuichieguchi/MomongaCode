@@ -28,7 +28,7 @@ const runTool = (file: string, args: readonly string[]): Promise<string> =>
     });
   });
 
-const findHolders = async (marker: string): Promise<number[]> => {
+export const findHolders = async (marker: string): Promise<number[]> => {
   const output = await runTool('/usr/sbin/lsof', ['-t', '--', marker]);
   return output
     .split('\n')

@@ -37,6 +37,7 @@ export type ToolContext = SubjectContext & {
   step: number;
   callId: string;
   idemKey: string;
+  outputBudgetChars: number;
   processMarker?: string;
   env: Readonly<Record<string, string>>;
   signal: AbortSignal;
@@ -61,6 +62,7 @@ export type ToolDefinition<Input> = {
   kind: ToolKind;
   sideEffect: SideEffect;
   inputSchema: Record<string, unknown>;
+  pagesOutput?: true;
   timeoutMs: number | ((input: Input) => number);
   title(input: Input): string;
   locations?(input: Input): { path: string; line?: number }[];

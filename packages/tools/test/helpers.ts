@@ -136,7 +136,7 @@ export const makeBlobs = () => {
     },
     read(handle: string, range: { lineStart: number; lineEnd: number } | { offset: number; length: number }) {
       const entry = stored.get(handle);
-      if (entry === undefined) return Promise.reject(new Error(`no blob ${handle}`));
+      if (entry === undefined) return Promise.reject(Object.assign(new Error(`no blob ${handle}`), { code: 'BLOB_NOT_FOUND' }));
       const lines = entry.text.split('\n');
       const base = { totalLines: lines.length, totalBytes: Buffer.byteLength(entry.text) };
       if ('lineStart' in range) return Promise.resolve({ ...base, text: lines.slice(range.lineStart - 1, range.lineEnd).join('\n') });
@@ -154,6 +154,13 @@ export const makeBlobs = () => {
 };
 
 export const fakeSandbox: Sandbox = {
+  kind: 'seatbelt',
+  spawn: () => {
+    throw new Error('sandbox is not used by executor tests');
+  },
+};
+
+export const noneSandbox: Sandbox = {
   kind: 'none',
   spawn: () => {
     throw new Error('sandbox is not used by executor tests');

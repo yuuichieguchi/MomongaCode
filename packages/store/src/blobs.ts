@@ -153,7 +153,7 @@ export const createBlobStore = (db: DatabaseSync, clock: Clock, dir: string): Bl
   const locate = (handle: string): { file: string; totalBytes: number; totalLines: number } => {
     if (!HANDLE_PATTERN.test(handle)) throw new Error(`invalid blob handle "${handle}": expected a 64-character lowercase hex sha256`);
     const row = select.get({ sha256: handle });
-    if (row === undefined) throw new Error(`unknown blob ${handle}`);
+    if (row === undefined) throw Object.assign(new Error(`unknown blob ${handle}`), { code: 'BLOB_NOT_FOUND' });
     const reader = readerFor('blobs', handle, row);
     return { file: path.join(dir, handle), totalBytes: reader.number('byte_length'), totalLines: reader.number('line_count') };
   };
