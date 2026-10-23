@@ -3,7 +3,11 @@ import { absoluteFrom } from '@momonga/policy';
 import { assertReadAllowedValid } from '@momonga/sandbox';
 import { canonicalPath, comparableContains } from '@momonga/foundation';
 
-export const canonicalOrResolved = (entry: string): string => canonicalPath(path.isAbsolute(entry) ? entry : path.resolve(entry));
+export const assertAbsoluteEntries = (field: string, entries: readonly string[]): void => {
+  for (const entry of entries) {
+    if (!path.isAbsolute(entry)) throw new Error(`${field} entry must be an absolute path: ${entry}`);
+  }
+};
 
 export type ReadAccessPolicy = {
   readDenied: readonly string[];
@@ -14,9 +18,11 @@ const isStrictlyInside = (candidate: string, directory: string): boolean =>
   comparableContains(directory, candidate) && !comparableContains(candidate, directory);
 
 export const createReadAccessMatcher = (policy: ReadAccessPolicy) => {
+  assertAbsoluteEntries('readDenied', policy.readDenied);
+  assertAbsoluteEntries('readAllowed', policy.readAllowed ?? []);
   assertReadAllowedValid(policy.readDenied, policy.readAllowed ?? []);
-  const denied: string[] = policy.readDenied.map(canonicalOrResolved);
-  const allowed: string[] = (policy.readAllowed ?? []).map(canonicalOrResolved);
+  const denied: string[] = policy.readDenied.map(canonicalPath);
+  const allowed: string[] = (policy.readAllowed ?? []).map(canonicalPath);
 
   const blocksResolved = (resolved: string): boolean =>
     denied.some(
@@ -29,7 +35,7 @@ export const createReadAccessMatcher = (policy: ReadAccessPolicy) => {
     deniesAnything: denied.length > 0,
     blocksResolved,
     blocks: (target: string, cwd: string): boolean =>
-      blocksResolved(canonicalOrResolved(absoluteFrom(target, cwd))) || blocksResolved(path.resolve(cwd, target)),
+      blocksResolved(canonicalPath(absoluteFrom(target, cwd))) || blocksResolved(path.resolve(cwd, target)),
     isAllowedEntry: (resolved: string): boolean => allowed.some((guard) => comparableContains(guard, resolved)),
     leadsToAllowed: (resolved: string): boolean => allowed.some((guard) => isStrictlyInside(guard, resolved)),
     deniedWithin: (directory: string): string[] => denied.filter((guard) => isStrictlyInside(guard, directory)),

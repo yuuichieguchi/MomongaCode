@@ -2,6 +2,7 @@ import path from 'node:path';
 import { comparableContains } from '@momonga/foundation';
 import { assertReadAllowedValid, canonicalizePath, defaultProtectedPaths } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
+import { assertAbsoluteEntries } from '../read-access.ts';
 
 export const protectedPathsFor = (roots: readonly string[]): string[] => roots.flatMap(defaultProtectedPaths);
 
@@ -19,6 +20,13 @@ export type SandboxPolicyOptions = {
 const unique = (values: readonly string[]): string[] => [...new Set(values)];
 
 export const buildSandboxPolicy = (options: SandboxPolicyOptions): SandboxPolicy => {
+  assertAbsoluteEntries('roots', options.roots);
+  assertAbsoluteEntries('home', [options.home]);
+  assertAbsoluteEntries('tmpDir', [options.tmpDir]);
+  assertAbsoluteEntries('sessionsTmpRoot', [options.sessionsTmpRoot]);
+  assertAbsoluteEntries('extraWritable', options.extraWritable ?? []);
+  assertAbsoluteEntries('extraReadDenied', options.extraReadDenied ?? []);
+  assertAbsoluteEntries('readAllowed', options.readAllowed ?? []);
   const momonga = path.join(options.home, '.momonga');
   const keychains = path.join(options.home, 'Library', 'Keychains');
   const readDenied = [momonga, keychains, options.sessionsTmpRoot, ...(options.extraReadDenied ?? [])];
