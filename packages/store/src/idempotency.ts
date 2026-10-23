@@ -3,7 +3,7 @@ import { canonicalJson, immediateTx } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { expectOneOf, expectRecord, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
-import type { IdempotencyBegin, IdempotencyRecord, IdempotencyStore } from './types.ts';
+import type { IdempotencyBegin, IdempotencyLookup, IdempotencyRecord, IdempotencyStore } from './types.ts';
 
 const OPEN_STATES = ['PENDING', 'UNKNOWN'] as const;
 
@@ -45,7 +45,18 @@ export const createIdempotencyStore = (db: DatabaseSync, clock: Clock): Idempote
     }
   };
 
+  const lookupRow = (key: string, row: Row): IdempotencyLookup => {
+    const reader = readerFor('idempotency', key, row);
+    if (reader.string('state') === 'COMPLETED') return { s: 'COMPLETED', result: reader.json('result_json') };
+    const rec = decodeRecord(row);
+    return rec.state === 'PENDING' ? { s: 'PENDING', rec } : { s: 'UNKNOWN', rec };
+  };
+
   return {
+    get: (key) => {
+      const row = select.get({ key });
+      return row === undefined ? undefined : lookupRow(key, row);
+    },
     begin: (key, options) =>
       immediateTx<IdempotencyBegin>(db, () => {
         const inserted = insert.run({
@@ -57,10 +68,7 @@ export const createIdempotencyStore = (db: DatabaseSync, clock: Clock): Idempote
         if (Number(inserted.changes) === 1) return { s: 'NEW' };
         const row = select.get({ key });
         if (row === undefined) throw new Error(`idempotency key "${key}" vanished during begin`);
-        const state = readerFor('idempotency', key, row).string('state');
-        if (state === 'COMPLETED') return { s: 'COMPLETED', result: readerFor('idempotency', key, row).json('result_json') };
-        const rec = decodeRecord(row);
-        return rec.state === 'PENDING' ? { s: 'PENDING', rec } : { s: 'UNKNOWN', rec };
+        return lookupRow(key, row);
       }),
     attachProcess: (key, process) => {
       requireChange(attach.run({ key, pgid: process.pgid, startedAt: process.startedAt }).changes, key, 'attach a process to', 'PENDING');

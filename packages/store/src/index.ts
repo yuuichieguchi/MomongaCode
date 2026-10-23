@@ -18,6 +18,7 @@ export type {
   CreateSessionInput,
   HeartbeatResult,
   IdempotencyBegin,
+  IdempotencyLookup,
   IdempotencyRecord,
   IdempotencyStore,
   LeaseLost,

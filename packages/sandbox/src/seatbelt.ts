@@ -50,6 +50,7 @@ export function createSeatbeltSandbox(options: SeatbeltSandboxOptions): Sandbox 
           file: sandboxExecPath,
           args: ['-p', profile, ...paramArgs, '--', ...command.argv],
           cwd: command.cwd,
+          ...(command.markerFile === undefined ? {} : { markerFile: command.markerFile }),
           env: { ...command.env, TMPDIR: tmpDir },
           signal,
           killGraceMs: options.killGraceMs,

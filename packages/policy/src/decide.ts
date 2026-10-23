@@ -3,7 +3,7 @@ import type { PermissionRule } from '@momonga/config';
 import type { PermissionMode } from '@momonga/protocol';
 import { commandCoveredByAllowRules } from './command-match.ts';
 import { matchRule, matchStrength, ruleCoversToolName } from './match-rule.ts';
-import { absoluteFrom, canonicalizePath, isInside } from './path-match.ts';
+import { absoluteFrom, canonicalizePath, isInside, volumeIsCaseInsensitive } from './path-match.ts';
 import { allReads, allRedirects, analyzeCommand, changesDirectory, looseRedirectTargets } from './shell.ts';
 import type { RedirectTarget } from './shell.ts';
 import type { DecisionKind, PermissionSubject, PolicyTool } from './types.ts';
@@ -16,11 +16,12 @@ export type DecideInput = {
   roots: string[];
   home: string;
   cwd: string;
+  protectedPaths?: readonly string[];
 };
 
 export type Decision = {
   kind: DecisionKind;
-  source: 'rule' | 'mode';
+  source: 'rule' | 'mode' | 'protected';
   reason: string;
   rule?: PermissionRule;
 };
@@ -39,6 +40,26 @@ const byRule = (kind: DecisionKind, rule: PermissionRule, verb: string): Decisio
 });
 
 const byMode = (kind: DecisionKind, reason: string): Decision => ({ kind, source: 'mode', reason });
+
+const comparable = (value: string): string => (volumeIsCaseInsensitive ? value.toLowerCase() : value);
+
+const resolveGuard = (guard: string, cwd: string): string =>
+  comparable(canonicalizePath(absoluteFrom(guard, cwd)) ?? path.resolve(cwd, guard));
+
+const protectedWriteReason = (input: DecideInput, subject: PermissionSubject): string | undefined => {
+  if (subject.kind !== 'path' || subject.access !== 'write') return undefined;
+  const protectedPaths = input.protectedPaths ?? [];
+  if (protectedPaths.length === 0) return undefined;
+  const guards = protectedPaths.map((guard) => ({ guard, resolved: resolveGuard(guard, input.cwd) }));
+  for (const target of subject.paths) {
+    const canonical = canonicalizePath(absoluteFrom(target, input.cwd));
+    if (canonical === null) return `writing to ${target} requires approval because its real location cannot be resolved and protected paths exist`;
+    const resolvedTarget = comparable(canonical);
+    const hit = guards.find(({ resolved }) => isInside(resolvedTarget, resolved));
+    if (hit !== undefined) return `writing to protected path ${hit.guard} requires approval`;
+  }
+  return undefined;
+};
 
 const insideRoots = (paths: readonly string[], roots: string[], cwd: string): boolean => {
   if (paths.length === 0) return false;
@@ -85,6 +106,9 @@ const decideSubject = (input: DecideInput, tool: PolicyTool, subject: Permission
   if (mode === 'plan' && tool.sideEffect !== 'read_only') {
     return byMode('deny', `plan mode only allows read-only tools; ${tool.name} has side effect ${tool.sideEffect}`);
   }
+
+  const guardReason = protectedWriteReason(input, subject);
+  if (guardReason !== undefined) return { kind: 'ask', source: 'protected', reason: guardReason };
 
   const asked = applicable.find((rule) => rule.effect === 'ask' && matchRule(rule, subject, input.roots));
   if (asked !== undefined) {
@@ -174,6 +198,8 @@ export const decide = (input: DecideInput): Decision => {
   ];
   const denied = secondary.find((decision) => decision.kind === 'deny');
   if (denied !== undefined) return denied;
+  const guarded = secondary.find((decision) => decision.kind === 'ask' && decision.source === 'protected');
+  if (guarded !== undefined) return guarded;
   if (primary.kind === 'ask') return primary;
   return secondary.find((decision) => decision.kind === 'ask') ?? primary;
 };
