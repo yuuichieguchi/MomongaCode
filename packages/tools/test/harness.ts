@@ -4,7 +4,7 @@ import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { absoluteFrom, canonicalizePath } from '@momonga/policy';
 import type { PermissionSubject } from '@momonga/policy';
 import { createToolExecutor, createToolRegistry, defineTool, validateToolInput } from '@momonga/tools';
-import type { AnyTool, BatchInput, ToolCall, ToolContext, ToolDefinition, ToolSet } from '@momonga/tools';
+import type { AnyTool, BatchInput, ToolCall, ToolContext, ToolDefinition, ToolExecutorOptions, ToolSet } from '@momonga/tools';
 import type { PermissionRule } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
 import { fakeSandbox, makeBlobs, makeClock, makeIdempotency, makeLayout, sandboxPolicyFor } from './helpers.ts';
@@ -36,22 +36,35 @@ export const toolSetOf = async (...tools: AnyTool[]): Promise<ToolSet> => {
 
 export type Harness = ReturnType<typeof makeHarness>;
 
-export const makeHarness = (options: { maxInlineOutputChars?: number; maxParallel?: number; idempotencyTtlMs?: number; attempts?: number } = {}) => {
+export type HarnessOptions = {
+  maxInlineOutputChars?: number;
+  maxParallel?: number;
+  idempotencyTtlMs?: number;
+  attempts?: number;
+  executor?: Partial<ToolExecutorOptions>;
+};
+
+export const makeHarness = (options: HarnessOptions = {}) => {
   const layout: Layout = makeLayout();
   const clock = makeClock();
   const idempotency = makeIdempotency(clock);
   const blobs = makeBlobs();
   const markerDir = path.join(layout.root, 'markers');
   fs.mkdirSync(markerDir, { mode: 0o700 });
+  const warnings: string[] = [];
   const executor = createToolExecutor({
     idempotency: idempotency.port,
     blobs: blobs.port,
     clock,
     processMarkerDir: markerDir,
+    onWarning: (message: string) => {
+      warnings.push(message);
+    },
     ...(options.idempotencyTtlMs === undefined ? {} : { idempotencyTtlMs: options.idempotencyTtlMs }),
     ...(options.maxInlineOutputChars === undefined ? {} : { maxInlineOutputChars: options.maxInlineOutputChars }),
     ...(options.maxParallel === undefined ? {} : { maxParallel: options.maxParallel }),
     readOnlyRetry: { attempts: options.attempts ?? 3, baseMs: 0, maxMs: 0 },
+    ...options.executor,
   });
   const session = { cwd: layout.project, readLedger: new Map<string, { sha256: string; mtimeMs: number }>() };
   const started: string[] = [];
@@ -82,7 +95,7 @@ export const makeHarness = (options: { maxInlineOutputChars?: number; maxParalle
     },
     ...extra,
   });
-  return { layout, markerDir, clock, idempotency, blobs, executor, session, started, input };
+  return { layout, markerDir, clock, idempotency, blobs, executor, session, started, input, warnings };
 };
 
 export type ExecuteFn = (input: Input, ctx: ToolContext, prepared: Record<string, unknown> | undefined) => ReturnType<ToolDefinition<Input>['execute']>;

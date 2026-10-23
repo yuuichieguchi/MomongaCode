@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import path from 'node:path';
+import { canonicalPath, comparableContains } from '@momonga/foundation';
 
 export type JsonFile = { found: false } | { found: true; value: unknown };
 
@@ -162,9 +162,6 @@ export const parseJsonText = (text: string, source: string): unknown => {
 
 export type ReadJsonFileOptions = { confineTo?: string };
 
-const isInsideDirectory = (candidate: string, directory: string): boolean =>
-  candidate === directory || candidate.startsWith(directory.endsWith(path.sep) ? directory : `${directory}${path.sep}`);
-
 const assertReadable = async (file: string, confineTo: string | undefined): Promise<boolean> => {
   let link: fs.Stats;
   try {
@@ -183,9 +180,9 @@ const assertReadable = async (file: string, confineTo: string | undefined): Prom
     }
     if (!target.isFile()) throw new Error(`${file}: not a regular file`);
     if (confineTo !== undefined) {
-      const real = await fs.promises.realpath(file);
-      const root = await fs.promises.realpath(confineTo);
-      if (!isInsideDirectory(real, root)) throw new Error(`${file}: symlink target ${real} is outside the project ${root}`);
+      const real = canonicalPath(file);
+      const root = canonicalPath(confineTo);
+      if (!comparableContains(root, real)) throw new Error(`${file}: symlink target ${real} is outside the project ${root}`);
     }
     return true;
   }

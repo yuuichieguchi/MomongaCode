@@ -54,6 +54,7 @@ describe('worker cancel recovery with a hanging reconcile', () => {
       blobs: env.store.blobs,
       clock: env.clock,
       processMarkerDir: env.markers,
+      onWarning: () => undefined,
       reconcileCapMs: 20,
       reconcileGraceMs: 20,
     });

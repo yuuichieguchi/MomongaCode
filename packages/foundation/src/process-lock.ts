@@ -8,6 +8,18 @@ export interface ProcessLock {
   release(): void;
 }
 
+export class ProcessLockHeldError extends Error {
+  readonly lockPath: string;
+  readonly holderPid: number;
+
+  constructor(message: string, lockPath: string, holderPid: number) {
+    super(message);
+    this.name = 'ProcessLockHeldError';
+    this.lockPath = lockPath;
+    this.holderPid = holderPid;
+  }
+}
+
 const GARBLED_LOCK_GRACE_MS = 2000;
 const ABANDONED_TAKEOVER_MS = 10000;
 const LOCK_RETRY_MS = 25;
@@ -89,7 +101,7 @@ const acquireLock = async (lockPath: string, describeHolder: DescribeHolder): Pr
       await removeStaleLock(lockPath, state);
       continue;
     }
-    throw new Error(await describeHolder(state.pid));
+    throw new ProcessLockHeldError(await describeHolder(state.pid), lockPath, state.pid);
   }
 };
 

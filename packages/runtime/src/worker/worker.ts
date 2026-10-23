@@ -3,7 +3,9 @@ import type { RunMemory } from './claim-context.ts';
 import type { ClaimControl } from './claim-control.ts';
 import { runClaim } from './claim-runner.ts';
 import type { ClaimHost } from './claim-runner.ts';
+import { isFatalStoreError } from '@momonga/store';
 import { describeError } from './errors.ts';
+import { reportError } from './report.ts';
 import type { Worker, WorkerErrorContext, WorkerOptions } from './types.ts';
 
 const DEFAULT_IDLE_POLL_MS = 250;
@@ -46,12 +48,23 @@ export const createWorker = (options: WorkerOptions): Worker => {
 
   const report = (error: unknown, context: WorkerErrorContext, claim: Claim | null): void => {
     let message = `The worker failed on this run: ${describeError(error)}`;
-    try {
-      options.onError?.(error, context);
-    } catch (hookError) {
-      message = `${message} (the error hook also failed: ${describeError(hookError)})`;
-    }
+    const hookFailure = reportError(options, error, context);
+    if (hookFailure !== undefined) message = `${message} (the error hook also failed: ${hookFailure})`;
     if (claim !== null) noticeOnClaim(message, claim);
+  };
+
+  let fatalReported = false;
+
+  const fatal = (error: unknown): void => {
+    stopping = true;
+    aborted = true;
+    if (fatalReported) return;
+    fatalReported = true;
+    try {
+      options.onFatal(error instanceof Error ? error : new Error(String(error)));
+    } catch (hookError) {
+      reportError(options, hookError, { workerId: options.workerId });
+    }
   };
 
   const runOnce = async (onClaim?: (claim: Claim) => void): Promise<'idle' | 'yielded'> => {
@@ -76,6 +89,10 @@ export const createWorker = (options: WorkerOptions): Worker => {
         attempt.claim = claim;
       });
     } catch (error) {
+      if (isFatalStoreError(error)) {
+        fatal(error);
+        return 'idle';
+      }
       const { claim } = attempt;
       report(error, { workerId: options.workerId, ...(claim === null ? {} : { runId: claim.runId }) }, claim);
       return 'idle';
@@ -114,6 +131,7 @@ export const createWorker = (options: WorkerOptions): Worker => {
   const poll = async (): Promise<void> => {
     while (!stopping) {
       const outcome = await pollOnce();
+      if (stopping) return;
       sweepMemories();
       if (outcome === 'idle') await sleep();
     }
@@ -122,10 +140,11 @@ export const createWorker = (options: WorkerOptions): Worker => {
   return {
     runOnce: () => runOnce(),
     start: () => {
+      if (fatalReported) throw new Error('the worker hit a fatal error and cannot be restarted');
       if (loop !== undefined) return;
       stopping = false;
       unsubscribeWake = options.wake?.subscribe(onWake);
-      loop = poll();
+      loop = poll().catch(fatal);
     },
     stop: async () => {
       stopping = true;

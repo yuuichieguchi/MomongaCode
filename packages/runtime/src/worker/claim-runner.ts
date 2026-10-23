@@ -1,5 +1,6 @@
 import { createTokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex } from '@momonga/foundation';
+import { isFatalStoreError } from '@momonga/store';
 import type { Claim } from '@momonga/store';
 import type { ClaimContext, Flow, RunMemory, Terminals } from './claim-context.ts';
 import { reconcileStartedCalls } from './cancel-recovery.ts';
@@ -11,14 +12,16 @@ import { inlineOutputLimitFor } from './inline-limit.ts';
 import { openJournal } from './journal.ts';
 import type { Journal } from './journal.ts';
 import { readRunLimits } from './limits.ts';
-import { decideAfterResponse, modelKey, responsePending, resumeInFlight, runModelStep } from './model-step.ts';
+import { decideAfterResponse, responsePending, resumeInFlight, runModelStep } from './model-step.ts';
 import { readPins } from './pins.ts';
 import type { RunPins } from './pins.ts';
 import { createTerminals } from './terminals.ts';
 import { settleCalls } from './tool-step.ts';
 import type { WorkerOptions } from './types.ts';
 import type { TraceSpan } from '../ports.ts';
+import { modelKey } from '../model-key.ts';
 import { buildSystemPrompt } from '../system-prompt.ts';
+import { reportError } from './report.ts';
 
 const DEFAULT_HEARTBEAT_DIVISOR = 3;
 const DEFAULT_CANCEL_POLL_MS = 250;
@@ -67,6 +70,8 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
   let journal: Journal | undefined;
   let terminals: Terminals | undefined;
   let agentSpan: TraceSpan | undefined;
+  let escaping = false;
+  let fatal = false;
   try {
     journal = openJournal({ store, claim, lost: control.lost });
     terminals = createTerminals({ store, claim, journal, control, clock: options.clock });
@@ -76,8 +81,16 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
   } catch (error) {
     const cause = control.failure() ?? error;
     agentSpan?.end(cause);
+    if (isFatalStoreError(cause)) {
+      fatal = true;
+      escaping = true;
+      throw cause;
+    }
     if (control.leaseLost() || cause instanceof LeaseLostError) return;
-    if (journal === undefined || terminals === undefined) throw cause;
+    if (journal === undefined || terminals === undefined) {
+      escaping = true;
+      throw cause;
+    }
     try {
       if (control.shuttingDown()) {
         terminals.yieldLease();
@@ -99,12 +112,22 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
       }
       requeueOrStop(options, claim, journal, terminals, memory, cause);
     } catch (recoveryError) {
-      if (!(recoveryError instanceof LeaseLostError)) throw recoveryError;
+      if (!(recoveryError instanceof LeaseLostError)) {
+        escaping = true;
+        fatal = isFatalStoreError(recoveryError);
+        throw recoveryError;
+      }
     }
   } finally {
     control.stop();
     detach();
-    if (memory.streak === 0 || store.getRun(claim.runId)?.status !== 'QUEUED') host.forget(claim.runId);
+    if (!fatal) {
+      try {
+        if (memory.streak === 0 || store.getRun(claim.runId)?.status !== 'QUEUED') host.forget(claim.runId);
+      } catch (lookupError) {
+        if (!escaping) throw lookupError;
+      }
+    }
   }
 };
 
@@ -171,7 +194,7 @@ const drive = async (
     if (control.shuttingDown()) {
       settled.catch((error: unknown) => {
         if (error instanceof LeaseLostError || error instanceof ShutdownError) return;
-        options.onError?.(error, { workerId: options.workerId, runId: run.id });
+        reportError(options, error, { workerId: options.workerId, runId: run.id });
       });
       terminals.yieldLease();
       return;
@@ -187,7 +210,8 @@ const drive = async (
 
   const systemPrompt = (options.systemPrompt ?? buildSystemPrompt)({ cwd: session.cwd, platform: process.platform });
   const systemPromptDigest = sha256Hex(systemPrompt);
-  const toolSet = await tools.toolSet(run.id);
+  const env = tools.envFor(session);
+  const toolSet = await tools.toolSet(run.id, { signal: control.signal, env });
   const recorded = journal.state.pins;
   const pins: RunPins =
     recorded === undefined
@@ -226,6 +250,7 @@ const drive = async (
     capabilities: pins.capabilities,
     limits,
     toolSet,
+    env,
     functionTools: toolSet.forModel({ mode: session.permissionMode, rules }),
     systemPrompt,
     inlineLimit: inlineOutputLimitFor(pins.capabilities),

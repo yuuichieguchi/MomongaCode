@@ -7,9 +7,11 @@ import type { PermissionMode, RunEventPayload, RunStatus, SessionEventPayload } 
 import { createApprovalStore } from './approvals.ts';
 import { createBlobStore, prepareBlobDirectory } from './blobs.ts';
 import { decodeEvent, decodeRun, decodeRunEvents, decodeRunState, decodeSession, encodeRunState } from './codec.ts';
+import { StoreIdentityError } from './fatal.ts';
 import { createIdempotencyStore } from './idempotency.ts';
 import { corrupt, expectOneOf, expectRecord, isRecord, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
+import { sameRunRequest } from './run-request.ts';
 import { MIGRATIONS } from './schema.ts';
 import { createTrustStore } from './trust.ts';
 import type {
@@ -168,8 +170,8 @@ const FENCE_SQL = `
 
 const prepareStatements = (db: DatabaseSync) => ({
   insertSession: db.prepare(
-    `INSERT INTO sessions (id, cwd, env_json, permission_mode, model_alias, bypass_allowed, created_at)
-     VALUES (:id, :cwd, :env, :permissionMode, :modelAlias, :bypassAllowed, :createdAt)`,
+    `INSERT INTO sessions (id, cwd, env_json, permission_mode, model_alias, bypass_allowed, additional_directories_json, created_at)
+     VALUES (:id, :cwd, :env, :permissionMode, :modelAlias, :bypassAllowed, :additionalDirectories, :createdAt)`,
   ),
   updateSessionMode: db.prepare('UPDATE sessions SET permission_mode = :permissionMode WHERE id = :id'),
   sessionMaxEventId: db.prepare('SELECT COALESCE(MAX(id), 0) AS max_id FROM events WHERE session_id = :sessionId'),
@@ -178,6 +180,10 @@ const prepareStatements = (db: DatabaseSync) => ({
   listSessionsByCwd: db.prepare('SELECT * FROM sessions WHERE cwd = :cwd ORDER BY created_at, rowid'),
   dataVersion: db.prepare('PRAGMA data_version'),
   selectRun: db.prepare('SELECT * FROM runs WHERE id = :id'),
+  latestSessionEventTime: db.prepare('SELECT created_at FROM events WHERE session_id = :sessionId ORDER BY id DESC LIMIT 1'),
+  activeRunExists: db.prepare(
+    `SELECT EXISTS (SELECT 1 FROM runs WHERE session_id = :sessionId AND status NOT IN (${TERMINAL_STATUSES.map((status) => `'${status}'`).join(', ')})) AS active`,
+  ),
   selectRunByKey: db.prepare('SELECT * FROM runs WHERE session_id = :sessionId AND idempotency_key = :key'),
   listRuns: db.prepare('SELECT * FROM runs WHERE session_id = :sessionId ORDER BY ordinal'),
   latestRunOfSession: db.prepare('SELECT id FROM runs WHERE session_id = :sessionId ORDER BY ordinal DESC LIMIT 1'),
@@ -277,7 +283,9 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const db = openDatabase(options.path);
   let statements: Statements;
   let blobDirectory: string;
+  let identity: fs.Stats;
   try {
+    identity = fs.statSync(options.path);
     migrate(db, MIGRATIONS);
     blobDirectory = path.join(path.dirname(options.path), 'blobs');
     prepareBlobDirectory(blobDirectory);
@@ -574,6 +582,12 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     };
   };
 
+  const findRunByIdempotencyKey = (sessionId: string, key: string): { run: Run; requestDigest: string | null } | undefined => {
+    const row = sql.selectRunByKey.get({ sessionId, key });
+    if (row === undefined) return undefined;
+    return { run: decodeRun(row), requestDigest: readerFor('runs', String(row['id']), row).nullableString('request_digest') };
+  };
+
   const store: RuntimeStore = {
     createSession: (input) =>
       transaction(() => {
@@ -585,6 +599,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           permissionMode: input.permissionMode,
           modelAlias: input.modelAlias,
           bypassAllowed: input.bypassAllowed === true ? 1 : 0,
+          additionalDirectories: canonicalJson(input.additionalDirectories ?? []),
           createdAt: clock.now(),
         });
         const row = sql.selectSession.get({ id });
@@ -615,12 +630,9 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       transaction<CreateRunResult>(() => {
         if (sql.selectSession.get({ id: sessionId }) === undefined) return { kind: 'not_found' };
         if (input.idempotencyKey !== undefined) {
-          const existing = sql.selectRunByKey.get({ sessionId, key: input.idempotencyKey });
+          const existing = findRunByIdempotencyKey(sessionId, input.idempotencyKey);
           if (existing !== undefined) {
-            const storedDigest = readerFor('runs', String(existing['id']), existing).nullableString('request_digest');
-            return storedDigest !== null && storedDigest === input.requestDigest
-              ? { kind: 'existing', run: decodeRun(existing) }
-              : { kind: 'key_reused' };
+            return sameRunRequest(existing, input.requestDigest) ? { kind: 'existing', run: existing.run } : { kind: 'key_reused' };
           }
         }
         const ordinalRow = sql.nextOrdinal.get({ sessionId });
@@ -647,6 +659,33 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         writeRun(inserted);
         return { kind: 'created', run: requireRun(id) };
       }),
+
+    findRunByIdempotencyKey,
+
+    sessionActivity: (sessionId) =>
+      readTx(db, () => {
+        const row = sql.selectSession.get({ id: sessionId });
+        if (row === undefined) return undefined;
+        const latest = sql.latestSessionEventTime.get({ sessionId });
+        const active = sql.activeRunExists.get({ sessionId });
+        if (active === undefined) throw new Error(`could not compute whether session ${sessionId} has an active run`);
+        return {
+          lastActivityAt: latest === undefined ? decodeSession(row).createdAt : readerFor('events', sessionId, latest).number('created_at'),
+          hasActiveRun: readerFor('runs', sessionId, active).number('active') === 1,
+        };
+      }),
+
+    checkIdentity: () => {
+      let current: fs.Stats;
+      try {
+        current = fs.statSync(options.path);
+      } catch (error) {
+        throw new StoreIdentityError(`database ${options.path} is no longer present`, { cause: error });
+      }
+      if (current.dev !== identity.dev || current.ino !== identity.ino) {
+        throw new StoreIdentityError(`database ${options.path} was replaced: it is not the file this store opened`);
+      }
+    },
 
     listRuns: (sessionId, statuses) =>
       sql.listRuns

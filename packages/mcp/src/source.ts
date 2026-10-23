@@ -1,7 +1,7 @@
 import type { CallToolResult, Tool } from '@modelcontextprotocol/client';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { defineTool, ToolExecutionError } from '@momonga/tools';
-import type { AnyTool, ToolResult, ToolSource, ToolSourceListing } from '@momonga/tools';
+import type { AnyTool, ToolListOptions, ToolResult, ToolSource, ToolSourceListing } from '@momonga/tools';
 import { McpUnavailableError } from './connection.ts';
 import type { McpServerConnection } from './connection.ts';
 import { sanitizeSchema } from './schema-sanitizer.ts';
@@ -117,9 +117,9 @@ const buildTool = (
 
 export const createMcpToolSource = (options: McpToolSourceOptions): ToolSource => {
   const { server, connection } = options;
-  const listWithNotices = async (): Promise<ToolSourceListing> => {
+  const listWithNotices = async (listOptions?: ToolListOptions): Promise<ToolSourceListing> => {
     assertServerNameFits(server);
-    const listed = await connection.listTools();
+    const listed = await connection.listTools(listOptions?.signal === undefined ? undefined : { signal: listOptions.signal });
     const tools: AnyTool[] = [];
     const notices: string[] = [];
     for (const tool of listed) {
@@ -136,7 +136,7 @@ export const createMcpToolSource = (options: McpToolSourceOptions): ToolSource =
   };
   return {
     id: `mcp__${server}`,
-    list: async () => (await listWithNotices()).tools,
+    list: async (listOptions) => (await listWithNotices(listOptions)).tools,
     listWithNotices,
   };
 };

@@ -7,14 +7,14 @@ import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { InstructionReader } from '@momonga/context';
 import type { Capabilities, PermissionMode, RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { createWorker } from '@momonga/runtime';
-import type { ToolRuntimePort, Worker, WorkerOptions } from '@momonga/runtime';
+import type { ToolEnv, ToolRuntimePort, Worker, WorkerOptions } from '@momonga/runtime';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
 import type { Claim, Run, RuntimeStore, Session } from '@momonga/store';
 import { createFakeClock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 import { createToolExecutor, createToolRegistry } from '@momonga/tools';
-import type { AnyTool, ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
+import type { AbandonTarget, AnyTool, ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
 import { within } from './deferred.ts';
 import { createFakeGateway } from './fake-gateway.ts';
 import type { FakeGateway } from './fake-gateway.ts';
@@ -102,6 +102,14 @@ export type EnvOptions = {
 
 export type BatchInput = Parameters<ToolExecutor['runBatch']>[0];
 
+export type PortCalls = {
+  envFor: { sessionId: string; env: ToolEnv }[];
+  toolSet: { runId: string; signal: AbortSignal | undefined; env: ToolEnv | undefined }[];
+  recoveryToolSet: { signal: AbortSignal | undefined }[];
+  policyFor: { sessionId: string; env: ToolEnv | undefined }[];
+  abandon: { targets: AbandonTarget[]; signal: AbortSignal }[];
+};
+
 export type WorkerOverrides = Partial<Omit<WorkerOptions, 'tools'>> & { tools?: Partial<ToolRuntimePort>; toolList?: () => AnyTool[] };
 
 export type Env = Awaited<ReturnType<typeof makeEnv>>;
@@ -133,13 +141,27 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const tracer: FakeTracer = createFakeTracer();
   const toolbox: FakeToolbox = createFakeToolbox();
   const instructions = createFakeInstructions();
-  const realExecutor = createToolExecutor({ idempotency: store.idempotency, blobs: store.blobs, clock, processMarkerDir: markers });
+  const executorWarnings: string[] = [];
+  const realExecutor = createToolExecutor({
+    idempotency: store.idempotency,
+    blobs: store.blobs,
+    clock,
+    processMarkerDir: markers,
+    onWarning: (message: string) => {
+      executorWarnings.push(message);
+    },
+  });
   const batches: BatchInput[] = [];
+  const portCalls: PortCalls = { envFor: [], toolSet: [], recoveryToolSet: [], policyFor: [], abandon: [] };
   const executor: ToolExecutor = {
     ...realExecutor,
     runBatch: (input) => {
       batches.push(input);
       return realExecutor.runBatch(input);
+    },
+    abandon: (targets, abandonOptions) => {
+      portCalls.abandon.push({ targets: [...targets], signal: abandonOptions.signal });
+      return realExecutor.abandon(targets, abandonOptions);
     },
   };
   const sandboxPolicy: SandboxPolicy = {
@@ -151,6 +173,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   };
   const sessionStates = new Map<string, ToolSessionState>();
   const workers: Worker[] = [];
+  const fatals: Error[] = [];
   const pendingRuns: Promise<unknown>[] = [];
   let rawDb: DatabaseSync | undefined;
 
@@ -177,10 +200,25 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   };
 
   const toolRuntime = (toolList: () => AnyTool[]): ToolRuntimePort => ({
-    toolSet: async () => snapshotTools(toolList()),
+    envFor: (target: Session) => {
+      const env: ToolEnv = { ...target.env };
+      portCalls.envFor.push({ sessionId: target.id, env });
+      return env;
+    },
+    toolSet: async (runId: string, toolSetOptions: { signal: AbortSignal; env: ToolEnv }) => {
+      portCalls.toolSet.push({ runId, signal: toolSetOptions?.signal, env: toolSetOptions?.env });
+      return snapshotTools(toolList());
+    },
+    recoveryToolSet: async (recoveryOptions: { signal: AbortSignal }) => {
+      portCalls.recoveryToolSet.push({ signal: recoveryOptions?.signal });
+      return snapshotTools(toolList());
+    },
     executor,
     sandbox: fakeSandbox,
-    policyFor: async (target: Session) => ({ roots: [target.cwd, EXTRA_ROOT], sandboxPolicy, protectedPaths: [], tmpDir: sessionTmpDir }),
+    policyFor: async (target: Session, policyOptions: { env: ToolEnv }) => {
+      portCalls.policyFor.push({ sessionId: target.id, env: policyOptions?.env });
+      return { roots: [target.cwd, EXTRA_ROOT], sandboxPolicy, protectedPaths: [], tmpDir: sessionTmpDir, env: policyOptions?.env ?? target.env };
+    },
     sessionState: (target: Session) => {
       const existing = sessionStates.get(target.id);
       if (existing !== undefined) return existing;
@@ -205,6 +243,9 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       home,
       blobs: store.blobs,
       instructionReader: instructions,
+      onFatal: (error: Error) => {
+        fatals.push(error);
+      },
       ...rest,
     });
     workers.push(created);
@@ -305,7 +346,10 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     toolbox,
     instructions,
     executor,
+    executorWarnings,
     batches,
+    portCalls,
+    fatals,
     session,
     worker,
     runOnce,

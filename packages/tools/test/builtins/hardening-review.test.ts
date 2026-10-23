@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { volumeIsCaseInsensitive } from '@momonga/policy';
@@ -11,7 +12,7 @@ afterEach(() => {
 
 const ACCEPT = { mode: 'acceptEdits' } as const;
 
-describe.runIf(volumeIsCaseInsensitive)('Keychains stays unreadable whatever readAllowed says', () => {
+describe.runIf(volumeIsCaseInsensitive(os.tmpdir()))('Keychains stays unreadable whatever readAllowed says', () => {
   it('Read of home/Library/Keychains/k.db is refused with a case-variant readAllowed entry', async () => {
     const tools = await makeBuiltins();
     const keychains = path.join(tools.layout.home, 'Library', 'Keychains');
@@ -179,7 +180,7 @@ describe.each(grepBackends)('Grep allowed-root discovery (%s backend)', (_name, 
   });
 });
 
-describe.runIf(volumeIsCaseInsensitive)('roots compare case-insensitively on a case-insensitive volume', () => {
+describe.runIf(volumeIsCaseInsensitive(os.tmpdir()))('roots compare case-insensitively on a case-insensitive volume', () => {
   it('Write to a differently cased path under a missing root is inside the roots in acceptEdits', async () => {
     const tools = await makeBuiltins();
     const root = path.join(tools.layout.project, 'newdir');

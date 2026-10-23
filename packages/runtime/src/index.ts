@@ -10,6 +10,7 @@ export type {
   GatewayCallOptions,
   GatewayPort,
   SettingsPort,
+  ToolEnv,
   ToolPolicy,
   ToolRuntimePort,
   ToolSpanInput,

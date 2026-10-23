@@ -79,6 +79,7 @@ export const createIdempotencyStore = (db: DatabaseSync, clock: Clock): Idempote
     markUnknown: (key) => {
       requireChange(markUnknown.run({ key }).changes, key, 'mark unknown', 'PENDING');
     },
+    markUnknownIfPending: (key) => Number(markUnknown.run({ key }).changes) === 1,
     purgeExpired: (nowMs) => Number(purge.run({ nowMs }).changes),
   };
 };

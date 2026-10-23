@@ -155,10 +155,6 @@ describe('trust case variants', () => {
     expect(store.trust.decisionFor(path.join(root, 'WORK', 'PROJECT', 'SRC'))).toEqual({ decision: 'trusted', inheritedFrom: project });
     expect(store.trust.decisionFor(deep)).toEqual({ decision: 'trusted', inheritedFrom: project });
   });
-
-  it.skipIf(CASE_INSENSITIVE)('is skipped on a case-sensitive volume because case variants are distinct paths there', () => {
-    expect(CASE_INSENSITIVE).toBe(false);
-  });
 });
 
 describe('trust.set', () => {

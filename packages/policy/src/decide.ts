@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { comparableContains } from '@momonga/foundation';
+import { comparableContains, containsByComponents, volumeIsCaseInsensitive } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import type { PermissionMode } from '@momonga/protocol';
 import { commandCoveredByAllowRules } from './command-match.ts';
@@ -42,18 +42,32 @@ const byRule = (kind: DecisionKind, rule: PermissionRule, verb: string): Decisio
 
 const byMode = (kind: DecisionKind, reason: string): Decision => ({ kind, source: 'mode', reason });
 
-const resolveGuard = (guard: string, cwd: string): string =>
-  canonicalizePath(absoluteFrom(guard, cwd)) ?? path.resolve(cwd, guard);
+type Guard = { guard: string; resolved: string | null; lexical: string };
+
+const componentsOfPath = (value: string): string[] => value.split('/').filter((component) => component !== '');
+
+const guardCovers = ({ resolved, lexical }: Guard, canonical: string): boolean =>
+  resolved === null
+    ? containsByComponents(
+        { existing: '/', tail: componentsOfPath(lexical) },
+        { existing: '/', tail: componentsOfPath(canonical) },
+        volumeIsCaseInsensitive(lexical),
+      )
+    : comparableContains(resolved, canonical);
 
 const protectedWriteReason = (input: DecideInput, subject: PermissionSubject): string | undefined => {
   if (subject.kind !== 'path' || subject.access !== 'write') return undefined;
   const protectedPaths = input.protectedPaths ?? [];
   if (protectedPaths.length === 0) return undefined;
-  const guards = protectedPaths.map((guard) => ({ guard, resolved: resolveGuard(guard, input.cwd) }));
+  const guards: Guard[] = protectedPaths.map((guard) => ({
+    guard,
+    resolved: canonicalizePath(absoluteFrom(guard, input.cwd)),
+    lexical: path.resolve(input.cwd, guard),
+  }));
   for (const target of subject.paths) {
     const canonical = canonicalizePath(absoluteFrom(target, input.cwd));
     if (canonical === null) return `writing to ${target} requires approval because its real location cannot be resolved and protected paths exist`;
-    const hit = guards.find(({ resolved }) => comparableContains(resolved, canonical));
+    const hit = guards.find((guard) => guardCovers(guard, canonical));
     if (hit !== undefined) return `writing to protected path ${hit.guard} requires approval`;
   }
   return undefined;

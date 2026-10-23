@@ -1,16 +1,19 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import fs from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { Readable, Stream, Writable } from 'node:stream';
 import { deserializeMessage, serializeMessage, type JSONRPCMessage, type Transport } from '@modelcontextprotocol/client';
 import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
 import type { McpStdioServerConfig } from '@momonga/config';
-import { terminateGroup, type TerminateOutcome } from '@momonga/foundation';
+import { reapMarkedProcesses, terminateGroup, type TerminateOutcome } from '@momonga/foundation';
 
 const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 const STDERR_TAIL_BYTES = 64 * 1024;
 const DEFAULT_CLOSE_GRACE_MS = 2000;
 const NEWLINE = 0x0a;
+
+export type McpMarkerOptions = { dir: string; onWarning(message: string): void };
 
 export interface StdioTransportOptions {
   name: string;
@@ -18,6 +21,7 @@ export interface StdioTransportOptions {
   projectDir: string;
   baseEnv: Record<string, string>;
   closeGraceMs?: number;
+  markers?: McpMarkerOptions;
   terminate?: (pgid: number, options: { graceMs: number }) => Promise<TerminateOutcome>;
 }
 
@@ -38,13 +42,17 @@ export interface StdioTransport extends Transport {
 
 type ServerProcess = ChildProcessByStdio<Writable, Readable, Readable>;
 
-function composeEnv(baseEnv: Record<string, string>, overlay: Record<string, string> | undefined): Record<string, string> {
+export function inheritedEnvOf(baseEnv: Record<string, string>): Record<string, string> {
   const env: Record<string, string> = {};
   for (const key of DEFAULT_INHERITED_ENV_VARS) {
     const value = baseEnv[key];
     if (value !== undefined && !value.startsWith('()')) env[key] = value;
   }
-  return { ...env, ...overlay };
+  return env;
+}
+
+function composeEnv(baseEnv: Record<string, string>, overlay: Record<string, string> | undefined): Record<string, string> {
+  return { ...inheritedEnvOf(baseEnv), ...overlay };
 }
 
 function isExecutableFile(candidate: string): boolean {
@@ -87,6 +95,7 @@ class StdioTransportImpl implements StdioTransport {
   private closed = false;
   private deliveryStopped = false;
   private readonly closeGraceMs: number;
+  private markerPath: string | undefined;
 
   private readonly options: StdioTransportOptions;
 
@@ -116,16 +125,30 @@ class StdioTransportImpl implements StdioTransport {
     const { config, projectDir, baseEnv } = this.options;
     const cwd = path.resolve(projectDir, config.cwd ?? '.');
     const env = composeEnv(baseEnv, config.env);
-    const file = resolveCommand(config.command, cwd, env['PATH'] ?? '');
-    const child = spawn(file, config.args ?? [], { cwd, env, detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    const markerPath = this.options.markers === undefined ? undefined : path.join(this.options.markers.dir, randomUUID());
+    let child: ServerProcess;
+    try {
+      child = this.spawnServer(config, cwd, env, markerPath);
+    } catch (error) {
+      if (markerPath !== undefined) fs.rmSync(markerPath, { force: true });
+      throw error;
+    }
     this.child = child;
-    await new Promise<void>((resolve, reject) => {
-      child.once('error', reject);
-      child.once('spawn', () => {
-        child.off('error', reject);
-        resolve();
+    this.markerPath = markerPath;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        child.once('error', reject);
+        child.once('spawn', () => {
+          child.off('error', reject);
+          resolve();
+        });
       });
-    });
+    } catch (error) {
+      this.markerPath = undefined;
+      if (markerPath !== undefined) fs.rmSync(markerPath, { force: true });
+      throw error;
+    }
+    if (markerPath !== undefined) fs.writeFileSync(markerPath, `${child.pid}\n`);
     this.exited = new Promise<void>((resolve) => {
       child.once('exit', (code, signal) => {
         this.exit = { code, signal };
@@ -140,6 +163,18 @@ class StdioTransportImpl implements StdioTransport {
     child.stdin.on('error', (error) => this.reportError(error));
     child.stdout.on('data', (chunk: Buffer) => this.onStdout(chunk));
     child.stderr.on('data', (chunk: Buffer) => this.onStderr(chunk));
+  }
+
+  private spawnServer(config: McpStdioServerConfig, cwd: string, env: Record<string, string>, markerPath: string | undefined): ServerProcess {
+    const file = resolveCommand(config.command, cwd, env['PATH'] ?? '');
+    const args = config.args ?? [];
+    if (markerPath === undefined) return spawn(file, args, { cwd, env, detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
+    const markerFd = fs.openSync(markerPath, 'wx', 0o600);
+    try {
+      return spawn(file, args, { cwd, env, detached: true, stdio: ['pipe', 'pipe', 'pipe', markerFd] }) as ServerProcess;
+    } finally {
+      fs.closeSync(markerFd);
+    }
   }
 
   send(message: JSONRPCMessage): Promise<void> {
@@ -181,8 +216,32 @@ class StdioTransportImpl implements StdioTransport {
       if (child !== undefined && child.pid !== undefined) {
         child.stdin.end();
         await this.raceTimeout(this.exited);
-        await (this.options.terminate ?? terminateGroup)(child.pid, { graceMs: this.closeGraceMs });
+        let terminateFailure: { error: unknown } | undefined;
+        try {
+          await (this.options.terminate ?? terminateGroup)(child.pid, { graceMs: this.closeGraceMs });
+        } catch (error) {
+          terminateFailure = { error };
+        }
         await this.raceTimeout(this.stdoutEnded);
+        let sweepFailure: { error: unknown } | undefined;
+        if (this.markerPath !== undefined && this.options.markers !== undefined) {
+          try {
+            await reapMarkedProcesses({
+              marker: this.markerPath,
+              pgid: child.pid,
+              killGraceMs: this.closeGraceMs,
+              label: 'mcp',
+              onWarning: this.options.markers.onWarning,
+            });
+          } catch (error) {
+            sweepFailure = { error };
+          }
+        }
+        if (terminateFailure !== undefined && sweepFailure !== undefined) {
+          throw new AggregateError([terminateFailure.error, sweepFailure.error], 'terminating the MCP server group and sweeping its marker both failed');
+        }
+        if (terminateFailure !== undefined) throw terminateFailure.error;
+        if (sweepFailure !== undefined) throw sweepFailure.error;
       }
     } finally {
       const child = this.child;

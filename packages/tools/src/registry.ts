@@ -9,7 +9,13 @@ const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
 export type ToolSourceListing = { tools: AnyTool[]; notices: string[] };
 
-export type ToolSource = { id: string; list(): Promise<AnyTool[]>; listWithNotices?(): Promise<ToolSourceListing> };
+export type ToolListOptions = { signal?: AbortSignal };
+
+export type ToolSource = {
+  id: string;
+  list(options?: ToolListOptions): Promise<AnyTool[]>;
+  listWithNotices?(options?: ToolListOptions): Promise<ToolSourceListing>;
+};
 
 export type ToolSet = {
   readonly digest: string;
@@ -22,7 +28,7 @@ export type ToolSet = {
 export type ToolRegistry = {
   register(tool: AnyTool): void;
   addSource(source: ToolSource): void;
-  snapshot(): Promise<ToolSet>;
+  snapshot(options?: ToolListOptions): Promise<ToolSet>;
 };
 
 const assertRegistrable = (tool: AnyTool): void => {
@@ -65,21 +71,25 @@ export const createToolRegistry = (): ToolRegistry => {
     addSource: (source) => {
       sources.push(source);
     },
-    snapshot: async () => {
+    snapshot: async (options) => {
+      const signal = options?.signal;
       const tools: AnyTool[] = [...builtins];
       const taken = new Set(tools.map((tool) => tool.name));
       const notices: string[] = [];
       for (const source of sources) {
+        signal?.throwIfAborted();
+        const listOptions: ToolListOptions = signal === undefined ? {} : { signal };
         let listed: AnyTool[];
         try {
           if (source.listWithNotices === undefined) {
-            listed = await source.list();
+            listed = await source.list(listOptions);
           } else {
-            const listing = await source.listWithNotices();
+            const listing = await source.listWithNotices(listOptions);
             listed = listing.tools;
             for (const notice of listing.notices) notices.push(`Tool source ${JSON.stringify(source.id)}: ${notice}`);
           }
         } catch (error) {
+          if (signal?.aborted === true) throw signal.reason;
           notices.push(`Tool source ${JSON.stringify(source.id)} failed to list tools: ${error instanceof Error ? error.message : String(error)}`);
           continue;
         }

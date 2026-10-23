@@ -58,7 +58,8 @@ export type IdempotencyLog =
   | { op: 'begin'; key: string; expiresAt: number; meta: Record<string, unknown>; s: FakeBegin['s'] }
   | { op: 'attachProcess'; key: string; pgid: number; startedAt: number }
   | { op: 'complete'; key: string; result: unknown }
-  | { op: 'markUnknown'; key: string };
+  | { op: 'markUnknown'; key: string }
+  | { op: 'markUnknownIfPending'; key: string; changed: boolean };
 
 export const makeIdempotency = (clock: { now(): number }) => {
   const records = new Map<string, Entry>();
@@ -101,6 +102,13 @@ export const makeIdempotency = (clock: { now(): number }) => {
       log.push({ op: 'markUnknown', key });
       const existing = records.get(key);
       if (existing?.kind === 'open') existing.rec = { ...existing.rec, state: 'UNKNOWN' };
+    },
+    markUnknownIfPending(key: string): boolean {
+      const existing = records.get(key);
+      const changed = existing?.kind === 'open' && existing.rec.state === 'PENDING';
+      if (changed) existing.rec = { ...existing.rec, state: 'UNKNOWN' };
+      log.push({ op: 'markUnknownIfPending', key, changed });
+      return changed;
     },
   };
   const seed = (key: string, state: 'PENDING' | 'UNKNOWN', meta: Record<string, unknown>): FakeRecord => {

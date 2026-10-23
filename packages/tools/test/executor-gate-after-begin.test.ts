@@ -22,6 +22,7 @@ const executorWhoseRecordVanishesAfterGet = (harness: Harness) => {
     blobs: harness.blobs.port,
     clock: harness.clock,
     processMarkerDir: harness.markerDir,
+    onWarning: () => undefined,
   });
 };
 

@@ -1,3 +1,4 @@
+import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { decide, volumeIsCaseInsensitive } from '@momonga/policy';
@@ -6,7 +7,7 @@ import { makeLayout } from './helpers.ts';
 
 const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write' };
 
-describe.runIf(volumeIsCaseInsensitive)('roots compare case-insensitively on a case-insensitive volume', () => {
+describe.runIf(volumeIsCaseInsensitive(os.tmpdir()))('roots compare case-insensitively on a case-insensitive volume', () => {
   it('allows a differently cased target under a root that does not exist yet in acceptEdits', () => {
     const layout = makeLayout();
     const root = path.join(layout.project, 'newdir');

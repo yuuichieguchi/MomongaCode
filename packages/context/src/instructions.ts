@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { sha256Hex } from '@momonga/foundation';
+import { comparableContains, sha256Hex } from '@momonga/foundation';
 import type { MessageInputItem } from '@momonga/protocol';
 import type {
   ContextNotice,
@@ -32,8 +32,6 @@ export type DiscoverOptions = {
   trusted: boolean;
   touchedPaths: readonly TouchedPath[];
 };
-
-const isInside = (root: string, candidate: string): boolean => candidate === root || candidate.startsWith(`${root}/`);
 
 const capText = (text: string): { text: string; truncated: boolean } => {
   const bytes = new TextEncoder().encode(text);
@@ -92,7 +90,7 @@ export const discoverInstructions = async (options: DiscoverOptions): Promise<Di
   const readInProject = async (filePath: string): Promise<{ realPath: string; text: string } | undefined> => {
     const file = await reader.read(filePath);
     if (file === undefined) return undefined;
-    if (!isInside(realRoot, file.realPath)) {
+    if (!comparableContains(realRoot, file.realPath)) {
       notices.push({
         code: 'instructions_outside_project',
         message: `${filePath} resolves to ${file.realPath}, outside the project, and was ignored`,

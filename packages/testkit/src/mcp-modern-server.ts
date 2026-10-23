@@ -20,6 +20,7 @@ import {
   MODERN_FIXTURE_OVERSIZED_DESCRIPTION_CHARS,
   MODERN_FIXTURE_PAGE_SIZE,
   MODERN_FIXTURE_RECORD_ENV,
+  MODERN_FIXTURE_SETSID_GRANDCHILD_ENV,
   MODERN_FIXTURE_STDERR_ENV,
   type ModernFixtureRecord,
 } from './mcp-fixtures.ts';
@@ -312,6 +313,18 @@ const createFixtureServer = (): Server => {
   return server;
 };
 
+const SETSID_GRANDCHILD = [
+  'use POSIX;',
+  'POSIX::setsid();',
+  'open(my $ready, ">", "$ARGV[0].tmp"); print $ready $$; close($ready); rename("$ARGV[0].tmp", $ARGV[0]);',
+  'sleep 1 while 1;',
+].join(' ');
+
+const spawnSetsidGrandchild = (readyFile: string): void => {
+  const grandchild = spawn('perl', ['-e', SETSID_GRANDCHILD, readyFile], { stdio: ['ignore', 'ignore', 'ignore', 3] });
+  record({ type: 'grandchild', pid: grandchild.pid ?? -1 });
+};
+
 const runServer = (): void => {
   const stderrLine = process.env[MODERN_FIXTURE_STDERR_ENV];
   if (stderrLine !== undefined && stderrLine !== '') process.stderr.write(`${stderrLine}\n`);
@@ -319,6 +332,8 @@ const runServer = (): void => {
     const grandchild = spawn('sleep', ['600'], { stdio: 'ignore' });
     record({ type: 'grandchild', pid: grandchild.pid ?? -1 });
   }
+  const setsidReadyFile = process.env[MODERN_FIXTURE_SETSID_GRANDCHILD_ENV];
+  if (setsidReadyFile !== undefined && setsidReadyFile !== '') spawnSetsidGrandchild(setsidReadyFile);
   serveStdio(createFixtureServer, { legacy: 'reject' });
   record({ type: 'ready', pid: process.pid });
 };

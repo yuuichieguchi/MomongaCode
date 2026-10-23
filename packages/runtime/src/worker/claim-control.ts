@@ -1,8 +1,9 @@
 import type { Claim, RuntimeStore } from '@momonga/store';
-import { LeaseLostError } from './errors.ts';
+import { LeaseLostError, ShutdownError } from './errors.ts';
 
 export type ClaimControl = {
   readonly signal: AbortSignal;
+  readonly recoverySignal: AbortSignal;
   lost(): never;
   leaseLost(): boolean;
   cancelRequested(): boolean;
@@ -28,6 +29,7 @@ export type ClaimControlOptions = {
 
 export const startClaimControl = ({ store, claim, heartbeatMs, cancelPollMs }: ClaimControlOptions): ClaimControl => {
   const controller = new AbortController();
+  const recovery = new AbortController();
   let leaseLost = false;
   let cancelRequested = false;
   let shuttingDown = false;
@@ -44,6 +46,7 @@ export const startClaimControl = ({ store, claim, heartbeatMs, cancelPollMs }: C
 
   const markLost = (): void => {
     leaseLost = true;
+    if (!recovery.signal.aborted) recovery.abort(new LeaseLostError());
     abortFor('lease_lost');
   };
 
@@ -55,6 +58,7 @@ export const startClaimControl = ({ store, claim, heartbeatMs, cancelPollMs }: C
 
   const shutdown = (): void => {
     shuttingDown = true;
+    if (!recovery.signal.aborted) recovery.abort(new ShutdownError());
     abortFor('shutdown');
     shutdownRequested.resolve();
   };
@@ -95,6 +99,7 @@ export const startClaimControl = ({ store, claim, heartbeatMs, cancelPollMs }: C
 
   return {
     signal: controller.signal,
+    recoverySignal: recovery.signal,
     lost: () => {
       markLost();
       throw new LeaseLostError();

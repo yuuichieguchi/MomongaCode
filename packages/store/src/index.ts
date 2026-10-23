@@ -1,4 +1,6 @@
 export { foldRunState, initialRunState } from './fold.ts';
+export { StoreIdentityError, isFatalStoreError } from './fatal.ts';
+export { sameRunRequest } from './run-request.ts';
 export { openRuntimeStore } from './runtime-store.ts';
 export type {
   Approval,

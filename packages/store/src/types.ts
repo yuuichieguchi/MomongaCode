@@ -18,6 +18,7 @@ export type Session = {
   permissionMode: PermissionMode;
   modelAlias: string;
   bypassAllowed: boolean;
+  additionalDirectories: readonly string[];
   createdAt: number;
 };
 
@@ -27,6 +28,7 @@ export type CreateSessionInput = {
   permissionMode: PermissionMode;
   modelAlias: string;
   bypassAllowed?: boolean;
+  additionalDirectories?: readonly string[];
 };
 
 export type RunError = { code: string; message: string };
@@ -130,6 +132,7 @@ export type IdempotencyStore = {
   attachProcess(key: string, process: { pgid: number; startedAt: number }): void;
   complete(key: string, result: unknown): void;
   markUnknown(key: string): void;
+  markUnknownIfPending(key: string): boolean;
   purgeExpired(nowMs: number): number;
 };
 
@@ -196,6 +199,9 @@ export type RuntimeStore = {
   getSession(id: string): Session | undefined;
   listSessions(filter?: { cwd?: string }): Session[];
   createRunAndEnqueue(sessionId: string, input: CreateRunInput): CreateRunResult;
+  findRunByIdempotencyKey(sessionId: string, key: string): { run: Run; requestDigest: string | null } | undefined;
+  sessionActivity(sessionId: string): { lastActivityAt: number; hasActiveRun: boolean } | undefined;
+  checkIdentity(): void;
   getRun(id: string): Run | undefined;
   claim(workerId: string): Claim | null;
   heartbeat(claim: Claim): HeartbeatResult;

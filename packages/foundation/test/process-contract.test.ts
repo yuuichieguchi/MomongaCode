@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  EXIT_ALREADY_RUNNING,
   EXIT_CONFIG,
   EXIT_FAILURE,
   EXIT_OK,
@@ -26,6 +27,10 @@ const captureStream = () => {
 describe('exit codes', () => {
   it('pins the documented values', () => {
     expect([EXIT_OK, EXIT_FAILURE, EXIT_CONFIG]).toEqual([0, 1, 78]);
+  });
+
+  it('EXIT_ALREADY_RUNNING is 75', () => {
+    expect(EXIT_ALREADY_RUNNING).toBe(75);
   });
 });
 
@@ -89,6 +94,17 @@ describe('createJsonLogger', () => {
         traceId: '0af7651916cd43dd8448eb211c80319c',
       },
       { ts: START_ISO, level: 'warn', service: 'runtime', pid: process.pid, msg: 'plain' },
+    ]);
+  });
+
+  it('writes the step field', () => {
+    const capture = captureStream();
+    const logger = createJsonLogger({ service: 'runtime', stream: capture.stream, clock: createFakeClock(START_MS), level: 'debug' });
+    logger.debug('startup.step', { step: 'open-store' });
+    logger.debug('plain');
+    expect(capture.lines()).toEqual([
+      { ts: START_ISO, level: 'debug', service: 'runtime', pid: process.pid, msg: 'startup.step', step: 'open-store' },
+      { ts: START_ISO, level: 'debug', service: 'runtime', pid: process.pid, msg: 'plain' },
     ]);
   });
 

@@ -99,6 +99,7 @@ describe('worker cancel with a non-cancel error', () => {
               await untilAborted(signal);
               throw new Error('executor exploded');
             },
+            abandon: () => Promise.reject(new Error('abandon is not used by this test')),
           },
         },
       }),

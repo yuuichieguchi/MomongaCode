@@ -2,6 +2,7 @@ import type { Clock } from './clock.ts';
 
 export const EXIT_OK = 0;
 export const EXIT_FAILURE = 1;
+export const EXIT_ALREADY_RUNNING = 75;
 export const EXIT_CONFIG = 78;
 
 export const MINIMAL_CHILD_ENV_NAMES = ['PATH', 'HOME', 'LANG', 'TMPDIR'] as const;
@@ -30,6 +31,7 @@ export interface LogFields {
   runId?: string;
   workerId?: string;
   traceId?: string;
+  step?: string;
   err?: Error;
 }
 
@@ -52,7 +54,7 @@ const LEVEL_RANK = { debug: 0, info: 1, warn: 2, error: 3 } as const satisfies R
 export const createJsonLogger = ({ service, clock, stream = process.stderr, level = 'info' }: JsonLoggerOptions): JsonLogger => {
   const emit = (entryLevel: LogLevel, msg: string, fields: LogFields = {}): void => {
     if (LEVEL_RANK[entryLevel] < LEVEL_RANK[level]) return;
-    const { runId, workerId, traceId, err } = fields;
+    const { runId, workerId, traceId, step, err } = fields;
     const entry = {
       ts: new Date(clock.now()).toISOString(),
       level: entryLevel,
@@ -62,6 +64,7 @@ export const createJsonLogger = ({ service, clock, stream = process.stderr, leve
       ...(runId === undefined ? {} : { runId }),
       ...(workerId === undefined ? {} : { workerId }),
       ...(traceId === undefined ? {} : { traceId }),
+      ...(step === undefined ? {} : { step }),
       ...(err === undefined ? {} : { err: { name: err.name, message: err.message, stack: err.stack } }),
     };
     stream.write(`${JSON.stringify(entry)}\n`);

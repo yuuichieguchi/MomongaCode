@@ -1,6 +1,7 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { CreateResponseBody, InputItem, RunState } from '@momonga/protocol';
 import type { ClaimContext, Flow } from './claim-context.ts';
+import { modelKey } from '../model-key.ts';
 import { GatewayFailureError } from './errors.ts';
 import { isRecord } from './json.ts';
 import { buildNext, cancelIfInterrupted } from './context-step.ts';
@@ -17,8 +18,6 @@ const REFUSAL_CODES = ['guardrail_violation', 'refusal', 'content_filter'];
 type LimitReason = 'max_steps' | 'budget';
 
 const isRequestBody = (value: unknown): value is CreateResponseBody => isRecord(value) && typeof value['model'] === 'string';
-
-export const modelKey = (runId: string, step: number, attempt: number): string => sha256Hex(canonicalJson([runId, step, attempt]));
 
 const summaryInstruction = (reason: LimitReason): string =>
   `You have reached the ${reason} limit. Summarize what you accomplished, what remains, and any state the user must know. Do not call tools.`;

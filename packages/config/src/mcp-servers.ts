@@ -4,8 +4,8 @@ import { readJsonFile } from './json-file.ts';
 import { looksLikeCredentialName } from './credential-env.ts';
 import { loadLayers } from './layers.ts';
 import type { LoadedLayers } from './layers.ts';
-import { ConfigError } from './user-settings.ts';
-import type { TrustOracle } from './layers.ts';
+import { ConfigError, toConfigError } from './config-error.ts';
+import type { TrustOracle, UserLayer } from './layers.ts';
 import { assertMcpServer, assertMcpServersFile } from './settings.ts';
 import type { McpServerConfig, McpServersFile, Settings } from './settings.ts';
 
@@ -20,6 +20,7 @@ export type LoadMcpServersOptions = {
   projectDir: string;
   trust: TrustOracle;
   env: Readonly<Record<string, string | undefined>>;
+  user?: UserLayer;
 };
 
 export type LoadMcpServersResult = {
@@ -131,10 +132,7 @@ const fileExists = async (file: string): Promise<boolean> => {
   }
 };
 
-const toConfigError = (error: unknown): ConfigError =>
-  error instanceof ConfigError ? error : new ConfigError(error instanceof Error ? error.message : String(error), { cause: error });
-
-const loadLayersForUser = async (options: Pick<LoadMcpServersOptions, 'home' | 'projectDir' | 'trust'>): Promise<LoadedLayers> => {
+const loadLayersForUser = async (options: Pick<LoadMcpServersOptions, 'home' | 'projectDir' | 'trust' | 'user'>): Promise<LoadedLayers> => {
   try {
     return await loadLayers(options);
   } catch (error) {
@@ -197,8 +195,8 @@ const readProjectServers = async (
   return file.mcpServers;
 };
 
-export const loadMcpServers = async ({ home, projectDir, trust, env }: LoadMcpServersOptions): Promise<LoadMcpServersResult> => {
-  const loaded = await loadLayersForUser({ home, projectDir, trust });
+export const loadMcpServers = async ({ home, projectDir, trust, env, user }: LoadMcpServersOptions): Promise<LoadMcpServersResult> => {
+  const loaded = await loadLayersForUser({ home, projectDir, trust, ...(user === undefined ? {} : { user }) });
   const warnings = [...loaded.warnings];
   const userSettings = loaded.layers.find((layer) => layer.origin === 'user');
   const approvingSettings = loaded.layers.filter((layer) => layer.origin === 'user' || layer.origin === 'local').map((layer) => layer.settings);

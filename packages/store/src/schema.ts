@@ -186,6 +186,10 @@ ALTER TABLE runs ADD COLUMN previous_run_id TEXT REFERENCES runs (id);
 ALTER TABLE sessions ADD COLUMN bypass_allowed INTEGER NOT NULL DEFAULT 0 CHECK (bypass_allowed IN (0, 1));
 `;
 
+const SESSION_ADDITIONAL_DIRECTORIES = `
+ALTER TABLE sessions ADD COLUMN additional_directories_json TEXT NOT NULL DEFAULT '[]';
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -194,4 +198,5 @@ export const MIGRATIONS: readonly Migration[] = [
     name: 'allow session-scoped events, add the expired and withdrawn approval statuses, record the request digest and previous run, and mark sessions that may use bypass',
     sql: SESSION_SCOPED_EVENTS_AND_APPROVAL_LIFECYCLE,
   },
+  { version: 4, name: 'snapshot the additional directories of a session', sql: SESSION_ADDITIONAL_DIRECTORIES },
 ];
