@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
 import type { SandboxExit, SandboxedProcess } from './types.ts';
 
 export interface LaunchOptions {
@@ -9,6 +10,7 @@ export interface LaunchOptions {
   signal: AbortSignal;
   killGraceMs: number;
   afterExit: () => void;
+  markerFile?: string;
 }
 
 const POLL_INTERVAL_MS = 10;
@@ -22,7 +24,8 @@ function signalGroup(pgid: number, signal: NodeJS.Signals): void {
   try {
     process.kill(-pgid, signal);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== 'ESRCH' && code !== 'EPERM') throw error;
   }
 }
 
@@ -52,16 +55,28 @@ async function waitForGroupGone(pgid: number, deadline: number): Promise<boolean
 }
 
 export function launch(options: LaunchOptions): SandboxedProcess {
-  const child = spawn(options.file, [...options.args], {
-    cwd: options.cwd,
-    env: { ...options.env },
-    detached: true,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  const markerFd = options.markerFile === undefined ? undefined : fs.openSync(options.markerFile, 'r');
+  let child: ReturnType<typeof spawn>;
+  try {
+    child = spawn(options.file, [...options.args], {
+      cwd: options.cwd,
+      env: { ...options.env },
+      detached: true,
+      stdio: markerFd === undefined ? ['ignore', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe', markerFd],
+    });
+  } finally {
+    if (markerFd !== undefined) fs.closeSync(markerFd);
+  }
   const pid = child.pid;
   if (pid === undefined) {
     child.once('error', () => undefined);
     throw new Error(`failed to spawn ${options.file} in ${options.cwd}`);
+  }
+  const { stdout, stderr } = child;
+  if (stdout === null || stderr === null) {
+    child.once('error', () => undefined);
+    signalGroup(pid, 'SIGKILL');
+    throw new Error(`failed to open output pipes for ${options.file}`);
   }
   const { signal, killGraceMs } = options;
   let killedBy: SandboxExit['killedBy'];
@@ -115,5 +130,5 @@ export function launch(options: LaunchOptions): SandboxedProcess {
   signal.addEventListener('abort', onAbort, { once: true });
   if (signal.aborted) onAbort();
 
-  return { pid, pgid: pid, stdout: child.stdout, stderr: child.stderr, exited };
+  return { pid, pgid: pid, stdout, stderr, exited };
 }

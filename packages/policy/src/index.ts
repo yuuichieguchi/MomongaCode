@@ -6,3 +6,4 @@ export { matchRule } from './match-rule.ts';
 export type { DecisionKind, PermissionSubject, PolicyTool, SideEffect } from './types.ts';
 export { modelVisibleTools } from './visible-tools.ts';
 export type { VisibleToolsOptions } from './visible-tools.ts';
+export { suggestAllowRule } from './suggest-allow-rule.ts';

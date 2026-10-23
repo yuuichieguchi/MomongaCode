@@ -9,6 +9,7 @@ export interface SandboxCommand {
   argv: readonly string[];
   cwd: string;
   env: Readonly<Record<string, string>>;
+  markerFile?: string;
 }
 
 export interface SandboxExit {

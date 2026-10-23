@@ -103,7 +103,10 @@ export type IdempotencyBegin =
   | { s: 'UNKNOWN'; rec: IdempotencyRecord }
   | { s: 'COMPLETED'; result: unknown };
 
+export type IdempotencyLookup = Exclude<IdempotencyBegin, { s: 'NEW' }>;
+
 export type IdempotencyStore = {
+  get(key: string): IdempotencyLookup | undefined;
   begin(key: string, options: { expiresAt: number; meta: Record<string, unknown> }): IdempotencyBegin;
   attachProcess(key: string, process: { pgid: number; startedAt: number }): void;
   complete(key: string, result: unknown): void;
