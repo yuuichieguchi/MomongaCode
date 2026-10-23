@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 import { findHolders, holderGroups, reconcileProcessGroup } from '@momonga/foundation';
+import type { ReapTiming } from '@momonga/foundation';
 
 const spawnedGroups: number[] = [];
 const spawnedPids: number[] = [];
@@ -392,5 +393,51 @@ describe('holderGroups', () => {
     const holder = startEscapedHolder(marker);
     expect(await waitUntil(() => holdersOf(marker).includes(holder), 5000)).toBe(true);
     expect(await holderGroups([holder])).toEqual([holder]);
+  });
+});
+
+describe('reconcileProcessGroup timing injection', () => {
+  const IGNORING_GROUP_SCRIPT = `trap '' TERM; touch "$DIR/ready"; while :; do sleep 1; done`;
+
+  it('reconcileProcessGroup waits only through the injected timing', { timeout: 20_000 }, async () => {
+    const dir = makeDir();
+    const marker = makeMarker(dir);
+    const group = await startGroup(dir, IGNORING_GROUP_SCRIPT, { fd3: marker });
+    let current = 0;
+    const sleeps: number[] = [];
+    const timing: ReapTiming = {
+      now: () => current,
+      sleep: async (ms: number) => {
+        sleeps.push(ms);
+        current += ms;
+        await new Promise((resolve) => setImmediate(resolve));
+      },
+    };
+    const signals: Array<{ pid: number; signal: NodeJS.Signals | number; at: number }> = [];
+    const kill = (pid: number, signal: NodeJS.Signals | number): void => {
+      if (signal !== 0) signals.push({ pid, signal, at: current });
+      process.kill(pid, signal);
+    };
+    const hour = 3_600_000;
+    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: hour, kill, timing });
+    expect(result.outcome).toBe('unknown');
+    expect(signals[0]).toEqual({ pid: -group.pgid, signal: 'SIGTERM', at: 0 });
+    const killed = signals.find(({ signal }) => signal === 'SIGKILL');
+    expect(killed?.pid).toBe(-group.pgid);
+    expect(killed?.at).toBeGreaterThanOrEqual(hour);
+    expect(sleeps.reduce((total, ms) => total + ms, 0)).toBeGreaterThanOrEqual(hour);
+    await group.leaderReaped;
+    expect(await waitUntil(() => !alive(-group.pgid), 5000)).toBe(true);
+  });
+
+  it('throws a signalling error other than EPERM and ESRCH', { timeout: 20_000 }, async () => {
+    const dir = makeDir();
+    const marker = makeMarker(dir);
+    const group = await startGroup(dir, TERM_MARKER_SCRIPT, { fd3: marker });
+    const kill = (pid: number, signal: NodeJS.Signals | number): void => {
+      if (signal !== 0) throw Object.assign(new Error(`kill EINVAL ${pid}`), { code: 'EINVAL', errno: -22, syscall: 'kill' });
+      process.kill(pid, signal);
+    };
+    await expect(reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 100, kill })).rejects.toThrow('kill EINVAL');
   });
 });

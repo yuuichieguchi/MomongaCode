@@ -1,6 +1,6 @@
 import path from 'node:path';
 import picomatch from 'picomatch';
-import { canonicalPath, comparableContains, foldCase, volumeIsCaseInsensitive } from '@momonga/foundation';
+import { canonicalPath, comparableContains, volumeIsCaseInsensitive } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 
 const MATCH_OPTIONS = { dot: true, nocase: false, nonegate: true, windows: false } as const;
@@ -58,8 +58,8 @@ const matchesBeneath = (
   includeDirectoryItself: boolean,
   ignoreCase: boolean,
 ): boolean => {
-  const candidate = ignoreCase ? foldCase(rawCandidate) : rawCandidate;
-  const directory = ignoreCase ? foldCase(rawDirectory) : rawDirectory;
+  const candidate = ignoreCase ? rawCandidate.toLowerCase() : rawCandidate;
+  const directory = ignoreCase ? rawDirectory.toLowerCase() : rawDirectory;
   if (candidate === directory) return globRest === '' || (includeDirectoryItself && ONLY_GLOBSTARS.test(globRest));
   const prefix = directory === '/' ? '/' : `${directory}/`;
   if (!candidate.startsWith(prefix)) return false;
@@ -80,7 +80,7 @@ export const pathMatchesRule = (rule: PermissionRule, target: string, strict: bo
   const absolute = absoluteFrom(target, rule.cwd);
   const real = canonicalizePath(absolute);
   const lexical = path.resolve(rule.cwd, target);
-  const ignoreCase = !strict && volumeIsCaseInsensitive;
+  const ignoreCase = !strict && volumeIsCaseInsensitive(lexical);
 
   if (pattern.kind === 'any-depth') {
     const isMatch = picomatch(pattern.glob, { ...MATCH_OPTIONS, nocase: ignoreCase });

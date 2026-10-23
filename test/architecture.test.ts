@@ -243,3 +243,47 @@ describe('architecture: checker self-test', () => {
     expect(checkManifest('tools', { '@momonga/testkit': '*' })).toHaveLength(1);
   });
 });
+
+const UNKNOWN_WRITER_CALL = /\b(markUnknown|markUnknownIfPending)\s*\((?![^()]*\)\s*[:{])/g;
+const UNKNOWN_WRITER_ALLOWLIST = ['packages/tools/src/executor.ts'];
+
+export const unknownWriterCalls = (source: string): string[] => [...source.matchAll(UNKNOWN_WRITER_CALL)].map((match) => match[1] as string);
+
+const srcFilesOf = (dir: string): string[] =>
+  fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) return entry.name === 'node_modules' || entry.name === 'test' ? [] : srcFilesOf(full);
+    return /\.(ts|tsx)$/.test(entry.name) ? [full] : [];
+  });
+
+const unknownWritersByFile = (): Record<string, string[]> =>
+  Object.fromEntries(
+    fs
+      .readdirSync(packagesDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && fs.existsSync(path.join(packagesDir, entry.name, 'src')))
+      .flatMap((entry) => srcFilesOf(path.join(packagesDir, entry.name, 'src')))
+      .map((file) => [path.relative(root, file), unknownWriterCalls(fs.readFileSync(file, 'utf8'))] as const)
+      .filter(([, calls]) => calls.length > 0),
+  );
+
+describe('architecture: UNKNOWN has one writer', () => {
+  it('markUnknownIfPending and markUnknown are called only from the executor abandon', () => {
+    const writers = unknownWritersByFile();
+
+    expect(Object.keys(writers).filter((file) => !UNKNOWN_WRITER_ALLOWLIST.includes(file))).toEqual([]);
+    expect(Object.keys(writers)).toEqual(['packages/tools/src/executor.ts']);
+    const executorCalls = writers['packages/tools/src/executor.ts'] ?? [];
+    expect(executorCalls.length).toBeGreaterThanOrEqual(1);
+    expect(executorCalls.every((name) => name === 'markUnknownIfPending')).toBe(true);
+  });
+
+  it('the matcher finds identifier calls but not declarations, definitions or prepared statements', () => {
+    expect(unknownWriterCalls('idempotency.markUnknownIfPending(target.idemKey);')).toEqual(['markUnknownIfPending']);
+    expect(unknownWriterCalls('const { markUnknown } = port;\nmarkUnknown(key);')).toEqual(['markUnknown']);
+    expect(unknownWriterCalls('markUnknownIfPending(key: string): boolean;\nmarkUnknown(key: string): void;')).toEqual([]);
+    expect(unknownWriterCalls('markUnknownIfPending: (key) => Number(markUnknown.run({ key }).changes) === 1,')).toEqual([]);
+    expect(unknownWriterCalls('markUnknownIfPending(key) {\n  return true;\n}')).toEqual([]);
+    expect(unknownWriterCalls('if (!idempotency.markUnknownIfPending(key)) return;')).toEqual(['markUnknownIfPending']);
+    expect(unknownWriterCalls("const markUnknown = db.prepare(\"UPDATE idempotency SET state = 'UNKNOWN'\");")).toEqual([]);
+  });
+});

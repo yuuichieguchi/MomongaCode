@@ -10,7 +10,7 @@ const MINIMUM_LIMIT = LONGEST_MARKER.length + 2 + 2;
 
 const construct = (maxInlineOutputChars: number) => {
   const clock = makeClock();
-  return createToolExecutor({ idempotency: makeIdempotency(clock).port, blobs: makeBlobs().port, clock, maxInlineOutputChars, processMarkerDir: '/nonexistent-marker-dir' });
+  return createToolExecutor({ idempotency: makeIdempotency(clock).port, blobs: makeBlobs().port, clock, maxInlineOutputChars, processMarkerDir: '/nonexistent-marker-dir', onWarning: () => undefined });
 };
 
 const truncatedOutput = async (output: string, limit: number): Promise<{ output: string; truncated?: true }> => {

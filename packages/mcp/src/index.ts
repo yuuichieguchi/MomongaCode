@@ -11,5 +11,5 @@ export { createMcpPool } from './pool.ts';
 export type { McpPool, McpPoolOptions } from './pool.ts';
 export { createMcpToolSource } from './source.ts';
 export type { McpToolSourceOptions } from './source.ts';
-export { createStdioTransport } from './stdio-transport.ts';
-export type { StdioTransport, StdioTransportDiagnostics, StdioTransportExit, StdioTransportOptions } from './stdio-transport.ts';
+export { createStdioTransport, inheritedEnvOf } from './stdio-transport.ts';
+export type { McpMarkerOptions, StdioTransport, StdioTransportDiagnostics, StdioTransportExit, StdioTransportOptions } from './stdio-transport.ts';

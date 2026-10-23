@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalJson, canonicalPath, comparableContains, comparablePath, computeBackoff, sha256Hex } from '@momonga/foundation';
-import type { Clock } from '@momonga/foundation';
+import { canonicalJson, canonicalPath, comparableContains, comparablePath, computeBackoff, reapMarkedProcesses, sha256Hex } from '@momonga/foundation';
+import type { Clock, ReapTiming, SignalSender } from '@momonga/foundation';
 import { absoluteFrom, canonicalizePath, decide, suggestAllowRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject } from '@momonga/policy';
 import type { PermissionMode, ToolKind } from '@momonga/protocol';
@@ -23,6 +23,7 @@ const DEFAULT_READ_ONLY_RETRY = { attempts: 3, baseMs: 200, maxMs: 2000 } as con
 const ABORT_SETTLE_LIMIT_MS = 2000;
 const DEFAULT_RECONCILE_GRACE_MS = 2000;
 const DEFAULT_RECONCILE_CAP_MS = 30_000;
+const ABANDON_KILL_GRACE_MS = 2000;
 const UNKNOWN_EFFECTS_NOTICE = 'Its side effects are unknown; inspect the current state before retrying.';
 
 export type ToolCall = {
@@ -92,21 +93,31 @@ export type ToolExecutorOptions = {
   processMarkerDir: string;
   reconcileCapMs?: number;
   reconcileGraceMs?: number;
+  onWarning(message: string): void;
+  reap?: { kill?: SignalSender; timing?: ReapTiming };
 };
 
-export type ToolExecutor = { runBatch(input: BatchInput): Promise<CallOutcome[]> };
+export type AbandonTarget = { callId: string; idemKey: string };
+
+export type AbandonOutcome = { idemKey: string; callId: string; outcome: 'unknown' };
+
+export type ToolExecutor = {
+  runBatch(input: BatchInput): Promise<CallOutcome[]>;
+  abandon(targets: readonly AbandonTarget[], options: { signal: AbortSignal }): Promise<AbandonOutcome[]>;
+};
 
 type RunPlan = {
   call: ToolCall;
   tool: AnyTool;
   input: unknown;
-  subject: PermissionSubject;
+  gate: Gate | undefined;
   key: string;
   batch: BatchInput;
-  access: BatchAccess;
   recovered?: ToolIdempotencyRecord;
   gateRan: boolean;
 };
+
+type Gate = { subject: PermissionSubject; access: BatchAccess };
 
 type Admission = { kind: 'outcome'; outcome: CallOutcome } | { kind: 'run'; plan: RunPlan };
 
@@ -277,7 +288,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
     };
   };
 
-  const permissionGate = (call: ToolCall, tool: AnyTool, input: unknown, subject: PermissionSubject, batch: BatchInput, access: BatchAccess): CallOutcome | undefined => {
+  const permissionGate = (call: ToolCall, tool: AnyTool, input: unknown, gate: Gate | undefined, batch: BatchInput): CallOutcome | undefined => {
+    if (gate === undefined) throw new Error('permission gate requires a subject and read access');
+    const { subject, access } = gate;
     const cwd = batch.session.cwd;
     const blockedPath = readDeniedPath(subject, access, cwd);
     if (blockedPath !== undefined) return failedOutcome(call.callId, `Permission denied: ${blockedPath} is blocked by the sandbox policy`);
@@ -327,7 +340,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
     return undefined;
   };
 
-  const admit = (call: ToolCall, batch: BatchInput, access: BatchAccess): Admission => {
+  const admit = (call: ToolCall, batch: BatchInput, access: BatchAccess | undefined): Admission => {
     const outcome = (value: CallOutcome): Admission => ({ kind: 'outcome', outcome: value });
     if (batch.signal.aborted) return outcome(failedOutcome(call.callId, `${call.name} was cancelled`));
     const tool = batch.toolSet.get(call.name);
@@ -340,31 +353,39 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
     const input = validation.value;
     const cwd = batch.session.cwd;
 
+    const key = idempotencyKeyFor(batch.runId, batch.step, call.callId);
+    if (batch.recoverOnly === true) {
+      const existing = idempotency.get(key);
+      if (existing?.s === 'COMPLETED') return outcome(storedOutcome(existing.result));
+      if (existing === undefined) return outcome(failedOutcome(call.callId, `${tool.name} was cancelled`));
+      if (existing.s === 'UNKNOWN') {
+        return outcome({ ...failedOutcome(call.callId, interruptedOutput(tool)), idemKey: key, reconciled: 'unknown' });
+      }
+      return { kind: 'run', plan: { call, tool, input, gate: undefined, key, batch, recovered: existing.rec, gateRan: false } };
+    }
+
+    if (access === undefined) throw new Error('read access is required for a batch that can execute');
     let subject;
     try {
       subject = tool.subject(input, { cwd, home: batch.home, roots: rootsOf(batch) });
     } catch (error) {
       return outcome(failedOutcome(call.callId, describeThrown(tool.name, error)));
     }
+    const gate: Gate = { subject, access };
 
-    const key = idempotencyKeyFor(batch.runId, batch.step, call.callId);
     const existing = idempotency.get(key);
     if (existing?.s === 'COMPLETED') return outcome(storedOutcome(existing.result));
     const recovered = existing?.s === 'PENDING' || existing?.s === 'UNKNOWN' ? existing.rec : undefined;
-    if (batch.recoverOnly === true) {
-      if (recovered === undefined) return outcome(failedOutcome(call.callId, `${tool.name} was cancelled`));
-      return { kind: 'run', plan: { call, tool, input, subject, key, batch, access, recovered, gateRan: false } };
-    }
 
     if (recovered === undefined) {
-      const gated = permissionGate(call, tool, input, subject, batch, access);
+      const gated = permissionGate(call, tool, input, gate, batch);
       if (gated !== undefined) return outcome(gated);
     }
-    return { kind: 'run', plan: { call, tool, input, subject, key, batch, access, gateRan: recovered === undefined, ...(recovered === undefined ? {} : { recovered }) } };
+    return { kind: 'run', plan: { call, tool, input, gate, key, batch, gateRan: recovered === undefined, ...(recovered === undefined ? {} : { recovered }) } };
   };
 
   const perform = async (plan: RunPlan): Promise<CallOutcome> => {
-    const { call, tool, input, subject, key, batch, access, recovered, gateRan } = plan;
+    const { call, tool, input, gate, key, batch, recovered, gateRan } = plan;
     const { callId } = call;
     const inlineLimit = batch.maxInlineOutputChars ?? maxInlineOutputChars;
     if (batch.signal.aborted) return failedOutcome(callId, `${tool.name} was cancelled`);
@@ -426,7 +447,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
         record = current?.rec;
         if (record === undefined) {
           if (recoverOnly) return failedOutcome(callId, `${tool.name} was cancelled`);
-          const gated = permissionGate(call, tool, input, subject, batch, access);
+          const gated = permissionGate(call, tool, input, gate, batch);
           if (gated !== undefined) return gated;
           gateAdmitted = true;
         } else {
@@ -508,7 +529,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
 
       const admitExecution = (): CallOutcome | undefined => {
         if (gateAdmitted) return undefined;
-        const gated = permissionGate(call, tool, input, subject, batch, access);
+        const gated = permissionGate(call, tool, input, gate, batch);
         if (gated?.kind === 'needs_approval') return gated;
         if (gated?.kind === 'result') return complete(gated.result);
         return undefined;
@@ -586,8 +607,11 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
   };
 
   const runBatch = async (batch: BatchInput): Promise<CallOutcome[]> => {
-    const access: BatchAccess = { ...createReadAccessMatcher(batch.sandboxPolicy), writeDeniedPath: createWriteGuard(batch) };
-    if (batch.tmpDir !== undefined) assertSessionTmpDirValid(batch.sandboxPolicy, batch.tmpDir);
+    let access: BatchAccess | undefined;
+    if (batch.recoverOnly !== true) {
+      access = { ...createReadAccessMatcher(batch.sandboxPolicy), writeDeniedPath: createWriteGuard(batch) };
+      if (batch.tmpDir !== undefined) assertSessionTmpDirValid(batch.sandboxPolicy, batch.tmpDir);
+    }
     const { calls } = batch;
     const outcomes: Array<CallOutcome | undefined> = new Array<CallOutcome | undefined>(calls.length).fill(undefined);
     const inFlight = new Set<Promise<void>>();
@@ -705,5 +729,38 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
     });
   };
 
-  return { runBatch };
+  const abandonTarget = async (target: AbandonTarget): Promise<AbandonOutcome> => {
+    const lookup = idempotency.get(target.idemKey);
+    if (lookup?.s === 'PENDING') {
+      const marker = path.join(options.processMarkerDir, target.idemKey);
+      try {
+        await reapMarkedProcesses({
+          marker,
+          pgid: lookup.rec.pgid,
+          killGraceMs: ABANDON_KILL_GRACE_MS,
+          label: 'tool',
+          onWarning: options.onWarning,
+          ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
+          ...(options.reap?.timing === undefined ? {} : { timing: options.reap.timing }),
+        });
+      } catch (error) {
+        options.onWarning(`tool marker ${marker} could not be cleaned up: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    idempotency.markUnknownIfPending(target.idemKey);
+    return { idemKey: target.idemKey, callId: target.callId, outcome: 'unknown' };
+  };
+
+  const abandon = async (targets: readonly AbandonTarget[], { signal }: { signal: AbortSignal }): Promise<AbandonOutcome[]> => {
+    signal.throwIfAborted();
+    const settled = await Promise.allSettled(targets.map((target) => abandonTarget(target)));
+    const outcomes: AbandonOutcome[] = [];
+    for (const result of settled) {
+      if (result.status === 'rejected') throw result.reason;
+      outcomes.push(result.value);
+    }
+    return outcomes;
+  };
+
+  return { runBatch, abandon };
 };

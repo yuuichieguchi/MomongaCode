@@ -17,6 +17,7 @@ const boundedExecutor = (harness: Harness) =>
     blobs: harness.blobs.port,
     clock: harness.clock,
     processMarkerDir: harness.markerDir,
+    onWarning: () => undefined,
     reconcileCapMs: CAP_MS,
     reconcileGraceMs: GRACE_MS,
   });

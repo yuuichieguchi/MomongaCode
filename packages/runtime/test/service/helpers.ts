@@ -555,6 +555,7 @@ export type WorkerKit = {
   gateway: FakeGateway;
   settings: FakeSettings;
   toolbox: FakeToolbox;
+  fatals: Error[];
   worker(id?: string, overrides?: Partial<WorkerOptions>): Worker;
   runOnce(worker: Worker): Promise<'idle' | 'yielded'>;
 };
@@ -567,7 +568,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
   const tracer = createFakeTracer();
   const toolbox = createFakeToolbox();
   const instructions = createFakeInstructions();
-  const executor = createToolExecutor({ idempotency: env.store.idempotency, blobs: env.store.blobs, clock: env.clock, processMarkerDir: markers });
+  const executor = createToolExecutor({ idempotency: env.store.idempotency, blobs: env.store.blobs, clock: env.clock, processMarkerDir: markers, onWarning: () => undefined });
   const sessionsTmpRoot = path.join(env.layout.root, 'sessions');
   const sessionTmpDir = path.join(sessionsTmpRoot, 'session-tmp');
   fs.mkdirSync(sessionTmpDir, { recursive: true, mode: 0o700 });
@@ -580,21 +581,31 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
   };
   const sessionStates = new Map<string, ToolSessionState>();
   const workers: Worker[] = [];
+  const fatals: Error[] = [];
   const pendingRuns: Promise<unknown>[] = [];
   onCleanup(async () => {
     gateway.releaseAll();
     await within(Promise.allSettled(pendingRuns), 10_000, 'worker runs to settle');
     await within(Promise.allSettled(workers.map((worker) => worker.stop())), 10_000, 'workers to stop');
   });
+  const snapshotToolbox = async () => {
+    const registry = createToolRegistry();
+    for (const tool of toolbox.tools()) registry.register(tool);
+    return registry.snapshot();
+  };
   const tools: ToolRuntimePort = {
-    toolSet: async () => {
-      const registry = createToolRegistry();
-      for (const tool of toolbox.tools()) registry.register(tool);
-      return registry.snapshot();
-    },
+    envFor: (target: Session) => ({ ...target.env }),
+    toolSet: async () => snapshotToolbox(),
+    recoveryToolSet: async () => snapshotToolbox(),
     executor,
     sandbox: fakeSandbox,
-    policyFor: async (target: Session) => ({ roots: [target.cwd], sandboxPolicy, protectedPaths: [], tmpDir: sessionTmpDir }),
+    policyFor: async (target: Session, policyOptions: { env: Readonly<Record<string, string>> }) => ({
+      roots: [target.cwd],
+      sandboxPolicy,
+      protectedPaths: [],
+      tmpDir: sessionTmpDir,
+      env: policyOptions?.env ?? target.env,
+    }),
     sessionState: (target: Session) => {
       const existing = sessionStates.get(target.id);
       if (existing !== undefined) return existing;
@@ -617,6 +628,9 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
       home: env.layout.home,
       blobs: env.store.blobs,
       instructionReader: instructions,
+      onFatal: (error: Error) => {
+        fatals.push(error);
+      },
       ...overrides,
     });
     workers.push(created);
@@ -627,5 +641,5 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
     pendingRuns.push(running);
     return running;
   };
-  return { gateway, settings, toolbox, worker, runOnce };
+  return { gateway, settings, toolbox, fatals, worker, runOnce };
 };

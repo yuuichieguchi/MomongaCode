@@ -2,7 +2,7 @@ import type { TokenMeter } from '@momonga/context';
 import type { Capabilities, FunctionTool } from '@momonga/protocol';
 import type { Claim, Run, StatusPatch } from '@momonga/store';
 import type { ToolSet } from '@momonga/tools';
-import type { TraceSpan } from '../ports.ts';
+import type { ToolEnv, TraceSpan } from '../ports.ts';
 import type { ClaimControl } from './claim-control.ts';
 import type { Journal } from './journal.ts';
 import type { RunLimits } from './limits.ts';
@@ -25,6 +25,7 @@ export type ClaimContext = {
   capabilities: Capabilities;
   limits: RunLimits;
   toolSet: ToolSet;
+  env: ToolEnv;
   functionTools: FunctionTool[];
   systemPrompt: string;
   inlineLimit: number;

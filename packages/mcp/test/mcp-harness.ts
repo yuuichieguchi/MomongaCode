@@ -155,6 +155,12 @@ const makeIdempotency = (): IdempotencyPort => {
       const rec = open.get(key);
       if (rec !== undefined) open.set(key, { ...rec, state: 'UNKNOWN' });
     },
+    markUnknownIfPending: (key) => {
+      const rec = open.get(key);
+      if (rec?.state !== 'PENDING') return false;
+      open.set(key, { ...rec, state: 'UNKNOWN' });
+      return true;
+    },
   };
 };
 
@@ -186,6 +192,7 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000)) => {
     blobs: unusedBlobs,
     clock,
     processMarkerDir: markers,
+    onWarning: () => undefined,
     readOnlyRetry: { attempts: 3, baseMs: 0, maxMs: 0 },
   });
   const rule = (effect: RuleEffect, text: string): PermissionRule =>

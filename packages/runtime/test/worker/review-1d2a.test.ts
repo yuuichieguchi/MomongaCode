@@ -184,19 +184,23 @@ describe('WS1: quiet detached cancel recovery', () => {
     const reached = deferred<void>();
     const gate = deferred<void>();
     const thrown = deferred<void>();
-    env.settings.rulesHook = async () => {
-      reached.resolve();
-      await gate.promise;
-      thrown.resolve();
-      throw makeError();
-    };
     const reported: unknown[] = [];
-    const worker = env.worker('worker-1', { onError: (error) => reported.push(error) });
+    const worker = env.worker('worker-1', {
+      onError: (error) => reported.push(error),
+      tools: {
+        recoveryToolSet: async () => {
+          reached.resolve();
+          await gate.promise;
+          thrown.resolve();
+          throw makeError();
+        },
+      },
+    });
     const running = env.runOnce(worker);
     const claimEnded = running.then(() => {
-      throw new Error('the claim settled before cancel recovery read the rules');
+      throw new Error('the claim settled before cancel recovery built its tool set');
     });
-    await within(Promise.race([reached.promise, claimEnded]), 5_000, 'cancel recovery to read the rules');
+    await within(Promise.race([reached.promise, claimEnded]), 5_000, 'cancel recovery to build its tool set');
 
     await within(worker.abort('shutdown'), 5_000, 'the shutdown abort to resolve');
     gate.resolve();

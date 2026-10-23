@@ -21,6 +21,7 @@ export type IdempotencyPort = {
   attachProcess(key: string, process: { pgid: number; startedAt: number }): void;
   complete(key: string, result: unknown): void;
   markUnknown(key: string): void;
+  markUnknownIfPending(key: string): boolean;
 };
 
 export type BlobPort = {

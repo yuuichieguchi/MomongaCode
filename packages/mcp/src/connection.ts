@@ -5,7 +5,7 @@ import { CircuitBreaker, computeBackoff } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { createSafeSchemaValidator } from './schema-validator.ts';
 import { createStdioTransport } from './stdio-transport.ts';
-import type { StdioTransport } from './stdio-transport.ts';
+import type { McpMarkerOptions, StdioTransport } from './stdio-transport.ts';
 
 const CLIENT_NAME = 'momonga';
 const CLIENT_VERSION = '0.0.0';
@@ -42,7 +42,7 @@ export interface McpServerConnection {
   readonly protocolEra: ProtocolEra | undefined;
   readonly serverInfo: Implementation | undefined;
   readonly instructions: string | undefined;
-  listTools(): Promise<Tool[]>;
+  listTools(options?: { signal?: AbortSignal }): Promise<Tool[]>;
   callTool(input: McpCallToolInput): Promise<CallToolResult>;
   diagnostics(): McpServerDiagnostics;
   close(): Promise<void>;
@@ -58,6 +58,8 @@ export type McpConnectionOptions = {
   requestTimeoutMs?: number;
   connectTimeoutMs?: number;
   resetAfterMs?: number;
+  markers?: McpMarkerOptions;
+  closeGraceMs?: number;
 };
 
 export class McpUnavailableError extends Error {
@@ -160,10 +162,12 @@ class ManagedConnection implements McpServerConnection {
     await this.ensureSession();
   }
 
-  async listTools(): Promise<Tool[]> {
-    const { client, transport } = await this.ensureSession();
+  async listTools(options?: { signal?: AbortSignal }): Promise<Tool[]> {
+    const signal = options?.signal;
+    signal?.throwIfAborted();
+    const { client, transport } = await this.ensureSessionUnless(signal);
     try {
-      return (await client.listTools()).tools;
+      return (await client.listTools(undefined, signal === undefined ? undefined : { signal })).tools;
     } catch (error) {
       throw this.withExitDetail(transport, error);
     }
@@ -209,6 +213,26 @@ class ManagedConnection implements McpServerConnection {
     return new Error(`${errorMessage(error)} (${detail})`);
   }
 
+  private async ensureSessionUnless(signal: AbortSignal | undefined): Promise<Session> {
+    const pending = this.ensureSession();
+    if (signal === undefined) return pending;
+    pending.catch(() => undefined);
+    return new Promise<Session>((resolve, reject) => {
+      const onAbort = (): void => reject(signal.reason);
+      signal.addEventListener('abort', onAbort, { once: true });
+      pending.then(
+        (session) => {
+          signal.removeEventListener('abort', onAbort);
+          resolve(session);
+        },
+        (error: unknown) => {
+          signal.removeEventListener('abort', onAbort);
+          reject(error);
+        },
+      );
+    });
+  }
+
   private async ensureSession(): Promise<Session> {
     if (this.closing !== undefined) throw new Error(`MCP server "${this.name}" connection is closed`);
     if (this.session !== undefined) return this.session;
@@ -235,7 +259,15 @@ class ManagedConnection implements McpServerConnection {
     }
     this.assertOpen();
     const { projectDir, baseEnv, connectTimeoutMs } = this.options;
-    const transport = createStdioTransport({ name: this.name, config, projectDir, baseEnv });
+    const { markers, closeGraceMs } = this.options;
+    const transport = createStdioTransport({
+      name: this.name,
+      config,
+      projectDir,
+      baseEnv,
+      ...(markers === undefined ? {} : { markers }),
+      ...(closeGraceMs === undefined ? {} : { closeGraceMs }),
+    });
     this.lastTransport = transport;
     this.pendingTransport = transport;
     const client = new Client(

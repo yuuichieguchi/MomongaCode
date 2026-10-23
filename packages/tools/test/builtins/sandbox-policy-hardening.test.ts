@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { momongaLayout } from '@momonga/foundation';
@@ -137,7 +138,7 @@ describe('buildSandboxPolicy readAllowed validation', () => {
   });
 });
 
-describe.runIf(volumeIsCaseInsensitive)('buildSandboxPolicy readAllowed validation on a case-insensitive volume', () => {
+describe.runIf(volumeIsCaseInsensitive(os.tmpdir()))('buildSandboxPolicy readAllowed validation on a case-insensitive volume', () => {
   it('throws for an entry inside Keychains spelled in another case', () => {
     const { layout, sessions, tmpDir } = fixture();
     const library = path.join(layout.home, 'Library');

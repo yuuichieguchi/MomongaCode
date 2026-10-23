@@ -1,6 +1,7 @@
 import type { McpServerEntry } from '@momonga/config';
 import type { Clock } from '@momonga/foundation';
 import type { ToolSource } from '@momonga/tools';
+import type { McpMarkerOptions } from './stdio-transport.ts';
 import { createManagedConnection } from './connection.ts';
 import type { McpServerDiagnostics } from './connection.ts';
 import { createMcpToolSource } from './source.ts';
@@ -14,6 +15,8 @@ export type McpPoolOptions = {
   requestTimeoutMs?: number;
   connectTimeoutMs?: number;
   resetAfterMs?: number;
+  markers?: McpMarkerOptions;
+  closeGraceMs?: number;
 };
 
 export type McpPool = {
@@ -35,6 +38,8 @@ export const createMcpPool = (options: McpPoolOptions): McpPool => {
       ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }),
       ...(options.connectTimeoutMs === undefined ? {} : { connectTimeoutMs: options.connectTimeoutMs }),
       ...(options.resetAfterMs === undefined ? {} : { resetAfterMs: options.resetAfterMs }),
+      ...(options.markers === undefined ? {} : { markers: options.markers }),
+      ...(options.closeGraceMs === undefined ? {} : { closeGraceMs: options.closeGraceMs }),
     }),
   );
   return {

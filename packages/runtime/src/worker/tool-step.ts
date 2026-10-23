@@ -135,7 +135,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   const step = journal.state.step;
   if (ctx.control.yieldRequested()) return ctx.terminals.yieldLease();
   const rules = await options.settings.rules(session);
-  const policy = await options.tools.policyFor(session);
+  const policy = await options.tools.policyFor(session, { env: ctx.env });
   const spans = new Map<string, TraceSpan>();
   let outcomes: CallOutcome[];
   try {
@@ -149,7 +149,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
       home: options.home,
       roots: policy.roots,
       tmpDir: policy.tmpDir,
-      env: session.env,
+      env: policy.env,
       session: options.tools.sessionState(session),
       sandbox: options.tools.sandbox,
       sandboxPolicy: policy.sandboxPolicy,

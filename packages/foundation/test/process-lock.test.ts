@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process';
+import net from 'node:net';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { acquireProcessLock, isProcessAlive } from '@momonga/foundation';
+import { ProcessLockHeldError, acquireProcessLock, isProcessAlive, listenUnix } from '@momonga/foundation';
 
 const tempDirs: string[] = [];
 const children: number[] = [];
@@ -96,6 +97,55 @@ describe('acquireProcessLock', () => {
     fs.writeFileSync(lockPath, String(other), { mode: 0o600 });
     await lock.release();
     expect(fs.readFileSync(lockPath, 'utf8').trim()).toBe(String(other));
+  });
+});
+
+describe('ProcessLockHeldError', () => {
+  it('throws ProcessLockHeldError with holderPid and lockPath', async () => {
+    const lockPath = path.join(makeDir(), 'runtime.lock');
+    const holder = livePid();
+    fs.writeFileSync(lockPath, String(holder), { mode: 0o600 });
+    const failure = await acquireProcessLock(lockPath, async (pid) => `held by ${pid} for test`).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(ProcessLockHeldError);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as ProcessLockHeldError).holderPid).toBe(holder);
+    expect((failure as ProcessLockHeldError).lockPath).toBe(lockPath);
+    expect((failure as ProcessLockHeldError).message).toBe(`held by ${holder} for test`);
+  });
+
+  it('uses the default holder description as the message', async () => {
+    const lockPath = path.join(makeDir(), 'runtime.lock');
+    const holder = livePid();
+    fs.writeFileSync(lockPath, String(holder), { mode: 0o600 });
+    const failure = await acquireProcessLock(lockPath).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(ProcessLockHeldError);
+    expect((failure as Error).message).toBe(`${lockPath} is held by live process ${holder}; remove it if that process is not momonga`);
+  });
+
+  it('listenUnix surfaces ProcessLockHeldError', async () => {
+    const dir = makeDir();
+    const socketPath = path.join(dir, 'r.sock');
+    const holder = livePid();
+    fs.writeFileSync(`${socketPath}.lock`, String(holder), { mode: 0o600 });
+    const server = net.createServer();
+    try {
+      const failure = await listenUnix(server, socketPath).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(ProcessLockHeldError);
+      expect((failure as ProcessLockHeldError).holderPid).toBe(holder);
+      expect((failure as ProcessLockHeldError).lockPath).toBe(`${socketPath}.lock`);
+      expect((failure as Error).message).toContain(`${socketPath} is already in use by process ${holder}`);
+    } finally {
+      server.close();
+    }
   });
 });
 

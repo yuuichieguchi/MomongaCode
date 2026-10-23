@@ -37,6 +37,7 @@ export type WorkerOptions = {
   blobs: WorkerBlobs;
   instructionReader: InstructionReader;
   onError?: (error: unknown, context: WorkerErrorContext) => void;
+  onFatal: (error: Error) => void;
   wake?: WorkerWake;
   random?: () => number;
 };

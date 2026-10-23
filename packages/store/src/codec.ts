@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
 import type { RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload } from '@momonga/protocol';
 import { corrupt, expectOneOf, expectRecord, expectStringRecord, isRecord, readerFor } from './rows.ts';
@@ -5,6 +6,16 @@ import type { Row } from './rows.ts';
 import type { Run, RunError, Session } from './types.ts';
 
 const identityOf = (row: Row): string => String(row['id']);
+
+const expectAbsolutePaths = (table: string, identity: string, column: string, value: unknown): readonly string[] => {
+  if (!Array.isArray(value)) throw corrupt(table, identity, `column ${column} must hold a JSON array`);
+  for (const entry of value) {
+    if (typeof entry !== 'string' || !path.isAbsolute(entry)) {
+      throw corrupt(table, identity, `column ${column} must hold absolute path strings`);
+    }
+  }
+  return value as string[];
+};
 
 export const decodeSession = (row: Row): Session => {
   const identity = identityOf(row);
@@ -16,6 +27,7 @@ export const decodeSession = (row: Row): Session => {
     permissionMode: expectOneOf('sessions', identity, 'permission_mode', PERMISSION_MODES, reader.string('permission_mode')),
     modelAlias: reader.string('model_alias'),
     bypassAllowed: reader.flag('bypass_allowed'),
+    additionalDirectories: expectAbsolutePaths('sessions', identity, 'additional_directories_json', reader.json('additional_directories_json')),
     createdAt: reader.number('created_at'),
   };
 };

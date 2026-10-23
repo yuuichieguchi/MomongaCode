@@ -1,6 +1,5 @@
-import fs from 'node:fs';
 import path from 'node:path';
-import { isLoopbackHost } from '@momonga/foundation';
+import { canonicalPath, comparableContains, isLoopbackHost } from '@momonga/foundation';
 import { layoutOf } from './layout.ts';
 import type {
   ChatCompletionsTarget,
@@ -30,23 +29,6 @@ const resolveFm = (target: FmTarget): ResolvedFmTarget => ({
   admissionTimeoutMs: target.admissionTimeoutMs ?? 30000,
 });
 
-const realpathThroughMissing = (candidate: string): string => {
-  const missing: string[] = [];
-  let current = path.resolve(candidate);
-  for (;;) {
-    try {
-      return path.join(fs.realpathSync.native(current), ...missing.reverse());
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      missing.push(path.basename(current));
-      current = path.dirname(current);
-    }
-  }
-};
-
-const isInside = (candidate: string, directory: string): boolean =>
-  candidate === directory || candidate.startsWith(`${directory}${path.sep}`);
-
 const checkBaseUrl = (baseUrl: string, where: string): void => {
   let url: URL;
   try {
@@ -62,8 +44,7 @@ const checkBaseUrl = (baseUrl: string, where: string): void => {
 
 const checkSocketPath = (socketPath: string, home: string, where: string): void => {
   if (!path.isAbsolute(socketPath)) throw new Error(`${where}: socketPath ${JSON.stringify(socketPath)} must be an absolute path`);
-  const runDirectory = realpathThroughMissing(layoutOf(home).run);
-  if (isInside(realpathThroughMissing(socketPath), runDirectory)) {
+  if (comparableContains(canonicalPath(layoutOf(home).run), canonicalPath(socketPath))) {
     throw new Error(`${where}: socketPath ${socketPath} must not be inside ${layoutOf(home).run}`);
   }
 };

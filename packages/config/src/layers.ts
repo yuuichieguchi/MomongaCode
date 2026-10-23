@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { toConfigError } from './config-error.ts';
 import { looksLikeCredentialName } from './credential-env.ts';
 import { readJsonFile, readJsonFileSync } from './json-file.ts';
 import type { JsonFile } from './json-file.ts';
@@ -18,7 +19,7 @@ export type Layer = { origin: RuleOrigin; source: string; root: string; settings
 
 export type LoadedLayers = { layers: Layer[]; models: ResolvedModels; files: string[]; warnings: string[] };
 
-export type LayerOptions = { home: string; projectDir: string; trust: TrustOracle };
+export type LayerOptions = { home: string; projectDir: string; trust: TrustOracle; user?: UserLayer };
 
 const PROJECT_ENV_ALLOWLIST: ReadonlySet<string> = new Set([
   'NODE_ENV', 'RUST_LOG', 'RUST_BACKTRACE', 'LOG_LEVEL', 'DEBUG', 'TZ', 'LANG', 'LANGUAGE', 'CI', 'FORCE_COLOR', 'NO_COLOR', 'TERM',
@@ -88,17 +89,26 @@ const readLayer = async (
   root: string,
   warnings: string[],
   confineTo?: string,
-): Promise<Layer | undefined> =>
-  buildLayer(await readJsonFile(file, confineTo === undefined ? {} : { confineTo }), file, origin, root, true, warnings);
+): Promise<Layer | undefined> => {
+  try {
+    return buildLayer(await readJsonFile(file, confineTo === undefined ? {} : { confineTo }), file, origin, root, true, warnings);
+  } catch (error) {
+    throw toConfigError(error);
+  }
+};
 
 export type UserLayer = { layer: Layer | undefined; models: ResolvedModels; warnings: string[] };
 
 export const readUserLayer = (home: string): UserLayer => {
-  const warnings: string[] = [];
-  const file = layoutOf(home).settingsFile;
-  const layer = buildLayer(readJsonFileSync(file), file, 'user', home, false, warnings);
-  const models = resolveModels(layer?.settings.models, { source: file, home, warnings });
-  return { layer, models, warnings };
+  try {
+    const warnings: string[] = [];
+    const file = layoutOf(home).settingsFile;
+    const layer = buildLayer(readJsonFileSync(file), file, 'user', home, false, warnings);
+    const models = resolveModels(layer?.settings.models, { source: file, home, warnings });
+    return { layer, models, warnings };
+  } catch (error) {
+    throw toConfigError(error);
+  }
 };
 
 const exists = async (file: string): Promise<boolean> => {
@@ -113,8 +123,8 @@ const exists = async (file: string): Promise<boolean> => {
 
 const realpath = promisify(fs.realpath.native);
 
-export const loadLayers = async ({ home, projectDir, trust }: LayerOptions): Promise<LoadedLayers> => {
-  const user = readUserLayer(home);
+export const loadLayers = async ({ home, projectDir, trust, user: snapshot }: LayerOptions): Promise<LoadedLayers> => {
+  const user = snapshot ?? readUserLayer(home);
   const warnings = [...user.warnings];
   const layers: Layer[] = user.layer === undefined ? [] : [user.layer];
   const result = (): LoadedLayers => ({ layers, models: user.models, files: layers.map((layer) => layer.source), warnings });
