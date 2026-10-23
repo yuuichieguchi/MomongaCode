@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { createGateway } from '@momonga/gateway';
 import { createFakeClock, createFakeTimers, createScriptedAdapter } from '@momonga/testkit';
 import { isLoopbackAddress } from '../src/server/config-check.ts';
-import { HMAC_KEY, START_MS, buildConfig, makeDir, registerCleanup, startGateway } from './gateway-helpers.ts';
+import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, makeDir, registerCleanup, startGateway } from './gateway-helpers.ts';
 
 const construct = (overrides: { hmacKey?: Uint8Array; debugTcp?: { host: string; port: number; token: string } }) => {
   const dir = makeDir();
@@ -17,6 +17,7 @@ const construct = (overrides: { hmacKey?: Uint8Array; debugTcp?: { host: string;
     dbPath: path.join(dir, 'state', 'gateway.db'),
     hmacKey: overrides.hmacKey ?? HMAC_KEY,
     socketPath: path.join(dir, 'gw.sock'),
+    version: TEST_VERSION,
     ...(overrides.debugTcp === undefined ? {} : { debugTcp: overrides.debugTcp }),
   });
 };
@@ -80,6 +81,7 @@ describe('idempotencyReaderStallMs', () => {
         dbPath: path.join(dir, 'state', 'gateway.db'),
         hmacKey: HMAC_KEY,
         socketPath: path.join(dir, 'gw.sock'),
+        version: TEST_VERSION,
       }),
     ).rejects.toThrow(/idempotencyReaderStallMs/);
   });

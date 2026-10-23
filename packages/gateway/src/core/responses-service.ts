@@ -1,8 +1,9 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { StreamEvent } from '@momonga/protocol';
 import { parseDeadlineHeader } from './deadline.ts';
-import { gatewayClosedError, invalidRequest } from './errors.ts';
-import { createIdempotencyRegistry, normalizeIdempotencyKey } from './idempotency.ts';
+import { armDeadline } from './deadline.ts';
+import { gatewayClosedError, invalidRequest, runCancelledError } from './errors.ts';
+import { createIdempotencyRegistry, parseIdempotencyKey } from './idempotency.ts';
 import { normalizeInput } from './input.ts';
 import { executeResponse } from './respond.ts';
 import type { ResponseJob } from './respond.ts';
@@ -26,9 +27,17 @@ export type Submission = {
 
 export type ResponsesService = {
   submit(rawBody: unknown, headers: SubmitHeaders, signal: AbortSignal): Submission;
+  cancel(idempotencyKey: string | undefined): boolean;
+  abortUnkeyed(reason: unknown): void;
   abortAll(reason: unknown): void;
   settled(): Promise<void>;
   activeCount(): number;
+};
+
+const withoutStreamFlag = (rawBody: unknown): unknown => {
+  if (typeof rawBody !== 'object' || rawBody === null || Array.isArray(rawBody)) return rawBody;
+  const { stream: _stream, ...rest } = rawBody as Record<string, unknown>;
+  return rest;
 };
 
 const parseStep = (value: string | undefined): number | undefined =>
@@ -47,9 +56,48 @@ const replay = (frames: readonly StreamEvent[]): RunSubscription => {
   };
 };
 
+const subscribeWithOwnDeadline = (
+  services: Services,
+  run: SharedRun,
+  signal: AbortSignal,
+  deadlineAt: number | undefined,
+): RunSubscription => {
+  if (deadlineAt === undefined) return run.subscribe(signal);
+  const expiry = new AbortController();
+  const disarm = armDeadline(services, deadlineAt, (reason) => expiry.abort(reason));
+  let inner: RunSubscription;
+  try {
+    inner = run.subscribe(AbortSignal.any([signal, expiry.signal]));
+  } catch (error) {
+    disarm();
+    throw error;
+  }
+  return {
+    evicted: inner.evicted,
+    next: async () => {
+      try {
+        const step = await inner.next();
+        if (step.done === true) {
+          disarm();
+          if (expiry.signal.aborted && !signal.aborted) throw expiry.signal.reason;
+        }
+        return step;
+      } catch (error) {
+        disarm();
+        throw error;
+      }
+    },
+    return: async () => {
+      disarm();
+      return inner.return?.() ?? { done: true, value: undefined };
+    },
+  };
+};
+
 export const createResponsesService = (services: Services, validator: RequestValidator): ResponsesService => {
   const registry = createIdempotencyRegistry(services);
   const active = new Set<SharedRun>();
+  const keyedRuns = new Set<SharedRun>();
 
   return {
     submit: (rawBody, headers, signal) => {
@@ -59,12 +107,11 @@ export const createResponsesService = (services: Services, validator: RequestVal
       services.router.targetsOf(body.model);
       const stream = body.stream === true;
 
-      const key = headers.idempotencyKey === undefined ? undefined : normalizeIdempotencyKey(headers.idempotencyKey);
-      if (key !== undefined && key === '') throw invalidRequest('invalid_idempotency_key', 'the idempotency-key header must not be empty');
-      const digest = key === undefined ? undefined : sha256Hex(canonicalJson(rawBody));
+      const key = parseIdempotencyKey(headers.idempotencyKey);
+      const digest = key === undefined ? undefined : sha256Hex(canonicalJson(withoutStreamFlag(rawBody)));
       if (key !== undefined && digest !== undefined) {
         const found = registry.lookup(key, digest);
-        if (found.kind === 'inflight') return { stream, events: found.run.subscribe(signal) };
+        if (found.kind === 'inflight') return { stream, events: subscribeWithOwnDeadline(services, found.run, signal, deadlineAt) };
         if (found.kind === 'stored') return { stream, events: replay(found.frames) };
       }
 
@@ -87,6 +134,7 @@ export const createResponsesService = (services: Services, validator: RequestVal
       };
       const onSettled = (): void => {
         active.delete(run);
+        keyedRuns.delete(run);
         if (key !== undefined) registry.end(key, run);
       };
       const run: SharedRun =
@@ -98,12 +146,26 @@ export const createResponsesService = (services: Services, validator: RequestVal
               {
                 maxBufferedBytes: services.config.limits.maxIdempotencyFrameBytes,
                 readerStallMs: services.config.limits.idempotencyReaderStallMs,
+                detachedMaxMs: services.config.detachedMaxMs,
+                onAborted: () => registry.end(key, run),
                 timers: services.timers,
               },
             );
       active.add(run);
+      if (key !== undefined) keyedRuns.add(run);
       if (key !== undefined && digest !== undefined) registry.begin(key, digest, run);
       return { stream, events: run.subscribe(signal) };
+    },
+    cancel: (idempotencyKey) => {
+      const key = parseIdempotencyKey(idempotencyKey);
+      if (key === undefined) throw invalidRequest('invalid_idempotency_key', 'the idempotency-key header is required');
+      const run = registry.take(key);
+      if (run === undefined) return false;
+      run.abort(runCancelledError());
+      return true;
+    },
+    abortUnkeyed: (reason) => {
+      for (const run of active) if (!keyedRuns.has(run)) run.abort(reason);
     },
     abortAll: (reason) => {
       for (const run of active) run.abort(reason);

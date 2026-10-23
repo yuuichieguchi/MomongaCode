@@ -1,6 +1,6 @@
 import type { ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
 import Ajv2020 from 'ajv/dist/2020.js';
-import type { PermissionMode } from '@momonga/protocol';
+import type { Capabilities, PermissionMode } from '@momonga/protocol';
 import { MCP_SERVERS_FILE_SCHEMA, MCP_SERVER_SCHEMA, SETTINGS_SCHEMA } from './settings-schema.ts';
 
 export type PermissionsSettings = {
@@ -27,10 +27,58 @@ export type McpRemoteServerConfig = {
 
 export type McpServerConfig = McpStdioServerConfig | McpRemoteServerConfig;
 
-export type ModelTarget = { adapter: string; model: string; [key: string]: unknown };
+export type FmToolCalling = 'auto' | 'native' | 'constrained';
+
+export type TargetCapabilities = Omit<Capabilities, 'toolCalling' | 'probedAt' | 'maxConcurrency'>;
+
+export type FmTarget = {
+  adapter: 'fm';
+  model?: string;
+  toolCalling?: FmToolCalling;
+  maxConcurrency?: number;
+  admissionTimeoutMs?: number;
+};
+
+export type ChatCompletionsTarget = {
+  adapter: 'chat-completions';
+  model: string;
+  baseUrl?: string;
+  socketPath?: string;
+  apiKeyEnv?: string;
+  toolCalling?: 'native' | 'constrained';
+  capabilities: Pick<TargetCapabilities, 'contextWindow' | 'maxOutputTokens'> & Partial<TargetCapabilities>;
+  maxConcurrency?: number;
+  admissionTimeoutMs?: number;
+};
+
+export type ModelTarget = FmTarget | ChatCompletionsTarget;
+
+export type ResolvedFmTarget = {
+  adapter: 'fm';
+  model: string;
+  toolCalling: FmToolCalling;
+  maxConcurrency: number;
+  admissionTimeoutMs: number;
+};
+
+export type ResolvedChatCompletionsTarget = {
+  adapter: 'chat-completions';
+  model: string;
+  baseUrl?: string;
+  socketPath?: string;
+  apiKeyEnv?: string;
+  toolCalling: 'native' | 'constrained';
+  capabilities: TargetCapabilities & { maxConcurrency: number };
+  maxConcurrency: number;
+  admissionTimeoutMs: number;
+};
+
+export type ResolvedModelTarget = ResolvedFmTarget | ResolvedChatCompletionsTarget;
+
+export type ModelAlias = string | string[];
 
 export type ModelsSettings = {
-  aliases?: Record<string, string>;
+  aliases?: Record<string, ModelAlias>;
   targets?: Record<string, ModelTarget>;
 };
 
@@ -47,7 +95,7 @@ export type Settings = {
 
 export type McpServersFile = { mcpServers?: Record<string, McpServerConfig> };
 
-const ajv = new Ajv2020.default({ strict: true });
+const ajv = new Ajv2020.default({ strict: true, discriminator: true });
 const validateSettings: ValidateFunction<Settings> = ajv.compile<Settings>(SETTINGS_SCHEMA);
 const validateMcpServersFile: ValidateFunction<McpServersFile> = ajv.compile<McpServersFile>(MCP_SERVERS_FILE_SCHEMA);
 const validateMcpServer: ValidateFunction<McpServerConfig> = ajv.compile<McpServerConfig>(MCP_SERVER_SCHEMA);

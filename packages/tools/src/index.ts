@@ -16,7 +16,6 @@ export type {
   ToolIdempotencyLookup,
   ToolIdempotencyRecord,
 } from './ports.ts';
-export { reconcileProcessGroup } from './process-reconcile.ts';
 export { createToolRegistry } from './registry.ts';
 export { MINIMUM_INLINE_OUTPUT_CHARS } from './truncate.ts';
 export type { ToolRegistry, ToolSet, ToolSource, ToolSourceListing } from './registry.ts';

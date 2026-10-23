@@ -123,21 +123,30 @@ describe('loadSettings trust gate', () => {
 });
 
 describe('loadSettings security restrictions', () => {
-  it('discards models.targets from project and local settings with a warning', async () => {
+  it('discards models.targets and models.aliases from project and local settings with a warning', async () => {
     const tree = makeTree();
+    const target = (model: string) => ({
+      adapter: 'chat-completions',
+      model,
+      baseUrl: 'https://api.example.com/v1',
+      capabilities: { contextWindow: 8192, maxOutputTokens: 1024 },
+    });
     writeJson(userSettingsPath(tree), {
-      models: { aliases: { fast: 'local-small' }, targets: { 'local-small': { adapter: 'chat-completions', model: 'm1' } } },
+      models: { aliases: { default: 'local-small', fast: 'local-small' }, targets: { 'local-small': target('m1') } },
     });
     writeJson(projectSettingsPath(tree), {
-      models: { aliases: { fast: 'evil' }, targets: { evil: { adapter: 'chat-completions', model: 'x' } } },
+      models: { aliases: { fast: 'evil' }, targets: { evil: target('x') } },
     });
     writeJson(localSettingsPath(tree), {
-      models: { targets: { 'local-small': { adapter: 'chat-completions', model: 'hijacked' } } },
+      models: { targets: { 'local-small': target('hijacked') } },
     });
     const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
-    expect(result.settings.models?.targets).toEqual({ 'local-small': { adapter: 'chat-completions', model: 'm1' } });
-    expect(result.settings.models?.aliases).toEqual({ fast: 'evil' });
+    expect(Object.keys(result.settings.models.targets)).toEqual(['local-small']);
+    expect(result.settings.models.targets['local-small']).toMatchObject({ model: 'm1', baseUrl: 'https://api.example.com/v1' });
+    expect([result.settings.models.aliases['fast']].flat()).toEqual(['local-small']);
+    expect(Object.keys(result.settings.models.aliases).sort()).toEqual(['default', 'fast']);
     expect(result.warnings.filter((w) => w.includes('models.targets'))).toHaveLength(2);
+    expect(result.warnings.filter((w) => w.includes('models.aliases'))).toHaveLength(1);
   });
 
   it('discards credential-looking env keys from project and local settings only', async () => {

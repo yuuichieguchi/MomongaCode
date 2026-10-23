@@ -18,7 +18,16 @@ export const validator = createOpenResponsesValidator();
 const cleanups: Array<() => void | Promise<void>> = [];
 
 afterEach(async () => {
-  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+  const failures: unknown[] = [];
+  for (const cleanup of cleanups.splice(0).reverse()) {
+    try {
+      await cleanup();
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, 'several cleanups failed');
 });
 
 export const registerCleanup = (cleanup: () => void | Promise<void>): void => {
@@ -32,8 +41,10 @@ export const makeDir = (): string => {
   return dir;
 };
 
+export const TEST_VERSION = '0.0.0-test';
+
 export type TargetSpec = {
-  adapter: string;
+  kind?: string;
   model: string;
   maxConcurrency?: number;
   admissionTimeoutMs?: number;
@@ -49,14 +60,15 @@ export type ConfigOverrides = {
   idempotency?: Partial<GatewayConfig['idempotency']>;
   closeGraceMs?: number;
   sseKeepAliveMs?: number;
+  detachedMaxMs?: number;
 };
 
 export const buildConfig = (overrides: ConfigOverrides = {}): GatewayConfig => {
   const targets: GatewayConfig['models']['targets'] = {};
-  const specs = overrides.targets ?? { primary: { adapter: 'primary', model: 'scripted-primary' } };
+  const specs = overrides.targets ?? { primary: { model: 'scripted-primary' } };
   for (const [name, spec] of Object.entries(specs)) {
     targets[name] = {
-      adapter: spec.adapter,
+      kind: spec.kind ?? 'scripted',
       model: spec.model,
       maxConcurrency: spec.maxConcurrency ?? 4,
       admissionTimeoutMs: spec.admissionTimeoutMs ?? 5000,
@@ -71,6 +83,7 @@ export const buildConfig = (overrides: ConfigOverrides = {}): GatewayConfig => {
     idempotency: { ttlMs: 60_000, ...overrides.idempotency },
     closeGraceMs: overrides.closeGraceMs ?? 1000,
     sseKeepAliveMs: overrides.sseKeepAliveMs ?? 15_000,
+    detachedMaxMs: overrides.detachedMaxMs ?? 1_800_000,
   };
 };
 
@@ -93,6 +106,7 @@ export type HarnessOptions = {
   telemetry?: Telemetry;
   hmacKey?: Uint8Array;
   debugTcp?: GatewayOptions['debugTcp'];
+  onError?: GatewayOptions['onError'];
 };
 
 export const startGateway = async (options: HarnessOptions): Promise<Harness> => {
@@ -109,6 +123,8 @@ export const startGateway = async (options: HarnessOptions): Promise<Harness> =>
     dbPath,
     hmacKey: options.hmacKey ?? HMAC_KEY,
     socketPath,
+    version: TEST_VERSION,
+    ...(options.onError === undefined ? {} : { onError: options.onError }),
     ...(options.telemetry === undefined ? {} : { telemetry: options.telemetry }),
     ...(options.debugTcp === undefined ? {} : { debugTcp: options.debugTcp }),
   });

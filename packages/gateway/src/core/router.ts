@@ -20,8 +20,9 @@ export type Router = {
   hasAlias(alias: string): boolean;
   targetsOf(alias: string): TargetRuntime[];
   capabilitiesOf(target: TargetRuntime): Promise<Capabilities>;
+  aliasCapabilitiesOf(alias: string): Promise<Capabilities>;
   candidates(alias: string, requirements: { tools: boolean }): Promise<TargetRuntime[]>;
-  health(): Promise<GatewayHealth>;
+  health(): Promise<Pick<GatewayHealth, 'ok' | 'targets'>>;
 };
 
 export type RouterOptions = {
@@ -35,6 +36,32 @@ const requireEntry = <T>(entries: Record<string, T>, name: string, kind: string)
   const entry = Object.hasOwn(entries, name) ? entries[name] : undefined;
   if (entry === undefined) throw new Error(`gateway configuration references unknown ${kind} "${name}"`);
   return entry;
+};
+
+const TOOL_CALLING_RANK: Record<Capabilities['toolCalling'], number> = { none: 0, constrained: 1, native: 2 };
+const TOKEN_COUNTING_RANK: Record<Capabilities['tokenCounting'], number> = { estimated: 0, calibrated: 1, exact: 2 };
+
+const weakest = <T extends string>(values: readonly T[], rank: Record<T, number>): T =>
+  values.reduce((lowest, value) => (rank[value] < rank[lowest] ? value : lowest));
+
+const mergeCapabilities = (all: readonly [Capabilities, ...Capabilities[]]): Capabilities => {
+  const [first] = all;
+  return {
+    contextWindow: Math.min(...all.map((entry) => entry.contextWindow)),
+    maxOutputTokens: Math.min(...all.map((entry) => entry.maxOutputTokens)),
+    toolCalling: weakest(all.map((entry) => entry.toolCalling), TOOL_CALLING_RANK),
+    structuredOutput: all.some((entry) => entry.structuredOutput === 'none') ? 'none' : 'json_schema',
+    streaming: all.every((entry) => entry.streaming),
+    stopSequences: all.every((entry) => entry.stopSequences),
+    imageInput: all.every((entry) => entry.imageInput),
+    parallelToolCalls: all.every((entry) => entry.parallelToolCalls),
+    schemaDialect: all.some((entry) => entry.schemaDialect === 'fm-generation') ? 'fm-generation' : 'json-schema-2020-12',
+    tokenCounting: weakest(all.map((entry) => entry.tokenCounting), TOKEN_COUNTING_RANK),
+    usageReported: all.every((entry) => entry.usageReported),
+    maxConcurrency: Math.min(...all.map((entry) => entry.maxConcurrency)),
+    source: first.source,
+    ...(all.length === 1 && first.probedAt !== undefined ? { probedAt: first.probedAt } : {}),
+  };
 };
 
 const reportedHealthOf = async (target: TargetRuntime): Promise<HealthResult | undefined> => {
@@ -53,7 +80,7 @@ export const createRouter = (options: RouterOptions): Router => {
     targets.set(name, {
       name,
       model: target.model,
-      adapter: requireEntry(adapters, target.adapter, 'adapter'),
+      adapter: requireEntry(adapters, name, 'adapter'),
       breaker: new CircuitBreaker({ failureThreshold: config.breaker.failureThreshold, openMs: config.breaker.openMs, clock }),
       gate: createAdmissionGate({
         targetName: name,
@@ -81,11 +108,19 @@ export const createRouter = (options: RouterOptions): Router => {
     return { ...declared, ...target.capabilityOverride, source: 'config' };
   };
 
+  const aliasCapabilitiesOf = async (alias: string): Promise<Capabilities> => {
+    const all = await Promise.all(targetsOf(alias).map((target) => capabilitiesOf(target)));
+    const [first, ...rest] = all;
+    if (first === undefined) throw new Error(`model alias "${alias}" has no targets`);
+    return mergeCapabilities([first, ...rest]);
+  };
+
   return {
     aliases: () => [...aliasTargets.keys()],
     hasAlias: (alias) => aliasTargets.has(alias),
     targetsOf,
     capabilitiesOf,
+    aliasCapabilitiesOf,
     candidates: async (alias, requirements) => {
       const all = targetsOf(alias);
       if (!requirements.tools) return all;

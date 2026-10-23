@@ -88,3 +88,5 @@ export {
 } from './mcp-fixtures.ts';
 export type { ModernFixtureRecord } from './mcp-fixtures.ts';
 export { killGroupsForCleanup, killPidsForCleanup } from './process-groups.ts';
+export { FAKE_OS_BUILD, createFakeFm, fakeExec } from './fake-fm.ts';
+export type { CreateFakeFmOptions, FakeExecResult, FakeFm, FakeFmConfig } from './fake-fm.ts';

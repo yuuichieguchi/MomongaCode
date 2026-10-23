@@ -1,7 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { looksLikeCredentialName } from './credential-env.ts';
-import { readJsonFile } from './json-file.ts';
+import { readJsonFile, readJsonFileSync } from './json-file.ts';
+import type { JsonFile } from './json-file.ts';
+import { momongaLayout } from '@momonga/foundation';
+import { resolveModels } from './models.ts';
+import type { ResolvedModels } from './models.ts';
 import { localSettingsFile } from './local-settings.ts';
 import type { RuleOrigin } from './rule.ts';
 import { assertSettings, KNOWN_SETTINGS_KEYS } from './settings.ts';
@@ -11,7 +16,7 @@ export type TrustOracle = { isTrusted: (directory: string) => boolean };
 
 export type Layer = { origin: RuleOrigin; source: string; root: string; settings: Settings };
 
-export type LoadedLayers = { layers: Layer[]; files: string[]; warnings: string[] };
+export type LoadedLayers = { layers: Layer[]; models: ResolvedModels; files: string[]; warnings: string[] };
 
 export type LayerOptions = { home: string; projectDir: string; trust: TrustOracle };
 
@@ -30,9 +35,10 @@ export const rejectAutoMode = (settings: Settings, source: string): void => {
 const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: string[]): Settings => {
   const restricted: Settings = { ...settings };
 
-  if (settings.models?.targets !== undefined) {
-    warnings.push(`${source}: models.targets is only honored in user settings; discarded`);
-    const { targets: _discarded, ...remaining } = settings.models;
+  if (settings.models !== undefined) {
+    const { targets, aliases, ...remaining } = settings.models;
+    if (targets !== undefined) warnings.push(`${source}: models.targets is only honored in user settings; discarded`);
+    if (aliases !== undefined) warnings.push(`${source}: models.aliases is only honored in user settings; discarded`);
     if (Object.keys(remaining).length === 0) delete restricted.models;
     else restricted.models = remaining;
   }
@@ -61,15 +67,7 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
   return restricted;
 };
 
-const readLayer = async (
-  file: string,
-  origin: RuleOrigin,
-  root: string,
-  restricted: boolean,
-  warnings: string[],
-  confineTo?: string,
-): Promise<Layer | undefined> => {
-  const read = await readJsonFile(file, confineTo === undefined ? {} : { confineTo });
+const buildLayer = (read: JsonFile, file: string, origin: RuleOrigin, root: string, restricted: boolean, warnings: string[]): Layer | undefined => {
   if (!read.found) return undefined;
   const settings = assertSettings(read.value, file);
   rejectAutoMode(settings, file);
@@ -77,6 +75,25 @@ const readLayer = async (
     if (!KNOWN_SETTINGS_KEYS.includes(key)) warnings.push(`${file}: unknown setting ${JSON.stringify(key)} ignored`);
   }
   return { origin, source: file, root, settings: restricted ? restrictToUserTrustLevel(settings, file, warnings) : settings };
+};
+
+const readLayer = async (
+  file: string,
+  origin: RuleOrigin,
+  root: string,
+  warnings: string[],
+  confineTo?: string,
+): Promise<Layer | undefined> =>
+  buildLayer(await readJsonFile(file, confineTo === undefined ? {} : { confineTo }), file, origin, root, true, warnings);
+
+export type UserLayer = { layer: Layer | undefined; models: ResolvedModels; warnings: string[] };
+
+export const readUserLayer = (home: string): UserLayer => {
+  const warnings: string[] = [];
+  const file = momongaLayout(home).settingsFile;
+  const layer = buildLayer(readJsonFileSync(file), file, 'user', home, false, warnings);
+  const models = resolveModels(layer?.settings.models, { source: file, home, warnings });
+  return { layer, models, warnings };
 };
 
 const exists = async (file: string): Promise<boolean> => {
@@ -89,9 +106,16 @@ const exists = async (file: string): Promise<boolean> => {
   }
 };
 
+const realpath = promisify(fs.realpath.native);
+
 export const loadLayers = async ({ home, projectDir, trust }: LayerOptions): Promise<LoadedLayers> => {
-  const warnings: string[] = [];
-  const userFile = path.join(home, '.momonga', 'settings.json');
+  const user = readUserLayer(home);
+  const warnings = [...user.warnings];
+  const layers: Layer[] = user.layer === undefined ? [] : [user.layer];
+  const result = (): LoadedLayers => ({ layers, models: user.models, files: layers.map((layer) => layer.source), warnings });
+
+  if ((await realpath(projectDir)) === (await realpath(home))) return result();
+
   const projectFile = path.join(projectDir, '.momonga', 'settings.json');
   const localFile = await localSettingsFile(home, projectDir);
   const repositoryLocalFile = path.join(projectDir, '.momonga', 'settings.local.json');
@@ -100,14 +124,10 @@ export const loadLayers = async ({ home, projectDir, trust }: LayerOptions): Pro
     warnings.push(`${repositoryLocalFile} is ignored; local settings now live in ${localFile}`);
   }
 
-  const layers: Layer[] = [];
-  const user = await readLayer(userFile, 'user', home, false, warnings);
-  if (user !== undefined) layers.push(user);
-
   if (trust.isTrusted(projectDir)) {
-    const project = await readLayer(projectFile, 'project', projectDir, true, warnings, projectDir);
+    const project = await readLayer(projectFile, 'project', projectDir, warnings, projectDir);
     if (project !== undefined) layers.push(project);
-    const local = await readLayer(localFile, 'local', projectDir, true, warnings);
+    const local = await readLayer(localFile, 'local', projectDir, warnings);
     if (local !== undefined) layers.push(local);
   } else {
     const present: string[] = [];
@@ -119,5 +139,5 @@ export const loadLayers = async ({ home, projectDir, trust }: LayerOptions): Pro
     }
   }
 
-  return { layers, files: layers.map((layer) => layer.source), warnings };
+  return result();
 };

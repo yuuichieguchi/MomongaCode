@@ -86,6 +86,7 @@ const setup = async (config: Setup = {}) => {
     args[0] === 'license' && config.licenseExitCode !== undefined
       ? { exitCode: config.licenseExitCode, stdout: '', stderr: 'The license agreement has not been accepted.' }
       : { exitCode: 0, stdout: '', stderr: '' };
+  const warnings: string[] = [];
   const fmServe: FmServe = createFmServe({
     binary: BINARY,
     socketPath,
@@ -98,9 +99,11 @@ const setup = async (config: Setup = {}) => {
     maxRestarts: 3,
     restartResetMs: 5000,
     preconditionTtlMs: 1000,
+    onWarning: (message) => warnings.push(message),
   });
   registerCleanup(async () => {
     await fmServe.stop();
+    expect(warnings).toEqual([]);
     for (const child of children) await child.exit();
   });
   const execCalls: ExecCall[] = [];
@@ -216,7 +219,7 @@ describe('createManagedFmTarget health', () => {
     const adapter = adapterFor(managed, clock);
     const { client } = await startGateway({
       adapters: { fm: adapter },
-      config: { aliases: { fast: ['fm'] }, targets: { fm: { adapter: 'fm', model: 'system' } } },
+      config: { aliases: { fast: ['fm'] }, targets: { fm: { model: 'system' } } },
     });
     const health = await getJson(client, '/v1/momonga/health');
     expect(health.status).toBe(200);

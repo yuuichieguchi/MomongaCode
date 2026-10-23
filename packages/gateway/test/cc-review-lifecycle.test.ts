@@ -6,7 +6,7 @@ import { createChatCompletionsAdapter, createFmServe, createGateway, createManag
 import type { ExecResult, FmServe, FmServeTimers, ProbeRecordKey, ProviderAdapter } from '@momonga/gateway';
 import { createFakeClock, createFakeTimers, createScriptedAdapter, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
-import { HMAC_KEY, START_MS, buildConfig, makeDir, registerCleanup, startGateway } from './gateway-helpers.ts';
+import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, makeDir, registerCleanup, startGateway } from './gateway-helpers.ts';
 import { TARGET } from './cc-support.ts';
 import { saveProbeRecord } from '@momonga/gateway';
 import { makeReport } from './report-fixture.ts';
@@ -56,6 +56,7 @@ const managedFm = async () => {
   const dir = makeDir();
   const socketPath = path.join(dir, 'fm.sock');
   const children: Child[] = [];
+  const warnings: string[] = [];
   const fmServe: FmServe = createFmServe({
     binary: '/usr/bin/fm',
     socketPath,
@@ -72,9 +73,11 @@ const managedFm = async () => {
     maxRestarts: 3,
     restartResetMs: 5000,
     preconditionTtlMs: 1000,
+    onWarning: (message) => warnings.push(message),
   });
   registerCleanup(async () => {
     await fmServe.stop();
+    expect(warnings).toEqual([]);
     for (const child of children) await child.exit();
   });
   const managed = await createManagedFmTarget({
@@ -130,7 +133,7 @@ describe('adapter and gateway shutdown', () => {
       adapters: { fm: adapter, a: other, b: other },
       config: {
         aliases: { fast: ['fm'], other: ['a', 'b'] },
-        targets: { fm: { adapter: 'fm', model: 'system' }, a: { adapter: 'a', model: 'm' }, b: { adapter: 'b', model: 'm' } },
+        targets: { fm: { model: 'system' }, a: { model: 'm' }, b: { model: 'm' } },
       },
     });
     await gateway.close();
@@ -154,7 +157,7 @@ describe('adapter and gateway shutdown', () => {
     const gateway = await createGateway({
       config: buildConfig({
         aliases: { fast: ['a'], other: ['b'] },
-        targets: { a: { adapter: 'a', model: 'm' }, b: { adapter: 'b', model: 'm' } },
+        targets: { a: { model: 'm' }, b: { model: 'm' } },
       }),
       adapters: { a: failing, b: { ...createScriptedAdapter({ calls: [] }), close: healthy } },
       clock,
@@ -162,6 +165,7 @@ describe('adapter and gateway shutdown', () => {
       dbPath: path.join(dir, 'state', 'gateway.db'),
       hmacKey: HMAC_KEY,
       socketPath,
+      version: TEST_VERSION,
     });
     const closing = gateway.close();
     await expect(closing).rejects.toBeInstanceOf(AggregateError);

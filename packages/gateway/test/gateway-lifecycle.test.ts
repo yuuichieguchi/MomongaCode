@@ -52,13 +52,13 @@ describe('gateway persistence and lifecycle', () => {
     expect(second.calls[0]?.request.input).toEqual([...userInput('q1'), ...stored.body.output, ...userInput('q2')]);
   });
 
-  it('rejects construction when a target references an adapter that was not supplied', async () => {
+  it('rejects construction when a target has no adapter keyed by its name', async () => {
     await expect(
       startGateway({
-        adapters: {},
-        config: { aliases: { fast: ['primary'] }, targets: { primary: { adapter: 'missing-adapter', model: 'm' } } },
+        adapters: { 'missing-adapter': createScriptedAdapter({ calls: [] }) },
+        config: { aliases: { fast: ['primary'] }, targets: { primary: { model: 'm' } } },
       }),
-    ).rejects.toThrow(/missing-adapter/);
+    ).rejects.toThrow(/"primary"/);
   });
 
   it('rejects construction when an alias references an unknown target', async () => {

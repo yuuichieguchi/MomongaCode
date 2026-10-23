@@ -94,7 +94,7 @@ describe('circuit breaker', () => {
       adapters: { a, b },
       config: {
         aliases: { fast: ['a', 'b'] },
-        targets: { a: { adapter: 'a', model: 'model-a' }, b: { adapter: 'b', model: 'model-b' } },
+        targets: { a: { model: 'model-a' }, b: { model: 'model-b' } },
         retry: { maxAttempts: 1 },
         breaker: { failureThreshold: 1, openMs: 10_000 },
       },
@@ -124,7 +124,7 @@ describe('circuit breaker', () => {
       adapters: { a },
       config: {
         aliases: { fast: ['a'] },
-        targets: { a: { adapter: 'a', model: 'model-a' } },
+        targets: { a: { model: 'model-a' } },
         retry: { maxAttempts: 1 },
         breaker: { failureThreshold: 1, openMs: 10_000 },
       },
@@ -141,8 +141,8 @@ describe('concurrency limiter', () => {
   const limited = {
     aliases: { fast: ['a'], other: ['b'] },
     targets: {
-      a: { adapter: 'a', model: 'model-a', maxConcurrency: 1, admissionTimeoutMs: 5000 },
-      b: { adapter: 'b', model: 'model-b' },
+      a: { model: 'model-a', maxConcurrency: 1, admissionTimeoutMs: 5000 },
+      b: { model: 'model-b' },
     },
   };
 

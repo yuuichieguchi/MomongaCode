@@ -10,6 +10,7 @@ export type AgentSpanInput = {
   conversationId: string;
   runId: string;
   step?: number;
+  attempt?: number;
 };
 
 export type ChatSpanInput = {
@@ -57,6 +58,7 @@ export const startAgentSpan = (tracer: Tracer, input: AgentSpanInput, parent?: C
         [A.ATTR_GEN_AI_CONVERSATION_ID]: input.conversationId,
         [MOMONGA_ATTRIBUTES.runId]: input.runId,
         ...(input.step === undefined ? {} : { [MOMONGA_ATTRIBUTES.step]: input.step }),
+        ...(input.attempt === undefined ? {} : { [MOMONGA_ATTRIBUTES.attempt]: input.attempt }),
       },
     },
     parent,

@@ -158,7 +158,18 @@ describe('S6 credential variables in project .mcp.json', () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), {
       enableAllProjectMcpServers: true,
-      models: { targets: { m: { adapter: 'chat-completions', model: 'x', apiKeyEnv: 'ACME_CRED' } } },
+      models: {
+        targets: {
+          m: {
+            adapter: 'chat-completions',
+            model: 'x',
+            baseUrl: 'https://api.example.com/v1',
+            apiKeyEnv: 'ACME_CRED',
+            capabilities: { contextWindow: 8192, maxOutputTokens: 1024 },
+          },
+        },
+        aliases: { default: 'm' },
+      },
     });
     writeJson(mcpJsonPath(tree), { mcpServers: { s: { command: 's', args: ['${ACME_CRED}'] } } });
     const failure = loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { ACME_CRED: 'v' } });

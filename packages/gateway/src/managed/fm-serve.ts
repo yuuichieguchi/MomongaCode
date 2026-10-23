@@ -1,7 +1,8 @@
-import { execFile, spawn as nodeSpawn } from 'node:child_process';
 import fs from 'node:fs';
 import { createUdsClient, isUnixSocketLive, type UdsClient } from '@momonga/foundation';
 import type { HealthResult } from '@momonga/protocol';
+import { createExecFn, createGroupSpawn, createPlainSpawn, reapStaleFmGroups } from './fm-processes.ts';
+import type { ChildEnv } from './fm-processes.ts';
 
 export interface ExecResult {
   exitCode: number;
@@ -10,6 +11,7 @@ export interface ExecResult {
 }
 
 export interface FmChild {
+  finalize?(graceMs: number): Promise<void>;
   kill(signal?: NodeJS.Signals): boolean;
   once(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown;
   once(event: 'error', listener: (error: Error) => void): unknown;
@@ -33,6 +35,9 @@ export interface FmServeOptions {
   maxRestarts: number;
   restartResetMs: number;
   preconditionTtlMs: number;
+  env?: ChildEnv;
+  markerDirectory?: string;
+  onWarning: (message: string) => void;
   exec?: ExecFn;
   spawn?: SpawnFn;
   timers?: FmServeTimers;
@@ -75,23 +80,6 @@ export class FmServeError extends Error {
 const LICENSE_NOT_ACCEPTED_EXIT_CODE = 69;
 const HEALTH_POLL_INTERVAL_MS = 25;
 
-const nodeExec: ExecFn = (file, args) =>
-  new Promise((resolve, reject) => {
-    execFile(file, [...args], (error, stdout, stderr) => {
-      if (error === null) {
-        resolve({ exitCode: 0, stdout, stderr });
-        return;
-      }
-      if (typeof error.code === 'number') {
-        resolve({ exitCode: error.code, stdout, stderr });
-        return;
-      }
-      reject(error);
-    });
-  });
-
-const defaultSpawn: SpawnFn = (file, args) => nodeSpawn(file, [...args], { stdio: 'ignore' });
-
 const defaultTimers: FmServeTimers = {
   setTimeout: (callback, ms) => setTimeout(callback, ms),
   clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout),
@@ -127,8 +115,12 @@ interface ManagedChild {
 const NOT_RUNNING: HealthResult = { ok: false, reason: 'not_running' };
 
 export const createFmServe = (options: FmServeOptions): FmServe => {
-  const exec = options.exec ?? nodeExec;
-  const spawn = options.spawn ?? defaultSpawn;
+  const exec = options.exec ?? createExecFn(options.env);
+  const spawn =
+    options.spawn ??
+    (options.markerDirectory === undefined
+      ? createPlainSpawn(options.env)
+      : createGroupSpawn({ env: options.env, markerDirectory: options.markerDirectory, onWarning: options.onWarning }));
   const timers = options.timers ?? defaultTimers;
   const argv = ['serve', '--socket', options.socketPath] as const;
 
@@ -202,6 +194,9 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
   };
 
   const claimSocketPath = async (): Promise<void> => {
+    if (options.markerDirectory !== undefined) {
+      await reapStaleFmGroups({ markerDirectory: options.markerDirectory, graceMs: options.stopGraceMs, onWarning: options.onWarning });
+    }
     const existing = await fs.promises.lstat(options.socketPath).catch((error: NodeJS.ErrnoException) => {
       if (error.code === 'ENOENT') return undefined;
       throw error;
@@ -276,12 +271,15 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
     });
 
   const terminate = (managed: ManagedChild): Promise<void> => {
-    if (managed.exited) return Promise.resolve();
     managed.terminating ??= (async () => {
-      managed.process.kill('SIGTERM');
-      if (await waitForExit(managed, options.stopGraceMs)) return;
-      managed.process.kill('SIGKILL');
-      await waitForExit(managed, undefined);
+      if (!managed.exited) {
+        managed.process.kill('SIGTERM');
+        if (!(await waitForExit(managed, options.stopGraceMs))) {
+          managed.process.kill('SIGKILL');
+          await waitForExit(managed, undefined);
+        }
+      }
+      await managed.process.finalize?.(options.stopGraceMs);
     })();
     return managed.terminating;
   };

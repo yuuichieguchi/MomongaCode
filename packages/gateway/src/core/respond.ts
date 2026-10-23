@@ -18,7 +18,7 @@ import type { AttemptSpan, TraceParent } from './attempt-span.ts';
 import { applyBreakerVerdict, breakerVerdictOf } from './breaker-verdict.ts';
 import type { BreakerVerdict } from './breaker-verdict.ts';
 import { armDeadline } from './deadline.ts';
-import { GatewayError } from './errors.ts';
+import { GatewayError, isRunCancelled } from './errors.ts';
 import { estimateInputTokens, estimateOutputTokens, estimatedUsage } from './estimate.ts';
 import { resolveInput } from './input.ts';
 import type { ResolvedInput } from './input.ts';
@@ -344,6 +344,13 @@ async function* relay(
     sequence_number: nextSequence(),
     response: resource,
   };
+
+  if (isRunCancelled(signal.reason)) {
+    const cancelled = signal.reason as GatewayError;
+    opened.span.fail('cancelled', cancelled, cancelled.message);
+    yield failedTerminal({ code: 'run_cancelled', message: cancelled.message, type: 'server_error' }, resource.output);
+    return;
+  }
 
   const priorFrames = control.frames();
   const commit: CommitRequest = {

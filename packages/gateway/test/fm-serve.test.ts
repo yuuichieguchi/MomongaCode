@@ -192,6 +192,7 @@ const setup = (config: SetupConfig = {}) => {
     children.push(child);
     return child;
   });
+  const warnings: string[] = [];
   const server: FmServe = createFmServe({
     binary: '/usr/bin/fm',
     socketPath,
@@ -204,8 +205,12 @@ const setup = (config: SetupConfig = {}) => {
     maxRestarts: config.maxRestarts ?? 3,
     restartResetMs: RESET_MS,
     preconditionTtlMs: config.preconditionTtlMs ?? 1000,
+    onWarning: (message) => warnings.push(message),
   });
-  cleanups.push(() => server.stop());
+  cleanups.push(async () => {
+    await server.stop();
+    expect(warnings).toEqual([]);
+  });
   return { server, spawn, exec, socketPath, events, manual };
 };
 
