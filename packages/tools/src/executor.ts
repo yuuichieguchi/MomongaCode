@@ -101,6 +101,7 @@ type RunPlan = {
   key: string;
   batch: BatchInput;
   recovered?: ToolIdempotencyRecord;
+  gateRan: boolean;
 };
 
 type Admission = { kind: 'outcome'; outcome: CallOutcome } | { kind: 'run'; plan: RunPlan };
@@ -323,18 +324,18 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
     const recovered = existing?.s === 'PENDING' || existing?.s === 'UNKNOWN' ? existing.rec : undefined;
     if (batch.recoverOnly === true) {
       if (recovered === undefined) return outcome(failedOutcome(call.callId, `${tool.name} was cancelled`));
-      return { kind: 'run', plan: { call, tool, input, subject, key, batch, recovered } };
+      return { kind: 'run', plan: { call, tool, input, subject, key, batch, recovered, gateRan: false } };
     }
 
     if (recovered === undefined) {
       const gated = permissionGate(call, tool, input, subject, batch);
       if (gated !== undefined) return outcome(gated);
     }
-    return { kind: 'run', plan: { call, tool, input, subject, key, batch, ...(recovered === undefined ? {} : { recovered }) } };
+    return { kind: 'run', plan: { call, tool, input, subject, key, batch, gateRan: recovered === undefined, ...(recovered === undefined ? {} : { recovered }) } };
   };
 
   const perform = async (plan: RunPlan): Promise<CallOutcome> => {
-    const { call, tool, input, subject, key, batch, recovered } = plan;
+    const { call, tool, input, subject, key, batch, recovered, gateRan } = plan;
     const { callId } = call;
     const inlineLimit = batch.maxInlineOutputChars ?? maxInlineOutputChars;
     if (batch.signal.aborted) return failedOutcome(callId, `${tool.name} was cancelled`);
@@ -387,23 +388,38 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
       };
 
       let prepared: Record<string, unknown> | undefined;
+      let record: ToolIdempotencyRecord | undefined;
+      let gateAdmitted = gateRan;
       if (recovered !== undefined) {
-        const stored = recovered.meta['prepared'];
-        prepared = isRecord(stored) ? stored : undefined;
-      } else if (tool.prepare !== undefined) {
-        try {
-          prepared = await tool.prepare(input, ctx);
-        } catch (error) {
-          return failedOutcome(callId, describeThrown(tool.name, error));
+        const current = idempotency.get(key);
+        if (current?.s === 'COMPLETED') return storedOutcome(current.result);
+        record = current?.rec;
+        if (record === undefined) {
+          if (recoverOnly) return failedOutcome(callId, `${tool.name} was cancelled`);
+          const gated = permissionGate(call, tool, input, subject, batch);
+          if (gated !== undefined) return gated;
+          gateAdmitted = true;
+        } else {
+          const stored = record.meta['prepared'];
+          prepared = isRecord(stored) ? stored : undefined;
         }
       }
-      if (abortReason !== undefined) return failedOutcome(callId, `${tool.name} was cancelled`);
-
-      const begun = idempotency.begin(key, {
-        expiresAt: clock.now() + ttlMs,
-        meta: { tool: tool.name, ...(prepared === undefined ? {} : { prepared }) },
-      });
-      if (begun.s === 'COMPLETED') return storedOutcome(begun.result);
+      if (record === undefined) {
+        if (tool.prepare !== undefined) {
+          try {
+            prepared = await tool.prepare(input, ctx);
+          } catch (error) {
+            return failedOutcome(callId, describeThrown(tool.name, error));
+          }
+        }
+        if (abortReason !== undefined) return failedOutcome(callId, `${tool.name} was cancelled`);
+        const begun = idempotency.begin(key, {
+          expiresAt: clock.now() + ttlMs,
+          meta: { tool: tool.name, ...(prepared === undefined ? {} : { prepared }) },
+        });
+        if (begun.s === 'COMPLETED') return storedOutcome(begun.result);
+        if (begun.s !== 'NEW') record = begun.rec;
+      }
 
       const deferred: DeferredOutcome = { callId, kind: 'deferred' };
 
@@ -460,17 +476,22 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
         return complete({ status: 'failed', output }, reconciled);
       };
 
-      if (begun.s === 'NEW' && recoverOnly) {
-        return complete(finalizeResult({ status: 'failed', output: `${tool.name} was cancelled` }, tool, inlineLimit));
-      }
-      if (begun.s === 'NEW') {
+      const admitExecution = (): CallOutcome | undefined => {
+        if (gateAdmitted) return undefined;
+        const gated = permissionGate(call, tool, input, subject, batch);
+        if (gated?.kind === 'needs_approval') return gated;
+        if (gated?.kind === 'result') return complete(gated.result);
+        return undefined;
+      };
+
+      if (record === undefined) {
         await batch.onStarted?.(callId, key);
         return await execute();
       }
 
       let reconcileOutcome: ReconcileResult;
       try {
-        reconcileOutcome = await reconcileWithin(tool, input, begun.rec, ctx, () => abortWith('timeout'), () => {
+        reconcileOutcome = await reconcileWithin(tool, input, record, ctx, () => abortWith('timeout'), () => {
           contextClosed = true;
         });
       } catch (error) {
@@ -480,9 +501,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
         return complete(finalizeResult({ status: 'failed', output: cancelledOutput(tool) }, tool, inlineLimit), 'not_applied');
       }
       if (reconcileOutcome.outcome === 'not_applied') {
-        const gated = permissionGate(call, tool, input, subject, batch);
-        if (gated?.kind === 'needs_approval') return gated;
-        if (gated?.kind === 'result') return complete(gated.result);
+        const refused = admitExecution();
+        if (refused !== undefined) return refused;
         return await execute('not_applied');
       }
       const status = reconcileOutcome.outcome === 'already_applied' ? 'completed' : 'failed';
