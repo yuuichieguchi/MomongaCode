@@ -1,0 +1,310 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import picomatch from 'picomatch';
+import { canonicalizePath, isInside } from '@momonga/policy';
+import type { SandboxPolicy } from '@momonga/sandbox';
+import { defineTool, ToolExecutionError } from '../types.ts';
+import type { ToolContext } from '../types.ts';
+import { extensionsForType } from './file-types.ts';
+import { looksBinary, regularFileProblem, statIfExists } from './files.ts';
+import { sortByMtimeThenPath } from './glob.ts';
+import { canonicalPathOf } from './paths.ts';
+import { isPermissionError, walkFiles } from './walk.ts';
+
+type OutputMode = 'content' | 'files_with_matches' | 'count';
+
+type GrepInput = {
+  pattern: string;
+  path?: string;
+  glob?: string;
+  type?: string;
+  output_mode?: OutputMode;
+  '-i'?: boolean;
+  '-n'?: boolean;
+  '-A'?: number;
+  '-B'?: number;
+  '-C'?: number;
+  head_limit?: number;
+  offset?: number;
+  multiline?: boolean;
+};
+
+type SearchResult = { entries: string[]; unreadable: boolean };
+
+const UNREADABLE_NOTE = '(some paths could not be read)';
+
+const contextOf = (input: GrepInput): { before: number; after: number } => ({
+  before: input['-B'] ?? input['-C'] ?? 0,
+  after: input['-A'] ?? input['-C'] ?? 0,
+});
+
+const lineNumbersWanted = (input: GrepInput): boolean => input['-n'] ?? true;
+
+const resolveRipgrep = (envPath: string | undefined): string | undefined => {
+  for (const directory of (envPath ?? '').split(path.delimiter)) {
+    if (directory === '') continue;
+    const candidate = path.join(directory, 'rg');
+    try {
+      fs.accessSync(candidate, fs.constants.X_OK);
+      if (fs.statSync(candidate).isFile()) return candidate;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT' && (error as NodeJS.ErrnoException).code !== 'EACCES') throw error;
+    }
+  }
+  return undefined;
+};
+
+const escapeGlob = (value: string): string => value.replace(/[\\[\]*?{}!]/g, '\\$&');
+
+const deniedGlobs = (readDenied: readonly string[], target: string, isDirectory: boolean): string[] => {
+  if (!isDirectory) return [];
+  return readDenied.flatMap((entry) => {
+    const resolved = canonicalizePath(entry) ?? path.resolve(entry);
+    if (resolved === target || !isInside(resolved, target)) return [];
+    const relative = escapeGlob(path.relative(target, resolved));
+    return ['--glob', `!${relative}`, '--glob', `!${relative}/**`];
+  });
+};
+
+const ripgrepArguments = (input: GrepInput, mode: OutputMode, target: string, readDenied: readonly string[], isDirectory: boolean): string[] => {
+  const { before, after } = contextOf(input);
+  return [
+    '--no-config',
+    '--color',
+    'never',
+    '--no-heading',
+    '-H',
+    '--hidden',
+    '--glob',
+    '!.git',
+    '--sort',
+    'path',
+    '--no-require-git',
+    '--no-ignore-parent',
+    '--no-ignore-global',
+    '--no-ignore-exclude',
+    ...(mode === 'files_with_matches' ? ['-l'] : []),
+    ...(mode === 'count' ? ['-c'] : []),
+    ...(mode === 'content' ? [lineNumbersWanted(input) ? '-n' : '--no-line-number'] : []),
+    ...(mode === 'content' && before > 0 ? ['-B', String(before)] : []),
+    ...(mode === 'content' && after > 0 ? ['-A', String(after)] : []),
+    ...(input['-i'] === true ? ['-i'] : []),
+    ...(input.multiline === true ? ['-U', '--multiline-dotall'] : []),
+    ...(input.type === undefined ? [] : [...extensionsForType(input.type).flatMap((extension) => ['--type-add', `momonga:*.${extension}`]), '--type', 'momonga']),
+    ...(input.glob === undefined ? [] : ['--glob', input.glob]),
+    ...deniedGlobs(readDenied, target, isDirectory),
+    '-e',
+    input.pattern,
+    '--',
+    target,
+  ];
+};
+
+const collect = async (stream: AsyncIterable<Uint8Array>): Promise<string> => {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks).toString('utf8');
+};
+
+const lineList = (text: string): string[] => (text === '' ? [] : text.replace(/\n$/, '').split('\n'));
+
+const searchWithRipgrep = async (
+  ripgrep: string,
+  input: GrepInput,
+  mode: OutputMode,
+  target: string,
+  isDirectory: boolean,
+  ctx: ToolContext,
+): Promise<SearchResult> => {
+  const policy: SandboxPolicy = { writableRoots: [], writeDenied: [], readDenied: ctx.sandboxPolicy.readDenied, network: 'deny' };
+  const child = ctx.sandbox.spawn({ argv: [ripgrep, ...ripgrepArguments(input, mode, target, ctx.sandboxPolicy.readDenied, isDirectory)], cwd: isDirectory ? target : path.dirname(target), env: ctx.env }, policy, ctx.signal);
+  const [stdout, stderr, exit] = await Promise.all([collect(child.stdout), collect(child.stderr), child.exited]);
+  if (exit.code === 1 && stdout === '') return { entries: [], unreadable: false };
+  if (exit.code === 0) return { entries: lineList(stdout), unreadable: false };
+  if (exit.code === 2) {
+    const ioErrorsOnly = lineList(stderr).every((line) => line.includes('os error'));
+    if (stdout !== '') return { entries: lineList(stdout), unreadable: true };
+    if (ioErrorsOnly) return { entries: [], unreadable: true };
+  }
+  const reason = exit.signal === null ? `exit code ${exit.code}` : `signal ${exit.signal}`;
+  throw new ToolExecutionError(`ripgrep failed (${reason}): ${stderr.trim()}`);
+};
+
+const matchedLineNumbers = (text: string, lines: readonly string[], expression: RegExp, multiline: boolean): number[] => {
+  if (!multiline) {
+    const hits: number[] = [];
+    lines.forEach((line, index) => {
+      if (expression.test(line)) hits.push(index + 1);
+    });
+    return hits;
+  }
+  const lineStarts: number[] = [0];
+  for (let index = text.indexOf('\n'); index !== -1; index = text.indexOf('\n', index + 1)) lineStarts.push(index + 1);
+  const lineOf = (position: number): number => {
+    let low = 0;
+    let high = lineStarts.length - 1;
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      if ((lineStarts[middle] as number) <= position) low = middle;
+      else high = middle - 1;
+    }
+    return low + 1;
+  };
+  const hits = new Set<number>();
+  for (const match of text.matchAll(expression)) {
+    const first = lineOf(match.index);
+    const endPosition = match[0].length === 0 ? match.index : match.index + match[0].length - 1;
+    const last = Math.min(lineOf(endPosition), lines.length);
+    for (let line = first; line <= last; line += 1) hits.add(line);
+  }
+  return [...hits].sort((left, right) => left - right);
+};
+
+const contentLines = (
+  file: string,
+  lines: readonly string[],
+  hits: readonly number[],
+  input: GrepInput,
+): Array<{ lineNumber: number; text: string }> => {
+  const { before, after } = contextOf(input);
+  const withNumbers = lineNumbersWanted(input);
+  const hitSet = new Set(hits);
+  const shown = new Set<number>();
+  for (const hit of hits) {
+    for (let line = Math.max(1, hit - before); line <= Math.min(lines.length, hit + after); line += 1) shown.add(line);
+  }
+  return [...shown]
+    .sort((left, right) => left - right)
+    .map((lineNumber) => {
+      const separator = hitSet.has(lineNumber) ? ':' : '-';
+      const text = lines[lineNumber - 1] as string;
+      return { lineNumber, text: withNumbers ? `${file}${separator}${lineNumber}${separator}${text}` : `${file}${separator}${text}` };
+    });
+};
+
+const splitGroups = (shown: ReadonlyArray<{ lineNumber: number; text: string }>): string[][] => {
+  const groups: string[][] = [];
+  let previous = -1;
+  for (const line of shown) {
+    if (previous === -1 || line.lineNumber !== previous + 1) groups.push([]);
+    (groups[groups.length - 1] as string[]).push(line.text);
+    previous = line.lineNumber;
+  }
+  return groups;
+};
+
+const searchWithJavaScript = async (input: GrepInput, mode: OutputMode, target: string, isDirectory: boolean, ctx: ToolContext): Promise<SearchResult> => {
+  const multiline = input.multiline === true;
+  let expression: RegExp;
+  try {
+    expression = new RegExp(input.pattern, `${input['-i'] === true ? 'i' : ''}m${multiline ? 'gs' : ''}`);
+  } catch (error) {
+    throw new ToolExecutionError(`Invalid regular expression: ${(error as Error).message}`);
+  }
+  const extensions = input.type === undefined ? undefined : extensionsForType(input.type);
+  const globMatch = input.glob === undefined ? undefined : picomatch(input.glob, { dot: true, basename: true });
+  const { before, after } = contextOf(input);
+  const withContext = mode === 'content' && (before > 0 || after > 0);
+
+  let unreadable = false;
+  const candidates: string[] = [];
+  if (isDirectory) {
+    for await (const entry of walkFiles({
+      root: target,
+      readDenied: ctx.sandboxPolicy.readDenied,
+      includeSymlinkedFiles: false,
+      signal: ctx.signal,
+      onUnreadable: () => void (unreadable = true),
+    })) {
+      const extension = path.extname(entry.relative).slice(1);
+      if (extensions !== undefined && !extensions.includes(extension)) continue;
+      if (globMatch !== undefined && !globMatch(entry.relative)) continue;
+      candidates.push(entry.absolute);
+    }
+  } else {
+    candidates.push(target);
+  }
+
+  const files: string[] = [];
+  const groups: string[][] = [];
+  const entries: string[] = [];
+  for (const file of candidates) {
+    ctx.signal.throwIfAborted();
+    let text: string;
+    try {
+      if (await looksBinary(file)) continue;
+      text = await fs.promises.readFile(file, 'utf8');
+    } catch (error) {
+      if (!isPermissionError(error)) throw error;
+      unreadable = true;
+      continue;
+    }
+    const lines = text === '' ? [] : text.replace(/\n$/, '').split('\n');
+    const hits = matchedLineNumbers(text, lines, expression, multiline);
+    if (hits.length === 0) continue;
+    if (mode === 'files_with_matches') files.push(file);
+    else if (mode === 'count') entries.push(`${file}:${hits.length}`);
+    else groups.push(...splitGroups(contentLines(file, lines, hits, input)));
+  }
+
+  if (mode === 'files_with_matches') return { entries: await sortByMtimeThenPath(files), unreadable };
+  if (mode === 'count') return { entries, unreadable };
+  const joined: string[] = [];
+  groups.forEach((group, index) => {
+    if (index > 0 && withContext) joined.push('--');
+    joined.push(...group);
+  });
+  return { entries: joined, unreadable };
+};
+
+export const grepTool = defineTool<GrepInput>({
+  name: 'Grep',
+  description:
+    'Searches file contents with a regular expression (ripgrep syntax when available). path is an absolute file or directory and defaults to the current working directory. output_mode: files_with_matches (default, newest first), content (path:line:text with optional -A/-B/-C context), or count. Respects .gitignore and .ignore, skips .git, includes dotfiles. head_limit and offset page through the output entries.',
+  kind: 'search',
+  sideEffect: 'read_only',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      pattern: { type: 'string', minLength: 1, description: 'Regular expression to search for' },
+      path: { type: 'string', description: 'Absolute file or directory to search; defaults to the current working directory' },
+      glob: { type: 'string', description: 'Glob filter for file names, for example "*.js"' },
+      type: { type: 'string', description: 'File type filter, for example "ts" or "py"' },
+      output_mode: { type: 'string', enum: ['content', 'files_with_matches', 'count'] },
+      '-i': { type: 'boolean', description: 'Case-insensitive search' },
+      '-n': { type: 'boolean', description: 'Show line numbers in content mode (default true)' },
+      '-A': { type: 'integer', minimum: 0, description: 'Lines of context after each match' },
+      '-B': { type: 'integer', minimum: 0, description: 'Lines of context before each match' },
+      '-C': { type: 'integer', minimum: 0, description: 'Lines of context before and after each match' },
+      head_limit: { type: 'integer', minimum: 0, description: 'Return at most this many output entries (0 means unlimited)' },
+      offset: { type: 'integer', minimum: 0, description: 'Skip this many output entries first' },
+      multiline: { type: 'boolean', description: 'Let patterns match across lines' },
+    },
+    required: ['pattern'],
+    additionalProperties: false,
+  },
+  timeoutMs: 60_000,
+  title: (input) => `Grep ${input.pattern}`,
+  subject: (input, ctx) => {
+    if (input.type !== undefined) extensionsForType(input.type);
+    return { kind: 'path', tool: 'Grep', paths: [canonicalPathOf('path', input.path ?? ctx.cwd)], access: 'read' };
+  },
+  execute: async (input, ctx) => {
+    const target = canonicalPathOf('path', input.path ?? ctx.session.cwd);
+    const stat = await statIfExists(target);
+    if (stat === undefined) throw new ToolExecutionError(`Path does not exist: ${target}`);
+    const problem = stat.isDirectory() ? undefined : regularFileProblem(stat, target);
+    if (problem !== undefined) throw new ToolExecutionError(problem);
+    const mode = input.output_mode ?? 'files_with_matches';
+    const ripgrep = resolveRipgrep(ctx.env['PATH']);
+    const found =
+      ripgrep === undefined
+        ? await searchWithJavaScript(input, mode, target, stat.isDirectory(), ctx)
+        : await searchWithRipgrep(ripgrep, input, mode, target, stat.isDirectory(), ctx);
+    const ordered = mode === 'files_with_matches' && ripgrep !== undefined ? await sortByMtimeThenPath(found.entries) : found.entries;
+    const skipped = ordered.slice(input.offset ?? 0);
+    const limited = input.head_limit === undefined || input.head_limit === 0 ? skipped : skipped.slice(0, input.head_limit);
+    const lines = limited.length === 0 ? ['No matches found'] : limited;
+    return { status: 'completed', output: [...lines, ...(found.unreadable ? [UNREADABLE_NOTE] : [])].join('\n') };
+  },
+});
