@@ -1,1 +1,8 @@
-export {};
+export { parseRule, RuleParseError } from '@momonga/config';
+export type { ParseRuleOptions, PermissionRule, RuleEffect, RuleOrigin } from '@momonga/config';
+export { decide } from './decide.ts';
+export type { DecideInput, Decision } from './decide.ts';
+export { matchRule } from './match-rule.ts';
+export type { DecisionKind, PermissionSubject, PolicyTool, SideEffect } from './types.ts';
+export { modelVisibleTools } from './visible-tools.ts';
+export type { VisibleToolsOptions } from './visible-tools.ts';
