@@ -27,8 +27,17 @@ export interface UdsClient {
   close(): Promise<void>;
 }
 
-export const createUdsClient = (socketPath: string): UdsClient => {
-  const agent = new Agent({ connect: { socketPath } });
+export interface UdsClientOptions {
+  headersTimeoutMs?: number;
+  bodyTimeoutMs?: number;
+}
+
+export const createUdsClient = (socketPath: string, options: UdsClientOptions = {}): UdsClient => {
+  const agent = new Agent({
+    connect: { socketPath },
+    ...(options.headersTimeoutMs === undefined ? {} : { headersTimeout: options.headersTimeoutMs }),
+    ...(options.bodyTimeoutMs === undefined ? {} : { bodyTimeout: options.bodyTimeoutMs }),
+  });
   let closing: Promise<void> | undefined;
   return {
     request: async (options) => {

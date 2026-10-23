@@ -1,6 +1,6 @@
 import { CircuitBreaker } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import type { Capabilities, GatewayHealth, ProviderAdapter } from '@momonga/protocol';
+import type { Capabilities, GatewayHealth, HealthResult, ProviderAdapter, TargetHealth } from '@momonga/protocol';
 import { createAdmissionGate } from './admission.ts';
 import type { AdmissionGate } from './admission.ts';
 import { invalidRequest, notFound } from './errors.ts';
@@ -21,7 +21,7 @@ export type Router = {
   targetsOf(alias: string): TargetRuntime[];
   capabilitiesOf(target: TargetRuntime): Promise<Capabilities>;
   candidates(alias: string, requirements: { tools: boolean }): Promise<TargetRuntime[]>;
-  health(): GatewayHealth;
+  health(): Promise<GatewayHealth>;
 };
 
 export type RouterOptions = {
@@ -35,6 +35,15 @@ const requireEntry = <T>(entries: Record<string, T>, name: string, kind: string)
   const entry = Object.hasOwn(entries, name) ? entries[name] : undefined;
   if (entry === undefined) throw new Error(`gateway configuration references unknown ${kind} "${name}"`);
   return entry;
+};
+
+const reportedHealthOf = async (target: TargetRuntime): Promise<HealthResult | undefined> => {
+  if (target.adapter.health === undefined) return undefined;
+  try {
+    return await target.adapter.health({ name: target.name, model: target.model });
+  } catch (error) {
+    return { ok: false, reason: 'health_check_failed', detail: error instanceof Error ? error.message : String(error) };
+  }
 };
 
 export const createRouter = (options: RouterOptions): Router => {
@@ -67,7 +76,7 @@ export const createRouter = (options: RouterOptions): Router => {
   };
 
   const capabilitiesOf = async (target: TargetRuntime): Promise<Capabilities> => {
-    const declared = await target.adapter.capabilities();
+    const declared = await target.adapter.capabilities({ name: target.name, model: target.model });
     if (target.capabilityOverride === undefined) return declared;
     return { ...declared, ...target.capabilityOverride, source: 'config' };
   };
@@ -87,11 +96,21 @@ export const createRouter = (options: RouterOptions): Router => {
       }
       return supported;
     },
-    health: () => {
-      const entries = [...targets.values()].map((target) => {
-        const breaker = target.breaker.state;
-        return [target.name, { ok: breaker !== 'open', breaker }] as const;
-      });
+    health: async () => {
+      const entries = await Promise.all(
+        [...targets.values()].map(async (target) => {
+          const breaker = target.breaker.state;
+          const reported = await reportedHealthOf(target);
+          const health: TargetHealth = {
+            ok: breaker !== 'open' && (reported?.ok ?? true),
+            breaker,
+            ...(reported?.reason === undefined ? {} : { reason: reported.reason }),
+            ...(reported?.detail === undefined ? {} : { detail: reported.detail }),
+            ...(reported?.remediation === undefined ? {} : { remediation: reported.remediation }),
+          };
+          return [target.name, health] as const;
+        }),
+      );
       return { ok: entries.every(([, health]) => health.ok), targets: Object.fromEntries(entries) };
     },
   };

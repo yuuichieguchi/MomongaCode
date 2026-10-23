@@ -36,7 +36,7 @@ describe('protocol capability types', () => {
   it('defines HealthResult', () => {
     expectTypeOf<HealthResult>().toEqualTypeOf<{
       ok: boolean;
-      reason?: 'not_running' | 'unhealthy' | 'precondition_failed';
+      reason?: 'not_running' | 'unhealthy' | 'precondition_failed' | 'health_check_failed';
       detail?: string;
       remediation?: string;
     }>();

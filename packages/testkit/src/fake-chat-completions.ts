@@ -31,7 +31,23 @@ export interface FakeChatCompletionsOptions {
   stallNativeSamples?: number[];
   stallMs?: number;
   healthy?: boolean;
+  script?: FakeScriptedReply[];
 }
+
+export interface FakeStreamChunk {
+  delta: Record<string, unknown>;
+  finishReason?: string | null;
+}
+
+export type FakeScriptedReply =
+  | {
+      kind: 'stream';
+      chunks: FakeStreamChunk[];
+      usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+      done?: boolean;
+    }
+  | { kind: 'error'; status: number; body: unknown; headers?: Record<string, string> }
+  | { kind: 'hang'; chunks?: FakeStreamChunk[] };
 
 export interface RecordedRequest {
   method: string;
@@ -44,6 +60,7 @@ export interface FakeChatCompletionsServer {
   socketPath: string;
   requests: RecordedRequest[];
   openConnections(): number;
+  disconnects(): number;
   close(): Promise<void>;
 }
 
@@ -150,6 +167,8 @@ const mutateTypes = (value: unknown): unknown | undefined => {
   return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, wrongTyped(entry)]));
 };
 
+const TOOL_RESULT_PREFIX = '<tool_result';
+
 const MALFORMED_JSON = '{"kind": "tool_calls", "calls": [{"name": ';
 
 const readBody = async (request: http.IncomingMessage): Promise<string> => {
@@ -185,6 +204,8 @@ export const startFakeChatCompletions = async (
   const jsonSchemaAccepted = options.scenario !== 'none';
 
   const requests: RecordedRequest[] = [];
+  const script = [...(options.script ?? [])];
+  let disconnectCount = 0;
   let inFlight = 0;
   const waiting: Array<() => void> = [];
   let completionCount = 0;
@@ -227,7 +248,7 @@ export const startFakeChatCompletions = async (
 
   const constrainedCompletion = (schema: unknown, lastText: string, lastRole: unknown): CompletionOut => {
     const requiredToolName =
-      lastRole === 'user' ? findRequestedName(lastText, collectAllowedNames(schema)) : undefined;
+      lastRole === 'user' && !lastText.trimStart().startsWith(TOOL_RESULT_PREFIX) ? findRequestedName(lastText, collectAllowedNames(schema)) : undefined;
     if (requiredToolName === undefined) {
       return { content: JSON.stringify(generateInstance(schema)), toolCalls: [], finishReason: 'stop' };
     }
@@ -360,6 +381,42 @@ export const startFakeChatCompletions = async (
     response.end();
   };
 
+  const writeScriptedChunks = (response: http.ServerResponse, chunks: readonly FakeStreamChunk[], id: string): void => {
+    for (const chunk of chunks) {
+      const payload = {
+        id,
+        object: 'chat.completion.chunk',
+        created: 0,
+        model: modelId,
+        choices: [{ index: 0, delta: chunk.delta, finish_reason: chunk.finishReason ?? null }],
+      };
+      response.write(`data: ${JSON.stringify(payload)}\n\n`);
+    }
+  };
+
+  const serveScripted = async (reply: FakeScriptedReply, response: http.ServerResponse): Promise<void> => {
+    if (reply.kind === 'error') {
+      writeJson(response, reply.status, reply.body, reply.headers ?? {});
+      return;
+    }
+    completionCount += 1;
+    const id = `chatcmpl-fake-${completionCount}`;
+    response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+    if (reply.kind === 'hang') {
+      writeScriptedChunks(response, reply.chunks ?? [], id);
+      await new Promise<void>((resolve) => response.once('close', () => resolve()));
+      return;
+    }
+    writeScriptedChunks(response, reply.chunks, id);
+    if (reply.usage !== undefined) {
+      response.write(
+        `data: ${JSON.stringify({ id, object: 'chat.completion.chunk', created: 0, model: modelId, choices: [], usage: reply.usage })}\n\n`,
+      );
+    }
+    if (reply.done !== false) response.write('data: [DONE]\n\n');
+    response.end();
+  };
+
   const handleCompletion = async (body: Json, response: http.ServerResponse, signal: AbortSignal): Promise<void> => {
     validateCompletionRequest(body);
     if (latencyMs > 0) await delay(latencyMs, undefined, { signal });
@@ -416,6 +473,14 @@ export const startFakeChatCompletions = async (
         return;
       }
       if (request.method === 'POST' && requestPath === '/v1/chat/completions') {
+        response.once('close', () => {
+          if (!response.writableFinished) disconnectCount += 1;
+        });
+        const scripted = script.shift();
+        if (scripted !== undefined) {
+          await serveScripted(scripted, response);
+          return;
+        }
         if (inFlight >= maxConcurrency && overflow === 'reject') {
           writeJson(
             response,
@@ -481,6 +546,7 @@ export const startFakeChatCompletions = async (
     socketPath,
     requests,
     openConnections: () => sockets.size,
+    disconnects: () => disconnectCount,
     close: async () => {
       if (closed) return;
       closed = true;

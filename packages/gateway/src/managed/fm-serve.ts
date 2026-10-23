@@ -46,6 +46,7 @@ export interface FmServeEndpoint {
 export interface FmServe {
   readonly restarts: number;
   start(): Promise<FmServeEndpoint>;
+  ensureRunning(): Promise<FmServeEndpoint>;
   stop(): Promise<void>;
   health(): Promise<HealthResult>;
 }
@@ -446,18 +447,30 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
     return started;
   };
 
+  const start = (): Promise<FmServeEndpoint> => {
+    if (state === 'starting' && startPromise !== undefined) return startPromise;
+    if (state === 'running' || state === 'restarting') return Promise.reject(new Error('fm serve is already started'));
+    if (startPromise !== undefined) {
+      return startPromise.then(undefined, () => undefined).then(() => begin());
+    }
+    return begin();
+  };
+
   return {
     get restarts(): number {
       return totalRestarts;
     },
 
-    start(): Promise<FmServeEndpoint> {
-      if (state === 'starting' && startPromise !== undefined) return startPromise;
-      if (state === 'running' || state === 'restarting') return Promise.reject(new Error('fm serve is already started'));
-      if (startPromise !== undefined) {
-        return startPromise.then(undefined, () => undefined).then(() => begin());
+    start,
+
+    ensureRunning(): Promise<FmServeEndpoint> {
+      if (state === 'running' || state === 'restarting') {
+        return Promise.resolve({ kind: 'unix', socketPath: options.socketPath });
       }
-      return begin();
+      if (state === 'stopped') {
+        return Promise.reject(new FmServeError('not_running', 'fm serve was stopped', undefined, undefined));
+      }
+      return start();
     },
 
     async stop(): Promise<void> {
@@ -482,6 +495,7 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
       const unmet = await checkPreconditions(true);
       if (unmet !== undefined) return unmet;
       if (state === 'failed') return failure;
+      if (state === 'idle') return { ok: true, detail: 'idle; starts on demand' };
       const healthClient = client;
       if (state !== 'running' || current === undefined || current.exited || healthClient === undefined) return NOT_RUNNING;
       const deadline = createDeadline(options.healthTimeoutMs);

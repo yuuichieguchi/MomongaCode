@@ -63,6 +63,20 @@ const closeServer = (server: http.Server): Promise<void> =>
     server.close((error) => (error === undefined ? resolve() : reject(error)));
   });
 
+const closeAdapters = async (adapters: GatewayOptions['adapters']): Promise<unknown[]> => {
+  const failures: unknown[] = [];
+  await Promise.all(
+    [...new Set(Object.values(adapters))].map(async (adapter) => {
+      try {
+        await adapter.close?.();
+      } catch (error) {
+        failures.push(error);
+      }
+    }),
+  );
+  return failures;
+};
+
 export const createGateway = async (options: GatewayOptions): Promise<Gateway> => {
   checkGatewayOptions(options);
   const { clock, timers } = options;
@@ -130,7 +144,9 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
         }
         for (const server of servers) server.closeAllConnections();
         await Promise.all(closed);
+        const adapterFailures = await closeAdapters(options.adapters);
         store.close();
+        if (adapterFailures.length > 0) throw new AggregateError(adapterFailures, 'one or more adapters failed to close');
       })();
       return closing;
     };

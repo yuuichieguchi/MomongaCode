@@ -20,7 +20,7 @@ export type Capabilities = {
 
 export type HealthResult = {
   ok: boolean;
-  reason?: 'not_running' | 'unhealthy' | 'precondition_failed';
+  reason?: 'not_running' | 'unhealthy' | 'precondition_failed' | 'health_check_failed';
   detail?: string;
   remediation?: string;
 };

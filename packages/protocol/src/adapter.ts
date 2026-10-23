@@ -1,4 +1,4 @@
-import type { Capabilities } from './capabilities.ts';
+import type { Capabilities, HealthResult } from './capabilities.ts';
 import type { CountTokensRequest, CountTokensResult } from './gateway-api.ts';
 import type { ErrorBody, FunctionTool, InputItem, StreamEvent, ToolChoice, Usage } from './open-responses.ts';
 
@@ -48,9 +48,11 @@ export type AdapterCompactResult = { summary: string; usage: Usage };
 
 export type ProviderAdapter = {
   readonly kind: string;
-  capabilities(): Promise<Capabilities>;
+  capabilities(target: AdapterTarget): Promise<Capabilities>;
   create(request: AdapterRequest, ctx: AdapterContext): AsyncIterable<StreamEvent>;
   classify(error: unknown): ClassifiedError;
+  health?(target: AdapterTarget): Promise<HealthResult>;
+  close?(): Promise<void>;
   countTokens?(request: CountTokensRequest, ctx: AdapterContext): Promise<AdapterCountTokensResult>;
   compact?(request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult>;
 };
