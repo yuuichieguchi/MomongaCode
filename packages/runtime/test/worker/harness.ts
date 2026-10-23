@@ -115,10 +115,14 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   fs.mkdirSync(project, { recursive: true });
   fs.mkdirSync(markers, { recursive: true, mode: 0o700 });
   fs.mkdirSync(stateDir, { mode: 0o700 });
+  const sessionsTmpRoot = path.join(root, 'sessions');
+  const sessionTmpDir = path.join(sessionsTmpRoot, 'session-tmp');
+  fs.mkdirSync(sessionTmpDir, { recursive: true, mode: 0o700 });
   const dbPath = path.join(stateDir, 'runtime.db');
   const clock: FakeClock = createFakeClock(START_MS);
   const store: RuntimeStore = openRuntimeStore({
     path: dbPath,
+    home,
     clock,
     leaseMs: LEASE_MS,
     maxAttempts: options.maxAttempts ?? 5,
@@ -138,7 +142,13 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       return realExecutor.runBatch(input);
     },
   };
-  const sandboxPolicy: SandboxPolicy = { writableRoots: [project], writeDenied: [], readDenied: [], network: 'deny' };
+  const sandboxPolicy: SandboxPolicy = {
+    writableRoots: [project],
+    writeDenied: [sessionsTmpRoot],
+    readDenied: [sessionsTmpRoot],
+    readAllowed: [sessionTmpDir],
+    network: 'deny',
+  };
   const sessionStates = new Map<string, ToolSessionState>();
   const workers: Worker[] = [];
   const pendingRuns: Promise<unknown>[] = [];
@@ -170,7 +180,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     toolSet: async () => snapshotTools(toolList()),
     executor,
     sandbox: fakeSandbox,
-    policyFor: async (target: Session) => ({ roots: [target.cwd, EXTRA_ROOT], sandboxPolicy, protectedPaths: [] }),
+    policyFor: async (target: Session) => ({ roots: [target.cwd, EXTRA_ROOT], sandboxPolicy, protectedPaths: [], tmpDir: sessionTmpDir }),
     sessionState: (target: Session) => {
       const existing = sessionStates.get(target.id);
       if (existing !== undefined) return existing;
@@ -283,6 +293,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   return {
     root,
     project,
+    sessionTmpDir,
     home,
     markers,
     dbPath,

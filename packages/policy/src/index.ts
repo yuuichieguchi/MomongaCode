@@ -7,4 +7,4 @@ export type { DecisionKind, PermissionSubject, PolicyTool, SideEffect } from './
 export { modelVisibleTools } from './visible-tools.ts';
 export type { VisibleToolsOptions } from './visible-tools.ts';
 export { suggestAllowRule } from './suggest-allow-rule.ts';
-export { absoluteFrom, canonicalizePath, isInside, volumeIsCaseInsensitive } from './path-match.ts';
+export { absoluteFrom, canonicalizePath, volumeIsCaseInsensitive } from './path-match.ts';

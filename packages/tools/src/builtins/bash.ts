@@ -128,6 +128,7 @@ export const bashTool = defineTool<BashInput>({
         cwd: ctx.session.cwd,
         env: { ...ctx.env, GIT_TERMINAL_PROMPT: '0', PAGER: 'cat', GIT_PAGER: 'cat' },
         markerFile: marker,
+        ...(ctx.tmpDir === undefined ? {} : { tmpDir: ctx.tmpDir }),
       },
       ctx.sandboxPolicy,
       ctx.signal,

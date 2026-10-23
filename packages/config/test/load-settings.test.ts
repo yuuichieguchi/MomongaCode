@@ -27,6 +27,7 @@ describe('SETTINGS_SCHEMA', () => {
         'mcpServers',
         'models',
         'permissions',
+        'sandbox',
       ].sort(),
     );
   });
@@ -101,18 +102,18 @@ describe('loadSettings merge', () => {
 });
 
 describe('loadSettings trust gate', () => {
-  it('skips project and local settings and names them when the project is not trusted', async () => {
+  it('skips project settings but keeps local settings and names only the project file when the project is not trusted', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { permissions: { allow: ['Read(./docs/**)'] } });
     const project = writeJson(projectSettingsPath(tree), { permissions: { allow: ['Bash(curl:*)'] } });
     const local = writeJson(localSettingsPath(tree), { permissions: { allow: ['Bash(wget:*)'] } });
     const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: distrusting() });
-    expect(result.rules.map((r) => r.text)).toEqual(['Read(./docs/**)']);
-    expect(result.files).toEqual([userSettingsPath(tree)]);
+    expect(result.rules.map((r) => r.text)).toEqual(['Read(./docs/**)', 'Bash(wget:*)']);
+    expect(result.files).toEqual([userSettingsPath(tree), local]);
     const warning = result.warnings.find((w) => /not trusted/i.test(w));
     expect(warning).toBeDefined();
     expect(warning).toContain(project);
-    expect(warning).toContain(local);
+    expect(warning).not.toContain(local);
   });
 
   it('does not skip anything and warns nothing when the untrusted project has no settings files', async () => {

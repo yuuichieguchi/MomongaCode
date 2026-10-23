@@ -1,4 +1,5 @@
-export { buildSeatbeltProfile, defaultProtectedPaths } from './profile.ts';
+export { canonicalizePath } from './canonical-path.ts';
+export { assertReadAllowedValid, assertSessionTmpDirValid, buildSeatbeltProfile, defaultProtectedPaths } from './profile.ts';
 export type { SeatbeltProfile } from './profile.ts';
 export { createSeatbeltSandbox } from './seatbelt.ts';
 export type { SeatbeltSandboxOptions } from './seatbelt.ts';

@@ -43,12 +43,13 @@ describe.skipIf(!fs.existsSync(SANDBOX_EXEC))('run API boundary under real Seatb
       await new Promise<void>((resolve) => control.listen(controlSocket, resolve));
       onCleanup(() => new Promise<void>((resolve) => control.close(() => resolve())));
 
-      const tmpDir = path.join(env.layout.root, 't');
+      const sessionsTmpRoot = path.join(env.layout.root, 'sessions');
+      const tmpDir = path.join(sessionsTmpRoot, 'session-x');
       const sandboxTmp = path.join(env.layout.root, 'st');
-      fs.mkdirSync(tmpDir);
+      fs.mkdirSync(tmpDir, { recursive: true, mode: 0o700 });
       fs.mkdirSync(sandboxTmp);
       const sandbox = createSeatbeltSandbox({ tmpRoot: sandboxTmp, killGraceMs: 300 });
-      const policy = buildSandboxPolicy({ roots: [env.layout.projectReal], home: env.layout.home, tmpDir, network });
+      const policy = buildSandboxPolicy({ roots: [env.layout.projectReal], home: env.layout.home, tmpDir, sessionsTmpRoot, network });
       const marker = path.join(env.layout.projectReal, 'ran.txt');
       const runSocket = env.layout.socketPath;
       const script = [

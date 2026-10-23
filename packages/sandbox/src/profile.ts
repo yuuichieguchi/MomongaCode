@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { comparableContains } from '@momonga/foundation';
 import { canonicalizePath } from './canonical-path.ts';
 import type { SandboxPolicy } from './types.ts';
 
@@ -20,7 +21,11 @@ export function defaultProtectedPaths(root: string): string[] {
 }
 
 function isWithin(candidate: string, root: string): boolean {
-  return candidate === root || candidate.startsWith(root === path.sep ? root : root + path.sep);
+  return comparableContains(root, candidate);
+}
+
+function isStrictlyWithin(candidate: string, root: string): boolean {
+  return isWithin(candidate, root) && !isWithin(root, candidate);
 }
 
 function unique(values: readonly string[]): string[] {
@@ -33,6 +38,44 @@ function ancestorsWithin(target: string, roots: readonly string[]): string[] {
     if (roots.some((root) => isWithin(current, root))) found.push(current);
   }
   return found;
+}
+
+export function assertReadAllowedValid(readDenied: readonly string[], readAllowed: readonly string[]): string[] {
+  const denied = unique(readDenied.map(canonicalizePath));
+  return unique(readAllowed.map(canonicalizePath)).map((entry) => {
+    if (!denied.some((guard) => isStrictlyWithin(entry, guard))) {
+      throw new Error(`readAllowed entry must lie strictly inside a readDenied entry: ${entry}`);
+    }
+    if (denied.some((guard) => isWithin(guard, entry))) {
+      throw new Error(`readAllowed entry must not equal or contain a readDenied entry: ${entry}`);
+    }
+    return entry;
+  });
+}
+
+export function assertSessionTmpDirValid(policy: SandboxPolicy, tmpDir: string): string {
+  const canonical = canonicalizePath(tmpDir);
+  const readAllowed = (policy.readAllowed ?? []).map(canonicalizePath);
+  if (!readAllowed.some((entry) => isWithin(canonical, entry) && isWithin(entry, canonical))) {
+    throw new Error(`session tmpDir must be one of the readAllowed entries: ${canonical}`);
+  }
+  if (policy.writeDenied.map(canonicalizePath).some((entry) => isWithin(entry, canonical))) {
+    throw new Error(`session tmpDir must not equal or contain a writeDenied entry: ${canonical}`);
+  }
+  return canonical;
+}
+
+function metadataAncestors(allowed: readonly string[], denied: readonly string[]): string[] {
+  const found: string[] = [];
+  for (const entry of allowed) {
+    for (const guard of denied.filter((candidate) => isStrictlyWithin(entry, candidate))) {
+      for (let current = path.dirname(entry); isWithin(current, guard); current = path.dirname(current)) {
+        found.push(current);
+        if (isWithin(guard, current)) break;
+      }
+    }
+  }
+  return unique(found);
 }
 
 const BASE_RULES = [
@@ -48,10 +91,12 @@ const BASE_RULES = [
   '(allow file-write-data file-ioctl (regex #"^/dev/fd/[0-9]+$"))',
 ];
 
-export function buildSeatbeltProfile(policy: SandboxPolicy): SeatbeltProfile {
+export function buildSeatbeltProfile(policy: SandboxPolicy, options: { tmpDir?: string } = {}): SeatbeltProfile {
   const roots = unique(policy.writableRoots.map(canonicalizePath));
   const writeDenied = unique(policy.writeDenied.map(canonicalizePath));
   const readDenied = unique(policy.readDenied.map(canonicalizePath));
+  const readAllowed = assertReadAllowedValid(policy.readDenied, policy.readAllowed ?? []);
+  const sessionTmpDir = options.tmpDir === undefined ? undefined : assertSessionTmpDirValid(policy, options.tmpDir);
   const guardedAncestors = unique(writeDenied.flatMap((target) => ancestorsWithin(target, roots)));
 
   const params: Record<string, string> = {};
@@ -65,11 +110,18 @@ export function buildSeatbeltProfile(policy: SandboxPolicy): SeatbeltProfile {
 
   for (const name of define('WRITABLE_ROOT', roots)) lines.push(`(allow file-write* (subpath (param "${name}")))`);
   for (const name of define('WRITE_DENIED', writeDenied)) lines.push(`(deny file-write* (subpath (param "${name}")))`);
+  if (sessionTmpDir !== undefined) {
+    for (const name of define('SESSION_TMP', [sessionTmpDir])) lines.push(`(allow file-write* (subpath (param "${name}")))`);
+  }
   for (const name of define('GUARDED_ANCESTOR', guardedAncestors)) {
     lines.push(`(deny file-write-unlink (literal (param "${name}")))`);
   }
   const readDeniedNames = define('READ_DENIED', readDenied);
   for (const name of readDeniedNames) lines.push(`(deny file-read* (subpath (param "${name}")))`);
+  for (const name of define('READ_ALLOWED', readAllowed)) lines.push(`(allow file-read* (subpath (param "${name}")))`);
+  for (const name of define('READ_METADATA', metadataAncestors(readAllowed, readDenied))) {
+    lines.push(`(allow file-read-metadata (literal (param "${name}")))`);
+  }
   if (policy.network === 'allow') {
     lines.push('(allow network*)');
     for (const name of readDeniedNames) {

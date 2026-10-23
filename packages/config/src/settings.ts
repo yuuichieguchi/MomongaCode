@@ -82,6 +82,8 @@ export type ModelsSettings = {
   targets?: Record<string, ModelTarget>;
 };
 
+export type SandboxSetting = 'seatbelt' | 'none';
+
 export type Settings = {
   permissions?: PermissionsSettings;
   env?: Record<string, string>;
@@ -91,9 +93,10 @@ export type Settings = {
   mcpServers?: Record<string, McpServerConfig>;
   models?: ModelsSettings;
   autoUpdates?: boolean;
+  sandbox?: SandboxSetting;
 };
 
-export type McpServersFile = { mcpServers?: Record<string, McpServerConfig> };
+export type McpServersFile = { mcpServers?: Record<string, unknown> };
 
 const ajv = new Ajv2020.default({ strict: true, discriminator: true });
 const validateSettings: ValidateFunction<Settings> = ajv.compile<Settings>(SETTINGS_SCHEMA);

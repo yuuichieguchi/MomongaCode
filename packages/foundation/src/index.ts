@@ -17,7 +17,7 @@ export { forceKillGroup, groupAlive, signalGroup, terminateGroup, waitForGroupGo
 export type { ForceKillGroupOptions, TerminateGroupOptions, TerminateOutcome } from './process-group.ts';
 export { acquireProcessLock } from './process-lock.ts';
 export type { DescribeHolder, ProcessLock } from './process-lock.ts';
-export { ensureMomongaDirs, momongaLayout, momongaPaths } from './momonga-paths.ts';
+export { ensureMomongaDirs, ensureSessionTmpDir, momongaLayout, momongaPaths } from './momonga-paths.ts';
 export type { MomongaPaths } from './momonga-paths.ts';
 export { secretKeyFile } from './secret-key-file.ts';
 export type { SecretKeyFileOptions } from './secret-key-file.ts';
@@ -37,3 +37,4 @@ export type { MarkerReconcileResult } from './process-markers.ts';
 export { isProcessAlive } from './process-alive.ts';
 export type { SignalSender } from './process-alive.ts';
 export { SOCKET_PATH_LIMIT, assertSocketPathLength } from './socket-path.ts';
+export { canonicalPath, comparableContains, comparablePath, foldCase, volumeIsCaseInsensitive } from './path-compare.ts';

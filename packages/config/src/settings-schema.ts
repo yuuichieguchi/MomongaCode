@@ -127,6 +127,7 @@ export const SETTINGS_SCHEMA = {
       additionalProperties: false,
     },
     autoUpdates: { type: 'boolean' },
+    sandbox: { enum: ['seatbelt', 'none'] },
   },
 } as const;
 
@@ -134,6 +135,6 @@ export const MCP_SERVERS_FILE_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
   type: 'object',
   properties: {
-    mcpServers: { type: 'object', additionalProperties: MCP_SERVER_SCHEMA },
+    mcpServers: { type: 'object' },
   },
 } as const;

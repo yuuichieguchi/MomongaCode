@@ -30,6 +30,8 @@ function removePrivateTmpDir(dir: string): void {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
+const paramArgsOf = (params: Record<string, string>): string[] => Object.entries(params).flatMap(([name, value]) => ['-D', `${name}=${value}`]);
+
 export function createSeatbeltSandbox(options: SeatbeltSandboxOptions): Sandbox {
   const sandboxExecPath = options.sandboxExecPath ?? DEFAULT_SANDBOX_EXEC_PATH;
   fs.accessSync(sandboxExecPath, fs.constants.X_OK);
@@ -39,16 +41,29 @@ export function createSeatbeltSandbox(options: SeatbeltSandboxOptions): Sandbox 
     kind: 'seatbelt',
     spawn(command: SandboxCommand, policy: SandboxPolicy, signal: AbortSignal): SandboxedProcess {
       for (const root of policy.writableRoots) assertExistingDirectory(root);
+      if (command.tmpDir !== undefined) {
+        assertExistingDirectory(command.tmpDir);
+        const { profile, params } = buildSeatbeltProfile(policy, { tmpDir: command.tmpDir });
+        return launch({
+          file: sandboxExecPath,
+          args: ['-p', profile, ...paramArgsOf(params), '--', ...command.argv],
+          cwd: command.cwd,
+          ...(command.markerFile === undefined ? {} : { markerFile: command.markerFile }),
+          env: { ...command.env, TMPDIR: command.tmpDir },
+          signal,
+          killGraceMs: options.killGraceMs,
+          afterExit: () => undefined,
+        });
+      }
       const tmpDir = fs.mkdtempSync(path.join(tmpRoot, 'sandbox-'));
       try {
         const { profile, params } = buildSeatbeltProfile({
           ...policy,
           writableRoots: [...policy.writableRoots, canonicalizePath(tmpDir)],
         });
-        const paramArgs = Object.entries(params).flatMap(([name, value]) => ['-D', `${name}=${value}`]);
         return launch({
           file: sandboxExecPath,
-          args: ['-p', profile, ...paramArgs, '--', ...command.argv],
+          args: ['-p', profile, ...paramArgsOf(params), '--', ...command.argv],
           cwd: command.cwd,
           ...(command.markerFile === undefined ? {} : { markerFile: command.markerFile }),
           env: { ...command.env, TMPDIR: tmpDir },

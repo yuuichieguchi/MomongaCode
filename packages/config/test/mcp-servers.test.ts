@@ -85,20 +85,22 @@ describe('loadMcpServers', () => {
     expect(result.failed).toEqual([]);
   });
 
-  it('rejects invalid server names', async () => {
+  it('skips a project server with an invalid name and warns naming it', async () => {
     const tree = makeTree();
     writeJson(mcpJsonPath(tree), { mcpServers: { 'bad name!': { command: 'x' } } });
-    await expect(loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV })).rejects.toThrow(
-      'bad name!',
-    );
+    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV });
+    expect(result.enabled).toEqual([]);
+    expect(result.pendingApproval).toEqual([]);
+    expect(result.warnings.filter((w) => w.includes('bad name!'))).toHaveLength(1);
   });
 
-  it('reports malformed .mcp.json with file and line', async () => {
+  it('warns about malformed .mcp.json with file and line', async () => {
     const tree = makeTree();
     const file = writeText(mcpJsonPath(tree), '{\n  "mcpServers": {\n    "a": }\n}\n');
-    const failure = loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV });
-    await expect(failure).rejects.toThrow(file);
-    await expect(failure).rejects.toThrow(/line 3/);
+    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV });
+    expect(result.enabled).toEqual([]);
+    expect(result.pendingApproval).toEqual([]);
+    expect(result.warnings.filter((w) => w.includes(file) && /line 3/.test(w))).toHaveLength(1);
   });
 
   it('puts project servers in pendingApproval unless enabled by user or local settings', async () => {

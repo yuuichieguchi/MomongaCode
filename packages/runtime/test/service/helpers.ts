@@ -378,6 +378,7 @@ export const createNotifier = (): Notifier => {
 export const openStore = (dbPath: string, clock: FakeClock, extra: { notifier?: Notifier; maxAttempts?: number } = {}): RuntimeStore => {
   const store = openRuntimeStore({
     path: dbPath,
+    home: path.dirname(dbPath),
     clock,
     leaseMs: LEASE_MS,
     maxAttempts: extra.maxAttempts ?? 5,
@@ -567,7 +568,16 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
   const toolbox = createFakeToolbox();
   const instructions = createFakeInstructions();
   const executor = createToolExecutor({ idempotency: env.store.idempotency, blobs: env.store.blobs, clock: env.clock, processMarkerDir: markers });
-  const sandboxPolicy: SandboxPolicy = { writableRoots: [env.layout.projectReal], writeDenied: [], readDenied: [], network: 'deny' };
+  const sessionsTmpRoot = path.join(env.layout.root, 'sessions');
+  const sessionTmpDir = path.join(sessionsTmpRoot, 'session-tmp');
+  fs.mkdirSync(sessionTmpDir, { recursive: true, mode: 0o700 });
+  const sandboxPolicy: SandboxPolicy = {
+    writableRoots: [env.layout.projectReal],
+    writeDenied: [sessionsTmpRoot],
+    readDenied: [sessionsTmpRoot],
+    readAllowed: [sessionTmpDir],
+    network: 'deny',
+  };
   const sessionStates = new Map<string, ToolSessionState>();
   const workers: Worker[] = [];
   const pendingRuns: Promise<unknown>[] = [];
@@ -584,7 +594,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
     },
     executor,
     sandbox: fakeSandbox,
-    policyFor: async (target: Session) => ({ roots: [target.cwd], sandboxPolicy, protectedPaths: [] }),
+    policyFor: async (target: Session) => ({ roots: [target.cwd], sandboxPolicy, protectedPaths: [], tmpDir: sessionTmpDir }),
     sessionState: (target: Session) => {
       const existing = sessionStates.get(target.id);
       if (existing !== undefined) return existing;

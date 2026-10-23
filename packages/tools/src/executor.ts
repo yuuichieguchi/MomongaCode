@@ -1,12 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalJson, computeBackoff, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, comparableContains, comparablePath, computeBackoff, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { absoluteFrom, canonicalizePath, decide, suggestAllowRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject } from '@momonga/policy';
 import type { PermissionMode, ToolKind } from '@momonga/protocol';
+import { assertSessionTmpDirValid } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
-import { createReadDeniedMatcher } from './read-denied.ts';
+import { canonicalOrResolved, createReadAccessMatcher } from './read-access.ts';
+import type { ReadAccessMatcher } from './read-access.ts';
 import type { BlobPort, IdempotencyPort, ToolIdempotencyRecord } from './ports.ts';
 import type { ToolSet } from './registry.ts';
 import { MINIMUM_INLINE_OUTPUT_CHARS, truncateOutput } from './truncate.ts';
@@ -39,6 +41,7 @@ export type BatchInput = {
   rules: PermissionRule[];
   home: string;
   roots: readonly string[];
+  tmpDir?: string;
   env: Readonly<Record<string, string>>;
   session: ToolSessionState;
   sandbox: Sandbox;
@@ -100,6 +103,7 @@ type RunPlan = {
   subject: PermissionSubject;
   key: string;
   batch: BatchInput;
+  access: ReadAccessMatcher;
   recovered?: ToolIdempotencyRecord;
   gateRan: boolean;
 };
@@ -123,11 +127,28 @@ const storedOutcome = (stored: unknown): ResultOutcome => {
   return stored;
 };
 
-const readDeniedPath = (subject: PermissionSubject, readDenied: readonly string[], cwd: string): string | undefined => {
-  if (subject.kind !== 'path' || readDenied.length === 0) return undefined;
-  const matcher = createReadDeniedMatcher(readDenied, cwd);
-  return subject.paths.find((target) => matcher.blocks(target));
+const readDeniedPath = (subject: PermissionSubject, access: ReadAccessMatcher, cwd: string): string | undefined => {
+  if (subject.kind !== 'path' || !access.deniesAnything) return undefined;
+  return subject.paths.find((target) => access.blocks(target, cwd));
 };
+
+const approvalGatedWritePaths = (batch: BatchInput): Set<string> => {
+  const alwaysDenied = [path.join(batch.home, '.momonga'), path.join(batch.home, 'Library', 'Keychains')].map(comparablePath);
+  return new Set(batch.protectedPaths.map(comparablePath).filter((entry) => !alwaysDenied.includes(entry)));
+};
+
+const writeDeniedPath = (subject: PermissionSubject, batch: BatchInput, cwd: string): string | undefined => {
+  if (subject.kind !== 'path' || subject.access !== 'write') return undefined;
+  const gated = approvalGatedWritePaths(batch);
+  const guards = batch.sandboxPolicy.writeDenied.filter((entry) => !gated.has(comparablePath(entry))).map(canonicalOrResolved);
+  if (guards.length === 0) return undefined;
+  const exempt = batch.tmpDir === undefined ? undefined : canonicalOrResolved(batch.tmpDir);
+  const blocksResolved = (resolved: string): boolean =>
+    guards.some((guard) => comparableContains(guard, resolved)) && !(exempt !== undefined && comparableContains(exempt, resolved));
+  return subject.paths.find((target) => blocksResolved(canonicalOrResolved(absoluteFrom(target, cwd))) || blocksResolved(path.resolve(cwd, target)));
+};
+
+const rootsOf = (batch: BatchInput): readonly string[] => (batch.tmpDir === undefined ? batch.roots : [...batch.roots, batch.tmpDir]);
 
 const digestSubject = (subject: PermissionSubject, cwd: string): unknown => {
   if (subject.kind === 'path') {
@@ -250,10 +271,12 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
     };
   };
 
-  const permissionGate = (call: ToolCall, tool: AnyTool, input: unknown, subject: PermissionSubject, batch: BatchInput): CallOutcome | undefined => {
+  const permissionGate = (call: ToolCall, tool: AnyTool, input: unknown, subject: PermissionSubject, batch: BatchInput, access: ReadAccessMatcher): CallOutcome | undefined => {
     const cwd = batch.session.cwd;
-    const blockedPath = readDeniedPath(subject, batch.sandboxPolicy.readDenied, cwd);
+    const blockedPath = readDeniedPath(subject, access, cwd);
     if (blockedPath !== undefined) return failedOutcome(call.callId, `Permission denied: ${blockedPath} is blocked by the sandbox policy`);
+    const writeBlockedPath = writeDeniedPath(subject, batch, cwd);
+    if (writeBlockedPath !== undefined) return failedOutcome(call.callId, `Permission denied: ${writeBlockedPath} is write-protected by the sandbox policy`);
 
     const policyTool = { name: tool.name, kind: tool.kind, sideEffect: tool.sideEffect };
     const decision = decide({
@@ -261,7 +284,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
       subject,
       mode: batch.mode,
       rules: batch.rules,
-      roots: [...batch.roots],
+      roots: [...rootsOf(batch)],
       home: batch.home,
       cwd,
       protectedPaths: batch.protectedPaths,
@@ -298,7 +321,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
     return undefined;
   };
 
-  const admit = (call: ToolCall, batch: BatchInput): Admission => {
+  const admit = (call: ToolCall, batch: BatchInput, access: ReadAccessMatcher): Admission => {
     const outcome = (value: CallOutcome): Admission => ({ kind: 'outcome', outcome: value });
     if (batch.signal.aborted) return outcome(failedOutcome(call.callId, `${call.name} was cancelled`));
     const tool = batch.toolSet.get(call.name);
@@ -313,7 +336,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
 
     let subject;
     try {
-      subject = tool.subject(input, { cwd, home: batch.home, roots: batch.roots });
+      subject = tool.subject(input, { cwd, home: batch.home, roots: rootsOf(batch) });
     } catch (error) {
       return outcome(failedOutcome(call.callId, describeThrown(tool.name, error)));
     }
@@ -324,18 +347,18 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
     const recovered = existing?.s === 'PENDING' || existing?.s === 'UNKNOWN' ? existing.rec : undefined;
     if (batch.recoverOnly === true) {
       if (recovered === undefined) return outcome(failedOutcome(call.callId, `${tool.name} was cancelled`));
-      return { kind: 'run', plan: { call, tool, input, subject, key, batch, recovered, gateRan: false } };
+      return { kind: 'run', plan: { call, tool, input, subject, key, batch, access, recovered, gateRan: false } };
     }
 
     if (recovered === undefined) {
-      const gated = permissionGate(call, tool, input, subject, batch);
+      const gated = permissionGate(call, tool, input, subject, batch, access);
       if (gated !== undefined) return outcome(gated);
     }
-    return { kind: 'run', plan: { call, tool, input, subject, key, batch, gateRan: recovered === undefined, ...(recovered === undefined ? {} : { recovered }) } };
+    return { kind: 'run', plan: { call, tool, input, subject, key, batch, access, gateRan: recovered === undefined, ...(recovered === undefined ? {} : { recovered }) } };
   };
 
   const perform = async (plan: RunPlan): Promise<CallOutcome> => {
-    const { call, tool, input, subject, key, batch, recovered, gateRan } = plan;
+    const { call, tool, input, subject, key, batch, access, recovered, gateRan } = plan;
     const { callId } = call;
     const inlineLimit = batch.maxInlineOutputChars ?? maxInlineOutputChars;
     if (batch.signal.aborted) return failedOutcome(callId, `${tool.name} was cancelled`);
@@ -362,7 +385,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
       const ctx: ToolContext = {
         cwd: batch.session.cwd,
         home: batch.home,
-        roots: batch.roots,
+        roots: rootsOf(batch),
+        ...(batch.tmpDir === undefined ? {} : { tmpDir: batch.tmpDir }),
         runId: batch.runId,
         step: batch.step,
         callId,
@@ -396,7 +420,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
         record = current?.rec;
         if (record === undefined) {
           if (recoverOnly) return failedOutcome(callId, `${tool.name} was cancelled`);
-          const gated = permissionGate(call, tool, input, subject, batch);
+          const gated = permissionGate(call, tool, input, subject, batch, access);
           if (gated !== undefined) return gated;
           gateAdmitted = true;
         } else {
@@ -478,7 +502,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
 
       const admitExecution = (): CallOutcome | undefined => {
         if (gateAdmitted) return undefined;
-        const gated = permissionGate(call, tool, input, subject, batch);
+        const gated = permissionGate(call, tool, input, subject, batch, access);
         if (gated?.kind === 'needs_approval') return gated;
         if (gated?.kind === 'result') return complete(gated.result);
         return undefined;
@@ -556,6 +580,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
   };
 
   const runBatch = async (batch: BatchInput): Promise<CallOutcome[]> => {
+    const access = createReadAccessMatcher(batch.sandboxPolicy);
+    if (batch.tmpDir !== undefined) assertSessionTmpDirValid(batch.sandboxPolicy, batch.tmpDir);
     const { calls } = batch;
     const outcomes: Array<CallOutcome | undefined> = new Array<CallOutcome | undefined>(calls.length).fill(undefined);
     const inFlight = new Set<Promise<void>>();
@@ -579,7 +605,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
     const surfaceApprovalsFrom = (start: number): void => {
       for (let later = start; later < calls.length; later += 1) {
         const call = calls[later] as ToolCall;
-        const admission = admit(call, batch);
+        const admission = admit(call, batch, access);
         outcomes[later] =
           admission.kind === 'outcome' && admission.outcome.kind === 'needs_approval'
             ? admission.outcome
@@ -607,7 +633,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
 
         let admission: Admission;
         try {
-          admission = admit(call, batch);
+          admission = admit(call, batch, access);
         } catch (error) {
           release?.();
           throw error;

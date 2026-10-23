@@ -38,6 +38,7 @@ export type ToolContext = SubjectContext & {
   callId: string;
   idemKey: string;
   outputBudgetChars: number;
+  tmpDir?: string;
   processMarker?: string;
   traceparent?: string;
   tracestate?: string;

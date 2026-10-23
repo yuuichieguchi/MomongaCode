@@ -1,0 +1,71 @@
+import { describe, expect, it } from 'vitest';
+import { SETTINGS_SCHEMA, loadSettings, loadUserSettings } from '@momonga/config';
+import { localSettingsPath, makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
+
+describe('sandbox setting', () => {
+  it('is declared in the settings schema as seatbelt or none', () => {
+    const properties = SETTINGS_SCHEMA.properties as Record<string, unknown>;
+    expect(properties['sandbox']).toEqual({ enum: ['seatbelt', 'none'] });
+  });
+
+  it('defaults to seatbelt for user settings', async () => {
+    const tree = makeTree();
+    const result = await loadUserSettings({ home: tree.home });
+    expect(result.settings.sandbox).toBe('seatbelt');
+  });
+
+  it('resolves none from user settings', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { sandbox: 'none' });
+    const result = await loadUserSettings({ home: tree.home });
+    expect(result.settings.sandbox).toBe('none');
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('rejects an unknown sandbox value in user settings naming the pointer', async () => {
+    const tree = makeTree();
+    const file = writeJson(userSettingsPath(tree), { sandbox: 'docker' });
+    const failure = loadUserSettings({ home: tree.home });
+    await expect(failure).rejects.toThrow(file);
+    await expect(failure).rejects.toThrow('/sandbox');
+  });
+
+  it('defaults to seatbelt in loadSettings', async () => {
+    const tree = makeTree();
+    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    expect(result.settings.sandbox).toBe('seatbelt');
+  });
+
+  it('honours user settings in loadSettings', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { sandbox: 'none' });
+    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    expect(result.settings.sandbox).toBe('none');
+  });
+
+  it('drops sandbox from project settings with a warning naming the file', async () => {
+    const tree = makeTree();
+    const file = writeJson(projectSettingsPath(tree), { sandbox: 'none' });
+    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    expect(result.settings.sandbox).toBe('seatbelt');
+    expect(result.warnings.filter((w) => w.includes(file) && w.includes('sandbox'))).toHaveLength(1);
+  });
+
+  it('drops sandbox from local settings with a warning naming the file', async () => {
+    const tree = makeTree();
+    const file = writeJson(localSettingsPath(tree), { sandbox: 'none' });
+    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    expect(result.settings.sandbox).toBe('seatbelt');
+    expect(result.warnings.filter((w) => w.includes(file) && w.includes('sandbox'))).toHaveLength(1);
+  });
+
+  it('keeps the user value when project and local settings try to override it', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { sandbox: 'none' });
+    writeJson(projectSettingsPath(tree), { sandbox: 'seatbelt' });
+    writeJson(localSettingsPath(tree), { sandbox: 'seatbelt' });
+    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    expect(result.settings.sandbox).toBe('none');
+    expect(result.warnings.filter((w) => w.includes('sandbox'))).toHaveLength(2);
+  });
+});

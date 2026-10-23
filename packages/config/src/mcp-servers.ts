@@ -3,9 +3,11 @@ import path from 'node:path';
 import { readJsonFile } from './json-file.ts';
 import { looksLikeCredentialName } from './credential-env.ts';
 import { loadLayers } from './layers.ts';
+import type { LoadedLayers } from './layers.ts';
+import { ConfigError } from './user-settings.ts';
 import type { TrustOracle } from './layers.ts';
 import { assertMcpServer, assertMcpServersFile } from './settings.ts';
-import type { McpServerConfig, Settings } from './settings.ts';
+import type { McpServerConfig, McpServersFile, Settings } from './settings.ts';
 
 export type McpServerScope = 'user' | 'project';
 
@@ -33,6 +35,15 @@ const EXPANSION_BODY = /^([A-Za-z_][A-Za-z0-9_]*)(?::-([\s\S]*))?$/;
 
 class UnsetVariableError extends Error {}
 
+class CredentialVariableError extends Error {
+  readonly variable: string;
+
+  constructor(message: string, variable: string) {
+    super(message);
+    this.variable = variable;
+  }
+}
+
 const USER_EXPANSION_NOTE =
   'user-scope ${VAR} expansion sees only the environment it is given (in the runtime, the credential-stripped session environment); keep MCP credentials as literal values in user settings until the keychain store exists';
 
@@ -50,7 +61,10 @@ const expandText = (value: string, env: LoadMcpServersOptions['env'], serverName
     if (parsed === null) throw new Error(`${source}: MCP server ${JSON.stringify(serverName)} has an invalid expansion \${${body}}`);
     const variable = parsed[1] as string;
     if (refuse(variable)) {
-      throw new Error(`${source}: MCP server ${JSON.stringify(serverName)} must not expand credential variable ${variable}`);
+      throw new CredentialVariableError(
+        `${source}: MCP server ${JSON.stringify(serverName)} must not expand credential variable ${variable}`,
+        variable,
+      );
     }
     const fallback = parsed[2];
     const current = env[variable];
@@ -117,8 +131,74 @@ const fileExists = async (file: string): Promise<boolean> => {
   }
 };
 
+const toConfigError = (error: unknown): ConfigError =>
+  error instanceof ConfigError ? error : new ConfigError(error instanceof Error ? error.message : String(error), { cause: error });
+
+const loadLayersForUser = async (options: Pick<LoadMcpServersOptions, 'home' | 'projectDir' | 'trust'>): Promise<LoadedLayers> => {
+  try {
+    return await loadLayers(options);
+  } catch (error) {
+    throw toConfigError(error);
+  }
+};
+
+type ProjectOutcome =
+  | { kind: 'ok'; config: McpServerConfig }
+  | { kind: 'unset'; reason: string }
+  | { kind: 'skipped'; warning: string };
+
+const evaluateProjectServer = (
+  name: string,
+  rawConfig: unknown,
+  mcpJson: string,
+  expandNow: boolean,
+  env: LoadMcpServersOptions['env'],
+  refuse: VariableGuard,
+): ProjectOutcome => {
+  try {
+    assertServerName(name, mcpJson);
+    const config = assertMcpServer(rawConfig, mcpJson, name);
+    if (!expandNow) return { kind: 'ok', config };
+    return { kind: 'ok', config: expandServer(config, env, name, mcpJson, refuse) };
+  } catch (error) {
+    if (error instanceof UnsetVariableError) return { kind: 'unset', reason: error.message };
+    if (error instanceof CredentialVariableError) {
+      return {
+        kind: 'skipped',
+        warning: `${mcpJson}: skipped MCP server ${JSON.stringify(name)}: must not expand credential variable ${error.variable}`,
+      };
+    }
+    if (error instanceof Error) return { kind: 'skipped', warning: `${error.message}; skipped MCP server ${JSON.stringify(name)}` };
+    throw error;
+  }
+};
+
+const readProjectServers = async (
+  mcpJson: string,
+  projectDir: string,
+  userNames: ReadonlySet<string>,
+  warnings: string[],
+): Promise<McpServersFile['mcpServers']> => {
+  let file: McpServersFile;
+  try {
+    const read = await readJsonFile(mcpJson, { confineTo: projectDir });
+    if (!read.found) return undefined;
+    file = assertMcpServersFile(read.value, mcpJson);
+  } catch (error) {
+    if (!(error instanceof Error)) throw error;
+    warnings.push(`${error.message}; skipped the project MCP servers in ${mcpJson}`);
+    return undefined;
+  }
+  const clash = Object.keys(file.mcpServers ?? {}).find((name) => userNames.has(name));
+  if (clash !== undefined) {
+    warnings.push(`${mcpJson}: MCP server ${JSON.stringify(clash)} is also defined in user settings; skipped the project MCP servers in ${mcpJson}`);
+    return undefined;
+  }
+  return file.mcpServers;
+};
+
 export const loadMcpServers = async ({ home, projectDir, trust, env }: LoadMcpServersOptions): Promise<LoadMcpServersResult> => {
-  const loaded = await loadLayers({ home, projectDir, trust });
+  const loaded = await loadLayersForUser({ home, projectDir, trust });
   const warnings = [...loaded.warnings];
   const userSettings = loaded.layers.find((layer) => layer.origin === 'user');
   const approvingSettings = loaded.layers.filter((layer) => layer.origin === 'user' || layer.origin === 'local').map((layer) => layer.settings);
@@ -134,14 +214,18 @@ export const loadMcpServers = async ({ home, projectDir, trust, env }: LoadMcpSe
 
   if (userSettings !== undefined) {
     for (const [name, config] of Object.entries(userSettings.settings.mcpServers ?? {})) {
-      assertServerName(name, userSettings.source);
-      seen.add(name);
-      const expanded = tryExpand(() => expandServer(config, env, name, userSettings.source, allowAnyVariable));
-      if ('config' in expanded) {
-        enabled.push({ name, scope: 'user', config: expanded.config });
-      } else {
-        failed.push({ name, reason: expanded.reason });
-        if (!warnings.includes(USER_EXPANSION_NOTE)) warnings.push(USER_EXPANSION_NOTE);
+      try {
+        assertServerName(name, userSettings.source);
+        seen.add(name);
+        const expanded = tryExpand(() => expandServer(config, env, name, userSettings.source, allowAnyVariable));
+        if ('config' in expanded) {
+          enabled.push({ name, scope: 'user', config: expanded.config });
+        } else {
+          failed.push({ name, reason: expanded.reason });
+          if (!warnings.includes(USER_EXPANSION_NOTE)) warnings.push(USER_EXPANSION_NOTE);
+        }
+      } catch (error) {
+        throw toConfigError(error);
       }
     }
   }
@@ -154,19 +238,14 @@ export const loadMcpServers = async ({ home, projectDir, trust, env }: LoadMcpSe
 
   const protectedNames = credentialVariableNames(userSettings?.settings);
   const refuseCredentialVariable: VariableGuard = (variable) => looksLikeCredentialName(variable) || SENSITIVE_VARIABLE.test(variable) || protectedNames.has(variable);
-  const read = await readJsonFile(mcpJson, { confineTo: projectDir });
-  if (!read.found) return { enabled, pendingApproval, failed, warnings };
-  const file = assertMcpServersFile(read.value, mcpJson);
-  for (const [name, rawConfig] of Object.entries(file.mcpServers ?? {})) {
-    assertServerName(name, mcpJson);
-    if (seen.has(name)) throw new Error(`${mcpJson}: MCP server ${JSON.stringify(name)} is also defined in user settings`);
-    const config = assertMcpServer(rawConfig, mcpJson, name);
+  const projectServers = await readProjectServers(mcpJson, projectDir, seen, warnings);
+  for (const [name, rawConfig] of Object.entries(projectServers ?? {})) {
     const isEnabled = !disabled.has(name) && (approveAll || approved.has(name));
-    if (isEnabled) {
-      const expanded = tryExpand(() => expandServer(config, env, name, mcpJson, refuseCredentialVariable));
-      if ('config' in expanded) enabled.push({ name, scope: 'project', config: expanded.config });
-      else failed.push({ name, reason: expanded.reason });
-    } else pendingApproval.push({ name, scope: 'project', config });
+    const outcome = evaluateProjectServer(name, rawConfig, mcpJson, isEnabled, env, refuseCredentialVariable);
+    if (outcome.kind === 'skipped') warnings.push(outcome.warning);
+    else if (outcome.kind === 'unset') failed.push({ name, reason: outcome.reason });
+    else if (isEnabled) enabled.push({ name, scope: 'project', config: outcome.config });
+    else pendingApproval.push({ name, scope: 'project', config: outcome.config });
   }
   return { enabled, pendingApproval, failed, warnings };
 };

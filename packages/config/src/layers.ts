@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { looksLikeCredentialName } from './credential-env.ts';
 import { readJsonFile, readJsonFileSync } from './json-file.ts';
 import type { JsonFile } from './json-file.ts';
-import { momongaLayout } from '@momonga/foundation';
+import { layoutOf } from './layout.ts';
 import { resolveModels } from './models.ts';
 import type { ResolvedModels } from './models.ts';
 import { localSettingsFile } from './local-settings.ts';
@@ -58,6 +58,11 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
     delete restricted.mcpServers;
   }
 
+  if (settings.sandbox !== undefined) {
+    warnings.push(`${source}: sandbox is only honored in user settings; discarded`);
+    delete restricted.sandbox;
+  }
+
   if (settings.permissions?.defaultMode === 'bypassPermissions') {
     warnings.push(`${source}: bypassPermissions is only honored in user settings and on the command line; ignored`);
     const { defaultMode: _ignored, ...remaining } = settings.permissions;
@@ -90,7 +95,7 @@ export type UserLayer = { layer: Layer | undefined; models: ResolvedModels; warn
 
 export const readUserLayer = (home: string): UserLayer => {
   const warnings: string[] = [];
-  const file = momongaLayout(home).settingsFile;
+  const file = layoutOf(home).settingsFile;
   const layer = buildLayer(readJsonFileSync(file), file, 'user', home, false, warnings);
   const models = resolveModels(layer?.settings.models, { source: file, home, warnings });
   return { layer, models, warnings };
@@ -127,17 +132,11 @@ export const loadLayers = async ({ home, projectDir, trust }: LayerOptions): Pro
   if (trust.isTrusted(projectDir)) {
     const project = await readLayer(projectFile, 'project', projectDir, warnings, projectDir);
     if (project !== undefined) layers.push(project);
-    const local = await readLayer(localFile, 'local', projectDir, warnings);
-    if (local !== undefined) layers.push(local);
-  } else {
-    const present: string[] = [];
-    for (const file of [projectFile, localFile]) {
-      if (await exists(file)) present.push(file);
-    }
-    if (present.length > 0) {
-      warnings.push(`project ${projectDir} is not trusted; skipped settings files: ${present.join(', ')}`);
-    }
+  } else if (await exists(projectFile)) {
+    warnings.push(`project ${projectDir} is not trusted; skipped settings files: ${projectFile}`);
   }
+  const local = await readLayer(localFile, 'local', projectDir, warnings);
+  if (local !== undefined) layers.push(local);
 
   return result();
 };

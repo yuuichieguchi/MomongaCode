@@ -148,6 +148,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
       rules,
       home: options.home,
       roots: policy.roots,
+      tmpDir: policy.tmpDir,
       env: session.env,
       session: options.tools.sessionState(session),
       sandbox: options.tools.sandbox,

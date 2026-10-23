@@ -153,7 +153,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   const timers = options.timers ?? realTimers;
   const logger = options.logger ?? createJsonLogger({ service: 'gateway', clock });
   const binary = options.fmBinary ?? DEFAULT_FM_BINARY;
-  const paths = momongaPaths(options.home);
+  const paths = momongaPaths(options.home, process.platform, {});
   await ensureMomongaDirs(paths);
   const lock = await acquireProcessLock(paths.locks.gateway);
   const cleanups: Array<() => void | Promise<void>> = [() => lock.release()];

@@ -2,6 +2,7 @@ export interface SandboxPolicy {
   writableRoots: readonly string[];
   writeDenied: readonly string[];
   readDenied: readonly string[];
+  readAllowed?: readonly string[];
   network: 'deny' | 'allow';
 }
 
@@ -10,6 +11,7 @@ export interface SandboxCommand {
   cwd: string;
   env: Readonly<Record<string, string>>;
   markerFile?: string;
+  tmpDir?: string;
 }
 
 export interface SandboxExit {

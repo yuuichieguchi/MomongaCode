@@ -1,42 +1,23 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import picomatch from 'picomatch';
+import { canonicalPath, comparableContains, foldCase, volumeIsCaseInsensitive } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 
 const MATCH_OPTIONS = { dot: true, nocase: false, nonegate: true, windows: false } as const;
 const GLOB_CHARACTERS = /[*?[\]{}!+@()\\]/;
 const ONLY_GLOBSTARS = /^(\*\*\/?)+$/;
 
-export const volumeIsCaseInsensitive = process.platform === 'darwin' || process.platform === 'win32';
+export { volumeIsCaseInsensitive };
 
 export const canonicalizePath = (absolute: string): string | null => {
-  const missing: string[] = [];
-  let current = absolute;
-  for (;;) {
-    try {
-      const resolved = fs.realpathSync.native(current);
-      return missing.length === 0 ? resolved : path.join(resolved, ...missing.reverse());
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return null;
-    }
-    try {
-      fs.lstatSync(current);
-      return null;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return null;
-    }
-    const parent = path.dirname(current);
-    const name = path.basename(current);
-    if (parent === current || name === '..') return null;
-    if (name !== '.' && name !== '') missing.push(name);
-    current = parent;
+  try {
+    return canonicalPath(absolute);
+  } catch {
+    return null;
   }
 };
 
 export const absoluteFrom = (target: string, cwd: string): string => (path.isAbsolute(target) ? target : `${cwd}/${target}`);
-
-export const isInside = (candidate: string, directory: string): boolean =>
-  candidate === directory || candidate.startsWith(directory === '/' ? '/' : `${directory}/`);
 
 type CompiledPattern =
   | { kind: 'any-depth'; glob: string }
@@ -77,8 +58,8 @@ const matchesBeneath = (
   includeDirectoryItself: boolean,
   ignoreCase: boolean,
 ): boolean => {
-  const candidate = ignoreCase ? rawCandidate.toLowerCase() : rawCandidate;
-  const directory = ignoreCase ? rawDirectory.toLowerCase() : rawDirectory;
+  const candidate = ignoreCase ? foldCase(rawCandidate) : rawCandidate;
+  const directory = ignoreCase ? foldCase(rawDirectory) : rawDirectory;
   if (candidate === directory) return globRest === '' || (includeDirectoryItself && ONLY_GLOBSTARS.test(globRest));
   const prefix = directory === '/' ? '/' : `${directory}/`;
   if (!candidate.startsWith(prefix)) return false;
@@ -91,7 +72,7 @@ const segmentsOf = (absolute: string): string[] => absolute.split('/').filter((s
 const insideAnyRoot = (candidate: string, roots: readonly string[], cwd: string): boolean =>
   roots.some((root) => {
     const canonical = canonicalizePath(absoluteFrom(root, cwd));
-    return canonical !== null && isInside(candidate, canonical);
+    return canonical !== null && comparableContains(canonical, candidate);
   });
 
 export const pathMatchesRule = (rule: PermissionRule, target: string, strict: boolean, roots: readonly string[]): boolean => {

@@ -122,6 +122,8 @@ describe('worker policyFor', () => {
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.batches).toHaveLength(1);
     expect(env.batches[0]?.roots).toEqual([env.project, EXTRA_ROOT]);
+    expect(env.sessionTmpDir).toMatch(/session-tmp$/);
+    expect(env.batches[0]?.tmpDir).toBe(env.sessionTmpDir);
     expect(env.batches[0]?.sandboxPolicy.writableRoots).toEqual([env.project]);
   });
 
@@ -152,6 +154,8 @@ describe('worker policyFor', () => {
     expect(env.batches).toHaveLength(1);
     expect(env.batches[0]?.recoverOnly).toBe(true);
     expect(env.batches[0]?.roots).toEqual([env.project, EXTRA_ROOT]);
+    expect(env.sessionTmpDir).toMatch(/session-tmp$/);
+    expect(env.batches[0]?.tmpDir).toBe(env.sessionTmpDir);
     expect(env.toolbox.reconciles).toEqual([key]);
   });
 });
