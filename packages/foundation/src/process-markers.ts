@@ -24,13 +24,17 @@ export const findHolders = async (marker: string): Promise<number[]> => {
     .filter((pid) => pid !== process.pid);
 };
 
-export const holderGroups = async (holders: readonly number[]): Promise<number[]> => {
+const groupsByHolder = async (holders: readonly number[]): Promise<Map<number, number>> => {
   const output = await runTool('/bin/ps', ['-o', 'pid=,pgid=', '-p', holders.join(',')]);
-  return output.split('\n').flatMap((line) => {
-    const match = ROW_FORMAT.exec(line);
-    return match === null ? [] : [Number(match[2])];
-  });
+  return new Map(
+    output.split('\n').flatMap((line): Array<[number, number]> => {
+      const match = ROW_FORMAT.exec(line);
+      return match === null ? [] : [[Number(match[1]), Number(match[2])]];
+    }),
+  );
 };
+
+export const holderGroups = async (holders: readonly number[]): Promise<number[]> => [...(await groupsByHolder(holders)).values()];
 
 const signalTargets = (send: SignalSender, targets: readonly number[], signal: NodeJS.Signals): number[] => {
   const unsignalled: number[] = [];
@@ -72,8 +76,10 @@ export const reconcileProcessGroup = async (
       { leftAloneGroup: pgid },
     );
   }
-  const groupVerified = groupAlive && (await holderGroups(holders)).includes(pgid);
-  const termTargets = [...(groupVerified ? [-pgid] : []), ...holders];
+  const holderGroup = groupAlive ? await groupsByHolder(holders) : new Map<number, number>();
+  const groupVerified = [...holderGroup.values()].includes(pgid);
+  const holdersOutsideGroup = groupVerified ? holders.filter((pid) => holderGroup.get(pid) !== pgid) : holders;
+  const termTargets = [...(groupVerified ? [-pgid] : []), ...holdersOutsideGroup];
   const unsignalled = new Set(signalTargets(kill, termTargets, 'SIGTERM'));
   await sleep(killGraceMs);
 
