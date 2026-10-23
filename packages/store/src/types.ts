@@ -78,6 +78,7 @@ export type HeartbeatResult = { kind: 'ok'; cancelRequested: boolean; status: Cl
 export type AppendResult = { kind: 'ok'; lastSeq: number } | LeaseLost;
 export type RunMutationResult = { kind: 'ok'; run: Run } | LeaseLost | Conflict;
 export type ServiceMutationResult = { kind: 'ok'; run: Run } | Conflict;
+export type RequestApprovalResult = { kind: 'ok'; approval: Approval } | LeaseLost | Conflict;
 export type SnapshotResult = { kind: 'ok' } | LeaseLost | Conflict;
 
 export type StatusPatch = { stopReason?: StopReason; error?: RunError };
@@ -118,19 +119,20 @@ export type Approval = {
   id: string;
   runId: string;
   callId: string;
-  status: 'pending' | 'resolved';
+  status: 'pending' | 'resolved' | 'superseded';
   options: PermissionOption[];
   expiresAt: number;
   createdAt: number;
   optionId?: string;
   resolvedAt?: number;
+  subjectDigest?: string;
 };
 
 export type ApprovalCreateResult = { kind: 'ok'; approval: Approval } | Conflict;
 export type ApprovalResolveResult = { kind: 'ok'; approval: Approval } | Conflict;
 
 export type ApprovalStore = {
-  create(input: { runId: string; callId: string; options: PermissionOption[]; expiresAt: number }): ApprovalCreateResult;
+  create(input: { runId: string; callId: string; options: PermissionOption[]; expiresAt: number; renewal?: true; subjectDigest?: string }): ApprovalCreateResult;
   get(id: string): Approval | undefined;
   resolve(id: string, resolution: { optionId: string }): ApprovalResolveResult;
   listPending(runId: string): Approval[];
@@ -178,6 +180,15 @@ export type RuntimeStore = {
   readRunEvents(runId: string, afterSeq: number, limit: number): RunEvent[];
   readSessionEvents(sessionId: string, afterId: number, limit: number): RunEvent[];
   load(runId: string): LoadedRun;
+  requestApproval(
+    claim: Claim,
+    input: {
+      callId: string;
+      options: PermissionOption[];
+      expiresAt: number;
+      event: { subjectDigest: string; suggestedRule?: string };
+    },
+  ): RequestApprovalResult;
   writeSnapshot(claim: Claim, seq: number, state: RunState): SnapshotResult;
   idempotency: IdempotencyStore;
   approvals: ApprovalStore;

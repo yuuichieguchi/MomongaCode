@@ -19,6 +19,7 @@ import type {
   LeaseLost,
   LoadedRun,
   Run,
+  RequestApprovalResult,
   RunMutationResult,
   RuntimeStore,
   RuntimeStoreOptions,
@@ -166,6 +167,9 @@ const prepareStatements = (db: DatabaseSync) => ({
      RETURNING status, cancel_requested, id`,
   ),
   fence: db.prepare(FENCE_SQL),
+  approvalRequested: db.prepare(
+    "SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.permission.requested' AND json_extract(payload_json, '$.approvalId') = :approvalId LIMIT 1",
+  ),
   latestSnapshot: db.prepare('SELECT * FROM snapshots WHERE run_id = :runId ORDER BY seq DESC LIMIT 1'),
   upsertSnapshot: db.prepare(
     `INSERT INTO snapshots (run_id, seq, state_json, created_at) VALUES (:runId, :seq, :state, :createdAt)
@@ -213,6 +217,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     throw error;
   }
   const sql = statements;
+  const approvalOps = createApprovalStore(db, clock);
 
   const requireRun = (runId: string): Run => {
     const row = sql.selectRun.get({ id: runId });
@@ -485,6 +490,33 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         return { snapshot: { seq, state }, tail: sql.runEvents.all({ runId, after: seq, limit: -1 }).map(decodeEvent) };
       }),
 
+    requestApproval: (claim, input) =>
+      immediateTx<RequestApprovalResult>(db, () => {
+        const run = fenced(claim);
+        if (run === undefined) return leaseLost;
+        const created = approvalOps.createWithinTransaction({
+          runId: run.id,
+          callId: input.callId,
+          options: input.options,
+          expiresAt: input.expiresAt,
+          renewal: true,
+          subjectDigest: input.event.subjectDigest,
+        }, true);
+        if (created.kind === 'conflict') return created;
+        if (created.created || !sql.approvalRequested.get({ runId: run.id, approvalId: created.approval.id })) {
+          const event: RunEventPayload = {
+            type: 'tool.permission.requested',
+            approvalId: created.approval.id,
+            callId: input.callId,
+            options: input.options,
+            subjectDigest: input.event.subjectDigest,
+            ...(input.event.suggestedRule === undefined ? {} : { suggestedRule: input.event.suggestedRule }),
+          };
+          writeRun(appendPayloads(run, [event]));
+        }
+        return { kind: 'ok', approval: created.approval };
+      }),
+
     writeSnapshot: (claim, seq, state) =>
       immediateTx(db, () => {
         const run = fenced(claim);
@@ -502,7 +534,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       }),
 
     idempotency: createIdempotencyStore(db, clock),
-    approvals: createApprovalStore(db, clock),
+    approvals: approvalOps.store,
     blobs: createBlobStore(db, clock, blobDirectory),
     trust: createTrustStore(db, clock),
 

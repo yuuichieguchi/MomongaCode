@@ -1,4 +1,4 @@
-export { createToolExecutor } from './executor.ts';
+export { createToolExecutor, subjectDigestOf } from './executor.ts';
 export type {
   BatchInput,
   CallOutcome,
@@ -18,6 +18,7 @@ export type {
 } from './ports.ts';
 export { reconcileProcessGroup } from './process-reconcile.ts';
 export { createToolRegistry } from './registry.ts';
+export { MINIMUM_INLINE_OUTPUT_CHARS } from './truncate.ts';
 export type { ToolRegistry, ToolSet, ToolSource, ToolSourceListing } from './registry.ts';
 export { defineTool, ToolExecutionError, ToolInputError, TransientToolError } from './types.ts';
 export type {

@@ -1,6 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createToolExecutor, createToolRegistry, defineTool } from '@momonga/tools';
+import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import { absoluteFrom, canonicalizePath } from '@momonga/policy';
+import type { PermissionSubject } from '@momonga/policy';
+import { createToolExecutor, createToolRegistry, defineTool, validateToolInput } from '@momonga/tools';
 import type { AnyTool, BatchInput, ToolCall, ToolContext, ToolDefinition, ToolSet } from '@momonga/tools';
 import type { PermissionRule } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
@@ -54,10 +57,12 @@ export const makeHarness = (options: { maxInlineOutputChars?: number; maxParalle
   const started: string[] = [];
   const input = (
     toolSet: ToolSet,
-    calls: ToolCall[],
+    calls: HarnessCall[],
     extra: Partial<BatchInput> & { mode?: PermissionMode; rules?: PermissionRule[] } = {},
   ): BatchInput => ({
-    calls,
+    calls: calls.map((entry) =>
+      bindApproval(entry, toolSet, { cwd: (extra.session ?? session).cwd, home: extra.home ?? layout.home, roots: extra.roots ?? [layout.project] }),
+    ),
     toolSet,
     runId: 'run-1',
     step: 1,
@@ -82,5 +87,50 @@ export const makeHarness = (options: { maxInlineOutputChars?: number; maxParalle
 
 export type ExecuteFn = (input: Input, ctx: ToolContext, prepared: Record<string, unknown> | undefined) => ReturnType<ToolDefinition<Input>['execute']>;
 
-export const call = (callId: string, name: string, args: unknown = {}, approval?: ToolCall['approval']): ToolCall =>
+export type ApprovalKind = 'allow_once' | 'allow_always';
+
+export type BoundApproval = { kind: ApprovalKind; subjectDigest: string };
+
+export type ApprovalSpec = ApprovalKind | BoundApproval;
+
+export type HarnessCall = { callId: string; name: string; arguments: unknown; approval?: ApprovalSpec };
+
+export const UNRESOLVED_SUBJECT_DIGEST = 'unresolved-subject';
+
+const subjectForDigest = (subject: PermissionSubject, cwd: string): unknown => {
+  if (subject.kind === 'path') {
+    return {
+      ...subject,
+      paths: subject.paths.map((target) => {
+        const absolute = absoluteFrom(target, cwd);
+        return canonicalizePath(absolute) ?? absolute;
+      }),
+    };
+  }
+  if (subject.kind === 'command') return { subject, cwd: canonicalizePath(cwd) };
+  return subject;
+};
+
+export const expectedSubjectDigest = (subject: PermissionSubject, cwd: string): string => sha256Hex(canonicalJson(subjectForDigest(subject, cwd)));
+
+const digestForCall = (entry: HarnessCall, toolSet: ToolSet, context: { cwd: string; home: string; roots: readonly string[] }): string => {
+  const tool = toolSet.get(entry.name);
+  if (tool === undefined) return UNRESOLVED_SUBJECT_DIGEST;
+  const validation = validateToolInput(tool, entry.arguments);
+  if (!validation.ok) return UNRESOLVED_SUBJECT_DIGEST;
+  try {
+    return expectedSubjectDigest(tool.subject(validation.value, context), context.cwd);
+  } catch {
+    return UNRESOLVED_SUBJECT_DIGEST;
+  }
+};
+
+const bindApproval = (entry: HarnessCall, toolSet: ToolSet, context: { cwd: string; home: string; roots: readonly string[] }): ToolCall => {
+  const { approval, ...rest } = entry;
+  if (approval === undefined) return rest;
+  if (typeof approval !== 'string') return { ...rest, approval };
+  return { ...rest, approval: { kind: approval, subjectDigest: digestForCall(entry, toolSet, context) } };
+};
+
+export const call = (callId: string, name: string, args: unknown = {}, approval?: ApprovalSpec): HarnessCall =>
   approval === undefined ? { callId, name, arguments: args } : { callId, name, arguments: args, approval };

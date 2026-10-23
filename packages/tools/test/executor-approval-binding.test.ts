@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
-import type { NeedsApprovalOutcome } from '@momonga/tools';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import type { NeedsApprovalOutcome, ToolCall } from '@momonga/tools';
 import { approvalOf, makeBuiltins, resultOf } from './builtins/fixtures.ts';
 
 const HEX_DIGEST = /^[0-9a-f]{64}$/;
@@ -64,12 +64,17 @@ describe('approval binding by subject digest', () => {
     expect(fs.readFileSync(path.join(other, 'file.txt'), 'utf8')).toBe('approved content');
   });
 
-  it('keeps a bare string approval unbound so it proceeds after the swap', async () => {
-    const { tools, other, args, swapDirForSymlink } = await setup();
+  it('does not honor a bare string approval, asking again instead of proceeding', async () => {
+    const { tools, target, args } = await setup();
     approvalOf(await tools.run('Write', args, {}, undefined, 'w1'));
-    swapDirForSymlink();
-    const result = resultOf(await tools.run('Write', args, {}, 'allow_once', 'w1'));
-    expect(result.status).toBe('completed');
-    expect(fs.readFileSync(path.join(other, 'file.txt'), 'utf8')).toBe('approved content');
+    const bare = { callId: 'w1', name: 'Write', arguments: args, approval: 'allow_once' as unknown as NonNullable<ToolCall['approval']> };
+    const [outcome] = await tools.executor.runBatch({ ...tools.batch('Write', args, {}, undefined, 'w1'), calls: [bare] });
+    expect(approvalOf(outcome).callId).toBe('w1');
+    expect(fs.existsSync(target)).toBe(false);
+    expect(tools.idempotency.records.size).toBe(0);
+  });
+
+  it('types an approval only as the subject-bound object form', () => {
+    expectTypeOf<ToolCall['approval']>().toEqualTypeOf<{ kind: 'allow_once' | 'allow_always'; subjectDigest: string } | undefined>();
   });
 });

@@ -1,6 +1,7 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { STOP_REASONS, findDanglingOutput } from '@momonga/protocol';
 import type { InputItem, RunEvent, RunState, StopReason } from '@momonga/protocol';
+import { isRecord } from './rows.ts';
 
 type PendingCall = RunState['pendingCalls'][string];
 type HistoryEntry = RunState['history'][number];
@@ -18,6 +19,8 @@ export const initialRunState = (ids: { runId: string; sessionId: string }): RunS
   pendingCalls: {},
   notes: [],
   toolCallCounts: {},
+  steps: {},
+  loadedInstructions: [],
   lastSeq: 0,
 });
 
@@ -104,12 +107,33 @@ const truncate = (state: RunState, event: Extract<RunEvent, { type: 'context.tru
   return { ...state, history, evicted };
 };
 
+const isRefusalMessage = (item: unknown): boolean =>
+  isRecord(item) &&
+  item['type'] === 'message' &&
+  Array.isArray(item['content']) &&
+  item['content'].some((part: unknown) => isRecord(part) && part['type'] === 'refusal');
+
+const callIdOf = (item: unknown): string[] =>
+  isRecord(item) && item['type'] === 'function_call' && typeof item['call_id'] === 'string' ? [item['call_id']] : [];
+
+const withStep = (steps: RunState['steps'], step: number, body: unknown): RunState['steps'] => {
+  const toolChoice = typeof body === 'object' && body !== null && 'tool_choice' in body ? body.tool_choice : undefined;
+  return typeof toolChoice === 'string' ? { ...steps, [step]: { toolChoice, summary: toolChoice === 'none' } } : steps;
+};
+
+const withInstruction = (current: RunState['loadedInstructions'], path: string, textSha256: string): RunState['loadedInstructions'] =>
+  current.some((entry) => entry.path === path)
+    ? current.map((entry) => (entry.path === path ? { path, textSha256 } : entry))
+    : [...current, { path, textSha256 }];
+
 const applyEvent = (state: RunState, event: RunEvent): RunState => {
   switch (event.type) {
-    case 'user.message':
-      return appendItems(state, [{ item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: event.text }] } }]);
+    case 'user.message': {
+      const { lastResponse: _answered, ...rest } = state;
+      return appendItems(rest, [{ item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: event.text }] } }]);
+    }
     case 'run.started':
-      return { ...state, attempt: event.attempt };
+      return { ...state, attempt: event.attempt, pins: state.pins ?? event.pins };
     case 'run.status': {
       const next = { ...state, status: event.to };
       if (event.to === 'STOPPED' && event.reason !== undefined) return { ...next, stopReason: toStopReason(event.reason, state) };
@@ -119,6 +143,7 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       return {
         ...state,
         inFlightModelRequest: { step: event.step, attempt: event.attempt, digest: event.digest, body: event.body },
+        steps: withStep(state.steps, event.step, event.body),
       };
     case 'model.responded': {
       const inFlight = state.inFlightModelRequest;
@@ -130,6 +155,13 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
           base,
           (event.response.output as InputItem[]).map((item) => ({ item })),
         ),
+        lastResponse: {
+          step: event.step,
+          incomplete: event.response.status === 'incomplete',
+          refusal: event.response.output.some(isRefusalMessage),
+          callIds: event.response.output.flatMap(callIdOf),
+          ...(event.response.incompleteReason === undefined ? {} : { incompleteReason: event.response.incompleteReason }),
+        },
         usage: {
           inputTokens: state.usage.inputTokens + input_tokens,
           outputTokens: state.usage.outputTokens + output_tokens,
@@ -152,7 +184,7 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       };
     }
     case 'tool.permission.requested':
-      return withCall(state, event.callId, event.type, (call) => ({ ...call, status: 'awaiting_approval', approvalId: event.approvalId, options: event.options, subjectDigest: event.subjectDigest }));
+      return withCall(state, event.callId, event.type, ({ resolution: _stale, ...call }) => ({ ...call, status: 'awaiting_approval', approvalId: event.approvalId, options: event.options, subjectDigest: event.subjectDigest, ...(event.suggestedRule === undefined ? {} : { suggestedRule: event.suggestedRule }) }));
     case 'tool.permission.resolved': {
       const entry = Object.entries(state.pendingCalls).find(([, call]) => call.approvalId === event.approvalId);
       if (entry === undefined) throw new Error(`run ${state.runId}: ${event.type} refers to unknown approval ${event.approvalId}`);
@@ -161,8 +193,17 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
         if (option === undefined || call.subjectDigest === undefined) {
           throw new Error(`run ${state.runId}: ${event.type} for approval ${event.approvalId} names unknown option ${event.optionId}`);
         }
-        const { options: _removed, ...rest } = call;
-        return { ...rest, status: 'requested', resolution: { optionId: option.optionId, kind: option.kind, subjectDigest: call.subjectDigest } };
+        const { options: _removed, suggestedRule, ...rest } = call;
+        return {
+          ...rest,
+          status: 'requested',
+          resolution: {
+            optionId: option.optionId,
+            kind: option.kind,
+            subjectDigest: call.subjectDigest,
+            ...(suggestedRule === undefined ? {} : { suggestedRule }),
+          },
+        };
       });
     }
     case 'tool.started':
@@ -183,8 +224,17 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
     case 'plan.updated':
     case 'mode.changed':
     case 'usage.updated':
-    case 'instructions.loaded':
       return state;
+    case 'instructions.loaded':
+      return { ...state, loadedInstructions: withInstruction(state.loadedInstructions, event.path, sha256Hex(event.content)) };
+    case 'approval.rule.persisted': {
+      const entry = Object.entries(state.pendingCalls).find(([, call]) => call.approvalId === event.approvalId);
+      if (entry === undefined) throw new Error(`run ${state.runId}: ${event.type} refers to unknown approval ${event.approvalId}`);
+      return withCall(state, entry[0], event.type, (call) => {
+        if (call.resolution === undefined) throw new Error(`run ${state.runId}: ${event.type} for approval ${event.approvalId} precedes its resolution`);
+        return { ...call, resolution: { ...call.resolution, rulePersisted: true } };
+      });
+    }
     default: {
       const unhandled: never = event;
       throw new Error(`run ${state.runId}: unhandled event ${JSON.stringify(unhandled)}`);

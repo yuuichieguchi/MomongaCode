@@ -30,9 +30,9 @@ describe('append', () => {
     const claim = mustClaim(store, 'w1');
     store.append(claim, [
       { type: 'model.requested', step: 1, attempt: 1, digest: 'd1', body: {} },
-      { type: 'model.responded', step: 1, attempt: 1, response: { output: [], usage: usage(10, 5) } },
+      { type: 'model.responded', step: 1, attempt: 1, response: { status: 'completed', output: [], usage: usage(10, 5) } },
       { type: 'model.requested', step: 2, attempt: 1, digest: 'd2', body: {} },
-      { type: 'model.responded', step: 2, attempt: 1, response: { output: [], usage: usage(7, 3) } },
+      { type: 'model.responded', step: 2, attempt: 1, response: { status: 'completed', output: [], usage: usage(7, 3) } },
     ]);
     expect(mustRun(store, run.id)).toMatchObject({
       step: 2,

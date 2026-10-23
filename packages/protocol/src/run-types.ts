@@ -33,6 +33,8 @@ export type PermissionOption = {
 };
 
 export type ModelResponse = {
+  status: 'completed' | 'incomplete';
+  incompleteReason?: string;
   output: unknown[];
   usage: { input_tokens: number; output_tokens: number; total_tokens: number };
 };
@@ -55,7 +57,14 @@ export type RunEventPayload =
       rawInput: unknown;
       locations?: { path: string; line?: number }[];
     }
-  | { type: 'tool.permission.requested'; approvalId: string; callId: string; options: PermissionOption[]; subjectDigest: string }
+  | {
+      type: 'tool.permission.requested';
+      approvalId: string;
+      callId: string;
+      options: PermissionOption[];
+      subjectDigest: string;
+      suggestedRule?: string;
+    }
   | { type: 'tool.permission.resolved'; approvalId: string; optionId: string; rulePersisted?: boolean }
   | { type: 'tool.started'; callId: string; idemKey: string }
   | { type: 'tool.updated'; callId: string; content: unknown[] }
@@ -78,6 +87,7 @@ export type RunEventPayload =
   | { type: 'context.compacted'; item: CompactionInputItem; summary: string; replacedThroughSeq: number }
   | { type: 'context.truncated'; callId: string; handle: string; kind: 'omitted' | 'truncated' }
   | { type: 'instructions.loaded'; path: string; content: string }
+  | { type: 'approval.rule.persisted'; approvalId: string; effect: 'allow' | 'deny'; rule: string }
   | { type: 'notice'; level: 'info' | 'warning' | 'error'; message: string };
 
 export type RunEventEnvelope = {
@@ -106,6 +116,7 @@ export type RunState = {
   nextItemSeq: number;
   summary?: { item: CompactionInputItem; summary: string; replacedThroughSeq: number };
   evicted: string[];
+  pins?: Record<string, unknown>;
   pendingCalls: Record<
     string,
     {
@@ -117,11 +128,15 @@ export type RunState = {
       approvalId?: string;
       options?: PermissionOption[];
       subjectDigest?: string;
-      resolution?: { optionId: string; kind: PermissionOption['kind']; subjectDigest: string };
+      suggestedRule?: string;
+      resolution?: { optionId: string; kind: PermissionOption['kind']; subjectDigest: string; suggestedRule?: string; rulePersisted?: true };
     }
   >;
   inFlightModelRequest?: { step: number; attempt: number; digest: string; body: unknown };
   notes: { level: 'info' | 'warning' | 'error'; message: string }[];
   toolCallCounts: Record<string, number>;
+  steps: Record<number, { toolChoice: string; summary: boolean }>;
+  lastResponse?: { step: number; incomplete: boolean; incompleteReason?: string; refusal: boolean; callIds: string[] };
+  loadedInstructions: { path: string; textSha256: string }[];
   lastSeq: number;
 };

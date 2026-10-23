@@ -113,4 +113,29 @@ CREATE TABLE trust (
 );
 `;
 
-export const MIGRATIONS: readonly Migration[] = [{ version: 1, name: 'initial schema', sql: INITIAL_SCHEMA }];
+const RENEWABLE_APPROVALS = `
+CREATE TABLE approvals_renewable (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES runs (id),
+  call_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'resolved', 'superseded')),
+  options_json TEXT NOT NULL,
+  option_id TEXT,
+  expires_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  resolved_at INTEGER,
+  subject_digest TEXT
+);
+INSERT INTO approvals_renewable (id, run_id, call_id, status, options_json, option_id, expires_at, created_at, resolved_at)
+  SELECT id, run_id, call_id, status, options_json, option_id, expires_at, created_at, resolved_at FROM approvals;
+DROP TABLE approvals;
+ALTER TABLE approvals_renewable RENAME TO approvals;
+CREATE INDEX approvals_by_expiry ON approvals (status, expires_at);
+CREATE INDEX approvals_by_call ON approvals (run_id, call_id, created_at);
+CREATE UNIQUE INDEX approvals_one_pending_per_call ON approvals (run_id, call_id) WHERE status = 'pending';
+`;
+
+export const MIGRATIONS: readonly Migration[] = [
+  { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
+  { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
+];

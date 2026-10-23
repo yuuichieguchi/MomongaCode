@@ -3,6 +3,7 @@ export { openRuntimeStore } from './runtime-store.ts';
 export type {
   Approval,
   ApprovalCreateResult,
+  RequestApprovalResult,
   ApprovalResolveResult,
   ApprovalStore,
   BlobByteRange,

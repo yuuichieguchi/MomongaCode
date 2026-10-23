@@ -53,7 +53,7 @@ const loadedFile = (
   const capped = capText(rawText);
   const body = capped.truncated ? `${capped.text}\n${TRUNCATION_NOTE}` : capped.text;
   return {
-    instruction: { path: filePath, realPath, scope, truncated: capped.truncated, textSha256: sha256Hex(capped.text) },
+    instruction: { path: filePath, realPath, scope, truncated: capped.truncated, text: capped.text, textSha256: sha256Hex(capped.text) },
     message: {
       type: 'message',
       role: 'developer',
