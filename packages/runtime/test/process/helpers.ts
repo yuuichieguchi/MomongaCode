@@ -12,7 +12,7 @@ import type { RunNotifier, SettingsComposition, ToolRuntime } from '@momonga/run
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore, Session } from '@momonga/store';
-import { createFakeClock, createFakeTimers, killGroupsForCleanup } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, fakeReapTiming, killGroupsForCleanup } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 
 export const START_MS = 1_800_000_000_000;
@@ -209,15 +209,15 @@ export const makeFakePoolFactory = (): FakePoolFactory => {
   };
 };
 
-export const fakeReapTiming = (clock: FakeClock, timers: FakeTimers): ReapTiming & { sleeps: number[] } => {
+export const recordingReapTiming = (clock: FakeClock, timers: FakeTimers): ReapTiming & { sleeps: number[] } => {
+  const timing = fakeReapTiming(clock, timers);
   const sleeps: number[] = [];
   return {
     sleeps,
-    now: () => clock.now(),
-    sleep: async (ms) => {
+    now: () => timing.now(),
+    sleep: (ms) => {
       sleeps.push(ms);
-      timers.advance(ms);
-      await new Promise<void>((resolve) => setImmediate(resolve));
+      return timing.sleep(ms);
     },
   };
 };
@@ -243,7 +243,7 @@ export type RuntimeFixture = StoreFixture & {
   logger: RecordingLogger;
   reporter: Reporter;
   pools: FakePoolFactory;
-  reapTiming: ReturnType<typeof fakeReapTiming>;
+  reapTiming: ReturnType<typeof recordingReapTiming>;
 };
 
 export type RuntimeFixtureOptions = {
@@ -261,7 +261,7 @@ export const makeRuntimeFixture = async (options: RuntimeFixtureOptions = {}): P
   const logger = makeLogger();
   const reporter = makeReporter();
   const pools = makeFakePoolFactory();
-  const reapTiming = fakeReapTiming(fixture.clock, fixture.timers);
+  const reapTiming = recordingReapTiming(fixture.clock, fixture.timers);
   const composition = runtime.createSettingsComposition({ home: temp.home, cache, store: fixture.store });
   const toolRuntime = runtime.createToolRuntime({
     paths: temp.paths,

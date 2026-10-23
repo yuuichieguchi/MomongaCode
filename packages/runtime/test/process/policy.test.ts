@@ -209,7 +209,7 @@ describe('policyFor (system timers, none used)', () => {
     });
   });
 
-  it.each(['EIO', 'EACCES', 'EMFILE', 'ENOSPC', 'ENOENT'])('a transient errno from ensureSessionTmpDir (%s) propagates unchanged and is not a ConfigError', async (code) => {
+  it.each(['EIO', 'EMFILE', 'ENOSPC', 'EDQUOT'])('a transient errno from ensureSessionTmpDir (%s) propagates unchanged and is not a ConfigError', async (code) => {
     const failure = errnoError(code);
     const { temp, store, policyFor } = await setup({ ensure: async () => Promise.reject(failure) });
     const session = createSession(store, temp.project);
@@ -220,7 +220,18 @@ describe('policyFor (system timers, none used)', () => {
     expect(error).not.toBeInstanceOf(ConfigError);
   });
 
-  it('an errno error from buildSandboxPolicy propagates; an assertion error from it becomes ConfigError', async () => {
+  it.each(['EACCES', 'ENOENT', 'EPERM'])('a non-transient errno from ensureSessionTmpDir (%s) becomes ConfigError with the errno as cause', async (code) => {
+    const failure = errnoError(code);
+    const { temp, store, policyFor } = await setup({ ensure: async () => Promise.reject(failure) });
+    const session = createSession(store, temp.project);
+
+    const error = await rejectionOf(policyFor(session, { env: env() }));
+
+    expectWrapped(error, session.id);
+    expect((error as Error).cause).toBe(failure);
+  });
+
+  it('a non-transient errno error from buildSandboxPolicy (EACCES) and an assertion error from it both become ConfigError', async () => {
     const temp = await makeTempHome();
     const locked = makeDir(temp.root, 'locked');
     const lockedTmp = path.join(locked, 'session-tmp');
@@ -231,8 +242,8 @@ describe('policyFor (system timers, none used)', () => {
     const errnoFailure = await rejectionOf(errnoCase.policyFor(errnoSession, { env: env() }));
     fs.chmodSync(locked, 0o700);
 
-    expect(errnoFailure).not.toBeInstanceOf(ConfigError);
-    expect((errnoFailure as NodeJS.ErrnoException).code).toBe('EACCES');
+    expectWrapped(errnoFailure, errnoSession.id);
+    expect(((errnoFailure as Error).cause as NodeJS.ErrnoException).code).toBe('EACCES');
 
     const assertionCase = await setup({ ensure: async () => 'relative-tmp' });
     const assertionSession = createSession(assertionCase.store, assertionCase.temp.project);

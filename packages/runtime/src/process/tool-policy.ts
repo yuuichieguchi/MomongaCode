@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { ConfigError } from '@momonga/config';
-import { canonicalDirectory, ensureSessionTmpDir as defaultEnsureSessionTmpDir, SessionTmpDirError } from '@momonga/foundation';
+import { canonicalDirectory, ensureSessionTmpDir as defaultEnsureSessionTmpDir, isTransientErrno } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { buildSandboxPolicy, protectedPathsFor } from '@momonga/tools';
 import type { ToolRuntimePort } from '../ports.ts';
@@ -13,15 +13,12 @@ export type PolicyForOptions = {
   ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<string>;
 };
 
-const hasErrnoCode = (error: unknown): boolean =>
-  error instanceof Error && typeof (error as NodeJS.ErrnoException).code === 'string';
-
 export const createPolicyFor = ({ paths, home, sessionStates, ensureSessionTmpDir = defaultEnsureSessionTmpDir }: PolicyForOptions): ToolRuntimePort['policyFor'] => {
   if (!path.isAbsolute(home)) throw new TypeError(`home must be an absolute path, got ${home}`);
 
   return async (session, { env }) => {
     const wrap = (cause: unknown): ConfigError =>
-      new ConfigError(`the tool policy for session ${session.id} could not be built: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+      cause instanceof ConfigError ? cause : new ConfigError(`the tool policy for session ${session.id} could not be built: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
 
     sessionStates.get(session);
     const roots = [session.cwd, ...session.additionalDirectories];
@@ -34,7 +31,8 @@ export const createPolicyFor = ({ paths, home, sessionStates, ensureSessionTmpDi
     try {
       tmpDir = await ensureSessionTmpDir(paths, session.id);
     } catch (error) {
-      throw error instanceof SessionTmpDirError ? wrap(error) : error;
+      if (isTransientErrno(error)) throw error;
+      throw wrap(error);
     }
 
     try {
@@ -42,7 +40,8 @@ export const createPolicyFor = ({ paths, home, sessionStates, ensureSessionTmpDi
       const protectedPaths = protectedPathsFor(roots);
       return { roots, sandboxPolicy, tmpDir, protectedPaths, env };
     } catch (error) {
-      throw hasErrnoCode(error) || error instanceof ConfigError ? error : wrap(error);
+      if (isTransientErrno(error)) throw error;
+      throw wrap(error);
     }
   };
 };

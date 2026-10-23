@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StoreIdentityError, isFatalStoreError } from '@momonga/store';
 import { harness, newSession } from './helpers.ts';
 
@@ -11,6 +11,18 @@ const thrownBy = (action: () => unknown): unknown => {
     return error;
   }
   throw new Error('expected the action to throw');
+};
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+const failStatOf = (target: string, failure: unknown): void => {
+  const original = fs.statSync;
+  vi.spyOn(fs, 'statSync').mockImplementation(((file: fs.PathLike, ...rest: unknown[]) => {
+    if (file === target) throw failure;
+    return (original as (...args: unknown[]) => unknown)(file, ...rest);
+  }) as typeof fs.statSync);
 };
 
 describe('RuntimeStore.checkIdentity', () => {
@@ -52,5 +64,27 @@ describe('RuntimeStore.checkIdentity', () => {
 
     expect(error).toBeInstanceOf(StoreIdentityError);
     expect(isFatalStoreError(error)).toBe(true);
+  });
+
+  it.each(['EMFILE', 'EIO', 'ENOSPC'])('rethrows a transient %s from the stat unchanged instead of a StoreIdentityError', (code) => {
+    const { dbPath, store } = harness();
+    const failure = Object.assign(new Error(`${code}: injected`), { code });
+    failStatOf(dbPath, failure);
+
+    const error = thrownBy(() => store.checkIdentity());
+
+    expect(error).toBe(failure);
+    expect(error).not.toBeInstanceOf(StoreIdentityError);
+  });
+
+  it('an ENOENT from the stat is still a StoreIdentityError', () => {
+    const { dbPath, store } = harness();
+    const failure = Object.assign(new Error('ENOENT: injected'), { code: 'ENOENT' });
+    failStatOf(dbPath, failure);
+
+    const error = thrownBy(() => store.checkIdentity());
+
+    expect(error).toBeInstanceOf(StoreIdentityError);
+    expect((error as Error).cause).toBe(failure);
   });
 });

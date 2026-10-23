@@ -177,7 +177,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       dependentPath: paths.databases.gateway,
     });
     const traceStore: TraceStore = openTraceStore({ path: paths.traces.gateway, clock });
-    const telemetry: Telemetry = createTelemetry({ serviceName: 'gateway', serviceVersion: options.version, clock, store: traceStore });
+    const telemetry: Telemetry = createTelemetry({ serviceName: 'momonga-gateway', serviceVersion: options.version, clock, store: traceStore });
     cleanups.push(() => closeTelemetry(telemetry, traceStore));
 
     const childEnv = minimalChildEnv(options.env);
