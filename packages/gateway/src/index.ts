@@ -17,3 +17,19 @@ export type {
   FmServeTimers,
   SpawnFn,
 } from './managed/fm-serve.ts';
+export { createGateway } from './server/gateway.ts';
+export { createReplayAdapter } from './adapters/replay-adapter.ts';
+export type { ReplayAdapterOptions } from './adapters/replay-adapter.ts';
+export type { DebugTcpOptions, Gateway, GatewayConfig, GatewayOptions, GatewayTargetConfig, GatewayTimers } from './types.ts';
+export type {
+  AdapterCompactRequest,
+  AdapterCompactResult,
+  AdapterContext,
+  AdapterCountTokensResult,
+  AdapterInputItem,
+  AdapterRequest,
+  AdapterTarget,
+  ClassifiedError,
+  DecodedCompactionItem,
+  ProviderAdapter,
+} from '@momonga/protocol';

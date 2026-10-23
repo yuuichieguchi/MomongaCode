@@ -1,0 +1,46 @@
+import type { StreamEvent } from '@momonga/protocol';
+import { idempotencyInProgressError, invalidRequest } from './errors.ts';
+import type { SharedRun } from './run.ts';
+import type { Services } from './services.ts';
+
+export type IdempotencyLookup =
+  | { kind: 'miss' }
+  | { kind: 'inflight'; run: SharedRun }
+  | { kind: 'stored'; frames: StreamEvent[] };
+
+export type IdempotencyRegistry = {
+  lookup(key: string, digest: string): IdempotencyLookup;
+  begin(key: string, digest: string, run: SharedRun): void;
+  end(key: string, run: SharedRun): void;
+};
+
+const reusedError = (key: string) =>
+  invalidRequest('idempotency_key_reused', `idempotency key "${key}" was already used with a different request body`);
+
+export const createIdempotencyRegistry = (services: Services): IdempotencyRegistry => {
+  const inflight = new Map<string, { digest: string; run: SharedRun }>();
+  return {
+    lookup: (key, digest) => {
+      const running = inflight.get(key);
+      if (running !== undefined) {
+        if (running.digest !== digest) throw reusedError(key);
+        if (!running.run.joinable()) throw idempotencyInProgressError(key);
+        return { kind: 'inflight', run: running.run };
+      }
+      const stored = services.store.getIdempotency(key);
+      if (stored === undefined) return { kind: 'miss' };
+      if (services.clock.now() >= stored.storedAtMs + services.config.idempotency.ttlMs) {
+        services.store.deleteIdempotency(key);
+        return { kind: 'miss' };
+      }
+      if (stored.digest !== digest) throw reusedError(key);
+      return { kind: 'stored', frames: stored.frames };
+    },
+    begin: (key, digest, run) => {
+      inflight.set(key, { digest, run });
+    },
+    end: (key, run) => {
+      if (inflight.get(key)?.run === run) inflight.delete(key);
+    },
+  };
+};

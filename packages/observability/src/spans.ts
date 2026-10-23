@@ -17,8 +17,8 @@ export type ChatSpanInput = {
   requestModel: string;
   maxTokens?: number;
   stream: boolean;
-  runId: string;
-  step: number;
+  runId?: string;
+  step?: number;
   attempt: number;
 };
 
@@ -73,8 +73,8 @@ export const startChatSpan = (tracer: Tracer, input: ChatSpanInput, parent?: Con
         [A.ATTR_GEN_AI_REQUEST_MODEL]: input.requestModel,
         ...(input.maxTokens === undefined ? {} : { [A.ATTR_GEN_AI_REQUEST_MAX_TOKENS]: input.maxTokens }),
         [A.ATTR_GEN_AI_REQUEST_STREAM]: input.stream,
-        [MOMONGA_ATTRIBUTES.runId]: input.runId,
-        [MOMONGA_ATTRIBUTES.step]: input.step,
+        ...(input.runId === undefined ? {} : { [MOMONGA_ATTRIBUTES.runId]: input.runId }),
+        ...(input.step === undefined ? {} : { [MOMONGA_ATTRIBUTES.step]: input.step }),
         [MOMONGA_ATTRIBUTES.attempt]: input.attempt,
       },
     },

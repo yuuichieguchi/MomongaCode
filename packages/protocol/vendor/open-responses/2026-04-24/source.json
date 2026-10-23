@@ -1,0 +1,8 @@
+{
+  "name": "Open Responses specification",
+  "version": "2026-04-24",
+  "repository": "https://github.com/openresponses/openresponses",
+  "path": "public/openapi/2026-04-24/openapi.json",
+  "commit": "4849f32442bc380852bb4068f0b6cfff347c2baa",
+  "license": "Apache-2.0"
+}

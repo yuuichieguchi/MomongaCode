@@ -34,3 +34,21 @@ export {
   toolRoundTripRun,
 } from './run-event-fixtures.ts';
 export type { RecordedRun } from './run-event-fixtures.ts';
+export { createFakeTimers } from './fake-timers.ts';
+export type { FakeTimers, PendingTimer } from './fake-timers.ts';
+export { waitFor } from './wait-for.ts';
+export type { WaitForOptions } from './wait-for.ts';
+export { OPEN_RESPONSES_SPEC_URL, createOpenResponsesValidator, loadOpenResponsesSpec } from './open-responses-schema.ts';
+export type { OpenResponsesSpec, OpenResponsesValidator, SchemaCheck } from './open-responses-schema.ts';
+export { responseResource, textResponseEvents, usageOf } from './open-responses-fixtures.ts';
+export type { ResponseResourceInput, TextResponseScript } from './open-responses-fixtures.ts';
+export { DEFAULT_SCRIPTED_CAPABILITIES, ScriptedUpstreamError, createScriptedAdapter } from './scripted-adapter.ts';
+export type {
+  RecordedAdapterCall,
+  RecordedCompactCall,
+  RecordedCountCall,
+  ScriptedAdapter,
+  ScriptedAdapterOptions,
+  ScriptedCallPlan,
+  ScriptedFailure,
+} from './scripted-adapter.ts';
