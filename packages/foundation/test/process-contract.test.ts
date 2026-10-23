@@ -108,6 +108,19 @@ describe('createJsonLogger', () => {
     ]);
   });
 
+  it('emits count and ids when given and omits them otherwise', () => {
+    const capture = captureStream();
+    const logger = createJsonLogger({ service: 'runtime', stream: capture.stream, clock: createFakeClock(START_MS), level: 'debug' });
+    logger.debug('session_state.evicted', { count: 2, ids: ['ses-a', 'ses-b'] });
+    logger.debug('session_state.evicted', { count: 0, ids: [] });
+    logger.debug('plain');
+    expect(capture.lines()).toEqual([
+      { ts: START_ISO, level: 'debug', service: 'runtime', pid: process.pid, msg: 'session_state.evicted', count: 2, ids: ['ses-a', 'ses-b'] },
+      { ts: START_ISO, level: 'debug', service: 'runtime', pid: process.pid, msg: 'session_state.evicted', count: 0, ids: [] },
+      { ts: START_ISO, level: 'debug', service: 'runtime', pid: process.pid, msg: 'plain' },
+    ]);
+  });
+
   it('serialises err as exactly name, message and stack', () => {
     const capture = captureStream();
     const logger = createJsonLogger({ service: 'gateway', stream: capture.stream, clock: createFakeClock(START_MS) });

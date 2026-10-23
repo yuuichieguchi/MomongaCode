@@ -6,7 +6,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { afterEach, expect } from 'vitest';
-import { createUdsClient } from '@momonga/foundation';
+import { createUdsClient, momongaPaths } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import * as protocol from '@momonga/protocol';
 import type { PermissionMode, PermissionOption, RunEvent, RunEventPayload } from '@momonga/protocol';
@@ -40,6 +40,8 @@ export const DEFAULT_TIMEOUT_MS = 6 * HOUR_MS;
 export const DEFAULT_TTL_MS = 30 * 60 * 1000;
 export const DEFAULT_LIMITS = { maxSteps: 50, maxTotalTokens: 1_000_000, approvalTtlMs: DEFAULT_TTL_MS, loopThreshold: 3 };
 export const SOCKET_PATH_LIMIT = 104;
+export const SERVICE_PID = 424_242;
+export const STARTED_AT = new Date(START_MS).toISOString();
 
 type Cleanup = () => void | Promise<void>;
 
@@ -78,30 +80,61 @@ export const makeLayout = (): Layout => {
   return { root, home, momonga, runDir, project, projectReal: fs.realpathSync(project), socketPath, dbPath: path.join(root, 's.db') };
 };
 
-export type SettingsDefault = { defaultMode?: PermissionMode; defaultModeOrigin?: 'user' | 'project' | 'local' };
+export type SettingsDefault = {
+  defaultMode?: PermissionMode;
+  defaultModeOrigin?: 'user' | 'project' | 'local';
+  additionalDirectories?: readonly string[];
+  credentialEnvNames?: readonly string[];
+};
+
+export type SessionCreateSettingsResult = {
+  defaultMode?: PermissionMode;
+  defaultModeOrigin?: 'user' | 'project' | 'local';
+  additionalDirectories: readonly string[];
+  credentialEnvNames: readonly string[];
+};
 
 export type FakePorts = {
   settingsByCwd: Map<string, SettingsDefault>;
   settingsCalls: string[];
-  credentialEnvNames: () => readonly string[];
+  settingsFailure: { error?: unknown };
+  aliasesFailure: { error?: unknown };
   modelAliases: () => Promise<readonly string[]>;
-  settingsFor: (cwd: string) => Promise<SettingsDefault>;
+  sessionCreateSettings: (cwd: string) => Promise<SessionCreateSettingsResult>;
 };
 
 export const createFakePorts = (): FakePorts => {
   const settingsByCwd = new Map<string, SettingsDefault>();
   const settingsCalls: string[] = [];
+  const settingsFailure: { error?: unknown } = {};
+  const aliasesFailure: { error?: unknown } = {};
   return {
     settingsByCwd,
     settingsCalls,
-    credentialEnvNames: () => [DECLARED_CREDENTIAL],
-    modelAliases: async () => [MODEL_ALIAS, OTHER_ALIAS],
-    settingsFor: async (cwd) => {
+    settingsFailure,
+    aliasesFailure,
+    modelAliases: async () => {
+      if (aliasesFailure.error !== undefined) throw aliasesFailure.error;
+      return [MODEL_ALIAS, OTHER_ALIAS];
+    },
+    sessionCreateSettings: async (cwd) => {
       settingsCalls.push(cwd);
+      if (settingsFailure.error !== undefined) throw settingsFailure.error;
       const real = fs.existsSync(cwd) ? fs.realpathSync(cwd) : cwd;
-      return settingsByCwd.get(real) ?? {};
+      const entry = settingsByCwd.get(real) ?? {};
+      return {
+        ...(entry.defaultMode === undefined ? {} : { defaultMode: entry.defaultMode }),
+        ...(entry.defaultModeOrigin === undefined ? {} : { defaultModeOrigin: entry.defaultModeOrigin }),
+        additionalDirectories: entry.additionalDirectories ?? [],
+        credentialEnvNames: entry.credentialEnvNames ?? [DECLARED_CREDENTIAL],
+      };
     },
   };
+};
+
+export const protectedAreasOf = (home: string): string[] => {
+  const paths = momongaPaths(home, 'darwin', {});
+  return [paths.root, path.join(home, 'Library', 'Keychains'), paths.tmp.root];
 };
 
 const ajv = new Ajv2020.default({ strict: false, allErrors: true });
@@ -136,7 +169,7 @@ export const expectSchema = (name: string, value: unknown): void => {
   if (!valid) throw new Error(`${name} schema rejected ${JSON.stringify(value)}: ${ajv.errorsText(validate.errors)}`);
 };
 
-const VIEW_KEYS: Record<string, string> = { session: 'SessionView', run: 'RunView', approval: 'ApprovalView' };
+const VIEW_KEYS: Record<string, string> = { session: 'SessionView', run: 'RunView', approval: 'ApprovalView', trust: 'TrustView' };
 const LIST_KEYS: Record<string, string> = { sessions: 'SessionView', runs: 'RunView', approvals: 'ApprovalView' };
 
 export const validateJsonBody = (status: number, body: unknown): void => {
@@ -361,11 +394,14 @@ export type ServiceOverrides = {
   clock?: FakeClock;
   wrapStore?: (store: RuntimeStore) => RuntimeStore;
   cancelUpstream?: (runId: string) => Promise<void>;
+  onFatal?: boolean;
+  sandboxKind?: 'seatbelt' | 'none';
+  protectedRootAreas?: readonly string[];
 };
 
 export type Notifier = { onCommit(touched: { runId?: string; sessionId: string }[]): void; subscriberCount(): number };
 
-export type RunService = { socketPath: string; close(): Promise<void> };
+export type RunService = { socketPath: string; beginDraining(): void; close(): Promise<void> };
 
 export type ServiceEnv = Awaited<ReturnType<typeof startService>>;
 
@@ -390,7 +426,7 @@ export const openStore = (dbPath: string, clock: FakeClock, extra: { notifier?: 
 };
 
 export const serviceOptions = (
-  base: { store: RuntimeStore; clock: FakeClock; home: string; socketPath: string; ports: FakePorts; notifier: Notifier; errors: unknown[] },
+  base: { store: RuntimeStore; clock: FakeClock; home: string; socketPath: string; ports: FakePorts; notifier: Notifier; errors: unknown[]; fatals?: Error[] },
   overrides: ServiceOverrides = {},
 ): Record<string, unknown> => ({
   store: base.store,
@@ -398,9 +434,12 @@ export const serviceOptions = (
   home: base.home,
   version: SERVICE_VERSION,
   socketPath: base.socketPath,
-  credentialEnvNames: base.ports.credentialEnvNames,
+  pid: SERVICE_PID,
+  startedAt: STARTED_AT,
+  sandboxKind: overrides.sandboxKind ?? 'seatbelt',
+  protectedRootAreas: overrides.protectedRootAreas ?? protectedAreasOf(base.home),
   modelAliases: base.ports.modelAliases,
-  settingsFor: base.ports.settingsFor,
+  sessionCreateSettings: base.ports.sessionCreateSettings,
   defaults: { modelAlias: MODEL_ALIAS, runTimeoutMs: DEFAULT_TIMEOUT_MS, limits: { ...DEFAULT_LIMITS } },
   notifier: base.notifier,
   keepAliveMs: overrides.keepAliveMs ?? 600_000,
@@ -410,6 +449,7 @@ export const serviceOptions = (
   ...(overrides.timers === undefined ? {} : { timers: overrides.timers }),
   ...(overrides.cancelUpstream === undefined ? {} : { cancelUpstream: overrides.cancelUpstream }),
   onError: (error: unknown) => base.errors.push(error),
+  ...(base.fatals === undefined ? {} : { onFatal: (error: Error) => base.fatals?.push(error) }),
 });
 
 export const launchService = async (options: Record<string, unknown>): Promise<RunService> => {
@@ -426,8 +466,21 @@ export const startService = async (overrides: ServiceOverrides & { fakeTimers?: 
   const store = openStore(layout.dbPath, clock, { notifier, ...(overrides.maxAttempts === undefined ? {} : { maxAttempts: overrides.maxAttempts }) });
   const ports = createFakePorts();
   const errors: unknown[] = [];
+  const fatals: Error[] = [];
   const service = await launchService(
-    serviceOptions({ store: overrides.wrapStore === undefined ? store : overrides.wrapStore(store), clock, home: layout.home, socketPath: layout.socketPath, ports, notifier, errors }, { ...overrides, ...(timers === undefined ? {} : { timers }) }),
+    serviceOptions(
+      {
+        store: overrides.wrapStore === undefined ? store : overrides.wrapStore(store),
+        clock,
+        home: layout.home,
+        socketPath: layout.socketPath,
+        ports,
+        notifier,
+        errors,
+        ...(overrides.onFatal === true ? { fatals } : {}),
+      },
+      { ...overrides, ...(timers === undefined ? {} : { timers }) },
+    ),
   );
   let closed = false;
   const closeService = async (): Promise<void> => {
@@ -499,6 +552,7 @@ export const startService = async (overrides: ServiceOverrides & { fakeTimers?: 
     store,
     ports,
     errors,
+    fatals,
     service,
     client,
     closeService,

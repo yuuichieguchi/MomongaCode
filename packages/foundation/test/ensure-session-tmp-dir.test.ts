@@ -1,13 +1,18 @@
 import fs from 'node:fs';
+import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
-import { ensureMomongaDirs, ensureSessionTmpDir, momongaPaths } from '@momonga/foundation';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { SessionTmpDirError, ensureMomongaDirs, ensureSessionTmpDir, momongaPaths } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 
 const tempDirs: string[] = [];
+const lockedDirs: string[] = [];
+const RUNNING_AS_ROOT = process.getuid?.() === 0;
 
 afterEach(() => {
+  vi.restoreAllMocks();
+  for (const dir of lockedDirs.splice(0)) fs.chmodSync(dir, 0o700);
   for (const dir of tempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -95,5 +100,74 @@ describe('ensureSessionTmpDir', () => {
     fs.chmodSync(dir, 0o755);
     await ensureSessionTmpDir(paths, 'session-1');
     expect(fs.lstatSync(dir).mode & 0o777).toBe(0o700);
+  });
+});
+
+const rejectionOf = async (promise: Promise<unknown>): Promise<unknown> => {
+  try {
+    await promise;
+  } catch (error) {
+    return error;
+  }
+  throw new Error('expected ensureSessionTmpDir to reject');
+};
+
+describe('ensureSessionTmpDir error classes', () => {
+  it('a session dir replaced by a symlink throws SessionTmpDirError', async () => {
+    const paths = await preparedPaths();
+    const outside = makeDir('mm-outside-');
+    fs.symlinkSync(outside, path.join(paths.tmp.sessions, 'session-1'));
+    const error = await rejectionOf(ensureSessionTmpDir(paths, 'session-1'));
+    expect(error).toBeInstanceOf(SessionTmpDirError);
+    expect(fs.readdirSync(outside)).toEqual([]);
+  });
+
+  it('a sessions root replaced by a symlink throws SessionTmpDirError', async () => {
+    const paths = await preparedPaths();
+    const outside = makeDir('mm-outside-');
+    fs.rmSync(paths.tmp.sessions, { recursive: true });
+    fs.symlinkSync(outside, paths.tmp.sessions);
+    const error = await rejectionOf(ensureSessionTmpDir(paths, 'session-1'));
+    expect(error).toBeInstanceOf(SessionTmpDirError);
+    expect(fs.readdirSync(outside)).toEqual([]);
+  });
+
+  it('a session dir replaced by a file throws SessionTmpDirError', async () => {
+    const paths = await preparedPaths();
+    fs.writeFileSync(path.join(paths.tmp.sessions, 'session-1'), 'x');
+    const error = await rejectionOf(ensureSessionTmpDir(paths, 'session-1'));
+    expect(error).toBeInstanceOf(SessionTmpDirError);
+  });
+
+  it('a session dir that is not directly in the sessions root throws SessionTmpDirError', async () => {
+    const paths = await preparedPaths();
+    const directory = path.join(paths.tmp.sessions, 'session-1');
+    fs.mkdirSync(directory, { mode: 0o700 });
+    const elsewhere = makeDir('mm-elsewhere-');
+    const alias = path.join(elsewhere, 'alias');
+    fs.symlinkSync(directory, alias);
+    const realRealpath = fsp.realpath;
+    vi.spyOn(fsp, 'realpath').mockImplementation((async (target: fs.PathLike, options?: unknown) =>
+      String(target) === directory ? alias : realRealpath(target, options as never)) as typeof fsp.realpath);
+    const error = await rejectionOf(ensureSessionTmpDir(paths, 'session-1'));
+    expect(error).toBeInstanceOf(SessionTmpDirError);
+    expect((error as Error).message).toBe(`${directory} does not live directly in the sessions root ${paths.tmp.sessions}`);
+  });
+
+  it.skipIf(RUNNING_AS_ROOT)('a sessions root with mode 000 throws a plain errno error (EACCES), not SessionTmpDirError', async () => {
+    const paths = await preparedPaths();
+    fs.chmodSync(paths.tmp.sessions, 0o000);
+    lockedDirs.push(paths.tmp.sessions);
+    const error = await rejectionOf(ensureSessionTmpDir(paths, 'session-1'));
+    expect(error).not.toBeInstanceOf(SessionTmpDirError);
+    expect((error as NodeJS.ErrnoException).code).toBe('EACCES');
+  });
+
+  it('an invalid session id throws a plain Error, not SessionTmpDirError', async () => {
+    const paths = await preparedPaths();
+    const error = await rejectionOf(ensureSessionTmpDir(paths, '../escaped'));
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(SessionTmpDirError);
+    expect((error as Error).message).toBe('invalid session id: "../escaped"');
   });
 });

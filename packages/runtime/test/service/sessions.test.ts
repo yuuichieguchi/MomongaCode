@@ -1,17 +1,25 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DECLARED_CREDENTIAL, MODEL_ALIAS, OTHER_ALIAS, SERVICE_VERSION, START_MS, expectError, startService } from './helpers.ts';
+import { DECLARED_CREDENTIAL, MODEL_ALIAS, OTHER_ALIAS, SERVICE_PID, SERVICE_VERSION, STARTED_AT, START_MS, expectError, startService } from './helpers.ts';
 
 const SECRET = 'hunter2-value';
 const TOKEN_PREFIX = 'sk-';
 
 describe('health', () => {
-  it('reports the version and api version', async () => {
+  it('reports the version, api version, pid, start time, state and sandbox', async () => {
     const env = await startService();
     const response = await env.http('GET', '/v1/health');
     expect(response.status).toBe(200);
-    expect(response.json).toEqual({ status: 'ok', version: SERVICE_VERSION, apiVersion: 1 });
+    expect(response.json).toEqual({
+      status: 'ok',
+      version: SERVICE_VERSION,
+      apiVersion: 1,
+      pid: SERVICE_PID,
+      startedAt: STARTED_AT,
+      state: 'running',
+      sandbox: 'seatbelt',
+    });
   });
 });
 
@@ -34,6 +42,7 @@ describe('session creation, listing and reading', () => {
       envKeys: expect.any(Array),
       activeRunId: null,
       latestRunId: null,
+      additionalDirectories: [],
     });
     expect([...session.envKeys].sort()).toEqual(['LANG', 'PATH']);
   });

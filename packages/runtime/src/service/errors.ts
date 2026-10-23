@@ -64,6 +64,12 @@ export const idempotencyKeyReused = (): ApiError =>
     message: 'the Idempotency-Key was already used with a different request body',
   });
 
+export const serviceUnavailable = (code: 'draining' | 'gateway_unavailable', message: string): ApiError =>
+  new ApiError({ status: 503, type: 'server_error', code, message, headers: { 'retry-after': '1' } });
+
+export const configError = (message: string, param?: string): ApiError =>
+  new ApiError({ status: 422, type: 'invalid_request', code: 'config_error', message, ...(param === undefined ? {} : { param }) });
+
 export const errorResponse = (error: ApiError): Response =>
   new Response(
     JSON.stringify({

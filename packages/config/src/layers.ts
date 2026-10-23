@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { toConfigError } from './config-error.ts';
+import { rethrowIfTransient, toConfigError } from './config-error.ts';
 import { looksLikeCredentialName } from './credential-env.ts';
 import { readJsonFile, readJsonFileSync } from './json-file.ts';
 import type { JsonFile } from './json-file.ts';
@@ -93,6 +93,7 @@ const readLayer = async (
   try {
     return buildLayer(await readJsonFile(file, confineTo === undefined ? {} : { confineTo }), file, origin, root, true, warnings);
   } catch (error) {
+    rethrowIfTransient(error);
     throw toConfigError(error);
   }
 };
@@ -107,6 +108,7 @@ export const readUserLayer = (home: string): UserLayer => {
     const models = resolveModels(layer?.settings.models, { source: file, home, warnings });
     return { layer, models, warnings };
   } catch (error) {
+    rethrowIfTransient(error);
     throw toConfigError(error);
   }
 };
@@ -117,11 +119,21 @@ const exists = async (file: string): Promise<boolean> => {
     return true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
-    throw error;
+    rethrowIfTransient(error);
+    throw toConfigError(error);
   }
 };
 
-const realpath = promisify(fs.realpath.native);
+const nativeRealpath = promisify(fs.realpath.native);
+
+const realpath = async (target: string): Promise<string> => {
+  try {
+    return await nativeRealpath(target);
+  } catch (error) {
+    rethrowIfTransient(error);
+    throw toConfigError(error);
+  }
+};
 
 export const loadLayers = async ({ home, projectDir, trust, user: snapshot }: LayerOptions): Promise<LoadedLayers> => {
   const user = snapshot ?? readUserLayer(home);
@@ -132,7 +144,13 @@ export const loadLayers = async ({ home, projectDir, trust, user: snapshot }: La
   if ((await realpath(projectDir)) === (await realpath(home))) return result();
 
   const projectFile = path.join(projectDir, '.momonga', 'settings.json');
-  const localFile = await localSettingsFile(home, projectDir);
+  let localFile: string;
+  try {
+    localFile = await localSettingsFile(home, projectDir);
+  } catch (error) {
+    rethrowIfTransient(error);
+    throw toConfigError(error);
+  }
   const repositoryLocalFile = path.join(projectDir, '.momonga', 'settings.local.json');
 
   if (await exists(repositoryLocalFile)) {

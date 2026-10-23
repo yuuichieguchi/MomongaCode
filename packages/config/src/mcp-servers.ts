@@ -4,7 +4,7 @@ import { readJsonFile } from './json-file.ts';
 import { looksLikeCredentialName } from './credential-env.ts';
 import { loadLayers } from './layers.ts';
 import type { LoadedLayers } from './layers.ts';
-import { ConfigError, toConfigError } from './config-error.ts';
+import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import type { TrustOracle, UserLayer } from './layers.ts';
 import { assertMcpServer, assertMcpServersFile } from './settings.ts';
 import type { McpServerConfig, McpServersFile, Settings } from './settings.ts';
@@ -128,7 +128,8 @@ const fileExists = async (file: string): Promise<boolean> => {
     return true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
-    throw error;
+    rethrowIfTransient(error);
+    throw toConfigError(error);
   }
 };
 
@@ -136,6 +137,7 @@ const loadLayersForUser = async (options: Pick<LoadMcpServersOptions, 'home' | '
   try {
     return await loadLayers(options);
   } catch (error) {
+    rethrowIfTransient(error);
     throw toConfigError(error);
   }
 };
@@ -183,7 +185,8 @@ const readProjectServers = async (
     if (!read.found) return undefined;
     file = assertMcpServersFile(read.value, mcpJson);
   } catch (error) {
-    if (!(error instanceof Error)) throw error;
+    rethrowIfTransient(error);
+    if (!(error instanceof Error)) throw toConfigError(error);
     warnings.push(`${error.message}; skipped the project MCP servers in ${mcpJson}`);
     return undefined;
   }
@@ -223,6 +226,7 @@ export const loadMcpServers = async ({ home, projectDir, trust, env, user }: Loa
           if (!warnings.includes(USER_EXPANSION_NOTE)) warnings.push(USER_EXPANSION_NOTE);
         }
       } catch (error) {
+        rethrowIfTransient(error);
         throw toConfigError(error);
       }
     }

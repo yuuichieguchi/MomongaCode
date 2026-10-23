@@ -42,7 +42,7 @@ export interface StdioTransport extends Transport {
 
 type ServerProcess = ChildProcessByStdio<Writable, Readable, Readable>;
 
-export function inheritedEnvOf(baseEnv: Record<string, string>): Record<string, string> {
+export function inheritedEnvOf(baseEnv: Readonly<Record<string, string>>): Record<string, string> {
   const env: Record<string, string> = {};
   for (const key of DEFAULT_INHERITED_ENV_VARS) {
     const value = baseEnv[key];

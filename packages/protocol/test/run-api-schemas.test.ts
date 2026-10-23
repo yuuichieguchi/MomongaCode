@@ -15,6 +15,9 @@ const SCHEMA_NAMES = [
   'ApprovalView',
   'ErrorBody',
   'PublicRunEvent',
+  'TrustView',
+  'TrustResponse',
+  'PutTrustRequest',
 ] as const;
 
 type SchemaName = (typeof SCHEMA_NAMES)[number];
@@ -118,8 +121,25 @@ describe('request schemas', () => {
 
 describe('response schemas', () => {
   it('describes the health body', () => {
-    expect(accepts('Health', { status: 'ok', version: '0.0.0', apiVersion: 1 })).toBe(true);
-    expect(accepts('Health', { status: 'ok', version: '0.0.0', apiVersion: 2 })).toBe(false);
+    const health = { status: 'ok', version: '0.0.0', apiVersion: 1, pid: 4242, startedAt: '2027-01-15T08:00:00.000Z', state: 'running', sandbox: 'seatbelt' };
+    expect(accepts('Health', health)).toBe(true);
+    expect(accepts('Health', { ...health, apiVersion: 2 })).toBe(false);
+  });
+
+  it('Health accepts the seven fields and rejects a missing or extra field, an unknown state and an unknown sandbox', () => {
+    const health = { status: 'ok', version: '0.0.0', apiVersion: 1, pid: 4242, startedAt: '2027-01-15T08:00:00.000Z', state: 'running', sandbox: 'seatbelt' };
+    expect(accepts('Health', health)).toBe(true);
+    expect(accepts('Health', { ...health, state: 'draining', sandbox: 'none' })).toBe(true);
+    for (const field of Object.keys(health)) {
+      const { [field]: _omitted, ...missing } = health as Record<string, unknown>;
+      expect(accepts('Health', missing), field).toBe(false);
+    }
+    expect(accepts('Health', { status: 'ok', version: '0.0.0', apiVersion: 1 })).toBe(false);
+    expect(accepts('Health', { ...health, extra: true })).toBe(false);
+    expect(accepts('Health', { ...health, state: 'tearingDown' })).toBe(false);
+    expect(accepts('Health', { ...health, sandbox: 'docker' })).toBe(false);
+    expect(accepts('Health', { ...health, pid: 1.5 })).toBe(false);
+    expect(accepts('Health', { ...health, startedAt: 1_800_000_000_000 })).toBe(false);
   });
 
   it('describes the error body aligned with the gateway', () => {
@@ -139,9 +159,52 @@ describe('response schemas', () => {
       envKeys: ['PATH'],
       activeRunId: null,
       latestRunId: 'run-1',
+      additionalDirectories: ['/work/shared'],
     };
     expect(accepts('SessionView', view)).toBe(true);
     expect(accepts('SessionView', { ...view, env: { PATH: '/usr/bin' } })).toBe(false);
+  });
+
+  it('SessionView requires additionalDirectories', () => {
+    const view = {
+      id: 'sess-1',
+      cwd: '/work/a',
+      permissionMode: 'default',
+      modelAlias: 'fm',
+      bypassAllowed: false,
+      createdAt: 1_800_000_000_000,
+      envKeys: ['PATH'],
+      activeRunId: null,
+      latestRunId: null,
+    };
+    expect(accepts('SessionView', view)).toBe(false);
+    expect(accepts('SessionView', { ...view, additionalDirectories: [] })).toBe(true);
+    expect(accepts('SessionView', { ...view, additionalDirectories: ['/work/b', '/work/c'] })).toBe(true);
+    expect(accepts('SessionView', { ...view, additionalDirectories: [1] })).toBe(false);
+  });
+
+  it('TrustView, TrustResponse and PutTrustRequest accept valid bodies and reject extras, an empty path and an unknown decision', () => {
+    const exact = { path: '/work/a', decision: 'trusted' };
+    const inherited = { path: '/work/a/b', decision: 'untrusted', inheritedFrom: '/work/a' };
+    const unset = { path: '/work/c', decision: null };
+    for (const view of [exact, inherited, unset]) {
+      expect(accepts('TrustView', view)).toBe(true);
+      expect(accepts('TrustResponse', { trust: view })).toBe(true);
+    }
+    expect(accepts('TrustView', { ...exact, extra: 1 })).toBe(false);
+    expect(accepts('TrustView', { path: '/work/a', decision: 'maybe' })).toBe(false);
+    expect(accepts('TrustView', { path: '/work/a' })).toBe(false);
+    expect(accepts('TrustResponse', { trust: exact, extra: 1 })).toBe(false);
+    expect(accepts('TrustResponse', { trust: { ...exact, extra: 1 } })).toBe(false);
+    expect(accepts('TrustResponse', {})).toBe(false);
+
+    expect(accepts('PutTrustRequest', { path: '/work/a', decision: 'trusted' })).toBe(true);
+    expect(accepts('PutTrustRequest', { path: '/work/a', decision: 'untrusted' })).toBe(true);
+    expect(accepts('PutTrustRequest', { path: '', decision: 'trusted' })).toBe(false);
+    expect(accepts('PutTrustRequest', { path: '/work/a', decision: 'maybe' })).toBe(false);
+    expect(accepts('PutTrustRequest', { path: '/work/a', decision: null })).toBe(false);
+    expect(accepts('PutTrustRequest', { path: '/work/a', decision: 'trusted', extra: 1 })).toBe(false);
+    expect(accepts('PutTrustRequest', { path: '/work/a' })).toBe(false);
   });
 
   it('describes a RunView without lease fields', () => {

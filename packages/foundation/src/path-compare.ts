@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { isTransientErrno } from './transient-errno.ts';
 
 const MAX_SYMLINK_HOPS = 40;
 
@@ -153,31 +154,41 @@ export const canonicalPath = (input: string): string => {
 };
 
 
-export type CanonicalDirectoryResult = { ok: true; path: string } | { ok: false; reason: string };
+export type CanonicalDirectoryFailureCode = 'not_absolute' | 'unresolvable' | 'missing' | 'not_directory' | 'unreadable';
+
+export type CanonicalDirectoryResult =
+  | { ok: true; path: string }
+  | { ok: false; code: CanonicalDirectoryFailureCode; reason: string };
+
+const UNRESOLVABLE_ERRNO = new Set(['ENOTDIR', 'ELOOP', 'ENAMETOOLONG']);
 
 export const canonicalDirectory = (input: string): CanonicalDirectoryResult => {
-  if (!path.isAbsolute(input)) return { ok: false, reason: 'must be an absolute path' };
+  if (!path.isAbsolute(input)) return { ok: false, code: 'not_absolute', reason: 'must be an absolute path' };
   let canonical: string;
   try {
     canonical = canonicalPath(input);
   } catch (error) {
-    return { ok: false, reason: `cannot be resolved: ${(error as Error).message}` };
+    if (isTransientErrno(error)) throw error;
+    return { ok: false, code: 'unresolvable', reason: `cannot be resolved: ${(error as Error).message}` };
   }
   let stat: fs.Stats;
   try {
     stat = fs.statSync(canonical);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT') return { ok: false, reason: 'does not exist' };
-    if (code === 'EACCES') return { ok: false, reason: 'cannot be read' };
-    throw error;
+    if (isTransientErrno(error)) throw error;
+    if (code === 'ENOENT') return { ok: false, code: 'missing', reason: 'does not exist' };
+    if (code !== undefined && UNRESOLVABLE_ERRNO.has(code)) {
+      return { ok: false, code: 'unresolvable', reason: `cannot be resolved: ${(error as Error).message}` };
+    }
+    return { ok: false, code: 'unreadable', reason: 'cannot be read' };
   }
-  if (!stat.isDirectory()) return { ok: false, reason: 'is not a directory' };
+  if (!stat.isDirectory()) return { ok: false, code: 'not_directory', reason: 'is not a directory' };
   try {
     fs.accessSync(canonical, fs.constants.R_OK | fs.constants.X_OK);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EACCES') return { ok: false, reason: 'cannot be read' };
-    throw error;
+    if (isTransientErrno(error)) throw error;
+    return { ok: false, code: 'unreadable', reason: 'cannot be read' };
   }
   return { ok: true, path: canonical };
 };

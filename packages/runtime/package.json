@@ -11,7 +11,6 @@
     "@momonga/config": "*",
     "@momonga/context": "*",
     "@momonga/foundation": "*",
-    "@momonga/gateway": "*",
     "@momonga/mcp": "*",
     "@momonga/observability": "*",
     "@momonga/policy": "*",
@@ -23,5 +22,8 @@
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "hono": "4.13.13"
+  },
+  "devDependencies": {
+    "@momonga/gateway": "*"
   }
 }

@@ -157,6 +157,17 @@ describe('trust case variants', () => {
   });
 });
 
+describe('trust home containment with comparableContains', () => {
+  it.runIf(CASE_INSENSITIVE)('a decision on a case variant of home is not inherited', () => {
+    const { home, store } = makeTrustTree((canonical) => canonical.toUpperCase());
+    const child = mkdir(path.join(home, 'project'));
+    store.trust.set(home.toLowerCase(), 'trusted');
+    expect(store.trust.decisionFor(home)).toEqual({ decision: 'trusted' });
+    expect(store.trust.decisionFor(child.toUpperCase())).toEqual({ decision: null });
+    expect(store.trust.decisionFor(child)).toEqual({ decision: null });
+  });
+});
+
 describe('trust.set', () => {
   it('refuses to trust the filesystem root', () => {
     const { store } = makeTrustTree();

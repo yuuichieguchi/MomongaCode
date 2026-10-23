@@ -32,6 +32,8 @@ export interface LogFields {
   workerId?: string;
   traceId?: string;
   step?: string;
+  count?: number;
+  ids?: readonly string[];
   err?: Error;
 }
 
@@ -54,7 +56,7 @@ const LEVEL_RANK = { debug: 0, info: 1, warn: 2, error: 3 } as const satisfies R
 export const createJsonLogger = ({ service, clock, stream = process.stderr, level = 'info' }: JsonLoggerOptions): JsonLogger => {
   const emit = (entryLevel: LogLevel, msg: string, fields: LogFields = {}): void => {
     if (LEVEL_RANK[entryLevel] < LEVEL_RANK[level]) return;
-    const { runId, workerId, traceId, step, err } = fields;
+    const { runId, workerId, traceId, step, count, ids, err } = fields;
     const entry = {
       ts: new Date(clock.now()).toISOString(),
       level: entryLevel,
@@ -65,6 +67,8 @@ export const createJsonLogger = ({ service, clock, stream = process.stderr, leve
       ...(workerId === undefined ? {} : { workerId }),
       ...(traceId === undefined ? {} : { traceId }),
       ...(step === undefined ? {} : { step }),
+      ...(count === undefined ? {} : { count }),
+      ...(ids === undefined ? {} : { ids }),
       ...(err === undefined ? {} : { err: { name: err.name, message: err.message, stack: err.stack } }),
     };
     stream.write(`${JSON.stringify(entry)}\n`);

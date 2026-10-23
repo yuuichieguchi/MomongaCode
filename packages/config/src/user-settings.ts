@@ -1,5 +1,6 @@
 import fs from 'node:fs';
-import { ConfigError, toConfigError } from './config-error.ts';
+import { isTransientErrno } from '@momonga/foundation';
+import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import { layoutOf } from './layout.ts';
 import { readUserLayer } from './layers.ts';
 import type { UserLayer } from './layers.ts';
@@ -20,6 +21,7 @@ const readUserSettingsSync = (home: string): UserSettingsLoad => {
     const settings = mergeLayers(layers, user.models, home, home, warnings);
     return { settings, user, warnings };
   } catch (error) {
+    rethrowIfTransient(error);
     throw toConfigError(error);
   }
 };
@@ -72,6 +74,7 @@ export const createUserSettingsCache = ({ home, onWarning }: UserSettingsCacheOp
       key = changeKeyOf(file);
     } catch (error) {
       seenKey = undefined;
+      rethrowIfTransient(error);
       failWith(toConfigError(error), undefined);
       return latest as UserSettingsSnapshot;
     }
@@ -84,6 +87,8 @@ export const createUserSettingsCache = ({ home, onWarning }: UserSettingsCacheOp
       warnedFailure = undefined;
       latest = { settings: loaded.settings, user: loaded.user };
     } catch (error) {
+      if (isTransientErrno(error)) seenKey = undefined;
+      rethrowIfTransient(error);
       failWith(toConfigError(error), key);
     }
     return latest as UserSettingsSnapshot;
@@ -91,7 +96,13 @@ export const createUserSettingsCache = ({ home, onWarning }: UserSettingsCacheOp
 
   return {
     get: () => {
-      const snapshot = refresh();
+      let snapshot: UserSettingsSnapshot;
+      try {
+        snapshot = refresh();
+      } catch (error) {
+        if (isTransientErrno(error) && lastGood !== undefined) return lastGood;
+        throw error;
+      }
       if (!('error' in snapshot)) return snapshot.settings;
       if (lastGood === undefined) throw snapshot.error;
       return lastGood;

@@ -46,7 +46,7 @@ const MATRIX: Record<string, PackageRule> = {
   mcp: rule(['protocol', 'foundation', 'config', 'tools']),
   context: rule(['protocol', 'foundation']),
   skills: rule(['protocol', 'foundation', 'config', 'tools']),
-  runtime: rule(ALL_PACKAGES.filter((name) => name !== 'runtime' && name !== 'cli' && name !== 'testkit')),
+  runtime: rule(['protocol', 'foundation', 'config', 'store', 'observability', 'policy', 'sandbox', 'tools', 'mcp', 'context', 'skills']),
   cli: rule(['protocol', 'foundation', 'config'], ['runtime', 'gateway']),
   testkit: rule(['protocol', 'foundation']),
 };
@@ -202,6 +202,11 @@ describe('architecture: checker self-test', () => {
   it('flags type-only and re-export violations', () => {
     expect(checkFile('foundation', fileIn('foundation'), "import type { T } from '@momonga/protocol';")).toHaveLength(1);
     expect(checkFile('policy', fileIn('policy'), "export * from '@momonga/tools';")).toHaveLength(1);
+  });
+
+  it('flags runtime importing gateway', () => {
+    expect(checkFile('runtime', fileIn('runtime'), "import { createGateway } from '@momonga/gateway';")).toHaveLength(1);
+    expect(checkManifest('runtime', { '@momonga/gateway': '*' })).toEqual(['runtime must not depend on @momonga/gateway']);
   });
 
   it('flags runtime importing cli', () => {

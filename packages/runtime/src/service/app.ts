@@ -1,16 +1,19 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { stripCredentialEnv } from '@momonga/config';
-import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import { ConfigError, stripCredentialEnv } from '@momonga/config';
+import { canonicalDirectory, canonicalJson, canonicalPath, comparableContains, comparablePath, isTransientErrno, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { RUN_STATUSES } from '@momonga/protocol';
 import type { PermissionMode, RunStatus } from '@momonga/protocol';
+import { sameRunRequest } from '@momonga/store';
 import type { Run, RuntimeStore } from '@momonga/store';
+import { GatewayRequestError } from '../gateway-client.ts';
+import type { SandboxKind } from '../process/sandbox-kind.ts';
 import {
   ApiError,
   conflict,
+  configError,
   errorResponse,
   idempotencyKeyReused,
   internalErrorResponse,
@@ -18,12 +21,14 @@ import {
   methodNotAllowed,
   modeNotAllowed,
   notFound,
+  serviceUnavailable,
 } from './errors.ts';
 import { STREAM_HEADERS, eventStreamResponse } from './event-stream.ts';
 import type { EventSource } from './event-stream.ts';
 import type { RunNotifier } from './notifier.ts';
 import { JSON_MEDIA_TYPES, PATCH_MEDIA_TYPES, parseCursor, parseIdempotencyKey, readJson, validateBody } from './request.ts';
 import type { CreateRunBody, CreateSessionBody, PatchSessionBody, ResolveApprovalBody } from './request.ts';
+import { registerTrustRoutes } from './trust.ts';
 import type { ServiceTimers } from './timers.ts';
 import { isTerminalStatus, toRunView, toSessionView } from './views.ts';
 
@@ -31,15 +36,22 @@ export type RunLimitDefaults = { maxSteps: number; maxTotalTokens: number; appro
 
 export type RunServiceDefaults = { modelAlias: string; runTimeoutMs: number; limits: RunLimitDefaults };
 
-export type SessionSettings = { defaultMode?: PermissionMode; defaultModeOrigin?: 'user' | 'project' | 'local' };
+export type SessionCreateSettings = {
+  defaultMode?: PermissionMode;
+  defaultModeOrigin?: 'user' | 'project' | 'local';
+  additionalDirectories: readonly string[];
+  credentialEnvNames: readonly string[];
+};
 
 export type RunAppDeps = {
   store: RuntimeStore;
   clock: Clock;
   version: string;
-  credentialEnvNames: () => readonly string[];
   modelAliases: () => Promise<readonly string[]>;
-  settingsFor: (cwd: string) => Promise<SessionSettings>;
+  sessionCreateSettings: (cwd: string) => Promise<SessionCreateSettings>;
+  isDraining(): boolean;
+  health: { pid: number; startedAt: string; sandbox: SandboxKind };
+  protectedRootAreas: readonly string[];
   defaults: RunServiceDefaults;
   notifier: RunNotifier;
   timers: ServiceTimers;
@@ -50,40 +62,22 @@ export type RunAppDeps = {
   onError: (error: unknown) => void;
 };
 
-type Handler = (context: Context) => Response | Promise<Response>;
+export type Handler = (context: Context) => Response | Promise<Response>;
+
+export type RouteRegistrar = (routePath: string, handlers: Readonly<Record<string, Handler>>) => void;
 
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
 
-const MISSING_PATH_CODES: ReadonlySet<string> = new Set(['ENOENT', 'ENOTDIR']);
-const UNREADABLE_PATH_CODES: ReadonlySet<string> = new Set(['EACCES', 'ELOOP', 'ENAMETOOLONG']);
-
-const pathFailure = (error: unknown, target: string): ApiError | undefined => {
-  const code = (error as NodeJS.ErrnoException).code ?? '';
-  if (UNREADABLE_PATH_CODES.has(code)) return invalidRequest(`cwd ${target} cannot be read: ${code}`, 'cwd');
-  return undefined;
-};
-
-const realpathOrUndefined = async (target: string): Promise<string | undefined> => {
-  try {
-    return await fs.promises.realpath(target);
-  } catch (error) {
-    if (MISSING_PATH_CODES.has((error as NodeJS.ErrnoException).code ?? '')) return undefined;
-    throw pathFailure(error, target) ?? error;
-  }
-};
-
-const isDirectory = async (target: string): Promise<boolean> => {
-  try {
-    return (await fs.promises.stat(target)).isDirectory();
-  } catch (error) {
-    throw pathFailure(error, target) ?? error;
-  }
-};
-
 const requireAbsolute = (value: string, label: string): void => {
   if (!path.isAbsolute(value)) throw invalidRequest(`${label} must be an absolute path`, label);
 };
+
+const protectedAreaOf = (areas: readonly string[], target: string): string | undefined =>
+  areas.find((area) => comparableContains(area, target));
+
+const isGatewayUnavailable = (error: unknown): boolean =>
+  error instanceof GatewayRequestError && (error.type === 'transport' || error.status >= 500);
 
 const checkModeAllowed = (mode: PermissionMode, bypassAllowed: boolean): void => {
   if (mode === 'auto') throw conflict('mode_unavailable', 'the auto permission mode is not available yet');
@@ -117,7 +111,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     return run;
   };
 
-  const route = (routePath: string, handlers: Readonly<Record<string, Handler>>): void => {
+  const route: RouteRegistrar = (routePath: string, handlers: Readonly<Record<string, Handler>>): void => {
     app.all(routePath, (context) => {
       const method = context.req.method;
       const handler = method === 'HEAD' ? handlers['GET'] : handlers[method];
@@ -126,32 +120,75 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     });
   };
 
-  const health: Handler = () => json({ status: 'ok', version: deps.version, apiVersion: 1 });
+  const health: Handler = () =>
+  json({
+    status: 'ok',
+    version: deps.version,
+    apiVersion: 1,
+    pid: deps.health.pid,
+    startedAt: deps.health.startedAt,
+    state: deps.isDraining() ? 'draining' : 'running',
+    sandbox: deps.health.sandbox,
+  });
+
+  const drainingError = () => serviceUnavailable('draining', 'the service is draining and accepts no new work');
 
   const createSession: Handler = async (context) => {
+    if (deps.isDraining()) throw drainingError();
     const body = validateBody<CreateSessionBody>('CreateSessionRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
-    requireAbsolute(body.cwd, 'cwd');
-    const cwd = await realpathOrUndefined(body.cwd);
-    if (cwd === undefined) throw invalidRequest(`cwd ${body.cwd} does not exist`, 'cwd');
-    if (!(await isDirectory(cwd))) throw invalidRequest(`cwd ${body.cwd} is not a directory`, 'cwd');
+    const resolved = canonicalDirectory(body.cwd);
+    if (!resolved.ok) throw invalidRequest(`cwd ${body.cwd} ${resolved.reason}`, 'cwd');
+    const cwd = resolved.path;
+    const cwdArea = protectedAreaOf(deps.protectedRootAreas, cwd);
+    if (cwdArea !== undefined) throw invalidRequest(`cwd ${body.cwd} is inside ${cwdArea} and cannot be a session root`, 'cwd');
     const modelAlias = body.modelAlias ?? deps.defaults.modelAlias;
-    if (!(await deps.modelAliases()).includes(modelAlias)) throw invalidRequest(`unknown model alias ${modelAlias}`, 'modelAlias');
-    const settings = await deps.settingsFor(cwd);
+    let aliases: readonly string[];
+    try {
+      aliases = await deps.modelAliases();
+    } catch (error) {
+      if (isGatewayUnavailable(error)) throw serviceUnavailable('gateway_unavailable', 'the model gateway is unavailable');
+      throw error;
+    }
+    if (!aliases.includes(modelAlias)) throw invalidRequest(`unknown model alias ${modelAlias}`, 'modelAlias');
+    let settings: SessionCreateSettings;
+    try {
+      settings = await deps.sessionCreateSettings(cwd);
+    } catch (error) {
+      if (error instanceof ConfigError) throw configError(error.message);
+      throw error;
+    }
+    const additionalDirectories: string[] = [];
+    const seen = new Set<string>([comparablePath(cwd)]);
+    for (const entry of settings.additionalDirectories) {
+      const area = protectedAreaOf(deps.protectedRootAreas, entry);
+      if (area !== undefined) {
+        throw configError(`additionalDirectories entry ${entry} is inside ${area} and cannot be a session root`, 'additionalDirectories');
+      }
+      const key = comparablePath(entry);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      additionalDirectories.push(entry);
+    }
     const permissionMode = body.permissionMode ?? settings.defaultMode ?? 'default';
     const bypassAllowed =
       body.bypassAllowed === true || (settings.defaultMode === 'bypassPermissions' && settings.defaultModeOrigin === 'user');
     checkModeAllowed(permissionMode, bypassAllowed);
-    const stripped = stripCredentialEnv(body.env, deps.credentialEnvNames());
-    const session = store.createSession({ cwd, env: stripped.env, permissionMode, modelAlias, bypassAllowed });
+    const stripped = stripCredentialEnv(body.env, settings.credentialEnvNames);
+    const session = store.createSession({ cwd, env: stripped.env, permissionMode, modelAlias, bypassAllowed, additionalDirectories });
     return json({ session: toSessionView(store, session), strippedEnvKeys: stripped.removed }, 201, { location: `/v1/sessions/${session.id}` });
   };
 
-  const listSessions: Handler = async (context) => {
+  const listSessions: Handler = (context) => {
     const requested = context.req.query('cwd');
     if (requested === undefined) return json({ sessions: store.listSessions().map((session) => toSessionView(store, session)) });
     requireAbsolute(requested, 'cwd');
-    const cwd = await realpathOrUndefined(requested);
-    if (cwd === undefined) return json({ sessions: [] });
+    let cwd: string;
+    try {
+      cwd = canonicalPath(requested);
+    } catch (error) {
+      if (isTransientErrno(error)) throw error;
+      throw invalidRequest(`cwd ${requested} cannot be resolved: ${(error as Error).message}`, 'cwd');
+    }
     return json({ sessions: store.listSessions({ cwd }).map((session) => toSessionView(store, session)) });
   };
 
@@ -177,9 +214,16 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const idempotencyKey = parseIdempotencyKey(context.req.header('idempotency-key') ?? null);
     const parsed = await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes);
     const body = validateBody<CreateRunBody>('CreateRunRequest', parsed);
+    const idempotency = idempotencyKey === undefined ? undefined : { idempotencyKey, requestDigest: sha256Hex(canonicalJson(parsed)) };
+    if (deps.isDraining()) {
+      const found = idempotency === undefined ? undefined : store.findRunByIdempotencyKey(session.id, idempotency.idempotencyKey);
+      if (idempotency === undefined || found === undefined) throw drainingError();
+      if (!sameRunRequest(found, idempotency.requestDigest)) throw idempotencyKeyReused();
+      return json({ run: toRunView(found.run) }, 202, { location: `/v1/runs/${found.run.id}`, 'idempotent-replayed': 'true' });
+    }
     const result = store.createRunAndEnqueue(session.id, {
       input: body.input,
-      ...(idempotencyKey === undefined ? {} : { idempotencyKey, requestDigest: sha256Hex(canonicalJson(parsed)) }),
+      ...idempotency,
       timeoutMs: body.timeoutMs ?? deps.defaults.runTimeoutMs,
       limits: { ...deps.defaults.limits, ...body.limits },
       pins: {},
@@ -291,6 +335,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   route('/v1/runs/:id/approvals', { GET: listRunApprovals });
   route('/v1/runs/:id/events', { GET: runEvents });
   route('/v1/approvals/:id', { GET: getApproval, POST: resolveApproval });
+  registerTrustRoutes(route, { store, maxBodyBytes: deps.maxBodyBytes });
 
   app.notFound(() => errorResponse(notFound('no such route')));
   app.onError((error) => {
