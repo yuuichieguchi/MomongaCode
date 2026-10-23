@@ -1,13 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalJson, comparableContains, comparablePath, computeBackoff, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, canonicalPath, comparableContains, comparablePath, computeBackoff, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { absoluteFrom, canonicalizePath, decide, suggestAllowRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject } from '@momonga/policy';
 import type { PermissionMode, ToolKind } from '@momonga/protocol';
 import { assertSessionTmpDirValid } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
-import { canonicalOrResolved, createReadAccessMatcher } from './read-access.ts';
+import { assertAbsoluteEntries, createReadAccessMatcher } from './read-access.ts';
 import type { ReadAccessMatcher } from './read-access.ts';
 import type { BlobPort, IdempotencyPort, ToolIdempotencyRecord } from './ports.ts';
 import type { ToolSet } from './registry.ts';
@@ -103,7 +103,7 @@ type RunPlan = {
   subject: PermissionSubject;
   key: string;
   batch: BatchInput;
-  access: ReadAccessMatcher;
+  access: BatchAccess;
   recovered?: ToolIdempotencyRecord;
   gateRan: boolean;
 };
@@ -137,16 +137,22 @@ const approvalGatedWritePaths = (batch: BatchInput): Set<string> => {
   return new Set(batch.protectedPaths.map(comparablePath).filter((entry) => !alwaysDenied.includes(entry)));
 };
 
-const writeDeniedPath = (subject: PermissionSubject, batch: BatchInput, cwd: string): string | undefined => {
-  if (subject.kind !== 'path' || subject.access !== 'write') return undefined;
+const createWriteGuard = (batch: BatchInput): ((subject: PermissionSubject, cwd: string) => string | undefined) => {
+  assertAbsoluteEntries('writeDenied', batch.sandboxPolicy.writeDenied);
+  assertAbsoluteEntries('writableRoots', batch.sandboxPolicy.writableRoots);
+  batch.sandboxPolicy.writableRoots.forEach(canonicalPath);
   const gated = approvalGatedWritePaths(batch);
-  const guards = batch.sandboxPolicy.writeDenied.filter((entry) => !gated.has(comparablePath(entry))).map(canonicalOrResolved);
-  if (guards.length === 0) return undefined;
-  const exempt = batch.tmpDir === undefined ? undefined : canonicalOrResolved(batch.tmpDir);
+  const guards = batch.sandboxPolicy.writeDenied.filter((entry) => !gated.has(comparablePath(entry))).map(canonicalPath);
+  const exempt = batch.tmpDir === undefined ? undefined : canonicalPath(batch.tmpDir);
   const blocksResolved = (resolved: string): boolean =>
     guards.some((guard) => comparableContains(guard, resolved)) && !(exempt !== undefined && comparableContains(exempt, resolved));
-  return subject.paths.find((target) => blocksResolved(canonicalOrResolved(absoluteFrom(target, cwd))) || blocksResolved(path.resolve(cwd, target)));
+  return (subject, cwd) => {
+    if (subject.kind !== 'path' || subject.access !== 'write' || guards.length === 0) return undefined;
+    return subject.paths.find((target) => blocksResolved(canonicalPath(absoluteFrom(target, cwd))) || blocksResolved(path.resolve(cwd, target)));
+  };
 };
+
+type BatchAccess = ReadAccessMatcher & { writeDeniedPath: (subject: PermissionSubject, cwd: string) => string | undefined };
 
 const rootsOf = (batch: BatchInput): readonly string[] => (batch.tmpDir === undefined ? batch.roots : [...batch.roots, batch.tmpDir]);
 
@@ -271,11 +277,11 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
     };
   };
 
-  const permissionGate = (call: ToolCall, tool: AnyTool, input: unknown, subject: PermissionSubject, batch: BatchInput, access: ReadAccessMatcher): CallOutcome | undefined => {
+  const permissionGate = (call: ToolCall, tool: AnyTool, input: unknown, subject: PermissionSubject, batch: BatchInput, access: BatchAccess): CallOutcome | undefined => {
     const cwd = batch.session.cwd;
     const blockedPath = readDeniedPath(subject, access, cwd);
     if (blockedPath !== undefined) return failedOutcome(call.callId, `Permission denied: ${blockedPath} is blocked by the sandbox policy`);
-    const writeBlockedPath = writeDeniedPath(subject, batch, cwd);
+    const writeBlockedPath = access.writeDeniedPath(subject, cwd);
     if (writeBlockedPath !== undefined) return failedOutcome(call.callId, `Permission denied: ${writeBlockedPath} is write-protected by the sandbox policy`);
 
     const policyTool = { name: tool.name, kind: tool.kind, sideEffect: tool.sideEffect };
@@ -321,7 +327,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
     return undefined;
   };
 
-  const admit = (call: ToolCall, batch: BatchInput, access: ReadAccessMatcher): Admission => {
+  const admit = (call: ToolCall, batch: BatchInput, access: BatchAccess): Admission => {
     const outcome = (value: CallOutcome): Admission => ({ kind: 'outcome', outcome: value });
     if (batch.signal.aborted) return outcome(failedOutcome(call.callId, `${call.name} was cancelled`));
     const tool = batch.toolSet.get(call.name);
@@ -580,7 +586,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
   };
 
   const runBatch = async (batch: BatchInput): Promise<CallOutcome[]> => {
-    const access = createReadAccessMatcher(batch.sandboxPolicy);
+    const access: BatchAccess = { ...createReadAccessMatcher(batch.sandboxPolicy), writeDeniedPath: createWriteGuard(batch) };
     if (batch.tmpDir !== undefined) assertSessionTmpDirValid(batch.sandboxPolicy, batch.tmpDir);
     const { calls } = batch;
     const outcomes: Array<CallOutcome | undefined> = new Array<CallOutcome | undefined>(calls.length).fill(undefined);
