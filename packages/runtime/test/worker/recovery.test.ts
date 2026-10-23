@@ -116,17 +116,17 @@ describe('worker recovery of pending calls', () => {
       { optionId: 'opt-ao', name: 'Allow once', kind: 'allow_once' as const },
       { optionId: 'opt-ro', name: 'Reject once', kind: 'reject_once' as const },
     ];
-    const created = env.store.approvals.create({ runId: run.id, callId: 'call_w_1', options, expiresAt: START_MS + 1_800_000 });
-    if (created.kind !== 'ok') throw new Error('expected an approval');
-    env.seed(
+    const seeder = env.seed(
       run.id,
       [
         responded(1, [functionCallItem({ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'x' } })]),
         { type: 'tool.call', callId: 'call_w_1', providerCallId: 'call_w_1', name: 'Write', kind: 'edit', title: `Write ${target}`, rawInput: { file_path: target, content: 'x' } },
-        { type: 'tool.permission.requested', approvalId: created.approval.id, callId: 'call_w_1', options, subjectDigest: 'a'.repeat(64) },
       ],
-      'crash',
+      'hold',
     );
+    const created = env.store.requestApproval(seeder, { callId: 'call_w_1', options, expiresAt: START_MS + 1_800_000, event: { subjectDigest: 'a'.repeat(64) } });
+    if (created.kind !== 'ok') throw new Error('expected an approval');
+    env.clock.advance(LEASE_MS + 1);
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 

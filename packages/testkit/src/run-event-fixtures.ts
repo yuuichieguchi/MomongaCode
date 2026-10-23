@@ -132,7 +132,7 @@ export const approvalWaitResumeRun: RecordedRun = {
     { type: 'run.started', attempt: 2, now: 1_700_000_000_100, pins: { model: 'fm' } },
     { type: 'tool.started', callId: 'c1', idemKey: 'k1' },
     { type: 'tool.completed', callId: 'c1', status: 'completed', output: '' },
-    { type: 'mode.changed', mode: 'acceptEdits' },
+    { type: 'plan.updated', entries: [{ content: 'delete tmp', priority: 'medium', status: 'completed' }] },
     { type: 'model.requested', step: 2, attempt: 1, digest: 'd2', body: { input: 'delete tmp + done' } },
     { type: 'model.responded', step: 2, attempt: 1, response: { status: 'completed', output: [assistantText('m2', 'deleted')], usage: usage(25, 2) } },
     { type: 'run.status', from: 'RUNNING', to: 'COMPLETED' },

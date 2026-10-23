@@ -68,7 +68,7 @@ describe('store.requestApproval', () => {
     const { runId, claim } = claimWithCall(store);
     const first = store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, expiresAt: START_MS + 60_000, event: { subjectDigest: DIGEST } });
     if (first.kind !== 'ok') throw new Error('expected the first approval');
-    expect(store.approvals.resolve(first.approval.id, { optionId: 'allow_once' }).kind).toBe('ok');
+    expect(store.resolveApproval(first.approval.id, 'allow_once').kind).toBe('ok');
 
     const second = store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, expiresAt: START_MS + 60_000, event: { subjectDigest: 'b'.repeat(64) } });
 

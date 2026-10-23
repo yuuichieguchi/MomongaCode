@@ -71,12 +71,12 @@ describe('run event payloads', () => {
       | 'tool.call'
       | 'tool.permission.requested'
       | 'tool.permission.resolved'
+      | 'tool.permission.cancelled'
       | 'tool.started'
       | 'tool.updated'
       | 'tool.completed'
       | 'tool.reconciled'
       | 'plan.updated'
-      | 'mode.changed'
       | 'usage.updated'
       | 'context.compacted'
       | 'context.truncated'
@@ -168,6 +168,11 @@ describe('run event payloads', () => {
       optionId: string;
       rulePersisted?: boolean;
     }>();
+    expectTypeOf<Payload<'tool.permission.cancelled'>>().toEqualTypeOf<{
+      type: 'tool.permission.cancelled';
+      approvalId: string;
+      reason: 'expired' | 'withdrawn' | 'superseded';
+    }>();
     expectTypeOf<Payload<'tool.started'>>().toEqualTypeOf<{ type: 'tool.started'; callId: string; idemKey: string }>();
     expectTypeOf<Payload<'tool.updated'>>().toEqualTypeOf<{ type: 'tool.updated'; callId: string; content: unknown[] }>();
     expectTypeOf<Payload<'tool.completed'>>().toEqualTypeOf<{
@@ -187,12 +192,11 @@ describe('run event payloads', () => {
     }>();
   });
 
-  it('defines the session and context payloads', () => {
+  it('defines the plan, usage and context payloads', () => {
     expectTypeOf<Payload<'plan.updated'>>().toEqualTypeOf<{
       type: 'plan.updated';
       entries: { content: string; priority: 'high' | 'medium' | 'low'; status: 'pending' | 'in_progress' | 'completed' }[];
     }>();
-    expectTypeOf<Payload<'mode.changed'>>().toEqualTypeOf<{ type: 'mode.changed'; mode: PermissionMode }>();
     expectTypeOf<Payload<'usage.updated'>>().toEqualTypeOf<{
       type: 'usage.updated';
       inputTokens: number;

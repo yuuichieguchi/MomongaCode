@@ -2,7 +2,7 @@ import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { StreamEvent } from '@momonga/protocol';
 import { parseDeadlineHeader } from './deadline.ts';
 import { gatewayClosedError, invalidRequest } from './errors.ts';
-import { createIdempotencyRegistry } from './idempotency.ts';
+import { createIdempotencyRegistry, normalizeIdempotencyKey } from './idempotency.ts';
 import { normalizeInput } from './input.ts';
 import { executeResponse } from './respond.ts';
 import type { ResponseJob } from './respond.ts';
@@ -59,7 +59,7 @@ export const createResponsesService = (services: Services, validator: RequestVal
       services.router.targetsOf(body.model);
       const stream = body.stream === true;
 
-      const key = headers.idempotencyKey;
+      const key = headers.idempotencyKey === undefined ? undefined : normalizeIdempotencyKey(headers.idempotencyKey);
       if (key !== undefined && key === '') throw invalidRequest('invalid_idempotency_key', 'the idempotency-key header must not be empty');
       const digest = key === undefined ? undefined : sha256Hex(canonicalJson(rawBody));
       if (key !== undefined && digest !== undefined) {

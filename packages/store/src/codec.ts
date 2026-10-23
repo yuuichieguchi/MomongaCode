@@ -1,5 +1,5 @@
 import { PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
-import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
+import type { RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload } from '@momonga/protocol';
 import { corrupt, expectOneOf, expectRecord, expectStringRecord, isRecord, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
 import type { Run, RunError, Session } from './types.ts';
@@ -15,6 +15,7 @@ export const decodeSession = (row: Row): Session => {
     env: expectStringRecord('sessions', identity, 'env_json', reader.json('env_json')),
     permissionMode: expectOneOf('sessions', identity, 'permission_mode', PERMISSION_MODES, reader.string('permission_mode')),
     modelAlias: reader.string('model_alias'),
+    bypassAllowed: reader.flag('bypass_allowed'),
     createdAt: reader.number('created_at'),
   };
 };
@@ -79,12 +80,12 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   'tool.call': true,
   'tool.permission.requested': true,
   'tool.permission.resolved': true,
+  'tool.permission.cancelled': true,
   'tool.started': true,
   'tool.updated': true,
   'tool.completed': true,
   'tool.reconciled': true,
   'plan.updated': true,
-  'mode.changed': true,
   'usage.updated': true,
   'context.compacted': true,
   'context.truncated': true,
@@ -93,13 +94,11 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   notice: true,
 };
 
-export const decodeEvent = (row: Row): RunEvent => {
-  const identity = identityOf(row);
+const SESSION_EVENT_TYPES: Record<SessionEventPayload['type'], true> = { 'mode.changed': true };
+
+const decodeRunEvent = (row: Row, identity: string, type: string, payload: Record<string, unknown>): RunEvent => {
   const reader = readerFor('events', identity, row);
-  const type = reader.string('type');
   if (!Object.hasOwn(EVENT_TYPES, type)) throw corrupt('events', identity, `column type has unknown event type "${type}"`);
-  const payload = expectRecord('events', identity, 'payload_json', reader.json('payload_json'));
-  if (payload['type'] !== type) throw corrupt('events', identity, `payload_json type does not match column type "${type}"`);
   const envelope = {
     id: reader.number('id'),
     runId: reader.string('run_id'),
@@ -111,6 +110,33 @@ export const decodeEvent = (row: Row): RunEvent => {
   };
   return { ...payload, ...envelope } as RunEvent;
 };
+
+const decodeSessionEvent = (row: Row, identity: string, type: string, payload: Record<string, unknown>): SessionEvent => {
+  const reader = readerFor('events', identity, row);
+  if (!Object.hasOwn(SESSION_EVENT_TYPES, type)) {
+    throw corrupt('events', identity, `column run_id is NULL but type "${type}" is not a session event type`);
+  }
+  const envelope = { id: reader.number('id'), sessionId: reader.string('session_id'), createdAt: reader.number('created_at') };
+  const mode = payload['mode'];
+  if (typeof mode !== 'string') throw corrupt('events', identity, 'payload_json mode must be a string');
+  return { type: 'mode.changed', mode: expectOneOf('events', identity, 'payload_json', PERMISSION_MODES, mode), ...envelope };
+};
+
+export const decodeEvent = (row: Row): RunEvent | SessionEvent => {
+  const identity = identityOf(row);
+  const reader = readerFor('events', identity, row);
+  const type = reader.string('type');
+  const payload = expectRecord('events', identity, 'payload_json', reader.json('payload_json'));
+  if (payload['type'] !== type) throw corrupt('events', identity, `payload_json type does not match column type "${type}"`);
+  return reader.nullableString('run_id') === null ? decodeSessionEvent(row, identity, type, payload) : decodeRunEvent(row, identity, type, payload);
+};
+
+export const decodeRunEvents = (rows: readonly Row[]): RunEvent[] =>
+  rows.map((row) => {
+    const event = decodeEvent(row);
+    if (!('runId' in event)) throw corrupt('events', identityOf(row), 'a run event query returned a session event');
+    return event;
+  });
 
 const PERMISSION_KINDS = ['allow_once', 'allow_always', 'reject_once', 'reject_always'] as const;
 const PENDING_STATUSES = ['requested', 'awaiting_approval', 'started', 'completed', 'reconciled'] as const;

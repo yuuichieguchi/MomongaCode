@@ -206,6 +206,14 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
         };
       });
     }
+    case 'tool.permission.cancelled': {
+      const entry = Object.entries(state.pendingCalls).find(([, call]) => call.approvalId === event.approvalId);
+      if (entry === undefined) throw new Error(`run ${state.runId}: ${event.type} refers to unknown approval ${event.approvalId}`);
+      return withCall(state, entry[0], event.type, (call) => {
+        const { approvalId: _approval, options: _options, subjectDigest: _digest, suggestedRule: _rule, ...rest } = call;
+        return { ...rest, status: 'requested' };
+      });
+    }
     case 'tool.started':
       return withCall(state, event.callId, event.type, (call) => ({ ...call, status: 'started', idemKey: event.idemKey }));
     case 'tool.completed':
@@ -222,7 +230,6 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
     case 'agent.thought.delta':
     case 'tool.updated':
     case 'plan.updated':
-    case 'mode.changed':
     case 'usage.updated':
       return state;
     case 'instructions.loaded':

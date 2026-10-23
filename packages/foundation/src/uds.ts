@@ -212,7 +212,15 @@ export const listenUnix = async (server: net.Server, socketPath: string): Promis
     );
   }
   const directory = path.dirname(socketPath);
-  const directoryMode = (await fs.promises.stat(directory)).mode & 0o777;
+  const directoryStat = await fs.promises.lstat(directory);
+  if (directoryStat.isSymbolicLink()) throw new Error(`Socket directory ${directory} is a symlink; refusing to listen in it`);
+  if (!directoryStat.isDirectory()) throw new Error(`Socket directory ${directory} is not a directory`);
+  const uid = process.getuid?.();
+  if (uid === undefined) throw new Error('process.getuid is required to verify the socket directory owner');
+  if (directoryStat.uid !== uid) {
+    throw new Error(`Socket directory ${directory} is owned by uid ${directoryStat.uid}, but the current user is uid ${uid}; the directory must be owned by the current user`);
+  }
+  const directoryMode = directoryStat.mode & 0o777;
   if (directoryMode !== 0o700) {
     throw new Error(`Socket directory ${directory} must have mode 0700, found ${directoryMode.toString(8)}`);
   }

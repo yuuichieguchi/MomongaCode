@@ -198,12 +198,20 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   };
 
   const enqueue = (input = 'Say hello', extra: { limits?: Record<string, unknown>; deadlineAt?: number } = {}): Run =>
-    store.createRunAndEnqueue(session.id, {
-      input,
-      deadlineAt: extra.deadlineAt ?? DEADLINE_MS,
-      limits: extra.limits ?? {},
-      pins: {},
-    });
+    createdRun(
+      store.createRunAndEnqueue(session.id, {
+        input,
+        timeoutMs: (extra.deadlineAt ?? DEADLINE_MS) - clock.now(),
+        limits: extra.limits ?? {},
+        pins: {},
+      }),
+    );
+
+  const cancel = (runId: string): Run => {
+    const result = store.requestCancel(runId);
+    if (result.kind !== 'ok') throw new Error(`run ${runId} could not be cancelled: ${result.kind}`);
+    return result.run;
+  };
 
   const events = (runId: string): RunEvent[] => store.readRunEvents(runId, 0, 100_000);
 
@@ -222,7 +230,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     return found;
   };
 
-  const seed = (runId: string, payloads: readonly RunEventPayload[], end: 'release' | 'crash'): Claim => {
+  const seed = (runId: string, payloads: readonly RunEventPayload[], end: 'release' | 'crash' | 'hold'): Claim => {
     const claim = store.claim('seeder');
     if (claim === null || claim.runId !== runId) throw new Error(`seeder could not claim run ${runId}`);
     const appended = store.append(claim, payloads);
@@ -230,7 +238,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     if (end === 'release') {
       const released = store.release(claim, 'QUEUED');
       if (released.kind !== 'ok') throw new Error(`seeder could not release run ${runId}`);
-    } else {
+    } else if (end === 'crash') {
       clock.advance(LEASE_MS + 1);
     }
     return claim;
@@ -252,18 +260,14 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     raw().prepare('UPDATE sessions SET model_alias = ? WHERE id = ?').run(alias, session.id);
   };
 
-  const resolveApproval = (runId: string, kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always'): void => {
-    const requested = ofType(runId, 'tool.permission.requested').at(-1);
-    if (requested === undefined) throw new Error(`run ${runId} has no permission request`);
+  const resolveApproval = (runId: string, kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always', approvalId?: string): void => {
+    const requests = ofType(runId, 'tool.permission.requested');
+    const requested = approvalId === undefined ? requests.at(-1) : requests.find((candidate) => candidate.approvalId === approvalId);
+    if (requested === undefined) throw new Error(`run ${runId} has no permission request ${approvalId ?? ''}`);
     const option = requested.options.find((candidate) => candidate.kind === kind);
     if (option === undefined) throw new Error(`permission request ${requested.approvalId} offers no ${kind} option`);
-    const resolved = store.approvals.resolve(requested.approvalId, { optionId: option.optionId });
-    if (resolved.kind !== 'ok') throw new Error(`approval ${requested.approvalId} could not be resolved`);
-    const current = run(runId);
-    const result = store.appendAsService(runId, current.version, 'QUEUED', [
-      { type: 'tool.permission.resolved', approvalId: requested.approvalId, optionId: option.optionId },
-    ]);
-    if (result.kind !== 'ok') throw new Error(`run ${runId} could not be requeued: ${result.reason ?? 'conflict'}`);
+    const resolved = store.resolveApproval(requested.approvalId, option.optionId);
+    if (resolved.kind !== 'ok') throw new Error(`approval ${requested.approvalId} could not be resolved: ${resolved.kind}`);
   };
 
   return {
@@ -284,6 +288,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     worker,
     runOnce,
     enqueue,
+    cancel,
     events,
     ofType,
     fold,
@@ -294,6 +299,11 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     resolveApproval,
     snapshotTools,
   };
+};
+
+export const createdRun = (result: ReturnType<RuntimeStore['createRunAndEnqueue']>): Run => {
+  if (result.kind !== 'created' && result.kind !== 'existing') throw new Error(`expected a run, got ${result.kind}`);
+  return result.run;
 };
 
 export const modelKey = (runId: string, step: number, attempt = 1): string => sha256Hex(canonicalJson([runId, step, attempt]));

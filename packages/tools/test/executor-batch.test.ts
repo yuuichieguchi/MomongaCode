@@ -119,7 +119,7 @@ describe('batch scheduling', () => {
     expect(outcomes.map((outcome) => outcome.callId)).toEqual(['r1', 'r2', 'w3', 'r4']);
   });
 
-  it('stops at the first approval request and defers later calls without validating them', async () => {
+  it('stops at the first approval request and defers later calls that do not ask, including unknown and invalid ones', async () => {
     const harness = makeHarness();
     const log: string[] = [];
     const bash = makeTool('Bash', {

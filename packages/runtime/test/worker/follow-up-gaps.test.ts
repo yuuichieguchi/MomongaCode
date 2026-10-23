@@ -40,7 +40,7 @@ describe('cancel recovery of an interrupted call', () => {
       'crash',
     );
     env.store.idempotency.begin(key, { expiresAt: START_MS + 86_400_000, meta: { tool: 'Touch' } });
-    expect(env.store.requestCancel(run.id).status).toBe('CANCELLING');
+    expect(env.cancel(run.id).status).toBe('CANCELLING');
 
     await env.runOnce(env.worker('worker-1', { toolList: () => [...env.toolbox.tools(), touchTool(runs)] }));
 

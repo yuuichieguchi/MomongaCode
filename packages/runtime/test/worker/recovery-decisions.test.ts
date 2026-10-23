@@ -133,7 +133,7 @@ describe('worker cancel recovery past the run deadline', () => {
       'crash',
     );
     env.store.idempotency.begin(key, { expiresAt: START_MS + 86_400_000, meta: { tool: 'Mark' } });
-    expect(env.store.requestCancel(run.id).status).toBe('CANCELLING');
+    expect(env.cancel(run.id).status).toBe('CANCELLING');
 
     await env.runOnce(env.worker());
 

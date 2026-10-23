@@ -135,7 +135,63 @@ CREATE INDEX approvals_by_call ON approvals (run_id, call_id, created_at);
 CREATE UNIQUE INDEX approvals_one_pending_per_call ON approvals (run_id, call_id) WHERE status = 'pending';
 `;
 
+const SESSION_SCOPED_EVENTS_AND_APPROVAL_LIFECYCLE = `
+CREATE TABLE events_session_scoped (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id TEXT REFERENCES runs (id),
+  session_id TEXT NOT NULL REFERENCES sessions (id),
+  seq INTEGER,
+  step INTEGER,
+  lease_token INTEGER,
+  created_at INTEGER NOT NULL,
+  type TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  UNIQUE (run_id, seq),
+  CHECK ((run_id IS NULL) = (seq IS NULL) AND (seq IS NULL) = (step IS NULL) AND (step IS NULL) = (lease_token IS NULL))
+);
+INSERT INTO events_session_scoped (id, run_id, session_id, seq, step, lease_token, created_at, type, payload_json)
+  SELECT id, run_id, session_id, seq, step, lease_token, created_at, type, payload_json FROM events;
+DROP TABLE events;
+ALTER TABLE events_session_scoped RENAME TO events;
+CREATE INDEX events_by_session ON events (session_id, id);
+CREATE TRIGGER events_reject_update BEFORE UPDATE ON events BEGIN
+  SELECT RAISE(ABORT, 'events are append-only: UPDATE is not allowed');
+END;
+CREATE TRIGGER events_reject_delete BEFORE DELETE ON events BEGIN
+  SELECT RAISE(ABORT, 'events are append-only: DELETE is not allowed');
+END;
+
+CREATE TABLE approvals_lifecycle (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES runs (id),
+  call_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'resolved', 'superseded', 'expired', 'withdrawn')),
+  options_json TEXT NOT NULL,
+  option_id TEXT,
+  expires_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  resolved_at INTEGER,
+  subject_digest TEXT
+);
+INSERT INTO approvals_lifecycle (id, run_id, call_id, status, options_json, option_id, expires_at, created_at, resolved_at, subject_digest)
+  SELECT id, run_id, call_id, status, options_json, option_id, expires_at, created_at, resolved_at, subject_digest FROM approvals;
+DROP TABLE approvals;
+ALTER TABLE approvals_lifecycle RENAME TO approvals;
+CREATE INDEX approvals_by_expiry ON approvals (status, expires_at);
+CREATE INDEX approvals_by_call ON approvals (run_id, call_id, created_at);
+CREATE UNIQUE INDEX approvals_one_pending_per_call ON approvals (run_id, call_id) WHERE status = 'pending';
+
+ALTER TABLE runs ADD COLUMN request_digest TEXT;
+ALTER TABLE runs ADD COLUMN previous_run_id TEXT REFERENCES runs (id);
+ALTER TABLE sessions ADD COLUMN bypass_allowed INTEGER NOT NULL DEFAULT 0 CHECK (bypass_allowed IN (0, 1));
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
+  {
+    version: 3,
+    name: 'allow session-scoped events, add the expired and withdrawn approval statuses, record the request digest and previous run, and mark sessions that may use bypass',
+    sql: SESSION_SCOPED_EVENTS_AND_APPROVAL_LIFECYCLE,
+  },
 ];

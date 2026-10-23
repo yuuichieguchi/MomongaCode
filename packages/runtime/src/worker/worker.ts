@@ -9,7 +9,9 @@ export const createWorker = (options: WorkerOptions): Worker => {
   const idlePollMs = options.idlePollMs ?? DEFAULT_IDLE_POLL_MS;
   let stopping = false;
   let loop: Promise<void> | undefined;
-  let wake: (() => void) | undefined;
+  let interruptSleep: (() => void) | undefined;
+  let wakePending = false;
+  let unsubscribeWake: (() => void) | undefined;
 
   const noticeOnClaim = (message: string, claim: Claim): void => {
     try {
@@ -53,15 +55,25 @@ export const createWorker = (options: WorkerOptions): Worker => {
     }
   };
 
+  const onWake = (): void => {
+    if (interruptSleep === undefined) wakePending = true;
+    else interruptSleep();
+  };
+
   const sleep = (): Promise<void> =>
     new Promise<void>((resolve) => {
+      if (wakePending) {
+        wakePending = false;
+        resolve();
+        return;
+      }
       const timer = setTimeout(done, idlePollMs);
       function done(): void {
         clearTimeout(timer);
-        wake = undefined;
+        interruptSleep = undefined;
         resolve();
       }
-      wake = done;
+      interruptSleep = done;
     });
 
   const poll = async (): Promise<void> => {
@@ -75,11 +87,14 @@ export const createWorker = (options: WorkerOptions): Worker => {
     start: () => {
       if (loop !== undefined) return;
       stopping = false;
+      unsubscribeWake = options.wake?.subscribe(onWake);
       loop = poll();
     },
     stop: async () => {
       stopping = true;
-      wake?.();
+      unsubscribeWake?.();
+      unsubscribeWake = undefined;
+      interruptSleep?.();
       const running = loop;
       loop = undefined;
       if (running !== undefined) await running;

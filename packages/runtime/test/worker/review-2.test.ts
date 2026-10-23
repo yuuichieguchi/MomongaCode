@@ -4,7 +4,7 @@ import type { GatewayPort } from '@momonga/runtime';
 import type { RuntimeStore } from '@momonga/store';
 import { createToolExecutor, defineTool } from '@momonga/tools';
 import { deferred, waitUntil, within } from './deferred.ts';
-import { DEADLINE_MS, LEASE_MS, START_MS, makeEnv, toolKey } from './harness.ts';
+import { DEADLINE_MS, LEASE_MS, START_MS, makeEnv, toolKey, createdRun } from './harness.ts';
 import type { Env } from './harness.ts';
 import { MODEL_ALIAS, functionCallItem, textStep } from './scripts.ts';
 
@@ -48,7 +48,7 @@ describe('worker cancel recovery with a hanging reconcile', () => {
     ];
     env.seed(run.id, payloads, 'crash');
     env.store.idempotency.begin(key, { expiresAt: START_MS + 86_400_000, meta: { tool: 'Stall' } });
-    expect(env.store.requestCancel(run.id).status).toBe('CANCELLING');
+    expect(env.cancel(run.id).status).toBe('CANCELLING');
     const executor = createToolExecutor({
       idempotency: env.store.idempotency,
       blobs: env.store.blobs,
@@ -68,7 +68,7 @@ describe('worker cancel recovery with a hanging reconcile', () => {
 
 const secondSessionRun = (env: Env) => {
   const other = env.store.createSession({ cwd: env.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, permissionMode: 'default', modelAlias: MODEL_ALIAS });
-  return env.store.createRunAndEnqueue(other.id, { input: 'Say hello', deadlineAt: DEADLINE_MS, limits: {}, pins: {} });
+  return createdRun(env.store.createRunAndEnqueue(other.id, { input: 'Say hello', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {} }));
 };
 
 const isFailureNotice = (payload: RunEventPayload): boolean => payload.type === 'notice' && payload.message.includes('load exploded');

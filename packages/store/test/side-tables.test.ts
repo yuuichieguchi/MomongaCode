@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import type { Approval, RuntimeStore } from '@momonga/store';
-import { START_MS, enqueue, harness, makeStoreDir, newSession, openStoreAt } from './helpers.ts';
+import { START_MS, harness, makeStoreDir, openStoreAt } from './helpers.ts';
+import { EXPIRES_MS, OPTIONS, awaitingApproval, requestFor } from './approval-fixture.ts';
 
 const fileMode = (file: string) => fs.statSync(file).mode & 0o777;
 const sha256 = (data: string) => createHash('sha256').update(data, 'utf8').digest('hex');
@@ -66,95 +66,42 @@ describe('idempotency', () => {
   });
 });
 
-const createApproval = (store: RuntimeStore, input: Parameters<RuntimeStore['approvals']['create']>[0]): Approval => {
-  const result = store.approvals.create(input);
-  if (result.kind !== 'ok') throw new Error(`expected approval creation to succeed: ${result.reason ?? result.kind}`);
-  return result.approval;
-};
-
 describe('approvals', () => {
-  const options = [
-    { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
-    { optionId: 'reject_once', name: 'Reject', kind: 'reject_once' },
-  ] as const;
-
-  const setup = () => {
-    const h = harness();
-    const run = enqueue(h.store, newSession(h.store).id);
-    return { ...h, run };
-  };
-
-  it('creates one pending approval per (run, call) and lists it', () => {
-    const { store, run } = setup();
-    const approval = createApproval(store, { runId: run.id, callId: 'c1', options: [...options], expiresAt: START_MS + 60_000 });
-    expect(approval).toMatchObject({
-      runId: run.id,
-      callId: 'c1',
-      status: 'pending',
-      options: [...options],
-      expiresAt: START_MS + 60_000,
-      createdAt: START_MS,
-    });
-    const again = createApproval(store, { runId: run.id, callId: 'c1', options: [...options], expiresAt: START_MS + 99_000 });
+  it('keeps one pending approval per (run, call) and lists it', () => {
+    const { store } = harness();
+    const { runId, claim, approvals } = awaitingApproval(store, [{ callId: 'c1' }], 'running');
+    const [approval] = approvals;
+    if (approval === undefined) throw new Error('expected an approval');
+    expect(approval).toMatchObject({ runId, callId: 'c1', status: 'pending', options: OPTIONS, expiresAt: EXPIRES_MS, createdAt: START_MS });
+    const again = requestFor(store, claim, 'c1', START_MS + 99_000);
     expect(again.id).toBe(approval.id);
-    expect(store.approvals.listPending(run.id).map((item) => item.id)).toEqual([approval.id]);
+    expect(store.approvals.listPending(runId).map((item) => item.id)).toEqual([approval.id]);
     expect(store.approvals.get(approval.id)).toEqual(approval);
   });
 
-  it('refuses to re-request an approval that was already resolved instead of returning the stale one', () => {
-    const { store, run } = setup();
-    const approval = createApproval(store, { runId: run.id, callId: 'c1', options: [...options], expiresAt: START_MS + 60_000 });
-    store.approvals.resolve(approval.id, { optionId: 'allow_once' });
-    const again = store.approvals.create({ runId: run.id, callId: 'c1', options: [...options], expiresAt: START_MS + 60_000 });
-    expect(again.kind).toBe('conflict');
-    expect(store.approvals.listPending(run.id)).toEqual([]);
-  });
-
-  it('refuses to re-request a pending approval with different options', () => {
-    const { store, run } = setup();
-    createApproval(store, { runId: run.id, callId: 'c1', options: [...options], expiresAt: START_MS + 60_000 });
-    const again = store.approvals.create({ runId: run.id, callId: 'c1', options: [options[0]], expiresAt: START_MS + 60_000 });
-    expect(again.kind).toBe('conflict');
-  });
-
   it('approves calls that share a provider id independently under their run-unique ids', () => {
-    const { store, run } = setup();
-    const first = createApproval(store, { runId: run.id, callId: 'run-call-1', options: [...options], expiresAt: START_MS + 60_000 });
-    store.approvals.resolve(first.id, { optionId: 'allow_once' });
-    const second = createApproval(store, { runId: run.id, callId: 'run-call-2', options: [...options], expiresAt: START_MS + 60_000 });
+    const { store } = harness();
+    const { approvals } = awaitingApproval(store, [{ callId: 'run-call-1' }, { callId: 'run-call-2' }], 'running');
+    const [first, second] = approvals;
+    if (first === undefined || second === undefined) throw new Error('expected two approvals');
+    expect(store.resolveApproval(first.id, 'allow_once').kind).toBe('ok');
     expect(second.id).not.toBe(first.id);
-    expect(second.status).toBe('pending');
-    expect(store.approvals.resolve(second.id, { optionId: 'reject_once' })).toMatchObject({ kind: 'ok', approval: { optionId: 'reject_once' } });
+    expect(store.resolveApproval(second.id, 'reject_once')).toMatchObject({ kind: 'ok', approval: { optionId: 'reject_once' } });
     expect(store.approvals.get(first.id)?.optionId).toBe('allow_once');
   });
 
   it('resolves exactly once', () => {
-    const { clock, store, run } = setup();
-    const approval = createApproval(store, { runId: run.id, callId: 'c1', options: [...options], expiresAt: START_MS + 60_000 });
+    const { clock, store } = harness();
+    const { runId, approvals } = awaitingApproval(store, [{ callId: 'c1' }], 'running');
+    const id = approvals[0]?.id ?? '';
     clock.advance(9);
-    expect(store.approvals.resolve(approval.id, { optionId: 'allow_once' })).toMatchObject({
+    expect(store.resolveApproval(id, 'allow_once')).toMatchObject({
       kind: 'ok',
-      approval: { id: approval.id, status: 'resolved', optionId: 'allow_once', resolvedAt: START_MS + 9 },
+      approval: { id, status: 'resolved', optionId: 'allow_once', resolvedAt: START_MS + 9 },
     });
-    expect(store.approvals.resolve(approval.id, { optionId: 'reject_once' }).kind).toBe('conflict');
-    expect(store.approvals.get(approval.id)?.optionId).toBe('allow_once');
-    expect(store.approvals.listPending(run.id)).toEqual([]);
-  });
-
-  it('rejects an option that was not offered', () => {
-    const { store, run } = setup();
-    const approval = createApproval(store, { runId: run.id, callId: 'c1', options: [...options], expiresAt: START_MS + 60_000 });
-    expect(store.approvals.resolve(approval.id, { optionId: 'allow_always' }).kind).toBe('conflict');
-    expect(store.approvals.get(approval.id)?.status).toBe('pending');
-  });
-
-  it('lists pending approvals that expired by a given time', () => {
-    const { store, run } = setup();
-    const soon = createApproval(store, { runId: run.id, callId: 'c1', options: [...options], expiresAt: START_MS + 10 });
-    createApproval(store, { runId: run.id, callId: 'c2', options: [...options], expiresAt: START_MS + 100 });
-    const resolved = createApproval(store, { runId: run.id, callId: 'c3', options: [...options], expiresAt: START_MS + 5 });
-    store.approvals.resolve(resolved.id, { optionId: 'allow_once' });
-    expect(store.approvals.listExpired(START_MS + 10).map((item) => item.id)).toEqual([soon.id]);
+    expect(store.resolveApproval(id, 'reject_once')).toEqual({ kind: 'approval_not_pending', status: 'resolved' });
+    expect(store.approvals.get(id)?.optionId).toBe('allow_once');
+    expect(store.approvals.listPending(runId)).toEqual([]);
   });
 });
 

@@ -95,14 +95,14 @@ describe('Idempotency-Key', () => {
     expect(primary.calls).toHaveLength(2);
   });
 
-  it('rejects the same key with a different body digest as idempotency_key_reused', async () => {
+  it('rejects the same key with a different body digest with 422 idempotency_key_reused', async () => {
     const primary = createScriptedAdapter({ calls: [{ events: events('first') }] });
     const { client } = await startGateway({ adapters: { primary } });
     expect((await readJson(await postJson(client, '/v1/responses', body, key('k-6')))).status).toBe(200);
     const reused = await readJson(
       await postJson(client, '/v1/responses', { model: 'fast', input: userInput('different') }, key('k-6')),
     );
-    expect(reused.status).toBe(400);
+    expect(reused.status).toBe(422);
     expectErrorBody(reused.body, { type: 'invalid_request', code: 'idempotency_key_reused', param: null });
     expect(primary.calls).toHaveLength(1);
   });
@@ -126,6 +126,29 @@ describe('Idempotency-Key', () => {
     clock.advance(2);
     expect(outputText((await readJson(await postJson(client, '/v1/responses', body, key('k-8')))).body)).toBe('after');
     expect(primary.calls).toHaveLength(2);
+  });
+
+  it('treats the sf-string form of a key as the same key as its bare token', async () => {
+    const primary = createScriptedAdapter({ calls: [{ events: events('quoted') }, { events: events('unexpected') }] });
+    const { client } = await startGateway({ adapters: { primary } });
+    const quoted = await readJson(await postJson(client, '/v1/responses', body, key('"k-sf"')));
+    const bare = await readJson(await postJson(client, '/v1/responses', body, key('k-sf')));
+    const quotedAgain = await readJson(await postJson(client, '/v1/responses', body, key('"k-sf"')));
+    expect(quoted.status).toBe(200);
+    expect(bare.body).toEqual(quoted.body);
+    expect(quotedAgain.body).toEqual(quoted.body);
+    expect(outputText(quoted.body)).toBe('quoted');
+    expect(primary.calls).toHaveLength(1);
+  });
+
+  it('rejects a reused sf-string key with a different body with 422', async () => {
+    const primary = createScriptedAdapter({ calls: [{ events: events('first') }, { events: events('unexpected') }] });
+    const { client } = await startGateway({ adapters: { primary } });
+    expect((await readJson(await postJson(client, '/v1/responses', body, key('"k-sf-2"')))).status).toBe(200);
+    const reused = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('different') }, key('k-sf-2')));
+    expect(reused.status).toBe(422);
+    expectErrorBody(reused.body, { type: 'invalid_request', code: 'idempotency_key_reused', param: null });
+    expect(primary.calls).toHaveLength(1);
   });
 
   it('keeps keys independent', async () => {
