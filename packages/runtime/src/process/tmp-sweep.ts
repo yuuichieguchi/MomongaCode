@@ -72,9 +72,9 @@ export const sweepSessionTmp = async ({
     }
 
     let target: { path: string; stat: fs.Stats } | 'unlinked' | 'gone' | 'kept';
-    try {
-      if (!removable(name)) target = 'kept';
-      else {
+    if (!removable(name)) target = 'kept';
+    else {
+      try {
         const current = fs.lstatSync(entry);
         if (!current.isDirectory()) {
           fs.unlinkSync(entry);
@@ -85,13 +85,13 @@ export const sweepSessionTmp = async ({
           fs.renameSync(entry, renamed);
           target = { path: renamed, stat: current };
         }
-      }
-    } catch (error) {
-      if (isMissing(error)) target = 'gone';
-      else {
-        onWarning(`session tmp entry ${entry} could not be removed: ${asError(error).message}`);
-        kept += 1;
-        continue;
+      } catch (error) {
+        if (isMissing(error)) target = 'gone';
+        else {
+          onWarning(`session tmp entry ${entry} could not be removed: ${asError(error).message}`);
+          kept += 1;
+          continue;
+        }
       }
     }
 

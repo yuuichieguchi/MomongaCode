@@ -41,7 +41,7 @@ describe('leak contract (system timers, in-process gateway)', () => {
     await settleTurns();
     const baseline = counts();
     await runOnce(stack);
-    await waitFor(() => Object.keys(excess(baseline)).length === 0, { maxTurns: 5000, description: 'runtime handles to be released' }).catch(() => undefined);
+    await waitFor(() => Object.keys(excess(baseline)).length === 0, { maxTurns: 5000, description: 'runtime handles to be released' });
     expect(excess(baseline)).toEqual({});
   });
 });

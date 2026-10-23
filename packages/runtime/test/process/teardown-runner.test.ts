@@ -24,12 +24,12 @@ const controlled = (name: string): TeardownStep & { finish(): void } => {
   };
 };
 
-const harness = (steps: readonly TeardownStep[]) => {
+const harness = (steps: readonly TeardownStep[], failureEvent?: string) => {
   const clock = createFakeClock(START_MS);
   const timers = createFakeTimers(clock);
   const logger = makeLogger();
   let result: string[] | undefined;
-  const done = runTeardown({ steps, budgetMs: BUDGET_MS, clock, timers, logger }).then((names: string[]) => {
+  const done = runTeardown({ steps, budgetMs: BUDGET_MS, clock, timers, logger, ...(failureEvent === undefined ? {} : { failureEvent }) }).then((names: string[]) => {
     result = names;
     return names;
   });
@@ -168,5 +168,31 @@ describe('runTeardown (fake timers, fake steps)', () => {
     await flush();
     expect(abandoned.result()).toEqual(['mcp-pools']);
     expect(abandoned.timers.pending()).toEqual([]);
+  });
+  it.each([
+    [undefined, 'teardown.step_failed'],
+    ['startup.cleanup_failed', 'startup.cleanup_failed'],
+  ])('step failures are logged under the failure event name (given %s, logged as %s)', async (failureEvent, expectedEvent) => {
+    const syncFailure = new Error('sync failure');
+    const asyncFailure = new Error('async failure');
+    const h = harness(
+      [
+        {
+          name: 'service',
+          run: () => {
+            throw syncFailure;
+          },
+        },
+        { name: 'telemetry', run: () => Promise.reject(asyncFailure) },
+      ],
+      failureEvent,
+    );
+    await flush();
+
+    const failures = h.logger.entries.filter((entry) => entry.level === 'error');
+    expect(failures.map((entry) => [entry.msg, entry.fields?.step, entry.fields?.err])).toEqual([
+      [expectedEvent, 'service', syncFailure],
+      [expectedEvent, 'telemetry', asyncFailure],
+    ]);
   });
 });

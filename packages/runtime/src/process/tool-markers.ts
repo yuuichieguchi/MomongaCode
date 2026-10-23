@@ -36,7 +36,13 @@ export const reapToolMarkers = async ({
 
   const planFor = async (name: string): Promise<ReapPlan | undefined> => {
     const marker = path.join(dir, name);
-    const holders = await findHolders(marker);
+    let holders: number[];
+    try {
+      holders = await findHolders(marker);
+    } catch (error) {
+      onWarning(`tool marker ${marker} holders could not be determined: ${asError(error).message}`);
+      return undefined;
+    }
     if (holders.length === 0) {
       try {
         await fs.promises.unlink(marker);

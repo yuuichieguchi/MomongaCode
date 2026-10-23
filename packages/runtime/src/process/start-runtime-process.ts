@@ -208,12 +208,12 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     }
   };
 
-  const teardown = (): Promise<string[]> =>
-    runTeardown({ steps: [...cleanups].reverse(), budgetMs: RUNTIME_TEARDOWN_BUDGET_MS, clock, timers, logger });
+  const teardown = (failureEvent?: string): Promise<string[]> =>
+    runTeardown({ steps: [...cleanups].reverse(), budgetMs: RUNTIME_TEARDOWN_BUDGET_MS, clock, timers, logger, ...(failureEvent === undefined ? {} : { failureEvent }) });
 
   const shutdown = async (abortFirst: boolean): Promise<RuntimeCloseResult> => {
     let stragglers: string[] = [];
-    let abandoned: string[] = [];
+    let phaseFailed = false;
     try {
       phase = abortFirst ? 'aborting' : 'draining';
       service?.beginDraining();
@@ -223,14 +223,15 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         phase = 'aborting';
         stragglers = await abortWorkers();
       }
-      phase = 'tearingDown';
-      abandoned = await teardown();
     } catch (error) {
+      phaseFailed = true;
       logger.error('shutdown failed', { err: asError(error) });
     }
+    phase = 'tearingDown';
+    const abandoned = await teardown();
     phase = 'closed';
     const result: RuntimeCloseResult = {
-      clean: abandoned.length === 0 && stragglers.length === 0 && fatalError === undefined,
+      clean: !phaseFailed && abandoned.length === 0 && stragglers.length === 0 && fatalError === undefined,
       abandoned,
       stragglers,
       ...(fatalError === undefined ? {} : { fatal: fatalError }),
@@ -336,8 +337,11 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     cleanups.push({
       name: 'telemetry',
       run: async () => {
-        await telemetry.forceFlush();
-        await telemetry.shutdown();
+        try {
+          await telemetry.forceFlush();
+        } finally {
+          await telemetry.shutdown();
+        }
       },
     });
     const tracer = createTracerPort(telemetry);
@@ -391,7 +395,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         defaults: RUNTIME_DEFAULTS,
         timers,
         cancelUpstream: tracker.cancel,
-        onError: report,
+        onError: (error) => logger.error('service error', { err: asError(error) }),
         onFatal: latchFatal,
       }),
     );
@@ -438,7 +442,9 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
     await step('timers', () => {
       periodics.push(
-        startPeriodic({ intervalMs: IDEMPOTENCY_PURGE_MS, run: () => void store.idempotency.purgeExpired(clock.now()), timers, report }),
+        startPeriodic({ intervalMs: IDEMPOTENCY_PURGE_MS, run: () => {
+            store.idempotency.purgeExpired(clock.now());
+          }, timers, report }),
         startPeriodic({
           intervalMs: SESSION_TMP_SWEEP_MS,
           run: async () => {
@@ -453,7 +459,9 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           timers,
           report,
         }),
-        startPeriodic({ intervalMs: SESSION_STATE_SWEEP_MS, run: () => void toolRuntime.sessionStates.evictIdle(clock.now()), timers, report }),
+        startPeriodic({ intervalMs: SESSION_STATE_SWEEP_MS, run: () => {
+            toolRuntime.sessionStates.evictIdle(clock.now());
+          }, timers, report }),
         startPeriodic({ intervalMs: STORE_IDENTITY_CHECK_MS, run: () => store.checkIdentity(), timers, report }),
       );
       cleanups.push({ name: 'timers', run: async () => void (await Promise.all(periodics.map((periodic) => periodic.stop()))) });
@@ -471,14 +479,15 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       const fields: ReadyFields = { service: 'runtime', pid: process.pid, version, socketPath: paths.sockets.runtime, startedAt };
       announceReady(fields, stdout);
       logger.info('runtime ready');
+      phase = 'running';
+      if (fatalError !== undefined) void abort();
       return fields;
     });
 
-    phase = 'running';
     return { ready, sandbox: kind, close, abort, fatal };
   } catch (error) {
     phase = 'tearingDown';
-    await teardown();
+    await teardown('startup.cleanup_failed');
     phase = 'closed';
     throw error;
   }

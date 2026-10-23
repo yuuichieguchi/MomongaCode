@@ -121,7 +121,7 @@ export const modelSettings = (fakeSocketPath: string): Record<string, unknown> =
   models: {
     aliases: { default: ['primary'] },
     targets: {
-      primary: { adapter: 'chat-completions', model: 'system', socketPath: fakeSocketPath, capabilities: { contextWindow: 131072, maxOutputTokens: 1024 } },
+      primary: { adapter: 'chat-completions', model: 'system', socketPath: fakeSocketPath, capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } },
     },
   },
 });
@@ -363,6 +363,7 @@ export const scriptedToolCall = (name: string, args: Record<string, unknown>, ca
       finishReason: 'tool_calls',
     },
   ],
+  usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
 });
 
 export const approveOnce = async (launched: Pick<Launched, 'http'>, runId: string): Promise<void> => {

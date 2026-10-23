@@ -236,6 +236,29 @@ describe('sweepSessionTmp (fake clock, fake timers, none armed)', () => {
     await expect(result).rejects.toBe(failure);
   });
 
+  it('a store error from sessionActivity on the second removability check propagates', async () => {
+    const temp = await makeTempHome();
+    const dir = sessionDir(temp, sessionId(1));
+    const failure = Object.assign(new Error('database disk image is malformed'), { code: 'SQLITE_CORRUPT' });
+    let lookups = 0;
+
+    const { result, warned } = sweep(
+      temp,
+      activityStore({
+        [sessionId(1)]: () => {
+          lookups += 1;
+          if (lookups === 1) return undefined;
+          throw failure;
+        },
+      }),
+    );
+
+    await expect(result).rejects.toBe(failure);
+    expect(lookups).toBe(2);
+    expect(warned.messages).toEqual([]);
+    expect(exists(dir)).toBe(true);
+  });
+
   it('a session that gains in-memory state between the listing and the removal is kept', async () => {
     const temp = await makeTempHome();
     const dir = sessionDir(temp, sessionId(1));

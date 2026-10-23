@@ -10,12 +10,13 @@ export type RunTeardownOptions = {
   clock: Clock;
   timers: ServiceTimers;
   logger: JsonLogger;
+  failureEvent?: string;
 };
 
 const isPromiseLike = (value: unknown): value is PromiseLike<unknown> =>
   typeof value === 'object' && value !== null && typeof (value as { then?: unknown }).then === 'function';
 
-export const runTeardown = async ({ steps, budgetMs, clock, timers, logger }: RunTeardownOptions): Promise<string[]> => {
+export const runTeardown = async ({ steps, budgetMs, clock, timers, logger, failureEvent = 'teardown.step_failed' }: RunTeardownOptions): Promise<string[]> => {
   const startedAt = clock.now();
   const abandoned: string[] = [];
   for (const step of steps) {
@@ -24,14 +25,14 @@ export const runTeardown = async ({ steps, budgetMs, clock, timers, logger }: Ru
     try {
       pending = step.run();
     } catch (error) {
-      logger.error('teardown.step_failed', { step: step.name, err: asError(error) });
+      logger.error(failureEvent, { step: step.name, err: asError(error) });
       continue;
     }
     if (!isPromiseLike(pending)) continue;
     const settled = Promise.resolve(pending).then(
       () => 'settled' as const,
       (error: unknown) => {
-        logger.error('teardown.step_failed', { step: step.name, err: asError(error) });
+        logger.error(failureEvent, { step: step.name, err: asError(error) });
         return 'settled' as const;
       },
     );
