@@ -7,7 +7,7 @@ import type { McpServerConfig, McpServerEntry, PermissionRule, RuleEffect } from
 import { createMcpPool, type McpPool } from '@momonga/mcp';
 import { createToolExecutor, createToolRegistry } from '@momonga/tools';
 import type { BatchInput, BlobPort, IdempotencyPort, ToolCall, ToolIdempotencyBegin, ToolIdempotencyRecord, ToolSet } from '@momonga/tools';
-import { MCP_LEGACY_SERVER_PATH, MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_RECORD_ENV, createFakeClock, type FakeClock, type ModernFixtureRecord } from '@momonga/testkit';
+import { MCP_LEGACY_SERVER_PATH, MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_RECORD_ENV, createFakeClock, killPidsForCleanup, type FakeClock, type ModernFixtureRecord } from '@momonga/testkit';
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
@@ -45,14 +45,6 @@ export const groupExists = (pgid: number): boolean => {
   }
 };
 
-const forceKill = (target: number): void => {
-  try {
-    process.kill(target, 'SIGKILL');
-  } catch {
-    return;
-  }
-};
-
 export const makeDir = (): string => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-mcp-src-')));
   onCleanup(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -72,7 +64,7 @@ export const makeRecordFile = (): string => {
   const file = path.join(makeDir(), 'record.jsonl');
   onCleanup(() => {
     for (const entry of readRecords(file)) {
-      if ((entry.type === 'grandchild' || entry.type === 'ready') && entry.pid > 1 && pidAlive(entry.pid)) forceKill(entry.pid);
+      if ((entry.type === 'grandchild' || entry.type === 'ready') && entry.pid > 1 && pidAlive(entry.pid)) killPidsForCleanup([entry.pid]);
     }
   });
   return file;

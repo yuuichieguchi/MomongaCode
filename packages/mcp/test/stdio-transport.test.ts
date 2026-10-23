@@ -7,7 +7,7 @@ import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
 import type { McpStdioServerConfig } from '@momonga/config';
 import { createStdioTransport, type StdioTransport } from '@momonga/mcp';
 import type { TerminateOutcome } from '@momonga/foundation';
-import { MCP_RAW_STDIO_SERVER_PATH } from '@momonga/testkit';
+import { MCP_RAW_STDIO_SERVER_PATH, killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
@@ -44,14 +44,6 @@ const groupExists = (pgid: number): boolean => {
     return true;
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
-};
-
-const forceKill = (target: number): void => {
-  try {
-    process.kill(target, 'SIGKILL');
-  } catch {
-    return;
   }
 };
 
@@ -134,7 +126,7 @@ const harness = async (options: HarnessOptions = {}): Promise<Harness> => {
   cleanups.push(async () => {
     const pgid = transport.pgid;
     await transport.close().catch(() => undefined);
-    if (pgid !== undefined && pgid > 1) forceKill(-pgid);
+    if (pgid !== undefined && pgid > 1) await killGroupsForCleanup([pgid]);
   });
   await transport.start();
   let nextId = 1;
@@ -163,7 +155,7 @@ const until = async (predicate: () => boolean, description: string): Promise<voi
 
 const trackGrandchild = (pid: number): void => {
   cleanups.push(() => {
-    if (pidAlive(pid)) forceKill(pid);
+    if (pidAlive(pid)) killPidsForCleanup([pid]);
   });
 };
 
@@ -449,7 +441,7 @@ describe('createStdioTransport relative PATH entries', () => {
     cleanups.push(async () => {
       const pgid = transport.pgid;
       await transport.close().catch(() => undefined);
-      if (pgid !== undefined && pgid > 1) forceKill(-pgid);
+      if (pgid !== undefined && pgid > 1) await killGroupsForCleanup([pgid]);
     });
     const failure = transport.start();
     await expect(failure).rejects.toThrow(/mm-only-relative/);
@@ -527,7 +519,7 @@ const readEscapedPid = async (readyFile: string): Promise<number> => {
   await until(() => fs.existsSync(readyFile), 'escaped grandchild ready file');
   const pid = Number(fs.readFileSync(readyFile, 'utf8'));
   cleanups.push(() => {
-    if (pid > 1 && pidAlive(pid)) forceKill(pid);
+    if (pid > 1 && pidAlive(pid)) killPidsForCleanup([pid]);
   });
   return pid;
 };

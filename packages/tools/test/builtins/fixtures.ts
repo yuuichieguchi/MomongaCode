@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, expect } from 'vitest';
+import { killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { buildSandboxPolicy, createBuiltinTools } from '@momonga/tools';
@@ -19,20 +20,17 @@ const trackedGroups = new Set<number>();
 const trackedPids = new Set<number>();
 const cleanups: Array<() => void> = [];
 
-const forceKill = (target: number): void => {
-  try {
-    process.kill(target, 'SIGKILL');
-  } catch {
-    return;
-  }
-};
-
-afterEach(() => {
-  for (const pgid of trackedGroups) forceKill(-pgid);
-  for (const pid of trackedPids) forceKill(pid);
+afterEach(async () => {
+  const groups = [...trackedGroups];
   trackedGroups.clear();
-  trackedPids.clear();
-  for (const cleanup of cleanups.splice(0).reverse()) cleanup();
+  try {
+    await killGroupsForCleanup(groups);
+  } finally {
+    const pids = [...trackedPids];
+    trackedPids.clear();
+    killPidsForCleanup(pids);
+    for (const cleanup of cleanups.splice(0).reverse()) cleanup();
+  }
 });
 
 export const trackGroup = (pgid: number): void => void trackedGroups.add(pgid);

@@ -83,3 +83,4 @@ export {
   nestedNotSchema,
 } from './mcp-fixtures.ts';
 export type { ModernFixtureRecord } from './mcp-fixtures.ts';
+export { killGroupsForCleanup, killPidsForCleanup } from './process-groups.ts';

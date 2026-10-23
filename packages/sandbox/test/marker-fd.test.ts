@@ -4,7 +4,8 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createSeatbeltSandbox, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { killGroup, makeTempDir, run } from './helpers.ts';
+import { killGroupsForCleanup } from '@momonga/testkit';
+import { makeTempDir, run } from './helpers.ts';
 
 const BASE_ENV = { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' };
 const MARKER_CONTENT = 'marker-content';
@@ -78,13 +79,16 @@ describe.runIf(process.platform === 'darwin').each(variants)('marker file as fd 
     sandbox = make(tempDir());
   });
 
-  afterEach(() => {
-    for (const proc of spawned) killGroup(proc.pgid);
-    for (const controller of controllers) controller.abort();
-    for (const dir of created) fs.rmSync(dir, { recursive: true, force: true });
-    created = [];
-    spawned = [];
-    controllers = [];
+  afterEach(async () => {
+    try {
+      await killGroupsForCleanup(spawned.map((proc) => proc.pgid));
+    } finally {
+      for (const controller of controllers) controller.abort();
+      for (const dir of created) fs.rmSync(dir, { recursive: true, force: true });
+      created = [];
+      spawned = [];
+      controllers = [];
+    }
   });
 
   it('lets the child read the marker through fd 3', async () => {
