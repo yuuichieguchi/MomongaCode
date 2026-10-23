@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
-import { reconcileProcessGroup } from '@momonga/tools';
+import { findHolders, holderGroups, reconcileProcessGroup } from '@momonga/foundation';
 
 const spawnedGroups: number[] = [];
 const spawnedPids: number[] = [];
@@ -264,3 +264,130 @@ describe('reconcileProcessGroup', () => {
   });
 });
 
+
+describe('reconcileProcessGroup structured result', () => {
+  const recordingKill = () => {
+    const signals: Array<[number, string | number]> = [];
+    const kill = (pid: number, signal: NodeJS.Signals | number): void => {
+      if (signal !== 0) signals.push([pid, signal]);
+      process.kill(pid, signal);
+    };
+    return { signals, kill };
+  };
+
+  it('reports a live recorded group with no holder in it as leftAloneGroup and signals nothing', { timeout: 20_000 }, async () => {
+    const dir = makeDir();
+    const marker = makeMarker(dir);
+    const group = await startGroup(dir, CLOSED_FD_SCRIPT, { fd3: marker });
+    const { signals, kill } = recordingKill();
+    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 100, kill });
+    expect(result.leftAloneGroup).toBe(group.pgid);
+    expect(result.unsignalledPids).toEqual([]);
+    expect(signals).toEqual([]);
+    expect(alive(-group.pgid)).toBe(true);
+  });
+
+  it('reports no leftAloneGroup and no unsignalledPids when a verified group is stopped', { timeout: 20_000 }, async () => {
+    const dir = makeDir();
+    const marker = makeMarker(dir);
+    const group = await startGroup(dir, TERM_MARKER_SCRIPT, { fd3: marker });
+    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 300 });
+    expect(result.leftAloneGroup).toBeUndefined();
+    expect(result.unsignalledPids).toEqual([]);
+    expect(result.leftAlonePids).toEqual([]);
+    expect(await waitUntil(() => !alive(-group.pgid), 5000)).toBe(true);
+  });
+
+  it('reports leftAloneGroup when the verified holder exits on TERM and a non-holder member survives', { timeout: 20_000 }, async () => {
+    const dir = makeDir();
+    const marker = makeMarker(dir);
+    const script = `/bin/sh -c 'exec 3<&-; trap "" TERM; touch "$DIR/member"; while :; do sleep 1; done' & trap 'exit 0' TERM; touch "$DIR/ready"; wait`;
+    const group = await startGroup(dir, script, { fd3: marker, readyFiles: ['ready', 'member'] });
+    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 500 });
+    await group.leaderReaped;
+    expect(result.leftAloneGroup).toBe(group.pgid);
+    expect(result.unsignalledPids).toEqual([]);
+    expect(alive(-group.pgid)).toBe(true);
+  });
+
+  it('reports a former holder that dropped the marker and stays alive in leftAlonePids', { timeout: 20_000 }, async () => {
+    const dir = makeDir();
+    const marker = makeMarker(dir);
+    const fd = fs.openSync(marker, 'r');
+    const source = "process.on('SIGTERM', () => require('node:fs').closeSync(3)); setInterval(() => {}, 1 << 30);";
+    const child = spawn(process.execPath, ['-e', source], { detached: true, stdio: ['ignore', 'ignore', 'ignore', fd] });
+    fs.closeSync(fd);
+    child.unref();
+    const pid = child.pid;
+    if (pid === undefined) throw new Error('spawn failed');
+    spawnedGroups.push(pid);
+    expect(await waitUntil(() => holdersOf(marker).includes(pid), 5000)).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const result = await reconcileProcessGroup({ pgid: pid, marker }, { killGraceMs: 500 });
+    expect(result.leftAlonePids).toContain(pid);
+    expect(alive(pid)).toBe(true);
+    expect(holdersOf(marker)).toEqual([]);
+  });
+
+  it('lists a pid whose signal failed with EPERM in unsignalledPids', { timeout: 20_000 }, async () => {
+    const dir = makeDir();
+    const marker = makeMarker(dir);
+    const group = await startGroup(dir, TERM_MARKER_SCRIPT, { fd3: marker });
+    const blocked = startEscapedHolder(marker);
+    expect(await waitUntil(() => holdersOf(marker).includes(blocked), 5000)).toBe(true);
+    const kill = (pid: number, signal: NodeJS.Signals | number): void => {
+      if (pid === blocked && signal !== 0) {
+        throw Object.assign(new Error(`kill EPERM ${pid}`), { code: 'EPERM', errno: -1, syscall: 'kill' });
+      }
+      process.kill(pid, signal);
+    };
+    const result = await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 300, kill });
+    expect(result.unsignalledPids).toEqual([blocked]);
+    expect(result.leftAloneGroup).toBeUndefined();
+    expect(alive(blocked)).toBe(true);
+  });
+});
+
+describe('findHolders', () => {
+  it('returns an empty list when nothing holds the marker', { timeout: 20_000 }, async () => {
+    const marker = makeMarker(makeDir());
+    expect(await findHolders(marker)).toEqual([]);
+  });
+
+  it('excludes the current process even when it holds the marker open', { timeout: 20_000 }, async () => {
+    const marker = makeMarker(makeDir());
+    const fd = fs.openSync(marker, 'r');
+    try {
+      expect(await findHolders(marker)).toEqual([]);
+    } finally {
+      fs.closeSync(fd);
+    }
+  });
+
+  it('returns the pid of a child that inherited the marker descriptor', { timeout: 20_000 }, async () => {
+    const marker = makeMarker(makeDir());
+    const holder = startEscapedHolder(marker);
+    expect(await waitUntil(() => holdersOf(marker).includes(holder), 5000)).toBe(true);
+    expect(await findHolders(marker)).toEqual([holder]);
+  });
+});
+
+describe('holderGroups', () => {
+  it('maps each holder to its process group id', { timeout: 20_000 }, async () => {
+    const dir = makeDir();
+    const marker = makeMarker(dir);
+    const group = await startGroup(dir, TERM_MARKER_SCRIPT, { fd3: marker });
+    const holders = holdersOf(marker);
+    expect(holders.length).toBeGreaterThan(0);
+    const groups = await holderGroups(holders);
+    expect(groups).toHaveLength(holders.length);
+    expect(new Set(groups)).toEqual(new Set([group.pgid]));
+  });
+
+  it('maps a detached escaped holder to its own group', { timeout: 20_000 }, async () => {
+    const marker = makeMarker(makeDir());
+    const holder = startEscapedHolder(marker);
+    expect(await waitUntil(() => holdersOf(marker).includes(holder), 5000)).toBe(true);
+    expect(await holderGroups([holder])).toEqual([holder]);
+  });
+});

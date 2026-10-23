@@ -126,8 +126,8 @@ describe('models and health', () => {
   const config = {
     aliases: { fast: ['a'], deep: ['b', 'a'] },
     targets: {
-      a: { adapter: 'a', model: 'model-a', capabilities: { contextWindow: 4096, toolCalling: 'constrained' as const } },
-      b: { adapter: 'b', model: 'model-b' },
+      a: { model: 'model-a', capabilities: { contextWindow: 4096, toolCalling: 'constrained' as const } },
+      b: { model: 'model-b' },
     },
   };
 

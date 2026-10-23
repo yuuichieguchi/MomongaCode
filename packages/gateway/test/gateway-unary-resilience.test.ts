@@ -107,7 +107,7 @@ describe('count_tokens uses the breaker and admission gate', () => {
     };
     const { client } = await startGateway({
       adapters: { primary: adapter },
-      config: { targets: { primary: { adapter: 'primary', model: 'scripted-primary', maxConcurrency: 1 } } },
+      config: { targets: { primary: { model: 'scripted-primary', maxConcurrency: 1 } } },
     });
     const one = postJson(client, '/v1/momonga/count_tokens', countBody);
     await waitFor(() => running === 1);

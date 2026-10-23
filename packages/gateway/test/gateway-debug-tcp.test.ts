@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { createGateway } from '@momonga/gateway';
 import type { GatewayOptions } from '@momonga/gateway';
 import { createFakeClock, createFakeTimers, createScriptedAdapter } from '@momonga/testkit';
-import { HMAC_KEY, START_MS, buildConfig, expectErrorBody, getJson, makeDir, registerCleanup, startGateway } from './gateway-helpers.ts';
+import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, expectErrorBody, getJson, makeDir, registerCleanup, startGateway } from './gateway-helpers.ts';
 
 const DEBUG_TOKEN = 'momonga-debug-test-token';
 
@@ -28,6 +28,7 @@ const constructWith = (debugTcp: { host: string; port: number; token: string }) 
       dbPath: path.join(dir, 'state', 'gateway.db'),
       hmacKey: HMAC_KEY,
       socketPath: path.join(dir, 'gw.sock'),
+      version: TEST_VERSION,
       debugTcp: debugTcp as unknown as NonNullable<GatewayOptions['debugTcp']>,
     }))(),
   };

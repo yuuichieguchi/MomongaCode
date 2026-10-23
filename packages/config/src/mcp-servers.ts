@@ -11,6 +11,8 @@ export type McpServerScope = 'user' | 'project';
 
 export type McpServerEntry = { name: string; scope: McpServerScope; config: McpServerConfig };
 
+export type McpServerFailure = { name: string; reason: string };
+
 export type LoadMcpServersOptions = {
   home: string;
   projectDir: string;
@@ -21,12 +23,18 @@ export type LoadMcpServersOptions = {
 export type LoadMcpServersResult = {
   enabled: McpServerEntry[];
   pendingApproval: McpServerEntry[];
+  failed: McpServerFailure[];
   warnings: string[];
 };
 
 const SERVER_NAME = /^[A-Za-z0-9_-]+$/;
 const EXPANSION = /\$\{([^}]*)\}/g;
 const EXPANSION_BODY = /^([A-Za-z_][A-Za-z0-9_]*)(?::-([\s\S]*))?$/;
+
+class UnsetVariableError extends Error {}
+
+const USER_EXPANSION_NOTE =
+  'user-scope ${VAR} expansion sees only the environment it is given (in the runtime, the credential-stripped session environment); keep MCP credentials as literal values in user settings until the keychain store exists';
 
 const assertServerName = (name: string, source: string): void => {
   if (!SERVER_NAME.test(name) || name.includes('__') || name.startsWith('_') || name.endsWith('_')) {
@@ -48,7 +56,7 @@ const expandText = (value: string, env: LoadMcpServersOptions['env'], serverName
     const current = env[variable];
     if (current !== undefined && (current !== '' || fallback === undefined)) return current;
     if (fallback !== undefined) return fallback;
-    throw new Error(`${source}: MCP server ${JSON.stringify(serverName)} needs environment variable ${variable}, which is not set`);
+    throw new UnsetVariableError(`${source}: MCP server ${JSON.stringify(serverName)} needs environment variable ${variable}, which is not set`);
   });
 
 const expandMap = (map: Record<string, string>, expand: (value: string) => string): Record<string, string> =>
@@ -78,6 +86,15 @@ const expandServer = (
   };
 };
 
+const tryExpand = (expand: () => McpServerConfig): { config: McpServerConfig } | { reason: string } => {
+  try {
+    return { config: expand() };
+  } catch (error) {
+    if (error instanceof UnsetVariableError) return { reason: error.message };
+    throw error;
+  }
+};
+
 const SENSITIVE_VARIABLE = /(URL|DSN|PAT|CREDENTIAL|CONN|SESSION|COOKIE)/i;
 
 const allowAnyVariable: VariableGuard = () => false;
@@ -85,8 +102,7 @@ const allowAnyVariable: VariableGuard = () => false;
 const credentialVariableNames = (settings: Settings | undefined): Set<string> => {
   const names = new Set<string>();
   for (const target of Object.values(settings?.models?.targets ?? {})) {
-    const apiKeyEnv = target['apiKeyEnv'];
-    if (typeof apiKeyEnv === 'string') names.add(apiKeyEnv);
+    if (target.adapter === 'chat-completions' && target.apiKeyEnv !== undefined) names.add(target.apiKeyEnv);
   }
   return names;
 };
@@ -113,34 +129,44 @@ export const loadMcpServers = async ({ home, projectDir, trust, env }: LoadMcpSe
 
   const enabled: McpServerEntry[] = [];
   const pendingApproval: McpServerEntry[] = [];
+  const failed: McpServerFailure[] = [];
   const seen = new Set<string>();
 
   if (userSettings !== undefined) {
     for (const [name, config] of Object.entries(userSettings.settings.mcpServers ?? {})) {
       assertServerName(name, userSettings.source);
       seen.add(name);
-      enabled.push({ name, scope: 'user', config: expandServer(config, env, name, userSettings.source, allowAnyVariable) });
+      const expanded = tryExpand(() => expandServer(config, env, name, userSettings.source, allowAnyVariable));
+      if ('config' in expanded) {
+        enabled.push({ name, scope: 'user', config: expanded.config });
+      } else {
+        failed.push({ name, reason: expanded.reason });
+        if (!warnings.includes(USER_EXPANSION_NOTE)) warnings.push(USER_EXPANSION_NOTE);
+      }
     }
   }
 
   const mcpJson = path.join(projectDir, '.mcp.json');
   if (!trust.isTrusted(projectDir)) {
     if (await fileExists(mcpJson)) warnings.push(`project ${projectDir} is not trusted; ${mcpJson} was not read`);
-    return { enabled, pendingApproval, warnings };
+    return { enabled, pendingApproval, failed, warnings };
   }
 
   const protectedNames = credentialVariableNames(userSettings?.settings);
   const refuseCredentialVariable: VariableGuard = (variable) => looksLikeCredentialName(variable) || SENSITIVE_VARIABLE.test(variable) || protectedNames.has(variable);
   const read = await readJsonFile(mcpJson, { confineTo: projectDir });
-  if (!read.found) return { enabled, pendingApproval, warnings };
+  if (!read.found) return { enabled, pendingApproval, failed, warnings };
   const file = assertMcpServersFile(read.value, mcpJson);
   for (const [name, rawConfig] of Object.entries(file.mcpServers ?? {})) {
     assertServerName(name, mcpJson);
     if (seen.has(name)) throw new Error(`${mcpJson}: MCP server ${JSON.stringify(name)} is also defined in user settings`);
     const config = assertMcpServer(rawConfig, mcpJson, name);
     const isEnabled = !disabled.has(name) && (approveAll || approved.has(name));
-    if (isEnabled) enabled.push({ name, scope: 'project', config: expandServer(config, env, name, mcpJson, refuseCredentialVariable) });
-    else pendingApproval.push({ name, scope: 'project', config });
+    if (isEnabled) {
+      const expanded = tryExpand(() => expandServer(config, env, name, mcpJson, refuseCredentialVariable));
+      if ('config' in expanded) enabled.push({ name, scope: 'project', config: expanded.config });
+      else failed.push({ name, reason: expanded.reason });
+    } else pendingApproval.push({ name, scope: 'project', config });
   }
-  return { enabled, pendingApproval, warnings };
+  return { enabled, pendingApproval, failed, warnings };
 };

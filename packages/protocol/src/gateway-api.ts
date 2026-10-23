@@ -31,6 +31,11 @@ export type TargetHealth = {
 export type GatewayHealth = {
   ok: boolean;
   targets: Record<string, TargetHealth>;
+  version: string;
+  apiVersion: 1;
+  pid: number;
+  startedAt: string;
+  state: 'running' | 'draining';
 };
 
 export type UsageSource = 'reported' | 'estimated';

@@ -156,6 +156,7 @@ export type StoredDataChecks = {
   inputItems(value: unknown): string | undefined;
   outputItems(value: unknown): string | undefined;
   streamEvents(value: unknown): string | undefined;
+  compactResource(value: unknown): string | undefined;
 };
 
 const describeIssue = (issue: Issue): string => `${joinParam(issue.segments) ?? 'value'} ${issue.message}`;
@@ -163,6 +164,7 @@ const describeIssue = (issue: Issue): string => `${joinParam(issue.segments) ?? 
 export const createStoredDataChecks = (): StoredDataChecks => {
   const kit = specKit();
   const itemField = kit.compile('ItemField');
+  const compactResource = kit.compile('CompactResource');
   const outputIssue = (item: unknown, index: number): Issue | undefined =>
     itemField(item) ? undefined : issueOf(itemField.errors ?? [], ['output', String(index)]);
   return {
@@ -182,6 +184,7 @@ export const createStoredDataChecks = (): StoredDataChecks => {
       }
       return undefined;
     },
+    compactResource: (value) => (compactResource(value) ? undefined : describeIssue(issueOf(compactResource.errors ?? [], []))),
     streamEvents: (value) => {
       if (!Array.isArray(value) || value.length === 0) return 'is not a non-empty array';
       for (const [index, event] of value.entries()) {

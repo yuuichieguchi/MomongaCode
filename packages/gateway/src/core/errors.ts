@@ -34,6 +34,8 @@ export const STATUS_BY_TYPE: Record<ErrorType, number> = {
 const STATUS_BY_CODE: Record<string, number> = {
   deadline_exceeded: 504,
   gateway_closed: 503,
+  authentication_failed: 401,
+  missing_api_key: 401,
 };
 
 export const statusFor = (type: ErrorType, code: string | null): number =>
@@ -59,6 +61,25 @@ export const serverError = (status: number, code: string, message: string): Gate
   new GatewayError({ status, type: 'server_error', code, message });
 
 export const gatewayClosedError = (): GatewayError => serverError(503, 'gateway_closed', 'the gateway is shutting down');
+
+export const SKIPPABLE_CODES: ReadonlySet<string> = new Set(['missing_api_key', 'authentication_failed']);
+
+export const missingApiKeyError = (apiKeyEnv: string): GatewayError =>
+  new GatewayError({
+    status: 401,
+    type: 'invalid_request',
+    code: 'missing_api_key',
+    param: apiKeyEnv,
+    message: `the environment variable ${apiKeyEnv} is unset or empty in the gateway process`,
+  });
+
+export const runCancelledError = (): GatewayError =>
+  new GatewayError({ status: 499, type: 'server_error', code: 'run_cancelled', message: 'the run was cancelled through the cancel endpoint' });
+
+export const isRunCancelled = (reason: unknown): boolean => reason instanceof GatewayError && reason.body.code === 'run_cancelled';
+
+export const detachedRunExpiredError = (): GatewayError =>
+  serverError(504, 'detached_run_expired', 'the run kept going with no client attached and exceeded detachedMaxMs');
 
 export const deadlineExceededError = (detail: string): GatewayError => serverError(504, 'deadline_exceeded', detail);
 

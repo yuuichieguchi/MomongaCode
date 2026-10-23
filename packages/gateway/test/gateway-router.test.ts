@@ -14,7 +14,7 @@ const TOOLS = [
 
 const twoTargets = {
   aliases: { fast: ['a', 'b'] },
-  targets: { a: { adapter: 'a', model: 'model-a' }, b: { adapter: 'b', model: 'model-b' } },
+  targets: { a: { model: 'model-a' }, b: { model: 'model-b' } },
 };
 
 describe('router fallback', () => {
@@ -81,7 +81,7 @@ describe('capability filter', () => {
       adapters: { plain, tooled },
       config: {
         aliases: { fast: ['plain', 'tooled'] },
-        targets: { plain: { adapter: 'plain', model: 'model-p' }, tooled: { adapter: 'tooled', model: 'model-t' } },
+        targets: { plain: { model: 'model-p' }, tooled: { model: 'model-t' } },
       },
     });
     const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), tools: TOOLS }));
@@ -96,10 +96,10 @@ describe('capability filter', () => {
   it('applies the config capability override over the adapter declaration when filtering', async () => {
     const declaredNative = createScriptedAdapter({ calls: [], capabilities: { toolCalling: 'native' } });
     const { client } = await startGateway({
-      adapters: { declaredNative },
+      adapters: { only: declaredNative },
       config: {
         aliases: { fast: ['only'] },
-        targets: { only: { adapter: 'declaredNative', model: 'model-o', capabilities: { toolCalling: 'none' } } },
+        targets: { only: { model: 'model-o', capabilities: { toolCalling: 'none' } } },
       },
     });
     const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), tools: TOOLS }));
@@ -112,7 +112,7 @@ describe('capability filter', () => {
     const plain = createScriptedAdapter({ calls: [], capabilities: { toolCalling: 'none' } });
     const { client } = await startGateway({
       adapters: { plain },
-      config: { aliases: { fast: ['plain'] }, targets: { plain: { adapter: 'plain', model: 'model-p' } } },
+      config: { aliases: { fast: ['plain'] }, targets: { plain: { model: 'model-p' } } },
     });
     const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), tools: TOOLS }));
     expect(response.status).toBe(400);
@@ -127,7 +127,7 @@ describe('capability filter', () => {
     });
     const { client } = await startGateway({
       adapters: { plain },
-      config: { aliases: { fast: ['plain'] }, targets: { plain: { adapter: 'plain', model: 'model-p' } } },
+      config: { aliases: { fast: ['plain'] }, targets: { plain: { model: 'model-p' } } },
     });
     const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
     expect(response.status).toBe(200);

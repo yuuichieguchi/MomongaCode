@@ -70,7 +70,14 @@ export const functionCallEvents = (callId: string, name: string, args: string): 
 
 export type RawStreamClient = { socket: net.Socket };
 
-export const openUnreadStream = async (socketPath: string, body: unknown): Promise<RawStreamClient> => {
+export type RawPostOptions = { headers?: Record<string, string>; paused?: boolean };
+
+export const openRawPost = async (
+  socketPath: string,
+  urlPath: string,
+  body: unknown,
+  options: RawPostOptions = {},
+): Promise<RawStreamClient> => {
   const payload = JSON.stringify(body);
   const socket = net.connect(socketPath);
   registerCleanup(() => {
@@ -81,9 +88,16 @@ export const openUnreadStream = async (socketPath: string, body: unknown): Promi
     socket.once('error', reject);
   });
   socket.on('error', () => undefined);
-  socket.pause();
+  if (options.paused === true) socket.pause();
+  else socket.on('data', () => undefined);
+  const extraHeaders = Object.entries(options.headers ?? {})
+    .map(([name, value]) => `${name}: ${value}\r\n`)
+    .join('');
   socket.write(
-    `POST /v1/responses HTTP/1.1\r\nhost: localhost\r\ncontent-type: application/json\r\ncontent-length: ${Buffer.byteLength(payload)}\r\n\r\n${payload}`,
+    `POST ${urlPath} HTTP/1.1\r\nhost: localhost\r\ncontent-type: application/json\r\n${extraHeaders}content-length: ${Buffer.byteLength(payload)}\r\n\r\n${payload}`,
   );
   return { socket };
 };
+
+export const openUnreadStream = (socketPath: string, body: unknown): Promise<RawStreamClient> =>
+  openRawPost(socketPath, '/v1/responses', body, { paused: true });

@@ -3,7 +3,7 @@ import type { Telemetry } from '@momonga/observability';
 import type { Capabilities, ProviderAdapter } from '@momonga/protocol';
 
 export type GatewayTargetConfig = {
-  adapter: string;
+  kind: string;
   model: string;
   maxConcurrency: number;
   admissionTimeoutMs: number;
@@ -21,6 +21,7 @@ export type GatewayConfig = {
   idempotency: { ttlMs: number };
   closeGraceMs: number;
   sseKeepAliveMs: number;
+  detachedMaxMs: number;
 };
 
 export type GatewayTimers = {
@@ -41,10 +42,13 @@ export type GatewayOptions = {
   telemetry?: Telemetry;
   debugTcp?: DebugTcpOptions;
   random?: () => number;
+  version: string;
+  onError?: (error: unknown) => void;
 };
 
 export type Gateway = {
   readonly socketPath: string;
+  readonly startedAt: string;
   readonly tcpPort: number | undefined;
   readonly abandonedRuns: number;
   close(): Promise<void>;

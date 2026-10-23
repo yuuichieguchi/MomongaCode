@@ -204,3 +204,26 @@ export const readJsonFile = async (file: string, options: ReadJsonFileOptions = 
   }
   return { found: true, value: parseJsonText(text, file) };
 };
+
+export const readJsonFileSync = (file: string): JsonFile => {
+  let link: fs.Stats;
+  try {
+    link = fs.lstatSync(file);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { found: false };
+    throw error;
+  }
+  if (link.isSymbolicLink()) {
+    let target: fs.Stats;
+    try {
+      target = fs.statSync(file);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`${file}: dangling symlink`, { cause: error });
+      throw error;
+    }
+    if (!target.isFile()) throw new Error(`${file}: not a regular file`);
+  } else if (!link.isFile()) {
+    throw new Error(`${file}: not a regular file`);
+  }
+  return { found: true, value: parseJsonText(fs.readFileSync(file, 'utf8'), file) };
+};

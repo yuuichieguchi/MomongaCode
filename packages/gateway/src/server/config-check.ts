@@ -1,13 +1,10 @@
+import { isLoopbackHost } from '@momonga/foundation';
 import type { GatewayOptions } from '../types.ts';
 
 const MIN_HMAC_KEY_BYTES = 32;
-const IPV4_LOOPBACK = /^127\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+const NON_LITERAL_LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['localhost', '[::1]']);
 
-export const isLoopbackAddress = (address: string): boolean => {
-  if (address === '::1') return true;
-  const match = IPV4_LOOPBACK.exec(address);
-  return match !== null && match.slice(1).every((octet) => Number(octet) <= 255);
-};
+export const isLoopbackAddress = (address: string): boolean => isLoopbackHost(address) && !NON_LITERAL_LOOPBACK_HOSTS.has(address);
 
 const requirePositiveInteger = (name: string, value: number): void => {
   if (!Number.isInteger(value) || value < 1) throw new RangeError(`createGateway: ${name} must be a positive integer, got ${value}`);
@@ -17,8 +14,8 @@ export const checkGatewayOptions = (options: GatewayOptions): void => {
   const { config, adapters, debugTcp } = options;
   const targetNames = Object.keys(config.models.targets);
   for (const [name, target] of Object.entries(config.models.targets)) {
-    if (!Object.hasOwn(adapters, target.adapter)) {
-      throw new Error(`createGateway: target "${name}" references adapter "${target.adapter}" which was not supplied`);
+    if (!Object.hasOwn(adapters, name)) {
+      throw new Error(`createGateway: target "${name}" has no adapter keyed by its name`);
     }
     requirePositiveInteger(`models.targets.${name}.maxConcurrency`, target.maxConcurrency);
     requirePositiveInteger(`models.targets.${name}.admissionTimeoutMs`, target.admissionTimeoutMs);
@@ -36,6 +33,7 @@ export const checkGatewayOptions = (options: GatewayOptions): void => {
   requirePositiveInteger('idempotency.ttlMs', config.idempotency.ttlMs);
   requirePositiveInteger('closeGraceMs', config.closeGraceMs);
   requirePositiveInteger('sseKeepAliveMs', config.sseKeepAliveMs);
+  requirePositiveInteger('detachedMaxMs', config.detachedMaxMs);
   if (options.hmacKey.length < MIN_HMAC_KEY_BYTES) {
     throw new Error(`createGateway: hmacKey must be at least ${MIN_HMAC_KEY_BYTES} bytes, got ${options.hmacKey.length}`);
   }

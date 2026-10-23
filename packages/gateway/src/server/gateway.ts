@@ -99,13 +99,19 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       forceCloseSignal: forceCloseController.signal,
     };
     const responses = createResponsesService(services, validator);
+    const unary = createUnaryService(services, validator);
     const tracker = createRequestTracker();
+    const startedAtMs = clock.now();
+    const startedAt = new Date(startedAtMs).toISOString();
     const app = createApp({
       services,
       responses,
-      unary: createUnaryService(services, validator),
+      unary,
       tracker,
-      startedAtSeconds: Math.floor(clock.now() / 1000),
+      startedAtSeconds: Math.floor(startedAtMs / 1000),
+      startedAt,
+      version: options.version,
+      onError: options.onError,
     });
     const handler: FetchHandler = (request, env) => app.fetch(request, env);
 
@@ -128,19 +134,21 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       closing ??= (async () => {
         const reason = gatewayClosedError();
         closeController.abort(reason);
-        responses.abortAll(reason);
+        responses.abortUnkeyed(reason);
         const closed = servers.map((server) => closeServer(server));
         for (const server of servers) server.closeIdleConnections();
         let graceHandle: unknown;
         const grace = new Promise<'expired'>((resolve) => {
           graceHandle = timers.setTimeout(() => resolve('expired'), options.config.closeGraceMs);
         });
-        const drained = Promise.all([responses.settled(), tracker.idle()]).then(() => 'drained' as const);
+        const drained = Promise.all([responses.settled(), unary.settled(), tracker.idle()]).then(() => 'drained' as const);
         const outcome = await Promise.race([drained, grace]);
         timers.clearTimeout(graceHandle);
         if (outcome === 'expired') {
-          abandonedRuns = responses.activeCount();
+          abandonedRuns = responses.activeCount() + unary.activeCount();
           forceCloseController.abort(reason);
+          responses.abortAll(reason);
+          unary.abortAll(reason);
         }
         for (const server of servers) server.closeAllConnections();
         await Promise.all(closed);
@@ -153,6 +161,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
 
     return {
       socketPath: options.socketPath,
+      startedAt,
       tcpPort,
       get abandonedRuns() {
         return abandonedRuns;

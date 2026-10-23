@@ -49,13 +49,40 @@ describe('loadMcpServers', () => {
     expect(result.pendingApproval).toEqual([]);
   });
 
-  it('fails naming the server and variable when ${VAR} is unset without default', async () => {
+  it('reports a project server with an unset ${VAR} as failed instead of throwing', async () => {
     const tree = makeTree();
     writeJson(localSettingsPath(tree), { enableAllProjectMcpServers: true });
-    writeJson(mcpJsonPath(tree), { mcpServers: { db: { command: 'db-mcp', args: ['${DATABASE_URL}'] } } });
-    const failure = loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV });
-    await expect(failure).rejects.toThrow('db');
-    await expect(failure).rejects.toThrow('DATABASE_URL');
+    writeJson(mcpJsonPath(tree), {
+      mcpServers: { db: { command: 'db-mcp', args: ['${DB_HOST}'] }, ok: { command: 'ok-mcp', args: ['${PORT}'] } },
+    });
+    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV });
+    expect(result.enabled).toEqual([{ name: 'ok', scope: 'project', config: { command: 'ok-mcp', args: ['9000'] } }]);
+    expect(result.pendingApproval).toEqual([]);
+    expect(result.failed).toHaveLength(1);
+    expect(result.failed[0]?.name).toBe('db');
+    expect(result.failed[0]?.reason).toContain('DB_HOST');
+  });
+
+  it('reports a user server with an unset ${VAR} as failed and keeps the other user servers', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), {
+      mcpServers: {
+        gh: { command: 'gh-mcp', env: { T: '${GITHUB_TOKEN}' } },
+        files: { command: '${HOME_BIN}/files' },
+      },
+    });
+    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV });
+    expect(result.enabled).toEqual([{ name: 'files', scope: 'user', config: { command: '/opt/bin/files' } }]);
+    expect(result.failed).toHaveLength(1);
+    expect(result.failed[0]?.name).toBe('gh');
+    expect(result.failed[0]?.reason).toContain('GITHUB_TOKEN');
+  });
+
+  it('reports no failures when every variable is set', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { mcpServers: { files: { command: '${HOME_BIN}/files' } } });
+    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: ENV });
+    expect(result.failed).toEqual([]);
   });
 
   it('rejects invalid server names', async () => {

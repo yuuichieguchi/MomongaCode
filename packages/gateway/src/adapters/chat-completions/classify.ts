@@ -55,6 +55,9 @@ const classifyHttp = (error: UpstreamHttpError): ClassifiedError => {
   }
   if (status >= 500) return { retryable: true, error: body('server_error', upstreamCode ?? 'upstream_error', error.message) };
   if (status === 413) return { retryable: false, error: body('invalid_request', 'payload_too_large', error.message) };
+  if (status === 401 || status === 403) {
+    return { retryable: false, error: body('invalid_request', 'authentication_failed', error.message) };
+  }
   if (error.guardrail) {
     return { retryable: false, error: body('model_error', 'guardrail_violation', upstreamMessage) };
   }

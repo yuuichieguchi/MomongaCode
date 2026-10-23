@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { findHolders, reconcileProcessGroup } from '../process-reconcile.ts';
+import { findHolders, reconcileProcessGroup } from '@momonga/foundation';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import type { SandboxExit } from '@momonga/sandbox';
 import type { ToolContext } from '../types.ts';

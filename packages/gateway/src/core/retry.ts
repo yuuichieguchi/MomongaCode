@@ -2,7 +2,7 @@ import { computeBackoff } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import type { ClassifiedError, ProviderAdapter } from '@momonga/protocol';
 import { applyBreakerVerdict, breakerVerdictOf } from './breaker-verdict.ts';
-import { GatewayError, deadlineExceededError, gatewayErrorFromBody, serverError } from './errors.ts';
+import { GatewayError, SKIPPABLE_CODES, deadlineExceededError, gatewayErrorFromBody, serverError } from './errors.ts';
 import type { TargetRuntime } from './router.ts';
 import type { GatewayTimers } from '../types.ts';
 
@@ -68,11 +68,15 @@ const sleep = (timers: GatewayTimers, ms: number, signal: AbortSignal): Promise<
 const retryAfterHeader = (classified: ClassifiedError): Record<string, string> =>
   classified.retryAfterMs === undefined ? {} : { 'retry-after': String(Math.max(1, Math.ceil(classified.retryAfterMs / 1000))) };
 
+const isSkipCode = (code: string | null): boolean => code !== null && SKIPPABLE_CODES.has(code);
+
+type LastFailure = { kind: 'upstream'; failure: UpstreamFailure } | { kind: 'skip'; error: unknown };
+
 export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOutcome<T>> => {
   const { candidates, policy, signal, deadlineAt } = request;
   const fallbackFrom: string[] = [];
   let attempts = 0;
-  let lastFailure: UpstreamFailure | undefined;
+  let lastFailure: LastFailure | undefined;
   for (const target of candidates) {
     for (let attemptNumber = 1; attemptNumber <= policy.maxAttempts; attemptNumber += 1) {
       if (signal.aborted) throw signal.reason;
@@ -82,11 +86,21 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
         const value = await request.attempt(target, attemptNumber);
         return { value, target, attempts, fallbackFrom };
       } catch (error) {
+        if (error instanceof GatewayError && isSkipCode(error.body.code)) {
+          target.breaker.onNeutral();
+          lastFailure = { kind: 'skip', error };
+          break;
+        }
         if (!(error instanceof UpstreamFailure)) throw error;
         const { classified } = error;
+        if (isSkipCode(classified.error.code)) {
+          target.breaker.onNeutral();
+          lastFailure = { kind: 'skip', error: gatewayErrorFromBody(classified.error, retryAfterHeader(classified)) };
+          break;
+        }
         applyBreakerVerdict(target.breaker, breakerVerdictOf(classified.error.type, classified.error.code));
         if (!classified.retryable) throw gatewayErrorFromBody(classified.error, retryAfterHeader(classified));
-        lastFailure = error;
+        lastFailure = { kind: 'upstream', failure: error };
         if (attemptNumber === policy.maxAttempts) break;
         const backoffMs = computeBackoff({
           attempt: attemptNumber - 1,
@@ -103,6 +117,9 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
     }
     fallbackFrom.push(target.name);
   }
-  if (lastFailure !== undefined) throw gatewayErrorFromBody(lastFailure.classified.error, retryAfterHeader(lastFailure.classified));
+  if (lastFailure?.kind === 'skip') throw lastFailure.error;
+  if (lastFailure?.kind === 'upstream') {
+    throw gatewayErrorFromBody(lastFailure.failure.classified.error, retryAfterHeader(lastFailure.failure.classified));
+  }
   throw serverError(503, 'all_targets_unavailable', 'every candidate target is unavailable because its circuit breaker is open');
 };

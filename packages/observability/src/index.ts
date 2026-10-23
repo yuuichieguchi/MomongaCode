@@ -8,7 +8,7 @@ export { recordChatResponse, recordError, startAgentSpan, startChatSpan, startTo
 export type { AgentSpanInput, ChatResponse, ChatSpanInput, ChatUsage, ToolSpanInput } from './spans.ts';
 export { summarizeRun } from './summary.ts';
 export type { ChatResult, RunSummary } from './summary.ts';
-export { createTelemetry } from './telemetry.ts';
+export { closeTelemetry, contextOf, createTelemetry, traceparentOf } from './telemetry.ts';
 export type {
   BatchOptions,
   BodyCaptureOptions,

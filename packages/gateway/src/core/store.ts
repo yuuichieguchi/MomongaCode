@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
 import { immediateTx, migrate, openDatabase } from '@momonga/foundation';
 import type { Migration } from '@momonga/foundation';
-import type { InputItem, ItemField, StreamEvent, UsageReport, UsageSource } from '@momonga/protocol';
+import type { CompactResource, InputItem, ItemField, StreamEvent, UsageReport, UsageSource } from '@momonga/protocol';
 import type { StoredDataChecks } from './validation.ts';
 
 const MIGRATIONS: readonly Migration[] = [
@@ -38,6 +38,19 @@ const MIGRATIONS: readonly Migration[] = [
       CREATE INDEX usage_by_run ON usage (run_id, seq);
     `,
   },
+  {
+    version: 2,
+    name: 'gateway-compactions',
+    sql: `
+      CREATE TABLE compactions (
+        key TEXT PRIMARY KEY,
+        digest TEXT NOT NULL,
+        resource_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+      ) STRICT;
+    `,
+  },
 ];
 
 export type StoredResponse = { input: InputItem[]; output: ItemField[] };
@@ -54,6 +67,10 @@ export type UsageRecord = {
   usageSource: UsageSource;
 };
 
+export type StoredCompaction = { digest: string; expiresAtMs: number; resource: CompactResource };
+
+export type CompactionCommit = { key: string; digest: string; resource: CompactResource; createdAtMs: number; expiresAtMs: number };
+
 export type CommitRequest = {
   recordedAtMs: number;
   idempotencyExpiredBeforeMs: number;
@@ -67,6 +84,9 @@ export type GatewayStore = {
   getIdempotency(key: string): StoredIdempotency | undefined;
   deleteIdempotency(key: string): void;
   commit(request: CommitRequest): void;
+  getCompaction(key: string): StoredCompaction | undefined;
+  deleteCompaction(key: string): void;
+  commitCompaction(commit: CompactionCommit): void;
   usageReport(runId: string): UsageReport;
   close(): void;
 };
@@ -96,6 +116,19 @@ const parseChecked = (json: string, location: RowLocation, check: (value: unknow
   return parsed;
 };
 
+const parseCheckedObject = (json: string, location: RowLocation, check: (value: unknown) => string | undefined): unknown => {
+  const where = `gateway database table ${location.table} (${location.keyColumn} ${location.key}) column ${location.column}`;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch (error) {
+    throw new Error(`${where} is not valid JSON: ${(error as Error).message}`, { cause: error });
+  }
+  const problem = check(parsed);
+  if (problem !== undefined) throw new Error(`${where} failed validation: ${problem}`);
+  return parsed;
+};
+
 const requireUsageSource = (value: unknown): UsageSource => {
   if (value !== 'reported' && value !== 'estimated') throw new TypeError('gateway database column usage_source is invalid');
   return value;
@@ -108,6 +141,10 @@ type Statements = {
   putIdempotency: StatementSync;
   deleteIdempotency: StatementSync;
   pruneIdempotency: StatementSync;
+  getCompaction: StatementSync;
+  putCompaction: StatementSync;
+  deleteCompaction: StatementSync;
+  pruneCompactions: StatementSync;
   putUsage: StatementSync;
   usageForRun: StatementSync;
 };
@@ -119,6 +156,12 @@ const prepare = (db: DatabaseSync): Statements => ({
   putIdempotency: db.prepare('INSERT OR REPLACE INTO idempotency (key, digest, stored_at_ms, frames_json) VALUES (?, ?, ?, ?)'),
   deleteIdempotency: db.prepare('DELETE FROM idempotency WHERE key = ?'),
   pruneIdempotency: db.prepare('DELETE FROM idempotency WHERE stored_at_ms <= ?'),
+  getCompaction: db.prepare('SELECT digest, resource_json, expires_at FROM compactions WHERE key = ?'),
+  putCompaction: db.prepare(
+    'INSERT OR REPLACE INTO compactions (key, digest, resource_json, created_at, expires_at) VALUES (?, ?, ?, ?, ?)',
+  ),
+  deleteCompaction: db.prepare('DELETE FROM compactions WHERE key = ?'),
+  pruneCompactions: db.prepare('DELETE FROM compactions WHERE expires_at <= ?'),
   putUsage: db.prepare(
     'INSERT INTO usage (response_id, run_id, step, target, input_tokens, output_tokens, total_tokens, usage_source, recorded_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
   ),
@@ -167,6 +210,28 @@ export const openGatewayStore = (dbPath: string, checks: StoredDataChecks): Gate
       },
       deleteIdempotency: (key) => {
         statements.deleteIdempotency.run(key);
+      },
+      getCompaction: (key) => {
+        const row = statements.getCompaction.get(key);
+        if (row === undefined) return undefined;
+        return {
+          digest: requireString(row['digest'], 'digest'),
+          expiresAtMs: requireNumber(row['expires_at'], 'expires_at'),
+          resource: parseCheckedObject(
+            requireString(row['resource_json'], 'resource_json'),
+            { table: 'compactions', keyColumn: 'key', key, column: 'resource_json' },
+            checks.compactResource,
+          ) as CompactResource,
+        };
+      },
+      deleteCompaction: (key) => {
+        statements.deleteCompaction.run(key);
+      },
+      commitCompaction: (commit) => {
+        immediateTx(db, () => {
+          statements.pruneCompactions.run(commit.createdAtMs);
+          statements.putCompaction.run(commit.key, commit.digest, JSON.stringify(commit.resource), commit.createdAtMs, commit.expiresAtMs);
+        });
       },
       commit: (request) => {
         immediateTx(db, () => {

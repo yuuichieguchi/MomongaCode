@@ -12,9 +12,10 @@ export type IdempotencyRegistry = {
   lookup(key: string, digest: string): IdempotencyLookup;
   begin(key: string, digest: string, run: SharedRun): void;
   end(key: string, run: SharedRun): void;
+  take(key: string): SharedRun | undefined;
 };
 
-const reusedError = (key: string) =>
+export const reusedError = (key: string) =>
   invalidRequest('idempotency_key_reused', `idempotency key "${key}" was already used with a different request body`, null, 422);
 
 const SF_STRING = /^"((?:[^"\\]|\\["\\])*)"$/;
@@ -22,6 +23,13 @@ const SF_STRING = /^"((?:[^"\\]|\\["\\])*)"$/;
 export const normalizeIdempotencyKey = (header: string): string => {
   const quoted = SF_STRING.exec(header);
   return quoted?.[1] === undefined ? header : quoted[1].replace(/\\(["\\])/g, '$1');
+};
+
+export const parseIdempotencyKey = (header: string | undefined): string | undefined => {
+  if (header === undefined) return undefined;
+  const key = normalizeIdempotencyKey(header);
+  if (key === '') throw invalidRequest('invalid_idempotency_key', 'the idempotency-key header must not be empty');
+  return key;
 };
 
 export const createIdempotencyRegistry = (services: Services): IdempotencyRegistry => {
@@ -48,6 +56,11 @@ export const createIdempotencyRegistry = (services: Services): IdempotencyRegist
     },
     end: (key, run) => {
       if (inflight.get(key)?.run === run) inflight.delete(key);
+    },
+    take: (key) => {
+      const running = inflight.get(key);
+      inflight.delete(key);
+      return running?.run;
     },
   };
 };

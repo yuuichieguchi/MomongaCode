@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import type { ModelList, MomongaModelList } from '@momonga/protocol';
+import type { GatewayHealth, ModelList, MomongaModelList } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, invalidRequest, notFound } from '../core/errors.ts';
 import type { ResponsesService, SubmitHeaders } from '../core/responses-service.ts';
 import type { Services } from '../core/services.ts';
@@ -16,6 +16,9 @@ export type AppDependencies = {
   unary: UnaryService;
   tracker: RequestTracker;
   startedAtSeconds: number;
+  startedAt: string;
+  version: string;
+  onError: ((error: unknown) => void) | undefined;
 };
 
 const errorResponse = (error: GatewayError): Response =>
@@ -41,6 +44,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   app.onError((error) => {
     if (error instanceof GatewayError) return errorResponse(error);
     if (error instanceof ClientDisconnectedError) return new Response(null, { status: 499 });
+    dependencies.onError?.(error);
     return errorResponse(
       new GatewayError({ status: 500, type: 'server_error', code: 'internal_error', message: error.message }),
     );
@@ -77,7 +81,9 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
     const release = tracker.begin();
     try {
-      return context.json(await unary.compact(raw, requestSignalOf(context), context.req.header('momonga-deadline-ms')));
+      return context.json(
+        await unary.compact(raw, context.req.raw.signal, context.req.header('momonga-deadline-ms'), context.req.header('idempotency-key')),
+      );
     } finally {
       release();
     }
@@ -107,13 +113,11 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     const data = await Promise.all(
       services.router.aliases().map(async (id) => {
         const targets = services.router.targetsOf(id);
-        const first = targets[0];
-        if (first === undefined) throw new Error(`model alias "${id}" has no targets`);
         return {
           id,
           object: 'model' as const,
           targets: targets.map((target) => target.name),
-          capabilities: await services.router.capabilitiesOf(first),
+          capabilities: await services.router.aliasCapabilitiesOf(id),
         };
       }),
     );
@@ -121,7 +125,23 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     return context.json(list);
   });
 
-  app.get('/v1/momonga/health', async (context) => context.json(await services.router.health()));
+  app.get('/v1/momonga/health', async (context) => {
+    const report: GatewayHealth = {
+      ...(await services.router.health()),
+      version: dependencies.version,
+      apiVersion: 1,
+      pid: process.pid,
+      startedAt: dependencies.startedAt,
+      state: services.closeSignal.aborted ? 'draining' : 'running',
+    };
+    return context.json(report);
+  });
+
+  app.post('/v1/momonga/responses/cancel', (context) =>
+    context.json({
+      cancelled: [responses.cancel(context.req.header('idempotency-key')), unary.cancel(context.req.header('idempotency-key'))].some(Boolean),
+    }),
+  );
 
   app.get('/v1/momonga/usage', (context) => {
     const runId = context.req.query('run_id');

@@ -42,3 +42,6 @@ export type {
 export { createManagedFmTarget } from './managed/fm-target.ts';
 export type { ExecWithStdinFn, ManagedFmTarget, ManagedFmTargetOptions } from './managed/fm-target.ts';
 export type { KeywordSupport } from './probe/envelope.ts';
+export { FM_SERVE_DEFAULTS, GATEWAY_CONFIG_DEFAULTS } from './defaults.ts';
+export { startGatewayProcess } from './process.ts';
+export type { GatewayProcess, StartGatewayProcessOptions } from './process.ts';

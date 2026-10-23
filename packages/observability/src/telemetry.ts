@@ -14,6 +14,8 @@ import { GENAI_SEMCONV } from './semconv.ts';
 import { createTraceStoreExporter } from './trace-exporter.ts';
 import type { BodyKind, TraceStore } from './trace-store.ts';
 
+const W3C_PROPAGATOR = new W3CTraceContextPropagator();
+
 const INSTRUMENTATION_SCOPE_NAME = '@momonga/observability';
 const DEFAULT_MAX_QUEUED_BODIES = 2048;
 const DEFAULT_MAX_QUEUED_BYTES = 16 * 1024 * 1024;
@@ -143,4 +145,18 @@ export const createTelemetry = (options: TelemetryOptions): Telemetry => {
       return shutdownPromise;
     },
   };
+};
+
+export const traceparentOf = (span: Span): string => {
+  const { traceId, spanId, traceFlags } = span.spanContext();
+  return `00-${traceId}-${spanId}-${traceFlags.toString(16).padStart(2, '0')}`;
+};
+
+export const contextOf = (traceparent: string): Context =>
+  W3C_PROPAGATOR.extract(ROOT_CONTEXT, { traceparent }, defaultTextMapGetter);
+
+export const closeTelemetry = async (telemetry: Telemetry, traceStore: TraceStore): Promise<void> => {
+  await telemetry.forceFlush();
+  await telemetry.shutdown();
+  traceStore.close();
 };

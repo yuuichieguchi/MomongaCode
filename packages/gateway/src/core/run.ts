@@ -1,6 +1,6 @@
 import type { StreamEvent } from '@momonga/protocol';
 import { frameOf } from './frame.ts';
-import { ClientDisconnectedError, readerStalledError } from './errors.ts';
+import { ClientDisconnectedError, detachedRunExpiredError, readerStalledError } from './errors.ts';
 import type { GatewayTimers } from '../types.ts';
 
 export type RunControl = {
@@ -102,11 +102,13 @@ type Cursor = { position: number; evict: () => void };
 export type BufferedRunOptions = {
   maxBufferedBytes: number;
   readerStallMs: number;
+  detachedMaxMs: number;
+  onAborted: () => void;
   timers: GatewayTimers;
 };
 
 export const startBufferedRun = (produce: Produce, onSettled: () => void, options: BufferedRunOptions): SharedRun => {
-  const { maxBufferedBytes, readerStallMs, timers } = options;
+  const { maxBufferedBytes, readerStallMs, detachedMaxMs, timers } = options;
   const controller = new AbortController();
   const waiters = new Set<() => void>();
   const cursors = new Set<Cursor>();
@@ -116,13 +118,27 @@ export const startBufferedRun = (produce: Produce, onSettled: () => void, option
   let retained = true;
   let failure: { error: unknown } | undefined;
   let finished = false;
+  let detachTimer: unknown;
+
+  const clearDetachTimer = (): void => {
+    if (detachTimer === undefined) return;
+    timers.clearTimeout(detachTimer);
+    detachTimer = undefined;
+  };
 
   const wake = (): void => {
     for (const waiter of [...waiters]) waiter();
     waiters.clear();
   };
   const changed = (): Promise<void> => new Promise((resolve) => waiters.add(resolve));
-  controller.signal.addEventListener('abort', wake, { once: true });
+  controller.signal.addEventListener(
+    'abort',
+    () => {
+      options.onAborted();
+      wake();
+    },
+    { once: true },
+  );
 
   const lowestPosition = (): number => Math.min(base + slots.length, ...[...cursors].map((cursor) => cursor.position));
 
@@ -135,10 +151,23 @@ export const startBufferedRun = (produce: Produce, onSettled: () => void, option
     base = lowest;
   };
 
+  const onLastSubscriberGone = (): void => {
+    if (finished || controller.signal.aborted) return;
+    if (!retained) {
+      controller.abort(new ClientDisconnectedError());
+      return;
+    }
+    if (detachTimer !== undefined) return;
+    detachTimer = timers.setTimeout(() => {
+      detachTimer = undefined;
+      if (cursors.size === 0 && !finished) controller.abort(detachedRunExpiredError());
+    }, detachedMaxMs);
+  };
+
   const evictStalled = (): void => {
     const lowest = lowestPosition();
     for (const cursor of [...cursors]) if (cursor.position === lowest) cursor.evict();
-    if (cursors.size === 0 && !finished) controller.abort(new ClientDisconnectedError());
+    if (cursors.size === 0) onLastSubscriberGone();
     trim();
     wake();
   };
@@ -158,7 +187,10 @@ export const startBufferedRun = (produce: Produce, onSettled: () => void, option
         const bytes = frameOf(event).byteLength;
         slots.push({ event, bytes });
         heldBytes += bytes;
-        if (retained && heldBytes > maxBufferedBytes) retained = false;
+        if (retained && heldBytes > maxBufferedBytes) {
+          retained = false;
+          if (cursors.size === 0) onLastSubscriberGone();
+        }
         trim();
         wake();
         while (blocked()) {
@@ -171,6 +203,7 @@ export const startBufferedRun = (produce: Produce, onSettled: () => void, option
       failure = { error };
     } finally {
       finished = true;
+      clearDetachTimer();
       onSettled();
       wake();
     }
@@ -194,11 +227,12 @@ export const startBufferedRun = (produce: Produce, onSettled: () => void, option
         },
       };
       cursors.add(cursor);
+      clearDetachTimer();
       const close = (): void => {
         if (closed) return;
         closed = true;
         signal.removeEventListener('abort', onAbort);
-        if (cursors.delete(cursor) && cursors.size === 0 && !finished) controller.abort(new ClientDisconnectedError());
+        if (cursors.delete(cursor) && cursors.size === 0) onLastSubscriberGone();
         trim();
         wake();
       };
