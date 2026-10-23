@@ -66,6 +66,7 @@ describe('run event payloads', () => {
       | 'run.status'
       | 'model.requested'
       | 'model.responded'
+      | 'model.stream.restarted'
       | 'agent.message.delta'
       | 'agent.thought.delta'
       | 'tool.call'
@@ -275,7 +276,7 @@ describe('RunState', () => {
           };
         }
       >;
-      inFlightModelRequest?: { step: number; attempt: number; digest: string; body: unknown };
+      inFlightModelRequest?: { step: number; attempt: number; digest: string; body: unknown; requestedSeq: number };
       notes: { level: 'info' | 'warning' | 'error'; message: string }[];
       toolCallCounts: Record<string, number>;
       steps: Record<number, { toolChoice: string; summary: boolean }>;

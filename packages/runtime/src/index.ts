@@ -1,3 +1,4 @@
+export { ConfigError } from '@momonga/config';
 export { buildSystemPrompt } from './system-prompt.ts';
 export type { SystemPromptContext } from './system-prompt.ts';
 export { createWorker } from './worker/worker.ts';
@@ -9,6 +10,7 @@ export type {
   GatewayCallOptions,
   GatewayPort,
   SettingsPort,
+  ToolPolicy,
   ToolRuntimePort,
   ToolSpanInput,
   TracerPort,
@@ -30,3 +32,7 @@ export type {
   ServiceTimers,
   SessionSettings,
 } from './service/index.ts';
+export { GatewayRequestError, createGatewayClient } from './gateway-client.ts';
+export type { GatewayClient, GatewayClientOptions, GatewayModel, GatewayRequestErrorFields } from './gateway-client.ts';
+export { createTracerPort } from './tracer.ts';
+export { LeaseLostError, ShutdownError } from './worker/errors.ts';

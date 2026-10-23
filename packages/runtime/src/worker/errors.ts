@@ -13,3 +13,10 @@ export class GatewayFailureError extends Error {
 }
 
 export const describeError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+export class ShutdownError extends Error {
+  constructor() {
+    super('the worker is shutting down');
+    this.name = 'ShutdownError';
+  }
+}

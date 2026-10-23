@@ -1,9 +1,13 @@
 import type { Claim } from '@momonga/store';
+import type { RunMemory } from './claim-context.ts';
+import type { ClaimControl } from './claim-control.ts';
 import { runClaim } from './claim-runner.ts';
+import type { ClaimHost } from './claim-runner.ts';
 import { describeError } from './errors.ts';
 import type { Worker, WorkerErrorContext, WorkerOptions } from './types.ts';
 
 const DEFAULT_IDLE_POLL_MS = 250;
+const TERMINAL_STATUSES: readonly string[] = ['COMPLETED', 'STOPPED', 'FAILED', 'CANCELLED'];
 
 export const createWorker = (options: WorkerOptions): Worker => {
   const idlePollMs = options.idlePollMs ?? DEFAULT_IDLE_POLL_MS;
@@ -12,6 +16,25 @@ export const createWorker = (options: WorkerOptions): Worker => {
   let interruptSleep: (() => void) | undefined;
   let wakePending = false;
   let unsubscribeWake: (() => void) | undefined;
+  let aborted = false;
+  const controls = new Set<ClaimControl>();
+  const inFlight = new Set<Promise<unknown>>();
+  const memories = new Map<string, RunMemory>();
+
+  const host: ClaimHost = {
+    attach: (control) => {
+      controls.add(control);
+      return () => controls.delete(control);
+    },
+    memoryOf: (runId) => {
+      const existing = memories.get(runId);
+      if (existing !== undefined) return existing;
+      const created: RunMemory = { streak: 0, interruptions: 0, deadlineAt: Number.POSITIVE_INFINITY };
+      memories.set(runId, created);
+      return created;
+    },
+    forget: (runId) => memories.delete(runId),
+  };
 
   const noticeOnClaim = (message: string, claim: Claim): void => {
     try {
@@ -22,23 +45,27 @@ export const createWorker = (options: WorkerOptions): Worker => {
   };
 
   const report = (error: unknown, context: WorkerErrorContext, claim: Claim | null): void => {
-    const failure = `The worker failed on this run: ${describeError(error)}`;
-    if (options.onError === undefined) {
-      if (claim !== null) noticeOnClaim(failure, claim);
-      return;
-    }
+    let message = `The worker failed on this run: ${describeError(error)}`;
     try {
-      options.onError(error, context);
+      options.onError?.(error, context);
     } catch (hookError) {
-      if (claim !== null) noticeOnClaim(`${failure} (the error hook also failed: ${describeError(hookError)})`, claim);
+      message = `${message} (the error hook also failed: ${describeError(hookError)})`;
     }
+    if (claim !== null) noticeOnClaim(message, claim);
   };
 
   const runOnce = async (onClaim?: (claim: Claim) => void): Promise<'idle' | 'yielded'> => {
+    if (aborted || stopping) return 'idle';
     const claim = options.store.claim(options.workerId);
     if (claim === null) return 'idle';
     onClaim?.(claim);
-    await runClaim(options, claim);
+    const running = runClaim(options, claim, host);
+    inFlight.add(running);
+    try {
+      await running;
+    } finally {
+      inFlight.delete(running);
+    }
     return 'yielded';
   };
 
@@ -76,9 +103,19 @@ export const createWorker = (options: WorkerOptions): Worker => {
       interruptSleep = done;
     });
 
+  const sweepMemories = (): void => {
+    const now = options.clock.now();
+    for (const [runId, memory] of memories) {
+      const status = options.store.getRun(runId)?.status;
+      if (memory.deadlineAt <= now || status === undefined || TERMINAL_STATUSES.includes(status)) memories.delete(runId);
+    }
+  };
+
   const poll = async (): Promise<void> => {
     while (!stopping) {
-      if ((await pollOnce()) === 'idle') await sleep();
+      const outcome = await pollOnce();
+      sweepMemories();
+      if (outcome === 'idle') await sleep();
     }
   };
 
@@ -95,9 +132,24 @@ export const createWorker = (options: WorkerOptions): Worker => {
       unsubscribeWake?.();
       unsubscribeWake = undefined;
       interruptSleep?.();
+      for (const control of controls) control.requestYield();
       const running = loop;
       loop = undefined;
       if (running !== undefined) await running;
+      await Promise.allSettled([...inFlight]);
+    },
+    memorySize: () => memories.size,
+    abort: async () => {
+      aborted = true;
+      stopping = true;
+      unsubscribeWake?.();
+      unsubscribeWake = undefined;
+      interruptSleep?.();
+      for (const control of controls) control.shutdown();
+      const running = loop;
+      loop = undefined;
+      if (running !== undefined) await running;
+      await Promise.allSettled([...inFlight]);
     },
   };
 };

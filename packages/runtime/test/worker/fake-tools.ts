@@ -18,6 +18,7 @@ type Hook = (input: Record<string, unknown>, ctx: ToolContext) => void | Promise
 export type FakeToolbox = {
   executions: Execution[];
   reconciles: string[];
+  reconcileHook: (() => Promise<void>) | undefined;
   hooks: Partial<Record<string, Hook>>;
   waitStarted: Deferred<void>;
   waitSignals: AbortSignal[];
@@ -38,6 +39,7 @@ export const createFakeToolbox = (): FakeToolbox => {
   const box: FakeToolbox = {
     executions: [],
     reconciles: [],
+    reconcileHook: undefined,
     hooks: {},
     waitStarted: deferred<void>(),
     waitSignals: [],
@@ -171,6 +173,7 @@ export const createFakeToolbox = (): FakeToolbox => {
     },
     reconcile: async (input, record) => {
       box.reconciles.push(record.key);
+      await box.reconcileHook?.();
       return { outcome: 'already_applied', output: `already marked ${String(input['value'])}` };
     },
   });

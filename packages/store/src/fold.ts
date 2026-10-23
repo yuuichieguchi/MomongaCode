@@ -142,7 +142,7 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
     case 'model.requested':
       return {
         ...state,
-        inFlightModelRequest: { step: event.step, attempt: event.attempt, digest: event.digest, body: event.body },
+        inFlightModelRequest: { step: event.step, attempt: event.attempt, digest: event.digest, body: event.body, requestedSeq: event.seq },
         steps: withStep(state.steps, event.step, event.body),
       };
     case 'model.responded': {
@@ -228,6 +228,7 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       return { ...state, notes: [...state.notes, { level: event.level, message: event.message }] };
     case 'agent.message.delta':
     case 'agent.thought.delta':
+    case 'model.stream.restarted':
     case 'tool.updated':
     case 'plan.updated':
     case 'usage.updated':

@@ -26,7 +26,8 @@ export type GatewayPort = {
   stream(body: CreateResponseBody, options: GatewayCallOptions): AsyncIterable<StreamEvent>;
   compact(request: CompactRequest, options: GatewayCallOptions): Promise<CompactResource>;
   countTokens(request: CountTokensRequest, options: { signal: AbortSignal }): Promise<CountTokensResult>;
-  capabilities(alias: string): Promise<Capabilities>;
+  capabilities(alias: string, options: { signal: AbortSignal }): Promise<Capabilities>;
+  cancel(idempotencyKey: string, options: { signal: AbortSignal }): Promise<boolean>;
 };
 
 export type AppendedRule = { effect: 'allow' | 'deny'; rule: string };
@@ -37,12 +38,17 @@ export type SettingsPort = {
   trusted(session: Session): boolean;
 };
 
+export type ToolPolicy = {
+  roots: readonly string[];
+  sandboxPolicy: SandboxPolicy;
+  protectedPaths: readonly string[];
+};
+
 export type ToolRuntimePort = {
   toolSet(runId: string): Promise<ToolSet>;
   executor: ToolExecutor;
   sandbox: Sandbox;
-  sandboxPolicy: SandboxPolicy;
-  protectedPaths: readonly string[];
+  policyFor(session: Session): Promise<ToolPolicy>;
   sessionState(session: Session): ToolSessionState;
 };
 

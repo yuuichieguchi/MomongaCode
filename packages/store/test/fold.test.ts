@@ -243,7 +243,7 @@ describe('foldRunState details', () => {
 
   it('keeps the exact in-flight model request when no response was recorded', () => {
     const state = foldAll(events.slice(0, 4));
-    expect(state.inFlightModelRequest).toEqual({ step: 1, attempt: 1, digest: 'd1', body: { input: 'say hi' } });
+    expect(state.inFlightModelRequest).toEqual({ step: 1, attempt: 1, digest: 'd1', body: { input: 'say hi' }, requestedSeq: 4 });
     expect(state.step).toBe(1);
   });
 

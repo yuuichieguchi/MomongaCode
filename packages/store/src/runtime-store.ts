@@ -59,6 +59,11 @@ const SERVICE_TRANSITIONS: Record<RunStatus, readonly RunStatus[]> = {
   CANCELLED: [],
 };
 
+const SWEEP_TRANSITIONS: Record<RunStatus, readonly RunStatus[]> = {
+  ...SERVICE_TRANSITIONS,
+  QUEUED: ['STOPPED'],
+};
+
 const DEAD_LETTER_TRANSITIONS: Record<RunStatus, readonly RunStatus[]> = {
   QUEUED: ['FAILED', 'CANCELLED'],
   RUNNING: ['FAILED', 'CANCELLED'],
@@ -71,12 +76,44 @@ const DEAD_LETTER_TRANSITIONS: Record<RunStatus, readonly RunStatus[]> = {
   CANCELLED: [],
 };
 
+const isClaimStatus = (status: RunStatus): status is ClaimStatus => CLAIM_STATUSES.some((claimStatus) => claimStatus === status);
+
+const releaseTarget = (status: ClaimStatus): 'QUEUED' | 'CANCELLING' => {
+  switch (status) {
+    case 'RUNNING':
+      return 'QUEUED';
+    case 'CANCELLING':
+      return 'CANCELLING';
+    default: {
+      const unreachable: never = status;
+      throw new Error(`unhandled claim status ${String(unreachable)}`);
+    }
+  }
+};
+
+const refundedAttempts = (run: Run, refund: boolean | undefined): number => {
+  if (refund !== true) return run.attempts;
+  if (run.attempts <= 0) throw new Error(`run ${run.id} has no attempt to refund`);
+  return run.attempts - 1;
+};
+
+const clearLease = (
+  run: Run,
+  change: { availableAt: number; resetFailures: boolean; refundAttempt: boolean | undefined },
+): Pick<Run, 'leaseOwner' | 'leaseExpiresAt' | 'availableAt' | 'failedAttempts' | 'attempts'> => ({
+  leaseOwner: null,
+  leaseExpiresAt: null,
+  availableAt: change.availableAt,
+  failedAttempts: change.resetFailures ? 0 : run.failedAttempts,
+  attempts: refundedAttempts(run, change.refundAttempt),
+});
+
 const isTerminal = (status: RunStatus): boolean => TERMINAL_STATUSES.some((terminal) => terminal === status);
 
 const CLAIMABLE = `
   (
     (r.status = 'QUEUED' AND r.available_at <= :now)
-    OR (r.status IN ('RUNNING', 'CANCELLING') AND (r.lease_expires_at IS NULL OR r.lease_expires_at <= :now))
+    OR (r.status IN ('RUNNING', 'CANCELLING') AND r.available_at <= :now AND (r.lease_expires_at IS NULL OR r.lease_expires_at <= :now))
   )
   AND NOT EXISTS (
     SELECT 1 FROM runs earlier
@@ -152,10 +189,13 @@ const prepareStatements = (db: DatabaseSync) => ({
   ),
   dueWaitingRuns: db.prepare(
     `SELECT r.id FROM runs r
-     WHERE r.status = 'WAITING_HUMAN'
-       AND (
-         r.deadline_at <= :nowMs
-         OR EXISTS (SELECT 1 FROM approvals a WHERE a.run_id = r.id AND a.status = 'pending' AND a.expires_at <= :nowMs)
+     WHERE (r.status = 'QUEUED' AND r.deadline_at <= :nowMs)
+       OR (
+         r.status = 'WAITING_HUMAN'
+         AND (
+           r.deadline_at <= :nowMs
+           OR EXISTS (SELECT 1 FROM approvals a WHERE a.run_id = r.id AND a.status = 'pending' AND a.expires_at <= :nowMs)
+         )
        )
      ORDER BY r.created_at, r.rowid`,
   ),
@@ -212,6 +252,7 @@ type StatusChange = {
   patch?: StatusPatch;
   deadLetter?: boolean;
   resetFailures?: boolean;
+  refundAttempt?: boolean;
 };
 
 const payloadStep = (payload: RunEventPayload): number => ('step' in payload ? payload.step : 0);
@@ -358,16 +399,22 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     const appended = appendPayloads(run, [...leadingEvents, ...withdrawal, statusEvent]);
     const keepsLease = to === 'RUNNING' || to === 'CANCELLING';
     const wakesNow = to === 'QUEUED' || (to === 'CANCELLING' && run.leaseOwner === null);
+    const availableAt = change.availableAt ?? (wakesNow ? clock.now() : run.availableAt);
     const next: Run = {
       ...appended,
       status: to,
       version: run.version + 1,
-      leaseOwner: keepsLease ? run.leaseOwner : null,
-      leaseExpiresAt: keepsLease ? run.leaseExpiresAt : null,
-      availableAt: change.availableAt ?? (wakesNow ? clock.now() : run.availableAt),
       cancelRequested: run.cancelRequested || to === 'CANCELLING' || to === 'CANCELLED',
       deadLetter: change.deadLetter ?? run.deadLetter,
-      failedAttempts: change.resetFailures === true ? 0 : run.failedAttempts,
+      ...(keepsLease
+        ? {
+            leaseOwner: run.leaseOwner,
+            leaseExpiresAt: run.leaseExpiresAt,
+            availableAt,
+            failedAttempts: change.resetFailures === true ? 0 : run.failedAttempts,
+            attempts: refundedAttempts(run, change.refundAttempt),
+          }
+        : clearLease(run, { availableAt, resetFailures: change.resetFailures === true, refundAttempt: change.refundAttempt })),
     };
     if (patch.stopReason !== undefined) next.stopReason = patch.stopReason;
     if (patch.error !== undefined) next.error = patch.error;
@@ -430,6 +477,10 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   };
 
   const stopWaitingRun = (run: Run, nowMs: number): boolean => {
+    if (run.status === 'QUEUED' && run.deadlineAt <= nowMs) {
+      changeStatus(run, 'STOPPED', { edges: SWEEP_TRANSITIONS, patch: { stopReason: 'timeout' } });
+      return true;
+    }
     if (run.status !== 'WAITING_HUMAN') return false;
     const due = approvalOps.listPendingDue(run.id, nowMs);
     if (due.length > 0) {
@@ -649,14 +700,30 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     transition: (claim, from, to, patch) => workerTransition(claim, from, to, patch === undefined ? {} : { patch }),
 
-    release: (claim, to, availableAt) =>
+    release: (claim, to, availableAt, options) =>
       transaction<RunMutationResult>(() => {
         const run = fenced(claim);
         if (run === undefined) return leaseLost;
+        const refund = options?.refundAttempt === true ? { refundAttempt: true } : {};
         if (to === 'WAITING_HUMAN' && approvalOps.store.listPending(run.id).length === 0) {
-          return moveWorker(run, CLAIM_STATUSES, 'QUEUED', { availableAt: clock.now() });
+          return moveWorker(run, CLAIM_STATUSES, 'QUEUED', { availableAt: clock.now(), ...refund });
         }
-        return moveWorker(run, CLAIM_STATUSES, to, availableAt === undefined ? {} : { availableAt });
+        return moveWorker(run, CLAIM_STATUSES, to, { ...(availableAt === undefined ? {} : { availableAt }), ...refund });
+      }),
+
+    releaseLease: (claim, options) =>
+      transaction<RunMutationResult>(() => {
+        const run = fenced(claim);
+        if (run === undefined) return leaseLost;
+        const refund = options.refundAttempt === true ? { refundAttempt: true } : {};
+        if (!isClaimStatus(run.status)) return conflict(`run ${run.id} is ${run.status}, expected one of ${CLAIM_STATUSES.join(', ')}`);
+        if (releaseTarget(run.status) === 'QUEUED') return moveWorker(run, ['RUNNING'], 'QUEUED', { availableAt: options.availableAt, ...refund });
+        writeRun({
+          ...run,
+          version: run.version + 1,
+          ...clearLease(run, { availableAt: options.availableAt, resetFailures: true, refundAttempt: options.refundAttempt }),
+        });
+        return { kind: 'ok', run: requireRun(run.id) };
       }),
 
     requestCancel: (runId) =>

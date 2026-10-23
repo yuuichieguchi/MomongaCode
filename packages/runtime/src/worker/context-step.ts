@@ -61,17 +61,20 @@ export const compactThrough = async (ctx: ClaimContext, throughSeq: number): Pro
   const { journal, options } = ctx;
   const state = journal.state;
   const input = [...(state.summary === undefined ? [] : [state.summary.item]), ...state.history.filter((entry) => entry.seq <= throughSeq).map((entry) => entry.item)];
+  const idempotencyKey = sha256Hex(canonicalJson([ctx.run.id, 'compact', throughSeq]));
+  ctx.control.inFlight.compactionKey = idempotencyKey;
   const resource = await ctx.control.recordingRaised(
     options.gateway.compact(
       { model: ctx.alias, input, instructions: ctx.systemPrompt },
       {
-        idempotencyKey: sha256Hex(canonicalJson([ctx.run.id, 'compact', throughSeq])),
+        idempotencyKey,
         deadlineAt: ctx.run.deadlineAt,
         signal: ctx.control.signal,
         traceparent: ctx.agentSpan.traceparent,
       },
     ),
   );
+  delete ctx.control.inFlight.compactionKey;
   const compaction = resource.output.find((item) => item.type === 'compaction');
   if (compaction === undefined) throw new Error(`the compaction response for run ${ctx.run.id} holds no compaction item`);
   journal.append([
@@ -90,6 +93,7 @@ export const cancelIfInterrupted = (ctx: ClaimContext): 'done' | undefined => {
   const failure = ctx.control.failure();
   if (failure !== undefined) throw failure;
   if (ctx.control.leaseLost()) ctx.control.lost();
+  if (ctx.control.shuttingDown()) return ctx.terminals.yieldLease();
   return interrupted(ctx) ? ctx.terminals.cancel() : undefined;
 };
 

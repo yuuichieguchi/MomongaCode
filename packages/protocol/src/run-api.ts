@@ -94,6 +94,10 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
     properties: { step: nonNegativeInteger, attempt: integer, itemId: string, text: string },
     required: ['step', 'attempt', 'itemId', 'text'],
   },
+  'model.stream.restarted': {
+    properties: { step: nonNegativeInteger, attempt: integer },
+    required: ['step', 'attempt'],
+  },
   'tool.call': {
     properties: {
       callId: string,

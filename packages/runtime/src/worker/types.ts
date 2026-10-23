@@ -38,10 +38,13 @@ export type WorkerOptions = {
   instructionReader: InstructionReader;
   onError?: (error: unknown, context: WorkerErrorContext) => void;
   wake?: WorkerWake;
+  random?: () => number;
 };
 
 export type Worker = {
   runOnce(): Promise<'idle' | 'yielded'>;
   start(): void;
   stop(): Promise<void>;
+  abort(reason: 'shutdown'): Promise<void>;
+  memorySize(): number;
 };

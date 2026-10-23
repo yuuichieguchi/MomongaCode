@@ -199,7 +199,8 @@ export type RuntimeStore = {
   heartbeat(claim: Claim): HeartbeatResult;
   append(claim: Claim, events: readonly RunEventPayload[]): AppendResult;
   transition(claim: Claim, from: readonly RunStatus[], to: RunStatus, patch?: StatusPatch): RunMutationResult;
-  release(claim: Claim, to: RunStatus, availableAt?: number): RunMutationResult;
+  release(claim: Claim, to: RunStatus, availableAt?: number, options?: { refundAttempt?: boolean }): RunMutationResult;
+  releaseLease(claim: Claim, options: { availableAt: number; refundAttempt?: boolean }): RunMutationResult;
   requestCancel(runId: string): RequestCancelResult;
   setPermissionMode(sessionId: string, mode: PermissionMode): SetPermissionModeResult;
   listRuns(sessionId: string, statuses?: readonly RunStatus[]): Run[];

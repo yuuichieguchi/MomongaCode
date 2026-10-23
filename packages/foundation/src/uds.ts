@@ -24,6 +24,7 @@ export interface UdsResponse {
 export interface UdsClient {
   request(options: UdsRequestOptions): Promise<UdsResponse>;
   close(): Promise<void>;
+  destroy(): Promise<void>;
 }
 
 export interface UdsClientOptions {
@@ -38,6 +39,7 @@ export const createUdsClient = (socketPath: string, options: UdsClientOptions = 
     ...(options.bodyTimeoutMs === undefined ? {} : { bodyTimeout: options.bodyTimeoutMs }),
   });
   let closing: Promise<void> | undefined;
+  let destroying: Promise<void> | undefined;
   return {
     request: async (options) => {
       const response = await request(`http://localhost${options.path}`, {
@@ -63,6 +65,10 @@ export const createUdsClient = (socketPath: string, options: UdsClientOptions = 
     close: () => {
       closing ??= agent.close();
       return closing;
+    },
+    destroy: () => {
+      destroying ??= agent.destroy().then(() => undefined);
+      return destroying;
     },
   };
 };

@@ -77,6 +77,7 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   'model.responded': true,
   'agent.message.delta': true,
   'agent.thought.delta': true,
+  'model.stream.restarted': true,
   'tool.call': true,
   'tool.permission.requested': true,
   'tool.permission.resolved': true,
@@ -205,7 +206,7 @@ const hasConsistentSeqs = (history: readonly unknown[], nextItemSeq: unknown, su
   return true;
 };
 
-export const SNAPSHOT_STATE_VERSION = 3;
+export const SNAPSHOT_STATE_VERSION = 4;
 
 export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
 
@@ -216,6 +217,7 @@ export const decodeRunState = (identity: string, value: unknown): RunState | und
   const usage = state['usage'];
   const history = state['history'];
   const evicted = state['evicted'];
+  const inFlight = state['inFlightModelRequest'];
   const valid =
     typeof state['runId'] === 'string' &&
     typeof state['sessionId'] === 'string' &&
@@ -232,6 +234,7 @@ export const decodeRunState = (identity: string, value: unknown): RunState | und
     history.every(isHistoryEntry) &&
     (state['summary'] === undefined || isSummary(state['summary'])) &&
     hasConsistentSeqs(history, state['nextItemSeq'], state['summary']) &&
+    (inFlight === undefined || (isRecord(inFlight) && Number.isInteger(inFlight['requestedSeq']))) &&
     (state['pins'] === undefined || isRecord(state['pins'])) &&
     Array.isArray(evicted) &&
     evicted.every((callId) => typeof callId === 'string') &&
