@@ -5,12 +5,12 @@ import type { MeterCount, MeterRequest, TokenMeter, TokenMeterOptions, UsageObse
 
 const ERROR_WINDOW = 20;
 const ESTIMATED_ERROR_FLOOR = 0.1;
+const MAX_RELATIVE_ERROR = 1;
 const MAX_COUNTED = 1024;
 const MAX_OBSERVATIONS = 64;
 const MAX_ITEM_COUNTS = 8192;
 
 type CountedRecord = { itemCount: number; inputTokens: number; counterBound: number };
-type ObservationRecord = { itemCount: number; inputTokens: number };
 
 const remember = <V>(map: Map<string, V>, key: string, value: V, limit: number): void => {
   map.delete(key);
@@ -23,14 +23,21 @@ const remember = <V>(map: Map<string, V>, key: string, value: V, limit: number):
 
 export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOptions): TokenMeter => {
   const counted = new Map<string, CountedRecord>();
-  const observations = new Map<string, ObservationRecord>();
+  const observations = new Map<string, CountedRecord>();
   const itemTokens = new Map<string, number>();
   const baselines = new Map<string, number>();
   const errors: number[] = [];
 
   const relativeError = (): number => {
-    if (errors.length > 0) return Math.max(...errors);
-    return capabilities.tokenCounting === 'estimated' ? ESTIMATED_ERROR_FLOOR : 0;
+    const observed = errors.length > 0 ? Math.max(...errors) : 0;
+    return capabilities.tokenCounting === 'estimated' ? Math.max(ESTIMATED_ERROR_FLOOR, observed) : observed;
+  };
+
+  const errorBoundOf = (record: CountedRecord): number => {
+    const relativeBound = Math.ceil(relativeError() * record.inputTokens);
+    return capabilities.tokenCounting === 'estimated'
+      ? Math.max(relativeBound, record.counterBound)
+      : relativeBound + record.counterBound;
   };
 
   const requestOf = (
@@ -61,7 +68,7 @@ export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOpt
     const withBound = (record: CountedRecord): MeterCount => ({
       inputTokens: record.inputTokens,
       inputDigest,
-      errorBound: Math.ceil(relativeError() * record.inputTokens) + record.counterBound,
+      errorBound: errorBoundOf(record),
     });
 
     const known = counted.get(inputDigest);
@@ -75,7 +82,7 @@ export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOpt
       const observation = observations.get(digestAt(length));
       if (observation === undefined) continue;
       if (length === input.length) {
-        record = { itemCount: input.length, inputTokens: observation.inputTokens, counterBound: 0 };
+        record = observation;
       } else {
         const suffix = await counter.count(requestOf(input.slice(length), tools, instructions));
         const baseline = await baselineOf(tools, instructions);
@@ -107,9 +114,13 @@ export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOpt
   const observe = ({ inputDigest, inputTokens }: UsageObservation): void => {
     const record = counted.get(inputDigest);
     if (record === undefined) throw new Error(`token meter has no count for input digest ${inputDigest}`);
-    errors.push(Math.abs(record.inputTokens - inputTokens) / Math.max(inputTokens, 1));
+    const estimate = record.inputTokens;
+    const underEstimate = Math.max(0, inputTokens - estimate) / Math.max(estimate, 1);
+    errors.push(Math.min(underEstimate, MAX_RELATIVE_ERROR));
     if (errors.length > ERROR_WINDOW) errors.shift();
-    remember(observations, inputDigest, { itemCount: record.itemCount, inputTokens }, MAX_OBSERVATIONS);
+    const conservative = Math.max(estimate, inputTokens);
+    remember(counted, inputDigest, { ...record, inputTokens: conservative }, MAX_COUNTED);
+    remember(observations, inputDigest, { ...record, inputTokens: conservative }, MAX_OBSERVATIONS);
   };
 
   return { count, countItem, observe, relativeError };
