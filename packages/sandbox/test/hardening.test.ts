@@ -5,7 +5,8 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildSeatbeltProfile, createSeatbeltSandbox, defaultProtectedPaths } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { isAlive, killGroup, makeTempDir, run, waitUntilDead } from './helpers.ts';
+import { killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
+import { isAlive, makeTempDir, run, waitUntilDead } from './helpers.ts';
 
 const KILL_GRACE_MS = 300;
 const BASE_ENV = { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' };
@@ -56,20 +57,17 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox hardening (real 
   });
 
   afterEach(async () => {
-    for (const pid of strayPids) {
-      try {
-        process.kill(pid, 'SIGKILL');
-      } catch {
-        continue;
-      }
+    killPidsForCleanup(strayPids);
+    try {
+      await killGroupsForCleanup(spawned.map((proc) => proc.pgid));
+    } finally {
+      await Promise.all(servers.map((server) => new Promise((resolve) => server.close(resolve))));
+      for (const dir of created) fs.rmSync(dir, { recursive: true, force: true });
+      created = [];
+      spawned = [];
+      servers = [];
+      strayPids = [];
     }
-    for (const proc of spawned) killGroup(proc.pgid);
-    await Promise.all(servers.map((server) => new Promise((resolve) => server.close(resolve))));
-    for (const dir of created) fs.rmSync(dir, { recursive: true, force: true });
-    created = [];
-    spawned = [];
-    servers = [];
-    strayPids = [];
   });
 
   it('terminates background processes left behind by the leader before exited resolves', async () => {
@@ -96,7 +94,7 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox hardening (real 
     const escaped = Number(fs.readFileSync(path.join(root, 'pid'), 'utf8'));
     strayPids.push(escaped);
     expect(isAlive(escaped)).toBe(true);
-    process.kill(escaped, 'SIGKILL');
+    killPidsForCleanup([escaped]);
     expect(await waitUntilDead([escaped], 2000)).toBe(true);
   });
 

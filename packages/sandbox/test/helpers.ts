@@ -41,11 +41,3 @@ export async function waitUntilDead(pids: number[], timeoutMs: number): Promise<
   }
   return pids.every((pid) => !isAlive(pid));
 }
-
-export function killGroup(pgid: number): void {
-  try {
-    process.kill(-pgid, 'SIGKILL');
-  } catch {
-    return;
-  }
-}

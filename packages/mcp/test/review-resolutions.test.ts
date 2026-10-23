@@ -8,6 +8,7 @@ import {
   FIXTURE_HOSTILE_TITLE,
   MCP_MODERN_SERVER_PATH,
   MODERN_FIXTURE_RECORD_ENV,
+  killPidsForCleanup,
 } from '@momonga/testkit';
 import {
   callRecords,
@@ -171,15 +172,7 @@ describe('close during backoff and connect', () => {
   it('aborts an in-flight connect on close and reaps the half-started server', async () => {
     const launcher = makeLauncher(() => 'exec sleep 600');
     const harness = makePool([entry('stuck', launcher.config)], { connectTimeoutMs: 60_000 });
-    onCleanup(() => {
-      for (const pid of launcher.pids()) {
-        try {
-          process.kill(pid, 'SIGKILL');
-        } catch {
-          continue;
-        }
-      }
-    });
+    onCleanup(() => killPidsForCleanup(launcher.pids()));
     const [source] = harness.pool.sources;
     const pending = (source?.list() as Promise<unknown>).then(
       () => 'resolved',
@@ -198,15 +191,7 @@ describe('close aborting the first connect', () => {
   it('leaves no abort error and no failure behind in diagnostics', async () => {
     const launcher = makeLauncher(() => 'exec sleep 600');
     const harness = makePool([entry('stuck', launcher.config)], { connectTimeoutMs: 60_000 });
-    onCleanup(() => {
-      for (const pid of launcher.pids()) {
-        try {
-          process.kill(pid, 'SIGKILL');
-        } catch {
-          continue;
-        }
-      }
-    });
+    onCleanup(() => killPidsForCleanup(launcher.pids()));
     const pending = (harness.pool.sources[0]?.list() as Promise<unknown>).catch(() => undefined);
     await waitUntil(() => launcher.pids().length === 1, 'launcher started');
     await harness.pool.close();

@@ -5,6 +5,7 @@ import { Client, type ListChangedHandlers } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  killPidsForCleanup,
   LEGACY_FIXTURE_PROTOCOL_VERSION,
   LEGACY_FIXTURE_TOOL_NAMES,
   MCP_LEGACY_SERVER_PATH,
@@ -37,7 +38,7 @@ const makeRecordFile = (): string => {
   const file = path.join(dir, 'record.jsonl');
   cleanups.push(() => {
     for (const entry of readRecords(file)) {
-      if (entry.type === 'grandchild' && entry.pid > 1 && pidAlive(entry.pid)) process.kill(entry.pid, 'SIGKILL');
+      if (entry.type === 'grandchild' && entry.pid > 1 && pidAlive(entry.pid)) killPidsForCleanup([entry.pid]);
     }
     fs.rmSync(dir, { recursive: true, force: true });
   });
