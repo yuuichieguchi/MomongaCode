@@ -54,3 +54,18 @@ export type {
   ScriptedCallPlan,
   ScriptedFailure,
 } from './scripted-adapter.ts';
+export {
+  LEGACY_FIXTURE_PROTOCOL_VERSION,
+  LEGACY_FIXTURE_TOOL_NAMES,
+  MCP_LEGACY_SERVER_PATH,
+  MCP_MODERN_SERVER_PATH,
+  MCP_RAW_STDIO_SERVER_PATH,
+  MODERN_FIXTURE_GRANDCHILD_ENV,
+  MODERN_FIXTURE_IMAGE_BYTES,
+  MODERN_FIXTURE_LONG_TOOL_NAME,
+  MODERN_FIXTURE_PAGE_SIZE,
+  MODERN_FIXTURE_PROTOCOL_VERSION,
+  MODERN_FIXTURE_RECORD_ENV,
+  MODERN_FIXTURE_TOOL_NAMES,
+} from './mcp-fixtures.ts';
+export type { ModernFixtureRecord } from './mcp-fixtures.ts';

@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import { signalGroup, terminateGroup } from '@momonga/foundation';
 import type { SandboxExit, SandboxedProcess } from './types.ts';
 
 export interface LaunchOptions {
@@ -11,47 +12,6 @@ export interface LaunchOptions {
   killGraceMs: number;
   afterExit: () => void;
   markerFile?: string;
-}
-
-const POLL_INTERVAL_MS = 10;
-
-function assertSignalableGroup(pgid: number): void {
-  if (!Number.isInteger(pgid) || pgid <= 1) throw new Error(`refusing to signal process group ${pgid}`);
-}
-
-function signalGroup(pgid: number, signal: NodeJS.Signals): void {
-  assertSignalableGroup(pgid);
-  try {
-    process.kill(-pgid, signal);
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code !== 'ESRCH' && code !== 'EPERM') throw error;
-  }
-}
-
-function groupAlive(pgid: number): boolean {
-  assertSignalableGroup(pgid);
-  try {
-    process.kill(-pgid, 0);
-    return true;
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ESRCH') return false;
-    if (code === 'EPERM') return true;
-    throw error;
-  }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function waitForGroupGone(pgid: number, deadline: number): Promise<boolean> {
-  while (groupAlive(pgid)) {
-    if (Date.now() >= deadline) return false;
-    await sleep(POLL_INTERVAL_MS);
-  }
-  return true;
 }
 
 export function launch(options: LaunchOptions): SandboxedProcess {
@@ -101,16 +61,7 @@ export function launch(options: LaunchOptions): SandboxedProcess {
       clearTimeout(graceTimer);
       graceTimer = undefined;
     }
-    if (!groupAlive(pid)) return;
-    if (termDeadline === undefined) {
-      termDeadline = Date.now() + killGraceMs;
-      signalGroup(pid, 'SIGTERM');
-    }
-    if (await waitForGroupGone(pid, termDeadline)) return;
-    signalGroup(pid, 'SIGKILL');
-    if (!(await waitForGroupGone(pid, Date.now() + Math.max(killGraceMs, 1000)))) {
-      throw new Error(`process group ${pid} did not terminate after SIGKILL`);
-    }
+    await terminateGroup(pid, termDeadline === undefined ? { graceMs: killGraceMs } : { graceMs: killGraceMs, termDeadline });
   };
 
   const exited = new Promise<SandboxExit>((resolve, reject) => {
