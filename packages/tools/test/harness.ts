@@ -82,5 +82,5 @@ export const makeHarness = (options: { maxInlineOutputChars?: number; maxParalle
 
 export type ExecuteFn = (input: Input, ctx: ToolContext, prepared: Record<string, unknown> | undefined) => ReturnType<ToolDefinition<Input>['execute']>;
 
-export const call = (callId: string, name: string, args: unknown = {}, approval?: 'allow_once' | 'allow_always'): ToolCall =>
+export const call = (callId: string, name: string, args: unknown = {}, approval?: ToolCall['approval']): ToolCall =>
   approval === undefined ? { callId, name, arguments: args } : { callId, name, arguments: args, approval };

@@ -1,3 +1,4 @@
+import { findDanglingOutput } from '@momonga/protocol';
 import type { FunctionCallOutputInputItem, InputItem, MessageInputItem } from '@momonga/protocol';
 import { budgetFor } from './budget.ts';
 import { chainTail, digestChain, frozenItem } from './digests.ts';
@@ -134,16 +135,12 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
     ...(entry.handle === undefined ? {} : { handle: entry.handle }),
   }));
 
-  const retainedCalls = new Set(
-    historyItems.flatMap((entry) => (entry.item.type === 'function_call' ? [entry.item.call_id] : [])),
-  );
   if (sources.summary !== undefined) {
-    for (const entry of historyItems) {
-      if (entry.item.type === 'function_call_output' && !retainedCalls.has(entry.item.call_id)) {
-        throw new RangeError(
-          `summary boundary splits call ${entry.item.call_id}: output at seq ${entry.seq} has no retained function_call`,
-        );
-      }
+    const dangling = findDanglingOutput(historyItems);
+    if (dangling !== undefined) {
+      throw new RangeError(
+        `summary boundary splits call ${dangling.callId}: output at seq ${dangling.seq} has no retained function_call`,
+      );
     }
   }
 

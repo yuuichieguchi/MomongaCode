@@ -1,6 +1,8 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES } from '@momonga/protocol';
 import type {
+  CompactionInputItem,
+  InputItem,
   ModelResponse,
   PermissionMode,
   PermissionOption,
@@ -154,6 +156,7 @@ describe('run event payloads', () => {
       approvalId: string;
       callId: string;
       options: PermissionOption[];
+      subjectDigest: string;
     }>();
     expectTypeOf<Payload<'tool.permission.resolved'>>().toEqualTypeOf<{
       type: 'tool.permission.resolved';
@@ -170,6 +173,7 @@ describe('run event payloads', () => {
       output: string;
       content?: unknown[];
       truncated?: boolean;
+      handle?: string;
     }>();
     expectTypeOf<Payload<'tool.reconciled'>>().toEqualTypeOf<{
       type: 'tool.reconciled';
@@ -193,10 +197,16 @@ describe('run event payloads', () => {
     }>();
     expectTypeOf<Payload<'context.compacted'>>().toEqualTypeOf<{
       type: 'context.compacted';
+      item: CompactionInputItem;
       summary: string;
-      replacedThroughItem: number;
+      replacedThroughSeq: number;
     }>();
-    expectTypeOf<Payload<'context.truncated'>>().toEqualTypeOf<{ type: 'context.truncated'; callId: string; handle: string }>();
+    expectTypeOf<Payload<'context.truncated'>>().toEqualTypeOf<{
+      type: 'context.truncated';
+      callId: string;
+      handle: string;
+      kind: 'omitted' | 'truncated';
+    }>();
     expectTypeOf<Payload<'instructions.loaded'>>().toEqualTypeOf<{ type: 'instructions.loaded'; path: string; content: string }>();
     expectTypeOf<Payload<'notice'>>().toEqualTypeOf<{
       type: 'notice';
@@ -231,7 +241,10 @@ describe('RunState', () => {
       step: number;
       attempt: number;
       usage: { inputTokens: number; outputTokens: number; totalTokens: number };
-      items: unknown[];
+      history: { seq: number; item: InputItem; callId?: string; handle?: string }[];
+      nextItemSeq: number;
+      summary?: { item: CompactionInputItem; summary: string; replacedThroughSeq: number };
+      evicted: string[];
       pendingCalls: Record<
         string,
         {
@@ -241,6 +254,13 @@ describe('RunState', () => {
           status: 'requested' | 'awaiting_approval' | 'started' | 'completed' | 'reconciled';
           idemKey?: string;
           approvalId?: string;
+          subjectDigest?: string;
+          options?: PermissionOption[];
+          resolution?: {
+            optionId: string;
+            kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';
+            subjectDigest: string;
+          };
         }
       >;
       inFlightModelRequest?: { step: number; attempt: number; digest: string; body: unknown };

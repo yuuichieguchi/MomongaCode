@@ -224,6 +224,20 @@ describe('summary boundary validation', () => {
   });
 });
 
+describe('positional summary boundary validation', () => {
+  it('throws RangeError naming the call_id when a reused id would cover an output whose own call was dropped', async () => {
+    const capabilities = capabilitiesFor(200000);
+    const { ports } = harness(capabilities);
+    const history = [call(1, 'c1'), output(2, 'c1', 'A'), call(3, 'c1'), output(4, 'c1', 'B'), user(5, 'next')];
+    const summary = { item: { type: 'compaction', encrypted_content: 'enc' } as CompactionInputItem, replacedThroughSeq: 1 };
+    const error = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history, summary }) }), ports).catch(
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(RangeError);
+    expect((error as RangeError).message).toContain('c1');
+  });
+});
+
 describe('touched path kinds', () => {
   it('never looks for AGENTS.md inside a touched file path', async () => {
     const capabilities = capabilitiesFor(200000);

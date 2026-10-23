@@ -111,9 +111,67 @@ export const decodeEvent = (row: Row): RunEvent => {
   return { ...payload, ...envelope } as RunEvent;
 };
 
-export const decodeRunState = (identity: string, value: unknown): RunState => {
-  const state = expectRecord('snapshots', identity, 'state_json', value);
+const PERMISSION_KINDS = ['allow_once', 'allow_always', 'reject_once', 'reject_always'] as const;
+const PENDING_STATUSES = ['requested', 'awaiting_approval', 'started', 'completed', 'reconciled'] as const;
+
+const isPermissionKind = (value: unknown): boolean => PERMISSION_KINDS.some((kind) => kind === value);
+
+const isHistoryItem = (item: unknown): boolean => {
+  if (!isRecord(item) || typeof item['type'] !== 'string') return false;
+  if (item['type'] === 'function_call' || item['type'] === 'function_call_output') return typeof item['call_id'] === 'string';
+  return true;
+};
+
+const isHistoryEntry = (value: unknown): boolean =>
+  isRecord(value) &&
+  Number.isInteger(value['seq']) &&
+  isHistoryItem(value['item']) &&
+  (value['callId'] === undefined || typeof value['callId'] === 'string') &&
+  (value['handle'] === undefined || typeof value['handle'] === 'string');
+
+const isSummary = (value: unknown): boolean =>
+  isRecord(value) &&
+  isRecord(value['item']) &&
+  value['item']['type'] === 'compaction' &&
+  typeof value['item']['encrypted_content'] === 'string' &&
+  typeof value['summary'] === 'string' &&
+  Number.isInteger(value['replacedThroughSeq']);
+
+const isPendingCall = (value: unknown): boolean =>
+  isRecord(value) &&
+  typeof value['name'] === 'string' &&
+  typeof value['providerCallId'] === 'string' &&
+  PENDING_STATUSES.some((status) => status === value['status']) &&
+  (value['subjectDigest'] === undefined || typeof value['subjectDigest'] === 'string') &&
+  (value['options'] === undefined ||
+    (Array.isArray(value['options']) &&
+      value['options'].every((option) => isRecord(option) && typeof option['optionId'] === 'string' && isPermissionKind(option['kind'])))) &&
+  (value['resolution'] === undefined ||
+    (isRecord(value['resolution']) &&
+      typeof value['resolution']['optionId'] === 'string' &&
+      isPermissionKind(value['resolution']['kind']) &&
+      typeof value['resolution']['subjectDigest'] === 'string'));
+
+const hasConsistentSeqs = (history: readonly unknown[], nextItemSeq: unknown, summary: unknown): boolean => {
+  const seqs = history.map((entry) => (entry as { seq: number }).seq);
+  if (!seqs.every((seq, index) => index === 0 || seq > (seqs[index - 1] as number))) return false;
+  if (!Number.isInteger(nextItemSeq) || (nextItemSeq as number) < 1) return false;
+  if (seqs.length > 0 && (nextItemSeq as number) <= (seqs[seqs.length - 1] as number)) return false;
+  if (summary !== undefined && seqs.length > 0 && (summary as { replacedThroughSeq: number }).replacedThroughSeq >= (seqs[0] as number)) return false;
+  return true;
+};
+
+export const SNAPSHOT_STATE_VERSION = 2;
+
+export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
+
+export const decodeRunState = (identity: string, value: unknown): RunState | undefined => {
+  const record = expectRecord('snapshots', identity, 'state_json', value);
+  if (record['stateVersion'] !== SNAPSHOT_STATE_VERSION) return undefined;
+  const { stateVersion: _version, ...state } = record;
   const usage = state['usage'];
+  const history = state['history'];
+  const evicted = state['evicted'];
   const valid =
     typeof state['runId'] === 'string' &&
     typeof state['sessionId'] === 'string' &&
@@ -126,9 +184,15 @@ export const decodeRunState = (identity: string, value: unknown): RunState => {
     typeof usage['inputTokens'] === 'number' &&
     typeof usage['outputTokens'] === 'number' &&
     typeof usage['totalTokens'] === 'number' &&
-    Array.isArray(state['items']) &&
+    Array.isArray(history) &&
+    history.every(isHistoryEntry) &&
+    (state['summary'] === undefined || isSummary(state['summary'])) &&
+    hasConsistentSeqs(history, state['nextItemSeq'], state['summary']) &&
+    Array.isArray(evicted) &&
+    evicted.every((callId) => typeof callId === 'string') &&
     Array.isArray(state['notes']) &&
     isRecord(state['pendingCalls']) &&
+    Object.values(state['pendingCalls']).every(isPendingCall) &&
     isRecord(state['toolCallCounts']);
   if (!valid) throw corrupt('snapshots', identity, 'column state_json does not hold a RunState');
   return state as RunState;
