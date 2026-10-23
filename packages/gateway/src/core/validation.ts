@@ -1,5 +1,6 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
+import { canonicalJson } from '@momonga/foundation';
 import { OPEN_RESPONSES_OPENAPI } from '@momonga/protocol';
 import type { CompactRequest, CountTokensRequest, CreateResponseBody } from '@momonga/protocol';
 import { invalidRequest } from './errors.ts';
@@ -194,6 +195,43 @@ export const createStoredDataChecks = (): StoredDataChecks => {
   };
 };
 
+const MAX_TOOLS = 128;
+const MAX_TOOL_PARAMETERS_BYTES = 65536;
+
+const validateTools = (tools: unknown): void => {
+  if (!Array.isArray(tools)) throwIssue({ segments: ['tools'], message: 'must be an array of function tools' });
+  const list = tools as unknown[];
+  if (list.length > MAX_TOOLS) throwIssue({ segments: ['tools'], message: `must contain at most ${MAX_TOOLS} tools` });
+  const names = new Set<string>();
+  list.forEach((tool, index) => {
+    const at = (field: string): string[] => ['tools', String(index), field];
+    if (!isRecord(tool)) throwIssue({ segments: ['tools', String(index)], message: 'must be an object' });
+    const entry = tool as SchemaObject;
+    if (entry['type'] !== 'function') throwIssue({ segments: at('type'), message: 'must be "function"' });
+    const name = entry['name'];
+    if (typeof name !== 'string' || name === '') {
+      throwIssue({ segments: at('name'), message: 'is required and must be a non-empty string' });
+    }
+    if (names.has(name as string)) throwIssue({ segments: at('name'), message: 'must be unique' });
+    names.add(name as string);
+    const description = entry['description'];
+    if (description !== undefined && description !== null && typeof description !== 'string') {
+      throwIssue({ segments: at('description'), message: 'must be a string' });
+    }
+    const parameters = entry['parameters'];
+    if (parameters !== undefined && parameters !== null && !isRecord(parameters)) {
+      throwIssue({ segments: at('parameters'), message: 'must be an object' });
+    }
+    if (parameters !== undefined && parameters !== null && Buffer.byteLength(canonicalJson(parameters)) > MAX_TOOL_PARAMETERS_BYTES) {
+      throwIssue({ segments: at('parameters'), message: `must not exceed ${MAX_TOOL_PARAMETERS_BYTES} bytes of canonical JSON` });
+    }
+    const strict = entry['strict'];
+    if (strict !== undefined && typeof strict !== 'boolean') {
+      throwIssue({ segments: at('strict'), message: 'must be a boolean' });
+    }
+  });
+};
+
 export type RequestValidator = {
   parseCreate(body: unknown): CreateResponseBody;
   parseCompact(body: unknown): CompactRequest;
@@ -250,6 +288,8 @@ export const createRequestValidator = (): RequestValidator => {
       if (instructions !== undefined && instructions !== null && typeof instructions !== 'string') {
         throwIssue({ segments: ['instructions'], message: 'must be a string' });
       }
+      const tools = record['tools'];
+      if (tools !== undefined) validateTools(tools);
       return assertValidated<CountTokensRequest>(body);
     },
   };

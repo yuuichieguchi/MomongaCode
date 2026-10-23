@@ -185,6 +185,22 @@ describe('createManagedFmTarget token counting', () => {
     const result = await managed.countTokens(TARGET, { model: 'fast', input: 'count these words' }, new AbortController().signal);
     expect(result).toEqual({ input_tokens: 20, method: 'estimated', error_bound: 6 });
   });
+
+  it('counts each tool as canonical JSON on its own line between instructions and input items', async () => {
+    const { managed, execCalls } = await setup({ countStdout: '20\n' });
+    const tools = [
+      { type: 'function' as const, name: 'Read', description: 'Read a file', parameters: { type: 'object', properties: { path: { type: 'string' } } }, strict: true },
+      { type: 'function' as const, name: 'Bash', description: 'Run a command', parameters: { type: 'object', properties: {} } },
+    ];
+    await managed.countTokens(TARGET, { model: 'fast', instructions: 'Be terse.', tools, input: [userText('count these words')] }, new AbortController().signal);
+    const lines = (execCalls[0]?.stdin ?? '').split('\n');
+    expect(lines).toEqual([
+      'Be terse.',
+      '{"description":"Read a file","name":"Read","parameters":{"properties":{"path":{"type":"string"}},"type":"object"}}',
+      '{"description":"Run a command","name":"Bash","parameters":{"properties":{},"type":"object"}}',
+      'count these words',
+    ]);
+  });
 });
 
 describe('createManagedFmTarget health', () => {
