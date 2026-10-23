@@ -16,6 +16,8 @@ export type {
   FakeChatCompletionsOptions,
   FakeChatCompletionsServer,
   FakeScenario,
+  FakeScriptedReply,
+  FakeStreamChunk,
   RecordedRequest,
 } from './fake-chat-completions.ts';
 export { generateInstance, collectAllowedNames, findUsedKeywords } from './schema-instance.ts';

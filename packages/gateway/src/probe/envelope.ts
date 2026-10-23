@@ -79,14 +79,23 @@ const literal = (value: string, support: KeywordSupport): JsonObject => {
   return { type: 'string' };
 };
 
-export const buildToolCallEnvelope = (tool: ProbeTool, support: KeywordSupport): JsonObject => {
-  const argumentsSchema = support.nested ? lowerSchema(tool.parameters, support) : { type: 'object' };
-  const call = {
-    type: 'object',
-    properties: { name: literal(tool.name, support), arguments: argumentsSchema },
-    required: ['name', 'arguments'],
-  };
-  const calls = { type: 'array', minItems: 1, maxItems: 1, items: call };
+const callSchema = (tool: ProbeTool, support: KeywordSupport): JsonObject => ({
+  type: 'object',
+  properties: {
+    name: literal(tool.name, support),
+    arguments: support.nested ? lowerSchema(tool.parameters, support) : { type: 'object' },
+  },
+  required: ['name', 'arguments'],
+});
+
+const envelopeAround = (calls: JsonObject, support: KeywordSupport, requireToolCalls: boolean): JsonObject => {
+  if (requireToolCalls) {
+    return {
+      type: 'object',
+      properties: { kind: literal('tool_calls', support), calls },
+      required: ['kind', 'calls'],
+    };
+  }
   if (!support.anyOf) {
     return {
       type: 'object',
@@ -113,6 +122,30 @@ export const buildToolCallEnvelope = (tool: ProbeTool, support: KeywordSupport):
       },
     ],
   };
+};
+
+export const buildToolCallEnvelope = (tool: ProbeTool, support: KeywordSupport): JsonObject =>
+  envelopeAround({ type: 'array', minItems: 1, maxItems: 1, items: callSchema(tool, support) }, support, false);
+
+const callItemsFor = (tools: readonly ProbeTool[], support: KeywordSupport): JsonObject => {
+  const [only] = tools;
+  if (tools.length === 1 && only !== undefined) return callSchema(only, support);
+  if (support.anyOf) return { anyOf: tools.map((tool) => callSchema(tool, support)) };
+  const names = tools.map((tool) => tool.name);
+  return {
+    type: 'object',
+    properties: { name: support.enum ? { enum: names } : { type: 'string' }, arguments: { type: 'object' } },
+    required: ['name', 'arguments'],
+  };
+};
+
+export const buildToolsEnvelope = (
+  tools: readonly ProbeTool[],
+  support: KeywordSupport,
+  requireToolCalls = false,
+): JsonObject => {
+  if (tools.length === 0) throw new RangeError('buildToolsEnvelope: at least one tool is required');
+  return envelopeAround({ type: 'array', minItems: 1, items: callItemsFor(tools, support) }, support, requireToolCalls);
 };
 
 export const keywordProbeSchemas: Record<ProbeKeyword, JsonObject> = {

@@ -8,6 +8,7 @@ import {
   generateInstance,
   isValidAtIndex,
   startFakeChatCompletions,
+  waitFor,
   type FakeChatCompletionsOptions,
   type FakeChatCompletionsServer,
 } from '@momonga/testkit';
@@ -550,5 +551,138 @@ describe('probe support options', () => {
   it('counts open connections', async () => {
     const fake = await start({ scenario: 'none' });
     expect(fake.openConnections()).toBe(0);
+  });
+});
+
+const streamFrames = (text: string): string[] =>
+  text
+    .split('\n\n')
+    .filter((frame) => frame.startsWith('data: '))
+    .map((frame) => frame.slice('data: '.length));
+
+describe('scripted replies', () => {
+  it('serves scripted stream chunks verbatim in order, then usage and [DONE], and records the request', async () => {
+    const server = await start({
+      scenario: 'tools-ok',
+      script: [
+        {
+          kind: 'stream',
+          chunks: [{ delta: { role: 'assistant', content: 'ab' } }, { delta: { content: 'c' } }, { delta: {}, finishReason: 'length' }],
+          usage: { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 },
+        },
+      ],
+    });
+    const response = await send(server.socketPath, 'POST', '/v1/chat/completions', { model: 'system', messages: [], stream: true });
+    expect(response.status).toBe(200);
+    const frames = streamFrames(response.text);
+    expect(frames.at(-1)).toBe('[DONE]');
+    const payloads = frames.slice(0, -1).map((frame) => JSON.parse(frame));
+    expect(payloads.map((payload) => payload.choices[0]?.delta ?? null)).toEqual([
+      { role: 'assistant', content: 'ab' },
+      { content: 'c' },
+      {},
+      null,
+    ]);
+    expect(payloads[2].choices[0].finish_reason).toBe('length');
+    expect(payloads[3].usage).toEqual({ prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 });
+    expect(server.requests).toHaveLength(1);
+  });
+
+  it('omits [DONE] when the scripted stream sets done to false', async () => {
+    const server = await start({
+      scenario: 'tools-ok',
+      script: [{ kind: 'stream', chunks: [{ delta: { content: 'x' } }], done: false }],
+    });
+    const response = await send(server.socketPath, 'POST', '/v1/chat/completions', { model: 'system', messages: [], stream: true });
+    expect(streamFrames(response.text).includes('[DONE]')).toBe(false);
+    expect(streamFrames(response.text)).toHaveLength(1);
+  });
+
+  it('serves a scripted error with its status, body, and headers, then falls back to normal behaviour', async () => {
+    const server = await start({
+      scenario: 'tools-ok',
+      script: [{ kind: 'error', status: 429, body: { error: { message: 'slow down' } }, headers: { 'retry-after': '2' } }],
+    });
+    const first = await send(server.socketPath, 'POST', '/v1/chat/completions', { model: 'system', messages: [{ role: 'user', content: 'hi' }] });
+    expect(first.status).toBe(429);
+    expect(first.headers['retry-after']).toBe('2');
+    expect(json(first)).toEqual({ error: { message: 'slow down' } });
+    const second = await send(server.socketPath, 'POST', '/v1/chat/completions', { model: 'system', messages: [{ role: 'user', content: 'hi' }] });
+    expect(second.status).toBe(200);
+    expect(json(second).choices[0].message.content).toBe(FAKE_DETERMINISTIC_REPLY);
+  });
+
+  it('holds a hanging stream open until the client disconnects and counts the disconnect', async () => {
+    const server = await start({ scenario: 'tools-ok', script: [{ kind: 'hang', chunks: [{ delta: { content: 'partial' } }] }] });
+    expect(server.disconnects()).toBe(0);
+    const received = await new Promise<string>((resolve, reject) => {
+      const request = http.request(
+        { socketPath: server.socketPath, method: 'POST', path: '/v1/chat/completions', headers: { 'content-type': 'application/json' } },
+        (response) => {
+          response.once('data', (chunk: Buffer) => {
+            resolve(chunk.toString('utf8'));
+            request.destroy();
+          });
+        },
+      );
+      request.on('error', () => undefined);
+      request.once('error', reject);
+      request.end(JSON.stringify({ model: 'system', messages: [], stream: true }));
+    });
+    expect(received).toContain('partial');
+    await waitFor(() => server.disconnects() === 1);
+    expect(server.disconnects()).toBe(1);
+  });
+
+  it('does not count completed responses as disconnects', async () => {
+    const server = await start({ scenario: 'tools-ok' });
+    await send(server.socketPath, 'POST', '/v1/chat/completions', { model: 'system', messages: [{ role: 'user', content: 'hi' }], stream: true });
+    expect(server.disconnects()).toBe(0);
+  });
+});
+
+describe('constrained replies after a rendered tool result', () => {
+  const envelope = {
+    type: 'object',
+    anyOf: [
+      { type: 'object', properties: { kind: { const: 'final' }, text: { type: 'string' } }, required: ['kind', 'text'] },
+      {
+        type: 'object',
+        properties: {
+          kind: { const: 'tool_calls' },
+          calls: {
+            type: 'array',
+            minItems: 1,
+            items: {
+              type: 'object',
+              properties: { name: { const: 'get_weather' }, arguments: { type: 'object' } },
+              required: ['name', 'arguments'],
+            },
+          },
+        },
+        required: ['kind', 'calls'],
+      },
+    ],
+  };
+  const responseFormat = { type: 'json_schema', json_schema: { name: 'envelope', schema: envelope, strict: true } };
+
+  it('answers with a final envelope when the last user message is a <tool_result> block naming a tool', async () => {
+    const server = await start({ scenario: 'json-schema-only' });
+    const response = await send(server.socketPath, 'POST', '/v1/chat/completions', {
+      model: 'system',
+      response_format: responseFormat,
+      messages: [{ role: 'user', content: '<tool_result call_id="c1" name="get_weather">sunny</tool_result>' }],
+    });
+    expect(JSON.parse(json(response).choices[0].message.content).kind).toBe('final');
+  });
+
+  it('still answers with a tool call when a plain user message names the tool', async () => {
+    const server = await start({ scenario: 'json-schema-only' });
+    const response = await send(server.socketPath, 'POST', '/v1/chat/completions', {
+      model: 'system',
+      response_format: responseFormat,
+      messages: [{ role: 'user', content: 'please use get_weather' }],
+    });
+    expect(JSON.parse(json(response).choices[0].message.content)).toMatchObject({ kind: 'tool_calls', calls: [{ name: 'get_weather' }] });
   });
 });

@@ -246,9 +246,9 @@ describe('createFmServe preconditions', () => {
     expect(health.remediation).toBeUndefined();
   });
 
-  it('reports not_running before start when preconditions hold', async () => {
+  it('reports idle-ok before start when preconditions hold', async () => {
     const { server, spawn } = setup();
-    expect(await server.health()).toMatchObject({ ok: false, reason: 'not_running' });
+    expect(await server.health()).toMatchObject({ ok: true });
     expect(spawn).not.toHaveBeenCalled();
   });
 
@@ -702,5 +702,81 @@ describe('createFmServe stop and health', () => {
     manual.fire(HEALTH_MS);
     expect(await checking).toEqual({ ok: false, reason: 'unhealthy' });
     expect(manual.delays()).toEqual([]);
+  });
+});
+
+describe('createFmServe ensureRunning', () => {
+  it('starts once for concurrent callers and returns the endpoint without spawning when running', async () => {
+    const { server, spawn, socketPath } = setup();
+    const [first, second] = await Promise.all([server.ensureRunning(), server.ensureRunning()]);
+    expect(first).toEqual({ kind: 'unix', socketPath });
+    expect(second).toEqual(first);
+    expect(await server.ensureRunning()).toEqual(first);
+    expect(spawn).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts again after the restart budget is exhausted', async () => {
+    const { server, spawn, manual } = setup({
+      maxRestarts: 2,
+      child: (index) => (index === 0 || index >= 3 ? {} : { dieOnSpawn: true }),
+    });
+    await server.ensureRunning();
+    await children[0]?.crash(1, null);
+    await vi.waitFor(() => expect(manual.delays()).toEqual([BACKOFF_MS]));
+    manual.fire(BACKOFF_MS);
+    await vi.waitFor(() => expect(manual.delays()).toEqual([BACKOFF_MS * 2]));
+    manual.fire(BACKOFF_MS * 2);
+    await vi.waitFor(async () => expect(await server.health()).toMatchObject({ ok: false, reason: 'unhealthy' }));
+    await server.ensureRunning();
+    expect(spawn).toHaveBeenCalledTimes(4);
+    expect(await server.health()).toEqual({ ok: true });
+  });
+
+  it('returns the endpoint while a restart is pending', async () => {
+    const { server, spawn, socketPath } = setup();
+    await server.ensureRunning();
+    await children[0]?.crash(1, null);
+    expect(await server.ensureRunning()).toEqual({ kind: 'unix', socketPath });
+    expect(spawn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('createFmServe stopped', () => {
+  it('does not restart through ensureRunning after stop', async () => {
+    const { server, spawn } = setup();
+    await server.ensureRunning();
+    await server.stop();
+    await expect(server.ensureRunning()).rejects.toMatchObject({ reason: 'not_running' });
+    expect(spawn).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets an explicit start leave the stopped state', async () => {
+    const { server, spawn } = setup();
+    await server.ensureRunning();
+    await server.stop();
+    await server.start();
+    expect(spawn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('createFmServe idle health', () => {
+  it('reports ok while idle with passing preconditions', async () => {
+    const { server, spawn } = setup();
+    expect(await server.health()).toEqual({ ok: true, detail: 'idle; starts on demand' });
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('still surfaces a precondition failure while idle', async () => {
+    const exec = async (_file: string, args: readonly string[]): Promise<ExecResult> =>
+      args[0] === 'license' ? { exitCode: 69, stdout: '', stderr: 'no' } : { exitCode: 0, stdout: '', stderr: '' };
+    const { server } = setup({ exec });
+    expect(await server.health()).toMatchObject({ ok: false, reason: 'precondition_failed', remediation: 'sudo fm license' });
+  });
+
+  it('reports not_running after stop', async () => {
+    const { server } = setup();
+    await server.ensureRunning();
+    await server.stop();
+    expect(await server.health()).toMatchObject({ ok: false, reason: 'not_running' });
   });
 });

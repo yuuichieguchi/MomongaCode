@@ -121,7 +121,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     return context.json(list);
   });
 
-  app.get('/v1/momonga/health', (context) => context.json(services.router.health()));
+  app.get('/v1/momonga/health', async (context) => context.json(await services.router.health()));
 
   app.get('/v1/momonga/usage', (context) => {
     const runId = context.req.query('run_id');

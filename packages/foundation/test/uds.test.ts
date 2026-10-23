@@ -373,3 +373,32 @@ describe('createUdsClient close', () => {
     await created.close();
   });
 });
+
+describe('createUdsClient timeouts', () => {
+  const slowServer = async (delayMs: number): Promise<string> => {
+    const socketPath = path.join(makeDir(), 'slow.sock');
+    const server = track(
+      http.createServer((request, response) => {
+        request.resume();
+        setTimeout(() => response.end('late'), delayMs);
+      }),
+    );
+    await listenUnix(server, socketPath);
+    return socketPath;
+  };
+
+  it('fails with a headers timeout when headersTimeoutMs is exceeded', async () => {
+    const socketPath = await slowServer(3000);
+    const limited = createUdsClient(socketPath, { headersTimeoutMs: 100 });
+    cleanups.push(() => limited.close());
+    await expect(limited.request({ method: 'GET', path: '/' })).rejects.toMatchObject({ code: 'UND_ERR_HEADERS_TIMEOUT' });
+  }, 10_000);
+
+  it('disables the headers timeout with headersTimeoutMs 0', async () => {
+    const socketPath = await slowServer(100);
+    const unbounded = createUdsClient(socketPath, { headersTimeoutMs: 0, bodyTimeoutMs: 0 });
+    cleanups.push(() => unbounded.close());
+    const response = await unbounded.request({ method: 'GET', path: '/' });
+    expect(await response.text()).toBe('late');
+  });
+});

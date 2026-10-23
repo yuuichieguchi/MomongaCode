@@ -1,6 +1,9 @@
-import type { CreateResponseBody, ResponseResource } from '@momonga/protocol';
+import type { CreateResponseBody, FunctionTool, ResponseResource } from '@momonga/protocol';
 
 export type ResourceIdentity = { id: string; model: string; createdAtSeconds: number };
+
+export const echoedTools = (tools: readonly FunctionTool[] | null | undefined): FunctionTool[] =>
+  (tools ?? []).map((tool) => ({ ...tool, strict: tool.strict ?? false }));
 
 export const baseResource = (body: CreateResponseBody, identity: ResourceIdentity): ResponseResource => ({
   id: identity.id,
@@ -14,7 +17,7 @@ export const baseResource = (body: CreateResponseBody, identity: ResourceIdentit
   instructions: body.instructions ?? null,
   output: [],
   error: null,
-  tools: body.tools ?? [],
+  tools: echoedTools(body.tools),
   tool_choice: body.tool_choice ?? 'auto',
   truncation: body.truncation ?? 'disabled',
   parallel_tool_calls: body.parallel_tool_calls ?? false,

@@ -33,3 +33,12 @@ export type {
   DecodedCompactionItem,
   ProviderAdapter,
 } from '@momonga/protocol';
+export { createChatCompletionsAdapter } from './adapters/chat-completions/adapter.ts';
+export type {
+  ChatCompletionsAdapter,
+  ChatCompletionsAdapterOptions,
+  ChatCompletionsEndpoint,
+} from './adapters/chat-completions/types.ts';
+export { createManagedFmTarget } from './managed/fm-target.ts';
+export type { ExecWithStdinFn, ManagedFmTarget, ManagedFmTargetOptions } from './managed/fm-target.ts';
+export type { KeywordSupport } from './probe/envelope.ts';

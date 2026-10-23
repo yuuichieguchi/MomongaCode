@@ -1,4 +1,4 @@
-import type { Capabilities } from './capabilities.ts';
+import type { Capabilities, HealthResult } from './capabilities.ts';
 import type { InputItem } from './open-responses.ts';
 
 export const MOMONGA_EVENT_PREFIX = 'momonga:' as const;
@@ -22,6 +22,9 @@ export type CountTokensResult = {
 export type TargetHealth = {
   ok: boolean;
   breaker: 'closed' | 'open' | 'half-open';
+  reason?: HealthResult['reason'];
+  detail?: string;
+  remediation?: string;
 };
 
 export type GatewayHealth = {

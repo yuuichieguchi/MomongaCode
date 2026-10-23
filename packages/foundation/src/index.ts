@@ -11,5 +11,5 @@ export type { MigrateResult, Migration, OpenDatabaseOptions } from './sqlite.ts'
 export { decodeSse, encodeSse } from './sse.ts';
 export type { SseEvent } from './sse.ts';
 export { createUdsClient, isUnixSocketLive, listenUnix } from './uds.ts';
-export type { UdsClient, UdsRequestOptions, UdsResponse } from './uds.ts';
+export type { UdsClient, UdsClientOptions, UdsRequestOptions, UdsResponse } from './uds.ts';
 export { uuidv7 } from './uuidv7.ts';
