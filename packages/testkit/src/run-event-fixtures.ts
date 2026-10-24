@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { RunEvent, RunEventPayload } from '@momonga/protocol';
 
 export type RecordedRun = {
@@ -272,6 +273,47 @@ export const evictionAndRejectionRun: RecordedRun = {
   ],
 };
 
+type InheritedPayload = Extract<RunEventPayload, { type: 'context.inherited' }>;
+
+const inheritedHistory: InheritedPayload['history'] = [
+  { seq: 1, item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'read a.txt' }] } },
+  { seq: 2, item: { type: 'function_call', call_id: 'c0', name: 'Read', arguments: '{"path":"a.txt"}' } },
+  {
+    seq: 3,
+    item: { type: 'function_call_output', call_id: 'c0', output: 'Not run: the user interrupted the previous request before this tool call ran.' },
+    callId: 'c0',
+  },
+  { seq: 4, item: { type: 'message', role: 'user', content: '[The user interrupted the previous request before it was finished.]' } },
+];
+
+const inheritedDigest = (history: InheritedPayload['history'], nextItemSeq: number): string =>
+  sha256Hex(canonicalJson({ history, nextItemSeq, summary: null, evicted: [], mode: 'default' }));
+
+export const inheritedRun: RecordedRun = {
+  name: 'inherited context',
+  payloads: [
+    { type: 'user.message', text: 'now read b.txt' },
+    { type: 'run.status', from: 'QUEUED', to: 'RUNNING' },
+    {
+      type: 'context.inherited',
+      fromRunId: 'run-previous',
+      fromLastSeq: 9,
+      history: inheritedHistory,
+      nextItemSeq: 5,
+      evicted: [],
+      closures: [{ callId: 'c0', seq: 3, effect: 'not_executed', announced: true }],
+      markers: [{ seq: 4, kind: 'interrupted' }],
+      fromMode: 'default',
+      mode: 'default',
+      digest: inheritedDigest(inheritedHistory, 5),
+    },
+    { type: 'run.started', attempt: 1, now: 1_700_000_000_001, pins: { model: 'fm' }, mode: 'default' },
+    { type: 'model.requested', step: 1, attempt: 1, digest: 'd1', body: { input: 'inherited + now read b.txt' } },
+    { type: 'model.responded', step: 1, attempt: 1, response: { status: 'completed', output: [assistantText('m1', 'b says hi')], usage: usage(40, 4) } },
+    { type: 'run.status', from: 'RUNNING', to: 'COMPLETED' },
+  ],
+};
+
 export const RECORDED_RUNS: readonly RecordedRun[] = [
   finalAnswerRun,
   toolRoundTripRun,
@@ -281,4 +323,5 @@ export const RECORDED_RUNS: readonly RecordedRun[] = [
   compactionRejectedAtBuildRun,
   compactionRejectedAtStreamRun,
   evictionAndRejectionRun,
+  inheritedRun,
 ];

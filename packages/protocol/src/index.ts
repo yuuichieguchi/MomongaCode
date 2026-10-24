@@ -1,5 +1,5 @@
 export type { Capabilities, HealthResult, ToolCallingMode, ToolCallingSetting } from './capabilities.ts';
-export { findDanglingOutput } from './call-pairing.ts';
+export { findDanglingOutput, findUnpairedCalls } from './call-pairing.ts';
 export { compactionSummaryMessage, decodeCompactionSummary } from './compaction-summary.ts';
 export { PROBE_KEYWORDS } from './probe.ts';
 export type { ProbeKeyword, ProbeReport } from './probe.ts';

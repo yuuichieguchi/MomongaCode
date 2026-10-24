@@ -33,6 +33,8 @@ export type CreateSessionInput = {
 
 export type RunError = { code: string; message: string };
 
+export type HistoryMode = 'inherit' | 'fresh';
+
 export type Run = {
   id: string;
   sessionId: string;
@@ -55,6 +57,8 @@ export type Run = {
   step: number;
   lastSeq: number;
   usage: { inputTokens: number; outputTokens: number; totalTokens: number };
+  previousRunId: string | null;
+  history: HistoryMode;
   error?: RunError;
 };
 
@@ -65,6 +69,7 @@ export type CreateRunInput = {
   timeoutMs: number;
   limits: Record<string, unknown>;
   pins: Record<string, unknown>;
+  history?: HistoryMode;
 };
 
 export type ClaimStatus = 'RUNNING' | 'CANCELLING';
@@ -100,6 +105,7 @@ export type RunMutationResult = { kind: 'ok'; run: Run } | LeaseLost | Conflict;
 export type ServiceMutationResult = { kind: 'ok'; run: Run } | Conflict;
 export type RequestApprovalResult = { kind: 'ok'; approval: Approval } | LeaseLost;
 export type SnapshotResult = { kind: 'ok' } | LeaseLost | Conflict;
+export type InheritContextResult = { kind: 'inherited' } | { kind: 'already' } | { kind: 'none' } | LeaseLost | Conflict;
 
 export type StatusPatch = { stopReason?: StopReason; error?: RunError };
 
@@ -237,6 +243,7 @@ export type RuntimeStore = {
   approvalView(approvalId: string): ApprovalView | undefined;
   pendingApprovalViews(runId: string): ApprovalView[];
   writeSnapshot(claim: Claim, seq: number, state: RunState): SnapshotResult;
+  inheritContext(claim: Claim, options: { mode: PermissionMode }): InheritContextResult;
   dataVersion(): number;
   idempotency: IdempotencyStore;
   approvals: ApprovalStore;

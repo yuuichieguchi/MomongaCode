@@ -82,6 +82,7 @@ describe('run event payloads', () => {
       | 'usage.updated'
       | 'context.compacted'
       | 'context.compaction_rejected'
+      | 'context.inherited'
       | 'context.truncated'
       | 'instructions.loaded'
       | 'approval.rule.persisted'
@@ -219,6 +220,21 @@ describe('run event payloads', () => {
       attempt?: number;
       item: MessageInputItem;
     }>();
+    expectTypeOf<Payload<'context.inherited'>>().toEqualTypeOf<{
+      type: 'context.inherited';
+      fromRunId: string;
+      fromLastSeq: number;
+      history: { seq: number; item: InputItem; callId?: string; handle?: string }[];
+      nextItemSeq: number;
+      summary?: { item: CompactionInputItem | MessageInputItem; summary: string; replacedThroughSeq: number };
+      evicted: string[];
+      closures: { callId: string; seq: number; effect: 'not_executed' | 'unknown'; announced: boolean }[];
+      partial?: { seq: number };
+      markers: { seq: number; kind: 'interrupted' | 'unprocessed' | 'dropped' | 'mode_changed' }[];
+      fromMode?: PermissionMode;
+      mode?: PermissionMode;
+      digest: string;
+    }>();
     expectTypeOf<Payload<'context.truncated'>>().toEqualTypeOf<{
       type: 'context.truncated';
       callId: string;
@@ -293,6 +309,8 @@ describe('RunState', () => {
       loadedInstructions: { path: string; textSha256: string }[];
       streaming?: { step: number; attempt: number; seen: boolean; items: { itemId: string; text: string }[] };
       mode?: PermissionMode;
+      taskSeq: number;
+      inherited?: { fromRunId: string; fromLastSeq: number; digest: string };
       lastSeq: number;
     }>();
   });

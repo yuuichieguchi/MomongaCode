@@ -3,6 +3,7 @@ import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import { fixtureCompactionItem } from '@momonga/testkit';
 import { enqueue, harness, mustClaim, newSession, rawDb } from './helpers.ts';
+import { assistantItem, inheritedEvent, taskItem } from './inherit-fixtures.ts';
 
 const USAGE = { input_tokens: 10, output_tokens: 2, total_tokens: 12 };
 const PLAIN = { type: 'message', role: 'user', content: '<conversation_summary>\nfirst part\n</conversation_summary>' } as const;
@@ -23,11 +24,22 @@ const journal: RunEventPayload[] = [
   { type: 'agent.thought.delta', step: 2, attempt: 1, itemId: 'r2', text: 'reasoning' },
 ];
 
-const storedSnapshot = () => {
+const INHERITED = inheritedEvent({
+  fromRunId: 'run-prev',
+  fromLastSeq: 7,
+  history: [
+    { seq: 1, item: taskItem('earlier question') },
+    { seq: 2, item: assistantItem('m0', 'earlier answer') },
+  ],
+  nextItemSeq: 3,
+  mode: 'plan',
+});
+
+const storedSnapshot = (leading: readonly RunEventPayload[] = []) => {
   const { dbPath, store } = harness();
   const run = enqueue(store, newSession(store).id, 'continue the work');
   const claim = mustClaim(store, 'w1');
-  expect(store.append(claim, journal).kind).toBe('ok');
+  expect(store.append(claim, [...leading, ...journal]).kind).toBe('ok');
   const events: RunEvent[] = store.readRunEvents(run.id, 0, 1000);
   const state = events.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }));
   const lastSeq = events[events.length - 1]!.seq;
@@ -41,10 +53,27 @@ const storedSnapshot = () => {
   return { store, run, state, events, mutate, storedJson };
 };
 
-describe('snapshot state version 5', () => {
-  it('writes stateVersion 5', () => {
+describe('snapshot state version 6', () => {
+  it('writes stateVersion 6', () => {
     const { storedJson } = storedSnapshot();
-    expect(storedJson()['stateVersion']).toBe(5);
+    expect(storedJson()['stateVersion']).toBe(6);
+  });
+
+  it('round-trips taskSeq and inherited for an inheriting run', () => {
+    const { store, run, state, storedJson } = storedSnapshot([INHERITED]);
+    expect(state.taskSeq).toBe(3);
+    expect(state.inherited).toEqual({ fromRunId: 'run-prev', fromLastSeq: 7, digest: INHERITED.digest });
+    expect(storedJson()['taskSeq']).toBe(3);
+    expect(store.load(run.id).snapshot?.state).toEqual(state);
+  });
+
+  it('treats a version 5 snapshot of an inheriting run as absent and replays the event from the journal', () => {
+    const { store, run, state, events, mutate } = storedSnapshot([INHERITED]);
+    mutate("json_set(state_json, '$.stateVersion', 5)");
+    const loaded = store.load(run.id);
+    expect(loaded.snapshot).toBeUndefined();
+    expect(loaded.tail).toEqual(events);
+    expect(loaded.tail.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }) as RunState)).toEqual(state);
   });
 
   it('round-trips streaming with seen, the mode and a plain-message summary', () => {
@@ -57,9 +86,9 @@ describe('snapshot state version 5', () => {
     expect(loaded.snapshot?.state).toEqual(state);
   });
 
-  it('treats an otherwise valid version 4 snapshot as absent and falls back to the full fold', () => {
+  it('treats an otherwise valid version 5 snapshot as absent and falls back to the full fold', () => {
     const { store, run, state, events, mutate } = storedSnapshot();
-    mutate("json_set(state_json, '$.stateVersion', 4)");
+    mutate("json_set(state_json, '$.stateVersion', 5)");
     const loaded = store.load(run.id);
     expect(loaded.snapshot).toBeUndefined();
     expect(loaded.tail).toEqual(events);
@@ -75,6 +104,18 @@ describe('snapshot state version 5', () => {
     ['a plain-message summary without string content', "json_set(state_json, '$.summary.item.content', 3)"],
   ])('reports a snapshot with %s as corrupt', (_label, expression) => {
     const { store, run, mutate } = storedSnapshot();
+    mutate(expression);
+    expect(() => store.load(run.id)).toThrow(/corrupt/);
+  });
+
+  it.each([
+    ['a taskSeq that is not an integer', "json_set(state_json, '$.taskSeq', 'one')"],
+    ['no taskSeq', "json_remove(state_json, '$.taskSeq')"],
+    ['an inherited record without a digest', "json_remove(state_json, '$.inherited.digest')"],
+    ['an inherited record whose fromLastSeq is not an integer', "json_set(state_json, '$.inherited.fromLastSeq', 'seven')"],
+    ['an inherited record whose fromRunId is not a string', "json_set(state_json, '$.inherited.fromRunId', 3)"],
+  ])('reports an inheriting snapshot with %s as corrupt', (_label, expression) => {
+    const { store, run, mutate } = storedSnapshot([INHERITED]);
     mutate(expression);
     expect(() => store.load(run.id)).toThrow(/corrupt/);
   });

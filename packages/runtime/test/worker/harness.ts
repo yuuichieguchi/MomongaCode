@@ -24,7 +24,7 @@ import { createFakeToolbox } from './fake-tools.ts';
 import type { FakeToolbox } from './fake-tools.ts';
 import { createFakeTracer } from './fake-tracer.ts';
 import type { FakeTracer } from './fake-tracer.ts';
-import { MODEL_ALIAS } from './scripts.ts';
+import { MODEL_ALIAS, resetResponseIds } from './scripts.ts';
 
 export const START_MS = 1_800_000_000_000;
 export const LEASE_MS = 30_000;
@@ -115,6 +115,7 @@ export type WorkerOverrides = Partial<Omit<WorkerOptions, 'tools'>> & { tools?: 
 export type Env = Awaited<ReturnType<typeof makeEnv>>;
 
 export const makeEnv = async (options: EnvOptions = {}) => {
+  resetResponseIds();
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-worker-')));
   const project = path.join(root, 'project');
   const home = path.join(root, 'home');
@@ -258,13 +259,17 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     return running;
   };
 
-  const enqueue = (input = 'Say hello', extra: { limits?: Record<string, unknown>; deadlineAt?: number } = {}): Run =>
+  const enqueue = (
+    input = 'Say hello',
+    extra: { limits?: Record<string, unknown>; deadlineAt?: number; history?: 'inherit' | 'fresh' } = {},
+  ): Run =>
     createdRun(
       store.createRunAndEnqueue(session.id, {
         input,
         timeoutMs: (extra.deadlineAt ?? DEADLINE_MS) - clock.now(),
         limits: extra.limits ?? {},
         pins: {},
+        ...(extra.history === undefined ? {} : { history: extra.history }),
       }),
     );
 
@@ -360,6 +365,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     fold,
     run,
     seed,
+    raw,
     setMode,
     setModelAlias,
     resolveApproval,

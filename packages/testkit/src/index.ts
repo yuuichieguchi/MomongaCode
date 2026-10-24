@@ -35,6 +35,7 @@ export {
   compactionRejectedAtStreamRun,
   compactionRun,
   evictionAndRejectionRun,
+  inheritedRun,
   fixtureCompactionContent,
   fixtureCompactionItem,
   fixtureSubjectDigest,

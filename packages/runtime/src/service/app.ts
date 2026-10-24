@@ -227,6 +227,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       timeoutMs: body.timeoutMs ?? deps.defaults.runTimeoutMs,
       limits: { ...deps.defaults.limits, ...body.limits },
       pins: {},
+      history: body.history ?? 'inherit',
     });
     if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
     if (result.kind === 'key_reused') throw idempotencyKeyReused();

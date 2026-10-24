@@ -1,8 +1,11 @@
 import { ConfigError } from '@momonga/config';
+import { InheritanceError } from '@momonga/store';
 import { GatewayRequestError } from '../gateway-client.ts';
 
 const STREAM_INTERRUPTED_REFUNDS = 3;
 const NOT_FATAL_4XX: readonly number[] = [408, 409, 429];
+
+export const INHERITANCE_FAILURE_MESSAGE = 'The previous conversation could not be loaded. Start a new conversation (/clear) to continue.';
 
 export type FailureDisposition =
   | { kind: 'fail'; code: string; message: string }
@@ -13,6 +16,7 @@ const isClientError = (status: number): boolean => status >= 400 && status < 500
 
 export const dispositionOf = (error: unknown, interruptions: number): FailureDisposition => {
   if (error instanceof ConfigError) return { kind: 'fail', code: 'config_error', message: error.message };
+  if (error instanceof InheritanceError) return { kind: 'fail', code: error.code, message: INHERITANCE_FAILURE_MESSAGE };
   if (!(error instanceof GatewayRequestError)) return { kind: 'requeue', refund: false, retryAfterMs: 0, interrupted: false };
   const retryAfterMs = error.retryAfterMs ?? 0;
   if (error.code === 'deadline_exceeded') return { kind: 'timeout' };

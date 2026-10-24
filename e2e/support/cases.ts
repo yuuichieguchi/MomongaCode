@@ -6,6 +6,7 @@ export type E2eCaseFile =
   | 'b3-gateway-kill.test.ts'
   | 'c-cancel.test.ts'
   | 'mcp-orphan.test.ts'
+  | 'multi-turn.test.ts'
   | 'supervisor.test.ts'
   | 'logs.test.ts';
 
@@ -19,6 +20,12 @@ export const E2E_CASES = [
   { id: 'c1b', file: 'c-cancel.test.ts', title: 'c1b: cancel when the command ignores SIGTERM', needsBash: true },
   { id: 'c2', file: 'c-cancel.test.ts', title: 'c2: cancel mid-stream cuts the upstream connection', needsBash: false },
   { id: 'c3', file: 'c-cancel.test.ts', title: 'c3: cancel of a queued run', needsBash: false },
+  { id: 'mt1', file: 'multi-turn.test.ts', title: 'mt1: two sequential runs share the conversation', needsBash: false },
+  { id: 'mt1b', file: 'multi-turn.test.ts', title: 'mt1b: the same upstream call id in two runs reaches the model as two different ids', needsBash: false },
+  { id: 'mt2-join', file: 'multi-turn.test.ts', title: 'mt2 join: runtime killed during the first model call of an inheriting run', needsBash: false },
+  { id: 'mt2-replay', file: 'multi-turn.test.ts', title: 'mt2 replay: the inheriting run response arrived while the runtime was down', needsBash: false },
+  { id: 'mt3', file: 'multi-turn.test.ts', title: 'mt3: a cancelled predecessor with partial text is inherited with a merged marker', needsBash: false },
+  { id: 'mt4', file: 'multi-turn.test.ts', title: 'mt4: history fresh starts a new conversation that later runs inherit', needsBash: false },
   { id: 'mcp-orphan', file: 'mcp-orphan.test.ts', title: 'mcp: a live MCP server tree is gone after the runtime is killed and restarted', needsBash: true },
   { id: 's1', file: 'supervisor.test.ts', title: 'S1 supervisor SIGKILL: children close themselves, observably', needsBash: false },
   { id: 's1b', file: 'supervisor.test.ts', title: 'S1b wedged orphan is reaped by the next supervisor, observably', needsBash: false },

@@ -113,6 +113,15 @@ describe('request schemas', () => {
     expect(accepts('CreateRunRequest', { input: 'x', timeoutMs: 7 * DAY_MS + 1 })).toBe(false);
   });
 
+  it('accepts history inherit or fresh on a run creation body and rejects any other value', () => {
+    expect(accepts('CreateRunRequest', { input: 'x', history: 'inherit' })).toBe(true);
+    expect(accepts('CreateRunRequest', { input: 'x', history: 'fresh' })).toBe(true);
+    expect(accepts('CreateRunRequest', { input: 'x', history: 'none' })).toBe(false);
+    expect(accepts('CreateRunRequest', { input: 'x', history: null })).toBe(false);
+    expect(accepts('CreateRunRequest', { input: 'x', history: true })).toBe(false);
+    expect(accepts('CreateRunRequest', { input: 'x', history: 'fresh', previousRunId: 'run-0' })).toBe(false);
+  });
+
   it('validates the approval resolution body', () => {
     expect(accepts('ResolveApprovalRequest', { optionId: 'allow_once' })).toBe(true);
     expect(accepts('ResolveApprovalRequest', {})).toBe(false);
@@ -222,11 +231,39 @@ describe('response schemas', () => {
       deadlineAt: 1_800_021_600_000,
       cancelRequested: false,
       lastSeq: 9,
+      previousRunId: 'run-0',
+      history: 'inherit',
     };
     expect(accepts('RunView', view)).toBe(true);
     expect(accepts('RunView', { ...view, error: { code: 'max_attempts', message: 'x' } })).toBe(true);
     expect(accepts('RunView', { ...view, leaseToken: 3 })).toBe(false);
     expect(accepts('RunView', { ...view, leaseOwner: 'w1' })).toBe(false);
+  });
+
+  it('requires previousRunId and history on a RunView', () => {
+    const view = {
+      id: 'run-2',
+      sessionId: 'sess-1',
+      ordinal: 2,
+      status: 'QUEUED',
+      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+      step: 0,
+      limits: { maxSteps: 50 },
+      createdAt: 1_800_000_000_000,
+      deadlineAt: 1_800_021_600_000,
+      cancelRequested: false,
+      lastSeq: 1,
+      previousRunId: 'run-1',
+      history: 'inherit',
+    };
+    expect(accepts('RunView', view)).toBe(true);
+    expect(accepts('RunView', { ...view, previousRunId: null, history: 'fresh' })).toBe(true);
+    const { previousRunId: _previous, ...withoutPrevious } = view;
+    expect(accepts('RunView', withoutPrevious)).toBe(false);
+    const { history: _history, ...withoutHistory } = view;
+    expect(accepts('RunView', withoutHistory)).toBe(false);
+    expect(accepts('RunView', { ...view, history: 'none' })).toBe(false);
+    expect(accepts('RunView', { ...view, previousRunId: 7 })).toBe(false);
   });
 
   it('describes an ApprovalView with its tool call', () => {
@@ -288,6 +325,123 @@ describe('PublicRunEvent projection', () => {
     const atBuild = toPublicRunEvent({ ...RUN_ENVELOPE, step: 1, leaseToken: 4, type: 'context.compaction_rejected', item } as unknown as RunEvent);
     expect(atBuild).toEqual({ ...RUN_ENVELOPE, step: 1, type: 'context.compaction_rejected' });
     expect(accepts('PublicRunEvent', atBuild)).toBe(true);
+  });
+
+  it('reduces context.inherited to counts, closures, markers and the digest, without any item', () => {
+    const reduced = {
+      ...RUN_ENVELOPE,
+      step: 0,
+      type: 'context.inherited',
+      fromRunId: 'run-0',
+      fromLastSeq: 12,
+      itemCount: 6,
+      nextItemSeq: 9,
+      summaryThroughSeq: 2,
+      closures: [{ callId: 'call_a', effect: 'not_executed', announced: true }],
+      partialMessage: false,
+      markers: [{ kind: 'mode_changed' }],
+      digest: 'd'.repeat(64),
+    };
+    expect(accepts('PublicRunEvent', reduced)).toBe(true);
+    const { summaryThroughSeq: _through, ...withoutSummary } = reduced;
+    expect(accepts('PublicRunEvent', { ...withoutSummary, closures: [], markers: [] })).toBe(true);
+    expect(accepts('PublicRunEvent', { ...reduced, history: [] })).toBe(false);
+    expect(accepts('PublicRunEvent', { ...reduced, summary: { summary: 'secret' } })).toBe(false);
+    expect(accepts('PublicRunEvent', { ...reduced, closures: [{ callId: 'call_a', seq: 7, effect: 'unknown', announced: false }] })).toBe(false);
+    expect(accepts('PublicRunEvent', { ...reduced, closures: [{ callId: 'call_a', effect: 'maybe', announced: false }] })).toBe(false);
+    expect(accepts('PublicRunEvent', { ...reduced, markers: [{ kind: 'mode_changed', seq: 8 }] })).toBe(false);
+    expect(accepts('PublicRunEvent', { ...reduced, markers: [{ kind: 'paused' }] })).toBe(false);
+    const { digest: _digest, ...withoutDigest } = reduced;
+    expect(accepts('PublicRunEvent', withoutDigest)).toBe(false);
+  });
+
+  it('removes the inherited items, the summary and the modes from a public context.inherited', () => {
+    const summaryItem = { type: 'message' as const, role: 'user' as const, content: '<conversation_summary>\nsecret\n</conversation_summary>' };
+    const event = {
+      ...RUN_ENVELOPE,
+      step: 0,
+      leaseToken: 3,
+      type: 'context.inherited',
+      fromRunId: 'run-0',
+      fromLastSeq: 12,
+      history: [
+        { seq: 3, item: { type: 'message', role: 'user', content: 'secret question' } },
+        { seq: 4, item: { type: 'function_call', call_id: 'call_a', name: 'Read', arguments: '{}' }, callId: 'call_a' },
+        { seq: 5, item: { type: 'function_call_output', call_id: 'call_a', output: 'Not run' }, callId: 'call_a' },
+        { seq: 6, item: { type: 'function_call', call_id: 'call_b', name: 'Read', arguments: '{}' } },
+        { seq: 7, item: { type: 'function_call_output', call_id: 'call_b', output: 'Not run' }, callId: 'call_b' },
+        { seq: 8, item: { type: 'message', role: 'user', content: '[The permission mode changed]' } },
+      ],
+      nextItemSeq: 9,
+      summary: { item: summaryItem, summary: 'secret', replacedThroughSeq: 2 },
+      evicted: ['call_x'],
+      closures: [
+        { callId: 'call_a', seq: 5, effect: 'not_executed', announced: true },
+        { callId: 'call_b', seq: 7, effect: 'unknown', announced: false },
+      ],
+      markers: [{ seq: 8, kind: 'mode_changed' }],
+      fromMode: 'default',
+      mode: 'plan',
+      digest: 'e'.repeat(64),
+    } as unknown as RunEvent;
+    const publicEvent = toPublicRunEvent(event);
+    expect(publicEvent).toEqual({
+      ...RUN_ENVELOPE,
+      step: 0,
+      type: 'context.inherited',
+      fromRunId: 'run-0',
+      fromLastSeq: 12,
+      itemCount: 6,
+      nextItemSeq: 9,
+      summaryThroughSeq: 2,
+      closures: [
+        { callId: 'call_a', effect: 'not_executed', announced: true },
+        { callId: 'call_b', effect: 'unknown', announced: false },
+      ],
+      partialMessage: false,
+      markers: [{ kind: 'mode_changed' }],
+      digest: 'e'.repeat(64),
+    });
+    expect(accepts('PublicRunEvent', publicEvent)).toBe(true);
+    expect(JSON.stringify(publicEvent)).not.toContain('secret');
+  });
+
+  it('reports a projected partial message and omits summaryThroughSeq without a summary', () => {
+    const event = {
+      ...RUN_ENVELOPE,
+      step: 0,
+      leaseToken: 3,
+      type: 'context.inherited',
+      fromRunId: 'run-0',
+      fromLastSeq: 5,
+      history: [
+        { seq: 1, item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'q' }] } },
+        { seq: 2, item: { type: 'message', role: 'assistant', status: 'incomplete', content: [{ type: 'output_text', text: 'half', annotations: [] }] } },
+        { seq: 3, item: { type: 'message', role: 'user', content: '[The user interrupted the previous request before it was finished.]' } },
+      ],
+      nextItemSeq: 4,
+      evicted: [],
+      closures: [],
+      partial: { seq: 2 },
+      markers: [{ seq: 3, kind: 'interrupted' }],
+      mode: 'default',
+      digest: 'f'.repeat(64),
+    } as unknown as RunEvent;
+    const publicEvent = toPublicRunEvent(event);
+    expect(publicEvent).toEqual({
+      ...RUN_ENVELOPE,
+      step: 0,
+      type: 'context.inherited',
+      fromRunId: 'run-0',
+      fromLastSeq: 5,
+      itemCount: 3,
+      nextItemSeq: 4,
+      closures: [],
+      partialMessage: true,
+      markers: [{ kind: 'interrupted' }],
+      digest: 'f'.repeat(64),
+    });
+    expect(accepts('PublicRunEvent', publicEvent)).toBe(true);
   });
 
   it('reduces instructions.loaded to the path', () => {

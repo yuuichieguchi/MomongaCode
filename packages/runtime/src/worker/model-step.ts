@@ -6,6 +6,7 @@ import { GatewayFailureError } from './errors.ts';
 import { isRecord } from './json.ts';
 import { buildNext, cancelIfInterrupted, recoverRejectedCompaction } from './context-step.ts';
 import { isLoop } from './loop-detection.ts';
+import { ownEntries } from './own-entries.ts';
 import { streamModel } from './model-stream.ts';
 import type { ModelResult } from './model-stream.ts';
 import { recordCalls, settleCalls } from './tool-step.ts';
@@ -58,7 +59,7 @@ export const decideAfterResponse = async (ctx: ClaimContext): Promise<Flow> => {
     if (response.incomplete) return incompleteFailure(response.incompleteReason, terminals);
     return terminals.finish('COMPLETED');
   }
-  if (isLoop(journal.state.history, ctx.limits.loopThreshold)) {
+  if (isLoop(ownEntries(journal.state), ctx.limits.loopThreshold)) {
     journal.append([
       { type: 'notice', level: 'warning', message: `The model repeated the same tool call with the same results ${ctx.limits.loopThreshold} times in a row, so the run stops.` },
     ]);

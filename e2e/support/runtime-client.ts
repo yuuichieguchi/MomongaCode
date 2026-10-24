@@ -36,9 +36,18 @@ export type RunEventStream = {
 
 export type EventsOptions = { after?: number };
 
+export type RunHistory = 'inherit' | 'fresh';
+
+export type CreateRunOptions = { history?: RunHistory };
+
+export const createRunBody = (input: string, options: CreateRunOptions = {}): { input: string; history?: RunHistory } => ({
+  input,
+  ...(options.history === undefined ? {} : { history: options.history }),
+});
+
 export type RuntimeClient = {
   createSession(): Promise<{ session: SessionView }>;
-  createRun(sessionId: string, input: string): Promise<{ run: RunView; location: string }>;
+  createRun(sessionId: string, input: string, options?: CreateRunOptions): Promise<{ run: RunView; location: string }>;
   getRun(id: string): Promise<{ run: RunView }>;
   cancel(id: string): Promise<{ status: 200 | 202; run: RunView }>;
   events(id: string, options?: EventsOptions): RunEventStream;
@@ -153,8 +162,13 @@ export const createRuntimeClient = (home: E2eHome): RuntimeClient => {
     return parsed['run'];
   };
 
-  const createRun = async (sessionId: string, input: string): Promise<{ run: RunView; location: string }> => {
-    const response = await http.request({ method: 'POST', path: `/v1/sessions/${sessionId}/runs`, headers: JSON_HEADERS, body: JSON.stringify({ input }) });
+  const createRun = async (sessionId: string, input: string, options: CreateRunOptions = {}): Promise<{ run: RunView; location: string }> => {
+    const response = await http.request({
+      method: 'POST',
+      path: `/v1/sessions/${sessionId}/runs`,
+      headers: JSON_HEADERS,
+      body: JSON.stringify(createRunBody(input, options)),
+    });
     const parsed = await requireJson(response, [202], `POST /v1/sessions/${sessionId}/runs`);
     const location = response.headers['location'];
     if (location === undefined) throw new Error(`POST /v1/sessions/${sessionId}/runs answered without a Location header`);

@@ -26,6 +26,10 @@ export const assistantMessage = (id: string, text: string): MessageItem => ({
 
 let responseCounter = 0;
 
+export const resetResponseIds = (): void => {
+  responseCounter = 0;
+};
+
 const nextResponseId = (): string => {
   responseCounter += 1;
   return `resp_${responseCounter}`;

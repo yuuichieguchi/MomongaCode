@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { joinSseChunk, parseSse } from './runtime-client.ts';
+import { createRunBody, joinSseChunk, parseSse } from './runtime-client.ts';
 
 const deltaData = JSON.stringify({ type: 'agent.message.delta', runId: 'r1', seq: 3, step: 1, text: 'hel' });
 const terminalData = JSON.stringify({
@@ -63,5 +63,17 @@ describe('joinSseChunk', () => {
 
   it('normalises every CRLF of the joined buffer and keeps a lone LF', () => {
     expect(joinSseChunk('id: 2\r\nda', 'ta: y\r\n\n')).toBe('id: 2\ndata: y\n\n');
+  });
+});
+
+describe('createRunBody', () => {
+  it('sends only the input when no history is given, so the runtime default applies', () => {
+    expect(createRunBody('Say hello')).toEqual({ input: 'Say hello' });
+    expect(JSON.stringify(createRunBody('Say hello', {}))).toBe('{"input":"Say hello"}');
+  });
+
+  it('sends the history option when given', () => {
+    expect(createRunBody('Start over', { history: 'fresh' })).toEqual({ input: 'Start over', history: 'fresh' });
+    expect(createRunBody('Go on', { history: 'inherit' })).toEqual({ input: 'Go on', history: 'inherit' });
   });
 });

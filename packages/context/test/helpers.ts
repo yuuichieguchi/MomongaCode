@@ -150,6 +150,7 @@ export const sourcesWith = (overrides: Partial<ContextSources> = {}): ContextSou
   systemPrompt: SYSTEM_PROMPT,
   tools: [],
   task: TASK,
+  taskSeq: 0,
   activatedSkills: [],
   history: [],
   ...overrides,

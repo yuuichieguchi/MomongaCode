@@ -63,6 +63,7 @@ describe('initialRunState', () => {
       usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
       history: [],
       nextItemSeq: 1,
+      taskSeq: 1,
       evicted: [],
       pendingCalls: {},
       notes: [],
