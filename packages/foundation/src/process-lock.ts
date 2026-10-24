@@ -52,6 +52,10 @@ const readLockState = async (lockPath: string): Promise<LockObservation> => {
 
 const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+export type LockTiming = { now(): number; sleep(ms: number): Promise<void> };
+
+const realLockTiming: LockTiming = { now: () => Date.now(), sleep: pause };
+
 const tryCreateLock = async (lockPath: string): Promise<boolean> => {
   const temporary = `${lockPath}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
   await fs.promises.writeFile(temporary, String(process.pid), { flag: 'wx', mode: 0o600 });
@@ -72,21 +76,21 @@ const sameState = (current: LockObservation, observed: LockObservation): boolean
   return current.kind === observed.kind && current.modifiedAtMs === observed.modifiedAtMs;
 };
 
-const removeStaleLock = async (lockPath: string, observed: LockObservation): Promise<void> => {
+const removeStaleLock = async (lockPath: string, observed: LockObservation, timing: LockTiming): Promise<void> => {
   const mutex = `${lockPath}.takeover`;
   try {
     await fs.promises.mkdir(mutex, { mode: 0o700 });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     const age = await fs.promises.stat(mutex).then(
-      (stat) => Date.now() - stat.mtimeMs,
+      (stat) => timing.now() - stat.mtimeMs,
       (statError: NodeJS.ErrnoException) => {
         if (statError.code === 'ENOENT') return 0;
         throw statError;
       },
     );
     if (age > ABANDONED_TAKEOVER_MS) await fs.promises.rm(mutex, { recursive: true, force: true });
-    else await pause(LOCK_RETRY_MS);
+    else await timing.sleep(LOCK_RETRY_MS);
     return;
   }
   try {
@@ -123,9 +127,9 @@ export type JudgeLockDependencies = {
   memo?: LockVerdictMemo;
 };
 
-export type AcquireProcessLockOptions = { startTimeOf?: ProcessStartProbe };
+export type AcquireProcessLockOptions = { startTimeOf?: ProcessStartProbe; timing?: LockTiming };
 
-export type InspectProcessLockOptions = { startTimeOf?: ProcessStartProbe; memo?: LockVerdictMemo };
+export type InspectProcessLockOptions = { startTimeOf?: ProcessStartProbe; memo?: LockVerdictMemo; timing?: LockTiming };
 
 export type ProcessLockInspection = { state: 'free' } | { state: 'held'; pid: number } | { state: 'unreadable' };
 
@@ -169,7 +173,7 @@ const startsAfterLock = (startedAt: number | undefined, modifiedAtMs: number): b
   startedAt !== undefined && startedAt > modifiedAtMs + LOCK_START_TOLERANCE_MS;
 
 export const judgeLock = async (observation: LockObservation, dependencies: JudgeLockDependencies): Promise<LockVerdict> => {
-  const { isAlive, startTimeOf, reobserve, now = Date.now, sleep = pause, memo } = dependencies;
+  const { isAlive, startTimeOf, reobserve, memo, now = realLockTiming.now, sleep = realLockTiming.sleep } = dependencies;
   const settle = (verdict: LockVerdict): LockVerdict => {
     if (memo === undefined) return verdict;
     if (verdict === 'held' && observation.kind === 'pid') {
@@ -195,11 +199,14 @@ export const judgeLock = async (observation: LockObservation, dependencies: Judg
 };
 
 export const inspectProcessLock = async (lockPath: string, options: InspectProcessLockOptions = {}): Promise<ProcessLockInspection> => {
+  const timing = options.timing ?? realLockTiming;
   let observed = await readLockState(lockPath);
   const verdict = await judgeLock(observed, {
     isAlive: isProcessAlive,
     startTimeOf: options.startTimeOf ?? defaultProcessStartProbe,
     reobserve: async () => (observed = await readLockState(lockPath)),
+    now: timing.now,
+    sleep: timing.sleep,
     ...(options.memo === undefined ? {} : { memo: options.memo }),
   });
   if (verdict === 'unreadable') return { state: 'unreadable' };
@@ -208,7 +215,7 @@ export const inspectProcessLock = async (lockPath: string, options: InspectProce
   return { state: 'held', pid: observed.pid };
 };
 
-const acquireLock = async (lockPath: string, describeHolder: DescribeHolder, startTimeOf: ProcessStartProbe): Promise<void> => {
+const acquireLock = async (lockPath: string, describeHolder: DescribeHolder, startTimeOf: ProcessStartProbe, timing: LockTiming): Promise<void> => {
   for (;;) {
     if (await tryCreateLock(lockPath)) return;
     let observed = await readLockState(lockPath);
@@ -216,14 +223,16 @@ const acquireLock = async (lockPath: string, describeHolder: DescribeHolder, sta
       isAlive: isProcessAlive,
       startTimeOf,
       reobserve: async () => (observed = await readLockState(lockPath)),
+      now: timing.now,
+      sleep: timing.sleep,
     });
     if (verdict === 'missing') continue;
     if (verdict === 'unreadable') {
-      await pause(LOCK_RETRY_MS);
+      await timing.sleep(LOCK_RETRY_MS);
       continue;
     }
     if (verdict === 'stale') {
-      await removeStaleLock(lockPath, observed);
+      await removeStaleLock(lockPath, observed, timing);
       continue;
     }
     if (observed.kind !== 'pid') throw new Error(`lock ${lockPath} was judged held without a holder pid`);
@@ -236,6 +245,6 @@ export const acquireProcessLock = async (
   describeHolder: DescribeHolder = async (pid) => `${lockPath} is held by live process ${pid}; remove it if that process is not momonga`,
   options: AcquireProcessLockOptions = {},
 ): Promise<ProcessLock> => {
-  await acquireLock(lockPath, describeHolder, options.startTimeOf ?? defaultProcessStartProbe);
+  await acquireLock(lockPath, describeHolder, options.startTimeOf ?? defaultProcessStartProbe, options.timing ?? realLockTiming);
   return { release: () => releaseLock(lockPath) };
 };

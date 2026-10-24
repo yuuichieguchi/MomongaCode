@@ -1,0 +1,128 @@
+import http from 'node:http';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { listenUnix } from '@momonga/foundation';
+import type { LockTiming, ProcessStartProbe } from '@momonga/foundation';
+import type { ErrorBody, SupervisorHealth, SupervisorShutdownResponse } from '@momonga/protocol';
+import { CONTROL_CLOSE_ALL_AFTER_MS, CONTROL_REQUEST_TIMEOUT_MS, SHUTDOWN_BODY_LIMIT_BYTES } from './constants.ts';
+import type { SupervisorTimers } from './constants.ts';
+import { omitUndefined } from './omit-undefined.ts';
+
+export type ShutdownResponseWriter = {
+  writeHead(status: number, headers: Readonly<Record<string, string | number>>): unknown;
+  end(body: string, callback: () => void): unknown;
+};
+
+export type ControlHandlerOptions = {
+  health(): SupervisorHealth;
+  onShutdownRequested(): void;
+};
+
+export type ControlServerOptions = ControlHandlerOptions & {
+  socketPath: string;
+  timers: SupervisorTimers;
+  startTimeOf?: ProcessStartProbe;
+  timing?: LockTiming;
+  onError(error: Error): void;
+};
+
+export type ControlServer = {
+  readonly socketPath: string;
+  close(): Promise<void>;
+};
+
+const JSON_CONTENT_TYPE = 'application/json; charset=utf-8';
+
+export const respondShutdown = (response: ShutdownResponseWriter, onShutdownRequested: () => void): void => {
+  const body = JSON.stringify({ phase: 'draining' } satisfies SupervisorShutdownResponse);
+  response.writeHead(202, { 'content-type': JSON_CONTENT_TYPE, 'content-length': Buffer.byteLength(body), connection: 'close' });
+  response.end(body, onShutdownRequested);
+};
+
+const respondJson = (request: IncomingMessage, response: ServerResponse, status: number, value: unknown, extraHeaders: Readonly<Record<string, string>> = {}): void => {
+  const body = JSON.stringify(value);
+  response.writeHead(status, { 'content-type': JSON_CONTENT_TYPE, 'content-length': Buffer.byteLength(body), ...extraHeaders });
+  response.end(request.method === 'HEAD' ? undefined : body);
+};
+
+const respondError = (
+  request: IncomingMessage,
+  response: ServerResponse,
+  status: number,
+  error: Pick<ErrorBody, 'message' | 'type' | 'code'>,
+  extraHeaders: Readonly<Record<string, string>> = {},
+): void => respondJson(request, response, status, { error: { ...error, param: null } }, extraHeaders);
+
+const readLimitedBody = (request: IncomingMessage, limitBytes: number, onComplete: () => void, onOverLimit: () => void): void => {
+  let received = 0;
+  let overLimit = false;
+  request.on('data', (chunk: Buffer) => {
+    if (overLimit) return;
+    received += chunk.length;
+    if (received > limitBytes) {
+      overLimit = true;
+      onOverLimit();
+    }
+  });
+  request.on('end', () => {
+    if (!overLimit) onComplete();
+  });
+};
+
+export const createControlRequestHandler = (options: ControlHandlerOptions): ((request: IncomingMessage, response: ServerResponse) => void) => {
+  return (request, response) => {
+    const pathname = new URL(request.url ?? '/', 'http://localhost').pathname;
+    const method = request.method ?? 'GET';
+    if (pathname === '/v1/health') {
+      if (method === 'GET' || method === 'HEAD') {
+        respondJson(request, response, 200, options.health());
+        return;
+      }
+      respondError(request, response, 405, { message: `${method} is not allowed on ${pathname}`, type: 'invalid_request', code: 'method_not_allowed' }, { allow: 'GET, HEAD' });
+      return;
+    }
+    if (pathname === '/v1/shutdown') {
+      if (method !== 'POST') {
+        respondError(request, response, 405, { message: `${method} is not allowed on ${pathname}`, type: 'invalid_request', code: 'method_not_allowed' }, { allow: 'POST' });
+        return;
+      }
+      readLimitedBody(
+        request,
+        SHUTDOWN_BODY_LIMIT_BYTES,
+        () => respondShutdown(response, options.onShutdownRequested),
+        () =>
+          respondError(
+            request,
+            response,
+            413,
+            { message: `request body exceeds ${SHUTDOWN_BODY_LIMIT_BYTES} bytes`, type: 'invalid_request', code: 'payload_too_large' },
+            { connection: 'close' },
+          ),
+      );
+      return;
+    }
+    respondError(request, response, 404, { message: `no route for ${method} ${pathname}`, type: 'not_found', code: 'not_found' });
+  };
+};
+
+export const startControlServer = async (options: ControlServerOptions): Promise<ControlServer> => {
+  const { timers } = options;
+  const server = http.createServer(createControlRequestHandler(options));
+  server.requestTimeout = CONTROL_REQUEST_TIMEOUT_MS;
+  server.headersTimeout = CONTROL_REQUEST_TIMEOUT_MS;
+  await listenUnix(server, options.socketPath, omitUndefined({ startTimeOf: options.startTimeOf, timing: options.timing }));
+  server.on('error', options.onError);
+  let closing: Promise<void> | undefined;
+  const close = (): Promise<void> => {
+    closing ??= new Promise<void>((resolve, reject) => {
+      const closeAllTimer = timers.setTimeout(() => server.closeAllConnections(), CONTROL_CLOSE_ALL_AFTER_MS);
+      server.close((error) => {
+        timers.clearTimeout(closeAllTimer);
+        if (error === undefined) resolve();
+        else reject(error);
+      });
+      server.closeIdleConnections();
+    });
+    return closing;
+  };
+  return { socketPath: options.socketPath, close };
+};

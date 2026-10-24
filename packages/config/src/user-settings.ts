@@ -66,7 +66,7 @@ export const createUserSettingsCache = ({ home, onWarning }: UserSettingsCacheOp
     const failure = `${key}\u0000${error.message}`;
     if (lastGood === undefined || failure === warnedFailure) return;
     warnedFailure = failure;
-    onWarning(`${error.message}; keeping the last good settings`);
+    onWarning(`settings file is invalid: ${error.message}`);
   };
 
   const refresh = (): UserSettingsSnapshot => {

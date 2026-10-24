@@ -46,6 +46,7 @@ export type DaemonStartContext<F extends FlagSpec> = {
   logger: JsonLogger;
   stdout: TextStream;
   droppedLogLines(): number;
+  requestShutdown(): void;
 };
 
 export type DaemonDefinition<F extends FlagSpec> = {
@@ -65,7 +66,7 @@ export class StartupCancelled extends Error {
   }
 }
 
-type ShutdownTrigger = 'sigterm' | 'sigint' | 'lifeline' | 'fatal' | 'uncaught';
+type ShutdownTrigger = 'sigterm' | 'sigint' | 'lifeline' | 'request' | 'fatal' | 'uncaught';
 
 type ExitPath = 'close' | 'abort' | 'deadline' | 'startup-cancelled' | 'start-failed';
 
@@ -293,6 +294,16 @@ export const runDaemonEntry = async <F extends FlagSpec>(io: EntryIo, definition
     }
   };
 
+  const requestShutdown = (): void => {
+    if (phase === 'closed') return;
+    logger.info('entry.shutdown_requested', { data: { state: phase } });
+    if (phase === 'starting') latchCancel('request');
+    else if (phase === 'running' && handle !== undefined) {
+      beginShutdown('request');
+      close(handle);
+    }
+  };
+
   disposers.push(io.onSignal('SIGTERM', () => onSignal('SIGTERM')));
   disposers.push(io.onSignal('SIGINT', () => onSignal('SIGINT')));
   disposers.push(io.onUncaught(onUncaught));
@@ -308,7 +319,7 @@ export const runDaemonEntry = async <F extends FlagSpec>(io: EntryIo, definition
 
   let started: DaemonHandle;
   try {
-    started = await definition.start({ flags, home, env: io.env, signal: controller.signal, logger, stdout: io.stdout, droppedLogLines: sink.droppedLogLines });
+    started = await definition.start({ flags, home, env: io.env, signal: controller.signal, logger, stdout: io.stdout, droppedLogLines: sink.droppedLogLines, requestShutdown });
   } catch (error) {
     if (shutdownTrigger !== undefined) {
       logger.warn('entry.startup_cancelled', { err: toError(error) });

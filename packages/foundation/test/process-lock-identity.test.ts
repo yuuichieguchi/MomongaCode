@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { ProcessLockHeldError, acquireProcessLock, createLockVerdictMemo, defaultProcessStartProbe, inspectProcessLock } from '@momonga/foundation';
-import type { ProcessStartProbe } from '@momonga/foundation';
+import { GARBLED_LOCK_GRACE_MS, GHOST_CONFIRM_MS, ProcessLockHeldError, acquireProcessLock, createLockVerdictMemo, defaultProcessStartProbe, inspectProcessLock } from '@momonga/foundation';
+import type { LockTiming, ProcessStartProbe } from '@momonga/foundation';
 import { registerCleanup, spawnTracked, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { judgeLock } from '../src/process-lock.ts';
@@ -500,5 +500,72 @@ describe('inspectProcessLock', () => {
       expect(again, fixture.name).toEqual(fresh);
       expect(fresh.state, fixture.name).toBe(fixture.inspect);
     }
+  });
+});
+
+type ManualLockTiming = { timing: LockTiming; sleeps: number[] };
+
+const manualLockTiming = (startAt: number): ManualLockTiming => {
+  let current = startAt;
+  const sleeps: number[] = [];
+  return {
+    sleeps,
+    timing: {
+      now: () => current,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+        current += ms;
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      },
+    },
+  };
+};
+
+describe('lock time port', () => {
+  it('timing port drives the ghost confirmation pause in acquire and inspect', async (context) => {
+    const dir = withTempDir(context);
+    const holder = livePid(context);
+    const acquireLockPath = lockIn(dir, 'acquire.lock');
+    const inspectLockPath = lockIn(dir, 'inspect.lock');
+    const acquireMtime = writeLock(acquireLockPath, String(holder));
+    const inspectMtime = writeLock(inspectLockPath, String(holder));
+    const acquireTiming = manualLockTiming(acquireMtime);
+    const lock = await acquireProcessLock(acquireLockPath, undefined, { startTimeOf: async () => acquireMtime + 10_000, timing: acquireTiming.timing });
+    expect(acquireTiming.sleeps).toEqual([GHOST_CONFIRM_MS]);
+    expect(content(acquireLockPath)).toBe(String(process.pid));
+    lock.release();
+    const inspectTiming = manualLockTiming(inspectMtime);
+    expect(await inspectProcessLock(inspectLockPath, { startTimeOf: async () => inspectMtime + 10_000, timing: inspectTiming.timing })).toEqual({ state: 'free' });
+    expect(inspectTiming.sleeps).toEqual([GHOST_CONFIRM_MS]);
+  });
+
+  it('timing port decides the garbled-lock age for inspect, whatever the real clock says', async (context) => {
+    const dir = withTempDir(context);
+    const lockPath = lockIn(dir);
+    const youngMtime = writeLock(lockPath, 'garbage');
+    expect(await inspectProcessLock(lockPath, { timing: manualLockTiming(youngMtime + GARBLED_LOCK_GRACE_MS + 1).timing })).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(lockPath, { timing: manualLockTiming(youngMtime + GARBLED_LOCK_GRACE_MS).timing })).toEqual({ state: 'unreadable' });
+    const oldMtime = writeLock(lockPath, 'garbage', Date.now() - 3_600_000);
+    expect(await inspectProcessLock(lockPath, { timing: manualLockTiming(oldMtime + GARBLED_LOCK_GRACE_MS).timing })).toEqual({ state: 'unreadable' });
+    expect(content(lockPath)).toBe('garbage');
+  });
+
+  it('timing port decides the garbled-lock age for acquire, whatever the real clock says', async (context) => {
+    const dir = withTempDir(context);
+    const staleLockPath = lockIn(dir, 'stale.lock');
+    const staleMtime = writeLock(staleLockPath, 'garbage');
+    const staleTiming = manualLockTiming(staleMtime + GARBLED_LOCK_GRACE_MS + 1);
+    const staleLock = await acquireProcessLock(staleLockPath, undefined, { timing: staleTiming.timing });
+    expect(content(staleLockPath)).toBe(String(process.pid));
+    expect(staleTiming.sleeps).toEqual([]);
+    staleLock.release();
+    const youngLockPath = lockIn(dir, 'young.lock');
+    const youngMtime = writeLock(youngLockPath, 'garbage', Date.now() - 3_600_000);
+    const youngTiming = manualLockTiming(youngMtime + GARBLED_LOCK_GRACE_MS);
+    const youngLock = await acquireProcessLock(youngLockPath, undefined, { timing: youngTiming.timing });
+    expect(content(youngLockPath)).toBe(String(process.pid));
+    expect(youngTiming.sleeps.length).toBeGreaterThan(0);
+    expect(youngTiming.sleeps.every((ms) => ms > 0 && ms < GARBLED_LOCK_GRACE_MS)).toBe(true);
+    youngLock.release();
   });
 });

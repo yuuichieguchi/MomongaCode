@@ -15,7 +15,7 @@ export const GATEWAY_MAX_CLOSE_MS = 15_000;
 export const ENTRY_HARD_EXIT_MARGIN_MS = 3000;
 export const SHUTDOWN_MARGIN_MS = 5000;
 export const STDIO_EXIT_FLUSH_MS = 1000;
-export const SUPERVISOR_FINALIZE_MS = 9000;
+export const SUPERVISOR_FINALIZE_MS = 11_000;
 export const MINIMAL_CHILD_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 export const LIFELINE_FD = 3;
 export const DAEMON_MARKER_FD = 4;
@@ -101,28 +101,40 @@ const RESERVED_LOG_KEYS: ReadonlySet<string> = new Set(['ts', 'level', 'service'
 const extraFields = (data: NonNullable<LogFields['data']>): Record<string, string | number | boolean | null> =>
   Object.fromEntries(Object.entries(data).filter(([key]) => !RESERVED_LOG_KEYS.has(key)));
 
+export interface LogLineInput {
+  ts: string;
+  level: LogLevel;
+  service: string;
+  msg: string;
+  fields?: LogFields;
+}
+
+export const formatLogLine = ({ ts, level, service, msg, fields = {} }: LogLineInput): string => {
+  const { runId, workerId, traceId, step, count, ids, err, data } = fields;
+  const entry = {
+    ...(data === undefined ? {} : extraFields(data)),
+    ts,
+    level,
+    service,
+    pid: process.pid,
+    msg,
+    ...(runId === undefined ? {} : { runId }),
+    ...(workerId === undefined ? {} : { workerId }),
+    ...(traceId === undefined ? {} : { traceId }),
+    ...(step === undefined ? {} : { step }),
+    ...(count === undefined ? {} : { count }),
+    ...(ids === undefined ? {} : { ids }),
+    ...(err === undefined ? {} : { err: { name: err.name, message: err.message, stack: err.stack } }),
+  };
+  return `${JSON.stringify(entry)}\n`;
+};
+
 const LEVEL_RANK = { debug: 0, info: 1, warn: 2, error: 3 } as const satisfies Record<LogLevel, number>;
 
 export const createJsonLogger = ({ service, clock, stream = process.stderr, level = 'info' }: JsonLoggerOptions): JsonLogger => {
   const emit = (entryLevel: LogLevel, msg: string, fields: LogFields = {}): void => {
     if (LEVEL_RANK[entryLevel] < LEVEL_RANK[level]) return;
-    const { runId, workerId, traceId, step, count, ids, err, data } = fields;
-    const entry = {
-      ...(data === undefined ? {} : extraFields(data)),
-      ts: new Date(clock.now()).toISOString(),
-      level: entryLevel,
-      service,
-      pid: process.pid,
-      msg,
-      ...(runId === undefined ? {} : { runId }),
-      ...(workerId === undefined ? {} : { workerId }),
-      ...(traceId === undefined ? {} : { traceId }),
-      ...(step === undefined ? {} : { step }),
-      ...(count === undefined ? {} : { count }),
-      ...(ids === undefined ? {} : { ids }),
-      ...(err === undefined ? {} : { err: { name: err.name, message: err.message, stack: err.stack } }),
-    };
-    stream.write(`${JSON.stringify(entry)}\n`);
+    stream.write(formatLogLine({ ts: new Date(clock.now()).toISOString(), level: entryLevel, service, msg, fields }));
   };
   return {
     debug: (msg, fields) => emit('debug', msg, fields),
