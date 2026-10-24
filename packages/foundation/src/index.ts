@@ -15,9 +15,30 @@ export type { UdsClient, UdsClientOptions, UdsRequestOptions, UdsResponse } from
 export { uuidv7 } from './uuidv7.ts';
 export { forceKillGroup, groupAlive, signalGroup, terminateGroup, waitForGroupGone } from './process-group.ts';
 export type { ForceKillGroupOptions, TerminateGroupOptions, TerminateOutcome } from './process-group.ts';
-export { ProcessLockHeldError, acquireProcessLock } from './process-lock.ts';
-export type { DescribeHolder, ProcessLock } from './process-lock.ts';
-export { SessionTmpDirError, ensureMomongaDirs, ensureSessionTmpDir, momongaLayout, momongaPaths } from './momonga-paths.ts';
+export {
+  GARBLED_LOCK_GRACE_MS,
+  GHOST_CONFIRM_MS,
+  LOCK_START_TOLERANCE_MS,
+  ProcessLockHeldError,
+  acquireProcessLock,
+  createLockVerdictMemo,
+  defaultProcessStartProbe,
+  createProcessStartProbe,
+  PS_PROBE_TIMEOUT_MS,
+  inspectProcessLock,
+} from './process-lock.ts';
+export type {
+  AcquireProcessLockOptions,
+  DescribeHolder,
+  InspectProcessLockOptions,
+  LockVerdictMemo,
+  ProcessLock,
+  ProcessLockInspection,
+  ProcessStartProbe,
+  ProbeExecFile,
+  ProcessStartProbeDependencies,
+} from './process-lock.ts';
+export { SessionTmpDirError, ensureMomongaDirs, ensureSessionTmpDir, momongaLayout, momongaPaths, rotatedLogPath } from './momonga-paths.ts';
 export type { MomongaPaths } from './momonga-paths.ts';
 export { secretKeyFile } from './secret-key-file.ts';
 export type { SecretKeyFileOptions } from './secret-key-file.ts';
@@ -27,10 +48,25 @@ export {
   EXIT_CONFIG,
   EXIT_FAILURE,
   EXIT_OK,
+  DAEMON_MARKER_FD,
+  ENTRY_HARD_EXIT_MARGIN_MS,
+  GATEWAY_MAX_CLOSE_MS,
+  LIFELINE_FD,
   MINIMAL_CHILD_ENV_LC_PREFIX,
   MINIMAL_CHILD_ENV_NAMES,
+  MINIMAL_CHILD_PATH,
+  RUNTIME_ABORT_BUDGET_MS,
+  RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
+  RUNTIME_TEARDOWN_BUDGET_MS,
+  SHUTDOWN_MARGIN_MS,
+  STDIO_EXIT_FLUSH_MS,
+  SUPERVISOR_FINALIZE_MS,
   announceReady,
   createJsonLogger,
+  minimalChildEnv,
+  parseReadyLine,
+  runtimeMaxCloseMs,
+  supervisorMaxCloseMs,
 } from './process-contract.ts';
 export type { JsonLogger, JsonLoggerOptions, LogFields, LogLevel, ReadyFields, TextStream } from './process-contract.ts';
 export { findHolders, holderGroups, reapMarkedProcesses, reapMarkerDirectory, reconcileProcessGroup } from './process-markers.ts';
@@ -41,3 +77,10 @@ export { SOCKET_PATH_LIMIT, assertSocketPathLength } from './socket-path.ts';
 export { canonicalDirectory, canonicalPath, comparableContains, comparableFromParts, comparablePath, containsByComponents, setCaseSensitivityProbe, volumeIsCaseInsensitive } from './path-compare.ts';
 export type { CanonicalDirectoryFailureCode, CanonicalDirectoryResult, CaseSensitivityProbe, PathParts } from './path-compare.ts';
 export { isTransientErrno } from './transient-errno.ts';
+export { COMMON_ENTRY_FLAGS, EntryUsageError, parseFlags } from './entry-flags.ts';
+export type { FlagKind, FlagSpec, ParsedFlags } from './entry-flags.ts';
+export { watchLifeline } from './lifeline.ts';
+export { LOG_KEEP, LOG_MAX_BYTES, createRotatingLogFile } from './rotating-log.ts';
+export type { RotatingLogFile, RotatingLogFileOptions } from './rotating-log.ts';
+export { StartupCancelled, exitCodeForStartError, nodeEntryIo, runDaemonEntry } from './daemon-entry.ts';
+export type { DaemonCloseResult, DaemonDefinition, DaemonHandle, DaemonStartContext, EntryIo, EntrySignal, LogTarget } from './daemon-entry.ts';

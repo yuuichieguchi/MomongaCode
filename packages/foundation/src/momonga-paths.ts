@@ -8,14 +8,15 @@ export interface MomongaPaths {
   settingsFile: string;
   run: string;
   sockets: { gateway: string; runtime: string; fm: string; supervisor: string };
-  locks: { gateway: string; runtime: string };
-  markers: { root: string; tools: string; mcp: string; fm: string };
+  locks: { gateway: string; runtime: string; supervisor: string };
+  markers: { root: string; tools: string; mcp: string; fm: string; daemons: string };
   state: string;
   databases: { runtime: string; gateway: string };
   traces: { dir: string; gateway: string; runtime: string };
   gatewayKey: string;
   probe: string;
   logs: string;
+  logFiles: { supervisor: string; gateway: string; runtime: string };
   projects: string;
   skills: string;
   cacheBase: string;
@@ -50,12 +51,13 @@ export const momongaLayout = (
       fm: path.join(run, 'fm.sock'),
       supervisor: path.join(run, 'supervisor.sock'),
     },
-    locks: { gateway: path.join(run, 'gateway.lock'), runtime: path.join(run, 'runtime.lock') },
+    locks: { gateway: path.join(run, 'gateway.lock'), runtime: path.join(run, 'runtime.lock'), supervisor: path.join(run, 'supervisor.lock') },
     markers: {
       root: markers,
       tools: path.join(markers, 'tools'),
       mcp: path.join(markers, 'mcp'),
       fm: path.join(markers, 'fm'),
+      daemons: path.join(markers, 'daemons'),
     },
     state,
     databases: { runtime: path.join(state, 'runtime.db'), gateway: path.join(state, 'gateway.db') },
@@ -63,12 +65,19 @@ export const momongaLayout = (
     gatewayKey: path.join(state, 'gateway.key'),
     probe: path.join(state, 'probe'),
     logs: path.join(root, 'logs'),
+    logFiles: {
+      supervisor: path.join(root, 'logs', 'supervisor.log'),
+      gateway: path.join(root, 'logs', 'gateway.log'),
+      runtime: path.join(root, 'logs', 'runtime.log'),
+    },
     projects: path.join(root, 'projects'),
     skills: path.join(root, 'skills'),
     cacheBase,
     tmp: { root: tmp, spawn: path.join(tmp, 'spawn'), sessions: path.join(tmp, 'sessions') },
   };
 };
+
+export const rotatedLogPath = (file: string, generation: number): string => `${file}.${generation}`;
 
 export const momongaPaths = (
   home: string,
@@ -108,6 +117,7 @@ export const ensureMomongaDirs = async (paths: MomongaPaths): Promise<void> => {
     paths.markers.tools,
     paths.markers.mcp,
     paths.markers.fm,
+    paths.markers.daemons,
     paths.state,
     paths.traces.dir,
     paths.probe,

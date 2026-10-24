@@ -63,7 +63,9 @@ export const captureStdout = (): StdoutCapture => {
 
 export const launchGateway = async (options: GatewayProcessOptions): Promise<GatewayProcessHandle> => {
   const handle = await startGatewayProcess(options);
-  registerCleanup(() => handle.close());
+  registerCleanup(async () => {
+    await handle.close();
+  });
   return handle;
 };
 

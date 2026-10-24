@@ -6,11 +6,12 @@ import {
   announceReady,
   createJsonLogger,
   ensureMomongaDirs,
+  minimalChildEnv,
   momongaPaths,
   secretKeyFile,
   systemClock,
 } from '@momonga/foundation';
-import type { Clock, JsonLogger, MomongaPaths } from '@momonga/foundation';
+import type { Clock, JsonLogger, MomongaPaths, ReadyFields, TextStream } from '@momonga/foundation';
 import { closeTelemetry, createTelemetry, openTraceStore } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import type { AdapterTarget, Capabilities, ProviderAdapter } from '@momonga/protocol';
@@ -20,7 +21,7 @@ import { FM_SERVE_DEFAULTS, GATEWAY_CONFIG_DEFAULTS } from './defaults.ts';
 import { missingApiKeyError } from './core/errors.ts';
 import { FmServeError, createFmServe } from './managed/fm-serve.ts';
 import type { ExecFn, FmServe, SpawnFn } from './managed/fm-serve.ts';
-import { createExecFn, createExecWithStdin, minimalChildEnv } from './managed/fm-processes.ts';
+import { createExecFn, createExecWithStdin } from './managed/fm-processes.ts';
 import { createManagedFmTarget } from './managed/fm-target.ts';
 import type { ExecWithStdinFn, ManagedFmTarget } from './managed/fm-target.ts';
 import { createGateway } from './server/gateway.ts';
@@ -37,9 +38,30 @@ export type StartGatewayProcessOptions = {
   execWithStdin?: ExecWithStdinFn;
   spawn?: SpawnFn;
   logger?: JsonLogger;
+  stdout?: TextStream;
+  signal?: AbortSignal;
 };
 
-export type GatewayProcess = { socketPath: string; close(): Promise<void> };
+export type GatewayCloseResult = {
+  clean: boolean;
+  abandonedRuns: number;
+  failures: Error[];
+  fatal?: Error;
+};
+
+export type GatewayProcess = {
+  ready: ReadyFields;
+  socketPath: string;
+  close(): Promise<GatewayCloseResult>;
+  abort(): Promise<GatewayCloseResult>;
+  fatal: Promise<Error>;
+};
+
+type Phase = 'starting' | 'running' | 'closing' | 'closed';
+
+const toError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
+
+const failuresOf = (error: unknown): Error[] => (error instanceof AggregateError ? error.errors.map(toError) : [toError(error)]);
 
 const DEFAULT_FM_BINARY = '/usr/bin/fm';
 const OS_BUILD_COMMAND = '/usr/bin/sw_vers';
@@ -153,25 +175,77 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   const timers = options.timers ?? realTimers;
   const logger = options.logger ?? createJsonLogger({ service: 'gateway', clock });
   const binary = options.fmBinary ?? DEFAULT_FM_BINARY;
+  const { signal } = options;
+  const stdout = options.stdout ?? process.stdout;
   const paths = momongaPaths(options.home, process.platform, {});
+  signal?.throwIfAborted();
   await ensureMomongaDirs(paths);
+  signal?.throwIfAborted();
   const lock = await acquireProcessLock(paths.locks.gateway);
   const cleanups: Array<() => void | Promise<void>> = [() => lock.release()];
-  const unwind = async (): Promise<void> => {
-    const failures: unknown[] = [];
+  const unwind = async (): Promise<Error[]> => {
+    const failures: Error[] = [];
     for (const cleanup of cleanups.splice(0).reverse()) {
       try {
         await cleanup();
       } catch (error) {
-        failures.push(error);
+        failures.push(...failuresOf(error));
       }
     }
-    if (failures.length === 1) throw failures[0];
-    if (failures.length > 1) throw new AggregateError(failures, 'gateway process cleanup failed');
+    return failures;
   };
+
+  let phase: Phase = 'starting';
+  let fatalError: Error | undefined;
+  let resolveFatal: (error: Error) => void = () => undefined;
+  const fatal = new Promise<Error>((resolve) => {
+    resolveFatal = resolve;
+  });
+  let requestGatewayAbort: () => void = () => undefined;
+  let gatewayAbandonedRuns: () => number = () => 0;
+  let abortRequested = false;
+  let lifecycle: Promise<GatewayCloseResult> | undefined;
+
+  const shutdown = async (): Promise<GatewayCloseResult> => {
+    phase = 'closing';
+    const failures = await unwind();
+    phase = 'closed';
+    const abandonedRuns = gatewayAbandonedRuns();
+    if (abandonedRuns > 0) logger.warn('close.abandoned_runs', { count: abandonedRuns });
+    return {
+      clean: failures.length === 0 && fatalError === undefined,
+      abandonedRuns,
+      failures,
+      ...(fatalError === undefined ? {} : { fatal: fatalError }),
+    };
+  };
+
+  const close = (): Promise<GatewayCloseResult> => {
+    lifecycle ??= shutdown();
+    return lifecycle;
+  };
+
+  const abort = (): Promise<GatewayCloseResult> => {
+    abortRequested = true;
+    if (lifecycle === undefined) lifecycle = shutdown();
+    else requestGatewayAbort();
+    return lifecycle;
+  };
+
+  const latchFatal = (error: Error): void => {
+    if (phase === 'closed') return;
+    logger.error('gateway.fatal', { err: error });
+    if (fatalError !== undefined) return;
+    fatalError = error;
+    resolveFatal(error);
+    if (phase === 'running' || phase === 'closing') void abort();
+  };
+
   try {
+    signal?.throwIfAborted();
     const { settings, warnings } = await loadUserSettings({ home: options.home });
     for (const warning of warnings) logger.warn(warning);
+    signal?.throwIfAborted();
     const hmacKey = secretKeyFile(paths.gatewayKey, {
       mustExist: fs.existsSync(paths.databases.gateway),
       dependentPath: paths.databases.gateway,
@@ -180,6 +254,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const telemetry: Telemetry = createTelemetry({ serviceName: 'momonga-gateway', serviceVersion: options.version, clock, store: traceStore });
     cleanups.push(() => closeTelemetry(telemetry, traceStore));
 
+    signal?.throwIfAborted();
     const childEnv = minimalChildEnv(options.env);
     const exec = options.exec ?? createExecFn(childEnv);
     const targets = Object.entries(settings.models.targets);
@@ -211,7 +286,9 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
             osBuild: await readOsBuild(exec),
             binarySha256: await sha256OfFile(binary),
           };
+    signal?.throwIfAborted();
     for (const [name, target] of targets) {
+      signal?.throwIfAborted();
       if (target.adapter === 'fm') {
         if (fmContext === undefined) throw new Error('fm context is missing for an fm target');
         adapters[name] = await createFmAdapter(name, target, fmContext, clock);
@@ -226,6 +303,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       }
     }
 
+    signal?.throwIfAborted();
     const gateway = await createGateway({
       config: gatewayConfigOf(settings.models.targets, settings.models.aliases),
       adapters,
@@ -236,24 +314,24 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       socketPath: paths.sockets.gateway,
       telemetry,
       version: options.version,
-      onError: (error) => logger.error('unhandled gateway error', { err: error instanceof Error ? error : new Error(String(error)) }),
+      onError: (error) => logger.error('unhandled gateway error', { err: toError(error) }),
+      onFatal: latchFatal,
     });
     cleanups.splice(cleanups.indexOf(closeAdapters), 1);
-    cleanups.push(() => gateway.close());
-    announceReady({ service: 'gateway', pid: process.pid, version: options.version, socketPath: gateway.socketPath, startedAt: gateway.startedAt });
+    cleanups.push(() => (abortRequested ? gateway.abort() : gateway.close()));
+    requestGatewayAbort = () => void gateway.abort();
+    gatewayAbandonedRuns = () => gateway.abandonedRuns;
+    signal?.throwIfAborted();
+    const ready: ReadyFields = { service: 'gateway', pid: process.pid, version: options.version, socketPath: gateway.socketPath, startedAt: gateway.startedAt };
+    announceReady(ready, stdout);
+    phase = 'running';
+    if (fatalError !== undefined) void abort();
 
-    let closing: Promise<void> | undefined;
-    return {
-      socketPath: gateway.socketPath,
-      close: () => {
-        closing ??= unwind();
-        return closing;
-      },
-    };
+    return { ready, socketPath: gateway.socketPath, close, abort, fatal };
   } catch (error) {
-    await unwind().catch((cleanupError: unknown) => {
-      throw new AggregateError([error, cleanupError], 'gateway process startup failed and cleanup failed');
-    });
+    phase = 'closing';
+    for (const cleanupFailure of await unwind()) logger.error('startup.cleanup_failed', { err: cleanupFailure });
+    phase = 'closed';
     throw error;
   }
 };

@@ -44,6 +44,7 @@ export type GatewayOptions = {
   random?: () => number;
   version: string;
   onError?: (error: unknown) => void;
+  onFatal?: (error: Error) => void;
 };
 
 export type Gateway = {
@@ -52,4 +53,5 @@ export type Gateway = {
   readonly tcpPort: number | undefined;
   readonly abandonedRuns: number;
   close(): Promise<void>;
+  abort(): Promise<void>;
 };

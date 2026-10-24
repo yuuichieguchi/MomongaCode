@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./entry": "./src/entry.ts",
+    "./bin": "./src/bin.ts"
   },
   "dependencies": {
     "@hono/node-server": "2.1.5",

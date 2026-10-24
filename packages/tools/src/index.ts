@@ -5,6 +5,7 @@ export type {
   BatchInput,
   CallOutcome,
   DeferredOutcome,
+  InspectableToolExecutor,
   NeedsApprovalOutcome,
   ResultOutcome,
   ToolCall,

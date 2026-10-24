@@ -300,7 +300,7 @@ describe('executor execution', () => {
       op: 'begin',
       key: keyFor('run-1', 1, 'c1'),
       expiresAt: harness.clock.now() + 5000,
-      meta: { tool: 'Edit', prepared: { before: 'abc' } },
+      meta: { tool: 'Edit', runId: 'run-1', prepared: { before: 'abc' } },
       s: 'NEW',
     });
   });

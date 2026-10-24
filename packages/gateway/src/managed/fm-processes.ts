@@ -3,25 +3,11 @@ import type { ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { MINIMAL_CHILD_ENV_LC_PREFIX, MINIMAL_CHILD_ENV_NAMES, reapMarkedProcesses, reapMarkerDirectory, signalGroup } from '@momonga/foundation';
+import { reapMarkedProcesses, reapMarkerDirectory, signalGroup } from '@momonga/foundation';
 import type { ExecResult, ExecFn, FmChild, SpawnFn } from './fm-serve.ts';
 import type { ExecWithStdinFn } from './fm-target.ts';
 
-export const MINIMAL_CHILD_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
-
 export type ChildEnv = Readonly<Record<string, string>>;
-
-export const minimalChildEnv = (source: Readonly<Record<string, string | undefined>>): ChildEnv => {
-  const env: Record<string, string> = {};
-  for (const name of MINIMAL_CHILD_ENV_NAMES) {
-    const value = name === 'PATH' ? MINIMAL_CHILD_PATH : source[name];
-    if (value !== undefined) env[name] = value;
-  }
-  for (const [name, value] of Object.entries(source)) {
-    if (name.startsWith(MINIMAL_CHILD_ENV_LC_PREFIX) && value !== undefined) env[name] = value;
-  }
-  return env;
-};
 
 const envOption = (env: ChildEnv | undefined): { env?: Record<string, string> } => (env === undefined ? {} : { env: { ...env } });
 

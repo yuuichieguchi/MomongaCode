@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { SOCKET_PATH_LIMIT, assertSocketPathLength, momongaPaths } from '@momonga/foundation';
+import { SOCKET_PATH_LIMIT, assertSocketPathLength, momongaPaths, rotatedLogPath } from '@momonga/foundation';
 
 const HOME = '/Users/alice';
 
@@ -21,12 +21,14 @@ const expectedLayout = (home: string, cacheBase: string) => {
     locks: {
       gateway: path.join(run, 'gateway.lock'),
       runtime: path.join(run, 'runtime.lock'),
+      supervisor: path.join(run, 'supervisor.lock'),
     },
     markers: {
       root: path.join(run, 'markers'),
       tools: path.join(run, 'markers', 'tools'),
       mcp: path.join(run, 'markers', 'mcp'),
       fm: path.join(run, 'markers', 'fm'),
+      daemons: path.join(run, 'markers', 'daemons'),
     },
     state,
     databases: {
@@ -41,6 +43,11 @@ const expectedLayout = (home: string, cacheBase: string) => {
     gatewayKey: path.join(state, 'gateway.key'),
     probe: path.join(state, 'probe'),
     logs: path.join(root, 'logs'),
+    logFiles: {
+      supervisor: path.join(root, 'logs', 'supervisor.log'),
+      gateway: path.join(root, 'logs', 'gateway.log'),
+      runtime: path.join(root, 'logs', 'runtime.log'),
+    },
     projects: path.join(root, 'projects'),
     skills: path.join(root, 'skills'),
     cacheBase,
@@ -121,5 +128,23 @@ describe('socket path limit', () => {
     const socket = `/${'\u00e9'.repeat(52)}`;
     expect(Buffer.byteLength(socket)).toBe(105);
     expect(() => assertSocketPathLength(socket)).toThrow(/105/);
+  });
+});
+
+describe('rotatedLogPath', () => {
+  it('appends the generation to the file name', () => {
+    expect(rotatedLogPath('/x/runtime.log', 1)).toBe('/x/runtime.log.1');
+    expect(rotatedLogPath('/Users/alice/.momonga/logs/supervisor.log', 4)).toBe('/Users/alice/.momonga/logs/supervisor.log.4');
+  });
+
+  it('pins the darwin log files and the supervisor lock', () => {
+    const paths = momongaPaths(HOME, 'darwin', {});
+    expect(paths.logFiles).toEqual({
+      supervisor: '/Users/alice/.momonga/logs/supervisor.log',
+      gateway: '/Users/alice/.momonga/logs/gateway.log',
+      runtime: '/Users/alice/.momonga/logs/runtime.log',
+    });
+    expect(paths.locks.supervisor).toBe('/Users/alice/.momonga/run/supervisor.lock');
+    expect(paths.markers.daemons).toBe('/Users/alice/.momonga/run/markers/daemons');
   });
 });

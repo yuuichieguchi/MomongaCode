@@ -58,3 +58,4 @@ export { runtimeMaxCloseMs } from './process/close-budget.ts';
 export { RuntimeAlreadyRunningError } from './process/errors.ts';
 export { startRuntimeProcess } from './process/start-runtime-process.ts';
 export type { RuntimeCloseResult, RuntimeProcess, StartRuntimeProcessOptions } from './process/start-runtime-process.ts';
+export { RUNTIME_ENTRY_FLAGS, runRuntimeEntry } from './process/entry.ts';

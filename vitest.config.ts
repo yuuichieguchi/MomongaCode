@@ -9,6 +9,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'unit',
+          globalSetup: ['test/support/leak-guard.ts'],
           include: ['packages/*/test/**/*.test.ts', 'packages/*/test/**/*.test.tsx', 'test/**/*.test.ts'],
         },
       },

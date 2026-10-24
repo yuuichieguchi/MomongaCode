@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
+import { withTempDir } from '@momonga/testkit';
 
 const tempDirs: string[] = [];
 
@@ -25,6 +26,7 @@ const directoriesOf = (paths: ReturnType<typeof momongaPaths>): string[] => [
   paths.markers.tools,
   paths.markers.mcp,
   paths.markers.fm,
+  paths.markers.daemons,
   paths.state,
   paths.traces.dir,
   paths.probe,
@@ -136,5 +138,23 @@ describe('ensureMomongaDirs under concurrency', () => {
     );
     expect(codes).toEqual(['0', '0', '0', '0', '0', '0']);
     for (const dir of directoriesOf(momongaPaths(home, 'darwin', {}))) expect(modeOf(dir), dir).toBe(0o700);
+  });
+});
+
+describe('ensureMomongaDirs daemon markers', () => {
+  it('creates markers/daemons with mode 0700', async (context) => {
+    const paths = momongaPaths(withTempDir(context), 'darwin', {});
+    await ensureMomongaDirs(paths);
+    const stat = fs.lstatSync(paths.markers.daemons);
+    expect(stat.isDirectory()).toBe(true);
+    expect(stat.mode & 0o777).toBe(0o700);
+  });
+
+  it('tightens an existing 0755 markers/daemons to 0700', async (context) => {
+    const paths = momongaPaths(withTempDir(context), 'darwin', {});
+    fs.mkdirSync(paths.markers.daemons, { recursive: true, mode: 0o700 });
+    fs.chmodSync(paths.markers.daemons, 0o755);
+    await ensureMomongaDirs(paths);
+    expect(modeOf(paths.markers.daemons)).toBe(0o700);
   });
 });

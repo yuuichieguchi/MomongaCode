@@ -1,14 +1,28 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { findHolders } from '@momonga/foundation';
 import type { ReapMarkedProcessesOptions } from '@momonga/foundation';
-import type { IdempotencyLookup, IdempotencyRecord } from '@momonga/store';
-import { createFakeClock, createFakeTimers, fakeReapTiming, killGroupsForCleanup, waitFor } from '@momonga/testkit';
+import type { IdempotencyLookup, IdempotencyRecord, Run } from '@momonga/store';
+import { createFakeClock, createFakeTimers, fakeReapTiming, killGroupsForCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
+import type { CleanupContext } from '@momonga/testkit';
 import { reapToolMarkers } from '../../src/process/tool-markers.ts';
 import { START_MS, makeTempHome } from './helpers.ts';
 import type { TempHome } from './helpers.ts';
+
+const holderProbe = vi.hoisted(() => ({ findHolderCalls: 0 }));
+
+vi.mock('@momonga/foundation', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@momonga/foundation')>();
+  return {
+    ...original,
+    findHolders: (...args: Parameters<typeof original.findHolders>) => {
+      holderProbe.findHolderCalls += 1;
+      return original.findHolders(...args);
+    },
+  };
+});
 
 const KILL_GRACE_MS = 2000;
 const spawnedGroups: number[] = [];
@@ -260,5 +274,210 @@ describe('reapToolMarkers (real processes, system timers, except where fake time
     expect(exists(marker)).toBe(false);
     expect(await findHolders(marker)).toEqual([]);
     expect(timers.pending()).toEqual([]);
+  });
+});
+
+const deadLetterKey = (n: number): string => (0xd000 + n).toString(16).padStart(64, '0');
+
+const trackedMarkerDir = (context: CleanupContext): string => {
+  const dir = path.join(withTempDir(context), 'tools');
+  fs.mkdirSync(dir, { mode: 0o700 });
+  return dir;
+};
+
+const emptyMarker = (dir: string, name: string): string => {
+  const marker = path.join(dir, name);
+  fs.writeFileSync(marker, '', { mode: 0o600 });
+  return marker;
+};
+
+const trackedHolder = async (context: CleanupContext, marker: string): Promise<number> => {
+  const fd = fs.openSync(marker, 'r');
+  let pid: number;
+  try {
+    pid = spawnTracked(context, '/bin/sh', ['-c', 'exec /bin/sleep 30'], { stdio: ['ignore', 'ignore', 'ignore', fd], env: { PATH: '/usr/bin:/bin' } }).pid;
+  } finally {
+    fs.closeSync(fd);
+  }
+  const deadline = Date.now() + 10_000;
+  while (!(await findHolders(marker)).includes(pid)) {
+    if (Date.now() > deadline) throw new Error(`process ${pid} never showed up as a holder of ${marker}`);
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  }
+  return pid;
+};
+
+type RunFixture = Pick<Run, 'id' | 'status' | 'deadLetter'>;
+
+const pendingFor = (key: string, runId: string | undefined, pgid?: number): IdempotencyLookup => {
+  const base = record(key, 'PENDING', pgid);
+  return { s: 'PENDING', rec: { ...base, meta: runId === undefined ? {} : { tool: 'Bash', runId } } } as IdempotencyLookup;
+};
+
+const deadLetterStore = (lookups: Record<string, IdempotencyLookup>, runs: readonly RunFixture[]) => {
+  const runsAsked: string[] = [];
+  return {
+    runsAsked,
+    store: {
+      idempotency: { get: (key: string): IdempotencyLookup | undefined => lookups[key] },
+      getRun: (id: string): RunFixture | undefined => {
+        runsAsked.push(id);
+        return runs.find((run) => run.id === id);
+      },
+    } as never,
+  };
+};
+
+const PERIODIC = (skipKeys: ReadonlySet<string> = new Set()) => ({ deadLetterOnly: true as const, skipKeys });
+
+const terminalWarning = (marker: string, runId: string): string => `tool marker ${marker}: run ${runId} is terminal, so its holder was reaped`;
+
+describe('reapToolMarkers dead-lettered runs, start scope (§8)', () => {
+  it('PENDING with a dead-lettered run is reaped with the recorded pgid and a warning naming the run', async (context) => {
+    const dir = trackedMarkerDir(context);
+    const key = deadLetterKey(1);
+    const marker = emptyMarker(dir, key);
+    const pgid = await trackedHolder(context, marker);
+    const { store } = deadLetterStore({ [key]: pendingFor(key, 'run-dead', pgid) }, [{ id: 'run-dead', status: 'FAILED', deadLetter: true }]);
+    const reaper = recordingReap();
+    const warned = warnings();
+
+    await reapToolMarkers({ dir, store, killGraceMs: KILL_GRACE_MS, onWarning: warned.onWarning, reap: reaper.reap as never });
+
+    expect(reaper.calls).toHaveLength(1);
+    expect(reaper.calls[0]).toMatchObject({ marker, pgid, killGraceMs: KILL_GRACE_MS, label: 'tool' });
+    expect(warned.messages).toContain(terminalWarning(marker, 'run-dead'));
+  });
+
+  it('PENDING with a non-terminal run is kept', async (context) => {
+    const dir = trackedMarkerDir(context);
+    const key = deadLetterKey(2);
+    const marker = emptyMarker(dir, key);
+    const pgid = await trackedHolder(context, marker);
+    const { store, runsAsked } = deadLetterStore({ [key]: pendingFor(key, 'run-live', pgid) }, [{ id: 'run-live', status: 'RUNNING', deadLetter: false }]);
+    const reaper = recordingReap();
+
+    await reapToolMarkers({ dir, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never });
+
+    expect(runsAsked).toEqual(['run-live']);
+    expect(reaper.calls).toEqual([]);
+    expect(exists(marker)).toBe(true);
+  });
+
+  it('PENDING with an unknown run is kept', async (context) => {
+    const dir = trackedMarkerDir(context);
+    const key = deadLetterKey(3);
+    const marker = emptyMarker(dir, key);
+    const pgid = await trackedHolder(context, marker);
+    const { store, runsAsked } = deadLetterStore({ [key]: pendingFor(key, 'run-gone', pgid) }, []);
+    const reaper = recordingReap();
+
+    await reapToolMarkers({ dir, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never });
+
+    expect(runsAsked).toEqual(['run-gone']);
+    expect(reaper.calls).toEqual([]);
+    expect(exists(marker)).toBe(true);
+  });
+
+  it('a terminal run that was not dead-lettered (CANCELLED, deadLetter false) is reaped at start', async (context) => {
+    const dir = trackedMarkerDir(context);
+    const key = deadLetterKey(4);
+    const marker = emptyMarker(dir, key);
+    const pgid = await trackedHolder(context, marker);
+    const { store } = deadLetterStore({ [key]: pendingFor(key, 'run-cancelled', pgid) }, [{ id: 'run-cancelled', status: 'CANCELLED', deadLetter: false }]);
+    const reaper = recordingReap();
+
+    await reapToolMarkers({ dir, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never, scope: 'all' });
+
+    expect(reaper.calls).toHaveLength(1);
+    expect(reaper.calls[0]).toMatchObject({ marker, pgid });
+  });
+});
+
+describe('reapToolMarkers dead-lettered runs, periodic scope (§8)', () => {
+  it('a dead-lettered run is reaped from the record alone: no findHolders, the recorded pgid, a warning naming the run', async (context) => {
+    const dir = trackedMarkerDir(context);
+    const key = deadLetterKey(5);
+    const marker = emptyMarker(dir, key);
+    const pgid = await trackedHolder(context, marker);
+    const { store } = deadLetterStore({ [key]: pendingFor(key, 'run-dead', pgid) }, [{ id: 'run-dead', status: 'FAILED', deadLetter: true }]);
+    const reaper = recordingReap();
+    const warned = warnings();
+    holderProbe.findHolderCalls = 0;
+
+    await reapToolMarkers({ dir, store, killGraceMs: KILL_GRACE_MS, onWarning: warned.onWarning, reap: reaper.reap as never, scope: PERIODIC() });
+
+    expect(holderProbe.findHolderCalls).toBe(0);
+    expect(reaper.calls).toHaveLength(1);
+    expect(reaper.calls[0]).toMatchObject({ marker, pgid, killGraceMs: KILL_GRACE_MS, label: 'tool' });
+    expect(warned.messages).toContain(terminalWarning(marker, 'run-dead'));
+  });
+
+  it('CANCELLED with deadLetter false is kept in the periodic scope', async (context) => {
+    const dir = trackedMarkerDir(context);
+    const key = deadLetterKey(6);
+    const marker = emptyMarker(dir, key);
+    const pgid = await trackedHolder(context, marker);
+    const { store } = deadLetterStore({ [key]: pendingFor(key, 'run-cancelled', pgid) }, [{ id: 'run-cancelled', status: 'CANCELLED', deadLetter: false }]);
+    const reaper = recordingReap();
+
+    await reapToolMarkers({ dir, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never, scope: PERIODIC() });
+
+    expect(reaper.calls).toEqual([]);
+    expect(exists(marker)).toBe(true);
+  });
+
+  it('a dead-lettered run whose key is in skipKeys (an in-flight call) is skipped', async (context) => {
+    const dir = trackedMarkerDir(context);
+    const key = deadLetterKey(7);
+    const marker = emptyMarker(dir, key);
+    const pgid = await trackedHolder(context, marker);
+    const { store } = deadLetterStore({ [key]: pendingFor(key, 'run-dead', pgid) }, [{ id: 'run-dead', status: 'FAILED', deadLetter: true }]);
+    const reaper = recordingReap();
+
+    await reapToolMarkers({ dir, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never, scope: PERIODIC(new Set([key])) });
+
+    expect(reaper.calls).toEqual([]);
+    expect(exists(marker)).toBe(true);
+  });
+
+  it('PENDING without runId, an unknown run, and a non-key name are all left alone', async (context) => {
+    const dir = trackedMarkerDir(context);
+    const noRunId = deadLetterKey(8);
+    const unknownRun = deadLetterKey(9);
+    const markers = [emptyMarker(dir, noRunId), emptyMarker(dir, unknownRun), emptyMarker(dir, 'not-a-key')];
+    for (const marker of markers) await trackedHolder(context, marker);
+    const { store } = deadLetterStore({ [noRunId]: pendingFor(noRunId, undefined, 1), [unknownRun]: pendingFor(unknownRun, 'run-gone', 1) }, []);
+    const reaper = recordingReap();
+    holderProbe.findHolderCalls = 0;
+
+    await reapToolMarkers({ dir, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never, scope: PERIODIC() });
+
+    expect(reaper.calls).toEqual([]);
+    expect(holderProbe.findHolderCalls).toBe(0);
+    for (const marker of markers) expect(exists(marker)).toBe(true);
+  });
+
+  it('the periodic scope never touches a holder-less marker; the start scope removes the record-less one', async (context) => {
+    const dir = trackedMarkerDir(context);
+    const inFlight = deadLetterKey(10);
+    const recordless = deadLetterKey(11);
+    const inFlightMarker = emptyMarker(dir, inFlight);
+    const recordlessMarker = emptyMarker(dir, recordless);
+    const { store } = deadLetterStore({ [inFlight]: pendingFor(inFlight, 'run-live') }, [{ id: 'run-live', status: 'RUNNING', deadLetter: false }]);
+    const reaper = recordingReap();
+    holderProbe.findHolderCalls = 0;
+
+    await reapToolMarkers({ dir, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never, scope: PERIODIC() });
+
+    expect(exists(inFlightMarker)).toBe(true);
+    expect(exists(recordlessMarker)).toBe(true);
+    expect(reaper.calls).toEqual([]);
+    expect(holderProbe.findHolderCalls).toBe(0);
+
+    await reapToolMarkers({ dir, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never });
+
+    expect(exists(recordlessMarker)).toBe(false);
+    expect(reaper.calls).toEqual([]);
   });
 });

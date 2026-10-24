@@ -106,6 +106,8 @@ export type ToolExecutor = {
   abandon(targets: readonly AbandonTarget[], options: { signal: AbortSignal }): Promise<AbandonOutcome[]>;
 };
 
+export type InspectableToolExecutor = ToolExecutor & { inFlightKeys(): ReadonlySet<string> };
+
 type RunPlan = {
   call: ToolCall;
   tool: AnyTool;
@@ -262,7 +264,7 @@ const settleWithin = async (pending: Promise<unknown>, ms: number): Promise<void
   }
 };
 
-export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor => {
+export const createToolExecutor = (options: ToolExecutorOptions): InspectableToolExecutor => {
   if (options.maxInlineOutputChars !== undefined && options.maxInlineOutputChars < MINIMUM_INLINE_OUTPUT_CHARS) {
     throw new RangeError(`maxInlineOutputChars must be at least ${MINIMUM_INLINE_OUTPUT_CHARS}`);
   }
@@ -273,6 +275,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
   const maxParallel = options.maxParallel ?? DEFAULT_MAX_PARALLEL;
   const reconcileCapMs = options.reconcileCapMs ?? DEFAULT_RECONCILE_CAP_MS;
   const reconcileGraceMs = options.reconcileGraceMs ?? DEFAULT_RECONCILE_GRACE_MS;
+  const activeKeys = new Map<string, number>();
 
   const finalizeResult = (result: ToolResult, tool: AnyTool, limit: number): ResultOutcome['result'] => {
     const truncated =
@@ -405,6 +408,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
     let contextClosed = false;
     const onBatchAbort = (): void => abortWith('cancelled');
     batch.signal.addEventListener('abort', onBatchAbort, { once: true });
+    activeKeys.set(key, (activeKeys.get(key) ?? 0) + 1);
     let timer: NodeJS.Timeout | undefined;
 
     try {
@@ -466,7 +470,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
         if (abortReason !== undefined) return failedOutcome(callId, `${tool.name} was cancelled`);
         const begun = idempotency.begin(key, {
           expiresAt: clock.now() + ttlMs,
-          meta: { tool: tool.name, ...(prepared === undefined ? {} : { prepared }) },
+          meta: { tool: tool.name, runId: batch.runId, ...(prepared === undefined ? {} : { prepared }) },
         });
         if (begun.s === 'COMPLETED') return storedOutcome(begun.result);
         if (begun.s !== 'NEW') record = begun.rec;
@@ -562,6 +566,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
       clearTimeout(timer);
       if (recordCompleted && tool.sideEffect === 'exec') fs.rmSync(processMarker, { force: true });
       batch.signal.removeEventListener('abort', onBatchAbort);
+      const remaining = (activeKeys.get(key) ?? 0) - 1;
+      if (remaining > 0) activeKeys.set(key, remaining);
+      else activeKeys.delete(key);
     }
   };
 
@@ -762,5 +769,5 @@ export const createToolExecutor = (options: ToolExecutorOptions): ToolExecutor =
     return outcomes;
   };
 
-  return { runBatch, abandon };
+  return { runBatch, abandon, inFlightKeys: () => new Set(activeKeys.keys()) };
 };
