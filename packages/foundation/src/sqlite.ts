@@ -99,10 +99,15 @@ export const immediateTx = <T>(db: DatabaseSync, fn: () => T): T => {
   }
 };
 
+const pinReadSnapshot = (db: DatabaseSync): void => {
+  db.prepare('SELECT 1 FROM sqlite_master LIMIT 1').get();
+};
+
 export const readTx = <T>(db: DatabaseSync, fn: () => T): T => {
   if (db.isTransaction) throw new Error('readTx cannot be nested: a transaction is already open on this connection');
   db.exec('BEGIN');
   try {
+    pinReadSnapshot(db);
     const result = fn();
     if (isPromiseLike(result)) throw new TypeError('readTx callback must be synchronous; it returned a Promise');
     db.exec('COMMIT');

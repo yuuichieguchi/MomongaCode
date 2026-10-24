@@ -1,0 +1,148 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { skipCase, titleOf } from './support/cases.ts';
+import { readDb } from './support/db.ts';
+import { createE2eHome } from './support/home.ts';
+import type { E2eHome } from './support/home.ts';
+import { TOOL_GROUPS_SQL } from './support/ledger.ts';
+import { groupAlive } from './support/process.ts';
+import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
+import { seatbeltOrSkip } from './support/sandbox.ts';
+import { DEFAULT_E2E_DEPS, startStack } from './support/stack.ts';
+import { childOf } from './support/supervisor-client.ts';
+import { chatCompletions, messagesOf, precedingAssistantCallId, textReply, toolCallReply } from './support/upstream.ts';
+import { E2E_MARGIN_MS, E2E_RECOVERY_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
+
+const UNKNOWN_EFFECT_SENTENCE = 'The effect of the interrupted command is unknown';
+
+const textOf = (content: unknown): string =>
+  typeof content === 'string' ? content : JSON.stringify(content);
+
+const linesOf = (file: string): string[] | undefined => {
+  if (!fs.existsSync(file)) return undefined;
+  return fs.readFileSync(file, 'utf8').split('\n').filter((line) => line !== '');
+};
+
+const toolGroupsOf = (home: E2eHome): number[] =>
+  readDb<{ pgid: number }>(home.paths.databases.runtime, TOOL_GROUPS_SQL).map((row) => Number(row.pgid));
+
+describe('b2: Bash under seatbelt', () => {
+  it.skipIf(skipCase('b2-seatbelt'))(titleOf('b2-seatbelt'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
+    seatbeltOrSkip(context);
+    const home = await createE2eHome();
+    const outside = path.join(home.root, 'outside.txt');
+    const stack = await startStack({
+      home,
+      needsBash: true,
+      script: [toolCallReply('Bash', { command: `echo x > ${outside}; echo rc=$?` }), textReply('done')],
+    });
+    expect(stack.sandbox).toBe('seatbelt');
+    const runtime = createRuntimeClient(home);
+    try {
+      expect((await runtime.health()).sandbox).toBe('seatbelt');
+      const { session } = await runtime.createSession();
+      const { run } = await runtime.createRun(session.id, 'Say hello');
+      const stream = runtime.events(run.id);
+      const frames = await stream.toEnd(E2E_RECOVERY_BOUND_MS);
+      await stream.close();
+
+      expect(frames.at(-1)?.data.type).toBe('run.status');
+      expect(frames.at(-1)?.data.to).toBe('COMPLETED');
+      expect((await runtime.getRun(run.id)).run.status).toBe('COMPLETED');
+
+      const calls = chatCompletions(stack.fake);
+      expect(calls).toHaveLength(2);
+      expect(messagesOf(calls[0]).filter((message) => message.role === 'tool')).toEqual([]);
+      const toolMessages = messagesOf(calls[1]).filter((message) => message.role === 'tool');
+      expect(toolMessages).toHaveLength(1);
+      const assistantCallId = precedingAssistantCallId(messagesOf(calls[1]), toolMessages[0]);
+      expect(assistantCallId).toMatch(/^call_[0-9a-f]{32}$/);
+      expect(toolMessages[0]?.tool_call_id).toBe(assistantCallId);
+      const toolText = textOf(toolMessages[0]?.content);
+      expect(toolText).toContain('Operation not permitted');
+      expect(toolText).toContain('rc=1');
+      expect(toolText).not.toContain('rc=0');
+      expect(fs.existsSync(outside)).toBe(false);
+      expect(fs.existsSync(path.join(home.project, 'outside.txt'))).toBe(false);
+      expect(framesOfType(frames, 'tool.reconciled')).toEqual([]);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it.skipIf(skipCase('b2-recovery'))(titleOf('b2-recovery'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
+    seatbeltOrSkip(context);
+    const home = await createE2eHome();
+    const effectLog = path.join(home.project, 'effect.log');
+    const stack = await startStack({
+      home,
+      needsBash: true,
+      deps: { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY },
+      script: [toolCallReply('Bash', { command: `echo effect >> ${effectLog}; sleep 30` }), textReply('done')],
+    });
+    expect(stack.sandbox).toBe('seatbelt');
+    const runtime = createRuntimeClient(home);
+    try {
+      expect((await runtime.health()).sandbox).toBe('seatbelt');
+      const { session } = await runtime.createSession();
+      const { run } = await runtime.createRun(session.id, 'Say hello');
+
+      await until(() => linesOf(effectLog)?.length === 1, { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'effect.log has one line' });
+      const toolGroups = await until(
+        () => {
+          const groups = toolGroupsOf(home);
+          return groups.length > 0 ? groups : undefined;
+        },
+        { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'idempotency row with a pgid' },
+      );
+      expect(toolGroups).toHaveLength(1);
+      const pgid = toolGroups[0] as number;
+      expect(groupAlive(pgid)).toBe(true);
+      expect(fs.readdirSync(home.paths.markers.tools).length).toBeGreaterThanOrEqual(1);
+
+      const before = await stack.client.health();
+      const oldRuntimePid = childOf(before, 'runtime').pid;
+      const oldGatewayPid = childOf(before, 'gateway').pid;
+      if (oldRuntimePid === undefined) throw new Error('runtime has no pid');
+      expect(chatCompletions(stack.fake)).toHaveLength(1);
+
+      process.kill(oldRuntimePid, 'SIGKILL');
+      expect(groupAlive(pgid)).toBe(true);
+
+      await until(async () => (await runtime.getRun(run.id)).run.status === 'COMPLETED', {
+        deadlineMs: E2E_RUN_COMPLETED_BOUND_MS,
+        description: `run ${run.id} COMPLETED after recovery`,
+      });
+
+      expect(groupAlive(pgid)).toBe(false);
+      const stream = runtime.events(run.id);
+      const frames = await stream.toEnd(E2E_MARGIN_MS);
+      await stream.close();
+      const reconciled = framesOfType(frames, 'tool.reconciled');
+      expect(reconciled.map((frame) => frame.data.outcome)).toEqual(['unknown']);
+      expect(frames.at(-1)?.data.to).toBe('COMPLETED');
+      expect(linesOf(effectLog)).toEqual(['effect']);
+
+      const calls = chatCompletions(stack.fake);
+      expect(calls).toHaveLength(2);
+      expect(messagesOf(calls[0]).filter((message) => message.role === 'tool')).toEqual([]);
+      const lastMessage = messagesOf(calls[1]).at(-1);
+      expect(lastMessage?.role).toBe('tool');
+      const recoveredCallId = precedingAssistantCallId(messagesOf(calls[1]), lastMessage);
+      expect(recoveredCallId).toMatch(/^call_[0-9a-f]{32}$/);
+      expect(lastMessage?.tool_call_id).toBe(recoveredCallId);
+      expect(reconciled[0]?.data.callId).toBe(recoveredCallId);
+      expect(textOf(lastMessage?.content)).toContain(UNKNOWN_EFFECT_SENTENCE);
+      expect(fs.readdirSync(home.paths.markers.tools)).toEqual([]);
+
+      const after = await stack.client.health();
+      const runtimeAfter = childOf(after, 'runtime');
+      expect(runtimeAfter.restarts).toBe(1);
+      expect(runtimeAfter.pid).not.toBe(oldRuntimePid);
+      expect(childOf(after, 'gateway').pid).toBe(oldGatewayPid);
+    } finally {
+      await runtime.close();
+    }
+  });
+});

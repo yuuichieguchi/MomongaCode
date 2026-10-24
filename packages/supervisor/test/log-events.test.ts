@@ -36,6 +36,7 @@ const SAMPLES: { [K in keyof Events]: PayloadOf<K> } = {
   'child.stdout': { child: 'gateway', childPid: 4251, raw: 'stray', rawBytes: 5, truncated: true },
   'supervisor.background_failed': { source: 'exit-handler' },
   'settings.changed': { models: true, sandbox: false },
+  'settings.evaluated': { modelsChanged: false, sandboxChanged: true, roles: '' },
   'settings.invalid': { detail: 'settings file is invalid: bad', action: 'keep-running-children-hold-spawns' },
   'settings.read_failed': { detail: 'EMFILE' },
   'settings.warning': { detail: 'settings file is invalid: x' },
@@ -68,6 +69,7 @@ const EXPECTED_LEVELS: { [K in keyof Events]: LogLevel } = {
   'child.stdout': 'info',
   'supervisor.background_failed': 'error',
   'settings.changed': 'info',
+  'settings.evaluated': 'info',
   'settings.invalid': 'warn',
   'settings.read_failed': 'warn',
   'settings.warning': 'warn',
@@ -131,6 +133,9 @@ describe('log-events', () => {
     expect(emit('plan.begin')).toMatchObject({ roles: 'runtime,gateway', planned: 2 });
     expect(emit('plan.end')).toMatchObject({ roles: 'runtime', planned: 1 });
     expect(emit('settings.changed')).toMatchObject({ models: true, sandbox: false });
+    expect(emit('settings.evaluated')).toMatchObject({ modelsChanged: false, sandboxChanged: true, roles: '' });
+    expect(emit('settings.evaluated')).not.toHaveProperty('models');
+    expect(emit('settings.evaluated')).not.toHaveProperty('sandbox');
     expect(emit('shutdown.step')).toMatchObject({ shutdownStep: 4 });
     expect(emit('shutdown.step')).not.toHaveProperty('step');
   });

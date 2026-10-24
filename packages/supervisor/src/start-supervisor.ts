@@ -25,7 +25,7 @@ import { startControlServer } from './control-server.ts';
 import type { ControlServer } from './control-server.ts';
 import { runLaunchTask } from './launch.ts';
 import type { ChildRole, GatewayTuning, Launcher, RuntimeTuning } from './launcher.ts';
-import { phaseChange, planBegin, planEnd, settingsChanged, settingsInvalid, settingsReadFailed, settingsWarning, supervisorBackgroundFailed, writeEvent } from './log-events.ts';
+import { phaseChange, planBegin, planEnd, settingsChanged, settingsEvaluated, settingsInvalid, settingsReadFailed, settingsWarning, supervisorBackgroundFailed, writeEvent } from './log-events.ts';
 import { omitUndefined } from './omit-undefined.ts';
 import type { MarkerPorts } from './orphans.ts';
 import { digestsOf, planRoles, runRestartPlan } from './plan.ts';
@@ -248,12 +248,12 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       const gatewayApplied = gateway.appliedDigests();
       const modelsChanged = (runtimeApplied !== undefined && runtimeApplied.models !== current.models) || (gatewayApplied !== undefined && gatewayApplied.models !== current.models);
       const sandboxChanged = runtimeApplied !== undefined && runtimeApplied.sandbox !== current.sandbox;
-      if (!modelsChanged && !sandboxChanged) return;
-      log(settingsChanged({ models: modelsChanged, sandbox: sandboxChanged }));
+      if (modelsChanged || sandboxChanged) log(settingsChanged({ models: modelsChanged, sandbox: sandboxChanged }));
       const roles = planRoles(current, {
         ...(runtimeApplied !== undefined && PLANNABLE_STATES.has(runtime.state()) ? { runtime: runtimeApplied } : {}),
         ...(gatewayApplied !== undefined && PLANNABLE_STATES.has(gateway.state()) ? { gateway: gatewayApplied } : {}),
       });
+      log(settingsEvaluated({ modelsChanged, sandboxChanged, roles: roles.join(',') }));
       if (roles.length > 0) startPlan(roles);
     };
 
