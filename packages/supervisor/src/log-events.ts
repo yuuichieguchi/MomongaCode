@@ -52,6 +52,7 @@ export const childStderr = defineEvent<RawRecord>('child.stderr', 'warn');
 export const childStdout = defineEvent<RawRecord>('child.stdout', 'info');
 export const supervisorBackgroundFailed = defineEvent<{ source: string }>('supervisor.background_failed', 'error');
 export const settingsChanged = defineEvent<{ models: boolean; sandbox: boolean }>('settings.changed', 'info');
+export const settingsEvaluated = defineEvent<{ modelsChanged: boolean; sandboxChanged: boolean; roles: string }>('settings.evaluated', 'info');
 export const settingsInvalid = defineEvent<{ detail: string; action: 'keep-running-children-hold-spawns' }>('settings.invalid', 'warn');
 export const settingsReadFailed = defineEvent<{ detail: string }>('settings.read_failed', 'warn');
 export const settingsWarning = defineEvent<{ detail: string }>('settings.warning', 'warn');
@@ -84,6 +85,7 @@ export const SUPERVISOR_EVENTS = {
   'child.stdout': childStdout,
   'supervisor.background_failed': supervisorBackgroundFailed,
   'settings.changed': settingsChanged,
+  'settings.evaluated': settingsEvaluated,
   'settings.invalid': settingsInvalid,
   'settings.read_failed': settingsReadFailed,
   'settings.warning': settingsWarning,

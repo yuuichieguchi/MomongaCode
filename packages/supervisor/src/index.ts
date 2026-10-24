@@ -99,6 +99,7 @@ export {
   planBegin,
   planEnd,
   settingsChanged,
+  settingsEvaluated,
   settingsInvalid,
   settingsReadFailed,
   settingsWarning,

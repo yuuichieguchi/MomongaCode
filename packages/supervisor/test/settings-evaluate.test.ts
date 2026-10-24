@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { SHUTDOWN_MARGIN_MS, runtimeMaxCloseMs } from '@momonga/foundation';
 import { spawnTracked, waitFor } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
@@ -142,6 +142,94 @@ describe('supervisor-level settings evaluation', () => {
     expect(h.log.withMsg('settings.invalid')).toEqual([]);
     expect(h.fake.spawnCount()).toBe(2);
     expect(h.fake.children.flatMap((child) => child.signals)).toEqual([]);
+    expect(h.log.withMsg('settings.changed')).toEqual([]);
+    expect(h.log.withMsg('settings.evaluated')).toEqual([expect.objectContaining({ level: 'info', modelsChanged: false, sandboxChanged: false, roles: '' })]);
+  });
+
+  it('every valid evaluation logs settings.evaluated: a sandbox change logs changed, evaluated, plan.begin in that order', async (context) => {
+    const h = await watched(context, { settings: validSettings({ sandbox: 'seatbelt' }) });
+    await edit(h, validSettings({ sandbox: 'none' }));
+    await pumpUntil(h.timers, () => planCount(h) === 1, { stepMs: 50, maxMs: 30_000 });
+    expect(h.log.withMsg('settings.evaluated')).toEqual([expect.objectContaining({ level: 'info', modelsChanged: false, sandboxChanged: true, roles: 'runtime' })]);
+    const messages = h.log.messages();
+    const changedAt = messages.indexOf('settings.changed');
+    const evaluatedAt = messages.indexOf('settings.evaluated');
+    const planAt = messages.indexOf('plan.begin');
+    expect(changedAt).toBeGreaterThanOrEqual(0);
+    expect(evaluatedAt).toBeGreaterThan(changedAt);
+    expect(planAt).toBeGreaterThan(evaluatedAt);
+  });
+
+  it('every valid evaluation logs settings.evaluated: a models change names both roles', async (context) => {
+    const h = await watched(context);
+    await edit(h, validSettings({ model: 'gpt-y' }));
+    await pumpUntil(h.timers, () => planCount(h) === 1, { stepMs: 50, maxMs: 30_000 });
+    expect(h.log.withMsg('settings.evaluated')).toEqual([expect.objectContaining({ modelsChanged: true, sandboxChanged: false, roles: 'runtime,gateway' })]);
+    const messages = h.log.messages();
+    expect(messages.indexOf('settings.evaluated')).toBeLessThan(messages.indexOf('plan.begin'));
+    expect(messages.indexOf('settings.evaluated')).toBeGreaterThan(messages.indexOf('settings.changed'));
+  });
+
+  it('every valid evaluation logs settings.evaluated: a digest change while the runtime waits for its lock plans nothing', async (context) => {
+    const holder = { pid: 0 };
+    const h = await watched(context, {
+      settings: validSettings({ sandbox: 'seatbelt' }),
+      prepare: (_home, paths) => {
+        holder.pid = spawnTracked(context, 'sleep', ['30']).pid;
+        writeLockFile(paths.locks.runtime, holder.pid);
+      },
+      overrides: { startTimeOf: async () => 0, lockWaitMs: 3_600_000 },
+    });
+    h.fake.latest('runtime').exit(75);
+    await h.waitForState('runtime', 'waiting-lock');
+    await edit(h, validSettings({ sandbox: 'none' }));
+    await pumpUntil(h.timers, () => h.log.withMsg('settings.evaluated').length === 1, { stepMs: 50, maxMs: 10_000 });
+    await pump(h.timers, 2000, 50);
+    expect(h.log.withMsg('settings.evaluated')).toEqual([expect.objectContaining({ modelsChanged: false, sandboxChanged: true, roles: '' })]);
+    expect(h.log.withMsg('settings.changed')).toEqual([expect.objectContaining({ models: false, sandbox: true })]);
+    expect(planCount(h)).toBe(0);
+  });
+
+  it('every valid evaluation logs settings.evaluated: a reformatting with equal digests', async (context) => {
+    const h = await watched(context);
+    const reordered = Object.fromEntries(Object.entries(validSettings()).reverse());
+    await editText(h, `\n${JSON.stringify(reordered, null, 3)}\n`);
+    await pump(h.timers, 1000, 50);
+    expect(h.log.withMsg('settings.evaluated')).toEqual([expect.objectContaining({ modelsChanged: false, sandboxChanged: false, roles: '' })]);
+    expect(h.log.withMsg('settings.changed')).toEqual([]);
+    expect(planCount(h)).toBe(0);
+  });
+
+  it('evaluations that read no valid snapshot log no settings.evaluated', async (context) => {
+    const h = await watched(context);
+    await edit(h, { ...validSettings(), permissions: { allow: ['Bash(ls)'] } });
+    await pumpUntil(h.timers, () => h.log.withMsg('settings.evaluated').length === 1, { stepMs: 50, maxMs: 10_000 });
+
+    h.watch.fire();
+    await pump(h.timers, SETTINGS_DEBOUNCE_MS + 50, 50);
+    expect(h.log.withMsg('settings.evaluated')).toHaveLength(1);
+
+    await editText(h, INVALID_SETTINGS_TEXT);
+    await pumpUntil(h.timers, () => h.log.withMsg('settings.invalid').length === 1, { stepMs: 50, maxMs: 10_000 });
+    expect(h.log.withMsg('settings.evaluated')).toHaveLength(1);
+
+    const settingsFile = path.join(h.home, '.momonga', 'settings.json');
+    const realRead = fs.readFileSync;
+    const readSpy = vi.spyOn(fs, 'readFileSync').mockImplementation(((file: fs.PathOrFileDescriptor, options?: unknown) => {
+      if (typeof file === 'string' && fs.realpathSync(path.dirname(file)) === fs.realpathSync(path.dirname(settingsFile)) && path.basename(file) === 'settings.json') {
+        throw Object.assign(new Error('EMFILE: too many open files'), { code: 'EMFILE' });
+      }
+      return realRead(file, options as never);
+    }) as typeof fs.readFileSync);
+    try {
+      await edit(h, { ...validSettings(), permissions: { allow: ['Bash(pwd)'] } });
+      await pumpUntil(h.timers, () => h.log.withMsg('settings.read_failed').length === 1, { stepMs: 50, maxMs: 10_000 });
+      await pump(h.timers, 5000, 100);
+      expect(h.log.withMsg('settings.read_failed')).toEqual([expect.objectContaining({ level: 'warn' })]);
+      expect(h.log.withMsg('settings.evaluated')).toHaveLength(1);
+    } finally {
+      readSpy.mockRestore();
+    }
   });
 
   it('same digest after reformatting restarts nothing', async (context) => {

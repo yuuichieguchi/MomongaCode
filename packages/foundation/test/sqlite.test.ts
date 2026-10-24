@@ -4,7 +4,8 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
-import { immediateTx, migrate, openDatabase } from '@momonga/foundation';
+import { immediateTx, migrate, openDatabase, readTx } from '@momonga/foundation';
+import { withTempDir } from '@momonga/testkit';
 
 const cleanups: Array<() => void> = [];
 
@@ -225,5 +226,29 @@ describe('immediateTx', () => {
       expect(other.isTransaction).toBe(false);
     });
     expect(count(db)).toEqual({ n: 0 });
+  });
+});
+
+describe('readTx', () => {
+  it('pins one snapshot at BEGIN even when the first statement fails at prepare', (context) => {
+    const file = path.join(withTempDir(context), 'snapshot.db');
+    const a = open(file);
+    a.exec('CREATE TABLE t (v INTEGER)');
+    a.exec('INSERT INTO t VALUES (1)');
+    const b = open(file);
+
+    const observed = readTx(a, () => {
+      expect(() => a.prepare('SELECT * FROM missing')).toThrow(/no such table/);
+      b.exec('BEGIN IMMEDIATE');
+      b.exec('CREATE TABLE missing (v INTEGER)');
+      b.exec('INSERT INTO t VALUES (2)');
+      b.exec('COMMIT');
+      return a.prepare('SELECT COUNT(*) AS n FROM t').get();
+    });
+
+    expect(observed).toEqual({ n: 1 });
+    const fresh = open(file);
+    expect(fresh.prepare('SELECT COUNT(*) AS n FROM t').get()).toEqual({ n: 2 });
+    expect(tables(fresh)).toEqual(['missing', 't']);
   });
 });
