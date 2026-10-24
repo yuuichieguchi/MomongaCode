@@ -101,3 +101,12 @@ export type {
 export { ADAPTER_NEUTRAL_ERROR_CODES } from './adapter.ts';
 export type { AdapterNeutralErrorCode } from './adapter.ts';
 export { OPEN_RESPONSES_OPENAPI } from './open-responses-spec.ts';
+export { SUPERVISOR_API_VERSION } from './supervisor-api.ts';
+export type {
+  SupervisorChildHealth,
+  SupervisorChildState,
+  SupervisorExitReason,
+  SupervisorHealth,
+  SupervisorPhase,
+  SupervisorShutdownResponse,
+} from './supervisor-api.ts';

@@ -16,6 +16,7 @@ export type FakeEntryIo = EntryIo & {
   signal(name: EntrySignal): void;
   endLifeline(): void;
   uncaught(error: Error): void;
+  setDroppedLines(path: string, count: number): void;
 };
 
 export type FakeEntryIoOptions = {
@@ -24,6 +25,7 @@ export type FakeEntryIoOptions = {
   env?: Readonly<Record<string, string | undefined>>;
   clock?: Clock;
   timers?: EntryIo['timers'];
+  logFile?: (path: string) => RotatingLogFile;
 };
 
 const realTimers: EntryIo['timers'] = {
@@ -51,14 +53,19 @@ export const createFakeEntryIo = (options: FakeEntryIoOptions): FakeEntryIo => {
     resolveExited = resolve;
   });
 
+  const dropped = new Map<string, number>();
+
   const logFile = (path: string): RotatingLogFile => {
     logFilePaths.push(path);
+    if (options.logFile !== undefined) return options.logFile(path);
     const lines = logFiles.get(path) ?? [];
     logFiles.set(path, lines);
     return {
       write: (line) => void lines.push(line.endsWith('\n') ? line.slice(0, -1) : line),
       close: () => undefined,
-      droppedLines: 0,
+      get droppedLines() {
+        return dropped.get(path) ?? 0;
+      },
     };
   };
 
@@ -128,6 +135,9 @@ export const createFakeEntryIo = (options: FakeEntryIoOptions): FakeEntryIo => {
     },
     uncaught: (error) => {
       for (const handler of [...uncaughtHandlers]) handler(error);
+    },
+    setDroppedLines: (path, count) => {
+      dropped.set(path, count);
     },
   };
 };

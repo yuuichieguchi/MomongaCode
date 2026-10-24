@@ -19,6 +19,7 @@ const ALL_PACKAGES = [
   'context',
   'skills',
   'runtime',
+  'supervisor',
   'cli',
   'testkit',
 ] as const;
@@ -47,7 +48,8 @@ const MATRIX: Record<string, PackageRule> = {
   context: rule(['protocol', 'foundation']),
   skills: rule(['protocol', 'foundation', 'config', 'tools']),
   runtime: rule(['protocol', 'foundation', 'config', 'store', 'observability', 'policy', 'sandbox', 'tools', 'mcp', 'context', 'skills']),
-  cli: rule(['protocol', 'foundation', 'config'], ['runtime', 'gateway']),
+  supervisor: rule(['protocol', 'foundation', 'config']),
+  cli: rule(['protocol', 'foundation', 'config'], ['runtime', 'gateway', 'supervisor']),
   testkit: rule(['protocol', 'foundation']),
 };
 
@@ -209,15 +211,38 @@ describe('architecture: checker self-test', () => {
     expect(checkManifest('runtime', { '@momonga/gateway': '*' })).toEqual(['runtime must not depend on @momonga/gateway']);
   });
 
+  it('allows supervisor to import protocol, foundation and config only', () => {
+    expect(
+      checkFile(
+        'supervisor',
+        fileIn('supervisor'),
+        "import { a } from '@momonga/protocol';\nimport { b } from '@momonga/foundation';\nimport { c } from '@momonga/config';",
+      ),
+    ).toEqual([]);
+    expect(checkFile('supervisor', fileIn('supervisor'), "import { r } from '@momonga/runtime';")).toHaveLength(1);
+    expect(checkFile('supervisor', fileIn('supervisor'), "const g = await import('@momonga/gateway');")).toHaveLength(1);
+    expect(checkFile('supervisor', fileIn('supervisor'), "import { o } from '@momonga/observability';")).toHaveLength(1);
+    expect(checkFile('supervisor', fileIn('supervisor'), "import { t } from '@momonga/testkit';")).toHaveLength(1);
+    expect(checkManifest('supervisor', { '@momonga/runtime': '*' })).toEqual(['supervisor must not depend on @momonga/runtime']);
+    expect(checkManifest('supervisor', { '@momonga/protocol': '*', '@momonga/foundation': '*', '@momonga/config': '*' })).toEqual([]);
+  });
+
+  it('flags runtime and gateway importing supervisor', () => {
+    expect(checkFile('runtime', fileIn('runtime'), "import { s } from '@momonga/supervisor';")).toHaveLength(1);
+    expect(checkFile('gateway', fileIn('gateway'), "const s = await import('@momonga/supervisor');")).toHaveLength(1);
+  });
+
   it('flags runtime importing cli', () => {
     expect(checkFile('runtime', fileIn('runtime'), "import '@momonga/cli';")).toHaveLength(1);
   });
 
-  it('allows cli to import runtime and gateway only dynamically', () => {
+  it('allows cli to import runtime, gateway and supervisor only dynamically', () => {
     expect(checkFile('cli', fileIn('cli'), "const r = await import('@momonga/runtime');")).toEqual([]);
     expect(checkFile('cli', fileIn('cli'), "const g = await import('@momonga/gateway');")).toEqual([]);
+    expect(checkFile('cli', fileIn('cli'), "const s = await import('@momonga/supervisor');")).toEqual([]);
     expect(checkFile('cli', fileIn('cli'), "import { run } from '@momonga/runtime';")).toHaveLength(1);
     expect(checkFile('cli', fileIn('cli'), "import { g } from '@momonga/gateway';")).toHaveLength(1);
+    expect(checkFile('cli', fileIn('cli'), "import { startSupervisor } from '@momonga/supervisor';")).toHaveLength(1);
     expect(checkFile('cli', fileIn('cli'), "const s = await import('@momonga/store');")).toHaveLength(1);
     expect(checkFile('cli', fileIn('cli'), "import { c } from '@momonga/config';")).toEqual([]);
   });
@@ -244,7 +269,7 @@ describe('architecture: checker self-test', () => {
     expect(checkManifest('gateway', { '@momonga/store': '*', undici: '1' })).toEqual([
       'gateway must not depend on @momonga/store',
     ]);
-    expect(checkManifest('cli', { '@momonga/runtime': '*', '@momonga/gateway': '*' })).toEqual([]);
+    expect(checkManifest('cli', { '@momonga/runtime': '*', '@momonga/gateway': '*', '@momonga/supervisor': '*' })).toEqual([]);
     expect(checkManifest('tools', { '@momonga/testkit': '*' })).toHaveLength(1);
   });
 });

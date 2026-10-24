@@ -19,11 +19,15 @@ export class EntryUsageError extends Error {
   }
 }
 
-export const COMMON_ENTRY_FLAGS = {
+export const BASE_ENTRY_FLAGS = {
   'app-version': { kind: 'string', required: true },
   home: { kind: 'string' },
-  'lifeline-fd': { kind: 'int' },
   'log-target': { kind: 'string' },
+} as const satisfies FlagSpec;
+
+export const COMMON_ENTRY_FLAGS = {
+  ...BASE_ENTRY_FLAGS,
+  'lifeline-fd': { kind: 'int' },
 } as const satisfies FlagSpec;
 
 const INTEGER_PATTERN = /^-?\d+$/;

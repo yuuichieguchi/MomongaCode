@@ -5,7 +5,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createUdsClient, listenUnix } from '@momonga/foundation';
+import { GHOST_CONFIRM_MS, createUdsClient, listenUnix } from '@momonga/foundation';
 import { registerCleanup, spawnTracked, withTempDir } from '@momonga/testkit';
 
 const cleanups: Array<() => Promise<void> | void> = [];
@@ -427,6 +427,36 @@ describe('listenUnix lock options', () => {
     });
     expect(server.listening).toBe(true);
     expect(probed).toEqual([ghost.pid, ghost.pid]);
+    expect(fs.readFileSync(`${socketPath}.lock`, 'utf8')).toBe(String(process.pid));
+  });
+  it('listenUnix forwards timing to the socket lock', async (context) => {
+    const socketPath = path.join(withTempDir(context), 'ghost-timed.sock');
+    const ghost = spawnTracked(context, '/bin/sleep', ['60'], { stdio: 'ignore' });
+    fs.writeFileSync(`${socketPath}.lock`, String(ghost.pid), { mode: 0o600 });
+    const lockTime = fs.statSync(`${socketPath}.lock`).mtimeMs;
+    const sleeps: number[] = [];
+    let fakeNow = lockTime;
+    const server = http.createServer();
+    registerCleanup(context, 
+      () =>
+        new Promise<void>((resolve) => {
+          if (!server.listening) resolve();
+          else server.close(() => resolve());
+        }),
+    );
+    await listenUnix(server, socketPath, {
+      startTimeOf: async () => lockTime + 10_000,
+      timing: {
+        now: () => fakeNow,
+        sleep: async (ms) => {
+          sleeps.push(ms);
+          fakeNow += ms;
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        },
+      },
+    });
+    expect(server.listening).toBe(true);
+    expect(sleeps).toEqual([GHOST_CONFIRM_MS]);
     expect(fs.readFileSync(`${socketPath}.lock`, 'utf8')).toBe(String(process.pid));
   });
 });

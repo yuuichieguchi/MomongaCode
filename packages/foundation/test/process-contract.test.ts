@@ -19,6 +19,7 @@ import {
   SUPERVISOR_FINALIZE_MS,
   announceReady,
   createJsonLogger,
+  formatLogLine,
   isLoopbackHost,
   minimalChildEnv,
   parseReadyLine,
@@ -193,6 +194,26 @@ describe('createJsonLogger', () => {
   });
 });
 
+describe('formatLogLine', () => {
+  it('renders the exact line with data first, then the envelope, then the reserved fields', () => {
+    const line = formatLogLine({
+      ts: START_ISO,
+      level: 'warn',
+      service: 'custom-service',
+      msg: 'thing.happened',
+      fields: { runId: 'run-9', data: { detail: 'x', service: 'shadowed' } },
+    });
+    expect(line).toBe(`{"detail":"x","ts":"${START_ISO}","level":"warn","service":"custom-service","pid":${process.pid},"msg":"thing.happened","runId":"run-9"}\n`);
+  });
+
+  it('is byte-identical to what createJsonLogger writes for the same service and entry', () => {
+    const capture = captureStream();
+    const logger = createJsonLogger({ service: 'custom-service', stream: capture.stream, clock: createFakeClock(START_MS) });
+    logger.error('boom', { count: 3, data: { child: 'runtime' } });
+    expect(capture.chunks).toEqual([formatLogLine({ ts: START_ISO, level: 'error', service: 'custom-service', msg: 'boom', fields: { count: 3, data: { child: 'runtime' } } })]);
+  });
+});
+
 describe('close budgets', () => {
   it('pins the runtime budgets and the default drain', () => {
     expect([RUNTIME_ABORT_BUDGET_MS, RUNTIME_TEARDOWN_BUDGET_MS, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS]).toEqual([5000, 10_000, 30_000]);
@@ -209,7 +230,7 @@ describe('close budgets', () => {
     expect(ENTRY_HARD_EXIT_MARGIN_MS).toBe(3000);
     expect(SHUTDOWN_MARGIN_MS).toBe(5000);
     expect(STDIO_EXIT_FLUSH_MS).toBe(1000);
-    expect(SUPERVISOR_FINALIZE_MS).toBe(9000);
+    expect(SUPERVISOR_FINALIZE_MS).toBe(11_000);
   });
 
   it('ENTRY_HARD_EXIT_MARGIN_MS + STDIO_EXIT_FLUSH_MS < SHUTDOWN_MARGIN_MS', () => {
@@ -217,12 +238,34 @@ describe('close budgets', () => {
   });
 
   it('supervisorMaxCloseMs', () => {
-    expect(supervisorMaxCloseMs(30_000)).toBe(79_000);
-    expect(supervisorMaxCloseMs(0)).toBe(49_000);
+    expect(supervisorMaxCloseMs(30_000)).toBe(81_000);
+    expect(supervisorMaxCloseMs(0)).toBe(51_000);
     for (const drain of [1, 1000, 12_345]) {
       const runtimeBound = drain + 15_000 + 5000;
       const gatewayBound = 15_000 + 5000;
-      expect(supervisorMaxCloseMs(drain), String(drain)).toBe(runtimeBound + gatewayBound + 9000);
+      expect(supervisorMaxCloseMs(drain), String(drain)).toBe(runtimeBound + gatewayBound + 11_000);
+    }
+  });
+
+  it('SUPERVISOR_FINALIZE_MS is the sum of its three terms', () => {
+    const supervisorStdioFlushMs = 1000;
+    const exitHandlerFlushes = 2 * supervisorStdioFlushMs;
+    const shutdownReapCapMs = 4000;
+    const shutdownReleaseBoundMs = 5000;
+    expect(SUPERVISOR_FINALIZE_MS).toBe(exitHandlerFlushes + shutdownReapCapMs + shutdownReleaseBoundMs);
+  });
+
+  it('the engine deadline lies beyond the orderly worst case', () => {
+    const exitHandlerFlushes = 2 * 1000;
+    const shutdownReapCapMs = 4000;
+    const shutdownReleaseBoundMs = 5000;
+    for (const drain of [0, 1000, 30_000]) {
+      const runtimeBound = runtimeMaxCloseMs(drain) + SHUTDOWN_MARGIN_MS;
+      const gatewayBound = GATEWAY_MAX_CLOSE_MS + SHUTDOWN_MARGIN_MS;
+      const orderlyWorstCase = runtimeBound + gatewayBound + exitHandlerFlushes + shutdownReapCapMs + shutdownReleaseBoundMs;
+      const engineDeadline = supervisorMaxCloseMs(drain) + ENTRY_HARD_EXIT_MARGIN_MS;
+      expect(engineDeadline, String(drain)).toBeGreaterThan(orderlyWorstCase);
+      expect(engineDeadline - orderlyWorstCase, String(drain)).toBe(3000);
     }
   });
 });

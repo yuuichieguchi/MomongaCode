@@ -31,6 +31,7 @@ export type {
   AcquireProcessLockOptions,
   DescribeHolder,
   InspectProcessLockOptions,
+  LockTiming,
   LockVerdictMemo,
   ProcessLock,
   ProcessLockInspection,
@@ -63,12 +64,13 @@ export {
   SUPERVISOR_FINALIZE_MS,
   announceReady,
   createJsonLogger,
+  formatLogLine,
   minimalChildEnv,
   parseReadyLine,
   runtimeMaxCloseMs,
   supervisorMaxCloseMs,
 } from './process-contract.ts';
-export type { JsonLogger, JsonLoggerOptions, LogFields, LogLevel, ReadyFields, TextStream } from './process-contract.ts';
+export type { JsonLogger, JsonLoggerOptions, LogFields, LogLevel, LogLineInput, ReadyFields, TextStream } from './process-contract.ts';
 export { findHolders, holderGroups, reapMarkedProcesses, reapMarkerDirectory, reconcileProcessGroup } from './process-markers.ts';
 export type { MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirectoryOptions, ReapTiming } from './process-markers.ts';
 export { isProcessAlive } from './process-alive.ts';
@@ -77,7 +79,7 @@ export { SOCKET_PATH_LIMIT, assertSocketPathLength } from './socket-path.ts';
 export { canonicalDirectory, canonicalPath, comparableContains, comparableFromParts, comparablePath, containsByComponents, setCaseSensitivityProbe, volumeIsCaseInsensitive } from './path-compare.ts';
 export type { CanonicalDirectoryFailureCode, CanonicalDirectoryResult, CaseSensitivityProbe, PathParts } from './path-compare.ts';
 export { isTransientErrno } from './transient-errno.ts';
-export { COMMON_ENTRY_FLAGS, EntryUsageError, parseFlags } from './entry-flags.ts';
+export { BASE_ENTRY_FLAGS, COMMON_ENTRY_FLAGS, EntryUsageError, parseFlags } from './entry-flags.ts';
 export type { FlagKind, FlagSpec, ParsedFlags } from './entry-flags.ts';
 export { watchLifeline } from './lifeline.ts';
 export { LOG_KEEP, LOG_MAX_BYTES, createRotatingLogFile } from './rotating-log.ts';

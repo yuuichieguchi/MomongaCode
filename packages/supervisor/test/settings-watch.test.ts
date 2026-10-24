@@ -1,0 +1,263 @@
+import { EventEmitter } from 'node:events';
+import fs from 'node:fs';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { createFakeClock, createFakeTimers, withTempDir } from '@momonga/testkit';
+import { ERROR_KEY_PREFIX, safeChangeKey, watchSettings } from '../src/settings-watch.ts';
+import type { SettingsWatch } from '../src/settings-watch.ts';
+import { pollUntil } from './support/p2-poll.ts';
+
+type Listener = (eventType: string, filename: string | null) => void;
+
+class FakeWatcher extends EventEmitter {
+  closed = 0;
+  close(): void {
+    this.closed += 1;
+  }
+}
+
+const fakeWatch = (options: { throws?: boolean } = {}) => {
+  const watchers: FakeWatcher[] = [];
+  const listeners: Listener[] = [];
+  const directories: string[] = [];
+  const watch = ((directory: string, ...rest: unknown[]) => {
+    directories.push(directory);
+    if (options.throws === true) throw Object.assign(new Error('watch EMFILE'), { code: 'EMFILE' });
+    const listener = rest.find((value): value is Listener => typeof value === 'function');
+    const watcher = new FakeWatcher();
+    if (listener !== undefined) {
+      listeners.push(listener);
+      watcher.on('change', listener);
+    }
+    watchers.push(watcher);
+    return watcher;
+  }) as unknown as typeof fs.watch;
+  const fire = (filename: string | null, eventType = 'rename'): void => {
+    for (const watcher of watchers) watcher.emit('change', eventType, filename);
+  };
+  return { watch, watchers, directories, fire };
+};
+
+const setup = (options: { initialKey?: string; key?: () => string; throws?: boolean; debounceMs?: number; pollMs?: number; onChange?: () => void } = {}) => {
+  const clock = createFakeClock(0);
+  const timers = createFakeTimers(clock);
+  const fake = fakeWatch({ ...(options.throws === undefined ? {} : { throws: options.throws }) });
+  let key = 'k1';
+  let calls = 0;
+  const warnings: Error[] = [];
+  const errors: Error[] = [];
+  const watcher: SettingsWatch = watchSettings({
+    directory: '/fake/home/.momonga',
+    file: 'settings.json',
+    debounceMs: options.debounceMs ?? 200,
+    pollMs: options.pollMs ?? 2000,
+    changeKey: options.key ?? (() => key),
+    initialKey: options.initialKey ?? 'k1',
+    onChange: () => {
+      calls += 1;
+      options.onChange?.();
+    },
+    onWarning: (error) => void warnings.push(error),
+    onError: (error) => void errors.push(error),
+    timers,
+    watch: fake.watch,
+  });
+  return {
+    timers,
+    fake,
+    watcher,
+    calls: () => calls,
+    warnings,
+    errors,
+    setKey: (next: string) => {
+      key = next;
+    },
+  };
+};
+
+describe('safeChangeKey', () => {
+  it('returns the key when changeKey succeeds', () => {
+    expect(safeChangeKey(() => '1:2:3')).toBe('1:2:3');
+    expect(safeChangeKey(() => 'missing')).toBe('missing');
+  });
+
+  it('changeKey throw maps to a sentinel key', () => {
+    const eio = Object.assign(new Error('stat EIO'), { code: 'EIO' });
+    expect(ERROR_KEY_PREFIX).toBe('error:');
+    expect(
+      safeChangeKey(() => {
+        throw eio;
+      }),
+    ).toBe('error:EIO');
+  });
+});
+
+describe('watchSettings', () => {
+  it('watches the directory, not the file', () => {
+    const { fake, watcher } = setup();
+    expect(fake.directories).toEqual(['/fake/home/.momonga']);
+    watcher.stop();
+  });
+
+  it('a burst of writes is debounced', () => {
+    const { fake, timers, calls, watcher } = setup();
+    for (let index = 0; index < 10; index += 1) {
+      fake.fire('settings.json', index % 2 === 0 ? 'rename' : 'change');
+      timers.advance(15);
+    }
+    expect(calls()).toBe(0);
+    timers.advance(184);
+    expect(calls()).toBe(0);
+    timers.advance(1);
+    expect(calls()).toBe(1);
+    timers.advance(200);
+    expect(calls()).toBe(1);
+    watcher.stop();
+  });
+
+  it('unrelated files are ignored', () => {
+    const { fake, timers, calls, watcher } = setup();
+    fake.fire('other.json');
+    fake.fire('settings.json.tmp');
+    timers.advance(10_000);
+    expect(calls()).toBe(0);
+    watcher.stop();
+  });
+
+  it('null filename counts as a change', () => {
+    const { fake, timers, calls, watcher } = setup();
+    fake.fire(null);
+    timers.advance(200);
+    expect(calls()).toBe(1);
+    watcher.stop();
+  });
+
+  it('polling fallback', () => {
+    const { timers, calls, warnings, errors, setKey, watcher } = setup({ throws: true });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toBeInstanceOf(Error);
+    expect(warnings[0]?.message).toContain('EMFILE');
+    timers.advance(2000 + 200);
+    expect(calls()).toBe(0);
+    setKey('k2');
+    timers.advance(2000 + 200);
+    expect(calls()).toBe(1);
+    timers.advance(2000 + 200);
+    expect(calls()).toBe(1);
+    expect(warnings).toHaveLength(1);
+    expect(errors).toEqual([]);
+    watcher.stop();
+  });
+
+  it('watch error falls back to polling', () => {
+    const { fake, timers, calls, warnings, errors, setKey, watcher } = setup();
+    expect(warnings).toEqual([]);
+    expect(() => fake.watchers[0]?.emit('error', Object.assign(new Error('watch failed'), { code: 'EIO' }))).not.toThrow();
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toBeInstanceOf(Error);
+    expect(warnings[0]?.message).toContain('watch failed');
+    expect(() => fake.watchers[0]?.emit('error', Object.assign(new Error('watch failed again'), { code: 'EIO' }))).not.toThrow();
+    expect(warnings).toHaveLength(1);
+    setKey('k2');
+    timers.advance(2000 + 200);
+    expect(calls()).toBe(1);
+    expect(warnings).toHaveLength(1);
+    expect(errors).toEqual([]);
+    watcher.stop();
+  });
+
+  it('a working watch reports no warning and no error', () => {
+    const { fake, timers, warnings, errors, watcher } = setup();
+    fake.fire('settings.json');
+    timers.advance(10_000);
+    expect(warnings).toEqual([]);
+    expect(errors).toEqual([]);
+    watcher.stop();
+  });
+
+  it('seeds from initialKey, not from a key read at construction', () => {
+    const { timers, calls, watcher } = setup({ initialKey: 'seed', key: () => 'already-newer' });
+    timers.advance(2000 + 200);
+    expect(calls()).toBe(1);
+    watcher.stop();
+  });
+
+  it('changeKey throw schedules onChange and nothing throws out of the timer', () => {
+    let fail = false;
+    const { timers, calls, watcher } = setup({
+      key: () => {
+        if (fail) throw Object.assign(new Error('stat EIO'), { code: 'EIO' });
+        return 'k1';
+      },
+    });
+    fail = true;
+    expect(() => timers.advance(2000 + 200)).not.toThrow();
+    expect(calls()).toBe(1);
+    watcher.stop();
+  });
+
+  it('an onChange that throws does not escape the timer and goes to onError, not onWarning', () => {
+    const exploded = new Error('evaluate exploded');
+    const { fake, timers, calls, warnings, errors, watcher } = setup({
+      onChange: () => {
+        throw exploded;
+      },
+    });
+    fake.fire('settings.json');
+    expect(() => timers.advance(200)).not.toThrow();
+    expect(calls()).toBe(1);
+    expect(errors).toEqual([exploded]);
+    expect(warnings).toEqual([]);
+    watcher.stop();
+  });
+
+  it('stop clears timers and closes the watcher', () => {
+    const { fake, timers, calls, watcher } = setup();
+    fake.fire('settings.json');
+    expect(timers.pending().length).toBeGreaterThan(0);
+    watcher.stop();
+    expect(timers.pending()).toEqual([]);
+    expect(fake.watchers[0]?.closed).toBe(1);
+    fake.fire('settings.json');
+    timers.advance(10_000);
+    expect(calls()).toBe(0);
+    expect(timers.pending()).toEqual([]);
+  });
+
+  it('a rename-replace triggers one onChange', async (context) => {
+    const dir = withTempDir(context);
+    const file = path.join(dir, 'settings.json');
+    fs.writeFileSync(file, '{}');
+    let calls = 0;
+    const errors: Error[] = [];
+    const realTimers = {
+      setTimeout: (callback: () => void, ms: number): unknown => setTimeout(callback, ms),
+      clearTimeout: (handle: unknown): void => clearTimeout(handle as NodeJS.Timeout),
+    };
+    const keyOf = (): string => {
+      const stat = fs.statSync(file, { bigint: true });
+      return `${stat.mtimeNs}:${stat.size}:${stat.ino}`;
+    };
+    const watcher = watchSettings({
+      directory: dir,
+      file: 'settings.json',
+      debounceMs: 200,
+      pollMs: 200,
+      changeKey: keyOf,
+      initialKey: keyOf(),
+      onChange: () => {
+        calls += 1;
+      },
+      onWarning: (error) => void errors.push(error),
+      onError: (error) => void errors.push(error),
+      timers: realTimers,
+    });
+    context.onTestFinished(() => watcher.stop());
+    const temporary = path.join(dir, '.settings.tmp');
+    fs.writeFileSync(temporary, '{"sandbox":"none"}');
+    fs.renameSync(temporary, file);
+    await pollUntil(() => calls > 0, 8000, 'onChange after rename');
+    expect(calls).toBe(1);
+    expect(errors).toEqual([]);
+  }, 15_000);
+});

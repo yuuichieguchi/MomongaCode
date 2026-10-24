@@ -497,6 +497,147 @@ describe('runDaemonEntry: starting state', () => {
   });
 });
 
+const requestShutdownOf = (launched: Launched): (() => void) => {
+  const context = launched.contexts[0];
+  if (context === undefined) throw new Error('start was not called');
+  return () => context.requestShutdown();
+};
+
+const shutdownRequests = (launched: Launched): LogLine[] => launched.sinkLines().filter((line) => line.msg === 'entry.shutdown_requested');
+
+describe('runDaemonEntry: requestShutdown', () => {
+  it("requestShutdown closes once and exits 0 with trigger 'request'", async () => {
+    const launched = await launchRunning();
+    requestShutdownOf(launched)();
+    await settle();
+    expect(launched.close).toHaveBeenCalledTimes(1);
+    expect(launched.abort).not.toHaveBeenCalled();
+    expect(shutdownRequests(launched).map((line) => line['state'])).toEqual(['running']);
+    launched.result.resolve({ clean: true });
+    await finish(launched, 0);
+    expect(launched.abort).not.toHaveBeenCalled();
+    expectFinalExit(launched.sinkLines(), { code: 0, path: 'close', clean: true, trigger: 'request' });
+  });
+
+  it('requestShutdown twice does not abort', async () => {
+    const launched = await launchRunning();
+    const requestShutdown = requestShutdownOf(launched);
+    requestShutdown();
+    await settle();
+    requestShutdown();
+    await settle();
+    expect(launched.close).toHaveBeenCalledTimes(1);
+    expect(launched.abort).not.toHaveBeenCalled();
+    expect(shutdownRequests(launched).map((line) => line['state'])).toEqual(['running', 'closing']);
+    launched.result.resolve({ clean: true });
+    await finish(launched, 0);
+    expect(launched.abort).not.toHaveBeenCalled();
+    expectFinalExit(launched.sinkLines(), { code: 0, path: 'close', clean: true, trigger: 'request' });
+  });
+
+  it('a SIGTERM after requestShutdown aborts', async () => {
+    const launched = await launchRunning();
+    requestShutdownOf(launched)();
+    await settle();
+    launched.signal('SIGTERM');
+    await settle();
+    expect(launched.close).toHaveBeenCalledTimes(1);
+    expect(launched.abort).toHaveBeenCalledTimes(1);
+    launched.result.resolve({ clean: true });
+    await finish(launched, 0);
+    expectFinalExit(launched.sinkLines(), { code: 0, path: 'abort', clean: true, trigger: 'request' });
+  });
+
+  it('requestShutdown during aborting and after exit is ignored', async () => {
+    const launched = await launchRunning();
+    const requestShutdown = requestShutdownOf(launched);
+    launched.signal('SIGINT');
+    await settle();
+    requestShutdown();
+    await settle();
+    expect(launched.close).not.toHaveBeenCalled();
+    expect(launched.abort).toHaveBeenCalledTimes(1);
+    expect(shutdownRequests(launched).map((line) => line['state'])).toEqual(['aborting']);
+    launched.result.resolve({ clean: true });
+    await finish(launched, 0);
+    expectFinalExit(launched.sinkLines(), { code: 0, path: 'abort', clean: true, trigger: 'sigint' });
+    const linesAtExit = launched.sinkLines().length;
+    expect(() => requestShutdown()).not.toThrow();
+    await settle();
+    expect(launched.sinkLines()).toHaveLength(linesAtExit);
+    expect(launched.close).not.toHaveBeenCalled();
+    expect(launched.abort).toHaveBeenCalledTimes(1);
+    expect(launched.exits).toEqual([0]);
+  });
+
+  it.each([
+    ['start rejects', 'reject'],
+    ['start resolves anyway', 'resolve'],
+  ] as const)('requestShutdown during starting latches the cancel (%s)', async (_name, outcome) => {
+    const fake = fakeIo(ARGV_FILE);
+    const daemon = scriptedDaemon();
+    const scriptedStart = daemon.definition.start;
+    daemon.definition.start = (context) => {
+      const started = scriptedStart(context);
+      context.requestShutdown();
+      return started;
+    };
+    const running = runDaemonEntry(fake.io, daemon.definition);
+    await settle();
+    const context = daemon.contexts[0];
+    expect(context).toBeDefined();
+    expect(context?.signal.aborted).toBe(true);
+    expect(context?.signal.reason).toBeInstanceOf(StartupCancelled);
+    expect(fake.sinkLines().filter((line) => line.msg === 'entry.shutdown_requested').map((line) => line['state'])).toEqual(['starting']);
+    if (outcome === 'reject') {
+      daemon.start.reject(context?.signal.reason);
+      await settle();
+      expect(await running).toBe(1);
+      expect(fake.exits).toEqual([1]);
+      expect(daemon.close).not.toHaveBeenCalled();
+      expectFinalExit(fake.sinkLines(), { code: 1, path: 'startup-cancelled', clean: false, trigger: 'request' });
+    } else {
+      daemon.run();
+      await settle();
+      expect(daemon.close).toHaveBeenCalledTimes(1);
+      expect(daemon.abort).not.toHaveBeenCalled();
+      daemon.result.resolve({ clean: true });
+      await settle();
+      expect(await running).toBe(0);
+      expect(fake.exits).toEqual([0]);
+      expectFinalExit(fake.sinkLines(), { code: 0, path: 'close', clean: true, trigger: 'request' });
+    }
+  });
+
+  it('requestShutdown outlives start when called from a promise continuation', async () => {
+    const launched = await launchRunning();
+    const requestShutdown = requestShutdownOf(launched);
+    await Promise.resolve().then(() => requestShutdown());
+    await settle();
+    expect(launched.close).toHaveBeenCalledTimes(1);
+    expect(launched.abort).not.toHaveBeenCalled();
+    launched.result.resolve({ clean: true });
+    await finish(launched, 0);
+    expectFinalExit(launched.sinkLines(), { code: 0, path: 'close', clean: true, trigger: 'request' });
+  });
+
+  it('requestShutdown outlives start when called from a timer callback', async () => {
+    const launched = await launchRunning();
+    const requestShutdown = requestShutdownOf(launched);
+    launched.timers.setTimeout(() => requestShutdown(), 250);
+    launched.timers.advance(249);
+    await settle();
+    expect(launched.close).not.toHaveBeenCalled();
+    launched.timers.advance(1);
+    await settle();
+    expect(launched.close).toHaveBeenCalledTimes(1);
+    expect(launched.abort).not.toHaveBeenCalled();
+    launched.result.resolve({ clean: true });
+    await finish(launched, 0);
+    expectFinalExit(launched.sinkLines(), { code: 0, path: 'close', clean: true, trigger: 'request' });
+  });
+});
+
 class ConfigError extends Error {
   constructor(message: string) {
     super(message);
@@ -686,6 +827,7 @@ describe('log targets and stdout', () => {
 const exitScenarios: Array<[string, (launched: Launched) => Promise<void>, { code: number; path: string }]> = [
   ['close', async (launched) => (launched.signal('SIGTERM'), launched.result.resolve({ clean: true })), { code: 0, path: 'close' }],
   ['abort', async (launched) => (launched.signal('SIGINT'), launched.result.resolve({ clean: true })), { code: 0, path: 'abort' }],
+  ['request', async (launched) => (requestShutdownOf(launched)(), launched.result.resolve({ clean: true })), { code: 0, path: 'close' }],
   ['unclean close', async (launched) => (launched.signal('SIGTERM'), launched.result.resolve({ clean: false })), { code: 1, path: 'close' }],
   ['fatal', async (launched) => (launched.fatal.resolve(new Error('f')), await settle(), launched.result.resolve({ clean: true })), { code: 1, path: 'abort' }],
   [

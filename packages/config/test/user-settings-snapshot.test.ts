@@ -63,7 +63,8 @@ describe('UserSettingsCache.snapshot', () => {
     expect(error).toBeInstanceOf(ConfigError);
     expect(error.message).toContain(file);
     expect(cache.get().env).toEqual({ TZ: 'good' });
-    expect(warnings.some((message) => message.includes(file) && message.endsWith('; keeping the last good settings'))).toBe(true);
+    expect(warnings.some((message) => message.startsWith('settings file is invalid: ') && message.includes(file))).toBe(true);
+    expect(warnings.some((message) => message.includes('keeping') || message.includes('last good'))).toBe(false);
   });
 
   it('a later good load replaces the error', () => {
@@ -193,7 +194,7 @@ describe('loaders taking a user layer', () => {
 });
 
 describe('warnings for a broken user settings file', () => {
-  const keeping = (warnings: readonly string[]): string[] => warnings.filter((message) => message.endsWith('; keeping the last good settings'));
+  const invalidFileWarnings = (warnings: readonly string[]): string[] => warnings.filter((message) => message.startsWith('settings file is invalid: '));
 
   it('warns once per failure while the file stays broken', () => {
     const tree = makeTree();
@@ -207,8 +208,8 @@ describe('warnings for a broken user settings file', () => {
     cache.get();
     cache.snapshot();
     cache.get();
-    expect(keeping(warnings)).toHaveLength(1);
-    expect(keeping(warnings)[0]).toContain(file);
+    expect(invalidFileWarnings(warnings)).toHaveLength(1);
+    expect(invalidFileWarnings(warnings)[0]).toContain(file);
   });
 
   it('warns again when the error message changes', () => {
@@ -224,7 +225,7 @@ describe('warnings for a broken user settings file', () => {
     cache.get();
     cache.snapshot();
     cache.get();
-    expect(keeping(warnings)).toHaveLength(2);
+    expect(invalidFileWarnings(warnings)).toHaveLength(2);
   });
 
   it('warns again when the file identity changes with the same error', () => {
@@ -239,6 +240,26 @@ describe('warnings for a broken user settings file', () => {
     writeTextAt(file, '{ broken', T2);
     cache.snapshot();
     cache.get();
-    expect(keeping(warnings)).toHaveLength(2);
+    expect(invalidFileWarnings(warnings)).toHaveLength(2);
+  });
+
+  it('the warning states the problem and no policy', () => {
+    const tree = makeTree();
+    const file = userSettingsPath(tree);
+    writeAt(file, { env: { TZ: 'good' } }, T0);
+    const getConsumer = cacheFor(tree);
+    const snapshotConsumer = cacheFor(tree);
+    getConsumer.cache.get();
+    snapshotConsumer.cache.snapshot();
+    writeTextAt(file, '{ broken', T1);
+    getConsumer.cache.get();
+    const error = errorOf(snapshotConsumer.cache.snapshot());
+    expect(getConsumer.warnings).toEqual([`settings file is invalid: ${error.message}`]);
+    expect(snapshotConsumer.warnings).toEqual(getConsumer.warnings);
+    expect(getConsumer.warnings[0]).toContain(file);
+    for (const message of getConsumer.warnings) {
+      expect(message).not.toContain('keeping');
+      expect(message).not.toContain('last good');
+    }
   });
 });

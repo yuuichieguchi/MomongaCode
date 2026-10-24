@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { COMMON_ENTRY_FLAGS, EntryUsageError, parseFlags } from '@momonga/foundation';
+import { BASE_ENTRY_FLAGS, COMMON_ENTRY_FLAGS, EntryUsageError, parseFlags } from '@momonga/foundation';
 import type { FlagSpec } from '@momonga/foundation';
 
 const RUNTIME_LIKE = {
@@ -66,5 +66,43 @@ describe('parseFlags', () => {
 
   it('EntryUsageError is an Error', () => {
     expect(new EntryUsageError('x')).toBeInstanceOf(Error);
+  });
+});
+
+describe('BASE_ENTRY_FLAGS', () => {
+  it('BASE_ENTRY_FLAGS declares exactly app-version (required), home and log-target', () => {
+    expect(BASE_ENTRY_FLAGS).toEqual({
+      'app-version': { kind: 'string', required: true },
+      home: { kind: 'string' },
+      'log-target': { kind: 'string' },
+    });
+    expect(Object.keys(BASE_ENTRY_FLAGS).sort()).toEqual(['app-version', 'home', 'log-target']);
+  });
+
+  it('COMMON_ENTRY_FLAGS contains every BASE_ENTRY_FLAGS entry by identity', () => {
+    const baseKeys = Object.keys(BASE_ENTRY_FLAGS) as Array<keyof typeof BASE_ENTRY_FLAGS>;
+    expect(baseKeys.sort()).toEqual(['app-version', 'home', 'log-target']);
+    for (const key of baseKeys) expect(COMMON_ENTRY_FLAGS[key], key).toBe(BASE_ENTRY_FLAGS[key]);
+    expect(Object.keys(COMMON_ENTRY_FLAGS).sort()).toEqual([...baseKeys, 'lifeline-fd'].sort());
+  });
+
+  it('parseFlags with BASE_ENTRY_FLAGS accepts the base flags', () => {
+    expect(parseFlags(['--app-version=2.0.0', '--home=/h', '--log-target=file'], BASE_ENTRY_FLAGS)).toEqual({
+      'app-version': '2.0.0',
+      home: '/h',
+      'log-target': 'file',
+    });
+  });
+
+  it('parseFlags with BASE_ENTRY_FLAGS rejects --lifeline-fd', () => {
+    const error = usageErrorOf(['--app-version=2.0.0', '--lifeline-fd=3'], BASE_ENTRY_FLAGS);
+    expect(error).toBeInstanceOf(EntryUsageError);
+    expect((error as Error).message).toBe('unknown flag --lifeline-fd');
+  });
+
+  it('parseFlags with BASE_ENTRY_FLAGS requires --app-version', () => {
+    const error = usageErrorOf(['--home=/h'], BASE_ENTRY_FLAGS);
+    expect(error).toBeInstanceOf(EntryUsageError);
+    expect((error as Error).message).toBe('missing required flag --app-version');
   });
 });
