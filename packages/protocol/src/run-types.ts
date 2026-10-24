@@ -90,6 +90,21 @@ export type RunEventPayload =
   | { type: 'usage.updated'; inputTokens: number; outputTokens: number; totalTokens: number }
   | { type: 'context.compacted'; item: CompactionInputItem; summary: string; replacedThroughSeq: number }
   | { type: 'context.compaction_rejected'; step?: number; attempt?: number; item: MessageInputItem }
+  | {
+      type: 'context.inherited';
+      fromRunId: string;
+      fromLastSeq: number;
+      history: { seq: number; item: InputItem; callId?: string; handle?: string }[];
+      nextItemSeq: number;
+      summary?: { item: CompactionInputItem | MessageInputItem; summary: string; replacedThroughSeq: number };
+      evicted: string[];
+      closures: { callId: string; seq: number; effect: 'not_executed' | 'unknown'; announced: boolean }[];
+      partial?: { seq: number };
+      markers: { seq: number; kind: 'interrupted' | 'unprocessed' | 'dropped' | 'mode_changed' }[];
+      fromMode?: PermissionMode;
+      mode?: PermissionMode;
+      digest: string;
+    }
   | { type: 'context.truncated'; callId: string; handle: string; kind: 'omitted' | 'truncated' }
   | { type: 'instructions.loaded'; path: string; content: string }
   | { type: 'approval.rule.persisted'; approvalId: string; effect: 'allow' | 'deny'; rule: string }
@@ -149,5 +164,7 @@ export type RunState = {
   loadedInstructions: { path: string; textSha256: string }[];
   streaming?: { step: number; attempt: number; seen: boolean; items: { itemId: string; text: string }[] };
   mode?: PermissionMode;
+  taskSeq: number;
+  inherited?: { fromRunId: string; fromLastSeq: number; digest: string };
   lastSeq: number;
 };

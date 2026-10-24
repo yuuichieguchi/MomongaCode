@@ -190,6 +190,11 @@ const SESSION_ADDITIONAL_DIRECTORIES = `
 ALTER TABLE sessions ADD COLUMN additional_directories_json TEXT NOT NULL DEFAULT '[]';
 `;
 
+const RUN_HISTORY_MODE = `
+ALTER TABLE runs ADD COLUMN history_mode TEXT NOT NULL DEFAULT 'fresh' CHECK (history_mode IN ('inherit', 'fresh'));
+UPDATE runs SET history_mode = 'inherit' WHERE previous_run_id IS NOT NULL AND status = 'QUEUED' AND attempts = 0;
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -199,4 +204,5 @@ export const MIGRATIONS: readonly Migration[] = [
     sql: SESSION_SCOPED_EVENTS_AND_APPROVAL_LIFECYCLE,
   },
   { version: 4, name: 'snapshot the additional directories of a session', sql: SESSION_ADDITIONAL_DIRECTORIES },
+  { version: 5, name: 'record whether a run inherits the history of its predecessor', sql: RUN_HISTORY_MODE },
 ];

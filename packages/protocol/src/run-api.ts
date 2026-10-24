@@ -27,6 +27,7 @@ const constant = (value: string): JsonSchema => ({ type: 'string', const: value 
 const boundedInteger = (minimum: number, maximum: number): JsonSchema => ({ type: 'integer', minimum, maximum });
 
 const permissionMode = enumOf(PERMISSION_MODES);
+const historyMode = enumOf(['inherit', 'fresh']);
 
 const permissionOption = closed(
   {
@@ -165,6 +166,26 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
     required: ['summary', 'replacedThroughSeq'],
   },
   'context.compaction_rejected': { properties: { attempt: integer }, required: [] },
+  'context.inherited': {
+    properties: {
+      fromRunId: string,
+      fromLastSeq: nonNegativeInteger,
+      itemCount: nonNegativeInteger,
+      nextItemSeq: nonNegativeInteger,
+      summaryThroughSeq: nonNegativeInteger,
+      closures: {
+        type: 'array',
+        items: closed({ callId: string, effect: enumOf(['not_executed', 'unknown']), announced: boolean }, ['callId', 'effect', 'announced']),
+      },
+      partialMessage: boolean,
+      markers: {
+        type: 'array',
+        items: closed({ kind: enumOf(['interrupted', 'unprocessed', 'dropped', 'mode_changed']) }, ['kind']),
+      },
+      digest: string,
+    },
+    required: ['fromRunId', 'fromLastSeq', 'itemCount', 'nextItemSeq', 'closures', 'partialMessage', 'markers', 'digest'],
+  },
   'context.truncated': {
     properties: { callId: string, handle: string, kind: enumOf(['omitted', 'truncated']) },
     required: ['callId', 'handle', 'kind'],
@@ -231,6 +252,7 @@ export const RUN_API_SCHEMAS = {
         input: { type: 'string', minLength: 1, maxLength: 1_000_000 },
         limits: runLimits,
         timeoutMs: boundedInteger(1000, 7 * DAY_MS),
+        history: historyMode,
       },
       ['input'],
     ),
@@ -286,8 +308,24 @@ export const RUN_API_SCHEMAS = {
         deadlineAt: integer,
         cancelRequested: boolean,
         lastSeq: nonNegativeInteger,
+        previousRunId: nullable(string),
+        history: historyMode,
       },
-      ['id', 'sessionId', 'ordinal', 'status', 'usage', 'step', 'limits', 'createdAt', 'deadlineAt', 'cancelRequested', 'lastSeq'],
+      [
+        'id',
+        'sessionId',
+        'ordinal',
+        'status',
+        'usage',
+        'step',
+        'limits',
+        'createdAt',
+        'deadlineAt',
+        'cancelRequested',
+        'lastSeq',
+        'previousRunId',
+        'history',
+      ],
     ),
   ),
   ApprovalView: root(
@@ -322,7 +360,13 @@ export const RUN_API_SCHEMAS = {
   PublicRunEvent: root({ type: 'object', oneOf: EVENT_TYPES.map(publicEventVariant) }),
 } as const satisfies Record<string, JsonSchema>;
 
-type ReducedEventType = 'model.requested' | 'run.started' | 'context.compacted' | 'context.compaction_rejected' | 'instructions.loaded';
+type ReducedEventType =
+  | 'model.requested'
+  | 'run.started'
+  | 'context.compacted'
+  | 'context.compaction_rejected'
+  | 'context.inherited'
+  | 'instructions.loaded';
 
 type PublicPayload =
   | Exclude<RunEventPayload, { type: ReducedEventType }>
@@ -330,6 +374,18 @@ type PublicPayload =
   | { type: 'run.started'; attempt: number }
   | { type: 'context.compacted'; summary: string; replacedThroughSeq: number }
   | { type: 'context.compaction_rejected'; step?: number; attempt?: number }
+  | {
+      type: 'context.inherited';
+      fromRunId: string;
+      fromLastSeq: number;
+      itemCount: number;
+      nextItemSeq: number;
+      summaryThroughSeq?: number;
+      closures: { callId: string; effect: 'not_executed' | 'unknown'; announced: boolean }[];
+      partialMessage: boolean;
+      markers: { kind: 'interrupted' | 'unprocessed' | 'dropped' | 'mode_changed' }[];
+      digest: string;
+    }
   | { type: 'instructions.loaded'; path: string };
 
 type PublicRunEnvelope = Omit<RunEventEnvelope, 'leaseToken'>;
@@ -338,28 +394,38 @@ export type PublicRunEvent =
   | (PublicPayload extends infer Payload ? (Payload extends unknown ? Payload & PublicRunEnvelope : never) : never)
   | SessionEvent;
 
-const reducedFields = (event: RunEvent): Record<string, unknown> | undefined => {
-  switch (event.type) {
-    case 'model.requested':
-      return { step: event.step, attempt: event.attempt, digest: event.digest };
-    case 'run.started':
-      return { attempt: event.attempt };
-    case 'context.compacted':
-      return { summary: event.summary, replacedThroughSeq: event.replacedThroughSeq };
-    case 'context.compaction_rejected':
-      return event.attempt === undefined ? {} : { attempt: event.attempt };
-    case 'instructions.loaded':
-      return { path: event.path };
-    default:
-      return undefined;
-  }
-};
-
 export const toPublicRunEvent = (event: RunEvent | SessionEvent): PublicRunEvent => {
   if (!('runId' in event)) return event;
-  const { leaseToken: _leaseToken, ...visible } = event;
-  const reduced = reducedFields(event);
-  if (reduced === undefined) return visible;
-  const { id, runId, sessionId, seq, step, createdAt, type } = event;
-  return { id, runId, sessionId, seq, step, createdAt, type, ...reduced } as PublicRunEvent;
+  const { id, runId, sessionId, seq, step, createdAt } = event;
+  const envelope = { id, runId, sessionId, seq, step, createdAt };
+  switch (event.type) {
+    case 'model.requested':
+      return { ...envelope, type: event.type, step: event.step, attempt: event.attempt, digest: event.digest };
+    case 'run.started':
+      return { ...envelope, type: event.type, attempt: event.attempt };
+    case 'context.compacted':
+      return { ...envelope, type: event.type, summary: event.summary, replacedThroughSeq: event.replacedThroughSeq };
+    case 'context.compaction_rejected':
+      return { ...envelope, type: event.type, ...(event.attempt === undefined ? {} : { attempt: event.attempt }) };
+    case 'context.inherited':
+      return {
+        ...envelope,
+        type: event.type,
+        fromRunId: event.fromRunId,
+        fromLastSeq: event.fromLastSeq,
+        itemCount: event.history.length,
+        nextItemSeq: event.nextItemSeq,
+        ...(event.summary === undefined ? {} : { summaryThroughSeq: event.summary.replacedThroughSeq }),
+        closures: event.closures.map(({ callId, effect, announced }) => ({ callId, effect, announced })),
+        partialMessage: event.partial !== undefined,
+        markers: event.markers.map(({ kind }) => ({ kind })),
+        digest: event.digest,
+      };
+    case 'instructions.loaded':
+      return { ...envelope, type: event.type, path: event.path };
+    default: {
+      const { leaseToken: _leaseToken, ...visible } = event;
+      return visible;
+    }
+  }
 };

@@ -7,8 +7,6 @@ import { GatewayRequestError } from '../gateway-client.ts';
 import type { ClaimContext } from './claim-context.ts';
 import { touchedPathsOf } from './touched-paths.ts';
 
-const FIRST_ITEM_SEQ = 1;
-
 export type BuildOutcome = { kind: 'built'; built: BuiltContext } | { kind: 'done' };
 
 const buildOnce = async (ctx: ClaimContext): Promise<BuiltContext> => {
@@ -23,9 +21,10 @@ const buildOnce = async (ctx: ClaimContext): Promise<BuiltContext> => {
         systemPrompt: ctx.systemPrompt,
         tools: ctx.functionTools,
         task: { type: 'message', role: 'user', content: [{ type: 'input_text', text: taskTextOf(ctx) }] },
+        taskSeq: state.taskSeq,
         activatedSkills: [],
         history: state.history
-          .filter((entry) => entry.seq !== FIRST_ITEM_SEQ)
+          .filter((entry) => entry.seq !== state.taskSeq)
           .map((entry) => ({ seq: entry.seq, item: entry.item, ...(entry.handle === undefined ? {} : { handle: entry.handle }) })),
         ...(state.summary === undefined ? {} : { summary: { item: state.summary.item, replacedThroughSeq: state.summary.replacedThroughSeq } }),
       },

@@ -63,11 +63,12 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
   const notices: ContextNotice[] = [...discovered.notices];
 
   const systemMessage: MessageInputItem = { type: 'message', role: 'system', content: sources.systemPrompt };
-  const pinned: InputItem[] = [
+  const task = frozenItem(sources.task);
+  const pinnedLayers: InputItem[] = [
     systemMessage,
     ...[discovered.user, discovered.root].flatMap((file) => (file === undefined ? [] : [file.message])),
-    frozenItem(sources.task),
   ];
+  const pinned: InputItem[] = [...pinnedLayers, task];
   const pinnedDigest = chainTail(digestChain({ scope: 'pinned', tools }, pinned));
   if (input.expectedPinnedDigest !== undefined && input.expectedPinnedDigest !== pinnedDigest) {
     throw new PrefixChangedError(input.expectedPinnedDigest, pinnedDigest);
@@ -81,9 +82,10 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
     role: 'developer',
     content: `Activated skill ${skill.name}:\n${skill.content}`,
   }));
-  const layersOf = (): InputItem[] => [...pinned, ...nested.map((file) => file.message), ...skillMessages];
+  const layersOf = (): InputItem[] => [...pinnedLayers, ...nested.map((file) => file.message), ...skillMessages];
+  const floorOf = (layerItems: readonly InputItem[]): InputItem[] => [...layerItems, task];
   let layers = layersOf();
-  let layersCounted = nested.length + skillMessages.length === 0 ? pinnedCounted : await countInput(layers);
+  let layersCounted = nested.length + skillMessages.length === 0 ? pinnedCounted : await countInput(floorOf(layers));
   while (!fits(layersCounted) && nested.length > 0) {
     const dropped = nested.shift();
     if (dropped === undefined) break;
@@ -92,7 +94,7 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
       message: `${dropped.instruction.path} was dropped because the context budget was exceeded`,
     });
     layers = layersOf();
-    layersCounted = await countInput(layers);
+    layersCounted = await countInput(floorOf(layers));
   }
   if (!fits(layersCounted)) throw new PinnedOverflowError(layersCounted.inputTokens, budgetOf(layersCounted).I);
 
@@ -144,8 +146,16 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
 
   const slots: Slot[] = [];
   let turn = 0;
+  let inheritedSeen = false;
+  let taskBoundaryPending = false;
   for (const [index, entry] of historyItems.entries()) {
-    if (index > 0 && isUserMessage(entry.item)) turn += 1;
+    if (entry.seq < sources.taskSeq) inheritedSeen = true;
+    else if (inheritedSeen) {
+      taskBoundaryPending = true;
+      inheritedSeen = false;
+    }
+    if ((index > 0 && isUserMessage(entry.item)) || taskBoundaryPending) turn += 1;
+    taskBoundaryPending = false;
     const slot: Slot = { seq: entry.seq, turn, item: entry.item };
     if (entry.item.type === 'function_call_output') {
       const original = entry.item;
@@ -178,9 +188,15 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
     }
     slots.push(slot);
   }
-  const turnCount = slots.length === 0 ? 0 : (slots.at(-1)?.turn ?? 0) + 1;
+  const lastSlot = slots.at(-1);
+  const turnCount = lastSlot === undefined ? 0 : lastSlot.seq < sources.taskSeq ? lastSlot.turn + 2 : lastSlot.turn + 1;
 
-  const assemble = (): InputItem[] => [...layers, ...summaryItems, ...slots.map((slot) => slot.item)];
+  const assemble = (): InputItem[] => {
+    const items = slots.map((slot) => slot.item);
+    const taskIndex = slots.findIndex((slot) => slot.seq > sources.taskSeq);
+    const ordered = taskIndex < 0 ? [...items, task] : [...items.slice(0, taskIndex), task, ...items.slice(taskIndex)];
+    return [...layers, ...summaryItems, ...ordered];
+  };
 
   const evictOldest = async (keep: number): Promise<boolean> => {
     for (const slot of slots) {

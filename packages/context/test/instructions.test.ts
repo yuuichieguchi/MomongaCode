@@ -79,7 +79,7 @@ describe('pinned AGENTS.md', () => {
 });
 
 describe('nested AGENTS.md', () => {
-  it('loads files between the root and touched paths, closest last, after the task', async () => {
+  it('loads files between the root and touched paths, closest last, before the task', async () => {
     const capabilities = capabilitiesFor(200000);
     const { ports, reader } = harness(capabilities, {
       files: {
@@ -94,9 +94,9 @@ describe('nested AGENTS.md', () => {
       ports,
     );
     const taskIndex = result.input.findIndex((item) => item.type === 'message' && item.role === 'user');
-    const after = result.input.slice(taskIndex + 1);
-    expect(after.length).toBe(2);
-    const nested = after.map((item) => (item.type === 'message' && item.role === 'developer' ? textOf(item.content) : ''));
+    expect(taskIndex).toBe(result.input.length - 1);
+    const beforeTask = result.input.slice(taskIndex - 2, taskIndex);
+    const nested = beforeTask.map((item) => (item.type === 'message' && item.role === 'developer' ? textOf(item.content) : ''));
     expect(nested[0]?.startsWith(header('/proj/src/AGENTS.md', '/proj/src'))).toBe(true);
     expect(nested[0]).toContain('src rules');
     expect(nested[1]?.startsWith(header('/proj/src/lib/AGENTS.md', '/proj/src/lib'))).toBe(true);

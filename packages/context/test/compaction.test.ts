@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ContextOverflowError, buildContext } from '@momonga/context';
 import type { CompactionInputItem } from '@momonga/protocol';
 import {
+  TASK,
   assistant,
   call,
   capabilitiesFor,
@@ -106,7 +107,7 @@ describe('summary layering', () => {
     output(9, 'c2', 'r2'),
   ];
 
-  it('places the summary after pinned layers and drops replaced history', async () => {
+  it('places the summary after the layers, the task right after the summary that covers it, and drops replaced history', async () => {
     const capabilities = capabilitiesFor(200000);
     const { ports } = harness(capabilities);
     const result = await buildContext(
@@ -115,7 +116,8 @@ describe('summary layering', () => {
       }),
       ports,
     );
-    expect(result.input[2]).toEqual(summaryItem);
+    expect(result.input[1]).toEqual(summaryItem);
+    expect(result.input[2]).toEqual(TASK);
     expect(idsOf(result.input.slice(3))).toEqual(['h7', 'h8', 'h9']);
     expect(expectPairsWhole(result.input)).toBe(true);
   });

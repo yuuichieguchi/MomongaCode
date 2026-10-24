@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { RECORDED_RUNS, createFakeClock, materializeEvents } from '@momonga/testkit';
 
 describe('createFakeClock', () => {
@@ -53,6 +54,37 @@ describe('recorded run fixtures', () => {
       const types = run.payloads.map((payload) => payload.type);
       expect(types.indexOf('context.compacted')).toBeGreaterThanOrEqual(0);
       expect(types.indexOf('context.compacted')).toBeLessThan(types.indexOf('context.compaction_rejected'));
+    }
+  });
+
+  it('covers context.inherited right after the task and before run.started, with a digest over its content', () => {
+    const runs = RECORDED_RUNS.filter((run) => run.payloads.some((payload) => payload.type === 'context.inherited'));
+    expect(runs.length).toBeGreaterThan(0);
+    for (const run of runs) {
+      const types = run.payloads.map((payload) => payload.type);
+      expect(types.filter((type) => type === 'context.inherited')).toHaveLength(1);
+      expect(types.indexOf('context.inherited')).toBeGreaterThan(types.indexOf('user.message'));
+      const started = types.indexOf('run.started');
+      if (started >= 0) expect(types.indexOf('context.inherited')).toBeLessThan(started);
+      const inherited = run.payloads.find((payload) => payload.type === 'context.inherited') as unknown as {
+        history: unknown[];
+        nextItemSeq: number;
+        summary?: unknown;
+        evicted: string[];
+        mode?: string;
+        digest: string;
+      };
+      expect(inherited.digest).toBe(
+        sha256Hex(
+          canonicalJson({
+            history: inherited.history,
+            nextItemSeq: inherited.nextItemSeq,
+            summary: inherited.summary ?? null,
+            evicted: inherited.evicted,
+            mode: inherited.mode ?? null,
+          }),
+        ),
+      );
     }
   });
 });

@@ -179,6 +179,12 @@ const drive = async (
   if (run === undefined) throw new Error(`unknown run ${claim.runId}`);
   const session = store.getSession(run.sessionId);
   if (session === undefined) throw new Error(`unknown session ${run.sessionId}`);
+  if (journal.state.inherited === undefined) {
+    const inherited = store.inheritContext(claim, { mode: session.permissionMode });
+    if (inherited.kind === 'lease_lost') control.lost();
+    if (inherited.kind === 'conflict') throw new Error(`the context of run ${run.id} could not be inherited: ${inherited.reason ?? 'conflict'}`);
+    if (inherited.kind !== 'none') journal.sync();
+  }
   if (claim.status === 'CANCELLING' || run.cancelRequested) {
     if (control.shuttingDown()) {
       terminals.yieldLease();

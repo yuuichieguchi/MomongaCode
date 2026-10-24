@@ -1,4 +1,6 @@
 export { foldRunState, initialRunState } from './fold.ts';
+export { InheritanceError, applyInheritance, projectInheritance } from './inherit.ts';
+export type { InheritanceErrorCode, InheritanceKind, InheritanceOutcome, InheritedPayload } from './inherit.ts';
 export { StoreIdentityError, isFatalStoreError } from './fatal.ts';
 export { sameRunRequest } from './run-request.ts';
 export { openRuntimeStore } from './runtime-store.ts';
@@ -20,6 +22,8 @@ export type {
   CreateRunResult,
   CreateSessionInput,
   HeartbeatResult,
+  HistoryMode,
+  InheritContextResult,
   IdempotencyBegin,
   IdempotencyLookup,
   IdempotencyRecord,

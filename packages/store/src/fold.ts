@@ -1,6 +1,7 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { STOP_REASONS, findDanglingOutput } from '@momonga/protocol';
 import type { InputItem, RunEvent, RunState, StopReason } from '@momonga/protocol';
+import { applyInheritance } from './inherit.ts';
 import { isRecord } from './rows.ts';
 
 type PendingCall = RunState['pendingCalls'][string];
@@ -21,6 +22,7 @@ export const initialRunState = (ids: { runId: string; sessionId: string }): RunS
   toolCallCounts: {},
   steps: {},
   loadedInstructions: [],
+  taskSeq: 1,
   lastSeq: 0,
 });
 
@@ -124,10 +126,14 @@ const compact = (state: RunState, event: Extract<RunEvent, { type: 'context.comp
   return { ...state, history, summary: { item: event.item, summary: event.summary, replacedThroughSeq: event.replacedThroughSeq } };
 };
 
+const isInheritedOutput = (state: RunState, callId: string): boolean =>
+  state.history.some((entry) => entry.callId === callId && entry.item.type === 'function_call_output' && entry.seq < state.taskSeq);
+
 const truncate = (state: RunState, event: Extract<RunEvent, { type: 'context.truncated' }>): RunState => {
   const call = state.pendingCalls[event.callId];
-  if (call === undefined) throw new Error(`run ${state.runId}: ${event.type} refers to unknown tool call ${event.callId}`);
-  if (call.status !== 'completed' && call.status !== 'reconciled') {
+  if (call === undefined) {
+    if (!isInheritedOutput(state, event.callId)) throw new Error(`run ${state.runId}: ${event.type} refers to unknown tool call ${event.callId}`);
+  } else if (call.status !== 'completed' && call.status !== 'reconciled') {
     throw new Error(`run ${state.runId}: ${event.type} refers to tool call ${event.callId} that has not finished (${call.status})`);
   }
   const index = state.history.findIndex((entry) => entry.callId === event.callId && entry.item.type === 'function_call_output');
@@ -259,6 +265,8 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       return compact(state, event);
     case 'context.compaction_rejected':
       return rejectCompaction(state, event);
+    case 'context.inherited':
+      return applyInheritance(state, event);
     case 'context.truncated':
       return truncate(state, event);
     case 'notice':

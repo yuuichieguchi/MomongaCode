@@ -5,6 +5,7 @@ import type { Session } from '@momonga/store';
 import type { TraceSpan } from '../ports.ts';
 import type { ClaimContext, Flow } from './claim-context.ts';
 import { parseJsonOrText } from './json.ts';
+import { ownEntries } from './own-entries.ts';
 
 export const REJECTED_OUTPUT = 'The user rejected this tool call.';
 
@@ -29,9 +30,9 @@ const callPayload = (ctx: ClaimContext, item: { call_id: string; name: string; a
 };
 
 export const recordCalls = (ctx: ClaimContext): void => {
-  const { pendingCalls, history } = ctx.journal.state;
+  const { pendingCalls } = ctx.journal.state;
   const payloads: RunEventPayload[] = [];
-  for (const { item } of history) {
+  for (const { item } of ownEntries(ctx.journal.state)) {
     if (item.type === 'function_call' && pendingCalls[item.call_id] === undefined) payloads.push(callPayload(ctx, item));
   }
   if (payloads.length > 0) ctx.journal.append(payloads);

@@ -31,7 +31,7 @@ export const startClaimControl = ({ store, claim, heartbeatMs, cancelPollMs }: C
   const controller = new AbortController();
   const recovery = new AbortController();
   let leaseLost = false;
-  let cancelRequested = false;
+  let cancelRequested = claim.status === 'CANCELLING';
   let shuttingDown = false;
   let yieldRequested = false;
   const recovering = claim.status === 'CANCELLING';

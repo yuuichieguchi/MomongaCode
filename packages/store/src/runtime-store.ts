@@ -3,12 +3,15 @@ import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, readTx, uuidv7 } from '@momonga/foundation';
 import { TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
-import type { PermissionMode, RunEventPayload, RunStatus, SessionEventPayload } from '@momonga/protocol';
+import type { PermissionMode, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
 import { createApprovalStore } from './approvals.ts';
 import { createBlobStore, prepareBlobDirectory } from './blobs.ts';
+import { foldRunState, initialRunState } from './fold.ts';
 import { decodeEvent, decodeRun, decodeRunEvents, decodeRunState, decodeSession, encodeRunState } from './codec.ts';
-import { StoreIdentityError } from './fatal.ts';
+import { StoreIdentityError, isFatalStoreError } from './fatal.ts';
 import { createIdempotencyStore } from './idempotency.ts';
+import { InheritanceError, applyInheritance, projectInheritance, retractsTask } from './inherit.ts';
+import type { InheritanceOutcome, InheritedPayload } from './inherit.ts';
 import { corrupt, expectOneOf, expectRecord, isRecord, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
 import { sameRunRequest } from './run-request.ts';
@@ -22,6 +25,7 @@ import type {
   Conflict,
   CreateRunResult,
   HeartbeatResult,
+  InheritContextResult,
   LeaseLost,
   LoadedRun,
   Run,
@@ -111,7 +115,7 @@ const clearLease = (
   attempts: refundedAttempts(run, change.refundAttempt),
 });
 
-const isTerminal = (status: RunStatus): boolean => TERMINAL_STATUSES.some((terminal) => terminal === status);
+const isTerminal = (status: RunStatus): status is TerminalStatus => TERMINAL_STATUSES.some((terminal) => terminal === status);
 
 const CLAIMABLE = `
   (
@@ -134,10 +138,10 @@ const CLAIM_ORDER = 'ORDER BY r.available_at, r.created_at, r.rowid';
 
 const RUN_INSERT_SQL = `
   INSERT INTO runs (
-    id, session_id, ordinal, idempotency_key, request_digest, previous_run_id, status, version, lease_token, available_at, attempts,
+    id, session_id, ordinal, idempotency_key, request_digest, previous_run_id, history_mode, status, version, lease_token, available_at, attempts,
     failed_attempts, cancel_requested, deadline_at, limits_json, usage_json, step, last_seq, pins, dead_letter, created_at
   ) VALUES (
-    :id, :sessionId, :ordinal, :idempotencyKey, :requestDigest, :previousRunId, 'QUEUED', 0, 0, :availableAt, 0,
+    :id, :sessionId, :ordinal, :idempotencyKey, :requestDigest, :previousRunId, :historyMode, 'QUEUED', 0, 0, :availableAt, 0,
     0, 0, :deadlineAt, :limits, :usage, 0, 0, :pins, 0, :createdAt
   )
 `;
@@ -243,6 +247,7 @@ const prepareStatements = (db: DatabaseSync) => ({
   approvalRequested: db.prepare(
     "SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.permission.requested' AND json_extract(payload_json, '$.approvalId') = :approvalId LIMIT 1",
   ),
+  inheritedEvent: db.prepare("SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'context.inherited' LIMIT 1"),
   latestSnapshot: db.prepare('SELECT * FROM snapshots WHERE run_id = :runId ORDER BY seq DESC LIMIT 1'),
   upsertSnapshot: db.prepare(
     `INSERT INTO snapshots (run_id, seq, state_json, created_at) VALUES (:runId, :seq, :state, :createdAt)
@@ -588,6 +593,105 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return { run: decodeRun(row), requestDigest: readerFor('runs', String(row['id']), row).nullableString('request_digest') };
   };
 
+  const hasInheritedEvent = (runId: string): boolean => sql.inheritedEvent.get({ runId }) !== undefined;
+
+  const loadInReadTx = (runId: string): LoadedRun => {
+    requireRun(runId);
+    const row: Row | undefined = sql.latestSnapshot.get({ runId });
+    if (row === undefined) return { tail: decodeRunEvents(sql.runEvents.all({ runId, after: 0, limit: -1 })) };
+    const identity = `${runId}@${String(row['seq'])}`;
+    const reader = readerFor('snapshots', identity, row);
+    const seq = reader.number('seq');
+    const state = decodeRunState(identity, reader.json('state_json'));
+    if (state === undefined) return { tail: decodeRunEvents(sql.runEvents.all({ runId, after: 0, limit: -1 })) };
+    if (state.runId !== runId) throw corrupt('snapshots', identity, `state belongs to run ${state.runId}`);
+    return { snapshot: { seq, state }, tail: decodeRunEvents(sql.runEvents.all({ runId, after: seq, limit: -1 })) };
+  };
+
+  const foldedRun = (run: Run): RunState => {
+    const loaded = loadInReadTx(run.id);
+    return loaded.tail.reduce(foldRunState, loaded.snapshot?.state ?? initialRunState({ runId: run.id, sessionId: run.sessionId }));
+  };
+
+  const outcomeOf = (run: Run & { status: TerminalStatus }): InheritanceOutcome => ({
+    status: run.status,
+    ...(run.stopReason === undefined ? {} : { stopReason: run.stopReason }),
+    ...(run.error === undefined ? {} : { errorCode: run.error.code }),
+  });
+
+  const predecessorOf = (child: Run): Run => {
+    if (child.previousRunId === null) throw new InheritanceError('previous_run_inconsistent', `run ${child.id} has no previous run`);
+    const row = sql.selectRun.get({ id: child.previousRunId });
+    if (row === undefined) throw new InheritanceError('previous_run_inconsistent', `previous run ${child.previousRunId} of run ${child.id} does not exist`);
+    const previous = decodeRun(row);
+    if (previous.sessionId !== child.sessionId || previous.ordinal !== child.ordinal - 1) {
+      throw new InheritanceError('previous_run_inconsistent', `previous run ${previous.id} is not the run before ${child.id} in session ${child.sessionId}`);
+    }
+    return previous;
+  };
+
+  type WalkedRun = { runId: string; lastSeq: number; status: RunStatus };
+  type InheritPlan = { kind: 'none' } | { kind: 'already' } | Conflict | { kind: 'ready'; payload: InheritedPayload; walked: WalkedRun[] };
+
+  type TerminalRun = Run & { status: TerminalStatus };
+
+  const isTerminalRun = (run: Run): run is TerminalRun => isTerminal(run.status);
+
+  const resolveSource = (run: Run, mode: PermissionMode): InheritPlan => {
+    const walked: WalkedRun[] = [];
+    const unmaterialised: TerminalRun[] = [];
+    let base: TerminalRun;
+    for (let cursor = run; ; ) {
+      const previous = predecessorOf(cursor);
+      if (!isTerminalRun(previous)) return conflict(`previous run ${previous.id} of run ${run.id} is ${previous.status}, not terminal`);
+      walked.push({ runId: previous.id, lastSeq: previous.lastSeq, status: previous.status });
+      if (previous.history === 'fresh' || previous.previousRunId === null || hasInheritedEvent(previous.id)) {
+        base = previous;
+        break;
+      }
+      unmaterialised.push(previous);
+      cursor = previous;
+    }
+    let sourceRun = base;
+    let sourceState = foldedRun(base);
+    for (const candidate of unmaterialised.reverse()) {
+      const candidateState = foldedRun(candidate);
+      if (retractsTask(candidateState, outcomeOf(candidate))) continue;
+      const payload = projectInheritance(sourceState, outcomeOf(sourceRun), { kind: 'intermediate' });
+      sourceState = applyInheritance(candidateState, payload);
+      sourceRun = candidate;
+    }
+    return { kind: 'ready', payload: projectInheritance(sourceState, outcomeOf(sourceRun), { kind: 'final', currentMode: mode }), walked };
+  };
+
+  const planInheritance = (claim: Claim, mode: PermissionMode): InheritPlan => {
+    const run = requireRun(claim.runId);
+    if (run.history !== 'inherit' || run.previousRunId === null) return { kind: 'none' };
+    if (hasInheritedEvent(run.id)) return { kind: 'already' };
+    try {
+      return resolveSource(run, mode);
+    } catch (error) {
+      if (error instanceof InheritanceError || isFatalStoreError(error)) throw error;
+      throw new InheritanceError('previous_run_unreadable', `the previous run of ${run.id} could not be read`, { cause: error });
+    }
+  };
+
+  const writeInheritance = (claim: Claim, plan: Extract<InheritPlan, { kind: 'ready' }>): InheritContextResult =>
+    transaction<InheritContextResult>(() => {
+      const run = fenced(claim);
+      if (run === undefined) return leaseLost;
+      if (hasInheritedEvent(run.id)) return { kind: 'already' };
+      for (const walkedRun of plan.walked) {
+        const row = sql.selectRun.get({ id: walkedRun.runId });
+        const current = row === undefined ? undefined : decodeRun(row);
+        if (current === undefined || current.status !== walkedRun.status || current.lastSeq !== walkedRun.lastSeq) {
+          return conflict(`run ${walkedRun.runId} changed while the context of run ${run.id} was being inherited`);
+        }
+      }
+      writeRun(appendPayloads(run, [plan.payload]));
+      return { kind: 'inherited' };
+    });
+
   const store: RuntimeStore = {
     createSession: (input) =>
       transaction(() => {
@@ -648,6 +752,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           idempotencyKey: input.idempotencyKey ?? null,
           requestDigest: input.requestDigest ?? null,
           previousRunId: previous === undefined ? null : readerFor('runs', sessionId, previous).string('id'),
+          historyMode: input.history ?? 'inherit',
           availableAt: now,
           deadlineAt: now + input.timeoutMs,
           limits: canonicalJson(input.limits),
@@ -808,19 +913,12 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return readerFor('events', sessionId, row).number('max_id');
     },
 
-    load: (runId) =>
-      readTx(db, (): LoadedRun => {
-        requireRun(runId);
-        const row: Row | undefined = sql.latestSnapshot.get({ runId });
-        if (row === undefined) return { tail: decodeRunEvents(sql.runEvents.all({ runId, after: 0, limit: -1 })) };
-        const identity = `${runId}@${String(row['seq'])}`;
-        const reader = readerFor('snapshots', identity, row);
-        const seq = reader.number('seq');
-        const state = decodeRunState(identity, reader.json('state_json'));
-        if (state === undefined) return { tail: decodeRunEvents(sql.runEvents.all({ runId, after: 0, limit: -1 })) };
-        if (state.runId !== runId) throw corrupt('snapshots', identity, `state belongs to run ${state.runId}`);
-        return { snapshot: { seq, state }, tail: decodeRunEvents(sql.runEvents.all({ runId, after: seq, limit: -1 })) };
-      }),
+    load: (runId) => readTx(db, () => loadInReadTx(runId)),
+
+    inheritContext: (claim, { mode }) => {
+      const plan = readTx(db, () => planInheritance(claim, mode));
+      return plan.kind === 'ready' ? writeInheritance(claim, plan) : plan;
+    },
 
     requestApproval: (claim, input) =>
       transaction<RequestApprovalResult>(() => {

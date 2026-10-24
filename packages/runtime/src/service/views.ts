@@ -18,6 +18,8 @@ export const toRunView = (run: Run) => ({
   deadlineAt: run.deadlineAt,
   cancelRequested: run.cancelRequested,
   lastSeq: run.lastSeq,
+  previousRunId: run.previousRunId,
+  history: run.history,
 });
 
 export const toSessionView = (store: RuntimeStore, session: Session) => {

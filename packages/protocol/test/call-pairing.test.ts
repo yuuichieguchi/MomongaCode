@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findDanglingOutput } from '@momonga/protocol';
+import { findDanglingOutput, findUnpairedCalls } from '@momonga/protocol';
 import type { InputItem } from '@momonga/protocol';
 
 const callAt = (seq: number, callId: string): { seq: number; item: InputItem } => ({
@@ -37,5 +37,28 @@ describe('findDanglingOutput', () => {
 
   it('finds nothing in an empty history', () => {
     expect(findDanglingOutput([])).toBeUndefined();
+  });
+});
+
+describe('findUnpairedCalls', () => {
+  it('returns every function_call without a later output, in history order', () => {
+    expect(
+      findUnpairedCalls([userAt(1), callAt(2, 'c1'), callAt(3, 'c2'), outputAt(4, 'c2'), callAt(5, 'c3')]),
+    ).toEqual([
+      { seq: 2, callId: 'c1' },
+      { seq: 5, callId: 'c3' },
+    ]);
+  });
+
+  it('returns nothing when every call is answered, including parallel calls answered out of order', () => {
+    expect(findUnpairedCalls([userAt(1), callAt(2, 'c1'), callAt(3, 'c2'), outputAt(4, 'c2'), outputAt(5, 'c1')])).toEqual([]);
+  });
+
+  it('does not treat an output that precedes its call as pairing it', () => {
+    expect(findUnpairedCalls([outputAt(1, 'c1'), callAt(2, 'c1')])).toEqual([{ seq: 2, callId: 'c1' }]);
+  });
+
+  it('returns nothing for an empty history', () => {
+    expect(findUnpairedCalls([])).toEqual([]);
   });
 });

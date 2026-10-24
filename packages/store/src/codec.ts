@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
 import type { RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload } from '@momonga/protocol';
+import { hasConsistentSeqs } from './seqs.ts';
 import { corrupt, expectOneOf, expectRecord, expectStringRecord, isRecord, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
 import type { Run, RunError, Session } from './types.ts';
@@ -31,6 +32,8 @@ export const decodeSession = (row: Row): Session => {
     createdAt: reader.number('created_at'),
   };
 };
+
+const HISTORY_MODES = ['inherit', 'fresh'] as const;
 
 const decodeUsage = (identity: string, value: unknown): Run['usage'] => {
   const record = expectRecord('runs', identity, 'usage_json', value);
@@ -75,6 +78,8 @@ export const decodeRun = (row: Row): Run => {
     step: reader.number('step'),
     lastSeq: reader.number('last_seq'),
     usage: decodeUsage(identity, reader.json('usage_json')),
+    previousRunId: reader.nullableString('previous_run_id'),
+    history: expectOneOf('runs', identity, 'history_mode', HISTORY_MODES, reader.string('history_mode')),
   };
   if (stopReason !== null) run.stopReason = expectOneOf('runs', identity, 'stop_reason', STOP_REASONS, stopReason);
   if (errorJson !== null) run.error = decodeRunError(identity, errorJson);
@@ -102,6 +107,7 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   'usage.updated': true,
   'context.compacted': true,
   'context.compaction_rejected': true,
+  'context.inherited': true,
   'context.truncated': true,
   'instructions.loaded': true,
   'approval.rule.persisted': true,
@@ -218,19 +224,13 @@ const isStreaming = (value: unknown): boolean =>
   Array.isArray(value['items']) &&
   value['items'].every((item: unknown) => isRecord(item) && typeof item['itemId'] === 'string' && typeof item['text'] === 'string');
 
+const isInherited = (value: unknown): boolean =>
+  isRecord(value) && typeof value['fromRunId'] === 'string' && Number.isInteger(value['fromLastSeq']) && typeof value['digest'] === 'string';
+
 const isLoadedInstruction = (value: unknown): boolean =>
   isRecord(value) && typeof value['path'] === 'string' && typeof value['textSha256'] === 'string';
 
-const hasConsistentSeqs = (history: readonly unknown[], nextItemSeq: unknown, summary: unknown): boolean => {
-  const seqs = history.map((entry) => (entry as { seq: number }).seq);
-  if (!seqs.every((seq, index) => index === 0 || seq > (seqs[index - 1] as number))) return false;
-  if (!Number.isInteger(nextItemSeq) || (nextItemSeq as number) < 1) return false;
-  if (seqs.length > 0 && (nextItemSeq as number) <= (seqs[seqs.length - 1] as number)) return false;
-  if (summary !== undefined && seqs.length > 0 && (summary as { replacedThroughSeq: number }).replacedThroughSeq >= (seqs[0] as number)) return false;
-  return true;
-};
-
-export const SNAPSHOT_STATE_VERSION = 5;
+export const SNAPSHOT_STATE_VERSION = 6;
 
 export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
 
@@ -272,7 +272,9 @@ export const decodeRunState = (identity: string, value: unknown): RunState | und
     Array.isArray(state['loadedInstructions']) &&
     state['loadedInstructions'].every(isLoadedInstruction) &&
     (state['streaming'] === undefined || isStreaming(state['streaming'])) &&
-    (state['mode'] === undefined || PERMISSION_MODES.some((mode) => mode === state['mode']));
+    (state['mode'] === undefined || PERMISSION_MODES.some((mode) => mode === state['mode'])) &&
+    Number.isInteger(state['taskSeq']) &&
+    (state['inherited'] === undefined || isInherited(state['inherited']));
   if (!valid) throw corrupt('snapshots', identity, 'column state_json does not hold a RunState');
   return state as RunState;
 };
