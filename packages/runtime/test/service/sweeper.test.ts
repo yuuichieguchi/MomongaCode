@@ -75,7 +75,7 @@ describe('sweeper inside the run service', () => {
     const after = env.runEvents(run.id).filter((event) => event.seq > before);
     expect(after.map((event) => event.type)).toEqual(['tool.permission.cancelled', 'notice', 'run.status']);
     expect(after[0]).toMatchObject({ approvalId: approval.id, reason: 'expired' });
-    expect(after[1]).toMatchObject({ message: 'The approval for call_w_1 expired.' });
+    expect(after[1]).toMatchObject({ message: `The approval for ${kit.gateway.callId('call_w_1')} expired.` });
     expect(after[2]).toMatchObject({ from: 'WAITING_HUMAN', to: 'STOPPED' });
   });
 

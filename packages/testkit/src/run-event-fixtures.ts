@@ -185,6 +185,44 @@ export const compactionRun: RecordedRun = {
   ],
 };
 
+const compactedPrefix: RunEventPayload[] = [
+  { type: 'user.message', text: 'grep everything' },
+  ...started(1),
+  { type: 'model.requested', step: 1, attempt: 1, digest: 'd1', body: { input: 'grep everything' } },
+  { type: 'model.responded', step: 1, attempt: 1, response: { status: 'completed', output: [assistantText('m1', 'searched')], usage: usage(10, 2) } },
+  { type: 'user.message', text: 'and again' },
+  { type: 'context.compacted', item: fixtureCompactionItem('cmp-1', 'searched for x'), summary: 'searched for x', replacedThroughSeq: 2 },
+];
+
+const plainSummary = {
+  type: 'message' as const,
+  role: 'user' as const,
+  content: '<conversation_summary>\nsearched for x\n</conversation_summary>',
+};
+
+export const compactionRejectedAtBuildRun: RecordedRun = {
+  name: 'compaction rejected at build',
+  payloads: [
+    ...compactedPrefix,
+    { type: 'context.compaction_rejected', item: plainSummary },
+    { type: 'model.requested', step: 2, attempt: 1, digest: 'd2', body: { input: 'summary' } },
+    { type: 'model.responded', step: 2, attempt: 1, response: { status: 'completed', output: [assistantText('m2', 'found x')], usage: usage(20, 3) } },
+    { type: 'run.status', from: 'RUNNING', to: 'COMPLETED' },
+  ],
+};
+
+export const compactionRejectedAtStreamRun: RecordedRun = {
+  name: 'compaction rejected at stream',
+  payloads: [
+    ...compactedPrefix,
+    { type: 'model.requested', step: 2, attempt: 1, digest: 'd2', body: { input: 'summary' } },
+    { type: 'context.compaction_rejected', step: 2, attempt: 1, item: plainSummary },
+    { type: 'model.requested', step: 3, attempt: 1, digest: 'd3', body: { input: 'plain summary' } },
+    { type: 'model.responded', step: 3, attempt: 1, response: { status: 'completed', output: [assistantText('m3', 'found x')], usage: usage(20, 3) } },
+    { type: 'run.status', from: 'RUNNING', to: 'COMPLETED' },
+  ],
+};
+
 export const evictionAndRejectionRun: RecordedRun = {
   name: 'eviction and rejection',
   payloads: [
@@ -240,5 +278,7 @@ export const RECORDED_RUNS: readonly RecordedRun[] = [
   approvalWaitResumeRun,
   cancelRun,
   compactionRun,
+  compactionRejectedAtBuildRun,
+  compactionRejectedAtStreamRun,
   evictionAndRejectionRun,
 ];

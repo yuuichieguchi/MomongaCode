@@ -39,7 +39,7 @@ describe('worker re-reads session mode and rules for every batch', () => {
     await env.runOnce(env.worker());
 
     expect(env.run(run.id).status).toBe('COMPLETED');
-    const [completed] = env.ofType(run.id, 'tool.completed').filter((event) => event.callId === 'call_w_1');
+    const [completed] = env.ofType(run.id, 'tool.completed').filter((event) => event.callId === env.gateway.callId('call_w_1'));
     expect(completed?.status).toBe('failed');
     expect(completed?.output.startsWith('Permission denied')).toBe(true);
     expect(fs.existsSync(target)).toBe(false);

@@ -4,6 +4,7 @@ import { buildToolsEnvelope } from '../../probe/envelope.ts';
 import type { KeywordSupport } from '../../probe/envelope.ts';
 import { UnsupportedInputError } from './failures.ts';
 import { escapeAttribute, neutralizeMarkup, textOfContent } from './input-text.ts';
+import { mergeAdjacentUserMessages } from './merge-user-messages.ts';
 import { SYSTEM_PART_SEPARATOR, samplingOf, summaryMessageOf, systemTextOf } from './native-request.ts';
 import type { ChatMessage, ChatRequestBody } from './native-request.ts';
 
@@ -73,7 +74,7 @@ const historyOf = (request: AdapterRequest, envelopeReplies: boolean): ChatMessa
     }
   }
   flushCalls();
-  return messages;
+  return mergeAdjacentUserMessages(messages);
 };
 
 export type ConstrainedBody = {

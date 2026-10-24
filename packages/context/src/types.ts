@@ -24,7 +24,7 @@ export type HistoryItem = {
 
 export type ActivatedSkill = { name: string; content: string };
 
-export type ContextSummary = { item: DeepReadonly<CompactionInputItem>; replacedThroughSeq: number };
+export type ContextSummary = { item: DeepReadonly<CompactionInputItem | MessageInputItem>; replacedThroughSeq: number };
 
 export type ContextSources = {
   systemPrompt: string;

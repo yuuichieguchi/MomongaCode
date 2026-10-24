@@ -45,7 +45,7 @@ describe('worker cancel', () => {
     expect(elapsed).toBeLessThan(CANCEL_BUDGET_MS);
     expect(env.toolbox.waitSignals.map((signal) => signal.aborted)).toEqual([true]);
     expect(env.gateway.streams).toHaveLength(1);
-    const call = env.fold(run.id).pendingCalls['call_wait_1'];
+    const call = env.fold(run.id).pendingCalls[env.gateway.callId('call_wait_1')];
     expect(['completed', 'reconciled']).toContain(call?.status);
   });
 

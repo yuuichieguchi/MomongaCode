@@ -222,7 +222,7 @@ const drive = async (
           capabilities: await gateway.capabilities(session.modelAlias, { signal: control.signal }),
         }
       : readPins(recorded);
-  journal.append([{ type: 'run.started', attempt: claim.attempt, now: clock.now(), pins: { ...pins } }]);
+  journal.append([{ type: 'run.started', attempt: claim.attempt, now: clock.now(), pins: { ...pins }, mode: session.permissionMode }]);
   const knownNotes = new Set(journal.state.notes.map((note) => note.message));
   const toolNotices = toolSet.notices.filter((message) => !knownNotes.has(message));
   if (toolNotices.length > 0) journal.append([...new Set(toolNotices)].map((message) => ({ type: 'notice', level: 'warning', message })));

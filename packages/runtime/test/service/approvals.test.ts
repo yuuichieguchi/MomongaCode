@@ -24,18 +24,18 @@ const optionOf = (approval: { options: { optionId: string; kind: string }[] }, k
 describe('approval views', () => {
   it('lists the pending approval with its tool call, options and suggested rule', async () => {
     const env = await startService();
-    const { run, targets, approvals } = await askToWrite(env);
+    const { kit, run, targets, approvals } = await askToWrite(env);
     const target = targets[0];
 
     expect(approvals).toHaveLength(1);
     const [approval] = approvals;
     expect(approval).toMatchObject({
       runId: run.id,
-      callId: 'call_w_1',
+      callId: kit.gateway.callId('call_w_1'),
       status: 'pending',
       expiresAt: START_MS + DEFAULT_TTL_MS,
       suggestedRule: `Write(/${target})`,
-      toolCall: { callId: 'call_w_1', name: 'Write', title: `Write ${target}`, kind: 'edit', rawInput: { file_path: target, content: 'approved' }, locations: [{ path: target }] },
+      toolCall: { callId: kit.gateway.callId('call_w_1'), name: 'Write', title: `Write ${target}`, kind: 'edit', rawInput: { file_path: target, content: 'approved' }, locations: [{ path: target }] },
     });
     expect(approval.options.map((option: { kind: string }) => option.kind).sort()).toEqual(['allow_always', 'allow_once', 'reject_always', 'reject_once']);
     const requested = env.ofType(run.id, 'tool.permission.requested').at(-1);
@@ -79,8 +79,8 @@ describe('approval resolution', () => {
 
   it('keeps the run WAITING_HUMAN until the last of two pending approvals is resolved', async () => {
     const env = await startService();
-    const { run, approvals } = await askToWrite(env, {}, ['one.txt', 'two.txt']);
-    expect(approvals.map((approval) => approval.callId)).toEqual(['call_w_1', 'call_w_2']);
+    const { kit, run, approvals } = await askToWrite(env, {}, ['one.txt', 'two.txt']);
+    expect(approvals.map((approval) => approval.callId)).toEqual([kit.gateway.callId('call_w_1'), kit.gateway.callId('call_w_2')]);
 
     const [first, second] = approvals;
     const afterFirst = await env.http('POST', `/v1/approvals/${first.id}`, { body: { optionId: optionOf(first, 'allow_once') } });

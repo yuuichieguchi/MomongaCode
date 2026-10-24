@@ -76,7 +76,7 @@ describe('worker shutdown through abort', () => {
     await within(running, 5_000, 'the claim to settle');
 
     expect(toolSignals.map((signal) => signal.aborted)).toEqual([true]);
-    expect(env.fold(run.id).pendingCalls['call_m_1']?.status).toBe('started');
+    expect(env.fold(run.id).pendingCalls[env.gateway.callId('call_m_1')]?.status).toBe('started');
     expect(env.ofType(run.id, 'tool.completed')).toEqual([]);
     expect(env.ofType(run.id, 'tool.reconciled')).toEqual([]);
     expectYieldedWithoutTrace(env, run.id, 'QUEUED', 0);
@@ -86,8 +86,8 @@ describe('worker shutdown through abort', () => {
     expect(await env.runOnce(env.worker('worker-2'))).toBe('yielded');
 
     expect(env.run(run.id).status).toBe('COMPLETED');
-    expect(env.toolbox.reconciles).toEqual([toolKey(run.id, 1, 'call_m_1')]);
-    expect(env.ofType(run.id, 'tool.reconciled')).toEqual([expect.objectContaining({ callId: 'call_m_1', outcome: 'already_applied' })]);
+    expect(env.toolbox.reconciles).toEqual([toolKey(run.id, 1, env.gateway.callId('call_m_1'))]);
+    expect(env.ofType(run.id, 'tool.reconciled')).toEqual([expect.objectContaining({ callId: env.gateway.callId('call_m_1'), outcome: 'already_applied' })]);
   });
 
   it('writes nothing during cancel recovery and leaves the run CANCELLING with the lease cleared', async () => {
@@ -202,6 +202,6 @@ describe('worker graceful stop', () => {
     env.gateway.script.push(textStep('Echoed.'));
     expect(await env.runOnce(env.worker('worker-2'))).toBe('yielded');
     expect(env.run(run.id).status).toBe('COMPLETED');
-    expect(env.toolbox.executions.map((execution) => execution.callId)).toEqual(['call_e_1']);
+    expect(env.toolbox.executions.map((execution) => execution.callId)).toEqual([env.gateway.callId('call_e_1')]);
   });
 });

@@ -1,8 +1,9 @@
 import { ContextOverflowError, PinnedOverflowError, buildContext } from '@momonga/context';
 import type { BuiltContext } from '@momonga/context';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import { decodeCompactionSummary } from '@momonga/protocol';
+import { compactionSummaryMessage, decodeCompactionSummary } from '@momonga/protocol';
 import type { RunEventPayload } from '@momonga/protocol';
+import { GatewayRequestError } from '../gateway-client.ts';
 import type { ClaimContext } from './claim-context.ts';
 import { touchedPathsOf } from './touched-paths.ts';
 
@@ -124,10 +125,32 @@ const recordEvictions = (ctx: ClaimContext, built: BuiltContext): void => {
   ctx.journal.append(unreflected.map((eviction) => ({ type: 'context.truncated', callId: eviction.callId, handle: eviction.handle, kind: eviction.kind })));
 };
 
+export const recoverRejectedCompaction = (ctx: ClaimContext, error: unknown, position?: { step: number; attempt: number }): 'recovered' | 'done' => {
+  const summary = ctx.journal.state.summary;
+  if (!(error instanceof GatewayRequestError) || error.code !== 'invalid_compaction' || summary?.item.type !== 'compaction') throw error;
+  if (summary.summary === '') {
+    ctx.terminals.finish('FAILED', {
+      error: {
+        code: 'compaction_unverifiable',
+        message: 'The gateway rejected the compaction item of this run and its summary text was not recorded, so the conversation cannot be rebuilt.',
+      },
+    });
+    return 'done';
+  }
+  ctx.journal.append([{ type: 'context.compaction_rejected', ...(position ?? {}), item: compactionSummaryMessage(summary.summary) }]);
+  return 'recovered';
+};
+
 export const buildNext = async (ctx: ClaimContext): Promise<BuildOutcome> => {
   let forcedCompaction = false;
   let compacted = false;
-  for (;;) {
+  let compacting: 'forced' | 'threshold' | undefined;
+  const compactOnce = async (throughSeq: number, kind: 'forced' | 'threshold'): Promise<void> => {
+    compacting = kind;
+    await compactThrough(ctx, throughSeq);
+    compacting = undefined;
+  };
+  const attemptBuild = async (): Promise<BuildOutcome | undefined> => {
     if (cancelIfInterrupted(ctx) === 'done') return { kind: 'done' };
     let built: BuiltContext;
     try {
@@ -152,19 +175,31 @@ export const buildNext = async (ctx: ClaimContext): Promise<BuildOutcome> => {
         }
         forcedCompaction = true;
         if (cancelIfInterrupted(ctx) === 'done') return { kind: 'done' };
-        await compactThrough(ctx, error.compactThroughSeq);
-        continue;
+        await compactOnce(error.compactThroughSeq, 'forced');
+        return undefined;
       }
       throw error;
     }
     if (cancelIfInterrupted(ctx) === 'done') return { kind: 'done' };
     if (built.needsCompaction && built.compactThroughSeq !== undefined && !compacted) {
       compacted = true;
-      await compactThrough(ctx, built.compactThroughSeq);
-      continue;
+      await compactOnce(built.compactThroughSeq, 'threshold');
+      return undefined;
     }
     recordContextFacts(ctx, built);
     recordEvictions(ctx, built);
     return { kind: 'built', built };
+  };
+  for (;;) {
+    try {
+      const outcome = await attemptBuild();
+      if (outcome !== undefined) return outcome;
+    } catch (error) {
+      if (recoverRejectedCompaction(ctx, error) === 'done') return { kind: 'done' };
+      if (compacting === 'forced') forcedCompaction = false;
+      if (compacting === 'threshold') compacted = false;
+      if (compacting !== undefined) delete ctx.control.inFlight.compactionKey;
+      compacting = undefined;
+    }
   }
 };

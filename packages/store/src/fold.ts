@@ -83,6 +83,36 @@ const functionCallOutput = (providerCallId: string, output: string): InputItem =
   output,
 });
 
+const withoutStreaming = (state: RunState): RunState => {
+  const { streaming: _removed, ...rest } = state;
+  return rest;
+};
+
+const withDelta = (state: RunState, event: { step: number; attempt: number; itemId: string; text: string }, collectText: boolean): RunState => {
+  const current = state.streaming;
+  const record =
+    current !== undefined && current.step === event.step && current.attempt === event.attempt
+      ? current
+      : { step: event.step, attempt: event.attempt, seen: false, items: [] };
+  const items = !collectText
+    ? record.items
+    : record.items.some((item) => item.itemId === event.itemId)
+      ? record.items.map((item) => (item.itemId === event.itemId ? { itemId: item.itemId, text: item.text + event.text } : item))
+      : [...record.items, { itemId: event.itemId, text: event.text }];
+  return { ...state, streaming: { step: record.step, attempt: record.attempt, seen: true, items } };
+};
+
+const rejectCompaction = (state: RunState, event: Extract<RunEvent, { type: 'context.compaction_rejected' }>): RunState => {
+  if (state.summary === undefined) throw new Error(`run ${state.runId}: ${event.type} arrives without a summary`);
+  if (state.summary.item.type !== 'compaction') throw new Error(`run ${state.runId}: ${event.type} arrives for a summary that is already a message`);
+  const replaced = { ...state, summary: { ...state.summary, item: event.item } };
+  if (event.attempt === undefined) return replaced;
+  const inFlight = replaced.inFlightModelRequest;
+  if (inFlight === undefined || inFlight.step !== event.step || inFlight.attempt !== event.attempt) return replaced;
+  const { [event.step]: _abandoned, ...steps } = replaced.steps;
+  return { ...withoutInFlight(replaced), steps };
+};
+
 const compact = (state: RunState, event: Extract<RunEvent, { type: 'context.compacted' }>): RunState => {
   const history = state.history.filter((entry) => entry.seq > event.replacedThroughSeq);
   const dangling = findDanglingOutput(history);
@@ -133,7 +163,12 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       return appendItems(rest, [{ item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: event.text }] } }]);
     }
     case 'run.started':
-      return { ...state, attempt: event.attempt, pins: state.pins ?? event.pins };
+      return {
+        ...state,
+        attempt: event.attempt,
+        pins: state.pins ?? event.pins,
+        ...(event.mode === undefined ? {} : { mode: event.mode }),
+      };
     case 'run.status': {
       const next = { ...state, status: event.to };
       if (event.to === 'STOPPED' && event.reason !== undefined) return { ...next, stopReason: toStopReason(event.reason, state) };
@@ -141,14 +176,14 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
     }
     case 'model.requested':
       return {
-        ...state,
+        ...withoutStreaming(state),
         inFlightModelRequest: { step: event.step, attempt: event.attempt, digest: event.digest, body: event.body, requestedSeq: event.seq },
         steps: withStep(state.steps, event.step, event.body),
       };
     case 'model.responded': {
       const inFlight = state.inFlightModelRequest;
       const settled = inFlight !== undefined && inFlight.step === event.step && inFlight.attempt === event.attempt;
-      const base = settled ? withoutInFlight(state) : state;
+      const base = withoutStreaming(settled ? withoutInFlight(state) : state);
       const { input_tokens, output_tokens, total_tokens } = event.response.usage;
       return {
         ...appendItems(
@@ -222,13 +257,18 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       return finishCall(state, event.callId, event.type, 'reconciled', event.output);
     case 'context.compacted':
       return compact(state, event);
+    case 'context.compaction_rejected':
+      return rejectCompaction(state, event);
     case 'context.truncated':
       return truncate(state, event);
     case 'notice':
       return { ...state, notes: [...state.notes, { level: event.level, message: event.message }] };
     case 'agent.message.delta':
+      return withDelta(state, event, true);
     case 'agent.thought.delta':
+      return withDelta(state, event, false);
     case 'model.stream.restarted':
+      return state.streaming?.step === event.step && state.streaming.attempt === event.attempt ? withoutStreaming(state) : state;
     case 'tool.updated':
     case 'plan.updated':
     case 'usage.updated':

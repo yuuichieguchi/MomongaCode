@@ -35,8 +35,8 @@ describe('worker approvals for a whole batch', () => {
 
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
     const requests = env.ofType(run.id, 'tool.permission.requested');
-    expect(requests.map((request) => request.callId)).toEqual(['call_p_1', 'call_p_2']);
-    expect(env.store.approvals.listPending(run.id).map((approval) => approval.callId)).toEqual(['call_p_1', 'call_p_2']);
+    expect(requests.map((request) => request.callId)).toEqual([env.gateway.callId('call_p_1'), env.gateway.callId('call_p_2')]);
+    expect(env.store.approvals.listPending(run.id).map((approval) => approval.callId)).toEqual([env.gateway.callId('call_p_1'), env.gateway.callId('call_p_2')]);
     expect(env.toolbox.executions).toEqual([]);
     const [first, second] = requests;
     if (first === undefined || second === undefined) throw new Error('expected two permission requests');

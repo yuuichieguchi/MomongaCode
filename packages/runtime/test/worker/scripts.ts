@@ -87,6 +87,18 @@ export const outputStep = (output: ItemField[], usage: ScriptedUsage = 'auto'): 
 
 export const callsStep = (calls: ScriptedCall[], usage: ScriptedUsage = 'auto'): ScriptStep => outputStep(calls.map(functionCallItem), usage);
 
+export const textThenCallsStep = (text: string, calls: ScriptedCall[], usage: ScriptedUsage = 'auto'): ScriptStep => {
+  const itemId = `msg_${nextResponseId()}`;
+  const message = assistantMessage(itemId, text);
+  const output: ItemField[] = [message, ...calls.map(functionCallItem)];
+  const delta: StreamEvent = { type: 'response.output_text.delta', sequence_number: 0, item_id: itemId, output_index: 0, content_index: 0, delta: text };
+  const [messageAdded, messageDone, ...callEvents] = itemEvents(output);
+  return {
+    events: numbered([created(), messageAdded as StreamEvent, delta, messageDone as StreamEvent, ...callEvents, terminal('response.completed', output, scriptedUsage(usage), 0)]),
+    ...autoFlag(usage),
+  };
+};
+
 export const incompleteStep = (output: ItemField[], reason = 'max_output_tokens', usage: ScriptedUsage = 'auto'): ScriptStep => ({
   events: numbered([created(), ...itemEvents(output), terminal('response.incomplete', output, scriptedUsage(usage), 0, reason)]),
   ...autoFlag(usage),

@@ -3,6 +3,7 @@ import { RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES } from '@momonga/protocol
 import type {
   CompactionInputItem,
   InputItem,
+  MessageInputItem,
   ModelResponse,
   PermissionMode,
   PermissionOption,
@@ -80,6 +81,7 @@ describe('run event payloads', () => {
       | 'plan.updated'
       | 'usage.updated'
       | 'context.compacted'
+      | 'context.compaction_rejected'
       | 'context.truncated'
       | 'instructions.loaded'
       | 'approval.rule.persisted'
@@ -94,6 +96,7 @@ describe('run event payloads', () => {
       attempt: number;
       now: number;
       pins: Record<string, unknown>;
+      mode?: PermissionMode;
     }>();
     expectTypeOf<Payload<'run.status'>>().toEqualTypeOf<{
       type: 'run.status';
@@ -210,6 +213,12 @@ describe('run event payloads', () => {
       summary: string;
       replacedThroughSeq: number;
     }>();
+    expectTypeOf<Payload<'context.compaction_rejected'>>().toEqualTypeOf<{
+      type: 'context.compaction_rejected';
+      step?: number;
+      attempt?: number;
+      item: MessageInputItem;
+    }>();
     expectTypeOf<Payload<'context.truncated'>>().toEqualTypeOf<{
       type: 'context.truncated';
       callId: string;
@@ -252,7 +261,7 @@ describe('RunState', () => {
       usage: { inputTokens: number; outputTokens: number; totalTokens: number };
       history: { seq: number; item: InputItem; callId?: string; handle?: string }[];
       nextItemSeq: number;
-      summary?: { item: CompactionInputItem; summary: string; replacedThroughSeq: number };
+      summary?: { item: CompactionInputItem | MessageInputItem; summary: string; replacedThroughSeq: number };
       evicted: string[];
       pins?: Record<string, unknown>;
       pendingCalls: Record<
@@ -282,6 +291,8 @@ describe('RunState', () => {
       steps: Record<number, { toolChoice: string; summary: boolean }>;
       lastResponse?: { step: number; incomplete: boolean; incompleteReason?: string; refusal: boolean; callIds: string[] };
       loadedInstructions: { path: string; textSha256: string }[];
+      streaming?: { step: number; attempt: number; seen: boolean; items: { itemId: string; text: string }[] };
+      mode?: PermissionMode;
       lastSeq: number;
     }>();
   });

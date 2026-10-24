@@ -74,17 +74,17 @@ describe('per-call completion events', () => {
 
     try {
       await waitUntil(
-        () => env.ofType(run.id, 'tool.completed').some((event) => event.callId === 'call_fast'),
+        () => env.ofType(run.id, 'tool.completed').some((event) => event.callId === env.gateway.callId('call_fast')),
         3_000,
         'the fast call to be recorded while the slow call is blocked',
       );
-      expect(env.ofType(run.id, 'tool.completed').map((event) => event.callId)).toEqual(['call_fast']);
+      expect(env.ofType(run.id, 'tool.completed').map((event) => event.callId)).toEqual([env.gateway.callId('call_fast')]);
     } finally {
       releaseSlow.resolve();
     }
     await within(running, 5_000, 'the run to finish');
     expect(env.run(run.id).status).toBe('COMPLETED');
-    expect(env.ofType(run.id, 'tool.completed').map((event) => event.callId)).toEqual(['call_fast', 'call_slow']);
+    expect(env.ofType(run.id, 'tool.completed').map((event) => event.callId)).toEqual([env.gateway.callId('call_fast'), env.gateway.callId('call_slow')]);
   }, 15_000);
 });
 

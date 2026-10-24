@@ -1,10 +1,10 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import type { CreateResponseBody, InputItem, RunState } from '@momonga/protocol';
+import type { CreateResponseBody, InputItem, ResponseResource, RunState } from '@momonga/protocol';
 import type { ClaimContext, Flow } from './claim-context.ts';
 import { modelKey } from '../model-key.ts';
 import { GatewayFailureError } from './errors.ts';
 import { isRecord } from './json.ts';
-import { buildNext, cancelIfInterrupted } from './context-step.ts';
+import { buildNext, cancelIfInterrupted, recoverRejectedCompaction } from './context-step.ts';
 import { isLoop } from './loop-detection.ts';
 import { streamModel } from './model-stream.ts';
 import type { ModelResult } from './model-stream.ts';
@@ -12,7 +12,6 @@ import { recordCalls, settleCalls } from './tool-step.ts';
 
 const MODEL_ATTEMPT = 1;
 const DEADLINE_CODE = 'deadline_exceeded';
-const RESTART_SCAN_CHUNK = 1000;
 const REFUSAL_CODES = ['guardrail_violation', 'refusal', 'content_filter'];
 
 type LimitReason = 'max_steps' | 'budget';
@@ -87,6 +86,15 @@ const handleResult = async (
   const { response, incomplete } = result;
   const usage = response.usage;
   if (usage === null) throw new GatewayFailureError('the model response carries no usage');
+  const reusedCallId = reusedCallIdOf(journal.state, response.output);
+  if (reusedCallId !== undefined) {
+    const message = `The model response reuses the tool call id ${reusedCallId}, which the gateway must issue fresh for every call, so the run stops.`;
+    journal.append([
+      { type: 'model.stream.restarted', step: position.step, attempt: position.attempt },
+      { type: 'notice', level: 'error', message },
+    ]);
+    return terminals.finish('FAILED', { error: { code: 'call_id_reused', message } });
+  }
   const before = journal.state.usage;
   journal.append([
     {
@@ -113,18 +121,36 @@ const handleResult = async (
   return decideAfterResponse(ctx);
 };
 
-const DELTA_TYPES: readonly string[] = ['agent.message.delta', 'agent.thought.delta'];
+const streamedBeforeRestart = (state: RunState, position: { step: number; attempt: number }): boolean =>
+  state.streaming?.seen === true && state.streaming.step === position.step && state.streaming.attempt === position.attempt;
 
-const streamedBeforeRestart = (ctx: ClaimContext, position: { step: number; attempt: number }, requestedSeq: number): boolean => {
-  let streamed = false;
-  for (let after = requestedSeq; ; ) {
-    const events = ctx.options.store.readRunEvents(ctx.run.id, after, RESTART_SCAN_CHUNK);
-    for (const event of events) {
-      if (event.type === 'model.stream.restarted' && event.step === position.step && event.attempt === position.attempt) streamed = false;
-      else if (DELTA_TYPES.includes(event.type) && 'attempt' in event && event.step === position.step && event.attempt === position.attempt) streamed = true;
-    }
-    if (events.length < RESTART_SCAN_CHUNK) return streamed;
-    after = events[events.length - 1]?.seq ?? after;
+const reusedCallIdOf = (state: RunState, output: ResponseResource['output']): string | undefined => {
+  const known = new Set<string>([
+    ...state.history.flatMap((entry) => (entry.item.type === 'function_call' ? [entry.item.call_id] : [])),
+    ...Object.keys(state.pendingCalls),
+    ...state.evicted,
+  ]);
+  for (const item of output) {
+    if (item.type !== 'function_call') continue;
+    if (known.has(item.call_id)) return item.call_id;
+    known.add(item.call_id);
+  }
+  return undefined;
+};
+
+type StreamOutcome = { kind: 'result'; result: ModelResult } | { kind: 'flow'; flow: Flow };
+
+const streamRecovering = async (
+  ctx: ClaimContext,
+  body: CreateResponseBody,
+  position: { step: number; attempt: number },
+): Promise<StreamOutcome> => {
+  try {
+    return { kind: 'result', result: await streamModel(ctx, body, modelKey(ctx.run.id, position.step, position.attempt), position) };
+  } catch (error) {
+    const recovery = recoverRejectedCompaction(ctx, error, position);
+    delete ctx.control.inFlight.modelKey;
+    return { kind: 'flow', flow: recovery === 'done' ? 'done' : 'continue' };
   }
 };
 
@@ -134,9 +160,9 @@ export const resumeInFlight = async (ctx: ClaimContext): Promise<Flow> => {
   if (!isRequestBody(inFlight.body)) throw new Error(`the recorded model request of step ${inFlight.step} is not a response body`);
   const position = { step: inFlight.step, attempt: inFlight.attempt };
   if (ctx.control.yieldRequested()) return ctx.terminals.yieldLease();
-  if (streamedBeforeRestart(ctx, position, inFlight.requestedSeq)) ctx.journal.append([{ type: 'model.stream.restarted', step: position.step, attempt: position.attempt }]);
-  const result = await streamModel(ctx, inFlight.body, modelKey(ctx.run.id, position.step, position.attempt), position);
-  return handleResult(ctx, result, position, undefined);
+  if (streamedBeforeRestart(ctx.journal.state, position)) ctx.journal.append([{ type: 'model.stream.restarted', step: position.step, attempt: position.attempt }]);
+  const outcome = await streamRecovering(ctx, inFlight.body, position);
+  return outcome.kind === 'flow' ? outcome.flow : handleResult(ctx, outcome.result, position, undefined);
 };
 
 export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
@@ -164,6 +190,6 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   if (cancelIfInterrupted(ctx) === 'done') return 'done';
   const position = { step, attempt: MODEL_ATTEMPT };
   journal.append([{ type: 'model.requested', step: position.step, attempt: position.attempt, digest: sha256Hex(canonicalJson(body)), body }]);
-  const result = await streamModel(ctx, body, modelKey(ctx.run.id, position.step, position.attempt), position);
-  return handleResult(ctx, result, position, limit === undefined ? { inputDigest: built.inputDigest } : undefined);
+  const streamed = await streamRecovering(ctx, body, position);
+  return streamed.kind === 'flow' ? streamed.flow : handleResult(ctx, streamed.result, position, limit === undefined ? { inputDigest: built.inputDigest } : undefined);
 };

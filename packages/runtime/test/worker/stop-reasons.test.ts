@@ -40,7 +40,7 @@ describe('worker stop reasons', () => {
 
     expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'max_steps' });
     expect(env.toolbox.executions.map((execution) => execution.input['value'])).toEqual(['x']);
-    expect(env.ofType(run.id, 'tool.started').map((event) => event.callId)).toEqual(['call_s_1']);
+    expect(env.ofType(run.id, 'tool.started').map((event) => event.callId)).toEqual([env.gateway.callId('call_s_1')]);
   });
 
   it('stops at the budget from run.limits after a final summary call', async () => {
@@ -130,7 +130,7 @@ describe('worker stop reasons', () => {
 
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.toolbox.executions.map((execution) => execution.input['value'])).toEqual(['kept']);
-    expect(env.ofType(run.id, 'tool.completed')).toEqual([expect.objectContaining({ callId: 'call_i_1', output: 'echo:kept' })]);
+    expect(env.ofType(run.id, 'tool.completed')).toEqual([expect.objectContaining({ callId: env.gateway.callId('call_i_1'), output: 'echo:kept' })]);
   });
 
   it('stops at refusal on a guardrail_violation failure without retrying', async () => {

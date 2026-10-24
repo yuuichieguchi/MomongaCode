@@ -164,6 +164,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
     properties: { summary: string, replacedThroughSeq: nonNegativeInteger },
     required: ['summary', 'replacedThroughSeq'],
   },
+  'context.compaction_rejected': { properties: { attempt: integer }, required: [] },
   'context.truncated': {
     properties: { callId: string, handle: string, kind: enumOf(['omitted', 'truncated']) },
     required: ['callId', 'handle', 'kind'],
@@ -321,13 +322,14 @@ export const RUN_API_SCHEMAS = {
   PublicRunEvent: root({ type: 'object', oneOf: EVENT_TYPES.map(publicEventVariant) }),
 } as const satisfies Record<string, JsonSchema>;
 
-type ReducedEventType = 'model.requested' | 'run.started' | 'context.compacted' | 'instructions.loaded';
+type ReducedEventType = 'model.requested' | 'run.started' | 'context.compacted' | 'context.compaction_rejected' | 'instructions.loaded';
 
 type PublicPayload =
   | Exclude<RunEventPayload, { type: ReducedEventType }>
   | { type: 'model.requested'; step: number; attempt: number; digest: string }
   | { type: 'run.started'; attempt: number }
   | { type: 'context.compacted'; summary: string; replacedThroughSeq: number }
+  | { type: 'context.compaction_rejected'; step?: number; attempt?: number }
   | { type: 'instructions.loaded'; path: string };
 
 type PublicRunEnvelope = Omit<RunEventEnvelope, 'leaseToken'>;
@@ -344,6 +346,8 @@ const reducedFields = (event: RunEvent): Record<string, unknown> | undefined => 
       return { attempt: event.attempt };
     case 'context.compacted':
       return { summary: event.summary, replacedThroughSeq: event.replacedThroughSeq };
+    case 'context.compaction_rejected':
+      return event.attempt === undefined ? {} : { attempt: event.attempt };
     case 'instructions.loaded':
       return { path: event.path };
     default:

@@ -101,6 +101,7 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   'plan.updated': true,
   'usage.updated': true,
   'context.compacted': true,
+  'context.compaction_rejected': true,
   'context.truncated': true,
   'instructions.loaded': true,
   'approval.rule.persisted': true,
@@ -169,11 +170,14 @@ const isHistoryEntry = (value: unknown): boolean =>
   (value['callId'] === undefined || typeof value['callId'] === 'string') &&
   (value['handle'] === undefined || typeof value['handle'] === 'string');
 
+const isSummaryItem = (item: unknown): boolean =>
+  isRecord(item) &&
+  ((item['type'] === 'compaction' && typeof item['encrypted_content'] === 'string') ||
+    (item['type'] === 'message' && item['role'] === 'user' && typeof item['content'] === 'string'));
+
 const isSummary = (value: unknown): boolean =>
   isRecord(value) &&
-  isRecord(value['item']) &&
-  value['item']['type'] === 'compaction' &&
-  typeof value['item']['encrypted_content'] === 'string' &&
+  isSummaryItem(value['item']) &&
   typeof value['summary'] === 'string' &&
   Number.isInteger(value['replacedThroughSeq']);
 
@@ -206,6 +210,14 @@ const isLastResponse = (value: unknown): boolean =>
   value['callIds'].every((callId: unknown) => typeof callId === 'string') &&
   (value['incompleteReason'] === undefined || typeof value['incompleteReason'] === 'string');
 
+const isStreaming = (value: unknown): boolean =>
+  isRecord(value) &&
+  Number.isInteger(value['step']) &&
+  Number.isInteger(value['attempt']) &&
+  typeof value['seen'] === 'boolean' &&
+  Array.isArray(value['items']) &&
+  value['items'].every((item: unknown) => isRecord(item) && typeof item['itemId'] === 'string' && typeof item['text'] === 'string');
+
 const isLoadedInstruction = (value: unknown): boolean =>
   isRecord(value) && typeof value['path'] === 'string' && typeof value['textSha256'] === 'string';
 
@@ -218,7 +230,7 @@ const hasConsistentSeqs = (history: readonly unknown[], nextItemSeq: unknown, su
   return true;
 };
 
-export const SNAPSHOT_STATE_VERSION = 4;
+export const SNAPSHOT_STATE_VERSION = 5;
 
 export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
 
@@ -258,7 +270,9 @@ export const decodeRunState = (identity: string, value: unknown): RunState | und
     (state['lastResponse'] === undefined || isLastResponse(state['lastResponse'])) &&
     Object.values(state['steps']).every(isStep) &&
     Array.isArray(state['loadedInstructions']) &&
-    state['loadedInstructions'].every(isLoadedInstruction);
+    state['loadedInstructions'].every(isLoadedInstruction) &&
+    (state['streaming'] === undefined || isStreaming(state['streaming'])) &&
+    (state['mode'] === undefined || PERMISSION_MODES.some((mode) => mode === state['mode']));
   if (!valid) throw corrupt('snapshots', identity, 'column state_json does not hold a RunState');
   return state as RunState;
 };

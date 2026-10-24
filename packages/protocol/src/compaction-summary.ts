@@ -1,3 +1,5 @@
+import type { MessageInputItem } from './open-responses.ts';
+
 const SUPPORTED_VERSION = 1;
 const BASE64URL_SEGMENT = /^[A-Za-z0-9_-]+$/;
 
@@ -16,3 +18,9 @@ export const decodeCompactionSummary = (encryptedContent: string): string | unde
   if (v !== SUPPORTED_VERSION || typeof summary !== 'string') return undefined;
   return summary;
 };
+
+export const compactionSummaryMessage = (text: string): MessageInputItem => ({
+  type: 'message',
+  role: 'user',
+  content: `<conversation_summary>\n${text.replaceAll('<', '&lt;')}\n</conversation_summary>`,
+});

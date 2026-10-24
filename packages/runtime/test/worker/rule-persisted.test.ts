@@ -39,6 +39,6 @@ describe('worker allow_always rule persistence across a crash', () => {
     const persisted = env.events(run.id).filter((event) => (event.type as string) === 'approval.rule.persisted');
     expect(persisted).toEqual([expect.objectContaining({ approvalId, effect: 'allow', rule })]);
     expect(env.ofType(run.id, 'notice').filter((notice) => notice.message.includes(`Saved the allow rule ${rule}`))).toHaveLength(1);
-    expect(env.fold(run.id).pendingCalls['call_w_1']?.resolution).toMatchObject({ kind: 'allow_always', rulePersisted: true });
+    expect(env.fold(run.id).pendingCalls[env.gateway.callId('call_w_1')]?.resolution).toMatchObject({ kind: 'allow_always', rulePersisted: true });
   });
 });

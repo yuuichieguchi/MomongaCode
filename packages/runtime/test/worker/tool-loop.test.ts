@@ -35,19 +35,19 @@ describe('worker tool loop', () => {
     const position = (type: string, callId: string): number =>
       toolEvents.findIndex((event) => event.type === type && 'callId' in event && event.callId === callId);
     expect(toolEvents.slice(0, 2).map((event) => event.type)).toEqual(['tool.call', 'tool.call']);
-    for (const callId of ['call_r_1', 'call_r_2']) {
+    for (const callId of [env.gateway.callId('call_r_1'), env.gateway.callId('call_r_2')]) {
       expect(position('tool.call', callId)).toBeLessThan(position('tool.started', callId));
       expect(position('tool.started', callId)).toBeLessThan(position('tool.completed', callId));
     }
 
     const calls = env.ofType(run.id, 'tool.call');
-    expect(calls[0]).toMatchObject({ callId: 'call_r_1', providerCallId: 'call_r_1', name: 'Echo', kind: 'read', title: 'Echo a', rawInput: { value: 'a' } });
-    expect(calls[1]).toMatchObject({ callId: 'call_r_2', providerCallId: 'call_r_2', name: 'Echo', kind: 'read', title: 'Echo b', rawInput: { value: 'b' } });
+    expect(calls[0]).toMatchObject({ callId: env.gateway.callId('call_r_1'), providerCallId: env.gateway.callId('call_r_1'), name: 'Echo', kind: 'read', title: 'Echo a', rawInput: { value: 'a' } });
+    expect(calls[1]).toMatchObject({ callId: env.gateway.callId('call_r_2'), providerCallId: env.gateway.callId('call_r_2'), name: 'Echo', kind: 'read', title: 'Echo b', rawInput: { value: 'b' } });
 
     const completed = env.ofType(run.id, 'tool.completed');
     expect(completed.map((event) => [event.callId, event.status, event.output]).sort()).toEqual([
-      ['call_r_1', 'completed', 'echo:a'],
-      ['call_r_2', 'completed', 'echo:b'],
+      [env.gateway.callId('call_r_1'), 'completed', 'echo:a'],
+      [env.gateway.callId('call_r_2'), 'completed', 'echo:b'],
     ]);
     const startedEvents = env.ofType(run.id, 'tool.started');
     expect(startedEvents.map((event) => event.idemKey).every((key) => /^[0-9a-f]{64}$/.test(key))).toBe(true);
@@ -61,11 +61,11 @@ describe('worker tool loop', () => {
     if (!Array.isArray(input)) throw new Error('expected an input array');
     const outputs = input.filter((item) => item.type === 'function_call_output');
     expect(outputs).toEqual([
-      expect.objectContaining({ call_id: 'call_r_1', output: 'echo:a' }),
-      expect.objectContaining({ call_id: 'call_r_2', output: 'echo:b' }),
+      expect.objectContaining({ call_id: env.gateway.callId('call_r_1'), output: 'echo:a' }),
+      expect.objectContaining({ call_id: env.gateway.callId('call_r_2'), output: 'echo:b' }),
     ]);
     const callsInInput = input.filter((item) => item.type === 'function_call').map((item) => (item.type === 'function_call' ? item.call_id : ''));
-    expect(callsInInput).toEqual(['call_r_1', 'call_r_2']);
+    expect(callsInInput).toEqual([env.gateway.callId('call_r_1'), env.gateway.callId('call_r_2')]);
 
     expect(env.ofType(run.id, 'usage.updated').map((event) => [event.inputTokens, event.outputTokens, event.totalTokens])).toEqual([
       [100, 10, 110],
@@ -101,6 +101,6 @@ describe('worker tool loop', () => {
     await env.runOnce(env.worker());
 
     expect(env.ofType(run.id, 'tool.call')[0]).toMatchObject({ kind: 'edit', title: `Write ${target}`, locations: [{ path: target }] });
-    expect(env.ofType(run.id, 'tool.completed')[0]).toMatchObject({ callId: 'call_w_1', status: 'completed', output: `wrote ${target}` });
+    expect(env.ofType(run.id, 'tool.completed')[0]).toMatchObject({ callId: env.gateway.callId('call_w_1'), status: 'completed', output: `wrote ${target}` });
   });
 });

@@ -13,10 +13,10 @@ describe('deeply readonly source items', () => {
     expectTypeOf<ContextSources['task']>().not.toEqualTypeOf<MessageInputItem>();
   });
 
-  it('types the summary item as DeepReadonly<CompactionInputItem>', () => {
+  it('types the summary item as DeepReadonly<CompactionInputItem | MessageInputItem>', () => {
     type SummaryItem = NonNullable<ContextSources['summary']>['item'];
-    expectTypeOf<SummaryItem>().toEqualTypeOf<DeepReadonly<CompactionInputItem>>();
-    expectTypeOf<SummaryItem>().not.toEqualTypeOf<CompactionInputItem>();
+    expectTypeOf<SummaryItem>().toEqualTypeOf<DeepReadonly<CompactionInputItem | MessageInputItem>>();
+    expectTypeOf<SummaryItem>().not.toEqualTypeOf<CompactionInputItem | MessageInputItem>();
   });
 
   it('makes nested content arrays readonly', () => {
