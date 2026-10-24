@@ -1,4 +1,4 @@
-import type { CompactionInputItem, InputItem } from './open-responses.ts';
+import type { CompactionInputItem, InputItem, MessageInputItem } from './open-responses.ts';
 
 export const RUN_STATUSES = [
   'QUEUED',
@@ -44,7 +44,7 @@ export type ModelResponse = {
 
 export type RunEventPayload =
   | { type: 'user.message'; text: string }
-  | { type: 'run.started'; attempt: number; now: number; pins: Record<string, unknown> }
+  | { type: 'run.started'; attempt: number; now: number; pins: Record<string, unknown>; mode?: PermissionMode }
   | { type: 'run.status'; from: RunStatus; to: RunStatus; reason?: string }
   | { type: 'model.requested'; step: number; attempt: number; digest: string; body: unknown }
   | { type: 'model.responded'; step: number; attempt: number; response: ModelResponse }
@@ -89,6 +89,7 @@ export type RunEventPayload =
     }
   | { type: 'usage.updated'; inputTokens: number; outputTokens: number; totalTokens: number }
   | { type: 'context.compacted'; item: CompactionInputItem; summary: string; replacedThroughSeq: number }
+  | { type: 'context.compaction_rejected'; step?: number; attempt?: number; item: MessageInputItem }
   | { type: 'context.truncated'; callId: string; handle: string; kind: 'omitted' | 'truncated' }
   | { type: 'instructions.loaded'; path: string; content: string }
   | { type: 'approval.rule.persisted'; approvalId: string; effect: 'allow' | 'deny'; rule: string }
@@ -122,7 +123,7 @@ export type RunState = {
   usage: { inputTokens: number; outputTokens: number; totalTokens: number };
   history: { seq: number; item: InputItem; callId?: string; handle?: string }[];
   nextItemSeq: number;
-  summary?: { item: CompactionInputItem; summary: string; replacedThroughSeq: number };
+  summary?: { item: CompactionInputItem | MessageInputItem; summary: string; replacedThroughSeq: number };
   evicted: string[];
   pins?: Record<string, unknown>;
   pendingCalls: Record<
@@ -146,5 +147,7 @@ export type RunState = {
   steps: Record<number, { toolChoice: string; summary: boolean }>;
   lastResponse?: { step: number; incomplete: boolean; incompleteReason?: string; refusal: boolean; callIds: string[] };
   loadedInstructions: { path: string; textSha256: string }[];
+  streaming?: { step: number; attempt: number; seen: boolean; items: { itemId: string; text: string }[] };
+  mode?: PermissionMode;
   lastSeq: number;
 };

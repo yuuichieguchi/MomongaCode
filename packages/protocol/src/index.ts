@@ -1,6 +1,6 @@
 export type { Capabilities, HealthResult, ToolCallingMode, ToolCallingSetting } from './capabilities.ts';
 export { findDanglingOutput } from './call-pairing.ts';
-export { decodeCompactionSummary } from './compaction-summary.ts';
+export { compactionSummaryMessage, decodeCompactionSummary } from './compaction-summary.ts';
 export { PROBE_KEYWORDS } from './probe.ts';
 export type { ProbeKeyword, ProbeReport } from './probe.ts';
 export { RUN_API_SCHEMAS, toPublicRunEvent } from './run-api.ts';

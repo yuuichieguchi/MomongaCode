@@ -45,7 +45,7 @@ describe('chat-completions request mapping', () => {
     expect(system).not.toContain('Earlier we discussed the parser.');
     expect(messages[1]).toEqual({
       role: 'user',
-      content: '<conversation_summary>\nEarlier we discussed the parser.\n</conversation_summary>',
+      content: '<conversation_summary>\nEarlier we discussed the parser.\n</conversation_summary>\n\nHello',
     });
   });
 
@@ -53,17 +53,17 @@ describe('chat-completions request mapping', () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     await collect(makeAdapter(fake), historyRequest());
     const messages = lastCompletionBody(fake).messages as any[];
-    expect(messages).toHaveLength(7);
-    expect(messages[2]).toEqual({ role: 'user', content: 'Hello' });
-    expect(messages[3]).toEqual({ role: 'assistant', content: 'Hi there' });
-    expect(messages[4].role).toBe('assistant');
-    expect([null, undefined, '']).toContain(messages[4].content);
-    expect(messages[4].tool_calls).toEqual([
+    expect(messages).toHaveLength(6);
+    expect(messages[1]).toEqual({ role: 'user', content: '<conversation_summary>\nEarlier we discussed the parser.\n</conversation_summary>\n\nHello' });
+    expect(messages[2]).toEqual({ role: 'assistant', content: 'Hi there' });
+    expect(messages[3].role).toBe('assistant');
+    expect([null, undefined, '']).toContain(messages[3].content);
+    expect(messages[3].tool_calls).toEqual([
       { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{"path":"a.txt"}' } },
       { id: 'c2', type: 'function', function: { name: 'list_dir', arguments: '{"dir":"."}' } },
     ]);
-    expect(messages[5]).toEqual({ role: 'tool', tool_call_id: 'c1', content: 'A' });
-    expect(messages[6]).toEqual({ role: 'tool', tool_call_id: 'c2', content: 'B' });
+    expect(messages[4]).toEqual({ role: 'tool', tool_call_id: 'c1', content: 'A' });
+    expect(messages[5]).toEqual({ role: 'tool', tool_call_id: 'c2', content: 'B' });
     expect(JSON.stringify(messages)).not.toContain('secret reasoning');
   });
 

@@ -2,7 +2,8 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { describe, expect, it } from 'vitest';
-import { RUN_API_SCHEMAS } from '@momonga/protocol';
+import { RUN_API_SCHEMAS, toPublicRunEvent } from '@momonga/protocol';
+import type { RunEvent } from '@momonga/protocol';
 
 const SCHEMA_NAMES = [
   'CreateSessionRequest',
@@ -270,6 +271,23 @@ describe('PublicRunEvent projection', () => {
     const reduced = { ...RUN_ENVELOPE, type: 'context.compacted', summary: 'so far', replacedThroughSeq: 4 };
     expect(accepts('PublicRunEvent', reduced)).toBe(true);
     expect(accepts('PublicRunEvent', { ...reduced, item: { type: 'compaction', encrypted_content: 'x' } })).toBe(false);
+  });
+
+  it('reduces context.compaction_rejected to step and attempt, without the item', () => {
+    const withStep = { ...RUN_ENVELOPE, step: 2, type: 'context.compaction_rejected', attempt: 1 };
+    expect(accepts('PublicRunEvent', withStep)).toBe(true);
+    expect(accepts('PublicRunEvent', { ...RUN_ENVELOPE, step: 0, type: 'context.compaction_rejected' })).toBe(true);
+    expect(accepts('PublicRunEvent', { ...withStep, item: { type: 'message', role: 'user', content: 'secret summary' } })).toBe(false);
+  });
+
+  it('removes the item from a public context.compaction_rejected', () => {
+    const item = { type: 'message' as const, role: 'user' as const, content: '<conversation_summary>\nsecret\n</conversation_summary>' };
+    const atSite3 = toPublicRunEvent({ ...RUN_ENVELOPE, step: 2, leaseToken: 4, type: 'context.compaction_rejected', attempt: 1, item } as unknown as RunEvent);
+    expect(atSite3).toEqual({ ...RUN_ENVELOPE, step: 2, type: 'context.compaction_rejected', attempt: 1 });
+    expect(accepts('PublicRunEvent', atSite3)).toBe(true);
+    const atBuild = toPublicRunEvent({ ...RUN_ENVELOPE, step: 1, leaseToken: 4, type: 'context.compaction_rejected', item } as unknown as RunEvent);
+    expect(atBuild).toEqual({ ...RUN_ENVELOPE, step: 1, type: 'context.compaction_rejected' });
+    expect(accepts('PublicRunEvent', atBuild)).toBe(true);
   });
 
   it('reduces instructions.loaded to the path', () => {

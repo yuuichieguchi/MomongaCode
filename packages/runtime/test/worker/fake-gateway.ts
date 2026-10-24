@@ -1,4 +1,4 @@
-import { canonicalJson } from '@momonga/foundation';
+import { canonicalJson, uuidv7 } from '@momonga/foundation';
 import type {
   Capabilities,
   CompactRequest,
@@ -88,6 +88,8 @@ const withObservedUsage = (events: readonly StreamEvent[], body: CreateResponseB
       : event,
   );
 
+const issueCallId = (): string => `call_${uuidv7().replaceAll('-', '')}`;
+
 const abortedPromise = (signal: AbortSignal): Promise<never> =>
   new Promise<never>((_resolve, reject) => {
     if (signal.aborted) reject(new FakeAbortError());
@@ -111,6 +113,9 @@ export type FakeGateway = GatewayPort & {
   generations: Map<string, number>;
   compactSummaries: string[];
   capabilitiesValue: Capabilities;
+  rewriteCallIds: boolean;
+  issuedCallIds(scriptId: string): string[];
+  callId(scriptId: string, occurrence?: number): string;
   releaseAll(): void;
   nthStream(index: number): Promise<RecordedStream>;
 };
@@ -120,6 +125,27 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
   const inFlight = new Map<string, Generation>();
   const waiters = new Map<number, Deferred<RecordedStream>>();
   const gates: Deferred<void>[] = [];
+  const issued = new Map<string, string[]>();
+
+  const withIssuedCallIds = (events: readonly StreamEvent[]): StreamEvent[] => {
+    const callIds = new Map<string, string>();
+    const rewriteItem = (item: ItemField): ItemField => {
+      if (item.type !== 'function_call') return item;
+      let callId = callIds.get(item.call_id);
+      if (callId === undefined) {
+        callId = issueCallId();
+        callIds.set(item.call_id, callId);
+        issued.set(item.call_id, [...(issued.get(item.call_id) ?? []), callId]);
+      }
+      return { ...item, call_id: callId };
+    };
+    return events.map((event): StreamEvent => {
+      if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') return { ...event, item: rewriteItem(event.item) };
+      if (event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed')
+        return { ...event, response: { ...event.response, output: event.response.output.map(rewriteItem) } } as StreamEvent;
+      return event;
+    });
+  };
 
   const waiterFor = (index: number): Deferred<RecordedStream> => {
     const existing = waiters.get(index);
@@ -139,7 +165,8 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
   const startGeneration = (key: string, body: CreateResponseBody): Generation => {
     const scripted = gateway.script.shift();
     if (scripted === undefined) throw new Error(`fake gateway: no scripted step left for key ${key}`);
-    const step: ScriptStep = scripted.autoUsage === true ? { ...scripted, events: withObservedUsage(scripted.events, body) } : scripted;
+    const observed: ScriptStep = scripted.autoUsage === true ? { ...scripted, events: withObservedUsage(scripted.events, body) } : scripted;
+    const step: ScriptStep = gateway.rewriteCallIds ? { ...observed, events: withIssuedCallIds(observed.events) } : observed;
     gateway.generations.set(key, (gateway.generations.get(key) ?? 0) + 1);
     if (step.gate !== undefined) gates.push(step.gate.release);
     const outcome = (async () => {
@@ -196,6 +223,15 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
     generations: new Map(),
     compactSummaries: [],
     capabilitiesValue: capabilities,
+    rewriteCallIds: true,
+
+    issuedCallIds: (scriptId) => [...(issued.get(scriptId) ?? [])],
+
+    callId: (scriptId, occurrence = 0) => {
+      const callId = issued.get(scriptId)?.[occurrence];
+      if (callId === undefined) throw new Error(`fake gateway: no call id issued for ${scriptId} (occurrence ${occurrence})`);
+      return callId;
+    },
 
     stream: (body, options) => {
       const key = options.idempotencyKey;

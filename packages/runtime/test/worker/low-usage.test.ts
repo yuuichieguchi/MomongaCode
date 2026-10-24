@@ -19,7 +19,7 @@ describe('worker with low reported usage', () => {
     const input = env.gateway.streams[1]?.body.input;
     if (!Array.isArray(input)) throw new Error('expected an input array');
     expect(input.filter((item) => item.type === 'function_call_output')).toEqual([
-      expect.objectContaining({ call_id: 'call_low_1', output: 'echo:a' }),
+      expect.objectContaining({ call_id: env.gateway.callId('call_low_1'), output: 'echo:a' }),
     ]);
   });
 });

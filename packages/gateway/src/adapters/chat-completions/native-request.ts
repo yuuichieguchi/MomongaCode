@@ -1,5 +1,7 @@
+import { compactionSummaryMessage } from '@momonga/protocol';
 import type { AdapterInputItem, AdapterRequest, FunctionTool, ToolChoice } from '@momonga/protocol';
-import { neutralizeMarkup, textOfContent } from './input-text.ts';
+import { textOfContent } from './input-text.ts';
+import { mergeAdjacentUserMessages } from './merge-user-messages.ts';
 
 export type ChatMessage = Record<string, unknown>;
 
@@ -29,10 +31,10 @@ export const systemTextOf = (instructions: string | null | undefined, input: rea
   return parts.filter((part) => part !== '');
 };
 
-export const summaryMessageOf = (summary: string): ChatMessage => ({
-  role: 'user',
-  content: `<conversation_summary>\n${neutralizeMarkup(summary)}\n</conversation_summary>`,
-});
+export const summaryMessageOf = (summary: string): ChatMessage => {
+  const { role, content } = compactionSummaryMessage(summary);
+  return { role, content };
+};
 
 const toolOf = (tool: FunctionTool): unknown => ({
   type: 'function',
@@ -81,7 +83,7 @@ export const buildNativeBody = (request: AdapterRequest): ChatRequestBody => {
   const tools = request.tools ?? [];
   return {
     model: request.model,
-    messages,
+    messages: mergeAdjacentUserMessages(messages),
     stream: true,
     stream_options: { include_usage: true },
     ...(tools.length === 0 ? {} : { tools: tools.map(toolOf) }),

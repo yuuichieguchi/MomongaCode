@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { foldRunState } from '@momonga/store';
 import { makeEnv } from './harness.ts';
@@ -34,6 +35,21 @@ describe('worker snapshots', () => {
     expectSnapshotAtYield(env, run.id);
     const state = env.store.load(run.id).snapshot?.state;
     expect(state?.pins).toEqual(env.ofType(run.id, 'run.started')[0]?.pins);
-    expect(state?.pendingCalls['call_w_1']?.suggestedRule).toBe(`Write(/${target})`);
+    expect(state?.pendingCalls[env.gateway.callId('call_w_1')]?.suggestedRule).toBe(`Write(/${target})`);
+  });
+
+  it('writes the snapshot with state version 5, carrying the recorded mode', async (context) => {
+    const env = await makeEnv({ mode: 'acceptEdits' });
+    env.gateway.script.push(textStep('Done.'));
+    const run = env.enqueue();
+    await env.runOnce(env.worker());
+    const db = new DatabaseSync(env.dbPath);
+    context.onTestFinished(() => db.close());
+    const row = db.prepare('SELECT state_json FROM snapshots WHERE run_id = ? ORDER BY seq DESC LIMIT 1').get(run.id) as { state_json: string } | undefined;
+    expect(row).toBeDefined();
+    const stored = JSON.parse(row!.state_json) as Record<string, unknown>;
+    expect(stored['stateVersion']).toBe(5);
+    expect(stored['mode']).toBe('acceptEdits');
+    expect(env.store.load(run.id).snapshot?.state.mode).toBe('acceptEdits');
   });
 });

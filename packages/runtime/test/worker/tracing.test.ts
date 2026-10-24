@@ -21,7 +21,7 @@ describe('worker tracing', () => {
     const tools = env.tracer.spans.filter((span) => span.kind === 'tool');
     expect(agents).toHaveLength(1);
     expect(agents[0]?.input).toMatchObject({ runId: run.id, sessionId: env.session.id, attempt: 1 });
-    expect(tools.map((span) => span.input['callId']).sort()).toEqual(['call_p_1', 'call_p_2']);
+    expect(tools.map((span) => span.input['callId']).sort()).toEqual([env.gateway.callId('call_p_1'), env.gateway.callId('call_p_2')]);
     for (const span of tools) {
       expect(span.parent).toBe(agents[0]?.traceparent);
       expect(span.input).toMatchObject({ runId: run.id, step: 1, toolName: 'Probe' });

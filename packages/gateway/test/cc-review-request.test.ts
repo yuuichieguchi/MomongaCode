@@ -163,14 +163,14 @@ describe('compaction summaries', () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     await collect(makeAdapter(fake), summaryRequest);
     const messages = lastCompletionBody(fake).messages as any[];
-    expect(messages.map((message) => message.role)).toEqual(['system', 'user', 'user']);
+    expect(messages.map((message) => message.role)).toEqual(['system', 'user']);
     expect(messages[0].content).toBe('Be terse.');
-    const summary = messages[1].content as string;
-    expect(summary.startsWith('<conversation_summary>')).toBe(true);
-    expect(summary.endsWith('</conversation_summary>')).toBe(true);
-    expect(summary.match(/</g)).toHaveLength(2);
+    const [summary, hello] = (messages[1].content as string).split('\n\n');
+    expect(hello).toBe('Hello');
+    expect(summary!.startsWith('<conversation_summary>')).toBe(true);
+    expect(summary!.endsWith('</conversation_summary>')).toBe(true);
+    expect(summary!.match(/</g)).toHaveLength(2);
     expect(summary).toContain('parsers');
-    expect(messages[2]).toEqual({ role: 'user', content: 'Hello' });
   });
 
   const inline: AdapterRequest = {
@@ -190,22 +190,20 @@ describe('compaction summaries', () => {
     expect(messages.map((message) => [message.role, message.content])).toEqual([
       ['user', 'A'],
       ['assistant', 'B'],
-      ['user', '<conversation_summary>\nearlier\n</conversation_summary>'],
-      ['user', 'C'],
+      ['user', '<conversation_summary>\nearlier\n</conversation_summary>\n\nC'],
     ]);
   });
 
   it('stay at their own position in constrained mode', async () => {
     const messages = await sentMessages({ ...inline, tools: [readFileTool] });
-    expect(messages.map((message) => message.role)).toEqual(['system', 'user', 'assistant', 'user', 'user']);
-    expect(messages[3].content).toMatch(/^<conversation_summary>/);
-    expect(messages[4]).toEqual({ role: 'user', content: 'C' });
+    expect(messages.map((message) => message.role)).toEqual(['system', 'user', 'assistant', 'user']);
+    expect(messages[3]).toEqual({ role: 'user', content: '<conversation_summary>\nearlier\n</conversation_summary>\n\nC' });
   });
 
   it('are sent the same way in constrained mode', async () => {
     const messages = await sentMessages({ ...summaryRequest, tools: [readFileTool] });
     expect(messages[0].content).not.toContain('parsers');
-    expect(messages[1].content).toMatch(/^<conversation_summary>/);
-    expect(messages[2]).toEqual({ role: 'user', content: 'Hello' });
+    expect(messages).toHaveLength(2);
+    expect(messages[1].content).toMatch(/^<conversation_summary>[\s\S]*<\/conversation_summary>\n\nHello$/);
   });
 });

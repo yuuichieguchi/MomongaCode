@@ -1,3 +1,4 @@
+import { isFatalStoreError } from '@momonga/store';
 import type { CreateResponseBody, ResponseResource } from '@momonga/protocol';
 import type { RunEventPayload } from '@momonga/protocol';
 import type { ClaimContext } from './claim-context.ts';
@@ -64,6 +65,15 @@ const createDeltaBuffer = (
   };
 };
 
+const flushRecordingFailure = (ctx: ClaimContext, buffer: DeltaBuffer): void => {
+  try {
+    buffer.flush();
+  } catch (flushError) {
+    if (isFatalStoreError(flushError)) throw flushError;
+    if (!ctx.control.leaseLost()) ctx.control.fail(flushError);
+  }
+};
+
 export const streamModel = async (
   ctx: ClaimContext,
   body: CreateResponseBody,
@@ -111,7 +121,9 @@ export const streamModel = async (
       })(),
     );
   } catch (error) {
-    throw ctx.control.failure() ?? error;
+    const original = ctx.control.failure() ?? error;
+    if (!ctx.control.leaseLost()) flushRecordingFailure(ctx, buffer);
+    throw original;
   } finally {
     buffer.dispose();
   }

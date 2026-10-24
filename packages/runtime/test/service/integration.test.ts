@@ -59,10 +59,10 @@ describe('service and worker over the real socket', () => {
 
     const rest = await stream.toEnd(10_000);
     expect(rest.at(-1)).toMatchObject({ type: 'run.status', to: 'COMPLETED' });
-    expect(rest.find((event) => event.type === 'tool.completed')).toMatchObject({ callId: 'call_w_1', status: 'failed', output: REJECTED });
+    expect(rest.find((event) => event.type === 'tool.completed')).toMatchObject({ callId: kit.gateway.callId('call_w_1'), status: 'failed', output: REJECTED });
     expect(fs.existsSync(target)).toBe(false);
     const input = kit.gateway.streams[1]?.body.input;
-    expect(Array.isArray(input) && input.some((item) => item.type === 'function_call_output' && item.call_id === 'call_w_1' && item.output === REJECTED)).toBe(true);
+    expect(Array.isArray(input) && input.some((item) => item.type === 'function_call_output' && item.call_id === kit.gateway.callId('call_w_1') && item.output === REJECTED)).toBe(true);
   }, 20_000);
 
   it('persists an allow_always rule so the next run gets no prompt', async () => {

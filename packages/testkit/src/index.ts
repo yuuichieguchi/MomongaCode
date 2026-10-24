@@ -31,6 +31,8 @@ export {
   RECORDED_RUNS,
   approvalWaitResumeRun,
   cancelRun,
+  compactionRejectedAtBuildRun,
+  compactionRejectedAtStreamRun,
   compactionRun,
   evictionAndRejectionRun,
   fixtureCompactionContent,

@@ -15,7 +15,7 @@ describe('worker loop detection', () => {
     expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'loop' });
     expect(env.toolbox.executions).toHaveLength(2);
     expect(env.gateway.streams).toHaveLength(3);
-    expect(env.ofType(run.id, 'tool.started').map((event) => event.callId)).toEqual(['call_l_1', 'call_l_2']);
+    expect(env.ofType(run.id, 'tool.started').map((event) => event.callId)).toEqual([env.gateway.callId('call_l_1'), env.gateway.callId('call_l_2')]);
     expect(env.ofType(run.id, 'notice').length).toBeGreaterThan(0);
   });
 

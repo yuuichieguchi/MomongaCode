@@ -29,7 +29,7 @@ describe('worker approval request', () => {
     expect(requests).toHaveLength(1);
     const [request] = requests;
     if (request === undefined) throw new Error('expected a permission request');
-    expect(request.callId).toBe('call_w_1');
+    expect(request.callId).toBe(env.gateway.callId('call_w_1'));
     expect(request.options.map((option) => option.kind).sort()).toEqual(['allow_always', 'allow_once', 'reject_always', 'reject_once']);
     expect(new Set(request.options.map((option) => option.optionId)).size).toBe(4);
     expect(request.subjectDigest).toMatch(/^[0-9a-f]{64}$/);
@@ -37,10 +37,10 @@ describe('worker approval request', () => {
 
     const pending = env.store.approvals.listPending(run.id);
     expect(pending).toHaveLength(1);
-    expect(pending[0]).toMatchObject({ id: request.approvalId, callId: 'call_w_1', expiresAt: START_MS + DEFAULT_TTL_MS });
+    expect(pending[0]).toMatchObject({ id: request.approvalId, callId: env.gateway.callId('call_w_1'), expiresAt: START_MS + DEFAULT_TTL_MS });
     expect(pending[0]?.options).toEqual(request.options);
 
-    expect(env.fold(run.id).pendingCalls['call_w_1']).toMatchObject({ status: 'awaiting_approval', suggestedRule: `Write(/${target})` });
+    expect(env.fold(run.id).pendingCalls[env.gateway.callId('call_w_1')]).toMatchObject({ status: 'awaiting_approval', suggestedRule: `Write(/${target})` });
     expect(fs.existsSync(target)).toBe(false);
     expect(env.toolbox.executions).toEqual([]);
   });
@@ -75,7 +75,7 @@ describe('worker approval resume', () => {
 
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(fs.readFileSync(target, 'utf8')).toBe('approved');
-    expect(env.ofType(run.id, 'tool.completed')).toEqual([expect.objectContaining({ callId: 'call_w_1', status: 'completed', output: `wrote ${target}` })]);
+    expect(env.ofType(run.id, 'tool.completed')).toEqual([expect.objectContaining({ callId: env.gateway.callId('call_w_1'), status: 'completed', output: `wrote ${target}` })]);
     expect(env.settings.appended).toEqual([]);
     expect(env.ofType(run.id, 'tool.permission.requested')).toHaveLength(1);
   });
@@ -122,11 +122,11 @@ describe('worker approval resume', () => {
     await env.runOnce(env.worker('worker-2'));
 
     expect(env.run(run.id).status).toBe('COMPLETED');
-    expect(env.ofType(run.id, 'tool.completed')).toEqual([expect.objectContaining({ callId: 'call_w_1', status: 'failed', output: REJECTED })]);
+    expect(env.ofType(run.id, 'tool.completed')).toEqual([expect.objectContaining({ callId: env.gateway.callId('call_w_1'), status: 'failed', output: REJECTED })]);
     expect(fs.existsSync(target)).toBe(false);
     expect(env.toolbox.executions).toEqual([]);
     const input = env.gateway.streams[1]?.body.input;
-    expect(Array.isArray(input) && input.some((item) => item.type === 'function_call_output' && item.call_id === 'call_w_1' && item.output === REJECTED)).toBe(true);
+    expect(Array.isArray(input) && input.some((item) => item.type === 'function_call_output' && item.call_id === env.gateway.callId('call_w_1') && item.output === REJECTED)).toBe(true);
     if (kind === 'reject_always') {
       expect(env.settings.appended).toEqual([{ sessionId: env.session.id, effect: 'deny', rule: `Write(/${target})` }]);
     } else {
@@ -151,7 +151,7 @@ describe('worker approval resume', () => {
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
     const requests = env.ofType(run.id, 'tool.permission.requested');
     expect(requests).toHaveLength(2);
-    expect(requests[1]?.callId).toBe('call_w_1');
+    expect(requests[1]?.callId).toBe(env.gateway.callId('call_w_1'));
     expect(requests[1]?.subjectDigest).not.toBe(firstRequest?.subjectDigest);
     expect(requests[1]?.approvalId).not.toBe(firstRequest?.approvalId);
     const pending = env.store.approvals.listPending(run.id);
@@ -165,7 +165,7 @@ describe('worker approval resume', () => {
     const env = await makeEnv();
     const { run } = await askToWrite(env);
     env.resolveApproval(run.id, 'reject_once');
-    expect(env.fold(run.id).pendingCalls['call_w_1']).toMatchObject({ status: 'requested', resolution: { kind: 'reject_once' } });
+    expect(env.fold(run.id).pendingCalls[env.gateway.callId('call_w_1')]).toMatchObject({ status: 'requested', resolution: { kind: 'reject_once' } });
     env.gateway.script.push(textStep('Understood.'));
 
     await env.runOnce(env.worker('worker-2'));

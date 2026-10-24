@@ -10,7 +10,7 @@ const startWait = async (env: Env) => {
   const run = env.enqueue('Wait for a long time');
   const running = env.runOnce(env.worker('worker-a', { heartbeatMs: 10 }));
   await within(env.toolbox.waitStarted.promise, 5_000, 'the long tool to start');
-  return { run, running, key: toolKey(run.id, 1, 'call_wait_1') };
+  return { run, running, key: toolKey(run.id, 1, env.gateway.callId('call_wait_1')) };
 };
 
 describe('worker lease loss during a long tool', () => {
@@ -31,7 +31,7 @@ describe('worker lease loss during a long tool', () => {
   it('settles quietly and keeps the record the successor completed', async () => {
     const env = await makeEnv();
     const { run, running, key } = await startWait(env);
-    const successorOutcome = { callId: 'call_wait_1', kind: 'result', result: { status: 'completed', output: 'successor result' } };
+    const successorOutcome = { callId: env.gateway.callId('call_wait_1'), kind: 'result', result: { status: 'completed', output: 'successor result' } };
 
     env.clock.advance(LEASE_MS + 1);
     expect(env.store.claim('worker-thief')?.runId).toBe(run.id);

@@ -42,4 +42,17 @@ describe('recorded run fixtures', () => {
       ['run.status', 2],
     ]);
   });
+
+  it('covers context.compaction_rejected, with and without step and attempt, after a context.compacted', () => {
+    const runs = RECORDED_RUNS.filter((run) => run.payloads.some((payload) => payload.type === 'context.compaction_rejected'));
+    expect(runs.length).toBeGreaterThan(0);
+    const rejections = runs.flatMap((run) => run.payloads.filter((payload) => payload.type === 'context.compaction_rejected'));
+    expect(rejections.some((payload) => 'step' in payload && 'attempt' in payload)).toBe(true);
+    expect(rejections.some((payload) => !('step' in payload) && !('attempt' in payload))).toBe(true);
+    for (const run of runs) {
+      const types = run.payloads.map((payload) => payload.type);
+      expect(types.indexOf('context.compacted')).toBeGreaterThanOrEqual(0);
+      expect(types.indexOf('context.compacted')).toBeLessThan(types.indexOf('context.compaction_rejected'));
+    }
+  });
 });
