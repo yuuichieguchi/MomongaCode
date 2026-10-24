@@ -25,8 +25,8 @@ describe('Write', () => {
     resultOf(await tools.run('Write', { file_path: created, content: 'two' }, { mode: 'acceptEdits' }));
     const metas = tools.idempotency.log.flatMap((entry) => (entry.op === 'begin' ? [entry.meta] : []));
     expect(metas).toEqual([
-      { tool: 'Write', prepared: { path: created, preHash: null, postHash: sha256('one') } },
-      { tool: 'Write', prepared: { path: created, preHash: sha256('one'), postHash: sha256('two') } },
+      { tool: 'Write', runId: 'run-1', prepared: { path: created, preHash: null, postHash: sha256('one') } },
+      { tool: 'Write', runId: 'run-1', prepared: { path: created, preHash: sha256('one'), postHash: sha256('two') } },
     ]);
   });
 

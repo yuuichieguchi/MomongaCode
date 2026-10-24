@@ -1,5 +1,6 @@
 export { createBodyQueue } from './body-queue.ts';
 export type { BodyQueue, BodyQueueLimits } from './body-queue.ts';
+export { installOtelErrorHandler } from './errors.ts';
 export { PRICE_TABLE, computeCost, definePriceTable } from './cost.ts';
 export type { Cost, CostInput, CostUsage, PriceEntry, PriceTable } from './cost.ts';
 export type { ClockedSpan, ClockedTracer } from './clocked-tracer.ts';

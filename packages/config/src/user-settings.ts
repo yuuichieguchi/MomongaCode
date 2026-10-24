@@ -52,8 +52,9 @@ const changeKeyOf = (file: string): string => {
   }
 };
 
+export const userSettingsChangeKey = (home: string): string => changeKeyOf(layoutOf(home).settingsFile);
+
 export const createUserSettingsCache = ({ home, onWarning }: UserSettingsCacheOptions): UserSettingsCache => {
-  const file = layoutOf(home).settingsFile;
   let latest: UserSettingsSnapshot | undefined;
   let lastGood: ResolvedSettings | undefined;
   let seenKey: string | undefined;
@@ -71,7 +72,7 @@ export const createUserSettingsCache = ({ home, onWarning }: UserSettingsCacheOp
   const refresh = (): UserSettingsSnapshot => {
     let key: string;
     try {
-      key = changeKeyOf(file);
+      key = userSettingsChangeKey(home);
     } catch (error) {
       seenKey = undefined;
       rethrowIfTransient(error);

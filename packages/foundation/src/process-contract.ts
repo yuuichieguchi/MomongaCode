@@ -8,6 +8,35 @@ export const EXIT_CONFIG = 78;
 export const MINIMAL_CHILD_ENV_NAMES = ['PATH', 'HOME', 'LANG', 'TMPDIR'] as const;
 export const MINIMAL_CHILD_ENV_LC_PREFIX = 'LC_';
 
+export const RUNTIME_ABORT_BUDGET_MS = 5000;
+export const RUNTIME_TEARDOWN_BUDGET_MS = 10_000;
+export const RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS = 30_000;
+export const GATEWAY_MAX_CLOSE_MS = 15_000;
+export const ENTRY_HARD_EXIT_MARGIN_MS = 3000;
+export const SHUTDOWN_MARGIN_MS = 5000;
+export const STDIO_EXIT_FLUSH_MS = 1000;
+export const SUPERVISOR_FINALIZE_MS = 9000;
+export const MINIMAL_CHILD_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
+export const LIFELINE_FD = 3;
+export const DAEMON_MARKER_FD = 4;
+
+export const runtimeMaxCloseMs = (drainTimeoutMs: number): number => drainTimeoutMs + RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS;
+
+export const supervisorMaxCloseMs = (drainTimeoutMs: number): number =>
+  runtimeMaxCloseMs(drainTimeoutMs) + SHUTDOWN_MARGIN_MS + GATEWAY_MAX_CLOSE_MS + SHUTDOWN_MARGIN_MS + SUPERVISOR_FINALIZE_MS;
+
+export const minimalChildEnv = (source: Readonly<Record<string, string | undefined>>): Readonly<Record<string, string>> => {
+  const env: Record<string, string> = {};
+  for (const name of MINIMAL_CHILD_ENV_NAMES) {
+    const value = name === 'PATH' ? MINIMAL_CHILD_PATH : source[name];
+    if (value !== undefined) env[name] = value;
+  }
+  for (const [name, value] of Object.entries(source)) {
+    if (name.startsWith(MINIMAL_CHILD_ENV_LC_PREFIX) && value !== undefined) env[name] = value;
+  }
+  return env;
+};
+
 export interface TextStream {
   write(chunk: string): boolean;
 }
@@ -25,6 +54,21 @@ export const announceReady = (fields: ReadyFields, stream: TextStream = process.
   stream.write(`${JSON.stringify({ event: 'ready', service, pid, version, socketPath, startedAt })}\n`);
 };
 
+export const parseReadyLine = (line: string): ReadyFields | undefined => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
+  const { event, service, pid, version, socketPath, startedAt } = parsed as Record<string, unknown>;
+  if (event !== 'ready') return undefined;
+  if (typeof service !== 'string' || typeof version !== 'string' || typeof socketPath !== 'string' || typeof startedAt !== 'string') return undefined;
+  if (typeof pid !== 'number' || !Number.isInteger(pid)) return undefined;
+  return { service, pid, version, socketPath, startedAt };
+};
+
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export interface LogFields {
@@ -35,6 +79,7 @@ export interface LogFields {
   count?: number;
   ids?: readonly string[];
   err?: Error;
+  data?: Readonly<Record<string, string | number | boolean | null>>;
 }
 
 export interface JsonLogger {
@@ -51,13 +96,19 @@ export interface JsonLoggerOptions {
   level?: LogLevel;
 }
 
+const RESERVED_LOG_KEYS: ReadonlySet<string> = new Set(['ts', 'level', 'service', 'pid', 'msg', 'runId', 'workerId', 'traceId', 'step', 'count', 'ids', 'err']);
+
+const extraFields = (data: NonNullable<LogFields['data']>): Record<string, string | number | boolean | null> =>
+  Object.fromEntries(Object.entries(data).filter(([key]) => !RESERVED_LOG_KEYS.has(key)));
+
 const LEVEL_RANK = { debug: 0, info: 1, warn: 2, error: 3 } as const satisfies Record<LogLevel, number>;
 
 export const createJsonLogger = ({ service, clock, stream = process.stderr, level = 'info' }: JsonLoggerOptions): JsonLogger => {
   const emit = (entryLevel: LogLevel, msg: string, fields: LogFields = {}): void => {
     if (LEVEL_RANK[entryLevel] < LEVEL_RANK[level]) return;
-    const { runId, workerId, traceId, step, count, ids, err } = fields;
+    const { runId, workerId, traceId, step, count, ids, err, data } = fields;
     const entry = {
+      ...(data === undefined ? {} : extraFields(data)),
       ts: new Date(clock.now()).toISOString(),
       level: entryLevel,
       service,

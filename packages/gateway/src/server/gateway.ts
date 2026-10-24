@@ -77,6 +77,10 @@ const closeAdapters = async (adapters: GatewayOptions['adapters']): Promise<unkn
   return failures;
 };
 
+const watchServerErrors = (server: http.Server, onFatal: (error: Error) => void): void => {
+  server.on('error', (error: Error) => onFatal(error));
+};
+
 export const createGateway = async (options: GatewayOptions): Promise<Gateway> => {
   checkGatewayOptions(options);
   const { clock, timers } = options;
@@ -118,6 +122,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
     const unixServer = http.createServer(getRequestListener(handler));
     servers.push(unixServer);
     await listenUnix(unixServer, options.socketPath);
+    if (options.onFatal !== undefined) watchServerErrors(unixServer, options.onFatal);
 
     let tcpPort: number | undefined;
     let tcpServer: http.Server | undefined;
@@ -126,10 +131,15 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       servers.push(tcpServer);
       tcpPort = await listenTcp(tcpServer, options.debugTcp.host, options.debugTcp.port);
       assertLoopbackBinding(tcpServer);
+      if (options.onFatal !== undefined) watchServerErrors(tcpServer, options.onFatal);
     }
 
     let closing: Promise<void> | undefined;
     let abandonedRuns = 0;
+    let requestAbort: () => void = () => undefined;
+    const abortRequested = new Promise<'aborted'>((resolve) => {
+      requestAbort = () => resolve('aborted');
+    });
     const close = (): Promise<void> => {
       closing ??= (async () => {
         const reason = gatewayClosedError();
@@ -142,9 +152,9 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
           graceHandle = timers.setTimeout(() => resolve('expired'), options.config.closeGraceMs);
         });
         const drained = Promise.all([responses.settled(), unary.settled(), tracker.idle()]).then(() => 'drained' as const);
-        const outcome = await Promise.race([drained, grace]);
+        const outcome = await Promise.race([drained, grace, abortRequested]);
         timers.clearTimeout(graceHandle);
-        if (outcome === 'expired') {
+        if (outcome !== 'drained') {
           abandonedRuns = responses.activeCount() + unary.activeCount();
           forceCloseController.abort(reason);
           responses.abortAll(reason);
@@ -167,6 +177,10 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
         return abandonedRuns;
       },
       close,
+      abort: () => {
+        requestAbort();
+        return close();
+      },
     };
   } catch (error) {
     await Promise.all(servers.map((server) => closeServer(server)));

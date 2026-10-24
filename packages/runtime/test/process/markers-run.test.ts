@@ -2,11 +2,12 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ensureMomongaDirs } from '@momonga/foundation';
+import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
-import { createFakeClock } from '@momonga/testkit';
-import { START_MS, trackGroup } from './helpers.ts';
-import { RUNTIME_VERSION, captureStream, failureOf, hookLogger, isLockFree, launchRuntime, prepareStack, startRuntimeProcess, stepsLogged } from './run-helpers.ts';
+import { createFakeClock, createFakeTimers, spawnTracked, withTempDir } from '@momonga/testkit';
+import type { CleanupContext } from '@momonga/testkit';
+import { START_MS, createRun, createSession, trackGroup, writeUserSettings } from './helpers.ts';
+import { RUNTIME_VERSION, captureStream, failureOf, flushTurns, hookLogger, isLockFree, launchRuntime, modelSettings, prepareStack, readDb, startRuntimeProcess, stepsLogged, waitForCondition } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
 
 const control = vi.hoisted(() => ({ lookupError: undefined as Error | undefined }));
@@ -138,5 +139,104 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
     expect(groupExists(holder)).toBe(true);
     expect(isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
     expect(stdout.chunks).toEqual([]);
+  });
+});
+
+const LEASE_MS = 30_000;
+const MAX_ATTEMPTS = 5;
+const SWEEP_MS = 30_000;
+const DEAD_LETTER_KEY = 'd'.repeat(64);
+
+const trackedRunHome = (context: CleanupContext): RunHome => {
+  const home = withTempDir(context, { asHome: true });
+  const root = withTempDir(context);
+  writeUserSettings(home, { sandbox: 'none', ...modelSettings(path.join(root, 'up.sock')) });
+  return { root, home, paths: momongaPaths(home, 'darwin', {}), project: root };
+};
+
+const trackedHolder = (context: CleanupContext, marker: string): number => {
+  const fd = fs.openSync(marker, 'w', 0o600);
+  try {
+    return spawnTracked(context, '/bin/sh', ['-c', 'exec sleep 30'], { stdio: ['ignore', 'ignore', 'ignore', fd] }).pid;
+  } finally {
+    fs.closeSync(fd);
+  }
+};
+
+type Seeded = { runId: string; pgid: number; lastClaimAt: number };
+
+const seedTakenOverRun = async (context: CleanupContext, temp: RunHome, deadLetterInSeed: boolean): Promise<Seeded> => {
+  await ensureMomongaDirs(temp.paths);
+  const clock = createFakeClock(SEED_MS);
+  const store = openRuntimeStore({ path: temp.paths.databases.runtime, home: temp.home, clock, leaseMs: LEASE_MS, maxAttempts: MAX_ATTEMPTS, maxTotalAttempts: 20 });
+  try {
+    const session = createSession(store, temp.project);
+    const runId = createRun(store, session.id);
+    for (let claim = 0; claim < MAX_ATTEMPTS; claim += 1) {
+      if (claim > 0) clock.advance(LEASE_MS + 1);
+      if (store.claim(`seed-worker-${claim}`)?.runId !== runId) throw new Error(`seed claim ${claim} did not take run ${runId}`);
+    }
+    const seeded = store.getRun(runId);
+    if (seeded?.status !== 'RUNNING' || seeded.failedAttempts !== MAX_ATTEMPTS - 1) {
+      throw new Error(`seed did not reach RUNNING with failedAttempts ${MAX_ATTEMPTS - 1}: ${JSON.stringify(seeded)}`);
+    }
+    const lastClaimAt = clock.now();
+    if (deadLetterInSeed) {
+      clock.advance(LEASE_MS + 1);
+      if (store.claim('seed-final') !== null) throw new Error('the exhausted run was claimed instead of dead-lettered');
+      if (store.getRun(runId)?.deadLetter !== true) throw new Error('the seed did not dead-letter the run');
+    }
+    store.idempotency.begin(DEAD_LETTER_KEY, { expiresAt: clock.now() + 30 * 86_400_000, meta: { tool: 'Bash', runId } });
+    const pgid = trackedHolder(context, path.join(temp.paths.markers.tools, DEAD_LETTER_KEY));
+    store.idempotency.attachProcess(DEAD_LETTER_KEY, { pgid, startedAt: clock.now() });
+    return { runId, pgid, lastClaimAt };
+  } finally {
+    store.close();
+  }
+};
+
+const idempotencyState = (temp: RunHome): string | undefined =>
+  readDb<{ state: string }>(temp.paths.databases.runtime, 'SELECT state FROM idempotency WHERE key = ?', DEAD_LETTER_KEY)[0]?.state;
+
+const deadLetterOf = (temp: RunHome, runId: string): { status: string; dead_letter: number } | undefined =>
+  readDb<{ status: string; dead_letter: number }>(temp.paths.databases.runtime, 'SELECT status, dead_letter FROM runs WHERE id = ?', runId)[0];
+
+describe('dead-lettered runs: real holders (§8)', () => {
+  it('a real holder of a dead-lettered run is killed by the periodic sweep while the runtime is live', PROCESS_TIMEOUT, async (context) => {
+    const temp = trackedRunHome(context);
+    const { runId, pgid, lastClaimAt } = await seedTakenOverRun(context, temp, false);
+    const marker = path.join(temp.paths.markers.tools, DEAD_LETTER_KEY);
+    const clock = createFakeClock(lastClaimAt + 1000);
+    const timers = createFakeTimers(clock);
+
+    const launched = await launchRuntime(temp, { clock, fakeTimers: timers });
+    expect(stepsLogged(launched.logger)).toContain('tool-markers');
+    expect(groupExists(pgid)).toBe(true);
+    expect(fs.existsSync(marker)).toBe(true);
+
+    for (let elapsed = 0; elapsed < 4 * SWEEP_MS && (groupExists(pgid) || fs.existsSync(marker)); elapsed += 1000) {
+      timers.advance(1000);
+      await flushTurns();
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    }
+
+    expect(deadLetterOf(temp, runId)).toEqual({ status: 'FAILED', dead_letter: 1 });
+    expect(groupExists(pgid)).toBe(false);
+    await waitForCondition(() => !fs.existsSync(marker), 'the marker to be removed');
+    expect(idempotencyState(temp)).toBe('PENDING');
+  });
+
+  it('a real holder of a run dead-lettered before launch is killed at start', PROCESS_TIMEOUT, async (context) => {
+    const temp = trackedRunHome(context);
+    const { runId, pgid } = await seedTakenOverRun(context, temp, true);
+    const marker = path.join(temp.paths.markers.tools, DEAD_LETTER_KEY);
+    expect(deadLetterOf(temp, runId)).toEqual({ status: 'FAILED', dead_letter: 1 });
+
+    const launched = await launchRuntime(temp);
+
+    expect(stepsLogged(launched.logger)).toContain('tool-markers');
+    expect(groupExists(pgid)).toBe(false);
+    expect(fs.existsSync(marker)).toBe(false);
+    expect(idempotencyState(temp)).toBe('PENDING');
   });
 });

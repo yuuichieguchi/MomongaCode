@@ -3,6 +3,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { Agent, request } from 'undici';
 import { acquireProcessLock } from './process-lock.ts';
+import type { AcquireProcessLockOptions } from './process-lock.ts';
 import { assertSocketPathLength } from './socket-path.ts';
 
 export interface UdsRequestOptions {
@@ -97,7 +98,7 @@ const listen = (server: net.Server, socketPath: string): Promise<void> =>
     });
   });
 
-export const listenUnix = async (server: net.Server, socketPath: string): Promise<void> => {
+export const listenUnix = async (server: net.Server, socketPath: string, lockOptions?: AcquireProcessLockOptions): Promise<void> => {
   assertSocketPathLength(socketPath);
   const directory = path.dirname(socketPath);
   const directoryStat = await fs.promises.lstat(directory);
@@ -117,7 +118,7 @@ export const listenUnix = async (server: net.Server, socketPath: string): Promis
     const listening = await isUnixSocketLive(socketPath);
     const suspicion = listening ? '' : ' and nothing is listening on the socket, so the lock is suspected stale';
     return `${socketPath} is already in use by process ${pid} (lock ${lockPath})${suspicion}; remove ${lockPath} if process ${pid} is not momonga`;
-  });
+  }, lockOptions);
   try {
     const existing = await fs.promises.lstat(socketPath).catch((error: NodeJS.ErrnoException) => {
       if (error.code === 'ENOENT') return undefined;

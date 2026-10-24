@@ -4,7 +4,7 @@ export { isCredentialEnvName, stripCredentialEnv } from './credential-env.ts';
 export { loadSettings } from './load-settings.ts';
 export { credentialEnvNames } from './models.ts';
 export type { ResolvedModels } from './models.ts';
-export { ConfigError, createUserSettingsCache, loadUserSettings } from './user-settings.ts';
+export { ConfigError, createUserSettingsCache, loadUserSettings, userSettingsChangeKey } from './user-settings.ts';
 export type { LoadUserSettingsOptions, LoadUserSettingsResult, UserSettingsCache, UserSettingsCacheOptions, UserSettingsSnapshot } from './user-settings.ts';
 export type { LoadSettingsOptions, LoadSettingsResult, ResolvedPermissions, ResolvedSettings } from './load-settings.ts';
 export { loadMcpServers } from './mcp-servers.ts';

@@ -9,6 +9,7 @@ import {
   ensureMomongaDirs,
   momongaPaths,
   ProcessLockHeldError,
+  RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
   reapMarkerDirectory,
   systemClock,
 } from '@momonga/foundation';
@@ -47,6 +48,7 @@ import {
   STORE_IDENTITY_CHECK_MS,
   STORE_MAX_ATTEMPTS,
   STORE_MAX_TOTAL_ATTEMPTS,
+  TOOL_MARKER_SWEEP_MS,
 } from './constants.ts';
 import { RUNTIME_DEFAULTS } from './defaults.ts';
 import { RuntimeAlreadyRunningError } from './errors.ts';
@@ -99,7 +101,6 @@ type StartedWorker = { id: string; worker: Worker };
 
 const DEFAULT_SANDBOX_EXEC_PATH = '/usr/bin/sandbox-exec';
 const DEFAULT_LEASE_MS = 30_000;
-const DEFAULT_DRAIN_TIMEOUT_MS = 30_000;
 
 const assertPositiveInteger = (name: string, value: number): void => {
   if (!Number.isSafeInteger(value) || value <= 0) throw new RangeError(`${name} must be a positive integer, got ${value}`);
@@ -115,7 +116,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   if (options.gatewaySocketPath !== undefined) assertAbsolute('gatewaySocketPath', options.gatewaySocketPath);
   const workerCount = options.workerCount ?? 1;
   const leaseMs = options.leaseMs ?? DEFAULT_LEASE_MS;
-  const drainTimeoutMs = options.drainTimeoutMs ?? DEFAULT_DRAIN_TIMEOUT_MS;
+  const drainTimeoutMs = options.drainTimeoutMs ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS;
   assertPositiveInteger('workerCount', workerCount);
   assertPositiveInteger('leaseMs', leaseMs);
   if (!Number.isSafeInteger(drainTimeoutMs) || drainTimeoutMs < 0) {
@@ -463,6 +464,20 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             toolRuntime.sessionStates.evictIdle(clock.now());
           }, timers, report }),
         startPeriodic({ intervalMs: STORE_IDENTITY_CHECK_MS, run: () => store.checkIdentity(), timers, report }),
+        startPeriodic({
+          intervalMs: TOOL_MARKER_SWEEP_MS,
+          run: () =>
+            reapToolMarkers({
+              dir: paths.markers.tools,
+              store,
+              killGraceMs: MARKER_REAP_KILL_GRACE_MS,
+              onWarning,
+              timing: reapTiming,
+              scope: { deadLetterOnly: true, skipKeys: toolRuntime.inFlightKeys() },
+            }),
+          timers,
+          report,
+        }),
       );
       cleanups.push({ name: 'timers', run: async () => void (await Promise.all(periodics.map((periodic) => periodic.stop()))) });
     });

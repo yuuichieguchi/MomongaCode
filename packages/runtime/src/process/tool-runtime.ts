@@ -39,6 +39,7 @@ export type ToolRuntime = {
   port: ToolRuntimePort;
   mcpPools: McpPoolCache;
   sessionStates: SessionStates;
+  inFlightKeys(): ReadonlySet<string>;
 };
 
 const dedupe = (notices: readonly string[]): string[] => [...new Set(notices)];
@@ -130,5 +131,5 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     sessionState: (session) => sessionStates.get(session),
   };
 
-  return { port, mcpPools, sessionStates };
+  return { port, mcpPools, sessionStates, inFlightKeys: () => executor.inFlightKeys() };
 };

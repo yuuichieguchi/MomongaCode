@@ -93,3 +93,18 @@ export type { ModernFixtureRecord } from './mcp-fixtures.ts';
 export { killGroupsForCleanup, killPidsForCleanup } from './process-groups.ts';
 export { FAKE_OS_BUILD, createFakeFm, fakeExec } from './fake-fm.ts';
 export type { CreateFakeFmOptions, FakeExecResult, FakeFm, FakeFmConfig } from './fake-fm.ts';
+export {
+  TEMP_DIR_PREFIX,
+  TEST_RUN_ENV,
+  assertHomeSocketBudget,
+  registerCleanup,
+  spawnTracked,
+  tempDirPrefixFor,
+  testRunToken,
+  withTempDir,
+} from './test-support.ts';
+export type { CleanupContext, TempDirOptions, TrackedChild } from './test-support.ts';
+export { createFakeEntryIo, parseJsonLines } from './fake-entry-io.ts';
+export type { FakeEntryIo, FakeEntryIoOptions, JsonLine } from './fake-entry-io.ts';
+export { DAEMON_BIN_EXIT_DEADLINE_MS, DAEMON_BIN_READY_DEADLINE_MS, readJsonLinesFile, startDaemonBin } from './daemon-bin.ts';
+export type { DaemonBin } from './daemon-bin.ts';

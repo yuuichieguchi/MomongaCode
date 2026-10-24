@@ -160,7 +160,9 @@ export const startGateway = async (temp: RunHome): Promise<void> => {
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
   try {
     const gateway = await startGatewayProcess({ home: temp.home, env: sessionEnvFor(temp.home), version: GATEWAY_VERSION });
-    onCleanup(() => gateway.close());
+    onCleanup(async () => {
+      await gateway.close();
+    });
   } finally {
     stdout.mockRestore();
   }

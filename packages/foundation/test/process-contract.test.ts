@@ -4,12 +4,28 @@ import {
   EXIT_CONFIG,
   EXIT_FAILURE,
   EXIT_OK,
+  DAEMON_MARKER_FD,
+  ENTRY_HARD_EXIT_MARGIN_MS,
+  GATEWAY_MAX_CLOSE_MS,
+  LIFELINE_FD,
   MINIMAL_CHILD_ENV_LC_PREFIX,
   MINIMAL_CHILD_ENV_NAMES,
+  MINIMAL_CHILD_PATH,
+  RUNTIME_ABORT_BUDGET_MS,
+  RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
+  RUNTIME_TEARDOWN_BUDGET_MS,
+  SHUTDOWN_MARGIN_MS,
+  STDIO_EXIT_FLUSH_MS,
+  SUPERVISOR_FINALIZE_MS,
   announceReady,
   createJsonLogger,
   isLoopbackHost,
+  minimalChildEnv,
+  parseReadyLine,
+  runtimeMaxCloseMs,
+  supervisorMaxCloseMs,
 } from '@momonga/foundation';
+import type { ReadyFields } from '@momonga/foundation';
 import { createFakeClock } from '@momonga/testkit';
 
 const START_MS = 1_800_000_000_000;
@@ -174,5 +190,127 @@ describe('createJsonLogger', () => {
     const logger = createJsonLogger({ service: 'gateway', stream: capture.stream, clock: createFakeClock(START_MS), level: 'debug' });
     logger.debug('d');
     expect(capture.lines()).toEqual([{ ts: START_ISO, level: 'debug', service: 'gateway', pid: process.pid, msg: 'd' }]);
+  });
+});
+
+describe('close budgets', () => {
+  it('pins the runtime budgets and the default drain', () => {
+    expect([RUNTIME_ABORT_BUDGET_MS, RUNTIME_TEARDOWN_BUDGET_MS, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS]).toEqual([5000, 10_000, 30_000]);
+  });
+
+  it('runtimeMaxCloseMs equals drain + 15000', () => {
+    expect(runtimeMaxCloseMs(0)).toBe(15_000);
+    expect(runtimeMaxCloseMs(30_000)).toBe(45_000);
+    expect(runtimeMaxCloseMs(1)).toBe(15_001);
+  });
+
+  it('pins GATEWAY_MAX_CLOSE_MS, the margins, the stdio flush and the supervisor finalize budget', () => {
+    expect(GATEWAY_MAX_CLOSE_MS).toBe(15_000);
+    expect(ENTRY_HARD_EXIT_MARGIN_MS).toBe(3000);
+    expect(SHUTDOWN_MARGIN_MS).toBe(5000);
+    expect(STDIO_EXIT_FLUSH_MS).toBe(1000);
+    expect(SUPERVISOR_FINALIZE_MS).toBe(9000);
+  });
+
+  it('ENTRY_HARD_EXIT_MARGIN_MS + STDIO_EXIT_FLUSH_MS < SHUTDOWN_MARGIN_MS', () => {
+    expect(ENTRY_HARD_EXIT_MARGIN_MS + STDIO_EXIT_FLUSH_MS).toBeLessThan(SHUTDOWN_MARGIN_MS);
+  });
+
+  it('supervisorMaxCloseMs', () => {
+    expect(supervisorMaxCloseMs(30_000)).toBe(79_000);
+    expect(supervisorMaxCloseMs(0)).toBe(49_000);
+    for (const drain of [1, 1000, 12_345]) {
+      const runtimeBound = drain + 15_000 + 5000;
+      const gatewayBound = 15_000 + 5000;
+      expect(supervisorMaxCloseMs(drain), String(drain)).toBe(runtimeBound + gatewayBound + 9000);
+    }
+  });
+});
+
+describe('fd numbers', () => {
+  it('LIFELINE_FD is 3 and DAEMON_MARKER_FD is 4', () => {
+    expect(LIFELINE_FD).toBe(3);
+    expect(DAEMON_MARKER_FD).toBe(4);
+  });
+});
+
+describe('minimalChildEnv', () => {
+  it('pins MINIMAL_CHILD_PATH', () => {
+    expect(MINIMAL_CHILD_PATH).toBe('/usr/bin:/bin:/usr/sbin:/sbin');
+  });
+
+  it('forces PATH, copies HOME, LANG, TMPDIR and LC_*, and drops everything else', () => {
+    const env = minimalChildEnv({
+      PATH: '/opt/evil/bin:/usr/bin',
+      HOME: '/Users/alice',
+      LANG: 'ja_JP.UTF-8',
+      TMPDIR: '/var/folders/t/',
+      LC_ALL: 'C',
+      LC_CTYPE: 'UTF-8',
+      AWS_SECRET_ACCESS_KEY: 'SENTINEL-aws',
+      FOO: 'bar',
+      UNSET: undefined,
+    });
+    expect(env).toEqual({
+      PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
+      HOME: '/Users/alice',
+      LANG: 'ja_JP.UTF-8',
+      TMPDIR: '/var/folders/t/',
+      LC_ALL: 'C',
+      LC_CTYPE: 'UTF-8',
+    });
+  });
+
+  it('sets PATH even when the source has none and omits absent names', () => {
+    expect(minimalChildEnv({})).toEqual({ PATH: '/usr/bin:/bin:/usr/sbin:/sbin' });
+  });
+});
+
+describe('parseReadyLine', () => {
+  const fieldSets: ReadyFields[] = [
+    { service: 'runtime', pid: 4242, version: '1.2.3', socketPath: '/h/.momonga/run/runtime.sock', startedAt: START_ISO },
+    { service: 'gateway', pid: 1, version: '0.0.0-dev+abc', socketPath: '/tmp/x y/gateway.sock', startedAt: '2026-01-01T00:00:00.000Z' },
+    { service: 'supervisor', pid: 99_999, version: '', socketPath: '/s/\u00e9.sock', startedAt: START_ISO },
+  ];
+
+  it.each(fieldSets)('parseReadyLine round-trips announceReady for $service', (fields) => {
+    const capture = captureStream();
+    announceReady(fields, capture.stream);
+    expect(parseReadyLine(capture.chunks.join(''))).toEqual(fields);
+    expect(parseReadyLine(capture.chunks.join('').trimEnd())).toEqual(fields);
+  });
+
+  it.each([
+    ['non-JSON', 'ready'],
+    ['a JSON array', '["ready"]'],
+    ['missing event', '{"service":"runtime","pid":1,"version":"1","socketPath":"/s","startedAt":"t"}'],
+    ['event log', '{"event":"log","service":"runtime","pid":1,"version":"1","socketPath":"/s","startedAt":"t"}'],
+    ['string pid', '{"event":"ready","service":"runtime","pid":"1","version":"1","socketPath":"/s","startedAt":"t"}'],
+    ['fractional pid', '{"event":"ready","service":"runtime","pid":1.5,"version":"1","socketPath":"/s","startedAt":"t"}'],
+    ['missing socketPath', '{"event":"ready","service":"runtime","pid":1,"version":"1","startedAt":"t"}'],
+    ['extra garbage after the object', '{"event":"ready","service":"runtime","pid":1,"version":"1","socketPath":"/s","startedAt":"t"} trailing'],
+    ['JSON null', 'null'],
+    ['empty line', ''],
+  ])('parseReadyLine rejects %s', (_name, line) => {
+    expect(() => parseReadyLine(line)).not.toThrow();
+    expect(parseReadyLine(line)).toBeUndefined();
+  });
+});
+
+describe('LogFields.data', () => {
+  it('LogFields.data is serialised and cannot override core keys', () => {
+    const capture = captureStream();
+    const logger = createJsonLogger({ service: 'runtime', stream: capture.stream, clock: createFakeClock(START_MS) });
+    logger.info('entry.exit', { runId: 'r', data: { path: 'close', ts: 'x', runId: 'y', level: 'error', msg: 'forged', code: 0, clean: true, trigger: null } });
+    expect(capture.lines()).toEqual([
+      { ts: START_ISO, level: 'info', service: 'runtime', pid: process.pid, msg: 'entry.exit', runId: 'r', path: 'close', code: 0, clean: true, trigger: null },
+    ]);
+  });
+
+  it('a data key that names an absent LogFields key is not written', () => {
+    const capture = captureStream();
+    const logger = createJsonLogger({ service: 'runtime', stream: capture.stream, clock: createFakeClock(START_MS) });
+    logger.info('entry.start', { data: { logTarget: 'file', pid: 7, service: 'gateway', err: 'forged' } });
+    expect(capture.lines()).toEqual([{ ts: START_ISO, level: 'info', service: 'runtime', pid: process.pid, msg: 'entry.start', logTarget: 'file' }]);
   });
 });
