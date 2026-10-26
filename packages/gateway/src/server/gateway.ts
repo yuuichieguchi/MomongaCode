@@ -6,6 +6,7 @@ import { listenUnix } from '@momonga/foundation';
 import { createCompactionCodec } from '../core/compaction.ts';
 import { GatewayError, gatewayClosedError } from '../core/errors.ts';
 import { createResponsesService } from '../core/responses-service.ts';
+import { createRedactor } from '../core/redaction.ts';
 import { createRouter } from '../core/router.ts';
 import type { Services } from '../core/services.ts';
 import { openGatewayStore } from '../core/store.ts';
@@ -95,7 +96,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       clock,
       timers,
       random: options.random ?? Math.random,
-      router: createRouter({ config: options.config, adapters: options.adapters, clock, timers }),
+      router: createRouter({ config: options.config, adapters: options.adapters, clock, timers, redactor: createRedactor({ credentials: options.credentials }) }),
       store,
       codec: createCompactionCodec(options.hmacKey),
       telemetry: options.telemetry,

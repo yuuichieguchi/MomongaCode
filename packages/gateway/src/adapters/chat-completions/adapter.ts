@@ -44,7 +44,6 @@ const FULL_KEYWORD_SUPPORT: KeywordSupport = {
 };
 
 const DONE_MARKER = '[DONE]';
-const MAX_UPSTREAM_MESSAGE_CHARS = 500;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -54,8 +53,8 @@ const httpErrorOf = async (
   clock: Clock,
   isGuardrail: (status: number, body: unknown) => boolean,
 ): Promise<UpstreamHttpError> => {
-  const text = await readTextLimited(response.body, MAX_ERROR_BODY_BYTES);
-  let message = text.slice(0, MAX_UPSTREAM_MESSAGE_CHARS);
+  const { text } = await readTextLimited(response.body, MAX_ERROR_BODY_BYTES);
+  let message = text;
   let code: string | null = null;
   let parsed: unknown;
   try {

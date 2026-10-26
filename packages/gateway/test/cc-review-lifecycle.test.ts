@@ -155,6 +155,7 @@ describe('adapter and gateway shutdown', () => {
     const socketPath = path.join(dir, 'gw.sock');
     const clock = createFakeClock(START_MS);
     const gateway = await createGateway({
+      credentials: [],
       config: buildConfig({
         aliases: { fast: ['a'], other: ['b'] },
         targets: { a: { model: 'm' }, b: { model: 'm' } },

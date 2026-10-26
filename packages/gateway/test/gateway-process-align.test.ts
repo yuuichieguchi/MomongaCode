@@ -309,6 +309,7 @@ describe('gateway fatal (§4.2, §4.3)', { timeout: 30_000 }, () => {
     }) as typeof http.createServer);
     const seen: Error[] = [];
     const gateway = await createGateway({
+      credentials: [],
       config: buildConfig(),
       adapters: { primary: createScriptedAdapter({ calls: [] }) },
       clock,

@@ -53,7 +53,8 @@ export type FakeScriptedReply =
       done?: boolean;
     }
   | { kind: 'error'; status: number; body: unknown; headers?: Record<string, string> }
-  | { kind: 'hang'; chunks?: FakeStreamChunk[] };
+  | { kind: 'hang'; chunks?: FakeStreamChunk[] }
+  | { kind: 'raw-sse'; events: string[] };
 
 export interface RecordedRequest {
   method: string;
@@ -437,6 +438,11 @@ export const startFakeChatCompletions = async (
     if (reply.kind === 'hang') {
       writeScriptedChunks(response, reply.chunks ?? [], id);
       await new Promise<void>((resolve) => response.once('close', () => resolve()));
+      return;
+    }
+    if (reply.kind === 'raw-sse') {
+      for (const event of reply.events) response.write(`data: ${event}\n\n`);
+      response.end();
       return;
     }
     writeScriptedChunks(response, reply.chunks, id);

@@ -4,12 +4,15 @@ import type { Capabilities, GatewayHealth, HealthResult, ProviderAdapter, Target
 import { createAdmissionGate } from './admission.ts';
 import type { AdmissionGate } from './admission.ts';
 import { invalidRequest, notFound } from './errors.ts';
+import { guardAdapter } from './guarded-adapter.ts';
+import type { GuardedAdapter } from './guarded-adapter.ts';
+import type { Redactor } from './redaction.ts';
 import type { GatewayConfig, GatewayTimers } from '../types.ts';
 
 export type TargetRuntime = {
   name: string;
   model: string;
-  adapter: ProviderAdapter;
+  adapter: GuardedAdapter;
   breaker: CircuitBreaker;
   gate: AdmissionGate;
   capabilityOverride: Partial<Capabilities> | undefined;
@@ -30,6 +33,7 @@ export type RouterOptions = {
   adapters: Record<string, ProviderAdapter>;
   clock: Clock;
   timers: GatewayTimers;
+  redactor: Redactor;
 };
 
 const requireEntry = <T>(entries: Record<string, T>, name: string, kind: string): T => {
@@ -64,14 +68,8 @@ const mergeCapabilities = (all: readonly [Capabilities, ...Capabilities[]]): Cap
   };
 };
 
-const reportedHealthOf = async (target: TargetRuntime): Promise<HealthResult | undefined> => {
-  if (target.adapter.health === undefined) return undefined;
-  try {
-    return await target.adapter.health({ name: target.name, model: target.model });
-  } catch (error) {
-    return { ok: false, reason: 'health_check_failed', detail: error instanceof Error ? error.message : String(error) };
-  }
-};
+const reportedHealthOf = (target: TargetRuntime): Promise<HealthResult> | undefined =>
+  target.adapter.health?.({ name: target.name, model: target.model });
 
 export const createRouter = (options: RouterOptions): Router => {
   const { config, adapters, clock, timers } = options;
@@ -80,7 +78,7 @@ export const createRouter = (options: RouterOptions): Router => {
     targets.set(name, {
       name,
       model: target.model,
-      adapter: requireEntry(adapters, name, 'adapter'),
+      adapter: guardAdapter(requireEntry(adapters, name, 'adapter'), options.redactor),
       breaker: new CircuitBreaker({ failureThreshold: config.breaker.failureThreshold, openMs: config.breaker.openMs, clock }),
       gate: createAdmissionGate({
         targetName: name,

@@ -107,6 +107,7 @@ export type HarnessOptions = {
   hmacKey?: Uint8Array;
   debugTcp?: GatewayOptions['debugTcp'];
   onError?: GatewayOptions['onError'];
+  credentials?: readonly string[];
 };
 
 export const startGateway = async (options: HarnessOptions): Promise<Harness> => {
@@ -116,6 +117,7 @@ export const startGateway = async (options: HarnessOptions): Promise<Harness> =>
   const socketPath = path.join(dir, 'gw.sock');
   const dbPath = path.join(dir, 'state', 'gateway.db');
   const gateway = await createGateway({
+    credentials: options.credentials ?? [],
     config: buildConfig(options.config),
     adapters: options.adapters,
     clock,

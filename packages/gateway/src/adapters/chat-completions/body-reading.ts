@@ -29,17 +29,36 @@ export async function* boundedSseBytes(source: AsyncIterable<Uint8Array>, maxEve
   }
 }
 
-export const readTextLimited = async (source: AsyncIterable<Uint8Array>, maxBytes: number): Promise<string> => {
+export type LimitedText = { text: string; truncated: boolean };
+
+const isTokenCharacter = (character: string | undefined): boolean => character !== undefined && /[A-Za-z0-9_+/=.\\%-]/.test(character);
+
+const withoutTrailingToken = (text: string): string => {
+  let end = text.length;
+  while (end > 0 && isTokenCharacter(text[end - 1])) end -= 1;
+  return text.slice(0, end);
+};
+
+export const readTextLimited = async (source: AsyncIterable<Uint8Array>, maxBytes: number): Promise<LimitedText> => {
   const decoder = new TextDecoder();
   let text = '';
   let total = 0;
+  let truncated = false;
   for await (const chunk of source) {
+    if (chunk.length === 0) continue;
     const remaining = maxBytes - total;
-    if (remaining <= 0) break;
+    if (remaining <= 0) {
+      truncated = true;
+      break;
+    }
     const slice = chunk.length > remaining ? chunk.subarray(0, remaining) : chunk;
     total += slice.length;
     text += decoder.decode(slice, { stream: true });
-    if (chunk.length > remaining) break;
+    if (chunk.length > remaining) {
+      truncated = true;
+      break;
+    }
   }
-  return text + decoder.decode();
+  text += decoder.decode();
+  return { text: truncated ? withoutTrailingToken(text) : text, truncated };
 };

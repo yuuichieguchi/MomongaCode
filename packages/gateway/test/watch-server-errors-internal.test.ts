@@ -23,6 +23,7 @@ describe('watchServerErrors is module-internal (B3)', () => {
     }) as typeof http.createServer);
     const seen: Error[] = [];
     const gateway = await createGateway({
+      credentials: [],
       config: buildConfig(),
       adapters: { primary: createScriptedAdapter({ calls: [] }) },
       clock,

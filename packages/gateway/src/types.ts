@@ -34,6 +34,7 @@ export type DebugTcpOptions = { host: string; port: number; token: string };
 export type GatewayOptions = {
   config: GatewayConfig;
   adapters: Record<string, ProviderAdapter>;
+  credentials: readonly string[];
   clock: Clock;
   timers: GatewayTimers;
   dbPath: string;

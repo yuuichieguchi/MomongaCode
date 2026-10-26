@@ -49,7 +49,7 @@ describe('GatewayOptions.onError', () => {
     expect(response.status).toBe(500);
     expectErrorBody(response.body, { type: 'server_error', code: 'internal_error' });
     expect(onError).toHaveBeenCalledTimes(1);
-    expect(onError).toHaveBeenCalledWith(failure);
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'capabilities exploded' }));
   });
 
   it('is not called for a GatewayError answered with its own status', async () => {
