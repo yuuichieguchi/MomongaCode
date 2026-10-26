@@ -18,7 +18,7 @@ afterEach(() => {
 });
 
 function policyFor(root: string, overrides: Partial<SandboxPolicy> = {}): SandboxPolicy {
-  return { writableRoots: [root], writeDenied: [], readDenied: [], network: 'deny', ...overrides };
+  return { writableRoots: [root], writeDenied: [], writeDeniedLiterals: [], readDenied: [], network: 'deny', ...overrides };
 }
 
 function paramNamesReferenced(profile: string): string[] {

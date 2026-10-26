@@ -27,7 +27,7 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox (real sandbox-ex
   }
 
   function policy(overrides: Partial<SandboxPolicy> = {}): SandboxPolicy {
-    return { writableRoots: [root], writeDenied: [], readDenied: [], network: 'deny', ...overrides };
+    return { writableRoots: [root], writeDenied: [], writeDeniedLiterals: [], readDenied: [], network: 'deny', ...overrides };
   }
 
   function sh(

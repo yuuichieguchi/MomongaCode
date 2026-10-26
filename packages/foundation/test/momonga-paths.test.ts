@@ -50,6 +50,8 @@ const expectedLayout = (home: string, cacheBase: string) => {
     },
     projects: path.join(root, 'projects'),
     skills: path.join(root, 'skills'),
+    launcher: path.join(home, '.local', 'bin', 'momonga'),
+    keychains: path.join(home, 'Library', 'Keychains'),
     cacheBase,
     tmp: {
       root: path.join(cacheBase, 'tmp'),
@@ -96,6 +98,10 @@ describe('momongaPaths', () => {
     const home = `/${'é'.repeat(37)}`;
     expect(Buffer.byteLength(`${home}/.momonga/run/supervisor.sock`)).toBe(104);
     expect(() => momongaPaths(home, 'darwin', {})).toThrow(/104/);
+  });
+  it('places the launcher link outside the momonga root on every platform', () => {
+    expect(momongaPaths(HOME, 'darwin', {}).launcher).toBe('/Users/alice/.local/bin/momonga');
+    expect(momongaPaths('/home/bob', 'linux', { XDG_CACHE_HOME: '/xdg' }).launcher).toBe('/home/bob/.local/bin/momonga');
   });
 });
 

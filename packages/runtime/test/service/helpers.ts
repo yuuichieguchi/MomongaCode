@@ -628,7 +628,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
   fs.mkdirSync(sessionTmpDir, { recursive: true, mode: 0o700 });
   const sandboxPolicy: SandboxPolicy = {
     writableRoots: [env.layout.projectReal],
-    writeDenied: [sessionsTmpRoot],
+    writeDenied: [sessionsTmpRoot], writeDeniedLiterals: [],
     readDenied: [sessionsTmpRoot],
     readAllowed: [sessionTmpDir],
     network: 'deny',

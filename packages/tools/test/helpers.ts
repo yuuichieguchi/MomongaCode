@@ -177,7 +177,7 @@ export const noneSandbox: Sandbox = {
 
 export const sandboxPolicyFor = (layout: Layout): SandboxPolicy => ({
   writableRoots: [layout.project],
-  writeDenied: [],
+  writeDenied: [], writeDeniedLiterals: [],
   readDenied: [],
   network: 'deny',
 });

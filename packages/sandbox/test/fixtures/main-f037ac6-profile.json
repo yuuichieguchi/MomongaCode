@@ -1,0 +1,21 @@
+{
+  "profile": "(version 1)\n(deny default)\n(allow process-exec)\n(allow process-fork)\n(allow sysctl-read)\n(allow signal (target same-sandbox))\n(allow file-read*)\n(allow file-write-data (literal \"/dev/null\") (literal \"/dev/dtracehelper\"))\n(allow file-write-data file-ioctl (literal \"/dev/tty\"))\n(allow file-write-data file-ioctl (regex #\"^/dev/fd/[0-9]+$\"))\n(allow file-write* (subpath (param \"WRITABLE_ROOT_0\")))\n(allow file-write* (subpath (param \"WRITABLE_ROOT_1\")))\n(deny file-write* (subpath (param \"WRITE_DENIED_0\")))\n(deny file-write* (subpath (param \"WRITE_DENIED_1\")))\n(deny file-write* (subpath (param \"WRITE_DENIED_2\")))\n(deny file-write* (subpath (param \"WRITE_DENIED_3\")))\n(deny file-write* (subpath (param \"WRITE_DENIED_4\")))\n(allow file-write* (subpath (param \"SESSION_TMP_0\")))\n(deny file-write-unlink (literal (param \"GUARDED_ANCESTOR_0\")))\n(deny file-write-unlink (literal (param \"GUARDED_ANCESTOR_1\")))\n(deny file-read* (subpath (param \"READ_DENIED_0\")))\n(deny file-read* (subpath (param \"READ_DENIED_1\")))\n(deny file-read* (subpath (param \"READ_DENIED_2\")))\n(deny file-read* (subpath (param \"READ_DENIED_3\")))\n(allow file-read* (subpath (param \"READ_ALLOWED_0\")))\n(allow file-read-metadata (literal (param \"READ_METADATA_0\")))\n(allow network*)\n(deny network-outbound (remote unix-socket (subpath (param \"READ_DENIED_0\"))))\n(deny network-outbound (remote unix-socket (subpath (param \"READ_DENIED_1\"))))\n(deny network-outbound (remote unix-socket (subpath (param \"READ_DENIED_2\"))))\n(deny network-outbound (remote unix-socket (subpath (param \"READ_DENIED_3\"))))\n",
+  "params": {
+    "WRITABLE_ROOT_0": "/golden/work",
+    "WRITABLE_ROOT_1": "/golden/sessions/one",
+    "WRITE_DENIED_0": "/golden/home/.momonga",
+    "WRITE_DENIED_1": "/golden/home/Library/Keychains",
+    "WRITE_DENIED_2": "/golden/sessions",
+    "WRITE_DENIED_3": "/golden/work/.git/hooks",
+    "WRITE_DENIED_4": "/golden/work/.mcp.json",
+    "SESSION_TMP_0": "/golden/sessions/one",
+    "GUARDED_ANCESTOR_0": "/golden/work/.git",
+    "GUARDED_ANCESTOR_1": "/golden/work",
+    "READ_DENIED_0": "/golden/home/.momonga",
+    "READ_DENIED_1": "/golden/home/Library/Keychains",
+    "READ_DENIED_2": "/golden/sessions",
+    "READ_DENIED_3": "/golden/home/.ssh",
+    "READ_ALLOWED_0": "/golden/sessions/one",
+    "READ_METADATA_0": "/golden/sessions"
+  }
+}

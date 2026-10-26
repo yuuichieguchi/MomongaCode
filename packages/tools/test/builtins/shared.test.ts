@@ -89,6 +89,7 @@ describe('buildSandboxPolicy', () => {
       writableRoots: ['/w/a', '/w/b', '/s/sessions/one'],
       writeDenied: [...protectedPathsFor(['/w/a', '/w/b']), '/Users/me/.momonga', '/Users/me/Library/Keychains', '/s/sessions'].sort(),
       readDenied: [path.join('/Users/me', '.momonga'), path.join('/Users/me', 'Library', 'Keychains'), '/s/sessions'],
+      writeDeniedLiterals: ['/Users/me/.local/bin/momonga'],
       readAllowed: ['/s/sessions/one'],
       network: 'deny',
     });
@@ -108,6 +109,7 @@ describe('buildSandboxPolicy', () => {
       writableRoots: ['/w/a', '/s/sessions/one', '/cache'],
       writeDenied: [...defaultProtectedPaths('/w/a'), '/h/.momonga', '/h/Library/Keychains', '/s/sessions'].sort(),
       readDenied: ['/h/.momonga', '/h/Library/Keychains', '/s/sessions', '/h/.ssh'],
+      writeDeniedLiterals: ['/h/.local/bin/momonga'],
       readAllowed: ['/s/sessions/one'],
       network: 'allow',
     });

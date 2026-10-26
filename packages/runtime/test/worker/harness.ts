@@ -167,7 +167,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   };
   const sandboxPolicy: SandboxPolicy = {
     writableRoots: [project],
-    writeDenied: [sessionsTmpRoot],
+    writeDenied: [sessionsTmpRoot], writeDeniedLiterals: [],
     readDenied: [sessionsTmpRoot],
     readAllowed: [sessionTmpDir],
     network: 'deny',

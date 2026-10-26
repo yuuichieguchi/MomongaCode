@@ -1,6 +1,7 @@
 export interface SandboxPolicy {
   writableRoots: readonly string[];
   writeDenied: readonly string[];
+  writeDeniedLiterals: readonly string[];
   readDenied: readonly string[];
   readAllowed?: readonly string[];
   network: 'deny' | 'allow';

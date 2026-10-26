@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { comparableContains } from '@momonga/foundation';
+import { canonicalParentForm } from './always-write-denied.ts';
 import { canonicalizePath } from './canonical-path.ts';
 import type { SandboxPolicy } from './types.ts';
 
@@ -97,7 +98,10 @@ export function buildSeatbeltProfile(policy: SandboxPolicy, options: { tmpDir?: 
   const readDenied = unique(policy.readDenied.map(canonicalizePath));
   const readAllowed = assertReadAllowedValid(policy.readDenied, policy.readAllowed ?? []);
   const sessionTmpDir = options.tmpDir === undefined ? undefined : assertSessionTmpDirValid(policy, options.tmpDir);
-  const guardedAncestors = unique(writeDenied.flatMap((target) => ancestorsWithin(target, roots)));
+  const literals = unique(policy.writeDeniedLiterals);
+  const literalForms = unique(literals.flatMap((literal) => [literal, canonicalParentForm(literal)]));
+  const literalAncestors = unique(literalForms.flatMap((target) => ancestorsWithin(target, roots)));
+  const guardedAncestors = unique([...writeDenied.flatMap((target) => ancestorsWithin(target, roots)), ...literalAncestors]);
 
   const params: Record<string, string> = {};
   const lines = [...BASE_RULES];
@@ -113,8 +117,12 @@ export function buildSeatbeltProfile(policy: SandboxPolicy, options: { tmpDir?: 
   if (sessionTmpDir !== undefined) {
     for (const name of define('SESSION_TMP', [sessionTmpDir])) lines.push(`(allow file-write* (subpath (param "${name}")))`);
   }
+  for (const name of define('WRITE_DENIED_LITERAL', literals)) lines.push(`(deny file-write* (literal (param "${name}")))`);
   for (const name of define('GUARDED_ANCESTOR', guardedAncestors)) {
     lines.push(`(deny file-write-unlink (literal (param "${name}")))`);
+  }
+  for (const name of define('SYMLINK_GUARD', literalAncestors)) {
+    lines.push(`(deny file-write-create (require-all (literal (param "${name}")) (vnode-type SYMLINK)))`);
   }
   const readDeniedNames = define('READ_DENIED', readDenied);
   for (const name of readDeniedNames) lines.push(`(deny file-read* (subpath (param "${name}")))`);

@@ -1,8 +1,8 @@
-import path from 'node:path';
+import { momongaLayout } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 
 export const protectedRootAreasOf = (paths: MomongaPaths, canonicalHome: string): string[] => [
   paths.root,
-  path.join(canonicalHome, 'Library', 'Keychains'),
+  momongaLayout(canonicalHome).keychains,
   paths.tmp.root,
 ];
