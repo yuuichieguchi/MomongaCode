@@ -211,7 +211,7 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000)) => {
       env: {},
       session: { cwd: project, readLedger: new Map() },
       sandbox: unusedSandbox,
-      sandboxPolicy: { writableRoots: [project], writeDenied: [], readDenied: [], network: 'deny' },
+      sandboxPolicy: { writableRoots: [project], writeDenied: [], writeDeniedLiterals: [], readDenied: [], network: 'deny' },
       deadlineAt: clock.now() + 600_000,
       signal: new AbortController().signal,
       protectedPaths: [],

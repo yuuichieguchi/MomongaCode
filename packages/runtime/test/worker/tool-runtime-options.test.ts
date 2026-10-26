@@ -12,7 +12,7 @@ const policyReturning = (env: Env, policyEnv: () => ToolEnv, seen: Array<{ env: 
   seen.push(options);
   return {
     roots: [session.cwd],
-    sandboxPolicy: { writableRoots: [session.cwd], writeDenied: [], readDenied: [], network: 'deny' as const },
+    sandboxPolicy: { writableRoots: [session.cwd], writeDenied: [], writeDeniedLiterals: [], readDenied: [], network: 'deny' as const },
     protectedPaths: [],
     tmpDir: env.sessionTmpDir,
     env: policyEnv(),

@@ -40,7 +40,7 @@ describe.runIf(HAS_SEATBELT)('seatbelt session tmp dir (real sandbox-exec)', () 
 
   const policy = (): SandboxPolicy => ({
     writableRoots: [work],
-    writeDenied: [sessions],
+    writeDenied: [sessions], writeDeniedLiterals: [],
     readDenied: [sessions],
     readAllowed: [mine],
     network: 'deny',
@@ -141,7 +141,7 @@ describe.runIf(HAS_SEATBELT)('seatbelt rejects an invalid command tmpDir (real s
     const mine = path.join(sessions, 'session-1');
     const other = path.join(sessions, 'session-2');
     for (const dir of [momonga, work, mine, other, path.join(base, 'spawn-tmp')]) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-    const policy: SandboxPolicy = { writableRoots: [work], writeDenied: [momonga, sessions], readDenied: [momonga, sessions], readAllowed: [mine], network: 'deny' };
+    const policy: SandboxPolicy = { writableRoots: [work], writeDenied: [momonga, sessions], writeDeniedLiterals: [], readDenied: [momonga, sessions], readAllowed: [mine], network: 'deny' };
     const sandbox = createSeatbeltSandbox({ tmpRoot: path.join(base, 'spawn-tmp'), killGraceMs: KILL_GRACE_MS });
     return { base, home, work, sessions, other, policy, sandbox, marker: path.join(work, 'ran') };
   };
@@ -172,7 +172,7 @@ describe.runIf(HAS_SEATBELT)('seatbelt rejects an invalid command tmpDir (real s
 });
 
 describe('unsandboxed session tmp dir', () => {
-  const policy: SandboxPolicy = { writableRoots: [], writeDenied: [], readDenied: [], network: 'deny' };
+  const policy: SandboxPolicy = { writableRoots: [], writeDenied: [], writeDeniedLiterals: [], readDenied: [], network: 'deny' };
 
   it('sets TMPDIR to the command tmpDir', async () => {
     const tmpDir = tempDir();

@@ -43,7 +43,7 @@ describe('cancel recovery fallback', () => {
       tools: {
         policyFor: async (session: Session, options: { env: ToolEnv }) => ({
           ...(await policyWithEnv(env)(session, options)),
-          sandboxPolicy: { writableRoots: [session.cwd, 'relative/root'], writeDenied: [], readDenied: [], network: 'deny' as const },
+          sandboxPolicy: { writableRoots: [session.cwd, 'relative/root'], writeDenied: [], writeDeniedLiterals: [], readDenied: [], network: 'deny' as const },
         }),
       },
     });

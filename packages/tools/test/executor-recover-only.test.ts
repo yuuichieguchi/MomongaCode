@@ -31,7 +31,7 @@ const reconcilingTool = (outcome: 'already_applied' | 'not_applied' | 'unknown' 
 
 const relativeWritablePolicy = (harness: Harness): SandboxPolicy => ({
   writableRoots: [harness.layout.project, 'relative/root'],
-  writeDenied: [],
+  writeDenied: [], writeDeniedLiterals: [],
   readDenied: [],
   network: 'deny',
 });
@@ -67,7 +67,7 @@ describe('executor recoverOnly batches skip policy validation', () => {
       harness.input(await toolSetOf(tool), [call('c1', 'Mark')], {
         recoverOnly: true,
         tmpDir: strayTmpDir(harness),
-        sandboxPolicy: { writableRoots: [harness.layout.project], writeDenied: [], readDenied: [], readAllowed: [], network: 'deny' },
+        sandboxPolicy: { writableRoots: [harness.layout.project], writeDenied: [], writeDeniedLiterals: [], readDenied: [], readAllowed: [], network: 'deny' },
       }),
     );
 
@@ -120,7 +120,7 @@ describe('executor recoverOnly batches skip policy validation', () => {
         tmpDir: 'relative-session-tmp',
         sandboxPolicy: {
           writableRoots: ['relative/root'],
-          writeDenied: ['relative/denied'],
+          writeDenied: ['relative/denied'], writeDeniedLiterals: [],
           readDenied: ['relative/read-denied'],
           readAllowed: ['relative/read-allowed'],
           network: 'deny',

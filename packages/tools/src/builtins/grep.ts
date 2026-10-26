@@ -122,7 +122,7 @@ const searchWithRipgrep = async (
   if (isDirectory) {
     for await (const root of reachableAllowedRoots(target, '', [], { signal: ctx.signal, onUnreadable: () => undefined }, access)) allowedRoots.push(root.absolute);
   }
-  const policy: SandboxPolicy = { writableRoots: [], writeDenied: [], readDenied, ...(readAllowed === undefined ? {} : { readAllowed }), network: 'deny' };
+  const policy: SandboxPolicy = { writableRoots: [], writeDenied: [], writeDeniedLiterals: [], readDenied, ...(readAllowed === undefined ? {} : { readAllowed }), network: 'deny' };
   const child = ctx.sandbox.spawn({ argv: [ripgrep, ...ripgrepArguments(input, mode, target, access, isDirectory, allowedRoots)], cwd: isDirectory ? target : path.dirname(target), env: ctx.env }, policy, ctx.signal);
   const [stdout, stderr, exit] = await Promise.all([collect(child.stdout), collect(child.stderr), child.exited]);
   if (exit.code === 1 && stdout === '') return { entries: [], unreadable: false };

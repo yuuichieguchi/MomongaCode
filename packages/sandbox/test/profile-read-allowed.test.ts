@@ -19,7 +19,7 @@ const tempDir = (): string => {
 
 const policyFor = (root: string, overrides: Partial<SandboxPolicy>): SandboxPolicy => ({
   writableRoots: [root],
-  writeDenied: [],
+  writeDenied: [], writeDeniedLiterals: [],
   readDenied: [],
   network: 'deny',
   ...overrides,

@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalJson, canonicalPath, comparableContains, comparablePath, computeBackoff, reapMarkedProcesses, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, canonicalPath, comparableContains, comparablePath, computeBackoff, momongaLayout, reapMarkedProcesses, sha256Hex, volumeIsCaseInsensitive } from '@momonga/foundation';
 import type { Clock, ReapTiming, SignalSender } from '@momonga/foundation';
 import { absoluteFrom, canonicalizePath, decide, suggestAllowRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject } from '@momonga/policy';
 import type { PermissionMode, ToolKind } from '@momonga/protocol';
-import { assertSessionTmpDirValid } from '@momonga/sandbox';
+import { assertSessionTmpDirValid, canonicalParentForm } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { assertAbsoluteEntries, createReadAccessMatcher } from './read-access.ts';
 import type { ReadAccessMatcher } from './read-access.ts';
@@ -146,9 +146,30 @@ const readDeniedPath = (subject: PermissionSubject, access: ReadAccessMatcher, c
 };
 
 const approvalGatedWritePaths = (batch: BatchInput): Set<string> => {
-  const alwaysDenied = [path.join(batch.home, '.momonga'), path.join(batch.home, 'Library', 'Keychains')].map(comparablePath);
+  const layout = momongaLayout(batch.home);
+  const alwaysDenied = [layout.root, layout.keychains].map(comparablePath);
   return new Set(batch.protectedPaths.map(comparablePath).filter((entry) => !alwaysDenied.includes(entry)));
 };
+
+const parentCanonicalKey = (target: string): string => {
+  const directory = path.dirname(target);
+  const name = path.basename(target);
+  return path.join(comparablePath(directory), volumeIsCaseInsensitive(directory) ? name.toLowerCase() : name);
+};
+
+const lexicalAncestorsOf = (target: string): string[] => {
+  const found: string[] = [];
+  for (let current = path.dirname(target); current !== path.dirname(current); current = path.dirname(current)) found.push(current);
+  return found;
+};
+
+const launcherGuardKeys = (literals: readonly string[]): Set<string> =>
+  new Set(
+    literals
+      .flatMap((literal) => [literal, canonicalParentForm(literal)])
+      .flatMap((literal) => [literal, ...lexicalAncestorsOf(literal)])
+      .map(parentCanonicalKey),
+  );
 
 const createWriteGuard = (batch: BatchInput): ((subject: PermissionSubject, cwd: string) => string | undefined) => {
   assertAbsoluteEntries('writeDenied', batch.sandboxPolicy.writeDenied);
@@ -156,12 +177,19 @@ const createWriteGuard = (batch: BatchInput): ((subject: PermissionSubject, cwd:
   batch.sandboxPolicy.writableRoots.forEach(canonicalPath);
   const gated = approvalGatedWritePaths(batch);
   const guards = batch.sandboxPolicy.writeDenied.filter((entry) => !gated.has(comparablePath(entry))).map(canonicalPath);
+  const launcherKeys = launcherGuardKeys(batch.sandboxPolicy.writeDeniedLiterals);
+  const blocksLauncher = (resolved: string): boolean => launcherKeys.has(parentCanonicalKey(resolved));
   const exempt = batch.tmpDir === undefined ? undefined : canonicalPath(batch.tmpDir);
   const blocksResolved = (resolved: string): boolean =>
     guards.some((guard) => comparableContains(guard, resolved)) && !(exempt !== undefined && comparableContains(exempt, resolved));
   return (subject, cwd) => {
-    if (subject.kind !== 'path' || subject.access !== 'write' || guards.length === 0) return undefined;
-    return subject.paths.find((target) => blocksResolved(canonicalPath(absoluteFrom(target, cwd))) || blocksResolved(path.resolve(cwd, target)));
+    if (subject.kind !== 'path' || subject.access !== 'write') return undefined;
+    return subject.paths.find(
+      (target) =>
+        blocksResolved(canonicalPath(absoluteFrom(target, cwd))) ||
+        blocksResolved(path.resolve(cwd, target)) ||
+        blocksLauncher(path.resolve(cwd, target)),
+    );
   };
 };
 

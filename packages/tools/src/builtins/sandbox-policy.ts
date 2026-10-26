@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { comparableContains } from '@momonga/foundation';
-import { assertReadAllowedValid, canonicalizePath, defaultProtectedPaths } from '@momonga/sandbox';
+import { alwaysWriteDenied, assertReadAllowedValid, canonicalizePath, defaultProtectedPaths } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { assertAbsoluteEntries } from '../read-access.ts';
 
@@ -27,17 +27,17 @@ export const buildSandboxPolicy = (options: SandboxPolicyOptions): SandboxPolicy
   assertAbsoluteEntries('extraWritable', options.extraWritable ?? []);
   assertAbsoluteEntries('extraReadDenied', options.extraReadDenied ?? []);
   assertAbsoluteEntries('readAllowed', options.readAllowed ?? []);
-  const momonga = path.join(options.home, '.momonga');
-  const keychains = path.join(options.home, 'Library', 'Keychains');
-  const readDenied = [momonga, keychains, options.sessionsTmpRoot, ...(options.extraReadDenied ?? [])];
+  const denied = alwaysWriteDenied(options.home);
+  const readDenied = [...denied.subtrees, options.sessionsTmpRoot, ...(options.extraReadDenied ?? [])];
   const readAllowed = unique([options.tmpDir, ...(options.readAllowed ?? [])]);
-  const homeGuards = [momonga, keychains].map(canonicalizePath);
+  const homeGuards = denied.subtrees.map(canonicalizePath);
   for (const entry of assertReadAllowedValid(readDenied, readAllowed)) {
-    if (homeGuards.some((guard) => comparableContains(guard, entry))) throw new Error(`readAllowed entry must not lie inside ${momonga} or ${keychains}: ${entry}`);
+    if (homeGuards.some((guard) => comparableContains(guard, entry))) throw new Error(`readAllowed entry must not lie inside ${denied.root} or ${denied.keychains}: ${entry}`);
   }
   return {
     writableRoots: [...options.roots, options.tmpDir, ...(options.extraWritable ?? [])],
-    writeDenied: unique([momonga, keychains, options.sessionsTmpRoot, ...protectedPathsFor(options.roots)]),
+    writeDenied: unique([...denied.subtrees, options.sessionsTmpRoot, ...protectedPathsFor(options.roots)]),
+    writeDeniedLiterals: [...denied.literals],
     readDenied,
     readAllowed,
     network: options.network ?? 'deny',

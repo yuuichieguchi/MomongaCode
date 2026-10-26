@@ -51,7 +51,7 @@ describe.runIf(process.platform === 'darwin').each(variants)('marker file as fd 
 
   const policy = (overrides: Partial<SandboxPolicy> = {}): SandboxPolicy => ({
     writableRoots: [root],
-    writeDenied: [],
+    writeDenied: [], writeDeniedLiterals: [],
     readDenied: [],
     network: 'deny',
     ...overrides,

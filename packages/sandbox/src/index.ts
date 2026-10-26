@@ -1,3 +1,5 @@
+export { alwaysWriteDenied, canonicalParentForm } from './always-write-denied.ts';
+export type { AlwaysWriteDenied, LauncherLinksStatus } from './always-write-denied.ts';
 export { canonicalizePath } from './canonical-path.ts';
 export { assertReadAllowedValid, assertSessionTmpDirValid, buildSeatbeltProfile, defaultProtectedPaths } from './profile.ts';
 export type { SeatbeltProfile } from './profile.ts';
