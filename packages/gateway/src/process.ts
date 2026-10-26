@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import { loadUserSettings } from '@momonga/config';
+import { credentialEnvNames, loadUserSettings } from '@momonga/config';
 import {
   acquireProcessLock,
   announceReady,
@@ -19,6 +19,7 @@ import { createChatCompletionsAdapter } from './adapters/chat-completions/adapte
 import type { ChatCompletionsEndpoint } from './adapters/chat-completions/types.ts';
 import { FM_SERVE_DEFAULTS, GATEWAY_CONFIG_DEFAULTS } from './defaults.ts';
 import { missingApiKeyError } from './core/errors.ts';
+import { MIN_CREDENTIAL_CHARS } from './core/redaction.ts';
 import { FmServeError, createFmServe } from './managed/fm-serve.ts';
 import type { ExecFn, FmServe, SpawnFn } from './managed/fm-serve.ts';
 import { createExecFn, createExecWithStdin } from './managed/fm-processes.ts';
@@ -129,6 +130,21 @@ const apiKeyReader =
     if (value === undefined || value === '') throw missingApiKeyError(apiKeyEnv);
     return value;
   };
+
+const credentialValuesOf = (
+  env: StartGatewayProcessOptions['env'],
+  envNames: readonly string[],
+  warn: (message: string) => void,
+): string[] =>
+  envNames.flatMap((name) => {
+    const value = env[name];
+    if (value === undefined || value.trim() === '') return [];
+    if (value.trim().length < MIN_CREDENTIAL_CHARS) {
+      warn(`${name} holds fewer than ${MIN_CREDENTIAL_CHARS} characters, so its value is not redacted from upstream text`);
+      return [];
+    }
+    return [value];
+  });
 
 type FmContext = {
   paths: MomongaPaths;
@@ -307,6 +323,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const gateway = await createGateway({
       config: gatewayConfigOf(settings.models.targets, settings.models.aliases),
       adapters,
+      credentials: credentialValuesOf(options.env, credentialEnvNames(settings), (message) => logger.warn(message)),
       clock,
       timers,
       dbPath: paths.databases.gateway,

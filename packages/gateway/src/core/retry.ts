@@ -1,8 +1,9 @@
 import { computeBackoff } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import type { ClassifiedError, ProviderAdapter } from '@momonga/protocol';
+import type { ClassifiedError } from '@momonga/protocol';
 import { applyBreakerVerdict, breakerVerdictOf } from './breaker-verdict.ts';
 import { GatewayError, SKIPPABLE_CODES, deadlineExceededError, gatewayErrorFromBody, serverError } from './errors.ts';
+import type { GuardedAdapter } from './guarded-adapter.ts';
 import type { TargetRuntime } from './router.ts';
 import type { GatewayTimers } from '../types.ts';
 
@@ -22,7 +23,7 @@ export const emptyStreamFailure = (): UpstreamFailure =>
     error: { type: 'server_error', code: 'empty_upstream_stream', message: 'the upstream ended its stream before sending any event', param: null },
   });
 
-export const failureFrom = (adapter: ProviderAdapter, error: unknown, signal: AbortSignal): unknown => {
+export const failureFrom = (adapter: GuardedAdapter, error: unknown, signal: AbortSignal): unknown => {
   if (error instanceof GatewayError || error instanceof UpstreamFailure) return error;
   if (signal.aborted) return signal.reason;
   return new UpstreamFailure(adapter.classify(error));

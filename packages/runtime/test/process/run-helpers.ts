@@ -4,7 +4,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { vi } from 'vitest';
 import { createUdsClient, momongaPaths } from '@momonga/foundation';
-import type { Clock, MomongaPaths, ReadyFields, TextStream, UdsClient } from '@momonga/foundation';
+import type { Clock, JsonLogger, MomongaPaths, ReadyFields, TextStream, UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import * as runtime from '@momonga/runtime';
 import type { ServiceTimers } from '@momonga/runtime';
@@ -156,10 +156,17 @@ export const prepareStack = async (fakeOptions: FakeOptionsInput = {}, extraSett
   return { temp, fake, hold, settings, completions: () => fake.requests.filter((request) => request.path === '/v1/chat/completions').length };
 };
 
-export const startGateway = async (temp: RunHome): Promise<void> => {
+export type StartGatewayOptions = { env?: Readonly<Record<string, string>>; logger?: JsonLogger };
+
+export const startGateway = async (temp: RunHome, options: StartGatewayOptions = {}): Promise<void> => {
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
   try {
-    const gateway = await startGatewayProcess({ home: temp.home, env: sessionEnvFor(temp.home), version: GATEWAY_VERSION });
+    const gateway = await startGatewayProcess({
+      home: temp.home,
+      env: { ...sessionEnvFor(temp.home), ...options.env },
+      version: GATEWAY_VERSION,
+      ...(options.logger === undefined ? {} : { logger: options.logger }),
+    });
     onCleanup(async () => {
       await gateway.close();
     });

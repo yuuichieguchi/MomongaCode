@@ -317,3 +317,28 @@ describe('architecture: UNKNOWN has one writer', () => {
     expect(unknownWriterCalls("const markUnknown = db.prepare(\"UPDATE idempotency SET state = 'UNKNOWN'\");")).toEqual([]);
   });
 });
+
+const RUN_PROBE_MODULE = path.join(packagesDir, 'gateway', 'src', 'probe', 'run-probe.ts');
+const GATEWAY_BARREL = path.join(packagesDir, 'gateway', 'src', 'index.ts');
+
+const runProbeImporters = (): string[] =>
+  packageNames
+    .flatMap((name) => listSourceFiles(path.join(packagesDir, name, 'src')))
+    .filter((file) => file !== RUN_PROBE_MODULE && file !== GATEWAY_BARREL)
+    .filter((file) => {
+      const source = fs.readFileSync(file, 'utf8');
+      const named = [...source.matchAll(/\bimport\s+(?:type\s+)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/g)].some(
+        ([, names, specifier]) => /\brunProbe\b/.test(names ?? '') && (specifier === '@momonga/gateway' || /run-probe(\.ts)?$/.test(specifier ?? '')),
+      );
+      const dynamic = /\bimport\(\s*['"](?:@momonga\/gateway|[^'"]*run-probe(?:\.ts)?)['"]\s*\)[\s\S]{0,200}?\brunProbe\b/.test(source);
+      const namespace = /\bimport\s+\*\s+as\s+(\w+)\s+from\s*['"]@momonga\/gateway['"]/.exec(source);
+      const viaNamespace = namespace !== null && new RegExp(`\\b${namespace[1]}\\.runProbe\\b`).test(source);
+      return named || dynamic || viaNamespace;
+    })
+    .map((file) => path.relative(root, file));
+
+describe('architecture: the probe stays unwired', () => {
+  it('runProbe has no importer outside tests', () => {
+    expect(runProbeImporters()).toEqual([]);
+  });
+});
