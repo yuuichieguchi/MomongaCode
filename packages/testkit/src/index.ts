@@ -15,6 +15,7 @@ export {
 export type {
   FakeChatCompletionsOptions,
   FakeChatCompletionsServer,
+  FakeRoute,
   FakeScenario,
   FakeResponseHold,
   FakeScriptedReply,

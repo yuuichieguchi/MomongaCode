@@ -1,20 +1,27 @@
 import { canonicalJson, sha256Hex, uuidv7 } from '@momonga/foundation';
+import { marginFloorFor, outputReserveFor, summaryTokenCapFor } from '@momonga/protocol';
 import type {
+  AdapterCompactRequest,
+  AdapterInputItem,
+  AdapterRequest,
   CompactRequest,
   CompactResource,
   CompactionItem,
+  CountTokensRequest,
   CountTokensResult,
   InputItem,
+  LenientItems,
 } from '@momonga/protocol';
 import { armDeadline, parseDeadlineHeader, withDeadline } from './deadline.ts';
-import { errorBoundFor, estimateInputTokens } from './estimate.ts';
-import { ClientDisconnectedError, detachedRunExpiredError, gatewayClosedError, invalidRequest, isRunCancelled, runCancelledError } from './errors.ts';
+import { errorBoundFor, estimateInputTokens, wireTokensOf } from './estimate.ts';
+import { ClientDisconnectedError, GatewayError, detachedRunExpiredError, gatewayErrorFromBody, gatewayClosedError, invalidRequest, isRunCancelled, runCancelledError } from './errors.ts';
 import { parseIdempotencyKey, reusedError } from './idempotency.ts';
 import { normalizeInput, resolveInput } from './input.ts';
 import { failureFrom, runWithRetry } from './retry.ts';
 import type { RetryOutcome } from './retry.ts';
 import type { TargetRuntime } from './router.ts';
 import type { Services } from './services.ts';
+import { textOfWire } from './wire-text.ts';
 import type { RequestValidator } from './validation.ts';
 
 export type UnaryService = {
@@ -67,6 +74,48 @@ const callTargets = <T>(
     }),
   );
 
+const adapterRequestOf = (model: string, request: CountTokensRequest, input: AdapterInputItem[]): AdapterRequest => ({
+  model,
+  input,
+  ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
+  ...(request.tools === undefined || request.tools.length === 0 ? {} : { tools: request.tools }),
+  ...(request.tool_choice === undefined ? {} : { tool_choice: request.tool_choice }),
+});
+
+const isTargetFailure = (error: unknown, signal: AbortSignal): error is GatewayError =>
+  error instanceof GatewayError && !signal.aborted && error.body.code !== 'deadline_exceeded';
+
+const asGatewayError = <T>(target: TargetRuntime, render: () => T): T => {
+  try {
+    return render();
+  } catch (error) {
+    throw gatewayErrorFromBody(target.adapter.classify(error).error);
+  }
+};
+
+const countWire = async (
+  services: Services,
+  target: TargetRuntime,
+  wire: Record<string, unknown>,
+  signal: AbortSignal,
+  deadlineAt: number | undefined,
+): Promise<CountTokensResult> => {
+  const adapterCountTokens = target.adapter.countTokens;
+  if (adapterCountTokens === undefined) {
+    const tokens = wireTokensOf(wire);
+    return { input_tokens: tokens, method: 'estimated', error_bound: errorBoundFor(tokens) };
+  }
+  const outcome = await callTargets(services, [target], signal, deadlineAt, (chosen, attemptNumber, guarded) =>
+    adapterCountTokens.call(
+      chosen.adapter,
+      { model: chosen.model, input: textOfWire(wire) },
+      { signal: guarded, target: { name: chosen.name, model: chosen.model }, attempt: attemptNumber },
+    ),
+  );
+  outcome.target.breaker.onSuccess();
+  return outcome.value;
+};
+
 const countTokens = async (
   services: Services,
   validator: RequestValidator,
@@ -79,6 +128,21 @@ const countTokens = async (
   const target = services.router.targetsOf(request.model)[0];
   if (target === undefined) throw new Error(`model alias "${request.model}" has no targets`);
   const resolved = resolveInput(services.store, services.codec, undefined, normalizeInput(request.input));
+  const renderWire = target.adapter.renderWire;
+  if (renderWire !== undefined) {
+    const lenient = request.momonga?.lenient_items;
+    const lenientItems: LenientItems | undefined =
+      lenient === undefined ? undefined : { callNames: lenient.call_names, withTools: lenient.with_tools };
+    const wire = asGatewayError(target, () =>
+      renderWire.call(
+        target.adapter,
+        adapterRequestOf(target.model, request, resolved.forAdapter),
+        { name: target.name, model: target.model },
+        lenientItems === undefined ? undefined : { lenientItems },
+      ),
+    );
+    return countWire(services, target, wire, signal, deadlineAt);
+  }
   const countable: InputItem[] = resolved.forAdapter.map((item) =>
     item.type === 'compaction_summary'
       ? { type: 'message', role: 'user', content: [{ type: 'input_text', text: item.summary }] }
@@ -113,22 +177,70 @@ const compactOnce = async (
 ): Promise<CompactResource> => {
   const targets = services.router.targetsOf(request.model);
   const resolved = resolveInput(services.store, services.codec, request.previous_response_id, normalizeInput(request.input));
-  const candidates = targets.filter((target) => target.adapter.compact !== undefined);
-  if (candidates.length === 0) {
+  const supporting = targets.filter((target) => target.adapter.compact !== undefined);
+  if (supporting.length === 0) {
     throw invalidRequest('capability_unsupported', `no target of model alias "${request.model}" supports compaction`, 'model');
   }
-  const outcome = await callTargets(services, candidates, signal, deadlineAt, (target, attemptNumber, guarded) => {
+  const compactRequestFor = (target: TargetRuntime, cap: number): AdapterCompactRequest => ({
+    model: target.model,
+    input: resolved.forAdapter,
+    ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
+    momonga: { ...request.momonga, max_summary_tokens: cap },
+  });
+  const capsByTarget = new Map<TargetRuntime, number>();
+  const sized: TargetRuntime[] = [];
+  let withinCap = 0;
+  let counterFailure: GatewayError | undefined;
+  for (const target of supporting) {
+    const capabilities = await services.router.capabilitiesOf(target);
+    const maximum = summaryTokenCapFor(capabilities);
+    const cap = request.momonga?.max_summary_tokens ?? maximum;
+    if (cap > maximum) continue;
+    withinCap += 1;
+    capsByTarget.set(target, cap);
+    const renderCompactWire = target.adapter.renderCompactWire;
+    if (renderCompactWire === undefined) {
+      sized.push(target);
+      continue;
+    }
+    const wire = asGatewayError(target, () =>
+      renderCompactWire.call(target.adapter, compactRequestFor(target, cap), { name: target.name, model: target.model }, cap),
+    );
+    let counted: CountTokensResult;
+    try {
+      counted = await countWire(services, target, wire, signal, deadlineAt);
+    } catch (error) {
+      if (!isTargetFailure(error, signal)) throw error;
+      counterFailure = error;
+      continue;
+    }
+    const limit = Math.min(
+      capabilities.contextWindow - cap - marginFloorFor(capabilities.contextWindow),
+      capabilities.contextWindow - outputReserveFor(capabilities),
+    );
+    if (counted.input_tokens + counted.error_bound <= limit) sized.push(target);
+  }
+  if (sized.length === 0 && counterFailure !== undefined) throw counterFailure;
+  if (withinCap === 0) {
+    throw invalidRequest(
+      'invalid_summary_cap',
+      'momonga.max_summary_tokens exceeds the largest summary any target of the model alias accepts',
+      'momonga.max_summary_tokens',
+    );
+  }
+  if (sized.length === 0) {
+    throw invalidRequest('compaction_input_too_large', 'the conversation to summarise does not fit the context window of any target', 'input');
+  }
+  const outcome = await callTargets(services, sized, signal, deadlineAt, (target, attemptNumber, guarded) => {
     const compact = target.adapter.compact;
     if (compact === undefined) throw new TypeError(`target "${target.name}" lost its compact capability`);
-    return compact.call(
-      target.adapter,
-      {
-        model: target.model,
-        input: resolved.forAdapter,
-        ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
-      },
-      { signal: guarded, target: { name: target.name, model: target.model }, attempt: attemptNumber },
-    );
+    const cap = capsByTarget.get(target);
+    if (cap === undefined) throw new TypeError(`target "${target.name}" has no summary cap`);
+    return compact.call(target.adapter, compactRequestFor(target, cap), {
+      signal: guarded,
+      target: { name: target.name, model: target.model },
+      attempt: attemptNumber,
+    });
   });
   outcome.target.breaker.onSuccess();
   const item: CompactionItem = {

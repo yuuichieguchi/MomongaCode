@@ -1,9 +1,21 @@
 import { decodeSse, parseRetryAfter } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import type { AdapterContext, AdapterRequest, AdapterTarget, StreamEvent } from '@momonga/protocol';
+import { summaryTokenCapFor } from '@momonga/protocol';
+import type {
+  AdapterCompactRequest,
+  AdapterCompactResult,
+  AdapterContext,
+  AdapterRequest,
+  AdapterTarget,
+  LenientItems,
+  RenderWireOptions,
+  StreamEvent,
+} from '@momonga/protocol';
+import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
 import { classifyChatCompletionsError, matchesGuardrailCode } from './classify.ts';
 import { boundedSseBytes, readTextLimited } from './body-reading.ts';
 import { buildConstrainedBody } from './constrained-request.ts';
+import { summaryOfTerminal, summaryRequestOf } from './compact.ts';
 import { createConstrainedSink } from './constrained-sink.ts';
 import type { ConstrainedPlan } from './constrained-sink.ts';
 import { StreamFailure, UnsupportedInputError, UpstreamHttpError } from './failures.ts';
@@ -13,9 +25,12 @@ import { MAX_ERROR_BODY_BYTES, MAX_SSE_EVENT_BYTES } from './limits.ts';
 import { buildNativeBody } from './native-request.ts';
 import type { ChatRequestBody } from './native-request.ts';
 import { createNativeSink } from './native-sink.ts';
+import { nativeHistoryOf, plainHistoryOf } from './plain-history.ts';
 import { ResponseEmitter } from './response-emitter.ts';
 import { StreamDriver } from './stream-driver.ts';
 import type { ChatCompletionsAdapter, ChatCompletionsAdapterOptions } from './types.ts';
+import { wireOf } from './wire.ts';
+import type { ChatWire } from './wire.ts';
 import type { KeywordSupport } from '../../probe/envelope.ts';
 
 const FULL_KEYWORD_SUPPORT: KeywordSupport = {
@@ -84,6 +99,24 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
     return { body: buildNativeBody(request), envelope: undefined };
   };
 
+  const lenientWireOf = (request: AdapterRequest, target: AdapterTarget, lenient: LenientItems): ChatWire => {
+    const { callNames, withTools } = lenient;
+    if (options.toolCalling(target) === 'constrained') {
+      return { messages: plainHistoryOf(request.input, { envelopeReplies: withTools, callNames }) };
+    }
+    return {
+      messages: withTools ? nativeHistoryOf(request.input) : plainHistoryOf(request.input, { envelopeReplies: false, callNames }),
+    };
+  };
+
+  const renderCompactWire = (request: AdapterCompactRequest, target: AdapterTarget, cap: number): ChatWire =>
+    wireOf(bodyFor(summaryRequestOf(request, cap), target).body);
+
+  const renderWire = (request: AdapterRequest, target: AdapterTarget, renderOptions?: RenderWireOptions): ChatWire =>
+    renderOptions?.lenientItems === undefined
+      ? wireOf(bodyFor(request, target).body)
+      : lenientWireOf(request, target, renderOptions.lenientItems);
+
   async function* create(request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
     if (closed) throw new Error('the chat-completions adapter is closed');
     const { body, envelope } = bodyFor(request, ctx.target);
@@ -142,10 +175,27 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
     }
   }
 
+  const compact = async (request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult> => {
+    const cap = request.momonga?.max_summary_tokens ?? summaryTokenCapFor(await options.capabilities(ctx.target));
+    const summaryRequest = summaryRequestOf(request, cap);
+    for await (const event of create(summaryRequest, ctx)) {
+      const collected = summaryOfTerminal(event, cap);
+      if (collected === undefined) continue;
+      const usage =
+        collected.usage ??
+        estimatedUsage(wireTokensOf(renderWire(summaryRequest, ctx.target)), tokensForText(collected.summary));
+      return { summary: collected.summary, usage };
+    }
+    throw new StreamFailure('upstream_protocol_error', 'model_error', 'the upstream ended without a terminal event');
+  };
+
   return {
     kind: 'chat-completions',
     capabilities: (target) => options.capabilities(target),
     create,
+    compact,
+    renderWire,
+    renderCompactWire,
     classify: classifyChatCompletionsError,
     ...(health === undefined ? {} : { health: (target: AdapterTarget) => health(target) }),
     ...(countTokens === undefined

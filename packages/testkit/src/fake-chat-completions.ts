@@ -32,6 +32,12 @@ export interface FakeChatCompletionsOptions {
   stallMs?: number;
   healthy?: boolean;
   script?: FakeScriptedReply[];
+  routes?: FakeRoute[];
+}
+
+export interface FakeRoute {
+  match: (body: unknown) => boolean;
+  reply: FakeScriptedReply;
 }
 
 export interface FakeStreamChunk {
@@ -64,6 +70,7 @@ export interface FakeResponseHold {
 export interface FakeChatCompletionsServer {
   socketPath: string;
   requests: RecordedRequest[];
+  routeHits: number[];
   hold(): FakeResponseHold;
   openConnections(): number;
   disconnects(): number;
@@ -211,6 +218,8 @@ export const startFakeChatCompletions = async (
 
   const requests: RecordedRequest[] = [];
   const script = [...(options.script ?? [])];
+  const routes = [...(options.routes ?? [])];
+  const routeHits = routes.map(() => 0);
   let disconnectCount = 0;
   let inFlight = 0;
   const waiting: Array<() => void> = [];
@@ -499,6 +508,12 @@ export const startFakeChatCompletions = async (
         response.once('close', () => {
           if (!response.writableFinished) disconnectCount += 1;
         });
+        const routeIndex = routes.findIndex((route) => route.match(body));
+        if (routeIndex >= 0) {
+          routeHits[routeIndex] = (routeHits[routeIndex] as number) + 1;
+          await serveScripted((routes[routeIndex] as FakeRoute).reply, response);
+          return;
+        }
         const held = holds.shift();
         if (held !== undefined) {
           held.arrived(requests[requests.length - 1] as RecordedRequest);
@@ -574,6 +589,7 @@ export const startFakeChatCompletions = async (
   return {
     socketPath,
     requests,
+    routeHits,
     openConnections: () => sockets.size,
     disconnects: () => disconnectCount,
     hold: createHold,

@@ -1,8 +1,14 @@
 import type { Capabilities, HealthResult } from './capabilities.ts';
 import type { CountTokensRequest, CountTokensResult } from './gateway-api.ts';
-import type { ErrorBody, FunctionTool, InputItem, StreamEvent, ToolChoice, Usage } from './open-responses.ts';
+import type { CompactMomongaExtension, ErrorBody, FunctionTool, InputItem, StreamEvent, ToolChoice, Usage } from './open-responses.ts';
 
-export const ADAPTER_NEUTRAL_ERROR_CODES = ['guardrail_violation', 'content_filter', 'refusal'] as const;
+export const ADAPTER_NEUTRAL_ERROR_CODES = [
+  'guardrail_violation',
+  'content_filter',
+  'refusal',
+  'compaction_summary_too_long',
+  'compaction_invalid_reply',
+] as const;
 
 export type AdapterNeutralErrorCode = (typeof ADAPTER_NEUTRAL_ERROR_CODES)[number];
 
@@ -42,7 +48,12 @@ export type AdapterCompactRequest = {
   model: string;
   input: AdapterInputItem[];
   instructions?: string | null;
+  momonga?: CompactMomongaExtension;
 };
+
+export type LenientItems = { callNames: Record<string, string>; withTools: boolean };
+
+export type RenderWireOptions = { lenientItems?: LenientItems };
 
 export type AdapterCompactResult = { summary: string; usage: Usage };
 
@@ -55,4 +66,6 @@ export type ProviderAdapter = {
   close?(): Promise<void>;
   countTokens?(request: CountTokensRequest, ctx: AdapterContext): Promise<AdapterCountTokensResult>;
   compact?(request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult>;
+  renderCompactWire?(request: AdapterCompactRequest, target: AdapterTarget, cap: number): Record<string, unknown>;
+  renderWire?(request: AdapterRequest, target: AdapterTarget, options?: RenderWireOptions): Record<string, unknown>;
 };

@@ -16,7 +16,7 @@ export type DaemonBin = {
 
 const linesOf = (text: string): string[] => text.split('\n').filter((line) => line !== '');
 
-export const startDaemonBin = (context: CleanupContext, bin: string, args: readonly string[], env: Readonly<Record<string, string>>): DaemonBin => {
+export const startDaemonBin = (context: CleanupContext | undefined, bin: string, args: readonly string[], env: Readonly<Record<string, string>>): DaemonBin => {
   const child = spawnTracked(context, process.execPath, [bin, ...args], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...env } });
   let stdout = '';
   let stderr = '';

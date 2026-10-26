@@ -1,5 +1,5 @@
 import type { ClassifiedError, ErrorBody } from '@momonga/protocol';
-import { UnsupportedInputError, UpstreamHttpError } from './failures.ts';
+import { CompactionReplyError, StreamFailure, UnsupportedInputError, UpstreamHttpError } from './failures.ts';
 
 const CONNECTION_CODES: ReadonlySet<string> = new Set([
   'ECONNREFUSED',
@@ -69,6 +69,12 @@ const classifyHttp = (error: UpstreamHttpError): ClassifiedError => {
 
 export const classifyChatCompletionsError = (error: unknown): ClassifiedError => {
   if (error instanceof UpstreamHttpError) return classifyHttp(error);
+  if (error instanceof CompactionReplyError) {
+    return { retryable: error.retryable, error: body('model_error', error.code, error.message) };
+  }
+  if (error instanceof StreamFailure) {
+    return { retryable: true, error: body(error.errorType, error.code, error.message) };
+  }
   if (error instanceof UnsupportedInputError) {
     return { retryable: false, error: body('invalid_request', error.code, error.message, error.param) };
   }

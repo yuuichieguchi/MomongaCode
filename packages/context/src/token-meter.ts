@@ -1,7 +1,7 @@
 import { canonicalJson } from '@momonga/foundation';
 import type { CountTokensRequest, FunctionTool, InputItem } from '@momonga/protocol';
 import { digestChain, itemDigest } from './digests.ts';
-import type { MeterCount, MeterRequest, TokenMeter, TokenMeterOptions, UsageObservation } from './types.ts';
+import type { ItemCountContext, MeterCount, MeterRequest, TokenMeter, TokenMeterOptions, UsageObservation } from './types.ts';
 
 const ERROR_WINDOW = 20;
 const ESTIMATED_ERROR_FLOOR = 0.1;
@@ -102,11 +102,15 @@ export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOpt
     return withBound(record);
   };
 
-  const countItem = async (item: InputItem): Promise<number> => {
-    const key = itemDigest(item);
+  const countItem = async (item: InputItem, { callNames, withTools }: ItemCountContext): Promise<number> => {
+    const key = canonicalJson([itemDigest(item), withTools, callNames]);
     const known = itemTokens.get(key);
     if (known !== undefined) return known;
-    const result = await counter.count({ model, input: [item] });
+    const result = await counter.count({
+      model,
+      input: [item],
+      momonga: { lenient_items: { call_names: { ...callNames }, with_tools: withTools } },
+    });
     remember(itemTokens, key, result.input_tokens, MAX_ITEM_COUNTS);
     return result.input_tokens;
   };
