@@ -34,6 +34,10 @@ export type {
   ProviderAdapter,
 } from '@momonga/protocol';
 export { createChatCompletionsAdapter } from './adapters/chat-completions/adapter.ts';
+export { COMPACTION_INSTRUCTIONS_MARKER } from './adapters/chat-completions/compact.ts';
+export { wireOf } from './adapters/chat-completions/wire.ts';
+export type { ChatWire } from './adapters/chat-completions/wire.ts';
+export { estimateInputTokens, wireTokensOf } from './core/estimate.ts';
 export type {
   ChatCompletionsAdapter,
   ChatCompletionsAdapterOptions,

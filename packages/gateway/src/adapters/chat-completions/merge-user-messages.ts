@@ -1,4 +1,4 @@
-import type { ChatMessage } from './native-request.ts';
+import type { ChatMessage } from './plain-history.ts';
 
 export const USER_PART_SEPARATOR = '\n\n';
 

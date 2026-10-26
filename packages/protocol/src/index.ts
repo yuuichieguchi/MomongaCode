@@ -1,4 +1,21 @@
 export type { Capabilities, HealthResult, ToolCallingMode, ToolCallingSetting } from './capabilities.ts';
+export {
+  COMPACTION_INSTRUCTIONS_VERSION,
+  ESTIMATED_ERROR_BOUND_RATIO,
+  MARGIN_RATIO,
+  MAX_SUMMARY_TOKENS,
+  MIN_MARGIN,
+  MIN_SUMMARY_TOKENS,
+  SUMMARY_ACCEPT_RATIO,
+  SUMMARY_ITEM_OVERHEAD,
+  SUMMARY_PROMPT_TOKENS,
+  SUMMARY_ROOM_RATIO,
+  SUMMARY_WINDOW_RATIO,
+  marginFloorFor,
+  outputReserveFor,
+  summaryItemTokensFor,
+  summaryTokenCapFor,
+} from './budget-constants.ts';
 export { findDanglingOutput, findUnpairedCalls } from './call-pairing.ts';
 export { compactionSummaryMessage, decodeCompactionSummary } from './compaction-summary.ts';
 export { PROBE_KEYWORDS } from './probe.ts';
@@ -26,6 +43,7 @@ export type {
 export { ERROR_TYPES, OPEN_RESPONSES_STREAM_EVENT_TYPES, OPEN_RESPONSES_VERSION, TERMINAL_STREAM_EVENT_TYPES } from './open-responses.ts';
 export type {
   Annotation,
+  CompactMomongaExtension,
   CompactRequest,
   CompactResource,
   CompactionInputItem,
@@ -70,6 +88,7 @@ export type {
 export { MOMONGA_EVENT_PREFIX } from './gateway-api.ts';
 export type {
   CountTokensMethod,
+  CountTokensMomongaExtension,
   CountTokensRequest,
   CountTokensResult,
   GatewayHealth,
@@ -96,7 +115,9 @@ export type {
   AdapterTarget,
   ClassifiedError,
   DecodedCompactionItem,
+  LenientItems,
   ProviderAdapter,
+  RenderWireOptions,
 } from './adapter.ts';
 export { ADAPTER_NEUTRAL_ERROR_CODES } from './adapter.ts';
 export type { AdapterNeutralErrorCode } from './adapter.ts';

@@ -11,6 +11,7 @@ import type {
   BuiltContext,
   ContextEviction,
   ContextNotice,
+  ItemCountContext,
   MeterCount,
 } from './types.ts';
 
@@ -102,6 +103,11 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
   const prefixDigest = chainTail(digestChain({ scope: 'prefix', tools }, [...layers, ...summaryItems]));
 
   const itemCap = itemCapFor(capabilities);
+  const callNames = new Map<string, string>();
+  const countContextFor = (callId: string): ItemCountContext => {
+    const name = callNames.get(callId);
+    return { callNames: name === undefined ? {} : { [callId]: name }, withTools: true };
+  };
   const reports = new Map<string, ContextEviction>();
 
   const ensureHandle = async (state: OutputState): Promise<boolean> => {
@@ -116,7 +122,7 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
     let kept = Math.floor((state.text.length * itemCap) / state.tokens);
     for (;;) {
       const rendered = withOutput(state.original, headAndTail(state.text, kept, marker));
-      const tokens = await meter.countItem(rendered);
+      const tokens = await meter.countItem(rendered, countContextFor(state.callId));
       if (tokens <= itemCap || kept === 0) {
         state.renderedTokens = tokens;
         return rendered;
@@ -134,6 +140,10 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
     item: frozenItem(entry.item),
     ...(entry.handle === undefined ? {} : { handle: entry.handle }),
   }));
+
+  for (const entry of historyItems) {
+    if (entry.item.type === 'function_call') callNames.set(entry.item.call_id, entry.item.name);
+  }
 
   if (sources.summary !== undefined) {
     const dangling = findDanglingOutput(historyItems);
@@ -160,7 +170,7 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
     if (entry.item.type === 'function_call_output') {
       const original = entry.item;
       const text = outputTextOf(original.output);
-      const tokens = await meter.countItem(original);
+      const tokens = await meter.countItem(original, countContextFor(original.call_id));
       const state: OutputState = {
         original,
         callId: original.call_id,
@@ -176,7 +186,7 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
         const handle = state.handle as string;
         slot.item = withOutput(original, omittedMarker(tokens, handle));
         state.mode = 'omitted';
-        state.renderedTokens = await meter.countItem(slot.item);
+        state.renderedTokens = await meter.countItem(slot.item, countContextFor(state.callId));
         if (created) reports.set(state.callId, { callId: state.callId, handle, kind: 'omitted' });
       } else if (tokens > itemCap) {
         await ensureHandle(state);
@@ -203,12 +213,12 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
       const state = slot.output;
       if (state === undefined || state.mode === 'omitted' || slot.turn >= turnCount - keep) continue;
       const probe = withOutput(state.original, omittedMarker(state.tokens, state.handle ?? ASSUMED_HANDLE));
-      if ((await meter.countItem(probe)) >= state.renderedTokens) continue;
+      if ((await meter.countItem(probe, countContextFor(state.callId))) >= state.renderedTokens) continue;
       await ensureHandle(state);
       const handle = state.handle as string;
       slot.item = withOutput(state.original, omittedMarker(state.tokens, handle));
       state.mode = 'omitted';
-      state.renderedTokens = await meter.countItem(slot.item);
+      state.renderedTokens = await meter.countItem(slot.item, countContextFor(state.callId));
       reports.set(state.callId, { callId: state.callId, handle, kind: 'omitted' });
       return true;
     }

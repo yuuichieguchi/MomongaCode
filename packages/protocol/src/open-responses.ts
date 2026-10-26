@@ -321,12 +321,15 @@ export type StreamEvent =
     }
   | { type: 'error'; sequence_number: number; error: ErrorBody };
 
+export type CompactMomongaExtension = { max_summary_tokens?: number; retains_user_request?: boolean };
+
 export type CompactRequest = {
   model: string;
   input?: string | InputItem[] | null;
   previous_response_id?: string | null;
   instructions?: string | null;
   prompt_cache_key?: string | null;
+  momonga?: CompactMomongaExtension;
 };
 
 export type CompactResource = {

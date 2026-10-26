@@ -4,7 +4,7 @@ import type { AdapterRequest, ProbeKeyword } from '@momonga/protocol';
 import { USER_PART_SEPARATOR, mergeAdjacentUserMessages } from '../src/adapters/chat-completions/merge-user-messages.ts';
 import { buildNativeBody } from '../src/adapters/chat-completions/native-request.ts';
 import { buildConstrainedBody } from '../src/adapters/chat-completions/constrained-request.ts';
-import type { ChatMessage } from '../src/adapters/chat-completions/native-request.ts';
+import type { ChatMessage } from '../src/adapters/chat-completions/plain-history.ts';
 import { START_MS, postJson, readJson, readSse, startGateway } from './gateway-helpers.ts';
 import { CC_CAPABILITIES, completionBodies, lastCompletionBody, makeAdapter, readFileTool, startFake, userText } from './cc-support.ts';
 
@@ -137,6 +137,7 @@ describe('chat-completions bodies merge adjacent user messages', () => {
         userText('[marker]'),
         userText('task'),
       ],
+      tools: [readFileTool],
     });
     expect(body.messages).toEqual([
       { role: 'system', content: 'Be terse.' },

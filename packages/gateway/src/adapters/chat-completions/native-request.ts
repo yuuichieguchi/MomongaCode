@@ -1,9 +1,7 @@
-import { compactionSummaryMessage } from '@momonga/protocol';
 import type { AdapterInputItem, AdapterRequest, FunctionTool, ToolChoice } from '@momonga/protocol';
 import { textOfContent } from './input-text.ts';
-import { mergeAdjacentUserMessages } from './merge-user-messages.ts';
-
-export type ChatMessage = Record<string, unknown>;
+import { nativeHistoryOf, plainHistoryOf } from './plain-history.ts';
+import type { ChatMessage } from './plain-history.ts';
 
 export type ChatRequestBody = {
   model: string;
@@ -31,11 +29,6 @@ export const systemTextOf = (instructions: string | null | undefined, input: rea
   return parts.filter((part) => part !== '');
 };
 
-export const summaryMessageOf = (summary: string): ChatMessage => {
-  const { role, content } = compactionSummaryMessage(summary);
-  return { role, content };
-};
-
 const toolOf = (tool: FunctionTool): unknown => ({
   type: 'function',
   function: {
@@ -56,34 +49,13 @@ export const samplingOf = (request: AdapterRequest): Pick<ChatRequestBody, 'max_
 
 export const buildNativeBody = (request: AdapterRequest): ChatRequestBody => {
   const messages: ChatMessage[] = [];
+  const tools = request.tools ?? [];
   const system = systemTextOf(request.instructions, request.input);
   if (system.length > 0) messages.push({ role: 'system', content: system.join(SYSTEM_PART_SEPARATOR) });
-  let pendingCalls: unknown[] = [];
-  const flushCalls = (): void => {
-    if (pendingCalls.length === 0) return;
-    messages.push({ role: 'assistant', content: null, tool_calls: pendingCalls });
-    pendingCalls = [];
-  };
-  for (const item of request.input) {
-    if (item.type === 'reasoning') continue;
-    if (item.type === 'function_call') {
-      pendingCalls.push({ id: item.call_id, type: 'function', function: { name: item.name, arguments: item.arguments } });
-      continue;
-    }
-    flushCalls();
-    if (item.type === 'compaction_summary') {
-      messages.push(summaryMessageOf(item.summary));
-    } else if (item.type === 'function_call_output') {
-      messages.push({ role: 'tool', tool_call_id: item.call_id, content: textOfContent(item.output) });
-    } else if (item.role === 'user' || item.role === 'assistant') {
-      messages.push({ role: item.role, content: textOfContent(item.content) });
-    }
-  }
-  flushCalls();
-  const tools = request.tools ?? [];
+  messages.push(...(tools.length === 0 ? plainHistoryOf(request.input, { envelopeReplies: false }) : nativeHistoryOf(request.input)));
   return {
     model: request.model,
-    messages: mergeAdjacentUserMessages(messages),
+    messages,
     stream: true,
     stream_options: { include_usage: true },
     ...(tools.length === 0 ? {} : { tools: tools.map(toolOf) }),

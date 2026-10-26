@@ -1,7 +1,7 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
 import { canonicalJson } from '@momonga/foundation';
-import { OPEN_RESPONSES_OPENAPI } from '@momonga/protocol';
+import { MIN_SUMMARY_TOKENS, OPEN_RESPONSES_OPENAPI } from '@momonga/protocol';
 import type { CompactRequest, CountTokensRequest, CreateResponseBody } from '@momonga/protocol';
 import { invalidRequest } from './errors.ts';
 
@@ -235,6 +235,59 @@ const validateTools = (tools: unknown): void => {
   });
 };
 
+const KNOWN_TOOL_CHOICES: ReadonlySet<unknown> = new Set(['none', 'auto', 'required']);
+
+const validateToolChoice = (choice: unknown): void => {
+  if (KNOWN_TOOL_CHOICES.has(choice)) return;
+  if (isRecord(choice) && choice['type'] === 'function' && typeof choice['name'] === 'string' && choice['name'] !== '') return;
+  throwIssue({ segments: ['tool_choice'], message: 'must be "none", "auto", "required" or a function choice with a name' });
+};
+
+const requireKnownKeys = (record: SchemaObject, known: readonly string[], prefix: readonly string[]): void => {
+  for (const key of Object.keys(record)) {
+    if (!known.includes(key)) throwIssue({ segments: [...prefix, key], message: 'is not a known key' });
+  }
+};
+
+const momongaRecord = (value: unknown): SchemaObject | undefined => {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) throwIssue({ segments: ['momonga'], message: 'must be an object' });
+  return value as SchemaObject;
+};
+
+const validateCompactMomonga = (value: unknown): void => {
+  const momonga = momongaRecord(value);
+  if (momonga === undefined) return;
+  requireKnownKeys(momonga, ['max_summary_tokens', 'retains_user_request'], ['momonga']);
+  const cap = momonga['max_summary_tokens'];
+  if (cap !== undefined && (!Number.isInteger(cap) || (cap as number) < MIN_SUMMARY_TOKENS)) {
+    throwIssue({ segments: ['momonga', 'max_summary_tokens'], message: `must be an integer of at least ${MIN_SUMMARY_TOKENS}` });
+  }
+  const retains = momonga['retains_user_request'];
+  if (retains !== undefined && typeof retains !== 'boolean') {
+    throwIssue({ segments: ['momonga', 'retains_user_request'], message: 'must be a boolean' });
+  }
+};
+
+const validateCountMomonga = (value: unknown): void => {
+  const momonga = momongaRecord(value);
+  if (momonga === undefined) return;
+  requireKnownKeys(momonga, ['lenient_items'], ['momonga']);
+  const lenient = momonga['lenient_items'];
+  if (lenient === undefined) return;
+  const at = ['momonga', 'lenient_items'];
+  if (!isRecord(lenient)) throwIssue({ segments: at, message: 'must be an object' });
+  const record = lenient as SchemaObject;
+  requireKnownKeys(record, ['call_names', 'with_tools'], at);
+  const callNames = record['call_names'];
+  if (!isRecord(callNames) || Object.values(callNames).some((name) => typeof name !== 'string')) {
+    throwIssue({ segments: [...at, 'call_names'], message: 'is required and must map call ids to tool names' });
+  }
+  if (typeof record['with_tools'] !== 'boolean') {
+    throwIssue({ segments: [...at, 'with_tools'], message: 'is required and must be a boolean' });
+  }
+};
+
 export type RequestValidator = {
   parseCreate(body: unknown): CreateResponseBody;
   parseCompact(body: unknown): CompactRequest;
@@ -275,6 +328,7 @@ export const createRequestValidator = (): RequestValidator => {
     },
     parseCompact: (body) => {
       validateWithItems(compactSchema, body);
+      validateCompactMomonga(requireRecord(body, 'body')['momonga']);
       return assertValidated<CompactRequest>(body);
     },
     parseCountTokens: (body) => {
@@ -293,6 +347,9 @@ export const createRequestValidator = (): RequestValidator => {
       }
       const tools = record['tools'];
       if (tools !== undefined) validateTools(tools);
+      const toolChoice = record['tool_choice'];
+      if (toolChoice !== undefined) validateToolChoice(toolChoice);
+      validateCountMomonga(record['momonga']);
       return assertValidated<CountTokensRequest>(body);
     },
   };

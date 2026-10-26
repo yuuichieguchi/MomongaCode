@@ -26,6 +26,7 @@ export type {
   NoticeCode,
   TokenCounter,
   TouchedPath,
+  ItemCountContext,
   TokenMeter,
   TokenMeterOptions,
   UsageObservation,

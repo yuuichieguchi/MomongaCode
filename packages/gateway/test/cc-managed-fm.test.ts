@@ -13,7 +13,7 @@ import type { ExecResult, FmServe, FmServeTimers, ManagedFmTarget, ProbeRecordKe
 import type { ProbeReport } from '@momonga/protocol';
 import { FAKE_DETERMINISTIC_REPLY, createFakeClock, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeClock } from '@momonga/testkit';
-import { START_MS, getJson, makeDir, registerCleanup, startGateway } from './gateway-helpers.ts';
+import { START_MS, getJson, makeDir, postJson, readJson, registerCleanup, startGateway } from './gateway-helpers.ts';
 import { TARGET, collect, outputTextOf, userText } from './cc-support.ts';
 import { makeReport } from './report-fixture.ts';
 
@@ -225,5 +225,47 @@ describe('createManagedFmTarget health', () => {
     expect(health.status).toBe(200);
     expect(health.body.ok).toBe(false);
     expect(health.body.targets.fm).toMatchObject({ ok: false, breaker: 'closed', reason: 'precondition_failed', remediation: 'sudo fm license' });
+  });
+});
+
+describe('createManagedFmTarget compaction and wire counting', () => {
+  it('advertises compact through the chat-completions adapter and answers through fake-fm', async () => {
+    const { managed, clock } = await setup();
+    const adapter = adapterFor(managed, clock);
+    expect(adapter.compact).toBeTypeOf('function');
+    const result = await adapter.compact?.(
+      { model: 'system', input: [userText('summarise this')], momonga: { max_summary_tokens: 64 } },
+      { signal: new AbortController().signal, target: TARGET, attempt: 1 },
+    );
+    expect(result?.summary).toBe(FAKE_DETERMINISTIC_REPLY);
+  });
+
+  it('answers /v1/responses/compact for a managed fm alias', async () => {
+    const { managed, clock } = await setup();
+    const { client } = await startGateway({
+      adapters: { fm: adapterFor(managed, clock) },
+      config: { aliases: { fast: ['fm'] }, targets: { fm: { model: 'system' } } },
+    });
+    const response = await readJson(await postJson(client, '/v1/responses/compact', { model: 'fast', input: [userText('summarise this')] }));
+    expect(response.status).toBe(200);
+    expect(response.body.object).toBe('response.compaction');
+  });
+
+  it('feeds fm count-tokens the text parts of the wire through /v1/momonga/count_tokens', async () => {
+    const { managed, clock, execCalls } = await setup({ countStdout: '20\n' });
+    const { client } = await startGateway({
+      adapters: { fm: adapterFor(managed, clock) },
+      config: { aliases: { fast: ['fm'] }, targets: { fm: { model: 'system' } } },
+    });
+    const tools = [{ type: 'function' as const, name: 'Read', description: 'Read a file', parameters: { type: 'object', properties: { path: { type: 'string' } } } }];
+    const response = await readJson(
+      await postJson(client, '/v1/momonga/count_tokens', { model: 'fast', instructions: 'Be terse.', tools, input: [userText('count these words')] }),
+    );
+    expect(response.status).toBe(200);
+    const stdin = execCalls.find((call) => call.args[0] === 'count-tokens')?.stdin ?? '';
+    expect(stdin).toContain('Be terse.');
+    expect(stdin).toContain('count these words');
+    expect(stdin).toContain('"function":{');
+    expect(stdin).not.toContain('{"description":"Read a file","name":"Read","parameters"');
   });
 });

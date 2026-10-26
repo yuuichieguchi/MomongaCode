@@ -61,3 +61,17 @@ export class UpstreamHttpError extends Error {
     this.guardrail = guardrail;
   }
 }
+
+export type CompactionReplyCode = 'compaction_summary_too_long' | 'compaction_invalid_reply' | 'content_filter';
+
+export class CompactionReplyError extends Error {
+  readonly code: CompactionReplyCode;
+  readonly retryable: boolean;
+
+  constructor(code: CompactionReplyCode, retryable: boolean, message: string) {
+    super(message);
+    this.name = 'CompactionReplyError';
+    this.code = code;
+    this.retryable = retryable;
+  }
+}

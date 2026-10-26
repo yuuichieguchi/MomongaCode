@@ -69,9 +69,11 @@ export type UsageObservation = {
   inputTokens: number;
 };
 
+export type ItemCountContext = { callNames: Readonly<Record<string, string>>; withTools: boolean };
+
 export type TokenMeter = {
   count(request: MeterRequest): Promise<MeterCount>;
-  countItem(item: InputItem): Promise<number>;
+  countItem(item: InputItem, context: ItemCountContext): Promise<number>;
   observe(observation: UsageObservation): void;
   relativeError(): number;
 };

@@ -19,7 +19,16 @@ type Cleanup = () => void | Promise<void>;
 
 export type CleanupContext = Pick<TestContext, 'onTestFinished'>;
 
-export const registerCleanup = (context: CleanupContext, cleanup: Cleanup): void => {
+function assertTestContext(context: CleanupContext | undefined, helper: string): asserts context is CleanupContext {
+  if (typeof context?.onTestFinished !== 'function') {
+    throw new Error(
+      `${helper} needs a test context with onTestFinished: receive it as the last argument of the test function, for example it('...', (context) => ...)`,
+    );
+  }
+}
+
+export const registerCleanup = (context: CleanupContext | undefined, cleanup: Cleanup): void => {
+  assertTestContext(context, 'registerCleanup');
   context.onTestFinished(cleanup);
 };
 
@@ -57,9 +66,10 @@ const removeTempDir = (dir: string): void => {
 
 export type TempDirOptions = { asHome?: boolean };
 
-export const withTempDir = (context: CleanupContext, options: TempDirOptions = {}): string => {
+export const withTempDir = (context: CleanupContext | undefined, options: TempDirOptions = {}): string => {
+  assertTestContext(context, 'withTempDir');
   const created = fs.mkdtempSync(path.join(os.tmpdir(), tempDirPrefixFor(testRunToken())));
-  registerCleanup(context, () => removeTempDir(created));
+  context.onTestFinished(() => removeTempDir(created));
   const dir = fs.realpathSync(created);
   fs.chmodSync(dir, 0o700);
   if (options.asHome === true) assertHomeSocketBudget(dir);
@@ -92,12 +102,13 @@ const killTracked = async (child: TrackedChild, ownGroup: boolean): Promise<void
   if (isProcessAlive(child.pid)) throw new Error(`tracked child ${child.pid} is still alive after cleanup`);
 };
 
-export const spawnTracked = (context: CleanupContext, command: string, args: readonly string[] = [], options: SpawnOptions = {}): TrackedChild => {
+export const spawnTracked = (context: CleanupContext | undefined, command: string, args: readonly string[] = [], options: SpawnOptions = {}): TrackedChild => {
+  assertTestContext(context, 'spawnTracked');
   const ownGroup = options.detached ?? true;
   const child = spawn(command, args, { ...options, detached: ownGroup });
   const pid = child.pid;
   if (pid === undefined) throw new Error(`spawn of ${command} failed`);
   const tracked = child as TrackedChild;
-  registerCleanup(context, () => killTracked(tracked, ownGroup));
+  context.onTestFinished(() => killTracked(tracked, ownGroup));
   return tracked;
 };

@@ -1,5 +1,5 @@
 import type { Capabilities, HealthResult } from './capabilities.ts';
-import type { FunctionTool, InputItem } from './open-responses.ts';
+import type { FunctionTool, InputItem, ToolChoice } from './open-responses.ts';
 
 export const MOMONGA_EVENT_PREFIX = 'momonga:' as const;
 
@@ -7,11 +7,17 @@ export type MomongaEventName = `${typeof MOMONGA_EVENT_PREFIX}${string}`;
 
 export type CountTokensMethod = 'exact' | 'calibrated' | 'estimated';
 
+export type CountTokensMomongaExtension = {
+  lenient_items?: { call_names: Record<string, string>; with_tools: boolean };
+};
+
 export type CountTokensRequest = {
   model: string;
   input: string | InputItem[];
   instructions?: string | null;
   tools?: FunctionTool[];
+  tool_choice?: ToolChoice;
+  momonga?: CountTokensMomongaExtension;
 };
 
 export type CountTokensResult = {
