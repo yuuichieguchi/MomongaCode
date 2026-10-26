@@ -354,7 +354,7 @@ describe('orphan reap at supervisor start', () => {
       markerPorts: { findHolders: async () => (holding ? [999_999] : []) },
       overrides: { orphanGraceMs: 60_000 },
     });
-    await pumpUntil(h.timers, () => h.markers.calls.findHolders.length >= 3, { stepMs: 250, maxMs: 5000 });
+    await pumpUntil(h.timers, () => h.markers.calls.findHolders.length >= 3, { realWork: h.realWork, stepMs: 250, maxMs: 5000 });
     expect(h.health().phase).toBe('reaping-orphans');
     expect(h.fake.spawnCount()).toBe(0);
     holding = false;
@@ -370,10 +370,10 @@ describe('orphan reap at supervisor start', () => {
         expect(health.children.map((child) => child.state)).toEqual(['pending', 'pending']);
         return false;
       },
-      { stepMs: 250, maxMs: 5000 },
+      { realWork: h.realWork, stepMs: 250, maxMs: 5000 },
     );
     expect(observedTogether).toBe(true);
-    await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { stepMs: 50, maxMs: 5000 });
+    await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { realWork: h.realWork, stepMs: 50, maxMs: 5000 });
     const messages = h.log.messages();
     const reapedAt = messages.indexOf('orphans.reaped');
     expect(reapedAt).toBeGreaterThanOrEqual(0);
@@ -394,7 +394,7 @@ describe('orphan reap at supervisor start', () => {
       markerPorts: { findHolders: async () => [999_999], reapMarkerDirectory: async () => ({ reaped: 0, kept: 1 }) },
       overrides: { orphanGraceMs: 250, startTimeOf: async () => 0, lockWaitMs: 3_600_000 },
     });
-    await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { stepMs: 250, maxMs: 5000 });
+    await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { realWork: h.realWork, stepMs: 250, maxMs: 5000 });
     expect(h.log.withMsg('orphans.reaped')).toEqual([expect.objectContaining({ reaped: 0, kept: 1, level: 'warn' })]);
     h.fake.latest('runtime').exit(75);
     await h.waitForState('runtime', 'waiting-lock', 5000);
@@ -407,7 +407,7 @@ describe('orphan reap at supervisor start', () => {
       markerPorts: { findHolders: async () => [999_999] },
       overrides: { orphanGraceMs: 250 },
     });
-    await pumpUntil(h.timers, () => h.markers.calls.reapMarkerDirectory.length === 1, { stepMs: 250, maxMs: 5000 });
+    await pumpUntil(h.timers, () => h.markers.calls.reapMarkerDirectory.length === 1, { realWork: h.realWork, stepMs: 250, maxMs: 5000 });
     expect(h.markers.calls.reapMarkerDirectory[0]?.killGraceMs).toBe(ORPHAN_REAP_GRACE_MS);
     expect(h.markers.calls.reapMarkerDirectory[0]?.dir).toBe(h.paths.markers.daemons);
   });
@@ -419,8 +419,8 @@ describe('orphan reap at supervisor start', () => {
       overrides: { runtime: { drainTimeoutMs: 1000 } },
     });
     const bound = runtimeMaxCloseMs(1000) + 2000;
-    await pumpUntil(h.timers, () => h.clock.now() - Date.parse('2026-01-01T00:00:00.000Z') >= bound - 300, { stepMs: 250, maxMs: bound });
+    await pumpUntil(h.timers, () => h.clock.now() - Date.parse('2026-01-01T00:00:00.000Z') >= bound - 300, { realWork: h.realWork, stepMs: 250, maxMs: bound });
     expect(h.markers.calls.reapMarkerDirectory).toEqual([]);
-    await pumpUntil(h.timers, () => h.markers.calls.reapMarkerDirectory.length === 1, { stepMs: 250, maxMs: 1000 });
+    await pumpUntil(h.timers, () => h.markers.calls.reapMarkerDirectory.length === 1, { realWork: h.realWork, stepMs: 250, maxMs: 1000 });
   });
 });

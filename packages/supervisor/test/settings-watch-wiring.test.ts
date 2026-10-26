@@ -24,7 +24,7 @@ describe('supervisor wiring of watchSettings callbacks', () => {
     captured.options.length = 0;
     const watch = fakeSettingsWatch();
     const h = await startHarness(context, { overrides: { watchSettings: true, settingsWatch: watch.watch } });
-    await pumpUntil(h.timers, () => captured.options.length === 1, { stepMs: 50, maxMs: 10_000 });
+    await pumpUntil(h.timers, () => captured.options.length === 1, { realWork: h.realWork, stepMs: 50, maxMs: 10_000 });
     expect(captured.options).toHaveLength(1);
     const options = captured.options[0] as WatchSettingsOptions;
 

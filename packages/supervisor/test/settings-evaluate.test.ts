@@ -32,20 +32,20 @@ const watched = async (context: CleanupContext, options: HarnessOptions = {}, wa
     await h.waitForState('gateway', 'ready', 10_000);
     await h.waitForState('runtime', 'ready', 10_000);
   }
-  await pump(h.timers, SETTINGS_DEBOUNCE_MS * 2, 50);
+  await pump(h.timers, h.realWork, SETTINGS_DEBOUNCE_MS * 2, 50);
   return Object.assign(h, { watch });
 };
 
 const edit = async (h: Watched, value: unknown): Promise<void> => {
   writeSettings(h.home, value);
   h.watch.fire();
-  await pump(h.timers, SETTINGS_DEBOUNCE_MS + 50, 50);
+  await pump(h.timers, h.realWork, SETTINGS_DEBOUNCE_MS + 50, 50);
 };
 
 const editText = async (h: Watched, text: string): Promise<void> => {
   writeSettingsText(h.home, text);
   h.watch.fire();
-  await pump(h.timers, SETTINGS_DEBOUNCE_MS + 50, 50);
+  await pump(h.timers, h.realWork, SETTINGS_DEBOUNCE_MS + 50, 50);
 };
 
 const planCount = (h: Harness): number => h.log.withMsg('plan.begin').length;
@@ -60,13 +60,13 @@ describe('supervisor-level settings evaluation', () => {
     const h = await startHarness(context, { overrides: { watchSettings: true, settingsWatch: throwingWatch } });
     await h.waitForState('gateway', 'ready', 10_000);
     await h.waitForState('runtime', 'ready', 10_000);
-    await pump(h.timers, 10_000, 50);
+    await pump(h.timers, h.realWork, 10_000, 50);
     const warnings = h.log.withMsg('settings.warning');
     expect(warnings).toHaveLength(1);
     expect(String(warnings[0]?.['detail'])).toContain('EMFILE');
     expect(h.log.withMsg('supervisor.background_failed')).toEqual([]);
     const fatal = settledFlag(h.supervisor.fatal);
-    await pump(h.timers, 100, 50);
+    await pump(h.timers, h.realWork, 100, 50);
     expect(fatal.settled()).toBe(false);
   });
 
@@ -87,8 +87,8 @@ describe('supervisor-level settings evaluation', () => {
       },
       overrides: { watchSettings: true, settingsWatch: seam },
     });
-    await pumpUntil(h.timers, () => planCount(h) === 1 && h.log.withMsg('plan.end').length === 1, { stepMs: 50, maxMs: 30_000 });
-    await pump(h.timers, 20_000, 100);
+    await pumpUntil(h.timers, () => planCount(h) === 1 && h.log.withMsg('plan.end').length === 1, { realWork: h.realWork, stepMs: 50, maxMs: 30_000 });
+    await pump(h.timers, h.realWork, 20_000, 100);
     expect(planCount(h)).toBe(1);
     expect(watch.directories).toEqual([path.join(h.home, '.momonga')]);
     expect(h.log.withMsg('settings.changed')).toEqual([expect.objectContaining({ models: true, sandbox: false })]);
@@ -97,14 +97,14 @@ describe('supervisor-level settings evaluation', () => {
   it('sandbox change restarts only the runtime', async (context) => {
     const h = await watched(context, { settings: validSettings({ sandbox: 'seatbelt' }) });
     await edit(h, validSettings({ sandbox: 'none' }));
-    await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2, { stepMs: 50, maxMs: 30_000 });
+    await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2, { realWork: h.realWork, stepMs: 50, maxMs: 30_000 });
     await h.waitForState('runtime', 'ready');
     expect(h.fake.spawnCount('gateway')).toBe(1);
     expect(h.fake.latest('gateway').signals).toEqual([]);
     expect(h.log.withMsg('plan.begin')).toEqual([expect.objectContaining({ roles: 'runtime', planned: 1 })]);
     expect(h.log.withMsg('settings.changed')).toEqual([expect.objectContaining({ models: false, sandbox: true })]);
     await edit(h, validSettings({ sandbox: 'none' }));
-    await pump(h.timers, 5000, 100);
+    await pump(h.timers, h.realWork, 5000, 100);
     expect(h.fake.spawnCount('runtime')).toBe(2);
   });
 
@@ -112,7 +112,7 @@ describe('supervisor-level settings evaluation', () => {
     const h = await watched(context);
     const mark = h.order.length;
     await edit(h, validSettings({ model: 'gpt-y' }));
-    await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2, { stepMs: 50, maxMs: 30_000 });
+    await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2, { realWork: h.realWork, stepMs: 50, maxMs: 30_000 });
     expect(after(h.order, mark)).toEqual(['SIGTERM:runtime', 'exit:runtime', 'SIGTERM:gateway', 'exit:gateway', 'spawn:gateway', 'spawn:runtime']);
     expect(h.fake.latest('gateway').index).toBeLessThan(h.fake.latest('runtime').index);
     expect(h.log.withMsg('plan.begin')).toEqual([expect.objectContaining({ roles: 'runtime,gateway', planned: 2 })]);
@@ -127,17 +127,17 @@ describe('supervisor-level settings evaluation', () => {
     const h = await watched(context);
     h.fake.setBehaviour('gateway', { autoReady: false });
     await edit(h, validSettings({ model: 'gpt-y' }));
-    await pumpUntil(h.timers, () => h.fake.spawnCount('gateway') === 2, { stepMs: 50, maxMs: 30_000 });
-    await pump(h.timers, 2000, 50);
+    await pumpUntil(h.timers, () => h.fake.spawnCount('gateway') === 2, { realWork: h.realWork, stepMs: 50, maxMs: 30_000 });
+    await pump(h.timers, h.realWork, 2000, 50);
     expect(h.fake.spawnCount('runtime')).toBe(1);
     h.fake.latest('gateway').ready();
-    await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2, { stepMs: 50, maxMs: 1000 });
+    await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2, { realWork: h.realWork, stepMs: 50, maxMs: 1000 });
   });
 
   it('irrelevant change restarts nothing', async (context) => {
     const h = await watched(context);
     await edit(h, { ...validSettings(), permissions: { allow: ['Bash(ls)'] } });
-    await pump(h.timers, 10_000, 100);
+    await pump(h.timers, h.realWork, 10_000, 100);
     expect(planCount(h)).toBe(0);
     expect(h.log.withMsg('settings.invalid')).toEqual([]);
     expect(h.fake.spawnCount()).toBe(2);
@@ -149,7 +149,7 @@ describe('supervisor-level settings evaluation', () => {
   it('every valid evaluation logs settings.evaluated: a sandbox change logs changed, evaluated, plan.begin in that order', async (context) => {
     const h = await watched(context, { settings: validSettings({ sandbox: 'seatbelt' }) });
     await edit(h, validSettings({ sandbox: 'none' }));
-    await pumpUntil(h.timers, () => planCount(h) === 1, { stepMs: 50, maxMs: 30_000 });
+    await pumpUntil(h.timers, () => planCount(h) === 1, { realWork: h.realWork, stepMs: 50, maxMs: 30_000 });
     expect(h.log.withMsg('settings.evaluated')).toEqual([expect.objectContaining({ level: 'info', modelsChanged: false, sandboxChanged: true, roles: 'runtime' })]);
     const messages = h.log.messages();
     const changedAt = messages.indexOf('settings.changed');
@@ -163,7 +163,7 @@ describe('supervisor-level settings evaluation', () => {
   it('every valid evaluation logs settings.evaluated: a models change names both roles', async (context) => {
     const h = await watched(context);
     await edit(h, validSettings({ model: 'gpt-y' }));
-    await pumpUntil(h.timers, () => planCount(h) === 1, { stepMs: 50, maxMs: 30_000 });
+    await pumpUntil(h.timers, () => planCount(h) === 1, { realWork: h.realWork, stepMs: 50, maxMs: 30_000 });
     expect(h.log.withMsg('settings.evaluated')).toEqual([expect.objectContaining({ modelsChanged: true, sandboxChanged: false, roles: 'runtime,gateway' })]);
     const messages = h.log.messages();
     expect(messages.indexOf('settings.evaluated')).toBeLessThan(messages.indexOf('plan.begin'));
@@ -183,8 +183,8 @@ describe('supervisor-level settings evaluation', () => {
     h.fake.latest('runtime').exit(75);
     await h.waitForState('runtime', 'waiting-lock');
     await edit(h, validSettings({ sandbox: 'none' }));
-    await pumpUntil(h.timers, () => h.log.withMsg('settings.evaluated').length === 1, { stepMs: 50, maxMs: 10_000 });
-    await pump(h.timers, 2000, 50);
+    await pumpUntil(h.timers, () => h.log.withMsg('settings.evaluated').length === 1, { realWork: h.realWork, stepMs: 50, maxMs: 10_000 });
+    await pump(h.timers, h.realWork, 2000, 50);
     expect(h.log.withMsg('settings.evaluated')).toEqual([expect.objectContaining({ modelsChanged: false, sandboxChanged: true, roles: '' })]);
     expect(h.log.withMsg('settings.changed')).toEqual([expect.objectContaining({ models: false, sandbox: true })]);
     expect(planCount(h)).toBe(0);
@@ -194,7 +194,7 @@ describe('supervisor-level settings evaluation', () => {
     const h = await watched(context);
     const reordered = Object.fromEntries(Object.entries(validSettings()).reverse());
     await editText(h, `\n${JSON.stringify(reordered, null, 3)}\n`);
-    await pump(h.timers, 1000, 50);
+    await pump(h.timers, h.realWork, 1000, 50);
     expect(h.log.withMsg('settings.evaluated')).toEqual([expect.objectContaining({ modelsChanged: false, sandboxChanged: false, roles: '' })]);
     expect(h.log.withMsg('settings.changed')).toEqual([]);
     expect(planCount(h)).toBe(0);
@@ -203,14 +203,14 @@ describe('supervisor-level settings evaluation', () => {
   it('evaluations that read no valid snapshot log no settings.evaluated', async (context) => {
     const h = await watched(context);
     await edit(h, { ...validSettings(), permissions: { allow: ['Bash(ls)'] } });
-    await pumpUntil(h.timers, () => h.log.withMsg('settings.evaluated').length === 1, { stepMs: 50, maxMs: 10_000 });
+    await pumpUntil(h.timers, () => h.log.withMsg('settings.evaluated').length === 1, { realWork: h.realWork, stepMs: 50, maxMs: 10_000 });
 
     h.watch.fire();
-    await pump(h.timers, SETTINGS_DEBOUNCE_MS + 50, 50);
+    await pump(h.timers, h.realWork, SETTINGS_DEBOUNCE_MS + 50, 50);
     expect(h.log.withMsg('settings.evaluated')).toHaveLength(1);
 
     await editText(h, INVALID_SETTINGS_TEXT);
-    await pumpUntil(h.timers, () => h.log.withMsg('settings.invalid').length === 1, { stepMs: 50, maxMs: 10_000 });
+    await pumpUntil(h.timers, () => h.log.withMsg('settings.invalid').length === 1, { realWork: h.realWork, stepMs: 50, maxMs: 10_000 });
     expect(h.log.withMsg('settings.evaluated')).toHaveLength(1);
 
     const settingsFile = path.join(h.home, '.momonga', 'settings.json');
@@ -223,8 +223,8 @@ describe('supervisor-level settings evaluation', () => {
     }) as typeof fs.readFileSync);
     try {
       await edit(h, { ...validSettings(), permissions: { allow: ['Bash(pwd)'] } });
-      await pumpUntil(h.timers, () => h.log.withMsg('settings.read_failed').length === 1, { stepMs: 50, maxMs: 10_000 });
-      await pump(h.timers, 5000, 100);
+      await pumpUntil(h.timers, () => h.log.withMsg('settings.read_failed').length === 1, { realWork: h.realWork, stepMs: 50, maxMs: 10_000 });
+      await pump(h.timers, h.realWork, 5000, 100);
       expect(h.log.withMsg('settings.read_failed')).toEqual([expect.objectContaining({ level: 'warn' })]);
       expect(h.log.withMsg('settings.evaluated')).toHaveLength(1);
     } finally {
@@ -237,7 +237,7 @@ describe('supervisor-level settings evaluation', () => {
     const settings = validSettings();
     const reordered = Object.fromEntries(Object.entries(settings).reverse());
     await editText(h, `\n\n${JSON.stringify(reordered, null, 7)}\n`);
-    await pump(h.timers, 10_000, 100);
+    await pump(h.timers, h.realWork, 10_000, 100);
     expect(planCount(h)).toBe(0);
     expect(h.fake.spawnCount()).toBe(2);
   });
@@ -245,7 +245,7 @@ describe('supervisor-level settings evaluation', () => {
   it('invalid edit keeps running children', async (context) => {
     const h = await watched(context);
     await editText(h, INVALID_SETTINGS_TEXT);
-    await pump(h.timers, 10_000, 100);
+    await pump(h.timers, h.realWork, 10_000, 100);
     expect(h.fake.children.flatMap((child) => child.signals)).toEqual([]);
     expect(h.fake.spawnCount()).toBe(2);
     const invalid = h.log.withMsg('settings.invalid');
@@ -261,10 +261,10 @@ describe('supervisor-level settings evaluation', () => {
     await h.waitForState('gateway', 'held-config');
     h.fake.setBehaviour('gateway', { autoReady: false });
     await editText(h, INVALID_SETTINGS_TEXT);
-    await pump(h.timers, 1000, 50);
+    await pump(h.timers, h.realWork, 1000, 50);
     expect(h.fake.spawnCount('gateway')).toBe(1);
     await edit(h, validSettings({ permissions: { allow: ['Bash(ls)'] } }));
-    await pumpUntil(h.timers, () => h.fake.spawnCount('gateway') === 2, { stepMs: 50, maxMs: 2000 });
+    await pumpUntil(h.timers, () => h.fake.spawnCount('gateway') === 2, { realWork: h.realWork, stepMs: 50, maxMs: 2000 });
     expect(h.log.withMsg('child.spawn').at(-1)).toMatchObject({ child: 'gateway', reason: 'settings-change' });
     h.fake.latest('gateway').exit(78);
     await h.waitForState('gateway', 'held-config');
@@ -277,7 +277,7 @@ describe('supervisor-level settings evaluation', () => {
     await h.waitForState('gateway', 'held-config');
     await editText(h, INVALID_SETTINGS_TEXT);
     await editText(h, `${INVALID_SETTINGS_TEXT} `);
-    await pump(h.timers, 1000, 50);
+    await pump(h.timers, h.realWork, 1000, 50);
     expect(h.child('gateway').state).toBe('held-config');
     expect(h.log.withMsg('settings.invalid').length).toBeGreaterThanOrEqual(1);
   });
@@ -286,11 +286,11 @@ describe('supervisor-level settings evaluation', () => {
     const h = await watched(context, { behaviours: { runtime: { autoReady: false, onTerm: 'exit1' } } }, false);
     await h.waitForState('gateway', 'ready', 10_000);
     expect(h.child('runtime').state).toBe('starting');
-    await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 1, { stepMs: 50, maxMs: 5000 });
+    await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 1, { realWork: h.realWork, stepMs: 50, maxMs: 5000 });
     const mark = h.order.length;
     await edit(h, validSettings({ model: 'gpt-y' }));
-    await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2, { stepMs: 50, maxMs: 30_000 });
-    await pump(h.timers, 5000, 50);
+    await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2, { realWork: h.realWork, stepMs: 50, maxMs: 30_000 });
+    await pump(h.timers, h.realWork, 5000, 50);
     expect(h.fake.spawnCount('runtime')).toBe(2);
     expect(after(h.order, mark).filter((entry) => entry.startsWith('spawn'))).toEqual(['spawn:gateway', 'spawn:runtime']);
     expect(h.child('runtime').consecutiveFailures).toBe(0);
@@ -301,10 +301,10 @@ describe('supervisor-level settings evaluation', () => {
     const h = await watched(context);
     h.fake.setBehaviour('gateway', { autoReady: false });
     await edit(h, validSettings({ model: 'gpt-y' }));
-    await pumpUntil(h.timers, () => h.fake.spawnCount('gateway') === 2, { stepMs: 50, maxMs: 30_000 });
+    await pumpUntil(h.timers, () => h.fake.spawnCount('gateway') === 2, { realWork: h.realWork, stepMs: 50, maxMs: 30_000 });
     const exitAt = h.clock.now();
     h.fake.latest('gateway').exit(78);
-    await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2, { stepMs: 50, maxMs: 2000 });
+    await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2, { realWork: h.realWork, stepMs: 50, maxMs: 2000 });
     expect(h.clock.now() - exitAt).toBeLessThan(1000);
     expect(h.child('gateway').state).toBe('held-config');
   });
@@ -324,12 +324,12 @@ describe('supervisor-level settings evaluation', () => {
     expect(!holdsLock || holderPid > 0).toBe(true);
     h.fake.setBehaviour('gateway', { autoReady: false });
     await edit(h, validSettings({ model: 'gpt-y' }));
-    await pumpUntil(h.timers, () => h.fake.spawnCount('gateway') === 2, { stepMs: 50, maxMs: 30_000 });
+    await pumpUntil(h.timers, () => h.fake.spawnCount('gateway') === 2, { realWork: h.realWork, stepMs: 50, maxMs: 30_000 });
     expect(h.child('gateway').state).toBe('starting');
     const pendingDelays = h.timers.pending().map((timer) => timer.delayMs);
     expect(pendingDelays.filter((delayMs) => delayMs === PLAN_POLL_SUSPECT_MS)).toEqual([]);
     h.fake.latest('gateway').exit(holdsLock ? 75 : 1);
-    await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2, { stepMs: 50, maxMs: 2000 });
+    await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2, { realWork: h.realWork, stepMs: 50, maxMs: 2000 });
     if (state === 'external') {
       await h.waitForState('gateway', 'external', 10_000);
       expect(h.fake.latest('gateway').signals).toEqual([]);
@@ -348,8 +348,8 @@ describe('supervisor-level settings evaluation', () => {
     h.fake.latest('runtime').exit(75);
     await h.waitForState('runtime', 'waiting-lock');
     await edit(h, validSettings({ model: 'gpt-y' }));
-    await pumpUntil(h.timers, () => h.fake.spawnCount('gateway') === 2, { stepMs: 50, maxMs: 30_000 });
-    await pump(h.timers, 2000, 50);
+    await pumpUntil(h.timers, () => h.fake.spawnCount('gateway') === 2, { realWork: h.realWork, stepMs: 50, maxMs: 30_000 });
+    await pump(h.timers, h.realWork, 2000, 50);
     expect(h.fake.of('runtime').flatMap((child) => child.signals)).toEqual([]);
     expect(h.child('runtime').state).toBe('waiting-lock');
     expect(h.fake.spawnCount('runtime')).toBe(1);
@@ -368,7 +368,7 @@ describe('supervisor-level settings evaluation', () => {
     h.fake.latest('runtime').exit(75);
     await h.waitForState('runtime', 'external', 10_000);
     await edit(h, validSettings({ model: 'gpt-y' }));
-    await pumpUntil(h.timers, () => h.fake.spawnCount('gateway') === 2, { stepMs: 50, maxMs: 30_000 });
+    await pumpUntil(h.timers, () => h.fake.spawnCount('gateway') === 2, { realWork: h.realWork, stepMs: 50, maxMs: 30_000 });
     expect(h.fake.of('runtime').flatMap((child) => child.signals)).toEqual([]);
     expect(h.child('runtime').state).toBe('external');
     expect(h.fake.latest('gateway').index).toBeGreaterThan(0);
@@ -380,8 +380,8 @@ describe('supervisor-level settings evaluation', () => {
     h.fake.latest('runtime').exit(1);
     await h.waitForState('runtime', 'backoff');
     await edit(h, validSettings({ model: 'gpt-y' }));
-    await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2, { stepMs: 50, maxMs: 60_000 });
-    await pump(h.timers, 30_000, 100);
+    await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2, { realWork: h.realWork, stepMs: 50, maxMs: 60_000 });
+    await pump(h.timers, h.realWork, 30_000, 100);
     expect(h.fake.spawnCount('runtime')).toBe(2);
     expect(h.fake.of('runtime')[0]?.signals).toEqual([]);
     expect(h.fake.spawnCount('gateway')).toBe(2);
@@ -392,8 +392,8 @@ describe('supervisor-level settings evaluation', () => {
     h.fake.latest('runtime').exit(78);
     await h.waitForState('runtime', 'held-config');
     await edit(h, validSettings({ model: 'gpt-y' }));
-    await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2 && h.fake.spawnCount('gateway') === 2, { stepMs: 50, maxMs: 30_000 });
-    await pump(h.timers, 5000, 100);
+    await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2 && h.fake.spawnCount('gateway') === 2, { realWork: h.realWork, stepMs: 50, maxMs: 30_000 });
+    await pump(h.timers, h.realWork, 5000, 100);
     const runtimeSpawns = h.log.withMsg('child.spawn').filter((line) => line['child'] === 'runtime');
     expect(runtimeSpawns.map((line) => line['reason'])).toEqual(['initial', 'settings-change']);
   });
@@ -409,12 +409,12 @@ describe('supervisor-level settings evaluation', () => {
     });
     h.fake.setBehaviour('runtime', { onTerm: 'ignore', onKill: 'ignore' });
     await edit(h, validSettings({ model: 'gpt-y' }));
-    await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2, { stepMs: 100, maxMs: RUNTIME_TERM_BOUND + KILL_CONFIRM_MS + 30_000 });
+    await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2, { realWork: h.realWork, stepMs: 100, maxMs: RUNTIME_TERM_BOUND + KILL_CONFIRM_MS + 30_000 });
     expect(h.log.withMsg('child.unkillable')).toEqual([expect.objectContaining({ child: 'runtime' })]);
     expect(h.fake.spawnCount('gateway')).toBe(2);
     h.fake.latest('runtime').exit(75);
     await h.waitForState('runtime', 'waiting-lock');
-    await pump(h.timers, 10_000, 100);
+    await pump(h.timers, h.realWork, 10_000, 100);
     expect(h.fake.spawnCount('runtime')).toBe(2);
   });
 
@@ -425,8 +425,8 @@ describe('supervisor-level settings evaluation', () => {
     const restartedRuntime = h.fake.latest('runtime');
     const runtimeEvent = (kind: 'kill' | 'killGroup') =>
       h.fake.events.find((event) => event.role === 'runtime' && event.pid === restartedRuntime.pid && event.kind === kind);
-    await pumpUntil(h.timers, () => runtimeEvent('kill') !== undefined, { stepMs: 50, maxMs: 5000 });
-    await pumpUntil(h.timers, () => runtimeEvent('killGroup') !== undefined, { stepMs: 50, maxMs: RUNTIME_TERM_BOUND + 1000 });
+    await pumpUntil(h.timers, () => runtimeEvent('kill') !== undefined, { realWork: h.realWork, stepMs: 50, maxMs: 5000 });
+    await pumpUntil(h.timers, () => runtimeEvent('killGroup') !== undefined, { realWork: h.realWork, stepMs: 50, maxMs: RUNTIME_TERM_BOUND + 1000 });
     const sigterm = runtimeEvent('kill');
     const groupKill = runtimeEvent('killGroup');
     expect(sigterm?.detail).toBe('SIGTERM');
@@ -442,14 +442,14 @@ describe('supervisor-level settings evaluation', () => {
     });
     h.fake.setBehaviour('runtime', { onTerm: 'ignore' });
     await edit(h, validSettings({ model: 'gpt-y' }));
-    await pumpUntil(h.timers, () => h.fake.latest('runtime').signals.length === 1, { stepMs: 50, maxMs: 5000 });
+    await pumpUntil(h.timers, () => h.fake.latest('runtime').signals.length === 1, { realWork: h.realWork, stepMs: 50, maxMs: 5000 });
     await edit(h, validSettings({ model: 'gpt-z', apiKeyEnv: 'SECOND_EDIT_NAME' }));
     await edit(h, validSettings({ model: 'gpt-w', apiKeyEnv: 'THIRD_EDIT_NAME' }));
     expect(planCount(h)).toBe(1);
     h.fake.setBehaviour('runtime', { onTerm: 'exit0' });
     h.fake.latest('runtime').exit(0);
-    await pumpUntil(h.timers, () => h.log.withMsg('plan.end').length === 1, { stepMs: 50, maxMs: 60_000 });
-    await pump(h.timers, 20_000, 100);
+    await pumpUntil(h.timers, () => h.log.withMsg('plan.end').length === 1, { realWork: h.realWork, stepMs: 50, maxMs: 60_000 });
+    await pump(h.timers, h.realWork, 20_000, 100);
     expect(planCount(h)).toBe(1);
     expect(h.fake.spawnCount('runtime')).toBe(2);
     expect(h.fake.spawnCount('gateway')).toBe(2);
@@ -479,8 +479,8 @@ describe('the first spawn and the settings read', () => {
     await waitFor(() => h.markers.calls.findHolders.length > 0);
     writeSettings(h.home, validSettings({ sandbox: 'none', apiKeyEnv: 'UPSTREAM_SECRET_NAME' }));
     holding = false;
-    await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { stepMs: 250, maxMs: 5000 });
-    await pump(h.timers, 10_000, 100);
+    await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { realWork: h.realWork, stepMs: 250, maxMs: 5000 });
+    await pump(h.timers, h.realWork, 10_000, 100);
     expect(planCount(h)).toBe(0);
     expect(h.fake.spawnCount()).toBe(2);
     expect(h.fake.latest('gateway').options.env['UPSTREAM_SECRET_NAME']).toBe('value-for-test');

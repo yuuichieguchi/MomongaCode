@@ -11,6 +11,7 @@ import {
   T0,
   TEST_VERSION,
   createFakeSpawn,
+  createRealWorkScope,
   drive,
   fakeLauncher,
   httpOver,
@@ -23,10 +24,11 @@ import {
   writeMarker,
   writeSettings,
 } from './fixtures/p3-harness.ts';
-import type { FakeSpawn, MarkerCalls } from './fixtures/p3-harness.ts';
+import type { FakeSpawn, MarkerCalls, RealWorkScope } from './fixtures/p3-harness.ts';
 import type { MarkerPorts } from '../src/orphans.ts';
 
 type EntryRun = {
+  realWork: RealWorkScope;
   io: FakeEntryIo;
   home: string;
   paths: MomongaPaths;
@@ -63,7 +65,8 @@ const startEntry = (context: CleanupContext, options: EntryOptions = {}): EntryR
   const fake = createFakeSpawn();
   const markers = recordingMarkerPorts(options.markerPorts ?? {});
   const lockSleeps: number[] = [];
-  const code = runSupervisorEntry(io, {
+  const realWork = createRealWorkScope();
+  const code = realWork.run(() => runSupervisorEntry(io, {
     launcher: fakeLauncher,
     spawn: fake.port,
     markerPorts: markers.ports,
@@ -79,7 +82,7 @@ const startEntry = (context: CleanupContext, options: EntryOptions = {}): EntryR
       },
     },
     ...options.deps,
-  });
+  }));
   let done = false;
   void code.then(
     () => {
@@ -98,6 +101,7 @@ const startEntry = (context: CleanupContext, options: EntryOptions = {}): EntryR
     }
   });
   return {
+    realWork,
     io,
     home,
     paths,
@@ -122,12 +126,12 @@ const childrenReady = async (run: EntryRun): Promise<void> => {
   await pumpUntil(
     run.timers,
     () => run.fake.spawnCount('gateway') >= 1 && run.fake.spawnCount('runtime') >= 1 && run.supervisorLog().filter((line) => line.msg === 'child.ready').length >= 2,
-    { stepMs: 50, maxMs: 10_000, description: 'both children ready' },
+    { stepMs: 50, maxMs: 10_000, description: 'both children ready', realWork: run.realWork },
   );
 };
 
 const exitOf = async (run: EntryRun, maxMs = 200_000): Promise<number> => {
-  await drive(run.timers, () => run.exited(), { stepMs: 50, maxSteps: Math.ceil(maxMs / 50), description: 'entry exit' });
+  await drive(run.timers, () => run.exited(), { stepMs: 50, maxSteps: Math.ceil(maxMs / 50), description: 'entry exit', realWork: run.realWork });
   return run.code;
 };
 
@@ -301,7 +305,7 @@ describe('runSupervisorEntry', () => {
     runtime.writeStderr('TypeError: boom');
     runtime.writeStdout('a stray stdout line');
     runtime.exit(1);
-    await pumpUntil(run.timers, () => run.fake.spawnCount('runtime') === 2, { stepMs: 50, maxMs: 10_000 });
+    await pumpUntil(run.timers, () => run.fake.spawnCount('runtime') === 2, { stepMs: 50, maxMs: 10_000, realWork: run.realWork });
     expect(run.io.logFilePaths).toEqual([run.paths.logFiles.supervisor]);
     const lines = run.supervisorLog();
     expect(lines).toContainEqual(expect.objectContaining({ msg: 'child.stderr', child: 'runtime', childPid: runtime.pid, raw: 'TypeError: boom' }));

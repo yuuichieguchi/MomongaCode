@@ -1,3 +1,4 @@
+import { AsyncLocalStorage, createHook } from 'node:async_hooks';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -5,6 +6,7 @@ import { PassThrough } from 'node:stream';
 import { createJsonLogger, momongaPaths } from '@momonga/foundation';
 import type { JsonLogger, MomongaPaths, TextStream } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
+import { onTestFinished } from 'vitest';
 import { createFakeClock, createFakeTimers, registerCleanup, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, FakeClock, FakeTimers, JsonLine } from '@momonga/testkit';
 import type { ChildExit, ChildHandle, SpawnPort, SpawnPortOptions } from '../../src/child-manager.ts';
@@ -18,6 +20,76 @@ export const TEST_VERSION = '9.9.9-test';
 
 export const turns = async (count = 20): Promise<void> => {
   for (let index = 0; index < count; index += 1) await new Promise<void>((resolve) => setImmediate(resolve));
+};
+
+const ONE_SHOT_REQUEST_TYPE_LIST = [
+  'FSREQCALLBACK',
+  'FSREQPROMISE',
+  'FILEHANDLECLOSEREQ',
+  'GETADDRINFOREQWRAP',
+  'GETNAMEINFOREQWRAP',
+  'QUERYWRAP',
+  'TCPCONNECTWRAP',
+  'PIPECONNECTWRAP',
+  'WRITEWRAP',
+  'SHUTDOWNWRAP',
+] as const;
+
+type OneShotRequestType = (typeof ONE_SHOT_REQUEST_TYPE_LIST)[number];
+
+const ONE_SHOT_REQUEST_TYPES: ReadonlySet<string> = new Set<OneShotRequestType>(ONE_SHOT_REQUEST_TYPE_LIST);
+
+export type RealWorkScope = {
+  run<T>(fn: () => T): T;
+  inFlight(): boolean;
+  describe(): string;
+  dispose(): void;
+};
+
+export const createRealWorkScope = (): RealWorkScope => {
+  const storage = new AsyncLocalStorage<object>();
+  const token = {};
+  const requests = new Map<number, string>();
+  const timers = new Map<number, { hasRef(): boolean }>();
+  const hook = createHook({
+    init: (asyncId, type, _trigger, resource) => {
+      if (storage.getStore() !== token) return;
+      if (ONE_SHOT_REQUEST_TYPES.has(type)) requests.set(asyncId, type);
+      else if (type === 'Timeout' && 'hasRef' in resource && typeof resource.hasRef === 'function') timers.set(asyncId, resource as { hasRef(): boolean });
+    },
+    destroy: (asyncId) => {
+      requests.delete(asyncId);
+      timers.delete(asyncId);
+    },
+  }).enable();
+  const refTimerCount = (): number => [...timers.values()].filter((timer) => timer.hasRef()).length;
+  const scope: RealWorkScope = {
+    run: (fn) => storage.run(token, fn),
+    inFlight: () => requests.size > 0 || refTimerCount() > 0,
+    describe: () => {
+      const counts = new Map<string, number>();
+      for (const type of requests.values()) counts.set(type, (counts.get(type) ?? 0) + 1);
+      const requestSummary = [...counts].map(([type, count]) => `${type}=${String(count)}`).join(',');
+      return `real work in flight: requests[${requestSummary}] refTimers=${String(refTimerCount())}`;
+    },
+    dispose: () => {
+      hook.disable();
+      requests.clear();
+      timers.clear();
+    },
+  };
+  onTestFinished(() => {
+    scope.dispose();
+  });
+  return scope;
+};
+
+const waitForWithRealWork = async (realWork: RealWorkScope, predicate: () => boolean, description: string): Promise<void> => {
+  try {
+    await waitFor(predicate, { description });
+  } catch (error) {
+    throw new Error(`${error instanceof Error ? error.message : String(error)}; ${realWork.describe()}`, { cause: error });
+  }
 };
 
 export type CapturedLog = {
@@ -327,10 +399,11 @@ export const recordingMarkerPorts = (overrides: MarkerPorts = {}, record?: strin
   return { ports, calls };
 };
 
-export const pump = async (timers: FakeTimers, ms: number, stepMs = 50): Promise<void> => {
+export const pump = async (timers: FakeTimers, realWork: RealWorkScope, ms: number, stepMs = 50): Promise<void> => {
   let remaining = ms;
   await turns();
   while (remaining > 0) {
+    await waitForWithRealWork(realWork, () => !realWork.inFlight(), 'real work before advancing fake time');
     const step = Math.min(stepMs, remaining);
     timers.advance(step);
     remaining -= step;
@@ -338,13 +411,21 @@ export const pump = async (timers: FakeTimers, ms: number, stepMs = 50): Promise
   }
 };
 
-export const pumpUntil = async (timers: FakeTimers, predicate: () => boolean, options: { stepMs?: number; maxMs?: number; description?: string } = {}): Promise<void> => {
+export const pumpUntil = async (
+  timers: FakeTimers,
+  predicate: () => boolean,
+  options: { realWork: RealWorkScope; stepMs?: number; maxMs?: number; description?: string },
+): Promise<void> => {
+  const { realWork } = options;
   const stepMs = options.stepMs ?? 50;
   const maxMs = options.maxMs ?? 600_000;
+  const description = options.description ?? 'condition';
   let elapsed = 0;
   await turns();
   while (!predicate()) {
-    if (elapsed >= maxMs) throw new Error(`pumpUntil: ${options.description ?? 'condition'} not met after ${maxMs} fake ms`);
+    if (elapsed >= maxMs) throw new Error(`pumpUntil: ${description} not met after ${maxMs} fake ms`);
+    await waitForWithRealWork(realWork, () => predicate() || !realWork.inFlight(), `${description} or quiet real work`);
+    if (predicate()) return;
     timers.advance(stepMs);
     elapsed += stepMs;
     await turns();
@@ -371,6 +452,7 @@ export type Harness = {
   readonly paths: MomongaPaths;
   readonly clock: FakeClock;
   readonly timers: FakeTimers;
+  readonly realWork: RealWorkScope;
   readonly fake: FakeSpawn;
   readonly log: CapturedLog;
   readonly stdout: CapturedText;
@@ -407,6 +489,7 @@ export const startHarness = async (context: CleanupContext, options: HarnessOpti
   if (options.settingsText !== undefined) writeSettingsText(home, options.settingsText);
   else writeSettings(home, options.settings ?? validSettings());
   options.prepare?.(home, paths);
+  const realWork = createRealWorkScope();
   const clock = createFakeClock(T0);
   const timers = createFakeTimers(clock);
   const order: string[] = options.order ?? [];
@@ -417,7 +500,7 @@ export const startHarness = async (context: CleanupContext, options: HarnessOpti
     options.onStdout?.(chunk);
   });
   const markers = recordingMarkerPorts(options.markerPorts ?? {}, order);
-  const supervisor = await startSupervisor({
+  const supervisor = await realWork.run(() => startSupervisor({
     home,
     version: TEST_VERSION,
     launcher: options.overrides?.launcher ?? fakeLauncher,
@@ -431,7 +514,7 @@ export const startHarness = async (context: CleanupContext, options: HarnessOpti
     random: () => 0.5,
     watchSettings: false,
     ...options.overrides,
-  });
+  }));
   registerCleanup(context, async () => {
     fake.dieOnAnySignal();
     const closing = settledFlag(supervisor.abort());
@@ -453,6 +536,7 @@ export const startHarness = async (context: CleanupContext, options: HarnessOpti
     paths,
     clock,
     timers,
+    realWork,
     fake,
     log,
     stdout,
@@ -462,7 +546,7 @@ export const startHarness = async (context: CleanupContext, options: HarnessOpti
     health,
     child,
     waitForState: async (role, state, maxMs = 120_000) => {
-      await pumpUntil(timers, () => child(role).state === state, { maxMs, description: `${role} ${state}` });
+      await pumpUntil(timers, () => child(role).state === state, { realWork, maxMs, description: `${role} ${state}` });
     },
   };
 };
@@ -544,11 +628,16 @@ export const writeLockFile = (lockPath: string, pid: number, mtimeMs?: number): 
   if (mtimeMs !== undefined) fs.utimesSync(lockPath, mtimeMs / 1000, mtimeMs / 1000);
 };
 
-export const drive = async (timers: FakeTimers, done: () => boolean, options: { stepMs?: number; maxSteps?: number; description?: string } = {}): Promise<void> => {
+export const drive = async (
+  timers: FakeTimers,
+  done: () => boolean,
+  options: { realWork: RealWorkScope; stepMs?: number; maxSteps?: number; description?: string },
+): Promise<void> => {
+  const { realWork } = options;
   const stepMs = options.stepMs ?? 50;
   const maxSteps = options.maxSteps ?? 10_000;
   for (let step = 0; step < maxSteps && !done(); step += 1) {
-    await waitFor(() => done() || timers.pending().length > 0, { description: options.description ?? 'next fake timer' });
+    await waitForWithRealWork(realWork, () => done() || (timers.pending().length > 0 && !realWork.inFlight()), options.description ?? 'next fake timer');
     if (done()) return;
     timers.advance(stepMs);
     await turns(5);
