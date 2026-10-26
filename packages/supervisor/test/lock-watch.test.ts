@@ -8,7 +8,7 @@ import type { CleanupContext } from '@momonga/testkit';
 import { PROBE_HEADERS_TIMEOUT_MS, holderPidOf, labelHealthResponse, probeExternalHealth, watchLock } from '../src/lock-watch.ts';
 import type { ExternalProbe, LockWatchOptions, ProbeOutcome } from '../src/lock-watch.ts';
 import type { ChildRole } from '../src/launcher.ts';
-import { drive, pump, pumpUntil, startHarness, turns } from './fixtures/p3-harness.ts';
+import { createRealWorkScope, drive, pump, pumpUntil, startHarness, turns } from './fixtures/p3-harness.ts';
 
 describe('labelHealthResponse', () => {
   it('external probe labels', () => {
@@ -100,6 +100,7 @@ type Scripted = {
 const watchHarness = (overrides: Partial<LockWatchOptions> = {}) => {
   const clock = createFakeClock(0);
   const timers = createFakeTimers(clock);
+  const realWork = createRealWorkScope();
   const scripted: Scripted = { inspections: [], next: { state: 'held', pid: 4321 } };
   const events: string[] = [];
   const probes: number[] = [];
@@ -128,10 +129,11 @@ const watchHarness = (overrides: Partial<LockWatchOptions> = {}) => {
     onBackgroundError: (error, source) => void backgroundErrors.push({ error, source }),
     ...overrides,
   };
-  const watch = watchLock(options);
+  const watch = realWork.run(() => watchLock(options));
   return {
     clock,
     timers,
+    realWork,
     scripted,
     events,
     probes,
@@ -146,37 +148,37 @@ const watchHarness = (overrides: Partial<LockWatchOptions> = {}) => {
 describe('watchLock', () => {
   it('exit 75 waits on the lock and fires onFree when it frees', async () => {
     const h = watchHarness({ lockWaitMs: 3_600_000 });
-    await pump(h.timers, 5 * 60_000, 500);
+    await pump(h.timers, h.realWork, 5 * 60_000, 500);
     expect(h.events.filter((event) => event.startsWith('free'))).toEqual([]);
     expect(h.scripted.inspections.length).toBeGreaterThanOrEqual(599);
     expect(h.scripted.inspections.length).toBeLessThanOrEqual(601);
     const freedAt = h.clock.now();
     h.scripted.next = { state: 'free' };
-    await pumpUntil(h.timers, () => h.events.some((event) => event.startsWith('free')), { stepMs: 50, maxMs: 1000 });
+    await pumpUntil(h.timers, () => h.events.some((event) => event.startsWith('free')), { realWork: h.realWork, stepMs: 50, maxMs: 1000 });
     expect(h.clock.now() - freedAt).toBeLessThanOrEqual(500);
     const callsAtFree = h.scripted.inspections.length;
-    await pump(h.timers, 5000, 500);
+    await pump(h.timers, h.realWork, 5000, 500);
     expect(h.scripted.inspections.length).toBe(callsAtFree);
     expect(h.timers.pending()).toEqual([]);
   });
 
   it('lockWaitMs expiry gives external with the holder pid', async () => {
     const h = watchHarness({ lockWaitMs: 2000 });
-    await pump(h.timers, 1950, 50);
+    await pump(h.timers, h.realWork, 1950, 50);
     expect(h.events.filter((event) => event.startsWith('external'))).toEqual([]);
-    await pump(h.timers, 600, 50);
+    await pump(h.timers, h.realWork, 600, 50);
     expect(h.events.filter((event) => event.startsWith('external'))).toEqual([expect.stringMatching(/^external:4321@/)]);
     h.watch.stop();
   });
 
   it('the first probe starts on entering external, then every EXTERNAL_POLL_MS', async () => {
     const h = watchHarness({ lockWaitMs: 1000 });
-    await pumpUntil(h.timers, () => h.events.some((event) => event.startsWith('external')), { stepMs: 50, maxMs: 5000 });
+    await pumpUntil(h.timers, () => h.events.some((event) => event.startsWith('external')), { realWork: h.realWork, stepMs: 50, maxMs: 5000 });
     const enteredAt = h.clock.now();
     await turns();
     expect(h.probes).toEqual([enteredAt]);
     expect(h.events).toContain('probe:unreachable');
-    await pumpUntil(h.timers, () => h.clock.now() >= enteredAt + 60_000, { stepMs: 50 });
+    await pumpUntil(h.timers, () => h.clock.now() >= enteredAt + 60_000, { realWork: h.realWork, stepMs: 50 });
     expect(h.probes).toHaveLength(13);
     expect(h.probes.map((at) => at - enteredAt)).toEqual(Array.from({ length: 13 }, (_unused, index) => index * 5000));
     h.watch.stop();
@@ -185,19 +187,19 @@ describe('watchLock', () => {
   it('probe results are reported as they change', async () => {
     const h = watchHarness({ lockWaitMs: 500 });
     h.setProbe('healthy');
-    await pumpUntil(h.timers, () => h.events.includes('probe:healthy'), { stepMs: 50, maxMs: 5000 });
+    await pumpUntil(h.timers, () => h.events.includes('probe:healthy'), { realWork: h.realWork, stepMs: 50, maxMs: 5000 });
     h.setProbe('unhealthy');
-    await pumpUntil(h.timers, () => h.events.includes('probe:unhealthy'), { stepMs: 50, maxMs: 10_000 });
+    await pumpUntil(h.timers, () => h.events.includes('probe:unhealthy'), { realWork: h.realWork, stepMs: 50, maxMs: 10_000 });
     h.watch.stop();
   });
 
   it('external polls the lock at LOCK_POLL_MS', async () => {
     const h = watchHarness({ lockWaitMs: 1000 });
-    await pumpUntil(h.timers, () => h.events.some((event) => event.startsWith('external')), { stepMs: 50, maxMs: 5000 });
-    await pump(h.timers, 1200, 50);
+    await pumpUntil(h.timers, () => h.events.some((event) => event.startsWith('external')), { realWork: h.realWork, stepMs: 50, maxMs: 5000 });
+    await pump(h.timers, h.realWork, 1200, 50);
     const freedAt = h.clock.now();
     h.scripted.next = { state: 'free' };
-    await pumpUntil(h.timers, () => h.events.some((event) => event.startsWith('free')), { stepMs: 50, maxMs: 5000 });
+    await pumpUntil(h.timers, () => h.events.some((event) => event.startsWith('free')), { realWork: h.realWork, stepMs: 50, maxMs: 5000 });
     expect(h.clock.now() - freedAt).toBeLessThanOrEqual(500);
     expect(h.timers.pending()).toEqual([]);
   });
@@ -205,7 +207,7 @@ describe('watchLock', () => {
   it('unreadable lock counts as held', async () => {
     const h = watchHarness({ lockWaitMs: 2000 });
     h.scripted.next = { state: 'unreadable' };
-    await pump(h.timers, 3000, 50);
+    await pump(h.timers, h.realWork, 3000, 50);
     expect(h.events.filter((event) => event.startsWith('free'))).toEqual([]);
     expect(h.events.filter((event) => event.startsWith('external'))).toEqual([expect.stringMatching(/^external:undefined@/)]);
     h.watch.stop();
@@ -214,14 +216,14 @@ describe('watchLock', () => {
   it('the waiting loop passes one memo per watch and forwards startTimeOf', async () => {
     const startTimeOf = async (): Promise<number | undefined> => 0;
     const h = watchHarness({ lockWaitMs: 3_600_000, startTimeOf });
-    await pump(h.timers, 10_000, 500);
+    await pump(h.timers, h.realWork, 10_000, 500);
     expect(h.scripted.inspections.length).toBeGreaterThanOrEqual(19);
     const first = h.scripted.inspections[0];
     expect(first?.memo).toBeDefined();
     expect(first?.startTimeOf).toBe(startTimeOf);
     for (const inspection of h.scripted.inspections) expect(inspection?.memo).toBe(first?.memo);
     const other = watchHarness({ role: 'gateway', lockWaitMs: 3_600_000 });
-    await pump(other.timers, 1000, 500);
+    await pump(other.timers, other.realWork, 1000, 500);
     expect(other.scripted.inspections[0]?.memo).toBeDefined();
     expect(other.scripted.inspections[0]?.memo).not.toBe(first?.memo);
     h.watch.stop();
@@ -235,7 +237,7 @@ describe('watchLock', () => {
       new Promise<ProcessLockInspection>((resolve) => {
         release = resolve;
       });
-    await pumpUntil(h.timers, () => h.scripted.inspections.length > 0, { stepMs: 50, maxMs: 2000 });
+    await pumpUntil(h.timers, () => h.scripted.inspections.length > 0, { realWork: h.realWork, stepMs: 50, maxMs: 2000 });
     h.watch.stop();
     release({ state: 'free' });
     await turns();
@@ -247,7 +249,7 @@ describe('watchLock', () => {
     const h = watchHarness({ lockWaitMs: 3_600_000 });
     const failure = Object.assign(new Error('lock read EIO'), { code: 'EIO' });
     h.scripted.next = () => Promise.reject(failure);
-    await pump(h.timers, 1500, 50);
+    await pump(h.timers, h.realWork, 1500, 50);
     expect(h.backgroundErrors.length).toBeGreaterThanOrEqual(1);
     expect(h.backgroundErrors[0]?.error).toBe(failure);
     expect(typeof h.backgroundErrors[0]?.source).toBe('string');
@@ -283,11 +285,11 @@ describe('watchLock', () => {
 
   it('stop clears every timer', async () => {
     const h = watchHarness({ lockWaitMs: 500 });
-    await pumpUntil(h.timers, () => h.events.some((event) => event.startsWith('external')), { stepMs: 50, maxMs: 5000 });
+    await pumpUntil(h.timers, () => h.events.some((event) => event.startsWith('external')), { realWork: h.realWork, stepMs: 50, maxMs: 5000 });
     h.watch.stop();
     expect(h.timers.pending()).toEqual([]);
     const probes = h.probes.length;
-    await pump(h.timers, 20_000, 500);
+    await pump(h.timers, h.realWork, 20_000, 500);
     expect(h.probes).toHaveLength(probes);
   });
 });
@@ -376,7 +378,7 @@ describe('exit 75 through the supervisor', () => {
     await h.waitForState('runtime', 'ready');
     h.fake.latest('runtime').exit(75);
     await h.waitForState('runtime', 'waiting-lock');
-    await pump(h.timers, 5 * 60_000, 500);
+    await pump(h.timers, h.realWork, 5 * 60_000, 500);
     expect(h.fake.spawnCount('runtime')).toBe(1);
     expect(h.child('runtime')).toMatchObject({ state: 'waiting-lock', consecutiveFailures: 0 });
     expect(h.child('runtime').lastExit).toMatchObject({ code: 75, reason: 'lock-held' });
@@ -389,7 +391,7 @@ describe('exit 75 through the supervisor', () => {
         return true;
       }
     });
-    await drive(h.timers, () => h.fake.spawnCount('runtime') === 2, { stepMs: 50, maxSteps: 200, description: 'respawn after the lock frees' });
+    await drive(h.timers, () => h.fake.spawnCount('runtime') === 2, { realWork: h.realWork, stepMs: 50, maxSteps: 200, description: 'respawn after the lock frees' });
     expect(h.log.withMsg('child.spawn').at(-1)).toMatchObject({ child: 'runtime', reason: 'lock-free' });
     expect(h.child('runtime').consecutiveFailures).toBe(0);
   });
@@ -408,7 +410,7 @@ describe('exit 75 through the supervisor', () => {
     const external = h.child('runtime').external;
     expect(external?.pid).toBe(holderPid);
     expect(['pending', 'unreachable']).toContain(external?.probe);
-    await pumpUntil(h.timers, () => h.child('runtime').external?.probe === 'unreachable', { stepMs: 50, maxMs: 10_000 });
+    await pumpUntil(h.timers, () => h.child('runtime').external?.probe === 'unreachable', { realWork: h.realWork, stepMs: 50, maxMs: 10_000 });
     expect(h.fake.spawnCount('runtime')).toBe(1);
     expect(() => process.kill(holderPid, 0)).not.toThrow();
     expect(h.log.withMsg('child.external')).toEqual([expect.objectContaining({ child: 'runtime', holderPid })]);

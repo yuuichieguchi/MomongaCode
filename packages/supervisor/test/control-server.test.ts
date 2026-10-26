@@ -13,7 +13,7 @@ import type { CleanupContext } from '@momonga/testkit';
 import { respondShutdown, startControlServer } from '../src/control-server.ts';
 import type { ControlServer } from '../src/control-server.ts';
 import { trackSupervisorChildren } from './support/track-supervisor-children.ts';
-import { httpOver, phaseChanges, pumpUntil, settledFlag, startHarness, turns, writeMarker } from './fixtures/p3-harness.ts';
+import { createRealWorkScope, httpOver, phaseChanges, pumpUntil, settledFlag, startHarness, turns, writeMarker } from './fixtures/p3-harness.ts';
 
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
@@ -82,9 +82,10 @@ const startServer = async (context: CleanupContext, health: () => SupervisorHeal
   const socketPath = path.join(runDir(context), 'supervisor.sock');
   const clock = createFakeClock(0);
   const timers = createFakeTimers(clock);
+  const realWork = createRealWorkScope();
   let shutdowns = 0;
   const errors: Error[] = [];
-  const server: ControlServer = await startControlServer({
+  const server: ControlServer = await realWork.run(() => startControlServer({
     socketPath,
     timers,
     health,
@@ -92,7 +93,7 @@ const startServer = async (context: CleanupContext, health: () => SupervisorHeal
       shutdowns += 1;
     },
     onError: (error) => void errors.push(error),
-  });
+  }));
   registerCleanup(context, async () => {
     const closing = settledFlag(server.close());
     for (let round = 0; round < 50 && !closing.settled(); round += 1) {
@@ -100,7 +101,7 @@ const startServer = async (context: CleanupContext, health: () => SupervisorHeal
       await turns(5);
     }
   });
-  return { socketPath, server, timers, shutdowns: () => shutdowns, errors };
+  return { socketPath, server, timers, realWork, shutdowns: () => shutdowns, errors };
 };
 
 const envelopeOf = (text: string): unknown => JSON.parse(text);
@@ -200,16 +201,16 @@ describe('startControlServer', () => {
   });
 
   it('close removes the socket and releases its lock', async (context) => {
-    const { socketPath, server, timers } = await startServer(context);
+    const { socketPath, server, timers, realWork } = await startServer(context);
     expect(fs.existsSync(`${socketPath}.lock`)).toBe(true);
     const closing = settledFlag(server.close());
-    await pumpUntil(timers, () => closing.settled(), { stepMs: 100, maxMs: 5000 });
+    await pumpUntil(timers, () => closing.settled(), { realWork, stepMs: 100, maxMs: 5000 });
     expect(fs.existsSync(socketPath)).toBe(false);
     expect(fs.existsSync(`${socketPath}.lock`)).toBe(false);
   });
 
   it('step 5 with a half-sent request completes within the bound', async (context) => {
-    const { socketPath, server, timers, shutdowns } = await startServer(context);
+    const { socketPath, server, timers, realWork, shutdowns } = await startServer(context);
     const raw = net.connect(socketPath);
     registerCleanup(context, () => void raw.destroy());
     raw.on('error', () => undefined);
@@ -218,7 +219,7 @@ describe('startControlServer', () => {
     await turns(50);
     const closing = settledFlag(server.close());
     await turns(50);
-    await pumpUntil(timers, () => closing.settled(), { stepMs: 100, maxMs: 1000 });
+    await pumpUntil(timers, () => closing.settled(), { realWork, stepMs: 100, maxMs: 1000 });
     expect(fs.existsSync(socketPath)).toBe(false);
     expect(fs.existsSync(`${socketPath}.lock`)).toBe(false);
     expect(shutdowns()).toBe(0);
@@ -319,9 +320,9 @@ describe('control API through the supervisor', () => {
       const phase = h.health().phase;
       if (observed.at(-1) !== phase) observed.push(phase);
     };
-    await pumpUntil(h.timers, () => (observe(), h.health().phase === 'running'), { stepMs: 50, maxMs: 5000 });
+    await pumpUntil(h.timers, () => (observe(), h.health().phase === 'running'), { realWork: h.realWork, stepMs: 50, maxMs: 5000 });
     const closing = settledFlag(h.supervisor.close());
-    await pumpUntil(h.timers, () => (observe(), closing.settled()), { stepMs: 50, maxMs: 120_000 });
+    await pumpUntil(h.timers, () => (observe(), closing.settled()), { realWork: h.realWork, stepMs: 50, maxMs: 120_000 });
     expect(observed).toEqual(['reaping-orphans', 'running', 'draining']);
     expect(phaseChanges(h.log)).toEqual(['reaping-orphans->running', 'running->draining']);
   });
@@ -339,7 +340,7 @@ describe('control API through the supervisor', () => {
     expect(h.health().children.map((child) => child.state)).toEqual(['stopped', 'stopped']);
     const result = await (async () => {
       const closed = settledFlag(h.supervisor.closed);
-      await pumpUntil(h.timers, () => closed.settled(), { stepMs: 50, maxMs: 30_000 });
+      await pumpUntil(h.timers, () => closed.settled(), { realWork: h.realWork, stepMs: 50, maxMs: 30_000 });
       return closed.value();
     })();
     expect(result).toEqual({ clean: true, killed: [], leaked: [] });
@@ -353,7 +354,7 @@ describe('control API through the supervisor', () => {
     await h.waitForState('gateway', 'ready');
     const closed = settledFlag(h.supervisor.closed);
     expect((await httpOver(context, h.paths.sockets.supervisor, 'POST', '/v1/shutdown')).status).toBe(202);
-    await pumpUntil(h.timers, () => closed.settled(), { stepMs: 50, maxMs: 120_000 });
+    await pumpUntil(h.timers, () => closed.settled(), { realWork: h.realWork, stepMs: 50, maxMs: 120_000 });
     expect(closed.value()).toEqual({ clean: true, killed: [], leaked: [] });
     expect(h.fake.latest('runtime').signals).toEqual(['SIGTERM']);
     expect(h.fake.latest('gateway').signals).toEqual(['SIGTERM']);
@@ -382,7 +383,7 @@ describe('control API through the supervisor', () => {
     expect(h.fake.latest('runtime').signals).toEqual(['SIGTERM']);
     h.fake.latest('runtime').exit(0);
     const closed = settledFlag(h.supervisor.closed);
-    await pumpUntil(h.timers, () => closed.settled(), { stepMs: 50, maxMs: 120_000 });
+    await pumpUntil(h.timers, () => closed.settled(), { realWork: h.realWork, stepMs: 50, maxMs: 120_000 });
     expect(h.fake.latest('gateway').signals).toEqual(['SIGTERM']);
   });
 
