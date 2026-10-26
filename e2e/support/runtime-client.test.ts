@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createRunBody, joinSseChunk, parseSse } from './runtime-client.ts';
+import { createRunBody, eventsHeadersOf, eventsQueryOf, isApprovalView, joinSseChunk, parseSse } from './runtime-client.ts';
 
 const deltaData = JSON.stringify({ type: 'agent.message.delta', runId: 'r1', seq: 3, step: 1, text: 'hel' });
 const terminalData = JSON.stringify({
@@ -75,5 +75,38 @@ describe('createRunBody', () => {
   it('sends the history option when given', () => {
     expect(createRunBody('Start over', { history: 'fresh' })).toEqual({ input: 'Start over', history: 'fresh' });
     expect(createRunBody('Go on', { history: 'inherit' })).toEqual({ input: 'Go on', history: 'inherit' });
+  });
+});
+
+describe('event cursor options', () => {
+  it.each([
+    { options: { after: 4 }, query: '?after=4', headers: { accept: 'text/event-stream' } },
+    { options: { lastEventId: 7 }, query: '', headers: { accept: 'text/event-stream', 'last-event-id': '7' } },
+    { options: { after: 4, lastEventId: 7 }, query: '?after=4', headers: { accept: 'text/event-stream', 'last-event-id': '7' } },
+    { options: {}, query: '', headers: { accept: 'text/event-stream' } },
+  ])('builds query $query and headers for $options', ({ options, query, headers }) => {
+    expect(eventsQueryOf(options)).toBe(query);
+    expect(eventsHeadersOf(options)).toEqual(headers);
+  });
+
+  it('sends a zero cursor instead of dropping it', () => {
+    expect(eventsQueryOf({ after: 0 })).toBe('?after=0');
+    expect(eventsHeadersOf({ lastEventId: 0 })).toEqual({ accept: 'text/event-stream', 'last-event-id': '0' });
+  });
+});
+
+describe('isApprovalView', () => {
+  it('accepts an approval with string id, runId, callId and status', () => {
+    expect(isApprovalView({ id: 'a1', runId: 'r1', callId: 'c1', status: 'pending', options: [] })).toBe(true);
+  });
+
+  it.each([
+    ['a missing id', { runId: 'r1', callId: 'c1', status: 'pending' }],
+    ['a numeric runId', { id: 'a1', runId: 1, callId: 'c1', status: 'pending' }],
+    ['a missing callId', { id: 'a1', runId: 'r1', status: 'pending' }],
+    ['a missing status', { id: 'a1', runId: 'r1', callId: 'c1' }],
+    ['null', null],
+  ])('rejects %s', (_label, value) => {
+    expect(isApprovalView(value)).toBe(false);
   });
 });

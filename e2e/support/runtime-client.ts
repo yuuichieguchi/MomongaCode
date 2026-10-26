@@ -1,7 +1,7 @@
 import { createUdsClient } from '@momonga/foundation';
 import type { UdsResponse } from '@momonga/foundation';
 import { RUN_STATUSES } from '@momonga/protocol';
-import type { RunHealth, RunStatus } from '@momonga/protocol';
+import type { PermissionMode, RunHealth, RunStatus } from '@momonga/protocol';
 import type { E2eHome } from './home.ts';
 import { until } from './wait.ts';
 import { isRecord } from './is-record.ts';
@@ -34,7 +34,13 @@ export type RunEventStream = {
   close(): Promise<void>;
 };
 
-export type EventsOptions = { after?: number };
+export type EventsOptions = { after?: number; lastEventId?: number };
+
+export type CreateSessionOptions = { permissionMode?: PermissionMode };
+
+export type ApprovalView = { readonly id: string; readonly runId: string; readonly callId: string; readonly status: string } & Readonly<Record<string, unknown>>;
+
+export type RawResponse = { readonly status: number; readonly body: unknown };
 
 export type RunHistory = 'inherit' | 'fresh';
 
@@ -46,11 +52,14 @@ export const createRunBody = (input: string, options: CreateRunOptions = {}): { 
 });
 
 export type RuntimeClient = {
-  createSession(): Promise<{ session: SessionView }>;
+  createSession(options?: CreateSessionOptions): Promise<{ session: SessionView }>;
   createRun(sessionId: string, input: string, options?: CreateRunOptions): Promise<{ run: RunView; location: string }>;
   getRun(id: string): Promise<{ run: RunView }>;
   cancel(id: string): Promise<{ status: 200 | 202; run: RunView }>;
   events(id: string, options?: EventsOptions): RunEventStream;
+  eventsStatus(id: string, options: EventsOptions): Promise<RawResponse>;
+  approvals(runId: string): Promise<ApprovalView[]>;
+  resolveApproval(id: string, optionId: string): Promise<RawResponse>;
   health(): Promise<RunHealth>;
   close(): Promise<void>;
 };
@@ -109,6 +118,16 @@ const isRunView = (value: unknown): value is RunView =>
   typeof value['lastSeq'] === 'number' &&
   typeof value['cancelRequested'] === 'boolean';
 
+export const isApprovalView = (value: unknown): value is ApprovalView =>
+  isRecord(value) && typeof value['id'] === 'string' && typeof value['runId'] === 'string' && typeof value['callId'] === 'string' && typeof value['status'] === 'string';
+
+export const eventsQueryOf = (options: EventsOptions): string => (options.after === undefined ? '' : `?after=${options.after}`);
+
+export const eventsHeadersOf = (options: EventsOptions): Record<string, string> => ({
+  accept: 'text/event-stream',
+  ...(options.lastEventId === undefined ? {} : { 'last-event-id': String(options.lastEventId) }),
+});
+
 const isRunHealth = (value: unknown): value is RunHealth =>
   isRecord(value) &&
   value['status'] === 'ok' &&
@@ -144,11 +163,11 @@ export const createRuntimeClient = (home: E2eHome): RuntimeClient => {
     return JSON.parse(text);
   };
 
-  const createSession = async (): Promise<{ session: SessionView }> => {
+  const createSession = async (options: CreateSessionOptions = {}): Promise<{ session: SessionView }> => {
     const body = {
       cwd: home.project,
       env: { HOME: home.home, PATH: SESSION_PATH, TMPDIR: home.sessionTmp },
-      permissionMode: 'bypassPermissions',
+      permissionMode: options.permissionMode ?? 'bypassPermissions',
       bypassAllowed: true,
     };
     const response = await http.request({ method: 'POST', path: '/v1/sessions', headers: JSON_HEADERS, body: JSON.stringify(body) });
@@ -203,8 +222,7 @@ export const createRuntimeClient = (home: E2eHome): RuntimeClient => {
     let closing = false;
 
     const read = async (): Promise<void> => {
-      const query = options.after === undefined ? '' : `?after=${options.after}`;
-      const response = await http.request({ method: 'GET', path: `/v1/runs/${id}/events${query}`, headers: { accept: 'text/event-stream' }, signal: controller.signal });
+      const response = await http.request({ method: 'GET', path: `/v1/runs/${id}/events${eventsQueryOf(options)}`, headers: eventsHeadersOf(options), signal: controller.signal });
       if (response.status !== 200) throw new Error(`GET /v1/runs/${id}/events answered ${response.status}: ${await response.text()}`);
       const decoder = new TextDecoder();
       let buffer = '';
@@ -279,10 +297,41 @@ export const createRuntimeClient = (home: E2eHome): RuntimeClient => {
     return handle;
   };
 
+  const eventsStatus = async (id: string, options: EventsOptions): Promise<RawResponse> => {
+    const controller = new AbortController();
+    const response = await http.request({ method: 'GET', path: `/v1/runs/${id}/events${eventsQueryOf(options)}`, headers: eventsHeadersOf(options), signal: controller.signal });
+    if (response.status === 200) {
+      controller.abort();
+      return { status: response.status, body: undefined };
+    }
+    const text = await response.text();
+    try {
+      return { status: response.status, body: JSON.parse(text) };
+    } catch (error) {
+      throw new Error(`GET /v1/runs/${id}/events answered ${response.status} with a non-JSON body: ${text}`, { cause: error });
+    }
+  };
+
+  const approvals = async (runId: string): Promise<ApprovalView[]> => {
+    const response = await http.request({ method: 'GET', path: `/v1/runs/${runId}/approvals` });
+    const parsed = await requireJson(response, [200], `GET /v1/runs/${runId}/approvals`);
+    if (!isRecord(parsed) || !Array.isArray(parsed['approvals'])) throw new Error(`GET /v1/runs/${runId}/approvals answered a body without approvals: ${JSON.stringify(parsed)}`);
+    const listed: unknown[] = parsed['approvals'];
+    return listed.map((entry) => {
+      if (!isApprovalView(entry)) throw new Error(`GET /v1/runs/${runId}/approvals listed a malformed approval: ${JSON.stringify(entry)}`);
+      return entry;
+    });
+  };
+
+  const resolveApproval = async (id: string, optionId: string): Promise<RawResponse> => {
+    const response = await http.request({ method: 'POST', path: `/v1/approvals/${id}`, headers: JSON_HEADERS, body: JSON.stringify({ optionId }) });
+    return { status: response.status, body: JSON.parse(await response.text()) };
+  };
+
   const close = async (): Promise<void> => {
     await Promise.all([...openStreams].map((stream) => stream.abort()));
     await http.close();
   };
 
-  return { createSession, createRun, getRun, cancel, events, health, close };
+  return { createSession, createRun, getRun, cancel, events, eventsStatus, approvals, resolveApproval, health, close };
 };
