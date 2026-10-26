@@ -12,6 +12,7 @@ import {
   idsOf,
   inputFor,
   output,
+  overflowOf,
   sourcesWith,
   touchedFile,
   user,
@@ -170,14 +171,16 @@ describe('the floor with an inherited history', () => {
 });
 
 describe('the task as a turn boundary', () => {
-  it('compacts through a single inherited turn instead of overflowing with nothing compactable', async () => {
+  it('makes a single inherited turn a compaction candidate at level 1, blocked only by the summary input budget', async () => {
     const capabilities = capabilitiesFor(4000);
-    const error = await buildContext(
-      inputFor(capabilities, { sources: sourcesWith({ taskSeq: 3, history: inheritedTurns(1, 8000) }) }),
-      harness(capabilities).ports,
-    ).catch((caught: unknown) => caught);
-    expect(error).toBeInstanceOf(ContextOverflowError);
-    expect((error as ContextOverflowError).compactThroughSeq).toBe(2);
+    const sources = sourcesWith({ taskSeq: 3, history: inheritedTurns(1, 8000) });
+    const atLevel0 = await overflowOf(inputFor(capabilities, { sources, level: 0 }), harness(capabilities).ports);
+    expect(atLevel0.lastLevel).toBe(false);
+    expect(atLevel0.compactionBlockedBy?.reason).toBe('no_step_boundary_outside_protection');
+    const atLevel1 = await overflowOf(inputFor(capabilities, { sources, level: 1 }), harness(capabilities).ports);
+    expect(atLevel1.lastLevel).toBe(true);
+    expect(atLevel1.compaction).toBeUndefined();
+    expect(atLevel1.compactionBlockedBy?.reason).toBe('region_exceeds_summary_input_budget');
   });
 
   it('with three inherited turns and keep 3 makes only the oldest compactable on the first step', async () => {
@@ -186,19 +189,18 @@ describe('the task as a turn boundary', () => {
       inputFor(capabilities, { sources: sourcesWith({ taskSeq: 7, history: inheritedTurns(3, 1600) }) }),
       harness(capabilities).ports,
     );
-    expect(result.needsCompaction).toBe(true);
-    expect(result.compactThroughSeq).toBe(2);
+    expect(result.compaction?.throughSeq).toBe(2);
     expect(result.notices.map((notice) => notice.code)).toEqual([]);
   });
 
-  it('makes every inherited turn compactable after the keep = 1 shrink', async () => {
+  it('compacts the oldest inherited turn at level 0 before shrinking, and later turns only after the shrink', async () => {
     const capabilities = capabilitiesFor(4000);
-    const error = await buildContext(
-      inputFor(capabilities, { sources: sourcesWith({ taskSeq: 7, history: inheritedTurns(3, 2400) }) }),
-      harness(capabilities).ports,
-    ).catch((caught: unknown) => caught);
-    expect(error).toBeInstanceOf(ContextOverflowError);
-    expect((error as ContextOverflowError).compactThroughSeq).toBe(6);
+    const sources = sourcesWith({ taskSeq: 7, history: inheritedTurns(3, 2400) });
+    const atLevel0 = await overflowOf(inputFor(capabilities, { sources, level: 0 }), harness(capabilities).ports);
+    expect(atLevel0.inputTokens).toBe(3719);
+    expect(atLevel0.compaction?.throughSeq).toBe(2);
+    const atLevel1 = await overflowOf(inputFor(capabilities, { sources, level: 1 }), harness(capabilities).ports);
+    expect(atLevel1.compaction?.throughSeq).toBe(4);
   });
 
   it('starts a new turn for own items after the task, so inherited outputs are evicted oldest first and own outputs never', async () => {
@@ -223,6 +225,7 @@ describe('the task as a turn boundary', () => {
             output(13, 'c4', big('c4')),
           ],
         }),
+        level: 1,
       }),
       harness(capabilities).ports,
     );

@@ -28,7 +28,8 @@ export type ClaimContext = {
   env: ToolEnv;
   functionTools: FunctionTool[];
   systemPrompt: string;
-  inlineLimit: number;
+  inlineLimitForReconcile: number;
+  inlineLimitForExecution: () => Promise<number>;
   journal: Journal;
   control: ClaimControl;
   terminals: Terminals;
@@ -36,6 +37,7 @@ export type ClaimContext = {
   meter: TokenMeter;
   pinnedDigest: { value: string | undefined };
   memory: RunMemory;
+  compaction: { suppressedUntilStep: number };
 };
 
 export type RunMemory = { streak: number; interruptions: number; deadlineAt: number };

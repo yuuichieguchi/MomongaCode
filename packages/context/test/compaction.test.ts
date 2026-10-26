@@ -11,6 +11,7 @@ import {
   idsOf,
   inputFor,
   output,
+  overflowOf,
   outputTextOf,
   sourcesWith,
   tokensOfItems,
@@ -20,8 +21,8 @@ import {
 const W = 4000;
 const I = 2920;
 
-describe('needsCompaction', () => {
-  it('requests compaction through the end of the last non-recent turn when above compactAt * I', async () => {
+describe('proactive compaction hint', () => {
+  it('requests compaction through the end of the last non-recent turn when above the high-water mark', async () => {
     const capabilities = capabilitiesFor(W);
     const { ports } = harness(capabilities);
     const history = [
@@ -37,10 +38,8 @@ describe('needsCompaction', () => {
       inputFor(capabilities, { sources: sourcesWith({ history }), keepRecentTurns: 1 }),
       ports,
     );
-    expect(result.inputTokens).toBeGreaterThan(0.7 * I);
-    expect(result.inputTokens).toBeLessThanOrEqual(I);
-    expect(result.needsCompaction).toBe(true);
-    expect(result.compactThroughSeq).toBe(6);
+    expect(result.inputTokens).toBe(2345);
+    expect(result.compaction?.throughSeq).toBe(6);
   });
 
   it('keeps the default three recent turns out of the compaction range', async () => {
@@ -57,8 +56,7 @@ describe('needsCompaction', () => {
       user(8, 'q4'),
     ];
     const result = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }) }), ports);
-    expect(result.needsCompaction).toBe(true);
-    expect(result.compactThroughSeq).toBe(2);
+    expect(result.compaction?.throughSeq).toBe(2);
   });
 
   it('honours a custom compactAt threshold', async () => {
@@ -71,14 +69,12 @@ describe('needsCompaction', () => {
     );
     expect(below.inputTokens).toBeLessThan(0.7 * I);
     expect(below.inputTokens).toBeGreaterThan(0.3 * I);
-    expect(below.needsCompaction).toBe(false);
-    expect(below.compactThroughSeq).toBeUndefined();
+    expect(below.compaction).toBeUndefined();
     const above = await buildContext(
       inputFor(capabilities, { sources: sourcesWith({ history }), keepRecentTurns: 1, compactAt: 0.3 }),
       harness(capabilities).ports,
     );
-    expect(above.needsCompaction).toBe(true);
-    expect(above.compactThroughSeq).toBe(2);
+    expect(above.compaction?.throughSeq).toBe(2);
   });
 
   it('does not request compaction when only recent items remain', async () => {
@@ -88,8 +84,7 @@ describe('needsCompaction', () => {
     const result = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }) }), ports);
     expect(result.inputTokens).toBeGreaterThan(0.7 * I);
     expect(result.inputTokens).toBeLessThanOrEqual(I);
-    expect(result.needsCompaction).toBe(false);
-    expect(result.compactThroughSeq).toBeUndefined();
+    expect(result.compaction).toBeUndefined();
   });
 });
 
@@ -140,7 +135,7 @@ describe('summary layering', () => {
 });
 
 describe('overflow handling', () => {
-  it('shrinks recent turns down to the current turn with a notice before failing', async () => {
+  it('throws at level 0 and shrinks recent turns to the current turn with a notice at level 1', async () => {
     const capabilities = capabilitiesFor(W);
     const { ports } = harness(capabilities);
     const text = (letter: string): string => letter.repeat(2400);
@@ -162,14 +157,15 @@ describe('overflow handling', () => {
       output(15, 'c6', text('f')),
     ];
     expect(tokensOfItems(history.map((entry) => entry.item))).toBeGreaterThan(I);
-    const result = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }) }), ports);
+    const overflow = await overflowOf(inputFor(capabilities, { sources: sourcesWith({ history }), level: 0 }), ports);
+    expect(overflow.level).toBe(0);
+    expect(overflow.lastLevel).toBe(false);
+    expect(overflow.compaction).toBeUndefined();
+    expect(overflow.compactionBlockedBy?.reason).toBe('no_step_boundary_outside_protection');
+    const result = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }), level: 1 }), ports);
     expect(result.inputTokens).toBeLessThanOrEqual(I);
     expect(result.notices.some((notice) => notice.code === 'recent_turns_shrunk')).toBe(true);
-    expect(result.evictions.length).toBeGreaterThan(0);
-    expect(result.evictions.every((eviction) => ['c1', 'c2', 'c3', 'c4'].includes(eviction.callId))).toBe(true);
-    expect(result.evictions.map((eviction) => eviction.callId)).toEqual(
-      ['c1', 'c2', 'c3', 'c4'].slice(0, result.evictions.length),
-    );
+    expect(result.evictions.map((eviction) => eviction.callId)).toEqual(['c1', 'c2', 'c3', 'c4']);
     expect(outputTextOf(result.input, 'c5')).toBe(text('e'));
     expect(outputTextOf(result.input, 'c6')).toBe(text('f'));
     expect(expectPairsWhole(result.input)).toBe(true);
@@ -195,6 +191,7 @@ describe('overflow handling', () => {
     expect(error).toBeInstanceOf(ContextOverflowError);
     const overflow = error as ContextOverflowError;
     expect(overflow.inputBudget).toBe(I);
+    expect(overflow.ceiling).toBe(I);
     expect(overflow.inputTokens).toBeGreaterThan(I);
     expect(overflow.inputTokens).toBeGreaterThanOrEqual(3500);
   });

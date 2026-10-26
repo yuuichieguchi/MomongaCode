@@ -165,6 +165,8 @@ export type RunState = {
   streaming?: { step: number; attempt: number; seen: boolean; items: { itemId: string; text: string }[] };
   mode?: PermissionMode;
   taskSeq: number;
+  loopGroups: { signature: string; outputSignature?: string }[];
+  loopOpen?: { calls: [string, unknown][]; callIds: string[]; outputs: Record<string, string> };
   inherited?: { fromRunId: string; fromLastSeq: number; digest: string };
   lastSeq: number;
 };

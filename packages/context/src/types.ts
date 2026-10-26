@@ -41,6 +41,7 @@ export type TokenCounter = {
 };
 
 export type BlobPort = {
+  handleFor(content: string): string;
   put(text: string, options: { mediaType: string }): Promise<{ handle: string }>;
 };
 
@@ -101,6 +102,10 @@ export type BuildContextInput = {
   home: string;
   expectedPinnedDigest?: string;
   keepRecentTurns?: number;
+  keepRecentSteps?: number;
+  level?: number;
+  itemCap?: number;
+  pinnedTokens?: number;
   compactAt?: number;
   tools?: 'none';
   trailing?: readonly InputItem[];
@@ -122,7 +127,8 @@ export type NoticeCode =
   | 'instructions_outside_project'
   | 'nested_instructions_untrusted'
   | 'instructions_dropped'
-  | 'recent_turns_shrunk';
+  | 'recent_turns_shrunk'
+  | 'recent_steps_shrunk';
 
 export type ContextNotice = { code: NoticeCode; message: string };
 
@@ -131,6 +137,22 @@ export type EvictionKind = 'omitted' | 'truncated';
 export type ContextEviction = { callId: string; handle: string; kind: EvictionKind };
 
 export type ContextBudget = { W: number; R: number; I: number; margin: number };
+
+export type ProtectionLevel = { keepTurns: number; keepSteps: number };
+
+export type PinnedBreakdown = { systemPrompt: number; tools: number; instructions: number; task: number };
+
+export type CompactionPlan = { throughSeq: number; input: InputItem[]; summaryTokenCap: number };
+
+export type CompactionBlockReason =
+  | 'no_step_boundary_outside_protection'
+  | 'protected_step_exceeds_room'
+  | 'deficit_not_closed'
+  | 'region_exceeds_summary_input_budget';
+
+export type CompactionBlock = { reason: CompactionBlockReason; message: string };
+
+export type PinnedMeasure = { pinnedTokens: number; ceiling: number; room: number; itemCap: number; summaryCap: number };
 
 export type BuiltContext = {
   input: InputItem[];
@@ -142,8 +164,7 @@ export type BuiltContext = {
   pinnedDigest: string;
   inputDigest: string;
   evictions: ContextEviction[];
-  needsCompaction: boolean;
-  compactThroughSeq?: number;
+  compaction?: CompactionPlan;
   notices: ContextNotice[];
   loadedInstructions: LoadedInstruction[];
 };

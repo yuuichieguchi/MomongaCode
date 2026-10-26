@@ -1,24 +1,82 @@
 import { describe, expect, it } from 'vitest';
-import { budgetFor } from '../src/budget.ts';
-import { MARGIN_RATIO, MIN_MARGIN, marginFloorFor, outputReserveFor } from '@momonga/protocol';
+import { budgetFor, inputCeilingFor, itemCapFor } from '@momonga/context';
+import {
+  ESTIMATED_ERROR_BOUND_RATIO,
+  MARGIN_RATIO,
+  MAX_SUMMARY_TOKENS,
+  MIN_MARGIN,
+  MIN_SUMMARY_TOKENS,
+  SUMMARY_ACCEPT_RATIO,
+  SUMMARY_ITEM_OVERHEAD,
+  SUMMARY_PROMPT_TOKENS,
+  SUMMARY_ROOM_RATIO,
+  SUMMARY_WINDOW_RATIO,
+  marginFloorFor,
+  outputReserveFor,
+  summaryItemTokensFor,
+  summaryTokenCapFor,
+} from '@momonga/protocol';
 import { capabilitiesFor } from './helpers.ts';
 
-describe('protocol margin constants match today\'s budgetFor', () => {
-  it.for([1024, 2048, 4096, 32768, 200000])('a %i-token window has the margin floor of budgetFor', (window) => {
-    expect(budgetFor(capabilitiesFor(window), 0).margin).toBe(marginFloorFor(window));
-    expect(marginFloorFor(window)).toBe(Math.max(Math.ceil(MARGIN_RATIO * window), MIN_MARGIN));
+describe('budget constants are pinned by literal values', () => {
+  it('keeps the protocol ratios and floors', () => {
+    expect(MARGIN_RATIO).toBe(0.02);
+    expect(MIN_MARGIN).toBe(32);
+    expect(ESTIMATED_ERROR_BOUND_RATIO).toBe(0.3);
+    expect(MIN_SUMMARY_TOKENS).toBe(64);
+    expect(MAX_SUMMARY_TOKENS).toBe(4096);
+    expect(SUMMARY_WINDOW_RATIO).toBe(0.06);
+    expect(SUMMARY_ROOM_RATIO).toBe(0.3);
+    expect(SUMMARY_ACCEPT_RATIO).toBe(1.3);
+    expect(SUMMARY_ITEM_OVERHEAD).toBe(20);
+    expect(SUMMARY_PROMPT_TOKENS).toBe(234);
   });
 
-  it.for([0, 7, 300])('the error bound %i is added on top of the floor', (errorBound) => {
-    expect(budgetFor(capabilitiesFor(4096), errorBound).margin).toBe(marginFloorFor(4096) + errorBound);
+  it.for([
+    [113, 167],
+    [189, 266],
+    [246, 340],
+  ] as const)('summaryItemTokensFor(%i) is %i', ([cap, tokens]) => {
+    expect(summaryItemTokensFor(cap)).toBe(tokens);
   });
 });
 
-describe('protocol outputReserveFor matches today\'s budgetFor R', () => {
-  it.for(
-    [1024, 2048, 4096, 32768, 200000].flatMap((window) => [64, 512, 1024, 4096, 100000].map((maxOutput) => [window, maxOutput] as const)),
-  )('a %i-token window with maxOutputTokens %i reserves the R of budgetFor', ([window, maxOutput]) => {
-    const capabilities = capabilitiesFor(window, { maxOutputTokens: maxOutput });
-    expect(outputReserveFor(capabilities)).toBe(budgetFor(capabilities, 0).R);
+describe('budget formulas at maxOutputTokens 1024 with estimated counting', () => {
+  it.for([
+    { window: 1024, R: 256, margin: 32, I: 736, ceiling: 566, itemCap: 184, summaryCap: 64 },
+    { window: 2048, R: 512, margin: 41, I: 1495, ceiling: 1150, itemCap: 373, summaryCap: 123 },
+    { window: 4096, R: 1024, margin: 82, I: 2990, ceiling: 2300, itemCap: 747, summaryCap: 246 },
+    { window: 8192, R: 1024, margin: 164, I: 7004, ceiling: 5387, itemCap: 1751, summaryCap: 492 },
+    { window: 32768, R: 1024, margin: 656, I: 31088, ceiling: 23913, itemCap: 7772, summaryCap: 1967 },
+    { window: 200000, R: 1024, margin: 4000, I: 194976, ceiling: 149981, itemCap: 48744, summaryCap: 4096 },
+  ])('a $window-token window has R $R, margin $margin, I $I and ceiling $ceiling', (row) => {
+    const capabilities = capabilitiesFor(row.window, { maxOutputTokens: 1024, tokenCounting: 'estimated' });
+    expect(budgetFor(capabilities, 0)).toEqual({ W: row.window, R: row.R, margin: row.margin, I: row.I });
+    expect(outputReserveFor(capabilities)).toBe(row.R);
+    expect(marginFloorFor(row.window)).toBe(row.margin);
+    expect(inputCeilingFor(capabilities)).toBe(row.ceiling);
+    expect(itemCapFor(capabilities)).toBe(row.itemCap);
+    expect(summaryTokenCapFor(capabilities)).toBe(row.summaryCap);
+  });
+
+  it.for([0, 7, 300])('adds the error bound %i on top of the margin floor', (errorBound) => {
+    const capabilities = capabilitiesFor(4096, { maxOutputTokens: 1024, tokenCounting: 'estimated' });
+    expect(budgetFor(capabilities, errorBound)).toEqual({ W: 4096, R: 1024, margin: 82 + errorBound, I: 2990 - errorBound });
+  });
+});
+
+describe('outputReserveFor by literal values', () => {
+  it.for([
+    [1024, 1024, 256],
+    [4096, 64, 64],
+    [4096, 4096, 1024],
+    [1024, 100000, 256],
+    [300, 4096, 150],
+    [200000, 100000, 50000],
+    [2048, 300, 300],
+  ] as const)('a %i-token window with maxOutputTokens %i reserves %i', ([window, maxOutputTokens, reserve]) => {
+    const capabilities = capabilitiesFor(window, { maxOutputTokens });
+    expect(outputReserveFor(capabilities)).toBe(reserve);
+    expect(budgetFor(capabilities, 0).R).toBe(reserve);
   });
 });

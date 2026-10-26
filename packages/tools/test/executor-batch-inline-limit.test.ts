@@ -14,12 +14,12 @@ const recordingTool = (budgets: number[]) =>
     },
   });
 
-describe('per-batch maxInlineOutputChars', () => {
+describe('per-batch inline limit', () => {
   it('truncates to the batch limit when it is below the executor default', async () => {
     const harness = makeHarness({ maxInlineOutputChars: 1000 });
     const budgets: number[] = [];
     const set = await toolSetOf(recordingTool(budgets));
-    const [outcome] = await harness.executor.runBatch({ ...harness.input(set, [call('c1', 'Read')]), maxInlineOutputChars: 200 });
+    const [outcome] = await harness.executor.runBatch({ ...harness.input(set, [call('c1', 'Read')]), inlineLimitForReconcile: 200 });
     if (outcome?.kind !== 'result') throw new Error('expected result');
     expect(outcome.result.truncated).toBe(true);
     expect(outcome.result.handle).toBe(blobHandle(1));
@@ -31,7 +31,7 @@ describe('per-batch maxInlineOutputChars', () => {
     const harness = makeHarness({ maxInlineOutputChars: 200 });
     const budgets: number[] = [];
     const set = await toolSetOf(recordingTool(budgets));
-    const [outcome] = await harness.executor.runBatch({ ...harness.input(set, [call('c1', 'Read')]), maxInlineOutputChars: 1000 });
+    const [outcome] = await harness.executor.runBatch({ ...harness.input(set, [call('c1', 'Read')]), inlineLimitForReconcile: 1000 });
     expect(outcome).toEqual({ callId: 'c1', kind: 'result', result: { status: 'completed', output: FULL }, idemKey: expect.any(String) });
     expect(harness.blobs.puts).toEqual([]);
     expect(budgets).toEqual([1000]);

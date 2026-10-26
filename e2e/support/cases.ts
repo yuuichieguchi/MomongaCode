@@ -10,7 +10,8 @@ export type E2eCaseFile =
   | 'supervisor.test.ts'
   | 'logs.test.ts'
   | 'd-approvals.test.ts'
-  | 'e-sse-reconnect.test.ts';
+  | 'e-sse-reconnect.test.ts'
+  | 'a-compaction.test.ts';
 
 export const E2E_CASES = [
   { id: 'b1-join', file: 'b1-model-call.test.ts', title: 'b1 join: restarted runtime joins the in-flight upstream call', needsBash: false },
@@ -50,6 +51,10 @@ export const E2E_CASES = [
   { id: 'd-reject-always', file: 'd-approvals.test.ts', title: 'd: reject_always persists a deny rule and the next run in the project is denied without a prompt', needsBash: false },
   { id: 'e-replay', file: 'e-sse-reconnect.test.ts', title: 'e: Last-Event-ID k replays k+1 to the end once, after=k matches, a cursor past the end is 400, a late attach replays all', needsBash: false },
   { id: 'e-resume', file: 'e-sse-reconnect.test.ts', title: 'e: a stream dropped mid-run and resumed with Last-Event-ID has no gap and no duplicate', needsBash: false },
+  { id: 'a-compaction', file: 'a-compaction.test.ts', title: 'a: one long turn truncates a tool output, evicts it and compacts within the turn (full tools, native)', needsBash: false },
+  { id: 'a-compaction-lean', file: 'a-compaction.test.ts', title: 'a: lean tool set, the gain rule decides the first compaction at the default protection level (native)', needsBash: false },
+  { id: 'a-compaction-constrained', file: 'a-compaction.test.ts', title: 'a: constrained tool calling counts the duplicated schemas and compacts within the turn', needsBash: false },
+  { id: 'a-constrained-pinned-overflow', file: 'a-compaction.test.ts', title: 'a: constrained tool calling with every tool fails pinned_overflow before any upstream request', needsBash: false },
 ] as const satisfies readonly { id: string; file: E2eCaseFile; title: string; needsBash: boolean }[];
 
 export type E2eCase = (typeof E2E_CASES)[number];

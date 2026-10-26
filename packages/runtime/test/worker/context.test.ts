@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
 import { fixtureCompactionContent, fixtureCompactionItem } from '@momonga/testkit';
-import { capabilitiesFor, compactKey, makeEnv, testSystemPrompt, textOf } from './harness.ts';
+import { capabilitiesFor, compactKey, makeEnv, textOf } from './harness.ts';
 import { assistantMessage, callsStep, functionCallItem, textStep } from './scripts.ts';
 
 const responded = (step: number, output: unknown[]): RunEventPayload => ({
@@ -51,7 +51,7 @@ describe('worker context: evictions', () => {
 });
 
 describe('worker context: compaction', () => {
-  it('compacts through the boundary with the documented key, then appends context.compacted and rebuilds', async () => {
+  it('compacts the rendered prefix through the boundary under the whole-body key, then appends context.compacted and rebuilds', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
     const run = env.enqueue('Task one');
     const big = assistantMessage('msg_big', 'x'.repeat(100_000));
@@ -77,9 +77,10 @@ describe('worker context: compaction', () => {
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.gateway.compacts).toHaveLength(1);
     const [compact] = env.gateway.compacts;
-    expect(compact?.idempotencyKey).toBe(compactKey(run.id, 2));
+    expect(compact?.idempotencyKey).toBe(compactKey(run.id, compact?.request));
     expect(compact?.request.input).toEqual(history.filter((entry) => entry.seq <= 2).map((entry) => entry.item));
-    expect(compact?.request.instructions).toBe(testSystemPrompt({ cwd: env.project, platform: process.platform }));
+    expect(compact?.request).not.toHaveProperty('instructions');
+    expect(compact?.request.momonga).toEqual({ max_summary_tokens: 2400, retains_user_request: true });
 
     const [compacted] = env.ofType(run.id, 'context.compacted');
     expect(compacted).toMatchObject({ summary: 'S1', replacedThroughSeq: 2, item: { type: 'compaction', encrypted_content: fixtureCompactionContent('S1') } });
@@ -120,8 +121,9 @@ describe('worker context: compaction', () => {
     await env.runOnce(env.worker());
 
     const [compact] = env.gateway.compacts;
-    expect(compact?.idempotencyKey).toBe(compactKey(run.id, 4));
-    expect(compact?.request.input).toEqual([prior, ...state.history.filter((entry) => entry.seq <= 4).map((entry) => entry.item)]);
+    expect(compact?.idempotencyKey).toBe(compactKey(run.id, compact?.request));
+    const task = { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Task one' }] };
+    expect(compact?.request.input).toEqual([prior, task, ...state.history.filter((entry) => entry.seq <= 4).map((entry) => entry.item)]);
     expect(env.ofType(run.id, 'context.compacted').at(-1)).toMatchObject({ summary: 'S1', replacedThroughSeq: 4 });
     expect(env.run(run.id).status).toBe('COMPLETED');
   });
@@ -135,7 +137,9 @@ describe('worker context: compaction', () => {
     const failed = env.run(run.id);
     expect(failed.status).toBe('FAILED');
     expect(failed.error?.code).toBe('pinned_overflow');
-    expect(failed.error?.message.length).toBeGreaterThan(0);
+    expect(failed.error?.message).toMatch(
+      /^The pinned context needs \d+ tokens but at most \d+ fit \(window 600, output reserve 256, estimation margin \d+\)\. Breakdown: system prompt \d+, tool definitions \d+ \(\d+%\), instructions \d+, task \d+\. Reduce it with deny rules for tools you do not need, `plan` mode, a shorter task or AGENTS\.md, or a model with a larger context window\.$/,
+    );
     expect(env.gateway.streams).toEqual([]);
     expect(env.ofType(run.id, 'run.status').at(-1)).toMatchObject({ from: 'RUNNING', to: 'FAILED', reason: 'pinned_overflow' });
   });

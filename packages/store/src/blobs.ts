@@ -19,6 +19,8 @@ export const prepareBlobDirectory = (dir: string): void => {
   }
 };
 
+const handleOfBytes = (bytes: Uint8Array): string => sha256Hex(bytes);
+
 const countLines = (bytes: Uint8Array): number => {
   if (bytes.length === 0) return 0;
   let newlines = 0;
@@ -183,10 +185,11 @@ export const createBlobStore = (db: DatabaseSync, clock: Clock, dir: string): Bl
   }
 
   return {
+    handleFor: (content) => handleOfBytes(Buffer.from(content, 'utf8')),
     put: (data, options) => {
       const bytes = typeof data === 'string' ? Buffer.from(data, 'utf8') : data;
       assertUtf8(bytes);
-      const sha256 = sha256Hex(bytes);
+      const sha256 = handleOfBytes(bytes);
       const target = path.join(dir, sha256);
       if (!holdsContent(target, sha256, bytes.length)) writeAtomically(dir, target, bytes, clock);
       const lineCount = countLines(bytes);

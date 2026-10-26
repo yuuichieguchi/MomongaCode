@@ -81,7 +81,7 @@ describe('worker gateway cancel wiring', () => {
     await within(running, 5_000, 'the worker to finish after cancel');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
-    expect(env.gateway.cancels.map((call) => call.idempotencyKey)).toEqual([compactKey(run.id, 2)]);
+    expect(env.gateway.cancels.map((call) => call.idempotencyKey)).toEqual([compactKey(run.id, env.gateway.compacts[0]?.request)]);
     expect(statuses).toEqual(['CANCELLING']);
     expect(env.gateway.streams).toEqual([]);
   });

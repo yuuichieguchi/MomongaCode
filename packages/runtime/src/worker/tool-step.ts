@@ -1,10 +1,12 @@
+import { PinnedOverflowError } from '@momonga/context';
+import { parseJsonOrText } from '@momonga/foundation';
 import type { PermissionOption, RunEventPayload, RunState } from '@momonga/protocol';
 import type { CallOutcome, NeedsApprovalOutcome, ResultOutcome, ToolCall } from '@momonga/tools';
 import { validateToolInput } from '@momonga/tools';
 import type { Session } from '@momonga/store';
 import type { TraceSpan } from '../ports.ts';
 import type { ClaimContext, Flow } from './claim-context.ts';
-import { parseJsonOrText } from './json.ts';
+import { pinnedOverflowFailure } from './context-step.ts';
 import { ownEntries } from './own-entries.ts';
 
 export const REJECTED_OUTPUT = 'The user rejected this tool call.';
@@ -158,7 +160,8 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
       signal: ctx.control.signal,
       leaseLost: () => ctx.control.leaseLost() || ctx.control.shuttingDown(),
       protectedPaths: policy.protectedPaths,
-      maxInlineOutputChars: ctx.inlineLimit,
+      inlineLimitForReconcile: ctx.inlineLimitForReconcile,
+      inlineLimitForExecution: ctx.inlineLimitForExecution,
       traceparentFor: (callId) => {
         const existing = spans.get(callId);
         if (existing !== undefined) return { traceparent: existing.traceparent };
@@ -174,6 +177,10 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
     });
   } catch (error) {
     for (const span of spans.values()) span.end(error);
+    if (error instanceof PinnedOverflowError) {
+      ctx.terminals.finish('FAILED', { error: pinnedOverflowFailure(ctx, error) });
+      return 'done';
+    }
     throw error;
   }
   for (const span of spans.values()) span.end();

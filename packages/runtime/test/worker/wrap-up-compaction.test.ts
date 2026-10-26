@@ -1,0 +1,33 @@
+import { describe, expect, it } from 'vitest';
+import { capabilitiesFor, makeEnv } from './harness.ts';
+import { textStep } from './scripts.ts';
+import { bigStep, padOf, withinTurnWorker } from './within-turn-support.ts';
+
+const sixPaddedSteps = () => [0, 1, 2, 3, 4, 5].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1400) }));
+
+describe('wrap-up build', () => {
+  it('makes no proactive compaction call although the context is above the high-water mark', async () => {
+    const env = await makeEnv({ capabilities: capabilitiesFor(4000) });
+    env.gateway.script.push(...sixPaddedSteps(), textStep('Here is what I did.'));
+    const run = env.enqueue('Fill the context', { limits: { maxSteps: 6 } });
+
+    await env.runOnce(env.worker('worker-1', withinTurnWorker()));
+
+    expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'max_steps' });
+    expect(env.gateway.streams).toHaveLength(7);
+    expect(env.gateway.streams[6]?.body.tool_choice).toBe('none');
+    expect(env.gateway.compacts).toEqual([]);
+    expect(env.ofType(run.id, 'context.compacted')).toEqual([]);
+  });
+
+  it('compacts proactively at the same step when the run is not wrapping up', async () => {
+    const env = await makeEnv({ capabilities: capabilitiesFor(4000) });
+    env.gateway.script.push(...sixPaddedSteps(), textStep('done'));
+    const run = env.enqueue('Fill the context');
+
+    await env.runOnce(env.worker('worker-1', withinTurnWorker()));
+
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(env.gateway.compacts).toHaveLength(1);
+  });
+});

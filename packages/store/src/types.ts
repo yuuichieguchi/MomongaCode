@@ -186,6 +186,7 @@ export type BlobSlice = { text: string; totalLines: number; totalBytes: number }
 export type BlobByteSlice = BlobSlice & { offset: number; length: number };
 
 export type BlobStore = {
+  handleFor(content: string): string;
   put(data: string | Uint8Array, options: { mediaType: string }): BlobRef;
   read(handle: string, range: BlobLineRange): Promise<BlobSlice>;
   read(handle: string, range: BlobByteRange): Promise<BlobByteSlice>;

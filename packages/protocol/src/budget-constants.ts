@@ -34,3 +34,6 @@ export const summaryTokenCapFor = (capabilities: Capabilities, room?: number): n
 };
 
 export const summaryItemTokensFor = (cap: number): number => Math.ceil(SUMMARY_ACCEPT_RATIO * cap) + SUMMARY_ITEM_OVERHEAD;
+
+export const sizingRatioFor = (capabilities: Capabilities): number =>
+  capabilities.tokenErrorRatio ?? (capabilities.tokenCounting === 'exact' ? 0 : ESTIMATED_ERROR_BOUND_RATIO);

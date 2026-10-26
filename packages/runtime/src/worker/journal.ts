@@ -7,6 +7,7 @@ const READ_CHUNK = 1000;
 
 export type Journal = {
   readonly state: RunState;
+  countRecorded(type: RunEventPayload['type']): number;
   append(payloads: readonly RunEventPayload[]): void;
   sync(): void;
   verifyLease(): void;
@@ -34,6 +35,17 @@ export const openJournal = ({ store, claim, lost }: JournalOptions): Journal => 
     }
   };
 
+  const countRecorded = (type: RunEventPayload['type']): number => {
+    let count = 0;
+    for (let after = 0; ; ) {
+      const events = store.readRunEvents(claim.runId, after, READ_CHUNK);
+      for (const event of events) if (event.type === type) count += 1;
+      const last = events.at(-1);
+      if (last === undefined || events.length < READ_CHUNK) return count;
+      after = last.seq;
+    }
+  };
+
   const snapshot = (): void => {
     const result = store.writeSnapshot(claim, state.lastSeq, state);
     if (result.kind === 'lease_lost') lost();
@@ -45,6 +57,7 @@ export const openJournal = ({ store, claim, lost }: JournalOptions): Journal => 
     get state() {
       return state;
     },
+    countRecorded,
     sync,
     verifyLease: () => {
       if (store.append(claim, []).kind === 'lease_lost') lost();

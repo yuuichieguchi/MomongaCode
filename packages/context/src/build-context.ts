@@ -1,23 +1,30 @@
-import { findDanglingOutput } from '@momonga/protocol';
-import type { FunctionCallOutputInputItem, InputItem, MessageInputItem } from '@momonga/protocol';
-import { budgetFor, itemCapFor } from './budget.ts';
+import { SUMMARY_PROMPT_TOKENS, findDanglingOutput, findUnpairedCalls, summaryItemTokensFor, summaryTokenCapFor } from '@momonga/protocol';
+import type { FunctionCallOutputInputItem, FunctionTool, InputItem, MessageInputItem } from '@momonga/protocol';
+import { MIN_ROOM_TOKENS, budgetFor, inputCeilingFor, itemCapFor, summaryInputCeilingFor } from './budget.ts';
 import { chainTail, digestChain, frozenItem } from './digests.ts';
-import { ContextOverflowError, PinnedOverflowError, PrefixChangedError } from './errors.ts';
+import { ContextOverflowError, PinnedOverflowError, PinnedRoomError, PrefixChangedError } from './errors.ts';
 import { discoverInstructions } from './instructions.ts';
+import type { DiscoveredInstructions } from './instructions.ts';
+import { DEFAULT_KEEP_RECENT_STEPS, DEFAULT_KEEP_RECENT_TURNS, positiveInteger, protectionRungsOf, retainedHistoryOf, shapeOf } from './levels.ts';
 import { headAndTail, omittedMarker, outputTextOf, truncatedMarker, withOutput } from './tool-output.ts';
 import type {
   BuildContextInput,
   BuildContextPorts,
   BuiltContext,
+  CompactionBlock,
+  CompactionPlan,
   ContextEviction,
   ContextNotice,
   ItemCountContext,
   MeterCount,
+  PinnedBreakdown,
+  PinnedMeasure,
+  ProtectionLevel,
 } from './types.ts';
 
-const DEFAULT_KEEP_RECENT_TURNS = 3;
 const DEFAULT_COMPACT_AT = 0.7;
-const ASSUMED_HANDLE = 'x'.repeat(36);
+const COMPACTION_MIN_GAIN = 2;
+const EVICT_LOW_WATER = 0.5;
 const BLOB_MEDIA_TYPE = 'text/plain';
 
 type OutputState = {
@@ -26,6 +33,7 @@ type OutputState = {
   text: string;
   tokens: number;
   handle: string | undefined;
+  persisted: boolean;
   mode: 'full' | 'truncated' | 'omitted';
   renderedTokens: number;
 };
@@ -33,29 +41,53 @@ type OutputState = {
 type Slot = {
   seq: number;
   turn: number;
+  step: number;
   item: InputItem;
   output?: OutputState;
 };
 
-const isUserMessage = (item: InputItem): boolean => item.type === 'message' && item.role === 'user';
+type Head = {
+  discovered: DiscoveredInstructions;
+  notices: ContextNotice[];
+  systemMessage: MessageInputItem;
+  task: InputItem;
+  pinnedLayers: InputItem[];
+  pinnedDigest: string;
+  pinnedTokens: number;
+  ceiling: number;
+  room: number;
+};
 
-export const buildContext = async (input: BuildContextInput, ports: BuildContextPorts): Promise<BuiltContext> => {
-  const { capabilities, sources, evicted } = input;
-  const { meter, blobs } = ports;
-  const toolless = input.tools === 'none';
-  const tools = toolless ? [] : [...sources.tools];
-  const trailing = [...(input.trailing ?? [])];
-  const compactAt = input.compactAt ?? DEFAULT_COMPACT_AT;
-  const requestedKeep = input.keepRecentTurns ?? DEFAULT_KEEP_RECENT_TURNS;
-  if (!Number.isInteger(requestedKeep) || requestedKeep < 1) {
-    throw new RangeError(`keepRecentTurns must be a positive integer, received ${requestedKeep}`);
-  }
-
+const metering = (input: BuildContextInput, ports: BuildContextPorts) => {
+  const { capabilities } = input;
+  const tools: FunctionTool[] = input.tools === 'none' ? [] : [...input.sources.tools];
   const budgetOf = (counted: MeterCount) => budgetFor(capabilities, counted.errorBound);
   const fits = (counted: MeterCount): boolean => counted.inputTokens <= budgetOf(counted).I;
-  const belowCompactLimit = (counted: MeterCount): boolean => counted.inputTokens <= compactAt * budgetOf(counted).I;
-  const countInput = (items: readonly InputItem[]): Promise<MeterCount> => meter.count({ input: items, tools });
+  const countInput = (items: readonly InputItem[]): Promise<MeterCount> => ports.meter.count({ input: items, tools });
+  return { tools, budgetOf, fits, countInput };
+};
 
+const breakdownOf = async (
+  input: BuildContextInput,
+  ports: BuildContextPorts,
+  systemMessage: MessageInputItem,
+  instructions: readonly InputItem[],
+  task: InputItem,
+): Promise<PinnedBreakdown> => {
+  const { tools } = metering(input, ports);
+  const countOf = async (items: readonly InputItem[], withTools: readonly FunctionTool[]): Promise<number> =>
+    items.length === 0 && withTools.length === 0 ? 0 : (await ports.meter.count({ input: items, tools: withTools })).inputTokens;
+  return {
+    systemPrompt: await countOf([systemMessage], []),
+    tools: await countOf([], tools),
+    instructions: await countOf(instructions, []),
+    task: await countOf([task], []),
+  };
+};
+
+const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): Promise<Head> => {
+  const { capabilities, sources } = input;
+  const { fits, countInput } = metering(input, ports);
   const discovered = await discoverInstructions({
     reader: ports.instructions,
     home: input.home,
@@ -63,21 +95,58 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
     trusted: input.trusted,
     touchedPaths: input.touchedPaths,
   });
-  const notices: ContextNotice[] = [...discovered.notices];
-
   const systemMessage: MessageInputItem = { type: 'message', role: 'system', content: sources.systemPrompt };
   const task = frozenItem(sources.task);
-  const pinnedLayers: InputItem[] = [
-    systemMessage,
-    ...[discovered.user, discovered.root].flatMap((file) => (file === undefined ? [] : [file.message])),
-  ];
+  const instructionMessages = [discovered.user, discovered.root].flatMap((file) => (file === undefined ? [] : [file.message]));
+  const pinnedLayers: InputItem[] = [systemMessage, ...instructionMessages];
   const pinned: InputItem[] = [...pinnedLayers, task];
   const pinnedDigest = chainTail(digestChain({ scope: 'pinned-items' }, pinned));
   if (input.expectedPinnedDigest !== undefined && input.expectedPinnedDigest !== pinnedDigest) {
     throw new PrefixChangedError(input.expectedPinnedDigest, pinnedDigest);
   }
-  const pinnedCounted = await countInput(pinned);
-  if (!fits(pinnedCounted)) throw new PinnedOverflowError(pinnedCounted.inputTokens, budgetOf(pinnedCounted).I);
+  const ceiling = inputCeilingFor(capabilities);
+  const pinnedCounted = input.pinnedTokens === undefined ? await countInput(pinned) : undefined;
+  const pinnedTokens = input.pinnedTokens ?? (pinnedCounted as MeterCount).inputTokens;
+  if (pinnedTokens > ceiling || (pinnedCounted !== undefined && !fits(pinnedCounted))) {
+    throw new PinnedOverflowError({ pinnedTokens, ceiling, breakdown: await breakdownOf(input, ports, systemMessage, instructionMessages, task) });
+  }
+  const room = ceiling - pinnedTokens;
+  if (room < MIN_ROOM_TOKENS) {
+    throw new PinnedRoomError({
+      pinnedTokens,
+      ceiling,
+      room,
+      minimum: MIN_ROOM_TOKENS,
+      breakdown: await breakdownOf(input, ports, systemMessage, instructionMessages, task),
+    });
+  }
+  return { discovered, notices: [...discovered.notices], systemMessage, task, pinnedLayers, pinnedDigest, pinnedTokens, ceiling, room };
+};
+
+export const measurePinned = async (input: BuildContextInput, ports: BuildContextPorts): Promise<PinnedMeasure> => {
+  const { pinnedTokens, ceiling, room } = await measureHead(input, ports);
+  return {
+    pinnedTokens,
+    ceiling,
+    room,
+    itemCap: itemCapFor(input.capabilities, room),
+    summaryCap: summaryTokenCapFor(input.capabilities, room),
+  };
+};
+
+export const buildContext = async (input: BuildContextInput, ports: BuildContextPorts): Promise<BuiltContext> => {
+  const { capabilities, sources, evicted } = input;
+  const { meter, blobs } = ports;
+  const { tools, budgetOf, fits, countInput } = metering(input, ports);
+  const trailing = [...(input.trailing ?? [])];
+  const compactAt = input.compactAt ?? DEFAULT_COMPACT_AT;
+  const requestedKeepTurns = positiveInteger('keepRecentTurns', input.keepRecentTurns ?? DEFAULT_KEEP_RECENT_TURNS);
+  const requestedKeepSteps = positiveInteger('keepRecentSteps', input.keepRecentSteps ?? DEFAULT_KEEP_RECENT_STEPS);
+  const requestedLevel = input.level ?? 0;
+  if (!Number.isInteger(requestedLevel) || requestedLevel < 0) throw new RangeError(`level must be a non-negative integer, received ${requestedLevel}`);
+
+  const head = await measureHead(input, ports);
+  const { discovered, notices, systemMessage, task, pinnedLayers, pinnedDigest, pinnedTokens, ceiling, room } = head;
 
   const nested = [...discovered.nested];
   const skillMessages: MessageInputItem[] = sources.activatedSkills.map((skill) => ({
@@ -87,9 +156,10 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
   }));
   const layersOf = (): InputItem[] => [...pinnedLayers, ...nested.map((file) => file.message), ...skillMessages];
   const floorOf = (layerItems: readonly InputItem[]): InputItem[] => [...layerItems, task];
+  const exceeds = (counted: MeterCount): boolean => !fits(counted) || counted.inputTokens > ceiling;
   let layers = layersOf();
-  let layersCounted = nested.length + skillMessages.length === 0 ? pinnedCounted : await countInput(floorOf(layers));
-  while (!fits(layersCounted) && nested.length > 0) {
+  let layersCounted = await countInput(floorOf(layers));
+  while (exceeds(layersCounted) && nested.length > 0) {
     const dropped = nested.shift();
     if (dropped === undefined) break;
     notices.push({
@@ -99,23 +169,32 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
     layers = layersOf();
     layersCounted = await countInput(floorOf(layers));
   }
-  if (!fits(layersCounted)) throw new PinnedOverflowError(layersCounted.inputTokens, budgetOf(layersCounted).I);
+  if (exceeds(layersCounted)) {
+    throw new PinnedOverflowError({
+      pinnedTokens: layersCounted.inputTokens,
+      ceiling,
+      breakdown: await breakdownOf(input, ports, systemMessage, layers.slice(1), task),
+    });
+  }
+  const floorTokens = layersCounted.inputTokens;
 
   const summaryItems: InputItem[] = sources.summary === undefined ? [] : [frozenItem(sources.summary.item)];
   const prefixDigest = chainTail(digestChain({ scope: 'prefix', tools }, [...layers, ...summaryItems]));
 
-  const itemCap = itemCapFor(capabilities);
+  const itemCap = input.itemCap ?? itemCapFor(capabilities, room);
+  const summaryCap = summaryTokenCapFor(capabilities, room);
   const callNames = new Map<string, string>();
   const countContextFor = (callId: string): ItemCountContext => {
     const name = callNames.get(callId);
-    return { callNames: name === undefined ? {} : { [callId]: name }, withTools: !toolless };
+    return { callNames: name === undefined ? {} : { [callId]: name }, withTools: input.tools !== 'none' };
   };
-  const reports = new Map<string, ContextEviction>();
+  const reports = new Map<string, { eviction: ContextEviction; state: OutputState }>();
+  const reported = (): ContextEviction[] => [...reports.values()].filter(({ state }) => state.persisted).map(({ eviction }) => eviction);
 
   const ensureHandle = async (state: OutputState): Promise<boolean> => {
-    if (state.handle !== undefined) return false;
-    const stored = await blobs.put(state.text, { mediaType: BLOB_MEDIA_TYPE });
-    state.handle = stored.handle;
+    if (state.persisted) return false;
+    state.handle = (await blobs.put(state.text, { mediaType: BLOB_MEDIA_TYPE })).handle;
+    state.persisted = true;
     return true;
   };
 
@@ -133,11 +212,7 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
     }
   };
 
-  const historyItems = (
-    sources.summary === undefined
-      ? sources.history
-      : sources.history.filter((entry) => entry.seq > (sources.summary?.replacedThroughSeq ?? 0))
-  ).map((entry) => ({
+  const historyItems = retainedHistoryOf(sources.history, sources.summary).map((entry) => ({
     seq: entry.seq,
     item: frozenItem(entry.item),
     ...(entry.handle === undefined ? {} : { handle: entry.handle }),
@@ -156,19 +231,12 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
     }
   }
 
+  const shape = shapeOf(historyItems, sources.taskSeq);
+  const { turnCount, currentTurn, lastStep } = shape;
   const slots: Slot[] = [];
-  let turn = 0;
-  let inheritedSeen = false;
-  let taskBoundaryPending = false;
   for (const [index, entry] of historyItems.entries()) {
-    if (entry.seq < sources.taskSeq) inheritedSeen = true;
-    else if (inheritedSeen) {
-      taskBoundaryPending = true;
-      inheritedSeen = false;
-    }
-    if ((index > 0 && isUserMessage(entry.item)) || taskBoundaryPending) turn += 1;
-    taskBoundaryPending = false;
-    const slot: Slot = { seq: entry.seq, turn, item: entry.item };
+    const { turn, step } = shape.positions[index] as (typeof shape.positions)[number];
+    const slot: Slot = { seq: entry.seq, turn, step, item: entry.item };
     if (entry.item.type === 'function_call_output') {
       const original = entry.item;
       const text = outputTextOf(original.output);
@@ -179,6 +247,7 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
         text,
         tokens,
         handle: 'handle' in entry ? entry.handle : undefined,
+        persisted: 'handle' in entry,
         mode: 'full',
         renderedTokens: tokens,
       };
@@ -189,19 +258,22 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
         slot.item = withOutput(original, omittedMarker(tokens, handle));
         state.mode = 'omitted';
         state.renderedTokens = await meter.countItem(slot.item, countContextFor(state.callId));
-        if (created) reports.set(state.callId, { callId: state.callId, handle, kind: 'omitted' });
+        if (created) reports.set(state.callId, { eviction: { callId: state.callId, handle, kind: 'omitted' }, state });
       } else if (tokens > itemCap) {
         await ensureHandle(state);
         const handle = state.handle as string;
         slot.item = await truncate(state, handle);
         state.mode = 'truncated';
-        reports.set(state.callId, { callId: state.callId, handle, kind: 'truncated' });
+        reports.set(state.callId, { eviction: { callId: state.callId, handle, kind: 'truncated' }, state });
       }
     }
     slots.push(slot);
   }
-  const lastSlot = slots.at(-1);
-  const turnCount = lastSlot === undefined ? 0 : lastSlot.seq < sources.taskSeq ? lastSlot.turn + 2 : lastSlot.turn + 1;
+  const rungs = protectionRungsOf(shape, requestedKeepTurns, requestedKeepSteps);
+  const lastIndex = rungs.length - 1;
+  const levelIndex = Math.min(requestedLevel, lastIndex);
+  const lastLevel = levelIndex === lastIndex;
+  const { protection, protectedSlots } = rungs[levelIndex] as (typeof rungs)[number];
 
   const assemble = (): InputItem[] => {
     const items = slots.map((slot) => slot.item);
@@ -210,46 +282,152 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
     return [...layers, ...summaryItems, ...ordered, ...trailing];
   };
 
-  const evictOldest = async (keep: number): Promise<boolean> => {
-    for (const slot of slots) {
+  const evictOldest = async (): Promise<boolean> => {
+    for (const [index, slot] of slots.entries()) {
       const state = slot.output;
-      if (state === undefined || state.mode === 'omitted' || slot.turn >= turnCount - keep) continue;
-      const probe = withOutput(state.original, omittedMarker(state.tokens, state.handle ?? ASSUMED_HANDLE));
+      if (state === undefined || state.mode === 'omitted' || protectedSlots.has(index)) continue;
+      const handle = state.handle ?? blobs.handleFor(state.text);
+      const probe = withOutput(state.original, omittedMarker(state.tokens, handle));
       if ((await meter.countItem(probe, countContextFor(state.callId))) >= state.renderedTokens) continue;
-      await ensureHandle(state);
-      const handle = state.handle as string;
-      slot.item = withOutput(state.original, omittedMarker(state.tokens, handle));
+      state.handle = handle;
+      slot.item = probe;
       state.mode = 'omitted';
       state.renderedTokens = await meter.countItem(slot.item, countContextFor(state.callId));
-      reports.set(state.callId, { callId: state.callId, handle, kind: 'omitted' });
+      reports.set(state.callId, { eviction: { callId: state.callId, handle, kind: 'omitted' }, state });
       return true;
     }
     return false;
   };
 
-  const compactThroughSeqFor = (keep: number): number | undefined => {
-    const lastCompactableTurn = turnCount - keep - 1;
-    if (lastCompactableTurn < 0) return undefined;
-    return slots.findLast((slot) => slot.turn === lastCompactableTurn)?.seq;
+  const persistEvictions = async (throughIndex: number): Promise<void> => {
+    for (const [index, slot] of slots.entries()) {
+      if (index > throughIndex || slot.output?.mode !== 'omitted') continue;
+      await ensureHandle(slot.output);
+    }
   };
 
-  let keep = requestedKeep;
+  const cutIndexes = (): number[] => {
+    const firstProtected = Math.min(slots.length, ...protectedSlots);
+    const cuts: number[] = [];
+    for (const [index, slot] of slots.entries()) {
+      if (index >= firstProtected) break;
+      const next = slots[index + 1];
+      const endsStep = next === undefined ? slot.turn !== currentTurn : next.turn !== slot.turn || next.step !== slot.step;
+      if (endsStep) cuts.push(index);
+    }
+    return cuts;
+  };
+
+  const compactionFor = async (
+    kind: 'proactive' | 'forced',
+    deficit: number,
+  ): Promise<{ plan: CompactionPlan } | { blocked: CompactionBlock } | { declined: true }> => {
+    const cuts = cutIndexes();
+    if (cuts.length === 0) {
+      const lastStepItems = slots.filter((slot) => slot.turn === currentTurn && slot.step === lastStep).map((slot) => slot.item);
+      const protectedCounted = await countInput([...layers, task, ...lastStepItems]);
+      return lastStepItems.length > 0 && protectedCounted.inputTokens > ceiling
+        ? {
+            blocked: {
+              reason: 'protected_step_exceeds_room',
+              message: `the latest step alone needs ${protectedCounted.inputTokens} tokens, more than the ${ceiling} that fit`,
+            },
+          }
+        : {
+            blocked: {
+              reason: 'no_step_boundary_outside_protection',
+              message: 'every step boundary lies inside the protected recent steps or before the summary',
+            },
+          };
+    }
+    const item = summaryItemTokensFor(summaryCap);
+    const layersOnly = (await countInput(layers)).inputTokens;
+    const taskTokens = floorTokens - layersOnly;
+    const summaryCeiling = summaryInputCeilingFor(capabilities);
+    let overBudget: CompactionBlock | undefined;
+    for (const cutIndex of cuts.toReversed()) {
+      const prefix = slots.slice(0, cutIndex + 1);
+      const taskInside = prefix.some((slot) => slot.seq > sources.taskSeq);
+      const counted = await countInput([...layers, ...summaryItems, ...prefix.map((slot) => slot.item)]);
+      const region = counted.inputTokens - layersOnly;
+      const regionWithTask = region + (taskInside ? taskTokens : 0);
+      if (regionWithTask + SUMMARY_PROMPT_TOKENS + summaryCap > summaryCeiling) {
+        overBudget = {
+          reason: 'region_exceeds_summary_input_budget',
+          message: `the compactable region needs ${regionWithTask} tokens plus ${SUMMARY_PROMPT_TOKENS} for the instructions and ${summaryCap} for the summary, more than the ${summaryCeiling} a summary request may hold`,
+        };
+        continue;
+      }
+      const closes = kind === 'proactive' ? region >= COMPACTION_MIN_GAIN * item : region - item >= deficit;
+      if (!closes) {
+        return kind === 'proactive'
+          ? { declined: true }
+          : {
+              blocked: {
+                reason: 'deficit_not_closed',
+                message: `the latest compactable region of ${region} tokens would free ${region - item} after a summary of ${item}, but ${deficit} are needed`,
+              },
+            };
+      }
+      const unpaired = findUnpairedCalls(prefix);
+      if (unpaired.length > 0) {
+        throw new Error(`compaction cut at seq ${(slots[cutIndex] as Slot).seq} leaves unpaired calls: ${unpaired.map((call) => call.callId).join(', ')}`);
+      }
+      await persistEvictions(cutIndex);
+      const throughSeq = (slots[cutIndex] as Slot).seq;
+      const items = prefix.map((slot) => slot.item);
+      const taskAt = prefix.findIndex((slot) => slot.seq > sources.taskSeq);
+      const compactionInput = taskAt < 0 ? items : [...items.slice(0, taskAt), task, ...items.slice(taskAt)];
+      return { plan: { throughSeq, input: [...summaryItems, ...compactionInput], summaryTokenCap: summaryCap } };
+    }
+    return { blocked: overBudget as CompactionBlock };
+  };
+
   let total = await countInput(assemble());
-  for (;;) {
-    while (!belowCompactLimit(total) && (await evictOldest(keep))) total = await countInput(assemble());
-    if (fits(total)) break;
-    if (keep > 1 && turnCount > 1) {
-      keep = 1;
+  const highMark = floorTokens + compactAt * (ceiling - floorTokens);
+  const lowMark = floorTokens + EVICT_LOW_WATER * (highMark - floorTokens);
+  if (total.inputTokens > highMark || !fits(total)) {
+    while ((total.inputTokens > lowMark || !fits(total)) && (await evictOldest())) total = await countInput(assemble());
+  }
+
+  if (!fits(total)) {
+    const deficit = Math.max(total.inputTokens - ceiling, total.inputTokens + total.errorBound - budgetFor(capabilities, 0).I);
+    const outcome = await compactionFor('forced', deficit);
+    if (lastLevel) await persistEvictions(slots.length);
+    throw new ContextOverflowError({
+      inputTokens: total.inputTokens,
+      inputBudget: budgetOf(total).I,
+      ceiling,
+      pinnedTokens,
+      floorTokens,
+      level: levelIndex,
+      lastLevel,
+      protection,
+      breakdown: lastLevel ? await breakdownOf(input, ports, systemMessage, layers.slice(1), task) : undefined,
+      evictions: reported(),
+      compaction: 'plan' in outcome ? outcome.plan : undefined,
+      compactionBlockedBy: 'blocked' in outcome ? outcome.blocked : undefined,
+    });
+  }
+
+  await persistEvictions(slots.length);
+
+  if (levelIndex > 0) {
+    if (protection.keepTurns < requestedKeepTurns && turnCount > protection.keepTurns) {
       notices.push({
         code: 'recent_turns_shrunk',
         message: 'recent turns were reduced to the current turn because the context budget was exceeded',
       });
-      continue;
     }
-    throw new ContextOverflowError(total.inputTokens, budgetOf(total).I, compactThroughSeqFor(keep));
+    if (protection.keepSteps < requestedKeepSteps) {
+      notices.push({
+        code: 'recent_steps_shrunk',
+        message: `recent steps of the current turn were reduced from ${requestedKeepSteps} to ${protection.keepSteps} because the context budget was exceeded`,
+      });
+    }
   }
 
-  const compactThroughSeq = belowCompactLimit(total) ? undefined : compactThroughSeqFor(keep);
+  const hint = levelIndex === 0 && total.inputTokens > highMark ? await compactionFor('proactive', 0) : undefined;
   return {
     input: assemble(),
     tools,
@@ -259,9 +437,8 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
     prefixDigest,
     pinnedDigest,
     inputDigest: total.inputDigest,
-    evictions: [...reports.values()],
-    needsCompaction: compactThroughSeq !== undefined,
-    ...(compactThroughSeq === undefined ? {} : { compactThroughSeq }),
+    evictions: reported(),
+    ...(hint !== undefined && 'plan' in hint ? { compaction: hint.plan } : {}),
     notices,
     loadedInstructions: [discovered.user, discovered.root, ...nested]
       .filter((file) => file !== undefined)

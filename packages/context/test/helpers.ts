@@ -1,4 +1,4 @@
-import { canonicalJson } from '@momonga/foundation';
+import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type {
   Capabilities,
   ContentPart,
@@ -9,10 +9,13 @@ import type {
   MessageInputItem,
 } from '@momonga/protocol';
 import {
+  ContextOverflowError,
+  buildContext,
   createTokenMeter,
   type BlobPort,
   type BuildContextInput,
   type BuildContextPorts,
+  type BuiltContext,
   type DeepReadonly,
   type ContextSources,
   type HistoryItem,
@@ -62,21 +65,38 @@ export const tokensOfTools = (tools: readonly FunctionTool[]): number =>
 
 export type FakeCounter = TokenCounter & { calls: CountTokensRequest[] };
 
+const requestTokens = (request: CountTokensRequest): number => {
+  const instructionTokens =
+    request.instructions === undefined || request.instructions === null ? 0 : tokensOfText(request.instructions);
+  const inputTokens = typeof request.input === 'string' ? tokensOfText(request.input) : tokensOfItems(request.input);
+  const toolTokens = (request.tools ?? []).reduce((sum, tool) => sum + tokensOfTool(tool), 0);
+  return instructionTokens + toolTokens + inputTokens;
+};
+
 export const fakeCounter = (errorBound = 0, method: CountTokensResult['method'] = 'exact'): FakeCounter => {
   const calls: CountTokensRequest[] = [];
   return {
     calls,
     count: async (request) => {
       calls.push(request);
-      const instructionTokens =
-        request.instructions === undefined || request.instructions === null ? 0 : tokensOfText(request.instructions);
-      const inputTokens =
-        typeof request.input === 'string' ? tokensOfText(request.input) : tokensOfItems(request.input);
-      const toolTokens = (request.tools ?? []).reduce((sum, tool) => sum + tokensOfTool(tool), 0);
-      return { input_tokens: instructionTokens + toolTokens + inputTokens, method, error_bound: errorBound };
+      return { input_tokens: requestTokens(request), method, error_bound: errorBound };
     },
   };
 };
+
+export const ratioCounter = (ratio: number): FakeCounter => {
+  const calls: CountTokensRequest[] = [];
+  return {
+    calls,
+    count: async (request) => {
+      calls.push(request);
+      const tokens = requestTokens(request);
+      return { input_tokens: tokens, method: 'estimated', error_bound: Math.ceil(ratio * tokens) };
+    },
+  };
+};
+
+export const handleOf = (text: string): string => sha256Hex(text).slice(0, 6);
 
 export type FakeBlobs = BlobPort & { puts: Array<{ text: string; mediaType: string }> };
 
@@ -84,9 +104,10 @@ export const fakeBlobs = (): FakeBlobs => {
   const puts: Array<{ text: string; mediaType: string }> = [];
   return {
     puts,
+    handleFor: handleOf,
     put: async (text, options) => {
       puts.push({ text, mediaType: options.mediaType });
-      return { handle: `blob-${puts.length}` };
+      return { handle: handleOf(text) };
     },
   };
 };
@@ -143,6 +164,14 @@ export const output = (seq: number, callId: string, text: string, handle?: strin
   ...(handle === undefined ? {} : { handle }),
 });
 
+export const argsCall = (seq: number, callId: string, chars: number): HistoryItem => ({
+  seq,
+  item: { type: 'function_call', id: `h${seq}`, call_id: callId, name: 'Read', arguments: `{"p":"${'x'.repeat(chars)}"}` },
+});
+
+export const stepsOf = (chars: readonly number[]): HistoryItem[] =>
+  chars.flatMap((size, index) => [argsCall(2 * index + 1, `c${index}`, size), output(2 * index + 2, `c${index}`, 'ok')]);
+
 export const SYSTEM_PROMPT = 'You are MomongaCode.';
 export const TASK: MessageInputItem = { type: 'message', role: 'user', content: 'Do the task.' };
 
@@ -173,9 +202,9 @@ export type Harness = {
 
 export const harness = (
   capabilities: Capabilities,
-  options: { files?: Parameters<typeof fakeReader>[0]; counterErrorBound?: number } = {},
+  options: { files?: Parameters<typeof fakeReader>[0]; counterErrorBound?: number; counter?: FakeCounter } = {},
 ): Harness => {
-  const counter = fakeCounter(options.counterErrorBound ?? 0);
+  const counter = options.counter ?? fakeCounter(options.counterErrorBound ?? 0);
   const blobs = fakeBlobs();
   const reader = fakeReader(options.files ?? {});
   const meter = createTokenMeter({ counter, model: MODEL, capabilities });
@@ -251,4 +280,23 @@ export const seeded = (seed: number) => {
     next,
     int: (min: number, max: number): number => min + Math.floor(next() * (max - min + 1)),
   };
+};
+
+export const overflowOf = async (input: BuildContextInput, ports: BuildContextPorts): Promise<ContextOverflowError> => {
+  const error = await buildContext(input, ports).catch((caught: unknown) => caught);
+  if (!(error instanceof ContextOverflowError)) throw new Error(`expected ContextOverflowError, received ${String(error)}`);
+  return error;
+};
+
+export const buildThroughLevels = async (
+  input: BuildContextInput,
+  ports: BuildContextPorts,
+): Promise<{ built: BuiltContext; level: number }> => {
+  for (let level = 0; ; level += 1) {
+    try {
+      return { built: await buildContext({ ...input, level }, ports), level };
+    } catch (error) {
+      if (!(error instanceof ContextOverflowError) || error.lastLevel !== false || level >= 3) throw error;
+    }
+  }
 };

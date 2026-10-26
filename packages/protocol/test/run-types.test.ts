@@ -309,6 +309,8 @@ describe('RunState', () => {
       loadedInstructions: { path: string; textSha256: string }[];
       streaming?: { step: number; attempt: number; seen: boolean; items: { itemId: string; text: string }[] };
       mode?: PermissionMode;
+      loopGroups: { signature: string; outputSignature?: string }[];
+      loopOpen?: { calls: [string, unknown][]; callIds: string[]; outputs: Record<string, string> };
       taskSeq: number;
       inherited?: { fromRunId: string; fromLastSeq: number; digest: string };
       lastSeq: number;

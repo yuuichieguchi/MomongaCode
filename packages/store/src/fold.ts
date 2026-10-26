@@ -1,5 +1,5 @@
-import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import { STOP_REASONS, findDanglingOutput } from '@momonga/protocol';
+import { canonicalJson, parseJsonOrText, sha256Hex } from '@momonga/foundation';
+import { LOOP_GROUPS_KEPT, STOP_REASONS, findDanglingOutput } from '@momonga/protocol';
 import type { InputItem, RunEvent, RunState, StopReason } from '@momonga/protocol';
 import { applyInheritance } from './inherit.ts';
 import { isRecord } from './rows.ts';
@@ -22,6 +22,7 @@ export const initialRunState = (ids: { runId: string; sessionId: string }): RunS
   toolCallCounts: {},
   steps: {},
   loadedInstructions: [],
+  loopGroups: [],
   taskSeq: 1,
   lastSeq: 0,
 });
@@ -45,21 +46,50 @@ const withCall = (state: RunState, callId: string, eventType: string, update: (c
   pendingCalls: { ...state.pendingCalls, [callId]: update(requireCall(state, callId, eventType)) },
 });
 
-const appendItems = (state: RunState, items: readonly { item: InputItem; callId?: string }[], handle?: string): RunState => ({
-  ...state,
-  history: [
-    ...state.history,
-    ...items.map(
-      ({ item, callId }, offset): HistoryEntry => ({
-        seq: state.nextItemSeq + offset,
-        item,
-        ...(callId === undefined ? {} : { callId }),
-        ...(handle === undefined ? {} : { handle }),
-      }),
-    ),
-  ],
-  nextItemSeq: state.nextItemSeq + items.length,
-});
+const outputTextOf = (output: unknown): string => (typeof output === 'string' ? output : canonicalJson(output));
+
+const digestOf = (value: unknown): string => sha256Hex(canonicalJson(value));
+
+const closedGroup = (open: NonNullable<RunState['loopOpen']>): RunState['loopGroups'][number] => {
+  const complete = Object.keys(open.outputs).length > 0 && open.callIds.every((callId) => open.outputs[callId] !== undefined);
+  return {
+    signature: digestOf(open.calls),
+    ...(complete ? { outputSignature: digestOf(open.callIds.map((callId) => open.outputs[callId])) } : {}),
+  };
+};
+
+const withLoopItem = (state: RunState, item: InputItem): RunState => {
+  const open = state.loopOpen;
+  if (item.type === 'function_call') {
+    const call: [string, unknown] = [item.name, parseJsonOrText(item.arguments)];
+    if (open !== undefined && Object.keys(open.outputs).length === 0) {
+      return { ...state, loopOpen: { calls: [...open.calls, call], callIds: [...open.callIds, item.call_id], outputs: open.outputs } };
+    }
+    const loopGroups = open === undefined ? state.loopGroups : [...state.loopGroups, closedGroup(open)].slice(-LOOP_GROUPS_KEPT);
+    return { ...state, loopGroups, loopOpen: { calls: [call], callIds: [item.call_id], outputs: {} } };
+  }
+  if (item.type === 'function_call_output' && open !== undefined) {
+    return { ...state, loopOpen: { ...open, outputs: { ...open.outputs, [item.call_id]: digestOf(outputTextOf(item.output)) } } };
+  }
+  return state;
+};
+
+const appendItems = (state: RunState, items: readonly { item: InputItem; callId?: string }[], handle?: string): RunState =>
+  items.reduce<RunState>((folded, { item }) => withLoopItem(folded, item), {
+    ...state,
+    history: [
+      ...state.history,
+      ...items.map(
+        ({ item, callId }, offset): HistoryEntry => ({
+          seq: state.nextItemSeq + offset,
+          item,
+          ...(callId === undefined ? {} : { callId }),
+          ...(handle === undefined ? {} : { handle }),
+        }),
+      ),
+    ],
+    nextItemSeq: state.nextItemSeq + items.length,
+  });
 
 const finishCall = (
   state: RunState,

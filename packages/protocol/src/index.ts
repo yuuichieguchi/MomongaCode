@@ -13,9 +13,11 @@ export {
   SUMMARY_WINDOW_RATIO,
   marginFloorFor,
   outputReserveFor,
+  sizingRatioFor,
   summaryItemTokensFor,
   summaryTokenCapFor,
 } from './budget-constants.ts';
+export { LOOP_GROUPS_KEPT } from './loop-groups.ts';
 export { findDanglingOutput, findUnpairedCalls } from './call-pairing.ts';
 export { compactionSummaryMessage, decodeCompactionSummary } from './compaction-summary.ts';
 export { PROBE_KEYWORDS } from './probe.ts';

@@ -53,10 +53,10 @@ const storedSnapshot = (leading: readonly RunEventPayload[] = []) => {
   return { store, run, state, events, mutate, storedJson };
 };
 
-describe('snapshot state version 6', () => {
-  it('writes stateVersion 6', () => {
+describe('snapshot state version 7', () => {
+  it('writes stateVersion 7', () => {
     const { storedJson } = storedSnapshot();
-    expect(storedJson()['stateVersion']).toBe(6);
+    expect(storedJson()['stateVersion']).toBe(7);
   });
 
   it('round-trips taskSeq and inherited for an inheriting run', () => {
@@ -67,9 +67,9 @@ describe('snapshot state version 6', () => {
     expect(store.load(run.id).snapshot?.state).toEqual(state);
   });
 
-  it('treats a version 5 snapshot of an inheriting run as absent and replays the event from the journal', () => {
+  it('treats a version 6 snapshot of an inheriting run as absent and replays the event from the journal', () => {
     const { store, run, state, events, mutate } = storedSnapshot([INHERITED]);
-    mutate("json_set(state_json, '$.stateVersion', 5)");
+    mutate("json_set(state_json, '$.stateVersion', 6)");
     const loaded = store.load(run.id);
     expect(loaded.snapshot).toBeUndefined();
     expect(loaded.tail).toEqual(events);
@@ -86,9 +86,9 @@ describe('snapshot state version 6', () => {
     expect(loaded.snapshot?.state).toEqual(state);
   });
 
-  it('treats an otherwise valid version 5 snapshot as absent and falls back to the full fold', () => {
+  it('treats an otherwise valid version 6 snapshot as absent and falls back to the full fold', () => {
     const { store, run, state, events, mutate } = storedSnapshot();
-    mutate("json_set(state_json, '$.stateVersion', 5)");
+    mutate("json_set(state_json, '$.stateVersion', 6)");
     const loaded = store.load(run.id);
     expect(loaded.snapshot).toBeUndefined();
     expect(loaded.tail).toEqual(events);
