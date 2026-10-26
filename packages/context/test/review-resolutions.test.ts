@@ -110,11 +110,12 @@ describe('expectedPinnedDigest', () => {
     expect(first.pinnedDigest).not.toBe(first.prefixDigest);
   });
 
-  it.each<[string, Partial<BuildContextInput>]>([
+  it.for<[string, Partial<BuildContextInput>]>([
     ['nested instructions', { touchedPaths: [touchedFile('/proj/src/a.ts')] }],
     ['activated skills', { sources: base({ activatedSkills: [{ name: 'skill', content: 'skill body' }] }) }],
     ['summary', { sources: base({ summary, history: [user(3, 'next')] }) }],
-  ])('does not throw when only %s change', async (_label, overrides) => {
+    ['tools', { sources: base({ tools: [{ ...READ_TOOL, name: 'Read2' }] }) }],
+  ])('does not throw when only %s change', async ([, overrides]) => {
     const first = await pinnedOf();
     const result = await buildContext(
       inputFor(capabilities, { sources: base(), ...overrides, expectedPinnedDigest: first.pinnedDigest }),
@@ -124,13 +125,12 @@ describe('expectedPinnedDigest', () => {
     expect(result.prefixDigest).not.toBe(first.prefixDigest);
   });
 
-  it.each<[string, Partial<ContextSources>, Record<string, string>]>([
+  it.for<[string, Partial<ContextSources>, Record<string, string>]>([
     ['system prompt', { systemPrompt: `${SYSTEM_PROMPT} v2` }, files],
-    ['tools', { tools: [{ ...READ_TOOL, name: 'Read2' }] }, files],
     ['task', { task: { ...TASK, content: 'Another task.' } }, files],
     ['user AGENTS.md', {}, { ...files, [USER_AGENTS]: 'user rules v2' }],
     ['root AGENTS.md', {}, { ...files, [ROOT_AGENTS]: 'root rules v2' }],
-  ])('throws PrefixChangedError when the %s changes', async (_label, sourceOverrides, changedFiles) => {
+  ])('throws PrefixChangedError when the %s changes', async ([, sourceOverrides, changedFiles]) => {
     const first = await pinnedOf();
     const error = await buildContext(
       inputFor(capabilities, { sources: base(sourceOverrides), expectedPinnedDigest: first.pinnedDigest }),

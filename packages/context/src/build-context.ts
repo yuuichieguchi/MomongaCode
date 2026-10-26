@@ -42,7 +42,9 @@ const isUserMessage = (item: InputItem): boolean => item.type === 'message' && i
 export const buildContext = async (input: BuildContextInput, ports: BuildContextPorts): Promise<BuiltContext> => {
   const { capabilities, sources, evicted } = input;
   const { meter, blobs } = ports;
-  const tools = [...sources.tools];
+  const toolless = input.tools === 'none';
+  const tools = toolless ? [] : [...sources.tools];
+  const trailing = [...(input.trailing ?? [])];
   const compactAt = input.compactAt ?? DEFAULT_COMPACT_AT;
   const requestedKeep = input.keepRecentTurns ?? DEFAULT_KEEP_RECENT_TURNS;
   if (!Number.isInteger(requestedKeep) || requestedKeep < 1) {
@@ -70,7 +72,7 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
     ...[discovered.user, discovered.root].flatMap((file) => (file === undefined ? [] : [file.message])),
   ];
   const pinned: InputItem[] = [...pinnedLayers, task];
-  const pinnedDigest = chainTail(digestChain({ scope: 'pinned', tools }, pinned));
+  const pinnedDigest = chainTail(digestChain({ scope: 'pinned-items' }, pinned));
   if (input.expectedPinnedDigest !== undefined && input.expectedPinnedDigest !== pinnedDigest) {
     throw new PrefixChangedError(input.expectedPinnedDigest, pinnedDigest);
   }
@@ -106,7 +108,7 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
   const callNames = new Map<string, string>();
   const countContextFor = (callId: string): ItemCountContext => {
     const name = callNames.get(callId);
-    return { callNames: name === undefined ? {} : { [callId]: name }, withTools: true };
+    return { callNames: name === undefined ? {} : { [callId]: name }, withTools: !toolless };
   };
   const reports = new Map<string, ContextEviction>();
 
@@ -205,7 +207,7 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
     const items = slots.map((slot) => slot.item);
     const taskIndex = slots.findIndex((slot) => slot.seq > sources.taskSeq);
     const ordered = taskIndex < 0 ? [...items, task] : [...items.slice(0, taskIndex), task, ...items.slice(taskIndex)];
-    return [...layers, ...summaryItems, ...ordered];
+    return [...layers, ...summaryItems, ...ordered, ...trailing];
   };
 
   const evictOldest = async (keep: number): Promise<boolean> => {

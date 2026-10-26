@@ -102,6 +102,8 @@ export type BuildContextInput = {
   expectedPinnedDigest?: string;
   keepRecentTurns?: number;
   compactAt?: number;
+  tools?: 'none';
+  trailing?: readonly InputItem[];
 };
 
 export type InstructionScope = 'user' | 'root' | 'nested';

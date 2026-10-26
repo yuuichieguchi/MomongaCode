@@ -1,5 +1,5 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import type { CreateResponseBody, InputItem, ResponseResource, RunState } from '@momonga/protocol';
+import type { CreateResponseBody, ResponseResource, RunState } from '@momonga/protocol';
 import type { ClaimContext, Flow } from './claim-context.ts';
 import { modelKey } from '../model-key.ts';
 import { GatewayFailureError } from './errors.ts';
@@ -9,6 +9,7 @@ import { isLoop } from './loop-detection.ts';
 import { ownEntries } from './own-entries.ts';
 import { streamModel } from './model-stream.ts';
 import type { ModelResult } from './model-stream.ts';
+import { summaryStopReason } from './wrap-up.ts';
 import { recordCalls, settleCalls } from './tool-step.ts';
 
 const MODEL_ATTEMPT = 1;
@@ -18,9 +19,6 @@ const REFUSAL_CODES = ['guardrail_violation', 'refusal', 'content_filter'];
 type LimitReason = 'max_steps' | 'budget';
 
 const isRequestBody = (value: unknown): value is CreateResponseBody => isRecord(value) && typeof value['model'] === 'string';
-
-const summaryInstruction = (reason: LimitReason): string =>
-  `You have reached the ${reason} limit. Summarize what you accomplished, what remains, and any state the user must know. Do not call tools.`;
 
 const limitReached = (ctx: ClaimContext): LimitReason | undefined => {
   const state = ctx.journal.state;
@@ -52,7 +50,7 @@ export const decideAfterResponse = async (ctx: ClaimContext): Promise<Flow> => {
   const response = journal.state.lastResponse;
   if (response === undefined) throw new Error(`run ${ctx.run.id} has no recorded model response to decide on`);
   if (journal.state.steps[response.step]?.summary === true) {
-    return terminals.finish('STOPPED', { stopReason: response.step - 1 >= ctx.limits.maxSteps ? 'max_steps' : 'budget' });
+    return terminals.finish('STOPPED', { stopReason: summaryStopReason(response.step, ctx.limits.maxSteps) });
   }
   if (response.refusal) return terminals.finish('STOPPED', { stopReason: 'refusal' });
   if (response.callIds.length === 0) {
@@ -171,15 +169,13 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   if (options.clock.now() >= ctx.run.deadlineAt) return terminals.finish('STOPPED', { stopReason: 'timeout' });
   if (ctx.control.yieldRequested()) return terminals.yieldLease();
   const limit = limitReached(ctx);
-  const outcome = await buildNext(ctx);
+  const outcome = await buildNext(ctx, limit === undefined ? {} : { wrapUp: limit });
   if (outcome.kind === 'done') return 'done';
   const { built } = outcome;
-  const input: InputItem[] =
-    limit === undefined ? built.input : [...built.input, { type: 'message', role: 'developer', content: summaryInstruction(limit) }];
   const step = journal.state.step + 1;
   const body: CreateResponseBody = {
     model: ctx.alias,
-    input,
+    input: built.input,
     tools: built.tools,
     tool_choice: limit === undefined ? 'auto' : 'none',
     parallel_tool_calls: ctx.capabilities.parallelToolCalls,

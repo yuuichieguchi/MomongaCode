@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { usageOf } from '@momonga/testkit';
-import { START_MS, finalSummaryInstruction, makeEnv, modelKey, textOf } from './harness.ts';
+import { START_MS, finalSummaryInstruction, makeEnv, modelKey } from './harness.ts';
 import { assistantMessage, callsStep, failedStep, functionCallItem, incompleteStep, refusalStep, textStep } from './scripts.ts';
 
 const lastInputItem = (input: unknown): unknown => (Array.isArray(input) ? input.at(-1) : undefined);
@@ -18,11 +18,9 @@ describe('worker stop reasons', () => {
     const [first, summary] = env.gateway.streams;
     expect(summary?.idempotencyKey).toBe(modelKey(run.id, 2));
     expect(summary?.body.tool_choice).toBe('none');
-    expect(summary?.body.tools).toEqual(first?.body.tools);
-    expect((summary?.body.tools ?? []).length).toBeGreaterThan(0);
-    const instruction = lastInputItem(summary?.body.input);
-    expect(instruction).toMatchObject({ type: 'message', role: 'developer' });
-    expect(textOf(instruction)).toBe(finalSummaryInstruction('max_steps'));
+    expect((first?.body.tools ?? []).length).toBeGreaterThan(0);
+    expect(summary?.body.tools ?? []).toEqual([]);
+    expect(lastInputItem(summary?.body.input)).toEqual({ type: 'message', role: 'user', content: finalSummaryInstruction('max_steps') });
     expect(env.ofType(run.id, 'model.responded').map((event) => event.step)).toEqual([1, 2]);
     expect(env.toolbox.executions.map((execution) => execution.name)).toEqual(['Echo']);
     expect(env.ofType(run.id, 'run.status').at(-1)).toMatchObject({ from: 'RUNNING', to: 'STOPPED', reason: 'max_steps' });
@@ -54,8 +52,8 @@ describe('worker stop reasons', () => {
     expect(env.gateway.streams).toHaveLength(2);
     const summary = env.gateway.streams[1];
     expect(summary?.body.tool_choice).toBe('none');
-    expect(summary?.body.tools).toEqual(env.gateway.streams[0]?.body.tools);
-    expect(textOf(lastInputItem(summary?.body.input))).toBe(finalSummaryInstruction('budget'));
+    expect(summary?.body.tools ?? []).toEqual([]);
+    expect(lastInputItem(summary?.body.input)).toEqual({ type: 'message', role: 'user', content: finalSummaryInstruction('budget') });
   });
 
   it('keeps going while total usage stays under the default budget of 1_000_000 tokens', async () => {
