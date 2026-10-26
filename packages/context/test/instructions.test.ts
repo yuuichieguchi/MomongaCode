@@ -74,7 +74,7 @@ describe('pinned AGENTS.md', () => {
     const { ports } = harness(capabilities, { files: { [ROOT_AGENTS]: 'r'.repeat(16000) } });
     const error = await buildContext(inputFor(capabilities), ports).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(PinnedOverflowError);
-    expect((error as PinnedOverflowError).inputBudget).toBe(2920);
+    expect((error as PinnedOverflowError).ceiling).toBe(2920);
   });
 });
 

@@ -8,7 +8,8 @@ import { startClaimControl } from './claim-control.ts';
 import type { ClaimControl } from './claim-control.ts';
 import { dispositionOf } from './gateway-policy.ts';
 import { describeError, LeaseLostError, ShutdownError } from './errors.ts';
-import { inlineOutputLimitFor } from './inline-limit.ts';
+import { inlineLimitForItemCap, inlineOutputLimitFor } from './inline-limit.ts';
+import { measurePinnedFor } from './context-step.ts';
 import { openJournal } from './journal.ts';
 import type { Journal } from './journal.ts';
 import { readRunLimits } from './limits.ts';
@@ -268,6 +269,7 @@ const drive = async (
 
   const limits = readRunLimits(run.limits, options.defaults);
   const rules = await options.settings.rules(session);
+  let measuredInlineLimit: Promise<number> | undefined;
   const ctx: ClaimContext = {
     options,
     claim,
@@ -279,7 +281,11 @@ const drive = async (
     env,
     functionTools: toolSet.forModel({ mode: session.permissionMode, rules }),
     systemPrompt,
-    inlineLimit: inlineOutputLimitFor(pins.capabilities),
+    inlineLimitForReconcile: inlineOutputLimitFor(pins.capabilities),
+    inlineLimitForExecution: () => {
+      measuredInlineLimit ??= measurePinnedFor(ctx).then((measured) => inlineLimitForItemCap(measured.itemCap));
+      return measuredInlineLimit;
+    },
     journal,
     control,
     terminals,
@@ -287,6 +293,7 @@ const drive = async (
     meter: createTokenMeter({ counter: { count: (request) => control.recordingRaised(gateway.countTokens(request, { signal: control.signal })) }, model: pins.modelAlias, capabilities: pins.capabilities }),
     pinnedDigest: { value: undefined },
     memory,
+    compaction: { suppressedUntilStep: 0 },
   };
 
   if (responsePending(journal.state)) {

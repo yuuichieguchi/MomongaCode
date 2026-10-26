@@ -50,7 +50,8 @@ export type BatchInput = {
   deadlineAt: number;
   signal: AbortSignal;
   protectedPaths: readonly string[];
-  maxInlineOutputChars?: number;
+  inlineLimitForReconcile?: number;
+  inlineLimitForExecution?: () => Promise<number>;
   recoverOnly?: true;
   leaseLost?(): boolean;
   onOutcome?(outcome: ResultOutcome): void;
@@ -418,7 +419,12 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   const perform = async (plan: RunPlan): Promise<CallOutcome> => {
     const { call, tool, input, gate, key, batch, recovered, gateRan } = plan;
     const { callId } = call;
-    const inlineLimit = batch.maxInlineOutputChars ?? maxInlineOutputChars;
+    const inlineLimit = batch.inlineLimitForReconcile ?? maxInlineOutputChars;
+    let executionLimit: Promise<number> | undefined;
+    const resolveExecutionLimit = (): Promise<number> => {
+      executionLimit ??= batch.inlineLimitForExecution === undefined ? Promise.resolve(inlineLimit) : batch.inlineLimitForExecution();
+      return executionLimit;
+    };
     if (batch.signal.aborted) return failedOutcome(callId, `${tool.name} was cancelled`);
     const recoverOnly = batch.recoverOnly === true;
     const leaseLost = (): boolean => batch.leaseLost?.() === true;
@@ -488,6 +494,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         }
       }
       if (record === undefined) {
+        await resolveExecutionLimit();
         if (tool.prepare !== undefined) {
           try {
             prepared = await tool.prepare(input, ctx);
@@ -521,6 +528,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       };
 
       const execute = async (reconciled?: ReconcileResult['outcome']): Promise<CallOutcome> => {
+        const outputLimit = await resolveExecutionLimit();
+        const executionCtx: ToolContext = { ...ctx, outputBudgetChars: outputLimit };
         if (tool.sideEffect === 'exec') {
           fs.rmSync(processMarker, { force: true });
           fs.closeSync(fs.openSync(processMarker, 'wx', 0o600));
@@ -531,7 +540,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         const runTool = async (): Promise<ToolResult> => {
           for (let attempt = 0; ; attempt += 1) {
             try {
-              return await tool.execute(input, ctx, prepared);
+              return await tool.execute(input, executionCtx, prepared);
             } catch (error) {
               const retryable =
                 error instanceof TransientToolError &&
@@ -553,7 +562,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         timer = setTimeout(() => abortWith('timeout'), timeoutMs);
         const running = runTool();
         const result = await Promise.race([running, aborted.then(() => undefined)]);
-        if (abortReason === undefined && result !== undefined) return complete(finalizeResult(result, tool, inlineLimit), reconciled);
+        if (abortReason === undefined && result !== undefined) return complete(finalizeResult(result, tool, outputLimit), reconciled);
         await settleWithin(running, ABORT_SETTLE_LIMIT_MS);
         const output = abortReason === 'timeout' ? timedOutOutput(tool, timeoutMs) : cancelledOutput(tool);
         return complete({ status: 'failed', output }, reconciled);

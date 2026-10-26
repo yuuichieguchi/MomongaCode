@@ -37,7 +37,7 @@ const contextFor = (state: RunState) => {
         readRunEvents: () => [{ type: 'user.message', text: TASK_TEXT }],
       },
       settings: { trusted: () => true },
-      blobs: { put: async () => ({ handle: 'blob-1' }) },
+      blobs: { handleFor: () => 'blob-1', put: async () => ({ handle: 'blob-1' }) },
       instructionReader: { read: async () => undefined, exists: async () => false, realpath: async (target: string) => target },
     },
     run: { id: 'run_wrap', sessionId: 'session_wrap' },

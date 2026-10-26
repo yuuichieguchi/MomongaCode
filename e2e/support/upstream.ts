@@ -21,6 +21,13 @@ export const textReply = (text: string): FakeScriptedReply => ({
   usage: SCRIPTED_USAGE,
 });
 
+export type EnvelopeCall = { readonly name: string; readonly arguments: Readonly<Record<string, unknown>> };
+
+export const envelopeToolCallsReply = (calls: readonly EnvelopeCall[]): FakeScriptedReply =>
+  textReply(JSON.stringify({ kind: 'tool_calls', calls: calls.map((call) => ({ name: call.name, arguments: call.arguments })) }));
+
+export const envelopeFinalReply = (text: string): FakeScriptedReply => textReply(JSON.stringify({ kind: 'final', text }));
+
 export const hangReply = (text: string): FakeScriptedReply => ({
   kind: 'hang',
   chunks: [{ delta: { role: 'assistant', content: text } }],

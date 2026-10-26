@@ -43,6 +43,7 @@ export const capabilitiesFromProbe = (report: ProbeReport, decision: ToolCalling
     parallelToolCalls: false,
     schemaDialect: 'json-schema-2020-12',
     tokenCounting: report.tokenCalibration === undefined ? 'estimated' : 'calibrated',
+    ...(report.tokenCalibration === undefined ? {} : { tokenErrorRatio: report.tokenCalibration.errorBound }),
     usageReported: report.usageReported,
     maxConcurrency: report.maxConcurrency,
     source: 'probed',

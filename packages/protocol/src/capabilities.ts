@@ -12,6 +12,7 @@ export type Capabilities = {
   parallelToolCalls: boolean;
   schemaDialect: 'json-schema-2020-12' | 'fm-generation';
   tokenCounting: 'exact' | 'calibrated' | 'estimated';
+  tokenErrorRatio?: number;
   usageReported: boolean;
   maxConcurrency: number;
   source: 'declared' | 'probed' | 'config' | 'unprobed';

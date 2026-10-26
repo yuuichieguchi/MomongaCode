@@ -61,6 +61,7 @@ const TARGET_CAPABILITIES_SCHEMA = {
     parallelToolCalls: { type: 'boolean' },
     schemaDialect: { enum: ['json-schema-2020-12', 'fm-generation'] },
     tokenCounting: { enum: ['exact', 'calibrated', 'estimated'] },
+    tokenErrorRatio: { type: 'number', minimum: 0 },
     usageReported: { type: 'boolean' },
     source: { enum: ['declared', 'probed', 'config', 'unprobed'] },
   },

@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { ContextOverflowError, PinnedOverflowError, buildContext } from '@momonga/context';
+import { ContextOverflowError, PinnedOverflowError, buildContext, budgetFor as productBudgetFor } from '@momonga/context';
 import {
   assistant,
   budgetFor,
+  buildThroughLevels,
   call,
   capabilitiesFor,
   harness,
@@ -42,12 +43,8 @@ describe('budget formula', () => {
     expect(result.budget).toEqual({ W: 100000, R: 25000, margin: 2000, I: 73000 });
   });
 
-  it('caps R at half the window for small windows', async () => {
-    const capabilities = capabilitiesFor(300);
-    const { ports } = harness(capabilities);
-    const result = await buildContext(inputFor(capabilities), ports);
-    expect(result.budget).toEqual({ W: 300, R: 150, margin: 32, I: 118 });
-    expect(result.maxOutputTokens).toBe(150);
+  it('caps R at half the window for small windows', () => {
+    expect(productBudgetFor(capabilitiesFor(300), 0)).toEqual({ W: 300, R: 150, margin: 32, I: 118 });
   });
 
   it('adds the counter error_bound to the margin', async () => {
@@ -75,7 +72,7 @@ describe('pinned overflow', () => {
     const error = await buildContext(inputFor(capabilities, { sources }), ports).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(PinnedOverflowError);
     const pinned = error as PinnedOverflowError;
-    expect(pinned.inputBudget).toBe(736);
+    expect(pinned.ceiling).toBe(736);
     expect(pinned.pinnedTokens).toBeGreaterThan(736);
     expect(pinned.pinnedTokens).toBeGreaterThanOrEqual(1000);
   });
@@ -85,7 +82,7 @@ describe('pinned overflow', () => {
     const { ports } = harness(capabilities);
     const error = await buildContext(inputFor(capabilities), ports).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(PinnedOverflowError);
-    expect((error as PinnedOverflowError).inputBudget).toBe(0);
+    expect((error as PinnedOverflowError).ceiling).toBe(0);
   });
 });
 
@@ -125,7 +122,7 @@ describe('budget property', () => {
       const history = randomHistory(random, expected.I);
       const keepRecentTurns = random.int(1, 3);
       try {
-        const result = await buildContext(
+        const { built: result } = await buildThroughLevels(
           inputFor(capabilities, { sources: sourcesWith({ history }), keepRecentTurns }),
           ports,
         );
@@ -162,13 +159,13 @@ describe('tool definitions in the budget', () => {
       (caught: unknown) => caught,
     );
     expect(error).toBeInstanceOf(PinnedOverflowError);
-    expect((error as PinnedOverflowError).inputBudget).toBe(736);
+    expect((error as PinnedOverflowError).ceiling).toBe(736);
     expect((error as PinnedOverflowError).pinnedTokens).toBeGreaterThanOrEqual(tokensOfTools(tools));
   });
 
-  it('leaves less room for history when tools are large', async () => {
+  it('leaves less room for history when tools are large, measured above the floor that includes them', async () => {
     const capabilities = capabilitiesFor(4000);
-    const history = [user(1, 'old'), call(2, 'c1'), output(3, 'c1', 'o'.repeat(2400)), user(4, 'now')];
+    const history = [user(1, 'old'), call(2, 'c1'), output(3, 'c1', 'o'.repeat(2400)), call(4, 'c2'), output(5, 'c2', 'p'.repeat(2400)), user(6, 'now')];
     const tools = [{ ...bigTool, description: 'd'.repeat(6000) }];
     const without = await buildContext(
       inputFor(capabilities, { sources: sourcesWith({ history }), keepRecentTurns: 1 }),
@@ -178,8 +175,11 @@ describe('tool definitions in the budget', () => {
       inputFor(capabilities, { sources: sourcesWith({ history, tools }), keepRecentTurns: 1 }),
       harness(capabilities).ports,
     );
+    const floor = 32 + tokensOfTools(tools);
+    const highMark = floor + 0.7 * (2920 - floor);
+    const lowMark = floor + 0.5 * (highMark - floor);
     expect(without.evictions).toEqual([]);
-    expect(withTools.evictions.map((eviction) => eviction.callId)).toEqual(['c1']);
-    expect(withTools.inputTokens).toBeLessThanOrEqual(0.7 * withTools.budget.I);
+    expect(withTools.evictions.map((eviction) => eviction.callId)).toEqual(['c1', 'c2']);
+    expect(withTools.inputTokens).toBeLessThanOrEqual(lowMark);
   });
 });

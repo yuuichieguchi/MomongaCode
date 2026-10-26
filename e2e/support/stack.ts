@@ -9,7 +9,7 @@ import type { ReadyFields } from '@momonga/foundation';
 import type { SupervisorChildState, SupervisorHealth, SupervisorPhase } from '@momonga/protocol';
 import type { ChildRole } from '@momonga/supervisor';
 import { startFakeChatCompletions } from '@momonga/testkit';
-import type { FakeChatCompletionsServer, FakeScriptedReply } from '@momonga/testkit';
+import type { FakeChatCompletionsServer, FakeRoute, FakeScriptedReply } from '@momonga/testkit';
 import { registerE2eCleanup } from './home.ts';
 import type { E2eHome } from './home.ts';
 import { REPO_ROOT } from './launcher.ts';
@@ -36,6 +36,10 @@ export type StackSandbox = 'seatbelt' | 'none';
 
 export type StackReadiness = { phase: SupervisorPhase; children: Readonly<Record<ChildRole, SupervisorChildState>> };
 
+export type StackTargetCapabilities = { readonly contextWindow: number; readonly maxOutputTokens: number };
+
+export type StackTarget = { readonly capabilities?: StackTargetCapabilities; readonly toolCalling?: 'native' | 'constrained' };
+
 export type StartStackOptions = {
   home: E2eHome;
   needsBash?: boolean;
@@ -44,6 +48,8 @@ export type StartStackOptions = {
   settingsText?: string;
   deps?: E2eDeps;
   script?: FakeScriptedReply[];
+  routes?: FakeRoute[];
+  target?: StackTarget;
   upstream?: FakeChatCompletionsServer;
   readiness?: Partial<StackReadiness> | false;
   readinessDeadlineMs?: number;
@@ -68,6 +74,7 @@ export type SpawnSupervisorOptions = { home: E2eHome; deps?: E2eDeps; stackNumbe
 export type E2eStack = {
   readonly home: E2eHome;
   readonly fake: FakeChatCompletionsServer;
+  readonly routeHits: readonly number[];
   readonly supervisor: SpawnedSupervisor;
   readonly ready: ReadyFields;
   readonly client: SupervisorClient;
@@ -99,6 +106,26 @@ export const baseSettings = (home: E2eHome, sandbox: StackSandbox): Record<strin
   },
   sandbox,
 });
+
+export const settingsWithTarget = (settings: Readonly<Record<string, unknown>>, target: StackTarget): Record<string, unknown> => {
+  const models = settings['models'] as { aliases: unknown; targets: Record<string, Record<string, unknown>> };
+  const primary = models.targets[UPSTREAM_TARGET];
+  if (primary === undefined) throw new Error(`settingsWithTarget: no ${UPSTREAM_TARGET} target to override`);
+  return {
+    ...settings,
+    models: {
+      ...models,
+      targets: {
+        ...models.targets,
+        [UPSTREAM_TARGET]: {
+          ...primary,
+          ...(target.capabilities === undefined ? {} : { capabilities: { ...target.capabilities } }),
+          ...(target.toolCalling === undefined ? {} : { toolCalling: target.toolCalling }),
+        },
+      },
+    },
+  };
+};
 
 export const writeSettingsFile = (home: E2eHome, value: Readonly<Record<string, unknown>> | string): void => {
   const target = home.paths.settingsFile;
@@ -221,7 +248,8 @@ const sandboxChoiceOf = (options: StartStackOptions): SandboxChoice => {
 
 const settingsOf = (home: E2eHome, kind: StackSandbox, options: StartStackOptions): Readonly<Record<string, unknown>> | string => {
   if (options.settingsText !== undefined) return options.settingsText;
-  return { ...baseSettings(home, kind), ...options.settings };
+  const base = options.target === undefined ? baseSettings(home, kind) : settingsWithTarget(baseSettings(home, kind), options.target);
+  return { ...base, ...options.settings };
 };
 
 const satisfied = (health: SupervisorHealth, wanted: StackReadiness): boolean =>
@@ -230,6 +258,7 @@ const satisfied = (health: SupervisorHealth, wanted: StackReadiness): boolean =>
 const startUpstream = async (home: E2eHome, options: StartStackOptions): Promise<FakeChatCompletionsServer> => {
   if (options.upstream !== undefined) {
     if (options.script !== undefined) throw new Error('startStack: script cannot be combined with a caller-supplied upstream');
+    if (options.routes !== undefined) throw new Error('startStack: routes cannot be combined with a caller-supplied upstream');
     return options.upstream;
   }
   const fake = await startFakeChatCompletions({
@@ -237,6 +266,7 @@ const startUpstream = async (home: E2eHome, options: StartStackOptions): Promise
     maxConcurrency: 8,
     socketPath: home.upstreamSocket,
     ...(options.script === undefined ? {} : { script: options.script }),
+    ...(options.routes === undefined ? {} : { routes: options.routes }),
   });
   registerE2eCleanup(() => fake.close());
   return fake;
@@ -290,6 +320,7 @@ export const startStack = async (options: StartStackOptions): Promise<E2eStack> 
   return {
     home,
     fake,
+    routeHits: fake.routeHits,
     supervisor,
     ready,
     client,

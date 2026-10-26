@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
+import { LOOP_GROUPS_KEPT, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
 import type { RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload } from '@momonga/protocol';
 import { hasConsistentSeqs } from './seqs.ts';
 import { corrupt, expectOneOf, expectRecord, expectStringRecord, isRecord, readerFor } from './rows.ts';
@@ -230,7 +230,24 @@ const isInherited = (value: unknown): boolean =>
 const isLoadedInstruction = (value: unknown): boolean =>
   isRecord(value) && typeof value['path'] === 'string' && typeof value['textSha256'] === 'string';
 
-export const SNAPSHOT_STATE_VERSION = 6;
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+const isSha256 = (value: unknown): boolean => typeof value === 'string' && SHA256_HEX.test(value);
+
+const isLoopGroup = (value: unknown): boolean =>
+  isRecord(value) && isSha256(value['signature']) && (value['outputSignature'] === undefined || isSha256(value['outputSignature']));
+
+const isLoopOpen = (value: unknown): boolean =>
+  isRecord(value) &&
+  Array.isArray(value['calls']) &&
+  value['calls'].every((call: unknown) => Array.isArray(call) && call.length === 2 && typeof call[0] === 'string') &&
+  Array.isArray(value['callIds']) &&
+  value['calls'].length === value['callIds'].length &&
+  value['callIds'].every((callId: unknown) => typeof callId === 'string') &&
+  isRecord(value['outputs']) &&
+  Object.values(value['outputs']).every(isSha256);
+
+export const SNAPSHOT_STATE_VERSION = 7;
 
 export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
 
@@ -274,6 +291,10 @@ export const decodeRunState = (identity: string, value: unknown): RunState | und
     (state['streaming'] === undefined || isStreaming(state['streaming'])) &&
     (state['mode'] === undefined || PERMISSION_MODES.some((mode) => mode === state['mode'])) &&
     Number.isInteger(state['taskSeq']) &&
+    Array.isArray(state['loopGroups']) &&
+    state['loopGroups'].length <= LOOP_GROUPS_KEPT &&
+    state['loopGroups'].every(isLoopGroup) &&
+    (state['loopOpen'] === undefined || isLoopOpen(state['loopOpen'])) &&
     (state['inherited'] === undefined || isInherited(state['inherited']));
   if (!valid) throw corrupt('snapshots', identity, 'column state_json does not hold a RunState');
   return state as RunState;

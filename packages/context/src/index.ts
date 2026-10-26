@@ -1,6 +1,6 @@
-export { itemCapFor } from './budget.ts';
-export { buildContext } from './build-context.ts';
-export { ContextOverflowError, PinnedOverflowError, PrefixChangedError } from './errors.ts';
+export { MIN_ROOM_TOKENS, budgetFor, inputCeilingFor, itemCapFor } from './budget.ts';
+export { buildContext, measurePinned } from './build-context.ts';
+export { ContextOverflowError, PinnedOverflowError, PinnedRoomError, PrefixChangedError } from './errors.ts';
 export { createFsInstructionReader } from './fs-instruction-reader.ts';
 export { INSTRUCTION_FILE_LIMIT_BYTES } from './instructions.ts';
 export { createTokenMeter } from './token-meter.ts';
@@ -10,6 +10,9 @@ export type {
   BuildContextInput,
   BuildContextPorts,
   BuiltContext,
+  CompactionBlock,
+  CompactionBlockReason,
+  CompactionPlan,
   ContextBudget,
   ContextEviction,
   ContextNotice,
@@ -24,6 +27,9 @@ export type {
   MeterCount,
   MeterRequest,
   NoticeCode,
+  PinnedBreakdown,
+  PinnedMeasure,
+  ProtectionLevel,
   TokenCounter,
   TouchedPath,
   ItemCountContext,

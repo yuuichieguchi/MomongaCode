@@ -106,7 +106,7 @@ describe('worker gateway error policy: fatal 4xx', () => {
     expect(env.gateway.streams).toEqual([]);
   });
 
-  it('fails the run when compact rejects with invalid_request', async () => {
+  it('continues without compaction and warns when a proactive compact rejects with invalid_request', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
     const run = env.enqueue('Task one');
     const responded = (step: number, text: string): RunEventPayload => ({
@@ -127,7 +127,7 @@ describe('worker gateway error policy: fatal 4xx', () => {
       ],
       'release',
     );
-    env.gateway.script.push(textStep('never sent'));
+    env.gateway.script.push(textStep('Answer four.'));
     env.gateway.compactHook = async () => {
       throw gatewayError({ status: 400, type: 'invalid_request', code: 'invalid_request', message: 'compaction input is invalid' });
     };
@@ -135,8 +135,11 @@ describe('worker gateway error policy: fatal 4xx', () => {
     await claimOnce(env, env.worker());
 
     expect(env.gateway.compacts).toHaveLength(1);
-    expect(env.run(run.id)).toMatchObject({ status: 'FAILED', error: { code: 'invalid_request', message: 'compaction input is invalid' } });
-    expect(env.gateway.streams).toEqual([]);
+    expect(env.run(run.id)).toMatchObject({ status: 'COMPLETED' });
+    expect(env.gateway.streams).toHaveLength(1);
+    expect(env.ofType(run.id, 'notice').map((event) => ({ level: event.level, message: event.message }))).toEqual([
+      { level: 'warning', message: 'Compaction failed (invalid_request): compaction input is invalid; continuing without it' },
+    ]);
   });
 });
 

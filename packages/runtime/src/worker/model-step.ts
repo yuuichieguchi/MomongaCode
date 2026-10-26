@@ -6,7 +6,6 @@ import { GatewayFailureError } from './errors.ts';
 import { isRecord } from './json.ts';
 import { buildNext, cancelIfInterrupted, recoverRejectedCompaction } from './context-step.ts';
 import { isLoop } from './loop-detection.ts';
-import { ownEntries } from './own-entries.ts';
 import { streamModel } from './model-stream.ts';
 import type { ModelResult } from './model-stream.ts';
 import { summaryStopReason } from './wrap-up.ts';
@@ -57,7 +56,7 @@ export const decideAfterResponse = async (ctx: ClaimContext): Promise<Flow> => {
     if (response.incomplete) return incompleteFailure(response.incompleteReason, terminals);
     return terminals.finish('COMPLETED');
   }
-  if (isLoop(ownEntries(journal.state), ctx.limits.loopThreshold)) {
+  if (isLoop(journal.state, ctx.limits.loopThreshold)) {
     journal.append([
       { type: 'notice', level: 'warning', message: `The model repeated the same tool call with the same results ${ctx.limits.loopThreshold} times in a row, so the run stops.` },
     ]);
@@ -171,13 +170,14 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   const limit = limitReached(ctx);
   const outcome = await buildNext(ctx, limit === undefined ? {} : { wrapUp: limit });
   if (outcome.kind === 'done') return 'done';
-  const { built } = outcome;
+  const { built, wrapUp } = outcome;
+  const summarising = limit !== undefined || wrapUp !== undefined;
   const step = journal.state.step + 1;
   const body: CreateResponseBody = {
     model: ctx.alias,
     input: built.input,
     tools: built.tools,
-    tool_choice: limit === undefined ? 'auto' : 'none',
+    tool_choice: summarising ? 'none' : 'auto',
     parallel_tool_calls: ctx.capabilities.parallelToolCalls,
     max_output_tokens: built.maxOutputTokens,
     store: false,
@@ -186,7 +186,10 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   };
   if (cancelIfInterrupted(ctx) === 'done') return 'done';
   const position = { step, attempt: MODEL_ATTEMPT };
-  journal.append([{ type: 'model.requested', step: position.step, attempt: position.attempt, digest: sha256Hex(canonicalJson(body)), body }]);
+  journal.append([
+    ...(wrapUp === undefined ? [] : [{ type: 'notice' as const, level: 'error' as const, message: wrapUp.notice }]),
+    { type: 'model.requested', step: position.step, attempt: position.attempt, digest: sha256Hex(canonicalJson(body)), body },
+  ]);
   const streamed = await streamRecovering(ctx, body, position);
-  return streamed.kind === 'flow' ? streamed.flow : handleResult(ctx, streamed.result, position, limit === undefined ? { inputDigest: built.inputDigest } : undefined);
+  return streamed.kind === 'flow' ? streamed.flow : handleResult(ctx, streamed.result, position, summarising ? undefined : { inputDigest: built.inputDigest });
 };

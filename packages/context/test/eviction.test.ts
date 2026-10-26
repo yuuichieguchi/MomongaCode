@@ -6,6 +6,7 @@ import {
   call,
   capabilitiesFor,
   expectPairsWhole,
+  handleOf,
   harness,
   inputFor,
   itemCapFor,
@@ -43,7 +44,9 @@ const evictionHistory = (): HistoryItem[] => [
 
 const W = 4000;
 const I = 2920;
-const COMPACT_LIMIT = 0.7 * I;
+const FLOOR = 32;
+const HIGH_MARK = FLOOR + 0.7 * (I - FLOOR);
+const LOW_MARK = FLOOR + 0.5 * (HIGH_MARK - FLOOR);
 
 const originalOutput = (history: HistoryItem[], callId: string): DeepReadonly<InputItem> => {
   const found = history.find((entry) => entry.item.type === 'function_call_output' && entry.item.call_id === callId);
@@ -52,7 +55,7 @@ const originalOutput = (history: HistoryItem[], callId: string): DeepReadonly<In
 };
 
 describe('eviction of stale tool outputs', () => {
-  it('evicts the oldest evictable outputs first, down to compactAt * I', async () => {
+  it('evicts the oldest evictable outputs first, down to the low-water mark above the floor', async () => {
     const capabilities = capabilitiesFor(W);
     const { ports, blobs } = harness(capabilities);
     const history = evictionHistory();
@@ -62,17 +65,16 @@ describe('eviction of stale tool outputs', () => {
     );
     expect(result.budget.I).toBe(I);
     const evictedIds = result.evictions.map((eviction) => eviction.callId);
-    expect(evictedIds.length).toBeGreaterThanOrEqual(2);
-    expect(evictedIds).toEqual(['c1', 'c2', 'c3', 'c4', 'c5'].slice(0, evictedIds.length));
+    expect(evictedIds).toEqual(['c1', 'c2', 'c3', 'c4', 'c5']);
     expect(result.evictions.every((eviction) => eviction.kind === 'omitted')).toBe(true);
     expect(result.inputTokens).toBe(tokensOfItems(result.input));
-    expect(result.inputTokens).toBeLessThanOrEqual(COMPACT_LIMIT);
+    expect(result.inputTokens).toBeLessThanOrEqual(LOW_MARK);
 
     const lastEvicted = evictedIds.at(-1) as string;
     const restored = result.input.map((item) =>
       item.type === 'function_call_output' && item.call_id === lastEvicted ? originalOutput(history, lastEvicted) : item,
     );
-    expect(tokensOfItems(restored)).toBeGreaterThan(COMPACT_LIMIT);
+    expect(tokensOfItems(restored)).toBeGreaterThan(LOW_MARK);
 
     expect(outputTextOf(result.input, 'c6')).toBe(OLD_TEXT('f'));
     expect(result.evictions.some((eviction) => eviction.callId === 'c6')).toBe(false);
@@ -93,10 +95,10 @@ describe('eviction of stale tool outputs', () => {
     const tokens = Number(match?.[1]);
     expect(tokens).toBeGreaterThanOrEqual(tokensOfText(OLD_TEXT('a')));
     expect(tokens).toBeLessThanOrEqual(tokensOfItem(originalOutput(history, 'c1')));
-    expect(match?.[2]).toBe('blob-1');
+    expect(match?.[2]).toBe(handleOf(OLD_TEXT('a')));
     expect(blobs.puts[0]?.text).toBe(OLD_TEXT('a'));
     expect(typeof blobs.puts[0]?.mediaType).toBe('string');
-    expect(result.evictions[0]).toEqual({ callId: 'c1', handle: 'blob-1', kind: 'omitted' });
+    expect(result.evictions[0]).toEqual({ callId: 'c1', handle: handleOf(OLD_TEXT('a')), kind: 'omitted' });
   });
 
   it('reuses an existing handle instead of putting the output again', async () => {
@@ -153,7 +155,7 @@ describe('eviction of stale tool outputs', () => {
     expect(expectPairsWhole(result.input)).toBe(true);
   });
 
-  it('does not evict anything when the input is below compactAt * I', async () => {
+  it('does not evict anything when the input is below the high-water mark', async () => {
     const capabilities = capabilitiesFor(200000);
     const { ports, blobs } = harness(capabilities);
     const result = await buildContext(
@@ -179,12 +181,12 @@ describe('per-item cap', () => {
     expect(text.endsWith('TAIL')).toBe(true);
     const match = truncatedMarker.exec(text);
     expect(match).not.toBeNull();
-    expect(match?.[2]).toBe('blob-1');
+    expect(match?.[2]).toBe(handleOf(bigText));
     expect(Number(match?.[1])).toBeGreaterThan(0);
     const truncatedItem = result.input.find((item) => item.type === 'function_call_output');
     expect(tokensOfItem(truncatedItem as InputItem)).toBeLessThanOrEqual(itemCapFor(I));
     expect(blobs.puts).toEqual([{ text: bigText, mediaType: expect.any(String) }]);
-    expect(result.evictions).toEqual([{ callId: 'big', handle: 'blob-1', kind: 'truncated' }]);
+    expect(result.evictions).toEqual([{ callId: 'big', handle: handleOf(bigText), kind: 'truncated' }]);
     expect(result.inputTokens).toBeLessThanOrEqual(I);
   });
 

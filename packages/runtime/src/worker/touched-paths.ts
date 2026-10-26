@@ -1,7 +1,8 @@
 import path from 'node:path';
 import type { TouchedPath } from '@momonga/context';
+import { parseJsonOrText } from '@momonga/foundation';
 import type { RunState } from '@momonga/protocol';
-import { isRecord, parseJsonOrText } from './json.ts';
+import { isRecord } from './json.ts';
 
 const FILE_TOOLS = ['Read', 'Write', 'Edit'] as const;
 const DIRECTORY_TOOLS = ['Glob', 'Grep'] as const;

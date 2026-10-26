@@ -39,8 +39,7 @@ describe('layer order', () => {
     expect(idsOf(result.input.slice(2))).toEqual(['h1', 'h2', 'h3', 'h4', 'h5']);
     expect(result.tools).toEqual([READ_TOOL]);
     expect(result.evictions).toEqual([]);
-    expect(result.needsCompaction).toBe(false);
-    expect(result.compactThroughSeq).toBeUndefined();
+    expect(result.compaction).toBeUndefined();
     expect(result.prefixDigest).toMatch(/^[0-9a-f]{64}$/);
     expect(result.inputDigest).toMatch(/^[0-9a-f]{64}$/);
   });

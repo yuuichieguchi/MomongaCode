@@ -1,5 +1,6 @@
 import { CircuitBreaker } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
+import { sizingRatioFor } from '@momonga/protocol';
 import type { Capabilities, GatewayHealth, HealthResult, ProviderAdapter, TargetHealth } from '@momonga/protocol';
 import { createAdmissionGate } from './admission.ts';
 import type { AdmissionGate } from './admission.ts';
@@ -48,6 +49,9 @@ const TOKEN_COUNTING_RANK: Record<Capabilities['tokenCounting'], number> = { est
 const weakest = <T extends string>(values: readonly T[], rank: Record<T, number>): T =>
   values.reduce((lowest, value) => (rank[value] < rank[lowest] ? value : lowest));
 
+const mergedErrorRatio = (all: readonly Capabilities[]): Pick<Capabilities, 'tokenErrorRatio'> =>
+  all.some((entry) => entry.tokenErrorRatio !== undefined) ? { tokenErrorRatio: Math.max(...all.map(sizingRatioFor)) } : {};
+
 const mergeCapabilities = (all: readonly [Capabilities, ...Capabilities[]]): Capabilities => {
   const [first] = all;
   return {
@@ -61,6 +65,7 @@ const mergeCapabilities = (all: readonly [Capabilities, ...Capabilities[]]): Cap
     parallelToolCalls: all.every((entry) => entry.parallelToolCalls),
     schemaDialect: all.some((entry) => entry.schemaDialect === 'fm-generation') ? 'fm-generation' : 'json-schema-2020-12',
     tokenCounting: weakest(all.map((entry) => entry.tokenCounting), TOKEN_COUNTING_RANK),
+    ...mergedErrorRatio(all),
     usageReported: all.every((entry) => entry.usageReported),
     maxConcurrency: Math.min(...all.map((entry) => entry.maxConcurrency)),
     source: first.source,

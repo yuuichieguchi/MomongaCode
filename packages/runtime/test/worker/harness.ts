@@ -382,7 +382,7 @@ export const modelKey = (runId: string, step: number, attempt = 1): string => sh
 
 export const toolKey = (runId: string, step: number, callId: string): string => sha256Hex(canonicalJson([runId, step, callId]));
 
-export const compactKey = (runId: string, throughSeq: number): string => sha256Hex(canonicalJson([runId, 'compact', throughSeq]));
+export const compactKey = (runId: string, request: unknown): string => sha256Hex(canonicalJson([runId, 'compact', sha256Hex(canonicalJson(request))]));
 
 export const bodyDigest = (body: unknown): string => sha256Hex(canonicalJson(body));
 

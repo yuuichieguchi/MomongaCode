@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { InputItem, MessageInputItem, RunEvent, RunEventPayload } from '@momonga/protocol';
+import type { CountTokensResult, InputItem, MessageInputItem, RunEvent, RunEventPayload } from '@momonga/protocol';
 import { GatewayRequestError } from '@momonga/runtime';
 import { fixtureCompactionContent } from '@momonga/testkit';
+import { budgetFor } from '@momonga/context';
 import { bodyDigest, capabilitiesFor, compactKey, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import type { ScriptStep } from './fake-gateway.ts';
@@ -33,7 +34,7 @@ const compacted = (summary: string, replacedThroughSeq: number): RunEventPayload
   replacedThroughSeq,
 });
 
-const conversation = (sizes: { second?: number } = {}): RunEventPayload[] => [
+const conversation = (sizes: { second?: number; fifth?: number } = {}): RunEventPayload[] => [
   responded(1, 'answer one'),
   { type: 'user.message', text: 'question two' },
   responded(2, `answer two ${'x'.repeat(sizes.second ?? 0)}`),
@@ -42,7 +43,7 @@ const conversation = (sizes: { second?: number } = {}): RunEventPayload[] => [
   { type: 'user.message', text: 'question four' },
   responded(4, 'answer four'),
   { type: 'user.message', text: 'question five' },
-  responded(5, 'answer five'),
+  responded(5, `answer five ${'f'.repeat(sizes.fifth ?? 0)}`),
   { type: 'user.message', text: 'question six' },
 ];
 
@@ -141,23 +142,25 @@ describe('compaction item rejected at the context build (site 1, count_tokens)',
 });
 
 describe('compaction item rejected by compact (site 2)', () => {
-  const seedCompactedConversation = async (contextWindow: number, secondAnswerChars: number) => {
+  const seedCompactedConversation = async (contextWindow: number, sizes: { second: number; fifth?: number }) => {
     const env = await makeEnv({ capabilities: capabilitiesFor(contextWindow) });
     const run = env.enqueue('question one');
-    const payloads = conversation({ second: secondAnswerChars });
+    const payloads = conversation(sizes);
     env.seed(run.id, [payloads[0]!, payloads[1]!, compacted(SUMMARY_TEXT, 2), ...payloads.slice(2)], 'release');
     let rejectedOnce = false;
+    let countsBeforeFirstCompact: CountTokensResult[] | undefined;
     env.gateway.compactHook = async (request) => {
+      countsBeforeFirstCompact ??= [...env.gateway.countResults];
       if (hasCompaction(request.input)) {
         rejectedOnce = true;
         throw invalidCompaction();
       }
     };
-    return { env, run, rejected: () => rejectedOnce };
+    return { env, run, rejected: () => rejectedOnce, countsBeforeFirstCompact: () => countsBeforeFirstCompact ?? [] };
   };
 
-  it('on the threshold path resets the compacted flag and compacts again from the plain summary under the same key', async () => {
-    const { env, run, rejected } = await seedCompactedConversation(40_000, 110_000);
+  it('on the threshold path compacts again from the plain summary and keys each compaction by its own request', async () => {
+    const { env, run, rejected } = await seedCompactedConversation(40_000, { second: 110_000 });
     env.gateway.script.push(textStep('Done.'));
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
@@ -171,24 +174,28 @@ describe('compaction item rejected by compact (site 2)', () => {
     const [first, second] = env.gateway.compacts;
     expect(firstInputOf(first)).toMatchObject({ type: 'compaction' });
     expect(firstInputOf(second)).toEqual(PLAIN_SUMMARY);
-    expect(first?.idempotencyKey).toBe(compactKey(run.id, 6));
-    expect(second?.idempotencyKey).toBe(compactKey(run.id, 6));
+    expect(first?.idempotencyKey).toBe(compactKey(run.id, first?.request));
+    expect(second?.idempotencyKey).toBe(compactKey(run.id, second?.request));
     expect(firstSeq(env, run.id, 'context.compaction_rejected')).toBeLessThan(env.ofType(run.id, 'context.compacted').at(-1)!.seq);
     expect(env.ofType(run.id, 'context.compacted').at(-1)?.item.type).toBe('compaction');
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(requestInputs(env, run.id)).toHaveLength(1);
   });
 
-  it('on the forced path resets forcedCompaction so the run completes instead of stopping for budget', async () => {
-    const { env, run, rejected } = await seedCompactedConversation(40_000, 150_000);
+  it('after an overflow retries the forced compaction at the same level from the plain summary and completes', async () => {
+    const capabilities = capabilitiesFor(40_000);
+    const { env, run, rejected, countsBeforeFirstCompact } = await seedCompactedConversation(40_000, { second: 110_000, fifth: 36_000 });
     env.gateway.script.push(textStep('Done.'));
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
     expect(rejected()).toBe(true);
+    expect(countsBeforeFirstCompact().some((count) => count.input_tokens > budgetFor(capabilities, count.error_bound).I)).toBe(true);
     expect(rejections(env, run.id)).toHaveLength(1);
+    expect(env.ofType(run.id, 'notice').map((event) => event.message).filter((message) => /^recent (turns|steps)/.test(message))).toEqual([]);
     expect(env.gateway.compacts).toHaveLength(2);
-    expect(env.gateway.compacts.map((compact) => compact.idempotencyKey)).toEqual([compactKey(run.id, 10), compactKey(run.id, 10)]);
+    expect(env.gateway.compacts[1]?.request.input).toHaveLength((env.gateway.compacts[0]?.request.input as unknown[]).length);
+    expect(env.gateway.compacts.map((compact) => compact.idempotencyKey)).toEqual(env.gateway.compacts.map((compact) => compactKey(run.id, compact.request)));
     expect(firstInputOf(env.gateway.compacts[1])).toEqual(PLAIN_SUMMARY);
     expect(env.run(run.id).stopReason).toBeUndefined();
     expect(env.run(run.id).status).toBe('COMPLETED');

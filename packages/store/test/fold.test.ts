@@ -70,6 +70,7 @@ describe('initialRunState', () => {
       toolCallCounts: {},
       steps: {},
       loadedInstructions: [],
+      loopGroups: [],
       lastSeq: 0,
     });
   });
@@ -112,6 +113,7 @@ describe('foldRunState on recorded runs', () => {
       nextItemSeq: 5,
       pendingCalls: { c1: { name: 'Read', providerCallId: 'c1', arguments: { path: 'a.txt' }, status: 'completed', idemKey: 'k1' } },
       toolCallCounts: { [sha256('Read\n{"path":"a.txt"}')]: 1 },
+      loopOpen: { calls: [['Read', { path: 'a.txt' }]], callIds: ['c1'], outputs: { c1: sha256('"A"') } },
       lastSeq: 13,
     });
   });

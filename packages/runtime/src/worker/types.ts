@@ -12,6 +12,7 @@ export type WorkerDefaults = {
 };
 
 export type WorkerBlobs = {
+  handleFor(content: string): string;
   put(data: string, options: { mediaType: string }): { handle: string };
 };
 

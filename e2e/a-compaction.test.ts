@@ -1,0 +1,276 @@
+import { describe, expect, it } from 'vitest';
+import type { Capabilities } from '@momonga/protocol';
+import {
+  ACCEPTANCE_MAX_OUTPUT,
+  ACCEPTANCE_TASK,
+  ACCEPTANCE_WINDOW,
+  acceptanceTarget,
+  budgetFor,
+  dryRun,
+  isCompactionRequest,
+  journalOfRows,
+  ofType,
+  planScript,
+  summaryRoute,
+  summaryTextOf,
+  wireTokensOfBody,
+} from './support/budget.ts';
+import type { JournalEvent, Plan, PlanCaseSpec } from './support/budget.ts';
+import { titleOf } from './support/cases.ts';
+import type { E2eCaseId } from './support/cases.ts';
+import { readDb } from './support/db.ts';
+import { createGatewayCountClient } from './support/gateway-count.ts';
+import type { GatewayCountClient } from './support/gateway-count.ts';
+import { readBackOutputOf, writeHaystack, HAYSTACK_READ_BACK_LINE } from './support/haystack.ts';
+import type { Haystack } from './support/haystack.ts';
+import { createE2eHome } from './support/home.ts';
+import type { E2eHome } from './support/home.ts';
+import { createRuntimeClient } from './support/runtime-client.ts';
+import { startStack } from './support/stack.ts';
+import type { E2eStack } from './support/stack.ts';
+import { chatCompletions } from './support/upstream.ts';
+import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
+
+const PLANNED_CASE_TIMEOUT_MS = 4 * E2E_TEST_TIMEOUT_MS;
+const LEAN_DENY = ['Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob'] as const;
+const CONSTRAINED_DENY = ['Read', 'Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob'] as const;
+const FULL_LINE_CHARS = [90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200] as const;
+const EXPECTED_OUTPUT_RESERVE = 1024;
+const EXPECTED_CEILING_AT_4096 = 2300;
+const AFTER_COMPACTION = 'after compaction';
+
+type PlannedCase = { readonly id: E2eCaseId; readonly title: string; readonly spec: PlanCaseSpec };
+
+const PLANNED_CASES: readonly PlannedCase[] = [
+  {
+    id: 'a-compaction',
+    title: titleOf('a-compaction'),
+    spec: { name: 'a-compaction', toolCalling: 'native', deny: [], grid: FULL_LINE_CHARS.map((lineChars) => ({ tool: 'Read', lineChars })), probeFillers: 10 },
+  },
+  {
+    id: 'a-compaction-lean',
+    title: titleOf('a-compaction-lean'),
+    spec: { name: 'a-compaction-lean', toolCalling: 'native', deny: LEAN_DENY, grid: [{ tool: 'Read', lineChars: 90 }], probeFillers: 16 },
+  },
+  {
+    id: 'a-compaction-constrained',
+    title: titleOf('a-compaction-constrained'),
+    spec: {
+      name: 'a-compaction-constrained',
+      toolCalling: 'constrained',
+      deny: CONSTRAINED_DENY,
+      grid: [1, 2, 3].map((limit) => ({ tool: 'ReadOutput', limit })),
+      probeFillers: 14,
+    },
+  },
+];
+
+type EventRow = { seq: number; type: string; payload_json: string };
+type RunRow = { status: string; stop_reason: string | null; attempts: number; error_json: string | null };
+
+const denySettings = (deny: readonly string[]): Record<string, unknown> => (deny.length === 0 ? {} : { permissions: { deny: [...deny] } });
+
+const journalOf = (home: E2eHome, runId: string): JournalEvent[] =>
+  journalOfRows(readDb<EventRow>(home.paths.databases.runtime, 'SELECT seq, type, payload_json FROM events WHERE run_id = ? ORDER BY seq', runId));
+
+const runRowOf = (home: E2eHome, runId: string): RunRow => {
+  const row = readDb<RunRow>(home.paths.databases.runtime, 'SELECT status, stop_reason, attempts, error_json FROM runs WHERE id = ?', runId)[0];
+  if (row === undefined) throw new Error(`run ${runId} has no row`);
+  return row;
+};
+
+const runToEnd = async (home: E2eHome): Promise<string> => {
+  const runtime = createRuntimeClient(home);
+  try {
+    const { session } = await runtime.createSession();
+    const { run } = await runtime.createRun(session.id, ACCEPTANCE_TASK);
+    const stream = runtime.events(run.id);
+    await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
+    await stream.close();
+    return run.id;
+  } finally {
+    await runtime.close();
+  }
+};
+
+const inputItemsOf = (body: unknown): Record<string, unknown>[] => {
+  if (typeof body !== 'object' || body === null || !('input' in body) || !Array.isArray(body.input)) throw new Error('model.requested body has no input array');
+  return body.input as Record<string, unknown>[];
+};
+
+const textOfItem = (item: Record<string, unknown>): string => {
+  const content = item['content'];
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content.map((part: unknown) => (typeof part === 'object' && part !== null && 'text' in part ? String(part.text) : '')).join('');
+};
+
+const occurrences = (haystack: string, needle: string): number => haystack.split(needle).length - 1;
+
+const escapedInJson = (text: string): string => JSON.stringify(text).slice(1, -1);
+
+type Observed = {
+  readonly journal: JournalEvent[];
+  readonly row: RunRow;
+  readonly posts: ReturnType<typeof chatCompletions>;
+  readonly modelPosts: ReturnType<typeof chatCompletions>;
+  readonly requested: JournalEvent[];
+  readonly compacted: JournalEvent[];
+};
+
+const observe = (stack: E2eStack, runId: string): Observed => {
+  const journal = journalOf(stack.home, runId);
+  const posts = chatCompletions(stack.fake);
+  return {
+    journal,
+    row: runRowOf(stack.home, runId),
+    posts,
+    modelPosts: posts.filter((post) => !isCompactionRequest(post.body)),
+    requested: ofType(journal, 'model.requested'),
+    compacted: ofType(journal, 'context.compacted'),
+  };
+};
+
+const assertAcceptance = async (
+  observed: Observed,
+  context: { stack: E2eStack; haystack: Haystack; summary: string; capabilities: Capabilities; count: GatewayCountClient; plan: Plan },
+): Promise<void> => {
+  const { journal, row, posts, modelPosts, requested, compacted } = observed;
+  const { stack, haystack, summary, capabilities, count, plan } = context;
+
+  expect({ status: row.status, stopReason: row.stop_reason }).toEqual({ status: 'COMPLETED', stopReason: null });
+  expect(row.attempts).toBe(1);
+
+  const postKinds = posts.map((post) => (isCompactionRequest(post.body) ? 'compact' : 'model'));
+  const journalKinds = journal.filter((event) => event.type === 'model.requested' || event.type === 'context.compacted').map((event) => (event.type === 'model.requested' ? 'model' : 'compact'));
+  expect(postKinds).toEqual(journalKinds);
+  expect(stack.routeHits).toEqual([compacted.length]);
+
+  const completed = ofType(journal, 'tool.completed');
+  const grep = completed[0];
+  expect(grep?.data['truncated']).toBe(true);
+  expect(grep?.data['handle']).toBe(haystack.handle);
+  const grepInline = String(grep?.data['output']);
+  expect(grepInline.length).toBeLessThan(haystack.grepOutput.length);
+  expect(grepInline.length).toBeLessThanOrEqual(plan.sizing.inlineChars);
+
+  expect(compacted.length).toBeGreaterThanOrEqual(1);
+  const firstCompaction = compacted[0] as JournalEvent;
+  const eviction = ofType(journal, 'context.truncated').find(
+    (event) => event.data['kind'] === 'omitted' && event.data['handle'] === haystack.handle && event.data['callId'] === grep?.data['callId'],
+  );
+  expect(eviction).toBeDefined();
+  const evictionSeq = (eviction as JournalEvent).seq;
+  expect(evictionSeq).toBeLessThan(firstCompaction.seq);
+  const firstWithoutGrep = requested.find((event) => event.seq > (grep as JournalEvent).seq && !JSON.stringify(event.data['body']).includes(escapedInJson(grepInline)));
+  expect(firstWithoutGrep).toBeDefined();
+  expect(evictionSeq).toBeLessThan((firstWithoutGrep as JournalEvent).seq);
+  for (const post of posts) expect(JSON.stringify(post.body).includes(escapedInJson(haystack.grepOutput))).toBe(false);
+
+  expect(completed[1]?.data['output']).toBe(readBackOutputOf(haystack, HAYSTACK_READ_BACK_LINE));
+
+  const taskSeq = ofType(journal, 'user.message')[0]?.seq ?? Number.POSITIVE_INFINITY;
+  expect(compacted.some((event) => (event.data['replacedThroughSeq'] as number) > taskSeq)).toBe(true);
+  for (const event of compacted) expect(event.data['summary']).toBe(summary);
+
+  const { W, R } = budgetFor(capabilities, 0);
+  expect(W).toBe(ACCEPTANCE_WINDOW);
+  expect(R).toBe(EXPECTED_OUTPUT_RESERVE);
+  for (const post of posts) expect(wireTokensOfBody(post.body)).toBeLessThanOrEqual(W - R);
+  expect(modelPosts).toHaveLength(requested.length);
+  for (const [index, event] of requested.entries()) {
+    const counted = await count.count(event.data['body']);
+    expect(counted.input_tokens).toBe(wireTokensOfBody(modelPosts[index]?.body));
+  }
+  expect(plan.sizing.pinned).toBe(wireTokensOfBody(modelPosts[0]?.body));
+  expect(plan.runs.map((run) => run.perturbation)).toEqual([0, -2, 2]);
+
+  for (const event of requested) {
+    const items = inputItemsOf(event.data['body']);
+    items.forEach((item, index) => {
+      if (item['type'] !== 'function_call_output') return;
+      expect(items.slice(0, index).some((earlier) => earlier['type'] === 'function_call' && earlier['call_id'] === item['call_id'])).toBe(true);
+    });
+    expect(items.filter((item) => item['type'] === 'message' && item['role'] === 'user' && textOfItem(item) === ACCEPTANCE_TASK)).toHaveLength(1);
+  }
+  for (const post of modelPosts) expect(occurrences(JSON.stringify(post.body), ACCEPTANCE_TASK)).toBe(1);
+
+  const notices = ofType(journal, 'notice').map((event) => String(event.data['message']));
+  expect(notices.filter((message) => message.includes(AFTER_COMPACTION))).toEqual([]);
+  expect(journal.filter((event) => event.type === 'run.status' && event.data['to'] === 'STOPPED')).toEqual([]);
+};
+
+const assertLeanProperties = (observed: Observed, haystack: Haystack): void => {
+  expect(ofType(observed.journal, 'notice').map((event) => String(event.data['message']))).toEqual([]);
+  const firstCompaction = observed.compacted[0] as JournalEvent;
+  const firstEviction = ofType(observed.journal, 'context.truncated').find((event) => event.data['kind'] === 'omitted' && event.data['handle'] === haystack.handle);
+  expect(firstEviction).toBeDefined();
+  const between = observed.requested.filter((event) => event.seq > (firstEviction as JournalEvent).seq && event.seq < firstCompaction.seq);
+  expect(between.length).toBeGreaterThanOrEqual(1);
+};
+
+const assertConstrainedWire = (observed: Observed): void => {
+  for (const post of observed.modelPosts) {
+    const body = post.body as Record<string, unknown>;
+    expect(body['tools']).toBeUndefined();
+    expect(body['response_format']).toBeDefined();
+  }
+};
+
+describe('a: within-turn truncation and compaction at W=4096', () => {
+  it.for(PLANNED_CASES)('$title', { timeout: PLANNED_CASE_TIMEOUT_MS }, async ({ id, spec }) => {
+    const home = await createE2eHome();
+    const haystack = writeHaystack(home.project);
+    const summary = summaryTextOf(haystack.handle);
+    const target = acceptanceTarget(spec.toolCalling);
+
+    const planningHome = await createE2eHome();
+    await startStack({ home: planningHome, sandbox: 'none', target, routes: [summaryRoute(summary)] });
+    const planningCount = createGatewayCountClient(planningHome.paths.sockets.gateway);
+    const capabilities = await planningCount.capabilities();
+    const plan = await planScript({ spec, home, haystack, gatewaySocket: planningHome.paths.sockets.gateway, summary }, capabilities);
+
+    const stack = await startStack({ home, sandbox: 'none', target, settings: denySettings(spec.deny), script: plan.replies, routes: [summaryRoute(summary)] });
+    const count = createGatewayCountClient(home.paths.sockets.gateway);
+    expect(await count.capabilities()).toEqual(capabilities);
+    const runId = await runToEnd(home);
+    const observed = observe(stack, runId);
+
+    await assertAcceptance(observed, { stack, haystack, summary, capabilities, count, plan });
+    if (id === 'a-compaction-lean') assertLeanProperties(observed, haystack);
+    if (spec.toolCalling === 'constrained') assertConstrainedWire(observed);
+  });
+
+  it(titleOf('a-constrained-pinned-overflow'), { timeout: PLANNED_CASE_TIMEOUT_MS }, async () => {
+    const home = await createE2eHome();
+    const haystack = writeHaystack(home.project);
+    const target = acceptanceTarget('constrained');
+    const stack = await startStack({ home, sandbox: 'none', target });
+    const measured = await dryRun({
+      plan: {
+        spec: { name: 'a-constrained-pinned-overflow', toolCalling: 'constrained', deny: [], grid: [], probeFillers: 0 },
+        home,
+        haystack,
+        gatewaySocket: home.paths.sockets.gateway,
+        summary: summaryTextOf(haystack.handle),
+      },
+      steps: [],
+      perturbation: 0,
+      fillers: 0,
+    });
+    const pinned = measured.counts[0]?.input_tokens;
+    expect(pinned).toBeGreaterThan(EXPECTED_CEILING_AT_4096);
+
+    const runId = await runToEnd(home);
+    const row = runRowOf(home, runId);
+    expect({ status: row.status, stopReason: row.stop_reason }).toEqual({ status: 'FAILED', stopReason: null });
+    const error = JSON.parse(row.error_json ?? '{}') as { code?: string; message?: string };
+    expect(error.code).toBe('pinned_overflow');
+    expect(error.message).toContain(
+      `needs ${pinned} tokens but at most ${EXPECTED_CEILING_AT_4096} fit (window ${ACCEPTANCE_WINDOW}, output reserve ${ACCEPTANCE_MAX_OUTPUT}`,
+    );
+    expect(error.message).toMatch(/tool definitions \d+ \(\d+%\)/);
+    expect(chatCompletions(stack.fake)).toEqual([]);
+    expect(measured.facts.status).toBe('FAILED');
+  });
+});
