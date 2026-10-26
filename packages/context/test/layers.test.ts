@@ -129,17 +129,17 @@ describe('PrefixChangedError', () => {
     expect((error as PrefixChangedError).actual).not.toBe(first.pinnedDigest);
   });
 
-  it('throws when the tools change within a run', async () => {
+  it('accepts a changed tool list within a run because the tool set is guarded by the pins', async () => {
     const capabilities = capabilitiesFor(200000);
     const { ports } = harness(capabilities);
     const first = await buildContext(inputFor(capabilities, { sources: sourcesWith({ tools: [READ_TOOL] }) }), ports);
-    const error = await buildContext(
+    const second = await buildContext(
       inputFor(capabilities, {
         sources: sourcesWith({ tools: [{ ...READ_TOOL, description: 'Read a file quickly' }] }),
         expectedPinnedDigest: first.pinnedDigest,
       }),
       ports,
-    ).catch((caught: unknown) => caught);
-    expect(error).toBeInstanceOf(PrefixChangedError);
+    );
+    expect(second.pinnedDigest).toBe(first.pinnedDigest);
   });
 });

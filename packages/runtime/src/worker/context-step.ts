@@ -6,10 +6,12 @@ import type { RunEventPayload } from '@momonga/protocol';
 import { GatewayRequestError } from '../gateway-client.ts';
 import type { ClaimContext } from './claim-context.ts';
 import { touchedPathsOf } from './touched-paths.ts';
+import { wrapUpInstructionFor } from './wrap-up.ts';
+import type { WrapUpReason } from './wrap-up.ts';
 
 export type BuildOutcome = { kind: 'built'; built: BuiltContext } | { kind: 'done' };
 
-const buildOnce = async (ctx: ClaimContext): Promise<BuiltContext> => {
+const buildOnce = async (ctx: ClaimContext, wrapUp: WrapUpReason | undefined): Promise<BuiltContext> => {
   const { options, journal } = ctx;
   const state = journal.state;
   const session = sessionOf(ctx);
@@ -34,6 +36,7 @@ const buildOnce = async (ctx: ClaimContext): Promise<BuiltContext> => {
       projectRoot: session.cwd,
       home: options.home,
       ...(ctx.pinnedDigest.value === undefined ? {} : { expectedPinnedDigest: ctx.pinnedDigest.value }),
+      ...(wrapUp === undefined ? {} : { tools: 'none' as const, trailing: [{ type: 'message' as const, role: 'user' as const, content: wrapUpInstructionFor(wrapUp) }] }),
     },
     {
       meter: ctx.meter,
@@ -41,7 +44,7 @@ const buildOnce = async (ctx: ClaimContext): Promise<BuiltContext> => {
       instructions: options.instructionReader,
     },
   );
-  ctx.pinnedDigest.value ??= built.pinnedDigest;
+  if (wrapUp === undefined) ctx.pinnedDigest.value ??= built.pinnedDigest;
   return built;
 };
 
@@ -140,7 +143,7 @@ export const recoverRejectedCompaction = (ctx: ClaimContext, error: unknown, pos
   return 'recovered';
 };
 
-export const buildNext = async (ctx: ClaimContext): Promise<BuildOutcome> => {
+export const buildNext = async (ctx: ClaimContext, options: { wrapUp?: WrapUpReason } = {}): Promise<BuildOutcome> => {
   let forcedCompaction = false;
   let compacted = false;
   let compacting: 'forced' | 'threshold' | undefined;
@@ -153,7 +156,7 @@ export const buildNext = async (ctx: ClaimContext): Promise<BuildOutcome> => {
     if (cancelIfInterrupted(ctx) === 'done') return { kind: 'done' };
     let built: BuiltContext;
     try {
-      built = await buildOnce(ctx);
+      built = await buildOnce(ctx, options.wrapUp);
     } catch (error) {
       if (error instanceof PinnedOverflowError) {
         ctx.terminals.finish('FAILED', {
