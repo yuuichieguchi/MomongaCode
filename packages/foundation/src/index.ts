@@ -87,3 +87,9 @@ export { LOG_KEEP, LOG_MAX_BYTES, createRotatingLogFile } from './rotating-log.t
 export type { RotatingLogFile, RotatingLogFileOptions } from './rotating-log.ts';
 export { StartupCancelled, exitCodeForStartError, nodeEntryIo, runDaemonEntry } from './daemon-entry.ts';
 export type { DaemonCloseResult, DaemonDefinition, DaemonHandle, DaemonStartContext, EntryIo, EntrySignal, LogTarget } from './daemon-entry.ts';
+export { UNRESOLVABLE_ERRNO_CODES, resolveCanonicalPath, unresolvableReasonOf } from './path-resolution.ts';
+export type { PathResolution, UnresolvableErrno, UnresolvableReason } from './path-resolution.ts';
+export { anchorFormOf, checkExceptionGrammar, checkFilePatternGrammar, fileMatcherOf, parseExceptionPattern, parseFilePattern, testFileMatcher } from './file-pattern.ts';
+export type { Expression, FileMatcher, FilePattern, FilePatternContext, GlobSegment, MatcherForm } from './file-pattern.ts';
+export { EMPTY_FILE_RULES, FileRuleError, compileFileRuleSet, inWritableArea, lexicallyWithin, writableAreaOf, fileRuleBlocks, fileRuleFingerprint } from './file-rules.ts';
+export type { FileRuleAccess, FileRuleEffect, FileRuleEntry, FileRuleException, FileRuleProvenance, FileRuleSet, FileRuleSpec, WritableArea } from './file-rules.ts';

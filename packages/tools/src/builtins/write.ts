@@ -3,7 +3,7 @@ import { sha256Hex } from '@momonga/foundation';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import { assertReadAndUnchanged, assertSameLocation, newFileMode, regularFileProblem, updateLedgerAfterWrite, sha256OfFile, statIfExists, writeFileAtomically } from './files.ts';
 import { pluralize, splitLines } from './format.ts';
-import { canonicalPathOf } from './paths.ts';
+import { canonicalPathOf, requireAbsolute } from './paths.ts';
 import { parsePreparedWrite, reconcileWrite } from './prepared.ts';
 
 type WriteInput = { file_path: string; content: string };
@@ -26,7 +26,7 @@ export const writeTool = defineTool<WriteInput>({
   timeoutMs: 30_000,
   title: (input) => `Write ${input.file_path}`,
   locations: (input) => [{ path: input.file_path }],
-  subject: (input) => ({ kind: 'path', tool: 'Write', paths: [canonicalPathOf('file_path', input.file_path)], access: 'write' }),
+  subject: (input) => ({ kind: 'path', tool: 'Write', paths: [requireAbsolute('file_path', input.file_path)], access: 'write' }),
   prepare: async (input, ctx) => {
     const target = canonicalPathOf('file_path', input.file_path);
     const stat = await statIfExists(target);

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { EMPTY_FILE_RULES } from '@momonga/foundation';
 import { ConfigError } from '@momonga/runtime';
 import type { ToolEnv } from '@momonga/runtime';
 import type { Session } from '@momonga/store';
@@ -43,7 +44,7 @@ describe('cancel recovery fallback', () => {
       tools: {
         policyFor: async (session: Session, options: { env: ToolEnv }) => ({
           ...(await policyWithEnv(env)(session, options)),
-          sandboxPolicy: { writableRoots: [session.cwd, 'relative/root'], writeDenied: [], writeDeniedLiterals: [], readDenied: [], network: 'deny' as const },
+          sandboxPolicy: { writableRoots: [session.cwd, 'relative/root'], writeDenied: [], writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES, readDenied: [], network: 'deny' as const },
         }),
       },
     });

@@ -326,7 +326,7 @@ export const runBashThroughPort = async (
   const port = f.toolRuntime.port;
   const signal = signalNever();
   const env = port.envFor(session);
-  const policy = await port.policyFor(session, { env });
+  const policy = await port.policyFor(session, { env, rules: [] });
   const toolSet = await port.toolSet(runId, { signal, env });
   const outcomes = await port.executor.runBatch({
     calls: [{ callId: `call-${Math.random().toString(16).slice(2)}`, name: 'Bash', arguments: JSON.stringify({ command }) }],

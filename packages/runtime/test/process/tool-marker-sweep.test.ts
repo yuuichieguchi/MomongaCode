@@ -80,7 +80,7 @@ describe('tool marker sweep wiring (§8)', () => {
     const toolSet = await registry.snapshot();
     const port = f.toolRuntime.port;
     const env = port.envFor(session);
-    const policy = await port.policyFor(session, { env });
+    const policy = await port.policyFor(session, { env, rules: [] });
     const callId = 'call-hold';
     const key = sha256Hex(canonicalJson([runId, 1, callId]));
 

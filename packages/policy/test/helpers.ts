@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
-import { parseRule } from '@momonga/policy';
+import { computeFileRules, parseRule } from '@momonga/policy';
+import type { FileRuleSet } from '@momonga/foundation';
 import type { PermissionRule, RuleEffect, RuleOrigin } from '@momonga/policy';
 
 const cleanups: Array<() => void> = [];
@@ -38,3 +39,5 @@ export const ruleIn =
   (layout: Layout, origin: RuleOrigin = 'user') =>
   (effect: RuleEffect, text: string): PermissionRule =>
     parseRule(text, { effect, origin, source: `${origin}-settings`, settingsRoot: layout.project, home: layout.home, cwd: layout.project });
+
+export const fileRulesFor = (rules: readonly PermissionRule[], roots: readonly string[]): FileRuleSet => computeFileRules(rules, roots, null);

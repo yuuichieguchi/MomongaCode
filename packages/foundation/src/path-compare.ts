@@ -108,6 +108,8 @@ export const volumeIsCaseInsensitive = (target: string): boolean => {
 
 const isMissing = (error: unknown): boolean => (error as NodeJS.ErrnoException).code === 'ENOENT';
 
+const codedError = (message: string, code: 'ELOOP' | 'ENOENT' | 'ENOTDIR'): NodeJS.ErrnoException => Object.assign(new Error(message), { code });
+
 const DIRECTORY_REQUIRED = '/';
 
 const componentsOf = (value: string): string[] => {
@@ -134,20 +136,20 @@ export const canonicalPath = (input: string): string => {
     } catch (error) {
       if (!isMissing(error)) throw error;
       const tail = [component, ...pending.reverse()];
-      if (tail.includes('..')) throw new Error(`cannot resolve '..' below a missing component: ${input}`);
-      if (tail.includes(DIRECTORY_REQUIRED)) throw new Error(`missing component followed by a slash: ${input}`);
+      if (tail.includes('..')) throw codedError(`cannot resolve '..' below a missing component: ${input}`, 'ENOENT');
+      if (tail.includes(DIRECTORY_REQUIRED)) throw codedError(`missing component followed by a slash: ${input}`, 'ENOENT');
       return path.join(fs.realpathSync.native(prefix), ...tail);
     }
     if (stat.isSymbolicLink()) {
       hops -= 1;
-      if (hops < 0) throw new Error(`too many symbolic links resolving ${input}`);
+      if (hops < 0) throw codedError(`too many symbolic links resolving ${input}`, 'ELOOP');
       const target = fs.readlinkSync(candidate);
-      if (target === '') throw new Error(`empty symbolic link target: ${candidate}`);
+      if (target === '') throw codedError(`empty symbolic link target: ${candidate}`, 'ENOENT');
       if (path.isAbsolute(target)) prefix = path.sep;
       pending.push(...componentsOf(target).reverse());
       continue;
     }
-    if (pending.length > 0 && !stat.isDirectory()) throw new Error(`not a directory: ${candidate}`);
+    if (pending.length > 0 && !stat.isDirectory()) throw codedError(`not a directory: ${candidate}`, 'ENOTDIR');
     prefix = candidate;
   }
   return fs.realpathSync.native(prefix);

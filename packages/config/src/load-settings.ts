@@ -5,7 +5,7 @@ import { canonicalDirectory, comparableContains } from '@momonga/foundation';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import { loadLayers, rejectAutoMode } from './layers.ts';
 import type { Layer, TrustOracle, UserLayer } from './layers.ts';
-import { parseRule, RuleParseError } from './rule.ts';
+import { NEGATION_PREFIX, PATH_TOOLS, parseRule, RuleParseError } from './rule.ts';
 import type { PermissionRule, RuleEffect, RuleOrigin } from './rule.ts';
 import { assertSettings } from './settings.ts';
 import type { McpServerConfig, SandboxSetting, Settings } from './settings.ts';
@@ -50,22 +50,53 @@ export type LoadSettingsResult = {
 
 const EFFECTS: readonly RuleEffect[] = ['allow', 'ask', 'deny'];
 
-const layerRules = (layer: Layer, home: string, projectDir: string): PermissionRule[] => {
-  const rules: PermissionRule[] = [];
-  for (const effect of EFFECTS) {
+const EDIT_FAMILY: ReadonlySet<string> = new Set(['Edit', 'Write']);
+
+const sameToolFamily = (left: string, right: string): boolean => left === right || (EDIT_FAMILY.has(left) && EDIT_FAMILY.has(right));
+
+const isPathTool = (tool: string): boolean => (PATH_TOOLS as readonly string[]).includes(tool);
+
+const isNegation = (rule: PermissionRule): boolean => isPathTool(rule.tool) && rule.specifier?.startsWith(NEGATION_PREFIX) === true;
+
+const isRelativeForm = (specifier: string): boolean => !specifier.startsWith('/') && !specifier.startsWith('~');
+
+const withException = (rule: PermissionRule, pattern: string): PermissionRule => ({ ...rule, exceptions: [...(rule.exceptions ?? []), pattern] });
+
+const attachNegations = (effect: RuleEffect, parsed: readonly PermissionRule[], layer: Layer, warnings: string[]): PermissionRule[] => {
+  const kept: PermissionRule[] = [];
+  for (const rule of parsed) {
+    if (!isNegation(rule)) {
+      kept.push(rule);
+      continue;
+    }
+    if (effect === 'allow') {
+      throw new ConfigError(`${layer.source}: ${new RuleParseError(rule.text, 'negation_in_allow: a ! pattern is not allowed in an allow rule').message}`);
+    }
+    const pattern = (rule.specifier as string).slice(NEGATION_PREFIX.length);
+    let attached = false;
+    kept.forEach((earlier, index) => {
+      if (!sameToolFamily(earlier.tool, rule.tool) || earlier.specifier === undefined || !isRelativeForm(earlier.specifier)) return;
+      kept[index] = withException(earlier, pattern);
+      attached = true;
+    });
+    if (!attached) warnings.push(`${layer.source}: ${rule.text} carves nothing; ignored`);
+  }
+  return kept;
+};
+
+export const parseLayerRules = (layer: Layer, home: string, projectDir: string, warnings: string[]): PermissionRule[] =>
+  EFFECTS.flatMap((effect) => {
+    const parsed: PermissionRule[] = [];
     for (const text of layer.settings.permissions?.[effect] ?? []) {
       try {
-        rules.push(
-          parseRule(text, { effect, origin: layer.origin, source: layer.source, settingsRoot: layer.root, home, cwd: projectDir }),
-        );
+        parsed.push(parseRule(text, { effect, origin: layer.origin, source: layer.source, settingsRoot: layer.ruleRoot, home, cwd: projectDir }));
       } catch (error) {
         if (error instanceof RuleParseError) throw new ConfigError(`${layer.source}: ${error.message}`, { cause: error });
         throw error;
       }
     }
-  }
-  return rules;
-};
+    return attachNegations(effect, parsed, layer, warnings);
+  });
 
 const resolveDirectory = (directory: string, layer: Layer, home: string): string => {
   const expanded = directory === '~' ? home : directory.startsWith('~/') ? path.join(home, directory.slice(2)) : directory;
@@ -131,9 +162,9 @@ export const loadSettings = async ({ home, projectDir, cli, trust, user }: LoadS
     throw toConfigError(error);
   }
   if (cliSettings.models !== undefined) throw new ConfigError('cli: models settings are only honored in user settings');
-  const layers: Layer[] = [...loaded.layers, { origin: 'cli', source: 'cli', root: projectDir, settings: cliSettings }];
-  const rules = layers.flatMap((layer) => layerRules(layer, home, projectDir));
+  const layers: Layer[] = [...loaded.layers, { origin: 'cli', source: 'cli', root: projectDir, ruleRoot: projectDir, settings: cliSettings }];
   const warnings = [...loaded.warnings];
+  const rules = layers.flatMap((layer) => parseLayerRules(layer, home, projectDir, warnings));
   const settings = mergeLayers(layers, loaded.models, home, projectDir, warnings);
   return { settings, rules, warnings, files: loaded.files };
 };

@@ -15,7 +15,7 @@ import type { Settings } from './settings.ts';
 
 export type TrustOracle = { isTrusted: (directory: string) => boolean };
 
-export type Layer = { origin: RuleOrigin; source: string; root: string; settings: Settings };
+export type Layer = { origin: RuleOrigin; source: string; root: string; ruleRoot: string; settings: Settings };
 
 export type LoadedLayers = { layers: Layer[]; models: ResolvedModels; files: string[]; warnings: string[] };
 
@@ -73,14 +73,22 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
   return restricted;
 };
 
-const buildLayer = (read: JsonFile, file: string, origin: RuleOrigin, root: string, restricted: boolean, warnings: string[]): Layer | undefined => {
+const buildLayer = (
+  read: JsonFile,
+  file: string,
+  origin: RuleOrigin,
+  root: string,
+  ruleRoot: string,
+  restricted: boolean,
+  warnings: string[],
+): Layer | undefined => {
   if (!read.found) return undefined;
   const settings = assertSettings(read.value, file);
   rejectAutoMode(settings, file);
   for (const key of Object.keys(settings)) {
     if (!KNOWN_SETTINGS_KEYS.includes(key)) warnings.push(`${file}: unknown setting ${JSON.stringify(key)} ignored`);
   }
-  return { origin, source: file, root, settings: restricted ? restrictToUserTrustLevel(settings, file, warnings) : settings };
+  return { origin, source: file, root, ruleRoot, settings: restricted ? restrictToUserTrustLevel(settings, file, warnings) : settings };
 };
 
 const readLayer = async (
@@ -91,7 +99,7 @@ const readLayer = async (
   confineTo?: string,
 ): Promise<Layer | undefined> => {
   try {
-    return buildLayer(await readJsonFile(file, confineTo === undefined ? {} : { confineTo }), file, origin, root, true, warnings);
+    return buildLayer(await readJsonFile(file, confineTo === undefined ? {} : { confineTo }), file, origin, root, root, true, warnings);
   } catch (error) {
     rethrowIfTransient(error);
     throw toConfigError(error);
@@ -104,7 +112,7 @@ export const readUserLayer = (home: string): UserLayer => {
   try {
     const warnings: string[] = [];
     const file = layoutOf(home).settingsFile;
-    const layer = buildLayer(readJsonFileSync(file), file, 'user', home, false, warnings);
+    const layer = buildLayer(readJsonFileSync(file), file, 'user', home, path.dirname(file), false, warnings);
     const models = resolveModels(layer?.settings.models, { source: file, home, warnings });
     return { layer, models, warnings };
   } catch (error) {

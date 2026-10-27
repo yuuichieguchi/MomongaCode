@@ -1,3 +1,5 @@
+import type { FileRuleSet } from '@momonga/foundation';
+
 export interface SandboxPolicy {
   writableRoots: readonly string[];
   writeDenied: readonly string[];
@@ -5,6 +7,7 @@ export interface SandboxPolicy {
   readDenied: readonly string[];
   readAllowed?: readonly string[];
   network: 'deny' | 'allow';
+  fileRules: FileRuleSet;
 }
 
 export interface SandboxCommand {

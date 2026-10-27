@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { decide, matchRule } from '@momonga/policy';
-import type { PermissionSubject, PolicyTool } from '@momonga/policy';
+import { computeFileRules, decide, matchRule } from '@momonga/policy';
+import type { DecideInput, PermissionRule, PermissionSubject, PolicyTool } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
-import { makeLayout, ruleIn, touch } from './helpers.ts';
+import { fileRulesFor, makeLayout, ruleIn, touch } from './helpers.ts';
 
 const BASH: PolicyTool = { name: 'Bash', kind: 'execute', sideEffect: 'exec' };
 const READ: PolicyTool = { name: 'Read', kind: 'read', sideEffect: 'read_only' };
@@ -26,7 +26,11 @@ const bash = (command: string, spec: Spec = {}) => {
     ],
     roots: [layout.project],
     home: layout.home,
-    cwd: layout.project,
+    cwd: layout.project, fileRules: fileRulesFor([
+      ...(spec.allow ?? []).map((t) => make('allow', t)),
+      ...(spec.ask ?? []).map((t) => make('ask', t)),
+      ...(spec.deny ?? []).map((t) => make('deny', t)),
+    ], [layout.project]),
   }).kind;
 };
 
@@ -35,7 +39,7 @@ const ALLOW = ['Bash(ls:*)', 'Bash(echo:*)', 'Bash(cat:*)'];
 describe('item 0: deny fallback never triggers on a non-literal argument', () => {
   it('matchRule: echo x with an escaped semicolon is a single echo command', () => {
     const layout = makeLayout();
-    expect(matchRule(ruleIn(layout)('deny', 'Bash(rm:*)'), { kind: 'command', tool: 'Bash', command: 'echo x \\; rm -rf ~' })).toBe(false);
+    expect(matchRule(ruleIn(layout)('deny', 'Bash(rm:*)'), { kind: 'command', tool: 'Bash', command: 'echo x \\; rm -rf ~' }, fileRulesFor([ruleIn(layout)('deny', 'Bash(rm:*)')], [ruleIn(layout)('deny', 'Bash(rm:*)').cwd]), 0)).toBe(false);
   });
 
   it.each(['echo $HOME', 'echo ~ *.txt', 'ls $(date)', 'echo "$X" `date`'])('%j is not denied by Bash(rm:*)', (command) => {
@@ -183,34 +187,37 @@ describe('S2 and S1: slash-less patterns and case', () => {
     const outside = touch(path.join(layout.outside, 'a.ts'));
     fs.symlinkSync(outside, path.join(layout.project, 'link.ts'));
     const decision = (file: string) =>
-      decide({ tool: WRITE, subject: subject(file), mode: 'default', rules: [rule], roots, home: layout.home, cwd: layout.project }).kind;
+      decide({ tool: WRITE, subject: subject(file), mode: 'default', rules: [rule], roots, fileRules: fileRulesFor([rule], roots), home: layout.home, cwd: layout.project }).kind;
     expect(decision(inside)).toBe('allow');
     expect(decision(outside)).toBe('ask');
     expect(decision(path.join(layout.project, 'link.ts'))).toBe('ask');
     expect(decision('/etc/a.ts')).toBe('ask');
   });
 
-  it('slash-less deny and ask match any path segment while allow matches the basename only', () => {
+  it('slash-less deny, ask and allow all match a path below a matched node', () => {
     const layout = makeLayout();
     const make = ruleIn(layout);
     const file = touch(path.join(layout.project, '.env', 'inner.txt'));
     const subject: PermissionSubject = { kind: 'path', tool: 'Read', paths: [file], access: 'read' };
-    expect(matchRule(make('deny', 'Read(.env)'), subject)).toBe(true);
-    expect(matchRule(make('ask', 'Read(.env)'), subject)).toBe(true);
-    expect(matchRule(make('allow', 'Read(.env)'), subject)).toBe(false);
-    expect(matchRule(make('allow', 'Read(inner.txt)'), subject, [layout.project])).toBe(true);
+    const roots = [layout.project];
+    const decision = (rule: PermissionRule) =>
+      decide({ tool: READ, subject, mode: 'default', rules: [rule], roots, home: layout.home, cwd: layout.project, fileRules: computeFileRules([rule], roots, null) } as DecideInput);
+    expect(decision(make('deny', 'Read(.env)'))).toMatchObject({ kind: 'deny', source: 'rule' });
+    expect(decision(make('ask', 'Read(.env)'))).toMatchObject({ kind: 'ask', source: 'rule' });
+    expect(decision(make('allow', 'Read(.env)'))).toMatchObject({ kind: 'allow', source: 'rule' });
+    expect(decision(make('allow', 'Read(inner.txt)'))).toMatchObject({ kind: 'allow', source: 'rule' });
   });
 
   it.skipIf(process.platform === 'linux')('deny and ask compare case-insensitively on case-insensitive volumes while allow stays exact', () => {
     const layout = makeLayout();
     const make = ruleIn(layout);
     const upper: PermissionSubject = { kind: 'path', tool: 'Write', paths: [path.join(layout.project, 'NEWDIR', 'k')], access: 'write' };
-    expect(matchRule(make('deny', 'Write(./newdir/**)'), upper)).toBe(true);
-    expect(matchRule(make('ask', 'Write(./newdir/**)'), upper)).toBe(true);
-    expect(matchRule(make('allow', 'Write(./newdir/**)'), upper)).toBe(false);
+    expect(matchRule(make('deny', 'Write(./newdir/**)'), upper, fileRulesFor([make('deny', 'Write(./newdir/**)')], [make('deny', 'Write(./newdir/**)').cwd]), 0)).toBe(true);
+    expect(matchRule(make('ask', 'Write(./newdir/**)'), upper, fileRulesFor([make('ask', 'Write(./newdir/**)')], [make('ask', 'Write(./newdir/**)').cwd]), 0)).toBe(true);
+    expect(matchRule(make('allow', 'Write(./newdir/**)'), upper, fileRulesFor([make('allow', 'Write(./newdir/**)')], [make('allow', 'Write(./newdir/**)').cwd]), 0)).toBe(false);
     const dot: PermissionSubject = { kind: 'path', tool: 'Read', paths: [path.join(layout.project, '.ENV')], access: 'read' };
-    expect(matchRule(make('deny', 'Read(.env)'), dot)).toBe(true);
-    expect(matchRule(make('allow', 'Read(.env)'), dot)).toBe(false);
+    expect(matchRule(make('deny', 'Read(.env)'), dot, fileRulesFor([make('deny', 'Read(.env)')], [make('deny', 'Read(.env)').cwd]), 0)).toBe(true);
+    expect(matchRule(make('allow', 'Read(.env)'), dot, fileRulesFor([make('allow', 'Read(.env)')], [make('allow', 'Read(.env)').cwd]), 0)).toBe(false);
   });
 });
 
@@ -219,7 +226,7 @@ describe('read tool sanity', () => {
     const layout = makeLayout();
     const file = touch(path.join(layout.project, 'f'));
     expect(
-      decide({ tool: READ, subject: { kind: 'path', tool: 'Read', paths: [file], access: 'read' }, mode: 'default', rules: [], roots: [layout.project], home: layout.home, cwd: layout.project }).kind,
+      decide({ tool: READ, subject: { kind: 'path', tool: 'Read', paths: [file], access: 'read' }, mode: 'default', rules: [], roots: [layout.project], home: layout.home, cwd: layout.project, fileRules: fileRulesFor([], [layout.project]) }).kind,
     ).toBe('allow');
   });
 });

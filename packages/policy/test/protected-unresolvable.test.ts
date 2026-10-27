@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { decide } from '@momonga/policy';
 import type { DecideInput, PermissionSubject, PolicyTool } from '@momonga/policy';
-import { makeLayout } from './helpers.ts';
+import { fileRulesFor, makeLayout } from './helpers.ts';
 
 const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write' };
 
@@ -21,6 +21,7 @@ const writeInput = (layout: ReturnType<typeof makeLayout>, target: string, guard
   mode: 'acceptEdits',
   rules: [],
   roots: [layout.project],
+  fileRules: fileRulesFor([], [layout.project]),
   home: layout.home,
   cwd: layout.project,
   protectedPaths: [guard],

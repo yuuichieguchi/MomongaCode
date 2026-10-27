@@ -1,7 +1,9 @@
 export { alwaysWriteDenied, canonicalParentForm } from './always-write-denied.ts';
 export type { AlwaysWriteDenied, LauncherLinksStatus } from './always-write-denied.ts';
 export { canonicalizePath } from './canonical-path.ts';
-export { assertReadAllowedValid, assertSessionTmpDirValid, buildSeatbeltProfile, defaultProtectedPaths } from './profile.ts';
+export { assertAbsoluteEntries, buildSeatbeltProfile, defaultProtectedPaths, validateSandboxPolicy } from './profile.ts';
+export { SandboxPolicyError } from './policy-error.ts';
+export type { SandboxPolicyErrorCode } from './policy-error.ts';
 export type { SeatbeltProfile } from './profile.ts';
 export { createSeatbeltSandbox } from './seatbelt.ts';
 export type { SeatbeltSandboxOptions } from './seatbelt.ts';

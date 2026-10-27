@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { decide } from '@momonga/policy';
 import type { PolicyTool } from '@momonga/policy';
-import { makeLayout } from './helpers.ts';
+import { fileRulesFor, makeLayout } from './helpers.ts';
 
 const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write' };
 
@@ -22,7 +22,7 @@ describe('protected dangling link whose target has dotdot after a symlink', () =
       roots: [layout.project],
       home: layout.home,
       cwd: layout.project,
-      protectedPaths: [envrc],
+      protectedPaths: [envrc], fileRules: fileRulesFor([], [layout.project]),
     });
     expect(decision).toMatchObject({ kind: 'ask', source: 'protected' });
   });

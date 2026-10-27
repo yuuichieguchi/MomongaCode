@@ -3,7 +3,9 @@ import path from 'node:path';
 import ignore from 'ignore';
 import type { Ignore } from 'ignore';
 import { canonicalizePath } from '@momonga/policy';
+import type { FileRuleSet } from '@momonga/foundation';
 import { createReadAccessMatcher } from '../read-access.ts';
+import type { ReadAccessMatcher, ReadFamilyTool } from '../read-access.ts';
 import { isMissing } from './files.ts';
 
 export type WalkEntry = { absolute: string; relative: string };
@@ -12,6 +14,8 @@ export type WalkOptions = {
   root: string;
   readDenied: readonly string[];
   readAllowed: readonly string[] | undefined;
+  fileRules: FileRuleSet;
+  tool: ReadFamilyTool;
   includeSymlinkedFiles: boolean;
   signal: AbortSignal;
   onUnreadable(): void;
@@ -23,6 +27,8 @@ export type Blocks = {
   allowedWithin(directory: string): string[];
   isAllowedEntry(resolved: string): boolean;
 };
+
+type WalkAccess = Blocks & Pick<ReadAccessMatcher, 'blockedByForms'>;
 
 export type IgnoreFrame = { base: string; rules: Ignore };
 
@@ -106,7 +112,7 @@ async function* walkAllowedRoots(
   base: string,
   frames: readonly IgnoreFrame[],
   options: WalkOptions,
-  denied: Blocks,
+  denied: WalkAccess,
 ): AsyncGenerator<WalkEntry> {
   for await (const root of reachableAllowedRoots(directory, base, frames, options, denied)) {
     if (root.isDirectory) yield* walkDirectory(root.absolute, `${root.relative}/`, root.frames, options, denied);
@@ -119,7 +125,7 @@ async function* walkDirectory(
   base: string,
   frames: readonly IgnoreFrame[],
   options: WalkOptions,
-  denied: Blocks,
+  denied: WalkAccess,
 ): AsyncGenerator<WalkEntry> {
   options.signal.throwIfAborted();
   const own = await loadIgnoreRules(directory, base, options.onUnreadable);
@@ -143,12 +149,13 @@ async function* walkDirectory(
       }
       continue;
     }
+    if (!entry.isSymbolicLink() && denied.blockedByForms(absolute, absolute, options.tool) !== undefined) continue;
     let isDirectory = entry.isDirectory();
     let isFile = entry.isFile();
     if (entry.isSymbolicLink()) {
       if (!options.includeSymlinkedFiles) continue;
       const canonicalTarget = canonicalizePath(absolute);
-      if (canonicalTarget === null || denied.blocksResolved(canonicalTarget)) continue;
+      if (canonicalTarget === null || denied.blocksResolved(canonicalTarget) || denied.blockedByForms(absolute, canonicalTarget, options.tool) !== undefined) continue;
       const target = await fs.promises.stat(canonicalTarget).catch((error: unknown) => {
         if (isMissing(error)) return undefined;
         throw error;

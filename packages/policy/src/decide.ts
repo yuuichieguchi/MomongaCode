@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { comparableContains, containsByComponents, volumeIsCaseInsensitive } from '@momonga/foundation';
+import type { FileRuleSet } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import type { PermissionMode } from '@momonga/protocol';
 import { commandCoveredByAllowRules } from './command-match.ts';
@@ -18,6 +19,7 @@ export type DecideInput = {
   home: string;
   cwd: string;
   protectedPaths?: readonly string[];
+  fileRules: FileRuleSet;
 };
 
 export type Decision = {
@@ -104,12 +106,14 @@ const modeDefault = (input: DecideInput, subject: PermissionSubject): Decision =
 };
 
 const decideSubject = (input: DecideInput, tool: PolicyTool, subject: PermissionSubject): Decision => {
-  const { rules, mode } = input;
-  const applicable = rules.filter((rule) => ruleCoversToolName(rule, subject.kind === 'mcp' ? `mcp__${subject.server}__${subject.tool}` : subject.tool));
+  const { rules, mode, fileRules } = input;
+  const applicable = rules
+    .map((rule, ruleIndex) => ({ rule, ruleIndex }))
+    .filter(({ rule }) => ruleCoversToolName(rule, subject.kind === 'mcp' ? `mcp__${subject.server}__${subject.tool}` : subject.tool));
 
   const denyHits = applicable
-    .filter((rule) => rule.effect === 'deny')
-    .map((rule) => ({ rule, strength: matchStrength(rule, subject, input.roots) }));
+    .filter(({ rule }) => rule.effect === 'deny')
+    .map(({ rule, ruleIndex }) => ({ rule, strength: matchStrength(rule, subject, fileRules, ruleIndex) }));
   const denied = denyHits.find((hit) => hit.strength === 'position');
   if (denied !== undefined) return byRule('deny', denied.rule, 'denied');
   const incidental = denyHits.find((hit) => hit.strength === 'incidental');
@@ -122,18 +126,21 @@ const decideSubject = (input: DecideInput, tool: PolicyTool, subject: Permission
   const guardReason = protectedWriteReason(input, subject);
   if (guardReason !== undefined) return { kind: 'ask', source: 'protected', reason: guardReason };
 
-  const asked = applicable.find((rule) => rule.effect === 'ask' && matchRule(rule, subject, input.roots));
+  const asked = applicable.find(({ rule, ruleIndex }) => rule.effect === 'ask' && matchRule(rule, subject, fileRules, ruleIndex));
   if (asked !== undefined) {
-    if (mode === 'bypassPermissions') return byMode('allow', `bypassPermissions mode overrides ask rule ${describeRule(asked)}`);
-    return byRule('ask', asked, 'approval required');
+    if (mode === 'bypassPermissions') return byMode('allow', `bypassPermissions mode overrides ask rule ${describeRule(asked.rule)}`);
+    return byRule('ask', asked.rule, 'approval required');
   }
   if (incidental !== undefined) return byRule('ask', incidental.rule, 'approval required (the rule words appear as an argument)');
 
-  const allowRules = applicable.filter((rule) => rule.effect === 'allow');
+  const allowRules = applicable.filter(({ rule }) => rule.effect === 'allow');
   const allowed =
     subject.kind === 'command'
-      ? commandCoveredByAllowRules(allowRules, subject.command)
-      : allowRules.find((rule) => matchRule(rule, subject, input.roots));
+      ? commandCoveredByAllowRules(
+          allowRules.map(({ rule }) => rule),
+          subject.command,
+        )
+      : allowRules.find(({ rule, ruleIndex }) => matchRule(rule, subject, fileRules, ruleIndex))?.rule;
   if (allowed !== undefined) return byRule('allow', allowed, 'allowed');
 
   return modeDefault(input, subject);

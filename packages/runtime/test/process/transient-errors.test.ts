@@ -88,7 +88,7 @@ describe('transient errno and abort rules of the runtime composition (system tim
       return (original as (...args: unknown[]) => unknown)(target, ...rest);
     }) as typeof fs.statSync);
 
-    const error = await rejectionOf(f.toolRuntime.port.policyFor(session, { env: Object.freeze({ PATH: '/usr/bin:/bin' }) }));
+    const error = await rejectionOf(f.toolRuntime.port.policyFor(session, { env: Object.freeze({ PATH: '/usr/bin:/bin' }), rules: [] }));
 
     expect(error).toBe(failure);
     expect(error).not.toBeInstanceOf(ConfigError);

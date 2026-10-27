@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { EMPTY_FILE_RULES } from '@momonga/foundation';
 import { ConfigError } from '@momonga/runtime';
 import type { ToolEnv } from '@momonga/runtime';
 import type { Session } from '@momonga/store';
@@ -12,7 +13,7 @@ const policyReturning = (env: Env, policyEnv: () => ToolEnv, seen: Array<{ env: 
   seen.push(options);
   return {
     roots: [session.cwd],
-    sandboxPolicy: { writableRoots: [session.cwd], writeDenied: [], writeDeniedLiterals: [], readDenied: [], network: 'deny' as const },
+    sandboxPolicy: { writableRoots: [session.cwd], writeDenied: [], writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES, readDenied: [], network: 'deny' as const },
     protectedPaths: [],
     tmpDir: env.sessionTmpDir,
     env: policyEnv(),

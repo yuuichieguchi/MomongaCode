@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { EMPTY_FILE_RULES } from '@momonga/foundation';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -51,7 +52,7 @@ describe.runIf(process.platform === 'darwin').each(variants)('marker file as fd 
 
   const policy = (overrides: Partial<SandboxPolicy> = {}): SandboxPolicy => ({
     writableRoots: [root],
-    writeDenied: [], writeDeniedLiterals: [],
+    writeDenied: [], writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES,
     readDenied: [],
     network: 'deny',
     ...overrides,

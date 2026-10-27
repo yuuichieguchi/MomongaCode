@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { volumeIsCaseInsensitive } from '@momonga/policy';
+import { SandboxPolicyError, validateSandboxPolicy } from '@momonga/sandbox';
 import { BASE_PATH, RG_BIN, RG_PATH, makeBuiltins, resultOf } from './fixtures.ts';
 import type { Builtins } from './fixtures.ts';
 
@@ -37,20 +38,24 @@ describe.runIf(volumeIsCaseInsensitive(os.tmpdir()))('Keychains stays unreadable
   });
 });
 
-describe('executor rejects an invalid batch.tmpDir', () => {
-  const cases: Array<[string, (tools: Builtins) => { tmpDir: string; target: string }]> = [
-    ['home', (tools) => ({ tmpDir: tools.layout.home, target: path.join(tools.layout.home, 'new.txt') })],
-    ['the sessions root', (tools) => ({ tmpDir: path.dirname(tools.tmpDir), target: path.join(path.dirname(tools.tmpDir), 'new.txt') })],
-    ['/', (tools) => ({ tmpDir: '/', target: path.join(tools.layout.outside, 'new.txt') })],
+describe('validateSandboxPolicy rejects an invalid session tmp dir', () => {
+  const cases: Array<[string, (tools: Builtins) => string]> = [
+    ['home', (tools) => tools.layout.home],
+    ['the sessions root', (tools) => path.dirname(tools.tmpDir)],
+    ['/', () => '/'],
   ];
 
-  for (const [label, setup] of cases) {
-    it(`rejects a batch whose tmpDir is ${label} before any tool runs`, async () => {
+  for (const [label, tmpDirOf] of cases) {
+    it(`rejects a tmpDir that is ${label} with session_tmp_not_read_allowed`, async () => {
       const tools = await makeBuiltins();
-      const { tmpDir, target } = setup(tools);
-      await expect(tools.run('Write', { file_path: target, content: 'x' }, { mode: 'bypassPermissions', tmpDir }, 'allow_once')).rejects.toThrow();
-      expect(fs.existsSync(target)).toBe(false);
-      expect(tools.idempotency.log).toEqual([]);
+      let thrown: unknown;
+      try {
+        validateSandboxPolicy(tools.sandboxPolicy, { tmpDir: tmpDirOf(tools) });
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(SandboxPolicyError);
+      expect((thrown as SandboxPolicyError).code).toBe('session_tmp_not_read_allowed');
     });
   }
 
@@ -230,40 +235,34 @@ describe.each(grepBackends)('Grep with an allowed target (%s backend)', (_name, 
   });
 });
 
-describe('executor rejects a malformed readAllowed policy', () => {
-  const readSpy = () => {
-    const touched: string[] = [];
-    const realReadFile = fs.promises.readFile.bind(fs.promises);
-    vi.spyOn(fs.promises, 'readFile').mockImplementation(((target: fs.PathLike, ...rest: unknown[]) => {
-      touched.push(String(target));
-      return (realReadFile as (...args: unknown[]) => unknown)(target, ...rest);
-    }) as typeof fs.promises.readFile);
-    return touched;
+describe('validateSandboxPolicy rejects a malformed readAllowed policy', () => {
+  const codeOf = (action: () => unknown): unknown => {
+    try {
+      action();
+    } catch (error) {
+      expect(error).toBeInstanceOf(SandboxPolicyError);
+      return (error as SandboxPolicyError).code;
+    }
+    throw new Error('expected a SandboxPolicyError');
   };
 
-  it('rejects an allowed entry that contains another readDenied entry before any tool runs', async () => {
+  it('rejects an allowed entry that contains another readDenied entry', async () => {
     const tools = await makeBuiltins();
     const vault = path.join(tools.layout.project, 'vault');
-    const file = tools.write('vault/ok/deep/z/w/a.txt', 'needle\n');
     const sandboxPolicy = {
       ...tools.sandboxPolicy,
       readDenied: [...tools.sandboxPolicy.readDenied, vault, path.join(vault, 'ok', 'deep', 'z')],
       readAllowed: [...(tools.sandboxPolicy.readAllowed ?? []), path.join(vault, 'ok'), path.join(vault, 'ok', 'deep'), path.join(vault, 'ok', 'deep', 'z', 'w')],
     };
-    const touched = readSpy();
-    await expect(tools.run('Read', { file_path: file }, { mode: 'bypassPermissions', sandboxPolicy }, 'allow_once')).rejects.toThrow();
-    expect(touched.filter((target) => target.startsWith(vault))).toEqual([]);
-    expect(tools.idempotency.log).toEqual([]);
+    expect(codeOf(() => validateSandboxPolicy(sandboxPolicy))).toBe('read_allowed_contains_denied');
   });
 
-  it('rejects an allowed entry outside every readDenied entry before any tool runs', async () => {
+  it('rejects an allowed entry outside every readDenied entry', async () => {
     const tools = await makeBuiltins();
-    const file = tools.write('free/a.txt', 'needle\n');
     const sandboxPolicy = {
       ...tools.sandboxPolicy,
       readAllowed: [...(tools.sandboxPolicy.readAllowed ?? []), path.join(tools.layout.project, 'free')],
     };
-    await expect(tools.run('Read', { file_path: file }, { mode: 'bypassPermissions', sandboxPolicy }, 'allow_once')).rejects.toThrow();
-    expect(tools.idempotency.log).toEqual([]);
+    expect(codeOf(() => validateSandboxPolicy(sandboxPolicy))).toBe('read_allowed_not_inside_denied');
   });
 });

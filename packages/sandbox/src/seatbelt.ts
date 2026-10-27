@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { canonicalizePath } from './canonical-path.ts';
 import { launch } from './process.ts';
+import { SandboxPolicyError } from './policy-error.ts';
 import { buildSeatbeltProfile } from './profile.ts';
 import type { Sandbox, SandboxCommand, SandboxPolicy, SandboxedProcess } from './types.ts';
 
@@ -14,9 +15,9 @@ export interface SeatbeltSandboxOptions {
 }
 
 function assertExistingDirectory(root: string): void {
-  if (!path.isAbsolute(root)) throw new Error(`writable root must be absolute: ${root}`);
+  if (!path.isAbsolute(root)) throw new SandboxPolicyError('writable_root_not_absolute', `writable root must be absolute: ${root}`, { path: root });
   if (!fs.statSync(root, { throwIfNoEntry: false })?.isDirectory()) {
-    throw new Error(`writable root does not exist or is not a directory: ${root}`);
+    throw new SandboxPolicyError('writable_root_missing', `writable root does not exist or is not a directory: ${root}`, { path: root });
   }
 }
 
@@ -57,10 +58,8 @@ export function createSeatbeltSandbox(options: SeatbeltSandboxOptions): Sandbox 
       }
       const tmpDir = fs.mkdtempSync(path.join(tmpRoot, 'sandbox-'));
       try {
-        const { profile, params } = buildSeatbeltProfile({
-          ...policy,
-          writableRoots: [...policy.writableRoots, canonicalizePath(tmpDir)],
-        });
+        const scratchDir = canonicalizePath(tmpDir);
+        const { profile, params } = buildSeatbeltProfile({ ...policy, writableRoots: [...policy.writableRoots, scratchDir] }, { scratchDir });
         return launch({
           file: sandboxExecPath,
           args: ['-p', profile, ...paramArgsOf(params), '--', ...command.argv],

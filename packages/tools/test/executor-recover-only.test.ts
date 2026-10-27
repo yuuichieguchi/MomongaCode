@@ -1,6 +1,8 @@
 import fs from 'node:fs';
+import { EMPTY_FILE_RULES } from '@momonga/foundation';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { SandboxPolicyError, validateSandboxPolicy } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
@@ -31,7 +33,7 @@ const reconcilingTool = (outcome: 'already_applied' | 'not_applied' | 'unknown' 
 
 const relativeWritablePolicy = (harness: Harness): SandboxPolicy => ({
   writableRoots: [harness.layout.project, 'relative/root'],
-  writeDenied: [], writeDeniedLiterals: [],
+  writeDenied: [], writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES,
   readDenied: [],
   network: 'deny',
 });
@@ -67,7 +69,7 @@ describe('executor recoverOnly batches skip policy validation', () => {
       harness.input(await toolSetOf(tool), [call('c1', 'Mark')], {
         recoverOnly: true,
         tmpDir: strayTmpDir(harness),
-        sandboxPolicy: { writableRoots: [harness.layout.project], writeDenied: [], writeDeniedLiterals: [], readDenied: [], readAllowed: [], network: 'deny' },
+        sandboxPolicy: { writableRoots: [harness.layout.project], writeDenied: [], writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES, readDenied: [], readAllowed: [], network: 'deny' },
       }),
     );
 
@@ -120,7 +122,7 @@ describe('executor recoverOnly batches skip policy validation', () => {
         tmpDir: 'relative-session-tmp',
         sandboxPolicy: {
           writableRoots: ['relative/root'],
-          writeDenied: ['relative/denied'], writeDeniedLiterals: [],
+          writeDenied: ['relative/denied'], writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES,
           readDenied: ['relative/read-denied'],
           readAllowed: ['relative/read-allowed'],
           network: 'deny',
@@ -132,18 +134,16 @@ describe('executor recoverOnly batches skip policy validation', () => {
     expect(seen.reconciled).toBe(1);
   });
 
-  it('a normal batch with the same policy still rejects before any tool runs or idempotency write', async () => {
+  it('the same policy is rejected at the one validation point, validateSandboxPolicy', () => {
     const harness = makeHarness();
-    const { tool, seen } = reconcilingTool('already_applied');
-
-    await expect(
-      harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Mark')], { mode: 'bypassPermissions', sandboxPolicy: relativeWritablePolicy(harness) })),
-    ).rejects.toThrow(/relative|absolute/);
-
-    expect(seen.executed).toBe(0);
-    expect(seen.subjects).toBe(0);
-    expect(harness.idempotency.log).toEqual([]);
-    expect(harness.started).toEqual([]);
+    let thrown: unknown;
+    try {
+      validateSandboxPolicy(relativeWritablePolicy(harness));
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(SandboxPolicyError);
+    expect((thrown as SandboxPolicyError).code).toBe('writable_root_not_absolute');
   });
 });
 
@@ -188,5 +188,37 @@ describe('executor recoverOnly treats UNKNOWN as already abandoned', () => {
 
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'result', reconciled: 'already_applied' });
     expect(seen.reconciled).toBe(1);
+  });
+});
+
+describe('recovery reaches only reconcile, with a context that names no sandbox (pins)', () => {
+  it.each(['already_applied', 'not_applied', 'unknown'] as const)('reconciles %s without prepare, execute or a sandbox in the context', async (outcome) => {
+    const harness = makeHarness();
+    harness.idempotency.seed(KEY, 'PENDING', { tool: 'Mark' });
+    const contexts: Array<Record<string, unknown>> = [];
+    const tool = makeTool('Mark', {
+      kind: 'edit',
+      sideEffect: 'write',
+      subject: () => {
+        throw new Error('subject must not run during recovery');
+      },
+      prepare: async () => {
+        throw new Error('prepare must not run during recovery');
+      },
+      execute: async () => {
+        throw new Error('execute must not run during recovery');
+      },
+      reconcile: async (_input, _record, ctx) => {
+        contexts.push(ctx as unknown as Record<string, unknown>);
+        return { outcome, output: `reconciled ${outcome}` };
+      },
+    });
+
+    const [result] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Mark')], { recoverOnly: true }));
+
+    expect(result).toMatchObject({ callId: 'c1', kind: 'result', reconciled: outcome, result: { status: outcome === 'already_applied' ? 'completed' : 'failed' } });
+    expect(contexts).toHaveLength(1);
+    expect('sandbox' in (contexts[0] as object)).toBe(false);
+    expect('sandboxPolicy' in (contexts[0] as object)).toBe(false);
   });
 });

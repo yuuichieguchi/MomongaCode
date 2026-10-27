@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { EMPTY_FILE_RULES } from '@momonga/foundation';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildSeatbeltProfile } from '@momonga/sandbox';
@@ -19,7 +20,7 @@ const tempDir = (): string => {
 
 const policyFor = (root: string, overrides: Partial<SandboxPolicy>): SandboxPolicy => ({
   writableRoots: [root],
-  writeDenied: [], writeDeniedLiterals: [],
+  writeDenied: [], writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES,
   readDenied: [],
   network: 'deny',
   ...overrides,

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { decide } from '@momonga/policy';
 import type { DecisionKind, PermissionSubject, PolicyTool } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
-import { makeLayout, ruleIn, touch } from './helpers.ts';
+import { fileRulesFor, makeLayout, ruleIn, touch } from './helpers.ts';
 import type { Layout } from './helpers.ts';
 
 type Case = { label: string; tool: PolicyTool; subject: (layout: Layout) => PermissionSubject; ruleText: string };
@@ -56,7 +56,7 @@ const run = (layout: Layout, c: Case, mode: PermissionMode, effects: Array<'allo
     rules: effects.map((effect) => ruleIn(layout)(effect, c.ruleText)),
     roots: [layout.project],
     home: layout.home,
-    cwd: layout.project,
+    cwd: layout.project, fileRules: fileRulesFor(effects.map((effect) => ruleIn(layout)(effect, c.ruleText)), [layout.project]),
   });
 
 describe('decide mode defaults', () => {
@@ -92,11 +92,11 @@ describe('decide precedence', () => {
     const allowCli = ruleIn(layout, 'cli')('allow', 'Bash(make build)');
     const askLocal = ruleIn(layout, 'local')('ask', 'Bash(make:*)');
     const denyProject = ruleIn(layout, 'project')('deny', 'Bash(make:*)');
-    expect(decide({ ...base, rules: [allowCli, askLocal] }).kind).toBe('ask');
-    const denied = decide({ ...base, rules: [allowCli, askLocal, denyProject] });
+    expect(decide({ ...base, rules: [allowCli, askLocal], fileRules: fileRulesFor([allowCli, askLocal], base.roots) }).kind).toBe('ask');
+    const denied = decide({ ...base, rules: [allowCli, askLocal, denyProject], fileRules: fileRulesFor([allowCli, askLocal, denyProject], base.roots) });
     expect(denied).toMatchObject({ kind: 'deny', source: 'rule', rule: denyProject });
     expect(denied.reason).toContain('Bash(make:*)');
-    expect(decide({ ...base, rules: [allowCli] })).toMatchObject({ kind: 'allow', source: 'rule', rule: allowCli });
+    expect(decide({ ...base, rules: [allowCli], fileRules: fileRulesFor([allowCli], base.roots) })).toMatchObject({ kind: 'allow', source: 'rule', rule: allowCli });
   });
 
   it('plan mode denial explains plan mode', () => {
@@ -116,7 +116,7 @@ describe('decide precedence', () => {
       rules: [],
       roots: [layout.project, layout.outside],
       home: layout.home,
-      cwd: layout.project,
+      cwd: layout.project, fileRules: fileRulesFor([], [layout.project, layout.outside]),
     });
     expect(decision.kind).toBe('allow');
   });
@@ -140,7 +140,7 @@ describe('decide adversarial Bash', () => {
       rules: [...ALLOW.map((t) => make('allow', t)), ...(extra.deny ?? []).map((t) => make('deny', t))],
       roots: [layout.project],
       home: layout.home,
-      cwd: layout.project,
+      cwd: layout.project, fileRules: fileRulesFor([...ALLOW.map((t) => make('allow', t)), ...(extra.deny ?? []).map((t) => make('deny', t))], [layout.project]),
     }).kind;
   };
 

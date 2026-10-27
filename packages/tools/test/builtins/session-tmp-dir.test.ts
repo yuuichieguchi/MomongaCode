@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { momongaLayout } from '@momonga/foundation';
+import { computeFileRules } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
 import { makeBuiltins, resultOf } from './fixtures.ts';
 import type { RunExtra } from './fixtures.ts';
@@ -21,7 +22,7 @@ const fixture = async () => {
   const extra: RunExtra = {
     roots: [project],
     tmpDir,
-    sandboxPolicy: buildSandboxPolicy({ roots: [project], home, tmpDir, sessionsTmpRoot: sessions }),
+    sandboxPolicy: buildSandboxPolicy({ fileRules: computeFileRules([], [project], tmpDir), roots: [project], home, tmpDir, sessionsTmpRoot: sessions }),
   };
   return { tools, sessions, tmpDir, sibling, marker, extra };
 };

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { EMPTY_FILE_RULES } from '@momonga/foundation';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { alwaysWriteDenied, buildSeatbeltProfile } from '@momonga/sandbox';
@@ -18,7 +19,7 @@ const policyFor = (home: string): SandboxPolicy => {
   return {
     writableRoots: [home],
     writeDenied: [...denied.subtrees],
-    writeDeniedLiterals: [...denied.literals],
+    writeDeniedLiterals: [...denied.literals], fileRules: EMPTY_FILE_RULES,
     readDenied: [],
     network: 'deny',
   };
@@ -237,7 +238,7 @@ describe('alwaysWriteDenied launcher-links decisions', () => {
     const legacy: SandboxPolicy = {
       writableRoots: [home],
       writeDenied: [path.join(home, '.momonga'), path.join(home, 'Library', 'Keychains')],
-      writeDeniedLiterals: [],
+      writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES,
       readDenied: [],
       network: 'deny',
     };
@@ -253,7 +254,7 @@ describe('alwaysWriteDenied launcher-links decisions', () => {
     const legacy: SandboxPolicy = {
       writableRoots: ['/golden/work', '/golden/sessions/one'],
       writeDenied: ['/golden/home/.momonga', '/golden/home/Library/Keychains', '/golden/sessions', '/golden/work/.git/hooks', '/golden/work/.mcp.json'],
-      writeDeniedLiterals: [],
+      writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES,
       readDenied: ['/golden/home/.momonga', '/golden/home/Library/Keychains', '/golden/sessions', '/golden/home/.ssh'],
       readAllowed: ['/golden/sessions/one'],
       network: 'allow',

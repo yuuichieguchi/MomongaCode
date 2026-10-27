@@ -6,8 +6,10 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { afterEach, expect } from 'vitest';
-import { createUdsClient, momongaPaths } from '@momonga/foundation';
+import { createUdsClient, EMPTY_FILE_RULES, momongaPaths } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
+import type { PermissionRule } from '@momonga/config';
+import { computeFileRules } from '@momonga/policy';
 import * as protocol from '@momonga/protocol';
 import type { PermissionMode, PermissionOption, RunEvent, RunEventPayload } from '@momonga/protocol';
 import * as runtime from '@momonga/runtime';
@@ -628,7 +630,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
   fs.mkdirSync(sessionTmpDir, { recursive: true, mode: 0o700 });
   const sandboxPolicy: SandboxPolicy = {
     writableRoots: [env.layout.projectReal],
-    writeDenied: [sessionsTmpRoot], writeDeniedLiterals: [],
+    writeDenied: [sessionsTmpRoot], writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES,
     readDenied: [sessionsTmpRoot],
     readAllowed: [sessionTmpDir],
     network: 'deny',
@@ -653,9 +655,9 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
     recoveryToolSet: async () => snapshotToolbox(),
     executor,
     sandbox: fakeSandbox,
-    policyFor: async (target: Session, policyOptions: { env: Readonly<Record<string, string>> }) => ({
+    policyFor: async (target: Session, policyOptions: { env: Readonly<Record<string, string>>; rules: readonly PermissionRule[] }) => ({
       roots: [target.cwd],
-      sandboxPolicy,
+      sandboxPolicy: { ...sandboxPolicy, fileRules: computeFileRules(policyOptions.rules, [target.cwd], sessionTmpDir) },
       protectedPaths: [],
       tmpDir: sessionTmpDir,
       env: policyOptions?.env ?? target.env,

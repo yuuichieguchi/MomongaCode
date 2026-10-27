@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { compileFileRuleSet, resolveCanonicalPath, volumeIsCaseInsensitive } from '@momonga/foundation';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
@@ -6,7 +7,7 @@ import { parseRule } from '@momonga/config';
 import type { McpServerConfig, McpServerEntry, PermissionRule, RuleEffect } from '@momonga/config';
 import { createMcpPool, type McpPool } from '@momonga/mcp';
 import { createToolExecutor, createToolRegistry } from '@momonga/tools';
-import type { BatchInput, BlobPort, IdempotencyPort, ToolCall, ToolIdempotencyBegin, ToolIdempotencyRecord, ToolSet } from '@momonga/tools';
+import type { BlobPort, ExecutionBatchInput, IdempotencyPort, ToolCall, ToolIdempotencyBegin, ToolIdempotencyRecord, ToolSet } from '@momonga/tools';
 import { MCP_LEGACY_SERVER_PATH, MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_RECORD_ENV, createFakeClock, killPidsForCleanup, type FakeClock, type ModernFixtureRecord } from '@momonga/testkit';
 
 const cleanups: Array<() => Promise<void> | void> = [];
@@ -171,7 +172,7 @@ const unusedBlobs: BlobPort = {
   read: () => Promise.reject(new Error('blobs are not used by MCP tests')),
 };
 
-const unusedSandbox: BatchInput['sandbox'] = {
+const unusedSandbox: ExecutionBatchInput['sandbox'] = {
   kind: 'seatbelt',
   spawn: () => {
     throw new Error('sandbox is not used by MCP tests');
@@ -197,7 +198,7 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000)) => {
   });
   const rule = (effect: RuleEffect, text: string): PermissionRule =>
     parseRule(text, { effect, origin: 'user', source: 'user-settings', settingsRoot: project, home, cwd: project });
-  const input = (toolSet: ToolSet, calls: ToolCall[], extra: Partial<BatchInput> = {}): BatchInput => {
+  const input = (toolSet: ToolSet, calls: ToolCall[], extra: Partial<ExecutionBatchInput> = {}): ExecutionBatchInput => {
     runCounter += 1;
     return {
       calls,
@@ -211,19 +212,19 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000)) => {
       env: {},
       session: { cwd: project, readLedger: new Map() },
       sandbox: unusedSandbox,
-      sandboxPolicy: { writableRoots: [project], writeDenied: [], writeDeniedLiterals: [], readDenied: [], network: 'deny' },
+      sandboxPolicy: { writableRoots: [project], writeDenied: [], writeDeniedLiterals: [], fileRules: compileFileRuleSet([], [project], null, resolveCanonicalPath, volumeIsCaseInsensitive), readDenied: [], network: 'deny' },
       deadlineAt: clock.now() + 600_000,
       signal: new AbortController().signal,
       protectedPaths: [],
       ...extra,
     };
   };
-  const run = async (toolSet: ToolSet, name: string, args: unknown, extra: Partial<BatchInput> = {}) => {
+  const run = async (toolSet: ToolSet, name: string, args: unknown, extra: Partial<ExecutionBatchInput> = {}) => {
     const rules = extra.rules ?? [rule('allow', name)];
     const [outcome] = await executor.runBatch(input(toolSet, [{ callId: 'call-1', name, arguments: args }], { ...extra, rules }));
     return outcome;
   };
-  const resultOf = async (toolSet: ToolSet, name: string, args: unknown, extra: Partial<BatchInput> = {}) => {
+  const resultOf = async (toolSet: ToolSet, name: string, args: unknown, extra: Partial<ExecutionBatchInput> = {}) => {
     const outcome = await run(toolSet, name, args, extra);
     if (outcome?.kind !== 'result') throw new Error(`expected a result for ${name}, got ${JSON.stringify(outcome)}`);
     return outcome.result;

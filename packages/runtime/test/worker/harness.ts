@@ -3,8 +3,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
-import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, EMPTY_FILE_RULES, sha256Hex } from '@momonga/foundation';
+import type { PermissionRule } from '@momonga/config';
 import type { InstructionReader } from '@momonga/context';
+import { computeFileRules } from '@momonga/policy';
 import type { Capabilities, PermissionMode, RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { createWorker } from '@momonga/runtime';
 import type { ToolEnv, ToolRuntimePort, Worker, WorkerOptions } from '@momonga/runtime';
@@ -167,7 +169,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   };
   const sandboxPolicy: SandboxPolicy = {
     writableRoots: [project],
-    writeDenied: [sessionsTmpRoot], writeDeniedLiterals: [],
+    writeDenied: [sessionsTmpRoot], writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES,
     readDenied: [sessionsTmpRoot],
     readAllowed: [sessionTmpDir],
     network: 'deny',
@@ -216,9 +218,11 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     },
     executor,
     sandbox: fakeSandbox,
-    policyFor: async (target: Session, policyOptions: { env: ToolEnv }) => {
+    policyFor: async (target: Session, policyOptions: { env: ToolEnv; rules: readonly PermissionRule[] }) => {
       portCalls.policyFor.push({ sessionId: target.id, env: policyOptions?.env });
-      return { roots: [target.cwd, EXTRA_ROOT], sandboxPolicy, protectedPaths: [], tmpDir: sessionTmpDir, env: policyOptions?.env ?? target.env };
+      const roots = [target.cwd, EXTRA_ROOT];
+      const fileRules = computeFileRules(policyOptions.rules, roots, sessionTmpDir);
+      return { roots, sandboxPolicy: { ...sandboxPolicy, fileRules }, protectedPaths: [], tmpDir: sessionTmpDir, env: policyOptions?.env ?? target.env };
     },
     sessionState: (target: Session) => {
       const existing = sessionStates.get(target.id);

@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { EMPTY_FILE_RULES } from '@momonga/foundation';
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
@@ -29,7 +30,7 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox hardening (real 
   function sh(script: string, overrides: Partial<SandboxPolicy> = {}): SandboxedProcess {
     const proc = sandbox.spawn(
       { argv: ['/bin/sh', '-c', script], cwd: root, env: BASE_ENV },
-      { writableRoots: [root], writeDenied: defaultProtectedPaths(root), writeDeniedLiterals: [], readDenied: [], network: 'deny', ...overrides },
+      { writableRoots: [root], writeDenied: defaultProtectedPaths(root), writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES, readDenied: [], network: 'deny', ...overrides },
       new AbortController().signal,
     );
     spawned.push(proc);
@@ -159,7 +160,7 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox hardening (real 
     fs.mkdirSync(work);
     const { profile, params } = buildSeatbeltProfile({
       writableRoots: [work],
-      writeDenied: [], writeDeniedLiterals: [],
+      writeDenied: [], writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES,
       readDenied: [],
       network: 'deny',
     });

@@ -9,7 +9,7 @@ import type { ToolContext } from '../types.ts';
 import { extensionsForType } from './file-types.ts';
 import { looksBinary, regularFileProblem, statIfExists } from './files.ts';
 import { sortByMtimeThenPath } from './glob.ts';
-import { canonicalPathOf } from './paths.ts';
+import { canonicalPathOf, requireAbsolute } from './paths.ts';
 import { isPermissionError, reachableAllowedRoots, walkFiles } from './walk.ts';
 
 type OutputMode = 'content' | 'files_with_matches' | 'count';
@@ -84,7 +84,8 @@ const ripgrepArguments = (input: GrepInput, mode: OutputMode, target: string, ac
     '--no-ignore-exclude',
     ...(mode === 'files_with_matches' ? ['-l'] : []),
     ...(mode === 'count' ? ['-c'] : []),
-    ...(mode === 'content' ? [lineNumbersWanted(input) ? '-n' : '--no-line-number'] : []),
+    '--null',
+    ...(mode === 'content' ? ['-n'] : []),
     ...(mode === 'content' && before > 0 ? ['-B', String(before)] : []),
     ...(mode === 'content' && after > 0 ? ['-A', String(after)] : []),
     ...(input['-i'] === true ? ['-i'] : []),
@@ -108,6 +109,55 @@ const collect = async (stream: AsyncIterable<Uint8Array>): Promise<string> => {
 
 const lineList = (text: string): string[] => (text === '' ? [] : text.replace(/\n$/, '').split('\n'));
 
+const NUL = '\0';
+const GROUP_SEPARATOR_LINE = '--\n';
+const COUNT_PAYLOAD = /^\d+$/;
+const CONTENT_PAYLOAD = /^(\d+)([:-])(.*)$/s;
+
+type RipgrepRecord = { recordPath: string; payload: string } | 'separator';
+
+const malformedRecord = (recordPath: string): ToolExecutionError => new ToolExecutionError(`ripgrep produced a malformed record for ${recordPath}`);
+
+const nextRecord = (stdout: string, position: number, mode: OutputMode): { record: RipgrepRecord; next: number } => {
+  if (mode === 'content' && stdout.startsWith(GROUP_SEPARATOR_LINE, position)) return { record: 'separator', next: position + GROUP_SEPARATOR_LINE.length };
+  const nul = stdout.indexOf(NUL, position);
+  if (nul === -1) throw malformedRecord(stdout.slice(position).split('\n')[0] as string);
+  const recordPath = stdout.slice(position, nul);
+  if (mode === 'files_with_matches') return { record: { recordPath, payload: '' }, next: nul + 1 };
+  const lineEnd = stdout.indexOf('\n', nul + 1);
+  const end = lineEnd === -1 ? stdout.length : lineEnd;
+  return { record: { recordPath, payload: stdout.slice(nul + 1, end) }, next: end + 1 };
+};
+
+const recordsOf = (stdout: string, mode: OutputMode, input: GrepInput, visible: (recordPath: string) => boolean): string[] => {
+  const groups: string[][] = [[]];
+  const entries: string[] = [];
+  for (let position = 0; position < stdout.length; ) {
+    const { record, next } = nextRecord(stdout, position, mode);
+    position = next;
+    if (record === 'separator') {
+      groups.push([]);
+      continue;
+    }
+    const { recordPath, payload } = record;
+    if (mode === 'files_with_matches') {
+      if (visible(recordPath)) entries.push(recordPath);
+    } else if (mode === 'count') {
+      if (!COUNT_PAYLOAD.test(payload)) throw malformedRecord(recordPath);
+      if (visible(recordPath)) entries.push(`${recordPath}:${payload}`);
+    } else {
+      const parsed = CONTENT_PAYLOAD.exec(payload);
+      if (parsed === null) throw malformedRecord(recordPath);
+      const [, lineNumber, kind, text] = parsed as unknown as [string, string, string, string];
+      if (visible(recordPath)) (groups[groups.length - 1] as string[]).push(lineNumbersWanted(input) ? `${recordPath}${kind}${lineNumber}${kind}${text}` : `${recordPath}${kind}${text}`);
+    }
+  }
+  if (mode !== 'content') return entries;
+  return groups.filter((group) => group.length > 0).flatMap((group, index) => (index === 0 ? group : [GROUP_SEPARATOR, ...group]));
+};
+
+const GROUP_SEPARATOR = '--';
+
 const searchWithRipgrep = async (
   ripgrep: string,
   input: GrepInput,
@@ -117,19 +167,29 @@ const searchWithRipgrep = async (
   ctx: ToolContext,
 ): Promise<SearchResult> => {
   const { readDenied, readAllowed } = ctx.sandboxPolicy;
-  const access = createReadAccessMatcher({ readDenied, readAllowed });
+  const access = createReadAccessMatcher({ readDenied, readAllowed, fileRules: ctx.sandboxPolicy.fileRules });
   const allowedRoots: string[] = [];
   if (isDirectory) {
     for await (const root of reachableAllowedRoots(target, '', [], { signal: ctx.signal, onUnreadable: () => undefined }, access)) allowedRoots.push(root.absolute);
   }
-  const policy: SandboxPolicy = { writableRoots: [], writeDenied: [], writeDeniedLiterals: [], readDenied, ...(readAllowed === undefined ? {} : { readAllowed }), network: 'deny' };
-  const child = ctx.sandbox.spawn({ argv: [ripgrep, ...ripgrepArguments(input, mode, target, access, isDirectory, allowedRoots)], cwd: isDirectory ? target : path.dirname(target), env: ctx.env }, policy, ctx.signal);
+  const policy: SandboxPolicy = { writableRoots: [], writeDenied: [], writeDeniedLiterals: [], readDenied, ...(readAllowed === undefined ? {} : { readAllowed }), network: 'deny', fileRules: ctx.sandboxPolicy.fileRules };
+  const spawnCwd = isDirectory ? target : path.dirname(target);
+  const child = ctx.sandbox.spawn({ argv: [ripgrep, ...ripgrepArguments(input, mode, target, access, isDirectory, allowedRoots)], cwd: spawnCwd, env: ctx.env }, policy, ctx.signal);
+  const visibleCache = new Map<string, boolean>();
+  const visible = (recordPath: string): boolean => {
+    let verdict = visibleCache.get(recordPath);
+    if (verdict === undefined) {
+      verdict = access.blockedBy(recordPath, spawnCwd, 'Grep') === undefined;
+      visibleCache.set(recordPath, verdict);
+    }
+    return verdict;
+  };
   const [stdout, stderr, exit] = await Promise.all([collect(child.stdout), collect(child.stderr), child.exited]);
   if (exit.code === 1 && stdout === '') return { entries: [], unreadable: false };
-  if (exit.code === 0) return { entries: lineList(stdout), unreadable: false };
+  if (exit.code === 0) return { entries: recordsOf(stdout, mode, input, visible), unreadable: false };
   if (exit.code === 2) {
     const ioErrorsOnly = lineList(stderr).every((line) => line.includes('os error'));
-    if (stdout !== '') return { entries: lineList(stdout), unreadable: true };
+    if (stdout !== '') return { entries: recordsOf(stdout, mode, input, visible), unreadable: true };
     if (ioErrorsOnly) return { entries: [], unreadable: true };
   }
   const reason = exit.signal === null ? `exit code ${exit.code}` : `signal ${exit.signal}`;
@@ -219,6 +279,8 @@ const searchWithJavaScript = async (input: GrepInput, mode: OutputMode, target: 
       root: target,
       readDenied: ctx.sandboxPolicy.readDenied,
       readAllowed: ctx.sandboxPolicy.readAllowed,
+      fileRules: ctx.sandboxPolicy.fileRules,
+      tool: 'Grep',
       includeSymlinkedFiles: false,
       signal: ctx.signal,
       onUnreadable: () => void (unreadable = true),
@@ -294,7 +356,7 @@ export const grepTool = defineTool<GrepInput>({
   title: (input) => `Grep ${input.pattern}`,
   subject: (input, ctx) => {
     if (input.type !== undefined) extensionsForType(input.type);
-    return { kind: 'path', tool: 'Grep', paths: [canonicalPathOf('path', input.path ?? ctx.cwd)], access: 'read' };
+    return { kind: 'path', tool: 'Grep', paths: [requireAbsolute('path', input.path ?? ctx.cwd)], access: 'read' };
   },
   execute: async (input, ctx) => {
     const target = canonicalPathOf('path', input.path ?? ctx.session.cwd);
