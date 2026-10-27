@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import { decide, suggestAllowRule } from '@momonga/policy';
+import { computeFileRules, decide, suggestAllowRule } from '@momonga/policy';
 import { ToolExecutionError, ToolInputError } from '@momonga/tools';
 import type { ToolContext } from '@momonga/tools';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
@@ -61,6 +61,7 @@ describe('executor pipeline early exits', () => {
       mode: 'default',
       rules,
       roots: [harness.layout.project],
+      fileRules: computeFileRules(rules, [harness.layout.project], null),
       home: harness.layout.home,
       cwd: harness.layout.project,
       protectedPaths: [],
@@ -89,6 +90,7 @@ describe('executor pipeline early exits', () => {
       mode: 'default',
       rules: [],
       roots: [harness.layout.project],
+      fileRules: computeFileRules([], [harness.layout.project], null),
       home: harness.layout.home,
       cwd: harness.layout.project,
       protectedPaths: [],

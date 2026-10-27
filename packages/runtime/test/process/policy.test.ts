@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ConfigError } from '@momonga/config';
 import { ensureSessionTmpDir } from '@momonga/foundation';
+import { computeFileRules } from '@momonga/policy';
 import type { MomongaPaths } from '@momonga/foundation';
 import * as runtime from '@momonga/runtime';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
@@ -54,7 +55,7 @@ describe('policyFor (system timers, none used)', () => {
     const session = createSession(store, temp.project, { additionalDirectories: [extra] });
     const given = env();
 
-    const policy = await policyFor(session, { env: given });
+    const policy = await policyFor(session, { env: given, rules: [] });
 
     const tmpDir = sessionTmpDirOf(temp, session);
     expect(policy.tmpDir).toBe(tmpDir);
@@ -65,7 +66,7 @@ describe('policyFor (system timers, none used)', () => {
     expect(policy.protectedPaths).toEqual(protectedPathsFor([temp.project, extra]));
     expect(policy.sandboxPolicy.writableRoots).toContain(tmpDir);
     expect(policy.sandboxPolicy).toEqual(
-      buildSandboxPolicy({ roots: [temp.project, extra], home: temp.home, tmpDir, sessionsTmpRoot: temp.paths.tmp.sessions, network: 'deny' }),
+      buildSandboxPolicy({ fileRules: computeFileRules([], [temp.project, extra], tmpDir), roots: [temp.project, extra], home: temp.home, tmpDir, sessionsTmpRoot: temp.paths.tmp.sessions, network: 'deny' }),
     );
     expect(policy.sandboxPolicy.network).toBe('deny');
     expect(policy.sandboxPolicy.readDenied).toEqual(
@@ -76,10 +77,10 @@ describe('policyFor (system timers, none used)', () => {
   it('policyFor resets the tmp dir mode to 0700 on every call', async () => {
     const { temp, store, policyFor } = await setup();
     const session = createSession(store, temp.project);
-    await policyFor(session, { env: env() });
+    await policyFor(session, { env: env(), rules: [] });
     fs.chmodSync(sessionTmpDirOf(temp, session), 0o755);
 
-    await policyFor(session, { env: env() });
+    await policyFor(session, { env: env(), rules: [] });
 
     expect(fs.statSync(sessionTmpDirOf(temp, session)).mode & 0o777).toBe(0o700);
   });
@@ -96,7 +97,7 @@ describe('policyFor (system timers, none used)', () => {
     const session = createSession(fixture.store, fixture.temp.project);
     expect(fixture.states.has(session.id)).toBe(false);
 
-    await fixture.policyFor(session, { env: env() });
+    await fixture.policyFor(session, { env: env(), rules: [] });
 
     expect(seen).toEqual([true]);
     expect(fixture.states.get(session).cwd).toBe(fixture.temp.project);
@@ -107,7 +108,7 @@ describe('policyFor (system timers, none used)', () => {
     const session = createSession(store, temp.project, { env: { OTHER: 'x' } });
     const given = env();
 
-    const policy = await policyFor(session, { env: given });
+    const policy = await policyFor(session, { env: given, rules: [] });
 
     expect(policy.env).toBe(given);
   });
@@ -118,9 +119,9 @@ describe('policyFor (system timers, none used)', () => {
       const session = createSession(store, temp.project);
       const sandbox = createSeatbeltSandbox({ tmpRoot: temp.paths.tmp.spawn, killGraceMs: 300 });
 
-      const first = await policyFor(session, { env: env() });
+      const first = await policyFor(session, { env: env(), rules: [] });
       const write = await runSandboxed(sandbox, first.sandboxPolicy, { script: 'printf kept > "$TMPDIR/note" && printf "%s" "$TMPDIR"', cwd: temp.project, env: BASE_ENV, tmpDir: first.tmpDir });
-      const second = await policyFor(session, { env: env() });
+      const second = await policyFor(session, { env: env(), rules: [] });
       const read = await runSandboxed(sandbox, second.sandboxPolicy, { script: 'cat "$TMPDIR/note"', cwd: temp.project, env: BASE_ENV, tmpDir: second.tmpDir });
 
       expect(write.code).toBe(0);
@@ -134,9 +135,9 @@ describe('policyFor (system timers, none used)', () => {
       const mine = createSession(store, temp.project);
       const other = createSession(store, temp.project);
       const sandbox = createSeatbeltSandbox({ tmpRoot: temp.paths.tmp.spawn, killGraceMs: 300 });
-      const otherPolicy = await policyFor(other, { env: env() });
+      const otherPolicy = await policyFor(other, { env: env(), rules: [] });
       fs.writeFileSync(path.join(otherPolicy.tmpDir, 'secret.txt'), 'hidden');
-      const minePolicy = await policyFor(mine, { env: env() });
+      const minePolicy = await policyFor(mine, { env: env(), rules: [] });
 
       const result = await runSandboxed(sandbox, minePolicy.sandboxPolicy, {
         script: `cat '${path.join(otherPolicy.tmpDir, 'secret.txt')}'`,
@@ -154,12 +155,12 @@ describe('policyFor (system timers, none used)', () => {
     it('a session tmp dir replaced by a symlink', async () => {
       const { temp, store, policyFor } = await setup();
       const session = createSession(store, temp.project);
-      await policyFor(session, { env: env() });
+      await policyFor(session, { env: env(), rules: [] });
       const tmpDir = sessionTmpDirOf(temp, session);
       fs.rmSync(tmpDir, { recursive: true });
       fs.symlinkSync(makeDir(temp.root, 'elsewhere'), tmpDir);
 
-      expectWrapped(await rejectionOf(policyFor(session, { env: env() })), session.id);
+      expectWrapped(await rejectionOf(policyFor(session, { env: env(), rules: [] })), session.id);
     });
 
     it('the sessions root replaced by a symlink', async () => {
@@ -169,7 +170,7 @@ describe('policyFor (system timers, none used)', () => {
       fs.renameSync(temp.paths.tmp.sessions, moved);
       fs.symlinkSync(moved, temp.paths.tmp.sessions);
 
-      expectWrapped(await rejectionOf(policyFor(session, { env: env() })), session.id);
+      expectWrapped(await rejectionOf(policyFor(session, { env: env(), rules: [] })), session.id);
     });
 
     it('a root replaced by a file', async () => {
@@ -178,7 +179,7 @@ describe('policyFor (system timers, none used)', () => {
       fs.rmSync(temp.project, { recursive: true });
       fs.writeFileSync(temp.project, 'not a directory');
 
-      expectWrapped(await rejectionOf(policyFor(session, { env: env() })), session.id);
+      expectWrapped(await rejectionOf(policyFor(session, { env: env(), rules: [] })), session.id);
     });
 
     it('a removed root', async () => {
@@ -187,7 +188,7 @@ describe('policyFor (system timers, none used)', () => {
       const session = createSession(store, temp.project, { additionalDirectories: [extra] });
       fs.rmSync(extra, { recursive: true });
 
-      expectWrapped(await rejectionOf(policyFor(session, { env: env() })), session.id);
+      expectWrapped(await rejectionOf(policyFor(session, { env: env(), rules: [] })), session.id);
     });
 
     it('a root in a symlink loop', async () => {
@@ -196,7 +197,7 @@ describe('policyFor (system timers, none used)', () => {
       fs.rmSync(temp.project, { recursive: true });
       fs.symlinkSync(temp.project, temp.project);
 
-      expectWrapped(await rejectionOf(policyFor(session, { env: env() })), session.id);
+      expectWrapped(await rejectionOf(policyFor(session, { env: env(), rules: [] })), session.id);
     });
 
     it('a root check fails before a tmp dir is created', async () => {
@@ -204,7 +205,7 @@ describe('policyFor (system timers, none used)', () => {
       const session = createSession(store, temp.project);
       fs.rmSync(temp.project, { recursive: true });
 
-      expectWrapped(await rejectionOf(policyFor(session, { env: env() })), session.id);
+      expectWrapped(await rejectionOf(policyFor(session, { env: env(), rules: [] })), session.id);
       expect(fs.existsSync(sessionTmpDirOf(temp, session))).toBe(false);
     });
   });
@@ -214,7 +215,7 @@ describe('policyFor (system timers, none used)', () => {
     const { temp, store, policyFor } = await setup({ ensure: async () => Promise.reject(failure) });
     const session = createSession(store, temp.project);
 
-    const error = await rejectionOf(policyFor(session, { env: env() }));
+    const error = await rejectionOf(policyFor(session, { env: env(), rules: [] }));
 
     expect(error).toBe(failure);
     expect(error).not.toBeInstanceOf(ConfigError);
@@ -225,7 +226,7 @@ describe('policyFor (system timers, none used)', () => {
     const { temp, store, policyFor } = await setup({ ensure: async () => Promise.reject(failure) });
     const session = createSession(store, temp.project);
 
-    const error = await rejectionOf(policyFor(session, { env: env() }));
+    const error = await rejectionOf(policyFor(session, { env: env(), rules: [] }));
 
     expectWrapped(error, session.id);
     expect((error as Error).cause).toBe(failure);
@@ -239,7 +240,7 @@ describe('policyFor (system timers, none used)', () => {
     const errnoSession = createSession(errnoCase.store, errnoCase.temp.project);
     fs.chmodSync(locked, 0o000);
 
-    const errnoFailure = await rejectionOf(errnoCase.policyFor(errnoSession, { env: env() }));
+    const errnoFailure = await rejectionOf(errnoCase.policyFor(errnoSession, { env: env(), rules: [] }));
     fs.chmodSync(locked, 0o700);
 
     expectWrapped(errnoFailure, errnoSession.id);
@@ -248,10 +249,10 @@ describe('policyFor (system timers, none used)', () => {
     const assertionCase = await setup({ ensure: async () => 'relative-tmp' });
     const assertionSession = createSession(assertionCase.store, assertionCase.temp.project);
 
-    const assertionFailure = await rejectionOf(assertionCase.policyFor(assertionSession, { env: env() }));
+    const assertionFailure = await rejectionOf(assertionCase.policyFor(assertionSession, { env: env(), rules: [] }));
 
     expectWrapped(assertionFailure, assertionSession.id);
-    expect(((assertionFailure as Error).cause as NodeJS.ErrnoException).code).toBeUndefined();
+    expect(((assertionFailure as Error).cause as NodeJS.ErrnoException).code).toBe('entry_not_absolute');
   });
 
   it('a ConfigError is not wrapped twice', async () => {
@@ -259,7 +260,7 @@ describe('policyFor (system timers, none used)', () => {
     const { temp, store, policyFor } = await setup({ ensure: async () => Promise.reject(failure) });
     const session = createSession(store, temp.project);
 
-    expect(await rejectionOf(policyFor(session, { env: env() }))).toBe(failure);
+    expect(await rejectionOf(policyFor(session, { env: env(), rules: [] }))).toBe(failure);
   });
 
   it('a store error is never wrapped', async () => {
@@ -273,7 +274,7 @@ describe('policyFor (system timers, none used)', () => {
     });
     const session = createSession(store, temp.project);
 
-    expect(await rejectionOf(policyFor(session, { env: env() }))).toBe(failure);
+    expect(await rejectionOf(policyFor(session, { env: env(), rules: [] }))).toBe(failure);
   });
 
   it('a relative home raises TypeError', async () => {

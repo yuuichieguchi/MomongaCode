@@ -1,7 +1,7 @@
 import { defineTool, ToolExecutionError } from '../types.ts';
 import { looksBinary, recordInLedger, regularFileProblem, scanLines, statIfExists } from './files.ts';
 import { DEFAULT_LINE_LIMIT, pageNumberedLines, pastEndMessage } from './format.ts';
-import { canonicalPathOf } from './paths.ts';
+import { canonicalPathOf, requireAbsolute } from './paths.ts';
 
 type ReadInput = { file_path: string; offset?: number; limit?: number };
 
@@ -25,7 +25,7 @@ export const readTool = defineTool<ReadInput>({
   timeoutMs: 30_000,
   title: (input) => `Read ${input.file_path}`,
   locations: (input) => [{ path: input.file_path, ...(input.offset === undefined ? {} : { line: input.offset }) }],
-  subject: (input) => ({ kind: 'path', tool: 'Read', paths: [canonicalPathOf('file_path', input.file_path)], access: 'read' }),
+  subject: (input) => ({ kind: 'path', tool: 'Read', paths: [requireAbsolute('file_path', input.file_path)], access: 'read' }),
   execute: async (input, ctx) => {
     const canonical = canonicalPathOf('file_path', input.file_path);
     const stat = await statIfExists(canonical);

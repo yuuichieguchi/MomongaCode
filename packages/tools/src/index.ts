@@ -3,6 +3,8 @@ export type {
   AbandonOutcome,
   AbandonTarget,
   BatchInput,
+  ExecutionBatchInput,
+  RecoveryBatchInput,
   CallOutcome,
   DeferredOutcome,
   InspectableToolExecutor,
@@ -26,6 +28,7 @@ export { defineTool, ToolExecutionError, ToolInputError, TransientToolError } fr
 export type {
   AnyTool,
   PlanEntry,
+  ReconcileContext,
   ReconcileResult,
   SubjectContext,
   ToolContent,

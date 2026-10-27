@@ -4,10 +4,10 @@ import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { absoluteFrom, canonicalizePath } from '@momonga/policy';
 import type { PermissionSubject } from '@momonga/policy';
 import { createToolExecutor, createToolRegistry, defineTool, validateToolInput } from '@momonga/tools';
-import type { AnyTool, BatchInput, ToolCall, ToolContext, ToolDefinition, ToolExecutorOptions, ToolSet } from '@momonga/tools';
+import type { AnyTool, ExecutionBatchInput, ToolCall, ToolContext, ToolDefinition, ToolExecutorOptions, ToolSet } from '@momonga/tools';
 import type { PermissionRule } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
-import { fakeSandbox, makeBlobs, makeClock, makeIdempotency, makeLayout, sandboxPolicyFor } from './helpers.ts';
+import { fakeSandbox, makeBlobs, makeClock, makeIdempotency, makeLayout, minimalPolicyFor } from './helpers.ts';
 import type { Layout } from './helpers.ts';
 
 export type Input = Record<string, unknown>;
@@ -71,8 +71,9 @@ export const makeHarness = (options: HarnessOptions = {}) => {
   const input = (
     toolSet: ToolSet,
     calls: HarnessCall[],
-    extra: Partial<BatchInput> & { mode?: PermissionMode; rules?: PermissionRule[] } = {},
-  ): BatchInput => ({
+    extra: Partial<Omit<ExecutionBatchInput, 'recoverOnly'>> & { recoverOnly?: true; mode?: PermissionMode; rules?: PermissionRule[] } = {},
+  ): ExecutionBatchInput => {
+    const batch = {
     calls: calls.map((entry) =>
       bindApproval(entry, toolSet, { cwd: (extra.session ?? session).cwd, home: extra.home ?? layout.home, roots: extra.roots ?? [layout.project] }),
     ),
@@ -86,7 +87,6 @@ export const makeHarness = (options: HarnessOptions = {}) => {
     env: { LANG: 'C' },
     session,
     sandbox: fakeSandbox,
-    sandboxPolicy: sandboxPolicyFor(layout),
     deadlineAt: clock.now() + 600_000,
     signal: new AbortController().signal,
     protectedPaths: [],
@@ -94,7 +94,11 @@ export const makeHarness = (options: HarnessOptions = {}) => {
       started.push(callId);
     },
     ...extra,
-  });
+    };
+    if (extra.sandboxPolicy !== undefined) return batch as unknown as ExecutionBatchInput;
+    const sandboxPolicy = minimalPolicyFor({ layout, rules: batch.rules, roots: batch.roots, ...(batch.tmpDir === undefined ? {} : { tmpDir: batch.tmpDir }) });
+    return { ...batch, sandboxPolicy } as unknown as ExecutionBatchInput;
+  };
   return { layout, markerDir, clock, idempotency, blobs, executor, session, started, input, warnings };
 };
 

@@ -5,7 +5,7 @@ import type { SideEffect } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
-import { noneSandbox, ruleFor, sandboxPolicyFor } from './helpers.ts';
+import { noneSandbox, ruleFor, minimalPolicyFor } from './helpers.ts';
 
 const MODES: PermissionMode[] = ['default', 'acceptEdits', 'plan', 'bypassPermissions'];
 
@@ -31,7 +31,7 @@ const execTool = (runs: string[], sideEffect: SideEffect = 'exec') =>
     },
   });
 
-const deniedPolicy = (harness: Harness, ...readDenied: string[]) => ({ ...sandboxPolicyFor(harness.layout), readDenied });
+const deniedPolicy = (harness: Harness, ...readDenied: string[]) => ({ ...minimalPolicyFor({ layout: harness.layout }), readDenied });
 
 describe('executor: readDenied path subjects', () => {
   for (const mode of MODES) {

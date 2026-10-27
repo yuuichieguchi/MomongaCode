@@ -3,7 +3,7 @@ import path from 'node:path';
 import picomatch from 'picomatch';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import { statIfExists } from './files.ts';
-import { canonicalPathOf } from './paths.ts';
+import { canonicalPathOf, requireAbsolute } from './paths.ts';
 import { walkFiles } from './walk.ts';
 
 type GlobInput = { pattern: string; path?: string };
@@ -36,7 +36,7 @@ export const globTool = defineTool<GlobInput>({
   subject: (input, ctx) => ({
     kind: 'path',
     tool: 'Glob',
-    paths: [canonicalPathOf('path', input.path ?? ctx.cwd)],
+    paths: [requireAbsolute('path', input.path ?? ctx.cwd)],
     access: 'read',
   }),
   execute: async (input, ctx) => {
@@ -50,6 +50,8 @@ export const globTool = defineTool<GlobInput>({
       root,
       readDenied: ctx.sandboxPolicy.readDenied,
       readAllowed: ctx.sandboxPolicy.readAllowed,
+      fileRules: ctx.sandboxPolicy.fileRules,
+      tool: 'Glob',
       includeSymlinkedFiles: true,
       signal: ctx.signal,
       onUnreadable: () => undefined,

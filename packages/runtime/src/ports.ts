@@ -52,7 +52,7 @@ export type ToolRuntimePort = {
   envFor(session: Session): ToolEnv;
   toolSet(runId: string, options: { signal: AbortSignal; env: ToolEnv }): Promise<ToolSet>;
   recoveryToolSet(options: { signal: AbortSignal }): Promise<ToolSet>;
-  policyFor(session: Session, options: { env: ToolEnv }): Promise<ToolPolicy>;
+  policyFor(session: Session, options: { env: ToolEnv; rules: readonly PermissionRule[] }): Promise<ToolPolicy>;
   executor: ToolExecutor;
   sandbox: Sandbox;
   sessionState(session: Session): ToolSessionState;

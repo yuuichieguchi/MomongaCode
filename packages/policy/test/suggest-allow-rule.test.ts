@@ -2,7 +2,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { matchRule, parseRule, suggestAllowRule } from '@momonga/policy';
 import type { PermissionSubject, PolicyTool } from '@momonga/policy';
-import { makeLayout, touch } from './helpers.ts';
+import { fileRulesFor, makeLayout, touch } from './helpers.ts';
 import type { Layout } from './helpers.ts';
 
 const BASH: PolicyTool = { name: 'Bash', kind: 'execute', sideEffect: 'exec' };
@@ -15,11 +15,7 @@ const PLAN: PolicyTool = { name: 'UpdatePlan', kind: 'think', sideEffect: 'read_
 const ctxOf = (layout: Layout) => ({ cwd: layout.project, home: layout.home });
 
 const roundTrip = (layout: Layout, text: string, subject: PermissionSubject): boolean =>
-  matchRule(
-    parseRule(text, { effect: 'allow', origin: 'local', source: 'local-settings', settingsRoot: layout.project, home: layout.home, cwd: layout.project }),
-    subject,
-    [layout.project],
-  );
+  matchRule(parseRule(text, { effect: 'allow', origin: 'local', source: 'local-settings', settingsRoot: layout.project, home: layout.home, cwd: layout.project }), subject, fileRulesFor([parseRule(text, { effect: 'allow', origin: 'local', source: 'local-settings', settingsRoot: layout.project, home: layout.home, cwd: layout.project })], [layout.project]), 0);
 
 const command = (text: string): PermissionSubject => ({ kind: 'command', tool: 'Bash', command: text });
 

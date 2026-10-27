@@ -2,6 +2,7 @@ import path from 'node:path';
 import { ConfigError } from '@momonga/config';
 import { canonicalDirectory, ensureSessionTmpDir as defaultEnsureSessionTmpDir, isTransientErrno } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
+import { computeFileRules } from '@momonga/policy';
 import { buildSandboxPolicy, protectedPathsFor } from '@momonga/tools';
 import type { ToolRuntimePort } from '../ports.ts';
 import type { SessionStates } from './session-states.ts';
@@ -16,15 +17,16 @@ export type PolicyForOptions = {
 export const createPolicyFor = ({ paths, home, sessionStates, ensureSessionTmpDir = defaultEnsureSessionTmpDir }: PolicyForOptions): ToolRuntimePort['policyFor'] => {
   if (!path.isAbsolute(home)) throw new TypeError(`home must be an absolute path, got ${home}`);
 
-  return async (session, { env }) => {
+  return async (session, { env, rules }) => {
     const wrap = (cause: unknown): ConfigError =>
       cause instanceof ConfigError ? cause : new ConfigError(`the tool policy for session ${session.id} could not be built: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
 
     sessionStates.get(session);
-    const roots = [session.cwd, ...session.additionalDirectories];
-    for (const root of roots) {
+    const roots: string[] = [];
+    for (const root of [session.cwd, ...session.additionalDirectories]) {
       const result = canonicalDirectory(root);
       if (!result.ok) throw wrap(new Error(`root ${root} ${result.reason}`));
+      roots.push(result.path);
     }
 
     let tmpDir: string;
@@ -36,7 +38,8 @@ export const createPolicyFor = ({ paths, home, sessionStates, ensureSessionTmpDi
     }
 
     try {
-      const sandboxPolicy = buildSandboxPolicy({ roots, home, tmpDir, sessionsTmpRoot: paths.tmp.sessions, network: 'deny' });
+      const fileRules = computeFileRules(rules, roots, tmpDir);
+      const sandboxPolicy = buildSandboxPolicy({ roots, home, tmpDir, sessionsTmpRoot: paths.tmp.sessions, fileRules, network: 'deny' });
       const protectedPaths = protectedPathsFor(roots);
       return { roots, sandboxPolicy, tmpDir, protectedPaths, env };
     } catch (error) {

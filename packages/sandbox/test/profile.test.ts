@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { EMPTY_FILE_RULES } from '@momonga/foundation';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildSeatbeltProfile, defaultProtectedPaths } from '@momonga/sandbox';
@@ -18,7 +19,7 @@ afterEach(() => {
 });
 
 function policyFor(root: string, overrides: Partial<SandboxPolicy> = {}): SandboxPolicy {
-  return { writableRoots: [root], writeDenied: [], writeDeniedLiterals: [], readDenied: [], network: 'deny', ...overrides };
+  return { writableRoots: [root], writeDenied: [], writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES, readDenied: [], network: 'deny', ...overrides };
 }
 
 function paramNamesReferenced(profile: string): string[] {

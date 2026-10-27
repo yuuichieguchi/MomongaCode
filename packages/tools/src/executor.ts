@@ -1,19 +1,20 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalJson, canonicalPath, comparableContains, comparablePath, computeBackoff, momongaLayout, reapMarkedProcesses, sha256Hex, volumeIsCaseInsensitive } from '@momonga/foundation';
-import type { Clock, ReapTiming, SignalSender } from '@momonga/foundation';
-import { absoluteFrom, canonicalizePath, decide, suggestAllowRule } from '@momonga/policy';
+import { canonicalJson, canonicalPath, comparableContains, comparablePath, computeBackoff, fileRuleFingerprint, momongaLayout, reapMarkedProcesses, sha256Hex, volumeIsCaseInsensitive } from '@momonga/foundation';
+import type { Clock, FileRuleProvenance, ReapTiming, SignalSender } from '@momonga/foundation';
+import { absoluteFrom, canonicalizePath, decide, fileRuleSpecsOf, suggestAllowRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject } from '@momonga/policy';
 import type { PermissionMode, ToolKind } from '@momonga/protocol';
-import { assertSessionTmpDirValid, canonicalParentForm } from '@momonga/sandbox';
+import { SandboxPolicyError, canonicalParentForm } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
-import { assertAbsoluteEntries, createReadAccessMatcher } from './read-access.ts';
+import { createReadAccessMatcher } from './read-access.ts';
+import type { ReadFamilyTool } from './read-access.ts';
 import type { ReadAccessMatcher } from './read-access.ts';
 import type { BlobPort, IdempotencyPort, ToolIdempotencyRecord } from './ports.ts';
 import type { ToolSet } from './registry.ts';
 import { MINIMUM_INLINE_OUTPUT_CHARS, truncateOutput } from './truncate.ts';
 import { ToolExecutionError, ToolInputError, TransientToolError } from './types.ts';
-import type { AnyTool, ReconcileResult, ToolContent, ToolContext, ToolResult, ToolSessionState } from './types.ts';
+import type { AnyTool, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolResult, ToolSessionState } from './types.ts';
 import { validateToolInput } from './validate.ts';
 
 const DEFAULT_IDEMPOTENCY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -33,32 +34,45 @@ export type ToolCall = {
   approval?: { kind: 'allow_once' | 'allow_always'; subjectDigest: string };
 };
 
-export type BatchInput = {
-  calls: readonly ToolCall[];
-  toolSet: ToolSet;
-  runId: string;
-  step: number;
-  mode: PermissionMode;
-  rules: PermissionRule[];
-  home: string;
-  roots: readonly string[];
-  tmpDir?: string;
-  env: Readonly<Record<string, string>>;
-  session: ToolSessionState;
-  sandbox: Sandbox;
-  sandboxPolicy: SandboxPolicy;
-  deadlineAt: number;
-  signal: AbortSignal;
-  protectedPaths: readonly string[];
-  inlineLimitForReconcile?: number;
-  inlineLimitForExecution?: () => Promise<number>;
-  recoverOnly?: true;
+type BatchCallbacks = {
   leaseLost?(): boolean;
   onOutcome?(outcome: ResultOutcome): void;
   traceparentFor?(callId: string): { traceparent: string; tracestate?: string } | undefined;
   onStarted?(callId: string, idemKey: string): void | Promise<void>;
   onUpdate?(callId: string, content: ToolContent[]): void;
 };
+
+type BatchCore = BatchCallbacks & {
+  calls: readonly ToolCall[];
+  toolSet: ToolSet;
+  runId: string;
+  step: number;
+  mode: PermissionMode;
+  home: string;
+  roots: readonly string[];
+  tmpDir?: string;
+  env: Readonly<Record<string, string>>;
+  session: ToolSessionState;
+  deadlineAt: number;
+  signal: AbortSignal;
+  protectedPaths: readonly string[];
+  inlineLimitForReconcile?: number;
+  inlineLimitForExecution?: () => Promise<number>;
+};
+
+export type ExecutionBatchInput = BatchCore & {
+  rules: PermissionRule[];
+  sandbox: Sandbox;
+  sandboxPolicy: SandboxPolicy;
+  recoverOnly?: undefined;
+};
+
+export type RecoveryBatchInput = BatchCore & {
+  rules: readonly [];
+  recoverOnly: true;
+};
+
+export type BatchInput = ExecutionBatchInput | RecoveryBatchInput;
 
 export type ResultOutcome = {
   callId: string;
@@ -109,16 +123,28 @@ export type ToolExecutor = {
 
 export type InspectableToolExecutor = ToolExecutor & { inFlightKeys(): ReadonlySet<string> };
 
-type RunPlan = {
+type ExecutionPlan = {
+  kind: 'execution';
   call: ToolCall;
   tool: AnyTool;
   input: unknown;
-  gate: Gate | undefined;
+  gate: Gate;
   key: string;
-  batch: BatchInput;
+  batch: ExecutionBatchInput;
   recovered?: ToolIdempotencyRecord;
   gateRan: boolean;
 };
+
+type RecoveryPlan = {
+  kind: 'recovery';
+  call: ToolCall;
+  tool: AnyTool;
+  input: unknown;
+  key: string;
+  batch: RecoveryBatchInput;
+};
+
+type RunPlan = ExecutionPlan | RecoveryPlan;
 
 type Gate = { subject: PermissionSubject; access: BatchAccess };
 
@@ -146,7 +172,21 @@ const readDeniedPath = (subject: PermissionSubject, access: ReadAccessMatcher, c
   return subject.paths.find((target) => access.blocks(target, cwd));
 };
 
-const approvalGatedWritePaths = (batch: BatchInput): Set<string> => {
+const readRuleToolOf = (subjectTool: string): ReadFamilyTool => (subjectTool === 'Grep' || subjectTool === 'Glob' ? subjectTool : 'Read');
+
+const ruleBlock = (subject: PermissionSubject, access: BatchAccess, cwd: string): { target: string; provenance: FileRuleProvenance } | undefined => {
+  if (subject.kind !== 'path') return undefined;
+  const tool = readRuleToolOf(subject.tool);
+  for (const target of subject.paths) {
+    const provenance = access.blockedBy(target, cwd, tool) ?? (subject.access === 'write' ? access.writeBlockedBy(target, cwd) : undefined);
+    if (provenance !== undefined) return { target, provenance };
+  }
+  return undefined;
+};
+
+const describeProvenance = ({ ruleText, layer, source }: FileRuleProvenance): string => `${ruleText} (${layer}: ${source})`;
+
+const approvalGatedWritePaths = (batch: ExecutionBatchInput): Set<string> => {
   const layout = momongaLayout(batch.home);
   const alwaysDenied = [layout.root, layout.keychains].map(comparablePath);
   return new Set(batch.protectedPaths.map(comparablePath).filter((entry) => !alwaysDenied.includes(entry)));
@@ -172,9 +212,7 @@ const launcherGuardKeys = (literals: readonly string[]): Set<string> =>
       .map(parentCanonicalKey),
   );
 
-const createWriteGuard = (batch: BatchInput): ((subject: PermissionSubject, cwd: string) => string | undefined) => {
-  assertAbsoluteEntries('writeDenied', batch.sandboxPolicy.writeDenied);
-  assertAbsoluteEntries('writableRoots', batch.sandboxPolicy.writableRoots);
+const createWriteGuard = (batch: ExecutionBatchInput): ((subject: PermissionSubject, cwd: string) => string | undefined) => {
   batch.sandboxPolicy.writableRoots.forEach(canonicalPath);
   const gated = approvalGatedWritePaths(batch);
   const guards = batch.sandboxPolicy.writeDenied.filter((entry) => !gated.has(comparablePath(entry))).map(canonicalPath);
@@ -196,7 +234,7 @@ const createWriteGuard = (batch: BatchInput): ((subject: PermissionSubject, cwd:
 
 type BatchAccess = ReadAccessMatcher & { writeDeniedPath: (subject: PermissionSubject, cwd: string) => string | undefined };
 
-const rootsOf = (batch: BatchInput): readonly string[] => (batch.tmpDir === undefined ? batch.roots : [...batch.roots, batch.tmpDir]);
+const rootsOf = (batch: BatchCore): readonly string[] => (batch.tmpDir === undefined ? batch.roots : [...batch.roots, batch.tmpDir]);
 
 const digestSubject = (subject: PermissionSubject, cwd: string): unknown => {
   if (subject.kind === 'path') {
@@ -320,14 +358,17 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     };
   };
 
-  const permissionGate = (call: ToolCall, tool: AnyTool, input: unknown, gate: Gate | undefined, batch: BatchInput): CallOutcome | undefined => {
-    if (gate === undefined) throw new Error('permission gate requires a subject and read access');
-    const { subject, access } = gate;
+  const permissionGate = (call: ToolCall, tool: AnyTool, input: unknown, gate: Gate, batch: ExecutionBatchInput): CallOutcome | undefined => {
+        const { subject, access } = gate;
     const cwd = batch.session.cwd;
     const blockedPath = readDeniedPath(subject, access, cwd);
     if (blockedPath !== undefined) return failedOutcome(call.callId, `Permission denied: ${blockedPath} is blocked by the sandbox policy`);
     const writeBlockedPath = access.writeDeniedPath(subject, cwd);
     if (writeBlockedPath !== undefined) return failedOutcome(call.callId, `Permission denied: ${writeBlockedPath} is write-protected by the sandbox policy`);
+    const blockedByRule = ruleBlock(subject, access, cwd);
+    if (blockedByRule !== undefined) {
+      return failedOutcome(call.callId, `Permission denied: ${blockedByRule.target} is blocked by ${describeProvenance(blockedByRule.provenance)}`);
+    }
 
     const policyTool = { name: tool.name, kind: tool.kind, sideEffect: tool.sideEffect };
     const decision = decide({
@@ -339,6 +380,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       home: batch.home,
       cwd,
       protectedPaths: batch.protectedPaths,
+      fileRules: batch.sandboxPolicy.fileRules,
     });
     if (decision.kind === 'deny') return failedOutcome(call.callId, `Permission denied: ${decision.reason}`);
     const unsandboxedExec = decision.kind === 'allow' && tool.sideEffect === 'exec' && batch.sandbox.kind === 'none';
@@ -352,7 +394,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       }
       if (approval?.subjectDigest !== subjectDigest) {
         const effective: Decision = unsandboxedExec
-          ? { kind: 'ask', source: 'mode', reason: 'no sandbox is available, so command execution requires approval' }
+          ? { kind: 'ask', source: 'mode', reason: 'no sandbox is available: file deny rules are checked on the command text only, so command execution requires approval' }
           : decision;
         const suggestedRule =
           unsandboxedExec || decision.source === 'protected' ? undefined : suggestAllowRule(policyTool, subject, { cwd, home: batch.home });
@@ -393,7 +435,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       if (existing.s === 'UNKNOWN') {
         return outcome({ ...failedOutcome(call.callId, interruptedOutput(tool)), idemKey: key, reconciled: 'unknown' });
       }
-      return { kind: 'run', plan: { call, tool, input, gate: undefined, key, batch, recovered: existing.rec, gateRan: false } };
+      return { kind: 'run', plan: { kind: 'recovery', call, tool, input, key, batch } };
     }
 
     if (access === undefined) throw new Error('read access is required for a batch that can execute');
@@ -413,11 +455,125 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       const gated = permissionGate(call, tool, input, gate, batch);
       if (gated !== undefined) return outcome(gated);
     }
-    return { kind: 'run', plan: { call, tool, input, gate, key, batch, gateRan: recovered === undefined, ...(recovered === undefined ? {} : { recovered }) } };
+    return { kind: 'run', plan: { kind: 'execution', call, tool, input, gate, key, batch, gateRan: recovered === undefined, ...(recovered === undefined ? {} : { recovered }) } };
   };
 
-  const perform = async (plan: RunPlan): Promise<CallOutcome> => {
-    const { call, tool, input, gate, key, batch, recovered, gateRan } = plan;
+  type CallScope = {
+    controller: AbortController;
+    processMarker: string;
+    reconcileCtx: ReconcileContext;
+    abortReason(): AbortReason | undefined;
+    abortWith(reason: AbortReason): void;
+    armTimer(ms: number): void;
+    closeContext(): void;
+    complete(result: ResultOutcome['result'], reconciled?: ReconcileResult['outcome']): CallOutcome;
+    release(): void;
+  };
+
+  const openScope = (batch: BatchCore, call: ToolCall, tool: AnyTool, key: string, inlineLimit: number, deadlineAt: number): CallScope => {
+    const { callId } = call;
+    const controller = new AbortController();
+    let abortReason: AbortReason | undefined;
+    let recordCompleted = false;
+    let contextClosed = false;
+    let timer: NodeJS.Timeout | undefined;
+    const leaseLost = (): boolean => batch.leaseLost?.() === true;
+    const abortWith = (reason: AbortReason): void => {
+      if (abortReason !== undefined) return;
+      abortReason = reason;
+      controller.abort();
+    };
+    const processMarker = path.join(options.processMarkerDir, key);
+    const onBatchAbort = (): void => abortWith('cancelled');
+    batch.signal.addEventListener('abort', onBatchAbort, { once: true });
+    activeKeys.set(key, (activeKeys.get(key) ?? 0) + 1);
+    const trace = batch.traceparentFor?.(callId);
+    const reconcileCtx: ReconcileContext = {
+      cwd: batch.session.cwd,
+      home: batch.home,
+      roots: rootsOf(batch),
+      ...(batch.tmpDir === undefined ? {} : { tmpDir: batch.tmpDir }),
+      runId: batch.runId,
+      step: batch.step,
+      callId,
+      idemKey: key,
+      outputBudgetChars: inlineLimit,
+      ...(tool.sideEffect === 'exec' ? { processMarker } : {}),
+      ...(trace === undefined ? {} : { traceparent: trace.traceparent }),
+      ...(trace?.tracestate === undefined ? {} : { tracestate: trace.tracestate }),
+      env: batch.env,
+      signal: controller.signal,
+      deadlineAt,
+      blobs,
+      clock,
+      session: batch.session,
+      attachProcess: (processInfo) => {
+        if (!leaseLost() && !contextClosed) idempotency.attachProcess(key, processInfo);
+      },
+      update: (content) => {
+        if (!contextClosed) batch.onUpdate?.(callId, content);
+      },
+    };
+    const deferred: DeferredOutcome = { callId, kind: 'deferred' };
+    return {
+      controller,
+      processMarker,
+      reconcileCtx,
+      abortReason: () => abortReason,
+      abortWith,
+      armTimer: (ms) => {
+        timer = setTimeout(() => abortWith('timeout'), ms);
+      },
+      closeContext: () => {
+        contextClosed = true;
+      },
+      complete: (result, reconciled) => {
+        if (leaseLost()) return deferred;
+        const outcome: ResultOutcome = { callId, kind: 'result', result, idemKey: key, ...(reconciled === undefined ? {} : { reconciled }) };
+        idempotency.complete(key, outcome);
+        recordCompleted = true;
+        return outcome;
+      },
+      release: () => {
+        clearTimeout(timer);
+        if (recordCompleted && tool.sideEffect === 'exec') fs.rmSync(processMarker, { force: true });
+        batch.signal.removeEventListener('abort', onBatchAbort);
+        const remaining = (activeKeys.get(key) ?? 0) - 1;
+        if (remaining > 0) activeKeys.set(key, remaining);
+        else activeKeys.delete(key);
+      },
+    };
+  };
+
+  const reconcileOnly = async (batch: RecoveryBatchInput, plan: RecoveryPlan): Promise<CallOutcome> => {
+    const { call, tool, input, key } = plan;
+    const { callId } = call;
+    const inlineLimit = batch.inlineLimitForReconcile ?? maxInlineOutputChars;
+    if (batch.signal.aborted) return failedOutcome(callId, `${tool.name} was cancelled`);
+    const scope = openScope(batch, call, tool, key, inlineLimit, clock.now() + reconcileCapMs + reconcileGraceMs);
+    try {
+      const current = idempotency.get(key);
+      if (current?.s === 'COMPLETED') return storedOutcome(current.result);
+      const record = current?.rec;
+      if (record === undefined) return failedOutcome(callId, `${tool.name} was cancelled`);
+      let reconcileOutcome: ReconcileResult;
+      try {
+        reconcileOutcome = await reconcileWithin(tool, input, record, scope.reconcileCtx, () => scope.abortWith('timeout'), scope.closeContext);
+      } catch (error) {
+        return failedOutcome(callId, describeThrown(tool.name, error));
+      }
+      if (reconcileOutcome.outcome === 'not_applied') {
+        return scope.complete(finalizeResult({ status: 'failed', output: cancelledOutput(tool) }, tool, inlineLimit), 'not_applied');
+      }
+      const status = reconcileOutcome.outcome === 'already_applied' ? 'completed' : 'failed';
+      return scope.complete(finalizeResult({ status, output: reconcileOutcome.output }, tool, inlineLimit), reconcileOutcome.outcome);
+    } finally {
+      scope.release();
+    }
+  };
+
+  const performExecution = async (batch: ExecutionBatchInput, plan: ExecutionPlan): Promise<CallOutcome> => {
+    const { call, tool, input, gate, key, recovered, gateRan } = plan;
     const { callId } = call;
     const inlineLimit = batch.inlineLimitForReconcile ?? maxInlineOutputChars;
     let executionLimit: Promise<number> | undefined;
@@ -426,56 +582,12 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       return executionLimit;
     };
     if (batch.signal.aborted) return failedOutcome(callId, `${tool.name} was cancelled`);
-    const recoverOnly = batch.recoverOnly === true;
-    const leaseLost = (): boolean => batch.leaseLost?.() === true;
-    if (!recoverOnly && batch.deadlineAt - clock.now() <= 0) return failedOutcome(callId, `Run deadline exceeded before ${tool.name} could start`);
+    if (batch.deadlineAt - clock.now() <= 0) return failedOutcome(callId, `Run deadline exceeded before ${tool.name} could start`);
 
-    const controller = new AbortController();
-    let abortReason: AbortReason | undefined;
-    const abortWith = (reason: AbortReason): void => {
-      if (abortReason !== undefined) return;
-      abortReason = reason;
-      controller.abort();
-    };
-    const processMarker = path.join(options.processMarkerDir, key);
-    let recordCompleted = false;
-    let contextClosed = false;
-    const onBatchAbort = (): void => abortWith('cancelled');
-    batch.signal.addEventListener('abort', onBatchAbort, { once: true });
-    activeKeys.set(key, (activeKeys.get(key) ?? 0) + 1);
-    let timer: NodeJS.Timeout | undefined;
+    const scope = openScope(batch, call, tool, key, inlineLimit, batch.deadlineAt);
+    const toolContext: ToolContext = { ...scope.reconcileCtx, sandbox: batch.sandbox, sandboxPolicy: batch.sandboxPolicy };
 
     try {
-      const trace = batch.traceparentFor?.(callId);
-      const ctx: ToolContext = {
-        cwd: batch.session.cwd,
-        home: batch.home,
-        roots: rootsOf(batch),
-        ...(batch.tmpDir === undefined ? {} : { tmpDir: batch.tmpDir }),
-        runId: batch.runId,
-        step: batch.step,
-        callId,
-        idemKey: key,
-        outputBudgetChars: inlineLimit,
-        ...(tool.sideEffect === 'exec' ? { processMarker } : {}),
-        ...(trace === undefined ? {} : { traceparent: trace.traceparent }),
-        ...(trace?.tracestate === undefined ? {} : { tracestate: trace.tracestate }),
-        env: batch.env,
-        signal: controller.signal,
-        deadlineAt: recoverOnly ? clock.now() + reconcileCapMs + reconcileGraceMs : batch.deadlineAt,
-        sandbox: batch.sandbox,
-        sandboxPolicy: batch.sandboxPolicy,
-        blobs,
-        clock,
-        session: batch.session,
-        attachProcess: (processInfo) => {
-          if (!leaseLost() && !contextClosed) idempotency.attachProcess(key, processInfo);
-        },
-        update: (content) => {
-          if (!contextClosed) batch.onUpdate?.(callId, content);
-        },
-      };
-
       let prepared: Record<string, unknown> | undefined;
       let record: ToolIdempotencyRecord | undefined;
       let gateAdmitted = gateRan;
@@ -484,7 +596,6 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         if (current?.s === 'COMPLETED') return storedOutcome(current.result);
         record = current?.rec;
         if (record === undefined) {
-          if (recoverOnly) return failedOutcome(callId, `${tool.name} was cancelled`);
           const gated = permissionGate(call, tool, input, gate, batch);
           if (gated !== undefined) return gated;
           gateAdmitted = true;
@@ -497,12 +608,12 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         await resolveExecutionLimit();
         if (tool.prepare !== undefined) {
           try {
-            prepared = await tool.prepare(input, ctx);
+            prepared = await tool.prepare(input, toolContext);
           } catch (error) {
             return failedOutcome(callId, describeThrown(tool.name, error));
           }
         }
-        if (abortReason !== undefined) return failedOutcome(callId, `${tool.name} was cancelled`);
+        if (scope.abortReason() !== undefined) return failedOutcome(callId, `${tool.name} was cancelled`);
         const begun = idempotency.begin(key, {
           expiresAt: clock.now() + ttlMs,
           meta: { tool: tool.name, runId: batch.runId, ...(prepared === undefined ? {} : { prepared }) },
@@ -511,28 +622,12 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         if (begun.s !== 'NEW') record = begun.rec;
       }
 
-      const deferred: DeferredOutcome = { callId, kind: 'deferred' };
-
-      const complete = (result: ResultOutcome['result'], reconciled?: ReconcileResult['outcome']): CallOutcome => {
-        if (leaseLost()) return deferred;
-        const outcome: ResultOutcome = {
-          callId,
-          kind: 'result',
-          result,
-          idemKey: key,
-          ...(reconciled === undefined ? {} : { reconciled }),
-        };
-        idempotency.complete(key, outcome);
-        recordCompleted = true;
-        return outcome;
-      };
-
       const execute = async (reconciled?: ReconcileResult['outcome']): Promise<CallOutcome> => {
         const outputLimit = await resolveExecutionLimit();
-        const executionCtx: ToolContext = { ...ctx, outputBudgetChars: outputLimit };
+        const executionCtx: ToolContext = { ...toolContext, outputBudgetChars: outputLimit };
         if (tool.sideEffect === 'exec') {
-          fs.rmSync(processMarker, { force: true });
-          fs.closeSync(fs.openSync(processMarker, 'wx', 0o600));
+          fs.rmSync(scope.processMarker, { force: true });
+          fs.closeSync(fs.openSync(scope.processMarker, 'wx', 0o600));
         }
         const requestedMs = typeof tool.timeoutMs === 'function' ? tool.timeoutMs(input) : tool.timeoutMs;
         const timeoutMs = Math.max(0, Math.min(requestedMs, batch.deadlineAt - clock.now()));
@@ -546,33 +641,33 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
                 error instanceof TransientToolError &&
                 tool.sideEffect === 'read_only' &&
                 attempt + 1 < retry.attempts &&
-                !controller.signal.aborted &&
+                !scope.controller.signal.aborted &&
                 batch.deadlineAt - clock.now() > 0;
               if (!retryable) return { status: 'failed', output: describeThrown(tool.name, error) };
-              await pause(computeBackoff({ attempt, baseMs: retry.baseMs, maxMs: retry.maxMs, random: Math.random }), controller.signal);
-              if (controller.signal.aborted) return { status: 'failed', output: describeThrown(tool.name, error) };
+              await pause(computeBackoff({ attempt, baseMs: retry.baseMs, maxMs: retry.maxMs, random: Math.random }), scope.controller.signal);
+              if (scope.controller.signal.aborted) return { status: 'failed', output: describeThrown(tool.name, error) };
             }
           }
         };
 
         const aborted = new Promise<void>((resolve) => {
-          if (controller.signal.aborted) resolve();
-          else controller.signal.addEventListener('abort', () => resolve(), { once: true });
+          if (scope.controller.signal.aborted) resolve();
+          else scope.controller.signal.addEventListener('abort', () => resolve(), { once: true });
         });
-        timer = setTimeout(() => abortWith('timeout'), timeoutMs);
+        scope.armTimer(timeoutMs);
         const running = runTool();
         const result = await Promise.race([running, aborted.then(() => undefined)]);
-        if (abortReason === undefined && result !== undefined) return complete(finalizeResult(result, tool, outputLimit), reconciled);
+        if (scope.abortReason() === undefined && result !== undefined) return scope.complete(finalizeResult(result, tool, outputLimit), reconciled);
         await settleWithin(running, ABORT_SETTLE_LIMIT_MS);
-        const output = abortReason === 'timeout' ? timedOutOutput(tool, timeoutMs) : cancelledOutput(tool);
-        return complete({ status: 'failed', output }, reconciled);
+        const output = scope.abortReason() === 'timeout' ? timedOutOutput(tool, timeoutMs) : cancelledOutput(tool);
+        return scope.complete({ status: 'failed', output }, reconciled);
       };
 
       const admitExecution = (): CallOutcome | undefined => {
         if (gateAdmitted) return undefined;
         const gated = permissionGate(call, tool, input, gate, batch);
         if (gated?.kind === 'needs_approval') return gated;
-        if (gated?.kind === 'result') return complete(gated.result);
+        if (gated?.kind === 'result') return scope.complete(gated.result);
         return undefined;
       };
 
@@ -583,14 +678,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
 
       let reconcileOutcome: ReconcileResult;
       try {
-        reconcileOutcome = await reconcileWithin(tool, input, record, ctx, () => abortWith('timeout'), () => {
-          contextClosed = true;
-        });
+        reconcileOutcome = await reconcileWithin(tool, input, record, scope.reconcileCtx, () => scope.abortWith('timeout'), scope.closeContext);
       } catch (error) {
         return failedOutcome(callId, describeThrown(tool.name, error));
-      }
-      if (reconcileOutcome.outcome === 'not_applied' && recoverOnly) {
-        return complete(finalizeResult({ status: 'failed', output: cancelledOutput(tool) }, tool, inlineLimit), 'not_applied');
       }
       if (reconcileOutcome.outcome === 'not_applied') {
         const refused = admitExecution();
@@ -598,22 +688,20 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         return await execute('not_applied');
       }
       const status = reconcileOutcome.outcome === 'already_applied' ? 'completed' : 'failed';
-      return complete(finalizeResult({ status, output: reconcileOutcome.output }, tool, inlineLimit), reconcileOutcome.outcome);
+      return scope.complete(finalizeResult({ status, output: reconcileOutcome.output }, tool, inlineLimit), reconcileOutcome.outcome);
     } finally {
-      clearTimeout(timer);
-      if (recordCompleted && tool.sideEffect === 'exec') fs.rmSync(processMarker, { force: true });
-      batch.signal.removeEventListener('abort', onBatchAbort);
-      const remaining = (activeKeys.get(key) ?? 0) - 1;
-      if (remaining > 0) activeKeys.set(key, remaining);
-      else activeKeys.delete(key);
+      scope.release();
     }
   };
+
+  const perform = (plan: RunPlan): Promise<CallOutcome> =>
+    plan.kind === 'recovery' ? reconcileOnly(plan.batch, plan) : performExecution(plan.batch, plan);
 
   const reconcileWithin = async (
     tool: AnyTool,
     input: unknown,
     record: ToolIdempotencyRecord,
-    ctx: ToolContext,
+    ctx: ReconcileContext,
     abortTool: () => void,
     closeContext: () => void,
   ): Promise<ReconcileResult> => {
@@ -643,19 +731,24 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     tool: AnyTool,
     input: unknown,
     record: ToolIdempotencyRecord,
-    ctx: ToolContext,
+    ctx: ReconcileContext,
   ): Promise<ReconcileResult> => {
     if (tool.reconcile !== undefined) return tool.reconcile(input, record, ctx);
     if (tool.sideEffect === 'read_only') return { outcome: 'not_applied', output: '' };
     return { outcome: 'unknown', output: interruptedOutput(tool) };
   };
 
-  const runBatch = async (batch: BatchInput): Promise<CallOutcome[]> => {
-    let access: BatchAccess | undefined;
-    if (batch.recoverOnly !== true) {
-      access = { ...createReadAccessMatcher(batch.sandboxPolicy), writeDeniedPath: createWriteGuard(batch) };
-      if (batch.tmpDir !== undefined) assertSessionTmpDirValid(batch.sandboxPolicy, batch.tmpDir);
+  const prepareBatch = (given: BatchInput): { batch: BatchInput; access: BatchAccess | undefined } => {
+    if (given.recoverOnly === true) return { batch: given, access: undefined };
+    const expected = fileRuleFingerprint(fileRuleSpecsOf(given.rules, given.roots), given.roots, given.tmpDir ?? null);
+    if (given.sandboxPolicy.fileRules.fingerprint !== expected) {
+      throw new SandboxPolicyError('file_rules_stale', 'the sandbox policy was built from different permission rules, roots or session tmp dir than this batch');
     }
+    return { batch: given, access: { ...createReadAccessMatcher(given.sandboxPolicy), writeDeniedPath: createWriteGuard(given) } };
+  };
+
+  const runBatch = async (given: BatchInput): Promise<CallOutcome[]> => {
+    const { batch, access } = prepareBatch(given);
     const { calls } = batch;
     const outcomes: Array<CallOutcome | undefined> = new Array<CallOutcome | undefined>(calls.length).fill(undefined);
     const inFlight = new Set<Promise<void>>();

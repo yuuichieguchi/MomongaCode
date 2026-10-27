@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
-import { sandboxPolicyFor } from './helpers.ts';
+import { minimalPolicyFor } from './helpers.ts';
 
 const pathTool = (access: 'read' | 'write', target: string, runs: string[]) =>
   makeTool('PathTool', {
@@ -25,7 +25,7 @@ describe('executor: writeDenied path subjects', () => {
     const [outcome] = await harness.executor.runBatch(
       harness.input(await toolSetOf(pathTool('write', target, runs)), [call('c1', 'PathTool', {}, 'allow_once')], {
         mode: 'bypassPermissions',
-        sandboxPolicy: { ...sandboxPolicyFor(harness.layout), writeDenied: [sessions] },
+        sandboxPolicy: { ...minimalPolicyFor({ layout: harness.layout }), writeDenied: [sessions] },
       }),
     );
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'result', result: { status: 'failed' } });
@@ -43,7 +43,7 @@ describe('executor: writeDenied path subjects', () => {
     const [outcome] = await harness.executor.runBatch(
       harness.input(await toolSetOf(pathTool('write', path.join(link, 'x'), runs)), [call('c1', 'PathTool', {}, 'allow_once')], {
         mode: 'bypassPermissions',
-        sandboxPolicy: { ...sandboxPolicyFor(harness.layout), writeDenied: [keychains] },
+        sandboxPolicy: { ...minimalPolicyFor({ layout: harness.layout }), writeDenied: [keychains] },
       }),
     );
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'failed' } });
@@ -60,7 +60,7 @@ describe('executor: writeDenied path subjects', () => {
     const [outcome] = await harness.executor.runBatch(
       harness.input(await toolSetOf(pathTool('read', target, runs)), [call('c1', 'PathTool')], {
         mode: 'bypassPermissions',
-        sandboxPolicy: { ...sandboxPolicyFor(harness.layout), writeDenied: [sessions] },
+        sandboxPolicy: { ...minimalPolicyFor({ layout: harness.layout }), writeDenied: [sessions] },
       }),
     );
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed' } });

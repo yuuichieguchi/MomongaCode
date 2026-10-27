@@ -156,7 +156,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     expect(await delta(() => f.composition.envFor(session))).toBe(1);
     expect(await delta(() => f.toolRuntime.port.envFor(session))).toBe(1);
     expect(await delta(() => f.toolRuntime.port.toolSet(runId, { signal: signalNever(), env: Object.freeze({ PLAIN: '1' }) }))).toBe(1);
-    expect(await delta(() => f.toolRuntime.port.policyFor(session, { env: Object.freeze({ PLAIN: '1' }) }))).toBe(0);
+    expect(await delta(() => f.toolRuntime.port.policyFor(session, { env: Object.freeze({ PLAIN: '1' }), rules: [] }))).toBe(0);
   });
 
   it('loadSessionSettings wraps a non-ConfigError as ConfigError with cause', async () => {

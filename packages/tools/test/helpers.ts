@@ -4,8 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import { parseRule } from '@momonga/policy';
+import { computeFileRules, parseRule } from '@momonga/policy';
+import { buildSandboxPolicy } from '@momonga/tools';
 import type { PermissionRule, RuleEffect } from '@momonga/policy';
+import { validateSandboxPolicy } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 
 const cleanups: Array<() => void> = [];
@@ -175,12 +177,38 @@ export const noneSandbox: Sandbox = {
   },
 };
 
-export const sandboxPolicyFor = (layout: Layout): SandboxPolicy => ({
-  writableRoots: [layout.project],
-  writeDenied: [], writeDeniedLiterals: [],
-  readDenied: [],
-  network: 'deny',
-});
+export const sessionsTmpRootOf = (layout: Layout): string => path.join(layout.root, 'sessions');
+
+export const sessionTmpDirOf = (layout: Layout): string => {
+  const tmpDir = path.join(sessionsTmpRootOf(layout), 'session-0');
+  fs.mkdirSync(tmpDir, { recursive: true });
+  return tmpDir;
+};
+
+export type PolicyInputs = { layout: Layout; rules?: readonly PermissionRule[]; roots?: readonly string[]; tmpDir?: string };
+
+export const minimalPolicyFor = ({ layout, rules = [], roots = [layout.project], tmpDir }: PolicyInputs): SandboxPolicy => {
+  const policy: SandboxPolicy = {
+    writableRoots: [layout.project],
+    writeDenied: [],
+    writeDeniedLiterals: [],
+    readDenied: [],
+    network: 'deny',
+    fileRules: computeFileRules(rules, roots, tmpDir ?? null),
+  };
+  validateSandboxPolicy(policy, tmpDir === undefined ? {} : { tmpDir });
+  return policy;
+};
+
+export const policyFor = ({ layout, rules = [], roots = [layout.project], tmpDir = sessionTmpDirOf(layout) }: PolicyInputs): SandboxPolicy =>
+  buildSandboxPolicy({
+    roots: [...roots],
+    home: layout.home,
+    tmpDir,
+    sessionsTmpRoot: sessionsTmpRootOf(layout),
+    fileRules: computeFileRules(rules, roots, tmpDir),
+    network: 'deny',
+  });
 
 export const keyFor = (runId: string, step: number, callId: string): string => sha256Hex(canonicalJson([runId, step, callId]));
 

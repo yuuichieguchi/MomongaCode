@@ -1,0 +1,9 @@
+{
+  "files_with_matches": "{{PROJECT}}/.env\u0000{{PROJECT}}/notes.txt\u0000{{PROJECT}}/sub/.env\u0000",
+  "count": "{{PROJECT}}/.env\u00001\n{{PROJECT}}/notes.txt\u00001\n{{PROJECT}}/sub/.env\u00001\n",
+  "content": "{{PROJECT}}/.env\u00001:TOKEN=secret-one\n{{PROJECT}}/.env\u00002-plain\n--\n{{PROJECT}}/notes.txt\u00001-before\n{{PROJECT}}/notes.txt\u00002:secret in notes\n{{PROJECT}}/notes.txt\u00003-after\n--\n{{PROJECT}}/sub/.env\u00001-x\n{{PROJECT}}/sub/.env\u00002:secret sub\n",
+  "relative": "sub/.env\u00002:secret sub\n",
+  "newline_files_with_matches": "{{PROJECT}}/notes.txt\u0000{{PROJECT}}/sub/a\nb.txt\u0000",
+  "newline_count": "{{PROJECT}}/notes.txt\u00001\n{{PROJECT}}/sub/a\nb.txt\u00001\n",
+  "newline_content": "{{PROJECT}}/notes.txt\u00001:SECRET-VALUE in notes\n--\n{{PROJECT}}/sub/a\nb.txt\u00001-before\n{{PROJECT}}/sub/a\nb.txt\u00002:SECRET-VALUE\n"
+}

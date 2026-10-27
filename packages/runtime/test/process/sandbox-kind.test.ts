@@ -43,7 +43,7 @@ describe('sandbox kind (system timers, none used)', () => {
 
     expect(outcome.kind).toBe('needs_approval');
     if (outcome.kind !== 'needs_approval') return;
-    expect(outcome.decision).toEqual({ kind: 'ask', source: 'mode', reason: 'no sandbox is available, so command execution requires approval' });
+    expect(outcome.decision).toEqual({ kind: 'ask', source: 'mode', reason: 'no sandbox is available: file deny rules are checked on the command text only, so command execution requires approval' });
     expect(outcome.suggestedRule).toBeUndefined();
   });
 

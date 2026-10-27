@@ -9,7 +9,9 @@
   "dependencies": {
     "@momonga/config": "*",
     "@momonga/foundation": "*",
-    "@momonga/protocol": "*",
-    "picomatch": "4.0.7"
+    "@momonga/protocol": "*"
+  },
+  "devDependencies": {
+    "ignore": "7.0.12"
   }
 }

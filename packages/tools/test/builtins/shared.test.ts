@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { EMPTY_FILE_RULES } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
 import { defaultProtectedPaths } from '@momonga/sandbox';
 import { buildSandboxPolicy, createBuiltinTools, createToolRegistry, protectedPathsFor } from '@momonga/tools';
@@ -66,7 +67,7 @@ describe('createBuiltinTools', () => {
         { callId: 'r', name: 'Read', arguments: JSON.stringify({ file_path: file }) },
         { callId: 'g', name: 'Glob', arguments: JSON.stringify({ pattern: '*.txt' }) },
         { callId: 'p', name: 'UpdatePlan', arguments: JSON.stringify({ entries: [{ content: 'x', status: 'pending', priority: 'low' }] }) },
-      ], { sandboxPolicy: tools.sandboxPolicy }),
+      ], { sandboxPolicy: tools.sandboxPolicy, tmpDir: tools.tmpDir }),
     );
     expect(read).toMatchObject({ kind: 'result', result: { status: 'completed', output: '     1\ta' } });
     expect(glob).toMatchObject({ kind: 'result', result: { status: 'completed', output: file } });
@@ -84,19 +85,19 @@ describe('buildSandboxPolicy', () => {
   const sortedWriteDenied = (policy: { writeDenied: readonly string[] }): string[] => [...policy.writeDenied].sort();
 
   it('builds writable roots, protected writes and default read denials', () => {
-    const policy = buildSandboxPolicy({ roots: ['/w/a', '/w/b'], home: '/Users/me', tmpDir: '/s/sessions/one', sessionsTmpRoot: '/s/sessions' });
+    const policy = buildSandboxPolicy({ fileRules: EMPTY_FILE_RULES, roots: ['/w/a', '/w/b'], home: '/Users/me', tmpDir: '/s/sessions/one', sessionsTmpRoot: '/s/sessions' });
     expect({ ...policy, writeDenied: sortedWriteDenied(policy) }).toEqual({
       writableRoots: ['/w/a', '/w/b', '/s/sessions/one'],
       writeDenied: [...protectedPathsFor(['/w/a', '/w/b']), '/Users/me/.momonga', '/Users/me/Library/Keychains', '/s/sessions'].sort(),
       readDenied: [path.join('/Users/me', '.momonga'), path.join('/Users/me', 'Library', 'Keychains'), '/s/sessions'],
-      writeDeniedLiterals: ['/Users/me/.local/bin/momonga'],
+      writeDeniedLiterals: ['/Users/me/.local/bin/momonga'], fileRules: EMPTY_FILE_RULES,
       readAllowed: ['/s/sessions/one'],
       network: 'deny',
     });
   });
 
   it('appends extra writable and read-denied paths and honors the network setting', () => {
-    const policy = buildSandboxPolicy({
+    const policy = buildSandboxPolicy({ fileRules: EMPTY_FILE_RULES,
       roots: ['/w/a'],
       home: '/h',
       tmpDir: '/s/sessions/one',
@@ -109,7 +110,7 @@ describe('buildSandboxPolicy', () => {
       writableRoots: ['/w/a', '/s/sessions/one', '/cache'],
       writeDenied: [...defaultProtectedPaths('/w/a'), '/h/.momonga', '/h/Library/Keychains', '/s/sessions'].sort(),
       readDenied: ['/h/.momonga', '/h/Library/Keychains', '/s/sessions', '/h/.ssh'],
-      writeDeniedLiterals: ['/h/.local/bin/momonga'],
+      writeDeniedLiterals: ['/h/.local/bin/momonga'], fileRules: EMPTY_FILE_RULES,
       readAllowed: ['/s/sessions/one'],
       network: 'allow',
     });

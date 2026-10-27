@@ -311,7 +311,7 @@ describe('sweepSessionTmp (fake clock, fake timers, none armed)', () => {
     vi.spyOn(fs.promises, 'rm').mockImplementation(async (target, options) => {
       if (!policyRan) {
         policyRan = true;
-        await policyFor(session, { env: Object.freeze({ PLAIN: '1' }) });
+        await policyFor(session, { env: Object.freeze({ PLAIN: '1' }), rules: [] });
       }
       return originalRm(target, options);
     });

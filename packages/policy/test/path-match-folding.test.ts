@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { setCaseSensitivityProbe } from '@momonga/foundation';
 import { matchRule } from '@momonga/policy';
 import type { PermissionSubject } from '@momonga/policy';
-import { makeLayout, ruleIn } from './helpers.ts';
+import { fileRulesFor, makeLayout, ruleIn } from './helpers.ts';
 
 afterEach(() => {
   setCaseSensitivityProbe(undefined);
@@ -28,7 +28,7 @@ describe.runIf(VM_IS_SEPARATE_MOUNT)('pathMatchesRule folding across a mount bou
   it('folds both sides once ignoreCase is decided from the target', () => {
     setCaseSensitivityProbe((directory) => directory === VM || directory.startsWith(`${VM}/`));
     const rule = ruleIn(makeLayout())('deny', 'Read(//System/Volumes/**)');
-    expect(matchRule(rule, read(`${VM}/Missing/file`))).toBe(true);
+    expect(matchRule(rule, read(`${VM}/Missing/file`), fileRulesFor([rule], [rule.cwd]), 0)).toBe(true);
   });
 });
 
@@ -40,7 +40,7 @@ describe.skipIf(RUNNING_AS_ROOT)('pathMatchesRule under an unreadable directory'
     fs.chmodSync(locked, 0o000);
     try {
       const rule = ruleIn(layout)('deny', `Read(/${locked}/**)`);
-      expect(matchRule(rule, read(path.join(locked, 'x', 'y')))).toBe(true);
+      expect(matchRule(rule, read(path.join(locked, 'x', 'y')), fileRulesFor([rule], [rule.cwd]), 0)).toBe(true);
     } finally {
       fs.chmodSync(locked, 0o700);
     }

@@ -1,3 +1,5 @@
+import { FileRuleError, checkExceptionGrammar, checkFilePatternGrammar } from '@momonga/foundation';
+
 export type RuleEffect = 'allow' | 'ask' | 'deny';
 export type RuleOrigin = 'user' | 'project' | 'local' | 'cli';
 
@@ -11,6 +13,7 @@ export type PermissionRule = {
   settingsRoot: string;
   home: string;
   cwd: string;
+  exceptions?: readonly string[];
 };
 
 export type ParseRuleOptions = {
@@ -29,7 +32,9 @@ export class RuleParseError extends Error {
   }
 }
 
-const PATH_TOOLS = ['Read', 'Write', 'Edit', 'Glob', 'Grep'] as const;
+export const NEGATION_PREFIX = '!';
+
+export const PATH_TOOLS = ['Read', 'Write', 'Edit', 'Glob', 'Grep'] as const;
 const SPECIFIER_TOOLS: readonly string[] = [...PATH_TOOLS, 'Bash'];
 const PLAIN_TOOLS: readonly string[] = [...SPECIFIER_TOOLS, 'ReadOutput', 'UpdatePlan'];
 const MCP_NAME = /^[A-Za-z0-9_-]+$/;
@@ -64,6 +69,16 @@ const validateSpecifier = (text: string, tool: string, specifier: string): void 
     return;
   }
   if (/[()]/.test(specifier)) throw new RuleParseError(text, 'parentheses are not allowed in a path specifier');
+  const negated = specifier.startsWith(NEGATION_PREFIX);
+  const body = negated ? specifier.slice(NEGATION_PREFIX.length) : specifier;
+  try {
+    if (negated) checkExceptionGrammar(body);
+    checkFilePatternGrammar(body);
+  } catch (error) {
+    if (error instanceof FileRuleError && error.reason === 'empty_negation') throw new RuleParseError(text, 'empty specifier');
+    if (error instanceof FileRuleError) throw new RuleParseError(text, `${error.reason}: ${error.message}`);
+    throw error;
+  }
 };
 
 export const parseRule = (text: string, options: ParseRuleOptions): PermissionRule => {

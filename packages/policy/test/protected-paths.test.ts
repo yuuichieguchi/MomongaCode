@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { decide } from '@momonga/policy';
 import type { DecideInput, PermissionSubject, PolicyTool } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
-import { makeLayout, ruleIn, touch } from './helpers.ts';
+import { fileRulesFor, makeLayout, ruleIn, touch } from './helpers.ts';
 import type { Layout } from './helpers.ts';
 
 const READ: PolicyTool = { name: 'Read', kind: 'read', sideEffect: 'read_only' };
@@ -20,7 +20,8 @@ const setup = () => {
   return { layout, gitDir, settingsFile };
 };
 
-const input = (layout: Layout, tool: PolicyTool, subject: PermissionSubject, mode: PermissionMode, protectedPaths: readonly string[], extra: Partial<DecideInput> = {}): DecideInput => ({
+const input = (layout: Layout, tool: PolicyTool, subject: PermissionSubject, mode: PermissionMode, protectedPaths: readonly string[], extra: Partial<DecideInput> = {}): DecideInput => {
+  const given = {
   tool,
   subject,
   mode,
@@ -30,7 +31,9 @@ const input = (layout: Layout, tool: PolicyTool, subject: PermissionSubject, mod
   cwd: layout.project,
   protectedPaths,
   ...extra,
-});
+  };
+  return { fileRules: fileRulesFor(given.rules, given.roots), ...given };
+};
 
 const writeSubject = (tool: string, target: string): PermissionSubject => ({ kind: 'path', tool, paths: [target], access: 'write' });
 

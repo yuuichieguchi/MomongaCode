@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { decide } from '@momonga/policy';
 import type { PolicyTool } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
-import { makeLayout, ruleIn } from './helpers.ts';
+import { fileRulesFor, makeLayout, ruleIn } from './helpers.ts';
 
 const BASH: PolicyTool = { name: 'Bash', kind: 'execute', sideEffect: 'exec' };
 
@@ -22,7 +22,11 @@ const decision = (command: string, spec: Spec = {}) => {
     ],
     roots: [layout.project],
     home: layout.home,
-    cwd: layout.project,
+    cwd: layout.project, fileRules: fileRulesFor([
+      ...(spec.allow ?? []).map((t) => make('allow', t)),
+      ...(spec.ask ?? []).map((t) => make('ask', t)),
+      ...(spec.deny ?? []).map((t) => make('deny', t)),
+    ], [layout.project]),
   });
 };
 

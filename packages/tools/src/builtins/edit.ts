@@ -3,7 +3,7 @@ import { sha256Hex } from '@momonga/foundation';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import { assertReadAndUnchanged, assertSameLocation, looksBinary, regularFileProblem, updateLedgerAfterWrite, sha256OfFile, statIfExists, writeFileAtomically } from './files.ts';
 import { numberedLines, splitLines } from './format.ts';
-import { canonicalPathOf } from './paths.ts';
+import { canonicalPathOf, requireAbsolute } from './paths.ts';
 import { parsePreparedWrite, reconcileWrite } from './prepared.ts';
 
 type EditInput = { file_path: string; old_string: string; new_string: string; replace_all?: boolean };
@@ -89,7 +89,7 @@ export const editTool = defineTool<EditInput>({
   timeoutMs: 30_000,
   title: (input) => `Edit ${input.file_path}`,
   locations: (input) => [{ path: input.file_path }],
-  subject: (input) => ({ kind: 'path', tool: 'Edit', paths: [canonicalPathOf('file_path', input.file_path)], access: 'write' }),
+  subject: (input) => ({ kind: 'path', tool: 'Edit', paths: [requireAbsolute('file_path', input.file_path)], access: 'write' }),
   prepare: async (input, ctx) => {
     if (input.old_string === '') throw new ToolExecutionError('old_string must not be empty; use Write to create or replace a file');
     if (input.old_string === input.new_string) throw new ToolExecutionError('old_string and new_string are identical; nothing to change');

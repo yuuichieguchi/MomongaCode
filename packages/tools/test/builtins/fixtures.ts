@@ -5,12 +5,13 @@ import { afterEach, expect } from 'vitest';
 import { killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
-import { buildSandboxPolicy, createBuiltinTools, protectedPathsFor } from '@momonga/tools';
-import type { BatchInput, CallOutcome, NeedsApprovalOutcome, ResultOutcome, ToolSet } from '@momonga/tools';
+import { createBuiltinTools, protectedPathsFor } from '@momonga/tools';
+import type { CallOutcome, ExecutionBatchInput, NeedsApprovalOutcome, ResultOutcome, ToolSet } from '@momonga/tools';
 import type { PermissionRule } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
 import { call, makeHarness, toolSetOf } from '../harness.ts';
 import type { ApprovalSpec } from '../harness.ts';
+import { policyFor, sessionTmpDirOf, sessionsTmpRootOf } from '../helpers.ts';
 
 export const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 export const RG_BIN = '/opt/homebrew/bin/rg';
@@ -73,34 +74,33 @@ export const approvalOf = (outcome: CallOutcome | undefined): NeedsApprovalOutco
   return outcome as NeedsApprovalOutcome;
 };
 
-export type RunExtra = Partial<BatchInput> & { mode?: PermissionMode; rules?: PermissionRule[] };
+export type RunExtra = Partial<Omit<ExecutionBatchInput, 'recoverOnly'>> & { mode?: PermissionMode; rules?: PermissionRule[] };
 
 export type Builtins = Awaited<ReturnType<typeof makeBuiltins>>;
 
 export const makeBuiltins = async (options: { maxInlineOutputChars?: number; realSandbox?: boolean } = {}) => {
   const harness = makeHarness(options.maxInlineOutputChars === undefined ? {} : { maxInlineOutputChars: options.maxInlineOutputChars });
   const { layout } = harness;
-  const sessionsTmpRoot = path.join(layout.root, 'sessions');
-  const tmpDir = path.join(sessionsTmpRoot, 'session-0');
+  const sessionsTmpRoot = sessionsTmpRootOf(layout);
+  const tmpDir = sessionTmpDirOf(layout);
   const sandboxTmpRoot = path.join(layout.root, 'sandbox-tmp');
-  fs.mkdirSync(tmpDir, { recursive: true });
   fs.mkdirSync(sandboxTmpRoot);
   const toolSet: ToolSet = await toolSetOf(...createBuiltinTools());
-  const sandboxPolicy: SandboxPolicy = buildSandboxPolicy({ roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot });
+  const sandboxPolicy: SandboxPolicy = policyFor({ layout, tmpDir });
   const sandbox: Sandbox | undefined = options.realSandbox === true ? createSeatbeltSandbox({ tmpRoot: sandboxTmpRoot, killGraceMs: 300 }) : undefined;
   let counter = 0;
   const nextCallId = (): string => {
     counter += 1;
     return `call-${counter}`;
   };
-  const batch = (name: string, args: unknown, extra: RunExtra = {}, approval?: ApprovalSpec, callId = nextCallId()): BatchInput =>
+  const batch = (name: string, args: unknown, extra: RunExtra = {}, approval?: ApprovalSpec, callId = nextCallId()): ExecutionBatchInput =>
     harness.input(toolSet, [call(callId, name, args, approval)], {
       env: BASE_ENV,
-      sandboxPolicy,
       protectedPaths: protectedPathsFor([layout.project]),
-      ...(extra.sandboxPolicy === undefined ? { tmpDir } : {}),
+      tmpDir,
       ...(sandbox === undefined ? {} : { sandbox }),
       ...extra,
+      sandboxPolicy: extra.sandboxPolicy ?? policyFor({ layout, tmpDir: extra.tmpDir ?? tmpDir, ...(extra.rules === undefined ? {} : { rules: extra.rules }), ...(extra.roots === undefined ? {} : { roots: extra.roots }) }),
     });
   const run = async (
     name: string,

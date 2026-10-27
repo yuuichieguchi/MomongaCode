@@ -4,7 +4,7 @@ import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.t
 import { layoutOf } from './layout.ts';
 import { readUserLayer } from './layers.ts';
 import type { UserLayer } from './layers.ts';
-import { mergeLayers } from './load-settings.ts';
+import { mergeLayers, parseLayerRules } from './load-settings.ts';
 import type { ResolvedSettings } from './load-settings.ts';
 
 export type LoadUserSettingsOptions = { home: string };
@@ -18,6 +18,7 @@ const readUserSettingsSync = (home: string): UserSettingsLoad => {
     const user = readUserLayer(home);
     const warnings = [...user.warnings];
     const layers = user.layer === undefined ? [] : [user.layer];
+    for (const layer of layers) parseLayerRules(layer, home, home, warnings);
     const settings = mergeLayers(layers, user.models, home, home, warnings);
     return { settings, user, warnings };
   } catch (error) {

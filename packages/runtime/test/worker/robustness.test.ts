@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ConfigError } from '@momonga/runtime';
 import type { RuntimeStore } from '@momonga/store';
+import type { ExecutionBatchInput } from '@momonga/tools';
 import { waitUntil, within } from './deferred.ts';
 import { EXTRA_ROOT, START_MS, makeEnv, toolKey } from './harness.ts';
 import { callsStep, functionCallItem, textStep } from './scripts.ts';
@@ -124,7 +125,7 @@ describe('worker policyFor', () => {
     expect(env.batches[0]?.roots).toEqual([env.project, EXTRA_ROOT]);
     expect(env.sessionTmpDir).toMatch(/session-tmp$/);
     expect(env.batches[0]?.tmpDir).toBe(env.sessionTmpDir);
-    expect(env.batches[0]?.sandboxPolicy.writableRoots).toEqual([env.project]);
+    expect((env.batches[0] as ExecutionBatchInput | undefined)?.sandboxPolicy.writableRoots).toEqual([env.project]);
   });
 
   it('passes the policyFor roots to cancel recovery', async () => {

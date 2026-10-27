@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { createToolExecutor } from '@momonga/tools';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
-import { keyFor, sandboxPolicyFor } from './helpers.ts';
+import { keyFor, minimalPolicyFor } from './helpers.ts';
 
 const KEY = keyFor('run-1', 1, 'c1');
 
@@ -146,7 +146,7 @@ describe('executor post-reconcile gate applies readDenied', () => {
     const [outcome] = await harness.executor.runBatch(
       harness.input(await toolSetOf(tool), [call('c1', 'Edit')], {
         mode: 'bypassPermissions',
-        sandboxPolicy: { ...sandboxPolicyFor(harness.layout), readDenied: [secret] },
+        sandboxPolicy: { ...minimalPolicyFor({ layout: harness.layout }), readDenied: [secret] },
       }),
     );
 
