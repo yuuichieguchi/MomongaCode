@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { findHolders } from '@momonga/foundation';
+import { REAP_POLL_INTERVAL_MS, findHolders } from '@momonga/foundation';
 import type { ReapTiming, SignalSender } from '@momonga/foundation';
 import { killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 import { makeHarness } from './harness.ts';
@@ -11,7 +11,6 @@ import { keyFor } from './helpers.ts';
 
 const PROCESS_TIMEOUT = { timeout: 30_000 };
 const STUBBORN_GRACE_MS = 100;
-const POLL_INTERVAL_MS = 25;
 const KEY_A = keyFor('run-1', 1, 'call-a');
 const KEY_B = keyFor('run-1', 1, 'call-b');
 
@@ -320,7 +319,7 @@ describe('executor abandon', () => {
       expect.arrayContaining([`tool marker ${marker} kept: process ${stubborn} still hold it after cleanup; the next start will retry`]),
     );
     expect(harness.idempotency.stateOf(KEY_A)).toBe('UNKNOWN');
-    expect(timing.sleeps).toBe(1 + STUBBORN_GRACE_MS / POLL_INTERVAL_MS);
+    expect(timing.sleeps).toBe(1 + STUBBORN_GRACE_MS / REAP_POLL_INTERVAL_MS);
   });
 
   it('a target whose marker cannot be removed becomes a warning while the others are still reaped and every target is CAS-ed', PROCESS_TIMEOUT, async () => {
