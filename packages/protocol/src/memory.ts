@@ -12,6 +12,8 @@ export type MemorySource =
 
 export const MEMORY_KINDS = ['fact', 'episode', 'procedure'] as const;
 
+export const DEFAULT_MEMORY_KIND = 'fact' as const satisfies (typeof MEMORY_KINDS)[number];
+
 export type MemoryKind = (typeof MEMORY_KINDS)[number];
 
 export const MEMORY_STATES = ['active', 'candidate', 'archived', 'duplicate'] as const;
@@ -44,12 +46,23 @@ export type MemoryRecord = {
   state: MemoryState;
   duplicateOf: string | null;
   supersedes: string[];
+  supersededBy: string[];
   retiredAt: number | null;
   evidence: MemoryEvidence[];
   contributedAt: number | null;
 };
 
 export type MemoryView = MemoryRecord & { status: MemoryStatus };
+
+export const describeMemoryValidity = (memory: Pick<MemoryRecord, 'state' | 'retiredAt' | 'supersedes' | 'supersededBy'>): string =>
+  [
+    ...(memory.state === 'active' ? [] : [`state ${memory.state}`]),
+    ...(memory.retiredAt === null ? [] : [`retired ${new Date(memory.retiredAt).toISOString()}`]),
+    ...(memory.supersedes.length === 0 ? [] : [`supersedes ${memory.supersedes.join(' ')}`]),
+    ...(memory.supersededBy.length === 0 ? [] : [`superseded by ${memory.supersededBy.join(' ')}`]),
+  ]
+    .map((part) => `, ${part}`)
+    .join('');
 
 export type MemoriesResponse = { memories: MemoryView[] };
 

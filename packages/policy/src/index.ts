@@ -1,6 +1,6 @@
 export { parseRule, RuleParseError } from '@momonga/config';
 export type { ParseRuleOptions, PermissionRule, RuleEffect, RuleOrigin } from '@momonga/config';
-export { decide, decidePrimary } from './decide.ts';
+export { decide, decidePrimary, isGoverningRule } from './decide.ts';
 export type { DecideInput, Decision } from './decide.ts';
 export { matchRule, ruleCoversSubject } from './match-rule.ts';
 export { INERT_PRINTERS, commandPatternOf } from './command-match.ts';

@@ -103,7 +103,7 @@ describe('reporting', () => {
       globBudgetMs: 1_000,
     };
 
-    const replay = await replayWitness(env, 'Bash', { kind: 'command', command: 'rm x', defaultAllow: false }, { kind: 'allow', dependsOnDefault: false });
+    const replay = await replayWitness(env, 'Bash', { kind: 'command', command: 'rm x', defaultAllow: false }, { kind: 'allow', dependsOnDefault: false, viaPaths: false });
 
     expect(replay).toEqual({ agrees: false, predicted: 'allow', actual: 'deny', final: 'deny' });
   });

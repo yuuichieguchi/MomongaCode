@@ -9,7 +9,7 @@ describe('memory subjects', () => {
     const canonicalise = () => {
       throw new Error('a memory subject names no path');
     };
-    expect(suggestAllowRule(MEMORY_SAVE, { kind: 'memory', tool: 'MemorySave', scope: 'user' }, '/work', canonicalise)).toBeUndefined();
-    expect(suggestAllowRule(MEMORY_SAVE, { kind: 'memory', tool: 'MemorySave', scope: 'project' }, '/work', canonicalise)).toBeUndefined();
+    expect(suggestAllowRule(MEMORY_SAVE, { kind: 'memory', tool: 'MemorySave', scope: 'user', text: 'a note', memoryKind: 'fact', paths: [], supersedes: [] }, '/work', canonicalise)).toBeUndefined();
+    expect(suggestAllowRule(MEMORY_SAVE, { kind: 'memory', tool: 'MemorySave', scope: 'project', text: 'a note', memoryKind: 'fact', paths: [], supersedes: [] }, '/work', canonicalise)).toBeUndefined();
   });
 });

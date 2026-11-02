@@ -1,5 +1,5 @@
 import { createRedactor } from '@momonga/foundation';
-import { MEMORY_KINDS, MEMORY_SCOPES } from '@momonga/protocol';
+import { DEFAULT_MEMORY_KIND, MEMORY_KINDS, MEMORY_SCOPES, describeMemoryValidity } from '@momonga/protocol';
 import type { MemoryKind, MemoryScope, MemoryView } from '@momonga/protocol';
 import { defineTool, ToolExecutionError, ToolInputError } from '../types.ts';
 import type { AnyTool } from '../types.ts';
@@ -18,17 +18,8 @@ type SearchInput = { query: string; include?: 'live' | 'all' };
 
 const redactor = createRedactor({ credentials: [] });
 
-const validityOf = (memory: MemoryView): string =>
-  [
-    ...(memory.state === 'active' ? [] : [`state ${memory.state}`]),
-    ...(memory.retiredAt === null ? [] : [`retired ${new Date(memory.retiredAt).toISOString()}`]),
-    ...(memory.supersedes.length === 0 ? [] : [`supersedes ${memory.supersedes.join(' ')}`]),
-  ]
-    .map((part) => `, ${part}`)
-    .join('');
-
 const describeMemory = (memory: MemoryView): string =>
-  `[${memory.id}] (${memory.scope} memory, ${memory.origin} origin, status ${memory.status}${validityOf(memory)}, saved ${new Date(memory.createdAt).toISOString()} in run ${memory.source.runId}${memory.source.kind === 'tool' ? ` step ${memory.source.step}` : ''}, last used ${new Date(memory.lastUsedAt).toISOString()}) ${memory.text}`;
+  `[${memory.id}] (${memory.scope} memory, ${memory.origin} origin, status ${memory.status}${describeMemoryValidity(memory)}, saved ${new Date(memory.createdAt).toISOString()} in run ${memory.source.runId}${memory.source.kind === 'tool' ? ` step ${memory.source.step}` : ''}, last used ${new Date(memory.lastUsedAt).toISOString()}) ${memory.text}`;
 
 const termsOf = (query: string): string[] => query.split(/\s+/).filter((term) => term !== '');
 
@@ -53,7 +44,12 @@ export const createMemoryTools = ({ port, trusted }: MemoryToolsOptions): AnyToo
       additionalProperties: false,
     },
     timeoutMs: MEMORY_TOOL_TIMEOUT_MS,
-    title: (input) => `Save a ${input.scope} memory`,
+    title: (input) =>
+      [
+        `Save a ${input.scope} memory`,
+        ...(input.supersedes === undefined || input.supersedes.length === 0 ? [] : [`replacing ${input.supersedes.join(', ')}`]),
+        ...(input.paths === undefined || input.paths.length === 0 ? [] : [`bound to ${input.paths.join(', ')}`]),
+      ].join(' '),
     subject: (input) => {
       if (input.text.trim() === '') throw new ToolInputError('text must contain more than whitespace');
       if (input.scope === 'project' && !trusted) {
@@ -62,7 +58,15 @@ export const createMemoryTools = ({ port, trusted }: MemoryToolsOptions): AnyToo
       if (redactor.text(input.text) !== input.text) {
         throw new ToolExecutionError('The memory was not saved because it looks like it contains a credential or secret. State the fact without the secret.');
       }
-      return { kind: 'memory', tool: MEMORY_SAVE_TOOL_NAME, scope: input.scope };
+      return {
+        kind: 'memory',
+        tool: MEMORY_SAVE_TOOL_NAME,
+        scope: input.scope,
+        text: input.text,
+        memoryKind: input.kind ?? DEFAULT_MEMORY_KIND,
+        paths: input.paths ?? [],
+        supersedes: input.supersedes ?? [],
+      };
     },
     reconcile: async () => ({ outcome: 'not_applied', output: '' }),
     execute: async (input, ctx) => {

@@ -37,6 +37,7 @@ const MEMORY: MemoryView = {
   state: 'active',
   duplicateOf: null,
   supersedes: [],
+  supersededBy: [],
   retiredAt: null,
   evidence: [],
   contributedAt: null,
@@ -70,7 +71,7 @@ describe('rule formats', () => {
   });
 
   it('says per fact when a fact is text-only in policy verify', () => {
-    const text = formatGovernanceVerification({ rules: [{ id: 'g1', behavior: 'deny', rule: 'Bash(rm:*)' }], textOnly: [fact('g2')] });
+    const text = formatGovernanceVerification({ rules: [{ id: 'g1', behavior: 'deny', rule: 'Bash(rm:*)' }], textOnly: [fact('g2')] }, true);
     expect(text).toContain('g1: verified as deny Bash(rm:*)');
     expect(text).toContain('g2: text-only, no guarantee');
   });

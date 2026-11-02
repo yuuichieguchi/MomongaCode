@@ -103,6 +103,7 @@ const MEMORY: MemoryView = {
   state: 'active',
   duplicateOf: null,
   supersedes: [],
+  supersededBy: [],
   retiredAt: null,
   evidence: [],
   contributedAt: null,

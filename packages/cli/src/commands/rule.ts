@@ -1,3 +1,4 @@
+import { InvalidArgumentError } from 'commander';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { GoverningEnforcement, GoverningKind } from '@momonga/protocol';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
@@ -25,8 +26,9 @@ const withRuntime = async <T>(ports: CliPorts, paths: MomongaPaths, use: (client
   }
 };
 
-export const ruleAdd = (ports: CliPorts, paths: MomongaPaths, target: string, text: string, options: RuleAddOptions): Promise<number> =>
-  withRuntime(ports, paths, async (client) => {
+export const ruleAdd = async (ports: CliPorts, paths: MomongaPaths, target: string, text: string, options: RuleAddOptions): Promise<number> => {
+  if (options.user && options.paths.length > 0) throw new InvalidArgumentError('--path applies to a rule of this folder, so it cannot be combined with --user');
+  return withRuntime(ports, paths, async (client) => {
     const response = await client.addRule({
       kind: options.kind,
       target,
@@ -39,6 +41,7 @@ export const ruleAdd = (ports: CliPorts, paths: MomongaPaths, target: string, te
     ports.stdout.write(`${options.json ? JSON.stringify(response) : formatRuleAdded(response)}\n`);
     return 0;
   });
+};
 
 export const ruleList = (ports: CliPorts, paths: MomongaPaths, json: boolean): Promise<number> =>
   withRuntime(ports, paths, async (client) => {

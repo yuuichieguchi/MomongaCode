@@ -106,6 +106,17 @@ describe('search', () => {
     expect(store.memories.search(VISIBLE, ['shared'], { include: 'all' }).map((entry) => entry.id).sort()).toEqual([older.id, newer.id, retired.id].sort());
   });
 
+  it('says on a replaced note which notes replaced it, and not on the one that replaced it', () => {
+    const { store, run } = started();
+    const older = save(store, run.id, 'c1', 'shared word');
+    const newer = save(store, run.id, 'c2', 'shared word again', { supersedes: [older.id] });
+    expect(store.memories.get(older.id)?.supersededBy).toEqual([newer.id]);
+    expect(store.memories.get(newer.id)?.supersededBy).toEqual([]);
+    expect(store.memories.search(VISIBLE, ['shared'], { include: 'all' }).map((entry) => [entry.id, entry.supersededBy])).toEqual(
+      expect.arrayContaining([[older.id, [newer.id]], [newer.id, []]]),
+    );
+  });
+
   it('keeps visibility with include all: another project stays hidden', () => {
     const { store, run } = started();
     save(store, run.id, 'c1', 'shared word', { project: '/work/b' });
@@ -121,5 +132,22 @@ describe('matchingIds', () => {
     const second = save(store, run.id, 'c2', 'about the sweeper');
     save(store, run.id, 'c3', 'nothing else');
     expect([...store.memories.matchingIds(VISIBLE, ['parser.ts', 'sweeper'])].sort()).toEqual([first.id, second.id].sort());
+  });
+
+  it('is not widened to almost every note by a one-letter word of the task', () => {
+    const { store, run } = started();
+    const wanted = save(store, run.id, 'c1', 'the bug lives in the sweeper');
+    save(store, run.id, 'c2', 'banana bread recipe');
+    save(store, run.id, 'c3', 'a gardening note');
+    expect([...store.memories.matchingIds(VISIBLE, ['fix', 'a', 'bug'])]).toEqual([wanted.id]);
+  });
+
+  it('still matches a short word when it is the whole query, and a two-character Japanese word beside others', () => {
+    const { store, run } = started();
+    const letter = save(store, run.id, 'c1', 'x marks the spot');
+    const japanese = save(store, run.id, 'c2', '設計の方針');
+    save(store, run.id, 'c3', 'unrelated');
+    expect([...store.memories.matchingIds(VISIBLE, ['x'])]).toEqual([letter.id]);
+    expect([...store.memories.matchingIds(VISIBLE, ['設計', 'parser'])]).toEqual([japanese.id]);
   });
 });

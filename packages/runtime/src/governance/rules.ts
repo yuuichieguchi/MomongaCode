@@ -35,8 +35,15 @@ export const enforcedFactsFor = (store: Pick<RuntimeStore, 'governing'>, clock: 
 export const governanceRulesOf = (facts: readonly EnforcedFact[], context: RuleParseContext): PermissionRule[] =>
   facts.map((fact) => parseGovernanceRule({ id: fact.id, behavior: fact.enforcement.behavior, rule: fact.enforcement.rule }, context));
 
-export const permissionRulesFor = async (sources: PermissionRuleSources, session: Session): Promise<PermissionRule[]> => {
-  const context = { home: sources.home, project: session.cwd };
-  const governing = governanceRulesOf(enforcedFactsFor(sources.store, sources.clock, session.cwd), context);
-  return [...(await sources.settings.rules(session)), ...governing];
+const governanceRulesFor = (sources: PermissionRuleSources, session: Session): PermissionRule[] =>
+  governanceRulesOf(enforcedFactsFor(sources.store, sources.clock, session.cwd), { home: sources.home, project: session.cwd });
+
+export const permissionRulesFor = async (sources: PermissionRuleSources, session: Session): Promise<PermissionRule[]> => [
+  ...(await sources.settings.rules(session)),
+  ...governanceRulesFor(sources, session),
+];
+
+export const permissionRulesComposerFor = async (sources: PermissionRuleSources, session: Session): Promise<() => PermissionRule[]> => {
+  const settingsRules = await sources.settings.rules(session);
+  return () => [...settingsRules, ...governanceRulesFor(sources, session)];
 };

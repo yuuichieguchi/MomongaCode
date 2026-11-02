@@ -9,6 +9,13 @@ export class EvidenceOutsideRootError extends Error {
   }
 }
 
+export class EvidenceUnreadableError extends Error {
+  constructor(target: string, options?: ErrorOptions) {
+    super(`${target} could not be read`, options);
+    this.name = 'EvidenceUnreadableError';
+  }
+}
+
 export type EvidencePorts = {
   hashFile(absolutePath: string): Promise<string | undefined>;
   isAncestor(sha: string): Promise<boolean | undefined>;
@@ -26,7 +33,7 @@ const fileFinding = async (entry: Extract<MemoryEvidence, { kind: 'file' }>, con
   try {
     hash = await context.ports.hashFile(resolved);
   } catch (error) {
-    if (error instanceof EvidenceOutsideRootError) return 'unchecked';
+    if (error instanceof EvidenceOutsideRootError || error instanceof EvidenceUnreadableError) return 'unchecked';
     throw error;
   }
   return hash === entry.sha256 ? 'matches' : 'contradicts';

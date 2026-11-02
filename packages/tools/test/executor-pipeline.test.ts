@@ -210,6 +210,19 @@ describe('executor pipeline early exits', () => {
     expect(outcome.suggestedRule).toBeUndefined();
   });
 
+  it('offers no suggested rule on an ask from a governing fact, because an allow rule could never lift it', async () => {
+    const harness = makeHarness();
+    const subject = { kind: 'command' as const, tool: 'Bash', command: 'make build' };
+    const tool = makeTool('Bash', { ...BASH, subject: () => subject });
+    const governing = { ...ruleFor(harness.layout)('ask', 'Bash(make build)'), layer: 'governance' as const };
+    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Bash')], { rules: [governing] }));
+    if (outcome?.kind !== 'needs_approval') throw new Error('expected needs_approval');
+    expect(outcome.decision).toMatchObject({ kind: 'ask', source: 'rule', humanOnly: true });
+    expect(outcome).not.toHaveProperty('suggestedRule');
+    const settings = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c2', 'Bash')], { rules: [ruleFor(harness.layout)('ask', 'Bash(make build)')] }));
+    expect(settings[0]).toMatchObject({ kind: 'needs_approval', suggestedRule: 'Bash(make build)' });
+  });
+
   it('proceeds on ask when the call carries an approval', async () => {
     const harness = makeHarness();
     const probe = counting();

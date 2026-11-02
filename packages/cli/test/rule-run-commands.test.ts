@@ -43,6 +43,7 @@ const memory = (id: string, overrides: Partial<MemoryView> = {}): MemoryView => 
   state: 'active',
   duplicateOf: null,
   supersedes: [],
+  supersededBy: [],
   retiredAt: null,
   evidence: [],
   contributedAt: null,
@@ -124,6 +125,12 @@ describe('momonga rule', () => {
     expect(out.join('')).toContain('warning: overlaps g0');
   });
 
+  it('refuses --path together with --user, sending nothing, because a rule for every folder has no folder to take paths from', async (context) => {
+    const { paths, ports, seen } = await setup(context, () => ({ status: 201, body: { fact: fact('g1'), size: [], warnings: [] } }));
+    await expect(ruleAdd(ports, paths, 'tabs', 'use tabs', { kind: 'constraint', user: true, paths: ['src/**'], enforcement: null, supersedes: [], json: false })).rejects.toThrow('--path');
+    expect(seen).toEqual([]);
+  });
+
   it('adds a user rule with no project', async (context) => {
     const { paths, ports, seen } = await setup(context, () => ({ status: 201, body: { fact: fact('g1'), size: [], warnings: [] } }));
     await ruleAdd(ports, paths, 'tabs', 'use tabs', { kind: 'constraint', user: true, paths: [], enforcement: null, supersedes: [], until: 86_400_000, json: true });
@@ -157,13 +164,14 @@ describe('momonga memory history', () => {
   it('prints the chain with the status and validity of each note', async (context) => {
     const { paths, ports, seen, out } = await setup(context, () => ({
       status: 200,
-      body: { memories: [memory('m1', { status: 'stale', retiredAt: 86_400_000 }), memory('m2', { supersedes: ['m1'] })] },
+      body: { memories: [memory('m1', { status: 'stale', retiredAt: 86_400_000, supersededBy: ['m2'] }), memory('m2', { supersedes: ['m1'] })] },
     }));
     expect(await memoryHistory(ports, paths, 'm1', false)).toBe(0);
     expect(seen.map((entry) => entry.url)).toEqual(['/v1/memories/m1/history']);
     const lines = out.join('').split('\n');
     expect(lines[0]).toContain('m1  stale');
     expect(lines[0]).toContain('retired 1970-01-02T00:00:00.000Z');
+    expect(lines[0]).toContain('superseded by m2');
     expect(lines[1]).toContain('m2  unbound');
     expect(lines[1]).toContain('supersedes m1');
   });
@@ -172,14 +180,14 @@ describe('momonga memory history', () => {
 describe('momonga policy verify', () => {
   const governance: PolicyGovernanceResponse = { rules: [{ id: 'g1', behavior: 'ask', rule: 'Bash(git push:*)' }], textOnly: [fact('g2')] };
 
-  const hostCapturing = () => {
+  const hostCapturing = (exitCode = 0, status = 'proved') => {
     const requests: { rules: { text: string; effect: string; layer?: string }[] }[] = [];
     const host = {
       loadVerifier: async () => ({
         secretLocationsOf: () => [],
         verifyPermissions: async (_api: unknown, request: { rules: { text: string; effect: string; layer?: string }[] }) => {
           requests.push(request);
-          return { exitCode: 0, status: 'proved' };
+          return { exitCode, status };
         },
         formatReport: () => 'verification report',
       }),
@@ -201,6 +209,18 @@ describe('momonga policy verify', () => {
     expect(out.join('')).toContain('g1: verified as ask Bash(git push:*)');
     expect(out.join('')).toContain('g2: text-only, no guarantee');
   });
+
+  for (const status of ['refuted', 'unknown']) {
+    it(`does not claim a rule was verified when the report says ${status}`, async (context) => {
+      const { paths, ports, out } = await setup(context, ({ url }) =>
+        url.startsWith('/v1/trust') ? { status: 200, body: { trust: { path: 'x', decision: 'trusted' } } } : { status: 200, body: governance },
+      );
+      const { host } = hostCapturing(1, status);
+      expect(await policyVerify(ports, paths, host, { json: false, secrets: [] })).toBe(1);
+      expect(out.join('')).toContain('g1: included in the verification as ask Bash(git push:*), which did not prove');
+      expect(out.join('')).not.toContain('verified as');
+    });
+  }
 
   it('adds the governance answer to the JSON report only when there is one', async (context) => {
     const { paths, ports, out } = await setup(context, ({ url }) =>

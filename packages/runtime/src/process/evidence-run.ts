@@ -2,7 +2,8 @@ import { canonicalDirectory, protectedSetFor } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
 import type { PolicyPorts } from '@momonga/policy';
-import type { Sandbox } from '@momonga/sandbox';
+import { SandboxPolicyError } from '@momonga/sandbox';
+import type { Sandbox, SandboxedProcess } from '@momonga/sandbox';
 import { buildSandboxPolicy, readOnlyEnvironment, readOnlySandboxPolicy } from '@momonga/tools';
 import type { EvidenceRun } from '../memory/evidence.ts';
 
@@ -25,19 +26,25 @@ export const createEvidenceRunner =
   (project: string): EvidenceRun =>
   async (command, signal) => {
     const root = canonicalDirectory(project);
-    if (!root.ok) throw new Error(`the evidence project ${project} ${root.reason}`);
+    if (!root.ok) return { exitCode: null };
     const roots = [root.path];
-    const policy = readOnlySandboxPolicy(
-      buildSandboxPolicy({
-        roots: [],
-        home,
-        sessionsTmpRoot: paths.tmp.sessions,
-        fileRules: computeFileRules([], roots, null),
-        protectedSet: protectedSetFor(roots, fs),
-        network: command.network,
-      }),
-    );
-    const child = sandbox.spawn({ argv: command.argv, cwd: command.cwd, env: readOnlyEnvironment({ ...env, ...command.env }) }, policy, signal);
+    let child: SandboxedProcess;
+    try {
+      const policy = readOnlySandboxPolicy(
+        buildSandboxPolicy({
+          roots: [],
+          home,
+          sessionsTmpRoot: paths.tmp.sessions,
+          fileRules: computeFileRules([], roots, null),
+          protectedSet: protectedSetFor(roots, fs),
+          network: command.network,
+        }),
+      );
+      child = sandbox.spawn({ argv: command.argv, cwd: command.cwd, env: readOnlyEnvironment({ ...env, ...command.env }) }, policy, signal);
+    } catch (error) {
+      if (error instanceof SandboxPolicyError) return { exitCode: null };
+      throw error;
+    }
     const [stdout, , exit] = await Promise.all([textOf(child.stdout), textOf(child.stderr), child.exited]);
     return { exitCode: exit.code, stdout };
   };

@@ -60,7 +60,7 @@ const classifiedWithoutDigest = { type: 'tool.permission.classified', callId: 'c
 describe('snapshot state version 11', () => {
   it('writes stateVersion 11', () => {
     const { storedJson } = storedSnapshot();
-    expect(storedJson()['stateVersion']).toBe(11);
+    expect(storedJson()['stateVersion']).toBe(12);
   });
 
   it('reports a snapshot without the working facts as corrupt', () => {

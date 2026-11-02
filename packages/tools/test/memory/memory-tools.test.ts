@@ -20,6 +20,7 @@ const viewOf = (overrides: Partial<MemoryView> = {}): MemoryView => ({
   state: 'active',
   duplicateOf: null,
   supersedes: [],
+  supersededBy: [],
   retiredAt: null,
   evidence: [],
   contributedAt: null,
@@ -167,6 +168,16 @@ describe('memory tools', () => {
     );
   });
 
+  it('marks a note that was replaced, so a model that asks for all notes does not rely on it', async () => {
+    const harness = makeHarness();
+    const replaced = viewOf({ id: 'mem-old', supersededBy: ['mem-new'] });
+    const [outcome] = await harness.executor.runBatch(
+      harness.input(await toolSet(fakePort([replaced]).port), [call('c1', MEMORY_SEARCH_TOOL_NAME, { query: 'tabs', include: 'all' })]),
+    );
+    const output = outcome?.kind === 'result' ? outcome.result.output : '';
+    expect(output).toContain('status unbound, superseded by mem-new, saved');
+  });
+
   it('passes kind, paths and supersedes to the port only when the model gave them', async () => {
     const { port, saved } = fakePort();
     const harness = makeHarness();
@@ -176,6 +187,43 @@ describe('memory tools', () => {
       ]),
     );
     expect(saved).toEqual([{ scope: 'project', text: 'parser lives in src/parser.ts', runId: 'run-1', step: 1, callId: 'c1', signal: expect.any(AbortSignal), kind: 'fact', paths: ['src/parser.ts'], supersedes: ['mem-9'] }]);
+  });
+
+  describe('what the approver sees of a MemorySave', () => {
+    const saveTool = () => {
+      const tool = createMemoryTools({ port: fakePort().port, trusted: true }).find((candidate) => candidate.name === MEMORY_SAVE_TOOL_NAME);
+      if (tool === undefined) throw new Error('MemorySave is missing');
+      return tool;
+    };
+    const subjectCtx = { cwd: '/work', roots: ['/work'] } as never;
+
+    it('names the notes it replaces and the paths it binds in the title', () => {
+      const title = saveTool().title({ text: 'x', scope: 'user', supersedes: ['mem-1', 'mem-2'], paths: ['src/a.ts'] });
+      expect(title).toBe('Save a user memory replacing mem-1, mem-2 bound to src/a.ts');
+      expect(saveTool().title({ text: 'x', scope: 'project' })).toBe('Save a project memory');
+    });
+
+    it('puts text, kind, paths and supersedes in the subject, so the digest covers everything later sessions see', () => {
+      const input = { text: 'prefers tabs', scope: 'user', kind: 'procedure', supersedes: ['mem-1'], paths: ['src/a.ts'] };
+      expect(saveTool().subject(input, subjectCtx)).toEqual({
+        kind: 'memory',
+        tool: MEMORY_SAVE_TOOL_NAME,
+        scope: 'user',
+        text: 'prefers tabs',
+        memoryKind: 'procedure',
+        paths: ['src/a.ts'],
+        supersedes: ['mem-1'],
+      });
+      expect(saveTool().subject({ text: 'a', scope: 'user' }, subjectCtx)).toEqual({
+        kind: 'memory',
+        tool: MEMORY_SAVE_TOOL_NAME,
+        scope: 'user',
+        text: 'a',
+        memoryKind: 'fact',
+        paths: [],
+        supersedes: [],
+      });
+    });
   });
 
   it('caps the matches it shows and says how many were left out', async () => {

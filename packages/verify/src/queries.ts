@@ -90,7 +90,7 @@ export const probe = async (
   if (result.status === 'unknown') return { status: 'unknown', reason: result.reason };
   if (witness === undefined) throw new Error('the solver found a model without a witness');
   const predicted = kindOf(result.readBool, outcome);
-  const replay = await replayWitness(env, tool, witness, { kind: predicted, dependsOnDefault: result.readBool(outcome.byDefault) });
+  const replay = await replayWitness(env, tool, witness, { kind: predicted, dependsOnDefault: result.readBool(outcome.byDefault), viaPaths: result.readBool(outcome.viaPaths) });
   const counterexample: Counterexample = { witness, predicted, cause: causeOf(subject, outcome, predicted, result.readBool, env.mode), replay };
   if (isMismatch(replay)) mismatches.push({ property, subject: subjectName, counterexample });
   return { status: 'found', counterexample };
@@ -103,7 +103,7 @@ export const predictDecision = async (context: QueryContext, tool: SubjectTool, 
   const result = await solveWithinBudget(context, [...subject.domain, ...subject.bind(witness)]);
   if (result.status === 'unsat') return undefined;
   if (result.status === 'unknown') throw new Error(`the solver could not evaluate the model: ${result.reason}`);
-  return { kind: kindOf(result.readBool, outcome), dependsOnDefault: result.readBool(outcome.byDefault) };
+  return { kind: kindOf(result.readBool, outcome), dependsOnDefault: result.readBool(outcome.byDefault), viaPaths: result.readBool(outcome.viaPaths) };
 };
 
 export const termsOf = (context: QueryContext, tool: SubjectTool): readonly RuleTerms[] => (context.subjects.get(tool) as SubjectModel).terms;

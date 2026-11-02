@@ -141,6 +141,39 @@ describe('MemorySave in a run', () => {
     expect(env.store.memories.list()).toEqual([]);
   });
 
+  describe('a note may only replace a note of its own scope and project, saved at an origin no higher than its own', () => {
+    const saveOnce = async (env: Env, id: string, args: Record<string, unknown>, trusted: boolean) => {
+      env.settings.trustedValue = trusted;
+      env.gateway.script.push(callsStep([{ callId: `call_${id}`, name: 'MemorySave', args }]), textStep('Done.'));
+      const run = env.enqueue(`Remember ${id}`, { history: 'fresh' });
+      await env.runOnce(env.worker(`w-${id}`, { memories: createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: () => gitRun([]) }) }));
+      return run;
+    };
+
+    it('refuses an untrusted folder replacing a trusted user note, leaving the old note recalled', async () => {
+      const env = await makeEnv({ mode: 'bypassPermissions' });
+      await saveOnce(env, 'a', { text: 'trusted user note', scope: 'user' }, true);
+      const [older] = env.store.memories.list();
+      const run = await saveOnce(env, 'b', { text: 'hostile replacement', scope: 'user', supersedes: [older?.id] }, false);
+      const completed = env.ofType(run.id, 'tool.completed')[0];
+      expect(completed?.status).toBe('failed');
+      expect(completed?.output).toContain(`${older?.id} is not a saved memory you can replace`);
+      expect(env.store.memories.list().map((memory) => memory.text)).toEqual(['trusted user note']);
+    });
+
+    it('refuses a user note replacing a project note, and a project note replacing a user note', async () => {
+      const env = await makeEnv({ mode: 'bypassPermissions' });
+      await saveOnce(env, 'a', { text: 'project note', scope: 'project' }, true);
+      await saveOnce(env, 'b', { text: 'user note', scope: 'user' }, true);
+      const [project, user] = env.store.memories.list();
+      const first = await saveOnce(env, 'c', { text: 'x', scope: 'user', supersedes: [project?.id] }, true);
+      const second = await saveOnce(env, 'd', { text: 'y', scope: 'project', supersedes: [user?.id] }, true);
+      expect(env.ofType(first.id, 'tool.completed')[0]?.status).toBe('failed');
+      expect(env.ofType(second.id, 'tool.completed')[0]?.status).toBe('failed');
+      expect(env.store.memories.list()).toHaveLength(2);
+    });
+  });
+
   it('fails the call when the note replaces a memory that is not saved', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.gateway.script.push(savePaths([], { supersedes: ['absent'] }), textStep('Refused.'));

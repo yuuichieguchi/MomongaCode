@@ -1,5 +1,5 @@
 import { agentSystemPrompt, readAgentPin } from '@momonga/agents';
-import { permissionRulesFor } from '../governance/rules.ts';
+import { permissionRulesComposerFor } from '../governance/rules.ts';
 import { signalUntil } from '../memory/deadline-signal.ts';
 import { createTokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex } from '@momonga/foundation';
@@ -306,7 +306,7 @@ const drive = async (
   }
 
   const limits = readRunLimits(run.limits, options.defaults);
-  const rules = await permissionRulesFor(options, session);
+  const composeRules = await permissionRulesComposerFor(options, session);
   let measuredInlineLimit: Promise<number> | undefined;
   const ctx: ClaimContext = {
     options,
@@ -320,7 +320,7 @@ const drive = async (
     recalled,
     usedMemoryIds: new Set<string>(),
     env,
-    functionTools: () => toolSet.forModel({ mode: session.permissionMode, rules }),
+    functionTools: () => toolSet.forModel({ mode: session.permissionMode, rules: composeRules() }),
     systemPrompt,
     inlineLimitForReconcile: inlineOutputLimitFor(pins.capabilities),
     inlineLimitForExecution: () => {

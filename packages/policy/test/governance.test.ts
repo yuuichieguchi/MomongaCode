@@ -89,6 +89,39 @@ describe('a governance rule', () => {
     expect(decideWith(layout, BASH, RM, 'bypassPermissions', rules)).toMatchObject({ kind: 'ask', humanOnly: true });
   });
 
+  describe('on a path the command builds at run time', () => {
+    const DYNAMIC: PermissionSubject = { kind: 'command', tool: 'Bash', command: 'cat $(echo secrets/key)' };
+
+    it.each(PERMISSION_MODES.filter((mode) => mode !== 'plan'))('asks a person in %s mode, because the rule cannot be matched against a path that is not known', (mode) => {
+      const layout = makeLayout();
+      const decision = decideWith(layout, BASH, DYNAMIC, mode, [governed(layout, 'ask', 'Read(secrets/**)')]);
+      expect(decision).toMatchObject({ kind: 'ask', humanOnly: true });
+    });
+
+    it('asks a person in plan mode too', () => {
+      const layout = makeLayout();
+      expect(decideWith(layout, BASH, DYNAMIC, 'plan', [governed(layout, 'ask', 'Read(secrets/**)')]).kind).not.toBe('allow');
+    });
+
+    it('holds for a deny rule as well, in bypass', () => {
+      const layout = makeLayout();
+      expect(decideWith(layout, BASH, DYNAMIC, 'bypassPermissions', [governed(layout, 'deny', 'Read(secrets/**)')])).toMatchObject({ kind: 'ask', humanOnly: true });
+    });
+
+    it('stays as before when no governing rule covers reading, in bypass', () => {
+      const layout = makeLayout();
+      expect(decideWith(layout, BASH, DYNAMIC, 'bypassPermissions', [ruleIn(layout)('ask', 'Read(secrets/**)')]).kind).toBe('allow');
+      expect(decideWith(layout, BASH, DYNAMIC, 'bypassPermissions', [governed(layout, 'ask', 'Bash(rm:*)')]).kind).toBe('allow');
+    });
+
+    it('is not a human-only question when only the settings hold the rule, so a hook or the classifier may still answer it', () => {
+      const layout = makeLayout();
+      const decision = decideWith(layout, BASH, DYNAMIC, 'default', [ruleIn(layout)('ask', 'Read(secrets/**)')]);
+      expect(decision.kind).toBe('ask');
+      expect(decision.humanOnly).toBeUndefined();
+    });
+  });
+
   it('leaves a settings ask overridable by bypass, as before', () => {
     const layout = makeLayout();
     const decision = decideWith(layout, BASH, RM, 'bypassPermissions', [ruleIn(layout)('ask', 'Bash(rm:*)')]);

@@ -104,7 +104,7 @@ describe('MemoryView schema additions', () => {
     { kind: 'commit', sha: 'd818eb5' },
     { kind: 'check', runId: 'r1', callId: 'c1', seq: 5, command: 'npm test', exitCode: 0 },
   ];
-  const stored = { ...view, kind: 'fact', state: 'active', duplicateOf: null, supersedes: ['m0'], retiredAt: null, evidence, contributedAt: null };
+  const stored = { ...view, kind: 'fact', state: 'active', duplicateOf: null, supersedes: ['m0'], supersededBy: [], retiredAt: null, evidence, contributedAt: null };
   const full = { ...stored, status: 'verified' };
 
   it('accepts a view with the fields of the design', () => {
@@ -116,7 +116,7 @@ describe('MemoryView schema additions', () => {
     expect(acceptsMemory(stored)).toBe(false);
   });
 
-  it.each(['kind', 'state', 'duplicateOf', 'supersedes', 'retiredAt', 'contributedAt', 'evidence', 'status'])('requires %s', (field) => {
+  it.each(['kind', 'state', 'duplicateOf', 'supersedes', 'supersededBy', 'retiredAt', 'contributedAt', 'evidence', 'status'])('requires %s', (field) => {
     expect(acceptsMemory(full)).toBe(true);
     const { [field]: _removed, ...without } = full as Record<string, unknown>;
     expect(acceptsMemory(without)).toBe(false);

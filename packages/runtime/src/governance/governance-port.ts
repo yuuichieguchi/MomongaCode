@@ -14,8 +14,15 @@ export type GovernancePortOptions = {
 
 export const createGovernancePort = ({ store, settings }: GovernancePortOptions): GovernancePort => ({
   load: (session) => {
+    const find = (runId: string, callId: string): { factId: string } | undefined => {
+      const recorded = store.governing.list().find((fact) => fact.source.kind === 'proposal' && fact.source.runId === runId && fact.source.callId === callId);
+      return recorded === undefined ? undefined : { factId: recorded.id };
+    };
     const toolPort: GovernanceToolPort = {
+      find,
       propose: (request) => {
+        const replayed = find(request.runId, request.callId);
+        if (replayed !== undefined) return { factId: replayed.factId, created: false };
         const scope: GoverningFactView['scope'] = request.scope === 'user' ? { level: 'user' } : { level: 'project', project: session.cwd, paths: request.paths ?? [] };
         const target = normalizeTarget(request.target);
         const enforcement = request.enforcement ?? null;

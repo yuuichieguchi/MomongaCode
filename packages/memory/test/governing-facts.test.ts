@@ -46,6 +46,35 @@ describe('checkGoverningFact', () => {
     expect(checkGoverningFact(fact('new', { supersedes: ['old'] }), { existing: [old], parses })).toMatchObject({ ok: false, code: 'supersedes_outside_group' });
   });
 
+  describe('a repeat of a fact that is already live', () => {
+    const repeat = fact('new', { text: 'Never use pandas.' });
+
+    it('is refused with the id of the live fact, because two identical facts would form a permanent conflict', () => {
+      const result = checkGoverningFact(repeat, { existing: [fact('old', { text: 'Never use pandas.' })], parses });
+      expect(result).toMatchObject({ ok: false, code: 'duplicate_live_fact' });
+      expect(result.ok ? '' : result.message).toContain('old');
+    });
+
+    it.each<[string, GoverningFactView[]]>([
+      ['another text', [fact('old', { text: 'Prefer polars.' })]],
+      ['another scope', [fact('old', { text: 'Never use pandas.', scope: { level: 'user' } })]],
+      ['another target', [fact('old', { text: 'Never use pandas.', target: 'numpy' })]],
+      ['a retired fact', [fact('old', { text: 'Never use pandas.', retiredAt: 5 })]],
+      ['a fact another one replaced', [fact('old', { text: 'Never use pandas.' }), fact('mid', { supersedes: ['old'], text: 'Different.' })]],
+    ])('is accepted against %s', (_name, existing) => {
+      expect(checkGoverningFact(repeat, { existing, parses })).toEqual({ ok: true });
+    });
+
+    it('is accepted when it replaces the identical fact', () => {
+      expect(checkGoverningFact(fact('new', { text: 'Never use pandas.', supersedes: ['old'] }), { existing: [fact('old', { text: 'Never use pandas.' })], parses })).toEqual({ ok: true });
+    });
+  });
+
+  it.each(['/abs/legacy/**', '/legacy/*.ts'])('refuses the absolute glob %s, which could never match a path relative to the project', (glob) => {
+    const result = checkGoverningFact(fact('new', { scope: { level: 'project', project: '/work/a', paths: [glob] } }), { existing: [], parses });
+    expect(result).toMatchObject({ ok: false, code: 'absolute_path_glob' });
+  });
+
   it('refuses a supersedes entry that does not exist', () => {
     expect(checkGoverningFact(fact('new', { supersedes: ['absent'] }), { existing: [], parses })).toMatchObject({ ok: false, code: 'supersedes_outside_group' });
   });

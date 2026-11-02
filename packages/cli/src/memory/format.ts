@@ -1,3 +1,4 @@
+import { describeMemoryValidity } from '@momonga/protocol';
 import type { MemoryView } from '@momonga/protocol';
 
 const firstLine = (text: string): string => text.split('\n')[0] ?? '';
@@ -11,19 +12,10 @@ export const formatMemoryList = (memories: readonly MemoryView[]): string =>
 
 const iso = (ms: number): string => new Date(ms).toISOString();
 
-const validityOf = (memory: MemoryView): string =>
-  [
-    ...(memory.state === 'active' ? [] : [`state ${memory.state}`]),
-    ...(memory.retiredAt === null ? [] : [`retired ${iso(memory.retiredAt)}`]),
-    ...(memory.supersedes.length === 0 ? [] : [`supersedes ${memory.supersedes.join(' ')}`]),
-  ]
-    .map((part) => `, ${part}`)
-    .join('');
-
 export const formatMemoryHistory = (memories: readonly MemoryView[]): string =>
   memories.length === 0
     ? 'no memories'
-    : memories.map((memory) => `${memory.id}  ${memory.status}  saved ${iso(memory.createdAt)}${validityOf(memory)}  ${firstLine(memory.text)}`).join('\n');
+    : memories.map((memory) => `${memory.id}  ${memory.status}  saved ${iso(memory.createdAt)}${describeMemoryValidity(memory)}  ${firstLine(memory.text)}`).join('\n');
 
 const evidenceLine = (entry: MemoryView['evidence'][number]): string => {
   switch (entry.kind) {

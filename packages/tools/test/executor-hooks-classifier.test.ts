@@ -145,6 +145,45 @@ describe('questions only a person may answer: protected writes and removal of th
     expect(executed).toEqual([]);
   });
 
+  describe('a command that reaches a path a governing fact asks about, by a name built at run time', () => {
+    const DYNAMIC = 'cat $(echo secrets/key)';
+
+    const governingAsk = (harness: ReturnType<typeof makeHarness>) => [{ ...ruleFor(harness.layout)('ask', 'Read(secrets/**)'), layer: 'governance' as const }];
+
+    const options = (harness: ReturnType<typeof makeHarness>) => ({
+      rules: governingAsk(harness),
+      tmpDir: sessionTmpDirOf(harness.layout),
+      sandboxPolicy: policyFor({ layout: harness.layout, rules: governingAsk(harness) }),
+    });
+
+    it('still asks a person in bypass mode', async () => {
+      const harness = makeHarness();
+      const executed: string[] = [];
+      const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(commandTool(DYNAMIC, executed)), [call('c1', 'Bash')], { mode: 'bypassPermissions', ...options(harness) }));
+      expect(outcome).toMatchObject({ kind: 'needs_approval', decision: { kind: 'ask', humanOnly: true } });
+      expect(executed).toEqual([]);
+    });
+
+    it('is not resolved by a hook allow', async () => {
+      const harness = makeHarness();
+      const executed: string[] = [];
+      const { hooks } = fakeHooks({ decision: 'allow', reason: 'fine' });
+      const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(commandTool(DYNAMIC, executed)), [call('c1', 'Bash')], { hooks, ...options(harness) }));
+      expect(outcome).toMatchObject({ kind: 'needs_approval' });
+      expect(executed).toEqual([]);
+    });
+
+    it('never goes to the auto classifier', async () => {
+      const harness = makeHarness();
+      const executed: string[] = [];
+      const { classifier, requests } = fakeClassifier('allow');
+      const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(commandTool(DYNAMIC, executed)), [call('c1', 'Bash')], { mode: 'auto', classifier, ...options(harness) }));
+      expect(outcome).toMatchObject({ kind: 'needs_approval' });
+      expect(requests).toEqual([]);
+      expect(executed).toEqual([]);
+    });
+  });
+
   it('still lets a hook allow resolve an ordinary mode ask', async () => {
     const harness = makeHarness();
     const executed: string[] = [];

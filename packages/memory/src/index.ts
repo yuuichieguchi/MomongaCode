@@ -1,6 +1,6 @@
 export { checkGoverningFact, normalizeTarget, overlappingEnforced, ruleSizeReport } from './governing-facts.ts';
 export type { GoverningFactCheck, GoverningFactRefusalCode, RuleSizeEntry, RuleSizeTarget } from './governing-facts.ts';
-export { EvidenceOutsideRootError, memoryStatus } from './memory-status.ts';
+export { EvidenceOutsideRootError, EvidenceUnreadableError, memoryStatus } from './memory-status.ts';
 export type { EvidencePorts, MemoryStatusContext } from './memory-status.ts';
 export { recallOrder } from './recall-order.ts';
 export { resolveGoverning, scopeKeyOf } from './resolve-governing.ts';

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EvidenceOutsideRootError, memoryStatus } from '@momonga/memory';
+import { EvidenceOutsideRootError, EvidenceUnreadableError, memoryStatus } from '@momonga/memory';
 import type { EvidencePorts } from '@momonga/memory';
 import type { MemoryEvidence } from '@momonga/protocol';
 
@@ -59,6 +59,26 @@ describe('memoryStatus', () => {
       isAncestor: async () => true,
     };
     await expect(statusOf([file('link')], ports)).resolves.toBe('unverifiable');
+  });
+
+  it('is unverifiable when the file cannot be read, and never fails the read', async () => {
+    const ports: EvidencePorts = {
+      hashFile: async (target) => {
+        throw new EvidenceUnreadableError(target);
+      },
+      isAncestor: async () => true,
+    };
+    await expect(statusOf([file('a.ts')], ports)).resolves.toBe('unverifiable');
+  });
+
+  it('rethrows a failure that is not about the evidence, because that is a defect', async () => {
+    const ports: EvidencePorts = {
+      hashFile: async () => {
+        throw new TypeError('a defect');
+      },
+      isAncestor: async () => true,
+    };
+    await expect(statusOf([file('a.ts')], ports)).rejects.toThrow('a defect');
   });
 
   it('lets a contradiction outrank an entry that cannot be checked', async () => {

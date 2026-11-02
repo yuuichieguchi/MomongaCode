@@ -61,9 +61,9 @@ const byRule = (kind: DecisionKind, rule: PermissionRule, verb: string): Decisio
 
 const byMode = (kind: DecisionKind, reason: string, basis: ApprovalBasis = 'mode'): Decision => ({ kind, source: 'mode', reason, ...basisOf(kind, basis) });
 
-const isGoverning = (rule: PermissionRule): boolean => rule.layer === 'governance';
+export const isGoverningRule = (rule: PermissionRule): boolean => rule.layer === 'governance';
 
-const askByRule = (rule: PermissionRule, verb: string): Decision => ({ ...byRule('ask', rule, verb), ...(isGoverning(rule) ? { humanOnly: true as const } : {}) });
+const askByRule = (rule: PermissionRule, verb: string): Decision => ({ ...byRule('ask', rule, verb), ...(isGoverningRule(rule) ? { humanOnly: true as const } : {}) });
 
 const isEmptySet = (set: ProtectedSet): boolean =>
   set.paths.length === 0 && set.lexicalPaths.length === 0 && set.literals.length === 0 && set.names.length === 0 && set.patterns.entries.length === 0;
@@ -94,7 +94,7 @@ const scanDeny = (input: DecideInput, subject: PermissionSubject, applicable: Ap
     .map(({ rule, ruleIndex }) => ({ rule, strength: matchStrength(rule, subject, input.fileRules, ruleIndex) }));
   const position = hits.find((hit) => hit.strength === 'position');
   const incidentals = hits.filter((hit) => hit.strength === 'incidental');
-  const incidental = incidentals.find((hit) => isGoverning(hit.rule)) ?? incidentals[0];
+  const incidental = incidentals.find((hit) => isGoverningRule(hit.rule)) ?? incidentals[0];
   const denied =
     position !== undefined
       ? byRule('deny', position.rule, 'denied')
@@ -167,7 +167,7 @@ const decideSubject = (input: DecideInput, tool: PolicyTool, subject: Permission
   if (guarded !== undefined) return guarded;
 
   const askRules = applicable.filter(({ rule, ruleIndex }) => rule.effect === 'ask' && matchRule(rule, subject, fileRules, ruleIndex));
-  const governingAsk = askRules.find(({ rule }) => isGoverning(rule));
+  const governingAsk = askRules.find(({ rule }) => isGoverningRule(rule));
   if (governingAsk !== undefined) return askByRule(governingAsk.rule, 'approval required');
   const asked = askRules[0];
   if (asked !== undefined) {
@@ -244,12 +244,14 @@ const decidePathAccess = (input: DecideInput, plan: PathPlan, tool: PolicyTool, 
     const guard = checkGuards(input, { kind: 'path', tool: tool.name, paths: plan.candidates, access });
     if (guard !== undefined) decisions.push(guard);
   }
-  if (input.mode === 'bypassPermissions') return decisions;
+  const governed = applicableRules(input, { kind: 'path', tool: tool.name, paths: [], access }).some(({ rule }) => isGoverningRule(rule));
+  if (input.mode === 'bypassPermissions' && !governed) return decisions;
+  const asked = (decision: Decision): Decision => (governed ? { ...decision, humanOnly: true } : decision);
   if (plan.unresolvable.length > 0) {
     const kinds = [...new Set(plan.unresolvable.map(describeReason))].join(', ');
-    decisions.push(byMode('ask', `the command accesses a path that cannot be determined statically (${kinds})`));
+    decisions.push(asked(byMode('ask', `the command accesses a path that cannot be determined statically (${kinds})`)));
   }
-  if (plan.needsApproval) decisions.push(byMode('ask', 'a redirect target starting with ~ requires approval'));
+  if (plan.needsApproval) decisions.push(asked(byMode('ask', 'a redirect target starting with ~ requires approval')));
   return decisions;
 };
 

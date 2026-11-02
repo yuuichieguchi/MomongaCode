@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
-import { createUnsandboxed } from '@momonga/sandbox';
+import { SandboxPolicyError, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxCommand, SandboxPolicy } from '@momonga/sandbox';
 import { fakePolicyFilesystem, withTempDir } from '@momonga/testkit';
 import { createEvidenceRunner } from '../../src/process/evidence-run.ts';
@@ -114,12 +114,36 @@ describe('the evidence runner', () => {
     expect(gone(pids[0] ?? 0)).toBe(true);
   });
 
-  it('refuses a project that is not a folder', async (context) => {
+  it('answers that a project that is not a folder cannot be checked, and starts nothing', async (context) => {
     const home = withTempDir(context, { asHome: true });
     const paths = momongaPaths(home);
     await ensureMomongaDirs(paths);
-    const { sandbox } = sandboxAnswering('', 0);
+    const { sandbox, spawned } = sandboxAnswering('', 0);
     const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandbox, env: {} })('/no/such/project');
-    await expect(run({ argv: ['git', 'status'], cwd: '/no/such/project', env: {}, network: 'deny' }, new AbortController().signal)).rejects.toThrow('/no/such/project');
+    await expect(run({ argv: ['git', 'status'], cwd: '/no/such/project', env: {}, network: 'deny' }, new AbortController().signal)).resolves.toEqual({ exitCode: null });
+    expect(spawned).toEqual([]);
+  });
+
+  it('answers that a command the sandbox refuses cannot be checked, but lets any other failure through', async (context) => {
+    const home = withTempDir(context, { asHome: true });
+    const paths = momongaPaths(home);
+    await ensureMomongaDirs(paths);
+    const project = fs.realpathSync(withTempDir(context));
+    const refusing: Sandbox = {
+      kind: 'none',
+      spawn: () => {
+        throw new SandboxPolicyError('writable_root_not_absolute', 'refused');
+      },
+    };
+    const broken: Sandbox = {
+      kind: 'none',
+      spawn: () => {
+        throw new TypeError('a defect');
+      },
+    };
+    const command = { argv: ['git', 'status'], cwd: project, env: {}, network: 'deny' as const };
+    const signal = new AbortController().signal;
+    await expect(createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandbox: refusing, env: {} })(project)(command, signal)).resolves.toEqual({ exitCode: null });
+    await expect(createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandbox: broken, env: {} })(project)(command, signal)).rejects.toThrow('a defect');
   });
 });

@@ -1,7 +1,14 @@
+import path from 'node:path';
 import type { GoverningFactView } from '@momonga/protocol';
 import { scopeKeyOf } from './resolve-governing.ts';
 
-export type GoverningFactRefusalCode = 'empty_target' | 'allow_enforcement' | 'invalid_rule' | 'supersedes_outside_group';
+export type GoverningFactRefusalCode =
+  | 'empty_target'
+  | 'allow_enforcement'
+  | 'invalid_rule'
+  | 'supersedes_outside_group'
+  | 'duplicate_live_fact'
+  | 'absolute_path_glob';
 
 export type GoverningFactCheck = { ok: true } | { ok: false; code: GoverningFactRefusalCode; message: string };
 
@@ -24,6 +31,10 @@ export const checkGoverningFact = (
     if (behavior === 'allow') return refuse('allow_enforcement', 'a rule can only restrict: enforcement must be deny or ask, never allow');
     if (!context.parses(enforcement.rule)) return refuse('invalid_rule', `the enforcement rule ${JSON.stringify(enforcement.rule)} is not a valid permission rule`);
   }
+  if (fact.scope.level === 'project') {
+    const absolute = fact.scope.paths.find((glob) => path.isAbsolute(glob));
+    if (absolute !== undefined) return refuse('absolute_path_glob', `the path glob ${JSON.stringify(absolute)} is absolute, but a glob is matched against paths relative to the project, so it could never match`);
+  }
   const group = scopeKeyOf(fact.scope);
   for (const id of fact.supersedes) {
     const replaced = context.existing.find((candidate) => candidate.id === id);
@@ -31,6 +42,11 @@ export const checkGoverningFact = (
       return refuse('supersedes_outside_group', `${id} is not a governing fact with the target ${fact.target} and the same scope`);
     }
   }
+  const hidden = new Set([...context.existing.flatMap((candidate) => candidate.supersedes), ...fact.supersedes]);
+  const repeated = context.existing.find(
+    (candidate) => candidate.retiredAt === null && !hidden.has(candidate.id) && candidate.target === fact.target && scopeKeyOf(candidate.scope) === group && candidate.text === fact.text,
+  );
+  if (repeated !== undefined) return refuse('duplicate_live_fact', `${repeated.id} already states this for the same target and scope`);
   return { ok: true };
 };
 

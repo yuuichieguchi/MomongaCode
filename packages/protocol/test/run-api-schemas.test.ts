@@ -554,6 +554,7 @@ describe('memory schemas', () => {
     state: 'active',
     duplicateOf: null,
     supersedes: [],
+    supersededBy: [],
     retiredAt: null,
     evidence: [],
     status: 'unbound',

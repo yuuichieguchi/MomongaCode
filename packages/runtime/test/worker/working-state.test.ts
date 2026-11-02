@@ -273,7 +273,7 @@ describe('inherited history', () => {
     ...fold([TASK, compactedThrough(1)]),
     taskSeq: 3,
     inherited: { fromRunId: 'run-parent', fromLastSeq: 12, digest: 'digest' },
-    workingFacts: { written: [], commands: [], messages: [], itemEvents: [], ...workingFacts },
+    workingFacts: { written: [], touched: [], commands: [], messages: [], itemEvents: [], ...workingFacts },
   });
 
   it('names the journal of the parent run when inherited items were replaced', () => {
@@ -301,6 +301,7 @@ describe('the smallest cap', () => {
       inherited: { fromRunId: '01a3185c-5000-745f-8ed8-f61784e21274', fromLastSeq: widest, digest: 'digest' },
       workingFacts: {
         written: [],
+        touched: [],
         commands: [],
         messages: [
           { text: 'x'.repeat(200), seq: 0 },
@@ -329,6 +330,7 @@ describe('mandatory lines wider than the cap', () => {
       inherited: { fromRunId: '01a3185c-5000-745f-8ed8-f61784e21274', fromLastSeq: widest, digest: 'digest' },
       workingFacts: {
         written: [],
+        touched: [],
         commands: [],
         messages: [{ text: 'kept only if it fits', seq: widest }],
         itemEvents: [],

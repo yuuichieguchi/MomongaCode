@@ -4,6 +4,7 @@ import { checkGoverningFact, normalizeTarget, overlappingEnforced, resolveGovern
 import { tokensForText } from '@momonga/protocol';
 import type { AddRuleRequest, Capabilities, GoverningFactView, PolicyGovernanceResponse, RuleAddResponse } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
+import { GatewayRequestError } from '../gateway-client.ts';
 import { ruleParses } from '../governance/rules.ts';
 import { invalidRequest, notFound } from './errors.ts';
 import type { Handler, RouteRegistrar } from './app.ts';
@@ -49,6 +50,15 @@ export const registerRuleRoutes = (route: RouteRegistrar, deps: RuleRoutesDeps):
     return ruleSizeReport(tokens, targets);
   };
 
+  const sizeOrWarning = async (tokens: number): Promise<{ size: RuleAddResponse['size']; warnings: string[] }> => {
+    try {
+      return { size: await sizeOf(tokens), warnings: [] };
+    } catch (error) {
+      if (!(error instanceof GatewayRequestError)) throw error;
+      return { size: [], warnings: [`the size of this rule could not be measured because the gateway did not answer: ${error.message}`] };
+    }
+  };
+
   const addRule: Handler = async (context) => {
     const body = validateBody<AddRuleRequest>('AddRuleRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
     const scope: GoverningFactView['scope'] =
@@ -66,10 +76,11 @@ export const registerRuleRoutes = (route: RouteRegistrar, deps: RuleRoutesDeps):
     const existing = governing.list();
     const checked = checkGoverningFact({ ...input, id: '', validFrom: 0, retiredAt: null, source: { kind: 'command', at: 0 } }, { existing, parses: ruleParses });
     if (!checked.ok) throw invalidRequest(checked.message);
+    const sized = await sizeOrWarning(tokensForText(input.text));
     const { fact } = governing.add(input);
     const applicable = existing.filter((other) => other.scope.level === 'user' || (scope.level === 'project' && other.scope.project === scope.project));
-    const warnings = overlappingEnforced(fact, applicable).map(overlapWarning);
-    return json({ fact, size: await sizeOf(tokensForText(fact.text)), warnings } satisfies RuleAddResponse, 201);
+    const warnings = [...overlappingEnforced(fact, applicable).map(overlapWarning), ...sized.warnings];
+    return json({ fact, size: sized.size, warnings } satisfies RuleAddResponse, 201);
   };
 
   const listRules: Handler = (context) => json({ facts: governing.list({ project: requiredProject(context) }) }, 200);

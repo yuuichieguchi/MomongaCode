@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { lexicallyWithin } from '@momonga/foundation';
-import { EvidenceOutsideRootError } from '@momonga/memory';
+import { EvidenceOutsideRootError, EvidenceUnreadableError } from '@momonga/memory';
 import type { EvidencePorts } from '@momonga/memory';
 import type { MemoryEvidence, RunEvent } from '@momonga/protocol';
 import { ToolExecutionError } from '@momonga/tools';
@@ -36,14 +36,36 @@ const gitCommand = (project: string, args: readonly string[]): EvidenceCommand =
 const isMissingFile = (error: unknown): boolean =>
   typeof error === 'object' && error !== null && 'code' in error && (error.code === 'ENOENT' || error.code === 'ENOTDIR');
 
-const sha256OfFile = (target: string): Promise<string> =>
+const hasErrnoCode = (error: unknown): boolean => typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string';
+
+const sha256OfHandle = (handle: fs.promises.FileHandle): Promise<string> =>
   new Promise((resolve, reject) => {
     const hash = createHash('sha256');
-    const stream = fs.createReadStream(target);
+    const stream = handle.createReadStream({ autoClose: false });
     stream.on('error', reject);
     stream.on('data', (chunk) => hash.update(chunk));
     stream.on('end', () => resolve(hash.digest('hex')));
   });
+
+const sha256OfRegularFile = async (real: string, original: string): Promise<string | undefined> => {
+  let handle: fs.promises.FileHandle;
+  try {
+    handle = await fs.promises.open(real, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK);
+  } catch (error) {
+    if (isMissingFile(error)) return undefined;
+    if (hasErrnoCode(error)) throw new EvidenceUnreadableError(original, { cause: error });
+    throw error;
+  }
+  try {
+    if (!(await handle.stat()).isFile()) return undefined;
+    return await sha256OfHandle(handle);
+  } catch (error) {
+    if (hasErrnoCode(error)) throw new EvidenceUnreadableError(original, { cause: error });
+    throw error;
+  } finally {
+    await handle.close();
+  }
+};
 
 export const createEvidencePorts = ({ project, trusted, run, signal }: EvidencePortsOptions): EvidencePorts => {
   const ancestry = new Map<string, Promise<boolean | undefined>>();
@@ -63,10 +85,11 @@ export const createEvidencePorts = ({ project, trusted, run, signal }: EvidenceP
         real = await fs.promises.realpath(absolutePath);
       } catch (error) {
         if (isMissingFile(error)) return undefined;
+        if (hasErrnoCode(error)) throw new EvidenceUnreadableError(absolutePath, { cause: error });
         throw error;
       }
       if (!lexicallyWithin(real, root)) throw new EvidenceOutsideRootError(absolutePath);
-      return sha256OfFile(real);
+      return sha256OfRegularFile(real, absolutePath);
     },
     isAncestor: (sha) => {
       if (!trusted || !COMMIT_ID.test(sha)) return Promise.resolve(undefined);

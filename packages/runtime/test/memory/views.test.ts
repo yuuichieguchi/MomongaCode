@@ -18,6 +18,7 @@ const record = (id: string, project: string, sha = SHA): MemoryRecord => ({
   state: 'active',
   duplicateOf: null,
   supersedes: [],
+  supersededBy: [],
   retiredAt: null,
   evidence: [{ kind: 'commit', sha }],
   contributedAt: null,

@@ -1,5 +1,5 @@
 import { recallOrder } from '@momonga/memory';
-import type { MemoryRecord, MemoryView } from '@momonga/protocol';
+import type { MemoryRecord, MemoryScope, MemoryView } from '@momonga/protocol';
 import { MEMORY_SEARCH_RESULT_LIMIT, ToolExecutionError, createMemoryTools } from '@momonga/tools';
 import type { MemoryStorePort } from '@momonga/tools';
 import type { MemoryVisibility, RuntimeStore, Session } from '@momonga/store';
@@ -26,14 +26,21 @@ export const createMemoryPort = ({ store, settings, evidenceRun }: MemoryPortOpt
       const ports = createEvidencePorts(evidenceOptionsFor(bound));
       return Promise.all(records.map((record) => memoryViewOf(record, { project: session.cwd, trusted, ports })));
     };
-    const replaceable = (ids: readonly string[]): void => {
-      const known = new Set(store.memories.search(visibility, [], { include: 'all' }).map((memory) => memory.id));
+    const originOf = trusted ? 'trusted' : 'untrusted';
+    const replaceable = (ids: readonly string[], scope: MemoryScope): void => {
+      const project = scope === 'project' ? session.cwd : null;
+      const known = new Set(
+        store.memories
+          .search(visibility, [], { include: 'all' })
+          .filter((memory) => memory.scope === scope && memory.project === project && (memory.origin === originOf || memory.origin === 'untrusted'))
+          .map((memory) => memory.id),
+      );
       const unknown = ids.filter((id) => !known.has(id));
-      if (unknown.length > 0) throw new ToolExecutionError(`${unknown.join(', ')} ${unknown.length === 1 ? 'is' : 'are'} not saved memories you can replace`);
+      if (unknown.length > 0) throw new ToolExecutionError(`${unknown.join(', ')} ${unknown.length === 1 ? 'is not a saved memory' : 'are not saved memories'} you can replace`);
     };
     const toolPort: MemoryStorePort = {
       save: async ({ scope, text, runId, step, callId, kind, paths, supersedes, signal: bound }) => {
-        replaceable(supersedes ?? []);
+        replaceable(supersedes ?? [], scope);
         const evidence = await bindMemoryEvidence({
           runId,
           events: readAllRunEvents(store, runId),

@@ -8,12 +8,16 @@ const CTX = { cwd: '/work/a', home: '/home/u', roots: ['/work/a'] };
 
 const canonicalise = (absolute: string) => ({ ok: true as const, path: absolute });
 
-const fakePort = () => {
+const fakePort = (added: { runId: string; callId: string; factId: string }[] = []) => {
   const proposed: unknown[] = [];
   const port: GovernancePort = {
     propose: (request) => {
       proposed.push(request);
       return { factId: 'g1', created: proposed.length === 1 };
+    },
+    find: (runId, callId) => {
+      const found = added.find((entry) => entry.runId === runId && entry.callId === callId);
+      return found === undefined ? undefined : { factId: found.factId };
     },
   };
   return { port, proposed };
@@ -31,6 +35,23 @@ describe('RulePropose', () => {
   it('is offered in a trusted folder and not in an untrusted one', () => {
     expect(createGovernanceTools({ port: fakePort().port, trusted: true }).map((entry) => entry.name)).toEqual([RULE_PROPOSE_TOOL_NAME]);
     expect(createGovernanceTools({ port: fakePort().port, trusted: false })).toEqual([]);
+  });
+
+  describe('reconcile after a crash between the store commit and the recorded result', () => {
+    const reconcileWith = async (added: { runId: string; callId: string; factId: string }[]) => {
+      const [found] = createGovernanceTools({ port: fakePort(added).port, trusted: true });
+      if (found?.reconcile === undefined) throw new Error('RulePropose has no reconcile');
+      return found.reconcile(INPUT as never, {} as never, { runId: 'r1', callId: 'c1' } as never);
+    };
+
+    it('reports the rule as applied when the store holds a fact of this run and call', async () => {
+      await expect(reconcileWith([{ runId: 'r1', callId: 'c1', factId: 'g9' }])).resolves.toEqual({ outcome: 'already_applied', output: 'Rule g9 was already added.' });
+    });
+
+    it('reports the rule as not applied when the store holds none, and for another call', async () => {
+      await expect(reconcileWith([])).resolves.toEqual({ outcome: 'not_applied', output: '' });
+      await expect(reconcileWith([{ runId: 'r1', callId: 'other', factId: 'g9' }])).resolves.toEqual({ outcome: 'not_applied', output: '' });
+    });
   });
 
   it('has a governance subject', () => {

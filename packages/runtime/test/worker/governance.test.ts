@@ -1,5 +1,3 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { sha256Hex } from '@momonga/foundation';
 import { pinnedOverflowFailure } from '../../src/worker/context-step.ts';
@@ -105,11 +103,31 @@ describe('the composed rule list', () => {
     expect(given[0]).toContain('Read(./secret/**)');
   });
 
-  it('has one reader of settings.rules, so no path can bypass the layer', () => {
-    const source = (relative: string) => fs.readFileSync(path.join(import.meta.dirname, '../../src', relative), 'utf8');
-    for (const file of ['worker/tool-step.ts', 'worker/claim-runner.ts', 'worker/hook-step.ts', 'process/tool-runtime.ts']) {
-      expect(source(file)).not.toMatch(/settings\.rules\(/);
-    }
+  it('lets every reader of the rule list see a fact enforced after the claim began: tool listing, tool-step and the hook policy', async () => {
+    const env = await makeEnv({ mode: 'bypassPermissions' });
+    env.settings.hooksValue = { UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'true' }] }] } as typeof env.settings.hooksValue;
+    const hookRules: string[][] = [];
+    const worker = env.worker('worker-1', {
+      tools: {
+        policyFor: async (_session, options) => {
+          hookRules.push(options.rules.map((rule) => rule.text));
+          throw new Error('stop after the first policy');
+        },
+      },
+    });
+    added(env, { target: 'bash', enforcement: { behavior: 'deny', rule: 'Bash' } });
+    env.gateway.script.push(textStep('Done.'));
+    env.enqueue('Hello');
+    await env.runOnce(worker).catch(() => undefined);
+    expect(hookRules[0]).toContain('Bash');
+
+    const second = await makeEnv({ mode: 'bypassPermissions' });
+    added(second, { target: 'bash', enforcement: { behavior: 'deny', rule: 'Bash' } });
+    second.gateway.script.push(callsStep([{ callId: 'call_e_1', name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
+    second.enqueue('Echo');
+    await second.runOnce(second.worker());
+    expect(governanceRules(second)).toEqual(['deny Bash']);
+    expect((second.gateway.streams[0]?.body.tools as { name: string }[]).map((tool) => tool.name)).not.toContain('Bash');
   });
 });
 

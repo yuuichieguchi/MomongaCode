@@ -90,7 +90,7 @@ export const contextInputOf = (ctx: ClaimContext, wrapUp: WrapUpReason | undefin
   const workingState = workingStateOf(ctx, state);
   const projectedWorkingState = projectedWorkingStateOf(ctx, state);
   const task = taskOf(ctx);
-  const touchedPaths = touchedPathsOf(state.history, session.cwd);
+  const touchedPaths = touchedPathsOf(state.workingFacts.touched, session.cwd);
   return {
     capabilities: ctx.capabilities,
     model: ctx.alias,

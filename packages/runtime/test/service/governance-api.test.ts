@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { tokensForText } from '@momonga/protocol';
+import { GatewayRequestError } from '@momonga/runtime';
 import { MODEL_ALIAS, OTHER_ALIAS, expectError, expectSchema, startService } from './helpers.ts';
 
 const textRule = (project: string, overrides: Record<string, unknown> = {}) => ({
@@ -27,6 +28,43 @@ describe('rules api', () => {
       { target: MODEL_ALIAS, contextWindow: 8192, tokens, percent: (tokens * 100) / 8192 },
       { target: OTHER_ALIAS, contextWindow: 8192, tokens, percent: (tokens * 100) / 8192 },
     ]);
+  });
+
+  it('adds the fact and carries a warning in the response when the gateway cannot answer for the size', async () => {
+    const env = await startService({ fakeTimers: true });
+    env.ports.aliasesFailure.error = new GatewayRequestError({ status: 503, type: 'server_error', code: 'unavailable', message: 'the gateway is down' });
+    const added = await env.http('POST', '/v1/rules', { body: textRule(env.layout.project) });
+    expect(added.status).toBe(201);
+    expect(added.json.size).toEqual([]);
+    expect(added.json.warnings).toHaveLength(1);
+    expect(added.json.warnings[0]).toContain('the gateway is down');
+    expectSchema('RuleAddResponse', added.json);
+    const listed = await env.http('GET', `/v1/rules?project=${encodeURIComponent(env.layout.project)}`);
+    expect(listed.json.facts).toHaveLength(1);
+  });
+
+  it('lets a failure that is not the gateway answering through, and adds nothing', async () => {
+    const env = await startService({ fakeTimers: true });
+    env.ports.aliasesFailure.error = new TypeError('a defect');
+    const added = await env.http('POST', '/v1/rules', { body: textRule(env.layout.project) });
+    expect(added.status).toBe(500);
+    const listed = await env.http('GET', `/v1/rules?project=${encodeURIComponent(env.layout.project)}`);
+    expect(listed.json.facts).toEqual([]);
+  });
+
+  it('refuses a repeat of a live fact with the id of the existing one, and stores nothing', async () => {
+    const env = await startService({ fakeTimers: true });
+    const first = (await env.http('POST', '/v1/rules', { body: textRule(env.layout.project) })).json.fact;
+    const repeated = await env.http('POST', '/v1/rules', { body: textRule(env.layout.project) });
+    expectError(repeated, 400, 'invalid_request');
+    expect(JSON.stringify(repeated.json)).toContain(first.id);
+    const listed = await env.http('GET', `/v1/rules?project=${encodeURIComponent(env.layout.project)}`);
+    expect(listed.json.facts).toHaveLength(1);
+  });
+
+  it('refuses an absolute path glob', async () => {
+    const env = await startService({ fakeTimers: true });
+    expectError(await env.http('POST', '/v1/rules', { body: textRule(env.layout.project, { scope: { level: 'project', project: env.layout.project, paths: ['/abs/**'] } }) }), 400, 'invalid_request');
   });
 
   it('stores the project of a fact in the canonical form that sessions use', async () => {
@@ -130,7 +168,7 @@ describe('memory history route', () => {
 
 describe('schema', () => {
   it('requires status on a memory view', async () => {
-    const memory = { id: 'm', scope: 'user', origin: 'trusted', project: null, text: 't', source: { kind: 'tool', sessionId: 's', runId: 'r', step: 1, callId: 'c', seq: 1 }, createdAt: 1, lastUsedAt: 1, kind: 'fact', state: 'active', duplicateOf: null, supersedes: [], retiredAt: null, evidence: [], contributedAt: null };
+    const memory = { id: 'm', scope: 'user', origin: 'trusted', project: null, text: 't', source: { kind: 'tool', sessionId: 's', runId: 'r', step: 1, callId: 'c', seq: 1 }, createdAt: 1, lastUsedAt: 1, kind: 'fact', state: 'active', duplicateOf: null, supersedes: [], supersededBy: [], retiredAt: null, evidence: [], contributedAt: null };
     expect(() => expectSchema('MemoryView', memory)).toThrow(/status/);
     expectSchema('MemoryView', { ...memory, status: 'unbound' });
   });

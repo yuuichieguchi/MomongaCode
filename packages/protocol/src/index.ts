@@ -37,9 +37,11 @@ export {
   withMessage,
   withReplacedThrough,
   withTaskText,
+  withTouched,
   withWritten,
 } from './working-facts.ts';
 export type {
+  TouchedTarget,
   CommandFact,
   FileAccess,
   ItemEvent,
@@ -79,7 +81,7 @@ export type {
   SkillsResponse,
 } from './run-api.ts';
 export { assistantTextOf } from './assistant-text.ts';
-export { MEMORY_EVIDENCE_KINDS, MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES } from './memory.ts';
+export { DEFAULT_MEMORY_KIND, describeMemoryValidity, MEMORY_EVIDENCE_KINDS, MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES } from './memory.ts';
 export type {
   MemoriesResponse,
   MemoryEvidence,

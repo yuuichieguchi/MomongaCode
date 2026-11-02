@@ -68,9 +68,12 @@ export const createGovernanceTools = ({ port, trusted }: GovernanceToolsOptions)
         supersedes: input.supersedes ?? [],
       };
     },
-    reconcile: async () => ({ outcome: 'not_applied', output: '' }),
+    reconcile: async (_input, _record, ctx) => {
+      const found = port.find(ctx.runId, ctx.callId);
+      return found === undefined ? { outcome: 'not_applied', output: '' } : { outcome: 'already_applied', output: `Rule ${found.factId} was already added.` };
+    },
     execute: async (input, ctx) => {
-      const { factId, created } = port.propose({ ...input, runId: ctx.runId, step: ctx.step, callId: ctx.callId });
+      const { factId, created } = port.propose({ ...input, runId: ctx.runId, callId: ctx.callId });
       return { status: 'completed', output: created ? `Added rule ${factId}.` : `Rule ${factId} was already added.` };
     },
   });

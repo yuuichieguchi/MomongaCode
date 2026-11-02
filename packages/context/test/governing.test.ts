@@ -165,6 +165,7 @@ const memory = (id: string, status: MemoryView['status']): MemoryView => ({
   state: 'active',
   duplicateOf: null,
   supersedes: [],
+  supersededBy: [],
   retiredAt: null,
   evidence: [],
   contributedAt: null,

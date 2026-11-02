@@ -16,6 +16,7 @@ const memoryOf = (index: number, overrides: Partial<MemoryView> = {}): MemoryVie
   state: 'active',
   duplicateOf: null,
   supersedes: [],
+  supersededBy: [],
   retiredAt: null,
   evidence: [],
   contributedAt: null,

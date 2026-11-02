@@ -15,6 +15,7 @@ const memory = (id: string, overrides: Partial<MemoryView> = {}): MemoryView => 
   state: 'active',
   duplicateOf: null,
   supersedes: [],
+  supersededBy: [],
   retiredAt: null,
   evidence: [],
   contributedAt: null,

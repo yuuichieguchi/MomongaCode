@@ -74,7 +74,7 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
     ports.stdout.write(
       options.json
         ? `${JSON.stringify(hasGovernance ? { ...report, governance } : report)}\n`
-        : `${verifier.formatReport(report)}\n${hasGovernance ? `${formatGovernanceVerification(governance)}\n` : ''}`,
+        : `${verifier.formatReport(report)}\n${hasGovernance ? `${formatGovernanceVerification(governance, report.exitCode === 0)}\n` : ''}`,
     );
     for (const warning of loaded.warnings) ports.stderr.write(`warning: ${warning}\n`);
     return report.exitCode;

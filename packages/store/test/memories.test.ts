@@ -35,6 +35,7 @@ describe('memory store', () => {
       state: 'active',
       duplicateOf: null,
       supersedes: [],
+      supersededBy: [],
       retiredAt: null,
       contributedAt: null,
       evidence: [],

@@ -1,4 +1,4 @@
-import { ruleCoversSubject } from '@momonga/policy';
+import { isGoverningRule as isGoverning, ruleCoversSubject } from '@momonga/policy';
 import type { PermissionRule, PermissionSubject } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
 import type { Bool, Seq } from 'z3-solver';
@@ -6,9 +6,7 @@ import type { CommandModel } from './command-model.ts';
 import type { PathModel } from './path-model.ts';
 import type { Smt } from './smt.ts';
 
-const isGoverning = (rule: PermissionRule): boolean => rule.layer === 'governance';
-
-export const SUBJECT_TOOLS =['Read', 'Glob', 'Grep', 'Write', 'Bash', 'mcp'] as const;
+export const SUBJECT_TOOLS = ['Read', 'Glob', 'Grep', 'Write', 'Bash', 'mcp'] as const;
 export type SubjectTool = (typeof SUBJECT_TOOLS)[number];
 
 export type Witness =
@@ -28,6 +26,7 @@ export type Outcome = {
   guarded: Bool;
   asked: Bool;
   incidentalAsk: Bool;
+  viaPaths: Bool;
   undecidedByDenyOrAsk: Bool;
 };
 
@@ -38,6 +37,7 @@ export type SubjectModel = {
   terms: readonly RuleTerms[];
   guard: Bool;
   planDeny: Bool;
+  dynamicAsk: Bool;
   defaultAllow: Bool;
   witness(read: (term: Seq) => string, readBool: (term: Bool) => boolean): Witness;
   bind(witness: Witness): readonly Bool[];
@@ -58,6 +58,9 @@ const subjectStub = (tool: SubjectTool): PermissionSubject => {
   return { kind: 'path', tool, paths: [], access: READ_TOOLS.has(tool) ? 'read' : 'write' };
 };
 
+const DYNAMIC_READ = (smt: Smt) =>
+  smt.concat(smt.text('cat $('), smt.plus(smt.chars([[0x20, 0x20], [0x2f, 0x2f], [0x61, 0x7a]])), smt.text(')'));
+
 const anyOf = (smt: Smt, terms: readonly Bool[]): Bool => (terms.length === 0 ? smt.ctx.Bool.val(false) : terms.length === 1 ? (terms[0] as Bool) : smt.ctx.Or(...terms));
 
 export const createSubject = (models: DecisionModels, tool: SubjectTool, name: string): SubjectModel => {
@@ -74,13 +77,16 @@ export const createSubject = (models: DecisionModels, tool: SubjectTool, name: s
     const terms = rules.flatMap((rule, index): RuleTerms[] =>
       ruleCoversSubject(rule, stub) ? [{ index, rule, position: commands.position(command, rule), incidental: commands.incidental(command, rule), strict: commands.strict(command, rule) }] : [],
     );
+    const readsGoverned = rules.some((rule) => isGoverning(rule) && ruleCoversSubject(rule, subjectStub('Read')));
+    const dynamicRead = readsGoverned ? smt.member(command, DYNAMIC_READ(smt)) : no;
     return {
       tool,
       kind: 'command',
-      domain: [commands.domain(command)],
+      domain: [readsGoverned ? ctx.Or(commands.domain(command), dynamicRead) : commands.domain(command)],
       terms,
       guard: no,
       planDeny: no,
+      dynamicAsk: dynamicRead,
       defaultAllow: bypass ? yes : defaultAllowTerm,
       witness: (read, readBool) => ({ kind: 'command', command: read(command), defaultAllow: readBool(defaultAllowTerm) }),
       bind: (witness) => (witness.kind === 'command' ? [command.eq(smt.stringValue(witness.command))] : []),
@@ -110,6 +116,7 @@ export const createSubject = (models: DecisionModels, tool: SubjectTool, name: s
       terms,
       guard: no,
       planDeny: mode === 'plan' ? ctx.Not(readOnly) : no,
+      dynamicAsk: no,
       defaultAllow: bypass ? yes : no,
       witness: (read, readBool) => {
         const text = read(full).slice(MCP_PREFIX.length);
@@ -140,6 +147,7 @@ export const createSubject = (models: DecisionModels, tool: SubjectTool, name: s
     terms,
     guard: access === 'write' ? paths.protectedWrite(vars.resolved) : no,
     planDeny: mode === 'plan' && access === 'write' ? yes : no,
+    dynamicAsk: no,
     defaultAllow: bypass ? yes : access === 'read' ? inside : mode === 'acceptEdits' ? inside : no,
     witness: (read) => ({ kind: 'path', tool, access, requested: read(vars.requested), resolved: read(vars.resolved) }),
     bind: (witness) => (witness.kind === 'path' ? [vars.requested.eq(smt.stringValue(witness.requested)), vars.resolved.eq(smt.stringValue(witness.resolved))] : []),
@@ -160,7 +168,7 @@ export const ruleEffectCases = (models: DecisionModels, subject: SubjectModel, t
   const governingAskMatch = anyOf(smt, ofEffect('ask').filter((other) => isGoverning(other.rule)).map((other) => ctx.Or(other.position, other.incidental)));
   const allowMatch = anyOf(smt, ofEffect('allow').map((other) => other.strict));
   const noDenyOrPlan = ctx.And(ctx.Not(bypass ? ctx.Or(denyPosition, denyIncidental) : denyPosition), ctx.Not(subject.planDeny));
-  const unguarded = ctx.And(noDenyOrPlan, ctx.Not(subject.guard));
+  const unguarded = ctx.And(noDenyOrPlan, ctx.Not(subject.guard), ctx.Not(subject.dynamicAsk));
   switch (term.rule.effect) {
     case 'allow':
       return [ctx.And(term.strict, unguarded, ctx.Not(askMatch), ctx.Not(denyIncidental), ctx.Not(allowMatch), ctx.Not(subject.defaultAllow))];
@@ -203,7 +211,20 @@ export const outcomeOf = (models: DecisionModels, subject: SubjectModel, exclude
   const askedByDefault = ctx.And(afterIncidental, ctx.Not(allowMatch), ctx.Not(subject.defaultAllow));
   const askOverridden = bypass ? ctx.And(asked, ctx.Not(governingAskMatch)) : ctx.Bool.val(false);
   const askHeld = bypass ? ctx.And(asked, governingAskMatch) : asked;
-  const allow = ctx.Or(allowedByRule, allowedByDefault, askOverridden);
-  const ask = ctx.Or(guarded, askHeld, incidentalAsk, askedByDefault);
-  return { deny, ask, allow, allowedByRule, allowedByDefault, byDefault: ctx.Or(allowedByDefault, askedByDefault), guarded, asked, incidentalAsk, undecidedByDenyOrAsk: afterIncidental };
+  const dynamicAsk = ctx.And(open, subject.dynamicAsk);
+  const allow = ctx.And(ctx.Or(allowedByRule, allowedByDefault, askOverridden), ctx.Not(dynamicAsk));
+  const ask = ctx.Or(guarded, askHeld, incidentalAsk, askedByDefault, dynamicAsk);
+  return {
+    deny,
+    ask,
+    allow,
+    allowedByRule,
+    allowedByDefault,
+    byDefault: ctx.And(ctx.Or(allowedByDefault, askedByDefault), ctx.Not(dynamicAsk)),
+    guarded,
+    asked,
+    incidentalAsk,
+    viaPaths: dynamicAsk,
+    undecidedByDenyOrAsk: afterIncidental,
+  };
 };

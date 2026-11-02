@@ -37,8 +37,10 @@ export const formatRuleAdded = ({ fact, size, warnings }: RuleAddResponse): stri
 export const formatRuleHistory = (facts: readonly GoverningFactView[]): string =>
   facts.length === 0 ? 'no rules' : facts.map((fact) => `${fact.id}  ${validityOf(fact)}  ${fact.kind} ${fact.target}: ${fact.text}`).join('\n');
 
-export const formatGovernanceVerification = ({ rules, textOnly }: PolicyGovernanceResponse): string =>
+export const formatGovernanceVerification = ({ rules, textOnly }: PolicyGovernanceResponse, proved: boolean): string =>
   [
-    ...rules.map((rule) => `${rule.id}: verified as ${rule.behavior} ${rule.rule}`),
+    ...rules.map((rule) =>
+      proved ? `${rule.id}: verified as ${rule.behavior} ${rule.rule}` : `${rule.id}: included in the verification as ${rule.behavior} ${rule.rule}, which did not prove`,
+    ),
     ...textOnly.map((fact) => `${fact.id}: text-only, no guarantee (${fact.target})`),
   ].join('\n');

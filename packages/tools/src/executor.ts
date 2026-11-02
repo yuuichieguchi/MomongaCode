@@ -616,7 +616,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         }
         if (hooks !== undefined) rememberVerdict(key, verdict);
         const suggestedRule =
-          unsandboxedExec || decision.source === 'protected' || decision.source === 'hook'
+          unsandboxedExec || decision.source === 'protected' || decision.source === 'hook' || decision.rule?.layer === 'governance'
             ? undefined
             : suggestAllowRule(policyTool, subject, cwd, options.fs.canonicalise);
         const locations = tool.locations?.(input);

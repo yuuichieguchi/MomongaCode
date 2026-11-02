@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { immediateTx, uuidv7 } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import { MEMORY_EVIDENCE_KINDS, MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES } from '@momonga/protocol';
+import { DEFAULT_MEMORY_KIND, MEMORY_EVIDENCE_KINDS, MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES } from '@momonga/protocol';
 import type { MemoryEvidence, MemoryOrigin, MemoryScope, MemorySource } from '@momonga/protocol';
 import { corrupt, expectOneOf, readerFor } from './rows.ts';
 import type { Row, RowReader } from './rows.ts';
@@ -44,7 +44,7 @@ const decodeEvidence = (memoryId: string, row: Row): MemoryEvidence => {
   }
 };
 
-const decodeMemory = (row: Row, evidence: MemoryEvidence[]): MemoryRecord => {
+const decodeMemory = (row: Row, evidence: MemoryEvidence[], supersededBy: string[]): MemoryRecord => {
   const identity = String(row['id']);
   const reader = readerFor('memories', identity, row);
   const scope: MemoryScope = expectOneOf('memories', identity, 'scope', MEMORY_SCOPES, reader.string('scope'));
@@ -64,6 +64,7 @@ const decodeMemory = (row: Row, evidence: MemoryEvidence[]): MemoryRecord => {
     state: expectOneOf('memories', identity, 'state', MEMORY_STATES, reader.string('state')),
     duplicateOf: reader.nullableString('duplicate_of'),
     supersedes: decodeStringList(identity, reader, 'supersedes_json'),
+    supersededBy,
     retiredAt: reader.nullableNumber('retired_at'),
     contributedAt: reader.nullableNumber('contributed_at'),
     evidence,
@@ -71,8 +72,6 @@ const decodeMemory = (row: Row, evidence: MemoryEvidence[]): MemoryRecord => {
 };
 
 const RECENCY = 'ORDER BY last_used_at DESC, created_at DESC, id';
-
-const DEFAULT_MEMORY_KIND = 'fact';
 
 const RECALLABLE = `state = 'active' AND retired_at IS NULL AND NOT EXISTS (
   SELECT 1 FROM memories AS successor, json_each(successor.supersedes_json) AS replaced
@@ -107,11 +106,15 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
   const visibleInTrustedProject = db.prepare(`SELECT * FROM memories WHERE ${VISIBLE_TRUSTED} AND ${RECALLABLE} ${RECENCY}`);
   const visibleUntrusted = db.prepare(`SELECT * FROM memories WHERE ${VISIBLE_UNTRUSTED} AND ${RECALLABLE} ${RECENCY}`);
   const evidenceOf = db.prepare('SELECT * FROM memory_evidence WHERE memory_id = :id ORDER BY ordinal');
+  const replacedBy = db.prepare(
+    "SELECT m.id FROM memories m, json_each(m.supersedes_json) AS replaced WHERE replaced.value = :id AND m.state <> 'candidate' ORDER BY m.created_at, m.id",
+  );
   const decode = (row: Row): MemoryRecord => {
     const id = String(row['id']);
     return decodeMemory(
       row,
       evidenceOf.all({ id }).map((evidenceRow) => decodeEvidence(id, evidenceRow)),
+      replacedBy.all({ id }).map((successor) => readerFor('memories', id, successor).string('id')),
     );
   };
   const touch = db.prepare('UPDATE memories SET last_used_at = :now WHERE id = :id');

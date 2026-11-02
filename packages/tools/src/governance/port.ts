@@ -10,10 +10,11 @@ export type RuleProposalInput = {
   supersedes?: string[];
 };
 
-export type RuleProposalRequest = RuleProposalInput & { runId: string; step: number; callId: string };
+export type RuleProposalRequest = RuleProposalInput & { runId: string; callId: string };
 
 export type GovernancePort = {
   propose(request: RuleProposalRequest): { factId: string; created: boolean };
+  find(runId: string, callId: string): { factId: string } | undefined;
 };
 
 export type GovernanceToolsOptions = { port: GovernancePort; trusted: boolean };

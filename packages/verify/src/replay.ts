@@ -17,7 +17,7 @@ export type ReplayEnvironment = {
   globBudgetMs: number;
 };
 
-export type Prediction = { kind: DecisionKind; dependsOnDefault: boolean };
+export type Prediction = { kind: DecisionKind; dependsOnDefault: boolean; viaPaths: boolean };
 
 const TOOLS: Readonly<Record<Exclude<SubjectTool, 'mcp'>, PolicyTool>> = {
   Read: { name: 'Read', kind: 'read', sideEffect: 'read_only' },
@@ -82,5 +82,6 @@ export const replayWitness = async (env: ReplayEnvironment, tool: SubjectTool, w
     return { crashed: `${error.name}: ${error.message}` };
   }
   if (predicted.dependsOnDefault && witness.kind === 'command') return { skipped: 'the outcome depends on the approval class of the command, which the model leaves open' };
-  return actual === predicted.kind ? { agrees: true, actual, final } : { agrees: false, predicted: predicted.kind, actual, final };
+  const compared = predicted.viaPaths ? final : actual;
+  return compared === predicted.kind ? { agrees: true, actual: compared, final } : { agrees: false, predicted: predicted.kind, actual: compared, final };
 };

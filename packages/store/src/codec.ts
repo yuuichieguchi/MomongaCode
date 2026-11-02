@@ -346,13 +346,17 @@ const isWorkingFacts = (value: unknown): boolean =>
       isReconciled(entry['reconciled']) &&
       Number.isInteger(entry['seq']),
   ) &&
+  isArrayOf(
+    value['touched'],
+    (entry) => isRecord(entry) && (entry['kind'] === 'file' || entry['kind'] === 'directory') && (entry['path'] === undefined || typeof entry['path'] === 'string'),
+  ) &&
   isArrayOf(value['messages'], (entry) => isRecord(entry) && typeof entry['text'] === 'string' && Number.isInteger(entry['seq'])) &&
   (value['plan'] === undefined ||
     (isRecord(value['plan']) && Number.isInteger(value['plan']['seq']) && isArrayOf(value['plan']['entries'], isPlanEntry))) &&
   isArrayOf(value['itemEvents'], (entry) => isRecord(entry) && Number.isInteger(entry['itemSeq']) && Number.isInteger(entry['eventSeq'])) &&
   (value['replacedThroughEventSeq'] === undefined || Number.isInteger(value['replacedThroughEventSeq']));
 
-export const SNAPSHOT_STATE_VERSION = 11;
+export const SNAPSHOT_STATE_VERSION = 12;
 
 export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
 

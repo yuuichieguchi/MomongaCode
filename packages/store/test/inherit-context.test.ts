@@ -105,13 +105,13 @@ describe('inheritContext: the happy path', () => {
       fromLastSeq: mustRun(store, first.id).lastSeq,
       history,
       nextItemSeq: 3,
-      workingFacts: { written: [], commands: [], messages: [{ text: 'Say hello', seq: 0 }], itemEvents: [] },
+      workingFacts: { written: [], touched: [], commands: [], messages: [{ text: 'Say hello', seq: 0 }], itemEvents: [] },
       evicted: [],
       closures: [],
       markers: [],
       fromMode: 'default',
       mode: 'default',
-      digest: inheritedDigest({ history, nextItemSeq: 3, evicted: [], mode: 'default', workingFacts: { written: [], commands: [], messages: [{ text: 'Say hello', seq: 0 }], itemEvents: [] } }),
+      digest: inheritedDigest({ history, nextItemSeq: 3, evicted: [], mode: 'default', workingFacts: { written: [], touched: [], commands: [], messages: [{ text: 'Say hello', seq: 0 }], itemEvents: [] } }),
     });
     expect(mustRun(store, second.id).lastSeq).toBe(2);
     const state = events.reduce(foldRunState, initialRunState({ runId: second.id, sessionId: session.id }));
@@ -417,7 +417,7 @@ describe('inheritContext: predecessors that ended badly', () => {
   it('throws previous_run_unreadable for a corrupt predecessor snapshot', () => {
     const { store, dbPath, session, first } = completedPredecessor();
     const db = writable(dbPath);
-    db.prepare(`INSERT INTO snapshots (run_id, seq, state_json, created_at) VALUES (?, 1, '{"stateVersion":11,"runId":7}', 0)`).run(first.id);
+    db.prepare(`INSERT INTO snapshots (run_id, seq, state_json, created_at) VALUES (?, 1, '{"stateVersion":12,"runId":7}', 0)`).run(first.id);
     enqueue(store, session.id, 'And again');
     const claim = mustClaim(store, 'w1');
     expect(thrown(() => store.inheritContext(claim, { mode: 'default' }))).toEqual(inheritanceError('previous_run_unreadable'));

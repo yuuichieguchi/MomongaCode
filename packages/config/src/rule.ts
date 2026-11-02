@@ -4,7 +4,7 @@ import type { FileRuleAccess, FileRuleSpec } from '@momonga/foundation';
 export type RuleEffect = 'allow' | 'ask' | 'deny';
 export type RuleOrigin = 'user' | 'project' | 'local' | 'cli';
 
-export const RULE_LAYERS = ['governance'] as const;
+const RULE_LAYERS = ['governance'] as const;
 
 export type RuleLayer = (typeof RULE_LAYERS)[number];
 

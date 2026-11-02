@@ -1,8 +1,9 @@
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { EvidenceOutsideRootError } from '@momonga/memory';
+import { EvidenceOutsideRootError, EvidenceUnreadableError } from '@momonga/memory';
 import type { RunEvent, ToolFile } from '@momonga/protocol';
 import { MemoryEvidenceError, bindMemoryEvidence, createEvidencePorts, readGitHead } from '@momonga/runtime';
 import type { EvidenceCommand } from '@momonga/runtime';
@@ -247,6 +248,27 @@ describe('production hashFile', () => {
     fs.writeFileSync(path.join(root, 'secret'), 'abc');
     fs.symlinkSync(path.join(root, 'secret'), path.join(project, 'link'));
     await expect(portsFor(true, 0, project).ports.hashFile(path.join(project, 'link'))).rejects.toBeInstanceOf(EvidenceOutsideRootError);
+  });
+
+  it('gives undefined for a path that is no longer a regular file, so the file counts as gone', async () => {
+    const { project } = tempProject();
+    fs.mkdirSync(path.join(project, 'dir'));
+    await expect(portsFor(true, 0, project).ports.hashFile(path.join(project, 'dir'))).resolves.toBeUndefined();
+  });
+
+  it.skipIf(process.getuid?.() === 0)('says a file that cannot be read could not be checked, instead of failing the read', async () => {
+    const { project } = tempProject();
+    const target = path.join(project, 'locked.txt');
+    fs.writeFileSync(target, 'abc');
+    fs.chmodSync(target, 0o000);
+    await expect(portsFor(true, 0, project).ports.hashFile(target)).rejects.toBeInstanceOf(EvidenceUnreadableError);
+  });
+
+  it('does not hang on a FIFO: it is not a regular file and counts as gone', async () => {
+    const { project } = tempProject();
+    const fifo = path.join(project, 'pipe');
+    execFileSync('mkfifo', [fifo]);
+    await expect(portsFor(true, 0, project).ports.hashFile(fifo)).resolves.toBeUndefined();
   });
 
   it('hashes a symlink that stays inside the project', async () => {
