@@ -119,7 +119,7 @@ const resolveChatCompletions = (target: ChatCompletionsTarget, home: string, whe
   adapter: 'chat-completions',
   model: target.model,
   toolCalling: target.toolCalling ?? 'native',
-  ...(target.provider === undefined ? {} : { provider: target.provider }),
+  provider: target.provider,
   ...resolveRemote(target, CHAT_COMPLETIONS_CAPABILITY_DEFAULTS, home, where),
 });
 
@@ -127,7 +127,7 @@ const resolveOpenResponses = (target: OpenResponsesTarget, home: string, where: 
   adapter: 'open-responses',
   model: target.model,
   toolCalling: target.toolCalling ?? 'native',
-  ...(target.provider === undefined ? {} : { provider: target.provider }),
+  provider: target.provider,
   ...resolveRemote(target, OPEN_RESPONSES_CAPABILITY_DEFAULTS, home, where),
 });
 

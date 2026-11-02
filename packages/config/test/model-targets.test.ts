@@ -10,6 +10,7 @@ const IMAGE_TOKENS = { pixelsPerToken: 500, maxTokens: 2000 };
 
 const chatTarget = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   adapter: 'chat-completions',
+  provider: 'fake',
   model: 'gpt-x',
   baseUrl: 'https://api.example.com/v1',
   capabilities: CAPABILITIES,
@@ -164,6 +165,7 @@ describe('chat-completions target schema', () => {
     const models = await expectAccepted({ targets: { remote: chatTarget() }, aliases: { default: 'remote' } });
     expect(models.targets['remote']).toEqual({
       adapter: 'chat-completions',
+      provider: 'fake',
       model: 'gpt-x',
       baseUrl: 'https://api.example.com/v1',
       toolCalling: 'native',
@@ -190,6 +192,11 @@ describe('chat-completions target schema', () => {
     expect(models.targets['remote']).toMatchObject({
       capabilities: { structuredOutput: 'json_schema', streaming: false, tokenCounting: 'exact', imageInput: true, stopSequences: true },
     });
+  });
+
+  it.each(['chat-completions', 'open-responses'])('requires provider on a %s target', async (adapter) => {
+    const { provider: _provider, ...withoutProvider } = chatTarget({ adapter });
+    await expectRejected({ targets: { remote: withoutProvider }, aliases: { default: 'remote' } }, 'provider');
   });
 
   it('requires imageTokens when a remote target declares imageInput', async () => {

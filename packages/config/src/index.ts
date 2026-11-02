@@ -36,5 +36,6 @@ export type {
   OtlpSettings,
   PermissionsSettings,
   Settings,
+  PriceEntrySettings,
   TelemetrySettings,
 } from './settings.ts';

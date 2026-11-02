@@ -78,6 +78,7 @@ describe('Open Responses compliance suite against the supervised gateway debug l
           targets: {
             primary: {
               adapter: 'chat-completions',
+              provider: 'fake',
               model: 'system',
               socketPath: home.upstreamSocket,
               maxConcurrency: 8,

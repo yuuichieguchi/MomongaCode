@@ -53,7 +53,7 @@ export type ChatCompletionsTarget = {
   socketPath?: string;
   apiKeyEnv?: string;
   apiKeySecret?: string;
-  provider?: string;
+  provider: string;
   toolCalling?: 'native' | 'constrained';
   capabilities: Pick<TargetCapabilities, 'contextWindow' | 'maxOutputTokens'> & Partial<TargetCapabilities>;
   maxConcurrency?: number;
@@ -69,7 +69,7 @@ export type OpenResponsesTarget = {
   socketPath?: string;
   apiKeyEnv?: string;
   apiKeySecret?: string;
-  provider?: string;
+  provider: string;
   toolCalling?: 'native' | 'none';
   capabilities: RemoteTargetCapabilities;
   maxConcurrency?: number;
@@ -105,7 +105,7 @@ export type ResolvedChatCompletionsTarget = {
   socketPath?: string;
   apiKeyEnv?: string;
   apiKeySecret?: string;
-  provider?: string;
+  provider: string;
   toolCalling: 'native' | 'constrained';
   capabilities: TargetCapabilities & { maxConcurrency: number };
   maxConcurrency: number;
@@ -119,7 +119,7 @@ export type ResolvedOpenResponsesTarget = {
   socketPath?: string;
   apiKeyEnv?: string;
   apiKeySecret?: string;
-  provider?: string;
+  provider: string;
   toolCalling: 'native' | 'none';
   capabilities: TargetCapabilities & { maxConcurrency: number };
   maxConcurrency: number;
@@ -161,6 +161,16 @@ export type OtlpSettings = { endpoint: string; headers?: Record<string, string> 
 
 export type TelemetrySettings = { otlp?: OtlpSettings; captureMessageContent?: boolean };
 
+export type PriceEntrySettings = {
+  provider: string;
+  model: string;
+  effectiveFrom: string;
+  inputPerMTok: number;
+  cachedInputPerMTok?: number;
+  outputPerMTok: number;
+  currency: 'USD';
+};
+
 export type AutoModeSettings = { classifier?: string };
 
 export type Settings = {
@@ -176,6 +186,7 @@ export type Settings = {
   autoUpdates?: boolean;
   sandbox?: SandboxSetting;
   telemetry?: TelemetrySettings;
+  pricing?: PriceEntrySettings[];
 };
 
 export type HookGroups = NonNullable<HooksSettings[keyof HooksSettings]>;

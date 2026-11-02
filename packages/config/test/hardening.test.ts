@@ -164,6 +164,7 @@ describe('S6 credential variables in project .mcp.json', () => {
         targets: {
           m: {
             adapter: 'chat-completions',
+            provider: 'fake',
             model: 'x',
             baseUrl: 'https://api.example.com/v1',
             apiKeyEnv: 'ACME_CRED',

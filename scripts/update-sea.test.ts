@@ -189,7 +189,7 @@ describe('self-update on built single executables', () => {
         sandbox: 'none',
         models: {
           aliases: { default: ['up'] },
-          targets: { up: { adapter: 'chat-completions', model: 'm', baseUrl: 'http://127.0.0.1:9', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } } },
+          targets: { up: { adapter: 'chat-completions', provider: 'fake', model: 'm', baseUrl: 'http://127.0.0.1:9', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } } },
         },
       }),
     );

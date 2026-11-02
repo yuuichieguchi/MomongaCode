@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { systemClock } from '@momonga/foundation';
-import { GENAI_SEMCONV, buildCostReport, formatCostReport, openTraceStore } from '@momonga/observability';
+import { GENAI_SEMCONV, buildCostReport, definePriceTable, formatCostReport, openTraceStore } from '@momonga/observability';
 import { OTLP_SPAN_KIND, decodeOtlpSpans, startOtlpCollector } from '@momonga/testkit';
 import type { DecodedOtlpSpan, OtlpCollector } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
@@ -87,12 +87,14 @@ describe('OTLP export through real processes', () => {
       expect(chat.parentSpanId).toBe(agent.spanId);
       expect(chat.name).toBe('chat system');
       expect(chat.attributes).toMatchObject({ 'gen_ai.request.model': 'system', 'gen_ai.response.finish_reasons': expect.any(Array), 'momonga.run_id': runId });
-      expect(chat.attributes['gen_ai.provider.name']).toBe('openai');
+      expect(chat.attributes['gen_ai.provider.name']).toBe('fake');
       expect(chat.attributes['gen_ai.usage.input_tokens']).toBe(10);
       expect(chat.attributes['gen_ai.usage.output_tokens']).toBe(5);
     }
     expect(JSON.stringify(collector.requests.map((request) => request.body))).not.toContain('otlp notes');
   });
+
+  const UPSTREAM_PRICES = [{ provider: 'apple', model: UPSTREAM_MODEL, effectiveFrom: '1970-01-01', inputPerMTok: 0, outputPerMTok: 0, currency: 'USD' as const }];
 
   it(titleOf('cost-report'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
@@ -114,6 +116,7 @@ describe('OTLP export through real processes', () => {
             },
           },
         },
+        pricing: UPSTREAM_PRICES,
       },
     });
     const runtime = createRuntimeClient(home);
@@ -133,7 +136,7 @@ describe('OTLP export through real processes', () => {
 
     const store = openTraceStore({ path: home.paths.traces.gateway, clock: systemClock });
     try {
-      const report = buildCostReport(store, [{ runId, sessionId }]);
+      const report = buildCostReport(store, [{ runId, sessionId }], { table: definePriceTable(UPSTREAM_PRICES) });
       console.log(formatCostReport(report));
       expect(report.runs).toHaveLength(1);
       expect(report.sessions).toMatchObject([{ sessionId, runIds: [runId], calls: 2 }]);

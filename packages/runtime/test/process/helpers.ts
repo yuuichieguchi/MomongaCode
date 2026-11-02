@@ -99,6 +99,7 @@ export const chatTargetSettings = (apiKeyEnv: string): Record<string, unknown> =
     targets: {
       m: {
         adapter: 'chat-completions',
+        provider: 'fake',
         model: 'x',
         baseUrl: 'https://api.example.com/v1',
         apiKeyEnv,

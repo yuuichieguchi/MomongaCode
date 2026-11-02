@@ -12,7 +12,7 @@ import { startSupervisorHarness } from './support/p2-supervisor-harness.ts';
 
 const declaring = (...names: string[]): CredentialSettings =>
   ({
-    models: { targets: Object.fromEntries(names.map((name, index) => [`t${index}`, { adapter: 'chat-completions', apiKeyEnv: name }])) },
+    models: { targets: Object.fromEntries(names.map((name, index) => [`t${index}`, { adapter: 'chat-completions', provider: 'fake', apiKeyEnv: name }])) },
   }) as unknown as CredentialSettings;
 
 const TOKEN_LIKE = 'sk-' + 'placeholder-value';

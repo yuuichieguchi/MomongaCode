@@ -16,6 +16,7 @@ const anthropicTarget = (overrides: Record<string, unknown> = {}): Record<string
 
 const openResponsesTarget = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   adapter: 'open-responses',
+  provider: 'fake',
   model: 'llama-fake',
   baseUrl: 'http://127.0.0.1:11434/v1',
   capabilities: CAPABILITIES,
@@ -120,6 +121,7 @@ describe('open-responses target', () => {
     const { result } = await loadWithTargets({ local: openResponsesTarget() });
     expect(result.settings.models.targets['local']).toEqual({
       adapter: 'open-responses',
+      provider: 'fake',
       model: 'llama-fake',
       baseUrl: 'http://127.0.0.1:11434/v1',
       toolCalling: 'native',
@@ -167,6 +169,7 @@ describe('chat-completions apiKeySecret', () => {
   it('accepts a stored secret reference and rejects it together with apiKeyEnv', async () => {
     const chat = (overrides: Record<string, unknown>) => ({
       adapter: 'chat-completions',
+      provider: 'fake',
       model: 'm',
       baseUrl: 'https://api.example.com/v1',
       capabilities: CAPABILITIES,

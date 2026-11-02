@@ -21,7 +21,7 @@ const settingsWithProviders = async () => {
           aliases: { default: ['claude'] },
           targets: {
             claude: { adapter: 'anthropic', model: 'm', baseUrl: 'https://api.anthropic.com', apiKeyEnv: 'PROVIDER_ENV_ANTHROPIC', capabilities: CAPABILITIES },
-            router: { adapter: 'open-responses', model: 'm', baseUrl: 'https://openrouter.ai/api/v1', apiKeyEnv: 'PROVIDER_ENV_ROUTER', capabilities: CAPABILITIES },
+            router: { adapter: 'open-responses', provider: 'fake', model: 'm', baseUrl: 'https://openrouter.ai/api/v1', apiKeyEnv: 'PROVIDER_ENV_ROUTER', capabilities: CAPABILITIES },
             stored: { adapter: 'anthropic', model: 'm', baseUrl: 'https://api.anthropic.com', apiKeySecret: STORED_SECRET_NAME, capabilities: CAPABILITIES },
           },
         },

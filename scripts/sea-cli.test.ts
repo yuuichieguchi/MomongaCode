@@ -82,6 +82,7 @@ describe('single executable built from the real CLI entry', () => {
           targets: {
             [UPSTREAM_TARGET]: {
               adapter: 'chat-completions',
+              provider: 'fake',
               model: 'system',
               socketPath: path.join(root, 'u.sock'),
               capabilities: { contextWindow: 8192, maxOutputTokens: 1024 },

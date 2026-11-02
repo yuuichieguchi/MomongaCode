@@ -17,7 +17,7 @@ import {
   systemClock,
 } from '@momonga/foundation';
 import type { Clock, JsonLogger, MomongaPaths, ReadyFields, SecretStore, TextStream } from '@momonga/foundation';
-import { buildCostReport, closeTelemetry, formatCostReport, createTelemetry, exportersFor, openTraceStore } from '@momonga/observability';
+import { buildCostReport, closeTelemetry, definePriceTable, formatCostReport, createTelemetry, exportersFor, openTraceStore } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import type { AdapterTarget, Capabilities, ProviderAdapter } from '@momonga/protocol';
 import { createSecretResolver } from './secrets.ts';
@@ -31,7 +31,6 @@ import {
   FM_PROVIDER_NAME,
   FM_SERVE_DEFAULTS,
   GATEWAY_CONFIG_DEFAULTS,
-  OPENAI_FORMAT_PROVIDER_NAME,
 } from './defaults.ts';
 import { missingApiKeyError, secretUnavailableError } from './core/errors.ts';
 import { MIN_CREDENTIAL_CHARS } from './core/redaction.ts';
@@ -235,7 +234,7 @@ const providerNameOf = (target: ResolvedTarget): string => {
       return ANTHROPIC_PROVIDER_NAME;
     case 'chat-completions':
     case 'open-responses':
-      return target.provider ?? OPENAI_FORMAT_PROVIDER_NAME;
+      return target.provider;
   }
 };
 
@@ -338,6 +337,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       mustExist: fs.existsSync(paths.databases.gateway),
       dependentPath: paths.databases.gateway,
     });
+    const priceTable = definePriceTable(settings.pricing === undefined ? [] : settings.pricing);
     const traceStore: TraceStore = openTraceStore({ path: paths.traces.gateway, clock });
     const telemetry: Telemetry = createTelemetry({
       serviceName: 'momonga-gateway',
@@ -425,7 +425,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       telemetry,
       costReport: async (runs) => {
         await telemetry.forceFlush();
-        const report = buildCostReport(traceStore, runs);
+        const report = buildCostReport(traceStore, runs, { table: priceTable });
         return { report, text: formatCostReport(report) };
       },
       version: options.version,

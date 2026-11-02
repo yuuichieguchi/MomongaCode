@@ -104,6 +104,7 @@ export const isAlive = (pid: number): boolean => {
 
 export const ccTarget = (socketPath: string, extra: Record<string, unknown> = {}) => ({
   adapter: 'chat-completions',
+  provider: 'fake',
   model: 'system',
   socketPath,
   capabilities: { contextWindow: 4096, maxOutputTokens: 1024 },
