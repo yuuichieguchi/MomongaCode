@@ -123,7 +123,7 @@ const restartDaemon = async (ports: UpdatePorts, target: string, signal: AbortSi
   }
 };
 
-const installLocked = async (ports: UpdatePorts, update: UpdateTarget, release: Release, options: InstallOptions): Promise<InstallResult> => {
+export const installLocked = async (ports: UpdatePorts, update: UpdateTarget, release: Release, options: InstallOptions): Promise<InstallResult> => {
   const { signal } = options;
   const target = await ports.fs.realpath(ports.self.execPath);
   const directory = path.dirname(target);

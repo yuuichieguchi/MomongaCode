@@ -1,6 +1,6 @@
 import { selfInvocation } from '../daemon/launcher.ts';
 import { UpdateError } from './errors.ts';
-import { installRelease, resolveUpdateTarget } from './install.ts';
+import { installLocked, resolveUpdateTarget } from './install.ts';
 import type { UpdatePorts } from './ports.ts';
 import { checkForUpdate } from './release.ts';
 import type { BuildUpdateInputs, UpdateEndpoints } from './source.ts';
@@ -50,6 +50,13 @@ const noticeOf = (ports: UpdatePorts, state: UpdateState): string | undefined =>
 const isDue = (state: UpdateState | undefined, now: number, intervalMs: number): boolean =>
   state === undefined || state.checkedAt > now || now - state.checkedAt >= intervalMs;
 
+const isCheckRunning = async (ports: UpdatePorts): Promise<boolean> => {
+  const lock = await ports.lock.acquire();
+  if (lock === undefined) return true;
+  lock.release();
+  return false;
+};
+
 const isEnabled = async (wiring: UpdateWiring): Promise<boolean> => isApplicable(wiring) && (await wiring.ports.autoUpdates());
 
 export const announceUpdate = async (wiring: UpdateWiring): Promise<string | undefined> => {
@@ -67,6 +74,7 @@ export const startBackgroundCheck = async (wiring: UpdateWiring): Promise<void> 
   if (!(await isEnabled(wiring))) return;
   const state = await readState(ports);
   if (!isDue(state, ports.clock.now(), wiring.checkIntervalMs)) return;
+  if (await isCheckRunning(ports)) return;
   const invocation = selfInvocation(ports.self, UPDATE_CHECK_COMMAND);
   const child = ports.spawnDetached({ command: invocation.command, args: invocation.args, env: ports.env, cwd: ports.home });
   void child.exit.then(undefined, (error: unknown) => {
@@ -88,21 +96,26 @@ const checkAndInstall = async (wiring: UpdateWiring, signal: AbortSignal): Promi
   const target = resolveUpdateTarget(ports, wiring.build, wiring.endpoints);
   const check = await checkForUpdate(ports, target.source, signal);
   if (check.kind !== 'available') return { kind: 'up_to_date' };
-  const result = await installRelease(ports, target, check.latest, { restartDaemon: false, signal });
+  const result = await installLocked(ports, target, check.latest, { restartDaemon: false, signal });
   return { kind: 'installed', version: result.to };
 };
 
 export const runBackgroundCheck = async (wiring: UpdateWiring, signal: AbortSignal): Promise<number> => {
   const { ports } = wiring;
-  const checkedAt = ports.clock.now();
-  let outcome: BackgroundOutcome;
+  const lock = await ports.lock.acquire();
+  if (lock === undefined) return 0;
   try {
-    outcome = await checkAndInstall(wiring, signal);
-  } catch (error) {
-    if (error instanceof UpdateError && error.code === 'update_in_progress') return 0;
-    await recordOutcome(ports, checkedAt, failureOutcome(error));
-    throw error;
+    const checkedAt = ports.clock.now();
+    let outcome: BackgroundOutcome;
+    try {
+      outcome = await checkAndInstall(wiring, signal);
+    } catch (error) {
+      await recordOutcome(ports, checkedAt, failureOutcome(error));
+      throw error;
+    }
+    await recordOutcome(ports, checkedAt, outcome);
+    return 0;
+  } finally {
+    lock.release();
   }
-  await recordOutcome(ports, checkedAt, outcome);
-  return 0;
 };
