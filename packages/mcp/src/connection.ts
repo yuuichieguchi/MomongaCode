@@ -15,7 +15,7 @@ import { credentialKey } from './oauth-provider.ts';
 import { createGuardedFetch } from './remote-policy.ts';
 import type { GuardedFetch } from './remote-policy.ts';
 import type { McpRemotePorts } from './remote-ports.ts';
-import { TASK_HANDLE_ERROR_CODE, createRemoteTransport } from './remote-transport.ts';
+import { createRemoteTransport } from './remote-transport.ts';
 import type { ConnectionTransport } from './remote-transport.ts';
 import { createSafeSchemaValidator } from './schema-validator.ts';
 import { createStdioTransport } from './stdio-transport.ts';
@@ -23,6 +23,7 @@ import { DEFAULT_CLOSE_GRACE_MS } from './stdio-transport.ts';
 import type { McpMarkerOptions } from './stdio-transport.ts';
 import { McpInputSuspension } from './suspension.ts';
 import type { McpCheckpoint, McpResume } from './suspension.ts';
+import { taskHandleOf } from './task-handle.ts';
 import { settleTask } from './tasks.ts';
 import type { SettleTaskOptions, TaskRequester } from './tasks.ts';
 import { pause, systemTimers } from './timers.ts';
@@ -336,9 +337,8 @@ class ManagedConnection implements McpServerConnection {
           { signal: stop, timeout: remaining, maxTotalTimeout: remaining, allowInputRequired: true, toolDefinition: callableTool },
         );
       } catch (error) {
-        if (error instanceof ProtocolError && error.code === TASK_HANDLE_ERROR_CODE) {
-          return await this.settle(session, tool, input, { created: error.data }, timeout);
-        }
+        const handle = error instanceof ProtocolError ? taskHandleOf(error.code, error.data) : undefined;
+        if (handle !== undefined) return await this.settle(session, tool, input, { created: handle }, timeout);
         throw error;
       }
       if (!isInputRequiredResult(result)) return validateStructuredOutput(input.name, tool, result);

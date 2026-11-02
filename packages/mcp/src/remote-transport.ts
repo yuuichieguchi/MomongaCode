@@ -3,10 +3,10 @@ import type { FetchLike, JSONRPCMessage, OAuthClientProvider, Transport, Transpo
 import type { McpRemoteServerConfig, McpServerScope } from '@momonga/config';
 import { SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS } from '@momonga/foundation';
 import { assertRemoteUrl } from './remote-policy.ts';
+import { createTaskHandleRewriter } from './task-handle.ts';
 import type { McpTimers } from './timers.ts';
 import type { StdioTransportExit } from './stdio-transport.ts';
 
-export const TASK_HANDLE_ERROR_CODE = -39001;
 export const RECONNECT_BASE_MS = SSE_RECONNECT_BASE_MS;
 export const RECONNECT_MAX_MS = SSE_RECONNECT_MAX_MS;
 export const RECONNECT_GROWTH = 2;
@@ -26,13 +26,11 @@ export type RemoteTransportOptions = {
   timers: McpTimers;
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
-
 class RemoteTransport implements ConnectionTransport {
   onclose?: (() => void) | undefined;
   onerror?: ((error: Error) => void) | undefined;
   private handler: Transport['onmessage'];
-  private readonly toolCalls = new Set<string | number>();
+  private readonly taskHandles = createTaskHandleRewriter();
   private readonly inner: StreamableHTTPClientTransport;
 
   constructor(inner: StreamableHTTPClientTransport) {
@@ -47,7 +45,7 @@ class RemoteTransport implements ConnectionTransport {
 
   set onmessage(handler: Transport['onmessage']) {
     this.handler = handler;
-    this.inner.onmessage = (message) => handler?.(this.rewrite(message));
+    this.inner.onmessage = (message) => handler?.(this.taskHandles.inbound(message));
   }
 
   get hasPerRequestStream(): boolean {
@@ -74,27 +72,18 @@ class RemoteTransport implements ConnectionTransport {
     return this.inner.start();
   }
 
-  send(message: JSONRPCMessage, options?: TransportSendOptions): Promise<void> {
-    if ('method' in message && 'id' in message && message.method === 'tools/call') this.toolCalls.add(message.id);
+  async send(message: JSONRPCMessage, options?: TransportSendOptions): Promise<void> {
+    this.taskHandles.outbound(message);
     return this.inner.send(message, options as Parameters<StreamableHTTPClientTransport['send']>[1]);
   }
 
-  close(): Promise<void> {
+  async close(): Promise<void> {
+    this.taskHandles.reset();
     return this.inner.close();
   }
 
   terminateSession(): Promise<void> {
     return this.inner.terminateSession();
-  }
-
-  private rewrite(message: JSONRPCMessage): JSONRPCMessage {
-    if (!('id' in message) || message.id === undefined) return message;
-    const wasToolCall = this.toolCalls.delete(message.id);
-    if (!wasToolCall || !('result' in message)) return message;
-    const result: unknown = message.result;
-    // SDK 2.3.1 rejects any tools/call result whose resultType is "task" and drops the handle; surfacing it as an error carries the handle through the client.
-    if (!isRecord(result) || result['resultType'] !== 'task') return message;
-    return { jsonrpc: '2.0', id: message.id, error: { code: TASK_HANDLE_ERROR_CODE, message: 'the server returned a task handle', data: result } };
   }
 }
 
