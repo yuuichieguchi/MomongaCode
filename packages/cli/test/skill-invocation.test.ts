@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SkillView } from '@momonga/protocol';
-import { SkillInvocationError, resolveSkillInvocation } from '../src/run/skill-invocation.ts';
+import { SkillInvocationError, resolveSkillInvocation, skillInvocationOf, skillTask } from '../src/run/skill-invocation.ts';
 
 const PDF: SkillView = { name: 'pdf', description: 'Extract PDF text', scope: 'project', location: '/p/SKILL.md' };
 
@@ -34,5 +34,14 @@ describe('resolveSkillInvocation', () => {
 
   it('asks for a task instead of inventing one', async () => {
     await expect(resolveSkillInvocation(client([PDF]), 's1', '/pdf', undefined)).rejects.toBeInstanceOf(SkillInvocationError);
+  });
+});
+
+describe('skillInvocationOf', () => {
+  it('is the one rule the headless run, the terminal UI and the ACP agent share', () => {
+    expect(skillInvocationOf('/pdf summarize it', ['pdf'])).toEqual({ input: 'summarize it', skill: 'pdf' });
+    expect(skillInvocationOf('/pdf', [])).toEqual({ input: '/pdf' });
+    expect(() => skillInvocationOf('/pdf', ['pdf'])).toThrow(SkillInvocationError);
+    expect(() => skillTask('pdf', '')).toThrow('/pdf needs a task to run the skill on: /pdf <task>');
   });
 });

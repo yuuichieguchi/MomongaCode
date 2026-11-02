@@ -14,10 +14,10 @@ const configOf = (server: McpServer): McpServerConfig => {
 };
 
 export const mcpServersOf = (servers: readonly McpServer[]): Record<string, McpServerConfig> => {
-  const configs: Record<string, McpServerConfig> = {};
+  const configs = new Map<string, McpServerConfig>();
   for (const server of servers) {
-    if (server.name in configs) throw RequestError.invalidParams({ name: server.name }, `the MCP server name ${server.name} is given twice`);
-    configs[server.name] = configOf(server);
+    if (configs.has(server.name)) throw RequestError.invalidParams({ name: server.name }, `the MCP server name ${server.name} is given twice`);
+    configs.set(server.name, configOf(server));
   }
-  return configs;
+  return Object.fromEntries(configs);
 };

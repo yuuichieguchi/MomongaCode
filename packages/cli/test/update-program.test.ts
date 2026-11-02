@@ -30,7 +30,7 @@ const programFor = async (context: TestContext, options: HarnessOptions = {}) =>
   const program = buildProgram({
     ports: cli,
     entries,
-    update: harness.wiring,
+    update: () => harness.wiring,
     interrupt: new AbortController().signal,
     entryIo: (args) => ({ argv: [...args] }) as unknown as EntryIo,
     complete: (code) => completed.push(code),
@@ -51,6 +51,17 @@ describe('momonga update command', () => {
     expect(stdout.join('')).toContain('updated momonga 1.0.0 -> 2.0.0');
     expect(harness.targetBytes().equals(NEW_BINARY)).toBe(true);
     expect(harness.spawned).toHaveLength(0);
+  });
+
+  it('reports instead of failing when --check runs ahead of the latest release, and still refuses to install a downgrade', async (context) => {
+    const { program, harness, completed, stdout } = await programFor(context);
+    harness.server.publish('v0.9.0', { [assetNameFor(harness.ports.platform, harness.ports.arch)]: NEW_BINARY });
+
+    await run(program, 'update', '--check');
+
+    expect(completed).toEqual([0]);
+    expect(stdout.join('')).toBe('momonga 1.0.0 is newer than the latest release v0.9.0\n');
+    await expect(run(program, 'update')).rejects.toMatchObject({ code: 'downgrade_refused' });
   });
 
   it('propagates a typed refusal for a build without an update source', async (context) => {

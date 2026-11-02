@@ -8,6 +8,6 @@ export type ProgramDeps = {
   interrupt: AbortSignal;
   entryIo(args: readonly string[]): EntryIo;
   entries: DaemonEntries;
-  update: UpdateWiring;
+  update(): UpdateWiring;
   complete(code: number): void;
 };

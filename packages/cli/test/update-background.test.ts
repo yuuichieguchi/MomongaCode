@@ -39,6 +39,16 @@ describe('startBackgroundCheck: what the user command does', () => {
     expect(harness.spawned).toHaveLength(1);
   });
 
+  it('does not spawn another check while one holds the update lock, because it has not recorded anything yet', async (context) => {
+    const harness = await setupUpdate(context);
+    harness.control.lockHeld = true;
+
+    await startBackgroundCheck(harness.wiring);
+
+    expect(harness.spawned).toEqual([]);
+    expect(harness.released.count).toBe(0);
+  });
+
   it('treats a check time in the future as due', async (context) => {
     const harness = await setupUpdate(context);
     harness.state.value = { checkedAt: 10_000_000, outcome: { kind: 'up_to_date' }, announced: true };
@@ -219,6 +229,7 @@ describe('runBackgroundCheck: the detached check itself', () => {
 
     expect(await runBackgroundCheck(harness.wiring, interrupt())).toBe(0);
 
+    expect(harness.server.requests).toEqual([]);
     expect(harness.state.writes).toEqual([]);
     expect(harness.targetBytes().equals(OLD_BINARY)).toBe(true);
   });

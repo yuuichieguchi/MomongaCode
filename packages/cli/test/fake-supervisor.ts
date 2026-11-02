@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import http from 'node:http';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { SupervisorChildHealth, SupervisorHealth } from '@momonga/protocol';
+import type { SessionView } from '../src/client/views.ts';
 import type { CliClock, DetachedExit, SpawnDetached } from '../src/ports.ts';
+import { SESSION } from './fake-backend.ts';
 
 export type FakeSupervisorOptions = {
   paths: MomongaPaths;
@@ -97,4 +99,26 @@ export const recordingSpawn = (onSpawn: (spec: SpawnedProcess) => Promise<Detach
     return { exit: onSpawn(record) ?? new Promise<DetachedExit>(() => undefined) };
   };
   return { spawn, spawned };
+};
+
+export const startFakeRuntime = async (paths: MomongaPaths, activeRunIds: readonly (string | null)[]): Promise<{ stop(): Promise<void> }> => {
+  const sessions: SessionView[] = activeRunIds.map((activeRunId, index) => ({ ...SESSION, id: `session-${index}`, activeRunId }));
+  const server = http.createServer((request, response) => {
+    if (request.method === 'GET' && request.url === '/v1/sessions') {
+      response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ sessions }));
+      return;
+    }
+    response.writeHead(404).end();
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(paths.sockets.runtime, resolve);
+  });
+  return {
+    stop: () =>
+      new Promise<void>((resolve) => {
+        server.close(() => resolve());
+        server.closeAllConnections();
+      }),
+  };
 };

@@ -58,12 +58,13 @@ const developerIdRequirement = (teamId: string): string =>
 
 export const CODESIGN = '/usr/bin/codesign';
 
-const verifySignature = async (ports: UpdatePorts, source: UpdateSource, file: string): Promise<void> => {
+const verifySignature = async (ports: UpdatePorts, source: UpdateSource, file: string, signal: AbortSignal): Promise<void> => {
   if (source.signature.kind === 'none') return;
   const { teamId } = source.signature;
   const result = await ports.run(CODESIGN, ['--verify', '--strict', '--verbose=2', `-R=${developerIdRequirement(teamId)}`, file], {
     env: ports.env,
     timeoutMs: CANDIDATE_CHECK_TIMEOUT_MS,
+    signal,
   });
   if (result.exitCode !== 0) {
     throw new UpdateError('signature_rejected', `the downloaded executable is not a valid Developer ID signature of Apple Team ID ${teamId}`, {
@@ -72,8 +73,8 @@ const verifySignature = async (ports: UpdatePorts, source: UpdateSource, file: s
   }
 };
 
-const verifyCandidateRuns = async (ports: UpdatePorts, file: string, release: Release): Promise<void> => {
-  const result = await ports.run(file, ['--version'], { env: ports.env, timeoutMs: CANDIDATE_CHECK_TIMEOUT_MS });
+const verifyCandidateRuns = async (ports: UpdatePorts, file: string, release: Release, signal: AbortSignal): Promise<void> => {
+  const result = await ports.run(file, ['--version'], { env: ports.env, timeoutMs: CANDIDATE_CHECK_TIMEOUT_MS, signal });
   if (result.exitCode !== 0) {
     throw new UpdateError('candidate_unusable', `the downloaded executable exited with code ${result.exitCode} for --version`, { detail: result.stderr.trim() });
   }
@@ -82,12 +83,28 @@ const verifyCandidateRuns = async (ports: UpdatePorts, file: string, release: Re
   }
 };
 
-const abandon = async (fs: UpdateFs, staged: StagedFile, original: unknown): Promise<never> => {
+const PERMISSION_CODES: ReadonlySet<string> = new Set(['EACCES', 'EPERM', 'EROFS']);
+
+const inDirectory = async <T>(directory: string, step: () => Promise<T>): Promise<T> => {
+  try {
+    return await step();
+  } catch (error) {
+    const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
+    if (typeof code !== 'string' || !PERMISSION_CODES.has(code)) throw error;
+    throw new UpdateError('install_directory_not_writable', `momonga cannot write to ${directory}, where the running executable is installed`, {
+      detail: `${code}: ${error instanceof Error ? error.message : String(error)}`,
+      remediation: 'run the update as the user that owns that directory, or reinstall with the install script',
+      cause: error,
+    });
+  }
+};
+
+const abandon = async (ports: UpdatePorts, staged: StagedFile, original: unknown): Promise<never> => {
   try {
     await staged.close();
-    await fs.remove(staged.path);
+    await ports.fs.remove(staged.path);
   } catch (cleanup) {
-    throw new AggregateError([original, cleanup], 'the update failed and its staging file could not be removed');
+    ports.stderr.write(`momonga: the staging file ${staged.path} could not be removed: ${cleanup instanceof Error ? cleanup.message : String(cleanup)}\n`);
   }
   throw original;
 };
@@ -96,8 +113,8 @@ export type InstallOptions = { restartDaemon: boolean; signal: AbortSignal };
 
 export type InstallResult = { from: string; to: string; target: string; daemonRestarted: boolean };
 
-const restartDaemon = async (ports: UpdatePorts, target: string): Promise<void> => {
-  const result = await ports.run(target, ['daemon', 'start'], { env: ports.env });
+const restartDaemon = async (ports: UpdatePorts, target: string, signal: AbortSignal): Promise<void> => {
+  const result = await ports.run(target, ['daemon', 'start'], { env: ports.env, timeoutMs: await ports.daemon.restartBoundMs(), signal });
   if (result.exitCode !== 0) {
     throw new UpdateError('daemon_restart_failed', `the update was installed but the new daemon did not start (exit code ${result.exitCode})`, {
       detail: `${result.stdout}${result.stderr}`.trim(),
@@ -106,14 +123,14 @@ const restartDaemon = async (ports: UpdatePorts, target: string): Promise<void> 
   }
 };
 
-const installLocked = async (ports: UpdatePorts, update: UpdateTarget, release: Release, options: InstallOptions): Promise<InstallResult> => {
+export const installLocked = async (ports: UpdatePorts, update: UpdateTarget, release: Release, options: InstallOptions): Promise<InstallResult> => {
   const { signal } = options;
   const target = await ports.fs.realpath(ports.self.execPath);
   const directory = path.dirname(target);
   const daemonWasRunning = options.restartDaemon && (await ports.daemon.running());
-  await ports.fs.removeLeftovers(directory);
+  await inDirectory(directory, () => ports.fs.removeLeftovers(directory));
   const expected = await expectedChecksum(ports, update, release, signal);
-  const staged = await ports.fs.stage(directory, await ports.fs.modeOf(target));
+  const staged = await inDirectory(directory, async () => ports.fs.stage(directory, await ports.fs.modeOf(target)));
   try {
     const actual = await downloadInto(ports, releaseUrl(update.source, release, update.asset), staged, signal);
     await staged.close();
@@ -122,13 +139,13 @@ const installLocked = async (ports: UpdatePorts, update: UpdateTarget, release: 
         remediation: 'nothing was installed; try again later',
       });
     }
-    await verifySignature(ports, update.source, staged.path);
-    await verifyCandidateRuns(ports, staged.path, release);
-    await ports.fs.publish(staged.path, target);
+    await verifySignature(ports, update.source, staged.path, signal);
+    await verifyCandidateRuns(ports, staged.path, release, signal);
+    await inDirectory(directory, () => ports.fs.publish(staged.path, target));
   } catch (error) {
-    return abandon(ports.fs, staged, error);
+    return abandon(ports, staged, error);
   }
-  if (daemonWasRunning) await restartDaemon(ports, target);
+  if (daemonWasRunning) await restartDaemon(ports, target, signal);
   return { from: ports.version, to: release.version.text, target, daemonRestarted: daemonWasRunning };
 };
 

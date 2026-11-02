@@ -6,7 +6,7 @@ import { ProcessLockHeldError, acquireProcessLock, ensureMomongaDirs, nodeComman
 import type { MomongaPaths } from '@momonga/foundation';
 import { Agent, interceptors, request } from 'undici';
 import { createSupervisorClient } from '../client/supervisor-client.ts';
-import { probeSupervisor } from '../daemon/ensure-daemon.ts';
+import { defaultDaemonBounds, probeSupervisor } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import type { DaemonProbe, StagedFile, UpdateFs, UpdateHttp, UpdateLock, UpdatePorts, UpdateStateStore } from './ports.ts';
 
@@ -108,6 +108,10 @@ export const nodeDaemonProbe = (paths: MomongaPaths): DaemonProbe => ({
       await client.close();
     }
   },
+  restartBoundMs: async () => {
+    const { readyMs, stopMs } = await defaultDaemonBounds();
+    return readyMs + stopMs;
+  },
 });
 
 const definedEnv = (env: Readonly<Record<string, string | undefined>>): Record<string, string> =>
@@ -115,7 +119,7 @@ const definedEnv = (env: Readonly<Record<string, string | undefined>>): Record<s
 
 export const nodeUpdatePorts = (ports: CliPorts, paths: MomongaPaths): UpdatePorts => ({
   version: ports.version,
-  platform: process.platform,
+  platform: ports.platform,
   arch: process.arch,
   home: ports.home,
   self: ports.self,

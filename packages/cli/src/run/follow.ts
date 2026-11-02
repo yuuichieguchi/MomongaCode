@@ -32,38 +32,87 @@ export class ReconnectBoundExceeded extends Error {
   }
 }
 
-export type StreamOpener = (options: { lastEventId?: number; signal?: AbortSignal }) => AsyncIterable<RunEventFrame>;
+export type StreamOpener = (options: { lastEventId?: number; signal?: AbortSignal; onOpen?: () => void }) => AsyncIterable<RunEventFrame>;
 
-export type FollowEventsOptions<Result> = {
+export type ReconnectPolicy = {
   clock: CliClock;
   random: () => number;
-  after?: number;
   reconnectBoundMs: number;
-  open: StreamOpener;
-  finished(): Promise<Result | undefined>;
   boundExceeded(boundMs: number, cause: unknown): Error;
   restoreConnection(): Promise<void>;
-  onEvent(frame: RunEventFrame): void;
   onReconnecting?(attempt: number): void;
   signal?: AbortSignal;
 };
 
-export const followEvents = async <Result>(options: FollowEventsOptions<Result>): Promise<Result> => {
-  const { clock } = options;
-  let cursor = options.after ?? 0;
+type Reconnector = { opened(): void; delivered(): void; reconnect(failure: unknown): Promise<void> };
+
+const createReconnector = (policy: ReconnectPolicy): Reconnector => {
   let attempt = 0;
   let stalledSince: number | undefined;
+  return {
+    opened: () => {
+      stalledSince = undefined;
+    },
+    delivered: () => {
+      attempt = 0;
+    },
+    reconnect: async (failure) => {
+      stalledSince ??= policy.clock.now();
+      if (policy.clock.now() - stalledSince >= policy.reconnectBoundMs) throw policy.boundExceeded(policy.reconnectBoundMs, failure);
+      policy.onReconnecting?.(attempt);
+      await policy.clock.sleep(
+        computeBackoff({ attempt, baseMs: RECONNECT_FIRST_RETRY_MS, maxMs: RECONNECT_MAX_INTERVAL_MS, random: policy.random }),
+        policy.signal,
+      );
+      attempt += 1;
+      await policy.restoreConnection();
+    },
+  };
+};
+
+export const retryAfterRestore = async <T>(policy: ReconnectPolicy, operation: () => Promise<T>): Promise<T> => {
+  const reconnector = createReconnector(policy);
+  for (;;) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (policy.signal?.aborted === true || !isTransientStreamError(error)) throw error;
+      await reconnector.reconnect(error);
+    }
+  }
+};
+
+export class DaemonUnreachable extends Error {
+  readonly boundMs: number;
+
+  constructor(boundMs: number, cause: unknown) {
+    super(`lost the connection to the daemon and could not restore it within ${boundMs} ms`, { cause });
+    this.name = 'DaemonUnreachable';
+    this.boundMs = boundMs;
+  }
+}
+
+export type FollowEventsOptions<Result> = ReconnectPolicy & {
+  after?: number;
+  open: StreamOpener;
+  finished(): Promise<Result | undefined>;
+  onEvent(frame: RunEventFrame): void;
+};
+
+export const followEvents = async <Result>(options: FollowEventsOptions<Result>): Promise<Result> => {
+  const reconnector = createReconnector(options);
+  let cursor = options.after ?? 0;
   for (;;) {
     let failure: unknown;
     try {
       const streamOptions = {
         ...(cursor > 0 ? { lastEventId: cursor } : {}),
         ...(options.signal === undefined ? {} : { signal: options.signal }),
+        onOpen: reconnector.opened,
       };
       for await (const frame of options.open(streamOptions)) {
         cursor = frame.id;
-        attempt = 0;
-        stalledSince = undefined;
+        reconnector.delivered();
         options.onEvent(frame);
       }
       const result = await options.finished();
@@ -72,15 +121,7 @@ export const followEvents = async <Result>(options: FollowEventsOptions<Result>)
       if (options.signal?.aborted === true || !isTransientStreamError(error)) throw error;
       failure = error;
     }
-    stalledSince ??= clock.now();
-    if (clock.now() - stalledSince >= options.reconnectBoundMs) throw options.boundExceeded(options.reconnectBoundMs, failure);
-    options.onReconnecting?.(attempt);
-    await clock.sleep(
-      computeBackoff({ attempt, baseMs: RECONNECT_FIRST_RETRY_MS, maxMs: RECONNECT_MAX_INTERVAL_MS, random: options.random }),
-      options.signal,
-    );
-    attempt += 1;
-    await options.restoreConnection();
+    await reconnector.reconnect(failure);
   }
 };
 
@@ -91,9 +132,10 @@ export type FollowOptions = {
   clock: CliClock;
   random: () => number;
   runId: string;
-  after?: number;
+  seenThrough?: number;
   reconnectBoundMs: number;
   restoreConnection(): Promise<void>;
+  onSeenEvent?(frame: RunEventFrame): void;
   onEvent(frame: RunEventFrame): void;
   onChildEvent?: ChildFrameHandler;
   onReconnecting?(attempt: number): void;
@@ -135,7 +177,13 @@ export const followRun = async (options: FollowOptions): Promise<RunView> => {
     );
   };
 
+  const seenThrough = options.seenThrough ?? 0;
+
   const onEvent = (frame: RunEventFrame): void => {
+    if (frame.id <= seenThrough) {
+      options.onSeenEvent?.(frame);
+      return;
+    }
     options.onEvent(frame);
     const event = frame.data;
     if (onChildEvent !== undefined && event.type === 'tool.waiting' && event.awaits.kind === 'run') followChild(event.awaits.runId, event.awaits.agent, onChildEvent);
@@ -143,10 +191,16 @@ export const followRun = async (options: FollowOptions): Promise<RunView> => {
 
   let run: RunView;
   try {
+    if (onChildEvent !== undefined && seenThrough > 0) {
+      for (const child of await client.childRuns(runId)) {
+        if (isTerminalStatus(child.status)) continue;
+        if (child.agent === undefined) throw new Error(`child run ${child.id} of run ${runId} names no agent`);
+        followChild(child.id, child.agent, onChildEvent);
+      }
+    }
     run = await followEvents<RunView>({
       clock: options.clock,
       random: options.random,
-      ...(options.after === undefined ? {} : { after: options.after }),
       reconnectBoundMs: options.reconnectBoundMs,
       open: (streamOptions) => client.streamEvents(runId, streamOptions),
       finished: async () => {

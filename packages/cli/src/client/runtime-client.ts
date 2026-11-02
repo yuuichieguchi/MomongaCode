@@ -53,7 +53,7 @@ export class RunApiError extends Error {
 
 export type RunEventFrame = { readonly id: number; readonly event: string | undefined; readonly data: PublicRunEvent };
 
-export type EventsOptions = { after?: number; lastEventId?: number; signal?: AbortSignal };
+export type EventsOptions = { after?: number; lastEventId?: number; signal?: AbortSignal; onOpen?: () => void };
 
 export type CreateSessionInput = {
   cwd: string;
@@ -86,7 +86,7 @@ export type RuntimeClient = {
   health(): Promise<RunHealth>;
   createSession(input: CreateSessionInput): Promise<CreatedSession>;
   getSession(id: string): Promise<SessionView>;
-  listSessions(cwd: string): Promise<SessionView[]>;
+  listSessions(cwd?: string): Promise<SessionView[]>;
   listRuns(sessionId: string): Promise<RunView[]>;
   skills(sessionId: string): Promise<SkillsResponse>;
   agents(sessionId: string): Promise<AgentsResponse>;
@@ -254,9 +254,9 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     return sessionOf(body, `PATCH ${path}`);
   };
 
-  const listSessions = async (cwd: string): Promise<SessionView[]> => {
+  const listSessions = async (cwd?: string): Promise<SessionView[]> => {
     const description = 'GET /v1/sessions';
-    const { body } = await send('GET', `/v1/sessions?cwd=${encodeURIComponent(cwd)}`, [200]);
+    const { body } = await send('GET', cwd === undefined ? '/v1/sessions' : `/v1/sessions?cwd=${encodeURIComponent(cwd)}`, [200]);
     return listOf(body, 'sessions', description).map((entry) => checkSession(entry, description));
   };
 
@@ -413,6 +413,7 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
       ...(eventsOptions.signal === undefined ? {} : { signal: eventsOptions.signal }),
     });
     if (response.status !== 200) throw new RunApiError(description, response.status, await response.text());
+    eventsOptions.onOpen?.();
     for await (const event of decodeSse(response.body)) yield frameOf(event, description);
   }
 

@@ -19,7 +19,7 @@ export const runUpdateFixture = async (version: string): Promise<void> => {
   const program = buildProgram({
     ports,
     entries: daemonEntries(ports.self),
-    update: {
+    update: () => ({
       ...wiring,
       build: { repo: FIXTURE_REPO, teamId: FIXTURE_TEAM_ID },
       endpoints: releaseUrl === undefined ? wiring.endpoints : { apiBaseUrl: releaseUrl, downloadBaseUrl: releaseUrl },
@@ -28,7 +28,7 @@ export const runUpdateFixture = async (version: string): Promise<void> => {
         run: (file, args, options) =>
           file === '/usr/bin/codesign' && process.env[REAL_CODESIGN_ENV] === undefined ? Promise.resolve({ exitCode: 0, stdout: '', stderr: '' }) : nodeCommandRunner(file, args, options),
       },
-    },
+    }),
     interrupt: interrupt.signal,
     entryIo: (args) => ({ ...nodeEntryIo(), argv: [...args] }),
     complete: (code) => {

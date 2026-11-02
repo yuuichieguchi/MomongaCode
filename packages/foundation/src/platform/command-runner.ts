@@ -1,7 +1,7 @@
 import { execFile, execFileSync } from 'node:child_process';
 import type { ExecFileException, ExecFileSyncOptions } from 'node:child_process';
 
-export type CommandOptions = { env: Readonly<Record<string, string>>; timeoutMs?: number; input?: string };
+export type CommandOptions = { env: Readonly<Record<string, string>>; timeoutMs?: number; input?: string; signal?: AbortSignal };
 
 export type CommandResult = { exitCode: number; stdout: string; stderr: string };
 
@@ -16,7 +16,14 @@ export const nodeCommandRunner: CommandRunner = (file, args, options) =>
     const child = execFile(
       file,
       [...args],
-      { env: { ...options.env }, ...(options.timeoutMs === undefined ? {} : { timeout: options.timeoutMs }), killSignal: 'SIGKILL', windowsHide: true, encoding: 'utf8' },
+      {
+        env: { ...options.env },
+        ...(options.timeoutMs === undefined ? {} : { timeout: options.timeoutMs }),
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        killSignal: 'SIGKILL',
+        windowsHide: true,
+        encoding: 'utf8',
+      },
       (error, stdout, stderr) => {
         if (error === null) {
           resolve({ exitCode: 0, stdout, stderr });

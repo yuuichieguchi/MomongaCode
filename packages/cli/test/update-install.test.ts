@@ -5,7 +5,7 @@ import { runUpdate } from '../src/commands/update.ts';
 import { UpdateError } from '../src/update/errors.ts';
 import { assetNameFor } from '../src/update/source.ts';
 import { checksumListing } from './fake-release-server.ts';
-import { NEW_BINARY, OLD_BINARY, TEAM_ID, setupUpdate } from './update-harness.ts';
+import { DAEMON_RESTART_BOUND_MS, NEW_BINARY, OLD_BINARY, TEAM_ID, setupUpdate } from './update-harness.ts';
 import type { HarnessOptions, UpdateHarness } from './update-harness.ts';
 
 const interrupt = (): AbortSignal => new AbortController().signal;
@@ -93,6 +93,21 @@ describe('momonga update: a good update', () => {
     expect(harness.targetBytes().equals(NEW_BINARY)).toBe(true);
   });
 
+  it('keeps the symlink and replaces the real file when the daemon is restarted through it', async (context) => {
+    const harness = await setupUpdate(context);
+    const link = path.join(harness.dir, 'momonga-link');
+    fs.symlinkSync(harness.target, link);
+    harness.ports.self = { kind: 'single-binary', execPath: link };
+    harness.control.daemonRunning = true;
+    publish(harness);
+
+    await update(harness);
+
+    expect(fs.readlinkSync(link)).toBe(harness.target);
+    expect(harness.runs.find((call) => call.args[0] === 'daemon')?.file).toBe(harness.target);
+    expect(harness.directoryEntries()).toEqual(['momonga', 'momonga-link']);
+  });
+
   it('removes staging files left behind by an earlier crashed update', async (context) => {
     const harness = await setupUpdate(context);
     fs.writeFileSync(path.join(harness.dir, '.momonga-update.deadbeef'), 'partial');
@@ -102,6 +117,63 @@ describe('momonga update: a good update', () => {
     await update(harness);
 
     expect(harness.directoryEntries()).toEqual(['momonga', 'unrelated']);
+  });
+});
+
+describe('momonga update: through a symlink, a failure before publishing', () => {
+  const linked = async (context: Parameters<typeof setupUpdate>[0], options: HarnessOptions = {}) => {
+    const harness = await setupUpdate(context, options);
+    const link = path.join(harness.dir, 'momonga-link');
+    fs.symlinkSync(harness.target, link);
+    harness.ports.self = { kind: 'single-binary', execPath: link };
+    return { harness, link };
+  };
+
+  const expectIntact = (harness: UpdateHarness, link: string): void => {
+    expect(fs.readlinkSync(link)).toBe(harness.target);
+    expect(harness.targetBytes().equals(OLD_BINARY)).toBe(true);
+    expect(harness.directoryEntries()).toEqual(['momonga', 'momonga-link']);
+  };
+
+  it('leaves the link and the real file intact and removes the staging file after a checksum mismatch', async (context) => {
+    const { harness, link } = await linked(context);
+    harness.server.publish('v2.0.0', { [assetOf(harness)]: NEW_BINARY }, { checksums: checksumListing({ [assetOf(harness)]: OLD_BINARY }) });
+
+    await expectRejected(harness, 'checksum_mismatch');
+
+    expectIntact(harness, link);
+  });
+
+  it('leaves the link and the real file intact and removes the staging file after a rejected signature', async (context) => {
+    const { harness, link } = await linked(context, darwin);
+    harness.control.codesign = { exitCode: 3, stdout: '', stderr: 'rejected' };
+    publish(harness);
+
+    await expectRejected(harness, 'signature_rejected');
+
+    expectIntact(harness, link);
+  });
+
+  it('leaves the link and the real file intact and removes the staging file after an unusable candidate', async (context) => {
+    const { harness, link } = await linked(context);
+    harness.control.reportedVersion = '9.9.9';
+    publish(harness);
+
+    await expectRejected(harness, 'candidate_unusable');
+
+    expectIntact(harness, link);
+  });
+
+  it('reports an unwritable real directory behind the link as typed and leaves everything intact', async (context) => {
+    const { harness, link } = await linked(context);
+    publish(harness);
+    fs.chmodSync(harness.dir, 0o555);
+    try {
+      await expectRejected(harness, 'install_directory_not_writable');
+    } finally {
+      fs.chmodSync(harness.dir, 0o755);
+    }
+    expectIntact(harness, link);
   });
 });
 
@@ -166,8 +238,8 @@ describe('momonga update: a release that must not be installed', () => {
   it('rejects a candidate that exits non-zero for --version', async (context) => {
     const harness = await setupUpdate(context);
     publish(harness);
-    harness.ports.run = async (file, args) => {
-      harness.runs.push({ file, args, targetContent: '', stagedContent: undefined });
+    harness.ports.run = async (file, args, options) => {
+      harness.runs.push({ file, args, options, targetContent: '', stagedContent: undefined });
       return { exitCode: 9, stdout: '', stderr: 'cannot start' };
     };
 
@@ -290,20 +362,35 @@ describe('momonga update: failures keep the installed binary intact', () => {
     expect(harness.released.count).toBe(1);
   });
 
-  it('surfaces a staging directory that cannot be written instead of falling back elsewhere', async (context) => {
+  it('reports an install directory that cannot be written with a typed error and the cause, without falling back elsewhere', async (context) => {
     const harness = await setupUpdate(context);
     publish(harness);
     fs.chmodSync(harness.dir, 0o555);
     try {
-      const error: unknown = await update(harness).then(
-        () => undefined,
-        (failure: unknown) => failure,
-      );
-      expect((error as NodeJS.ErrnoException).code).toBe('EACCES');
+      const error = await expectRejected(harness, 'install_directory_not_writable');
+      expect(error.message).toContain(harness.dir);
+      expect(error.detail).toMatch(/^EACCES: /);
+      expect(error.remediation).toContain('install script');
+      expect(error.cause).toMatchObject({ code: 'EACCES' });
     } finally {
       fs.chmodSync(harness.dir, 0o755);
     }
     expectUnchanged(harness);
+  });
+
+  it('keeps the reason of a failed update when the staging file cannot be removed either, and says so', async (context) => {
+    const harness = await setupUpdate(context);
+    harness.server.publish('v2.0.0', { [assetOf(harness)]: NEW_BINARY }, { checksums: checksumListing({ [assetOf(harness)]: OLD_BINARY }) });
+    const remove = harness.ports.fs.remove;
+    harness.ports.fs.remove = async () => {
+      throw new Error('the volume went away');
+    };
+
+    const error = await expectRejected(harness, 'checksum_mismatch');
+
+    expect(error.message).toContain('does not match SHA256SUMS');
+    expect(harness.stderr.join('')).toMatch(/momonga: the staging file .*\.momonga-update\..* could not be removed: the volume went away\n/);
+    for (const entry of fs.readdirSync(harness.dir)) if (entry.startsWith('.momonga-update.')) await remove(path.join(harness.dir, entry));
   });
 
   it('stops at an aborted signal without installing', async (context) => {
@@ -331,6 +418,18 @@ describe('momonga update: the daemon after the update', () => {
     expect(restart?.args).toEqual(['daemon', 'start']);
     expect(restart?.targetContent).toBe(NEW_BINARY.toString());
     expect(harness.stdout.join('')).toContain('restarted the daemon on the new version');
+  });
+
+  it('lets the interrupt stop the signature check, the candidate check and the restart, and bounds the restart', async (context) => {
+    const harness = await setupUpdate(context, darwin);
+    harness.control.daemonRunning = true;
+    publish(harness);
+    const controller = new AbortController();
+
+    await runUpdate(harness.wiring, { write: () => undefined }, { checkOnly: false, interrupt: controller.signal });
+
+    expect(harness.runs.map((call) => call.options.signal)).toEqual([controller.signal, controller.signal, controller.signal]);
+    expect(harness.runs.at(-1)?.options.timeoutMs).toBe(DAEMON_RESTART_BOUND_MS);
   });
 
   it('does not start a daemon that was not running', async (context) => {

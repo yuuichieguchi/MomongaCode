@@ -33,6 +33,19 @@ export const nodeFiles: CliFiles = {
   ensureDirectory: async (directory) => void (await fs.mkdir(directory, { recursive: true })),
   makeTempDirectory: (prefix) => fs.mkdtemp(path.join(os.tmpdir(), prefix)),
   removeTree: (directory) => fs.rm(directory, { recursive: true, force: true }),
+  readTextIfPresent: async (file) => {
+    try {
+      return await fs.readFile(file, 'utf8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+      throw error;
+    }
+  },
+  appendText: async (file, text, modes) => {
+    await fs.mkdir(path.dirname(file), { recursive: true, mode: modes.directory });
+    await fs.appendFile(file, text, { mode: modes.file });
+  },
+  rename: (from, to) => fs.rename(from, to),
 };
 
 export const nodeSpawnDetached: SpawnDetached = (spec) => {
@@ -54,6 +67,7 @@ export const nodeSelf = (argv: readonly string[], singleBinary: () => boolean): 
 
 export const nodePorts = (version: string): CliPorts => ({
   version,
+  platform: process.platform,
   env: process.env,
   cwd: process.cwd(),
   home: process.env['HOME'] ?? os.homedir(),

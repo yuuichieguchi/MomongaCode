@@ -18,6 +18,14 @@ describe('mcpServersOf', () => {
     });
   });
 
+  it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])('accepts the server name %s as an ordinary name', (name) => {
+    const configs = mcpServersOf([{ name, command: 'node', args: [], env: [] }]);
+
+    expect(Object.keys(configs)).toEqual([name]);
+    expect(Object.getOwnPropertyDescriptor(configs, name)?.value).toEqual({ type: 'stdio', command: 'node', args: [], env: {} });
+    expect(Object.getPrototypeOf(configs)).toBe(Object.prototype);
+  });
+
   it('returns no servers for an empty list', () => {
     expect(mcpServersOf([])).toEqual({});
   });

@@ -11,6 +11,7 @@ import { describeClassification, describeDenial, describeHook, describeRunError 
 import { asChildEvent } from './child-events.ts';
 import { followRun } from './follow.ts';
 import { openSession } from './open-session.ts';
+import type { CliSession } from './open-session.ts';
 import { resolveSkillInvocation } from './skill-invocation.ts';
 
 export const OUTPUT_FORMATS = ['text', 'json', 'stream-json'] as const;
@@ -64,7 +65,7 @@ export const describeEnd = (run: RunView): string => {
   return `momonga: run ${run.id} ${run.status}${reason === undefined ? '' : ` (${reason})`}`;
 };
 
-export type FrameSink = { handle(frame: RunEventFrame): void; handleChild(frame: RunEventFrame, agent: string): void; finalText(): string };
+export type FrameSink = { absorb(frame: RunEventFrame): void; handle(frame: RunEventFrame): void; handleChild(frame: RunEventFrame, agent: string): void; finalText(): string };
 
 const awaitedOf = (awaits: Extract<PublicRunEvent, { type: 'tool.waiting' }>['awaits']): string =>
   awaits.kind === 'run' ? `subagent ${awaits.agent} (run ${awaits.runId})` : `job ${awaits.jobId}`;
@@ -123,6 +124,12 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
     }
   };
 
+  const absorb = (frame: RunEventFrame): void => {
+    const event = frame.data;
+    if (event.type === 'tool.call') titles.set(event.callId, event.title);
+    if (event.type === 'agent.message.delta') items.set(event.itemId, `${items.get(event.itemId) ?? ''}${event.text}`);
+  };
+
   const handle = (frame: RunEventFrame): void => {
     const event = frame.data;
     if (format === 'stream-json') ports.stdout.write(`${JSON.stringify(event)}\n`);
@@ -145,7 +152,7 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
   };
 
   const finalText = (): string => [...items.values()].at(-1) ?? '';
-  return { handle, handleChild, finalText };
+  return { absorb, handle, handleChild, finalText };
 };
 
 export type WatchOptions = {
@@ -165,13 +172,15 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
       ports.stderr.write(`momonga: cancel failed: ${error instanceof Error ? error.message : String(error)}\n`);
     });
   };
-  options.interrupt.addEventListener('abort', cancelOnInterrupt, { once: true });
+  if (options.interrupt.aborted) cancelOnInterrupt();
+  else options.interrupt.addEventListener('abort', cancelOnInterrupt, { once: true });
   const run = await followRun({
     client,
     clock: ports.clock,
     random: ports.random,
     runId,
-    ...(options.after === undefined ? {} : { after: options.after }),
+    ...(options.after === undefined ? {} : { seenThrough: options.after }),
+    onSeenEvent: sink.absorb,
     reconnectBoundMs: await daemonReadyBoundMs(),
     restoreConnection: async () => {
       await ensureDaemon(ports, paths);
@@ -192,15 +201,28 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
   return run.status === 'CANCELLED' ? EXIT_CANCELLED : EXIT_RUN_FAILED;
 };
 
+const openInterruptibleSession = async (ports: CliPorts, paths: MomongaPaths, options: HeadlessOptions): Promise<CliSession | undefined> => {
+  try {
+    return await openSession(ports, paths, {
+      daemonReplacement: 'when-idle',
+      signal: options.interrupt,
+      ...(options.permissionMode === undefined ? {} : { permissionMode: options.permissionMode }),
+      ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),
+    });
+  } catch (error) {
+    if (options.interrupt.aborted && error === options.interrupt.reason) return undefined;
+    throw error;
+  }
+};
+
 export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options: HeadlessOptions): Promise<number> => {
-  const session = await openSession(ports, paths, {
-    ...(options.permissionMode === undefined ? {} : { permissionMode: options.permissionMode }),
-    ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),
-  });
+  const session = await openInterruptibleSession(ports, paths, options);
+  if (session === undefined) return EXIT_CANCELLED;
   try {
     const sessionId = session.created.session.id;
     const invocation = await resolveSkillInvocation(session.client, sessionId, options.prompt, options.skill);
     const images = await Promise.all((options.images ?? []).map((file) => readImageAttachment(ports.files, ports.cwd, file)));
+    if (options.interrupt.aborted) return EXIT_CANCELLED;
     const { run: started } = await session.client.createRun(sessionId, invocation.input, {
       ...(invocation.skill === undefined ? {} : { skill: invocation.skill }),
       ...(images.length === 0 ? {} : { images }),

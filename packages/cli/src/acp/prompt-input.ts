@@ -1,6 +1,7 @@
 import { RequestError } from '@agentclientprotocol/sdk';
 import type { ContentBlock } from '@agentclientprotocol/sdk';
-import { parseSlash } from '../tui/slash.ts';
+import { escapeXmlAttribute, escapeXmlText } from '@momonga/protocol';
+import { SkillInvocationError, skillInvocationOf } from '../run/skill-invocation.ts';
 
 export type PromptInput = { readonly input: string; readonly skill?: string };
 
@@ -11,9 +12,10 @@ const textOf = (block: ContentBlock): string => {
     case 'resource_link':
       return `[${block.name}](${block.uri})`;
     case 'resource': {
-      if ('text' in block.resource) return `<resource uri="${block.resource.uri}">\n${block.resource.text}\n</resource>`;
-      const mimeType = block.resource.mimeType === undefined || block.resource.mimeType === null ? '' : ` mimeType="${block.resource.mimeType}"`;
-      return `<resource uri="${block.resource.uri}"${mimeType} binary="true" bytes="${Buffer.byteLength(block.resource.blob, 'base64')}" />`;
+      const uri = escapeXmlAttribute(block.resource.uri);
+      if ('text' in block.resource) return `<resource uri="${uri}">\n${escapeXmlText(block.resource.text)}\n</resource>`;
+      const mimeType = block.resource.mimeType === undefined || block.resource.mimeType === null ? '' : ` mimeType="${escapeXmlAttribute(block.resource.mimeType)}"`;
+      return `<resource uri="${uri}"${mimeType} binary="true" bytes="${Buffer.byteLength(block.resource.blob, 'base64')}" />`;
     }
     case 'image':
     case 'audio':
@@ -24,7 +26,10 @@ const textOf = (block: ContentBlock): string => {
 export const promptInputOf = (blocks: readonly ContentBlock[], skillNames: readonly string[]): PromptInput => {
   const input = blocks.map(textOf).join('\n');
   if (input.trim() === '') throw RequestError.invalidParams(undefined, 'the prompt has no text');
-  const slash = parseSlash(input);
-  if (slash !== undefined && skillNames.includes(slash.name)) return { input, skill: slash.name };
-  return { input };
+  try {
+    return skillInvocationOf(input, skillNames);
+  } catch (error) {
+    if (error instanceof SkillInvocationError) throw RequestError.invalidParams(undefined, error.message);
+    throw error;
+  }
 };

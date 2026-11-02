@@ -240,6 +240,11 @@ export const fakeRuntime = (): FakeRuntime => {
     approvals: unexpected('approvals'),
     getApproval: async (id) => {
       record(`getApproval ${id}`);
+      const failure = runtime.failures.get('getApproval');
+      if (failure !== undefined) {
+        runtime.failures.delete('getApproval');
+        throw failure;
+      }
       return approvalView({ id, status: runtime.approvalStatus });
     },
     resolveApproval: async (id, optionId) => {
@@ -348,6 +353,7 @@ export const startAgent = (overrides: Partial<AcpDeps> = {}): Harness => {
     autoModeAvailable: async () => false,
     canonicalCwd: (cwd) => cwd,
     daemonReady: async () => undefined,
+    retryAfterRestore: (operation) => operation(),
     follow: async (request) => {
       const script = scripts.get(request.runId);
       if (script === undefined) throw new Error(`no script for run ${request.runId}`);

@@ -53,12 +53,13 @@ export const buildProgram = (deps: ProgramDeps): Command => {
 
   program.hook('preAction', async (_program, action) => {
     if (isBackgroundCheckExempt(action.name())) return;
+    const wiring = deps.update();
     try {
       if (!startsInteractiveSession(program, action)) {
-        const notice = await announceUpdate(deps.update);
+        const notice = await announceUpdate(wiring);
         if (notice !== undefined) ports.stderr.write(`momonga: ${notice}\n`);
       }
-      await startBackgroundCheck(deps.update);
+      await startBackgroundCheck(wiring);
     } catch (error) {
       ports.stderr.write(`momonga: the background update check was not started: ${describeFailure(error)}\n`);
     }
@@ -85,7 +86,7 @@ export const buildProgram = (deps: ProgramDeps): Command => {
       }
       if (ports.terminal === undefined) throw new Error('the interactive session needs a terminal; pass --print <prompt> to run without one');
       const { runInteractive } = await import('./tui/run-interactive.tsx');
-      deps.complete(await runInteractive(ports, pathsOf(ports), ports.terminal, { ...(prompt === undefined ? {} : { prompt }), ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...session }, deps.update));
+      deps.complete(await runInteractive(ports, pathsOf(ports), ports.terminal, { ...(prompt === undefined ? {} : { prompt }), ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...session }, deps.update()));
     });
 
   program
@@ -140,7 +141,7 @@ export const buildProgram = (deps: ProgramDeps): Command => {
     .description('replace this executable with the latest release after verifying its checksum and signature')
     .option('--check', 'only report whether a newer release exists')
     .action(async (options: { check?: true }) => {
-      deps.complete(await runUpdate(deps.update, ports.stdout, { checkOnly: options.check === true, interrupt: deps.interrupt }));
+      deps.complete(await runUpdate(deps.update(), ports.stdout, { checkOnly: options.check === true, interrupt: deps.interrupt }));
     });
 
   const daemon = program.command('daemon').description('manage the background daemon');
@@ -187,7 +188,7 @@ export const buildProgram = (deps: ProgramDeps): Command => {
     .command(UPDATE_CHECK_COMMAND, { hidden: true })
     .helpOption(false)
     .action(async () => {
-      deps.complete(await runBackgroundCheck(deps.update, deps.interrupt));
+      deps.complete(await runBackgroundCheck(deps.update(), deps.interrupt));
     });
   internal(INTERNAL_COMMANDS.supervise, deps.entries.supervise);
   internal(INTERNAL_COMMANDS.gateway, deps.entries.gateway);

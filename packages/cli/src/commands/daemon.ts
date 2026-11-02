@@ -24,7 +24,7 @@ export const daemonStatus = async (ports: CliPorts, paths: MomongaPaths): Promis
 };
 
 export const daemonStart = async (ports: CliPorts & DaemonPorts, paths: MomongaPaths): Promise<number> => {
-  const health = await ensureDaemon(ports, paths);
+  const health = await ensureDaemon(ports, paths, { replacement: 'always' });
   ports.stdout.write(`momonga daemon running: pid ${health.pid}, version ${health.version}\n`);
   return 0;
 };

@@ -1,4 +1,6 @@
 import type { SkillView } from '@momonga/protocol';
+import { SkillInvocationError, skillTask } from '../../run/skill-invocation.ts';
+import type { SkillInvocation } from '../../run/skill-invocation.ts';
 import type { SlashCommand } from '../slash.ts';
 
 export type SkillCommands = { commands: SlashCommand[]; shadowed: string[] };
@@ -16,11 +18,15 @@ export const skillCommands = (skills: readonly SkillView[], taken: ReadonlySet<s
       usage: '<task>',
       description: skill.description,
       run: async (args, context) => {
-        if (args === '') {
-          context.info(`/${skill.name} needs a task to run the skill on: /${skill.name} <task>`);
+        let invocation: SkillInvocation;
+        try {
+          invocation = skillTask(skill.name, args);
+        } catch (error) {
+          if (!(error instanceof SkillInvocationError)) throw error;
+          context.info(error.message);
           return;
         }
-        await context.startRun(args, { skill: skill.name });
+        await context.startRun(invocation.input, { skill: skill.name });
       },
     });
   }

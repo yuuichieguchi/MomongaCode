@@ -7,6 +7,7 @@ import type { FakeScriptedReply } from '@momonga/testkit';
 import cliPackage from '../packages/cli/package.json' with { type: 'json' };
 import { startAcpClient, updatesOf } from './support/acp.ts';
 import { titleOf } from './support/cases.ts';
+import { runCli } from './support/cli.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
@@ -58,6 +59,23 @@ const codeOf = async (call: Promise<unknown>): Promise<number> => {
 };
 
 describe('acp: momonga acp', () => {
+  it(titleOf('acp-daemon-restart'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    const { home, project } = await prepare(() => []);
+    const acp = startAcpClient(home);
+    await acp.initialize();
+    const first = await acp.agent.request('session/new', { cwd: project, mcpServers: [] });
+    expect(first.sessionId).not.toBe('');
+
+    const stopped = await runCli(home, ['daemon', 'stop']);
+    expect(stopped.stdout).toBe('momonga daemon stopped\n');
+
+    const second = await acp.agent.request('session/new', { cwd: project, mcpServers: [] });
+    expect(second.sessionId).not.toBe(first.sessionId);
+    const status = await runCli(home, ['daemon', 'status']);
+    expect(status.code).toBe(0);
+    expect(await acp.finish()).toEqual({ code: 0, signal: null });
+  });
+
   it(titleOf('acp-edit-task'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const { home, project, target, fake } = await prepare(editTask);
     const acp = startAcpClient(home, { capabilities: { session: { notices: {}, compaction: {} } } });

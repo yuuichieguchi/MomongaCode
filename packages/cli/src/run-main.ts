@@ -5,6 +5,7 @@ import { nodePorts } from './node-ports.ts';
 import type { CliPorts } from './ports.ts';
 import { pathsOf } from './paths.ts';
 import { buildProgram } from './program.ts';
+import type { UpdateWiring } from './update/background.ts';
 import { nodeUpdateWiring } from './update/wiring.ts';
 
 const entryIo = (args: readonly string[]): ReturnType<typeof nodeEntryIo> => ({ ...nodeEntryIo(), argv: [...args] });
@@ -13,20 +14,19 @@ export const runMain = async (version: string, overrides: Partial<CliPorts> = {}
   const interrupt = new AbortController();
   process.once('SIGINT', () => interrupt.abort());
 
-  const ports: CliPorts = { ...nodePorts(version), ...overrides };
-
-  const program = buildProgram({
-    ports,
-    entries: daemonEntries(ports.self),
-    update: nodeUpdateWiring(ports, pathsOf(ports)),
-    interrupt: interrupt.signal,
-    entryIo,
-    complete: (code) => {
-      process.exitCode = code;
-    },
-  });
-
   try {
+    const ports: CliPorts = { ...nodePorts(version), ...overrides };
+    let update: UpdateWiring | undefined;
+    const program = buildProgram({
+      ports,
+      entries: daemonEntries(ports.self),
+      update: () => (update ??= nodeUpdateWiring(ports, pathsOf(ports))),
+      interrupt: interrupt.signal,
+      entryIo,
+      complete: (code) => {
+        process.exitCode = code;
+      },
+    });
     await program.parseAsync();
   } catch (error) {
     process.stderr.write(`momonga: ${describeFailure(error)}\n`);

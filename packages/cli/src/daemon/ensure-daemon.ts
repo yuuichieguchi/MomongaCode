@@ -1,11 +1,13 @@
 import { EXIT_ALREADY_RUNNING, ENTRY_HARD_EXIT_MARGIN_MS, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, inspectProcessLock, supervisorMaxCloseMs } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
+import { createRuntimeClient } from '../client/runtime-client.ts';
 import { createSupervisorClient } from '../client/supervisor-client.ts';
 import type { SupervisorClient } from '../client/supervisor-client.ts';
-import { POLL_INTERVAL_MS } from '../constants.ts';
+import { DAEMON_POLL_INTERVAL_MS } from '../constants.ts';
 import { pollUntil } from '../poll.ts';
 import type { CliPorts, DetachedExit } from '../ports.ts';
+import { compareVersions, tryParseVersion } from '../update/version.ts';
 import { INTERNAL_COMMANDS, selfInvocation } from './launcher.ts';
 
 export class DaemonStartError extends Error {
@@ -64,11 +66,11 @@ const heldFailure = (health: SupervisorHealth): string | undefined => {
 
 const exitDescription = (exit: DetachedExit): string => `code ${exit.code}, signal ${exit.signal}`;
 
-export const waitForSupervisorGone = async (ports: Pick<DaemonPorts, 'clock'>, paths: MomongaPaths, stopMs: number): Promise<void> => {
+export const waitForSupervisorGone = async (ports: Pick<DaemonPorts, 'clock'>, paths: MomongaPaths, stopMs: number, signal?: AbortSignal): Promise<void> => {
   await pollUntil(
     ports.clock,
     async () => ((await inspectProcessLock(paths.locks.supervisor)).state === 'free' ? true : undefined),
-    { boundMs: stopMs, intervalMs: POLL_INTERVAL_MS, description: 'the previous supervisor to release its lock' },
+    { boundMs: stopMs, intervalMs: DAEMON_POLL_INTERVAL_MS, description: 'the previous supervisor to release its lock', ...(signal === undefined ? {} : { signal }) },
   );
 };
 
@@ -89,13 +91,13 @@ type SpawnOutcome = { exit: DetachedExit } | { error: unknown };
 
 type SpawnedSupervisor = { outcome(): SpawnOutcome | undefined };
 
-const awaitReady = async (ports: DaemonPorts, paths: MomongaPaths, client: SupervisorClient, readyMs: number, spawned?: SpawnedSupervisor): Promise<SupervisorHealth> =>
+const awaitReady = async (ports: DaemonPorts, paths: MomongaPaths, client: SupervisorClient, readyMs: number, signal?: AbortSignal, spawned?: SpawnedSupervisor): Promise<SupervisorHealth> =>
   pollUntil(
     ports.clock,
     async () => {
       const health = await probeSupervisor(client);
       if (health !== undefined) {
-        if (health.version !== ports.version) {
+        if (spawned !== undefined && health.version !== ports.version) {
           throw new DaemonStartError(`the daemon (pid ${health.pid}) runs version ${health.version}, not ${ports.version}; run \`momonga daemon stop\``, paths.logFiles.supervisor);
         }
         const held = heldFailure(health);
@@ -109,10 +111,10 @@ const awaitReady = async (ports: DaemonPorts, paths: MomongaPaths, client: Super
       }
       return undefined;
     },
-    { boundMs: readyMs, intervalMs: POLL_INTERVAL_MS, description: 'the daemon to become ready' },
+    { boundMs: readyMs, intervalMs: DAEMON_POLL_INTERVAL_MS, description: 'the daemon to become ready', ...(signal === undefined ? {} : { signal }) },
   );
 
-const startDaemon = async (ports: DaemonPorts, paths: MomongaPaths, client: SupervisorClient, readyMs: number): Promise<SupervisorHealth> => {
+const startDaemon = async (ports: DaemonPorts, paths: MomongaPaths, client: SupervisorClient, readyMs: number, signal?: AbortSignal): Promise<SupervisorHealth> => {
   const invocation = selfInvocation(ports.self, INTERNAL_COMMANDS.supervise, superviseFlags(ports));
   const child = ports.spawnDetached({ command: invocation.command, args: invocation.args, env: ports.env, cwd: ports.home });
   let outcome: SpawnOutcome | undefined;
@@ -124,19 +126,53 @@ const startDaemon = async (ports: DaemonPorts, paths: MomongaPaths, client: Supe
       outcome = { error };
     },
   );
-  return awaitReady(ports, paths, client, readyMs, { outcome: () => outcome });
+  return awaitReady(ports, paths, client, readyMs, signal, { outcome: () => outcome });
 };
 
-export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, bounds?: DaemonBounds): Promise<SupervisorHealth> => {
-  const { readyMs, stopMs } = bounds ?? (await defaultDaemonBounds());
+export type DaemonReplacement = 'never' | 'when-idle' | 'always';
+
+export type EnsureDaemonOptions = { bounds?: DaemonBounds; replacement?: DaemonReplacement; signal?: AbortSignal };
+
+const isStrictlyNewerThan = (clientVersion: string, daemonVersion: string): boolean => {
+  const client = tryParseVersion(clientVersion);
+  const daemon = tryParseVersion(daemonVersion);
+  return client !== undefined && daemon !== undefined && compareVersions(client, daemon) === 1;
+};
+
+const hasNoActiveRun = async (paths: MomongaPaths, health: SupervisorHealth): Promise<boolean> => {
+  const runtime = health.children.find((child) => child.role === 'runtime');
+  if (runtime?.state !== 'ready') return false;
+  const client = createRuntimeClient({ socketPath: paths.sockets.runtime });
+  try {
+    return (await client.listSessions()).every((session) => session.activeRunId === null);
+  } finally {
+    await client.close();
+  }
+};
+
+const mayReplace = async (ports: DaemonPorts, paths: MomongaPaths, current: SupervisorHealth, replacement: DaemonReplacement): Promise<boolean> => {
+  if (replacement === 'never' || !isStrictlyNewerThan(ports.version, current.version)) return false;
+  return replacement === 'always' || (await hasNoActiveRun(paths, current));
+};
+
+export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, options: EnsureDaemonOptions = {}): Promise<SupervisorHealth> => {
+  const { signal } = options;
+  signal?.throwIfAborted();
+  const { readyMs, stopMs } = options.bounds ?? (await defaultDaemonBounds());
   const client = createSupervisorClient({ socketPath: paths.sockets.supervisor });
   try {
     const current = await probeSupervisor(client);
-    if (current === undefined) return await startDaemon(ports, paths, client, readyMs);
-    if (current.version === ports.version && current.phase !== 'draining') return await awaitReady(ports, paths, client, readyMs);
-    if (current.phase !== 'draining') await client.shutdown();
-    await waitForSupervisorGone(ports, paths, stopMs);
-    return await startDaemon(ports, paths, client, readyMs);
+    if (current === undefined) return await startDaemon(ports, paths, client, readyMs, signal);
+    if (current.phase === 'draining') {
+      await waitForSupervisorGone(ports, paths, stopMs, signal);
+      return await startDaemon(ports, paths, client, readyMs, signal);
+    }
+    if (await mayReplace(ports, paths, current, options.replacement ?? 'never')) {
+      await client.shutdown();
+      await waitForSupervisorGone(ports, paths, stopMs, signal);
+      return await startDaemon(ports, paths, client, readyMs, signal);
+    }
+    return await awaitReady(ports, paths, client, readyMs, signal);
   } finally {
     await client.close();
   }

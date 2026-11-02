@@ -295,6 +295,13 @@ export function App(props: AppProps) {
     setApprovalIndexState(index);
   };
 
+  const promptKey = transcript.approval?.approvalId ?? transcript.elicitation?.inputId;
+  const [selectionOwner, setSelectionOwner] = useState(promptKey);
+  if (selectionOwner !== promptKey) {
+    setSelectionOwner(promptKey);
+    setApprovalIndex(0);
+  }
+
   const setAttachments = (next: readonly Attachment[]): void => {
     attachmentsRef.current = next;
     setAttachmentsState(next);

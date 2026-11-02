@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { CommandResult } from '@momonga/foundation';
+import type { CommandOptions, CommandResult } from '@momonga/foundation';
 import { registerCleanup, withTempDir } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import type { DetachedSpawn, SelfExecutable } from '../src/ports.ts';
@@ -16,7 +16,9 @@ export const TEAM_ID = 'ABCDE12345';
 export const OLD_BINARY = Buffer.from('old-binary-bytes');
 export const NEW_BINARY = Buffer.from('new-binary-bytes-of-a-newer-release');
 
-export type RunCall = { file: string; args: readonly string[]; targetContent: string; stagedContent: string | undefined };
+export const DAEMON_RESTART_BOUND_MS = 123_456;
+
+export type RunCall = { file: string; args: readonly string[]; options: CommandOptions; targetContent: string; stagedContent: string | undefined };
 
 export type Control = {
   codesign: CommandResult;
@@ -91,8 +93,8 @@ export const setupUpdate = async (context: TestContext, options: HarnessOptions 
     clock: virtualClock(),
     http: undiciUpdateHttp(),
     fs: nodeUpdateFs(),
-    run: async (file, args) => {
-      runs.push({ file, args, targetContent: fs.readFileSync(target, 'utf8'), stagedContent: readText(file) });
+    run: async (file, args, options) => {
+      runs.push({ file, args, options, targetContent: fs.readFileSync(target, 'utf8'), stagedContent: readText(file) });
       if (file === '/usr/bin/codesign') return control.codesign;
       if (args[0] === '--version') return ok(`${control.reportedVersion ?? (server.latestTag ?? '').slice(1)}\n`);
       if (args[0] === 'daemon' && args[1] === 'start') return control.daemonStart;
@@ -115,7 +117,7 @@ export const setupUpdate = async (context: TestContext, options: HarnessOptions 
         state.writes.push(value);
       },
     },
-    daemon: { running: async () => control.daemonRunning },
+    daemon: { running: async () => control.daemonRunning, restartBoundMs: async () => DAEMON_RESTART_BOUND_MS },
     autoUpdates: async () => control.autoUpdates,
     spawnDetached: (spec) => {
       let rejectExit: (error: Error) => void = () => undefined;

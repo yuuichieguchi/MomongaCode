@@ -5,6 +5,7 @@ import path from 'node:path';
 import { CLI_BUNDLE, CLI_FAKES_BUNDLE, cliEnv, fakePortsEnv } from './cli.ts';
 import { registerE2eCleanup } from './home.ts';
 import type { E2eHome } from './home.ts';
+import { trackStreamErrors } from './stream-errors.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, until } from './wait.ts';
 
 export const SCRIPT_BINARY = '/usr/bin/script';
@@ -61,7 +62,7 @@ export const spawnPty = async (home: E2eHome, args: readonly string[], env: Read
     },
   );
   const input = fs.createWriteStream(fifo);
-  input.on('error', () => undefined);
+  const inputPipe = trackStreamErrors(input, 'the input pipe of the pty');
   const shellClosed = new Promise<void>((resolve, reject) => {
     child.once('error', reject);
     child.once('close', () => resolve());
@@ -79,6 +80,7 @@ export const spawnPty = async (home: E2eHome, args: readonly string[], env: Read
     });
     input.end();
     await shellClosed;
+    inputPipe.assertHealthy();
     return { code, signal: null };
   };
 
@@ -86,6 +88,7 @@ export const spawnPty = async (home: E2eHome, args: readonly string[], env: Read
     if (child.pid !== undefined && child.exitCode === null && child.signalCode === null) process.kill(-child.pid, 'SIGKILL');
     input.destroy();
     await shellClosed;
+    inputPipe.assertHealthy();
   });
   const rawOutput = (): string => (fs.existsSync(transcript) ? fs.readFileSync(transcript, 'utf8') : '');
   let writtenAt = 0;
@@ -102,8 +105,15 @@ export const spawnPty = async (home: E2eHome, args: readonly string[], env: Read
       throw new Error(`${error instanceof Error ? error.message : String(error)}\nscreen tail:\n${screen().slice(-1500)}`, { cause: error });
     }
   };
-  return { sinceLastWrite, write: (text) => {
+  return {
+    sinceLastWrite,
+    write: (text) => {
+      inputPipe.assertHealthy();
       writtenAt = rawOutput().length;
       input.write(text);
-    }, screen, waitFor, exit };
+    },
+    screen,
+    waitFor,
+    exit,
+  };
 };
