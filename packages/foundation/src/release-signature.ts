@@ -11,7 +11,9 @@ export type PlacedFile = { readonly path: string; remove(): Promise<void> };
 
 export type PlaceFile = (content: string) => Promise<PlacedFile>;
 
-export type ReleaseSignatureVerdict = { kind: 'valid' } | { kind: 'invalid'; detail: string };
+export const SIGNATURE_REJECTED_EXIT_CODE = 255;
+
+export type ReleaseSignatureVerdict = { kind: 'valid' } | { kind: 'invalid'; detail: string } | { kind: 'tool_unusable'; detail: string };
 
 export type VerifyReleaseSignatureInput = {
   run: CommandRunner;
@@ -24,27 +26,57 @@ export type VerifyReleaseSignatureInput = {
   signal?: AbortSignal;
 };
 
-export const verifyReleaseSignature = async (input: VerifyReleaseSignatureInput): Promise<ReleaseSignatureVerdict> => {
-  const signers = await input.place(`${RELEASE_SIGNATURE_NAMESPACE} ${input.publicKey}\n`);
+export const RELEASE_SIGNATURE_KNOWN_ANSWER = {
+  publicKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFwe8TGwVyt4tOBlS8ZQ4u0RZPmNbMoDh39vu78BBdz/',
+  content: 'momonga-known-answer\n',
+  signature: [
+    '-----BEGIN SSH SIGNATURE-----',
+    'U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgXB7xMbBXK3i04GVLxlDi7RFk+Y',
+    '1sygOHf2+7vwEF3P8AAAAPbW9tb25nYS1yZWxlYXNlAAAAAAAAAAZzaGE1MTIAAABTAAAA',
+    'C3NzaC1lZDI1NTE5AAAAQCeeh0B8rYw6InWFDGdscolZEvxOMcA70RC5KdVBVIQwO13qy9',
+    'QwXGKVndeMYhS5P1o3zbFtOwrgq7hpDJelowo=',
+    '-----END SSH SIGNATURE-----',
+    '',
+  ].join('\n'),
+} as const;
+
+type VerificationOutcome = { exitCode: number; detail: string };
+
+const runVerification = async (
+  input: VerifyReleaseSignatureInput,
+  publicKey: string,
+  checksums: string,
+  signatureText: string,
+): Promise<VerificationOutcome> => {
+  const signers = await input.place(`${RELEASE_SIGNATURE_NAMESPACE} ${publicKey}\n`);
   try {
-    const signature = await input.place(input.signature);
+    const signature = await input.place(signatureText);
     try {
       const result = await input.run(
         RELEASE_SIGNATURE_TOOL,
         ['-Y', 'verify', '-f', signers.path, '-I', RELEASE_SIGNATURE_NAMESPACE, '-n', RELEASE_SIGNATURE_NAMESPACE, '-s', signature.path],
         {
           env: input.env,
-          input: input.checksums,
+          input: checksums,
           ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
           ...(input.signal === undefined ? {} : { signal: input.signal }),
         },
       );
-      if (result.exitCode === 0) return { kind: 'valid' };
-      return { kind: 'invalid', detail: `${result.stderr}${result.stdout}`.trim() };
+      return { exitCode: result.exitCode, detail: `${result.stderr}${result.stdout}`.trim() };
     } finally {
       await signature.remove();
     }
   } finally {
     await signers.remove();
   }
+};
+
+export const verifyReleaseSignature = async (input: VerifyReleaseSignatureInput): Promise<ReleaseSignatureVerdict> => {
+  const outcome = await runVerification(input, input.publicKey, input.checksums, input.signature);
+  if (outcome.exitCode === 0) return { kind: 'valid' };
+  if (outcome.exitCode !== SIGNATURE_REJECTED_EXIT_CODE) return { kind: 'tool_unusable', detail: outcome.detail };
+  const known = RELEASE_SIGNATURE_KNOWN_ANSWER;
+  const control = await runVerification(input, known.publicKey, known.content, known.signature);
+  if (control.exitCode !== 0) return { kind: 'tool_unusable', detail: outcome.detail };
+  return { kind: 'invalid', detail: outcome.detail };
 };

@@ -105,6 +105,7 @@ export { FAKE_OS_BUILD, createFakeFm, fakeExec } from './fake-fm.ts';
 export type { CreateFakeFmOptions, FakeExecResult, FakeFm, FakeFmConfig } from './fake-fm.ts';
 export {
   TEMP_DIR_PREFIX,
+  TEST_HEARTBEAT_MS,
   TEST_RUN_ENV,
   assertHomeSocketBudget,
   registerCleanup,
@@ -118,8 +119,8 @@ export { createFakeEntryIo, parseJsonLines } from './fake-entry-io.ts';
 export type { FakeEntryIo, FakeEntryIoOptions, JsonLine } from './fake-entry-io.ts';
 export { DAEMON_BIN_EXIT_DEADLINE_MS, DAEMON_BIN_READY_DEADLINE_MS, readJsonLinesFile, startDaemonBin } from './daemon-bin.ts';
 export type { DaemonBin } from './daemon-bin.ts';
-export { APPLE_PROGRAMS, TEST_SEARCH_PATH, fakePolicyFilesystem, isWritableFor, protectedSetWith } from './fake-policy-filesystem.ts';
-export type { FakeGlobExpansion, FakePolicyFilesystem, FakePolicyFilesystemLayout, FakeProgramResolution, FakeResolveCall, RecordingPolicyFilesystem } from './fake-policy-filesystem.ts';
+export { APPLE_PROGRAMS, FAKE_LEASE, TEST_SEARCH_PATH, fakePolicyFilesystem, hostFilesystemOf, isWritableFor, protectedSetWith } from './fake-policy-filesystem.ts';
+export type { FakeGlobDeadline, FakeGlobExpansion, FakePolicyFilesystem, FakePolicyFilesystemLayout, FakeProgramResolution, FakeResolveCall, HostOf, RecordingPolicyFilesystem } from './fake-policy-filesystem.ts';
 export { OTLP_SPAN_KIND, decodeOtlpSpans, otlpAttributes, startOtlpCollector } from './otlp-collector.ts';
 export type { CollectedOtlpRequest, DecodedOtlpSpan, OtlpCollector, OtlpCollectorResponse } from './otlp-collector.ts';
 export { startFakeSseUpstream } from './fake-sse-upstream.ts';

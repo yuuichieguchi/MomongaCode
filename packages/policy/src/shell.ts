@@ -16,9 +16,12 @@ export type DirectoryStep = { path: string; physical: boolean } | null;
 
 export type Place = { effect: CwdEffect; trail: readonly DirectoryStep[] };
 
+export type Joint = 'pipe' | 'and-or' | 'background' | 'terminator';
+
 export type Segment = {
   text: string;
   words: Word[];
+  joint: Joint;
   opaque: boolean;
   commandIndex: number;
   effectiveIndex: number;
@@ -87,7 +90,7 @@ const nameOf = (word: Word | undefined): string | undefined =>
 
 const EMPTY_EFFECTS: ProgramEffects = { writes: [], reads: [], opaque: false };
 
-const describeSegment = (text: string, words: Word[], opaque: boolean, place: Place, specs: CommandSpecs): Segment => {
+const describeSegment = (text: string, words: Word[], joint: Joint, opaque: boolean, place: Place, specs: CommandSpecs): Segment => {
   let commandIndex = 0;
   while (commandIndex < words.length && ASSIGNMENT.test((words[commandIndex] as Word).value)) commandIndex += 1;
   const effective = locateEffectiveCommand(words, specs);
@@ -99,6 +102,7 @@ const describeSegment = (text: string, words: Word[], opaque: boolean, place: Pl
   return {
     text,
     words,
+    joint,
     opaque,
     commandIndex,
     effectiveIndex: effective.index,
@@ -221,14 +225,14 @@ const scanFrom = (command: string, start: number, depth: number, incoming: Place
     }
   };
 
-  const endSegment = (endIndex: number, operatorLength: number): void => {
+  const endSegment = (endIndex: number, operatorLength: number, joint: Joint): void => {
     flushWord();
     if (pending !== null) unsupported('redirection without a target');
     const text = command.slice(segmentStart, endIndex).trim();
     if (text !== '') {
       const first = words[0];
       if (first !== undefined && first.plain && RESERVED_WORDS.has(first.value)) unsupported('shell reserved word');
-      const segment = describeSegment(text, words, opaque, { effect: cwdState, trail }, specs);
+      const segment = describeSegment(text, words, joint, opaque, { effect: cwdState, trail }, specs);
       segments.push(segment);
       const firstPayload = nested.length;
       const payloadEffect = collectPayloads(segment, nested, depth, specs);
@@ -328,7 +332,7 @@ const scanFrom = (command: string, start: number, depth: number, incoming: Place
     const next = command[index + 1];
 
     if (char === ')' && inSubstitution) {
-      endSegment(index, 0);
+      endSegment(index, 0, 'terminator');
       end = index + 1;
       closed = true;
       break;
@@ -336,12 +340,12 @@ const scanFrom = (command: string, start: number, depth: number, incoming: Place
       flushWord();
       index += 1;
     } else if (char === '\n') {
-      endSegment(index, 1);
+      endSegment(index, 1, 'terminator');
       index += 1;
     } else if (char === '#' && !word.started) {
       const lineEnd = command.indexOf('\n', index);
       const commentEnd = lineEnd === -1 ? command.length : lineEnd;
-      endSegment(index, commentEnd - index);
+      endSegment(index, commentEnd - index, 'terminator');
       index = commentEnd;
     } else if (char === '\\') {
       if (next === undefined) return unsupported('dangling backslash');
@@ -368,22 +372,22 @@ const scanFrom = (command: string, start: number, depth: number, incoming: Place
       return unsupported('subshell or grouping');
     } else if (char === ';') {
       if (next === ';') return unsupported('case terminator');
-      endSegment(index, 1);
+      endSegment(index, 1, 'terminator');
       index += 1;
     } else if (char === '|') {
       const length = next === '|' || next === '&' ? 2 : 1;
-      endSegment(index, length);
+      endSegment(index, length, next === '|' ? 'and-or' : 'pipe');
       index += length;
     } else if (char === '&') {
       if (next === '&') {
-        endSegment(index, 2);
+        endSegment(index, 2, 'and-or');
         index += 2;
       } else if (next === '>') {
         flushWord();
         startRedirect('write');
         index += command[index + 2] === '>' ? 3 : 2;
       } else {
-        endSegment(index, 1);
+        endSegment(index, 1, 'background');
         index += 1;
       }
     } else if (char === '>') {
@@ -426,7 +430,7 @@ const scanFrom = (command: string, start: number, depth: number, incoming: Place
     }
   }
   if (inSubstitution && !closed) return unsupported('unterminated command substitution');
-  if (!closed) endSegment(command.length, 0);
+  if (!closed) endSegment(command.length, 0, 'terminator');
 
   for (const segment of segments) {
     segment.effects = pathEffectsOf(segment, strongerEffect(segment.cwdBefore, segment.cwdEffect), specs);
@@ -484,21 +488,80 @@ export const analyzeCommand = (command: string, specs: CommandSpecs = STRUCTURAL
 const writesOf = (segment: Segment, resolveFor: ((segment: Segment) => string | undefined) | undefined): Target[] =>
   segment.effects.darwinWrites !== undefined && resolveFor?.(segment) === DARWIN_SED ? segment.effects.darwinWrites : segment.effects.writes;
 
-export type ExecutionStep = { reads: Target[]; writes: Target[]; relocates: boolean };
+export type ExecutionStep = { reads: Target[]; writes: Target[]; segment: Segment | undefined; concurrentWith: number[]; outlives: boolean };
+
+const listsOf = (segments: readonly Segment[]): { pipelineOf: number[]; listOf: number[] } => {
+  const pipelineOf: number[] = [];
+  const listOf: number[] = [];
+  let pipeline = 0;
+  let list = 0;
+  for (const segment of segments) {
+    pipelineOf.push(pipeline);
+    listOf.push(list);
+    if (segment.joint !== 'pipe') pipeline += 1;
+    if (segment.joint !== 'pipe' && segment.joint !== 'and-or') list += 1;
+  }
+  return { pipelineOf, listOf };
+};
+
+const backgroundedPositions = (segments: readonly Segment[]): boolean[] => {
+  const { listOf } = listsOf(segments);
+  return segments.map((_, position) => segments.some((segment, other) => listOf[other] === listOf[position] && segment.joint === 'background'));
+};
+
+const concurrentPositions = (segments: readonly Segment[]): number[][] => {
+  const { pipelineOf, listOf } = listsOf(segments);
+  const backgrounded = backgroundedPositions(segments);
+  const together = (first: number, second: number): boolean => {
+    const [earlier, later] = first < second ? [first, second] : [second, first];
+    return pipelineOf[earlier] === pipelineOf[later] || (listOf[earlier] !== listOf[later] && (backgrounded[earlier] as boolean));
+  };
+  return segments.map((_, position) => segments.flatMap((__, other) => (other !== position && together(position, other) ? [other] : [])));
+};
 
 export const executionSteps = (analysis: Analysis, resolveFor?: (segment: Segment) => string | undefined): ExecutionStep[] => {
   const steps: ExecutionStep[] = [];
+  const ranges: Array<{ start: number; end: number }> = [];
+  const backgroundedAt = backgroundedPositions(analysis.segments);
+  const escapes: Array<{ step: number; blockEnd: number }> = [];
   for (let position = 0; position < analysis.segments.length; position += 1) {
-    for (const inner of analysis.nested) if (inner.at === position) steps.push(...executionSteps(inner, resolveFor));
+    const start = steps.length;
+    for (const inner of analysis.nested) {
+      if (inner.at !== position) continue;
+      const offset = steps.length;
+      const block = executionSteps(inner, resolveFor);
+      for (const step of block) steps.push({ ...step, concurrentWith: step.concurrentWith.map((index) => index + offset) });
+      block.forEach((step, index) => {
+        if (step.outlives) escapes.push({ step: offset + index, blockEnd: offset + block.length });
+      });
+    }
     steps.push({
       reads: analysis.reads.filter((_, index) => analysis.readAt[index] === position),
       writes: analysis.redirects.filter((_, index) => analysis.redirectAt[index] === position),
-      relocates: false,
+      segment: undefined,
+      concurrentWith: [],
+      outlives: backgroundedAt[position] as boolean,
     });
     const segment = analysis.segments[position] as Segment;
-    const writes = writesOf(segment, resolveFor);
-    steps.push({ reads: segment.effects.reads, writes, relocates: segment.effects.spec?.createsNames === true && writes.length > 0 });
+    steps.push({ reads: segment.effects.reads, writes: writesOf(segment, resolveFor), segment, concurrentWith: [], outlives: backgroundedAt[position] as boolean });
+    if (backgroundedAt[position]) for (let index = start; index < steps.length; index += 1) (steps[index] as ExecutionStep).outlives = true;
+    ranges.push({ start, end: steps.length });
   }
+  for (const { step, blockEnd } of escapes) {
+    for (let later = blockEnd; later < steps.length; later += 1) {
+      (steps[step] as ExecutionStep).concurrentWith.push(later);
+      (steps[later] as ExecutionStep).concurrentWith.push(step);
+    }
+  }
+  concurrentPositions(analysis.segments).forEach((others, position) => {
+    const own = ranges[position] as { start: number; end: number };
+    for (const other of others) {
+      const foreign = ranges[other] as { start: number; end: number };
+      for (let index = own.start; index < own.end; index += 1) {
+        for (let target = foreign.start; target < foreign.end; target += 1) (steps[index] as ExecutionStep).concurrentWith.push(target);
+      }
+    }
+  });
   return steps;
 };
 

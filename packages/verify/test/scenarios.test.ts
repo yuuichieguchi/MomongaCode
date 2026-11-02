@@ -50,6 +50,7 @@ describe('a clean rule set', () => {
     ]);
 
     expect(statuses(report)).toEqual({ 'deny-precedence': 'proved', 'secret-reach': 'proved', 'rule-consistency': 'proved', 'bash-admission': 'proved' });
+    expect(report.mismatches).toEqual([]);
     expect(report.exitCode).toBe(0);
     const note = report.outsideProof.find((item) => item.startsWith('Bash rules the model cannot follow')) ?? '';
     expect(note).toContain('Bash(sudo:*)');
@@ -205,7 +206,7 @@ describe('rules that cannot take effect or that contradict', () => {
 });
 
 describe('solver limits', () => {
-  it('reports unknown, never proved, for a query the solver cannot finish within its timeout', async () => {
+  it('reports unknown, never proved, for a query the solver cannot finish within the verification budget', async () => {
     const { report } = await run(
       [
         ['allow', 'Bash(git:*)'],
@@ -213,7 +214,7 @@ describe('solver limits', () => {
         ['deny', 'Bash(rm:*)'],
         ['allow', 'Bash(ls:*)'],
       ],
-      { timeoutMs: 1 },
+      { budgetMs: 1 },
     );
 
     const unknown = report.results.filter((result) => result.verdict.status === 'unknown');

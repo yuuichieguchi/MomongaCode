@@ -17,7 +17,7 @@ import type { ToolRuntimePort, Worker, WorkerOptions } from '@momonga/runtime';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { Claim, RuntimeStore, Session } from '@momonga/store';
-import { fakePolicyFilesystem, createFakeClock, createFakeKernelLock, createFakeTimers } from '@momonga/testkit';
+import { FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import type { ToolSessionState } from '@momonga/tools';
@@ -477,7 +477,7 @@ export const serviceOptions = (
       structuredOutput: 'none',
       streaming: true,
       stopSequences: true,
-      ...protocol.imageCapability(overrides.imageInput === true, overrides.imageInput === true ? { pixelsPerToken: 750, maxTokens: 1600 } : undefined),
+      ...protocol.imageCapability(overrides.imageInput === true, overrides.imageInput === true ? { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } : undefined),
       parallelToolCalls: false,
       schemaDialect: 'json-schema-2020-12',
       tokenCounting: 'estimated',
@@ -506,7 +506,7 @@ export const serviceOptions = (
       report: {
         runs: [],
         sessions: [],
-        total: { calls: 0, unpricedCalls: 0, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, amount: 0, currency: 'USD', priceVersions: [] },
+        total: { calls: 0, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 0, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, amount: 0, currency: 'USD', priceVersions: [] },
       },
       text: 'cost report',
     })),
@@ -686,7 +686,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
   const tracer = createFakeTracer();
   const toolbox = createFakeToolbox();
   const instructions = createFakeInstructions();
-  const executor = createToolExecutor({ fs: fakePolicyFilesystem(), idempotency: env.store.idempotency, blobs: env.store.blobs, clock: env.clock, processMarkerDir: markers, callLockDir: callLocks, kernelLock: createFakeKernelLock({ inheritable: false }), onWarning: () => undefined });
+  const executor = createToolExecutor({ fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE, idempotency: env.store.idempotency, blobs: env.store.blobs, clock: env.clock, processMarkerDir: markers, callLockDir: callLocks, kernelLock: createFakeKernelLock({ inheritable: false }), onWarning: () => undefined });
   const sessionsTmpRoot = path.join(env.layout.root, 'sessions');
   const sessionTmpDir = path.join(sessionsTmpRoot, 'session-tmp');
   fs.mkdirSync(sessionTmpDir, { recursive: true, mode: 0o700 });

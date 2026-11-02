@@ -46,7 +46,15 @@ export const writeHolderFile = (holderFile: string, text: string): void => {
   }
 };
 
-export const readHolderFromDescriptor = (descriptor: number): string => {
+export const removeFilesThenRelease = (files: readonly string[], release: () => void): void => {
+  try {
+    for (const file of files) fs.rmSync(file, { force: true });
+  } finally {
+    release();
+  }
+};
+
+export const readHolderFromDescriptor =(descriptor: number): string => {
   const buffer = Buffer.alloc(HOLDER_READ_MAX_BYTES);
   const bytesRead = fs.readSync(descriptor, buffer, 0, HOLDER_READ_MAX_BYTES, 0);
   return buffer.toString('utf8', 0, bytesRead);

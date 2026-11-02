@@ -6,7 +6,7 @@ import { localSettingsPath, makeTree, projectSettingsPath, trusting, userSetting
 import type { Tree } from './helpers.ts';
 
 const CAPABILITIES = { contextWindow: 128000, maxOutputTokens: 4096 };
-const IMAGE_TOKENS = { pixelsPerToken: 500, maxTokens: 2000 };
+const IMAGE_TOKENS = { pixelsPerToken: 500, maxTokens: 2000, minTokens: 1 };
 
 const chatTarget = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   adapter: 'chat-completions',
@@ -228,6 +228,15 @@ describe('chat-completions target schema', () => {
       { targets: { remote: chatTarget({ capabilities: { ...CAPABILITIES, imageInput: true } }) }, aliases: { default: 'remote' } },
       'capabilities.imageTokens',
     );
+  });
+
+  it('accepts a per-image minimum in the declared imageTokens and keeps it', async () => {
+    const imageTokens = { ...IMAGE_TOKENS, minTokens: 576 };
+    const models = await expectAccepted({
+      targets: { remote: chatTarget({ capabilities: { ...CAPABILITIES, imageInput: true, imageTokens } }) },
+      aliases: { default: 'remote' },
+    });
+    expect(models.targets['remote']).toMatchObject({ capabilities: { imageTokens } });
   });
 
   it('keeps the declared imageTokens on the resolved capabilities', async () => {

@@ -5,7 +5,7 @@ export const SESSION_STATE_IDLE_MS = 1_800_000;
 export { RUNTIME_ABORT_BUDGET_MS, RUNTIME_TEARDOWN_BUDGET_MS } from '@momonga/foundation';
 export const STORE_MAX_ATTEMPTS = 5;
 export const STORE_MAX_TOTAL_ATTEMPTS = 20;
-export const SANDBOX_KILL_GRACE_MS = 1000;
+export { SANDBOX_KILL_GRACE_MS } from '@momonga/sandbox';
 export const MARKER_REAP_KILL_GRACE_MS = 2000;
 export const STORE_IDENTITY_CHECK_MS = 5000;
 export const SESSION_STATE_SWEEP_MS = 300_000;

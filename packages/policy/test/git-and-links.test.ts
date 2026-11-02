@@ -139,6 +139,39 @@ describe('port errors are rethrown by decide', () => {
     expect(thrownBy(() => decideRow(row, 'default'))).toBe(error);
   });
 
+  it.each(['EIO', 'EMFILE', 'ENFILE'])('FE4a: rethrows %s from readHead and never approves the command', (code) => {
+    const error = Object.assign(new Error(`${code}: injected`), { code });
+    const row = commandRow('git status', {
+      cwd: (layout) => P(layout, 'sub'),
+      prepare: (layout) => fs.mkdirSync(P(layout, 'sub')),
+      fs: () => ({
+        overrides: {
+          readHead: () => {
+            throw error;
+          },
+        },
+      }),
+    });
+    for (const mode of ['default', 'acceptEdits'] as const) expect(thrownBy(() => decideRow(row, mode))).toBe(error);
+  });
+
+  it('FE4b: rethrows EMFILE from isSearchable and never approves the command', () => {
+    const error = Object.assign(new Error('EMFILE: injected'), { code: 'EMFILE' });
+    const row = commandRow('git status', {
+      cwd: (layout) => P(layout, 'sub'),
+      prepare: (layout) => fs.mkdirSync(P(layout, 'sub')),
+      fs: () => ({
+        overrides: {
+          readHead: () => ({ kind: 'text', text: 'ref: refs/heads/main\n' }),
+          isSearchable: () => {
+            throw error;
+          },
+        },
+      }),
+    });
+    expect(thrownBy(() => decideRow(row, 'default'))).toBe(error);
+  });
+
   it('FE5: rethrows EIO from expandGlob', () => {
     const error = eio();
     const row = commandRow('cat *', {

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { REAP_POLL_INTERVAL_MS } from '@momonga/foundation';
+import { CLAIM_POLL_MS, claimWithin } from '@momonga/foundation';
 import type { KernelLockMechanism, ReapTiming } from '@momonga/foundation';
 
 export class EarlierAttemptNotStoppedError extends Error {
@@ -34,34 +34,12 @@ export type CallLocksOptions = {
 
 export const createCallLocks = ({ dir, mechanism, timing, waitMs }: CallLocksOptions): CallLocks => ({
   acquire: async (key, signal) => {
-    const lockPath = path.join(dir, `${key}.lock`);
-    const deadline = timing.now() + waitMs;
-    for (;;) {
-      if (signal.aborted) return 'aborted';
-      const outcome = await mechanism.claim(lockPath);
-      if (outcome.kind === 'claimed') {
-        const { lock } = outcome;
-        try {
-          lock.writeHolder(String(process.pid));
-        } catch (error) {
-          lock.release();
-          throw error;
-        }
-        return {
-          release: () => {
-            fs.rmSync(lockPath, { force: true });
-            lock.release();
-          },
-        };
-      }
-      if (timing.now() >= deadline) {
-        const holder = await mechanism.readHolder(lockPath);
-        throw new EarlierAttemptNotStoppedError(
-          `the call ${key} is still held by ${holder === undefined || holder === '' ? 'another attempt' : `process ${holder}`} after ${waitMs} ms, so the earlier attempt could not be confirmed stopped`,
-          'lock_held',
-        );
-      }
-      await timing.sleep(REAP_POLL_INTERVAL_MS);
-    }
+    const outcome = await claimWithin({ mechanism, lockPath: path.join(dir, `${key}.lock`), holder: String(process.pid), timing, pollMs: CLAIM_POLL_MS, waitMs, signal });
+    if (outcome.kind === 'aborted') return 'aborted';
+    if (outcome.kind === 'claimed') return { release: () => outcome.lock.dispose() };
+    throw new EarlierAttemptNotStoppedError(
+      `the call ${key} is still held by ${outcome.holder === undefined || outcome.holder === '' ? 'another attempt' : `process ${outcome.holder}`} after ${waitMs} ms, so the earlier attempt could not be confirmed stopped`,
+      'lock_held',
+    );
   },
 });

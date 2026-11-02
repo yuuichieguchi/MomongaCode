@@ -2,7 +2,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import { decodeSse } from '@momonga/foundation';
 import { PROBE_KEYWORDS, type ImageTokenModel, type ProbeKeyword, type ProbeReport } from '@momonga/protocol';
 import { solidPngDataUrl } from './solid-png.ts';
-import { ProbeTimeoutError, createProbeClient, type HttpResult, type ProbeClient } from './client.ts';
+import { ProbeTimeoutError, createProbeClient, systemSleep, type HttpResult, type ProbeClient } from './client.ts';
 import { buildToolCallEnvelope, keywordProbeSchemas, type KeywordSupport, type ProbeTool } from './envelope.ts';
 import { field, firstOf, isRecord, parseJson } from './json.ts';
 
@@ -15,8 +15,10 @@ export interface ProbeOptions {
   now?: () => Date;
   signal?: AbortSignal;
   stepTimeoutMs?: number;
+  sleep?: (ms: number, signal: AbortSignal | undefined) => Promise<void>;
 }
 
+const MAX_RATE_LIMIT_RETRIES = 3;
 const DEFAULT_SAMPLES = 10;
 const CONCURRENCY_ATTEMPTS = 8;
 const SEARCH_INITIAL_WORDS = 64;
@@ -26,7 +28,8 @@ const SEARCH_TOLERANCE = 0.01;
 const IMAGE_PROMPT = 'Describe this image.';
 const IMAGE_PROBE_SMALL_SIDE = 512;
 const IMAGE_PROBE_LARGE_SIDE = 2048;
-const IMAGE_CAP_DETECTION_MARGIN = 0.1;
+const IMAGE_PROBE_MAX_SIDE = 8192;
+const IMAGE_REJECTION_STATUSES = [400, 413] as const;
 const CALIBRATION_WORD_COUNTS = [20, 80, 320] as const;
 const CONTEXT_FIELDS = [
   'context_window',
@@ -50,6 +53,7 @@ const PROBE_TOOL: ProbeTool = {
 const TOOL_PROMPT = `Please call ${PROBE_TOOL.name} for Tokyo for 3 days`;
 const SYSTEM_PROMPT = 'Answer only with JSON that matches the given schema.';
 const PLAIN_PROMPT = 'Say hello in one short sentence.';
+const TINY_PNG_SIDE = 1;
 const TINY_PNG =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
@@ -74,7 +78,14 @@ const promptTokensOf = (body: unknown): number | undefined => {
   return typeof tokens === 'number' ? tokens : undefined;
 };
 
-const wordsOf = (count: number): string => Array.from({ length: count }, () => 'word').join(' ');
+const retryAfterMs = (value: string | undefined, now: Date): number | undefined => {
+  if (value === undefined) return undefined;
+  if (/^\d+$/.test(value)) return Number(value) * 1000;
+  const at = Date.parse(value);
+  return Number.isNaN(at) ? undefined : Math.max(0, at - now.getTime());
+};
+
+const wordsOf =(count: number): string => Array.from({ length: count }, () => 'word').join(' ');
 
 const toolArgumentsValid = (args: unknown): boolean => isRecord(args) && validateToolArguments(args);
 
@@ -139,8 +150,20 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
   const model = options.model ?? listedId;
   if (typeof model !== 'string') throw new Error('Probe could not determine a model id from /v1/models');
 
-  const chat = (body: Record<string, unknown>): Promise<HttpResult> =>
+  const post = (body: Record<string, unknown>): Promise<HttpResult> =>
     client.post('/v1/chat/completions', { model, ...body });
+  const stepTimeoutMs = options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS;
+  const sleep = options.sleep ?? systemSleep;
+  const chat: Chat = async (body) => {
+    let result = await post(body);
+    for (let retry = 0; result.status === 429 && retry < MAX_RATE_LIMIT_RETRIES; retry += 1) {
+      const waitMs = retryAfterMs(result.headers['retry-after'], now());
+      if (waitMs === undefined || waitMs > stepTimeoutMs) return result;
+      await sleep(waitMs, options.signal);
+      result = await post(body);
+    }
+    return result;
+  };
 
   const plain = await chat({ messages: [{ role: 'user', content: PLAIN_PROMPT }] });
   expectStatus(plain, [200], 'plain completion');
@@ -153,17 +176,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
     'stop sequences',
   );
   const imageInputAccepted = isAcceptedOrRejected(
-    await chat({
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: 'Describe this image.' },
-            { type: 'image_url', image_url: { url: TINY_PNG } },
-          ],
-        },
-      ],
-    }),
+    await imagePromptRequest(chat, TINY_PNG),
     'image input',
   );
 
@@ -203,7 +216,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
   const contextWindow =
     reportedContextWindow(modelsBody, healthResult.text) ?? (await searchContextWindow(chat));
 
-  const maxConcurrency = await measureConcurrency(chat);
+  const maxConcurrency = await measureConcurrency(post);
 
   return {
     probedAt: now().toISOString(),
@@ -226,26 +239,101 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
 
 type Chat = (body: Record<string, unknown>) => Promise<HttpResult>;
 
-const imagePromptTokens = async (chat: Chat, side: number | undefined): Promise<number | undefined> => {
+type ImageCost = { rejected: true } | { rejected: false; promptTokens: number | undefined };
+
+type MeasuredImage = { side: number; tokens: number };
+
+type Measurement = MeasuredImage | 'rejected' | 'unusable';
+
+const imagePromptRequest = (chat: Chat, imageUrl: string | undefined): Promise<HttpResult> => {
   const parts: unknown[] = [{ type: 'text', text: IMAGE_PROMPT }];
-  if (side !== undefined) parts.push({ type: 'image_url', image_url: { url: solidPngDataUrl(side) } });
-  const result = await chat({ messages: [{ role: 'user', content: parts }] });
-  expectStatus(result, [200], 'image token measurement');
+  if (imageUrl !== undefined) parts.push({ type: 'image_url', image_url: { url: imageUrl } });
+  return chat({ messages: [{ role: 'user', content: parts }], max_tokens: 1 });
+};
+
+const baselinePromptTokens = async (chat: Chat): Promise<number | undefined> => {
+  const result = await imagePromptRequest(chat, undefined);
+  expectStatus(result, [200], 'image token baseline');
   return promptTokensOf(parseJson(result.text));
 };
 
+const imageCost = async (chat: Chat, imageUrl: string): Promise<ImageCost> => {
+  const result = await imagePromptRequest(chat, imageUrl);
+  expectStatus(result, [200, ...IMAGE_REJECTION_STATUSES], 'image token measurement');
+  if (result.status !== 200) return { rejected: true };
+  return { rejected: false, promptTokens: promptTokensOf(parseJson(result.text)) };
+};
+
+const measureUrl = async (chat: Chat, baseline: number, side: number, imageUrl: string): Promise<Measurement> => {
+  const cost = await imageCost(chat, imageUrl);
+  if (cost.rejected) return 'rejected';
+  if (cost.promptTokens === undefined || cost.promptTokens - baseline <= 0) return 'unusable';
+  return { side, tokens: cost.promptTokens - baseline };
+};
+
+const measureSide = (chat: Chat, baseline: number, side: number): Promise<Measurement> => measureUrl(chat, baseline, side, solidPngDataUrl(side));
+
+const bisectLargestAccepted = async (chat: Chat, baseline: number, accepted: MeasuredImage, rejectedFrom: number): Promise<MeasuredImage | undefined> => {
+  let largest = accepted;
+  let rejectedSide = rejectedFrom;
+  while (rejectedSide - largest.side > Math.max(1, Math.floor(largest.side * SEARCH_TOLERANCE))) {
+    const middle = Math.floor((largest.side + rejectedSide) / 2);
+    const measured = await measureSide(chat, baseline, middle);
+    if (measured === 'unusable') return undefined;
+    if (measured === 'rejected') rejectedSide = middle;
+    else largest = measured;
+  }
+  return largest;
+};
+
+type Ceiling = { largest: MeasuredImage; plateau: boolean };
+
+const findCeiling = async (chat: Chat, baseline: number, small: MeasuredImage, floorTokens: number): Promise<Ceiling | undefined> => {
+  let previous = small;
+  for (let side = IMAGE_PROBE_LARGE_SIDE; side <= IMAGE_PROBE_MAX_SIDE; side *= 2) {
+    const measured = await measureSide(chat, baseline, side);
+    if (measured === 'unusable') return undefined;
+    if (measured === 'rejected') {
+      const largest = await bisectLargestAccepted(chat, baseline, previous, side);
+      return largest === undefined ? undefined : { largest, plateau: false };
+    }
+    if (measured.tokens <= previous.tokens && previous.tokens > floorTokens) return { largest: measured, plateau: true };
+    previous = measured;
+  }
+  return { largest: previous, plateau: false };
+};
+
+const referenceBelowPlateau = async (chat: Chat, baseline: number, start: MeasuredImage, model: Pick<ImageTokenModel, 'minTokens' | 'maxTokens'>, plateau: boolean): Promise<MeasuredImage | undefined> => {
+  let candidate = start;
+  for (;;) {
+    if (candidate.tokens <= model.minTokens) return undefined;
+    if (!plateau || candidate.tokens < model.maxTokens) return candidate;
+    const side = Math.floor(candidate.side / 2);
+    if (side < 1) return undefined;
+    const measured = await measureSide(chat, baseline, side);
+    if (measured === 'rejected' || measured === 'unusable') return undefined;
+    candidate = measured;
+  }
+};
+
 const measureImageTokens = async (chat: Chat): Promise<ImageTokenModel | undefined> => {
-  const baseline = await imagePromptTokens(chat, undefined);
-  const small = await imagePromptTokens(chat, IMAGE_PROBE_SMALL_SIDE);
-  const large = await imagePromptTokens(chat, IMAGE_PROBE_LARGE_SIDE);
-  if (baseline === undefined || small === undefined || large === undefined) return undefined;
-  const smallTokens = small - baseline;
-  const largeTokens = large - baseline;
-  if (smallTokens <= 0) return undefined;
-  const pixelsPerToken = IMAGE_PROBE_SMALL_SIDE ** 2 / smallTokens;
-  const uncappedLargeTokens = IMAGE_PROBE_LARGE_SIDE ** 2 / pixelsPerToken;
-  if (largeTokens > uncappedLargeTokens * (1 - IMAGE_CAP_DETECTION_MARGIN)) return undefined;
-  return { pixelsPerToken, maxTokens: largeTokens };
+  const baseline = await baselinePromptTokens(chat);
+  if (baseline === undefined) return undefined;
+  const tiny = await measureUrl(chat, baseline, TINY_PNG_SIDE, TINY_PNG);
+  if (tiny === 'rejected' || tiny === 'unusable') return undefined;
+  const small = await measureSide(chat, baseline, IMAGE_PROBE_SMALL_SIDE);
+  if (small === 'unusable') return undefined;
+  const ceiling =
+    small === 'rejected'
+      ? { largest: await bisectLargestAccepted(chat, baseline, tiny, IMAGE_PROBE_SMALL_SIDE), plateau: false }
+      : await findCeiling(chat, baseline, small, tiny.tokens);
+  if (ceiling?.largest === undefined || ceiling.largest.side === tiny.side) return undefined;
+  const { largest, plateau } = ceiling;
+  const model = { minTokens: tiny.tokens, maxTokens: largest.tokens };
+  const start = small === 'rejected' ? largest : small;
+  const reference = model.minTokens === model.maxTokens ? start : await referenceBelowPlateau(chat, baseline, start, model, plateau);
+  if (reference === undefined) return undefined;
+  return { pixelsPerToken: reference.side ** 2 / reference.tokens, ...model };
 };
 
 const probeStreaming = async (client: ProbeClient, model: string): Promise<ProbeReport['streaming']> => {

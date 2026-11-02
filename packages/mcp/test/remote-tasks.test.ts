@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { createFakeClock } from '@momonga/testkit';
-import { DEFAULT_TASK_POLL_MS, McpInputSuspension, McpTaskError, MIN_TASK_POLL_MS } from '@momonga/mcp';
+import { DEFAULT_TASK_POLL_MS, McpInputProtocolError, McpInputSuspension, McpTaskError, MIN_TASK_POLL_MS } from '@momonga/mcp';
 import type { McpCheckpoint } from '@momonga/mcp';
 
 const CALL_TIMEOUT_MS = 1_000_000;
 const isPoll = (ms: number): boolean => ms !== CALL_TIMEOUT_MS;
+import { settleTask } from '../src/tasks.ts';
+import type { TaskMethod, TaskRequester } from '../src/tasks.ts';
+import type { McpTimers } from '../src/timers.ts';
 import { makeRemoteConnection, observedTimers, startHttpFixture, textOf } from './remote-harness.ts';
 
 const setup = async (era: 'modern' | 'legacy' = 'modern') => {
@@ -25,6 +28,151 @@ const startLongTask = async (fixture: Awaited<ReturnType<typeof startHttpFixture
   const [taskId] = fixture.taskIds();
   return { outcome, taskId: taskId as string };
 };
+
+const TASK_START_MS = 1_000_000;
+const TASK_ID = 'task-1';
+const iso = (ms: number): string => new Date(ms).toISOString();
+const firingTimers: McpTimers = {
+  setTimeout: (callback) => {
+    queueMicrotask(callback);
+    return undefined;
+  },
+  clearTimeout: () => undefined,
+};
+const accepted = { content: [{ type: 'text' as const, text: 'accepted' }] };
+type SettleOverrides = { created: unknown; request: TaskRequester; signal?: AbortSignal; now?: () => number; trackCancel?: (outcome: Promise<void>) => void };
+const settleOptions = (overrides: SettleOverrides) => ({
+  start: { created: overrides.created },
+  answers: {},
+  request: overrides.request,
+  timers: firingTimers,
+  clock: { now: overrides.now ?? (() => TASK_START_MS) },
+  signal: overrides.signal ?? new AbortController().signal,
+  onCheckpoint: () => undefined,
+  accept: () => accepted,
+  trackCancel: overrides.trackCancel ?? ((outcome: Promise<void>) => void outcome.catch(() => undefined)),
+});
+const pastItsTtl = {
+  taskId: TASK_ID,
+  status: 'working',
+  ttlMs: 5000,
+  createdAt: iso(TASK_START_MS),
+  lastUpdatedAt: iso(TASK_START_MS + 6000),
+};
+const rejection = (settling: Promise<unknown>): Promise<unknown> =>
+  settling.then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+
+describe('settleTask when tasks/cancel fails', () => {
+  it('keeps the ttl error and reports the cancel failure on cancelFailure, never on the cause chain', async () => {
+    const reaped = new Error('task not found');
+    const error = await rejection(settleTask(settleOptions({ created: pastItsTtl, request: async () => { throw reaped; } })));
+    expect(error).toBeInstanceOf(McpTaskError);
+    expect((error as McpTaskError).message).toContain('ttl of 5000ms');
+    expect((error as McpTaskError).cancelFailure).toBe(reaped);
+    expect((error as McpTaskError).cause).toBeUndefined();
+  });
+
+  it('keeps the input request parse error and reports the cancel failure on cancelFailure', async () => {
+    const reaped = new Error('task not found');
+    const malformed = { taskId: TASK_ID, status: 'input_required', inputRequests: 'not requests' };
+    const error = await rejection(settleTask(settleOptions({ created: malformed, request: async () => { throw reaped; } })));
+    expect(error).toBeInstanceOf(McpInputProtocolError);
+    expect((error as McpInputProtocolError).cancelFailure).toBe(reaped);
+    expect((error as McpInputProtocolError).cause).toBeUndefined();
+  });
+
+  it('rejects with the untouched abort reason at once while the cancel is still unanswered, and tracks the cancel outcome', async () => {
+    const controller = new AbortController();
+    const reason = new Error('run cancelled');
+    const cancelAnswer = Promise.withResolvers<unknown>();
+    const cancelSignals: (AbortSignal | undefined)[] = [];
+    const request: TaskRequester = async (method, _params, signal) => {
+      if (method === 'tasks/get') {
+        controller.abort(reason);
+        throw new Error('poll aborted');
+      }
+      cancelSignals.push(signal);
+      return cancelAnswer.promise;
+    };
+    const tracked: Promise<void>[] = [];
+    const working = { taskId: TASK_ID, status: 'working' };
+    const thrown = await rejection(settleTask(settleOptions({ created: working, request, signal: controller.signal, trackCancel: (outcome) => void tracked.push(outcome) })));
+    expect(thrown).toBe(reason);
+    expect(Object.keys(reason)).toEqual([]);
+    expect(reason.cause).toBeUndefined();
+    expect(cancelSignals).toEqual([undefined]);
+    expect(tracked).toHaveLength(1);
+    const outcome = rejection(tracked[0] as Promise<void>);
+    const refused = new Error('task not found');
+    cancelAnswer.reject(refused);
+    expect(await outcome).toBe(refused);
+  });
+
+  it('sends the cancel when the signal was already aborted before the first poll, and rejects with the reason', async () => {
+    const controller = new AbortController();
+    const reason = new Error('run cancelled');
+    controller.abort(reason);
+    const methods: TaskMethod[] = [];
+    const request: TaskRequester = async (method) => {
+      methods.push(method);
+      return {};
+    };
+    const tracked: Promise<void>[] = [];
+    const working = { taskId: TASK_ID, status: 'working' };
+    expect(await rejection(settleTask(settleOptions({ created: working, request, signal: controller.signal, trackCancel: (outcome) => void tracked.push(outcome) })))).toBe(reason);
+    await Promise.all(tracked);
+    expect(methods).toEqual(['tasks/cancel']);
+  });
+
+  it('gives the cancel a signal that follows the abort of the call', async () => {
+    const controller = new AbortController();
+    const cancelSignals: (AbortSignal | undefined)[] = [];
+    const request: TaskRequester = async (method, _params, signal) => {
+      if (method === 'tasks/cancel') cancelSignals.push(signal);
+      return {};
+    };
+    await rejection(settleTask(settleOptions({ created: pastItsTtl, request, signal: controller.signal })));
+    expect(cancelSignals).toHaveLength(1);
+    const [cancelSignal] = cancelSignals;
+    expect(cancelSignal).toBeInstanceOf(AbortSignal);
+    expect(cancelSignal?.aborted).toBe(false);
+    controller.abort(new Error('run cancelled'));
+    expect(cancelSignal?.aborted).toBe(true);
+  });
+});
+
+describe('settleTask cancel budget', () => {
+  it('leaves the cancel timeout to the requester, which applies the configured request timeout', async () => {
+    const cancelArities: number[] = [];
+    const request = async (...args: Parameters<TaskRequester>): Promise<unknown> => {
+      if (args[0] === 'tasks/cancel') cancelArities.push(args.length);
+      return {};
+    };
+    await rejection(settleTask(settleOptions({ created: pastItsTtl, request })));
+    expect(cancelArities).toEqual([3]);
+  });
+});
+
+describe('settleTask with ttlMs 0 on a real clock', () => {
+  it('polls once before applying the ttl when the clock ticks between receiving the creating response and checking it', async () => {
+    let tick = 0;
+    const now = (): number => {
+      tick += 1;
+      return TASK_START_MS + tick;
+    };
+    const methods: TaskMethod[] = [];
+    const request: TaskRequester = async (method) => {
+      methods.push(method);
+      return { taskId: TASK_ID, status: 'completed', result: {} };
+    };
+    const created = { taskId: TASK_ID, status: 'working', ttlMs: 0, createdAt: iso(TASK_START_MS), lastUpdatedAt: iso(TASK_START_MS) };
+    await expect(settleTask(settleOptions({ created, request, now }))).resolves.toBe(accepted);
+    expect(methods).toEqual(['tasks/get']);
+  });
+});
 
 describe('tasks extension over streamable HTTP', () => {
   it('polls a returned task handle until it completes and returns the tool result', async () => {
@@ -70,6 +218,7 @@ describe('tasks extension over streamable HTTP', () => {
     controller.abort(new Error('run cancelled'));
     const settled = await outcome;
     expect('error' in settled && (settled.error as Error).message).toContain('run cancelled');
+    await fixture.until(() => fixture.notes.some((note) => note.type === 'task_cancel'));
     expect(fixture.notes.filter((note) => note.type === 'task_cancel')).toEqual([{ type: 'task_cancel', taskId }]);
     expect(fixture.rpcRecords('tasks/cancel')[0]?.headers['mcp-name']).toBe(taskId);
     expect(fixture.rpcRecords('tasks/get')).toHaveLength(0);
@@ -86,6 +235,7 @@ describe('tasks extension over streamable HTTP', () => {
     timers.advance(5000);
     const settled = await outcome;
     expect('error' in settled && (settled.error as Error).message).toContain('did not finish within 5000ms');
+    await fixture.until(() => fixture.notes.some((note) => note.type === 'task_cancel'));
     expect(fixture.notes.filter((note) => note.type === 'task_cancel')).toHaveLength(1);
   });
 

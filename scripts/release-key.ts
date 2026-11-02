@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { RELEASE_PUBLIC_KEY_PATTERN, nodeCommandRunner, verifyReleaseSignature } from '@momonga/foundation';
+import { RELEASE_PUBLIC_KEY_PATTERN, RELEASE_SIGNATURE_TOOL, nodeCommandRunner, verifyReleaseSignature } from '@momonga/foundation';
 import type { PlaceFile } from '@momonga/foundation';
 
 const SHELL_INSTALLER = 'scripts/install.sh';
@@ -52,6 +52,9 @@ export const verifyWithPinnedKey = async (root: string, checksumsFile: string, s
     });
     if (verdict.kind === 'invalid') {
       throw new Error(`${checksumsFile} is not signed by the release key pinned in the installers; refusing to publish${verdict.detail === '' ? '' : `: ${verdict.detail}`}`);
+    }
+    if (verdict.kind === 'tool_unusable') {
+      throw new Error(`${RELEASE_SIGNATURE_TOOL} cannot verify signatures on this machine, so ${checksumsFile} was not checked; upgrade OpenSSH${verdict.detail === '' ? '' : `: ${verdict.detail}`}`);
     }
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });

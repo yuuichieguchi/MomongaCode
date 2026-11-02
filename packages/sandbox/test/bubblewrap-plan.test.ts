@@ -3,7 +3,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import type { FileRuleSet } from '@momonga/foundation';
-import { nodeFilesystemPort, planBubblewrap } from '@momonga/sandbox';
+import { SandboxPolicyError, nodeFilesystemPort, planBubblewrap } from '@momonga/sandbox';
 import type { FilesystemPort, SandboxPolicy } from '@momonga/sandbox';
 import { fileRulesOf, fileSpec } from './file-rule-specs.ts';
 import { makeTempDir } from './helpers.ts';
@@ -44,6 +44,117 @@ const indexOfTriple = (args: readonly string[], flag: string, source: string, de
   args.findIndex((value, index) => value === flag && args[index + 1] === source && args[index + 2] === dest);
 
 const FILE_RULES = (specs: ReturnType<typeof fileSpec>[]): FileRuleSet => fileRulesOf(specs, [work]);
+
+describe('planBubblewrap refuses a protected name that is a symlink (review item 7)', () => {
+  const refusal = (literal: string) => {
+    try {
+      planBubblewrap(policy({ writeDeniedLiterals: [literal] }), { cwd: work });
+    } catch (error) {
+      return error;
+    }
+    return undefined;
+  };
+
+  it('refuses .git -> realgit with a SandboxPolicyError that names the path, because a mount cannot sit on a link name', () => {
+    fs.mkdirSync(path.join(work, 'realgit'));
+    fs.symlinkSync('realgit', path.join(work, '.git'));
+    const error = refusal(path.join(work, '.git'));
+    expect(error).toBeInstanceOf(SandboxPolicyError);
+    expect(error).toMatchObject({ code: 'protected_link_not_pinnable', path: path.join(work, '.git') });
+    expect((error as SandboxPolicyError).message).toContain(path.join(work, '.git'));
+  });
+
+  it('refuses a symlink loop at .git the same way instead of throwing a raw ELOOP', () => {
+    fs.symlinkSync('.git', path.join(work, '.git'));
+    const error = refusal(path.join(work, '.git'));
+    expect(error).toBeInstanceOf(SandboxPolicyError);
+    expect(error).toMatchObject({ code: 'protected_link_not_pinnable', path: path.join(work, '.git') });
+  });
+
+  it('refuses an entry that cannot be inspected because a loop lies in the way, naming it', () => {
+    fs.symlinkSync('loop', path.join(work, 'loop'));
+    const target = path.join(work, 'loop', 'inner');
+    const error = refusal(target);
+    expect(error).toBeInstanceOf(SandboxPolicyError);
+    expect(error).toMatchObject({ code: 'protected_path_unreadable', path: target });
+    expect((error as SandboxPolicyError).message).toContain(target);
+  });
+
+  it('refuses an entry below a directory of mode 000, naming it', () => {
+    if (process.getuid?.() === 0) return;
+    const locked = path.join(work, 'locked');
+    fs.mkdirSync(locked);
+    fs.chmodSync(locked, 0o000);
+    try {
+      const target = path.join(locked, 'inner');
+      const error = refusal(target);
+      expect(error).toBeInstanceOf(SandboxPolicyError);
+      expect(error).toMatchObject({ code: 'protected_path_unreadable', path: target });
+    } finally {
+      fs.chmodSync(locked, 0o700);
+    }
+  });
+
+  it('control: a regular file or a directory at the protected name is still pinned', () => {
+    fs.mkdirSync(path.join(work, '.git'));
+    const { args } = planBubblewrap(policy({ writeDeniedLiterals: [path.join(work, '.git')] }), { cwd: work });
+    expect(indexOfTriple(args, '--ro-bind', path.join(work, '.git'))).toBeGreaterThan(-1);
+  });
+});
+
+describe('planBubblewrap refuses only where the sandboxed process could change what it protects', () => {
+  const unlessRoot = (): boolean => process.getuid?.() === 0;
+
+  it('does not refuse a symlinked write-denied literal outside every writable area: the read-only root already holds it', () => {
+    const launcher = path.join(home, 'momonga');
+    fs.symlinkSync('target', launcher);
+    const { args } = planBubblewrap(policy({ writeDeniedLiterals: [launcher] }), { cwd: work });
+    expect(indexOfTriple(args, '--ro-bind', launcher)).toBe(-1);
+  });
+
+  it('treats EACCES outside every writable area as absent', () => {
+    if (unlessRoot()) return;
+    const locked = path.join(base, 'locked');
+    fs.mkdirSync(locked);
+    fs.chmodSync(locked, 0o000);
+    try {
+      const target = path.join(locked, 'secret');
+      expect(() => planBubblewrap(policy({ writeDeniedLiterals: [target] }), { cwd: work })).not.toThrow();
+    } finally {
+      fs.chmodSync(locked, 0o700);
+    }
+  });
+
+  it('refuses EACCES on a protected literal inside a writable area', () => {
+    if (unlessRoot()) return;
+    const locked = path.join(work, 'locked');
+    fs.mkdirSync(locked);
+    fs.chmodSync(locked, 0o000);
+    try {
+      const target = path.join(locked, 'secret');
+      expect(() => planBubblewrap(policy({ writeDeniedLiterals: [target] }), { cwd: work })).toThrowError(expect.objectContaining({ code: 'protected_path_unreadable', path: target }));
+    } finally {
+      fs.chmodSync(locked, 0o700);
+    }
+  });
+
+  it('refuses an unreachable ancestor of a writable root, and ignores an unreachable path elsewhere', () => {
+    const elsewhere = path.join(sessions, 'x');
+    const port: FilesystemPort = { ...nodeFilesystemPort, kindOf: (target) => (target === base || target === elsewhere ? 'unreachable' : nodeFilesystemPort.kindOf(target)) };
+    expect(() => planBubblewrap(policy({ writeDeniedLiterals: [base] }), { cwd: work }, port)).toThrowError(expect.objectContaining({ code: 'protected_path_unreadable', path: base }));
+    expect(() => planBubblewrap(policy({ writeDeniedLiterals: [elsewhere] }), { cwd: work }, port)).not.toThrow();
+  });
+
+  it('applies the same rule to a directory that cannot be listed while a deny pattern expands', () => {
+    const elsewhere = path.join(base, 'elsewhere');
+    fs.mkdirSync(elsewhere);
+    const unlistable: FilesystemPort = { ...nodeFilesystemPort, children: () => 'unreachable' };
+    const outsideRules = fileRulesOf([fileSpec('**/.env', { roots: [elsewhere], home, tool: 'Read' })], [elsewhere]);
+    expect(() => planBubblewrap(policy({ fileRules: outsideRules }), { cwd: work }, unlistable)).not.toThrow();
+    const insideRules = FILE_RULES([fileSpec('**/.env', { roots: [work], home, tool: 'Read' })]);
+    expect(() => planBubblewrap(policy({ fileRules: insideRules }), { cwd: work }, unlistable)).toThrowError(expect.objectContaining({ code: 'protected_path_unreadable', path: work }));
+  });
+});
 
 describe('planBubblewrap', () => {
   it('starts from a read-only view of the host with devices, a private proc and a masked /run', () => {

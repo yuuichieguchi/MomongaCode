@@ -17,10 +17,10 @@ describe('an earlier segment of the same command can change what a later operand
     expect(workspace.runBash('mv src s2; cat s2/l').stdout).toBe('TOP\n');
   });
 
-  it.each(['mv src s2; cat s2/l', 'cp -R src s2; cat s2/l', 'mv src s2 && echo "$(cat s2/l)"', 'cp -R src s2; cat s2/*'])('asks for %s in acceptEdits mode', (command) => {
+  it.each(['mv src s2; cat s2/l', 'cp -R src s2; cat s2/l', 'mv src s2 && echo "$(cat s2/l)"', 'cp -R src s2; cat s2/*'])('asks for %s in acceptEdits mode', async (command) => {
     const workspace = makeRealWorkspace();
     withLinkToSecret(workspace);
-    expect(workspace.decide(command, { mode: 'acceptEdits' }).kind).toBe('ask');
+    expect((await workspace.decideExpanding(command, { mode: 'acceptEdits' })).kind).toBe('ask');
   });
 
   it('reads the moved directory by its old name as a missing path, not as a hole', () => {

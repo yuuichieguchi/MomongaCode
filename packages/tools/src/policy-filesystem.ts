@@ -1,10 +1,12 @@
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
+import type { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
-import { MAX_POINTER_FILE_BYTES, resolveCanonicalPath, unresolvableReasonOf, volumeIsCaseInsensitive } from '@momonga/foundation';
-import type { EntryRead, StepRead, Unresolved } from '@momonga/foundation';
+import type { Readable } from 'node:stream';
+import { MAX_POINTER_FILE_BYTES, gitlinksOfIndex, resolveCanonicalPath, unresolvableReasonOf, volumeIsCaseInsensitive } from '@momonga/foundation';
+import type { EntryRead, GitlinkRead, StepRead, Unresolved } from '@momonga/foundation';
 import { systemProgramDirectories } from '@momonga/policy';
-import type { GlobExpansion, HeadRead, PolicyFilesystem, ProgramResolution } from '@momonga/policy';
+import type { GlobDeadline, GlobExpander, GlobExpansion, HeadRead, PolicyHostFilesystem, ProgramResolution } from '@momonga/policy';
 import { ShellNotFoundError, nodeShellPorts, resolveBashPath } from './builtins/shell.ts';
 import type { ShellPorts } from './builtins/shell.ts';
 
@@ -86,7 +88,9 @@ const readEntry = (absolute: string): EntryRead =>
       if (stat.isDirectory()) return { kind: 'directory', canonical: fs.realpathSync.native(absolute) };
       if (!stat.isFile()) return { kind: 'file', text: '' };
       if (stat.size > MAX_POINTER_FILE_BYTES) return { kind: 'oversize' };
-      return { kind: 'file', text: fs.readFileSync(absolute, 'utf8') };
+      const raw = fs.readFileSync(absolute);
+      const text = raw.toString('utf8');
+      return Buffer.from(text, 'utf8').equals(raw) ? { kind: 'file', text } : { unresolvable: { kind: 'dynamic' } };
     },
     NOT_THERE,
     { kind: 'absent' },
@@ -96,7 +100,11 @@ const readNoFollow = (absolute: string): StepRead =>
   typedRead<StepRead>(
     () => {
       const stat = fs.lstatSync(absolute);
-      if (stat.isSymbolicLink()) return { kind: 'symlink', target: fs.readlinkSync(absolute) };
+      if (stat.isSymbolicLink()) {
+        const raw = fs.readlinkSync(absolute, 'buffer');
+        const target = raw.toString('utf8');
+        return Buffer.from(target, 'utf8').equals(raw) ? { kind: 'symlink', target } : { unresolvable: { kind: 'dynamic' } };
+      }
       return stat.isDirectory() ? { kind: 'directory' } : { kind: 'other' };
     },
     MISSING,
@@ -106,13 +114,11 @@ const readNoFollow = (absolute: string): StepRead =>
 const GIT_HEADREF_BUFFER_BYTES = 256;
 const HEAD_BYTES = GIT_HEADREF_BUFFER_BYTES - 1;
 
-const isErrno = (error: unknown): boolean => typeof codeOf(error) === 'string';
-
 const rejectedByGit = <T>(read: () => T, rejected: T): T => {
   try {
     return read();
   } catch (error) {
-    if (isErrno(error)) return rejected;
+    if (SKIPPED_ERRNO.has(codeOf(error) ?? '')) return rejected;
     throw error;
   }
 };
@@ -121,7 +127,7 @@ const readHead = (absolute: string): HeadRead =>
   rejectedByGit<HeadRead>(
     () => {
       const stat = fs.lstatSync(absolute);
-      if (stat.isSymbolicLink()) return { kind: 'symlink', target: fs.readlinkSync(absolute) };
+      if (stat.isSymbolicLink()) return { kind: 'symlink', target: fs.readlinkSync(absolute, 'buffer').toString('latin1') };
       if (!stat.isFile()) return { kind: 'invalid' };
       const descriptor = fs.openSync(absolute, 'r');
       try {
@@ -137,53 +143,174 @@ const readHead = (absolute: string): HeadRead =>
 
 const isSearchable = (absolute: string): boolean =>
   rejectedByGit(() => {
+    fs.lstatSync(absolute);
     fs.accessSync(absolute, fs.constants.X_OK);
     return true;
   }, false);
 
+const readGitlinks = (gitDirectory: string): GitlinkRead | Unresolved =>
+  typedRead<GitlinkRead | Unresolved>(() => gitlinksOfIndex(fs.readFileSync(path.join(gitDirectory, 'index'))), NOT_THERE, { paths: [] });
+
 const GLOB_PROGRAM ='IFS=; shopt -s nullglob; for entry in $1; do printf "%s\\0" "$entry"; done';
 const LOCALE_VARIABLES = ['LANG', 'LC_ALL', 'LC_COLLATE', 'LC_CTYPE'] as const;
 const PATH_MAX_BYTES = 4096;
-const NUL_SEPARATOR_BYTES = 1;
-const OVERFLOW_DETECTION_ENTRIES = 1;
+const KILL_SIGNAL = 'SIGKILL';
+const DYNAMIC: GlobExpansion = { unresolvable: { kind: 'dynamic' } };
 
 const globEnvironment = (): Record<string, string> =>
   Object.fromEntries(LOCALE_VARIABLES.flatMap((name) => (process.env[name] === undefined ? [] : [[name, process.env[name] as string]])));
 
-const expandGlob = (platform: NodeJS.Platform, shellPorts: ShellPorts) => (pattern: string, cwd: string, limit: number): GlobExpansion => {
-  let shell: string;
-  try {
-    shell = resolveBashPath(platform, shellPorts);
-  } catch (error) {
-    if (error instanceof ShellNotFoundError) return { unresolvable: { kind: 'dynamic' } };
-    throw error;
-  }
-  const result = spawnSync(shell, ['--noprofile', '--norc', '-c', GLOB_PROGRAM, 'glob', pattern], {
-    cwd,
-    env: globEnvironment(),
-    stdio: ['ignore', 'pipe', 'pipe'],
-    encoding: 'utf8',
-    maxBuffer: (limit + OVERFLOW_DETECTION_ENTRIES) * (PATH_MAX_BYTES + NUL_SEPARATOR_BYTES),
-  });
-  if (result.error !== undefined) {
-    const code = codeOf(result.error);
-    if (code === 'ENOBUFS') return { overflow: true };
-    if (code === 'ENOENT' || code === 'ENOTDIR') return { matches: [] };
-    return unresolvedOf(result.error);
-  }
-  if (result.status !== 0) throw new Error(`glob expansion of ${pattern} failed with status ${String(result.status)}: ${result.stderr}`);
-  const matches = result.stdout.split('\0').filter((entry) => entry !== '');
-  return matches.length > limit ? { overflow: true } : { matches };
+export type GlobChild = EventEmitter & {
+  stdout: Readable | null | undefined;
+  stderr: Readable | null | undefined;
+  kill(signal: NodeJS.Signals): boolean;
+  unref(): void;
 };
 
-export const createPolicyFilesystem = (platform: NodeJS.Platform = process.platform, shellPorts: ShellPorts = nodeShellPorts()): PolicyFilesystem => ({
+export type GlobPorts = {
+  spawn(file: string, args: readonly string[], options: { cwd: string; env: Record<string, string> }): GlobChild;
+  setTimeout(callback: () => void, ms: number): ReturnType<typeof setTimeout>;
+  clearTimeout(handle: ReturnType<typeof setTimeout>): void;
+};
+
+export const nodeGlobPorts = (): GlobPorts => ({
+  spawn: (file, args, options) => spawn(file, [...args], { ...options, stdio: ['ignore', 'pipe', 'pipe'] }),
+  setTimeout: (callback, ms) => setTimeout(callback, ms),
+  clearTimeout: (handle) => clearTimeout(handle),
+});
+
+const entriesOf = (output: Buffer): string[] | undefined => {
+  const entries: string[] = [];
+  let start = 0;
+  for (let end = output.indexOf(0, start); end !== -1; end = output.indexOf(0, start)) {
+    const raw = output.subarray(start, end);
+    start = end + 1;
+    if (raw.length === 0) continue;
+    const text = raw.toString('utf8');
+    if (!Buffer.from(text, 'utf8').equals(raw)) return undefined;
+    entries.push(text);
+  }
+  return entries;
+};
+
+const countSeparators = (chunk: Buffer): number => {
+  let count = 0;
+  for (let at = chunk.indexOf(0); at !== -1; at = chunk.indexOf(0, at + 1)) count += 1;
+  return count;
+};
+
+const runGlob = (ports: GlobPorts, shell: string, pattern: string, cwd: string, limit: number, deadline: GlobDeadline, signal: AbortSignal): Promise<GlobExpansion> =>
+  new Promise((resolve, reject) => {
+    const remaining = deadline.remainingMs();
+    if (remaining <= 0 || signal.aborted) {
+      resolve(DYNAMIC);
+      return;
+    }
+    let child: GlobChild;
+    try {
+      child = ports.spawn(shell, ['--noprofile', '--norc', '-c', GLOB_PROGRAM, 'glob', pattern], { cwd, env: globEnvironment() });
+    } catch (error) {
+      if (codeOf(error) === 'E2BIG') resolve(DYNAMIC);
+      else reject(error);
+      return;
+    }
+    const output: Buffer[] = [];
+    const errors: Buffer[] = [];
+    let separators = 0;
+    let errorBytes = 0;
+    let done = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const abandon = (): void => {
+      child.kill(KILL_SIGNAL);
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+      child.unref();
+    };
+    const onAbort = (): void =>
+      settle(() => {
+        abandon();
+        return DYNAMIC;
+      });
+    const settle = (finish: () => GlobExpansion): void => {
+      if (done) return;
+      done = true;
+      if (timer !== undefined) ports.clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+      try {
+        resolve(finish());
+      } catch (error) {
+        reject(error);
+      }
+    };
+    child.on('error', (error: Error) =>
+      settle(() => {
+        abandon();
+        const code = codeOf(error);
+        if (code === 'ENOENT' || code === 'ENOTDIR') return { matches: [] };
+        return unresolvedOf(error);
+      }),
+    );
+    timer = ports.setTimeout(
+      () =>
+        settle(() => {
+          abandon();
+          return DYNAMIC;
+        }),
+      remaining,
+    );
+    signal.addEventListener('abort', onAbort, { once: true });
+    child.stdout?.on('data', (chunk: Buffer) => {
+      if (done) return;
+      output.push(chunk);
+      separators += countSeparators(chunk);
+      if (separators > limit) {
+        settle(() => {
+          abandon();
+          return { overflow: true };
+        });
+      }
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      if (done || errorBytes >= PATH_MAX_BYTES) return;
+      errors.push(chunk);
+      errorBytes += chunk.length;
+    });
+    child.on('close', (status: number | null) =>
+      settle(() => {
+        if (status !== 0) throw new Error(`glob expansion of ${pattern} failed with status ${String(status)}: ${Buffer.concat(errors).toString('utf8')}`);
+        const entries = entriesOf(Buffer.concat(output));
+        if (entries === undefined) return DYNAMIC;
+        return entries.length > limit ? { overflow: true } : { matches: entries };
+      }),
+    );
+  });
+
+export const createGlobExpander =
+  (platform: NodeJS.Platform, shellPorts: ShellPorts, ports: GlobPorts): GlobExpander =>
+  async (pattern, cwd, limit, deadline, signal) => {
+    let shell: string;
+    try {
+      shell = resolveBashPath(platform, shellPorts);
+    } catch (error) {
+      if (error instanceof ShellNotFoundError) return DYNAMIC;
+      throw error;
+    }
+    return runGlob(ports, shell, pattern, cwd, limit, deadline, signal);
+  };
+
+export const createPolicyFilesystem = (
+  platform: NodeJS.Platform = process.platform,
+  shellPorts: ShellPorts = nodeShellPorts(),
+  globPorts: GlobPorts = nodeGlobPorts(),
+): PolicyHostFilesystem => ({
   platform,
   canonicalise: (absolute) => resolveCanonicalPath(absolute),
   volumeProbe: (directory) => volumeIsCaseInsensitive(directory),
   resolveProgram: resolveProgram(platform),
-  expandGlob: expandGlob(platform, shellPorts),
+  expandGlob: createGlobExpander(platform, shellPorts, globPorts),
   readEntry,
   readNoFollow,
   readHead,
   isSearchable,
+  gitlinks: readGitlinks,
 });

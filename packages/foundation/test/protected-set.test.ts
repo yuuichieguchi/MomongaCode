@@ -203,6 +203,31 @@ describe('pointer parse rule', () => {
     expect(set.issues).toEqual([]);
   });
 
+  it('cuts a .git file at the first NUL byte, as git does with its C string', () => {
+    const set = protectedSetFor([ROOT], portsOf(pointerTree('gitdir: /w/g\0/elsewhere\n')));
+    expect(set.paths).toEqual(expect.arrayContaining(['/w/g/hooks', '/w/g/config']));
+    expect(set.issues).toEqual([]);
+  });
+
+  it('cuts a commondir file at the first NUL byte', () => {
+    const set = protectedSetFor([ROOT], portsOf(worktreeTree('../..\0x\n')));
+    expect(set.paths).toEqual(expect.arrayContaining([`${MAIN_GIT}/hooks`, `${MAIN_GIT}/config`]));
+    expect(set.issues).toEqual([]);
+  });
+
+  it('strips the line end of the whole text before the cut, so a line end before the NUL stays in the path, as git reads it', () => {
+    const gitFile = protectedSetFor([ROOT], portsOf(pointerTree('gitdir: /w/g\n\0x', '/w/g\n')));
+    expect(gitFile.paths).toEqual(expect.arrayContaining(['/w/g\n/hooks', '/w/g\n/config']));
+    expect(gitFile.paths).not.toContain('/w/g/hooks');
+    const commondir = protectedSetFor([ROOT], portsOf(worktreeTree('../..\n\0x')));
+    expect(commondir.paths).not.toContain(`${MAIN_GIT}/hooks`);
+  });
+
+  it('treats a .git file whose path starts at a NUL byte as malformed', () => {
+    const set = protectedSetFor([ROOT], portsOf(pointerTree('gitdir: \0/w/g\n')));
+    expect(set.issues).toEqual([{ root: ROOT, file: `${ROOT}/.git`, problem: 'malformed' }]);
+  });
+
   it.each([
     ['trailing spaces', '../..  \n', `${MAIN_GIT}/worktrees/..  `],
     ['a second line', '../..\nsecond\n', `${MAIN_GIT}/worktrees/..\nsecond`],

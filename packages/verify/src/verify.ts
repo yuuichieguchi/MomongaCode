@@ -1,7 +1,9 @@
-import type { ProtectedSet } from '@momonga/foundation';
+import { systemClock } from '@momonga/foundation';
+import type { Clock, ProtectedSet } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
-import type { PermissionRule, PolicyFilesystem } from '@momonga/policy';
+import type { PermissionRule, PolicyHostFilesystem } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
+import { startBudget } from './budget.ts';
 import { alphabetFor } from './char-set.ts';
 import { createCommandModel } from './command-model.ts';
 import { createPathModel } from './path-model.ts';
@@ -10,7 +12,7 @@ import type { SecretLocation } from './properties.ts';
 import { buildSubjects } from './queries.ts';
 import type { QueryContext } from './queries.ts';
 import { exitCodeOf } from './report.ts';
-import type { VerificationReport } from './report.ts';
+import type { PropertyResult, VerificationReport } from './report.ts';
 import { createSmt } from './smt.ts';
 import type { Z3Api } from './smt.ts';
 
@@ -21,10 +23,11 @@ export type VerifyRequest = {
   home: string;
   cwd: string;
   protectedSet: ProtectedSet;
-  fs: PolicyFilesystem;
+  fs: PolicyHostFilesystem;
   secretLocations: readonly SecretLocation[];
   exemptDirectory: string | null;
-  timeoutMs: number;
+  budgetMs: number;
+  clock?: Clock;
 };
 
 const STATIC_OUTSIDE_PROOF: readonly string[] = [
@@ -46,14 +49,15 @@ const unmodelledNotes = (context: QueryContext, rules: readonly PermissionRule[]
   const unmodelled = rules.filter((rule) => rule.tool === 'Bash' && context.models.commands.unmodelled(rule));
   if (unmodelled.length > 0) {
     notes.push(
-      `Bash rules the model cannot follow, because a word uses a character outside the modelled command alphabet or an allow rule names a wrapper, shell or eval program such as sudo, env or bash. They are treated as matching no modelled command. A deny or ask rule among them can only make a decision stricter than the model predicts, so no proved result depends on it; an allow rule among them makes rule-consistency unknown: ${unmodelled.map((rule) => rule.text).join(', ')}.`,
+      `Bash rules the model cannot follow, because a word uses a character outside the modelled command alphabet or an allow rule names a wrapper, shell or eval program such as sudo, env or bash. They are treated as matching no modelled command. A deny rule whose words are expressible and whose program is a wrapper, shell or eval program is checked for rule-consistency on a few concrete commands against the real decision code, and a one-word rule of that kind does not affect bash-admission. Every other such rule makes rule-consistency unknown; an allow rule makes bash-admission unknown while a Bash deny rule exists, and a deny or ask rule makes it unknown while a Bash allow rule exists, because the product can decide a command differently from the model: ${unmodelled.map((rule) => rule.text).join(', ')}.`,
     );
   }
   return notes;
 };
 
 export const buildQueryContext = (api: Z3Api, request: VerifyRequest): QueryContext => {
-  const { rules, roots, mode, home, cwd, protectedSet, fs, secretLocations, exemptDirectory, timeoutMs } = request;
+  const { rules, roots, mode, home, cwd, protectedSet, fs, secretLocations, exemptDirectory, budgetMs } = request;
+  const budget = startBudget(request.clock ?? systemClock, budgetMs);
   const fileRules = computeFileRules(rules, roots, exemptDirectory, fs.canonicalise, fs.volumeProbe);
   const alphabet = alphabetFor([
     home,
@@ -76,8 +80,8 @@ export const buildQueryContext = (api: Z3Api, request: VerifyRequest): QueryCont
   const models = { smt, paths, commands, rules, mode };
   return {
     models,
-    env: { rules, roots, mode, home, cwd, fileRules, protectedSet, fs },
-    timeoutMs,
+    env: { rules, roots, mode, home, cwd, fileRules, protectedSet, fs, globBudgetMs: budgetMs },
+    budget,
     subjects: buildSubjects(models),
     mismatches: [],
   };
@@ -87,12 +91,16 @@ export const verifyPermissions = async (api: Z3Api, request: VerifyRequest): Pro
   const { rules, mode, secretLocations } = request;
   const context = buildQueryContext(api, request);
   const { mismatches } = context;
-  const results = [
-    await checkDenyPrecedence(context),
-    await checkSecretReach(context, secretLocations),
-    await checkRuleConsistency(context),
-    await checkBashAdmission(context),
+  const checks = [
+    (scoped: QueryContext) => checkDenyPrecedence(scoped),
+    (scoped: QueryContext) => checkSecretReach(scoped, secretLocations),
+    (scoped: QueryContext) => checkRuleConsistency(scoped),
+    (scoped: QueryContext) => checkBashAdmission(scoped),
   ];
+  const results: PropertyResult[] = [];
+  for (const [index, check] of checks.entries()) {
+    results.push(await check({ ...context, budget: context.budget.share(checks.length - index) }));
+  }
   return {
     mode,
     ruleCount: rules.length,
