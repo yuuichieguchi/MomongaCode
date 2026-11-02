@@ -136,6 +136,7 @@ export const registerE2eCleanup = (cleanup: E2eCleanup): void => {
 const supervisorGroupsOf = (home: E2eHome): number[] => home.ledger.entries().filter((entry) => entry.source === 'supervisor').map((entry) => entry.pgid);
 
 const stopProcessesOf = async (home: E2eHome): Promise<void> => {
+  await home.ledger.collect({});
   const supervisors = supervisorGroupsOf(home);
   if (supervisors.length > 0) await home.ledger.kill(supervisors);
   await home.ledger.sweep({});

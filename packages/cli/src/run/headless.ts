@@ -161,7 +161,7 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
     const { run: started } = await session.client.createRun(sessionId, options.prompt);
     if (options.format === 'stream-json') {
       ports.stdout.write(
-        `${JSON.stringify({ type: 'system', subtype: 'init', session_id: sessionId, run_id: started.id, cwd: ports.cwd, permission_mode: session.created.session.permissionMode })}\n`,
+        `${JSON.stringify({ type: 'system', subtype: 'init', session_id: sessionId, run_id: started.id, cwd: ports.cwd, permission_mode: session.created.session.permissionMode, stripped_env_keys: session.created.strippedEnvKeys })}\n`,
       );
     }
     return await watchRun(ports, paths, { client: session.client, runId: started.id, format: options.format, verbose: options.verbose, interrupt: options.interrupt });

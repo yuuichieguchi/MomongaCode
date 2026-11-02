@@ -2,7 +2,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import type { ChildProcessByStdio } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { CLI_BUNDLE, cliEnv, trackDaemon } from './cli.ts';
+import { CLI_BUNDLE, cliEnv } from './cli.ts';
 import { registerE2eCleanup } from './home.ts';
 import type { E2eHome } from './home.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, until } from './wait.ts';
@@ -96,7 +96,6 @@ export const spawnPty = async (home: E2eHome, args: readonly string[], env: Read
     });
     try {
       await found;
-      await trackDaemon(home);
     } catch (error) {
       throw new Error(`${error instanceof Error ? error.message : String(error)}\nscreen tail:\n${screen().slice(-1500)}`, { cause: error });
     }

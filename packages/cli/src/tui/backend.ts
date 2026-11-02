@@ -34,6 +34,7 @@ export type TuiBackend = {
 export const createTuiBackend = (ports: CliPorts, paths: MomongaPaths, options: SessionOptions, history: HistoryStore): TuiBackend => {
   let client: RuntimeClient | undefined;
   let session: SessionView | undefined;
+  const closing = new AbortController();
 
   const runtime = (): RuntimeClient => {
     if (client === undefined) throw new Error('the daemon connection is not open yet');
@@ -83,6 +84,7 @@ export const createTuiBackend = (ports: CliPorts, paths: MomongaPaths, options: 
         },
         onEvent: handlers.onEvent,
         onReconnecting: handlers.onReconnecting,
+        signal: closing.signal,
       }),
     cancel: async (runId) => {
       await runtime().cancel(runId);
@@ -101,6 +103,7 @@ export const createTuiBackend = (ports: CliPorts, paths: MomongaPaths, options: 
     loadHistory: () => history.load(),
     recordHistory: (text) => history.append(text),
     close: async () => {
+      closing.abort();
       await client?.close();
     },
   };

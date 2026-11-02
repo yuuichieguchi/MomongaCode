@@ -257,9 +257,10 @@ describe('cli: momonga -p', () => {
   it(titleOf('cli-env'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const { home } = await prepare(() => [textReply('ok')]);
 
-    const result = await runCli(home, ['-p', 'hi'], { env: { OPENAI_API_KEY: 'sk-test-0123456789abcdef', DEPLOY_TOKEN: 'plain-token-value', MOMONGA_VISIBLE: 'kept' } });
+    const result = await runCli(home, ['-p', 'hi', '--output-format', 'stream-json'], { env: { OPENAI_API_KEY: 'sk-test-0123456789abcdef', DEPLOY_TOKEN: 'plain-token-value', MOMONGA_VISIBLE: 'kept' } });
 
     expect(result.code).toBe(0);
+    expect(jsonLines(result.stdout)[0]).toMatchObject({ type: 'system', subtype: 'init', stripped_env_keys: [] });
     const [row] = readDb<{ env_json: string }>(home.paths.databases.runtime, 'SELECT env_json FROM sessions');
     const env: unknown = JSON.parse(row?.env_json ?? 'null');
     expect(env).toMatchObject({ MOMONGA_VISIBLE: 'kept', HOME: home.home });

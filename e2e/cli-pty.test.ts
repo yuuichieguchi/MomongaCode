@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { titleOf } from './support/cases.ts';
+import { readDb } from './support/db.ts';
 import { createE2eHome } from './support/home.ts';
 import { KEYS, spawnPty } from './support/pty.ts';
 import { baseSettings, sandboxChoiceOf, startUpstream, writeSettingsFile } from './support/stack.ts';
@@ -97,5 +98,29 @@ describe('cli: interactive TUI through a pty', () => {
     expect(await pty.exit()).toEqual({ code: 0, signal: null });
     const history = fs.readFileSync(path.join(home.paths.state, 'history.jsonl'), 'utf8').split('\n').filter((line) => line !== '');
     expect(history.map((line) => JSON.parse(line))).toEqual(['/help', '/mode plan', 'line one\nline two', '/exit']);
+  });
+
+  it(titleOf('cli-pty-exit-running'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    const home = await createE2eHome();
+    const fake = await startUpstream(home, { home, script: [hangReply('still thinking')] });
+    writeSettingsFile(home, baseSettings(home, sandboxChoiceOf({ home }).kind));
+
+    const pty = await spawnPty(home, []);
+    await pty.waitFor('Do you trust the files in');
+    pty.write('1');
+    await pty.waitFor('mode: default');
+    pty.write('a long task');
+    await pty.waitFor('> a long task');
+    pty.write(KEYS.enter);
+    await until(() => chatCompletions(fake).length > 0, { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the upstream to receive the request' });
+    await pty.waitFor('working (esc to cancel)');
+
+    pty.write('/exit');
+    await pty.waitFor('> /exit');
+    pty.write(KEYS.enter);
+    expect(await pty.exit()).toEqual({ code: 0, signal: null });
+
+    const [row] = readDb<{ status: string }>(home.paths.databases.runtime, 'SELECT status FROM runs');
+    expect(row?.status).toBe('RUNNING');
   });
 });

@@ -204,6 +204,7 @@ export function App(props: AppProps) {
   const [reconnecting, setReconnecting] = useState(false);
   const nextHistory = useRef<'inherit' | 'fresh'>('inherit');
   const initialPromptSent = useRef(false);
+  const exiting = useRef(false);
   const runIdRef = useRef<string | undefined>(undefined);
   const editorRef = useRef<EditorState>(editor);
   const approvalIndexRef = useRef(0);
@@ -219,6 +220,7 @@ export function App(props: AppProps) {
   };
 
   const finish = (outcome: TuiOutcome): void => {
+    exiting.current = true;
     onExit(outcome);
     exit();
   };
@@ -282,7 +284,7 @@ export function App(props: AppProps) {
       setReconnecting(false);
       if (run.status !== 'COMPLETED') dispatch({ kind: 'append', entry: { kind: 'notice', level: run.status === 'CANCELLED' ? 'info' : 'error', text: describeEnd(run) } });
     } catch (error) {
-      reportError(error);
+      if (!exiting.current) reportError(error);
     } finally {
       runIdRef.current = undefined;
       setBusy(false);
@@ -334,12 +336,15 @@ export function App(props: AppProps) {
     submit(text).catch(reportError);
   };
 
-  const { initialPrompt } = props;
-  useEffect(() => {
-    if (phase.kind !== 'ready' || initialPrompt === undefined || initialPromptSent.current) return;
+  const sendInitialPrompt = useEffectEvent((): void => {
+    if (props.initialPrompt === undefined || initialPromptSent.current) return;
     initialPromptSent.current = true;
-    submit(initialPrompt).catch(reportError);
+    submit(props.initialPrompt).catch(reportError);
   });
+
+  useEffect(() => {
+    if (phase.kind === 'ready') sendInitialPrompt();
+  }, [phase.kind]);
 
   const cancelRun = (): void => {
     const runId = runIdRef.current;

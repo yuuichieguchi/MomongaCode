@@ -1,6 +1,7 @@
 {
   "name": "momonga",
   "version": "0.0.0",
+  "private": true,
   "type": "module",
   "bin": {
     "momonga": "./dist/main.js"

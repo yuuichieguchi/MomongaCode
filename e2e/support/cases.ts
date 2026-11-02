@@ -69,6 +69,7 @@ export const E2E_CASES = [
   { id: 'cli-probe', file: 'cli.test.ts', title: 'cli: gateway probe fm records the measurement and reports the remedy when fm is unavailable', needsBash: false },
   { id: 'cli-race', file: 'cli.test.ts', title: 'cli: two commands started together share one daemon', needsBash: false },
   { id: 'cli-interrupt', file: 'cli.test.ts', title: 'cli: ctrl+c during -p cancels the run and exits 130', needsBash: false },
+  { id: 'cli-pty-exit-running', file: 'cli-pty.test.ts', title: 'cli pty: /exit while a task runs leaves the terminal at once and the task continues in the daemon', needsBash: false },
   { id: 'cli-pty-approval', file: 'cli-pty.test.ts', title: 'cli pty: first-run trust prompt, Edit approval with a diff, mode cycling and a clean exit through a real pty', needsBash: false },
   { id: 'cli-pty-session', file: 'cli-pty.test.ts', title: 'cli pty: slash commands, multi-line input, esc cancels a running task, history recall and /exit through a real pty', needsBash: false },
 ] as const satisfies readonly { id: string; file: E2eCaseFile; title: string; needsBash: boolean }[];

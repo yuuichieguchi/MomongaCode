@@ -1,11 +1,10 @@
 import { spawn } from 'node:child_process';
-import fs from 'node:fs';
 import path from 'node:path';
 import { registerE2eCleanup } from './home.ts';
 import type { E2eHome } from './home.ts';
 import { REPO_ROOT } from './launcher.ts';
 import { SESSION_PATH } from './runtime-client.ts';
-import { E2E_TEST_TIMEOUT_MS, withinBound } from './wait.ts';
+import { E2E_RUN_COMPLETED_BOUND_MS, withinBound } from './wait.ts';
 
 export const CLI_BUNDLE = path.join(REPO_ROOT, 'packages', 'cli', 'dist', 'main.js');
 
@@ -20,13 +19,6 @@ export const cliEnv = (home: E2eHome, extra: Readonly<Record<string, string>> = 
   LANG: 'C',
   ...extra,
 });
-
-export const trackDaemon = async (home: E2eHome): Promise<void> => {
-  const lock = home.paths.locks.supervisor;
-  if (!fs.existsSync(lock)) return;
-  const pid = Number.parseInt(fs.readFileSync(lock, 'utf8'), 10);
-  if (Number.isInteger(pid) && pid > 1) await home.ledger.add(pid, 'supervisor');
-};
 
 export type RunningCli = { readonly result: Promise<CliResult>; interrupt(): void };
 
@@ -51,7 +43,9 @@ export const startCli = (home: E2eHome, args: readonly string[], options: RunCli
   registerE2eCleanup(() => {
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
   });
-  const result = withinBound(closed, options.boundMs ?? E2E_TEST_TIMEOUT_MS, `momonga ${args.join(' ')}`).finally(() => trackDaemon(home));
+  const result = withinBound(closed, options.boundMs ?? E2E_RUN_COMPLETED_BOUND_MS, `momonga ${args.join(' ')}`).catch((error: unknown) => {
+    throw new Error(`${error instanceof Error ? error.message : String(error)}\nstdout so far:\n${stdout}\nstderr so far:\n${stderr}`, { cause: error });
+  });
   return { result, interrupt: () => void child.kill('SIGINT') };
 };
 
