@@ -4,7 +4,7 @@ import { SOCKET_PATH_LIMIT, assertSocketPathLength, momongaPaths, rotatedLogPath
 
 const HOME = '/Users/alice';
 
-const expectedLayout = (home: string, cacheBase: string) => {
+const expectedLayout = (home: string, cacheBase: string, keychains: string = path.join(home, 'Library', 'Keychains')) => {
   const root = path.join(home, '.momonga');
   const run = path.join(root, 'run');
   const state = path.join(root, 'state');
@@ -51,7 +51,7 @@ const expectedLayout = (home: string, cacheBase: string) => {
     projects: path.join(root, 'projects'),
     skills: path.join(root, 'skills'),
     launcher: path.join(home, '.local', 'bin', 'momonga'),
-    keychains: path.join(home, 'Library', 'Keychains'),
+    keychains,
     cacheBase,
     tmp: {
       root: path.join(cacheBase, 'tmp'),
@@ -72,12 +72,12 @@ describe('momongaPaths', () => {
 
   it('uses XDG_CACHE_HOME for the cache base on linux', () => {
     expect(momongaPaths('/home/bob', 'linux', { XDG_CACHE_HOME: '/var/cache/bob' })).toEqual(
-      expectedLayout('/home/bob', '/var/cache/bob/momonga'),
+      expectedLayout('/home/bob', '/var/cache/bob/momonga', '/home/bob/.local/share/keyrings'),
     );
   });
 
   it('falls back to ~/.cache on linux when XDG_CACHE_HOME is unset', () => {
-    expect(momongaPaths('/home/bob', 'linux', {})).toEqual(expectedLayout('/home/bob', '/home/bob/.cache/momonga'));
+    expect(momongaPaths('/home/bob', 'linux', {})).toEqual(expectedLayout('/home/bob', '/home/bob/.cache/momonga', '/home/bob/.local/share/keyrings'));
   });
 
   it('accepts a home whose longest socket path is 103 bytes', () => {
@@ -121,19 +121,19 @@ describe('socket path limit', () => {
   });
 
   it('accepts a 103-byte path', () => {
-    expect(() => assertSocketPathLength(`/${'s'.repeat(102)}`)).not.toThrow();
+    expect(() => assertSocketPathLength(`/${'s'.repeat(102)}`, 'darwin')).not.toThrow();
   });
 
   it('rejects a 104-byte path naming the path and its length', () => {
     const socket = `/${'s'.repeat(103)}`;
-    expect(() => assertSocketPathLength(socket)).toThrow(socket);
-    expect(() => assertSocketPathLength(socket)).toThrow(/104/);
+    expect(() => assertSocketPathLength(socket, 'darwin')).toThrow(socket);
+    expect(() => assertSocketPathLength(socket, 'darwin')).toThrow(/104/);
   });
 
   it('counts bytes rather than characters', () => {
     const socket = `/${'\u00e9'.repeat(52)}`;
     expect(Buffer.byteLength(socket)).toBe(105);
-    expect(() => assertSocketPathLength(socket)).toThrow(/105/);
+    expect(() => assertSocketPathLength(socket, 'darwin')).toThrow(/105/);
   });
 });
 
