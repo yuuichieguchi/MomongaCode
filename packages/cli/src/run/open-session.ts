@@ -6,7 +6,7 @@ import type { CreatedSession, RuntimeClient } from '../client/runtime-client.ts'
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { DaemonPorts, DaemonReplacement } from '../daemon/ensure-daemon.ts';
 
-export type SessionOptions = { permissionMode?: PermissionMode; bypassAllowed?: boolean; modelAlias?: string; daemonReplacement?: DaemonReplacement };
+export type SessionOptions = { permissionMode?: PermissionMode; bypassAllowed?: boolean; modelAlias?: string; daemonReplacement?: DaemonReplacement; signal?: AbortSignal };
 
 export type CliSession = {
   client: RuntimeClient;
@@ -28,7 +28,10 @@ export const autoModeConfigured = async (ports: Pick<DaemonPorts, 'home'>): Prom
 export const connectRuntime = (paths: MomongaPaths): RuntimeClient => createRuntimeClient({ socketPath: paths.sockets.runtime });
 
 export const openSession = async (ports: DaemonPorts & { cwd: string }, paths: MomongaPaths, options: SessionOptions): Promise<CliSession> => {
-  await ensureDaemon(ports, paths, options.daemonReplacement === undefined ? {} : { replacement: options.daemonReplacement });
+  await ensureDaemon(ports, paths, {
+    ...(options.daemonReplacement === undefined ? {} : { replacement: options.daemonReplacement }),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  });
   const client = connectRuntime(paths);
   try {
     const created = await client.createSession({
