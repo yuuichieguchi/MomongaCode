@@ -10,15 +10,16 @@ export type ProductOptions = {
   routes?: FakeRoute[];
   settings?: Readonly<Record<string, unknown>>;
   imageInput?: boolean;
+  contextWindow?: number;
 };
 
 export type Product = { home: E2eHome; fake: FakeChatCompletionsServer };
 
-const withImageInput = (settings: Record<string, unknown>): Record<string, unknown> => {
+const withCapabilities = (settings: Record<string, unknown>, capabilities: Record<string, unknown>): Record<string, unknown> => {
   const models = settings['models'] as { aliases: unknown; targets: Record<string, { capabilities: Record<string, unknown> }> };
   const primary = models.targets[UPSTREAM_TARGET];
-  if (primary === undefined) throw new Error(`no ${UPSTREAM_TARGET} target to give image input`);
-  return { ...settings, models: { ...models, targets: { ...models.targets, [UPSTREAM_TARGET]: { ...primary, capabilities: { ...primary.capabilities, imageInput: true } } } } };
+  if (primary === undefined) throw new Error(`no ${UPSTREAM_TARGET} target to give capabilities`);
+  return { ...settings, models: { ...models, targets: { ...models.targets, [UPSTREAM_TARGET]: { ...primary, capabilities: { ...primary.capabilities, ...capabilities } } } } };
 };
 
 export const prepareProduct = async (options: ProductOptions = {}): Promise<Product> => {
@@ -30,7 +31,11 @@ export const prepareProduct = async (options: ProductOptions = {}): Promise<Prod
     upstreamImageInput: options.imageInput === true,
   });
   const base = baseSettings(home, sandboxChoiceOf({ home }).kind);
-  writeSettingsFile(home, { ...(options.imageInput === true ? withImageInput(base) : base), ...options.settings });
+  const capabilities = {
+    ...(options.imageInput === true ? { imageInput: true } : {}),
+    ...(options.contextWindow === undefined ? {} : { contextWindow: options.contextWindow }),
+  };
+  writeSettingsFile(home, { ...withCapabilities(base, capabilities), ...options.settings });
   return { home, fake };
 };
 

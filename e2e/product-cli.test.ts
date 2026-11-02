@@ -9,6 +9,8 @@ import { PNG_BYTES, prepareProduct, requestText, writePng, writeUserSkill } from
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
 
+const WINDOW_WITH_ROOM_FOR_ALL_TOOLS_AND_AN_IMAGE = 32768;
+
 const jsonOf = (text: string): unknown => JSON.parse(text);
 
 const openedUrls = (home: E2eHome): string[] => {
@@ -125,7 +127,7 @@ describe('momonga -p with skills and images', () => {
   });
 
   it(titleOf('cli-image-print'), { timeout: 2 * E2E_TEST_TIMEOUT_MS }, async () => {
-    const capable = await prepareProduct({ imageInput: true, script: [textReply('It is a picture.')] });
+    const capable = await prepareProduct({ imageInput: true, contextWindow: WINDOW_WITH_ROOM_FOR_ALL_TOOLS_AND_AN_IMAGE, script: [textReply('It is a picture.')] });
     const shot = writePng(capable.home.project, 'shot.png');
 
     const described = await runCli(capable.home, ['-p', 'What is in the picture?', '--image', 'shot.png']);
