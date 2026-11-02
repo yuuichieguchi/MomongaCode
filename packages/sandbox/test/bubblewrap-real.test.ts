@@ -1,10 +1,12 @@
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { killGroupsForCleanup } from '@momonga/testkit';
+import { killGroupsForCleanup, waitFor } from '@momonga/testkit';
+import { fileRulesOf, fileSpec } from './file-rule-specs.ts';
 import { makeTempDir, run } from './helpers.ts';
 
 const KILL_GRACE_MS = 300;
@@ -89,6 +91,37 @@ describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', () => {
     const tmp = result.stdout.trim();
     expect(result.code).toBe(0);
     expect(fs.existsSync(tmp)).toBe(false);
+  });
+
+  it('keeps a protected path that does not exist yet from being created, and removes the placeholder afterwards', async () => {
+    const hooks = path.join(work, '.git', 'hooks');
+    const result = await run(sh('mkdir .git 2>/dev/null && echo created || echo refused', { writeDeniedLiterals: [hooks] }));
+    expect(result.stdout.trim()).toBe('refused');
+    expect(fs.existsSync(path.join(work, '.git'))).toBe(false);
+  });
+
+  it('keeps that protection for a second command planned while the first command holds the placeholder', async () => {
+    const hooks = path.join(work, '.git', 'hooks');
+    const gates = [path.join(outside, 'gate-first'), path.join(outside, 'gate-second')];
+    for (const gate of gates) execFileSync('/usr/bin/mkfifo', [gate]);
+    const first = sh(`: > ${path.join(outside, 'first-ready')}; cat ${gates[0]}`, { writeDeniedLiterals: [hooks] });
+    await waitFor(() => fs.existsSync(path.join(outside, 'first-ready')));
+    const second = sh(`: > ${path.join(outside, 'second-ready')}; cat ${gates[1]}; mkdir .git 2>/dev/null && echo created || echo refused`, { writeDeniedLiterals: [hooks] });
+    await waitFor(() => fs.existsSync(path.join(outside, 'second-ready')));
+    fs.writeFileSync(gates[0] as string, 'open');
+    await run(first);
+    expect(fs.existsSync(path.join(work, '.git'))).toBe(true);
+    fs.writeFileSync(gates[1] as string, 'open');
+    expect((await run(second)).stdout.trim()).toBe('refused');
+    expect(fs.existsSync(path.join(work, '.git'))).toBe(false);
+  });
+
+  it('keeps a protected path from being created under the closure of a widening allow rule', async () => {
+    const wide = tempDir();
+    const fileRules = fileRulesOf([fileSpec(`/${wide}/**`, { roots: [work], home: outside, tool: 'Edit', effect: 'allow' })], [work]);
+    const result = await run(sh(`mkdir ${wide}/.git 2>/dev/null && echo created || echo refused; : > ${wide}/other && echo wrote`, { fileRules, writeDeniedLiterals: [path.join(wide, '.git', 'hooks')] }));
+    expect(result.stdout.trim().split('\n')).toEqual(['refused', 'wrote']);
+    expect(fs.existsSync(path.join(wide, '.git'))).toBe(false);
   });
 
   it('terminates the whole process group when aborted', async () => {
