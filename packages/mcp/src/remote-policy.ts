@@ -41,6 +41,7 @@ export const assertAuthorizationUrl = (url: URL, scope: McpServerScope): void =>
   if (!allowedSchemes(scope).includes(url.protocol)) {
     throw new McpRemotePolicyError('authorization_url_scheme', `refusing to open an authorization URL with scheme ${url.protocol.replace(':', '')}`);
   }
+  assertRemoteUrl(url.href, scope);
 };
 
 const lookupVia = (resolver: HostResolver): LookupFunction => {

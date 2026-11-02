@@ -194,6 +194,26 @@ describe('authorization URLs', () => {
     expect((refusal as McpRemotePolicyError).violation).toBe('authorization_url_scheme');
   });
 
+  it.each([
+    ['https://127.0.0.1:8443/authorize', 'non_public_address_literal'],
+    ['https://169.254.169.254/authorize', 'non_public_address_literal'],
+    ['https://localhost/authorize', 'loopback_hostname'],
+    ['https://user:pass@auth.example.com/authorize', 'credentials_in_url'],
+  ] as const)('refuses to hand a project-scope %s to the browser (%s)', async (url, violation) => {
+    const refusal = await Promise.resolve()
+      .then(() => providerFor('project').redirectToAuthorization(new URL(url)))
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    expect(refusal).toBeInstanceOf(McpRemotePolicyError);
+    expect((refusal as McpRemotePolicyError).violation).toBe(violation);
+  });
+
+  it('lets a user-scope connection send the browser to a local authorization server', async () => {
+    await expect(Promise.resolve().then(() => providerFor('user').redirectToAuthorization(new URL('http://127.0.0.1:9000/authorize')))).resolves.toBeUndefined();
+  });
+
   it('hands an https authorization URL to the browser', () => {
     let received: URL | undefined;
     const provider = createMcpOAuthProvider({
@@ -209,6 +229,42 @@ describe('authorization URLs', () => {
     });
     provider.redirectToAuthorization(new URL('https://auth.example.com/authorize'));
     expect(received?.href).toBe('https://auth.example.com/authorize');
+  });
+});
+
+describe('the 401 challenge of the server', () => {
+  it('is followed to the protected resource metadata it names and its scope is requested', async () => {
+    const oauth = await startOauthFixture();
+    const fixture = await startHttpFixture({ era: 'modern', oauth, protectedResourceMetadataPath: '/metadata/custom', challengeScope: 'files:read' });
+    const follow = browserThatFollowsRedirect();
+    const requested: Array<string | null> = [];
+    const { connection } = makeRemoteConnection({
+      fixture,
+      openAuthorizationUrl: async (url) => {
+        requested.push(url.searchParams.get('scope'));
+        await follow(url);
+      },
+    });
+    await connection.authorize(new AbortController().signal);
+    expect(requested).toEqual(['files:read']);
+    expect(await connection.authState()).toEqual({ state: 'authorized' });
+  });
+
+  it('yields to the scope the user configured', async () => {
+    const oauth = await startOauthFixture();
+    const fixture = await startHttpFixture({ era: 'modern', oauth, protectedResourceMetadataPath: '/metadata/custom', challengeScope: 'files:read' });
+    const follow = browserThatFollowsRedirect();
+    const requested: Array<string | null> = [];
+    const { connection } = makeRemoteConnection({
+      fixture,
+      oauth: { scope: 'configured' },
+      openAuthorizationUrl: async (url) => {
+        requested.push(url.searchParams.get('scope'));
+        await follow(url);
+      },
+    });
+    await connection.authorize(new AbortController().signal);
+    expect(requested).toEqual(['configured']);
   });
 });
 
