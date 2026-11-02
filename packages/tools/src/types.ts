@@ -1,6 +1,6 @@
 import type { Clock } from '@momonga/foundation';
 import type { PermissionSubject } from '@momonga/policy';
-import type { ElicitationRequestView, SideEffect, ToolAwait, ToolKind } from '@momonga/protocol';
+import type { ElicitationRequestView, SideEffect, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { BackgroundJobs, BlobPort, ToolIdempotencyRecord } from './ports.ts';
 
@@ -23,6 +23,8 @@ export type ToolResult = {
   plan?: PlanEntry[];
   skill?: SkillActivation;
   authorizationRequired?: { server: string };
+  files?: ToolFile[];
+  exitCode?: number;
 };
 
 export type ToolPending = { status: 'pending'; awaits: ToolAwait; wakeAt?: number };

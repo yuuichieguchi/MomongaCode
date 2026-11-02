@@ -127,6 +127,7 @@ export const editTool = defineTool<EditInput>({
       status: 'completed',
       output: `The file ${plan.path} has been updated. Here is the result of running cat -n on a snippet of the edited file:\n${snippetOf(replacement)}${warning === undefined ? '' : `\n${warning}`}`,
       content: [{ type: 'diff', path: plan.path, oldText: original, newText: replacement.updated }],
+      files: [{ path: plan.path, sha256: plan.postHash, access: 'write' }],
     };
   },
   reconcile: async (_input, record) => reconcileWrite(record, 'Edit'),

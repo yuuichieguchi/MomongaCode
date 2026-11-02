@@ -1,7 +1,7 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
 import { canonicalJson, isRecord } from '@momonga/foundation';
-import { MIN_SUMMARY_TOKENS, OPEN_RESPONSES_OPENAPI } from '@momonga/protocol';
+import { MIN_SUMMARY_TOKENS, OPEN_RESPONSES_OPENAPI, tokensForText } from '@momonga/protocol';
 import type { CompactRequest, CountTokensRequest, CreateResponseBody } from '@momonga/protocol';
 import { invalidRequest } from './errors.ts';
 
@@ -256,7 +256,7 @@ const momongaRecord = (value: unknown): SchemaObject | undefined => {
 const validateCompactMomonga = (value: unknown): void => {
   const momonga = momongaRecord(value);
   if (momonga === undefined) return;
-  requireKnownKeys(momonga, ['max_summary_tokens', 'retains_user_request'], ['momonga']);
+  requireKnownKeys(momonga, ['max_summary_tokens', 'retains_user_request', 'guideline'], ['momonga']);
   const cap = momonga['max_summary_tokens'];
   if (cap !== undefined && (!Number.isInteger(cap) || (cap as number) < MIN_SUMMARY_TOKENS)) {
     throwIssue({ segments: ['momonga', 'max_summary_tokens'], message: `must be an integer of at least ${MIN_SUMMARY_TOKENS}` });
@@ -264,6 +264,10 @@ const validateCompactMomonga = (value: unknown): void => {
   const retains = momonga['retains_user_request'];
   if (retains !== undefined && typeof retains !== 'boolean') {
     throwIssue({ segments: ['momonga', 'retains_user_request'], message: 'must be a boolean' });
+  }
+  const guideline = momonga['guideline'];
+  if (guideline !== undefined && (typeof guideline !== 'string' || tokensForText(guideline) > MIN_SUMMARY_TOKENS)) {
+    throwIssue({ segments: ['momonga', 'guideline'], message: `must be a string of at most ${MIN_SUMMARY_TOKENS} estimated tokens` });
   }
 };
 

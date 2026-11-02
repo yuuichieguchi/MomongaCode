@@ -1,5 +1,10 @@
 export { MIN_ROOM_TOKENS, budgetFor, inputCeilingFor, itemCapFor, memoryBudgetFor, pinnedFloorFor } from './budget.ts';
 export { renderMemories } from './memory.ts';
+export { textOfContent, textOfItem } from './item-text.ts';
+export { checkSummary } from './summary-fidelity.ts';
+export type { FidelitySource } from './summary-fidelity.ts';
+export { WORKING_STATE_MESSAGE_MIN_TOKENS, criticalIdentifiersOf, renderWorkingState, workingStateCapFor, workingStateMessage } from './working-state.ts';
+export type { WorkingStateOptions } from './working-state.ts';
 export { buildContext, measureLayers, measurePinned } from './build-context.ts';
 export { ContextOverflowError, PinnedOverflowError, PinnedRoomError, PrefixChangedError } from './errors.ts';
 export { createFsInstructionReader } from './fs-instruction-reader.ts';

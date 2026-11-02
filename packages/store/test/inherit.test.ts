@@ -78,12 +78,55 @@ describe('projectInheritance: a completed conversation', () => {
         { seq: 2, item: assistantItem('m1', 'hello') },
       ],
       nextItemSeq: 3,
+      workingFacts: { written: [], commands: [], messages: [{ text: 'Say hello', seq: 0 }], itemEvents: [] },
       evicted: [],
       closures: [],
       markers: [],
       fromMode: 'default',
       mode: 'default',
-      digest: inheritedDigest({ history: state.history, nextItemSeq: 3, evicted: [], mode: 'default' }),
+      digest: inheritedDigest({
+        history: state.history,
+        nextItemSeq: 3,
+        evicted: [],
+        mode: 'default',
+        workingFacts: { written: [], commands: [], messages: [{ text: 'Say hello', seq: 0 }], itemEvents: [] },
+      }),
+    });
+    expectWellFormed(payload);
+  });
+
+  it('carries the task of the source run as the first inherited message', () => {
+    const state = answered('default');
+    expect(state.workingFacts.taskText).toBe('Say hello');
+    const payload = project(state, { status: 'COMPLETED' });
+    expect(payload.workingFacts?.messages).toEqual([{ text: 'Say hello', seq: 0 }]);
+  });
+
+  it('carries no task of a source run whose task was retracted', () => {
+    const payload = project(foldOf([task('Never started')]), CANCELLED);
+    expect(payload.history).toEqual([]);
+    expect(payload.workingFacts?.messages).toEqual([]);
+  });
+
+  it('carries the working facts of the source run with every entry marked as inherited', () => {
+    const state = {
+      ...answered('default'),
+      workingFacts: {
+        written: [{ path: '/p/a.ts', sha256: 'a'.repeat(64), seq: 12 }],
+        commands: [{ command: 'make lint', failed: true, exitCode: 2, seq: 14 }],
+        messages: [{ text: 'use two spaces', seq: 9 }],
+        plan: { seq: 11, entries: [{ content: 'open step', priority: 'high' as const, status: 'pending' as const }] },
+        itemEvents: [{ itemSeq: 2, eventSeq: 5 }],
+        replacedThroughEventSeq: 4,
+      },
+    };
+    const payload = project(state, { status: 'COMPLETED' });
+    expect(payload.workingFacts).toEqual({
+      written: [{ path: '/p/a.ts', sha256: 'a'.repeat(64), seq: 0 }],
+      commands: [{ command: 'make lint', failed: true, exitCode: 2, seq: 0 }],
+      messages: [{ text: 'use two spaces', seq: 0 }],
+      plan: { seq: 0, entries: [{ content: 'open step', priority: 'high', status: 'pending' }] },
+      itemEvents: [],
     });
     expectWellFormed(payload);
   });

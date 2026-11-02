@@ -1,15 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { AdapterCompactRequest, AdapterInputItem, ToolCallingMode } from '@momonga/protocol';
-import { SUMMARY_PROMPT_TOKENS } from '@momonga/protocol';
 import { TARGET, completionBodies, lastCompletionBody, startFake, userText } from './cc-support.ts';
 import {
-  KEEP_CLAUSE,
   RESTATE_CLAUSE,
   TRANSCRIPT_TAIL,
   callReply,
   ccAdapterFor,
   emptyReply,
-  estimatedTokens,
   instructionsFor,
   lengthReply,
   textReply,
@@ -27,17 +24,6 @@ const compactRequest = (overrides: Partial<AdapterCompactRequest> = {}): Adapter
   model: 'system',
   input: conversation,
   ...overrides,
-});
-
-describe('SUMMARY_PROMPT_TOKENS', () => {
-  it.for([
-    [64, RESTATE_CLAUSE],
-    [246, KEEP_CLAUSE],
-    [4096, KEEP_CLAUSE],
-  ] as const)('is within 10%% of the estimated instructions for cap %i', ([cap, clause]) => {
-    const measured = estimatedTokens(instructionsFor(cap, clause));
-    expect(Math.abs(SUMMARY_PROMPT_TOKENS - measured)).toBeLessThanOrEqual(Math.ceil(0.1 * measured));
-  });
 });
 
 describe('chat-completions adapter compact', () => {

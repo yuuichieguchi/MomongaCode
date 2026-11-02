@@ -1,9 +1,24 @@
-import { ContextOverflowError, PinnedOverflowError, PinnedRoomError, budgetFor, buildContext, measureLayers, measurePinned } from '@momonga/context';
+import {
+  ContextOverflowError,
+  PinnedOverflowError,
+  PinnedRoomError,
+  budgetFor,
+  buildContext,
+  checkSummary,
+  criticalIdentifiersOf,
+  measureLayers,
+  measurePinned,
+  renderWorkingState,
+  textOfItem,
+  workingStateCapFor,
+} from '@momonga/context';
 import type { ActivatedSkill, BuildContextInput, BuildContextPorts, BuiltContext, CompactionPlan, ContextEviction, PinnedMeasure } from '@momonga/context';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import { compactionSummaryMessage, decodeCompactionSummary, userMessageContent } from '@momonga/protocol';
-import type { CompactRequest, ContentPart, RunEventPayload } from '@momonga/protocol';
+import { compactionSummaryMessage, decodeCompactionSummary, tokensForText, userMessageContent } from '@momonga/protocol';
+import type { CompactRequest, CompactResource, CompactionInputItem, ContentPart, MessageInputItem, RunEvent, RunEventPayload, RunState, SummaryFidelity } from '@momonga/protocol';
+import { foldRunState } from '@momonga/store';
 import { GatewayRequestError } from '../gateway-client.ts';
+import type { WorkerBlobs } from './types.ts';
 import type { ClaimContext } from './claim-context.ts';
 import { touchedPathsOf } from './touched-paths.ts';
 import { wrapUpInstructionFor } from './wrap-up.ts';
@@ -23,7 +38,8 @@ const ESCALATING_CODES: readonly string[] = [
   'refusal',
 ];
 const NON_ESCALATING_4XX: readonly number[] = [401, 403, 404, 408, 409, 429];
-const PROACTIVE_SUPPRESSED_STEPS = 3;
+const NO_ADOPTED_GUIDELINE = 0;
+const MAX_NAMED_TOKENS = 5;
 
 const escalates = (error: unknown): error is GatewayRequestError =>
   error instanceof GatewayRequestError &&
@@ -42,10 +58,20 @@ const taskContentOf = (ctx: ClaimContext): ContentPart[] => {
   return userMessageContent(first.text, first.images);
 };
 
+const workingStateOf = (ctx: ClaimContext, state: RunState): string | undefined =>
+  state.summary === undefined
+    ? undefined
+    : renderWorkingState(state, { capTokens: workingStateCapFor(ctx.capabilities), tokensOf: tokensForText, verificationCommands: ctx.verificationCommands });
+
+const projectedWorkingStateOf = (ctx: ClaimContext, state: RunState): string | undefined =>
+  state.history.length === 0 ? undefined : workingStateOf(ctx, projectCompaction(ctx, state.nextItemSeq - 1, compactionSummaryMessage(''), ''));
+
 export const contextInputOf = (ctx: ClaimContext, wrapUp: WrapUpReason | undefined, level: number): BuildContextInput => {
   const { options, journal } = ctx;
   const state = journal.state;
   const session = sessionOf(ctx);
+  const workingState = workingStateOf(ctx, state);
+  const projectedWorkingState = projectedWorkingStateOf(ctx, state);
   return {
     capabilities: ctx.capabilities,
     model: ctx.alias,
@@ -61,6 +87,8 @@ export const contextInputOf = (ctx: ClaimContext, wrapUp: WrapUpReason | undefin
         .filter((entry) => entry.seq !== state.taskSeq)
         .map((entry) => ({ seq: entry.seq, item: entry.item, ...(entry.handle === undefined ? {} : { handle: entry.handle }) })),
       ...(state.summary === undefined ? {} : { summary: { item: state.summary.item, replacedThroughSeq: state.summary.replacedThroughSeq } }),
+      ...(workingState === undefined ? {} : { workingState }),
+      ...(projectedWorkingState === undefined ? {} : { projectedWorkingState }),
     },
     evicted: new Set(state.evicted),
     touchedPaths: touchedPathsOf(state.history, session.cwd),
@@ -95,7 +123,92 @@ const buildOnce = async (ctx: ClaimContext, wrapUp: WrapUpReason | undefined, le
   return built;
 };
 
-export const compactThrough = async (ctx: ClaimContext, plan: Pick<CompactionPlan, 'throughSeq' | 'input' | 'summaryTokenCap'>): Promise<void> => {
+type CompactedPayload = Extract<RunEventPayload, { type: 'context.compacted' }>;
+type CompactedEvent = Extract<RunEvent, { type: 'context.compacted' }>;
+type CompactionSource = Pick<CompactionPlan, 'throughSeq' | 'input' | 'summaryTokenCap' | 'pinnedText'>;
+
+const wholeBlobText = async (blobs: WorkerBlobs, handle: string, scope: { runId: string }): Promise<string> => {
+  const { totalBytes } = await blobs.read(handle, { offset: 0, length: 0 }, scope);
+  return (await blobs.read(handle, { offset: 0, length: totalBytes }, scope)).text;
+};
+
+type RegionText = { text: string; unreadable: { handle: string; reason: string }[] };
+
+const replacedRegionText = async (ctx: ClaimContext, plan: CompactionSource): Promise<RegionText> => {
+  const replaced = ctx.journal.state.history.filter((entry) => entry.seq <= plan.throughSeq);
+  const unreadable: RegionText['unreadable'] = [];
+  const recorded = await Promise.all(
+    replaced.map(async (entry) => {
+      if (entry.handle === undefined || entry.item.type !== 'function_call_output') return textOfItem(entry.item);
+      const { handle } = entry;
+      try {
+        return await wholeBlobText(ctx.options.blobs, handle, { runId: ctx.run.id });
+      } catch (error) {
+        unreadable.push({ handle, reason: error instanceof Error ? error.message : String(error) });
+        return textOfItem(entry.item);
+      }
+    }),
+  );
+  return { text: [...recorded, ...plan.input.map((item) => textOfItem(item))].join('\n'), unreadable };
+};
+
+const noticeOf = (message: string): RunEventPayload => ({ type: 'notice', level: 'warning', message });
+
+const fittingHead = (text: string, maxTokens: number): string => {
+  if (tokensForText(text) <= maxTokens) return text;
+  const marker = ' [… cut]';
+  let kept = 0;
+  let tooLong = text.length;
+  while (tooLong - kept > 1) {
+    const middle = Math.floor((kept + tooLong) / 2);
+    if (tokensForText(`${text.slice(0, middle)}${marker}`) <= maxTokens) kept = middle;
+    else tooLong = middle;
+  }
+  return `${text.slice(0, kept)}${marker}`;
+};
+
+const projectCompaction = (ctx: ClaimContext, throughSeq: number, item: CompactionInputItem | MessageInputItem, summary: string): RunState => {
+  const state = ctx.journal.state;
+  const event: CompactedEvent = {
+    type: 'context.compacted',
+    item,
+    summary,
+    replacedThroughSeq: throughSeq,
+    id: 0,
+    runId: state.runId,
+    sessionId: state.sessionId,
+    seq: state.lastSeq + 1,
+    step: state.step,
+    leaseToken: 0,
+    createdAt: 0,
+  };
+  return foldRunState(state, event);
+};
+
+const renderedFacts = (ctx: ClaimContext, projected: RunState, capTokens: number): string => {
+  const text = renderWorkingState(projected, { capTokens, tokensOf: tokensForText, verificationCommands: ctx.verificationCommands });
+  if (text === undefined) throw new Error(`run ${projected.runId} has no summary after a projected compaction`);
+  return text;
+};
+
+const deterministicCompaction = (ctx: ClaimContext, plan: CompactionSource, fidelity?: SummaryFidelity): CompactedPayload => {
+  const projected = projectCompaction(ctx, plan.throughSeq, compactionSummaryMessage(''), '');
+  const facts = renderedFacts(ctx, projected, Math.min(plan.summaryTokenCap, workingStateCapFor(ctx.capabilities)));
+  const previous = ctx.journal.state.summary?.summary ?? '';
+  const room = plan.summaryTokenCap - tokensForText(facts) - 1;
+  const summary = previous === '' || room <= 0 ? facts : `${fittingHead(previous, room)}\n${facts}`;
+  return {
+    type: 'context.compacted',
+    item: compactionSummaryMessage(summary),
+    summary,
+    replacedThroughSeq: plan.throughSeq,
+    source: 'deterministic',
+    ...(fidelity === undefined ? {} : { fidelity }),
+    guidelineVersion: NO_ADOPTED_GUIDELINE,
+  };
+};
+
+export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource): Promise<void> => {
   const { journal, options } = ctx;
   const request: CompactRequest = {
     model: ctx.alias,
@@ -104,31 +217,64 @@ export const compactThrough = async (ctx: ClaimContext, plan: Pick<CompactionPla
   };
   const idempotencyKey = sha256Hex(canonicalJson([ctx.run.id, 'compact', sha256Hex(canonicalJson(request))]));
   ctx.control.inFlight.compactionKey = idempotencyKey;
-  const resource = await ctx.control.recordingRaised(
-    options.gateway.compact(request, {
-      idempotencyKey,
-      deadlineAt: ctx.run.deadlineAt,
-      signal: ctx.control.signal,
-      traceparent: ctx.agentSpan.traceparent,
-    }),
-  );
+  let resource: CompactResource;
+  try {
+    resource = await ctx.control.recordingRaised(
+      options.gateway.compact(request, {
+        idempotencyKey,
+        deadlineAt: ctx.run.deadlineAt,
+        signal: ctx.control.signal,
+        traceparent: ctx.agentSpan.traceparent,
+      }),
+    );
+  } catch (error) {
+    if (!escalates(error)) throw error;
+    delete ctx.control.inFlight.compactionKey;
+    journal.append([
+      noticeOf(`Compaction summary failed (${error.code}): ${error.message}; the deterministic summary was used`),
+      deterministicCompaction(ctx, plan),
+    ]);
+    return;
+  }
   delete ctx.control.inFlight.compactionKey;
   const compaction = resource.output.find((item) => item.type === 'compaction');
   if (compaction === undefined) throw new Error(`the compaction response for run ${ctx.run.id} holds no compaction item`);
+  const item: CompactionInputItem = { type: 'compaction', id: compaction.id, encrypted_content: compaction.encrypted_content };
+  const summary = decodeCompactionSummary(compaction.encrypted_content) ?? '';
+  const projected = projectCompaction(ctx, plan.throughSeq, item, summary);
+  const region = await replacedRegionText(ctx, plan);
+  const fidelity = checkSummary(summary, {
+    region: region.text,
+    pinned: plan.pinnedText,
+    previousSummary: journal.state.summary?.summary ?? '',
+    critical: criticalIdentifiersOf(projected.workingFacts),
+    workingState: renderedFacts(ctx, projected, workingStateCapFor(ctx.capabilities)),
+  });
+  const charge: RunEventPayload = {
+    type: 'usage.charged',
+    purpose: 'compaction',
+    inputTokens: resource.usage.input_tokens,
+    outputTokens: resource.usage.output_tokens,
+    totalTokens: resource.usage.total_tokens,
+  };
+  const unreadableNotices =
+    region.unreadable.length === 0
+      ? []
+      : [
+          noticeOf(
+            `Compaction fidelity check could not read ${region.unreadable.length} recorded output(s): ${region.unreadable.map((blob) => `${blob.handle} (${blob.reason})`).join('; ')}; a token found only there cannot be verified`,
+          ),
+        ];
+  const accepted = fidelity.fabricated.length === 0;
   journal.append([
-    {
-      type: 'usage.charged',
-      purpose: 'compaction',
-      inputTokens: resource.usage.input_tokens,
-      outputTokens: resource.usage.output_tokens,
-      totalTokens: resource.usage.total_tokens,
-    },
-    {
-      type: 'context.compacted',
-      item: { type: 'compaction', id: compaction.id, encrypted_content: compaction.encrypted_content },
-      summary: decodeCompactionSummary(compaction.encrypted_content) ?? '',
-      replacedThroughSeq: plan.throughSeq,
-    },
+    charge,
+    ...unreadableNotices,
+    ...(accepted
+      ? []
+      : [noticeOf(`Compaction summary rejected: ${fidelity.fabricated.length} token(s) found nowhere in the replaced history or the pinned context (${fidelity.fabricated.slice(0, MAX_NAMED_TOKENS).join(', ')}); the deterministic summary was used`)]),
+    accepted
+      ? { type: 'context.compacted', item, summary, replacedThroughSeq: plan.throughSeq, source: 'model', fidelity, guidelineVersion: NO_ADOPTED_GUIDELINE }
+      : deterministicCompaction(ctx, plan, fidelity),
   ]);
 };
 
@@ -195,7 +341,7 @@ export const pinnedOverflowFailure = (ctx: ClaimContext, error: PinnedOverflowEr
   if (error instanceof PinnedRoomError) {
     return {
       code: 'pinned_overflow',
-      message: `The pinned context fits (${error.pinnedTokens} of ${error.ceiling} tokens) but leaves only ${error.room} tokens for the conversation; at least ${error.minimum} are needed for one tool call, one tool result and a summary. Reduce the fixed prefix (deny rules for unused tools, plan mode, shorter instructions) or use a larger window.`,
+      message: `The pinned context fits (${error.pinnedTokens} of ${error.ceiling} tokens) but leaves only ${error.room} tokens for the conversation; at least ${error.minimum} are needed for one tool call, one tool result, a summary and the working state. Reduce the fixed prefix (deny rules for unused tools, plan mode, shorter instructions) or use a larger window.`,
     };
   }
   const { systemPrompt, tools, instructions, task } = error.breakdown;
@@ -209,7 +355,6 @@ export const pinnedOverflowFailure = (ctx: ClaimContext, error: PinnedOverflowEr
 type FinalAttempt = {
   successes: number;
   attempts: number;
-  failures: { code: string; message: string }[];
   triedAtLastLevel: boolean;
 };
 
@@ -227,8 +372,6 @@ const budgetStopNotice = (ctx: ClaimContext, error: ContextOverflowError, attemp
     breakdown === undefined
       ? `${error.pinnedTokens}`
       : `${error.pinnedTokens} (system prompt ${breakdown.systemPrompt}, tool definitions ${breakdown.tools}, instructions ${breakdown.instructions}, task ${breakdown.task})`;
-  const failures =
-    attempt.failures.length === 0 ? '' : `, ${attempt.failures.length} failed (${attempt.failures.map((failure) => `${failure.code}: ${failure.message}`).join('; ')})`;
   const reason =
     error.compactionBlockedBy?.message ??
     (attempt.triedAtLastLevel ? 'the compaction at this level did not free enough room' : 'no compaction was available');
@@ -236,14 +379,13 @@ const budgetStopNotice = (ctx: ClaimContext, error: ContextOverflowError, attemp
     `The context needs ${error.inputTokens} tokens but at most ${error.ceiling} fit (window ${W}, output reserve ${R}, estimation margin ${W - R - error.ceiling}). ` +
     `The fixed prefix takes ${prefix}. ` +
     `Earlier in this run: ${ctx.journal.state.evicted.length} tool outputs were replaced by handles and ${ctx.journal.countRecorded('context.compacted') - attempt.successes} compaction(s) were recorded. ` +
-    `Final attempt: ${attempt.attempts} compaction(s) ran${failures}; no further compaction was possible because ${reason}; ` +
+    `Final attempt: ${attempt.attempts} compaction(s) ran; no further compaction was possible because ${reason}; ` +
     `${protectionClause(error)}; ${wrapUpClause}.`
   );
 };
 
 export const buildNext = async (ctx: ClaimContext, options: { wrapUp?: WrapUpReason } = {}): Promise<BuildOutcome> => {
-  const step = ctx.journal.state.step + 1;
-  const attempt: FinalAttempt = { successes: 0, attempts: 0, failures: [], triedAtLastLevel: false };
+  const attempt: FinalAttempt = { successes: 0, attempts: 0, triedAtLastLevel: false };
   const levelsWithCompaction = new Set<number>();
   let proactiveDone = false;
   let level = 0;
@@ -288,17 +430,11 @@ export const buildNext = async (ctx: ClaimContext, options: { wrapUp?: WrapUpRea
       if (error.compaction !== undefined && !levelsWithCompaction.has(level)) {
         levelsWithCompaction.add(level);
         if (cancelIfInterrupted(ctx) === 'done') return { kind: 'done' };
-        try {
-          const result = await compact(error.compaction);
-          if (result === 'done') return { kind: 'done' };
-          if (result === 'retry') levelsWithCompaction.delete(level);
-          if (error.lastLevel) attempt.triedAtLastLevel = true;
-          continue;
-        } catch (failure) {
-          if (!escalates(failure)) throw failure;
-          attempt.failures.push({ code: failure.code, message: failure.message });
-          if (error.lastLevel) attempt.triedAtLastLevel = true;
-        }
+        const result = await compact(error.compaction);
+        if (result === 'done') return { kind: 'done' };
+        if (result === 'retry') levelsWithCompaction.delete(level);
+        if (error.lastLevel) attempt.triedAtLastLevel = true;
+        continue;
       }
       if (!error.lastLevel) {
         level += 1;
@@ -321,20 +457,12 @@ export const buildNext = async (ctx: ClaimContext, options: { wrapUp?: WrapUpRea
       return { kind: 'built', built: wrapUpBuilt, wrapUp: { reason: 'context', notice: budgetStopNotice(ctx, error, attempt, 'a final summary was requested') } };
     }
     if (cancelIfInterrupted(ctx) === 'done') return { kind: 'done' };
-    if (built.compaction !== undefined && options.wrapUp === undefined && level === 0 && !proactiveDone && step > ctx.compaction.suppressedUntilStep) {
+    if (built.compaction !== undefined && options.wrapUp === undefined && level === 0 && !proactiveDone) {
       proactiveDone = true;
-      try {
-        const result = await compact(built.compaction);
-        if (result === 'done') return { kind: 'done' };
-        if (result === 'retry') proactiveDone = false;
-        continue;
-      } catch (failure) {
-        if (!escalates(failure)) throw failure;
-        ctx.compaction.suppressedUntilStep = step + PROACTIVE_SUPPRESSED_STEPS;
-        ctx.journal.append([
-          { type: 'notice', level: 'warning', message: `Compaction failed (${failure.code}): ${failure.message}; continuing without it` },
-        ]);
-      }
+      const result = await compact(built.compaction);
+      if (result === 'done') return { kind: 'done' };
+      if (result === 'retry') proactiveDone = false;
+      continue;
     }
     recordContextFacts(ctx, built);
     recordEvictions(ctx, built.evictions);

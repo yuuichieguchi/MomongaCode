@@ -159,7 +159,7 @@ describe('budget stop counts of the final attempt', () => {
   it('says the compaction did not free enough room after a successful compaction at the last level', async () => {
     const env = await makeEnv({ capabilities: W4000 });
     env.gateway.script.push(
-      ...[4700, 4700, 100, 9200].map((size, index) => bigStep(`s${index}`, { letter: 'a', size: 0, pad: 'pqrs'[index]?.repeat(size) ?? '' })),
+      ...[4378, 4378, 100, 8880].map((size, index) => bigStep(`s${index}`, { letter: 'a', size: 0, pad: 'pqrs'[index]?.repeat(size) ?? '' })),
       textStep('never sent'),
     );
     env.gateway.compactSummaries.push('T'.repeat(2400));
@@ -241,15 +241,17 @@ describe('forced compaction failure decided by code', () => {
     ['refusal by its code alone', 502, 'model_error', 'refusal'],
     ['a 413 rejection', 413, 'invalid_request', 'payload_too_large'],
     ['a 422 rejection', 422, 'invalid_request', 'invalid_request'],
-  ] as const)('escalates on %s: the level shrinks after the attempt and the run continues', async ([, status, type, code]) => {
+  ] as const)('escalates on %s: a deterministic summary replaces the region and the run continues', async ([, status, type, code]) => {
     const { env, run, attemptedAt } = await runForced(gatewayError(status, type, code));
 
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(attemptedAt).toHaveLength(1);
-    const truncations = env.ofType(run.id, 'context.truncated');
-    expect(truncations.map((event) => event.callId)).toEqual(callIdsOf(env, run.id).slice(0, 4));
-    for (const truncation of truncations) expect(truncation.seq).toBeGreaterThan(attemptedAt[0] as number);
-    expect(env.ofType(run.id, 'context.compacted')).toEqual([]);
+    const compacted = env.ofType(run.id, 'context.compacted');
+    expect(compacted).toHaveLength(1);
+    expect(compacted[0]).toMatchObject({ source: 'deterministic', guidelineVersion: 0 });
+    expect(compacted[0]?.seq).toBeGreaterThan(attemptedAt[0] as number);
+    expect(env.ofType(run.id, 'usage.charged')).toEqual([]);
+    expect(noticesOf(env, run.id).filter((message) => message.startsWith(`Compaction summary failed (${code})`))).toHaveLength(1);
   });
 
   it.for([
@@ -277,12 +279,12 @@ describe('forced compaction failure decided by code', () => {
     expect(env.gateway.streams).toHaveLength(5);
   });
 
-  it('stops with the gateway code in the notice when the forced compaction fails at the last level', async () => {
+  it('completes on a deterministic summary when the forced compaction fails at the last level', async () => {
     const env = await makeEnv({ capabilities: W4000 });
     env.gateway.script.push(
       bigStep('k0', { letter: 'a', size: 0, pad: padOf(0, 2200) }),
       bigStep('k1', { letter: 'a', size: 0, pad: padOf(1, 9000) }),
-      textStep('never sent'),
+      textStep('sent after the deterministic summary'),
     );
     env.gateway.compactHook = async () => {
       throw gatewayError(502, 'model_error', 'compaction_summary_too_long');
@@ -291,18 +293,15 @@ describe('forced compaction failure decided by code', () => {
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
 
-    expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'budget' });
+    expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.gateway.compacts).toHaveLength(1);
-    expect(env.gateway.streams).toHaveLength(2);
-    const notice = noticesOf(env, run.id).find((message) => message.startsWith('The context needs'));
-    const match = BUDGET_NOTICE.exec(notice ?? '');
-    expect(match?.[3]).toBe('1');
-    expect(match?.[4]).toContain('compaction_summary_too_long');
+    expect(env.ofType(run.id, 'context.compacted')).toEqual([expect.objectContaining({ source: 'deterministic' })]);
+    expect(noticesOf(env, run.id).find((message) => message.startsWith('The context needs'))).toBeUndefined();
   });
 });
 
 describe('proactive compaction failure', () => {
-  it('warns with the gateway code and suppresses proactive retries for three steps', async () => {
+  it('composes the deterministic summary at the step that asked for the compaction and records no warning', async () => {
     const env = await makeEnv({ capabilities: W4000 });
     env.gateway.script.push(...Array.from({ length: 16 }, (_unused, index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 520) })), textStep('done'));
     const requestedAt: number[] = [];
@@ -320,16 +319,16 @@ describe('proactive compaction failure', () => {
 
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(requestedAt[0]).toBe(10);
-    expect(requestedAt[1]).toBe(14);
-    const warning = env.ofType(run.id, 'notice').find((event) => event.message.startsWith('Compaction failed (compaction_summary_too_long)'));
-    expect(warning).toMatchObject({ level: 'warning' });
-    expect(warning?.message).toMatch(/; continuing without it$/);
-    expect(env.ofType(run.id, 'context.compacted')).toHaveLength(1);
+    expect(noticesOf(env, run.id).filter((message) => message.startsWith('Compaction failed'))).toEqual([]);
+    const sources = env.ofType(run.id, 'context.compacted').map((event) => event.source);
+    expect(sources[0]).toBe('deterministic');
+    expect(sources.slice(1).every((source) => source === 'model')).toBe(true);
+    expect(env.gateway.compacts).toHaveLength(sources.length);
   });
 });
 
-describe('forced compaction inside the suppression window of a failed proactive compaction', () => {
-  it.for([0, 1])('compacts at the overflow %i steps after the failed proactive attempt instead of shrinking protection', async (quietSteps) => {
+describe('compaction after a rejected model summary', () => {
+  it.for([0, 1])('keeps the protected zone when the context overflows %i quiet steps after the first compaction fell back to the deterministic summary', async (quietSteps) => {
     const env = await makeEnv({ capabilities: W4000 });
     env.gateway.script.push(
       ...[0, 1, 2, 3, 4, 5].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1400) })),
@@ -347,15 +346,16 @@ describe('forced compaction inside the suppression window of a failed proactive 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
 
     expect(env.run(run.id).status).toBe('COMPLETED');
-    expect(env.gateway.compacts).toHaveLength(2);
-    expect(requestedAt[1]).toBe((requestedAt[0] as number) + 1 + quietSteps);
-    expect(env.ofType(run.id, 'context.compacted')).toHaveLength(1);
+    const sources = env.ofType(run.id, 'context.compacted').map((event) => event.source);
+    expect(sources[0]).toBe('deterministic');
+    expect(sources.slice(1).every((source) => source === 'model')).toBe(true);
+    expect(env.gateway.compacts).toHaveLength(sources.length);
     expect(noticesOf(env, run.id).filter((message) => /^recent (turns|steps)/.test(message))).toEqual([]);
   });
 });
 
 describe('minimum room at claim', () => {
-  it('fails pinned_overflow with the minimum-room message when the prefix leaves fewer than 192 tokens', async () => {
+  it('fails pinned_overflow with the minimum-room message when the prefix leaves fewer than 260 tokens', async () => {
     const env = await makeEnv({ capabilities: W4000 });
     env.instructions.files.set(`${env.project}/AGENTS.md`, 'r'.repeat(10600));
     const run = env.enqueue('Fill the context');
@@ -366,7 +366,7 @@ describe('minimum room at claim', () => {
     expect(failed.status).toBe('FAILED');
     expect(failed.error?.code).toBe('pinned_overflow');
     expect(failed.error?.message).toMatch(
-      /^The pinned context fits \(\d+ of 2920 tokens\) but leaves only \d+ tokens for the conversation; at least 192 are needed for one tool call, one tool result and a summary\. Reduce the fixed prefix \(deny rules for unused tools, plan mode, shorter instructions\) or use a larger window\.$/,
+      /^The pinned context fits \(\d+ of 2920 tokens\) but leaves only \d+ tokens for the conversation; at least 260 are needed for one tool call, one tool result, a summary and the working state\. Reduce the fixed prefix \(deny rules for unused tools, plan mode, shorter instructions\) or use a larger window\.$/,
     );
     expect(env.gateway.streams).toEqual([]);
   });

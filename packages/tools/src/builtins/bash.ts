@@ -139,8 +139,9 @@ export const bashTool = defineTool<BashInput>({
     }
     for (const note of notes) output += `${output === '' ? '' : '\n'}${note}`;
     if (exit.signal !== null) return { status: 'failed', output: `${output}${output === '' ? '' : '\n'}[terminated by ${exit.signal}]` };
-    if (exit.code !== 0) return { status: 'failed', output: `${output}${output === '' ? '' : '\n'}[exit code ${exit.code}]` };
-    return { status: 'completed', output };
+    const exitCode = exit.code === null ? {} : { exitCode: exit.code };
+    if (exit.code !== 0) return { status: 'failed', output: `${output}${output === '' ? '' : '\n'}[exit code ${exit.code}]`, ...exitCode };
+    return { status: 'completed', output, ...exitCode };
   },
   reconcile: async (input, record, ctx) => {
     if (input.run_in_background === true) {

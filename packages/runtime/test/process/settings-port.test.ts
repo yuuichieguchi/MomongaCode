@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ConfigError } from '@momonga/config';
+import { ConfigError, DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS } from '@momonga/config';
 import { sha256Hex } from '@momonga/foundation';
 import * as runtime from '@momonga/runtime';
 import type { Session } from '@momonga/store';
@@ -53,6 +53,19 @@ describe('settings composition hooks and auto mode', () => {
     expect((await f.composition.settings.hooks(session)).Stop?.map((group) => group.hooks[0]?.command)).toEqual(['user-stop', 'project-stop']);
     expect(f.composition.settings.autoModeClassifier()).toBe('guard');
     expect((await f.composition.sessionCreateSettings(f.temp.project)).autoModeClassifier).toBe('guard');
+  });
+
+  it('serves the verification commands of the layers, the defaults when no layer names any', async () => {
+    const f = await makeRuntimeFixture();
+    writeUserSettings(f.temp.home, {});
+    const session = createSession(f.store, f.temp.project);
+    expect((await f.composition.settings.verification(session)).commands).toEqual([...DEFAULT_VERIFICATION_COMMANDS]);
+
+    writeUserSettings(f.temp.home, { verification: { commands: ['make check'] } });
+    expect(await f.composition.settings.verification(session)).toEqual({
+      commands: ['make check'],
+      manifests: [...DEFAULT_VERIFICATION_MANIFESTS],
+    });
   });
 
   it('reports no classifier when the user settings name none', async () => {

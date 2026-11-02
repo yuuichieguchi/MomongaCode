@@ -57,6 +57,8 @@ export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
           ...(result.truncated === undefined ? {} : { truncated: result.truncated }),
           ...(result.handle === undefined ? {} : { handle: result.handle }),
           ...(result.denial === undefined ? {} : { denial: result.denial }),
+          ...(result.files === undefined ? {} : { files: result.files }),
+          ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
         }
       : { type: 'tool.reconciled', callId, outcome: outcome.reconciled, output: result.output };
   return [

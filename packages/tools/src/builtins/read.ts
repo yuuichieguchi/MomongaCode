@@ -50,8 +50,9 @@ export const readTool = defineTool<ReadInput>({
       ctx.signal,
     );
     await recordInLedger(ctx.session, canonical, scan.sha256);
-    if (scan.totalLines === 0) return { status: 'completed', output: '(file is empty)' };
-    if (offset > scan.totalLines) return { status: 'completed', output: pastEndMessage(offset, 'file', scan.totalLines) };
-    return { status: 'completed', output: pageNumberedLines(selected, offset, scan.totalLines, ctx.outputBudgetChars) };
+    const files = [{ path: canonical, sha256: scan.sha256, access: 'read' as const }];
+    if (scan.totalLines === 0) return { status: 'completed', output: '(file is empty)', files };
+    if (offset > scan.totalLines) return { status: 'completed', output: pastEndMessage(offset, 'file', scan.totalLines), files };
+    return { status: 'completed', output: pageNumberedLines(selected, offset, scan.totalLines, ctx.outputBudgetChars), files };
   },
 });

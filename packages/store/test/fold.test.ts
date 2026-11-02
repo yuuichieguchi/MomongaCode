@@ -65,6 +65,7 @@ describe('initialRunState', () => {
       history: [],
       nextItemSeq: 1,
       taskSeq: 1,
+      workingFacts: { written: [], commands: [], messages: [], itemEvents: [] },
       evicted: [],
       pendingCalls: {},
       notes: [],
@@ -91,6 +92,16 @@ describe('foldRunState on recorded runs', () => {
       usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12 },
       history: [entry(1, userItem('say hi')), entry(2, assistantItem('m1', 'hi'))],
       nextItemSeq: 3,
+      workingFacts: {
+        written: [],
+        commands: [],
+        messages: [],
+        taskText: 'say hi',
+        itemEvents: [
+          { itemSeq: 1, eventSeq: 1 },
+          { itemSeq: 2, eventSeq: 7 },
+        ],
+      },
       lastSeq: 9,
     });
   });
@@ -118,6 +129,18 @@ describe('foldRunState on recorded runs', () => {
         entry(4, assistantItem('m2', 'A it is')),
       ],
       nextItemSeq: 5,
+      workingFacts: {
+        written: [],
+        commands: [],
+        messages: [],
+        taskText: 'read a.txt',
+        itemEvents: [
+          { itemSeq: 1, eventSeq: 1 },
+          { itemSeq: 2, eventSeq: 6 },
+          { itemSeq: 3, eventSeq: 10 },
+          { itemSeq: 4, eventSeq: 12 },
+        ],
+      },
       pendingCalls: { c1: { name: 'Read', providerCallId: 'c1', arguments: { path: 'a.txt' }, status: 'completed', idemKey: 'k1' } },
       toolCallCounts: { [sha256('Read\n{"path":"a.txt"}')]: 1 },
       loopOpen: { calls: [['Read', { path: 'a.txt' }]], callIds: ['c1'], outputs: { c1: sha256('"A"') } },

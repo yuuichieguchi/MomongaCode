@@ -1,6 +1,18 @@
 import { canonicalJson, parseJsonOrText, sha256Hex } from '@momonga/foundation';
-import { LOOP_GROUPS_KEPT, STOP_REASONS, findDanglingOutput, userMessageContent } from '@momonga/protocol';
-import type { InputItem, RunEvent, RunEventPayload, RunState, StopReason } from '@momonga/protocol';
+import {
+  LOOP_GROUPS_KEPT,
+  STOP_REASONS,
+  emptyWorkingFacts,
+  findDanglingOutput,
+  userMessageContent,
+  withCommand,
+  withItemEvents,
+  withMessage,
+  withReplacedThrough,
+  withTaskText,
+  withWritten,
+} from '@momonga/protocol';
+import type { InputItem, RunEvent, RunEventPayload, RunState, StopReason, WorkingFacts } from '@momonga/protocol';
 import { applyInheritance } from './inherit.ts';
 import { isRecord } from './rows.ts';
 
@@ -16,6 +28,7 @@ export const initialRunState = (ids: { runId: string; sessionId: string }): RunS
   usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
   history: [],
   nextItemSeq: 1,
+  workingFacts: emptyWorkingFacts(),
   evicted: [],
   pendingCalls: {},
   notes: [],
@@ -96,9 +109,14 @@ const withLoopItem = (state: RunState, item: InputItem): RunState => {
   return state;
 };
 
-const appendItems = (state: RunState, items: readonly { item: InputItem; callId?: string }[], handle?: string): RunState =>
+const appendItems = (state: RunState, items: readonly { item: InputItem; callId?: string }[], eventSeq: number, handle?: string): RunState =>
   items.reduce<RunState>((folded, { item }) => withLoopItem(folded, item), {
     ...state,
+    workingFacts: withItemEvents(
+      state.workingFacts,
+      items.map((_item, offset) => state.nextItemSeq + offset),
+      eventSeq,
+    ),
     history: [
       ...state.history,
       ...items.map(
@@ -119,11 +137,71 @@ const finishCall = (
   eventType: string,
   status: PendingCall['status'],
   output: string,
+  eventSeq: number,
   handle?: string,
 ): RunState => {
   const call = requireCall(state, callId, eventType);
   const settled = { ...state, pendingCalls: { ...state.pendingCalls, [callId]: { ...call, status } } };
-  return appendItems(settled, [{ item: functionCallOutput(call.providerCallId, output), callId }], handle);
+  return appendItems(settled, [{ item: functionCallOutput(call.providerCallId, output), callId }], eventSeq, handle);
+};
+
+const FILE_WRITING_TOOLS: readonly string[] = ['Write', 'Edit'];
+
+const stringArgument = (call: PendingCall, name: string): string | undefined => {
+  const value = isRecord(call.arguments) ? call.arguments[name] : undefined;
+  return typeof value === 'string' ? value : undefined;
+};
+
+const isBackgroundLaunch = (call: PendingCall): boolean => isRecord(call.arguments) && call.arguments['run_in_background'] === true;
+
+const wasNotRun = (call: PendingCall, event: Extract<RunEvent, { type: 'tool.completed' }>): boolean =>
+  event.denial !== undefined || call.resolution?.kind === 'reject_once' || call.resolution?.kind === 'reject_always';
+
+const withToolFacts = (facts: WorkingFacts, call: PendingCall, event: Extract<RunEvent, { type: 'tool.completed' }>): WorkingFacts => {
+  if (wasNotRun(call, event)) return facts;
+  const { seq } = event;
+  if (event.files !== undefined) {
+    return event.files.reduce((folded, file) => (file.access === 'write' ? withWritten(folded, { path: file.path, sha256: file.sha256, seq }) : folded), facts);
+  }
+  if (event.status === 'completed' && FILE_WRITING_TOOLS.includes(call.name)) {
+    const path = stringArgument(call, 'file_path');
+    return path === undefined ? facts : withWritten(facts, { path, seq });
+  }
+  if (call.name === 'Bash' && !isBackgroundLaunch(call)) {
+    const command = stringArgument(call, 'command');
+    if (command === undefined) return facts;
+    return withCommand(facts, {
+      command,
+      failed: event.status === 'failed',
+      ...(event.exitCode === undefined ? {} : { exitCode: event.exitCode }),
+      seq,
+    });
+  }
+  return facts;
+};
+
+const withReconciledFacts = (facts: WorkingFacts, call: PendingCall, event: Extract<RunEvent, { type: 'tool.reconciled' }>): WorkingFacts => {
+  if (event.outcome === 'not_applied') return facts;
+  const reconciled = event.outcome;
+  const { seq } = event;
+  if (FILE_WRITING_TOOLS.includes(call.name)) {
+    const path = stringArgument(call, 'file_path');
+    return path === undefined ? facts : withWritten(facts, { path, reconciled, seq });
+  }
+  const command = call.name === 'Bash' && !isBackgroundLaunch(call) ? stringArgument(call, 'command') : undefined;
+  return command === undefined ? facts : withCommand(facts, { command, failed: false, reconciled, seq });
+};
+
+const reconcileCall = (state: RunState, event: Extract<RunEvent, { type: 'tool.reconciled' }>): RunState => {
+  const call = requireCall(state, event.callId, event.type);
+  const finished = finishCall(state, event.callId, event.type, 'reconciled', event.output, event.seq);
+  return { ...finished, workingFacts: withReconciledFacts(finished.workingFacts, call, event) };
+};
+
+const completeCall = (state: RunState, event: Extract<RunEvent, { type: 'tool.completed' }>): RunState => {
+  const call = requireCall(state, event.callId, event.type);
+  const finished = finishCall(state, event.callId, event.type, 'completed', event.output, event.seq, event.handle);
+  return { ...finished, workingFacts: withToolFacts(finished.workingFacts, call, event) };
 };
 
 const withoutInFlight = (state: RunState): RunState => {
@@ -175,7 +253,12 @@ const compact = (state: RunState, event: Extract<RunEvent, { type: 'context.comp
       `run ${state.runId}: summary boundary splits call ${dangling.callId}: output at seq ${dangling.seq} has no retained function_call`,
     );
   }
-  return { ...state, history, summary: { item: event.item, summary: event.summary, replacedThroughSeq: event.replacedThroughSeq } };
+  return {
+    ...state,
+    history,
+    workingFacts: withReplacedThrough(state.workingFacts, event.replacedThroughSeq),
+    summary: { item: event.item, summary: event.summary, replacedThroughSeq: event.replacedThroughSeq },
+  };
 };
 
 const isInheritedOutput = (state: RunState, callId: string): boolean =>
@@ -221,7 +304,14 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
   switch (event.type) {
     case 'user.message': {
       const { lastResponse: _answered, ...rest } = state;
-      return appendItems(rest, [{ item: { type: 'message', role: 'user', content: userMessageContent(event.text, event.images) } }]);
+      const appended = appendItems(rest, [{ item: { type: 'message', role: 'user', content: userMessageContent(event.text, event.images) } }], event.seq);
+      return {
+        ...appended,
+        workingFacts:
+          state.lastSeq === 0
+            ? withTaskText(appended.workingFacts, event.text)
+            : withMessage(appended.workingFacts, { text: event.text, seq: event.seq }),
+      };
     }
     case 'run.started':
       return {
@@ -249,6 +339,7 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
         ...appendItems(
           base,
           (event.response.output as InputItem[]).map((item) => ({ item })),
+          event.seq,
         ),
         lastResponse: {
           step: event.step,
@@ -337,9 +428,9 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
     case 'tool.started':
       return withCall(state, event.callId, event.type, (call) => ({ ...call, status: 'started', idemKey: event.idemKey }));
     case 'tool.completed':
-      return finishCall(state, event.callId, event.type, 'completed', event.output, event.handle);
+      return completeCall(state, event);
     case 'tool.reconciled':
-      return finishCall(state, event.callId, event.type, 'reconciled', event.output);
+      return reconcileCall(state, event);
     case 'context.compacted':
       return compact(state, event);
     case 'context.compaction_rejected':
@@ -358,10 +449,11 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       return state.streaming?.step === event.step && state.streaming.attempt === event.attempt ? withoutStreaming(state) : state;
     case 'tool.waiting':
       return withCall(state, event.callId, event.type, (call) => ({ ...call, awaiting: event.awaits }));
+    case 'plan.updated':
+      return { ...state, workingFacts: { ...state.workingFacts, plan: { seq: event.seq, entries: event.entries } } };
     case 'job.finished':
     case 'hook.completed':
     case 'tool.updated':
-    case 'plan.updated':
     case 'usage.updated':
     case 'context.governing_loaded':
     case 'context.memories_loaded':

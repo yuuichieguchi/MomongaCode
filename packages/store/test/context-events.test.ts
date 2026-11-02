@@ -54,7 +54,30 @@ describe('context events in the journal', () => {
     expect(foldRunState(start(), event).summary).toEqual({ item: messageItem, summary: 'so far', replacedThroughSeq: 3 });
   });
 
-  it('keeps the same summary state when the new fields are present, so snapshots keep their version', () => {
+  describe('tool.completed file and exit facts', () => {
+    const base = { type: 'tool.completed', callId: 'c1', status: 'completed', output: 'ok' };
+    const files = [{ path: '/p/a.ts', sha256: 'a'.repeat(64), access: 'write' }];
+
+    it('decodes an event recorded before files and exitCode', () => {
+      expect(decodeEvent(row(base))).toEqual({ ...base, ...ENVELOPE });
+    });
+
+    it('decodes files and exitCode as recorded', () => {
+      const payload = { ...base, files, exitCode: 0 };
+      expect(decodeEvent(row(payload))).toEqual({ ...payload, ...ENVELOPE });
+    });
+
+    it.each([
+      ['files that are not an array', { files: 'a.ts' }],
+      ['a file without a sha256', { files: [{ path: '/p/a.ts', access: 'write' }] }],
+      ['a file with an unknown access', { files: [{ path: '/p/a.ts', sha256: 'a'.repeat(64), access: 'delete' }] }],
+      ['an exit code that is not an integer', { exitCode: '1' }],
+    ])('refuses %s as corrupt', (_name, extra) => {
+      expect(() => decodeEvent(row({ ...base, ...extra }))).toThrow(/corrupt/);
+    });
+  });
+
+  it('keeps the same summary state when the new fields are present', () => {
     const event = {
       type: 'context.compacted',
       item,
@@ -66,6 +89,6 @@ describe('context events in the journal', () => {
       ...ENVELOPE,
     } as RunEvent;
     expect(foldRunState(start(), event).summary).toEqual({ item, summary: 'so far', replacedThroughSeq: 3 });
-    expect(SNAPSHOT_STATE_VERSION).toBe(9);
+    expect(SNAPSHOT_STATE_VERSION).toBe(10);
   });
 });
