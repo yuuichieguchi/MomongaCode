@@ -76,7 +76,7 @@ describe('run api types', () => {
       pid: number;
       startedAt: string;
       state: 'running' | 'draining';
-      sandbox: 'seatbelt' | 'none';
+      sandbox: 'seatbelt' | 'bubblewrap' | 'none';
     }>();
   });
 });

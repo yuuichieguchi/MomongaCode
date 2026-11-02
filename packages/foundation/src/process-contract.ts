@@ -25,10 +25,26 @@ export const runtimeMaxCloseMs = (drainTimeoutMs: number): number => drainTimeou
 export const supervisorMaxCloseMs = (drainTimeoutMs: number): number =>
   runtimeMaxCloseMs(drainTimeoutMs) + SHUTDOWN_MARGIN_MS + GATEWAY_MAX_CLOSE_MS + SHUTDOWN_MARGIN_MS + SUPERVISOR_FINALIZE_MS;
 
-export const minimalChildEnv = (source: Readonly<Record<string, string | undefined>>): Readonly<Record<string, string>> => {
+export const PLATFORM_CHILD_ENV_NAMES: Readonly<Record<'linux' | 'win32', readonly string[]>> = {
+  linux: ['XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS'],
+  win32: ['SystemRoot', 'SystemDrive', 'windir', 'ComSpec', 'PATHEXT', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'ProgramData', 'TEMP', 'TMP'],
+};
+
+export const minimalChildPath = (source: Readonly<Record<string, string | undefined>>, platform: NodeJS.Platform): string => {
+  if (platform !== 'win32') return MINIMAL_CHILD_PATH;
+  const systemRoot = source['SystemRoot'];
+  if (systemRoot === undefined) throw new Error('SystemRoot is required to build the minimal child PATH on win32');
+  return `${systemRoot}\\System32;${systemRoot}`;
+};
+
+export const minimalChildEnv = (
+  source: Readonly<Record<string, string | undefined>>,
+  platform: NodeJS.Platform = process.platform,
+): Readonly<Record<string, string>> => {
   const env: Record<string, string> = {};
-  for (const name of MINIMAL_CHILD_ENV_NAMES) {
-    const value = name === 'PATH' ? MINIMAL_CHILD_PATH : source[name];
+  const extra = platform === 'linux' || platform === 'win32' ? PLATFORM_CHILD_ENV_NAMES[platform] : [];
+  for (const name of [...MINIMAL_CHILD_ENV_NAMES, ...extra]) {
+    const value = name === 'PATH' ? minimalChildPath(source, platform) : source[name];
     if (value !== undefined) env[name] = value;
   }
   for (const [name, value] of Object.entries(source)) {

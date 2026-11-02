@@ -243,7 +243,7 @@ export type RunHealth = {
   pid: number;
   startedAt: string;
   state: 'running' | 'draining';
-  sandbox: 'seatbelt' | 'none';
+  sandbox: 'seatbelt' | 'bubblewrap' | 'none';
 };
 
 export const RUN_API_SCHEMAS = {
@@ -282,7 +282,7 @@ export const RUN_API_SCHEMAS = {
         pid: integer,
         startedAt: string,
         state: enumOf(['running', 'draining']),
-        sandbox: enumOf(['seatbelt', 'none']),
+        sandbox: enumOf(['seatbelt', 'bubblewrap', 'none']),
       },
       ['status', 'version', 'apiVersion', 'pid', 'startedAt', 'state', 'sandbox'],
     ),

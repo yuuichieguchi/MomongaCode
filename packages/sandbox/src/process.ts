@@ -22,6 +22,7 @@ export function launch(options: LaunchOptions): SandboxedProcess {
       cwd: options.cwd,
       env: { ...options.env },
       detached: true,
+      windowsHide: true,
       stdio: markerFd === undefined ? ['ignore', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe', markerFd],
     });
   } finally {

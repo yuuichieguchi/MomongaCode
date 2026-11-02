@@ -7,7 +7,7 @@ import {
   SecretUnavailableError,
   announceReady,
   createJsonLogger,
-  createKeychainSecretStore,
+  createPlatformSecretStore,
   ensureMomongaDirs,
   minimalChildEnv,
   momongaPaths,
@@ -380,7 +380,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     signal?.throwIfAborted();
     const referencedSecrets = secretNames(settings);
     const secretStore =
-      options.secretStore ?? createKeychainSecretStore(options.execWithStdin ?? createExecWithStdin(childEnv));
+      options.secretStore ?? createPlatformSecretStore(process.platform, options.execWithStdin ?? createExecWithStdin(childEnv), childEnv);
     const secrets =
       referencedSecrets.length === 0
         ? { values: new Map<string, string>(), failures: new Map<string, Error>() }

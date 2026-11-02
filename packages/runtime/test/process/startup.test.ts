@@ -237,7 +237,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     const temp = makeRunHome();
     writeUserSettings(temp.home, { sandbox: 'seatbelt' });
     const missing = path.join(temp.root, 'no-sandbox-exec');
-    const { started, stdout, logger } = startBare(temp, { sandboxExecPath: missing });
+    const { started, stdout, logger } = startBare(temp, { sandboxExecPath: missing, platform: 'darwin' });
     const error = await failureOf(started);
     expect(error).toBeInstanceOf(ConfigError);
     expect((error as Error).message).toBe(
@@ -246,6 +246,28 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect(stepsLogged(logger).at(-1)).toBe('sandbox');
     expect(isLockFree(temp.paths.locks.runtime)).toBe(true);
     expect(stdout.chunks).toEqual([]);
+  });
+
+  it('a missing bwrap throws ConfigError naming bwrap on linux', PROCESS_TIMEOUT, async () => {
+    const temp = makeRunHome();
+    writeUserSettings(temp.home, { sandbox: 'bubblewrap' });
+    const missing = path.join(temp.root, 'no-bwrap');
+    const { started } = startBare(temp, { sandboxExecPath: missing, platform: 'linux' });
+    const error = await failureOf(started);
+    expect(error).toBeInstanceOf(ConfigError);
+    expect((error as Error).message).toBe(
+      `bwrap is not available at ${missing}; set "sandbox": "none" in ${temp.paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
+    );
+    expect(isLockFree(temp.paths.locks.runtime)).toBe(true);
+  });
+
+  it('a sandbox kind from another operating system is a ConfigError', PROCESS_TIMEOUT, async () => {
+    const temp = makeRunHome();
+    writeUserSettings(temp.home, { sandbox: 'seatbelt' });
+    const { started } = startBare(temp, { platform: 'linux' });
+    const error = await failureOf(started);
+    expect(error).toBeInstanceOf(ConfigError);
+    expect((error as Error).message).toContain('sandbox "seatbelt" is only available on darwin');
   });
 
   it('sandbox none skips the sandbox-exec check and logs the warning', PROCESS_TIMEOUT, async () => {

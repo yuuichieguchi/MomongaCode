@@ -200,7 +200,7 @@ export const SETTINGS_SCHEMA = {
       additionalProperties: false,
     },
     autoUpdates: { type: 'boolean' },
-    sandbox: { enum: ['seatbelt', 'none'] },
+    sandbox: { enum: ['seatbelt', 'bubblewrap', 'none'] },
     telemetry: {
       type: 'object',
       properties: {

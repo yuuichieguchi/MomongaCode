@@ -1,1 +1,1 @@
-export type SandboxKind = 'seatbelt' | 'none';
+export type SandboxKind = 'seatbelt' | 'bubblewrap' | 'none';

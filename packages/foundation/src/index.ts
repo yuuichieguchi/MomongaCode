@@ -50,6 +50,11 @@ export {
   SecretEmptyError,
   SecretUnavailableError,
   createKeychainSecretStore,
+  createPlatformSecretStore,
+  createSecretServiceStore,
+  createCredentialManagerStore,
+  credentialReadScript,
+  SECRET_TOOL_BINARY,
 } from './secret-store.ts';
 export type { SecretProcessPort, SecretProcessResult, SecretStore } from './secret-store.ts';
 export type { SecretKeyFileOptions } from './secret-key-file.ts';
@@ -66,6 +71,8 @@ export {
   MINIMAL_CHILD_ENV_LC_PREFIX,
   MINIMAL_CHILD_ENV_NAMES,
   MINIMAL_CHILD_PATH,
+  PLATFORM_CHILD_ENV_NAMES,
+  minimalChildPath,
   RUNTIME_ABORT_BUDGET_MS,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
   RUNTIME_TEARDOWN_BUDGET_MS,
