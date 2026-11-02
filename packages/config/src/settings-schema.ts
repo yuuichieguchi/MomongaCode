@@ -1,5 +1,5 @@
 import { SECRET_NAME_PATTERN } from '@momonga/foundation';
-import { HOOK_COMMAND_TYPE, PERMISSION_MODES } from '@momonga/protocol';
+import { HOOK_COMMAND_TYPE, PERMISSION_MODES, TARGET_BILLINGS } from '@momonga/protocol';
 
 const STRING_ARRAY = { type: 'array', items: { type: 'string' } } as const;
 const STRING_MAP = { type: 'object', additionalProperties: { type: 'string' } } as const;
@@ -86,6 +86,8 @@ const TARGET_CAPABILITIES_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+const BILLING_SCHEMA = { enum: [...TARGET_BILLINGS] } as const;
+
 const API_KEY_PROPERTIES = {
   apiKeyEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
   apiKeySecret: { type: 'string', pattern: SECRET_NAME_PATTERN },
@@ -112,6 +114,7 @@ const CHAT_COMPLETIONS_TARGET_SCHEMA = {
     ...API_KEY_PROPERTIES,
     provider: { type: 'string', pattern: PROVIDER_NAME_PATTERN },
     toolCalling: { enum: ['native', 'constrained'] },
+    billing: BILLING_SCHEMA,
     capabilities: TARGET_CAPABILITIES_SCHEMA,
     maxConcurrency: POSITIVE_INTEGER,
     admissionTimeoutMs: NON_NEGATIVE_INTEGER,
@@ -131,6 +134,7 @@ const OPEN_RESPONSES_TARGET_SCHEMA = {
     ...API_KEY_PROPERTIES,
     provider: { type: 'string', pattern: PROVIDER_NAME_PATTERN },
     toolCalling: { enum: ['native', 'none'] },
+    billing: BILLING_SCHEMA,
     capabilities: TARGET_CAPABILITIES_SCHEMA,
     maxConcurrency: POSITIVE_INTEGER,
     admissionTimeoutMs: NON_NEGATIVE_INTEGER,
@@ -148,6 +152,7 @@ const ANTHROPIC_TARGET_SCHEMA = {
     baseUrl: { type: 'string', minLength: 1 },
     socketPath: { type: 'string', minLength: 1 },
     ...API_KEY_PROPERTIES,
+    billing: BILLING_SCHEMA,
     capabilities: TARGET_CAPABILITIES_SCHEMA,
     maxConcurrency: POSITIVE_INTEGER,
     admissionTimeoutMs: NON_NEGATIVE_INTEGER,

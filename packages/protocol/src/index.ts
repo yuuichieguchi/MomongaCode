@@ -17,7 +17,8 @@ export {
   summaryItemTokensFor,
   summaryTokenCapFor,
 } from './budget-constants.ts';
-export { applyCapabilityOverride, imageCapability } from './capabilities.ts';
+export { TARGET_BILLINGS, applyCapabilityOverride, imageCapability } from './capabilities.ts';
+export type { TargetBilling } from './capabilities.ts';
 export { LOOP_GROUPS_KEPT } from './loop-groups.ts';
 export { findDanglingOutput, findUnpairedCalls } from './call-pairing.ts';
 export { compactionSummaryMessage, decodeCompactionSummary } from './compaction-summary.ts';

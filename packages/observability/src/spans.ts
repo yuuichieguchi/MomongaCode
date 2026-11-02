@@ -14,8 +14,11 @@ export type AgentSpanInput = {
   attempt?: number;
 };
 
+export type ChatBilling = 'metered' | 'local';
+
 export type ChatSpanInput = {
   providerName: string;
+  billing: ChatBilling;
   requestModel: string;
   maxTokens?: number;
   stream: boolean;
@@ -90,6 +93,7 @@ export const startChatSpan = (tracer: Tracer, input: ChatSpanInput, parent?: Con
       attributes: {
         [A.ATTR_GEN_AI_OPERATION_NAME]: OPERATIONS.chat,
         [A.ATTR_GEN_AI_PROVIDER_NAME]: input.providerName,
+        [MOMONGA_ATTRIBUTES.billing]: input.billing,
         [A.ATTR_GEN_AI_REQUEST_MODEL]: input.requestModel,
         ...(input.maxTokens === undefined ? {} : { [A.ATTR_GEN_AI_REQUEST_MAX_TOKENS]: input.maxTokens }),
         [A.ATTR_GEN_AI_REQUEST_STREAM]: input.stream,

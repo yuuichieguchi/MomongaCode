@@ -1,7 +1,7 @@
 import type { ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
-import type { CapabilitiesCore, HooksSettings, ImageCapability, ImageTokenModel, PermissionMode } from '@momonga/protocol';
+import type { CapabilitiesCore, HooksSettings, ImageCapability, ImageTokenModel, TargetBilling, PermissionMode } from '@momonga/protocol';
 import { MCP_SERVERS_FILE_SCHEMA, MCP_SERVER_SCHEMA, SETTINGS_SCHEMA } from './settings-schema.ts';
 
 export type PermissionsSettings = {
@@ -61,6 +61,7 @@ export type ChatCompletionsTarget = {
   apiKeySecret?: string;
   provider: string;
   toolCalling?: 'native' | 'constrained';
+  billing?: TargetBilling;
   capabilities: DeclaredTargetCapabilities;
   maxConcurrency?: number;
   admissionTimeoutMs?: number;
@@ -77,6 +78,7 @@ export type OpenResponsesTarget = {
   apiKeySecret?: string;
   provider: string;
   toolCalling?: 'native' | 'none';
+  billing?: TargetBilling;
   capabilities: RemoteTargetCapabilities;
   maxConcurrency?: number;
   admissionTimeoutMs?: number;
@@ -89,6 +91,7 @@ export type AnthropicTarget = {
   socketPath?: string;
   apiKeyEnv?: string;
   apiKeySecret?: string;
+  billing?: TargetBilling;
   capabilities: RemoteTargetCapabilities;
   maxConcurrency?: number;
   admissionTimeoutMs?: number;
@@ -100,6 +103,7 @@ export type ResolvedFmTarget = {
   adapter: 'fm';
   model: string;
   toolCalling: FmToolCalling;
+  billing: 'local';
   maxConcurrency: number;
   admissionTimeoutMs: number;
 };
@@ -113,6 +117,7 @@ export type ResolvedChatCompletionsTarget = {
   apiKeySecret?: string;
   provider: string;
   toolCalling: 'native' | 'constrained';
+  billing: TargetBilling;
   capabilities: TargetCapabilities & { maxConcurrency: number };
   maxConcurrency: number;
   admissionTimeoutMs: number;
@@ -127,6 +132,7 @@ export type ResolvedOpenResponsesTarget = {
   apiKeySecret?: string;
   provider: string;
   toolCalling: 'native' | 'none';
+  billing: TargetBilling;
   capabilities: TargetCapabilities & { maxConcurrency: number };
   maxConcurrency: number;
   admissionTimeoutMs: number;
@@ -140,6 +146,7 @@ export type ResolvedAnthropicTarget = {
   apiKeyEnv?: string;
   apiKeySecret?: string;
   toolCalling: 'native';
+  billing: TargetBilling;
   capabilities: TargetCapabilities & { maxConcurrency: number };
   maxConcurrency: number;
   admissionTimeoutMs: number;

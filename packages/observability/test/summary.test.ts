@@ -18,7 +18,7 @@ describe('summarizeRun', () => {
     const parent = trace.setSpan(ROOT_CONTEXT, agent);
     const chat = (step: number, attempt: number, finishReasons: string[], usage: { inputTokens: number; outputTokens: number; cachedInputTokens?: number }) => {
       h.clock.advance(10);
-      const span = startChatSpan(tracer, { providerName: 'openai', requestModel: 'gpt-x', stream: true, runId: RUN_ID, step, attempt }, parent);
+      const span = startChatSpan(tracer, { providerName: 'openai', billing: 'metered', requestModel: 'gpt-x', stream: true, runId: RUN_ID, step, attempt }, parent);
       h.clock.advance(100);
       recordChatResponse(span, { finishReasons, usage });
       span.end(h.clock.now());
@@ -26,7 +26,7 @@ describe('summarizeRun', () => {
     };
     const failed = (() => {
       h.clock.advance(10);
-      const span = startChatSpan(tracer, { providerName: 'openai', requestModel: 'gpt-x', stream: true, runId: RUN_ID, step: 1, attempt: 1 }, parent);
+      const span = startChatSpan(tracer, { providerName: 'openai', billing: 'metered', requestModel: 'gpt-x', stream: true, runId: RUN_ID, step: 1, attempt: 1 }, parent);
       recordError(span, new Error('503'), 'http_503');
       h.clock.advance(5);
       span.end(h.clock.now());
@@ -80,7 +80,7 @@ describe('summarizeRun', () => {
     const h = harness();
     const tracer = h.telemetry.tracer;
     for (const attempt of [1, 2]) {
-      const span = startChatSpan(tracer, { providerName: 'openai', requestModel: 'gpt-x', stream: false, runId: RUN_ID, step: 1, attempt });
+      const span = startChatSpan(tracer, { providerName: 'openai', billing: 'metered', requestModel: 'gpt-x', stream: false, runId: RUN_ID, step: 1, attempt });
       recordChatResponse(span, { finishReasons: ['stop'], usage: { inputTokens: 1, outputTokens: 1 } });
       h.clock.advance(1);
       span.end(h.clock.now());

@@ -17,7 +17,7 @@ const chatTarget = (overrides: Record<string, unknown> = {}): Record<string, unk
   ...overrides,
 });
 
-const DEFAULT_FM_TARGET = { adapter: 'fm', model: 'default', toolCalling: 'auto', maxConcurrency: 1, admissionTimeoutMs: 30000 };
+const DEFAULT_FM_TARGET = { adapter: 'fm', model: 'default', toolCalling: 'auto', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 30000 };
 
 const resolvedCapabilities = (maxConcurrency: number) => ({
   contextWindow: 128000,
@@ -140,7 +140,7 @@ describe('fm target schema', () => {
       targets: { local: { adapter: 'fm', model: 'm2', toolCalling: 'constrained', maxConcurrency: 2, admissionTimeoutMs: 5000 } },
       aliases: { default: 'local' },
     });
-    expect(models.targets['local']).toEqual({ adapter: 'fm', model: 'm2', toolCalling: 'constrained', maxConcurrency: 2, admissionTimeoutMs: 5000 });
+    expect(models.targets['local']).toEqual({ adapter: 'fm', model: 'm2', toolCalling: 'constrained', billing: 'local', maxConcurrency: 2, admissionTimeoutMs: 5000 });
   });
 
   it.each(['auto', 'native', 'constrained'])('accepts toolCalling %j', async (toolCalling) => {
@@ -169,10 +169,17 @@ describe('chat-completions target schema', () => {
       model: 'gpt-x',
       baseUrl: 'https://api.example.com/v1',
       toolCalling: 'native',
+      billing: 'metered',
       maxConcurrency: 4,
       admissionTimeoutMs: 30000,
       capabilities: expect.objectContaining(resolvedCapabilities(4)),
     });
+  });
+
+  it('keeps a billing of local the user declares and rejects an unknown billing', async () => {
+    const models = await expectAccepted({ targets: { remote: chatTarget({ billing: 'local' }) }, aliases: { default: 'remote' } });
+    expect(models.targets['remote']).toMatchObject({ billing: 'local' });
+    await expectRejected({ targets: { remote: chatTarget({ billing: 'free' }) }, aliases: { default: 'remote' } });
   });
 
   it('takes capabilities.maxConcurrency from the target', async () => {

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { canonicalPath, comparableContains, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
 import { imageCapability } from '@momonga/protocol';
+import type { TargetBilling } from '@momonga/protocol';
 import { layoutOf } from './layout.ts';
 import type {
   AnthropicTarget,
@@ -34,6 +35,7 @@ const resolveFm = (target: FmTarget): ResolvedFmTarget => ({
   adapter: 'fm',
   model: target.model ?? 'default',
   toolCalling: target.toolCalling ?? 'auto',
+  billing: 'local',
   maxConcurrency: target.maxConcurrency ?? 1,
   admissionTimeoutMs: target.admissionTimeoutMs ?? 30000,
 });
@@ -56,6 +58,7 @@ type RemoteTargetInput = {
   socketPath?: string;
   apiKeyEnv?: string;
   apiKeySecret?: string;
+  billing?: TargetBilling;
   capabilities: DeclaredTargetCapabilities;
   maxConcurrency?: number;
   admissionTimeoutMs?: number;
@@ -87,6 +90,7 @@ const ANTHROPIC_CAPABILITY_DEFAULTS: CapabilityDefaults = {
 };
 
 const DEFAULT_REMOTE_MAX_CONCURRENCY = 4;
+const DEFAULT_REMOTE_BILLING: TargetBilling = 'metered';
 
 const resolveRemote = (target: RemoteTargetInput, defaults: CapabilityDefaults, home: string, where: string) => {
   const { baseUrl, socketPath } = target;
@@ -103,6 +107,7 @@ const resolveRemote = (target: RemoteTargetInput, defaults: CapabilityDefaults, 
     ...(socketPath === undefined ? {} : { socketPath }),
     ...(target.apiKeyEnv === undefined ? {} : { apiKeyEnv: target.apiKeyEnv }),
     ...(target.apiKeySecret === undefined ? {} : { apiKeySecret: target.apiKeySecret }),
+    billing: target.billing ?? DEFAULT_REMOTE_BILLING,
     capabilities,
     maxConcurrency,
     admissionTimeoutMs: target.admissionTimeoutMs ?? 30000,

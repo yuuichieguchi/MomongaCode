@@ -106,6 +106,7 @@ const openAttempt = async (
     telemetry: services.telemetry,
     parent: job.parent,
     providerName: target.provider,
+    billing: target.billing,
     requestModel: target.model,
     maxTokens: job.body.max_output_tokens ?? undefined,
     stream: job.body.stream === true,

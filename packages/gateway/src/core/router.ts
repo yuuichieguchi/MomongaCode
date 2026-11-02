@@ -1,7 +1,7 @@
 import { CircuitBreaker } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { applyCapabilityOverride, imageCapability, sizingRatioFor } from '@momonga/protocol';
-import type { Capabilities, CapabilityOverride, GatewayHealth, HealthResult, ImageCapability, ProviderAdapter, TargetHealth } from '@momonga/protocol';
+import type { Capabilities, CapabilityOverride, GatewayHealth, HealthResult, ImageCapability, ProviderAdapter, TargetBilling, TargetHealth } from '@momonga/protocol';
 import { createAdmissionGate } from './admission.ts';
 import type { AdmissionGate } from './admission.ts';
 import { invalidRequest, notFound } from './errors.ts';
@@ -14,6 +14,7 @@ export type TargetRuntime = {
   name: string;
   provider: string;
   model: string;
+  billing: TargetBilling;
   adapter: GuardedAdapter;
   breaker: CircuitBreaker;
   gate: AdmissionGate;
@@ -97,6 +98,7 @@ export const createRouter = (options: RouterOptions): Router => {
       name,
       provider: target.provider,
       model: target.model,
+      billing: target.billing,
       adapter: guardAdapter(requireEntry(adapters, name, 'adapter'), options.redactor),
       breaker: new CircuitBreaker({ failureThreshold: config.breaker.failureThreshold, openMs: config.breaker.openMs, clock }),
       gate: createAdmissionGate({

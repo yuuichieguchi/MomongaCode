@@ -1,6 +1,9 @@
 export type ToolCallingMode = 'native' | 'constrained' | 'none';
 export type ToolCallingSetting = 'native' | 'constrained' | 'auto';
 
+export const TARGET_BILLINGS = ['metered', 'local'] as const;
+export type TargetBilling = (typeof TARGET_BILLINGS)[number];
+
 export type ImageTokenModel = { pixelsPerToken: number; maxTokens: number };
 
 export type ImageCapability =

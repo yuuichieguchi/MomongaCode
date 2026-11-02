@@ -53,7 +53,7 @@ describe('startChatSpan and recordChatResponse', () => {
     const agent = startAgentSpan(h.telemetry.tracer, { agentName: 'a', agentId: 'b', conversationId: 'c', runId: RUN_ID });
     const chat = startChatSpan(
       h.telemetry.tracer,
-      { providerName: 'openai', requestModel: 'gpt-x', maxTokens: 1024, stream: true, runId: RUN_ID, step: 2, attempt: 1 },
+      { providerName: 'openai', billing: 'metered', requestModel: 'gpt-x', maxTokens: 1024, stream: true, runId: RUN_ID, step: 2, attempt: 1 },
       trace.setSpan(ROOT_CONTEXT, agent),
     );
     recordChatResponse(chat, {
@@ -78,6 +78,7 @@ describe('startChatSpan and recordChatResponse', () => {
       'momonga.run_id': RUN_ID,
       'momonga.step': 2,
       'momonga.attempt': 1,
+      'momonga.billing': 'metered',
       'gen_ai.response.model': 'gpt-x-2026',
       'gen_ai.response.id': 'resp_1',
       'gen_ai.response.finish_reasons': ['stop'],
@@ -93,6 +94,7 @@ describe('startChatSpan and recordChatResponse', () => {
     const h = harness();
     const chat = startChatSpan(h.telemetry.tracer, {
       providerName: 'apple',
+      billing: 'local',
       requestModel: 'system',
       stream: false,
       runId: RUN_ID,
@@ -110,6 +112,7 @@ describe('startChatSpan and recordChatResponse', () => {
       'momonga.run_id': RUN_ID,
       'momonga.step': 1,
       'momonga.attempt': 2,
+      'momonga.billing': 'local',
       'gen_ai.response.finish_reasons': ['length'],
       'gen_ai.usage.input_tokens': 5,
       'gen_ai.usage.output_tokens': 6,
@@ -168,6 +171,7 @@ describe('recordError', () => {
     const h = harness();
     const chat = startChatSpan(h.telemetry.tracer, {
       providerName: 'openai',
+      billing: 'metered',
       requestModel: 'gpt-x',
       stream: false,
       runId: RUN_ID,

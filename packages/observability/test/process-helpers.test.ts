@@ -24,7 +24,7 @@ describe('traceparentOf and contextOf', () => {
     const header = traceparentOf(parent);
     const child = startChatSpan(
       h.telemetry.tracer,
-      { providerName: 'openai', requestModel: 'gpt-x', maxTokens: 16, stream: true, runId: RUN_ID, step: 1, attempt: 1 },
+      { providerName: 'openai', billing: 'metered', requestModel: 'gpt-x', maxTokens: 16, stream: true, runId: RUN_ID, step: 1, attempt: 1 },
       contextOf(header),
     );
     child.end(h.clock.now());

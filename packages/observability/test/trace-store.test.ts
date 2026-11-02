@@ -74,7 +74,7 @@ describe('stored spans', () => {
     h.clock.advance(10);
     const chat = startChatSpan(
       h.telemetry.tracer,
-      { providerName: 'openai', requestModel: 'gpt-x', stream: false, runId: RUN_ID, step: 1, attempt: 1 },
+      { providerName: 'openai', billing: 'metered', requestModel: 'gpt-x', stream: false, runId: RUN_ID, step: 1, attempt: 1 },
       parent,
     );
     h.clock.advance(5);
@@ -150,6 +150,7 @@ describe('body capture', () => {
     const h = harness();
     const chat = startChatSpan(h.telemetry.tracer, {
       providerName: 'openai',
+      billing: 'metered',
       requestModel: 'gpt-x',
       stream: false,
       runId: RUN_ID,
@@ -174,6 +175,7 @@ describe('body capture', () => {
     const h = harness({ bodies: { enabled: true, retentionMs: 1000 } });
     const chat = startChatSpan(h.telemetry.tracer, {
       providerName: 'openai',
+      billing: 'metered',
       requestModel: 'gpt-x',
       stream: false,
       runId: RUN_ID,
@@ -213,6 +215,7 @@ describe('body capture', () => {
     const h = harness({ bodies: { enabled: true, retentionMs: 1000 } });
     const chat = startChatSpan(h.telemetry.tracer, {
       providerName: 'openai',
+      billing: 'metered',
       requestModel: 'gpt-x',
       stream: false,
       runId: RUN_ID,

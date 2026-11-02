@@ -8,7 +8,7 @@ const TABLE = definePriceTable([
   { provider: 'acme', model: 'm1', effectiveFrom: '2026-06-01', inputPerMTok: 1, outputPerMTok: 4, currency: 'USD' },
 ]);
 
-type Call = { provider: string; model: string; input: number; output: number; cached?: number; at: number; fail?: boolean };
+type Call = { provider: string; model: string; input: number; output: number; cached?: number; at: number; fail?: boolean; billing?: 'metered' | 'local' };
 
 const AT_MARCH = Date.parse('2026-03-10T00:00:00Z');
 const AT_JULY = Date.parse('2026-07-10T00:00:00Z');
@@ -18,7 +18,7 @@ const recordCalls = async (runId: string, calls: readonly Call[], h: ReturnType<
   const parent = trace.setSpan(ROOT_CONTEXT, agent);
   for (const [index, call] of calls.entries()) {
     h.clock.set(call.at);
-    const chat = startChatSpan(h.telemetry.tracer, { providerName: call.provider, requestModel: call.model, stream: true, runId, step: index + 1, attempt: 1 }, parent);
+    const chat = startChatSpan(h.telemetry.tracer, { providerName: call.provider, billing: call.billing ?? 'metered', requestModel: call.model, stream: true, runId, step: index + 1, attempt: 1 }, parent);
     if (call.fail === true) recordError(chat, new Error('boom'), 'upstream_error');
     else recordChatResponse(chat, { finishReasons: ['stop'], usage: { inputTokens: call.input, outputTokens: call.output, ...(call.cached === undefined ? {} : { cachedInputTokens: call.cached }) } });
     chat.end(h.clock.now());
@@ -94,6 +94,26 @@ describe('buildCostReport', () => {
     const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }, { runId: 'run-none', sessionId: 's' }], { table: definePriceTable([]) });
     expect(report.runs[0]).toMatchObject({ calls: 1, unpricedCalls: 1, amount: 0, inputTokens: 100 });
     expect(report.runs[1]).toMatchObject({ calls: 0, unpricedCalls: 0, amount: 0, priceVersions: [] });
+  });
+
+  it('reports a call to a local target as local with no amount, not as unpriced', async () => {
+    const h = harness();
+    await recordCalls('run-a', [
+      { provider: 'apple', model: 'system', input: 100, output: 10, at: AT_JULY, billing: 'local' },
+      { provider: 'acme', model: 'm1', input: 1_000_000, output: 0, at: AT_JULY },
+    ], h);
+    const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
+    expect(report.total).toMatchObject({ calls: 2, localCalls: 1, unpricedCalls: 0, amount: 1, inputTokens: 1_000_100, outputTokens: 10 });
+    const text = formatCostReport(report);
+    expect(text).toContain('1 of 2 call(s) ran locally and cost nothing');
+    expect(text).not.toContain('no price entry');
+  });
+
+  it('does not look up a price for a local call even when the table has an entry for its provider and model', async () => {
+    const h = harness();
+    await recordCalls('run-a', [{ provider: 'acme', model: 'm1', input: 1_000_000, output: 0, at: AT_JULY, billing: 'local' }], h);
+    const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
+    expect(report.total).toMatchObject({ calls: 1, localCalls: 1, unpricedCalls: 0, amount: 0, priceVersions: [] });
   });
 
   it('refuses a run listed twice', () => {
