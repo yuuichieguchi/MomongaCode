@@ -43,6 +43,15 @@ export type {
 export { SessionTmpDirError, ensureMomongaDirs, ensureSessionTmpDir, momongaLayout, momongaPaths, rotatedLogPath } from './momonga-paths.ts';
 export type { MomongaPaths } from './momonga-paths.ts';
 export { secretKeyFile } from './secret-key-file.ts';
+export {
+  KEYCHAIN_SERVICE,
+  SECRET_NAME_PATTERN,
+  SECURITY_BINARY,
+  SecretEmptyError,
+  SecretUnavailableError,
+  createKeychainSecretStore,
+} from './secret-store.ts';
+export type { SecretProcessPort, SecretProcessResult, SecretStore } from './secret-store.ts';
 export type { SecretKeyFileOptions } from './secret-key-file.ts';
 export { isLoopbackHost } from './loopback.ts';
 export {

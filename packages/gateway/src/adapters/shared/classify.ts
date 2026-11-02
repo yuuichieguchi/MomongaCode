@@ -70,7 +70,7 @@ export const createUpstreamClassifier =
       return { retryable: error.retryable, error: body('model_error', error.code, error.message) };
     }
     if (error instanceof StreamFailure) {
-      return { retryable: true, error: body(error.errorType, error.code, error.message) };
+      return { retryable: error.errorType !== 'invalid_request' && error.errorType !== 'not_found', error: body(error.errorType, error.code, error.message) };
     }
     if (error instanceof UnsupportedInputError) {
       return { retryable: false, error: body('invalid_request', error.code, error.message, error.param) };

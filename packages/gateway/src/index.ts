@@ -50,3 +50,8 @@ export { FM_SERVE_DEFAULTS, GATEWAY_CONFIG_DEFAULTS } from './defaults.ts';
 export { startGatewayProcess } from './process.ts';
 export type { GatewayCloseResult, GatewayProcess, StartGatewayProcessOptions } from './process.ts';
 export { GATEWAY_ENTRY_FLAGS, runGatewayEntry } from './entry.ts';
+export type { GatewayEntryDeps } from './entry.ts';
+export { createAnthropicAdapter } from './adapters/anthropic/adapter.ts';
+export type { AnthropicAdapter, AnthropicAdapterOptions } from './adapters/anthropic/types.ts';
+export { createOpenResponsesAdapter } from './adapters/open-responses/adapter.ts';
+export type { OpenResponsesAdapter, OpenResponsesAdapterOptions } from './adapters/open-responses/types.ts';

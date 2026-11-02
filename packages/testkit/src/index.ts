@@ -114,3 +114,48 @@ export { DAEMON_BIN_EXIT_DEADLINE_MS, DAEMON_BIN_READY_DEADLINE_MS, readJsonLine
 export type { DaemonBin } from './daemon-bin.ts';
 export { APPLE_PROGRAMS, TEST_SEARCH_PATH, fakePolicyFilesystem, isWritableFor, protectedSetWith } from './fake-policy-filesystem.ts';
 export type { FakeGlobExpansion, FakePolicyFilesystem, FakePolicyFilesystemLayout, FakeProgramResolution, FakeResolveCall, RecordingPolicyFilesystem } from './fake-policy-filesystem.ts';
+export { startFakeSseUpstream } from './fake-sse-upstream.ts';
+export type {
+  FakeSseFrame,
+  FakeUpstreamOptions,
+  FakeUpstreamReply,
+  FakeUpstreamServer,
+  RecordedUpstreamRequest,
+} from './fake-sse-upstream.ts';
+export {
+  FAKE_ANTHROPIC_PATH,
+  FAKE_ANTHROPIC_VERSION,
+  anthropicErrorBody,
+  anthropicErrorEvent,
+  anthropicErrorReply,
+  anthropicMessageEnd,
+  anthropicMessageStart,
+  anthropicPing,
+  anthropicStream,
+  anthropicTextBlock,
+  anthropicTextReply,
+  anthropicToolUseBlock,
+  anthropicToolUseReply,
+  startFakeAnthropic,
+} from './fake-anthropic.ts';
+export type { AnthropicUsage, FakeAnthropicOptions } from './fake-anthropic.ts';
+export {
+  DONE_FRAME,
+  FAKE_OPEN_RESPONSES_PATH,
+  functionCallEvents,
+  messageEvents,
+  numberedFrames,
+  openResponsesErrorBody,
+  openResponsesErrorFrame,
+  openResponsesErrorReply,
+  openResponsesStream,
+  openResponsesTextReply,
+  openResponsesToolCallReply,
+  openingEvents,
+  refusalEvents,
+  startFakeOpenResponses,
+  terminalEvent,
+} from './fake-open-responses.ts';
+export type { FakeOpenResponsesOptions, TerminalSpec } from './fake-open-responses.ts';
+export { createFakeSecretStore, createFakeSecurityPort } from './fake-secrets.ts';
+export type { FakeSecretStore, FakeSecurityPort } from './fake-secrets.ts';

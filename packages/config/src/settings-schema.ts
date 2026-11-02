@@ -1,3 +1,4 @@
+import { SECRET_NAME_PATTERN } from '@momonga/foundation';
 import { PERMISSION_MODES } from '@momonga/protocol';
 
 const STRING_ARRAY = { type: 'array', items: { type: 'string' } } as const;
@@ -69,6 +70,29 @@ const TARGET_CAPABILITIES_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+const API_KEY_PROPERTIES = {
+  apiKeyEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
+  apiKeySecret: { type: 'string', pattern: SECRET_NAME_PATTERN },
+} as const;
+
+const AT_MOST_ONE_API_KEY = {
+  not: { properties: { apiKeyEnv: true, apiKeySecret: true }, required: ['apiKeyEnv', 'apiKeySecret'] },
+} as const;
+
+const EXACTLY_ONE_API_KEY = {
+  oneOf: [
+    { properties: { apiKeyEnv: true }, required: ['apiKeyEnv'] },
+    { properties: { apiKeySecret: true }, required: ['apiKeySecret'] },
+  ],
+} as const;
+
+const { imageInput: _imageInput, ...REMOTE_CAPABILITY_PROPERTIES } = TARGET_CAPABILITIES_SCHEMA.properties;
+
+const REMOTE_TARGET_CAPABILITIES_SCHEMA = {
+  ...TARGET_CAPABILITIES_SCHEMA,
+  properties: REMOTE_CAPABILITY_PROPERTIES,
+} as const;
+
 const CHAT_COMPLETIONS_TARGET_SCHEMA = {
   type: 'object',
   properties: {
@@ -76,20 +100,56 @@ const CHAT_COMPLETIONS_TARGET_SCHEMA = {
     model: { type: 'string', minLength: 1 },
     baseUrl: { type: 'string', minLength: 1 },
     socketPath: { type: 'string', minLength: 1 },
-    apiKeyEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
+    ...API_KEY_PROPERTIES,
     toolCalling: { enum: ['native', 'constrained'] },
     capabilities: TARGET_CAPABILITIES_SCHEMA,
     maxConcurrency: POSITIVE_INTEGER,
     admissionTimeoutMs: NON_NEGATIVE_INTEGER,
   },
   required: ['adapter', 'model', 'capabilities'],
+  ...AT_MOST_ONE_API_KEY,
+  additionalProperties: false,
+} as const;
+
+const OPEN_RESPONSES_TARGET_SCHEMA = {
+  type: 'object',
+  properties: {
+    adapter: { const: 'open-responses' },
+    model: { type: 'string', minLength: 1 },
+    baseUrl: { type: 'string', minLength: 1 },
+    socketPath: { type: 'string', minLength: 1 },
+    ...API_KEY_PROPERTIES,
+    toolCalling: { enum: ['native', 'none'] },
+    capabilities: REMOTE_TARGET_CAPABILITIES_SCHEMA,
+    maxConcurrency: POSITIVE_INTEGER,
+    admissionTimeoutMs: NON_NEGATIVE_INTEGER,
+  },
+  required: ['adapter', 'model', 'capabilities'],
+  ...AT_MOST_ONE_API_KEY,
+  additionalProperties: false,
+} as const;
+
+const ANTHROPIC_TARGET_SCHEMA = {
+  type: 'object',
+  properties: {
+    adapter: { const: 'anthropic' },
+    model: { type: 'string', minLength: 1 },
+    baseUrl: { type: 'string', minLength: 1 },
+    socketPath: { type: 'string', minLength: 1 },
+    ...API_KEY_PROPERTIES,
+    capabilities: REMOTE_TARGET_CAPABILITIES_SCHEMA,
+    maxConcurrency: POSITIVE_INTEGER,
+    admissionTimeoutMs: NON_NEGATIVE_INTEGER,
+  },
+  required: ['adapter', 'model', 'capabilities'],
+  ...EXACTLY_ONE_API_KEY,
   additionalProperties: false,
 } as const;
 
 const MODEL_TARGET_SCHEMA = {
   type: 'object',
   discriminator: { propertyName: 'adapter' },
-  oneOf: [FM_TARGET_SCHEMA, CHAT_COMPLETIONS_TARGET_SCHEMA],
+  oneOf: [FM_TARGET_SCHEMA, CHAT_COMPLETIONS_TARGET_SCHEMA, OPEN_RESPONSES_TARGET_SCHEMA, ANTHROPIC_TARGET_SCHEMA],
 } as const;
 
 export const SETTINGS_SCHEMA = {

@@ -2,7 +2,7 @@ export { appendPermissionRule } from './append-rule.ts';
 export type { AppendPermissionRuleOptions } from './append-rule.ts';
 export { isCredentialEnvName, stripCredentialEnv } from './credential-env.ts';
 export { loadSettings } from './load-settings.ts';
-export { credentialEnvNames } from './models.ts';
+export { credentialEnvNames, secretNames } from './models.ts';
 export type { ResolvedModels } from './models.ts';
 export { ConfigError, createUserSettingsCache, loadUserSettings, userSettingsChangeKey } from './user-settings.ts';
 export type { LoadUserSettingsOptions, LoadUserSettingsResult, UserSettingsCache, UserSettingsCacheOptions, UserSettingsSnapshot } from './user-settings.ts';
@@ -17,15 +17,20 @@ export type {
   McpRemoteServerConfig,
   McpServerConfig,
   McpStdioServerConfig,
+  AnthropicTarget,
   ChatCompletionsTarget,
   FmTarget,
   FmToolCalling,
   ModelAlias,
   ModelTarget,
   ModelsSettings,
+  OpenResponsesTarget,
+  RemoteTargetCapabilities,
+  ResolvedAnthropicTarget,
   ResolvedChatCompletionsTarget,
   ResolvedFmTarget,
   ResolvedModelTarget,
+  ResolvedOpenResponsesTarget,
   TargetCapabilities,
   PermissionsSettings,
   Settings,

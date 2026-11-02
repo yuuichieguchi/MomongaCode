@@ -45,13 +45,42 @@ export type ChatCompletionsTarget = {
   baseUrl?: string;
   socketPath?: string;
   apiKeyEnv?: string;
+  apiKeySecret?: string;
   toolCalling?: 'native' | 'constrained';
   capabilities: Pick<TargetCapabilities, 'contextWindow' | 'maxOutputTokens'> & Partial<TargetCapabilities>;
   maxConcurrency?: number;
   admissionTimeoutMs?: number;
 };
 
-export type ModelTarget = FmTarget | ChatCompletionsTarget;
+export type RemoteTargetCapabilities = Pick<TargetCapabilities, 'contextWindow' | 'maxOutputTokens'> &
+  Partial<Omit<TargetCapabilities, 'imageInput'>>;
+
+export type OpenResponsesTarget = {
+  adapter: 'open-responses';
+  model: string;
+  baseUrl?: string;
+  socketPath?: string;
+  apiKeyEnv?: string;
+  apiKeySecret?: string;
+  toolCalling?: 'native' | 'none';
+  capabilities: RemoteTargetCapabilities;
+  maxConcurrency?: number;
+  admissionTimeoutMs?: number;
+};
+
+export type AnthropicTarget = {
+  adapter: 'anthropic';
+  model: string;
+  baseUrl?: string;
+  socketPath?: string;
+  apiKeyEnv?: string;
+  apiKeySecret?: string;
+  capabilities: RemoteTargetCapabilities;
+  maxConcurrency?: number;
+  admissionTimeoutMs?: number;
+};
+
+export type ModelTarget = FmTarget | ChatCompletionsTarget | OpenResponsesTarget | AnthropicTarget;
 
 export type ResolvedFmTarget = {
   adapter: 'fm';
@@ -67,13 +96,44 @@ export type ResolvedChatCompletionsTarget = {
   baseUrl?: string;
   socketPath?: string;
   apiKeyEnv?: string;
+  apiKeySecret?: string;
   toolCalling: 'native' | 'constrained';
   capabilities: TargetCapabilities & { maxConcurrency: number };
   maxConcurrency: number;
   admissionTimeoutMs: number;
 };
 
-export type ResolvedModelTarget = ResolvedFmTarget | ResolvedChatCompletionsTarget;
+export type ResolvedOpenResponsesTarget = {
+  adapter: 'open-responses';
+  model: string;
+  baseUrl?: string;
+  socketPath?: string;
+  apiKeyEnv?: string;
+  apiKeySecret?: string;
+  toolCalling: 'native' | 'none';
+  capabilities: TargetCapabilities & { maxConcurrency: number };
+  maxConcurrency: number;
+  admissionTimeoutMs: number;
+};
+
+export type ResolvedAnthropicTarget = {
+  adapter: 'anthropic';
+  model: string;
+  baseUrl?: string;
+  socketPath?: string;
+  apiKeyEnv?: string;
+  apiKeySecret?: string;
+  toolCalling: 'native';
+  capabilities: TargetCapabilities & { maxConcurrency: number };
+  maxConcurrency: number;
+  admissionTimeoutMs: number;
+};
+
+export type ResolvedModelTarget =
+  | ResolvedFmTarget
+  | ResolvedChatCompletionsTarget
+  | ResolvedOpenResponsesTarget
+  | ResolvedAnthropicTarget;
 
 export type ModelAlias = string | string[];
 
