@@ -1025,6 +1025,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           modelAlias: input.modelAlias ?? parentSession.modelAlias,
           bypassAllowed: parentSession.bypassAllowed ? 1 : 0,
           additionalDirectories: canonicalJson(parentSession.additionalDirectories),
+          mcpServers: canonicalJson(parentSession.mcpServers),
           createdAt: now,
         });
         const runId = uuidv7(clock);
