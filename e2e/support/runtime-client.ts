@@ -60,6 +60,7 @@ export type RuntimeClient = {
   eventsStatus(id: string, options: EventsOptions): Promise<RawResponse>;
   approvals(runId: string): Promise<ApprovalView[]>;
   resolveApproval(id: string, optionId: string): Promise<RawResponse>;
+  json(method: string, path: string, body?: unknown): Promise<RawResponse>;
   health(): Promise<RunHealth>;
   close(): Promise<void>;
 };
@@ -328,10 +329,20 @@ export const createRuntimeClient = (home: E2eHome): RuntimeClient => {
     return { status: response.status, body: JSON.parse(await response.text()) };
   };
 
+  const json = async (method: string, path: string, body?: unknown): Promise<RawResponse> => {
+    const response = await http.request({
+      method,
+      path,
+      ...(body === undefined ? {} : { headers: JSON_HEADERS, body: JSON.stringify(body) }),
+    });
+    const text = await response.text();
+    return { status: response.status, body: text === '' ? undefined : JSON.parse(text) };
+  };
+
   const close = async (): Promise<void> => {
     await Promise.all([...openStreams].map((stream) => stream.abort()));
     await http.close();
   };
 
-  return { createSession, createRun, getRun, cancel, events, eventsStatus, approvals, resolveApproval, health, close };
+  return { createSession, createRun, getRun, cancel, events, eventsStatus, approvals, resolveApproval, json, health, close };
 };

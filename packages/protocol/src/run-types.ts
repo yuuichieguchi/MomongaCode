@@ -85,7 +85,7 @@ export type RunEventPayload =
   | { type: 'tool.elicitation.requested'; inputId: string; callId: string; server: string; requests: ElicitationRequestView[] }
   | { type: 'tool.elicitation.resolved'; inputId: string; responses: Record<string, ElicitationAnswerRecord> }
   | { type: 'tool.elicitation.cancelled'; inputId: string; reason: 'expired' | 'withdrawn' | 'superseded' }
-  | { type: 'mcp.authorization.required'; callId: string; server: string }
+  | { type: 'mcp.authorization.required'; server: string; callId?: string }
   | { type: 'tool.started'; callId: string; idemKey: string }
   | { type: 'tool.updated'; callId: string; content: unknown[] }
   | {

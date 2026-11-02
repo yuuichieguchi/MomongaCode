@@ -255,6 +255,11 @@ const drive = async (
   const knownNotes = new Set(journal.state.notes.map((note) => note.message));
   const toolNotices = [...skills.warnings, ...toolSet.notices].filter((message) => !knownNotes.has(message));
   if (toolNotices.length > 0) journal.append([...new Set(toolNotices)].map((message) => ({ type: 'notice', level: 'warning', message })));
+  for (const server of toolSet.authorizationRequired) {
+    const message = `MCP server "${server}" requires authorization before its tools can be listed`;
+    if (journal.state.notes.some((note) => note.message === message)) continue;
+    journal.append([{ type: 'notice', level: 'warning', message }, { type: 'mcp.authorization.required', server }]);
+  }
 
   if (recorded !== undefined) {
     if (pins.modelAlias !== session.modelAlias || pins.systemPromptDigest !== systemPromptDigest) {

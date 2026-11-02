@@ -145,7 +145,13 @@ export const createMcpToolSource = (options: McpToolSourceOptions): ToolSource =
   const { server, connection } = options;
   const listWithNotices = async (listOptions?: ToolListOptions): Promise<ToolSourceListing> => {
     assertServerNameFits(server);
-    const listed = await connection.listTools(listOptions?.signal === undefined ? undefined : { signal: listOptions.signal });
+    let listed: Tool[];
+    try {
+      listed = await connection.listTools(listOptions?.signal === undefined ? undefined : { signal: listOptions.signal });
+    } catch (error) {
+      if (authorizationRequiredFor(error) === undefined) throw error;
+      return { tools: [], notices: [], authorizationRequired: [server] };
+    }
     const tools: AnyTool[] = [];
     const notices: string[] = [];
     for (const tool of listed) {

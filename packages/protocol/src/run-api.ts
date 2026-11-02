@@ -157,7 +157,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
     properties: { inputId: string, reason: enumOf(['expired', 'withdrawn', 'superseded']) },
     required: ['inputId', 'reason'],
   },
-  'mcp.authorization.required': { properties: { callId: string, server: string }, required: ['callId', 'server'] },
+  'mcp.authorization.required': { properties: { callId: string, server: string }, required: ['server'] },
   'tool.started': { properties: { callId: string, idemKey: string }, required: ['callId', 'idemKey'] },
   'tool.updated': { properties: { callId: string, content: { type: 'array' } }, required: ['callId', 'content'] },
   'tool.completed': {
