@@ -31,6 +31,8 @@ export type RealWorkspace = {
   decide(command: string, options?: { mode?: PermissionMode; cwd?: string; searchPath?: string; rules?: ReadonlyArray<readonly [RuleEffect, string]> }): Decision;
   runBash(command: string, cwd?: string): { stdout: string; stderr: string; status: number | null };
   env(extra?: Record<string, string>): NodeJS.ProcessEnv;
+  git(cwd: string, ...args: string[]): { stdout: string; stderr: string; status: number | null };
+  initRepository(relative?: string): string;
 };
 
 export const makeRealWorkspace = (): RealWorkspace => {
@@ -51,6 +53,10 @@ export const makeRealWorkspace = (): RealWorkspace => {
     ...extra,
   });
   const at = (relative: string): string => path.resolve(project, relative);
+  const git = (cwd: string, ...args: string[]) => {
+    const result = spawnSync('/usr/bin/git', args, { cwd, env: env(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    return { stdout: result.stdout, stderr: result.stderr, status: result.status };
+  };
   return {
     base,
     project,
@@ -98,5 +104,20 @@ export const makeRealWorkspace = (): RealWorkspace => {
       return { stdout: result.stdout, stderr: result.stderr, status: result.status };
     },
     env,
+    git,
+    initRepository: (relative = '.') => {
+      const directory = at(relative);
+      fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+      for (const args of [['init', '-q', '-b', 'main'], ['config', 'user.name', 't'], ['config', 'user.email', 't@t']]) {
+        const result = git(directory, ...args);
+        if (result.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${result.stderr}`);
+      }
+      fs.writeFileSync(path.join(directory, 'tracked'), 'one\n');
+      for (const args of [['add', 'tracked'], ['commit', '-q', '-m', 'one']]) {
+        const result = git(directory, ...args);
+        if (result.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${result.stderr}`);
+      }
+      return directory;
+    },
   };
 };

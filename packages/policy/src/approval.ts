@@ -1,10 +1,10 @@
 import path from 'node:path';
 import { lexicallyWithin } from '@momonga/foundation';
 import type { ProtectedSet } from '@momonga/foundation';
-import { isOptionWord, parseArgv } from './argv.ts';
+import { hasOption, isOptionWord, parseArgv } from './argv.ts';
 import type { ParsedArgv, ParsedOption } from './argv.ts';
 import type { GitParse } from './git-argv.ts';
-import { GIT_READ_ONLY_SUBCOMMANDS, gitSubcommandSpec } from './git-subcommands.ts';
+import { GIT_LISTING_SELECTORS, GIT_LISTING_SPECS, GIT_READ_ONLY_SUBCOMMANDS, gitSubcommandSpec, reflogView } from './git-subcommands.ts';
 import type { PolicyFilesystem } from './filesystem.ts';
 import type { OptionEffect, CommandSpec } from './command-specs.ts';
 import { globDirectory, sedFacts } from './path-effects.ts';
@@ -35,13 +35,6 @@ const DISQUALIFYING_EFFECTS: ReadonlySet<OptionEffect> = new Set(['write', 'exec
 const CAPABLE_EFFECTS: ReadonlySet<OptionEffect> = new Set(['write', 'exec', 'delete', 'opens-path', 'sensitive']);
 const APPLE_DIRECTORIES: readonly string[] = ['/bin', '/usr/bin'];
 
-const GIT_LISTING_OPTIONS: readonly string[] = ['-l', '--list', '-a', '-r', '-v', '-vv', '--show-current', '--contains', '--merged', '--no-merged', '--all', '--remotes', '--verbose'];
-const GIT_LISTING_SELECTORS: readonly string[] = ['-l', '--list', '--contains', '--merged', '--no-merged'];
-
-const optionName = (text: string): string => {
-  const equals = text.indexOf('=');
-  return equals === -1 ? text : text.slice(0, equals);
-};
 
 const globAllowed = (word: Word, context: ApprovalContext): boolean => {
   const pattern = word.value;
@@ -133,23 +126,39 @@ const gitReadOnlyAllowed = (subcommand: string, rest: readonly Word[]): boolean 
   return parsed.undeclared.length === 0 && optionsAllowed(spec, parsed.options);
 };
 
+const listingAllowed = (subcommand: 'branch' | 'tag', rest: readonly Word[]): boolean => {
+  const spec = GIT_LISTING_SPECS[subcommand];
+  const parsed = parseArgv(rest, spec);
+  if (parsed.undeclared.length > 0 || !optionsAllowed(spec, parsed.options)) return false;
+  return parsed.operands.length === 0 || hasOption(parsed, ...GIT_LISTING_SELECTORS[subcommand]);
+};
+
+const remoteAllowed = (rest: readonly Word[]): boolean => {
+  const spec = GIT_LISTING_SPECS.remote;
+  const parsed = parseArgv(rest, spec);
+  if (parsed.undeclared.length > 0 || !optionsAllowed(spec, parsed.options)) return false;
+  const [first, ...names] = parsed.operands;
+  if (first === undefined) return parsed.options.every(({ option }) => option === '-v' || option === '--verbose');
+  if (first.value === 'show') return names.length > 0 && hasOption(parsed, '-n');
+  return first.value === 'get-url' && names.length > 0 && !hasOption(parsed, '-n', '-v', '--verbose');
+};
+
+const reflogAllowed = (rest: readonly Word[]): boolean => {
+  const view = reflogView(rest);
+  if (view.writes) return false;
+  if (view.subcommand === 'show') return gitReadOnlyAllowed('reflog', view.words);
+  return view.words.every((word) => !isOptionWord(word));
+};
+
 const gitSubcommandAllowed = (git: GitParse): boolean => {
-  const options = git.rest.filter(isOptionWord).map((word) => word.value);
-  const operands = git.rest.filter((word) => !isOptionWord(word) && word.value !== '--');
   switch (git.subcommand) {
     case 'branch':
-    case 'tag': {
-      const names = options.map(optionName);
-      if (!names.every((name) => GIT_LISTING_OPTIONS.includes(name) || name.startsWith('-n'))) return false;
-      return operands.length === 0 || names.some((name) => GIT_LISTING_SELECTORS.includes(name));
-    }
-    case 'remote': {
-      const [first] = operands;
-      if (first === undefined) return options.every((name) => name === '-v' || name === '--verbose');
-      return (first.value === 'show' || first.value === 'get-url') && options.every((name) => name === '-n');
-    }
+    case 'tag':
+      return listingAllowed(git.subcommand, git.rest);
+    case 'remote':
+      return remoteAllowed(git.rest);
     case 'reflog':
-      return operands.length === 0 || operands[0]?.value === 'show';
+      return reflogAllowed(git.rest);
     default:
       return git.subcommand !== undefined && GIT_READ_ONLY_SUBCOMMANDS.has(git.subcommand) && gitReadOnlyAllowed(git.subcommand, git.rest);
   }

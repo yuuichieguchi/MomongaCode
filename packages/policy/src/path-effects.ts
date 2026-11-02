@@ -2,7 +2,7 @@ import path from 'node:path';
 import { hasOption, optionsNamed, parseArgv } from './argv.ts';
 import type { ParsedArgv, ParsedOption } from './argv.ts';
 import { parseGit } from './git-argv.ts';
-import { GIT_READ_ONLY_SUBCOMMANDS, gitSubcommandSpec } from './git-subcommands.ts';
+import { GIT_READ_ONLY_SUBCOMMANDS, gitSubcommandSpec, reflogView } from './git-subcommands.ts';
 import type { GitParse } from './git-argv.ts';
 import { specOf } from './command-specs.ts';
 import type { CommandSpec } from './command-specs.ts';
@@ -417,7 +417,10 @@ const cleanRemoves = (parsed: ParsedArgv): boolean => {
 
 const restoresWorktree = (parsed: ParsedArgv): boolean => !hasOption(parsed, '--staged', '-S') || hasOption(parsed, '--worktree', '-W');
 
-const gitSubcommandEffects = (subcommand: string, rest: readonly Word[]): { writes: Target[]; reads: Target[] } => {
+const gitSubcommandEffects = (subcommand: string, allWords: readonly Word[]): { writes: Target[]; reads: Target[] } => {
+  const view = subcommand === 'reflog' ? reflogView(allWords) : undefined;
+  if (view?.writes === true) return { writes: [], reads: [] };
+  const rest = view === undefined ? allWords : view.words;
   const spec = gitSubcommandSpec(subcommand);
   const parsed = parseArgv(rest, spec);
   const { reads: optionReads, writes } = optionEffectTargets(spec, parsed);
