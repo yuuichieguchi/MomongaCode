@@ -3,6 +3,7 @@ export { InheritanceError, applyInheritance, projectInheritance } from './inheri
 export type { InheritanceErrorCode, InheritanceKind, InheritanceOutcome, InheritedPayload } from './inherit.ts';
 export { StoreIdentityError, isFatalStoreError } from './fatal.ts';
 export { sameRunRequest } from './run-request.ts';
+export { CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from './transitions.ts';
 export { openRuntimeStore } from './runtime-store.ts';
 export type {
   Approval,

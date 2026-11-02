@@ -18,6 +18,7 @@ import { corrupt, expectOneOf, expectRecord, isRecord, readerFor } from './rows.
 import type { Row } from './rows.ts';
 import { sameRunRequest } from './run-request.ts';
 import { MIGRATIONS } from './schema.ts';
+import { CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from './transitions.ts';
 import { createTrustStore } from './trust.ts';
 import type {
   Approval,
@@ -49,49 +50,6 @@ import type {
   StatusPatch,
   WaitTargets,
 } from './types.ts';
-
-const CLAIM_STATUSES = ['RUNNING', 'CANCELLING'] as const;
-
-const WORKER_TRANSITIONS: Record<RunStatus, readonly RunStatus[]> = {
-  QUEUED: [],
-  RUNNING: ['WAITING_TOOL', 'WAITING_HUMAN', 'COMPLETED', 'STOPPED', 'FAILED', 'CANCELLING', 'QUEUED'],
-  WAITING_TOOL: [],
-  WAITING_HUMAN: [],
-  CANCELLING: ['CANCELLED'],
-  COMPLETED: [],
-  STOPPED: [],
-  FAILED: [],
-  CANCELLED: [],
-};
-
-const SERVICE_TRANSITIONS: Record<RunStatus, readonly RunStatus[]> = {
-  QUEUED: ['CANCELLED'],
-  RUNNING: ['CANCELLING'],
-  WAITING_TOOL: ['QUEUED', 'CANCELLING'],
-  WAITING_HUMAN: ['QUEUED', 'CANCELLED', 'STOPPED'],
-  CANCELLING: [],
-  COMPLETED: [],
-  STOPPED: [],
-  FAILED: [],
-  CANCELLED: [],
-};
-
-const SWEEP_TRANSITIONS: Record<RunStatus, readonly RunStatus[]> = {
-  ...SERVICE_TRANSITIONS,
-  QUEUED: ['STOPPED'],
-};
-
-const DEAD_LETTER_TRANSITIONS: Record<RunStatus, readonly RunStatus[]> = {
-  QUEUED: ['FAILED', 'CANCELLED'],
-  RUNNING: ['FAILED', 'CANCELLED'],
-  WAITING_TOOL: [],
-  WAITING_HUMAN: [],
-  CANCELLING: ['CANCELLED'],
-  COMPLETED: [],
-  STOPPED: [],
-  FAILED: [],
-  CANCELLED: [],
-};
 
 const isClaimStatus = (status: RunStatus): status is ClaimStatus => CLAIM_STATUSES.some((claimStatus) => claimStatus === status);
 

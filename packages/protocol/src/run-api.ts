@@ -346,7 +346,7 @@ const publicEventVariant = (type: keyof typeof PAYLOAD_SCHEMAS): JsonSchema => {
   );
 };
 
-const EVENT_TYPES = Object.keys(PAYLOAD_SCHEMAS) as (keyof typeof PAYLOAD_SCHEMAS)[];
+export const EVENT_TYPES = Object.keys(PAYLOAD_SCHEMAS) as (keyof typeof PAYLOAD_SCHEMAS)[];
 
 const trustView = closed(
   { path: string, decision: { anyOf: [enumOf(['trusted', 'untrusted']), { type: 'null' }] }, inheritedFrom: string },
