@@ -19,10 +19,17 @@ export type McpStdioServerConfig = {
   cwd?: string;
 };
 
+export type McpOAuthConfig = {
+  clientId?: string;
+  scope?: string;
+  callbackPort?: number;
+};
+
 export type McpRemoteServerConfig = {
-  type: 'http' | 'sse';
+  type: 'http';
   url: string;
   headers?: Record<string, string>;
+  oauth?: McpOAuthConfig;
 };
 
 export type McpServerConfig = McpStdioServerConfig | McpRemoteServerConfig;
@@ -111,7 +118,18 @@ const describeErrors = (errors: ErrorObject[] | null | undefined): string => {
   return `${pointer === '' ? '/' : pointer}: ${first.message ?? 'schema violation'}`;
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const assertNotHttpSse = (server: unknown, source: string, name: string): void => {
+  if (isRecord(server) && server['type'] === 'sse') {
+    throw new Error(`${source}: MCP server ${JSON.stringify(name)} uses the deprecated HTTP+SSE transport, which is not supported; use type "http" (Streamable HTTP)`);
+  }
+};
+
 export const assertSettings = (value: unknown, source: string): Settings => {
+  if (isRecord(value) && isRecord(value['mcpServers'])) {
+    for (const [name, server] of Object.entries(value['mcpServers'])) assertNotHttpSse(server, source, name);
+  }
   if (validateSettings(value)) return value;
   throw new Error(`${source}: invalid settings at ${describeErrors(validateSettings.errors)}`);
 };
@@ -122,6 +140,7 @@ export const assertMcpServersFile = (value: unknown, source: string): McpServers
 };
 
 export const assertMcpServer = (value: unknown, source: string, name: string): McpServerConfig => {
+  assertNotHttpSse(value, source, name);
   if (validateMcpServer(value)) return value;
   throw new Error(`${source}: invalid MCP server ${JSON.stringify(name)}: ${describeErrors(validateMcpServer.errors)}`);
 };

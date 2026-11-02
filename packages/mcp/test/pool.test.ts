@@ -54,7 +54,7 @@ describe('createMcpPool sources', () => {
     expect(broken?.lastError).toContain('/nonexistent/momonga-mcp-server');
   });
 
-  it('rejects an http server config with a notice and never connects to it', async () => {
+  it('reports a remote server config without a credential store as a notice and never connects to it', async () => {
     let connections = 0;
     const server = net.createServer((socket) => {
       connections += 1;
@@ -67,7 +67,7 @@ describe('createMcpPool sources', () => {
     const set = await harness.snapshot();
     const remoteNotices = set.notices.filter((notice) => notice.startsWith('Tool source "mcp__remote" failed to list tools: '));
     expect(remoteNotices).toHaveLength(1);
-    expect(remoteNotices[0]).toMatch(/remote MCP servers/i);
+    expect(remoteNotices[0]).toMatch(/no credential store/i);
     expect(set.get('mcp__legacy__add')?.name).toBe('mcp__legacy__add');
     expect(connections).toBe(0);
   });

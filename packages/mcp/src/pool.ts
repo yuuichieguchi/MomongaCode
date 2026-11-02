@@ -1,7 +1,9 @@
 import type { McpServerEntry } from '@momonga/config';
 import type { Clock } from '@momonga/foundation';
 import type { ToolSource } from '@momonga/tools';
+import type { McpRemotePorts } from './remote-ports.ts';
 import type { McpMarkerOptions } from './stdio-transport.ts';
+import type { McpTimers } from './timers.ts';
 import { createManagedConnection } from './connection.ts';
 import type { McpServerDiagnostics } from './connection.ts';
 import { createMcpToolSource } from './source.ts';
@@ -11,6 +13,8 @@ export type McpPoolOptions = {
   projectDir: string;
   baseEnv: Record<string, string>;
   clock: Clock;
+  timers?: McpTimers;
+  remote?: McpRemotePorts;
   random?: () => number;
   requestTimeoutMs?: number;
   connectTimeoutMs?: number;
@@ -25,15 +29,20 @@ export type McpPool = {
   diagnostics(): McpServerDiagnostics[];
 };
 
-export const createMcpPool = (options: McpPoolOptions): McpPool => {
+export type McpAuthorizingPool = McpPool & { authorize(server: string, signal: AbortSignal): Promise<void> };
+
+export const createMcpPool = (options: McpPoolOptions): McpAuthorizingPool => {
   const { servers, projectDir, baseEnv, clock } = options;
   const connections = servers.map((entry) =>
     createManagedConnection({
       name: entry.name,
       config: entry.config,
+      scope: entry.scope,
       projectDir,
       baseEnv,
       clock,
+      ...(options.timers === undefined ? {} : { timers: options.timers }),
+      ...(options.remote === undefined ? {} : { remote: options.remote }),
       ...(options.random === undefined ? {} : { random: options.random }),
       ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }),
       ...(options.connectTimeoutMs === undefined ? {} : { connectTimeoutMs: options.connectTimeoutMs }),
@@ -54,5 +63,10 @@ export const createMcpPool = (options: McpPoolOptions): McpPool => {
       await Promise.all(connections.map((connection) => connection.close()));
     },
     diagnostics: () => connections.map((connection) => connection.diagnostics()),
+    authorize: (server, signal) => {
+      const connection = connections.find((candidate) => candidate.name === server);
+      if (connection === undefined) return Promise.reject(new Error(`no MCP server named "${server}" in this pool`));
+      return connection.authorize(signal);
+    },
   };
 };

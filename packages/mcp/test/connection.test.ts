@@ -28,6 +28,7 @@ const connect = async (name: string, config: McpServerConfig, requestTimeoutMs?:
   const connection = await connectMcpServer({
     name,
     config,
+    scope: 'user',
     projectDir: makeDir(),
     baseEnv: BASE_ENV,
     clock: createFakeClock(1_000_000),
@@ -78,8 +79,8 @@ describe('connectMcpServer negotiation', () => {
   });
 });
 
-describe('connectMcpServer rejects remote configs', () => {
-  it.each(['http', 'sse'] as const)('rejects a %s config without opening a connection', async (type) => {
+describe('connectMcpServer remote configs', () => {
+  it('refuses a remote config that has no credential store and opens no connection', async () => {
     let connections = 0;
     const server = net.createServer((socket) => {
       connections += 1;
@@ -91,12 +92,13 @@ describe('connectMcpServer rejects remote configs', () => {
     await expect(
       connectMcpServer({
         name: 'remote',
-        config: { type, url: `http://127.0.0.1:${port}/mcp` },
+        config: { type: 'http', url: `http://127.0.0.1:${port}/mcp` },
+        scope: 'user',
         projectDir: makeDir(),
         baseEnv: BASE_ENV,
         clock: createFakeClock(0),
       }),
-    ).rejects.toThrow(/remote MCP servers/i);
+    ).rejects.toThrow(/no credential store/i);
     expect(connections).toBe(0);
   });
 });

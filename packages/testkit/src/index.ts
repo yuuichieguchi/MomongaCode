@@ -114,3 +114,15 @@ export { DAEMON_BIN_EXIT_DEADLINE_MS, DAEMON_BIN_READY_DEADLINE_MS, readJsonLine
 export type { DaemonBin } from './daemon-bin.ts';
 export { APPLE_PROGRAMS, TEST_SEARCH_PATH, fakePolicyFilesystem, isWritableFor, protectedSetWith } from './fake-policy-filesystem.ts';
 export type { FakeGlobExpansion, FakePolicyFilesystem, FakePolicyFilesystemLayout, FakeProgramResolution, FakeResolveCall, RecordingPolicyFilesystem } from './fake-policy-filesystem.ts';
+export { readBody, sendJson, startLoopbackServer } from './loopback-http.ts';
+export type { LoopbackHandler, LoopbackServer } from './loopback-http.ts';
+export { startMcpOauthFixture } from './mcp-oauth-fixture.ts';
+export type { AuthorizeMode, McpOauthFixture, OauthFixtureRecord, TokenVerdict } from './mcp-oauth-fixture.ts';
+export {
+  HTTP_FIXTURE_LEGACY_VERSION,
+  HTTP_FIXTURE_MODERN_VERSION,
+  HTTP_FIXTURE_RECONNECT_DELAY_MS,
+  HTTP_FIXTURE_TASKS_EXTENSION,
+  startMcpHttpFixture,
+} from './mcp-http-fixture.ts';
+export type { FixtureNote, McpHttpFixture, McpHttpFixtureEra, McpHttpFixtureOptions, RecordedHttpRequest } from './mcp-http-fixture.ts';

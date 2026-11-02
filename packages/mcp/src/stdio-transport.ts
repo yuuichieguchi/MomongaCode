@@ -10,7 +10,7 @@ import { reapMarkedProcesses, terminateGroup, type TerminateOutcome } from '@mom
 
 const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 const STDERR_TAIL_BYTES = 64 * 1024;
-const DEFAULT_CLOSE_GRACE_MS = 2000;
+export const DEFAULT_CLOSE_GRACE_MS = 2000;
 const NEWLINE = 0x0a;
 
 export type McpMarkerOptions = { dir: string; onWarning(message: string): void };

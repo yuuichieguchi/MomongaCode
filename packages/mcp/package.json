@@ -11,6 +11,7 @@
     "@momonga/config": "*",
     "@momonga/foundation": "*",
     "@momonga/protocol": "*",
-    "@momonga/tools": "*"
+    "@momonga/tools": "*",
+    "undici": "8.12.3"
   }
 }

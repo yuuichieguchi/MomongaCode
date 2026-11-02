@@ -1,9 +1,10 @@
+import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { loadMcpServers } from '@momonga/config';
 import { canonicalJson, ensureSessionTmpDir as defaultEnsureSessionTmpDir, sha256Hex } from '@momonga/foundation';
 import type { Clock, JsonLogger, MomongaPaths, ReapTiming } from '@momonga/foundation';
-import { createMcpPool, inheritedEnvOf } from '@momonga/mcp';
-import type { McpPool, McpPoolOptions } from '@momonga/mcp';
+import { createFileCredentialStore, createMcpPool, inheritedEnvOf, openInBrowser } from '@momonga/mcp';
+import type { McpPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
 import type { Sandbox } from '@momonga/sandbox';
 import type { RuntimeStore } from '@momonga/store';
 import { createBuiltinTools, createPolicyFilesystem, createToolExecutor, createToolRegistry } from '@momonga/tools';
@@ -33,6 +34,7 @@ export type ToolRuntimeOptions = {
   settings: Pick<SettingsComposition, 'envFor' | 'takeUserSnapshot' | 'loadSessionSettings' | 'trustOracle'>;
   reapTiming: ReapTiming;
   createPool?: (options: McpPoolOptions) => McpPool;
+  mcpRemote?: McpRemotePorts;
   ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<string>;
   policyFilesystem?: PolicyFilesystem;
 };
@@ -50,6 +52,11 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   const { paths, home, store, notifier, clock, timers, logger, report, sandbox, settings, reapTiming } = options;
   if (!path.isAbsolute(home)) throw new TypeError(`home must be an absolute path, got ${home}`);
   const createPool = options.createPool ?? createMcpPool;
+  const mcpRemote: McpRemotePorts = options.mcpRemote ?? {
+    credentials: createFileCredentialStore(path.join(paths.state, 'mcp-credentials')),
+    randomToken: () => randomBytes(32).toString('base64url'),
+    openAuthorizationUrl: openInBrowser,
+  };
   const ensureSessionTmpDir = options.ensureSessionTmpDir ?? defaultEnsureSessionTmpDir;
 
   const policyFilesystem = options.policyFilesystem ?? createPolicyFilesystem();
@@ -92,6 +99,8 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
               projectDir: session.cwd,
               baseEnv: env,
               clock,
+              timers,
+              remote: mcpRemote,
               markers: { dir: paths.markers.mcp, onWarning: (message) => logger.warn(message) },
               closeGraceMs: MCP_CLOSE_GRACE_MS,
             }),
