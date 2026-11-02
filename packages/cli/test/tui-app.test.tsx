@@ -143,6 +143,27 @@ describe('App run rendering', () => {
     app.unmount();
   });
 
+  it('starts the highlight of the next queued approval at its first option', async () => {
+    const { backend, app } = await start();
+    await untilFrame(app, 'mode: default');
+    await runStarted(backend, app, 'x');
+    const options = [
+      { optionId: 'o1', name: 'Allow once', kind: 'allow_once' },
+      { optionId: 'o3', name: 'Reject once', kind: 'reject_once' },
+    ];
+    for (const [callId, approvalId] of [['c1', 'ap1'], ['c2', 'ap2']] as const) {
+      backend.emit(frame({ type: 'tool.call', callId, providerCallId: callId, name: 'Bash', kind: 'execute', title: `Bash ${callId}`, rawInput: { command: 'ls' } }));
+      backend.emit(frame({ type: 'tool.permission.requested', approvalId, callId, subjectDigest: 'd', options }));
+    }
+    await untilFrame(app, 'Permission requested: Bash c1');
+    app.stdin.write(KEYS.down);
+    backend.emit(frame({ type: 'tool.permission.resolved', approvalId: 'ap1', optionId: 'o3' }));
+    await untilFrame(app, 'Permission requested: Bash c2');
+    app.stdin.write(KEYS.enter);
+    await backend.called('approve:ap2:o1');
+    app.unmount();
+  });
+
   it('cancels the run on escape, also while a permission prompt is open', async () => {
     const { backend, app } = await start();
     await untilFrame(app, 'mode: default');
