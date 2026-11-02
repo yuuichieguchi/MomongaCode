@@ -1,11 +1,14 @@
 import { PERMISSION_MODES } from '@momonga/protocol';
 import type { PermissionMode } from '@momonga/protocol';
+import type { TuiBackend } from './backend.ts';
 
 export type SlashContext = {
   readonly mode: PermissionMode;
   readonly bypassAllowed: boolean;
   readonly commands: readonly SlashCommand[];
+  readonly backend: TuiBackend;
   info(text: string): void;
+  startRun(text: string, options?: { skill?: string }): Promise<void>;
   clear(): void;
   exit(): void;
   setMode(mode: PermissionMode): Promise<void>;
@@ -28,6 +31,26 @@ export const createSlashRegistry = (commands: readonly SlashCommand[]): SlashReg
   list: () => commands,
   find: (name) => commands.find((command) => command.name === name || command.aliases?.includes(name) === true),
 });
+
+export type SlashCompletion = { names: readonly string[]; completed: string };
+
+const COMPLETABLE = /^\/[^\s/]*$/;
+
+const commonPrefix = (names: readonly string[]): string =>
+  names.reduce((prefix, name) => {
+    let length = 0;
+    while (length < prefix.length && prefix[length] === name[length]) length += 1;
+    return prefix.slice(0, length);
+  });
+
+export const slashCompletion = (text: string, commands: readonly SlashCommand[]): SlashCompletion | undefined => {
+  if (!COMPLETABLE.test(text)) return undefined;
+  const typed = text.slice(1);
+  const names = commands.map((command) => command.name).filter((name) => name.startsWith(typed));
+  if (names.length === 0) return undefined;
+  const [only] = names;
+  return { names, completed: names.length === 1 && only !== undefined ? `/${only} ` : `/${commonPrefix(names)}` };
+};
 
 export type ParsedSlash = { name: string; args: string };
 

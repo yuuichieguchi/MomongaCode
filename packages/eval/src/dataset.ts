@@ -35,6 +35,7 @@ export type GoldenCase = {
   runs: number;
   minPassRate: number;
   timeoutMs?: number;
+  files?: Record<string, string>;
   graders: GraderSpec[];
 };
 
@@ -82,6 +83,7 @@ export const DATASET_SCHEMA = {
           runs: { type: 'integer', minimum: 1 },
           minPassRate: { type: 'number', minimum: 0, maximum: 1 },
           timeoutMs: { type: 'integer', minimum: 1000 },
+          files: { type: 'object', additionalProperties: { type: 'string' } },
           graders: {
             type: 'array',
             minItems: 1,
@@ -141,6 +143,17 @@ const assertPatternsCompile = (dataset: GoldenDataset, source: string): void => 
   }
 };
 
+const assertFilesStayInside = (dataset: GoldenDataset, source: string): void => {
+  for (const golden of dataset.cases) {
+    for (const name of Object.keys(golden.files ?? {})) {
+      const segments = name.split('/');
+      if (name === '' || name.startsWith('/') || segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
+        throw new DatasetError(`${source}: case ${golden.id} has the fixture file ${JSON.stringify(name)}; fixture names must be relative paths inside the workspace`);
+      }
+    }
+  }
+};
+
 const assertCountRanges = (dataset: GoldenDataset, source: string): void => {
   for (const golden of dataset.cases) {
     for (const spec of golden.graders) {
@@ -163,5 +176,6 @@ export const parseDataset = (text: string, source: string): GoldenDataset => {
   assertUniqueCaseIds(value, source);
   assertPatternsCompile(value, source);
   assertCountRanges(value, source);
+  assertFilesStayInside(value, source);
   return value;
 };

@@ -35,6 +35,12 @@ export type PermissionOption = {
   kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';
 };
 
+export const IMAGE_MEDIA_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const;
+
+export type ImageMediaType = (typeof IMAGE_MEDIA_TYPES)[number];
+
+export type ImageAttachment = { mediaType: ImageMediaType; data: string };
+
 export type ElicitationRequestView =
   | { key: string; mode: 'form'; message: string; requestedSchema: Record<string, unknown> }
   | { key: string; mode: 'url'; message: string; url: string };
@@ -60,7 +66,7 @@ export type JobStatus = (typeof JOB_STATUSES)[number];
 export type ToolAwait = { kind: 'run'; runId: string; sessionId: string; agent: string } | { kind: 'job'; jobId: string };
 
 export type RunEventPayload =
-  | { type: 'user.message'; text: string }
+  | { type: 'user.message'; text: string; images?: ImageAttachment[] }
   | { type: 'run.started'; attempt: number; now: number; pins: Record<string, unknown>; mode?: PermissionMode }
   | { type: 'run.status'; from: RunStatus; to: RunStatus; reason?: string }
   | { type: 'model.requested'; step: number; attempt: number; digest: string; body: unknown }

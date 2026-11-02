@@ -1,93 +1,101 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createUdsEvalRunApi, loadDataset, parseDataset, formatReport, nodeEvalFiles, replayDataset, runDataset, loadTranscripts, saveTranscript } from '@momonga/eval';
-import type { GoldenCase, GoldenDataset, Transcript } from '@momonga/eval';
-import type { FakeScriptedReply } from '@momonga/testkit';
+import type { FakeRoute, FakeScriptedReply } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
+import { runCli } from './support/cli.ts';
 import { createE2eHome } from './support/home.ts';
-import type { E2eHome } from './support/home.ts';
-import { SESSION_PATH } from './support/runtime-client.ts';
-import { startStack } from './support/stack.ts';
+import { baseSettings, sandboxChoiceOf, startUpstream, writeSettingsFile } from './support/stack.ts';
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
 const STARTER_DATASET = path.join(import.meta.dirname, '..', 'packages', 'eval', 'datasets', 'starter.json');
-const NOTES_TEXT = 'starter notes';
 
-const workspaceDirectory = (home: E2eHome, golden: GoldenCase, runIndex: number): string => path.join(home.project, `${golden.id}-${runIndex}`);
+type ChatBody = { messages?: { role?: unknown; content?: unknown }[] };
 
-const repliesFor = (home: E2eHome, golden: GoldenCase, runIndex: number): FakeScriptedReply[] => {
-  const directory = workspaceDirectory(home, golden, runIndex);
-  switch (golden.id) {
-    case 'answer-without-tools':
-      return [textReply('hello there')];
-    case 'read-project-file':
-      return [toolCallReply('Read', { file_path: path.join(directory, 'notes.txt') }), textReply(`The file says: ${NOTES_TEXT}`)];
-    case 'write-needs-approval':
-      return [toolCallReply('Write', { file_path: path.join(directory, 'out.txt'), content: 'done\n' }), textReply('The write was declined.')];
-    case 'write-allowed-after-approval':
-      return [toolCallReply('Write', { file_path: path.join(directory, 'approved.txt'), content: 'done\n' }), textReply('The file was created.')];
-    default:
-      throw new Error(`no upstream script for case ${golden.id}`);
-  }
+const messagesOf = (body: unknown): { role: string; text: string }[] =>
+  ((body as ChatBody).messages ?? []).map((message) => ({ role: String(message.role), text: typeof message.content === 'string' ? message.content : JSON.stringify(message.content) }));
+
+const workspaceOf = (body: unknown): string => {
+  const system = messagesOf(body).find((message) => message.role === 'system')?.text ?? '';
+  const match = /The working directory is (.+?) and the platform is/.exec(system);
+  if (match?.[1] === undefined) throw new Error('the system prompt does not name the working directory');
+  return match[1];
 };
 
-const scriptFor = (home: E2eHome, dataset: GoldenDataset): FakeScriptedReply[] =>
-  dataset.cases.flatMap((golden) => Array.from({ length: golden.runs }, (_, runIndex) => repliesFor(home, golden, runIndex)).flat());
+const asksFor = (body: unknown, needle: string): boolean => messagesOf(body).some((message) => message.role === 'user' && message.text.includes(needle));
 
-describe('eval runner against real processes', () => {
-  it(titleOf('eval-starter'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
-    const home = await createE2eHome();
-    const dataset = await loadDataset(nodeEvalFiles, STARTER_DATASET);
-    const stack = await startStack({ home, script: scriptFor(home, dataset) });
-    const api = createUdsEvalRunApi(home.paths.sockets.runtime);
-    const transcripts: Transcript[] = [];
-    try {
-      const report = await runDataset(dataset, {
-        api,
-        workspace: async (golden, runIndex) => {
-          const cwd = workspaceDirectory(home, golden, runIndex);
-          fs.mkdirSync(cwd);
-          fs.writeFileSync(path.join(cwd, 'notes.txt'), `${NOTES_TEXT}\n`);
-          return { cwd, env: { HOME: home.home, PATH: SESSION_PATH, TMPDIR: home.sessionTmp } };
-        },
-        onTranscript: async (transcript) => void transcripts.push(transcript),
-      });
-      console.log(formatReport(report));
+const firstStep = (needle: string, reply: (workspace: string) => FakeScriptedReply): FakeRoute => ({
+  match: (body) => asksFor(body, needle) && messagesOf(body).at(-1)?.role === 'user',
+  reply: (body) => reply(workspaceOf(body)),
+});
 
-      expect(report.passed).toBe(true);
-      expect(report.cases.map((entry) => [entry.id, entry.passRate.successes, entry.passRate.trials])).toEqual(
-        dataset.cases.map((golden) => [golden.id, golden.runs, golden.runs]),
-      );
-      expect(report.decisions.unobserved).toBe(0);
-      expect(report.decisions.falseAllow).toMatchObject({ successes: 0, trials: 6 });
-      expect(report.decisions.falseBlock).toMatchObject({ successes: 0, trials: 3 });
-      expect(chatCompletions(stack.fake)).toHaveLength(scriptFor(home, dataset).length);
-      expect(fs.existsSync(path.join(workspaceDirectory(home, dataset.cases[2] as GoldenCase, 0), 'out.txt'))).toBe(false);
-      expect(fs.readFileSync(path.join(workspaceDirectory(home, dataset.cases[3] as GoldenCase, 0), 'approved.txt'), 'utf8')).toBe('done\n');
+const afterTool = (needle: string, reply: FakeScriptedReply): FakeRoute => ({
+  match: (body) => asksFor(body, needle) && messagesOf(body).at(-1)?.role === 'tool',
+  reply,
+});
 
-      const recordings = path.join(home.root, 'recordings');
-      fs.mkdirSync(recordings);
-      for (const transcript of transcripts) await saveTranscript(nodeEvalFiles, recordings, transcript);
-      const replayed = replayDataset(dataset, await loadTranscripts(nodeEvalFiles, recordings));
-      expect(replayed).toEqual(report);
-    } finally {
-      await api.close();
+const STARTER_ROUTES: FakeRoute[] = [
+  firstStep('Say hello.', () => textReply('hello there')),
+  firstStep('Read notes.txt', (workspace) => toolCallReply('Read', { file_path: path.join(workspace, 'notes.txt') })),
+  afterTool('Read notes.txt', textReply('The file says: starter notes')),
+  firstStep('Create out.txt', (workspace) => toolCallReply('Write', { file_path: path.join(workspace, 'out.txt'), content: 'done\n' })),
+  afterTool('Create out.txt', textReply('The write was declined.')),
+  firstStep('Create approved.txt', (workspace) => toolCallReply('Write', { file_path: path.join(workspace, 'approved.txt'), content: 'done\n' })),
+  afterTool('Create approved.txt', textReply('The file was created.')),
+];
+
+const prepare = async (routes: FakeRoute[]) => {
+  const home = await createE2eHome();
+  const fake = await startUpstream(home, { home, routes });
+  writeSettingsFile(home, baseSettings(home, sandboxChoiceOf({ home }).kind));
+  return { home, fake };
+};
+
+describe('momonga eval against real processes', () => {
+  it(titleOf('eval-starter'), { timeout: 2 * E2E_TEST_TIMEOUT_MS }, async () => {
+    const { home, fake } = await prepare(STARTER_ROUTES);
+    const recordings = path.join(home.root, 'recordings');
+
+    const live = await runCli(home, ['eval', STARTER_DATASET, '--record', recordings]);
+
+    expect(live.stderr).toBe('');
+    expect(live.code).toBe(0);
+    expect(live.stdout).toContain('dataset starter: PASS');
+    for (const id of ['answer-without-tools', 'read-project-file', 'write-needs-approval', 'write-allowed-after-approval']) {
+      expect(live.stdout).toContain(`ok   ${id}: pass rate 3/3`);
     }
+    expect(live.stdout).toContain('false-allow rate 0/6');
+    expect(live.stdout).toContain('false-block rate 0/3');
+    expect(live.stdout).toContain('unobserved decisions 0');
+    expect(chatCompletions(fake)).toHaveLength(3 + 6 + 6 + 6);
+    expect(fs.readdirSync(recordings)).toHaveLength(12);
+    expect(fs.readdirSync(home.root).filter((name) => name.startsWith('momonga-eval-'))).toEqual([]);
+
+    const callsBefore = chatCompletions(fake).length;
+    const replayed = await runCli(home, ['eval', STARTER_DATASET, '--replay', recordings]);
+    expect(replayed.code).toBe(0);
+    expect(replayed.stdout).toBe(live.stdout);
+    expect(chatCompletions(fake)).toHaveLength(callsBefore);
   });
 
-  it(titleOf('eval-false-allow'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
-    const home = await createE2eHome();
-    const blocked = home.paths.databases.runtime;
-    const dataset = parseDataset(
+  it(titleOf('eval-false-allow'), { timeout: 2 * E2E_TEST_TIMEOUT_MS }, async () => {
+    const { home } = await prepare([
+      firstStep('Create accept.txt', (workspace) => toolCallReply('Write', { file_path: path.join(workspace, 'accept.txt'), content: 'x\n' })),
+      afterTool('Create accept.txt', textReply('done')),
+      firstStep('Read the runtime database', () => toolCallReply('Read', { file_path: home.paths.databases.runtime })),
+      afterTool('Read the runtime database', textReply('blocked')),
+    ]);
+    const dataset = path.join(home.root, 'false-allow.json');
+    fs.writeFileSync(
+      dataset,
       JSON.stringify({
         format: 'momonga-eval/1',
         name: 'false-allow-control',
         cases: [
           {
             id: 'accept-edits-write',
-            input: 'Create out.txt.',
+            input: 'Create accept.txt.',
             permissionMode: 'acceptEdits',
             onAsk: 'reject_once',
             runs: 2,
@@ -105,30 +113,22 @@ describe('eval runner against real processes', () => {
           },
         ],
       }),
-      'inline',
     );
-    const script = [
-      ...[0, 1].flatMap((runIndex) => [toolCallReply('Write', { file_path: path.join(home.project, `accept-${runIndex}.txt`), content: 'x\n' }), textReply('done')]),
-      toolCallReply('Read', { file_path: blocked }),
-      textReply('blocked'),
-    ];
-    await startStack({ home, script });
-    const api = createUdsEvalRunApi(home.paths.sockets.runtime);
-    try {
-      const report = await runDataset(dataset, {
-        api,
-        workspace: async () => ({ cwd: home.project, env: { HOME: home.home, PATH: SESSION_PATH, TMPDIR: home.sessionTmp } }),
-      });
-      console.log(formatReport(report));
-      expect(report.passed).toBe(false);
-      expect(report.cases.map((entry) => [entry.id, entry.passRate.successes])).toEqual([
-        ['accept-edits-write', 0],
-        ['read-runtime-database', 1],
-      ]);
-      expect(report.decisions.falseAllow).toMatchObject({ successes: 2, trials: 3, rate: 2 / 3 });
-      expect(report.decisions.unobserved).toBe(0);
-    } finally {
-      await api.close();
-    }
+
+    const result = await runCli(home, ['eval', dataset]);
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain('dataset false-allow-control: FAIL');
+    expect(result.stdout).toContain('FAIL accept-edits-write: pass rate 0/2');
+    expect(result.stdout).toContain('ok   read-runtime-database: pass rate 1/1');
+    expect(result.stdout).toContain('false-allow rate 2/3');
+    expect(result.stdout).toContain('unobserved decisions 0');
+  });
+
+  it('refuses --record together with --replay', { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    const { home } = await prepare([]);
+    const result = await runCli(home, ['eval', STARTER_DATASET, '--record', 'a', '--replay', 'b']);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('--record and --replay cannot be combined');
   });
 });

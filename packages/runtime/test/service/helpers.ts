@@ -411,6 +411,8 @@ export type ServiceOverrides = {
   wrapStore?: (store: RuntimeStore) => RuntimeStore;
   cancelUpstream?: (runId: string) => Promise<void>;
   runTrace?: (runId: string) => Promise<unknown>;
+  imageInput?: boolean;
+  runCost?: (runs: readonly { runId: string; sessionId: string }[]) => Promise<unknown>;
   onFatal?: boolean;
   sandboxKind?: 'seatbelt' | 'none';
   protectedRootAreas?: readonly string[];
@@ -459,6 +461,21 @@ export const serviceOptions = (
   sandboxKind: overrides.sandboxKind ?? 'seatbelt',
   protectedRootAreas: overrides.protectedRootAreas ?? protectedAreasOf(base.home),
   modelAliases: base.ports.modelAliases,
+  modelCapabilities: async () => ({
+    contextWindow: 8192,
+    maxOutputTokens: 2048,
+    toolCalling: 'native',
+    structuredOutput: 'none',
+    streaming: true,
+    stopSequences: true,
+    imageInput: overrides.imageInput ?? false,
+    parallelToolCalls: false,
+    schemaDialect: 'json-schema-2020-12',
+    tokenCounting: 'estimated',
+    usageReported: true,
+    maxConcurrency: 1,
+    source: 'declared',
+  }),
   sessionCreateSettings: base.ports.sessionCreateSettings,
   skills: overrides.skills ?? diskSkillsPort(base.home, overrides.skillsTrusted),
   mcp: overrides.mcp ?? unusedMcpAdmin,
@@ -471,6 +488,16 @@ export const serviceOptions = (
   ...(overrides.timers === undefined ? {} : { timers: overrides.timers }),
   ...(overrides.cancelUpstream === undefined ? {} : { cancelUpstream: overrides.cancelUpstream }),
   runTrace: overrides.runTrace ?? (async () => undefined),
+  runCost:
+    overrides.runCost ??
+    (async () => ({
+      report: {
+        runs: [],
+        sessions: [],
+        total: { calls: 0, unpricedCalls: 0, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, amount: 0, currency: 'USD', priceVersions: [] },
+      },
+      text: 'cost report',
+    })),
   onError: (error: unknown) => base.errors.push(error),
   ...(base.fatals === undefined ? {} : { onFatal: (error: Error) => base.fatals?.push(error) }),
 });

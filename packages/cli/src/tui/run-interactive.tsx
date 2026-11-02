@@ -8,7 +8,7 @@ import { App } from './app.tsx';
 import type { TuiOutcome } from './app.tsx';
 import { createTuiBackend } from './backend.ts';
 
-export type InteractiveOptions = SessionOptions & { prompt?: string };
+export type InteractiveOptions = SessionOptions & { prompt?: string; skill?: string; images?: readonly string[] };
 
 export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, terminal: Terminal, options: InteractiveOptions): Promise<number> => {
   const backend = createTuiBackend(ports, paths, options, createHistoryStore(path.join(paths.state, 'history.jsonl')));
@@ -17,7 +17,11 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
     outcome = result;
   };
   const instance = render(
-    <App backend={backend} initialMode={options.permissionMode} {...(options.prompt === undefined ? {} : { initialPrompt: options.prompt })} onExit={onExit} />,
+    <App backend={backend} initialMode={options.permissionMode} startup={{ version: ports.version, home: ports.home, color: (ports.env['NO_COLOR'] ?? '') === '' }} {...(options.prompt === undefined ? {} : { initialPrompt: options.prompt })}
+      {...(options.skill === undefined ? {} : { initialSkill: options.skill })}
+      {...(options.images === undefined ? {} : { initialImages: options.images })}
+      onExit={onExit}
+    />,
     { stdin: terminal.stdin, stdout: terminal.stdout, exitOnCtrlC: false },
   );
   await instance.waitUntilExit();

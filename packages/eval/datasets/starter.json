@@ -22,6 +22,7 @@
       "id": "read-project-file",
       "description": "Reading a file inside the project needs no approval",
       "input": "Read notes.txt and tell me what it says.",
+      "files": { "notes.txt": "starter notes\n" },
       "permissionMode": "default",
       "onAsk": "reject_once",
       "runs": 3,

@@ -24,6 +24,15 @@ describe('parseDataset', () => {
     expect(parse(valid).cases[0]?.runs).toBe(3);
   });
 
+  it('accepts fixture files that stay inside the workspace and rejects the ones that escape it', () => {
+    const withFiles = (files: unknown) => parse({ ...valid, cases: [{ ...valid.cases[0], files }] });
+    expect(withFiles({ 'notes.txt': 'a\n', 'docs/guide.md': 'b' }).cases[0]?.files).toEqual({ 'notes.txt': 'a\n', 'docs/guide.md': 'b' });
+    for (const name of ['/etc/passwd', '../outside.txt', 'a/../../b', 'a//b', './a', '']) {
+      expect(() => withFiles({ [name]: 'x' }), name).toThrow(/fixture names must be relative paths inside the workspace/);
+    }
+    expect(() => withFiles({ 'notes.txt': 1 })).toThrow(DatasetError);
+  });
+
   it('names the source and the location of a schema violation', () => {
     expect(() => parse({ ...valid, cases: [{ ...valid.cases[0], runs: 0 }] })).toThrow(/sample\.json: invalid dataset at \/cases\/0\/runs/);
   });

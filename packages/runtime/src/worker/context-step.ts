@@ -1,8 +1,8 @@
 import { ContextOverflowError, PinnedOverflowError, PinnedRoomError, budgetFor, buildContext, measurePinned } from '@momonga/context';
 import type { BuildContextInput, BuildContextPorts, BuiltContext, CompactionPlan, ContextEviction, PinnedMeasure } from '@momonga/context';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import { compactionSummaryMessage, decodeCompactionSummary } from '@momonga/protocol';
-import type { CompactRequest, RunEventPayload } from '@momonga/protocol';
+import { compactionSummaryMessage, decodeCompactionSummary, userMessageContent } from '@momonga/protocol';
+import type { CompactRequest, ContentPart, RunEventPayload } from '@momonga/protocol';
 import { GatewayRequestError } from '../gateway-client.ts';
 import type { ClaimContext } from './claim-context.ts';
 import { touchedPathsOf } from './touched-paths.ts';
@@ -36,10 +36,10 @@ const sessionOf = (ctx: ClaimContext) => {
   return session;
 };
 
-const taskTextOf = (ctx: ClaimContext): string => {
+const taskContentOf = (ctx: ClaimContext): ContentPart[] => {
   const [first] = ctx.options.store.readRunEvents(ctx.run.id, 0, 1);
   if (first === undefined || first.type !== 'user.message') throw new Error(`run ${ctx.run.id} does not start with a user message`);
-  return first.text;
+  return userMessageContent(first.text, first.images);
 };
 
 export const contextInputOf = (ctx: ClaimContext, wrapUp: WrapUpReason | undefined, level: number): BuildContextInput => {
@@ -52,7 +52,7 @@ export const contextInputOf = (ctx: ClaimContext, wrapUp: WrapUpReason | undefin
     sources: {
       systemPrompt: ctx.systemPrompt,
       tools: ctx.functionTools(),
-      task: { type: 'message', role: 'user', content: [{ type: 'input_text', text: taskTextOf(ctx) }] },
+      task: { type: 'message', role: 'user', content: taskContentOf(ctx) },
       taskSeq: state.taskSeq,
       ...(ctx.skills.catalog === undefined ? {} : { skillCatalog: ctx.skills.catalog }),
       activatedSkills: state.activatedSkills,

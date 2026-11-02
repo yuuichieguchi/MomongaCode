@@ -1,52 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { PublicRunEvent } from '@momonga/protocol';
-import type { RunEventFrame } from '../src/client/runtime-client.ts';
-import { App } from '../src/tui/app.tsx';
-import type { TuiOutcome } from '../src/tui/app.tsx';
 import { createSlashRegistry, BUILTIN_SLASH_COMMANDS } from '../src/tui/slash.ts';
+import { App } from '../src/tui/app.tsx';
 import { fakeBackend, runView } from './fake-backend.ts';
-import type { FakeBackend, FakeBackendOptions } from './fake-backend.ts';
 import { KEYS, renderObservable, untilFrame, untilOutput } from './ink-helpers.ts';
-import type { Instance } from './ink-helpers.ts';
-
-const base = { runId: 'run-1', sessionId: 'session-1', step: 1, createdAt: 1 } as const;
-
-let sequence = 0;
-
-const frame = (event: Record<string, unknown>): RunEventFrame => {
-  sequence += 1;
-  return { id: sequence, event: String(event['type']), data: { ...base, id: sequence, seq: sequence, ...event } as PublicRunEvent };
-};
-
-const start = async (options: FakeBackendOptions = {}, extra: { prompt?: string } = {}) => {
-  const backend = fakeBackend(options);
-  const outcomes: TuiOutcome[] = [];
-  const exited = Promise.withResolvers<TuiOutcome>();
-  const app = renderObservable(
-    <App
-      backend={backend}
-      initialMode={undefined}
-      {...(extra.prompt === undefined ? {} : { initialPrompt: extra.prompt })}
-      onExit={(outcome) => {
-        outcomes.push(outcome);
-        exited.resolve(outcome);
-      }}
-    />,
-  );
-  return { backend, app, outcomes, exited: exited.promise };
-};
-
-const type = async (app: Instance, text: string, echo: string): Promise<void> => {
-  app.stdin.write(text);
-  await untilFrame(app, echo);
-};
-
-const runStarted = async (backend: FakeBackend, app: Instance, text: string): Promise<void> => {
-  await type(app, text, `> ${text}`);
-  app.stdin.write(KEYS.enter);
-  await untilOutput(app, `> ${text}`);
-  await backend.called('openSession');
-};
+import { frame, runStarted, start, type } from './tui-harness.tsx';
 
 describe('App startup', () => {
   it('opens the session of a trusted folder and shows the status line', async () => {
@@ -84,7 +41,7 @@ describe('App startup', () => {
   });
 
   it('sends an initial prompt once the session is ready', async () => {
-    const { backend, app } = await start({}, { prompt: 'list the files' });
+    const { backend, app } = await start({}, { initialPrompt: 'list the files' });
     await untilOutput(app, '> list the files');
     expect(backend.started).toEqual([{ text: 'list the files', history: 'inherit' }]);
     app.unmount();

@@ -1,6 +1,7 @@
 import { createUdsClient, decodeSse, parseRetryAfter } from '@momonga/foundation';
 import type { UdsClient, UdsResponse } from '@momonga/foundation';
 import { ERROR_TYPES } from '@momonga/protocol';
+import type { CostReportView } from '@momonga/protocol';
 import type {
   Capabilities,
   CompactRequest,
@@ -58,6 +59,7 @@ export type GatewayModel = { id: string; capabilities: Capabilities };
 export type GatewayClient = GatewayPort & {
   models(): Promise<GatewayModel[]>;
   health(): Promise<GatewayHealth>;
+  cost(runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal): Promise<{ report: CostReportView; text: string }>;
   destroy(): Promise<void>;
 };
 
@@ -351,6 +353,11 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
     },
 
     models: () => listModels(noSignal),
+    cost: async (runs, signal) => {
+      const parsed = await unary({ method: 'POST', path: '/v1/momonga/cost', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ runs }) }, signal, unaryBound());
+      if (!isRecord(parsed) || !isRecord(parsed['report']) || typeof parsed['text'] !== 'string') throw invalidResponse('the cost answer has no report and text');
+      return { report: parsed['report'] as CostReportView, text: parsed['text'] };
+    },
 
     health: async (): Promise<GatewayHealth> => {
       const parsed = await unary({ method: 'GET', path: '/v1/momonga/health', headers: {} }, noSignal, unaryBound());

@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const HISTORY_ENTRIES = 500;
+const BASH_DEFAULT_HISTSIZE = 500;
+
+export const HISTORY_ENTRIES = BASH_DEFAULT_HISTSIZE;
 
 export const HISTORY_FILE_MODE = 0o600;
 

@@ -22,11 +22,13 @@ export { findDanglingOutput, findUnpairedCalls } from './call-pairing.ts';
 export { compactionSummaryMessage, decodeCompactionSummary } from './compaction-summary.ts';
 export { PROBE_KEYWORDS } from './probe.ts';
 export type { ProbeKeyword, ProbeReport } from './probe.ts';
-export { RUN_API_SCHEMAS, toPublicRunEvent } from './run-api.ts';
+export { RUN_API_SCHEMAS, base64ByteLength, toPublicRunEvent } from './run-api.ts';
 export { MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES } from './run-api.ts';
 export type {
   JobView,
   JobsResponse,
+  CostReportView,
+  CostTotalsView,
   JsonSchema,
   McpAuthState,
   McpAuthorizationView,
@@ -42,16 +44,19 @@ export type {
 } from './run-api.ts';
 export { MEMORY_SCOPES } from './memory.ts';
 export type { MemoriesResponse, MemoryResponse, MemoryScope, MemorySource, MemoryView } from './memory.ts';
+export { imageDataUrl, userMessageContent } from './user-content.ts';
 export { escapeXmlAttribute, escapeXmlText } from './xml.ts';
 export { SKILL_CONTENT_CLOSE_TAG, skillContentOpenTag } from './skill-content.ts';
 export { AUTO_MODE_UNAVAILABLE, isUnavailableMode } from './auto-mode.ts';
-export { APPROVAL_STATUSES, JOB_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS } from './run-types.ts';
+export { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS } from './run-types.ts';
 export type {
   ActivatedSkillRecord,
   ApprovalStatus,
   ElicitationAnswerRecord,
   ElicitationRequestView,
   JobStatus,
+  ImageAttachment,
+  ImageMediaType,
   ModelResponse,
   PendingCallStatus,
   PermissionMode,

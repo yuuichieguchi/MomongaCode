@@ -2,15 +2,18 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { registerE2eCleanup } from './home.ts';
 import type { E2eHome } from './home.ts';
-import { REPO_ROOT } from './launcher.ts';
+import { CLI_BUNDLE, CLI_FAKES_BUNDLE } from './cli-bundles.ts';
 import { SESSION_PATH } from './runtime-client.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, withinBound } from './wait.ts';
 
-export const CLI_BUNDLE = path.join(REPO_ROOT, 'packages', 'cli', 'dist', 'main.js');
+export { CLI_BUNDLE, CLI_FAKES_BUNDLE, CLI_FAKES_ENTRY } from './cli-bundles.ts';
+
+export const OPEN_LOG_FILE_NAME = 'opened-urls.log';
+export const SECRETS_FILE_NAME = 'fake-secrets.json';
 
 export type CliResult = { readonly code: number | null; readonly signal: NodeJS.Signals | null; readonly stdout: string; readonly stderr: string };
 
-export type RunCliOptions = { env?: Readonly<Record<string, string>>; cwd?: string; boundMs?: number };
+export type RunCliOptions = { env?: Readonly<Record<string, string>>; cwd?: string; boundMs?: number; bundle?: string };
 
 export const cliEnv = (home: E2eHome, extra: Readonly<Record<string, string>> = {}): Record<string, string> => ({
   PATH: SESSION_PATH,
@@ -20,10 +23,10 @@ export const cliEnv = (home: E2eHome, extra: Readonly<Record<string, string>> = 
   ...extra,
 });
 
-export type RunningCli = { readonly result: Promise<CliResult>; interrupt(): void };
+export type RunningCli = { readonly result: Promise<CliResult>; interrupt(): void; partialStdout(): string; partialStderr(): string };
 
 export const startCli = (home: E2eHome, args: readonly string[], options: RunCliOptions = {}): RunningCli => {
-  const child = spawn(process.execPath, [CLI_BUNDLE, ...args], {
+  const child = spawn(process.execPath, [options.bundle ?? CLI_BUNDLE, ...args], {
     cwd: options.cwd ?? home.project,
     env: cliEnv(home, options.env),
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -46,7 +49,17 @@ export const startCli = (home: E2eHome, args: readonly string[], options: RunCli
   const result = withinBound(closed, options.boundMs ?? E2E_RUN_COMPLETED_BOUND_MS, `momonga ${args.join(' ')}`).catch((error: unknown) => {
     throw new Error(`${error instanceof Error ? error.message : String(error)}\nstdout so far:\n${stdout}\nstderr so far:\n${stderr}`, { cause: error });
   });
-  return { result, interrupt: () => void child.kill('SIGINT') };
+  return { result, interrupt: () => void child.kill('SIGINT'), partialStdout: () => stdout, partialStderr: () => stderr };
 };
 
 export const runCli = (home: E2eHome, args: readonly string[], options: RunCliOptions = {}): Promise<CliResult> => startCli(home, args, options).result;
+
+export const fakePortsEnv = (home: E2eHome): Record<string, string> => ({
+  MOMONGA_E2E_OPEN_LOG: path.join(home.root, OPEN_LOG_FILE_NAME),
+  MOMONGA_E2E_SECRETS_FILE: path.join(home.root, SECRETS_FILE_NAME),
+});
+
+export const startCliWithFakes = (home: E2eHome, args: readonly string[], options: RunCliOptions = {}): RunningCli =>
+  startCli(home, args, { ...options, bundle: CLI_FAKES_BUNDLE, env: { ...fakePortsEnv(home), ...options.env } });
+
+export const runCliWithFakes = (home: E2eHome, args: readonly string[], options: RunCliOptions = {}): Promise<CliResult> => startCliWithFakes(home, args, options).result;

@@ -1,25 +1,39 @@
 import { useEffect, useEffectEvent, useReducer, useRef, useState } from 'react';
-import { Box, Static, Text, useApp, useInput, useStdout } from 'ink';
-import type { PermissionMode, PermissionOption } from '@momonga/protocol';
+import { Box, Static, Text, useApp, useInput, usePaste, useStdout, useWindowSize } from 'ink';
+import type { Capabilities, ImageAttachment, MomongaModelEntry, PermissionMode, PermissionOption } from '@momonga/protocol';
+import { currentField, currentRequest, decide, enterValue, leaveFields, withError } from '../elicit/flow.ts';
+import type { ElicitationDecision, ElicitationFlow } from '../elicit/flow.ts';
 import type { RunEventFrame } from '../client/runtime-client.ts';
 import type { RunView } from '../client/views.ts';
+import { describeAttachment, pastedImagePaths } from '../images.ts';
 import { describeEnd } from '../run/headless.ts';
-import type { TuiBackend } from './backend.ts';
-import { clipDiff, diffOfToolInput } from './diff.ts';
+import type { StartRunOptions, TuiBackend } from './backend.ts';
+import { DEFAULT_SLASH_COMMANDS } from './commands/index.ts';
+import { StartupScreen } from './startup.tsx';
+import type { StartupConfig } from './startup.tsx';
+import { skillCommands } from './commands/skills.ts';
+import { clipDiff, diffOfToolInput, maxDiffLines } from './diff.ts';
 import type { DiffLine } from './diff.ts';
 import { applyKey, emptyEditor } from './editor.ts';
 import type { EditorState } from './editor.ts';
-import { createSlashRegistry, BUILTIN_SLASH_COMMANDS, parseSlash } from './slash.ts';
-import type { SlashRegistry } from './slash.ts';
-import { appendEntry, initialTranscript, nextMode, reduceEvent, settledCount } from './transcript.ts';
-import type { Entry, PendingApproval, Transcript } from './transcript.ts';
+import { createSlashRegistry, parseSlash, slashCompletion } from './slash.ts';
+import type { SlashCommand, SlashRegistry } from './slash.ts';
+import { appendEntry, initialTranscript, nextMode, reduceEvent, settledCount, withElicitationFlow } from './transcript.ts';
+import type { Entry, PendingApproval, PendingElicitation, Transcript } from './transcript.ts';
 
 export type TuiOutcome = { error?: Error };
+
+type StaticItem = { kind: 'banner' } | { kind: 'entry'; entry: Entry };
+
+type Attachment = { file: string; image: ImageAttachment };
 
 export type AppProps = {
   backend: TuiBackend;
   initialMode: PermissionMode | undefined;
   initialPrompt?: string;
+  initialImages?: readonly string[];
+  initialSkill?: string;
+  startup?: StartupConfig;
   slash?: SlashRegistry;
   onExit(outcome: TuiOutcome): void;
 };
@@ -29,6 +43,7 @@ type Phase = { kind: 'starting' } | { kind: 'trust'; path: string } | { kind: 'r
 type TranscriptAction =
   | { kind: 'event'; frame: RunEventFrame }
   | { kind: 'append'; entry: Entry }
+  | { kind: 'elicitation-flow'; flow: ElicitationFlow; submitted: boolean }
   | { kind: 'run-started'; runId: string }
   | { kind: 'reset' };
 
@@ -38,6 +53,8 @@ const transcriptReducer = (state: Transcript, action: TranscriptAction): Transcr
       return reduceEvent(state, action.frame.data);
     case 'append':
       return appendEntry(state, action.entry);
+    case 'elicitation-flow':
+      return withElicitationFlow(state, action.flow, action.submitted);
     case 'run-started':
       return { ...state, runId: action.runId, runStatus: 'QUEUED' };
     case 'reset':
@@ -99,8 +116,8 @@ const diffPrefix = (line: DiffLine): string => {
 
 const colorProps = (color: string | undefined): { color?: string } => (color === undefined ? {} : { color });
 
-function DiffView({ lines }: { lines: readonly DiffLine[] }) {
-  const clipped = clipDiff(lines);
+function DiffView({ lines, max }: { lines: readonly DiffLine[]; max: number }) {
+  const clipped = clipDiff(lines, max);
   return (
     <Box flexDirection="column">
       {clipped.lines.map((line, index) => (
@@ -146,11 +163,12 @@ function EntryView({ entry }: { entry: Entry }) {
 }
 
 function ApprovalPrompt({ approval, tool, selected }: { approval: PendingApproval; tool: Extract<Entry, { kind: 'tool' }> | undefined; selected: number }) {
+  const { rows } = useWindowSize();
   const diff = tool === undefined ? undefined : diffOfToolInput(tool.name, tool.rawInput);
   return (
     <Box flexDirection="column" borderStyle="round" paddingX={1}>
       <Text bold>{`Permission requested: ${tool?.title ?? approval.callId}`}</Text>
-      {diff === undefined ? null : <DiffView lines={diff} />}
+      {diff === undefined ? null : <DiffView lines={diff} max={maxDiffLines(rows, approval.options.length)} />}
       {approval.options.map((option: PermissionOption, index) => (
         <Text key={option.optionId} inverse={index === selected}>{`${index + 1}. ${option.name}`}</Text>
       ))}
@@ -185,13 +203,61 @@ function InputBox({ editor }: { editor: EditorState }) {
   );
 }
 
+export const decisionChoices = (flow: ElicitationFlow): readonly { decision: ElicitationDecision; label: string }[] => {
+  const accept = currentRequest(flow).mode === 'url' ? 'Open the URL in the browser and accept' : 'Submit';
+  return [
+    { decision: 'accept', label: accept },
+    { decision: 'decline', label: 'Decline' },
+    { decision: 'cancel', label: 'Cancel' },
+  ];
+};
+
+function ElicitationPrompt({ elicitation, title, editor, selected }: { elicitation: PendingElicitation; title: string; editor: EditorState; selected: number }) {
+  const { flow } = elicitation;
+  const request = currentRequest(flow);
+  const field = currentField(flow);
+  return (
+    <Box flexDirection="column">
+      <Box flexDirection="column" borderStyle="round" paddingX={1}>
+        <Text bold>{`MCP server ${elicitation.server} asks for input (${title}) ${flow.index + 1}/${flow.requests.length}`}</Text>
+        <Text>{request.message}</Text>
+        {request.mode === 'url' ? <Text>{`URL: ${request.url}`}</Text> : null}
+        {flow.stage === 'fields' && field !== undefined ? (
+          <Box flexDirection="column">
+            <Text bold>{`${field.title} (${field.name}, ${field.kind}${field.required ? ', required' : ', optional: leave empty to skip'})`}</Text>
+            {field.description === undefined ? null : <Text dimColor>{field.description}</Text>}
+            {field.options.map((option, index) => (
+              <Text key={option.value}>{`  ${index + 1}. ${option.label}`}</Text>
+            ))}
+          </Box>
+        ) : null}
+        {flow.stage === 'decision'
+          ? decisionChoices(flow).map((choice, index) => (
+              <Text key={choice.decision} inverse={index === selected}>{`${index + 1}. ${choice.label}`}</Text>
+            ))
+          : null}
+        {flow.error === undefined ? null : <Text color="red">{flow.error}</Text>}
+        {elicitation.submitted ? <Text dimColor>sending the answer…</Text> : null}
+        <Text dimColor>
+          {flow.stage === 'fields'
+            ? 'enter to confirm the value, esc to decline or cancel instead'
+            : '1-3 or up/down and enter to choose, esc to cancel the run'}
+        </Text>
+      </Box>
+      {flow.stage === 'fields' ? <InputBox editor={editor} /> : null}
+    </Box>
+  );
+}
+
 const errorOf = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
 export function App(props: AppProps) {
   const { backend, onExit } = props;
   const { exit } = useApp();
   const { stdout } = useStdout();
-  const slash = props.slash ?? createSlashRegistry(BUILTIN_SLASH_COMMANDS);
+  const baseSlash = props.slash ?? createSlashRegistry(DEFAULT_SLASH_COMMANDS);
+  const [skillSlash, setSkillSlash] = useState<readonly SlashCommand[]>([]);
+  const slash = createSlashRegistry([...baseSlash.list(), ...skillSlash]);
   const [phase, setPhase] = useState<Phase>({ kind: 'starting' });
   const [transcript, dispatch] = useReducer(transcriptReducer, initialTranscript);
   const [editor, setEditor] = useState<EditorState>(emptyEditor());
@@ -199,7 +265,12 @@ export function App(props: AppProps) {
   const [bypassAllowed, setBypassAllowed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [approvalIndex, setApprovalIndexState] = useState(0);
-  const [contextWindow, setContextWindow] = useState<number | undefined>(undefined);
+  const [model, setModel] = useState<MomongaModelEntry | undefined>(undefined);
+  const [alias, setAlias] = useState<string | undefined>(undefined);
+  const [notices, setNotices] = useState<readonly string[]>([]);
+  const capabilities: Capabilities | undefined = model?.capabilities;
+  const [attachments, setAttachmentsState] = useState<readonly Attachment[]>([]);
+  const [elicitEditor, setElicitEditor] = useState<EditorState>(emptyEditor());
   const [epoch, setEpoch] = useState(0);
   const [reconnecting, setReconnecting] = useState(false);
   const nextHistory = useRef<'inherit' | 'fresh'>('inherit');
@@ -208,10 +279,23 @@ export function App(props: AppProps) {
   const runIdRef = useRef<string | undefined>(undefined);
   const editorRef = useRef<EditorState>(editor);
   const approvalIndexRef = useRef(0);
+  const attachmentsRef = useRef<readonly Attachment[]>([]);
+  const elicitEditorRef = useRef<EditorState>(elicitEditor);
+  const flowRef = useRef<{ inputId: string; flow: ElicitationFlow } | undefined>(undefined);
 
   const setApprovalIndex = (index: number): void => {
     approvalIndexRef.current = index;
     setApprovalIndexState(index);
+  };
+
+  const setAttachments = (next: readonly Attachment[]): void => {
+    attachmentsRef.current = next;
+    setAttachmentsState(next);
+  };
+
+  const replaceElicitEditor = (next: EditorState): void => {
+    elicitEditorRef.current = next;
+    setElicitEditor(next);
   };
 
   const replaceEditor = (next: EditorState): void => {
@@ -240,12 +324,31 @@ export function App(props: AppProps) {
   const openSession = async (): Promise<void> => {
     const session = await backend.openSession();
     setModeState(session.permissionMode);
+    setAlias(session.modelAlias);
     setBypassAllowed(session.bypassAllowed);
     replaceEditor(emptyEditor(await backend.loadHistory()));
     setPhase({ kind: 'ready' });
-    void backend.contextWindow().then(setContextWindow, (error: unknown) => {
-      dispatch({ kind: 'append', entry: { kind: 'notice', level: 'warning', text: `context window unavailable: ${errorOf(error).message}` } });
+    void backend.model().then(setModel, (error: unknown) => {
+      dispatch({ kind: 'append', entry: { kind: 'notice', level: 'warning', text: `model information unavailable: ${errorOf(error).message}` } });
     });
+    void backend.startupNotices().then(
+      (found) => setNotices((previous) => [...previous, ...found]),
+      (error: unknown) => {
+        dispatch({ kind: 'append', entry: { kind: 'notice', level: 'warning', text: `startup notices unavailable: ${errorOf(error).message}` } });
+      },
+    );
+    void backend.skills().then(
+      ({ skills, warnings }) => {
+        const taken = new Set(baseSlash.list().flatMap((command) => [command.name, ...(command.aliases ?? [])]));
+        const loaded = skillCommands(skills, taken);
+        setSkillSlash(loaded.commands);
+        setNotices((previous) => [...previous, ...warnings]);
+        if (loaded.shadowed.length > 0) note(`skills shadowed by a built-in command and reachable only through the model: ${loaded.shadowed.join(', ')}`);
+      },
+      (error: unknown) => {
+        dispatch({ kind: 'append', entry: { kind: 'notice', level: 'warning', text: `skills unavailable: ${errorOf(error).message}` } });
+      },
+    );
   };
 
   const boot = useEffectEvent(async (): Promise<void> => {
@@ -265,13 +368,17 @@ export function App(props: AppProps) {
     void boot();
   }, [backend]);
 
-  const runPrompt = async (text: string): Promise<void> => {
+  const runPrompt = async (text: string, options: { skill?: string } = {}): Promise<void> => {
     setBusy(true);
+    const sent = attachmentsRef.current;
+    setAttachments([]);
     dispatch({ kind: 'append', entry: { kind: 'user', text } });
+    for (const attachment of sent) note(`attached ${describeAttachment(attachment.file, attachment.image)}`);
     try {
       const history = nextHistory.current;
       nextHistory.current = 'inherit';
-      const started = await backend.startRun(text, history);
+      const runOptions: StartRunOptions = { ...options, ...(sent.length === 0 ? {} : { images: sent.map((attachment) => attachment.image) }) };
+      const started = await backend.startRun(text, history, runOptions);
       runIdRef.current = started.id;
       dispatch({ kind: 'run-started', runId: started.id });
       const run: RunView = await backend.follow(started.id, {
@@ -303,7 +410,15 @@ export function App(props: AppProps) {
       mode,
       bypassAllowed,
       commands: slash.list(),
+      backend,
       info: note,
+      startRun: async (task, runOptions) => {
+        if (busy) {
+          note('a task is running; press esc to cancel it');
+          return;
+        }
+        await runPrompt(task, runOptions);
+      },
       clear: () => {
         nextHistory.current = 'fresh';
         dispatch({ kind: 'reset' });
@@ -337,9 +452,16 @@ export function App(props: AppProps) {
   };
 
   const sendInitialPrompt = useEffectEvent((): void => {
-    if (props.initialPrompt === undefined || initialPromptSent.current) return;
+    if (initialPromptSent.current) return;
     initialPromptSent.current = true;
-    submit(props.initialPrompt).catch(reportError);
+    const { initialPrompt, initialImages, initialSkill } = props;
+    const send = async (): Promise<void> => {
+      if (initialImages !== undefined && initialImages.length > 0) await attach(initialImages);
+      if (initialPrompt === undefined) return;
+      if (initialSkill === undefined) await submit(initialPrompt);
+      else await runPrompt(initialPrompt, { skill: initialSkill });
+    };
+    send().catch(reportError);
   });
 
   useEffect(() => {
@@ -355,6 +477,94 @@ export function App(props: AppProps) {
   const resolveApproval = (approval: PendingApproval, option: PermissionOption | undefined): void => {
     if (option === undefined) return;
     backend.resolveApproval(approval.approvalId, option.optionId).catch(reportError);
+  };
+
+  const attach = async (files: readonly string[]): Promise<void> => {
+    const added: Attachment[] = [];
+    for (const file of files) added.push({ file, image: await backend.readImage(file) });
+    setAttachments([...attachmentsRef.current, ...added]);
+  };
+
+  const imageInput = capabilities?.imageInput === true;
+
+  usePaste(
+    (text) => {
+      const paths = imageInput ? pastedImagePaths(text) : undefined;
+      if (paths !== undefined) {
+        attach(paths).catch(reportError);
+        return;
+      }
+      if (transcript.elicitation !== undefined) {
+        if (transcript.elicitation.flow.stage === 'fields') replaceElicitEditor(applyKey(elicitEditorRef.current, { input: text }).state);
+        return;
+      }
+      replaceEditor(applyKey(editorRef.current, { input: text }).state);
+    },
+    { isActive: phase.kind === 'ready' && transcript.approval === undefined },
+  );
+
+  const flowOf = (pending: PendingElicitation): ElicitationFlow =>
+    flowRef.current?.inputId === pending.inputId ? flowRef.current.flow : pending.flow;
+
+  const applyFlow = (pending: PendingElicitation, flow: ElicitationFlow, submitted = false): void => {
+    flowRef.current = { inputId: pending.inputId, flow };
+    setApprovalIndex(0);
+    dispatch({ kind: 'elicitation-flow', flow, submitted });
+  };
+
+  const proceedFlow = (pending: PendingElicitation, flow: ElicitationFlow): void => {
+    if (!flow.complete) {
+      applyFlow(pending, flow);
+      return;
+    }
+    applyFlow(pending, flow, true);
+    backend.resolveElicitation(pending.inputId, flow.answers).catch((error: unknown) => {
+      applyFlow(pending, withError({ ...flow, complete: false, stage: 'decision' }, errorOf(error).message));
+    });
+  };
+
+  const decideFlow = (pending: PendingElicitation, decision: ElicitationDecision | undefined): void => {
+    if (decision === undefined) return;
+    const flow = flowOf(pending);
+    const request = currentRequest(flow);
+    if (decision === 'accept' && request.mode === 'url') {
+      const next = decide(flow, decision);
+      backend.openUrl(new URL(request.url)).then(
+        () => proceedFlow(pending, next),
+        (error: unknown) => applyFlow(pending, withError(flow, `could not open the URL: ${errorOf(error).message}`)),
+      );
+      return;
+    }
+    proceedFlow(pending, decide(flow, decision));
+  };
+
+  const elicitationKey = (pending: PendingElicitation, input: string, key: Parameters<Parameters<typeof useInput>[0]>[1]): void => {
+    if (key.ctrl && input === 'c') {
+      cancelRun();
+      return;
+    }
+    if (pending.submitted) return;
+    const flow = flowOf(pending);
+    if (flow.stage === 'decision') {
+      const choices = decisionChoices(flow);
+      if (key.escape) cancelRun();
+      else if (key.upArrow) setApprovalIndex((approvalIndexRef.current + choices.length - 1) % choices.length);
+      else if (key.downArrow) setApprovalIndex((approvalIndexRef.current + 1) % choices.length);
+      else if (key.return) decideFlow(pending, choices[approvalIndexRef.current]?.decision);
+      else if (/^[1-9]$/.test(input)) decideFlow(pending, choices[Number(input) - 1]?.decision);
+      return;
+    }
+    if (key.escape) {
+      applyFlow(pending, leaveFields(flow));
+      return;
+    }
+    if (key.return && elicitEditorRef.current.text === '') {
+      applyFlow(pending, enterValue(flow, ''));
+      return;
+    }
+    const outcome = applyKey(elicitEditorRef.current, { ...key, input });
+    replaceElicitEditor(outcome.state);
+    if (outcome.submit !== undefined) applyFlow(pending, enterValue(flow, outcome.submit));
   };
 
   const cycleMode = (): void => {
@@ -389,6 +599,10 @@ export function App(props: AppProps) {
       cycleMode();
       return;
     }
+    if (transcript.elicitation !== undefined) {
+      elicitationKey(transcript.elicitation, input, key);
+      return;
+    }
     const approval = transcript.approval;
     if (approval !== undefined) {
       if (key.escape || (key.ctrl && input === 'c')) {
@@ -415,6 +629,15 @@ export function App(props: AppProps) {
       finish({});
       return;
     }
+    if ((key.backspace || key.delete) && editorRef.current.text === '' && attachmentsRef.current.length > 0) {
+      setAttachments(attachmentsRef.current.slice(0, -1));
+      return;
+    }
+    if (key.tab) {
+      const completion = slashCompletion(editorRef.current.text, slash.list());
+      if (completion !== undefined) replaceEditor({ ...editorRef.current, text: completion.completed, cursor: completion.completed.length, historyIndex: undefined });
+      return;
+    }
     const outcome = applyKey(editorRef.current, { ...key, input });
     replaceEditor(outcome.state);
     if (outcome.submit !== undefined) {
@@ -425,20 +648,31 @@ export function App(props: AppProps) {
 
   const settled = settledCount(transcript.entries);
   const pendingTool = transcript.approval === undefined ? undefined : transcript.entries.find((entry): entry is Extract<Entry, { kind: 'tool' }> => entry.kind === 'tool' && entry.callId === transcript.approval?.callId);
+  const contextWindow = capabilities?.contextWindow;
   const contextPercent = contextWindow === undefined || transcript.contextTokens === undefined ? undefined : Math.round((transcript.contextTokens / contextWindow) * 100);
+  const pendingTitle = transcript.elicitation === undefined ? '' : (transcript.entries.find((entry): entry is Extract<Entry, { kind: 'tool' }> => entry.kind === 'tool' && entry.callId === transcript.elicitation?.callId)?.title ?? transcript.elicitation.callId);
+  const completion = phase.kind === 'ready' ? slashCompletion(editor.text, slash.list()) : undefined;
+
+  const banner =
+    props.startup === undefined || alias === undefined ? null : (
+      <StartupScreen config={props.startup} model={{ alias, targets: model?.targets }} mode={mode} cwd={backend.cwd} notices={notices} />
+    );
+  const staticItems: StaticItem[] = [
+    ...(banner !== null && transcript.entries.length > 0 ? [{ kind: 'banner' } as const] : []),
+    ...transcript.entries.slice(0, settled).map((entry): StaticItem => ({ kind: 'entry', entry })),
+  ];
 
   return (
     <Box flexDirection="column">
-      <Static key={epoch} items={transcript.entries.slice(0, settled)}>
-        {(entry, index) => (
-          <Box key={index}>
-            <EntryView entry={entry} />
-          </Box>
+      <Static key={epoch} items={staticItems}>
+        {(item, index) => (
+          <Box key={index}>{item.kind === 'banner' ? banner : <EntryView entry={item.entry} />}</Box>
         )}
       </Static>
       {transcript.entries.slice(settled).map((entry, index) => (
         <EntryView key={index} entry={entry} />
       ))}
+      {phase.kind === 'ready' && transcript.entries.length === 0 ? banner : null}
       {phase.kind === 'starting' ? <Text dimColor>starting the momonga daemon…</Text> : null}
       {phase.kind === 'trust' ? (
         <Box flexDirection="column" borderStyle="round" paddingX={1}>
@@ -451,10 +685,21 @@ export function App(props: AppProps) {
         </Box>
       ) : null}
       {phase.kind === 'ready' && transcript.approval !== undefined ? <ApprovalPrompt approval={transcript.approval} tool={pendingTool} selected={approvalIndex} /> : null}
-      {phase.kind === 'ready' && transcript.approval === undefined ? <InputBox editor={editor} /> : null}
+      {phase.kind === 'ready' && transcript.elicitation !== undefined ? (
+        <ElicitationPrompt elicitation={transcript.elicitation} title={pendingTitle} editor={elicitEditor} selected={approvalIndex} />
+      ) : null}
+      {phase.kind === 'ready' && transcript.approval === undefined && transcript.elicitation === undefined ? (
+        <Box flexDirection="column">
+          {attachments.map((attachment, index) => (
+            <Text key={index} dimColor>{`attached ${describeAttachment(attachment.file, attachment.image)} (backspace on an empty input removes the last)`}</Text>
+          ))}
+          <InputBox editor={editor} />
+          {completion === undefined ? null : <Text dimColor>{completion.names.map((name) => `/${name}`).join('  ')} (tab completes)</Text>}
+        </Box>
+      ) : null}
       {phase.kind === 'ready' ? (
         <Text dimColor>
-          {`mode: ${mode} (shift+tab) · tokens: ${formatTokens(transcript.usage.totalTokens)}${contextPercent === undefined ? '' : ` · context: ${contextPercent}%`}${busy ? ' · working (esc to cancel)' : ''}${reconnecting ? ' · reconnecting…' : ''}`}
+          {`mode: ${mode} (shift+tab) · tokens: ${formatTokens(transcript.usage.totalTokens)}${contextPercent === undefined ? '' : ` · context: ${contextPercent}%`}${imageInput ? ' · image input: paste a file path' : ''}${busy ? ' · working (esc to cancel)' : ''}${reconnecting ? ' · reconnecting…' : ''}`}
         </Text>
       ) : null}
     </Box>

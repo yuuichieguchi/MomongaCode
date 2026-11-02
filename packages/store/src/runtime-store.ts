@@ -983,7 +983,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           createdAt: now,
         });
         const inserted = appendPayloads(requireRun(id), [
-          { type: 'user.message', text: input.input },
+          { type: 'user.message', text: input.input, ...(input.images === undefined ? {} : { images: input.images }) },
           ...(input.skill === undefined ? [] : [{ type: 'skill.activated' as const, name: input.skill.name, content: input.skill.content }]),
         ]);
         writeRun(inserted);

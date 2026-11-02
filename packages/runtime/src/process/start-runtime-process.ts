@@ -426,6 +426,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         protectedRootAreas: protectedRootAreasOf(paths, canonicalHome),
         notifier,
         modelAliases: async () => (await gatewayClient.models()).map((model) => model.id),
+        modelCapabilities: (alias, signal) => gatewayClient.capabilities(alias, { signal }),
         sessionCreateSettings: settingsComposition.sessionCreateSettings,
         skills: skillsPort,
         defaults: RUNTIME_DEFAULTS,
@@ -435,6 +436,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           await telemetry.forceFlush();
           return runTraceOf(traceStore, runId);
         },
+        runCost: (runs, signal) => gatewayClient.cost(runs, signal),
         mcp: toolRuntime.mcpAdmin,
         onError: (error) => logger.error('service error', { err: asError(error) }),
         onFatal: latchFatal,

@@ -3,6 +3,7 @@ import type {
   ElicitationAnswerRecord,
   ElicitationRequestView,
   JobStatus,
+  ImageAttachment,
   PermissionMode,
   PermissionOption,
   RunEvent,
@@ -78,6 +79,7 @@ export type CreateRunInput = {
   pins: Record<string, unknown>;
   history?: HistoryMode;
   skill?: { name: string; content: string };
+  images?: ImageAttachment[];
 };
 
 export type ClaimStatus = 'RUNNING' | 'CANCELLING';

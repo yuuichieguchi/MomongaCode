@@ -11,7 +11,9 @@ export { MAX_REDACTED_CHARS, MIN_CREDENTIAL_CHARS, REDACTED_MARKER, createRedact
 export type { Redactor, RedactorOptions } from './redaction.ts';
 export { immediateTx, migrate, openDatabase, readTx } from './sqlite.ts';
 export type { MigrateResult, Migration, OpenDatabaseOptions } from './sqlite.ts';
-export { decodeSse, encodeSse } from './sse.ts';
+export { SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS, decodeSse, encodeSse } from './sse.ts';
+export { openCommandFor, openInBrowser } from './open-browser.ts';
+export type { OpenCommand } from './open-browser.ts';
 export type { SseEvent } from './sse.ts';
 export { createUdsClient, isUnixSocketLive, listenUnix } from './uds.ts';
 export type { UdsClient, UdsClientOptions, UdsRequestOptions, UdsResponse } from './uds.ts';
@@ -29,6 +31,7 @@ export {
   createProcessStartProbe,
   PS_PROBE_TIMEOUT_MS,
   inspectProcessLock,
+  LOCK_RETRY_MS,
 } from './process-lock.ts';
 export type {
   AcquireProcessLockOptions,
@@ -44,6 +47,7 @@ export type {
 } from './process-lock.ts';
 export { SessionTmpDirError, adapterSocketPath, ensureMomongaDirs, ensureSessionTmpDir, momongaLayout, momongaPaths, rotatedLogPath } from './momonga-paths.ts';
 export type { MomongaPaths } from './momonga-paths.ts';
+export { createExecWithStdin } from './exec-with-stdin.ts';
 export { secretKeyFile } from './secret-key-file.ts';
 export {
   KEYCHAIN_SERVICE,
@@ -51,7 +55,10 @@ export {
   SECURITY_BINARY,
   SecretEmptyError,
   SecretUnavailableError,
+  SecretWriteError,
   createKeychainSecretStore,
+  keychainWriteCommand,
+  credentialWriteScript,
   createPlatformSecretStore,
   createSecretServiceStore,
   createCredentialManagerStore,

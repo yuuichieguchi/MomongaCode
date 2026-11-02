@@ -1,9 +1,11 @@
 import { spawn } from 'node:child_process';
+import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { isSea } from 'node:sea';
-import { systemClock } from '@momonga/foundation';
-import type { CliClock, CliPorts, SelfExecutable, SpawnDetached } from './ports.ts';
+import { nodeEvalFiles } from '@momonga/eval';
+import { createExecWithStdin, createPlatformSecretStore, openInBrowser, systemClock } from '@momonga/foundation';
+import type { CliClock, CliFiles, CliPorts, SelfExecutable, SpawnDetached } from './ports.ts';
 
 const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
   new Promise((resolve, reject) => {
@@ -23,6 +25,14 @@ const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
   });
 
 export const nodeClock: CliClock = { now: () => systemClock.now(), sleep };
+
+export const nodeFiles: CliFiles = {
+  ...nodeEvalFiles,
+  readBytes: (file) => fs.readFile(file),
+  ensureDirectory: async (directory) => void (await fs.mkdir(directory, { recursive: true })),
+  makeTempDirectory: (prefix) => fs.mkdtemp(path.join(os.tmpdir(), prefix)),
+  removeTree: (directory) => fs.rm(directory, { recursive: true, force: true }),
+};
 
 export const nodeSpawnDetached: SpawnDetached = (spec) => {
   const child = spawn(spec.command, [...spec.args], { cwd: spec.cwd, env: { ...spec.env }, detached: true, stdio: 'ignore' });
@@ -53,4 +63,7 @@ export const nodePorts = (version: string): CliPorts => ({
   self: nodeSelf(process.argv, isSea),
   spawnDetached: nodeSpawnDetached,
   terminal: process.stdin.isTTY && process.stdout.isTTY ? { stdin: process.stdin, stdout: process.stdout } : undefined,
+  files: nodeFiles,
+  openUrl: (url, signal) => openInBrowser(url, signal, process.env),
+  secretStore: () => createPlatformSecretStore(process.platform, createExecWithStdin(undefined), process.env),
 });

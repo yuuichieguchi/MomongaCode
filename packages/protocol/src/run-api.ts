@@ -1,6 +1,6 @@
-import { APPROVAL_STATUSES, JOB_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TOOL_KINDS } from './run-types.ts';
+import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TOOL_KINDS } from './run-types.ts';
 import { MEMORY_SCOPES } from './memory.ts';
-import type { RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent } from './run-types.ts';
+import type { ImageMediaType, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent } from './run-types.ts';
 
 const DRAFT_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
 const DAY_MS = 86_400_000;
@@ -38,6 +38,20 @@ const permissionOption = closed(
   },
   ['optionId', 'name', 'kind'],
 );
+
+const BASE64_PATTERN = '^[A-Za-z0-9+/]+={0,2}$';
+
+const imageAttachment = closed(
+  { mediaType: enumOf(IMAGE_MEDIA_TYPES), data: { type: 'string', minLength: 1, pattern: BASE64_PATTERN } },
+  ['mediaType', 'data'],
+);
+
+const imageSummary = closed({ mediaType: enumOf(IMAGE_MEDIA_TYPES), byteLength: nonNegativeInteger }, ['mediaType', 'byteLength']);
+
+export const base64ByteLength = (data: string): number => {
+  const padding = data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0;
+  return (data.length / 4) * 3 - padding;
+};
 
 const elicitationRequest = {
   oneOf: [
@@ -103,7 +117,7 @@ const skillView = closed(
 );
 
 const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { properties: Record<string, JsonSchema>; required: readonly string[] }> = {
-  'user.message': { properties: { text: string }, required: ['text'] },
+  'user.message': { properties: { text: string, images: { type: 'array', items: imageSummary } }, required: ['text'] },
   'run.started': { properties: { attempt: integer }, required: ['attempt'] },
   'run.status': {
     properties: { from: enumOf(RUN_STATUSES), to: enumOf(RUN_STATUSES), reason: string },
@@ -290,6 +304,30 @@ const trustView = closed(
   ['path', 'decision'],
 );
 
+const costTotalsProperties: Record<string, JsonSchema> = {
+  calls: nonNegativeInteger,
+  unpricedCalls: nonNegativeInteger,
+  inputTokens: nonNegativeInteger,
+  outputTokens: nonNegativeInteger,
+  cachedInputTokens: nonNegativeInteger,
+  amount: { type: 'number', minimum: 0 },
+  currency: constant('USD'),
+  priceVersions: { type: 'array', items: string },
+};
+const costTotalsRequired = Object.keys(costTotalsProperties);
+
+const costReportView = closed(
+  {
+    runs: { type: 'array', items: closed({ runId: string, sessionId: string, ...costTotalsProperties }, ['runId', 'sessionId', ...costTotalsRequired]) },
+    sessions: {
+      type: 'array',
+      items: closed({ sessionId: string, runIds: { type: 'array', items: string }, ...costTotalsProperties }, ['sessionId', 'runIds', ...costTotalsRequired]),
+    },
+    total: closed(costTotalsProperties, costTotalsRequired),
+  },
+  ['runs', 'sessions', 'total'],
+);
+
 const memoryScope = enumOf(MEMORY_SCOPES);
 
 const memoryView = closed(
@@ -350,6 +388,7 @@ export type McpAuthorizationView = {
   server: string;
   status: (typeof MCP_AUTHORIZATION_STATUSES)[number];
   startedAt: number;
+  expiresAt: number;
   url?: string;
   failure?: { code: string; message: string };
 };
@@ -378,6 +417,22 @@ export type JobView = {
 };
 
 export type JobsResponse = { jobs: JobView[] };
+export type CostTotalsView = {
+  calls: number;
+  unpricedCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  amount: number;
+  currency: 'USD';
+  priceVersions: string[];
+};
+
+export type CostReportView = {
+  runs: (CostTotalsView & { runId: string; sessionId: string })[];
+  sessions: (CostTotalsView & { sessionId: string; runIds: string[] })[];
+  total: CostTotalsView;
+};
 
 export type RunHealth = {
   status: 'ok';
@@ -451,6 +506,7 @@ export const RUN_API_SCHEMAS = {
         timeoutMs: boundedInteger(1000, 7 * DAY_MS),
         history: historyMode,
         skill: { type: 'string', minLength: 1 },
+        images: { type: 'array', items: imageAttachment },
       },
       ['input'],
     ),
@@ -462,10 +518,11 @@ export const RUN_API_SCHEMAS = {
         server: string,
         status: enumOf(MCP_AUTHORIZATION_STATUSES),
         startedAt: integer,
+        expiresAt: integer,
         url: string,
         failure: closed({ code: string, message: string }, ['code', 'message']),
       },
-      ['server', 'status', 'startedAt'],
+      ['server', 'status', 'startedAt', 'expiresAt'],
     ),
   ),
   McpServersResponse: root(
@@ -614,6 +671,7 @@ export const RUN_API_SCHEMAS = {
       ['runId', 'summary', 'spans'],
     ),
   ),
+  CostReport: root(costReportView),
   MemoryView: root(memoryView),
   MemoriesResponse: root(closed({ memories: { type: 'array', items: memoryView } }, ['memories'])),
   MemoryResponse: root(closed({ memory: memoryView }, ['memory'])),
@@ -624,6 +682,7 @@ export const RUN_API_SCHEMAS = {
 } as const satisfies Record<string, JsonSchema>;
 
 type ReducedEventType =
+  | 'user.message'
   | 'model.requested'
   | 'run.started'
   | 'context.compacted'
@@ -634,6 +693,7 @@ type ReducedEventType =
 
 type PublicPayload =
   | Exclude<RunEventPayload, { type: ReducedEventType }>
+  | { type: 'user.message'; text: string; images?: { mediaType: ImageMediaType; byteLength: number }[] }
   | { type: 'model.requested'; step: number; attempt: number; digest: string }
   | { type: 'run.started'; attempt: number }
   | { type: 'context.compacted'; summary: string; replacedThroughSeq: number }
@@ -664,6 +724,13 @@ export const toPublicRunEvent = (event: RunEvent | SessionEvent): PublicRunEvent
   const { id, runId, sessionId, seq, step, createdAt } = event;
   const envelope = { id, runId, sessionId, seq, step, createdAt };
   switch (event.type) {
+    case 'user.message':
+      return {
+        ...envelope,
+        type: event.type,
+        text: event.text,
+        ...(event.images === undefined ? {} : { images: event.images.map((image) => ({ mediaType: image.mediaType, byteLength: base64ByteLength(image.data) })) }),
+      };
     case 'model.requested':
       return { ...envelope, type: event.type, step: event.step, attempt: event.attempt, digest: event.digest };
     case 'run.started':

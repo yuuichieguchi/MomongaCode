@@ -1,5 +1,5 @@
 import { canonicalJson, parseJsonOrText, sha256Hex } from '@momonga/foundation';
-import { LOOP_GROUPS_KEPT, STOP_REASONS, findDanglingOutput } from '@momonga/protocol';
+import { LOOP_GROUPS_KEPT, STOP_REASONS, findDanglingOutput, userMessageContent } from '@momonga/protocol';
 import type { InputItem, RunEvent, RunState, StopReason } from '@momonga/protocol';
 import { applyInheritance } from './inherit.ts';
 import { isRecord } from './rows.ts';
@@ -200,7 +200,7 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
   switch (event.type) {
     case 'user.message': {
       const { lastResponse: _answered, ...rest } = state;
-      return appendItems(rest, [{ item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: event.text }] } }]);
+      return appendItems(rest, [{ item: { type: 'message', role: 'user', content: userMessageContent(event.text, event.images) } }]);
     }
     case 'run.started':
       return {

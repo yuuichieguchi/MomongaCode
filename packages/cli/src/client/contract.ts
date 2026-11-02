@@ -1,8 +1,8 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import { RUN_API_SCHEMAS } from '@momonga/protocol';
-import type { PublicRunEvent, RunHealth, RunTraceView } from '@momonga/protocol';
-import type { ApprovalView, ErrorBody, RunView, SessionView, TrustView } from './views.ts';
+import type { CostReportView, MemoriesResponse, MemoryResponse, McpAuthorizationView, McpServerView, PublicRunEvent, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
+import type { ApprovalView, ElicitationView, ErrorBody, RunView, SessionView, TrustView } from './views.ts';
 
 export class ContractViolation extends Error {
   constructor(description: string, detail: string) {
@@ -29,3 +29,12 @@ export const checkErrorBody = guard<ErrorBody>(RUN_API_SCHEMAS.ErrorBody);
 export const checkHealth = guard<RunHealth>(RUN_API_SCHEMAS.Health);
 export const checkRunEvent = guard<PublicRunEvent>(RUN_API_SCHEMAS.PublicRunEvent);
 export const checkTrace = guard<RunTraceView>(RUN_API_SCHEMAS.RunTrace);
+export const checkSkills = guard<SkillsResponse>(RUN_API_SCHEMAS.SkillsResponse);
+export const checkElicitation = guard<ElicitationView>(RUN_API_SCHEMAS.ElicitationView);
+export const checkMcpServers = guard<{ servers: McpServerView[] }>(RUN_API_SCHEMAS.McpServersResponse);
+export const checkMcpAuthorization = guard<McpAuthorizationView>(RUN_API_SCHEMAS.McpAuthorizationView);
+export const checkMemories = guard<MemoriesResponse>(RUN_API_SCHEMAS.MemoriesResponse);
+export const checkMemory = guard<MemoryResponse>(RUN_API_SCHEMAS.MemoryResponse);
+export const checkCostReport = guard<CostReportView>(RUN_API_SCHEMAS.CostReport);
+
+export const compileRequestedSchema = (schema: Readonly<Record<string, unknown>>): ValidateFunction => ajv.compile(schema);

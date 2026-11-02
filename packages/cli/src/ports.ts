@@ -1,3 +1,5 @@
+import type { SecretStore } from '@momonga/foundation';
+
 export type CliClock = {
   now(): number;
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
@@ -24,6 +26,16 @@ export type Sink = { write(text: string): void };
 
 export type Terminal = { stdin: NodeJS.ReadStream; stdout: NodeJS.WriteStream };
 
+export type CliFiles = {
+  readBytes(file: string): Promise<Uint8Array>;
+  readText(file: string): Promise<string>;
+  writeText(file: string, text: string): Promise<void>;
+  listFiles(directory: string): Promise<string[]>;
+  ensureDirectory(directory: string): Promise<void>;
+  makeTempDirectory(prefix: string): Promise<string>;
+  removeTree(directory: string): Promise<void>;
+};
+
 export type CliPorts = {
   version: string;
   env: Readonly<Record<string, string | undefined>>;
@@ -36,4 +48,7 @@ export type CliPorts = {
   self: SelfExecutable;
   spawnDetached: SpawnDetached;
   terminal: Terminal | undefined;
+  files: CliFiles;
+  openUrl(url: URL, signal: AbortSignal): Promise<void>;
+  secretStore(): SecretStore;
 };

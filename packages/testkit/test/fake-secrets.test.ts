@@ -23,10 +23,20 @@ describe('createFakeSecurityPort', () => {
     [SECURITY_BINARY, ['add-generic-password', '-s', KEYCHAIN_SERVICE, '-a', 'main', '-w', 'leaked'], ''],
     [SECURITY_BINARY, ['find-generic-password', '-s', 'other-service', '-a', 'main', '-w'], ''],
     [SECURITY_BINARY, ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', 'main', '-w'], 'stdin'],
-    [SECURITY_BINARY, ['-i'], 'add-generic-password'],
+    [SECURITY_BINARY, ['-i'], 'add-generic-password -w leaked\n'],
   ] as const)('rejects the unexpected invocation %j', async ([file, args, stdin]) => {
     const port = createFakeSecurityPort(() => ({ main: 'value' }));
     await expect(port(file, args, stdin, NEVER_ABORTED)).rejects.toThrow('unexpected invocation');
+  });
+});
+
+describe('createFakeSecurityPort writes', () => {
+  it('decodes the hex value of an interactive add-generic-password and hands it to onWrite', async () => {
+    const written: Array<[string, string]> = [];
+    const port = createFakeSecurityPort(() => ({}), (name, value) => void written.push([name, value]));
+    const stdin = `add-generic-password -U -s ${KEYCHAIN_SERVICE} -a main -X ${Buffer.from('sk-fake', 'utf8').toString('hex')}\n`;
+    expect(await port(SECURITY_BINARY, ['-i'], stdin, NEVER_ABORTED)).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+    expect(written).toEqual([['main', 'sk-fake']]);
   });
 });
 
@@ -36,5 +46,12 @@ describe('createFakeSecretStore', () => {
     expect(await store.read('a', NEVER_ABORTED)).toBe('one');
     await expect(store.read('b', NEVER_ABORTED)).rejects.toBeInstanceOf(SecretUnavailableError);
     expect(store.reads).toEqual(['a', 'b']);
+  });
+
+  it('records a write and reads it back', async () => {
+    const store = createFakeSecretStore({});
+    await store.write('k', 'v', NEVER_ABORTED);
+    expect(store.writes).toEqual([{ name: 'k', value: 'v' }]);
+    expect(await store.read('k', NEVER_ABORTED)).toBe('v');
   });
 });

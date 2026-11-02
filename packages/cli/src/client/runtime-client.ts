@@ -1,8 +1,25 @@
 import { createUdsClient, decodeSse, isRecord } from '@momonga/foundation';
 import type { UdsResponse } from '@momonga/foundation';
-import type { PermissionMode, PublicRunEvent, RunHealth, RunTraceView } from '@momonga/protocol';
-import { ContractViolation, checkApproval, checkTrace, checkErrorBody, checkHealth, checkRun, checkRunEvent, checkSession, checkTrust } from './contract.ts';
-import type { ApprovalView, RunView, SessionView, TrustView } from './views.ts';
+import type { CostReportView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryView, PermissionMode, PublicRunEvent, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
+import {
+  ContractViolation,
+  checkApproval,
+  checkCostReport,
+  checkElicitation,
+  checkErrorBody,
+  checkHealth,
+  checkMcpAuthorization,
+  checkMcpServers,
+  checkMemories,
+  checkMemory,
+  checkRun,
+  checkRunEvent,
+  checkSession,
+  checkSkills,
+  checkTrace,
+  checkTrust,
+} from './contract.ts';
+import type { ApprovalView, ElicitationView, RunView, SessionView, TrustView } from './views.ts';
 
 export class RunApiError extends Error {
   readonly status: number;
@@ -41,7 +58,19 @@ export type CreateSessionInput = {
   bypassAllowed?: boolean;
 };
 
-export type CreateRunOptions = { history?: 'inherit' | 'fresh'; idempotencyKey?: string };
+export type CreateRunOptions = {
+  history?: 'inherit' | 'fresh';
+  idempotencyKey?: string;
+  skill?: string;
+  timeoutMs?: number;
+  images?: readonly ImageAttachment[];
+};
+
+export type MemoryFilter = { scope?: MemoryScope; project?: string };
+
+export type CostFilter = { run: string } | { session: string } | { cwd: string } | Record<string, never>;
+
+export type ResolvedElicitation = { elicitation: ElicitationView; run: RunView };
 
 export type CreatedSession = { session: SessionView; strippedEnvKeys: string[] };
 
@@ -59,6 +88,19 @@ export type RuntimeClient = {
   approvals(runId: string): Promise<ApprovalView[]>;
   getApproval(id: string): Promise<ApprovalView>;
   resolveApproval(id: string, optionId: string): Promise<ResolvedApproval>;
+  skills(sessionId: string): Promise<SkillsResponse>;
+  elicitations(runId: string): Promise<ElicitationView[]>;
+  getElicitation(id: string): Promise<ElicitationView>;
+  resolveElicitation(id: string, responses: Readonly<Record<string, ElicitationAnswerRecord>>): Promise<ResolvedElicitation>;
+  mcpServers(sessionId: string): Promise<McpServerView[]>;
+  startMcpAuthorization(sessionId: string, server: string): Promise<McpAuthorizationView>;
+  mcpAuthorization(sessionId: string, server: string): Promise<McpAuthorizationView>;
+  cancelMcpAuthorization(sessionId: string, server: string): Promise<void>;
+  memories(filter?: MemoryFilter): Promise<MemoryView[]>;
+  memory(id: string): Promise<MemoryView>;
+  deleteMemory(id: string): Promise<void>;
+  cost(filter?: CostFilter): Promise<CostReportView>;
+  costText(filter?: CostFilter): Promise<string>;
   trust(path: string): Promise<TrustView>;
   setTrust(path: string, decision: 'trusted' | 'untrusted'): Promise<TrustView>;
   streamEvents(runId: string, options?: EventsOptions): AsyncGenerator<RunEventFrame>;
@@ -74,9 +116,12 @@ export const eventsHeadersOf = (options: EventsOptions): Record<string, string> 
   ...(options.lastEventId === undefined ? {} : { 'last-event-id': String(options.lastEventId) }),
 });
 
-export const createRunBody = (input: string, options: CreateRunOptions = {}): { input: string; history?: 'inherit' | 'fresh' } => ({
+export const createRunBody = (input: string, options: CreateRunOptions = {}): Record<string, unknown> => ({
   input,
   ...(options.history === undefined ? {} : { history: options.history }),
+  ...(options.skill === undefined ? {} : { skill: options.skill }),
+  ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+  ...(options.images === undefined || options.images.length === 0 ? {} : { images: options.images }),
 });
 
 const parsed = (text: string, description: string): unknown => {
@@ -112,7 +157,7 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     method: string,
     path: string,
     expected: readonly number[],
-    init: { body?: unknown; headers?: Record<string, string> } = {},
+    init: { body?: unknown; headers?: Record<string, string>; raw?: true } = {},
   ): Promise<{ response: UdsResponse; body: unknown }> => {
     const description = `${method} ${path}`;
     const headers = { ...(init.body === undefined ? {} : JSON_HEADERS), ...init.headers };
@@ -124,7 +169,7 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     });
     const text = await response.text();
     if (!expected.includes(response.status)) throw new RunApiError(description, response.status, text);
-    return { response, body: parsed(text, description) };
+    return { response, body: response.status === 204 ? undefined : init.raw === true ? text : parsed(text, description) };
   };
 
   const sessionOf = (body: unknown, description: string): SessionView => checkSession(fieldOf(body, 'session', description), description);
@@ -211,6 +256,92 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     return { approval: checkApproval(fieldOf(body, 'approval', `POST ${path}`), `POST ${path}`), run: runOf(body, `POST ${path}`) };
   };
 
+  const skills = async (sessionId: string): Promise<SkillsResponse> => {
+    const path = `/v1/sessions/${sessionId}/skills`;
+    const { body } = await send('GET', path, [200]);
+    return checkSkills(body, `GET ${path}`);
+  };
+
+  const elicitations = async (runId: string): Promise<ElicitationView[]> => {
+    const path = `/v1/runs/${runId}/elicitations`;
+    const { body } = await send('GET', path, [200]);
+    return listOf(body, 'elicitations', `GET ${path}`).map((entry) => checkElicitation(entry, `GET ${path}`));
+  };
+
+  const getElicitation = async (id: string): Promise<ElicitationView> => {
+    const path = `/v1/elicitations/${id}`;
+    const { body } = await send('GET', path, [200]);
+    return checkElicitation(fieldOf(body, 'elicitation', `GET ${path}`), `GET ${path}`);
+  };
+
+  const resolveElicitation = async (id: string, responses: Readonly<Record<string, ElicitationAnswerRecord>>): Promise<ResolvedElicitation> => {
+    const path = `/v1/elicitations/${id}`;
+    const { body } = await send('POST', path, [200], { body: { responses } });
+    return { elicitation: checkElicitation(fieldOf(body, 'elicitation', `POST ${path}`), `POST ${path}`), run: runOf(body, `POST ${path}`) };
+  };
+
+  const mcpServers = async (sessionId: string): Promise<McpServerView[]> => {
+    const path = `/v1/sessions/${sessionId}/mcp/servers`;
+    const { body } = await send('GET', path, [200]);
+    return checkMcpServers(body, `GET ${path}`).servers;
+  };
+
+  const authorizationPath = (sessionId: string, server: string): string => `/v1/sessions/${sessionId}/mcp/servers/${encodeURIComponent(server)}/authorization`;
+
+  const startMcpAuthorization = async (sessionId: string, server: string): Promise<McpAuthorizationView> => {
+    const path = authorizationPath(sessionId, server);
+    const { body } = await send('POST', path, [202]);
+    return checkMcpAuthorization(fieldOf(body, 'authorization', `POST ${path}`), `POST ${path}`);
+  };
+
+  const mcpAuthorization = async (sessionId: string, server: string): Promise<McpAuthorizationView> => {
+    const path = authorizationPath(sessionId, server);
+    const { body } = await send('GET', path, [200]);
+    return checkMcpAuthorization(fieldOf(body, 'authorization', `GET ${path}`), `GET ${path}`);
+  };
+
+  const cancelMcpAuthorization = async (sessionId: string, server: string): Promise<void> => {
+    await send('DELETE', authorizationPath(sessionId, server), [204]);
+  };
+
+  const memoriesQueryOf = (filter: MemoryFilter): string => {
+    const query = new URLSearchParams();
+    if (filter.scope !== undefined) query.set('scope', filter.scope);
+    if (filter.project !== undefined) query.set('project', filter.project);
+    const text = query.toString();
+    return text === '' ? '' : `?${text}`;
+  };
+
+  const memories = async (filter: MemoryFilter = {}): Promise<MemoryView[]> => {
+    const path = `/v1/memories${memoriesQueryOf(filter)}`;
+    const { body } = await send('GET', path, [200]);
+    return checkMemories(body, `GET ${path}`).memories;
+  };
+
+  const memory = async (id: string): Promise<MemoryView> => {
+    const path = `/v1/memories/${encodeURIComponent(id)}`;
+    const { body } = await send('GET', path, [200]);
+    return checkMemory(body, `GET ${path}`).memory;
+  };
+
+  const deleteMemory = async (id: string): Promise<void> => {
+    await send('DELETE', `/v1/memories/${encodeURIComponent(id)}`, [204]);
+  };
+
+  const costPath = (filter: CostFilter, format: 'json' | 'text'): string => `/v1/cost?${new URLSearchParams({ ...filter, format }).toString()}`;
+
+  const cost = async (filter: CostFilter = {}): Promise<CostReportView> => {
+    const path = costPath(filter, 'json');
+    const { body } = await send('GET', path, [200]);
+    return checkCostReport(body, `GET ${path}`);
+  };
+
+  const costText = async (filter: CostFilter = {}): Promise<string> => {
+    const { body } = await send('GET', costPath(filter, 'text'), [200], { raw: true });
+    if (typeof body !== 'string') throw new ContractViolation('GET /v1/cost', 'the text report is not text');
+    return body;
+  };
+
   const trust = async (path: string): Promise<TrustView> => {
     const description = 'GET /v1/trust';
     const { body } = await send('GET', `/v1/trust?path=${encodeURIComponent(path)}`, [200]);
@@ -248,6 +379,19 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     approvals,
     getApproval,
     resolveApproval,
+    skills,
+    elicitations,
+    getElicitation,
+    resolveElicitation,
+    mcpServers,
+    startMcpAuthorization,
+    mcpAuthorization,
+    cancelMcpAuthorization,
+    memories,
+    memory,
+    deleteMemory,
+    cost,
+    costText,
     trust,
     setTrust,
     streamEvents,

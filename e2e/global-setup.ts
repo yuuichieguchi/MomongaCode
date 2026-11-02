@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { TEST_RUN_ENV } from '@momonga/testkit';
 import { E2E_CASES } from './support/cases.ts';
+import { CLI_FAKES_BUNDLE, CLI_FAKES_ENTRY } from './support/cli-bundles.ts';
 import { BUNDLE_SCRIPT } from './support/launcher.ts';
 import { E2E_RUN_ENV } from './support/run-env.ts';
 import { SANDBOX_ENV, encodeSandboxProbe, runSandboxProbe, sandboxLine } from './support/sandbox.ts';
@@ -25,6 +26,7 @@ export default function setup(): () => Promise<void> {
   process.env[E2E_RUN_ENV] = run;
   process.env[TEST_RUN_ENV] = run;
   execFileSync(process.execPath, [BUNDLE_SCRIPT], { stdio: 'inherit' });
+  execFileSync(process.execPath, [BUNDLE_SCRIPT, '--entry', CLI_FAKES_ENTRY, '--outfile', CLI_FAKES_BUNDLE], { stdio: 'inherit' });
   const probe = runSandboxProbe();
   process.env[SANDBOX_ENV] = encodeSandboxProbe(probe);
   console.log(sandboxLine(probe, E2E_CASES));

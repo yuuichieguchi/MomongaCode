@@ -3,7 +3,7 @@ import path from 'node:path';
 import { getRequestListener } from '@hono/node-server';
 import { canonicalPath, comparableContains, listenUnix } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import type { RunTraceView } from '@momonga/protocol';
+import type { Capabilities, CostReportView, RunTraceView } from '@momonga/protocol';
 import { isFatalStoreError } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import { asError } from '../process/as-error.ts';
@@ -33,6 +33,7 @@ export type RunServiceOptions = {
   protectedRootAreas: readonly string[];
   notifier: RunNotifier;
   modelAliases: () => Promise<readonly string[]>;
+  modelCapabilities: (alias: string, signal: AbortSignal) => Promise<Capabilities>;
   sessionCreateSettings: (cwd: string) => Promise<SessionCreateSettings>;
   skills: SkillsPort;
   defaults: { modelAlias: string; runTimeoutMs?: number; limits: RunLimitDefaults };
@@ -43,6 +44,7 @@ export type RunServiceOptions = {
   maxBodyBytes?: number;
   cancelUpstream?: (runId: string) => Promise<void>;
   runTrace: (runId: string) => Promise<RunTraceView | undefined>;
+  runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal) => Promise<{ report: CostReportView; text: string }>;
   mcp: McpAdminPort;
   onError?: (error: unknown) => void;
   onFatal?: (error: Error) => void;
@@ -90,6 +92,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     clock: options.clock,
     version: options.version,
     modelAliases: options.modelAliases,
+    modelCapabilities: options.modelCapabilities,
     sessionCreateSettings: options.sessionCreateSettings,
     skills: options.skills,
     isDraining: () => draining,
@@ -102,6 +105,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     maxBodyBytes: options.maxBodyBytes ?? TWO_MIB,
     closeSignal: closeController.signal,
     runTrace: options.runTrace,
+    runCost: options.runCost,
     mcp: options.mcp,
     ...(options.cancelUpstream === undefined ? {} : { cancelUpstream: options.cancelUpstream }),
     onError: report,

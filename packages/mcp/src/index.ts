@@ -37,4 +37,3 @@ export type { McpRemotePorts } from './remote-ports.ts';
 export { DEFAULT_TASK_POLL_MS, MIN_TASK_POLL_MS } from './tasks.ts';
 export { systemTimers } from './timers.ts';
 export type { McpTimers } from './timers.ts';
-export { openInBrowser } from './open-browser.ts';

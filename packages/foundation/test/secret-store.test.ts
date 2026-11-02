@@ -4,6 +4,7 @@ import {
   SECURITY_BINARY,
   SecretEmptyError,
   SecretUnavailableError,
+  SecretWriteError,
   createKeychainSecretStore,
 } from '@momonga/foundation';
 import type { SecretProcessPort, SecretProcessResult } from '@momonga/foundation';
@@ -73,5 +74,36 @@ describe('createKeychainSecretStore', () => {
       throw failure;
     });
     await expect(store.read('k', NEVER_ABORTED)).rejects.toBe(failure);
+  });
+});
+
+describe('createKeychainSecretStore write', () => {
+  it('feeds an interactive add-generic-password with a hex value through stdin and keeps the value out of argv', async () => {
+    const { port, calls } = recordingPort({ exitCode: 0, stdout: '', stderr: '' });
+    await createKeychainSecretStore(port).write('anthropic-main', 'sk-ant-fake-value', NEVER_ABORTED);
+    expect(calls).toEqual([
+      {
+        file: SECURITY_BINARY,
+        args: ['-i'],
+        stdin: `add-generic-password -U -s ${KEYCHAIN_SERVICE} -a anthropic-main -X ${Buffer.from('sk-ant-fake-value').toString('hex')}\n`,
+      },
+    ]);
+    expect(JSON.stringify(calls[0]?.args)).not.toContain('sk-ant');
+  });
+
+  it('keeps the exit code and stderr of a failed write in a typed error', async () => {
+    const { port } = recordingPort({ exitCode: 36, stdout: '', stderr: 'User interaction is not allowed.\n' });
+    const failure = createKeychainSecretStore(port).write('k', 'v', NEVER_ABORTED);
+    await expect(failure).rejects.toBeInstanceOf(SecretWriteError);
+    await expect(failure).rejects.toMatchObject({ exitCode: 36, secretName: 'k' });
+    await expect(failure).rejects.toThrow('User interaction is not allowed.');
+  });
+
+  it('rejects an unsafe name and an empty value without invoking the port', async () => {
+    const { port, calls } = recordingPort({ exitCode: 0, stdout: '', stderr: '' });
+    const store = createKeychainSecretStore(port);
+    await expect(store.write('a b', 'v', NEVER_ABORTED)).rejects.toBeInstanceOf(RangeError);
+    await expect(store.write('k', '', NEVER_ABORTED)).rejects.toBeInstanceOf(RangeError);
+    expect(calls).toEqual([]);
   });
 });

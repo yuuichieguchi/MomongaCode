@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import type { GatewayHealth, ModelList, MomongaModelList } from '@momonga/protocol';
+import type { CostReportView, GatewayHealth, ModelList, MomongaModelList } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, invalidRequest, notFound } from '../core/errors.ts';
 import type { ResponsesService, SubmitHeaders } from '../core/responses-service.ts';
 import type { Services } from '../core/services.ts';
@@ -18,6 +18,7 @@ export type AppDependencies = {
   startedAtSeconds: number;
   startedAt: string;
   version: string;
+  costReport: ((runs: readonly { runId: string; sessionId: string }[]) => Promise<{ report: CostReportView; text: string }>) | undefined;
   onError: ((error: unknown) => void) | undefined;
 };
 
@@ -149,6 +150,19 @@ export const createApp = (dependencies: AppDependencies): Hono => {
       throw invalidRequest('invalid_query', 'the run_id query parameter is required', 'run_id');
     }
     return context.json(services.store.usageReport(runId));
+  });
+
+  app.post('/v1/momonga/cost', async (context) => {
+    if (dependencies.costReport === undefined) throw notFound('cost_unavailable', 'this gateway keeps no trace store to price runs from');
+    const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
+    const runs = (raw as { runs?: unknown }).runs;
+    if (
+      !Array.isArray(runs) ||
+      !runs.every((run): run is { runId: string; sessionId: string } => typeof run?.runId === 'string' && typeof run?.sessionId === 'string')
+    ) {
+      throw invalidRequest('invalid_body', 'runs must be a list of { runId, sessionId }', 'runs');
+    }
+    return context.json(await dependencies.costReport(runs));
   });
 
   return app;

@@ -5,7 +5,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { reapMarkedProcesses, reapMarkerDirectory, signalGroup } from '@momonga/foundation';
 import type { ExecResult, ExecFn, FmChild, SpawnFn } from './fm-serve.ts';
-import type { ExecWithStdinFn } from './fm-target.ts';
 
 export type ChildEnv = Readonly<Record<string, string>>;
 
@@ -28,26 +27,7 @@ export const createExecFn =
       });
     });
 
-export const createExecWithStdin =
-  (env: ChildEnv | undefined): ExecWithStdinFn =>
-  (file, args, stdin, signal) =>
-    new Promise<ExecResult>((resolve, reject) => {
-      const child = nodeSpawn(file, [...args], { ...envOption(env), stdio: ['pipe', 'pipe', 'pipe'], signal });
-      const stdout: Buffer[] = [];
-      const stderr: Buffer[] = [];
-      child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
-      child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
-      child.stdin.on('error', reject);
-      child.once('error', reject);
-      child.once('close', (code) => {
-        resolve({
-          exitCode: code ?? 1,
-          stdout: Buffer.concat(stdout).toString('utf8'),
-          stderr: Buffer.concat(stderr).toString('utf8'),
-        });
-      });
-      child.stdin.end(stdin);
-    });
+export { createExecWithStdin } from '@momonga/foundation';
 
 export const createPlainSpawn =
   (env: ChildEnv | undefined): SpawnFn =>
