@@ -109,6 +109,18 @@ const warnings = () => {
   return { messages, onWarning: (message: string) => void messages.push(message) };
 };
 
+describe('reapToolMarkers on hook markers', () => {
+  it('reaps the holder of a hook marker that has no idempotency record', async () => {
+    const temp = await makeTempHome();
+    const marker = markerOf(temp, `hook-${keyOf(7)}`);
+    const pid = await holdMarker(marker);
+    const { store } = idempotencyOf({});
+    await reapToolMarkers({ dir: temp.paths.markers.tools, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning });
+    expect(await findHolders(marker)).not.toContain(pid);
+    expect(exists(marker)).toBe(false);
+  });
+});
+
 describe('reapToolMarkers (real processes, system timers, except where fake timers are stated)', () => {
   it('a store error propagates and no reap is called (D2: every lookup happens before any reap)', async () => {
     const temp = await makeTempHome();

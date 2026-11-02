@@ -35,6 +35,9 @@ export type HookExecution = {
   decision?: HookPreToolDecision | 'block';
   message?: string;
   systemMessage?: string;
+  updatedInput?: Record<string, unknown>;
+  stopReason?: string;
+  halted?: true;
   durationMs: number;
 };
 
@@ -60,3 +63,7 @@ export const hookMatcherMatches = (matcher: string | undefined, value: string): 
 };
 
 export const HOOK_MATCHER_EVENTS: readonly HookEvent[] = ['PreToolUse', 'PostToolUse', 'SessionStart'];
+
+export const HOOK_STOPPED_CODE = 'hook_stopped';
+
+export const USER_PROMPT_BLOCKED_CODE = 'user_prompt_blocked';

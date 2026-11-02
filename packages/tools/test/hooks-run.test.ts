@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, reapMarkerDirectory } from '@momonga/foundation';
 import type { HookExecution, HooksSettings } from '@momonga/protocol';
 import { createUnsandboxed } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
@@ -34,6 +34,8 @@ const settings = (event: keyof HooksSettings, command: string, matcher?: string)
 });
 
 const contextFor = (hooks: HooksSettings, overrides: Partial<HookRunContext> = {}) => {
+  const markerDir = path.join(dir, 'markers');
+  fs.mkdirSync(markerDir, { recursive: true });
   const executions: HookExecution[] = [];
   const context: HookRunContext = {
     hooks,
@@ -42,6 +44,8 @@ const contextFor = (hooks: HooksSettings, overrides: Partial<HookRunContext> = {
     env: { PATH: '/usr/bin:/bin' },
     cwd: dir,
     projectDir: dir,
+    markerDir,
+    runId: 'run-1',
     session: { id: 's1', permissionMode: 'default' },
     clock: { now: () => Date.now() },
     signal: new AbortController().signal,
@@ -114,7 +118,13 @@ describe('PreToolUse hook processes', () => {
   });
 
   it('reports invalid and unsupported JSON as an error without deciding', async () => {
-    for (const body of ['{"hookSpecificOutput":{"permissionDecision":"defer"}}', '{"hookSpecificOutput":{"updatedInput":{}}}', '{"continue":false}', '{not json']) {
+    for (const body of [
+      '{"hookSpecificOutput":{"permissionDecision":"defer"}}',
+      '{"hookSpecificOutput":{"updatedToolOutput":"x"}}',
+      '{"hookSpecificOutput":{"updatedInput":5}}',
+      '{"continue":"no"}',
+      '{not json',
+    ]) {
       const { context, executions } = contextFor(settings('PreToolUse', `printf '%s' '${body}'`));
       expect(await createToolHooks(context).preToolUse(call)).toBeUndefined();
       expect(executions[0]).toMatchObject({ outcome: 'error', exitCode: 0 });
@@ -168,6 +178,61 @@ describe('PreToolUse hook processes', () => {
   });
 });
 
+describe('updated input, halting and process markers', () => {
+  it('returns an updated input with the decision', async () => {
+    const json = JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', updatedInput: { command: 'ls -la' } } });
+    const { context, executions } = contextFor(settings('PreToolUse', `echo '${json}'`));
+    expect(await createToolHooks(context).preToolUse(call)).toEqual({ decision: 'allow', updatedInput: { command: 'ls -la' } });
+    expect(executions[0]).toMatchObject({ updatedInput: { command: 'ls -la' } });
+  });
+
+  it('lets a later hook win when several update the input', async () => {
+    const update = (command: string) => JSON.stringify({ hookSpecificOutput: { updatedInput: { command } } });
+    const hooks: HooksSettings = { PreToolUse: [{ hooks: [{ type: 'command', command: `echo '${update('first')}'` }, { type: 'command', command: `echo '${update('second')}'` }] }] };
+    const { context } = contextFor(hooks);
+    expect(await createToolHooks(context).preToolUse(call)).toEqual({ updatedInput: { command: 'second' } });
+  });
+
+  it('turns continue false into a halt with the stop reason and marks the execution', async () => {
+    const json = JSON.stringify({ continue: false, stopReason: 'maintenance window' });
+    const { context, executions } = contextFor(settings('PreToolUse', `echo '${json}'`));
+    expect(await createToolHooks(context).preToolUse(call)).toEqual({ halt: { reason: 'maintenance window' } });
+    expect(executions[0]).toMatchObject({ outcome: 'success', halted: true, stopReason: 'maintenance window' });
+  });
+
+  it('halts the prompt, the session start and the stop hooks on continue false', async () => {
+    const json = JSON.stringify({ continue: false, stopReason: 'halt' });
+    expect(await runUserPromptSubmit(contextFor(settings('UserPromptSubmit', `echo '${json}'`)).context, 'p')).toEqual({ blocked: 'halt', context: [] });
+    expect((await runSessionStart(contextFor(settings('SessionStart', `echo '${json}'`)).context, 'startup')).halt).toEqual({ reason: 'halt' });
+    expect(await runStop(contextFor(settings('Stop', `echo '${json}'`)).context, false)).toEqual({ continueWith: undefined, halt: { reason: 'halt' } });
+  });
+
+  it('holds a marker file while the hook runs and removes it afterwards', async () => {
+    const listing = path.join(dir, 'listing.txt');
+    const { context } = contextFor(settings('PreToolUse', `ls ${path.join(dir, 'markers')} > ${listing}`));
+    await createToolHooks(context).preToolUse(call);
+    expect(fs.readFileSync(listing, 'utf8').trim()).toMatch(/^hook-[0-9a-f]{64}$/);
+    expect(fs.readdirSync(path.join(dir, 'markers'))).toEqual([]);
+  });
+
+  it('lets the marker reaper kill a hook process whose runtime died', async () => {
+    const pidFile = path.join(dir, 'orphan.pid');
+    const controller = new AbortController();
+    const { context } = contextFor(settings('PreToolUse', `echo $$ > ${pidFile}; exec sleep 30`), { signal: controller.signal });
+    const pending = createToolHooks(context).preToolUse(call);
+    for (;;) {
+      if (fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8').trim() !== '') break;
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    const pid = Number(fs.readFileSync(pidFile, 'utf8').trim());
+    const markerDir = path.join(dir, 'markers');
+    await reapMarkerDirectory({ dir: markerDir, killGraceMs: 200, label: 'tool', onWarning: (message) => { throw new Error(message); } });
+    expect(() => process.kill(pid, 0)).toThrow();
+    controller.abort();
+    await pending;
+  });
+});
+
 describe('PostToolUse hook processes', () => {
   it('returns stderr of an exit 2 hook, a block reason and additional context as feedback', async () => {
     const json = JSON.stringify({ decision: 'block', reason: 'tests fail', hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: 'see log' } });
@@ -175,7 +240,7 @@ describe('PostToolUse hook processes', () => {
       PostToolUse: [{ hooks: [{ type: 'command', command: `echo '${json}'` }, { type: 'command', command: 'echo from-stderr >&2; exit 2' }] }],
     });
     const feedback = await createToolHooks(context).postToolUse({ ...call, output: 'ok' });
-    expect(feedback).toBe('tests fail\nsee log\nfrom-stderr');
+    expect(feedback).toEqual({ feedback: 'tests fail\nsee log\nfrom-stderr' });
   });
 
   it('returns nothing when no hook has feedback', async () => {
@@ -207,27 +272,27 @@ describe('prompt, start and stop hooks', () => {
 
   it('collects session start context and passes the source', async () => {
     const { context, executions } = contextFor(settings('SessionStart', 'echo ctx', 'startup'));
-    expect(await runSessionStart(context, 'startup')).toEqual(['ctx']);
+    expect((await runSessionStart(context, 'startup')).context).toEqual(['ctx']);
     expect(executions).toHaveLength(1);
     const other = contextFor(settings('SessionStart', 'echo ctx', 'resume'));
-    expect(await runSessionStart(other.context, 'startup')).toEqual([]);
+    expect((await runSessionStart(other.context, 'startup')).context).toEqual([]);
   });
 
   it('keeps the agent going on a Stop block and reports stop_hook_active', async () => {
     const out = path.join(dir, 'stop.json');
     const { context } = contextFor(settings('Stop', `cat > ${out}; echo "run the tests" >&2; exit 2`));
-    expect(await runStop(context, true)).toEqual({ continueWith: 'run the tests' });
+    expect(await runStop(context, true)).toEqual({ continueWith: 'run the tests', halt: undefined });
     expect(JSON.parse(fs.readFileSync(out, 'utf8'))).toMatchObject({ hook_event_name: 'Stop', stop_hook_active: true });
   });
 
   it('lets the agent stop when no Stop hook objects', async () => {
     const { context } = contextFor(settings('Stop', 'true'));
-    expect(await runStop(context, false)).toEqual({ continueWith: undefined });
+    expect(await runStop(context, false)).toEqual({ continueWith: undefined, halt: undefined });
   });
 
   it('treats exit 2 of a SessionStart hook as a visible non-blocking error', async () => {
     const { context, executions } = contextFor(settings('SessionStart', 'echo bad >&2; exit 2'));
-    expect(await runSessionStart(context, 'startup')).toEqual([]);
+    expect((await runSessionStart(context, 'startup')).context).toEqual([]);
     expect(executions[0]).toMatchObject({ outcome: 'error', exitCode: 2, message: 'bad' });
   });
 });

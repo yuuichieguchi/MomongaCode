@@ -7,11 +7,13 @@ export type ParsedHookOutput = {
   additionalContext?: string;
   systemMessage?: string;
   plainText?: string;
+  updatedInput?: Record<string, unknown>;
+  halt?: { reason: string | undefined };
 };
 
 export type HookOutputResult = { ok: true; value: ParsedHookOutput } | { ok: false; message: string };
 
-const UNSUPPORTED_SPECIFIC_FIELDS = ['updatedInput', 'updatedToolOutput', 'updatedMCPToolOutput'] as const;
+const UNSUPPORTED_SPECIFIC_FIELDS = ['updatedToolOutput', 'updatedMCPToolOutput'] as const;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -37,6 +39,12 @@ const specificOutput = (event: HookEvent, record: Record<string, unknown>): Hook
   if (context !== undefined) value.additionalContext = context;
   const reason = optionalString(record, 'permissionDecisionReason', 'hookSpecificOutput.');
   if (isProblem(reason)) return fail(reason.problem);
+  const updated = record['updatedInput'];
+  if (updated !== undefined) {
+    if (event !== 'PreToolUse') return fail(`hookSpecificOutput.updatedInput applies only to PreToolUse, not ${event}`);
+    if (!isRecord(updated)) return fail('hookSpecificOutput.updatedInput must be an object');
+    value.updatedInput = updated;
+  }
   const decision = record['permissionDecision'];
   if (decision !== undefined) {
     if (event !== 'PreToolUse') return fail(`hookSpecificOutput.permissionDecision applies only to PreToolUse, not ${event}`);
@@ -59,8 +67,12 @@ export const parseHookOutput = (event: HookEvent, stdout: string): HookOutputRes
     return fail(`the output is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
   if (!isRecord(parsed)) return fail('the output is not a JSON object');
-  if (parsed['continue'] === false) return fail('continue: false is not supported');
   const value: ParsedHookOutput = {};
+  const proceed = parsed['continue'];
+  if (proceed !== undefined && typeof proceed !== 'boolean') return fail('continue must be a boolean');
+  const stopReason = optionalString(parsed, 'stopReason', '');
+  if (isProblem(stopReason)) return fail(stopReason.problem);
+  if (proceed === false) value.halt = { reason: stopReason };
   const systemMessage = optionalString(parsed, 'systemMessage', '');
   if (isProblem(systemMessage)) return fail(systemMessage.problem);
   if (systemMessage !== undefined) value.systemMessage = systemMessage;

@@ -6,7 +6,7 @@ import { validateToolInput } from '@momonga/tools';
 import type { Session } from '@momonga/store';
 import { createToolHooks } from '@momonga/tools';
 import { createAutoClassifier } from './auto-classifier.ts';
-import { hookRunContextFor } from './hook-step.ts';
+import { haltRun, hookRunContextFor } from './hook-step.ts';
 import type { TraceSpan } from '../ports.ts';
 import type { ClaimContext, Flow } from './claim-context.ts';
 import { pinnedOverflowFailure } from './context-step.ts';
@@ -156,6 +156,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
     : undefined;
   const classifier = session.permissionMode === 'auto' ? createAutoClassifier(ctx, options.tools.sessionState(session).cwd, step) : undefined;
   const spans = new Map<string, TraceSpan>();
+  const halt: { reason?: string; hookEvent?: string } = {};
   let outcomes: CallOutcome[];
   try {
     outcomes = await options.tools.executor.runBatch({
@@ -177,6 +178,10 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
       signal: ctx.control.signal,
       ...(toolHooks === undefined ? {} : { hooks: toolHooks }),
       ...(classifier === undefined ? {} : { classifier }),
+      onHalt: (reason, hookEvent) => {
+        halt.reason = reason;
+        halt.hookEvent = hookEvent;
+      },
       leaseLost: () => ctx.control.leaseLost() || ctx.control.shuttingDown(),
       inlineLimitForReconcile: ctx.inlineLimitForReconcile,
       inlineLimitForExecution: ctx.inlineLimitForExecution,
@@ -204,6 +209,8 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   for (const span of spans.values()) span.end();
   if (ctx.control.leaseLost()) ctx.control.lost();
   if (ctx.control.shuttingDown()) return ctx.terminals.yieldLease();
+
+  if (halt.hookEvent !== undefined) return haltRun(ctx, halt.hookEvent, halt.reason);
 
   const asking = outcomes.filter((outcome): outcome is NeedsApprovalOutcome => outcome.kind === 'needs_approval');
   if (asking.length === 0) return 'continue';

@@ -1,5 +1,8 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { HOOK_BLOCKING_EXIT_CODE, hookMatcherMatches, hookTimeoutMs, HOOK_MATCHER_EVENTS } from '@momonga/protocol';
 import type { HookCommand, HookEvent, HookExecution, HooksSettings, PermissionMode } from '@momonga/protocol';
+import { canonicalJson, findHolders, reconcileProcessGroup, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createCapture, pumpOutput } from '../capture.ts';
@@ -17,6 +20,8 @@ export type HookRunContext = {
   cwd: string;
   projectDir: string;
   tmpDir?: string;
+  markerDir: string;
+  runId: string;
   session: { id: string; permissionMode: PermissionMode };
   clock: Clock;
   signal: AbortSignal;
@@ -74,13 +79,17 @@ const executeHook = async (
     hook_event_name: event,
     ...payload,
   });
+  const marker = path.join(ctx.markerDir, `hook-${sha256Hex(canonicalJson([ctx.runId, event, callId ?? null, command.command]))}`);
   try {
+    fs.rmSync(marker, { force: true });
+    fs.closeSync(fs.openSync(marker, 'wx', 0o600));
     const child = ctx.sandbox.spawn(
       {
         argv: ['/bin/bash', '-c', command.command],
         cwd: ctx.cwd,
         env: { ...ctx.env, MOMONGA_PROJECT_DIR: ctx.projectDir },
         stdin,
+        markerFile: marker,
         ...(ctx.tmpDir === undefined ? {} : { tmpDir: ctx.tmpDir }),
       },
       ctx.sandboxPolicy,
@@ -91,6 +100,7 @@ const executeHook = async (
     let exit;
     try {
       exit = await child.exited;
+      if ((await findHolders(marker)).length > 0) await reconcileProcessGroup({ pgid: child.pgid, marker });
       await pump.settle();
     } finally {
       await pump.close();
@@ -121,11 +131,15 @@ const executeHook = async (
         ...(output.decision === undefined ? {} : { decision: output.decision }),
         ...(output.reason === undefined ? {} : { message: output.reason }),
         ...(output.systemMessage === undefined ? {} : { systemMessage: output.systemMessage }),
+        ...(output.updatedInput === undefined ? {} : { updatedInput: output.updatedInput }),
+        ...(output.halt === undefined ? {} : { halted: true as const }),
+        ...(output.halt?.reason === undefined ? {} : { stopReason: output.halt.reason }),
       },
       output,
       stderr,
     );
   } finally {
+    fs.rmSync(marker, { force: true });
     timer.cancel();
     ctx.signal.removeEventListener('abort', onCancel);
   }

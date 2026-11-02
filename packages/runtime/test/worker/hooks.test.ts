@@ -87,4 +87,67 @@ describe('worker hooks', () => {
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(fs.readFileSync(target, 'utf8')).toBe('x');
   });
+
+  const haltJson = JSON.stringify({ continue: false, stopReason: 'maintenance window' });
+
+  it('fails the run with hook_stopped when a PreToolUse hook says continue false, and the tool never runs', async () => {
+    const env = await makeEnv({ mode: 'bypassPermissions' });
+    const target = path.join(env.project, 'out.txt');
+    env.settings.hooksValue = hooks('PreToolUse', `echo '${haltJson}'`, 'Write');
+    env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'x' } }]));
+    const run = env.enqueue('write it');
+    await env.runOnce(workerWithProcesses(env));
+    expect(env.run(run.id)).toMatchObject({ status: 'FAILED', error: { code: 'hook_stopped', message: 'maintenance window' } });
+    expect(fs.existsSync(target)).toBe(false);
+    expect(env.ofType(run.id, 'hook.completed')).toMatchObject([{ halted: true, stopReason: 'maintenance window' }]);
+    expect(env.ofType(run.id, 'tool.completed')).toHaveLength(1);
+  });
+
+  it('applies a PreToolUse updatedInput to what the tool receives', async () => {
+    const env = await makeEnv({ mode: 'bypassPermissions' });
+    const original = path.join(env.project, 'original.txt');
+    const rewritten = path.join(env.project, 'rewritten.txt');
+    const json = JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', updatedInput: { file_path: rewritten, content: 'y' } } });
+    env.settings.hooksValue = hooks('PreToolUse', `echo '${json}'`, 'Write');
+    env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: original, content: 'x' } }]), textStep('done'));
+    const run = env.enqueue('write it');
+    await env.runOnce(workerWithProcesses(env));
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(fs.existsSync(original)).toBe(false);
+    expect(fs.readFileSync(rewritten, 'utf8')).toBe('y');
+  });
+
+  it('fails the run with hook_stopped when a SessionStart hook says continue false, before any model call', async () => {
+    const env = await makeEnv();
+    env.settings.hooksValue = hooks('SessionStart', `echo '${haltJson}'`, 'startup');
+    const run = env.enqueue('hello');
+    await env.runOnce(workerWithProcesses(env));
+    expect(env.run(run.id)).toMatchObject({ status: 'FAILED', error: { code: 'hook_stopped' } });
+    expect(env.gateway.streams).toHaveLength(0);
+  });
+
+  it('completes the run with a notice when a Stop hook says continue false', async () => {
+    const env = await makeEnv();
+    env.settings.hooksValue = hooks('Stop', `echo '${haltJson}'`);
+    env.gateway.script.push(textStep('done'));
+    const run = env.enqueue('hello');
+    await env.runOnce(workerWithProcesses(env));
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(env.ofType(run.id, 'notice').some((notice) => notice.message.includes('maintenance window'))).toBe(true);
+  });
+
+  it('runs a PreToolUse hook once for a write that needs approval', async () => {
+    const env = await makeEnv();
+    const target = path.join(env.project, 'out.txt');
+    const counter = path.join(env.project, 'hook-runs.txt');
+    env.settings.hooksValue = hooks('PreToolUse', `echo run >> ${counter}`, 'Write');
+    env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'x' } }]), textStep('written'));
+    const run = env.enqueue('write it');
+    await env.runOnce(workerWithProcesses(env));
+    env.resolveApproval(run.id, 'allow_once');
+    await env.runOnce(workerWithProcesses(env));
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(fs.readFileSync(target, 'utf8')).toBe('x');
+    expect(fs.readFileSync(counter, 'utf8').trim().split('\n')).toHaveLength(1);
+  });
 });

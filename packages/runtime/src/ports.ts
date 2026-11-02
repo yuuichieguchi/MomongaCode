@@ -65,6 +65,7 @@ export type ToolRuntimePort = {
   recoveryContextFor(session: Session, options: { env: ToolEnv }): Promise<RecoveryContext>;
   executor: ToolExecutor;
   sandbox: Sandbox;
+  markerDir: string;
   sessionState(session: Session): ToolSessionState;
 };
 

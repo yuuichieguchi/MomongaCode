@@ -1,4 +1,4 @@
-import { STOP_HOOK_MAX_CONTINUATIONS } from '@momonga/protocol';
+import { HOOK_STOPPED_CODE, STOP_HOOK_MAX_CONTINUATIONS, USER_PROMPT_BLOCKED_CODE } from '@momonga/protocol';
 import type { HookExecution, HooksSettings, RunEventPayload } from '@momonga/protocol';
 import { runSessionStart, runStop, runUserPromptSubmit, selectHookCommands } from '@momonga/tools';
 import type { HookRunContext } from '@momonga/tools';
@@ -9,7 +9,6 @@ import type { ClaimContext, Flow } from './claim-context.ts';
 
 export const STOP_HOOK_FEEDBACK_PREFIX = '[Stop hook feedback]\n';
 export const HOOK_CONTEXT_PREFIX = 'hook context';
-export const USER_PROMPT_BLOCKED_CODE = 'user_prompt_blocked';
 
 const hookCompleted = (execution: HookExecution): RunEventPayload => ({ type: 'hook.completed', ...execution });
 
@@ -36,6 +35,8 @@ export const hookRunContextFor = (
   cwd: ctx.options.tools.sessionState(session).cwd,
   projectDir: session.cwd,
   tmpDir: policy.tmpDir,
+  markerDir: ctx.options.tools.markerDir,
+  runId: ctx.run.id,
   session: { id: session.id, permissionMode: session.permissionMode },
   clock: ctx.options.clock,
   signal: ctx.control.signal,
@@ -56,6 +57,12 @@ const lifecycleHooksFor = async (ctx: ClaimContext, hooks: HooksSettings): Promi
 const alreadyRan = (ctx: ClaimContext, event: HookExecution['hookEvent']): boolean =>
   ctx.journal.countWhere((recorded) => recorded.type === 'hook.completed' && recorded.hookEvent === event) > 0;
 
+export const haltRun = (ctx: ClaimContext, event: string, reason: string | undefined): Flow => {
+  const message = reason === undefined || reason === '' ? `a ${event} hook stopped the run` : reason;
+  ctx.journal.append([{ type: 'notice', level: 'warning', message: `Stopped by a ${event} hook: ${message}` }]);
+  return ctx.terminals.finish('FAILED', { error: { code: HOOK_STOPPED_CODE, message } });
+};
+
 export const runStartHooks = async (ctx: ClaimContext): Promise<Flow> => {
   const session = sessionOf(ctx);
   const hooks = await ctx.options.settings.hooks(session);
@@ -64,8 +71,9 @@ export const runStartHooks = async (ctx: ClaimContext): Promise<Flow> => {
   if (!wantsSessionStart && !wantsPrompt) return 'continue';
   const lifecycle = await lifecycleHooksFor(ctx, hooks);
   if (wantsSessionStart) {
-    const context = await runSessionStart(lifecycle.context, 'startup');
-    ctx.journal.append([...lifecycle.executions.splice(0).map(hookCompleted), ...contextMessage('SessionStart', context)]);
+    const started = await runSessionStart(lifecycle.context, 'startup');
+    ctx.journal.append([...lifecycle.executions.splice(0).map(hookCompleted), ...contextMessage('SessionStart', started.context)]);
+    if (started.halt !== undefined) return haltRun(ctx, 'SessionStart', started.halt.reason);
   }
   if (wantsPrompt) {
     const [first] = ctx.options.store.readRunEvents(ctx.run.id, 0, 1);
@@ -90,6 +98,13 @@ export const runStopHooks = async (ctx: ClaimContext): Promise<'continue' | 'all
   }
   const lifecycle = await lifecycleHooksFor(ctx, hooks);
   const result = await runStop(lifecycle.context, continuations > 0);
+  if (result.halt !== undefined) {
+    ctx.journal.append([
+      ...lifecycle.executions.map(hookCompleted),
+      { type: 'notice', level: 'info', message: `A Stop hook ended the run: ${result.halt.reason ?? 'no reason given'}` },
+    ]);
+    return 'allow';
+  }
   const feedback: RunEventPayload[] = result.continueWith === undefined ? [] : [{ type: 'user.message', text: `${STOP_HOOK_FEEDBACK_PREFIX}${result.continueWith}` }];
   ctx.journal.append([...lifecycle.executions.map(hookCompleted), ...feedback]);
   return result.continueWith === undefined ? 'allow' : 'continue';
