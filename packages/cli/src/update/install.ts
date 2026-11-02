@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { parseChecksumListing } from '@momonga/foundation';
+import { RELEASE_SIGNATURE_ASSET, RELEASE_SIGNATURE_TOOL, parseChecksumListing, verifyReleaseSignature } from '@momonga/foundation';
+import type { PlaceFile, ReleaseSignatureVerdict } from '@momonga/foundation';
 import { UpdateError } from './errors.ts';
-import type { StagedFile, UpdateFs, UpdatePorts } from './ports.ts';
+import type { StagedFile, UpdatePorts } from './ports.ts';
 import { readText, requestOrFail } from './release.ts';
 import type { Release } from './release.ts';
 import { CHECKSUMS_ASSET, assetNameFor, resolveUpdateSource } from './source.ts';
@@ -26,10 +27,73 @@ export const resolveUpdateTarget = (ports: Pick<UpdatePorts, 'self' | 'platform'
 const releaseUrl = (source: UpdateSource, release: Release, name: string): string =>
   `${source.endpoints.downloadBaseUrl}/${source.repo}/releases/download/${release.tag}/${name}`;
 
-const expectedChecksum = async (ports: UpdatePorts, target: UpdateTarget, release: Release, signal: AbortSignal): Promise<string> => {
+const SIGNING_FILE_MODE = 0o600;
+
+const reportUnremoved = (ports: UpdatePorts, file: string, cleanup: unknown): void => {
+  ports.stderr.write(`momonga: the staging file ${file} could not be removed: ${cleanup instanceof Error ? cleanup.message : String(cleanup)}\n`);
+};
+
+const placeSigningFile =
+  (ports: UpdatePorts, directory: string): PlaceFile =>
+  async (content) => {
+    const staged = await inDirectory(directory, () => ports.fs.stage(directory, SIGNING_FILE_MODE));
+    try {
+      await staged.write(new TextEncoder().encode(content));
+      await staged.close();
+    } catch (error) {
+      await abandon(ports, staged, error);
+    }
+    return {
+      path: staged.path,
+      remove: async () => {
+        try {
+          await ports.fs.remove(staged.path);
+        } catch (cleanup) {
+          reportUnremoved(ports, staged.path, cleanup);
+        }
+      },
+    };
+  };
+
+const isMissingProgram = (error: unknown): boolean => typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
+
+const verifyChecksumsSignature = async (ports: UpdatePorts, source: UpdateSource, directory: string, checksums: string, release: Release, signal: AbortSignal): Promise<void> => {
+  const what = `downloading ${RELEASE_SIGNATURE_ASSET}`;
+  const response = await requestOrFail(ports, releaseUrl(source, release, RELEASE_SIGNATURE_ASSET), signal, 'signature_unavailable', what);
+  const signature = await readText(response, signal, 'signature_unavailable', what);
+  let verdict: ReleaseSignatureVerdict;
+  try {
+    verdict = await verifyReleaseSignature({
+      run: ports.run,
+      env: ports.env,
+      place: placeSigningFile(ports, directory),
+      publicKey: source.publicKey,
+      checksums,
+      signature,
+      timeoutMs: CANDIDATE_CHECK_TIMEOUT_MS,
+      signal,
+    });
+  } catch (error) {
+    if (!isMissingProgram(error)) throw error;
+    throw new UpdateError('signature_tool_missing', `${RELEASE_SIGNATURE_TOOL} is required to verify the release signature and was not found`, {
+      remediation: 'install the OpenSSH client, then run `momonga update` again',
+      cause: error,
+    });
+  }
+  if (verdict.kind === 'invalid') {
+    throw new UpdateError('signature_rejected', `${CHECKSUMS_ASSET} of ${release.tag} is not signed by the release key this build pins`, {
+      detail: verdict.detail,
+      remediation: 'nothing was installed',
+    });
+  }
+};
+
+const expectedChecksum = async (ports: UpdatePorts, target: UpdateTarget, release: Release, directory: string, signal: AbortSignal): Promise<string> => {
   const what = `downloading ${CHECKSUMS_ASSET}`;
   const response = await requestOrFail(ports, releaseUrl(target.source, release, CHECKSUMS_ASSET), signal, 'checksums_unavailable', what);
-  const listing = parseChecksumListing(await readText(response, signal, 'checksums_unavailable', what), CHECKSUMS_ASSET);
+  const checksums = await readText(response, signal, 'checksums_unavailable', what);
+  await verifyChecksumsSignature(ports, target.source, directory, checksums, release, signal);
+  const listing = parseChecksumListing(checksums, CHECKSUMS_ASSET);
   const checksum = listing.get(target.asset);
   if (checksum === undefined) {
     throw new UpdateError('checksum_entry_missing', `${CHECKSUMS_ASSET} of ${release.tag} has no entry for ${target.asset}`, { detail: releaseUrl(target.source, release, CHECKSUMS_ASSET) });
@@ -58,9 +122,9 @@ const developerIdRequirement = (teamId: string): string =>
 
 export const CODESIGN = '/usr/bin/codesign';
 
-const verifySignature = async (ports: UpdatePorts, source: UpdateSource, file: string, signal: AbortSignal): Promise<void> => {
-  if (source.signature.kind === 'none') return;
-  const { teamId } = source.signature;
+const verifyCodesign = async (ports: UpdatePorts, source: UpdateSource, file: string, signal: AbortSignal): Promise<void> => {
+  if (source.codesign.kind === 'none') return;
+  const { teamId } = source.codesign;
   const result = await ports.run(CODESIGN, ['--verify', '--strict', '--verbose=2', `-R=${developerIdRequirement(teamId)}`, file], {
     env: ports.env,
     timeoutMs: CANDIDATE_CHECK_TIMEOUT_MS,
@@ -104,7 +168,7 @@ const abandon = async (ports: UpdatePorts, staged: StagedFile, original: unknown
     await staged.close();
     await ports.fs.remove(staged.path);
   } catch (cleanup) {
-    ports.stderr.write(`momonga: the staging file ${staged.path} could not be removed: ${cleanup instanceof Error ? cleanup.message : String(cleanup)}\n`);
+    reportUnremoved(ports, staged.path, cleanup);
   }
   throw original;
 };
@@ -129,7 +193,7 @@ export const installLocked = async (ports: UpdatePorts, update: UpdateTarget, re
   const directory = path.dirname(target);
   const daemonWasRunning = options.restartDaemon && (await ports.daemon.running());
   await inDirectory(directory, () => ports.fs.removeLeftovers(directory));
-  const expected = await expectedChecksum(ports, update, release, signal);
+  const expected = await expectedChecksum(ports, update, release, directory, signal);
   const staged = await inDirectory(directory, async () => ports.fs.stage(directory, await ports.fs.modeOf(target)));
   try {
     const actual = await downloadInto(ports, releaseUrl(update.source, release, update.asset), staged, signal);
@@ -139,7 +203,7 @@ export const installLocked = async (ports: UpdatePorts, update: UpdateTarget, re
         remediation: 'nothing was installed; try again later',
       });
     }
-    await verifySignature(ports, update.source, staged.path, signal);
+    await verifyCodesign(ports, update.source, staged.path, signal);
     await verifyCandidateRuns(ports, staged.path, release, signal);
     await inDirectory(directory, () => ports.fs.publish(staged.path, target));
   } catch (error) {

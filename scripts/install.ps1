@@ -23,7 +23,7 @@ if ($env:MOMONGA_RELEASE_BASE_URL) {
 }
 
 if ($env:MOMONGA_RELEASE_PUBLIC_KEY) { $publicKey = $env:MOMONGA_RELEASE_PUBLIC_KEY } else { $publicKey = $embeddedReleasePublicKey }
-if (-not $publicKey) { Fail 'no release signing key is pinned: set MOMONGA_RELEASE_PUBLIC_KEY to the ssh public key line published by the maintainers' }
+if (-not $publicKey) { Fail 'this installer pins no release signing key, so it cannot verify the release: install from a release whose installer pins the key, or set MOMONGA_RELEASE_PUBLIC_KEY to the ssh public key line the maintainers publish (ssh-ed25519 AAAA...)' }
 $sshKeygen = Get-Command ssh-keygen -ErrorAction SilentlyContinue
 if (-not $sshKeygen) { Fail 'ssh-keygen is required to verify the release signature: enable the Windows OpenSSH Client optional feature' }
 if ($baseUrl -notmatch '^https://' -and $baseUrl -notmatch '^http://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(/|$)') {

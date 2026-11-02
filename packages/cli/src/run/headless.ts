@@ -2,7 +2,7 @@ import type { MomongaPaths } from '@momonga/foundation';
 import type { PermissionMode, PublicRunEvent } from '@momonga/protocol';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView } from '../client/views.ts';
-import { daemonReadyBoundMs, ensureDaemon } from '../daemon/ensure-daemon.ts';
+import { daemonReadyBoundMs, restoreDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { describeElicitation } from '../elicit/describe.ts';
 import { readImageAttachment } from '../images.ts';
@@ -182,9 +182,7 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
     ...(options.after === undefined ? {} : { seenThrough: options.after }),
     onSeenEvent: sink.absorb,
     reconnectBoundMs: await daemonReadyBoundMs(),
-    restoreConnection: async () => {
-      await ensureDaemon(ports, paths);
-    },
+    restoreConnection: restoreDaemon(ports, paths),
     onEvent: sink.handle,
     onChildEvent: sink.handleChild,
     onReconnecting: (attempt) => ports.stderr.write(`momonga: lost the event stream, reconnecting (attempt ${attempt + 1})\n`),

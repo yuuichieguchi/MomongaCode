@@ -138,14 +138,26 @@ const isStrictlyNewerThan = (clientVersion: string, daemonVersion: string): bool
   return client !== undefined && daemon !== undefined && compareVersions(client, daemon) === 1;
 };
 
-const replaceOlder = async (ports: DaemonPorts, client: SupervisorClient, current: SupervisorHealth, replacement: DaemonReplacement): Promise<boolean> => {
+const replaceOlder = async (
+  ports: DaemonPorts,
+  client: SupervisorClient,
+  current: SupervisorHealth,
+  replacement: DaemonReplacement,
+  signal: AbortSignal | undefined,
+): Promise<boolean> => {
   if (replacement === 'never' || !isStrictlyNewerThan(ports.version, current.version)) return false;
   if (replacement === 'always') {
-    await client.shutdown();
+    await client.shutdown(signal);
     return true;
   }
-  return (await client.shutdownIfIdle()).accepted;
+  return (await client.shutdownIfIdle(signal)).accepted;
 };
+
+export const restoreDaemon =
+  (ports: DaemonPorts, paths: MomongaPaths) =>
+  async (signal: AbortSignal | undefined): Promise<void> => {
+    await ensureDaemon(ports, paths, signal === undefined ? {} : { signal });
+  };
 
 export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, options: EnsureDaemonOptions = {}): Promise<SupervisorHealth> => {
   const { signal } = options;
@@ -159,7 +171,7 @@ export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, opti
       await waitForSupervisorGone(ports, paths, stopMs, signal);
       return await startDaemon(ports, paths, client, readyMs, signal);
     }
-    if (await replaceOlder(ports, client, current, options.replacement ?? 'never')) {
+    if (await replaceOlder(ports, client, current, options.replacement ?? 'never', signal)) {
       await waitForSupervisorGone(ports, paths, stopMs, signal);
       return await startDaemon(ports, paths, client, readyMs, signal);
     }

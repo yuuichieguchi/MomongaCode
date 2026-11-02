@@ -45,7 +45,7 @@ export const requestOrFail = async (
 };
 
 export const readText = async (response: HttpResponse, signal: AbortSignal, code: UpdateErrorCode, what: string): Promise<string> => {
-  const decoder = new TextDecoder('utf-8', { fatal: true });
+  const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
   let text = '';
   try {
     for await (const chunk of response.body) text += decoder.decode(chunk, { stream: true });

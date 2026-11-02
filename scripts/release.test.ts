@@ -26,7 +26,8 @@ fi`,
   xcrun: `printf '{"id":"fake-submission","status":"%s"}\\n' "\${STUB_NOTARY_STATUS:-Accepted}"`,
   spctl: `exit "\${STUB_SPCTL_EXIT:-0}"`,
   codesign: `if [ "$1" = "--display" ]; then printf 'Authority=Developer ID\\nTeamIdentifier=%s\\n' "\${STUB_TEAM_ID:-FAKE000000}" >&2; fi`,
-  'ssh-keygen': `for last; do :; done
+  'ssh-keygen': `case " $* " in *" verify "*) exit "\${STUB_SSH_VERIFY_EXIT:-0}" ;; esac
+for last; do :; done
 printf 'signature' > "$last.sig"`,
   gh: `case "$1 $2" in
   "release edit")
@@ -51,6 +52,13 @@ const gitEnv = (): NodeJS.ProcessEnv => ({
   GIT_AUTHOR_EMAIL: 'release-test@example.invalid',
   GIT_COMMITTER_NAME: 'Release Test',
   GIT_COMMITTER_EMAIL: 'release-test@example.invalid',
+});
+
+const PINNED_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl';
+
+const installers = (key: string): Record<string, string> => ({
+  'scripts/install.sh': `#!/bin/bash\nreadonly EMBEDDED_RELEASE_PUBLIC_KEY="${key}"\n`,
+  'scripts/install.ps1': `$embeddedReleasePublicKey = '${key}'\n`,
 });
 
 const CHECKS = ['npm', 'npm', 'npm', 'npm'];
@@ -129,8 +137,11 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     fs.mkdirSync(path.join(work, 'packages/cli'), { recursive: true });
     fs.copyFileSync(`${repoRoot}scripts/release.sh`, path.join(work, 'scripts/release.sh'));
     fs.copyFileSync(`${repoRoot}scripts/sea-entitlements.plist`, path.join(work, 'scripts/sea-entitlements.plist'));
+    fs.copyFileSync(`${repoRoot}scripts/release-key.ts`, path.join(work, 'scripts/release-key.ts'));
+    for (const [file, content] of Object.entries(installers(PINNED_KEY))) fs.writeFileSync(path.join(work, file), content);
+    fs.symlinkSync(`${repoRoot}node_modules`, path.join(work, 'node_modules'));
     fs.writeFileSync(path.join(work, 'packages/cli/package.json'), JSON.stringify({ name: 'momonga', version: '1.2.3' }));
-    fs.writeFileSync(path.join(work, '.gitignore'), 'dist/\n');
+    fs.writeFileSync(path.join(work, '.gitignore'), 'dist/\nnode_modules\n');
     git(work, 'init', '--initial-branch=main');
     git(work, 'remote', 'add', 'origin', origin);
     commit('first change');
@@ -175,6 +186,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
       'write_checksums',
       'rm -f',
       'ssh-keygen -Y',
+      `node ${work}/scripts/release-key.ts`,
       'gh release',
       'gh release',
       'git fetch',
@@ -205,11 +217,12 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
       'npm run',
       'npm run',
       'ssh-keygen -Y',
+      'ssh-keygen -Y',
       'gh release',
       'gh release',
     ]);
     expect(calls.slice(0, 4)).toEqual(['npm run typecheck ', 'npm test ', 'npm run test:e2e ', 'npm run test:packaging ']);
-    const updateSourceFlags = '--repo fake-owner/fake-repo --team-id FAKE000000 ';
+    const updateSourceFlags = `--repo fake-owner/fake-repo --team-id FAKE000000 --release-public-key ${PINNED_KEY} `;
     expect(calls[4]).toBe(`npm run sea -- --unsigned --output ${binary} ${updateSourceFlags}`);
     expect(calls[5]).toBe(
       `codesign --sign Developer ID Application: Fake Person (FAKE000000) --force --timestamp --options runtime --entitlements ${work}/scripts/sea-entitlements.plist ${binary} `,
@@ -227,14 +240,52 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
       ),
     );
     expect(calls[14]).toBe(`ssh-keygen -Y sign -f ${signingKey} -n momonga-release ${out}/SHA256SUMS `);
-    expect(calls[15]).toContain(
+    expect(calls[15]).toMatch(/^ssh-keygen -Y verify -f \S+ -I momonga-release -n momonga-release -s \S+ $/);
+    expect(calls[16]).toContain(
       `gh release create v1.2.3 ${binary} ${out}/momonga-linux-x64 ${out}/momonga-linux-arm64 ${out}/momonga-win-x64.exe ${out}/SHA256SUMS ${out}/SHA256SUMS.sig --repo fake-owner/fake-repo --draft --target ${git(work, 'rev-parse', 'HEAD').trim()} --title v1.2.3 --notes - second change (`,
     );
-    expect(calls[16]).toBe('gh release edit v1.2.3 --repo fake-owner/fake-repo --draft=false ');
+    expect(calls[17]).toBe('gh release edit v1.2.3 --repo fake-owner/fake-repo --draft=false ');
     expect(originTags()).toBe('v1.2.3\n');
     expect(git(work, 'tag', '--list')).toBe('v1.2.3\n');
     const sums = fs.readFileSync(`${work}/dist/release/SHA256SUMS`, 'utf8').trimEnd().split('\n');
     expect(sums.map((line) => line.replace(/^[0-9a-f]{64} {2}/, ''))).toEqual(['momonga-darwin-arm64', 'momonga-linux-x64', 'momonga-linux-arm64', 'momonga-win-x64.exe']);
+  });
+
+  it('refuses to build or publish when the installers pin no release key, and says what to do', () => {
+    for (const [file, content] of Object.entries(installers(''))) fs.writeFileSync(path.join(work, file), content);
+    git(work, 'add', '-A');
+    commit('unpin the release key');
+
+    const result = release();
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('no release signing key is pinned in scripts/install.sh and scripts/install.ps1');
+    expect(result.stderr).toContain('ssh-keygen -y -f <RELEASE_SIGNING_KEY>');
+    expect(loggedCalls()).toEqual([]);
+    expect(originTags()).toBe('');
+  });
+
+  it('refuses to build when the two installers pin different keys', () => {
+    fs.writeFileSync(path.join(work, 'scripts/install.ps1'), installers(`${PINNED_KEY.slice(0, -4)}AAAA`)['scripts/install.ps1'] as string);
+    commit('diverge the pins');
+
+    const result = release();
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('pin different release public keys');
+    expect(loggedCalls()).toEqual([]);
+  });
+
+  it('does not publish when the key pinned in the installers does not verify the signature it just made', () => {
+    commit('second change');
+
+    const result = release({ STUB_SSH_VERIFY_EXIT: '1' });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('is not signed by the release key pinned in the installers; refusing to publish');
+    expect(loggedNames().slice(-2)).toEqual(['ssh-keygen', 'ssh-keygen']);
+    expect(loggedNames()).not.toContain('gh');
+    expect(originTags()).toBe('');
   });
 
   it('covers every commit when there is no previous tag', () => {

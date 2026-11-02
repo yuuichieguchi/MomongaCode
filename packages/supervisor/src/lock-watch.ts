@@ -1,4 +1,4 @@
-import { createUdsClient, inspectProcessLock, isTransientFailure } from '@momonga/foundation';
+import { LOCAL_REQUEST_HEADERS_TIMEOUT_MS, createUdsClient, inspectProcessLock, isTransientFailure } from '@momonga/foundation';
 import type { KernelLockMechanism, ProcessLockInspection } from '@momonga/foundation';
 import { LINE_MAX_BYTES } from './constants.ts';
 import type { SupervisorTimers } from './constants.ts';
@@ -31,7 +31,7 @@ export type LockWatchOptions = {
 
 export type LockWatch = { stop(): void };
 
-export const PROBE_HEADERS_TIMEOUT_MS = 2000;
+export const PROBE_HEADERS_TIMEOUT_MS = LOCAL_REQUEST_HEADERS_TIMEOUT_MS;
 export const HEALTH_BODY_MAX_BYTES = LINE_MAX_BYTES;
 
 const HEALTH_PATHS = { runtime: '/v1/health', gateway: '/v1/momonga/health' } as const satisfies Record<ChildRole, string>;

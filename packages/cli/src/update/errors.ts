@@ -12,6 +12,8 @@ export const UPDATE_ERROR_CODES = [
   'checksum_entry_missing',
   'download_failed',
   'checksum_mismatch',
+  'signature_unavailable',
+  'signature_tool_missing',
   'signature_rejected',
   'candidate_unusable',
   'install_directory_not_writable',

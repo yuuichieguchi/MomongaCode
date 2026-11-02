@@ -2,7 +2,7 @@ import { waitFor } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { UPDATE_CHECK_COMMAND, announceUpdate, runBackgroundCheck, startBackgroundCheck } from '../src/update/background.ts';
 import { assetNameFor } from '../src/update/source.ts';
-import { NEW_BINARY, OLD_BINARY, setupUpdate } from './update-harness.ts';
+import { NEW_BINARY, OLD_BINARY, PUBLIC_KEY, setupUpdate } from './update-harness.ts';
 import type { HarnessOptions, UpdateHarness } from './update-harness.ts';
 
 const interrupt = (): AbortSignal => new AbortController().signal;
@@ -49,6 +49,21 @@ describe('startBackgroundCheck: what the user command does', () => {
     expect(harness.released.count).toBe(0);
   });
 
+  it('decides whether a check is running without taking the update lock, so it cannot make a concurrent update fail', async (context) => {
+    const harness = await setupUpdate(context);
+    let acquisitions = 0;
+    const acquire = harness.ports.lock.acquire;
+    harness.ports.lock.acquire = async () => {
+      acquisitions += 1;
+      return acquire();
+    };
+
+    await startBackgroundCheck(harness.wiring);
+
+    expect(harness.spawned).toHaveLength(1);
+    expect(acquisitions).toBe(0);
+  });
+
   it('treats a check time in the future as due', async (context) => {
     const harness = await setupUpdate(context);
     harness.state.value = { checkedAt: 10_000_000, outcome: { kind: 'up_to_date' }, announced: true };
@@ -72,7 +87,7 @@ describe('startBackgroundCheck: what the user command does', () => {
 
   const inapplicable: readonly [string, HarnessOptions][] = [
     ['a build run from source', { scripted: true }],
-    ['a build without an update source', { build: { repo: undefined, teamId: undefined } }],
+    ['a build without an update source', { build: { repo: undefined, teamId: undefined, publicKey: undefined } }],
     ['a platform without a release asset', { platform: 'win32' }],
   ];
   for (const [label, options] of inapplicable) {
@@ -89,7 +104,7 @@ describe('startBackgroundCheck: what the user command does', () => {
   }
 
   it('surfaces a malformed build input instead of skipping silently', async (context) => {
-    const harness = await setupUpdate(context, { build: { repo: 'no-slash', teamId: undefined } });
+    const harness = await setupUpdate(context, { build: { repo: 'no-slash', teamId: undefined, publicKey: PUBLIC_KEY } });
 
     await expect(startBackgroundCheck(harness.wiring)).rejects.toMatchObject({ code: 'invalid_update_source' });
   });

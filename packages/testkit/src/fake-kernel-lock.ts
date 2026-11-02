@@ -1,12 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ClaimOutcome, KernelLockMechanism } from '@momonga/foundation';
+import type { ClaimOutcome, HeldKernelLock, KernelLockMechanism } from '@momonga/foundation';
 
 export type FakeKernelLock = KernelLockMechanism & {
   holdExternally(lockPath: string, pid: number): void;
   releaseExternally(lockPath: string): void;
   isHeldBy(lockPath: string): 'external' | 'claim' | undefined;
   claimsMade(): readonly string[];
+  adoptionsMade(): readonly { lockPath: string; descriptor: number }[];
 };
 
 export type FakeKernelLockOptions = { inheritable: boolean };
@@ -17,24 +18,24 @@ export const createFakeKernelLock = ({ inheritable }: FakeKernelLockOptions): Fa
   const holders = new Map<string, 'external' | 'claim'>();
   const claims: string[] = [];
   let nextDescriptor = FIRST_DESCRIPTOR;
+  const adoptions: { lockPath: string; descriptor: number }[] = [];
+  const claimedLock = (lockPath: string, descriptor: number | undefined): HeldKernelLock => {
+    let open = true;
+    return {
+      descriptor,
+      writeHolder: (text) => fs.writeFileSync(lockPath, text, { mode: 0o600 }),
+      release: () => {
+        if (!open) return;
+        open = false;
+        holders.delete(lockPath);
+      },
+    };
+  };
   const claimSync = (lockPath: string): ClaimOutcome => {
     if (holders.has(lockPath)) return { kind: 'held' };
     holders.set(lockPath, 'claim');
     claims.push(lockPath);
-    const descriptor = inheritable ? nextDescriptor++ : undefined;
-    let open = true;
-    return {
-      kind: 'claimed',
-      lock: {
-        descriptor,
-        writeHolder: (text) => fs.writeFileSync(lockPath, text, { mode: 0o600 }),
-        release: () => {
-          if (!open) return;
-          open = false;
-          holders.delete(lockPath);
-        },
-      },
-    };
+    return { kind: 'claimed', lock: claimedLock(lockPath, inheritable ? nextDescriptor++ : undefined) };
   };
   const readHolderSync = (lockPath: string): string | undefined => {
     try {
@@ -51,6 +52,15 @@ export const createFakeKernelLock = ({ inheritable }: FakeKernelLockOptions): Fa
     readHolder: async (lockPath) => readHolderSync(lockPath),
     readHolderSync,
     claimInheritable: inheritable ? claimSync : undefined,
+    adoptInherited: inheritable
+      ? (request) => {
+          adoptions.push({ lockPath: request.lockPath, descriptor: request.descriptor });
+          holders.set(request.lockPath, 'claim');
+          const lock = claimedLock(request.lockPath, request.descriptor);
+          lock.writeHolder(request.newHolder);
+          return lock;
+        }
+      : undefined,
     holdExternally: (lockPath, pid) => {
       holders.set(lockPath, 'external');
       fs.mkdirSync(path.dirname(lockPath), { recursive: true, mode: 0o700 });
@@ -61,5 +71,6 @@ export const createFakeKernelLock = ({ inheritable }: FakeKernelLockOptions): Fa
     },
     isHeldBy: (lockPath) => holders.get(lockPath),
     claimsMade: () => [...claims],
+    adoptionsMade: () => [...adoptions],
   };
 };

@@ -15,7 +15,7 @@ export type HistoryStore = {
 
 export class HistoryCorrupt extends Error {
   constructor(file: string, line: number, detail: string) {
-    super(`input history ${file} is corrupt at line ${line}: ${detail}`);
+    super(`input history ${file} is corrupt at line ${line}: ${detail}; remove that line, or delete the file to start with an empty history`);
     this.name = 'HistoryCorrupt';
   }
 }
@@ -36,8 +36,9 @@ const readEntries = async (files: Pick<CliFiles, 'readTextIfPresent'>, file: str
   if (text === undefined) return [];
   return text
     .split('\n')
-    .filter((line) => line !== '')
-    .map((line, index) => parseEntry(file, line, index + 1));
+    .map((line, index) => ({ line, number: index + 1 }))
+    .filter(({ line }) => line !== '')
+    .map(({ line, number }) => parseEntry(file, line, number));
 };
 
 export const createHistoryStore = (files: Pick<CliFiles, 'readTextIfPresent' | 'appendText' | 'rename'>, file: string): HistoryStore => {

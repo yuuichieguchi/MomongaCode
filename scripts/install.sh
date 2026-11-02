@@ -37,7 +37,7 @@ else
 fi
 
 public_key="${MOMONGA_RELEASE_PUBLIC_KEY:-$EMBEDDED_RELEASE_PUBLIC_KEY}"
-[ -n "$public_key" ] || fail "no release signing key is pinned: set MOMONGA_RELEASE_PUBLIC_KEY to the ssh public key line published by the maintainers"
+[ -n "$public_key" ] || fail "this installer pins no release signing key, so it cannot verify the release: install from a release whose installer pins the key, or set MOMONGA_RELEASE_PUBLIC_KEY to the ssh public key line the maintainers publish (ssh-ed25519 AAAA...)"
 command -v ssh-keygen > /dev/null || fail "ssh-keygen is required to verify the release signature"
 
 loopback_http='^http://(127\.0\.0\.1|localhost|\[::1\])(:[0-9]+)?(/.*)?$'

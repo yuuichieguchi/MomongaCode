@@ -42,8 +42,9 @@ export type {
   ProcessLockInspection,
   ProcessLockOptions,
 } from './process-lock.ts';
-export { ABSTRACT_SOCKET_PREFIX, PIPE_LOCK_PREFIX, claimNetAddress, createKernelLockMechanism, darwinFileLock, hostKernelLock, netLockAddress, probeNetAddress } from './platform/kernel-lock.ts';
-export type { ClaimOutcome, HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
+export { createFileLock, createKernelLockMechanism, darwinFileLock, hostKernelLock, nodeFileLockOps } from './platform/kernel-lock.ts';
+export { LOCK_DATABASE_SUFFIX, sqliteFileLock } from './platform/sqlite-lock.ts';
+export type { ClaimOutcome, FileLockOps, HeldKernelLock, InheritedLockRequest, KernelLockMechanism } from './platform/kernel-lock.ts';
 export { judgeProcessIdentity } from './process-identity.ts';
 export type { ProcessIdentity } from './process-identity.ts';
 export { SessionTmpDirError, adapterSocketPath, ensureMomongaDirs, ensureSessionTmpDir, momongaLayout, momongaPaths, rotatedLogPath } from './momonga-paths.ts';
@@ -89,6 +90,9 @@ export {
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
   RUNTIME_TEARDOWN_BUDGET_MS,
   SHUTDOWN_MARGIN_MS,
+  CONTROL_REQUEST_TIMEOUT_MS,
+  LOCAL_REQUEST_HEADERS_TIMEOUT_MS,
+  SUPERVISOR_RESPONSE_BOUND_MS,
   STDIO_EXIT_FLUSH_MS,
   CHILD_STDIO_FLUSH_MS,
   KILL_CONFIRM_MS,
@@ -147,3 +151,12 @@ export { nodeProcFs } from './platform/procfs.ts';
 export type { FileIdentity, ProcFs } from './platform/procfs.ts';
 export type { PlatformDirectoryPorts } from './momonga-paths.ts';
 export { parseChecksumListing } from './checksum-listing.ts';
+export {
+  RELEASE_CHECKSUMS_ASSET,
+  RELEASE_PUBLIC_KEY_PATTERN,
+  RELEASE_SIGNATURE_ASSET,
+  RELEASE_SIGNATURE_NAMESPACE,
+  RELEASE_SIGNATURE_TOOL,
+  verifyReleaseSignature,
+} from './release-signature.ts';
+export type { PlaceFile, PlacedFile, ReleaseSignatureVerdict, VerifyReleaseSignatureInput } from './release-signature.ts';

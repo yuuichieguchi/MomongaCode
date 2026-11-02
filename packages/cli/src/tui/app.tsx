@@ -16,7 +16,7 @@ import type { StartupConfig } from './startup.tsx';
 import { skillCommands } from './commands/skills.ts';
 import { clipDiff, diffOfToolInput, maxDiffLines } from './diff.ts';
 import type { DiffLine } from './diff.ts';
-import { applyKey, emptyEditor } from './editor.ts';
+import { applyKey, characterEndAfter, emptyEditor } from './editor.ts';
 import type { EditorState } from './editor.ts';
 import { createSlashRegistry, parseSlash, slashCompletion } from './slash.ts';
 import type { SlashCommand, SlashRegistry } from './slash.ts';
@@ -185,9 +185,9 @@ function ApprovalPrompt({ approval, tool, selected }: { approval: PendingApprova
 
 function InputBox({ editor }: { editor: EditorState }) {
   const before = editor.text.slice(0, editor.cursor);
-  const atCursor = editor.text[editor.cursor];
-  const cursorChar = atCursor === undefined || atCursor === '\n' ? ' ' : atCursor;
-  const after = editor.text.slice(editor.cursor + (atCursor === undefined || atCursor === '\n' ? 0 : 1));
+  const atCursor = editor.text.slice(editor.cursor, characterEndAfter(editor.text, editor.cursor));
+  const cursorChar = atCursor === '' || atCursor === '\n' ? ' ' : atCursor;
+  const after = editor.text.slice(editor.cursor + (atCursor === '' || atCursor === '\n' ? 0 : atCursor.length));
   const lines = `${before}\u0000${cursorChar}\u0001${after}`.split('\n');
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="gray" paddingX={1}>

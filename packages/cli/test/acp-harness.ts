@@ -234,6 +234,11 @@ export const fakeRuntime = (): FakeRuntime => {
     getRun: unexpected('getRun'),
     cancel: async (id) => {
       record(`cancel ${id}`);
+      const failure = runtime.failures.get('cancel');
+      if (failure !== undefined) {
+        runtime.failures.delete('cancel');
+        throw failure;
+      }
       return { status: 202, run: runView({ id, status: 'CANCELLING' }) };
     },
     trace: unexpected('trace'),

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { RELEASE_SIGNATURE_TOOL } from '@momonga/foundation';
 import type { CommandOptions, CommandResult } from '@momonga/foundation';
 import { registerCleanup, withTempDir } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
@@ -13,6 +14,7 @@ import { virtualClock } from './fake-supervisor.ts';
 
 export const REPO = 'acme/momonga';
 export const TEAM_ID = 'ABCDE12345';
+export const PUBLIC_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl release@example.invalid';
 export const OLD_BINARY = Buffer.from('old-binary-bytes');
 export const NEW_BINARY = Buffer.from('new-binary-bytes-of-a-newer-release');
 
@@ -20,7 +22,11 @@ export const DAEMON_RESTART_BOUND_MS = 123_456;
 
 export type RunCall = { file: string; args: readonly string[]; options: CommandOptions; targetContent: string; stagedContent: string | undefined };
 
+export type SignatureCheck = { args: readonly string[]; options: CommandOptions; allowedSigners: string; signature: string; directory: string };
+
 export type Control = {
+  signature: CommandResult;
+  signatureToolMissing: boolean;
   codesign: CommandResult;
   reportedVersion: string | undefined;
   daemonRunning: boolean;
@@ -39,6 +45,7 @@ export type UpdateHarness = {
   wiring: UpdateWiring;
   control: Control;
   runs: RunCall[];
+  signatureChecks: SignatureCheck[];
   stderr: string[];
   stdout: string[];
   spawned: SpawnedCheck[];
@@ -68,6 +75,8 @@ export const setupUpdate = async (context: TestContext, options: HarnessOptions 
   registerCleanup(context, () => server.stop());
   const platform = options.platform ?? 'linux';
   const control: Control = {
+    signature: ok(),
+    signatureToolMissing: false,
     codesign: ok(),
     reportedVersion: undefined,
     daemonRunning: false,
@@ -76,6 +85,7 @@ export const setupUpdate = async (context: TestContext, options: HarnessOptions 
     autoUpdates: true,
   };
   const runs: RunCall[] = [];
+  const signatureChecks: SignatureCheck[] = [];
   const stderr: string[] = [];
   const stdout: string[] = [];
   const spawned: SpawnedCheck[] = [];
@@ -94,6 +104,12 @@ export const setupUpdate = async (context: TestContext, options: HarnessOptions 
     http: undiciUpdateHttp(),
     fs: nodeUpdateFs(),
     run: async (file, args, options) => {
+      if (file === RELEASE_SIGNATURE_TOOL) {
+        if (control.signatureToolMissing) throw Object.assign(new Error(`spawn ${file} ENOENT`), { code: 'ENOENT' });
+        const placed = (flag: string): string => readText(args[args.indexOf(flag) + 1] as string) as string;
+        signatureChecks.push({ args, options, allowedSigners: placed('-f'), signature: placed('-s'), directory: path.dirname(args[args.indexOf('-f') + 1] as string) });
+        return control.signature;
+      }
       runs.push({ file, args, options, targetContent: fs.readFileSync(target, 'utf8'), stagedContent: readText(file) });
       if (file === '/usr/bin/codesign') return control.codesign;
       if (args[0] === '--version') return ok(`${control.reportedVersion ?? (server.latestTag ?? '').slice(1)}\n`);
@@ -101,6 +117,7 @@ export const setupUpdate = async (context: TestContext, options: HarnessOptions 
       throw new Error(`unexpected command ${file} ${args.join(' ')}`);
     },
     lock: {
+      isHeld: async () => control.lockHeld,
       acquire: async () => {
         if (control.lockHeld) return undefined;
         return {
@@ -131,7 +148,7 @@ export const setupUpdate = async (context: TestContext, options: HarnessOptions 
   };
   const wiring: UpdateWiring = {
     ports,
-    build: options.build ?? { repo: REPO, teamId: TEAM_ID },
+    build: options.build ?? { repo: REPO, teamId: TEAM_ID, publicKey: PUBLIC_KEY },
     endpoints: server.endpoints,
     checkIntervalMs: 1000,
   };
@@ -143,6 +160,7 @@ export const setupUpdate = async (context: TestContext, options: HarnessOptions 
     wiring,
     control,
     runs,
+    signatureChecks,
     stderr,
     stdout,
     spawned,

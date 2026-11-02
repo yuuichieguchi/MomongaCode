@@ -405,6 +405,7 @@ describe('listenUnix lock options', () => {
       readHolder: async () => undefined,
       readHolderSync: () => undefined,
       claimInheritable: undefined,
+      adoptInherited: undefined,
     };
     const server = http.createServer();
     await expect(listenUnix(server, socketPath, { mechanism })).rejects.toBeInstanceOf(ProcessLockHeldError);

@@ -100,6 +100,18 @@ describe('update lock', () => {
     expect(again).toBeDefined();
     again?.release();
   });
+
+  it('reports a held lock without taking it', async (context) => {
+    const home = withTempDir(context, { asHome: true });
+    const lock = nodeUpdateLock(momongaPaths(home));
+    expect(await lock.isHeld()).toBe(false);
+
+    const held = await lock.acquire();
+    expect(await lock.isHeld()).toBe(true);
+
+    held?.release();
+    expect(await lock.isHeld()).toBe(false);
+  });
 });
 
 describe('daemon probe', () => {

@@ -1,10 +1,16 @@
-import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import net from 'node:net';
-import os from 'node:os';
-import { comparablePath } from '../path-compare.ts';
-import { noFollowFlag } from './privacy.ts';
+import { HOLDER_READ_MAX_BYTES, readHolderFile, readHolderFileSync, readHolderFromDescriptor, rewriteHolderThroughDescriptor } from './holder-file.ts';
 import { UnsupportedPlatformError } from './process-inspector.ts';
+import { sqliteFileLock } from './sqlite-lock.ts';
+
+export { HOLDER_READ_MAX_BYTES };
+
+export class LockAdoptionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LockAdoptionError';
+  }
+}
 
 export type HeldKernelLock = {
   readonly descriptor: number | undefined;
@@ -14,188 +20,123 @@ export type HeldKernelLock = {
 
 export type ClaimOutcome = { kind: 'claimed'; lock: HeldKernelLock } | { kind: 'held' };
 
+export type InheritedLockRequest = { lockPath: string; descriptor: number; expectedHolder: string; newHolder: string };
+
 export interface KernelLockMechanism {
-  readonly name: 'file-lock' | 'abstract-socket' | 'named-pipe';
+  readonly name: 'file-lock' | 'sqlite-lock';
   claim(lockPath: string): Promise<ClaimOutcome>;
   isHeld(lockPath: string): Promise<boolean>;
   readHolder(lockPath: string): Promise<string | undefined>;
   readHolderSync(lockPath: string): string | undefined;
   readonly claimInheritable: ((lockPath: string) => ClaimOutcome) | undefined;
+  readonly adoptInherited: ((request: InheritedLockRequest) => HeldKernelLock) | undefined;
 }
-
-export const HOLDER_READ_MAX_BYTES = 64;
-
-const readHolderFile = async (lockPath: string): Promise<string | undefined> => {
-  let handle: fs.promises.FileHandle;
-  try {
-    handle = await fs.promises.open(lockPath, fs.constants.O_RDONLY | noFollowFlag());
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
-    throw error;
-  }
-  try {
-    const buffer = Buffer.alloc(HOLDER_READ_MAX_BYTES);
-    const { bytesRead } = await handle.read(buffer, 0, HOLDER_READ_MAX_BYTES, 0);
-    return buffer.toString('utf8', 0, bytesRead);
-  } finally {
-    await handle.close();
-  }
-};
-
-const readHolderFileSync = (lockPath: string): string | undefined => {
-  let descriptor: number;
-  try {
-    descriptor = fs.openSync(lockPath, fs.constants.O_RDONLY | noFollowFlag());
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
-    throw error;
-  }
-  try {
-    const buffer = Buffer.alloc(HOLDER_READ_MAX_BYTES);
-    const bytesRead = fs.readSync(descriptor, buffer, 0, HOLDER_READ_MAX_BYTES, 0);
-    return buffer.toString('utf8', 0, bytesRead);
-  } finally {
-    fs.closeSync(descriptor);
-  }
-};
 
 const O_SHLOCK = 0x10;
 const O_EXLOCK = 0x20;
 
 const WOULD_BLOCK = 'EAGAIN';
 
-const claimFile = (lockPath: string): ClaimOutcome => {
-  const { O_RDWR, O_CREAT, O_NONBLOCK, O_NOFOLLOW } = fs.constants;
+export type FileLockOps = {
+  open(lockPath: string, flags: number, mode?: number): number;
+  close(descriptor: number): void;
+};
+
+export const nodeFileLockOps: FileLockOps = {
+  open: (lockPath, flags, mode) => fs.openSync(lockPath, flags, mode),
+  close: (descriptor) => fs.closeSync(descriptor),
+};
+
+const SHARED_PROBE_FLAGS = fs.constants.O_RDONLY | O_SHLOCK | fs.constants.O_NONBLOCK | fs.constants.O_NOFOLLOW;
+
+const holdsExclusively = (ops: FileLockOps, lockPath: string): boolean => {
   let descriptor: number;
   try {
-    descriptor = fs.openSync(lockPath, O_RDWR | O_CREAT | O_EXLOCK | O_NONBLOCK | O_NOFOLLOW, 0o600);
+    descriptor = ops.open(lockPath, SHARED_PROBE_FLAGS);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === WOULD_BLOCK) return { kind: 'held' };
+    if ((error as NodeJS.ErrnoException).code === WOULD_BLOCK) return true;
     throw error;
   }
+  ops.close(descriptor);
+  return false;
+};
+
+const heldFile = (ops: FileLockOps, descriptor: number): HeldKernelLock => {
   let open = true;
   return {
-    kind: 'claimed',
-    lock: {
-      descriptor,
-      writeHolder: (text) => {
-        fs.ftruncateSync(descriptor, 0);
-        fs.writeSync(descriptor, text, 0);
-      },
-      release: () => {
-        if (!open) return;
-        open = false;
-        fs.closeSync(descriptor);
-      },
+    descriptor,
+    writeHolder: (text) => rewriteHolderThroughDescriptor(descriptor, text),
+    release: () => {
+      if (!open) return;
+      open = false;
+      ops.close(descriptor);
     },
   };
 };
 
-const probeFile = (lockPath: string): boolean => {
-  const { O_RDONLY, O_NONBLOCK, O_NOFOLLOW } = fs.constants;
-  let descriptor: number;
+const claimFile =
+  (ops: FileLockOps) =>
+  (lockPath: string): ClaimOutcome => {
+    const { O_RDWR, O_CREAT, O_NONBLOCK, O_NOFOLLOW } = fs.constants;
+    for (;;) {
+      try {
+        return { kind: 'claimed', lock: heldFile(ops, ops.open(lockPath, O_RDWR | O_CREAT | O_EXLOCK | O_NONBLOCK | O_NOFOLLOW, 0o600)) };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== WOULD_BLOCK) throw error;
+        if (holdsExclusively(ops, lockPath)) return { kind: 'held' };
+      }
+    }
+  };
+
+const probeFile = (ops: FileLockOps, lockPath: string): boolean => {
   try {
-    descriptor = fs.openSync(lockPath, O_RDONLY | O_SHLOCK | O_NONBLOCK | O_NOFOLLOW);
+    return holdsExclusively(ops, lockPath);
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === WOULD_BLOCK) return true;
-    if (code === 'ENOENT') return false;
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
     throw error;
   }
-  fs.closeSync(descriptor);
-  return false;
 };
 
-export const darwinFileLock: KernelLockMechanism = {
+const adoptFile =
+  (ops: FileLockOps) =>
+  ({ lockPath, descriptor, expectedHolder, newHolder }: InheritedLockRequest): HeldKernelLock => {
+    let inherited: fs.BigIntStats;
+    try {
+      inherited = fs.fstatSync(descriptor, { bigint: true });
+    } catch (error) {
+      throw new LockAdoptionError(`descriptor ${descriptor} is not open: ${(error as Error).message}`);
+    }
+    const named = fs.statSync(lockPath, { bigint: true });
+    if (!inherited.isFile() || inherited.dev !== named.dev || inherited.ino !== named.ino) {
+      throw new LockAdoptionError(`descriptor ${descriptor} is not ${lockPath}`);
+    }
+    if (readHolderFromDescriptor(descriptor) !== expectedHolder) {
+      throw new LockAdoptionError(`${lockPath} does not carry the hand-off nonce of this hand-off`);
+    }
+    const lock = heldFile(ops, descriptor);
+    lock.writeHolder(newHolder);
+    return lock;
+  };
+
+export const createFileLock = (ops: FileLockOps): KernelLockMechanism => ({
   name: 'file-lock',
-  claim: async (lockPath) => claimFile(lockPath),
-  isHeld: async (lockPath) => probeFile(lockPath),
+  claim: async (lockPath) => claimFile(ops)(lockPath),
+  isHeld: async (lockPath) => probeFile(ops, lockPath),
   readHolder: readHolderFile,
   readHolderSync: readHolderFileSync,
-  claimInheritable: claimFile,
-};
-
-export const ABSTRACT_SOCKET_PREFIX = '\0momonga-lock-';
-export const PIPE_LOCK_PREFIX = '\\\\.\\pipe\\momonga-lock-';
-const KEY_HEX_CHARS = 32;
-
-const keyOf = (lockPath: string): string => createHash('sha256').update(comparablePath(lockPath)).digest('hex').slice(0, KEY_HEX_CHARS);
-
-const userScope = (user: string): string => createHash('sha256').update(user).digest('hex').slice(0, 8);
-
-export const netLockAddress = (platform: 'linux' | 'win32', lockPath: string, user: string): string =>
-  `${platform === 'linux' ? ABSTRACT_SOCKET_PREFIX : PIPE_LOCK_PREFIX}${userScope(user)}-${keyOf(lockPath)}`;
-
-const heldServers = new Set<net.Server>();
-
-export const claimNetAddress = (address: string, holderFile: string): Promise<ClaimOutcome> =>
-  new Promise((resolve, reject) => {
-    const server = net.createServer((socket) => socket.destroy());
-    const onError = (error: NodeJS.ErrnoException): void => {
-      if (error.code === 'EADDRINUSE') resolve({ kind: 'held' });
-      else reject(error);
-    };
-    server.once('error', onError);
-    server.listen(address, () => {
-      server.off('error', onError);
-      server.unref();
-      heldServers.add(server);
-      let open = true;
-      resolve({
-        kind: 'claimed',
-        lock: {
-          descriptor: undefined,
-          writeHolder: (text) => {
-            const descriptor = fs.openSync(holderFile, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | noFollowFlag(), 0o600);
-            try {
-              fs.writeSync(descriptor, text);
-            } finally {
-              fs.closeSync(descriptor);
-            }
-          },
-          release: () => {
-            if (!open) return;
-            open = false;
-            heldServers.delete(server);
-            server.close();
-          },
-        },
-      });
-    });
-  });
-
-export const probeNetAddress = (address: string): Promise<boolean> =>
-  new Promise((resolve, reject) => {
-    const socket = net.connect(address);
-    socket.once('connect', () => {
-      socket.destroy();
-      resolve(true);
-    });
-    socket.once('error', (error: NodeJS.ErrnoException) => {
-      socket.destroy();
-      if (error.code === 'ECONNREFUSED' || error.code === 'ENOENT') resolve(false);
-      else if (error.code === WOULD_BLOCK) resolve(true);
-      else reject(error);
-    });
-  });
-
-const netLock = (name: 'abstract-socket' | 'named-pipe', platform: 'linux' | 'win32', user: () => string): KernelLockMechanism => ({
-  name,
-  claim: (lockPath) => claimNetAddress(netLockAddress(platform, lockPath, user()), lockPath),
-  isHeld: (lockPath) => probeNetAddress(netLockAddress(platform, lockPath, user())),
-  readHolder: readHolderFile,
-  readHolderSync: readHolderFileSync,
-  claimInheritable: undefined,
+  claimInheritable: claimFile(ops),
+  adoptInherited: adoptFile(ops),
 });
 
-export const createKernelLockMechanism = (platform: NodeJS.Platform, user: () => string = () => os.userInfo().username): KernelLockMechanism => {
+export const darwinFileLock: KernelLockMechanism = createFileLock(nodeFileLockOps);
+
+export const createKernelLockMechanism = (platform: NodeJS.Platform): KernelLockMechanism => {
   switch (platform) {
     case 'darwin':
       return darwinFileLock;
     case 'linux':
-      return netLock('abstract-socket', 'linux', user);
     case 'win32':
-      return netLock('named-pipe', 'win32', user);
+      return sqliteFileLock;
     default:
       throw new UnsupportedPlatformError(platform, 'process locks');
   }

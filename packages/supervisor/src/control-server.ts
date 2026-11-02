@@ -9,7 +9,7 @@ import { omitUndefined } from './omit-undefined.ts';
 
 export type ShutdownResponseWriter = {
   writeHead(status: number, headers: Readonly<Record<string, string | number>>): unknown;
-  end(body: string, callback: () => void): unknown;
+  end(body: string): unknown;
 };
 
 export type IdleShutdownOutcome = { kind: 'accepted' } | { kind: 'busy'; reason: string };
@@ -37,7 +37,8 @@ const JSON_CONTENT_TYPE = 'application/json; charset=utf-8';
 export const respondShutdown = (response: ShutdownResponseWriter, onShutdownRequested: () => void): void => {
   const body = JSON.stringify({ phase: 'draining' } satisfies SupervisorShutdownResponse);
   response.writeHead(202, { 'content-type': JSON_CONTENT_TYPE, 'content-length': Buffer.byteLength(body), connection: 'close' });
-  response.end(body, onShutdownRequested);
+  response.end(body);
+  onShutdownRequested();
 };
 
 const respondJson = (request: IncomingMessage, response: ServerResponse, status: number, value: unknown, extraHeaders: Readonly<Record<string, string>> = {}): void => {

@@ -10,6 +10,7 @@ export type FakeSupervisorOptions = {
   children?: SupervisorChildHealth[];
   phase?: SupervisorHealth['phase'];
   activeRunIds?: readonly (string | null)[];
+  unresponsiveShutdown?: { onRequest(): void };
 };
 
 export const readyChildren = (): SupervisorChildHealth[] => [
@@ -32,6 +33,10 @@ export const startFakeSupervisor = async (options: FakeSupervisorOptions): Promi
     return (options.activeRunIds ?? []).some((runId) => runId !== null) ? 'the runtime has an active run' : undefined;
   };
   const server = http.createServer((request, response) => {
+    if (request.method === 'POST' && (request.url === '/v1/shutdown-if-idle' || request.url === '/v1/shutdown') && options.unresponsiveShutdown !== undefined) {
+      options.unresponsiveShutdown.onRequest();
+      return;
+    }
     if (request.method === 'POST' && request.url === '/v1/shutdown-if-idle') {
       const refusal = idleRefusal();
       if (refusal !== undefined) {

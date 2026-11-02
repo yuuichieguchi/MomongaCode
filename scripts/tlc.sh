@@ -3,7 +3,8 @@ set -euo pipefail
 
 JAR_VERSION="TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)"
 JAR_SHA256="936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88"
-JAR_URL="https://github.com/tlaplus/tlaplus/releases/latest/download/tla2tools.jar"
+JAR_RELEASE_TAG="v1.7.4"
+JAR_URL="https://github.com/tlaplus/tlaplus/releases/download/$JAR_RELEASE_TAG/tla2tools.jar"
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 jar="$root/.cache/tla/tla2tools.jar"

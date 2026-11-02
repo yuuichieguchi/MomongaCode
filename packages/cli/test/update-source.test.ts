@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { UpdateError } from '../src/update/errors.ts';
 import { GITHUB_ENDPOINTS, assetNameFor, resolveUpdateSource } from '../src/update/source.ts';
 import { compareVersions, parseReleaseTag, parseVersion } from '../src/update/version.ts';
+import { PUBLIC_KEY } from './update-harness.ts';
 
 describe('parseVersion and parseReleaseTag', () => {
   it('reads MAJOR.MINOR.PATCH and a v-prefixed tag', () => {
@@ -33,8 +34,14 @@ describe('compareVersions', () => {
 
 describe('resolveUpdateSource', () => {
   it('uses a team on macOS and none elsewhere', () => {
-    expect(resolveUpdateSource({ repo: 'a/b', teamId: 'ABCDE12345' }, GITHUB_ENDPOINTS, 'darwin').signature).toEqual({ kind: 'apple-team', teamId: 'ABCDE12345' });
-    expect(resolveUpdateSource({ repo: 'a/b', teamId: 'ABCDE12345' }, GITHUB_ENDPOINTS, 'linux').signature).toEqual({ kind: 'none' });
+    expect(resolveUpdateSource({ repo: 'a/b', teamId: 'ABCDE12345', publicKey: PUBLIC_KEY }, GITHUB_ENDPOINTS, 'darwin').codesign).toEqual({ kind: 'apple-team', teamId: 'ABCDE12345' });
+    expect(resolveUpdateSource({ repo: 'a/b', teamId: 'ABCDE12345', publicKey: PUBLIC_KEY }, GITHUB_ENDPOINTS, 'linux').codesign).toEqual({ kind: 'none' });
+  });
+
+  it('carries the pinned release key on every platform', () => {
+    for (const platform of ['darwin', 'linux'] as const) {
+      expect(resolveUpdateSource({ repo: 'a/b', teamId: 'ABCDE12345', publicKey: PUBLIC_KEY }, GITHUB_ENDPOINTS, platform).publicKey).toBe(PUBLIC_KEY);
+    }
   });
 
   it('points at GitHub by default', () => {

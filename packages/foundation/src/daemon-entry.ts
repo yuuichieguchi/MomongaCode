@@ -326,10 +326,9 @@ export const runDaemonEntry = async <F extends FlagSpec>(io: EntryIo, definition
   let started: DaemonHandle;
   try {
     const unadopted = new UnadoptedEnv(io.env);
+    const lockOptions = io.lockMechanism === undefined ? {} : { mechanism: io.lockMechanism };
     const acquireLock = async (lockPath: string, describeHolder?: DescribeHolder): Promise<ProcessLock> =>
-      unadopted.handedOff
-        ? unadopted.adopt(lockPath)
-        : acquireProcessLock(lockPath, describeHolder, io.lockMechanism === undefined ? {} : { mechanism: io.lockMechanism });
+      unadopted.handedOff ? unadopted.adopt(lockPath, lockOptions) : acquireProcessLock(lockPath, describeHolder, lockOptions);
     started = await definition.start({
       version: definition.version,
       flags,

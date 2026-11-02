@@ -1,16 +1,16 @@
-import { createUdsClient, isRecord } from '@momonga/foundation';
+import { SUPERVISOR_RESPONSE_BOUND_MS, createUdsClient, isRecord } from '@momonga/foundation';
 import type { SupervisorChildHealth, SupervisorHealth, SupervisorPhase, SupervisorShutdownResponse } from '@momonga/protocol';
 
 export type ChildRole = SupervisorChildHealth['role'];
 
 export type SupervisorClient = {
   health(): Promise<SupervisorHealth>;
-  shutdown(): Promise<{ status: number; body: SupervisorShutdownResponse }>;
-  shutdownIfIdle(): Promise<{ accepted: boolean }>;
+  shutdown(signal?: AbortSignal): Promise<{ status: number; body: SupervisorShutdownResponse }>;
+  shutdownIfIdle(signal?: AbortSignal): Promise<{ accepted: boolean }>;
   close(): Promise<void>;
 };
 
-export type SupervisorClientOptions = { socketPath: string; onHealth?: (health: SupervisorHealth) => Promise<void> };
+export type SupervisorClientOptions = { socketPath: string; responseBoundMs?: number; onHealth?: (health: SupervisorHealth) => Promise<void> };
 
 const PHASES: ReadonlySet<string> = new Set<SupervisorPhase>(['reaping-orphans', 'running', 'draining']);
 const ROLES: ReadonlySet<string> = new Set<ChildRole>(['gateway', 'runtime']);
@@ -43,7 +43,8 @@ const isSupervisorHealth = (value: unknown): value is SupervisorHealth =>
 const isShutdownResponse = (value: unknown): value is SupervisorShutdownResponse => isRecord(value) && value['phase'] === 'draining';
 
 export const createSupervisorClient = (options: SupervisorClientOptions): SupervisorClient => {
-  const http = createUdsClient(options.socketPath);
+  const responseBoundMs = options.responseBoundMs ?? SUPERVISOR_RESPONSE_BOUND_MS;
+  const http = createUdsClient(options.socketPath, { headersTimeoutMs: responseBoundMs, bodyTimeoutMs: responseBoundMs });
 
   const health = async (): Promise<SupervisorHealth> => {
     const response = await http.request({ method: 'GET', path: '/v1/health' });
@@ -55,16 +56,16 @@ export const createSupervisorClient = (options: SupervisorClientOptions): Superv
     return body;
   };
 
-  const shutdown = async (): Promise<{ status: number; body: SupervisorShutdownResponse }> => {
-    const response = await http.request({ method: 'POST', path: '/v1/shutdown' });
+  const shutdown = async (signal?: AbortSignal): Promise<{ status: number; body: SupervisorShutdownResponse }> => {
+    const response = await http.request({ method: 'POST', path: '/v1/shutdown', ...(signal === undefined ? {} : { signal }) });
     const text = await response.text();
     const body: unknown = JSON.parse(text);
     if (!isShutdownResponse(body)) throw new Error(`POST /v1/shutdown answered ${response.status} with an unexpected body: ${text}`);
     return { status: response.status, body };
   };
 
-  const shutdownIfIdle = async (): Promise<{ accepted: boolean }> => {
-    const response = await http.request({ method: 'POST', path: '/v1/shutdown-if-idle' });
+  const shutdownIfIdle = async (signal?: AbortSignal): Promise<{ accepted: boolean }> => {
+    const response = await http.request({ method: 'POST', path: '/v1/shutdown-if-idle', ...(signal === undefined ? {} : { signal }) });
     const text = await response.text();
     if (response.status === 409) return { accepted: false };
     const body: unknown = JSON.parse(text);
