@@ -27,7 +27,7 @@ const populate = async (ports: CliPorts, directory: string, golden: GoldenCase):
 };
 
 const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenDataset, record: string | undefined): Promise<EvalReport> => {
-  await ensureDaemon(ports, paths);
+  await ensureDaemon(ports, paths, { replacement: 'when-idle' });
   const env = await environmentSnapshot(ports);
   const client = connectRuntime(paths);
   const workspaces: string[] = [];

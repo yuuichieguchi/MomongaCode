@@ -1,11 +1,13 @@
 import { EXIT_ALREADY_RUNNING, ENTRY_HARD_EXIT_MARGIN_MS, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, inspectProcessLock, supervisorMaxCloseMs } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
+import { createRuntimeClient } from '../client/runtime-client.ts';
 import { createSupervisorClient } from '../client/supervisor-client.ts';
 import type { SupervisorClient } from '../client/supervisor-client.ts';
 import { POLL_INTERVAL_MS } from '../constants.ts';
 import { pollUntil } from '../poll.ts';
 import type { CliPorts, DetachedExit } from '../ports.ts';
+import { compareVersions, tryParseVersion } from '../update/version.ts';
 import { INTERNAL_COMMANDS, selfInvocation } from './launcher.ts';
 
 export class DaemonStartError extends Error {
@@ -95,7 +97,7 @@ const awaitReady = async (ports: DaemonPorts, paths: MomongaPaths, client: Super
     async () => {
       const health = await probeSupervisor(client);
       if (health !== undefined) {
-        if (health.version !== ports.version) {
+        if (spawned !== undefined && health.version !== ports.version) {
           throw new DaemonStartError(`the daemon (pid ${health.pid}) runs version ${health.version}, not ${ports.version}; run \`momonga daemon stop\``, paths.logFiles.supervisor);
         }
         const held = heldFailure(health);
@@ -127,16 +129,48 @@ const startDaemon = async (ports: DaemonPorts, paths: MomongaPaths, client: Supe
   return awaitReady(ports, paths, client, readyMs, { outcome: () => outcome });
 };
 
-export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, bounds?: DaemonBounds): Promise<SupervisorHealth> => {
-  const { readyMs, stopMs } = bounds ?? (await defaultDaemonBounds());
+export type DaemonReplacement = 'never' | 'when-idle' | 'always';
+
+export type EnsureDaemonOptions = { bounds?: DaemonBounds; replacement?: DaemonReplacement };
+
+const isStrictlyNewerThan = (clientVersion: string, daemonVersion: string): boolean => {
+  const client = tryParseVersion(clientVersion);
+  const daemon = tryParseVersion(daemonVersion);
+  return client !== undefined && daemon !== undefined && compareVersions(client, daemon) === 1;
+};
+
+const hasNoActiveRun = async (paths: MomongaPaths, health: SupervisorHealth): Promise<boolean> => {
+  const runtime = health.children.find((child) => child.role === 'runtime');
+  if (runtime?.state !== 'ready') return false;
+  const client = createRuntimeClient({ socketPath: paths.sockets.runtime });
+  try {
+    return (await client.listSessions()).every((session) => session.activeRunId === null);
+  } finally {
+    await client.close();
+  }
+};
+
+const mayReplace = async (ports: DaemonPorts, paths: MomongaPaths, current: SupervisorHealth, replacement: DaemonReplacement): Promise<boolean> => {
+  if (replacement === 'never' || !isStrictlyNewerThan(ports.version, current.version)) return false;
+  return replacement === 'always' || (await hasNoActiveRun(paths, current));
+};
+
+export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, options: EnsureDaemonOptions = {}): Promise<SupervisorHealth> => {
+  const { readyMs, stopMs } = options.bounds ?? (await defaultDaemonBounds());
   const client = createSupervisorClient({ socketPath: paths.sockets.supervisor });
   try {
     const current = await probeSupervisor(client);
     if (current === undefined) return await startDaemon(ports, paths, client, readyMs);
-    if (current.version === ports.version && current.phase !== 'draining') return await awaitReady(ports, paths, client, readyMs);
-    if (current.phase !== 'draining') await client.shutdown();
-    await waitForSupervisorGone(ports, paths, stopMs);
-    return await startDaemon(ports, paths, client, readyMs);
+    if (current.phase === 'draining') {
+      await waitForSupervisorGone(ports, paths, stopMs);
+      return await startDaemon(ports, paths, client, readyMs);
+    }
+    if (await mayReplace(ports, paths, current, options.replacement ?? 'never')) {
+      await client.shutdown();
+      await waitForSupervisorGone(ports, paths, stopMs);
+      return await startDaemon(ports, paths, client, readyMs);
+    }
+    return await awaitReady(ports, paths, client, readyMs);
   } finally {
     await client.close();
   }

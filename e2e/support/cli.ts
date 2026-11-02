@@ -59,6 +59,8 @@ export const fakePortsEnv = (home: E2eHome): Record<string, string> => ({
   MOMONGA_E2E_SECRETS_FILE: path.join(home.root, SECRETS_FILE_NAME),
 });
 
+export const cliVersionEnv = (version: string): Record<string, string> => ({ MOMONGA_E2E_CLI_VERSION: version });
+
 export const startCliWithFakes = (home: E2eHome, args: readonly string[], options: RunCliOptions = {}): RunningCli =>
   startCli(home, args, { ...options, bundle: CLI_FAKES_BUNDLE, env: { ...fakePortsEnv(home), ...options.env } });
 

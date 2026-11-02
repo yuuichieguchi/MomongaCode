@@ -4,10 +4,16 @@ export type Version = { major: number; minor: number; patch: number; text: strin
 
 const VERSION_PATTERN = /^(\d{1,9})\.(\d{1,9})\.(\d{1,9})$/;
 
-export const parseVersion = (text: string, origin: string): Version => {
+export const tryParseVersion = (text: string): Version | undefined => {
   const match = VERSION_PATTERN.exec(text);
-  if (match === null) throw new UpdateError('version_malformed', `${origin} is not a MAJOR.MINOR.PATCH version`, { detail: JSON.stringify(text) });
+  if (match === null) return undefined;
   return { major: Number(match[1]), minor: Number(match[2]), patch: Number(match[3]), text };
+};
+
+export const parseVersion = (text: string, origin: string): Version => {
+  const version = tryParseVersion(text);
+  if (version === undefined) throw new UpdateError('version_malformed', `${origin} is not a MAJOR.MINOR.PATCH version`, { detail: JSON.stringify(text) });
+  return version;
 };
 
 export const parseReleaseTag = (tag: string): Version => {

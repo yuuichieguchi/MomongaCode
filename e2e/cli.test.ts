@@ -5,13 +5,14 @@ import { createFakeFm } from '@momonga/testkit';
 import cliPackage from '../packages/cli/package.json' with { type: 'json' };
 import type { FakeScriptedReply } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
-import { runCli, startCli } from './support/cli.ts';
+import { CLI_FAKES_BUNDLE, cliVersionEnv, runCli, runCliWithFakes, startCli } from './support/cli.ts';
 import { readDb } from './support/db.ts';
 import { supervisorLog } from './support/log-reader.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { DEFAULT_E2E_DEPS, baseSettings, sandboxChoiceOf, startStack, startUpstream, writeSettingsFile } from './support/stack.ts';
 import { chatCompletions, hangReply, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
+import { createRuntimeClient } from './support/runtime-client.ts';
 import { pidOf } from './support/supervisor-client.ts';
 import { E2E_RESTART_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
 
@@ -252,18 +253,50 @@ describe('cli: momonga -p', () => {
 
   it(titleOf('cli-version-restart'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
-    const stack = await startStack({ home, script: [textReply('from the new daemon')] });
+    const stack = await startStack({ home, script: [textReply('from the new daemon')], version: '1.0.0' });
     const oldPid = stack.supervisor.pid;
-    expect(stack.health.version).toBe('e2e');
+    expect(stack.health.version).toBe('1.0.0');
 
-    const result = await runCli(home, ['-p', 'hello']);
+    const result = await runCliWithFakes(home, ['-p', 'hello'], { env: cliVersionEnv('2.0.0') });
 
     expect(result.code).toBe(0);
     expect(result.stdout).toBe('from the new daemon\n');
     expect((await stack.supervisor.exited).code).toBe(0);
-    const status = await runCli(home, ['daemon', 'status']);
-    expect(status.stdout).toMatch(/version 0\.0\.0/);
+    const status = await runCliWithFakes(home, ['daemon', 'status'], { env: cliVersionEnv('2.0.0') });
+    expect(status.stdout).toMatch(/version 2\.0\.0/);
     expect(Number(/pid (\d+)/.exec(status.stdout)?.[1])).not.toBe(oldPid);
+  });
+
+  it(titleOf('cli-older-daemon-active-run'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    const home = await createE2eHome();
+    const stack = await startStack({ home, script: [textReply('held run'), textReply('second run')], version: '1.0.0' });
+    const hold = stack.fake.hold();
+    const runtime = createRuntimeClient(home);
+    const session = await runtime.createSession();
+    const held = (await runtime.createRun(session.session.id, 'work in progress')).run;
+    await hold.waitForRequest();
+
+    const status = await runCliWithFakes(home, ['status', held.id], { env: cliVersionEnv('2.0.0') });
+    const blocked = startCli(home, ['-p', 'another'], { bundle: CLI_FAKES_BUNDLE, env: cliVersionEnv('2.0.0') });
+
+    expect(status.code).toBe(0);
+    expect(status.stdout).toContain(held.id);
+    expect(process.kill(stack.supervisor.pid, 0)).toBe(true);
+    expect((await stack.client.health()).version).toBe('1.0.0');
+    hold.release();
+    expect((await blocked.result).code).toBe(0);
+  });
+
+  it(titleOf('cli-newer-daemon'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    const home = await createE2eHome();
+    const stack = await startStack({ home, script: [textReply('served by the newer daemon')], version: '3.0.0' });
+
+    const result = await runCliWithFakes(home, ['-p', 'hello'], { env: cliVersionEnv('2.0.0') });
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toBe('served by the newer daemon\n');
+    expect(process.kill(stack.supervisor.pid, 0)).toBe(true);
+    expect((await stack.client.health()).version).toBe('3.0.0');
   });
 
   it(titleOf('cli-reconnect'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {

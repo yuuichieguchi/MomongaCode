@@ -194,6 +194,7 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
 
 export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options: HeadlessOptions): Promise<number> => {
   const session = await openSession(ports, paths, {
+    daemonReplacement: 'when-idle',
     ...(options.permissionMode === undefined ? {} : { permissionMode: options.permissionMode }),
     ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),
   });
