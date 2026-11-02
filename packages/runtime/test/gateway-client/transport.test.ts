@@ -94,12 +94,12 @@ describe('gateway client transport faults', () => {
 
   it('reports stream_interrupted when the connection resets mid-stream', async () => {
     let answered = false;
+    let served: net.Socket | undefined;
     const fake = await startRawNetFake((socket) => {
       if (answered) return;
       answered = true;
-      socket.write(SSE_HEAD + chunked(sseFrame(createdEvent)), () => {
-        setTimeout(() => socket.destroy(), 20);
-      });
+      served = socket;
+      socket.write(SSE_HEAD + chunked(sseFrame(createdEvent)));
     });
     const clock = fakeClock();
     const client = makeClient(fake.socketPath, clock);
@@ -107,7 +107,10 @@ describe('gateway client transport faults', () => {
 
     const error = await settle(
       (async () => {
-        for await (const event of client.stream(streamBody(), callOptions(clock))) seen.push(event);
+        for await (const event of client.stream(streamBody(), callOptions(clock))) {
+          seen.push(event);
+          (served as net.Socket).destroy();
+        }
       })(),
     );
 
