@@ -1,12 +1,14 @@
 import type { Command } from 'commander';
 import { Option } from 'commander';
+import { CONTEXT_MODELS } from '@momonga/eval';
+import type { ContextModel } from '@momonga/eval';
 import { MEMORY_SCOPES, PERMISSION_MODES } from '@momonga/protocol';
 import type { MemoryScope, PermissionMode } from '@momonga/protocol';
 import { pathsOf } from '../paths.ts';
 import type { ProgramDeps } from '../program-deps.ts';
 import { showCost } from './cost.ts';
 import { elicit } from './elicit.ts';
-import { evaluate } from './evaluate.ts';
+import { compareContext, evaluate, evaluateContext } from './evaluate.ts';
 import { mcpList, mcpLogin } from './mcp.ts';
 import { memoryDelete, memoryList, memoryShow } from './memory.ts';
 import { listJobs } from './jobs.ts';
@@ -113,8 +115,9 @@ const registerCost: CommandGroup = (program, deps) => {
 };
 
 const registerEvaluate: CommandGroup = (program, deps) => {
-  program
+  const evaluation = program
     .command('eval <dataset>')
+    .enablePositionalOptions()
     .description('run a golden dataset against the daemon and report the pass rates')
     .option('--record <directory>', 'save the transcript of every run in this directory')
     .option('--replay <directory>', 'grade recorded transcripts instead of running the dataset')
@@ -125,6 +128,27 @@ const registerEvaluate: CommandGroup = (program, deps) => {
           ...(options.replay === undefined ? {} : { replay: options.replay }),
         }),
       );
+    });
+  evaluation
+    .command('context <dataset>')
+    .description('measure a context dataset from recorded transcripts and report the metrics of Evidence-Based Context')
+    .option('--replay <directory>', 'the recorded transcripts to measure')
+    .addOption(new Option('--model <model>', 'which kind of model produced the transcripts; a fake model proves only that the machinery works').choices(CONTEXT_MODELS))
+    .option('--report <file>', 'store the report as JSON for eval compare')
+    .action(async (dataset: string, options: { replay?: string; model?: ContextModel; report?: string }) => {
+      deps.complete(
+        await evaluateContext(deps.ports, dataset, {
+          ...(options.replay === undefined ? {} : { replay: options.replay }),
+          ...(options.model === undefined ? {} : { model: options.model }),
+          ...(options.report === undefined ? {} : { report: options.report }),
+        }),
+      );
+    });
+  evaluation
+    .command('compare <baseline> <candidate>')
+    .description('print the paired differences of two context reports and pass or fail the candidate against the gate')
+    .action(async (baseline: string, candidate: string) => {
+      deps.complete(await compareContext(deps.ports, baseline, candidate));
     });
 };
 

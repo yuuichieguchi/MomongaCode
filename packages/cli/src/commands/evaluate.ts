@@ -1,8 +1,23 @@
 import path from 'node:path';
-import { formatReport, loadDataset, loadTranscripts, replayDataset, runDataset, saveTranscript } from '@momonga/eval';
-import type { EvalReport, GoldenCase, GoldenDataset, Transcript } from '@momonga/eval';
+import {
+  buildContextReport,
+  compareContextReports,
+  formatContextComparison,
+  formatContextReport,
+  formatReport,
+  loadContextDataset,
+  loadContextReport,
+  loadDataset,
+  loadTranscripts,
+  replayDataset,
+  runDataset,
+  saveContextReport,
+  saveTranscript,
+} from '@momonga/eval';
+import type { ContextModel, EvalReport, GoldenCase, GoldenDataset, Transcript } from '@momonga/eval';
 import type { MomongaPaths } from '@momonga/foundation';
 import { goldenRunApi } from '../client/golden-run-api.ts';
+import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
@@ -47,6 +62,36 @@ const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenData
     await Promise.all(workspaces.map((directory) => ports.files.removeTree(directory)));
     await client.close();
   }
+};
+
+export type EvaluateContextOptions = { replay?: string; model?: ContextModel; report?: string };
+
+export const evaluateContext = async (ports: CliPorts, datasetFile: string, options: EvaluateContextOptions): Promise<number> => {
+  if (options.replay === undefined) {
+    throw new EvaluateUsageError(
+      'eval context replays recorded runs with --replay <directory>. The runtime cannot yet switch compaction off, load governing rules or play noise turns, so a live run could not honour the dataset. ' +
+        '`eval --record` refuses a context dataset because it requires the golden format; to record transcripts, make a golden copy of the dataset with the same case ids, input, files and graders and run `momonga eval <copy> --record <directory>`, then replay that directory here',
+    );
+  }
+  if (options.model === undefined) {
+    throw new EvaluateUsageError('--model fake|real is required with --replay: a transcript does not record which kind of model produced it');
+  }
+  const dataset = await loadContextDataset(ports.files, path.resolve(ports.cwd, datasetFile));
+  const transcripts = await loadTranscripts(ports.files, path.resolve(ports.cwd, options.replay));
+  const report = buildContextReport({ dataset, transcripts, model: options.model, seed: CONTEXT_BOOTSTRAP_SEED });
+  if (options.report !== undefined) await saveContextReport(ports.files, path.resolve(ports.cwd, options.report), report);
+  ports.stdout.write(`${formatContextReport(report)}\n`);
+  return report.passed ? 0 : 1;
+};
+
+export const compareContext = async (ports: CliPorts, baselineFile: string, candidateFile: string): Promise<number> => {
+  const [baseline, candidate] = await Promise.all([
+    loadContextReport(ports.files, path.resolve(ports.cwd, baselineFile)),
+    loadContextReport(ports.files, path.resolve(ports.cwd, candidateFile)),
+  ]);
+  const comparison = compareContextReports(baseline, candidate, { seed: CONTEXT_BOOTSTRAP_SEED });
+  ports.stdout.write(`${formatContextComparison(comparison)}\n`);
+  return comparison.gate.passed ? 0 : 1;
 };
 
 export const evaluate = async (ports: CliPorts, paths: MomongaPaths, datasetFile: string, options: EvaluateOptions): Promise<number> => {
