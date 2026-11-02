@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { MAX_POINTER_FILE_BYTES, resolveCanonicalPath, unresolvableReasonOf, volumeIsCaseInsensitive } from '@momonga/foundation';
-import type { EntryRead, StepRead, Unresolved } from '@momonga/foundation';
+import { MAX_POINTER_FILE_BYTES, gitlinksOfIndex, resolveCanonicalPath, unresolvableReasonOf, volumeIsCaseInsensitive } from '@momonga/foundation';
+import type { EntryRead, GitlinkRead, StepRead, Unresolved } from '@momonga/foundation';
 import { systemProgramDirectories } from '@momonga/policy';
 import type { GlobExpansion, HeadRead, PolicyFilesystem, ProgramResolution } from '@momonga/policy';
 import { ShellNotFoundError, nodeShellPorts, resolveBashPath } from './builtins/shell.ts';
@@ -141,6 +141,9 @@ const isSearchable = (absolute: string): boolean =>
     return true;
   }, false);
 
+const readGitlinks = (gitDirectory: string): GitlinkRead | Unresolved =>
+  typedRead<GitlinkRead | Unresolved>(() => gitlinksOfIndex(fs.readFileSync(path.join(gitDirectory, 'index'))), NOT_THERE, { paths: [] });
+
 const GLOB_PROGRAM ='IFS=; shopt -s nullglob; for entry in $1; do printf "%s\\0" "$entry"; done';
 const LOCALE_VARIABLES = ['LANG', 'LC_ALL', 'LC_COLLATE', 'LC_CTYPE'] as const;
 const PATH_MAX_BYTES = 4096;
@@ -186,4 +189,5 @@ export const createPolicyFilesystem = (platform: NodeJS.Platform = process.platf
   readNoFollow,
   readHead,
   isSearchable,
+  gitlinks: readGitlinks,
 });

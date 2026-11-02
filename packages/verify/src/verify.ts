@@ -46,7 +46,7 @@ const unmodelledNotes = (context: QueryContext, rules: readonly PermissionRule[]
   const unmodelled = rules.filter((rule) => rule.tool === 'Bash' && context.models.commands.unmodelled(rule));
   if (unmodelled.length > 0) {
     notes.push(
-      `Bash rules the model cannot follow, because a word uses a character outside the modelled command alphabet or an allow rule names a wrapper, shell or eval program such as sudo, env or bash. They are treated as matching no modelled command. A deny or ask rule among them can only make a decision stricter than the model predicts, so no proved result depends on it; an allow rule among them makes rule-consistency unknown: ${unmodelled.map((rule) => rule.text).join(', ')}.`,
+      `Bash rules the model cannot follow, because a word uses a character outside the modelled command alphabet or an allow rule names a wrapper, shell or eval program such as sudo, env or bash. They are treated as matching no modelled command. A deny rule whose words are expressible and whose program is a wrapper, shell or eval program is checked for rule-consistency on a few concrete commands against the real decision code, and a one-word rule of that kind does not affect bash-admission. Every other such rule makes rule-consistency unknown; an allow rule makes bash-admission unknown while a Bash deny rule exists, and a deny or ask rule makes it unknown while a Bash allow rule exists, because the product can decide a command differently from the model: ${unmodelled.map((rule) => rule.text).join(', ')}.`,
     );
   }
   return notes;

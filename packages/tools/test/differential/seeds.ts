@@ -1,5 +1,6 @@
 import path from 'node:path';
 import type { DifferentialWorkspace } from './fixture.ts';
+import { SIGNATURE_FORMS } from './generator.ts';
 import type { Case } from './oracles.ts';
 
 const CAT = [['allow', 'Bash(cat:*)']] as const;
@@ -76,10 +77,41 @@ export const readSeeds = (workspace: SeedPaths): Case[] => {
     { command: 'git tag -a -l' },
     { command: 'git branch -l new' },
     { command: 'git tag -v -l v1' },
+    { command: 'git log --format --output=tracked -1' },
+    { command: 'git log --format --output=.git/info/exclude -1', mode: 'acceptEdits' },
+    { command: 'cd pl/../only && git status' },
+    { command: 'mv m/z0 zz0; cat zz0*', mode: 'acceptEdits' },
+    { command: 'cat zy1 & mv m/z1 zy1', mode: 'acceptEdits', neverApproved: true },
+    { command: 'cat zy2 | mv m/z2 zy2', mode: 'acceptEdits', neverApproved: true },
+    ...SIGNATURE_FORMS.map((command): Case => ({ command, searchPath: `/usr/bin:/bin:${workspace.plantedBin}` })),
+    { command: 'echo $(cat zy3 > out3 &); mv m/z3 zy3', mode: 'acceptEdits', neverApproved: true },
+    { command: 'echo `cat zy4 > out4 &`; mv m/z4 zy4', mode: 'acceptEdits', neverApproved: true },
+    { command: 'echo $(cat zy5 > out5 & echo hi); mv m/z5 zy5', mode: 'acceptEdits', neverApproved: true },
+    ...['git status', 'git diff', 'git status --ignore-submodules=untracked', 'git status --ignore-submodules=all', 'git diff --ignore-submodules=dirty'].map((command): Case => ({ command, cwd: path.join(workspace.project, 'outer') })),
   ];
 };
 
-export const editSeeds = (workspace: SeedPaths): Case[] => {
+const SIDE_EFFECT_OPTION_WORDS = ['--output=pwn-sweep', '--ext-diff -p -1'];
+
+export const optionWordSweep = (values: readonly string[], subcommand: string): Case[] =>
+  values.flatMap((option) => SIDE_EFFECT_OPTION_WORDS.map((word) => ({ command: `git ${subcommand} ${option} ${word}` })));
+
+export const SEPARATE_WORD_SUBCOMMANDS = ['ls-files', 'grep', 'cat-file', 'for-each-ref'] as const;
+
+const SEPARATE_WORD_PREFIXES = ['', '-- ', '- '];
+
+const TAILS: Readonly<Record<(typeof SEPARATE_WORD_SUBCOMMANDS)[number], string>> = { 'ls-files': '', grep: ' two', 'cat-file': ' HEAD:tracked', 'for-each-ref': '' };
+
+export const PAGER_IN_WORKSPACE = './pager.sh';
+
+export const separateWordSweep = (subcommand: (typeof SEPARATE_WORD_SUBCOMMANDS)[number], options: readonly string[]): Case[] => {
+  const hazards = ['--output=pwn-sweep', `--open-files-in-pager=${PAGER_IN_WORKSPACE}`, `-O${PAGER_IN_WORKSPACE}`, '--textconv', '--filters', '--ext-diff'];
+  return options.flatMap((option) =>
+    hazards.flatMap((hazard) => SEPARATE_WORD_PREFIXES.map((prefix) => ({ command: `git ${subcommand} ${option} ${prefix}${hazard}${TAILS[subcommand]}` }))),
+  );
+};
+
+export const editSeeds =(workspace: SeedPaths): Case[] => {
   const hook = (name: string): string => workspace.hookScript(name);
   const create = (directory: string): string => `mkdir -p ${directory}/objects ${directory}/refs && echo 'ref: refs/heads/main' > ${directory}/HEAD && ${configLines(directory, hook('bare'))}`;
   return [

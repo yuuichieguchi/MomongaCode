@@ -55,7 +55,12 @@ const inputFor = (env: ReplayEnvironment, tool: SubjectTool, witness: Witness): 
   }
 };
 
-export const replayWitness = (env: ReplayEnvironment, tool: SubjectTool, witness: Witness, predicted: Prediction): Replay => {
+export const commandDecisionWithout = (env: ReplayEnvironment, command: string, omitted: PermissionRule | undefined): DecisionKind => {
+  const rules = env.rules.filter((rule) => rule !== omitted);
+  return decidePrimary(inputFor({ ...env, rules }, 'Bash', { kind: 'command', command, defaultAllow: false })).kind;
+};
+
+export const replayWitness =(env: ReplayEnvironment, tool: SubjectTool, witness: Witness, predicted: Prediction): Replay => {
   const input = inputFor(env, tool, witness);
   let actual: DecisionKind;
   let final: DecisionKind;

@@ -1,9 +1,11 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { analyzeCommand, commandSpecsFor, programNameOf } from '@momonga/policy';
+import { isProtectedWrite, protectedSetFor } from '@momonga/foundation';
+import { allWriteTargets, analyzeCommand, commandSpecsFor, programNameOf } from '@momonga/policy';
 import type { Analysis, Decision } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
+import { createPolicyFilesystem } from '@momonga/tools';
 import { CANARY } from './fixture.ts';
 import type { DifferentialWorkspace } from './fixture.ts';
 
@@ -13,6 +15,7 @@ export type Case = {
   cwd?: string;
   rules?: ReadonlyArray<readonly ['allow' | 'deny' | 'ask', string]>;
   searchPath?: string;
+  neverApproved?: true;
 };
 
 export type Outcome = { decision: Decision | 'threw'; ran: boolean; violations: string[] };
@@ -81,6 +84,26 @@ const inside = (candidate: string, root: string): boolean => candidate === root 
 
 const canonical = (absolute: string): string | undefined => (fs.existsSync(absolute) ? fs.realpathSync.native(absolute) : undefined);
 
+const operandOf = (arg: string): string[] => {
+  if (!arg.startsWith('-')) return arg.includes('=') ? [] : [arg];
+  const separator = arg.indexOf('=');
+  return separator === -1 ? [] : [arg.slice(separator + 1)];
+};
+
+const reportedWrites = (analysis: Analysis | null, cwd: string): string[] | undefined => {
+  if (analysis === null) return undefined;
+  const reported: string[] = [];
+  for (const target of allWriteTargets(analysis)) {
+    if ('literal' in target) reported.push(path.resolve(cwd, target.literal));
+    else if ('candidate' in target) reported.push(path.resolve(cwd, target.candidate));
+    else return undefined;
+  }
+  return reported;
+};
+
+const writePermitted = (entry: string, project: string, reported: readonly string[] | undefined): boolean =>
+  inside(entry, project) && (reported === undefined || reported.some((target) => inside(entry, target) || inside(target, entry)));
+
 const traceViolations = (workspace: DifferentialWorkspace, stderr: string, startCwd: string, names: ReadonlySet<string> | undefined): string[] => {
   const violations: string[] = [];
   let cwd = startCwd;
@@ -90,7 +113,7 @@ const traceViolations = (workspace: DifferentialWorkspace, stderr: string, start
     const [name, ...args] = tokensOf(match[1] as string);
     if (name === undefined) continue;
     if (names !== undefined && !names.has(name)) violations.push(`executed ${name}, which the analysis did not report (${line})`);
-    const operands = args.filter((arg) => !arg.startsWith('-') && !arg.includes('='));
+    const operands = args.flatMap(operandOf);
     if (name === 'cd') {
       const target = operands[0];
       if (target !== undefined) cwd = canonical(path.resolve(cwd, target)) ?? cwd;
@@ -125,6 +148,7 @@ export const runCase = (workspace: DifferentialWorkspace, input: Case): Outcome 
     return { decision: 'threw', ran: false, violations: [`decide threw: ${error instanceof Error ? error.message : String(error)}`] };
   }
   if (decision.kind !== 'allow') return { decision, ran: false, violations: [] };
+  if (input.neverApproved === true) return { decision, ran: false, violations: ['approved a read that runs concurrently with a relocation of the same name'] };
 
   const before = snapshot(workspace.base);
   const markersBefore = new Set(workspace.firedMarkers());
@@ -137,8 +161,15 @@ export const runCase = (workspace: DifferentialWorkspace, input: Case): Outcome 
   for (const marker of workspace.firedMarkers()) if (!markersBefore.has(marker)) violations.push(`a repository configuration ran ${marker}`);
   const after = snapshot(workspace.base);
   const fired = new Set(workspace.firedMarkers());
+  const filesystem = createPolicyFilesystem();
+  const protectedSet = protectedSetFor([workspace.project], filesystem);
+  const reported = reportedWrites(analysis, cwd);
   for (const entry of changedPaths(before, after)) {
-    const permitted = mode === 'acceptEdits' && inside(entry, workspace.project);
+    if (isProtectedWrite(protectedSet, entry, filesystem)) {
+      violations.push(`changed ${entry}, which is protected`);
+      continue;
+    }
+    const permitted = mode === 'acceptEdits' && writePermitted(entry, workspace.project, reported);
     if (!permitted && !(fired.has(path.basename(entry)) && path.dirname(entry) === workspace.base)) violations.push(`changed ${entry}, which the analysis did not report as written`);
   }
   return { decision, ran: true, violations };
