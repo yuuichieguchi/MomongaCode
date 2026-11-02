@@ -139,7 +139,7 @@ export type ReleaseTarget = { callId: string; name: string; idemKey: string };
 export type ToolExecutor = {
   runBatch(input: BatchInput): Promise<CallOutcome[]>;
   abandon(targets: readonly AbandonTarget[], options: { signal: AbortSignal }): Promise<AbandonOutcome[]>;
-  release(targets: readonly ReleaseTarget[], options: { toolSet: ToolSet; signal: AbortSignal }): Promise<void>;
+  release(targets: readonly ReleaseTarget[], options: { toolSet: () => Promise<ToolSet>; signal: AbortSignal }): Promise<void>;
 };
 
 export type InspectableToolExecutor = ToolExecutor & { inFlightKeys(): ReadonlySet<string> };
@@ -1103,19 +1103,24 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     return outcomes;
   };
 
-  const releaseTarget = async (target: ReleaseTarget, toolSet: ToolSet, signal: AbortSignal): Promise<void> => {
+  const releaseTarget = async (target: ReleaseTarget, toolSet: () => Promise<ToolSet>, signal: AbortSignal): Promise<void> => {
     const lookup = idempotency.get(target.idemKey);
     if (lookup?.s !== 'PENDING') return;
     const checkpoint = lookup.rec.meta['checkpoint'];
     if (!isRecord(checkpoint)) return;
-    await toolSet.get(target.name)?.releaseCheckpoint?.(checkpoint, { signal });
+    await (await toolSet()).get(target.name)?.releaseCheckpoint?.(checkpoint, { signal });
     idempotency.checkpoint(target.idemKey, undefined);
     idempotency.markUnknownIfPending(target.idemKey);
   };
 
-  const release = async (targets: readonly ReleaseTarget[], { toolSet, signal }: { toolSet: ToolSet; signal: AbortSignal }): Promise<void> => {
+  const release = async (
+    targets: readonly ReleaseTarget[],
+    { toolSet, signal }: { toolSet: () => Promise<ToolSet>; signal: AbortSignal },
+  ): Promise<void> => {
     signal.throwIfAborted();
-    await Promise.all(targets.map((target) => releaseTarget(target, toolSet, signal)));
+    let loaded: Promise<ToolSet> | undefined;
+    const loadOnce = (): Promise<ToolSet> => (loaded ??= toolSet());
+    await Promise.all(targets.map((target) => releaseTarget(target, loadOnce, signal)));
   };
 
   return { runBatch, abandon, release, inFlightKeys: () => new Set(activeKeys.keys()) };

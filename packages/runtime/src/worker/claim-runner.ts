@@ -217,10 +217,11 @@ const drive = async (
     if (control.leaseLost()) control.lost();
     const inFlight = journal.state.inFlightModelRequest;
     const keys = inFlight === undefined ? [] : [modelKey(run.id, inFlight.step, inFlight.attempt)];
-    const reconciling = reconcileStartedCalls({ options, run, session, journal, control });
-    const releasing = releaseWaitingOnCancel({ options, run, session, journal, control });
+    const recovering = releaseWaitingOnCancel({ options, run, session, journal, control }).then(() =>
+      reconcileStartedCalls({ options, run, session, journal, control }),
+    );
     const upstream = cancelUpstream(options, control, keys);
-    const settled = Promise.all([upstream, reconciling, releasing]);
+    const settled = Promise.all([upstream, recovering]);
     await Promise.race([settled, control.shutdownRequested]);
     if (control.shuttingDown()) {
       settled.catch((error: unknown) => {

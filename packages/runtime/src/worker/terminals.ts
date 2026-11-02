@@ -21,10 +21,16 @@ export const createTerminals = ({ store, claim, journal, control, clock }: Termi
     return 'done';
   };
 
-  const settle = (result: RunMutationResult): 'done' => {
+  const yieldLease = (): 'done' => {
+    const result = store.releaseLease(claim, { availableAt: clock.now(), refundAttempt: true });
+    if (result.kind === 'conflict') throw new Error(`run ${claim.runId} could not release its lease: ${result.reason ?? 'conflict'}`);
+    return 'done';
+  };
+
+  const settle = (result: RunMutationResult, whenCancelling: () => 'done'): 'done' => {
     if (result.kind === 'lease_lost') control.lost();
     if (result.kind === 'conflict') {
-      if (store.getRun(claim.runId)?.status === 'CANCELLING') return cancel();
+      if (store.getRun(claim.runId)?.status === 'CANCELLING') return whenCancelling();
       throw new Error(`run ${claim.runId} could not change status: ${result.reason ?? 'conflict'}`);
     }
     return 'done';
@@ -33,17 +39,13 @@ export const createTerminals = ({ store, claim, journal, control, clock }: Termi
   return {
     finish: (to, patch) => {
       journal.snapshot();
-      return settle(store.transition(claim, ['RUNNING'], to, patch));
+      return settle(store.transition(claim, ['RUNNING'], to, patch), cancel);
     },
     yieldTo: (to, availableAt, options) => {
       journal.snapshot();
-      return settle(store.release(claim, to, availableAt, options));
+      return settle(store.release(claim, to, availableAt, options), yieldLease);
     },
     cancel,
-    yieldLease: () => {
-      const result = store.releaseLease(claim, { availableAt: clock.now(), refundAttempt: true });
-      if (result.kind === 'conflict') throw new Error(`run ${claim.runId} could not release its lease: ${result.reason ?? 'conflict'}`);
-      return 'done';
-    },
+    yieldLease,
   };
 };

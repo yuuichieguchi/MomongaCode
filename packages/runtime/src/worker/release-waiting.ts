@@ -12,9 +12,8 @@ export const releaseWaitingCalls = async (input: {
 }): Promise<void> => {
   const { tools, run, session, pendingCalls, signal } = input;
   const targets: ReleaseTarget[] = Object.entries(pendingCalls).flatMap(([callId, call]) =>
-    call.status === 'awaiting_input' && call.idemKey !== undefined ? [{ callId, name: call.name, idemKey: call.idemKey }] : [],
+    call.idemKey !== undefined && call.status !== 'completed' && call.status !== 'reconciled' ? [{ callId, name: call.name, idemKey: call.idemKey }] : [],
   );
   if (targets.length === 0) return;
-  const toolSet = await tools.toolSet(run.id, { signal, env: tools.envFor(session) });
-  await tools.executor.release(targets, { toolSet, signal });
+  await tools.executor.release(targets, { toolSet: () => tools.toolSet(run.id, { signal, env: tools.envFor(session) }), signal });
 };
