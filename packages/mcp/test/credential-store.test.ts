@@ -47,6 +47,38 @@ describe('file credential store', () => {
   });
 });
 
+describe('file credential store updates', () => {
+  const counterOf = async (store: ReturnType<typeof createFileCredentialStore>): Promise<number> => Number(await store.read('counter'));
+
+  it('applies every concurrent read-modify-write from two stores on one directory', async () => {
+    const directory = path.join(makeDir(), 'creds');
+    const first = createFileCredentialStore(directory);
+    const second = createFileCredentialStore(directory);
+    await first.write('counter', '0');
+    const bump = (current: string | undefined): string => String(Number(current) + 1);
+    await Promise.all(Array.from({ length: 10 }, (_unused, index) => (index % 2 === 0 ? first : second).update('counter', bump)));
+    expect(await counterOf(first)).toBe(10);
+    expect(fs.readdirSync(directory).filter((name) => name.endsWith('.lock'))).toEqual([]);
+  });
+
+  it('starts from undefined when the key does not exist yet', async () => {
+    const store = createFileCredentialStore(path.join(makeDir(), 'creds'));
+    await store.update('fresh', (current) => (current === undefined ? 'created' : 'existed'));
+    expect(await store.read('fresh')).toBe('created');
+  });
+
+  it('removes the temporary file when the write fails', async () => {
+    const directory = path.join(makeDir(), 'creds');
+    const store = createFileCredentialStore(directory);
+    await store.write('k', 'one');
+    const [file] = fs.readdirSync(directory);
+    fs.rmSync(path.join(directory, file as string));
+    fs.mkdirSync(path.join(directory, file as string));
+    await expect(store.write('k', 'two')).rejects.toThrow();
+    expect(fs.readdirSync(directory).filter((name) => name.endsWith('.tmp'))).toEqual([]);
+  });
+});
+
 describe('file credential store under the real path layout', () => {
   it('keeps owner-only files in the per-user state directory of a temporary home and survives a new instance', async () => {
     const home = makeDir();

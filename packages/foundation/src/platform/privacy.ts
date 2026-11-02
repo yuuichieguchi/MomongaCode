@@ -22,6 +22,13 @@ export const ownerProblem = (
   return stat.uid === currentUid ? undefined : { found: stat.uid, expected: currentUid };
 };
 
+export const assertPrivateRegularFile = (stat: { mode: number; uid: number; isFile(): boolean }, description: string): void => {
+  if (!stat.isFile()) throw new Error(`${description} is not a regular file`);
+  const owner = ownerProblem(stat);
+  if (owner !== undefined) throw new Error(`${description} is owned by uid ${owner.found}, but the current user is uid ${owner.expected}`);
+  if (!modeIsPrivate(stat, 'file')) throw new Error(`${description} must have mode 0600, found ${(stat.mode & 0o777).toString(8).padStart(4, '0')}`);
+};
+
 export const noFollowFlag = (platform: NodeJS.Platform = process.platform): number => (platform === 'win32' ? 0 : fs.constants.O_NOFOLLOW);
 
 export const directoryFlag = (platform: NodeJS.Platform = process.platform): number => (platform === 'win32' ? 0 : fs.constants.O_DIRECTORY);

@@ -105,7 +105,7 @@ export { LINUX_SOCKET_PATH_LIMIT, PIPE_NAME_LIMIT, SOCKET_PATH_LIMIT, assertSock
 export { MAX_SYMLINK_HOPS, canonicalDirectory, canonicalPath, comparableContains, comparableFromParts, comparablePath, containsByComponents, setCaseSensitivityProbe, volumeIsCaseInsensitive, walkPath } from './path-compare.ts';
 export type { CanonicalDirectoryFailureCode, CanonicalDirectoryResult, CaseSensitivityProbe, PathParts, StepRead, StepReader, WalkEntry, WalkFailure, WalkFailureDetail, WalkFailureReason, WalkResult, WalkStep } from './path-compare.ts';
 export { isTransientErrno } from './transient-errno.ts';
-export { PRIVATE_MODE, PrivateTreeError, directoryFlag, ensureWindowsPrivateTree, modeIsPrivate, noFollowFlag, ownerProblem } from './platform/privacy.ts';
+export { PRIVATE_MODE, PrivateTreeError, assertPrivateRegularFile, directoryFlag, ensureWindowsPrivateTree, modeIsPrivate, noFollowFlag, ownerProblem } from './platform/privacy.ts';
 export type { OwnerProblem, PrivacyKind } from './platform/privacy.ts';
 export { BASE_ENTRY_FLAGS, COMMON_ENTRY_FLAGS, EntryUsageError, parseFlags } from './entry-flags.ts';
 export type { FlagKind, FlagSpec, ParsedFlags } from './entry-flags.ts';

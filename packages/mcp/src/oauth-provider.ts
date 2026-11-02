@@ -69,6 +69,8 @@ export type McpOAuthProvider = OAuthClientProvider & {
   secretValues(): Promise<string[]>;
 };
 
+const emptyStored = (): StoredCredentials => ({ version: STORE_VERSION, issuers: {} });
+
 export const createMcpOAuthProvider = (options: McpOAuthProviderOptions): McpOAuthProvider => {
   const key = credentialKey(options.server, options.resourceUrl);
   let verifier: string | undefined;
@@ -78,15 +80,17 @@ export const createMcpOAuthProvider = (options: McpOAuthProviderOptions): McpOAu
 
   const load = async (): Promise<StoredCredentials> => {
     const raw = await options.store.read(key);
-    return raw === undefined ? { version: STORE_VERSION, issuers: {} } : parseStored(raw);
+    return raw === undefined ? emptyStored() : parseStored(raw);
   };
   const update = async (issuer: string | undefined, change: (entry: IssuerCredentials) => IssuerCredentials): Promise<void> => {
-    const stored = await load();
-    const target = issuer ?? stored.lastIssuer;
-    if (target === undefined) throw new Error('cannot store MCP credentials without an authorization server issuer');
-    stored.issuers[target] = change(stored.issuers[target] ?? {});
-    stored.lastIssuer = target;
-    await options.store.write(key, JSON.stringify(stored));
+    await options.store.update(key, (raw) => {
+      const stored = raw === undefined ? emptyStored() : parseStored(raw);
+      const target = issuer ?? stored.lastIssuer;
+      if (target === undefined) throw new Error('cannot store MCP credentials without an authorization server issuer');
+      stored.issuers[target] = change(stored.issuers[target] ?? {});
+      stored.lastIssuer = target;
+      return JSON.stringify(stored);
+    });
   };
   const entryFor = async (context: OAuthClientInformationContext | undefined): Promise<IssuerCredentials | undefined> => {
     const stored = await load();
@@ -183,12 +187,14 @@ export const createMcpOAuthProvider = (options: McpOAuthProviderOptions): McpOAu
         await options.store.remove(key);
         return;
       }
-      const stored = await load();
-      for (const entry of Object.values(stored.issuers)) {
-        if (scope === 'tokens') delete entry.tokens;
-        if (scope === 'client') delete entry.clientInformation;
-      }
-      await options.store.write(key, JSON.stringify(stored));
+      await options.store.update(key, (raw) => {
+        const stored = raw === undefined ? emptyStored() : parseStored(raw);
+        for (const entry of Object.values(stored.issuers)) {
+          if (scope === 'tokens') delete entry.tokens;
+          if (scope === 'client') delete entry.clientInformation;
+        }
+        return JSON.stringify(stored);
+      });
     },
     secretValues: async () => {
       const stored = await load();
