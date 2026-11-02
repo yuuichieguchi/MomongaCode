@@ -1,11 +1,14 @@
-import type { PublicRunEvent } from '@momonga/protocol';
+import type { PublicRunEvent, ToolKind } from '@momonga/protocol';
 import type { PermissionDecision } from './dataset.ts';
+import type { Transcript } from './transcript.ts';
 
 type EventOf<T extends PublicRunEvent['type']> = Extract<PublicRunEvent, { type: T }>;
 
 export type ObservedCall = {
+  runId: string;
   callId: string;
   name: string;
+  kind: ToolKind;
   rawInput: unknown;
   decision: PermissionDecision | 'unresolved';
 };
@@ -37,10 +40,17 @@ const decisionOf = (events: readonly PublicRunEvent[], callId: string): Observed
   return 'unresolved';
 };
 
-export const callsOf = (events: readonly PublicRunEvent[]): ObservedCall[] =>
+const callsInRun = (runId: string, events: readonly PublicRunEvent[]): ObservedCall[] =>
   eventsOfType(events, 'tool.call').map((event) => ({
+    runId,
     callId: event.callId,
     name: event.name,
+    kind: event.kind,
     rawInput: event.rawInput,
     decision: decisionOf(events, event.callId),
   }));
+
+export const callsOf = (transcript: Pick<Transcript, 'run' | 'events' | 'children'>): ObservedCall[] => [
+  ...callsInRun(transcript.run.id, transcript.events),
+  ...transcript.children.flatMap((child) => callsInRun(child.runId, child.events)),
+];

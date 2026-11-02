@@ -13,11 +13,14 @@ export type TranscriptRun = {
   usage: { inputTokens: number; outputTokens: number; totalTokens: number };
 };
 
+export type TranscriptChild = { runId: string; agent: string; events: PublicRunEvent[] };
+
 export type Transcript = {
   caseId: string;
   runIndex: number;
   run: TranscriptRun;
   events: PublicRunEvent[];
+  children: TranscriptChild[];
 };
 
 export class TranscriptError extends Error {
@@ -61,9 +64,25 @@ const runOf = (value: unknown, where: string): TranscriptRun => {
   };
 };
 
+const childrenOf = (value: unknown, where: string): TranscriptChild[] => {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new TranscriptError(`${where}: children must be a list`);
+  return value.map((entry): TranscriptChild => {
+    if (!isRecord(entry) || typeof entry['runId'] !== 'string' || typeof entry['agent'] !== 'string') throw new TranscriptError(`${where}: every child needs a runId and an agent`);
+    return { runId: entry['runId'], agent: entry['agent'], events: [] };
+  });
+};
+
 export const encodeTranscript = (transcript: Transcript): string => {
-  const header = { format: TRANSCRIPT_FORMAT, caseId: transcript.caseId, runIndex: transcript.runIndex, run: transcript.run };
-  return [header, ...transcript.events].map((line) => JSON.stringify(line)).join('\n') + '\n';
+  const header = {
+    format: TRANSCRIPT_FORMAT,
+    caseId: transcript.caseId,
+    runIndex: transcript.runIndex,
+    run: transcript.run,
+    children: transcript.children.map(({ runId, agent }) => ({ runId, agent })),
+  };
+  const childLines = transcript.children.flatMap((child) => child.events.map((event) => ({ childRunId: child.runId, event })));
+  return [header, ...transcript.events, ...childLines].map((line) => JSON.stringify(line)).join('\n') + '\n';
 };
 
 export const decodeTranscript = (text: string, source: string): Transcript => {
@@ -81,7 +100,9 @@ export const decodeTranscript = (text: string, source: string): Transcript => {
   if (typeof caseId !== 'string' || caseId === '') throw new TranscriptError(`${source}:1: caseId must be a non-empty string`);
   if (!isNonNegativeInteger(runIndex)) throw new TranscriptError(`${source}:1: runIndex must be a non-negative integer`);
   const run = runOf(header['run'], `${source}:1`);
-  const events = eventLines.map((line, index) => {
+  const children = childrenOf(header['children'], `${source}:1`);
+  const events: PublicRunEvent[] = [];
+  eventLines.forEach((line, index) => {
     const lineNumber = index + 2;
     let parsed: unknown;
     try {
@@ -89,7 +110,13 @@ export const decodeTranscript = (text: string, source: string): Transcript => {
     } catch (error) {
       throw new TranscriptError(`${source}:${lineNumber}: not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
     }
-    return parsePublicRunEvent(parsed, `${source}:${lineNumber}`);
+    if (isRecord(parsed) && 'childRunId' in parsed) {
+      const child = children.find((entry) => entry.runId === parsed['childRunId']);
+      if (child === undefined) throw new TranscriptError(`${source}:${lineNumber}: the event belongs to a child run the header does not list`);
+      child.events.push(parsePublicRunEvent(parsed['event'], `${source}:${lineNumber}`));
+      return;
+    }
+    events.push(parsePublicRunEvent(parsed, `${source}:${lineNumber}`));
   });
-  return { caseId, runIndex, run, events };
+  return { caseId, runIndex, run, events, children };
 };

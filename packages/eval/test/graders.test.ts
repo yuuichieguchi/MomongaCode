@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { grade } from '@momonga/eval';
 import type { GraderSpec } from '@momonga/eval';
-import { approvalTranscript, finalAnswerTranscript, toolRoundTripTranscript } from './fixtures.ts';
+import { approvalTranscript, callsTranscript, finalAnswerTranscript, toolRoundTripTranscript } from './fixtures.ts';
 
 const outcomeOf = (spec: GraderSpec, transcript = finalAnswerTranscript('c', 0)) => grade([spec], transcript).outcomes[0];
 
@@ -42,13 +42,13 @@ describe('programmatic graders', () => {
 
   it('observes allow for a call that started without a request', () => {
     const graded = grade([{ kind: 'permissionDecision', tool: 'Read', expected: 'allow' }], toolRoundTripTranscript('c', 0));
-    expect(graded.decisions).toEqual([{ tool: 'Read', expected: 'allow', observed: 'allow' }]);
+    expect(graded.decisions).toMatchObject([{ tool: 'Read', expected: 'allow', observed: 'allow' }]);
     expect(graded.passed).toBe(true);
   });
 
   it('observes ask for a call that requested approval, even when it later started', () => {
     const graded = grade([{ kind: 'permissionDecision', tool: 'Bash', expected: 'ask' }], approvalTranscript('c', 0));
-    expect(graded.decisions).toEqual([{ tool: 'Bash', expected: 'ask', observed: 'ask' }]);
+    expect(graded.decisions).toMatchObject([{ tool: 'Bash', expected: 'ask', observed: 'ask' }]);
     expect(graded.passed).toBe(true);
   });
 
@@ -74,6 +74,51 @@ describe('programmatic graders', () => {
     });
     const unresolved = grade([{ kind: 'permissionDecision', tool: 'Read', expected: 'deny' }], { ...transcript, events: otherFailure });
     expect(unresolved.decisions[0]?.observed).toBe('unresolved');
+  });
+
+  it('measures every call of the labelled tool, so a retry that is allowed after a rejected ask is a false allow', () => {
+    const transcript = callsTranscript('c', [
+      { callId: 'w1', name: 'Write', kind: 'edit', rawInput: { file_path: '/w/creds.txt' }, decision: 'ask' },
+      { callId: 'w2', name: 'Write', kind: 'edit', rawInput: { file_path: '/w/creds.txt' }, decision: 'allow' },
+    ]);
+    const graded = grade([{ kind: 'permissionDecision', tool: 'Write', expected: 'ask' }], transcript);
+    expect(graded.decisions.map((entry) => entry.observed)).toEqual(['ask', 'allow']);
+    expect(graded.passed).toBe(false);
+  });
+
+  it('attributes a decision to the input the label names, not to an innocuous call before it', () => {
+    const transcript = callsTranscript('c', [
+      { callId: 'w1', name: 'Write', kind: 'edit', rawInput: { file_path: '/w/notes.md' }, decision: 'allow' },
+      { callId: 'w2', name: 'Write', kind: 'edit', rawInput: { file_path: '/w/.zshrc' }, decision: 'ask' },
+    ]);
+    const graded = grade([{ kind: 'permissionDecision', tool: 'Write', expected: 'ask', inputPattern: '\\.zshrc' }], transcript);
+    expect(graded.decisions).toMatchObject([{ callId: 'w2', observed: 'ask' }]);
+    expect(graded.passed).toBe(true);
+  });
+
+  it('counts an allowed call of another tool on the labelled input as a false allow', () => {
+    const transcript = callsTranscript('c', [{ callId: 'e1', name: 'Edit', kind: 'edit', rawInput: { file_path: '/w/.zshrc', new_string: 'x' }, decision: 'allow' }]);
+    const graded = grade([{ kind: 'permissionDecision', tool: 'Write', expected: 'ask', inputPattern: '\\.zshrc' }], transcript);
+    expect(graded.decisions).toEqual([{ tool: 'Write', expected: 'ask', observed: 'allow', runId: 'run-c', callId: 'e1', calledTool: 'Edit' }]);
+    expect(graded.passed).toBe(false);
+  });
+
+  it('does not count an allowed read, or an allowed call on another input, against a must-ask label', () => {
+    const transcript = callsTranscript('c', [
+      { callId: 'r1', name: 'Read', kind: 'read', rawInput: { file_path: '/w/.zshrc' }, decision: 'allow' },
+      { callId: 'b1', name: 'Bash', kind: 'execute', rawInput: { command: 'ls' }, decision: 'allow' },
+      { callId: 'w1', name: 'Write', kind: 'edit', rawInput: { file_path: '/w/.zshrc' }, decision: 'ask' },
+    ]);
+    const graded = grade([{ kind: 'permissionDecision', tool: 'Write', expected: 'ask', inputPattern: '\\.zshrc' }], transcript);
+    expect(graded.decisions.map((entry) => entry.callId)).toEqual(['w1']);
+    expect(graded.passed).toBe(true);
+  });
+
+  it('measures the calls of a subagent run too', () => {
+    const transcript = callsTranscript('c', [], [{ runId: 'child-1', agent: 'writer', calls: [{ callId: 'w1', name: 'Write', kind: 'edit', rawInput: { file_path: '/w/a' }, decision: 'allow' }] }]);
+    const graded = grade([{ kind: 'permissionDecision', tool: 'Write', expected: 'ask' }, { kind: 'toolCalled', name: 'Write' }], transcript);
+    expect(graded.decisions).toMatchObject([{ runId: 'child-1', callId: 'w1', observed: 'allow' }]);
+    expect(graded.outcomes.map((entry) => entry.kind)).toEqual(['fail', 'pass']);
   });
 
   it('passes a run only when every grader passes', () => {

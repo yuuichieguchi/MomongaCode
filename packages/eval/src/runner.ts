@@ -3,7 +3,7 @@ import type { GoldenCase, GoldenDataset } from './dataset.ts';
 import { grade } from './graders.ts';
 import { buildReport } from './report.ts';
 import type { CaseResult, EvalReport } from './report.ts';
-import type { Transcript, TranscriptRun } from './transcript.ts';
+import type { Transcript, TranscriptChild, TranscriptRun } from './transcript.ts';
 
 export type EvalWorkspace = { cwd: string; env: Record<string, string> };
 
@@ -34,21 +34,44 @@ const optionIdFor = (event: Extract<PublicRunEvent, { type: 'tool.permission.req
   return option.optionId;
 };
 
-const driveRun = async (ports: EvalPorts, golden: GoldenCase, runId: string): Promise<PublicRunEvent[]> => {
+type Driven = { events: PublicRunEvent[]; children: TranscriptChild[] };
+
+const driveRun = async (ports: EvalPorts, golden: GoldenCase, rootRunId: string): Promise<Driven> => {
   const events: PublicRunEvent[] = [];
-  for await (const event of ports.api.events(runId)) {
-    events.push(event);
-    if (event.type === 'tool.permission.requested') await ports.api.resolveApproval(event.approvalId, optionIdFor(event, golden));
-  }
-  return events;
+  const children: TranscriptChild[] = [];
+  const followed = new Set<string>([rootRunId]);
+  const following: Promise<void>[] = [];
+  let childFailure: { error: unknown } | undefined;
+
+  const follow = async (runId: string, sink: PublicRunEvent[]): Promise<void> => {
+    for await (const event of ports.api.events(runId)) {
+      sink.push(event);
+      if (event.type === 'tool.permission.requested') await ports.api.resolveApproval(event.approvalId, optionIdFor(event, golden));
+      if (event.type === 'tool.waiting' && event.awaits.kind === 'run' && !followed.has(event.awaits.runId)) {
+        followed.add(event.awaits.runId);
+        const child: TranscriptChild = { runId: event.awaits.runId, agent: event.awaits.agent, events: [] };
+        children.push(child);
+        following.push(
+          follow(child.runId, child.events).catch((error: unknown) => {
+            childFailure ??= { error };
+          }),
+        );
+      }
+    }
+  };
+
+  await follow(rootRunId, events);
+  for (let index = 0; index < following.length; index += 1) await following[index];
+  if (childFailure !== undefined) throw childFailure.error;
+  return { events, children };
 };
 
 const runOnce = async (ports: EvalPorts, golden: GoldenCase, runIndex: number): Promise<Transcript> => {
   const workspace = await ports.workspace(golden, runIndex);
   const session = await ports.api.createSession({ ...workspace, permissionMode: golden.permissionMode });
   const run = await ports.api.createRun(session.id, { input: golden.input, ...(golden.timeoutMs === undefined ? {} : { timeoutMs: golden.timeoutMs }) });
-  const events = await driveRun(ports, golden, run.id);
-  const transcript: Transcript = { caseId: golden.id, runIndex, run: await ports.api.getRun(run.id), events };
+  const { events, children } = await driveRun(ports, golden, run.id);
+  const transcript: Transcript = { caseId: golden.id, runIndex, run: await ports.api.getRun(run.id), events, children };
   if (ports.onTranscript !== undefined) await ports.onTranscript(transcript);
   return transcript;
 };

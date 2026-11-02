@@ -11,6 +11,6 @@ export type { EvalPorts, EvalRunApi, EvalWorkspace } from './runner.ts';
 export { WILSON_Z_95, proportionOf } from './stats.ts';
 export type { Proportion } from './stats.ts';
 export { TRANSCRIPT_FORMAT, TranscriptError, decodeTranscript, encodeTranscript, parsePublicRunEvent } from './transcript.ts';
-export type { Transcript, TranscriptRun } from './transcript.ts';
+export type { Transcript, TranscriptChild, TranscriptRun } from './transcript.ts';
 export { loadDataset, loadTranscripts, nodeEvalFiles, saveTranscript, transcriptFileName } from './files.ts';
 export type { EvalFiles } from './files.ts';

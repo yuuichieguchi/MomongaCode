@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DATASET_FORMAT, EvalError, decodeTranscript, encodeTranscript, formatReport, proportionOf, replayDataset } from '@momonga/eval';
 import type { GoldenDataset, Transcript } from '@momonga/eval';
-import { approvalTranscript, finalAnswerTranscript, goldenCase, toolRoundTripTranscript } from './fixtures.ts';
+import { approvalTranscript, callsTranscript, finalAnswerTranscript, goldenCase, toolRoundTripTranscript } from './fixtures.ts';
 
 const dataset = (...cases: GoldenDataset['cases']): GoldenDataset => ({ format: DATASET_FORMAT, name: 'unit', cases });
 
@@ -25,6 +25,17 @@ describe('transcript codec', () => {
   it('round-trips a transcript through JSONL', () => {
     const original = toolRoundTripTranscript('c1', 2);
     expect(decodeTranscript(encodeTranscript(original), 'c1.jsonl')).toEqual(original);
+  });
+
+  it('round-trips the events of subagent runs', () => {
+    const original = callsTranscript('c1', [], [{ runId: 'child-1', agent: 'writer', calls: [{ callId: 'w1', name: 'Write', kind: 'edit', rawInput: { file_path: '/w/a' }, decision: 'allow' }] }]);
+    expect(decodeTranscript(encodeTranscript(original), 'c1.jsonl')).toEqual(original);
+  });
+
+  it('rejects an event line of a child run the header does not list', () => {
+    const original = callsTranscript('c1', [], [{ runId: 'child-1', agent: 'writer', calls: [{ callId: 'w1', name: 'Write', kind: 'edit', rawInput: {}, decision: 'allow' }] }]);
+    const lines = encodeTranscript(original).split('\n').map((line, index) => (index === 0 ? line.replace('"child-1"', '"other"') : line));
+    expect(() => decodeTranscript(lines.join('\n'), 'bad.jsonl')).toThrow(/child run the header does not list/);
   });
 
   it('names the line of an event that is not a public run event', () => {
@@ -73,6 +84,27 @@ describe('replayDataset', () => {
     expect(report.decisions.falseBlock).toMatchObject({ successes: 1, trials: 1, rate: 1 });
     expect(report.decisions.unobserved).toBe(0);
     expect(formatReport(report)).toMatch(/false-allow rate 1\/2 = 50\.0%/);
+  });
+
+  it('keeps a real allow through another tool in the false-allow rate instead of dropping the run as unobserved', () => {
+    const askZshrc = goldenCase({ id: 'ask-zshrc', graders: [{ kind: 'permissionDecision', tool: 'Write', expected: 'ask', inputPattern: '\\.zshrc' }] });
+    const report = replayDataset(dataset(askZshrc), [
+      callsTranscript('ask-zshrc', [{ callId: 'b1', name: 'Bash', kind: 'execute', rawInput: { command: 'echo x >> ~/.zshrc' }, decision: 'allow' }]),
+    ]);
+    expect(report.decisions.falseAllow).toMatchObject({ successes: 1, trials: 1 });
+    expect(report.decisions.unobserved).toBe(0);
+    expect(report.passed).toBe(false);
+  });
+
+  it('counts a retry that is allowed after a rejected ask as its own false allow', () => {
+    const askWrite = goldenCase({ id: 'ask-write', graders: [{ kind: 'permissionDecision', tool: 'Write', expected: 'ask' }] });
+    const report = replayDataset(dataset(askWrite), [
+      callsTranscript('ask-write', [
+        { callId: 'w1', name: 'Write', kind: 'edit', rawInput: {}, decision: 'ask' },
+        { callId: 'w2', name: 'Write', kind: 'edit', rawInput: {}, decision: 'allow' },
+      ]),
+    ]);
+    expect(report.decisions.falseAllow).toMatchObject({ successes: 1, trials: 2 });
   });
 
   it('keeps an unobserved decision out of the rates and counts it', () => {
