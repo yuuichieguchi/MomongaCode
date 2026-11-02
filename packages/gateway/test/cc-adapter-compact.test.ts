@@ -49,7 +49,7 @@ describe('summaryRequestOf', () => {
 
   it('writes the cap and the word count into the instructions', () => {
     expect(systemOf(summaryRequestOf(compactRequest(), 246))).toBe(instructionsFor(246, RESTATE_CLAUSE));
-    expect(systemOf(summaryRequestOf(compactRequest(), 246))).toContain('at most 246 tokens (about 184 words)');
+    expect(systemOf(summaryRequestOf(compactRequest(), 246))).toContain('at most 246 tokens, no preamble');
   });
 
   it('carries COMPACTION_INSTRUCTIONS_MARKER in the instructions', () => {
