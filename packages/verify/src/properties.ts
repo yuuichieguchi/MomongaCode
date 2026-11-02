@@ -5,6 +5,7 @@ import type { RuleTerms, SubjectModel, SubjectTool } from './decision-model.ts';
 import { outcomeFor, probe, termsOf } from './queries.ts';
 import type { Probe, QueryContext } from './queries.ts';
 import { describeWitness } from './report.ts';
+import { commandDecisionWithout } from './replay.ts';
 import type { Counterexample, Finding, PropertyResult, Verdict } from './report.ts';
 
 export type SecretLocation = { label: string; directory: string; accesses: readonly ('read' | 'write')[] };
@@ -127,7 +128,13 @@ export const checkRuleConsistency = async (context: QueryContext): Promise<Prope
     const tools = toolsOf(context, rule, index);
     if (tools.length === 0) continue;
     if (rule.tool === 'Bash' && models.commands.unmodelled(rule)) {
-      if (rule.effect === 'allow') tally.unknowns.push(`${ruleLabel(rule)} uses a word or a program outside the modelled command alphabet, so whether it can take effect was not decided`);
+      if (models.commands.wrapperDeny(rule)) {
+        const candidates = models.commands.candidates(rule);
+        const effective = candidates.some((candidate) => commandDecisionWithout(context.env, candidate, undefined) !== commandDecisionWithout(context.env, candidate, rule));
+        if (!effective) tally.unknowns.push(`${ruleLabel(rule)} is a deny rule for a wrapper, shell or eval program; none of the commands tried (${candidates.join(' | ')}) shows it changing a decision, and other commands through the wrapper are not modelled`);
+      } else {
+        tally.unknowns.push(`${ruleLabel(rule)} ${rule.effect === 'deny' ? 'uses a word outside the modelled command alphabet' : rule.effect === 'ask' ? 'is an ask rule that the model cannot follow (a deny rule can reach the command through the wrapper or the word is outside the modelled alphabet)' : 'is an allow rule that the model cannot follow (a word outside the modelled alphabet, or a wrapper, shell or eval program)'}, so whether it can take effect was not decided`);
+      }
       continue;
     }
     let effective = false;
@@ -188,7 +195,7 @@ export const checkRuleConsistency = async (context: QueryContext): Promise<Prope
     id: 'rule-consistency',
     title: 'every rule can take effect and no pair of rules contradicts',
     subject: `${models.rules.length} rule(s)`,
-    proves: 'removing any single rule on a modelled tool changes the decision for at least one modelled input, and no allow rule lies entirely inside a deny rule',
+    proves: 'removing any single rule on a modelled tool changes the decision for at least one modelled input, and no allow rule lies entirely inside a deny rule; a Bash deny rule for a wrapper, shell or eval program is shown effective on concrete commands only, and any other Bash rule outside the modelled command alphabet makes the result unknown instead',
     doesNotProve: ['that the rules that remain express the intent of their author', 'effects on inputs outside the modelled input domain'],
     verdict: verdictOf(tally),
   };
@@ -199,9 +206,17 @@ export const checkBashAdmission = async (context: QueryContext): Promise<Propert
   const ctx = models.smt.ctx;
   const tally = newTally();
   const bash = termsOf(context, 'Bash');
-  const allows = bash.filter((term) => term.rule.effect === 'allow' && term.rule.specifier !== undefined);
+  const allows = bash.filter((term) => term.rule.effect === 'allow');
   const denies = bash.filter((term) => term.rule.effect === 'deny' && term.rule.specifier !== undefined);
   const command = subjectOf(context, 'Bash').commandTerm as NonNullable<SubjectModel['commandTerm']>;
+  const bashRules = models.rules.filter((rule) => rule.tool === 'Bash' && rule.specifier !== undefined);
+  const hasDeny = bashRules.some((rule) => rule.effect === 'deny');
+  for (const rule of bashRules) {
+    if (!models.commands.unmodelled(rule)) continue;
+    const singleWordWrapperDeny = models.commands.wrapperDeny(rule) && models.commands.wordCount(rule) === 1;
+    const matters = rule.effect === 'allow' ? hasDeny : allows.length > 0 && !singleWordWrapperDeny;
+    if (matters) tally.unknowns.push(`${ruleLabel(rule)} is outside what the model can follow, so whether ${rule.effect === 'allow' ? 'it admits a denied command' : 'an allow rule gets around it'} was not decided`);
+  }
   for (const allow of allows) {
     for (const deny of denies) {
       const admits = await probe(context, 'bash-admission', `${allow.rule.text} admitting ${deny.rule.text}`, 'Bash', [allow.strict, ctx.Or(deny.position, deny.incidental)]);
@@ -227,7 +242,7 @@ export const checkBashAdmission = async (context: QueryContext): Promise<Propert
     title: 'a Bash allow rule does not admit a denied program or subcommand',
     subject: `${allows.length} Bash allow rule(s) against ${denies.length} Bash deny rule(s)`,
     proves:
-      'for every Bash allow rule and every Bash deny rule of two or more words, no plain command is allowed that has the denied words in order with only option words between them',
+      'for every Bash allow rule and every Bash deny rule of two or more words that the model can follow, no plain command is allowed that has the denied words in order with only option words between them; a Bash allow rule outside the modelled command alphabet, a deny or ask rule outside it, and a deny rule of several words for a wrapper, shell or eval program make the result unknown instead',
     doesNotProve: [
       'that the option words skipped here are the only ones that can separate a program from its subcommand',
       'commands that reach a denied program through a wrapper, a shell payload or a script',

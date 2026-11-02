@@ -28,7 +28,14 @@ export type CommandModel = {
   strict(command: Seq, rule: PermissionRule): Bool;
   broad(command: Seq, rule: PermissionRule): Bool;
   unmodelled(rule: PermissionRule): boolean;
+  wrapperDeny(rule: PermissionRule): boolean;
+  wordCount(rule: PermissionRule): number;
+  candidates(rule: PermissionRule): string[];
 };
+
+const SHELL_PAYLOAD_FLAG = '-c';
+const PAYLOAD_EXAMPLE = 'ls';
+const ARGUMENT_EXAMPLE = 'x';
 
 const excludedProgramNames = (): string[] => {
   const fromSpecs = [...commandSpecsFor('darwin').all, ...commandSpecsFor('linux').all].filter((spec) => spec.wrapper !== undefined || spec.neverPrefix === true || spec.payload !== undefined).flatMap((spec) => [...spec.names]);
@@ -113,5 +120,12 @@ export const createCommandModel = (smt: Smt): CommandModel => {
     strict: (term, rule) => (rule.specifier === undefined ? ctx.Bool.val(true) : modelled(rule) ? member(term, strictLanguage(commandPatternOf(rule))) : never),
     broad: (term, rule) => (rule.specifier === undefined || !modelled(rule) ? never : member(term, broadLanguage(commandPatternOf(rule)))),
     unmodelled: (rule) => rule.specifier !== undefined && !modelled(rule),
+    wrapperDeny: (rule) => rule.specifier !== undefined && rule.effect === 'deny' && wordsExpressible(rule) && !modelled(rule),
+    wordCount: (rule) => patternWords(commandPatternOf(rule)).length,
+    candidates: (rule) => {
+      const words = patternWords(commandPatternOf(rule));
+      const own = words.join(' ');
+      return [own, `${own} ${ARGUMENT_EXAMPLE}`, `${words[0] as string} ${SHELL_PAYLOAD_FLAG} ${PAYLOAD_EXAMPLE}`];
+    },
   };
 };

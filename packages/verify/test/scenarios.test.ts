@@ -50,6 +50,7 @@ describe('a clean rule set', () => {
     ]);
 
     expect(statuses(report)).toEqual({ 'deny-precedence': 'proved', 'secret-reach': 'proved', 'rule-consistency': 'proved', 'bash-admission': 'proved' });
+    expect(report.mismatches).toEqual([]);
     expect(report.exitCode).toBe(0);
     const note = report.outsideProof.find((item) => item.startsWith('Bash rules the model cannot follow')) ?? '';
     expect(note).toContain('Bash(sudo:*)');

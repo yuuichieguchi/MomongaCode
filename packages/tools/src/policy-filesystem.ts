@@ -3,8 +3,8 @@ import type { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
-import { MAX_POINTER_FILE_BYTES, resolveCanonicalPath, unresolvableReasonOf, volumeIsCaseInsensitive } from '@momonga/foundation';
-import type { EntryRead, StepRead, Unresolved } from '@momonga/foundation';
+import { MAX_POINTER_FILE_BYTES, gitlinksOfIndex, resolveCanonicalPath, unresolvableReasonOf, volumeIsCaseInsensitive } from '@momonga/foundation';
+import type { EntryRead, GitlinkRead, StepRead, Unresolved } from '@momonga/foundation';
 import { systemProgramDirectories } from '@momonga/policy';
 import type { GlobDeadline, GlobExpander, GlobExpansion, HeadRead, PolicyHostFilesystem, ProgramResolution } from '@momonga/policy';
 import { ShellNotFoundError, nodeShellPorts, resolveBashPath } from './builtins/shell.ts';
@@ -147,6 +147,9 @@ const isSearchable = (absolute: string): boolean =>
     fs.accessSync(absolute, fs.constants.X_OK);
     return true;
   }, false);
+
+const readGitlinks = (gitDirectory: string): GitlinkRead | Unresolved =>
+  typedRead<GitlinkRead | Unresolved>(() => gitlinksOfIndex(fs.readFileSync(path.join(gitDirectory, 'index'))), NOT_THERE, { paths: [] });
 
 const GLOB_PROGRAM ='IFS=; shopt -s nullglob; for entry in $1; do printf "%s\\0" "$entry"; done';
 const LOCALE_VARIABLES = ['LANG', 'LC_ALL', 'LC_COLLATE', 'LC_CTYPE'] as const;
@@ -309,4 +312,5 @@ export const createPolicyFilesystem = (
   readNoFollow,
   readHead,
   isSearchable,
+  gitlinks: readGitlinks,
 });

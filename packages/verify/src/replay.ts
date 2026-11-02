@@ -1,4 +1,4 @@
-import { createGlobDeadline, decide, decidePrimary, prepareGlobs, settleGlobs } from '@momonga/policy';
+import { EMPTY_GLOB_TABLE, createGlobDeadline, decide, decidePrimary, prepareGlobs, settleGlobs } from '@momonga/policy';
 import type { DecideInput, DecisionKind, PermissionRule, PermissionSubject, PolicyHostFilesystem, PolicyTool } from '@momonga/policy';
 import type { FileRuleSet, ProtectedSet } from '@momonga/foundation';
 import type { PermissionMode } from '@momonga/protocol';
@@ -53,6 +53,11 @@ const inputFor = (env: ReplayEnvironment, tool: SubjectTool, witness: Witness): 
       return { ...base, tool: { name: `mcp__${witness.server}__${witness.tool}`, kind: 'other', sideEffect: witness.readOnly ? 'read_only' : 'write' }, subject };
     }
   }
+};
+
+export const commandDecisionWithout = (env: ReplayEnvironment, command: string, omitted: PermissionRule | undefined): DecisionKind => {
+  const rules = env.rules.filter((rule) => rule !== omitted);
+  return decidePrimary({ ...inputFor({ ...env, rules }, 'Bash', { kind: 'command', command, defaultAllow: false }), fs: settleGlobs(env.fs, EMPTY_GLOB_TABLE) }).kind;
 };
 
 export const replayWitness = async (env: ReplayEnvironment, tool: SubjectTool, witness: Witness, predicted: Prediction): Promise<Replay> => {

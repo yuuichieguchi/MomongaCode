@@ -90,8 +90,33 @@ const nested = (rng: Rng, inner: string): string =>
     () => `x=\`${escapeForBackticks(inner, false)}\``,
   ])();
 
-const GIT_FORMS = ['git status', 'git status -s', 'git log -1 --oneline', 'git diff', 'git rev-parse HEAD', 'git reflog', 'git reflog show', 'git reflog list', 'git reflog exists HEAD', 'git reflog write HEAD $(git rev-parse HEAD) $(git rev-parse HEAD) evil', 'git reflog -n 1', 'git --bare status', 'git branch', 'git show -s', 'git log -p -1'];
-const DIRECTORIES = ['sub', 'pl', 'bare', 'u40/sub', 'g40/sub', 'big/sub', 'xobj/sub', 'both', 'cd1', 'deep/x', 'pl/..', 'bare/in', 'bare/in/..', 'sub/..'];
+const GIT_FORMS = ['git status', 'git status -s', 'git log -1 --oneline', 'git diff', 'git rev-parse HEAD', 'git reflog', 'git reflog show', 'git reflog list', 'git reflog exists HEAD', 'git reflog write HEAD $(git rev-parse HEAD) $(git rev-parse HEAD) evil', 'git reflog -n 1', 'git --bare status', 'git branch', 'git show -s', 'git log -p -1', 'git log --format --output=pwn-form -1', 'git log -U --output=pwn-form -1', 'git show --expand-tabs --output=pwn-form', 'git rev-list --abbrev --output=pwn-form HEAD', 'git log --format=%h -1', 'git log -n 1 --oneline'];
+export const SIGNATURE_FORMS = [
+  'git log --show-signature -1',
+  'git show --show-signature -s',
+  'git log --format=%GG -1',
+  "git log '--pretty=format:%+GG' -1",
+  "git for-each-ref '--format=%(signature)'",
+  "git for-each-ref '--format=%(*signature)'",
+  "git for-each-ref '--format=%(*signature:grade)'",
+  "git tag -l '--format=%(*signature)'",
+  'git for-each-ref --sort=signature',
+  'git for-each-ref --sort=-signature',
+  "git for-each-ref '--sort=*signature'",
+  'git branch --sort=signature',
+  "git tag -l '--sort=*signature'",
+  "git shortlog '--group=format:%G?' HEAD",
+  'git shortlog --group=format:%GG HEAD',
+  "git shortlog --group 'format:%GG' HEAD",
+];
+const BACKGROUND_SUBSTITUTIONS: ReadonlyArray<(index: number) => string> = [
+  (index) => `echo $(cat zy${index} > out${index} &)`,
+  (index) => `echo \`cat zy${index} > out${index} &\``,
+  (index) => `echo $(cat zy${index} > out${index} & echo hi)`,
+  (index) => `echo $(echo $(cat zy${index} > out${index} &))`,
+];
+const SUBMODULE_FORMS = ['git status', 'git diff', 'git status --ignore-submodules=untracked', 'git diff --ignore-submodules=untracked', 'git status --ignore-submodules=all', 'git diff --ignore-submodules=dirty', 'git status --ignore-submodules', 'git log -1 -p', 'git diff --stat'];
+const DIRECTORIES = ['sub', 'pl', 'bare', 'u40/sub', 'g40/sub', 'big/sub', 'xobj/sub', 'both', 'cd1', 'deep/x', 'pl/..', 'bare/in', 'bare/in/..', 'sub/..', 'pl/../only'];
 const CD_FORMS = (directory: string): string[] => [`cd ${directory}`, `cd -P ${directory}`, `cd -L ${directory}`, `cd -- ${directory}`, `cd ./${directory}`, `cd -P -- ${directory}`, `cd "${directory}"`];
 const START_DIRECTORIES = ['', 'sub', 'u40/sub', 'g40/sub', 'big/sub', 'xobj/sub', 'both', 'cd1', 'bare', 'deep/x'];
 
@@ -115,7 +140,7 @@ const mutationScript = (rng: Rng, directory: string, hook: string): string => {
 export const generate = (rng: Rng, workspace: DifferentialWorkspace, count: number): Case[] => {
   const cases: Case[] = [];
   for (let index = 0; index < count; index += 1) {
-    const family = pick(rng, ['reader', 'reader', 'nested-reader', 'git', 'git', 'nested-git', 'hidden', 'mutation']);
+    const family = pick(rng, ['reader', 'reader', 'nested-reader', 'git', 'git', 'nested-git', 'hidden', 'mutation', 'relocated-glob', 'concurrent', 'writable-path', 'nested-background', 'submodule']);
     const rules = rng() < 0.2 ? ([['allow', 'Bash(cat:*)']] as const) : undefined;
     const cwd = (relative: string): string => path.join(workspace.project, relative);
     switch (family) {
@@ -137,6 +162,21 @@ export const generate = (rng: Rng, workspace: DifferentialWorkspace, count: numb
       }
       case 'hidden':
         cases.push({ command: nested(rng, pick(rng, PAYLOADS(index))) });
+        break;
+      case 'relocated-glob':
+        cases.push({ command: `mv m/z${index} zz${index}; cat ${pick(rng, [`zz${index}*`, `z[z]${index}`, `z?${index}`])}`, mode: 'acceptEdits' });
+        break;
+      case 'concurrent':
+        cases.push({ command: `cat zy${index} ${pick(rng, ['&', '|'])} mv m/z${index} zy${index}`, mode: 'acceptEdits', neverApproved: true });
+        break;
+      case 'writable-path':
+        cases.push({ command: pick(rng, SIGNATURE_FORMS), searchPath: `/usr/bin:/bin:${workspace.plantedBin}` });
+        break;
+      case 'nested-background':
+        cases.push({ command: `${pick(rng, BACKGROUND_SUBSTITUTIONS)(index)}; mv m/z${index} zy${index}`, mode: 'acceptEdits', neverApproved: true });
+        break;
+      case 'submodule':
+        cases.push({ command: pick(rng, SUBMODULE_FORMS), cwd: cwd('outer') });
         break;
       default:
         cases.push({ command: mutationScript(rng, `rep${index}`, workspace.hookScript('bare')), mode: 'acceptEdits' });
