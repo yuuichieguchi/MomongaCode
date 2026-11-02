@@ -17,6 +17,7 @@ import type { Clock, JsonLogger, ProcessLock, ReadyFields, TextStream } from '@m
 import { createTelemetry, openTraceStore } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import { createSeatbeltSandbox, createUnsandboxed } from '@momonga/sandbox';
+import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import type { Sandbox } from '@momonga/sandbox';
 import { isFatalStoreError, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
@@ -58,6 +59,7 @@ import { protectedRootAreasOf } from './protected-areas.ts';
 import { reapTimingOf } from './reap-timing.ts';
 import type { SandboxKind } from './sandbox-kind.ts';
 import { createSettingsComposition } from './settings-port.ts';
+import { createSkillsPort } from './skills-port.ts';
 import { runTeardown } from './teardown.ts';
 import type { TeardownStep } from './teardown.ts';
 import { sweepSessionTmp, sweepSpawnTmp } from './tmp-sweep.ts';
@@ -373,9 +375,13 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         reapTiming,
       });
       const tracker: CancelUpstreamTracker = createCancelUpstream({ store, gatewayClient, timers });
-      return { composition, runtime, tracker };
+      const skills = createSkillsPort({
+        loader: createSkillLoader({ home: canonicalHome, fileSystem: createNodeSkillFileSystem() }),
+        settings: composition.settings,
+      });
+      return { composition, runtime, tracker, skills };
     });
-    const { composition: settingsComposition, runtime: toolRuntime, tracker } = ports;
+    const { composition: settingsComposition, runtime: toolRuntime, tracker, skills: skillsPort } = ports;
     cleanups.push({ name: 'mcp-pools', run: () => toolRuntime.mcpPools.closeAll() });
     cleanups.push({ name: 'cancel-upstream', run: () => tracker.settle(CANCEL_UPSTREAM_SETTLE_MS) });
 
@@ -393,6 +399,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         notifier,
         modelAliases: async () => (await gatewayClient.models()).map((model) => model.id),
         sessionCreateSettings: settingsComposition.sessionCreateSettings,
+        skills: skillsPort,
         defaults: RUNTIME_DEFAULTS,
         timers,
         cancelUpstream: tracker.cancel,
@@ -410,6 +417,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           store,
           gateway: gatewayClient,
           settings: settingsComposition.settings,
+          skills: skillsPort,
           tools: toolRuntime.port,
           tracer,
           clock,

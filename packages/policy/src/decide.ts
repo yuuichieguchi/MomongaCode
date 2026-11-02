@@ -24,6 +24,7 @@ export type DecideInput = {
   mode: PermissionMode;
   rules: PermissionRule[];
   roots: string[];
+  readRoots?: readonly string[];
   home: string;
   cwd: string;
   fileRules: FileRuleSet;
@@ -114,7 +115,11 @@ const modeDefault = (input: DecideInput, subject: PermissionSubject): Decision =
     case 'path': {
       const inside = insideRoots(subject.paths, roots, cwd, input.fs.canonicalise);
       if (subject.access === 'read') {
-        return inside ? byMode('allow', 'reads inside the workspace are allowed') : byMode('ask', 'read outside the workspace requires approval');
+        if (inside) return byMode('allow', 'reads inside the workspace are allowed');
+        if (insideRoots(subject.paths, [...roots, ...(input.readRoots ?? [])], cwd, input.fs.canonicalise)) {
+          return byMode('allow', 'reads inside an agent skill directory are allowed');
+        }
+        return byMode('ask', 'read outside the workspace requires approval');
       }
       if (mode === 'acceptEdits' && inside) return byMode('allow', 'acceptEdits mode allows edits inside the workspace');
       return byMode('ask', inside ? 'edits require approval' : 'edit outside the workspace requires approval');

@@ -45,6 +45,7 @@ const contextFor = (state: RunState) => {
     capabilities,
     systemPrompt: SYSTEM_PROMPT,
     functionTools: [ECHO_TOOL],
+    skills: { catalog: undefined },
     journal: {
       state,
       append: (payloads: readonly RunEventPayload[]) => {

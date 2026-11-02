@@ -29,7 +29,7 @@ import type { FakeSettings } from '../worker/fake-settings.ts';
 import { createFakeToolbox } from '../worker/fake-tools.ts';
 import type { FakeToolbox } from '../worker/fake-tools.ts';
 import { createFakeTracer } from '../worker/fake-tracer.ts';
-import { capabilitiesFor, createFakeInstructions, fakeSandbox, testSystemPrompt } from '../worker/harness.ts';
+import { capabilitiesFor, createFakeInstructions, diskSkillsPort, fakeSandbox, testSystemPrompt } from '../worker/harness.ts';
 
 export const START_MS = 1_800_000_000_000;
 export const LEASE_MS = 30_000;
@@ -181,6 +181,7 @@ export const validateJsonBody = (status: number, body: unknown): void => {
     return;
   }
   if (typeof body !== 'object' || body === null) return;
+  if ('skills' in body && 'warnings' in body) expectSchema('SkillsResponse', body);
   for (const [key, name] of Object.entries(VIEW_KEYS)) if (key in body) expectSchema(name, (body as Record<string, unknown>)[key]);
   for (const [key, name] of Object.entries(LIST_KEYS)) {
     if (!(key in body)) continue;
@@ -399,6 +400,8 @@ export type ServiceOverrides = {
   onFatal?: boolean;
   sandboxKind?: 'seatbelt' | 'none';
   protectedRootAreas?: readonly string[];
+  skills?: runtime.SkillsPort;
+  skillsTrusted?: () => boolean;
 };
 
 export type Notifier = { onCommit(touched: { runId?: string; sessionId: string }[]): void; subscriberCount(): number };
@@ -442,6 +445,7 @@ export const serviceOptions = (
   protectedRootAreas: overrides.protectedRootAreas ?? protectedAreasOf(base.home),
   modelAliases: base.ports.modelAliases,
   sessionCreateSettings: base.ports.sessionCreateSettings,
+  skills: overrides.skills ?? diskSkillsPort(base.home, overrides.skillsTrusted),
   defaults: { modelAlias: MODEL_ALIAS, runTimeoutMs: DEFAULT_TIMEOUT_MS, limits: { ...DEFAULT_LIMITS } },
   notifier: base.notifier,
   keepAliveMs: overrides.keepAliveMs ?? 600_000,
@@ -675,6 +679,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
       store: env.store,
       gateway,
       settings,
+      skills: diskSkillsPort(env.layout.home),
       tools,
       tracer,
       clock: env.clock,

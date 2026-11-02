@@ -85,6 +85,7 @@ describe('run event payloads', () => {
       | 'context.inherited'
       | 'context.truncated'
       | 'instructions.loaded'
+      | 'skill.activated'
       | 'approval.rule.persisted'
       | 'notice'
     >();
@@ -233,6 +234,7 @@ describe('run event payloads', () => {
       markers: { seq: number; kind: 'interrupted' | 'unprocessed' | 'dropped' | 'mode_changed' }[];
       fromMode?: PermissionMode;
       mode?: PermissionMode;
+      activatedSkills?: { name: string; content: string }[];
       digest: string;
     }>();
     expectTypeOf<Payload<'context.truncated'>>().toEqualTypeOf<{
@@ -242,6 +244,7 @@ describe('run event payloads', () => {
       kind: 'omitted' | 'truncated';
     }>();
     expectTypeOf<Payload<'instructions.loaded'>>().toEqualTypeOf<{ type: 'instructions.loaded'; path: string; content: string }>();
+    expectTypeOf<Payload<'skill.activated'>>().toEqualTypeOf<{ type: 'skill.activated'; name: string; content: string }>();
     expectTypeOf<Payload<'notice'>>().toEqualTypeOf<{
       type: 'notice';
       level: 'info' | 'warning' | 'error';
@@ -307,6 +310,7 @@ describe('RunState', () => {
       steps: Record<number, { toolChoice: string; summary: boolean }>;
       lastResponse?: { step: number; incomplete: boolean; incompleteReason?: string; refusal: boolean; callIds: string[] };
       loadedInstructions: { path: string; textSha256: string }[];
+      activatedSkills: { name: string; content: string }[];
       streaming?: { step: number; attempt: number; seen: boolean; items: { itemId: string; text: string }[] };
       mode?: PermissionMode;
       loopGroups: { signature: string; outputSignature?: string }[];

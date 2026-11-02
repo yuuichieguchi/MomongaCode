@@ -68,7 +68,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   const policyFor = createPolicyFor(policyOptions);
   const recoveryContextFor = createRecoveryContextFor(policyOptions);
 
-  const toolSet: ToolRuntimePort['toolSet'] = async (runId, { signal, env }) => {
+  const toolSet: ToolRuntimePort['toolSet'] = async (runId, { signal, env, additionalTools }) => {
     const run = store.getRun(runId);
     if (run === undefined) throw new Error(`run ${runId} does not exist`);
     const session = store.getSession(run.sessionId);
@@ -104,6 +104,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
 
       const registry = createToolRegistry();
       for (const tool of createBuiltinTools()) registry.register(tool);
+      for (const tool of additionalTools ?? []) registry.register(tool);
       for (const source of sources) registry.addSource(source);
       const set = await registry.snapshot({ signal });
 

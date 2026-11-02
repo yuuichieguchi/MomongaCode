@@ -70,6 +70,7 @@ export type CreateRunInput = {
   limits: Record<string, unknown>;
   pins: Record<string, unknown>;
   history?: HistoryMode;
+  skill?: { name: string; content: string };
 };
 
 export type ClaimStatus = 'RUNNING' | 'CANCELLING';

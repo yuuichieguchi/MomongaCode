@@ -30,6 +30,7 @@ export type {
   PlanEntry,
   ReconcileContext,
   ReconcileResult,
+  SkillActivation,
   SubjectContext,
   ToolContent,
   ToolContext,

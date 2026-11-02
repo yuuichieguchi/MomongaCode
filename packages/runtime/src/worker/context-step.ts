@@ -54,7 +54,8 @@ export const contextInputOf = (ctx: ClaimContext, wrapUp: WrapUpReason | undefin
       tools: ctx.functionTools,
       task: { type: 'message', role: 'user', content: [{ type: 'input_text', text: taskTextOf(ctx) }] },
       taskSeq: state.taskSeq,
-      activatedSkills: [],
+      ...(ctx.skills.catalog === undefined ? {} : { skillCatalog: ctx.skills.catalog }),
+      activatedSkills: state.activatedSkills,
       history: state.history
         .filter((entry) => entry.seq !== state.taskSeq)
         .map((entry) => ({ seq: entry.seq, item: entry.item, ...(entry.handle === undefined ? {} : { handle: entry.handle }) })),

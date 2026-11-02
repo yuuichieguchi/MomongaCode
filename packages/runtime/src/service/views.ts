@@ -1,5 +1,6 @@
 import { TERMINAL_STATUSES } from '@momonga/protocol';
-import type { RunStatus } from '@momonga/protocol';
+import type { RunStatus, SkillView } from '@momonga/protocol';
+import type { Skill } from '@momonga/skills';
 import type { Run, RuntimeStore, Session } from '@momonga/store';
 
 export const isTerminalStatus = (status: RunStatus): boolean => (TERMINAL_STATUSES as readonly RunStatus[]).includes(status);
@@ -37,3 +38,10 @@ export const toSessionView = (store: RuntimeStore, session: Session) => {
     latestRunId: runs.at(-1)?.id ?? null,
   };
 };
+
+export const toSkillView = (skill: Skill): SkillView => ({
+  name: skill.name,
+  description: skill.description,
+  scope: skill.scope,
+  location: skill.location,
+});

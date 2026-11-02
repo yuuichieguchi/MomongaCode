@@ -19,6 +19,7 @@ export type CreateRunBody = {
   limits?: { maxSteps?: number; maxTotalTokens?: number; approvalTtlMs?: number; loopThreshold?: number };
   timeoutMs?: number;
   history?: 'inherit' | 'fresh';
+  skill?: string;
 };
 
 export type ResolveApprovalBody = { optionId: string };

@@ -52,6 +52,22 @@ describe('buildSandboxPolicy and file rules', () => {
     expect(codeOf(() => buildSandboxPolicy({ ...options, readAllowed: [inside] }))).toBe('read_allowed_inside_owned_root');
   });
 
+  it('accepts a readAllowed entry inside the skills directory of home/.momonga', () => {
+    const { layout, options } = optionsFor();
+    const skill = path.join(layout.home, '.momonga', 'skills', 'pdf');
+    fs.mkdirSync(skill, { recursive: true });
+    const policy = buildSandboxPolicy({ ...options, readAllowed: [skill] });
+    expect(policy.readAllowed).toContain(skill);
+    expect(policy.readDenied).toContain(path.join(layout.home, '.momonga'));
+  });
+
+  it('still throws read_allowed_inside_owned_root for the owned root next to the skills directory', () => {
+    const { layout, options } = optionsFor();
+    const sibling = path.join(layout.home, '.momonga', 'skills-state');
+    fs.mkdirSync(sibling, { recursive: true });
+    expect(codeOf(() => buildSandboxPolicy({ ...options, readAllowed: [sibling] }))).toBe('read_allowed_inside_owned_root');
+  });
+
   it('throws read_allowed_not_inside_denied for a readAllowed entry outside every readDenied entry', () => {
     const { layout, options } = optionsFor();
     expect(codeOf(() => buildSandboxPolicy({ ...options, readAllowed: [layout.outside] }))).toBe('read_allowed_not_inside_denied');

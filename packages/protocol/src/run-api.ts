@@ -56,6 +56,13 @@ const runLimits = closed(
 
 const location = closed({ path: string, line: nonNegativeInteger }, ['path']);
 
+const SKILL_SCOPES = ['project', 'user'] as const;
+
+const skillView = closed(
+  { name: string, description: string, scope: enumOf(SKILL_SCOPES), location: string },
+  ['name', 'description', 'scope', 'location'],
+);
+
 const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { properties: Record<string, JsonSchema>; required: readonly string[] }> = {
   'user.message': { properties: { text: string }, required: ['text'] },
   'run.started': { properties: { attempt: integer }, required: ['attempt'] },
@@ -191,6 +198,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
     required: ['callId', 'handle', 'kind'],
   },
   'instructions.loaded': { properties: { path: string }, required: ['path'] },
+  'skill.activated': { properties: { name: string }, required: ['name'] },
   'approval.rule.persisted': {
     properties: { approvalId: string, effect: enumOf(['allow', 'deny']), rule: string },
     required: ['approvalId', 'effect', 'rule'],
@@ -221,6 +229,12 @@ const trustView = closed(
   { path: string, decision: { anyOf: [enumOf(['trusted', 'untrusted']), { type: 'null' }] }, inheritedFrom: string },
   ['path', 'decision'],
 );
+
+export type SkillScope = (typeof SKILL_SCOPES)[number];
+
+export type SkillView = { name: string; description: string; scope: SkillScope; location: string };
+
+export type SkillsResponse = { skills: SkillView[]; warnings: string[] };
 
 export type RunHealth = {
   status: 'ok';
@@ -253,6 +267,7 @@ export const RUN_API_SCHEMAS = {
         limits: runLimits,
         timeoutMs: boundedInteger(1000, 7 * DAY_MS),
         history: historyMode,
+        skill: { type: 'string', minLength: 1 },
       },
       ['input'],
     ),
@@ -354,6 +369,7 @@ export const RUN_API_SCHEMAS = {
       ['id', 'runId', 'callId', 'status', 'options', 'expiresAt', 'createdAt', 'toolCall'],
     ),
   ),
+  SkillsResponse: root(closed({ skills: { type: 'array', items: skillView }, warnings: { type: 'array', items: string } }, ['skills', 'warnings'])),
   ErrorBody: root(
     closed({ error: closed({ type: string, code: string, message: string, param: string }, ['type', 'code', 'message']) }, ['error']),
   ),
@@ -366,7 +382,8 @@ type ReducedEventType =
   | 'context.compacted'
   | 'context.compaction_rejected'
   | 'context.inherited'
-  | 'instructions.loaded';
+  | 'instructions.loaded'
+  | 'skill.activated';
 
 type PublicPayload =
   | Exclude<RunEventPayload, { type: ReducedEventType }>
@@ -386,7 +403,8 @@ type PublicPayload =
       markers: { kind: 'interrupted' | 'unprocessed' | 'dropped' | 'mode_changed' }[];
       digest: string;
     }
-  | { type: 'instructions.loaded'; path: string };
+  | { type: 'instructions.loaded'; path: string }
+  | { type: 'skill.activated'; name: string };
 
 type PublicRunEnvelope = Omit<RunEventEnvelope, 'leaseToken'>;
 
@@ -423,6 +441,8 @@ export const toPublicRunEvent = (event: RunEvent | SessionEvent): PublicRunEvent
       };
     case 'instructions.loaded':
       return { ...envelope, type: event.type, path: event.path };
+    case 'skill.activated':
+      return { ...envelope, type: event.type, name: event.name };
     default: {
       const { leaseToken: _leaseToken, ...visible } = event;
       return visible;

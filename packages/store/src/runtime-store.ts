@@ -760,7 +760,10 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           pins: canonicalJson(input.pins),
           createdAt: now,
         });
-        const inserted = appendPayloads(requireRun(id), [{ type: 'user.message', text: input.input }]);
+        const inserted = appendPayloads(requireRun(id), [
+          { type: 'user.message', text: input.input },
+          ...(input.skill === undefined ? [] : [{ type: 'skill.activated' as const, name: input.skill.name, content: input.skill.content }]),
+        ]);
         writeRun(inserted);
         return { kind: 'created', run: requireRun(id) };
       }),

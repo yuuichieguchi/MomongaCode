@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { ConfigError } from '@momonga/config';
-import { canonicalDirectory, ensureSessionTmpDir as defaultEnsureSessionTmpDir, isTransientErrno, protectedSetFor } from '@momonga/foundation';
+import { canonicalDirectory, canonicalPath, comparableContains, ensureSessionTmpDir as defaultEnsureSessionTmpDir, isTransientErrno, protectedSetFor } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
 import type { PolicyFilesystem } from '@momonga/policy';
@@ -48,12 +48,14 @@ export const createPolicyFor = (options: PolicyForOptions): ToolRuntimePort['pol
   const { paths, home, fs } = options;
   const contextFor = contextBuilder(options);
 
-  return async (session, { env, rules }) => {
+  return async (session, { env, rules, readableDirectories }) => {
     const { roots, tmpDir, wrap } = await contextFor(session);
     try {
       const fileRules = computeFileRules(rules, roots, tmpDir);
       const protectedSet = protectedSetFor(roots, fs);
-      const sandboxPolicy = buildSandboxPolicy({ roots, home, tmpDir, sessionsTmpRoot: paths.tmp.sessions, fileRules, protectedSet, network: 'deny' });
+      const skillsRoot = canonicalPath(paths.skills);
+      const readAllowed = (readableDirectories ?? []).filter((directory) => comparableContains(skillsRoot, directory));
+      const sandboxPolicy = buildSandboxPolicy({ roots, home, tmpDir, sessionsTmpRoot: paths.tmp.sessions, fileRules, protectedSet, network: 'deny', readAllowed });
       return { roots, sandboxPolicy, tmpDir, env };
     } catch (error) {
       if (isTransientErrno(error)) throw error;

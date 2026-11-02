@@ -14,11 +14,14 @@ export type PlanEntry = {
   status: 'pending' | 'in_progress' | 'completed';
 };
 
+export type SkillActivation = { name: string; content: string };
+
 export type ToolResult = {
   status: 'completed' | 'failed';
   output: string;
   content?: ToolContent[];
   plan?: PlanEntry[];
+  skill?: SkillActivation;
 };
 
 export type ToolSessionState = {

@@ -54,7 +54,11 @@ export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
           ...(result.handle === undefined ? {} : { handle: result.handle }),
         }
       : { type: 'tool.reconciled', callId, outcome: outcome.reconciled, output: result.output };
-  return result.plan === undefined ? [settled] : [settled, { type: 'plan.updated', entries: result.plan }];
+  return [
+    settled,
+    ...(result.plan === undefined ? [] : [{ type: 'plan.updated' as const, entries: result.plan }]),
+    ...(result.skill === undefined ? [] : [{ type: 'skill.activated' as const, name: result.skill.name, content: result.skill.content }]),
+  ];
 };
 
 const approvalOptions = (suggestedRule: string | undefined): PermissionOption[] => [
@@ -138,7 +142,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   const step = journal.state.step;
   if (ctx.control.yieldRequested()) return ctx.terminals.yieldLease();
   const rules = await options.settings.rules(session);
-  const policy = await options.tools.policyFor(session, { env: ctx.env, rules });
+  const policy = await options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories });
   const spans = new Map<string, TraceSpan>();
   let outcomes: CallOutcome[];
   try {
@@ -151,6 +155,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
       rules,
       home: options.home,
       roots: policy.roots,
+      readRoots: ctx.skills.readDirectories,
       tmpDir: policy.tmpDir,
       env: policy.env,
       session: options.tools.sessionState(session),

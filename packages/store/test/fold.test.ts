@@ -70,6 +70,7 @@ describe('initialRunState', () => {
       toolCallCounts: {},
       steps: {},
       loadedInstructions: [],
+      activatedSkills: [],
       loopGroups: [],
       lastSeq: 0,
     });
