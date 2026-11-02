@@ -118,7 +118,7 @@ export const partialEntry = (seq: number, text: string): HistoryEntry => ({
   item: { type: 'message', role: 'assistant', status: 'incomplete', content: [{ type: 'output_text', text, annotations: [] }] },
 });
 
-export const inheritedDigest = (payload: Pick<InheritedEvent, 'history' | 'nextItemSeq' | 'summary' | 'evicted' | 'mode'>): string =>
+export const inheritedDigest = (payload: Pick<InheritedEvent, 'history' | 'nextItemSeq' | 'summary' | 'evicted' | 'mode' | 'activatedSkills'>): string =>
   sha256Hex(
     canonicalJson({
       history: payload.history,
@@ -126,6 +126,7 @@ export const inheritedDigest = (payload: Pick<InheritedEvent, 'history' | 'nextI
       summary: payload.summary ?? null,
       evicted: payload.evicted,
       mode: payload.mode ?? null,
+      ...(payload.activatedSkills === undefined ? {} : { activatedSkills: payload.activatedSkills }),
     }),
   );
 
@@ -167,4 +168,4 @@ export const hasAdjacentAssistants = (history: readonly HistoryEntry[]): boolean
       (history[index - 1]?.item as { role?: string }).role === 'assistant',
   );
 
-export type Outcome = { status: 'COMPLETED' | 'STOPPED' | 'FAILED' | 'CANCELLED'; stopReason?: StopReason; errorCode?: string };
+export type Outcome = { status: 'COMPLETED' | 'STOPPED' | 'FAILED' | 'CANCELLED'; stopReason?: StopReason; errorCode?: string; carriedSkills?: readonly string[] };

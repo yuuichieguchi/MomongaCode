@@ -5,7 +5,7 @@ import type { InputItem, PermissionMode, RunEventPayload, RunState, StopReason, 
 
 export type InheritedPayload = Extract<RunEventPayload, { type: 'context.inherited' }>;
 
-export type InheritanceOutcome = { status: TerminalStatus; stopReason?: StopReason; errorCode?: string };
+export type InheritanceOutcome = { status: TerminalStatus; stopReason?: StopReason; errorCode?: string; carriedSkills?: readonly string[] };
 
 export type InheritanceKind = { kind: 'final'; currentMode: PermissionMode } | { kind: 'intermediate' };
 
@@ -113,6 +113,8 @@ const assertPaired = (previous: RunState, history: readonly HistoryEntry[]): voi
 export const projectInheritance = (previous: RunState, outcome: InheritanceOutcome, kind: InheritanceKind): InheritedPayload => {
   const retracted = retractsTask(previous, outcome);
   const dropped = outcome.status === 'FAILED' && outcome.errorCode === 'pinned_overflow' && previous.step === 0;
+  if (dropped && outcome.carriedSkills === undefined) throw inconsistent(previous, 'the skills carried into a step-0 pinned_overflow run are not known');
+  const activatedSkills = dropped ? previous.activatedSkills.filter((skill) => outcome.carriedSkills?.includes(skill.name) === true) : previous.activatedSkills;
   const history: HistoryEntry[] = previous.history.filter((entry) => !retracted || entry.seq !== previous.taskSeq).map((entry) => ({ ...entry }));
   const closures: InheritedPayload['closures'] = [];
   const markers: InheritedPayload['markers'] = [];
@@ -181,7 +183,7 @@ export const projectInheritance = (previous: RunState, outcome: InheritanceOutco
     markers,
     ...(previous.mode === undefined ? {} : { fromMode: previous.mode }),
     ...(mode === undefined ? {} : { mode }),
-    ...(previous.activatedSkills.length === 0 ? {} : { activatedSkills: previous.activatedSkills.map((skill) => ({ ...skill })) }),
+    ...(activatedSkills.length === 0 ? {} : { activatedSkills: activatedSkills.map((skill) => ({ ...skill })) }),
   };
   return { ...unsigned, digest: digestOf(unsigned) };
 };

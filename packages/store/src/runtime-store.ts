@@ -254,6 +254,7 @@ const prepareStatements = (db: DatabaseSync) => ({
     "SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.permission.requested' AND json_extract(payload_json, '$.approvalId') = :approvalId LIMIT 1",
   ),
   inheritedEvent: db.prepare("SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'context.inherited' LIMIT 1"),
+  inheritedEventRow: db.prepare("SELECT * FROM events WHERE run_id = :runId AND type = 'context.inherited' LIMIT 1"),
   latestSnapshot: db.prepare('SELECT * FROM snapshots WHERE run_id = :runId ORDER BY seq DESC LIMIT 1'),
   upsertSnapshot: db.prepare(
     `INSERT INTO snapshots (run_id, seq, state_json, created_at) VALUES (:runId, :seq, :state, :createdAt)
@@ -652,6 +653,14 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
   const hasInheritedEvent = (runId: string): boolean => sql.inheritedEvent.get({ runId }) !== undefined;
 
+  const carriedSkillsOf = (runId: string): string[] => {
+    const row = sql.inheritedEventRow.get({ runId });
+    if (row === undefined) return [];
+    const [event] = decodeRunEvents([row]);
+    if (event?.type !== 'context.inherited') throw corrupt('events', runId, 'the context.inherited row does not decode to a context.inherited event');
+    return (event.activatedSkills ?? []).map((skill) => skill.name);
+  };
+
   const loadInReadTx = (runId: string): LoadedRun => {
     requireRun(runId);
     const row: Row | undefined = sql.latestSnapshot.get({ runId });
@@ -711,14 +720,16 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     }
     let sourceRun = base;
     let sourceState = foldedRun(base);
+    let carriedSkills = carriedSkillsOf(base.id);
     for (const candidate of unmaterialised.reverse()) {
       const candidateState = foldedRun(candidate);
       if (retractsTask(candidateState, outcomeOf(candidate))) continue;
-      const payload = projectInheritance(sourceState, outcomeOf(sourceRun), { kind: 'intermediate' });
+      const payload = projectInheritance(sourceState, { ...outcomeOf(sourceRun), carriedSkills }, { kind: 'intermediate' });
       sourceState = applyInheritance(candidateState, payload);
+      carriedSkills = (payload.activatedSkills ?? []).map((skill) => skill.name);
       sourceRun = candidate;
     }
-    return { kind: 'ready', payload: projectInheritance(sourceState, outcomeOf(sourceRun), { kind: 'final', currentMode: mode }), walked };
+    return { kind: 'ready', payload: projectInheritance(sourceState, { ...outcomeOf(sourceRun), carriedSkills }, { kind: 'final', currentMode: mode }), walked };
   };
 
   const planInheritance = (claim: Claim, mode: PermissionMode): InheritPlan => {

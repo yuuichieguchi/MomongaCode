@@ -240,6 +240,30 @@ describe('worker skills: oversized skill', () => {
   });
 });
 
+describe('worker skills: explicit oversized skill', () => {
+  it('fails the run that brought it and does not carry it into the next run, while an inherited skill stays', async () => {
+    const env = await makeEnv({ capabilities: capabilitiesFor(8000) });
+    writeSkill(projectSkills(env), 'pdf', 'Extract PDF text', PDF_BODY);
+    const warm = env.enqueue('Warm up');
+    env.gateway.script.push(activate('call_pdf', 'pdf'), textStep('Warm.'));
+    await env.runOnce(env.worker());
+    expect(env.run(warm.id).status).toBe('COMPLETED');
+
+    const content = `<skill_content name="huge">\n${'Follow this rule exactly. '.repeat(2000)}\n</skill_content>`;
+    const first = env.enqueue('Use the huge skill', { skill: { name: 'huge', content } });
+    await env.runOnce(env.worker());
+    expect(env.run(first.id).status).toBe('FAILED');
+    expect(env.run(first.id).error?.code).toBe('pinned_overflow');
+
+    env.gateway.script.push(textStep('Next answer.'));
+    const second = env.enqueue('Another question');
+    await env.runOnce(env.worker());
+
+    expect(env.run(second.id).status).toBe('COMPLETED');
+    expect(env.fold(second.id).activatedSkills.map((skill) => skill.name)).toEqual(['pdf']);
+  });
+});
+
 describe('worker skills: cancelling an activation', () => {
   it('settles a started activation that never completed as cancelled instead of abandoning it with unknown effects', async () => {
     const env = await makeEnv();
