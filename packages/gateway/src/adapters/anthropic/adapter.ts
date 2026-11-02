@@ -20,7 +20,6 @@ import { StreamFailure, UnsupportedInputError, UpstreamProtocolError } from '../
 import { createEndpointPool } from '../shared/http-client.ts';
 import type { CompletionResponse } from '../shared/http-client.ts';
 import { httpErrorOf } from '../shared/http-error.ts';
-import { assertImageInputSupported } from '../shared/image-part.ts';
 import { MAX_SSE_EVENT_BYTES, MAX_UNARY_BODY_BYTES } from '../shared/limits.ts';
 import { ResponseEmitter } from '../shared/response-emitter.ts';
 import {
@@ -101,7 +100,6 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
   async function* stream(request: AdapterRequest, ctx: AdapterContext, cacheBreakpoints: boolean): AsyncGenerator<StreamEvent> {
     if (closed) throw new Error('the anthropic adapter is closed');
     const capabilities = await options.capabilities(ctx.target);
-    assertImageInputSupported(request.input, capabilities);
     const base = buildMessagesBody(request, capabilities.maxOutputTokens, { cacheBreakpoints });
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
@@ -141,9 +139,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
 
   const countTokens = async (request: CountTokensRequest, ctx: AdapterContext): Promise<AdapterCountTokensResult> => {
     if (closed) throw new Error('the anthropic adapter is closed');
-    const capabilities = await options.capabilities(ctx.target);
     const input = asAdapterInput(request);
-    assertImageInputSupported(input, capabilities);
     const body = buildCountTokensBody({
       model: request.model,
       input,

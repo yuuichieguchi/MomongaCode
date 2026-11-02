@@ -4,7 +4,6 @@ import type { AdapterInputItem, AdapterRequest, ContentPart } from '@momonga/pro
 import { buildNativeBody } from '../src/adapters/chat-completions/native-request.ts';
 import { buildResponsesBody } from '../src/adapters/open-responses/request.ts';
 import { summaryRequestOf } from '../src/adapters/shared/compact.ts';
-import { assertImageInputSupported } from '../src/adapters/shared/image-part.ts';
 import { UnsupportedInputError } from '../src/adapters/shared/failures.ts';
 import { estimateInputTokens, wireTokensOf } from '../src/core/estimate.ts';
 import { dimensionsOfBase64 } from '../src/core/image-size.ts';
@@ -228,14 +227,5 @@ describe('image capability filter', () => {
     const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', imageBody));
     expect(response.status).toBe(400);
     expectErrorBody(response.body, { type: 'invalid_request', code: 'capability_unsupported' });
-  });
-});
-
-describe('adapter-level image gate', () => {
-  it('throws capability_unsupported for images when imageInput is not declared and passes otherwise', () => {
-    const input = [userImage()];
-    expect(() => assertImageInputSupported(input, { imageInput: false })).toThrow(expect.objectContaining({ code: 'capability_unsupported' }));
-    expect(() => assertImageInputSupported(input, { imageInput: true })).not.toThrow();
-    expect(() => assertImageInputSupported([{ type: 'message', role: 'user', content: 'text' }], { imageInput: false })).not.toThrow();
   });
 });

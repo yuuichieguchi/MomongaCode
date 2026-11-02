@@ -7,7 +7,6 @@ import { createUpstreamClassifier } from '../shared/classify.ts';
 import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { StreamFailure, UnsupportedInputError, UpstreamProtocolError } from '../shared/failures.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
-import { assertImageInputSupported } from '../shared/image-part.ts';
 import { httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
 import { MAX_SSE_EVENT_BYTES } from '../shared/limits.ts';
 import { ResponseEmitter } from '../shared/response-emitter.ts';
@@ -31,7 +30,6 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
     if (capabilities.toolCalling === 'none' && (request.tools ?? []).length > 0) {
       throw new UnsupportedInputError('capability_unsupported', 'this target does not support tool calling', 'tools');
     }
-    assertImageInputSupported(request.input, capabilities);
     const body = buildResponsesBody(request);
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);

@@ -191,6 +191,19 @@ describe('WebSocket transport over the unix socket', () => {
     expect(await client.closed).toBe(1000);
   });
 
+  it('ends an in-flight turn with the limit error envelope as its terminal message when the connection reaches its time limit', async () => {
+    const adapter = createScriptedAdapter({ calls: [{ ...textCall('never'), gate: { name: 'held', afterEvents: 1 } }] });
+    const harness = await startGateway({ adapters: { primary: adapter }, config: { websocketConnectionMs: CONNECTION_LIMIT_MS } });
+    const client = await connectUnix(harness);
+    client.send(create());
+    await waitFor(() => adapter.calls.length === 1, { description: 'call started' });
+    harness.timers.advance(CONNECTION_LIMIT_MS);
+    const turn = await client.untilTerminal();
+    expect(turn.at(-1)).toMatchObject({ type: 'error', error: { code: 'websocket_connection_limit_reached' } });
+    expect(turn.map((message) => message['type'])).not.toContain('response.completed');
+    expect(await client.closed).toBe(1000);
+  });
+
   it('closes idle connections with going-away when the gateway closes and waits for none', async () => {
     const harness = await startGateway({ adapters: { primary: createScriptedAdapter({ calls: [] }) } });
     const client = await connectUnix(harness);

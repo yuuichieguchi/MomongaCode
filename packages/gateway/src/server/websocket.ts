@@ -91,6 +91,7 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
     private limitTimer: unknown;
     private draining = false;
     private closing = false;
+    private expired = false;
 
     constructor(socket: WebSocket) {
       this.socket = socket;
@@ -109,6 +110,7 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
     }
 
     beginClose(): void {
+      if (this.expired) return;
       this.closing = true;
       if (!this.draining) this.socket.close(GOING_AWAY);
     }
@@ -125,6 +127,7 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
 
     private async expire(): Promise<void> {
       this.closing = true;
+      this.expired = true;
       this.queue.length = 0;
       this.lifetime.abort(new ClientDisconnectedError());
       if (this.socket.readyState === this.socket.OPEN) {
@@ -151,7 +154,7 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
         this.socket.terminate();
       } finally {
         this.draining = false;
-        if (this.closing && this.socket.readyState === this.socket.OPEN) this.socket.close(GOING_AWAY);
+        if (this.closing && !this.expired && this.socket.readyState === this.socket.OPEN) this.socket.close(GOING_AWAY);
       }
     }
 

@@ -19,7 +19,6 @@ import { createConstrainedSink } from './constrained-sink.ts';
 import type { ConstrainedPlan } from './constrained-sink.ts';
 import { StreamFailure, UnsupportedInputError } from '../shared/failures.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
-import { assertImageInputSupported } from '../shared/image-part.ts';
 import { httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
 import { MAX_SSE_EVENT_BYTES } from '../shared/limits.ts';
 import { CHAT_COMPLETIONS_PATH, CHAT_COMPLETIONS_SUFFIX } from './limits.ts';
@@ -87,7 +86,6 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
 
   async function* create(request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
     if (closed) throw new Error('the chat-completions adapter is closed');
-    assertImageInputSupported(request.input, await options.capabilities(ctx.target));
     const { body, envelope } = bodyFor(request, ctx.target);
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
