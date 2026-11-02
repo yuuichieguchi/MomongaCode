@@ -34,6 +34,6 @@ export interface SandboxedProcess {
 }
 
 export interface Sandbox {
-  kind: 'seatbelt' | 'none';
+  kind: 'seatbelt' | 'bubblewrap' | 'none';
   spawn(command: SandboxCommand, policy: SandboxPolicy, signal: AbortSignal): SandboxedProcess;
 }
