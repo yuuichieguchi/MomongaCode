@@ -53,6 +53,17 @@ describe('momonga update command', () => {
     expect(harness.spawned).toHaveLength(0);
   });
 
+  it('reports instead of failing when --check runs ahead of the latest release, and still refuses to install a downgrade', async (context) => {
+    const { program, harness, completed, stdout } = await programFor(context);
+    harness.server.publish('v0.9.0', { [assetNameFor(harness.ports.platform, harness.ports.arch)]: NEW_BINARY });
+
+    await run(program, 'update', '--check');
+
+    expect(completed).toEqual([0]);
+    expect(stdout.join('')).toBe('momonga 1.0.0 is newer than the latest release v0.9.0\n');
+    await expect(run(program, 'update')).rejects.toMatchObject({ code: 'downgrade_refused' });
+  });
+
   it('propagates a typed refusal for a build without an update source', async (context) => {
     const { program } = await programFor(context, { build: { repo: undefined, teamId: undefined } });
 

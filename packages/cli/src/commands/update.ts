@@ -14,14 +14,18 @@ export const runUpdate = async (wiring: UpdateWiring, stdout: Sink, options: Upd
     stdout.write(`momonga ${check.current.text} is up to date\n`);
     return 0;
   }
+  if (options.checkOnly) {
+    stdout.write(
+      check.kind === 'ahead'
+        ? `momonga ${check.current.text} is newer than the latest release ${check.latest.tag}\n`
+        : `momonga ${check.latest.version.text} is available (running ${check.current.text}); run \`momonga update\` to install it\n`,
+    );
+    return 0;
+  }
   if (check.kind === 'ahead') {
     throw new UpdateError('downgrade_refused', `the latest release ${check.latest.tag} is older than the running version ${check.current.text}; refusing to downgrade`, {
       remediation: 'install an older version explicitly with the install script (MOMONGA_VERSION)',
     });
-  }
-  if (options.checkOnly) {
-    stdout.write(`momonga ${check.latest.version.text} is available (running ${check.current.text}); run \`momonga update\` to install it\n`);
-    return 0;
   }
   const result = await installRelease(ports, target, check.latest, { restartDaemon: true, signal: options.interrupt });
   stdout.write(`updated momonga ${result.from} -> ${result.to} (${result.target})\n`);
