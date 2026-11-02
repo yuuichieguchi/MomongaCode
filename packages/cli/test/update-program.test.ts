@@ -30,7 +30,7 @@ const programFor = async (context: TestContext, options: HarnessOptions = {}) =>
   const program = buildProgram({
     ports: cli,
     entries,
-    update: harness.wiring,
+    update: () => harness.wiring,
     interrupt: new AbortController().signal,
     entryIo: (args) => ({ argv: [...args] }) as unknown as EntryIo,
     complete: (code) => completed.push(code),

@@ -319,6 +319,22 @@ describe('cli: momonga -p', () => {
     expect((await stack.client.health()).version).toBe('3.0.0');
   });
 
+  it(titleOf('cli-long-home'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    const home = await createE2eHome();
+    const longHome = `/${'h'.repeat(200)}`;
+
+    const version = await runCli(home, ['--version'], { env: { HOME: longHome } });
+    expect(version.stderr).toBe('');
+    expect(version.code).toBe(0);
+    expect(version.stdout).toBe(`${cliPackage.version}\n`);
+
+    const status = await runCli(home, ['daemon', 'status'], { env: { HOME: longHome } });
+    expect(status.code).toBe(1);
+    expect(status.stdout).toBe('');
+    expect(status.stderr).toMatch(/^momonga: Unix socket path .* must be shorter than/);
+    expect(status.stderr).not.toContain('    at ');
+  });
+
   it(titleOf('cli-reconnect'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const stack = await startStack({ home, script: [textReply('survived the restart')], version: cliPackage.version, deps: { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY } });

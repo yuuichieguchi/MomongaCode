@@ -96,6 +96,7 @@ export const E2E_CASES = [
   { id: 'cli-version-restart', file: 'cli.test.ts', title: 'cli: an idle daemon of an older version is drained and replaced before a run is started', needsBash: false },
   { id: 'cli-older-daemon-active-run', file: 'cli.test.ts', title: 'cli: a newer client leaves an older daemon with an active run alone: status and a new run neither drain it, and the new run is served by it', needsBash: false },
   { id: 'cli-newer-daemon', file: 'cli.test.ts', title: 'cli: an older client never replaces a newer daemon', needsBash: false },
+  { id: 'cli-long-home', file: 'cli.test.ts', title: 'cli: --version works under a home too long for a socket path, and other commands report the typed cause instead of a stack trace', needsBash: false },
   { id: 'cli-reconnect', file: 'cli.test.ts', title: 'cli: a runtime killed mid-run drops the event stream and the CLI resumes it with Last-Event-ID without a gap or a duplicate', needsBash: false },
   { id: 'cli-env', file: 'cli.test.ts', title: 'cli: the environment snapshot sent at session creation carries no credentials', needsBash: false },
   { id: 'cli-probe', file: 'cli.test.ts', title: 'cli: gateway probe fm records the measurement and reports the remedy when fm is unavailable', needsBash: false },
