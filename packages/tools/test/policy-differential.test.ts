@@ -79,7 +79,7 @@ describe('every command decide approves does what the analysis reported, on real
 describe('the oracle reports what an approved command really did, whatever decide said', () => {
   const approvingAll = (): ReturnType<typeof makeDifferentialWorkspace> => {
     const workspace = makeDifferentialWorkspace();
-    return { ...workspace, decide: () => ({ kind: 'allow', reason: 'forced by the oracle test' }) as ReturnType<typeof workspace.decide> };
+    return { ...workspace, decideExpanding: async () => ({ kind: 'allow', reason: 'forced by the oracle test' }) as Awaited<ReturnType<typeof workspace.decideExpanding>> };
   };
 
   it('a write inside .git is a violation in acceptEdits', async () => {
