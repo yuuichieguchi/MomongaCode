@@ -122,6 +122,7 @@ export const startGateway = async (options: HarnessOptions): Promise<Harness> =>
   const socketPath = path.join(dir, 'gw.sock');
   const dbPath = path.join(dir, 'state', 'gateway.db');
   const gateway = await createGateway({
+    random: () => 0.5,
     credentials: options.credentials ?? [],
     ...(options.credentialFeed === undefined ? {} : { credentialFeed: options.credentialFeed }),
     config: buildConfig(options.config),

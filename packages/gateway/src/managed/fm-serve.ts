@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+import { systemClock } from '@momonga/foundation';
+import { realTimers } from '../process-ports.ts';
 import { createUdsClient, isUnixSocketLive, type UdsClient } from '@momonga/foundation';
 import type { HealthResult } from '@momonga/protocol';
 import { createExecFn, createGroupSpawn, createPlainSpawn, reapStaleFmGroups } from './fm-processes.ts';
@@ -83,11 +85,7 @@ export const LICENSE_NOT_ACCEPTED_EXIT_CODE = 69;
 export const LICENSE_REMEDIATION = 'sudo fm license';
 const HEALTH_POLL_INTERVAL_MS = 25;
 
-const defaultTimers: FmServeTimers = {
-  setTimeout: (callback, ms) => setTimeout(callback, ms),
-  clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout),
-  now: () => Date.now(),
-};
+const defaultTimers: FmServeTimers = { ...realTimers, now: () => systemClock.now() };
 
 const CONNECTION_FAILURE_CODES = new Set(['ECONNREFUSED', 'ENOENT', 'ECONNRESET', 'EPIPE']);
 

@@ -8,7 +8,7 @@ const DEFAULT_BUSY_TIMEOUT_MS = 5000;
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
 
-export type OpenDatabaseOptions = { busyTimeoutMs?: number };
+export type OpenDatabaseOptions = { busyTimeoutMs?: number; createDirectory?: boolean };
 
 export type Migration = { version: number; name: string; sql: string };
 
@@ -56,6 +56,7 @@ export const openDatabase = (file: string, options: OpenDatabaseOptions = {}): D
   if (!Number.isInteger(busyTimeoutMs) || busyTimeoutMs < 0) {
     throw new RangeError(`openDatabase: busyTimeoutMs must be a non-negative integer, got ${busyTimeoutMs}`);
   }
+  if (options.createDirectory === true) fs.mkdirSync(path.dirname(file), { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
   assertPrivateDirectory(path.dirname(file));
   ensurePrivateFile(file);
   const db = new DatabaseSync(file, { timeout: busyTimeoutMs, enableForeignKeyConstraints: true });

@@ -21,6 +21,7 @@ const constructWith = (debugTcp: { host: string; port: number; token: string }) 
     dir,
     attempt: (async () =>
       createGateway({
+      random: () => 0.5,
       credentials: [],
       config: buildConfig(),
       adapters: { primary: createScriptedAdapter({ calls: [] }) },

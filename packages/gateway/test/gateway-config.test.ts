@@ -10,6 +10,7 @@ const construct = (overrides: { hmacKey?: Uint8Array; debugTcp?: { host: string;
   const dir = makeDir();
   const clock = createFakeClock(START_MS);
   return createGateway({
+    random: () => 0.5,
     credentials: [],
     config: buildConfig(),
     adapters: { primary: createScriptedAdapter({ calls: [] }) },
@@ -75,6 +76,7 @@ describe('readerStallMs', () => {
     const config = buildConfig({ limits: { readerStallMs: 0 } });
     await expect(
       createGateway({
+        random: () => 0.5,
         credentials: [],
         config,
         adapters: { primary: createScriptedAdapter({ calls: [] }) },

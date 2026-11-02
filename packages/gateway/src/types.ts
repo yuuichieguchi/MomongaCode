@@ -46,7 +46,7 @@ export type GatewayOptions = {
   telemetry?: Telemetry;
   costReport?: (runs: readonly { runId: string; sessionId: string }[]) => Promise<{ report: CostReportView; text: string }>;
   debugTcp?: DebugTcpOptions;
-  random?: () => number;
+  random: () => number;
   version: string;
   onError?: (error: unknown) => void;
   onFatal?: (error: Error) => void;

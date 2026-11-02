@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { credentialEnvNames, loadUserSettings, secretNames } from '@momonga/config';
 import {
@@ -14,7 +13,6 @@ import {
   adapterSocketPath,
   momongaPaths,
   secretKeyFile,
-  systemClock,
 } from '@momonga/foundation';
 import type { Clock, JsonLogger, MomongaPaths, ReadyFields, SecretStore, TextStream } from '@momonga/foundation';
 import { buildCostReport, closeTelemetry, definePriceTable, formatCostReport, createTelemetry, exportersFor, openTraceStore } from '@momonga/observability';
@@ -42,6 +40,8 @@ import { readOsBuild, sha256OfFile } from './managed/fm-record-key.ts';
 import { createManagedFmTarget } from './managed/fm-target.ts';
 import type { ExecWithStdinFn, ManagedFmTarget } from './managed/fm-target.ts';
 import { createGateway } from './server/gateway.ts';
+import { systemProcessPorts } from './process-ports.ts';
+import type { ProcessFilePorts } from './process-ports.ts';
 import type { GatewayConfig, GatewayTimers } from './types.ts';
 
 export type StartGatewayProcessOptions = {
@@ -50,6 +50,8 @@ export type StartGatewayProcessOptions = {
   version: string;
   clock?: Clock;
   timers?: GatewayTimers;
+  random?: () => number;
+  files?: ProcessFilePorts;
   fmBinary?: string;
   exec?: ExecFn;
   execWithStdin?: ExecWithStdinFn;
@@ -88,34 +90,18 @@ type ResolvedTargets = Awaited<ReturnType<typeof loadUserSettings>>['settings'][
 type ResolvedTarget = ResolvedTargets[string];
 type RemoteTarget = Exclude<ResolvedTarget, { adapter: 'fm' }>;
 
-const realTimers: GatewayTimers = {
-  setTimeout: (callback, ms) => setTimeout(callback, ms),
-  clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout),
-};
-
-const binaryUsable = async (file: string): Promise<boolean> => {
-  try {
-    await fs.promises.access(file, fs.constants.R_OK | fs.constants.X_OK);
-    return true;
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT' || code === 'EACCES') return false;
-    throw error;
-  }
-};
-
-const withBinaryGuard = (managed: ManagedFmTarget, binary: string): ManagedFmTarget => {
+const withBinaryGuard = (managed: ManagedFmTarget, binary: string, files: ProcessFilePorts): ManagedFmTarget => {
   const detail = `fm binary not found at ${binary}`;
   return {
     ...managed,
     resolveEndpoint: async (target) => {
-      if (!(await binaryUsable(binary))) {
+      if (!(await files.isUsableBinary(binary))) {
         throw new PreconditionFailedError(PRECONDITION_MESSAGE, detail, undefined);
       }
       return managed.resolveEndpoint(target);
     },
     health: async (target) =>
-      (await binaryUsable(binary)) ? managed.health(target) : { ok: false, reason: 'precondition_failed', detail },
+      (await files.isUsableBinary(binary)) ? managed.health(target) : { ok: false, reason: 'precondition_failed', detail },
   };
 };
 
@@ -202,7 +188,7 @@ type FmContext = {
   binarySha256: string;
 };
 
-const createFmAdapter = async (name: string, target: Extract<ResolvedTarget, { adapter: 'fm' }>, context: FmContext, clock: Clock) => {
+const createFmAdapter = async (name: string, target: Extract<ResolvedTarget, { adapter: 'fm' }>, context: FmContext, clock: Clock, files: ProcessFilePorts) => {
   const managed = await createManagedFmTarget({
     fmServe: context.fmServe,
     binary: context.binary,
@@ -211,20 +197,10 @@ const createFmAdapter = async (name: string, target: Extract<ResolvedTarget, { a
     recordKey: { target: name, binarySha256: context.binarySha256, osBuild: context.osBuild },
     toolCallingSetting: target.toolCalling,
   });
-  return createChatCompletionsAdapter({ ...withBinaryGuard(managed, context.binary), clock });
+  return createChatCompletionsAdapter({ ...withBinaryGuard(managed, context.binary, files), clock });
 };
 
 const DEBUG_TCP_HOST = '127.0.0.1';
-const GROUP_AND_OTHER_BITS = 0o077;
-
-const readDebugToken = (tokenFile: string): string => {
-  if (!path.isAbsolute(tokenFile)) throw new EntryUsageError(`--debug-tcp-token-file must be an absolute path, got ${tokenFile}`);
-  const mode = fs.statSync(tokenFile).mode;
-  if ((mode & GROUP_AND_OTHER_BITS) !== 0) throw new EntryUsageError(`${tokenFile} must not be readable by group or others`);
-  const token = fs.readFileSync(tokenFile, 'utf8').replace(/\n$/, '');
-  if (token === '') throw new EntryUsageError(`${tokenFile} holds an empty token`);
-  return token;
-};
 
 const providerNameOf = (target: ResolvedTarget): string => {
   switch (target.adapter) {
@@ -258,8 +234,10 @@ export const gatewayConfigOf = (targets: ResolvedTargets, aliases: Record<string
 });
 
 export const startGatewayProcess = async (options: StartGatewayProcessOptions): Promise<GatewayProcess> => {
-  const clock = options.clock ?? systemClock;
-  const timers = options.timers ?? realTimers;
+  const clock = options.clock ?? systemProcessPorts.clock;
+  const timers = options.timers ?? systemProcessPorts.timers;
+  const random = options.random ?? systemProcessPorts.random;
+  const files = options.files ?? systemProcessPorts.files;
   const logger = options.logger ?? createJsonLogger({ service: 'gateway', clock });
   const binary = options.fmBinary ?? DEFAULT_FM_BINARY;
   const { signal } = options;
@@ -334,7 +312,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     for (const warning of warnings) logger.warn(warning);
     signal?.throwIfAborted();
     const hmacKey = secretKeyFile(paths.gatewayKey, {
-      mustExist: fs.existsSync(paths.databases.gateway),
+      mustExist: files.databaseExists(paths.databases.gateway),
       dependentPath: paths.databases.gateway,
     });
     const priceTable = definePriceTable(settings.pricing === undefined ? [] : settings.pricing);
@@ -393,7 +371,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       signal?.throwIfAborted();
       if (target.adapter === 'fm') {
         if (fmContext === undefined) throw new Error('fm context is missing for an fm target');
-        adapters[name] = await createFmAdapter(name, target, fmContext, clock);
+        adapters[name] = await createFmAdapter(name, target, fmContext, clock, files);
         continue;
       }
       const readKey = apiKeyReader(options.env, secretResolver, target);
@@ -422,10 +400,11 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         }),
       clock,
       timers,
+      random,
       dbPath: paths.databases.gateway,
       hmacKey,
       socketPath: paths.sockets.gateway,
-      ...(options.debugTcp === undefined ? {} : { debugTcp: { host: DEBUG_TCP_HOST, port: options.debugTcp.port, token: readDebugToken(options.debugTcp.tokenFile) } }),
+      ...(options.debugTcp === undefined ? {} : { debugTcp: { host: DEBUG_TCP_HOST, port: options.debugTcp.port, token: files.readDebugToken(options.debugTcp.tokenFile) } }),
       telemetry,
       costReport: async (runs) => {
         await telemetry.forceFlush();

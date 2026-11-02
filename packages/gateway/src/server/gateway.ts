@@ -101,7 +101,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       config: options.config,
       clock,
       timers,
-      random: options.random ?? Math.random,
+      random: options.random,
       router: createRouter({ config: options.config, adapters: options.adapters, clock, timers, redactor }),
       store,
       codec: createCompactionCodec(options.hmacKey),
