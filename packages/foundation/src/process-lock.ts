@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { LOCK_FD } from './process-contract.ts';
-import { HOLDER_READ_MAX_BYTES, LockAdoptionError, hostKernelLock } from './platform/kernel-lock.ts';
+import { HOLDER_READ_MAX_BYTES, LockAdoptionError, hostKernelLock, writeHolderOrRelease } from './platform/kernel-lock.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
 
 export { HOLDER_READ_MAX_BYTES, LockAdoptionError };
@@ -53,7 +53,7 @@ export const inspectProcessLock = async (lockPath: string, options: InspectProce
 const lockOf = (held: HeldKernelLock): ProcessLock => ({ release: () => held.release() });
 
 const claimed = (held: HeldKernelLock): ProcessLock => {
-  held.writeHolder(String(process.pid));
+  writeHolderOrRelease(held, String(process.pid));
   return lockOf(held);
 };
 
@@ -90,12 +90,7 @@ export const claimLockForChild = (lockPath: string, options: ProcessLockOptions 
   const { lock } = outcome;
   if (lock.descriptor === undefined) throw new Error(`${mechanism.name} claimed ${lockPath} without an inheritable descriptor`);
   const nonce = (options.randomNonce ?? randomHandoffNonce)();
-  try {
-    lock.writeHolder(`${HANDOFF_PREFIX}${nonce}`);
-  } catch (error) {
-    lock.release();
-    throw error;
-  }
+  writeHolderOrRelease(lock, `${HANDOFF_PREFIX}${nonce}`);
   return {
     kind: 'claimed',
     handoff: {

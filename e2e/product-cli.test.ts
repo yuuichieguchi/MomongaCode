@@ -8,9 +8,12 @@ import type { CliResult } from './support/cli.ts';
 import type { E2eHome } from './support/home.ts';
 import { PNG_BYTES, prepareProduct, requestText, writePng, writeUserSkill } from './support/product.ts';
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
-import { E2E_POLICY_VERIFY_BOUND_MS, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
+import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, policyVerifyBoundMs, until } from './support/wait.ts';
 
 const WINDOW_WITH_ROOM_FOR_ALL_TOOLS_AND_AN_IMAGE = 32768;
+const POLICY_VERIFY_CALLS = 4;
+const POLICY_PRODUCT_PREPARATIONS = 2;
+const POLICY_VERIFY_BOUND_MS = await policyVerifyBoundMs();
 
 const jsonOf = (text: string): unknown => JSON.parse(text);
 
@@ -41,7 +44,7 @@ describe('momonga models, cost and memory', () => {
     expect(json).toMatchObject([{ id: 'default', targets: ['primary'], capabilities: { contextWindow: 8192, maxOutputTokens: 1024, imageInput: true } }]);
   });
 
-  it(titleOf('cli-policy-verify'), { timeout: 3 * E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('cli-policy-verify'), { timeout: POLICY_PRODUCT_PREPARATIONS * E2E_TEST_TIMEOUT_MS + POLICY_VERIFY_CALLS * POLICY_VERIFY_BOUND_MS }, async () => {
     type Report = {
       results: { id: string; verdict: { status: string; findings?: { counterexample?: { witness: { command?: string }; replay: { agrees?: boolean } } }[] } }[];
       mismatches: unknown[];
@@ -50,7 +53,7 @@ describe('momonga models, cost and memory', () => {
     };
     const clean = await prepareProduct({ settings: { permissions: { allow: ['Bash(git status:*)'], deny: ['Bash(git push:*)'] } } });
 
-    const verifyPolicy = (home: E2eHome, ...flags: string[]): Promise<CliResult> => runCli(home, ['policy', 'verify', ...flags], { boundMs: E2E_POLICY_VERIFY_BOUND_MS });
+    const verifyPolicy = (home: E2eHome, ...flags: string[]): Promise<CliResult> => runCli(home, ['policy', 'verify', ...flags], { boundMs: POLICY_VERIFY_BOUND_MS });
 
     const text = await verifyPolicy(clean.home);
     expect(text.stderr).toBe('');

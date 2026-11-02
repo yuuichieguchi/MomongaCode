@@ -1,5 +1,5 @@
 export { EarlierAttemptNotStoppedError, clearCallLocks } from './call-lock.ts';
-export { createToolExecutor, subjectDigestOf } from './executor.ts';
+export { createToolExecutor, heldCallWaitMs, subjectDigestOf } from './executor.ts';
 export type {
   AbandonOutcome,
   AbandonTarget,

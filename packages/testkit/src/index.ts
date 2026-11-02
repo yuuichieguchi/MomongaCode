@@ -105,6 +105,7 @@ export { FAKE_OS_BUILD, createFakeFm, fakeExec } from './fake-fm.ts';
 export type { CreateFakeFmOptions, FakeExecResult, FakeFm, FakeFmConfig } from './fake-fm.ts';
 export {
   TEMP_DIR_PREFIX,
+  TEST_HEARTBEAT_MS,
   TEST_RUN_ENV,
   assertHomeSocketBudget,
   registerCleanup,

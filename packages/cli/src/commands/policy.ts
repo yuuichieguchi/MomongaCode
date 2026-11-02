@@ -8,7 +8,7 @@ import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import type { PolicyVerifyHost } from '../verify/host.ts';
 
-export const VERIFY_QUERY_TIMEOUT_MS = 10_000;
+export const VERIFY_BUDGET_MS = 60_000;
 
 export type PolicyVerifyOptions = { json: boolean; mode?: PermissionMode; secrets: readonly string[] };
 
@@ -64,7 +64,7 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
       fs,
       secretLocations,
       exemptDirectory: null,
-      timeoutMs: VERIFY_QUERY_TIMEOUT_MS,
+      budgetMs: VERIFY_BUDGET_MS,
     });
     ports.stdout.write(`${options.json ? JSON.stringify(report) : verifier.formatReport(report)}\n`);
     for (const warning of loaded.warnings) ports.stderr.write(`warning: ${warning}\n`);

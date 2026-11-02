@@ -26,6 +26,8 @@ const scriptedOps = (steps: readonly Step[]) => {
       return nextDescriptor++;
     },
     close: (descriptor) => void closed.push(descriptor),
+    fstat: () => ({ dev: 1n, ino: 1n }),
+    lstat: () => ({ dev: 1n, ino: 1n }),
   };
   return { ops, opened, closed, exhausted: () => remaining.length === 0 };
 };
@@ -52,6 +54,8 @@ describe('a claim against a transient shared lock', () => {
         throw Object.assign(new Error('EACCES'), { code: 'EACCES' });
       },
       close: () => undefined,
+      fstat: () => ({ dev: 1n, ino: 1n }),
+      lstat: () => ({ dev: 1n, ino: 1n }),
     };
     await expect(createFileLock(failing).claim('/run/x.lock')).rejects.toMatchObject({ code: 'EACCES' });
   });

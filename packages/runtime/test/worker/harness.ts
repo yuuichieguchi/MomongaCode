@@ -16,7 +16,7 @@ import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import { foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
 import type { Claim, Run, RuntimeStore, Session } from '@momonga/store';
-import { fakePolicyFilesystem, createFakeClock, createFakeKernelLock } from '@momonga/testkit';
+import { TEST_HEARTBEAT_MS, fakePolicyFilesystem, createFakeClock, createFakeKernelLock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 import { createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import type { AbandonTarget, AnyTool, ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
@@ -164,7 +164,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const toolbox: FakeToolbox = createFakeToolbox();
   const instructions = createFakeInstructions();
   const executorWarnings: string[] = [];
-  const realExecutor = createToolExecutor({ fs: fakePolicyFilesystem(),
+  const realExecutor = createToolExecutor({ fs: fakePolicyFilesystem(), heartbeatMs: TEST_HEARTBEAT_MS,
     idempotency: store.idempotency,
     blobs: store.blobs,
     clock,

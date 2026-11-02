@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { RELEASE_SIGNATURE_TOOL } from '@momonga/foundation';
+import { RELEASE_SIGNATURE_KNOWN_ANSWER, RELEASE_SIGNATURE_TOOL } from '@momonga/foundation';
 import type { CommandOptions, CommandResult } from '@momonga/foundation';
 import { registerCleanup, withTempDir } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
@@ -26,6 +26,7 @@ export type SignatureCheck = { args: readonly string[]; options: CommandOptions;
 
 export type Control = {
   signature: CommandResult;
+  knownAnswer: CommandResult;
   signatureToolMissing: boolean;
   codesign: CommandResult;
   reportedVersion: string | undefined;
@@ -76,6 +77,7 @@ export const setupUpdate = async (context: TestContext, options: HarnessOptions 
   const platform = options.platform ?? 'linux';
   const control: Control = {
     signature: ok(),
+    knownAnswer: ok(),
     signatureToolMissing: false,
     codesign: ok(),
     reportedVersion: undefined,
@@ -106,6 +108,7 @@ export const setupUpdate = async (context: TestContext, options: HarnessOptions 
     run: async (file, args, options) => {
       if (file === RELEASE_SIGNATURE_TOOL) {
         if (control.signatureToolMissing) throw Object.assign(new Error(`spawn ${file} ENOENT`), { code: 'ENOENT' });
+        if (options.input === RELEASE_SIGNATURE_KNOWN_ANSWER.content) return control.knownAnswer;
         const placed = (flag: string): string => readText(args[args.indexOf(flag) + 1] as string) as string;
         signatureChecks.push({ args, options, allowedSigners: placed('-f'), signature: placed('-s'), directory: path.dirname(args[args.indexOf('-f') + 1] as string) });
         return control.signature;

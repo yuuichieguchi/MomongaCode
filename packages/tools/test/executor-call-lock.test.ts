@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { hostKernelLock } from '@momonga/foundation';
 import type { ReapTiming } from '@momonga/foundation';
 import { startLockHolder, withTempDir } from '@momonga/testkit';
-import { clearCallLocks } from '@momonga/tools';
+import { clearCallLocks, heldCallWaitMs } from '@momonga/tools';
 import { createCallLocks } from '../src/call-lock.ts';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
@@ -12,6 +12,7 @@ import { deferred, keyFor } from './helpers.ts';
 
 const KEY = keyFor('run-1', 1, 'c1');
 const HOLDER_PID = 4242;
+const HEARTBEAT_MS = 100;
 
 const lockPathOf = (harness: Harness): string => path.join(harness.callLockDir, `${KEY}.lock`);
 
@@ -108,8 +109,8 @@ describe('the per-call lock of the executor', () => {
     expect(harness.kernelLock.isHeldBy(lockPathOf(harness))).toBeUndefined();
   });
 
-  it('fails with a typed error naming the holder when the lock stays held for the reconcile cap, and neither reconciles nor executes', async () => {
-    const harness = makeHarness({ executor: { reap: { timing: advancingTiming() }, reconcileCapMs: 100 } });
+  it('fails with a typed error naming the holder when the lock stays held for the wait derived from the heartbeat, and neither reconciles nor executes', async () => {
+    const harness = makeHarness({ executor: { reap: { timing: advancingTiming() }, heartbeatMs: HEARTBEAT_MS } });
     const trace = makeTrace();
     harness.idempotency.seed(KEY, 'PENDING', { tool: 'Edit' });
     harness.kernelLock.holdExternally(lockPathOf(harness), HOLDER_PID);
@@ -118,7 +119,7 @@ describe('the per-call lock of the executor', () => {
       name: 'EarlierAttemptNotStoppedError',
       code: 'earlier_attempt_not_stopped',
       reason: 'lock_held',
-      message: expect.stringContaining(`process ${HOLDER_PID}`),
+      message: expect.stringContaining(`process ${HOLDER_PID} after ${heldCallWaitMs(HEARTBEAT_MS)} ms`),
     });
 
     expect(trace.events).toEqual([]);

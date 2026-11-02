@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import type { ClaimOutcome, HeldKernelLock, KernelLockMechanism } from './kernel-lock.ts';
+import { lstatIdentity, sameFile } from './file-identity.ts';
+import type { LockFileIdentity } from './file-identity.ts';
 import { readHolderFile, readHolderFileSync, writeHolderFile } from './holder-file.ts';
 import { noFollowFlag } from './privacy.ts';
 
@@ -14,11 +16,31 @@ const isBusy = (error: unknown): boolean =>
 
 const databasePathOf = (lockPath: string): string => `${lockPath}${LOCK_DATABASE_SUFFIX}`;
 
-// SQLite takes POSIX fcntl locks on Linux, and the kernel drops them when any descriptor of the file is closed by the same process: nothing else may open this file while a claim is held.
-const openForClaim = (databasePath: string): DatabaseSync => {
-  fs.closeSync(fs.openSync(databasePath, fs.constants.O_RDWR | fs.constants.O_CREAT | noFollowFlag(), 0o600));
-  return new DatabaseSync(databasePath, { timeout: 0 });
+export type OpenLockDatabase = (databasePath: string) => DatabaseSync;
+
+export type SqliteLockOps = {
+  open: OpenLockDatabase;
+  lstat(databasePath: string): LockFileIdentity | undefined;
+  createIfAbsent(databasePath: string): void;
+  remove(file: string): void;
+  removesOpenFiles: boolean;
 };
+
+export const nodeSqliteLockOps: SqliteLockOps = {
+  open: (databasePath) => new DatabaseSync(databasePath, { timeout: 0 }),
+  lstat: lstatIdentity,
+  createIfAbsent: (databasePath) => {
+    try {
+      fs.closeSync(fs.openSync(databasePath, fs.constants.O_RDWR | fs.constants.O_CREAT | fs.constants.O_EXCL | noFollowFlag(), 0o600));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    }
+  },
+  remove: (file) => fs.rmSync(file, { force: true }),
+  removesOpenFiles: process.platform !== 'win32',
+};
+
+const FILE_IN_USE = 'EBUSY';
 
 const readLockAcquirable = (database: DatabaseSync): boolean => {
   try {
@@ -33,46 +55,77 @@ const readLockAcquirable = (database: DatabaseSync): boolean => {
   }
 };
 
-const claimDatabase = (lockPath: string): ClaimOutcome => {
-  const database = openForClaim(databasePathOf(lockPath));
-  try {
-    for (;;) {
-      try {
-        database.exec('BEGIN EXCLUSIVE');
-        break;
-      } catch (error) {
-        if (!isBusy(error)) throw error;
-        if (!readLockAcquirable(database)) {
-          database.close();
-          return { kind: 'held' };
-        }
-      }
+const beginExclusive = (database: DatabaseSync): 'acquired' | 'held' => {
+  for (;;) {
+    try {
+      database.exec('BEGIN EXCLUSIVE');
+      return 'acquired';
+    } catch (error) {
+      if (!isBusy(error)) throw error;
+      if (!readLockAcquirable(database)) return 'held';
     }
-  } catch (error) {
-    if (database.isOpen) database.close();
-    throw error;
   }
-  let open = true;
-  const lock: HeldKernelLock = {
-    descriptor: undefined,
-    writeHolder: (text) => writeHolderFile(lockPath, text),
-    release: () => {
-      if (!open) return;
-      open = false;
-      database.close();
-    },
-  };
-  return { kind: 'claimed', lock };
 };
 
-const probeDatabase = (lockPath: string): boolean => {
-  try {
-    fs.lstatSync(databasePathOf(lockPath));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
-    throw error;
+const heldDatabase = (ops: SqliteLockOps, lockPath: string, databasePath: string, database: DatabaseSync): HeldKernelLock => {
+  let open = true;
+  const release = (): void => {
+    if (!open) return;
+    open = false;
+    database.close();
+  };
+  const removeDatabaseAfterClose = (): void => {
+    try {
+      ops.remove(databasePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== FILE_IN_USE) throw error;
+    }
+  };
+  return {
+    descriptor: undefined,
+    writeHolder: (text) => writeHolderFile(lockPath, text),
+    release,
+    dispose: () => {
+      try {
+        ops.remove(lockPath);
+        if (ops.removesOpenFiles) ops.remove(databasePath);
+      } finally {
+        release();
+      }
+      if (!ops.removesOpenFiles) removeDatabaseAfterClose();
+    },
+  };
+};
+
+const claimDatabase = (ops: SqliteLockOps, lockPath: string): ClaimOutcome => {
+  const databasePath = databasePathOf(lockPath);
+  for (;;) {
+    let identity = ops.lstat(databasePath);
+    if (identity === undefined) {
+      ops.createIfAbsent(databasePath);
+      identity = ops.lstat(databasePath);
+      if (identity === undefined) continue;
+    }
+    const database = ops.open(databasePath);
+    try {
+      if (beginExclusive(database) === 'held') {
+        database.close();
+        return { kind: 'held' };
+      }
+      if (sameFile(ops.lstat(databasePath), identity)) return { kind: 'claimed', lock: heldDatabase(ops, lockPath, databasePath, database) };
+    } catch (error) {
+      if (database.isOpen) database.close();
+      if (sameFile(ops.lstat(databasePath), identity)) throw error;
+      continue;
+    }
+    database.close();
   }
-  const database = new DatabaseSync(databasePathOf(lockPath), { timeout: 0 });
+};
+
+const probeDatabase = (ops: SqliteLockOps, lockPath: string): boolean => {
+  const databasePath = databasePathOf(lockPath);
+  if (ops.lstat(databasePath) === undefined) return false;
+  const database = ops.open(databasePath);
   try {
     return !readLockAcquirable(database);
   } finally {
@@ -80,12 +133,14 @@ const probeDatabase = (lockPath: string): boolean => {
   }
 };
 
-export const sqliteFileLock: KernelLockMechanism = {
+export const createSqliteFileLock = (ops: SqliteLockOps): KernelLockMechanism => ({
   name: 'sqlite-lock',
-  claim: async (lockPath) => claimDatabase(lockPath),
-  isHeld: async (lockPath) => probeDatabase(lockPath),
+  claim: async (lockPath) => claimDatabase(ops, lockPath),
+  isHeld: async (lockPath) => probeDatabase(ops, lockPath),
   readHolder: readHolderFile,
   readHolderSync: readHolderFileSync,
   claimInheritable: undefined,
   adoptInherited: undefined,
-};
+});
+
+export const sqliteFileLock: KernelLockMechanism = createSqliteFileLock(nodeSqliteLockOps);

@@ -37,6 +37,7 @@ export type ToolRuntimeOptions = {
   sandbox: Sandbox;
   shellHost: ShellHost;
   settings: Pick<SettingsComposition, 'envFor' | 'takeUserSnapshot' | 'loadSessionSettings' | 'trustOracle'>;
+  heartbeatMs: number;
   reapTiming: ReapTiming;
   createPool?: (options: McpPoolOptions) => McpPool;
   createAdminPool?: (options: McpPoolOptions) => McpAuthorizingPool;
@@ -80,6 +81,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     report,
   });
   const executor = createToolExecutor({
+    heartbeatMs: options.heartbeatMs,
     jobs,
     fs: policyFilesystem,
     idempotency: store.idempotency,

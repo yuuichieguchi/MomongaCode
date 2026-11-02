@@ -54,7 +54,7 @@ describe('the hand-off goes through the lock mechanism on both sides', () => {
       ...createFakeKernelLock({ inheritable: true }),
       adoptInherited: (request) => {
         requests.push(request);
-        return { descriptor: request.descriptor, writeHolder: () => undefined, release: () => undefined };
+        return { descriptor: request.descriptor, writeHolder: () => undefined, release: () => undefined, dispose: () => undefined };
       },
     };
     new UnadoptedEnv({ [LOCK_FD_ENV]: '5', [LOCK_NONCE_ENV]: 'abc' }).adopt('/run/runtime.lock', { mechanism }).release();
