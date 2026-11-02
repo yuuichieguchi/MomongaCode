@@ -44,6 +44,7 @@ type InflightCompaction = {
   promise: Promise<CompactResource>;
   subscribers: number;
   detachTimer: unknown;
+  settled: boolean;
 };
 
 const identifier = (services: Services, prefix: string): string => `${prefix}_${uuidv7(services.clock).replaceAll('-', '')}`;
@@ -291,7 +292,7 @@ export const createUnaryService = (services: Services, validator: RequestValidat
 
   const detach = (entry: InflightCompaction): void => {
     entry.subscribers -= 1;
-    if (entry.subscribers > 0 || entry.controller.signal.aborted || entry.detachTimer !== undefined) return;
+    if (entry.subscribers > 0 || entry.settled || entry.controller.signal.aborted || entry.detachTimer !== undefined) return;
     entry.detachTimer = services.timers.setTimeout(() => {
       entry.detachTimer = undefined;
       if (entry.subscribers === 0) entry.controller.abort(detachedRunExpiredError());
@@ -353,6 +354,7 @@ export const createUnaryService = (services: Services, validator: RequestValidat
       controller,
       subscribers: 0,
       detachTimer: undefined,
+      settled: false,
       promise: Promise.resolve().then(async () => {
         try {
           const resource = await compactOnce(services, request, controller.signal, deadlineAt);
@@ -361,12 +363,20 @@ export const createUnaryService = (services: Services, validator: RequestValidat
           services.store.commitCompaction({ key, digest, resource, createdAtMs: now, expiresAtMs: now + services.config.idempotency.ttlMs });
           return resource;
         } finally {
+          entry.settled = true;
           clearDetachTimer(entry);
           active.delete(entry);
           if (inflight.get(key) === entry) inflight.delete(key);
         }
       }),
     };
+    controller.signal.addEventListener(
+      'abort',
+      () => {
+        if (inflight.get(key) === entry) inflight.delete(key);
+      },
+      { once: true },
+    );
     inflight.set(key, entry);
     active.add(entry);
     return wait(entry, signal, deadlineAt);
