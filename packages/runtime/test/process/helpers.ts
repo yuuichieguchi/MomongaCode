@@ -163,6 +163,18 @@ export const createRun = (store: RuntimeStore, sessionId: string): string => {
   return id;
 };
 
+export const fenceFor = (store: RuntimeStore, runId: string, workerId = 'batch-worker'): { runId: string; workerId: string; leaseToken: number } => {
+  const run = store.getRun(runId);
+  if (run === undefined) throw new Error(`unknown run ${runId}`);
+  if (run.status === 'QUEUED') {
+    const claim = store.claim(workerId);
+    if (claim === null || claim.runId !== runId) throw new Error(`${workerId} could not claim run ${runId}`);
+    return { runId, workerId, leaseToken: claim.leaseToken };
+  }
+  if (run.leaseOwner === null) throw new Error(`run ${runId} holds no lease`);
+  return { runId, workerId: run.leaseOwner, leaseToken: run.leaseToken };
+};
+
 export type LogEntry = { level: 'debug' | 'info' | 'warn' | 'error'; msg: string; fields: LogFields | undefined };
 
 export type RecordingLogger = JsonLogger & { entries: LogEntry[] };
@@ -328,6 +340,7 @@ export const runBashThroughPort = async (
   runId: string,
   command: string,
   mode: 'default' | 'bypassPermissions' = 'bypassPermissions',
+  options: { fence?: { runId: string; workerId: string; leaseToken: number }; callId?: string } = {},
 ) => {
   const port = f.toolRuntime.port;
   const signal = signalNever();
@@ -335,8 +348,9 @@ export const runBashThroughPort = async (
   const policy = await port.policyFor(session, { env, rules: [] });
   const toolSet = await port.toolSet(runId, { signal, env });
   const outcomes = await port.executor.runBatch({
-    calls: [{ callId: `call-${Math.random().toString(16).slice(2)}`, name: 'Bash', arguments: JSON.stringify({ command }) }],
+    calls: [{ callId: options.callId ?? `call-${Math.random().toString(16).slice(2)}`, name: 'Bash', arguments: JSON.stringify({ command }) }],
     toolSet,
+    fence: options.fence ?? fenceFor(f.store, runId),
     runId,
     step: 1,
     mode,

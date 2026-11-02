@@ -7,6 +7,7 @@ export type ToolIdempotencyRecord = {
   meta: Record<string, unknown>;
   pgid?: number;
   startedAt?: number;
+  leaseToken?: number;
   createdAt: number;
   expiresAt: number;
 };
@@ -18,12 +19,24 @@ export type ToolIdempotencyLookup =
 
 export type ToolIdempotencyBegin = { s: 'NEW' } | ToolIdempotencyLookup;
 
+export type LeaseFence = { runId: string; workerId: string; leaseToken: number };
+
+export type LeasedBegin = ToolIdempotencyBegin | { s: 'LEASE_LOST' };
+
+export type LeasedOutcome = { kind: 'ok' } | { kind: 'lease_lost' };
+
+export type LeasedIdempotencyPort = {
+  begin(key: string, options: { expiresAt: number; meta: Record<string, unknown> }): LeasedBegin;
+  authorise(key: string): LeasedOutcome;
+  attachProcess(key: string, process: { pgid: number; startedAt: number }): LeasedOutcome;
+  checkpoint(key: string, state: Record<string, unknown> | undefined): LeasedOutcome;
+  complete(key: string, result: unknown): LeasedOutcome;
+};
+
 export type IdempotencyPort = {
   get(key: string): ToolIdempotencyLookup | undefined;
-  begin(key: string, options: { expiresAt: number; meta: Record<string, unknown> }): ToolIdempotencyBegin;
-  attachProcess(key: string, process: { pgid: number; startedAt: number }): void;
-  checkpoint(key: string, state: Record<string, unknown> | undefined): void;
-  complete(key: string, result: unknown): void;
+  holding(fence: LeaseFence): LeasedIdempotencyPort;
+  clearCheckpoint(key: string): void;
   markUnknown(key: string): void;
   markUnknownIfPending(key: string): boolean;
 };

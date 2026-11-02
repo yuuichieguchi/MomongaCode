@@ -3,7 +3,16 @@ import { canonicalJson, immediateTx } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { expectOneOf, expectRecord, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
-import type { IdempotencyBegin, IdempotencyLookup, IdempotencyRecord, IdempotencyStore } from './types.ts';
+import type {
+  IdempotencyBegin,
+  IdempotencyLookup,
+  IdempotencyRecord,
+  IdempotencyStore,
+  LeaseFence,
+  LeasedBegin,
+  LeasedIdempotency,
+  LeasedOutcome,
+} from './types.ts';
 
 const OPEN_STATES = ['PENDING', 'UNKNOWN'] as const;
 
@@ -12,27 +21,30 @@ const decodeRecord = (row: Row): IdempotencyRecord => {
   const reader = readerFor('idempotency', key, row);
   const pgid = reader.nullableNumber('pgid');
   const startedAt = reader.nullableNumber('started_at');
+  const leaseToken = reader.nullableNumber('lease_token');
   return {
     key,
     state: expectOneOf('idempotency', key, 'state', OPEN_STATES, reader.string('state')),
     meta: expectRecord('idempotency', key, 'meta_json', reader.json('meta_json')),
     ...(pgid === null ? {} : { pgid }),
     ...(startedAt === null ? {} : { startedAt }),
+    ...(leaseToken === null ? {} : { leaseToken }),
     createdAt: reader.number('created_at'),
     expiresAt: reader.number('expires_at'),
   };
 };
 
-export const createIdempotencyStore = (db: DatabaseSync, clock: Clock): IdempotencyStore => {
+export const createIdempotencyStore = (db: DatabaseSync, clock: Clock, holdsLease: (fence: LeaseFence) => boolean): IdempotencyStore => {
   const insert = db.prepare(
-    `INSERT INTO idempotency (key, state, meta_json, created_at, expires_at)
-     VALUES (:key, 'PENDING', :meta, :createdAt, :expiresAt)
+    `INSERT INTO idempotency (key, state, meta_json, lease_token, created_at, expires_at)
+     VALUES (:key, 'PENDING', :meta, :leaseToken, :createdAt, :expiresAt)
      ON CONFLICT (key) DO NOTHING`,
   );
   const select = db.prepare('SELECT * FROM idempotency WHERE key = :key');
   const attach = db.prepare(
     "UPDATE idempotency SET pgid = :pgid, started_at = :startedAt WHERE key = :key AND state = 'PENDING'",
   );
+  const adopt = db.prepare("UPDATE idempotency SET lease_token = :leaseToken WHERE key = :key AND state IN ('PENDING', 'UNKNOWN')");
   const setCheckpoint = db.prepare(
     "UPDATE idempotency SET meta_json = json_set(meta_json, '$.checkpoint', json(:state)) WHERE key = :key AND state = 'PENDING'",
   );
@@ -56,34 +68,66 @@ export const createIdempotencyStore = (db: DatabaseSync, clock: Clock): Idempote
     return rec.state === 'PENDING' ? { s: 'PENDING', rec } : { s: 'UNKNOWN', rec };
   };
 
+  const beginRecord = (key: string, options: { expiresAt: number; meta: Record<string, unknown> }, leaseToken: number | null): IdempotencyBegin => {
+    const inserted = insert.run({
+      key,
+      meta: canonicalJson(options.meta),
+      leaseToken,
+      createdAt: clock.now(),
+      expiresAt: options.expiresAt,
+    });
+    if (Number(inserted.changes) === 1) return { s: 'NEW' };
+    const row = select.get({ key });
+    if (row === undefined) throw new Error(`idempotency key "${key}" vanished during begin`);
+    return lookupRow(key, row);
+  };
+
+  const attachRecord = (key: string, process: { pgid: number; startedAt: number }): void => {
+    requireChange(attach.run({ key, pgid: process.pgid, startedAt: process.startedAt }).changes, key, 'attach a process to', 'PENDING');
+  };
+
+  const completeRecord = (key: string, result: unknown): void => {
+    requireChange(complete.run({ key, result: canonicalJson(result) }).changes, key, 'complete', 'PENDING or UNKNOWN');
+  };
+
+  const leasedBy = (fence: LeaseFence): LeasedIdempotency => {
+    const lost: LeasedOutcome = { kind: 'lease_lost' };
+    const ok: LeasedOutcome = { kind: 'ok' };
+    const whileHolding = (write: () => void): LeasedOutcome =>
+      immediateTx<LeasedOutcome>(db, () => {
+        if (!holdsLease(fence)) return lost;
+        write();
+        return ok;
+      });
+    return {
+      begin: (key, options) =>
+        immediateTx<LeasedBegin>(db, () => (holdsLease(fence) ? beginRecord(key, options, fence.leaseToken) : { s: 'LEASE_LOST' })),
+      authorise: (key) =>
+        whileHolding(() => {
+          requireChange(adopt.run({ key, leaseToken: fence.leaseToken }).changes, key, 'authorise', 'PENDING or UNKNOWN');
+        }),
+      attachProcess: (key, process) => whileHolding(() => attachRecord(key, process)),
+      checkpoint: (key, state) =>
+        whileHolding(() => {
+          const changes = state === undefined ? clearCheckpoint.run({ key }).changes : setCheckpoint.run({ key, state: canonicalJson(state) }).changes;
+          requireChange(changes, key, 'checkpoint', 'PENDING');
+        }),
+      complete: (key, result) => whileHolding(() => completeRecord(key, result)),
+    };
+  };
+
   return {
     get: (key) => {
       const row = select.get({ key });
       return row === undefined ? undefined : lookupRow(key, row);
     },
-    begin: (key, options) =>
-      immediateTx<IdempotencyBegin>(db, () => {
-        const inserted = insert.run({
-          key,
-          meta: canonicalJson(options.meta),
-          createdAt: clock.now(),
-          expiresAt: options.expiresAt,
-        });
-        if (Number(inserted.changes) === 1) return { s: 'NEW' };
-        const row = select.get({ key });
-        if (row === undefined) throw new Error(`idempotency key "${key}" vanished during begin`);
-        return lookupRow(key, row);
-      }),
-    attachProcess: (key, process) => {
-      requireChange(attach.run({ key, pgid: process.pgid, startedAt: process.startedAt }).changes, key, 'attach a process to', 'PENDING');
+    holding: leasedBy,
+    clearCheckpoint: (key) => {
+      requireChange(clearCheckpoint.run({ key }).changes, key, 'checkpoint', 'PENDING');
     },
-    checkpoint: (key, state) => {
-      const changes = state === undefined ? clearCheckpoint.run({ key }).changes : setCheckpoint.run({ key, state: canonicalJson(state) }).changes;
-      requireChange(changes, key, 'checkpoint', 'PENDING');
-    },
-    complete: (key, result) => {
-      requireChange(complete.run({ key, result: canonicalJson(result) }).changes, key, 'complete', 'PENDING or UNKNOWN');
-    },
+    begin: (key, options) => immediateTx<IdempotencyBegin>(db, () => beginRecord(key, options, null)),
+    attachProcess: attachRecord,
+    complete: completeRecord,
     markUnknown: (key) => {
       requireChange(markUnknown.run({ key }).changes, key, 'mark unknown', 'PENDING');
     },

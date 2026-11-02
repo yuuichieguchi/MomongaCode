@@ -33,6 +33,7 @@ import type {
   HeartbeatResult,
   InheritContextResult,
   JobStore,
+  LeaseFence,
   LeaseLost,
   LoadedRun,
   Run,
@@ -480,7 +481,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     });
   };
 
-  const fenced = (claim: Claim): Run | undefined => {
+  const fenced = (claim: LeaseFence): Run | undefined => {
     const row = sql.fence.get({ runId: claim.runId, leaseToken: claim.leaseToken, workerId: claim.workerId });
     return row === undefined ? undefined : decodeRun(row);
   };
@@ -1294,7 +1295,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         return { kind: 'ok' } as const;
       }),
 
-    idempotency: createIdempotencyStore(db, clock),
+    idempotency: createIdempotencyStore(db, clock, (fence) => fenced(fence) !== undefined),
     approvals: approvalOps.store,
     blobs: createBlobStore(db, clock, blobDirectory),
     trust: createTrustStore(db, clock, home),

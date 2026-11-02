@@ -48,6 +48,7 @@ const UNMODELLED_EVENT_TYPES = [
   'tool.elicitation.resolved',
   'tool.permission.classified',
   'tool.updated',
+  'usage.charged',
   'usage.updated',
 ];
 
@@ -88,5 +89,38 @@ describe('RunRecovery.tla against the implementation', () => {
     const modelled = new Set(setOf('ModelledEvents'));
     const emitted = [...spec.matchAll(/\bE\("([a-z.]+)"/g)].map((match) => match[1] as string);
     expect(emitted.filter((kind) => !modelled.has(kind))).toEqual([]);
+  });
+});
+
+const configDir = path.resolve(import.meta.dirname, '..', 'specs', 'tla');
+
+const constantsOf = (name: string): Record<string, string> => {
+  const text = fs.readFileSync(path.join(configDir, `${name}.cfg`), 'utf8');
+  const block = text.slice(text.indexOf('CONSTANTS'), text.search(/^(SYMMETRY|INVARIANTS|PROPERTIES)/m));
+  return Object.fromEntries([...block.matchAll(/^\s+(\w+)\s*=\s*(.+)$/gm)].map((match) => [match[1] as string, (match[2] as string).trim()]));
+};
+
+describe('the checked configurations against the repaired recovery design', () => {
+  const repairs = (name: string): [string, string] => {
+    const constants = constantsOf(name);
+    return [constants['UnfencedEffect'] as string, constants['NoReapBeforeReconcile'] as string];
+  };
+
+  it('checks the code with both repairs in every configuration that is not evidence', () => {
+    for (const name of ['RunRecovery', 'RunRecovery.children', 'RunRecovery.liveNone', 'RunRecovery.liveSpawn']) {
+      expect(repairs(name)).toEqual(['FALSE', 'FALSE']);
+    }
+  });
+
+  it('keeps one configuration per missing repair and one with neither as evidence', () => {
+    expect(repairs('RunRecovery.fenceOnly')).toEqual(['FALSE', 'TRUE']);
+    expect(repairs('RunRecovery.reapOnly')).toEqual(['TRUE', 'FALSE']);
+    expect(repairs('RunRecovery.unfixed')).toEqual(['TRUE', 'TRUE']);
+  });
+
+  it('records the edges of run.status events in every configuration that checks OnlyDeclaredEdges', () => {
+    for (const name of ['RunRecovery', 'RunRecovery.children']) {
+      expect(constantsOf(name)['StatusEdgesRecorded']).toBe('TRUE');
+    }
   });
 });

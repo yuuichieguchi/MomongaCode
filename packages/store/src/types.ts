@@ -136,6 +136,7 @@ export type IdempotencyRecord = {
   meta: Record<string, unknown>;
   pgid?: number;
   startedAt?: number;
+  leaseToken?: number;
   createdAt: number;
   expiresAt: number;
 };
@@ -148,11 +149,26 @@ export type IdempotencyBegin =
 
 export type IdempotencyLookup = Exclude<IdempotencyBegin, { s: 'NEW' }>;
 
+export type LeaseFence = Pick<Claim, 'runId' | 'workerId' | 'leaseToken'>;
+
+export type LeasedBegin = IdempotencyBegin | { s: 'LEASE_LOST' };
+
+export type LeasedOutcome = { kind: 'ok' } | LeaseLost;
+
+export type LeasedIdempotency = {
+  begin(key: string, options: { expiresAt: number; meta: Record<string, unknown> }): LeasedBegin;
+  authorise(key: string): LeasedOutcome;
+  attachProcess(key: string, process: { pgid: number; startedAt: number }): LeasedOutcome;
+  checkpoint(key: string, state: Record<string, unknown> | undefined): LeasedOutcome;
+  complete(key: string, result: unknown): LeasedOutcome;
+};
+
 export type IdempotencyStore = {
   get(key: string): IdempotencyLookup | undefined;
+  holding(fence: LeaseFence): LeasedIdempotency;
+  clearCheckpoint(key: string): void;
   begin(key: string, options: { expiresAt: number; meta: Record<string, unknown> }): IdempotencyBegin;
   attachProcess(key: string, process: { pgid: number; startedAt: number }): void;
-  checkpoint(key: string, state: Record<string, unknown> | undefined): void;
   complete(key: string, result: unknown): void;
   markUnknown(key: string): void;
   markUnknownIfPending(key: string): boolean;

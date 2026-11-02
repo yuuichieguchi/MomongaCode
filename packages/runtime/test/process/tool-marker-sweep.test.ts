@@ -6,7 +6,7 @@ import { createFakeClock, createFakeTimers, withTempDir } from '@momonga/testkit
 import type { CleanupContext } from '@momonga/testkit';
 import { createToolRegistry, defineTool } from '@momonga/tools';
 import { TOOL_MARKER_SWEEP_MS } from '../../src/process/constants.ts';
-import { START_MS, createRun, createSession, makeRuntimeFixture, onCleanup, signalNever, writeUserSettings } from './helpers.ts';
+import { START_MS, createRun, createSession, fenceFor, makeRuntimeFixture, onCleanup, signalNever, writeUserSettings } from './helpers.ts';
 import type { TempHome } from './helpers.ts';
 import { launchRuntime, modelSettings } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
@@ -87,6 +87,7 @@ describe('tool marker sweep wiring (§8)', () => {
     const batch = port.executor.runBatch({
       calls: [{ callId, name: 'Hold', arguments: '{}' }],
       toolSet,
+      fence: fenceFor(f.store, runId),
       runId,
       step: 1,
       mode: 'bypassPermissions',

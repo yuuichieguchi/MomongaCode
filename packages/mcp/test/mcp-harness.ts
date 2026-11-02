@@ -7,7 +7,7 @@ import { parseRule } from '@momonga/config';
 import type { McpServerConfig, McpServerEntry, PermissionRule, RuleEffect } from '@momonga/config';
 import { createMcpPool, type McpPool } from '@momonga/mcp';
 import { createToolExecutor, createToolRegistry } from '@momonga/tools';
-import type { BlobPort, ExecutionBatchInput, IdempotencyPort, ToolCall, ToolIdempotencyBegin, ToolIdempotencyRecord, ToolSet } from '@momonga/tools';
+import type { BlobPort, ExecutionBatchInput, IdempotencyPort, LeasedBegin, ToolCall, ToolIdempotencyRecord, ToolSet } from '@momonga/tools';
 import { MCP_LEGACY_SERVER_PATH, MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_RECORD_ENV, createFakeClock, fakePolicyFilesystem, killPidsForCleanup, type FakeClock, type ModernFixtureRecord } from '@momonga/testkit';
 
 const cleanups: Array<() => Promise<void> | void> = [];
@@ -140,23 +140,34 @@ const makeIdempotency = (): IdempotencyPort => {
       if (rec === undefined) return undefined;
       return rec.state === 'UNKNOWN' ? { s: 'UNKNOWN', rec } : { s: 'PENDING', rec };
     },
-    begin: (key, beginOptions): ToolIdempotencyBegin => {
-      if (completed.has(key)) return { s: 'COMPLETED', result: completed.get(key) };
-      const rec = open.get(key);
-      if (rec !== undefined) return rec.state === 'UNKNOWN' ? { s: 'UNKNOWN', rec } : { s: 'PENDING', rec };
-      open.set(key, { key, state: 'PENDING', meta: beginOptions.meta, createdAt: 0, expiresAt: beginOptions.expiresAt });
-      return { s: 'NEW' };
-    },
-    attachProcess: () => undefined,
-    checkpoint: (key, state) => {
+    holding: () => ({
+      begin: (key, beginOptions): LeasedBegin => {
+        if (completed.has(key)) return { s: 'COMPLETED', result: completed.get(key) };
+        const rec = open.get(key);
+        if (rec !== undefined) return rec.state === 'UNKNOWN' ? { s: 'UNKNOWN', rec } : { s: 'PENDING', rec };
+        open.set(key, { key, state: 'PENDING', meta: beginOptions.meta, createdAt: 0, expiresAt: beginOptions.expiresAt });
+        return { s: 'NEW' };
+      },
+      authorise: () => ({ kind: 'ok' }),
+      attachProcess: () => ({ kind: 'ok' }),
+      checkpoint: (key, state) => {
+        const rec = open.get(key);
+        if (rec === undefined) return { kind: 'ok' };
+        const { checkpoint: _previous, ...meta } = rec.meta;
+        open.set(key, { ...rec, meta: state === undefined ? meta : { ...meta, checkpoint: state } });
+        return { kind: 'ok' };
+      },
+      complete: (key, result) => {
+        open.delete(key);
+        completed.set(key, result);
+        return { kind: 'ok' };
+      },
+    }),
+    clearCheckpoint: (key) => {
       const rec = open.get(key);
       if (rec === undefined) return;
       const { checkpoint: _previous, ...meta } = rec.meta;
-      open.set(key, { ...rec, meta: state === undefined ? meta : { ...meta, checkpoint: state } });
-    },
-    complete: (key, result) => {
-      open.delete(key);
-      completed.set(key, result);
+      open.set(key, { ...rec, meta });
     },
     markUnknown: (key) => {
       const rec = open.get(key);
@@ -209,6 +220,7 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000)) => {
     return {
       calls,
       toolSet,
+      fence: { runId: `run-${runCounter}`, workerId: 'w1', leaseToken: 1 },
       runId: `run-${runCounter}`,
       step: 1,
       mode: 'default',

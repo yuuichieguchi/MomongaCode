@@ -12,7 +12,7 @@ import { createReadAccessMatcher } from './read-access.ts';
 import type { ReadFamilyTool } from './read-access.ts';
 import type { ReadAccessMatcher } from './read-access.ts';
 import type { PreToolHookVerdict, ToolHooks } from './hooks/events.ts';
-import type { AutoClassifier, BackgroundJobs, BlobPort, IdempotencyPort, ToolIdempotencyLookup, ToolIdempotencyRecord } from './ports.ts';
+import type { AutoClassifier, BackgroundJobs, BlobPort, IdempotencyPort, LeaseFence, LeasedIdempotencyPort, LeasedOutcome, ToolIdempotencyLookup, ToolIdempotencyRecord } from './ports.ts';
 import type { ToolSet } from './registry.ts';
 import { cancellableTimer } from './timers.ts';
 import { MINIMUM_INLINE_OUTPUT_CHARS, truncateOutput } from './truncate.ts';
@@ -40,6 +40,7 @@ export type ToolCall = {
 
 type BatchCallbacks = {
   leaseLost?(): boolean;
+  onLeaseLost?(): void;
   onOutcome?(outcome: ResultOutcome): void;
   traceparentFor?(callId: string): { traceparent: string; tracestate?: string } | undefined;
   onStarted?(callId: string, idemKey: string): void | Promise<void>;
@@ -49,6 +50,7 @@ type BatchCallbacks = {
 type BatchCore = BatchCallbacks & {
   calls: readonly ToolCall[];
   toolSet: ToolSet;
+  fence: LeaseFence;
   runId: string;
   step: number;
   mode: PermissionMode;
@@ -626,6 +628,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     extendTimerToDeadline(): void;
     disarmTimer(): void;
     closeContext(): void;
+    ledger: LeasedIdempotencyPort;
+    holding(outcome: LeasedOutcome): boolean;
+    deferred: CallOutcome;
     checkpoint(state: Record<string, unknown> | undefined): void;
     complete(result: ResultOutcome['result'], reconciled?: ReconcileResult['outcome']): CallOutcome;
     waiting(pending: ToolPending): CallOutcome;
@@ -641,6 +646,12 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     let timer: NodeJS.Timeout | undefined;
     let timerMs = 0;
     const leaseLost = (): boolean => batch.leaseLost?.() === true;
+    const ledger = idempotency.holding(batch.fence);
+    const holding = (outcome: LeasedOutcome): boolean => {
+      if (outcome.kind === 'ok') return true;
+      batch.onLeaseLost?.();
+      return false;
+    };
     const abortWith = (reason: AbortReason): void => {
       if (abortReason !== undefined) return;
       abortReason = reason;
@@ -672,7 +683,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       ...(options.jobs === undefined ? {} : { jobs: options.jobs }),
       session: batch.session,
       attachProcess: (processInfo) => {
-        if (!leaseLost() && !contextClosed) idempotency.attachProcess(key, processInfo);
+        if (!leaseLost() && !contextClosed) holding(ledger.attachProcess(key, processInfo));
       },
       update: (content) => {
         if (!contextClosed) batch.onUpdate?.(callId, content);
@@ -699,13 +710,16 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       closeContext: () => {
         contextClosed = true;
       },
+      ledger,
+      holding,
+      deferred,
       checkpoint: (state) => {
-        if (!leaseLost() && !contextClosed) idempotency.checkpoint(key, state);
+        if (!leaseLost() && !contextClosed) holding(ledger.checkpoint(key, state));
       },
       complete: (result, reconciled) => {
         if (leaseLost()) return deferred;
         const outcome: ResultOutcome = { callId, kind: 'result', result, idemKey: key, ...(reconciled === undefined ? {} : { reconciled }) };
-        idempotency.complete(key, outcome);
+        if (!holding(ledger.complete(key, outcome))) return deferred;
         recordCompleted = true;
         return outcome;
       },
@@ -724,6 +738,35 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     };
   };
 
+  const reapEarlierAttempt = async (key: string, pgid: number | undefined): Promise<void> => {
+    const marker = path.join(options.processMarkerDir, key);
+    try {
+      await reapMarkedProcesses({
+        marker,
+        pgid,
+        killGraceMs: options.reap?.killGraceMs ?? ABANDON_KILL_GRACE_MS,
+        label: 'tool',
+        onWarning: options.onWarning,
+        ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
+        ...(options.reap?.timing === undefined ? {} : { timing: options.reap.timing }),
+      });
+    } catch (error) {
+      options.onWarning(`tool marker ${marker} could not be cleaned up: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  type Resumed = { kind: 'reconciled'; result: ReconcileResult } | { kind: 'outcome'; outcome: CallOutcome };
+
+  const reconcileAsHolder = async (scope: CallScope, callId: string, tool: AnyTool, input: unknown, record: ToolIdempotencyRecord): Promise<Resumed> => {
+    if (!scope.holding(scope.ledger.authorise(record.key))) return { kind: 'outcome', outcome: scope.deferred };
+    await reapEarlierAttempt(record.key, record.pgid);
+    try {
+      return { kind: 'reconciled', result: await reconcileWithin(tool, input, record, scope.reconcileCtx, () => scope.abortWith('timeout'), scope.closeContext) };
+    } catch (error) {
+      return { kind: 'outcome', outcome: failedOutcome(callId, describeThrown(tool.name, error)) };
+    }
+  };
+
   const reconcileOnly = async (batch: RecoveryBatchInput, plan: RecoveryPlan): Promise<CallOutcome> => {
     const { call, tool, input, key } = plan;
     const { callId } = call;
@@ -735,12 +778,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       if (current?.s === 'COMPLETED') return storedOutcome(current.result);
       const record = current?.rec;
       if (record === undefined) return failedOutcome(callId, `${tool.name} was cancelled`);
-      let reconcileOutcome: ReconcileResult;
-      try {
-        reconcileOutcome = await reconcileWithin(tool, input, record, scope.reconcileCtx, () => scope.abortWith('timeout'), scope.closeContext);
-      } catch (error) {
-        return failedOutcome(callId, describeThrown(tool.name, error));
-      }
+      const resumed = await reconcileAsHolder(scope, callId, tool, input, record);
+      if (resumed.kind === 'outcome') return resumed.outcome;
+      const reconcileOutcome = resumed.result;
       if (reconcileOutcome.outcome === 'not_applied') {
         return scope.complete(finalizeResult({ status: 'failed', output: cancelledOutput(tool) }, tool, inlineLimit), 'not_applied');
       }
@@ -802,7 +842,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           }
         }
         if (scope.abortReason() !== undefined) return failedOutcome(callId, `${tool.name} was cancelled`);
-        const begun = idempotency.begin(key, {
+        const begun = scope.ledger.begin(key, {
           expiresAt: clock.now() + ttlMs,
           meta: {
             tool: tool.name,
@@ -811,12 +851,17 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
             ...(target.hookInput === undefined ? {} : { hookInput: target.hookInput }),
           },
         });
+        if (begun.s === 'LEASE_LOST') {
+          scope.holding({ kind: 'lease_lost' });
+          return scope.deferred;
+        }
         if (begun.s === 'COMPLETED') return storedOutcome(begun.result);
         if (begun.s !== 'NEW') record = begun.rec;
       }
 
       const execute = async (reconciled?: ReconcileResult['outcome'], resume?: ToolResume): Promise<CallOutcome> => {
         const outputLimit = await resolveExecutionLimit();
+        if (!scope.holding(scope.ledger.authorise(key))) return scope.deferred;
         const executionCtx: ToolContext = { ...toolContext, outputBudgetChars: outputLimit, ...(resume === undefined ? {} : { resume }) };
         if (tool.sideEffect === 'exec') {
           fs.rmSync(scope.processMarker, { force: true });
@@ -888,12 +933,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         return await execute(undefined, { checkpoint, inputResponses: call.inputResponses });
       }
 
-      let reconcileOutcome: ReconcileResult;
-      try {
-        reconcileOutcome = await reconcileWithin(tool, target.input, record, scope.reconcileCtx, () => scope.abortWith('timeout'), scope.closeContext);
-      } catch (error) {
-        return failedOutcome(callId, describeThrown(tool.name, error));
-      }
+      const resumed = await reconcileAsHolder(scope, callId, tool, target.input, record);
+      if (resumed.kind === 'outcome') return resumed.outcome;
+      const reconcileOutcome = resumed.result;
       if (reconcileOutcome.outcome === 'not_applied') {
         const refused = await admitExecution();
         if (refused !== undefined) return refused;
@@ -1082,22 +1124,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
 
   const abandonTarget = async (target: AbandonTarget): Promise<AbandonOutcome> => {
     const lookup = idempotency.get(target.idemKey);
-    if (lookup?.s === 'PENDING') {
-      const marker = path.join(options.processMarkerDir, target.idemKey);
-      try {
-        await reapMarkedProcesses({
-          marker,
-          pgid: lookup.rec.pgid,
-          killGraceMs: options.reap?.killGraceMs ?? ABANDON_KILL_GRACE_MS,
-          label: 'tool',
-          onWarning: options.onWarning,
-          ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
-          ...(options.reap?.timing === undefined ? {} : { timing: options.reap.timing }),
-        });
-      } catch (error) {
-        options.onWarning(`tool marker ${marker} could not be cleaned up: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
+    if (lookup?.s === 'PENDING') await reapEarlierAttempt(target.idemKey, lookup.rec.pgid);
     idempotency.markUnknownIfPending(target.idemKey);
     return { idemKey: target.idemKey, callId: target.callId, outcome: 'unknown' };
   };
@@ -1119,7 +1146,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     const checkpoint = lookup.rec.meta['checkpoint'];
     if (!isRecord(checkpoint)) return;
     await (await toolSet()).get(target.name)?.releaseCheckpoint?.(checkpoint, { signal });
-    idempotency.checkpoint(target.idemKey, undefined);
+    idempotency.clearCheckpoint(target.idemKey);
     idempotency.markUnknownIfPending(target.idemKey);
   };
 

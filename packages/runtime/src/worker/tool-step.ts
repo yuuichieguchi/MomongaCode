@@ -187,6 +187,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
     outcomes = await options.tools.executor.runBatch({
       calls,
       toolSet: ctx.toolSet,
+      fence: ctx.claim,
       runId: run.id,
       step,
       mode: session.permissionMode,
@@ -208,6 +209,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
         halt.hookEvent = hookEvent;
       },
       leaseLost: () => ctx.control.leaseLost() || ctx.control.shuttingDown(),
+      onLeaseLost: ctx.control.noteLeaseLost,
       inlineLimitForReconcile: ctx.inlineLimitForReconcile,
       inlineLimitForExecution: ctx.inlineLimitForExecution,
       traceparentFor: (callId) => {

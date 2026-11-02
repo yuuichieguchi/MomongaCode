@@ -7,6 +7,7 @@ import { EMPTY_PROTECTED_SET, canonicalJson, protectedSetFor, sha256Hex } from '
 import { fakePolicyFilesystem } from '@momonga/testkit';
 import { computeFileRules, parseRule } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
+import type { LeaseFence, LeasedIdempotencyPort } from '@momonga/tools';
 import type { PermissionRule, RuleEffect } from '@momonga/policy';
 import { validateSandboxPolicy } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
@@ -69,6 +70,9 @@ export const makeIdempotency = (clock: { now(): number }) => {
   const records = new Map<string, Entry>();
   const log: IdempotencyLog[] = [];
   const lookups: string[] = [];
+  const lease = { held: true };
+  const fences: LeaseFence[] = [];
+  const authorised: string[] = [];
   const port = {
     get(key: string): Exclude<FakeBegin, { s: 'NEW' }> | undefined {
       lookups.push(key);
@@ -109,6 +113,37 @@ export const makeIdempotency = (clock: { now(): number }) => {
       log.push({ op: 'complete', key, result });
       records.set(key, { kind: 'completed', result });
     },
+    clearCheckpoint(key: string): void {
+      port.checkpoint(key, undefined);
+    },
+    holding(fence: LeaseFence): LeasedIdempotencyPort {
+      fences.push(fence);
+      const lost = { kind: 'lease_lost' } as const;
+      const ok = { kind: 'ok' } as const;
+      return {
+        begin: (key, options) => (lease.held ? port.begin(key, options) : { s: 'LEASE_LOST' }),
+        authorise: (key) => {
+          if (!lease.held) return lost;
+          authorised.push(key);
+          return ok;
+        },
+        attachProcess: (key, processInfo) => {
+          if (!lease.held) return lost;
+          port.attachProcess(key, processInfo);
+          return ok;
+        },
+        checkpoint: (key, state) => {
+          if (!lease.held) return lost;
+          port.checkpoint(key, state);
+          return ok;
+        },
+        complete: (key, result) => {
+          if (!lease.held) return lost;
+          port.complete(key, result);
+          return ok;
+        },
+      };
+    },
     markUnknown(key: string): void {
       log.push({ op: 'markUnknown', key });
       const existing = records.get(key);
@@ -132,7 +167,7 @@ export const makeIdempotency = (clock: { now(): number }) => {
     if (entry === undefined) return undefined;
     return entry.kind === 'completed' ? 'COMPLETED' : entry.rec.state;
   };
-  return { port, records, log, lookups, seed, stateOf };
+  return { port, records, log, lookups, lease, fences, authorised, seed, stateOf };
 };
 
 export const blobHandle = (index: number): string => createHash('sha256').update(`blob-${index}`).digest('hex');
