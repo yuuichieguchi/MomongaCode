@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { loadUserSettings } from '@momonga/config';
-import { ProcessLockHeldError, acquireProcessLock, ensureMomongaDirs, nodeCommandRunner } from '@momonga/foundation';
+import { ProcessLockHeldError, acquireProcessLock, ensureMomongaDirs, inspectProcessLock, nodeCommandRunner } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { Agent, interceptors, request } from 'undici';
 import { createSupervisorClient } from '../client/supervisor-client.ts';
@@ -63,18 +63,22 @@ export const nodeUpdateFs = (): UpdateFs => ({
   },
 });
 
-export const nodeUpdateLock = (paths: MomongaPaths): UpdateLock => ({
-  acquire: async () => {
-    await ensureMomongaDirs(paths);
-    try {
-      const lock = await acquireProcessLock(path.join(paths.run, UPDATE_LOCK_FILE));
-      return { release: () => lock.release() };
-    } catch (error) {
-      if (error instanceof ProcessLockHeldError) return undefined;
-      throw error;
-    }
-  },
-});
+export const nodeUpdateLock = (paths: MomongaPaths): UpdateLock => {
+  const lockPath = path.join(paths.run, UPDATE_LOCK_FILE);
+  return {
+    acquire: async () => {
+      await ensureMomongaDirs(paths);
+      try {
+        const lock = await acquireProcessLock(lockPath);
+        return { release: () => lock.release() };
+      } catch (error) {
+        if (error instanceof ProcessLockHeldError) return undefined;
+        throw error;
+      }
+    },
+    isHeld: async () => (await inspectProcessLock(lockPath)).state !== 'free',
+  };
+};
 
 export const nodeUpdateState = (paths: MomongaPaths): UpdateStateStore => {
   const file = path.join(paths.state, UPDATE_STATE_FILE);

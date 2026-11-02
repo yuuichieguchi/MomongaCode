@@ -49,6 +49,21 @@ describe('startBackgroundCheck: what the user command does', () => {
     expect(harness.released.count).toBe(0);
   });
 
+  it('decides whether a check is running without taking the update lock, so it cannot make a concurrent update fail', async (context) => {
+    const harness = await setupUpdate(context);
+    let acquisitions = 0;
+    const acquire = harness.ports.lock.acquire;
+    harness.ports.lock.acquire = async () => {
+      acquisitions += 1;
+      return acquire();
+    };
+
+    await startBackgroundCheck(harness.wiring);
+
+    expect(harness.spawned).toHaveLength(1);
+    expect(acquisitions).toBe(0);
+  });
+
   it('treats a check time in the future as due', async (context) => {
     const harness = await setupUpdate(context);
     harness.state.value = { checkedAt: 10_000_000, outcome: { kind: 'up_to_date' }, announced: true };

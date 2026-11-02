@@ -5,6 +5,7 @@ import {
   LOCK_FD,
   LOCK_FD_ENV,
   LOCK_NONCE_ENV,
+  LockAdoptionError,
   ProcessLockHeldError,
   UnadoptedEnv,
   acquireProcessLock,
@@ -13,7 +14,8 @@ import {
   hostKernelLock,
   inspectProcessLock,
 } from '@momonga/foundation';
-import { registerCleanup, spawnTracked, withTempDir } from '@momonga/testkit';
+import type { InheritedLockRequest, KernelLockMechanism } from '@momonga/foundation';
+import { createFakeKernelLock, registerCleanup, spawnTracked, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, TrackedChild } from '@momonga/testkit';
 import { ADOPTER_FIXTURE, exitOf, firstLine, spawnFixture } from './support/lock-processes.ts';
 
@@ -32,6 +34,36 @@ describe('claimLockForChild', () => {
   it('reports a mechanism without an inheritable descriptor as unsupported', () => {
     expect(claimLockForChild('/unused', { mechanism: createKernelLockMechanism('linux') })).toEqual({ kind: 'unsupported' });
     expect(claimLockForChild('/unused', { mechanism: createKernelLockMechanism('win32') })).toEqual({ kind: 'unsupported' });
+  });
+});
+
+describe('the hand-off goes through the lock mechanism on both sides', () => {
+  it('takes the hand-off nonce from the injected random source', (context) => {
+    const lockPath = path.join(withTempDir(context), 'runtime.lock');
+    const kernel = createFakeKernelLock({ inheritable: true });
+    const claim = claimLockForChild(lockPath, { mechanism: kernel, randomNonce: () => 'fixed-nonce' });
+    if (claim.kind !== 'claimed') throw new Error(`expected a claim, got ${claim.kind}`);
+    expect(claim.handoff.env[LOCK_NONCE_ENV]).toBe('fixed-nonce');
+    expect(fs.readFileSync(lockPath, 'utf8')).toBe('handoff:fixed-nonce');
+    claim.handoff.closeParentCopy();
+  });
+
+  it('asks the mechanism to adopt the descriptor, naming the record it expects and the record it leaves', () => {
+    const requests: InheritedLockRequest[] = [];
+    const mechanism: KernelLockMechanism = {
+      ...createFakeKernelLock({ inheritable: true }),
+      adoptInherited: (request) => {
+        requests.push(request);
+        return { descriptor: request.descriptor, writeHolder: () => undefined, release: () => undefined };
+      },
+    };
+    new UnadoptedEnv({ [LOCK_FD_ENV]: '5', [LOCK_NONCE_ENV]: 'abc' }).adopt('/run/runtime.lock', { mechanism }).release();
+    expect(requests).toEqual([{ lockPath: '/run/runtime.lock', descriptor: 5, expectedHolder: 'handoff:abc', newHolder: String(process.pid) }]);
+  });
+
+  it('refuses a hand-off to a mechanism whose locks cannot be inherited', () => {
+    const mechanism = createKernelLockMechanism('linux');
+    expect(() => new UnadoptedEnv({ [LOCK_FD_ENV]: '5', [LOCK_NONCE_ENV]: 'abc' }).adopt('/unused', { mechanism })).toThrow(LockAdoptionError);
   });
 });
 

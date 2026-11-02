@@ -1,10 +1,9 @@
 import { randomBytes } from 'node:crypto';
-import fs from 'node:fs';
 import { LOCK_FD } from './process-contract.ts';
-import { HOLDER_READ_MAX_BYTES, hostKernelLock } from './platform/kernel-lock.ts';
+import { HOLDER_READ_MAX_BYTES, LockAdoptionError, hostKernelLock } from './platform/kernel-lock.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
 
-export { HOLDER_READ_MAX_BYTES };
+export { HOLDER_READ_MAX_BYTES, LockAdoptionError };
 
 export type DescribeHolder = (pid: number | undefined) => Promise<string>;
 
@@ -24,19 +23,14 @@ export class ProcessLockHeldError extends Error {
   }
 }
 
-export class LockAdoptionError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'LockAdoptionError';
-  }
-}
-
 export const LOCK_FD_ENV = 'MOMONGA_LOCK_FD';
 export const LOCK_NONCE_ENV = 'MOMONGA_LOCK_NONCE';
 const NONCE_BYTES = 16;
 const HANDOFF_PREFIX = 'handoff:';
 
-export type ProcessLockOptions = { mechanism?: KernelLockMechanism };
+export type ProcessLockOptions = { mechanism?: KernelLockMechanism; randomNonce?: () => string };
+
+const randomHandoffNonce = (): string => randomBytes(NONCE_BYTES).toString('hex');
 
 export type InspectProcessLockOptions = ProcessLockOptions;
 
@@ -95,7 +89,7 @@ export const claimLockForChild = (lockPath: string, options: ProcessLockOptions 
   }
   const { lock } = outcome;
   if (lock.descriptor === undefined) throw new Error(`${mechanism.name} claimed ${lockPath} without an inheritable descriptor`);
-  const nonce = randomBytes(NONCE_BYTES).toString('hex');
+  const nonce = (options.randomNonce ?? randomHandoffNonce)();
   try {
     lock.writeHolder(`${HANDOFF_PREFIX}${nonce}`);
   } catch (error) {
@@ -129,36 +123,13 @@ export class UnadoptedEnv {
     return rest;
   }
 
-  adopt(lockPath: string): ProcessLock {
+  adopt(lockPath: string, options: ProcessLockOptions = {}): ProcessLock {
     const fdText = this.#env[LOCK_FD_ENV];
     const nonce = this.#env[LOCK_NONCE_ENV];
     if (fdText === undefined || nonce === undefined) throw new LockAdoptionError(`${LOCK_FD_ENV} and ${LOCK_NONCE_ENV} must be set together`);
     if (!/^[1-9]\d{0,5}$/.test(fdText)) throw new LockAdoptionError(`${LOCK_FD_ENV} is not a descriptor number: ${JSON.stringify(fdText)}`);
-    const descriptor = Number(fdText);
-    let inherited: fs.BigIntStats;
-    try {
-      inherited = fs.fstatSync(descriptor, { bigint: true });
-    } catch (error) {
-      throw new LockAdoptionError(`descriptor ${descriptor} named by ${LOCK_FD_ENV} is not open: ${(error as Error).message}`);
-    }
-    const named = fs.statSync(lockPath, { bigint: true });
-    if (!inherited.isFile() || inherited.dev !== named.dev || inherited.ino !== named.ino) {
-      throw new LockAdoptionError(`descriptor ${descriptor} named by ${LOCK_FD_ENV} is not ${lockPath}`);
-    }
-    const buffer = Buffer.alloc(HOLDER_READ_MAX_BYTES);
-    const bytesRead = fs.readSync(descriptor, buffer, 0, HOLDER_READ_MAX_BYTES, 0);
-    if (buffer.toString('utf8', 0, bytesRead) !== `${HANDOFF_PREFIX}${nonce}`) {
-      throw new LockAdoptionError(`${lockPath} does not carry the hand-off nonce ${LOCK_NONCE_ENV} names`);
-    }
-    fs.ftruncateSync(descriptor, 0);
-    fs.writeSync(descriptor, String(process.pid), 0);
-    let open = true;
-    return {
-      release: () => {
-        if (!open) return;
-        open = false;
-        fs.closeSync(descriptor);
-      },
-    };
+    const mechanism = options.mechanism ?? hostKernelLock();
+    if (mechanism.adoptInherited === undefined) throw new LockAdoptionError(`${mechanism.name} locks cannot be handed to a child process`);
+    return lockOf(mechanism.adoptInherited({ lockPath, descriptor: Number(fdText), expectedHolder: `${HANDOFF_PREFIX}${nonce}`, newHolder: String(process.pid) }));
   }
 }

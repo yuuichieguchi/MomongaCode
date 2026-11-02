@@ -5,9 +5,11 @@ import type { CleanupContext, TrackedChild } from './test-support.ts';
 
 export const LOCK_HOLDER_MAIN = path.join(import.meta.dirname, 'lock-holder-main.ts');
 
-export const startLockHolder = (context: CleanupContext, lockPath: string): Promise<TrackedChild> =>
+export const startLockHolder = (context: CleanupContext, lockPath: string, mechanismPlatform?: NodeJS.Platform): Promise<TrackedChild> =>
   new Promise((resolve, reject) => {
-    const child = spawnTracked(context, process.execPath, [LOCK_HOLDER_MAIN, lockPath], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawnTracked(context, process.execPath, [LOCK_HOLDER_MAIN, lockPath, ...(mechanismPlatform === undefined ? [] : [mechanismPlatform])], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
     let stdout = '';
     let stderr = '';
     (child.stderr as Readable).on('data', (chunk: Buffer) => (stderr += chunk.toString('utf8')));

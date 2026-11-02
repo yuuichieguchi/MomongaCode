@@ -42,8 +42,9 @@ export type {
   ProcessLockInspection,
   ProcessLockOptions,
 } from './process-lock.ts';
-export { ABSTRACT_SOCKET_PREFIX, PIPE_LOCK_PREFIX, claimNetAddress, createKernelLockMechanism, darwinFileLock, hostKernelLock, netLockAddress, probeNetAddress } from './platform/kernel-lock.ts';
-export type { ClaimOutcome, HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
+export { createFileLock, createKernelLockMechanism, darwinFileLock, hostKernelLock, nodeFileLockOps } from './platform/kernel-lock.ts';
+export { LOCK_DATABASE_SUFFIX, sqliteFileLock } from './platform/sqlite-lock.ts';
+export type { ClaimOutcome, FileLockOps, HeldKernelLock, InheritedLockRequest, KernelLockMechanism } from './platform/kernel-lock.ts';
 export { judgeProcessIdentity } from './process-identity.ts';
 export type { ProcessIdentity } from './process-identity.ts';
 export { SessionTmpDirError, adapterSocketPath, ensureMomongaDirs, ensureSessionTmpDir, momongaLayout, momongaPaths, rotatedLogPath } from './momonga-paths.ts';

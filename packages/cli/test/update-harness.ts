@@ -101,6 +101,7 @@ export const setupUpdate = async (context: TestContext, options: HarnessOptions 
       throw new Error(`unexpected command ${file} ${args.join(' ')}`);
     },
     lock: {
+      isHeld: async () => control.lockHeld,
       acquire: async () => {
         if (control.lockHeld) return undefined;
         return {

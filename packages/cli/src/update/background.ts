@@ -50,13 +50,6 @@ const noticeOf = (ports: UpdatePorts, state: UpdateState): string | undefined =>
 const isDue = (state: UpdateState | undefined, now: number, intervalMs: number): boolean =>
   state === undefined || state.checkedAt > now || now - state.checkedAt >= intervalMs;
 
-const isCheckRunning = async (ports: UpdatePorts): Promise<boolean> => {
-  const lock = await ports.lock.acquire();
-  if (lock === undefined) return true;
-  lock.release();
-  return false;
-};
-
 const isEnabled = async (wiring: UpdateWiring): Promise<boolean> => isApplicable(wiring) && (await wiring.ports.autoUpdates());
 
 export const announceUpdate = async (wiring: UpdateWiring): Promise<string | undefined> => {
@@ -74,7 +67,7 @@ export const startBackgroundCheck = async (wiring: UpdateWiring): Promise<void> 
   if (!(await isEnabled(wiring))) return;
   const state = await readState(ports);
   if (!isDue(state, ports.clock.now(), wiring.checkIntervalMs)) return;
-  if (await isCheckRunning(ports)) return;
+  if (await ports.lock.isHeld()) return;
   const invocation = selfInvocation(ports.self, UPDATE_CHECK_COMMAND);
   const child = ports.spawnDetached({ command: invocation.command, args: invocation.args, env: ports.env, cwd: ports.home });
   void child.exit.then(undefined, (error: unknown) => {
