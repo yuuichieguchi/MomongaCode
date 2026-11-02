@@ -92,8 +92,8 @@ describe('a model summary that passes the check', () => {
 
   it('reads the replaced region through blobs', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
-    const { handle } = await env.store.blobs.put('full output naming src/deep/only-in-blob.ts', { mediaType: 'text/plain' });
     const run = env.enqueue('question one');
+    const { handle } = await env.store.blobs.put('full output naming src/deep/only-in-blob.ts', { mediaType: 'text/plain', runId: run.id });
     env.seed(run.id, conversation(handle, 'head [truncated]'), 'release');
     env.gateway.compactSummaries.push(CLEAN.replace('/proj/src/read.ts', 'src/deep/only-in-blob.ts'));
     await runToEnd(env);
