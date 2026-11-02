@@ -1,7 +1,7 @@
 import { ERROR_TYPES } from '@momonga/protocol';
 import type { ErrorType, Usage } from '@momonga/protocol';
 import { UpstreamProtocolError } from '../shared/failures.ts';
-import { isRecord } from '../shared/http-error.ts';
+import { isRecord } from '@momonga/foundation';
 
 export type UpstreamItem =
   | { kind: 'message'; text: string; refusal: string }

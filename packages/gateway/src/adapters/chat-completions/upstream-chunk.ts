@@ -1,3 +1,4 @@
+import { isRecord } from '@momonga/foundation';
 import type { Usage } from '@momonga/protocol';
 import { UpstreamProtocolError } from '../shared/failures.ts';
 
@@ -15,9 +16,6 @@ export type UpstreamChunk = {
   finishReason: string | undefined;
   usage: Usage | undefined;
 };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const invalid = (what: string): UpstreamProtocolError => new UpstreamProtocolError(`the upstream sent a malformed chunk: ${what}`);
 

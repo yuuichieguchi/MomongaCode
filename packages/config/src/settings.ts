@@ -1,6 +1,6 @@
 import type { ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
 import Ajv2020 from 'ajv/dist/2020.js';
-import { transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
+import { transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
 import type { Capabilities, HooksSettings, PermissionMode } from '@momonga/protocol';
 import { MCP_SERVERS_FILE_SCHEMA, MCP_SERVER_SCHEMA, SETTINGS_SCHEMA } from './settings-schema.ts';
 
@@ -206,8 +206,6 @@ const describeErrors = (errors: ErrorObject[] | null | undefined): string => {
   const pointer = `${first.instancePath}${additional}`;
   return `${pointer === '' ? '/' : pointer}: ${first.message ?? 'schema violation'}`;
 };
-
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const assertNotHttpSse = (server: unknown, source: string, name: string): void => {
   if (isRecord(server) && server['type'] === 'sse') {

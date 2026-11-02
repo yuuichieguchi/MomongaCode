@@ -1,6 +1,6 @@
 import type { DatabaseSync, SQLOutputValue, StatementSync } from 'node:sqlite';
 import type { AttributeValue } from '@opentelemetry/api';
-import { immediateTx, migrate, openDatabase } from '@momonga/foundation';
+import { immediateTx, migrate, openDatabase, isRecord } from '@momonga/foundation';
 import type { Clock, Migration } from '@momonga/foundation';
 import { reportError } from './errors.ts';
 
@@ -90,9 +90,6 @@ type Row = Record<string, SQLOutputValue>;
 
 const corrupt = (table: string, identity: string, detail: string): Error =>
   new Error(`database row ${table}[${identity}] is corrupt: ${detail}`);
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const isScalar = (value: unknown): value is string | number | boolean =>
   typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
