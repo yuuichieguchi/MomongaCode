@@ -111,13 +111,15 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
       const sink = envelope === undefined ? createNativeSink(emitter) : createConstrainedSink(emitter, envelope, options.clock);
       const driver = new StreamDriver(emitter, sink);
 
-      for (const event of driver.start()) {
-        ctx.signal.throwIfAborted();
-        yield event;
-      }
+      let opening: StreamEvent[] | undefined = driver.start();
       try {
         for await (const message of decodeSse(boundedSseBytes(response.body, MAX_SSE_EVENT_BYTES))) {
           ctx.signal.throwIfAborted();
+          if (opening !== undefined) {
+            const events = opening;
+            opening = undefined;
+            for (const event of events) yield event;
+          }
           if (message.data === DONE_MARKER) break;
           for (const event of driver.accept(message.data)) {
             ctx.signal.throwIfAborted();
@@ -126,12 +128,15 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
           if (driver.terminated) return;
         }
       } catch (error) {
-        if (!(error instanceof StreamFailure)) throw error;
+        if (!(error instanceof StreamFailure) || opening !== undefined) throw error;
         for (const event of driver.fail(error)) {
           ctx.signal.throwIfAborted();
           yield event;
         }
         return;
+      }
+      if (opening !== undefined) {
+        throw new StreamFailure('empty_upstream_stream', 'server_error', 'the upstream ended its stream before sending any event');
       }
       for (const event of driver.end()) {
         ctx.signal.throwIfAborted();
