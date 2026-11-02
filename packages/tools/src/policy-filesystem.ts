@@ -1,11 +1,13 @@
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { MAX_POINTER_FILE_BYTES, resolveCanonicalPath, unresolvableReasonOf, volumeIsCaseInsensitive } from '@momonga/foundation';
 import type { EntryRead, StepRead, Unresolved } from '@momonga/foundation';
 import { systemProgramDirectories } from '@momonga/policy';
-import type { GlobExpansion, PolicyFilesystem, ProgramResolution } from '@momonga/policy';
+import type { GlobExpansion, HeadRead, PolicyFilesystem, ProgramResolution } from '@momonga/policy';
+import { ShellNotFoundError, nodeShellPorts, resolveBashPath } from './builtins/shell.ts';
+import type { ShellPorts } from './builtins/shell.ts';
 
-const GLOB_CHARACTER = /[*?[]/;
 const NOT_THERE: ReadonlySet<string> = new Set(['ENOENT', 'ENOTDIR']);
 const MISSING: ReadonlySet<string> = new Set(['ENOENT']);
 
@@ -101,87 +103,84 @@ const readNoFollow = (absolute: string): StepRead =>
     { kind: 'missing' },
   );
 
-const escapeRegex = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const HEAD_BYTES = 255;
 
-const componentMatcher = (component: string): RegExp => {
-  let source = '';
-  for (let index = 0; index < component.length; index += 1) {
-    const char = component.charAt(index);
-    if (char === '*') source += '[^/]*';
-    else if (char === '?') source += '[^/]';
-    else if (char === '\\') {
-      index += 1;
-      source += escapeRegex(component.charAt(index));
-    } else if (char === '[') {
-      const close = component.indexOf(']', index + 2);
-      if (close === -1) source += '\\[';
-      else {
-        const body = component.slice(index + 1, close);
-        const negated = body.startsWith('!') || body.startsWith('^');
-        source += `[${negated ? '^' : ''}${(negated ? body.slice(1) : body).replace(/[\\\]]/g, '\\$&')}]`;
-        index = close;
-      }
-    } else source += escapeRegex(char);
+const isErrno = (error: unknown): boolean => typeof codeOf(error) === 'string';
+
+const rejectedByGit = <T>(read: () => T, rejected: T): T => {
+  try {
+    return read();
+  } catch (error) {
+    if (isErrno(error)) return rejected;
+    throw error;
   }
-  return new RegExp(`^${source}$`);
 };
 
-const joinBase = (base: string, name: string): string => (base === '' ? name : base === '/' ? `/${name}` : `${base}/${name}`);
-
-const expandGlob = (pattern: string, cwd: string, limit: number): GlobExpansion => {
-  const components = pattern.split('/').filter((component) => component !== '');
-  let bases: string[] = [pattern.startsWith('/') ? '/' : ''];
-  let examined = 0;
-  for (const [position, component] of components.entries()) {
-    const last = position === components.length - 1;
-    if (!GLOB_CHARACTER.test(component)) {
-      bases = bases.map((base) => joinBase(base, component));
-      if (last) {
-        const existing: string[] = [];
-        for (const base of bases) {
-          try {
-            fs.lstatSync(path.resolve(cwd, base));
-            existing.push(base);
-          } catch (error) {
-            if (!isNotThere(error)) return unresolvedOf(error);
-          }
-        }
-        bases = existing;
-      }
-      continue;
-    }
-    const matcher = componentMatcher(component);
-    const next: string[] = [];
-    for (const base of bases) {
-      let directory: fs.Dir;
+const readHead = (absolute: string): HeadRead =>
+  rejectedByGit<HeadRead>(
+    () => {
+      const stat = fs.lstatSync(absolute);
+      if (stat.isSymbolicLink()) return { kind: 'symlink', target: fs.readlinkSync(absolute) };
+      if (!stat.isFile()) return { kind: 'invalid' };
+      const descriptor = fs.openSync(absolute, 'r');
       try {
-        directory = fs.opendirSync(path.resolve(cwd, base === '' ? '.' : base));
-      } catch (error) {
-        if (isNotThere(error)) continue;
-        return unresolvedOf(error);
-      }
-      try {
-        for (let entry = directory.readSync(); entry !== null; entry = directory.readSync()) {
-          examined += 1;
-          if (examined > limit) return { overflow: true };
-          if (entry.name.startsWith('.') && !component.startsWith('.')) continue;
-          if (matcher.test(entry.name)) next.push(joinBase(base, entry.name));
-        }
+        const buffer = Buffer.alloc(HEAD_BYTES);
+        const length = fs.readSync(descriptor, buffer, 0, HEAD_BYTES, 0);
+        return { kind: 'text', text: buffer.toString('latin1', 0, length) };
       } finally {
-        directory.closeSync();
+        fs.closeSync(descriptor);
       }
-    }
-    bases = next;
+    },
+    { kind: 'invalid' },
+  );
+
+const isSearchable = (absolute: string): boolean =>
+  rejectedByGit(() => {
+    fs.accessSync(absolute, fs.constants.X_OK);
+    return true;
+  }, false);
+
+const GLOB_PROGRAM ='IFS=; shopt -s nullglob; for entry in $1; do printf "%s\\0" "$entry"; done';
+const LOCALE_VARIABLES = ['LANG', 'LC_ALL', 'LC_COLLATE', 'LC_CTYPE'] as const;
+const MAX_PATH_BYTES = 4096;
+
+const globEnvironment = (): Record<string, string> =>
+  Object.fromEntries(LOCALE_VARIABLES.flatMap((name) => (process.env[name] === undefined ? [] : [[name, process.env[name] as string]])));
+
+const expandGlob = (platform: NodeJS.Platform, shellPorts: ShellPorts) => (pattern: string, cwd: string, limit: number): GlobExpansion => {
+  let shell: string;
+  try {
+    shell = resolveBashPath(platform, shellPorts);
+  } catch (error) {
+    if (error instanceof ShellNotFoundError) return { unresolvable: { kind: 'dynamic' } };
+    throw error;
   }
-  return { matches: bases.sort() };
+  const result = spawnSync(shell, ['--noprofile', '--norc', '-c', GLOB_PROGRAM, 'glob', pattern], {
+    cwd,
+    env: globEnvironment(),
+    stdio: ['ignore', 'pipe', 'pipe'],
+    encoding: 'utf8',
+    maxBuffer: (limit + 1) * (MAX_PATH_BYTES + 1),
+  });
+  if (result.error !== undefined) {
+    const code = codeOf(result.error);
+    if (code === 'ENOBUFS') return { overflow: true };
+    if (code === 'ENOENT' || code === 'ENOTDIR') return { matches: [] };
+    return unresolvedOf(result.error);
+  }
+  if (result.status !== 0) throw new Error(`glob expansion of ${pattern} failed with status ${String(result.status)}: ${result.stderr}`);
+  const matches = result.stdout.split('\0').filter((entry) => entry !== '');
+  return matches.length > limit ? { overflow: true } : { matches };
 };
 
-export const createPolicyFilesystem = (platform: NodeJS.Platform = process.platform): PolicyFilesystem => ({
+export const createPolicyFilesystem = (platform: NodeJS.Platform = process.platform, shellPorts: ShellPorts = nodeShellPorts()): PolicyFilesystem => ({
   platform,
   canonicalise: (absolute) => resolveCanonicalPath(absolute),
   volumeProbe: (directory) => volumeIsCaseInsensitive(directory),
   resolveProgram: resolveProgram(platform),
-  expandGlob,
+  expandGlob: expandGlob(platform, shellPorts),
   readEntry,
   readNoFollow,
+  readHead,
+  isSearchable,
 });

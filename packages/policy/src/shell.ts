@@ -3,15 +3,16 @@ import { commandSpecsFor } from './platform-specs.ts';
 import type { CommandSpecs } from './command-specs.ts';
 import { DARWIN_SED, pathEffectsOf } from './path-effects.ts';
 import type { ProgramEffects } from './path-effects.ts';
+import { escapeForGlob } from './glob-pattern.ts';
 import { ASSIGNMENT } from './shell-lexemes.ts';
 import { markRelativeUnresolvable, strongerEffect, targetOfText } from './targets.ts';
 import type { CwdEffect, Target } from './targets.ts';
 import { locateEffectiveCommand } from './wrappers.ts';
 import type { WrapperUse } from './wrappers.ts';
 
-export type Word = { value: string; literal: boolean; plain: boolean; glob: boolean; staticValue: string | null };
+export type Word = { value: string; literal: boolean; plain: boolean; glob: string | null; staticValue: string | null };
 
-export type DirectoryStep = string | null;
+export type DirectoryStep = { path: string; physical: boolean } | null;
 
 export type Place = { effect: CwdEffect; trail: readonly DirectoryStep[] };
 
@@ -47,6 +48,8 @@ export type Analysis = {
 export const MAX_NESTING = 8;
 const FORBIDDEN_CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f]/;
 const DOUBLE_QUOTE_ESCAPABLE = '$`"\\';
+const BACKTICK_ESCAPE = /\\([`$\\])/g;
+const BACKTICK_ESCAPE_IN_DOUBLE_QUOTES = /\\([`$\\"])/g;
 
 export const RESERVED_WORDS: ReadonlySet<string> = new Set([
   'if', 'then', 'else', 'elif', 'fi', 'for', 'while', 'until', 'do', 'done', 'case', 'esac', 'in',
@@ -59,11 +62,11 @@ const unsupported = (reason: string): never => {
   throw new UnsupportedConstruct(reason);
 };
 
-type WordBuilder = { value: string; started: boolean; literal: boolean; tilde: boolean; plain: boolean; digitsOnly: boolean; glob: boolean; dynamic: boolean };
+type WordBuilder = { value: string; pattern: string; started: boolean; literal: boolean; tilde: boolean; plain: boolean; digitsOnly: boolean; glob: boolean; dynamic: boolean };
 
 type PendingRedirect = 'write' | 'write-or-duplicate' | 'read' | 'read-or-duplicate' | 'here-string';
 
-const freshWord = (): WordBuilder => ({ value: '', started: false, literal: true, tilde: false, plain: true, digitsOnly: true, glob: false, dynamic: false });
+const freshWord = (): WordBuilder => ({ value: '', pattern: '', started: false, literal: true, tilde: false, plain: true, digitsOnly: true, glob: false, dynamic: false });
 
 const skipSingleQuoted = (source: string, open: number): number => {
   const close = source.indexOf("'", open + 1);
@@ -117,16 +120,29 @@ const segmentChangesDirectory = (segment: Segment, specs: CommandSpecs): boolean
   return word !== undefined && word.literal && !word.value.includes('/') && specs.specOf(word.value)?.changesDirectory === true;
 };
 
-const NAVIGATION_FLAGS: ReadonlySet<string> = new Set(['-L', '-P', '--']);
+const CD_OPTION_CLUSTER = /^-[LPe@]+$/;
 
 const directoryStepOf = (segment: Segment): DirectoryStep => {
   const word = segment.words[segment.effectiveIndex];
   if (word === undefined || word.value !== 'cd') return null;
-  const operands = segment.words.slice(segment.effectiveIndex + 1).filter((arg) => !(arg.literal && NAVIGATION_FLAGS.has(arg.value)));
-  if (operands.length === 0) return '~';
+  const args = segment.words.slice(segment.effectiveIndex + 1);
+  let physical = false;
+  let first = 0;
+  for (; first < args.length; first += 1) {
+    const arg = args[first] as Word;
+    if (arg.staticValue === '--') {
+      first += 1;
+      break;
+    }
+    if (arg.staticValue === null || !CD_OPTION_CLUSTER.test(arg.staticValue)) break;
+    const direction = [...arg.staticValue].filter((letter) => letter === 'L' || letter === 'P').at(-1);
+    if (direction !== undefined) physical = direction === 'P';
+  }
+  const operands = args.slice(first);
+  if (operands.length === 0) return { path: '~', physical };
   const [only] = operands;
-  if (operands.length !== 1 || only === undefined || only.staticValue === null || only.staticValue.startsWith('-')) return null;
-  return only.staticValue;
+  if (operands.length !== 1 || only === undefined || only.staticValue === null || only.staticValue === '-') return null;
+  return { path: only.staticValue, physical };
 };
 
 const scan = (command: string, depth: number, incoming: Place, specs: CommandSpecs): Analysis => {
@@ -153,8 +169,17 @@ const scanFrom = (command: string, start: number, depth: number, incoming: Place
   let word = freshWord();
   let pending: PendingRedirect | null = null;
 
+  const addQuoted = (text: string): void => {
+    word.value += text;
+    word.pattern += escapeForGlob(text);
+  };
+
   const append = (char: string, quoted: boolean): void => {
-    word.value += char;
+    if (quoted) addQuoted(char);
+    else {
+      word.value += char;
+      word.pattern += char;
+    }
     word.started = true;
     if (quoted) {
       word.plain = false;
@@ -174,7 +199,7 @@ const scanFrom = (command: string, start: number, depth: number, incoming: Place
   const flushWord = (): void => {
     if (!word.started) return;
     const staticValue = word.literal && (!word.tilde || word.plain) ? word.value : null;
-    const finished: Word = { value: word.value, literal: word.literal && !word.tilde, plain: word.plain, glob: word.glob && !word.dynamic, staticValue };
+    const finished: Word = { value: word.value, literal: word.literal && !word.tilde, plain: word.plain, glob: word.glob && !word.dynamic ? word.pattern : null, staticValue };
     word = freshWord();
     if (pending === null) {
       words.push(finished);
@@ -255,13 +280,14 @@ const scanFrom = (command: string, start: number, depth: number, incoming: Place
     if (!quoted && (next === "'" || next === '"')) return unsupported('quoted dollar string');
     markDynamic();
     word.plain = false;
-    word.value += '$';
+    addQuoted('$');
     return index + 1;
   };
 
-  const parseBackticks = (index: number): number => {
+  const parseBackticks = (index: number, doubleQuoted: boolean): number => {
     const end = skipBackticks(command, index);
-    absorbSubstitution(command.slice(index + 1, end - 1).replace(/\\([`$\\])/g, '$1'));
+    const unescape = doubleQuoted ? BACKTICK_ESCAPE_IN_DOUBLE_QUOTES : BACKTICK_ESCAPE;
+    absorbSubstitution(command.slice(index + 1, end - 1).replace(unescape, '$1'));
     return end;
   };
 
@@ -278,16 +304,16 @@ const scanFrom = (command: string, start: number, depth: number, incoming: Place
         if (escaped === undefined) return unsupported('dangling backslash');
         if (escaped === '\n') index += 2;
         else if (DOUBLE_QUOTE_ESCAPABLE.includes(escaped)) {
-          word.value += escaped;
+          addQuoted(escaped);
           index += 2;
         } else {
-          word.value += '\\';
+          addQuoted('\\');
           index += 1;
         }
       } else if (char === '$') index = parseDollar(index, true);
-      else if (char === '`') index = parseBackticks(index);
+      else if (char === '`') index = parseBackticks(index, true);
       else {
-        word.value += char;
+        addQuoted(char);
         index += 1;
       }
     }
@@ -327,7 +353,7 @@ const scanFrom = (command: string, start: number, depth: number, incoming: Place
       }
     } else if (char === "'") {
       const end = skipSingleQuoted(command, index);
-      word.value += command.slice(index + 1, end - 1);
+      addQuoted(command.slice(index + 1, end - 1));
       word.started = true;
       word.plain = false;
       word.digitsOnly = false;
@@ -337,7 +363,7 @@ const scanFrom = (command: string, start: number, depth: number, incoming: Place
     } else if (char === '$') {
       index = parseDollar(index, false);
     } else if (char === '`') {
-      index = parseBackticks(index);
+      index = parseBackticks(index, false);
     } else if (char === '(' || char === ')') {
       return unsupported('subshell or grouping');
     } else if (char === ';') {

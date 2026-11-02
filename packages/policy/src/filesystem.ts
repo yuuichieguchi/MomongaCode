@@ -4,6 +4,8 @@ export type ProgramResolution = { program: string } | { none: true };
 
 export type GlobExpansion = { matches: string[] } | { overflow: true } | Unresolved;
 
+export type HeadRead = { kind: 'symlink'; target: string } | { kind: 'text'; text: string } | { kind: 'invalid' };
+
 export type PolicyFilesystem = {
   platform: NodeJS.Platform;
   canonicalise: (absolute: string) => PathResolution;
@@ -12,4 +14,6 @@ export type PolicyFilesystem = {
   expandGlob: (pattern: string, cwd: string, limit: number) => GlobExpansion;
   readEntry: GitEntryReader;
   readNoFollow: StepReader;
+  readHead: (absolute: string) => HeadRead;
+  isSearchable: (absolute: string) => boolean;
 };

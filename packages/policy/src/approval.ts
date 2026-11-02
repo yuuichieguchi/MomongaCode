@@ -7,6 +7,7 @@ import type { GitParse } from './git-argv.ts';
 import { GIT_LISTING_SELECTORS, GIT_LISTING_SPECS, GIT_READ_ONLY_SUBCOMMANDS, gitSubcommandSpec, reflogView } from './git-subcommands.ts';
 import type { PolicyFilesystem } from './filesystem.ts';
 import { MAX_GLOB_MATCHES, expandGlobWord } from './glob-expansion.ts';
+import { firstUnescaped, unescapeGlob } from './glob-pattern.ts';
 import type { OptionEffect, CommandSpec } from './command-specs.ts';
 import { globDirectory, sedFacts } from './path-effects.ts';
 import { absoluteFrom } from './path-match.ts';
@@ -16,6 +17,7 @@ import { discoverRepository } from './repository.ts';
 import { insideRoots } from './roots.ts';
 import { scanSedScript } from './sed-script.ts';
 import type { Analysis, DirectoryStep, Segment, Word } from './shell.ts';
+import type { Target } from './targets.ts';
 import type { WrapperUse } from './wrappers.ts';
 
 export const MAX_APPROVABLE_COMMAND_CHARS = 10_000;
@@ -37,9 +39,8 @@ const DISQUALIFYING_EFFECTS: ReadonlySet<OptionEffect> = new Set(['write', 'exec
 const CAPABLE_EFFECTS: ReadonlySet<OptionEffect> = new Set(['write', 'exec', 'delete', 'opens-path', 'sensitive']);
 
 
-const globAllowed = (word: Word, context: ApprovalContext): boolean => {
-  const pattern = word.value;
-  if (/[{}]/.test(pattern) || pattern.startsWith('~') || pattern.split('/').includes('..')) return false;
+const globAllowed = (pattern: string, context: ApprovalContext): boolean => {
+  if (firstUnescaped(pattern, '{}') !== -1 || pattern.startsWith('~') || unescapeGlob(pattern).split('/').includes('..')) return false;
   const directory = globDirectory(pattern);
   const canonicalise = context.fs.canonicalise;
   if (!insideRoots([absoluteFrom(directory, context.cwd)], context.roots, context.cwd, canonicalise)) return false;
@@ -56,7 +57,7 @@ const operandsAllowed = (spec: CommandSpec, operands: readonly Word[], context: 
   return operands.every((word) => {
     if (word.staticValue !== null) return true;
     if (capable || spec.approval === 'edit') return false;
-    if (word.glob) return globAllowed(word, context);
+    if (word.glob !== null) return globAllowed(word.glob, context);
     return spec.operands === 'none';
   });
 };
@@ -112,9 +113,22 @@ const programApproved = (spec: CommandSpec, segment: Segment, context: ApprovalC
 
 const sameDirectory = (left: string, right: string): boolean => lexicallyWithin(left, right) && lexicallyWithin(right, left);
 
-const stepTarget = (state: string, step: string, home: string): string | undefined => {
-  if (step === '~' || step.startsWith('~/')) return path.join(home, step.slice(1));
-  return step.startsWith('~') ? undefined : path.resolve(state, step);
+type StepOutcome = { unresolved: true } | { fails: true } | { reaches: string; named: string };
+
+const namedStepPath = (state: string, step: { path: string; physical: boolean }, home: string): string | undefined => {
+  if (step.path === '~' || step.path.startsWith('~/')) return `${home}${step.path.slice(1)}`;
+  if (step.path.startsWith('~')) return undefined;
+  return path.isAbsolute(step.path) ? step.path : `${state}/${step.path}`;
+};
+
+const stepOutcome = (context: ApprovalContext, state: string, step: { path: string; physical: boolean }): StepOutcome => {
+  const named = namedStepPath(state, step, context.home);
+  if (named === undefined) return { unresolved: true };
+  if (!step.physical) return { reaches: path.resolve(named), named };
+  const resolution = context.fs.canonicalise(named);
+  if (resolution.ok) return { reaches: resolution.path, named };
+  const { reason } = resolution;
+  return reason.kind === 'errno' && (reason.code === 'ENOENT' || reason.code === 'ENOTDIR') ? { fails: true } : { unresolved: true };
 };
 
 const reachableDirectories = (context: ApprovalContext, trail: readonly DirectoryStep[], changed: readonly string[]): string[] | undefined => {
@@ -123,11 +137,15 @@ const reachableDirectories = (context: ApprovalContext, trail: readonly Director
     if (step === null) return undefined;
     const reached = new Set(states);
     for (const state of states) {
-      const target = stepTarget(state, step, context.home);
-      if (target === undefined || changed.some((entry) => lexicallyWithin(target, entry))) return undefined;
-      const entry = context.fs.readEntry(target);
+      const outcome = stepOutcome(context, state, step);
+      if ('unresolved' in outcome) return undefined;
+      if ('fails' in outcome) continue;
+      const named = path.resolve(outcome.named);
+      if (changed.some((entry) => lexicallyWithin(outcome.reaches, entry) || lexicallyWithin(named, entry))) return undefined;
+      const entry = context.fs.readEntry(outcome.reaches);
       if ('unresolvable' in entry) return undefined;
-      if (entry.kind === 'directory') reached.add(target);
+      if (entry.kind !== 'directory' && changed.some((written) => lexicallyWithin(written, outcome.reaches) || lexicallyWithin(written, named))) return undefined;
+      if (entry.kind === 'directory') reached.add(outcome.reaches);
     }
     states = [...reached];
   }
@@ -186,7 +204,7 @@ const remoteAllowed = (rest: readonly Word[]): boolean => {
 
 const reflogAllowed = (rest: readonly Word[]): boolean => {
   const view = reflogView(rest);
-  if (view.writes) return false;
+  if (view.subcommand === undefined) return false;
   if (view.subcommand === 'show') return gitReadOnlyAllowed('reflog', view.words);
   return view.words.every((word) => !isOptionWord(word));
 };
@@ -262,10 +280,14 @@ const changesIntoUnknownDirectory = (segment: Segment): boolean => {
 
 const EVERYTHING = '/';
 
-const changedPathsOf = (segment: Segment, context: ApprovalContext): string[] => {
-  if (segment.effects.spec?.createsNames !== true) return [];
-  return segment.effects.writes.map((target) => ('literal' in target && !target.literal.startsWith('~') ? absoluteFrom(target.literal, context.cwd) : EVERYTHING));
+const changedPathOf = (target: Target, context: ApprovalContext): string => {
+  if (!('literal' in target)) return EVERYTHING;
+  if (target.literal === '~' || target.literal.startsWith('~/')) return path.join(context.home, target.literal.slice(1));
+  return target.literal.startsWith('~') ? EVERYTHING : absoluteFrom(target.literal, context.cwd);
 };
+
+const changedPathsOf = (segment: Segment, redirects: readonly Target[], context: ApprovalContext): string[] =>
+  [...redirects, ...segment.wrapperWrites, ...segment.effects.writes].map((target) => changedPathOf(target, context));
 
 const analysisApproval = (context: ApprovalContext, analysis: Analysis, changed: string[]): ApprovalClass | undefined => {
   if ([...analysis.redirects, ...analysis.reads].some((target) => 'unresolvable' in target)) return undefined;
@@ -279,7 +301,7 @@ const analysisApproval = (context: ApprovalContext, analysis: Analysis, changed:
     const kind = segmentClass(segment, context, changed);
     if (kind === undefined) return undefined;
     if (kind === 'edit') approval = 'edit';
-    changed.push(...changedPathsOf(segment, context));
+    changed.push(...changedPathsOf(segment, analysis.redirects.filter((_, index) => analysis.redirectAt[index] === position), context));
     if (changesIntoUnknownDirectory(segment)) directoryUnknown = true;
   }
   return approval;

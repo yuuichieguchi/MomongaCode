@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { hasOption, optionsNamed, parseArgv } from './argv.ts';
 import type { ParsedArgv, ParsedOption } from './argv.ts';
+import { GLOB_OR_BRACE_CHARACTERS, firstUnescaped, unescapeGlob } from './glob-pattern.ts';
 import { parseGit } from './git-argv.ts';
 import { GIT_READ_ONLY_SUBCOMMANDS, gitSubcommandSpec, reflogView } from './git-subcommands.ts';
 import type { GitParse } from './git-argv.ts';
@@ -24,21 +25,20 @@ export type ProgramEffects = {
 const NONE: ProgramEffects = { writes: [], reads: [], opaque: false };
 const REMOTE_NAME = '__remote_name__';
 const EXTRACTED = '__extracted__';
-const GLOB_CHARACTER = /[*?[\]{}]/;
 const REMOTE_OPERAND = /^[^/]*:/;
 const DASH = '-';
 export const DARWIN_SED = '/usr/bin/sed';
 
 const operandTarget = (word: Word, access: 'read' | 'write'): Target => {
   if (word.staticValue !== null) return targetOfText(word.staticValue);
-  if (access === 'read' && word.glob) return { glob: word.value };
+  if (access === 'read' && word.glob !== null) return { glob: word.glob };
   return DYNAMIC;
 };
 
 export const globDirectory = (pattern: string): string => {
-  const slash = pattern.lastIndexOf('/', pattern.search(GLOB_CHARACTER));
+  const slash = pattern.lastIndexOf('/', firstUnescaped(pattern, GLOB_OR_BRACE_CHARACTERS));
   if (slash === -1) return '.';
-  return slash === 0 ? '/' : pattern.slice(0, slash);
+  return slash === 0 ? '/' : unescapeGlob(pattern.slice(0, slash));
 };
 
 const optionValues = (parsed: ParsedArgv, ...names: readonly string[]): ParsedOption[] => optionsNamed(parsed, ...names);
@@ -219,7 +219,7 @@ const gnuSedReading = (args: readonly Word[]): GnuSed => {
   return { files: scriptGiven ? operands : operands.slice(1), inPlace, scriptFiles };
 };
 
-const syntheticWord = (value: string): Word => ({ value, literal: true, plain: true, glob: false, staticValue: value });
+const syntheticWord = (value: string): Word => ({ value, literal: true, plain: true, glob: null, staticValue: value });
 
 const uniqueTargets = (targets: readonly Target[]): Target[] => {
   const seen = new Set<string>();
@@ -424,9 +424,7 @@ const cleanRemoves = (parsed: ParsedArgv): boolean => {
 const restoresWorktree = (parsed: ParsedArgv): boolean => !hasOption(parsed, '--staged', '-S') || hasOption(parsed, '--worktree', '-W');
 
 const gitSubcommandEffects = (subcommand: string, allWords: readonly Word[]): { writes: Target[]; reads: Target[] } => {
-  const view = subcommand === 'reflog' ? reflogView(allWords) : undefined;
-  if (view?.writes === true) return { writes: [], reads: [] };
-  const rest = view === undefined ? allWords : view.words;
+  const rest = subcommand === 'reflog' ? reflogView(allWords).words : allWords;
   const spec = gitSubcommandSpec(subcommand);
   const parsed = parseArgv(rest, spec);
   const { reads: optionReads, writes } = optionEffectTargets(spec, parsed);

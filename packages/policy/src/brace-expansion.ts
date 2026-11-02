@@ -58,9 +58,17 @@ const sequenceOf = (body: string, limit: number): string[] | undefined => {
   return values;
 };
 
-const expandWithin = (text: string, limit: number): string[] => {
-  for (let open = text.indexOf('{'); open !== -1; open = text.indexOf('{', open + 1)) {
-    if (open > 0 && text.charAt(open - 1) === '\\') continue;
+const nextOpenBrace = (text: string, from: number): number => {
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text.charAt(index);
+    if (char === '\\') index += 1;
+    else if (char === '{' && index >= from) return index;
+  }
+  return -1;
+};
+
+const expandWithin =(text: string, limit: number): string[] => {
+  for (let open = nextOpenBrace(text, 0); open !== -1; open = nextOpenBrace(text, open + 1)) {
     const close = closingBrace(text, open);
     if (close === -1) continue;
     const body = text.slice(open + 1, close);

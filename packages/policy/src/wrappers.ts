@@ -24,7 +24,7 @@ const payloadWord = (option: ParsedOption): Word => ({
   value: option.value ?? '',
   literal: option.dynamic !== true,
   plain: option.dynamic !== true,
-  glob: false,
+  glob: null,
   staticValue: option.dynamic === true ? null : (option.value ?? ''),
 });
 
