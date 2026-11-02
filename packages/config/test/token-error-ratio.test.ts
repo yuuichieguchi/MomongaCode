@@ -6,6 +6,7 @@ const targetWith = (capabilities: Record<string, unknown>) => ({
   targets: {
     remote: {
       adapter: 'chat-completions',
+      provider: 'fake',
       model: 'gpt-x',
       baseUrl: 'https://api.example.com/v1',
       capabilities: { contextWindow: 4096, maxOutputTokens: 1024, ...capabilities },

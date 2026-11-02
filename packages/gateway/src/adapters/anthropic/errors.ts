@@ -1,5 +1,5 @@
 import { UpstreamHttpError, UpstreamProtocolError } from '../shared/failures.ts';
-import { isRecord } from '../shared/http-error.ts';
+import { isRecord } from '@momonga/foundation';
 import type { ErrorDetailReader } from '../shared/http-error.ts';
 
 const STATUS_BY_ERROR_TYPE: Readonly<Record<string, number>> = {

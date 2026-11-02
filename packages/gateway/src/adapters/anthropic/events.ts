@@ -1,3 +1,4 @@
+import { isRecord } from '@momonga/foundation';
 import { UpstreamProtocolError } from '../shared/failures.ts';
 
 export type AnthropicUsageFields = {
@@ -32,9 +33,6 @@ export type AnthropicStreamEvent =
   | { type: 'message_stop' }
   | { type: 'error'; errorType: string; message: string }
   | { type: 'unknown'; name: string };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const invalid = (what: string): UpstreamProtocolError => new UpstreamProtocolError(`the upstream sent a malformed event: ${what}`);
 

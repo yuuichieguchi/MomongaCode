@@ -44,6 +44,7 @@ type InflightCompaction = {
   promise: Promise<CompactResource>;
   subscribers: number;
   detachTimer: unknown;
+  settled: boolean;
 };
 
 const identifier = (services: Services, prefix: string): string => `${prefix}_${uuidv7(services.clock).replaceAll('-', '')}`;
@@ -100,9 +101,18 @@ const countWire = async (
   signal: AbortSignal,
   deadlineAt: number | undefined,
 ): Promise<CountTokensResult> => {
+  const { imageTokens: imageModel } = await services.router.capabilitiesOf(target);
+  const adapterCountWire = target.adapter.countWire;
+  if (adapterCountWire !== undefined) {
+    const counted = await callTargets(services, [target], signal, deadlineAt, (chosen, attemptNumber, guarded) =>
+      adapterCountWire.call(chosen.adapter, wire, { signal: guarded, target: { name: chosen.name, model: chosen.model }, attempt: attemptNumber }),
+    );
+    counted.target.breaker.onSuccess();
+    return counted.value;
+  }
   const adapterCountTokens = target.adapter.countTokens;
   if (adapterCountTokens === undefined) {
-    const tokens = wireTokensOf(wire);
+    const tokens = wireTokensOf(wire, imageModel);
     return { input_tokens: tokens, method: 'estimated', error_bound: errorBoundFor(tokens) };
   }
   const outcome = await callTargets(services, [target], signal, deadlineAt, (chosen, attemptNumber, guarded) =>
@@ -113,7 +123,7 @@ const countWire = async (
     ),
   );
   outcome.target.breaker.onSuccess();
-  const imageTokens = imageTokensOfWire(wire);
+  const imageTokens = imageTokensOfWire(wire, imageModel);
   if (imageTokens === 0) return outcome.value;
   const total = outcome.value.input_tokens + imageTokens;
   return { input_tokens: total, method: 'estimated', error_bound: errorBoundFor(total) };
@@ -154,7 +164,10 @@ const countTokens = async (
   );
   const adapterCountTokens = target.adapter.countTokens;
   if (adapterCountTokens === undefined) {
-    const inputTokens = estimateInputTokens({ input: resolved.forAdapter, instructions: request.instructions, tools: request.tools });
+    const inputTokens = estimateInputTokens(
+      { input: resolved.forAdapter, instructions: request.instructions, tools: request.tools },
+      (await services.router.capabilitiesOf(target)).imageTokens,
+    );
     return { input_tokens: inputTokens, method: 'estimated', error_bound: errorBoundFor(inputTokens) };
   }
   const outcome = await callTargets(services, [target], signal, deadlineAt, (chosen, attemptNumber, guarded) =>
@@ -279,7 +292,7 @@ export const createUnaryService = (services: Services, validator: RequestValidat
 
   const detach = (entry: InflightCompaction): void => {
     entry.subscribers -= 1;
-    if (entry.subscribers > 0 || entry.controller.signal.aborted || entry.detachTimer !== undefined) return;
+    if (entry.subscribers > 0 || entry.settled || entry.controller.signal.aborted || entry.detachTimer !== undefined) return;
     entry.detachTimer = services.timers.setTimeout(() => {
       entry.detachTimer = undefined;
       if (entry.subscribers === 0) entry.controller.abort(detachedRunExpiredError());
@@ -341,6 +354,7 @@ export const createUnaryService = (services: Services, validator: RequestValidat
       controller,
       subscribers: 0,
       detachTimer: undefined,
+      settled: false,
       promise: Promise.resolve().then(async () => {
         try {
           const resource = await compactOnce(services, request, controller.signal, deadlineAt);
@@ -349,12 +363,20 @@ export const createUnaryService = (services: Services, validator: RequestValidat
           services.store.commitCompaction({ key, digest, resource, createdAtMs: now, expiresAtMs: now + services.config.idempotency.ttlMs });
           return resource;
         } finally {
+          entry.settled = true;
           clearDetachTimer(entry);
           active.delete(entry);
           if (inflight.get(key) === entry) inflight.delete(key);
         }
       }),
     };
+    controller.signal.addEventListener(
+      'abort',
+      () => {
+        if (inflight.get(key) === entry) inflight.delete(key);
+      },
+      { once: true },
+    );
     inflight.set(key, entry);
     active.add(entry);
     return wait(entry, signal, deadlineAt);

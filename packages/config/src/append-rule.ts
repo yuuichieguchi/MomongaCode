@@ -1,8 +1,9 @@
-import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { settingsLockPath, withFileLock } from './file-lock.ts';
+import type { FileLockPorts } from './file-lock.ts';
 import { layoutOf } from './layout.ts';
+import { isRecord } from '@momonga/foundation';
 import { localSettingsDirectory } from './local-settings.ts';
 import { readJsonFile } from './json-file.ts';
 import { parseRule } from './rule.ts';
@@ -11,13 +12,11 @@ import type { RuleEffect } from './rule.ts';
 export type AppendPermissionRuleOptions = {
   home: string;
   projectDir: string;
+  ports: FileLockPorts;
   lockTimeoutMs?: number;
   rule: string;
   effect: RuleEffect;
 };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const inProcessQueues = new Map<string, Promise<void>>();
 
@@ -35,8 +34,8 @@ const serializeInProcess = <T>(key: string, task: () => Promise<T>): Promise<T> 
   return run;
 };
 
-const writeAtomically = async (file: string, content: string): Promise<void> => {
-  const temporary = `${file}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
+const writeAtomically = async (file: string, content: string, ports: FileLockPorts): Promise<void> => {
+  const temporary = `${file}.${process.pid}.${ports.randomHex(6)}.tmp`;
   try {
     const handle = await fs.promises.open(temporary, 'wx', 0o600);
     try {
@@ -70,7 +69,7 @@ const addRule = (document: Record<string, unknown>, file: string, rule: string, 
   return true;
 };
 
-export const appendPermissionRule = async ({ home, projectDir, rule, effect, lockTimeoutMs }: AppendPermissionRuleOptions): Promise<void> => {
+export const appendPermissionRule = async ({ home, projectDir, rule, effect, ports, lockTimeoutMs }: AppendPermissionRuleOptions): Promise<void> => {
   const directory = await localSettingsDirectory(home, projectDir);
   const file = path.join(directory, 'settings.local.json');
   parseRule(rule, { effect, origin: 'local', source: file, settingsRoot: projectDir, home, cwd: projectDir });
@@ -86,7 +85,7 @@ export const appendPermissionRule = async ({ home, projectDir, rule, effect, loc
         document = read.value;
       }
       if (!addRule(document, file, rule, effect)) return;
-      await writeAtomically(file, `${JSON.stringify(document, null, 2)}\n`);
-    }, lockTimeoutMs === undefined ? {} : { timeoutMs: lockTimeoutMs }),
+      await writeAtomically(file, `${JSON.stringify(document, null, 2)}\n`, ports);
+    }, { ports, ...(lockTimeoutMs === undefined ? {} : { timeoutMs: lockTimeoutMs }) }),
   );
 };

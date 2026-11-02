@@ -1,6 +1,8 @@
 export type ToolCallingMode = 'native' | 'constrained' | 'none';
 export type ToolCallingSetting = 'native' | 'constrained' | 'auto';
 
+export type ImageTokenModel = { pixelsPerToken: number; maxTokens: number };
+
 export type Capabilities = {
   contextWindow: number;
   maxOutputTokens: number;
@@ -9,6 +11,7 @@ export type Capabilities = {
   streaming: boolean;
   stopSequences: boolean;
   imageInput: boolean;
+  imageTokens?: ImageTokenModel;
   parallelToolCalls: boolean;
   schemaDialect: 'json-schema-2020-12' | 'guided-generation';
   tokenCounting: 'exact' | 'calibrated' | 'estimated';

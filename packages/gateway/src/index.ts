@@ -54,6 +54,7 @@ export { gatewayConfigOf, startGatewayProcess } from './process.ts';
 export type { GatewayCloseResult, GatewayProcess, StartGatewayProcessOptions } from './process.ts';
 export { GATEWAY_ENTRY_FLAGS, runGatewayEntry } from './entry.ts';
 export type { GatewayEntryDeps } from './entry.ts';
+export type { UpstreamLiveness } from './adapters/shared/http-client.ts';
 export { createAnthropicAdapter } from './adapters/anthropic/adapter.ts';
 export type { AnthropicAdapter, AnthropicAdapterOptions } from './adapters/anthropic/types.ts';
 export { createOpenResponsesAdapter } from './adapters/open-responses/adapter.ts';

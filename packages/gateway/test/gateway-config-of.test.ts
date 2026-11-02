@@ -16,35 +16,35 @@ const targetsFor = async (models: Record<string, unknown>) => {
 const CAPABILITIES = { contextWindow: 8192, maxOutputTokens: 1024 };
 
 describe('gatewayConfigOf provider names', () => {
-  it('names an fm target apple, a chat-completions target by its provider setting, and otherwise by the OpenAI format flavor', async () => {
+  it('names an fm target apple, and a chat-completions target by its provider setting', async () => {
     const targets = await targetsFor({
       targets: {
         onDevice: { adapter: 'fm' },
         hosted: { adapter: 'chat-completions', model: 'm', baseUrl: 'https://api.example.com/v1', provider: 'acme', capabilities: CAPABILITIES },
-        compatible: { adapter: 'chat-completions', model: 'm', baseUrl: 'https://api.example.com/v1', capabilities: CAPABILITIES },
+        local: { adapter: 'chat-completions', provider: 'vllm', model: 'm', baseUrl: 'http://127.0.0.1:8000/v1', capabilities: CAPABILITIES },
       },
       aliases: { default: 'onDevice' },
     });
     expect(Object.fromEntries(Object.entries(targets).map(([name, target]) => [name, target.provider]))).toEqual({
       onDevice: 'apple',
       hosted: 'acme',
-      compatible: 'openai',
+      local: 'vllm',
     });
   });
 
-  it('names an anthropic target anthropic and an open-responses target by its provider setting, otherwise by the OpenAI format flavor', async () => {
+  it('names an anthropic target anthropic and and an open-responses target by its provider setting', async () => {
     const targets = await targetsFor({
       targets: {
         claude: { adapter: 'anthropic', model: 'm', baseUrl: 'https://api.example.com', apiKeyEnv: 'ANTHROPIC_API_KEY', capabilities: CAPABILITIES },
         relay: { adapter: 'open-responses', model: 'm', baseUrl: 'https://api.example.com/v1', provider: 'acme', capabilities: CAPABILITIES },
-        plainRelay: { adapter: 'open-responses', model: 'm', baseUrl: 'https://api.example.com/v1', capabilities: CAPABILITIES },
+        ollama: { adapter: 'open-responses', provider: 'ollama', model: 'm', baseUrl: 'http://127.0.0.1:11434/v1', capabilities: CAPABILITIES },
       },
       aliases: { default: 'claude' },
     });
     expect(Object.fromEntries(Object.entries(targets).map(([name, target]) => [name, target.provider]))).toEqual({
       claude: 'anthropic',
       relay: 'acme',
-      plainRelay: 'openai',
+      ollama: 'ollama',
     });
   });
 

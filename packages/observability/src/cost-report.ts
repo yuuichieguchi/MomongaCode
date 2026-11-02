@@ -1,5 +1,5 @@
 import { GENAI_SEMCONV, OPERATIONS } from './semconv.ts';
-import { PRICE_TABLE, amountOfUnits, computeCostUnits } from './cost.ts';
+import { amountOfUnits, computeCostUnits } from './cost.ts';
 import type { PriceTable } from './cost.ts';
 import type { SpanRecord, TraceStore } from './trace-store.ts';
 
@@ -22,7 +22,7 @@ export type RunCost = CostTotals & { runId: string; sessionId: string };
 export type SessionCost = CostTotals & { sessionId: string; runIds: string[] };
 export type CostReport = { runs: RunCost[]; sessions: SessionCost[]; total: CostTotals };
 
-export type CostReportOptions = { table?: PriceTable };
+export type CostReportOptions = { table: PriceTable };
 
 type Accumulator = {
   calls: number;
@@ -110,8 +110,8 @@ const accumulateRun = (store: TraceStore, runId: string, table: PriceTable): Acc
   return accumulator;
 };
 
-export const buildCostReport = (store: TraceStore, runs: readonly CostedRun[], options: CostReportOptions = {}): CostReport => {
-  const table = options.table ?? PRICE_TABLE;
+export const buildCostReport = (store: TraceStore, runs: readonly CostedRun[], options: CostReportOptions): CostReport => {
+  const { table } = options;
   const seenRuns = new Set<string>();
   const perRun: { run: CostedRun; accumulator: Accumulator }[] = runs.map((run) => {
     if (seenRuns.has(run.runId)) throw new Error(`buildCostReport: run ${run.runId} is listed twice`);

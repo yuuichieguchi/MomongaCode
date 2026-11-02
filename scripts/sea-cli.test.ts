@@ -83,6 +83,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('single executable built from the r
           targets: {
             [UPSTREAM_TARGET]: {
               adapter: 'chat-completions',
+              provider: 'fake',
               model: 'system',
               socketPath: path.join(root, 'u.sock'),
               capabilities: { contextWindow: 8192, maxOutputTokens: 1024 },

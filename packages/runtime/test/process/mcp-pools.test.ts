@@ -237,7 +237,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     writeUserSettings(f.temp.home, {
       mcpServers: { fx: fixtureServer },
       models: {
-        targets: { m: { adapter: 'chat-completions', model: 'x', baseUrl: 'https://api.example.com/v1', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } } },
+        targets: { m: { adapter: 'chat-completions', provider: 'fake', model: 'x', baseUrl: 'https://api.example.com/v1', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } } },
         aliases: { other: 'm' },
       },
     });

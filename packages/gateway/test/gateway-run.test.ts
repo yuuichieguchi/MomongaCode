@@ -184,7 +184,7 @@ describe('sseResponse on shutdown', () => {
       next: () => new Promise(() => undefined),
       return: async () => ({ done: true, value: undefined }),
     };
-    const response = sseResponse(events[0] as StreamEvent, rest, { timers, keepAliveMs: 1000, signal: closing.signal, onEnd: () => undefined });
+    const response = sseResponse(events[0] as StreamEvent, rest, { timers, keepAliveMs: 1000, readerStallMs: 30_000, signal: closing.signal, onEnd: () => undefined });
     closing.abort(gatewayClosedError());
     await expect(response.text()).rejects.toMatchObject({ body: { code: 'gateway_closed' } });
   });

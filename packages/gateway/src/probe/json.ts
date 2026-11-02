@@ -1,7 +1,8 @@
 export type JsonObject = Record<string, unknown>;
 
-export const isRecord = (value: unknown): value is JsonObject =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
+import { isRecord } from '@momonga/foundation';
+
+export { isRecord };
 
 export const parseJson = (text: string): unknown => {
   try {

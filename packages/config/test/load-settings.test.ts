@@ -30,6 +30,7 @@ describe('SETTINGS_SCHEMA', () => {
         'mcpServers',
         'models',
         'permissions',
+        'pricing',
         'sandbox',
         'telemetry',
       ].sort(),
@@ -128,10 +129,70 @@ describe('loadSettings trust gate', () => {
 });
 
 describe('loadSettings security restrictions', () => {
+  describe('telemetry.otlp.endpoint transport', () => {
+    const load = async (endpoint: string) => {
+      const tree = makeTree();
+      writeJson(userSettingsPath(tree), { telemetry: { otlp: { endpoint, headers: { authorization: 'Bearer t' } } } });
+      return loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    };
+
+    it.each(['http://127.0.0.1:4318', 'http://localhost:4318', 'http://[::1]:4318', 'https://collector.example'])('accepts %s', async (endpoint) => {
+      expect((await load(endpoint)).settings.telemetry?.otlp?.endpoint).toBe(endpoint);
+    });
+
+    it('refuses cleartext to a remote host', async () => {
+      await expect(load('http://collector.example')).rejects.toThrow(/telemetry\.otlp\.endpoint .*must use https/);
+    });
+
+    it('refuses userinfo without printing the password', async () => {
+      const failure = load('https://user:hunter2@collector.example');
+      await expect(failure).rejects.toThrow('must not contain userinfo');
+      await expect(failure).rejects.not.toThrow(/hunter2/);
+    });
+  });
+
+  describe('pricing', () => {
+    const entry = { provider: 'acme', model: 'm1', effectiveFrom: '2026-01-01', inputPerMTok: 2, outputPerMTok: 8, currency: 'USD' };
+
+    it('takes the price entries of the user settings', async () => {
+      const tree = makeTree();
+      writeJson(userSettingsPath(tree), { pricing: [entry, { ...entry, effectiveFrom: '2026-06-01', inputPerMTok: 1, cachedInputPerMTok: 0.5 }] });
+      const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+      expect(result.settings.pricing).toEqual([entry, { ...entry, effectiveFrom: '2026-06-01', inputPerMTok: 1, cachedInputPerMTok: 0.5 }]);
+    });
+
+    it('leaves pricing absent when no settings file declares it', async () => {
+      const tree = makeTree();
+      const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+      expect(result.settings.pricing).toBeUndefined();
+    });
+
+    it('discards pricing from project and local settings with a warning', async () => {
+      const tree = makeTree();
+      const projectFile = writeJson(projectSettingsPath(tree), { pricing: [entry] });
+      writeJson(localSettingsPath(tree), { pricing: [entry] });
+      const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+      expect(result.settings.pricing).toBeUndefined();
+      expect(result.warnings.some((warning) => warning.includes('pricing is only honored in user settings') && warning.includes(projectFile))).toBe(true);
+    });
+
+    it.each([
+      ['a price below zero', { ...entry, inputPerMTok: -1 }],
+      ['a currency other than USD', { ...entry, currency: 'EUR' }],
+      ['an effectiveFrom that is not a date', { ...entry, effectiveFrom: 'soon' }],
+      ['a missing outputPerMTok', { provider: 'acme', model: 'm1', effectiveFrom: '2026-01-01', inputPerMTok: 1, currency: 'USD' }],
+    ])('rejects %s', async (_name, bad) => {
+      const tree = makeTree();
+      writeJson(userSettingsPath(tree), { pricing: [bad] });
+      await expect(loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toThrow(/pricing/);
+    });
+  });
+
   it('discards models.targets and models.aliases from project and local settings with a warning', async () => {
     const tree = makeTree();
     const target = (model: string) => ({
       adapter: 'chat-completions',
+      provider: 'fake',
       model,
       baseUrl: 'https://api.example.com/v1',
       capabilities: { contextWindow: 8192, maxOutputTokens: 1024 },

@@ -122,7 +122,7 @@ export const modelSettings = (fakeSocketPath: string): Record<string, unknown> =
   models: {
     aliases: { default: ['primary'] },
     targets: {
-      primary: { adapter: 'chat-completions', model: 'system', socketPath: fakeSocketPath, capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } },
+      primary: { adapter: 'chat-completions', provider: 'fake', model: 'system', socketPath: fakeSocketPath, capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } },
     },
   },
 });

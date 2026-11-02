@@ -1,0 +1,43 @@
+import { request } from 'undici';
+import { describe, expect, it } from 'vitest';
+import { createJsonLogger, systemClock } from '@momonga/foundation';
+import { startGatewayProcess } from '@momonga/gateway';
+import { registerCleanup, withTempDir } from '@momonga/testkit';
+import { PROCESS_VERSION, baseEnv, ccTarget, writeSettings } from './gateway-process-helpers.ts';
+
+const TOKEN = 'injected-debug-token';
+
+describe('gateway process ports', () => {
+  it('reads the debug token and the database presence through the injected file ports', async (context) => {
+    const home = withTempDir(context, { asHome: true });
+    writeSettings(home, { models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget('/nonexistent/upstream.sock') } } });
+    const lines: string[] = [];
+    const asked: string[] = [];
+    const handle = await startGatewayProcess({
+      home,
+      env: baseEnv(home),
+      version: PROCESS_VERSION,
+      debugTcp: { port: 0, tokenFile: '/nonexistent/debug.token' },
+      files: {
+        isUsableBinary: async () => false,
+        readDebugToken: (file) => {
+          asked.push(file);
+          return TOKEN;
+        },
+        databaseExists: () => false,
+      },
+      random: () => 0.25,
+      logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: { write: (chunk: string) => (lines.push(chunk), true) }, level: 'debug' }),
+      stdout: { write: () => true },
+    });
+    registerCleanup(context, async () => {
+      await handle.close();
+    });
+    expect(asked).toEqual(['/nonexistent/debug.token']);
+    const listener = lines.map((line) => JSON.parse(line) as Record<string, any>).find((line) => line['msg'] === 'gateway.debug_listener');
+    const port = listener?.['data']?.port ?? listener?.['port'];
+    const response = await request(`http://127.0.0.1:${port}/v1/models`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    expect(response.statusCode).toBe(200);
+    await response.body.dump();
+  });
+});

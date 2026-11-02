@@ -82,6 +82,11 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
     delete restricted.telemetry;
   }
 
+  if (settings.pricing !== undefined) {
+    warnings.push(`${source}: pricing is only honored in user settings; discarded`);
+    delete restricted.pricing;
+  }
+
   if (settings.autoUpdates !== undefined) {
     warnings.push(`${source}: autoUpdates is only honored in user settings; discarded`);
     delete restricted.autoUpdates;
@@ -154,7 +159,7 @@ export const readUserLayer = (home: string): UserLayer => {
   }
 };
 
-const exists = async (file: string): Promise<boolean> => {
+export const exists = async (file: string): Promise<boolean> => {
   try {
     await fs.promises.access(file);
     return true;

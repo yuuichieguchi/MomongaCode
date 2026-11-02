@@ -1,5 +1,4 @@
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
-
+import { isRecord } from '@momonga/foundation';
 export const textOfWire = (wire: Record<string, unknown>): string => {
   const parts: string[] = [];
   const messages = wire['messages'];

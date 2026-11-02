@@ -22,7 +22,7 @@ const caseVariant = (absolute: string): string => path.join(path.dirname(absolut
 
 const CAPABILITIES = { contextWindow: 128000, maxOutputTokens: 4096 };
 
-const socketTarget = (socketPath: string) => ({ adapter: 'chat-completions', model: 'gpt-x', socketPath, capabilities: CAPABILITIES });
+const socketTarget = (socketPath: string) => ({ adapter: 'chat-completions', provider: 'fake', model: 'gpt-x', socketPath, capabilities: CAPABILITIES });
 
 const loadWithSocket = (tree: Tree, socketPath: string) => {
   writeJson(userSettingsPath(tree), { models: { targets: { remote: socketTarget(socketPath) }, aliases: { default: 'remote' } } });

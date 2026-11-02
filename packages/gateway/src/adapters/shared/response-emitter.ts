@@ -31,6 +31,9 @@ export type ResponseEmitterOptions = {
 
 const newId = (prefix: string, clock: Clock): string => `${prefix}_${uuidv7(clock).replaceAll('-', '')}`;
 
+const contextHint = (contextInputTokens: number | undefined): { contextInputTokens?: number } =>
+  contextInputTokens === undefined ? {} : { contextInputTokens };
+
 export class ResponseEmitter {
   private readonly options: ResponseEmitterOptions;
   private readonly responseId: string;
@@ -151,17 +154,24 @@ export class ResponseEmitter {
     this.closeItem(this.callOf(key), 'completed');
   }
 
-  complete(usage: Usage | undefined): void {
+  complete(usage: Usage | undefined, contextInputTokens?: number): void {
     this.closeOpenItems('completed');
-    this.emit({ type: 'response.completed', response: this.resource({ status: 'completed', output: this.doneItems, usage: usage ?? null }) });
+    this.emit({
+      type: 'response.completed',
+      response: { ...this.resource({ status: 'completed', output: this.doneItems, usage: usage ?? null }), ...contextHint(contextInputTokens) },
+    });
     this.ended = true;
   }
 
-  incomplete(reason: 'max_output_tokens' | 'content_filter', usage: Usage | undefined): void {
+  incomplete(reason: 'max_output_tokens' | 'content_filter', usage: Usage | undefined, contextInputTokens?: number): void {
     this.closeOpenItems('incomplete');
     this.emit({
       type: 'response.incomplete',
-      response: { ...this.resource({ status: 'incomplete', output: this.doneItems, usage: usage ?? null }), incomplete_details: { reason } },
+      response: {
+        ...this.resource({ status: 'incomplete', output: this.doneItems, usage: usage ?? null }),
+        incomplete_details: { reason },
+        ...contextHint(contextInputTokens),
+      },
     });
     this.ended = true;
   }

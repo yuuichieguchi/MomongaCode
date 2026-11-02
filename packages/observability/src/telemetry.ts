@@ -101,7 +101,6 @@ export const createTelemetry = (options: TelemetryOptions): Telemetry => {
     provider.getTracer(INSTRUMENTATION_SCOPE_NAME, undefined, { schemaUrl: GENAI_SEMCONV.schemaUrl }),
     options.clock,
   );
-  const propagator = new W3CTraceContextPropagator();
   let shutdownPromise: Promise<void> | undefined;
 
   return {
@@ -110,10 +109,10 @@ export const createTelemetry = (options: TelemetryOptions): Telemetry => {
     propagation: {
       inject: (context) => {
         const carrier: Record<string, string> = {};
-        propagator.inject(context, carrier, defaultTextMapSetter);
+        W3C_PROPAGATOR.inject(context, carrier, defaultTextMapSetter);
         return carrier;
       },
-      extract: (headers) => propagator.extract(ROOT_CONTEXT, headers, defaultTextMapGetter),
+      extract: (headers) => W3C_PROPAGATOR.extract(ROOT_CONTEXT, headers, defaultTextMapGetter),
     },
     recordBody: (span, body) => {
       if (bodyQueue === undefined) return;

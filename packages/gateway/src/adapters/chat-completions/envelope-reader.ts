@@ -1,4 +1,4 @@
-import { canonicalJson } from '@momonga/foundation';
+import { canonicalJson, isRecord } from '@momonga/foundation';
 import { MalformedOutputError } from '../shared/failures.ts';
 import type { JsonEvent } from './incremental-json.ts';
 import { ValueBuilder } from './value-builder.ts';
@@ -20,9 +20,6 @@ type Phase =
   | 'top-end';
 
 const MAX_KIND_CHARS = 32;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export class EnvelopeReader {
   private readonly toolNames: ReadonlySet<string>;

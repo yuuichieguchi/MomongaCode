@@ -18,7 +18,7 @@ export type GatewayConfig = {
   };
   retry: { maxAttempts: number; baseMs: number; maxMs: number };
   breaker: { failureThreshold: number; openMs: number };
-  limits: { maxBodyBytes: number; maxIdempotencyFrameBytes: number; idempotencyReaderStallMs: number };
+  limits: { maxBodyBytes: number; maxIdempotencyFrameBytes: number; readerStallMs: number };
   idempotency: { ttlMs: number };
   closeGraceMs: number;
   sseKeepAliveMs: number;
@@ -37,6 +37,7 @@ export type GatewayOptions = {
   config: GatewayConfig;
   adapters: Record<string, ProviderAdapter>;
   credentials: readonly string[];
+  credentialFeed?: (add: (credential: string) => void) => void;
   clock: Clock;
   timers: GatewayTimers;
   dbPath: string;
@@ -45,7 +46,7 @@ export type GatewayOptions = {
   telemetry?: Telemetry;
   costReport?: (runs: readonly { runId: string; sessionId: string }[]) => Promise<{ report: CostReportView; text: string }>;
   debugTcp?: DebugTcpOptions;
-  random?: () => number;
+  random: () => number;
   version: string;
   onError?: (error: unknown) => void;
   onFatal?: (error: Error) => void;

@@ -21,7 +21,7 @@ export type CostInput = {
   model: string;
   usage: CostUsage;
   at: Date;
-  table?: PriceTable;
+  table: PriceTable;
 };
 
 export type Cost = { amount: number; currency: 'USD'; priceVersion: string };
@@ -66,18 +66,6 @@ export const definePriceTable = (entries: readonly PriceEntry[]): PriceTable => 
   return Object.freeze(entries.map((entry) => Object.freeze({ ...entry })));
 };
 
-export const PRICE_TABLE: PriceTable = definePriceTable([
-  {
-    provider: 'apple',
-    model: 'system',
-    effectiveFrom: '1970-01-01',
-    inputPerMTok: 0,
-    cachedInputPerMTok: 0,
-    outputPerMTok: 0,
-    currency: 'USD',
-  },
-]);
-
 const assertTokenCount = (field: string, tokens: number): void => {
   if (!Number.isSafeInteger(tokens) || tokens < 0) {
     throw new RangeError(`${field} must be a non-negative integer, got ${tokens}`);
@@ -115,7 +103,7 @@ export const computeCostUnits = (input: CostInput): CostUnits | null => {
   }
   const atMs = input.at.getTime();
   if (Number.isNaN(atMs)) throw new RangeError('computeCost: at must be a valid Date');
-  const entry = findEntry(input.table ?? PRICE_TABLE, input.provider, input.model, atMs);
+  const entry = findEntry(input.table, input.provider, input.model, atMs);
   if (entry === undefined) return null;
   const inputRate = scaledPrice(entry.inputPerMTok);
   const cachedRate = scaledPrice(entry.cachedInputPerMTok ?? entry.inputPerMTok);

@@ -10,6 +10,7 @@ const construct = (overrides: { hmacKey?: Uint8Array; debugTcp?: { host: string;
   const dir = makeDir();
   const clock = createFakeClock(START_MS);
   return createGateway({
+    random: () => 0.5,
     credentials: [],
     config: buildConfig(),
     adapters: { primary: createScriptedAdapter({ calls: [] }) },
@@ -68,13 +69,14 @@ describe('bearer scheme', () => {
   });
 });
 
-describe('idempotencyReaderStallMs', () => {
+describe('readerStallMs', () => {
   it('must be a positive integer', async () => {
     const dir = makeDir();
     const clock = createFakeClock(START_MS);
-    const config = buildConfig({ limits: { idempotencyReaderStallMs: 0 } });
+    const config = buildConfig({ limits: { readerStallMs: 0 } });
     await expect(
       createGateway({
+        random: () => 0.5,
         credentials: [],
         config,
         adapters: { primary: createScriptedAdapter({ calls: [] }) },
@@ -85,6 +87,6 @@ describe('idempotencyReaderStallMs', () => {
         socketPath: path.join(dir, 'gw.sock'),
         version: TEST_VERSION,
       }),
-    ).rejects.toThrow(/idempotencyReaderStallMs/);
+    ).rejects.toThrow(/readerStallMs/);
   });
 });

@@ -73,7 +73,7 @@ describe('telemetry setting', () => {
   it('keeps the user value when project settings try to override it', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { telemetry: OTLP });
-    writeJson(projectSettingsPath(tree), { telemetry: { otlp: { endpoint: 'http://evil.example' } } });
+    writeJson(projectSettingsPath(tree), { telemetry: { otlp: { endpoint: 'https://evil.example' } } });
     const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.telemetry).toEqual(OTLP);
   });

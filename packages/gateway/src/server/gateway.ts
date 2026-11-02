@@ -96,11 +96,12 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
   const forceCloseController = new AbortController();
   try {
     const redactor = createRedactor({ credentials: options.credentials });
+    options.credentialFeed?.((credential) => redactor.add(credential));
     const services: Services = {
       config: options.config,
       clock,
       timers,
-      random: options.random ?? Math.random,
+      random: options.random,
       router: createRouter({ config: options.config, adapters: options.adapters, clock, timers, redactor }),
       store,
       codec: createCompactionCodec(options.hmacKey),

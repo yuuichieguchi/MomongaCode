@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { canonicalPath, comparableContains, isLoopbackHost } from '@momonga/foundation';
+import { canonicalPath, comparableContains, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
 import { layoutOf } from './layout.ts';
 import type {
   AnthropicTarget,
@@ -36,15 +36,8 @@ const resolveFm = (target: FmTarget): ResolvedFmTarget => ({
 });
 
 const checkBaseUrl = (baseUrl: string, where: string): void => {
-  let url: URL;
-  try {
-    url = new URL(baseUrl);
-  } catch (error) {
-    throw new Error(`${where}: baseUrl ${JSON.stringify(baseUrl)} is not a valid URL`, { cause: error });
-  }
-  const secure = url.protocol === 'https:' || (url.protocol === 'http:' && isLoopbackHost(url.hostname));
-  if (!secure) throw new Error(`${where}: baseUrl ${JSON.stringify(baseUrl)} must use https: (http: is only allowed for loopback hosts)`);
-  if (url.username !== '' || url.password !== '') throw new Error(`${where}: baseUrl must not contain userinfo`);
+  const problem = transportUrlProblem(baseUrl);
+  if (problem !== undefined) throw new Error(`${where}: ${transportUrlMessage('baseUrl', baseUrl, problem)}`);
   if (baseUrl.includes('?') || baseUrl.includes('#')) throw new Error(`${where}: baseUrl must not contain a query or fragment`);
 };
 
@@ -100,12 +93,16 @@ const resolveRemote = (target: RemoteTargetInput, defaults: CapabilityDefaults, 
   if (baseUrl !== undefined) checkBaseUrl(baseUrl, where);
   if (socketPath !== undefined) checkSocketPath(socketPath, home, where);
   const maxConcurrency = target.maxConcurrency ?? DEFAULT_REMOTE_MAX_CONCURRENCY;
+  const capabilities = { ...defaults, ...target.capabilities, maxConcurrency };
+  if (capabilities.imageInput && capabilities.imageTokens === undefined) {
+    throw new Error(`${where}: capabilities.imageInput is true, so capabilities.imageTokens ({ pixelsPerToken, maxTokens }) must declare how the target counts an image`);
+  }
   return {
     ...(baseUrl === undefined ? {} : { baseUrl }),
     ...(socketPath === undefined ? {} : { socketPath }),
     ...(target.apiKeyEnv === undefined ? {} : { apiKeyEnv: target.apiKeyEnv }),
     ...(target.apiKeySecret === undefined ? {} : { apiKeySecret: target.apiKeySecret }),
-    capabilities: { ...defaults, ...target.capabilities, maxConcurrency },
+    capabilities,
     maxConcurrency,
     admissionTimeoutMs: target.admissionTimeoutMs ?? 30000,
   };
@@ -115,7 +112,7 @@ const resolveChatCompletions = (target: ChatCompletionsTarget, home: string, whe
   adapter: 'chat-completions',
   model: target.model,
   toolCalling: target.toolCalling ?? 'native',
-  ...(target.provider === undefined ? {} : { provider: target.provider }),
+  provider: target.provider,
   ...resolveRemote(target, CHAT_COMPLETIONS_CAPABILITY_DEFAULTS, home, where),
 });
 
@@ -123,7 +120,7 @@ const resolveOpenResponses = (target: OpenResponsesTarget, home: string, where: 
   adapter: 'open-responses',
   model: target.model,
   toolCalling: target.toolCalling ?? 'native',
-  ...(target.provider === undefined ? {} : { provider: target.provider }),
+  provider: target.provider,
   ...resolveRemote(target, OPEN_RESPONSES_CAPABILITY_DEFAULTS, home, where),
 });
 

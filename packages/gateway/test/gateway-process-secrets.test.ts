@@ -47,7 +47,7 @@ const startStack = async (
       aliases: { fast: options.aliasOrder ?? ['claude'] },
       targets: {
         claude: { adapter: 'anthropic', model: 'claude-fake', socketPath: anthropic.socketPath, apiKeySecret: SECRET_NAME, capabilities: CAPABILITIES },
-        local: { adapter: 'open-responses', model: 'local-fake', socketPath: openResponses.socketPath, capabilities: CAPABILITIES },
+        local: { adapter: 'open-responses', provider: 'fake', model: 'local-fake', socketPath: openResponses.socketPath, capabilities: CAPABILITIES },
       },
     },
   });
@@ -192,7 +192,7 @@ describe('stored secrets in the gateway process', () => {
     registerCleanup(context, () => openResponses.close());
     const home = withTempDir(context, { asHome: true });
     writeSettings(home, {
-      models: { aliases: { fast: ['local'] }, targets: { local: { adapter: 'open-responses', model: 'm', socketPath: openResponses.socketPath, capabilities: CAPABILITIES } } },
+      models: { aliases: { fast: ['local'] }, targets: { local: { adapter: 'open-responses', provider: 'fake', model: 'm', socketPath: openResponses.socketPath, capabilities: CAPABILITIES } } },
     });
     const security = createFakeSecurityPort(() => ({}));
     const handle = await startGatewayProcess({ home, env: baseEnv(home), version: PROCESS_VERSION, execWithStdin: security, stdout: { write: () => true } });

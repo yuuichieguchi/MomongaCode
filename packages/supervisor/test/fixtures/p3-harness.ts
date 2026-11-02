@@ -274,6 +274,7 @@ export const CHAT_CAPABILITIES = { contextWindow: 128000, maxOutputTokens: 4096 
 
 export const chatTarget = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   adapter: 'chat-completions',
+  provider: 'fake',
   model: 'gpt-x',
   baseUrl: 'https://api.example.com/v1',
   capabilities: CHAT_CAPABILITIES,

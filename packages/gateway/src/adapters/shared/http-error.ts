@@ -1,4 +1,4 @@
-import { parseRetryAfter } from '@momonga/foundation';
+import { parseRetryAfter, isRecord } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { readTextLimited } from './body-reading.ts';
 import { UpstreamHttpError } from './failures.ts';
@@ -8,9 +8,6 @@ import { MAX_ERROR_BODY_BYTES } from './limits.ts';
 export type UpstreamErrorDetail = { code?: string | null; message?: string };
 
 export type ErrorDetailReader = (parsed: unknown) => UpstreamErrorDetail;
-
-export const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export const httpErrorOf = async (
   response: CompletionResponse,

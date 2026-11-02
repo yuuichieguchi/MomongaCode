@@ -217,6 +217,9 @@ describe('OTLP exporter configuration', () => {
   it('refuses an endpoint that is not http or https', () => {
     expect(() => otlpTracesUrl('file:///tmp/x')).toThrow(TypeError);
     expect(() => otlpTracesUrl('not a url')).toThrow();
+    expect(() => otlpTracesUrl('http://collector.example')).toThrow(/must use https/);
+    expect(() => otlpTracesUrl('https://user:hunter2@collector.example')).toThrow('must not contain userinfo');
+    expect(() => otlpTracesUrl('https://user:hunter2@collector.example')).not.toThrow(/hunter2/);
   });
 
   it('lets the flush and the shutdown export together take at most half of the runtime teardown budget', () => {

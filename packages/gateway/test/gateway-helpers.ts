@@ -82,7 +82,7 @@ export const buildConfig = (overrides: ConfigOverrides = {}): GatewayConfig => {
     models: { aliases: overrides.aliases ?? { fast: ['primary'] }, targets },
     retry: { maxAttempts: 3, baseMs: 100, maxMs: 10_000, ...overrides.retry },
     breaker: { failureThreshold: 5, openMs: 30_000, ...overrides.breaker },
-    limits: { maxBodyBytes: 1_000_000, maxIdempotencyFrameBytes: 8_000_000, idempotencyReaderStallMs: 30_000, ...overrides.limits },
+    limits: { maxBodyBytes: 1_000_000, maxIdempotencyFrameBytes: 8_000_000, readerStallMs: 30_000, ...overrides.limits },
     idempotency: { ttlMs: 60_000, ...overrides.idempotency },
     closeGraceMs: overrides.closeGraceMs ?? 1000,
     sseKeepAliveMs: overrides.sseKeepAliveMs ?? 15_000,
@@ -112,6 +112,7 @@ export type HarnessOptions = {
   debugTcp?: GatewayOptions['debugTcp'];
   onError?: GatewayOptions['onError'];
   credentials?: readonly string[];
+  credentialFeed?: GatewayOptions['credentialFeed'];
 };
 
 export const startGateway = async (options: HarnessOptions): Promise<Harness> => {
@@ -121,7 +122,9 @@ export const startGateway = async (options: HarnessOptions): Promise<Harness> =>
   const socketPath = path.join(dir, 'gw.sock');
   const dbPath = path.join(dir, 'state', 'gateway.db');
   const gateway = await createGateway({
+    random: () => 0.5,
     credentials: options.credentials ?? [],
+    ...(options.credentialFeed === undefined ? {} : { credentialFeed: options.credentialFeed }),
     config: buildConfig(options.config),
     adapters: options.adapters,
     clock,

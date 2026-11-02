@@ -68,7 +68,8 @@ export {
 } from './secret-store.ts';
 export type { SecretProcessPort, SecretProcessResult, SecretStore } from './secret-store.ts';
 export type { SecretKeyFileOptions } from './secret-key-file.ts';
-export { isLoopbackHost } from './loopback.ts';
+export { isLoopbackHost, redactedUrl, transportUrlMessage, transportUrlProblem } from './loopback.ts';
+export type { TransportUrlProblem } from './loopback.ts';
 export {
   EXIT_ALREADY_RUNNING,
   EXIT_CONFIG,

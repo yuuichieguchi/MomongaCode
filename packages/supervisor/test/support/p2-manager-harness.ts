@@ -20,6 +20,7 @@ export const FIXTURE_BIN = '/opt/momonga/fixture-bin.ts';
 
 export const chatTargetDeclaring = (apiKeyEnv: string): Record<string, unknown> => ({
   adapter: 'chat-completions',
+  provider: 'fake',
   model: 'x',
   baseUrl: 'https://api.example.com/v1',
   apiKeyEnv,

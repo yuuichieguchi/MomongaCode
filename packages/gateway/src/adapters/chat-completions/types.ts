@@ -8,7 +8,7 @@ import type {
   ProviderAdapter,
   ToolCallingMode,
 } from '@momonga/protocol';
-import type { UpstreamEndpoint } from '../shared/http-client.ts';
+import type { UpstreamEndpoint, UpstreamLiveness } from '../shared/http-client.ts';
 import type { KeywordSupport } from '../../probe/envelope.ts';
 
 export type ChatCompletionsEndpoint = UpstreamEndpoint;
@@ -24,6 +24,7 @@ export type ChatCompletionsAdapterOptions = {
   isGuardrail?: (target: AdapterTarget, status: number, body: unknown) => boolean;
   close?: () => Promise<void>;
   clock: Clock;
+  liveness?: UpstreamLiveness;
 };
 
 export type ChatCompletionsAdapter = ProviderAdapter & { close(): Promise<void> };

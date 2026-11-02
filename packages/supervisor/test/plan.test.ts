@@ -7,8 +7,8 @@ import type { RestartPlanPort } from '../src/plan.ts';
 
 type PlanInput = Pick<ResolvedSettings, 'sandbox' | 'models' | 'telemetry'>;
 
-const modelsA = { targets: { remote: { adapter: 'chat-completions', model: 'a', baseUrl: 'https://x/v1' } }, aliases: { default: 'remote' } };
-const modelsB = { targets: { remote: { adapter: 'chat-completions', model: 'b', baseUrl: 'https://x/v1' } }, aliases: { default: 'remote' } };
+const modelsA = { targets: { remote: { adapter: 'chat-completions', provider: 'fake', model: 'a', baseUrl: 'https://x/v1' } }, aliases: { default: 'remote' } };
+const modelsB = { targets: { remote: { adapter: 'chat-completions', provider: 'fake', model: 'b', baseUrl: 'https://x/v1' } }, aliases: { default: 'remote' } };
 
 const settings = (models: unknown, sandbox: string, telemetry?: unknown): PlanInput => ({ models, sandbox, ...(telemetry === undefined ? {} : { telemetry }) }) as unknown as PlanInput;
 
@@ -28,7 +28,7 @@ describe('digestsOf', () => {
   });
 
   it('same digest after reformatting', () => {
-    const reordered = { aliases: { default: 'remote' }, targets: { remote: { baseUrl: 'https://x/v1', model: 'a', adapter: 'chat-completions' } } };
+    const reordered = { aliases: { default: 'remote' }, targets: { remote: { baseUrl: 'https://x/v1', model: 'a', adapter: 'chat-completions', provider: 'fake' } } };
     expect(digestsOf(settings(reordered, 'seatbelt'))).toEqual(digestsOf(settings(modelsA, 'seatbelt')));
   });
 });

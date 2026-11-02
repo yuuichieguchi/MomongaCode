@@ -64,6 +64,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
         return sseResponse(first.value, submission.events, {
           timers: services.timers,
           keepAliveMs: services.config.sseKeepAliveMs,
+          readerStallMs: services.config.limits.readerStallMs,
           signal: AbortSignal.any([context.req.raw.signal, services.forceCloseSignal, submission.events.evicted]),
           onEnd: release,
         });

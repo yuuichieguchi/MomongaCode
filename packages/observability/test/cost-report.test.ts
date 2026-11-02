@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ROOT_CONTEXT, trace } from '@opentelemetry/api';
-import { PRICE_TABLE, buildCostReport, definePriceTable, formatCostReport, recordChatResponse, recordError, startAgentSpan, startChatSpan } from '@momonga/observability';
+import { buildCostReport, definePriceTable, formatCostReport, recordChatResponse, recordError, startAgentSpan, startChatSpan } from '@momonga/observability';
 import { harness } from './helpers.ts';
 
 const TABLE = definePriceTable([
@@ -88,17 +88,16 @@ describe('buildCostReport', () => {
     expect(report.total).toMatchObject({ calls: 1, unpricedCalls: 0, amount: 1 });
   });
 
-  it('prices the built-in apple/system entry at zero and reports a run with no chat spans as empty', async () => {
+  it('reports a call with no price entry as unpriced and a run with no chat spans as empty', async () => {
     const h = harness();
     await recordCalls('run-a', [{ provider: 'apple', model: 'system', input: 100, output: 10, at: AT_JULY }], h);
-    const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }, { runId: 'run-none', sessionId: 's' }]);
-    expect(PRICE_TABLE.some((entry) => entry.provider === 'apple' && entry.model === 'system')).toBe(true);
-    expect(report.runs[0]).toMatchObject({ calls: 1, unpricedCalls: 0, amount: 0, inputTokens: 100 });
-    expect(report.runs[1]).toMatchObject({ calls: 0, amount: 0, priceVersions: [] });
+    const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }, { runId: 'run-none', sessionId: 's' }], { table: definePriceTable([]) });
+    expect(report.runs[0]).toMatchObject({ calls: 1, unpricedCalls: 1, amount: 0, inputTokens: 100 });
+    expect(report.runs[1]).toMatchObject({ calls: 0, unpricedCalls: 0, amount: 0, priceVersions: [] });
   });
 
   it('refuses a run listed twice', () => {
     const h = harness();
-    expect(() => buildCostReport(h.store, [{ runId: 'r', sessionId: 's' }, { runId: 'r', sessionId: 's' }])).toThrow(/run r is listed twice/);
+    expect(() => buildCostReport(h.store, [{ runId: 'r', sessionId: 's' }, { runId: 'r', sessionId: 's' }], { table: TABLE })).toThrow(/run r is listed twice/);
   });
 });

@@ -110,6 +110,7 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
           random: policy.random,
         });
         const waitMs = Math.max(backoffMs, error.classified.retryAfterMs ?? 0);
+        if (waitMs > policy.maxMs) break;
         if (deadlineAt !== undefined && policy.clock.now() + waitMs > deadlineAt) {
           throw deadlineExceededError(`the next retry of target "${target.name}" would start after the request deadline`);
         }

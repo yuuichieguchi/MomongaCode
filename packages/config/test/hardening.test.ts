@@ -2,7 +2,8 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ConfigError, appendPermissionRule, loadMcpServers, loadSettings } from '@momonga/config';
+import { ConfigError, appendPermissionRule, systemFileLockPorts, loadMcpServers, loadSettings } from '@momonga/config';
+import type { FileLockPorts } from '@momonga/config';
 import { hostKernelLock } from '@momonga/foundation';
 import { startLockHolder } from '@momonga/testkit';
 import { settingsLockPath } from '../src/file-lock.ts';
@@ -90,7 +91,7 @@ describe('B6 project env hijack denylist', () => {
 describe('B7 local settings live in user scope', () => {
   it('writes appended rules under the home directory and never inside the repository', async () => {
     const tree = makeTree();
-    await appendPermissionRule({ home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow' });
+    await appendPermissionRule({ ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow' });
     expect(fs.existsSync(path.join(tree.project, '.momonga'))).toBe(false);
     expect(fs.statSync(localSettingsDir(tree)).mode & 0o777).toBe(0o700);
     expect(fs.statSync(path.join(tree.home, '.momonga', 'projects')).mode & 0o777).toBe(0o700);
@@ -116,6 +117,18 @@ describe('B7 local settings live in user scope', () => {
   });
 });
 
+const steppedFileLockPorts = (): FileLockPorts => {
+  let now = 1_000_000;
+  let sequence = 0;
+  return {
+    clock: { now: () => now },
+    sleep: async (ms) => {
+      now += ms;
+    },
+    randomHex: () => `fake${(sequence += 1).toString(16).padStart(8, '0')}`,
+  };
+};
+
 describe('B8 lock hardening', () => {
   const lockPathOf = (tree: ReturnType<typeof makeTree>): string => settingsLockPath(tree.home, localSettingsPath(tree));
   const fileLock = hostKernelLock().name === 'file-lock';
@@ -124,7 +137,7 @@ describe('B8 lock hardening', () => {
     const tree = makeTree();
     fs.mkdirSync(path.dirname(lockPathOf(tree)), { recursive: true, mode: 0o700 });
     const holder = await startLockHolder(context, lockPathOf(tree));
-    const failure = appendPermissionRule({ home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow', lockTimeoutMs: 200 });
+    const failure = appendPermissionRule({ ports: steppedFileLockPorts(), home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow', lockTimeoutMs: 200 });
     await expect(failure).rejects.toThrow(/timed out/);
     await expect(failure).rejects.toThrow(lockPathOf(tree));
     await expect(failure).rejects.toThrow(String(holder.pid));
@@ -135,7 +148,7 @@ describe('B8 lock hardening', () => {
     const target = writeText(path.join(makeDir(), 'victim'), 'precious');
     fs.mkdirSync(path.dirname(lockPathOf(tree)), { recursive: true, mode: 0o700 });
     fs.symlinkSync(target, lockPathOf(tree));
-    await expect(appendPermissionRule({ home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow' })).rejects.toMatchObject({ code: 'ELOOP' });
+    await expect(appendPermissionRule({ ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow' })).rejects.toMatchObject({ code: 'ELOOP' });
     expect(fs.readFileSync(target, 'utf8')).toBe('precious');
   });
 
@@ -143,7 +156,7 @@ describe('B8 lock hardening', () => {
     const tree = makeTree();
     fs.mkdirSync(lockPathOf(tree), { recursive: true, mode: 0o700 });
     await expect(
-      appendPermissionRule({ home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow', lockTimeoutMs: 200 }),
+      appendPermissionRule({ ports: steppedFileLockPorts(), home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow', lockTimeoutMs: 200 }),
     ).rejects.toMatchObject({ code: 'EISDIR' });
   });
 });
@@ -160,28 +173,26 @@ describe('S6 credential variables in project .mcp.json', () => {
     expect(result.warnings.filter((w) => w.includes('"gh"') && w.includes('GITHUB_TOKEN'))).toHaveLength(1);
   });
 
-  it('refuses variables named by apiKeyEnv in user model targets', async () => {
+  const remoteTargets = {
+    'chat-completions': { adapter: 'chat-completions', provider: 'fake', model: 'x', baseUrl: 'https://api.example.com/v1' },
+    'open-responses': { adapter: 'open-responses', provider: 'fake', model: 'x', baseUrl: 'https://api.example.com/v1' },
+    anthropic: { adapter: 'anthropic', model: 'x', baseUrl: 'https://api.example.com' },
+  };
+
+  it.each(Object.entries(remoteTargets))('refuses variables named by apiKeyEnv in a user %s target', async (_adapter, target) => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), {
       enableAllProjectMcpServers: true,
       models: {
-        targets: {
-          m: {
-            adapter: 'chat-completions',
-            model: 'x',
-            baseUrl: 'https://api.example.com/v1',
-            apiKeyEnv: 'ACME_CRED',
-            capabilities: { contextWindow: 8192, maxOutputTokens: 1024 },
-          },
-        },
+        targets: { m: { ...target, apiKeyEnv: 'MY_MODEL_KEY', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } } },
         aliases: { default: 'm' },
       },
     });
-    writeJson(mcpJsonPath(tree), { mcpServers: { s: { command: 's', args: ['${ACME_CRED}'] } } });
-    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { ACME_CRED: 'v' } });
+    writeJson(mcpJsonPath(tree), { mcpServers: { s: { command: 's', args: ['${MY_MODEL_KEY}'] } } });
+    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { MY_MODEL_KEY: 'v' } });
     expect(result.enabled).toEqual([]);
     expect(result.pendingApproval).toEqual([]);
-    expect(result.warnings.filter((w) => w.includes('"s"') && w.includes('ACME_CRED'))).toHaveLength(1);
+    expect(result.warnings.filter((w) => w.includes('"s"') && w.includes('MY_MODEL_KEY'))).toHaveLength(1);
   });
 
   it('still lets user-scope servers expand credentials', async () => {

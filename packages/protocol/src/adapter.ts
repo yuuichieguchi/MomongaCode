@@ -65,6 +65,7 @@ export type ProviderAdapter = {
   health?(target: AdapterTarget): Promise<HealthResult>;
   close?(): Promise<void>;
   countTokens?(request: CountTokensRequest, ctx: AdapterContext): Promise<AdapterCountTokensResult>;
+  countWire?(wire: Record<string, unknown>, ctx: AdapterContext): Promise<AdapterCountTokensResult>;
   compact?(request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult>;
   renderCompactWire?(request: AdapterCompactRequest, target: AdapterTarget, cap: number): Record<string, unknown>;
   renderWire?(request: AdapterRequest, target: AdapterTarget, options?: RenderWireOptions): Record<string, unknown>;

@@ -3,6 +3,7 @@ import { credentialEnvNames, loadSettings, loadUserSettings, secretNames } from 
 import { makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 
 const CAPABILITIES = { contextWindow: 200000, maxOutputTokens: 8192 };
+const IMAGE_TOKENS = { pixelsPerToken: 750, maxTokens: 1600 };
 
 const anthropicTarget = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   adapter: 'anthropic',
@@ -15,6 +16,7 @@ const anthropicTarget = (overrides: Record<string, unknown> = {}): Record<string
 
 const openResponsesTarget = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   adapter: 'open-responses',
+  provider: 'fake',
   model: 'llama-fake',
   baseUrl: 'http://127.0.0.1:11434/v1',
   capabilities: CAPABILITIES,
@@ -92,12 +94,12 @@ describe('anthropic target', () => {
   });
 
   it('accepts a declared imageInput', async () => {
-    const { result } = await loadWithTargets({ claude: anthropicTarget({ capabilities: { ...CAPABILITIES, imageInput: true } }) });
+    const { result } = await loadWithTargets({ claude: anthropicTarget({ capabilities: { ...CAPABILITIES, imageInput: true, imageTokens: IMAGE_TOKENS } }) });
     expect(result.settings.models.targets['claude']).toMatchObject({ capabilities: { imageInput: true } });
   });
 
   it('accepts a declared imageInput on an open-responses target', async () => {
-    const { result } = await loadWithTargets({ local: openResponsesTarget({ capabilities: { ...CAPABILITIES, imageInput: true } }) });
+    const { result } = await loadWithTargets({ local: openResponsesTarget({ capabilities: { ...CAPABILITIES, imageInput: true, imageTokens: IMAGE_TOKENS } }) });
     expect(result.settings.models.targets['local']).toMatchObject({ capabilities: { imageInput: true } });
   });
 
@@ -119,6 +121,7 @@ describe('open-responses target', () => {
     const { result } = await loadWithTargets({ local: openResponsesTarget() });
     expect(result.settings.models.targets['local']).toEqual({
       adapter: 'open-responses',
+      provider: 'fake',
       model: 'llama-fake',
       baseUrl: 'http://127.0.0.1:11434/v1',
       toolCalling: 'native',
@@ -166,6 +169,7 @@ describe('chat-completions apiKeySecret', () => {
   it('accepts a stored secret reference and rejects it together with apiKeyEnv', async () => {
     const chat = (overrides: Record<string, unknown>) => ({
       adapter: 'chat-completions',
+      provider: 'fake',
       model: 'm',
       baseUrl: 'https://api.example.com/v1',
       capabilities: CAPABILITIES,

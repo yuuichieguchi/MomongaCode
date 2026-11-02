@@ -87,17 +87,18 @@ describe('image dimensions', () => {
 
 describe('image token estimate', () => {
   const imageInput = (url: string): AdapterInputItem[] => [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: url }] }];
+  const MODEL = { pixelsPerToken: 750, maxTokens: 1600 };
 
   it('counts an image from its dimensions, not from the length of its base64', () => {
     const huge = `data:image/png;base64,${png(750, 100)}${'A'.repeat(2_000_000)}`;
-    const tokens = estimateInputTokens({ input: imageInput(huge) });
+    const tokens = estimateInputTokens({ input: imageInput(huge) }, MODEL);
     expect(tokens).toBeGreaterThanOrEqual(100);
     expect(tokens).toBeLessThan(200);
   });
 
-  it('caps one image at the documented ceiling and uses the ceiling when the size is unknown', () => {
-    const big = estimateInputTokens({ input: imageInput(`data:image/png;base64,${png(4000, 4000)}`) });
-    const remote = estimateInputTokens({ input: imageInput('https://example.com/a.png') });
+  it('caps one image at the declared maximum and uses it when the size is unknown', () => {
+    const big = estimateInputTokens({ input: imageInput(`data:image/png;base64,${png(4000, 4000)}`) }, MODEL);
+    const remote = estimateInputTokens({ input: imageInput('https://example.com/a.png') }, MODEL);
     const base = estimateInputTokens({ input: [] });
     expect(big - base).toBeGreaterThanOrEqual(1600);
     expect(big - base).toBeLessThan(1700);
@@ -105,10 +106,29 @@ describe('image token estimate', () => {
     expect(remote - base).toBeLessThan(1700);
   });
 
+  it('derives the count from the declared model of the target', () => {
+    const declared = { pixelsPerToken: 100, maxTokens: 500 };
+    const sized = estimateInputTokens({ input: imageInput(`data:image/png;base64,${png(300, 100)}`) }, declared);
+    const capped = estimateInputTokens({ input: imageInput(`data:image/png;base64,${png(750, 100)}`) }, declared);
+    const unknown = estimateInputTokens({ input: imageInput('https://example.com/a.png') }, declared);
+    const base = estimateInputTokens({ input: [] });
+    expect(sized - base).toBeGreaterThanOrEqual(300);
+    expect(sized - base).toBeLessThan(400);
+    expect(capped - base).toBeGreaterThanOrEqual(500);
+    expect(capped - base).toBeLessThan(600);
+    expect(unknown - base).toBeGreaterThanOrEqual(500);
+    expect(unknown - base).toBeLessThan(600);
+  });
+
+  it('refuses to estimate an image when the target declares no image token model', () => {
+    expect(() => estimateInputTokens({ input: imageInput('https://example.com/a.png') })).toThrow(/imageTokens/);
+    expect(() => wireTokensOf({ messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: 'https://example.com/a.png' } }] }] })).toThrow(/imageTokens/);
+  });
+
   it('applies the same rule to chat-completions and Anthropic wires', () => {
     const data = png(750, 100);
-    const chat = wireTokensOf({ messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: `data:image/png;base64,${data}` } }] }] });
-    const anthropic = wireTokensOf({ messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data } }] }] });
+    const chat = wireTokensOf({ messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: `data:image/png;base64,${data}` } }] }] }, MODEL);
+    const anthropic = wireTokensOf({ messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data } }] }] }, MODEL);
     expect(chat).toBeLessThan(200);
     expect(anthropic).toBeLessThan(200);
   });

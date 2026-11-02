@@ -1,6 +1,6 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
-import { canonicalJson } from '@momonga/foundation';
+import { canonicalJson, isRecord } from '@momonga/foundation';
 import { MIN_SUMMARY_TOKENS, OPEN_RESPONSES_OPENAPI } from '@momonga/protocol';
 import type { CompactRequest, CountTokensRequest, CreateResponseBody } from '@momonga/protocol';
 import { invalidRequest } from './errors.ts';
@@ -10,8 +10,6 @@ const REF_PREFIX = '#/components/schemas/';
 const STRUCTURAL_KEYWORDS = new Set(['anyOf', 'oneOf', 'allOf', 'if', 'then', 'else', 'not']);
 
 type SchemaObject = Record<string, unknown>;
-
-const isRecord = (value: unknown): value is SchemaObject => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const requireRecord = (value: unknown, where: string): SchemaObject => {
   if (!isRecord(value)) throw new TypeError(`Open Responses spec: expected an object at ${where}`);

@@ -3,11 +3,12 @@ import type { Duplex } from 'node:stream';
 import { WebSocketServer } from 'ws';
 import type { RawData, WebSocket } from 'ws';
 import type { StreamEvent } from '@momonga/protocol';
-import { ClientDisconnectedError, GatewayError, invalidRequest } from '../core/errors.ts';
+import { ClientDisconnectedError, GatewayError, invalidRequest, readerStalledError } from '../core/errors.ts';
 import type { ConnectionResponses } from '../core/input.ts';
 import type { ResponsesService } from '../core/responses-service.ts';
 import type { Services } from '../core/services.ts';
 import type { StoredResponse } from '../core/store.ts';
+import { isRecord } from '@momonga/foundation';
 import type { RequestTracker } from './tracker.ts';
 
 export const RESPONSES_WEBSOCKET_PATH = '/v1/responses';
@@ -16,7 +17,7 @@ export const CONNECTION_LIMIT_CODE = 'websocket_connection_limit_reached';
 const GOING_AWAY = 1001;
 const NORMAL_CLOSURE = 1000;
 const FORBIDDEN_FIELDS = ['stream', 'stream_options', 'background'] as const;
-const NO_HEADERS = { idempotencyKey: undefined, deadlineMs: undefined, traceparent: undefined, tracestate: undefined } as const;
+const DEADLINE_HEADER = 'momonga-deadline-ms';
 
 export type WebSocketTransportOptions = {
   services: Services;
@@ -54,8 +55,6 @@ const createConnectionResponses = (): ConnectionResponses => {
   };
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
-
 const parseCreateEvent = (text: string): Record<string, unknown> => {
   let parsed: unknown;
   try {
@@ -85,18 +84,26 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
 
   class Connection {
     private readonly socket: WebSocket;
+    private readonly deadlineMs: string | undefined;
     private readonly state = createConnectionResponses();
-    private readonly queue: string[] = [];
+    private readonly queue: Array<{ text: string; bytes: number }> = [];
+    private queuedBytes = 0;
     private readonly lifetime = new AbortController();
     private limitTimer: unknown;
     private draining = false;
     private closing = false;
     private expired = false;
 
-    constructor(socket: WebSocket) {
+    constructor(socket: WebSocket, deadlineMs: string | undefined) {
       this.socket = socket;
+      this.deadlineMs = deadlineMs;
       connections.add(this);
-      this.limitTimer = services.timers.setTimeout(() => void this.expire(), options.connectionLimitMs);
+      this.limitTimer = services.timers.setTimeout(() => {
+        this.expire().catch((error: unknown) => {
+          options.onError?.(error);
+          this.socket.terminate();
+        });
+      }, options.connectionLimitMs);
       socket.on('message', (data) => this.receive(data));
       socket.on('error', (error) => {
         this.lifetime.abort(new ClientDisconnectedError());
@@ -121,14 +128,27 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
 
     private receive(data: RawData): void {
       if (this.closing) return;
-      this.queue.push(data.toString());
+      const text = data.toString();
+      const bytes = Buffer.byteLength(text);
+      this.queue.push({ text, bytes });
+      this.queuedBytes += bytes;
+      if (this.queuedBytes >= services.config.limits.maxBodyBytes) this.socket.pause();
       if (!this.draining) void this.drain();
+    }
+
+    private dequeue(): string | undefined {
+      const next = this.queue.shift();
+      if (next === undefined) return undefined;
+      this.queuedBytes -= next.bytes;
+      if (this.queuedBytes < services.config.limits.maxBodyBytes && this.socket.isPaused) this.socket.resume();
+      return next.text;
     }
 
     private async expire(): Promise<void> {
       this.closing = true;
       this.expired = true;
       this.queue.length = 0;
+      this.queuedBytes = 0;
       this.lifetime.abort(new ClientDisconnectedError());
       if (this.socket.readyState === this.socket.OPEN) {
         await this.send(envelopeOf(invalidRequest(CONNECTION_LIMIT_CODE, 'the WebSocket connection reached its time limit; open a new connection')));
@@ -138,14 +158,22 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
 
     private send(message: unknown): Promise<void> {
       return new Promise((resolve, reject) => {
-        this.socket.send(JSON.stringify(message), (error) => (error === undefined || error === null ? resolve() : reject(error)));
+        const stallTimer = services.timers.setTimeout(() => {
+          this.socket.terminate();
+          reject(readerStalledError());
+        }, services.config.limits.readerStallMs);
+        this.socket.send(JSON.stringify(message), (error) => {
+          services.timers.clearTimeout(stallTimer);
+          if (error === undefined || error === null) resolve();
+          else reject(error);
+        });
       });
     }
 
     private async drain(): Promise<void> {
       this.draining = true;
       try {
-        for (let text = this.queue.shift(); text !== undefined; text = this.queue.shift()) {
+        for (let text = this.dequeue(); text !== undefined; text = this.dequeue()) {
           if (this.socket.readyState !== this.socket.OPEN) return;
           await this.turn(text);
         }
@@ -166,7 +194,12 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
       try {
         const body = parseCreateEvent(text);
         previousId = typeof body['previous_response_id'] === 'string' ? body['previous_response_id'] : undefined;
-        submission = responses.submit({ ...body, stream: true }, NO_HEADERS, this.lifetime.signal, this.state);
+        submission = responses.submit(
+          { ...body, stream: true },
+          { idempotencyKey: undefined, deadlineMs: this.deadlineMs, traceparent: undefined, tracestate: undefined },
+          this.lifetime.signal,
+          this.state,
+        );
         for (;;) {
           const step = await submission.events.next();
           if (step.done === true) break;
@@ -193,7 +226,7 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
   return {
     attach: (server) => {
       server.on('upgrade', (request, socket, head) => {
-        const pathname = new URL(request.url ?? '/', 'http://localhost').pathname;
+        const pathname = (request.url ?? '').split('?', 1)[0];
         if (pathname !== RESPONSES_WEBSOCKET_PATH) {
           refuse(socket, '404 Not Found');
           return;
@@ -206,7 +239,8 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
           refuse(socket, '503 Service Unavailable');
           return;
         }
-        wss.handleUpgrade(request, socket, head, (client) => void new Connection(client));
+        const deadlineHeader = request.headers[DEADLINE_HEADER];
+        wss.handleUpgrade(request, socket, head, (client) => void new Connection(client, Array.isArray(deadlineHeader) ? deadlineHeader.join(', ') : deadlineHeader));
       });
     },
     beginClose: () => {

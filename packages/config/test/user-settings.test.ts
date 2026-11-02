@@ -151,7 +151,7 @@ describe('createUserSettingsCache', () => {
     writeAt(file, { env: { MODE: 'good' } }, T0);
     const { cache, warnings } = cacheFor(tree);
     expect(cache.get().env).toEqual({ MODE: 'good' });
-    writeAt(file, { models: { targets: { remote: { adapter: 'chat-completions', model: 'x' } } } }, T1);
+    writeAt(file, { models: { targets: { remote: { adapter: 'chat-completions', provider: 'fake', model: 'x' } } } }, T1);
     expect(cache.get().env).toEqual({ MODE: 'good' });
     expect(warnings).toHaveLength(1);
   });

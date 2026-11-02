@@ -46,7 +46,7 @@ const FULL_KEYWORD_SUPPORT: KeywordSupport = {
 const DONE_MARKER = '[DONE]';
 
 export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOptions): ChatCompletionsAdapter => {
-  const pool = createEndpointPool({ label: 'chat-completions', unixPath: CHAT_COMPLETIONS_PATH, urlSuffix: CHAT_COMPLETIONS_SUFFIX });
+  const pool = createEndpointPool({ label: 'chat-completions', unixPath: CHAT_COMPLETIONS_PATH, urlSuffix: CHAT_COMPLETIONS_SUFFIX }, options.liveness);
   const { health, countTokens, isGuardrail } = options;
   let closing: Promise<void> | undefined;
   let closed = false;
@@ -111,13 +111,15 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
       const sink = envelope === undefined ? createNativeSink(emitter) : createConstrainedSink(emitter, envelope, options.clock);
       const driver = new StreamDriver(emitter, sink);
 
-      for (const event of driver.start()) {
-        ctx.signal.throwIfAborted();
-        yield event;
-      }
+      let opening: StreamEvent[] | undefined = driver.start();
       try {
         for await (const message of decodeSse(boundedSseBytes(response.body, MAX_SSE_EVENT_BYTES))) {
           ctx.signal.throwIfAborted();
+          if (opening !== undefined) {
+            const events = opening;
+            opening = undefined;
+            for (const event of events) yield event;
+          }
           if (message.data === DONE_MARKER) break;
           for (const event of driver.accept(message.data)) {
             ctx.signal.throwIfAborted();
@@ -126,12 +128,15 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
           if (driver.terminated) return;
         }
       } catch (error) {
-        if (!(error instanceof StreamFailure)) throw error;
+        if (!(error instanceof StreamFailure) || opening !== undefined) throw error;
         for (const event of driver.fail(error)) {
           ctx.signal.throwIfAborted();
           yield event;
         }
         return;
+      }
+      if (opening !== undefined) {
+        throw new StreamFailure('empty_upstream_stream', 'server_error', 'the upstream ended its stream before sending any event');
       }
       for (const event of driver.end()) {
         ctx.signal.throwIfAborted();
@@ -143,14 +148,15 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
   }
 
   const compact = async (request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult> => {
-    const cap = request.momonga?.max_summary_tokens ?? summaryTokenCapFor(await options.capabilities(ctx.target));
+    const capabilities = await options.capabilities(ctx.target);
+    const cap = request.momonga?.max_summary_tokens ?? summaryTokenCapFor(capabilities);
     const summaryRequest = summaryRequestOf(request, cap);
     for await (const event of create(summaryRequest, ctx)) {
       const collected = summaryOfTerminal(event, cap);
       if (collected === undefined) continue;
       const usage =
         collected.usage ??
-        estimatedUsage(wireTokensOf(renderWire(summaryRequest, ctx.target)), tokensForText(collected.summary));
+        estimatedUsage(wireTokensOf(renderWire(summaryRequest, ctx.target), capabilities.imageTokens), tokensForText(collected.summary));
       return { summary: collected.summary, usage };
     }
     throw new StreamFailure('upstream_protocol_error', 'model_error', 'the upstream ended without a terminal event');

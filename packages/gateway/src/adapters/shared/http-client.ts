@@ -1,7 +1,10 @@
 import { Agent, request } from 'undici';
 import { createUdsClient } from '@momonga/foundation';
+import { UPSTREAM_LIVENESS_DEFAULTS } from '../../defaults.ts';
 
 export type UpstreamEndpoint = { kind: 'unix'; socketPath: string } | { kind: 'tcp'; baseUrl: string };
+
+export type UpstreamLiveness = { headersTimeoutMs: number; bodyTimeoutMs: number };
 
 export type EndpointRoute = { label: string; unixPath: string; urlSuffix: string };
 
@@ -32,18 +35,18 @@ const lowercased = (headers: Record<string, string | string[] | undefined>): Rec
   return result;
 };
 
-const unixClient = (socketPath: string, route: EndpointRoute): EndpointClient => {
-  const client = createUdsClient(socketPath, { headersTimeoutMs: 0, bodyTimeoutMs: 0 });
+const unixClient = (socketPath: string, route: EndpointRoute, liveness: UpstreamLiveness): EndpointClient => {
+  const client = createUdsClient(socketPath, liveness);
   return {
     post: ({ subpath, ...options }) => client.request({ method: 'POST', path: `${route.unixPath}${subpath ?? ''}`, ...options }),
     close: () => client.close(),
   };
 };
 
-const tcpClient = (baseUrl: string, route: EndpointRoute): EndpointClient => {
+const tcpClient = (baseUrl: string, route: EndpointRoute, liveness: UpstreamLiveness): EndpointClient => {
   const base = new URL(baseUrl);
   const urlFor = (subpath: string | undefined): URL => new URL(`${base.pathname.replace(/\/+$/, '')}${route.urlSuffix}${subpath ?? ''}`, base.origin);
-  const agent = new Agent({ headersTimeout: 0, bodyTimeout: 0 });
+  const agent = new Agent({ headersTimeout: liveness.headersTimeoutMs, bodyTimeout: liveness.bodyTimeoutMs });
   let closing: Promise<void> | undefined;
   return {
     post: async (options) => {
@@ -71,7 +74,7 @@ export type EndpointPool = {
   close(): Promise<void>;
 };
 
-export const createEndpointPool = (route: EndpointRoute): EndpointPool => {
+export const createEndpointPool = (route: EndpointRoute, liveness: UpstreamLiveness = UPSTREAM_LIVENESS_DEFAULTS): EndpointPool => {
   const clients = new Map<string, EndpointClient>();
   let closed = false;
   return {
@@ -80,7 +83,7 @@ export const createEndpointPool = (route: EndpointRoute): EndpointPool => {
       const key = keyOf(endpoint);
       let client = clients.get(key);
       if (client === undefined) {
-        client = endpoint.kind === 'unix' ? unixClient(endpoint.socketPath, route) : tcpClient(endpoint.baseUrl, route);
+        client = endpoint.kind === 'unix' ? unixClient(endpoint.socketPath, route, liveness) : tcpClient(endpoint.baseUrl, route, liveness);
         clients.set(key, client);
       }
       return client;

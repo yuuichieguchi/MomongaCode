@@ -69,6 +69,12 @@ const TARGET_CAPABILITIES_SCHEMA = {
     streaming: { type: 'boolean' },
     stopSequences: { type: 'boolean' },
     imageInput: { type: 'boolean' },
+    imageTokens: {
+      type: 'object',
+      properties: { pixelsPerToken: { type: 'number', exclusiveMinimum: 0 }, maxTokens: POSITIVE_INTEGER },
+      required: ['pixelsPerToken', 'maxTokens'],
+      additionalProperties: false,
+    },
     parallelToolCalls: { type: 'boolean' },
     schemaDialect: { enum: ['json-schema-2020-12', 'guided-generation'] },
     tokenCounting: { enum: ['exact', 'calibrated', 'estimated'] },
@@ -110,7 +116,7 @@ const CHAT_COMPLETIONS_TARGET_SCHEMA = {
     maxConcurrency: POSITIVE_INTEGER,
     admissionTimeoutMs: NON_NEGATIVE_INTEGER,
   },
-  required: ['adapter', 'model', 'capabilities'],
+  required: ['adapter', 'model', 'provider', 'capabilities'],
   ...AT_MOST_ONE_API_KEY,
   additionalProperties: false,
 } as const;
@@ -129,7 +135,7 @@ const OPEN_RESPONSES_TARGET_SCHEMA = {
     maxConcurrency: POSITIVE_INTEGER,
     admissionTimeoutMs: NON_NEGATIVE_INTEGER,
   },
-  required: ['adapter', 'model', 'capabilities'],
+  required: ['adapter', 'model', 'provider', 'capabilities'],
   ...AT_MOST_ONE_API_KEY,
   additionalProperties: false,
 } as const;
@@ -220,6 +226,23 @@ export const SETTINGS_SCHEMA = {
       additionalProperties: false,
     },
     autoUpdates: { type: 'boolean' },
+    pricing: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          provider: { type: 'string', pattern: PROVIDER_NAME_PATTERN },
+          model: { type: 'string', minLength: 1 },
+          effectiveFrom: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+          inputPerMTok: { type: 'number', minimum: 0 },
+          cachedInputPerMTok: { type: 'number', minimum: 0 },
+          outputPerMTok: { type: 'number', minimum: 0 },
+          currency: { const: 'USD' },
+        },
+        required: ['provider', 'model', 'effectiveFrom', 'inputPerMTok', 'outputPerMTok', 'currency'],
+        additionalProperties: false,
+      },
+    },
     sandbox: { enum: ['seatbelt', 'bubblewrap', 'none'] },
     telemetry: {
       type: 'object',

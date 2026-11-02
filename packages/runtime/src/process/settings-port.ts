@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { appendPermissionRule, credentialEnvNames, loadSettings, stripCredentialEnv } from '@momonga/config';
+import { appendPermissionRule, systemFileLockPorts, credentialEnvNames, loadSettings, stripCredentialEnv } from '@momonga/config';
 import type { LoadSettingsResult, ResolvedSettings, TrustOracle, UserLayer, UserSettingsCache } from '@momonga/config';
 import type { RuntimeStore, Session } from '@momonga/store';
 import type { SettingsPort, ToolEnv } from '../ports.ts';
@@ -57,7 +57,7 @@ export const createSettingsComposition = ({ home, cache, store }: SettingsCompos
     rules: async (session) => (await loadSessionSettings(session.cwd, takeUserSnapshot())).rules,
     hooks: async (session) => (await loadSessionSettings(session.cwd, takeUserSnapshot())).settings.hooks,
     autoModeClassifier: () => takeUserSnapshot().settings.autoMode?.classifier,
-    appendRule: (session, { effect, rule }) => appendPermissionRule({ home, projectDir: session.cwd, rule, effect }),
+    appendRule: (session, { effect, rule }) => appendPermissionRule({ ports: systemFileLockPorts, home, projectDir: session.cwd, rule, effect }),
     trusted: (session) => store.trust.decisionFor(session.cwd).decision === 'trusted',
   };
 

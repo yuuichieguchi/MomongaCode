@@ -1,5 +1,3 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
 import { immediateTx, migrate, openDatabase } from '@momonga/foundation';
 import type { Migration } from '@momonga/foundation';
@@ -103,29 +101,24 @@ const requireNumber = (value: unknown, column: string): number => {
 
 type RowLocation = { table: string; keyColumn: string; key: string; column: string };
 
-const parseChecked = (json: string, location: RowLocation, check: (value: unknown) => string | undefined): unknown[] => {
-  const where = `gateway database table ${location.table} (${location.keyColumn} ${location.key}) column ${location.column}`;
+const locationText = (location: RowLocation): string =>
+  `gateway database table ${location.table} (${location.keyColumn} ${location.key}) column ${location.column}`;
+
+const parseCheckedObject = (json: string, location: RowLocation, check: (value: unknown) => string | undefined): unknown => {
   let parsed: unknown;
   try {
     parsed = JSON.parse(json);
   } catch (error) {
-    throw new Error(`${where} is not valid JSON: ${(error as Error).message}`, { cause: error });
+    throw new Error(`${locationText(location)} is not valid JSON: ${(error as Error).message}`, { cause: error });
   }
   const problem = check(parsed);
-  if (problem !== undefined || !Array.isArray(parsed)) throw new Error(`${where} failed validation: ${problem ?? 'is not an array'}`);
+  if (problem !== undefined) throw new Error(`${locationText(location)} failed validation: ${problem}`);
   return parsed;
 };
 
-const parseCheckedObject = (json: string, location: RowLocation, check: (value: unknown) => string | undefined): unknown => {
-  const where = `gateway database table ${location.table} (${location.keyColumn} ${location.key}) column ${location.column}`;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json);
-  } catch (error) {
-    throw new Error(`${where} is not valid JSON: ${(error as Error).message}`, { cause: error });
-  }
-  const problem = check(parsed);
-  if (problem !== undefined) throw new Error(`${where} failed validation: ${problem}`);
+const parseChecked = (json: string, location: RowLocation, check: (value: unknown) => string | undefined): unknown[] => {
+  const parsed = parseCheckedObject(json, location, check);
+  if (!Array.isArray(parsed)) throw new Error(`${locationText(location)} failed validation: is not an array`);
   return parsed;
 };
 
@@ -170,11 +163,8 @@ const prepare = (db: DatabaseSync): Statements => ({
   ),
 });
 
-const PRIVATE_DIRECTORY_MODE = 0o700;
-
 export const openGatewayStore = (dbPath: string, checks: StoredDataChecks): GatewayStore => {
-  fs.mkdirSync(path.dirname(dbPath), { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
-  const db = openDatabase(dbPath);
+  const db = openDatabase(dbPath, { createDirectory: true });
   try {
     migrate(db, MIGRATIONS);
     const statements = prepare(db);

@@ -1,5 +1,6 @@
 import type { ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
 import Ajv2020 from 'ajv/dist/2020.js';
+import { transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
 import type { Capabilities, HooksSettings, PermissionMode } from '@momonga/protocol';
 import { MCP_SERVERS_FILE_SCHEMA, MCP_SERVER_SCHEMA, SETTINGS_SCHEMA } from './settings-schema.ts';
 
@@ -53,7 +54,7 @@ export type ChatCompletionsTarget = {
   socketPath?: string;
   apiKeyEnv?: string;
   apiKeySecret?: string;
-  provider?: string;
+  provider: string;
   toolCalling?: 'native' | 'constrained';
   capabilities: Pick<TargetCapabilities, 'contextWindow' | 'maxOutputTokens'> & Partial<TargetCapabilities>;
   maxConcurrency?: number;
@@ -69,7 +70,7 @@ export type OpenResponsesTarget = {
   socketPath?: string;
   apiKeyEnv?: string;
   apiKeySecret?: string;
-  provider?: string;
+  provider: string;
   toolCalling?: 'native' | 'none';
   capabilities: RemoteTargetCapabilities;
   maxConcurrency?: number;
@@ -105,7 +106,7 @@ export type ResolvedChatCompletionsTarget = {
   socketPath?: string;
   apiKeyEnv?: string;
   apiKeySecret?: string;
-  provider?: string;
+  provider: string;
   toolCalling: 'native' | 'constrained';
   capabilities: TargetCapabilities & { maxConcurrency: number };
   maxConcurrency: number;
@@ -119,7 +120,7 @@ export type ResolvedOpenResponsesTarget = {
   socketPath?: string;
   apiKeyEnv?: string;
   apiKeySecret?: string;
-  provider?: string;
+  provider: string;
   toolCalling: 'native' | 'none';
   capabilities: TargetCapabilities & { maxConcurrency: number };
   maxConcurrency: number;
@@ -161,6 +162,16 @@ export type OtlpSettings = { endpoint: string; headers?: Record<string, string> 
 
 export type TelemetrySettings = { otlp?: OtlpSettings; captureMessageContent?: boolean };
 
+export type PriceEntrySettings = {
+  provider: string;
+  model: string;
+  effectiveFrom: string;
+  inputPerMTok: number;
+  cachedInputPerMTok?: number;
+  outputPerMTok: number;
+  currency: 'USD';
+};
+
 export type AutoModeSettings = { classifier?: string };
 
 export type Settings = {
@@ -176,6 +187,7 @@ export type Settings = {
   autoUpdates?: boolean;
   sandbox?: SandboxSetting;
   telemetry?: TelemetrySettings;
+  pricing?: PriceEntrySettings[];
 };
 
 export type HookGroups = NonNullable<HooksSettings[keyof HooksSettings]>;
@@ -195,8 +207,6 @@ const describeErrors = (errors: ErrorObject[] | null | undefined): string => {
   return `${pointer === '' ? '/' : pointer}: ${first.message ?? 'schema violation'}`;
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
-
 const assertNotHttpSse = (server: unknown, source: string, name: string): void => {
   if (isRecord(server) && server['type'] === 'sse') {
     throw new Error(`${source}: MCP server ${JSON.stringify(name)} uses the deprecated HTTP+SSE transport, which is not supported; use type "http" (Streamable HTTP)`);
@@ -207,8 +217,13 @@ export const assertSettings = (value: unknown, source: string): Settings => {
   if (isRecord(value) && isRecord(value['mcpServers'])) {
     for (const [name, server] of Object.entries(value['mcpServers'])) assertNotHttpSse(server, source, name);
   }
-  if (validateSettings(value)) return value;
-  throw new Error(`${source}: invalid settings at ${describeErrors(validateSettings.errors)}`);
+  if (!validateSettings(value)) throw new Error(`${source}: invalid settings at ${describeErrors(validateSettings.errors)}`);
+  const endpoint = value.telemetry?.otlp?.endpoint;
+  if (endpoint !== undefined) {
+    const problem = transportUrlProblem(endpoint);
+    if (problem !== undefined) throw new Error(`${source}: ${transportUrlMessage('telemetry.otlp.endpoint', endpoint, problem)}`);
+  }
+  return value;
 };
 
 export const assertMcpServersFile = (value: unknown, source: string): McpServersFile => {

@@ -43,7 +43,7 @@ beforeAll(async () => {
       models: {
         aliases: { default: ['primary'] },
         targets: {
-          primary: { adapter: 'chat-completions', model: 'system', socketPath: fake.socketPath, capabilities: { contextWindow: 4096, maxOutputTokens: 1024 } },
+          primary: { adapter: 'chat-completions', provider: 'fake', model: 'system', socketPath: fake.socketPath, capabilities: { contextWindow: 4096, maxOutputTokens: 1024 } },
         },
       },
     }),

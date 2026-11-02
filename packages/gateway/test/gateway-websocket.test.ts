@@ -204,6 +204,17 @@ describe('WebSocket transport over the unix socket', () => {
     expect(await client.closed).toBe(1000);
   });
 
+  it('applies the momonga-deadline-ms of the upgrade request to every turn', async () => {
+    const adapter = createScriptedAdapter({ calls: [{ ...textCall('never'), gate: { name: 'held', afterEvents: 1 } }] });
+    const harness = await startGateway({ adapters: { primary: adapter } });
+    const client = await open(`ws+unix://${harness.socketPath}:/v1/responses`, { 'momonga-deadline-ms': '2000' });
+    client.send(create());
+    await waitFor(() => adapter.calls.length === 1, { description: 'call started' });
+    harness.timers.advance(2000);
+    const turn = await client.untilTerminal();
+    expect(turn.at(-1)).toMatchObject({ type: 'response.failed', response: { error: { code: 'deadline_exceeded' } } });
+  });
+
   it('closes idle connections with going-away when the gateway closes and waits for none', async () => {
     const harness = await startGateway({ adapters: { primary: createScriptedAdapter({ calls: [] }) } });
     const client = await connectUnix(harness);
