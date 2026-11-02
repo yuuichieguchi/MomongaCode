@@ -28,7 +28,8 @@ const resourcesOf = async (skill: Skill, fileSystem: SkillFileSystem, limits: Sk
     if (entries === undefined) continue;
     for (const entry of [...entries].sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0))) {
       const relative = path.relative(skill.directory, path.join(next.directory, entry.name));
-      if (entry.kind === 'file' && relative !== SKILL_FILE_NAME) {
+      if (entry.kind === 'unreadable') complete = false;
+      else if (entry.kind === 'file' && relative !== SKILL_FILE_NAME) {
         if (files.length >= limits.maxResources) return { files, complete: false };
         files.push(relative);
       } else if (entry.kind === 'directory' && !IGNORED_DIRECTORY_NAMES.has(entry.name) && next.depth < limits.maxDepth) {

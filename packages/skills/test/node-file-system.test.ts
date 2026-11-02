@@ -48,11 +48,33 @@ describe('node skill file system', () => {
     expect(failure).toMatchObject({ code: 'EISDIR' });
   });
 
-  it('treats a symlink that points at itself as an entry of kind other', async () => {
+  it('reports a symlink that points at itself as an unreadable entry that names the link and the code', async () => {
     const root = tempRoot();
     fs.symlinkSync(path.join(root, 'loop'), path.join(root, 'loop'));
     const entries = await createNodeSkillFileSystem().listDirectory(root);
-    expect(entries).toEqual([{ name: 'loop', kind: 'other' }]);
+    expect(entries).toEqual([{ name: 'loop', kind: 'unreadable', error: expect.objectContaining({ code: 'ELOOP', path: path.join(root, 'loop') }) }]);
+  });
+
+  it('warns that a symlinked skill folder could not be followed instead of dropping it silently', async () => {
+    const root = tempRoot();
+    const home = path.join(root, 'home');
+    fs.mkdirSync(path.join(home, '.agents', 'skills'), { recursive: true });
+    fs.symlinkSync(path.join(home, '.agents', 'skills', 'loop'), path.join(home, '.agents', 'skills', 'loop'));
+    const set = await createSkillLoader({ home, fileSystem: createNodeSkillFileSystem() }).load({ projectRoot: path.join(root, 'project'), trusted: true });
+    expect(set.skills).toEqual([]);
+    expect(set.warnings.join('\n')).toContain(`${path.join(home, '.agents', 'skills', 'loop')} cannot be read (ELOOP)`);
+  });
+
+  it('marks the resource list incomplete when a symlink inside a skill cannot be followed', async () => {
+    const root = tempRoot();
+    const home = path.join(root, 'home');
+    const skill = path.join(home, '.agents', 'skills', 'pdf');
+    fs.mkdirSync(skill, { recursive: true });
+    fs.writeFileSync(path.join(skill, 'SKILL.md'), '---\nname: pdf\ndescription: "Use when: PDFs"\n---\nBody\n');
+    fs.symlinkSync(path.join(skill, 'loop'), path.join(skill, 'loop'));
+    const set = await createSkillLoader({ home, fileSystem: createNodeSkillFileSystem() }).load({ projectRoot: path.join(root, 'project'), trusted: true });
+    const { content } = await set.activate('pdf');
+    expect(content).toContain('<skill_resources complete="false">');
   });
 
   it('follows symlinks to learn the kind of an entry and treats a broken link as other', async () => {
