@@ -26,6 +26,34 @@ describe('retry', () => {
     expect(response.body.momonga.attempts).toBe(2);
   });
 
+  it('falls back to the next target instead of sleeping through a Retry-After longer than retry.maxMs', async () => {
+    const primary = createScriptedAdapter({ calls: [{ failure: { status: 429, message: 'slow down', retryAfterMs: 86_400_000 } }] });
+    const secondary = createScriptedAdapter({ calls: [ok('scripted-secondary', 'from secondary')] });
+    const { client, timers } = await startGateway({
+      adapters: { primary, secondary },
+      config: {
+        aliases: { fast: ['primary', 'secondary'] },
+        targets: { primary: { model: 'scripted-primary' }, secondary: { model: 'scripted-secondary' } },
+        retry: { maxAttempts: 3, baseMs: 100, maxMs: 10_000 },
+      },
+    });
+    const response = await readJson(await postJson(client, '/v1/responses', request));
+    expect(response.status).toBe(200);
+    expect(outputText(response.body)).toBe('from secondary');
+    expect(response.body.momonga.fallbackFrom).toEqual(['primary']);
+    expect(primary.calls).toHaveLength(1);
+    expect(timers.pending().some((timer) => timer.delayMs > 10_000)).toBe(false);
+  });
+
+  it('returns the 429 with its Retry-After when the only target asks for a wait longer than retry.maxMs', async () => {
+    const primary = createScriptedAdapter({ calls: [{ failure: { status: 429, message: 'slow down', retryAfterMs: 86_400_000 } }] });
+    const { client } = await startGateway({ adapters: { primary }, config: { retry: { maxAttempts: 3, baseMs: 100, maxMs: 10_000 } } });
+    const response = await readJson(await postJson(client, '/v1/responses', request));
+    expect(response.status).toBe(429);
+    expect(response.headers['retry-after']).toBe('86400');
+    expect(primary.calls).toHaveLength(1);
+  });
+
   it('does not retry a 400-class upstream error', async () => {
     const primary = createScriptedAdapter({ calls: [{ failure: { status: 422, message: 'bad schema' } }] });
     const { client, timers } = await startGateway({ adapters: { primary } });
