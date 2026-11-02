@@ -6,17 +6,15 @@ import type { PermissionMode } from '@momonga/protocol';
 import { commandApproval } from './approval.ts';
 import { commandCoveredByAllowRules } from './command-match.ts';
 import type { PolicyFilesystem } from './filesystem.ts';
-import { expandGlobWord } from './glob-expansion.ts';
 import { matchRule, matchStrength, ruleCoversSubject } from './match-rule.ts';
 import { absoluteFrom } from './path-match.ts';
-import { resolveSegmentProgram } from './program-resolution.ts';
 import { commandSpecsFor } from './platform-specs.ts';
-import { discoverRepository } from './repository.ts';
 import { insideRoots } from './roots.ts';
-import { analyzeCommand, executionSteps, looseRedirectTargets, programNameOf } from './shell.ts';
-import type { Analysis, Segment } from './shell.ts';
+import { analyzeCommand, executionSteps, looseRedirectTargets } from './shell.ts';
+import type { Analysis } from './shell.ts';
+import { changedBefore, judgedAfter, locateTargets, locateWrites, sedResolution } from './step-plan.ts';
+import type { PathPlan } from './step-plan.ts';
 import { describeReason, markRelativeUnresolvable, targetOfText } from './targets.ts';
-import type { Target } from './targets.ts';
 import type { DecisionKind, PermissionSubject, PolicyTool } from './types.ts';
 
 export type DecideInput = {
@@ -43,7 +41,6 @@ export type Decision = {
   humanOnly?: true;
 };
 
-const DISCARD_TARGETS: ReadonlySet<string> = new Set(['/dev/null', '/dev/stdout', '/dev/stderr']);
 const WRITE_TOOL: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write' };
 const READ_TOOL: PolicyTool = { name: 'Read', kind: 'read', sideEffect: 'read_only' };
 
@@ -173,84 +170,6 @@ const decideSubject = (input: DecideInput, tool: PolicyTool, subject: Permission
   return modeDefault(input, subject);
 };
 
-type PathPlan = {
-  paths: string[];
-  removes: string[];
-  candidates: string[];
-  unresolvable: UnresolvableReason[];
-  needsApproval: boolean;
-};
-
-const worktreeOf = (input: DecideInput): string => {
-  const discovery = discoverRepository(input.cwd, input.fs);
-  if ('found' in discovery && discovery.found && discovery.hit.entry === 'dotgit') return discovery.hit.directory;
-  const cwd = input.fs.canonicalise(input.cwd);
-  const canonicalCwd = cwd.ok ? cwd.path : input.cwd;
-  for (const root of input.roots) {
-    const resolution = input.fs.canonicalise(absoluteFrom(root, input.cwd));
-    if (resolution.ok && lexicallyWithin(canonicalCwd, resolution.path)) return resolution.path;
-  }
-  return canonicalCwd;
-};
-
-const expandGlobTarget = (input: DecideInput, pattern: string, plan: PathPlan, place: (resolved: string) => void): void => {
-  for (const word of expandGlobWord(input, pattern)) {
-    if (word.kind === 'unresolvable') plan.unresolvable.push(word.reason);
-    else place(word.absolute);
-  }
-};
-
-const resolveTargets = (input: DecideInput, targets: readonly Target[], mutated: readonly string[]): PathPlan => {
-  const plan: PathPlan = { paths: [], removes: [], candidates: [], unresolvable: [], needsApproval: false };
-  const resolve = (text: string): string | undefined => {
-    if (DISCARD_TARGETS.has(text)) return undefined;
-    if (text === '~' || text.startsWith('~/')) return path.join(input.home, text.slice(1));
-    return absoluteFrom(text, input.cwd);
-  };
-  const shadowed = (resolved: string): boolean => mutated.some((changed) => lexicallyWithin(resolved, changed));
-  const noteShadow = (resolved: string): void => {
-    if (shadowed(resolved)) plan.unresolvable.push({ kind: 'earlier-segment' });
-  };
-  const place = (resolved: string): void => {
-    plan.paths.push(resolved);
-    noteShadow(resolved);
-  };
-  let worktree: string | undefined;
-  for (const target of targets) {
-    if ('unresolvable' in target) {
-      plan.unresolvable.push(target.unresolvable);
-    } else if ('worktree' in target) {
-      worktree ??= worktreeOf(input);
-      const resolved = target.below === undefined ? worktree : path.join(worktree, target.below);
-      place(resolved);
-      plan.removes.push(resolved);
-    } else if ('glob' in target) {
-      expandGlobTarget(input, target.glob, plan, place);
-    } else if ('candidate' in target) {
-      const resolved = resolve(target.candidate);
-      if (resolved === undefined) continue;
-      plan.candidates.push(resolved);
-      noteShadow(resolved);
-      if (target.removes === true) plan.removes.push(resolved);
-    } else {
-      const resolved = resolve(target.literal);
-      if (resolved === undefined) continue;
-      place(resolved);
-      if (target.removes === true) plan.removes.push(resolved);
-      if (target.needsApproval === true) plan.needsApproval = true;
-    }
-  }
-  return plan;
-};
-
-const sedResolution =
-  (input: DecideInput) =>
-  (segment: Segment): string | undefined => {
-    if (programNameOf(segment) !== 'sed') return undefined;
-    const resolution = resolveSegmentProgram(segment, input);
-    return 'program' in resolution ? resolution.program : undefined;
-  };
-
 const mergePlans = (plans: readonly PathPlan[]): PathPlan => ({
   paths: plans.flatMap((plan) => plan.paths),
   removes: plans.flatMap((plan) => plan.removes),
@@ -260,14 +179,14 @@ const mergePlans = (plans: readonly PathPlan[]): PathPlan => ({
 });
 
 const analysisPlan = (input: DecideInput, analysis: Analysis): { writes: PathPlan; reads: PathPlan } => {
-  const mutated: string[] = [];
+  const steps = executionSteps(analysis, sedResolution(input));
+  const plans = locateWrites(input, steps);
   const writes: PathPlan[] = [];
   const reads: PathPlan[] = [];
-  for (const step of executionSteps(analysis, sedResolution(input))) {
-    reads.push(resolveTargets(input, step.reads, mutated));
-    const written = resolveTargets(input, step.writes, mutated);
-    writes.push(written);
-    if (step.relocates) mutated.push(...written.paths, ...written.candidates);
+  for (const [index, plan] of plans.entries()) {
+    const changed = changedBefore(plans, index, 'name-creating').paths;
+    reads.push(judgedAfter(locateTargets(input, plan.step.reads), changed));
+    writes.push(judgedAfter(plan.writes, changed));
   }
   return { writes: mergePlans(writes), reads: mergePlans(reads) };
 };
@@ -277,10 +196,10 @@ const looseUnresolvable: UnresolvableReason = { kind: 'unanalyzable' };
 const planPathAccess = (input: DecideInput, command: string): { writes: PathPlan; reads: PathPlan } => {
   const analysis = analyzeCommand(command, commandSpecsFor(input.fs.platform));
   if (analysis !== null) return analysisPlan(input, analysis);
-  const loose = resolveTargets(input, markRelativeUnresolvable(looseRedirectTargets(command).map((text) => targetOfText(text)), 'changed'), []);
+  const loose = locateTargets(input, markRelativeUnresolvable(looseRedirectTargets(command).map((text) => targetOfText(text)), 'changed'));
   return {
     writes: { ...loose, paths: loose.paths.filter((target) => path.isAbsolute(target)), unresolvable: command.includes('>') ? [looseUnresolvable] : [] },
-    reads: { ...resolveTargets(input, [], []), unresolvable: command.includes('<') ? [looseUnresolvable] : [] },
+    reads: { ...locateTargets(input, []), unresolvable: command.includes('<') ? [looseUnresolvable] : [] },
   };
 };
 

@@ -3,13 +3,14 @@ import type { Word } from './shell.ts';
 
 export type ParsedOption = { option: string; value?: string; dynamic?: true };
 
-export type OptionStep = { next: number; options: ParsedOption[]; undeclared?: Word };
+export type OptionStep = { next: number; options: ParsedOption[]; undeclared?: Word; optionLikeValue?: true };
 
 export type ParsedArgv = {
   options: ParsedOption[];
   operands: Word[];
   undeclared: Word[];
   separatorAt: number | undefined;
+  optionLikeValue: boolean;
 };
 
 const COMMAND_TERMINATORS: ReadonlySet<string> = new Set([';', '+']);
@@ -33,8 +34,11 @@ const consume = (words: readonly Word[], at: number, decl: OptionDecl, attached:
   }
   if (attached !== undefined) return { next: at + 1, options: [withValue(decl.name, undefined, attached)] };
   const valueWord = words[at + 1];
-  return valueWord === undefined ? failed : { next: at + 2, options: [withValue(decl.name, valueWord, undefined)] };
+  if (valueWord === undefined) return failed;
+  return withLikeness({ next: at + 2, options: [withValue(decl.name, valueWord, undefined)] }, valueWord);
 };
+
+const withLikeness = (step: OptionStep, valueWord: Word): OptionStep => (isOptionWord(valueWord) ? { ...step, optionLikeValue: true } : step);
 
 const withUndeclared = (step: OptionStep, undeclared: Word | undefined): OptionStep => (undeclared === undefined ? step : { ...step, undeclared });
 
@@ -57,7 +61,7 @@ const clusterStep = (words: readonly Word[], at: number, spec: CommandSpec): Opt
     if (rest !== '') return withUndeclared({ next: at + 1, options: [...parsed, withValue(decl.name, undefined, rest)] }, undeclared);
     const valueWord = words[at + 1];
     if (valueWord === undefined) return { next: at + 1, options: parsed, undeclared: word };
-    return withUndeclared({ next: at + 2, options: [...parsed, withValue(decl.name, valueWord, undefined)] }, undeclared);
+    return withUndeclared(withLikeness({ next: at + 2, options: [...parsed, withValue(decl.name, valueWord, undefined)] }, valueWord), undeclared);
   }
   return withUndeclared({ next: at + 1, options: parsed }, undeclared);
 };
@@ -86,7 +90,7 @@ export const parseOptionAt = (words: readonly Word[], at: number, spec: CommandS
 };
 
 export const parseArgv = (words: readonly Word[], spec: CommandSpec): ParsedArgv => {
-  const parsed: ParsedArgv = { options: [], operands: [], undeclared: [], separatorAt: undefined };
+  const parsed: ParsedArgv = { options: [], operands: [], undeclared: [], separatorAt: undefined, optionLikeValue: false };
   let index = 0;
   while (index < words.length) {
     const word = words[index] as Word;
@@ -97,6 +101,7 @@ export const parseArgv = (words: readonly Word[], spec: CommandSpec): ParsedArgv
       const step = parseOptionAt(words, index, spec);
       parsed.options.push(...step.options);
       if (step.undeclared !== undefined) parsed.undeclared.push(step.undeclared);
+      if (step.optionLikeValue === true) parsed.optionLikeValue = true;
       index = step.next;
     } else {
       parsed.operands.push(word);

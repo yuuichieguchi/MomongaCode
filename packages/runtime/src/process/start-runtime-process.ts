@@ -34,6 +34,7 @@ import { runTraceOf } from '../service/trace-view.ts';
 import type { RunService } from '../service/service.ts';
 import { systemTimers } from '../service/timers.ts';
 import type { ServiceTimers } from '../service/timers.ts';
+import { heartbeatMsFor } from '../worker/heartbeat.ts';
 import { createWorker } from '../worker/worker.ts';
 import type { Worker } from '../worker/types.ts';
 import { asError } from './as-error.ts';
@@ -395,6 +396,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         shellHost: nodeShellHost(),
         settings: composition,
         reapTiming,
+        leaseMs,
+        heartbeatMs: heartbeatMsFor(leaseMs),
       });
       const tracker: CancelUpstreamTracker = createCancelUpstream({ store, gatewayClient, timers });
       const skills = createSkillsPort({

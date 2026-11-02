@@ -80,6 +80,12 @@ const verifyChecksumsSignature = async (ports: UpdatePorts, source: UpdateSource
       cause: error,
     });
   }
+  if (verdict.kind === 'tool_unusable') {
+    throw new UpdateError('signature_tool_unusable', `${RELEASE_SIGNATURE_TOOL} could not verify the release signature; it may be too old to support \`-Y verify\``, {
+      detail: verdict.detail,
+      remediation: 'upgrade the OpenSSH client (signature verification needs OpenSSH 8.0 or later), then run `momonga update` again; nothing was installed',
+    });
+  }
   if (verdict.kind === 'invalid') {
     throw new UpdateError('signature_rejected', `${CHECKSUMS_ASSET} of ${release.tag} is not signed by the release key this build pins`, {
       detail: verdict.detail,

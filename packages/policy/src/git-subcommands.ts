@@ -4,6 +4,22 @@ import type { Word } from './shell.ts';
 import { GIT_OPTION_TABLES } from './git-option-tables.ts';
 
 const EXEC_OPTIONS: ReadonlySet<string> = new Set(['--ext-diff', '--textconv', '--exec', '--extcmd', '--upload-pack', '--receive-pack', '--config', '--template', '-O', '--open-files-in-pager', '--filters']);
+const SIGNATURE_VERIFYING_SUBCOMMANDS: ReadonlySet<string> = new Set(['log', 'show', 'reflog']);
+const SIGNATURE_OPTION = '--show-signature';
+const FORMAT_OPTIONS: readonly string[] = ['--format', '--pretty'];
+const SORT_OPTION = '--sort';
+const GROUP_OPTION = '--group';
+const GROUP_FORMAT_PREFIX = 'format:';
+const PRETTY_SIGNATURE = /%[-+ ]?G/;
+const REF_FILTER_SIGNATURE = /%\((\*|\^\{\})?signature/;
+const SORT_SIGNATURE = /^-?\*?signature/;
+
+export const optionVerifiesSignature = (option: string, value: string | undefined): boolean => {
+  if (value === undefined) return false;
+  if (FORMAT_OPTIONS.includes(option)) return PRETTY_SIGNATURE.test(value) || REF_FILTER_SIGNATURE.test(value);
+  if (option === SORT_OPTION) return SORT_SIGNATURE.test(value);
+  return option === GROUP_OPTION && value.startsWith(GROUP_FORMAT_PREFIX) && PRETTY_SIGNATURE.test(value);
+};
 const WRITE_OPTIONS: ReadonlySet<string> = new Set(['--output']);
 const READ_OPTIONS: Readonly<Record<string, readonly string[]>> = {
   blame: ['--contents', '--ignore-revs-file', '-S'],
@@ -30,6 +46,7 @@ const OTHER_OPTIONS: Readonly<Record<string, readonly OptionDecl[]>> = {
 
 const effectOf = (subcommand: string, name: string, takes: OptionDecl['takes']): OptionEffect => {
   if (EXEC_OPTIONS.has(name)) return 'exec';
+  if (name === SIGNATURE_OPTION && SIGNATURE_VERIFYING_SUBCOMMANDS.has(subcommand)) return 'exec';
   if (WRITE_OPTIONS.has(name)) return 'write';
   if (READ_OPTIONS[subcommand]?.includes(name) === true) return 'read';
   return takes === 'none' ? 'flag' : 'non-path';

@@ -10,7 +10,9 @@ export type SandboxPolicyErrorCode =
   | 'writable_root_not_absolute'
   | 'writable_root_missing'
   | 'file_rules_stale'
-  | 'guard_path_unresolvable';
+  | 'guard_path_unresolvable'
+  | 'protected_link_not_pinnable'
+  | 'protected_path_unreadable';
 
 export class SandboxPolicyError extends Error {
   readonly code: SandboxPolicyErrorCode;

@@ -1,5 +1,5 @@
 import { assistantTextOf } from '@momonga/protocol';
-import type { PublicRunEvent, ToolKind } from '@momonga/protocol';
+import type { PublicRunEvent, SideEffect, ToolKind } from '@momonga/protocol';
 import type { PermissionDecision } from './dataset.ts';
 import type { Transcript } from './transcript.ts';
 
@@ -10,6 +10,7 @@ export type ObservedCall = {
   callId: string;
   name: string;
   kind: ToolKind;
+  sideEffect?: SideEffect;
   rawInput: unknown;
   decision: PermissionDecision | 'unresolved';
 };
@@ -36,6 +37,7 @@ const callsInRun = (runId: string, events: readonly PublicRunEvent[]): ObservedC
     callId: event.callId,
     name: event.name,
     kind: event.kind,
+    ...(event.sideEffect === undefined ? {} : { sideEffect: event.sideEffect }),
     rawInput: event.rawInput,
     decision: decisionOf(events, event.callId),
   }));

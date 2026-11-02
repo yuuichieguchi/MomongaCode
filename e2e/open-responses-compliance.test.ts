@@ -82,7 +82,7 @@ describe('Open Responses compliance suite against the supervised gateway debug l
               model: 'system',
               socketPath: home.upstreamSocket,
               maxConcurrency: 8,
-              capabilities: { contextWindow: 8192, maxOutputTokens: 1024, imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600 }, parallelToolCalls: true },
+              capabilities: { contextWindow: 8192, maxOutputTokens: 1024, imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 }, parallelToolCalls: true },
             },
           },
         },

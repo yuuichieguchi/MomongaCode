@@ -1,4 +1,5 @@
 import type { DecisionKind } from '@momonga/policy';
+import type { SolveBudget } from './budget.ts';
 import type { Bool } from 'z3-solver';
 import { SUBJECT_TOOLS, createSubject, outcomeOf } from './decision-model.ts';
 import type { DecisionModels, Outcome, RuleTerms, SubjectModel, SubjectTool, Witness } from './decision-model.ts';
@@ -11,7 +12,7 @@ import type { Prediction, ReplayEnvironment } from './replay.ts';
 export type QueryContext = {
   models: DecisionModels;
   env: ReplayEnvironment;
-  timeoutMs: number;
+  budget: SolveBudget;
   subjects: ReadonlyMap<SubjectTool, SubjectModel>;
   mismatches: ModelMismatch[];
 };
@@ -51,15 +52,20 @@ const causeOf = (subject: SubjectModel, outcome: Outcome, kind: DecisionKind, re
   return `no rule decides; the ${mode} mode default asks`;
 };
 
+const solveWithinBudget = (context: QueryContext, constraints: readonly Bool[]): Promise<SolveResult> => {
+  const remainingMs = context.budget.remainingMs();
+  if (remainingMs <= 0) return Promise.resolve({ status: 'unknown', reason: `the verification budget of ${context.budget.totalMs} ms was spent` });
+  return context.models.smt.solve(constraints, Math.ceil(remainingMs));
+};
+
 const solveForWitness = async (
-  smt: DecisionModels['smt'],
+  context: QueryContext,
   subject: SubjectModel,
   constraints: readonly Bool[],
-  timeoutMs: number,
 ): Promise<{ result: SolveResult; witness: Witness | undefined }> => {
   const exclusions: Bool[] = [];
   for (;;) {
-    const result = await smt.solve([...constraints, ...exclusions], timeoutMs);
+    const result = await solveWithinBudget(context, [...constraints, ...exclusions]);
     if (result.status !== 'sat') return { result, witness: undefined };
     const witness = subject.witness(result.read, result.readBool);
     const exclusion = subject.exclusion?.(witness);
@@ -76,15 +82,15 @@ export const probe = async (
   constraints: readonly Bool[],
   excluded: ReadonlySet<number> = new Set(),
 ): Promise<Probe> => {
-  const { models, env, timeoutMs, subjects, mismatches } = context;
+  const { models, env, subjects, mismatches } = context;
   const subject = subjects.get(tool) as SubjectModel;
   const outcome = outcomeOf(models, subject, excluded);
-  const { result, witness } = await solveForWitness(models.smt, subject, [...subject.domain, ...constraints], timeoutMs);
+  const { result, witness } = await solveForWitness(context, subject, [...subject.domain, ...constraints]);
   if (result.status === 'unsat') return { status: 'none' };
   if (result.status === 'unknown') return { status: 'unknown', reason: result.reason };
   if (witness === undefined) throw new Error('the solver found a model without a witness');
   const predicted = kindOf(result.readBool, outcome);
-  const replay = replayWitness(env, tool, witness, { kind: predicted, dependsOnDefault: result.readBool(outcome.byDefault) });
+  const replay = await replayWitness(env, tool, witness, { kind: predicted, dependsOnDefault: result.readBool(outcome.byDefault) });
   const counterexample: Counterexample = { witness, predicted, cause: causeOf(subject, outcome, predicted, result.readBool, env.mode), replay };
   if (isMismatch(replay)) mismatches.push({ property, subject: subjectName, counterexample });
   return { status: 'found', counterexample };
@@ -94,7 +100,7 @@ export const predictDecision = async (context: QueryContext, tool: SubjectTool, 
   const subject = context.subjects.get(tool) as SubjectModel;
   const outcome = outcomeOf(context.models, subject);
   if (subject.exclusion?.(witness) !== undefined) return undefined;
-  const result = await context.models.smt.solve([...subject.domain, ...subject.bind(witness)], context.timeoutMs);
+  const result = await solveWithinBudget(context, [...subject.domain, ...subject.bind(witness)]);
   if (result.status === 'unsat') return undefined;
   if (result.status === 'unknown') throw new Error(`the solver could not evaluate the model: ${result.reason}`);
   return { kind: kindOf(result.readBool, outcome), dependsOnDefault: result.readBool(outcome.byDefault) };

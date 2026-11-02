@@ -1,5 +1,5 @@
-import { decide, decidePrimary } from '@momonga/policy';
-import type { DecideInput, DecisionKind, PermissionRule, PermissionSubject, PolicyFilesystem, PolicyTool } from '@momonga/policy';
+import { EMPTY_GLOB_TABLE, createGlobDeadline, decide, decidePrimary, prepareGlobs, settleGlobs } from '@momonga/policy';
+import type { DecideInput, DecisionKind, PermissionRule, PermissionSubject, PolicyHostFilesystem, PolicyTool } from '@momonga/policy';
 import type { FileRuleSet, ProtectedSet } from '@momonga/foundation';
 import type { PermissionMode } from '@momonga/protocol';
 import type { SubjectTool, Witness } from './decision-model.ts';
@@ -13,7 +13,8 @@ export type ReplayEnvironment = {
   cwd: string;
   fileRules: FileRuleSet;
   protectedSet: ProtectedSet;
-  fs: PolicyFilesystem;
+  fs: PolicyHostFilesystem;
+  globBudgetMs: number;
 };
 
 export type Prediction = { kind: DecisionKind; dependsOnDefault: boolean };
@@ -26,7 +27,7 @@ const TOOLS: Readonly<Record<Exclude<SubjectTool, 'mcp'>, PolicyTool>> = {
   Bash: { name: 'Bash', kind: 'execute', sideEffect: 'exec' },
 };
 
-const inputFor = (env: ReplayEnvironment, tool: SubjectTool, witness: Witness): DecideInput => {
+const inputFor = (env: ReplayEnvironment, tool: SubjectTool, witness: Witness): Omit<DecideInput, 'fs'> => {
   const base = {
     mode: env.mode,
     rules: [...env.rules],
@@ -35,7 +36,6 @@ const inputFor = (env: ReplayEnvironment, tool: SubjectTool, witness: Witness): 
     cwd: env.cwd,
     fileRules: env.fileRules,
     protectedSet: env.protectedSet,
-    fs: env.fs,
     searchPath: undefined,
     isWritable: (): boolean => false,
   };
@@ -55,11 +55,26 @@ const inputFor = (env: ReplayEnvironment, tool: SubjectTool, witness: Witness): 
   }
 };
 
-export const replayWitness = (env: ReplayEnvironment, tool: SubjectTool, witness: Witness, predicted: Prediction): Replay => {
-  const input = inputFor(env, tool, witness);
+export const commandDecisionWithout = (env: ReplayEnvironment, command: string, omitted: PermissionRule | undefined): DecisionKind => {
+  const rules = env.rules.filter((rule) => rule !== omitted);
+  return decidePrimary({ ...inputFor({ ...env, rules }, 'Bash', { kind: 'command', command, defaultAllow: false }), fs: settleGlobs(env.fs, EMPTY_GLOB_TABLE) }).kind;
+};
+
+export const replayWitness = async (env: ReplayEnvironment, tool: SubjectTool, witness: Witness, predicted: Prediction): Promise<Replay> => {
   let actual: DecisionKind;
   let final: DecisionKind;
   try {
+    const unsettled = inputFor(env, tool, witness);
+    const globs = await prepareGlobs({
+      expand: env.fs.expandGlob,
+      platform: env.fs.platform,
+      subject: unsettled.subject,
+      cwd: env.cwd,
+      home: env.home,
+      deadline: createGlobDeadline(env.globBudgetMs),
+      signal: new AbortController().signal,
+    });
+    const input: DecideInput = { ...unsettled, fs: settleGlobs(env.fs, globs) };
     actual = decidePrimary(input).kind;
     final = decide(input).kind;
   } catch (error) {

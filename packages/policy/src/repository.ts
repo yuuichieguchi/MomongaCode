@@ -11,7 +11,7 @@ export type Discovery = { found: false } | { found: true; hit: RepositoryHit } |
 const NOT_FOUND: Discovery = { found: false };
 const UNRESOLVED: Discovery = { unresolved: true };
 
-const SYMBOLIC_HEAD = /^ref:[ \t\n\v\f\r]*refs\//;
+const SYMBOLIC_HEAD = /^ref:[ \t\n\r]*refs\//;
 const OBJECT_NAME_PREFIX = /^[0-9A-Fa-f]{40}/;
 
 type Validity = 'valid' | 'invalid' | 'unresolved';

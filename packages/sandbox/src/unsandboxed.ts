@@ -1,7 +1,5 @@
-import { launch } from './process.ts';
+import { SANDBOX_KILL_GRACE_MS, launch } from './process.ts';
 import type { Sandbox, SandboxCommand, SandboxedProcess } from './types.ts';
-
-const DEFAULT_KILL_GRACE_MS = 2000;
 
 export function createUnsandboxed(options: { killGraceMs?: number } = {}): Sandbox {
   return {
@@ -17,7 +15,7 @@ export function createUnsandboxed(options: { killGraceMs?: number } = {}): Sandb
         ...(command.stdin === undefined ? {} : { stdin: command.stdin }),
         env: command.tmpDir === undefined ? command.env : { ...command.env, TMPDIR: command.tmpDir },
         signal,
-        killGraceMs: options.killGraceMs ?? DEFAULT_KILL_GRACE_MS,
+        killGraceMs: options.killGraceMs ?? SANDBOX_KILL_GRACE_MS,
         afterExit: () => undefined,
       });
     },

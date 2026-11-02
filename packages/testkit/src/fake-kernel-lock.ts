@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { removeFilesThenRelease } from '@momonga/foundation';
 import type { ClaimOutcome, HeldKernelLock, KernelLockMechanism } from '@momonga/foundation';
 
 export type FakeKernelLock = KernelLockMechanism & {
@@ -21,14 +22,16 @@ export const createFakeKernelLock = ({ inheritable }: FakeKernelLockOptions): Fa
   const adoptions: { lockPath: string; descriptor: number }[] = [];
   const claimedLock = (lockPath: string, descriptor: number | undefined): HeldKernelLock => {
     let open = true;
+    const release = (): void => {
+      if (!open) return;
+      open = false;
+      holders.delete(lockPath);
+    };
     return {
       descriptor,
       writeHolder: (text) => fs.writeFileSync(lockPath, text, { mode: 0o600 }),
-      release: () => {
-        if (!open) return;
-        open = false;
-        holders.delete(lockPath);
-      },
+      release,
+      dispose: () => removeFilesThenRelease([lockPath], release),
     };
   };
   const claimSync = (lockPath: string): ClaimOutcome => {

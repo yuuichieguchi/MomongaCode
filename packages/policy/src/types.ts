@@ -1,6 +1,4 @@
-import type { MemoryScope, ToolKind } from '@momonga/protocol';
-
-export type SideEffect = 'read_only' | 'write' | 'exec';
+import type { MemoryScope, SideEffect, ToolKind } from '@momonga/protocol';
 
 export type PolicyTool = { name: string; kind: ToolKind; sideEffect: SideEffect };
 

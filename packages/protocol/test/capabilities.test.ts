@@ -18,7 +18,7 @@ const BASE: Capabilities = {
   source: 'declared',
 };
 
-const MODEL = { pixelsPerToken: 750, maxTokens: 1600 };
+const MODEL = { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 };
 
 describe('imageCapability', () => {
   it('refuses image input without a token model', () => {
