@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { immediateTx, sha256Hex, uuidv7 } from '@momonga/foundation';
+import { immediateTx, modeIsPrivate, sha256Hex, uuidv7 } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { readerFor } from './rows.ts';
 import type { BlobByteRange, BlobByteSlice, BlobLineRange, BlobRef, BlobSlice, BlobStore } from './types.ts';
@@ -13,9 +13,9 @@ const NEWLINE = 0x0a;
 
 export const prepareBlobDirectory = (dir: string): void => {
   fs.mkdirSync(dir, { recursive: true, mode: BLOB_DIRECTORY_MODE });
-  const mode = fs.statSync(dir).mode & 0o777;
-  if (mode !== BLOB_DIRECTORY_MODE) {
-    throw new Error(`blob directory ${dir} has mode ${mode.toString(8).padStart(4, '0')} but must be 0700; run: chmod 700 ${dir}`);
+  const stat = fs.statSync(dir);
+  if (!modeIsPrivate(stat, 'directory')) {
+    throw new Error(`blob directory ${dir} has mode ${(stat.mode & 0o777).toString(8).padStart(4, '0')} but must be 0700; run: chmod 700 ${dir}`);
   }
 };
 

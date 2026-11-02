@@ -3,9 +3,9 @@ import { SETTINGS_SCHEMA, loadSettings, loadUserSettings } from '@momonga/config
 import { localSettingsPath, makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 
 describe('sandbox setting', () => {
-  it('is declared in the settings schema as seatbelt or none', () => {
+  it('is declared in the settings schema as seatbelt, bubblewrap or none', () => {
     const properties = SETTINGS_SCHEMA.properties as Record<string, unknown>;
-    expect(properties['sandbox']).toEqual({ enum: ['seatbelt', 'none'] });
+    expect(properties['sandbox']).toEqual({ enum: ['seatbelt', 'bubblewrap', 'none'] });
   });
 
   it('defaults to seatbelt for user settings', async () => {

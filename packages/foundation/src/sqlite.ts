@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { sha256Hex } from './canonical-json.ts';
+import { modeIsPrivate } from './platform/privacy.ts';
 
 const DEFAULT_BUSY_TIMEOUT_MS = 5000;
 const PRIVATE_DIRECTORY_MODE = 0o700;
@@ -26,7 +27,7 @@ const assertPrivateDirectory = (dir: string): void => {
     throw error;
   }
   if (!stat.isDirectory()) throw new Error(`database directory ${dir} is not a directory`);
-  if ((stat.mode & 0o777) !== PRIVATE_DIRECTORY_MODE) {
+  if (!modeIsPrivate(stat, 'directory')) {
     throw new Error(`database directory ${dir} has mode ${formatMode(stat.mode)} but must be 0700; run: chmod 700 ${dir}`);
   }
 };
@@ -38,7 +39,7 @@ const ensurePrivateFile = (file: string): void => {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     const stat = fs.statSync(file);
-    if ((stat.mode & 0o777) !== PRIVATE_FILE_MODE) {
+    if (!modeIsPrivate(stat, 'file')) {
       throw new Error(`database file ${file} has mode ${formatMode(stat.mode)} but must be 0600; run: chmod 600 ${file}`, { cause: error });
     }
     return;

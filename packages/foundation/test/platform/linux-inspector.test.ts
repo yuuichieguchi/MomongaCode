@@ -1,0 +1,147 @@
+import { describe, expect, it } from 'vitest';
+import { createLinuxInspector } from '../../src/platform/linux-inspector.ts';
+import { auxvLayoutOf, isPidDirectoryName, parseBootTimeSeconds, parseClockTicksPerSecond, parseProcStat } from '../../src/platform/linux-parsers.ts';
+import type { FileIdentity, ProcFs } from '../../src/platform/procfs.ts';
+
+const STAT_SLEEP = '4242 (sleep) S 4200 4242 4200 34816 4242 4194304 120 0 0 0 0 0 0 0 20 0 1 0 987654 5517312 189 18446744073709551615 1 1 0 0 0 0 0 0 0 0 0 0 17 3 0 0 0 0 0';
+const STAT_AWKWARD_COMM = '77 (a) b (c)) R 1 77 77 0 -1 4194560 10 0 0 0 1 2 0 0 20 0 4 0 5000 1000 10 18446744073709551615 0 0 0 0 0 0 0 0 0 0 0 0 17 0 0 0 0 0 0';
+
+const auxvOf = (pairs: Array<[bigint, bigint]>): Uint8Array => {
+  const buffer = new ArrayBuffer(pairs.length * 16);
+  const view = new DataView(buffer);
+  pairs.forEach(([type, value], index) => {
+    view.setBigUint64(index * 16, type, true);
+    view.setBigUint64(index * 16 + 8, value, true);
+  });
+  return new Uint8Array(buffer);
+};
+
+const errno = (code: string): NodeJS.ErrnoException => Object.assign(new Error(code), { code });
+
+type FakeEntry = { text?: string; bytes?: Uint8Array; children?: string[]; identity?: FileIdentity; failure?: string };
+
+const fakeProcfs = (entries: Record<string, FakeEntry>): ProcFs => {
+  const lookup = (file: string): FakeEntry => {
+    const entry = entries[file];
+    if (entry === undefined) throw errno('ENOENT');
+    if (entry.failure !== undefined) throw errno(entry.failure);
+    return entry;
+  };
+  return {
+    readText: async (file) => lookup(file).text ?? '',
+    readBytes: async (file) => lookup(file).bytes ?? new Uint8Array(),
+    list: async (directory) => lookup(directory).children ?? [],
+    identityOf: async (file) => lookup(file).identity ?? { dev: 0n, ino: 0n },
+  };
+};
+
+const LAYOUT = auxvLayoutOf('x64', 'LE');
+const BASE_ENTRIES: Record<string, FakeEntry> = {
+  '/proc/stat': { text: 'cpu  1 2 3 4\nbtime 1700000000\nprocesses 5\n' },
+  '/proc/self/auxv': { bytes: auxvOf([[33n, 140737488355328n], [17n, 100n], [0n, 0n]]) },
+};
+
+describe('proc parsers (formats from proc_pid_stat(5), proc_stat(5), getauxval(3))', () => {
+  it('reads state, parent, group and starttime from the field after comm', () => {
+    expect(parseProcStat(STAT_SLEEP)).toEqual({ state: 'S', parentPid: 4200, groupId: 4242, startTicks: 987654n });
+  });
+
+  it('splits after the last closing parenthesis when comm contains parentheses and spaces', () => {
+    expect(parseProcStat(STAT_AWKWARD_COMM)).toEqual({ state: 'R', parentPid: 1, groupId: 77, startTicks: 5000n });
+  });
+
+  it('rejects a stat line without comm parentheses, with too few fields, or with a non-numeric starttime', () => {
+    expect(() => parseProcStat('12 sleep S 1')).toThrow('closing parenthesis');
+    expect(() => parseProcStat('12 (sleep) S 1 12')).toThrow('too few fields');
+    expect(() => parseProcStat(STAT_SLEEP.replace('987654', 'abc'))).toThrow('non-numeric');
+  });
+
+  it('reads btime in seconds', () => {
+    expect(parseBootTimeSeconds('cpu 1 2\nbtime 769041601\nprocesses 86031\n')).toBe(769041601);
+    expect(() => parseBootTimeSeconds('cpu 1 2\n')).toThrow('btime');
+  });
+
+  it('finds AT_CLKTCK in a 64-bit little-endian auxiliary vector and a 32-bit big-endian one', () => {
+    expect(parseClockTicksPerSecond(auxvOf([[33n, 1n], [17n, 100n], [0n, 0n]]), LAYOUT)).toBe(100);
+    const big = new DataView(new ArrayBuffer(16));
+    big.setUint32(0, 17, false);
+    big.setUint32(4, 1024, false);
+    expect(parseClockTicksPerSecond(new Uint8Array(big.buffer), { wordBytes: 4, littleEndian: false })).toBe(1024);
+  });
+
+  it('stops at AT_NULL and fails when AT_CLKTCK is absent', () => {
+    expect(() => parseClockTicksPerSecond(auxvOf([[33n, 1n], [0n, 0n], [17n, 100n]]), LAYOUT)).toThrow('AT_CLKTCK');
+  });
+
+  it('derives the auxv layout from the architecture', () => {
+    expect(auxvLayoutOf('arm64', 'LE')).toEqual({ wordBytes: 8, littleEndian: true });
+    expect(auxvLayoutOf('ia32', 'LE')).toEqual({ wordBytes: 4, littleEndian: true });
+  });
+
+  it('recognises process directories in /proc listings', () => {
+    expect(['1', '4242', 'self', 'sys', '0', '012'].filter(isPidDirectoryName)).toEqual(['1', '4242']);
+  });
+});
+
+describe('linux inspector through an injected procfs', () => {
+  it('computes the start time as boot time plus starttime ticks', async () => {
+    const inspector = createLinuxInspector({ procfs: fakeProcfs({ ...BASE_ENTRIES, '/proc/4242/stat': { text: STAT_SLEEP } }), layout: LAYOUT });
+    expect(await inspector.startTimeOf(4242)).toBe(1700000000000 + 9876540);
+  });
+
+  it('reports a missing process as undefined and propagates other read failures', async () => {
+    const inspector = createLinuxInspector({ procfs: fakeProcfs({ ...BASE_ENTRIES, '/proc/9/stat': { failure: 'EIO' } }), layout: LAYOUT });
+    expect(await inspector.startTimeOf(8)).toBeUndefined();
+    await expect(inspector.startTimeOf(9)).rejects.toThrow('EIO');
+  });
+
+  it('reads boot parameters once', async () => {
+    let reads = 0;
+    const procfs = fakeProcfs({ ...BASE_ENTRIES, '/proc/4242/stat': { text: STAT_SLEEP } });
+    const counting: ProcFs = { ...procfs, readText: (file) => ((reads += file === '/proc/stat' ? 1 : 0), procfs.readText(file)) };
+    const inspector = createLinuxInspector({ procfs: counting, layout: LAYOUT });
+    await inspector.startTimeOf(4242);
+    await inspector.startTimeOf(4242);
+    expect(reads).toBe(1);
+  });
+
+  it('lists the pids whose descriptors resolve to the marker file identity', async () => {
+    const marker = { dev: 64769n, ino: 5000n };
+    const procfs = fakeProcfs({
+      '/marker': { identity: marker },
+      '/proc': { children: ['self', 'sys', '10', '11', '12', '13', '14'] },
+      '/proc/10/fd': { children: ['0', '3'] },
+      '/proc/10/fd/0': { identity: { dev: 1n, ino: 1n } },
+      '/proc/10/fd/3': { identity: marker },
+      '/proc/11/fd': { children: ['0'] },
+      '/proc/11/fd/0': { identity: { dev: 64769n, ino: 5001n } },
+      '/proc/12/fd': { failure: 'EACCES' },
+      '/proc/13/fd': { children: ['4', '5'] },
+      '/proc/13/fd/4': { failure: 'ENOENT' },
+      '/proc/13/fd/5': { identity: marker },
+    });
+    const inspector = createLinuxInspector({ procfs, layout: LAYOUT });
+    expect(await inspector.holdersOf('/marker')).toEqual([10, 13]);
+  });
+
+  it('treats a missing marker as having no holders and propagates unexpected failures', async () => {
+    const inspector = createLinuxInspector({ procfs: fakeProcfs({ '/proc': { children: [] }, '/broken': { failure: 'EIO' } }), layout: LAYOUT });
+    expect(await inspector.holdersOf('/missing')).toEqual([]);
+    await expect(inspector.holdersOf('/broken')).rejects.toThrow('EIO');
+  });
+
+  it('does not hide an unexpected failure while reading a descriptor directory', async () => {
+    const procfs = fakeProcfs({ '/marker': { identity: { dev: 1n, ino: 1n } }, '/proc': { children: ['10'] }, '/proc/10/fd': { failure: 'EIO' } });
+    await expect(createLinuxInspector({ procfs, layout: LAYOUT }).holdersOf('/marker')).rejects.toThrow('EIO');
+  });
+
+  it('maps pids to their process group and omits pids that are gone', async () => {
+    const inspector = createLinuxInspector({ procfs: fakeProcfs({ ...BASE_ENTRIES, '/proc/4242/stat': { text: STAT_SLEEP }, '/proc/77/stat': { text: STAT_AWKWARD_COMM } }), layout: LAYOUT });
+    expect(await inspector.groupsOf([4242, 77, 5], [])).toEqual(
+      new Map([
+        [4242, 4242],
+        [77, 77],
+      ]),
+    );
+  });
+});

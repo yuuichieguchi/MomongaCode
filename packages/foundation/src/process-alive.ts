@@ -1,6 +1,8 @@
+import { hostSignalSender } from './platform/group-port.ts';
+
 export type SignalSender = (pid: number, signal: NodeJS.Signals | 0) => void;
 
-export const isProcessAlive = (pid: number, send: SignalSender = (target, signal) => void process.kill(target, signal)): boolean => {
+export const isProcessAlive = (pid: number, send: SignalSender = hostSignalSender): boolean => {
   try {
     send(pid, 0);
     return true;

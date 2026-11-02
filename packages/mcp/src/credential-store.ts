@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { modeIsPrivate, noFollowFlag } from '@momonga/foundation';
 
 export interface McpCredentialStore {
   read(key: string): Promise<string | undefined>;
@@ -31,7 +32,7 @@ const fileFor = (directory: string, key: string): string => path.join(directory,
 const readOwnerOnly = async (file: string): Promise<string | undefined> => {
   let handle: fs.promises.FileHandle;
   try {
-    handle = await fs.promises.open(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    handle = await fs.promises.open(file, fs.constants.O_RDONLY | noFollowFlag());
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
@@ -39,8 +40,9 @@ const readOwnerOnly = async (file: string): Promise<string | undefined> => {
   try {
     const stat = await handle.stat();
     if (!stat.isFile()) throw new Error(`credential file ${file} is not a regular file`);
-    const mode = stat.mode & 0o777;
-    if (mode !== FILE_MODE) throw new Error(`credential file ${file} must have mode 0600, found ${mode.toString(8).padStart(4, '0')}`);
+    if (!modeIsPrivate(stat, 'file')) {
+      throw new Error(`credential file ${file} must have mode 0600, found ${(stat.mode & 0o777).toString(8).padStart(4, '0')}`);
+    }
     return await handle.readFile('utf8');
   } finally {
     await handle.close();

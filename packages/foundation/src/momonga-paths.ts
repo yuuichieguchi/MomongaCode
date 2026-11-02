@@ -1,7 +1,10 @@
 import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { assertSocketPathLength } from './socket-path.ts';
+import { ensureWindowsPrivateTree, modeIsPrivate, noFollowFlag, directoryFlag, ownerProblem } from './platform/privacy.ts';
+import { nodeCommandRunner } from './platform/command-runner.ts';
+import type { CommandRunner } from './platform/command-runner.ts';
+import { assertSocketPathLength, pipePathFor } from './socket-path.ts';
 
 export interface MomongaPaths {
   root: string;
@@ -25,10 +28,23 @@ export interface MomongaPaths {
   tmp: { root: string; spawn: string; sessions: string };
 }
 
+const pathFor = (platform: NodeJS.Platform): path.PlatformPath => (platform === 'win32' ? path.win32 : path.posix);
+
+const absoluteOrUndefined = (candidate: string | undefined, flavor: path.PlatformPath): string | undefined =>
+  candidate === undefined || !flavor.isAbsolute(candidate) ? undefined : candidate;
+
 const cacheBaseOf = (home: string, platform: NodeJS.Platform, env: Readonly<Record<string, string | undefined>>): string => {
-  if (platform === 'darwin') return path.join(home, 'Library', 'Caches', 'momonga');
-  const xdg = env['XDG_CACHE_HOME'];
-  return path.join(xdg === undefined || !path.isAbsolute(xdg) ? path.join(home, '.cache') : xdg, 'momonga');
+  const flavor = pathFor(platform);
+  if (platform === 'darwin') return flavor.join(home, 'Library', 'Caches', 'momonga');
+  if (platform === 'win32') return flavor.join(absoluteOrUndefined(env['LOCALAPPDATA'], flavor) ?? flavor.join(home, 'AppData', 'Local'), 'momonga');
+  return flavor.join(absoluteOrUndefined(env['XDG_CACHE_HOME'], flavor) ?? flavor.join(home, '.cache'), 'momonga');
+};
+
+const keychainsOf = (home: string, platform: NodeJS.Platform, env: Readonly<Record<string, string | undefined>>): string => {
+  const flavor = pathFor(platform);
+  if (platform === 'darwin') return flavor.join(home, 'Library', 'Keychains');
+  if (platform === 'win32') return flavor.join(absoluteOrUndefined(env['APPDATA'], flavor) ?? flavor.join(home, 'AppData', 'Roaming'), 'Microsoft', 'Credentials');
+  return flavor.join(absoluteOrUndefined(env['XDG_DATA_HOME'], flavor) ?? flavor.join(home, '.local', 'share'), 'keyrings');
 };
 
 export const momongaLayout = (
@@ -36,48 +52,46 @@ export const momongaLayout = (
   platform: NodeJS.Platform = process.platform,
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): MomongaPaths => {
-  const root = path.join(home, '.momonga');
-  const run = path.join(root, 'run');
-  const state = path.join(root, 'state');
-  const markers = path.join(run, 'markers');
-  const traces = path.join(state, 'traces');
+  const flavor = pathFor(platform);
+  const join = flavor.join;
+  const root = join(home, '.momonga');
+  const run = join(root, 'run');
+  const state = join(root, 'state');
+  const markers = join(run, 'markers');
+  const traces = join(state, 'traces');
   const cacheBase = cacheBaseOf(home, platform, env);
-  const tmp = path.join(cacheBase, 'tmp');
+  const tmp = join(cacheBase, 'tmp');
+  const socket = (name: string): string => (platform === 'win32' ? pipePathFor(home, name) : join(run, `${name}.sock`));
   return {
     root,
-    settingsFile: path.join(root, 'settings.json'),
+    settingsFile: join(root, 'settings.json'),
     run,
-    sockets: {
-      gateway: path.join(run, 'gateway.sock'),
-      runtime: path.join(run, 'runtime.sock'),
-      fm: path.join(run, 'fm.sock'),
-      supervisor: path.join(run, 'supervisor.sock'),
-    },
-    locks: { gateway: path.join(run, 'gateway.lock'), runtime: path.join(run, 'runtime.lock'), supervisor: path.join(run, 'supervisor.lock') },
+    sockets: { gateway: socket('gateway'), runtime: socket('runtime'), fm: socket('fm'), supervisor: socket('supervisor') },
+    locks: { gateway: join(run, 'gateway.lock'), runtime: join(run, 'runtime.lock'), supervisor: join(run, 'supervisor.lock') },
     markers: {
       root: markers,
-      tools: path.join(markers, 'tools'),
-      mcp: path.join(markers, 'mcp'),
-      fm: path.join(markers, 'fm'),
-      daemons: path.join(markers, 'daemons'),
+      tools: join(markers, 'tools'),
+      mcp: join(markers, 'mcp'),
+      fm: join(markers, 'fm'),
+      daemons: join(markers, 'daemons'),
     },
     state,
-    databases: { runtime: path.join(state, 'runtime.db'), gateway: path.join(state, 'gateway.db') },
-    traces: { dir: traces, gateway: path.join(traces, 'gateway.db'), runtime: path.join(traces, 'runtime.db') },
-    gatewayKey: path.join(state, 'gateway.key'),
-    probe: path.join(state, 'probe'),
-    logs: path.join(root, 'logs'),
+    databases: { runtime: join(state, 'runtime.db'), gateway: join(state, 'gateway.db') },
+    traces: { dir: traces, gateway: join(traces, 'gateway.db'), runtime: join(traces, 'runtime.db') },
+    gatewayKey: join(state, 'gateway.key'),
+    probe: join(state, 'probe'),
+    logs: join(root, 'logs'),
     logFiles: {
-      supervisor: path.join(root, 'logs', 'supervisor.log'),
-      gateway: path.join(root, 'logs', 'gateway.log'),
-      runtime: path.join(root, 'logs', 'runtime.log'),
+      supervisor: join(root, 'logs', 'supervisor.log'),
+      gateway: join(root, 'logs', 'gateway.log'),
+      runtime: join(root, 'logs', 'runtime.log'),
     },
-    projects: path.join(root, 'projects'),
-    skills: path.join(root, 'skills'),
-    launcher: path.join(home, '.local', 'bin', 'momonga'),
-    keychains: path.join(home, 'Library', 'Keychains'),
+    projects: join(root, 'projects'),
+    skills: join(root, 'skills'),
+    launcher: platform === 'win32' ? join(home, 'AppData', 'Local', 'Programs', 'momonga', 'momonga.exe') : join(home, '.local', 'bin', 'momonga'),
+    keychains: keychainsOf(home, platform, env),
     cacheBase,
-    tmp: { root: tmp, spawn: path.join(tmp, 'spawn'), sessions: path.join(tmp, 'sessions') },
+    tmp: { root: tmp, spawn: join(tmp, 'spawn'), sessions: join(tmp, 'sessions') },
   };
 };
 
@@ -89,13 +103,18 @@ export const momongaPaths = (
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): MomongaPaths => {
   const paths = momongaLayout(home, platform, env);
-  for (const socket of Object.values(paths.sockets)) assertSocketPathLength(socket);
+  for (const socket of Object.values(paths.sockets)) assertSocketPathLength(socket, platform);
   return paths;
 };
 
-export const ensureMomongaDirs = async (paths: MomongaPaths): Promise<void> => {
-  const uid = process.getuid?.();
-  if (uid === undefined) throw new Error('process.getuid is required to verify directory ownership');
+export type PlatformDirectoryPorts = {
+  platform?: NodeJS.Platform;
+  run?: CommandRunner;
+  env?: Readonly<Record<string, string | undefined>>;
+};
+
+export const ensureMomongaDirs = async (paths: MomongaPaths, ports: PlatformDirectoryPorts = {}): Promise<void> => {
+  const platform = ports.platform ?? process.platform;
   const ensureDirectory = async (directory: string): Promise<void> => {
     let stat = await lstatIfPresent(directory);
     if (stat === undefined) {
@@ -108,10 +127,11 @@ export const ensureMomongaDirs = async (paths: MomongaPaths): Promise<void> => {
     }
     if (stat.isSymbolicLink()) throw new Error(`${directory} is a symlink; refusing to use it`);
     if (!stat.isDirectory()) throw new Error(`${directory} exists and is not a directory`);
-    if (stat.uid !== uid) {
-      throw new Error(`${directory} is owned by uid ${stat.uid}, but the current user is uid ${uid}; the directory must be owned by the current user`);
+    const owner = ownerProblem(stat, platform);
+    if (owner !== undefined) {
+      throw new Error(`${directory} is owned by uid ${owner.found}, but the current user is uid ${owner.expected}; the directory must be owned by the current user`);
     }
-    if ((stat.mode & 0o777) !== 0o700) await fs.chmod(directory, 0o700);
+    if (!modeIsPrivate(stat, 'directory', platform)) await fs.chmod(directory, 0o700);
   };
   await fs.mkdir(path.dirname(paths.root), { recursive: true });
   for (const directory of [
@@ -134,6 +154,11 @@ export const ensureMomongaDirs = async (paths: MomongaPaths): Promise<void> => {
   await fs.mkdir(path.dirname(paths.cacheBase), { recursive: true });
   for (const directory of [paths.cacheBase, paths.tmp.root, paths.tmp.spawn, paths.tmp.sessions]) {
     await ensureDirectory(directory);
+  }
+  if (platform === 'win32') {
+    const windows = { run: ports.run ?? nodeCommandRunner, env: ports.env ?? process.env };
+    await ensureWindowsPrivateTree(paths.root, windows);
+    await ensureWindowsPrivateTree(paths.cacheBase, windows);
   }
 };
 
@@ -167,11 +192,36 @@ const openDirectoryNoFollow = async (target: string, flags: number): Promise<fs.
   }
 };
 
-export const ensureSessionTmpDir = async (paths: MomongaPaths, sessionId: string): Promise<string> => {
+const ensureSessionTmpDirWindows = async (paths: MomongaPaths, sessionId: string): Promise<string> => {
+  const directory = path.join(paths.tmp.sessions, sessionId);
+  const root = await lstatIfPresent(paths.tmp.sessions);
+  if (root === undefined || root.isSymbolicLink() || !root.isDirectory()) {
+    throw new SessionTmpDirError(`${paths.tmp.sessions} is missing, a link, or not a directory; refusing to use it`);
+  }
+  try {
+    await fs.mkdir(directory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+  }
+  const child = await fs.lstat(directory);
+  if (child.isSymbolicLink() || !child.isDirectory()) {
+    throw new SessionTmpDirError(`${directory} is a link or not a directory; refusing to use it`);
+  }
+  const canonicalRoot = await fs.realpath(paths.tmp.sessions);
+  const canonicalDirectory = await fs.realpath(directory);
+  if (path.dirname(canonicalDirectory).toLowerCase() !== canonicalRoot.toLowerCase()) {
+    throw new SessionTmpDirError(`${directory} does not live directly in the sessions root ${paths.tmp.sessions}`);
+  }
+  return directory;
+};
+
+export const ensureSessionTmpDir = async (paths: MomongaPaths, sessionId: string, ports: PlatformDirectoryPorts = {}): Promise<string> => {
   assertSessionId(sessionId);
+  const platform = ports.platform ?? process.platform;
+  if (platform === 'win32') return ensureSessionTmpDirWindows(paths, sessionId);
   const uid = process.getuid?.();
   if (uid === undefined) throw new Error('process.getuid is required to verify directory ownership');
-  const openFlags = fsSync.constants.O_RDONLY | fsSync.constants.O_DIRECTORY | fsSync.constants.O_NOFOLLOW;
+  const openFlags = fsSync.constants.O_RDONLY | directoryFlag(platform) | noFollowFlag(platform);
   const directory = path.join(paths.tmp.sessions, sessionId);
   let rootHandle: fs.FileHandle | undefined;
   let childHandle: fs.FileHandle | undefined;

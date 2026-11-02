@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ProbeReport, ToolCallingMode, ToolCallingSetting } from '@momonga/protocol';
+import { modeIsPrivate } from '@momonga/foundation';
 import { decideToolCalling } from './decide.ts';
 import { isRecord } from './json.ts';
 import { isProbeReport } from './report-schema.ts';
@@ -25,7 +26,7 @@ const PRIVATE_DIRECTORY_MODE = 0o700;
 export const saveProbeRecord = async (dir: string, key: ProbeRecordKey, report: ProbeReport): Promise<void> => {
   const file = recordPath(dir, key.target);
   await fs.promises.mkdir(dir, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
-  if (((await fs.promises.stat(dir)).mode & 0o777) !== PRIVATE_DIRECTORY_MODE) {
+  if (!modeIsPrivate(await fs.promises.stat(dir), 'directory')) {
     await fs.promises.chmod(dir, PRIVATE_DIRECTORY_MODE);
   }
   const temporary = `${file}.${process.pid}.tmp`;

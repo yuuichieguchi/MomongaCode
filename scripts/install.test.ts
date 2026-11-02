@@ -49,8 +49,13 @@ describe('install.sh', () => {
   let baseUrl = '';
 
   const target = (): string => path.join(prefix, 'bin', 'momonga');
+  const unameStub = (os: string, machine: string): string => {
+    const stubs = fs.mkdtempSync(path.join(root, 'uname-'));
+    fs.writeFileSync(path.join(stubs, 'uname'), `#!/bin/sh\nif [ "$1" = "-m" ]; then echo ${machine}; else echo ${os}; fi\n`, { mode: 0o755 });
+    return stubs;
+  };
   const baseEnv = (): NodeJS.ProcessEnv => ({
-    PATH: '/usr/bin:/bin',
+    PATH: `${unameStub('Darwin', 'arm64')}:/usr/bin:/bin`,
     HOME: root,
     MOMONGA_INSTALL_PREFIX: prefix,
     MOMONGA_RELEASE_BASE_URL: baseUrl,
@@ -137,15 +142,31 @@ describe('install.sh', () => {
     expect(fs.readdirSync(path.join(prefix, 'bin'))).toEqual([]);
   });
 
-  it('refuses an unsupported platform', async () => {
+  it('refuses an unsupported operating system', async () => {
     const stubs = path.join(root, 'stubs');
     fs.mkdirSync(stubs, { recursive: true });
-    fs.writeFileSync(path.join(stubs, 'uname'), '#!/bin/sh\necho Linux\n', { mode: 0o755 });
+    fs.writeFileSync(path.join(stubs, 'uname'), '#!/bin/sh\necho FreeBSD\n', { mode: 0o755 });
     serveRelease(GOOD_BINARY, GOOD_BINARY);
     const outcome = await runInstall({ ...baseEnv(), PATH: `${stubs}:/usr/bin:/bin` });
     expect(outcome.code).toBe(1);
-    expect(outcome.stderr).toBe('install.sh: unsupported OS Linux: only macOS is supported\n');
+    expect(outcome.stderr).toBe('install.sh: unsupported OS FreeBSD: only macOS and Linux are supported; use install.ps1 on Windows\n');
     expect(fs.existsSync(path.join(prefix, 'bin'))).toBe(false);
+  });
+
+  it.each([
+    ['x86_64', 'momonga-linux-x64'],
+    ['aarch64', 'momonga-linux-arm64'],
+  ])('installs the %s Linux artifact as %s', async (machine, asset) => {
+    served = { [`/${asset}`]: GOOD_BINARY, '/SHA256SUMS': Buffer.from(`${sha256(GOOD_BINARY)}  ${asset}\n`) };
+    const outcome = await runInstall({ ...baseEnv(), PATH: `${unameStub('Linux', machine)}:/usr/bin:/bin` });
+    expect(outcome.code).toBe(0);
+    expect(fs.readFileSync(target())).toEqual(GOOD_BINARY);
+  });
+
+  it('refuses an unsupported Linux architecture', async () => {
+    const outcome = await runInstall({ ...baseEnv(), PATH: `${unameStub('Linux', 'riscv64')}:/usr/bin:/bin` });
+    expect(outcome.code).toBe(1);
+    expect(outcome.stderr).toBe('install.sh: unsupported architecture riscv64: only x86_64 and aarch64 are supported on Linux\n');
   });
 
   it('requires a repository or a base url', async () => {

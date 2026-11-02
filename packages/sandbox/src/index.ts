@@ -9,3 +9,5 @@ export { createSeatbeltSandbox } from './seatbelt.ts';
 export type { SeatbeltSandboxOptions } from './seatbelt.ts';
 export { createUnsandboxed } from './unsandboxed.ts';
 export type { Sandbox, SandboxCommand, SandboxExit, SandboxPolicy, SandboxedProcess } from './types.ts';
+export { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, nodeFilesystemPort, planBubblewrap } from './bubblewrap.ts';
+export type { BubblewrapOptions, BubblewrapPlan, BubblewrapSandboxOptions, FilesystemPort } from './bubblewrap.ts';

@@ -55,7 +55,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   const mcpRemote: McpRemotePorts = options.mcpRemote ?? {
     credentials: createFileCredentialStore(path.join(paths.state, 'mcp-credentials')),
     randomToken: () => randomBytes(32).toString('base64url'),
-    openAuthorizationUrl: openInBrowser,
+    openAuthorizationUrl: (url, signal) => openInBrowser(url, signal, process.env),
   };
   const ensureSessionTmpDir = options.ensureSessionTmpDir ?? defaultEnsureSessionTmpDir;
 

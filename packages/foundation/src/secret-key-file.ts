@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { isProcessAlive } from './process-alive.ts';
+import { modeIsPrivate, noFollowFlag, ownerProblem } from './platform/privacy.ts';
 
 export interface SecretKeyFileOptions {
   bytes?: number;
@@ -12,7 +13,7 @@ export interface SecretKeyFileOptions {
 const readKey = (keyPath: string, bytes: number): Uint8Array | undefined => {
   let fd: number;
   try {
-    fd = fs.openSync(keyPath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    fd = fs.openSync(keyPath, fs.constants.O_RDONLY | noFollowFlag());
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') return undefined;
@@ -22,11 +23,9 @@ const readKey = (keyPath: string, bytes: number): Uint8Array | undefined => {
   try {
     const stat = fs.fstatSync(fd);
     if (!stat.isFile()) throw new Error(`Key file ${keyPath} is not a regular file`);
-    const uid = process.getuid?.();
-    if (uid === undefined) throw new Error('process.getuid is required to verify the key file owner');
-    if (stat.uid !== uid) throw new Error(`Key file ${keyPath} is owned by uid ${stat.uid}, but the current user is uid ${uid}`);
-    const mode = stat.mode & 0o777;
-    if (mode !== 0o600) throw new Error(`Key file ${keyPath} must have mode 0600, found ${mode.toString(8).padStart(4, '0')}`);
+    const owner = ownerProblem(stat);
+    if (owner !== undefined) throw new Error(`Key file ${keyPath} is owned by uid ${owner.found}, but the current user is uid ${owner.expected}`);
+    if (!modeIsPrivate(stat, 'file')) throw new Error(`Key file ${keyPath} must have mode 0600, found ${(stat.mode & 0o777).toString(8).padStart(4, '0')}`);
     if (stat.size !== bytes) throw new Error(`Key file ${keyPath} must be exactly ${bytes} bytes, found ${stat.size}`);
     return new Uint8Array(fs.readFileSync(fd));
   } finally {

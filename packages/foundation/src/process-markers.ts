@@ -1,10 +1,10 @@
-import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { isProcessAlive } from './process-alive.ts';
 import type { SignalSender } from './process-alive.ts';
-
-const ROW_FORMAT = /^\s*(\d+)\s+(\d+)\s*$/;
+import { hostSignalSender } from './platform/group-port.ts';
+import type { ProcessInspector } from './platform/inspector-types.ts';
+import { defaultProcessInspector } from './platform/process-inspector.ts';
 
 export type ReapTiming = {
   now(): number;
@@ -16,7 +16,7 @@ const realTiming: ReapTiming = {
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 };
 
-const defaultKill: SignalSender = (pid, signal) => void process.kill(pid, signal);
+const defaultKill: SignalSender = hostSignalSender;
 
 const POLL_INTERVAL_MS = 25;
 
@@ -35,35 +35,17 @@ const graceSleep = async (timing: ReapTiming, ms: number, signal: AbortSignal | 
   }
 };
 
-const runTool = (file: string, args: readonly string[]): Promise<string> =>
-  new Promise((resolve, reject) => {
-    execFile(file, [...args], { env: { LC_ALL: 'C' } }, (error, stdout) => {
-      if (error === null) resolve(stdout);
-      else if (String(error.code) === '1') resolve('');
-      else reject(error);
-    });
-  });
+export const findHolders = async (marker: string, inspector: ProcessInspector = defaultProcessInspector()): Promise<number[]> =>
+  (await inspector.holdersOf(marker)).filter((pid) => pid !== process.pid);
 
-export const findHolders = async (marker: string): Promise<number[]> => {
-  const output = await runTool('/usr/sbin/lsof', ['-t', '--', marker]);
-  return output
-    .split('\n')
-    .filter((line) => /^\d+$/.test(line.trim()))
-    .map((line) => Number(line.trim()))
-    .filter((pid) => pid !== process.pid);
-};
+const groupsByHolder = (holders: readonly number[], candidateGroups: readonly number[], inspector: ProcessInspector): Promise<Map<number, number>> =>
+  inspector.groupsOf(holders, candidateGroups);
 
-const groupsByHolder = async (holders: readonly number[]): Promise<Map<number, number>> => {
-  const output = await runTool('/bin/ps', ['-o', 'pid=,pgid=', '-p', holders.join(',')]);
-  return new Map(
-    output.split('\n').flatMap((line): Array<[number, number]> => {
-      const match = ROW_FORMAT.exec(line);
-      return match === null ? [] : [[Number(match[1]), Number(match[2])]];
-    }),
-  );
-};
-
-export const holderGroups = async (holders: readonly number[]): Promise<number[]> => [...(await groupsByHolder(holders)).values()];
+export const holderGroups = async (
+  holders: readonly number[],
+  candidateGroups: readonly number[] = [],
+  inspector: ProcessInspector = defaultProcessInspector(),
+): Promise<number[]> => [...(await groupsByHolder(holders, candidateGroups, inspector)).values()];
 
 const signalTargets = (send: SignalSender, targets: readonly number[], signal: NodeJS.Signals): number[] => {
   const unsignalled: number[] = [];
@@ -93,10 +75,16 @@ const unknownResult = (detail: string, { leftAloneGroup, leftAlonePids = [], uns
 
 export const reconcileProcessGroup = async (
   recorded: { pgid: number; marker: string },
-  { killGraceMs = 2000, kill = defaultKill, timing = realTiming, signal }: { killGraceMs?: number; kill?: SignalSender; timing?: ReapTiming; signal?: AbortSignal } = {},
+  {
+    killGraceMs = 2000,
+    kill = defaultKill,
+    timing = realTiming,
+    signal,
+    inspector = defaultProcessInspector(),
+  }: { killGraceMs?: number; kill?: SignalSender; timing?: ReapTiming; signal?: AbortSignal; inspector?: ProcessInspector } = {},
 ): Promise<MarkerReconcileResult> => {
   const { pgid, marker } = recorded;
-  const holders = await findHolders(marker);
+  const holders = await findHolders(marker, inspector);
   const groupAlive = isProcessAlive(-pgid, kill);
   if (!groupAlive && holders.length === 0) return unknownResult('The interrupted command is no longer running.');
   if (holders.length === 0) {
@@ -105,15 +93,15 @@ export const reconcileProcessGroup = async (
       { leftAloneGroup: pgid },
     );
   }
-  const holderGroup = groupAlive ? await groupsByHolder(holders) : new Map<number, number>();
+  const holderGroup = groupAlive ? await groupsByHolder(holders, [pgid], inspector) : new Map<number, number>();
   const groupVerified = [...holderGroup.values()].includes(pgid);
   const holdersOutsideGroup = groupVerified ? holders.filter((pid) => holderGroup.get(pid) !== pgid) : holders;
   const termTargets = [...(groupVerified ? [-pgid] : []), ...holdersOutsideGroup];
   const unsignalled = new Set(signalTargets(kill, termTargets, 'SIGTERM'));
   await graceSleep(timing, killGraceMs, signal);
 
-  const remaining = await findHolders(marker);
-  const stillInGroup = groupVerified && isProcessAlive(-pgid, kill) && remaining.length > 0 && (await holderGroups(remaining)).includes(pgid);
+  const remaining = await findHolders(marker, inspector);
+  const stillInGroup = groupVerified && isProcessAlive(-pgid, kill) && remaining.length > 0 && (await holderGroups(remaining, [pgid], inspector)).includes(pgid);
   const killTargets = [...(stillInGroup ? [-pgid] : []), ...remaining];
   for (const pid of signalTargets(kill, killTargets, 'SIGKILL')) unsignalled.add(pid);
 
@@ -139,6 +127,7 @@ export type ReapMarkedProcessesOptions = {
   kill?: SignalSender;
   timing?: ReapTiming;
   signal?: AbortSignal;
+  inspector?: ProcessInspector;
 };
 
 const MARKER_CONTENT = /^\d+\n?$/;
@@ -165,14 +154,15 @@ const signalHoldersOnly = async (
   kill: SignalSender,
   timing: ReapTiming,
   signal: AbortSignal | undefined,
+  inspector: ProcessInspector,
 ): Promise<HolderPass> => {
-  const holders = (await findHolders(marker)).filter((pid) => pid > 1);
+  const holders = (await findHolders(marker, inspector)).filter((pid) => pid > 1);
   const unsignalled = new Set(signalTargets(kill, holders, 'SIGTERM'));
   const deadline = timing.now() + killGraceMs;
-  let remaining = await findHolders(marker);
+  let remaining = await findHolders(marker, inspector);
   while (remaining.length > 0 && timing.now() < deadline && !isAborted(signal)) {
     await timing.sleep(POLL_INTERVAL_MS);
-    remaining = await findHolders(marker);
+    remaining = await findHolders(marker, inspector);
   }
   const dropped = holders.filter((pid) => !remaining.includes(pid) && isProcessAlive(pid, kill));
   for (const pid of signalTargets(kill, remaining.filter((pid) => pid > 1), 'SIGKILL')) unsignalled.add(pid);
@@ -190,6 +180,7 @@ export const reapMarkedProcesses = async ({
   kill = defaultKill,
   timing = realTiming,
   signal,
+  inspector = defaultProcessInspector(),
 }: ReapMarkedProcessesOptions): Promise<{ removed: boolean }> => {
   const stat = await lstatIfPresent(marker);
   if (stat === undefined) return { removed: true };
@@ -199,9 +190,9 @@ export const reapMarkedProcesses = async ({
     return { removed: true };
   }
   const recorded = pgid ?? (await readRecordedGroup(marker));
-  const ownGroup = (await holderGroups([process.pid]))[0];
+  const ownGroup = (await holderGroups([process.pid], recorded === undefined ? [] : [recorded], inspector))[0];
   if (recorded !== undefined && recorded > 1 && recorded !== ownGroup) {
-    const result = await reconcileProcessGroup({ pgid: recorded, marker }, { killGraceMs, kill, timing, ...(signal === undefined ? {} : { signal }) });
+    const result = await reconcileProcessGroup({ pgid: recorded, marker }, { killGraceMs, kill, timing, inspector, ...(signal === undefined ? {} : { signal }) });
     if (result.leftAloneGroup !== undefined) {
       onWarning(`${label} marker ${marker}: group ${result.leftAloneGroup} is still alive but no marker holder is in it, so it was left alone`);
     }
@@ -212,7 +203,7 @@ export const reapMarkedProcesses = async ({
       onWarning(`${label} marker ${marker}: could not signal process ${joinPids(result.unsignalledPids)}`);
     }
   } else {
-    const { unsignalled, dropped } = await signalHoldersOnly(marker, killGraceMs, kill, timing, signal);
+    const { unsignalled, dropped } = await signalHoldersOnly(marker, killGraceMs, kill, timing, signal, inspector);
     if (dropped.length > 0) {
       onWarning(`${label} marker ${marker}: process ${joinPids(dropped)} dropped the marker but is still alive, so it was left alone`);
     }
@@ -221,10 +212,10 @@ export const reapMarkedProcesses = async ({
     }
   }
   const deadline = timing.now() + killGraceMs;
-  let remaining = await findHolders(marker);
+  let remaining = await findHolders(marker, inspector);
   while (remaining.length > 0 && timing.now() < deadline) {
     await timing.sleep(POLL_INTERVAL_MS);
-    remaining = await findHolders(marker);
+    remaining = await findHolders(marker, inspector);
   }
   if (remaining.length > 0) {
     onWarning(`${label} marker ${marker} kept: process ${joinPids(remaining)} still hold it after cleanup; the next start will retry`);
@@ -242,6 +233,7 @@ export type ReapMarkerDirectoryOptions = {
   kill?: SignalSender;
   timing?: ReapTiming;
   signal?: AbortSignal;
+  inspector?: ProcessInspector;
 };
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -254,6 +246,7 @@ export const reapMarkerDirectory = async ({
   kill,
   timing,
   signal,
+  inspector,
 }: ReapMarkerDirectoryOptions): Promise<{ reaped: number; kept: number }> => {
   let names: string[];
   try {
@@ -265,7 +258,7 @@ export const reapMarkerDirectory = async ({
   }
   const markers = names.map((name) => path.join(dir, name));
   const settled = await Promise.allSettled(
-    markers.map((marker) => reapMarkedProcesses({ marker, killGraceMs, label, onWarning, ...(kill === undefined ? {} : { kill }), ...(timing === undefined ? {} : { timing }), ...(signal === undefined ? {} : { signal }) })),
+    markers.map((marker) => reapMarkedProcesses({ marker, killGraceMs, label, onWarning, ...(kill === undefined ? {} : { kill }), ...(timing === undefined ? {} : { timing }), ...(signal === undefined ? {} : { signal }), ...(inspector === undefined ? {} : { inspector }) })),
   );
   let reaped = 0;
   let kept = 0;

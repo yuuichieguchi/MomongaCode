@@ -50,6 +50,11 @@ export {
   SecretEmptyError,
   SecretUnavailableError,
   createKeychainSecretStore,
+  createPlatformSecretStore,
+  createSecretServiceStore,
+  createCredentialManagerStore,
+  credentialReadScript,
+  SECRET_TOOL_BINARY,
 } from './secret-store.ts';
 export type { SecretProcessPort, SecretProcessResult, SecretStore } from './secret-store.ts';
 export type { SecretKeyFileOptions } from './secret-key-file.ts';
@@ -66,6 +71,8 @@ export {
   MINIMAL_CHILD_ENV_LC_PREFIX,
   MINIMAL_CHILD_ENV_NAMES,
   MINIMAL_CHILD_PATH,
+  PLATFORM_CHILD_ENV_NAMES,
+  minimalChildPath,
   RUNTIME_ABORT_BUDGET_MS,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
   RUNTIME_TEARDOWN_BUDGET_MS,
@@ -85,10 +92,12 @@ export { findHolders, holderGroups, reapMarkedProcesses, reapMarkerDirectory, re
 export type { MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirectoryOptions, ReapTiming } from './process-markers.ts';
 export { isProcessAlive } from './process-alive.ts';
 export type { SignalSender } from './process-alive.ts';
-export { SOCKET_PATH_LIMIT, assertSocketPathLength } from './socket-path.ts';
+export { LINUX_SOCKET_PATH_LIMIT, PIPE_NAME_LIMIT, SOCKET_PATH_LIMIT, assertSocketPathLength, isPipePath, pipePathFor, socketPathLimit } from './socket-path.ts';
 export { MAX_SYMLINK_HOPS, canonicalDirectory, canonicalPath, comparableContains, comparableFromParts, comparablePath, containsByComponents, setCaseSensitivityProbe, volumeIsCaseInsensitive, walkPath } from './path-compare.ts';
 export type { CanonicalDirectoryFailureCode, CanonicalDirectoryResult, CaseSensitivityProbe, PathParts, StepRead, StepReader, WalkEntry, WalkFailure, WalkFailureDetail, WalkFailureReason, WalkResult, WalkStep } from './path-compare.ts';
 export { isTransientErrno } from './transient-errno.ts';
+export { PRIVATE_MODE, PrivateTreeError, directoryFlag, ensureWindowsPrivateTree, modeIsPrivate, noFollowFlag, ownerProblem } from './platform/privacy.ts';
+export type { OwnerProblem, PrivacyKind } from './platform/privacy.ts';
 export { BASE_ENTRY_FLAGS, COMMON_ENTRY_FLAGS, EntryUsageError, parseFlags } from './entry-flags.ts';
 export type { FlagKind, FlagSpec, ParsedFlags } from './entry-flags.ts';
 export { watchLifeline } from './lifeline.ts';
@@ -104,3 +113,14 @@ export { anchorFormOf, checkExceptionGrammar, checkFilePatternGrammar, fileMatch
 export type { Expression, FileMatcher, FilePattern, FilePatternContext, GlobSegment, MatcherForm } from './file-pattern.ts';
 export { EMPTY_FILE_RULES, FileRuleError, compileFileRuleSet, inWritableArea, lexicallyWithin, writableAreaOf, writableCheckOf, fileRuleBlocks, fileRuleFingerprint } from './file-rules.ts';
 export type { FileRuleAccess, FileRuleEffect, FileRuleEntry, FileRuleException, FileRuleProvenance, FileRuleSet, FileRuleSpec, WritableArea } from './file-rules.ts';
+export { nodeCommandRunner, nodeSyncCommandRunner } from './platform/command-runner.ts';
+export type { CommandOptions, CommandResult, CommandRunner, SyncCommandRunner } from './platform/command-runner.ts';
+export type { ProcessInspector } from './platform/inspector-types.ts';
+export { UnsupportedPlatformError, createProcessInspector, defaultProcessInspector, hostInspectorPorts } from './platform/process-inspector.ts';
+export type { InspectorPorts } from './platform/process-inspector.ts';
+export { createProcessGroupPort, createSignalSender, hostProcessGroupPort, hostSignalSender, posixGroupPort } from './platform/group-port.ts';
+export type { ProcessGroupPort } from './platform/group-port.ts';
+export { WINDOWS_PROBE_TIMEOUT_MS } from './platform/windows-inspector.ts';
+export { nodeProcFs } from './platform/procfs.ts';
+export type { FileIdentity, ProcFs } from './platform/procfs.ts';
+export type { PlatformDirectoryPorts } from './momonga-paths.ts';

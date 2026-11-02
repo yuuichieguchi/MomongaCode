@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { bundle, defaultEntry, repoRoot } from './bundle.ts';
-import { ensureSeaNode } from './node-runtime.ts';
+import { SEA_TARGETS, ensureSeaNode, isSeaTargetName } from './node-runtime.ts';
+import type { SeaTargetName } from './node-runtime.ts';
 
 export const nodeCacheDir = `${repoRoot}.cache/node`;
 export const entitlementsPath = `${repoRoot}scripts/sea-entitlements.plist`;
@@ -12,10 +13,11 @@ export type SeaOptions = {
   readonly entry: string;
   readonly output: string;
   readonly workDir: string;
+  readonly target?: SeaTargetName;
 };
 
-export const buildSeaUnsigned = async ({ entry, output, workDir }: SeaOptions): Promise<void> => {
-  const nodeBinary = await ensureSeaNode(nodeCacheDir);
+export const buildSeaUnsigned = async ({ entry, output, workDir, target = 'darwin-arm64' }: SeaOptions): Promise<void> => {
+  const nodeBinary = await ensureSeaNode(nodeCacheDir, target);
   fs.rmSync(workDir, { recursive: true, force: true });
   fs.mkdirSync(workDir, { recursive: true });
   fs.mkdirSync(path.dirname(output), { recursive: true });
@@ -35,7 +37,14 @@ export const buildSeaUnsigned = async ({ entry, output, workDir }: SeaOptions): 
       execArgvExtension: 'none',
     }),
   );
-  execFileSync(nodeBinary, ['--build-sea', configPath], { stdio: 'inherit' });
+  const runner = target === hostSeaTarget() ? nodeBinary : await ensureSeaNode(nodeCacheDir, hostSeaTarget());
+  execFileSync(runner, ['--build-sea', configPath], { stdio: 'inherit' });
+};
+
+export const hostSeaTarget = (platform: NodeJS.Platform = process.platform, arch: string = process.arch): SeaTargetName => {
+  const name = `${platform === 'win32' ? 'win' : platform}-${arch}`;
+  if (!isSeaTargetName(name)) throw new Error(`no pinned node runtime for the build host ${platform}/${arch}`);
+  return name;
 };
 
 export const signAdHoc = (binary: string): void => {
@@ -47,7 +56,7 @@ export const signAdHoc = (binary: string): void => {
 
 export const buildSea = async (options: SeaOptions): Promise<void> => {
   await buildSeaUnsigned(options);
-  signAdHoc(options.output);
+  if ((options.target ?? 'darwin-arm64') === 'darwin-arm64') signAdHoc(options.output);
 };
 
 if (import.meta.main) {
@@ -57,9 +66,11 @@ if (import.meta.main) {
       output: { type: 'string', default: `${repoRoot}dist/sea/momonga` },
       'work-dir': { type: 'string', default: `${repoRoot}dist/sea/work` },
       unsigned: { type: 'boolean', default: false },
+      target: { type: 'string', default: 'darwin-arm64' },
     },
   });
-  const options = { entry: values.entry, output: values.output, workDir: values['work-dir'] };
+  if (!isSeaTargetName(values.target)) throw new Error(`unknown --target ${values.target}; expected one of ${Object.keys(SEA_TARGETS).join(', ')}`);
+  const options = { entry: values.entry, output: values.output, workDir: values['work-dir'], target: values.target };
   if (values.unsigned) await buildSeaUnsigned(options);
   else await buildSea(options);
 }

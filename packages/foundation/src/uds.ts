@@ -4,7 +4,8 @@ import path from 'node:path';
 import { Agent, request } from 'undici';
 import { acquireProcessLock } from './process-lock.ts';
 import type { AcquireProcessLockOptions } from './process-lock.ts';
-import { assertSocketPathLength } from './socket-path.ts';
+import { modeIsPrivate, ownerProblem } from './platform/privacy.ts';
+import { assertSocketPathLength, isPipePath } from './socket-path.ts';
 
 export interface UdsRequestOptions {
   method: string;
@@ -98,20 +99,28 @@ const listen = (server: net.Server, socketPath: string): Promise<void> =>
     });
   });
 
+const listenPipe = async (server: net.Server, pipePath: string): Promise<void> => {
+  try {
+    await listen(server, pipePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EADDRINUSE') throw new Error(`${pipePath} is already in use by a live server`, { cause: error });
+    throw error;
+  }
+};
+
 export const listenUnix = async (server: net.Server, socketPath: string, lockOptions?: AcquireProcessLockOptions): Promise<void> => {
   assertSocketPathLength(socketPath);
+  if (isPipePath(socketPath)) return listenPipe(server, socketPath);
   const directory = path.dirname(socketPath);
   const directoryStat = await fs.promises.lstat(directory);
   if (directoryStat.isSymbolicLink()) throw new Error(`Socket directory ${directory} is a symlink; refusing to listen in it`);
   if (!directoryStat.isDirectory()) throw new Error(`Socket directory ${directory} is not a directory`);
-  const uid = process.getuid?.();
-  if (uid === undefined) throw new Error('process.getuid is required to verify the socket directory owner');
-  if (directoryStat.uid !== uid) {
-    throw new Error(`Socket directory ${directory} is owned by uid ${directoryStat.uid}, but the current user is uid ${uid}; the directory must be owned by the current user`);
+  const owner = ownerProblem(directoryStat);
+  if (owner !== undefined) {
+    throw new Error(`Socket directory ${directory} is owned by uid ${owner.found}, but the current user is uid ${owner.expected}; the directory must be owned by the current user`);
   }
-  const directoryMode = directoryStat.mode & 0o777;
-  if (directoryMode !== 0o700) {
-    throw new Error(`Socket directory ${directory} must have mode 0700, found ${directoryMode.toString(8)}`);
+  if (!modeIsPrivate(directoryStat, 'directory')) {
+    throw new Error(`Socket directory ${directory} must have mode 0700, found ${(directoryStat.mode & 0o777).toString(8)}`);
   }
   const lockPath = `${socketPath}.lock`;
   const lock = await acquireProcessLock(lockPath, async (pid) => {

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import nodePath from 'node:path';
-import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, modeIsPrivate, sha256Hex } from '@momonga/foundation';
 import { TERMINAL_STREAM_EVENT_TYPES } from '@momonga/protocol';
 import type {
   AdapterContext,
@@ -55,9 +55,9 @@ const ensureRecordingDirectory = (file: string): void => {
     fs.chmodSync(directory, RECORD_DIRECTORY_MODE);
     return;
   }
-  const mode = fs.statSync(directory).mode & 0o777;
-  if (mode !== RECORD_DIRECTORY_MODE) {
-    throw new Error(`recording directory ${directory} has mode ${mode.toString(8)} but must be 0700; run: chmod 700 ${directory}`);
+  const stat = fs.statSync(directory);
+  if (!modeIsPrivate(stat, 'directory')) {
+    throw new Error(`recording directory ${directory} has mode ${(stat.mode & 0o777).toString(8)} but must be 0700; run: chmod 700 ${directory}`);
   }
 };
 

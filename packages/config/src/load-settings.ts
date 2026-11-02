@@ -7,7 +7,7 @@ import { loadLayers, rejectAutoMode } from './layers.ts';
 import type { Layer, TrustOracle, UserLayer } from './layers.ts';
 import { EDIT_TOOLS, NEGATION_PREFIX, isPathTool, parseRule, RuleParseError } from './rule.ts';
 import type { PermissionRule, RuleEffect, RuleOrigin } from './rule.ts';
-import { assertSettings } from './settings.ts';
+import { assertSettings, defaultSandboxSetting } from './settings.ts';
 import type { McpServerConfig, SandboxSetting, Settings, TelemetrySettings } from './settings.ts';
 import type { ResolvedModels } from './models.ts';
 
@@ -118,7 +118,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     mcpServers: {},
     models,
     autoUpdates: true,
-    sandbox: 'seatbelt',
+    sandbox: defaultSandboxSetting(),
   };
   for (const layer of layers) {
     const { permissions, env, enabledMcpjsonServers, disabledMcpjsonServers, enableAllProjectMcpServers, mcpServers, autoUpdates, sandbox, telemetry } =

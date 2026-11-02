@@ -4,6 +4,7 @@ import { defineTool, ToolExecutionError } from '../types.ts';
 import type { SandboxExit } from '@momonga/sandbox';
 import type { ToolContext } from '../types.ts';
 import { canonicalDirectories, insideAny } from './paths.ts';
+import { nodeShellPorts, resolveBashPath } from './shell.ts';
 
 type BashInput = { command: string; timeout?: number; description?: string };
 
@@ -124,7 +125,7 @@ export const bashTool = defineTool<BashInput>({
     const script = `${trapScript(nonce)}\n${input.command}`;
     const child = ctx.sandbox.spawn(
       {
-        argv: ['/bin/bash', '-c', script],
+        argv: [resolveBashPath(process.platform, { ...nodeShellPorts(), env: ctx.env }), '-c', script],
         cwd: ctx.session.cwd,
         env: { ...ctx.env, GIT_TERMINAL_PROMPT: '0', PAGER: 'cat', GIT_PAGER: 'cat' },
         markerFile: marker,

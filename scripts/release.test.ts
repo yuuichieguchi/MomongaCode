@@ -132,6 +132,9 @@ describe('release.sh', () => {
       'ditto -c',
       'xcrun notarytool',
       'spctl --assess',
+      'npm run',
+      'npm run',
+      'npm run',
       'write_checksums',
       'git tag',
       'git push',
@@ -154,6 +157,9 @@ describe('release.sh', () => {
       'ditto -c',
       'xcrun notarytool',
       'spctl --assess',
+      'npm run',
+      'npm run',
+      'npm run',
       'gh release',
     ]);
     expect(calls[0]).toBe(`npm run sea -- --unsigned --output ${binary} `);
@@ -165,9 +171,14 @@ describe('release.sh', () => {
       `xcrun notarytool submit ${binary}.zip --key ${keyFile} --key-id FAKEKEYID1 --issuer 00000000-0000-0000-0000-000000000000 --wait --output-format json `,
     );
     expect(calls[5]).toBe(`spctl --assess --type execute --verbose=4 ${binary} `);
-    expect(calls[6]).toContain(`gh release create v1.2.3 ${binary} ${work}/dist/release/SHA256SUMS --repo fake-owner/fake-repo --verify-tag --title v1.2.3 --notes - second change (`);
+    const out = `${work}/dist/release`;
+    expect(calls.slice(6, 9)).toEqual(
+      ['linux-x64', 'linux-arm64', 'win-x64'].map((target) => `npm run sea -- --unsigned --target ${target} --output ${out}/momonga-${target}${target === 'win-x64' ? '.exe' : ''} `),
+    );
+    expect(calls[9]).toContain(`gh release create v1.2.3 ${binary} ${out}/momonga-linux-x64 ${out}/momonga-linux-arm64 ${out}/momonga-win-x64.exe ${out}/SHA256SUMS --repo fake-owner/fake-repo --verify-tag --title v1.2.3 --notes - second change (`);
     expect(originTags()).toBe('v1.2.3\n');
-    expect(fs.readFileSync(`${work}/dist/release/SHA256SUMS`, 'utf8')).toMatch(/^[0-9a-f]{64} {2}momonga-darwin-arm64\n$/);
+    const sums = fs.readFileSync(`${work}/dist/release/SHA256SUMS`, 'utf8').trimEnd().split('\n');
+    expect(sums.map((line) => line.replace(/^[0-9a-f]{64} {2}/, ''))).toEqual(['momonga-darwin-arm64', 'momonga-linux-x64', 'momonga-linux-arm64', 'momonga-win-x64.exe']);
   });
 
   it('covers every commit when there is no previous tag', () => {

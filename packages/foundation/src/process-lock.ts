@@ -2,6 +2,11 @@ import { randomBytes } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import { isProcessAlive } from './process-alive.ts';
+import type { CommandRunner } from './platform/command-runner.ts';
+import { createDarwinInspector } from './platform/darwin-inspector.ts';
+import type { ProcessInspector } from './platform/inspector-types.ts';
+import { PS_PROBE_TIMEOUT_MS, createProcessInspector, hostInspectorPorts } from './platform/process-inspector.ts';
+import type { InspectorPorts } from './platform/process-inspector.ts';
 
 export type DescribeHolder = (pid: number) => Promise<string>;
 
@@ -133,7 +138,7 @@ export type InspectProcessLockOptions = { startTimeOf?: ProcessStartProbe; memo?
 
 export type ProcessLockInspection = { state: 'free' } | { state: 'held'; pid: number } | { state: 'unreadable' };
 
-export const PS_PROBE_TIMEOUT_MS = 2000;
+export { PS_PROBE_TIMEOUT_MS };
 
 export type ProbeExecFile = (
   file: string,
@@ -142,21 +147,32 @@ export type ProbeExecFile = (
   callback: (error: Error | null, stdout: string) => void,
 ) => void;
 
-export type ProcessStartProbeDependencies = { execFile: ProbeExecFile; timeoutMs: number; platform?: NodeJS.Platform };
+export type ProcessStartProbeDependencies = {
+  execFile: ProbeExecFile;
+  timeoutMs: number;
+  platform?: NodeJS.Platform;
+  inspectorPorts?: Partial<InspectorPorts>;
+};
+
+const commandRunnerOf =
+  (run: ProbeExecFile, timeoutMs: number): CommandRunner =>
+  (file, args, options) =>
+    new Promise((resolve, reject) => {
+      run(file, args, { env: { ...options.env }, timeout: options.timeoutMs ?? timeoutMs, killSignal: 'SIGKILL' }, (error, stdout) => {
+        if (error === null) resolve({ exitCode: 0, stdout, stderr: '' });
+        else reject(error);
+      });
+    });
 
 export const createProcessStartProbe = (dependencies: ProcessStartProbeDependencies): ProcessStartProbe => {
   const { execFile: run, timeoutMs, platform = process.platform } = dependencies;
-  return async (pid) => {
-    if (platform !== 'darwin') return undefined;
-    const output = await new Promise<string>((resolve) => {
-      run('/bin/ps', ['-o', 'lstart=', '-p', String(pid)], { env: { LC_ALL: 'C', TZ: 'UTC' }, timeout: timeoutMs, killSignal: 'SIGKILL' }, (error, stdout) => {
-        resolve(error === null ? stdout : '');
-      });
-    });
-    const text = output.trim();
-    if (text === '') return undefined;
-    const startedAt = Date.parse(`${text} GMT`);
-    return Number.isNaN(startedAt) ? undefined : startedAt;
+  let inspector: ProcessInspector | undefined;
+  return (pid) => {
+    inspector ??=
+      platform === 'darwin'
+        ? createDarwinInspector({ run: commandRunnerOf(run, timeoutMs), startTimeoutMs: timeoutMs })
+        : createProcessInspector(platform, { ...hostInspectorPorts(), ...dependencies.inspectorPorts, startTimeoutMs: timeoutMs });
+    return inspector.startTimeOf(pid);
   };
 };
 

@@ -152,7 +152,10 @@ export type ModelsSettings = {
   targets?: Record<string, ModelTarget>;
 };
 
-export type SandboxSetting = 'seatbelt' | 'none';
+export type SandboxSetting = 'seatbelt' | 'bubblewrap' | 'none';
+
+export const defaultSandboxSetting = (platform: NodeJS.Platform = process.platform): SandboxSetting =>
+  platform === 'darwin' ? 'seatbelt' : platform === 'linux' ? 'bubblewrap' : 'none';
 
 export type OtlpSettings = { endpoint: string; headers?: Record<string, string> };
 

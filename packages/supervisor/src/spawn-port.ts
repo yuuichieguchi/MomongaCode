@@ -6,7 +6,7 @@ import type { ChildExit, ChildHandle, SpawnPort } from './child-manager.ts';
 const endedReadable = (): Readable => Readable.from([]);
 
 export const createSpawnPort = (): SpawnPort => (command, args, options) => {
-  const child = spawn(command, [...args], { cwd: options.cwd, env: { ...options.env }, detached: options.detached, stdio: [...options.stdio] });
+  const child = spawn(command, [...args], { cwd: options.cwd, env: { ...options.env }, detached: options.detached, windowsHide: true, stdio: [...options.stdio] });
   const errorListeners: ((error: NodeJS.ErrnoException) => void)[] = [];
   const exitListeners: ((exit: ChildExit) => void)[] = [];
   const deliverError = (error: NodeJS.ErrnoException): void => {

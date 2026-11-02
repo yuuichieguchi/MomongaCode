@@ -16,7 +16,7 @@ import {
 import type { Clock, JsonLogger, ProcessLock, ReadyFields, TextStream } from '@momonga/foundation';
 import { createTelemetry, exportersFor, openTraceStore } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
-import { createSeatbeltSandbox, createUnsandboxed } from '@momonga/sandbox';
+import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createSeatbeltSandbox, createUnsandboxed } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import type { Sandbox } from '@momonga/sandbox';
 import { isFatalStoreError, openRuntimeStore } from '@momonga/store';
@@ -77,6 +77,7 @@ export type StartRuntimeProcessOptions = {
   stdout?: TextStream;
   gatewaySocketPath?: string;
   sandboxExecPath?: string;
+  platform?: NodeJS.Platform;
   workerCount?: number;
   leaseMs?: number;
   drainTimeoutMs?: number;
@@ -125,7 +126,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   if (!Number.isSafeInteger(drainTimeoutMs) || drainTimeoutMs < 0) {
     throw new RangeError(`drainTimeoutMs must be a non-negative integer, got ${drainTimeoutMs}`);
   }
-  const sandboxExecPath = options.sandboxExecPath ?? DEFAULT_SANDBOX_EXEC_PATH;
+  const sandboxExecPath = options.sandboxExecPath;
   const clock = options.clock ?? systemClock;
   const timers = options.timers ?? systemTimers;
   const logger = options.logger ?? createJsonLogger({ service: 'runtime', clock });
@@ -293,15 +294,23 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         logger.warn('sandbox is none: Bash asks before every command');
         return unsandboxed;
       }
+      const platform = options.platform ?? process.platform;
+      const required = kind === 'seatbelt' ? 'darwin' : 'linux';
+      if (platform !== required) {
+        throw new ConfigError(`sandbox "${kind}" is only available on ${required}; set "sandbox" in ${paths.settingsFile} to "none" to run without a sandbox (Bash will then ask before every command)`);
+      }
+      const launcherPath = sandboxExecPath ?? (kind === 'seatbelt' ? DEFAULT_SANDBOX_EXEC_PATH : DEFAULT_BWRAP_PATH);
+      const launcherName = kind === 'seatbelt' ? 'sandbox-exec' : 'bwrap';
       try {
-        fs.accessSync(sandboxExecPath, fs.constants.X_OK);
+        fs.accessSync(launcherPath, fs.constants.X_OK);
       } catch (error) {
         throw new ConfigError(
-          `sandbox-exec is not available at ${sandboxExecPath}; set "sandbox": "none" in ${paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
+          `${launcherName} is not available at ${launcherPath}; set "sandbox": "none" in ${paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
           { cause: error },
         );
       }
-      return createSeatbeltSandbox({ sandboxExecPath, tmpRoot: paths.tmp.spawn, killGraceMs: SANDBOX_KILL_GRACE_MS });
+      if (kind === 'bubblewrap') return createBubblewrapSandbox({ bwrapPath: launcherPath, tmpRoot: paths.tmp.spawn, killGraceMs: SANDBOX_KILL_GRACE_MS });
+      return createSeatbeltSandbox({ sandboxExecPath: launcherPath, tmpRoot: paths.tmp.spawn, killGraceMs: SANDBOX_KILL_GRACE_MS });
     });
 
     await step('mcp-markers', async () => {
