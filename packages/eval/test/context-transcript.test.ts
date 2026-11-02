@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TRANSCRIPT_FORMAT, decodeTranscript, encodeTranscript } from '@momonga/eval';
+import { TRANSCRIPT_FORMAT, TranscriptError, decodeTranscript, encodeTranscript } from '@momonga/eval';
 import type { Transcript } from '@momonga/eval';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { toolRoundTripTranscript } from './fixtures.ts';
@@ -31,6 +31,28 @@ describe('transcripts and the context events', () => {
       guidelineVersion: 1,
     });
     expect(decodeTranscript(encodeTranscript(original), 'new.jsonl')).toEqual(original);
+  });
+
+  it('ends a transcript with a record that counts its events, so a file cut at a line boundary is refused', () => {
+    const lines = encodeTranscript(toolRoundTripTranscript('c1', 2)).split('\n').filter((line) => line !== '');
+    expect(JSON.parse(lines.at(-1)!)).toMatchObject({ end: true });
+    const withoutLastEvent = [...lines.slice(0, -2), lines.at(-1)].join('\n') + '\n';
+    expect(() => decodeTranscript(withoutLastEvent, 'cut.jsonl')).toThrow(TranscriptError);
+    expect(() => decodeTranscript(withoutLastEvent, 'cut.jsonl')).toThrow(/events/);
+  });
+
+  it('refuses a transcript with no end record', () => {
+    const lines = encodeTranscript(toolRoundTripTranscript('c1', 2)).split('\n').filter((line) => line !== '');
+    expect(() => decodeTranscript(lines.slice(0, -1).join('\n') + '\n', 'cut.jsonl')).toThrow(/end record/);
+  });
+
+  it('counts the events of child runs in the end record', () => {
+    const parent = toolRoundTripTranscript('c1', 2);
+    const withChild: Transcript = { ...parent, children: [{ runId: 'child-1', agent: 'explore', events: parent.events.slice(0, 2) }] };
+    const lines = encodeTranscript(withChild).split('\n').filter((line) => line !== '');
+    const withoutChildEvent = [...lines.slice(0, -2), lines.at(-1)].join('\n') + '\n';
+    expect(decodeTranscript(encodeTranscript(withChild), 'child.jsonl')).toEqual(withChild);
+    expect(() => decodeTranscript(withoutChildEvent, 'cut.jsonl')).toThrow(TranscriptError);
   });
 
   it('round-trips the governing, memory and contribution events', () => {

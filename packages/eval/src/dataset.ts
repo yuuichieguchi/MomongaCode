@@ -116,13 +116,15 @@ export const DATASET_SCHEMA = {
 const ajv = new Ajv2020.default({ strict: true });
 const validateDataset: ValidateFunction<GoldenDataset> = ajv.compile<GoldenDataset>(DATASET_SCHEMA);
 
-const describeFirstError = (): string => {
-  const first = validateDataset.errors?.[0];
+export const describeFirstError = (validate: Pick<ValidateFunction, 'errors'>): string => {
+  const first = validate.errors?.[0];
   if (first === undefined) return '/: schema violation';
   return `${first.instancePath === '' ? '/' : first.instancePath}: ${first.message ?? 'schema violation'}`;
 };
 
-const assertUniqueCaseIds = (dataset: GoldenDataset, source: string): void => {
+type CasesHolder = { cases: readonly GoldenCase[] };
+
+const assertUniqueCaseIds = (dataset: CasesHolder, source: string): void => {
   const seen = new Set<string>();
   for (const golden of dataset.cases) {
     if (seen.has(golden.id)) throw new DatasetError(`${source}: duplicate case id ${golden.id}`);
@@ -130,7 +132,7 @@ const assertUniqueCaseIds = (dataset: GoldenDataset, source: string): void => {
   }
 };
 
-const assertPatternsCompile = (dataset: GoldenDataset, source: string): void => {
+const assertPatternsCompile = (dataset: CasesHolder, source: string): void => {
   for (const golden of dataset.cases) {
     for (const spec of golden.graders) {
       const pattern = spec.kind === 'finalTextMatches' ? spec.pattern : spec.kind === 'permissionDecision' ? spec.inputPattern : undefined;
@@ -144,18 +146,22 @@ const assertPatternsCompile = (dataset: GoldenDataset, source: string): void => 
   }
 };
 
-const assertFilesStayInside = (dataset: GoldenDataset, source: string): void => {
+export const isInsideWorkspace = (name: string): boolean => {
+  const segments = name.split('/');
+  return name !== '' && !name.startsWith('/') && !segments.some((segment) => segment === '' || segment === '.' || segment === '..');
+};
+
+const assertFilesStayInside = (dataset: CasesHolder, source: string): void => {
   for (const golden of dataset.cases) {
     for (const name of Object.keys(golden.files ?? {})) {
-      const segments = name.split('/');
-      if (name === '' || name.startsWith('/') || segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
+      if (!isInsideWorkspace(name)) {
         throw new DatasetError(`${source}: case ${golden.id} has the fixture file ${JSON.stringify(name)}; fixture names must be relative paths inside the workspace`);
       }
     }
   }
 };
 
-const assertCountRanges = (dataset: GoldenDataset, source: string): void => {
+const assertCountRanges = (dataset: CasesHolder, source: string): void => {
   for (const golden of dataset.cases) {
     for (const spec of golden.graders) {
       if (spec.kind !== 'toolCalled' || spec.count === undefined) continue;
@@ -166,17 +172,24 @@ const assertCountRanges = (dataset: GoldenDataset, source: string): void => {
   }
 };
 
-export const parseDataset = (text: string, source: string): GoldenDataset => {
-  let value: unknown;
+export const assertGoldenCases = (dataset: CasesHolder, source: string): void => {
+  assertUniqueCaseIds(dataset, source);
+  assertPatternsCompile(dataset, source);
+  assertCountRanges(dataset, source);
+  assertFilesStayInside(dataset, source);
+};
+
+export const jsonOf = (text: string, source: string): unknown => {
   try {
-    value = JSON.parse(text);
+    return JSON.parse(text);
   } catch (error) {
     throw new DatasetError(`${source}: not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
-  if (!validateDataset(value)) throw new DatasetError(`${source}: invalid dataset at ${describeFirstError()}`);
-  assertUniqueCaseIds(value, source);
-  assertPatternsCompile(value, source);
-  assertCountRanges(value, source);
-  assertFilesStayInside(value, source);
+};
+
+export const parseDataset = (text: string, source: string): GoldenDataset => {
+  const value = jsonOf(text, source);
+  if (!validateDataset(value)) throw new DatasetError(`${source}: invalid dataset at ${describeFirstError(validateDataset)}`);
+  assertGoldenCases(value, source);
   return value;
 };
