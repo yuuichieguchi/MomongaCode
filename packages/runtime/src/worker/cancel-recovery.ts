@@ -48,7 +48,7 @@ export const reconcileStartedCalls = async ({ options, run, session, journal, co
     const toolSet = await tools.recoveryToolSet({ signal: control.recoverySignal });
     const recoverable = started.filter((call) => toolSet.get(call.name) !== undefined);
     if (recoverable.length > 0) {
-      const policy = await tools.policyFor(session, { env, rules: [] });
+      const context = await tools.recoveryContextFor(session, { env });
       await tools.executor.runBatch({
         calls: recoverable.map(({ callId, name, arguments: args }) => ({ callId, name, arguments: args })),
         toolSet,
@@ -57,13 +57,12 @@ export const reconcileStartedCalls = async ({ options, run, session, journal, co
         mode: session.permissionMode,
         rules: [],
         home: options.home,
-        roots: policy.roots,
-        tmpDir: policy.tmpDir,
-        env: policy.env,
+        roots: context.roots,
+        tmpDir: context.tmpDir,
+        env: context.env,
         session: tools.sessionState(session),
         deadlineAt: run.deadlineAt,
         signal: control.recoverySignal,
-        protectedPaths: policy.protectedPaths,
         recoverOnly: true,
         leaseLost: () => control.leaseLost() || control.shuttingDown(),
         onOutcome: (outcome) => {

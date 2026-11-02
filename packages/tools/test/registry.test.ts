@@ -192,9 +192,9 @@ describe('ToolSet forModel', () => {
     ]);
   });
 
-  it('hides non-read-only tools in plan mode', async () => {
+  it('hides non-read-only tools except Bash in plan mode', async () => {
     const set = await build();
-    expect(set.forModel({ mode: 'plan', rules: [] }).map((tool) => tool.name)).toEqual(['Read']);
+    expect(set.forModel({ mode: 'plan', rules: [] }).map((tool) => tool.name)).toEqual(['Read', 'Bash']);
   });
 
   it('hides tools covered by a blanket deny rule but not by a specific deny rule', async () => {

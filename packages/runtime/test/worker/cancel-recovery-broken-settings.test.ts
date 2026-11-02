@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { PermissionRule } from '@momonga/config';
-import { EMPTY_FILE_RULES } from '@momonga/foundation';
 import type { ToolEnv } from '@momonga/runtime';
 import type { Session } from '@momonga/store';
 import { within } from './deferred.ts';
@@ -22,7 +21,8 @@ const recover = async (env: Env, brokenSettings: boolean) => {
     fs.writeFileSync(file, '{ "permissions": ');
   }
   const { run } = seedStartedCalls(env, CALLS);
-  const policyRules: Array<readonly PermissionRule[] | undefined> = [];
+  const policyBuilds: Array<readonly PermissionRule[] | undefined> = [];
+  const contexts: string[] = [];
   const worker = env.worker('worker-1', {
     ...(brokenSettings
       ? {
@@ -35,15 +35,13 @@ const recover = async (env: Env, brokenSettings: boolean) => {
         }
       : {}),
     tools: {
-      policyFor: async (session: Session, options: { env: ToolEnv; rules?: readonly PermissionRule[] }) => {
-        policyRules.push(options.rules);
-        return {
-          roots: [session.cwd],
-          sandboxPolicy: { writableRoots: [session.cwd], writeDenied: [], writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES, readDenied: [], network: 'deny' as const },
-          protectedPaths: [],
-          tmpDir: env.sessionTmpDir,
-          env: options.env,
-        };
+      policyFor: async (_session: Session, options: { env: ToolEnv; rules?: readonly PermissionRule[] }) => {
+        policyBuilds.push(options.rules);
+        throw new Error('recovery must not build a tool policy');
+      },
+      recoveryContextFor: async (session: Session, options: { env: ToolEnv }) => {
+        contexts.push(session.id);
+        return { roots: [session.cwd], tmpDir: env.sessionTmpDir, env: options.env };
       },
     },
   });
@@ -51,7 +49,8 @@ const recover = async (env: Env, brokenSettings: boolean) => {
   return {
     status: env.run(run.id).status,
     reconciled: env.ofType(run.id, 'tool.reconciled').map((event) => ({ callId: event.callId, outcome: event.outcome, output: event.output })),
-    policyRules,
+    policyBuilds,
+    contexts,
     batchRules: env.batches.map((batch) => batch.rules),
   };
 };
@@ -65,5 +64,7 @@ describe('cancel recovery with a broken user settings file', () => {
     expect(broken.reconciled).toEqual(valid.reconciled);
     expect(broken.reconciled.map((entry) => entry.callId).sort()).toEqual(['call_m_1', 'call_m_2']);
     expect(broken.batchRules).toEqual([[]]);
+    expect(broken.policyBuilds).toEqual([]);
+    expect(broken.contexts).toHaveLength(1);
   });
 });

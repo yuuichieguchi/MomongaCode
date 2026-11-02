@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { EMPTY_FILE_RULES } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { alwaysWriteDenied } from '@momonga/sandbox';
@@ -11,7 +11,7 @@ describe('buildSandboxPolicy consumes alwaysWriteDenied', () => {
     const home = withTempDir(context);
     fs.mkdirSync(path.join(home, 'dotfiles', 'local', 'bin'), { recursive: true });
     fs.symlinkSync(path.join(home, 'dotfiles', 'local'), path.join(home, '.local'));
-    const policy = buildSandboxPolicy({ fileRules: EMPTY_FILE_RULES, roots: [home], home, tmpDir: path.join(home, 's', 'one'), sessionsTmpRoot: path.join(home, 's') });
+    const policy = buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [home], home, tmpDir: path.join(home, 's', 'one'), sessionsTmpRoot: path.join(home, 's') });
     const denied = alwaysWriteDenied(home);
     expect(policy.writeDenied).toEqual(expect.arrayContaining([...denied.subtrees]));
     expect([...new Set(policy.writeDeniedLiterals)].sort()).toEqual(

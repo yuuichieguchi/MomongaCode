@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { fakePolicyFilesystem } from '@momonga/testkit';
 import { ConfigError, parseRule } from '@momonga/config';
 import type { PermissionRule } from '@momonga/config';
 import { computeFileRules, decide } from '@momonga/policy';
@@ -16,7 +17,7 @@ const setup = async () => {
   const temp = await makeTempHome();
   const { store, clock } = openStore(temp);
   const states = runtime.createSessionStates({ clock, store, logger: makeLogger() });
-  const policyFor = runtime.createPolicyFor({ paths: temp.paths, home: temp.home, sessionStates: states });
+  const policyFor = runtime.createPolicyFor({ paths: temp.paths, home: temp.home, sessionStates: states, fs: fakePolicyFilesystem() });
   return { temp, store, policyFor };
 };
 
@@ -54,6 +55,10 @@ describe('createPolicyFor roots and the file rules', () => {
       home: temp.home,
       cwd: temp.project,
       fileRules: policy.sandboxPolicy.fileRules,
+      protectedSet: policy.sandboxPolicy.protectedSet,
+      fs: fakePolicyFilesystem(),
+      searchPath: undefined,
+      isWritable: () => false,
     } as DecideInput);
     expect(decision).toMatchObject({ kind: 'deny', source: 'rule' });
     const profile = buildSeatbeltProfile(policy.sandboxPolicy, { tmpDir: policy.tmpDir });

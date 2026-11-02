@@ -35,8 +35,13 @@ describe('modelVisibleTools', () => {
     expect(names(modelVisibleTools(TOOLS, { mode: 'default', rules }))).toContain('mcp__srv__list');
   });
 
-  it('shows only read_only tools in plan mode', () => {
-    expect(names(modelVisibleTools(TOOLS, { mode: 'plan', rules: [] }))).toEqual(['Read', 'Grep', 'UpdatePlan', 'mcp__srv__list']);
+  it('shows read_only tools and Bash in plan mode, and hides Edit and MCP exec tools', () => {
+    expect(names(modelVisibleTools(TOOLS, { mode: 'plan', rules: [] }))).toEqual(['Read', 'Grep', 'Bash', 'UpdatePlan', 'mcp__srv__list']);
+  });
+
+  it('still hides Bash in plan mode under a blanket deny rule', () => {
+    const layout = makeLayout();
+    expect(names(modelVisibleTools(TOOLS, { mode: 'plan', rules: [ruleIn(layout)('deny', 'Bash')] }))).not.toContain('Bash');
   });
 
   it('still hides denied tools in bypassPermissions', () => {

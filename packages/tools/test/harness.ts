@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import { absoluteFrom, canonicalizePath } from '@momonga/policy';
+import { canonicalJson, resolveCanonicalPath, sha256Hex } from '@momonga/foundation';
+import { absoluteFrom } from '@momonga/policy';
+import { fakePolicyFilesystem } from '@momonga/testkit';
 import type { PermissionSubject } from '@momonga/policy';
 import { createToolExecutor, createToolRegistry, defineTool, validateToolInput } from '@momonga/tools';
 import type { AnyTool, ExecutionBatchInput, ToolCall, ToolContext, ToolDefinition, ToolExecutorOptions, ToolSet } from '@momonga/tools';
@@ -64,6 +65,7 @@ export const makeHarness = (options: HarnessOptions = {}) => {
     ...(options.maxInlineOutputChars === undefined ? {} : { maxInlineOutputChars: options.maxInlineOutputChars }),
     ...(options.maxParallel === undefined ? {} : { maxParallel: options.maxParallel }),
     readOnlyRetry: { attempts: options.attempts ?? 3, baseMs: 0, maxMs: 0 },
+    fs: fakePolicyFilesystem(),
     ...options.executor,
   });
   const session = { cwd: layout.project, readLedger: new Map<string, { sha256: string; mtimeMs: number }>() };
@@ -89,7 +91,6 @@ export const makeHarness = (options: HarnessOptions = {}) => {
     sandbox: fakeSandbox,
     deadlineAt: clock.now() + 600_000,
     signal: new AbortController().signal,
-    protectedPaths: [],
     onStarted: (callId: string) => {
       started.push(callId);
     },
@@ -120,11 +121,15 @@ const subjectForDigest = (subject: PermissionSubject, cwd: string): unknown => {
       ...subject,
       paths: subject.paths.map((target) => {
         const absolute = absoluteFrom(target, cwd);
-        return canonicalizePath(absolute) ?? absolute;
+        const resolution = resolveCanonicalPath(absolute);
+        return resolution.ok ? resolution.path : absolute;
       }),
     };
   }
-  if (subject.kind === 'command') return { subject, cwd: canonicalizePath(cwd) };
+  if (subject.kind === 'command') {
+    const resolution = resolveCanonicalPath(cwd);
+    return { subject, cwd: resolution.ok ? resolution.path : null };
+  }
   return subject;
 };
 

@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { compileFileRuleSet, resolveCanonicalPath, volumeIsCaseInsensitive } from '@momonga/foundation';
+import { compileFileRuleSet, resolveCanonicalPath, volumeIsCaseInsensitive, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
@@ -8,7 +8,7 @@ import type { McpServerConfig, McpServerEntry, PermissionRule, RuleEffect } from
 import { createMcpPool, type McpPool } from '@momonga/mcp';
 import { createToolExecutor, createToolRegistry } from '@momonga/tools';
 import type { BlobPort, ExecutionBatchInput, IdempotencyPort, ToolCall, ToolIdempotencyBegin, ToolIdempotencyRecord, ToolSet } from '@momonga/tools';
-import { MCP_LEGACY_SERVER_PATH, MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_RECORD_ENV, createFakeClock, killPidsForCleanup, type FakeClock, type ModernFixtureRecord } from '@momonga/testkit';
+import { MCP_LEGACY_SERVER_PATH, MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_RECORD_ENV, createFakeClock, fakePolicyFilesystem, killPidsForCleanup, type FakeClock, type ModernFixtureRecord } from '@momonga/testkit';
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
@@ -188,7 +188,7 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000)) => {
   const markers = path.join(root, 'markers');
   for (const dir of [home, project]) fs.mkdirSync(dir, { recursive: true });
   fs.mkdirSync(markers, { mode: 0o700 });
-  const executor = createToolExecutor({
+  const executor = createToolExecutor({ fs: fakePolicyFilesystem(),
     idempotency: makeIdempotency(),
     blobs: unusedBlobs,
     clock,
@@ -212,10 +212,9 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000)) => {
       env: {},
       session: { cwd: project, readLedger: new Map() },
       sandbox: unusedSandbox,
-      sandboxPolicy: { writableRoots: [project], writeDenied: [], writeDeniedLiterals: [], fileRules: compileFileRuleSet([], [project], null, resolveCanonicalPath, volumeIsCaseInsensitive), readDenied: [], network: 'deny' },
+      sandboxPolicy: { writableRoots: [project], writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: compileFileRuleSet([], [project], null, resolveCanonicalPath, volumeIsCaseInsensitive), readDenied: [], network: 'deny' },
       deadlineAt: clock.now() + 600_000,
       signal: new AbortController().signal,
-      protectedPaths: [],
       ...extra,
     };
   };

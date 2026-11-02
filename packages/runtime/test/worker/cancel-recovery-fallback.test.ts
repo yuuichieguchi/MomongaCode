@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { EMPTY_FILE_RULES } from '@momonga/foundation';
 import { ConfigError } from '@momonga/runtime';
 import type { ToolEnv } from '@momonga/runtime';
 import type { Session } from '@momonga/store';
@@ -26,31 +25,28 @@ const REMOTE = { callId: 'call_r_1', name: 'mcp__remote__write', args: { value: 
 
 const toolsWithout = (env: Env, ...names: string[]) => () => env.snapshotTools(env.toolbox.tools().filter((tool) => !names.includes(tool.name)));
 
-const policyWithEnv = (env: Env) => async (session: Session, options: { env: ToolEnv }) => ({
-  roots: [session.cwd],
-  sandboxPolicy: { writableRoots: [session.cwd], writeDenied: [], readDenied: [], network: 'deny' as const },
-  protectedPaths: [],
-  tmpDir: env.sessionTmpDir,
-  env: options.env,
-});
-
 const errorNotices = (env: Env, runId: string) => env.ofType(runId, 'notice').filter((notice) => notice.level === 'error');
 
 describe('cancel recovery fallback', () => {
-  it('a cancel with an invalid policy reaches CANCELLED and reconciles the started call', async () => {
+  it('a cancel whose policy build would fail reaches CANCELLED and reconciles the started call, because recovery builds no policy', async () => {
     const env = await makeEnv();
     const { run, keys } = seedStartedCalls(env, [MARK]);
+    const contexts: string[] = [];
     const worker = env.worker('worker-1', {
       tools: {
-        policyFor: async (session: Session, options: { env: ToolEnv }) => ({
-          ...(await policyWithEnv(env)(session, options)),
-          sandboxPolicy: { writableRoots: [session.cwd, 'relative/root'], writeDenied: [], writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES, readDenied: [], network: 'deny' as const },
-        }),
+        policyFor: async () => {
+          throw new Error('recovery must not build a tool policy');
+        },
+        recoveryContextFor: async (session: Session, options: { env: ToolEnv }) => {
+          contexts.push(session.id);
+          return { roots: [session.cwd], tmpDir: env.sessionTmpDir, env: options.env };
+        },
       },
     });
 
     await within(env.runOnce(worker), 10_000, 'the cancel recovery');
 
+    expect(contexts).toHaveLength(1);
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(env.toolbox.reconciles).toEqual([keys[MARK.callId]]);
     expect(env.ofType(run.id, 'tool.reconciled')).toEqual([expect.objectContaining({ callId: MARK.callId, outcome: 'already_applied', output: 'already marked one' })]);
@@ -59,7 +55,27 @@ describe('cancel recovery fallback', () => {
     expect(env.store.idempotency.get(keys[MARK.callId] as string)?.s).toBe('COMPLETED');
   });
 
-  it('a cancel where policyFor throws reaches CANCELLED, the process group is gone before CANCELLED, and the record is UNKNOWN', PROCESS_TIMEOUT, async () => {
+  it('a cancel still reconciles when the protected set would rethrow EIO from readEntry', async () => {
+    const env = await makeEnv();
+    const { run, keys } = seedStartedCalls(env, [MARK]);
+    const eio = Object.assign(new Error('EIO: injected readEntry failure'), { code: 'EIO' });
+    const worker = env.worker('worker-1', {
+      tools: {
+        policyFor: async () => {
+          throw eio;
+        },
+      },
+    });
+
+    await within(env.runOnce(worker), 10_000, 'the cancel recovery');
+
+    expect(env.run(run.id).status).toBe('CANCELLED');
+    expect(env.toolbox.reconciles).toEqual([keys[MARK.callId]]);
+    expect(env.ofType(run.id, 'tool.reconciled')).toEqual([expect.objectContaining({ callId: MARK.callId, outcome: 'already_applied' })]);
+    expect(errorNotices(env, run.id)).toEqual([]);
+  });
+
+  it('a cancel where recoveryContextFor throws reaches CANCELLED, the process group is gone before CANCELLED, and the record is UNKNOWN', PROCESS_TIMEOUT, async () => {
     const env = await makeEnv();
     const { run, keys } = seedStartedCalls(env, [BASH]);
     const key = keys[BASH.callId] as string;
@@ -73,7 +89,7 @@ describe('cancel recovery fallback', () => {
       store,
       onError: (error) => errors.push(error),
       tools: {
-        policyFor: async () => {
+        recoveryContextFor: async () => {
           throw failure;
         },
       },
@@ -103,8 +119,8 @@ describe('cancel recovery fallback', () => {
     const worker = env.worker('worker-1', {
       store,
       tools: {
-        policyFor: async () => {
-          throw new Error('policy unavailable');
+        recoveryContextFor: async () => {
+          throw new Error('recovery context unavailable');
         },
       },
     });

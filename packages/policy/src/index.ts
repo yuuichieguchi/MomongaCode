@@ -8,4 +8,7 @@ export type { DecisionKind, PermissionSubject, PolicyTool, SideEffect } from './
 export { modelVisibleTools } from './visible-tools.ts';
 export type { VisibleToolsOptions } from './visible-tools.ts';
 export { suggestAllowRule } from './suggest-allow-rule.ts';
-export { absoluteFrom, canonicalizePath, volumeIsCaseInsensitive } from './path-match.ts';
+export { absoluteFrom, volumeIsCaseInsensitive } from './path-match.ts';
+export { MAX_APPROVABLE_COMMAND_CHARS, MAX_GLOB_MATCHES } from './approval.ts';
+export { COMMAND_SPECS } from './command-specs.ts';
+export type { GlobExpansion, PolicyFilesystem, ProgramResolution } from './filesystem.ts';

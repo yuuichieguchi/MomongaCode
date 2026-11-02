@@ -5,7 +5,7 @@ import { canonicalDirectory, comparableContains } from '@momonga/foundation';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import { loadLayers, rejectAutoMode } from './layers.ts';
 import type { Layer, TrustOracle, UserLayer } from './layers.ts';
-import { NEGATION_PREFIX, PATH_TOOLS, parseRule, RuleParseError } from './rule.ts';
+import { EDIT_TOOLS, NEGATION_PREFIX, isPathTool, parseRule, RuleParseError } from './rule.ts';
 import type { PermissionRule, RuleEffect, RuleOrigin } from './rule.ts';
 import { assertSettings } from './settings.ts';
 import type { McpServerConfig, SandboxSetting, Settings } from './settings.ts';
@@ -50,11 +50,7 @@ export type LoadSettingsResult = {
 
 const EFFECTS: readonly RuleEffect[] = ['allow', 'ask', 'deny'];
 
-const EDIT_FAMILY: ReadonlySet<string> = new Set(['Edit', 'Write']);
-
-const sameToolFamily = (left: string, right: string): boolean => left === right || (EDIT_FAMILY.has(left) && EDIT_FAMILY.has(right));
-
-const isPathTool = (tool: string): boolean => (PATH_TOOLS as readonly string[]).includes(tool);
+const sameToolFamily = (left: string, right: string): boolean => left === right || (EDIT_TOOLS.has(left) && EDIT_TOOLS.has(right));
 
 const isNegation = (rule: PermissionRule): boolean => isPathTool(rule.tool) && rule.specifier?.startsWith(NEGATION_PREFIX) === true;
 

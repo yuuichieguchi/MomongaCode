@@ -159,7 +159,6 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
       deadlineAt: run.deadlineAt,
       signal: ctx.control.signal,
       leaseLost: () => ctx.control.leaseLost() || ctx.control.shuttingDown(),
-      protectedPaths: policy.protectedPaths,
       inlineLimitForReconcile: ctx.inlineLimitForReconcile,
       inlineLimitForExecution: ctx.inlineLimitForExecution,
       traceparentFor: (callId) => {

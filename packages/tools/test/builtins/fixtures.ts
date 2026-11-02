@@ -5,7 +5,7 @@ import { afterEach, expect } from 'vitest';
 import { killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
-import { createBuiltinTools, protectedPathsFor } from '@momonga/tools';
+import { createBuiltinTools } from '@momonga/tools';
 import type { CallOutcome, ExecutionBatchInput, NeedsApprovalOutcome, ResultOutcome, ToolSet } from '@momonga/tools';
 import type { PermissionRule } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
@@ -96,7 +96,6 @@ export const makeBuiltins = async (options: { maxInlineOutputChars?: number; rea
   const batch = (name: string, args: unknown, extra: RunExtra = {}, approval?: ApprovalSpec, callId = nextCallId()): ExecutionBatchInput =>
     harness.input(toolSet, [call(callId, name, args, approval)], {
       env: BASE_ENV,
-      protectedPaths: protectedPathsFor([layout.project]),
       tmpDir,
       ...(sandbox === undefined ? {} : { sandbox }),
       ...extra,

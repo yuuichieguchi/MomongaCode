@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SETTINGS_SCHEMA, loadSettings } from '@momonga/config';
+import { AUTO_MODE_UNAVAILABLE } from '@momonga/protocol';
 import {
   distrusting,
   localSettingsPath,
@@ -192,16 +193,14 @@ describe('loadSettings security restrictions', () => {
   it('rejects auto mode from user settings', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { permissions: { defaultMode: 'auto' } });
-    await expect(loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toThrow(
-      /auto mode is not available yet/,
-    );
+    await expect(loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toThrow(AUTO_MODE_UNAVAILABLE.message);
   });
 
   it('rejects auto mode from cli', async () => {
     const tree = makeTree();
     await expect(
       loadSettings({ home: tree.home, projectDir: tree.project, cli: { permissions: { defaultMode: 'auto' } }, trust: trusting(tree) }),
-    ).rejects.toThrow(/auto mode is not available yet/);
+    ).rejects.toThrow(AUTO_MODE_UNAVAILABLE.message);
   });
 });
 

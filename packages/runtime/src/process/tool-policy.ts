@@ -1,26 +1,30 @@
 import path from 'node:path';
 import { ConfigError } from '@momonga/config';
-import { canonicalDirectory, ensureSessionTmpDir as defaultEnsureSessionTmpDir, isTransientErrno } from '@momonga/foundation';
+import { canonicalDirectory, ensureSessionTmpDir as defaultEnsureSessionTmpDir, isTransientErrno, protectedSetFor } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
-import { buildSandboxPolicy, protectedPathsFor } from '@momonga/tools';
+import type { PolicyFilesystem } from '@momonga/policy';
+import { buildSandboxPolicy } from '@momonga/tools';
 import type { ToolRuntimePort } from '../ports.ts';
 import type { SessionStates } from './session-states.ts';
 
 export type PolicyForOptions = {
   paths: MomongaPaths;
   home: string;
+  fs: PolicyFilesystem;
   sessionStates: Pick<SessionStates, 'get'>;
   ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<string>;
 };
 
-export const createPolicyFor = ({ paths, home, sessionStates, ensureSessionTmpDir = defaultEnsureSessionTmpDir }: PolicyForOptions): ToolRuntimePort['policyFor'] => {
+const wrapperFor =
+  (sessionId: string) =>
+  (cause: unknown): ConfigError =>
+    cause instanceof ConfigError ? cause : new ConfigError(`the tool policy for session ${sessionId} could not be built: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+
+const contextBuilder = ({ paths, home, sessionStates, ensureSessionTmpDir = defaultEnsureSessionTmpDir }: PolicyForOptions) => {
   if (!path.isAbsolute(home)) throw new TypeError(`home must be an absolute path, got ${home}`);
-
-  return async (session, { env, rules }) => {
-    const wrap = (cause: unknown): ConfigError =>
-      cause instanceof ConfigError ? cause : new ConfigError(`the tool policy for session ${session.id} could not be built: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
-
+  return async (session: Parameters<ToolRuntimePort['policyFor']>[0]): Promise<{ roots: string[]; tmpDir: string; wrap: (cause: unknown) => ConfigError }> => {
+    const wrap = wrapperFor(session.id);
     sessionStates.get(session);
     const roots: string[] = [];
     for (const root of [session.cwd, ...session.additionalDirectories]) {
@@ -36,15 +40,32 @@ export const createPolicyFor = ({ paths, home, sessionStates, ensureSessionTmpDi
       if (isTransientErrno(error)) throw error;
       throw wrap(error);
     }
+    return { roots, tmpDir, wrap };
+  };
+};
 
+export const createPolicyFor = (options: PolicyForOptions): ToolRuntimePort['policyFor'] => {
+  const { paths, home, fs } = options;
+  const contextFor = contextBuilder(options);
+
+  return async (session, { env, rules }) => {
+    const { roots, tmpDir, wrap } = await contextFor(session);
     try {
       const fileRules = computeFileRules(rules, roots, tmpDir);
-      const sandboxPolicy = buildSandboxPolicy({ roots, home, tmpDir, sessionsTmpRoot: paths.tmp.sessions, fileRules, network: 'deny' });
-      const protectedPaths = protectedPathsFor(roots);
-      return { roots, sandboxPolicy, tmpDir, protectedPaths, env };
+      const protectedSet = protectedSetFor(roots, fs);
+      const sandboxPolicy = buildSandboxPolicy({ roots, home, tmpDir, sessionsTmpRoot: paths.tmp.sessions, fileRules, protectedSet, network: 'deny' });
+      return { roots, sandboxPolicy, tmpDir, env };
     } catch (error) {
       if (isTransientErrno(error)) throw error;
       throw wrap(error);
     }
+  };
+};
+
+export const createRecoveryContextFor = (options: PolicyForOptions): ToolRuntimePort['recoveryContextFor'] => {
+  const contextFor = contextBuilder(options);
+  return async (session, { env }) => {
+    const { roots, tmpDir } = await contextFor(session);
+    return { roots, tmpDir, env };
   };
 };

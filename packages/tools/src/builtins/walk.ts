@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import ignore from 'ignore';
 import type { Ignore } from 'ignore';
-import { canonicalizePath } from '@momonga/policy';
+import { resolveCanonicalPath } from '@momonga/foundation';
 import type { FileRuleSet } from '@momonga/foundation';
 import { createReadAccessMatcher } from '../read-access.ts';
 import type { ReadAccessMatcher, ReadFamilyTool } from '../read-access.ts';
@@ -154,8 +154,10 @@ async function* walkDirectory(
     let isFile = entry.isFile();
     if (entry.isSymbolicLink()) {
       if (!options.includeSymlinkedFiles) continue;
-      const canonicalTarget = canonicalizePath(absolute);
-      if (canonicalTarget === null || denied.blocksResolved(canonicalTarget) || denied.blockedByForms(absolute, canonicalTarget, options.tool) !== undefined) continue;
+      const resolution = resolveCanonicalPath(absolute);
+      if (!resolution.ok) continue;
+      const canonicalTarget = resolution.path;
+      if (denied.blocksResolved(canonicalTarget) || denied.blockedByForms(absolute, canonicalTarget, options.tool) !== undefined) continue;
       const target = await fs.promises.stat(canonicalTarget).catch((error: unknown) => {
         if (isMissing(error)) return undefined;
         throw error;

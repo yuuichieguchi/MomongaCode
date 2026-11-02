@@ -39,6 +39,7 @@ export type {
 } from './types.ts';
 export { validateToolInput } from './validate.ts';
 export type { ValidationResult } from './validate.ts';
-export { buildSandboxPolicy, createBuiltinTools, protectedPathsFor } from './builtins/index.ts';
+export { buildSandboxPolicy, createBuiltinTools } from './builtins/index.ts';
 export type { SandboxPolicyOptions } from './builtins/index.ts';
 export { compileUntrustedSchema, untrustedSchemaCacheSize } from './untrusted-schema.ts';
+export { createPolicyFilesystem } from './policy-filesystem.ts';

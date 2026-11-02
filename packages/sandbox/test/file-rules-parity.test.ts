@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { fileRuleBlocks } from '@momonga/foundation';
+import { fileRuleBlocks, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
 import type { SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
 import { killGroupsForCleanup } from '@momonga/testkit';
@@ -37,7 +37,7 @@ describe.runIf(process.platform === 'darwin')('kernel parity with the exact matc
     const exact = targets.map((target) => fileRules.entries.some((entry) => fileRuleBlocks(fileRules, entry, target, target)));
     const tmpRoot = path.join(base, 'spawn-tmp');
     fs.mkdirSync(tmpRoot);
-    const policy = { writableRoots: [], writeDenied: [], writeDeniedLiterals: [], readDenied: [], network: 'deny', fileRules } as SandboxPolicy;
+    const policy = { writableRoots: [], writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], readDenied: [], network: 'deny', fileRules } as SandboxPolicy;
     const proc = createSeatbeltSandbox({ tmpRoot, killGraceMs: 300 }).spawn(
       {
         argv: ['/bin/sh', '-c', 'for f in "$@"; do if cat -- "$f" >/dev/null 2>&1; then echo R; else echo D; fi; done', 'sh', ...targets],
@@ -70,7 +70,7 @@ describe.runIf(process.platform === 'darwin')('kernel parity with the exact matc
     expect(exact).toEqual([false, true, true]);
     const tmpRoot = path.join(base, 'spawn-tmp');
     fs.mkdirSync(tmpRoot);
-    const policy = { writableRoots: [], writeDenied: [], writeDeniedLiterals: [], readDenied: [], network: 'deny', fileRules } as SandboxPolicy;
+    const policy = { writableRoots: [], writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], readDenied: [], network: 'deny', fileRules } as SandboxPolicy;
     const proc = createSeatbeltSandbox({ tmpRoot, killGraceMs: 300 }).spawn(
       {
         argv: ['/bin/sh', '-c', 'for f in "$@"; do if cat -- "$f" >/dev/null 2>&1; then echo R; else echo D; fi; done', 'sh', ...targets],

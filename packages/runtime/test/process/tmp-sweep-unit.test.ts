@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { fakePolicyFilesystem } from '@momonga/testkit';
 import * as runtime from '@momonga/runtime';
 import { sweepSessionTmp, sweepSpawnTmp } from '../../src/process/tmp-sweep.ts';
 import { createSession, makeDir, makeLogger, makeTempHome, openStore, START_MS } from './helpers.ts';
@@ -299,7 +300,7 @@ describe('sweepSessionTmp (fake clock, fake timers, none armed)', () => {
     const { store: realStore, clock } = openStore(temp);
     const session = createSession(realStore, temp.project);
     const dir = sessionDir(temp, session.id, 'old.txt');
-    const policyFor = runtime.createPolicyFor({ paths: temp.paths, home: temp.home, sessionStates: runtime.createSessionStates({ clock, store: realStore, logger: makeLogger() }) });
+    const policyFor = runtime.createPolicyFor({ paths: temp.paths, home: temp.home, sessionStates: runtime.createSessionStates({ clock, store: realStore, logger: makeLogger() }), fs: fakePolicyFilesystem() });
     const renames: Array<[string, string]> = [];
     const originalRename = fs.renameSync;
     vi.spyOn(fs, 'renameSync').mockImplementation(((from: fs.PathLike, to: fs.PathLike) => {

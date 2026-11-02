@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
-import { canonicalJson, EMPTY_FILE_RULES, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, EMPTY_FILE_RULES, sha256Hex, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import type { InstructionReader } from '@momonga/context';
 import { computeFileRules } from '@momonga/policy';
@@ -13,7 +13,7 @@ import type { ToolEnv, ToolRuntimePort, Worker, WorkerOptions } from '@momonga/r
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
 import type { Claim, Run, RuntimeStore, Session } from '@momonga/store';
-import { createFakeClock } from '@momonga/testkit';
+import { fakePolicyFilesystem, createFakeClock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 import { createToolExecutor, createToolRegistry } from '@momonga/tools';
 import type { AbandonTarget, AnyTool, ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
@@ -145,7 +145,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const toolbox: FakeToolbox = createFakeToolbox();
   const instructions = createFakeInstructions();
   const executorWarnings: string[] = [];
-  const realExecutor = createToolExecutor({
+  const realExecutor = createToolExecutor({ fs: fakePolicyFilesystem(),
     idempotency: store.idempotency,
     blobs: store.blobs,
     clock,
@@ -169,7 +169,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   };
   const sandboxPolicy: SandboxPolicy = {
     writableRoots: [project],
-    writeDenied: [sessionsTmpRoot], writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES,
+    writeDenied: [sessionsTmpRoot], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES,
     readDenied: [sessionsTmpRoot],
     readAllowed: [sessionTmpDir],
     network: 'deny',
@@ -222,8 +222,9 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       portCalls.policyFor.push({ sessionId: target.id, env: policyOptions?.env });
       const roots = [target.cwd, EXTRA_ROOT];
       const fileRules = computeFileRules(policyOptions.rules, roots, sessionTmpDir);
-      return { roots, sandboxPolicy: { ...sandboxPolicy, fileRules }, protectedPaths: [], tmpDir: sessionTmpDir, env: policyOptions?.env ?? target.env };
+      return { roots, sandboxPolicy: { ...sandboxPolicy, fileRules }, tmpDir: sessionTmpDir, env: policyOptions?.env ?? target.env };
     },
+    recoveryContextFor: async (target: Session, recoveryOptions: { env: ToolEnv }) => ({ roots: [target.cwd, EXTRA_ROOT], tmpDir: sessionTmpDir, env: recoveryOptions.env }),
     sessionState: (target: Session) => {
       const existing = sessionStates.get(target.id);
       if (existing !== undefined) return existing;

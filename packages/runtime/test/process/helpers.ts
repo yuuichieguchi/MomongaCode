@@ -344,7 +344,6 @@ export const runBashThroughPort = async (
     sandboxPolicy: policy.sandboxPolicy,
     deadlineAt: f.clock.now() + 120_000,
     signal,
-    protectedPaths: policy.protectedPaths,
   });
   const outcome = outcomes[0];
   if (outcome === undefined) throw new Error('no outcome');

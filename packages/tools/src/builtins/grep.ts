@@ -1,3 +1,4 @@
+import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import fs from 'node:fs';
 import path from 'node:path';
 import picomatch from 'picomatch';
@@ -172,7 +173,7 @@ const searchWithRipgrep = async (
   if (isDirectory) {
     for await (const root of reachableAllowedRoots(target, '', [], { signal: ctx.signal, onUnreadable: () => undefined }, access)) allowedRoots.push(root.absolute);
   }
-  const policy: SandboxPolicy = { writableRoots: [], writeDenied: [], writeDeniedLiterals: [], readDenied, ...(readAllowed === undefined ? {} : { readAllowed }), network: 'deny', fileRules: ctx.sandboxPolicy.fileRules };
+  const policy: SandboxPolicy = { writableRoots: [], writeDenied: [], writeDeniedLiterals: [], readDenied, ...(readAllowed === undefined ? {} : { readAllowed }), network: 'deny', fileRules: ctx.sandboxPolicy.fileRules, protectedSet: EMPTY_PROTECTED_SET };
   const spawnCwd = isDirectory ? target : path.dirname(target);
   const child = ctx.sandbox.spawn({ argv: [ripgrep, ...ripgrepArguments(input, mode, target, access, isDirectory, allowedRoots)], cwd: spawnCwd, env: ctx.env }, policy, ctx.signal);
   const visibleCache = new Map<string, boolean>();

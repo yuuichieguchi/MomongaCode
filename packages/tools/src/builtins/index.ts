@@ -8,7 +8,7 @@ import { readOutputTool } from './read-output.ts';
 import { updatePlanTool } from './update-plan.ts';
 import { writeTool } from './write.ts';
 
-export { buildSandboxPolicy, protectedPathsFor } from './sandbox-policy.ts';
+export { buildSandboxPolicy } from './sandbox-policy.ts';
 export type { SandboxPolicyOptions } from './sandbox-policy.ts';
 
 export const createBuiltinTools = (): AnyTool[] => [readTool, writeTool, editTool, globTool, grepTool, bashTool, readOutputTool, updatePlanTool];

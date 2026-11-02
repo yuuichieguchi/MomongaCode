@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { AUTO_MODE_UNAVAILABLE, isUnavailableMode } from '@momonga/protocol';
 import { rethrowIfTransient, toConfigError } from './config-error.ts';
 import { looksLikeCredentialName } from './credential-env.ts';
 import { readJsonFile, readJsonFileSync } from './json-file.ts';
@@ -27,10 +28,8 @@ const PROJECT_ENV_ALLOWLIST: ReadonlySet<string> = new Set([
 
 const isProjectEnvAllowed = (name: string): boolean => PROJECT_ENV_ALLOWLIST.has(name) || /^LC_[A-Z]+$/.test(name);
 
-export const AUTO_MODE_ERROR = 'auto mode is not available yet';
-
 export const rejectAutoMode = (settings: Settings, source: string): void => {
-  if (settings.permissions?.defaultMode === 'auto') throw new Error(`${source}: ${AUTO_MODE_ERROR}`);
+  if (isUnavailableMode(settings.permissions?.defaultMode)) throw new Error(`${source}: ${AUTO_MODE_UNAVAILABLE.message}`);
 };
 
 const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: string[]): Settings => {

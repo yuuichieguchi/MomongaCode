@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { fakePolicyFilesystem } from '@momonga/testkit';
 import { ConfigError, loadSettings, parseRule } from '@momonga/config';
 import type { PermissionRule } from '@momonga/config';
 import { FileRuleError } from '@momonga/foundation';
@@ -14,7 +15,7 @@ const setup = async () => {
   const temp = await makeTempHome();
   const { store, clock } = openStore(temp);
   const states = runtime.createSessionStates({ clock, store, logger: makeLogger() });
-  const policyFor = runtime.createPolicyFor({ paths: temp.paths, home: temp.home, sessionStates: states });
+  const policyFor = runtime.createPolicyFor({ paths: temp.paths, home: temp.home, sessionStates: states, fs: fakePolicyFilesystem() });
   return { temp, store, policyFor };
 };
 

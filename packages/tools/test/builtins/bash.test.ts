@@ -307,21 +307,21 @@ describe.runIf(process.platform === 'darwin')('Bash (real Seatbelt)', () => {
 describe('Bash admission and metadata', () => {
   it('uses the description as the title', async () => {
     const tools = await makeBuiltins();
-    const outcome = approvalOf(await tools.run('Bash', { command: 'ls -la', description: 'List files' }));
-    expect(outcome.title).toBe('List files');
+    const outcome = approvalOf(await tools.run('Bash', { command: 'make build', description: 'Build it' }));
+    expect(outcome.title).toBe('Build it');
     expect(outcome.toolKind).toBe('execute');
   });
 
   it('cuts the command to 80 characters for the title', async () => {
     const tools = await makeBuiltins();
-    const command = `echo ${'x'.repeat(120)}`;
+    const command = `make ${'x'.repeat(120)}`;
     const outcome = approvalOf(await tools.run('Bash', { command }));
     expect(outcome.title).toBe(command.slice(0, 80));
   });
 
   it('suggests a rule for the command when asking under Seatbelt', async () => {
     const tools = await makeBuiltins();
-    const outcome = approvalOf(await tools.run('Bash', { command: 'git status' }));
+    const outcome = approvalOf(await tools.run('Bash', { command: 'make test' }));
     expect(outcome.suggestedRule).toBeDefined();
   });
 

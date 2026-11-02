@@ -1,0 +1,1 @@
+export const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*\+?=/;

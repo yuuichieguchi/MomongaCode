@@ -3,8 +3,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
 import { computeFileRules, parseRule } from '@momonga/policy';
-import type { FileRuleSet } from '@momonga/foundation';
-import type { PermissionRule, RuleEffect, RuleOrigin } from '@momonga/policy';
+import { EMPTY_PROTECTED_SET, protectedSetFor } from '@momonga/foundation';
+import type { FileRuleSet, ProtectedSet } from '@momonga/foundation';
+import { TEST_SEARCH_PATH, fakePolicyFilesystem, isWritableFor, protectedSetWith } from '@momonga/testkit';
+import type { FakePolicyFilesystemLayout } from '@momonga/testkit';
+import type { PermissionRule, PolicyFilesystem, RuleEffect, RuleOrigin } from '@momonga/policy';
 
 const cleanups: Array<() => void> = [];
 
@@ -41,3 +44,12 @@ export const ruleIn =
     parseRule(text, { effect, origin, source: `${origin}-settings`, settingsRoot: layout.project, home: layout.home, cwd: layout.project });
 
 export const fileRulesFor = (rules: readonly PermissionRule[], roots: readonly string[]): FileRuleSet => computeFileRules(rules, roots, null);
+
+export type FakeFsLayout = FakePolicyFilesystemLayout;
+
+export const fakeFs = (layout: FakeFsLayout = {}): PolicyFilesystem => fakePolicyFilesystem(layout);
+
+export const protectedSetOf = (roots: readonly string[], filesystem: PolicyFilesystem = fakeFs()): ProtectedSet =>
+  roots.length === 0 ? EMPTY_PROTECTED_SET : protectedSetFor(roots, filesystem);
+
+export { TEST_SEARCH_PATH, isWritableFor, protectedSetWith };

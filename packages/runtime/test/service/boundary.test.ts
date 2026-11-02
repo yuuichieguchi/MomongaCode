@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { EMPTY_FILE_RULES } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import http from 'node:http';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -50,7 +50,7 @@ describe.skipIf(!fs.existsSync(SANDBOX_EXEC))('run API boundary under real Seatb
       fs.mkdirSync(tmpDir, { recursive: true, mode: 0o700 });
       fs.mkdirSync(sandboxTmp);
       const sandbox = createSeatbeltSandbox({ tmpRoot: sandboxTmp, killGraceMs: 300 });
-      const policy = buildSandboxPolicy({ fileRules: EMPTY_FILE_RULES, roots: [env.layout.projectReal], home: env.layout.home, tmpDir, sessionsTmpRoot, network });
+      const policy = buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [env.layout.projectReal], home: env.layout.home, tmpDir, sessionsTmpRoot, network });
       const marker = path.join(env.layout.projectReal, 'ran.txt');
       const runSocket = env.layout.socketPath;
       const script = [

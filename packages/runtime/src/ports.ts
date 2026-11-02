@@ -44,15 +44,17 @@ export type ToolPolicy = {
   roots: readonly string[];
   sandboxPolicy: SandboxPolicy;
   tmpDir: string;
-  protectedPaths: readonly string[];
   env: ToolEnv;
 };
+
+export type RecoveryContext = { roots: readonly string[]; tmpDir: string; env: ToolEnv };
 
 export type ToolRuntimePort = {
   envFor(session: Session): ToolEnv;
   toolSet(runId: string, options: { signal: AbortSignal; env: ToolEnv }): Promise<ToolSet>;
   recoveryToolSet(options: { signal: AbortSignal }): Promise<ToolSet>;
   policyFor(session: Session, options: { env: ToolEnv; rules: readonly PermissionRule[] }): Promise<ToolPolicy>;
+  recoveryContextFor(session: Session, options: { env: ToolEnv }): Promise<RecoveryContext>;
   executor: ToolExecutor;
   sandbox: Sandbox;
   sessionState(session: Session): ToolSessionState;

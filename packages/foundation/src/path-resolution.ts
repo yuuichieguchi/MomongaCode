@@ -13,6 +13,8 @@ export type UnresolvableReason =
   | { kind: 'config-override' }
   | { kind: 'unanalyzable' };
 
+export type Unresolved = { unresolvable: UnresolvableReason };
+
 export type PathResolution = { ok: true; path: string } | { ok: false; reason: UnresolvableReason };
 
 const isUnresolvableErrno = (code: unknown): code is UnresolvableErrno => UNRESOLVABLE_ERRNO_CODES.some((candidate) => candidate === code);

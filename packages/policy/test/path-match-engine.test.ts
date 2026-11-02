@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { computeFileRules, decide, parseRule } from '@momonga/policy';
 import type { PermissionRule, PermissionSubject, PolicyTool, RuleEffect } from '@momonga/policy';
-import { makeLayout, touch } from './helpers.ts';
+import { TEST_SEARCH_PATH, fakeFs, isWritableFor, makeLayout, touch } from './helpers.ts';
 import type { Layout } from './helpers.ts';
 
 const TOOLS: Record<string, PolicyTool> = {
@@ -44,7 +45,9 @@ const decideOn = (fx: Fixture, specs: readonly RuleSpec[], tool: keyof typeof TO
     home: fx.home,
     cwd: fx.project,
     fileRules: computeFileRules(rules, roots, null),
-  } as Parameters<typeof decide>[0]);
+    fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor(roots),
+    protectedSet: EMPTY_PROTECTED_SET,
+  });
   return { kind: decision.kind, source: decision.source };
 };
 

@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { EMPTY_FILE_RULES } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -20,7 +20,7 @@ const policyFor = (fixture: LauncherFixture): SandboxPolicy => {
   return {
     writableRoots: [fixture.home],
     writeDenied: [...denied.subtrees],
-    writeDeniedLiterals: [...denied.literals], fileRules: EMPTY_FILE_RULES,
+    protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [...denied.literals], fileRules: EMPTY_FILE_RULES,
     readDenied: [],
     network: 'deny',
   };

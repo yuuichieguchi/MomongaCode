@@ -1,4 +1,4 @@
-import type { FileRuleSet } from '@momonga/foundation';
+import type { FileRuleSet, ProtectedSet } from '@momonga/foundation';
 
 export interface SandboxPolicy {
   writableRoots: readonly string[];
@@ -8,6 +8,7 @@ export interface SandboxPolicy {
   readAllowed?: readonly string[];
   network: 'deny' | 'allow';
   fileRules: FileRuleSet;
+  protectedSet: ProtectedSet;
 }
 
 export interface SandboxCommand {

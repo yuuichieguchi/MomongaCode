@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { EMPTY_FILE_RULES } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { SandboxPolicyError, buildSeatbeltProfile, createSeatbeltSandbox } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { makeTempDir } from './helpers.ts';
@@ -21,7 +21,7 @@ const base = (): { root: string; sessions: string; tmp: string; spawnTmp: string
 };
 
 const policyOf = (overrides: Partial<SandboxPolicy> & { writableRoots: readonly string[] }): SandboxPolicy =>
-  ({ writeDenied: [], writeDeniedLiterals: [], readDenied: [], network: 'deny', fileRules: EMPTY_FILE_RULES, ...overrides }) as SandboxPolicy;
+  ({ writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], readDenied: [], network: 'deny', fileRules: EMPTY_FILE_RULES, ...overrides }) as SandboxPolicy;
 
 const codeOf = (action: () => unknown): unknown => {
   try {

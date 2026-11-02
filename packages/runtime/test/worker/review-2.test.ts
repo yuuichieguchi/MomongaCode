@@ -1,3 +1,4 @@
+import { fakePolicyFilesystem } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
 import type { GatewayPort } from '@momonga/runtime';
@@ -49,7 +50,7 @@ describe('worker cancel recovery with a hanging reconcile', () => {
     env.seed(run.id, payloads, 'crash');
     env.store.idempotency.begin(key, { expiresAt: START_MS + 86_400_000, meta: { tool: 'Stall' } });
     expect(env.cancel(run.id).status).toBe('CANCELLING');
-    const executor = createToolExecutor({
+    const executor = createToolExecutor({ fs: fakePolicyFilesystem(),
       idempotency: env.store.idempotency,
       blobs: env.store.blobs,
       clock: env.clock,

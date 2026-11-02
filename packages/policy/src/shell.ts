@@ -1,8 +1,14 @@
 import path from 'node:path';
-import { pathEffectsOf } from './path-effects.ts';
-import { COMMAND_WRAPPERS, locateEffectiveCommand } from './wrappers.ts';
+import { specOf } from './command-specs.ts';
+import { DARWIN_SED, pathEffectsOf } from './path-effects.ts';
+import type { ProgramEffects } from './path-effects.ts';
+import { ASSIGNMENT } from './shell-lexemes.ts';
+import { markRelativeUnresolvable, strongerEffect, targetOfText } from './targets.ts';
+import type { CwdEffect, Target } from './targets.ts';
+import { locateEffectiveCommand } from './wrappers.ts';
+import type { WrapperUse } from './wrappers.ts';
 
-export type Word = { value: string; literal: boolean; plain: boolean; staticValue: string | null };
+export type Word = { value: string; literal: boolean; plain: boolean; glob: boolean; staticValue: string | null };
 
 export type Segment = {
   text: string;
@@ -10,36 +16,33 @@ export type Segment = {
   opaque: boolean;
   commandIndex: number;
   effectiveIndex: number;
+  strictIndex: number;
   prefixEligible: boolean;
   unanalyzable: boolean;
   wrapperPayloads: Word[];
+  wrappers: WrapperUse[];
+  wrapperWrites: Target[];
+  cwdEffect: CwdEffect;
+  cwdBefore: CwdEffect;
+  effects: ProgramEffects;
 };
-
-export type RedirectTarget = string | null;
 
 export type Analysis = {
   segments: Segment[];
-  redirects: RedirectTarget[];
-  reads: RedirectTarget[];
+  redirects: Target[];
+  reads: Target[];
   nested: Analysis[];
+  cwdAfter: CwdEffect;
 };
 
-const MAX_NESTING = 8;
-const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*\+?=/;
+export const MAX_NESTING = 8;
 const FORBIDDEN_CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f]/;
 const DOUBLE_QUOTE_ESCAPABLE = '$`"\\';
 
 const RESERVED_WORDS: ReadonlySet<string> = new Set([
   'if', 'then', 'else', 'elif', 'fi', 'for', 'while', 'until', 'do', 'done', 'case', 'esac', 'in',
-  'function', 'select', 'time', 'coproc', '{', '}', '!', '[[', ']]',
+  'function', 'select', 'coproc', '{', '}', '!', '[[', ']]',
 ]);
-
-const SHELLS: ReadonlySet<string> = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'fish', 'csh', 'tcsh', 'ash']);
-
-const NEVER_PREFIX_MATCHED: ReadonlySet<string> = new Set([...SHELLS, ...COMMAND_WRAPPERS, 'eval', 'source', '.', 'su']);
-
-
-const DIRECTORY_CHANGERS: ReadonlySet<string> = new Set(['cd', 'pushd', 'popd']);
 
 class UnsupportedConstruct extends Error {}
 
@@ -47,11 +50,11 @@ const unsupported = (reason: string): never => {
   throw new UnsupportedConstruct(reason);
 };
 
-type WordBuilder = { value: string; started: boolean; literal: boolean; tilde: boolean; plain: boolean; digitsOnly: boolean };
+type WordBuilder = { value: string; started: boolean; literal: boolean; tilde: boolean; plain: boolean; digitsOnly: boolean; glob: boolean; dynamic: boolean };
 
 type PendingRedirect = 'write' | 'write-or-duplicate' | 'read' | 'read-or-duplicate' | 'here-string';
 
-const freshWord = (): WordBuilder => ({ value: '', started: false, literal: true, tilde: false, plain: true, digitsOnly: true });
+const freshWord = (): WordBuilder => ({ value: '', started: false, literal: true, tilde: false, plain: true, digitsOnly: true, glob: false, dynamic: false });
 
 const skipSingleQuoted = (source: string, open: number): number => {
   const close = source.indexOf("'", open + 1);
@@ -102,25 +105,49 @@ const findClosingParenthesis = (source: string, from: number): number => {
 const nameOf = (word: Word | undefined): string | undefined =>
   word !== undefined && word.literal ? path.basename(word.value) : undefined;
 
-const describeSegment = (text: string, words: Word[], opaque: boolean): Segment => {
+const EMPTY_EFFECTS: ProgramEffects = { writes: [], reads: [], opaque: false };
+
+const describeSegment = (text: string, words: Word[], opaque: boolean, cwdBefore: CwdEffect): Segment => {
   let commandIndex = 0;
   while (commandIndex < words.length && ASSIGNMENT.test((words[commandIndex] as Word).value)) commandIndex += 1;
-  const name = nameOf(words[commandIndex]);
-  const prefixEligible = !opaque && name !== undefined && !NEVER_PREFIX_MATCHED.has(name);
   const effective = locateEffectiveCommand(words);
   const effectiveWord = words[effective.index];
+  const strictWord = words[effective.strictIndex];
+  const strictName = nameOf(strictWord);
+  const prefixEligible = !opaque && strictName !== undefined && specOf(strictName)?.neverPrefix !== true;
   const unanalyzable = effective.unanalyzable || (effectiveWord !== undefined && !effectiveWord.literal);
-  return { text, words, opaque, commandIndex, effectiveIndex: effective.index, prefixEligible, unanalyzable, wrapperPayloads: effective.payloads };
+  return {
+    text,
+    words,
+    opaque,
+    commandIndex,
+    effectiveIndex: effective.index,
+    strictIndex: effective.strictIndex,
+    prefixEligible,
+    unanalyzable,
+    wrapperPayloads: effective.payloads,
+    wrappers: effective.wrappers,
+    wrapperWrites: effective.writes,
+    cwdEffect: effective.cwdEffect,
+    cwdBefore,
+    effects: EMPTY_EFFECTS,
+  };
 };
 
-const scan = (command: string, depth: number): Analysis => {
+const segmentChangesDirectory = (segment: Segment): boolean => {
+  const word = segment.words[segment.effectiveIndex];
+  return word !== undefined && word.literal && !word.value.includes('/') && specOf(word.value)?.changesDirectory === true;
+};
+
+const scan = (command: string, depth: number, incoming: CwdEffect): Analysis => {
   if (depth > MAX_NESTING) return unsupported('nesting too deep');
   if (FORBIDDEN_CONTROL.test(command)) return unsupported('control character');
 
   const segments: Segment[] = [];
-  const redirects: RedirectTarget[] = [];
-  const reads: RedirectTarget[] = [];
+  const redirects: Target[] = [];
+  const reads: Target[] = [];
   const nested: Analysis[] = [];
+  let cwdState: CwdEffect = incoming;
   let words: Word[] = [];
   let opaque = false;
   let segmentStart = 0;
@@ -139,6 +166,7 @@ const scan = (command: string, depth: number): Analysis => {
   };
 
   const markDynamic = (): void => {
+    word.dynamic = true;
     word.literal = false;
     word.started = true;
     word.digitsOnly = false;
@@ -147,7 +175,7 @@ const scan = (command: string, depth: number): Analysis => {
   const flushWord = (): void => {
     if (!word.started) return;
     const staticValue = word.literal && (!word.tilde || word.plain) ? word.value : null;
-    const finished: Word = { value: word.value, literal: word.literal && !word.tilde, plain: word.plain, staticValue };
+    const finished: Word = { value: word.value, literal: word.literal && !word.tilde, plain: word.plain, glob: word.glob && !word.dynamic, staticValue };
     word = freshWord();
     if (pending === null) {
       words.push(finished);
@@ -159,8 +187,9 @@ const scan = (command: string, depth: number): Analysis => {
     const duplicatesDescriptor = finished.plain && /^(\d+|-)$/.test(finished.value);
     if (kind === 'read-or-duplicate' && duplicatesDescriptor) return;
     if (kind === 'write-or-duplicate' && duplicatesDescriptor) return;
-    if (kind === 'read' || kind === 'read-or-duplicate') reads.push(staticValue);
-    else redirects.push(staticValue);
+    const target = markRelativeUnresolvable([redirectTarget(staticValue, kind === 'write' || kind === 'write-or-duplicate')], cwdState)[0] as Target;
+    if (kind === 'read' || kind === 'read-or-duplicate') reads.push(target);
+    else redirects.push(target);
   };
 
   const endSegment = (endIndex: number, operatorLength: number): void => {
@@ -170,7 +199,10 @@ const scan = (command: string, depth: number): Analysis => {
     if (text !== '') {
       const first = words[0];
       if (first !== undefined && first.plain && RESERVED_WORDS.has(first.value)) unsupported('shell reserved word');
-      segments.push(describeSegment(text, words, opaque));
+      const segment = describeSegment(text, words, opaque, cwdState);
+      segments.push(segment);
+      cwdState = strongerEffect(cwdState, collectPayloads(segment, nested, depth));
+      if (segmentChangesDirectory(segment)) cwdState = strongerEffect(cwdState, 'changed');
     }
     words = [];
     opaque = false;
@@ -188,7 +220,7 @@ const scan = (command: string, depth: number): Analysis => {
   };
 
   const absorbSubstitution = (body: string): void => {
-    nested.push(scan(body, depth + 1));
+    nested.push(scan(body, depth + 1, cwdState));
     opaque = true;
     markDynamic();
     word.plain = false;
@@ -256,6 +288,11 @@ const scan = (command: string, depth: number): Analysis => {
     } else if (char === '\n') {
       endSegment(index, 1);
       index += 1;
+    } else if (char === '#' && !word.started) {
+      const lineEnd = command.indexOf('\n', index);
+      const commentEnd = lineEnd === -1 ? command.length : lineEnd;
+      endSegment(index, commentEnd - index);
+      index = commentEnd;
     } else if (char === '\\') {
       if (next === undefined) return unsupported('dangling backslash');
       if (next === '\n') index += 2;
@@ -327,6 +364,7 @@ const scan = (command: string, depth: number): Analysis => {
     } else if (char === '*' || char === '?' || char === '[' || char === ']' || char === '{' || char === '}') {
       append(char, false);
       word.literal = false;
+      word.glob = true;
       index += 1;
     } else if (char === '~' && !word.started) {
       append(char, false);
@@ -340,59 +378,75 @@ const scan = (command: string, depth: number): Analysis => {
   endSegment(command.length, 0);
 
   for (const segment of segments) {
-    collectPayloads(segment, nested, depth);
-    const effects = pathEffectsOf(segment);
-    redirects.push(...effects.writes);
-    reads.push(...effects.reads);
-    if (effects.opaque) segment.unanalyzable = true;
+    segment.effects = pathEffectsOf(segment, strongerEffect(segment.cwdBefore, segment.cwdEffect));
+    if (segment.effects.opaque) segment.unanalyzable = true;
   }
-  return { segments, redirects, reads, nested };
+  return { segments, redirects, reads, nested, cwdAfter: cwdState };
 };
 
 const SHELL_COMMAND_FLAG = /^-[A-Za-z]*c[A-Za-z]*$/;
 
-const collectPayloads = (segment: Segment, nested: Analysis[], depth: number): void => {
+const collectPayloads = (segment: Segment, nested: Analysis[], depth: number): CwdEffect => {
+  const inherited = strongerEffect(segment.cwdBefore, segment.cwdEffect);
   for (const payload of segment.wrapperPayloads) {
-    if (payload.literal) nested.push(scan(payload.value, depth + 1));
+    if (payload.literal) nested.push(scan(payload.value, depth + 1, inherited));
     else segment.unanalyzable = true;
   }
   const name = nameOf(segment.words[segment.effectiveIndex]);
-  if (name === undefined) return;
+  if (name === undefined) return 'none';
   const rest = segment.words.slice(segment.effectiveIndex + 1);
-  if (SHELLS.has(name)) {
+  const payloadKind = specOf(name)?.payload;
+  if (payloadKind === 'shell') {
     const flagIndex = rest.findIndex((word) => word.literal && SHELL_COMMAND_FLAG.test(word.value));
     const payload = flagIndex === -1 ? undefined : rest[flagIndex + 1];
-    if (payload !== undefined && payload.literal) nested.push(scan(payload.value, depth + 1));
+    if (payload !== undefined && payload.literal) nested.push(scan(payload.value, depth + 1, inherited));
     else segment.unanalyzable = true;
-  } else if (name === 'eval') {
-    if (rest.every((word) => word.literal)) nested.push(scan(rest.map((word) => word.value).join(' '), depth + 1));
-    else segment.unanalyzable = true;
-  } else if (name === 'source' || name === '.') {
+  } else if (payloadKind === 'eval') {
+    if (!rest.every((word) => word.literal)) {
+      segment.unanalyzable = true;
+      return 'changed';
+    }
+    const inner = scan(rest.map((word) => word.value).join(' '), depth + 1, inherited);
+    nested.push(inner);
+    return inner.cwdAfter;
+  } else if (payloadKind === 'source') {
     segment.unanalyzable = true;
+    return 'changed';
   }
+  return 'none';
 };
 
 export const analyzeCommand = (command: string): Analysis | null => {
   try {
-    return scan(command, 0);
+    return scan(command, 0, 'none');
   } catch (error) {
     if (error instanceof UnsupportedConstruct) return null;
     throw error;
   }
 };
 
-export const allRedirects = (analysis: Analysis): RedirectTarget[] => [
+const writesOf = (segment: Segment, resolveFor: ((segment: Segment) => string | undefined) | undefined): Target[] =>
+  segment.effects.darwinWrites !== undefined && resolveFor?.(segment) === DARWIN_SED ? segment.effects.darwinWrites : segment.effects.writes;
+
+export const allWriteTargets = (analysis: Analysis, resolveFor?: (segment: Segment) => string | undefined): Target[] => [
   ...analysis.redirects,
-  ...analysis.nested.flatMap(allRedirects),
+  ...analysis.segments.flatMap((segment) => writesOf(segment, resolveFor)),
+  ...analysis.nested.flatMap((inner) => allWriteTargets(inner, resolveFor)),
 ];
 
-export const allReads = (analysis: Analysis): RedirectTarget[] => [...analysis.reads, ...analysis.nested.flatMap(allReads)];
+export const allReadTargets = (analysis: Analysis): Target[] => [
+  ...analysis.reads,
+  ...analysis.segments.flatMap((segment) => segment.effects.reads),
+  ...analysis.nested.flatMap(allReadTargets),
+];
 
-export const changesDirectory = (analysis: Analysis): boolean =>
-  analysis.segments.some((segment) => {
-    const name = nameOf(segment.words[segment.effectiveIndex]);
-    return name !== undefined && DIRECTORY_CHANGERS.has(name);
-  }) || analysis.nested.some(changesDirectory);
+export const programNameOf = (segment: Segment): string | undefined => nameOf(segment.words[segment.effectiveIndex]);
+
+const redirectTarget = (staticValue: string | null, output: boolean): Target => {
+  const target = targetOfText(staticValue);
+  if (output && 'literal' in target && target.literal.startsWith('~')) return { ...target, needsApproval: true };
+  return target;
+};
 
 const LOOSE_REDIRECT = /(?:&>>?|>>?\|?)\s*([^\s;&|<>()`$'"\\]+)/g;
 

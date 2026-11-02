@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { protectedSetWith } from '@momonga/testkit';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import { minimalPolicyFor } from './helpers.ts';
 
@@ -65,5 +66,34 @@ describe('executor: writeDenied path subjects', () => {
     );
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed' } });
     expect(runs).toEqual([target]);
+  });
+});
+
+describe('executor write guard and the protected set (V15)', () => {
+  it('hard-denies an entry that is both a home guard and protected', async () => {
+    const harness = makeHarness();
+    const keychains = path.join(harness.layout.home, 'Library', 'Keychains');
+    fs.mkdirSync(keychains, { recursive: true });
+    const target = path.join(keychains, 'x');
+    const runs: string[] = [];
+    const policy = { ...minimalPolicyFor({ layout: harness.layout }), writeDenied: [keychains], protectedSet: protectedSetWith([harness.layout.project], [keychains]) };
+    const [outcome] = await harness.executor.runBatch(
+      harness.input(await toolSetOf(pathTool('write', target, runs)), [call('c1', 'PathTool', {}, 'allow_once')], { mode: 'bypassPermissions', sandboxPolicy: policy }),
+    );
+    expect(outcome).toMatchObject({ kind: 'result', result: { status: 'failed' } });
+    expect(runs).toEqual([]);
+  });
+
+  it('does not throw for a paths entry that does not resolve', async () => {
+    const harness = makeHarness();
+    const loop = path.join(harness.layout.project, 'loop');
+    fs.symlinkSync(loop, loop);
+    const entry = path.join(loop, 'x');
+    const runs: string[] = [];
+    const policy = { ...minimalPolicyFor({ layout: harness.layout }), writeDenied: [entry], protectedSet: protectedSetWith([harness.layout.project], [entry]) };
+    const [outcome] = await harness.executor.runBatch(
+      harness.input(await toolSetOf(pathTool('write', path.join(harness.layout.project, 'a.txt'), runs)), [call('c1', 'PathTool', {}, 'allow_once')], { mode: 'acceptEdits', sandboxPolicy: policy }),
+    );
+    expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed' } });
   });
 });

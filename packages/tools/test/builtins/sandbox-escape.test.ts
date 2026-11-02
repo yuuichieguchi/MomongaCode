@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { momongaLayout } from '@momonga/foundation';
+import { momongaLayout, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
 import { makeBuiltins, resultOf } from './fixtures.ts';
@@ -24,7 +24,7 @@ const escapeFixture = async (realSandbox: boolean) => {
     roots,
     home,
     session: { cwd, readLedger: new Map() },
-    sandboxPolicy: buildSandboxPolicy({ fileRules: computeFileRules([], roots, mine), roots, home, tmpDir: mine, sessionsTmpRoot: sessions }),
+    sandboxPolicy: buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: computeFileRules([], roots, mine), roots, home, tmpDir: mine, sessionsTmpRoot: sessions }),
     tmpDir: mine,
   });
   return { tools, home, momonga, keychains, sessions, mine, other, markerFor, extraFor };

@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { EMPTY_FILE_RULES, momongaLayout } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, momongaLayout, protectedSetFor } from '@momonga/foundation';
+import { fakePolicyFilesystem } from '@momonga/testkit';
 import { volumeIsCaseInsensitive } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
 import { makeLayout } from '../helpers.ts';
@@ -26,17 +27,26 @@ describe('buildSandboxPolicy always-denied writes', () => {
   for (const [label, rootsOf] of rootCases) {
     it(`denies writes to .momonga, Keychains and the sessions root with roots of ${label}`, () => {
       const { layout, sessions, tmpDir } = fixture();
-      const policy = buildSandboxPolicy({ fileRules: EMPTY_FILE_RULES, roots: rootsOf(layout), home: layout.home, tmpDir, sessionsTmpRoot: sessions });
+      const policy = buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: rootsOf(layout), home: layout.home, tmpDir, sessionsTmpRoot: sessions });
       expect(policy.writeDenied).toEqual(
         expect.arrayContaining([path.join(layout.home, '.momonga'), path.join(layout.home, 'Library', 'Keychains'), sessions]),
       );
     });
   }
 
-  it('keeps the protected paths of every root for a normal project', () => {
+  it('keeps the protected paths of the protected set for a normal project', () => {
     const { layout, sessions, tmpDir } = fixture();
-    const policy = buildSandboxPolicy({ fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions });
-    expect(policy.writeDenied).toEqual(expect.arrayContaining([path.join(layout.project, '.git', 'hooks'), path.join(layout.project, '.momonga')]));
+    const protectedSet = protectedSetFor([layout.project], fakePolicyFilesystem());
+    const policy = buildSandboxPolicy({ protectedSet, fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions });
+    expect(policy.protectedSet).toBe(protectedSet);
+    expect(policy.writeDenied).toEqual(
+      expect.arrayContaining([
+        path.join(layout.project, '.git', 'hooks'),
+        path.join(layout.project, '.git', 'config.worktree'),
+        path.join(layout.project, '.git', 'commondir'),
+        path.join(layout.project, '.momonga'),
+      ]),
+    );
     expect(policy.writableRoots).toEqual([layout.project, tmpDir]);
   });
 });
@@ -45,19 +55,19 @@ describe('buildSandboxPolicy session tmp invariants', () => {
   it('denies reads of the sessions root before extraReadDenied', () => {
     const { layout, sessions, tmpDir } = fixture();
     const ssh = path.join(layout.home, '.ssh');
-    const policy = buildSandboxPolicy({ fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, extraReadDenied: [ssh] });
+    const policy = buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, extraReadDenied: [ssh] });
     expect(policy.readDenied).toEqual([path.join(layout.home, '.momonga'), path.join(layout.home, 'Library', 'Keychains'), sessions, ssh]);
   });
 
   it('allows reading tmpDir without a readAllowed option', () => {
     const { layout, sessions, tmpDir } = fixture();
-    const policy = buildSandboxPolicy({ fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions });
+    const policy = buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions });
     expect(policy.readAllowed).toEqual([tmpDir]);
   });
 
   it('deduplicates tmpDir given again in readAllowed', () => {
     const { layout, sessions, tmpDir } = fixture();
-    const policy = buildSandboxPolicy({ fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, readAllowed: [tmpDir] });
+    const policy = buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, readAllowed: [tmpDir] });
     expect(policy.readAllowed).toEqual([tmpDir]);
   });
 
@@ -66,13 +76,13 @@ describe('buildSandboxPolicy session tmp invariants', () => {
     const vault = path.join(layout.outside, 'vault');
     const ok = path.join(vault, 'ok');
     fs.mkdirSync(ok, { recursive: true });
-    const policy = buildSandboxPolicy({ fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, extraReadDenied: [vault], readAllowed: [ok, tmpDir] });
+    const policy = buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, extraReadDenied: [vault], readAllowed: [ok, tmpDir] });
     expect(policy.readAllowed).toEqual([tmpDir, ok]);
   });
 
   it('throws for readAllowed equal to the sessions root without extraReadDenied', () => {
     const { layout, sessions, tmpDir } = fixture();
-    expect(() => buildSandboxPolicy({ fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, readAllowed: [sessions] })).toThrow();
+    expect(() => buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, readAllowed: [sessions] })).toThrow();
   });
 });
 
@@ -80,14 +90,14 @@ describe('buildSandboxPolicy readAllowed validation', () => {
   it('throws for an entry outside every readDenied entry', () => {
     const { layout, sessions, tmpDir } = fixture();
     expect(() =>
-      buildSandboxPolicy({ fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, readAllowed: [layout.outside] }),
+      buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, readAllowed: [layout.outside] }),
     ).toThrow();
   });
 
   it('throws for an entry equal to a readDenied entry', () => {
     const { layout, sessions, tmpDir } = fixture();
     expect(() =>
-      buildSandboxPolicy({ fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, readAllowed: [sessions] }),
+      buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, readAllowed: [sessions] }),
     ).toThrow();
   });
 
@@ -97,7 +107,7 @@ describe('buildSandboxPolicy readAllowed validation', () => {
     const inner = path.join(vault, 'a', 'b');
     fs.mkdirSync(inner, { recursive: true });
     expect(() =>
-      buildSandboxPolicy({ fileRules: EMPTY_FILE_RULES,
+      buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES,
         roots: [layout.project],
         home: layout.home,
         tmpDir,
@@ -113,7 +123,7 @@ describe('buildSandboxPolicy readAllowed validation', () => {
     const inside = path.join(layout.home, '.momonga', 'projects');
     fs.mkdirSync(inside, { recursive: true });
     expect(() =>
-      buildSandboxPolicy({ fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, readAllowed: [inside] }),
+      buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, readAllowed: [inside] }),
     ).toThrow();
   });
 
@@ -122,7 +132,7 @@ describe('buildSandboxPolicy readAllowed validation', () => {
     const inside = path.join(layout.home, 'Library', 'Keychains', 'sub');
     fs.mkdirSync(inside, { recursive: true });
     expect(() =>
-      buildSandboxPolicy({ fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, readAllowed: [inside] }),
+      buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, readAllowed: [inside] }),
     ).toThrow();
   });
 
@@ -133,7 +143,7 @@ describe('buildSandboxPolicy readAllowed validation', () => {
     const link = path.join(tmpDir, 'link');
     fs.symlinkSync(momonga, link);
     expect(() =>
-      buildSandboxPolicy({ fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, readAllowed: [link] }),
+      buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, readAllowed: [link] }),
     ).toThrow();
   });
 });
@@ -144,7 +154,7 @@ describe.runIf(volumeIsCaseInsensitive(os.tmpdir()))('buildSandboxPolicy readAll
     const library = path.join(layout.home, 'Library');
     fs.mkdirSync(path.join(library, 'Keychains'), { recursive: true });
     expect(() =>
-      buildSandboxPolicy({ fileRules: EMPTY_FILE_RULES,
+      buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES,
         roots: [layout.project],
         home: layout.home,
         tmpDir,
@@ -159,7 +169,7 @@ describe.runIf(volumeIsCaseInsensitive(os.tmpdir()))('buildSandboxPolicy readAll
     const { layout, sessions, tmpDir } = fixture();
     fs.mkdirSync(path.join(layout.home, '.momonga'), { recursive: true });
     expect(() =>
-      buildSandboxPolicy({ fileRules: EMPTY_FILE_RULES,
+      buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES,
         roots: [layout.project],
         home: layout.home,
         tmpDir,
@@ -173,7 +183,7 @@ describe.runIf(volumeIsCaseInsensitive(os.tmpdir()))('buildSandboxPolicy readAll
   it('throws for an entry equal to the sessions root in another case', () => {
     const { layout, sessions, tmpDir } = fixture();
     expect(() =>
-      buildSandboxPolicy({ fileRules: EMPTY_FILE_RULES,
+      buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES,
         roots: [layout.project],
         home: layout.home,
         tmpDir,

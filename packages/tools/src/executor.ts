@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalJson, canonicalPath, comparableContains, comparablePath, computeBackoff, fileRuleFingerprint, momongaLayout, reapMarkedProcesses, sha256Hex, volumeIsCaseInsensitive } from '@momonga/foundation';
-import type { Clock, FileRuleProvenance, ReapTiming, SignalSender } from '@momonga/foundation';
-import { absoluteFrom, canonicalizePath, decide, fileRuleSpecsOf, suggestAllowRule } from '@momonga/policy';
-import type { Decision, PermissionRule, PermissionSubject } from '@momonga/policy';
+import { canonicalJson, canonicalPath, comparableContains, comparablePath, computeBackoff, fileRuleFingerprint, momongaLayout, reapMarkedProcesses, sha256Hex, volumeIsCaseInsensitive, writableAreaOf, writableCheckOf } from '@momonga/foundation';
+import type { Clock, FileRuleProvenance, PathResolution, ReapTiming, SignalSender } from '@momonga/foundation';
+import { absoluteFrom, decide, fileRuleSpecsOf, suggestAllowRule } from '@momonga/policy';
+import type { Decision, PermissionRule, PermissionSubject, PolicyFilesystem } from '@momonga/policy';
 import type { PermissionMode, ToolKind } from '@momonga/protocol';
 import { SandboxPolicyError, canonicalParentForm } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
@@ -55,7 +55,6 @@ type BatchCore = BatchCallbacks & {
   session: ToolSessionState;
   deadlineAt: number;
   signal: AbortSignal;
-  protectedPaths: readonly string[];
   inlineLimitForReconcile?: number;
   inlineLimitForExecution?: () => Promise<number>;
 };
@@ -106,6 +105,7 @@ export type ToolExecutorOptions = {
   readOnlyRetry?: { attempts: number; baseMs: number; maxMs: number };
   maxParallel?: number;
   processMarkerDir: string;
+  fs: PolicyFilesystem;
   reconcileCapMs?: number;
   reconcileGraceMs?: number;
   onWarning(message: string): void;
@@ -186,12 +186,6 @@ const ruleBlock = (subject: PermissionSubject, access: BatchAccess, cwd: string)
 
 const describeProvenance = ({ ruleText, layer, source }: FileRuleProvenance): string => `${ruleText} (${layer}: ${source})`;
 
-const approvalGatedWritePaths = (batch: ExecutionBatchInput): Set<string> => {
-  const layout = momongaLayout(batch.home);
-  const alwaysDenied = [layout.root, layout.keychains].map(comparablePath);
-  return new Set(batch.protectedPaths.map(comparablePath).filter((entry) => !alwaysDenied.includes(entry)));
-};
-
 const parentCanonicalKey = (target: string): string => {
   const directory = path.dirname(target);
   const name = path.basename(target);
@@ -214,8 +208,10 @@ const launcherGuardKeys = (literals: readonly string[]): Set<string> =>
 
 const createWriteGuard = (batch: ExecutionBatchInput): ((subject: PermissionSubject, cwd: string) => string | undefined) => {
   batch.sandboxPolicy.writableRoots.forEach(canonicalPath);
-  const gated = approvalGatedWritePaths(batch);
-  const guards = batch.sandboxPolicy.writeDenied.filter((entry) => !gated.has(comparablePath(entry))).map(canonicalPath);
+  const layout = momongaLayout(batch.home);
+  const homeGuards = new Set([layout.root, layout.keychains]);
+  const approvalGated = new Set(batch.sandboxPolicy.protectedSet.paths);
+  const guards = batch.sandboxPolicy.writeDenied.filter((entry) => homeGuards.has(entry) || !approvalGated.has(entry)).map(canonicalPath);
   const launcherKeys = launcherGuardKeys(batch.sandboxPolicy.writeDeniedLiterals);
   const blocksLauncher = (resolved: string): boolean => launcherKeys.has(parentCanonicalKey(resolved));
   const exempt = batch.tmpDir === undefined ? undefined : canonicalPath(batch.tmpDir);
@@ -232,31 +228,35 @@ const createWriteGuard = (batch: ExecutionBatchInput): ((subject: PermissionSubj
   };
 };
 
-type BatchAccess = ReadAccessMatcher & { writeDeniedPath: (subject: PermissionSubject, cwd: string) => string | undefined };
+type BatchAccess = ReadAccessMatcher & {
+  writeDeniedPath: (subject: PermissionSubject, cwd: string) => string | undefined;
+  isWritable: (absolute: string) => boolean;
+};
 
 const rootsOf = (batch: BatchCore): readonly string[] => (batch.tmpDir === undefined ? batch.roots : [...batch.roots, batch.tmpDir]);
 
-const digestSubject = (subject: PermissionSubject, cwd: string): unknown => {
+const digestSubject = (subject: PermissionSubject, cwd: string, canonicalise: (absolute: string) => PathResolution): unknown => {
   if (subject.kind === 'path') {
     return {
       ...subject,
       paths: subject.paths.map((target) => {
         const absolute = absoluteFrom(target, cwd);
-        const real = canonicalizePath(absolute);
-        if (real === null) throw new Error(`${absolute} cannot be resolved to a real location`);
-        return real;
+        const real = canonicalise(absolute);
+        if (!real.ok) throw new Error(`${absolute} cannot be resolved to a real location`);
+        return real.path;
       }),
     };
   }
   if (subject.kind === 'command') {
-    const canonicalCwd = canonicalizePath(cwd);
-    if (canonicalCwd === null) throw new Error(`session cwd ${cwd} cannot be resolved to a real location`);
-    return { subject, cwd: canonicalCwd };
+    const canonicalCwd = canonicalise(cwd);
+    if (!canonicalCwd.ok) throw new Error(`session cwd ${cwd} cannot be resolved to a real location`);
+    return { subject, cwd: canonicalCwd.path };
   }
   return subject;
 };
 
-export const subjectDigestOf = (subject: PermissionSubject, cwd: string): string => sha256Hex(canonicalJson(digestSubject(subject, cwd)));
+export const subjectDigestOf = (subject: PermissionSubject, cwd: string, canonicalise: (absolute: string) => PathResolution): string =>
+  sha256Hex(canonicalJson(digestSubject(subject, cwd, canonicalise)));
 
 const failedOutcome = (callId: string, output: string): ResultOutcome => ({
   callId,
@@ -379,8 +379,11 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       roots: [...rootsOf(batch)],
       home: batch.home,
       cwd,
-      protectedPaths: batch.protectedPaths,
       fileRules: batch.sandboxPolicy.fileRules,
+      protectedSet: batch.sandboxPolicy.protectedSet,
+      fs: options.fs,
+      searchPath: batch.env['PATH'],
+      isWritable: access.isWritable,
     });
     if (decision.kind === 'deny') return failedOutcome(call.callId, `Permission denied: ${decision.reason}`);
     const unsandboxedExec = decision.kind === 'allow' && tool.sideEffect === 'exec' && batch.sandbox.kind === 'none';
@@ -388,7 +391,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     if ((decision.kind === 'ask' || unsandboxedExec)) {
       let subjectDigest: string;
       try {
-        subjectDigest = subjectDigestOf(subject, cwd);
+        subjectDigest = subjectDigestOf(subject, cwd, options.fs.canonicalise);
       } catch (error) {
         return failedOutcome(call.callId, `Permission check failed: ${error instanceof Error ? error.message : String(error)}`);
       }
@@ -397,7 +400,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           ? { kind: 'ask', source: 'mode', reason: 'no sandbox is available: file deny rules are checked on the command text only, so command execution requires approval' }
           : decision;
         const suggestedRule =
-          unsandboxedExec || decision.source === 'protected' ? undefined : suggestAllowRule(policyTool, subject, { cwd, home: batch.home });
+          unsandboxedExec || decision.source === 'protected' ? undefined : suggestAllowRule(policyTool, subject, cwd, options.fs.canonicalise);
         const locations = tool.locations?.(input);
         return {
           callId: call.callId,
@@ -744,7 +747,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     if (given.sandboxPolicy.fileRules.fingerprint !== expected) {
       throw new SandboxPolicyError('file_rules_stale', 'the sandbox policy was built from different permission rules, roots or session tmp dir than this batch');
     }
-    return { batch: given, access: { ...createReadAccessMatcher(given.sandboxPolicy), writeDeniedPath: createWriteGuard(given) } };
+    const { writableRoots } = given.sandboxPolicy;
+    const isWritable = writableCheckOf(writableAreaOf({ writableRoots, entries: given.sandboxPolicy.fileRules.entries }));
+    return { batch: given, access: { ...createReadAccessMatcher(given.sandboxPolicy), writeDeniedPath: createWriteGuard(given), isWritable } };
   };
 
   const runBatch = async (given: BatchInput): Promise<CallOutcome[]> => {

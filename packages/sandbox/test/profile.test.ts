@@ -1,8 +1,8 @@
 import fs from 'node:fs';
-import { EMPTY_FILE_RULES } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildSeatbeltProfile, defaultProtectedPaths } from '@momonga/sandbox';
+import { buildSeatbeltProfile } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { makeTempDir } from './helpers.ts';
 
@@ -19,7 +19,7 @@ afterEach(() => {
 });
 
 function policyFor(root: string, overrides: Partial<SandboxPolicy> = {}): SandboxPolicy {
-  return { writableRoots: [root], writeDenied: [], writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES, readDenied: [], network: 'deny', ...overrides };
+  return { writableRoots: [root], writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES, readDenied: [], network: 'deny', ...overrides };
 }
 
 function paramNamesReferenced(profile: string): string[] {
@@ -145,27 +145,5 @@ describe('buildSeatbeltProfile', () => {
     const root = tempDir();
     expect(() => buildSeatbeltProfile(policyFor(root, { readDenied: ['rel/secret-dir'] }))).toThrow(/rel\/secret-dir/);
     expect(() => buildSeatbeltProfile(policyFor(root, { writeDenied: ['rel/hook-dir'] }))).toThrow(/rel\/hook-dir/);
-  });
-});
-
-describe('defaultProtectedPaths', () => {
-  it('includes persistence and escape vectors inside the root', () => {
-    const root = '/work/project';
-    const paths = defaultProtectedPaths(root);
-    for (const expected of [
-      '/work/project/.git/hooks',
-      '/work/project/.git/config',
-      '/work/project/.momonga',
-      '/work/project/.mcp.json',
-      '/work/project/.envrc',
-      '/work/project/.vscode',
-      '/work/project/.idea',
-    ]) {
-      expect(paths).toContain(expected);
-    }
-  });
-
-  it('returns only paths inside the root', () => {
-    for (const entry of defaultProtectedPaths('/work/project')) expect(entry.startsWith('/work/project/')).toBe(true);
   });
 });

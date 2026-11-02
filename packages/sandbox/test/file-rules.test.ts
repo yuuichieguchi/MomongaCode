@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { volumeIsCaseInsensitive } from '@momonga/foundation';
+import { volumeIsCaseInsensitive, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import type { FileRuleSet, FileRuleSpec } from '@momonga/foundation';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
 import type { SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
@@ -73,7 +73,7 @@ describe.runIf(process.platform === 'darwin')('user file rules under real Seatbe
     const policy = {
       writableRoots: options.writableRoots ?? [fx.root],
       writeDenied: options.writeDenied ?? [],
-      writeDeniedLiterals: [],
+      protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [],
       readDenied: options.readDenied ?? [],
       ...(options.readAllowed === undefined ? {} : { readAllowed: options.readAllowed }),
       network: 'deny',

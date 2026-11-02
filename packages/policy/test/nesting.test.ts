@@ -1,0 +1,24 @@
+import { describe, expect, it } from 'vitest';
+import { MAX_NESTING, analyzeCommand } from '../src/shell.ts';
+import { commandRow, kindIn } from './decision-rows.ts';
+
+const nest = (depth: number): string => (depth === 0 ? 'echo x' : `echo $(${nest(depth - 1)})`);
+
+describe('MAX_NESTING (CON-9)', () => {
+  it('is the policy value 8', () => {
+    expect(MAX_NESTING).toBe(8);
+  });
+
+  it('analyses MAX_NESTING levels and rejects one more', () => {
+    expect(typeof MAX_NESTING).toBe('number');
+    expect(analyzeCommand(nest(MAX_NESTING))).not.toBeNull();
+    expect(analyzeCommand(nest(MAX_NESTING + 1))).toBeNull();
+  });
+
+  it('asks for the deepest analysable command and denies one level deeper under an unrelated Bash deny rule', () => {
+    expect(typeof MAX_NESTING).toBe('number');
+    const rules = [['deny', 'Bash(curl:*)']] as const;
+    expect(kindIn(commandRow(nest(MAX_NESTING), { rules }), 'default')).toBe('ask');
+    expect(kindIn(commandRow(nest(MAX_NESTING + 1), { rules }), 'default')).toBe('deny');
+  });
+});

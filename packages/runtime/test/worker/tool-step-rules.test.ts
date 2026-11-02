@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import { computeFileRules } from '@momonga/policy';
 import type { ToolEnv } from '@momonga/runtime';
@@ -22,13 +23,13 @@ describe('tool step rules', () => {
           const sandboxPolicy = {
             writableRoots: [session.cwd],
             writeDenied: [path.dirname(env.sessionTmpDir)],
-            writeDeniedLiterals: [],
+            protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [],
             readDenied: [path.dirname(env.sessionTmpDir)],
             readAllowed: [env.sessionTmpDir],
             network: 'deny',
             fileRules: computeFileRules(options.rules ?? [], roots, env.sessionTmpDir),
           } as SandboxPolicy;
-          return { roots, sandboxPolicy, protectedPaths: [], tmpDir: env.sessionTmpDir, env: options.env };
+          return { roots, sandboxPolicy, tmpDir: env.sessionTmpDir, env: options.env };
         },
       },
     });

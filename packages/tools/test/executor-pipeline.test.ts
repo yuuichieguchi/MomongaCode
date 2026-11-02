@@ -1,12 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import { EMPTY_PROTECTED_SET, canonicalJson, resolveCanonicalPath, sha256Hex } from '@momonga/foundation';
+import { TEST_SEARCH_PATH, fakePolicyFilesystem, isWritableFor, protectedSetWith } from '@momonga/testkit';
 import { computeFileRules, decide, suggestAllowRule } from '@momonga/policy';
 import { ToolExecutionError, ToolInputError } from '@momonga/tools';
 import type { ToolContext } from '@momonga/tools';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
-import { keyFor, ruleFor } from './helpers.ts';
+import { keyFor, minimalPolicyFor, ruleFor } from './helpers.ts';
 
 const counting = () => {
   const calls: string[] = [];
@@ -64,7 +65,8 @@ describe('executor pipeline early exits', () => {
       fileRules: computeFileRules(rules, [harness.layout.project], null),
       home: harness.layout.home,
       cwd: harness.layout.project,
-      protectedPaths: [],
+      fs: fakePolicyFilesystem(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([harness.layout.project]),
+      protectedSet: EMPTY_PROTECTED_SET,
     });
     expect(expected.kind).toBe('deny');
     expect(outcomes).toEqual([{ callId: 'c1', kind: 'result', result: { status: 'failed', output: `Permission denied: ${expected.reason}` } }]);
@@ -93,7 +95,8 @@ describe('executor pipeline early exits', () => {
       fileRules: computeFileRules([], [harness.layout.project], null),
       home: harness.layout.home,
       cwd: harness.layout.project,
-      protectedPaths: [],
+      fs: fakePolicyFilesystem(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([harness.layout.project]),
+      protectedSet: EMPTY_PROTECTED_SET,
     });
     expect(outcomes).toEqual([
       {
@@ -107,7 +110,7 @@ describe('executor pipeline early exits', () => {
         subjectDigest: sha256Hex(canonicalJson({ subject, cwd: harness.layout.project })),
       },
     ]);
-    expect(suggestAllowRule({ name: 'Bash', ...BASH }, subject, { cwd: harness.layout.project, home: harness.layout.home })).toBe('Bash(make build)');
+    expect(suggestAllowRule({ name: 'Bash', ...BASH }, subject, harness.layout.project, resolveCanonicalPath)).toBe('Bash(make build)');
     expect(probe.calls).toEqual([]);
     expect(harness.idempotency.records.size).toBe(0);
   });
@@ -198,7 +201,7 @@ describe('executor pipeline early exits', () => {
     const [outcome] = await harness.executor.runBatch(
       harness.input(await toolSetOf(tool), [call('c1', 'Write')], {
         mode: 'bypassPermissions',
-        protectedPaths: [path.join(harness.layout.project, '.git')],
+        sandboxPolicy: { ...minimalPolicyFor({ layout: harness.layout }), protectedSet: protectedSetWith([harness.layout.project], [path.join(harness.layout.project, '.git')]) },
       }),
     );
     expect(outcome?.kind).toBe('needs_approval');

@@ -1,3 +1,4 @@
+import { fakePolicyFilesystem } from '@momonga/testkit';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createToolExecutor } from '@momonga/tools';
@@ -17,7 +18,7 @@ const executorWhoseRecordVanishesAfterGet = (harness: Harness) => {
       return snapshot;
     },
   };
-  return createToolExecutor({
+  return createToolExecutor({ fs: fakePolicyFilesystem(),
     idempotency: vanishingPort,
     blobs: harness.blobs.port,
     clock: harness.clock,

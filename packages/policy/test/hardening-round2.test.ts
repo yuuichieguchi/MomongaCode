@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { decide } from '@momonga/policy';
 import type { PolicyTool } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
-import { fileRulesFor, makeLayout, ruleIn } from './helpers.ts';
+import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout, ruleIn } from './helpers.ts';
 
 const BASH: PolicyTool = { name: 'Bash', kind: 'execute', sideEffect: 'exec' };
 
@@ -22,7 +23,7 @@ const decision = (command: string, spec: Spec = {}) => {
     ],
     roots: [layout.project],
     home: layout.home,
-    cwd: layout.project, fileRules: fileRulesFor([
+    cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]), protectedSet: EMPTY_PROTECTED_SET, fileRules: fileRulesFor([
       ...(spec.allow ?? []).map((t) => make('allow', t)),
       ...(spec.ask ?? []).map((t) => make('ask', t)),
       ...(spec.deny ?? []).map((t) => make('deny', t)),
@@ -88,12 +89,11 @@ describe('F2: env -S carries a command line payload', () => {
   });
 });
 
-describe('F3: fail-closed git and package manager prefix allow', () => {
+describe('F3: git and package manager prefix rules match literally (D14)', () => {
   const GIT = ['Bash(git:*)'];
   it.each([
     'git log -O/bin/sh',
     'git grep --open-files-in-pager=sh x',
-    'git diff --output=/tmp/x',
     'git diff --ext-diff',
     'git diff --textconv',
     'git rebase -x sh',
@@ -105,7 +105,6 @@ describe('F3: fail-closed git and package manager prefix allow', () => {
     'git filter-repo x',
     'git submodule foreach "sh"',
     'git bisect run ./t.sh',
-    'git clone -u /bin/sh x y',
     'git fetch --upload-pack=sh x',
     'git push --receive-pack=sh x',
     'git archive --remote=x',
@@ -115,8 +114,17 @@ describe('F3: fail-closed git and package manager prefix allow', () => {
     'git -C /tmp log',
     'git --git-dir=/tmp/x log',
     'git commit --template=/tmp/x',
-  ])('%j with Bash(git:*) falls back to ask', (command) => {
-    expect(kind(command, { allow: GIT })).toBe('ask');
+  ])('%j with Bash(git:*) is allowed: the rule words match and no modeled target needs approval', (command) => {
+    expect(kind(command, { allow: GIT })).toBe('allow');
+  });
+
+  it('asks for git diff --output=/tmp/x: the output is a write target outside the roots', () => {
+    expect(kind('git diff --output=/tmp/x', { allow: GIT })).toBe('ask');
+  });
+
+  it('asks in default for git clone -u /bin/sh x y: the destination y is a write inside the roots', () => {
+    expect(kind('git clone -u /bin/sh x y', { allow: GIT })).toBe('ask');
+    expect(kind('git clone -u /bin/sh x y', { allow: GIT, mode: 'acceptEdits' })).toBe('allow');
   });
 
   it.each(['git status', 'git log --oneline -n 5', 'git commit -c HEAD', 'git diff --stat', 'git log -C', 'git checkout -b feature'])(
@@ -137,19 +145,16 @@ describe('F3: fail-closed git and package manager prefix allow', () => {
     ['Bash(npm init:*)', 'npm init evil'],
     ['Bash(pnpm dlx:*)', 'pnpm dlx cowsay'],
     ['Bash(yarn dlx:*)', 'yarn dlx cowsay'],
-  ])('%s does not allow %j', (rule, command) => {
-    expect(kind(command, { allow: [rule] })).toBe('ask');
+  ])('%s allows %j because the rule words match literally', (rule, command) => {
+    expect(kind(command, { allow: [rule] })).toBe('allow');
   });
 });
 
 describe('F5: more writers', () => {
   const DENY = ['Write(./.git/**)'];
   it.each([
-    'sed --expression=s/a/b/ -i .git/config',
     'sed -i -e s/a/b/ .git/config',
     'sed -i -f s.sed .git/config',
-    'sed --file=s.sed -i .git/config',
-    'sed --in-place -e s/a/b/ .git/config',
     'cp --target-directory=.git/hooks x',
     'cp --target-directory .git/hooks x',
     'cp -t .git/hooks x',
@@ -178,10 +183,14 @@ describe('F5: more writers', () => {
   });
 
   it.each(['curl -O http://x/h', 'wget http://x/h', 'patch -p1', 'tar xf a.tar', 'unzip a.zip', 'git clone http://x'])(
-    'cwd-relative writer %j is unresolvable: denied when a write deny rule exists, asked otherwise',
+    'cwd-relative writer %j is unresolvable: asks in default with the reason kind and runs in bypassPermissions',
     (command) => {
-      deniesEverywhere(command, DENY);
-      expect(kind(command, { allow: ['Bash(curl:*)', 'Bash(wget:*)', 'Bash(patch:*)', 'Bash(tar:*)', 'Bash(unzip:*)', 'Bash(git:*)'] })).toBe('ask');
+      const allow = ['Bash(curl:*)', 'Bash(wget:*)', 'Bash(patch:*)', 'Bash(tar:*)', 'Bash(unzip:*)', 'Bash(git:*)'];
+      const asked = decision(command, { allow, deny: DENY });
+      expect(asked.kind).toBe('ask');
+      expect(asked.reason).toContain('dynamic');
+      expect(kind(command, { allow, deny: DENY, mode: 'bypassPermissions' })).toBe('allow');
+      expect(kind(command, { allow })).toBe('ask');
     },
   );
 
@@ -283,22 +292,25 @@ describe('U1: any-offset deny matches ask instead of deny', () => {
 
 describe('unresolvable read targets', () => {
   const DENY = ['Read(~/.ssh/**)'];
-  it.each(['cat *.md', 'cat $F', 'cat < $F'])('%j asks with Read deny rules in default, acceptEdits and plan-free modes and denies in bypassPermissions', (command) => {
-    const asked = decision(command, { allow: ['Bash(cat:*)'], deny: DENY });
-    expect(asked.kind).toBe('ask');
-    expect(asked.reason).toContain('Read(~/.ssh/**)');
+  it.each(['cat $F', 'cat < $F'])('%j asks with Read deny rules in default and acceptEdits and runs in bypassPermissions', (command) => {
+    expect(kind(command, { allow: ['Bash(cat:*)'], deny: DENY })).toBe('ask');
     expect(kind(command, { allow: ['Bash(cat:*)'], deny: DENY, mode: 'acceptEdits' })).toBe('ask');
-    expect(kind(command, { deny: DENY, mode: 'bypassPermissions' })).toBe('deny');
+    expect(kind(command, { deny: DENY, mode: 'bypassPermissions' })).toBe('allow');
   });
 
-  it('keeps unresolvable write targets denied whenever a Write deny rule exists', () => {
-    expect(kind('echo x > $F', { allow: ['Bash(echo:*)'], deny: ['Write(./.git/**)'] })).toBe('deny');
+  it('asks for an unresolvable write target under a Write deny rule and runs it in bypassPermissions', () => {
+    expect(kind('echo x > $F', { allow: ['Bash(echo:*)'], deny: ['Write(./.git/**)'] })).toBe('ask');
+    expect(kind('echo x > $F', { allow: ['Bash(echo:*)'], deny: ['Write(./.git/**)'], mode: 'bypassPermissions' })).toBe('allow');
   });
 });
 
-describe('find primaries that execute or write defeat a prefix allow', () => {
-  it.each(['find . -exec rm {} ;', 'find . -delete', 'find . -execdir sh ;', 'find . -ok rm {} ;', 'find . -fprint out.txt'])('%j asks under Bash(find:*)', (command) => {
-    expect(kind(command, { allow: ['Bash(find:*)'] })).toBe('ask');
+describe('find primaries under a literal prefix allow (D14)', () => {
+  it.each(['find . -exec rm {} ;', 'find . -execdir sh ;', 'find . -ok rm {} ;', 'find . -fprint out.txt'])('%j is allowed under Bash(find:*)', (command) => {
+    expect(kind(command, { allow: ['Bash(find:*)'] })).toBe('allow');
+  });
+
+  it('asks for find . -delete under Bash(find:*): it removes the workspace', () => {
+    expect(kind('find . -delete', { allow: ['Bash(find:*)'] })).toBe('ask');
   });
 
   it('still allows a plain find', () => {

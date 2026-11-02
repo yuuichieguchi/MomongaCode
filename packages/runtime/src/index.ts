@@ -49,7 +49,7 @@ export { createSessionStates } from './process/session-states.ts';
 export type { SessionStates, SessionStatesOptions } from './process/session-states.ts';
 export { createSettingsComposition } from './process/settings-port.ts';
 export type { SettingsComposition, SettingsCompositionOptions, UserSnapshot } from './process/settings-port.ts';
-export { createPolicyFor } from './process/tool-policy.ts';
+export { createPolicyFor, createRecoveryContextFor } from './process/tool-policy.ts';
 export type { PolicyForOptions } from './process/tool-policy.ts';
 export { createToolRuntime } from './process/tool-runtime.ts';
 export type { ToolRuntime, ToolRuntimeOptions } from './process/tool-runtime.ts';

@@ -1,18 +1,17 @@
 import { compileFileRuleSet, resolveCanonicalPath, volumeIsCaseInsensitive } from '@momonga/foundation';
 import type { FileRuleSet, FileRuleSpec, PathResolution } from '@momonga/foundation';
+import { PATH_TOOL_RULES, isPathTool } from '@momonga/config';
 import type { PermissionRule } from '@momonga/config';
-
-const TOOL_BY_RULE_TOOL: Readonly<Record<string, FileRuleSpec['tool']>> = { Read: 'Read', Write: 'Edit', Edit: 'Edit', Glob: 'Glob', Grep: 'Grep' };
 
 export const fileRuleSpecsOf = (rules: readonly PermissionRule[], roots: readonly string[]): FileRuleSpec[] =>
   rules.flatMap((rule, ruleIndex) => {
-    const tool = TOOL_BY_RULE_TOOL[rule.tool];
-    if (tool === undefined || rule.specifier === undefined) return [];
+    if (!isPathTool(rule.tool) || rule.specifier === undefined) return [];
+    const { tool, access } = PATH_TOOL_RULES[rule.tool];
     return [
       {
         ruleIndex,
         tool,
-        access: tool === 'Edit' ? 'write' : 'read',
+        access,
         effect: rule.effect,
         specifier: rule.specifier,
         exceptions: rule.exceptions ?? [],

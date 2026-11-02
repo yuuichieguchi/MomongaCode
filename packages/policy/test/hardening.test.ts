@@ -2,9 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { computeFileRules, decide, matchRule } from '@momonga/policy';
-import type { DecideInput, PermissionRule, PermissionSubject, PolicyTool } from '@momonga/policy';
+import type { PermissionRule, PermissionSubject, PolicyTool } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
-import { fileRulesFor, makeLayout, ruleIn, touch } from './helpers.ts';
+import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { commandRow, kindIn } from './decision-rows.ts';
+import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout, ruleIn, touch } from './helpers.ts';
 
 const BASH: PolicyTool = { name: 'Bash', kind: 'execute', sideEffect: 'exec' };
 const READ: PolicyTool = { name: 'Read', kind: 'read', sideEffect: 'read_only' };
@@ -26,7 +28,7 @@ const bash = (command: string, spec: Spec = {}) => {
     ],
     roots: [layout.project],
     home: layout.home,
-    cwd: layout.project, fileRules: fileRulesFor([
+    cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]), protectedSet: EMPTY_PROTECTED_SET, fileRules: fileRulesFor([
       ...(spec.allow ?? []).map((t) => make('allow', t)),
       ...(spec.ask ?? []).map((t) => make('ask', t)),
       ...(spec.deny ?? []).map((t) => make('deny', t)),
@@ -81,10 +83,11 @@ describe('B3: opaque command words and payloads fail closed against deny', () =>
 describe('B4: unresolvable redirect targets under write deny rules', () => {
   const DENY = ['Write(~/.bashrc)'];
   it.each(['echo x > "$HOME/.bashrc"', 'echo x >$HOME/.bashrc', 'cd ~; echo x > .bashrc', 'echo x <(true) >"$HOME/.bashrc"'])(
-    '%j is denied in bypassPermissions and default',
+    '%j asks in default and acceptEdits and runs in bypassPermissions, where the kernel enforces the deny rule',
     (command) => {
-      expect(bash(command, { allow: ALLOW, deny: DENY, mode: 'bypassPermissions' })).toBe('deny');
-      expect(bash(command, { allow: ALLOW, deny: DENY })).toBe('deny');
+      expect(bash(command, { allow: ALLOW, deny: DENY, mode: 'bypassPermissions' })).toBe('allow');
+      expect(bash(command, { allow: ALLOW, deny: DENY })).toBe('ask');
+      expect(bash(command, { allow: ALLOW, deny: DENY, mode: 'acceptEdits' })).toBe('ask');
     },
   );
 
@@ -102,13 +105,13 @@ describe('S3: more wrappers and any-offset deny', () => {
     },
   );
 
-  it('best effort only: the sandbox is the backstop for unlink and find -delete', () => {
+  it('leaves unlink and find -delete to the sandbox under a Bash(rm:*) deny rule', () => {
     expect(bash('unlink x', { deny: ['Bash(rm:*)'] })).not.toBe('deny');
     expect(bash('find . -delete', { deny: ['Bash(rm:*)'] })).not.toBe('deny');
   });
 });
 
-describe('S4: dangerous options defeat prefix allow', () => {
+describe('S4: options do not defeat a literal prefix allow (D14)', () => {
   it.each([
     ['Bash(npm run test:*)', 'npm run test --script-shell=/tmp/x'],
     ['Bash(npm run test:*)', 'npm run test --userconfig /tmp/x'],
@@ -124,8 +127,13 @@ describe('S4: dangerous options defeat prefix allow', () => {
     ['Bash(git:*)', 'git -C /tmp log'],
     ['Bash(yarn test:*)', 'yarn test --script-shell /tmp/x'],
     ['Bash(pnpm test:*)', 'pnpm test --script-shell=/tmp/x'],
-  ])('%s does not allow %j', (rule, command) => {
-    expect(bash(command, { allow: [rule] })).toBe('ask');
+  ])('%s allows %j because the rule words match literally', (rule, command) => {
+    expect(bash(command, { allow: [rule] })).toBe('allow');
+  });
+
+  it('asks when the rule words are not adjacent to the program', () => {
+    expect(bash('git -C /tmp log', { allow: ['Bash(git log:*)'] })).toBe('ask');
+    expect(bash('git --git-dir=/tmp/x log', { allow: ['Bash(git log:*)'] })).toBe('ask');
   });
 
   it('still allows ordinary options', () => {
@@ -161,7 +169,6 @@ describe('S8: writer commands are write subjects', () => {
     'cp x .git/hooks/pre-commit',
     'mv x .git/hooks/pre-commit',
     'dd if=x of=.git/hooks/pre-commit',
-    'sed -i s/a/b/ .git/config',
     'install x .git/hooks/h',
     'touch .git/hooks/h',
     'truncate -s 0 .git/hooks/h',
@@ -187,7 +194,7 @@ describe('S2 and S1: slash-less patterns and case', () => {
     const outside = touch(path.join(layout.outside, 'a.ts'));
     fs.symlinkSync(outside, path.join(layout.project, 'link.ts'));
     const decision = (file: string) =>
-      decide({ tool: WRITE, subject: subject(file), mode: 'default', rules: [rule], roots, fileRules: fileRulesFor([rule], roots), home: layout.home, cwd: layout.project }).kind;
+      decide({ tool: WRITE, subject: subject(file), mode: 'default', rules: [rule], roots, fileRules: fileRulesFor([rule], roots), home: layout.home, cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor(roots), protectedSet: EMPTY_PROTECTED_SET }).kind;
     expect(decision(inside)).toBe('allow');
     expect(decision(outside)).toBe('ask');
     expect(decision(path.join(layout.project, 'link.ts'))).toBe('ask');
@@ -201,7 +208,7 @@ describe('S2 and S1: slash-less patterns and case', () => {
     const subject: PermissionSubject = { kind: 'path', tool: 'Read', paths: [file], access: 'read' };
     const roots = [layout.project];
     const decision = (rule: PermissionRule) =>
-      decide({ tool: READ, subject, mode: 'default', rules: [rule], roots, home: layout.home, cwd: layout.project, fileRules: computeFileRules([rule], roots, null) } as DecideInput);
+      decide({ tool: READ, subject, mode: 'default', rules: [rule], roots, home: layout.home, cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor(roots), protectedSet: EMPTY_PROTECTED_SET, fileRules: computeFileRules([rule], roots, null) });
     expect(decision(make('deny', 'Read(.env)'))).toMatchObject({ kind: 'deny', source: 'rule' });
     expect(decision(make('ask', 'Read(.env)'))).toMatchObject({ kind: 'ask', source: 'rule' });
     expect(decision(make('allow', 'Read(.env)'))).toMatchObject({ kind: 'allow', source: 'rule' });
@@ -226,7 +233,49 @@ describe('read tool sanity', () => {
     const layout = makeLayout();
     const file = touch(path.join(layout.project, 'f'));
     expect(
-      decide({ tool: READ, subject: { kind: 'path', tool: 'Read', paths: [file], access: 'read' }, mode: 'default', rules: [], roots: [layout.project], home: layout.home, cwd: layout.project, fileRules: fileRulesFor([], [layout.project]) }).kind,
+      decide({ tool: READ, subject: { kind: 'path', tool: 'Read', paths: [file], access: 'read' }, mode: 'default', rules: [], roots: [layout.project], home: layout.home, cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]), protectedSet: EMPTY_PROTECTED_SET, fileRules: fileRulesFor([], [layout.project]) }).kind,
     ).toBe('allow');
+  });
+});
+
+describe('S8: sed -i follows the resolved sed (3.5, revision 25)', () => {
+  const DENY = [['deny', 'Write(./.git/**)']] as const;
+  const FORMER_DENIES = ['sed -i s/a/b/ .git/config', 'sed --expression=s/a/b/ -i .git/config', 'sed --file=s.sed -i .git/config', 'sed --in-place -e s/a/b/ .git/config'];
+  const NON_APPLE: ReadonlyArray<readonly [string, Readonly<Record<string, string>>]> = [
+    ['a Homebrew sed', { sed: '/opt/homebrew/bin/sed' }],
+    ['an unresolved sed', {}],
+  ];
+
+  it.each(NON_APPLE.flatMap(([label, programs]) => FORMER_DENIES.map((command) => [command, label, programs] as const)))('%s with %s is denied by the union reading', (command, _label, programs) => {
+    const row = commandRow(command, { rules: DENY, fs: () => ({ programs }) });
+    expect(kindIn(row, 'default')).toBe('deny');
+    expect(kindIn(row, 'bypassPermissions')).toBe('deny');
+  });
+
+  it.each(FORMER_DENIES)('%s with /usr/bin/sed has no target on Darwin: asks in default, allowed in bypass', (command) => {
+    const row = commandRow(command, { rules: DENY, fs: () => ({ programs: { sed: '/usr/bin/sed' } }) });
+    expect(kindIn(row, 'default')).toBe('ask');
+    expect(kindIn(row, 'bypassPermissions')).toBe('allow');
+  });
+
+  it.each([
+    ["sed -i '' s/a/b/ .git/config", { sed: '/usr/bin/sed' }],
+    ["sed -i '' s/a/b/ .git/config", { sed: '/opt/homebrew/bin/sed' }],
+    ['sed -i .bak s/a/b/ .git/config', { sed: '/usr/bin/sed' }],
+    ['sed -i .bak s/a/b/ .git/config', { sed: '/opt/homebrew/bin/sed' }],
+  ] as const)('%s is denied whatever sed resolves to (%o)', (command, programs) => {
+    const row = commandRow(command, { rules: DENY, fs: () => ({ programs }) });
+    expect(kindIn(row, 'default')).toBe('deny');
+    expect(kindIn(row, 'bypassPermissions')).toBe('deny');
+  });
+
+  it('asks as a protected write for a GNU sed -i s/a/b/ .git/HEAD under Bash(sed:*)', () => {
+    const row = commandRow('sed -i s/a/b/ .git/HEAD', {
+      rules: [['allow', 'Bash(sed:*)']],
+      protection: true,
+      fs: () => ({ programs: { sed: '/opt/homebrew/bin/sed' } }),
+      prepare: (layout) => void touch(path.join(layout.project, '.git', 'HEAD')),
+    });
+    for (const mode of ['default', 'acceptEdits', 'bypassPermissions'] as const) expect(kindIn(row, mode)).toBe('prot');
   });
 });

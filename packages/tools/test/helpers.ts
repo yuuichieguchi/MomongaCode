@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
-import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import { EMPTY_PROTECTED_SET, canonicalJson, protectedSetFor, sha256Hex } from '@momonga/foundation';
+import { fakePolicyFilesystem } from '@momonga/testkit';
 import { computeFileRules, parseRule } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
 import type { PermissionRule, RuleEffect } from '@momonga/policy';
@@ -195,6 +196,7 @@ export const minimalPolicyFor = ({ layout, rules = [], roots = [layout.project],
     readDenied: [],
     network: 'deny',
     fileRules: computeFileRules(rules, roots, tmpDir ?? null),
+    protectedSet: EMPTY_PROTECTED_SET,
   };
   validateSandboxPolicy(policy, tmpDir === undefined ? {} : { tmpDir });
   return policy;
@@ -207,6 +209,7 @@ export const policyFor = ({ layout, rules = [], roots = [layout.project], tmpDir
     tmpDir,
     sessionsTmpRoot: sessionsTmpRootOf(layout),
     fileRules: computeFileRules(rules, roots, tmpDir),
+    protectedSet: protectedSetFor(roots, fakePolicyFilesystem()),
     network: 'deny',
   });
 

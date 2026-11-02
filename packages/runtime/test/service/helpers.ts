@@ -6,7 +6,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { afterEach, expect } from 'vitest';
-import { createUdsClient, EMPTY_FILE_RULES, momongaPaths } from '@momonga/foundation';
+import { createUdsClient, EMPTY_FILE_RULES, momongaPaths, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import { computeFileRules } from '@momonga/policy';
@@ -17,7 +17,7 @@ import type { ToolRuntimePort, Worker, WorkerOptions } from '@momonga/runtime';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { Claim, RuntimeStore, Session } from '@momonga/store';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { fakePolicyFilesystem, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { createToolExecutor, createToolRegistry } from '@momonga/tools';
 import type { ToolSessionState } from '@momonga/tools';
@@ -624,13 +624,13 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
   const tracer = createFakeTracer();
   const toolbox = createFakeToolbox();
   const instructions = createFakeInstructions();
-  const executor = createToolExecutor({ idempotency: env.store.idempotency, blobs: env.store.blobs, clock: env.clock, processMarkerDir: markers, onWarning: () => undefined });
+  const executor = createToolExecutor({ fs: fakePolicyFilesystem(), idempotency: env.store.idempotency, blobs: env.store.blobs, clock: env.clock, processMarkerDir: markers, onWarning: () => undefined });
   const sessionsTmpRoot = path.join(env.layout.root, 'sessions');
   const sessionTmpDir = path.join(sessionsTmpRoot, 'session-tmp');
   fs.mkdirSync(sessionTmpDir, { recursive: true, mode: 0o700 });
   const sandboxPolicy: SandboxPolicy = {
     writableRoots: [env.layout.projectReal],
-    writeDenied: [sessionsTmpRoot], writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES,
+    writeDenied: [sessionsTmpRoot], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES,
     readDenied: [sessionsTmpRoot],
     readAllowed: [sessionTmpDir],
     network: 'deny',
@@ -658,10 +658,10 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
     policyFor: async (target: Session, policyOptions: { env: Readonly<Record<string, string>>; rules: readonly PermissionRule[] }) => ({
       roots: [target.cwd],
       sandboxPolicy: { ...sandboxPolicy, fileRules: computeFileRules(policyOptions.rules, [target.cwd], sessionTmpDir) },
-      protectedPaths: [],
       tmpDir: sessionTmpDir,
       env: policyOptions?.env ?? target.env,
     }),
+    recoveryContextFor: async (target: Session, recoveryOptions: { env: Readonly<Record<string, string>> }) => ({ roots: [target.cwd], tmpDir: sessionTmpDir, env: recoveryOptions.env }),
     sessionState: (target: Session) => {
       const existing = sessionStates.get(target.id);
       if (existing !== undefined) return existing;

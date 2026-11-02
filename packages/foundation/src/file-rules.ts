@@ -3,13 +3,14 @@ import { canonicalJson, sha256Hex } from './canonical-json.ts';
 import { comparableContains } from './path-compare.ts';
 import { FileRuleError, fileMatcherOf, parseExceptionPattern, parseFilePattern, testExpression, testFileMatcher } from './file-pattern.ts';
 import type { Expression, FileMatcher, FilePattern, FilePatternContext } from './file-pattern.ts';
+import { unresolvableReasonOf } from './path-resolution.ts';
 import type { PathResolution, UnresolvableReason } from './path-resolution.ts';
 
 export { FileRuleError } from './file-pattern.ts';
 
 export type FileRuleAccess = 'read' | 'write';
 export type FileRuleEffect = 'deny' | 'ask' | 'allow';
-export type FileRuleProvenance = { ruleText: string; layer: 'user' | 'project' | 'local' | 'cli'; source: string };
+export type FileRuleProvenance = { ruleText: string; layer: 'user' | 'project' | 'local' | 'cli' | 'protected'; source: string };
 
 export type FileRuleSpec = {
   ruleIndex: number;
@@ -212,3 +213,14 @@ export const inWritableArea = (area: WritableArea, candidate: string, mode: 'can
   const inRoot = area.roots.some((root) => (mode === 'canonical' ? comparableContains(root, normalised) : lexicallyWithin(normalised, root)));
   return inRoot || area.widening.some((expression) => testExpression(expression, normalised, false));
 };
+
+export const writableCheckOf =
+  (area: WritableArea) =>
+  (entry: string): boolean => {
+    try {
+      return inWritableArea(area, entry, 'canonical');
+    } catch (error) {
+      if (unresolvableReasonOf(error) === undefined) throw error;
+      return true;
+    }
+  };

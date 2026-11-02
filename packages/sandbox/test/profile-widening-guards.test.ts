@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { SandboxPolicyError, buildSeatbeltProfile } from '@momonga/sandbox';
 import type { SandboxPolicy, SeatbeltProfile } from '@momonga/sandbox';
 import { fileRulesOf, fileSpec } from './file-rule-specs.ts';
@@ -47,7 +48,7 @@ const policyOf = (fx: Area): SandboxPolicy =>
   ({
     writableRoots: [fx.root],
     writeDenied: [fx.owned],
-    writeDeniedLiterals: [fx.literal],
+    protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [fx.literal],
     readDenied: [path.dirname(fx.tmp)],
     readAllowed: [fx.tmp],
     network: 'deny',

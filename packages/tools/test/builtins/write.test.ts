@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { protectedPathsFor } from '@momonga/tools';
 import { keyFor } from '../helpers.ts';
 import { approvalOf, makeBuiltins, resultOf, sha256 } from './fixtures.ts';
 
@@ -134,7 +133,7 @@ describe('Write', () => {
     const tools = await makeBuiltins();
     const file = path.join(tools.layout.project, '.envrc');
     const outcome = approvalOf(
-      await tools.run('Write', { file_path: file, content: 'export X=1' }, { mode: 'acceptEdits', protectedPaths: protectedPathsFor([tools.layout.project]) }),
+      await tools.run('Write', { file_path: file, content: 'export X=1' }, { mode: 'acceptEdits' }),
     );
     expect(outcome.decision.source).toBe('protected');
     expect('suggestedRule' in outcome).toBe(false);

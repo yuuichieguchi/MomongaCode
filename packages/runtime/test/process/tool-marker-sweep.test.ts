@@ -100,7 +100,6 @@ describe('tool marker sweep wiring (§8)', () => {
       sandboxPolicy: policy.sandboxPolicy,
       deadlineAt: f.clock.now() + 120_000,
       signal: signalNever(),
-      protectedPaths: policy.protectedPaths,
     });
     const settled = batch.then(
       () => undefined,

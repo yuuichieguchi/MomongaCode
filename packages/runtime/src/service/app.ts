@@ -4,7 +4,7 @@ import type { Context } from 'hono';
 import { ConfigError, stripCredentialEnv } from '@momonga/config';
 import { canonicalDirectory, canonicalJson, canonicalPath, comparableContains, comparablePath, isTransientErrno, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import { RUN_STATUSES } from '@momonga/protocol';
+import { AUTO_MODE_UNAVAILABLE, RUN_STATUSES, isUnavailableMode } from '@momonga/protocol';
 import type { PermissionMode, RunStatus } from '@momonga/protocol';
 import { sameRunRequest } from '@momonga/store';
 import type { Run, RuntimeStore } from '@momonga/store';
@@ -80,7 +80,7 @@ const isGatewayUnavailable = (error: unknown): boolean =>
   error instanceof GatewayRequestError && (error.type === 'transport' || error.status >= 500);
 
 const checkModeAllowed = (mode: PermissionMode, bypassAllowed: boolean): void => {
-  if (mode === 'auto') throw conflict('mode_unavailable', 'the auto permission mode is not available yet');
+  if (isUnavailableMode(mode)) throw conflict(AUTO_MODE_UNAVAILABLE.code, AUTO_MODE_UNAVAILABLE.message);
   if (mode === 'bypassPermissions' && !bypassAllowed) {
     throw modeNotAllowed('this session may not use the bypassPermissions mode');
   }

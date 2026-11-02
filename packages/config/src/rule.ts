@@ -1,4 +1,5 @@
 import { FileRuleError, checkExceptionGrammar, checkFilePatternGrammar } from '@momonga/foundation';
+import type { FileRuleAccess, FileRuleSpec } from '@momonga/foundation';
 
 export type RuleEffect = 'allow' | 'ask' | 'deny';
 export type RuleOrigin = 'user' | 'project' | 'local' | 'cli';
@@ -34,12 +35,29 @@ export class RuleParseError extends Error {
 
 export const NEGATION_PREFIX = '!';
 
-export const PATH_TOOLS = ['Read', 'Write', 'Edit', 'Glob', 'Grep'] as const;
+export const COMMAND_PREFIX_SUFFIX = ':*';
+
+export const PATH_TOOL_RULES = {
+  Read: { tool: 'Read', access: 'read' },
+  Write: { tool: 'Edit', access: 'write' },
+  Edit: { tool: 'Edit', access: 'write' },
+  Glob: { tool: 'Glob', access: 'read' },
+  Grep: { tool: 'Grep', access: 'read' },
+} as const satisfies Record<string, { tool: FileRuleSpec['tool']; access: FileRuleAccess }>;
+
+export type PathToolName = keyof typeof PATH_TOOL_RULES;
+
+export const PATH_TOOLS = Object.keys(PATH_TOOL_RULES) as PathToolName[];
+
+export const EDIT_TOOLS: ReadonlySet<string> = new Set(PATH_TOOLS.filter((tool) => PATH_TOOL_RULES[tool].tool === 'Edit'));
+
+export const isPathTool = (tool: string): tool is PathToolName => Object.hasOwn(PATH_TOOL_RULES, tool);
+
 const SPECIFIER_TOOLS: readonly string[] = [...PATH_TOOLS, 'Bash'];
 const PLAIN_TOOLS: readonly string[] = [...SPECIFIER_TOOLS, 'ReadOutput', 'UpdatePlan'];
 const MCP_NAME = /^[A-Za-z0-9_-]+$/;
 
-const hasBalancedParentheses = (value: string): boolean => {
+export const hasBalancedParentheses = (value: string): boolean => {
   let depth = 0;
   for (const char of value) {
     if (char === '(') depth += 1;
@@ -65,7 +83,7 @@ const validateSpecifier = (text: string, tool: string, specifier: string): void 
   if (specifier.includes('\0')) throw new RuleParseError(text, 'specifier contains a NUL byte');
   if (tool === 'Bash') {
     if (!hasBalancedParentheses(specifier)) throw new RuleParseError(text, 'unbalanced parentheses in specifier');
-    if (specifier.endsWith(':*') && specifier.slice(0, -2).trim() === '') throw new RuleParseError(text, 'empty command prefix');
+    if (specifier.endsWith(COMMAND_PREFIX_SUFFIX) && specifier.slice(0, -COMMAND_PREFIX_SUFFIX.length).trim() === '') throw new RuleParseError(text, 'empty command prefix');
     return;
   }
   if (/[()]/.test(specifier)) throw new RuleParseError(text, 'parentheses are not allowed in a path specifier');

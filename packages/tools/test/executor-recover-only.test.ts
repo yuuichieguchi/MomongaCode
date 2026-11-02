@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { EMPTY_FILE_RULES } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SandboxPolicyError, validateSandboxPolicy } from '@momonga/sandbox';
@@ -33,7 +33,7 @@ const reconcilingTool = (outcome: 'already_applied' | 'not_applied' | 'unknown' 
 
 const relativeWritablePolicy = (harness: Harness): SandboxPolicy => ({
   writableRoots: [harness.layout.project, 'relative/root'],
-  writeDenied: [], writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES,
+  writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES,
   readDenied: [],
   network: 'deny',
 });
@@ -69,7 +69,7 @@ describe('executor recoverOnly batches skip policy validation', () => {
       harness.input(await toolSetOf(tool), [call('c1', 'Mark')], {
         recoverOnly: true,
         tmpDir: strayTmpDir(harness),
-        sandboxPolicy: { writableRoots: [harness.layout.project], writeDenied: [], writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES, readDenied: [], readAllowed: [], network: 'deny' },
+        sandboxPolicy: { writableRoots: [harness.layout.project], writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES, readDenied: [], readAllowed: [], network: 'deny' },
       }),
     );
 
@@ -122,7 +122,7 @@ describe('executor recoverOnly batches skip policy validation', () => {
         tmpDir: 'relative-session-tmp',
         sandboxPolicy: {
           writableRoots: ['relative/root'],
-          writeDenied: ['relative/denied'], writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES,
+          writeDenied: ['relative/denied'], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES,
           readDenied: ['relative/read-denied'],
           readAllowed: ['relative/read-allowed'],
           network: 'deny',

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { computeFileRules } from '@momonga/policy';
@@ -34,7 +35,7 @@ const launcherHarness = (layout: Layout) => {
   const sessionsTmpRoot = path.join(harness.layout.root, 'sessions');
   const tmpDir = path.join(sessionsTmpRoot, 'one');
   fs.mkdirSync(tmpDir, { recursive: true });
-  const sandboxPolicy = buildSandboxPolicy({ fileRules: computeFileRules([], [home], null), roots: [home], home, tmpDir, sessionsTmpRoot });
+  const sandboxPolicy = buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: computeFileRules([], [home], null), roots: [home], home, tmpDir, sessionsTmpRoot });
   const rewriteRecord = (content: string): void => {
     const file = path.join(home, '.momonga', 'bin', 'launcher-links');
     fs.mkdirSync(path.dirname(file), { recursive: true });

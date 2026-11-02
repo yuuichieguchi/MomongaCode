@@ -1,14 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { fakePolicyFilesystem } from '@momonga/testkit';
 import { ConfigError } from '@momonga/config';
-import { ensureSessionTmpDir } from '@momonga/foundation';
+import { ensureSessionTmpDir, protectedSetFor } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
 import type { MomongaPaths } from '@momonga/foundation';
 import * as runtime from '@momonga/runtime';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
 import type { Session } from '@momonga/store';
-import { buildSandboxPolicy, protectedPathsFor } from '@momonga/tools';
+import { buildSandboxPolicy } from '@momonga/tools';
 import { BASE_ENV, HAS_SEATBELT, createSession, errnoError, makeDir, makeLogger, makeTempHome, openStore, runSandboxed } from './helpers.ts';
 import type { TempHome } from './helpers.ts';
 
@@ -21,6 +22,7 @@ const setup = async (options: { ensure?: EnsureTmpDir; sessionStates?: { get(ses
   const policyFor = runtime.createPolicyFor({
     paths: temp.paths,
     home: temp.home,
+    fs: fakePolicyFilesystem(),
     sessionStates: (options.sessionStates ?? states) as typeof states,
     ...(options.ensure === undefined ? {} : { ensureSessionTmpDir: options.ensure }),
   });
@@ -49,7 +51,7 @@ const expectWrapped = (error: unknown, sessionId: string): void => {
 const sessionTmpDirOf = (temp: TempHome, session: Session): string => path.join(temp.paths.tmp.sessions, session.id);
 
 describe('policyFor (system timers, none used)', () => {
-  it('policyFor creates a 0700 tmp dir, roots exclude it, protectedPaths cover the same roots and writableRoots include it', async () => {
+  it('policyFor creates a 0700 tmp dir, roots exclude it, the protected set covers the same roots and writableRoots include it', async () => {
     const { temp, store, policyFor } = await setup();
     const extra = makeDir(temp.root, 'extra');
     const session = createSession(store, temp.project, { additionalDirectories: [extra] });
@@ -63,10 +65,21 @@ describe('policyFor (system timers, none used)', () => {
     expect(fs.statSync(tmpDir).mode & 0o777).toBe(0o700);
     expect(policy.roots).toEqual([temp.project, extra]);
     expect(policy.roots).not.toContain(tmpDir);
-    expect(policy.protectedPaths).toEqual(protectedPathsFor([temp.project, extra]));
+    expect('protectedPaths' in policy).toBe(false);
+    const protectedSet = protectedSetFor([temp.project, extra], fakePolicyFilesystem());
+    expect(policy.sandboxPolicy.protectedSet).toEqual(protectedSet);
+    expect(policy.sandboxPolicy.protectedSet.roots).toEqual([temp.project, extra]);
     expect(policy.sandboxPolicy.writableRoots).toContain(tmpDir);
     expect(policy.sandboxPolicy).toEqual(
-      buildSandboxPolicy({ fileRules: computeFileRules([], [temp.project, extra], tmpDir), roots: [temp.project, extra], home: temp.home, tmpDir, sessionsTmpRoot: temp.paths.tmp.sessions, network: 'deny' }),
+      buildSandboxPolicy({
+        fileRules: computeFileRules([], [temp.project, extra], tmpDir),
+        protectedSet,
+        roots: [temp.project, extra],
+        home: temp.home,
+        tmpDir,
+        sessionsTmpRoot: temp.paths.tmp.sessions,
+        network: 'deny',
+      }),
     );
     expect(policy.sandboxPolicy.network).toBe('deny');
     expect(policy.sandboxPolicy.readDenied).toEqual(
@@ -283,7 +296,7 @@ describe('policyFor (system timers, none used)', () => {
     const sessionStates = runtime.createSessionStates({ clock, store, logger: makeLogger() });
     let error: unknown;
     try {
-      runtime.createPolicyFor({ paths: temp.paths, home: 'relative/home', sessionStates });
+      runtime.createPolicyFor({ paths: temp.paths, home: 'relative/home', sessionStates, fs: fakePolicyFilesystem() });
     } catch (caught) {
       error = caught;
     }

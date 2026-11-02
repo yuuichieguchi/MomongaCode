@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { EMPTY_FILE_RULES } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import type { FileRuleSet } from '@momonga/foundation';
 import { buildSeatbeltProfile } from '@momonga/sandbox';
 import type { SandboxPolicy, SeatbeltProfile } from '@momonga/sandbox';
@@ -34,7 +34,7 @@ const policyOf = (dirs: Layout, fileRules: FileRuleSet): SandboxPolicy =>
   ({
     writableRoots: [dirs.root],
     writeDenied: [dirs.sessions],
-    writeDeniedLiterals: [],
+    protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [],
     readDenied: [dirs.sessions],
     readAllowed: [dirs.tmp],
     network: 'deny',

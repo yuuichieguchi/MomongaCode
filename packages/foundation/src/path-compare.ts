@@ -1,8 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import type { Unresolved } from './path-resolution.ts';
 import { isTransientErrno } from './transient-errno.ts';
-
-const MAX_SYMLINK_HOPS = 40;
 
 export type CaseSensitivityProbe = (existingDirectory: string) => boolean | undefined;
 
@@ -106,9 +105,26 @@ export const volumeIsCaseInsensitive = (target: string): boolean => {
   return verdictForDirectory(directory, device);
 };
 
-const isMissing = (error: unknown): boolean => (error as NodeJS.ErrnoException).code === 'ENOENT';
+export const MAX_SYMLINK_HOPS = 40;
 
-const codedError = (message: string, code: 'ELOOP' | 'ENOENT' | 'ENOTDIR'): NodeJS.ErrnoException => Object.assign(new Error(message), { code });
+export type WalkEntry = { kind: 'missing' } | { kind: 'symlink'; target: string } | { kind: 'directory' } | { kind: 'other' };
+
+export type WalkStep<F> = (absolutePath: string) => WalkEntry | { stepFailure: F };
+
+export type WalkFailureDetail = 'parent-reference' | 'trailing-slash' | 'empty-link';
+
+export type WalkFailureReason = { kind: 'errno'; code: 'ELOOP' | 'ENOENT' | 'ENOTDIR' };
+
+export type WalkFailure = { reason: WalkFailureReason; candidate: string; prefix: string; detail?: WalkFailureDetail };
+
+export type WalkResult<F> =
+  | { ok: true; prefix: string; tail: readonly string[] }
+  | { ok: false; failure: WalkFailure }
+  | { ok: false; stepFailure: F; candidate: string; prefix: string };
+
+export type StepRead = WalkEntry | Unresolved;
+
+export type StepReader = (absolutePath: string) => StepRead;
 
 const DIRECTORY_REQUIRED = '/';
 
@@ -117,7 +133,12 @@ const componentsOf = (value: string): string[] => {
   return value.endsWith('/') ? [...components, DIRECTORY_REQUIRED] : components;
 };
 
-export const canonicalPath = (input: string): string => {
+const errnoFailure = (code: 'ELOOP' | 'ENOENT' | 'ENOTDIR', candidate: string, prefix: string, detail?: WalkFailureDetail): WalkResult<never> => ({
+  ok: false,
+  failure: { reason: { kind: 'errno', code }, candidate, prefix, ...(detail === undefined ? {} : { detail }) },
+});
+
+export const walkPath = <F>(input: string, step: WalkStep<F>, onLink: (name: string) => void): WalkResult<F> => {
   if (!path.isAbsolute(input)) throw new Error(`path must be absolute: ${input}`);
   const pending = componentsOf(input).reverse();
   let prefix: string = path.sep;
@@ -130,31 +151,63 @@ export const canonicalPath = (input: string): string => {
       continue;
     }
     const candidate = path.join(prefix, component);
-    let stat: fs.Stats;
-    try {
-      stat = fs.lstatSync(candidate);
-    } catch (error) {
-      if (!isMissing(error)) throw error;
+    const entry = step(candidate);
+    if ('stepFailure' in entry) return { ok: false, stepFailure: entry.stepFailure, candidate, prefix };
+    if (entry.kind === 'missing') {
       const tail = [component, ...pending.reverse()];
-      if (tail.includes('..')) throw codedError(`cannot resolve '..' below a missing component: ${input}`, 'ENOENT');
-      if (tail.includes(DIRECTORY_REQUIRED)) throw codedError(`missing component followed by a slash: ${input}`, 'ENOENT');
-      return path.join(fs.realpathSync.native(prefix), ...tail);
+      if (tail.includes('..')) return errnoFailure('ENOENT', candidate, prefix, 'parent-reference');
+      if (tail.includes(DIRECTORY_REQUIRED)) return errnoFailure('ENOENT', candidate, prefix, 'trailing-slash');
+      return { ok: true, prefix, tail };
     }
-    if (stat.isSymbolicLink()) {
+    if (entry.kind === 'symlink') {
+      onLink(candidate);
       hops -= 1;
-      if (hops < 0) throw codedError(`too many symbolic links resolving ${input}`, 'ELOOP');
-      const target = fs.readlinkSync(candidate);
-      if (target === '') throw codedError(`empty symbolic link target: ${candidate}`, 'ENOENT');
-      if (path.isAbsolute(target)) prefix = path.sep;
-      pending.push(...componentsOf(target).reverse());
+      if (hops < 0) return errnoFailure('ELOOP', candidate, prefix);
+      if (entry.target === '') return errnoFailure('ENOENT', candidate, prefix, 'empty-link');
+      if (path.isAbsolute(entry.target)) prefix = path.sep;
+      pending.push(...componentsOf(entry.target).reverse());
       continue;
     }
-    if (pending.length > 0 && !stat.isDirectory()) throw codedError(`not a directory: ${candidate}`, 'ENOTDIR');
+    if (pending.length > 0 && entry.kind !== 'directory') return errnoFailure('ENOTDIR', candidate, prefix);
     prefix = candidate;
   }
-  return fs.realpathSync.native(prefix);
+  return { ok: true, prefix, tail: [] };
 };
 
+const nodeStep = (candidate: string): WalkEntry => {
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(candidate);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { kind: 'missing' };
+    throw error;
+  }
+  if (stat.isSymbolicLink()) return { kind: 'symlink', target: fs.readlinkSync(candidate) };
+  return stat.isDirectory() ? { kind: 'directory' } : { kind: 'other' };
+};
+
+const codedError = (message: string, code: 'ELOOP' | 'ENOENT' | 'ENOTDIR'): NodeJS.ErrnoException => Object.assign(new Error(message), { code });
+
+const walkFailureError = (input: string, failure: WalkFailure): NodeJS.ErrnoException => {
+  const { code } = failure.reason;
+  if (failure.detail === 'parent-reference') return codedError(`cannot resolve '..' below a missing component: ${input}`, code);
+  if (failure.detail === 'trailing-slash') return codedError(`missing component followed by a slash: ${input}`, code);
+  if (failure.detail === 'empty-link') return codedError(`empty symbolic link target: ${failure.candidate}`, code);
+  if (code === 'ELOOP') return codedError(`too many symbolic links resolving ${input}`, code);
+  return codedError(`not a directory: ${failure.candidate}`, code);
+};
+
+export const canonicalPath = (input: string): string => {
+  const result = walkPath<never>(input, nodeStep, () => undefined);
+  if (!result.ok) {
+    if ('stepFailure' in result) {
+      const unhandled: never = result.stepFailure;
+      throw new Error(`canonicalPath: unexpected step failure ${String(unhandled)}`);
+    }
+    throw walkFailureError(input, result.failure);
+  }
+  return path.join(fs.realpathSync.native(result.prefix), ...result.tail);
+};
 
 export type CanonicalDirectoryFailureCode = 'not_absolute' | 'unresolvable' | 'missing' | 'not_directory' | 'unreadable';
 

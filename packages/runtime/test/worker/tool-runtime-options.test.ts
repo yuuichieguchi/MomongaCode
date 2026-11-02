@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EMPTY_FILE_RULES } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { ConfigError } from '@momonga/runtime';
 import type { ToolEnv } from '@momonga/runtime';
 import type { Session } from '@momonga/store';
@@ -13,8 +13,7 @@ const policyReturning = (env: Env, policyEnv: () => ToolEnv, seen: Array<{ env: 
   seen.push(options);
   return {
     roots: [session.cwd],
-    sandboxPolicy: { writableRoots: [session.cwd], writeDenied: [], writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES, readDenied: [], network: 'deny' as const },
-    protectedPaths: [],
+    sandboxPolicy: { writableRoots: [session.cwd], writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES, readDenied: [], network: 'deny' as const },
     tmpDir: env.sessionTmpDir,
     env: policyEnv(),
   };
@@ -91,7 +90,13 @@ describe('worker tool runtime options', () => {
     const recoverySeen: Array<{ env: ToolEnv } | undefined> = [];
     const recoveryStripped: ToolEnv = { PATH: '/usr/bin:/bin', FROM_RECOVERY_ENV_FOR: '1' };
     const recoveryWorker = cancelled.worker('worker-1', {
-      tools: { envFor: () => recoveryStripped, policyFor: policyReturning(cancelled, () => recoveryPolicyEnv, recoverySeen) },
+      tools: {
+        envFor: () => recoveryStripped,
+        recoveryContextFor: async (session: Session, options: { env: ToolEnv }) => {
+          recoverySeen.push(options);
+          return { roots: [session.cwd], tmpDir: cancelled.sessionTmpDir, env: recoveryPolicyEnv };
+        },
+      },
     });
 
     expect(await within(cancelled.runOnce(recoveryWorker), 10_000, 'the cancel recovery')).toBe('yielded');

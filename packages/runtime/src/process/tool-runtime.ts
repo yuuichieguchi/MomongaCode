@@ -6,8 +6,9 @@ import { createMcpPool, inheritedEnvOf } from '@momonga/mcp';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import type { Sandbox } from '@momonga/sandbox';
 import type { RuntimeStore } from '@momonga/store';
-import { createBuiltinTools, createToolExecutor, createToolRegistry } from '@momonga/tools';
+import { createBuiltinTools, createPolicyFilesystem, createToolExecutor, createToolRegistry } from '@momonga/tools';
 import type { ToolSet } from '@momonga/tools';
+import type { PolicyFilesystem } from '@momonga/policy';
 import type { ToolRuntimePort } from '../ports.ts';
 import type { RunNotifier } from '../service/notifier.ts';
 import type { ServiceTimers } from '../service/timers.ts';
@@ -17,7 +18,7 @@ import type { McpPoolCache } from './mcp-pool-cache.ts';
 import { createSessionStates } from './session-states.ts';
 import type { SessionStates } from './session-states.ts';
 import type { SettingsComposition } from './settings-port.ts';
-import { createPolicyFor } from './tool-policy.ts';
+import { createPolicyFor, createRecoveryContextFor } from './tool-policy.ts';
 
 export type ToolRuntimeOptions = {
   paths: MomongaPaths;
@@ -33,6 +34,7 @@ export type ToolRuntimeOptions = {
   reapTiming: ReapTiming;
   createPool?: (options: McpPoolOptions) => McpPool;
   ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<string>;
+  policyFilesystem?: PolicyFilesystem;
 };
 
 export type ToolRuntime = {
@@ -50,7 +52,9 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   const createPool = options.createPool ?? createMcpPool;
   const ensureSessionTmpDir = options.ensureSessionTmpDir ?? defaultEnsureSessionTmpDir;
 
+  const policyFilesystem = options.policyFilesystem ?? createPolicyFilesystem();
   const executor = createToolExecutor({
+    fs: policyFilesystem,
     idempotency: store.idempotency,
     blobs: store.blobs,
     clock,
@@ -60,7 +64,9 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   });
   const mcpPools = createMcpPoolCache({ store, notifier, timers, logger, report });
   const sessionStates = createSessionStates({ clock, store, logger });
-  const policyFor = createPolicyFor({ paths, home, sessionStates, ensureSessionTmpDir });
+  const policyOptions = { paths, home, fs: policyFilesystem, sessionStates, ensureSessionTmpDir };
+  const policyFor = createPolicyFor(policyOptions);
+  const recoveryContextFor = createRecoveryContextFor(policyOptions);
 
   const toolSet: ToolRuntimePort['toolSet'] = async (runId, { signal, env }) => {
     const run = store.getRun(runId);
@@ -126,6 +132,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     toolSet,
     recoveryToolSet,
     policyFor,
+    recoveryContextFor,
     executor,
     sandbox,
     sessionState: (session) => sessionStates.get(session),

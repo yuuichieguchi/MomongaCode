@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { decide } from '@momonga/policy';
 import type { DecideInput, PermissionSubject, PolicyTool } from '@momonga/policy';
-import { fileRulesFor, makeLayout } from './helpers.ts';
+import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout, protectedSetWith } from './helpers.ts';
 
 const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write' };
 
@@ -24,7 +24,8 @@ const writeInput = (layout: ReturnType<typeof makeLayout>, target: string, guard
   fileRules: fileRulesFor([], [layout.project]),
   home: layout.home,
   cwd: layout.project,
-  protectedPaths: [guard],
+  protectedSet: protectedSetWith([layout.project], [guard]),
+  fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]),
 });
 
 describe('an unresolvable protected path', () => {

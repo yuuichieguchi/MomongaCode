@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
-import { compileFileRuleSet, inWritableArea, lexicallyWithin, resolveCanonicalPath, writableAreaOf } from '@momonga/foundation';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { compileFileRuleSet, inWritableArea, lexicallyWithin, resolveCanonicalPath, writableAreaOf, writableCheckOf } from '@momonga/foundation';
 import type { FileRuleSpec } from '@momonga/foundation';
 
 const tempDirs: string[] = [];
@@ -100,5 +100,57 @@ describe('lexical containment of a child whose first name starts with ..', () =>
     expect(inWritableArea(area, '/r/..cfg', 'lexical')).toBe(true);
     expect(inWritableArea(area, '/r/../x', 'lexical')).toBe(false);
     expect(inWritableArea(area, '/rx', 'lexical')).toBe(false);
+  });
+});
+
+describe('writableCheckOf', () => {
+  const area = () => {
+    const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-wcheck-')));
+    tempDirs.push(base);
+    const root = path.join(base, 'root');
+    const outside = path.join(base, 'outside');
+    for (const dir of [root, outside]) fs.mkdirSync(dir);
+    return { root, outside, check: writableCheckOf(writableAreaOf({ writableRoots: [root], entries: [] })) };
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('is true for an entry inside the writable area, including one that does not exist yet', () => {
+    const { root, check } = area();
+    expect(check(path.join(root, 'bin'))).toBe(true);
+    expect(check(path.join(root, 'node_modules', '.bin'))).toBe(true);
+  });
+
+  it('is false for an entry outside the writable area', () => {
+    const { outside, check } = area();
+    expect(check(outside)).toBe(false);
+    expect(check('/opt/homebrew/bin')).toBe(false);
+  });
+
+  it('is true when the entry resolves with an unresolvable errno', () => {
+    const { outside, check } = area();
+    const loop = path.join(outside, 'loop');
+    fs.symlinkSync(loop, loop);
+    expect(check(path.join(loop, 'bin'))).toBe(true);
+  });
+
+  it('rethrows any other error unchanged', () => {
+    const { outside, check } = area();
+    const target = path.join(outside, 'broken');
+    const eio = Object.assign(new Error('EIO: injected'), { code: 'EIO' });
+    const original = fs.lstatSync;
+    vi.spyOn(fs, 'lstatSync').mockImplementation(((candidate: fs.PathLike, ...rest: unknown[]) => {
+      if (candidate === target) throw eio;
+      return (original as (...args: unknown[]) => unknown)(candidate, ...rest);
+    }) as typeof fs.lstatSync);
+    let caught: unknown;
+    try {
+      check(target);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBe(eio);
   });
 });

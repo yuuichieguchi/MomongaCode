@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { EMPTY_FILE_RULES } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { computeFileRules } from '@momonga/policy';
@@ -50,22 +50,22 @@ describe('relative sandbox policy entries', () => {
 
   it('make buildSandboxPolicy throw for a relative extraReadDenied entry', async () => {
     const tools = await makeBuiltins();
-    expect(() => buildSandboxPolicy({ fileRules: EMPTY_FILE_RULES, ...options(tools.layout.root), extraReadDenied: ['relative-denied'] })).toThrow(/absolute/);
+    expect(() => buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, ...options(tools.layout.root), extraReadDenied: ['relative-denied'] })).toThrow(/absolute/);
   });
 
   it('make buildSandboxPolicy throw for a relative readAllowed entry', async () => {
     const tools = await makeBuiltins();
-    expect(() => buildSandboxPolicy({ fileRules: EMPTY_FILE_RULES, ...options(tools.layout.root), readAllowed: ['sessions/s/inner'] })).toThrow(/absolute/);
+    expect(() => buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, ...options(tools.layout.root), readAllowed: ['sessions/s/inner'] })).toThrow(/absolute/);
   });
 
   it('make buildSandboxPolicy throw for a relative extraWritable entry', async () => {
     const tools = await makeBuiltins();
-    expect(() => buildSandboxPolicy({ fileRules: EMPTY_FILE_RULES, ...options(tools.layout.root), extraWritable: ['relative-writable'] })).toThrow(/absolute/);
+    expect(() => buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, ...options(tools.layout.root), extraWritable: ['relative-writable'] })).toThrow(/absolute/);
   });
 
   it('make buildSandboxPolicy throw for a relative root', async () => {
     const tools = await makeBuiltins();
-    expect(() => buildSandboxPolicy({ fileRules: EMPTY_FILE_RULES, ...options(tools.layout.root), roots: ['relative-root'] })).toThrow(/absolute/);
+    expect(() => buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, ...options(tools.layout.root), roots: ['relative-root'] })).toThrow(/absolute/);
   });
 
   it.each([

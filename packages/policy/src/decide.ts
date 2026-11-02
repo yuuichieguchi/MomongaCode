@@ -1,13 +1,21 @@
 import path from 'node:path';
-import { comparableContains, containsByComponents, volumeIsCaseInsensitive } from '@momonga/foundation';
-import type { FileRuleSet } from '@momonga/foundation';
+import { isProtectedWrite, lexicallyWithin } from '@momonga/foundation';
+import type { FileRuleSet, ProtectedSet, UnresolvableReason } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
+import { AUTO_MODE_UNAVAILABLE, isUnavailableMode } from '@momonga/protocol';
 import type { PermissionMode } from '@momonga/protocol';
+import { commandApproval } from './approval.ts';
 import { commandCoveredByAllowRules } from './command-match.ts';
-import { matchRule, matchStrength, ruleCoversToolName } from './match-rule.ts';
-import { absoluteFrom, canonicalizePath } from './path-match.ts';
-import { allReads, allRedirects, analyzeCommand, changesDirectory, looseRedirectTargets } from './shell.ts';
-import type { RedirectTarget } from './shell.ts';
+import type { PolicyFilesystem } from './filesystem.ts';
+import { matchRule, matchStrength, ruleCoversSubject } from './match-rule.ts';
+import { absoluteFrom } from './path-match.ts';
+import { resolveSegmentProgram } from './program-resolution.ts';
+import { discoverRepository } from './repository.ts';
+import { insideRoots } from './roots.ts';
+import { allReadTargets, allWriteTargets, analyzeCommand, looseRedirectTargets, programNameOf } from './shell.ts';
+import type { Analysis, Segment } from './shell.ts';
+import { describeReason, markRelativeUnresolvable, targetOfText } from './targets.ts';
+import type { Target } from './targets.ts';
 import type { DecisionKind, PermissionSubject, PolicyTool } from './types.ts';
 
 export type DecideInput = {
@@ -18,8 +26,11 @@ export type DecideInput = {
   roots: string[];
   home: string;
   cwd: string;
-  protectedPaths?: readonly string[];
   fileRules: FileRuleSet;
+  protectedSet: ProtectedSet;
+  fs: PolicyFilesystem;
+  searchPath: string | undefined;
+  isWritable: (absolute: string) => boolean;
 };
 
 export type Decision = {
@@ -44,45 +55,51 @@ const byRule = (kind: DecisionKind, rule: PermissionRule, verb: string): Decisio
 
 const byMode = (kind: DecisionKind, reason: string): Decision => ({ kind, source: 'mode', reason });
 
-type Guard = { guard: string; resolved: string | null; lexical: string };
-
-const componentsOfPath = (value: string): string[] => value.split('/').filter((component) => component !== '');
-
-const guardCovers = ({ resolved, lexical }: Guard, canonical: string): boolean =>
-  resolved === null
-    ? containsByComponents(
-        { existing: '/', tail: componentsOfPath(lexical) },
-        { existing: '/', tail: componentsOfPath(canonical) },
-        volumeIsCaseInsensitive(lexical),
-      )
-    : comparableContains(resolved, canonical);
+const isEmptySet = (set: ProtectedSet): boolean =>
+  set.paths.length === 0 && set.lexicalPaths.length === 0 && set.literals.length === 0 && set.names.length === 0 && set.patterns.entries.length === 0;
 
 const protectedWriteReason = (input: DecideInput, subject: PermissionSubject): string | undefined => {
-  if (subject.kind !== 'path' || subject.access !== 'write') return undefined;
-  const protectedPaths = input.protectedPaths ?? [];
-  if (protectedPaths.length === 0) return undefined;
-  const guards: Guard[] = protectedPaths.map((guard) => ({
-    guard,
-    resolved: canonicalizePath(absoluteFrom(guard, input.cwd)),
-    lexical: path.resolve(input.cwd, guard),
-  }));
+  if (subject.kind !== 'path' || subject.access !== 'write' || isEmptySet(input.protectedSet)) return undefined;
+  const probes = { canonicalise: input.fs.canonicalise, volumeProbe: input.fs.volumeProbe };
   for (const target of subject.paths) {
-    const canonical = canonicalizePath(absoluteFrom(target, input.cwd));
-    if (canonical === null) return `writing to ${target} requires approval because its real location cannot be resolved and protected paths exist`;
-    const hit = guards.find((guard) => guardCovers(guard, canonical));
-    if (hit !== undefined) return `writing to protected path ${hit.guard} requires approval`;
+    const resolution = input.fs.canonicalise(absoluteFrom(target, input.cwd));
+    if (!resolution.ok) {
+      return `writing to ${target} requires approval because its real location cannot be resolved (${describeReason(resolution.reason)}) and protected paths exist`;
+    }
+    if (isProtectedWrite(input.protectedSet, resolution.path, probes)) return `writing to protected path ${resolution.path} requires approval`;
   }
   return undefined;
 };
 
-const insideRoots = (paths: readonly string[], roots: string[], cwd: string): boolean => {
-  if (paths.length === 0) return false;
-  const canonicalRoots = roots.map((root) => canonicalizePath(absoluteFrom(root, cwd))).filter((root): root is string => root !== null);
-  return paths.every((target) => {
-    const real = canonicalizePath(absoluteFrom(target, cwd));
-    return real !== null && canonicalRoots.some((root) => comparableContains(root, real));
-  });
+type Applicable = Array<{ rule: PermissionRule; ruleIndex: number }>;
+
+const applicableRules = (input: DecideInput, subject: PermissionSubject): Applicable =>
+  input.rules.map((rule, ruleIndex) => ({ rule, ruleIndex })).filter(({ rule }) => ruleCoversSubject(rule, subject));
+
+type DenyScan = { denied: Decision | undefined; incidental: PermissionRule | undefined };
+
+const scanDeny = (input: DecideInput, subject: PermissionSubject, applicable: Applicable): DenyScan => {
+  const hits = applicable
+    .filter(({ rule }) => rule.effect === 'deny')
+    .map(({ rule, ruleIndex }) => ({ rule, strength: matchStrength(rule, subject, input.fileRules, ruleIndex) }));
+  const position = hits.find((hit) => hit.strength === 'position');
+  const incidental = hits.find((hit) => hit.strength === 'incidental');
+  const denied =
+    position !== undefined
+      ? byRule('deny', position.rule, 'denied')
+      : incidental !== undefined && input.mode === 'bypassPermissions'
+        ? byRule('deny', incidental.rule, 'denied')
+        : undefined;
+  return { denied, incidental: incidental?.rule };
 };
+
+const protectedDecision = (input: DecideInput, subject: PermissionSubject): Decision | undefined => {
+  const reason = protectedWriteReason(input, subject);
+  return reason === undefined ? undefined : { kind: 'ask', source: 'protected', reason };
+};
+
+const checkGuards = (input: DecideInput, subject: PermissionSubject): Decision | undefined =>
+  scanDeny(input, subject, applicableRules(input, subject)).denied ?? protectedDecision(input, subject);
 
 const modeDefault = (input: DecideInput, subject: PermissionSubject): Decision => {
   const { mode, roots, cwd } = input;
@@ -93,9 +110,9 @@ const modeDefault = (input: DecideInput, subject: PermissionSubject): Decision =
     case 'mcp':
       return byMode('ask', `MCP tool mcp__${subject.server}__${subject.tool} requires approval`);
     case 'command':
-      return byMode('ask', 'shell commands require approval');
+      return commandDefault(input, subject.command);
     case 'path': {
-      const inside = insideRoots(subject.paths, roots, cwd);
+      const inside = insideRoots(subject.paths, roots, cwd, input.fs.canonicalise);
       if (subject.access === 'read') {
         return inside ? byMode('allow', 'reads inside the workspace are allowed') : byMode('ask', 'read outside the workspace requires approval');
       }
@@ -105,33 +122,32 @@ const modeDefault = (input: DecideInput, subject: PermissionSubject): Decision =
   }
 };
 
-const decideSubject = (input: DecideInput, tool: PolicyTool, subject: PermissionSubject): Decision => {
-  const { rules, mode, fileRules } = input;
-  const applicable = rules
-    .map((rule, ruleIndex) => ({ rule, ruleIndex }))
-    .filter(({ rule }) => ruleCoversToolName(rule, subject.kind === 'mcp' ? `mcp__${subject.server}__${subject.tool}` : subject.tool));
+const commandDefault = (input: DecideInput, command: string): Decision => {
+  const approval = commandApproval(input, command, analyzeCommand(command));
+  if (approval === 'read-only') return byMode('allow', 'read-only command');
+  if (approval === 'edit' && input.mode === 'acceptEdits') return byMode('allow', 'acceptEdits mode allows filesystem commands inside the workspace');
+  return byMode('ask', 'shell commands require approval');
+};
 
-  const denyHits = applicable
-    .filter(({ rule }) => rule.effect === 'deny')
-    .map(({ rule, ruleIndex }) => ({ rule, strength: matchStrength(rule, subject, fileRules, ruleIndex) }));
-  const denied = denyHits.find((hit) => hit.strength === 'position');
-  if (denied !== undefined) return byRule('deny', denied.rule, 'denied');
-  const incidental = denyHits.find((hit) => hit.strength === 'incidental');
-  if (incidental !== undefined && mode === 'bypassPermissions') return byRule('deny', incidental.rule, 'denied');
+const decideSubject = (input: DecideInput, tool: PolicyTool, subject: PermissionSubject, commandDerived: boolean): Decision => {
+  const { mode, fileRules } = input;
+  const applicable = applicableRules(input, subject);
+  const { denied, incidental } = scanDeny(input, subject, applicable);
+  if (denied !== undefined) return denied;
 
-  if (mode === 'plan' && tool.sideEffect !== 'read_only') {
+  if (!commandDerived && mode === 'plan' && tool.sideEffect !== 'read_only' && subject.kind !== 'command') {
     return byMode('deny', `plan mode only allows read-only tools; ${tool.name} has side effect ${tool.sideEffect}`);
   }
 
-  const guardReason = protectedWriteReason(input, subject);
-  if (guardReason !== undefined) return { kind: 'ask', source: 'protected', reason: guardReason };
+  const guarded = protectedDecision(input, subject);
+  if (guarded !== undefined) return guarded;
 
   const asked = applicable.find(({ rule, ruleIndex }) => rule.effect === 'ask' && matchRule(rule, subject, fileRules, ruleIndex));
   if (asked !== undefined) {
     if (mode === 'bypassPermissions') return byMode('allow', `bypassPermissions mode overrides ask rule ${describeRule(asked.rule)}`);
     return byRule('ask', asked.rule, 'approval required');
   }
-  if (incidental !== undefined) return byRule('ask', incidental.rule, 'approval required (the rule words appear as an argument)');
+  if (incidental !== undefined) return byRule('ask', incidental, 'approval required (the rule words appear as an argument)');
 
   const allowRules = applicable.filter(({ rule }) => rule.effect === 'allow');
   const allowed =
@@ -146,68 +162,117 @@ const decideSubject = (input: DecideInput, tool: PolicyTool, subject: Permission
   return modeDefault(input, subject);
 };
 
-type PathPlan = { paths: string[]; unresolvable: boolean };
+type PathPlan = {
+  paths: string[];
+  removes: string[];
+  candidates: string[];
+  unresolvable: UnresolvableReason[];
+  needsApproval: boolean;
+};
 
-const resolveTargets = (input: DecideInput, targets: RedirectTarget[], relativeUnsafe: boolean): PathPlan => {
-  const paths: string[] = [];
-  let unresolvable = false;
+const worktreeOf = (input: DecideInput): string => {
+  const discovery = discoverRepository(input.cwd, input.fs);
+  if ('found' in discovery && discovery.found && discovery.hit.entry === 'dotgit') return discovery.hit.directory;
+  const cwd = input.fs.canonicalise(input.cwd);
+  const canonicalCwd = cwd.ok ? cwd.path : input.cwd;
+  for (const root of input.roots) {
+    const resolution = input.fs.canonicalise(absoluteFrom(root, input.cwd));
+    if (resolution.ok && lexicallyWithin(canonicalCwd, resolution.path)) return resolution.path;
+  }
+  return canonicalCwd;
+};
+
+const resolveTargets = (input: DecideInput, targets: readonly Target[]): PathPlan => {
+  const plan: PathPlan = { paths: [], removes: [], candidates: [], unresolvable: [], needsApproval: false };
+  const resolve = (text: string): string | undefined => {
+    if (DISCARD_TARGETS.has(text)) return undefined;
+    if (text === '~' || text.startsWith('~/')) return path.join(input.home, text.slice(1));
+    return absoluteFrom(text, input.cwd);
+  };
+  let worktree: string | undefined;
   for (const target of targets) {
-    if (target === null) {
-      unresolvable = true;
-    } else if (DISCARD_TARGETS.has(target)) {
-      continue;
-    } else if (target === '~' || target.startsWith('~/')) {
-      paths.push(path.join(input.home, target.slice(1)));
-    } else if (target.startsWith('~')) {
-      unresolvable = true;
-    } else if (path.isAbsolute(target)) {
-      paths.push(target);
-    } else if (relativeUnsafe) {
-      unresolvable = true;
+    if ('unresolvable' in target) {
+      plan.unresolvable.push(target.unresolvable);
+    } else if ('worktree' in target) {
+      worktree ??= worktreeOf(input);
+      const resolved = target.below === undefined ? worktree : path.join(worktree, target.below);
+      plan.paths.push(resolved);
+      plan.removes.push(resolved);
+    } else if ('candidate' in target) {
+      const resolved = resolve(target.candidate);
+      if (resolved === undefined) continue;
+      plan.candidates.push(resolved);
+      if (target.removes === true) plan.removes.push(resolved);
     } else {
-      paths.push(absoluteFrom(target, input.cwd));
+      const resolved = resolve(target.literal);
+      if (resolved === undefined) continue;
+      plan.paths.push(resolved);
+      if (target.removes === true) plan.removes.push(resolved);
+      if (target.needsApproval === true) plan.needsApproval = true;
     }
   }
-  return { paths, unresolvable };
+  return plan;
 };
+
+const sedResolution =
+  (input: DecideInput) =>
+  (segment: Segment): string | undefined => {
+    if (programNameOf(segment) !== 'sed') return undefined;
+    const resolution = resolveSegmentProgram(segment, input);
+    return 'program' in resolution ? resolution.program : undefined;
+  };
+
+const analysisPlan = (input: DecideInput, analysis: Analysis): { writes: PathPlan; reads: PathPlan } => ({
+  writes: resolveTargets(input, allWriteTargets(analysis, sedResolution(input))),
+  reads: resolveTargets(input, allReadTargets(analysis)),
+});
+
+const looseUnresolvable: UnresolvableReason = { kind: 'unanalyzable' };
 
 const planPathAccess = (input: DecideInput, command: string): { writes: PathPlan; reads: PathPlan } => {
   const analysis = analyzeCommand(command);
-  if (analysis === null) {
-    const writes = resolveTargets(input, looseRedirectTargets(command), true);
-    return {
-      writes: { paths: writes.paths.filter((target) => path.isAbsolute(target)), unresolvable: command.includes('>') || writes.unresolvable },
-      reads: { paths: [], unresolvable: command.includes('<') },
-    };
-  }
-  const relativeUnsafe = changesDirectory(analysis);
+  if (analysis !== null) return analysisPlan(input, analysis);
+  const loose = resolveTargets(input, markRelativeUnresolvable(looseRedirectTargets(command).map((text) => targetOfText(text)), 'changed'));
   return {
-    writes: resolveTargets(input, allRedirects(analysis), relativeUnsafe),
-    reads: resolveTargets(input, allReads(analysis), relativeUnsafe),
+    writes: { ...loose, paths: loose.paths.filter((target) => path.isAbsolute(target)), unresolvable: command.includes('>') ? [looseUnresolvable] : [] },
+    reads: { ...resolveTargets(input, []), unresolvable: command.includes('<') ? [looseUnresolvable] : [] },
   };
+};
+
+const removesWorkspace = (input: DecideInput, targets: readonly string[]): boolean => {
+  const roots: string[] = [];
+  for (const root of input.roots) {
+    const resolution = input.fs.canonicalise(absoluteFrom(root, input.cwd));
+    if (resolution.ok) roots.push(resolution.path);
+  }
+  return targets.some((target) => {
+    const resolution = input.fs.canonicalise(target);
+    return resolution.ok && roots.some((root) => lexicallyWithin(root, resolution.path));
+  });
 };
 
 const decidePathAccess = (input: DecideInput, plan: PathPlan, tool: PolicyTool, access: 'read' | 'write'): Decision[] => {
   const decisions: Decision[] = [];
+  if (input.mode !== 'bypassPermissions' && removesWorkspace(input, plan.removes)) decisions.push(byMode('ask', 'the command removes the workspace'));
   if (plan.paths.length > 0) {
-    decisions.push(decideSubject(input, tool, { kind: 'path', tool: tool.name, paths: plan.paths, access }));
+    decisions.push(decideSubject(input, tool, { kind: 'path', tool: tool.name, paths: plan.paths, access }, true));
   }
-  if (plan.unresolvable) {
-    const denying = input.rules.find((rule) => rule.effect === 'deny' && ruleCoversToolName(rule, tool.name));
-    if (denying === undefined) {
-      if (input.mode !== 'bypassPermissions') decisions.push(byMode('ask', 'the command accesses a path that cannot be determined statically'));
-    } else if (access === 'write' || input.mode === 'bypassPermissions') {
-      decisions.push(byRule('deny', denying, 'denied (a path argument cannot be determined statically)'));
-    } else {
-      decisions.push(byRule('ask', denying, 'approval required (a read target cannot be determined statically and Read deny rules exist)'));
-    }
+  if (plan.candidates.length > 0) {
+    const guard = checkGuards(input, { kind: 'path', tool: tool.name, paths: plan.candidates, access });
+    if (guard !== undefined) decisions.push(guard);
   }
+  if (input.mode === 'bypassPermissions') return decisions;
+  if (plan.unresolvable.length > 0) {
+    const kinds = [...new Set(plan.unresolvable.map(describeReason))].join(', ');
+    decisions.push(byMode('ask', `the command accesses a path that cannot be determined statically (${kinds})`));
+  }
+  if (plan.needsApproval) decisions.push(byMode('ask', 'a redirect target starting with ~ requires approval'));
   return decisions;
 };
 
 export const decide = (input: DecideInput): Decision => {
-  if (input.mode === 'auto') throw new Error('auto mode is not available yet');
-  const primary = decideSubject(input, input.tool, input.subject);
+  if (isUnavailableMode(input.mode)) throw new Error(AUTO_MODE_UNAVAILABLE.message);
+  const primary = decideSubject(input, input.tool, input.subject, false);
   if (input.subject.kind !== 'command' || primary.kind === 'deny') return primary;
 
   const plan = planPathAccess(input, input.subject.command);

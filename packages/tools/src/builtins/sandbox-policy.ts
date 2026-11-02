@@ -1,9 +1,7 @@
 import { comparableContains } from '@momonga/foundation';
-import type { FileRuleSet } from '@momonga/foundation';
-import { SandboxPolicyError, alwaysWriteDenied, assertAbsoluteEntries, canonicalizePath, defaultProtectedPaths, validateSandboxPolicy } from '@momonga/sandbox';
+import type { FileRuleSet, ProtectedSet } from '@momonga/foundation';
+import { SandboxPolicyError, alwaysWriteDenied, assertAbsoluteEntries, canonicalizePath, validateSandboxPolicy } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
-
-export const protectedPathsFor = (roots: readonly string[]): string[] => roots.flatMap(defaultProtectedPaths);
 
 export type SandboxPolicyOptions = {
   roots: readonly string[];
@@ -11,6 +9,7 @@ export type SandboxPolicyOptions = {
   tmpDir: string;
   sessionsTmpRoot: string;
   fileRules: FileRuleSet;
+  protectedSet: ProtectedSet;
   network?: 'deny' | 'allow';
   extraWritable?: readonly string[];
   extraReadDenied?: readonly string[];
@@ -32,12 +31,13 @@ export const buildSandboxPolicy = (options: SandboxPolicyOptions): SandboxPolicy
   const readAllowed = unique([options.tmpDir, ...(options.readAllowed ?? [])]);
   const policy: SandboxPolicy = {
     writableRoots: [...options.roots, options.tmpDir, ...(options.extraWritable ?? [])],
-    writeDenied: unique([...denied.subtrees, options.sessionsTmpRoot, ...protectedPathsFor(options.roots)]),
+    writeDenied: unique([...denied.subtrees, options.sessionsTmpRoot, ...options.protectedSet.paths]),
     writeDeniedLiterals: [...denied.literals],
     readDenied,
     readAllowed,
     network: options.network ?? 'deny',
     fileRules: options.fileRules,
+    protectedSet: options.protectedSet,
   };
   validateSandboxPolicy(policy, { tmpDir: options.tmpDir });
   const homeGuards = denied.subtrees.map(canonicalizePath);

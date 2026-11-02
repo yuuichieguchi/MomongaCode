@@ -77,8 +77,8 @@ export type { MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirec
 export { isProcessAlive } from './process-alive.ts';
 export type { SignalSender } from './process-alive.ts';
 export { SOCKET_PATH_LIMIT, assertSocketPathLength } from './socket-path.ts';
-export { canonicalDirectory, canonicalPath, comparableContains, comparableFromParts, comparablePath, containsByComponents, setCaseSensitivityProbe, volumeIsCaseInsensitive } from './path-compare.ts';
-export type { CanonicalDirectoryFailureCode, CanonicalDirectoryResult, CaseSensitivityProbe, PathParts } from './path-compare.ts';
+export { MAX_SYMLINK_HOPS, canonicalDirectory, canonicalPath, comparableContains, comparableFromParts, comparablePath, containsByComponents, setCaseSensitivityProbe, volumeIsCaseInsensitive, walkPath } from './path-compare.ts';
+export type { CanonicalDirectoryFailureCode, CanonicalDirectoryResult, CaseSensitivityProbe, PathParts, StepRead, StepReader, WalkEntry, WalkFailure, WalkFailureDetail, WalkFailureReason, WalkResult, WalkStep } from './path-compare.ts';
 export { isTransientErrno } from './transient-errno.ts';
 export { BASE_ENTRY_FLAGS, COMMON_ENTRY_FLAGS, EntryUsageError, parseFlags } from './entry-flags.ts';
 export type { FlagKind, FlagSpec, ParsedFlags } from './entry-flags.ts';
@@ -88,8 +88,10 @@ export type { RotatingLogFile, RotatingLogFileOptions } from './rotating-log.ts'
 export { StartupCancelled, exitCodeForStartError, nodeEntryIo, runDaemonEntry } from './daemon-entry.ts';
 export type { DaemonCloseResult, DaemonDefinition, DaemonHandle, DaemonStartContext, EntryIo, EntrySignal, LogTarget } from './daemon-entry.ts';
 export { UNRESOLVABLE_ERRNO_CODES, resolveCanonicalPath, unresolvableReasonOf } from './path-resolution.ts';
-export type { PathResolution, UnresolvableErrno, UnresolvableReason } from './path-resolution.ts';
+export type { PathResolution, UnresolvableErrno, UnresolvableReason, Unresolved } from './path-resolution.ts';
+export { EMPTY_PROTECTED_SET, MAX_POINTER_FILE_BYTES, defaultProtectedPaths, isProtectedWrite, protectedSetFor } from './protected-set.ts';
+export type { EntryRead, GitEntryReader, GitPointerIssue, ProtectedSet, ProtectedSetPorts } from './protected-set.ts';
 export { anchorFormOf, checkExceptionGrammar, checkFilePatternGrammar, fileMatcherOf, parseExceptionPattern, parseFilePattern, testFileMatcher } from './file-pattern.ts';
 export type { Expression, FileMatcher, FilePattern, FilePatternContext, GlobSegment, MatcherForm } from './file-pattern.ts';
-export { EMPTY_FILE_RULES, FileRuleError, compileFileRuleSet, inWritableArea, lexicallyWithin, writableAreaOf, fileRuleBlocks, fileRuleFingerprint } from './file-rules.ts';
+export { EMPTY_FILE_RULES, FileRuleError, compileFileRuleSet, inWritableArea, lexicallyWithin, writableAreaOf, writableCheckOf, fileRuleBlocks, fileRuleFingerprint } from './file-rules.ts';
 export type { FileRuleAccess, FileRuleEffect, FileRuleEntry, FileRuleException, FileRuleProvenance, FileRuleSet, FileRuleSpec, WritableArea } from './file-rules.ts';

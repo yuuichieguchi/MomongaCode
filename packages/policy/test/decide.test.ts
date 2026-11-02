@@ -2,8 +2,10 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { decide } from '@momonga/policy';
 import type { DecisionKind, PermissionSubject, PolicyTool } from '@momonga/policy';
+import { AUTO_MODE_UNAVAILABLE } from '@momonga/protocol';
 import type { PermissionMode } from '@momonga/protocol';
-import { fileRulesFor, makeLayout, ruleIn, touch } from './helpers.ts';
+import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout, ruleIn, touch } from './helpers.ts';
 import type { Layout } from './helpers.ts';
 
 type Case = { label: string; tool: PolicyTool; subject: (layout: Layout) => PermissionSubject; ruleText: string };
@@ -35,15 +37,15 @@ const CASES: Array<Case & { defaults: Record<(typeof MODES)[number], DecisionKin
   { label: 'Edit inside roots', tool: EDIT, subject: pathSubject('Edit', 'project', 'write'), ruleText: 'Edit', defaults: { default: 'ask', acceptEdits: 'allow', plan: 'deny', bypassPermissions: 'allow' } },
   { label: 'Write inside roots', tool: WRITE, subject: pathSubject('Write', 'project', 'write'), ruleText: 'Write', defaults: { default: 'ask', acceptEdits: 'allow', plan: 'deny', bypassPermissions: 'allow' } },
   { label: 'Edit outside roots', tool: EDIT, subject: pathSubject('Edit', 'outside', 'write'), ruleText: 'Edit', defaults: { default: 'ask', acceptEdits: 'ask', plan: 'deny', bypassPermissions: 'allow' } },
-  { label: 'Bash', tool: BASH, subject: () => ({ kind: 'command', tool: 'Bash', command: 'make build' }), ruleText: 'Bash(make build)', defaults: { default: 'ask', acceptEdits: 'ask', plan: 'deny', bypassPermissions: 'allow' } },
+  { label: 'Bash', tool: BASH, subject: () => ({ kind: 'command', tool: 'Bash', command: 'make build' }), ruleText: 'Bash(make build)', defaults: { default: 'ask', acceptEdits: 'ask', plan: 'ask', bypassPermissions: 'allow' } },
   { label: 'UpdatePlan', tool: PLAN, subject: () => ({ kind: 'none', tool: 'UpdatePlan' }), ruleText: 'UpdatePlan', defaults: { default: 'allow', acceptEdits: 'allow', plan: 'allow', bypassPermissions: 'allow' } },
   { label: 'MCP exec tool', tool: MCP_EXEC, subject: () => ({ kind: 'mcp', server: 'srv', tool: 'run' }), ruleText: 'mcp__srv__run', defaults: { default: 'ask', acceptEdits: 'ask', plan: 'deny', bypassPermissions: 'allow' } },
   { label: 'MCP read_only tool', tool: MCP_READ, subject: () => ({ kind: 'mcp', server: 'srv', tool: 'list' }), ruleText: 'mcp__srv', defaults: { default: 'ask', acceptEdits: 'ask', plan: 'ask', bypassPermissions: 'allow' } },
 ];
 
-const expectedWithRule = (effect: 'allow' | 'ask' | 'deny', mode: (typeof MODES)[number], tool: PolicyTool): DecisionKind => {
+const expectedWithRule = (effect: 'allow' | 'ask' | 'deny', mode: (typeof MODES)[number], c: Case, layout: Layout): DecisionKind => {
   if (effect === 'deny') return 'deny';
-  if (mode === 'plan' && tool.sideEffect !== 'read_only') return 'deny';
+  if (mode === 'plan' && c.tool.sideEffect !== 'read_only' && c.subject(layout).kind !== 'command') return 'deny';
   if (mode === 'bypassPermissions') return 'allow';
   return effect;
 };
@@ -56,7 +58,7 @@ const run = (layout: Layout, c: Case, mode: PermissionMode, effects: Array<'allo
     rules: effects.map((effect) => ruleIn(layout)(effect, c.ruleText)),
     roots: [layout.project],
     home: layout.home,
-    cwd: layout.project, fileRules: fileRulesFor(effects.map((effect) => ruleIn(layout)(effect, c.ruleText)), [layout.project]),
+    cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]), protectedSet: EMPTY_PROTECTED_SET, fileRules: fileRulesFor(effects.map((effect) => ruleIn(layout)(effect, c.ruleText)), [layout.project]),
   });
 
 describe('decide mode defaults', () => {
@@ -75,9 +77,9 @@ describe('decide rule effects', () => {
   for (const c of CASES) {
     for (const mode of MODES) {
       for (const effect of ['allow', 'ask', 'deny'] as const) {
-        const expected = expectedWithRule(effect, mode, c.tool);
-        it(`${c.label} in ${mode} with ${effect} rule -> ${expected}`, () => {
-          expect(run(makeLayout(), c, mode, [effect]).kind).toBe(expected);
+        it(`${c.label} in ${mode} with ${effect} rule`, () => {
+          const layout = makeLayout();
+          expect(run(layout, c, mode, [effect]).kind).toBe(expectedWithRule(effect, mode, c, layout));
         });
       }
     }
@@ -88,7 +90,7 @@ describe('decide precedence', () => {
   it('deny beats ask beats allow regardless of order and origin', () => {
     const layout = makeLayout();
     const subject: PermissionSubject = { kind: 'command', tool: 'Bash', command: 'make build' };
-    const base = { tool: BASH, subject, mode: 'default' as const, roots: [layout.project], home: layout.home, cwd: layout.project };
+    const base = { tool: BASH, subject, mode: 'default' as const, roots: [layout.project], home: layout.home, cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]), protectedSet: EMPTY_PROTECTED_SET };
     const allowCli = ruleIn(layout, 'cli')('allow', 'Bash(make build)');
     const askLocal = ruleIn(layout, 'local')('ask', 'Bash(make:*)');
     const denyProject = ruleIn(layout, 'project')('deny', 'Bash(make:*)');
@@ -101,7 +103,7 @@ describe('decide precedence', () => {
 
   it('plan mode denial explains plan mode', () => {
     const layout = makeLayout();
-    const decision = run(layout, CASES[6]!, 'plan', []);
+    const decision = run(layout, CASES[3]!, 'plan', []);
     expect(decision.kind).toBe('deny');
     expect(decision.reason).toMatch(/plan mode/i);
   });
@@ -116,14 +118,14 @@ describe('decide precedence', () => {
       rules: [],
       roots: [layout.project, layout.outside],
       home: layout.home,
-      cwd: layout.project, fileRules: fileRulesFor([], [layout.project, layout.outside]),
+      cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project, layout.outside]), protectedSet: EMPTY_PROTECTED_SET, fileRules: fileRulesFor([], [layout.project, layout.outside]),
     });
     expect(decision.kind).toBe('allow');
   });
 
   it('refuses auto mode instead of allowing', () => {
     const layout = makeLayout();
-    expect(() => run(layout, CASES[0]!, 'auto', ['allow'])).toThrow(/auto mode is not available/);
+    expect(() => run(layout, CASES[0]!, 'auto', ['allow'])).toThrow(AUTO_MODE_UNAVAILABLE.message);
   });
 });
 
@@ -140,7 +142,7 @@ describe('decide adversarial Bash', () => {
       rules: [...ALLOW.map((t) => make('allow', t)), ...(extra.deny ?? []).map((t) => make('deny', t))],
       roots: [layout.project],
       home: layout.home,
-      cwd: layout.project, fileRules: fileRulesFor([...ALLOW.map((t) => make('allow', t)), ...(extra.deny ?? []).map((t) => make('deny', t))], [layout.project]),
+      cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]), protectedSet: EMPTY_PROTECTED_SET, fileRules: fileRulesFor([...ALLOW.map((t) => make('allow', t)), ...(extra.deny ?? []).map((t) => make('deny', t))], [layout.project]),
     }).kind;
   };
 

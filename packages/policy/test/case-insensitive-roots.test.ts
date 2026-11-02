@@ -3,7 +3,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { decide, volumeIsCaseInsensitive } from '@momonga/policy';
 import type { PolicyTool } from '@momonga/policy';
-import { fileRulesFor, makeLayout } from './helpers.ts';
+import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout } from './helpers.ts';
 
 const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write' };
 
@@ -20,7 +21,7 @@ describe.runIf(volumeIsCaseInsensitive(os.tmpdir()))('roots compare case-insensi
       roots: [root],
       home: layout.home,
       cwd: layout.project,
-      protectedPaths: [], fileRules: fileRulesFor([], [root]),
+      protectedSet: EMPTY_PROTECTED_SET, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([root]), fileRules: fileRulesFor([], [root]),
     });
     expect(decision.kind).toBe('allow');
   });
@@ -37,7 +38,7 @@ describe.runIf(volumeIsCaseInsensitive(os.tmpdir()))('roots compare case-insensi
       roots: [root],
       home: layout.home,
       cwd: layout.project,
-      protectedPaths: [], fileRules: fileRulesFor([], [root]),
+      protectedSet: EMPTY_PROTECTED_SET, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([root]), fileRules: fileRulesFor([], [root]),
     });
     expect(decision.kind).toBe('ask');
   });

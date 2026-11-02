@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { UNRESOLVABLE_ERRNO_CODES, canonicalPath, resolveCanonicalPath } from '@momonga/foundation';
+import { UNRESOLVABLE_ERRNO_CODES, canonicalPath, resolveCanonicalPath, walkPath } from '@momonga/foundation';
 
 const tempDirs: string[] = [];
 
@@ -127,5 +127,35 @@ describe('canonicalPath coded failures', () => {
     const error = thrownBy(() => canonicalPath(input)) as NodeJS.ErrnoException;
     expect(error.message).toBe(`missing component followed by a slash: ${input}`);
     expect(error.code).toBe('ENOENT');
+  });
+});
+
+describe('raw step errors propagate unchanged', () => {
+  it('lets the exact error object thrown by a walkPath step reach the caller', () => {
+    const thrown = Object.assign(new Error('EACCES: permission denied, lstat'), { code: 'EACCES', syscall: 'lstat', path: '/w/locked/x' });
+    const error = thrownBy(() =>
+      walkPath(
+        '/w/locked/x',
+        (absolute) => {
+          if (absolute === '/w/locked/x') throw thrown;
+          return { kind: 'directory' };
+        },
+        () => undefined,
+      ),
+    ) as NodeJS.ErrnoException;
+    expect(error).toBe(thrown);
+    expect(error.message).toBe('EACCES: permission denied, lstat');
+    expect(error.code).toBe('EACCES');
+    expect(error.syscall).toBe('lstat');
+    expect(error.path).toBe('/w/locked/x');
+  });
+
+  it('lets the raw lstat ENAMETOOLONG of the canonicalPath node step escape uncoded', () => {
+    const dir = makeDir();
+    const candidate = path.join(dir, 'a'.repeat(300));
+    const error = thrownBy(() => canonicalPath(candidate)) as NodeJS.ErrnoException;
+    expect(error.code).toBe('ENAMETOOLONG');
+    expect(error.syscall).toBe('lstat');
+    expect(error.path).toBe(candidate);
   });
 });

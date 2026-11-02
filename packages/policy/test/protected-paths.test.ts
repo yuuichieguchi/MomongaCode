@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { decide } from '@momonga/policy';
 import type { DecideInput, PermissionSubject, PolicyTool } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
-import { fileRulesFor, makeLayout, ruleIn, touch } from './helpers.ts';
+import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout, protectedSetWith, ruleIn, touch } from './helpers.ts';
 import type { Layout } from './helpers.ts';
 
 const READ: PolicyTool = { name: 'Read', kind: 'read', sideEffect: 'read_only' };
@@ -22,15 +22,16 @@ const setup = () => {
 
 const input = (layout: Layout, tool: PolicyTool, subject: PermissionSubject, mode: PermissionMode, protectedPaths: readonly string[], extra: Partial<DecideInput> = {}): DecideInput => {
   const given = {
-  tool,
-  subject,
-  mode,
-  rules: [],
-  roots: [layout.project],
-  home: layout.home,
-  cwd: layout.project,
-  protectedPaths,
-  ...extra,
+    tool,
+    subject,
+    mode,
+    rules: [],
+    roots: [layout.project],
+    home: layout.home,
+    cwd: layout.project,
+    fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]),
+    protectedSet: protectedSetWith([layout.project], protectedPaths),
+    ...extra,
   };
   return { fileRules: fileRulesFor(given.rules, given.roots), ...given };
 };

@@ -12,18 +12,6 @@ export interface SeatbeltProfile {
   params: Record<string, string>;
 }
 
-export function defaultProtectedPaths(root: string): string[] {
-  return [
-    path.join(root, '.git', 'hooks'),
-    path.join(root, '.git', 'config'),
-    path.join(root, '.momonga'),
-    path.join(root, '.mcp.json'),
-    path.join(root, '.envrc'),
-    path.join(root, '.vscode'),
-    path.join(root, '.idea'),
-  ];
-}
-
 function isWithin(candidate: string, root: string): boolean {
   return comparableContains(root, candidate);
 }
@@ -89,6 +77,7 @@ export function validateSandboxPolicy(policy: SandboxPolicy, options: { tmpDir?:
   assertAbsoluteEntries('writable_root_not_absolute', 'writableRoots', policy.writableRoots);
   assertAbsoluteEntries('entry_not_absolute', 'writeDenied', policy.writeDenied);
   assertAbsoluteEntries('entry_not_absolute', 'writeDeniedLiterals', policy.writeDeniedLiterals);
+  assertAbsoluteEntries('entry_not_absolute', 'protectedSet.literals', policy.protectedSet.literals);
   assertAbsoluteEntries('entry_not_absolute', 'readDenied', policy.readDenied);
   assertAbsoluteEntries('entry_not_absolute', 'readAllowed', policy.readAllowed ?? []);
   assertReadAllowedValid(policy.readDenied, policy.readAllowed ?? []);
@@ -164,10 +153,10 @@ export function buildSeatbeltProfile(policy: SandboxPolicy, options: { tmpDir?: 
   const sessionTmpDir = options.tmpDir === undefined ? undefined : canonicalizePath(options.tmpDir);
   const scratchDir = options.scratchDir === undefined ? undefined : canonicalizePath(options.scratchDir);
   const area = writableAreaOf({ writableRoots: roots, entries: policy.fileRules.entries });
-  const literals = unique(policy.writeDeniedLiterals);
+  const literals = unique([...policy.writeDeniedLiterals, ...policy.protectedSet.literals]);
   const literalForms = unique(literals.flatMap((literal) => [literal, canonicalParentForm(literal)]));
   const literalAncestors = unique(literalForms.flatMap((target) => ancestorsWithin(target, area, 'canonical')));
-  const userDenies = policy.fileRules.entries.filter(isUserDeny);
+  const userDenies = [...policy.fileRules.entries, ...policy.protectedSet.patterns.entries].filter(isUserDeny);
   const userAncestors = unique(
     userDenies.flatMap((entry) =>
       denyFormsOf(entry).flatMap(({ matcher, directory }) => ancestorsWithin(directory, area, 'lexical', matcher.own.kind !== 'subpath')),

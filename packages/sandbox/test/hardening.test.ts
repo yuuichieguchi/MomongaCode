@@ -1,10 +1,10 @@
 import { spawnSync } from 'node:child_process';
-import { EMPTY_FILE_RULES } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, defaultProtectedPaths } from '@momonga/foundation';
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { buildSeatbeltProfile, createSeatbeltSandbox, defaultProtectedPaths } from '@momonga/sandbox';
+import { buildSeatbeltProfile, createSeatbeltSandbox } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
 import { killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 import { isAlive, makeTempDir, run, waitUntilDead } from './helpers.ts';
@@ -30,7 +30,7 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox hardening (real 
   function sh(script: string, overrides: Partial<SandboxPolicy> = {}): SandboxedProcess {
     const proc = sandbox.spawn(
       { argv: ['/bin/sh', '-c', script], cwd: root, env: BASE_ENV },
-      { writableRoots: [root], writeDenied: defaultProtectedPaths(root), writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES, readDenied: [], network: 'deny', ...overrides },
+      { writableRoots: [root], writeDenied: defaultProtectedPaths(root), protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES, readDenied: [], network: 'deny', ...overrides },
       new AbortController().signal,
     );
     spawned.push(proc);
@@ -160,7 +160,7 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox hardening (real 
     fs.mkdirSync(work);
     const { profile, params } = buildSeatbeltProfile({
       writableRoots: [work],
-      writeDenied: [], writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES,
+      writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: EMPTY_FILE_RULES,
       readDenied: [],
       network: 'deny',
     });
