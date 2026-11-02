@@ -59,6 +59,7 @@ import { protectedRootAreasOf } from './protected-areas.ts';
 import { reapTimingOf } from './reap-timing.ts';
 import type { SandboxKind } from './sandbox-kind.ts';
 import { createSettingsComposition } from './settings-port.ts';
+import { createMemoryPort } from './memory-port.ts';
 import { createSkillsPort } from './skills-port.ts';
 import { runTeardown } from './teardown.ts';
 import type { TeardownStep } from './teardown.ts';
@@ -379,9 +380,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         loader: createSkillLoader({ home: canonicalHome, fileSystem: createNodeSkillFileSystem() }),
         settings: composition.settings,
       });
-      return { composition, runtime, tracker, skills };
+      const memories = createMemoryPort({ store, settings: composition.settings });
+      return { composition, runtime, tracker, skills, memories };
     });
-    const { composition: settingsComposition, runtime: toolRuntime, tracker, skills: skillsPort } = ports;
+    const { composition: settingsComposition, runtime: toolRuntime, tracker, skills: skillsPort, memories: memoriesPort } = ports;
     cleanups.push({ name: 'mcp-pools', run: () => toolRuntime.mcpPools.closeAll() });
     cleanups.push({ name: 'cancel-upstream', run: () => tracker.settle(CANCEL_UPSTREAM_SETTLE_MS) });
 
@@ -418,6 +420,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           gateway: gatewayClient,
           settings: settingsComposition.settings,
           skills: skillsPort,
+          memories: memoriesPort,
           tools: toolRuntime.port,
           tracer,
           clock,

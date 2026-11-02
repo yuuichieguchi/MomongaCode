@@ -7,6 +7,8 @@ export { systemClock } from './clock.ts';
 export type { Clock } from './clock.ts';
 export { Deadline } from './deadline.ts';
 export { parseJsonOrText } from './json.ts';
+export { MAX_REDACTED_CHARS, MIN_CREDENTIAL_CHARS, REDACTED_MARKER, createRedactor } from './redaction.ts';
+export type { Redactor, RedactorOptions } from './redaction.ts';
 export { immediateTx, migrate, openDatabase, readTx } from './sqlite.ts';
 export type { MigrateResult, Migration, OpenDatabaseOptions } from './sqlite.ts';
 export { decodeSse, encodeSse } from './sse.ts';

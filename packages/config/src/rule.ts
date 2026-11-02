@@ -54,7 +54,7 @@ export const EDIT_TOOLS: ReadonlySet<string> = new Set(PATH_TOOLS.filter((tool) 
 export const isPathTool = (tool: string): tool is PathToolName => Object.hasOwn(PATH_TOOL_RULES, tool);
 
 const SPECIFIER_TOOLS: readonly string[] = [...PATH_TOOLS, 'Bash'];
-const PLAIN_TOOLS: readonly string[] = [...SPECIFIER_TOOLS, 'ReadOutput', 'UpdatePlan'];
+const PLAIN_TOOLS: readonly string[] = [...SPECIFIER_TOOLS, 'ReadOutput', 'UpdatePlan', 'MemorySave', 'MemorySearch'];
 const MCP_NAME = /^[A-Za-z0-9_-]+$/;
 
 export const hasBalancedParentheses = (value: string): boolean => {

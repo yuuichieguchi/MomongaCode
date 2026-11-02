@@ -1,6 +1,4 @@
-const ATTRIBUTE_ESCAPES: Readonly<Record<string, string>> = { '&': '&amp;', '"': '&quot;', '<': '&lt;', '>': '&gt;' };
-
-export const escapeXmlAttribute = (value: string): string => value.replace(/[&"<>]/g, (character) => ATTRIBUTE_ESCAPES[character] ?? character);
+import { escapeXmlAttribute } from './xml.ts';
 
 export const skillContentOpenTag = (name: string): string => `<skill_content name="${escapeXmlAttribute(name)}">`;
 

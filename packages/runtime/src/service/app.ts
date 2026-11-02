@@ -32,6 +32,7 @@ import type { EventSource } from './event-stream.ts';
 import type { RunNotifier } from './notifier.ts';
 import { JSON_MEDIA_TYPES, PATCH_MEDIA_TYPES, parseCursor, parseIdempotencyKey, readJson, validateBody } from './request.ts';
 import type { CreateRunBody, CreateSessionBody, PatchSessionBody, ResolveApprovalBody } from './request.ts';
+import { registerMemoryRoutes } from './memories.ts';
 import { registerTrustRoutes } from './trust.ts';
 import type { ServiceTimers } from './timers.ts';
 import { isTerminalStatus, toRunView, toSessionView, toSkillView } from './views.ts';
@@ -368,6 +369,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   route('/v1/runs/:id/events', { GET: runEvents });
   route('/v1/approvals/:id', { GET: getApproval, POST: resolveApproval });
   registerTrustRoutes(route, { store, maxBodyBytes: deps.maxBodyBytes });
+  registerMemoryRoutes(route, { store });
 
   app.notFound(() => errorResponse(notFound('no such route')));
   app.onError((error) => {

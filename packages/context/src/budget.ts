@@ -4,6 +4,7 @@ import type { ContextBudget } from './types.ts';
 
 const ITEM_CAP_RATIO = 0.25;
 const ITEM_ROOM_RATIO = 0.5;
+const MEMORY_ROOM_RATIO = ITEM_ROOM_RATIO / 2;
 const MIN_ITEM_CAP = 64;
 const ROOM_SLACK_TOKENS = 64;
 
@@ -30,3 +31,5 @@ export const itemCapFor = (capabilities: Capabilities, room?: number): number =>
   const base = Math.max(MIN_ITEM_CAP, Math.floor(ITEM_CAP_RATIO * budgetFor(capabilities, 0).I));
   return room === undefined ? base : Math.max(MIN_ITEM_CAP, Math.min(base, Math.floor(ITEM_ROOM_RATIO * room)));
 };
+
+export const memoryBudgetFor = (room: number): number => Math.floor(MEMORY_ROOM_RATIO * room);

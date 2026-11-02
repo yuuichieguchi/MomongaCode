@@ -4,7 +4,7 @@ import { COMPACTION_INSTRUCTIONS_MARKER, wireOf, wireTokensOf } from '@momonga/g
 import type { ChatWire } from '@momonga/gateway';
 import { ESTIMATED_ERROR_BOUND_RATIO, marginFloorFor, summaryItemTokensFor, summaryTokenCapFor } from '@momonga/protocol';
 import type { Capabilities, CountTokensResult, FunctionCallItem, RunEvent } from '@momonga/protocol';
-import { RUNTIME_DEFAULTS, buildSystemPrompt, createGatewayClient } from '@momonga/runtime';
+import { RUNTIME_DEFAULTS, buildSystemPrompt, createGatewayClient, createMemoryPort } from '@momonga/runtime';
 import type { GatewayPort } from '@momonga/runtime';
 import { createUnsandboxed } from '@momonga/sandbox';
 import type { FakeRoute, FakeScriptedReply } from '@momonga/testkit';
@@ -297,6 +297,7 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
       instructionReader: createFsInstructionReader(),
       defaults: RUNTIME_DEFAULTS.limits,
       toolList: () => createBuiltinTools(),
+      memories: createMemoryPort({ store: env.store, settings: env.settings }),
       tools: { sandbox: createUnsandboxed() },
     });
     for (let round = 0; round < DRY_RUN_MAX_CLAIMS && !TERMINAL.has(env.run(runId).status); round += 1) {

@@ -9,6 +9,7 @@ import type {
   CreateResponseBody,
   StreamEvent,
 } from '@momonga/protocol';
+import type { MemoryView } from '@momonga/protocol';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { SkillSet } from '@momonga/skills';
 import type { Session } from '@momonga/store';
@@ -41,6 +42,16 @@ export type SettingsPort = {
 
 export type SkillsPort = {
   load(session: Session): Promise<SkillSet>;
+};
+
+export type MemorySet = {
+  memories: readonly MemoryView[];
+  tools: readonly AnyTool[];
+  markUsed(ids: readonly string[]): void;
+};
+
+export type MemoryPort = {
+  load(session: Session): MemorySet;
 };
 
 export type ToolEnv = Readonly<Record<string, string>>;

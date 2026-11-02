@@ -99,7 +99,13 @@ describe('g: agent skills', () => {
     writeSkill(path.join(home.project, '.agents', 'skills'), 'pdf', 'Extract PDF text. Use when: the user mentions PDFs', { 'scripts/extract.py': 'print(1)' });
     const script = [toolCallReply('activate_skill', { name: 'pdf' }, 'call_skill'), textReply('The pdf skill is active.')];
     for (let index = 0; index < LONG_REQUESTS; index += 1) script.push(textReply(`Noted ${index + 1}.`));
-    const stack = await startStack({ home, sandbox: 'none', script, routes: [summaryRoute(SUMMARY)] });
+    const stack = await startStack({
+      home,
+      sandbox: 'none',
+      settings: { permissions: { deny: ['MemorySave', 'MemorySearch'] } },
+      script,
+      routes: [summaryRoute(SUMMARY)],
+    });
     await trust(home);
     const runtime = createRuntimeClient(home);
     try {

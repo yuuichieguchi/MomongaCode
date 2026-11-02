@@ -10,6 +10,7 @@ import { foldRunState, initialRunState } from './fold.ts';
 import { decodeEvent, decodeRun, decodeRunEvents, decodeRunState, decodeSession, encodeRunState } from './codec.ts';
 import { StoreIdentityError, isFatalStoreError } from './fatal.ts';
 import { createIdempotencyStore } from './idempotency.ts';
+import { createMemoryStore } from './memories.ts';
 import { InheritanceError, applyInheritance, projectInheritance, retractsTask } from './inherit.ts';
 import type { InheritanceOutcome, InheritedPayload } from './inherit.ts';
 import { corrupt, expectOneOf, expectRecord, isRecord, readerFor } from './rows.ts';
@@ -991,6 +992,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     approvals: approvalOps.store,
     blobs: createBlobStore(db, clock, blobDirectory),
     trust: createTrustStore(db, clock, home),
+    memories: createMemoryStore(db, clock),
 
     dataVersion: () => {
       const row = sql.dataVersion.get();

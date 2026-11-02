@@ -7,6 +7,8 @@ import type {
   RunState,
   RunStatus,
   SessionEvent,
+  MemoryScope,
+  MemoryView,
   StopReason,
   ToolKind,
 } from '@momonga/protocol';
@@ -202,6 +204,27 @@ export type TrustStore = {
   clear(path: string): void;
 };
 
+export type MemoryRecord = MemoryView;
+
+export type SaveMemoryInput = {
+  scope: MemoryScope;
+  project: string | null;
+  text: string;
+  runId: string;
+  step: number;
+  callId: string;
+};
+
+export type MemoryStore = {
+  save(input: SaveMemoryInput): { memory: MemoryRecord; created: boolean };
+  get(id: string): MemoryRecord | undefined;
+  list(filter?: { scope?: MemoryScope; project?: string }): MemoryRecord[];
+  recall(project: string | undefined): MemoryRecord[];
+  search(project: string | undefined, terms: readonly string[]): MemoryRecord[];
+  markUsed(ids: readonly string[]): void;
+  delete(id: string): boolean;
+};
+
 export type RuntimeStore = {
   createSession(input: CreateSessionInput): Session;
   getSession(id: string): Session | undefined;
@@ -251,6 +274,7 @@ export type RuntimeStore = {
   approvals: ApprovalStore;
   blobs: BlobStore;
   trust: TrustStore;
+  memories: MemoryStore;
   close(): void;
 };
 

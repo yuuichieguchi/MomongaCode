@@ -195,6 +195,26 @@ ALTER TABLE runs ADD COLUMN history_mode TEXT NOT NULL DEFAULT 'fresh' CHECK (hi
 UPDATE runs SET history_mode = 'inherit' WHERE previous_run_id IS NOT NULL AND status = 'QUEUED' AND attempts = 0;
 `;
 
+const LONG_TERM_MEMORIES = `
+CREATE TABLE memories (
+  id TEXT PRIMARY KEY,
+  scope TEXT NOT NULL CHECK (scope IN ('user', 'project')),
+  project TEXT,
+  text TEXT NOT NULL,
+  source_session_id TEXT NOT NULL,
+  source_run_id TEXT NOT NULL,
+  source_step INTEGER NOT NULL,
+  source_call_id TEXT NOT NULL,
+  source_seq INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  last_used_at INTEGER NOT NULL,
+  CHECK ((scope = 'project') = (project IS NOT NULL)),
+  UNIQUE (source_run_id, source_call_id)
+);
+CREATE INDEX memories_by_project ON memories (project);
+CREATE INDEX memories_by_recency ON memories (last_used_at DESC, created_at DESC);
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -205,4 +225,5 @@ export const MIGRATIONS: readonly Migration[] = [
   },
   { version: 4, name: 'snapshot the additional directories of a session', sql: SESSION_ADDITIONAL_DIRECTORIES },
   { version: 5, name: 'record whether a run inherits the history of its predecessor', sql: RUN_HISTORY_MODE },
+  { version: 6, name: 'store long-term memories with their scope, source and use times', sql: LONG_TERM_MEMORIES },
 ];

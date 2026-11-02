@@ -1,4 +1,5 @@
-export { MIN_ROOM_TOKENS, budgetFor, inputCeilingFor, itemCapFor } from './budget.ts';
+export { MIN_ROOM_TOKENS, budgetFor, inputCeilingFor, itemCapFor, memoryBudgetFor } from './budget.ts';
+export { renderMemories } from './memory.ts';
 export { buildContext, measurePinned } from './build-context.ts';
 export { ContextOverflowError, PinnedOverflowError, PinnedRoomError, PrefixChangedError } from './errors.ts';
 export { createFsInstructionReader } from './fs-instruction-reader.ts';
