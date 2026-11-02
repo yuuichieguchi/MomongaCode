@@ -13,7 +13,7 @@ export type ReapTiming = {
   sleep(ms: number): Promise<void>;
 };
 
-const realTiming: ReapTiming = {
+export const hostReapTiming: ReapTiming = {
   now: () => Date.now(),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 };
@@ -81,24 +81,34 @@ const signalTargets = (send: SignalSender, targets: readonly number[], signal: N
   return unsignalled;
 };
 
-export type MarkerReconcileResult = { outcome: 'unknown'; output: string; leftAloneGroup?: number; leftAlonePids: number[]; unsignalledPids: number[] };
+export type MarkerReconcileResult = {
+  outcome: 'unknown';
+  output: string;
+  stopped: boolean;
+  leftAloneGroup?: number;
+  leftAlonePids: number[];
+  unsignalledPids: number[];
+};
 
 type StructuredFindings = { leftAloneGroup?: number; leftAlonePids?: number[]; unsignalledPids?: number[] };
 
-const unknownResult = (detail: string, { leftAloneGroup, leftAlonePids = [], unsignalledPids = [] }: StructuredFindings = {}): MarkerReconcileResult => ({
+const unknownResult = (detail: string, stopped: boolean, { leftAloneGroup, leftAlonePids = [], unsignalledPids = [] }: StructuredFindings = {}): MarkerReconcileResult => ({
   outcome: 'unknown',
   output: `${detail} The effect of the interrupted command is unknown; inspect the current state before retrying it.`,
+  stopped,
   ...(leftAloneGroup === undefined ? {} : { leftAloneGroup }),
   leftAlonePids,
   unsignalledPids,
 });
+
+export const stoppedCommandResult = (): MarkerReconcileResult => unknownResult('The interrupted command was stopped.', true);
 
 export const reconcileProcessGroup = async (
   recorded: { pgid: number; marker: string },
   {
     killGraceMs = 2000,
     kill = defaultKill,
-    timing = realTiming,
+    timing = hostReapTiming,
     signal,
     inspector = defaultProcessInspector(),
   }: { killGraceMs?: number; kill?: SignalSender; timing?: ReapTiming; signal?: AbortSignal; inspector?: ProcessInspector } = {},
@@ -106,10 +116,11 @@ export const reconcileProcessGroup = async (
   const { pgid, marker } = recorded;
   const holders = await holdersUntil(marker, inspector, timing, timing.now() + killGraceMs, signal);
   const groupAlive = isProcessAlive(-pgid, kill);
-  if (!groupAlive && holders.length === 0) return unknownResult('The interrupted command is no longer running.');
+  if (!groupAlive && holders.length === 0) return unknownResult('The interrupted command is no longer running.', false);
   if (holders.length === 0) {
     return unknownResult(
       `Processes in group ${pgid} are still running but could not be verified as belonging to this call (for example they closed the inherited descriptor), so they were left alone.`,
+      false,
       { leftAloneGroup: pgid },
     );
   }
@@ -131,7 +142,7 @@ export const reconcileProcessGroup = async (
   const leftAlonePids = holders.filter((pid) => !remaining.includes(pid) && isProcessAlive(pid, kill));
   const leftAlone = [...(leftAloneGroup === undefined ? [] : [`group ${pgid}`]), ...leftAlonePids.map((pid) => `process ${pid}`)];
   if (leftAlone.length > 0) notes.push(`Still running but no longer verified as belonging to this call, so left alone: ${leftAlone.join(', ')}.`);
-  return unknownResult(['The interrupted command was stopped.', ...notes].join(' '), {
+  return unknownResult(['The interrupted command was stopped.', ...notes].join(' '), true, {
     ...(leftAloneGroup === undefined ? {} : { leftAloneGroup }),
     leftAlonePids,
     unsignalledPids: [...unsignalled],
@@ -176,7 +187,7 @@ const lstatIfPresent = async (target: string): Promise<fs.Stats | undefined> => 
   }
 };
 
-type HolderPass = { unsignalled: Set<number>; dropped: number[] };
+type HolderPass = { unsignalled: Set<number>; dropped: number[]; signalled: boolean };
 
 const signalHoldersOnly = async (
   marker: string,
@@ -196,33 +207,35 @@ const signalHoldersOnly = async (
   }
   const dropped = holders.filter((pid) => !remaining.includes(pid) && isProcessAlive(pid, kill));
   for (const pid of signalTargets(kill, remaining.filter((pid) => pid > 1), 'SIGKILL')) unsignalled.add(pid);
-  return { unsignalled, dropped };
+  return { unsignalled, dropped, signalled: holders.length > 0 };
 };
 
 const joinPids = (pids: readonly number[]): string => pids.join(', ');
 
-export const reapMarkedProcesses = async ({
+export const reapMarkedProcessesWithReport = async ({
   marker,
   pgid,
   killGraceMs,
   label,
   onWarning,
   kill = defaultKill,
-  timing = realTiming,
+  timing = hostReapTiming,
   signal,
   inspector = defaultProcessInspector(),
-}: ReapMarkedProcessesOptions): Promise<{ removed: boolean }> => {
+}: ReapMarkedProcessesOptions): Promise<{ removed: boolean; stopped: boolean }> => {
   const stat = await lstatIfPresent(marker);
-  if (stat === undefined) return { removed: true };
+  if (stat === undefined) return { removed: true, stopped: false };
   if (!stat.isFile()) {
     await fs.promises.unlink(marker);
     onWarning(`${label} marker ${marker} was not a regular file, so it was removed without being followed`);
-    return { removed: true };
+    return { removed: true, stopped: false };
   }
   const recorded = pgid ?? (await readRecordedGroup(marker));
   const ownGroup = (await holderGroups([process.pid], recorded === undefined ? [] : [recorded], inspector))[0];
+  let stopped: boolean;
   if (recorded !== undefined && recorded > 1 && recorded !== ownGroup) {
     const result = await reconcileProcessGroup({ pgid: recorded, marker }, { killGraceMs, kill, timing, inspector, ...(signal === undefined ? {} : { signal }) });
+    stopped = result.stopped;
     if (result.leftAloneGroup !== undefined) {
       onWarning(`${label} marker ${marker}: group ${result.leftAloneGroup} is still alive but no marker holder is in it, so it was left alone`);
     }
@@ -233,7 +246,8 @@ export const reapMarkedProcesses = async ({
       onWarning(`${label} marker ${marker}: could not signal process ${joinPids(result.unsignalledPids)}`);
     }
   } else {
-    const { unsignalled, dropped } = await signalHoldersOnly(marker, killGraceMs, kill, timing, signal, inspector);
+    const { unsignalled, dropped, signalled } = await signalHoldersOnly(marker, killGraceMs, kill, timing, signal, inspector);
+    stopped = signalled;
     if (dropped.length > 0) {
       onWarning(`${label} marker ${marker}: process ${joinPids(dropped)} dropped the marker but is still alive, so it was left alone`);
     }
@@ -249,10 +263,15 @@ export const reapMarkedProcesses = async ({
   }
   if (remaining.length > 0) {
     onWarning(`${label} marker ${marker} kept: process ${joinPids(remaining)} still hold it after cleanup; the next start will retry`);
-    return { removed: false };
+    return { removed: false, stopped };
   }
   await fs.promises.rm(marker, { force: true });
-  return { removed: true };
+  return { removed: true, stopped };
+};
+
+export const reapMarkedProcesses = async (options: ReapMarkedProcessesOptions): Promise<{ removed: boolean }> => {
+  const { removed } = await reapMarkedProcessesWithReport(options);
+  return { removed };
 };
 
 export type ReapMarkerDirectoryOptions = {

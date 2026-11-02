@@ -59,6 +59,7 @@ export type ReconcileContext = SubjectContext & {
   outputBudgetChars: number;
   tmpDir?: string;
   processMarker?: string;
+  earlierAttempt?: { stopped: boolean };
   traceparent?: string;
   tracestate?: string;
   env: Readonly<Record<string, string>>;

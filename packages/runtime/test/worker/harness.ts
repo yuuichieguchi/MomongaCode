@@ -15,7 +15,7 @@ import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import { foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
 import type { Claim, Run, RuntimeStore, Session } from '@momonga/store';
-import { fakePolicyFilesystem, createFakeClock } from '@momonga/testkit';
+import { fakePolicyFilesystem, createFakeClock, createFakeKernelLock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 import { createToolExecutor, createToolRegistry } from '@momonga/tools';
 import type { AbandonTarget, AnyTool, ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
@@ -138,6 +138,8 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const stateDir = path.join(root, 'state');
   fs.mkdirSync(project, { recursive: true });
   fs.mkdirSync(markers, { recursive: true, mode: 0o700 });
+  const callLocks = path.join(home, '.momonga', 'run', 'call-locks');
+  fs.mkdirSync(callLocks, { recursive: true, mode: 0o700 });
   fs.mkdirSync(stateDir, { mode: 0o700 });
   const sessionsTmpRoot = path.join(root, 'sessions');
   const sessionTmpDir = path.join(sessionsTmpRoot, 'session-tmp');
@@ -163,6 +165,8 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     blobs: store.blobs,
     clock,
     processMarkerDir: markers,
+    callLockDir: callLocks,
+    kernelLock: createFakeKernelLock({ inheritable: false }),
     onWarning: (message: string) => {
       executorWarnings.push(message);
     },
@@ -370,6 +374,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     sessionTmpDir,
     home,
     markers,
+    callLocks,
     dbPath,
     clock,
     store,

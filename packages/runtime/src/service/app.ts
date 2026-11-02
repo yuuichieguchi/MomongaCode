@@ -166,6 +166,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   const drainIfIdle: Handler = () => {
     if (!deps.isDraining()) {
       if (deps.store.hasActiveRun()) throw conflict('not_idle', 'a run is active, so the service keeps accepting work');
+      if (deps.store.jobs.listRunning().length > 0) throw conflict('not_idle', 'a background job is running, so the service keeps accepting work');
       deps.beginDraining();
     }
     return json({ state: 'draining' }, 202);

@@ -285,7 +285,7 @@ const isLoopOpen = (value: unknown): boolean =>
   isRecord(value['outputs']) &&
   Object.values(value['outputs']).every(isSha256);
 
-export const SNAPSHOT_STATE_VERSION = 8;
+export const SNAPSHOT_STATE_VERSION = 9;
 
 export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
 

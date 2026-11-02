@@ -145,19 +145,19 @@ describe('executor: inFlightKeys (§8)', () => {
     expect(harness.idempotency.stateOf(KEY)).toBe('PENDING');
 
     const replay = harness.executor.runBatch(harness.input(toolSet, [call('c1', 'Edit', {}, 'allow_once')]));
-    await reconcileStarted.opened;
     expect(harness.executor.inFlightKeys().has(KEY)).toBe(true);
 
     zombieLeaseLost = true;
-    reconcileRelease.open();
-    const [replayed] = await replay;
-    expect(replayed).toMatchObject({ kind: 'result', reconciled: 'already_applied' });
-    expect(harness.executor.inFlightKeys().has(KEY)).toBe(true);
-
     zombieRelease.open();
     const [deferred] = await zombie;
     expect(deferred).toMatchObject({ kind: 'deferred' });
-    await waitFor(() => !harness.executor.inFlightKeys().has(KEY), { description: 'the zombie perform to drop its count' });
+
+    await reconcileStarted.opened;
+    expect(harness.executor.inFlightKeys().has(KEY)).toBe(true);
+    reconcileRelease.open();
+    const [replayed] = await replay;
+    expect(replayed).toMatchObject({ kind: 'result', reconciled: 'already_applied' });
+    await waitFor(() => !harness.executor.inFlightKeys().has(KEY), { description: 'the replay perform to drop its count' });
     expect(harness.executor.inFlightKeys().size).toBe(0);
   });
 });

@@ -85,6 +85,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     blobs: store.blobs,
     clock,
     processMarkerDir: paths.markers.tools,
+    callLockDir: paths.callLocks,
     onWarning: (message) => logger.warn(message),
     reap: { timing: reapTiming },
   });

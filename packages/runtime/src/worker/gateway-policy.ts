@@ -1,6 +1,7 @@
 import { ConfigError } from '@momonga/config';
 import { SandboxPolicyError } from '@momonga/sandbox';
 import { InheritanceError } from '@momonga/store';
+import { EarlierAttemptNotStoppedError } from '@momonga/tools';
 import { GatewayRequestError } from '../gateway-client.ts';
 
 const STREAM_INTERRUPTED_REFUNDS = 3;
@@ -19,6 +20,7 @@ export const dispositionOf = (error: unknown, interruptions: number): FailureDis
   if (error instanceof ConfigError) return { kind: 'fail', code: 'config_error', message: error.message };
   if (error instanceof SandboxPolicyError) return { kind: 'fail', code: 'sandbox_policy_error', message: error.message };
   if (error instanceof InheritanceError) return { kind: 'fail', code: error.code, message: INHERITANCE_FAILURE_MESSAGE };
+  if (error instanceof EarlierAttemptNotStoppedError) return { kind: 'fail', code: error.code, message: error.message };
   if (!(error instanceof GatewayRequestError)) return { kind: 'requeue', refund: false, retryAfterMs: 0, interrupted: false };
   const retryAfterMs = error.retryAfterMs ?? 0;
   if (error.code === 'deadline_exceeded') return { kind: 'timeout' };

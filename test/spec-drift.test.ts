@@ -101,21 +101,43 @@ const constantsOf = (name: string): Record<string, string> => {
 };
 
 describe('the checked configurations against the repaired recovery design', () => {
-  const repairs = (name: string): [string, string] => {
+  const repairs = (name: string): [string, string, string] => {
     const constants = constantsOf(name);
-    return [constants['UnfencedEffect'] as string, constants['NoReapBeforeReconcile'] as string];
+    return [constants['UnfencedEffect'] as string, constants['NoCallLock'] as string, constants['NoReapBeforeReconcile'] as string];
   };
 
-  it('checks the code with both repairs in every configuration that is not evidence', () => {
+  it('checks the code with all three repairs in every configuration that is not evidence', () => {
     for (const name of ['RunRecovery', 'RunRecovery.children', 'RunRecovery.liveNone', 'RunRecovery.liveSpawn']) {
-      expect(repairs(name)).toEqual(['FALSE', 'FALSE']);
+      expect(repairs(name)).toEqual(['FALSE', 'FALSE', 'FALSE']);
     }
   });
 
-  it('keeps one configuration per missing repair and one with neither as evidence', () => {
-    expect(repairs('RunRecovery.fenceOnly')).toEqual(['FALSE', 'TRUE']);
-    expect(repairs('RunRecovery.reapOnly')).toEqual(['TRUE', 'FALSE']);
-    expect(repairs('RunRecovery.unfixed')).toEqual(['TRUE', 'TRUE']);
+  it('keeps one configuration per missing repair, the ones with a single repair, and one with none as evidence', () => {
+    expect(repairs('RunRecovery.unlocked')).toEqual(['FALSE', 'TRUE', 'FALSE']);
+    expect(repairs('RunRecovery.noReap')).toEqual(['FALSE', 'FALSE', 'TRUE']);
+    expect(repairs('RunRecovery.lockOnly')).toEqual(['FALSE', 'FALSE', 'TRUE']);
+    expect(repairs('RunRecovery.fenceOnly')).toEqual(['FALSE', 'TRUE', 'TRUE']);
+    expect(repairs('RunRecovery.reapOnly')).toEqual(['TRUE', 'TRUE', 'FALSE']);
+    expect(repairs('RunRecovery.unfixed')).toEqual(['TRUE', 'TRUE', 'TRUE']);
+  });
+
+  it('checks the reconcile and lock invariants in the configurations that check the code', () => {
+    for (const name of ['RunRecovery', 'RunRecovery.children']) {
+      const text = fs.readFileSync(path.join(configDir, `${name}.cfg`), 'utf8');
+      for (const invariant of ['AtMostOnceEffect', 'ReconcileSeesStoppedEffect', 'NoEffectDuringReconcile', 'LockIsExclusive']) {
+        expect(text).toMatch(new RegExp(`^\\s+${invariant}$`, 'm'));
+      }
+    }
+  });
+
+  it('names only invariants and properties that the spec defines', () => {
+    const configs = fs.readdirSync(configDir).filter((file) => file.endsWith('.cfg'));
+    expect(configs.length).toBeGreaterThan(0);
+    for (const file of configs) {
+      const text = fs.readFileSync(path.join(configDir, file), 'utf8');
+      const listed = text.slice(text.search(/^(INVARIANTS|PROPERTIES)/m)).split('\n').map((line) => line.trim()).filter((line) => /^[A-Z][A-Za-z]+$/.test(line) && line !== 'INVARIANTS' && line !== 'PROPERTIES');
+      for (const name of listed) expect(spec, `${file} names ${name}`).toMatch(new RegExp(`^${name} ==`, 'm'));
+    }
   });
 
   it('records the edges of run.status events in every configuration that checks OnlyDeclaredEdges', () => {

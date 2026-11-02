@@ -59,7 +59,7 @@ describe('releaseStoppedRunsAtStartup', () => {
     const errors: unknown[] = [];
     const failure = new Error('release failed');
     await releaseStoppedRunsAtStartup({
-      store: { stoppedRunIds: () => ['run-a', 'run-b', 'run-c'] },
+      store: { terminalRunIdsWithCheckpoint: () => ['run-a', 'run-b', 'run-c'] },
       releaseStopped: async (runId) => {
         if (runId === 'run-b') throw failure;
         released.push(runId);
@@ -76,7 +76,7 @@ describe('releaseStoppedRunsAtStartup', () => {
     const failure = new Error('store failed');
     await releaseStoppedRunsAtStartup({
       store: {
-        stoppedRunIds: () => {
+        terminalRunIdsWithCheckpoint: () => {
           throw failure;
         },
       },
@@ -93,7 +93,7 @@ describe('releaseStoppedRunsAtStartup', () => {
     const controller = new AbortController();
     const released: string[] = [];
     await releaseStoppedRunsAtStartup({
-      store: { stoppedRunIds: () => ['run-a', 'run-b'] },
+      store: { terminalRunIdsWithCheckpoint: () => ['run-a', 'run-b'] },
       releaseStopped: async (runId) => {
         released.push(runId);
         controller.abort();

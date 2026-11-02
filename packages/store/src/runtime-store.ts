@@ -188,10 +188,15 @@ const prepareStatements = (db: DatabaseSync) => ({
   anyActiveRunExists: db.prepare(`SELECT EXISTS (SELECT 1 FROM runs WHERE status NOT IN (${TERMINAL_LIST})) AS active`),
   selectRunByKey: db.prepare('SELECT * FROM runs WHERE session_id = :sessionId AND idempotency_key = :key'),
   listRuns: db.prepare('SELECT * FROM runs WHERE session_id = :sessionId ORDER BY ordinal'),
-  stoppedRunIds: db.prepare(
+  terminalRunIdsWithCheckpoint: db.prepare(
     `SELECT r.id FROM runs r
-     WHERE r.status IN ('STOPPED', 'CANCELLED')
-       AND EXISTS (SELECT 1 FROM idempotency i WHERE i.state = 'PENDING' AND json_extract(i.meta_json, '$.runId') = r.id)
+     WHERE r.status IN (${TERMINAL_LIST})
+       AND EXISTS (
+         SELECT 1 FROM idempotency i
+         WHERE i.state = 'PENDING'
+           AND json_extract(i.meta_json, '$.runId') = r.id
+           AND json_type(i.meta_json, '$.checkpoint') = 'object'
+       )
      ORDER BY r.created_at, r.rowid`,
   ),
   latestRunOfSession: db.prepare('SELECT id FROM runs WHERE session_id = :sessionId ORDER BY ordinal DESC LIMIT 1'),
@@ -1260,7 +1265,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return readerFor('runs', 'any', row).number('active') === 1;
     },
 
-    stoppedRunIds: () => sql.stoppedRunIds.all({}).map((row) => readerFor('runs', 'stopped', row).string('id')),
+    terminalRunIdsWithCheckpoint: () => sql.terminalRunIdsWithCheckpoint.all({}).map((row) => readerFor('runs', 'terminal', row).string('id')),
 
     expireApprovals: (nowMs) => {
       const stopped: string[] = [];

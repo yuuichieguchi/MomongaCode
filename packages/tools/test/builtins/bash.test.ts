@@ -288,6 +288,8 @@ describe.runIf(process.platform === 'darwin')('Bash (real Seatbelt)', () => {
       const executed = path.join(tools.layout.project, 'executed');
       const outcome = await bash(tools, `touch ${executed}`, {}, callId);
       expect(outcome).toMatchObject({ kind: 'result', reconciled: 'unknown', result: { status: 'failed' } });
+      expect(resultOf(outcome).output).toContain('The interrupted command was stopped.');
+      expect(resultOf(outcome).output).not.toContain('no longer running');
       expect(fs.existsSync(executed)).toBe(false);
       expect(await waitFor(() => !isAlive(-pgid), 5000)).toBe(true);
     });

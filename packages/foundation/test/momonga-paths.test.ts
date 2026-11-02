@@ -22,6 +22,7 @@ const expectedLayout = (home: string, cacheBase: string, keychains: string = pat
       runtime: path.join(run, 'runtime.lock'),
       supervisor: path.join(run, 'supervisor.lock'),
     },
+    callLocks: path.join(run, 'call-locks'),
     markers: {
       root: path.join(run, 'markers'),
       tools: path.join(run, 'markers', 'tools'),

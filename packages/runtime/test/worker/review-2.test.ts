@@ -1,4 +1,4 @@
-import { fakePolicyFilesystem } from '@momonga/testkit';
+import { createFakeKernelLock, fakePolicyFilesystem } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
 import type { GatewayPort } from '@momonga/runtime';
@@ -55,6 +55,8 @@ describe('worker cancel recovery with a hanging reconcile', () => {
       blobs: env.store.blobs,
       clock: env.clock,
       processMarkerDir: env.markers,
+      callLockDir: env.callLocks,
+      kernelLock: createFakeKernelLock({ inheritable: false }),
       onWarning: () => undefined,
       reconcileCapMs: 20,
       reconcileGraceMs: 20,
