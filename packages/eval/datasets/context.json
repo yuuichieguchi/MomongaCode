@@ -1,0 +1,111 @@
+{
+  "format": "momonga-eval-context/1",
+  "name": "context-starter",
+  "cases": [
+    {
+      "id": "rename-module-on",
+      "scenario": "rename-module",
+      "compaction": "on",
+      "input": "Rename src/parse.ts to src/parser.ts and update every import.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "reject_once",
+      "runs": 1,
+      "minPassRate": 0,
+      "files": { "src/parse.ts": "export const parse = (text) => text.trim();\n", "src/main.ts": "import { parse } from './parse.ts';\n" },
+      "rules": [{ "id": "use-esm", "kind": "constraint", "target": "module-format", "text": "Use ES modules only.", "inScope": true, "live": true, "supersedes": [] }],
+      "revisionDepth": 0,
+      "noise": { "level": 12, "topics": ["bundling", "imports"] },
+      "gold": [{ "seqFrom": 2, "seqTo": 6 }],
+      "graders": [{ "kind": "status", "equals": "COMPLETED" }]
+    },
+    {
+      "id": "rename-module-off",
+      "scenario": "rename-module",
+      "compaction": "off",
+      "input": "Rename src/parse.ts to src/parser.ts and update every import.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "reject_once",
+      "runs": 1,
+      "minPassRate": 0,
+      "files": { "src/parse.ts": "export const parse = (text) => text.trim();\n", "src/main.ts": "import { parse } from './parse.ts';\n" },
+      "rules": [{ "id": "use-esm", "kind": "constraint", "target": "module-format", "text": "Use ES modules only.", "inScope": true, "live": true, "supersedes": [] }],
+      "revisionDepth": 0,
+      "noise": { "level": 12, "topics": ["bundling", "imports"] },
+      "graders": [{ "kind": "status", "equals": "COMPLETED" }]
+    },
+    {
+      "id": "revised-test-runner-on",
+      "scenario": "revised-test-runner",
+      "compaction": "on",
+      "input": "Add a test for the date helper and run it with the project's test runner.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "reject_once",
+      "runs": 1,
+      "minPassRate": 0,
+      "files": { "src/date.ts": "export const year = (at) => new Date(at).getUTCFullYear();\n" },
+      "rules": [
+        { "id": "runner-1", "kind": "constraint", "target": "test-runner", "text": "Run tests with jest.", "inScope": true, "live": true, "supersedes": [] },
+        { "id": "runner-2", "kind": "constraint", "target": "test-runner", "text": "Run tests with mocha.", "inScope": true, "live": true, "supersedes": ["runner-1"] },
+        { "id": "runner-3", "kind": "constraint", "target": "test-runner", "text": "Run tests with vitest.", "inScope": true, "live": true, "supersedes": ["runner-2"] },
+        { "id": "legacy-style", "kind": "preference", "target": "legacy-style", "text": "Keep tabs in legacy files.", "inScope": false, "live": true, "supersedes": [] }
+      ],
+      "revisionDepth": 2,
+      "noise": { "level": 25, "topics": ["testing", "assertions"] },
+      "gold": [{ "seqFrom": 3, "seqTo": 9 }],
+      "graders": [{ "kind": "status", "equals": "COMPLETED" }]
+    },
+    {
+      "id": "revised-test-runner-off",
+      "scenario": "revised-test-runner",
+      "compaction": "off",
+      "input": "Add a test for the date helper and run it with the project's test runner.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "reject_once",
+      "runs": 1,
+      "minPassRate": 0,
+      "files": { "src/date.ts": "export const year = (at) => new Date(at).getUTCFullYear();\n" },
+      "rules": [
+        { "id": "runner-1", "kind": "constraint", "target": "test-runner", "text": "Run tests with jest.", "inScope": true, "live": true, "supersedes": [] },
+        { "id": "runner-2", "kind": "constraint", "target": "test-runner", "text": "Run tests with mocha.", "inScope": true, "live": true, "supersedes": ["runner-1"] },
+        { "id": "runner-3", "kind": "constraint", "target": "test-runner", "text": "Run tests with vitest.", "inScope": true, "live": true, "supersedes": ["runner-2"] },
+        { "id": "legacy-style", "kind": "preference", "target": "legacy-style", "text": "Keep tabs in legacy files.", "inScope": false, "live": true, "supersedes": [] }
+      ],
+      "revisionDepth": 2,
+      "noise": { "level": 25, "topics": ["testing", "assertions"] },
+      "graders": [{ "kind": "status", "equals": "COMPLETED" }]
+    },
+    {
+      "id": "file-changed-between-runs-on",
+      "scenario": "file-changed-between-runs",
+      "compaction": "on",
+      "input": "Report the value of LIMIT in config.ts.",
+      "permissionMode": "default",
+      "onAsk": "reject_once",
+      "runs": 2,
+      "minPassRate": 0,
+      "files": { "config.ts": "export const LIMIT = 10;\n" },
+      "workspace": [{ "beforeRun": 1, "write": { "config.ts": "export const LIMIT = 20;\n" } }],
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": { "level": 0, "topics": ["configuration"] },
+      "gold": [{ "seqFrom": 1, "seqTo": 4 }],
+      "graders": [{ "kind": "status", "equals": "COMPLETED" }]
+    },
+    {
+      "id": "file-changed-between-runs-off",
+      "scenario": "file-changed-between-runs",
+      "compaction": "off",
+      "input": "Report the value of LIMIT in config.ts.",
+      "permissionMode": "default",
+      "onAsk": "reject_once",
+      "runs": 2,
+      "minPassRate": 0,
+      "files": { "config.ts": "export const LIMIT = 10;\n" },
+      "workspace": [{ "beforeRun": 1, "write": { "config.ts": "export const LIMIT = 20;\n" } }],
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": { "level": 0, "topics": ["configuration"] },
+      "graders": [{ "kind": "status", "equals": "COMPLETED" }]
+    }
+  ]
+}

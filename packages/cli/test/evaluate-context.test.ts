@@ -1,0 +1,169 @@
+import { describe, expect, it } from 'vitest';
+import { CONTEXT_DATASET_FORMAT, DATASET_FORMAT, encodeTranscript } from '@momonga/eval';
+import type { Transcript } from '@momonga/eval';
+import type { EntryIo } from '@momonga/foundation';
+import type { DaemonEntries } from '../src/daemon/entries.ts';
+import type { CliPorts } from '../src/ports.ts';
+import { buildProgram } from '../src/program.ts';
+import type { UpdatePorts } from '../src/update/ports.ts';
+import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
+import { nodePolicyVerifyHost } from '../src/verify/host.ts';
+
+const pairedCase = (id: string, scenario: string, compaction: 'on' | 'off') => ({
+  id,
+  scenario,
+  compaction,
+  input: 'work',
+  permissionMode: 'default',
+  onAsk: 'reject_once',
+  runs: 1,
+  minPassRate: 1,
+  rules: [],
+  revisionDepth: 0,
+  noise: { level: 0, topics: ['testing'] },
+  graders: [{ kind: 'status', equals: 'COMPLETED' }],
+});
+
+const CONTEXT_DATASET = JSON.stringify({ format: CONTEXT_DATASET_FORMAT, name: 'sample', cases: [pairedCase('a-on', 'a', 'on'), pairedCase('a-off', 'a', 'off')] });
+
+const GOLDEN_DATASET = JSON.stringify({
+  format: DATASET_FORMAT,
+  name: 'golden',
+  cases: [{ id: 'a-on', input: 'x', permissionMode: 'default', onAsk: 'reject_once', runs: 1, minPassRate: 1, graders: [{ kind: 'status', equals: 'COMPLETED' }] }],
+});
+
+const transcript = (caseId: string, status: 'COMPLETED' | 'FAILED' = 'COMPLETED'): Transcript => ({
+  caseId,
+  runIndex: 0,
+  run: { id: `run-${caseId}`, status, step: 1, usage: { inputTokens: 9, outputTokens: 1, totalTokens: 10 } },
+  events: [],
+  children: [],
+});
+
+const harness = (onStatus: 'COMPLETED' | 'FAILED' = 'COMPLETED') => {
+  const stored = new Map<string, string>([
+    ['/w/context.json', CONTEXT_DATASET],
+    ['/w/golden.json', GOLDEN_DATASET],
+    ['/w/t/a-on.0.transcript.jsonl', encodeTranscript(transcript('a-on', onStatus))],
+    ['/w/t/a-off.0.transcript.jsonl', encodeTranscript(transcript('a-off'))],
+    ['/w/g/a-on.0.transcript.jsonl', encodeTranscript(transcript('a-on'))],
+  ]);
+  const stdout: string[] = [];
+  const completed: number[] = [];
+  const ports = {
+    version: '9.9.9',
+    home: '/h',
+    cwd: '/w',
+    terminal: undefined,
+    stdout: { write: (text: string) => stdout.push(text) },
+    files: {
+      readText: async (file: string) => {
+        const text = stored.get(file);
+        if (text === undefined) throw new Error(`no fixture for ${file}`);
+        return text;
+      },
+      writeText: async (file: string, text: string) => void stored.set(file, text),
+      listFiles: async (directory: string) => [...stored.keys()].filter((file) => file.startsWith(`${directory}/`)).sort(),
+    },
+  } as unknown as CliPorts;
+  const entries = {} as DaemonEntries;
+  const program = buildProgram({
+    ports,
+    policyVerify: () => nodePolicyVerifyHost(ports, { cacheBase: '/w/cache' }),
+    entries,
+    update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
+    interrupt: new AbortController().signal,
+    entryIo: (args) => ({ argv: [...args] }) as unknown as EntryIo,
+    complete: (code) => completed.push(code),
+  });
+  program.exitOverride().configureOutput({ writeErr: () => undefined });
+  for (const command of program.commands) {
+    command.exitOverride().configureOutput({ writeErr: () => undefined });
+    for (const nested of command.commands) nested.exitOverride().configureOutput({ writeErr: () => undefined });
+  }
+  return { program, stored, stdout, completed };
+};
+
+const run = (program: ReturnType<typeof harness>['program'], ...args: string[]): Promise<unknown> => program.parseAsync(args, { from: 'user' });
+
+const reportFile = async (name: string, onStatus: 'COMPLETED' | 'FAILED', model: 'fake' | 'real'): Promise<string> => {
+  const { program, stored } = harness(onStatus);
+  await run(program, 'eval', 'context', 'context.json', '--replay', 't', '--model', model, '--report', name);
+  const text = stored.get(`/w/${name}`);
+  if (text === undefined) throw new Error('the command stored no report');
+  return text;
+};
+
+describe('momonga eval context', () => {
+  it('replays a dataset with no model and states the provenance', async () => {
+    const { program, stdout, completed } = harness();
+    await run(program, 'eval', 'context', 'context.json', '--replay', 't', '--model', 'fake');
+    expect(completed).toEqual([0]);
+    expect(stdout.join('')).toContain('model: fake');
+    expect(stdout.join('')).toContain('machinery');
+  });
+
+  it('exits 1 when a case misses its required pass rate', async () => {
+    const { program, completed } = harness('FAILED');
+    await run(program, 'eval', 'context', 'context.json', '--replay', 't', '--model', 'fake');
+    expect(completed).toEqual([1]);
+  });
+
+  it('requires the provenance of a replay instead of guessing it', async () => {
+    const { program } = harness();
+    await expect(run(program, 'eval', 'context', 'context.json', '--replay', 't')).rejects.toThrow(/--model/);
+  });
+
+  it('refuses an unknown provenance', async () => {
+    const { program } = harness();
+    await expect(run(program, 'eval', 'context', 'context.json', '--replay', 't', '--model', 'gpt')).rejects.toThrow(/--model.*fake.*real/);
+  });
+
+  it('stores a report that compare can read', async () => {
+    const parsed: unknown = JSON.parse(await reportFile('a.json', 'COMPLETED', 'real'));
+    expect(parsed).toMatchObject({ dataset: 'sample', model: 'real' });
+  });
+});
+
+describe('momonga eval compare', () => {
+  const comparing = async (baseline: string, candidate: string) => {
+    const context = harness();
+    context.stored.set('/w/a.json', baseline);
+    context.stored.set('/w/b.json', candidate);
+    await run(context.program, 'eval', 'compare', 'a.json', 'b.json');
+    return context;
+  };
+
+  it('exits 0 and prints PASS when the candidate clears the gate', async () => {
+    const { completed, stdout } = await comparing(await reportFile('a.json', 'FAILED', 'real'), await reportFile('b.json', 'COMPLETED', 'real'));
+    expect(stdout.join('')).toContain('gate: PASS');
+    expect(completed).toEqual([0]);
+  });
+
+  it('exits 1 and prints FAIL when it does not', async () => {
+    const { completed, stdout } = await comparing(await reportFile('a.json', 'COMPLETED', 'real'), await reportFile('b.json', 'FAILED', 'real'));
+    expect(stdout.join('')).toContain('gate: FAIL');
+    expect(completed).toEqual([1]);
+  });
+
+  it('exits 1 for fake reports', async () => {
+    const { completed } = await comparing(await reportFile('a.json', 'FAILED', 'fake'), await reportFile('b.json', 'COMPLETED', 'fake'));
+    expect(completed).toEqual([1]);
+  });
+
+  it('refuses a file that is not a context report', async () => {
+    const context = harness();
+    context.stored.set('/w/a.json', '{}');
+    context.stored.set('/w/b.json', '{}');
+    await expect(run(context.program, 'eval', 'compare', 'a.json', 'b.json')).rejects.toThrow(/not a context report/);
+  });
+});
+
+describe('momonga eval <dataset>', () => {
+  it('still replays a golden dataset', async () => {
+    const { program, stdout, completed } = harness();
+    await run(program, 'eval', 'golden.json', '--replay', 'g');
+    expect(stdout.join('')).toContain('dataset golden: PASS');
+    expect(completed).toEqual([0]);
+  });
+});

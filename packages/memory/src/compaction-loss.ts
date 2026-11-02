@@ -1,5 +1,5 @@
 import { canonicalJson, isRecord } from '@momonga/foundation';
-import type { PermissionOption, RunEvent } from '@momonga/protocol';
+import type { PermissionOption, PublicRunEvent, RunEvent } from '@momonga/protocol';
 
 export const COMPACTION_LOSS_KINDS = ['history_read', 'rediscovery', 'repeated_failure', 'instruction_drift'] as const;
 
@@ -55,7 +55,7 @@ const readsHistoryAtOrBelow = (call: CallRecord, runId: string, compactionSeq: n
   return (requestedRun === undefined || requestedRun === runId) && typeof from === 'number' && from <= compactionSeq;
 };
 
-export const compactionLossSignals = (events: readonly RunEvent[]): CompactionLossSignal[] => {
+export const compactionLossSignals = (events: readonly (RunEvent | PublicRunEvent)[]): CompactionLossSignal[] => {
   const signals: CompactionLossSignal[] = [];
   const calls = new Map<string, CallRecord>();
   const approvalOptions = new Map<string, { callId: string; options: readonly PermissionOption[] }>();
