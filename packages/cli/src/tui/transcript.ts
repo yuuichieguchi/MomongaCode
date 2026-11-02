@@ -32,7 +32,9 @@ export type Transcript = {
   runStatus: RunStatus | undefined;
   waiting: string | undefined;
   approval: PendingApproval | undefined;
+  queuedApprovals: readonly PendingApproval[];
   elicitation: PendingElicitation | undefined;
+  queuedElicitations: readonly PendingElicitation[];
   usage: Usage;
   contextTokens: number | undefined;
 };
@@ -45,7 +47,9 @@ export const initialTranscript: Transcript = {
   runStatus: undefined,
   waiting: undefined,
   approval: undefined,
+  queuedApprovals: [],
   elicitation: undefined,
+  queuedElicitations: [],
   usage: EMPTY_USAGE,
   contextTokens: undefined,
 };
@@ -79,6 +83,26 @@ export const withElicitationFlow = (transcript: Transcript, flow: ElicitationFlo
 
 export const appendEntry = (transcript: Transcript, entry: Entry): Transcript => ({ ...transcript, entries: [...closeAssistant(transcript.entries), entry] });
 
+type Pending = { readonly callId: string };
+
+type Prompts<T extends Pending> = { head: T | undefined; queued: readonly T[] };
+
+const enqueue = <T extends Pending>(prompts: Prompts<T>, item: T, same: (other: T) => boolean): Prompts<T> => {
+  if (prompts.head !== undefined && same(prompts.head)) return prompts;
+  if (prompts.queued.some(same)) return prompts;
+  return prompts.head === undefined ? { head: item, queued: prompts.queued } : { head: prompts.head, queued: [...prompts.queued, item] };
+};
+
+const dequeue = <T extends Pending>(prompts: Prompts<T>, same: (other: T) => boolean): { prompts: Prompts<T>; removed: T } | undefined => {
+  if (prompts.head !== undefined && same(prompts.head)) return { prompts: { head: prompts.queued[0], queued: prompts.queued.slice(1) }, removed: prompts.head };
+  const removed = prompts.queued.find(same);
+  if (removed === undefined) return undefined;
+  return { prompts: { head: prompts.head, queued: prompts.queued.filter((other) => !same(other)) }, removed };
+};
+
+const releaseTool = (entries: readonly Entry[], callId: string): Entry[] =>
+  updateTool(entries, callId, (tool) => (tool.status === 'awaiting_approval' ? { ...tool, status: 'requested' } : tool));
+
 export const reduceEvent = (transcript: Transcript, event: PublicRunEvent): Transcript => {
   switch (event.type) {
     case 'agent.message.delta': {
@@ -101,41 +125,51 @@ export const reduceEvent = (transcript: Transcript, event: PublicRunEvent): Tran
         rawInput: event.rawInput,
         status: 'requested',
       });
-    case 'tool.permission.requested':
+    case 'tool.permission.requested': {
+      const pending: PendingApproval = {
+        approvalId: event.approvalId,
+        callId: event.callId,
+        options: event.options,
+        ...(event.suggestedRule === undefined ? {} : { suggestedRule: event.suggestedRule }),
+      };
+      const prompts = enqueue({ head: transcript.approval, queued: transcript.queuedApprovals }, pending, (other) => other.approvalId === event.approvalId);
       return {
         ...transcript,
         entries: updateTool(transcript.entries, event.callId, (tool) => ({ ...tool, status: 'awaiting_approval' })),
-        approval: {
-          approvalId: event.approvalId,
-          callId: event.callId,
-          options: event.options,
-          ...(event.suggestedRule === undefined ? {} : { suggestedRule: event.suggestedRule }),
-        },
-      };
-    case 'tool.permission.resolved':
-    case 'tool.permission.cancelled': {
-      if (transcript.approval?.approvalId !== event.approvalId) return transcript;
-      const { callId } = transcript.approval;
-      return {
-        ...transcript,
-        approval: undefined,
-        entries: updateTool(transcript.entries, callId, (tool) => (tool.status === 'awaiting_approval' ? { ...tool, status: 'requested' } : tool)),
+        approval: prompts.head,
+        queuedApprovals: prompts.queued,
       };
     }
-    case 'tool.elicitation.requested':
+    case 'tool.permission.resolved':
+    case 'tool.permission.cancelled': {
+      const settled = dequeue({ head: transcript.approval, queued: transcript.queuedApprovals }, (other) => other.approvalId === event.approvalId);
+      if (settled === undefined) return transcript;
+      return {
+        ...transcript,
+        approval: settled.prompts.head,
+        queuedApprovals: settled.prompts.queued,
+        entries: releaseTool(transcript.entries, settled.removed.callId),
+      };
+    }
+    case 'tool.elicitation.requested': {
+      const pending: PendingElicitation = { inputId: event.inputId, callId: event.callId, server: event.server, flow: startFlow(event.requests), submitted: false };
+      const prompts = enqueue({ head: transcript.elicitation, queued: transcript.queuedElicitations }, pending, (other) => other.inputId === event.inputId);
       return {
         ...transcript,
         entries: updateTool(transcript.entries, event.callId, (tool) => ({ ...tool, status: 'awaiting_approval' })),
-        elicitation: { inputId: event.inputId, callId: event.callId, server: event.server, flow: startFlow(event.requests), submitted: false },
+        elicitation: prompts.head,
+        queuedElicitations: prompts.queued,
       };
+    }
     case 'tool.elicitation.resolved':
     case 'tool.elicitation.cancelled': {
-      if (transcript.elicitation?.inputId !== event.inputId) return transcript;
-      const { callId } = transcript.elicitation;
+      const settled = dequeue({ head: transcript.elicitation, queued: transcript.queuedElicitations }, (other) => other.inputId === event.inputId);
+      if (settled === undefined) return transcript;
       return {
         ...transcript,
-        elicitation: undefined,
-        entries: updateTool(transcript.entries, callId, (tool) => (tool.status === 'awaiting_approval' ? { ...tool, status: 'requested' } : tool)),
+        elicitation: settled.prompts.head,
+        queuedElicitations: settled.prompts.queued,
+        entries: releaseTool(transcript.entries, settled.removed.callId),
       };
     }
     case 'mcp.authorization.required':
@@ -191,7 +225,9 @@ export const reduceEvent = (transcript: Transcript, event: PublicRunEvent): Tran
       return {
         ...base,
         approval: undefined,
+        queuedApprovals: [],
         elicitation: undefined,
+        queuedElicitations: [],
         entries: closeAssistant(base.entries).map((entry) =>
           entry.kind === 'plan' ? { kind: 'info', text: entry.entries.map((item) => `${item.status === 'completed' ? '[x]' : '[ ]'} ${item.content}`).join('\n') } : entry,
         ),

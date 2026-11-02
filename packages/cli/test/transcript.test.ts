@@ -38,6 +38,43 @@ describe('reduceEvent', () => {
     expect(apply([call, requested, { type: 'tool.permission.resolved', approvalId: 'other', optionId: 'o' }]).approval).toBeDefined();
   });
 
+  it('keeps the approvals of parallel subagents in order and shows each one after the previous is settled', () => {
+    const option = [{ optionId: 'o', name: 'Allow', kind: 'allow_once' }];
+    const childEvent = (runId: string, event: Record<string, unknown>): PublicRunEvent => ({ ...envelope, runId, ...event }) as PublicRunEvent;
+    const toolCall = (runId: string): PublicRunEvent => childEvent(runId, { ...call, callId: 'c1' });
+    const request = (runId: string, approvalId: string): PublicRunEvent => childEvent(runId, { type: 'tool.permission.requested', approvalId, callId: 'c1', subjectDigest: 'd', options: option });
+    const settle = (runId: string, approvalId: string): PublicRunEvent => childEvent(runId, { type: 'tool.permission.resolved', approvalId, optionId: 'o' });
+    const both = [toolCall('a'), request('a', 'ap-a'), toolCall('b'), request('b', 'ap-b')].reduce((state, event) => reduceChildEvent(state, event, 'reviewer'), initialTranscript);
+
+    expect(both.approval).toMatchObject({ approvalId: 'ap-a', callId: 'a/c1' });
+    expect(both.queuedApprovals).toMatchObject([{ approvalId: 'ap-b', callId: 'b/c1' }]);
+    const afterFirst = reduceChildEvent(both, settle('a', 'ap-a'), 'reviewer');
+    expect(afterFirst.approval).toMatchObject({ approvalId: 'ap-b' });
+    expect(afterFirst.queuedApprovals).toEqual([]);
+    expect(afterFirst.entries).toMatchObject([{ callId: 'a/c1', status: 'requested' }, { callId: 'b/c1', status: 'awaiting_approval' }]);
+    const queuedWithdrawn = reduceChildEvent(both, settle('b', 'ap-b'), 'reviewer');
+    expect(queuedWithdrawn.approval).toMatchObject({ approvalId: 'ap-a' });
+    expect(queuedWithdrawn.queuedApprovals).toEqual([]);
+    expect(queuedWithdrawn.entries).toMatchObject([{ status: 'awaiting_approval' }, { status: 'requested' }]);
+  });
+
+  it('keeps the questions of parallel subagents in order', () => {
+    const ask = (inputId: string, callId: string) => ({ type: 'tool.elicitation.requested', inputId, callId, server: 'remote', requests: [{ key: 'who', mode: 'url', message: 'Sign in', url: 'https://example.test/consent' }] });
+    const both = apply([call, { ...call, callId: 'c2' }, ask('in-1', 'c1'), ask('in-2', 'c2')]);
+
+    expect(both.elicitation).toMatchObject({ inputId: 'in-1' });
+    expect(both.queuedElicitations).toMatchObject([{ inputId: 'in-2' }]);
+    const next = reduceEvent(both, { ...envelope, type: 'tool.elicitation.resolved', inputId: 'in-1' } as unknown as PublicRunEvent);
+    expect(next.elicitation).toMatchObject({ inputId: 'in-2' });
+    expect(next.queuedElicitations).toEqual([]);
+  });
+
+  it('does not queue an approval it already holds', () => {
+    const requested = { type: 'tool.permission.requested', approvalId: 'ap', callId: 'c1', subjectDigest: 'd', options: [] };
+
+    expect(apply([call, requested, requested]).queuedApprovals).toEqual([]);
+  });
+
   it('marks an interrupted tool as unknown with the reconciliation text', () => {
     const state = apply([call, { type: 'tool.reconciled', callId: 'c1', outcome: 'unknown', output: 'effect unknown' }]);
     expect(state.entries[0]).toMatchObject({ status: 'unknown', output: 'effect unknown' });
