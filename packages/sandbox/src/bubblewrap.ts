@@ -7,6 +7,7 @@ import { launch } from './process.ts';
 import type { LaunchOptions } from './process.ts';
 import { validateSandboxPolicy } from './profile.ts';
 import { assertExistingDirectory, removePrivateTmpDir } from './scratch.ts';
+import type { DirectoryPort } from './scratch.ts';
 import type { Sandbox, SandboxCommand, SandboxPolicy, SandboxedProcess } from './types.ts';
 
 export const DEFAULT_BWRAP_PATH = '/usr/bin/bwrap';
@@ -18,13 +19,24 @@ export type FilesystemPort = {
   realpath(target: string): string;
   children(directory: string): Array<{ path: string; kind: EntryKind | 'other' }>;
   removePlaceholder(target: string): void;
+  requireExecutable(file: string): void;
+  makeTempDirectory(parent: string, prefix: string): string;
+  removePrivateDirectory(directory: string): void;
 };
 
 export const nodeFilesystemPort: FilesystemPort = {
+  requireExecutable: (file) => fs.accessSync(file, fs.constants.X_OK),
+  makeTempDirectory: (parent, prefix) => fs.mkdtempSync(path.join(parent, prefix)),
+  removePrivateDirectory: removePrivateTmpDir,
   kindOf: (target) => {
-    const stat = fs.statSync(target, { throwIfNoEntry: false });
-    if (stat === undefined) return undefined;
-    return stat.isDirectory() ? 'directory' : 'file';
+    try {
+      const stat = fs.statSync(target, { throwIfNoEntry: false });
+      if (stat === undefined) return undefined;
+      return stat.isDirectory() ? 'directory' : 'file';
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOTDIR') return undefined;
+      throw error;
+    }
   },
   realpath: (target) => fs.realpathSync(target),
   removePlaceholder: (target) => {
@@ -38,7 +50,7 @@ export const nodeFilesystemPort: FilesystemPort = {
     })),
 };
 
-export type BubblewrapOptions = { tmpDir?: string; scratchDir?: string; cwd: string };
+export type BubblewrapOptions = { tmpDir?: string; scratchDir?: string; cwd: string; heldPlaceholders?: ReadonlySet<string> };
 
 export type BubblewrapPlan = { args: string[]; placeholders: string[] };
 
@@ -80,10 +92,16 @@ const blockedPaths = (set: FileRuleSet, entry: FileRuleEntry, port: FilesystemPo
 
 export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions, port: FilesystemPort = nodeFilesystemPort): BubblewrapPlan {
   validateSandboxPolicy(policy, options.tmpDir === undefined ? {} : { tmpDir: options.tmpDir });
+  const heldPlaceholders = options.heldPlaceholders ?? new Set<string>();
+  const canonicalize = (target: string): string => {
+    const placeholder = [...heldPlaceholders].find((held) => target.startsWith(`${held}/`));
+    if (placeholder === undefined) return canonicalizePath(target);
+    return path.join(canonicalizePath(path.dirname(placeholder)), path.basename(placeholder), path.relative(placeholder, target));
+  };
   const roots = unique(policy.writableRoots.map(canonicalizePath));
-  const writeDenied = unique(policy.writeDenied.map(canonicalizePath));
-  const readDenied = unique(policy.readDenied.map(canonicalizePath));
-  const readAllowed = unique((policy.readAllowed ?? []).map(canonicalizePath));
+  const writeDenied = unique(policy.writeDenied.map(canonicalize));
+  const readDenied = unique(policy.readDenied.map(canonicalize));
+  const readAllowed = unique((policy.readAllowed ?? []).map(canonicalize));
   const sessionTmpDir = options.tmpDir === undefined ? undefined : canonicalizePath(options.tmpDir);
   const scratchDir = options.scratchDir === undefined ? undefined : canonicalizePath(options.scratchDir);
   const placeholders: string[] = [];
@@ -94,20 +112,25 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
   }
 
   const writableBinds: string[] = roots.flatMap((root) => ['--bind', root, root]);
+  const wideningAreas: string[] = [];
   for (const entry of policy.fileRules.entries) {
     if (!entry.widening) continue;
     const closure = entry.subset.closure;
-    if (closure.kind === 'subpath' && port.kindOf(closure.path) !== undefined) writableBinds.push('--bind', closure.path, closure.path);
+    if (closure.kind === 'subpath' && port.kindOf(closure.path) !== undefined) {
+      writableBinds.push('--bind', closure.path, closure.path);
+      wideningAreas.push(closure.path);
+    }
   }
+  const writableAreas = unique([...roots, ...wideningAreas]);
 
-  const insideRoots = (target: string): boolean => roots.some((root) => target.startsWith(`${root}/`));
+  const insideRoots = (target: string): boolean => writableAreas.some((area) => target.startsWith(`${area}/`));
 
   const firstMissingComponent = (target: string): string | undefined => {
     let missing = target;
     for (let parent = path.dirname(missing); parent !== missing; parent = path.dirname(missing)) {
       const kind = port.kindOf(parent);
       if (kind === 'directory') return missing;
-      if (kind === 'file') return undefined;
+      if (kind === 'file') return heldPlaceholders.has(parent) ? parent : undefined;
       missing = parent;
     }
     return undefined;
@@ -127,6 +150,7 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
       return;
     }
     const resolved = port.realpath(target);
+    if (heldPlaceholders.has(resolved) && !placeholders.includes(resolved)) placeholders.push(resolved);
     mounts.push({ depth: depthOf(resolved), args: ['--ro-bind', resolved, resolved] });
   };
 
@@ -143,8 +167,8 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
   const pinned = [...pinnedFrom.flatMap((target) => (target === undefined ? [] : [target])), ...unique(placeholders)];
   for (const target of pinned) {
     for (let ancestor = path.dirname(target); ancestor !== path.dirname(ancestor); ancestor = path.dirname(ancestor)) {
-      const inside = roots.some((root) => ancestor.startsWith(`${root}/`));
-      if (inside && !roots.includes(ancestor) && port.kindOf(ancestor) === 'directory') pinMounts.push({ depth: depthOf(ancestor), args: ['--bind', ancestor, ancestor] });
+      const inside = insideRoots(ancestor);
+      if (inside && !writableAreas.includes(ancestor) && port.kindOf(ancestor) === 'directory') pinMounts.push({ depth: depthOf(ancestor), args: ['--bind', ancestor, ancestor] });
     }
   }
 
@@ -195,9 +219,10 @@ export interface BubblewrapSandboxOptions {
 
 export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sandbox {
   const bwrapPath = options.bwrapPath ?? DEFAULT_BWRAP_PATH;
-  fs.accessSync(bwrapPath, fs.constants.X_OK);
-  const tmpRoot = fs.realpathSync(options.tmpRoot);
   const filesystem = options.filesystem ?? nodeFilesystemPort;
+  filesystem.requireExecutable(bwrapPath);
+  const tmpRoot = filesystem.realpath(options.tmpRoot);
+  const directories: DirectoryPort = { isDirectory: (target) => filesystem.kindOf(target) === 'directory' };
   const held = new Map<string, number>();
   const hold = (plan: BubblewrapPlan): void => {
     for (const placeholder of plan.placeholders) held.set(placeholder, (held.get(placeholder) ?? 0) + 1);
@@ -240,18 +265,19 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
   return {
     kind: 'bubblewrap',
     spawn(command: SandboxCommand, policy: SandboxPolicy, signal: AbortSignal): SandboxedProcess {
-      for (const root of policy.writableRoots) assertExistingDirectory(root);
+      for (const root of policy.writableRoots) assertExistingDirectory(root, directories);
+      const planned = { heldPlaceholders: new Set(held.keys()), cwd: command.cwd };
       if (command.tmpDir !== undefined) {
-        assertExistingDirectory(command.tmpDir);
-        return launchWith(command, planBubblewrap(policy, { tmpDir: command.tmpDir, cwd: command.cwd }, filesystem), command.tmpDir, signal, () => undefined);
+        assertExistingDirectory(command.tmpDir, directories);
+        return launchWith(command, planBubblewrap(policy, { ...planned, tmpDir: command.tmpDir }, filesystem), command.tmpDir, signal, () => undefined);
       }
-      const tmpDir = fs.mkdtempSync(path.join(tmpRoot, 'sandbox-'));
+      const tmpDir = filesystem.makeTempDirectory(tmpRoot, 'sandbox-');
       try {
         const scratchDir = canonicalizePath(tmpDir);
-        const plan = planBubblewrap(policy, { scratchDir, cwd: command.cwd }, filesystem);
-        return launchWith(command, plan, tmpDir, signal, () => removePrivateTmpDir(tmpDir));
+        const plan = planBubblewrap(policy, { ...planned, scratchDir }, filesystem);
+        return launchWith(command, plan, tmpDir, signal, () => filesystem.removePrivateDirectory(tmpDir));
       } catch (error) {
-        removePrivateTmpDir(tmpDir);
+        filesystem.removePrivateDirectory(tmpDir);
         throw error;
       }
     },

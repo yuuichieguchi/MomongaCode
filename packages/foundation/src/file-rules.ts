@@ -3,7 +3,7 @@ import { canonicalJson, sha256Hex } from './canonical-json.ts';
 import { comparableContains } from './path-compare.ts';
 import { FileRuleError, fileMatcherOf, parseExceptionPattern, parseFilePattern, testExpression, testFileMatcher } from './file-pattern.ts';
 import type { Expression, FileMatcher, FilePattern, FilePatternContext } from './file-pattern.ts';
-import { HOST_FLAVOUR, nativePathOf, patternPathOf, specifierOf } from './path-flavour.ts';
+import { HOST_FLAVOUR, candidatePathOf, isNativeAbsolute, nativePathOf, patternPathOf, specifierOf } from './path-flavour.ts';
 import type { PathFlavour } from './path-flavour.ts';
 import { unresolvableReasonOf } from './path-resolution.ts';
 import type { PathResolution, UnresolvableReason } from './path-resolution.ts';
@@ -177,6 +177,15 @@ export const compileFileRuleSet = (
   const probeNative = (directory: string): boolean => volumeProbe(nativePathOf(flavour, directory));
   return {
     entries: specs.flatMap((spec) => {
+      const absolute = spec.exceptions.find((text) => isNativeAbsolute(flavour, text));
+      if (absolute !== undefined) {
+        throw new FileRuleError(
+          'unsupported_pattern',
+          'absolute_exception',
+          `${spec.provenance.ruleText} (${spec.provenance.layer}: ${spec.provenance.source}): the ! pattern ${absolute} is a Windows absolute path, but a ! pattern names a path below the rule's own directory`,
+          spec.provenance,
+        );
+      }
       const translated = inPatternSpace(spec, flavour);
       return parseFilePattern(translated.specifier, translated.context).map((pattern) => compileEntry(translated, pattern, canonicaliseNative, probeNative, flavour));
     }),
@@ -214,8 +223,8 @@ const underExemption = (set: FileRuleSet, entry: FileRuleEntry, resolved: string
 };
 
 export const fileRuleBlocks = (set: FileRuleSet, entry: FileRuleEntry, requestedNative: string, resolvedNative: string): boolean => {
-  const requested = patternPathOf(set.flavour, requestedNative);
-  const resolved = patternPathOf(set.flavour, resolvedNative);
+  const requested = candidatePathOf(set.flavour, requestedNative);
+  const resolved = candidatePathOf(set.flavour, resolvedNative);
   if (entry.unresolved !== null || underExemption(set, entry, resolved)) return false;
   const requestedHit = matcherBlocks(entry, entry.exactLexical ?? entry.exact, requested);
   const resolvedHit = matcherBlocks(entry, entry.exact, resolved);

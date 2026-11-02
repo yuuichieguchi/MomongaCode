@@ -24,7 +24,21 @@ export const patternPathOf = (flavour: PathFlavour, native: string): string => {
   return forward(native);
 };
 
-export const nativePathOf = (flavour: PathFlavour, pattern: string): string => {
+export const isNativeAbsolute = (flavour: PathFlavour, text: string): boolean => flavour === 'win32' && (DRIVE.test(text) || (text.startsWith('\\\\') && UNC.test(text)));
+
+const WINDOWS_TRAILING =/[. ]+$/;
+
+const windowsNameIdentity = (name: string): string => {
+  if (name === '' || name === '.' || name === '..') return name;
+  return (name.split(':')[0] as string).replace(WINDOWS_TRAILING, '');
+};
+
+export const candidatePathOf = (flavour: PathFlavour, native: string): string => {
+  const pattern = patternPathOf(flavour, native);
+  return flavour === 'posix' ? pattern : pattern.split('/').map(windowsNameIdentity).join('/');
+};
+
+export const nativePathOf =(flavour: PathFlavour, pattern: string): string => {
   if (flavour === 'posix') return pattern;
   const unc = PATTERN_UNC.exec(pattern);
   if (unc !== null) return `\\\\${unc[1] as string}\\${unc[2] as string}${unc[3] === undefined || unc[3] === '' ? '' : `\\${unc[3].replace(/\//g, '\\')}`}`;

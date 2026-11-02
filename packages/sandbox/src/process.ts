@@ -83,36 +83,44 @@ export function launch(options: LaunchOptions): SandboxedProcess {
     options.afterExit();
   };
 
+  const reapAndClean = async (): Promise<void> => {
+    const failures: unknown[] = [];
+    try {
+      await reapGroup();
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
+      afterExitOnce();
+    } catch (error) {
+      failures.push(error);
+    }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1) throw new AggregateError(failures, 'the process group could not be reaped and the cleanup after it failed');
+  };
+
   let childError: Error | undefined;
 
   const exited = new Promise<SandboxExit>((resolve, reject) => {
     child.once('error', (error) => {
       childError = error;
       signal.removeEventListener('abort', onAbort);
-      reapGroup()
-        .then(() => {
-          afterExitOnce();
-          reject(error);
-        })
-        .catch(reject);
+      reapAndClean().then(() => reject(error), reject);
     });
     child.once('exit', (code, exitSignal) => {
       leaderExited = true;
       signal.removeEventListener('abort', onAbort);
-      reapGroup()
-        .then(() => {
-          afterExitOnce();
-          if (childError !== undefined) {
-            reject(childError);
-            return;
-          }
-          if (stdinFailure !== undefined) {
-            reject(stdinFailure);
-            return;
-          }
-          resolve({ code, signal: exitSignal, ...(killedBy === undefined ? {} : { killedBy }) });
-        })
-        .catch(reject);
+      reapAndClean().then(() => {
+        if (childError !== undefined) {
+          reject(childError);
+          return;
+        }
+        if (stdinFailure !== undefined) {
+          reject(stdinFailure);
+          return;
+        }
+        resolve({ code, signal: exitSignal, ...(killedBy === undefined ? {} : { killedBy }) });
+      }, reject);
     });
   });
 

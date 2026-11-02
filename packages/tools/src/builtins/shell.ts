@@ -19,6 +19,10 @@ export const nodeShellPorts = (): ShellPorts => ({
   env: process.env,
 });
 
+export type ShellHost = { platform: NodeJS.Platform; isExecutable(file: string): boolean };
+
+export const nodeShellHost = (): ShellHost => ({ platform: process.platform, isExecutable: nodeShellPorts().isExecutable });
+
 export class ShellNotFoundError extends Error {
   constructor(message: string) {
     super(message);

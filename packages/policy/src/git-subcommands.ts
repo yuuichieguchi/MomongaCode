@@ -62,17 +62,20 @@ export const GIT_READ_ONLY_SUBCOMMANDS: ReadonlySet<string> = new Set([
   'status', 'log', 'diff', 'show', 'blame', 'ls-files', 'ls-tree', 'rev-parse', 'rev-list', 'describe', 'shortlog', 'grep', 'cat-file', 'show-ref', 'name-rev', 'merge-base', 'for-each-ref', 'count-objects', 'check-ignore', 'reflog',
 ]);
 
-const REFLOG_WRITING: ReadonlySet<string> = new Set(['expire', 'delete', 'drop']);
-const REFLOG_QUERIES: ReadonlySet<string> = new Set(['list', 'exists']);
+const REFLOG_READ_FORMS = ['show', 'list', 'exists'] as const;
 
-export type ReflogView = { writes: true } | { writes: false; subcommand: 'show' | 'list' | 'exists'; words: Word[] };
+export type ReflogView = { subcommand: (typeof REFLOG_READ_FORMS)[number] | undefined; words: Word[] };
+
+const readFormOf = (word: Word): (typeof REFLOG_READ_FORMS)[number] | undefined =>
+  word.literal ? REFLOG_READ_FORMS.find((form) => form === word.value) : undefined;
 
 export const reflogView = (rest: readonly Word[]): ReflogView => {
   const [head, ...tail] = rest;
-  const name = head !== undefined && head.literal ? head.value : undefined;
-  if (name !== undefined && REFLOG_WRITING.has(name)) return { writes: true };
-  if (name !== undefined && REFLOG_QUERIES.has(name)) return { writes: false, subcommand: name as 'list' | 'exists', words: tail };
-  return { writes: false, subcommand: 'show', words: name === 'show' ? tail : [...rest] };
+  if (head === undefined) return { subcommand: 'show', words: [] };
+  const form = readFormOf(head);
+  if (form !== undefined) return { subcommand: form, words: tail };
+  if (head.literal && head.value.startsWith('-')) return { subcommand: 'show', words: [...rest] };
+  return { subcommand: undefined, words: [...rest] };
 };
 
 const LISTING_SELECTORS = ['--contains', '--no-contains', '--merged', '--no-merged', '--points-at'];

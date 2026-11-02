@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -275,27 +276,81 @@ describe('expandGlob', () => {
     expect(filesystem().expandGlob('missing/*.md', makeDir(), 1000)).toEqual({ matches: [] });
   });
 
-  it('overflows after limit + 1 directory entries even with few matches', () => {
+  it('overflows when more than limit paths match, and not at the limit', () => {
     const dir = makeDir();
-    for (let index = 0; index < 4; index += 1) fs.writeFileSync(path.join(dir, `f${index}.txt`), '');
-    fs.writeFileSync(path.join(dir, 'only.md'), '');
+    for (let index = 0; index < 4; index += 1) fs.writeFileSync(path.join(dir, `f${index}.md`), '');
     expect(filesystem().expandGlob('*.md', dir, 3)).toEqual({ overflow: true });
-    expect(filesystem().expandGlob('*.md', dir, 5)).toEqual({ matches: ['only.md'] });
+    expect(filesystem().expandGlob('*.md', dir, 4)).toEqual({ matches: ['f0.md', 'f1.md', 'f2.md', 'f3.md'] });
   });
 
-  it('maps EACCES on the directory to Unresolved', () => {
+  it('sees a directory the shell cannot open as the shell does: no match', () => {
     requireNonRoot();
     const dir = makeDir();
     const locked = path.join(dir, 'locked');
     fs.mkdirSync(locked);
     fs.chmodSync(locked, 0o000);
-    expect(filesystem().expandGlob('locked/*', dir, 1000)).toEqual({ unresolvable: { kind: 'errno', code: 'EACCES' } });
+    expect(filesystem().expandGlob('locked/*', dir, 1000)).toEqual({ matches: [] });
   });
 
-  it('rethrows EIO', () => {
+  it('keeps a backslash-escaped bracket literal and expands a POSIX class', () => {
     const dir = makeDir();
-    injectErrno('EIO', path.join(dir, 'broken'));
-    expect((thrownBy(() => filesystem().expandGlob('broken/*', dir, 1000)) as NodeJS.ErrnoException)?.code).toBe('EIO');
+    for (const name of ['[a]b', 'ab', 'lnk']) fs.writeFileSync(path.join(dir, name), '');
+    expect(filesystem().expandGlob('\\[a\\]*', dir, 1000)).toEqual({ matches: ['[a]b'] });
+    expect(filesystem().expandGlob('l[[:alpha:]]k', dir, 1000)).toEqual({ matches: ['lnk'] });
+  });
+
+  it('treats a range that is out of order as a word without matches instead of failing', () => {
+    const dir = makeDir();
+    fs.writeFileSync(path.join(dir, 'a'), '');
+    expect(filesystem().expandGlob('[z-a]*', dir, 1000)).toEqual({ matches: [] });
+  });
+
+  it('matches what the shell matches for a leading dot, whichever bash version runs', () => {
+    const dir = makeDir();
+    fs.mkdirSync(path.join(dir, 'sub'));
+    fs.writeFileSync(path.join(dir, '.hidden'), '');
+    const result = filesystem().expandGlob('.*', dir, 1000);
+    const shell = spawnSync('/bin/bash', ['-c', 'shopt -s nullglob; printf "%s\\n" .*'], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    expect('matches' in result ? result.matches : result).toEqual(shell.stdout.split('\n').filter((entry) => entry !== ''));
+  });
+
+  it('cannot determine the matches when no bash is found for the platform', () => {
+    const withoutBash = createPolicyFilesystem('win32', { isExecutable: never, env: {} });
+    expect(withoutBash.expandGlob('*', makeDir(), 1000)).toEqual({ unresolvable: { kind: 'dynamic' } });
+  });
+});
+
+describe('readHead and isSearchable answer as git does', () => {
+  it.each([
+    ['a symbolic ref', 'ref: refs/heads/main\n', 'text'],
+    ['a long file read only to its first 255 bytes', `ref: refs/heads/main\n${'#'.repeat(70_000)}`, 'text'],
+  ])('reads %s', (_label, content, kind) => {
+    const dir = makeDir();
+    fs.writeFileSync(path.join(dir, 'HEAD'), content);
+    const head = createPolicyFilesystem().readHead(path.join(dir, 'HEAD'));
+    expect(head.kind).toBe(kind);
+    expect(head.kind === 'text' ? head.text.length : 0).toBe(Math.min(255, content.length));
+  });
+
+  it('reads a symlink as its target, and a directory or a missing file as invalid', () => {
+    const dir = makeDir();
+    fs.symlinkSync('refs/heads/main', path.join(dir, 'HEAD'));
+    fs.mkdirSync(path.join(dir, 'dir'));
+    expect(createPolicyFilesystem().readHead(path.join(dir, 'HEAD'))).toEqual({ kind: 'symlink', target: 'refs/heads/main' });
+    expect(createPolicyFilesystem().readHead(path.join(dir, 'dir'))).toEqual({ kind: 'invalid' });
+    expect(createPolicyFilesystem().readHead(path.join(dir, 'missing'))).toEqual({ kind: 'invalid' });
+  });
+
+  it('is searchable for any entry with the execute bit, as access(X_OK) says, and not for one without', () => {
+    const dir = makeDir();
+    fs.writeFileSync(path.join(dir, 'exec'), '', { mode: 0o755 });
+    fs.writeFileSync(path.join(dir, 'plain'), '', { mode: 0o644 });
+    fs.mkdirSync(path.join(dir, 'directory'));
+    const filesystem = createPolicyFilesystem();
+    expect(filesystem.isSearchable(path.join(dir, 'exec'))).toBe(true);
+    expect(filesystem.isSearchable(path.join(dir, 'directory'))).toBe(true);
+    expect(filesystem.isSearchable(path.join(dir, 'plain'))).toBe(false);
+    expect(filesystem.isSearchable(path.join(dir, 'missing'))).toBe(false);
   });
 });
 

@@ -6,6 +6,8 @@ import type { EntryRead, PathResolution, ProtectedSet, StepRead, Unresolved, Unr
 export type FakeProgramResolution = { program: string } | { none: true };
 export type FakeGlobExpansion = { matches: string[] } | { overflow: true } | Unresolved;
 
+export type FakeHeadRead = { kind: 'symlink'; target: string } | { kind: 'text'; text: string } | { kind: 'invalid' };
+
 export type FakePolicyFilesystem = {
   platform: NodeJS.Platform;
   canonicalise: (absolute: string) => PathResolution;
@@ -14,6 +16,8 @@ export type FakePolicyFilesystem = {
   expandGlob: (pattern: string, cwd: string, limit: number) => FakeGlobExpansion;
   readEntry: (absolutePath: string) => EntryRead;
   readNoFollow: (absolutePath: string) => StepRead;
+  readHead: (absolutePath: string) => FakeHeadRead;
+  isSearchable: (absolutePath: string) => boolean;
 };
 
 export type FakeResolveCall = { name: string; cwd: string; searchPath: string | undefined; isWritable: (absolute: string) => boolean };
@@ -100,7 +104,44 @@ const readRealNoFollow = (absolute: string): StepRead =>
     { kind: 'missing' },
   );
 
-const noFollowFromEntry = (entry: EntryRead): StepRead => {
+const GIT_HEADREF_BUFFER_BYTES = 256;
+const HEAD_BYTES = GIT_HEADREF_BUFFER_BYTES - 1;
+
+const rejected = <T>(read: () => T, fallback: T): T => {
+  try {
+    return read();
+  } catch (error) {
+    if (typeof errnoOf(error) === 'string') return fallback;
+    throw error;
+  }
+};
+
+const readRealHead = (absolute: string): FakeHeadRead =>
+  rejected<FakeHeadRead>(
+    () => {
+      const stat = fs.lstatSync(absolute);
+      if (stat.isSymbolicLink()) return { kind: 'symlink', target: fs.readlinkSync(absolute) };
+      if (!stat.isFile()) return { kind: 'invalid' };
+      const descriptor = fs.openSync(absolute, 'r');
+      try {
+        const buffer = Buffer.alloc(HEAD_BYTES);
+        return { kind: 'text', text: buffer.toString('latin1', 0, fs.readSync(descriptor, buffer, 0, HEAD_BYTES, 0)) };
+      } finally {
+        fs.closeSync(descriptor);
+      }
+    },
+    { kind: 'invalid' },
+  );
+
+const headFromEntry = (entry: EntryRead): FakeHeadRead => ('unresolvable' in entry || entry.kind !== 'file' ? { kind: 'invalid' } : { kind: 'text', text: entry.text.slice(0, HEAD_BYTES) });
+
+const isRealSearchable = (absolute: string): boolean =>
+  rejected(() => {
+    fs.accessSync(absolute, fs.constants.X_OK);
+    return true;
+  }, false);
+
+const noFollowFromEntry =(entry: EntryRead): StepRead => {
   if ('unresolvable' in entry) return entry;
   if (entry.kind === 'directory') return { kind: 'directory' };
   if (entry.kind === 'absent') return { kind: 'missing' };
@@ -129,6 +170,15 @@ export const fakePolicyFilesystem = (layout: FakePolicyFilesystemLayout = {}): R
     readNoFollow: (absolute) => {
       const entry = entries[absolute];
       return entry === undefined ? readRealNoFollow(absolute) : noFollowFromEntry(entry);
+    },
+    readHead: (absolute) => {
+      const entry = entries[absolute];
+      return entry === undefined ? readRealHead(absolute) : headFromEntry(entry);
+    },
+    isSearchable: (absolute) => {
+      const entry = entries[absolute];
+      if (entry === undefined) return isRealSearchable(absolute);
+      return !('unresolvable' in entry) && entry.kind === 'directory';
     },
     ...layout.overrides,
   };

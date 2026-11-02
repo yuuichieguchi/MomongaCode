@@ -1,8 +1,8 @@
 import path from 'node:path';
 import { commondirTarget, gitFileTarget } from '@momonga/foundation';
-import type { PolicyFilesystem } from './filesystem.ts';
+import type { HeadRead, PolicyFilesystem } from './filesystem.ts';
 
-export type RepositoryPorts = Pick<PolicyFilesystem, 'canonicalise' | 'readEntry' | 'readNoFollow'>;
+export type RepositoryPorts = Pick<PolicyFilesystem, 'canonicalise' | 'readEntry' | 'readHead' | 'isSearchable'>;
 
 export type RepositoryHit = { directory: string; entry: 'dotgit' | 'bare'; gitDirectories: string[] };
 
@@ -11,20 +11,16 @@ export type Discovery = { found: false } | { found: true; hit: RepositoryHit } |
 const NOT_FOUND: Discovery = { found: false };
 const UNRESOLVED: Discovery = { unresolved: true };
 
-const SYMBOLIC_HEAD = /^ref:\s*refs\//;
-const OBJECT_HEAD = /^(?:[0-9a-f]{40}|[0-9a-f]{64})(?:\s|$)/;
+const SYMBOLIC_HEAD = /^ref:[ \t\n\v\f\r]*refs\//;
+const OBJECT_NAME_PREFIX = /^[0-9A-Fa-f]{40}/;
 
 type Validity = 'valid' | 'invalid' | 'unresolved';
 
-const headValidity = (head: string, ports: RepositoryPorts): Validity => {
-  const step = ports.readNoFollow(head);
-  if ('unresolvable' in step) return 'unresolved';
-  if (step.kind === 'symlink') return step.target.startsWith('refs/') ? 'valid' : 'invalid';
-  if (step.kind !== 'other') return 'invalid';
-  const entry = ports.readEntry(head);
-  if ('unresolvable' in entry) return 'unresolved';
-  if (entry.kind !== 'file') return 'invalid';
-  return SYMBOLIC_HEAD.test(entry.text) || OBJECT_HEAD.test(entry.text) ? 'valid' : 'invalid';
+const headIsValid = (head: HeadRead): boolean => {
+  if (head.kind === 'invalid') return false;
+  if (head.kind === 'symlink') return head.target.startsWith('refs/');
+  const [text] = head.text.split('\0');
+  return SYMBOLIC_HEAD.test(text as string) || OBJECT_NAME_PREFIX.test(text as string);
 };
 
 type Common = { directory: string } | 'unresolved' | 'broken';
@@ -40,17 +36,11 @@ const commonDirectoryOf = (gitDirectory: string, ports: RepositoryPorts): Common
 };
 
 const directoryValidity = (directory: string, ports: RepositoryPorts): Validity => {
-  const head = headValidity(path.join(directory, 'HEAD'), ports);
-  if (head !== 'valid') return head;
+  if (!headIsValid(ports.readHead(path.join(directory, 'HEAD')))) return 'invalid';
   const common = commonDirectoryOf(directory, ports);
   if (common === 'unresolved') return 'unresolved';
   if (common === 'broken') return 'invalid';
-  for (const name of ['objects', 'refs']) {
-    const entry = ports.readEntry(path.join(common.directory, name));
-    if ('unresolvable' in entry) return 'unresolved';
-    if (entry.kind !== 'directory') return 'invalid';
-  }
-  return 'valid';
+  return ['objects', 'refs'].every((name) => ports.isSearchable(path.join(common.directory, name))) ? 'valid' : 'invalid';
 };
 
 const canonicalOf = (absolute: string, ports: RepositoryPorts): string | undefined => {
@@ -64,9 +54,14 @@ const gitDirectoriesOf = (gitDirectory: string, ports: RepositoryPorts): string[
   return common.directory === gitDirectory ? [gitDirectory] : [gitDirectory, common.directory];
 };
 
-const dotGitFileTarget = (directory: string, text: string, ports: RepositoryPorts): string | undefined => {
+const hitAtGitfile = (directory: string, text: string, ports: RepositoryPorts): Discovery => {
   const named = gitFileTarget(text);
-  return named === undefined ? undefined : canonicalOf(path.resolve(directory, named), ports);
+  if (named === undefined) return NOT_FOUND;
+  const target = canonicalOf(path.resolve(directory, named), ports);
+  if (target === undefined) return UNRESOLVED;
+  const validity = directoryValidity(target, ports);
+  if (validity === 'unresolved') return UNRESOLVED;
+  return validity === 'valid' ? hitAt(directory, 'dotgit', target, ports) : NOT_FOUND;
 };
 
 const hitAt = (directory: string, entry: RepositoryHit['entry'], gitDirectory: string | undefined, ports: RepositoryPorts): Discovery => {
@@ -90,7 +85,7 @@ export const discoverRepository = (cwd: string, ports: RepositoryPorts, options:
   for (let directory = start.path; ; directory = path.dirname(directory)) {
     const dotGit = ports.readEntry(path.join(directory, '.git'));
     if ('unresolvable' in dotGit || dotGit.kind === 'oversize') return UNRESOLVED;
-    if (dotGit.kind === 'file') return hitAt(directory, 'dotgit', dotGitFileTarget(directory, dotGit.text, ports), ports);
+    if (dotGit.kind === 'file') return hitAtGitfile(directory, dotGit.text, ports);
     if (dotGit.kind === 'directory') {
       const validity = directoryValidity(dotGit.canonical, ports);
       if (validity === 'unresolved') return UNRESOLVED;

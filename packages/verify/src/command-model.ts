@@ -9,6 +9,7 @@ import type { Smt } from './smt.ts';
 const WORD_CHARACTERS: CharSet = [
   [0x25, 0x25],
   [0x2b, 0x3a],
+  [0x3d, 0x3d],
   [0x40, 0x5a],
   [0x5f, 0x5f],
   [0x61, 0x7a],
@@ -36,6 +37,8 @@ const excludedProgramNames = (): string[] => {
 
 const patternWords = (pattern: CommandPattern): string[] => (pattern.kind === 'prefix' ? pattern.words : pattern.text.split(/\s+/));
 
+const firstNameOf = (rule: PermissionRule): string => path.basename(patternWords(commandPatternOf(rule))[0] as string);
+
 export const createCommandModel = (smt: Smt): CommandModel => {
   const ctx = smt.ctx;
   const spaces = smt.plus(smt.chars(singleton(SPACE)));
@@ -48,6 +51,7 @@ export const createCommandModel = (smt: Smt): CommandModel => {
   const expressible = (text: string): boolean => [...text].every((character) => setContains(WORD_CHARACTERS, character.codePointAt(0) as number));
 
   const basenameIs = (name: string): Re => smt.concat(smt.optional(smt.concat(smt.star(wordAlphabet), slash)), smt.text(name), smt.star(slash));
+  const wordsExpressible = (rule: PermissionRule): boolean => patternWords(commandPatternOf(rule)).every(expressible);
   const excludedNames = excludedProgramNames().filter(expressible);
   const printer = smt.union(...[...INERT_PRINTERS].map(basenameIs));
   const command = smt.concat(plainWord, rest);
@@ -66,12 +70,7 @@ export const createCommandModel = (smt: Smt): CommandModel => {
   const sequence = (words: readonly string[], firstWordLanguage: (expected: string) => Re): Re =>
     smt.concat(...words.map((expected, index) => (index === 0 ? firstWordLanguage(expected) : smt.concat(spaces, smt.text(expected)))));
 
-  const wordsExpressible = (rule: PermissionRule): boolean => patternWords(commandPatternOf(rule)).every(expressible);
-
-  const modelled = (rule: PermissionRule): boolean => {
-    const words = patternWords(commandPatternOf(rule));
-    return wordsExpressible(rule) && !excludedNames.includes(path.basename(words[0] as string));
-  };
+  const modelled = (rule: PermissionRule): boolean => wordsExpressible(rule) && !excludedNames.includes(firstNameOf(rule));
 
   const never = ctx.Bool.val(false);
 

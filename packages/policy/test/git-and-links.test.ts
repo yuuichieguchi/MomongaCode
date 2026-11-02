@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { GIT_AND_LINK_ROWS, PROTECTED_ROWS, cellAt, columnModes, commandRow, contextOf, decideRow, kindIn, P, validGitDirectory } from './decision-rows.ts';
 import type { Row } from './decision-rows.ts';
 import { touch } from './helpers.ts';
+import type { Layout } from './helpers.ts';
 
 const rowsTable = (title: string, rows: readonly Row[]): void => {
   describe(title, () => {
@@ -83,15 +84,30 @@ describe('git approval follows repository discovery from the persisted cwd', () 
     expect(kindIn(row, 'default')).toBe('ask');
   });
 
-  it('refuses the approval when a .git file in sub points elsewhere (pin)', () => {
+  it('refuses the approval when a .git file in sub points at a git directory the workspace can write (pin)', () => {
     const row = commandRow('git status', {
       cwd: (layout) => P(layout, 'sub'),
       prepare: (layout) => {
         fs.mkdirSync(P(layout, 'sub'));
-        fs.writeFileSync(P(layout, 'sub', '.git'), `gitdir: ${path.join(layout.outside, 'other', '.git')}\n`);
+        validGitDirectory(layout, 'other');
+        fs.writeFileSync(P(layout, 'sub', '.git'), `gitdir: ${P(layout, 'other', '.git')}\n`);
       },
     });
     expect(kindIn(row, 'default')).toBe('ask');
+  });
+
+  it.each([
+    ['names a directory that is not a git directory', (layout: Layout) => `gitdir: ${path.join(layout.outside, 'other', '.git')}\n`],
+    ['has no gitdir line', () => 'garbage\n'],
+  ])('approves git status when the .git file in sub %s, because git stops with a fatal error before reading any configuration', (_label, text) => {
+    const row = commandRow('git status', {
+      cwd: (layout) => P(layout, 'sub'),
+      prepare: (layout) => {
+        fs.mkdirSync(P(layout, 'sub'));
+        fs.writeFileSync(P(layout, 'sub', '.git'), text(layout));
+      },
+    });
+    expect(kindIn(row, 'default')).toBe('allow');
   });
 });
 

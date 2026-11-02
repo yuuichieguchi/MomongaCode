@@ -46,7 +46,7 @@ const unmodelledNotes = (context: QueryContext, rules: readonly PermissionRule[]
   const unmodelled = rules.filter((rule) => rule.tool === 'Bash' && context.models.commands.unmodelled(rule));
   if (unmodelled.length > 0) {
     notes.push(
-      `Bash rules the model cannot follow, because a word uses a character outside the modelled command alphabet or the program is a wrapper, shell or eval such as sudo, env or bash. They are treated as matching no modelled command and are not judged for consistency: ${unmodelled.map((rule) => rule.text).join(', ')}.`,
+      `Bash rules the model cannot follow, because a word uses a character outside the modelled command alphabet or an allow rule names a wrapper, shell or eval program such as sudo, env or bash. They are treated as matching no modelled command. A deny or ask rule among them can only make a decision stricter than the model predicts, so no proved result depends on it; an allow rule among them makes rule-consistency unknown: ${unmodelled.map((rule) => rule.text).join(', ')}.`,
     );
   }
   return notes;
@@ -61,7 +61,10 @@ export const buildQueryContext = (api: Z3Api, request: VerifyRequest): QueryCont
     ...roots,
     ...rules.map((rule) => rule.specifier ?? ''),
     ...rules.flatMap((rule) => rule.exceptions ?? []),
-    ...secretLocations.map((location) => location.directory),
+    ...secretLocations.flatMap((location) => {
+      const canonical = fs.canonicalise(location.directory);
+      return canonical.ok ? [location.directory, canonical.path] : [location.directory];
+    }),
     ...protectedSet.paths,
     ...protectedSet.lexicalPaths,
     ...protectedSet.literals,

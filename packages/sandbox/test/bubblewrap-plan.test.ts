@@ -3,7 +3,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import type { FileRuleSet } from '@momonga/foundation';
-import { planBubblewrap } from '@momonga/sandbox';
+import { nodeFilesystemPort, planBubblewrap } from '@momonga/sandbox';
 import type { FilesystemPort, SandboxPolicy } from '@momonga/sandbox';
 import { fileRulesOf, fileSpec } from './file-rule-specs.ts';
 import { makeTempDir } from './helpers.ts';
@@ -60,6 +60,7 @@ describe('planBubblewrap', () => {
 
   it('keeps the systemd resolver reachable only when the network is allowed and the directory exists', () => {
     const port: FilesystemPort = {
+      ...nodeFilesystemPort,
       kindOf: (target) => (target === '/run/systemd/resolve' ? 'directory' : fs.statSync(target, { throwIfNoEntry: false })?.isDirectory() ? 'directory' : undefined),
       realpath: (target) => target,
       children: () => [],
@@ -86,6 +87,30 @@ describe('planBubblewrap', () => {
     expect(indexOfTriple(plan.args, '--ro-bind', hooks)).toBeGreaterThan(indexOfTriple(plan.args, '--bind', work));
     expect(indexOfTriple(plan.args, '--ro-bind', config)).toBeGreaterThan(0);
     expect(plan.placeholders).toEqual([]);
+  });
+
+  it('reserves a missing protected path under the closure of a widening allow, which is bound read-write like a root', () => {
+    const wide = path.join(base, 'wide');
+    fs.mkdirSync(wide);
+    const fileRules = fileRulesOf([fileSpec(`/${wide}/**`, { roots: [work], home, tool: 'Edit', effect: 'allow' })], [work]);
+    const hooks = path.join(wide, '.git', 'hooks');
+    const plan = planBubblewrap(policy({ fileRules, writeDeniedLiterals: [hooks] }), { cwd: work });
+    expect(indexOfTriple(plan.args, '--bind', wide)).toBeGreaterThan(0);
+    expect(plan.placeholders).toEqual([path.join(wide, '.git')]);
+    expect(indexOfTriple(plan.args, '--ro-bind', '/dev/null', path.join(wide, '.git'))).toBeGreaterThan(0);
+  });
+
+  it('takes a hold on a placeholder that a running command created, for the file itself and for a path below it', () => {
+    const git = path.join(work, '.git');
+    fs.writeFileSync(git, '');
+    const held = new Set([git]);
+    const below = planBubblewrap(policy({ writeDeniedLiterals: [path.join(git, 'hooks')] }), { cwd: work, heldPlaceholders: held });
+    expect(below.placeholders).toEqual([git]);
+    expect(indexOfTriple(below.args, '--ro-bind', '/dev/null', git)).toBeGreaterThan(0);
+    const itself = planBubblewrap(policy({ writeDeniedLiterals: [git] }), { cwd: work, heldPlaceholders: held });
+    expect(itself.placeholders).toEqual([git]);
+    const unrelated = planBubblewrap(policy({ writeDeniedLiterals: [git] }), { cwd: work });
+    expect(unrelated.placeholders).toEqual([]);
   });
 
   it('reserves the first missing component of a protected path under a writable root with /dev/null, so nothing can create it', () => {

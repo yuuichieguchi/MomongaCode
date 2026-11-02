@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { createBubblewrapSandbox } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
+import { waitFor } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
 
 const FAKE_BWRAP = `#!/bin/sh
@@ -96,6 +97,28 @@ describe('bubblewrap launch (a stand-in bwrap that creates the /dev/null mount p
     expect(fs.existsSync(path.join(work, '.git'))).toBe(true);
     fs.writeFileSync(gate, 'open');
     await run(first);
+    expect(fs.existsSync(path.join(work, '.git'))).toBe(false);
+  });
+
+  it('keeps a placeholder that an earlier command created until the later command that planned around it has exited', async () => {
+    const hooks = path.join(work, '.git', 'hooks');
+    const shared = sandbox();
+    const gates = [path.join(base, 'gate-first'), path.join(base, 'gate-second')];
+    for (const gate of gates) execFileSync('/usr/bin/mkfifo', [gate]);
+    const waiting = (name: string, gate: string) => ({ argv: ['/bin/sh', '-c', `: > ${path.join(base, name)}; cat ${gate}`], cwd: work, env: { PATH: '/usr/bin:/bin' } });
+    const announced = (name: string): Promise<void> => waitFor(() => fs.existsSync(path.join(base, name)));
+
+    const first = shared.spawn(waiting('first-ready', gates[0] as string), policy([hooks]), new AbortController().signal);
+    await announced('first-ready');
+    expect(fs.statSync(path.join(work, '.git')).isFile()).toBe(true);
+    const second = shared.spawn(waiting('second-ready', gates[1] as string), policy([hooks]), new AbortController().signal);
+    await announced('second-ready');
+
+    fs.writeFileSync(gates[0] as string, 'open');
+    await run(first);
+    expect(fs.existsSync(path.join(work, '.git'))).toBe(true);
+    fs.writeFileSync(gates[1] as string, 'open');
+    await run(second);
     expect(fs.existsSync(path.join(work, '.git'))).toBe(false);
   });
 

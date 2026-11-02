@@ -42,7 +42,7 @@ const expandWordPieces = (words: Word[]): Word[] =>
     const pieces = word.value
       .split(WORD_PIECE_SEPARATOR)
       .filter((piece) => piece !== '')
-      .map((piece): Word => ({ value: piece, literal: true, plain: false, glob: false, staticValue: piece }));
+      .map((piece): Word => ({ value: piece, literal: true, plain: false, glob: null, staticValue: piece }));
     return [word, ...pieces];
   });
 

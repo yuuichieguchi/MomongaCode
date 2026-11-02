@@ -57,6 +57,20 @@ describe('a clean rule set', () => {
     expect(note).not.toContain('Bash(rm:*)');
   }, 120_000);
 
+  it('reports rule-consistency as unknown, never proved, for an allow rule on a wrapper program the model cannot follow', async () => {
+    const { report } = await run([
+      ['allow', 'Bash(sudo ls:*)'],
+      ['deny', 'Bash(rm:*)'],
+    ]);
+
+    const consistency = resultOf(report, 'rule-consistency');
+    expect(consistency.verdict.status).toBe('unknown');
+    expect(consistency.verdict.status === 'unknown' ? consistency.verdict.reason : '').toContain('Bash(sudo ls:*)');
+    expect(report.exitCode).toBe(1);
+    const note = report.outsideProof.find((item) => item.startsWith('Bash rules the model cannot follow')) ?? '';
+    expect(note).toContain('Bash(sudo ls:*)');
+  }, 120_000);
+
   it('records where an allow rule overlaps a deny rule and which side wins there', async () => {
     const { report } = await run([
       ['allow', 'Read(./a/**)'],
