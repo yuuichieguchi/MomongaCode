@@ -8,8 +8,8 @@ import {
   fakeClock,
   makeClient,
   openSse,
-  registerCleanup,
   settle,
+  spiedTimers,
   sseFrame,
   startRawHttpFake,
   streamBody,
@@ -32,29 +32,47 @@ const clientReplying = async (handler: (request: RecordedHttpRequest, response: 
   return { clock, client: makeClient(fake.socketPath, clock, overrides) };
 };
 
+const IDLE_TIMEOUT_MS = 150;
+const DEADLINE_MS = 400;
+const PING_GAP_MS = 100;
+
 describe('gateway client stream deadline', () => {
   it('ends a stream kept alive by pings at the run deadline with deadline_exceeded', async () => {
-    const { clock, client } = await clientReplying((_request, response) => {
+    const fake = await startRawHttpFake();
+    let open: ServerResponse | undefined;
+    fake.respond((_request, response) => {
+      open = response;
       openSse(response);
       response.write(sseFrame(createdEvent));
-      const pings = setInterval(() => response.write(': ping\n\n'), 30);
-      registerCleanup(() => clearInterval(pings));
-    }, { streamIdleTimeoutMs: 150 });
-    const seen: unknown[] = [];
-
-    let guard: NodeJS.Timeout | undefined;
-    const stillOpen = new Promise<string>((resolve) => {
-      guard = setTimeout(() => resolve('still open after 2000 ms'), 2000);
     });
-    registerCleanup(() => clearTimeout(guard));
-    const error = await Promise.race([
-      settle(
-        (async () => {
-          for await (const event of client.stream(streamBody(), callOptions(clock, { deadlineInMs: 400 }))) seen.push(event);
-        })(),
-      ),
-      stillOpen,
-    ]);
+    const clock = fakeClock();
+    const timers = spiedTimers(clock);
+    const client = makeClient(fake.socketPath, clock, { streamIdleTimeoutMs: IDLE_TIMEOUT_MS, timers });
+    const seen: unknown[] = [];
+    let armedAtFirstEvent = 0;
+    let firstEventSeen: () => void = () => {};
+    const firstEvent = new Promise<void>((resolve) => {
+      firstEventSeen = resolve;
+    });
+    const finished = settle(
+      (async () => {
+        for await (const event of client.stream(streamBody(), callOptions(clock, { deadlineInMs: DEADLINE_MS }))) {
+          seen.push(event);
+          armedAtFirstEvent = timers.armed();
+          firstEventSeen();
+        }
+      })(),
+    );
+
+    await firstEvent;
+    await timers.untilArmed(armedAtFirstEvent + 1);
+    for (let elapsed = 0; elapsed < DEADLINE_MS; elapsed += PING_GAP_MS) {
+      const armedBefore = timers.armed();
+      (open as ServerResponse).write(': ping\n\n');
+      await timers.untilArmed(armedBefore + 1);
+      timers.advance(PING_GAP_MS);
+    }
+    const error = await finished;
 
     expect(seen).toEqual([createdEvent]);
     expectGatewayError(error, { status: 0, type: 'transport', code: 'deadline_exceeded' });

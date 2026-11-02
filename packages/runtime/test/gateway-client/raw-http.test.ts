@@ -1,6 +1,6 @@
 import type { ServerResponse } from 'node:http';
 import { describe, expect, it } from 'vitest';
-import { waitFor } from '@momonga/testkit';
+import { createFakeTimers, waitFor } from '@momonga/testkit';
 import {
   START_MS,
   TRACEPARENT,
@@ -16,6 +16,7 @@ import {
   openSse,
   registerCleanup,
   settle,
+  spiedTimers,
   sseFrame,
   startRawHttpFake,
   streamBody,
@@ -228,50 +229,66 @@ describe('gateway client error mapping', () => {
 });
 
 describe('gateway client bounds', () => {
+  const awaitingRequests = (fake: Awaited<ReturnType<typeof startRawHttpFake>>, count: number) =>
+    waitFor(() => fake.requests.length === count, { description: `${count} request(s) to arrive` });
+
   it('times out a unary call after unaryTimeoutMs', async () => {
     const fake = await startRawHttpFake();
     fake.respond(() => {});
     const clock = fakeClock();
-    const client = makeClient(fake.socketPath, clock, { unaryTimeoutMs: 100 });
+    const timers = createFakeTimers(clock);
+    const client = makeClient(fake.socketPath, clock, { unaryTimeoutMs: 100, timers });
 
-    const error = await settle(client.countTokens(COUNT_REQUEST, { signal: new AbortController().signal }));
+    const pending = settle(client.countTokens(COUNT_REQUEST, { signal: new AbortController().signal }));
+    await awaitingRequests(fake, 1);
+    timers.advance(100);
 
-    expectGatewayError(error, { status: 0, type: 'transport', code: 'gateway_timeout' });
+    expectGatewayError(await pending, { status: 0, type: 'transport', code: 'gateway_timeout' });
   });
 
   it('bounds a unary call by the deadline when it is sooner than unaryTimeoutMs', async () => {
     const fake = await startRawHttpFake();
     fake.respond(() => {});
     const clock = fakeClock();
-    const client = makeClient(fake.socketPath, clock, { unaryTimeoutMs: 600_000 });
+    const timers = createFakeTimers(clock);
+    const client = makeClient(fake.socketPath, clock, { unaryTimeoutMs: 600_000, timers });
 
-    const error = await settle(client.compact(COMPACT_REQUEST, callOptions(clock, { deadlineInMs: 100 })));
+    const pending = settle(client.compact(COMPACT_REQUEST, callOptions(clock, { deadlineInMs: 100 })));
+    await awaitingRequests(fake, 1);
+    timers.advance(100);
 
-    expectGatewayError(error, { status: 0, type: 'transport', code: 'deadline_exceeded' });
+    expectGatewayError(await pending, { status: 0, type: 'transport', code: 'deadline_exceeded' });
   });
 
   it('times out cancel after cancelTimeoutMs', async () => {
     const fake = await startRawHttpFake();
     fake.respond(() => {});
     const clock = fakeClock();
-    const client = makeClient(fake.socketPath, clock, { cancelTimeoutMs: 100, unaryTimeoutMs: 600_000 });
+    const timers = createFakeTimers(clock);
+    const client = makeClient(fake.socketPath, clock, { cancelTimeoutMs: 100, unaryTimeoutMs: 600_000, timers });
 
-    const error = await settle(client.cancel('key-1', { signal: new AbortController().signal }));
+    const pending = settle(client.cancel('key-1', { signal: new AbortController().signal }));
+    await awaitingRequests(fake, 1);
+    timers.advance(100);
 
-    expectGatewayError(error, { status: 0, type: 'transport', code: 'gateway_timeout' });
+    expectGatewayError(await pending, { status: 0, type: 'transport', code: 'gateway_timeout' });
   });
 
   it('lets the smaller of the deadline and unaryTimeoutMs decide the timeout code', async () => {
     const fake = await startRawHttpFake();
     fake.respond(() => {});
     const clock = fakeClock();
-    const capFirst = makeClient(fake.socketPath, clock, { unaryTimeoutMs: 100 });
-    const deadlineFirst = makeClient(fake.socketPath, clock, { unaryTimeoutMs: 400 });
+    const timers = createFakeTimers(clock);
+    const capFirst = makeClient(fake.socketPath, clock, { unaryTimeoutMs: 100, timers });
+    const deadlineFirst = makeClient(fake.socketPath, clock, { unaryTimeoutMs: 400, timers });
 
-    const [capError, deadlineError] = await Promise.all([
+    const pending = Promise.all([
       settle(capFirst.compact(COMPACT_REQUEST, callOptions(clock, { idempotencyKey: 'cap', deadlineInMs: 400 }))),
       settle(deadlineFirst.compact(COMPACT_REQUEST, callOptions(clock, { idempotencyKey: 'dl', deadlineInMs: 100 }))),
     ]);
+    await awaitingRequests(fake, 2);
+    timers.advance(100);
+    const [capError, deadlineError] = await pending;
 
     expectGatewayError(capError, { status: 0, type: 'transport', code: 'gateway_timeout' });
     expectGatewayError(deadlineError, { status: 0, type: 'transport', code: 'deadline_exceeded' });
@@ -284,14 +301,28 @@ describe('gateway client bounds', () => {
       response.write(sseFrame(createdEvent));
     });
     const clock = fakeClock();
-    const client = makeClient(fake.socketPath, clock, { streamIdleTimeoutMs: 150 });
+    const timers = spiedTimers(clock);
+    const client = makeClient(fake.socketPath, clock, { streamIdleTimeoutMs: 150, timers });
     const seen: unknown[] = [];
+    let armedAtFirstEvent = 0;
+    let firstEventSeen: () => void = () => {};
+    const firstEvent = new Promise<void>((resolve) => {
+      firstEventSeen = resolve;
+    });
 
-    const error = await settle(
+    const finished = settle(
       (async () => {
-        for await (const event of client.stream(streamBody(), callOptions(clock))) seen.push(event);
+        for await (const event of client.stream(streamBody(), callOptions(clock))) {
+          seen.push(event);
+          armedAtFirstEvent = timers.armed();
+          firstEventSeen();
+        }
       })(),
     );
+    await firstEvent;
+    await timers.untilArmed(armedAtFirstEvent + 1);
+    timers.advance(150);
+    const error = await finished;
 
     expect(seen).toEqual([createdEvent]);
     expectGatewayError(error, { status: 0, type: 'transport', code: 'stream_interrupted' });
@@ -299,23 +330,43 @@ describe('gateway client bounds', () => {
 
   it('treats keep-alive comments as activity', async () => {
     const fake = await startRawHttpFake();
+    let open: ServerResponse | undefined;
     fake.respond((_request, response) => {
+      open = response;
       openSse(response);
       response.write(sseFrame(createdEvent));
-      const pings = setInterval(() => response.write(': ping\n\n'), 50);
-      const finish = setTimeout(() => {
-        clearInterval(pings);
-        response.end(sseFrame(completedEvent));
-      }, 450);
-      registerCleanup(() => {
-        clearInterval(pings);
-        clearTimeout(finish);
-      });
     });
     const clock = fakeClock();
-    const client = makeClient(fake.socketPath, clock, { streamIdleTimeoutMs: 150 });
+    const timers = spiedTimers(clock);
+    const client = makeClient(fake.socketPath, clock, { streamIdleTimeoutMs: 150, timers });
+    let armedAtFirstEvent = 0;
+    let firstEventSeen: () => void = () => {};
+    const firstEvent = new Promise<void>((resolve) => {
+      firstEventSeen = resolve;
+    });
+    const seen: unknown[] = [];
 
-    expect(await collect(client.stream(streamBody(), callOptions(clock)))).toEqual([createdEvent, completedEvent]);
+    const finished = (async () => {
+      for await (const event of client.stream(streamBody(), callOptions(clock))) {
+        seen.push(event);
+        if (seen.length === 1) {
+          armedAtFirstEvent = timers.armed();
+          firstEventSeen();
+        }
+      }
+    })();
+    await firstEvent;
+    await timers.untilArmed(armedAtFirstEvent + 1);
+    for (let round = 0; round < 4; round += 1) {
+      const armedBefore = timers.armed();
+      (open as ServerResponse).write(': ping\n\n');
+      await timers.untilArmed(armedBefore + 1);
+      timers.advance(100);
+    }
+    (open as ServerResponse).end(sseFrame(completedEvent));
+    await finished;
+
+    expect(seen).toEqual([createdEvent, completedEvent]);
   });
 });
 

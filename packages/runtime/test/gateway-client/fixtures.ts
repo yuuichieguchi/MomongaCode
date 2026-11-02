@@ -4,8 +4,8 @@ import type net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect } from 'vitest';
-import { createFakeClock } from '@momonga/testkit';
-import type { FakeClock } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { GatewayRequestError, createGatewayClient } from '../../src/gateway-client.ts';
 
 export const START_MS = 1_800_000_000_000;
@@ -38,8 +38,38 @@ export const socketPathIn = (dir: string, name = 's.sock'): string => {
 
 export type ClientOverrides = Partial<Omit<Parameters<typeof createGatewayClient>[0], 'socketPath' | 'clock' | 'version'>>;
 
+export type SpiedTimers = FakeTimers & {
+  armed(): number;
+  untilArmed(count: number): Promise<void>;
+};
+
+export const spiedTimers = (clock: FakeClock): SpiedTimers => {
+  const timers = createFakeTimers(clock);
+  let armed = 0;
+  const waiters: Array<{ count: number; resolve: () => void }> = [];
+  return {
+    ...timers,
+    setTimeout: (callback, ms) => {
+      const handle = timers.setTimeout(callback, ms);
+      armed += 1;
+      for (const waiter of waiters.splice(0)) {
+        if (armed >= waiter.count) waiter.resolve();
+        else waiters.push(waiter);
+      }
+      return handle;
+    },
+    armed: () => armed,
+    untilArmed: (count) =>
+      armed >= count
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => {
+            waiters.push({ count, resolve });
+          }),
+  };
+};
+
 export const makeClient = (socketPath: string, clock: FakeClock, overrides: ClientOverrides = {}) => {
-  const client = createGatewayClient({ socketPath, clock, version: CLIENT_VERSION, ...overrides });
+  const client = createGatewayClient({ socketPath, clock, timers: createFakeTimers(clock), version: CLIENT_VERSION, ...overrides });
   registerCleanup(() => client.destroy());
   return client;
 };

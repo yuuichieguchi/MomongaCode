@@ -367,6 +367,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       createGatewayClient({
         socketPath: options.gatewaySocketPath ?? paths.sockets.gateway,
         clock,
+        timers,
         version,
         cancelTimeoutMs: GATEWAY_CANCEL_TIMEOUT_MS,
       }),

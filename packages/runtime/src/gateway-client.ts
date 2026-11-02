@@ -14,6 +14,8 @@ import type {
   StreamEvent,
 } from '@momonga/protocol';
 import type { Clock, GatewayCallOptions, GatewayPort } from './ports.ts';
+import { systemTimers } from './service/timers.ts';
+import type { ServiceTimers } from './service/timers.ts';
 
 export type GatewayRequestErrorFields = {
   status: number;
@@ -48,6 +50,7 @@ export class GatewayRequestError extends Error {
 export type GatewayClientOptions = {
   socketPath: string;
   clock: Clock;
+  timers?: ServiceTimers;
   version: string;
   unaryTimeoutMs?: number;
   cancelTimeoutMs?: number;
@@ -128,6 +131,7 @@ const errorFromBody = (response: UdsResponse, text: string, nowMs: number): Gate
 
 export const createGatewayClient = (options: GatewayClientOptions): GatewayClient => {
   const { clock, version } = options;
+  const timers = options.timers ?? systemTimers;
   const unaryTimeoutMs = options.unaryTimeoutMs ?? DEFAULT_UNARY_TIMEOUT_MS;
   const cancelTimeoutMs = options.cancelTimeoutMs ?? DEFAULT_CANCEL_TIMEOUT_MS;
   const streamIdleTimeoutMs = options.streamIdleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS;
@@ -139,12 +143,12 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
   const createGuard = (callerSignal: AbortSignal) => {
     const controller = new AbortController();
     let expired: GatewayRequestError | undefined;
-    let timer: NodeJS.Timeout | undefined;
-    let deadlineTimer: NodeJS.Timeout | undefined;
+    let timer: unknown;
+    let deadlineTimer: unknown;
     const onCallerAbort = (): void => controller.abort();
     callerSignal.addEventListener('abort', onCallerAbort, { once: true });
     const disarm = (): void => {
-      clearTimeout(timer);
+      timers.clearTimeout(timer);
       timer = undefined;
     };
     const expire = (code: TimeoutCode, ms: number): void => {
@@ -154,17 +158,17 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
     return {
       signal: controller.signal,
       armDeadline: (ms: number): void => {
-        deadlineTimer = setTimeout(() => expire('deadline_exceeded', ms), ms);
+        deadlineTimer = timers.setTimeout(() => expire('deadline_exceeded', ms), ms);
       },
       arm: (ms: number, code: TimeoutCode): void => {
         disarm();
-        timer = setTimeout(() => expire(code, ms), ms);
+        timer = timers.setTimeout(() => expire(code, ms), ms);
       },
       disarm,
       abort: (): void => controller.abort(),
       dispose: (): void => {
         disarm();
-        clearTimeout(deadlineTimer);
+        timers.clearTimeout(deadlineTimer);
         callerSignal.removeEventListener('abort', onCallerAbort);
       },
       translate: (error: unknown, midStream = false): unknown => {
