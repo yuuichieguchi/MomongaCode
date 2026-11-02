@@ -19,13 +19,20 @@ export const createSkillLoader = ({ home, fileSystem, limits = DEFAULT_SKILL_LIM
       if (skill === undefined) throw new UnknownSkillError(name, skills.map((entry) => entry.name));
       return activateSkill(skill, fileSystem, limits);
     };
+    const activationTool: SkillSet['activationTool'] = ({ isActive, admit }) =>
+      skills.length === 0 ? undefined : createActivateSkillTool({ skills, activate, isActive, admit });
     return {
       skills,
       warnings,
       readDirectories: [...new Set(skills.map((skill) => skill.realDirectory))],
       catalog: renderCatalog(skills),
       activate: async (name) => activate(name),
-      activationTool: ({ isActive }) => (skills.length === 0 ? undefined : createActivateSkillTool({ skills, activate, isActive })),
+      activationTool,
+      recoveryTool: () =>
+        activationTool({
+          isActive: () => false,
+          admit: () => Promise.reject(new Error('the recovery tool describes activate_skill for reconciliation and never executes it')),
+        }),
     };
   },
 });

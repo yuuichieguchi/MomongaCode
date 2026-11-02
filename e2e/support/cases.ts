@@ -70,6 +70,7 @@ export const E2E_CASES = [
   { id: 'g-skills', file: 'skills.test.ts', title: 'g: a skill in .agents/skills appears in the catalog, the model activates it and its body stays in context across a compaction', needsBash: false },
   { id: 'g-skills-explicit', file: 'skills.test.ts', title: 'g: the Run API lists the skills of a session and a run started with a skill has it active before the first model call', needsBash: false },
   { id: 'g-skills-resources', file: 'skills.test.ts', title: 'g: bundled resources of a user skill are read without approval in default mode and the rest of ~/.momonga stays denied', needsBash: false },
+  { id: 'g-skills-bash-resource', file: 'skills.test.ts', title: 'g: under seatbelt a Bash command reads a resource of a user skill while the rest of ~/.momonga stays denied', needsBash: true },
   { id: 'g-skills-untrusted', file: 'skills.test.ts', title: 'g: an untrusted folder offers no project skills', needsBash: false },
   { id: 'eval-starter', file: 'eval-runner.test.ts', title: 'eval: the starter dataset runs through the Run API against the fake upstream and reports pass and false-allow rates', needsBash: false },
   { id: 'eval-false-allow', file: 'eval-runner.test.ts', title: 'eval: a write allowed by acceptEdits and labelled ask is counted as a false allow; a blocked read labelled deny is observed as deny', needsBash: false },

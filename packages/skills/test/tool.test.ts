@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ToolExecutionError, createToolRegistry, validateToolInput } from '@momonga/tools';
 import type { AnyTool, ToolContext } from '@momonga/tools';
 import { ACTIVATE_SKILL_TOOL_NAME, createSkillLoader } from '@momonga/skills';
+import type { SkillAdmission, SkillContent } from '@momonga/skills';
 import { fakeSkillFileSystem, skillFile } from './fake-file-system.ts';
 
 const HOME = '/home/u';
@@ -10,9 +11,15 @@ const files = {
   [`${HOME}/.agents/skills/zip/SKILL.md`]: skillFile('zip', 'Pack files'),
 };
 
-const toolOf = async (isActive: (name: string) => boolean = () => false, fileSystem = fakeSkillFileSystem(files)): Promise<AnyTool> => {
+const admitAll = async (): Promise<SkillAdmission> => ({ admitted: true });
+
+const toolOf = async (
+  isActive: (name: string) => boolean = () => false,
+  fileSystem = fakeSkillFileSystem(files),
+  admit: (skill: SkillContent) => Promise<SkillAdmission> = admitAll,
+): Promise<AnyTool> => {
   const set = await createSkillLoader({ home: HOME, fileSystem }).load({ projectRoot: '/work/app', trusted: true });
-  const tool = set.activationTool({ isActive });
+  const tool = set.activationTool({ isActive, admit });
   if (tool === undefined) throw new Error('expected an activation tool');
   return tool;
 };
@@ -43,7 +50,7 @@ describe('activate_skill tool', () => {
 
   it('is not offered without skills', async () => {
     const set = await createSkillLoader({ home: HOME, fileSystem: fakeSkillFileSystem({}) }).load({ projectRoot: '/work/app', trusted: true });
-    expect(set.activationTool({ isActive: () => false })).toBeUndefined();
+    expect(set.activationTool({ isActive: () => false, admit: admitAll })).toBeUndefined();
   });
 
   it('returns the wrapped body and the activation to protect', async () => {
@@ -78,6 +85,29 @@ describe('activate_skill tool', () => {
     const tool = await toolOf();
     await run(tool, 'pdf');
     expect((await run(tool, 'zip')).skill?.name).toBe('zip');
+  });
+
+  it('fails the call with the admission reason and activates nothing when the skill is not admitted', async () => {
+    const admitted: string[] = [];
+    const tool = await toolOf(
+      () => false,
+      fakeSkillFileSystem(files),
+      async (skill) => {
+        admitted.push(skill.name);
+        return { admitted: false, reason: 'does not fit' };
+      },
+    );
+    await expect(run(tool, 'pdf')).rejects.toThrow(new ToolExecutionError('does not fit'));
+    await expect(run(tool, 'pdf')).rejects.toThrow(new ToolExecutionError('does not fit'));
+    expect(admitted).toEqual(['pdf', 'pdf']);
+  });
+
+  it('describes the tool for recovery without being able to execute it', async () => {
+    const set = await createSkillLoader({ home: HOME, fileSystem: fakeSkillFileSystem(files) }).load({ projectRoot: '/work/app', trusted: true });
+    const tool = set.recoveryTool();
+    expect(tool).toMatchObject({ name: 'activate_skill', sideEffect: 'read_only' });
+    expect(tool?.inputSchema).toMatchObject({ properties: { name: { enum: ['pdf', 'zip'] } } });
+    await expect(run(tool as AnyTool, 'pdf')).rejects.toThrow('never executes it');
   });
 
   it('reports a vanished file as a tool failure and allows a retry', async () => {

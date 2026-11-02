@@ -16,6 +16,7 @@ import { readRunLimits } from './limits.ts';
 import { decideAfterResponse, responsePending, resumeInFlight, runModelStep } from './model-step.ts';
 import { readPins } from './pins.ts';
 import type { RunPins } from './pins.ts';
+import { createSkillAdmission } from './skill-admission.ts';
 import { createTerminals } from './terminals.ts';
 import { settleCalls } from './tool-step.ts';
 import type { WorkerOptions } from './types.ts';
@@ -239,7 +240,8 @@ const drive = async (
   const systemPromptDigest = sha256Hex(systemPrompt);
   const env = tools.envFor(session);
   const skills = await options.skills.load(session);
-  const activationTool = skills.activationTool({ isActive: (name) => journal.state.activatedSkills.some((skill) => skill.name === name) });
+  const admit = createSkillAdmission(() => ctx);
+  const activationTool = skills.activationTool({ isActive: (name) => journal.state.activatedSkills.some((skill) => skill.name === name), admit });
   const recalled = options.memories.load(session);
   const toolSet = await tools.toolSet(run.id, {
     signal: control.signal,

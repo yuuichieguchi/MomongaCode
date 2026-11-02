@@ -1,5 +1,5 @@
-import { ContextOverflowError, PinnedOverflowError, PinnedRoomError, budgetFor, buildContext, measurePinned } from '@momonga/context';
-import type { BuildContextInput, BuildContextPorts, BuiltContext, CompactionPlan, ContextEviction, PinnedMeasure } from '@momonga/context';
+import { ContextOverflowError, PinnedOverflowError, PinnedRoomError, budgetFor, buildContext, measureLayers, measurePinned } from '@momonga/context';
+import type { ActivatedSkill, BuildContextInput, BuildContextPorts, BuiltContext, CompactionPlan, ContextEviction, PinnedMeasure } from '@momonga/context';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { compactionSummaryMessage, decodeCompactionSummary } from '@momonga/protocol';
 import type { CompactRequest, RunEventPayload } from '@momonga/protocol';
@@ -83,6 +83,11 @@ const portsOf = (ctx: ClaimContext): BuildContextPorts => ({
 });
 
 export const measurePinnedFor = (ctx: ClaimContext): Promise<PinnedMeasure> => measurePinned(contextInputOf(ctx, undefined, 0), portsOf(ctx));
+
+export const measureLayersWith = (ctx: ClaimContext, activatedSkills: readonly ActivatedSkill[]): Promise<void> => {
+  const input = contextInputOf(ctx, undefined, 0);
+  return measureLayers({ ...input, sources: { ...input.sources, activatedSkills } }, portsOf(ctx));
+};
 
 const buildOnce = async (ctx: ClaimContext, wrapUp: WrapUpReason | undefined, level: number): Promise<BuiltContext> => {
   const built = await buildContext(contextInputOf(ctx, wrapUp, level), portsOf(ctx));

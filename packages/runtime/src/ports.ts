@@ -68,7 +68,7 @@ export type RecoveryContext = { roots: readonly string[]; tmpDir: string; env: T
 export type ToolRuntimePort = {
   envFor(session: Session): ToolEnv;
   toolSet(runId: string, options: { signal: AbortSignal; env: ToolEnv; additionalTools?: readonly AnyTool[] }): Promise<ToolSet>;
-  recoveryToolSet(options: { signal: AbortSignal }): Promise<ToolSet>;
+  recoveryToolSet(options: { signal: AbortSignal; additionalTools?: readonly AnyTool[] }): Promise<ToolSet>;
   policyFor(session: Session, options: { env: ToolEnv; rules: readonly PermissionRule[]; readableDirectories?: readonly string[] }): Promise<ToolPolicy>;
   recoveryContextFor(session: Session, options: { env: ToolEnv }): Promise<RecoveryContext>;
   executor: ToolExecutor;

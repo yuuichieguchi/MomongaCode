@@ -8,4 +8,4 @@ export { createSkillLoader } from './loader.ts';
 export type { SkillLoaderOptions } from './loader.ts';
 export { renderCatalog } from './catalog.ts';
 export { SkillActivationError, UnknownSkillError } from './types.ts';
-export type { ActivationToolOptions, Skill, SkillContent, SkillLoadRequest, SkillLoader, SkillSet } from './types.ts';
+export type { ActivationToolOptions, Skill, SkillAdmission, SkillContent, SkillLoadRequest, SkillLoader, SkillSet } from './types.ts';

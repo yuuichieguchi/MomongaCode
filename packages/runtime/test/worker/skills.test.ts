@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { InputItem, RunEventPayload } from '@momonga/protocol';
 import { capabilitiesFor, makeEnv, textOf } from './harness.ts';
+import { seedStartedCalls } from './cancel-fixture.ts';
 import type { Env } from './harness.ts';
 import { assistantMessage, callsStep, textStep } from './scripts.ts';
 
@@ -186,6 +187,91 @@ describe('worker skills: activation', () => {
     const request = inputOf(env, 2);
     expect(request.filter((item) => textOf(item).includes(PDF_BODY))).toHaveLength(1);
     expect(developerTexts(request).some((text) => text.startsWith('Activated skill pdf:'))).toBe(true);
+  });
+});
+
+describe('worker skills: oversized skill', () => {
+  const OVERSIZED_BODY = 'Follow this rule exactly. '.repeat(2000);
+
+  it('refuses the activation with a tool failure, keeps the run going and leaves the session free of the skill', async () => {
+    const env = await makeEnv({ capabilities: capabilitiesFor(8000) });
+    writeSkill(projectSkills(env), 'huge', 'A skill larger than the window', OVERSIZED_BODY);
+    const first = env.enqueue('Use the huge skill');
+    env.gateway.script.push(activate('call_huge', 'huge'), textStep('Continuing without it.'), textStep('Next answer.'));
+
+    await env.runOnce(env.worker());
+
+    expect(env.run(first.id).status).toBe('COMPLETED');
+    const [refused] = env.ofType(first.id, 'tool.completed');
+    expect(refused).toMatchObject({ status: 'failed' });
+    expect(refused?.output).toContain('Skill huge was not activated');
+    expect(env.ofType(first.id, 'skill.activated')).toEqual([]);
+    expect(env.fold(first.id).activatedSkills).toEqual([]);
+
+    const second = env.enqueue('Another question');
+    await env.runOnce(env.worker());
+
+    expect(env.run(second.id).status).toBe('COMPLETED');
+    expect(env.fold(second.id).activatedSkills).toEqual([]);
+  });
+
+  it('admits a skill that fits and refuses the next one that no longer fits beside it', async () => {
+    const env = await makeEnv({ capabilities: capabilitiesFor(8000) });
+    writeSkill(projectSkills(env), 'first', 'Fits alone', 'Follow this rule exactly. '.repeat(500));
+    writeSkill(projectSkills(env), 'second', 'Fits alone but not beside the first', 'Follow this rule exactly. '.repeat(500));
+    const run = env.enqueue('Use both skills');
+    env.gateway.script.push(
+      callsStep([
+        { callId: 'call_first', name: 'activate_skill', args: { name: 'first' } },
+        { callId: 'call_second', name: 'activate_skill', args: { name: 'second' } },
+      ]),
+      textStep('Done.'),
+    );
+
+    await env.runOnce(env.worker());
+
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    const activated = env.ofType(run.id, 'skill.activated').map((event) => event.name);
+    expect(activated).toHaveLength(1);
+    const [loser] = ['first', 'second'].filter((name) => !activated.includes(name));
+    const outputs = env.ofType(run.id, 'tool.completed');
+    expect(outputs.filter((event) => event.status === 'failed').map((event) => event.output)).toEqual([expect.stringContaining(`Skill ${loser} was not activated`)]);
+    expect(outputs.filter((event) => event.status === 'completed')).toHaveLength(1);
+  });
+});
+
+describe('worker skills: cancelling an activation', () => {
+  it('settles a started activation that never completed as cancelled instead of abandoning it with unknown effects', async () => {
+    const env = await makeEnv();
+    writeSkill(projectSkills(env), 'pdf', 'Extract PDF text', PDF_BODY);
+    const { run } = seedStartedCalls(env, [{ callId: 'call_skill', name: 'activate_skill', kind: 'read', args: { name: 'pdf' } }]);
+
+    await env.runOnce(env.worker());
+
+    expect(env.run(run.id).status).toBe('CANCELLED');
+    expect(env.portCalls.abandon).toEqual([]);
+    expect(env.ofType(run.id, 'tool.reconciled')).toEqual([]);
+    expect(env.ofType(run.id, 'tool.completed')).toEqual([expect.objectContaining({ callId: 'call_skill', status: 'failed', output: 'activate_skill was cancelled' })]);
+    expect(env.ofType(run.id, 'skill.activated')).toEqual([]);
+  });
+
+  it('records the activation of a call that completed in the executor before its result reached the journal', async () => {
+    const env = await makeEnv();
+    writeSkill(projectSkills(env), 'pdf', 'Extract PDF text', PDF_BODY);
+    const { run, keys } = seedStartedCalls(env, [{ callId: 'call_skill', name: 'activate_skill', kind: 'read', args: { name: 'pdf' } }]);
+    const content = `<skill_content name="pdf">\n${PDF_BODY}\n</skill_content>`;
+    env.store.idempotency.complete(keys['call_skill'] as string, {
+      callId: 'call_skill',
+      kind: 'result',
+      result: { status: 'completed', output: content, skill: { name: 'pdf', content } },
+    });
+
+    await env.runOnce(env.worker());
+
+    expect(env.run(run.id).status).toBe('CANCELLED');
+    expect(env.portCalls.abandon).toEqual([]);
+    expect(env.ofType(run.id, 'tool.completed')).toEqual([expect.objectContaining({ callId: 'call_skill', status: 'completed', output: content })]);
+    expect(env.ofType(run.id, 'skill.activated')).toEqual([expect.objectContaining({ name: 'pdf', content })]);
   });
 });
 

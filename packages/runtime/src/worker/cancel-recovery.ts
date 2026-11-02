@@ -45,7 +45,11 @@ export const reconcileStartedCalls = async ({ options, run, session, journal, co
   try {
     const { tools } = options;
     const env = tools.envFor(session);
-    const toolSet = await tools.recoveryToolSet({ signal: control.recoverySignal });
+    const recoveryTool = (await options.skills.load(session)).recoveryTool();
+    const toolSet = await tools.recoveryToolSet({
+      signal: control.recoverySignal,
+      ...(recoveryTool === undefined ? {} : { additionalTools: [recoveryTool] }),
+    });
     const recoverable = started.filter((call) => toolSet.get(call.name) !== undefined);
     if (recoverable.length > 0) {
       const context = await tools.recoveryContextFor(session, { env });
