@@ -66,6 +66,8 @@ export { createChildRuns, finalTextOf } from './process/child-runs.ts';
 export type { ChildRunsOptions } from './process/child-runs.ts';
 export { createBackgroundJobs } from './process/background-jobs.ts';
 export type { BackgroundJobRegistry, BackgroundJobsOptions } from './process/background-jobs.ts';
+export { createNodeJobMarkerFiles } from './process/job-marker-files.ts';
+export type { JobMarkerFiles } from './process/job-marker-files.ts';
 export { createSkillsPort } from './process/skills-port.ts';
 export type { SkillsPortOptions } from './process/skills-port.ts';
 export { createToolRuntime } from './process/tool-runtime.ts';

@@ -2,13 +2,13 @@ import { defineTool, ToolExecutionError } from '@momonga/tools';
 import type { AnyTool } from '@momonga/tools';
 import { AGENT_TOOL_NAME, SPAWN_TOOL_TIMEOUT_MS } from './constants.ts';
 import { ChildRunError } from './types.ts';
-import type { AgentDefinition, ChildRunOutcome, ChildRuns } from './types.ts';
+import type { AgentDefinition, ChildRunOutcome, ChildRunSpawner } from './types.ts';
 
 type AgentInput = { description: string; prompt: string; subagent_type: string };
 
 const oneLine = (value: string): string => value.replace(/\s+/g, ' ');
 
-const finishedOutput = (agent: string, outcome: Extract<ChildRunOutcome, { state: 'finished' }>): { status: 'completed' | 'failed'; output: string } => {
+export const childResultOf = (agent: string, outcome: Extract<ChildRunOutcome, { state: 'finished' }>): { status: 'completed' | 'failed'; output: string } => {
   const lastMessage = outcome.text === '' ? '' : `\nIts last message:\n${outcome.text}`;
   switch (outcome.status) {
     case 'COMPLETED':
@@ -22,7 +22,7 @@ const finishedOutput = (agent: string, outcome: Extract<ChildRunOutcome, { state
   }
 };
 
-export const createAgentTool = (agents: readonly AgentDefinition[], runs: ChildRuns): AnyTool => {
+export const createAgentTool = (agents: readonly AgentDefinition[], runs: ChildRunSpawner): AnyTool => {
   const byName = new Map(agents.map((agent) => [agent.name, agent]));
   return defineTool<AgentInput>({
     name: AGENT_TOOL_NAME,
@@ -59,7 +59,7 @@ export const createAgentTool = (agents: readonly AgentDefinition[], runs: ChildR
       if (outcome.state === 'running') {
         return { status: 'pending', awaits: { kind: 'run', runId: outcome.runId, sessionId: outcome.sessionId, agent: agent.name }, wakeAt: ctx.deadlineAt };
       }
-      return finishedOutput(agent.name, outcome);
+      return childResultOf(agent.name, outcome);
     },
     reconcile: async () => ({ outcome: 'not_applied', output: '' }),
   });

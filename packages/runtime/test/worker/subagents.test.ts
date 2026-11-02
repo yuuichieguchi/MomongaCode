@@ -5,7 +5,7 @@ import { createNodeSkillFileSystem } from '@momonga/skills';
 import { createAgentsPort, createChildRuns } from '@momonga/runtime';
 import type { AgentsPort } from '@momonga/runtime';
 import { usageOf } from '@momonga/testkit';
-import { makeEnv, textOf } from './harness.ts';
+import { LEASE_MS, makeEnv, textOf } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 
@@ -189,6 +189,29 @@ describe('worker subagents', () => {
     expect(env.ofType(parent.id, 'tool.reconciled')).toEqual([]);
     const key = env.fold(parent.id).pendingCalls[Object.keys(env.fold(parent.id).pendingCalls)[0] as string]?.idemKey ?? '';
     expect(env.store.idempotency.get(key)).toMatchObject({ s: 'COMPLETED' });
+  });
+
+  it('hands the real result of a child that finished before the cancel to the parent instead of a cancelled statement', async () => {
+    const env = await makeEnv();
+    writeAgent(env, 'reviewer');
+    const worker = env.worker('w1', { agents: agentsPortOf(env) });
+    const parent = env.enqueue('Review');
+    env.gateway.script.push(delegate('call-a'), textStep('child verdict: ship it'));
+    await env.runOnce(worker);
+    await env.runOnce(worker);
+    const [child] = env.store.listChildRuns(parent.id);
+    expect(env.run(child?.id ?? '').status).toBe('COMPLETED');
+    expect(env.run(parent.id).status).toBe('QUEUED');
+    expect(env.store.claim('crashing-worker')?.runId).toBe(parent.id);
+    env.clock.advance(LEASE_MS + 1);
+    expect(env.cancel(parent.id).status).toBe('CANCELLING');
+
+    await env.runOnce(worker);
+
+    expect(env.run(parent.id).status).toBe('CANCELLED');
+    expect(env.ofType(parent.id, 'tool.completed')).toMatchObject([{ status: 'completed', output: 'child verdict: ship it' }]);
+    const key = env.fold(parent.id).pendingCalls[Object.keys(env.fold(parent.id).pendingCalls)[0] as string]?.idemKey ?? '';
+    expect(env.store.idempotency.get(key)).toMatchObject({ s: 'COMPLETED', result: { kind: 'result', result: { status: 'completed', output: 'child verdict: ship it' } } });
   });
 
   it('stops the parent and its child at their shared deadline while the parent waits', async () => {

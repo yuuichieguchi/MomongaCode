@@ -6,7 +6,7 @@ import type { SandboxExit, SandboxedProcess } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { Run, RuntimeStore } from '@momonga/store';
 import { createFakeClock, createFakeTimers } from '@momonga/testkit';
-import { createBackgroundJobs } from '@momonga/runtime';
+import { createBackgroundJobs, createNodeJobMarkerFiles } from '@momonga/runtime';
 import type { BackgroundJobRegistry } from '@momonga/runtime';
 import { createJobOutput } from '../../src/process/job-output.ts';
 
@@ -91,6 +91,7 @@ const setup = (probes: Parameters<typeof createBackgroundJobs>[0]['probes'] = {}
     clock,
     timers,
     markerDir,
+    markerFiles: createNodeJobMarkerFiles(),
     killGraceMs: 10,
     reapTiming: { now: () => clock.now(), sleep: async () => undefined },
     onWarning: (message) => warnings.push(message),
@@ -238,6 +239,33 @@ describe('background jobs', () => {
     await t.settled(jobId);
     expect(t.reconciled).toEqual([{ pgid: 4000 }]);
     expect((await t.jobs.read(t.run.id, jobId, {})).output).toContain('Terminated 1 process(es) that outlived the job.');
+  });
+
+  it.each([
+    ['looking up the holders of the marker', { findHolders: async () => { throw new Error('lsof is unavailable'); } }, 'lsof is unavailable'],
+    ['storing the output', {}, 'the blob store is full'],
+  ])('finishes the job as unknown, reports the error and frees its slot when %s fails', async (_label, probes, message) => {
+    const t = setup(probes);
+    if (message === 'the blob store is full') {
+      t.store.blobs.put = () => {
+        throw new Error(message);
+      };
+    }
+    const { jobId } = await t.start('call-1');
+    const key = t.store.jobs.get(jobId)?.idemKey ?? '';
+    const finalized = t.settled(jobId);
+    await t.spawned[0]?.stdoutStream.write('some output\n');
+    t.spawned[0]?.exit({ code: 0, signal: null });
+
+    await expect(finalized).rejects.toThrow(message);
+
+    expect(t.reports).toHaveLength(1);
+    expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'unknown' });
+    expect(t.store.idempotency.get(key)).toMatchObject({ s: 'COMPLETED' });
+    expect(t.store.readRunEvents(t.run.id, 0, 100).filter((event) => event.type === 'job.finished')).toMatchObject([{ jobId, status: 'unknown' }]);
+    expect(t.store.jobs.listForSession(t.run.sessionId).filter((job) => job.status === 'running')).toEqual([]);
+    expect(t.jobs.liveKeys().size).toBe(0);
+    expect(fs.existsSync(path.join(t.markerDir, key))).toBe(false);
   });
 
   it('refuses a job id that belongs to another session tree', async () => {

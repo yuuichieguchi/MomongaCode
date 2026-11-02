@@ -34,12 +34,14 @@ export type ChildRunOutcome =
 
 export type ChildRunRequest = { parentRunId: string; parentCallId: string; agent: AgentDefinition; prompt: string };
 
-export type ChildRuns = { spawn(request: ChildRunRequest): Promise<ChildRunOutcome> };
+export type ChildRunSpawner = { spawn(request: ChildRunRequest): Promise<ChildRunOutcome> };
+
+export type ChildRuns = ChildRunSpawner & { outcomeOf(runId: string): ChildRunOutcome };
 
 export type AgentSet = {
   agents: readonly AgentDefinition[];
   warnings: readonly string[];
-  tool(runs: ChildRuns): AnyTool | undefined;
+  tool(runs: ChildRunSpawner): AnyTool | undefined;
 };
 
 export type AgentLoadRequest = { projectRoot: string; trusted: boolean };

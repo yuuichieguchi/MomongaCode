@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { canonicalJson, findHolders, reapMarkedProcesses, reconcileProcessGroup, sha256Hex } from '@momonga/foundation';
 import type { Clock, ReapTiming } from '@momonga/foundation';
@@ -11,6 +10,7 @@ import type { ServiceTimers } from '../service/timers.ts';
 import { asError } from './as-error.ts';
 import { JOB_ID_HEX_CHARS, JOB_IDEMPOTENCY_TTL_MS, JOB_OUTPUT_WINDOW_BYTES, JOB_STREAM_DRAIN_MS, MAX_RUNNING_JOBS_PER_SESSION } from './constants.ts';
 import { createJobOutput } from './job-output.ts';
+import type { JobMarkerFiles } from './job-marker-files.ts';
 import type { JobOutput } from './job-output.ts';
 
 export type BackgroundJobsOptions = {
@@ -18,6 +18,7 @@ export type BackgroundJobsOptions = {
   clock: Clock;
   timers: ServiceTimers;
   markerDir: string;
+  markerFiles: JobMarkerFiles;
   killGraceMs: number;
   reapTiming: ReapTiming;
   onWarning(message: string): void;
@@ -57,7 +58,7 @@ const matching = (text: string, filter: RegExp): string =>
     .join('\n');
 
 export const createBackgroundJobs = (options: BackgroundJobsOptions): BackgroundJobRegistry => {
-  const { store, clock, timers, markerDir, killGraceMs, reapTiming, onWarning, report } = options;
+  const { store, clock, timers, markerDir, markerFiles, killGraceMs, reapTiming, onWarning, report } = options;
   const probes: ProcessProbes = { findHolders, reconcileProcessGroup, reapMarkedProcesses, ...options.probes };
   const live = new Map<string, LiveJob>();
 
@@ -89,6 +90,11 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
   const finalize = async (entry: LiveJob, process: SandboxedProcess, pumps: Promise<void>, timer: unknown): Promise<void> => {
     const { job } = entry;
     const marker = path.join(markerDir, job.idemKey);
+    const recordUnknown = (): void => {
+      if (store.jobs.get(job.id)?.status !== 'running') return;
+      store.jobs.finish(job.id, { status: 'unknown' });
+      settleRecord(job, { job: job.id, status: 'unknown' });
+    };
     try {
       const exit = await process.exited;
       timers.clearTimeout(timer);
@@ -108,9 +114,12 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       };
       store.jobs.finish(job.id, result);
       settleRecord(job, { job: job.id, status: result.status });
+    } catch (error) {
+      recordUnknown();
+      throw error;
     } finally {
       timers.clearTimeout(timer);
-      fs.rmSync(marker, { force: true });
+      markerFiles.remove(marker);
       live.delete(job.id);
     }
   };
@@ -147,14 +156,13 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       command: request.command,
     });
     const marker = path.join(markerDir, idemKey);
-    fs.rmSync(marker, { force: true });
-    fs.closeSync(fs.openSync(marker, 'wx', 0o600));
+    markerFiles.create(marker);
     const controller = new AbortController();
     let process: SandboxedProcess;
     try {
       process = request.spawn(marker, controller.signal);
     } catch (error) {
-      fs.rmSync(marker, { force: true });
+      markerFiles.remove(marker);
       store.jobs.finish(job.id, { status: 'unknown' });
       settleRecord(job, { job: job.id, status: 'unknown' });
       throw error;

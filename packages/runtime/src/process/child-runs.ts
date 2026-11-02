@@ -6,7 +6,7 @@ import { foldRunState, initialRunState } from '@momonga/store';
 import type { Run, RuntimeStore } from '@momonga/store';
 
 export type ChildRunsOptions = {
-  store: Pick<RuntimeStore, 'createChildRun' | 'listChildRuns' | 'load'>;
+  store: Pick<RuntimeStore, 'createChildRun' | 'getRun' | 'listChildRuns' | 'load'>;
   modelAliases(): Promise<readonly string[]>;
 };
 
@@ -50,6 +50,11 @@ export const createChildRuns = ({ store, modelAliases }: ChildRunsOptions): Chil
   };
 
   return {
+    outcomeOf: (runId) => {
+      const run = store.getRun(runId);
+      if (run === undefined) throw new Error(`unknown child run ${runId}`);
+      return outcomeOf(run);
+    },
     spawn: async ({ parentRunId, parentCallId, agent, prompt }) => {
       const known = store.listChildRuns(parentRunId).find((child) => child.parentCallId === parentCallId);
       if (known !== undefined) return outcomeOf(known);
