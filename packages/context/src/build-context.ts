@@ -1,11 +1,12 @@
 import { SUMMARY_PROMPT_TOKENS, findDanglingOutput, findUnpairedCalls, summaryItemTokensFor, summaryTokenCapFor } from '@momonga/protocol';
 import type { FunctionCallOutputInputItem, FunctionTool, InputItem, MessageInputItem } from '@momonga/protocol';
-import { MIN_ROOM_TOKENS, budgetFor, inputCeilingFor, itemCapFor, summaryInputCeilingFor } from './budget.ts';
+import { MIN_ROOM_TOKENS, budgetFor, inputCeilingFor, itemCapFor, memoryBudgetFor, summaryInputCeilingFor } from './budget.ts';
 import { chainTail, digestChain, frozenItem } from './digests.ts';
 import { ContextOverflowError, PinnedOverflowError, PinnedRoomError, PrefixChangedError } from './errors.ts';
 import { discoverInstructions } from './instructions.ts';
 import type { DiscoveredInstructions } from './instructions.ts';
 import { DEFAULT_KEEP_RECENT_STEPS, DEFAULT_KEEP_RECENT_TURNS, positiveInteger, protectionRungsOf, retainedHistoryOf, shapeOf } from './levels.ts';
+import { renderMemories } from './memory.ts';
 import { heldSkillOf, pointToHeldSkill } from './skill-output.ts';
 import { headAndTail, omittedMarker, outputTextOf, truncatedMarker, withOutput } from './tool-output.ts';
 import type {
@@ -157,7 +158,13 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
     role: 'developer',
     content: `Activated skill ${skill.name}:\n${skill.content}`,
   }));
-  const layersOf = (): InputItem[] => [...pinnedLayers, ...nested.map((file) => file.message), ...skillMessages];
+  let memoryMessage: MessageInputItem | undefined;
+  const layersOf = (): InputItem[] => [
+    ...pinnedLayers,
+    ...(memoryMessage === undefined ? [] : [memoryMessage]),
+    ...nested.map((file) => file.message),
+    ...skillMessages,
+  ];
   const floorOf = (layerItems: readonly InputItem[]): InputItem[] => [...layerItems, task];
   const exceeds = (counted: MeterCount): boolean => !fits(counted) || counted.inputTokens > ceiling;
   let layers = layersOf();
@@ -178,6 +185,43 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
       ceiling,
       breakdown: await breakdownOf(input, ports, systemMessage, layers.slice(1), task),
     });
+  }
+
+  const memoryCandidates = sources.memories ?? [];
+  let memoryCount = 0;
+  if (memoryCandidates.length > 0) {
+    const memoryBudget = memoryBudgetFor(room);
+    const baseTokens = layersCounted.inputTokens;
+    const fitsWith = async (count: number): Promise<boolean> => {
+      memoryMessage = {
+        type: 'message',
+        role: 'user',
+        content: renderMemories(memoryCandidates.slice(0, count), memoryCandidates.length - count),
+      };
+      const counted = await countInput(floorOf(layersOf()));
+      return !exceeds(counted) && counted.inputTokens - baseTokens <= memoryBudget;
+    };
+    if (await fitsWith(0)) {
+      let low = 0;
+      let high = memoryCandidates.length;
+      while (low < high) {
+        const middle = Math.ceil((low + high) / 2);
+        if (await fitsWith(middle)) low = middle;
+        else high = middle - 1;
+      }
+      memoryCount = low;
+      await fitsWith(memoryCount);
+    } else {
+      memoryMessage = undefined;
+    }
+    if (memoryCount < memoryCandidates.length) {
+      notices.push({
+        code: 'memories_dropped',
+        message: `${memoryCandidates.length - memoryCount} of ${memoryCandidates.length} saved memories were left out of the context because of its budget`,
+      });
+    }
+    layers = layersOf();
+    layersCounted = await countInput(floorOf(layers));
   }
   const floorTokens = layersCounted.inputTokens;
 
@@ -450,5 +494,6 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
     loadedInstructions: [discovered.user, discovered.root, ...nested]
       .filter((file) => file !== undefined)
       .map((file) => file.instruction),
+    loadedMemoryIds: memoryCandidates.slice(0, memoryCount).map((memory) => memory.id),
   };
 };

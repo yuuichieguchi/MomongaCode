@@ -240,7 +240,12 @@ const drive = async (
   const env = tools.envFor(session);
   const skills = await options.skills.load(session);
   const activationTool = skills.activationTool({ isActive: (name) => journal.state.activatedSkills.some((skill) => skill.name === name) });
-  const toolSet = await tools.toolSet(run.id, { signal: control.signal, env, additionalTools: activationTool === undefined ? [] : [activationTool] });
+  const recalled = options.memories.load(session);
+  const toolSet = await tools.toolSet(run.id, {
+    signal: control.signal,
+    env,
+    additionalTools: [...(activationTool === undefined ? [] : [activationTool]), ...recalled.tools],
+  });
   const recorded = journal.state.pins;
   const pins: RunPins =
     recorded === undefined
@@ -281,6 +286,8 @@ const drive = async (
     limits,
     toolSet,
     skills,
+    recalled,
+    usedMemoryIds: new Set<string>(),
     env,
     functionTools: toolSet.forModel({ mode: session.permissionMode, rules }),
     systemPrompt,

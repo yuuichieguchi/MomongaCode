@@ -56,6 +56,7 @@ export const contextInputOf = (ctx: ClaimContext, wrapUp: WrapUpReason | undefin
       taskSeq: state.taskSeq,
       ...(ctx.skills.catalog === undefined ? {} : { skillCatalog: ctx.skills.catalog }),
       activatedSkills: state.activatedSkills,
+      memories: ctx.recalled.memories,
       history: state.history
         .filter((entry) => entry.seq !== state.taskSeq)
         .map((entry) => ({ seq: entry.seq, item: entry.item, ...(entry.handle === undefined ? {} : { handle: entry.handle }) })),
@@ -143,6 +144,11 @@ const recordContextFacts = (ctx: ClaimContext, built: BuiltContext): void => {
     payloads.push({ type: 'instructions.loaded', path: instruction.path, content: instruction.text });
   }
   if (payloads.length > 0) ctx.journal.append(payloads);
+  const unmarked = built.loadedMemoryIds.filter((id) => !ctx.usedMemoryIds.has(id));
+  if (unmarked.length > 0) {
+    ctx.recalled.markUsed(unmarked);
+    for (const id of unmarked) ctx.usedMemoryIds.add(id);
+  }
 };
 
 const recordEvictions = (ctx: ClaimContext, evictions: readonly ContextEviction[]): void => {

@@ -32,8 +32,10 @@ import { chatCompletions } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
 const PLANNED_CASE_TIMEOUT_MS = 4 * E2E_TEST_TIMEOUT_MS;
-const LEAN_DENY = ['Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob'] as const;
-const CONSTRAINED_DENY = ['Read', 'Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob'] as const;
+const MEMORY_DENY = ['MemorySave', 'MemorySearch'] as const;
+const FULL_DENY = [...MEMORY_DENY] as const;
+const LEAN_DENY = ['Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob', ...MEMORY_DENY] as const;
+const CONSTRAINED_DENY = ['Read', 'Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob', ...MEMORY_DENY] as const;
 const FULL_LINE_CHARS = [90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200] as const;
 const EXPECTED_OUTPUT_RESERVE = 1024;
 const EXPECTED_CEILING_AT_4096 = 2300;
@@ -45,7 +47,7 @@ const PLANNED_CASES: readonly PlannedCase[] = [
   {
     id: 'a-compaction',
     title: titleOf('a-compaction'),
-    spec: { name: 'a-compaction', toolCalling: 'native', deny: [], grid: FULL_LINE_CHARS.map((lineChars) => ({ tool: 'Read', lineChars })), probeFillers: 10 },
+    spec: { name: 'a-compaction', toolCalling: 'native', deny: FULL_DENY, grid: FULL_LINE_CHARS.map((lineChars) => ({ tool: 'Read', lineChars })), probeFillers: 10 },
   },
   {
     id: 'a-compaction-lean',

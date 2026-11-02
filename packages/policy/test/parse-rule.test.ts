@@ -15,6 +15,8 @@ describe('parseRule', () => {
     ['Grep(/docs/**)', 'Grep', '/docs/**'],
     ['ReadOutput', 'ReadOutput', undefined],
     ['UpdatePlan', 'UpdatePlan', undefined],
+    ['MemorySave', 'MemorySave', undefined],
+    ['MemorySearch', 'MemorySearch', undefined],
     ['mcp__github', 'mcp__github', undefined],
     ['mcp__github__create_issue', 'mcp__github__create_issue', undefined],
   ])('parses %s', (text, tool, specifier) => {
@@ -27,7 +29,7 @@ describe('parseRule', () => {
     expect(rule.source).toBe('/p/.momonga/settings.json');
   });
 
-  it.each(['', 'Bash(unclosed', 'Bash()', 'Frobnicate', 'Read(a))', 'mcp__srv__tool(x)', 'mcp__bad name', 'bash(ls)'])(
+  it.each(['', 'Bash(unclosed', 'Bash()', 'Frobnicate', 'Read(a))', 'mcp__srv__tool(x)', 'mcp__bad name', 'bash(ls)', 'MemorySave(notes)'])(
     'rejects %j naming the rule text',
     (text) => {
       expect(() => parseRule(text, OPTIONS)).toThrow(RuleParseError);

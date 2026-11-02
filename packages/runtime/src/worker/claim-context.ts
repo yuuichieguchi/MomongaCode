@@ -3,7 +3,7 @@ import type { Capabilities, FunctionTool } from '@momonga/protocol';
 import type { SkillSet } from '@momonga/skills';
 import type { Claim, Run, StatusPatch } from '@momonga/store';
 import type { ToolSet } from '@momonga/tools';
-import type { ToolEnv, TraceSpan } from '../ports.ts';
+import type { MemorySet, ToolEnv, TraceSpan } from '../ports.ts';
 import type { ClaimControl } from './claim-control.ts';
 import type { Journal } from './journal.ts';
 import type { RunLimits } from './limits.ts';
@@ -27,6 +27,8 @@ export type ClaimContext = {
   limits: RunLimits;
   toolSet: ToolSet;
   skills: SkillSet;
+  recalled: MemorySet;
+  usedMemoryIds: Set<string>;
   env: ToolEnv;
   functionTools: FunctionTool[];
   systemPrompt: string;

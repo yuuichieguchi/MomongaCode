@@ -34,6 +34,9 @@ export type {
   SkillView,
   SkillsResponse,
 } from './run-api.ts';
+export { MEMORY_SCOPES } from './memory.ts';
+export type { MemoriesResponse, MemoryResponse, MemoryScope, MemorySource, MemoryView } from './memory.ts';
+export { escapeXmlAttribute, escapeXmlText } from './xml.ts';
 export { SKILL_CONTENT_CLOSE_TAG, skillContentOpenTag } from './skill-content.ts';
 export { AUTO_MODE_UNAVAILABLE, isUnavailableMode } from './auto-mode.ts';
 export { APPROVAL_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS } from './run-types.ts';

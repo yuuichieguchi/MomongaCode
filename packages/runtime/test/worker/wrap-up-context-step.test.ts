@@ -46,6 +46,8 @@ const contextFor = (state: RunState) => {
     systemPrompt: SYSTEM_PROMPT,
     functionTools: [ECHO_TOOL],
     skills: { catalog: undefined },
+    recalled: { memories: [], tools: [], markUsed: () => undefined },
+    usedMemoryIds: new Set<string>(),
     journal: {
       state,
       append: (payloads: readonly RunEventPayload[]) => {

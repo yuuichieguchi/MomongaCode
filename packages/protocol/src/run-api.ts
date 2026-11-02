@@ -1,4 +1,5 @@
 import { APPROVAL_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TOOL_KINDS } from './run-types.ts';
+import { MEMORY_SCOPES } from './memory.ts';
 import type { RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent } from './run-types.ts';
 
 const DRAFT_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
@@ -230,6 +231,24 @@ const trustView = closed(
   ['path', 'decision'],
 );
 
+const memoryScope = enumOf(MEMORY_SCOPES);
+
+const memoryView = closed(
+  {
+    id: string,
+    scope: memoryScope,
+    project: nullable(string),
+    text: string,
+    source: closed(
+      { sessionId: string, runId: string, step: nonNegativeInteger, callId: string, seq: nonNegativeInteger },
+      ['sessionId', 'runId', 'step', 'callId', 'seq'],
+    ),
+    createdAt: integer,
+    lastUsedAt: integer,
+  },
+  ['id', 'scope', 'project', 'text', 'source', 'createdAt', 'lastUsedAt'],
+);
+
 export type SkillScope = (typeof SKILL_SCOPES)[number];
 
 export type SkillView = { name: string; description: string; scope: SkillScope; location: string };
@@ -438,6 +457,9 @@ export const RUN_API_SCHEMAS = {
       ['runId', 'summary', 'spans'],
     ),
   ),
+  MemoryView: root(memoryView),
+  MemoriesResponse: root(closed({ memories: { type: 'array', items: memoryView } }, ['memories'])),
+  MemoryResponse: root(closed({ memory: memoryView }, ['memory'])),
   ErrorBody: root(
     closed({ error: closed({ type: string, code: string, message: string, param: string }, ['type', 'code', 'message']) }, ['error']),
   ),

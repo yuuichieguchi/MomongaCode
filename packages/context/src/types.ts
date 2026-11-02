@@ -5,6 +5,7 @@ import type {
   CountTokensResult,
   FunctionTool,
   InputItem,
+  MemoryView,
   MessageInputItem,
 } from '@momonga/protocol';
 
@@ -33,6 +34,7 @@ export type ContextSources = {
   taskSeq: number;
   skillCatalog?: string;
   activatedSkills: readonly ActivatedSkill[];
+  memories?: readonly DeepReadonly<MemoryView>[];
   history: readonly HistoryItem[];
   summary?: ContextSummary;
 };
@@ -128,6 +130,7 @@ export type NoticeCode =
   | 'instructions_outside_project'
   | 'nested_instructions_untrusted'
   | 'instructions_dropped'
+  | 'memories_dropped'
   | 'recent_turns_shrunk'
   | 'recent_steps_shrunk';
 
@@ -168,4 +171,5 @@ export type BuiltContext = {
   compaction?: CompactionPlan;
   notices: ContextNotice[];
   loadedInstructions: LoadedInstruction[];
+  loadedMemoryIds: string[];
 };

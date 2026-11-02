@@ -171,8 +171,8 @@ export const expectSchema = (name: string, value: unknown): void => {
   if (!valid) throw new Error(`${name} schema rejected ${JSON.stringify(value)}: ${ajv.errorsText(validate.errors)}`);
 };
 
-const VIEW_KEYS: Record<string, string> = { session: 'SessionView', run: 'RunView', approval: 'ApprovalView', trust: 'TrustView' };
-const LIST_KEYS: Record<string, string> = { sessions: 'SessionView', runs: 'RunView', approvals: 'ApprovalView' };
+const VIEW_KEYS: Record<string, string> = { session: 'SessionView', run: 'RunView', approval: 'ApprovalView', trust: 'TrustView', memory: 'MemoryView' };
+const LIST_KEYS: Record<string, string> = { sessions: 'SessionView', runs: 'RunView', approvals: 'ApprovalView', memories: 'MemoryView' };
 
 export const validateJsonBody = (status: number, body: unknown): void => {
   if (body === undefined) return;
@@ -682,6 +682,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
       gateway,
       settings,
       skills: diskSkillsPort(env.layout.home),
+      memories: runtime.createMemoryPort({ store: env.store, settings }),
       tools,
       tracer,
       clock: env.clock,

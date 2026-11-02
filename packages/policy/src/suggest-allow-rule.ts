@@ -37,6 +37,7 @@ export const suggestAllowRule = (
       return suggestForPath(tool, subject, cwd, canonicalise);
     case 'mcp':
       return `mcp__${subject.server}__${subject.tool}`;
+    case 'memory':
     case 'none':
       return tool.name;
   }

@@ -9,6 +9,8 @@ export type {
   Clock,
   GatewayCallOptions,
   GatewayPort,
+  MemoryPort,
+  MemorySet,
   SettingsPort,
   SkillsPort,
   ToolEnv,
@@ -52,6 +54,8 @@ export { createSettingsComposition } from './process/settings-port.ts';
 export type { SettingsComposition, SettingsCompositionOptions, UserSnapshot } from './process/settings-port.ts';
 export { createPolicyFor, createRecoveryContextFor } from './process/tool-policy.ts';
 export type { PolicyForOptions } from './process/tool-policy.ts';
+export { createMemoryPort } from './process/memory-port.ts';
+export type { MemoryPortOptions } from './process/memory-port.ts';
 export { createSkillsPort } from './process/skills-port.ts';
 export type { SkillsPortOptions } from './process/skills-port.ts';
 export { createToolRuntime } from './process/tool-runtime.ts';

@@ -20,6 +20,9 @@ const SCHEMA_NAMES = [
   'TrustResponse',
   'PutTrustRequest',
   'SkillsResponse',
+  'MemoryView',
+  'MemoriesResponse',
+  'MemoryResponse',
 ] as const;
 
 type SchemaName = (typeof SCHEMA_NAMES)[number];
@@ -477,5 +480,35 @@ describe('PublicRunEvent projection', () => {
 
   it('rejects an unknown event type', () => {
     expect(accepts('PublicRunEvent', { ...RUN_ENVELOPE, type: 'made.up' })).toBe(false);
+  });
+});
+
+describe('memory schemas', () => {
+  const view = {
+    id: 'mem-1',
+    scope: 'project',
+    project: '/work/a',
+    text: 'tests live in test/',
+    source: { sessionId: 's1', runId: 'r1', step: 2, callId: 'c1', seq: 5 },
+    createdAt: 1_800_000_000_000,
+    lastUsedAt: 1_800_000_001_000,
+  };
+
+  it('accepts a project and a user memory and rejects missing provenance, an unknown scope and extras', () => {
+    expect(accepts('MemoryView', view)).toBe(true);
+    expect(accepts('MemoryView', { ...view, scope: 'user', project: null })).toBe(true);
+    expect(accepts('MemoryView', { ...view, scope: 'team' })).toBe(false);
+    expect(accepts('MemoryView', { ...view, source: { ...view.source, seq: undefined } })).toBe(false);
+    expect(accepts('MemoryView', { ...view, extra: 1 })).toBe(false);
+    const { lastUsedAt: _lastUsedAt, ...withoutLastUsed } = view;
+    expect(accepts('MemoryView', withoutLastUsed)).toBe(false);
+  });
+
+  it('wraps views in the list and item envelopes', () => {
+    expect(accepts('MemoriesResponse', { memories: [view, view] })).toBe(true);
+    expect(accepts('MemoriesResponse', { memories: [] })).toBe(true);
+    expect(accepts('MemoriesResponse', { memories: [{ ...view, scope: 'x' }] })).toBe(false);
+    expect(accepts('MemoryResponse', { memory: view })).toBe(true);
+    expect(accepts('MemoryResponse', { memory: view, extra: 1 })).toBe(false);
   });
 });
