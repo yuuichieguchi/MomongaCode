@@ -9,6 +9,8 @@ import type { ResponsesService } from '../core/responses-service.ts';
 import type { Services } from '../core/services.ts';
 import type { StoredResponse } from '../core/store.ts';
 import { isRecord } from '@momonga/foundation';
+import { createInboundQueue } from './inbound-queue.ts';
+import type { InboundQueue } from './inbound-queue.ts';
 import type { RequestTracker } from './tracker.ts';
 
 export const RESPONSES_WEBSOCKET_PATH = '/v1/responses';
@@ -86,8 +88,7 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
     private readonly socket: WebSocket;
     private readonly deadlineMs: string | undefined;
     private readonly state = createConnectionResponses();
-    private readonly queue: Array<{ text: string; bytes: number }> = [];
-    private queuedBytes = 0;
+    private readonly queue: InboundQueue;
     private readonly lifetime = new AbortController();
     private limitTimer: unknown;
     private draining = false;
@@ -97,6 +98,7 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
     constructor(socket: WebSocket, deadlineMs: string | undefined) {
       this.socket = socket;
       this.deadlineMs = deadlineMs;
+      this.queue = createInboundQueue(socket, services.config.limits.maxBodyBytes);
       connections.add(this);
       this.limitTimer = services.timers.setTimeout(() => {
         this.expire().catch((error: unknown) => {
@@ -128,27 +130,14 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
 
     private receive(data: RawData): void {
       if (this.closing) return;
-      const text = data.toString();
-      const bytes = Buffer.byteLength(text);
-      this.queue.push({ text, bytes });
-      this.queuedBytes += bytes;
-      if (this.queuedBytes >= services.config.limits.maxBodyBytes) this.socket.pause();
+      this.queue.push(data.toString());
       if (!this.draining) void this.drain();
-    }
-
-    private dequeue(): string | undefined {
-      const next = this.queue.shift();
-      if (next === undefined) return undefined;
-      this.queuedBytes -= next.bytes;
-      if (this.queuedBytes < services.config.limits.maxBodyBytes && this.socket.isPaused) this.socket.resume();
-      return next.text;
     }
 
     private async expire(): Promise<void> {
       this.closing = true;
       this.expired = true;
-      this.queue.length = 0;
-      this.queuedBytes = 0;
+      this.queue.discard();
       this.lifetime.abort(new ClientDisconnectedError());
       if (this.socket.readyState === this.socket.OPEN) {
         await this.send(envelopeOf(invalidRequest(CONNECTION_LIMIT_CODE, 'the WebSocket connection reached its time limit; open a new connection')));
@@ -173,7 +162,7 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
     private async drain(): Promise<void> {
       this.draining = true;
       try {
-        for (let text = this.dequeue(); text !== undefined; text = this.dequeue()) {
+        for (let text = this.queue.shift(); text !== undefined; text = this.queue.shift()) {
           if (this.socket.readyState !== this.socket.OPEN) return;
           await this.turn(text);
         }
