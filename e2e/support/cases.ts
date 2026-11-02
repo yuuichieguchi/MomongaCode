@@ -17,7 +17,8 @@ export type E2eCaseFile =
   | 'otlp-export.test.ts'
   | 'open-responses-compliance.test.ts'
   | 'providers.test.ts'
-  | 'mcp-remote.test.ts';
+  | 'mcp-remote.test.ts'
+  | 'agents.test.ts';
 
 export const E2E_CASES = [
   { id: 'b1-join', file: 'b1-model-call.test.ts', title: 'b1 join: restarted runtime joins the in-flight upstream call', needsBash: false },
@@ -75,6 +76,12 @@ export const E2E_CASES = [
   { id: 'providers-anthropic', file: 'providers.test.ts', title: 'providers: a run with a tool call completes through the Anthropic adapter with a stored secret', needsBash: false },
   { id: 'providers-open-responses', file: 'providers.test.ts', title: 'providers: a run with a tool call completes through the Open Responses relay with a stored secret', needsBash: false },
   { id: 'providers-missing-secret', file: 'providers.test.ts', title: 'providers: a run fails with secret_unavailable when the stored secret is missing and the upstream is never called', needsBash: false },
+  { id: 'agent-run', file: 'agents.test.ts', title: 'agents: a subagent runs as a child run, the parent waits and receives its final text, and the Run API shows the hierarchy', needsBash: false },
+  { id: 'agent-cancel', file: 'agents.test.ts', title: 'agents: cancelling the parent cancels the running child and cuts its upstream connection', needsBash: false },
+  { id: 'agent-kill', file: 'agents.test.ts', title: 'agents: the runtime killed during the child model call recovers the child and the parent without a second child', needsBash: false },
+  { id: 'bg-output', file: 'agents.test.ts', title: 'background bash: a run waits on a job with BashOutput block and receives its output after it ends', needsBash: true },
+  { id: 'bg-kill', file: 'agents.test.ts', title: 'background bash: KillBash stops the job and its process group', needsBash: true },
+  { id: 'bg-runtime-kill', file: 'agents.test.ts', title: 'background bash: the runtime killed while a run waits on a job leaves the job unknown, kills its process group and wakes the run', needsBash: true },
 ] as const satisfies readonly { id: string; file: E2eCaseFile; title: string; needsBash: boolean }[];
 
 export type E2eCase = (typeof E2E_CASES)[number];
