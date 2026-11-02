@@ -1,5 +1,6 @@
 import { parseRule } from '@momonga/config';
 import type { PermissionRule } from '@momonga/config';
+import type { HooksSettings } from '@momonga/protocol';
 import type { SettingsPort } from '@momonga/runtime';
 import type { Session } from '@momonga/store';
 
@@ -10,6 +11,8 @@ export type FakeSettings = SettingsPort & {
   ruleReads: number;
   rulesHook: ((read: number) => Promise<void>) | undefined;
   trustedValue: boolean;
+  hooksValue: HooksSettings;
+  classifierAlias: string | undefined;
 };
 
 export const createFakeSettings = (layout: { home: string; project: string }): FakeSettings => {
@@ -22,6 +25,10 @@ export const createFakeSettings = (layout: { home: string; project: string }): F
     ruleReads: 0,
     rulesHook: undefined,
     trustedValue: true,
+    hooksValue: {},
+    classifierAlias: undefined,
+    hooks: async () => settings.hooksValue,
+    autoModeClassifier: () => settings.classifierAlias,
     rules: async (session) => {
       settings.ruleReads += 1;
       await settings.rulesHook?.(settings.ruleReads);

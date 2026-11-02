@@ -14,6 +14,11 @@ export type {
   ToolExecutor,
   ToolExecutorOptions,
 } from './executor.ts';
+export type { AutoClassifier, AutoClassifierRequest } from './ports.ts';
+export { createToolHooks, runSessionStart, runStop, runUserPromptSubmit, hasStopHooks, resolvePreToolUse } from './hooks/events.ts';
+export type { PreToolHookVerdict, PromptHookResult, StopHookResult, ToolHookCall, ToolHooks } from './hooks/events.ts';
+export type { HookReply, HookRunContext } from './hooks/run.ts';
+export { selectHookCommands } from './hooks/run.ts';
 export type {
   BlobPort,
   IdempotencyPort,

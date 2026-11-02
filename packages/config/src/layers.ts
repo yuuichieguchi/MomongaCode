@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { AUTO_MODE_UNAVAILABLE, isUnavailableMode } from '@momonga/protocol';
+import { HOOK_EVENTS, HOOK_MATCHER_EVENTS, hookMatcherError } from '@momonga/protocol';
 import { rethrowIfTransient, toConfigError } from './config-error.ts';
 import { looksLikeCredentialName } from './credential-env.ts';
 import { readJsonFile, readJsonFileSync } from './json-file.ts';
@@ -28,8 +28,22 @@ const PROJECT_ENV_ALLOWLIST: ReadonlySet<string> = new Set([
 
 const isProjectEnvAllowed = (name: string): boolean => PROJECT_ENV_ALLOWLIST.has(name) || /^LC_[A-Z]+$/.test(name);
 
-export const rejectAutoMode = (settings: Settings, source: string): void => {
-  if (isUnavailableMode(settings.permissions?.defaultMode)) throw new Error(`${source}: ${AUTO_MODE_UNAVAILABLE.message}`);
+export const normalizeHooks = (settings: Settings, source: string, warnings: string[]): Settings => {
+  if (settings.hooks === undefined) return settings;
+  const supported: Record<string, NonNullable<Settings['hooks']>[string]> = {};
+  for (const [event, groups] of Object.entries(settings.hooks)) {
+    if (!(HOOK_EVENTS as readonly string[]).includes(event)) {
+      warnings.push(`${source}: hook event ${JSON.stringify(event)} is not supported; ignored`);
+      continue;
+    }
+    for (const group of groups) {
+      if (group.matcher === undefined) continue;
+      const problem = (HOOK_MATCHER_EVENTS as readonly string[]).includes(event) ? hookMatcherError(group.matcher) : undefined;
+      if (problem !== undefined) throw new Error(`${source}: hooks.${event} matcher ${JSON.stringify(group.matcher)} is not a valid pattern: ${problem}`);
+    }
+    supported[event] = groups;
+  }
+  return { ...settings, hooks: supported };
 };
 
 const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: string[]): Settings => {
@@ -74,6 +88,17 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
     restricted.permissions = remaining;
   }
 
+  if (restricted.permissions?.defaultMode === 'auto') {
+    warnings.push(`${source}: auto mode is only honored in user settings and on the command line; ignored`);
+    const { defaultMode: _ignored, ...remaining } = restricted.permissions;
+    restricted.permissions = remaining;
+  }
+
+  if (settings.autoMode !== undefined) {
+    warnings.push(`${source}: autoMode is only honored in user settings; discarded`);
+    delete restricted.autoMode;
+  }
+
   return restricted;
 };
 
@@ -87,8 +112,7 @@ const buildLayer = (
   warnings: string[],
 ): Layer | undefined => {
   if (!read.found) return undefined;
-  const settings = assertSettings(read.value, file);
-  rejectAutoMode(settings, file);
+  const settings = normalizeHooks(assertSettings(read.value, file), file, warnings);
   for (const key of Object.keys(settings)) {
     if (!KNOWN_SETTINGS_KEYS.includes(key)) warnings.push(`${file}: unknown setting ${JSON.stringify(key)} ignored`);
   }

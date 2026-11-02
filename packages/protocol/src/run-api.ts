@@ -1,3 +1,5 @@
+import { HOOK_EVENTS, HOOK_OUTCOMES, HOOK_PRE_TOOL_DECISIONS } from './hooks.ts';
+import { PERMISSION_DENIAL_SOURCES } from './permission-denial.ts';
 import { APPROVAL_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TOOL_KINDS } from './run-types.ts';
 import type { RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent } from './run-types.ts';
 
@@ -122,6 +124,32 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
     properties: { approvalId: string, callId: string, options: { type: 'array', items: permissionOption }, subjectDigest: string, suggestedRule: string },
     required: ['approvalId', 'callId', 'options', 'subjectDigest'],
   },
+  'tool.permission.classified': {
+    properties: {
+      callId: string,
+      alias: string,
+      outcome: enumOf(['allow', 'ask']),
+      verdict: enumOf(['safe', 'unsafe']),
+      confidence: enumOf(['high', 'medium', 'low']),
+      rationale: string,
+      failure: string,
+    },
+    required: ['callId', 'outcome'],
+  },
+  'hook.completed': {
+    properties: {
+      hookEvent: enumOf(HOOK_EVENTS),
+      command: string,
+      outcome: enumOf(HOOK_OUTCOMES),
+      exitCode: integer,
+      callId: string,
+      decision: enumOf([...HOOK_PRE_TOOL_DECISIONS, 'block']),
+      message: string,
+      systemMessage: string,
+      durationMs: nonNegativeInteger,
+    },
+    required: ['hookEvent', 'command', 'outcome', 'durationMs'],
+  },
   'tool.permission.resolved': {
     properties: { approvalId: string, optionId: string, rulePersisted: boolean },
     required: ['approvalId', 'optionId'],
@@ -140,6 +168,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
       content: { type: 'array' },
       truncated: boolean,
       handle: string,
+      denial: closed({ source: enumOf(PERMISSION_DENIAL_SOURCES), reason: string }, ['source', 'reason']),
     },
     required: ['callId', 'status', 'output'],
   },

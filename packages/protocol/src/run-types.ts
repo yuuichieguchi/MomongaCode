@@ -1,4 +1,6 @@
+import type { HookExecution } from './hooks.ts';
 import type { CompactionInputItem, InputItem, MessageInputItem } from './open-responses.ts';
+import type { PermissionDenial } from './permission-denial.ts';
 
 export const RUN_STATUSES = [
   'QUEUED',
@@ -71,6 +73,17 @@ export type RunEventPayload =
       subjectDigest: string;
       suggestedRule?: string;
     }
+  | {
+      type: 'tool.permission.classified';
+      callId: string;
+      alias?: string;
+      outcome: 'allow' | 'ask';
+      verdict?: 'safe' | 'unsafe';
+      confidence?: 'high' | 'medium' | 'low';
+      rationale?: string;
+      failure?: string;
+    }
+  | ({ type: 'hook.completed' } & HookExecution)
   | { type: 'tool.permission.resolved'; approvalId: string; optionId: string; rulePersisted?: boolean }
   | { type: 'tool.permission.cancelled'; approvalId: string; reason: 'expired' | 'withdrawn' | 'superseded' }
   | { type: 'tool.started'; callId: string; idemKey: string }
@@ -83,6 +96,7 @@ export type RunEventPayload =
       content?: unknown[];
       truncated?: boolean;
       handle?: string;
+      denial?: PermissionDenial;
     }
   | { type: 'tool.reconciled'; callId: string; outcome: 'already_applied' | 'not_applied' | 'unknown'; output: string }
   | {

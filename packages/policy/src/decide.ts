@@ -2,7 +2,6 @@ import path from 'node:path';
 import { isProtectedWrite, lexicallyWithin } from '@momonga/foundation';
 import type { FileRuleSet, ProtectedSet, UnresolvableReason } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
-import { AUTO_MODE_UNAVAILABLE, isUnavailableMode } from '@momonga/protocol';
 import type { PermissionMode } from '@momonga/protocol';
 import { commandApproval } from './approval.ts';
 import { commandCoveredByAllowRules } from './command-match.ts';
@@ -36,7 +35,7 @@ export type DecideInput = {
 
 export type Decision = {
   kind: DecisionKind;
-  source: 'rule' | 'mode' | 'protected';
+  source: 'rule' | 'mode' | 'protected' | 'hook';
   reason: string;
   rule?: PermissionRule;
 };
@@ -276,7 +275,6 @@ const decidePathAccess = (input: DecideInput, plan: PathPlan, tool: PolicyTool, 
 };
 
 export const decide = (input: DecideInput): Decision => {
-  if (isUnavailableMode(input.mode)) throw new Error(AUTO_MODE_UNAVAILABLE.message);
   const primary = decideSubject(input, input.tool, input.subject, false);
   if (input.subject.kind !== 'command' || primary.kind === 'deny') return primary;
 

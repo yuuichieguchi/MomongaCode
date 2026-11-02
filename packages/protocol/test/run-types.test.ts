@@ -72,6 +72,8 @@ describe('run event payloads', () => {
       | 'agent.thought.delta'
       | 'tool.call'
       | 'tool.permission.requested'
+      | 'tool.permission.classified'
+      | 'hook.completed'
       | 'tool.permission.resolved'
       | 'tool.permission.cancelled'
       | 'tool.started'
@@ -189,6 +191,17 @@ describe('run event payloads', () => {
       content?: unknown[];
       truncated?: boolean;
       handle?: string;
+      denial?: { source: 'sandbox' | 'rule' | 'mode' | 'hook'; reason: string };
+    }>();
+    expectTypeOf<Payload<'tool.permission.classified'>>().toEqualTypeOf<{
+      type: 'tool.permission.classified';
+      callId: string;
+      alias?: string;
+      outcome: 'allow' | 'ask';
+      verdict?: 'safe' | 'unsafe';
+      confidence?: 'high' | 'medium' | 'low';
+      rationale?: string;
+      failure?: string;
     }>();
     expectTypeOf<Payload<'tool.reconciled'>>().toEqualTypeOf<{
       type: 'tool.reconciled';

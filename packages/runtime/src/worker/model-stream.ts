@@ -1,5 +1,5 @@
 import { isFatalStoreError } from '@momonga/store';
-import type { CreateResponseBody, ResponseResource } from '@momonga/protocol';
+import type { CreateResponseBody, ResponseResource, StreamEvent } from '@momonga/protocol';
 import type { RunEventPayload } from '@momonga/protocol';
 import type { ClaimContext } from './claim-context.ts';
 import { GatewayFailureError } from './errors.ts';
@@ -74,6 +74,21 @@ const flushRecordingFailure = (ctx: ClaimContext, buffer: DeltaBuffer): void => 
   }
 };
 
+export const terminalResultOf = (event: StreamEvent): ModelResult | undefined => {
+  switch (event.type) {
+    case 'response.completed':
+      return { kind: 'response', response: event.response, incomplete: false };
+    case 'response.incomplete':
+      return { kind: 'response', response: event.response, incomplete: true };
+    case 'response.failed':
+      return { kind: 'failed', code: event.response.error.code, message: event.response.error.message };
+    case 'error':
+      return { kind: 'failed', code: event.error.code, message: event.error.message };
+    default:
+      return undefined;
+  }
+};
+
 export const streamModel = async (
   ctx: ClaimContext,
   body: CreateResponseBody,
@@ -102,20 +117,11 @@ export const streamModel = async (
             case 'response.reasoning_summary_text.delta':
               buffer.add('agent.thought.delta', event.item_id, event.delta);
               break;
-            case 'response.completed':
-              terminal = { kind: 'response', response: event.response, incomplete: false };
+            default: {
+              const settled = terminalResultOf(event);
+              if (settled !== undefined) terminal = settled;
               break;
-            case 'response.incomplete':
-              terminal = { kind: 'response', response: event.response, incomplete: true };
-              break;
-            case 'response.failed':
-              terminal = { kind: 'failed', code: event.response.error.code, message: event.response.error.message };
-              break;
-            case 'error':
-              terminal = { kind: 'failed', code: event.error.code, message: event.error.message };
-              break;
-            default:
-              break;
+            }
           }
         }
       })(),

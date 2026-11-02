@@ -14,6 +14,7 @@ export function createUnsandboxed(options: { killGraceMs?: number } = {}): Sandb
         args,
         cwd: command.cwd,
         ...(command.markerFile === undefined ? {} : { markerFile: command.markerFile }),
+        ...(command.stdin === undefined ? {} : { stdin: command.stdin }),
         env: command.tmpDir === undefined ? command.env : { ...command.env, TMPDIR: command.tmpDir },
         signal,
         killGraceMs: options.killGraceMs ?? DEFAULT_KILL_GRACE_MS,

@@ -4,14 +4,17 @@ import { canonicalJson, canonicalPath, comparableContains, comparablePath, compu
 import type { Clock, FileRuleProvenance, PathResolution, ReapTiming, SignalSender } from '@momonga/foundation';
 import { absoluteFrom, decide, fileRuleSpecsOf, suggestAllowRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject, PolicyFilesystem } from '@momonga/policy';
-import type { PermissionMode, ToolKind } from '@momonga/protocol';
+import { permissionDeniedOutput } from '@momonga/protocol';
+import type { PermissionDenial, PermissionMode, ToolKind } from '@momonga/protocol';
 import { SandboxPolicyError, canonicalParentForm } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createReadAccessMatcher } from './read-access.ts';
 import type { ReadFamilyTool } from './read-access.ts';
 import type { ReadAccessMatcher } from './read-access.ts';
-import type { BlobPort, IdempotencyPort, ToolIdempotencyRecord } from './ports.ts';
+import type { ToolHooks } from './hooks/events.ts';
+import type { AutoClassifier, BlobPort, IdempotencyPort, ToolIdempotencyRecord } from './ports.ts';
 import type { ToolSet } from './registry.ts';
+import { cancellableTimer } from './timers.ts';
 import { MINIMUM_INLINE_OUTPUT_CHARS, truncateOutput } from './truncate.ts';
 import { ToolExecutionError, ToolInputError, TransientToolError } from './types.ts';
 import type { AnyTool, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolResult, ToolSessionState } from './types.ts';
@@ -58,6 +61,8 @@ type BatchCore = BatchCallbacks & {
   signal: AbortSignal;
   inlineLimitForReconcile?: number;
   inlineLimitForExecution?: () => Promise<number>;
+  hooks?: ToolHooks;
+  classifier?: AutoClassifier;
 };
 
 export type ExecutionBatchInput = BatchCore & {
@@ -77,7 +82,7 @@ export type BatchInput = ExecutionBatchInput | RecoveryBatchInput;
 export type ResultOutcome = {
   callId: string;
   kind: 'result';
-  result: ToolResult & { truncated?: true; handle?: string };
+  result: ToolResult & { truncated?: true; handle?: string; denial?: PermissionDenial };
   idemKey?: string;
   reconciled?: ReconcileResult['outcome'];
 };
@@ -148,6 +153,8 @@ type RecoveryPlan = {
 type RunPlan = ExecutionPlan | RecoveryPlan;
 
 type Gate = { subject: PermissionSubject; access: BatchAccess };
+
+type GateStage = 'enforce' | 'preview';
 
 type Admission = { kind: 'outcome'; outcome: CallOutcome } | { kind: 'run'; plan: RunPlan };
 
@@ -265,6 +272,12 @@ const failedOutcome = (callId: string, output: string): ResultOutcome => ({
   result: { status: 'failed', output },
 });
 
+const deniedOutcome = (callId: string, denial: PermissionDenial): ResultOutcome => ({
+  callId,
+  kind: 'result',
+  result: { status: 'failed', output: permissionDeniedOutput(denial), denial },
+});
+
 const describeThrown = (toolName: string, error: unknown): string => {
   if (error instanceof ToolInputError || error instanceof ToolExecutionError || error instanceof TransientToolError) return error.message;
   return `Internal error in ${toolName}: ${error instanceof Error ? error.message : String(error)}`;
@@ -298,14 +311,6 @@ const createLimiter = (limit: number): { acquire(): Promise<() => void> } => {
       return release;
     },
   };
-};
-
-const cancellableTimer = (ms: number): { done: Promise<void>; cancel(): void } => {
-  let handle: NodeJS.Timeout | undefined;
-  const done = new Promise<void>((resolve) => {
-    handle = setTimeout(resolve, ms);
-  });
-  return { done, cancel: () => clearTimeout(handle) };
 };
 
 const pause = (ms: number, signal: AbortSignal): Promise<void> =>
@@ -360,20 +365,29 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     };
   };
 
-  const permissionGate = (call: ToolCall, tool: AnyTool, input: unknown, gate: Gate, batch: ExecutionBatchInput): CallOutcome | undefined => {
-        const { subject, access } = gate;
+  const reasonOr = (reason: string | undefined, fallback: string): string => (reason === undefined || reason === '' ? fallback : reason);
+
+  const permissionGate = async (
+    call: ToolCall,
+    tool: AnyTool,
+    input: unknown,
+    gate: Gate,
+    batch: ExecutionBatchInput,
+    stage: GateStage = 'enforce',
+  ): Promise<CallOutcome | undefined> => {
+    const { subject, access } = gate;
     const cwd = batch.session.cwd;
     const blockedPath = readDeniedPath(subject, access, cwd);
-    if (blockedPath !== undefined) return failedOutcome(call.callId, `Permission denied: ${blockedPath} is blocked by the sandbox policy`);
+    if (blockedPath !== undefined) return deniedOutcome(call.callId, { source: 'sandbox', reason: `${blockedPath} is blocked by the sandbox policy` });
     const writeBlockedPath = access.writeDeniedPath(subject, cwd);
-    if (writeBlockedPath !== undefined) return failedOutcome(call.callId, `Permission denied: ${writeBlockedPath} is write-protected by the sandbox policy`);
+    if (writeBlockedPath !== undefined) return deniedOutcome(call.callId, { source: 'sandbox', reason: `${writeBlockedPath} is write-protected by the sandbox policy` });
     const blockedByRule = ruleBlock(subject, access, cwd);
     if (blockedByRule !== undefined) {
-      return failedOutcome(call.callId, `Permission denied: ${blockedByRule.target} is blocked by ${describeProvenance(blockedByRule.provenance)}`);
+      return deniedOutcome(call.callId, { source: 'rule', reason: `${blockedByRule.target} is blocked by ${describeProvenance(blockedByRule.provenance)}` });
     }
 
     const policyTool = { name: tool.name, kind: tool.kind, sideEffect: tool.sideEffect };
-    const decision = decide({
+    const policyDecision = decide({
       tool: policyTool,
       subject,
       mode: batch.mode,
@@ -388,7 +402,25 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       searchPath: batch.env['PATH'],
       isWritable: access.isWritable,
     });
-    if (decision.kind === 'deny') return failedOutcome(call.callId, `Permission denied: ${decision.reason}`);
+    if (policyDecision.kind === 'deny') {
+      return deniedOutcome(call.callId, { source: policyDecision.source === 'mode' ? 'mode' : 'rule', reason: policyDecision.reason });
+    }
+    const hooks = batch.hooks !== undefined && batch.hooks.matchesPreToolUse(tool.name) ? batch.hooks : undefined;
+    if (stage === 'preview' && (hooks !== undefined || batch.mode === 'auto')) return undefined;
+
+    let decision = policyDecision;
+    if (hooks !== undefined) {
+      const verdict = await hooks.preToolUse({ callId: call.callId, toolName: tool.name, input });
+      if (verdict?.decision === 'deny') {
+        return deniedOutcome(call.callId, { source: 'hook', reason: reasonOr(verdict.reason, `a PreToolUse hook denied ${tool.name}`) });
+      }
+      if (verdict?.decision === 'ask' && decision.kind === 'allow') {
+        decision = { kind: 'ask', source: 'hook', reason: reasonOr(verdict.reason, 'a PreToolUse hook requires approval') };
+      }
+      if (verdict?.decision === 'allow' && decision.kind === 'ask' && decision.source === 'mode') {
+        decision = { kind: 'allow', source: 'hook', reason: reasonOr(verdict.reason, 'allowed by a PreToolUse hook') };
+      }
+    }
     const unsandboxedExec = decision.kind === 'allow' && tool.sideEffect === 'exec' && batch.sandbox.kind === 'none';
     const { approval } = call;
     if ((decision.kind === 'ask' || unsandboxedExec)) {
@@ -402,8 +434,22 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         const effective: Decision = unsandboxedExec
           ? { kind: 'ask', source: 'mode', reason: 'no sandbox is available: file deny rules are checked on the command text only, so command execution requires approval' }
           : decision;
+        if (batch.mode === 'auto' && (effective.source === 'mode' || effective.source === 'protected')) {
+          if (batch.classifier === undefined) throw new Error('auto mode needs a classifier');
+          const verdict = await batch.classifier.classify({
+            callId: call.callId,
+            toolName: tool.name,
+            title: tool.title(input),
+            input,
+            reason: effective.reason,
+            subjectDigest,
+          });
+          if (verdict === 'allow') return undefined;
+        }
         const suggestedRule =
-          unsandboxedExec || decision.source === 'protected' ? undefined : suggestAllowRule(policyTool, subject, cwd, options.fs.canonicalise);
+          unsandboxedExec || decision.source === 'protected' || decision.source === 'hook'
+            ? undefined
+            : suggestAllowRule(policyTool, subject, cwd, options.fs.canonicalise);
         const locations = tool.locations?.(input);
         return {
           callId: call.callId,
@@ -420,7 +466,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     return undefined;
   };
 
-  const admit = (call: ToolCall, batch: BatchInput, access: BatchAccess | undefined): Admission => {
+  const admit = async (call: ToolCall, batch: BatchInput, access: BatchAccess | undefined, stage: GateStage = 'enforce'): Promise<Admission> => {
     const outcome = (value: CallOutcome): Admission => ({ kind: 'outcome', outcome: value });
     if (batch.signal.aborted) return outcome(failedOutcome(call.callId, `${call.name} was cancelled`));
     const tool = batch.toolSet.get(call.name);
@@ -458,7 +504,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     const recovered = existing?.s === 'PENDING' || existing?.s === 'UNKNOWN' ? existing.rec : undefined;
 
     if (recovered === undefined) {
-      const gated = permissionGate(call, tool, input, gate, batch);
+      const gated = await permissionGate(call, tool, input, gate, batch, stage);
       if (gated !== undefined) return outcome(gated);
     }
     return { kind: 'run', plan: { kind: 'execution', call, tool, input, gate, key, batch, gateRan: recovered === undefined, ...(recovered === undefined ? {} : { recovered }) } };
@@ -471,6 +517,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     abortReason(): AbortReason | undefined;
     abortWith(reason: AbortReason): void;
     armTimer(ms: number): void;
+    disarmTimer(): void;
     closeContext(): void;
     complete(result: ResultOutcome['result'], reconciled?: ReconcileResult['outcome']): CallOutcome;
     release(): void;
@@ -530,6 +577,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       armTimer: (ms) => {
         timer = setTimeout(() => abortWith('timeout'), ms);
       },
+      disarmTimer: () => clearTimeout(timer),
       closeContext: () => {
         contextClosed = true;
       },
@@ -578,6 +626,12 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     }
   };
 
+  const applyPostToolHooks = async (batch: ExecutionBatchInput, call: ToolCall, tool: AnyTool, input: unknown, result: ToolResult): Promise<ToolResult> => {
+    if (batch.hooks === undefined || result.status !== 'completed') return result;
+    const feedback = await batch.hooks.postToolUse({ callId: call.callId, toolName: tool.name, input, output: result.output });
+    return feedback === undefined ? result : { ...result, output: `${result.output}\n\n[PostToolUse hook]\n${feedback}` };
+  };
+
   const performExecution = async (batch: ExecutionBatchInput, plan: ExecutionPlan): Promise<CallOutcome> => {
     const { call, tool, input, gate, key, recovered, gateRan } = plan;
     const { callId } = call;
@@ -602,7 +656,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         if (current?.s === 'COMPLETED') return storedOutcome(current.result);
         record = current?.rec;
         if (record === undefined) {
-          const gated = permissionGate(call, tool, input, gate, batch);
+          const gated = await permissionGate(call, tool, input, gate, batch);
           if (gated !== undefined) return gated;
           gateAdmitted = true;
         } else {
@@ -663,15 +717,19 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         scope.armTimer(timeoutMs);
         const running = runTool();
         const result = await Promise.race([running, aborted.then(() => undefined)]);
-        if (scope.abortReason() === undefined && result !== undefined) return scope.complete(finalizeResult(result, tool, outputLimit), reconciled);
+        if (scope.abortReason() === undefined && result !== undefined) {
+          scope.disarmTimer();
+          const hooked = await applyPostToolHooks(batch, call, tool, input, result);
+          return scope.complete(finalizeResult(hooked, tool, outputLimit), reconciled);
+        }
         await settleWithin(running, ABORT_SETTLE_LIMIT_MS);
         const output = scope.abortReason() === 'timeout' ? timedOutOutput(tool, timeoutMs) : cancelledOutput(tool);
         return scope.complete({ status: 'failed', output }, reconciled);
       };
 
-      const admitExecution = (): CallOutcome | undefined => {
+      const admitExecution = async (): Promise<CallOutcome | undefined> => {
         if (gateAdmitted) return undefined;
-        const gated = permissionGate(call, tool, input, gate, batch);
+        const gated = await permissionGate(call, tool, input, gate, batch);
         if (gated?.kind === 'needs_approval') return gated;
         if (gated?.kind === 'result') return scope.complete(gated.result);
         return undefined;
@@ -689,7 +747,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         return failedOutcome(callId, describeThrown(tool.name, error));
       }
       if (reconcileOutcome.outcome === 'not_applied') {
-        const refused = admitExecution();
+        const refused = await admitExecution();
         if (refused !== undefined) return refused;
         return await execute('not_applied');
       }
@@ -777,10 +835,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
 
     let approvalAsked = false;
 
-    const surfaceApprovalsFrom = (start: number): void => {
+    const surfaceApprovalsFrom = async (start: number): Promise<void> => {
       for (let later = start; later < calls.length; later += 1) {
         const call = calls[later] as ToolCall;
-        const admission = admit(call, batch, access);
+        const admission = await admit(call, batch, access, 'preview');
         outcomes[later] =
           admission.kind === 'outcome' && admission.outcome.kind === 'needs_approval'
             ? admission.outcome
@@ -802,13 +860,13 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         }
         if (approvalAsked) {
           release?.();
-          surfaceApprovalsFrom(index);
+          await surfaceApprovalsFrom(index);
           return;
         }
 
         let admission: Admission;
         try {
-          admission = admit(call, batch, access);
+          admission = await admit(call, batch, access);
         } catch (error) {
           release?.();
           throw error;
@@ -820,7 +878,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           announce(admission.outcome);
           if (admission.outcome.kind === 'needs_approval') {
             await drain();
-            surfaceApprovalsFrom(index + 1);
+            await surfaceApprovalsFrom(index + 1);
             return;
           }
           continue;
@@ -831,7 +889,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           outcomes[index] = performed;
           announce(performed);
           if (performed.kind === 'needs_approval') {
-            surfaceApprovalsFrom(index + 1);
+            await surfaceApprovalsFrom(index + 1);
             return;
           }
           continue;

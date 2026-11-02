@@ -4,6 +4,9 @@ import type { PermissionOption, RunEventPayload, RunState } from '@momonga/proto
 import type { CallOutcome, NeedsApprovalOutcome, ResultOutcome, ToolCall } from '@momonga/tools';
 import { validateToolInput } from '@momonga/tools';
 import type { Session } from '@momonga/store';
+import { createToolHooks } from '@momonga/tools';
+import { createAutoClassifier } from './auto-classifier.ts';
+import { hookRunContextFor } from './hook-step.ts';
 import type { TraceSpan } from '../ports.ts';
 import type { ClaimContext, Flow } from './claim-context.ts';
 import { pinnedOverflowFailure } from './context-step.ts';
@@ -52,6 +55,7 @@ export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
           ...(result.content === undefined ? {} : { content: result.content }),
           ...(result.truncated === undefined ? {} : { truncated: result.truncated }),
           ...(result.handle === undefined ? {} : { handle: result.handle }),
+          ...(result.denial === undefined ? {} : { denial: result.denial }),
         }
       : { type: 'tool.reconciled', callId, outcome: outcome.reconciled, output: result.output };
   return [
@@ -143,6 +147,14 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   if (ctx.control.yieldRequested()) return ctx.terminals.yieldLease();
   const rules = await options.settings.rules(session);
   const policy = await options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories });
+  const hookSettings = await options.settings.hooks(session);
+  const hasToolHooks = hookSettings.PreToolUse !== undefined || hookSettings.PostToolUse !== undefined;
+  const toolHooks = hasToolHooks
+    ? createToolHooks(
+        hookRunContextFor(ctx, session, hookSettings, policy, (execution) => journal.append([{ type: 'hook.completed', ...execution }])),
+      )
+    : undefined;
+  const classifier = session.permissionMode === 'auto' ? createAutoClassifier(ctx, options.tools.sessionState(session).cwd, step) : undefined;
   const spans = new Map<string, TraceSpan>();
   let outcomes: CallOutcome[];
   try {
@@ -163,6 +175,8 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
       sandboxPolicy: policy.sandboxPolicy,
       deadlineAt: run.deadlineAt,
       signal: ctx.control.signal,
+      ...(toolHooks === undefined ? {} : { hooks: toolHooks }),
+      ...(classifier === undefined ? {} : { classifier }),
       leaseLost: () => ctx.control.leaseLost() || ctx.control.shuttingDown(),
       inlineLimitForReconcile: ctx.inlineLimitForReconcile,
       inlineLimitForExecution: ctx.inlineLimitForExecution,

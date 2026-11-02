@@ -87,6 +87,7 @@ export type SettingsDefault = {
   defaultModeOrigin?: 'user' | 'project' | 'local';
   additionalDirectories?: readonly string[];
   credentialEnvNames?: readonly string[];
+  autoModeClassifier?: string;
 };
 
 export type SessionCreateSettingsResult = {
@@ -94,6 +95,7 @@ export type SessionCreateSettingsResult = {
   defaultModeOrigin?: 'user' | 'project' | 'local';
   additionalDirectories: readonly string[];
   credentialEnvNames: readonly string[];
+  autoModeClassifier?: string;
 };
 
 export type FakePorts = {
@@ -129,6 +131,7 @@ export const createFakePorts = (): FakePorts => {
         ...(entry.defaultModeOrigin === undefined ? {} : { defaultModeOrigin: entry.defaultModeOrigin }),
         additionalDirectories: entry.additionalDirectories ?? [],
         credentialEnvNames: entry.credentialEnvNames ?? [DECLARED_CREDENTIAL],
+        ...(entry.autoModeClassifier === undefined ? {} : { autoModeClassifier: entry.autoModeClassifier }),
       };
     },
   };

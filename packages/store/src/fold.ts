@@ -311,6 +311,8 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       return withDelta(state, event, false);
     case 'model.stream.restarted':
       return state.streaming?.step === event.step && state.streaming.attempt === event.attempt ? withoutStreaming(state) : state;
+    case 'tool.permission.classified':
+    case 'hook.completed':
     case 'tool.updated':
     case 'plan.updated':
     case 'usage.updated':

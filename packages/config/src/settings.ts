@@ -1,6 +1,6 @@
 import type { ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
 import Ajv2020 from 'ajv/dist/2020.js';
-import type { Capabilities, PermissionMode } from '@momonga/protocol';
+import type { Capabilities, HooksSettings, PermissionMode } from '@momonga/protocol';
 import { MCP_SERVERS_FILE_SCHEMA, MCP_SERVER_SCHEMA, SETTINGS_SCHEMA } from './settings-schema.ts';
 
 export type PermissionsSettings = {
@@ -159,9 +159,13 @@ export type OtlpSettings = { endpoint: string; headers?: Record<string, string> 
 
 export type TelemetrySettings = { otlp?: OtlpSettings };
 
+export type AutoModeSettings = { classifier?: string };
+
 export type Settings = {
   permissions?: PermissionsSettings;
   env?: Record<string, string>;
+  hooks?: Record<string, HookGroups>;
+  autoMode?: AutoModeSettings;
   enabledMcpjsonServers?: string[];
   disabledMcpjsonServers?: string[];
   enableAllProjectMcpServers?: boolean;
@@ -171,6 +175,8 @@ export type Settings = {
   sandbox?: SandboxSetting;
   telemetry?: TelemetrySettings;
 };
+
+export type HookGroups = NonNullable<HooksSettings[keyof HooksSettings]>;
 
 export type McpServersFile = { mcpServers?: Record<string, unknown> };
 

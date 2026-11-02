@@ -32,3 +32,14 @@ export type BlobPort = {
     range: { offset: number; length: number },
   ): Promise<{ text: string; totalLines: number; totalBytes: number; offset: number; length: number }>;
 };
+
+export type AutoClassifierRequest = {
+  callId: string;
+  toolName: string;
+  title: string;
+  input: unknown;
+  reason: string;
+  subjectDigest: string;
+};
+
+export type AutoClassifier = { classify(request: AutoClassifierRequest): Promise<'allow' | 'ask'> };

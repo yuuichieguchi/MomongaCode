@@ -230,6 +230,25 @@ describe('session permission mode rules', () => {
     expect(response.json).toMatchObject({ error: { message: AUTO_MODE_UNAVAILABLE.message } });
   });
 
+  it('accepts auto at creation and by PATCH when a known classifier alias is configured', async () => {
+    const env = await startService();
+    env.ports.settingsByCwd.set(env.layout.projectReal, { autoModeClassifier: OTHER_ALIAS });
+    const session = await env.createSession({ permissionMode: 'auto' });
+    expect(session.permissionMode).toBe('auto');
+    const other = await env.createSession();
+    const patched = await env.http('PATCH', `/v1/sessions/${other.id}`, { body: { permissionMode: 'auto' } });
+    expect(patched.status).toBe(200);
+    expect(patched.json.session.permissionMode).toBe('auto');
+  });
+
+  it('rejects auto with 409 when the classifier alias is not known to the gateway', async () => {
+    const env = await startService();
+    env.ports.settingsByCwd.set(env.layout.projectReal, { autoModeClassifier: 'missing-alias' });
+    const response = await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: {}, permissionMode: 'auto' } });
+    expectError(response, 409, AUTO_MODE_UNAVAILABLE.code);
+    expect(response.json).toMatchObject({ error: { message: expect.stringContaining('missing-alias') } });
+  });
+
   it('rejects an unknown mode with 400', async () => {
     const env = await startService();
     expectError(await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: {}, permissionMode: 'yolo' } }), 400, 'invalid_request');

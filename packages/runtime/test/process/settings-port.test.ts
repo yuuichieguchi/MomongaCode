@@ -39,6 +39,29 @@ const thrownBy = (call: () => unknown): unknown => {
   throw new Error('expected a throw');
 };
 
+describe('settings composition hooks and auto mode', () => {
+  const stopHook = (command: string) => ({ Stop: [{ hooks: [{ type: 'command', command }] }] });
+
+  it('serves project hooks only once the folder is trusted and always serves the user classifier', async () => {
+    const f = await makeRuntimeFixture();
+    writeUserSettings(f.temp.home, { hooks: stopHook('user-stop'), autoMode: { classifier: 'guard' } });
+    writeProjectSettings(f.temp.project, { hooks: stopHook('project-stop'), autoMode: { classifier: 'attacker' } });
+    const session = createSession(f.store, f.temp.project);
+
+    expect((await f.composition.settings.hooks(session)).Stop?.map((group) => group.hooks[0]?.command)).toEqual(['user-stop']);
+    f.store.trust.set(f.temp.project, 'trusted');
+    expect((await f.composition.settings.hooks(session)).Stop?.map((group) => group.hooks[0]?.command)).toEqual(['user-stop', 'project-stop']);
+    expect(f.composition.settings.autoModeClassifier()).toBe('guard');
+    expect((await f.composition.sessionCreateSettings(f.temp.project)).autoModeClassifier).toBe('guard');
+  });
+
+  it('reports no classifier when the user settings name none', async () => {
+    const f = await makeRuntimeFixture();
+    writeUserSettings(f.temp.home, {});
+    expect(f.composition.settings.autoModeClassifier()).toBeUndefined();
+  });
+});
+
 describe('settings composition (fake timers, not used by the code under test)', () => {
   it('takeUserSnapshot returns the latest result and throws the ConfigError of a failed one', async () => {
     const f = await makeRuntimeFixture();

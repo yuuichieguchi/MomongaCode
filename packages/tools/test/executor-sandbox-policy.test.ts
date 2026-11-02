@@ -48,7 +48,7 @@ describe('executor: readDenied path subjects', () => {
             sandboxPolicy: deniedPolicy(harness, vault),
           }),
         );
-        expect(outcome).toEqual({ callId: 'c1', kind: 'result', result: { status: 'failed', output: `Permission denied: ${target} is blocked by the sandbox policy` } });
+        expect(outcome).toEqual({ callId: 'c1', kind: 'result', result: { status: 'failed', output: `Permission denied: ${target} is blocked by the sandbox policy`, denial: { source: 'sandbox', reason: `${target} is blocked by the sandbox policy` } } });
         expect(runs).toEqual([]);
       });
     }

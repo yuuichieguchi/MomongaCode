@@ -1,4 +1,4 @@
-import type { RunEventPayload, RunState } from '@momonga/protocol';
+import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import type { Claim, RuntimeStore } from '@momonga/store';
 
@@ -8,6 +8,7 @@ const READ_CHUNK = 1000;
 export type Journal = {
   readonly state: RunState;
   countRecorded(type: RunEventPayload['type']): number;
+  countWhere(predicate: (event: RunEvent) => boolean): number;
   append(payloads: readonly RunEventPayload[]): void;
   sync(): void;
   verifyLease(): void;
@@ -35,16 +36,18 @@ export const openJournal = ({ store, claim, lost }: JournalOptions): Journal => 
     }
   };
 
-  const countRecorded = (type: RunEventPayload['type']): number => {
+  const countWhere = (predicate: (event: RunEvent) => boolean): number => {
     let count = 0;
     for (let after = 0; ; ) {
       const events = store.readRunEvents(claim.runId, after, READ_CHUNK);
-      for (const event of events) if (event.type === type) count += 1;
+      for (const event of events) if (predicate(event)) count += 1;
       const last = events.at(-1);
       if (last === undefined || events.length < READ_CHUNK) return count;
       after = last.seq;
     }
   };
+
+  const countRecorded = (type: RunEventPayload['type']): number => countWhere((event) => event.type === type);
 
   const snapshot = (): void => {
     const result = store.writeSnapshot(claim, state.lastSeq, state);
@@ -58,6 +61,7 @@ export const openJournal = ({ store, claim, lost }: JournalOptions): Journal => 
       return state;
     },
     countRecorded,
+    countWhere,
     sync,
     verifyLease: () => {
       if (store.append(claim, []).kind === 'lease_lost') lost();

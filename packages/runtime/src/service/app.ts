@@ -4,7 +4,7 @@ import type { Context } from 'hono';
 import { ConfigError, stripCredentialEnv } from '@momonga/config';
 import { canonicalDirectory, canonicalJson, canonicalPath, comparableContains, comparablePath, isTransientErrno, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import { AUTO_MODE_UNAVAILABLE, RUN_STATUSES, isUnavailableMode } from '@momonga/protocol';
+import { AUTO_MODE_UNAVAILABLE, RUN_STATUSES } from '@momonga/protocol';
 import type { PermissionMode, RunStatus } from '@momonga/protocol';
 import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
 import { sameRunRequest } from '@momonga/store';
@@ -45,6 +45,7 @@ export type SessionCreateSettings = {
   defaultModeOrigin?: 'user' | 'project' | 'local';
   additionalDirectories: readonly string[];
   credentialEnvNames: readonly string[];
+  autoModeClassifier?: string;
 };
 
 export type RunAppDeps = {
@@ -84,8 +85,13 @@ const protectedAreaOf = (areas: readonly string[], target: string): string | und
 const isGatewayUnavailable = (error: unknown): boolean =>
   error instanceof GatewayRequestError && (error.type === 'transport' || error.status >= 500);
 
-const checkModeAllowed = (mode: PermissionMode, bypassAllowed: boolean): void => {
-  if (isUnavailableMode(mode)) throw conflict(AUTO_MODE_UNAVAILABLE.code, AUTO_MODE_UNAVAILABLE.message);
+const checkModeAllowed = (mode: PermissionMode, bypassAllowed: boolean, autoModeClassifier: string | undefined, aliases: readonly string[]): void => {
+  if (mode === 'auto') {
+    if (autoModeClassifier === undefined) throw conflict(AUTO_MODE_UNAVAILABLE.code, AUTO_MODE_UNAVAILABLE.message);
+    if (!aliases.includes(autoModeClassifier)) {
+      throw conflict(AUTO_MODE_UNAVAILABLE.code, `the auto mode classifier alias ${autoModeClassifier} is not known to the gateway`);
+    }
+  }
   if (mode === 'bypassPermissions' && !bypassAllowed) {
     throw modeNotAllowed('this session may not use the bypassPermissions mode');
   }
@@ -138,6 +144,24 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
 
   const drainingError = () => serviceUnavailable('draining', 'the service is draining and accepts no new work');
 
+  const gatewayAliases = async (): Promise<readonly string[]> => {
+    try {
+      return await deps.modelAliases();
+    } catch (error) {
+      if (isGatewayUnavailable(error)) throw serviceUnavailable('gateway_unavailable', 'the model gateway is unavailable');
+      throw error;
+    }
+  };
+
+  const sessionSettingsOf = async (cwd: string): Promise<SessionCreateSettings> => {
+    try {
+      return await deps.sessionCreateSettings(cwd);
+    } catch (error) {
+      if (error instanceof ConfigError) throw configError(error.message);
+      throw error;
+    }
+  };
+
   const createSession: Handler = async (context) => {
     if (deps.isDraining()) throw drainingError();
     const body = validateBody<CreateSessionBody>('CreateSessionRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
@@ -147,21 +171,9 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const cwdArea = protectedAreaOf(deps.protectedRootAreas, cwd);
     if (cwdArea !== undefined) throw invalidRequest(`cwd ${body.cwd} is inside ${cwdArea} and cannot be a session root`, 'cwd');
     const modelAlias = body.modelAlias ?? deps.defaults.modelAlias;
-    let aliases: readonly string[];
-    try {
-      aliases = await deps.modelAliases();
-    } catch (error) {
-      if (isGatewayUnavailable(error)) throw serviceUnavailable('gateway_unavailable', 'the model gateway is unavailable');
-      throw error;
-    }
+    const aliases = await gatewayAliases();
     if (!aliases.includes(modelAlias)) throw invalidRequest(`unknown model alias ${modelAlias}`, 'modelAlias');
-    let settings: SessionCreateSettings;
-    try {
-      settings = await deps.sessionCreateSettings(cwd);
-    } catch (error) {
-      if (error instanceof ConfigError) throw configError(error.message);
-      throw error;
-    }
+    const settings = await sessionSettingsOf(cwd);
     const additionalDirectories: string[] = [];
     const seen = new Set<string>([comparablePath(cwd)]);
     for (const entry of settings.additionalDirectories) {
@@ -177,7 +189,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const permissionMode = body.permissionMode ?? settings.defaultMode ?? 'default';
     const bypassAllowed =
       body.bypassAllowed === true || (settings.defaultMode === 'bypassPermissions' && settings.defaultModeOrigin === 'user');
-    checkModeAllowed(permissionMode, bypassAllowed);
+    checkModeAllowed(permissionMode, bypassAllowed, settings.autoModeClassifier, aliases);
     const stripped = stripCredentialEnv(body.env, settings.credentialEnvNames);
     const session = store.createSession({ cwd, env: stripped.env, permissionMode, modelAlias, bypassAllowed, additionalDirectories });
     return json({ session: toSessionView(store, session), strippedEnvKeys: stripped.removed }, 201, { location: `/v1/sessions/${session.id}` });
@@ -202,7 +214,8 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   const patchSession: Handler = async (context) => {
     const session = requireSession(context.req.param('id') ?? '');
     const body = validateBody<PatchSessionBody>('PatchSessionRequest', await readJson(context.req.raw, PATCH_MEDIA_TYPES, deps.maxBodyBytes));
-    checkModeAllowed(body.permissionMode, session.bypassAllowed);
+    const settings = await sessionSettingsOf(session.cwd);
+    checkModeAllowed(body.permissionMode, session.bypassAllowed, settings.autoModeClassifier, await gatewayAliases());
     const result = store.setPermissionMode(session.id, body.permissionMode);
     if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
     return json({ session: toSessionView(store, result.session) });

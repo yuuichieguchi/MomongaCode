@@ -12,9 +12,11 @@ export interface LaunchOptions {
   killGraceMs: number;
   afterExit: () => void;
   markerFile?: string;
+  stdin?: string;
 }
 
 export function launch(options: LaunchOptions): SandboxedProcess {
+  const stdinMode = options.stdin === undefined ? 'ignore' : 'pipe';
   const markerFd = options.markerFile === undefined ? undefined : fs.openSync(options.markerFile, 'r');
   let child: ReturnType<typeof spawn>;
   try {
@@ -22,7 +24,7 @@ export function launch(options: LaunchOptions): SandboxedProcess {
       cwd: options.cwd,
       env: { ...options.env },
       detached: true,
-      stdio: markerFd === undefined ? ['ignore', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe', markerFd],
+      stdio: markerFd === undefined ? [stdinMode, 'pipe', 'pipe'] : [stdinMode, 'pipe', 'pipe', markerFd],
     });
   } finally {
     if (markerFd !== undefined) fs.closeSync(markerFd);
@@ -32,13 +34,20 @@ export function launch(options: LaunchOptions): SandboxedProcess {
     child.once('error', () => undefined);
     throw new Error(`failed to spawn ${options.file} in ${options.cwd}`);
   }
-  const { stdout, stderr } = child;
+  const { stdout, stderr, stdin } = child;
   if (stdout === null || stderr === null) {
     child.once('error', () => undefined);
     signalGroup(pid, 'SIGKILL');
     throw new Error(`failed to open output pipes for ${options.file}`);
   }
   const { signal, killGraceMs } = options;
+  let stdinFailure: Error | undefined;
+  if (options.stdin !== undefined && stdin !== null) {
+    stdin.on('error', (error: NodeJS.ErrnoException) => {
+      if (error.code !== 'EPIPE') stdinFailure ??= error;
+    });
+    stdin.end(options.stdin);
+  }
   let killedBy: SandboxExit['killedBy'];
   let leaderExited = false;
   let termDeadline: number | undefined;
@@ -72,6 +81,10 @@ export function launch(options: LaunchOptions): SandboxedProcess {
       reapGroup()
         .then(() => {
           options.afterExit();
+          if (stdinFailure !== undefined) {
+            reject(stdinFailure);
+            return;
+          }
           resolve({ code, signal: exitSignal, ...(killedBy === undefined ? {} : { killedBy }) });
         })
         .catch(reject);

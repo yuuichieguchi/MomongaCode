@@ -3,6 +3,7 @@ import { findHolders, reconcileProcessGroup } from '@momonga/foundation';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import type { SandboxExit } from '@momonga/sandbox';
 import type { ToolContext } from '../types.ts';
+import { createCapture, pumpOutput } from '../capture.ts';
 import { canonicalDirectories, insideAny } from './paths.ts';
 
 type BashInput = { command: string; timeout?: number; description?: string };
@@ -10,64 +11,6 @@ type BashInput = { command: string; timeout?: number; description?: string };
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_TIMEOUT_MS = 600_000;
 const TITLE_CHARS = 80;
-const HEAD_BYTES = 4 * 1024 * 1024;
-const TAIL_BYTES = 4 * 1024 * 1024;
-const STREAM_DRAIN_MS = 1000;
-const CONTINUATION_BYTE = 0b1100_0000;
-
-const isContinuation = (byte: number | undefined): boolean => byte !== undefined && (byte & CONTINUATION_BYTE) === 0b1000_0000;
-
-const createCapture = () => {
-  const head: Buffer[] = [];
-  const tail: Buffer[] = [];
-  let headSize = 0;
-  let tailSize = 0;
-  let omitted = 0;
-  return {
-    push(chunk: Buffer): void {
-      let rest = chunk;
-      if (headSize < HEAD_BYTES) {
-        const taken = rest.subarray(0, HEAD_BYTES - headSize);
-        head.push(taken);
-        headSize += taken.length;
-        rest = rest.subarray(taken.length);
-      }
-      if (rest.length === 0) return;
-      tail.push(rest);
-      tailSize += rest.length;
-      while (tailSize > TAIL_BYTES) {
-        const excess = tailSize - TAIL_BYTES;
-        const first = tail[0] as Buffer;
-        if (first.length <= excess) {
-          tail.shift();
-          omitted += first.length;
-          tailSize -= first.length;
-        } else {
-          tail[0] = first.subarray(excess);
-          omitted += excess;
-          tailSize -= excess;
-        }
-      }
-    },
-    text(): string {
-      let headBytes = Buffer.concat(head);
-      let tailBytes = Buffer.concat(tail);
-      if (omitted === 0) return Buffer.concat([headBytes, tailBytes]).toString('utf8');
-      let leadIndex = headBytes.length - 1;
-      while (leadIndex > 0 && isContinuation(headBytes[leadIndex])) leadIndex -= 1;
-      const lead = headBytes[leadIndex] ?? 0;
-      const sequenceLength = lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : lead >= CONTINUATION_BYTE ? 2 : 1;
-      const headEnd = leadIndex + sequenceLength > headBytes.length ? leadIndex : headBytes.length;
-      let tailStart = 0;
-      while (tailStart < tailBytes.length && isContinuation(tailBytes[tailStart])) tailStart += 1;
-      const dropped = omitted + (headBytes.length - headEnd) + tailStart;
-      headBytes = headBytes.subarray(0, headEnd);
-      tailBytes = tailBytes.subarray(tailStart);
-      return `${headBytes.toString('utf8')}\n[… ${dropped} bytes omitted …]\n${tailBytes.toString('utf8')}`;
-    },
-  };
-};
-
 const trapScript = (nonce: string): string =>
   `trap 'status=$?; printf "\\n__MOMONGA_CWD_${nonce}__=%s\\n" "$(pwd -P)"; exit $status' EXIT`;
 
@@ -80,18 +23,6 @@ const extractCwd = (output: string, nonce: string): { output: string; cwd: strin
   const removeFrom = output[index - 1] === '\n' ? index - 1 : index;
   const removeTo = lineEnd === -1 ? output.length : lineEnd + 1;
   return { output: output.slice(0, removeFrom) + output.slice(removeTo), cwd };
-};
-
-const waitForStreams = async (streams: Promise<void>): Promise<void> => {
-  let timer: NodeJS.Timeout | undefined;
-  const expired = new Promise<void>((resolve) => {
-    timer = setTimeout(resolve, STREAM_DRAIN_MS);
-  });
-  try {
-    await Promise.race([streams, expired]);
-  } finally {
-    clearTimeout(timer);
-  }
 };
 
 const requireMarker = (ctx: ToolContext): string => {
@@ -136,20 +67,7 @@ export const bashTool = defineTool<BashInput>({
     ctx.attachProcess({ pgid: child.pgid, startedAt: ctx.clock.now() });
 
     const capture = createCapture();
-    const iterators = [child.stdout, child.stderr].map((stream) => stream[Symbol.asyncIterator]());
-    let streamFailure: { error: unknown } | undefined;
-    let closing: Promise<void> | undefined;
-    const closeIterators = (): Promise<void> => (closing ??= Promise.all(iterators.map((iterator) => iterator.return?.())).then(() => undefined));
-    const pumps = iterators.map((iterator) =>
-      (async () => {
-        for (let step = await iterator.next(); step.done !== true; step = await iterator.next()) capture.push(Buffer.from(step.value));
-      })().catch((error: unknown) => {
-        streamFailure ??= { error };
-        closeIterators().catch((closeError: unknown) => {
-          streamFailure ??= { error: closeError };
-        });
-      }),
-    );
+    const pump = pumpOutput([child.stdout, child.stderr], (_index, chunk) => capture.push(chunk));
     let exit: SandboxExit;
     const notes: string[] = [];
     try {
@@ -159,11 +77,12 @@ export const bashTool = defineTool<BashInput>({
         await reconcileProcessGroup({ pgid: child.pgid, marker });
         notes.push(`Terminated ${holders.length} process(es) that outlived the command.`);
       }
-      await waitForStreams(Promise.all(pumps).then(() => undefined));
+      await pump.settle();
     } finally {
-      await closeIterators();
+      await pump.close();
     }
-    if (streamFailure !== undefined) throw streamFailure.error;
+    const failure = pump.failure();
+    if (failure !== undefined) throw failure.error;
 
     const extracted = extractCwd(capture.text(), nonce);
     let output = extracted.output.replace(/\n+$/, '');

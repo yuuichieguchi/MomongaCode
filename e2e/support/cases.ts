@@ -17,7 +17,8 @@ export type E2eCaseFile =
   | 'otlp-export.test.ts'
   | 'open-responses-compliance.test.ts'
   | 'providers.test.ts'
-  | 'mcp-remote.test.ts';
+  | 'mcp-remote.test.ts'
+  | 'hooks-auto.test.ts';
 
 export const E2E_CASES = [
   { id: 'b1-join', file: 'b1-model-call.test.ts', title: 'b1 join: restarted runtime joins the in-flight upstream call', needsBash: false },
@@ -75,6 +76,10 @@ export const E2E_CASES = [
   { id: 'providers-anthropic', file: 'providers.test.ts', title: 'providers: a run with a tool call completes through the Anthropic adapter with a stored secret', needsBash: false },
   { id: 'providers-open-responses', file: 'providers.test.ts', title: 'providers: a run with a tool call completes through the Open Responses relay with a stored secret', needsBash: false },
   { id: 'providers-missing-secret', file: 'providers.test.ts', title: 'providers: a run fails with secret_unavailable when the stored secret is missing and the upstream is never called', needsBash: false },
+  { id: 'hook-pretooluse-block', file: 'hooks-auto.test.ts', title: 'hooks: a PreToolUse hook that exits 2 blocks the write, the denial is structured and the hook run is in the event stream', needsBash: true },
+  { id: 'auto-allow', file: 'hooks-auto.test.ts', title: 'auto: a confident safe verdict from the classifier alias runs the write without an approval', needsBash: false },
+  { id: 'auto-fallback', file: 'hooks-auto.test.ts', title: 'auto: an unsafe verdict and a malformed verdict each fall back to an approval request for the person', needsBash: false },
+  { id: 'auto-eval-false-allow', file: 'hooks-auto.test.ts', title: 'auto eval: the auto-mode golden dataset reports the measured false-allow rate of the classifier against the fake upstream', needsBash: false },
 ] as const satisfies readonly { id: string; file: E2eCaseFile; title: string; needsBash: boolean }[];
 
 export type E2eCase = (typeof E2E_CASES)[number];

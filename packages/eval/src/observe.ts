@@ -1,8 +1,6 @@
 import type { PublicRunEvent } from '@momonga/protocol';
 import type { PermissionDecision } from './dataset.ts';
 
-export const PERMISSION_DENIED_OUTPUT_PREFIX = 'Permission denied: ';
-
 type EventOf<T extends PublicRunEvent['type']> = Extract<PublicRunEvent, { type: T }>;
 
 export type ObservedCall = {
@@ -35,7 +33,7 @@ const decisionOf = (events: readonly PublicRunEvent[], callId: string): Observed
   if (eventsOfType(events, 'tool.permission.requested').some((event) => event.callId === callId)) return 'ask';
   if (eventsOfType(events, 'tool.started').some((event) => event.callId === callId)) return 'allow';
   const completed = eventsOfType(events, 'tool.completed').find((event) => event.callId === callId);
-  if (completed?.status === 'failed' && completed.output.startsWith(PERMISSION_DENIED_OUTPUT_PREFIX)) return 'deny';
+  if (completed?.denial !== undefined) return 'deny';
   return 'unresolved';
 };
 

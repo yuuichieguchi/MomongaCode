@@ -206,6 +206,6 @@ describe('Read', () => {
     const secret = path.join(secretDir, 'credentials.json');
     fs.writeFileSync(secret, '{}');
     const result = resultOf(await tools.run('Read', { file_path: secret }, { mode }, 'allow_once'));
-    expect(result).toEqual({ status: 'failed', output: `Permission denied: ${secret} is blocked by the sandbox policy` });
+    expect(result).toEqual({ status: 'failed', output: `Permission denied: ${secret} is blocked by the sandbox policy`, denial: { source: 'sandbox', reason: `${secret} is blocked by the sandbox policy` } });
   });
 });

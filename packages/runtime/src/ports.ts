@@ -7,6 +7,7 @@ import type {
   CountTokensRequest,
   CountTokensResult,
   CreateResponseBody,
+  HooksSettings,
   StreamEvent,
 } from '@momonga/protocol';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
@@ -35,6 +36,8 @@ export type AppendedRule = { effect: 'allow' | 'deny'; rule: string };
 
 export type SettingsPort = {
   rules(session: Session): Promise<PermissionRule[]>;
+  hooks(session: Session): Promise<HooksSettings>;
+  autoModeClassifier(): string | undefined;
   appendRule(session: Session, entry: AppendedRule): Promise<void>;
   trusted(session: Session): boolean;
 };
