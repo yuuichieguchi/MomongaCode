@@ -175,6 +175,7 @@ export type MomongaResponseExtension = {
   attempts: number;
   fallbackFrom?: string[];
   usageSource: 'reported' | 'estimated';
+  contextInputTokens?: number;
 };
 
 export type ResponseResource = {
@@ -210,6 +211,7 @@ export type ResponseResource = {
   safety_identifier: string | null;
   prompt_cache_key: string | null;
   momonga?: MomongaResponseExtension;
+  contextInputTokens?: number;
 };
 
 export type CreateResponseBody = {

@@ -117,7 +117,7 @@ const handleResult = async (
   ]);
   ctx.memory.streak = 0;
   ctx.memory.interruptions = 0;
-  if (observation !== undefined) ctx.meter.observe({ inputDigest: observation.inputDigest, inputTokens: usage.input_tokens });
+  if (observation !== undefined) ctx.meter.observe({ inputDigest: observation.inputDigest, inputTokens: response.momonga?.contextInputTokens ?? usage.input_tokens });
   return decideAfterResponse(ctx);
 };
 

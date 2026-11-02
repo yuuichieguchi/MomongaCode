@@ -311,12 +311,13 @@ async function* relaySteps(
     }
   }
 
-  const momongaFor = (usageSource: UsageSource): MomongaResponseExtension => ({
+  const momongaFor = (usageSource: UsageSource, contextInputTokens?: number): MomongaResponseExtension => ({
     alias: job.alias,
     target: target.name,
     attempts,
     ...(fallbackFrom.length === 0 ? {} : { fallbackFrom }),
     usageSource,
+    ...(contextInputTokens === undefined ? {} : { contextInputTokens }),
   });
   const completedAt = Math.floor(clock.now() / 1000);
 
@@ -372,7 +373,7 @@ async function* relaySteps(
     incomplete_details: upstream.incomplete_details,
     output: upstreamOutput,
     usage,
-    momonga: momongaFor(usageSource),
+    momonga: momongaFor(usageSource, upstream.contextInputTokens),
   };
   const terminal: StreamEvent = {
     type: terminalEvent.type,

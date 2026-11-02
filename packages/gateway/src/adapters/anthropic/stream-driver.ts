@@ -21,7 +21,7 @@ const addUsage = (left: AnthropicUsageFields, right: AnthropicUsageFields): Anth
 
 const usageOf = (fields: AnthropicUsageFields): Usage | undefined => {
   if (Object.keys(fields).length === 0) return undefined;
-  const input = (fields.input_tokens ?? 0) + (fields.cache_creation_input_tokens ?? 0) + (fields.cache_read_input_tokens ?? 0);
+  const input = inputTokensOf(fields);
   const output = fields.output_tokens ?? 0;
   return {
     input_tokens: input,
@@ -32,7 +32,10 @@ const usageOf = (fields: AnthropicUsageFields): Usage | undefined => {
   };
 };
 
-export type Continuation = { usage: AnthropicUsageFields };
+export const inputTokensOf = (fields: AnthropicUsageFields): number =>
+  (fields.input_tokens ?? 0) + (fields.cache_creation_input_tokens ?? 0) + (fields.cache_read_input_tokens ?? 0);
+
+export type Continuation = { usage: AnthropicUsageFields; firstInputTokens: number };
 
 export class AnthropicStreamDriver {
   private readonly emitter: ResponseEmitter;
@@ -40,6 +43,7 @@ export class AnthropicStreamDriver {
   private readonly recorder = new AssistantRecorder();
   private readonly carriedUsage: AnthropicUsageFields;
   private readonly resumed: boolean;
+  private readonly firstInputTokens: number | undefined;
   private segmentUsage: AnthropicUsageFields = {};
   private stopReason: string | undefined;
   private segmentStarted = false;
@@ -49,6 +53,7 @@ export class AnthropicStreamDriver {
     this.emitter = emitter;
     this.resumed = continuation !== undefined;
     this.carriedUsage = continuation?.usage ?? {};
+    this.firstInputTokens = continuation?.firstInputTokens;
   }
 
   get hasStarted(): boolean {
@@ -184,20 +189,20 @@ export class AnthropicStreamDriver {
       case 'end_turn':
       case 'stop_sequence':
       case 'tool_use':
-        this.emitter.complete(usage);
+        this.emitter.complete(usage, this.firstInputTokens);
         return;
       case 'pause_turn':
         if (this.recorder.unfinished > 0) throw new UpstreamProtocolError('the upstream paused the turn with a content block still open');
         this.pausedTurn = true;
         return;
       case 'max_tokens':
-        this.emitter.incomplete('max_output_tokens', usage);
+        this.emitter.incomplete('max_output_tokens', usage, this.firstInputTokens);
         return;
       case 'model_context_window_exceeded':
         this.emitter.fail('context_window_exceeded', 'invalid_request', 'the model stopped because the conversation exceeded its context window');
         return;
       case 'refusal':
-        this.emitter.incomplete('content_filter', usage);
+        this.emitter.incomplete('content_filter', usage, this.firstInputTokens);
         return;
       default:
         throw new UpstreamProtocolError(`the upstream sent the unsupported stop_reason ${JSON.stringify(this.stopReason)}`);

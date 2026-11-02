@@ -35,12 +35,12 @@ import type { AnthropicUsageFields } from './events.ts';
 import { assertCountable, buildCountTokensBody, buildMessagesBody } from './request.ts';
 import type { AnthropicCountTokensBody } from './request.ts';
 import type { AnthropicRequestBody } from './request.ts';
-import { AnthropicStreamDriver } from './stream-driver.ts';
+import { AnthropicStreamDriver, inputTokensOf } from './stream-driver.ts';
 import type { AnthropicAdapter, AnthropicAdapterOptions } from './types.ts';
 
 const neverGuardrail = (): boolean => false;
 
-type Paused = { content: Record<string, unknown>[]; usage: AnthropicUsageFields };
+type Paused = { content: Record<string, unknown>[]; usage: AnthropicUsageFields; firstInputTokens: number };
 
 const countTokensOf = (text: string): number => {
   let parsed: unknown;
@@ -115,7 +115,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
         const response = await pool.clientFor(endpoint).post({ headers: headersFor(apiKey, 'text/event-stream'), body: JSON.stringify(body), signal });
         if (response.status !== 200) throw await httpErrorOf(response, options.clock, anthropicErrorDetail, neverGuardrail);
         emitter ??= new ResponseEmitter({ clock: options.clock, model: request.model, request });
-        const driver = new AnthropicStreamDriver(emitter, paused === undefined ? undefined : { usage: paused.usage });
+        const driver = new AnthropicStreamDriver(emitter, paused === undefined ? undefined : { usage: paused.usage, firstInputTokens: paused.firstInputTokens });
         yield* readSegment(response, driver, ctx);
         if (!driver.paused) return;
         if (continuation >= MAX_PAUSE_CONTINUATIONS) {
@@ -129,7 +129,11 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
           }
           return;
         }
-        paused = { content: [...(paused?.content ?? []), ...driver.pausedContent()], usage: driver.accumulatedUsage() };
+        paused = {
+          content: [...(paused?.content ?? []), ...driver.pausedContent()],
+          usage: driver.accumulatedUsage(),
+          firstInputTokens: paused?.firstInputTokens ?? inputTokensOf(driver.accumulatedUsage()),
+        };
       }
     } finally {
       upstream.abort();

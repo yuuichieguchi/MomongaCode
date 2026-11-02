@@ -376,6 +376,15 @@ describe('anthropic adapter through the gateway: pause_turn', () => {
     ...anthropicMessageEnd('pause_turn', { output_tokens: 5 }),
   ]);
 
+  it('reports no contextInputTokens for a turn that was never paused', async () => {
+    const gateway = await startAnthropicGateway({
+      script: [anthropicStream([anthropicMessageStart({ input_tokens: 12, output_tokens: 1 }), ...anthropicTextBlock(0, ['plain']), ...anthropicMessageEnd('end_turn', { output_tokens: 3 })])],
+    });
+    const terminal = terminalOf(await streamResponse(gateway));
+    expect(terminal.response.usage).toMatchObject({ input_tokens: 12 });
+    expect(terminal.response.momonga.contextInputTokens).toBeUndefined();
+  });
+
   it('continues the paused turn with the received content as an assistant message and joins the segments into one response', async () => {
     const gateway = await startAnthropicGateway({
       script: [pausedSegment, anthropicStream([anthropicMessageStart({ input_tokens: 20, output_tokens: 1 }), ...anthropicTextBlock(0, ['part two']), ...anthropicMessageEnd('end_turn', { output_tokens: 7 })])],
@@ -386,6 +395,7 @@ describe('anthropic adapter through the gateway: pause_turn', () => {
     expect(textOf(terminal.response)).toBe('part one, part two');
     expect(typesOf(frames).filter((type) => type === 'response.created')).toHaveLength(1);
     expect(terminal.response.usage).toMatchObject({ input_tokens: 30, output_tokens: 12, total_tokens: 42 });
+    expect(terminal.response.momonga.contextInputTokens).toBe(10);
     expect(gateway.fake.requests).toHaveLength(2);
     const [first, second] = gateway.fake.requests.map((request) => request.body as { messages: Array<{ role: string; content: unknown }>; tools: unknown });
     expect(second?.tools).toEqual(first?.tools);
