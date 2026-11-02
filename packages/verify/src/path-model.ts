@@ -30,6 +30,7 @@ export type PathModel = {
   protectedWrite(resolved: Seq): Bool;
   inside(resolved: Seq): Bool;
   under(resolved: Seq, directory: string): Bool;
+  canonicalDirectory(directory: string): PathResolution;
   aliases: ReadonlyArray<{ lexical: string; canonical: string }>;
 };
 
@@ -157,5 +158,5 @@ export const createPathModel = (context: PathModelContext): PathModel => {
     return clauses.length === 0 ? ctx.Bool.val(false) : ctx.Or(...clauses);
   };
 
-  return { variables, ruleMatches, protectedWrite, inside, under, aliases };
+  return { variables, ruleMatches, protectedWrite, inside, under, canonicalDirectory: probes.canonicalise, aliases };
 };

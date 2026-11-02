@@ -86,7 +86,12 @@ export const checkSecretReach = async (context: QueryContext, locations: readonl
   const tally = newTally();
   const regions: Array<{ label: string; access: 'read' | 'write'; region: (resolved: NonNullable<ReturnType<typeof subjectOf>['resolvedTerm']>) => Bool }> = [];
   for (const location of locations) {
-    for (const access of location.accesses) regions.push({ label: `${location.label} (${access})`, access, region: (resolved) => models.paths.under(resolved, location.directory) });
+    const canonical = models.paths.canonicalDirectory(location.directory);
+    if (!canonical.ok) {
+      tally.unknowns.push(`${location.label} cannot be resolved to its real location (${canonical.reason.kind === 'errno' ? canonical.reason.code : canonical.reason.kind})`);
+      continue;
+    }
+    for (const access of location.accesses) regions.push({ label: `${location.label} (${access})`, access, region: (resolved) => models.paths.under(resolved, canonical.path) });
   }
   regions.push({ label: 'the protected set of the workspace (write)', access: 'write', region: (resolved) => models.paths.protectedWrite(resolved) });
   for (const { label, access, region } of regions) {
@@ -120,7 +125,11 @@ export const checkRuleConsistency = async (context: QueryContext): Promise<Prope
   const tally = newTally();
   for (const [index, rule] of models.rules.entries()) {
     const tools = toolsOf(context, rule, index);
-    if (tools.length === 0 || (rule.tool === 'Bash' && models.commands.unmodelled(rule))) continue;
+    if (tools.length === 0) continue;
+    if (rule.tool === 'Bash' && models.commands.unmodelled(rule)) {
+      if (rule.effect === 'allow') tally.unknowns.push(`${ruleLabel(rule)} uses a word or a program outside the modelled command alphabet, so whether it can take effect was not decided`);
+      continue;
+    }
     let effective = false;
     let undecided: string | undefined;
     let example: Counterexample | undefined;
@@ -160,6 +169,7 @@ export const checkRuleConsistency = async (context: QueryContext): Promise<Prope
         const allowTerm = termOf(context, tool, allowIndex);
         const denyTerm = termOf(context, tool, denyIndex);
         const reach = await probe(context, 'rule-consistency', `${allow.text} reach (${tool})`, tool, [allowTerm.strict]);
+        if (reach.status === 'unknown') tally.unknowns.push(reach.reason);
         if (reach.status !== 'found') continue;
         const outside = await probe(context, 'rule-consistency', `${allow.text} outside ${deny.text} (${tool})`, tool, [allowTerm.strict, ctx.Not(denyTerm.position), ctx.Not(denyTerm.incidental)]);
         if (outside.status === 'none') {
@@ -177,7 +187,7 @@ export const checkRuleConsistency = async (context: QueryContext): Promise<Prope
     id: 'rule-consistency',
     title: 'every rule can take effect and no pair of rules contradicts',
     subject: `${models.rules.length} rule(s)`,
-    proves: 'removing any single rule changes the decision for at least one modelled input, and no allow rule lies entirely inside a deny rule',
+    proves: 'removing any single rule on a modelled tool changes the decision for at least one modelled input, and no allow rule lies entirely inside a deny rule',
     doesNotProve: ['that the rules that remain express the intent of their author', 'effects on inputs outside the modelled input domain'],
     verdict: verdictOf(tally),
   };
