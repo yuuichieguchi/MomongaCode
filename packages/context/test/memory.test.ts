@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildContext, inputCeilingFor, memoryBudgetFor } from '@momonga/context';
+import { MIN_ROOM_TOKENS, buildContext, inputCeilingFor, memoryBudgetFor } from '@momonga/context';
 import type { MemoryView } from '@momonga/protocol';
 import { PROJECT, ROOT_AGENTS, capabilitiesFor, developerTexts, harness, inputFor, sourcesWith, textOf, tokensOfItems } from './helpers.ts';
 
@@ -98,6 +98,26 @@ describe('recalled memories', () => {
     const room = inputCeilingFor(capabilities) - bare.inputTokens;
     expect(result.inputTokens - bare.inputTokens).toBeLessThanOrEqual(memoryBudgetFor(room));
     expect(result.inputTokens).toBeLessThanOrEqual(result.budget.I);
+  });
+
+  it('share the room left after the skills and nested files, not the room the pinned layers alone leave', async () => {
+    const capabilities = capabilitiesFor(6000);
+    const { ports } = harness(capabilities);
+    const ceiling = inputCeilingFor(capabilities);
+    const bare = await buildContext(inputFor(capabilities, { sources: sourcesWith() }), ports);
+    const skill = (tokens: number) => ({ name: 'big', content: 'x'.repeat(4 * tokens) });
+    const headRoom = ceiling - bare.inputTokens;
+    const leftover = 2 * MIN_ROOM_TOKENS;
+    const skills = [skill(headRoom - leftover)];
+    const withSkill = await buildContext(inputFor(capabilities, { sources: sourcesWith({ activatedSkills: skills }) }), ports);
+    const roomAfterSkill = ceiling - withSkill.inputTokens;
+    expect(roomAfterSkill).toBeGreaterThanOrEqual(MIN_ROOM_TOKENS);
+    expect(roomAfterSkill).toBeLessThan(headRoom / 2);
+
+    const result = await buildContext(inputFor(capabilities, { sources: sourcesWith({ activatedSkills: skills, memories: memoriesOf(200) }) }), ports);
+
+    expect(result.inputTokens - withSkill.inputTokens).toBeLessThanOrEqual(memoryBudgetFor(roomAfterSkill));
+    expect(ceiling - result.inputTokens).toBeGreaterThanOrEqual(MIN_ROOM_TOKENS);
   });
 
   it.each([1100, 1500, 2500, 5000, 20000])('stay inside the input budget of a %i token window', async (window) => {
