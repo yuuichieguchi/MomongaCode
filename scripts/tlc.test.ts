@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import type { SpawnSyncReturns } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -8,7 +9,7 @@ import { createTempRoot, removeTempRoot } from './support/temp.ts';
 
 describe.skipIf(!HAS_POSIX_SHELL)('tlc.sh', () => {
   let root = '';
-  let result: ReturnType<typeof spawnSync<string>>;
+  let result: SpawnSyncReturns<string>;
 
   beforeAll(() => {
     root = createTempRoot();

@@ -155,6 +155,16 @@ describe('ensureDaemon', () => {
     expect(health.version).toBe(VERSION);
   });
 
+  it('stops waiting for an older daemon that never answers the replacement request when the caller aborts', async (context) => {
+    const { paths, start, portsWith } = await setup(context);
+    const controller = new AbortController();
+    await start({ version: '0.0.1', activeRunIds: [null], unresponsiveShutdown: { onRequest: () => controller.abort(new Error('interrupted')) } });
+    const { spawn, spawned } = recordingSpawn(() => undefined);
+
+    await expect(ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS, replacement: 'when-idle', signal: controller.signal })).rejects.toThrow('interrupted');
+    expect(spawned).toEqual([]);
+  });
+
   it('never replaces a newer daemon, even when the caller asks for it unconditionally', async (context) => {
     const { paths, start, portsWith } = await setup(context);
     const newer = await start({ version: '1.2.4', activeRunIds: [null] });
