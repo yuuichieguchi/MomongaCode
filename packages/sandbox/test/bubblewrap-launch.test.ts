@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
-import { createBubblewrapSandbox } from '@momonga/sandbox';
+import { SandboxPolicyError, createBubblewrapSandbox } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { waitFor } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
@@ -48,6 +48,21 @@ const policy = (writeDenied: string[]): SandboxPolicy => ({
 const sandbox = () => createBubblewrapSandbox({ bwrapPath: bwrap, tmpRoot: path.join(base, 'tmp'), killGraceMs: 300 });
 
 describe('bubblewrap launch (a stand-in bwrap that creates the /dev/null mount points; the real bwrap never ran on this host)', () => {
+  it('refuses to start a command in a workspace whose protected .git is a symlink loop, with a typed error that names it', () => {
+    const git = path.join(work, '.git');
+    fs.symlinkSync('.git', git);
+    const looped = { ...policy([]), writeDeniedLiterals: [git] };
+    let thrown: unknown;
+    try {
+      sandbox().spawn({ argv: ['/bin/sh', '-c', 'echo started'], cwd: work, env: { PATH: '/usr/bin:/bin' } }, looped, new AbortController().signal);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(SandboxPolicyError);
+    expect((thrown as SandboxPolicyError).message).toContain(git);
+    expect(fs.lstatSync(git).isSymbolicLink()).toBe(true);
+  });
+
   it('forwards the command stdin to the sandboxed process, as Seatbelt and the unsandboxed launcher do', async () => {
     const proc = sandbox().spawn({ argv: ['/bin/cat'], cwd: work, env: { PATH: '/usr/bin:/bin' }, stdin: '{"tool_input":1}' }, policy([]), new AbortController().signal);
     const result = await run(proc);

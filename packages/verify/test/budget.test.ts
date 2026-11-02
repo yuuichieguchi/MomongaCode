@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { protectedSetFor } from '@momonga/foundation';
+import { hostFilesystemOf } from '@momonga/testkit';
 import { verifyPermissions } from '../src/index.ts';
 import type { VerifyRequest } from '../src/index.ts';
 import { caseSensitiveFs, makeLayout, rulesOf, sshLocation, useZ3 } from './harness.ts';
@@ -21,7 +22,7 @@ describe('the overall budget of a verification', () => {
       home: layout.home,
       cwd: layout.project,
       protectedSet: protectedSetFor(roots, fileSystem),
-      fs: fileSystem,
+      fs: hostFilesystemOf(fileSystem),
       secretLocations: [sshLocation(layout)],
       exemptDirectory: null,
       budgetMs: 0,

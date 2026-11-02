@@ -1,4 +1,4 @@
-import { TEST_HEARTBEAT_MS, fakePolicyFilesystem } from '@momonga/testkit';
+import { FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf } from '@momonga/testkit';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createToolExecutor } from '@momonga/tools';
@@ -18,7 +18,7 @@ const executorWhoseRecordVanishesAfterGet = (harness: Harness) => {
       return snapshot;
     },
   };
-  return createToolExecutor({ fs: fakePolicyFilesystem(), heartbeatMs: TEST_HEARTBEAT_MS,
+  return createToolExecutor({ fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
     idempotency: vanishingPort,
     blobs: harness.blobs.port,
     clock: harness.clock,

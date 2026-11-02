@@ -1,7 +1,7 @@
 import { systemClock } from '@momonga/foundation';
 import type { Clock, ProtectedSet } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
-import type { PermissionRule, PolicyFilesystem } from '@momonga/policy';
+import type { PermissionRule, PolicyHostFilesystem } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
 import { startBudget } from './budget.ts';
 import { alphabetFor } from './char-set.ts';
@@ -23,7 +23,7 @@ export type VerifyRequest = {
   home: string;
   cwd: string;
   protectedSet: ProtectedSet;
-  fs: PolicyFilesystem;
+  fs: PolicyHostFilesystem;
   secretLocations: readonly SecretLocation[];
   exemptDirectory: string | null;
   budgetMs: number;
@@ -80,7 +80,7 @@ export const buildQueryContext = (api: Z3Api, request: VerifyRequest): QueryCont
   const models = { smt, paths, commands, rules, mode };
   return {
     models,
-    env: { rules, roots, mode, home, cwd, fileRules, protectedSet, fs },
+    env: { rules, roots, mode, home, cwd, fileRules, protectedSet, fs, globBudgetMs: budgetMs },
     budget,
     subjects: buildSubjects(models),
     mismatches: [],

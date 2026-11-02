@@ -90,7 +90,7 @@ export const probe = async (
   if (result.status === 'unknown') return { status: 'unknown', reason: result.reason };
   if (witness === undefined) throw new Error('the solver found a model without a witness');
   const predicted = kindOf(result.readBool, outcome);
-  const replay = replayWitness(env, tool, witness, { kind: predicted, dependsOnDefault: result.readBool(outcome.byDefault) });
+  const replay = await replayWitness(env, tool, witness, { kind: predicted, dependsOnDefault: result.readBool(outcome.byDefault) });
   const counterexample: Counterexample = { witness, predicted, cause: causeOf(subject, outcome, predicted, result.readBool, env.mode), replay };
   if (isMismatch(replay)) mismatches.push({ property, subject: subjectName, counterexample });
   return { status: 'found', counterexample };

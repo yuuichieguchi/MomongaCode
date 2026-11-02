@@ -86,6 +86,89 @@ describe('executor: writeDenied path subjects', () => {
   });
 });
 
+describe('executor write guard while a placeholder changes during the batch (HIGH-2)', () => {
+  const flippingTool = (flip: () => void) =>
+    makeTool('Flip', {
+      kind: 'edit',
+      sideEffect: 'write',
+      subject: () => ({ kind: 'path', tool: 'Flip', paths: ['flip.txt'], access: 'write' }),
+      execute: async () => {
+        flip();
+        return { status: 'completed', output: 'flipped' };
+      },
+    });
+
+  const runFlip = async (prepare: (placeholder: string) => void, flip: (placeholder: string) => void) => {
+    const harness = makeHarness();
+    const placeholder = path.join(harness.layout.project, 'protected');
+    prepare(placeholder);
+    const deniedBelow = path.join(placeholder, 'hooks');
+    const runs: string[] = [];
+    const tools = await toolSetOf(flippingTool(() => flip(placeholder)), pathTool('write', path.join(deniedBelow, 'pre-commit'), runs));
+    const outcomes = await harness.executor.runBatch(
+      harness.input(tools, [call('c1', 'Flip', {}, 'allow_once'), call('c2', 'PathTool', {}, 'allow_once')], {
+        mode: 'bypassPermissions',
+        sandboxPolicy: { ...minimalPolicyFor({ layout: harness.layout }), writeDenied: [deniedBelow] },
+      }),
+    );
+    return { outcomes, runs };
+  };
+
+  it('denies below an entry whose placeholder was removed after the guard was built', async () => {
+    const { outcomes, runs } = await runFlip(
+      (placeholder) => fs.writeFileSync(placeholder, ''),
+      (placeholder) => fs.unlinkSync(placeholder),
+    );
+    expect(outcomes[0]).toMatchObject({ kind: 'result', result: { status: 'completed' } });
+    expect((outcomes[1] as { result: { output: string } }).result.output).toMatch(/^Permission denied: /);
+    expect(runs).toEqual([]);
+  });
+
+  it('denies below an entry whose placeholder appeared after the guard was built', async () => {
+    const { outcomes, runs } = await runFlip(
+      () => undefined,
+      (placeholder) => fs.writeFileSync(placeholder, ''),
+    );
+    expect(outcomes[0]).toMatchObject({ kind: 'result', result: { status: 'completed' } });
+    expect((outcomes[1] as { result: { output: string } }).result.output).toMatch(/^Permission denied: /);
+    expect(runs).toEqual([]);
+  });
+
+  it('denies a write through a link whose target passes through the entry, whichever state the placeholder is in', async () => {
+    const harness = makeHarness();
+    const placeholder = path.join(harness.layout.project, 'protected');
+    fs.writeFileSync(placeholder, '');
+    const link = path.join(harness.layout.project, 'l');
+    fs.symlinkSync('protected/hooks/x', link);
+    const runs: string[] = [];
+    const tools = await toolSetOf(flippingTool(() => fs.unlinkSync(placeholder)), pathTool('write', link, runs));
+    const outcomes = await harness.executor.runBatch(
+      harness.input(tools, [call('c1', 'Flip', {}, 'allow_once'), call('c2', 'PathTool', {}, 'allow_once')], {
+        mode: 'bypassPermissions',
+        sandboxPolicy: { ...minimalPolicyFor({ layout: harness.layout }), writeDenied: [path.join(placeholder, 'hooks')] },
+      }),
+    );
+    expect((outcomes[1] as { result: { output: string } }).result.output).toMatch(/^Permission denied: /);
+    expect(runs).toEqual([]);
+  });
+
+  it('control: a sibling of the entry stays writable after the flip', async () => {
+    const harness = makeHarness();
+    const placeholder = path.join(harness.layout.project, 'protected');
+    fs.writeFileSync(placeholder, '');
+    const runs: string[] = [];
+    const sibling = path.join(harness.layout.project, 'free.txt');
+    const tools = await toolSetOf(flippingTool(() => fs.unlinkSync(placeholder)), pathTool('write', sibling, runs));
+    await harness.executor.runBatch(
+      harness.input(tools, [call('c1', 'Flip', {}, 'allow_once'), call('c2', 'PathTool', {}, 'allow_once')], {
+        mode: 'bypassPermissions',
+        sandboxPolicy: { ...minimalPolicyFor({ layout: harness.layout }), writeDenied: [path.join(placeholder, 'hooks')] },
+      }),
+    );
+    expect(runs).toEqual([sibling]);
+  });
+});
+
 describe('executor write guard and the protected set (V15)', () => {
   it('hard-denies an entry that is both a home guard and protected', async () => {
     const harness = makeHarness();

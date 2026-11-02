@@ -8,7 +8,7 @@ import type { Sandbox } from '@momonga/sandbox';
 import type { RuntimeStore } from '@momonga/store';
 import { createBuiltinTools, createPolicyFilesystem, createToolExecutor, createToolRegistry } from '@momonga/tools';
 import type { ShellHost, ToolSet } from '@momonga/tools';
-import type { PolicyFilesystem } from '@momonga/policy';
+import type { PolicyHostFilesystem } from '@momonga/policy';
 import type { ToolRuntimePort } from '../ports.ts';
 import type { RunNotifier } from '../service/notifier.ts';
 import type { ServiceTimers } from '../service/timers.ts';
@@ -37,13 +37,14 @@ export type ToolRuntimeOptions = {
   sandbox: Sandbox;
   shellHost: ShellHost;
   settings: Pick<SettingsComposition, 'envFor' | 'takeUserSnapshot' | 'loadSessionSettings' | 'trustOracle'>;
-  heartbeatMs: number;
   reapTiming: ReapTiming;
+  leaseMs: number;
+  heartbeatMs: number;
   createPool?: (options: McpPoolOptions) => McpPool;
   createAdminPool?: (options: McpPoolOptions) => McpAuthorizingPool;
   mcpRemote?: McpRemotePorts;
   ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<string>;
-  policyFilesystem?: PolicyFilesystem;
+  policyFilesystem?: PolicyHostFilesystem;
 };
 
 export type ToolRuntime = {
@@ -81,9 +82,10 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     report,
   });
   const executor = createToolExecutor({
-    heartbeatMs: options.heartbeatMs,
     jobs,
     fs: policyFilesystem,
+    leaseMs: options.leaseMs,
+    heartbeatMs: options.heartbeatMs,
     idempotency: store.idempotency,
     blobs: store.blobs,
     clock,

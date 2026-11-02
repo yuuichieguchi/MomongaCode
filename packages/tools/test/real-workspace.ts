@@ -4,8 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
 import { protectedSetFor } from '@momonga/foundation';
-import { computeFileRules, decide, parseRule } from '@momonga/policy';
-import type { Decision, PermissionRule, RuleEffect } from '@momonga/policy';
+import { EMPTY_GLOB_TABLE, computeFileRules, createGlobDeadline, decide, parseRule, prepareGlobs, settleGlobs } from '@momonga/policy';
+import type { Decision, GlobTable, PermissionRule, RuleEffect } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
 import { TEST_SEARCH_PATH, isWritableFor } from '@momonga/testkit';
 import { createPolicyFilesystem } from '@momonga/tools';
@@ -18,6 +18,10 @@ afterEach(() => {
   for (const cleanup of cleanups.splice(0).reverse()) cleanup();
 });
 
+type DecideOptions = { mode?: PermissionMode; cwd?: string; searchPath?: string; rules?: ReadonlyArray<readonly [RuleEffect, string]> };
+
+const GLOB_TEST_BUDGET_MS = 60_000;
+
 export type RealWorkspace = {
   base: string;
   project: string;
@@ -28,7 +32,8 @@ export type RealWorkspace = {
   link(target: string, relative: string): string;
   exists(relative: string): boolean;
   read(relative: string): string;
-  decide(command: string, options?: { mode?: PermissionMode; cwd?: string; searchPath?: string; rules?: ReadonlyArray<readonly [RuleEffect, string]> }): Decision;
+  decide(command: string, options?: DecideOptions): Decision;
+  decideExpanding(command: string, options?: DecideOptions): Promise<Decision>;
   runBash(command: string, cwd?: string, extra?: Record<string, string>): { stdout: string; stderr: string; status: number | null };
   env(extra?: Record<string, string>): NodeJS.ProcessEnv;
   git(cwd: string, ...args: string[]): { stdout: string; stderr: string; status: number | null };
@@ -53,6 +58,26 @@ export const makeRealWorkspace = (): RealWorkspace => {
     ...extra,
   });
   const at = (relative: string): string => path.resolve(project, relative);
+  const decideWith = (globs: GlobTable, command: string, options: DecideOptions): Decision => {
+    const rules: PermissionRule[] = (options.rules ?? []).map(([effect, text]) =>
+      parseRule(text, { effect, origin: 'user', source: 'user-settings', settingsRoot: project, home, cwd: project }),
+    );
+    const roots = [project];
+    return decide({
+      tool: { name: 'Bash', kind: 'execute', sideEffect: 'exec' },
+      subject: { kind: 'command', tool: 'Bash', command },
+      mode: options.mode ?? 'default',
+      rules,
+      roots,
+      home,
+      cwd: options.cwd ?? project,
+      fileRules: computeFileRules(rules, roots, null),
+      protectedSet: protectedSetFor(roots, filesystem),
+      fs: settleGlobs(filesystem, globs),
+      searchPath: options.searchPath ?? TEST_SEARCH_PATH,
+      isWritable: isWritableFor(roots),
+    });
+  };
   const git = (cwd: string, ...args: string[]) => {
     const result = spawnSync('/usr/bin/git', args, { cwd, env: env(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     return { stdout: result.stdout, stderr: result.stderr, status: result.status };
@@ -79,25 +104,18 @@ export const makeRealWorkspace = (): RealWorkspace => {
     },
     exists: (relative) => fs.existsSync(at(relative)),
     read: (relative) => fs.readFileSync(at(relative), 'utf8'),
-    decide: (command, options = {}) => {
-      const rules: PermissionRule[] = (options.rules ?? []).map(([effect, text]) =>
-        parseRule(text, { effect, origin: 'user', source: 'user-settings', settingsRoot: project, home, cwd: project }),
-      );
-      const roots = [project];
-      return decide({
-        tool: { name: 'Bash', kind: 'execute', sideEffect: 'exec' },
+    decide: (command, options = {}) => decideWith(EMPTY_GLOB_TABLE, command, options),
+    decideExpanding: async (command, options = {}) => {
+      const globs = await prepareGlobs({
+        expand: filesystem.expandGlob,
+        platform: filesystem.platform,
         subject: { kind: 'command', tool: 'Bash', command },
-        mode: options.mode ?? 'default',
-        rules,
-        roots,
-        home,
         cwd: options.cwd ?? project,
-        fileRules: computeFileRules(rules, roots, null),
-        protectedSet: protectedSetFor(roots, filesystem),
-        fs: filesystem,
-        searchPath: options.searchPath ?? TEST_SEARCH_PATH,
-        isWritable: isWritableFor(roots),
+        home,
+        deadline: createGlobDeadline(GLOB_TEST_BUDGET_MS),
+        signal: new AbortController().signal,
       });
+      return decideWith(globs, command, options);
     },
     runBash: (command, cwd = project, extra = {}) => {
       const result = spawnSync(REAL_BASH, ['-c', command], { cwd, env: env(extra), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });

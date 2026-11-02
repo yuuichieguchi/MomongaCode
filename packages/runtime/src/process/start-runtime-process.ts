@@ -392,8 +392,9 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         sandbox,
         shellHost: nodeShellHost(),
         settings: composition,
-        heartbeatMs: heartbeatMsFor(leaseMs),
         reapTiming,
+        leaseMs,
+        heartbeatMs: heartbeatMsFor(leaseMs),
       });
       const tracker: CancelUpstreamTracker = createCancelUpstream({ store, gatewayClient, timers });
       const skills = createSkillsPort({

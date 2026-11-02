@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { canonicalJson, resolveCanonicalPath, sha256Hex } from '@momonga/foundation';
 import { absoluteFrom } from '@momonga/policy';
-import { TEST_HEARTBEAT_MS, createFakeKernelLock, fakePolicyFilesystem } from '@momonga/testkit';
+import { FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf } from '@momonga/testkit';
 import type { PermissionSubject } from '@momonga/policy';
 import { createToolExecutor, createToolRegistry, defineTool, validateToolInput } from '@momonga/tools';
 import type { AnyTool, ExecutionBatchInput, ToolCall, ToolContext, ToolDefinition, ToolExecutorOptions, ToolSet } from '@momonga/tools';
@@ -70,8 +70,8 @@ export const makeHarness = (options: HarnessOptions = {}) => {
     ...(options.maxInlineOutputChars === undefined ? {} : { maxInlineOutputChars: options.maxInlineOutputChars }),
     ...(options.maxParallel === undefined ? {} : { maxParallel: options.maxParallel }),
     readOnlyRetry: { attempts: options.attempts ?? 3, baseMs: 0, maxMs: 0 },
-    fs: fakePolicyFilesystem(),
-    heartbeatMs: TEST_HEARTBEAT_MS,
+    fs: hostFilesystemOf(fakePolicyFilesystem()),
+    ...FAKE_LEASE,
     ...options.executor,
   });
   const session = { cwd: layout.project, readLedger: new Map<string, { sha256: string; mtimeMs: number }>() };

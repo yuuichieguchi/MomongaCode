@@ -12,7 +12,7 @@ import type { RunNotifier, SettingsComposition, ToolRuntime } from '@momonga/run
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore, Session } from '@momonga/store';
-import { TEST_HEARTBEAT_MS, createFakeClock, createFakeTimers, fakeReapTiming, killGroupsForCleanup } from '@momonga/testkit';
+import { FAKE_LEASE, createFakeClock, createFakeTimers, fakeReapTiming, killGroupsForCleanup } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 
@@ -294,8 +294,8 @@ export const makeRuntimeFixture = async (options: RuntimeFixtureOptions = {}): P
     sandbox: options.sandbox ?? inertSandbox,
     shellHost: nodeShellHost(),
     settings: composition,
-    heartbeatMs: TEST_HEARTBEAT_MS,
     reapTiming: options.reapTiming ?? reapTiming,
+    ...FAKE_LEASE,
     createPool: options.createPool ?? pools.create,
     ...(options.ensureSessionTmpDir === undefined ? {} : { ensureSessionTmpDir: options.ensureSessionTmpDir }),
   });

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { isProtectedWrite, protectedSetFor } from '@momonga/foundation';
 import type { ProtectedSet } from '@momonga/foundation';
-import { computeFileRules, decide } from '@momonga/policy';
+import { EMPTY_GLOB_TABLE, computeFileRules, decide, settleGlobs } from '@momonga/policy';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
 import type { SandboxedProcess } from '@momonga/sandbox';
 import { TEST_SEARCH_PATH, isWritableFor } from '@momonga/testkit';
@@ -203,7 +203,7 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
         home: path.join(root, 'home'),
         cwd: repositoryRoot,
         fileRules: computeFileRules([], [repositoryRoot], null),
-        fs: policyFilesystem(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([repositoryRoot]),
+        fs: settleGlobs(policyFilesystem(), EMPTY_GLOB_TABLE), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([repositoryRoot]),
         protectedSet: set,
       });
       expect(decision).toMatchObject({ kind: 'ask', source: 'protected' });

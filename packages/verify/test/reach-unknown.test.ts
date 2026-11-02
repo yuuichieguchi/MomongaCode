@@ -1,4 +1,5 @@
 import { protectedSetFor } from '@momonga/foundation';
+import { hostFilesystemOf } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { checkRuleConsistency } from '../src/properties.ts';
 import type { SolveResult } from '../src/smt.ts';
@@ -19,7 +20,7 @@ describe('rule-consistency when the last probe of a rule cannot be decided', () 
       home: layout.home,
       cwd: layout.project,
       protectedSet: protectedSetFor(roots, fileSystem),
-      fs: fileSystem,
+      fs: hostFilesystemOf(fileSystem),
       secretLocations: [sshLocation(layout)],
       exemptDirectory: null,
       budgetMs: 120_000,

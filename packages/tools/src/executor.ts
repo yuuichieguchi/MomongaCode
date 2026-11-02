@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalJson, canonicalPath, comparableContains, containsByComponents, comparablePath, computeBackoff, fileRuleFingerprint, hostKernelLock, hostReapTiming, momongaLayout, reapMarkedProcessesWithReport, sha256Hex, volumeIsCaseInsensitive, writableAreaOf, writableCheckOf } from '@momonga/foundation';
+import { canonicalJson, canonicalPath, comparableFromParts, containsByComponents, computeBackoff, fileRuleFingerprint, hostKernelLock, hostReapTiming, locateThroughFiles, momongaLayout, reapMarkedProcessesWithReport, sha256Hex, writableAreaOf, writableCheckOf } from '@momonga/foundation';
 import type { Clock, FileRuleProvenance, KernelLockMechanism, PathResolution, ReapTiming, SignalSender } from '@momonga/foundation';
-import { absoluteFrom, decide, fileRuleSpecsOf, suggestAllowRule } from '@momonga/policy';
-import type { Decision, PermissionRule, PermissionSubject, PolicyFilesystem } from '@momonga/policy';
+import { absoluteFrom, createGlobDeadline, decide, fileRuleSpecsOf, globBudgetMs, prepareGlobs, settleGlobs, suggestAllowRule } from '@momonga/policy';
+import type { Decision, PermissionRule, PermissionSubject, PolicyHostFilesystem } from '@momonga/policy';
 import { permissionDeniedOutput } from '@momonga/protocol';
 import type { ElicitationRequestView, PermissionDenial, PermissionMode, ToolAwait, ToolKind } from '@momonga/protocol';
 import { SANDBOX_STOP_BOUND_MS, SandboxPolicyError, canonicalParentForm } from '@momonga/sandbox';
@@ -132,10 +132,11 @@ export type ToolExecutorOptions = {
   processMarkerDir: string;
   callLockDir: string;
   kernelLock?: KernelLockMechanism;
-  fs: PolicyFilesystem;
+  fs: PolicyHostFilesystem;
+  leaseMs: number;
+  heartbeatMs: number;
   reconcileCapMs?: number;
   reconcileGraceMs?: number;
-  heartbeatMs: number;
   onWarning(message: string): void;
   reap?: { kill?: SignalSender; timing?: ReapTiming; killGraceMs?: number };
 };
@@ -225,7 +226,8 @@ const describeProvenance = ({ ruleText, layer, source }: FileRuleProvenance): st
 const parentCanonicalKey = (target: string): string => {
   const directory = path.dirname(target);
   const name = path.basename(target);
-  return path.join(comparablePath(directory), volumeIsCaseInsensitive(directory) ? name.toLowerCase() : name);
+  const { parts, caseInsensitive } = locateThroughFiles(directory);
+  return path.join(comparableFromParts(parts, caseInsensitive), caseInsensitive ? name.toLowerCase() : name);
 };
 
 const lexicalAncestorsOf = (target: string): string[] => {
@@ -242,31 +244,30 @@ const launcherGuardKeys = (literals: readonly string[]): Set<string> =>
       .map(parentCanonicalKey),
   );
 
-type BelowPlaceholder = { placeholder: string; tail: readonly string[] };
-
 const isEmptyRegularFile = (target: string): boolean => {
   const stat = fs.lstatSync(target);
   return stat.isFile() && stat.size === 0;
 };
 
-const belowPlaceholderOf = (target: string): BelowPlaceholder | undefined => {
+const requireResolvable = (entry: string): void => {
   try {
-    canonicalPath(target);
-    return undefined;
+    canonicalPath(entry);
+    return;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOTDIR') return undefined;
-  }
-  for (let ancestor = path.dirname(target); ancestor !== path.dirname(ancestor); ancestor = path.dirname(ancestor)) {
-    let real: string;
-    try {
-      real = canonicalPath(ancestor);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOTDIR') throw error;
-      continue;
+    if ((error as NodeJS.ErrnoException).code !== 'ENOTDIR') throw error;
+    for (let ancestor = path.dirname(entry); ancestor !== path.dirname(ancestor); ancestor = path.dirname(ancestor)) {
+      let real: string;
+      try {
+        real = canonicalPath(ancestor);
+      } catch (inner) {
+        if ((inner as NodeJS.ErrnoException).code !== 'ENOTDIR') throw inner;
+        continue;
+      }
+      if (isEmptyRegularFile(real)) return;
+      throw error;
     }
-    return isEmptyRegularFile(real) ? { placeholder: real, tail: path.relative(ancestor, target).split(path.sep) } : undefined;
+    throw error;
   }
-  return undefined;
 };
 
 const createWriteGuard = (batch: ExecutionBatchInput): ((subject: PermissionSubject, cwd: string) => string | undefined) => {
@@ -275,36 +276,23 @@ const createWriteGuard = (batch: ExecutionBatchInput): ((subject: PermissionSubj
   const homeGuards = new Set([layout.root, layout.keychains]);
   const approvalGated = new Set(batch.sandboxPolicy.protectedSet.paths);
   const entries = batch.sandboxPolicy.writeDenied.filter((entry) => homeGuards.has(entry) || !approvalGated.has(entry));
-  const belowPlaceholderGuards: BelowPlaceholder[] = [];
-  const guards: string[] = [];
-  for (const entry of entries) {
-    const below = belowPlaceholderOf(entry);
-    if (below === undefined) guards.push(canonicalPath(entry));
-    else belowPlaceholderGuards.push(below);
-  }
+  const guards = entries.map((entry) => {
+    requireResolvable(entry);
+    return locateThroughFiles(entry).parts;
+  });
   const launcherKeys = launcherGuardKeys(batch.sandboxPolicy.writeDeniedLiterals);
-  const blocksLauncher = (resolved: string): boolean => launcherKeys.has(parentCanonicalKey(resolved));
-  const exempt = batch.tmpDir === undefined ? undefined : canonicalPath(batch.tmpDir);
-  const exemptContains = (resolved: string): boolean => exempt !== undefined && comparableContains(exempt, resolved);
-  const blocksResolved = (resolved: string): boolean => guards.some((guard) => comparableContains(guard, resolved)) && !exemptContains(resolved);
-  const blocksBelowPlaceholder = (below: BelowPlaceholder): boolean => {
-    const foldTail = volumeIsCaseInsensitive(path.dirname(below.placeholder));
-    const inGuardedTree =
-      guards.some((guard) => comparableContains(guard, below.placeholder)) ||
-      belowPlaceholderGuards.some((guard) => guard.placeholder === below.placeholder && containsByComponents({ existing: guard.placeholder, tail: guard.tail }, { existing: below.placeholder, tail: below.tail }, foldTail));
-    return inGuardedTree && !exemptContains(below.placeholder);
-  };
-  const blocks = (resolved: string, canonicalise: boolean): boolean => {
-    const below = belowPlaceholderOf(resolved);
-    if (below !== undefined) return blocksBelowPlaceholder(below);
-    return blocksResolved(canonicalise ? canonicalPath(resolved) : resolved);
+  const blocksLauncher = (target: string): boolean => launcherKeys.has(parentCanonicalKey(target));
+  const exempt = batch.tmpDir === undefined ? undefined : locateThroughFiles(batch.tmpDir).parts;
+  const blocks = (target: string): boolean => {
+    const { parts, caseInsensitive } = locateThroughFiles(target);
+    const exemptContains = exempt !== undefined && containsByComponents(exempt, parts, caseInsensitive);
+    return guards.some((guard) => containsByComponents(guard, parts, caseInsensitive)) && !exemptContains;
   };
   return (subject, cwd) => {
     if (subject.kind !== 'path' || subject.access !== 'write') return undefined;
     return subject.paths.find((target) => {
-      const absolute = absoluteFrom(target, cwd);
       const lexical = path.resolve(cwd, target);
-      return blocks(absolute, true) || blocks(lexical, false) || (belowPlaceholderOf(lexical) === undefined && blocksLauncher(lexical));
+      return blocks(absoluteFrom(target, cwd)) || blocks(lexical) || blocksLauncher(lexical);
     });
   };
 };
@@ -473,13 +461,15 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     return text;
   };
 
-  const evaluatePolicy = (
+  const globBudget = globBudgetMs({ leaseMs: options.leaseMs, heartbeatMs: options.heartbeatMs });
+
+  const evaluatePolicy = async (
     call: ToolCall,
     tool: AnyTool,
     subject: PermissionSubject,
     access: BatchAccess,
     batch: ExecutionBatchInput,
-  ): { outcome: CallOutcome } | { decision: Decision } => {
+  ): Promise<{ outcome: CallOutcome } | { decision: Decision }> => {
     const cwd = batch.session.cwd;
     const blockedPath = readDeniedPath(subject, access, cwd);
     if (blockedPath !== undefined) return { outcome: deniedOutcome(call.callId, { source: 'sandbox', reason: `${blockedPath} is blocked by the sandbox policy` }) };
@@ -493,6 +483,16 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         outcome: deniedOutcome(call.callId, { source: 'rule', reason: `${blockedByRule.target} is blocked by ${describeProvenance(blockedByRule.provenance)}` }),
       };
     }
+    const globs = await prepareGlobs({
+      expand: options.fs.expandGlob,
+      platform: options.fs.platform,
+      subject,
+      cwd,
+      home: batch.home,
+      deadline: createGlobDeadline(globBudget),
+      signal: batch.signal,
+    });
+    if (batch.signal.aborted) return { outcome: failedOutcome(call.callId, `${tool.name} was cancelled`) };
     const decision = decide({
       tool: { name: tool.name, kind: tool.kind, sideEffect: tool.sideEffect },
       subject,
@@ -504,7 +504,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       cwd,
       fileRules: batch.sandboxPolicy.fileRules,
       protectedSet: batch.sandboxPolicy.protectedSet,
-      fs: options.fs,
+      fs: settleGlobs(options.fs, globs),
       searchPath: batch.env['PATH'],
       isWritable: access.isWritable,
     });
@@ -524,7 +524,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   ): Promise<CallOutcome | undefined> => {
     const cwd = batch.session.cwd;
     const policyTool = { name: tool.name, kind: tool.kind, sideEffect: tool.sideEffect };
-    const first = evaluatePolicy(call, tool, target.subject, access, batch);
+    const first = await evaluatePolicy(call, tool, target.subject, access, batch);
     if ('outcome' in first) return first.outcome;
     let decision = first.decision;
     const hooks = batch.hooks !== undefined && batch.hooks.matchesPreToolUse(tool.name) ? batch.hooks : undefined;
@@ -549,7 +549,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         } catch (error) {
           return failedOutcome(call.callId, describeThrown(tool.name, error));
         }
-        const second = evaluatePolicy(call, tool, subject, access, batch);
+        const second = await evaluatePolicy(call, tool, subject, access, batch);
         if ('outcome' in second) return second.outcome;
         decision = second.decision;
         target.input = validation.value;

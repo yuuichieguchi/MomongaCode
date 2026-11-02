@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
-import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox } from '@momonga/sandbox';
+import { DEFAULT_BWRAP_PATH, SandboxPolicyError, createBubblewrapSandbox } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
 import { killGroupsForCleanup, waitFor } from '@momonga/testkit';
 import { fileRulesOf, fileSpec } from './file-rule-specs.ts';
@@ -122,6 +122,57 @@ describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', () => {
     const result = await run(sh(`mkdir ${wide}/.git 2>/dev/null && echo created || echo refused; : > ${wide}/other && echo wrote`, { fileRules, writeDeniedLiterals: [path.join(wide, '.git', 'hooks')] }));
     expect(result.stdout.trim().split('\n')).toEqual(['refused', 'wrote']);
     expect(fs.existsSync(path.join(wide, '.git'))).toBe(false);
+  });
+
+  describe('a symlinked protected .git (the run settles whether a symlink can be pinned)', () => {
+    const START_REFUSED = 'start-refused';
+
+    const outcome = async (script: string, git: string): Promise<string> => {
+      try {
+        const proc = sh(script, { writeDeniedLiterals: [git] });
+        return (await run(proc)).stdout.trim();
+      } catch (error) {
+        if (error instanceof SandboxPolicyError) return START_REFUSED;
+        throw error;
+      }
+    };
+
+    const withLink = (target: string): string => {
+      const git = path.join(work, '.git');
+      fs.mkdirSync(path.join(work, target), { recursive: true });
+      fs.symlinkSync(target, git);
+      return git;
+    };
+
+    it('either refuses to start or does not let .git be replaced by a directory', async () => {
+      const git = withLink('realgit');
+      expect(['kept', START_REFUSED]).toContain(await outcome('rm .git 2>/dev/null && mkdir -p .git/hooks 2>/dev/null && echo replaced || echo kept', git));
+      expect(fs.lstatSync(git).isSymbolicLink()).toBe(true);
+    });
+
+    it('either refuses to start or does not let .git be re-pointed', async () => {
+      const git = withLink('realgit');
+      fs.mkdirSync(path.join(work, 'other'));
+      expect(['kept', START_REFUSED]).toContain(await outcome('ln -sfn other .git 2>/dev/null && echo repointed || echo kept', git));
+      expect(fs.readlinkSync(git)).toBe('realgit');
+    });
+
+    it('either refuses to start or keeps a looped .git a loop', async () => {
+      const git = path.join(work, '.git');
+      fs.symlinkSync('.git', git);
+      expect(['kept', START_REFUSED]).toContain(await outcome('rm .git 2>/dev/null && mkdir -p .git/hooks 2>/dev/null && echo replaced || echo kept', git));
+      expect(fs.lstatSync(git).isSymbolicLink()).toBe(true);
+    });
+
+    it('either refuses to start or lets a hand-made .git -> ../store/x.git work as a repository path without being replaceable', async () => {
+      const store = path.join(outside, 'x.git');
+      fs.mkdirSync(path.join(store, 'hooks'), { recursive: true });
+      const git = path.join(work, '.git');
+      fs.symlinkSync(store, git);
+      const result = await outcome('rm .git 2>/dev/null && echo replaced || echo kept', git);
+      expect(['kept', START_REFUSED]).toContain(result);
+      expect(fs.lstatSync(git).isSymbolicLink()).toBe(true);
+    });
   });
 
   it('terminates the whole process group when aborted', async () => {
