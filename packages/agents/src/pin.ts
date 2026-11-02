@@ -1,6 +1,5 @@
+import { isRecord } from '@momonga/foundation';
 import type { AgentDefinition, AgentPin } from './types.ts';
-
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export const pinOf = (agent: AgentDefinition): AgentPin => ({
   name: agent.name,

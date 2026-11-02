@@ -1,3 +1,4 @@
+import { isRecord } from '@momonga/foundation';
 import { compileUntrustedSchema } from '@momonga/tools';
 import { sanitizeSchema } from './schema-sanitizer.ts';
 import { capText, sanitizeServerText } from './text.ts';
@@ -30,7 +31,6 @@ export class McpElicitationAnswerError extends Error {
   }
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const parseUrl = (key: string, raw: unknown): string => {
   if (typeof raw !== 'string') throw new McpInputProtocolError(`input request "${key}" is a url elicitation without a url`);

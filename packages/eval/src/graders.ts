@@ -1,3 +1,4 @@
+import { isRecord } from '@momonga/foundation';
 import type { ToolKind } from '@momonga/protocol';
 import type { CountRange, GraderSpec, PermissionDecision } from './dataset.ts';
 import { callsOf, finalTextOf } from './observe.ts';
@@ -18,8 +19,6 @@ export type DecisionObservation = {
 };
 
 export type Graded = { outcomes: GradeOutcome[]; decisions: DecisionObservation[]; passed: boolean };
-
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const deepEqual = (left: unknown, right: unknown): boolean => {
   if (left === right) return true;

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { immediateTx, modeIsPrivate, sha256Hex, uuidv7 } from '@momonga/foundation';
+import { immediateTx, modeIsPrivate, sha256Hex, syncDirectorySync, uuidv7 } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { readerFor } from './rows.ts';
 import type { BlobByteRange, BlobByteSlice, BlobLineRange, BlobRef, BlobSlice, BlobStore } from './types.ts';
@@ -26,15 +26,6 @@ const countLines = (bytes: Uint8Array): number => {
   let newlines = 0;
   for (const byte of bytes) if (byte === NEWLINE) newlines += 1;
   return bytes[bytes.length - 1] === NEWLINE ? newlines : newlines + 1;
-};
-
-const syncDirectory = (dir: string): void => {
-  const fd = fs.openSync(dir, 'r');
-  try {
-    fs.fsyncSync(fd);
-  } finally {
-    fs.closeSync(fd);
-  }
 };
 
 const assertUtf8 = (bytes: Uint8Array): void => {
@@ -62,7 +53,7 @@ const writeAtomically = (dir: string, target: string, bytes: Uint8Array, clock: 
     fs.rmSync(temp, { force: true });
     throw error;
   }
-  syncDirectory(dir);
+  syncDirectorySync(dir);
 };
 
 const holdsContent = (target: string, sha256: string, byteLength: number): boolean => {

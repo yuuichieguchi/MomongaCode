@@ -1,4 +1,5 @@
 import type { CallToolResult } from '@modelcontextprotocol/client';
+import { isRecord } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { parseInputRequests } from './input-requests.ts';
 import type { ElicitationAnswer } from './input-requests.ts';
@@ -27,8 +28,6 @@ type TaskView =
   | (TaskBase & { status: 'completed'; result: unknown })
   | (TaskBase & { status: 'failed'; error: unknown })
   | (TaskBase & { status: 'cancelled'; message: string | undefined });
-
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export const parseTask = (value: unknown): TaskView => {
   if (!isRecord(value) || typeof value['taskId'] !== 'string') throw new McpTaskError('', 'the server returned a task without a taskId');

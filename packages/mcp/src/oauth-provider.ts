@@ -8,6 +8,7 @@ import type {
   StoredOAuthTokens,
 } from '@modelcontextprotocol/client';
 import type { McpServerScope } from '@momonga/config';
+import { isRecord } from '@momonga/foundation';
 import type { McpCredentialStore } from './credential-store.ts';
 import { McpAuthorizationError } from './remote-errors.ts';
 import { assertAuthorizationUrl } from './remote-policy.ts';
@@ -20,7 +21,6 @@ type IssuerCredentials = { clientInformation?: StoredOAuthClientInformation; tok
 
 type StoredCredentials = { version: typeof STORE_VERSION; lastIssuer?: string; issuers: Record<string, IssuerCredentials> };
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const parseStored = (raw: string): StoredCredentials => {
   const parsed: unknown = JSON.parse(raw);

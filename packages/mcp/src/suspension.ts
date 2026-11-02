@@ -1,3 +1,4 @@
+import { isRecord } from '@momonga/foundation';
 import type { ElicitationAnswer, ElicitationRequest } from './input-requests.ts';
 
 export type McpCheckpoint =
@@ -18,8 +19,6 @@ export class McpInputSuspension extends Error {
     this.checkpoint = checkpoint;
   }
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export const parseCheckpoint = (value: unknown): McpCheckpoint => {
   if (!isRecord(value)) throw new TypeError('an MCP checkpoint must be an object');

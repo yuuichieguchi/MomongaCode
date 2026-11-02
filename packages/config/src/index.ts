@@ -1,7 +1,7 @@
 export { appendPermissionRule } from './append-rule.ts';
 export type { AppendPermissionRuleOptions } from './append-rule.ts';
-export { systemFileLockPorts } from './file-lock.ts';
-export type { FileLockPorts } from './file-lock.ts';
+export { systemFileLockPorts } from '@momonga/foundation';
+export type { FileLockPorts } from '@momonga/foundation';
 export { isCredentialEnvName, stripCredentialEnv } from './credential-env.ts';
 export { loadSettings } from './load-settings.ts';
 export { credentialEnvNames, secretNames } from './models.ts';

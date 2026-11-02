@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { syncDirectorySync } from './atomic-file.ts';
 import { isProcessAlive } from './process-alive.ts';
 import { assertPrivateRegularFile, noFollowFlag } from './platform/privacy.ts';
 
@@ -41,15 +42,6 @@ const sweepStaleTemporaries = (keyPath: string): void => {
   }
 };
 
-const syncDirectory = (directory: string): void => {
-  const fd = fs.openSync(directory, fs.constants.O_RDONLY);
-  try {
-    fs.fsyncSync(fd);
-  } finally {
-    fs.closeSync(fd);
-  }
-};
-
 const createKey = (keyPath: string, bytes: number): Uint8Array => {
   const key = randomBytes(bytes);
   const temporary = `${keyPath}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
@@ -69,7 +61,7 @@ const createKey = (keyPath: string, bytes: number): Uint8Array => {
     return winner;
   } finally {
     fs.rmSync(temporary, { force: true });
-    syncDirectory(path.dirname(keyPath));
+    syncDirectorySync(path.dirname(keyPath));
   }
   return new Uint8Array(key);
 };
