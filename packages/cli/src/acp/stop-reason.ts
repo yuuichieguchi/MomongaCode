@@ -1,0 +1,46 @@
+import { RequestError } from '@agentclientprotocol/sdk';
+import type { StopReason } from '@agentclientprotocol/sdk';
+import type { RunView } from '../client/views.ts';
+
+const unmappable = (run: RunView, description: string): RequestError =>
+  RequestError.internalError(
+    { runId: run.id, status: run.status, ...(run.stopReason === undefined ? {} : { stopReason: run.stopReason }), ...(run.error === undefined ? {} : { error: run.error }) },
+    `run ${run.id} ${description}`,
+  );
+
+const stoppedReasonOf = (run: RunView): StopReason => {
+  const reason = run.stopReason;
+  if (reason === undefined) throw new Error(`run ${run.id} is STOPPED without a stop reason`);
+  switch (reason) {
+    case 'max_steps':
+      return 'max_turn_requests';
+    case 'max_tokens':
+    case 'budget':
+      return 'max_tokens';
+    case 'refusal':
+      return 'refusal';
+    case 'timeout':
+    case 'loop':
+    case 'approval_timeout':
+      throw unmappable(run, `stopped: ${reason}`);
+  }
+};
+
+export const stopReasonOf = (run: RunView): StopReason => {
+  switch (run.status) {
+    case 'COMPLETED':
+      return 'end_turn';
+    case 'CANCELLED':
+      return 'cancelled';
+    case 'STOPPED':
+      return stoppedReasonOf(run);
+    case 'FAILED':
+      throw unmappable(run, `failed${run.error === undefined ? '' : `: ${run.error.code}: ${run.error.message}`}`);
+    case 'QUEUED':
+    case 'RUNNING':
+    case 'WAITING_TOOL':
+    case 'WAITING_HUMAN':
+    case 'CANCELLING':
+      throw new Error(`run ${run.id} is ${run.status}, which is not a terminal status`);
+  }
+};

@@ -4,7 +4,7 @@ import type { RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPay
 import { hasConsistentSeqs } from './seqs.ts';
 import { corrupt, expectOneOf, expectRecord, expectStringRecord, isRecord, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
-import type { Run, RunError, Session } from './types.ts';
+import type { Run, RunError, Session, SessionMcpServers } from './types.ts';
 
 const identityOf = (row: Row): string => String(row['id']);
 
@@ -18,6 +18,14 @@ const expectAbsolutePaths = (table: string, identity: string, column: string, va
   return value as string[];
 };
 
+const expectServerRecords = (identity: string, value: unknown): SessionMcpServers => {
+  const record = expectRecord('sessions', identity, 'mcp_servers_json', value);
+  for (const [name, server] of Object.entries(record)) {
+    if (!isRecord(server)) throw corrupt('sessions', identity, `column mcp_servers_json entry ${JSON.stringify(name)} must be an object`);
+  }
+  return record as SessionMcpServers;
+};
+
 export const decodeSession = (row: Row): Session => {
   const identity = identityOf(row);
   const reader = readerFor('sessions', identity, row);
@@ -29,6 +37,7 @@ export const decodeSession = (row: Row): Session => {
     modelAlias: reader.string('model_alias'),
     bypassAllowed: reader.flag('bypass_allowed'),
     additionalDirectories: expectAbsolutePaths('sessions', identity, 'additional_directories_json', reader.json('additional_directories_json')),
+    mcpServers: expectServerRecords(identity, reader.json('mcp_servers_json')),
     createdAt: reader.number('created_at'),
   };
 };

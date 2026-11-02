@@ -21,7 +21,8 @@ export type E2eCaseFile =
   | 'cli.test.ts'
   | 'cli-pty.test.ts'
   | 'memory.test.ts'
-  | 'mcp-complete.test.ts';
+  | 'mcp-complete.test.ts'
+  | 'acp.test.ts';
 
 export const E2E_CASES = [
   { id: 'b1-join', file: 'b1-model-call.test.ts', title: 'b1 join: restarted runtime joins the in-flight upstream call', needsBash: false },
@@ -102,6 +103,14 @@ export const E2E_CASES = [
   { id: 'mcp-elicitation', file: 'mcp-complete.test.ts', title: 'mcp: an elicitation reaches the Run API as an event, the answer resumes the multi round-trip request and the run completes', needsBash: false },
   { id: 'mcp-task-input', file: 'mcp-complete.test.ts', title: 'mcp: a task that needs input is answered through tasks/update and the run completes', needsBash: false },
   { id: 'mcp-task-recovery', file: 'mcp-complete.test.ts', title: 'mcp: a runtime killed with SIGKILL during a task resumes polling the recorded task and starts no second one', needsBash: false },
+  { id: 'acp-edit-task', file: 'acp.test.ts', title: 'acp: a prompt that globs, reads and edits a file streams tool calls with their kinds, a diff and a usage update while stdout carries protocol frames only', needsBash: false },
+  { id: 'acp-permission', file: 'acp.test.ts', title: 'acp: in default mode the edit asks the client with the four options; allow_once applies it and reject_once leaves the file and tells the model', needsBash: false },
+  { id: 'acp-cancel', file: 'acp.test.ts', title: 'acp: session/cancel ends a streaming prompt with the cancelled stop reason', needsBash: false },
+  { id: 'acp-mode', file: 'acp.test.ts', title: 'acp: session/set_mode changes the permission mode of the Run API session and announces it, and a mode the session may not use is refused', needsBash: false },
+  { id: 'acp-load', file: 'acp.test.ts', title: 'acp: session/load on a second connection replays the conversation before it answers and the session continues with its history', needsBash: false },
+  { id: 'acp-mcp', file: 'acp.test.ts', title: 'acp: an MCP server passed with session/new is offered to the model and its tool runs, and an sse server is refused', needsBash: false },
+  { id: 'acp-elicitation', file: 'acp.test.ts', title: 'acp: an MCP server that asks the user for input reaches the editor as an elicitation and the answer resumes the tool call', needsBash: false },
+  { id: 'acp-commands', file: 'acp.test.ts', title: 'acp: the skills of the session are announced as commands and a slash prompt activates the skill', needsBash: false },
 ] as const satisfies readonly { id: string; file: E2eCaseFile; title: string; needsBash: boolean }[];
 
 export type E2eCase = (typeof E2E_CASES)[number];

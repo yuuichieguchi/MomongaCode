@@ -3,6 +3,7 @@ import { canonicalPath, momongaPaths } from '@momonga/foundation';
 import type { EntryIo, MomongaPaths } from '@momonga/foundation';
 import { PERMISSION_MODES } from '@momonga/protocol';
 import type { PermissionMode } from '@momonga/protocol';
+import { serveAcp } from './acp/serve.ts';
 import { daemonStatus, daemonStop } from './commands/daemon.ts';
 import { DEFAULT_FM_BINARY, probeFm } from './commands/gateway.ts';
 import { approve, attachRun, cancelRun } from './commands/runs.ts';
@@ -106,6 +107,13 @@ export const buildProgram = (deps: ProgramDeps): Command => {
     .option('--json', 'print the trace as JSON')
     .action(async (runId: string | undefined, options: { json?: true }) => {
       deps.complete(await showTrace(ports, pathsOf(ports), runId, options.json === true));
+    });
+
+  program
+    .command('acp')
+    .description('speak the Agent Client Protocol on standard input and output so an editor can drive momonga')
+    .action(async () => {
+      deps.complete(await serveAcp(ports, pathsOf(ports), deps.interrupt));
     });
 
   const daemon = program.command('daemon').description('manage the background daemon');

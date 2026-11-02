@@ -23,6 +23,7 @@ const SCHEMA_NAMES = [
   'MemoryView',
   'MemoriesResponse',
   'MemoryResponse',
+  'McpServersResponse',
 ] as const;
 
 type SchemaName = (typeof SCHEMA_NAMES)[number];
@@ -82,10 +83,26 @@ describe('request schemas', () => {
     expect(accepts('CreateSessionRequest', { cwd: '/work/a', env: {}, extra: true })).toBe(false);
   });
 
+  it('accepts MCP servers keyed by name in the session creation body and rejects anything else', () => {
+    expect(accepts('CreateSessionRequest', { cwd: '/work/a', env: {}, mcpServers: {} })).toBe(true);
+    expect(accepts('CreateSessionRequest', { cwd: '/work/a', env: {}, mcpServers: { fx: { command: 'node' }, docs: { type: 'http', url: 'https://example.com' } } })).toBe(true);
+    expect(accepts('CreateSessionRequest', { cwd: '/work/a', env: {}, mcpServers: [] })).toBe(false);
+    expect(accepts('CreateSessionRequest', { cwd: '/work/a', env: {}, mcpServers: { fx: 'node' } })).toBe(false);
+  });
+
   it('validates the session patch body', () => {
     expect(accepts('PatchSessionRequest', { permissionMode: 'acceptEdits' })).toBe(true);
     expect(accepts('PatchSessionRequest', {})).toBe(false);
     expect(accepts('PatchSessionRequest', { permissionMode: 'acceptEdits', cwd: '/x' })).toBe(false);
+    expect(accepts('PatchSessionRequest', { mcpServers: {} })).toBe(true);
+    expect(accepts('PatchSessionRequest', { permissionMode: 'plan', mcpServers: { fx: { command: 'node' } } })).toBe(true);
+    expect(accepts('PatchSessionRequest', { mcpServers: [] })).toBe(false);
+  });
+
+  it('reports the scope of an MCP server as user, project or session', () => {
+    const server = { name: 'fx', transport: 'stdio', auth: 'not_applicable' };
+    for (const scope of ['user', 'project', 'session']) expect(accepts('McpServersResponse', { servers: [{ ...server, scope }] }), scope).toBe(true);
+    expect(accepts('McpServersResponse', { servers: [{ ...server, scope: 'org' }] })).toBe(false);
   });
 
   it('bounds the run input by code points', () => {

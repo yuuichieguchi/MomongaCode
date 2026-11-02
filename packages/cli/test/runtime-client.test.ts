@@ -43,6 +43,11 @@ describe('request building', () => {
     expect(createRunBody('Start over', { history: 'fresh' })).toEqual({ input: 'Start over', history: 'fresh' });
   });
 
+  it('adds the skill only when one is named', () => {
+    expect(createRunBody('/pdf summarize', { skill: 'pdf' })).toEqual({ input: '/pdf summarize', skill: 'pdf' });
+    expect(createRunBody('summarize', { history: 'inherit', skill: 'pdf' })).toEqual({ input: 'summarize', history: 'inherit', skill: 'pdf' });
+  });
+
   it.each([
     { options: { after: 4 }, query: '?after=4', headers: { accept: 'text/event-stream' } },
     { options: { lastEventId: 7 }, query: '', headers: { accept: 'text/event-stream', 'last-event-id': '7' } },
@@ -64,6 +69,15 @@ describe('createSession', () => {
     expect(seen[0]?.headers['content-type']).toBe('application/json');
     expect(created.strippedEnvKeys).toEqual(['A']);
     expect(created.session.id).toBe('session-1');
+  });
+
+  it('posts the MCP servers of the session when they are given', async (context) => {
+    const { client, seen } = await serve(context, () => json(201, { session: SESSION, strippedEnvKeys: [] }, { location: '/v1/sessions/session-1' }));
+    const mcpServers = { fx: { type: 'stdio' as const, command: 'node', args: ['server.js'], env: { A: 'b' } } };
+
+    await client.createSession({ cwd: '/work', env: {}, mcpServers });
+
+    expect(JSON.parse(seen[0]?.body ?? '')).toEqual({ cwd: '/work', env: {}, mcpServers });
   });
 
   it('rejects a body that does not match the Run API contract', async (context) => {
@@ -92,6 +106,77 @@ describe('errors', () => {
   });
 });
 
+describe('sessions', () => {
+  it('reads a session by id', async (context) => {
+    const { client, seen } = await serve(context, () => json(200, { session: SESSION }));
+
+    expect(await client.getSession('session-1')).toEqual(SESSION);
+    expect(`${seen[0]?.method} ${seen[0]?.url}`).toBe('GET /v1/sessions/session-1');
+  });
+
+  it('lists the runs of a session in the order the API gives them', async (context) => {
+    const { client, seen } = await serve(context, () => json(200, { runs: [runView({ id: 'run-1', ordinal: 1 }), runView({ id: 'run-2', ordinal: 2 })] }));
+
+    expect((await client.listRuns('session-1')).map((run) => run.id)).toEqual(['run-1', 'run-2']);
+    expect(`${seen[0]?.method} ${seen[0]?.url}`).toBe('GET /v1/sessions/session-1/runs');
+  });
+
+  it('reads the skills of a session and rejects a body that is not the skills contract', async (context) => {
+    const skills = { skills: [{ name: 'pdf', description: 'Extract PDF text', scope: 'project', location: '/work/.agents/skills/pdf/SKILL.md' }], warnings: ['w'] };
+    const good = await serve(context, () => json(200, skills));
+
+    expect(await good.client.skills('session-1')).toEqual(skills);
+    expect(good.seen[0]?.url).toBe('/v1/sessions/session-1/skills');
+    const bad = await serve(context, () => json(200, { skills: [{ name: 'pdf' }], warnings: [] }));
+    await expect(bad.client.skills('session-1')).rejects.toBeInstanceOf(ContractViolation);
+  });
+
+  it('replaces the MCP servers of a session with a PATCH that carries nothing else', async (context) => {
+    const { client, seen } = await serve(context, () => json(200, { session: SESSION }));
+    const servers = { docs: { type: 'http' as const, url: 'https://example.com/mcp', headers: {} } };
+
+    await client.setMcpServers('session-1', servers);
+
+    expect(`${seen[0]?.method} ${seen[0]?.url}`).toBe('PATCH /v1/sessions/session-1');
+    expect(JSON.parse(seen[0]?.body ?? '')).toEqual({ mcpServers: servers });
+  });
+});
+
+describe('elicitations', () => {
+  const ELICITATION = {
+    id: 'in-1',
+    runId: 'run-1',
+    callId: 'call-1',
+    status: 'pending',
+    server: 'remote',
+    requests: [{ key: 'who', mode: 'form', message: 'Who are you?', requestedSchema: { type: 'object' } }],
+    expiresAt: 10,
+    createdAt: 1,
+    toolCall: { callId: 'call-1', name: 'mcp__remote__ask', title: 'Ask' },
+  };
+
+  it('reads an elicitation and rejects a body that is not the elicitation contract', async (context) => {
+    const good = await serve(context, () => json(200, { elicitation: ELICITATION }));
+
+    expect(await good.client.getElicitation('in-1')).toEqual(ELICITATION);
+    expect(`${good.seen[0]?.method} ${good.seen[0]?.url}`).toBe('GET /v1/elicitations/in-1');
+    const bad = await serve(context, () => json(200, { elicitation: { id: 'in-1' } }));
+    await expect(bad.client.getElicitation('in-1')).rejects.toBeInstanceOf(ContractViolation);
+  });
+
+  it('posts the answers by key and returns the elicitation with its run', async (context) => {
+    const { client, seen } = await serve(context, () => json(200, { elicitation: { ...ELICITATION, status: 'resolved' }, run: runView({ status: 'RUNNING' }) }));
+    const responses = { who: { action: 'accept' as const, content: { name: 'Ada' } } };
+
+    const resolved = await client.resolveElicitation('in-1', responses);
+
+    expect(`${seen[0]?.method} ${seen[0]?.url}`).toBe('POST /v1/elicitations/in-1');
+    expect(JSON.parse(seen[0]?.body ?? '')).toEqual({ responses });
+    expect(resolved.elicitation.status).toBe('resolved');
+    expect(resolved.run.status).toBe('RUNNING');
+  });
+});
+
 describe('runs', () => {
   it('creates a run with the history and the idempotency key and returns the Location', async (context) => {
     const { client, seen } = await serve(context, () => json(202, { run: runView({ status: 'QUEUED' }) }, { location: '/v1/runs/run-1' }));
@@ -101,6 +186,14 @@ describe('runs', () => {
     expect(created.location).toBe('/v1/runs/run-1');
     expect(seen[0]?.headers['idempotency-key']).toBe('key-1');
     expect(JSON.parse(seen[0]?.body ?? '')).toEqual({ input: 'hello', history: 'fresh' });
+  });
+
+  it('names the skill of a run in the body', async (context) => {
+    const { client, seen } = await serve(context, () => json(202, { run: runView({ status: 'QUEUED' }) }, { location: '/v1/runs/run-1' }));
+
+    await client.createRun('session-1', '/pdf summarize', { skill: 'pdf' });
+
+    expect(JSON.parse(seen[0]?.body ?? '')).toEqual({ input: '/pdf summarize', skill: 'pdf' });
   });
 
   it('reports whether a cancel was accepted or the run had already ended', async (context) => {

@@ -10,6 +10,7 @@
     "dist"
   ],
   "devDependencies": {
+    "@agentclientprotocol/sdk": "2.2.0",
     "@momonga/config": "*",
     "@momonga/foundation": "*",
     "@momonga/gateway": "*",

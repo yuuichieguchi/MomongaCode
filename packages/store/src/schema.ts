@@ -222,6 +222,10 @@ ALTER TABLE approvals ADD COLUMN requests_json TEXT;
 ALTER TABLE approvals ADD COLUMN responses_json TEXT;
 `;
 
+const SESSION_MCP_SERVERS = `
+ALTER TABLE sessions ADD COLUMN mcp_servers_json TEXT NOT NULL DEFAULT '{}';
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -234,4 +238,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 5, name: 'record whether a run inherits the history of its predecessor', sql: RUN_HISTORY_MODE },
   { version: 6, name: 'store long-term memories with their scope, source and use times', sql: LONG_TERM_MEMORIES },
   { version: 7, name: 'let an approval carry an MCP elicitation and its answers', sql: ELICITATION_APPROVALS },
+  { version: 8, name: 'let a session carry the MCP servers its client passed', sql: SESSION_MCP_SERVERS },
 ];

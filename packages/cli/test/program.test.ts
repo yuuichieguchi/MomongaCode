@@ -53,6 +53,20 @@ describe('internal daemon commands', () => {
   });
 });
 
+describe('acp command', () => {
+  it('is listed in the help', async () => {
+    const { program, out } = harness();
+    await run(program, '--help').catch(() => undefined);
+    expect(out.join('')).toContain('acp');
+  });
+
+  it('refuses to start without the standard streams to speak on', async () => {
+    const { program, completed } = harness();
+    await expect(run(program, 'acp')).rejects.toThrow('this build has no standard streams to speak the Agent Client Protocol on');
+    expect(completed).toEqual([]);
+  });
+});
+
 describe('root command', () => {
   it('prints the version it was built with', async () => {
     const { program, out } = harness();

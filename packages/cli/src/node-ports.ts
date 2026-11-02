@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
+import { Readable, Writable } from 'node:stream';
 import { isSea } from 'node:sea';
 import { systemClock } from '@momonga/foundation';
 import type { CliClock, CliPorts, SelfExecutable, SpawnDetached } from './ports.ts';
@@ -53,4 +54,5 @@ export const nodePorts = (version: string): CliPorts => ({
   self: nodeSelf(process.argv, isSea),
   spawnDetached: nodeSpawnDetached,
   terminal: process.stdin.isTTY && process.stdout.isTTY ? { stdin: process.stdin, stdout: process.stdout } : undefined,
+  acpStdio: () => ({ input: Readable.toWeb(process.stdin), output: Writable.toWeb(process.stdout) }),
 });

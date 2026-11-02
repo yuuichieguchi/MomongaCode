@@ -44,7 +44,8 @@ export const loadSessionMcpServers = (
   session: Session,
   env: ToolEnv,
   user: UserLayer = options.settings.takeUserSnapshot().user,
-): ReturnType<typeof loadMcpServers> => loadMcpServers({ home: options.home, projectDir: session.cwd, trust: options.settings.trustOracle, env, user });
+): ReturnType<typeof loadMcpServers> =>
+  loadMcpServers({ home: options.home, projectDir: session.cwd, trust: options.settings.trustOracle, env, user, sessionServers: session.mcpServers });
 
 const failureOf = (error: unknown): { code: string; message: string } =>
   error instanceof McpAuthorizationError ? { code: error.failure, message: error.message } : { code: 'error', message: asError(error).message };

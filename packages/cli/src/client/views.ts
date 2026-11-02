@@ -1,4 +1,4 @@
-import type { PermissionMode, PermissionOption, RunStatus, StopReason, ToolKind } from '@momonga/protocol';
+import type { ElicitationRequestView, PermissionMode, PermissionOption, RunStatus, StopReason, ToolKind } from '@momonga/protocol';
 
 export type SessionView = {
   readonly id: string;
@@ -52,6 +52,18 @@ export type ApprovalView = {
   readonly createdAt: number;
   readonly suggestedRule?: string;
   readonly toolCall: ApprovalToolCall;
+};
+
+export type ElicitationView = {
+  readonly id: string;
+  readonly runId: string;
+  readonly callId: string;
+  readonly status: ApprovalView['status'];
+  readonly server: string;
+  readonly requests: readonly ElicitationRequestView[];
+  readonly expiresAt: number;
+  readonly createdAt: number;
+  readonly toolCall: { readonly callId: string; readonly name: string; readonly title: string };
 };
 
 export type TrustView = {
