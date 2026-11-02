@@ -86,10 +86,47 @@ describe('MemorySave in a run', () => {
       { kind: 'commit', sha: HEAD },
       { kind: 'check', runId: run.id, callId: env.gateway.callId('call_b_1'), seq: bashCompleted?.seq, command: 'npm test', exitCode: 1 },
     ]);
-    expect(commands.map((command) => command.argv)).toEqual([
-      ['git', 'rev-parse', 'HEAD'],
-      ['git', 'merge-base', '--is-ancestor', HEAD, 'HEAD'],
-    ]);
+    expect(commands.map((command) => command.argv)).toEqual([['git', 'rev-parse', 'HEAD']]);
+  });
+
+  it('records HEAD for a note that names no path, and hands the evidence run the signal of the tool call', async () => {
+    const env = await makeEnv({ mode: 'bypassPermissions' });
+    const signals: AbortSignal[] = [];
+    const commands: EvidenceCommand[] = [];
+    env.gateway.script.push(callsStep([{ callId: 'call_m_1', name: 'MemorySave', args: { text: 'the repo uses vitest', scope: 'project' } }]), textStep('Saved.'));
+    env.enqueue('Remember');
+    await env.runOnce(
+      workerFor(env, 'w-1', async (command, signal) => {
+        commands.push(command);
+        signals.push(signal);
+        return { exitCode: 0, stdout: `${HEAD}\n` };
+      }),
+    );
+    const [memory] = env.store.memories.list();
+    expect(memory?.evidence).toEqual([{ kind: 'commit', sha: HEAD }]);
+    expect(commands.map((command) => command.argv)).toEqual([['git', 'rev-parse', 'HEAD'], ['git', 'merge-base', '--is-ancestor', HEAD, 'HEAD']]);
+    expect(signals).toHaveLength(2);
+    expect(signals.every((signal) => signal instanceof AbortSignal && !signal.aborted)).toBe(true);
+  });
+
+  it('hands recall a signal that follows the run: open while the run lives', async () => {
+    const env = await makeEnv({ mode: 'bypassPermissions' });
+    const given: AbortSignal[] = [];
+    const inner = createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: () => gitRun([]) });
+    env.gateway.script.push(textStep('Fine.'));
+    env.enqueue('Hello');
+    await env.runOnce(
+      env.worker('w-1', {
+        memories: {
+          load: (session, signal) => {
+            given.push(signal);
+            return inner.load(session, signal);
+          },
+        },
+      }),
+    );
+    expect(given).toHaveLength(1);
+    expect(given[0]?.aborted).toBe(false);
   });
 
   it('fails the call, saving nothing, when the path was not read or written in this run', async () => {

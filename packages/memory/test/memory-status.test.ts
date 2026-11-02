@@ -66,12 +66,24 @@ describe('memoryStatus', () => {
     await expect(statusOf([file('a.ts'), file('b.ts', HASH, '/work/b')], ports)).resolves.toBe('stale');
   });
 
-  it('is stale when a commit is no longer an ancestor, however well the hashes match', async () => {
-    await expect(statusOf([file('a.ts'), commit], portsWith({ '/work/a/a.ts': HASH }, false).ports)).resolves.toBe('stale');
+  it('stays verified when a commit is not an ancestor and every hash matches, because a squash or a rebase does that and the commit is provenance', async () => {
+    const { ports, asked } = portsWith({ '/work/a/a.ts': HASH }, false);
+    await expect(statusOf([file('a.ts'), commit], ports)).resolves.toBe('verified');
+    expect(asked).toEqual([]);
   });
 
-  it('is unverifiable when the commit check cannot run', async () => {
-    await expect(statusOf([file('a.ts'), commit], portsWith({ '/work/a/a.ts': HASH }, 'unknown').ports)).resolves.toBe('unverifiable');
+  it('stays verified when the commit check could not run, because file entries alone decide', async () => {
+    const { ports, asked } = portsWith({ '/work/a/a.ts': HASH }, 'unknown');
+    await expect(statusOf([file('a.ts'), commit], ports)).resolves.toBe('verified');
+    expect(asked).toEqual([]);
+  });
+
+  it('is stale when a hash differs, whatever the commit says', async () => {
+    await expect(statusOf([file('a.ts'), commit], portsWith({ '/work/a/a.ts': OTHER_HASH }, true).ports)).resolves.toBe('stale');
+  });
+
+  it('is stale when a file is gone even though the commit is not an ancestor', async () => {
+    await expect(statusOf([file('a.ts'), commit], portsWith({}, false).ports)).resolves.toBe('stale');
   });
 
   it('is unverifiable in an untrusted folder, and touches nothing', async () => {
@@ -110,11 +122,22 @@ describe('memoryStatus', () => {
     ['a commit that is an ancestor', [commit]],
     ['a passing check', [check]],
     ['both', [commit, check]],
-  ])('is unbound with only %s, because provenance does not say the fact still holds', async (_name, evidence) => {
+  ])('is unbound with only %s that can be checked, because provenance does not say the fact still holds', async (_name, evidence) => {
     await expect(statusOf(evidence, portsWith({}).ports)).resolves.toBe('unbound');
   });
 
-  it('is never verified with only a commit that is not an ancestor', async () => {
-    await expect(statusOf([commit], portsWith({}, false).ports)).resolves.not.toBe('verified');
+  it('is unverifiable with only a commit that is not an ancestor, and never stale', async () => {
+    await expect(statusOf([commit], portsWith({}, false).ports)).resolves.toBe('unverifiable');
+    await expect(statusOf([commit, check], portsWith({}, false).ports)).resolves.toBe('unverifiable');
+  });
+
+  it('is unverifiable with only a commit that cannot be checked', async () => {
+    await expect(statusOf([commit], portsWith({}, 'unknown').ports)).resolves.toBe('unverifiable');
+  });
+
+  it('is unverifiable with only a commit in an untrusted folder, and asks nothing', async () => {
+    const { ports, asked } = portsWith({}, true);
+    await expect(statusOf([commit], ports, false)).resolves.toBe('unverifiable');
+    expect(asked).toEqual([]);
   });
 });

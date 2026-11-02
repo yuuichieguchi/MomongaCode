@@ -70,8 +70,20 @@ describe('bindMemoryEvidence', () => {
     await expect(binding(events, ['../../etc/passwd'])).rejects.toBeInstanceOf(MemoryEvidenceError);
   });
 
-  it('binds nothing, and adds no commit or check, for a note that names no path', async () => {
-    await expect(binding(READ_A, [])).resolves.toEqual([]);
+  it('binds no file for a note that names no path, but records HEAD in a trusted folder all the same', async () => {
+    await expect(binding(READ_A, [])).resolves.toEqual([{ kind: 'commit', sha: HEAD }]);
+    await expect(binding(READ_A, [], { trusted: false })).resolves.toEqual([]);
+    await expect(binding(READ_A, [], { head: undefined })).resolves.toEqual([]);
+  });
+
+  it('takes the latest matching check of the whole run for a note that names no path, even one that came before a write', async () => {
+    const events = [
+      call(1, 'c1', 'Bash', { command: 'npm test' }),
+      done(2, 'c1', { exitCode: 0 }),
+      call(3, 'c2', 'Write', { file_path: 'src/a.ts' }),
+      done(4, 'c2', { files: [fileOf('/work/a/src/a.ts', 'write')] }),
+    ];
+    await expect(binding(events, [])).resolves.toEqual([{ kind: 'commit', sha: HEAD }, { kind: 'check', runId: 'r1', callId: 'c1', seq: 2, command: 'npm test', exitCode: 0 }]);
   });
 
   it('adds the latest matching verification command after the last write to a bound path', async () => {
@@ -140,17 +152,20 @@ const tempProject = (): { root: string; project: string } => {
   return { root, project };
 };
 
-const portsFor = (trusted: boolean, exitCode: number | null, project = PROJECT) => {
+const portsFor = (trusted: boolean, exitCode: number | null, project = PROJECT, signal: AbortSignal = new AbortController().signal) => {
   const commands: EvidenceCommand[] = [];
+  const signals: AbortSignal[] = [];
   const ports = createEvidencePorts({
     project,
     trusted,
-    run: async (command) => {
+    signal,
+    run: async (command, given) => {
       commands.push(command);
+      signals.push(given);
       return { exitCode };
     },
   });
-  return { ports, commands };
+  return { ports, commands, signals };
 };
 
 describe('production isAncestor', () => {
@@ -184,6 +199,34 @@ describe('production isAncestor', () => {
     await expect(ports.isAncestor('--upload-pack=touch')).resolves.toBeUndefined();
     expect(commands).toEqual([]);
   });
+
+  it('starts one process per distinct sha in one read, however many memories carry it', async () => {
+    const other = 'f'.repeat(40);
+    const { ports, commands } = portsFor(true, 0);
+    const answers = await Promise.all([ports.isAncestor(HEAD), ports.isAncestor(HEAD), ports.isAncestor(other), ports.isAncestor(HEAD), ports.isAncestor(other)]);
+    expect(answers).toEqual([true, true, true, true, true]);
+    expect(commands.map((command) => command.argv[3])).toEqual([HEAD, other]);
+  });
+
+  it('asks again in the next read, because the history may have moved', async () => {
+    const first = portsFor(true, 0);
+    const second = portsFor(true, 1);
+    await first.ports.isAncestor(HEAD);
+    await expect(second.ports.isAncestor(HEAD)).resolves.toBe(false);
+    expect(second.commands).toHaveLength(1);
+  });
+
+  it('hands the caller signal to the process, and starts nothing once it has aborted', async () => {
+    const live = new AbortController();
+    const { ports, signals } = portsFor(true, 0, PROJECT, live.signal);
+    await ports.isAncestor(HEAD);
+    expect(signals).toEqual([live.signal]);
+    const aborted = new AbortController();
+    aborted.abort();
+    const stopped = portsFor(true, 0, PROJECT, aborted.signal);
+    await expect(stopped.ports.isAncestor(HEAD)).resolves.toBeUndefined();
+    expect(stopped.commands).toEqual([]);
+  });
 });
 
 describe('production hashFile', () => {
@@ -215,11 +258,12 @@ describe('production hashFile', () => {
 });
 
 describe('production git head', () => {
-  const headOf = (trusted: boolean, result: { exitCode: number | null; stdout?: string }) => {
+  const headOf = (trusted: boolean, result: { exitCode: number | null; stdout?: string }, signal: AbortSignal = new AbortController().signal) => {
     const commands: EvidenceCommand[] = [];
     const head = readGitHead({
       project: PROJECT,
       trusted,
+      signal,
       run: async (command) => {
         commands.push(command);
         return result;
@@ -227,6 +271,14 @@ describe('production git head', () => {
     });
     return { head, commands };
   };
+
+  it('starts nothing once the caller signal has aborted', async () => {
+    const aborted = new AbortController();
+    aborted.abort();
+    const stopped = headOf(true, { exitCode: 0, stdout: HEAD }, aborted.signal);
+    await expect(stopped.head).resolves.toBeUndefined();
+    expect(stopped.commands).toEqual([]);
+  });
 
   it('runs the fixed argv with the fixed environment and reads the commit id', async () => {
     const { head, commands } = headOf(true, { exitCode: 0, stdout: `${HEAD}\n` });

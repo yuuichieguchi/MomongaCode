@@ -57,7 +57,7 @@ export type MemorySet = {
 };
 
 export type MemoryPort = {
-  load(session: Session): Promise<MemorySet>;
+  load(session: Session, signal: AbortSignal): Promise<MemorySet>;
 };
 
 export type GovernanceSet = { tools: readonly AnyTool[] };

@@ -19,9 +19,10 @@ const scopeOf = (raw: string | undefined): MemoryScope | undefined => {
 
 const projectOf = (raw: string | undefined): string | undefined => (raw === undefined ? undefined : canonicalProject(raw, 'project'));
 
-export const registerMemoryRoutes = (route: RouteRegistrar, deps: { store: Pick<RuntimeStore, 'memories'>; views: RecordViews }): void => {
+export const registerMemoryRoutes = (route: RouteRegistrar, deps: { store: Pick<RuntimeStore, 'memories'>; views: RecordViews; closeSignal: AbortSignal }): void => {
   const { memories } = deps.store;
   const { views } = deps;
+  const boundOf = (context: Context): AbortSignal => AbortSignal.any([deps.closeSignal, context.req.raw.signal]);
 
   const requireMemory = (context: Context) => {
     const id = context.req.param('id') ?? '';
@@ -35,14 +36,14 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: { store: Pick<
     const project = projectOf(context.req.query('project'));
     if (project !== undefined && scope === 'user') throw invalidRequest('a project filter cannot be combined with the user scope', 'project');
     const found = memories.list({ ...(scope === undefined ? {} : { scope }), ...(project === undefined ? {} : { project }) });
-    return json({ memories: await views.viewsOf(found) }, 200);
+    return json({ memories: await views.viewsOf(found, boundOf(context)) }, 200);
   };
 
-  const getMemory: Handler = async (context) => json({ memory: await views.viewOf(requireMemory(context)) }, 200);
+  const getMemory: Handler = async (context) => json({ memory: await views.viewOf(requireMemory(context), boundOf(context)) }, 200);
 
   const memoryHistory: Handler = async (context) => {
     const memory = requireMemory(context);
-    return json({ memories: await views.viewsOf(memories.history(memory.id)) }, 200);
+    return json({ memories: await views.viewsOf(memories.history(memory.id), boundOf(context)) }, 200);
   };
 
   const deleteMemory: Handler = (context) => {

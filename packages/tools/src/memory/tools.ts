@@ -72,6 +72,7 @@ export const createMemoryTools = ({ port, trusted }: MemoryToolsOptions): AnyToo
         runId: ctx.runId,
         step: ctx.step,
         callId: ctx.callId,
+        signal: ctx.signal,
         ...(input.kind === undefined ? {} : { kind: input.kind }),
         ...(input.paths === undefined ? {} : { paths: input.paths }),
         ...(input.supersedes === undefined ? {} : { supersedes: input.supersedes }),
@@ -102,8 +103,8 @@ export const createMemoryTools = ({ port, trusted }: MemoryToolsOptions): AnyToo
       if (termsOf(input.query).length === 0) throw new ToolInputError('query must contain at least one word');
       return { kind: 'none', tool: MEMORY_SEARCH_TOOL_NAME };
     },
-    execute: async (input) => {
-      const found = await port.search(termsOf(input.query), { include: input.include ?? 'live' });
+    execute: async (input, ctx) => {
+      const found = await port.search(termsOf(input.query), { include: input.include ?? 'live', signal: ctx.signal });
       const shown = found.slice(0, MEMORY_SEARCH_RESULT_LIMIT);
       if (shown.length === 0) return { status: 'completed', output: 'No saved memory matches.' };
       const omitted = found.length - shown.length;

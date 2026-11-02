@@ -32,22 +32,20 @@ const fileFinding = async (entry: Extract<MemoryEvidence, { kind: 'file' }>, con
   return hash === entry.sha256 ? 'matches' : 'contradicts';
 };
 
-const commitFinding = async (entry: Extract<MemoryEvidence, { kind: 'commit' }>, context: MemoryStatusContext): Promise<Finding> => {
-  if (!context.trusted) return 'unchecked';
-  const ancestor = await context.ports.isAncestor(entry.sha);
-  if (ancestor === undefined) return 'unchecked';
-  return ancestor ? 'matches' : 'contradicts';
+const commitIsAncestor = async (entries: readonly Extract<MemoryEvidence, { kind: 'commit' }>[], context: MemoryStatusContext): Promise<boolean> => {
+  if (!context.trusted) return false;
+  const answers = await Promise.all(entries.map((entry) => context.ports.isAncestor(entry.sha)));
+  return answers.every((answer) => answer === true);
 };
 
 export const memoryStatus = async (memory: { evidence: readonly MemoryEvidence[] }, context: MemoryStatusContext): Promise<MemoryStatus> => {
-  const findings = await Promise.all(
-    memory.evidence.flatMap((entry): Promise<Finding>[] => {
-      if (entry.kind === 'file') return [fileFinding(entry, context)];
-      if (entry.kind === 'commit') return [commitFinding(entry, context)];
-      return [];
-    }),
-  );
-  if (findings.includes('contradicts')) return 'stale';
-  if (findings.includes('unchecked')) return 'unverifiable';
-  return memory.evidence.some((entry) => entry.kind === 'file') ? 'verified' : 'unbound';
+  const files = memory.evidence.filter((entry): entry is Extract<MemoryEvidence, { kind: 'file' }> => entry.kind === 'file');
+  if (files.length > 0) {
+    const findings = await Promise.all(files.map((entry) => fileFinding(entry, context)));
+    if (findings.includes('contradicts')) return 'stale';
+    return findings.includes('unchecked') ? 'unverifiable' : 'verified';
+  }
+  const commits = memory.evidence.filter((entry): entry is Extract<MemoryEvidence, { kind: 'commit' }> => entry.kind === 'commit');
+  if (commits.length === 0) return 'unbound';
+  return (await commitIsAncestor(commits, context)) ? 'unbound' : 'unverifiable';
 };

@@ -16,9 +16,9 @@ export type EvidenceCommand = {
 
 export type EvidenceCommandResult = { exitCode: number | null; stdout?: string };
 
-export type EvidenceRun = (command: EvidenceCommand) => Promise<EvidenceCommandResult>;
+export type EvidenceRun = (command: EvidenceCommand, signal: AbortSignal) => Promise<EvidenceCommandResult>;
 
-export type EvidencePortsOptions = { project: string; trusted: boolean; run: EvidenceRun };
+export type EvidencePortsOptions = { project: string; trusted: boolean; run: EvidenceRun; signal: AbortSignal };
 
 export class MemoryEvidenceError extends ToolExecutionError {
   constructor(message: string) {
@@ -45,32 +45,43 @@ const sha256OfFile = (target: string): Promise<string> =>
     stream.on('end', () => resolve(hash.digest('hex')));
   });
 
-export const createEvidencePorts = ({ project, trusted, run }: EvidencePortsOptions): EvidencePorts => ({
-  hashFile: async (absolutePath) => {
-    let real: string;
-    let root: string;
-    try {
-      root = await fs.promises.realpath(project);
-      real = await fs.promises.realpath(absolutePath);
-    } catch (error) {
-      if (isMissingFile(error)) return undefined;
-      throw error;
-    }
-    if (!lexicallyWithin(real, root)) throw new EvidenceOutsideRootError(absolutePath);
-    return sha256OfFile(real);
-  },
-  isAncestor: async (sha) => {
-    if (!trusted || !COMMIT_ID.test(sha)) return undefined;
-    const { exitCode } = await run(gitCommand(project, ['merge-base', '--is-ancestor', sha, 'HEAD']));
+export const createEvidencePorts = ({ project, trusted, run, signal }: EvidencePortsOptions): EvidencePorts => {
+  const ancestry = new Map<string, Promise<boolean | undefined>>();
+  const askAncestry = async (sha: string): Promise<boolean | undefined> => {
+    if (signal.aborted) return undefined;
+    const { exitCode } = await run(gitCommand(project, ['merge-base', '--is-ancestor', sha, 'HEAD']), signal);
     if (exitCode === 0) return true;
     if (exitCode === 1) return false;
     return undefined;
-  },
-});
+  };
+  return {
+    hashFile: async (absolutePath) => {
+      let real: string;
+      let root: string;
+      try {
+        root = await fs.promises.realpath(project);
+        real = await fs.promises.realpath(absolutePath);
+      } catch (error) {
+        if (isMissingFile(error)) return undefined;
+        throw error;
+      }
+      if (!lexicallyWithin(real, root)) throw new EvidenceOutsideRootError(absolutePath);
+      return sha256OfFile(real);
+    },
+    isAncestor: (sha) => {
+      if (!trusted || !COMMIT_ID.test(sha)) return Promise.resolve(undefined);
+      const known = ancestry.get(sha);
+      if (known !== undefined) return known;
+      const asked = askAncestry(sha);
+      ancestry.set(sha, asked);
+      return asked;
+    },
+  };
+};
 
-export const readGitHead = async ({ project, trusted, run }: EvidencePortsOptions): Promise<string | undefined> => {
-  if (!trusted) return undefined;
-  const { exitCode, stdout } = await run(gitCommand(project, ['rev-parse', 'HEAD']));
+export const readGitHead = async ({ project, trusted, run, signal }: EvidencePortsOptions): Promise<string | undefined> => {
+  if (!trusted || signal.aborted) return undefined;
+  const { exitCode, stdout } = await run(gitCommand(project, ['rev-parse', 'HEAD']), signal);
   const head = stdout?.trim();
   return exitCode === 0 && head !== undefined && COMMIT_ID.test(head) ? head : undefined;
 };
@@ -118,7 +129,6 @@ const checkEvidenceOf = (input: BindMemoryEvidenceInput, boundPaths: ReadonlySet
 };
 
 export const bindMemoryEvidence = async (input: BindMemoryEvidenceInput): Promise<MemoryEvidence[]> => {
-  if (input.paths.length === 0) return [];
   const bound = new Map<string, MemoryEvidence>();
   for (const given of input.paths) {
     const resolved = path.resolve(input.project, given);

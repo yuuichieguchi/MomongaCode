@@ -1,5 +1,6 @@
 import { agentSystemPrompt, readAgentPin } from '@momonga/agents';
 import { permissionRulesFor } from '../governance/rules.ts';
+import { signalUntil } from '../memory/deadline-signal.ts';
 import { createTokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex } from '@momonga/foundation';
 import { isFatalStoreError } from '@momonga/store';
@@ -254,7 +255,7 @@ const drive = async (
   const skills = await options.skills.load(session);
   const admit = createSkillAdmission(() => ctx);
   const activationTool = skills.activationTool({ isActive: (name) => journal.state.activatedSkills.some((skill) => skill.name === name), admit });
-  const recalled = await options.memories.load(session);
+  const recalled = await options.memories.load(session, signalUntil(run.deadlineAt, clock.now(), control.signal));
   const agentSet = run.parentRunId === null && options.agents !== undefined ? await options.agents.load(session) : undefined;
   const agentTool = options.agents === undefined ? undefined : agentSet?.tool(options.agents.runs);
   const toolSet = await tools.toolSet(run.id, {

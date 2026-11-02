@@ -25,7 +25,7 @@ const textOf = async (stream: AsyncIterable<Uint8Array>): Promise<string> => {
 export const createEvidenceRunner =
   ({ paths, home, fs, sandbox, env }: EvidenceRunnerOptions) =>
   (project: string): EvidenceRun =>
-  async (command) => {
+  async (command, signal) => {
     const root = canonicalDirectory(project);
     if (!root.ok) throw new Error(`the evidence project ${project} ${root.reason}`);
     const roots = [root.path];
@@ -39,7 +39,7 @@ export const createEvidenceRunner =
       protectedSet: protectedSetFor(roots, fs),
       network: command.network,
     });
-    const child = sandbox.spawn({ argv: command.argv, cwd: command.cwd, env: { ...env, ...command.env }, tmpDir }, policy, new AbortController().signal);
+    const child = sandbox.spawn({ argv: command.argv, cwd: command.cwd, env: { ...env, ...command.env }, tmpDir }, policy, signal);
     const [stdout, , exit] = await Promise.all([textOf(child.stdout), textOf(child.stderr), child.exited]);
     return { exitCode: exit.code, stdout };
   };

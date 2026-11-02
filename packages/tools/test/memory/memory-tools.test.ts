@@ -64,7 +64,7 @@ describe('memory tools', () => {
     const [outcome] = await harness.executor.runBatch(
       harness.input(await toolSet(port), [call('c1', MEMORY_SAVE_TOOL_NAME, { text: 'prefers tabs', scope: 'project' }, 'allow_once')]),
     );
-    expect(saved).toEqual([{ scope: 'project', text: 'prefers tabs', runId: 'run-1', step: 1, callId: 'c1' }]);
+    expect(saved).toEqual([{ scope: 'project', text: 'prefers tabs', runId: 'run-1', step: 1, callId: 'c1', signal: expect.any(AbortSignal) }]);
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed', output: 'Saved project memory mem-1.' } });
   });
 
@@ -103,7 +103,7 @@ describe('memory tools', () => {
       harness.input(set, [call('c2', MEMORY_SAVE_TOOL_NAME, { text: 'prefers tabs', scope: 'user' }, 'allow_once')]),
     );
     expect(accepted?.kind).toBe('result');
-    expect(saved).toEqual([{ scope: 'user', text: 'prefers tabs', runId: 'run-1', step: 1, callId: 'c2' }]);
+    expect(saved).toEqual([{ scope: 'user', text: 'prefers tabs', runId: 'run-1', step: 1, callId: 'c2', signal: expect.any(AbortSignal) }]);
   });
 
   it('rejects whitespace-only text, unknown scopes and text beyond the cap', async () => {
@@ -175,7 +175,7 @@ describe('memory tools', () => {
         call('c1', MEMORY_SAVE_TOOL_NAME, { text: 'parser lives in src/parser.ts', scope: 'project', kind: 'fact', paths: ['src/parser.ts'], supersedes: ['mem-9'] }, 'allow_once'),
       ]),
     );
-    expect(saved).toEqual([{ scope: 'project', text: 'parser lives in src/parser.ts', runId: 'run-1', step: 1, callId: 'c1', kind: 'fact', paths: ['src/parser.ts'], supersedes: ['mem-9'] }]);
+    expect(saved).toEqual([{ scope: 'project', text: 'parser lives in src/parser.ts', runId: 'run-1', step: 1, callId: 'c1', signal: expect.any(AbortSignal), kind: 'fact', paths: ['src/parser.ts'], supersedes: ['mem-9'] }]);
   });
 
   it('caps the matches it shows and says how many were left out', async () => {

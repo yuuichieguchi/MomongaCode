@@ -516,7 +516,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   route('/v1/runs/:id/events', { GET: runEvents });
   route('/v1/approvals/:id', { GET: getApproval, POST: resolveApproval });
   registerTrustRoutes(route, { store, maxBodyBytes: deps.maxBodyBytes });
-  registerMemoryRoutes(route, { store, views: createRecordViews({ store, evidenceRun: deps.evidenceRun }) });
+  registerMemoryRoutes(route, { store, views: createRecordViews({ store, evidenceRun: deps.evidenceRun }), closeSignal: deps.closeSignal });
   registerRuleRoutes(route, {
     store,
     clock: deps.clock,
