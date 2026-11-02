@@ -68,6 +68,20 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     expect(result.output.trimEnd().endsWith('[exit code 3]')).toBe(true);
   });
 
+  it.for([
+    ['exit 0', 'completed', 0],
+    ['exit 3', 'failed', 3],
+  ] as const)('reports the exit code of %s as a structured fact', PROCESS_TIMEOUT, async ([command, status, exitCode]) => {
+    const tools = await makeBuiltins({ realSandbox: true });
+    const result = resultOf(await bash(tools, command));
+    expect(result).toMatchObject({ status, exitCode });
+  });
+
+  it('reports no exit code when the shell is killed by a signal', PROCESS_TIMEOUT, async () => {
+    const tools = await makeBuiltins({ realSandbox: true });
+    expect(resultOf(await bash(tools, 'kill -9 $$')).exitCode).toBeUndefined();
+  });
+
   it('fails with the signal name when the shell is killed by a signal', PROCESS_TIMEOUT, async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const result = resultOf(await bash(tools, 'kill -9 $$'));

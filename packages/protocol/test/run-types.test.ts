@@ -21,6 +21,7 @@ import type {
   TerminalStatus,
   ToolAwait,
   ToolKind,
+  WorkingFacts,
 } from '@momonga/protocol';
 
 type Flat<T> = { [K in keyof T]: T[K] };
@@ -210,6 +211,8 @@ describe('run event payloads', () => {
       truncated?: boolean;
       handle?: string;
       denial?: { source: 'sandbox' | 'rule' | 'mode' | 'hook'; reason: string };
+      files?: { path: string; sha256: string; access: 'read' | 'write' }[];
+      exitCode?: number;
     }>();
     expectTypeOf<Payload<'tool.permission.classified'>>().toEqualTypeOf<{
       type: 'tool.permission.classified';
@@ -276,6 +279,7 @@ describe('run event payloads', () => {
       history: { seq: number; item: InputItem; callId?: string; handle?: string }[];
       nextItemSeq: number;
       summary?: { item: CompactionInputItem | MessageInputItem; summary: string; replacedThroughSeq: number };
+      workingFacts?: WorkingFacts;
       evicted: string[];
       closures: { callId: string; seq: number; effect: 'not_executed' | 'unknown'; announced: boolean }[];
       partial?: { seq: number };
@@ -329,6 +333,7 @@ describe('RunState', () => {
       history: { seq: number; item: InputItem; callId?: string; handle?: string }[];
       nextItemSeq: number;
       summary?: { item: CompactionInputItem | MessageInputItem; summary: string; replacedThroughSeq: number };
+      workingFacts: WorkingFacts;
       evicted: string[];
       pins?: Record<string, unknown>;
       pendingCalls: Record<

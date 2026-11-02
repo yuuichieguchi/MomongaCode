@@ -1,0 +1,21 @@
+import { MAX_REDACTED_CHARS } from '@momonga/foundation';
+
+export const HISTORY_OUTPUT_HEAD_CHARS = MAX_REDACTED_CHARS;
+
+export const HISTORY_OUTPUT_TAIL_CHARS = 2 * MAX_REDACTED_CHARS;
+
+export const HISTORY_SNIPPET_MAX_CHARS = 200;
+
+export const HISTORY_SEARCH_ANCHOR_LIMIT = 10;
+
+export const HISTORY_STEP_HITS_PER_ANCHOR = 3;
+
+export const HISTORY_SCAN_LIMIT = 1000;
+
+export const HISTORY_CANDIDATE_LIMIT = 10_000;
+
+export const HISTORY_INDEX_BATCH_CHARS = 1_000_000;
+
+export const HISTORY_READ_PAGE_EVENTS = 200;
+
+export const HISTORY_READ_PAGE_CHARS = 262_144;

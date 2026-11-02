@@ -1,3 +1,4 @@
+import { safeSlice } from '@momonga/foundation';
 import type { BlobPort } from './ports.ts';
 
 const MEDIA_TYPE = 'text/plain; charset=utf-8';
@@ -6,8 +7,6 @@ const SEPARATOR_COUNT = 2;
 const MAX_OMITTED_DIGITS = 16;
 const HANDLE_LENGTH = 64;
 const HANDLE_PATTERN = new RegExp(`^[0-9a-f]{${HANDLE_LENGTH}}$`);
-const HIGH_SURROGATE = /[\uD800-\uDBFF]$/;
-const LOW_SURROGATE = /^[\uDC00-\uDFFF]/;
 
 const markerText = (omitted: number | string, handle: string): string =>
   `[${omitted} lines omitted; full output saved as ${handle}; read it with the ReadOutput tool]`;
@@ -15,16 +14,9 @@ const markerText = (omitted: number | string, handle: string): string =>
 export const MINIMUM_INLINE_OUTPUT_CHARS =
   markerText('9'.repeat(MAX_OMITTED_DIGITS), 'f'.repeat(HANDLE_LENGTH)).length + SEPARATOR_COUNT + 2;
 
-const headSlice = (text: string, length: number): string => {
-  const cut = text.slice(0, length);
-  return HIGH_SURROGATE.test(cut) ? cut.slice(0, -1) : cut;
-};
+const headSlice = (text: string, length: number): string => safeSlice(text, 0, length);
 
-const tailSlice = (text: string, length: number): string => {
-  if (length <= 0) return '';
-  const cut = text.slice(-length);
-  return LOW_SURROGATE.test(cut) ? cut.slice(1) : cut;
-};
+const tailSlice = (text: string, length: number): string => (length <= 0 ? '' : safeSlice(text, text.length - length, text.length));
 
 export type TruncatedOutput = { output: string } | { output: string; truncated: true; handle: string };
 

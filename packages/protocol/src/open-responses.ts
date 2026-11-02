@@ -323,7 +323,7 @@ export type StreamEvent =
     }
   | { type: 'error'; sequence_number: number; error: ErrorBody };
 
-export type CompactMomongaExtension = { max_summary_tokens?: number; retains_user_request?: boolean };
+export type CompactMomongaExtension = { max_summary_tokens?: number; retains_user_request?: boolean; guideline?: string };
 
 export type CompactRequest = {
   model: string;

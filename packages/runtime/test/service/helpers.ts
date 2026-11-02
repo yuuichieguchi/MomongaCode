@@ -6,7 +6,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { afterEach, expect } from 'vitest';
-import { createUdsClient, EMPTY_FILE_RULES, momongaLayout, momongaPaths, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { createRedactor, createUdsClient, EMPTY_FILE_RULES, momongaLayout, momongaPaths, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import { computeFileRules } from '@momonga/policy';
@@ -29,7 +29,7 @@ import type { FakeSettings } from '../worker/fake-settings.ts';
 import { createFakeToolbox } from '../worker/fake-tools.ts';
 import type { FakeToolbox } from '../worker/fake-tools.ts';
 import { createFakeTracer } from '../worker/fake-tracer.ts';
-import { capabilitiesFor, createFakeInstructions, diskAgentCatalog, diskSkillsPort, fakeSandbox, testSystemPrompt } from '../worker/harness.ts';
+import { capabilitiesFor, createFakeInstructions, diskAgentCatalog, diskSkillsPort, fakeSandbox, inertHistoryPort, testSystemPrompt } from '../worker/harness.ts';
 
 export const START_MS = 1_800_000_000_000;
 export const LEASE_MS = 30_000;
@@ -460,6 +460,7 @@ export const serviceOptions = (
 ): Record<string, unknown> => ({
   store: base.store,
   clock: base.clock,
+  redactor: createRedactor({ credentials: [] }),
   home: base.home,
   version: SERVICE_VERSION,
   socketPath: base.socketPath,
@@ -741,6 +742,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
       settings,
       skills: diskSkillsPort(env.layout.home),
       memories: runtime.createMemoryPort({ store: env.store, settings }),
+      history: inertHistoryPort,
       tools,
       tracer,
       clock: env.clock,

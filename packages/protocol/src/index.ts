@@ -1,16 +1,23 @@
 export type { Capabilities, CapabilitiesCore, CapabilityOverride, HealthResult, ImageCapability, ImageTokenModel, ToolCallingMode, ToolCallingSetting } from './capabilities.ts';
 export {
   COMPACTION_INSTRUCTIONS_VERSION,
+  ESTIMATED_CHARACTERS_PER_TOKEN,
   ESTIMATED_ERROR_BOUND_RATIO,
   MARGIN_RATIO,
+  MAX_COMPACTION_GUIDELINE_CHARS,
+  MAX_JOURNAL_SEQ_DIGITS,
   MAX_SUMMARY_TOKENS,
   MIN_MARGIN,
   MIN_SUMMARY_TOKENS,
+  RUN_ID_CHARS,
   SUMMARY_ACCEPT_RATIO,
   SUMMARY_ITEM_OVERHEAD,
   SUMMARY_PROMPT_TOKENS,
   SUMMARY_ROOM_RATIO,
   SUMMARY_WINDOW_RATIO,
+  WORKING_FACTS_KEPT,
+  WORKING_FACT_TEXT_CHARS,
+  WORKING_STATE_SUMMARY_RATIO,
   marginFloorFor,
   outputReserveFor,
   sizingRatioFor,
@@ -19,6 +26,30 @@ export {
 } from './budget-constants.ts';
 export { TARGET_BILLINGS, applyCapabilityOverride, imageCapability } from './capabilities.ts';
 export type { TargetBilling } from './capabilities.ts';
+export { tokensForText } from './estimate-tokens.ts';
+export {
+  FILE_ACCESSES,
+  INHERITED_FACT_SEQ,
+  emptyWorkingFacts,
+  inheritedWorkingFacts,
+  withCommand,
+  withItemEvents,
+  withMessage,
+  withReplacedThrough,
+  withTaskText,
+  withWritten,
+} from './working-facts.ts';
+export type {
+  CommandFact,
+  FileAccess,
+  ItemEvent,
+  MessageFact,
+  PlanEntryRecord,
+  ReconciledOutcome,
+  ToolFile,
+  WorkingFacts,
+  WrittenFact,
+} from './working-facts.ts';
 export { LOOP_GROUPS_KEPT } from './loop-groups.ts';
 export { findDanglingOutput, findUnpairedCalls } from './call-pairing.ts';
 export { compactionSummaryMessage, decodeCompactionSummary } from './compaction-summary.ts';
@@ -47,6 +78,7 @@ export type {
   AgentsResponse,
   SkillsResponse,
 } from './run-api.ts';
+export { assistantTextOf } from './assistant-text.ts';
 export { MEMORY_EVIDENCE_KINDS, MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES } from './memory.ts';
 export type {
   MemoriesResponse,

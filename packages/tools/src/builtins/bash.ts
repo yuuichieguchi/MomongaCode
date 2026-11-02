@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { commandSpecsFor, readPathsOfCommand } from '@momonga/policy';
 import { findHolders, reconcileProcessGroup, stoppedCommandResult } from '@momonga/foundation';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import type { SandboxExit } from '@momonga/sandbox';
@@ -90,6 +91,7 @@ export const bashTool = defineTool<BashInput>({
   timeoutMs: (input) => Math.min(input.run_in_background === true ? DEFAULT_TIMEOUT_MS : (input.timeout ?? DEFAULT_TIMEOUT_MS), MAX_TIMEOUT_MS),
   title: (input) => input.description ?? input.command.slice(0, TITLE_CHARS),
   subject: (input) => ({ kind: 'command', tool: 'Bash', command: input.command }),
+  locations: (input) => readPathsOfCommand(input.command, commandSpecsFor(process.platform)).map((target) => ({ path: target })),
   execute: async (input, ctx) => {
     if (input.run_in_background === true) return startBackgroundJob(input, ctx);
     const marker = requireMarker(ctx);
@@ -137,8 +139,9 @@ export const bashTool = defineTool<BashInput>({
     }
     for (const note of notes) output += `${output === '' ? '' : '\n'}${note}`;
     if (exit.signal !== null) return { status: 'failed', output: `${output}${output === '' ? '' : '\n'}[terminated by ${exit.signal}]` };
-    if (exit.code !== 0) return { status: 'failed', output: `${output}${output === '' ? '' : '\n'}[exit code ${exit.code}]` };
-    return { status: 'completed', output };
+    const exitCode = exit.code === null ? {} : { exitCode: exit.code };
+    if (exit.code !== 0) return { status: 'failed', output: `${output}${output === '' ? '' : '\n'}[exit code ${exit.code}]`, ...exitCode };
+    return { status: 'completed', output, ...exitCode };
   },
   reconcile: async (input, record, ctx) => {
     if (input.run_in_background === true) {

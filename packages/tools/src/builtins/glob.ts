@@ -34,6 +34,7 @@ export const globTool = defineTool<GlobInput>({
   },
   timeoutMs: 60_000,
   title: (input) => `Glob ${input.pattern}`,
+  locations: (input) => [{ path: input.path ?? '.' }],
   subject: (input, ctx) => ({
     kind: 'path',
     tool: 'Glob',

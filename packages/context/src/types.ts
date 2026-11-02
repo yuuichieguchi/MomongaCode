@@ -37,6 +37,8 @@ export type ContextSources = {
   memories?: readonly DeepReadonly<MemoryView>[];
   history: readonly HistoryItem[];
   summary?: ContextSummary;
+  workingState?: string;
+  projectedWorkingState?: string;
 };
 
 export type TokenCounter = {
@@ -147,7 +149,7 @@ export type ProtectionLevel = { keepTurns: number; keepSteps: number };
 
 export type PinnedBreakdown = { systemPrompt: number; tools: number; instructions: number; task: number };
 
-export type CompactionPlan = { throughSeq: number; input: InputItem[]; summaryTokenCap: number };
+export type CompactionPlan = { throughSeq: number; input: InputItem[]; summaryTokenCap: number; pinnedText: string };
 
 export type CompactionBlockReason =
   | 'no_step_boundary_outside_protection'

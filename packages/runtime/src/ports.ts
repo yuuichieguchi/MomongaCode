@@ -1,4 +1,4 @@
-import type { PermissionRule } from '@momonga/config';
+import type { PermissionRule, ResolvedVerificationSettings } from '@momonga/config';
 import type { Clock } from '@momonga/foundation';
 import type {
   Capabilities,
@@ -39,6 +39,7 @@ export type AppendedRule = { effect: 'allow' | 'deny'; rule: string };
 export type SettingsPort = {
   rules(session: Session): Promise<PermissionRule[]>;
   hooks(session: Session): Promise<HooksSettings>;
+  verification(session: Session): Promise<ResolvedVerificationSettings>;
   autoModeClassifier(): string | undefined;
   appendRule(session: Session, entry: AppendedRule): Promise<void>;
   trusted(session: Session): boolean;
@@ -56,6 +57,12 @@ export type MemorySet = {
 
 export type MemoryPort = {
   load(session: Session): MemorySet;
+};
+
+export type HistorySet = { tools: readonly AnyTool[] };
+
+export type HistoryPort = {
+  load(session: Session): HistorySet;
 };
 
 export type AgentCatalogPort = { load(session: Session): Promise<AgentSet> };

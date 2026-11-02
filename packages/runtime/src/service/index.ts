@@ -4,6 +4,8 @@ export { createRunNotifier } from './notifier.ts';
 export type { RunNotifier, TouchedScope, Unsubscribe } from './notifier.ts';
 export { createRunService } from './service.ts';
 export type { RunService, RunServiceOptions } from './service.ts';
+export { startSearchSweeper } from './search-sweeper.ts';
+export type { SearchSweeperOptions } from './search-sweeper.ts';
 export { startApprovalSweeper } from './sweeper.ts';
 export type { ApprovalSweeperOptions } from './sweeper.ts';
 export { systemTimers } from './timers.ts';

@@ -195,9 +195,9 @@ describe('the task as a turn boundary', () => {
 
   it('compacts the oldest inherited turn at level 0 before shrinking, and later turns only after the shrink', async () => {
     const capabilities = capabilitiesFor(4000);
-    const sources = sourcesWith({ taskSeq: 7, history: inheritedTurns(3, 2400) });
+    const sources = sourcesWith({ taskSeq: 7, history: inheritedTurns(3, 2000) });
     const atLevel0 = await overflowOf(inputFor(capabilities, { sources, level: 0 }), harness(capabilities).ports);
-    expect(atLevel0.inputTokens).toBe(3719);
+    expect(atLevel0.inputTokens).toBe(3119);
     expect(atLevel0.compaction?.throughSeq).toBe(2);
     const atLevel1 = await overflowOf(inputFor(capabilities, { sources, level: 1 }), harness(capabilities).ports);
     expect(atLevel1.compaction?.throughSeq).toBe(4);

@@ -19,6 +19,14 @@ describe('Edit', () => {
     expect(tools.session.readLedger.get(file)).toEqual({ sha256: sha256('one\nTWO\nthree\n'), mtimeMs: fs.statSync(file).mtimeMs });
   });
 
+  it('reports the edited file with the hash of the edited content as a structured fact', async () => {
+    const tools = await makeBuiltins();
+    const file = tools.write('fact.txt', 'one\ntwo\n');
+    tools.markRead(file);
+    const result = resultOf(await tools.run('Edit', { file_path: file, old_string: 'two', new_string: 'TWO' }, ACCEPT));
+    expect(result.files).toEqual([{ path: file, sha256: sha256('one\nTWO\n'), access: 'write' }]);
+  });
+
   it('records path, preHash and postHash as the prepared state', async () => {
     const tools = await makeBuiltins();
     const file = tools.write('p.txt', 'a\n');

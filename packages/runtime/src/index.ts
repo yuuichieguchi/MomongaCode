@@ -11,6 +11,8 @@ export type {
   Clock,
   GatewayCallOptions,
   GatewayPort,
+  HistoryPort,
+  HistorySet,
   MemoryPort,
   MemorySet,
   SettingsPort,
@@ -27,6 +29,7 @@ export {
   createRunNotifier,
   createRunService,
   startApprovalSweeper,
+  startSearchSweeper,
 } from './service/index.ts';
 export type {
   ApprovalSweeperOptions,
@@ -35,6 +38,7 @@ export type {
   RunService,
   RunServiceDefaults,
   RunServiceOptions,
+  SearchSweeperOptions,
   ServiceTimers,
   SessionCreateSettings,
 } from './service/index.ts';
@@ -61,6 +65,8 @@ export { createPolicyFilesystem } from '@momonga/tools';
 export type { PolicyForOptions } from './process/tool-policy.ts';
 export { createMemoryPort } from './process/memory-port.ts';
 export type { MemoryPortOptions } from './process/memory-port.ts';
+export { createHistoryPort } from './process/history-port.ts';
+export type { HistoryPortOptions } from './process/history-port.ts';
 export { createAgentsPort } from './process/agents-port.ts';
 export type { AgentsPortOptions } from './process/agents-port.ts';
 export { createChildRuns, finalTextOf } from './process/child-runs.ts';

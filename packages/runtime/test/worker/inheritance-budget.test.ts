@@ -197,10 +197,12 @@ describe('an inherited compaction item the gateway rejects', () => {
     const input = firstRequestInput(env, second.id);
     expect(input.some((item) => item.type === 'compaction')).toBe(false);
     expect(input).toContainEqual(PLAIN_SUMMARY);
-    expect(firstConversation(env, second.id).slice(-3)).toEqual([
+    const conversation = firstConversation(env, second.id);
+    expect(conversation.slice(-4, -1)).toEqual([
       ['user', 'question two'],
       ['assistant', 'answer two'],
       ['user', 'question three'],
     ]);
+    expect(conversation.at(-1)?.[1]).toMatch(/^<working_state>/);
   });
 });

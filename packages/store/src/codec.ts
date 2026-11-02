@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { LOOP_GROUPS_KEPT, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
+import { FILE_ACCESSES, LOOP_GROUPS_KEPT, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
 import type { RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload } from '@momonga/protocol';
 import { hasConsistentSeqs } from './seqs.ts';
 import { corrupt, expectOneOf, expectRecord, expectStringRecord, isRecord, readerFor } from './rows.ts';
@@ -140,9 +140,26 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
 
 const SESSION_EVENT_TYPES: Record<SessionEventPayload['type'], true> = { 'mode.changed': true };
 
+const isToolFile = (value: unknown): boolean =>
+  isRecord(value) &&
+  typeof value['path'] === 'string' &&
+  typeof value['sha256'] === 'string' &&
+  /^[0-9a-f]{64}$/.test(value['sha256']) &&
+  FILE_ACCESSES.some((access) => access === value['access']);
+
+const assertToolFacts = (identity: string, payload: Record<string, unknown>): void => {
+  if (payload['files'] !== undefined && !(Array.isArray(payload['files']) && payload['files'].every(isToolFile))) {
+    throw corrupt('events', identity, 'payload_json files must hold path, sha256 and access entries');
+  }
+  if (payload['exitCode'] !== undefined && !Number.isInteger(payload['exitCode'])) {
+    throw corrupt('events', identity, 'payload_json exitCode must be an integer');
+  }
+};
+
 const decodeRunEvent = (row: Row, identity: string, type: string, payload: Record<string, unknown>): RunEvent => {
   const reader = readerFor('events', identity, row);
   if (!Object.hasOwn(EVENT_TYPES, type)) throw corrupt('events', identity, `column type has unknown event type "${type}"`);
+  if (type === 'tool.completed') assertToolFacts(identity, payload);
   const envelope = {
     id: reader.number('id'),
     runId: reader.string('run_id'),
@@ -288,7 +305,45 @@ const isLoopOpen = (value: unknown): boolean =>
   isRecord(value['outputs']) &&
   Object.values(value['outputs']).every(isSha256);
 
-export const SNAPSHOT_STATE_VERSION = 9;
+const isArrayOf = (value: unknown, guard: (entry: unknown) => boolean): boolean => Array.isArray(value) && value.every(guard);
+
+const isPlanEntry = (value: unknown): boolean =>
+  isRecord(value) &&
+  typeof value['content'] === 'string' &&
+  (value['priority'] === 'high' || value['priority'] === 'medium' || value['priority'] === 'low') &&
+  (value['status'] === 'pending' || value['status'] === 'in_progress' || value['status'] === 'completed');
+
+const isReconciled = (value: unknown): boolean => value === undefined || value === 'already_applied' || value === 'unknown';
+
+const isWorkingFacts = (value: unknown): boolean =>
+  isRecord(value) &&
+  (value['taskText'] === undefined || typeof value['taskText'] === 'string') &&
+  isArrayOf(
+    value['written'],
+    (entry) =>
+      isRecord(entry) &&
+      typeof entry['path'] === 'string' &&
+      (entry['sha256'] === undefined || isSha256(entry['sha256'])) &&
+      isReconciled(entry['reconciled']) &&
+      Number.isInteger(entry['seq']),
+  ) &&
+  isArrayOf(
+    value['commands'],
+    (entry) =>
+      isRecord(entry) &&
+      typeof entry['command'] === 'string' &&
+      typeof entry['failed'] === 'boolean' &&
+      (entry['exitCode'] === undefined || Number.isInteger(entry['exitCode'])) &&
+      isReconciled(entry['reconciled']) &&
+      Number.isInteger(entry['seq']),
+  ) &&
+  isArrayOf(value['messages'], (entry) => isRecord(entry) && typeof entry['text'] === 'string' && Number.isInteger(entry['seq'])) &&
+  (value['plan'] === undefined ||
+    (isRecord(value['plan']) && Number.isInteger(value['plan']['seq']) && isArrayOf(value['plan']['entries'], isPlanEntry))) &&
+  isArrayOf(value['itemEvents'], (entry) => isRecord(entry) && Number.isInteger(entry['itemSeq']) && Number.isInteger(entry['eventSeq'])) &&
+  (value['replacedThroughEventSeq'] === undefined || Number.isInteger(value['replacedThroughEventSeq']));
+
+export const SNAPSHOT_STATE_VERSION = 10;
 
 export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
 
@@ -316,6 +371,7 @@ export const decodeRunState = (identity: string, value: unknown): RunState | und
     history.every(isHistoryEntry) &&
     (state['summary'] === undefined || isSummary(state['summary'])) &&
     hasConsistentSeqs(history, state['nextItemSeq'], state['summary']) &&
+    isWorkingFacts(state['workingFacts']) &&
     (inFlight === undefined || (isRecord(inFlight) && Number.isInteger(inFlight['requestedSeq']))) &&
     (state['pins'] === undefined || isRecord(state['pins'])) &&
     Array.isArray(evicted) &&

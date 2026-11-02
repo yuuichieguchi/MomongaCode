@@ -57,15 +57,21 @@ const CALL: RunEventPayload = { type: 'tool.call', callId: 'c1', providerCallId:
 
 const classifiedWithoutDigest = { type: 'tool.permission.classified', callId: 'c1', outcome: 'allow' } as unknown as RunEventPayload;
 
-describe('snapshot state version 9', () => {
-  it('writes stateVersion 9', () => {
+describe('snapshot state version 10', () => {
+  it('writes stateVersion 10', () => {
     const { storedJson } = storedSnapshot();
-    expect(storedJson()['stateVersion']).toBe(9);
+    expect(storedJson()['stateVersion']).toBe(10);
   });
 
-  it('treats a version 8 snapshot as absent and rebuilds it from the journal', () => {
+  it('reports a snapshot without the working facts as corrupt', () => {
+    const { store, run, mutate } = storedSnapshot();
+    mutate("json_remove(state_json, '$.workingFacts')");
+    expect(() => store.load(run.id)).toThrow(/corrupt/);
+  });
+
+  it('treats a version 9 snapshot as absent and rebuilds it from the journal', () => {
     const { store, run, state, events, mutate } = storedSnapshot();
-    mutate("json_set(state_json, '$.stateVersion', 8)");
+    mutate("json_set(state_json, '$.stateVersion', 9)");
     const loaded = store.load(run.id);
     expect(loaded.snapshot).toBeUndefined();
     expect(loaded.tail).toEqual(events);
