@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 
 export type OpenCommand = { file: string; args: readonly string[] };
 
-export const openCommandFor = (platform: NodeJS.Platform, url: URL, env: Readonly<Record<string, string | undefined>> = process.env): OpenCommand => {
+export const openCommandFor = (platform: NodeJS.Platform, url: URL, env: Readonly<Record<string, string | undefined>>): OpenCommand => {
   switch (platform) {
     case 'darwin':
       return { file: '/usr/bin/open', args: [url.toString()] };
@@ -18,8 +18,8 @@ export const openCommandFor = (platform: NodeJS.Platform, url: URL, env: Readonl
   }
 };
 
-export const openInBrowser = (url: URL, signal: AbortSignal): Promise<void> =>
+export const openInBrowser = (url: URL, signal: AbortSignal, env: Readonly<Record<string, string | undefined>>): Promise<void> =>
   new Promise((resolve, reject) => {
-    const command = openCommandFor(process.platform, url);
+    const command = openCommandFor(process.platform, url, env);
     execFile(command.file, [...command.args], { signal, windowsHide: true }, (error) => (error === null ? resolve() : reject(error)));
   });

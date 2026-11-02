@@ -5,8 +5,8 @@ const URL_TO_OPEN = new URL('https://auth.example.com/authorize?client_id=a&stat
 
 describe('openCommandFor', () => {
   it('uses open on darwin and xdg-open on linux with the URL as one argument', () => {
-    expect(openCommandFor('darwin', URL_TO_OPEN)).toEqual({ file: '/usr/bin/open', args: [URL_TO_OPEN.toString()] });
-    expect(openCommandFor('linux', URL_TO_OPEN)).toEqual({ file: '/usr/bin/xdg-open', args: [URL_TO_OPEN.toString()] });
+    expect(openCommandFor('darwin', URL_TO_OPEN, {})).toEqual({ file: '/usr/bin/open', args: [URL_TO_OPEN.toString()] });
+    expect(openCommandFor('linux', URL_TO_OPEN, {})).toEqual({ file: '/usr/bin/xdg-open', args: [URL_TO_OPEN.toString()] });
   });
 
   it('uses the url.dll file protocol handler on win32 so that & is not interpreted by a shell', () => {
@@ -18,6 +18,6 @@ describe('openCommandFor', () => {
   });
 
   it('rejects other platforms', () => {
-    expect(() => openCommandFor('freebsd', URL_TO_OPEN)).toThrow('not supported');
+    expect(() => openCommandFor('freebsd', URL_TO_OPEN, {})).toThrow('not supported');
   });
 });
