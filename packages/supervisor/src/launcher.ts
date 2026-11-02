@@ -37,7 +37,8 @@ export const contractArgs = (input: { role: ChildRole; version: string; home: st
   ...tuningFlags(input.role, input.runtime, input.gateway),
 ];
 
-export const childStdio = (markerFd: number): SpawnPortOptions['stdio'] => ['ignore', 'pipe', 'pipe', 'pipe', markerFd];
+export const childStdio = (markerFd: number, lockFd?: number): SpawnPortOptions['stdio'] =>
+  lockFd === undefined ? ['ignore', 'pipe', 'pipe', 'pipe', markerFd] : ['ignore', 'pipe', 'pipe', 'pipe', markerFd, lockFd];
 
 export const resolveLaunch = (input: {
   role: ChildRole;

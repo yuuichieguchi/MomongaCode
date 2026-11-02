@@ -33,7 +33,10 @@ const fakeWorld = (initial: Record<number, number>): FakeWorld => {
   const killed: number[] = [];
   const survivors = new Set<number>();
   const ports: LedgerPorts = {
-    startTimeOf: async (pid) => alive.get(pid),
+    startTimeOf: async (pid) => {
+      const start = alive.get(pid);
+      return start === undefined ? { kind: 'gone' } : { kind: 'value', value: start };
+    },
     groupAlive: (pgid) => groups.has(pgid),
     pidAlive: (pid) => alive.has(pid),
     killGroups: async (pgids) => {

@@ -2,10 +2,10 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { createUdsClient, momongaPaths } from '@momonga/foundation';
+import { createUdsClient, inspectProcessLock, momongaPaths } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS, runGatewayEntry } from '@momonga/gateway';
-import { createFakeEntryIo, parseJsonLines, registerCleanup, spawnTracked, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
+import { createFakeEntryIo, parseJsonLines, registerCleanup, startFakeChatCompletions, startLockHolder, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeEntryIo, JsonLine } from '@momonga/testkit';
 import { postJson, readJson, userInput } from './gateway-helpers.ts';
@@ -28,12 +28,6 @@ const validHome = async (context: CleanupContext, target: Record<string, unknown
 
 const runDir = (paths: MomongaPaths): void => {
   fs.mkdirSync(path.dirname(paths.locks.gateway), { recursive: true, mode: 0o700 });
-};
-
-const liveSleeper = (context: CleanupContext): number => spawnTracked(context, '/bin/sleep', ['120'], { stdio: 'ignore' }).pid;
-
-const writeLock = (lockPath: string, pid: number): void => {
-  fs.writeFileSync(lockPath, `${pid}\n`, { mode: 0o600 });
 };
 
 type Launched = { io: FakeEntryIo; exit: Promise<number> };
@@ -72,7 +66,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
   it('gateway: a held gateway.lock gives 75', PROCESS_TIMEOUT, async (context) => {
     const { home, paths } = await validHome(context);
     runDir(paths);
-    writeLock(paths.locks.gateway, liveSleeper(context));
+    await startLockHolder(context, paths.locks.gateway);
     const { io, exit } = launch(context, home, [`--home=${home}`, '--log-target=stderr']);
 
     expect(await exit).toBe(75);
@@ -82,19 +76,17 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
   it('gateway: a held gateway.sock.lock gives 1', PROCESS_TIMEOUT, async (context) => {
     const { home, paths } = await validHome(context);
     runDir(paths);
-    writeLock(`${paths.sockets.gateway}.lock`, liveSleeper(context));
+    await startLockHolder(context, `${paths.sockets.gateway}.lock`);
     const { io, exit } = launch(context, home, [`--home=${home}`, '--log-target=stderr']);
 
     expect(await exit).toBe(1);
     expect(io.stdoutText()).toBe('');
   });
 
-  it('gateway: a ghost gateway.lock is taken over, and SIGTERM then exits 0', PROCESS_TIMEOUT, async (context) => {
+  it('gateway: a lock file left behind by a dead process is no obstacle, and SIGTERM then exits 0', PROCESS_TIMEOUT, async (context) => {
     const { home, paths } = await validHome(context);
     runDir(paths);
-    writeLock(paths.locks.gateway, liveSleeper(context));
-    const anHourAgo = new Date(Date.now() - 3_600_000);
-    fs.utimesSync(paths.locks.gateway, anHourAgo, anHourAgo);
+    fs.writeFileSync(paths.locks.gateway, '999999\n', { mode: 0o600 });
     const launched = launch(context, home, [`--home=${home}`, '--log-target=stderr']);
 
     await waitForReadyOrExit(launched);
@@ -106,7 +98,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
   it('gateway: a home given through a symlink still gives 75 (the entry canonicalises the home)', PROCESS_TIMEOUT, async (context) => {
     const { home, paths } = await validHome(context);
     runDir(paths);
-    writeLock(paths.locks.gateway, liveSleeper(context));
+    await startLockHolder(context, paths.locks.gateway);
     const link = path.join(withTempDir(context), 'h');
     fs.symlinkSync(home, link);
     const { exit } = launch(context, link, [`--home=${link}`, '--log-target=stderr'], {}, link);
@@ -124,7 +116,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
     expect(launched.io.exits).toEqual([0]);
     expect(launched.io.stdoutLines()).toHaveLength(1);
     expect(JSON.parse(launched.io.stdoutLines()[0] ?? '')).toMatchObject({ event: 'ready', service: 'gateway', version: VERSION, socketPath: paths.sockets.gateway });
-    expect(fs.existsSync(paths.locks.gateway)).toBe(false);
+    expect((await inspectProcessLock(paths.locks.gateway)).state).toBe('free');
     expect(launched.io.logFilePaths).toEqual([paths.logFiles.gateway]);
     const log = parseJsonLines(launched.io.logLines(paths.logFiles.gateway));
     expect(log[0]).toMatchObject({ msg: 'entry.start', service: 'gateway' });

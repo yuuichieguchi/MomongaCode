@@ -55,7 +55,7 @@ describe('fatal at the ready line (system timers, in-process gateway)', () => {
       const outcome = await outcomeOf(startRuntimeProcess({ home: stack.temp.home, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout }));
       if ('error' in outcome) {
         expect(outcome.error).toBe(fatal);
-        expect(isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
+        expect(await isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
         return;
       }
       const { handle } = outcome;
@@ -63,7 +63,7 @@ describe('fatal at the ready line (system timers, in-process gateway)', () => {
       await waitFor(() => control.aborts === 1, { description: 'the fatal-triggered abort' });
       const result = await handle.close();
       expect(result).toMatchObject({ clean: false, fatal });
-      expect(isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
+      expect(await isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
     },
     60_000,
   );

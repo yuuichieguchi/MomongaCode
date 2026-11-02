@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { SEA_NODE_VERSION, SEA_TARGETS, extractArchiveArgs, isSeaTargetName } from './node-runtime.ts';
+import { SEA_NODE_VERSION, SEA_TARGETS, extractCommand, isSeaTargetName } from './node-runtime.ts';
 import { buildSea, hostSeaTarget } from './sea.ts';
 import { repoRoot } from './bundle.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
@@ -17,9 +17,20 @@ describe('SEA targets', () => {
     expect(Object.values(SEA_TARGETS).map((target) => target.assetName)).toEqual(['momonga-darwin-arm64', 'momonga-linux-x64', 'momonga-linux-arm64', 'momonga-win-x64.exe']);
   });
 
-  it('extracts tarballs with -z and zip archives through bsdtar', () => {
-    expect(extractArchiveArgs(SEA_TARGETS['linux-x64'], '/c/a.tar.gz', '/c')).toEqual(['-xzf', '/c/a.tar.gz', '-C', '/c']);
-    expect(extractArchiveArgs(SEA_TARGETS['win-x64'], '/c/a.zip', '/c')).toEqual(['-xf', '/c/a.zip', '-C', '/c']);
+  it('extracts with the system archiver by absolute path on each build host', () => {
+    const linuxTarball = SEA_TARGETS['linux-x64'];
+    const windowsZip = SEA_TARGETS['win-x64'];
+    expect(extractCommand(linuxTarball, '/c/a.tar.gz', '/c', 'darwin', {})).toEqual({ file: '/usr/bin/tar', args: ['-xzf', '/c/a.tar.gz', '-C', '/c'] });
+    expect(extractCommand(linuxTarball, '/c/a.tar.gz', '/c', 'linux', {})).toEqual({ file: '/usr/bin/tar', args: ['-xzf', '/c/a.tar.gz', '-C', '/c'] });
+    expect(extractCommand(windowsZip, '/c/a.zip', '/c', 'darwin', {})).toEqual({ file: '/usr/bin/tar', args: ['-xf', '/c/a.zip', '-C', '/c'] });
+    expect(extractCommand(windowsZip, '/c/a.zip', '/c', 'linux', {})).toEqual({ file: '/usr/bin/unzip', args: ['-q', '-o', '/c/a.zip', '-d', '/c'] });
+  });
+
+  it('never picks up a tar from PATH on Windows: it uses the one in System32', () => {
+    const env = { SystemRoot: 'C:\\Windows' };
+    expect(extractCommand(SEA_TARGETS['win-x64'], 'a.zip', 'c', 'win32', env)).toEqual({ file: 'C:\\Windows\\System32\\tar.exe', args: ['-xf', 'a.zip', '-C', 'c'] });
+    expect(extractCommand(SEA_TARGETS['linux-x64'], 'a.tar.gz', 'c', 'win32', env).file).toBe('C:\\Windows\\System32\\tar.exe');
+    expect(() => extractCommand(SEA_TARGETS['win-x64'], 'a.zip', 'c', 'win32', {})).toThrow('SystemRoot');
   });
 
   it('maps the build host to a pinned runtime and rejects unpinned hosts', () => {

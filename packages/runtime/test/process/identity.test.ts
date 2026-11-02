@@ -106,7 +106,7 @@ describe('database identity check (fake timers and fake clock, in-process gatewa
     expect(stepsLogged(logger).at(-1)).toBe('ready');
     expect(stepsLogged(logger, 'teardown.step')).toEqual(['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'gateway-client', 'telemetry', 'trace-store', 'store', 'lock']);
     expect(stdout.chunks).toEqual([]);
-    expect(isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
+    expect(await isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
     expect(timers.pending()).toEqual([]);
   });
 
@@ -121,7 +121,7 @@ describe('database identity check (fake timers and fake clock, in-process gatewa
     const closed = await launched.handle.close();
     expect(closed).toBe(aborted);
     expect(closed).toEqual({ clean: false, fatal, abandoned: [], stragglers: [] });
-    expect(isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
+    expect(await isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
     expect(timers.pending()).toEqual([]);
   });
 
@@ -161,6 +161,6 @@ describe('database identity check (fake timers and fake clock, in-process gatewa
     } finally {
       spy?.mockRestore();
     }
-    expect(isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
+    expect(await isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
   });
 });

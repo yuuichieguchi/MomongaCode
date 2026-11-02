@@ -1,12 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { createUdsClient, momongaPaths } from '@momonga/foundation';
+import { createUdsClient, inspectProcessLock, momongaPaths } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import { globalErrorHandler } from '@opentelemetry/core';
 import { runRuntimeEntry } from '@momonga/runtime';
-import { createFakeEntryIo, parseJsonLines, registerCleanup, spawnTracked, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
+import { createFakeEntryIo, parseJsonLines, registerCleanup, startFakeChatCompletions, startLockHolder, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { FakeEntryIo, JsonLine } from '@momonga/testkit';
 import { writeInvalidUserSettings, writeUserSettings } from './helpers.ts';
@@ -49,12 +49,6 @@ const runDir = (paths: MomongaPaths): void => {
   fs.mkdirSync(path.dirname(paths.locks.runtime), { recursive: true, mode: 0o700 });
 };
 
-const liveSleeper = (context: CleanupContext): number => spawnTracked(context, '/bin/sleep', ['120'], { stdio: 'ignore' }).pid;
-
-const writeLock = (lockPath: string, pid: number): void => {
-  fs.writeFileSync(lockPath, `${pid}\n`, { mode: 0o600 });
-};
-
 type Launched = { io: FakeEntryIo; exit: Promise<number> };
 
 const launch = (context: CleanupContext, home: string, flags: readonly string[], ioHome = home): Launched => {
@@ -95,7 +89,7 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
   it('runtime: a held runtime lock (live pid that started before the lock) gives 75', PROCESS_TIMEOUT, async (context) => {
     const { home, paths } = validHome(context);
     runDir(paths);
-    writeLock(paths.locks.runtime, liveSleeper(context));
+    await startLockHolder(context, paths.locks.runtime);
     const { io, exit } = launch(context, home, [`--home=${home}`, '--log-target=stderr']);
 
     expect(await exit).toBe(75);
@@ -106,7 +100,7 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
   it('runtime: a held runtime.sock.lock gives 1, not 75', PROCESS_TIMEOUT, async (context) => {
     const { home, paths } = validHome(context);
     runDir(paths);
-    writeLock(`${paths.sockets.runtime}.lock`, liveSleeper(context));
+    await startLockHolder(context, `${paths.sockets.runtime}.lock`);
     const { io, exit } = launch(context, home, [`--home=${home}`, '--log-target=stderr']);
 
     expect(await exit).toBe(1);
@@ -114,12 +108,10 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     expect(lastLine(stderrJson(io))).toMatchObject({ msg: 'entry.exit', code: 1, path: 'start-failed' });
   });
 
-  it('runtime: a ghost runtime lock (live pid, lock one hour old) is taken over, and SIGTERM then exits 0', PROCESS_TIMEOUT, async (context) => {
+  it('runtime: a lock file left behind by a dead process is no obstacle, and SIGTERM then exits 0', PROCESS_TIMEOUT, async (context) => {
     const { home, paths } = validHome(context);
     runDir(paths);
-    writeLock(paths.locks.runtime, liveSleeper(context));
-    const anHourAgo = new Date(Date.now() - 3_600_000);
-    fs.utimesSync(paths.locks.runtime, anHourAgo, anHourAgo);
+    fs.writeFileSync(paths.locks.runtime, '999999\n', { mode: 0o600 });
     const launched = launch(context, home, [`--home=${home}`, '--log-target=stderr']);
 
     await waitForReadyOrExit(launched);
@@ -131,7 +123,7 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
   it('runtime: a home given through a symlink still gives 75 (canonical lock path equality)', PROCESS_TIMEOUT, async (context) => {
     const { home, paths } = validHome(context);
     runDir(paths);
-    writeLock(paths.locks.runtime, liveSleeper(context));
+    await startLockHolder(context, paths.locks.runtime);
     const link = path.join(withTempDir(context), 'h');
     fs.symlinkSync(home, link);
     const { exit } = launch(context, link, [`--home=${link}`, '--log-target=stderr'], link);
@@ -149,7 +141,7 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     expect(launched.io.exits).toEqual([0]);
     expect(launched.io.stdoutLines()).toHaveLength(1);
     expect(JSON.parse(launched.io.stdoutLines()[0] ?? '')).toMatchObject({ event: 'ready', service: 'runtime', version: VERSION, socketPath: paths.sockets.runtime });
-    expect(fs.existsSync(paths.locks.runtime)).toBe(false);
+    expect(await inspectProcessLock(paths.locks.runtime)).toEqual({ state: 'free' });
     expect(launched.io.logFilePaths).toEqual([paths.logFiles.runtime]);
     const log = roleLog(launched.io, paths);
     expect(log[0]).toMatchObject({ msg: 'entry.start', service: 'runtime' });

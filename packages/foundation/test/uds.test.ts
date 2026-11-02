@@ -5,8 +5,10 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { GHOST_CONFIRM_MS, createUdsClient, listenUnix } from '@momonga/foundation';
-import { registerCleanup, spawnTracked, withTempDir } from '@momonga/testkit';
+import { ProcessLockHeldError, createUdsClient, inspectProcessLock, listenUnix } from '@momonga/foundation';
+import type { KernelLockMechanism } from '@momonga/foundation';
+import { registerCleanup, withTempDir } from '@momonga/testkit';
+import { startHolder } from './support/lock-processes.ts';
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
@@ -168,13 +170,13 @@ describe('listenUnix locking', () => {
     expect(fs.readFileSync(`${socketPath}.lock`, 'utf8')).toBe(String(process.pid));
   });
 
-  it('rejects when the lock is held by a live process', async () => {
-    const socketPath = path.join(makeDir(), 'held.sock');
-    fs.writeFileSync(`${socketPath}.lock`, String(process.ppid), { mode: 0o600 });
+  it('rejects when the lock is held by a live process', async (context) => {
+    const socketPath = path.join(withTempDir(context), 'held.sock');
+    const holder = await startHolder(context, `${socketPath}.lock`);
     const server = echoServer();
     await expect(listenUnix(server, socketPath)).rejects.toThrow(/in use/);
     expect(server.listening).toBe(false);
-    expect(fs.readFileSync(`${socketPath}.lock`, 'utf8')).toBe(String(process.ppid));
+    expect(await inspectProcessLock(`${socketPath}.lock`)).toEqual({ state: 'held', pid: holder.pid });
   });
 
   it('lets exactly one of several processes take over a dead-pid lock and leaves no stray files', async () => {
@@ -196,57 +198,42 @@ describe('listenUnix locking', () => {
     expect(fs.readdirSync(dir).sort()).toEqual(['takeover.sock', 'takeover.sock.lock']);
   });
 
-  it('publishes the lock by linking a complete temporary file so it is never visible without its pid', async () => {
-    const socketPath = path.join(makeDir(), 'atomic.sock');
-    const link = vi.spyOn(fs.promises, 'link');
-    cleanups.push(() => link.mockRestore());
+  it('holds the kernel lock without any temporary file beside the socket', async (context) => {
+    const socketPath = path.join(withTempDir(context), 'atomic.sock');
     await listenUnix(echoServer(), socketPath);
-    expect(link).toHaveBeenCalledTimes(1);
-    expect(link.mock.calls[0]?.[1]).toBe(`${socketPath}.lock`);
     expect(fs.readdirSync(path.dirname(socketPath)).sort()).toEqual(['atomic.sock', 'atomic.sock.lock']);
+    expect(await inspectProcessLock(`${socketPath}.lock`)).toEqual({ state: 'held', pid: process.pid });
   });
 
-  it('takes over an empty lock file older than the grace period', async () => {
+  it('ignores an empty lock file that has no holder', async () => {
     const socketPath = path.join(makeDir(), 'garbled.sock');
     const lockPath = `${socketPath}.lock`;
     fs.writeFileSync(lockPath, '', { mode: 0o600 });
-    const old = new Date(Date.now() - 60_000);
-    fs.utimesSync(lockPath, old, old);
     const server = echoServer();
     await listenUnix(server, socketPath);
     expect(server.listening).toBe(true);
     expect(fs.readFileSync(lockPath, 'utf8')).toBe(String(process.pid));
   });
 
-  it('names the lock path and the remediation when a live pid holds the lock', async () => {
-    const socketPath = path.join(makeDir(), 'reused.sock');
+  it('names the socket, the holder and the lock path when another process holds the lock', async (context) => {
+    const socketPath = path.join(withTempDir(context), 'reused.sock');
     const lockPath = `${socketPath}.lock`;
-    fs.writeFileSync(lockPath, String(process.ppid), { mode: 0o600 });
+    const holder = await startHolder(context, lockPath);
     const error = await listenUnix(echoServer(), socketPath).catch((e: unknown) => e);
-    const message = (error as Error).message;
-    expect(message).toContain(lockPath);
-    expect(message).toContain(`remove ${lockPath} if process ${process.ppid} is not momonga`);
-    expect(message).toContain('suspected stale');
-  });
-
-  it('does not call the lock suspected stale while the holder is serving the socket', async () => {
-    const socketPath = path.join(makeDir(), 'serving.sock');
-    await listenUnix(echoServer(), socketPath);
-    const error = await listenUnix(echoServer(), socketPath).catch((e: unknown) => e);
-    expect((error as Error).message).toContain(`${socketPath}.lock`);
-    expect((error as Error).message).not.toContain('suspected stale');
+    expect(error).toBeInstanceOf(ProcessLockHeldError);
+    expect((error as Error).message).toBe(`${socketPath} is already in use by process ${holder.pid} (lock ${lockPath})`);
   });
 
   it('releases the lock when the server closes', async () => {
     const socketPath = path.join(makeDir(), 'release.sock');
     const server = echoServer();
     await listenUnix(server, socketPath);
-    expect(fs.existsSync(`${socketPath}.lock`)).toBe(true);
+    expect(await inspectProcessLock(`${socketPath}.lock`)).toEqual({ state: 'held', pid: process.pid });
     await new Promise<void>((resolve) => {
       server.closeAllConnections();
       server.close(() => resolve());
     });
-    expect(fs.existsSync(`${socketPath}.lock`)).toBe(false);
+    expect(await inspectProcessLock(`${socketPath}.lock`)).toEqual({ state: 'free' });
   });
 
   it('releases the lock when listening fails', async () => {
@@ -254,7 +241,7 @@ describe('listenUnix locking', () => {
     const socketPath = path.join(dir, 'file.sock');
     fs.writeFileSync(socketPath, 'not a socket');
     await expect(listenUnix(echoServer(), socketPath)).rejects.toThrow(/not a socket/);
-    expect(fs.existsSync(`${socketPath}.lock`)).toBe(false);
+    expect(await inspectProcessLock(`${socketPath}.lock`)).toEqual({ state: 'free' });
   });
 });
 
@@ -405,58 +392,21 @@ describe('createUdsClient timeouts', () => {
 });
 
 describe('listenUnix lock options', () => {
-  it('listenUnix takes over a ghost <socket>.lock', async (context) => {
-    const socketPath = path.join(withTempDir(context), 'ghost.sock');
-    const ghost = spawnTracked(context, '/bin/sleep', ['60'], { stdio: 'ignore' });
-    fs.writeFileSync(`${socketPath}.lock`, String(ghost.pid), { mode: 0o600 });
-    const lockTime = fs.statSync(`${socketPath}.lock`).mtimeMs;
-    const probed: number[] = [];
-    const server = http.createServer();
-    registerCleanup(context, 
-      () =>
-        new Promise<void>((resolve) => {
-          if (!server.listening) resolve();
-          else server.close(() => resolve());
-        }),
-    );
-    await listenUnix(server, socketPath, {
-      startTimeOf: async (pid) => {
-        probed.push(pid);
-        return lockTime + 10_000;
+  it('forwards the lock mechanism to the socket lock', async (context) => {
+    const socketPath = path.join(withTempDir(context), 'forwarded.sock');
+    const claims: string[] = [];
+    const mechanism: KernelLockMechanism = {
+      name: 'file-lock',
+      claim: async (lockPath) => {
+        claims.push(lockPath);
+        return { kind: 'held' };
       },
-    });
-    expect(server.listening).toBe(true);
-    expect(probed).toEqual([ghost.pid, ghost.pid]);
-    expect(fs.readFileSync(`${socketPath}.lock`, 'utf8')).toBe(String(process.pid));
-  });
-  it('listenUnix forwards timing to the socket lock', async (context) => {
-    const socketPath = path.join(withTempDir(context), 'ghost-timed.sock');
-    const ghost = spawnTracked(context, '/bin/sleep', ['60'], { stdio: 'ignore' });
-    fs.writeFileSync(`${socketPath}.lock`, String(ghost.pid), { mode: 0o600 });
-    const lockTime = fs.statSync(`${socketPath}.lock`).mtimeMs;
-    const sleeps: number[] = [];
-    let fakeNow = lockTime;
+      isHeld: async () => true,
+      claimInheritable: undefined,
+    };
     const server = http.createServer();
-    registerCleanup(context, 
-      () =>
-        new Promise<void>((resolve) => {
-          if (!server.listening) resolve();
-          else server.close(() => resolve());
-        }),
-    );
-    await listenUnix(server, socketPath, {
-      startTimeOf: async () => lockTime + 10_000,
-      timing: {
-        now: () => fakeNow,
-        sleep: async (ms) => {
-          sleeps.push(ms);
-          fakeNow += ms;
-          await new Promise<void>((resolve) => setImmediate(resolve));
-        },
-      },
-    });
-    expect(server.listening).toBe(true);
-    expect(sleeps).toEqual([GHOST_CONFIRM_MS]);
-    expect(fs.readFileSync(`${socketPath}.lock`, 'utf8')).toBe(String(process.pid));
+    await expect(listenUnix(server, socketPath, { mechanism })).rejects.toBeInstanceOf(ProcessLockHeldError);
+    expect(claims).toEqual([`${socketPath}.lock`]);
+    expect(server.listening).toBe(false);
   });
 });

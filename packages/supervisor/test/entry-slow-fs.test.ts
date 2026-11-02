@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { GHOST_CONFIRM_MS } from '@momonga/foundation';
-import { createFakeClock, createFakeEntryIo, createFakeTimers, fakeReapTiming, parseJsonLines, registerCleanup, spawnTracked, waitFor } from '@momonga/testkit';
+import { hostKernelLock, inspectProcessLock } from '@momonga/foundation';
+import type { KernelLockMechanism } from '@momonga/foundation';
+import { createFakeClock, createFakeEntryIo, createFakeTimers, fakeReapTiming, parseJsonLines, registerCleanup } from '@momonga/testkit';
 import type { CleanupContext, FakeEntryIo, JsonLine } from '@momonga/testkit';
 import { runSupervisorEntry } from '../src/entry.ts';
 import type { SupervisorEntryDeps } from '../src/entry.ts';
@@ -15,7 +16,6 @@ import {
   pumpUntil,
   recordingMarkerPorts,
   validSettings,
-  writeLockFile,
   writeSettings,
 } from './fixtures/p3-harness.ts';
 import type { MomongaPaths } from '@momonga/foundation';
@@ -43,7 +43,6 @@ type SlowRun = {
   realWork: ReturnType<typeof createRealWorkScope>;
   io: FakeEntryIo;
   paths: MomongaPaths;
-  lockSleeps: number[];
   code: Promise<number>;
   timers: ReturnType<typeof createFakeTimers>;
   clock: ReturnType<typeof createFakeClock>;
@@ -51,10 +50,9 @@ type SlowRun = {
   supervisorLog(): JsonLine[];
 };
 
-const startEntry = (context: CleanupContext, prepare: (paths: MomongaPaths) => void, deps: Partial<SupervisorEntryDeps>): SlowRun => {
-  const { home, paths } = prepareHome(context);
+const startEntry = (context: CleanupContext, prepared: { home: string; paths: MomongaPaths }, lockMechanism: KernelLockMechanism, deps: Partial<SupervisorEntryDeps>): SlowRun => {
+  const { home, paths } = prepared;
   writeSettings(home, validSettings());
-  prepare(paths);
   const clock = createFakeClock(T0);
   const timers = createFakeTimers(clock);
   const io = createFakeEntryIo({
@@ -63,8 +61,8 @@ const startEntry = (context: CleanupContext, prepare: (paths: MomongaPaths) => v
     env: { PATH: '/usr/bin:/bin', HOME: home, LANG: 'C' },
     clock,
     timers,
+    lockMechanism,
   });
-  const lockSleeps: number[] = [];
   const realWork = createRealWorkScope();
   const fake = createFakeSpawn({ realWork });
   const code = realWork.run(() =>
@@ -75,14 +73,7 @@ const startEntry = (context: CleanupContext, prepare: (paths: MomongaPaths) => v
       random: () => 0.5,
       watchSettings: false,
       reapTiming: fakeReapTiming(clock, timers),
-      lockTiming: {
-        now: () => clock.now(),
-        sleep: (ms) => {
-          lockSleeps.push(ms);
-          timers.advance(ms);
-          return Promise.resolve();
-        },
-      },
+      lockMechanism,
       ...deps,
     }),
   );
@@ -100,7 +91,6 @@ const startEntry = (context: CleanupContext, prepare: (paths: MomongaPaths) => v
     realWork,
     io,
     paths,
-    lockSleeps,
     code,
     timers,
     clock,
@@ -114,32 +104,25 @@ const exitOf = async (run: SlowRun, maxMs: number): Promise<number> => {
   return run.code;
 };
 
-const cancelDuringStaleLockProbe = (context: CleanupContext, lockPathOf: (paths: MomongaPaths) => string): { run: SlowRun; holderProbes(): number } => {
-  const holder = spawnTracked(context, 'sleep', ['30']);
-  let probes = 0;
-  let io: FakeEntryIo | undefined;
-  const run = startEntry(context, (paths) => writeLockFile(lockPathOf(paths), holder.pid, Date.now() - 3_600_000), {
-    startTimeOf: async (pid) => {
-      if (pid === holder.pid) {
-        probes += 1;
-        io?.signal('SIGTERM');
-      }
-      return Date.now();
+const cancelOnClaim = (target: string, cancel: () => void): KernelLockMechanism => {
+  const host = hostKernelLock();
+  return {
+    ...host,
+    claim: async (lockPath) => {
+      if (lockPath === target) cancel();
+      return host.claim(lockPath);
     },
-  });
-  io = run.io;
-  return { run, holderProbes: () => probes };
+  };
 };
 
 type CancelledExit = { run: SlowRun; code: number; fakeMsAfterCancel: number };
 
 const cancelAndExit = async (context: CleanupContext, latencyMs: number, lockPathOf: (paths: MomongaPaths) => string, maxMs: number): Promise<CancelledExit> => {
   fsLatency.ms = latencyMs;
-  const { run, holderProbes } = cancelDuringStaleLockProbe(context, lockPathOf);
-  await waitFor(() => holderProbes() === 2, {
-    description: 'the ghost confirmation probe',
-  });
-  expect(run.lockSleeps).toEqual([GHOST_CONFIRM_MS]);
+  const prepared = prepareHome(context);
+  let io: FakeEntryIo | undefined;
+  const run = startEntry(context, prepared, cancelOnClaim(lockPathOf(prepared.paths), () => io?.signal('SIGTERM')), {});
+  io = run.io;
   const cancelledAt = run.clock.now();
   const code = await exitOf(run, maxMs);
   return { run, code, fakeMsAfterCancel: run.clock.now() - cancelledAt };
@@ -166,7 +149,7 @@ describe('supervisor entry under slow filesystem I/O', () => {
       code: 1,
     });
     expect(slow.run.io.stdoutLines()).toEqual([]);
-    expect(fs.existsSync(slow.run.paths.locks.supervisor)).toBe(false);
+    expect(await inspectProcessLock(slow.run.paths.locks.supervisor)).toEqual({ state: 'free' });
   });
 
   it('a cancel during listenUnix closes gracefully and removes the socket and both locks even when every fs operation is slow', async (context) => {
@@ -183,7 +166,7 @@ describe('supervisor entry under slow filesystem I/O', () => {
       code: 0,
     });
     expect(fs.existsSync(slow.run.paths.sockets.supervisor)).toBe(false);
-    expect(fs.existsSync(`${slow.run.paths.sockets.supervisor}.lock`)).toBe(false);
-    expect(fs.existsSync(slow.run.paths.locks.supervisor)).toBe(false);
+    expect(await inspectProcessLock(`${slow.run.paths.sockets.supervisor}.lock`)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(slow.run.paths.locks.supervisor)).toEqual({ state: 'free' });
   });
 });

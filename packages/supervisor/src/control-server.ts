@@ -1,7 +1,7 @@
 import http from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { listenUnix } from '@momonga/foundation';
-import type { LockTiming, ProcessStartProbe } from '@momonga/foundation';
+import type { KernelLockMechanism } from '@momonga/foundation';
 import type { ErrorBody, SupervisorHealth, SupervisorShutdownResponse } from '@momonga/protocol';
 import { CONTROL_CLOSE_ALL_AFTER_MS, CONTROL_REQUEST_TIMEOUT_MS, SHUTDOWN_BODY_LIMIT_BYTES } from './constants.ts';
 import type { SupervisorTimers } from './constants.ts';
@@ -20,8 +20,7 @@ export type ControlHandlerOptions = {
 export type ControlServerOptions = ControlHandlerOptions & {
   socketPath: string;
   timers: SupervisorTimers;
-  startTimeOf?: ProcessStartProbe;
-  timing?: LockTiming;
+  mechanism?: KernelLockMechanism;
   onError(error: Error): void;
 };
 
@@ -109,7 +108,7 @@ export const startControlServer = async (options: ControlServerOptions): Promise
   const server = http.createServer(createControlRequestHandler(options));
   server.requestTimeout = CONTROL_REQUEST_TIMEOUT_MS;
   server.headersTimeout = CONTROL_REQUEST_TIMEOUT_MS;
-  await listenUnix(server, options.socketPath, omitUndefined({ startTimeOf: options.startTimeOf, timing: options.timing }));
+  await listenUnix(server, options.socketPath, omitUndefined({ mechanism: options.mechanism }));
   server.on('error', options.onError);
   let closing: Promise<void> | undefined;
   const close = (): Promise<void> => {

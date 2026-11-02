@@ -16,7 +16,7 @@ import {
   secretKeyFile,
   systemClock,
 } from '@momonga/foundation';
-import type { Clock, JsonLogger, MomongaPaths, ReadyFields, SecretStore, TextStream } from '@momonga/foundation';
+import type { Clock, JsonLogger, MomongaPaths, ProcessLock, ReadyFields, SecretStore, TextStream } from '@momonga/foundation';
 import { buildCostReport, closeTelemetry, formatCostReport, createTelemetry, exportersFor, openTraceStore } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import type { AdapterTarget, Capabilities, ProviderAdapter } from '@momonga/protocol';
@@ -60,6 +60,7 @@ export type StartGatewayProcessOptions = {
   logger?: JsonLogger;
   stdout?: TextStream;
   signal?: AbortSignal;
+  acquireLock?: (lockPath: string) => Promise<ProcessLock>;
 };
 
 export type GatewayCloseResult = {
@@ -269,7 +270,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   signal?.throwIfAborted();
   await ensureMomongaDirs(paths);
   signal?.throwIfAborted();
-  const lock = await acquireProcessLock(paths.locks.gateway);
+  const lock = await (options.acquireLock ?? acquireProcessLock)(paths.locks.gateway);
   const cleanups: Array<() => void | Promise<void>> = [() => lock.release()];
   const unwind = async (): Promise<Error[]> => {
     const failures: Error[] = [];

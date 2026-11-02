@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { withFileLock } from './file-lock.ts';
+import { settingsLockPath, withFileLock } from './file-lock.ts';
+import { layoutOf } from './layout.ts';
 import { localSettingsDirectory } from './local-settings.ts';
 import { readJsonFile } from './json-file.ts';
 import { parseRule } from './rule.ts';
@@ -75,8 +76,9 @@ export const appendPermissionRule = async ({ home, projectDir, rule, effect, loc
   parseRule(rule, { effect, origin: 'local', source: file, settingsRoot: projectDir, home, cwd: projectDir });
 
   await fs.promises.mkdir(directory, { recursive: true, mode: 0o700 });
+  await fs.promises.mkdir(layoutOf(home).run, { recursive: true, mode: 0o700 });
   await serializeInProcess(file, () =>
-    withFileLock(`${file}.lock`, async () => {
+    withFileLock(settingsLockPath(home, file), async () => {
       const read = await readJsonFile(file);
       let document: Record<string, unknown> = {};
       if (read.found) {

@@ -3,6 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ConfigError, appendPermissionRule, loadMcpServers, loadSettings } from '@momonga/config';
+import { hostKernelLock } from '@momonga/foundation';
+import { startLockHolder } from '@momonga/testkit';
+import { settingsLockPath } from '../src/file-lock.ts';
 import {
   localSettingsDir,
   localSettingsPath,
@@ -114,33 +117,34 @@ describe('B7 local settings live in user scope', () => {
 });
 
 describe('B8 lock hardening', () => {
-  const lockPathOf = (tree: ReturnType<typeof makeTree>): string => `${localSettingsPath(tree)}.lock`;
+  const lockPathOf = (tree: ReturnType<typeof makeTree>): string => settingsLockPath(tree.home, localSettingsPath(tree));
+  const fileLock = hostKernelLock().name === 'file-lock';
 
-  it('times out naming the lock path and holder pid when a live process holds the lock', async () => {
+  it('times out naming the lock path and holder pid when another process holds the lock', async (context) => {
     const tree = makeTree();
-    writeText(lockPathOf(tree), String(process.pid));
+    fs.mkdirSync(path.dirname(lockPathOf(tree)), { recursive: true, mode: 0o700 });
+    const holder = await startLockHolder(context, lockPathOf(tree));
     const failure = appendPermissionRule({ home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow', lockTimeoutMs: 200 });
     await expect(failure).rejects.toThrow(/timed out/);
     await expect(failure).rejects.toThrow(lockPathOf(tree));
-    await expect(failure).rejects.toThrow(String(process.pid));
+    await expect(failure).rejects.toThrow(String(holder.pid));
   });
 
-  it('replaces a symlinked lock without touching its target', async () => {
+  it.skipIf(!fileLock)('refuses to follow a symlinked lock and leaves its target alone', async () => {
     const tree = makeTree();
     const target = writeText(path.join(makeDir(), 'victim'), 'precious');
-    fs.mkdirSync(localSettingsDir(tree), { recursive: true, mode: 0o700 });
+    fs.mkdirSync(path.dirname(lockPathOf(tree)), { recursive: true, mode: 0o700 });
     fs.symlinkSync(target, lockPathOf(tree));
-    await appendPermissionRule({ home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow' });
+    await expect(appendPermissionRule({ home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow' })).rejects.toMatchObject({ code: 'ELOOP' });
     expect(fs.readFileSync(target, 'utf8')).toBe('precious');
-    expect(fs.existsSync(lockPathOf(tree))).toBe(false);
   });
 
-  it('refuses a lock path that is a directory', async () => {
+  it.skipIf(!fileLock)('refuses a lock path that is a directory', async () => {
     const tree = makeTree();
     fs.mkdirSync(lockPathOf(tree), { recursive: true, mode: 0o700 });
     await expect(
       appendPermissionRule({ home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow', lockTimeoutMs: 200 }),
-    ).rejects.toThrow(/not a regular file/);
+    ).rejects.toMatchObject({ code: 'EISDIR' });
   });
 });
 

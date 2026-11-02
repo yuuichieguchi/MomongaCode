@@ -86,32 +86,47 @@ describe('windows inspector through an injected command runner', () => {
   it('asks Win32_Process for the creation time of one pid', async () => {
     calls.length = 0;
     const inspector = createWindowsInspector({ run: runnerReturning({ stdout: '1700000123456\r\n' }), env: ENV });
-    expect(await inspector.startTimeOf(321)).toBe(1700000123456);
+    expect(await inspector.startTimeOf(321)).toEqual({ kind: 'value', value: 1700000123456 });
     expect(calls[0]?.file).toBe(POWERSHELL);
     expect(calls[0]?.args.slice(0, 3)).toEqual(['-NoLogo', '-NoProfile', '-NonInteractive']);
     expect(decodeScript(calls[0]?.args ?? [])).toContain("Win32_Process -Filter 'ProcessId=321'");
     expect(calls[0]?.env).toEqual(ENV);
   });
 
-  it('reports a pid without a row as undefined', async () => {
+  it('reports a pid without a row as gone', async () => {
     const inspector = createWindowsInspector({ run: runnerReturning({ stdout: '\r\n' }), env: ENV });
-    expect(await inspector.startTimeOf(321)).toBeUndefined();
+    expect(await inspector.startTimeOf(321)).toEqual({ kind: 'gone' });
   });
 
-  it('propagates a failing powershell instead of reporting no process', async () => {
+  it('reports a failing powershell as a deterministic failure instead of no process', async () => {
     const inspector = createWindowsInspector({ run: runnerReturning({ exitCode: 1, stderr: 'boom' }), env: ENV });
-    await expect(inspector.startTimeOf(321)).rejects.toThrow('powershell exited with 1: boom');
+    expect(await inspector.startTimeOf(321)).toEqual({
+      kind: 'failed',
+      cause: 'deterministic',
+      evidence: { kind: 'exit', exitCode: 1, detail: 'powershell exited with 1: boom' },
+    });
+  });
+
+  it('reports a timed-out powershell as transient', async () => {
+    const timedOut = Object.assign(new Error('Command failed: timed out'), { killed: true, signal: 'SIGKILL' });
+    const inspector = createWindowsInspector({ run: async () => Promise.reject(timedOut), env: ENV });
+    expect(await inspector.startTimeOf(321)).toMatchObject({ kind: 'failed', cause: 'transient', evidence: { kind: 'timeout' } });
+  });
+
+  it('reports output it cannot parse as a deterministic failure', async () => {
+    const inspector = createWindowsInspector({ run: runnerReturning({ stdout: 'Monday' }), env: ENV });
+    expect(await inspector.startTimeOf(321)).toMatchObject({ kind: 'failed', cause: 'deterministic', evidence: { kind: 'unparseable' } });
   });
 
   it('needs SystemRoot to locate powershell', async () => {
     const inspector = createWindowsInspector({ run: runnerReturning({}), env: {} });
-    await expect(inspector.startTimeOf(321)).rejects.toThrow('SystemRoot');
+    expect(await inspector.startTimeOf(321)).toMatchObject({ kind: 'failed', cause: 'deterministic', evidence: { detail: expect.stringContaining('SystemRoot') } });
   });
 
   it('lists marker holders through the Restart Manager', async () => {
     calls.length = 0;
     const inspector = createWindowsInspector({ run: runnerReturning({ stdout: '[812,4096]' }), env: ENV });
-    expect(await inspector.holdersOf('C:\\Users\\a\\marker')).toEqual([812, 4096]);
+    expect(await inspector.holdersOf('C:\\Users\\a\\marker')).toEqual({ kind: 'value', value: [812, 4096] });
     const script = decodeScript(calls[0]?.args ?? []);
     expect(script).toContain('rstrtmgr.dll');
     expect(script).toContain("Holders('C:\\Users\\a\\marker')");
@@ -119,12 +134,13 @@ describe('windows inspector through an injected command runner', () => {
 
   it('maps live pids to candidate groups from one process table snapshot', async () => {
     const inspector = createWindowsInspector({ run: runnerReturning({ stdout: TABLE }), env: ENV });
-    expect(await inspector.groupsOf([300, 400, 12345], [100])).toEqual(
-      new Map([
+    expect(await inspector.groupsOf([300, 400, 12345], [100])).toEqual({
+      kind: 'value',
+      value: new Map([
         [300, 100],
         [400, 400],
       ]),
-    );
+    });
   });
 });
 

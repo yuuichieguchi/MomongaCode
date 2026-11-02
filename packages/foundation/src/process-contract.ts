@@ -15,15 +15,32 @@ export const GATEWAY_MAX_CLOSE_MS = 15_000;
 export const ENTRY_HARD_EXIT_MARGIN_MS = 3000;
 export const SHUTDOWN_MARGIN_MS = 5000;
 export const STDIO_EXIT_FLUSH_MS = 1000;
-export const SUPERVISOR_FINALIZE_MS = 11_000;
+export const CHILD_STDIO_FLUSH_MS = 1000;
+export const KILL_CONFIRM_MS = 5000;
+export const SHUTDOWN_DRAIN_BOUND_MS = 2000;
+export const SHUTDOWN_REAP_BOUND_MS = 4000;
+export const SHUTDOWN_RELEASE_BOUND_MS = 5000;
 export const MINIMAL_CHILD_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 export const LIFELINE_FD = 3;
 export const DAEMON_MARKER_FD = 4;
+export const LOCK_FD = 5;
 
 export const runtimeMaxCloseMs = (drainTimeoutMs: number): number => drainTimeoutMs + RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS;
 
+export const runtimeStopBudgetMs = (drainTimeoutMs: number): number => runtimeMaxCloseMs(drainTimeoutMs) + SHUTDOWN_MARGIN_MS;
+
+export const gatewayStopBudgetMs = (): number => GATEWAY_MAX_CLOSE_MS + SHUTDOWN_MARGIN_MS;
+
+export const killedChildSettleMs = (): number => KILL_CONFIRM_MS + CHILD_STDIO_FLUSH_MS;
+
 export const supervisorMaxCloseMs = (drainTimeoutMs: number): number =>
-  runtimeMaxCloseMs(drainTimeoutMs) + SHUTDOWN_MARGIN_MS + GATEWAY_MAX_CLOSE_MS + SHUTDOWN_MARGIN_MS + SUPERVISOR_FINALIZE_MS;
+  SHUTDOWN_DRAIN_BOUND_MS +
+  runtimeStopBudgetMs(drainTimeoutMs) +
+  killedChildSettleMs() +
+  gatewayStopBudgetMs() +
+  killedChildSettleMs() +
+  SHUTDOWN_REAP_BOUND_MS +
+  SHUTDOWN_RELEASE_BOUND_MS;
 
 export const PLATFORM_CHILD_ENV_NAMES: Readonly<Record<'linux' | 'win32', readonly string[]>> = {
   linux: ['XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS'],

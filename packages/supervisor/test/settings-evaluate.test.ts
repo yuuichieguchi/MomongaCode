@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { SHUTDOWN_MARGIN_MS, runtimeMaxCloseMs } from '@momonga/foundation';
-import { spawnTracked, waitFor } from '@momonga/testkit';
+import { createFakeKernelLock, spawnTracked, waitFor } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { KILL_CONFIRM_MS, SETTINGS_DEBOUNCE_MS } from '../src/constants.ts';
 import {
@@ -13,7 +13,6 @@ import {
   settledFlag,
   startHarness,
   validSettings,
-  writeLockFile,
   writeSettings,
   writeSettingsText,
 } from './fixtures/p3-harness.ts';
@@ -171,14 +170,15 @@ describe('supervisor-level settings evaluation', () => {
   });
 
   it('every valid evaluation logs settings.evaluated: a digest change while the runtime waits for its lock plans nothing', async (context) => {
+    const lock = createFakeKernelLock({ inheritable: false });
     const holder = { pid: 0 };
     const h = await watched(context, {
       settings: validSettings({ sandbox: 'seatbelt' }),
       prepare: (_home, paths) => {
         holder.pid = spawnTracked(context, 'sleep', ['30']).pid;
-        writeLockFile(paths.locks.runtime, holder.pid);
+        lock.holdExternally(paths.locks.runtime, holder.pid);
       },
-      overrides: { startTimeOf: async () => 0, lockWaitMs: 3_600_000 },
+      overrides: { lockMechanism: lock, lockWaitMs: 3_600_000 },
     });
     h.fake.latest('runtime').exit(75);
     await h.waitForState('runtime', 'waiting-lock');
@@ -310,6 +310,7 @@ describe('supervisor-level settings evaluation', () => {
   });
 
   it.for(['backoff', 'waiting-lock', 'external'] as const)('plan waits for any state other than starting (%s)', async (state, context) => {
+    const lock = createFakeKernelLock({ inheritable: false });
     let holderPid = 0;
     const holdsLock = state !== 'backoff';
     const h = await watched(context, {
@@ -317,9 +318,9 @@ describe('supervisor-level settings evaluation', () => {
         if (!holdsLock) return;
         const holder = spawnTracked(context, 'sleep', ['30']);
         holderPid = holder.pid;
-        writeLockFile(paths.locks.gateway, holder.pid);
+        lock.holdExternally(paths.locks.gateway, holder.pid);
       },
-      overrides: { startTimeOf: async () => 0, lockWaitMs: state === 'external' ? 1000 : 3_600_000 },
+      overrides: { lockMechanism: lock, lockWaitMs: state === 'external' ? 1000 : 3_600_000 },
     });
     expect(!holdsLock || holderPid > 0).toBe(true);
     h.fake.setBehaviour('gateway', { autoReady: false });
@@ -337,13 +338,14 @@ describe('supervisor-level settings evaluation', () => {
   });
 
   it('plan skips waiting-lock', async (context) => {
+    const lock = createFakeKernelLock({ inheritable: false });
     const holder = { pid: 0 };
     const h = await watched(context, {
       prepare: (_home, paths) => {
         holder.pid = spawnTracked(context, 'sleep', ['30']).pid;
-        writeLockFile(paths.locks.runtime, holder.pid);
+        lock.holdExternally(paths.locks.runtime, holder.pid);
       },
-      overrides: { startTimeOf: async () => 0, lockWaitMs: 3_600_000 },
+      overrides: { lockMechanism: lock, lockWaitMs: 3_600_000 },
     });
     h.fake.latest('runtime').exit(75);
     await h.waitForState('runtime', 'waiting-lock');
@@ -357,13 +359,14 @@ describe('supervisor-level settings evaluation', () => {
   });
 
   it('plan skips external', async (context) => {
+    const lock = createFakeKernelLock({ inheritable: false });
     const holder = { pid: 0 };
     const h = await watched(context, {
       prepare: (_home, paths) => {
         holder.pid = spawnTracked(context, 'sleep', ['30']).pid;
-        writeLockFile(paths.locks.runtime, holder.pid);
+        lock.holdExternally(paths.locks.runtime, holder.pid);
       },
-      overrides: { startTimeOf: async () => 0, lockWaitMs: 1000 },
+      overrides: { lockMechanism: lock, lockWaitMs: 1000 },
     });
     h.fake.latest('runtime').exit(75);
     await h.waitForState('runtime', 'external', 10_000);
@@ -399,13 +402,14 @@ describe('supervisor-level settings evaluation', () => {
   });
 
   it('a leaked plan stop still lets the plan finish', async (context) => {
+    const lock = createFakeKernelLock({ inheritable: false });
     const holder = { pid: 0 };
     const h = await watched(context, {
       prepare: (_home, paths) => {
         holder.pid = spawnTracked(context, 'sleep', ['30']).pid;
-        writeLockFile(paths.locks.runtime, holder.pid);
+        lock.holdExternally(paths.locks.runtime, holder.pid);
       },
-      overrides: { startTimeOf: async () => 0, lockWaitMs: 3_600_000 },
+      overrides: { lockMechanism: lock, lockWaitMs: 3_600_000 },
     });
     h.fake.setBehaviour('runtime', { onTerm: 'ignore', onKill: 'ignore' });
     await edit(h, validSettings({ model: 'gpt-y' }));

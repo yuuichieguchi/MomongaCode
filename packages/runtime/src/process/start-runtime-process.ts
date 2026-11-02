@@ -86,6 +86,7 @@ export type StartRuntimeProcessOptions = {
   leaseMs?: number;
   drainTimeoutMs?: number;
   signal?: AbortSignal;
+  acquireLock?: (lockPath: string) => Promise<ProcessLock>;
 };
 
 export type RuntimeCloseResult = {
@@ -274,7 +275,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
     const lock: ProcessLock = await step('lock', async () => {
       try {
-        return await acquireProcessLock(paths.locks.runtime);
+        return await (options.acquireLock ?? acquireProcessLock)(paths.locks.runtime);
       } catch (error) {
         if (error instanceof ProcessLockHeldError && error.lockPath === paths.locks.runtime) {
           throw new RuntimeAlreadyRunningError(error.message, error.lockPath, error.holderPid);

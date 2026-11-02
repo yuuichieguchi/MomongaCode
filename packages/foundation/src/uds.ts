@@ -123,11 +123,11 @@ export const listenUnix = async (server: net.Server, socketPath: string, lockOpt
     throw new Error(`Socket directory ${directory} must have mode 0700, found ${(directoryStat.mode & 0o777).toString(8)}`);
   }
   const lockPath = `${socketPath}.lock`;
-  const lock = await acquireProcessLock(lockPath, async (pid) => {
-    const listening = await isUnixSocketLive(socketPath);
-    const suspicion = listening ? '' : ' and nothing is listening on the socket, so the lock is suspected stale';
-    return `${socketPath} is already in use by process ${pid} (lock ${lockPath})${suspicion}; remove ${lockPath} if process ${pid} is not momonga`;
-  }, lockOptions);
+  const lock = await acquireProcessLock(
+    lockPath,
+    async (pid) => `${socketPath} is already in use by ${pid === undefined ? 'another process' : `process ${pid}`} (lock ${lockPath})`,
+    lockOptions,
+  );
   try {
     const existing = await fs.promises.lstat(socketPath).catch((error: NodeJS.ErrnoException) => {
       if (error.code === 'ENOENT') return undefined;

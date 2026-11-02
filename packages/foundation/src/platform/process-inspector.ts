@@ -13,6 +13,7 @@ export type InspectorPorts = {
   run: CommandRunner;
   procfs: ProcFs;
   env: Readonly<Record<string, string | undefined>>;
+  uid(): number;
   startTimeoutMs: number;
 };
 
@@ -26,14 +27,19 @@ export class UnsupportedPlatformError extends Error {
   }
 }
 
-export const hostInspectorPorts = (): InspectorPorts => ({ run: nodeCommandRunner, procfs: nodeProcFs, env: process.env, startTimeoutMs: PS_PROBE_TIMEOUT_MS });
+const hostUid = (): number => {
+  if (process.getuid === undefined) throw new UnsupportedPlatformError(process.platform, 'reading the current user id');
+  return process.getuid();
+};
+
+export const hostInspectorPorts = (): InspectorPorts => ({ run: nodeCommandRunner, procfs: nodeProcFs, env: process.env, uid: hostUid, startTimeoutMs: PS_PROBE_TIMEOUT_MS });
 
 export const createProcessInspector = (platform: NodeJS.Platform, ports: InspectorPorts): ProcessInspector => {
   switch (platform) {
     case 'darwin':
       return createDarwinInspector({ run: ports.run, startTimeoutMs: ports.startTimeoutMs });
     case 'linux':
-      return createLinuxInspector({ procfs: ports.procfs });
+      return createLinuxInspector({ procfs: ports.procfs, uid: ports.uid() });
     case 'win32':
       return createWindowsInspector({ run: ports.run, env: ports.env });
     default:

@@ -1,5 +1,6 @@
-import { createLockVerdictMemo, createUdsClient, inspectProcessLock } from '@momonga/foundation';
-import type { LockTiming, ProcessLockInspection, ProcessStartProbe } from '@momonga/foundation';
+import { createUdsClient, inspectProcessLock, isTransientFailure } from '@momonga/foundation';
+import type { KernelLockMechanism, ProcessLockInspection } from '@momonga/foundation';
+import { LINE_MAX_BYTES } from './constants.ts';
 import type { SupervisorTimers } from './constants.ts';
 import type { ChildRole } from './launcher.ts';
 import { omitUndefined } from './omit-undefined.ts';
@@ -15,24 +16,27 @@ export type LockWatchOptions = {
   lockPath: string;
   socketPath: string;
   lockWaitMs: number;
-  lockPollMs: number;
+  lockWatchIntervalMs: number;
   externalPollMs: number;
   timers: SupervisorTimers;
-  startTimeOf?: ProcessStartProbe;
-  timing?: LockTiming;
+  mechanism?: KernelLockMechanism;
   inspect?: typeof inspectProcessLock;
   probe?: HealthProbe;
   onFree(): void;
   onExternal(holderPid: number | undefined): void;
   onProbe(probe: ExternalProbe): void;
+  onTransient(error: unknown, source: string): void;
   onBackgroundError(error: unknown, source: string): void;
 };
 
 export type LockWatch = { stop(): void };
 
 export const PROBE_HEADERS_TIMEOUT_MS = 2000;
+export const HEALTH_BODY_MAX_BYTES = LINE_MAX_BYTES;
 
 const HEALTH_PATHS = { runtime: '/v1/health', gateway: '/v1/momonga/health' } as const satisfies Record<ChildRole, string>;
+
+const UNREACHABLE_CODES: ReadonlySet<string> = new Set(['ECONNREFUSED', 'ENOENT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT']);
 
 const parseJsonObject = (text: string): Record<string, unknown> | undefined => {
   let parsed: unknown;
@@ -52,14 +56,29 @@ export const labelHealthResponse = (role: ChildRole, response: { status: number;
   return 'healthy';
 };
 
+const codeOf = (error: unknown): string | undefined => (error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined);
+
+const readBounded = async (body: AsyncIterable<Uint8Array>, maxBytes: number): Promise<string | undefined> => {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of body) {
+    total += chunk.byteLength;
+    if (total > maxBytes) return undefined;
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks).toString('utf8');
+};
+
 export const createExternalHealthProbe = (timeoutMs: number): HealthProbe => async (role, socketPath) => {
   const client = createUdsClient(socketPath, { headersTimeoutMs: timeoutMs, bodyTimeoutMs: timeoutMs });
   try {
     const response = await client.request({ method: 'GET', path: HEALTH_PATHS[role] });
-    const body = await response.text();
-    return labelHealthResponse(role, { status: response.status, body });
-  } catch {
-    return 'unreachable';
+    const body = await readBounded(response.body, HEALTH_BODY_MAX_BYTES);
+    return body === undefined ? 'unhealthy' : labelHealthResponse(role, { status: response.status, body });
+  } catch (error) {
+    const code = codeOf(error);
+    if (code !== undefined && UNREACHABLE_CODES.has(code)) return 'unreachable';
+    throw error;
   } finally {
     await client.destroy();
   }
@@ -73,7 +92,6 @@ export const watchLock = (options: LockWatchOptions): LockWatch => {
   const { timers } = options;
   const inspect = options.inspect ?? inspectProcessLock;
   const probe = options.probe ?? probeExternalHealth;
-  const memo = createLockVerdictMemo();
   let stopped = false;
   let deadlinePassed = false;
   let external = false;
@@ -89,6 +107,11 @@ export const watchLock = (options: LockWatchOptions): LockWatch => {
     deadlineTimer = undefined;
   };
 
+  const report = (error: unknown, source: string): void => {
+    if (isTransientFailure(error)) options.onTransient(error, source);
+    else options.onBackgroundError(error, source);
+  };
+
   const guarded = (source: string, body: () => void): void => {
     try {
       body();
@@ -97,17 +120,27 @@ export const watchLock = (options: LockWatchOptions): LockWatch => {
     }
   };
 
-  const runProbe = (): void => {
+  const armProbe = (): void => {
     if (stopped) return;
     probeTimer = timers.setTimeout(() => {
       probeTimer = undefined;
       runProbe();
     }, options.externalPollMs);
+  };
+
+  const runProbe = (): void => {
+    if (stopped) return;
     probe(options.role, options.socketPath).then(
       (outcome) => {
-        if (!stopped) guarded('external-probe', () => options.onProbe(outcome));
+        if (stopped) return;
+        guarded('external-probe', () => options.onProbe(outcome));
+        armProbe();
       },
-      (error: unknown) => options.onBackgroundError(error, 'external-probe'),
+      (error: unknown) => {
+        if (stopped) return;
+        report(error, 'external-probe');
+        armProbe();
+      },
     );
   };
 
@@ -122,16 +155,16 @@ export const watchLock = (options: LockWatchOptions): LockWatch => {
     pollTimer = timers.setTimeout(() => {
       pollTimer = undefined;
       poll().catch((error: unknown) => options.onBackgroundError(error, 'lock-poll'));
-    }, options.lockPollMs);
+    }, options.lockWatchIntervalMs);
   };
 
   const poll = async (): Promise<void> => {
     let inspection: ProcessLockInspection;
     try {
-      inspection = await inspect(options.lockPath, { ...omitUndefined({ startTimeOf: options.startTimeOf, timing: options.timing }), memo });
+      inspection = await inspect(options.lockPath, omitUndefined({ mechanism: options.mechanism }));
     } catch (error) {
       if (stopped) return;
-      options.onBackgroundError(error, 'lock-poll');
+      report(error, 'lock-poll');
       armPoll();
       return;
     }

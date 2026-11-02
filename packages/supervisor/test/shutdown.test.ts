@@ -10,16 +10,16 @@ import {
   SHUTDOWN_MARGIN_MS,
   runtimeMaxCloseMs,
   supervisorMaxCloseMs,
+  inspectProcessLock,
 } from '@momonga/foundation';
 import type { ReapMarkerDirectoryOptions } from '@momonga/foundation';
-import { registerCleanup, spawnTracked, waitFor } from '@momonga/testkit';
+import { createFakeKernelLock, registerCleanup, spawnTracked, waitFor } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { GATEWAY_ABORT_BUDGET_MS, KILL_CONFIRM_MS, SHUTDOWN_REAP_BOUND_MS, SHUTDOWN_RELEASE_BOUND_MS, STDIO_FLUSH_MS } from '../src/constants.ts';
 import { childCloseBudgetMs } from '../src/shutdown.ts';
 import type { SupervisorCloseResult } from '../src/start-supervisor.ts';
 import {
   deferred,
-  writeLockFile,
   fakeSettingsWatch,
   httpOver,
   markerRole,
@@ -216,12 +216,12 @@ describe('shutdown order and bounds', () => {
 
   it('supervisor.lock and the control socket are gone after close', async (context) => {
     const h = await running(context);
-    expect(fs.existsSync(h.paths.locks.supervisor)).toBe(true);
+    expect(await inspectProcessLock(h.paths.locks.supervisor)).toEqual({ state: 'held', pid: process.pid });
     expect(fs.existsSync(h.paths.sockets.supervisor)).toBe(true);
     await finish(h, h.supervisor.close());
-    expect(fs.existsSync(h.paths.locks.supervisor)).toBe(false);
+    expect(await inspectProcessLock(h.paths.locks.supervisor)).toEqual({ state: 'free' });
     expect(fs.existsSync(h.paths.sockets.supervisor)).toBe(false);
-    expect(fs.existsSync(`${h.paths.sockets.supervisor}.lock`)).toBe(false);
+    expect(await inspectProcessLock(`${h.paths.sockets.supervisor}.lock`)).toEqual({ state: 'free' });
   });
 
   it('restart timers are cleared', async (context) => {
@@ -246,10 +246,11 @@ describe('shutdown order and bounds', () => {
   });
 
   it('held, waiting and external children do not block shutdown', async (context) => {
+    const lock = createFakeKernelLock({ inheritable: false });
     const holder = spawnTracked(context, 'sleep', ['30']);
     const h = await running(context, {
-      prepare: (_home, paths) => writeLockFile(paths.locks.runtime, holder.pid),
-      overrides: { startTimeOf: async () => 0, lockWaitMs: 1000 },
+      prepare: (_home, paths) => lock.holdExternally(paths.locks.runtime, holder.pid),
+      overrides: { lockMechanism: lock, lockWaitMs: 1000 },
     });
     h.fake.latest('gateway').exit(78);
     h.fake.latest('runtime').exit(75);
@@ -345,26 +346,26 @@ describe('shutdown and marker reaps', () => {
   });
 
   it('a lock poll in flight when close() starts does not spawn', async (context) => {
-    const holder = spawnTracked(context, 'sleep', ['30']);
-    const probe = deferred<number | undefined>();
-    let probes = 0;
-    const h = await running(context, {
-      prepare: (_home, paths) => writeLockFile(paths.locks.runtime, holder.pid),
-      overrides: {
-        lockWaitMs: 3_600_000,
-        startTimeOf: (pid) => {
-          if (pid !== holder.pid) return Promise.resolve(undefined);
-          probes += 1;
-          return probes === 1 ? probe.promise : Promise.resolve(Date.now() + 60_000);
-        },
+    const lock = createFakeKernelLock({ inheritable: false });
+    const poll = deferred<boolean>();
+    let polls = 0;
+    const inFlight = {
+      ...lock,
+      isHeld: (lockPath: string): Promise<boolean> => {
+        polls += 1;
+        return polls === 1 ? poll.promise : lock.isHeld(lockPath);
       },
+    };
+    const h = await running(context, {
+      prepare: (_home, paths) => lock.holdExternally(paths.locks.runtime, process.pid),
+      overrides: { lockWaitMs: 3_600_000, lockMechanism: inFlight },
     });
     h.fake.latest('runtime').exit(75);
-    await pumpUntil(h.timers, () => probes === 1, { realWork: h.realWork, maxMs: 5000 });
+    await pumpUntil(h.timers, () => polls === 1, { realWork: h.realWork, maxMs: 5000 });
     const closing = h.supervisor.close();
     await quiesce(h.realWork);
-    probe.resolve(Date.now() + 60_000);
-    await waitFor(() => probes === 2, { description: 'the ghost confirmation of the in-flight poll' });
+    lock.releaseExternally(h.paths.locks.runtime);
+    poll.resolve(false);
     await finish(h, closing);
     await quiesce(h.realWork);
     expect(h.fake.spawnCount('runtime')).toBe(1);
@@ -500,7 +501,7 @@ describe('shutdown and marker reaps', () => {
     expect(h.clock.now() - stepFiveAt).toBeGreaterThanOrEqual(SHUTDOWN_RELEASE_BOUND_MS);
     expect(h.clock.now() - stepFiveAt).toBeLessThanOrEqual(SHUTDOWN_RELEASE_BOUND_MS + 100);
     expect(h.log.withMsg('shutdown.step').filter((line) => line['detail'] === 'step 5 bound reached')).toEqual([expect.objectContaining({ level: 'warn' })]);
-    expect(fs.existsSync(h.paths.locks.supervisor)).toBe(false);
+    expect(await inspectProcessLock(h.paths.locks.supervisor)).toEqual({ state: 'free' });
     expect(result.killed).toEqual([]);
     expect(result.leaked).toEqual([]);
   });
@@ -516,7 +517,7 @@ describe('shutdown and marker reaps', () => {
     const result = await finish(h, h.supervisor.close(), 120_000);
     expect(result.clean).toBe(true);
     expect(fs.existsSync(h.paths.sockets.supervisor)).toBe(false);
-    expect(fs.existsSync(`${h.paths.sockets.supervisor}.lock`)).toBe(false);
+    expect(await inspectProcessLock(`${h.paths.sockets.supervisor}.lock`)).toEqual({ state: 'free' });
     expect(h.log.withMsg('shutdown.begin')).toHaveLength(1);
   });
 });

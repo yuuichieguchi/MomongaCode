@@ -4,6 +4,8 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { appendPermissionRule } from '@momonga/config';
+import { settingsLockPath } from '../src/file-lock.ts';
+import { startLockHolder } from '@momonga/testkit';
 import { localSettingsDir, localSettingsPath, makeDir, makeTree, registerCleanup, writeText } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 
@@ -85,5 +87,37 @@ for (let i = 0; i < 15; i += 1) await appendPermissionRule({ home, projectDir, r
     const allow = (readLocal(tree).permissions as { allow: string[] }).allow;
     const expected = ['a', 'b'].flatMap((tag) => Array.from({ length: 15 }, (_, i) => `Bash(${tag}${i})`));
     expect([...allow].sort()).toEqual(expected.sort());
+  });
+
+  it('keeps its lock under the account home, not beside the settings file, keyed by the comparable path of the file', async () => {
+    const tree = makeTree();
+    await appendPermissionRule({ home: tree.home, projectDir: tree.project, rule: 'Bash(a)', effect: 'allow' });
+    expect(fs.readdirSync(localSettingsDir(tree))).toEqual(['settings.local.json']);
+    const lockPath = settingsLockPath(tree.home, localSettingsPath(tree));
+    expect(path.dirname(lockPath)).toBe(path.join(tree.home, '.momonga', 'run'));
+    expect(fs.existsSync(lockPath)).toBe(true);
+    const viaLink = path.join(makeDir(), 'link');
+    fs.symlinkSync(path.dirname(localSettingsPath(tree)), viaLink);
+    expect(settingsLockPath(tree.home, path.join(viaLink, 'settings.local.json'))).toBe(lockPath);
+  });
+
+  it('times out naming the holder when another process holds the settings lock', async (context) => {
+    const tree = makeTree();
+    await appendPermissionRule({ home: tree.home, projectDir: tree.project, rule: 'Bash(a)', effect: 'allow' });
+    const holder = await startLockHolder(context, settingsLockPath(tree.home, localSettingsPath(tree)));
+    await expect(appendPermissionRule({ home: tree.home, projectDir: tree.project, rule: 'Bash(b)', effect: 'allow', lockTimeoutMs: 50 })).rejects.toThrow(
+      `held by process ${holder.pid}`,
+    );
+    expect((readLocal(tree).permissions as { allow: string[] }).allow).toEqual(['Bash(a)']);
+  });
+
+  it('is not blocked by a lock left behind by a process that died holding it', async (context) => {
+    const tree = makeTree();
+    await appendPermissionRule({ home: tree.home, projectDir: tree.project, rule: 'Bash(a)', effect: 'allow' });
+    const holder = await startLockHolder(context, settingsLockPath(tree.home, localSettingsPath(tree)));
+    holder.kill('SIGKILL');
+    await new Promise<void>((resolve) => holder.once('exit', () => resolve()));
+    await appendPermissionRule({ home: tree.home, projectDir: tree.project, rule: 'Bash(b)', effect: 'allow', lockTimeoutMs: 1000 });
+    expect((readLocal(tree).permissions as { allow: string[] }).allow).toEqual(['Bash(a)', 'Bash(b)']);
   });
 });

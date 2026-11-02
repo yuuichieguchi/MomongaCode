@@ -1,5 +1,5 @@
 import type { JsonLogger } from '@momonga/foundation';
-import { SHUTDOWN_REAP_BOUND_MS, SHUTDOWN_RELEASE_BOUND_MS } from './constants.ts';
+import { SHUTDOWN_DRAIN_BOUND_MS, SHUTDOWN_REAP_BOUND_MS, SHUTDOWN_RELEASE_BOUND_MS } from '@momonga/foundation';
 import type { SupervisorTimers } from './constants.ts';
 import { stopBudgetMs } from './child-manager.ts';
 import type { ChildManager, ChildStopResult } from './child-manager.ts';
@@ -99,13 +99,26 @@ export const createShutdownController = (options: ShutdownControllerOptions): Sh
     }
   };
 
+  const drainBackground = async (): Promise<void> => {
+    let drainTimer: unknown;
+    const boundReached = new Promise<'bound'>((resolve) => {
+      drainTimer = timers.setTimeout(() => resolve('bound'), SHUTDOWN_DRAIN_BOUND_MS);
+    });
+    try {
+      const outcome = await Promise.race([options.awaitBackground().then(() => 'drained' as const), boundReached]);
+      if (outcome === 'bound') log(shutdownStepBound({ shutdownStep: 1, detail: 'step 1 bound reached' }));
+    } finally {
+      timers.clearTimeout(drainTimer);
+    }
+  };
+
   const run = async (): Promise<SupervisorCloseResult> => {
     log(shutdownBegin({ mode: mode === 'aborting' ? 'abort' : 'close' }));
     options.beginDraining();
     for (const manager of managers) manager.enterDraining();
     const triedBefore = new Map<ChildRole, ReadonlySet<string>>(managers.map((manager) => [manager.role, new Set(manager.unreapedMarkers())]));
     log(shutdownStep({ shutdownStep: 1, detail: 'draining' }));
-    await options.awaitBackground();
+    await drainBackground();
 
     const killed: ChildRole[] = [];
     const leaked: ChildRole[] = [];

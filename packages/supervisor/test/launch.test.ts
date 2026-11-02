@@ -210,15 +210,14 @@ describe('runLaunchTask', () => {
     expect(calls).not.toContain('evaluate');
   });
 
-  it('readdir failure in phase 1 is a warning and the launch goes on', async (context) => {
-    const { launchOptions, calls, log, dir } = setup(context);
+  it('a readdir failure in phase 1 rejects and spawns nothing', async (context) => {
+    const { launchOptions, calls, dir } = setup(context);
     fs.chmodSync(dir, 0o000);
     try {
-      await expect(runLaunchTask(launchOptions)).resolves.toBeUndefined();
+      await expect(runLaunchTask(launchOptions)).rejects.toMatchObject({ code: 'EACCES' });
     } finally {
       fs.chmodSync(dir, 0o700);
     }
-    expect(log.withMsg('orphans.warning').length).toBeGreaterThanOrEqual(1);
-    expect(calls.filter((call) => call.startsWith('spawnWith'))).toHaveLength(2);
+    expect(calls.filter((call) => call.startsWith('spawnWith'))).toEqual([]);
   });
 });

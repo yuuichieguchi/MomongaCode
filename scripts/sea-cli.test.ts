@@ -11,6 +11,7 @@ import { chatCompletions, textReply, toolCallReply } from '../e2e/support/upstre
 import { defaultEntry } from './bundle.ts';
 import { buildSea } from './sea.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
+import { RUNS_MACOS_ARM64_ARTIFACTS } from './support/host.ts';
 
 const ORIGINAL = 'greeting = "hello"\n';
 const EDITED = 'greeting = "hello, momonga"\n';
@@ -40,7 +41,7 @@ const familyOf = (rootPid: number, table: readonly ProcessRow[]): ProcessRow[] =
   return family;
 };
 
-describe('single executable built from the real CLI entry', () => {
+describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('single executable built from the real CLI entry', () => {
   let root = '';
   let binary = '';
   let project = '';

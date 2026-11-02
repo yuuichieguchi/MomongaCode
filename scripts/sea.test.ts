@@ -6,6 +6,7 @@ import { repoRoot } from './bundle.ts';
 import { SEA_NODE_ARCHIVE_SHA256, assertFileChecksum, assertPinnedChecksum, parseShasums } from './node-runtime.ts';
 import { buildSea } from './sea.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
+import { RUNS_MACOS_ARM64_ARTIFACTS } from './support/host.ts';
 
 const ARCHIVE = 'node-v26.12.1-darwin-arm64.tar.gz';
 const OTHER_SHA = 'a'.repeat(64);
@@ -48,7 +49,7 @@ describe('SHASUMS256 verification', () => {
   });
 });
 
-describe('single executable built from the fixture entry', () => {
+describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('single executable built from the fixture entry', () => {
   const NO_NODE_ENV = (home: string): NodeJS.ProcessEnv => ({ PATH: '/usr/bin:/bin', HOME: home });
   let root = '';
   let binary = '';

@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   verify:
     name: ${{ matrix.os }}
@@ -14,10 +17,12 @@ jobs:
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          node-version: 24.22.1
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .node-version
           cache: npm
       - name: Install bubblewrap
         if: runner.os == 'Linux'
@@ -26,6 +31,8 @@ jobs:
           sudo apt-get install --yes bubblewrap
           sudo sysctl --write kernel.apparmor_restrict_unprivileged_userns=0
       - run: npm ci
+      - run: npm ci --prefix compliance/open-responses
       - run: npm run typecheck
       - run: npm test
       - run: npm run test:e2e
+      - run: npm run test:packaging

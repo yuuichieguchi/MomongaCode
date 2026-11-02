@@ -7,6 +7,7 @@ export interface ProcFs {
   readBytes(file: string): Promise<Uint8Array>;
   list(directory: string): Promise<string[]>;
   identityOf(file: string): Promise<FileIdentity>;
+  ownerOf(file: string): Promise<number>;
 }
 
 export const nodeProcFs: ProcFs = {
@@ -17,4 +18,5 @@ export const nodeProcFs: ProcFs = {
     const stat = await fs.promises.stat(file, { bigint: true });
     return { dev: stat.dev, ino: stat.ino };
   },
+  ownerOf: async (file) => (await fs.promises.stat(file)).uid,
 };

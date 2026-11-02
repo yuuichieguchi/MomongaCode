@@ -3,7 +3,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '@momonga/config';
-import { createJsonLogger, createUdsClient, systemClock } from '@momonga/foundation';
+import { createJsonLogger, createUdsClient, inspectProcessLock, systemClock } from '@momonga/foundation';
 import type { TextStream } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS, createGateway, startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
@@ -152,7 +152,7 @@ describe('startGatewayProcess startup unwind (§4.3)', { timeout: 30_000 }, () =
     const logged = cleanupLines.filter((line) => line.msg === 'startup.cleanup_failed');
     expect(logged).toHaveLength(1);
     expect(logged[0]).toMatchObject({ level: 'error', err: { message: cleanupFailure.message } });
-    expect(fs.existsSync(paths.lock)).toBe(false);
+    expect((await inspectProcessLock(paths.lock)).state).toBe('free');
   });
 
   it('ConfigError from settings is rethrown as ConfigError and the lock is released', async (context) => {
@@ -161,7 +161,7 @@ describe('startGatewayProcess startup unwind (§4.3)', { timeout: 30_000 }, () =
     writeSettings(home, { models: { targets: { '9-bad-name': { adapter: 'fm' } } } });
     const error = await rejectionOf(context, startGatewayProcess({ home, env: baseEnv(home), version: PROCESS_VERSION, stdout: capture() }));
     expect(error).toBeInstanceOf(ConfigError);
-    expect(fs.existsSync(homePaths(home).lock)).toBe(false);
+    expect((await inspectProcessLock(homePaths(home).lock)).state).toBe('free');
   });
 
   it('the ready line goes to options.stdout and never to process.stdout', async (context) => {
@@ -200,7 +200,7 @@ describe('startGatewayProcess startup unwind (§4.3)', { timeout: 30_000 }, () =
 
     expect(error).toBe(reason);
     expect(stdout.lines()).toEqual([]);
-    expect(fs.existsSync(paths.lock)).toBe(false);
+    expect((await inspectProcessLock(paths.lock)).state).toBe('free');
   });
 
   it('an abort between createGateway and announceReady rejects with the reason, prints no ready line, releases the lock and closes the server', async (context) => {
@@ -214,7 +214,7 @@ describe('startGatewayProcess startup unwind (§4.3)', { timeout: 30_000 }, () =
 
     expect(error).toBe(reason);
     expect(stdout.lines()).toEqual([]);
-    expect(fs.existsSync(paths.lock)).toBe(false);
+    expect((await inspectProcessLock(paths.lock)).state).toBe('free');
     expect(fs.existsSync(paths.socket)).toBe(false);
   });
 });
@@ -224,7 +224,7 @@ describe('GatewayProcess close and abort (§4.2, §4.3)', { timeout: 30_000 }, (
     const { home, paths } = await prepareHome(context);
     const handle = await start(context, { home, env: baseEnv(home), version: PROCESS_VERSION });
     expect(await handle.close()).toEqual({ clean: true, abandonedRuns: 0, failures: [] });
-    expect(fs.existsSync(paths.lock)).toBe(false);
+    expect((await inspectProcessLock(paths.lock)).state).toBe('free');
   });
 
   it('close reports adapter failures in the result instead of rejecting', async (context) => {
@@ -279,7 +279,7 @@ describe('GatewayProcess close and abort (§4.2, §4.3)', { timeout: 30_000 }, (
     const { home, paths } = await prepareHome(context);
     const handle = await start(context, { home, env: baseEnv(home), version: PROCESS_VERSION });
     expect(await handle.abort()).toEqual({ clean: true, abandonedRuns: 0, failures: [] });
-    expect(fs.existsSync(paths.lock)).toBe(false);
+    expect((await inspectProcessLock(paths.lock)).state).toBe('free');
     expect(fs.existsSync(paths.socket)).toBe(false);
   });
 
@@ -353,8 +353,8 @@ describe('gateway fatal (§4.2, §4.3)', { timeout: 30_000 }, () => {
     expect(() => server.emit('error', failure)).not.toThrow();
 
     expect(await handle.fatal).toBe(failure);
-    await until(() => !fs.existsSync(paths.lock), 'the fatal-triggered abort to release the lock');
     const result = await handle.close();
+    expect((await inspectProcessLock(paths.lock)).state).toBe('free');
     expect(result).toMatchObject({ clean: false, fatal: failure, failures: [] });
     expect(await handle.abort()).toBe(result);
   });

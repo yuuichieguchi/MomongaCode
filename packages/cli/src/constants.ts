@@ -1,6 +1,6 @@
-import { LOCK_RETRY_MS, SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS } from '@momonga/foundation';
+import { SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS } from '@momonga/foundation';
 
-export const POLL_INTERVAL_MS = LOCK_RETRY_MS;
+export const POLL_INTERVAL_MS = 25;
 
 export const RECONNECT_FIRST_RETRY_MS = SSE_RECONNECT_BASE_MS;
 
