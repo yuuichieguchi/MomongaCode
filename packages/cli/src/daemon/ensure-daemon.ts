@@ -4,7 +4,7 @@ import type { SupervisorHealth } from '@momonga/protocol';
 import { createRuntimeClient } from '../client/runtime-client.ts';
 import { createSupervisorClient } from '../client/supervisor-client.ts';
 import type { SupervisorClient } from '../client/supervisor-client.ts';
-import { POLL_INTERVAL_MS } from '../constants.ts';
+import { DAEMON_POLL_INTERVAL_MS } from '../constants.ts';
 import { pollUntil } from '../poll.ts';
 import type { CliPorts, DetachedExit } from '../ports.ts';
 import { compareVersions, tryParseVersion } from '../update/version.ts';
@@ -70,7 +70,7 @@ export const waitForSupervisorGone = async (ports: Pick<DaemonPorts, 'clock'>, p
   await pollUntil(
     ports.clock,
     async () => ((await inspectProcessLock(paths.locks.supervisor)).state === 'free' ? true : undefined),
-    { boundMs: stopMs, intervalMs: POLL_INTERVAL_MS, description: 'the previous supervisor to release its lock', ...(signal === undefined ? {} : { signal }) },
+    { boundMs: stopMs, intervalMs: DAEMON_POLL_INTERVAL_MS, description: 'the previous supervisor to release its lock', ...(signal === undefined ? {} : { signal }) },
   );
 };
 
@@ -111,7 +111,7 @@ const awaitReady = async (ports: DaemonPorts, paths: MomongaPaths, client: Super
       }
       return undefined;
     },
-    { boundMs: readyMs, intervalMs: POLL_INTERVAL_MS, description: 'the daemon to become ready', ...(signal === undefined ? {} : { signal }) },
+    { boundMs: readyMs, intervalMs: DAEMON_POLL_INTERVAL_MS, description: 'the daemon to become ready', ...(signal === undefined ? {} : { signal }) },
   );
 
 const startDaemon = async (ports: DaemonPorts, paths: MomongaPaths, client: SupervisorClient, readyMs: number, signal?: AbortSignal): Promise<SupervisorHealth> => {

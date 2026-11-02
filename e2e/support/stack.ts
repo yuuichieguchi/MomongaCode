@@ -15,6 +15,7 @@ import type { E2eHome } from './home.ts';
 import { REPO_ROOT } from './launcher.ts';
 import { E2E_RUN_ENV } from './run-env.ts';
 import { resolveSandbox } from './sandbox.ts';
+import { trackStreamErrors } from './stream-errors.ts';
 import { createSupervisorClient } from './supervisor-client.ts';
 import type { SupervisorClient } from './supervisor-client.ts';
 import { E2E_DEPS_ENV } from './supervisor-main.ts';
@@ -206,7 +207,7 @@ export const spawnSupervisor = (options: SpawnSupervisorOptions): SpawnedSupervi
   child.stderr.on('data', (chunk: Buffer) => {
     stderrBytes = Buffer.concat([stderrBytes, chunk]).subarray(-STDERR_TAIL_BYTES);
   });
-  child.stdin.on('error', () => undefined);
+  const stdin = trackStreamErrors(child.stdin, 'the stdin pipe of the supervisor');
   child.once('error', (error) => readyGate.reject(error));
   child.once('exit', (code, signal) => {
     exit = { code, signal };
@@ -224,6 +225,7 @@ export const spawnSupervisor = (options: SpawnSupervisorOptions): SpawnedSupervi
     child.stdin.destroy();
     child.stdout.destroy();
     child.stderr.destroy();
+    stdin.assertHealthy();
   });
 
   const ready = async (deadlineMs = E2E_READY_DEADLINE_MS): Promise<ReadyFields> => {
