@@ -68,11 +68,11 @@ describe('bearer scheme', () => {
   });
 });
 
-describe('idempotencyReaderStallMs', () => {
+describe('readerStallMs', () => {
   it('must be a positive integer', async () => {
     const dir = makeDir();
     const clock = createFakeClock(START_MS);
-    const config = buildConfig({ limits: { idempotencyReaderStallMs: 0 } });
+    const config = buildConfig({ limits: { readerStallMs: 0 } });
     await expect(
       createGateway({
         credentials: [],
@@ -85,6 +85,6 @@ describe('idempotencyReaderStallMs', () => {
         socketPath: path.join(dir, 'gw.sock'),
         version: TEST_VERSION,
       }),
-    ).rejects.toThrow(/idempotencyReaderStallMs/);
+    ).rejects.toThrow(/readerStallMs/);
   });
 });

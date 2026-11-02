@@ -29,7 +29,7 @@ export const checkGatewayOptions = (options: GatewayOptions): void => {
   requirePositiveInteger('retry.maxAttempts', config.retry.maxAttempts);
   requirePositiveInteger('limits.maxBodyBytes', config.limits.maxBodyBytes);
   requirePositiveInteger('limits.maxIdempotencyFrameBytes', config.limits.maxIdempotencyFrameBytes);
-  requirePositiveInteger('limits.idempotencyReaderStallMs', config.limits.idempotencyReaderStallMs);
+  requirePositiveInteger('limits.readerStallMs', config.limits.readerStallMs);
   requirePositiveInteger('idempotency.ttlMs', config.idempotency.ttlMs);
   requirePositiveInteger('closeGraceMs', config.closeGraceMs);
   requirePositiveInteger('sseKeepAliveMs', config.sseKeepAliveMs);

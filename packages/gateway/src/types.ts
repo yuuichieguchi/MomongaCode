@@ -18,7 +18,7 @@ export type GatewayConfig = {
   };
   retry: { maxAttempts: number; baseMs: number; maxMs: number };
   breaker: { failureThreshold: number; openMs: number };
-  limits: { maxBodyBytes: number; maxIdempotencyFrameBytes: number; idempotencyReaderStallMs: number };
+  limits: { maxBodyBytes: number; maxIdempotencyFrameBytes: number; readerStallMs: number };
   idempotency: { ttlMs: number };
   closeGraceMs: number;
   sseKeepAliveMs: number;

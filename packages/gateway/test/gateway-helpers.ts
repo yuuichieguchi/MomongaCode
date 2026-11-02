@@ -82,7 +82,7 @@ export const buildConfig = (overrides: ConfigOverrides = {}): GatewayConfig => {
     models: { aliases: overrides.aliases ?? { fast: ['primary'] }, targets },
     retry: { maxAttempts: 3, baseMs: 100, maxMs: 10_000, ...overrides.retry },
     breaker: { failureThreshold: 5, openMs: 30_000, ...overrides.breaker },
-    limits: { maxBodyBytes: 1_000_000, maxIdempotencyFrameBytes: 8_000_000, idempotencyReaderStallMs: 30_000, ...overrides.limits },
+    limits: { maxBodyBytes: 1_000_000, maxIdempotencyFrameBytes: 8_000_000, readerStallMs: 30_000, ...overrides.limits },
     idempotency: { ttlMs: 60_000, ...overrides.idempotency },
     closeGraceMs: overrides.closeGraceMs ?? 1000,
     sseKeepAliveMs: overrides.sseKeepAliveMs ?? 15_000,

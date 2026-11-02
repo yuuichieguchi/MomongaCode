@@ -147,7 +147,7 @@ export const createResponsesService = (services: Services, validator: RequestVal
               onSettled,
               {
                 maxBufferedBytes: services.config.limits.maxIdempotencyFrameBytes,
-                readerStallMs: services.config.limits.idempotencyReaderStallMs,
+                readerStallMs: services.config.limits.readerStallMs,
                 detachedMaxMs: services.config.detachedMaxMs,
                 onAborted: () => registry.end(key, run),
                 timers: services.timers,
