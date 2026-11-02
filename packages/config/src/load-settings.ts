@@ -3,6 +3,15 @@ import path from 'node:path';
 import type { HooksSettings, PermissionMode } from '@momonga/protocol';
 import { canonicalDirectory, comparableContains } from '@momonga/foundation';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
+import {
+  defaultContextSettings,
+  defaultMemorySettings,
+  defaultVerificationSettings,
+  mergeContextSettings,
+  mergeMemorySettings,
+  mergeVerificationSettings,
+} from './context-settings.ts';
+import type { ResolvedContextSettings, ResolvedMemorySettings, ResolvedVerificationSettings } from './context-settings.ts';
 import { loadLayers, normalizeHooks } from './layers.ts';
 import type { Layer, TrustOracle, UserLayer } from './layers.ts';
 import { EDIT_TOOLS, NEGATION_PREFIX, isPathTool, parseRule, RuleParseError } from './rule.ts';
@@ -35,6 +44,9 @@ export type ResolvedSettings = {
   sandbox: SandboxSetting;
   telemetry?: TelemetrySettings;
   pricing?: PriceEntrySettings[];
+  memory: ResolvedMemorySettings;
+  verification: ResolvedVerificationSettings;
+  context: ResolvedContextSettings;
 };
 
 export type LoadSettingsOptions = {
@@ -123,10 +135,31 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     models,
     autoUpdates: true,
     sandbox: defaultSandboxSetting(),
+    memory: defaultMemorySettings(),
+    verification: defaultVerificationSettings(),
+    context: defaultContextSettings(),
   };
   for (const layer of layers) {
-    const { permissions, env, hooks, autoMode, enabledMcpjsonServers, disabledMcpjsonServers, enableAllProjectMcpServers, mcpServers, autoUpdates, sandbox, telemetry, pricing } =
-      layer.settings;
+    const {
+      permissions,
+      env,
+      hooks,
+      autoMode,
+      enabledMcpjsonServers,
+      disabledMcpjsonServers,
+      enableAllProjectMcpServers,
+      mcpServers,
+      autoUpdates,
+      sandbox,
+      telemetry,
+      pricing,
+      memory,
+      verification,
+      context,
+    } = layer.settings;
+    merged.memory = mergeMemorySettings(merged.memory, memory);
+    merged.verification = mergeVerificationSettings(merged.verification, verification);
+    merged.context = mergeContextSettings(merged.context, context);
     if (permissions?.defaultMode !== undefined) {
       merged.permissions.defaultMode = permissions.defaultMode;
       merged.permissions.defaultModeOrigin = layer.origin;

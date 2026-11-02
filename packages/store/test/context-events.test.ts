@@ -1,0 +1,71 @@
+import { describe, expect, it } from 'vitest';
+import type { RunEvent, RunState } from '@momonga/protocol';
+import { foldRunState, initialRunState } from '@momonga/store';
+import { fixtureCompactionItem } from '@momonga/testkit';
+import { SNAPSHOT_STATE_VERSION, decodeEvent } from '../src/codec.ts';
+
+const ENVELOPE = { id: 9, runId: 'r1', sessionId: 's1', seq: 5, step: 1, leaseToken: 1, createdAt: 10 };
+
+const row = (payload: Record<string, unknown>): never =>
+  ({
+    id: ENVELOPE.id,
+    run_id: ENVELOPE.runId,
+    session_id: ENVELOPE.sessionId,
+    seq: ENVELOPE.seq,
+    step: ENVELOPE.step,
+    lease_token: ENVELOPE.leaseToken,
+    created_at: ENVELOPE.createdAt,
+    type: payload['type'],
+    payload_json: JSON.stringify(payload),
+  }) as never;
+
+const start = (): RunState => initialRunState({ runId: 'r1', sessionId: 's1' });
+const item = fixtureCompactionItem('cmp-1', 'so far');
+const messageItem = { type: 'message', role: 'user', content: '<conversation_summary>\nso far\n</conversation_summary>' };
+
+const NEW_EVENTS: [string, Record<string, unknown>][] = [
+  ['context.governing_loaded', { active: [{ id: 'g1', textSha256: 'aa' }], conflicts: [{ target: 'pandas', ids: ['g1', 'g2'] }] }],
+  ['context.memories_loaded', { memories: [{ id: 'm1', status: 'verified' }] }],
+  ['context.contribution', { items: [{ kind: 'memory', id: 'm1', contributed: true }] }],
+];
+
+describe('context events in the journal', () => {
+  it.each(NEW_EVENTS)('decodes %s', (type, fields) => {
+    const payload = { type, ...fields };
+    expect(decodeEvent(row(payload))).toEqual({ ...payload, ...ENVELOPE });
+  });
+
+  it.each(NEW_EVENTS)('folds %s without changing state beyond the seq', (type, fields) => {
+    const before = start();
+    const after = foldRunState(before, { type, ...fields, ...ENVELOPE } as unknown as RunEvent);
+    expect(after).toEqual({ ...before, step: 1, lastSeq: 5 });
+  });
+
+  it('decodes and folds a context.compacted recorded before source, fidelity and guidelineVersion', () => {
+    const payload = { type: 'context.compacted', item, summary: 'so far', replacedThroughSeq: 3 };
+    const event = decodeEvent(row(payload)) as RunEvent;
+    expect(event).toEqual({ ...payload, ...ENVELOPE });
+    expect(foldRunState(start(), event).summary).toEqual({ item, summary: 'so far', replacedThroughSeq: 3 });
+  });
+
+  it('decodes and folds a deterministic context.compacted with a message item', () => {
+    const payload = { type: 'context.compacted', item: messageItem, summary: 'so far', replacedThroughSeq: 3, source: 'deterministic' };
+    const event = decodeEvent(row(payload)) as RunEvent;
+    expect(foldRunState(start(), event).summary).toEqual({ item: messageItem, summary: 'so far', replacedThroughSeq: 3 });
+  });
+
+  it('keeps the same summary state when the new fields are present, so snapshots keep their version', () => {
+    const event = {
+      type: 'context.compacted',
+      item,
+      summary: 'so far',
+      replacedThroughSeq: 3,
+      source: 'model',
+      fidelity: { fabricated: [], identifiers: 1, retained: 1, sections: 'complete' },
+      guidelineVersion: 2,
+      ...ENVELOPE,
+    } as RunEvent;
+    expect(foldRunState(start(), event).summary).toEqual({ item, summary: 'so far', replacedThroughSeq: 3 });
+    expect(SNAPSHOT_STATE_VERSION).toBe(9);
+  });
+});
