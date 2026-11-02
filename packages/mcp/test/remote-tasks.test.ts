@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createFakeClock } from '@momonga/testkit';
-import { DEFAULT_TASK_POLL_MS, McpTaskError, MIN_TASK_POLL_MS } from '@momonga/mcp';
+import { DEFAULT_TASK_POLL_MS, McpInputSuspension, McpTaskError, MIN_TASK_POLL_MS } from '@momonga/mcp';
+import type { McpCheckpoint } from '@momonga/mcp';
 
 const CALL_TIMEOUT_MS = 1_000_000;
 const isPoll = (ms: number): boolean => ms !== CALL_TIMEOUT_MS;
@@ -115,5 +116,75 @@ describe('tasks extension over streamable HTTP', () => {
     timers.advance(DEFAULT_TASK_POLL_MS);
     const settled = await outcome;
     expect('value' in settled && textOf(settled.value)).toBe('done');
+  });
+
+  it('records the task id as a checkpoint the moment the handle arrives', async () => {
+    const { fixture, timers, connection } = await setup();
+    const checkpoints: McpCheckpoint[] = [];
+    const scheduled = timers.nextScheduled(isPoll);
+    const outcome = connection.callTool({ name: 'long_task', arguments: {}, timeoutMs: CALL_TIMEOUT_MS, onCheckpoint: (checkpoint) => checkpoints.push(checkpoint) });
+    await scheduled;
+    const [taskId] = fixture.taskIds();
+    expect(checkpoints).toEqual([{ kind: 'task', taskId, answered: [] }]);
+    fixture.completeTask(taskId as string, 'done');
+    timers.advance(MIN_TASK_POLL_MS);
+    await outcome;
+  });
+
+  it('resumes polling a recorded task on a fresh connection without starting a second one', async () => {
+    const { fixture, timers, connection } = await setup();
+    const checkpoints: McpCheckpoint[] = [];
+    const scheduled = timers.nextScheduled(isPoll);
+    const aborted = new AbortController();
+    const first = connection.callTool({ name: 'long_task', arguments: {}, timeoutMs: CALL_TIMEOUT_MS, signal: aborted.signal, onCheckpoint: (checkpoint) => checkpoints.push(checkpoint) });
+    first.catch(() => undefined);
+    await scheduled;
+    const taskId = fixture.taskIds()[0] as string;
+    fixture.notes.length = 0;
+
+    const restartedTimers = observedTimers(createFakeClock(1_000_000));
+    const { connection: restarted } = makeRemoteConnection({ fixture, timers: restartedTimers });
+    await restarted.listTools();
+    fixture.completeTask(taskId, 'finished after restart');
+    const result = await restarted.callTool({ name: 'long_task', arguments: {}, resume: { checkpoint: checkpoints[0] as McpCheckpoint, answers: {} } });
+    expect(textOf(result)).toBe('finished after restart');
+    expect(fixture.rpcRecords('tools/call').filter((record) => record.rpc?.params['name'] === 'long_task')).toHaveLength(1);
+    expect(fixture.taskIds()).toEqual([taskId]);
+    aborted.abort(new Error('first connection abandoned'));
+  });
+
+  it('hands a task that needs input back to the caller, then answers it with tasks/update', async () => {
+    const { fixture, timers, connection } = await setup();
+    const scheduled = timers.nextScheduled(isPoll);
+    const outcome = connection.callTool({ name: 'ask_task', arguments: {}, timeoutMs: CALL_TIMEOUT_MS }).then(
+      (value) => ({ value }),
+      (error: unknown) => ({ error }),
+    );
+    await scheduled;
+    timers.advance(MIN_TASK_POLL_MS);
+    const suspended = await outcome;
+    const suspension = 'error' in suspended ? suspended.error : undefined;
+    expect(suspension).toBeInstanceOf(McpInputSuspension);
+    const { requests, checkpoint } = suspension as McpInputSuspension;
+    const taskId = fixture.taskIds()[0] as string;
+    expect(requests.map((request) => request.key)).toEqual(['name']);
+    expect(checkpoint).toEqual({ kind: 'task', taskId, answered: [] });
+    expect(fixture.rpcRecords('tasks/update')).toHaveLength(0);
+
+    const resumedScheduled = timers.nextScheduled(isPoll);
+    const resumed = connection.callTool({
+      name: 'ask_task',
+      arguments: {},
+      timeoutMs: CALL_TIMEOUT_MS,
+      resume: { checkpoint, answers: { name: { action: 'accept', content: { name: 'Ada' } } } },
+    });
+    await resumedScheduled;
+    timers.advance(MIN_TASK_POLL_MS);
+    expect(textOf(await resumed)).toBe('hello Ada');
+    const [update] = fixture.rpcRecords('tasks/update');
+    expect(update?.headers['mcp-name']).toBe(taskId);
+    expect(update?.rpc?.params['inputResponses']).toEqual({ name: { action: 'accept', content: { name: 'Ada' } } });
+    expect(fixture.rpcRecords('tasks/update')).toHaveLength(1);
+    expect(fixture.rpcRecords('tools/call').filter((record) => record.rpc?.params['name'] === 'ask_task')).toHaveLength(1);
   });
 });

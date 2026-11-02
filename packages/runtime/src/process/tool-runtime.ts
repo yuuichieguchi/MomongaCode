@@ -3,7 +3,7 @@ import path from 'node:path';
 import { loadMcpServers } from '@momonga/config';
 import { canonicalJson, ensureSessionTmpDir as defaultEnsureSessionTmpDir, sha256Hex } from '@momonga/foundation';
 import type { Clock, JsonLogger, MomongaPaths, ReapTiming } from '@momonga/foundation';
-import { createFileCredentialStore, createMcpPool, inheritedEnvOf, openInBrowser } from '@momonga/mcp';
+import { createFileCredentialStore, createMcpPool, inheritedEnvOf, mcpCredentialDirectory, openInBrowser } from '@momonga/mcp';
 import type { McpPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
 import type { Sandbox } from '@momonga/sandbox';
 import type { RuntimeStore } from '@momonga/store';
@@ -53,7 +53,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   if (!path.isAbsolute(home)) throw new TypeError(`home must be an absolute path, got ${home}`);
   const createPool = options.createPool ?? createMcpPool;
   const mcpRemote: McpRemotePorts = options.mcpRemote ?? {
-    credentials: createFileCredentialStore(path.join(paths.state, 'mcp-credentials')),
+    credentials: createFileCredentialStore(mcpCredentialDirectory(paths)),
     randomToken: () => randomBytes(32).toString('base64url'),
     openAuthorizationUrl: openInBrowser,
   };

@@ -41,13 +41,6 @@ export class McpTaskError extends Error {
   }
 }
 
-export class McpInputRequiredError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'McpInputRequiredError';
-  }
-}
-
 const TRANSIENT_HTTP_STATUSES: ReadonlySet<number> = new Set([429, 502, 503, 504]);
 const TRANSIENT_SOCKET_CODES: ReadonlySet<string> = new Set(['UND_ERR_SOCKET', 'ECONNRESET', 'ECONNREFUSED', 'EPIPE', 'ETIMEDOUT']);
 

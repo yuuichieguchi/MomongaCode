@@ -21,7 +21,6 @@ export type McpHttpFixtureOptions = {
   era: McpHttpFixtureEra;
   oauth?: McpOauthFixture;
   taskPollIntervalMs?: number | null;
-  sendInputRequestsWithoutCapability?: boolean;
   holdSessionDelete?: boolean;
   path?: string;
 };
@@ -52,7 +51,7 @@ export type McpHttpFixture = {
   expireSessions(): void;
   releaseSlow(): void;
   taskIds(): string[];
-  completeTask(taskId: string, text: string): void;
+  completeTask(taskId: string, text: string, structuredContent?: unknown): void;
   failTask(taskId: string, message: string): void;
   close(): Promise<void>;
 };
@@ -60,8 +59,9 @@ export type McpHttpFixture = {
 type Rpc = { jsonrpc: '2.0'; id?: unknown; method: string; params?: Record<string, unknown> };
 
 type TaskState =
-  | { status: 'working'; createdAt: string }
-  | { status: 'completed'; createdAt: string; text: string }
+  | { status: 'working'; createdAt: string; asksForName?: true }
+  | { status: 'input_required'; createdAt: string }
+  | { status: 'completed'; createdAt: string; text: string; structuredContent?: unknown }
   | { status: 'failed'; createdAt: string; message: string }
   | { status: 'cancelled'; createdAt: string };
 
@@ -73,6 +73,8 @@ const objectSchema = (properties: Record<string, unknown>, required: string[] = 
   required,
 });
 
+const STRUCTURED_SCHEMA = objectSchema({ n: { type: 'number' } }, ['n']);
+
 const TOOLS = [
   { name: 'echo', description: 'Echo the text back', inputSchema: objectSchema({ text: { type: 'string' } }, ['text']), annotations: { readOnlyHint: true } },
   { name: 'slow', description: 'Waits until released or cancelled', inputSchema: objectSchema({}) },
@@ -82,6 +84,21 @@ const TOOLS = [
   { name: 'mrtr_loop', description: 'Never finishes: always asks for another round', inputSchema: objectSchema({}) },
   { name: 'reflect_auth', description: 'Reflects the received Authorization header', inputSchema: objectSchema({}) },
   { name: 'long_task', description: 'Returns a task handle to clients that support tasks', inputSchema: objectSchema({}) },
+  { name: 'ask_task', description: 'Returns a task that asks for a name once polled', inputSchema: objectSchema({}) },
+  { name: 'mrtr_url', description: 'Asks the user to open a URL', inputSchema: objectSchema({}) },
+  { name: 'mrtr_sampling', description: 'Asks for sampling, which no client declared', inputSchema: objectSchema({}) },
+  { name: 'structured', description: 'Returns structured content that may break its outputSchema', inputSchema: objectSchema({ valid: { type: 'boolean' } }, ['valid']), outputSchema: STRUCTURED_SCHEMA },
+  { name: 'structured_task', description: 'Returns a task whose result is structured', inputSchema: objectSchema({}), outputSchema: STRUCTURED_SCHEMA },
+  { name: 'bad_header_number', description: 'x-mcp-header on a number', inputSchema: objectSchema({ n: { type: 'number', 'x-mcp-header': 'N' } }) },
+  { name: 'bad_header_empty', description: 'empty x-mcp-header', inputSchema: objectSchema({ s: { type: 'string', 'x-mcp-header': '' } }) },
+  { name: 'bad_header_token', description: 'x-mcp-header that is not an HTTP token', inputSchema: objectSchema({ s: { type: 'string', 'x-mcp-header': 'has space' } }) },
+  {
+    name: 'bad_header_duplicate',
+    description: 'two x-mcp-header values that differ only in case',
+    inputSchema: objectSchema({ a: { type: 'string', 'x-mcp-header': 'Region' }, b: { type: 'string', 'x-mcp-header': 'region' } }),
+  },
+  { name: 'bad_header_anyof', description: 'x-mcp-header under anyOf', inputSchema: { type: 'object', properties: { s: { anyOf: [{ type: 'string', 'x-mcp-header': 'S' }] } } } },
+  { name: 'bad_header_array', description: 'x-mcp-header under items', inputSchema: objectSchema({ list: { type: 'array', items: { type: 'string', 'x-mcp-header': 'Item' } } }) },
   { name: 'stream_drop', description: 'Cuts the response stream after a progress event', inputSchema: objectSchema({}) },
   {
     name: 'region_echo',
@@ -91,6 +108,17 @@ const TOOLS = [
 ] as const;
 
 const textResult = (text: string): Record<string, unknown> => ({ content: [{ type: 'text', text }] });
+
+const NAME_REQUEST = {
+  name: {
+    method: 'elicitation/create',
+    params: {
+      mode: 'form',
+      message: 'Please enter your name.',
+      requestedSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
+    },
+  },
+} as const;
 
 const headerOf = (req: http.IncomingMessage, name: string): string | undefined => {
   const value = req.headers[name];
@@ -148,7 +176,10 @@ export const startMcpHttpFixture = async (options: McpHttpFixtureOptions): Promi
     lastUpdatedAt: state.createdAt,
     ttlMs: null,
     ...(options.taskPollIntervalMs === null ? {} : { pollIntervalMs: options.taskPollIntervalMs ?? 1 }),
-    ...(state.status === 'completed' ? { result: textResult(state.text) } : {}),
+    ...(state.status === 'input_required' ? { inputRequests: NAME_REQUEST } : {}),
+    ...(state.status === 'completed'
+      ? { result: { ...textResult(state.text), ...(state.structuredContent === undefined ? {} : { structuredContent: state.structuredContent }) } }
+      : {}),
     ...(state.status === 'failed' ? { statusMessage: state.message, error: { code: -32603, message: state.message } } : {}),
   });
 
@@ -261,7 +292,7 @@ export const startMcpHttpFixture = async (options: McpHttpFixtureOptions): Promi
       case 'mrtr_elicit': {
         const caps = modernCaps(rpc);
         const supported = caps['elicitation'] !== undefined;
-        if (!supported && options.sendInputRequestsWithoutCapability !== true) {
+        if (!supported) {
           sendJson(res, 200, complete(rpc.id, textResult('elicitation unavailable')));
           return;
         }
@@ -291,6 +322,40 @@ export const startMcpHttpFixture = async (options: McpHttpFixtureOptions): Promi
         });
         return;
       }
+      case 'mrtr_url': {
+        const responses = params['inputResponses'] as Record<string, { action?: string }> | undefined;
+        if (responses?.['link']?.action !== undefined) {
+          sendJson(res, 200, complete(rpc.id, textResult(`link ${responses['link'].action}`)));
+          return;
+        }
+        sendJson(res, 200, {
+          jsonrpc: '2.0',
+          id: rpc.id,
+          result: {
+            resultType: 'input_required',
+            inputRequests: { link: { method: 'elicitation/create', params: { mode: 'url', message: 'Connect your account.', url: 'https://example.test/connect?s=1' } } },
+            requestState: 'link',
+          },
+        });
+        return;
+      }
+      case 'mrtr_sampling': {
+        sendJson(res, 200, {
+          jsonrpc: '2.0',
+          id: rpc.id,
+          result: {
+            resultType: 'input_required',
+            inputRequests: { pick: { method: 'sampling/createMessage', params: { messages: [], maxTokens: 10 } } },
+          },
+        });
+        return;
+      }
+      case 'structured': {
+        sendJson(res, 200, complete(rpc.id, { ...textResult('structured'), structuredContent: args['valid'] === true ? { n: 1 } : { n: 'one' } }));
+        return;
+      }
+      case 'ask_task':
+      case 'structured_task':
       case 'long_task': {
         if (!modern || !clientSupportsTasks(rpc)) {
           sendJson(res, 200, complete(rpc.id, textResult('tasks unsupported')));
@@ -298,7 +363,7 @@ export const startMcpHttpFixture = async (options: McpHttpFixtureOptions): Promi
         }
         taskCounter += 1;
         const taskId = `task-${taskCounter}`;
-        const state: TaskState = { status: 'working', createdAt: new Date().toISOString() };
+        const state: TaskState = { status: 'working', createdAt: new Date().toISOString(), ...(name === 'ask_task' ? { asksForName: true as const } : {}) };
         tasks.set(taskId, state);
         sendJson(res, 200, { jsonrpc: '2.0', id: rpc.id, result: { resultType: 'task', ...taskView(taskId, state) } });
         changed();
@@ -341,8 +406,15 @@ export const startMcpHttpFixture = async (options: McpHttpFixtureOptions): Promi
       return;
     }
     if (rpc.method === 'tasks/get') {
-      sendJson(res, 200, complete(rpc.id, taskView(taskId, state)));
+      const view = state.status === 'working' && state.asksForName === true ? { status: 'input_required' as const, createdAt: state.createdAt } : state;
+      if (view !== state) tasks.set(taskId, view);
+      sendJson(res, 200, complete(rpc.id, taskView(taskId, view)));
       return;
+    }
+    if (rpc.method === 'tasks/update' && state.status === 'input_required') {
+      const responses = rpc.params?.['inputResponses'] as Record<string, { content?: { name?: string } }> | undefined;
+      tasks.set(taskId, { status: 'completed', createdAt: state.createdAt, text: `hello ${responses?.['name']?.content?.name ?? 'nobody'}` });
+      changed();
     }
     if (rpc.method === 'tasks/cancel') {
       note({ type: 'task_cancel', taskId });
@@ -560,9 +632,9 @@ export const startMcpHttpFixture = async (options: McpHttpFixtureOptions): Promi
       for (const gate of [...slowGates]) gate();
     },
     taskIds: () => [...tasks.keys()],
-    completeTask: (taskId, text) => {
+    completeTask: (taskId, text, structuredContent) => {
       const state = tasks.get(taskId);
-      if (state !== undefined) tasks.set(taskId, { status: 'completed', createdAt: state.createdAt, text });
+      if (state !== undefined) tasks.set(taskId, { status: 'completed', createdAt: state.createdAt, text, ...(structuredContent === undefined ? {} : { structuredContent }) });
     },
     failTask: (taskId, message) => {
       const state = tasks.get(taskId);
