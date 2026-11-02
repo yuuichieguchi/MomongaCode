@@ -10,7 +10,7 @@ import { ProcessLockHeldError, listenUnix, momongaPaths, parseReadyLine, inspect
 import type { SupervisorHealth } from '@momonga/protocol';
 import { createFakeClock, createFakeTimers, registerCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
-import { respondShutdown, startControlServer } from '../src/control-server.ts';
+import { createControlRequestHandler, respondShutdown, startControlServer } from '../src/control-server.ts';
 import type { ControlServer, IdleShutdownOutcome } from '../src/control-server.ts';
 import { trackSupervisorChildren } from './support/track-supervisor-children.ts';
 import { createRealWorkScope, httpOver, phaseChanges, pumpUntil, quiesce, settledFlag, startHarness, writeMarker } from './fixtures/p3-harness.ts';
@@ -36,12 +36,11 @@ const header = (headers: Readonly<Record<string, string | number>>, name: string
   Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1];
 
 describe('respondShutdown', () => {
-  it('shutdown returns 202 and starts the drain in the response callback', () => {
+  it('shutdown writes the 202 and then starts the drain without waiting for the response to be delivered', () => {
     const calls: string[] = [];
     let status = 0;
     let headers: Readonly<Record<string, string | number>> = {};
     let body = '';
-    let callback: (() => void) | undefined;
     let requested = 0;
     respondShutdown(
       {
@@ -50,24 +49,62 @@ describe('respondShutdown', () => {
           status = code;
           headers = values;
         },
-        end: (text, done) => {
+        end: (text) => {
           calls.push('end');
           body = text;
-          callback = done;
         },
       },
       () => {
+        calls.push('requested');
         requested += 1;
       },
     );
-    expect(calls).toEqual(['writeHead', 'end']);
+    expect(calls).toEqual(['writeHead', 'end', 'requested']);
     expect(status).toBe(202);
     expect(String(header(headers, 'connection')).toLowerCase()).toBe('close');
     expect(String(header(headers, 'content-type'))).toMatch(/^application\/json/);
     expect(JSON.parse(body)).toEqual({ phase: 'draining' });
-    expect(requested).toBe(0);
-    callback?.();
     expect(requested).toBe(1);
+  });
+
+  it('a client that disconnects before the accepted idle check answers still gets its drain started', async (context) => {
+    const socketPath = path.join(runDir(context), 'abandoned.sock');
+    let resolveOutcome: (outcome: IdleShutdownOutcome) => void = () => undefined;
+    let resolveRequested: () => void = () => undefined;
+    const requested = new Promise<void>((resolve) => {
+      resolveRequested = resolve;
+    });
+    let resolveClientGone: () => void = () => undefined;
+    const clientGone = new Promise<void>((resolve) => {
+      resolveClientGone = resolve;
+    });
+    let resolveCheckStarted: () => void = () => undefined;
+    const checkStarted = new Promise<void>((resolve) => {
+      resolveCheckStarted = resolve;
+    });
+    const handler = createControlRequestHandler({
+      health: () => SAMPLE_HEALTH,
+      shutdownIfIdle: () =>
+        new Promise<IdleShutdownOutcome>((resolve) => {
+          resolveOutcome = resolve;
+          resolveCheckStarted();
+        }),
+      onShutdownRequested: () => resolveRequested(),
+    });
+    const server = http.createServer(handler);
+    server.on('connection', (socket) => socket.once('close', resolveClientGone));
+    await listenUnix(server, socketPath);
+    registerCleanup(context, async () => {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    });
+    const client = net.connect(socketPath);
+    await new Promise<void>((resolve) => client.once('connect', resolve));
+    client.write('POST /v1/shutdown-if-idle HTTP/1.1\r\nhost: localhost\r\ncontent-length: 0\r\n\r\n');
+    await checkStarted;
+    client.destroy();
+    await clientGone;
+    resolveOutcome({ kind: 'accepted' });
+    await requested;
   });
 });
 
