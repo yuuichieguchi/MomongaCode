@@ -1,6 +1,7 @@
 import { render } from 'ink';
 import path from 'node:path';
 import type { MomongaPaths } from '@momonga/foundation';
+import { describeFailure } from '../failure.ts';
 import { createHistoryStore } from '../history-store.ts';
 import type { CliPorts, Terminal } from '../ports.ts';
 import type { SessionOptions } from '../run/open-session.ts';
@@ -28,7 +29,11 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
   );
   await instance.waitUntilExit();
   await backend.close();
+  return exitCodeOf(ports, outcome);
+};
+
+export const exitCodeOf = (ports: Pick<CliPorts, 'stderr'>, outcome: TuiOutcome): number => {
   if (outcome.error === undefined) return 0;
-  ports.stderr.write(`momonga: ${outcome.error.message}\n`);
+  ports.stderr.write(`momonga: ${describeFailure(outcome.error)}\n`);
   return 1;
 };
