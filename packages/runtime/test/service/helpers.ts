@@ -477,7 +477,7 @@ export const serviceOptions = (
       structuredOutput: 'none',
       streaming: true,
       stopSequences: true,
-      imageInput: overrides.imageInput ?? false,
+      ...protocol.imageCapability(overrides.imageInput === true, overrides.imageInput === true ? { pixelsPerToken: 750, maxTokens: 1600 } : undefined),
       parallelToolCalls: false,
       schemaDialect: 'json-schema-2020-12',
       tokenCounting: 'estimated',

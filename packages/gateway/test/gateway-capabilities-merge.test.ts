@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { imageCapability } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
 import { createScriptedAdapter } from '@momonga/testkit';
 import { getJson, startGateway } from './gateway-helpers.ts';
+
+const IMAGE_MODEL = { pixelsPerToken: 750, maxTokens: 1600 };
 
 const strong: Capabilities = {
   contextWindow: 8192,
@@ -11,6 +14,7 @@ const strong: Capabilities = {
   streaming: true,
   stopSequences: true,
   imageInput: true,
+  imageTokens: IMAGE_MODEL,
   parallelToolCalls: true,
   schemaDialect: 'json-schema-2020-12',
   tokenCounting: 'exact',
@@ -27,6 +31,7 @@ const middle: Capabilities = {
   streaming: true,
   stopSequences: false,
   imageInput: true,
+  imageTokens: IMAGE_MODEL,
   parallelToolCalls: true,
   schemaDialect: 'guided-generation',
   tokenCounting: 'calibrated',
@@ -115,7 +120,10 @@ describe('alias capabilities on /v1/momonga/models', () => {
 });
 
 describe('alias image token model on /v1/momonga/models', () => {
-  const sees = (imageTokens: Capabilities['imageTokens']): Capabilities => ({ ...strong, ...(imageTokens === undefined ? {} : { imageTokens }) });
+  const sees = (imageTokens: Capabilities['imageTokens']): Capabilities => {
+    const { imageInput: _imageInput, imageTokens: _imageTokens, ...core } = strong;
+    return { ...core, ...imageCapability(imageTokens !== undefined, imageTokens) };
+  };
 
   const mergedOf = async (first: Capabilities, second: Capabilities): Promise<Capabilities> => {
     const { client } = await startGateway({

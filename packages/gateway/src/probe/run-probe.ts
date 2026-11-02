@@ -1,6 +1,7 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import { decodeSse } from '@momonga/foundation';
-import { PROBE_KEYWORDS, type ProbeKeyword, type ProbeReport } from '@momonga/protocol';
+import { PROBE_KEYWORDS, type ImageTokenModel, type ProbeKeyword, type ProbeReport } from '@momonga/protocol';
+import { solidPngDataUrl } from './solid-png.ts';
 import { ProbeTimeoutError, createProbeClient, type HttpResult, type ProbeClient } from './client.ts';
 import { buildToolCallEnvelope, keywordProbeSchemas, type KeywordSupport, type ProbeTool } from './envelope.ts';
 import { field, firstOf, isRecord, parseJson } from './json.ts';
@@ -22,6 +23,10 @@ const SEARCH_INITIAL_WORDS = 64;
 const SEARCH_MAX_WORDS = 262144;
 const DEFAULT_STEP_TIMEOUT_MS = 120000;
 const SEARCH_TOLERANCE = 0.01;
+const IMAGE_PROMPT = 'Describe this image.';
+const IMAGE_PROBE_SMALL_SIDE = 512;
+const IMAGE_PROBE_LARGE_SIDE = 2048;
+const IMAGE_CAP_DETECTION_MARGIN = 0.1;
 const CALIBRATION_WORD_COUNTS = [20, 80, 320] as const;
 const CONTEXT_FIELDS = [
   'context_window',
@@ -162,6 +167,8 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
     'image input',
   );
 
+  const imageTokens = imageInputAccepted && usageReported ? await measureImageTokens(chat) : undefined;
+
   const guardrail: ProbeReport['guardrail'] = {};
   if (options.guardrailPrompt !== undefined) {
     const result = await chat({ messages: [{ role: 'user', content: options.guardrailPrompt }] });
@@ -211,12 +218,35 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
     stopSequences,
     maxConcurrency,
     imageInputAccepted,
+    ...(imageTokens === undefined ? {} : { imageTokens }),
     guardrail,
     ...(tokenCalibration === undefined ? {} : { tokenCalibration }),
   };
 };
 
 type Chat = (body: Record<string, unknown>) => Promise<HttpResult>;
+
+const imagePromptTokens = async (chat: Chat, side: number | undefined): Promise<number | undefined> => {
+  const parts: unknown[] = [{ type: 'text', text: IMAGE_PROMPT }];
+  if (side !== undefined) parts.push({ type: 'image_url', image_url: { url: solidPngDataUrl(side) } });
+  const result = await chat({ messages: [{ role: 'user', content: parts }] });
+  expectStatus(result, [200], 'image token measurement');
+  return promptTokensOf(parseJson(result.text));
+};
+
+const measureImageTokens = async (chat: Chat): Promise<ImageTokenModel | undefined> => {
+  const baseline = await imagePromptTokens(chat, undefined);
+  const small = await imagePromptTokens(chat, IMAGE_PROBE_SMALL_SIDE);
+  const large = await imagePromptTokens(chat, IMAGE_PROBE_LARGE_SIDE);
+  if (baseline === undefined || small === undefined || large === undefined) return undefined;
+  const smallTokens = small - baseline;
+  const largeTokens = large - baseline;
+  if (smallTokens <= 0) return undefined;
+  const pixelsPerToken = IMAGE_PROBE_SMALL_SIDE ** 2 / smallTokens;
+  const uncappedLargeTokens = IMAGE_PROBE_LARGE_SIDE ** 2 / pixelsPerToken;
+  if (largeTokens > uncappedLargeTokens * (1 - IMAGE_CAP_DETECTION_MARGIN)) return undefined;
+  return { pixelsPerToken, maxTokens: largeTokens };
+};
 
 const probeStreaming = async (client: ProbeClient, model: string): Promise<ProbeReport['streaming']> => {
   const { status, chunks } = await client.stream('/v1/chat/completions', {

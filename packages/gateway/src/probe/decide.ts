@@ -1,4 +1,5 @@
-import type { Capabilities, ProbeReport, ToolCallingMode } from '@momonga/protocol';
+import { imageCapability } from '@momonga/protocol';
+import type { Capabilities, ImageCapability, ProbeReport, ToolCallingMode } from '@momonga/protocol';
 
 export interface DecideThresholds {
   minValidRate?: number;
@@ -30,6 +31,11 @@ export const decideToolCalling = (report: ProbeReport, thresholds: DecideThresho
   return { mode: 'none' };
 };
 
+const probedImageCapability = (report: ProbeReport): ImageCapability =>
+  report.imageInputAccepted && report.imageTokens !== undefined
+    ? imageCapability(true, report.imageTokens)
+    : imageCapability(false, undefined);
+
 export const capabilitiesFromProbe = (report: ProbeReport, decision: ToolCallingDecision): Capabilities => {
   const contextWindow = report.contextWindow.value;
   return {
@@ -39,7 +45,7 @@ export const capabilitiesFromProbe = (report: ProbeReport, decision: ToolCalling
     structuredOutput: report.constrained.accepted ? 'json_schema' : 'none',
     streaming: report.streaming.supported,
     stopSequences: report.stopSequences,
-    imageInput: report.imageInputAccepted,
+    ...probedImageCapability(report),
     parallelToolCalls: false,
     schemaDialect: 'json-schema-2020-12',
     tokenCounting: report.tokenCalibration === undefined ? 'estimated' : 'calibrated',

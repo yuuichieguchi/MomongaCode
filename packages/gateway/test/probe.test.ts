@@ -136,6 +136,26 @@ describe('runProbe server features', () => {
     expect((await probe({ scenario: 'tools-ok', imageInput: true })).report.imageInputAccepted).toBe(true);
   });
 
+  it('measures the image token model of a target that accepts images and reports usage', async () => {
+    const { report } = await probe({ scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600 } });
+    expect(report.imageInputAccepted).toBe(true);
+    expect(report.imageTokens?.maxTokens).toBe(1600);
+    expect(report.imageTokens?.pixelsPerToken).toBeGreaterThan(740);
+    expect(report.imageTokens?.pixelsPerToken).toBeLessThan(760);
+  });
+
+  it('reports no image token model when the endpoint caps no image within the probe range', async () => {
+    const { report } = await probe({ scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 100_000 } });
+    expect(report.imageInputAccepted).toBe(true);
+    expect(report.imageTokens).toBeUndefined();
+  });
+
+  it('reports no image token model when usage is not reported', async () => {
+    const { report } = await probe({ scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600 }, usageReported: false });
+    expect(report.imageInputAccepted).toBe(true);
+    expect(report.imageTokens).toBeUndefined();
+  });
+
   it('measures max concurrency 1', async () => {
     const { report } = await probe(
       { scenario: 'tools-ok', latencyMs: SLOW_MS, maxConcurrency: 1, contextSizeExposure: 'models' },

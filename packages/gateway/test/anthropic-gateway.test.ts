@@ -448,7 +448,7 @@ describe('anthropic adapter through the gateway: count_tokens', () => {
   });
 
   it('refuses locally to count an image given by URL because the endpoint cannot', async () => {
-    const gateway = await startAnthropicGateway({ script: [anthropicCountTokensReply(1)], capabilities: { ...REMOTE_CAPABILITIES, imageInput: true } });
+    const gateway = await startAnthropicGateway({ script: [anthropicCountTokensReply(1)], capabilities: { ...REMOTE_CAPABILITIES, ...SEEING } });
     const response = await count(gateway, { input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'https://example.com/a.png' }] }] });
     expect(response.status).toBe(400);
     expect(gateway.fake.requests).toEqual([]);
@@ -461,12 +461,14 @@ describe('anthropic adapter through the gateway: count_tokens', () => {
   });
 });
 
+const SEEING = { imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600 } } as const;
+
 describe('anthropic adapter through the gateway: images', () => {
   const PNG = 'data:image/png;base64,iVBORw0KGgo=';
   const imageInput = [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'see' }, { type: 'input_image', image_url: PNG }] }];
 
   it('sends the image block when the target declares imageInput', async () => {
-    const gateway = await startAnthropicGateway({ script: [anthropicTextReply(['ok'])], capabilities: { ...REMOTE_CAPABILITIES, imageInput: true } });
+    const gateway = await startAnthropicGateway({ script: [anthropicTextReply(['ok'])], capabilities: { ...REMOTE_CAPABILITIES, ...SEEING } });
     const terminal = terminalOf(await streamResponse(gateway, { input: imageInput as never }));
     expect(terminal.type).toBe('response.completed');
     const body = gateway.fake.requests[0]?.body as { messages: Array<{ content: Array<{ type: string }> }> };

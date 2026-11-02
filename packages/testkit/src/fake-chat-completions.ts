@@ -24,6 +24,7 @@ export interface FakeChatCompletionsOptions {
   maxConcurrency?: number;
   overflow?: 'reject' | 'queue';
   imageInput?: boolean;
+  imageTokens?: FakeImageTokenModel;
   guardrailTrigger?: string;
   latencyMs?: number;
   failNativeSamples?: number[];
@@ -149,8 +150,32 @@ const messageText = (message: ChatMessage): string => {
   return '';
 };
 
-export const countFakePromptTokens = (messages: readonly ChatMessage[]): number =>
-  messages.reduce((total, message) => total + countFakeTokens(messageText(message)) + 4, 0);
+export interface FakeImageTokenModel {
+  pixelsPerToken: number;
+  maxTokens: number;
+}
+
+const PNG_DATA_URL = /^data:image\/png;base64,(.*)$/s;
+const PNG_HEADER_BYTES = 24;
+
+const fakeImageTokens = (part: unknown, model: FakeImageTokenModel): number => {
+  if (!isRecord(part) || part['type'] !== 'image_url' || !isRecord(part['image_url'])) return 0;
+  const url = part['image_url']['url'];
+  const payload = typeof url === 'string' ? PNG_DATA_URL.exec(url)?.[1] : undefined;
+  if (payload === undefined) return model.maxTokens;
+  const header = Buffer.from(payload.slice(0, 64), 'base64');
+  if (header.length < PNG_HEADER_BYTES) return model.maxTokens;
+  const pixels = header.readUInt32BE(16) * header.readUInt32BE(20);
+  return Math.min(model.maxTokens, Math.ceil(pixels / model.pixelsPerToken));
+};
+
+const fakeMessageImageTokens = (message: ChatMessage, model: FakeImageTokenModel | undefined): number =>
+  model === undefined || !Array.isArray(message.content)
+    ? 0
+    : message.content.reduce((total: number, part: unknown) => total + fakeImageTokens(part, model), 0);
+
+export const countFakePromptTokens = (messages: readonly ChatMessage[], imageModel?: FakeImageTokenModel): number =>
+  messages.reduce((total, message) => total + countFakeTokens(messageText(message)) + 4 + fakeMessageImageTokens(message, imageModel), 0);
 
 export const isValidAtIndex = (index: number, rate: number): boolean => {
   const percent = Math.round(rate * 100);
@@ -374,7 +399,7 @@ export const startFakeChatCompletions = async (
 
   const usageFor = (body: Json, out: CompletionOut): Json => {
     const messages = Array.isArray(body['messages']) ? (body['messages'] as ChatMessage[]) : [];
-    const promptTokens = countFakePromptTokens(messages);
+    const promptTokens = countFakePromptTokens(messages, options.imageTokens);
     const completionText = out.content ?? out.toolCalls.map((call) => call.function.arguments).join(' ');
     const completionTokens = Math.max(1, countFakeTokens(completionText));
     return { prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: promptTokens + completionTokens };

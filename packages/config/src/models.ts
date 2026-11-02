@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { canonicalPath, comparableContains, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
+import { imageCapability } from '@momonga/protocol';
 import { layoutOf } from './layout.ts';
 import type {
   AnthropicTarget,
@@ -14,7 +15,9 @@ import type {
   ResolvedFmTarget,
   ResolvedModelTarget,
   ResolvedOpenResponsesTarget,
+  DeclaredTargetCapabilities,
   TargetCapabilities,
+  TargetCapabilitiesCore,
 } from './settings.ts';
 
 export type ResolvedModels = {
@@ -53,12 +56,12 @@ type RemoteTargetInput = {
   socketPath?: string;
   apiKeyEnv?: string;
   apiKeySecret?: string;
-  capabilities: Pick<TargetCapabilities, 'contextWindow' | 'maxOutputTokens'> & Partial<TargetCapabilities>;
+  capabilities: DeclaredTargetCapabilities;
   maxConcurrency?: number;
   admissionTimeoutMs?: number;
 };
 
-type CapabilityDefaults = Omit<TargetCapabilities, 'contextWindow' | 'maxOutputTokens'>;
+type CapabilityDefaults = Omit<TargetCapabilitiesCore, 'contextWindow' | 'maxOutputTokens'> & { imageInput: false };
 
 const CHAT_COMPLETIONS_CAPABILITY_DEFAULTS: CapabilityDefaults = {
   structuredOutput: 'none',
@@ -93,10 +96,8 @@ const resolveRemote = (target: RemoteTargetInput, defaults: CapabilityDefaults, 
   if (baseUrl !== undefined) checkBaseUrl(baseUrl, where);
   if (socketPath !== undefined) checkSocketPath(socketPath, home, where);
   const maxConcurrency = target.maxConcurrency ?? DEFAULT_REMOTE_MAX_CONCURRENCY;
-  const capabilities = { ...defaults, ...target.capabilities, maxConcurrency };
-  if (capabilities.imageInput && capabilities.imageTokens === undefined) {
-    throw new Error(`${where}: capabilities.imageInput is true, so capabilities.imageTokens ({ pixelsPerToken, maxTokens }) must declare how the target counts an image`);
-  }
+  const { imageInput, imageTokens, ...core } = { ...defaults, ...target.capabilities, maxConcurrency };
+  const capabilities = { ...core, ...imageCapability(imageInput, imageTokens, `${where}: `) };
   return {
     ...(baseUrl === undefined ? {} : { baseUrl }),
     ...(socketPath === undefined ? {} : { socketPath }),

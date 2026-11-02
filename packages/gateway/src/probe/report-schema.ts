@@ -77,6 +77,12 @@ const reportSchema: JSONSchemaType<ProbeReport> = {
     stopSequences: bool,
     maxConcurrency: { type: 'integer', minimum: 1 },
     imageInputAccepted: bool,
+    imageTokens: {
+      type: 'object',
+      nullable: true,
+      required: ['pixelsPerToken', 'maxTokens'],
+      properties: { pixelsPerToken: { type: 'number', exclusiveMinimum: 0 }, maxTokens: { type: 'integer', minimum: 1 } },
+    },
     guardrail: { type: 'object', required: [], properties: { errorShape: anyJson } },
     tokenCalibration: {
       type: 'object',

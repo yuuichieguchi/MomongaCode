@@ -1,3 +1,4 @@
+import { applyCapabilityOverride } from '@momonga/protocol';
 import type {
   AdapterCompactRequest,
   AdapterCompactResult,
@@ -7,6 +8,7 @@ import type {
   AdapterTarget,
   ClassifiedError,
   Capabilities,
+  CapabilityOverride,
   CountTokensRequest,
   ProviderAdapter,
   StreamEvent,
@@ -25,7 +27,7 @@ export type ScriptedCallPlan = {
 export type ScriptedAdapterOptions = {
   kind?: string;
   calls: readonly ScriptedCallPlan[];
-  capabilities?: Partial<Capabilities>;
+  capabilities?: CapabilityOverride;
   countTokens?: AdapterCountTokensResult;
   compactSummary?: string;
   timers?: Pick<FakeTimers, 'setTimeout' | 'clearTimeout'>;
@@ -156,7 +158,7 @@ export const createScriptedAdapter = (options: ScriptedAdapterOptions): Scripted
       released.add(gateName);
       for (const wake of gateWaiters.get(gateName)?.splice(0) ?? []) wake();
     },
-    capabilities: async () => ({ ...DEFAULT_SCRIPTED_CAPABILITIES, ...options.capabilities }),
+    capabilities: async () => applyCapabilityOverride(DEFAULT_SCRIPTED_CAPABILITIES, options.capabilities ?? {}),
     create: (request: AdapterRequest, ctx: AdapterContext) => {
       const plan = options.calls[calls.length];
       const record: RecordedAdapterCall = {

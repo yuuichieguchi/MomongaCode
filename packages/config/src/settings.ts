@@ -1,7 +1,7 @@
 import type { ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
-import type { Capabilities, HooksSettings, PermissionMode } from '@momonga/protocol';
+import type { CapabilitiesCore, HooksSettings, ImageCapability, ImageTokenModel, PermissionMode } from '@momonga/protocol';
 import { MCP_SERVERS_FILE_SCHEMA, MCP_SERVER_SCHEMA, SETTINGS_SCHEMA } from './settings-schema.ts';
 
 export type PermissionsSettings = {
@@ -37,7 +37,12 @@ export type McpServerConfig = McpStdioServerConfig | McpRemoteServerConfig;
 
 export type FmToolCalling = 'auto' | 'native' | 'constrained';
 
-export type TargetCapabilities = Omit<Capabilities, 'toolCalling' | 'probedAt' | 'maxConcurrency'>;
+export type TargetCapabilitiesCore = Omit<CapabilitiesCore, 'toolCalling' | 'probedAt' | 'maxConcurrency'>;
+
+export type TargetCapabilities = TargetCapabilitiesCore & ImageCapability;
+
+export type DeclaredTargetCapabilities = Pick<TargetCapabilitiesCore, 'contextWindow' | 'maxOutputTokens'> &
+  Partial<TargetCapabilitiesCore> & { imageInput?: boolean; imageTokens?: ImageTokenModel };
 
 export type FmTarget = {
   adapter: 'fm';
@@ -56,12 +61,12 @@ export type ChatCompletionsTarget = {
   apiKeySecret?: string;
   provider: string;
   toolCalling?: 'native' | 'constrained';
-  capabilities: Pick<TargetCapabilities, 'contextWindow' | 'maxOutputTokens'> & Partial<TargetCapabilities>;
+  capabilities: DeclaredTargetCapabilities;
   maxConcurrency?: number;
   admissionTimeoutMs?: number;
 };
 
-export type RemoteTargetCapabilities = Pick<TargetCapabilities, 'contextWindow' | 'maxOutputTokens'> & Partial<TargetCapabilities>;
+export type RemoteTargetCapabilities = DeclaredTargetCapabilities;
 
 export type OpenResponsesTarget = {
   adapter: 'open-responses';

@@ -1,4 +1,4 @@
-export type { Capabilities, HealthResult, ImageTokenModel, ToolCallingMode, ToolCallingSetting } from './capabilities.ts';
+export type { Capabilities, CapabilitiesCore, CapabilityOverride, HealthResult, ImageCapability, ImageTokenModel, ToolCallingMode, ToolCallingSetting } from './capabilities.ts';
 export {
   COMPACTION_INSTRUCTIONS_VERSION,
   ESTIMATED_ERROR_BOUND_RATIO,
@@ -17,6 +17,7 @@ export {
   summaryItemTokensFor,
   summaryTokenCapFor,
 } from './budget-constants.ts';
+export { applyCapabilityOverride, imageCapability } from './capabilities.ts';
 export { LOOP_GROUPS_KEPT } from './loop-groups.ts';
 export { findDanglingOutput, findUnpairedCalls } from './call-pairing.ts';
 export { compactionSummaryMessage, decodeCompactionSummary } from './compaction-summary.ts';
