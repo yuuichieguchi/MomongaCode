@@ -1,6 +1,6 @@
 import net from 'node:net';
 import { describe, expect, it } from 'vitest';
-import { connectMcpServer, type McpServerConnection } from '@momonga/mcp';
+import { McpUnknownToolError, connectMcpServer, type McpServerConnection } from '@momonga/mcp';
 import type { McpServerConfig } from '@momonga/config';
 import {
   LEGACY_FIXTURE_PROTOCOL_VERSION,
@@ -152,6 +152,15 @@ describe('connectMcpServer callTool', () => {
     expect(textOf(await modern.callTool({ name: 'dotted.name/with-slash', arguments: {} }))).toBe('dotted');
     const legacy = await connect('legacy', legacyConfig());
     expect(textOf(await legacy.callTool({ name: 'add', arguments: { a: 40, b: 2 } }))).toBe('42');
+  });
+
+  it('fails with a typed error for a tool the server does not list, without calling the server', async () => {
+    const recordFile = makeRecordFile();
+    const connection = await connect('modern', modernConfig(recordFile));
+    const failure = await connection.callTool({ name: 'not_listed', arguments: {} }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(McpUnknownToolError);
+    expect(failure).toMatchObject({ server: 'modern', tool: 'not_listed' });
+    expect(callRecords(recordFile, 'not_listed')).toEqual([]);
   });
 
   it('times out after timeoutMs and the server records the cancellation', async () => {

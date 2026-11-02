@@ -109,6 +109,18 @@ export class McpUnavailableError extends Error {
   }
 }
 
+export class McpUnknownToolError extends Error {
+  readonly server: string;
+  readonly tool: string;
+
+  constructor(server: string, tool: string) {
+    super(`MCP server "${server}" does not list a tool named "${tool}"`);
+    this.name = 'McpUnknownToolError';
+    this.server = server;
+    this.tool = tool;
+  }
+}
+
 type Session = { client: Client; transport: ConnectionTransport; guarded: GuardedFetch | undefined; tools: Map<string, Tool> };
 
 const describeExit = (transport: ConnectionTransport): string | undefined => {
@@ -307,7 +319,9 @@ class ManagedConnection implements McpServerConnection {
     const known = session.tools.get(name);
     if (known !== undefined) return known;
     await this.listTools(signal === undefined ? undefined : { signal });
-    return this.session?.tools.get(name) ?? { name, inputSchema: { type: 'object' } };
+    const listed = this.session?.tools.get(name);
+    if (listed === undefined) throw new McpUnknownToolError(this.name, name);
+    return listed;
   }
 
   private async driveRounds(session: Session, tool: Tool, input: McpCallToolInput, timeout: number): Promise<CallToolResult> {
