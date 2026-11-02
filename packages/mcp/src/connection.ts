@@ -8,7 +8,8 @@ import { createMcpOAuthProvider } from './oauth-provider.ts';
 import type { McpOAuthProvider } from './oauth-provider.ts';
 import { parseInputRequests } from './input-requests.ts';
 import { validateStructuredOutput } from './output-validation.ts';
-import { McpAuthorizationError, McpRemotePolicyError, McpTaskError, isSessionExpired } from './remote-errors.ts';
+import { McpAuthorizationError, McpRemotePolicyError, McpTaskError, authorizationRequiredFor, isSessionExpired } from './remote-errors.ts';
+import { credentialKey } from './oauth-provider.ts';
 import { createGuardedFetch } from './remote-policy.ts';
 import type { GuardedFetch } from './remote-policy.ts';
 import type { McpRemotePorts } from './remote-ports.ts';
@@ -40,6 +41,8 @@ const REDACTED = '[redacted]';
 export const MRTR_MAX_ROUNDS = 10;
 export const MRTR_STATE_ONLY_PACING_MS = 250;
 export const TASKS_EXTENSION = 'io.modelcontextprotocol/tasks';
+
+export type McpAuthProbe = { state: 'not_applicable' | 'static_header' | 'not_required' | 'authorized' | 'required' | 'unreachable'; detail?: string };
 
 export type McpServerState = 'idle' | 'connected' | 'disconnected' | 'unavailable' | 'closed';
 
@@ -190,6 +193,21 @@ class ManagedConnection implements McpServerConnection {
 
   async connect(): Promise<void> {
     await this.ensureSession();
+  }
+
+  async authState(): Promise<McpAuthProbe> {
+    const { config, remote } = this.options;
+    if (!('url' in config)) return { state: 'not_applicable' };
+    if (Object.keys(config.headers ?? {}).some((header) => header.toLowerCase() === 'authorization')) return { state: 'static_header' };
+    if (remote === undefined) throw new Error(`MCP server "${this.name}" has no credential store configured`);
+    try {
+      await this.ensureSession();
+    } catch (error) {
+      if (authorizationRequiredFor(error) !== undefined) return { state: 'required' };
+      return { state: 'unreachable', detail: this.redact(errorMessage(error)) };
+    }
+    const stored = await remote.credentials.read(credentialKey(this.name, config.url));
+    return { state: stored === undefined ? 'not_required' : 'authorized' };
   }
 
   async authorize(signal: AbortSignal): Promise<void> {

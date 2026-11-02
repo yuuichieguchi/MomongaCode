@@ -1,6 +1,7 @@
 export { connectMcpServer, createManagedConnection, McpUnavailableError } from './connection.ts';
 export type {
   ConnectMcpServerOptions,
+  McpAuthProbe,
   McpCallToolInput,
   McpConnectionOptions,
   McpServerConnection,
@@ -27,7 +28,7 @@ export { createMcpOAuthProvider, credentialKey } from './oauth-provider.ts';
 export type { McpOAuthProvider, McpOAuthProviderOptions } from './oauth-provider.ts';
 export { startLoopbackRedirect } from './loopback-redirect.ts';
 export type { LoopbackRedirect, LoopbackRedirectOptions } from './loopback-redirect.ts';
-export { McpAuthorizationError, McpRemotePolicyError, McpTaskError, isTransientRemoteFailure } from './remote-errors.ts';
+export { McpAuthorizationError, McpRemotePolicyError, authorizationRequiredFor, McpTaskError, isTransientRemoteFailure } from './remote-errors.ts';
 export type { AuthorizationFailure, RemotePolicyViolation } from './remote-errors.ts';
 export { isPublicAddress } from './ip-address.ts';
 export { assertRemoteUrl, createGuardedFetch, systemResolver } from './remote-policy.ts';

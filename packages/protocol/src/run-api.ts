@@ -264,6 +264,30 @@ export type SkillView = { name: string; description: string; scope: SkillScope; 
 
 export type SkillsResponse = { skills: SkillView[]; warnings: string[] };
 
+export const MCP_AUTH_STATES = ['not_applicable', 'static_header', 'not_required', 'authorized', 'required', 'unreachable'] as const;
+
+export const MCP_AUTHORIZATION_STATUSES = ['awaiting_user', 'completed', 'failed'] as const;
+
+export type McpAuthState = (typeof MCP_AUTH_STATES)[number];
+
+export type McpAuthorizationView = {
+  server: string;
+  status: (typeof MCP_AUTHORIZATION_STATUSES)[number];
+  startedAt: number;
+  url?: string;
+  failure?: { code: string; message: string };
+};
+
+export type McpServerView = {
+  name: string;
+  scope: 'user' | 'project';
+  transport: 'stdio' | 'http';
+  url?: string;
+  auth: McpAuthState;
+  detail?: string;
+  authorization?: McpAuthorizationView;
+};
+
 export type RunHealth = {
   status: 'ok';
   version: string;
@@ -301,6 +325,40 @@ export const RUN_API_SCHEMAS = {
     ),
   ),
   ResolveApprovalRequest: root(closed({ optionId: { type: 'string', minLength: 1 } }, ['optionId'])),
+  McpAuthorizationView: root(
+    closed(
+      {
+        server: string,
+        status: enumOf(MCP_AUTHORIZATION_STATUSES),
+        startedAt: integer,
+        url: string,
+        failure: closed({ code: string, message: string }, ['code', 'message']),
+      },
+      ['server', 'status', 'startedAt'],
+    ),
+  ),
+  McpServersResponse: root(
+    closed(
+      {
+        servers: {
+          type: 'array',
+          items: closed(
+            {
+              name: string,
+              scope: enumOf(['user', 'project']),
+              transport: enumOf(['stdio', 'http']),
+              url: string,
+              auth: enumOf(MCP_AUTH_STATES),
+              detail: string,
+              authorization: { type: 'object' },
+            },
+            ['name', 'scope', 'transport', 'auth'],
+          ),
+        },
+      },
+      ['servers'],
+    ),
+  ),
   ResolveElicitationRequest: root(closed({ responses: { type: 'object', additionalProperties: elicitationAnswer } }, ['responses'])),
   ElicitationView: root(
     closed(

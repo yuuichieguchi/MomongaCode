@@ -387,6 +387,19 @@ export const waitUntil = async (condition: () => boolean, ms: number, label: str
   }
 };
 
+export type McpAdminPort = Parameters<typeof runtime.createRunService>[0]['mcp'];
+
+const unusedMcpAdmin: McpAdminPort = {
+  servers: () => Promise.reject(new Error('this test configured no MCP admin')),
+  startAuthorization: () => Promise.reject(new Error('this test configured no MCP admin')),
+  authorization: () => {
+    throw new Error('this test configured no MCP admin');
+  },
+  cancelAuthorization: () => {
+    throw new Error('this test configured no MCP admin');
+  },
+};
+
 export type ServiceOverrides = {
   timers?: FakeTimers;
   keepAliveMs?: number;
@@ -402,6 +415,7 @@ export type ServiceOverrides = {
   protectedRootAreas?: readonly string[];
   skills?: runtime.SkillsPort;
   skillsTrusted?: () => boolean;
+  mcp?: McpAdminPort;
 };
 
 export type Notifier = { onCommit(touched: { runId?: string; sessionId: string }[]): void; subscriberCount(): number };
@@ -446,6 +460,7 @@ export const serviceOptions = (
   modelAliases: base.ports.modelAliases,
   sessionCreateSettings: base.ports.sessionCreateSettings,
   skills: overrides.skills ?? diskSkillsPort(base.home, overrides.skillsTrusted),
+  mcp: overrides.mcp ?? unusedMcpAdmin,
   defaults: { modelAlias: MODEL_ALIAS, runTimeoutMs: DEFAULT_TIMEOUT_MS, limits: { ...DEFAULT_LIMITS } },
   notifier: base.notifier,
   keepAliveMs: overrides.keepAliveMs ?? 600_000,

@@ -4,7 +4,7 @@ import { defineTool, ToolExecutionError, ToolInputRequired, TransientToolError }
 import type { AnyTool, ToolListOptions, ToolResult, ToolResume, ToolSource, ToolSourceListing } from '@momonga/tools';
 import { McpUnavailableError } from './connection.ts';
 import { parseElicitationAnswer } from './input-requests.ts';
-import { McpAuthorizationError, isTransientRemoteFailure } from './remote-errors.ts';
+import { authorizationRequiredFor, isTransientRemoteFailure } from './remote-errors.ts';
 import { McpInputSuspension, parseCheckpoint } from './suspension.ts';
 import type { McpResume } from './suspension.ts';
 import type { McpServerConnection } from './connection.ts';
@@ -74,11 +74,6 @@ const mapResult = (result: CallToolResult, redact: (text: string) => string): To
     output,
     content: [{ type: 'content', content: { type: 'text', text: output } }],
   };
-};
-
-const authorizationRequiredFor = (error: unknown): McpAuthorizationError | undefined => {
-  const candidate = error instanceof Error && error.cause instanceof McpAuthorizationError ? error.cause : error;
-  return candidate instanceof McpAuthorizationError && candidate.failure === 'required' ? candidate : undefined;
 };
 
 const resumeOf = (resume: ToolResume | undefined): McpResume | undefined => {

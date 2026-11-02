@@ -68,3 +68,8 @@ export const isSessionExpired = (error: unknown): boolean => error instanceof Sd
 
 export const isUnauthorized = (error: unknown): boolean =>
   error instanceof SdkHttpError && error.code === SdkErrorCode.ClientHttpAuthentication;
+
+export const authorizationRequiredFor = (error: unknown): McpAuthorizationError | undefined => {
+  const candidate = error instanceof Error && error.cause instanceof McpAuthorizationError ? error.cause : error;
+  return candidate instanceof McpAuthorizationError && candidate.failure === 'required' ? candidate : undefined;
+};
