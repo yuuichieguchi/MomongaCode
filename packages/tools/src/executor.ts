@@ -118,7 +118,7 @@ export type ToolExecutorOptions = {
   reconcileCapMs?: number;
   reconcileGraceMs?: number;
   onWarning(message: string): void;
-  reap?: { kill?: SignalSender; timing?: ReapTiming };
+  reap?: { kill?: SignalSender; timing?: ReapTiming; killGraceMs?: number };
 };
 
 export type AbandonTarget = { callId: string; idemKey: string };
@@ -910,7 +910,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         await reapMarkedProcesses({
           marker,
           pgid: lookup.rec.pgid,
-          killGraceMs: ABANDON_KILL_GRACE_MS,
+          killGraceMs: options.reap?.killGraceMs ?? ABANDON_KILL_GRACE_MS,
           label: 'tool',
           onWarning: options.onWarning,
           ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),

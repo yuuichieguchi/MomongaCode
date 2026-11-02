@@ -10,6 +10,8 @@ import type { Harness, HarnessOptions } from './harness.ts';
 import { keyFor } from './helpers.ts';
 
 const PROCESS_TIMEOUT = { timeout: 30_000 };
+const STUBBORN_GRACE_MS = 100;
+const POLL_INTERVAL_MS = 25;
 const KEY_A = keyFor('run-1', 1, 'call-a');
 const KEY_B = keyFor('run-1', 1, 'call-b');
 
@@ -101,7 +103,7 @@ const fakeTiming = (overlapTarget = 1): ReapTiming & { active: number; maxActive
   return timing;
 };
 
-const harnessWith = (reap: { kill?: SignalSender; timing?: ReapTiming }): Harness =>
+const harnessWith = (reap: { kill?: SignalSender; timing?: ReapTiming; killGraceMs?: number }): Harness =>
   makeHarness({ executor: { reap } } as HarnessOptions);
 
 describe('executor abandon', () => {
@@ -304,7 +306,7 @@ describe('executor abandon', () => {
       if (signal !== 0 && (pid === stubborn || pid === -stubborn)) return;
       process.kill(pid, signal);
     };
-    const harness = harnessWith({ kill, timing });
+    const harness = harnessWith({ kill, timing, killGraceMs: STUBBORN_GRACE_MS });
     const marker = markerOf(harness, KEY_A);
     stubborn = spawnHolder(marker, 'exec sleep 30');
     seedPending(harness, KEY_A, stubborn);
@@ -318,6 +320,7 @@ describe('executor abandon', () => {
       expect.arrayContaining([`tool marker ${marker} kept: process ${stubborn} still hold it after cleanup; the next start will retry`]),
     );
     expect(harness.idempotency.stateOf(KEY_A)).toBe('UNKNOWN');
+    expect(timing.sleeps).toBe(1 + STUBBORN_GRACE_MS / POLL_INTERVAL_MS);
   });
 
   it('a target whose marker cannot be removed becomes a warning while the others are still reaped and every target is CAS-ed', PROCESS_TIMEOUT, async () => {
