@@ -5,11 +5,11 @@ import type { PolicyTool } from '@momonga/policy';
 const MEMORY_SAVE: PolicyTool = { name: 'MemorySave', kind: 'other', sideEffect: 'write' };
 
 describe('memory subjects', () => {
-  it('suggests the tool name as the allow rule, so one rule covers both scopes', () => {
+  it('suggests no allow rule, because a bare tool rule would let injected saves in every scope pass silently', () => {
     const canonicalise = () => {
       throw new Error('a memory subject names no path');
     };
-    expect(suggestAllowRule(MEMORY_SAVE, { kind: 'memory', tool: 'MemorySave', scope: 'user' }, '/work', canonicalise)).toBe('MemorySave');
-    expect(suggestAllowRule(MEMORY_SAVE, { kind: 'memory', tool: 'MemorySave', scope: 'project' }, '/work', canonicalise)).toBe('MemorySave');
+    expect(suggestAllowRule(MEMORY_SAVE, { kind: 'memory', tool: 'MemorySave', scope: 'user' }, '/work', canonicalise)).toBeUndefined();
+    expect(suggestAllowRule(MEMORY_SAVE, { kind: 'memory', tool: 'MemorySave', scope: 'project' }, '/work', canonicalise)).toBeUndefined();
   });
 });

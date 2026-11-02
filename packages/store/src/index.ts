@@ -39,6 +39,7 @@ export type {
   LoadedRun,
   MemoryRecord,
   MemoryStore,
+  MemoryVisibility,
   NotFound,
   RequestCancelResult,
   ResolveApprovalResult,

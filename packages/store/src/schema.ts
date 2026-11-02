@@ -254,6 +254,16 @@ const SESSION_MCP_SERVERS = `
 ALTER TABLE sessions ADD COLUMN mcp_servers_json TEXT NOT NULL DEFAULT '{}';
 `;
 
+const MEMORY_TRUST_ORIGIN = `
+ALTER TABLE memories ADD COLUMN origin TEXT NOT NULL DEFAULT 'untrusted' CHECK (origin IN ('trusted', 'untrusted'));
+UPDATE memories SET origin = 'trusted'
+WHERE scope = 'project'
+   OR EXISTS (
+     SELECT 1 FROM sessions s JOIN trust t ON t.decision = 'trusted' AND (s.cwd = t.path OR substr(s.cwd, 1, length(t.path) + 1) = t.path || '/')
+     WHERE s.id = memories.source_session_id
+   );
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -268,4 +278,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 7, name: 'let an approval carry an MCP elicitation and its answers', sql: ELICITATION_APPROVALS },
   { version: 8, name: 'link subagent runs to the run and tool call that spawned them, and record background jobs', sql: SUBAGENT_RUNS_AND_BACKGROUND_JOBS },
   { version: 9, name: 'let a session carry the MCP servers its client passed', sql: SESSION_MCP_SERVERS },
+  { version: 10, name: 'record whether a memory was saved in a trusted folder', sql: MEMORY_TRUST_ORIGIN },
 ];

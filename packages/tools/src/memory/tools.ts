@@ -19,7 +19,7 @@ type SearchInput = { query: string };
 const redactor = createRedactor({ credentials: [] });
 
 const describeMemory = (memory: MemoryView): string =>
-  `[${memory.id}] (${memory.scope} memory, saved ${new Date(memory.createdAt).toISOString()} in run ${memory.source.runId} step ${memory.source.step}, last used ${new Date(memory.lastUsedAt).toISOString()}) ${memory.text}`;
+  `[${memory.id}] (${memory.scope} memory, ${memory.origin} origin, saved ${new Date(memory.createdAt).toISOString()} in run ${memory.source.runId} step ${memory.source.step}, last used ${new Date(memory.lastUsedAt).toISOString()}) ${memory.text}`;
 
 const termsOf = (query: string): string[] => query.split(/\s+/).filter((term) => term !== '');
 
@@ -44,7 +44,7 @@ export const createMemoryTools = ({ port, trusted }: MemoryToolsOptions): AnyToo
     subject: (input) => {
       if (input.text.trim() === '') throw new ToolInputError('text must contain more than whitespace');
       if (input.scope === 'project' && !trusted) {
-        throw new ToolExecutionError('Project memories are only available in trusted folders. Trust this folder first, or save the memory with scope "user".');
+        throw new ToolExecutionError('Project memories are only available in trusted folders. Trust this folder first, or save the memory with scope "user"; a user memory saved in an untrusted folder is recalled only in untrusted folders.');
       }
       if (redactor.text(input.text) !== input.text) {
         throw new ToolExecutionError('The memory was not saved because it looks like it contains a credential or secret. State the fact without the secret.');

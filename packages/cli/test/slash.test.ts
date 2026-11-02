@@ -93,6 +93,7 @@ const PR: SkillView = { name: 'pr-review', description: 'Review a pull request',
 const MEMORY: MemoryView = {
   id: 'mem-1',
   scope: 'project',
+  origin: 'trusted',
   project: '/work/project',
   text: 'The build uses pnpm.\nSecond line.',
   source: { sessionId: 's1', runId: 'r1', step: 2, callId: 'c1', seq: 9 },

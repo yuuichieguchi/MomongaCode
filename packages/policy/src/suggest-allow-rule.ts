@@ -38,6 +38,7 @@ export const suggestAllowRule = (
     case 'mcp':
       return `mcp__${subject.server}__${subject.tool}`;
     case 'memory':
+      return undefined;
     case 'none':
       return tool.name;
   }

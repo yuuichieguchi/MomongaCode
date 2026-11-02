@@ -1,21 +1,23 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { immediateTx, uuidv7 } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import { MEMORY_SCOPES } from '@momonga/protocol';
-import type { MemoryScope } from '@momonga/protocol';
+import { MEMORY_ORIGINS, MEMORY_SCOPES } from '@momonga/protocol';
+import type { MemoryOrigin, MemoryScope } from '@momonga/protocol';
 import { corrupt, expectOneOf, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
-import type { MemoryRecord, MemoryStore, SaveMemoryInput } from './types.ts';
+import type { MemoryRecord, MemoryStore, MemoryVisibility, SaveMemoryInput } from './types.ts';
 
 const decodeMemory = (row: Row): MemoryRecord => {
   const identity = String(row['id']);
   const reader = readerFor('memories', identity, row);
   const scope: MemoryScope = expectOneOf('memories', identity, 'scope', MEMORY_SCOPES, reader.string('scope'));
+  const origin: MemoryOrigin = expectOneOf('memories', identity, 'origin', MEMORY_ORIGINS, reader.string('origin'));
   const project = reader.nullableString('project');
   if ((scope === 'project') !== (project !== null)) throw corrupt('memories', identity, `scope ${scope} does not match project ${String(project)}`);
   return {
     id: reader.string('id'),
     scope,
+    origin,
     project,
     text: reader.string('text'),
     source: {
@@ -37,8 +39,8 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
     "SELECT seq, session_id FROM events WHERE run_id = :runId AND type = 'tool.call' AND json_extract(payload_json, '$.callId') = :callId LIMIT 1",
   );
   const insert = db.prepare(
-    `INSERT INTO memories (id, scope, project, text, source_session_id, source_run_id, source_step, source_call_id, source_seq, created_at, last_used_at)
-     VALUES (:id, :scope, :project, :text, :sessionId, :runId, :step, :callId, :seq, :now, :now)
+    `INSERT INTO memories (id, scope, origin, project, text, source_session_id, source_run_id, source_step, source_call_id, source_seq, created_at, last_used_at)
+     VALUES (:id, :scope, :origin, :project, :text, :sessionId, :runId, :step, :callId, :seq, :now, :now)
      ON CONFLICT (source_run_id, source_call_id) DO NOTHING`,
   );
   const bySource = db.prepare('SELECT * FROM memories WHERE source_run_id = :runId AND source_call_id = :callId');
@@ -46,8 +48,8 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
   const all = db.prepare('SELECT * FROM memories ORDER BY created_at, id');
   const byScope = db.prepare('SELECT * FROM memories WHERE scope = :scope ORDER BY created_at, id');
   const byProject = db.prepare('SELECT * FROM memories WHERE project = :project ORDER BY created_at, id');
-  const visibleWithProject = db.prepare(`SELECT * FROM memories WHERE scope = 'user' OR project = :project ${RECENCY}`);
-  const visibleUserOnly = db.prepare(`SELECT * FROM memories WHERE scope = 'user' ${RECENCY}`);
+  const visibleInTrustedProject = db.prepare(`SELECT * FROM memories WHERE (scope = 'user' AND origin = 'trusted') OR project = :project ${RECENCY}`);
+  const visibleUntrusted = db.prepare(`SELECT * FROM memories WHERE scope = 'user' ${RECENCY}`);
   const touch = db.prepare('UPDATE memories SET last_used_at = :now WHERE id = :id');
   const remove = db.prepare('DELETE FROM memories WHERE id = :id');
 
@@ -58,8 +60,8 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
     return { seq: reader.number('seq'), sessionId: reader.string('session_id') };
   };
 
-  const visible = (project: string | undefined): MemoryRecord[] =>
-    (project === undefined ? visibleUserOnly.all() : visibleWithProject.all({ project })).map(decodeMemory);
+  const visible = (visibility: MemoryVisibility): MemoryRecord[] =>
+    (visibility.trusted ? visibleInTrustedProject.all({ project: visibility.project }) : visibleUntrusted.all()).map(decodeMemory);
 
   return {
     save: (input) =>
@@ -71,6 +73,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
         const inserted = insert.run({
           id: uuidv7(clock),
           scope: input.scope,
+          origin: input.origin,
           project: input.project,
           text: input.text,
           sessionId: source.sessionId,
@@ -94,9 +97,9 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
       return all.all().map(decodeMemory);
     },
     recall: visible,
-    search: (project, terms) => {
+    search: (visibility, terms) => {
       const needles = terms.map((term) => term.toLowerCase());
-      return visible(project).filter((memory) => needles.every((needle) => memory.text.toLowerCase().includes(needle)));
+      return visible(visibility).filter((memory) => needles.every((needle) => memory.text.toLowerCase().includes(needle)));
     },
     markUsed: (ids) => {
       const now = clock.now();

@@ -1,5 +1,5 @@
 import { HOOK_EVENTS, HOOK_OUTCOMES, HOOK_PRE_TOOL_DECISIONS } from './hooks.ts';
-import { MEMORY_SCOPES } from './memory.ts';
+import { MEMORY_ORIGINS, MEMORY_SCOPES } from './memory.ts';
 import { PERMISSION_DENIAL_SOURCES } from './permission-denial.ts';
 import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
 import type { ImageMediaType, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent } from './run-types.ts';
@@ -383,6 +383,7 @@ const memoryView = closed(
   {
     id: string,
     scope: memoryScope,
+    origin: enumOf(MEMORY_ORIGINS),
     project: nullable(string),
     text: string,
     source: closed(
@@ -392,7 +393,7 @@ const memoryView = closed(
     createdAt: integer,
     lastUsedAt: integer,
   },
-  ['id', 'scope', 'project', 'text', 'source', 'createdAt', 'lastUsedAt'],
+  ['id', 'scope', 'origin', 'project', 'text', 'source', 'createdAt', 'lastUsedAt'],
 );
 
 export type SkillScope = (typeof SKILL_SCOPES)[number];

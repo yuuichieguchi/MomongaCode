@@ -2,6 +2,10 @@ export const MEMORY_SCOPES = ['user', 'project'] as const;
 
 export type MemoryScope = (typeof MEMORY_SCOPES)[number];
 
+export const MEMORY_ORIGINS = ['trusted', 'untrusted'] as const;
+
+export type MemoryOrigin = (typeof MEMORY_ORIGINS)[number];
+
 export type MemorySource = {
   sessionId: string;
   runId: string;
@@ -13,6 +17,7 @@ export type MemorySource = {
 export type MemoryView = {
   id: string;
   scope: MemoryScope;
+  origin: MemoryOrigin;
   project: string | null;
   text: string;
   source: MemorySource;

@@ -45,8 +45,8 @@ export type {
   AgentsResponse,
   SkillsResponse,
 } from './run-api.ts';
-export { MEMORY_SCOPES } from './memory.ts';
-export type { MemoriesResponse, MemoryResponse, MemoryScope, MemorySource, MemoryView } from './memory.ts';
+export { MEMORY_ORIGINS, MEMORY_SCOPES } from './memory.ts';
+export type { MemoriesResponse, MemoryOrigin, MemoryResponse, MemoryScope, MemorySource, MemoryView } from './memory.ts';
 export { imageDataUrl, userMessageContent } from './user-content.ts';
 export { escapeXmlAttribute, escapeXmlText } from './xml.ts';
 export { SKILL_CONTENT_CLOSE_TAG, skillContentOpenTag } from './skill-content.ts';

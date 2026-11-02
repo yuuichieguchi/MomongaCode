@@ -10,6 +10,7 @@ const FAKE_KEY = 'sk-abcdefghijklmnopqrstuvwxyz0123456789';
 const viewOf = (overrides: Partial<MemoryView> = {}): MemoryView => ({
   id: 'mem-1',
   scope: 'user',
+  origin: 'trusted',
   project: null,
   text: 'prefers tabs',
   source: { sessionId: 's1', runId: 'run-1', step: 1, callId: 'c1', seq: 4 },
@@ -129,8 +130,8 @@ describe('memory tools', () => {
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed' } });
     const output = outcome?.kind === 'result' ? outcome.result.output : '';
     expect(output.split('\n')).toEqual([
-      '[mem-1] (user memory, saved 2026-11-02T00:00:00.000Z in run run-1 step 1, last used 2026-11-03T00:00:00.000Z) prefers tabs',
-      '[mem-2] (project memory, saved 2026-11-02T00:00:00.000Z in run run-9 step 3, last used 2026-11-03T00:00:00.000Z) run make',
+      '[mem-1] (user memory, trusted origin, saved 2026-11-02T00:00:00.000Z in run run-1 step 1, last used 2026-11-03T00:00:00.000Z) prefers tabs',
+      '[mem-2] (project memory, trusted origin, saved 2026-11-02T00:00:00.000Z in run run-9 step 3, last used 2026-11-03T00:00:00.000Z) run make',
     ]);
   });
 

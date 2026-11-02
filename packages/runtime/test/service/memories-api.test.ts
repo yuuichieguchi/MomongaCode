@@ -27,8 +27,8 @@ describe('memory api', () => {
   it('lists, reads and deletes memories with their provenance', async () => {
     const env = await startService({ fakeTimers: true });
     const { session, run } = await seedCalls(env);
-    const user = env.store.memories.save({ scope: 'user', project: null, text: 'prefers tabs', runId: run.id, step: 1, callId: 'c1' }).memory;
-    const project = env.store.memories.save({ scope: 'project', project: session.cwd, text: 'tests live in test/', runId: run.id, step: 2, callId: 'c2' }).memory;
+    const user = env.store.memories.save({ origin: 'trusted', scope: 'user', project: null, text: 'prefers tabs', runId: run.id, step: 1, callId: 'c1' }).memory;
+    const project = env.store.memories.save({ origin: 'trusted', scope: 'project', project: session.cwd, text: 'tests live in test/', runId: run.id, step: 2, callId: 'c2' }).memory;
     const call = env.runEvents(run.id).find((event) => event.type === 'tool.call' && event.callId === 'c1');
 
     const listed = await env.http('GET', '/v1/memories');
@@ -55,9 +55,9 @@ describe('memory api', () => {
     const { session, run } = await seedCalls(env);
     const other = path.join(env.layout.root, 'other');
     fs.mkdirSync(other);
-    const user = env.store.memories.save({ scope: 'user', project: null, text: 'u', runId: run.id, step: 1, callId: 'c1' }).memory;
-    const here = env.store.memories.save({ scope: 'project', project: session.cwd, text: 'here', runId: run.id, step: 1, callId: 'c2' }).memory;
-    const there = env.store.memories.save({ scope: 'project', project: fs.realpathSync.native(other), text: 'there', runId: run.id, step: 1, callId: 'c3' }).memory;
+    const user = env.store.memories.save({ origin: 'trusted', scope: 'user', project: null, text: 'u', runId: run.id, step: 1, callId: 'c1' }).memory;
+    const here = env.store.memories.save({ origin: 'trusted', scope: 'project', project: session.cwd, text: 'here', runId: run.id, step: 1, callId: 'c2' }).memory;
+    const there = env.store.memories.save({ origin: 'trusted', scope: 'project', project: fs.realpathSync.native(other), text: 'there', runId: run.id, step: 1, callId: 'c3' }).memory;
 
     expect((await env.http('GET', '/v1/memories?scope=user')).json).toEqual({ memories: [user] });
     expect((await env.http('GET', '/v1/memories?scope=project')).json).toEqual({ memories: [here, there] });
@@ -80,7 +80,7 @@ describe('memory api', () => {
     const env = await startService({ fakeTimers: true });
     const { run } = await seedCalls(env);
     const gone = path.join(env.layout.root, 'gone');
-    const memory = env.store.memories.save({ scope: 'project', project: gone, text: 'left behind', runId: run.id, step: 1, callId: 'c1' }).memory;
+    const memory = env.store.memories.save({ origin: 'trusted', scope: 'project', project: gone, text: 'left behind', runId: run.id, step: 1, callId: 'c1' }).memory;
     expect((await env.http('GET', `/v1/memories?project=${encodeURIComponent(gone)}`)).json).toEqual({ memories: [memory] });
   });
 
