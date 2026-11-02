@@ -38,6 +38,21 @@ const permissionOption = closed(
   ['optionId', 'name', 'kind'],
 );
 
+const elicitationRequest = {
+  oneOf: [
+    closed({ key: string, mode: constant('form'), message: string, requestedSchema: { type: 'object' } }, ['key', 'mode', 'message', 'requestedSchema']),
+    closed({ key: string, mode: constant('url'), message: string, url: string }, ['key', 'mode', 'message', 'url']),
+  ],
+} as const satisfies JsonSchema;
+
+const elicitationAnswer = {
+  oneOf: [
+    closed({ action: constant('accept'), content: { type: 'object' } }, ['action']),
+    closed({ action: constant('decline') }, ['action']),
+    closed({ action: constant('cancel') }, ['action']),
+  ],
+} as const satisfies JsonSchema;
+
 const usage = closed({ inputTokens: nonNegativeInteger, outputTokens: nonNegativeInteger, totalTokens: nonNegativeInteger }, [
   'inputTokens',
   'outputTokens',
@@ -130,6 +145,19 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
     properties: { approvalId: string, reason: enumOf(['expired', 'withdrawn', 'superseded']) },
     required: ['approvalId', 'reason'],
   },
+  'tool.elicitation.requested': {
+    properties: { inputId: string, callId: string, server: string, requests: { type: 'array', items: elicitationRequest } },
+    required: ['inputId', 'callId', 'server', 'requests'],
+  },
+  'tool.elicitation.resolved': {
+    properties: { inputId: string, responses: { type: 'object', additionalProperties: elicitationAnswer } },
+    required: ['inputId', 'responses'],
+  },
+  'tool.elicitation.cancelled': {
+    properties: { inputId: string, reason: enumOf(['expired', 'withdrawn', 'superseded']) },
+    required: ['inputId', 'reason'],
+  },
+  'mcp.authorization.required': { properties: { callId: string, server: string }, required: ['callId', 'server'] },
   'tool.started': { properties: { callId: string, idemKey: string }, required: ['callId', 'idemKey'] },
   'tool.updated': { properties: { callId: string, content: { type: 'array' } }, required: ['callId', 'content'] },
   'tool.completed': {
@@ -273,6 +301,23 @@ export const RUN_API_SCHEMAS = {
     ),
   ),
   ResolveApprovalRequest: root(closed({ optionId: { type: 'string', minLength: 1 } }, ['optionId'])),
+  ResolveElicitationRequest: root(closed({ responses: { type: 'object', additionalProperties: elicitationAnswer } }, ['responses'])),
+  ElicitationView: root(
+    closed(
+      {
+        id: string,
+        runId: string,
+        callId: string,
+        status: enumOf(APPROVAL_STATUSES),
+        server: string,
+        requests: { type: 'array', items: elicitationRequest },
+        expiresAt: integer,
+        createdAt: integer,
+        toolCall: closed({ callId: string, name: string, title: string }, ['callId', 'name', 'title']),
+      },
+      ['id', 'runId', 'callId', 'status', 'server', 'requests', 'expiresAt', 'createdAt', 'toolCall'],
+    ),
+  ),
   Health: root(
     closed(
       {

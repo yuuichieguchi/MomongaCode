@@ -2,7 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, uuidv7 } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { APPROVAL_STATUSES } from '@momonga/protocol';
-import type { PermissionOption } from '@momonga/protocol';
+import type { ElicitationAnswerRecord, ElicitationRequestView, PermissionOption } from '@momonga/protocol';
 import { corrupt, expectOneOf, isRecord, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
 import type { Approval, ApprovalStore } from './types.ts';
@@ -23,9 +23,24 @@ const decodeOptions = (identity: string, value: unknown): PermissionOption[] => 
   });
 };
 
+const decodeRequests = (identity: string, value: unknown): ElicitationRequestView[] => {
+  if (!Array.isArray(value)) throw corrupt('approvals', identity, 'column requests_json must be a JSON array');
+  return value as ElicitationRequestView[];
+};
+
+const decodeResponses = (identity: string, value: unknown): Record<string, ElicitationAnswerRecord> => {
+  if (!isRecord(value)) throw corrupt('approvals', identity, 'column responses_json must be a JSON object');
+  return value as Record<string, ElicitationAnswerRecord>;
+};
+
+const APPROVAL_KINDS = ['permission', 'elicitation'] as const;
+
 const decodeApproval = (row: Row): Approval => {
   const identity = String(row['id']);
   const reader = readerFor('approvals', identity, row);
+  const server = reader.nullableString('server');
+  const hasRequests = reader.nullableString('requests_json') !== null;
+  const hasResponses = reader.nullableString('responses_json') !== null;
   const optionId = reader.nullableString('option_id');
   const resolvedAt = reader.nullableNumber('resolved_at');
   const subjectDigest = reader.nullableString('subject_digest');
@@ -33,6 +48,10 @@ const decodeApproval = (row: Row): Approval => {
     id: reader.string('id'),
     runId: reader.string('run_id'),
     callId: reader.string('call_id'),
+    kind: expectOneOf('approvals', identity, 'kind', APPROVAL_KINDS, reader.string('kind')),
+    ...(server === null ? {} : { server }),
+    ...(hasRequests ? { requests: decodeRequests(identity, reader.json('requests_json')) } : {}),
+    ...(hasResponses ? { responses: decodeResponses(identity, reader.json('responses_json')) } : {}),
     status: expectOneOf('approvals', identity, 'status', APPROVAL_STATUSES, reader.string('status')),
     options: decodeOptions(identity, reader.json('options_json')),
     expiresAt: reader.number('expires_at'),
@@ -43,27 +62,38 @@ const decodeApproval = (row: Row): Approval => {
   };
 };
 
-export type ApprovalRequest = { runId: string; callId: string; options: PermissionOption[]; expiresAt: number; subjectDigest: string };
+export type ApprovalRequest = {
+  runId: string;
+  callId: string;
+  options: PermissionOption[];
+  expiresAt: number;
+  subjectDigest: string;
+  elicitation?: { server: string; requests: ElicitationRequestView[] };
+};
 
 export type ApprovalOps = {
   store: ApprovalStore;
   request(input: ApprovalRequest): { approval: Approval; created: boolean; superseded?: Approval };
   listPendingDue(runId: string, nowMs: number): Approval[];
   markResolved(id: string, optionId: string): Approval;
+  markAnswered(id: string, responses: Record<string, ElicitationAnswerRecord>): Approval;
   end(id: string, status: 'expired' | 'withdrawn'): void;
 };
 
 export const createApprovalStore = (db: DatabaseSync, clock: Clock): ApprovalOps => {
   const runExists = db.prepare('SELECT 1 AS present FROM runs WHERE id = :runId');
   const insert = db.prepare(
-    `INSERT INTO approvals (id, run_id, call_id, status, options_json, expires_at, created_at, subject_digest)
-     VALUES (:id, :runId, :callId, 'pending', :options, :expiresAt, :createdAt, :subjectDigest)`,
+    `INSERT INTO approvals (id, run_id, call_id, status, options_json, expires_at, created_at, subject_digest, kind, server, requests_json)
+     VALUES (:id, :runId, :callId, 'pending', :options, :expiresAt, :createdAt, :subjectDigest, :kind, :server, :requests)`,
   );
   const selectPendingByCall = db.prepare("SELECT * FROM approvals WHERE run_id = :runId AND call_id = :callId AND status = 'pending'");
   const supersede = db.prepare("UPDATE approvals SET status = 'superseded' WHERE id = :id AND status = 'pending'");
   const selectById = db.prepare('SELECT * FROM approvals WHERE id = :id');
   const resolve = db.prepare(
     "UPDATE approvals SET status = 'resolved', option_id = :optionId, resolved_at = :resolvedAt WHERE id = :id AND status = 'pending'",
+  );
+  const answer = db.prepare(
+    "UPDATE approvals SET status = 'resolved', responses_json = :responses, resolved_at = :resolvedAt WHERE id = :id AND status = 'pending' AND kind = 'elicitation'",
   );
   const finish = db.prepare("UPDATE approvals SET status = :status WHERE id = :id AND status = 'pending'");
   const listPending = db.prepare("SELECT * FROM approvals WHERE run_id = :runId AND status = 'pending' ORDER BY created_at, rowid");
@@ -92,6 +122,9 @@ export const createApprovalStore = (db: DatabaseSync, clock: Clock): ApprovalOps
       expiresAt: input.expiresAt,
       createdAt: clock.now(),
       subjectDigest: input.subjectDigest,
+      kind: input.elicitation === undefined ? 'permission' : 'elicitation',
+      server: input.elicitation?.server ?? null,
+      requests: input.elicitation === undefined ? null : canonicalJson(input.elicitation.requests),
     });
     return mustGet(id);
   };
@@ -121,6 +154,11 @@ export const createApprovalStore = (db: DatabaseSync, clock: Clock): ApprovalOps
     markResolved: (id, optionId) => {
       const result = resolve.run({ id, optionId, resolvedAt: clock.now() });
       if (Number(result.changes) !== 1) throw new Error(`approval ${id} could not be resolved`);
+      return mustGet(id);
+    },
+    markAnswered: (id, responses) => {
+      const result = answer.run({ id, responses: canonicalJson(responses), resolvedAt: clock.now() });
+      if (Number(result.changes) !== 1) throw new Error(`elicitation ${id} could not be answered`);
       return mustGet(id);
     },
     end: (id, status) => {

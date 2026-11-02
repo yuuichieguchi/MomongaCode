@@ -30,6 +30,8 @@ export { APPROVAL_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMIN
 export type {
   ActivatedSkillRecord,
   ApprovalStatus,
+  ElicitationAnswerRecord,
+  ElicitationRequestView,
   ModelResponse,
   PendingCallStatus,
   PermissionMode,

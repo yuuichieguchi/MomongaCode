@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, readTx, uuidv7 } from '@momonga/foundation';
+import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
 import { TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
-import type { PermissionMode, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
+import type { ElicitationAnswerRecord, ElicitationRequestView, PermissionMode, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
 import { createApprovalStore } from './approvals.ts';
 import { createBlobStore, prepareBlobDirectory } from './blobs.ts';
 import { foldRunState, initialRunState } from './fold.ts';
@@ -23,6 +23,7 @@ import type {
   Claim,
   ClaimStatus,
   Conflict,
+  ElicitationView,
   CreateRunResult,
   HeartbeatResult,
   InheritContextResult,
@@ -32,6 +33,7 @@ import type {
   RequestApprovalResult,
   RequestCancelResult,
   ResolveApprovalResult,
+  ResolveElicitationResult,
   RunMutationResult,
   RuntimeStore,
   RuntimeStoreOptions,
@@ -216,6 +218,9 @@ const prepareStatements = (db: DatabaseSync) => ({
   requestedEvent: db.prepare(
     "SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.permission.requested' AND json_extract(payload_json, '$.approvalId') = :approvalId LIMIT 1",
   ),
+  elicitationRequestedEvent: db.prepare(
+    "SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.elicitation.requested' AND json_extract(payload_json, '$.inputId') = :approvalId LIMIT 1",
+  ),
   runEvents: db.prepare('SELECT * FROM events WHERE run_id = :runId AND seq > :after ORDER BY seq LIMIT :limit'),
   sessionEvents: db.prepare('SELECT * FROM events WHERE session_id = :sessionId AND id > :after ORDER BY id LIMIT :limit'),
   selectExhausted: db.prepare(
@@ -350,7 +355,12 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   };
 
   const approvalAnnounced = (runId: string, approvalId: string): boolean =>
-    sql.requestedEvent.get({ runId, approvalId }) !== undefined;
+    sql.requestedEvent.get({ runId, approvalId }) !== undefined || sql.elicitationRequestedEvent.get({ runId, approvalId }) !== undefined;
+
+  const cancelledEvent = (approval: Approval, reason: 'expired' | 'withdrawn' | 'superseded'): RunEventPayload =>
+    approval.kind === 'elicitation'
+      ? { type: 'tool.elicitation.cancelled', inputId: approval.id, reason }
+      : { type: 'tool.permission.cancelled', approvalId: approval.id, reason };
 
   const requireRun = (runId: string): Run => {
     const row = sql.selectRun.get({ id: runId });
@@ -403,7 +413,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const withdrawPendingApprovals = (runId: string): RunEventPayload[] =>
     approvalOps.store.listPending(runId).flatMap((approval): RunEventPayload[] => {
       approvalOps.end(approval.id, 'withdrawn');
-      return approvalAnnounced(runId, approval.id) ? [{ type: 'tool.permission.cancelled', approvalId: approval.id, reason: 'withdrawn' }] : [];
+      return approvalAnnounced(runId, approval.id) ? [cancelledEvent(approval, 'withdrawn')] : [];
     });
 
   const changeStatus = (run: Run, to: RunStatus, change: StatusChange, leadingEvents: readonly RunEventPayload[] = []): Run => {
@@ -486,9 +496,13 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
   const expireApproval = (runId: string, approval: Approval): RunEventPayload[] => {
     approvalOps.end(approval.id, 'expired');
-    const notice: RunEventPayload = { type: 'notice', level: 'warning', message: `The approval for ${approval.callId} expired.` };
+    const notice: RunEventPayload = {
+      type: 'notice',
+      level: 'warning',
+      message: `The ${approval.kind === 'elicitation' ? 'request for input' : 'approval'} for ${approval.callId} expired.`,
+    };
     return approvalAnnounced(runId, approval.id)
-      ? [{ type: 'tool.permission.cancelled', approvalId: approval.id, reason: 'expired' }, notice]
+      ? [cancelledEvent(approval, 'expired'), notice]
       : [notice];
   };
 
@@ -513,7 +527,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
   const resolveInTransaction = (approvalId: string, optionId: string): ResolveApprovalResult => {
     const approval = approvalOps.store.get(approvalId);
-    if (approval === undefined) return { kind: 'not_found' };
+    if (approval === undefined || approval.kind !== 'permission') return { kind: 'not_found' };
     if (approval.status !== 'pending') return { kind: 'approval_not_pending', status: approval.status };
     if (!approvalAnnounced(approval.runId, approval.id)) return { kind: 'request_missing' };
     const now = clock.now();
@@ -584,6 +598,48 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       createdAt: approval.createdAt,
       ...(suggestedRule === undefined ? {} : { suggestedRule }),
       toolCall: toolCallOf(approval),
+    };
+  };
+
+  const resolveElicitationInTransaction = (elicitationId: string, responses: Record<string, ElicitationAnswerRecord>): ResolveElicitationResult => {
+    const approval = approvalOps.store.get(elicitationId);
+    if (approval === undefined) return { kind: 'not_found' };
+    if (approval.kind !== 'elicitation') return { kind: 'wrong_kind' };
+    if (approval.status !== 'pending') return { kind: 'approval_not_pending', status: approval.status };
+    if (!approvalAnnounced(approval.runId, approval.id)) return { kind: 'request_missing' };
+    const now = clock.now();
+    const run = requireRun(approval.runId);
+    if (approval.expiresAt <= now) {
+      stopWaitingRun(run, now);
+      return { kind: 'approval_not_pending', status: 'expired' };
+    }
+    if (run.cancelRequested) return { kind: 'run_cancelled' };
+    const answered = approvalOps.markAnswered(approval.id, responses);
+    const event: RunEventPayload = { type: 'tool.elicitation.resolved', inputId: approval.id, responses };
+    const settled = run.status === 'WAITING_HUMAN' && approvalOps.store.listPending(run.id).length === 0;
+    if (settled) {
+      changeStatus(run, 'QUEUED', { edges: SERVICE_TRANSITIONS, availableAt: now }, [event]);
+    } else {
+      writeRun({ ...appendPayloads(run, [event]), version: run.version + 1 });
+    }
+    return { kind: 'ok', elicitation: answered, run: requireRun(run.id) };
+  };
+
+  const elicitationViewOf = (approval: Approval): ElicitationView => {
+    if (approval.server === undefined || approval.requests === undefined) {
+      throw corrupt('approvals', approval.id, 'an elicitation approval must carry its server and requests');
+    }
+    const { callId, name, title } = toolCallOf(approval);
+    return {
+      id: approval.id,
+      runId: approval.runId,
+      callId: approval.callId,
+      status: approval.status,
+      server: approval.server,
+      requests: approval.requests,
+      expiresAt: approval.expiresAt,
+      createdAt: approval.createdAt,
+      toolCall: { callId, name, title },
     };
   };
 
@@ -936,7 +992,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         });
         const events: RunEventPayload[] = [];
         if (requested.superseded !== undefined && approvalAnnounced(run.id, requested.superseded.id)) {
-          events.push({ type: 'tool.permission.cancelled', approvalId: requested.superseded.id, reason: 'superseded' });
+          events.push(cancelledEvent(requested.superseded, 'superseded'));
         }
         if (requested.created || !approvalAnnounced(run.id, requested.approval.id)) {
           events.push({
@@ -954,6 +1010,38 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     resolveApproval: (approvalId, optionId) => transaction<ResolveApprovalResult>(() => resolveInTransaction(approvalId, optionId)),
 
+    requestElicitation: (claim, input) =>
+      transaction<RequestApprovalResult>(() => {
+        const run = fenced(claim);
+        if (run === undefined) return leaseLost;
+        const requested = approvalOps.request({
+          runId: run.id,
+          callId: input.callId,
+          options: [],
+          expiresAt: input.expiresAt,
+          subjectDigest: sha256Hex(canonicalJson({ server: input.server, requests: input.requests })),
+          elicitation: { server: input.server, requests: input.requests },
+        });
+        const events: RunEventPayload[] = [];
+        if (requested.superseded !== undefined && approvalAnnounced(run.id, requested.superseded.id)) {
+          events.push(cancelledEvent(requested.superseded, 'superseded'));
+        }
+        if (requested.created || !approvalAnnounced(run.id, requested.approval.id)) {
+          events.push({ type: 'tool.elicitation.requested', inputId: requested.approval.id, callId: input.callId, server: input.server, requests: input.requests });
+        }
+        if (events.length > 0) writeRun(appendPayloads(run, events));
+        return { kind: 'ok', approval: requested.approval };
+      }),
+
+    resolveElicitation: (elicitationId, responses) => transaction<ResolveElicitationResult>(() => resolveElicitationInTransaction(elicitationId, responses)),
+
+    elicitationView: (elicitationId) => {
+      const approval = approvalOps.store.get(elicitationId);
+      return approval === undefined || approval.kind !== 'elicitation' ? undefined : elicitationViewOf(approval);
+    },
+
+    pendingElicitationViews: (runId) => approvalOps.store.listPending(runId).filter((approval) => approval.kind === 'elicitation').map(elicitationViewOf),
+
     expireApprovals: (nowMs) => {
       const stopped: string[] = [];
       for (const row of sql.dueWaitingRuns.all({ nowMs })) {
@@ -966,10 +1054,10 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     approvalView: (approvalId) => {
       const approval = approvalOps.store.get(approvalId);
-      return approval === undefined ? undefined : viewOf(approval);
+      return approval === undefined || approval.kind !== 'permission' ? undefined : viewOf(approval);
     },
 
-    pendingApprovalViews: (runId) => approvalOps.store.listPending(runId).map(viewOf),
+    pendingApprovalViews: (runId) => approvalOps.store.listPending(runId).filter((approval) => approval.kind === 'permission').map(viewOf),
 
     writeSnapshot: (claim, seq, state) =>
       transaction(() => {

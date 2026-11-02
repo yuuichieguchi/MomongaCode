@@ -289,6 +289,28 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
         return { ...rest, status: 'requested' };
       });
     }
+    case 'tool.elicitation.requested':
+      return withCall(state, event.callId, event.type, ({ inputResolution: _stale, ...call }) => ({
+        ...call,
+        status: 'awaiting_input',
+        input: { inputId: event.inputId, server: event.server, requests: event.requests },
+      }));
+    case 'tool.elicitation.resolved': {
+      const entry = Object.entries(state.pendingCalls).find(([, call]) => call.input?.inputId === event.inputId);
+      if (entry === undefined) throw new Error(`run ${state.runId}: ${event.type} refers to unknown elicitation ${event.inputId}`);
+      return withCall(state, entry[0], event.type, ({ input: _answered, ...call }) => ({
+        ...call,
+        status: 'started',
+        inputResolution: { inputId: event.inputId, responses: event.responses },
+      }));
+    }
+    case 'tool.elicitation.cancelled': {
+      const entry = Object.entries(state.pendingCalls).find(([, call]) => call.input?.inputId === event.inputId);
+      if (entry === undefined) throw new Error(`run ${state.runId}: ${event.type} refers to unknown elicitation ${event.inputId}`);
+      return withCall(state, entry[0], event.type, ({ input: _withdrawn, ...call }) => ({ ...call, status: 'started' }));
+    }
+    case 'mcp.authorization.required':
+      return state;
     case 'tool.started':
       return withCall(state, event.callId, event.type, (call) => ({ ...call, status: 'started', idemKey: event.idemKey }));
     case 'tool.completed':

@@ -99,6 +99,10 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   'tool.permission.requested': true,
   'tool.permission.resolved': true,
   'tool.permission.cancelled': true,
+  'tool.elicitation.requested': true,
+  'tool.elicitation.resolved': true,
+  'tool.elicitation.cancelled': true,
+  'mcp.authorization.required': true,
   'tool.started': true,
   'tool.updated': true,
   'tool.completed': true,
@@ -160,7 +164,7 @@ export const decodeRunEvents = (rows: readonly Row[]): RunEvent[] =>
   });
 
 const PERMISSION_KINDS = ['allow_once', 'allow_always', 'reject_once', 'reject_always'] as const;
-const PENDING_STATUSES = ['requested', 'awaiting_approval', 'started', 'completed', 'reconciled'] as const;
+const PENDING_STATUSES = ['requested', 'awaiting_approval', 'awaiting_input', 'started', 'completed', 'reconciled'] as const;
 
 const isPermissionKind = (value: unknown): boolean => PERMISSION_KINDS.some((kind) => kind === value);
 
@@ -198,6 +202,10 @@ const isPendingCall = (value: unknown): boolean =>
   (value['options'] === undefined ||
     (Array.isArray(value['options']) &&
       value['options'].every((option) => isRecord(option) && typeof option['optionId'] === 'string' && isPermissionKind(option['kind'])))) &&
+  (value['input'] === undefined ||
+    (isRecord(value['input']) && typeof value['input']['inputId'] === 'string' && typeof value['input']['server'] === 'string' && Array.isArray(value['input']['requests']))) &&
+  (value['inputResolution'] === undefined ||
+    (isRecord(value['inputResolution']) && typeof value['inputResolution']['inputId'] === 'string' && isRecord(value['inputResolution']['responses']))) &&
   (value['resolution'] === undefined ||
     (isRecord(value['resolution']) &&
       typeof value['resolution']['optionId'] === 'string' &&

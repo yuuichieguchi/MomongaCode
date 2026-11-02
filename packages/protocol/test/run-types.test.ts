@@ -2,6 +2,8 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import { RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES } from '@momonga/protocol';
 import type {
   CompactionInputItem,
+  ElicitationAnswerRecord,
+  ElicitationRequestView,
   InputItem,
   MessageInputItem,
   ModelResponse,
@@ -74,6 +76,10 @@ describe('run event payloads', () => {
       | 'tool.permission.requested'
       | 'tool.permission.resolved'
       | 'tool.permission.cancelled'
+      | 'tool.elicitation.requested'
+      | 'tool.elicitation.resolved'
+      | 'tool.elicitation.cancelled'
+      | 'mcp.authorization.required'
       | 'tool.started'
       | 'tool.updated'
       | 'tool.completed'
@@ -289,7 +295,7 @@ describe('RunState', () => {
           name: string;
           providerCallId: string;
           arguments: unknown;
-          status: 'requested' | 'awaiting_approval' | 'started' | 'completed' | 'reconciled';
+          status: 'requested' | 'awaiting_approval' | 'awaiting_input' | 'started' | 'completed' | 'reconciled';
           idemKey?: string;
           approvalId?: string;
           subjectDigest?: string;
@@ -302,6 +308,8 @@ describe('RunState', () => {
             suggestedRule?: string;
             rulePersisted?: true;
           };
+          input?: { inputId: string; server: string; requests: ElicitationRequestView[] };
+          inputResolution?: { inputId: string; responses: Record<string, ElicitationAnswerRecord> };
         }
       >;
       inFlightModelRequest?: { step: number; attempt: number; digest: string; body: unknown; requestedSeq: number };

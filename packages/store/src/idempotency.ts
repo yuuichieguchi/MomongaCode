@@ -33,6 +33,10 @@ export const createIdempotencyStore = (db: DatabaseSync, clock: Clock): Idempote
   const attach = db.prepare(
     "UPDATE idempotency SET pgid = :pgid, started_at = :startedAt WHERE key = :key AND state = 'PENDING'",
   );
+  const setCheckpoint = db.prepare(
+    "UPDATE idempotency SET meta_json = json_set(meta_json, '$.checkpoint', json(:state)) WHERE key = :key AND state = 'PENDING'",
+  );
+  const clearCheckpoint = db.prepare("UPDATE idempotency SET meta_json = json_remove(meta_json, '$.checkpoint') WHERE key = :key AND state = 'PENDING'");
   const complete = db.prepare(
     "UPDATE idempotency SET state = 'COMPLETED', result_json = :result WHERE key = :key AND state IN ('PENDING', 'UNKNOWN')",
   );
@@ -72,6 +76,10 @@ export const createIdempotencyStore = (db: DatabaseSync, clock: Clock): Idempote
       }),
     attachProcess: (key, process) => {
       requireChange(attach.run({ key, pgid: process.pgid, startedAt: process.startedAt }).changes, key, 'attach a process to', 'PENDING');
+    },
+    checkpoint: (key, state) => {
+      const changes = state === undefined ? clearCheckpoint.run({ key }).changes : setCheckpoint.run({ key, state: canonicalJson(state) }).changes;
+      requireChange(changes, key, 'checkpoint', 'PENDING');
     },
     complete: (key, result) => {
       requireChange(complete.run({ key, result: canonicalJson(result) }).changes, key, 'complete', 'PENDING or UNKNOWN');
