@@ -7,7 +7,7 @@ import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts } from
 import type { Sandbox } from '@momonga/sandbox';
 import type { RuntimeStore } from '@momonga/store';
 import { createBuiltinTools, createPolicyFilesystem, createToolExecutor, createToolRegistry } from '@momonga/tools';
-import type { ToolSet } from '@momonga/tools';
+import type { ShellHost, ToolSet } from '@momonga/tools';
 import type { PolicyFilesystem } from '@momonga/policy';
 import type { ToolRuntimePort } from '../ports.ts';
 import type { RunNotifier } from '../service/notifier.ts';
@@ -35,6 +35,7 @@ export type ToolRuntimeOptions = {
   logger: JsonLogger;
   report(error: unknown): void;
   sandbox: Sandbox;
+  shellHost: ShellHost;
   settings: Pick<SettingsComposition, 'envFor' | 'takeUserSnapshot' | 'loadSessionSettings' | 'trustOracle'>;
   reapTiming: ReapTiming;
   createPool?: (options: McpPoolOptions) => McpPool;
@@ -177,6 +178,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     recoveryContextFor,
     executor,
     sandbox,
+    shellHost: options.shellHost,
     markerDir: paths.markers.tools,
     sessionState: (session) => sessionStates.get(session),
   };

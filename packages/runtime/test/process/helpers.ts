@@ -13,6 +13,7 @@ import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore, Session } from '@momonga/store';
 import { createFakeClock, createFakeTimers, fakeReapTiming, killGroupsForCleanup } from '@momonga/testkit';
+import { nodeShellHost } from '@momonga/tools';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 
 export const START_MS = 1_800_000_000_000;
@@ -291,6 +292,7 @@ export const makeRuntimeFixture = async (options: RuntimeFixtureOptions = {}): P
     logger,
     report: reporter.report,
     sandbox: options.sandbox ?? inertSandbox,
+    shellHost: nodeShellHost(),
     settings: composition,
     reapTiming: options.reapTiming ?? reapTiming,
     createPool: options.createPool ?? pools.create,

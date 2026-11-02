@@ -6,7 +6,7 @@ import { canonicalJson, findHolders, reconcileProcessGroup, sha256Hex } from '@m
 import type { Clock } from '@momonga/foundation';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createCapture, pumpOutput } from '../capture.ts';
-import { nodeShellHost, resolveBashPath } from '../builtins/shell.ts';
+import { resolveBashPath } from '../builtins/shell.ts';
 import type { ShellHost } from '../builtins/shell.ts';
 import { cancellableTimer } from '../timers.ts';
 import { parseHookOutput } from './output.ts';
@@ -19,7 +19,7 @@ export type HookRunContext = {
   sandbox: Sandbox;
   sandboxPolicy: SandboxPolicy;
   env: Readonly<Record<string, string>>;
-  shellHost?: ShellHost;
+  shellHost: ShellHost;
   cwd: string;
   projectDir: string;
   tmpDir?: string;
@@ -66,7 +66,7 @@ const executeHook = async (
   if (ctx.signal.aborted) return finish({ outcome: 'cancelled' });
   if (timeoutMs <= 0) return finish({ outcome: 'timed_out', message: 'the run deadline passed before the hook could start' });
 
-  const shellHost = ctx.shellHost ?? nodeShellHost();
+  const { shellHost } = ctx;
   const controller = new AbortController();
   const onCancel = (): void => controller.abort();
   ctx.signal.addEventListener('abort', onCancel, { once: true });

@@ -12,12 +12,14 @@ export type PromptTerminal = {
   stdout: Pick<Terminal['stdout'], 'write'>;
 };
 
+export type HiddenLineReader = (label: string) => Promise<string>;
+
 const END_OF_TEXT = '\u0003';
 const END_OF_TRANSMISSION = '\u0004';
 const BACKSPACE = '\u007f';
 const BACKSPACE_CONTROL = '\b';
 
-export const readHiddenLine = (terminal: PromptTerminal, label: string, signal: AbortSignal): Promise<string> =>
+const readLine = (terminal: PromptTerminal, label: string, signal: AbortSignal): Promise<string> =>
   new Promise<string>((resolve, reject) => {
     signal.throwIfAborted();
     const { stdin, stdout } = terminal;
@@ -25,8 +27,6 @@ export const readHiddenLine = (terminal: PromptTerminal, label: string, signal: 
     const finish = (settle: () => void): void => {
       stdin.off('data', onData);
       signal.removeEventListener('abort', onAbort);
-      stdin.setRawMode(false);
-      stdin.pause();
       stdout.write('\n');
       settle();
     };
@@ -46,8 +46,19 @@ export const readHiddenLine = (terminal: PromptTerminal, label: string, signal: 
       }
     };
     stdout.write(label);
-    stdin.setRawMode(true);
-    stdin.resume();
     stdin.on('data', onData);
     signal.addEventListener('abort', onAbort, { once: true });
   });
+
+export const withHiddenInput = async <T>(terminal: PromptTerminal, signal: AbortSignal, use: (read: HiddenLineReader) => Promise<T>): Promise<T> => {
+  signal.throwIfAborted();
+  const { stdin } = terminal;
+  stdin.setRawMode(true);
+  stdin.resume();
+  try {
+    return await use((label) => readLine(terminal, label, signal));
+  } finally {
+    stdin.pause();
+    stdin.setRawMode(false);
+  }
+};

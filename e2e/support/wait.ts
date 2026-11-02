@@ -1,5 +1,6 @@
 import { ENTRY_HARD_EXIT_MARGIN_MS, GATEWAY_MAX_CLOSE_MS, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import { LOCK_WATCH_INTERVAL_MS, ORPHAN_REAP_GRACE_MS, SETTINGS_DEBOUNCE_MS, SETTINGS_POLL_MS, SHUTDOWN_RELEASE_BOUND_MS } from '@momonga/supervisor';
+import { VERIFY_QUERY_TIMEOUT_MS } from '../../packages/cli/src/commands/policy.ts';
 import { CANCEL_UPSTREAM_SETTLE_MS, GATEWAY_CANCEL_TIMEOUT_MS, SANDBOX_KILL_GRACE_MS } from '../../packages/runtime/src/process/constants.ts';
 
 export const E2E_MARGIN_MS = 4000;
@@ -28,6 +29,8 @@ export const E2E_REAP_TO_RUNNING_BOUND_MS = E2E_ORPHAN_GRACE_MS + ORPHAN_REAP_GR
 export const E2E_PHASE2_REACHED_BOUND_MS = E2E_ORPHAN_GRACE_MS + E2E_MARGIN_MS;
 export const E2E_LOCK_FREE_BOUND_MS = LOCK_WATCH_INTERVAL_MS + E2E_RESTART_BOUND_MS;
 export const E2E_RUN_COMPLETED_BOUND_MS = E2E_RECOVERY_BOUND_MS + E2E_MARGIN_MS;
+export const E2E_POLICY_VERIFY_PROPERTY_COUNT = 4;
+export const E2E_POLICY_VERIFY_BOUND_MS = E2E_RUN_COMPLETED_BOUND_MS + E2E_POLICY_VERIFY_PROPERTY_COUNT * VERIFY_QUERY_TIMEOUT_MS;
 export const UNTIL_DEFAULT_INTERVAL_MS = 20;
 
 export type Truthy<T> = Exclude<T, false | null | undefined | 0 | ''>;

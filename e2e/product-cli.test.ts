@@ -4,10 +4,11 @@ import { describe, expect, it } from 'vitest';
 import { startMcpHttpFixture, startMcpOauthFixture } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
 import { OPEN_LOG_FILE_NAME, runCli, runCliWithFakes, startCli, startCliWithFakes } from './support/cli.ts';
+import type { CliResult } from './support/cli.ts';
 import type { E2eHome } from './support/home.ts';
 import { PNG_BYTES, prepareProduct, requestText, writePng, writeUserSkill } from './support/product.ts';
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
-import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
+import { E2E_POLICY_VERIFY_BOUND_MS, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
 
 const WINDOW_WITH_ROOM_FOR_ALL_TOOLS_AND_AN_IMAGE = 32768;
 
@@ -49,13 +50,15 @@ describe('momonga models, cost and memory', () => {
     };
     const clean = await prepareProduct({ settings: { permissions: { allow: ['Bash(git status:*)'], deny: ['Bash(git push:*)'] } } });
 
-    const text = await runCli(clean.home, ['policy', 'verify']);
+    const verifyPolicy = (home: E2eHome, ...flags: string[]): Promise<CliResult> => runCli(home, ['policy', 'verify', ...flags], { boundMs: E2E_POLICY_VERIFY_BOUND_MS });
+
+    const text = await verifyPolicy(clean.home);
     expect(text.stderr).toBe('');
     expect(text.code).toBe(0);
     expect(text.stdout).toContain('[PROVED ] the rules leave no route to secrets');
     expect(text.stdout).toContain('Outside the proof:');
     expect(text.stdout).toContain('does not prove:');
-    const cleanJson = jsonOf((await runCli(clean.home, ['policy', 'verify', '--json'])).stdout) as Report;
+    const cleanJson = jsonOf((await verifyPolicy(clean.home, '--json')).stdout) as Report;
     expect(cleanJson.results.map((result) => [result.id, result.verdict.status])).toEqual([
       ['deny-precedence', 'proved'],
       ['secret-reach', 'proved'],
@@ -67,12 +70,12 @@ describe('momonga models, cost and memory', () => {
     expect(cleanJson.outsideProof.length).toBeGreaterThan(0);
 
     const escape = await prepareProduct({ settings: { permissions: { allow: ['Bash(git:*)', 'Read(~/**)'], deny: ['Bash(git push:*)'] } } });
-    const refuted = await runCli(escape.home, ['policy', 'verify']);
+    const refuted = await verifyPolicy(escape.home);
     expect(refuted.code).toBe(1);
     expect(refuted.stdout).toContain('[REFUTED] a Bash allow rule does not admit a denied program or subcommand');
     expect(refuted.stdout).toContain('[REFUTED] the rules leave no route to secrets');
     expect(refuted.stdout).toContain('the decision code agrees (allow)');
-    const refutedJson = jsonOf((await runCli(escape.home, ['policy', 'verify', '--json'])).stdout) as Report;
+    const refutedJson = jsonOf((await verifyPolicy(escape.home, '--json')).stdout) as Report;
     expect(refutedJson.mismatches).toEqual([]);
     expect(refutedJson.exitCode).toBe(1);
     const bash = refutedJson.results.find((result) => result.id === 'bash-admission');

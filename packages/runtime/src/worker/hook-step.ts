@@ -32,6 +32,7 @@ export const hookRunContextFor = (
   sandbox: ctx.options.tools.sandbox,
   sandboxPolicy: policy.sandboxPolicy,
   env: policy.env,
+  shellHost: ctx.options.tools.shellHost,
   cwd: ctx.options.tools.sessionState(session).cwd,
   projectDir: session.cwd,
   tmpDir: policy.tmpDir,

@@ -52,6 +52,23 @@ describe('executor: writeDenied path subjects', () => {
     expect(runs).toEqual([]);
   });
 
+  it('guards a writeDenied entry below a non-directory placeholder instead of throwing ENOTDIR', async () => {
+    const harness = makeHarness();
+    const placeholder = path.join(harness.layout.project, 'protected');
+    fs.writeFileSync(placeholder, '');
+    const deniedBelow = path.join(placeholder, 'inner', 'secret');
+    const runs: string[] = [];
+    const [outcome] = await harness.executor.runBatch(
+      harness.input(await toolSetOf(pathTool('write', path.join(deniedBelow, 'f'), runs)), [call('c1', 'PathTool', {}, 'allow_once')], {
+        mode: 'bypassPermissions',
+        sandboxPolicy: { ...minimalPolicyFor({ layout: harness.layout }), writeDenied: [deniedBelow] },
+      }),
+    );
+    expect(outcome).toMatchObject({ callId: 'c1', kind: 'result', result: { status: 'failed' } });
+    expect((outcome as { result: { output: string } }).result.output).toMatch(/^Permission denied: /);
+    expect(runs).toEqual([]);
+  });
+
   it('still lets a read inside a writeDenied entry run', async () => {
     const harness = makeHarness();
     const sessions = path.join(harness.layout.project, 'sessions');

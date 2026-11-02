@@ -8,6 +8,7 @@ import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import * as runtime from '@momonga/runtime';
 import type { RuntimeStore } from '@momonga/store';
 import { MCP_MODERN_SERVER_PATH, waitFor } from '@momonga/testkit';
+import { nodeShellHost } from '@momonga/tools';
 import type { ToolSource } from '@momonga/tools';
 import {
   POOL_IDLE_CLOSE_MS,
@@ -400,6 +401,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
         logger: f.logger,
         report: f.reporter.report,
         sandbox: inertSandbox,
+        shellHost: nodeShellHost(),
         settings: f.composition,
         reapTiming: f.reapTiming,
       });
