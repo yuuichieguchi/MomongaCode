@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { McpInputSuspension, McpParkedInputLostError, connectMcpServer, createMcpToolSource } from '@momonga/mcp';
 import type { McpServerConnection } from '@momonga/mcp';
-import { FIXTURE_EXTRA_TOOLS_ENV, MCP_LEGACY_SERVER_PATH, createFakeClock } from '@momonga/testkit';
+import { FIXTURE_EXTRA_TOOLS_ENV, MCP_LEGACY_SERVER_PATH, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { ToolInputRequired } from '@momonga/tools';
 import type { AnyTool, ToolContext } from '@momonga/tools';
 import { BASE_ENV, makeDir, onCleanup } from './mcp-harness.ts';
@@ -33,6 +33,67 @@ const suspensionOf = async (connection: McpServerConnection, signal?: AbortSigna
   if (!('error' in outcome) || !(outcome.error instanceof McpInputSuspension)) throw new Error('expected the call to hand its request for input back');
   return outcome.error;
 };
+
+describe('the time budget of a call that waits for the person', () => {
+  const connectOnFakeTimers = async () => {
+    const clock = createFakeClock(1_000_000);
+    const fake = createFakeTimers(clock);
+    const delays: number[] = [];
+    const timers = {
+      ...fake,
+      setTimeout: (callback: () => void, ms: number) => {
+        delays.push(ms);
+        return fake.setTimeout(callback, ms);
+      },
+    };
+    const connection = await connectMcpServer({
+      name: 'legacy',
+      config: { command: process.execPath, args: [MCP_LEGACY_SERVER_PATH], env: { [FIXTURE_EXTRA_TOOLS_ENV]: 'ask_name' } },
+      scope: 'user',
+      projectDir: makeDir(),
+      baseEnv: BASE_ENV,
+      clock,
+      timers,
+    });
+    onCleanup(() => connection.close());
+    return { connection, timers, delays };
+  };
+
+  const TIMEOUT_MS = 1;
+
+  it('does not run the time budget while the call is parked, and the late answer still reaches the server', async () => {
+    const { connection, timers } = await connectOnFakeTimers();
+    const first = await connection.callTool({ name: 'ask_name', arguments: {}, timeoutMs: TIMEOUT_MS }).catch((error: unknown) => error);
+    if (!(first instanceof McpInputSuspension)) throw first;
+    expect(timers.pending()).toEqual([]);
+
+    timers.advance(10 * TIMEOUT_MS);
+
+    const result = await connection.callTool({
+      name: 'ask_name',
+      arguments: {},
+      timeoutMs: 60_000,
+      resume: { checkpoint: first.checkpoint, answers: { elicitation: { action: 'accept', content: { name: 'Ada' } } } },
+    });
+    expect(textOf(result)).toBe('hello Ada');
+  });
+
+  it('applies the time budget of the resuming call, measured from the resume', async () => {
+    const { connection, timers, delays } = await connectOnFakeTimers();
+    const first = await connection.callTool({ name: 'ask_name', arguments: {}, timeoutMs: 60_000 }).catch((error: unknown) => error);
+    if (!(first instanceof McpInputSuspension)) throw first;
+    expect(delays).toEqual([60_000]);
+    await connection.callTool({
+      name: 'ask_name',
+      arguments: {},
+      timeoutMs: 5000,
+      resume: { checkpoint: first.checkpoint, answers: { elicitation: { action: 'accept', content: { name: 'Ada' } } } },
+    });
+    expect(delays).toEqual([60_000, 5000]);
+    expect(timers.pending()).toEqual([]);
+  });
+
+});
 
 describe('server-initiated elicitation from a 2025-11-25 server', () => {
   it('hands the request back as an input request and finishes the same open call with the answer', async () => {

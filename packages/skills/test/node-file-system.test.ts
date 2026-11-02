@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
+import { UnreadablePathError, createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 
 const roots: string[] = [];
 
@@ -27,16 +27,32 @@ describe('node skill file system', () => {
     expect(await system.realpath(path.join(root, 'absent'))).toBeUndefined();
   });
 
-  it('rethrows an error that is not an absence', async () => {
+  it('throws an UnreadablePathError that names the path and the code for a path it may not read', async () => {
     const root = tempRoot();
     const locked = path.join(root, 'locked');
     fs.mkdirSync(locked);
     fs.chmodSync(locked, 0o000);
     try {
-      await expect(createNodeSkillFileSystem().listDirectory(locked)).rejects.toMatchObject({ code: 'EACCES' });
+      const failure: unknown = await createNodeSkillFileSystem().listDirectory(locked).catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(UnreadablePathError);
+      expect(failure).toMatchObject({ code: 'EACCES', path: locked });
     } finally {
       fs.chmodSync(locked, 0o700);
     }
+  });
+
+  it('rethrows an error that is neither an absence nor an unreadable path', async () => {
+    const root = tempRoot();
+    const failure: unknown = await createNodeSkillFileSystem().readText(root).catch((error: unknown) => error);
+    expect(failure).not.toBeInstanceOf(UnreadablePathError);
+    expect(failure).toMatchObject({ code: 'EISDIR' });
+  });
+
+  it('treats a symlink that points at itself as an entry of kind other', async () => {
+    const root = tempRoot();
+    fs.symlinkSync(path.join(root, 'loop'), path.join(root, 'loop'));
+    const entries = await createNodeSkillFileSystem().listDirectory(root);
+    expect(entries).toEqual([{ name: 'loop', kind: 'other' }]);
   });
 
   it('follows symlinks to learn the kind of an entry and treats a broken link as other', async () => {

@@ -2,6 +2,7 @@ import path from 'node:path';
 import { SKILL_CONTENT_CLOSE_TAG, skillContentOpenTag } from '@momonga/protocol';
 import { IGNORED_DIRECTORY_NAMES, SKILL_FILE_NAME } from './constants.ts';
 import type { SkillLimits } from './constants.ts';
+import { attemptRead } from './file-system.ts';
 import type { SkillFileSystem } from './file-system.ts';
 import { parseSkillFile } from './frontmatter.ts';
 import { escapeText } from './xml.ts';
@@ -14,10 +15,16 @@ const resourcesOf = async (skill: Skill, fileSystem: SkillFileSystem, limits: Sk
   const files: string[] = [];
   const queue: { directory: string; depth: number }[] = [{ directory: skill.directory, depth: 0 }];
   let visited = 0;
+  let complete = true;
   for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
     if (visited >= limits.maxDirectories) return { files, complete: false };
     visited += 1;
-    const entries = await fileSystem.listDirectory(next.directory);
+    const listing = await attemptRead(() => fileSystem.listDirectory(next.directory));
+    if (listing.kind === 'unreadable') {
+      complete = false;
+      continue;
+    }
+    const entries = listing.value;
     if (entries === undefined) continue;
     for (const entry of [...entries].sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0))) {
       const relative = path.relative(skill.directory, path.join(next.directory, entry.name));
@@ -29,7 +36,7 @@ const resourcesOf = async (skill: Skill, fileSystem: SkillFileSystem, limits: Sk
       }
     }
   }
-  return { files, complete: true };
+  return { files, complete };
 };
 
 const resourcesBlock = ({ files, complete }: Resources): string[] =>

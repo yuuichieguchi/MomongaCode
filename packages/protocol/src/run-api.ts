@@ -434,7 +434,7 @@ export type RunTraceSummary = {
 
 export type RunTraceView = { runId: string; summary: RunTraceSummary; spans: RunTraceSpan[] };
 
-export const MCP_AUTH_STATES = ['not_applicable', 'static_header', 'not_required', 'authorized', 'required', 'unreachable'] as const;
+export const MCP_AUTH_STATES = ['not_applicable', 'static_header', 'not_required', 'authorized', 'required', 'refused', 'unreachable'] as const;
 
 export const MCP_AUTHORIZATION_STATUSES = ['awaiting_user', 'completed', 'failed'] as const;
 

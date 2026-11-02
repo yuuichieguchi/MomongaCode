@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { DATASET_FORMAT, EvalError, runDataset } from '@momonga/eval';
 import type { EvalRunApi } from '@momonga/eval';
-import { approvalTranscript, finalAnswerTranscript, goldenCase } from './fixtures.ts';
+import type { PublicRunEvent } from '@momonga/protocol';
+import { approvalTranscript, callsTranscript, finalAnswerTranscript, goldenCase } from './fixtures.ts';
 import type { Transcript } from '@momonga/eval';
 
 type Scripted = { sessions: string[]; runs: string[]; resolved: { approvalId: string; optionId: string }[]; api: EvalRunApi };
@@ -9,6 +10,7 @@ type Scripted = { sessions: string[]; runs: string[]; resolved: { approvalId: st
 const scriptedApi = (transcripts: Transcript[]): Scripted => {
   const record: Scripted = { sessions: [], runs: [], resolved: [], api: undefined as unknown as EvalRunApi };
   const byRun = new Map(transcripts.map((transcript) => [transcript.run.id, transcript]));
+  const childEvents = new Map(transcripts.flatMap((transcript) => transcript.children.map((child) => [child.runId, child.events] as const)));
   const queue = [...transcripts];
   record.api = {
     createSession: async (input) => {
@@ -22,7 +24,7 @@ const scriptedApi = (transcripts: Transcript[]): Scripted => {
       return { id: next.run.id };
     },
     events: async function* (runId) {
-      for (const event of byRun.get(runId)?.events ?? []) yield event;
+      for (const event of byRun.get(runId)?.events ?? childEvents.get(runId) ?? []) yield event;
     },
     getRun: async (runId) => {
       const found = byRun.get(runId);
@@ -73,6 +75,32 @@ describe('runDataset', () => {
         { api: scripted.api, workspace },
       ),
     ).rejects.toThrow(EvalError);
+  });
+
+  it('follows a subagent run announced by tool.waiting and answers its approval requests', async () => {
+    const parent = callsTranscript('delegate', [{ callId: 'agent1', name: 'Agent', kind: 'other', rawInput: {}, decision: 'allow' }]);
+    const waiting = { ...(parent.events[0] as PublicRunEvent), type: 'tool.waiting', callId: 'agent1', awaits: { kind: 'run', runId: 'child-1', sessionId: 's-child', agent: 'writer' } } as unknown as PublicRunEvent;
+    const withChild: Transcript = {
+      ...parent,
+      events: [...parent.events, waiting],
+      children: [{ runId: 'child-1', agent: 'writer', events: callsTranscript('child', [{ callId: 'w1', name: 'Write', kind: 'edit', rawInput: { file_path: '/w/.zshrc' }, decision: 'ask' }]).events }],
+    };
+    const scripted = scriptedApi([withChild]);
+    let recorded: Transcript | undefined;
+    const report = await runDataset(
+      { format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'delegate', graders: [{ kind: 'permissionDecision', tool: 'Write', expected: 'ask' }] })] },
+      {
+        api: scripted.api,
+        workspace,
+        onTranscript: async (transcript) => {
+          recorded = transcript;
+        },
+      },
+    );
+    expect(scripted.resolved).toEqual([{ approvalId: 'a-w1', optionId: 'reject_once' }]);
+    expect(recorded?.children.map((child) => [child.runId, child.agent])).toEqual([['child-1', 'writer']]);
+    expect(report.decisions.falseAllow).toMatchObject({ successes: 0, trials: 1 });
+    expect(report.passed).toBe(true);
   });
 
   it('lets an infrastructure failure propagate', async () => {

@@ -1,4 +1,4 @@
-export { connectMcpServer, createManagedConnection, McpUnavailableError } from './connection.ts';
+export { connectMcpServer, createManagedConnection, McpUnavailableError, McpUnknownToolError } from './connection.ts';
 export type {
   ConnectMcpServerOptions,
   McpAuthProbe,

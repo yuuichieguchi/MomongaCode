@@ -10,12 +10,12 @@ import { parseInputRequests } from './input-requests.ts';
 import { validateStructuredOutput } from './output-validation.ts';
 import { createParkedInputs } from './parked-input.ts';
 import type { ParkedInputs } from './parked-input.ts';
-import { McpAuthorizationError, McpRemotePolicyError, McpTaskError, authorizationRequiredFor, isSessionExpired } from './remote-errors.ts';
+import { McpRemotePolicyError, McpTaskError, authorizationRequiredFor, deterministicRemoteFailureOf, findInCauseChain, isSessionExpired } from './remote-errors.ts';
 import { credentialKey } from './oauth-provider.ts';
 import { createGuardedFetch } from './remote-policy.ts';
 import type { GuardedFetch } from './remote-policy.ts';
 import type { McpRemotePorts } from './remote-ports.ts';
-import { TASK_HANDLE_ERROR_CODE, createRemoteTransport } from './remote-transport.ts';
+import { createRemoteTransport } from './remote-transport.ts';
 import type { ConnectionTransport } from './remote-transport.ts';
 import { createSafeSchemaValidator } from './schema-validator.ts';
 import { createStdioTransport } from './stdio-transport.ts';
@@ -23,6 +23,7 @@ import { DEFAULT_CLOSE_GRACE_MS } from './stdio-transport.ts';
 import type { McpMarkerOptions } from './stdio-transport.ts';
 import { McpInputSuspension } from './suspension.ts';
 import type { McpCheckpoint, McpResume } from './suspension.ts';
+import { taskHandleOf } from './task-handle.ts';
 import { settleTask } from './tasks.ts';
 import type { SettleTaskOptions, TaskRequester } from './tasks.ts';
 import { pause, systemTimers } from './timers.ts';
@@ -38,13 +39,16 @@ const BACKOFF_BASE_MS = 200;
 const BACKOFF_MAX_MS = 5000;
 const MIN_SECRET_CHARS = 8;
 const SECRET_HEADER = /auth|token|key|secret|cookie|password/i;
+const DESCRIPTIVE_HEADER = /^(accept(-charset|-encoding|-language)?|content-(type|language)|cache-control|user-agent)$/i;
 const REDACTED = '[redacted]';
+// The SDK arms a wall-clock timer per request that cannot be paused while a call is parked for the person; the call's own budget runs on the injected timers, so the SDK timer is set to the longest delay Node accepts.
+const SDK_TIMER_CEILING_MS = 2_147_483_647;
 
 export const MRTR_MAX_ROUNDS = 10;
 export const MRTR_STATE_ONLY_PACING_MS = 250;
 export const TASKS_EXTENSION = 'io.modelcontextprotocol/tasks';
 
-export type McpAuthProbe = { state: 'not_applicable' | 'static_header' | 'not_required' | 'authorized' | 'required' | 'unreachable'; detail?: string };
+export type McpAuthProbe = { state: 'not_applicable' | 'static_header' | 'not_required' | 'authorized' | 'required' | 'refused' | 'unreachable'; detail?: string };
 
 export type McpServerState = 'idle' | 'connected' | 'disconnected' | 'unavailable' | 'closed';
 
@@ -107,6 +111,20 @@ export class McpUnavailableError extends Error {
   }
 }
 
+export class McpUnknownToolError extends Error {
+  readonly server: string;
+  readonly tool: string;
+
+  constructor(server: string, tool: string) {
+    super(`MCP server "${server}" does not list a tool named "${tool}"`);
+    this.name = 'McpUnknownToolError';
+    this.server = server;
+    this.tool = tool;
+  }
+}
+
+type Attempt = { taskCheckpoint: McpCheckpoint | undefined };
+
 type Session = { client: Client; transport: ConnectionTransport; guarded: GuardedFetch | undefined; tools: Map<string, Tool> };
 
 const describeExit = (transport: ConnectionTransport): string | undefined => {
@@ -116,8 +134,6 @@ const describeExit = (transport: ConnectionTransport): string | undefined => {
 };
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
-
-const isDeterministicRemoteFailure = (error: unknown): boolean => error instanceof McpRemotePolicyError || error instanceof McpAuthorizationError;
 
 class ManagedConnection implements McpServerConnection {
   readonly name: string;
@@ -145,9 +161,9 @@ class ManagedConnection implements McpServerConnection {
   constructor(options: McpConnectionOptions) {
     this.options = options;
     this.name = options.name;
-    this.inputs = createParkedInputs(options.clock.now());
     this.random = options.random ?? Math.random;
     this.timers = options.timers ?? systemTimers;
+    this.inputs = createParkedInputs(options.clock.now(), this.timers);
     this.breaker = new CircuitBreaker({
       failureThreshold: FAILURE_THRESHOLD,
       openMs: options.resetAfterMs ?? DEFAULT_RESET_AFTER_MS,
@@ -155,6 +171,7 @@ class ManagedConnection implements McpServerConnection {
     });
     if ('headers' in options.config) {
       for (const [header, value] of Object.entries(options.config.headers ?? {})) {
+        if (DESCRIPTIVE_HEADER.test(header)) continue;
         const secretive = SECRET_HEADER.test(header);
         this.trackSecret(value, secretive);
         if (secretive) for (const part of value.split(/\s+/)) this.trackSecret(part, false);
@@ -214,6 +231,8 @@ class ManagedConnection implements McpServerConnection {
         if (live !== undefined && this.session === live) await this.discardSession(live);
         return { state: 'required' };
       }
+      const refusal = findInCauseChain(error, (candidate): candidate is McpRemotePolicyError => candidate instanceof McpRemotePolicyError);
+      if (refusal !== undefined) return { state: 'refused', detail: this.redact(refusal.message) };
       return { state: 'unreachable', detail: this.redact(errorMessage(error)) };
     }
     const stored = await remote.credentials.read(credentialKey(this.name, config.url));
@@ -256,16 +275,17 @@ class ManagedConnection implements McpServerConnection {
   }
 
   async callTool(input: McpCallToolInput): Promise<CallToolResult> {
-    return this.withLiveSession(undefined, async (session) => {
+    return this.withLiveSession(undefined, async (session, attempt) => {
       const timeout = input.timeoutMs ?? this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+      const resume = attempt.taskCheckpoint === undefined ? input.resume : { checkpoint: attempt.taskCheckpoint, answers: input.resume?.answers ?? {} };
+      const current: McpCallToolInput = { ...input, ...(resume === undefined ? {} : { resume }) };
       try {
-        const tool = await this.definitionOf(session, input.name, input.signal);
-        const { resume } = input;
-        if (resume?.checkpoint.kind === 'parked') return await this.inputs.resume(resume.checkpoint.parkId, resume.answers, input.signal);
+        const tool = await this.definitionOf(session, current.name, current.signal);
+        if (resume?.checkpoint.kind === 'parked') return await this.inputs.resume(resume.checkpoint.parkId, resume.answers, timeout, current.signal);
         if (resume?.checkpoint.kind === 'task') {
-          return await this.settle(session, tool, input, { taskId: resume.checkpoint.taskId, answered: resume.checkpoint.answered }, timeout);
+          return await this.settle(session, tool, current, attempt, { taskId: resume.checkpoint.taskId, answered: resume.checkpoint.answered }, timeout);
         }
-        return await this.inputs.run(input.signal, (signal) => this.driveRounds(session, tool, { ...input, signal }, timeout));
+        return await this.inputs.run(current.signal, timeout, (signal, endBudget) => this.driveRounds(session, tool, { ...current, signal }, attempt, timeout, endBudget));
       } catch (error) {
         if (error instanceof McpInputSuspension) throw error;
         throw this.failure(session.transport, error);
@@ -304,14 +324,15 @@ class ManagedConnection implements McpServerConnection {
     const known = session.tools.get(name);
     if (known !== undefined) return known;
     await this.listTools(signal === undefined ? undefined : { signal });
-    return this.session?.tools.get(name) ?? { name, inputSchema: { type: 'object' } };
+    const listed = this.session?.tools.get(name);
+    if (listed === undefined) throw new McpUnknownToolError(this.name, name);
+    return listed;
   }
 
-  private async driveRounds(session: Session, tool: Tool, input: McpCallToolInput, timeout: number): Promise<CallToolResult> {
+  private async driveRounds(session: Session, tool: Tool, input: McpCallToolInput, attempt: Attempt, timeout: number, endBudget: () => void): Promise<CallToolResult> {
     const { client } = session;
     const maxRounds = this.options.mrtrMaxRounds ?? MRTR_MAX_ROUNDS;
     const stop = input.signal ?? this.lifetime.signal;
-    const startedAt = this.options.clock.now();
     const meta: Record<string, string> = {};
     if (input.traceparent !== undefined) meta[TRACEPARENT_META_KEY] = input.traceparent;
     if (input.tracestate !== undefined) meta[TRACESTATE_META_KEY] = input.tracestate;
@@ -321,8 +342,6 @@ class ManagedConnection implements McpServerConnection {
     let requestState = checkpoint?.kind === 'mrtr' ? checkpoint.requestState : undefined;
     let responses = input.resume !== undefined && Object.keys(input.resume.answers).length > 0 ? input.resume.answers : undefined;
     for (;;) {
-      const remaining = timeout - (this.options.clock.now() - startedAt);
-      if (remaining <= 0) throw new SdkError(SdkErrorCode.RequestTimeout, 'Maximum total timeout exceeded', { maxTotalTimeout: timeout });
       let result;
       try {
         result = await client.callTool(
@@ -333,11 +352,13 @@ class ManagedConnection implements McpServerConnection {
             ...(requestState === undefined ? {} : { requestState }),
             ...(Object.keys(meta).length === 0 ? {} : { _meta: meta }),
           },
-          { signal: stop, timeout: remaining, maxTotalTimeout: remaining, allowInputRequired: true, toolDefinition: callableTool },
+          { signal: stop, timeout: SDK_TIMER_CEILING_MS, allowInputRequired: true, toolDefinition: callableTool },
         );
       } catch (error) {
-        if (error instanceof ProtocolError && error.code === TASK_HANDLE_ERROR_CODE) {
-          return await this.settle(session, tool, input, { created: error.data }, timeout);
+        const handle = error instanceof ProtocolError ? taskHandleOf(error.code, error.data) : undefined;
+        if (handle !== undefined) {
+          endBudget();
+          return await this.settle(session, tool, input, attempt, { created: handle }, timeout);
         }
         throw error;
       }
@@ -361,6 +382,7 @@ class ManagedConnection implements McpServerConnection {
     { client }: Session,
     tool: Tool,
     input: McpCallToolInput,
+    attempt: Attempt,
     start: SettleTaskOptions['start'],
     timeout: number,
   ): Promise<CallToolResult> {
@@ -377,8 +399,12 @@ class ManagedConnection implements McpServerConnection {
         answers: input.resume?.answers ?? {},
         request,
         timers: this.timers,
+        clock: this.options.clock,
         signal: stop.signal,
-        onCheckpoint: (next) => input.onCheckpoint?.(next),
+        onCheckpoint: (next) => {
+          attempt.taskCheckpoint = next;
+          input.onCheckpoint?.(next);
+        },
         accept: (taskId, value) => {
           if (!isCallToolResult(value)) throw new McpTaskError(taskId, `task ${taskId} completed with a result that is not a tool result`);
           return validateStructuredOutput(input.name, tool, value);
@@ -398,14 +424,18 @@ class ManagedConnection implements McpServerConnection {
       });
   }
 
-  private async withLiveSession<T>(signal: AbortSignal | undefined, operation: (session: Session) => Promise<T>): Promise<T> {
+  private async withLiveSession<T>(signal: AbortSignal | undefined, operation: (session: Session, attempt: Attempt) => Promise<T>): Promise<T> {
     const first = await this.ensureSessionUnless(signal);
+    const attempt: Attempt = { taskCheckpoint: undefined };
+    const deliveredBefore = first.transport.toolCallsDelivered();
     try {
-      return await operation(first);
+      return await operation(first, attempt);
     } catch (error) {
       if (!this.isExpiredSession(first, error)) throw error;
+      const redelivers = first.transport.toolCallsDelivered() > deliveredBefore && attempt.taskCheckpoint === undefined;
+      if (redelivers) throw error;
       await this.discardSession(first);
-      return operation(await this.ensureSessionUnless(signal));
+      return operation(await this.ensureSessionUnless(signal), attempt);
     }
   }
 
@@ -416,6 +446,7 @@ class ManagedConnection implements McpServerConnection {
 
   private async discardSession(session: Session): Promise<void> {
     if (this.session === session) this.session = undefined;
+    this.inputs.closeAll();
     await session.client.close();
     await session.guarded?.close();
   }
@@ -509,7 +540,7 @@ class ManagedConnection implements McpServerConnection {
         ...(markers === undefined ? {} : { markers }),
         ...(closeGraceMs === undefined ? {} : { closeGraceMs }),
       });
-      return { transport: Object.assign(transport, { terminateSession: () => Promise.resolve() }), guarded: undefined };
+      return { transport: Object.assign(transport, { terminateSession: () => Promise.resolve(), toolCallsDelivered: () => 0 }), guarded: undefined };
     }
     if (remote === undefined) throw new Error(`MCP server "${this.name}" is remote but no credential store was configured`);
     const guarded = createGuardedFetch({ scope, ...(remote.resolver === undefined ? {} : { resolver: remote.resolver }) });
@@ -591,9 +622,11 @@ class ManagedConnection implements McpServerConnection {
       this.lastError = failure.message;
       await client.close();
       await guarded?.close();
-      if (isDeterministicRemoteFailure(error)) {
+      const deterministic = deterministicRemoteFailureOf(error);
+      if (deterministic !== undefined) {
         this.state = 'disconnected';
-        throw failure;
+        this.lastError = deterministic.message;
+        throw deterministic instanceof McpRemotePolicyError ? deterministic : failure;
       }
       this.consecutiveFailures += 1;
       this.breaker.onFailure();

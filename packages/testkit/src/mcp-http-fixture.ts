@@ -21,6 +21,11 @@ export type McpHttpFixtureOptions = {
   era: McpHttpFixtureEra;
   oauth?: McpOauthFixture;
   taskPollIntervalMs?: number | null;
+  taskTtlMs?: number | null;
+  legacyTasks?: true;
+  taskCreatedAt?: string;
+  protectedResourceMetadataPath?: string;
+  challengeScope?: string;
   holdSessionDelete?: boolean;
   path?: string;
 };
@@ -56,7 +61,7 @@ export type McpHttpFixture = {
   close(): Promise<void>;
 };
 
-type Rpc = { jsonrpc: '2.0'; id?: unknown; method: string; params?: Record<string, unknown> };
+type Rpc = { jsonrpc: '2.0'; id?: unknown; method: string; params?: Record<string, unknown>; result?: Record<string, unknown> };
 
 type TaskState =
   | { status: 'working'; createdAt: string; asksForName?: true }
@@ -78,6 +83,7 @@ const STRUCTURED_SCHEMA = objectSchema({ n: { type: 'number' } }, ['n']);
 const TOOLS = [
   { name: 'echo', description: 'Echo the text back', inputSchema: objectSchema({ text: { type: 'string' } }, ['text']), annotations: { readOnlyHint: true } },
   { name: 'slow', description: 'Waits until released or cancelled', inputSchema: objectSchema({}) },
+  { name: 'ask_name', description: 'Asks the user for a name over the open response stream', inputSchema: objectSchema({}) },
   { name: 'mrtr_state', description: 'Needs two retries carrying requestState', inputSchema: objectSchema({}) },
   { name: 'mrtr_elicit', description: 'Asks the user for a name', inputSchema: objectSchema({}) },
   { name: 'flaky_read', description: 'Read-only; cuts the stream on its first call', inputSchema: objectSchema({}), annotations: { readOnlyHint: true } },
@@ -137,6 +143,7 @@ export const startMcpHttpFixture = async (options: McpHttpFixtureOptions): Promi
   const events = new Map<string, StoredEvent[]>();
   const tasks = new Map<string, TaskState>();
   const slowGates = new Set<() => void>();
+  const clientReplies = new Map<string, (result: Record<string, unknown> | undefined) => void>();
   let server: LoopbackServer | undefined;
   let streamCounter = 0;
   let taskCounter = 0;
@@ -174,7 +181,7 @@ export const startMcpHttpFixture = async (options: McpHttpFixtureOptions): Promi
     status: state.status,
     createdAt: state.createdAt,
     lastUpdatedAt: state.createdAt,
-    ttlMs: null,
+    ttlMs: options.taskTtlMs ?? null,
     ...(options.taskPollIntervalMs === null ? {} : { pollIntervalMs: options.taskPollIntervalMs ?? 1 }),
     ...(state.status === 'input_required' ? { inputRequests: NAME_REQUEST } : {}),
     ...(state.status === 'completed'
@@ -189,7 +196,8 @@ export const startMcpHttpFixture = async (options: McpHttpFixtureOptions): Promi
     const verdict = options.oauth.verify(presented, resourceUrl());
     if (verdict === 'valid') return false;
     record({ ...attempt, status: 401 });
-    const metadata = `resource_metadata="${origin()}/.well-known/oauth-protected-resource${mcpPath}"`;
+    const metadataPath = options.protectedResourceMetadataPath ?? `/.well-known/oauth-protected-resource${mcpPath}`;
+    const metadata = `resource_metadata="${origin()}${metadataPath}"${options.challengeScope === undefined ? '' : `, scope="${options.challengeScope}"`}`;
     const challenge = presented === undefined ? `Bearer ${metadata}` : `Bearer error="invalid_token", ${metadata}`;
     res.writeHead(401, { 'www-authenticate': challenge, 'content-type': 'application/json' });
     res.end(JSON.stringify(rpcError(undefined, -32001, 'unauthorized')));
@@ -252,6 +260,23 @@ export const startMcpHttpFixture = async (options: McpHttpFixtureOptions): Promi
           return;
         }
         sendEvent(res, complete(rpc.id, textResult('slow done')));
+        res.end();
+        return;
+      }
+      case 'ask_name': {
+        startSse(res);
+        sendEvent(res, { jsonrpc: '2.0', id: 'ask-1', method: 'elicitation/create', params: { ...NAME_REQUEST.name.params } });
+        const answer = await new Promise<Record<string, unknown> | undefined>((resolve) => {
+          clientReplies.set('ask-1', resolve);
+          void closedOf(res).then(() => resolve(undefined));
+        });
+        clientReplies.delete('ask-1');
+        if (answer === undefined) {
+          note({ type: 'aborted', tool: 'ask_name', requestId: rpc.id });
+          return;
+        }
+        const content = answer['content'] as { name?: string } | undefined;
+        sendEvent(res, complete(rpc.id, textResult(`hello ${content?.name ?? 'nobody'}`)));
         res.end();
         return;
       }
@@ -357,13 +382,13 @@ export const startMcpHttpFixture = async (options: McpHttpFixtureOptions): Promi
       case 'ask_task':
       case 'structured_task':
       case 'long_task': {
-        if (!modern || !clientSupportsTasks(rpc)) {
+        if (!(modern ? clientSupportsTasks(rpc) : options.legacyTasks === true)) {
           sendJson(res, 200, complete(rpc.id, textResult('tasks unsupported')));
           return;
         }
         taskCounter += 1;
         const taskId = `task-${taskCounter}`;
-        const state: TaskState = { status: 'working', createdAt: new Date().toISOString(), ...(name === 'ask_task' ? { asksForName: true as const } : {}) };
+        const state: TaskState = { status: 'working', createdAt: options.taskCreatedAt ?? new Date().toISOString(), ...(name === 'ask_task' ? { asksForName: true as const } : {}) };
         tasks.set(taskId, state);
         sendJson(res, 200, { jsonrpc: '2.0', id: rpc.id, result: { resultType: 'task', ...taskView(taskId, state) } });
         changed();
@@ -511,6 +536,11 @@ export const startMcpHttpFixture = async (options: McpHttpFixtureOptions): Promi
       res.writeHead(400).end();
       return;
     }
+    if (rpc.method === undefined) {
+      clientReplies.get(String(rpc.id))?.(rpc.result);
+      res.writeHead(202).end();
+      return;
+    }
     if (rpc.method === 'notifications/initialized') {
       res.writeHead(202).end();
       return;
@@ -527,6 +557,10 @@ export const startMcpHttpFixture = async (options: McpHttpFixtureOptions): Promi
     }
     if (rpc.method === 'tools/call') {
       await callTool(rpc, req, res);
+      return;
+    }
+    if (rpc.method.startsWith('tasks/') && options.legacyTasks === true) {
+      handleTasks(rpc, res);
       return;
     }
     sendJson(res, 200, rpcError(rpc.id, -32601, 'Method not found'));
@@ -550,7 +584,9 @@ export const startMcpHttpFixture = async (options: McpHttpFixtureOptions): Promi
   server = await startLoopbackServer(async (req, res) => {
     const url = new URL(req.url ?? '/', origin());
     const httpMethod = req.method ?? 'GET';
-    if (httpMethod === 'GET' && url.pathname.startsWith('/.well-known/oauth-protected-resource') && options.oauth !== undefined) {
+    const metadataRoute = options.protectedResourceMetadataPath ?? '/.well-known/oauth-protected-resource';
+    const servesMetadata = options.protectedResourceMetadataPath === undefined ? url.pathname.startsWith(metadataRoute) : url.pathname === metadataRoute;
+    if (httpMethod === 'GET' && servesMetadata && options.oauth !== undefined) {
       sendJson(res, 200, { resource: resourceUrl(), authorization_servers: [options.oauth.issuer], scopes_supported: ['mcp'] });
       return;
     }

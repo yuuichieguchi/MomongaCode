@@ -9,6 +9,7 @@ import {
   SKILL_FILE_NAME,
 } from './constants.ts';
 import type { SkillLimits } from './constants.ts';
+import { attemptRead, describeUnreadable } from './file-system.ts';
 import type { SkillFileSystem } from './file-system.ts';
 import { parseSkillFile } from './frontmatter.ts';
 import type { Skill } from './types.ts';
@@ -45,10 +46,20 @@ const skillDirectoriesUnder = async (
       warnings.push(`Skill scan of ${root} stopped after ${limits.maxDirectories} directories; skills beyond that point were not loaded`);
       break;
     }
-    const real = await fileSystem.realpath(next.directory);
+    const resolved = await attemptRead(() => fileSystem.realpath(next.directory));
+    if (resolved.kind === 'unreadable') {
+      warnings.push(`Skill scan skipped ${describeUnreadable(resolved.error)}`);
+      continue;
+    }
+    const real = resolved.value;
     if (real === undefined || seen.has(real)) continue;
     seen.add(real);
-    const entries = await fileSystem.listDirectory(next.directory);
+    const listing = await attemptRead(() => fileSystem.listDirectory(next.directory));
+    if (listing.kind === 'unreadable') {
+      warnings.push(`Skill scan skipped ${describeUnreadable(listing.error)}`);
+      continue;
+    }
+    const entries = listing.value;
     if (entries === undefined) continue;
     visited += 1;
     if (entries.some((entry) => entry.name === SKILL_FILE_NAME && entry.kind === 'file')) {
@@ -72,7 +83,12 @@ const skillOf = async (
   warnings: string[],
 ): Promise<Skill | undefined> => {
   const location = path.join(directory, SKILL_FILE_NAME);
-  const text = await fileSystem.readText(location);
+  const reading = await attemptRead(() => fileSystem.readText(location));
+  if (reading.kind === 'unreadable') {
+    warnings.push(`Skill at ${location} was skipped: ${describeUnreadable(reading.error)}`);
+    return undefined;
+  }
+  const text = reading.value;
   if (text === undefined) {
     warnings.push(`Skill at ${location} was skipped: the file disappeared while scanning`);
     return undefined;
@@ -102,7 +118,12 @@ const skillOf = async (
   if (trimmedDescription.length > DESCRIPTION_MAX_LENGTH) {
     warnings.push(`Skill ${JSON.stringify(name)} at ${location} has a description longer than ${DESCRIPTION_MAX_LENGTH} characters`);
   }
-  const realDirectory = await fileSystem.realpath(directory);
+  const resolution = await attemptRead(() => fileSystem.realpath(directory));
+  if (resolution.kind === 'unreadable') {
+    warnings.push(`Skill at ${location} was skipped: ${describeUnreadable(resolution.error)}`);
+    return undefined;
+  }
+  const realDirectory = resolution.value;
   if (realDirectory === undefined) {
     warnings.push(`Skill at ${location} was skipped: the directory disappeared while scanning`);
     return undefined;
@@ -115,7 +136,8 @@ export const scanSkills = async (request: ScanRequest, fileSystem: SkillFileSyst
   const chosen = new Map<string, Skill>();
   for (const { scope, directory: root } of locationsOf(request)) {
     if (scope === 'project' && !request.trusted) {
-      if ((await fileSystem.listDirectory(root)) !== undefined) {
+      const listing = await attemptRead(() => fileSystem.listDirectory(root));
+      if (listing.kind === 'unreadable' || listing.value !== undefined) {
         warnings.push(`Project skills in ${root} were skipped because the folder is not trusted`);
       }
       continue;

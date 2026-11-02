@@ -24,7 +24,7 @@ export type GraderSpec =
   | { kind: 'toolNotCalled'; name: string }
   | { kind: 'stepsAtMost'; max: number }
   | { kind: 'tokensAtMost'; max: number }
-  | { kind: 'permissionDecision'; tool: string; expected: PermissionDecision };
+  | { kind: 'permissionDecision'; tool: string; expected: PermissionDecision; inputPattern?: string };
 
 export type GoldenCase = {
   id: string;
@@ -99,7 +99,7 @@ export const DATASET_SCHEMA = {
                 grader('toolNotCalled', { name: string }, ['name']),
                 grader('stepsAtMost', { max: { type: 'integer', minimum: 0 } }, ['max']),
                 grader('tokensAtMost', { max: { type: 'integer', minimum: 0 } }, ['max']),
-                grader('permissionDecision', { tool: string, expected: { enum: [...PERMISSION_DECISIONS] } }, ['tool', 'expected']),
+                grader('permissionDecision', { tool: string, expected: { enum: [...PERMISSION_DECISIONS] }, inputPattern: string }, ['tool', 'expected']),
               ],
             },
           },
@@ -133,11 +133,12 @@ const assertUniqueCaseIds = (dataset: GoldenDataset, source: string): void => {
 const assertPatternsCompile = (dataset: GoldenDataset, source: string): void => {
   for (const golden of dataset.cases) {
     for (const spec of golden.graders) {
-      if (spec.kind !== 'finalTextMatches') continue;
+      const pattern = spec.kind === 'finalTextMatches' ? spec.pattern : spec.kind === 'permissionDecision' ? spec.inputPattern : undefined;
+      if (pattern === undefined) continue;
       try {
-        new RegExp(spec.pattern, 'u');
+        new RegExp(pattern, 'u');
       } catch (error) {
-        throw new DatasetError(`${source}: case ${golden.id} has an invalid finalTextMatches pattern: ${error instanceof Error ? error.message : String(error)}`);
+        throw new DatasetError(`${source}: case ${golden.id} has an invalid ${spec.kind} pattern: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
   }

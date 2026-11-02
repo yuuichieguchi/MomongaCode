@@ -1,4 +1,4 @@
-import { auth, validateAuthorizationResponseIssuer } from '@modelcontextprotocol/client';
+import { auth, extractWWWAuthenticateParams, validateAuthorizationResponseIssuer } from '@modelcontextprotocol/client';
 import type { FetchLike } from '@modelcontextprotocol/client';
 import type { McpServerScope } from '@momonga/config';
 import type { McpCredentialStore } from './credential-store.ts';
@@ -32,6 +32,19 @@ export type AuthorizeMcpServerOptions = {
   resourceMetadataUrl?: URL;
 };
 
+const PROBE_BODY = JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'ping' });
+
+const challengeOf = async (fetch: FetchLike, url: string, signal: AbortSignal): Promise<{ resourceMetadataUrl?: URL; scope?: string }> => {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+    body: PROBE_BODY,
+    signal,
+  });
+  await response.body?.cancel();
+  return response.status === 401 ? extractWWWAuthenticateParams(response) : {};
+};
+
 export const authorizeMcpServer = async (options: AuthorizeMcpServerOptions): Promise<void> => {
   const { ports, oauth, signal } = options;
   const redirect = await startLoopbackRedirect({ port: oauth?.callbackPort ?? 0, timers: ports.timers });
@@ -50,11 +63,14 @@ export const authorizeMcpServer = async (options: AuthorizeMcpServerOptions): Pr
         authorizationUrl = url;
       },
     });
+    const challenge = await challengeOf(options.fetch, options.url, signal);
+    const scope = oauth?.scope ?? challenge.scope;
+    const resourceMetadataUrl = options.resourceMetadataUrl ?? challenge.resourceMetadataUrl;
     const common = {
       serverUrl: options.url,
       fetchFn: options.fetch,
-      ...(oauth?.scope === undefined ? {} : { scope: oauth.scope }),
-      ...(options.resourceMetadataUrl === undefined ? {} : { resourceMetadataUrl: options.resourceMetadataUrl }),
+      ...(scope === undefined ? {} : { scope }),
+      ...(resourceMetadataUrl === undefined ? {} : { resourceMetadataUrl }),
     };
     if ((await auth(provider, common)) === 'AUTHORIZED') return;
     if (authorizationUrl === undefined || provider.expectedState === undefined) {

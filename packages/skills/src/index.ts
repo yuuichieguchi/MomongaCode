@@ -1,7 +1,7 @@
 export { ACTIVATE_SKILL_TOOL_NAME, DEFAULT_SKILL_LIMITS } from './constants.ts';
 export type { SkillLimits } from './constants.ts';
-export { createNodeSkillFileSystem } from './file-system.ts';
-export type { DirectoryEntry, SkillFileSystem } from './file-system.ts';
+export { UnreadablePathError, attemptRead, createNodeSkillFileSystem, describeUnreadable } from './file-system.ts';
+export type { DirectoryEntry, ReadAttempt, SkillFileSystem } from './file-system.ts';
 export { parseSkillFile } from './frontmatter.ts';
 export type { SkillFileParse } from './frontmatter.ts';
 export { createSkillLoader } from './loader.ts';

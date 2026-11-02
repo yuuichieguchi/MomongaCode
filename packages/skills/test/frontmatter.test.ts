@@ -63,6 +63,16 @@ describe('parseSkillFile', () => {
     expect(parseSkillFile('---\nname: a\nname: b\ndescription: x\n---\n')).toMatchObject({ kind: 'invalid' });
   });
 
+  it('rejects an alias bomb as invalid YAML instead of throwing', () => {
+    const levels = ['a: &a [x, x, x, x, x, x, x, x, x, x]'];
+    for (const [previous, next] of [['a', 'b'], ['b', 'c'], ['c', 'd'], ['d', 'e']] as const) {
+      levels.push(`${next}: &${next} [${Array.from({ length: 10 }, () => `*${previous}`).join(', ')}]`);
+    }
+    const result = parseSkillFile(`---\nname: pdf\ndescription: x\n${levels.join('\n')}\n---\nBody`);
+    expect(result).toMatchObject({ kind: 'invalid' });
+    expect(result.kind === 'invalid' && result.reason).toContain('not valid YAML');
+  });
+
   it('rejects a frontmatter that is not a mapping', () => {
     expect(parseSkillFile('---\n- a\n- b\n---\nBody')).toMatchObject({ kind: 'invalid', reason: 'the frontmatter must be a YAML mapping' });
   });

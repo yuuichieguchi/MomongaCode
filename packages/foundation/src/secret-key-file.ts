@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { isProcessAlive } from './process-alive.ts';
-import { modeIsPrivate, noFollowFlag, ownerProblem } from './platform/privacy.ts';
+import { assertPrivateRegularFile, noFollowFlag } from './platform/privacy.ts';
 
 export interface SecretKeyFileOptions {
   bytes?: number;
@@ -22,10 +22,7 @@ const readKey = (keyPath: string, bytes: number): Uint8Array | undefined => {
   }
   try {
     const stat = fs.fstatSync(fd);
-    if (!stat.isFile()) throw new Error(`Key file ${keyPath} is not a regular file`);
-    const owner = ownerProblem(stat);
-    if (owner !== undefined) throw new Error(`Key file ${keyPath} is owned by uid ${owner.found}, but the current user is uid ${owner.expected}`);
-    if (!modeIsPrivate(stat, 'file')) throw new Error(`Key file ${keyPath} must have mode 0600, found ${(stat.mode & 0o777).toString(8).padStart(4, '0')}`);
+    assertPrivateRegularFile(stat, `Key file ${keyPath}`);
     if (stat.size !== bytes) throw new Error(`Key file ${keyPath} must be exactly ${bytes} bytes, found ${stat.size}`);
     return new Uint8Array(fs.readFileSync(fd));
   } finally {

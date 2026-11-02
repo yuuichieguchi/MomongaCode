@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { momongaLayout } from '@momonga/foundation';
-import { parseSkillFile } from '@momonga/skills';
+import { attemptRead, describeUnreadable, parseSkillFile } from '@momonga/skills';
 import type { SkillFileSystem } from '@momonga/skills';
 import { AGENT_DIRECTORY_SEGMENTS, AGENT_FILE_SUFFIX, AGENT_NAME_MAX_LENGTH, INHERIT_MODEL, SUPPORTED_FIELDS } from './constants.ts';
 import type { AgentDefinition, AgentScope } from './types.ts';
@@ -22,7 +22,12 @@ const toolsOf = (value: unknown, location: string, warnings: string[]): string[]
 };
 
 const agentOf = async (file: string, scope: AgentScope, fileSystem: SkillFileSystem, warnings: string[]): Promise<AgentDefinition | undefined> => {
-  const text = await fileSystem.readText(file);
+  const reading = await attemptRead(() => fileSystem.readText(file));
+  if (reading.kind === 'unreadable') {
+    warnings.push(`Agent at ${file} was skipped: ${describeUnreadable(reading.error)}`);
+    return undefined;
+  }
+  const text = reading.value;
   if (text === undefined) {
     warnings.push(`Agent at ${file} was skipped: the file disappeared while scanning`);
     return undefined;
@@ -79,7 +84,12 @@ export const scanAgents = async ({ home, projectRoot, trusted }: AgentScanReques
     { scope: 'user', directory: momongaLayout(home).agents },
   ];
   for (const { scope, directory } of locations) {
-    const entries = await fileSystem.listDirectory(directory);
+    const listing = await attemptRead(() => fileSystem.listDirectory(directory));
+    if (listing.kind === 'unreadable') {
+      warnings.push(`Agents in ${directory} were skipped: ${describeUnreadable(listing.error)}`);
+      continue;
+    }
+    const entries = listing.value;
     if (entries === undefined) continue;
     if (scope === 'project' && !trusted) {
       warnings.push(`Project agents in ${directory} were skipped because the folder is not trusted`);

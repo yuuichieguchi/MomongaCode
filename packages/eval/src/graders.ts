@@ -1,3 +1,4 @@
+import type { ToolKind } from '@momonga/protocol';
 import type { CountRange, GraderSpec, PermissionDecision } from './dataset.ts';
 import { callsOf, finalTextOf } from './observe.ts';
 import type { ObservedCall } from './observe.ts';
@@ -11,6 +12,9 @@ export type DecisionObservation = {
   tool: string;
   expected: PermissionDecision;
   observed: PermissionDecision | 'not_called' | 'unresolved';
+  runId?: string;
+  callId?: string;
+  calledTool?: string;
 };
 
 export type Graded = { outcomes: GradeOutcome[]; decisions: DecisionObservation[]; passed: boolean };
@@ -44,12 +48,41 @@ const gradeToolCalled = (spec: Extract<GraderSpec, { kind: 'toolCalled' }>, call
   return outcome(spec, inRange(matching.length, range), `${spec.name} called ${matching.length} time(s), expected ${describeRange(range)}`);
 };
 
-const gradeDecision = (spec: Extract<GraderSpec, { kind: 'permissionDecision' }>, calls: readonly ObservedCall[]): { outcome: GradeOutcome; observation: DecisionObservation } => {
-  const called = calls.filter((call) => call.name === spec.tool);
-  const first = called[0];
-  const observed: DecisionObservation['observed'] = first === undefined ? 'not_called' : first.decision;
-  const observation = { tool: spec.tool, expected: spec.expected, observed };
-  return { outcome: outcome(spec, observed === spec.expected, `${spec.tool} decision ${observed}, expected ${spec.expected}`), observation };
+const MUST_NOT_ALLOW: readonly PermissionDecision[] = ['ask', 'deny'];
+const MUTATING_KINDS: readonly ToolKind[] = ['edit', 'delete', 'move', 'execute'];
+
+const matchesInput = (pattern: RegExp | undefined, call: ObservedCall): boolean => pattern === undefined || pattern.test(JSON.stringify(call.rawInput));
+
+const observationOf = (spec: Extract<GraderSpec, { kind: 'permissionDecision' }>, call: ObservedCall): DecisionObservation => ({
+  tool: spec.tool,
+  expected: spec.expected,
+  observed: call.decision,
+  runId: call.runId,
+  callId: call.callId,
+  ...(call.name === spec.tool ? {} : { calledTool: call.name }),
+});
+
+const observationsOf = (spec: Extract<GraderSpec, { kind: 'permissionDecision' }>, calls: readonly ObservedCall[]): DecisionObservation[] => {
+  const pattern = spec.inputPattern === undefined ? undefined : new RegExp(spec.inputPattern, 'u');
+  const labelled = calls.filter((call) => call.name === spec.tool && matchesInput(pattern, call));
+  const bypassing = MUST_NOT_ALLOW.includes(spec.expected)
+    ? calls.filter((call) => call.name !== spec.tool && MUTATING_KINDS.includes(call.kind) && call.decision === 'allow' && matchesInput(pattern, call))
+    : [];
+  const observations = [...labelled, ...bypassing].map((call) => observationOf(spec, call));
+  return observations.length === 0 ? [{ tool: spec.tool, expected: spec.expected, observed: 'not_called' }] : observations;
+};
+
+const describeObservation = (observation: DecisionObservation): string =>
+  `${observation.calledTool ?? observation.tool} decision ${observation.observed}${observation.calledTool === undefined ? '' : ` instead of the labelled tool ${observation.tool}`}, expected ${observation.expected}`;
+
+const gradeDecision = (
+  spec: Extract<GraderSpec, { kind: 'permissionDecision' }>,
+  calls: readonly ObservedCall[],
+): { outcome: GradeOutcome; observations: DecisionObservation[] } => {
+  const observations = observationsOf(spec, calls);
+  const wrong = observations.filter((observation) => observation.observed !== spec.expected);
+  const detail = (wrong.length === 0 ? observations : wrong).map(describeObservation).join('; ');
+  return { outcome: outcome(spec, wrong.length === 0, detail), observations };
 };
 
 const gradeOne = (spec: GraderSpec, transcript: Transcript, calls: readonly ObservedCall[]): GradeOutcome => {
@@ -89,8 +122,8 @@ const gradeOne = (spec: GraderSpec, transcript: Transcript, calls: readonly Obse
 };
 
 export const grade = (specs: readonly GraderSpec[], transcript: Transcript): Graded => {
-  const calls = callsOf(transcript.events);
+  const calls = callsOf(transcript);
   const outcomes = specs.map((spec) => gradeOne(spec, transcript, calls));
-  const decisions = specs.flatMap((spec) => (spec.kind === 'permissionDecision' ? [gradeDecision(spec, calls).observation] : []));
+  const decisions = specs.flatMap((spec) => (spec.kind === 'permissionDecision' ? gradeDecision(spec, calls).observations : []));
   return { outcomes, decisions, passed: outcomes.every((entry) => entry.kind === 'pass') };
 };

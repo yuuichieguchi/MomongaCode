@@ -48,6 +48,7 @@ export type ToolContext = ReconcileContext & {
   sandboxPolicy: SandboxPolicy;
   resume?: ToolResume;
   checkpoint(state: Record<string, unknown> | undefined): void;
+  extendToRunDeadline(): void;
 };
 
 export type ReconcileContext = SubjectContext & {

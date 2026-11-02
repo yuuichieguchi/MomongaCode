@@ -1,7 +1,7 @@
 import { createFakeClock, createFakeTimers, startMcpHttpFixture, startMcpOauthFixture } from '@momonga/testkit';
 import type { FakeClock, FakeTimers, McpHttpFixture, McpHttpFixtureOptions, McpOauthFixture } from '@momonga/testkit';
 import { createManagedConnection, createMemoryCredentialStore } from '@momonga/mcp';
-import type { McpConnectionOptions, McpCredentialStore, McpRemotePorts, McpTimers } from '@momonga/mcp';
+import type { HostResolver, McpConnectionOptions, McpCredentialStore, McpRemotePorts, McpTimers } from '@momonga/mcp';
 import type { McpServerScope } from '@momonga/config';
 import { BASE_ENV, makeDir, onCleanup } from './mcp-harness.ts';
 
@@ -55,10 +55,12 @@ export type RemoteHarnessOptions = {
   connection?: Partial<McpConnectionOptions>;
   oauth?: { clientId?: string; scope?: string; callbackPort?: number };
   closeInCleanup?: boolean;
+  resolver?: HostResolver;
+  clock?: FakeClock;
 };
 
 export const makeRemoteConnection = (options: RemoteHarnessOptions) => {
-  const clock = createFakeClock(1_000_000);
+  const clock = options.clock ?? createFakeClock(1_000_000);
   const store = options.store ?? createMemoryCredentialStore();
   let tokenCounter = 0;
   const remote: McpRemotePorts = {
@@ -68,6 +70,7 @@ export const makeRemoteConnection = (options: RemoteHarnessOptions) => {
       return `random-${tokenCounter}`;
     },
     openAuthorizationUrl: options.openAuthorizationUrl ?? (() => Promise.reject(new Error('no browser in this test'))),
+    ...(options.resolver === undefined ? {} : { resolver: options.resolver }),
   };
   const connection = createManagedConnection({
     name: 'remote',

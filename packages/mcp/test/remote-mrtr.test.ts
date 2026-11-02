@@ -10,6 +10,7 @@ const instantTimers = (): McpTimers & { delays: number[] } => {
   return {
     delays,
     setTimeout: (callback, ms) => {
+      if (ms !== MRTR_STATE_ONLY_PACING_MS) return undefined;
       delays.push(ms);
       queueMicrotask(callback);
       return undefined;
