@@ -18,6 +18,16 @@ export default defineConfig({
       {
         extends: true,
         test: {
+          name: 'packaging',
+          include: ['scripts/**/*.test.ts'],
+          globalSetup: ['test/support/leak-guard.ts'],
+          hookTimeout: E2E_HOOK_TIMEOUT_MS,
+          testTimeout: 60000,
+        },
+      },
+      {
+        extends: true,
+        test: {
           name: 'e2e',
           include: ['e2e/**/*.test.ts'],
           globalSetup: ['e2e/global-setup.ts'],

@@ -8,3 +8,4 @@ coverage
 .momonga-test*
 *.tsbuildinfo
 .vitest/
+.cache/
