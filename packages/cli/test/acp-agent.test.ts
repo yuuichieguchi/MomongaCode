@@ -245,10 +245,11 @@ describe('session/prompt', () => {
 
     await prompt(harness, sessionId, '/pdf summarize it');
     await prompt(harness, sessionId, '/unknown thing');
+    expect(errorOf(await prompt(harness, sessionId, '/pdf')).code).toBe(-32602);
 
     const created = harness.runtime.calls.filter((call) => call.startsWith('createRun'));
     expect(created).toEqual([
-      `createRun ${sessionId} ${JSON.stringify({ input: '/pdf summarize it', skill: 'pdf' })}`,
+      `createRun ${sessionId} ${JSON.stringify({ input: 'summarize it', skill: 'pdf' })}`,
       `createRun ${sessionId} ${JSON.stringify({ input: '/unknown thing' })}`,
     ]);
     await harness.peer.close();

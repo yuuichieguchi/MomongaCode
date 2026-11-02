@@ -10,6 +10,17 @@ export class SkillInvocationError extends Error {
 
 export type SkillInvocation = { input: string; skill?: string };
 
+export const skillTask = (name: string, args: string): SkillInvocation => {
+  if (args === '') throw new SkillInvocationError(`/${name} needs a task to run the skill on: /${name} <task>`);
+  return { input: args, skill: name };
+};
+
+export const skillInvocationOf = (prompt: string, skillNames: readonly string[]): SkillInvocation => {
+  const parsed = parseSlash(prompt);
+  if (parsed === undefined || !skillNames.includes(parsed.name)) return { input: prompt };
+  return skillTask(parsed.name, parsed.args);
+};
+
 export const resolveSkillInvocation = async (
   client: Pick<RuntimeClient, 'skills'>,
   sessionId: string,
@@ -23,10 +34,7 @@ export const resolveSkillInvocation = async (
     }
     return { input: prompt, skill: explicitSkill };
   }
-  const parsed = parseSlash(prompt);
-  if (parsed === undefined) return { input: prompt };
+  if (parseSlash(prompt) === undefined) return { input: prompt };
   const { skills } = await client.skills(sessionId);
-  if (!skills.some((skill) => skill.name === parsed.name)) return { input: prompt };
-  if (parsed.args === '') throw new SkillInvocationError(`/${parsed.name} needs a task to run the skill on: /${parsed.name} <task>`);
-  return { input: parsed.args, skill: parsed.name };
+  return skillInvocationOf(prompt, skills.map((skill) => skill.name));
 };
