@@ -14,6 +14,7 @@ export const UPDATE_ERROR_CODES = [
   'checksum_mismatch',
   'signature_rejected',
   'candidate_unusable',
+  'install_directory_not_writable',
   'daemon_restart_failed',
 ] as const;
 
