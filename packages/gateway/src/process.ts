@@ -12,7 +12,7 @@ import {
   systemClock,
 } from '@momonga/foundation';
 import type { Clock, JsonLogger, MomongaPaths, ReadyFields, TextStream } from '@momonga/foundation';
-import { closeTelemetry, createTelemetry, openTraceStore } from '@momonga/observability';
+import { closeTelemetry, createTelemetry, exportersFor, openTraceStore } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import type { AdapterTarget, Capabilities, ProviderAdapter } from '@momonga/protocol';
 import { createChatCompletionsAdapter } from './adapters/chat-completions/adapter.ts';
@@ -267,7 +267,13 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       dependentPath: paths.databases.gateway,
     });
     const traceStore: TraceStore = openTraceStore({ path: paths.traces.gateway, clock });
-    const telemetry: Telemetry = createTelemetry({ serviceName: 'momonga-gateway', serviceVersion: options.version, clock, store: traceStore });
+    const telemetry: Telemetry = createTelemetry({
+      serviceName: 'momonga-gateway',
+      serviceVersion: options.version,
+      clock,
+      store: traceStore,
+      exporters: exportersFor(settings.telemetry),
+    });
     cleanups.push(() => closeTelemetry(telemetry, traceStore));
 
     signal?.throwIfAborted();

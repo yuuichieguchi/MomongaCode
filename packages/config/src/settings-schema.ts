@@ -129,6 +129,21 @@ export const SETTINGS_SCHEMA = {
     },
     autoUpdates: { type: 'boolean' },
     sandbox: { enum: ['seatbelt', 'none'] },
+    telemetry: {
+      type: 'object',
+      properties: {
+        otlp: {
+          type: 'object',
+          properties: {
+            endpoint: { type: 'string', pattern: '^https?://[^\\s]+$' },
+            headers: STRING_MAP,
+          },
+          required: ['endpoint'],
+          additionalProperties: false,
+        },
+      },
+      additionalProperties: false,
+    },
   },
 } as const;
 

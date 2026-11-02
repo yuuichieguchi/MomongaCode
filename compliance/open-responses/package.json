@@ -1,0 +1,9 @@
+{
+  "name": "momonga-open-responses-compliance",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "bun": "1.4.4",
+    "zod": "3.25.76"
+  }
+}

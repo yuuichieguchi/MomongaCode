@@ -14,7 +14,7 @@ import {
   systemClock,
 } from '@momonga/foundation';
 import type { Clock, JsonLogger, ProcessLock, ReadyFields, TextStream } from '@momonga/foundation';
-import { createTelemetry, openTraceStore } from '@momonga/observability';
+import { createTelemetry, exportersFor, openTraceStore } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import { createSeatbeltSandbox, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox } from '@momonga/sandbox';
@@ -333,7 +333,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     cleanups.push({ name: 'trace-store', run: () => traceStore.close() });
 
     const telemetry: Telemetry = await step('telemetry', () =>
-      createTelemetry({ serviceName: 'momonga-runtime', serviceVersion: version, clock, store: traceStore }),
+      createTelemetry({ serviceName: 'momonga-runtime', serviceVersion: version, clock, store: traceStore, exporters: exportersFor(settings.telemetry) }),
     );
     cleanups.push({
       name: 'telemetry',

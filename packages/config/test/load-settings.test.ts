@@ -29,6 +29,7 @@ describe('SETTINGS_SCHEMA', () => {
         'models',
         'permissions',
         'sandbox',
+        'telemetry',
       ].sort(),
     );
   });

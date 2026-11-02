@@ -1,0 +1,14 @@
+{
+  "name": "@momonga/eval",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@momonga/foundation": "*",
+    "@momonga/protocol": "*",
+    "ajv": "8.20.0"
+  }
+}

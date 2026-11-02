@@ -1,0 +1,167 @@
+import Ajv2020 from 'ajv/dist/2020.js';
+import type { ValidateFunction } from 'ajv/dist/2020.js';
+import { PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
+import type { PermissionMode, RunStatus, StopReason } from '@momonga/protocol';
+
+export const DATASET_FORMAT = 'momonga-eval/1';
+
+export const PERMISSION_DECISIONS = ['allow', 'ask', 'deny'] as const;
+export type PermissionDecision = (typeof PERMISSION_DECISIONS)[number];
+
+export const ASK_RESPONSES = ['allow_once', 'reject_once'] as const;
+export type AskResponse = (typeof ASK_RESPONSES)[number];
+
+export type CountRange = { min?: number; max?: number };
+
+export type GraderSpec =
+  | { kind: 'status'; equals: RunStatus }
+  | { kind: 'stopReason'; equals: StopReason }
+  | { kind: 'noStopReason' }
+  | { kind: 'finalTextEquals'; text: string }
+  | { kind: 'finalTextIncludes'; text: string }
+  | { kind: 'finalTextMatches'; pattern: string }
+  | { kind: 'toolCalled'; name: string; count?: CountRange; inputIncludes?: Record<string, unknown> }
+  | { kind: 'toolNotCalled'; name: string }
+  | { kind: 'stepsAtMost'; max: number }
+  | { kind: 'tokensAtMost'; max: number }
+  | { kind: 'permissionDecision'; tool: string; expected: PermissionDecision };
+
+export type GoldenCase = {
+  id: string;
+  description?: string;
+  input: string;
+  permissionMode: PermissionMode;
+  onAsk: AskResponse;
+  runs: number;
+  minPassRate: number;
+  timeoutMs?: number;
+  graders: GraderSpec[];
+};
+
+export type GoldenDataset = { format: typeof DATASET_FORMAT; name: string; cases: GoldenCase[] };
+
+export class DatasetError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DatasetError';
+  }
+}
+
+const string = { type: 'string', minLength: 1 } as const;
+const countRange = {
+  type: 'object',
+  properties: { min: { type: 'integer', minimum: 0 }, max: { type: 'integer', minimum: 0 } },
+  additionalProperties: false,
+} as const;
+
+const grader = (kind: string, properties: Record<string, unknown>, required: readonly string[]) =>
+  ({
+    type: 'object',
+    properties: { kind: { const: kind }, ...properties },
+    required: ['kind', ...required],
+    additionalProperties: false,
+  }) as const;
+
+export const DATASET_SCHEMA = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object',
+  properties: {
+    format: { const: DATASET_FORMAT },
+    name: string,
+    cases: {
+      type: 'array',
+      minItems: 1,
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9._-]*$' },
+          description: string,
+          input: string,
+          permissionMode: { enum: [...PERMISSION_MODES] },
+          onAsk: { enum: [...ASK_RESPONSES] },
+          runs: { type: 'integer', minimum: 1 },
+          minPassRate: { type: 'number', minimum: 0, maximum: 1 },
+          timeoutMs: { type: 'integer', minimum: 1000 },
+          graders: {
+            type: 'array',
+            minItems: 1,
+            items: {
+              oneOf: [
+                grader('status', { equals: { enum: [...RUN_STATUSES] } }, ['equals']),
+                grader('stopReason', { equals: { enum: [...STOP_REASONS] } }, ['equals']),
+                grader('noStopReason', {}, []),
+                grader('finalTextEquals', { text: { type: 'string' } }, ['text']),
+                grader('finalTextIncludes', { text: string }, ['text']),
+                grader('finalTextMatches', { pattern: string }, ['pattern']),
+                grader('toolCalled', { name: string, count: countRange, inputIncludes: { type: 'object' } }, ['name']),
+                grader('toolNotCalled', { name: string }, ['name']),
+                grader('stepsAtMost', { max: { type: 'integer', minimum: 0 } }, ['max']),
+                grader('tokensAtMost', { max: { type: 'integer', minimum: 0 } }, ['max']),
+                grader('permissionDecision', { tool: string, expected: { enum: [...PERMISSION_DECISIONS] } }, ['tool', 'expected']),
+              ],
+            },
+          },
+        },
+        required: ['id', 'input', 'permissionMode', 'onAsk', 'runs', 'minPassRate', 'graders'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['format', 'name', 'cases'],
+  additionalProperties: false,
+} as const;
+
+const ajv = new Ajv2020.default({ strict: true });
+const validateDataset: ValidateFunction<GoldenDataset> = ajv.compile<GoldenDataset>(DATASET_SCHEMA);
+
+const describeFirstError = (): string => {
+  const first = validateDataset.errors?.[0];
+  if (first === undefined) return '/: schema violation';
+  return `${first.instancePath === '' ? '/' : first.instancePath}: ${first.message ?? 'schema violation'}`;
+};
+
+const assertUniqueCaseIds = (dataset: GoldenDataset, source: string): void => {
+  const seen = new Set<string>();
+  for (const golden of dataset.cases) {
+    if (seen.has(golden.id)) throw new DatasetError(`${source}: duplicate case id ${golden.id}`);
+    seen.add(golden.id);
+  }
+};
+
+const assertPatternsCompile = (dataset: GoldenDataset, source: string): void => {
+  for (const golden of dataset.cases) {
+    for (const spec of golden.graders) {
+      if (spec.kind !== 'finalTextMatches') continue;
+      try {
+        new RegExp(spec.pattern, 'u');
+      } catch (error) {
+        throw new DatasetError(`${source}: case ${golden.id} has an invalid finalTextMatches pattern: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+};
+
+const assertCountRanges = (dataset: GoldenDataset, source: string): void => {
+  for (const golden of dataset.cases) {
+    for (const spec of golden.graders) {
+      if (spec.kind !== 'toolCalled' || spec.count === undefined) continue;
+      const { min, max } = spec.count;
+      if (min === undefined && max === undefined) throw new DatasetError(`${source}: case ${golden.id} has a toolCalled count with neither min nor max`);
+      if (min !== undefined && max !== undefined && min > max) throw new DatasetError(`${source}: case ${golden.id} has a toolCalled count with min above max`);
+    }
+  }
+};
+
+export const parseDataset = (text: string, source: string): GoldenDataset => {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch (error) {
+    throw new DatasetError(`${source}: not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!validateDataset(value)) throw new DatasetError(`${source}: invalid dataset at ${describeFirstError()}`);
+  assertUniqueCaseIds(value, source);
+  assertPatternsCompile(value, source);
+  assertCountRanges(value, source);
+  return value;
+};

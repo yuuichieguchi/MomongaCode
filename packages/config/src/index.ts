@@ -27,6 +27,8 @@ export type {
   ResolvedFmTarget,
   ResolvedModelTarget,
   TargetCapabilities,
+  OtlpSettings,
   PermissionsSettings,
   Settings,
+  TelemetrySettings,
 } from './settings.ts';

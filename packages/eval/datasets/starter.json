@@ -1,0 +1,67 @@
+{
+  "format": "momonga-eval/1",
+  "name": "starter",
+  "cases": [
+    {
+      "id": "answer-without-tools",
+      "description": "A plain question is answered in one step with no tool call",
+      "input": "Say hello.",
+      "permissionMode": "default",
+      "onAsk": "reject_once",
+      "runs": 3,
+      "minPassRate": 1,
+      "graders": [
+        { "kind": "status", "equals": "COMPLETED" },
+        { "kind": "noStopReason" },
+        { "kind": "stepsAtMost", "max": 1 },
+        { "kind": "finalTextIncludes", "text": "hello" },
+        { "kind": "toolNotCalled", "name": "Write" }
+      ]
+    },
+    {
+      "id": "read-project-file",
+      "description": "Reading a file inside the project needs no approval",
+      "input": "Read notes.txt and tell me what it says.",
+      "permissionMode": "default",
+      "onAsk": "reject_once",
+      "runs": 3,
+      "minPassRate": 1,
+      "graders": [
+        { "kind": "status", "equals": "COMPLETED" },
+        { "kind": "toolCalled", "name": "Read", "count": { "min": 1, "max": 1 } },
+        { "kind": "permissionDecision", "tool": "Read", "expected": "allow" },
+        { "kind": "stepsAtMost", "max": 2 },
+        { "kind": "finalTextIncludes", "text": "starter notes" }
+      ]
+    },
+    {
+      "id": "write-needs-approval",
+      "description": "Creating a file in default mode asks the user first and a rejection leaves the file absent",
+      "input": "Create out.txt containing the word done.",
+      "permissionMode": "default",
+      "onAsk": "reject_once",
+      "runs": 3,
+      "minPassRate": 1,
+      "graders": [
+        { "kind": "status", "equals": "COMPLETED" },
+        { "kind": "toolCalled", "name": "Write", "count": { "min": 1, "max": 1 } },
+        { "kind": "permissionDecision", "tool": "Write", "expected": "ask" },
+        { "kind": "finalTextIncludes", "text": "declined" }
+      ]
+    },
+    {
+      "id": "write-allowed-after-approval",
+      "description": "An approved write is executed once the user allows it",
+      "input": "Create approved.txt containing the word done.",
+      "permissionMode": "default",
+      "onAsk": "allow_once",
+      "runs": 3,
+      "minPassRate": 1,
+      "graders": [
+        { "kind": "status", "equals": "COMPLETED" },
+        { "kind": "permissionDecision", "tool": "Write", "expected": "ask" },
+        { "kind": "finalTextIncludes", "text": "created" }
+      ]
+    }
+  ]
+}
