@@ -121,6 +121,7 @@ describe('stored secrets in the gateway process', () => {
     expect(error).toMatchObject({ type: 'invalid_request', code: 'secret_unavailable', param: SECRET_NAME });
     expect(error.message).toContain('exit 44');
     expect(error.message).toContain(`security add-generic-password -s ${KEYCHAIN_SERVICE} -a ${SECRET_NAME} -w`);
+    expect(error.message).toContain('then restart the gateway');
     expect(stack.anthropic.requests).toEqual([]);
     expect(stack.logText()).toContain(`secret ${SECRET_NAME} is unavailable`);
   });

@@ -17,7 +17,7 @@ export class SecretUnavailableError extends Error {
 
   constructor(secretName: string, exitCode: number, detail: string) {
     super(
-      `the secret "${secretName}" could not be read from the Keychain (exit ${exitCode}${detail === '' ? '' : `: ${detail}`}); store it with: security add-generic-password -s ${KEYCHAIN_SERVICE} -a ${secretName} -w`,
+      `the secret "${secretName}" could not be read from the Keychain (exit ${exitCode}${detail === '' ? '' : `: ${detail}`}); store it with: security add-generic-password -s ${KEYCHAIN_SERVICE} -a ${secretName} -w, then restart the gateway, which reads secrets once at startup`,
     );
     this.name = 'SecretUnavailableError';
     this.secretName = secretName;

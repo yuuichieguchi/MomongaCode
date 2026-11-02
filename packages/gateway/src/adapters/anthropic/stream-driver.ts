@@ -149,8 +149,10 @@ export class AnthropicStreamDriver {
         this.emitter.complete(usage);
         return;
       case 'max_tokens':
-      case 'model_context_window_exceeded':
         this.emitter.incomplete('max_output_tokens', usage);
+        return;
+      case 'model_context_window_exceeded':
+        this.emitter.fail('context_window_exceeded', 'invalid_request', 'the model stopped because the conversation exceeded its context window');
         return;
       case 'refusal':
         this.emitter.incomplete('content_filter', usage);

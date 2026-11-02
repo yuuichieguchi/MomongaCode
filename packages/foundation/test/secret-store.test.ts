@@ -53,6 +53,7 @@ describe('createKeychainSecretStore', () => {
     await expect(failure).rejects.toBeInstanceOf(SecretUnavailableError);
     await expect(failure).rejects.toMatchObject({ exitCode: 44, secretName: 'absent' });
     await expect(failure).rejects.toThrow('item could not be found');
+    await expect(failure).rejects.toThrow('then restart the gateway, which reads secrets once at startup');
   });
 
   it('rejects an empty stored value', async () => {

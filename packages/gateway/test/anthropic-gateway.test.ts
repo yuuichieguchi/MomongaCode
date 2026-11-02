@@ -192,13 +192,14 @@ describe('anthropic adapter through the gateway: terminal semantics', () => {
     expect(terminal.response.output[0]).toMatchObject({ type: 'function_call', status: 'incomplete', arguments: '{"path": "/t' });
   });
 
-  it('maps model_context_window_exceeded to the same truncation terminal as max_tokens', async () => {
+  it('fails a model_context_window_exceeded stop with a typed invalid_request instead of a truncation', async () => {
     const gateway = await startAnthropicGateway({
       script: [anthropicStream([anthropicMessageStart(), ...anthropicTextBlock(0, ['part']), ...anthropicMessageEnd('model_context_window_exceeded')])],
     });
     const terminal = terminalOf(await streamResponse(gateway));
-    expect(terminal.type).toBe('response.incomplete');
-    expect(terminal.response.incomplete_details).toEqual({ reason: 'max_output_tokens' });
+    expect(terminal.type).toBe('response.failed');
+    expect(terminal.response.error).toMatchObject({ code: 'context_window_exceeded', type: 'invalid_request' });
+    expect(gateway.fake.requests).toHaveLength(1);
   });
 
   it('maps a refusal stop reason to an incomplete response with content_filter', async () => {
