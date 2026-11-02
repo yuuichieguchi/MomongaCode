@@ -195,6 +195,7 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
 
   const claimSocketPath = async (): Promise<void> => {
     if (options.markerDirectory !== undefined) {
+      await fs.promises.mkdir(options.markerDirectory, { recursive: true, mode: 0o700 });
       await reapStaleFmGroups({ markerDirectory: options.markerDirectory, graceMs: options.stopGraceMs, onWarning: options.onWarning });
     }
     const existing = await fs.promises.lstat(options.socketPath).catch((error: NodeJS.ErrnoException) => {

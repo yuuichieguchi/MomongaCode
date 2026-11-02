@@ -18,6 +18,7 @@ export const sortByMtimeThenPath = async (files: readonly string[]): Promise<str
 
 export const globTool = defineTool<GlobInput>({
   name: 'Glob',
+  tier: 'essential',
   description:
     'Finds files by glob pattern (for example "**/*.ts"), matched relative to path. path defaults to the current working directory and must be an absolute directory. Respects .gitignore and .ignore, skips .git, includes dotfiles. Returns absolute paths, newest first, at most 100.',
   kind: 'search',

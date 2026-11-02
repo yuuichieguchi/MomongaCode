@@ -1,6 +1,6 @@
 import { SUMMARY_PROMPT_TOKENS, findDanglingOutput, findUnpairedCalls, summaryItemTokensFor, summaryTokenCapFor } from '@momonga/protocol';
 import type { FunctionCallOutputInputItem, FunctionTool, InputItem, MessageInputItem } from '@momonga/protocol';
-import { MIN_ROOM_TOKENS, budgetFor, inputCeilingFor, itemCapFor, memoryBudgetFor, summaryInputCeilingFor } from './budget.ts';
+import { MIN_ROOM_TOKENS, budgetFor, inputCeilingFor, itemCapFor, memoryBudgetFor, summaryInputCeilingFor, pinnedFloorFor } from './budget.ts';
 import { chainTail, digestChain, frozenItem } from './digests.ts';
 import { ContextOverflowError, PinnedOverflowError, PinnedRoomError, PrefixChangedError } from './errors.ts';
 import { discoverInstructions } from './instructions.ts';
@@ -50,6 +50,7 @@ type Slot = {
 
 type Head = {
   discovered: DiscoveredInstructions;
+  tools: FunctionTool[];
   notices: ContextNotice[];
   systemMessage: MessageInputItem;
   task: InputItem;
@@ -60,13 +61,14 @@ type Head = {
   room: number;
 };
 
-const metering = (input: BuildContextInput, ports: BuildContextPorts) => {
+const candidateToolsOf = (input: BuildContextInput): FunctionTool[] => (input.tools === 'none' ? [] : [...input.sources.tools]);
+
+const metering = (input: BuildContextInput, ports: BuildContextPorts, tools: readonly FunctionTool[]) => {
   const { capabilities } = input;
-  const tools: FunctionTool[] = input.tools === 'none' ? [] : [...input.sources.tools];
   const budgetOf = (counted: MeterCount) => budgetFor(capabilities, counted.errorBound);
   const fits = (counted: MeterCount): boolean => counted.inputTokens <= budgetOf(counted).I;
   const countInput = (items: readonly InputItem[]): Promise<MeterCount> => ports.meter.count({ input: items, tools });
-  return { tools, budgetOf, fits, countInput };
+  return { tools: [...tools], budgetOf, fits, countInput };
 };
 
 const breakdownOf = async (
@@ -75,8 +77,8 @@ const breakdownOf = async (
   systemMessage: MessageInputItem,
   instructions: readonly InputItem[],
   task: InputItem,
+  tools: readonly FunctionTool[],
 ): Promise<PinnedBreakdown> => {
-  const { tools } = metering(input, ports);
   const countOf = async (items: readonly InputItem[], withTools: readonly FunctionTool[]): Promise<number> =>
     items.length === 0 && withTools.length === 0 ? 0 : (await ports.meter.count({ input: items, tools: withTools })).inputTokens;
   return {
@@ -89,7 +91,7 @@ const breakdownOf = async (
 
 const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): Promise<Head> => {
   const { capabilities, sources } = input;
-  const { fits, countInput } = metering(input, ports);
+  const candidates = candidateToolsOf(input);
   const discovered = await discoverInstructions({
     reader: ports.instructions,
     home: input.home,
@@ -109,10 +111,37 @@ const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): 
     throw new PrefixChangedError(input.expectedPinnedDigest, pinnedDigest);
   }
   const ceiling = inputCeilingFor(capabilities);
-  const pinnedCounted = input.pinnedTokens === undefined ? await countInput(pinned) : undefined;
+  const toolFloor = pinnedFloorFor(capabilities);
+  const countWith = (offered: readonly FunctionTool[]): Promise<MeterCount> => ports.meter.count({ input: pinned, tools: offered });
+  const fitsFloor = (counted: MeterCount): boolean => metering(input, ports, candidates).fits(counted) && counted.inputTokens <= toolFloor;
+  let tools = candidates;
+  let pinnedCounted: MeterCount | undefined;
+  if (input.pinnedTokens === undefined) {
+    pinnedCounted = await countWith(candidates);
+    if (!fitsFloor(pinnedCounted)) {
+      const kept: FunctionTool[] = [];
+      for (const tool of candidates) {
+        if (fitsFloor(await countWith([...kept, tool]))) kept.push(tool);
+      }
+      const keptCounted = await countWith(kept);
+      if (kept.length > 0 || fitsFloor(keptCounted)) {
+        tools = kept;
+        pinnedCounted = keptCounted;
+      }
+    }
+  }
+  const { fits } = metering(input, ports, tools);
+  const leftOut = candidates.filter((tool) => !tools.includes(tool)).map((tool) => tool.name);
+  const toolNotices: ContextNotice[] = [];
+  if (leftOut.length > 0) {
+    toolNotices.push({
+      code: 'tools_dropped',
+      message: `Tools ${leftOut.join(', ')} were left out because the declared context window leaves no room for them`,
+    });
+  }
   const pinnedTokens = input.pinnedTokens ?? (pinnedCounted as MeterCount).inputTokens;
   if (pinnedTokens > ceiling || (pinnedCounted !== undefined && !fits(pinnedCounted))) {
-    throw new PinnedOverflowError({ pinnedTokens, ceiling, breakdown: await breakdownOf(input, ports, systemMessage, instructionMessages, task) });
+    throw new PinnedOverflowError({ pinnedTokens, ceiling, breakdown: await breakdownOf(input, ports, systemMessage, instructionMessages, task, tools) });
   }
   const room = ceiling - pinnedTokens;
   if (room < MIN_ROOM_TOKENS) {
@@ -121,10 +150,10 @@ const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): 
       ceiling,
       room,
       minimum: MIN_ROOM_TOKENS,
-      breakdown: await breakdownOf(input, ports, systemMessage, instructionMessages, task),
+      breakdown: await breakdownOf(input, ports, systemMessage, instructionMessages, task, tools),
     });
   }
-  return { discovered, notices: [...discovered.notices], systemMessage, task, pinnedLayers, pinnedDigest, pinnedTokens, ceiling, room };
+  return { discovered, notices: [...discovered.notices, ...toolNotices], tools, systemMessage, task, pinnedLayers, pinnedDigest, pinnedTokens, ceiling, room };
 };
 
 export const measurePinned = async (input: BuildContextInput, ports: BuildContextPorts): Promise<PinnedMeasure> => {
@@ -141,7 +170,6 @@ export const measurePinned = async (input: BuildContextInput, ports: BuildContex
 export const buildContext = async (input: BuildContextInput, ports: BuildContextPorts): Promise<BuiltContext> => {
   const { capabilities, sources, evicted } = input;
   const { meter, blobs } = ports;
-  const { tools, budgetOf, fits, countInput } = metering(input, ports);
   const trailing = [...(input.trailing ?? [])];
   const compactAt = input.compactAt ?? DEFAULT_COMPACT_AT;
   const requestedKeepTurns = positiveInteger('keepRecentTurns', input.keepRecentTurns ?? DEFAULT_KEEP_RECENT_TURNS);
@@ -150,6 +178,7 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
   if (!Number.isInteger(requestedLevel) || requestedLevel < 0) throw new RangeError(`level must be a non-negative integer, received ${requestedLevel}`);
 
   const head = await measureHead(input, ports);
+  const { tools, budgetOf, fits, countInput } = metering(input, ports, head.tools);
   const { discovered, notices, systemMessage, task, pinnedLayers, pinnedDigest, pinnedTokens, ceiling, room } = head;
 
   const nested = [...discovered.nested];
@@ -183,7 +212,7 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
     throw new PinnedOverflowError({
       pinnedTokens: layersCounted.inputTokens,
       ceiling,
-      breakdown: await breakdownOf(input, ports, systemMessage, layers.slice(1), task),
+      breakdown: await breakdownOf(input, ports, systemMessage, layers.slice(1), task, tools),
     });
   }
 
@@ -454,7 +483,7 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
       level: levelIndex,
       lastLevel,
       protection,
-      breakdown: lastLevel ? await breakdownOf(input, ports, systemMessage, layers.slice(1), task) : undefined,
+      breakdown: lastLevel ? await breakdownOf(input, ports, systemMessage, layers.slice(1), task, tools) : undefined,
       evictions: reported(),
       compaction: 'plan' in outcome ? outcome.plan : undefined,
       compactionBlockedBy: 'blocked' in outcome ? outcome.blocked : undefined,

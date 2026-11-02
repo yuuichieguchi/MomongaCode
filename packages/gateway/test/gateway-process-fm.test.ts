@@ -87,7 +87,7 @@ describe('managed fm under startGatewayProcess', { timeout: 60_000 }, () => {
     }
   });
 
-  it('runs fm serve as the leader of its own process group and marks it under run/markers/fm', async () => {
+  it('runs fm serve as the leader of its own process group and marks it under run/markers/targets/fm', async () => {
     const { fm, dumpFile, home } = await fakeFmSetup();
     reapServeGroups(dumpFile);
     const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });

@@ -3,6 +3,7 @@ import { modelVisibleTools } from '@momonga/policy';
 import type { PermissionRule } from '@momonga/policy';
 import type { FunctionTool, PermissionMode } from '@momonga/protocol';
 import { compileInputSchema } from './validate.ts';
+import { TOOL_TIERS } from './types.ts';
 import type { AnyTool } from './types.ts';
 
 const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
@@ -25,7 +26,7 @@ export type ToolSet = {
   readonly notices: readonly string[];
   readonly authorizationRequired: readonly string[];
   get(name: string): AnyTool | undefined;
-  forModel(options: { mode: PermissionMode; rules: PermissionRule[]; jobs?: boolean }): FunctionTool[];
+  forModel(options: { mode: PermissionMode; rules: PermissionRule[] }): FunctionTool[];
 };
 
 export type ToolRegistry = {
@@ -43,8 +44,10 @@ const assertRegistrable = (tool: AnyTool): void => {
 const digestOf = (tools: readonly AnyTool[]): string =>
   sha256Hex(canonicalJson(tools.map((tool) => [tool.name, tool.description, tool.kind, tool.sideEffect, tool.inputSchema])));
 
+const tierRankOf = (tool: AnyTool): number => TOOL_TIERS.indexOf(tool.tier ?? 'common');
+
 const buildToolSet = (tools: readonly AnyTool[], notices: readonly string[], authorizationRequired: readonly string[]): ToolSet => {
-  const frozenTools = Object.freeze([...tools]);
+  const frozenTools = Object.freeze([...tools].sort((left, right) => tierRankOf(left) - tierRankOf(right)));
   const frozenNotices = Object.freeze([...notices]);
   const byName = new Map(frozenTools.map((tool) => [tool.name, tool]));
   return {
@@ -53,10 +56,10 @@ const buildToolSet = (tools: readonly AnyTool[], notices: readonly string[], aut
     notices: frozenNotices,
     authorizationRequired: Object.freeze([...authorizationRequired]),
     get: (name) => byName.get(name),
-    forModel: ({ mode, rules, jobs = false }) => {
+    forModel: ({ mode, rules }) => {
       const visible = new Set(modelVisibleTools([...frozenTools], { mode, rules }).map((tool) => tool.name));
       return frozenTools
-        .filter((tool) => visible.has(tool.name) && (jobs || tool.requiresJobs !== true))
+        .filter((tool) => visible.has(tool.name))
         .map((tool) => ({ type: 'function', name: tool.name, description: tool.description, parameters: tool.inputSchema, strict: false }));
     },
   };

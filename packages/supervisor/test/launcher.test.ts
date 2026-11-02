@@ -35,11 +35,11 @@ describe('contract flags', () => {
       version: '1.2.3',
       home: '/h/home',
       runtime: { leaseMs: 100, drainTimeoutMs: 200, workerCount: 2, sandboxExecPath: '/usr/bin/sandbox-exec' },
-      gateway: { fmBinary: '/opt/fm' },
+      gateway: { args: ['--fm-binary=/opt/fm'] },
     });
     expect(tuned.slice(0, 4)).toEqual(['--app-version=1.2.3', '--home=/h/home', '--lifeline-fd=3', '--log-target=file']);
     expect([...tuned.slice(4)].sort()).toEqual(['--drain-timeout-ms=200', '--lease-ms=100', '--sandbox-exec-path=/usr/bin/sandbox-exec', '--worker-count=2']);
-    const gateway = contractArgs({ role: 'gateway', version: '1.2.3', home: '/h/home', runtime: { leaseMs: 100 }, gateway: { fmBinary: '/opt/fm' } });
+    const gateway = contractArgs({ role: 'gateway', version: '1.2.3', home: '/h/home', runtime: { leaseMs: 100 }, gateway: { args: ['--fm-binary=/opt/fm'] } });
     expect(gateway).toEqual(['--app-version=1.2.3', '--home=/h/home', '--lifeline-fd=3', '--log-target=file', '--fm-binary=/opt/fm']);
   });
 

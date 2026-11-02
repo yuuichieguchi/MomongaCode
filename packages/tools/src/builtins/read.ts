@@ -7,6 +7,7 @@ type ReadInput = { file_path: string; offset?: number; limit?: number };
 
 export const readTool = defineTool<ReadInput>({
   name: 'Read',
+  tier: 'essential',
   description:
     'Reads a text file from the filesystem. file_path must be absolute. Returns at most 2000 lines by default in cat -n format; use offset (1-based line) and limit to page through large files. Lines longer than 2000 characters are cut. Binary files are refused.',
   kind: 'read',

@@ -25,7 +25,7 @@ describe('protocol capability types', () => {
       stopSequences: boolean;
       imageInput: boolean;
       parallelToolCalls: boolean;
-      schemaDialect: 'json-schema-2020-12' | 'fm-generation';
+      schemaDialect: 'json-schema-2020-12' | 'guided-generation';
       tokenCounting: 'exact' | 'calibrated' | 'estimated';
       tokenErrorRatio?: number;
       usageReported: boolean;

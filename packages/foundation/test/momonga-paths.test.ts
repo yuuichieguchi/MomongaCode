@@ -15,7 +15,6 @@ const expectedLayout = (home: string, cacheBase: string, keychains: string = pat
     sockets: {
       gateway: path.join(run, 'gateway.sock'),
       runtime: path.join(run, 'runtime.sock'),
-      fm: path.join(run, 'fm.sock'),
       supervisor: path.join(run, 'supervisor.sock'),
     },
     locks: {
@@ -27,7 +26,7 @@ const expectedLayout = (home: string, cacheBase: string, keychains: string = pat
       root: path.join(run, 'markers'),
       tools: path.join(run, 'markers', 'tools'),
       mcp: path.join(run, 'markers', 'mcp'),
-      fm: path.join(run, 'markers', 'fm'),
+      targets: path.join(run, 'markers', 'targets'),
       daemons: path.join(run, 'markers', 'daemons'),
     },
     state,

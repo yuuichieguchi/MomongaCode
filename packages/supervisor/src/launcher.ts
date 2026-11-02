@@ -11,7 +11,7 @@ export type Launcher = (role: ChildRole) => LaunchSpec;
 
 export type RuntimeTuning = { leaseMs?: number; drainTimeoutMs?: number; workerCount?: number; sandboxExecPath?: string };
 
-export type GatewayTuning = { fmBinary?: string };
+export type GatewayTuning = { args?: readonly string[] };
 
 export type ResolvedLaunch = { command: string; args: readonly string[]; env: Readonly<Record<string, string>> };
 
@@ -19,7 +19,7 @@ export const CHILD_ROLES: readonly ChildRole[] = ['gateway', 'runtime'];
 
 const tuningFlags = (role: ChildRole, runtime: RuntimeTuning | undefined, gateway: GatewayTuning | undefined): string[] => {
   if (role === 'gateway') {
-    return gateway?.fmBinary === undefined ? [] : [`--fm-binary=${gateway.fmBinary}`];
+    return [...(gateway?.args ?? [])];
   }
   return [
     ...(runtime?.leaseMs === undefined ? [] : [`--lease-ms=${runtime.leaseMs}`]),

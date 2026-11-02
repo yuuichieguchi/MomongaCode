@@ -29,7 +29,7 @@ export type {
 export { createToolRegistry } from './registry.ts';
 export { MINIMUM_INLINE_OUTPUT_CHARS } from './truncate.ts';
 export type { SnapshotOptions, ToolListOptions, ToolRegistry, ToolSet, ToolSource, ToolSourceListing } from './registry.ts';
-export { defineTool, ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
+export { TOOL_TIERS, defineTool, ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
 export type {
   AnyTool,
   PlanEntry,
@@ -44,6 +44,7 @@ export type {
   ToolResult,
   ToolResume,
   ToolSessionState,
+  ToolTier,
 } from './types.ts';
 export { validateToolInput } from './validate.ts';
 export type { ValidationResult } from './validate.ts';

@@ -26,16 +26,3 @@ describe('snapshot with an allow list', () => {
     expect(set.tools).toEqual([]);
   });
 });
-
-describe('tools that need a job', () => {
-  it('are offered to the model only when jobs exist', async () => {
-    const registry = createToolRegistry();
-    registry.register(makeTool('Bash'));
-    registry.register(makeTool('BashOutput', { requiresJobs: true }));
-    const set = await registry.snapshot();
-    expect(set.forModel({ mode: 'default', rules: [] }).map((tool) => tool.name)).toEqual(['Bash']);
-    expect(set.forModel({ mode: 'default', rules: [], jobs: false }).map((tool) => tool.name)).toEqual(['Bash']);
-    expect(set.forModel({ mode: 'default', rules: [], jobs: true }).map((tool) => tool.name)).toEqual(['Bash', 'BashOutput']);
-    expect(set.get('BashOutput')).toBeDefined();
-  });
-});

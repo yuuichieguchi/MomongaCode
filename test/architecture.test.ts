@@ -1,6 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { buildContext, createFsInstructionReader, createTokenMeter } from '@momonga/context';
+import type { Capabilities } from '@momonga/protocol';
+import { createBuiltinTools, createMemoryTools, createToolRegistry } from '@momonga/tools';
 
 const root = path.resolve(import.meta.dirname, '..');
 const packagesDir = path.join(root, 'packages');
@@ -355,5 +358,77 @@ const runProbeImporters = (): string[] =>
 describe('architecture: the probe runs only on request', () => {
   it('runProbe is imported only by the explicit probe command of the gateway package', () => {
     expect(runProbeImporters()).toEqual(['packages/gateway/src/probe/probe-fm.ts']);
+  });
+});
+
+const LARGE_WINDOW_TARGET: Capabilities = {
+  contextWindow: 200_000,
+  maxOutputTokens: 8_192,
+  toolCalling: 'native',
+  structuredOutput: 'json_schema',
+  streaming: true,
+  stopSequences: true,
+  imageInput: true,
+  parallelToolCalls: true,
+  schemaDialect: 'json-schema-2020-12',
+  tokenCounting: 'exact',
+  usageReported: true,
+  maxConcurrency: 8,
+  source: 'declared',
+};
+
+describe('architecture: a large-window target gets the whole tool set', () => {
+  it('offers every default tool with its full description', async () => {
+    const unusedPort = {
+      save: (): never => {
+        throw new Error('the memory port is not used while listing tools');
+      },
+      search: (): never => {
+        throw new Error('the memory port is not used while listing tools');
+      },
+    };
+    const registry = createToolRegistry();
+    const registered = [...createBuiltinTools(), ...createMemoryTools({ port: unusedPort, trusted: true })];
+    for (const tool of registered) registry.register(tool);
+    const visible = (await registry.snapshot()).forModel({ mode: 'default', rules: [] });
+    const meter = createTokenMeter({
+      model: 'large',
+      capabilities: LARGE_WINDOW_TARGET,
+      counter: {
+        count: async (request) => ({ input_tokens: Math.ceil(JSON.stringify(request).length / 4), method: 'exact', error_bound: 0 }),
+      },
+    });
+    const blobs = {
+      handleFor: (): never => {
+        throw new Error('blobs are not used while listing tools');
+      },
+      put: (): never => {
+        throw new Error('blobs are not used while listing tools');
+      },
+    };
+    const built = await buildContext(
+      {
+        capabilities: LARGE_WINDOW_TARGET,
+        model: 'large',
+        sources: {
+          systemPrompt: 'You are an assistant.',
+          tools: visible,
+          task: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'List the files' }] },
+          taskSeq: 1,
+          activatedSkills: [],
+          history: [],
+        },
+        evicted: new Set(),
+        touchedPaths: [],
+        trusted: false,
+        projectRoot: root,
+        home: root,
+      },
+      { meter, blobs, instructions: createFsInstructionReader() },
+    );
+    expect(built.tools.map((tool) => tool.name).sort()).toEqual(registered.map((tool) => tool.name).sort());
+    for (const tool of registered) expect(built.tools.find((entry) => entry.name === tool.name)?.description).toBe(tool.description);
+    expect(built.tools.find((tool) => tool.name === 'Bash')?.description).toContain('a job ends with its command, with KillBash, at its time limit, or when MomongaCode stops');
+    expect(built.notices.map((notice) => notice.code)).not.toContain('tools_dropped');
   });
 });

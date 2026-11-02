@@ -25,7 +25,7 @@ const directoriesOf = (paths: ReturnType<typeof momongaPaths>): string[] => [
   paths.markers.root,
   paths.markers.tools,
   paths.markers.mcp,
-  paths.markers.fm,
+  paths.markers.targets,
   paths.markers.daemons,
   paths.state,
   paths.traces.dir,

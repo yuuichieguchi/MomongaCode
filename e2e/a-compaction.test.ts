@@ -13,6 +13,7 @@ import {
   planScript,
   summaryRoute,
   summaryTextOf,
+  upstreamRepliesOf,
   wireTokensOfBody,
 } from './support/budget.ts';
 import type { JournalEvent, Plan, PlanCaseSpec } from './support/budget.ts';
@@ -32,10 +33,9 @@ import { chatCompletions } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
 const PLANNED_CASE_TIMEOUT_MS = 4 * E2E_TEST_TIMEOUT_MS;
-const MEMORY_DENY = ['MemorySave', 'MemorySearch'] as const;
-const FULL_DENY = [...MEMORY_DENY] as const;
-const LEAN_DENY = ['Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob', ...MEMORY_DENY] as const;
-const CONSTRAINED_DENY = ['Read', 'Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob', ...MEMORY_DENY] as const;
+const FULL_DENY = [] as const;
+const LEAN_DENY = ['Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob'] as const;
+const CONSTRAINED_DENY = ['Read', 'Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob'] as const;
 const FULL_LINE_CHARS = [90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200] as const;
 const EXPECTED_OUTPUT_RESERVE = 1024;
 const EXPECTED_CEILING_AT_4096 = 2300;
@@ -203,7 +203,11 @@ const assertAcceptance = async (
 };
 
 const assertLeanProperties = (observed: Observed, haystack: Haystack): void => {
-  expect(ofType(observed.journal, 'notice').map((event) => String(event.data['message']))).toEqual([]);
+  expect(
+    ofType(observed.journal, 'notice')
+      .map((event) => String(event.data['message']))
+      .filter((message) => !message.startsWith('recent steps of the current turn were reduced')),
+  ).toEqual([]);
   const firstCompaction = observed.compacted[0] as JournalEvent;
   const firstEviction = ofType(observed.journal, 'context.truncated').find((event) => event.data['kind'] === 'omitted' && event.data['handle'] === haystack.handle);
   expect(firstEviction).toBeDefined();
@@ -243,36 +247,19 @@ describe('a: within-turn truncation and compaction at W=4096', () => {
     if (spec.toolCalling === 'constrained') assertConstrainedWire(observed);
   });
 
-  it(titleOf('a-constrained-pinned-overflow'), { timeout: PLANNED_CASE_TIMEOUT_MS }, async () => {
+  it(titleOf('a-constrained-tool-room'), { timeout: PLANNED_CASE_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
-    const haystack = writeHaystack(home.project);
+    writeHaystack(home.project);
     const target = acceptanceTarget('constrained');
-    const stack = await startStack({ home, sandbox: 'none', target });
-    const measured = await dryRun({
-      plan: {
-        spec: { name: 'a-constrained-pinned-overflow', toolCalling: 'constrained', deny: [], grid: [], probeFillers: 0 },
-        home,
-        haystack,
-        gatewaySocket: home.paths.sockets.gateway,
-        summary: summaryTextOf(haystack.handle),
-      },
-      steps: [],
-      perturbation: 0,
-      fillers: 0,
-    });
-    const pinned = measured.counts[0]?.input_tokens;
-    expect(pinned).toBeGreaterThan(EXPECTED_CEILING_AT_4096);
-
+    const stack = await startStack({ home, sandbox: 'none', target, script: upstreamRepliesOf([{ kind: 'final', text: 'Done.' }], 'constrained') });
+    const capabilities = await createGatewayCountClient(home.paths.sockets.gateway).capabilities();
     const runId = await runToEnd(home);
     const row = runRowOf(home, runId);
-    expect({ status: row.status, stopReason: row.stop_reason }).toEqual({ status: 'FAILED', stopReason: null });
-    const error = JSON.parse(row.error_json ?? '{}') as { code?: string; message?: string };
-    expect(error.code).toBe('pinned_overflow');
-    expect(error.message).toContain(
-      `needs ${pinned} tokens but at most ${EXPECTED_CEILING_AT_4096} fit (window ${ACCEPTANCE_WINDOW}, output reserve ${ACCEPTANCE_MAX_OUTPUT}`,
-    );
-    expect(error.message).toMatch(/tool definitions \d+ \(\d+%\)/);
-    expect(chatCompletions(stack.fake)).toEqual([]);
-    expect(measured.facts.status).toBe('FAILED');
+    expect({ status: row.status, stopReason: row.stop_reason }).toEqual({ status: 'COMPLETED', stopReason: null });
+    const notices = ofType(journalOf(home, runId), 'notice').map((event) => String(event.data['message']));
+    expect(notices.some((message) => message.startsWith('Tools ') && message.includes('were left out'))).toBe(true);
+    const posts = chatCompletions(stack.fake);
+    expect(posts).toHaveLength(1);
+    expect(wireTokensOfBody(posts[0]?.body)).toBeLessThanOrEqual(capabilities.contextWindow - budgetFor(capabilities, 0).R);
   });
 });

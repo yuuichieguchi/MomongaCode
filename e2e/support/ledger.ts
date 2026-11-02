@@ -46,7 +46,7 @@ export type CreateProcessLedgerOptions = { pidsFile: string; ports?: Partial<Led
 
 const LEDGER_SOURCES: ReadonlySet<string> = new Set<LedgerSource>(['supervisor', 'health', 'supervisor-log', 'db', 'mcp-record', 'fixture', 'marker-holder']);
 const SPAWN_LOG_MESSAGES: ReadonlySet<string> = new Set(['child.spawn', 'child.ready']);
-const MARKER_DIRECTORIES = ['tools', 'mcp', 'daemons', 'fm'] as const;
+const markerDirectoriesOf = (paths: MomongaPaths): string[] => [paths.markers.tools, paths.markers.mcp, paths.markers.daemons, path.join(paths.markers.targets, 'fm')];
 const RECORD_TYPES_WITH_PID: ReadonlySet<string> = new Set(['ready', 'grandchild']);
 const PS_PATH = '/bin/ps';
 const PIDS_FIELD_SEPARATOR = '\t';
@@ -200,8 +200,7 @@ export const createProcessLedger = (options: CreateProcessLedgerOptions): Proces
   };
 
   const collectMarkerHolders = async (paths: MomongaPaths): Promise<void> => {
-    for (const name of MARKER_DIRECTORIES) {
-      const directory = paths.markers[name];
+    for (const directory of markerDirectoriesOf(paths)) {
       for (const marker of listIfPresent(directory)) {
         for (const holder of await ports.findHolders(path.join(directory, marker))) {
           const pgid = await ports.pgidOf(holder);

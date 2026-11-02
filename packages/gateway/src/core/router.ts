@@ -67,7 +67,7 @@ const mergeCapabilities = (all: readonly [Capabilities, ...Capabilities[]]): Cap
     stopSequences: all.every((entry) => entry.stopSequences),
     imageInput: all.every((entry) => entry.imageInput),
     parallelToolCalls: all.every((entry) => entry.parallelToolCalls),
-    schemaDialect: all.some((entry) => entry.schemaDialect === 'fm-generation') ? 'fm-generation' : 'json-schema-2020-12',
+    schemaDialect: all.some((entry) => entry.schemaDialect === 'guided-generation') ? 'guided-generation' : 'json-schema-2020-12',
     tokenCounting: weakest(all.map((entry) => entry.tokenCounting), TOKEN_COUNTING_RANK),
     ...mergedErrorRatio(all),
     usageReported: all.every((entry) => entry.usageReported),

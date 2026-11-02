@@ -306,7 +306,7 @@ const drive = async (
     recalled,
     usedMemoryIds: new Set<string>(),
     env,
-    functionTools: () => toolSet.forModel({ mode: session.permissionMode, rules, jobs: store.jobs.listForSession(session.id).length > 0 }),
+    functionTools: () => toolSet.forModel({ mode: session.permissionMode, rules }),
     systemPrompt,
     inlineLimitForReconcile: inlineOutputLimitFor(pins.capabilities),
     inlineLimitForExecution: () => {

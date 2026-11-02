@@ -27,7 +27,7 @@ describe('win32 layout', () => {
 
   it('names the endpoints as named pipes scoped by the home directory, ignoring case', () => {
     expect(paths.sockets.runtime).toMatch(/^\\\\\.\\pipe\\momonga-[0-9a-f]{16}-runtime$/);
-    expect(new Set(Object.values(paths.sockets)).size).toBe(4);
+    expect(new Set(Object.values(paths.sockets)).size).toBe(3);
     expect(momongaLayout('c:\\users\\alice', 'win32', env).sockets.runtime).toBe(paths.sockets.runtime);
     expect(momongaLayout('C:\\Users\\Bob', 'win32', env).sockets.runtime).not.toBe(paths.sockets.runtime);
   });

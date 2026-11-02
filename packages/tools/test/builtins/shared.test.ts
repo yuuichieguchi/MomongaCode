@@ -8,6 +8,7 @@ import type { AnyTool } from '@momonga/tools';
 import { makeBuiltins } from './fixtures.ts';
 
 const NAMES = ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash', 'BashOutput', 'KillBash', 'ReadOutput', 'UpdatePlan'];
+const OFFERED = ['Read', 'Glob', 'Grep', 'ReadOutput', 'Write', 'Edit', 'Bash', 'UpdatePlan', 'BashOutput', 'KillBash'];
 
 describe('createBuiltinTools', () => {
   it('returns the ten tools in order', () => {
@@ -44,9 +45,8 @@ describe('createBuiltinTools', () => {
     const registry = createToolRegistry();
     for (const tool of createBuiltinTools()) registry.register(tool);
     const toolSet = await registry.snapshot();
-    expect(toolSet.tools.map((tool: AnyTool) => tool.name)).toEqual(NAMES);
-    expect(toolSet.forModel({ mode: 'default', rules: [] }).map((tool) => tool.name)).toEqual(NAMES.filter((name) => name !== 'BashOutput' && name !== 'KillBash'));
-    expect(toolSet.forModel({ mode: 'default', rules: [], jobs: true }).map((tool) => tool.name)).toEqual(NAMES);
+    expect(toolSet.tools.map((tool: AnyTool) => tool.name)).toEqual(OFFERED);
+    expect(toolSet.forModel({ mode: 'default', rules: [] }).map((tool) => tool.name)).toEqual(OFFERED);
   });
 
   it('uses Claude Code input property names', () => {

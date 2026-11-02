@@ -10,9 +10,9 @@ export interface MomongaPaths {
   root: string;
   settingsFile: string;
   run: string;
-  sockets: { gateway: string; runtime: string; fm: string; supervisor: string };
+  sockets: { gateway: string; runtime: string; supervisor: string };
   locks: { gateway: string; runtime: string; supervisor: string };
-  markers: { root: string; tools: string; mcp: string; fm: string; daemons: string };
+  markers: { root: string; tools: string; mcp: string; targets: string; daemons: string };
   state: string;
   databases: { runtime: string; gateway: string };
   traces: { dir: string; gateway: string; runtime: string };
@@ -48,6 +48,9 @@ const keychainsOf = (home: string, platform: NodeJS.Platform, env: Readonly<Reco
   return flavor.join(absoluteOrUndefined(env['XDG_DATA_HOME'], flavor) ?? flavor.join(home, '.local', 'share'), 'keyrings');
 };
 
+export const adapterSocketPath = (home: string, name: string, platform: NodeJS.Platform = process.platform): string =>
+  platform === 'win32' ? pipePathFor(home, name) : pathFor(platform).join(home, '.momonga', 'run', `${name}.sock`);
+
 export const momongaLayout = (
   home: string,
   platform: NodeJS.Platform = process.platform,
@@ -62,18 +65,18 @@ export const momongaLayout = (
   const traces = join(state, 'traces');
   const cacheBase = cacheBaseOf(home, platform, env);
   const tmp = join(cacheBase, 'tmp');
-  const socket = (name: string): string => (platform === 'win32' ? pipePathFor(home, name) : join(run, `${name}.sock`));
+  const socket = (name: string): string => adapterSocketPath(home, name, platform);
   return {
     root,
     settingsFile: join(root, 'settings.json'),
     run,
-    sockets: { gateway: socket('gateway'), runtime: socket('runtime'), fm: socket('fm'), supervisor: socket('supervisor') },
+    sockets: { gateway: socket('gateway'), runtime: socket('runtime'), supervisor: socket('supervisor') },
     locks: { gateway: join(run, 'gateway.lock'), runtime: join(run, 'runtime.lock'), supervisor: join(run, 'supervisor.lock') },
     markers: {
       root: markers,
       tools: join(markers, 'tools'),
       mcp: join(markers, 'mcp'),
-      fm: join(markers, 'fm'),
+      targets: join(markers, 'targets'),
       daemons: join(markers, 'daemons'),
     },
     state,
@@ -142,7 +145,7 @@ export const ensureMomongaDirs = async (paths: MomongaPaths, ports: PlatformDire
     paths.markers.root,
     paths.markers.tools,
     paths.markers.mcp,
-    paths.markers.fm,
+    paths.markers.targets,
     paths.markers.daemons,
     paths.state,
     paths.traces.dir,

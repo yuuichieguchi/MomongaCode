@@ -102,7 +102,6 @@ describe('g: agent skills', () => {
     const stack = await startStack({
       home,
       sandbox: 'none',
-      settings: { permissions: { deny: ['MemorySave', 'MemorySearch'] } },
       script,
       routes: [summaryRoute(SUMMARY)],
     });
@@ -150,7 +149,7 @@ describe('g: agent skills', () => {
       for (const post of posts.slice(1)) {
         expect(occurrences(JSON.stringify(post.body), BODY_MARKER)).toBe(isCompactionRequest(post.body) ? 0 : 1);
       }
-      for (const runId of [first.id, ...later]) expect(ofType(journalOf(home, runId), 'notice').map((event) => event.data['message'])).toEqual([]);
+      for (const runId of [first.id, ...later]) expect(ofType(journalOf(home, runId), 'notice').filter((event) => !String(event.data['message']).startsWith('Tools ') || !String(event.data['message']).includes('were left out'))).toEqual([]);
     } finally {
       await runtime.close();
     }

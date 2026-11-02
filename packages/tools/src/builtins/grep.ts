@@ -329,6 +329,7 @@ const searchWithJavaScript = async (input: GrepInput, mode: OutputMode, target: 
 
 export const grepTool = defineTool<GrepInput>({
   name: 'Grep',
+  tier: 'essential',
   description:
     'Searches file contents with a regular expression (ripgrep syntax when available). path is an absolute file or directory and defaults to the current working directory. output_mode: files_with_matches (default, newest first), content (path:line:text with optional -A/-B/-C context), or count. Respects .gitignore and .ignore, skips .git, includes dotfiles. head_limit and offset page through the output entries.',
   kind: 'search',

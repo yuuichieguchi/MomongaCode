@@ -151,22 +151,28 @@ describe('tool definitions in the budget', () => {
     expect(result.inputTokens).toBe(tokensOfItems(result.input) + tokensOfTools(tools));
   });
 
-  it('throws PinnedOverflowError when tool definitions alone exceed I', async () => {
+  it('leaves out tool definitions that alone exceed I, with a notice', async () => {
     const capabilities = capabilitiesFor(1024);
     const { ports } = harness(capabilities);
-    const tools = [bigTool];
-    const error = await buildContext(inputFor(capabilities, { sources: sourcesWith({ tools }) }), ports).catch(
-      (caught: unknown) => caught,
-    );
+    const result = await buildContext(inputFor(capabilities, { sources: sourcesWith({ tools: [bigTool] }) }), ports);
+    expect(result.tools).toEqual([]);
+    expect(result.notices.map((notice) => notice.code)).toContain('tools_dropped');
+  });
+
+  it('throws PinnedOverflowError when the prefix exceeds I even without tools', async () => {
+    const capabilities = capabilitiesFor(1024);
+    const { ports } = harness(capabilities);
+    const sources = sourcesWith({ systemPrompt: 's'.repeat(4000), tools: [bigTool] });
+    const error = await buildContext(inputFor(capabilities, { sources }), ports).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(PinnedOverflowError);
     expect((error as PinnedOverflowError).ceiling).toBe(736);
-    expect((error as PinnedOverflowError).pinnedTokens).toBeGreaterThanOrEqual(tokensOfTools(tools));
+    expect((error as PinnedOverflowError).pinnedTokens).toBeGreaterThanOrEqual(tokensOfTools([bigTool]));
   });
 
   it('leaves less room for history when tools are large, measured above the floor that includes them', async () => {
     const capabilities = capabilitiesFor(4000);
     const history = [user(1, 'old'), call(2, 'c1'), output(3, 'c1', 'o'.repeat(2400)), call(4, 'c2'), output(5, 'c2', 'p'.repeat(2400)), user(6, 'now')];
-    const tools = [{ ...bigTool, description: 'd'.repeat(6000) }];
+    const tools = [{ ...bigTool, description: 'd'.repeat(5000) }];
     const without = await buildContext(
       inputFor(capabilities, { sources: sourcesWith({ history }), keepRecentTurns: 1 }),
       harness(capabilities).ports,

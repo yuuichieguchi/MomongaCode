@@ -30,7 +30,7 @@ export const homePaths = (home: string) => {
     socket: path.join(root, 'run', 'gateway.sock'),
     lock: path.join(root, 'run', 'gateway.lock'),
     fmSocket: path.join(root, 'run', 'fm.sock'),
-    fmMarkers: path.join(root, 'run', 'markers', 'fm'),
+    fmMarkers: path.join(root, 'run', 'markers', 'targets', 'fm'),
     db: path.join(root, 'state', 'gateway.db'),
     key: path.join(root, 'state', 'gateway.key'),
   };

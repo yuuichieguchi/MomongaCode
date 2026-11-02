@@ -44,7 +44,7 @@ describe('wrap-up request of the max_steps and maxTotalTokens paths', () => {
     expect(summary?.body.tools ?? []).toEqual([]);
     expect(Array.isArray(summary?.body.input) ? summary.body.input.at(-1) : undefined).toEqual(instruction);
     const countedWithInstruction = env.gateway.counts.filter(
-      (request) => Array.isArray(request.input) && sameJson(request.input.at(-1), instruction) && (request.tools ?? []).length === 0,
+      (request) => Array.isArray(request.input) && request.input.length > 0 && sameJson(request.input.at(-1), instruction) && (request.tools ?? []).length === 0,
     );
     expect(countedWithInstruction.length).toBeGreaterThan(0);
     const [requested] = env.ofType(run.id, 'model.requested').filter((event) => event.step === 2);

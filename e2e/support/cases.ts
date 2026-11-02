@@ -67,7 +67,7 @@ export const E2E_CASES = [
   { id: 'a-compaction', file: 'a-compaction.test.ts', title: 'a: one long turn truncates a tool output, evicts it and compacts within the turn (full tools, native)', needsBash: false },
   { id: 'a-compaction-lean', file: 'a-compaction.test.ts', title: 'a: lean tool set, the gain rule decides the first compaction at the default protection level (native)', needsBash: false },
   { id: 'a-compaction-constrained', file: 'a-compaction.test.ts', title: 'a: constrained tool calling counts the duplicated schemas and compacts within the turn', needsBash: false },
-  { id: 'a-constrained-pinned-overflow', file: 'a-compaction.test.ts', title: 'a: constrained tool calling with every tool fails pinned_overflow before any upstream request', needsBash: false },
+  { id: 'a-constrained-tool-room', file: 'a-compaction.test.ts', title: 'a: constrained tool calling with every tool is offered only the tools that leave room and the run completes', needsBash: false },
   { id: 'g-skills', file: 'skills.test.ts', title: 'g: a skill in .agents/skills appears in the catalog, the model activates it and its body stays in context across a compaction', needsBash: false },
   { id: 'g-skills-explicit', file: 'skills.test.ts', title: 'g: the Run API lists the skills of a session and a run started with a skill has it active before the first model call', needsBash: false },
   { id: 'g-skills-resources', file: 'skills.test.ts', title: 'g: bundled resources of a user skill are read without approval in default mode and the rest of ~/.momonga stays denied', needsBash: false },

@@ -76,6 +76,10 @@ export type ReconcileResult = {
   output: string;
 };
 
+export const TOOL_TIERS = ['essential', 'common', 'optional'] as const;
+
+export type ToolTier = (typeof TOOL_TIERS)[number];
+
 export type ToolDefinition<Input> = {
   name: string;
   description: string;
@@ -83,7 +87,7 @@ export type ToolDefinition<Input> = {
   sideEffect: SideEffect;
   inputSchema: Record<string, unknown>;
   pagesOutput?: true;
-  requiresJobs?: true;
+  tier?: ToolTier;
   schemaMode?: 'strict' | 'lenient';
   timeoutMs: number | ((input: Input) => number);
   title(input: Input): string;

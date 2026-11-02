@@ -42,7 +42,7 @@ export type {
   ProbeExecFile,
   ProcessStartProbeDependencies,
 } from './process-lock.ts';
-export { SessionTmpDirError, ensureMomongaDirs, ensureSessionTmpDir, momongaLayout, momongaPaths, rotatedLogPath } from './momonga-paths.ts';
+export { SessionTmpDirError, adapterSocketPath, ensureMomongaDirs, ensureSessionTmpDir, momongaLayout, momongaPaths, rotatedLogPath } from './momonga-paths.ts';
 export type { MomongaPaths } from './momonga-paths.ts';
 export { secretKeyFile } from './secret-key-file.ts';
 export {

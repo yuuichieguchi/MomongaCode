@@ -131,6 +131,7 @@ export type NoticeCode =
   | 'nested_instructions_untrusted'
   | 'instructions_dropped'
   | 'memories_dropped'
+  | 'tools_dropped'
   | 'recent_turns_shrunk'
   | 'recent_steps_shrunk';
 

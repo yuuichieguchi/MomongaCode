@@ -203,13 +203,13 @@ describe('the build after a compaction', () => {
 
 describe('wrap-up build where the normal build overflows', () => {
   it('fits without the tool schemas although the normal build overflows at its last level', async () => {
-    const bigTool = { ...READ_TOOL, name: 'Huge', description: 'd'.repeat(6000) };
+    const bigTool = { ...READ_TOOL, name: 'Huge', description: 'd'.repeat(4000) };
     const instruction: MessageInputItem = {
       type: 'message',
       role: 'user',
       content: "The conversation no longer fits the model's context window. Summarize what you accomplished, what remains, and any state the user must know. Do not call tools.",
     };
-    const sources = sourcesWith({ tools: [bigTool], history: [argsCall(1, 'c0', 5799), output(2, 'c0', 'ok')] });
+    const sources = sourcesWith({ tools: [bigTool], history: [argsCall(1, 'c0', 7799), output(2, 'c0', 'ok')] });
 
     const normal = await buildContext(inputFor(capabilities, { sources, level: 0 }), harness(capabilities).ports).catch((caught: unknown) => caught);
     expect(normal).toBeInstanceOf(ContextOverflowError);
@@ -218,7 +218,7 @@ describe('wrap-up build where the normal build overflows', () => {
 
     const wrapUp = await buildContext(inputFor(capabilities, { sources, level: 0, tools: 'none', trailing: [instruction] }), harness(capabilities).ports);
     expect(wrapUp.tools).toEqual([]);
-    expect(wrapUp.inputTokens).toBe(1574);
+    expect(wrapUp.inputTokens).toBe(2074);
     expect(wrapUp.input.at(-1)).toEqual(instruction);
   });
 });
