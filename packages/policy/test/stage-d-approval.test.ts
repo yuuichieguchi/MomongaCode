@@ -184,8 +184,11 @@ describe('git closed grammar (P2-4d, B9)', () => {
 });
 
 describe('sort -o, ps, grep -d (P2-2, P2-4)', () => {
-  it.each(['sort -o out f', 'ps aux -ewww', 'ps aux -we', 'ps aux -e', 'ps -E', 'grep -d recurse -S x .'])('%s asks', (command) => asks(command));
-  it.each(['ps aux', 'ps -ef', 'ps -e', 'ps -ewww', 'ps -we', 'ps -A -e'])('%s allows', (command) => allows(command));
+  const onLinux: Extra = { fs: () => ({ platform: 'linux' }) };
+  it.each(['sort -o out f', 'grep -d recurse -S x .'])('%s asks', (command) => asks(command));
+  it.each(['ps aux -ewww', 'ps aux -we', 'ps aux -e', 'ps -E'])('%s asks on Linux', (command) => asks(command, onLinux));
+  it.each(['ps aux', 'ps -ef', 'ps -e', 'ps -ewww', 'ps -we', 'ps -A -e'])('%s allows on Linux', (command) => allows(command, onLinux));
+  it.each(['ps aux', 'ps -ef', 'ps -e', 'ps'])('%s asks on macOS because a sandboxed process cannot run the setuid /bin/ps', (command) => asks(command));
 });
 
 describe('mutation rows', () => {

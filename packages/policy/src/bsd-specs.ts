@@ -33,12 +33,6 @@ const SORT_OPTIONS: readonly OptionDecl[] = [
   ...valued('exec', '--compress-program'),
 ];
 
-const PS_OPTIONS: readonly OptionDecl[] = [
-  ...flag(...letters('ACcefhjlMmrSTvwXxL')),
-  ...marked('sensitive', '-E'),
-  ...valued('non-path', '-O', '-o', '-G', '-g', '-u', '-p', '-t', '-U'),
-];
-
 const FIND_OPTIONS: readonly OptionDecl[] = [
   ...flag('-H', '-P', '-E', '-X', '-d', '-s', '-x', '-depth', '-prune', '-print', '-print0', '-empty', '-not', '-a', '-o', '-and', '-or', '-xdev', '-mount', '-true', '-false', '-ls', '-nouser', '-nogroup', '!', '(', ')'),
   ...marked('follows-symlinks', '-L', '-follow'),
@@ -114,7 +108,6 @@ export const BSD_SPECS: readonly CommandSpec[] = [
       ...valued('non-path', '-P'),
     ],
   }),
-  define({ names: ['ps'], approval: 'read-only', operands: 'none', options: PS_OPTIONS, psLetters: { allowed: 'AaCcfhjlMmrSTuvwXx', sensitive: 'eE' } }),
   define({ names: ['sort'], approval: 'read-only', operands: 'read-all', options: SORT_OPTIONS }),
   define({ names: ['find'], approval: 'read-only', operands: 'read-all', extractor: 'find', noClusters: true, options: FIND_OPTIONS }),
 ];

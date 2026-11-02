@@ -2,7 +2,7 @@ import path from 'node:path';
 import { isProtectedWrite, lexicallyWithin } from '@momonga/foundation';
 import type { FileRuleSet, ProtectedSet, UnresolvableReason } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
-import type { PermissionMode } from '@momonga/protocol';
+import type { ApprovalBasis, PermissionMode } from '@momonga/protocol';
 import { commandApproval } from './approval.ts';
 import { commandCoveredByAllowRules } from './command-match.ts';
 import type { PolicyFilesystem } from './filesystem.ts';
@@ -39,6 +39,7 @@ export type Decision = {
   reason: string;
   rule?: PermissionRule;
   humanOnly?: true;
+  basis?: ApprovalBasis;
 };
 
 const WRITE_TOOL: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write' };
@@ -46,14 +47,17 @@ const READ_TOOL: PolicyTool = { name: 'Read', kind: 'read', sideEffect: 'read_on
 
 const describeRule = (rule: PermissionRule): string => `${rule.text} (${rule.origin}: ${rule.source})`;
 
+const basisOf = (kind: DecisionKind, basis: ApprovalBasis): { basis?: ApprovalBasis } => (kind === 'allow' ? { basis } : {});
+
 const byRule = (kind: DecisionKind, rule: PermissionRule, verb: string): Decision => ({
   kind,
   source: 'rule',
   rule,
   reason: `${verb} by rule ${describeRule(rule)}`,
+  ...basisOf(kind, 'rule'),
 });
 
-const byMode = (kind: DecisionKind, reason: string): Decision => ({ kind, source: 'mode', reason });
+const byMode = (kind: DecisionKind, reason: string, basis: ApprovalBasis = 'mode'): Decision => ({ kind, source: 'mode', reason, ...basisOf(kind, basis) });
 
 const isEmptySet = (set: ProtectedSet): boolean =>
   set.paths.length === 0 && set.lexicalPaths.length === 0 && set.literals.length === 0 && set.names.length === 0 && set.patterns.entries.length === 0;
@@ -132,7 +136,7 @@ const modeDefault = (input: DecideInput, subject: PermissionSubject): Decision =
 
 const commandDefault = (input: DecideInput, command: string): Decision => {
   const approval = commandApproval(input, command, analyzeCommand(command, commandSpecsFor(input.fs.platform)));
-  if (approval === 'read-only') return byMode('allow', 'read-only command');
+  if (approval === 'read-only') return byMode('allow', 'read-only command', 'read_only');
   if (approval === 'edit' && input.mode === 'acceptEdits') return byMode('allow', 'acceptEdits mode allows filesystem commands inside the workspace');
   return byMode('ask', 'shell commands require approval');
 };

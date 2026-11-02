@@ -13,6 +13,9 @@ export type SecretLocation = { label: string; directory: string; accesses: reado
 const READ_SUBJECTS: readonly SubjectTool[] = ['Read', 'Glob', 'Grep'];
 const WRITE_SUBJECTS: readonly SubjectTool[] = ['Write'];
 
+const READ_ONLY_ENFORCEMENT_LIMIT =
+  'the enforcement of a read-only approval by the kernel sandbox (no writable path) and a fixed git environment: the proof leaves the mode default of a Bash command open, so it holds whatever the analysis approves and does not model what the kernel and git environment additionally stop';
+
 const ruleLabel = (rule: PermissionRule): string => `${rule.text} (${rule.origin}: ${rule.source})`;
 
 type Tally = { findings: Finding[]; notes: string[]; unknowns: string[] };
@@ -75,7 +78,7 @@ export const checkDenyPrecedence = async (context: QueryContext): Promise<Proper
     title: 'an allow rule does not get around a deny rule',
     subject: `${models.rules.filter((rule) => rule.effect === 'allow').length} allow rule(s) against ${models.rules.filter((rule) => rule.effect === 'deny').length} deny rule(s)`,
     proves: 'for every allow rule and every tool it covers, no modelled input is allowed while a deny rule covering that tool matches it',
-    doesNotProve: ['inputs outside the modelled input domain', 'that a deny rule describes everything its author meant to forbid'],
+    doesNotProve: ['inputs outside the modelled input domain', 'that a deny rule describes everything its author meant to forbid', READ_ONLY_ENFORCEMENT_LIMIT],
     verdict: verdictOf(tally),
   };
 };
@@ -115,6 +118,7 @@ export const checkSecretReach = async (context: QueryContext, locations: readonl
     doesNotProve: [
       'access through programs that read or write a secret location on their own, such as a shell command that expands a variable',
       'secret locations that are not in the list above',
+      READ_ONLY_ENFORCEMENT_LIMIT,
     ],
     verdict: verdictOf(tally),
   };
@@ -196,7 +200,7 @@ export const checkRuleConsistency = async (context: QueryContext): Promise<Prope
     title: 'every rule can take effect and no pair of rules contradicts',
     subject: `${models.rules.length} rule(s)`,
     proves: 'removing any single rule on a modelled tool changes the decision for at least one modelled input, and no allow rule lies entirely inside a deny rule; a Bash deny rule for a wrapper, shell or eval program is shown effective on concrete commands only, and any other Bash rule outside the modelled command alphabet makes the result unknown instead',
-    doesNotProve: ['that the rules that remain express the intent of their author', 'effects on inputs outside the modelled input domain'],
+    doesNotProve: ['that the rules that remain express the intent of their author', 'effects on inputs outside the modelled input domain', READ_ONLY_ENFORCEMENT_LIMIT],
     verdict: verdictOf(tally),
   };
 };
@@ -246,6 +250,7 @@ export const checkBashAdmission = async (context: QueryContext): Promise<Propert
     doesNotProve: [
       'that the option words skipped here are the only ones that can separate a program from its subcommand',
       'commands that reach a denied program through a wrapper, a shell payload or a script',
+      READ_ONLY_ENFORCEMENT_LIMIT,
     ],
     verdict: verdictOf(tally),
   };

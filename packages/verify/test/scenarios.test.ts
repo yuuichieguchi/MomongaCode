@@ -37,6 +37,10 @@ describe('a clean rule set', () => {
     for (const result of report.results) {
       expect(result.proves).not.toBe('');
       expect(result.doesNotProve.length).toBeGreaterThan(0);
+      const limits = result.doesNotProve.join('\n');
+      expect(limits).toContain('read-only approval');
+      expect(limits).toContain('kernel sandbox');
+      expect(limits).toContain('git environment');
     }
     expect(report.outsideProof.join('\n')).toContain('arbitrary shell command');
     expect(report.solver).toMatch(/^Z3 \d+\.\d+\.\d+/);

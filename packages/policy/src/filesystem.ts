@@ -1,4 +1,4 @@
-import type { GitEntryReader, GitlinkRead, PathResolution, StepReader, Unresolved } from '@momonga/foundation';
+import type { GitEntryReader, PathResolution, StepReader, Unresolved } from '@momonga/foundation';
 
 export type ProgramResolution = { program: string } | { none: true };
 
@@ -20,7 +20,6 @@ export type PolicyFilesystem = {
   readNoFollow: StepReader;
   readHead: (absolute: string) => HeadRead;
   isSearchable: (absolute: string) => boolean;
-  gitlinks: (gitDirectory: string) => GitlinkRead | Unresolved;
 };
 
 export type PolicyPorts = Omit<PolicyFilesystem, 'expandGlob'>;
