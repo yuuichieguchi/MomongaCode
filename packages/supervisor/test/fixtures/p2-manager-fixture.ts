@@ -41,6 +41,9 @@ const manager = createChildManager({
   onBackgroundError: (error) => {
     process.stderr.write(`${String(error)}\n`);
   },
+  onTransientError: (error) => {
+    process.stderr.write(`transient: ${String(error)}\n`);
+  },
 });
 
 process.on('SIGTERM', () => {

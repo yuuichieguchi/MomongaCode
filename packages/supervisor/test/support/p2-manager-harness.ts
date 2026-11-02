@@ -4,8 +4,8 @@ import { createUserSettingsCache } from '@momonga/config';
 import type { UserSettingsCache, UserSettingsSnapshot } from '@momonga/config';
 import { createJsonLogger, momongaPaths } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { createFakeClock, createFakeTimers, parseJsonLines, withTempDir } from '@momonga/testkit';
-import type { CleanupContext, FakeClock, FakeTimers, JsonLine } from '@momonga/testkit';
+import { createFakeClock, createFakeKernelLock, createFakeTimers, parseJsonLines, withTempDir } from '@momonga/testkit';
+import type { CleanupContext, FakeClock, FakeKernelLock, FakeTimers, JsonLine } from '@momonga/testkit';
 import { DEFAULT_INTERVALS, HELD_RETRY_MS, STARTUP_TIMEOUT_MS } from '../../src/constants.ts';
 import { createChildManager } from '../../src/child-manager.ts';
 import type { ChildManager, ChildManagerOptions, SpawnPort } from '../../src/child-manager.ts';
@@ -83,6 +83,8 @@ export type ManagerHarness = {
   reapCalls: ReapCall[];
   reapResult: () => Promise<{ removed: boolean }>;
   manager: ChildManager;
+  lock: FakeKernelLock;
+  transients: { error: unknown; source: string }[];
   draining: { value: boolean };
   backgroundErrors: { error: unknown; source: string }[];
   logLines(): JsonLine[];
@@ -130,7 +132,11 @@ export const createManagerHarness = (context: CleanupContext, options: ManagerHa
   const reapCalls: ReapCall[] = [];
   const draining = { value: false };
   const backgroundErrors: { error: unknown; source: string }[] = [];
+  const transients: { error: unknown; source: string }[] = [];
+  const lock = createFakeKernelLock({ inheritable: false });
   const harness = {
+    lock,
+    transients,
     home,
     paths,
     clock,
@@ -163,7 +169,10 @@ export const createManagerHarness = (context: CleanupContext, options: ManagerHa
     startupTimeoutMs: STARTUP_TIMEOUT_MS,
     heldRetryMs: HELD_RETRY_MS,
     lockWaitMs: 3_600_000,
-    startTimeOf: async () => T0 - 3_600_000,
+    lockMechanism: lock,
+    onTransientError: (error, source) => {
+      transients.push({ error, source });
+    },
     ...(options.realReap === true
       ? {}
       : {

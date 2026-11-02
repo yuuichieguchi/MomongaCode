@@ -1,8 +1,8 @@
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { defaultProcessStartProbe, findHolders, groupAlive, isProcessAlive, rotatedLogPath } from '@momonga/foundation';
-import type { MomongaPaths, ProcessStartProbe } from '@momonga/foundation';
+import { ProbeFailedError, defaultProcessInspector, findHolders, groupAlive, isProcessAlive, judgeProcessIdentity, rotatedLogPath, valueOrThrow } from '@momonga/foundation';
+import type { MomongaPaths, ProbeResult } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { killGroupsForCleanup } from '@momonga/testkit';
 import { readDb } from './db.ts';
@@ -16,7 +16,7 @@ export type LedgerSource = 'supervisor' | 'health' | 'supervisor-log' | 'db' | '
 export type LedgerEntry = { readonly pgid: number; readonly startTime: number | undefined; readonly source: LedgerSource };
 
 export type LedgerPorts = {
-  startTimeOf: ProcessStartProbe;
+  startTimeOf: (pid: number) => Promise<ProbeResult<number>>;
   groupAlive: (pgid: number) => boolean;
   pidAlive: (pid: number) => boolean;
   killGroups: (pgids: readonly number[]) => Promise<void>;
@@ -87,7 +87,7 @@ export const processGroupOf = (pid: number): Promise<number | undefined> =>
   });
 
 export const defaultLedgerPorts: LedgerPorts = {
-  startTimeOf: defaultProcessStartProbe,
+  startTimeOf: (pid) => defaultProcessInspector().startTimeOf(pid),
   groupAlive,
   pidAlive: (pid) => isProcessAlive(pid),
   killGroups: killGroupsForCleanup,
@@ -117,8 +117,9 @@ export const selectGroupsToSignal = async (entries: readonly LedgerEntry[], port
   const signal: number[] = [];
   const dropped: number[] = [];
   for (const entry of entries) {
-    const leaderMatches = ports.pidAlive(entry.pgid) ? (await ports.startTimeOf(entry.pgid)) === entry.startTime : undefined;
-    const signalable = leaderMatches ?? ports.groupAlive(entry.pgid);
+    const identity = ports.pidAlive(entry.pgid) ? judgeProcessIdentity(entry.startTime, await ports.startTimeOf(entry.pgid)) : { kind: 'gone' as const };
+    if (identity.kind === 'failed') throw new ProbeFailedError(`reading the start time of ${entry.pgid}`, identity);
+    const signalable = identity.kind === 'same' ? true : identity.kind === 'replaced' ? false : ports.groupAlive(entry.pgid);
     (signalable ? signal : dropped).push(entry.pgid);
   }
   return { signal, dropped };
@@ -158,7 +159,7 @@ export const createProcessLedger = (options: CreateProcessLedgerOptions): Proces
 
   const add = async (pid: number, source: LedgerSource): Promise<void> => {
     if (entries.has(pid)) return;
-    const entry: LedgerEntry = { pgid: pid, startTime: await ports.startTimeOf(pid), source };
+    const entry: LedgerEntry = { pgid: pid, startTime: valueOrThrow(`reading the start time of ${pid}`, await ports.startTimeOf(pid), undefined), source };
     if (entries.has(pid)) return;
     entries.set(pid, entry);
     fs.appendFileSync(pidsFile, formatPidsLine(entry), { mode: 0o600 });

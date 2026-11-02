@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import type { ClaimOutcome, KernelLockMechanism } from '@momonga/foundation';
 
 export type FakeKernelLock = KernelLockMechanism & {
@@ -42,6 +43,7 @@ export const createFakeKernelLock = ({ inheritable }: FakeKernelLockOptions): Fa
     claimInheritable: inheritable ? claimSync : undefined,
     holdExternally: (lockPath, pid) => {
       holders.set(lockPath, 'external');
+      fs.mkdirSync(path.dirname(lockPath), { recursive: true, mode: 0o700 });
       fs.writeFileSync(lockPath, String(pid), { mode: 0o600 });
     },
     releaseExternally: (lockPath) => {

@@ -375,7 +375,7 @@ export const pumpUntil = async (
   }
 };
 
-export const settledFlag = <T>(promise: Promise<T>): { settled(): boolean; value(): T | undefined } => {
+export const settledFlag = <T>(promise: Promise<T>): { settled(): boolean; value(): T | undefined; promise: Promise<T> } => {
   let done = false;
   let result: T | undefined;
   promise.then(
@@ -387,7 +387,7 @@ export const settledFlag = <T>(promise: Promise<T>): { settled(): boolean; value
       done = true;
     },
   );
-  return { settled: () => done, value: () => result };
+  return { settled: () => done, value: () => result, promise };
 };
 
 export type Harness = {

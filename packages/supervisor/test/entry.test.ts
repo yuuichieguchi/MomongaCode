@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { GHOST_CONFIRM_MS, parseReadyLine } from '@momonga/foundation';
+import { hostKernelLock, inspectProcessLock, parseReadyLine } from '@momonga/foundation';
+import type { KernelLockMechanism } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { createFakeClock, createFakeEntryIo, createFakeTimers, fakeReapTiming, parseJsonLines, registerCleanup, spawnTracked, waitFor } from '@momonga/testkit';
+import { createFakeKernelLock, createFakeClock, createFakeEntryIo, createFakeTimers, fakeReapTiming, parseJsonLines, registerCleanup, startLockHolder, waitFor } from '@momonga/testkit';
 import type { CleanupContext, FakeEntryIo, JsonLine } from '@momonga/testkit';
 import type { MomongaPaths } from '@momonga/foundation';
 import { runSupervisorEntry } from '../src/entry.ts';
@@ -18,7 +19,6 @@ import {
   pumpUntil,
   recordingMarkerPorts,
   validSettings,
-  writeLockFile,
   writeMarker,
   writeSettings,
 } from './fixtures/p3-harness.ts';
@@ -34,7 +34,6 @@ type EntryRun = {
   timers: ReturnType<typeof createFakeTimers>;
   clock: ReturnType<typeof createFakeClock>;
   markers: MarkerCalls;
-  lockSleeps: number[];
   code: Promise<number>;
   supervisorLog(): JsonLine[];
   exited(): boolean;
@@ -44,11 +43,24 @@ type EntryOptions = {
   deps?: Partial<SupervisorEntryDeps>;
   markerPorts?: MarkerPorts;
   prepare?: (home: string, paths: MomongaPaths) => void;
+  prepared?: { home: string; paths: MomongaPaths };
+  lockMechanism?: KernelLockMechanism;
   argvHome?: boolean;
 };
 
+const cancelOnClaim = (target: string, cancel: () => void): KernelLockMechanism => {
+  const host = hostKernelLock();
+  return {
+    ...host,
+    claim: async (lockPath) => {
+      if (lockPath === target) cancel();
+      return host.claim(lockPath);
+    },
+  };
+};
+
 const startEntry = (context: CleanupContext, options: EntryOptions = {}): EntryRun => {
-  const { home, paths } = prepareHome(context);
+  const { home, paths } = options.prepared ?? prepareHome(context);
   writeSettings(home, validSettings());
   options.prepare?.(home, paths);
   const clock = createFakeClock(T0);
@@ -59,9 +71,9 @@ const startEntry = (context: CleanupContext, options: EntryOptions = {}): EntryR
     env: { PATH: '/usr/bin:/bin', HOME: home, LANG: 'C' },
     clock,
     timers,
+    ...(options.lockMechanism === undefined ? {} : { lockMechanism: options.lockMechanism }),
   });
   const markers = recordingMarkerPorts(options.markerPorts ?? {});
-  const lockSleeps: number[] = [];
   const realWork = createRealWorkScope();
   const fake = createFakeSpawn({ realWork });
   const code = realWork.run(() => runSupervisorEntry(io, {
@@ -71,14 +83,7 @@ const startEntry = (context: CleanupContext, options: EntryOptions = {}): EntryR
     random: () => 0.5,
     watchSettings: false,
     reapTiming: fakeReapTiming(clock, timers),
-    lockTiming: {
-      now: () => clock.now(),
-      sleep: (ms) => {
-        lockSleeps.push(ms);
-        timers.advance(ms);
-        return Promise.resolve();
-      },
-    },
+    ...(options.lockMechanism === undefined ? {} : { lockMechanism: options.lockMechanism }),
     ...options.deps,
   }));
   let done = false;
@@ -104,7 +109,6 @@ const startEntry = (context: CleanupContext, options: EntryOptions = {}): EntryR
     timers,
     clock,
     markers: markers.calls,
-    lockSleeps,
     code,
     supervisorLog: () => parseJsonLines(io.logLines(paths.logFiles.supervisor)),
     exited: () => done,
@@ -192,71 +196,38 @@ describe('runSupervisorEntry', () => {
   });
 
   it('second supervisor on the same home exits 75', async (context) => {
-    const holder = spawnTracked(context, 'sleep', ['30']);
-    const run = startEntry(context, {
-      prepare: (_home, paths) => writeLockFile(paths.locks.supervisor, holder.pid),
-      deps: { startTimeOf: async () => 0 },
-    });
+    const prepared = prepareHome(context);
+    fs.mkdirSync(prepared.paths.run, { recursive: true, mode: 0o700 });
+    await startLockHolder(context, prepared.paths.locks.supervisor);
+    const run = startEntry(context, { prepared });
     expect(await exitOf(run, 5000)).toBe(75);
     expect(run.io.stdoutLines()).toEqual([]);
     expect(lastLine(run)).toMatchObject({ msg: 'entry.exit', path: 'start-failed', code: 75 });
   });
 
   it('a cancel during the supervisor lock acquisition is a startup cancel', async (context) => {
-    const holder = spawnTracked(context, 'sleep', ['30']);
+    const prepared = prepareHome(context);
     let io: FakeEntryIo | undefined;
-    let holderProbes = 0;
-    let lockPath = '';
-    const run = startEntry(context, {
-      prepare: (_home, paths) => {
-        lockPath = paths.locks.supervisor;
-        writeLockFile(paths.locks.supervisor, holder.pid, Date.now() - 3_600_000);
-      },
-      deps: {
-        startTimeOf: async (pid) => {
-          if (pid === holder.pid) {
-            holderProbes += 1;
-            io?.signal('SIGTERM');
-          }
-          return Date.now();
-        },
-      },
-    });
+    const run = startEntry(context, { prepared, lockMechanism: cancelOnClaim(prepared.paths.locks.supervisor, () => io?.signal('SIGTERM')) });
     io = run.io;
-    await waitFor(() => holderProbes === 2, { description: 'the ghost confirmation probe of the supervisor lock' });
-    expect(run.lockSleeps).toEqual([GHOST_CONFIRM_MS]);
     expect(await exitOf(run, 5000)).toBe(1);
     expect(lastLine(run)).toMatchObject({ msg: 'entry.exit', path: 'startup-cancelled', trigger: 'sigterm', code: 1 });
     expect(run.io.stdoutLines()).toEqual([]);
-    expect(fs.existsSync(lockPath)).toBe(false);
+    expect(await inspectProcessLock(prepared.paths.locks.supervisor)).toEqual({ state: 'free' });
   });
 
   it('a cancel during listenUnix still announces ready and closes gracefully', async (context) => {
-    const holder = spawnTracked(context, 'sleep', ['30']);
+    const prepared = prepareHome(context);
     let io: FakeEntryIo | undefined;
-    let holderProbes = 0;
-    const run = startEntry(context, {
-      prepare: (_home, paths) => writeLockFile(`${paths.sockets.supervisor}.lock`, holder.pid, Date.now() - 3_600_000),
-      deps: {
-        startTimeOf: async (pid) => {
-          if (pid === holder.pid) {
-            holderProbes += 1;
-            io?.signal('SIGTERM');
-          }
-          return Date.now();
-        },
-      },
-    });
+    const run = startEntry(context, { prepared, lockMechanism: cancelOnClaim(`${prepared.paths.sockets.supervisor}.lock`, () => io?.signal('SIGTERM')) });
     io = run.io;
-    await waitFor(() => holderProbes === 2, { description: 'the ghost confirmation probe of the socket lock' });
-    expect(run.lockSleeps).toEqual([GHOST_CONFIRM_MS]);
     expect(await exitOf(run, 30_000)).toBe(0);
     expect(run.io.stdoutLines()).toHaveLength(1);
     expect(lastLine(run)).toMatchObject({ msg: 'entry.exit', path: 'close', trigger: 'sigterm', code: 0 });
     expect(run.fake.spawnCount()).toBe(0);
     expect(fs.existsSync(run.paths.sockets.supervisor)).toBe(false);
-    expect(fs.existsSync(`${run.paths.sockets.supervisor}.lock`)).toBe(false);
-    expect(fs.existsSync(run.paths.locks.supervisor)).toBe(false);
+    expect(await inspectProcessLock(`${run.paths.sockets.supervisor}.lock`)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(run.paths.locks.supervisor)).toEqual({ state: 'free' });
   });
 
   it('fatal after ready: the engine aborts and the children are stopped', async (context) => {

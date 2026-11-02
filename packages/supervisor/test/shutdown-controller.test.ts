@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
 import type { ChildManager } from '../src/child-manager.ts';
+import { SHUTDOWN_DRAIN_BOUND_MS, killedChildSettleMs, supervisorMaxCloseMs } from '@momonga/foundation';
+import { stopBudgetMs } from '../src/child-manager.ts';
 import { SHUTDOWN_REAP_BOUND_MS, SHUTDOWN_RELEASE_BOUND_MS } from '../src/constants.ts';
 import type { ChildRole } from '../src/launcher.ts';
 import { createShutdownController } from '../src/shutdown.ts';
@@ -42,7 +44,13 @@ const deferred = <T>() => {
   return { promise, resolve, reject };
 };
 
-const setup = (options: { runtime: ChildManager; gateway: ChildManager; closeControl?: () => Promise<void>; reap?: (marker: string) => Reap }) => {
+const setup = (options: {
+  runtime: ChildManager;
+  gateway: ChildManager;
+  closeControl?: () => Promise<void>;
+  reap?: (marker: string) => Reap;
+  awaitBackground?: () => Promise<void>;
+}) => {
   const clock = createFakeClock(0);
   const timers = createFakeTimers(clock);
   const log = createLogBuffer(clock);
@@ -61,7 +69,7 @@ const setup = (options: { runtime: ChildManager; gateway: ChildManager; closeCon
       },
     },
     beginDraining: () => undefined,
-    awaitBackground: async () => undefined,
+    awaitBackground: options.awaitBackground ?? (async () => undefined),
     closeControl: options.closeControl ?? (async () => undefined),
     releaseLock: () => undefined,
     onFatal: (error) => void fatals.push(error),
@@ -111,5 +119,60 @@ describe('shutdown step 5 late close rejection', () => {
     control.reject(late);
     await waitFor(() => h.fatals.length > 0, { description: 'the late close rejection reaches onFatal' });
     expect(h.fatals).toEqual([late]);
+  });
+});
+
+describe('shutdown step 1 bound and the sum of every wait', () => {
+  it('does not wait for background work that never settles past the step 1 bound', async () => {
+    const runtime = fakeManager('runtime', [], new Map());
+    const gateway = fakeManager('gateway', [], new Map());
+    const h = setup({ runtime, gateway, awaitBackground: () => new Promise(() => undefined) });
+    const result = settledResult(h.controller.close());
+    await waitFor(() => h.log.events('shutdown.step').some((line) => line['shutdownStep'] === 1), { description: 'step 1 reached' });
+    h.timers.advance(SHUTDOWN_DRAIN_BOUND_MS - 1);
+    await Promise.resolve();
+    expect(h.log.events('shutdown.step').some((line) => line['shutdownStep'] === 2)).toBe(false);
+    h.timers.advance(1);
+    await waitFor(() => result() !== undefined, { description: 'close settles after the step 1 bound' });
+    expect(h.log.events('shutdown.step').filter((line) => line['detail'] === 'step 1 bound reached')).toHaveLength(1);
+  });
+
+  it('with every wait at its worst, close settles exactly at supervisorMaxCloseMs', async () => {
+    const clock = createFakeClock(0);
+    const timers = createFakeTimers(clock);
+    const log = createLogBuffer(clock);
+    const slowManager = (role: ChildRole): ChildManager => ({
+      ...fakeManager(role, [`/markers/${role}-x`], new Map([[`/markers/${role}-x`, new Promise(() => undefined)]])),
+      stop: () =>
+        new Promise((resolve) => {
+          timers.setTimeout(() => resolve({ killed: true, leaked: false }), stopBudgetMs(role, 'term', 0) + killedChildSettleMs());
+        }),
+    });
+    const controller = createShutdownController({
+      runtime: slowManager('runtime'),
+      gateway: slowManager('gateway'),
+      drainTimeoutMs: 0,
+      timers,
+      logger: log.logger,
+      markerPorts: { reapMarkedProcesses: () => new Promise(() => undefined) },
+      beginDraining: () => undefined,
+      awaitBackground: () => new Promise(() => undefined),
+      closeControl: () => new Promise(() => undefined),
+      releaseLock: () => undefined,
+      onFatal: () => undefined,
+    });
+    const result = settledResult(controller.close());
+    const limit = supervisorMaxCloseMs(0);
+    let elapsed = 0;
+    while (result() === undefined && elapsed <= limit) {
+      await waitFor(() => timers.nextDueAt() !== undefined || result() !== undefined, { description: 'the next shutdown timer' });
+      if (result() !== undefined) break;
+      const due = timers.nextDueAt() as number;
+      timers.advance(due - clock.now());
+      elapsed = clock.now();
+      await waitFor(() => timers.nextDueAt() !== undefined || result() !== undefined, { description: 'the shutdown to proceed' });
+    }
+    expect(result()).toBeDefined();
+    expect(clock.now()).toBe(limit);
   });
 });

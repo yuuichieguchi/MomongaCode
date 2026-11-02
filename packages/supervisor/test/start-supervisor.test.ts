@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { ProcessLockHeldError, parseReadyLine } from '@momonga/foundation';
-import { createFakeClock, createFakeTimers, spawnTracked, waitFor } from '@momonga/testkit';
+import { ProcessLockHeldError, parseReadyLine, inspectProcessLock } from '@momonga/foundation';
+import { createFakeKernelLock, createFakeClock, createFakeTimers, spawnTracked, waitFor } from '@momonga/testkit';
 import { startSupervisor } from '../src/start-supervisor.ts';
 import {
   INVALID_SETTINGS_TEXT,
@@ -18,7 +18,6 @@ import {
   recordingMarkerPorts,
   settledFlag,
   startHarness,
-  writeLockFile,
   writeMarker,
   writeSettings,
   validSettings,
@@ -130,19 +129,13 @@ describe('startSupervisor', () => {
     expect((error as ProcessLockHeldError).lockPath).toBe(h.paths.locks.supervisor);
   });
 
-  it('ghost supervisor.sock.lock is taken over', async (context) => {
-    const holder = spawnTracked(context, 'sleep', ['30']);
-    const probed: number[] = [];
+  it('a supervisor.sock.lock left behind by a dead holder does not block the start', async (context) => {
     const h = await startHarness(context, {
-      prepare: (_home, paths) => writeLockFile(`${paths.sockets.supervisor}.lock`, holder.pid, Date.now() - 3_600_000),
-      overrides: {
-        startTimeOf: async (pid) => {
-          probed.push(pid);
-          return Date.now();
-        },
+      prepare: (_home, paths) => {
+        fs.mkdirSync(paths.run, { recursive: true, mode: 0o700 });
+        fs.writeFileSync(`${paths.sockets.supervisor}.lock`, '999999', { mode: 0o600 });
       },
     });
-    expect(probed).toContain(holder.pid);
     expect(fs.statSync(h.paths.sockets.supervisor).isSocket()).toBe(true);
     expect(fs.readFileSync(`${h.paths.sockets.supervisor}.lock`, 'utf8').trim()).toBe(String(process.pid));
     expect((await httpOver(context, h.paths.sockets.supervisor, 'GET', '/v1/health')).status).toBe(200);
@@ -169,8 +162,8 @@ describe('startSupervisor', () => {
       markerPorts: recordingMarkerPorts().ports,
     });
     await expect(attempt).rejects.toThrow(/not a socket/);
-    expect(fs.existsSync(paths.locks.supervisor)).toBe(false);
-    expect(fs.existsSync(`${paths.sockets.supervisor}.lock`)).toBe(false);
+    expect(await inspectProcessLock(paths.locks.supervisor)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(`${paths.sockets.supervisor}.lock`)).toEqual({ state: 'free' });
     expect(stdout.text()).toBe('');
     expect(fake.spawnCount()).toBe(0);
   });
@@ -243,15 +236,20 @@ describe('startSupervisor', () => {
     const onUnhandled = (reason: unknown): void => void unhandled.push(reason);
     process.on('unhandledRejection', onUnhandled);
     context.onTestFinished(() => void process.off('unhandledRejection', onUnhandled));
+    const lock = createFakeKernelLock({ inheritable: false });
     const holder = spawnTracked(context, 'sleep', ['30']);
+    const exploding = {
+      ...lock,
+      isHeld: async (lockPath: string): Promise<boolean> => {
+        if (lockPath.endsWith('gateway.lock')) throw new Error('lock exploded');
+        return lock.isHeld(lockPath);
+      },
+    };
     let explodeRandom = false;
     const h = await startHarness(context, {
-      prepare: (_home, paths) => writeLockFile(paths.locks.gateway, holder.pid),
+      prepare: (_home, paths) => lock.holdExternally(paths.locks.gateway, holder.pid),
       overrides: {
-        startTimeOf: async (pid) => {
-          if (pid === holder.pid) throw new Error('ps exploded');
-          return undefined;
-        },
+        lockMechanism: exploding,
         random: () => {
           if (explodeRandom) throw new Error('random exploded');
           return 0.5;

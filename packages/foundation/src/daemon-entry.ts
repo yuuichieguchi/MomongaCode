@@ -8,6 +8,7 @@ import { ENTRY_HARD_EXIT_MARGIN_MS, EXIT_ALREADY_RUNNING, EXIT_CONFIG, EXIT_FAIL
 import type { JsonLogger, TextStream } from './process-contract.ts';
 import { ProcessLockHeldError, UnadoptedEnv, acquireProcessLock } from './process-lock.ts';
 import type { DescribeHolder, ProcessLock } from './process-lock.ts';
+import type { KernelLockMechanism } from './platform/kernel-lock.ts';
 import { LOG_KEEP, LOG_MAX_BYTES, createRotatingLogFile } from './rotating-log.ts';
 import type { RotatingLogFile } from './rotating-log.ts';
 
@@ -28,6 +29,7 @@ export type EntryIo = {
   watchLifeline(fd: number, onEnd: () => void): () => void;
   logFile(path: string): RotatingLogFile;
   holdOpen(): () => void;
+  lockMechanism?: KernelLockMechanism;
   exit(code: number): void;
 };
 
@@ -323,7 +325,9 @@ export const runDaemonEntry = async <F extends FlagSpec>(io: EntryIo, definition
   try {
     const unadopted = new UnadoptedEnv(io.env);
     const acquireLock = async (lockPath: string, describeHolder?: DescribeHolder): Promise<ProcessLock> =>
-      unadopted.handedOff ? unadopted.adopt(lockPath) : acquireProcessLock(lockPath, describeHolder);
+      unadopted.handedOff
+        ? unadopted.adopt(lockPath)
+        : acquireProcessLock(lockPath, describeHolder, io.lockMechanism === undefined ? {} : { mechanism: io.lockMechanism });
     started = await definition.start({
       flags,
       home,

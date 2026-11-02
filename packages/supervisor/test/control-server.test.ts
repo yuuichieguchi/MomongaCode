@@ -6,7 +6,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { ProcessLockHeldError, listenUnix, momongaPaths, parseReadyLine } from '@momonga/foundation';
+import { ProcessLockHeldError, listenUnix, momongaPaths, parseReadyLine, inspectProcessLock } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { createFakeClock, createFakeTimers, registerCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
@@ -199,11 +199,11 @@ describe('startControlServer', () => {
 
   it('close removes the socket and releases its lock', async (context) => {
     const { socketPath, server, timers, realWork } = await startServer(context);
-    expect(fs.existsSync(`${socketPath}.lock`)).toBe(true);
+    expect(await inspectProcessLock(`${socketPath}.lock`)).toEqual({ state: 'held', pid: process.pid });
     const closing = settledFlag(server.close());
     await pumpUntil(timers, () => closing.settled(), { realWork, maxMs: 5000 });
     expect(fs.existsSync(socketPath)).toBe(false);
-    expect(fs.existsSync(`${socketPath}.lock`)).toBe(false);
+    expect(await inspectProcessLock(`${socketPath}.lock`)).toEqual({ state: 'free' });
   });
 
   it('step 5 with a half-sent request completes within the bound', async (context) => {
@@ -218,7 +218,7 @@ describe('startControlServer', () => {
     await quiesce(realWork);
     await pumpUntil(timers, () => closing.settled(), { realWork, maxMs: 1000 });
     expect(fs.existsSync(socketPath)).toBe(false);
-    expect(fs.existsSync(`${socketPath}.lock`)).toBe(false);
+    expect(await inspectProcessLock(`${socketPath}.lock`)).toEqual({ state: 'free' });
     expect(shutdowns()).toBe(0);
   });
 
@@ -245,7 +245,7 @@ describe('startControlServer', () => {
     server.closeAllConnections();
     await waitFor(() => closed, { description: 'close after closeAllConnections' });
     raw.destroy();
-    expect(fs.existsSync(`${socketPath}.lock`)).toBe(false);
+    expect(await inspectProcessLock(`${socketPath}.lock`)).toEqual({ state: 'free' });
   });
 });
 

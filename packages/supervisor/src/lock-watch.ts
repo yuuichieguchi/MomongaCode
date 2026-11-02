@@ -36,8 +36,7 @@ export const HEALTH_BODY_MAX_BYTES = LINE_MAX_BYTES;
 
 const HEALTH_PATHS = { runtime: '/v1/health', gateway: '/v1/momonga/health' } as const satisfies Record<ChildRole, string>;
 
-const UNREACHABLE_CODES: ReadonlySet<string> = new Set(['ECONNREFUSED', 'ENOENT']);
-const UNRESPONSIVE_CODES: ReadonlySet<string> = new Set(['UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT']);
+const UNREACHABLE_CODES: ReadonlySet<string> = new Set(['ECONNREFUSED', 'ENOENT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT']);
 
 const parseJsonObject = (text: string): Record<string, unknown> | undefined => {
   let parsed: unknown;
@@ -79,7 +78,6 @@ export const createExternalHealthProbe = (timeoutMs: number): HealthProbe => asy
   } catch (error) {
     const code = codeOf(error);
     if (code !== undefined && UNREACHABLE_CODES.has(code)) return 'unreachable';
-    if (code !== undefined && UNRESPONSIVE_CODES.has(code)) return 'unhealthy';
     throw error;
   } finally {
     await client.destroy();

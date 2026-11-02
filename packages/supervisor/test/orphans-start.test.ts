@@ -1,14 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
+import { ProbeFailedError, probeFailed, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import type { ReapMarkerDirectoryOptions } from '@momonga/foundation';
-import { createFakeClock, createFakeTimers, fakeReapTiming, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
+import { createFakeKernelLock, createFakeClock, createFakeTimers, fakeReapTiming, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { ORPHAN_REAP_GRACE_MS, SHUTDOWN_RELEASE_BOUND_MS } from '../src/constants.ts';
 import { reapOrphans } from '../src/orphans.ts';
 import type { MarkerPorts, OrphanReapOptions, OrphanReapResult } from '../src/orphans.ts';
-import { writeLockFile, captureLog, createRealWorkScope, httpOver, pumpUntil, settledFlag, startHarness, writeMarker } from './fixtures/p3-harness.ts';
+import { captureLog, createRealWorkScope, httpOver, pumpUntil, settledFlag, startHarness, writeMarker } from './fixtures/p3-harness.ts';
 
 const HOLDER_PID = 999_999;
 
@@ -193,58 +193,85 @@ describe('reapOrphans', () => {
     expect(calls.reap).toEqual([]);
   });
 
-  it('a findHolders failure in phase 1 is a warning and phase 2 decides', async (context) => {
+  const transientFailure = (): ProbeFailedError => new ProbeFailedError('listing marker holders', probeFailed({ kind: 'errno', code: 'EMFILE', detail: 'too many open files' }));
+
+  it('a deterministic findHolders failure in phase 1 is not read as no holders: it rejects and phase 2 never runs', async (context) => {
     const dir = markersDir(context);
     fs.writeFileSync(path.join(dir, 'runtime-08'), '');
+    const failure = new ProbeFailedError('listing marker holders', probeFailed({ kind: 'exit', exitCode: 2, detail: 'lsof exited with 2' }));
+    const { calls, ports } = recorded({ findHolders: () => Promise.reject(failure) });
+    const { reap, until } = reapSetup(dir, { markerPorts: ports });
+    const result = reap();
+    await until(() => result.settled(), 2500);
+    await expect(result.promise).rejects.toBe(failure);
+    expect(calls.reap).toEqual([]);
+  });
+
+  it('a transient findHolders failure in phase 1 is retried on the poll until it clears, then phase 2 decides', async (context) => {
+    const dir = markersDir(context);
+    fs.writeFileSync(path.join(dir, 'runtime-08'), '');
+    let attempts = 0;
     const { calls, ports } = recorded({
-      findHolders: () => Promise.reject(new Error('lsof: not found')),
+      findHolders: async () => {
+        attempts += 1;
+        if (attempts <= 2) throw transientFailure();
+        return [];
+      },
       reapMarkerDirectory: async () => ({ reaped: 1, kept: 0 }),
     });
     const { reap, until, log } = reapSetup(dir, { markerPorts: ports });
     const result = reap();
-    await until(() => result.settled(), 2500);
+    await until(() => result.settled(), 5000);
     expect(result.value()).toEqual({ reaped: 1, kept: 0, aborted: false });
+    expect(attempts).toBe(3);
     expect(calls.reap).toHaveLength(1);
-    expect(log.withMsg('orphans.warning').length).toBeGreaterThanOrEqual(1);
-    expect(log.withMsg('orphans.warning')[0]?.level).toBe('warn');
+    expect(log.withMsg('orphans.warning')).toHaveLength(2);
+    expect(log.withMsg('orphans.reaping')).toEqual([expect.objectContaining({ holders: 0 })]);
   });
 
-  it.for(['no holders', 'a findHolders failure', 'a readdir failure'] as const)('orphans.reaping is logged right before the phase-2 reap after %s', async (variant, context) => {
+  it('a transient findHolders failure that outlasts the grace rejects', async (context) => {
+    const dir = markersDir(context);
+    fs.writeFileSync(path.join(dir, 'runtime-08'), '');
+    const { calls, ports } = recorded({ findHolders: () => Promise.reject(transientFailure()) });
+    const { reap, until } = reapSetup(dir, { markerPorts: ports, orphanGraceMs: 1000 });
+    const result = reap();
+    await until(() => result.settled(), 10_000);
+    await expect(result.promise).rejects.toBeInstanceOf(ProbeFailedError);
+    expect(calls.reap).toEqual([]);
+  });
+
+  it('orphans.reaping is logged right before the phase-2 reap', async (context) => {
     const dir = markersDir(context);
     fs.writeFileSync(path.join(dir, 'runtime-10'), '');
     const reapingAtCall: unknown[][] = [];
     let log: ReturnType<typeof reapSetup>['log'] | undefined;
     const { ports } = recorded({
-      ...(variant === 'a findHolders failure' ? { findHolders: () => Promise.reject(new Error('lsof: not found')) } : {}),
       reapMarkerDirectory: async () => {
         reapingAtCall.push(log?.withMsg('orphans.reaping').map((line) => line['holders']) ?? []);
         return { reaped: 1, kept: 0 };
       },
     });
-    if (variant === 'a readdir failure') fs.chmodSync(dir, 0o000);
     const setup = reapSetup(dir, { markerPorts: ports });
     log = setup.log;
     const result = setup.reap();
     await setup.until(() => result.settled(), 2500);
-    fs.chmodSync(dir, 0o700);
     expect(reapingAtCall).toEqual([[0]]);
     const messages = setup.log.messages();
     expect(messages.lastIndexOf('orphans.reaping')).toBe(messages.length - 1);
   });
 
-  it('a readdir failure in phase 1 is a warning', async (context) => {
+  it('a readdir failure in phase 1 rejects instead of reaping nothing', async (context) => {
     const dir = markersDir(context);
     fs.writeFileSync(path.join(dir, 'runtime-09'), '');
     fs.chmodSync(dir, 0o000);
     const { calls, ports } = recorded();
-    const { reap, until, log } = reapSetup(dir, { markerPorts: ports });
+    const { reap, until } = reapSetup(dir, { markerPorts: ports });
     const result = reap();
     await until(() => result.settled(), 2500);
     fs.chmodSync(dir, 0o700);
-    expect(result.value()).toMatchObject({ aborted: false });
+    await expect(result.promise).rejects.toMatchObject({ code: 'EACCES' });
     expect(calls.findHolders).toBe(0);
-    expect(calls.reap).toHaveLength(1);
-    expect(log.withMsg('orphans.warning').length).toBeGreaterThanOrEqual(1);
+    expect(calls.reap).toEqual([]);
   });
 
   it('an abort during phase 2 still reports what the reap did', async (context) => {
@@ -355,16 +382,17 @@ describe('orphan reap at supervisor start', () => {
   });
 
   it('a kept marker does not block the start', async (context) => {
+    const lock = createFakeKernelLock({ inheritable: false });
     let holderPid = 0;
     const h = await startHarness(context, {
       prepare: (_home, paths) => {
         writeMarker(paths, 'runtime-old');
         const holder = spawnTracked(context, 'sleep', ['30']);
         holderPid = holder.pid;
-        writeLockFile(paths.locks.runtime, holder.pid);
+        lock.holdExternally(paths.locks.runtime, holder.pid);
       },
       markerPorts: { findHolders: async () => [999_999], reapMarkerDirectory: async () => ({ reaped: 0, kept: 1 }) },
-      overrides: { orphanGraceMs: 250, startTimeOf: async () => 0, lockWaitMs: 3_600_000 },
+      overrides: { orphanGraceMs: 250, lockMechanism: lock, lockWaitMs: 3_600_000 },
     });
     await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { realWork: h.realWork, maxMs: 5000 });
     expect(h.log.withMsg('orphans.reaped')).toEqual([expect.objectContaining({ reaped: 0, kept: 1, level: 'warn' })]);

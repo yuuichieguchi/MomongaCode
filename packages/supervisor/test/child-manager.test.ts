@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { GHOST_CONFIRM_MS, acquireProcessLock } from '@momonga/foundation';
-import { afterMicrotasks, registerCleanup, waitFor } from '@momonga/testkit';
+import { afterMicrotasks, createFakeKernelLock, waitFor } from '@momonga/testkit';
 import { DEFAULT_INTERVALS, HELD_RETRY_MS, KILL_CONFIRM_MS, STABLE_AFTER_MS, STARTUP_KILL_GRACE_MS, STARTUP_TIMEOUT_MS, STDIO_FLUSH_MS } from '../src/constants.ts';
 import { errnoError } from './support/p2-fake-spawn-port.ts';
 import { createManagerHarness, T0 } from './support/p2-manager-harness.ts';
@@ -211,8 +210,7 @@ describe('exit classification in the manager', () => {
 
   it('exit 75 does not respawn on a timer', async (context) => {
     const harness = createManagerHarness(context);
-    const lock = await acquireProcessLock(harness.paths.locks.runtime, undefined, { startTimeOf: async () => T0 - 3_600_000 });
-    registerCleanup(context, () => lock.release());
+    harness.lock.holdExternally(harness.paths.locks.runtime, process.pid);
     harness.spawnInitial();
     await exitAndWait(harness, 'waiting-lock', 75);
     for (let step = 0; step < 120; step += 1) {
@@ -222,40 +220,60 @@ describe('exit classification in the manager', () => {
     expect(harness.spawnCount()).toBe(1);
     expect(harness.manager.state()).toBe('waiting-lock');
     expect(harness.manager.health().consecutiveFailures).toBe(0);
-    lock.release();
-    await waitFor(() => harness.timers.pending().some((timer) => timer.delayMs === DEFAULT_INTERVALS.lockPollMs), { description: 'the next lock poll is armed' });
-    harness.timers.advance(DEFAULT_INTERVALS.lockPollMs);
+    harness.lock.releaseExternally(harness.paths.locks.runtime);
+    await waitFor(() => harness.timers.pending().some((timer) => timer.delayMs === DEFAULT_INTERVALS.lockWatchIntervalMs), { description: 'the next lock poll is armed' });
+    harness.timers.advance(DEFAULT_INTERVALS.lockWatchIntervalMs);
     await waitFor(() => harness.spawnCount() === 2, { description: 'spawn after the lock is released' });
     expect(spawnReasons(harness)).toEqual(['initial', 'lock-free']);
     expect(harness.manager.state()).toBe('starting');
   });
 
-  it('a ghost lock seen in waiting-lock is confirmed on the injected lock timing and frees the lock', async (context) => {
-    const sleeps: number[] = [];
-    const owner: { harness?: ManagerHarness } = {};
-    const lockTiming = {
-      now: () => owner.harness?.clock.now() ?? T0,
-      sleep: (ms: number) =>
-        new Promise<void>((resolve) => {
-          sleeps.push(ms);
-          owner.harness?.timers.setTimeout(resolve, ms);
-        }),
-    };
-    const harness = createManagerHarness(context, { overrides: { lockTiming, startTimeOf: async () => T0 + 3_600_000 } });
-    owner.harness = harness;
-    fs.writeFileSync(harness.paths.locks.runtime, String(process.pid));
-    const lockMtime = new Date(T0 - 3_600_000);
-    fs.utimesSync(harness.paths.locks.runtime, lockMtime, lockMtime);
+  it('with descriptor hand-off the claim is taken before the spawn and given to the child', async (context) => {
+    const lock = createFakeKernelLock({ inheritable: true });
+    const harness = createManagerHarness(context, { overrides: { lockMechanism: lock } });
     harness.spawnInitial();
-    await exitAndWait(harness, 'waiting-lock', 75);
-    await waitFor(() => harness.timers.pending().some((timer) => timer.delayMs === DEFAULT_INTERVALS.lockPollMs), { description: 'the first lock poll is armed' });
-    harness.timers.advance(DEFAULT_INTERVALS.lockPollMs);
-    await waitFor(() => sleeps.length === 1, { description: 'the ghost confirmation sleeps on the injected timing' });
-    expect(sleeps).toEqual([GHOST_CONFIRM_MS]);
-    expect(harness.spawnCount()).toBe(1);
-    harness.timers.advance(GHOST_CONFIRM_MS);
-    await waitFor(() => harness.spawnCount() === 2, { description: 'spawn after the ghost lock is confirmed' });
-    expect(spawnReasons(harness)).toEqual(['initial', 'lock-free']);
+    const { options } = harness.port.last();
+    expect(lock.claimsMade()).toEqual([harness.paths.locks.runtime]);
+    expect(options.stdio).toHaveLength(6);
+    expect(options.stdio[5]).toBeGreaterThanOrEqual(900);
+    expect(options.env['MOMONGA_LOCK_FD']).toBe('5');
+    expect(options.env['MOMONGA_LOCK_NONCE']).toMatch(/^[0-9a-f]{32}$/);
+    expect(lock.isHeldBy(harness.paths.locks.runtime)).toBeUndefined();
+  });
+
+  it('with descriptor hand-off a held lock spawns no child and waits', async (context) => {
+    const lock = createFakeKernelLock({ inheritable: true });
+    const harness = createManagerHarness(context, { overrides: { lockMechanism: lock } });
+    lock.holdExternally(harness.paths.locks.runtime, process.pid);
+    harness.spawnInitial();
+    expect(harness.manager.state()).toBe('waiting-lock');
+    expect(harness.spawnCount()).toBe(0);
+    lock.releaseExternally(harness.paths.locks.runtime);
+    await waitFor(() => harness.timers.pending().some((timer) => timer.delayMs === DEFAULT_INTERVALS.lockWatchIntervalMs), { description: 'the lock poll is armed' });
+    harness.timers.advance(DEFAULT_INTERVALS.lockWatchIntervalMs);
+    await waitFor(() => harness.spawnCount() === 1, { description: 'spawn after the lock is released' });
+    expect(spawnReasons(harness)).toEqual(['lock-free']);
+  });
+
+  it('with descriptor hand-off a failed spawn gives the claim back', async (context) => {
+    const lock = createFakeKernelLock({ inheritable: true });
+    const harness = createManagerHarness(context, { overrides: { lockMechanism: lock } });
+    harness.port.nextFailure = { kind: 'throw', error: new Error('spawn boom') };
+    harness.spawnInitial();
+    expect(harness.manager.state()).toBe('backoff');
+    expect(lock.isHeldBy(harness.paths.locks.runtime)).toBeUndefined();
+  });
+
+  it('escalating a stop to SIGINT never moves the kill deadline later', async (context) => {
+    const harness = createManagerHarness(context);
+    harness.spawnInitial();
+    const first = harness.port.last();
+    void harness.manager.stop('shutdown', 'term');
+    harness.timers.advance(40_000);
+    void harness.manager.stop('shutdown', 'int');
+    expect(first.signals).toEqual(['SIGTERM', 'SIGINT']);
+    harness.timers.advance(RUNTIME_SHUTDOWN_BUDGET_MS - 40_000);
+    expect(first.groupKills).toBe(1);
   });
 
   it('exit 78 holds until a trigger', async (context) => {
@@ -509,7 +527,6 @@ describe('stop', () => {
     const harness = createManagerHarness(context);
     harness.spawnInitial();
     void harness.manager.stop('shutdown', 'term');
-    harness.timers.advance(1000);
     void harness.manager.stop('shutdown', 'int');
     void harness.manager.stop('shutdown', 'int');
     expect(harness.port.last().signals).toEqual(['SIGTERM', 'SIGINT']);
