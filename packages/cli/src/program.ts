@@ -3,8 +3,11 @@ import type { EntryIo } from '@momonga/foundation';
 import { PERMISSION_MODES } from '@momonga/protocol';
 import type { PermissionMode } from '@momonga/protocol';
 import { serveAcp } from './acp/serve.ts';
-import { daemonStatus, daemonStop } from './commands/daemon.ts';
+import { daemonStart, daemonStatus, daemonStop } from './commands/daemon.ts';
 import { registerProductCommands } from './commands/register.ts';
+import { runUpdate } from './commands/update.ts';
+import { describeFailure } from './failure.ts';
+import { UPDATE_CHECK_COMMAND, runBackgroundCheck, startBackgroundCheck } from './update/background.ts';
 import { DEFAULT_FM_BINARY, probeFm } from './commands/gateway.ts';
 import { approve, attachRun, cancelRun } from './commands/runs.ts';
 import { showTrace } from './commands/trace.ts';
@@ -13,6 +16,8 @@ import { pathsOf } from './paths.ts';
 import type { ProgramDeps } from './program-deps.ts';
 import { OUTPUT_FORMATS, runHeadless } from './run/headless.ts';
 import type { OutputFormat } from './run/headless.ts';
+
+const isBackgroundCheckExempt = (commandName: string): boolean => commandName.startsWith('__') || commandName === 'update';
 
 type RootOptions = {
   print?: string;
@@ -43,6 +48,15 @@ export const buildProgram = (deps: ProgramDeps): Command => {
   const { ports } = deps;
   const program = new Command();
   program.name('momonga').version(ports.version).enablePositionalOptions().showHelpAfterError();
+
+  program.hook('preAction', async (_program, action) => {
+    if (isBackgroundCheckExempt(action.name())) return;
+    try {
+      await startBackgroundCheck(deps.update);
+    } catch (error) {
+      ports.stderr.write(`momonga: the background update check was not started: ${describeFailure(error)}\n`);
+    }
+  });
 
   program
     .argument('[prompt]', 'initial prompt of the interactive session')
@@ -115,7 +129,18 @@ export const buildProgram = (deps: ProgramDeps): Command => {
       deps.complete(await serveAcp(ports, pathsOf(ports), deps.interrupt));
     });
 
+  program
+    .command('update')
+    .description('replace this executable with the latest release after verifying its checksum and signature')
+    .option('--check', 'only report whether a newer release exists')
+    .action(async (options: { check?: true }) => {
+      deps.complete(await runUpdate(deps.update, ports.stdout, { checkOnly: options.check === true, interrupt: deps.interrupt }));
+    });
+
   const daemon = program.command('daemon').description('manage the background daemon');
+  daemon.command('start').description('start the daemon, or restart it when it runs another version').action(async () => {
+    deps.complete(await daemonStart(ports, pathsOf(ports)));
+  });
   daemon.command('status').action(async () => {
     deps.complete(await daemonStatus(ports, pathsOf(ports)));
   });
@@ -152,6 +177,12 @@ export const buildProgram = (deps: ProgramDeps): Command => {
         deps.complete(await run(deps.entryIo(args)));
       });
   };
+  program
+    .command(UPDATE_CHECK_COMMAND, { hidden: true })
+    .helpOption(false)
+    .action(async () => {
+      deps.complete(await runBackgroundCheck(deps.update, deps.interrupt));
+    });
   internal(INTERNAL_COMMANDS.supervise, deps.entries.supervise);
   internal(INTERNAL_COMMANDS.gateway, deps.entries.gateway);
   internal(INTERNAL_COMMANDS.runtime, deps.entries.runtime);

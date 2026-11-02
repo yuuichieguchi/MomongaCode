@@ -3,7 +3,9 @@ import { daemonEntries } from './daemon/entries.ts';
 import { describeFailure } from './failure.ts';
 import { nodePorts } from './node-ports.ts';
 import type { CliPorts } from './ports.ts';
+import { pathsOf } from './paths.ts';
 import { buildProgram } from './program.ts';
+import { nodeUpdateWiring } from './update/wiring.ts';
 
 const entryIo = (args: readonly string[]): ReturnType<typeof nodeEntryIo> => ({ ...nodeEntryIo(), argv: [...args] });
 
@@ -16,6 +18,7 @@ export const runMain = async (version: string, overrides: Partial<CliPorts> = {}
   const program = buildProgram({
     ports,
     entries: daemonEntries(ports.self),
+    update: nodeUpdateWiring(ports, pathsOf(ports)),
     interrupt: interrupt.signal,
     entryIo,
     complete: (code) => {

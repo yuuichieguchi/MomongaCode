@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { parseChecksumListing } from '@momonga/foundation';
 
 export const SEA_NODE_VERSION = '26.12.1';
 export const SEA_NODE_PLATFORM = 'darwin-arm64';
@@ -56,17 +57,7 @@ const archiveNameOf = (target: SeaTarget): string => `${archiveStemOf(target)}.$
 
 export const sha256OfFile = (file: string): string => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
-export const parseShasums = (shasums: string): ReadonlyMap<string, string> => {
-  const entries = shasums
-    .split('\n')
-    .filter((line) => line.length > 0)
-    .map((line) => {
-      const match = /^([0-9a-f]{64}) {2}(\S+)$/.exec(line);
-      if (!match) throw new Error(`malformed SHASUMS256 line: ${line}`);
-      return [match[2] as string, match[1] as string] as const;
-    });
-  return new Map(entries);
-};
+export const parseShasums = (shasums: string): ReadonlyMap<string, string> => parseChecksumListing(shasums, 'SHASUMS256');
 
 export const assertPinnedChecksum = (shasums: string, archiveName: string, pinned: string): void => {
   const published = parseShasums(shasums).get(archiveName);

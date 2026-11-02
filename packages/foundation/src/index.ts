@@ -133,3 +133,4 @@ export { WINDOWS_PROBE_TIMEOUT_MS } from './platform/windows-inspector.ts';
 export { nodeProcFs } from './platform/procfs.ts';
 export type { FileIdentity, ProcFs } from './platform/procfs.ts';
 export type { PlatformDirectoryPorts } from './momonga-paths.ts';
+export { parseChecksumListing } from './checksum-listing.ts';

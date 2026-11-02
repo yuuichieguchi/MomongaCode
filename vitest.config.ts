@@ -21,6 +21,7 @@ export default defineConfig({
           name: 'packaging',
           include: ['scripts/**/*.test.ts'],
           globalSetup: ['test/support/leak-guard.ts'],
+          fileParallelism: false,
           hookTimeout: E2E_HOOK_TIMEOUT_MS,
           testTimeout: 60000,
         },

@@ -17,7 +17,7 @@ chmod 755 "$output"`,
 : > "$last"`,
   xcrun: `printf '{"id":"fake-submission","status":"%s"}\\n' "\${STUB_NOTARY_STATUS:-Accepted}"`,
   spctl: `exit "\${STUB_SPCTL_EXIT:-0}"`,
-  codesign: ``,
+  codesign: `if [ "$1" = "--display" ]; then printf 'Authority=Developer ID\\nTeamIdentifier=%s\\n' "\${STUB_TEAM_ID:-FAKE000000}" >&2; fi`,
   gh: ``,
 };
 
@@ -61,6 +61,7 @@ describe('release.sh', () => {
     APPLE_API_KEY_ID: 'FAKEKEYID1',
     APPLE_API_ISSUER: '00000000-0000-0000-0000-000000000000',
     MOMONGA_REPO: 'fake-owner/fake-repo',
+    MOMONGA_TEAM_ID: 'FAKE000000',
     ...extra,
   });
 
@@ -127,6 +128,7 @@ describe('release.sh', () => {
       'npm run',
       'codesign --sign',
       'codesign --verify',
+      'codesign --display',
       `${work}/dist/release/momonga-darwin-arm64 --version`,
       'rm -f',
       'ditto -c',
@@ -154,6 +156,7 @@ describe('release.sh', () => {
       'npm run',
       'codesign --sign',
       'codesign --verify',
+      'codesign --display',
       'ditto -c',
       'xcrun notarytool',
       'spctl --assess',
@@ -162,20 +165,24 @@ describe('release.sh', () => {
       'npm run',
       'gh release',
     ]);
-    expect(calls[0]).toBe(`npm run sea -- --unsigned --output ${binary} `);
+    const updateSourceFlags = '--repo fake-owner/fake-repo --team-id FAKE000000 ';
+    expect(calls[0]).toBe(`npm run sea -- --unsigned --output ${binary} ${updateSourceFlags}`);
     expect(calls[1]).toBe(
       `codesign --sign Developer ID Application: Fake Person (FAKE000000) --force --timestamp --options runtime --entitlements ${work}/scripts/sea-entitlements.plist ${binary} `,
     );
     expect(calls[2]).toBe(`codesign --verify --strict --verbose=2 ${binary} `);
-    expect(calls[4]).toBe(
+    expect(calls[3]).toBe(`codesign --display --verbose=4 ${binary} `);
+    expect(calls[5]).toBe(
       `xcrun notarytool submit ${binary}.zip --key ${keyFile} --key-id FAKEKEYID1 --issuer 00000000-0000-0000-0000-000000000000 --wait --output-format json `,
     );
-    expect(calls[5]).toBe(`spctl --assess --type execute --verbose=4 ${binary} `);
+    expect(calls[6]).toBe(`spctl --assess --type execute --verbose=4 ${binary} `);
     const out = `${work}/dist/release`;
-    expect(calls.slice(6, 9)).toEqual(
-      ['linux-x64', 'linux-arm64', 'win-x64'].map((target) => `npm run sea -- --unsigned --target ${target} --output ${out}/momonga-${target}${target === 'win-x64' ? '.exe' : ''} `),
+    expect(calls.slice(7, 10)).toEqual(
+      ['linux-x64', 'linux-arm64', 'win-x64'].map(
+        (target) => `npm run sea -- --unsigned --target ${target} --output ${out}/momonga-${target}${target === 'win-x64' ? '.exe' : ''} ${updateSourceFlags}`,
+      ),
     );
-    expect(calls[9]).toContain(`gh release create v1.2.3 ${binary} ${out}/momonga-linux-x64 ${out}/momonga-linux-arm64 ${out}/momonga-win-x64.exe ${out}/SHA256SUMS --repo fake-owner/fake-repo --verify-tag --title v1.2.3 --notes - second change (`);
+    expect(calls[10]).toContain(`gh release create v1.2.3 ${binary} ${out}/momonga-linux-x64 ${out}/momonga-linux-arm64 ${out}/momonga-win-x64.exe ${out}/SHA256SUMS --repo fake-owner/fake-repo --verify-tag --title v1.2.3 --notes - second change (`);
     expect(originTags()).toBe('v1.2.3\n');
     const sums = fs.readFileSync(`${work}/dist/release/SHA256SUMS`, 'utf8').trimEnd().split('\n');
     expect(sums.map((line) => line.replace(/^[0-9a-f]{64} {2}/, ''))).toEqual(['momonga-darwin-arm64', 'momonga-linux-x64', 'momonga-linux-arm64', 'momonga-win-x64.exe']);
@@ -204,7 +211,7 @@ describe('release.sh', () => {
     commit('second change');
     const result = release({ STUB_SPCTL_EXIT: '1' });
     expect(result.status).not.toBe(0);
-    expect(loggedNames()).toEqual(['npm', 'codesign', 'codesign', 'ditto', 'xcrun', 'spctl']);
+    expect(loggedNames()).toEqual(['npm', 'codesign', 'codesign', 'codesign', 'ditto', 'xcrun', 'spctl']);
     expect(originTags()).toBe('');
     expect(fs.existsSync(`${work}/dist/release/SHA256SUMS`)).toBe(false);
   });
@@ -214,8 +221,32 @@ describe('release.sh', () => {
     const result = release({ STUB_NOTARY_STATUS: 'Invalid' });
     expect(result.status).not.toBe(0);
     expect(result.stderr).toBe('release.sh: notarization was not accepted\n');
-    expect(loggedNames()).toEqual(['npm', 'codesign', 'codesign', 'ditto', 'xcrun']);
+    expect(loggedNames()).toEqual(['npm', 'codesign', 'codesign', 'codesign', 'ditto', 'xcrun']);
     expect(originTags()).toBe('');
+  });
+
+  it('stops before notarization when the signed binary carries another Team ID', () => {
+    commit('second change');
+    const result = release({ STUB_TEAM_ID: 'OTHER00000' });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toBe('release.sh: the signed binary does not carry TeamIdentifier=FAKE000000\n');
+    expect(loggedNames()).toEqual(['npm', 'codesign', 'codesign', 'codesign']);
+    expect(originTags()).toBe('');
+  });
+
+  it('refuses to start without a Team ID', () => {
+    const result = release({ MOMONGA_TEAM_ID: '' });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toBe('release.sh: MOMONGA_TEAM_ID is not set\n');
+    expect(loggedCalls()).toEqual([]);
+  });
+
+  it('refuses a malformed Team ID and a malformed repository before any command', () => {
+    const teamId = release({ MOMONGA_TEAM_ID: 'lower-case' });
+    expect(teamId.stderr).toBe("release.sh: MOMONGA_TEAM_ID must be a 10-character Apple Team ID, got 'lower-case'\n");
+    const repo = release({ MOMONGA_REPO: 'no-slash' });
+    expect(repo.stderr).toBe("release.sh: MOMONGA_REPO must be <owner>/<repo>, got 'no-slash'\n");
+    expect(loggedCalls()).toEqual([]);
   });
 
   it('refuses to start without a credential', () => {
