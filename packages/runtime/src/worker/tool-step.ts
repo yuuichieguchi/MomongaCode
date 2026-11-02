@@ -229,7 +229,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
         journal.append(outcomePayloads(outcome));
         recordToolContent(spans, calls, outcome);
       },
-      onStarted: (callId, idemKey) => journal.append([{ type: 'tool.started', callId, idemKey }]),
+      onStarted: (callId, idemKey, basis) => journal.append([{ type: 'tool.started', callId, idemKey, basis }]),
       onUpdate: (callId, content) => journal.append([{ type: 'tool.updated', callId, content }]),
     });
   } catch (error) {

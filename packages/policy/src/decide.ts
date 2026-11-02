@@ -2,7 +2,7 @@ import path from 'node:path';
 import { isProtectedWrite, lexicallyWithin } from '@momonga/foundation';
 import type { FileRuleSet, ProtectedSet, UnresolvableReason } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
-import type { PermissionMode } from '@momonga/protocol';
+import type { ApprovalBasis, PermissionMode } from '@momonga/protocol';
 import { commandApproval } from './approval.ts';
 import { commandCoveredByAllowRules } from './command-match.ts';
 import type { PolicyFilesystem } from './filesystem.ts';
@@ -39,21 +39,27 @@ export type Decision = {
   reason: string;
   rule?: PermissionRule;
   humanOnly?: true;
+  basis?: ApprovalBasis;
 };
 
 const WRITE_TOOL: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write' };
 const READ_TOOL: PolicyTool = { name: 'Read', kind: 'read', sideEffect: 'read_only' };
 
-const describeRule = (rule: PermissionRule): string => `${rule.text} (${rule.origin}: ${rule.source})`;
+const HARMLESS_WRITE_TARGETS: ReadonlySet<string> = new Set(['/dev/null']);
+
+const describeRule =(rule: PermissionRule): string => `${rule.text} (${rule.origin}: ${rule.source})`;
+
+const basisOf = (kind: DecisionKind, basis: ApprovalBasis): { basis?: ApprovalBasis } => (kind === 'allow' ? { basis } : {});
 
 const byRule = (kind: DecisionKind, rule: PermissionRule, verb: string): Decision => ({
   kind,
   source: 'rule',
   rule,
   reason: `${verb} by rule ${describeRule(rule)}`,
+  ...basisOf(kind, 'rule'),
 });
 
-const byMode = (kind: DecisionKind, reason: string): Decision => ({ kind, source: 'mode', reason });
+const byMode = (kind: DecisionKind, reason: string, basis: ApprovalBasis = 'mode'): Decision => ({ kind, source: 'mode', reason, ...basisOf(kind, basis) });
 
 const isGoverning = (rule: PermissionRule): boolean => rule.layer === 'governance';
 
@@ -140,7 +146,7 @@ const modeDefault = (input: DecideInput, subject: PermissionSubject): Decision =
 
 const commandDefault = (input: DecideInput, command: string): Decision => {
   const approval = commandApproval(input, command, analyzeCommand(command, commandSpecsFor(input.fs.platform)));
-  if (approval === 'read-only') return byMode('allow', 'read-only command');
+  if (approval === 'read-only') return byMode('allow', 'read-only command', 'read_only');
   if (approval === 'edit' && input.mode === 'acceptEdits') return byMode('allow', 'acceptEdits mode allows filesystem commands inside the workspace');
   return byMode('ask', 'shell commands require approval');
 };
@@ -254,10 +260,8 @@ export const decide = (input: DecideInput): Decision => {
   if (input.subject.kind !== 'command' || primary.kind === 'deny') return primary;
 
   const plan = planPathAccess(input, input.subject.command);
-  const secondary = [
-    ...decidePathAccess(input, plan.writes, WRITE_TOOL, 'write'),
-    ...decidePathAccess(input, plan.reads, READ_TOOL, 'read'),
-  ];
+  const writeDecisions = decidePathAccess(input, plan.writes, WRITE_TOOL, 'write');
+  const secondary = [...writeDecisions, ...decidePathAccess(input, plan.reads, READ_TOOL, 'read')];
   const denied = secondary.find((decision) => decision.kind === 'deny');
   if (denied !== undefined) return denied;
   const humanOnly = secondary.find((decision) => decision.kind === 'ask' && decision.humanOnly === true);
@@ -265,5 +269,14 @@ export const decide = (input: DecideInput): Decision => {
   if (primary.kind === 'ask' && primary.source !== 'mode') return primary;
   if (humanOnly !== undefined) return humanOnly;
   if (primary.kind === 'ask') return primary;
-  return secondary.find((decision) => decision.kind === 'ask') ?? primary;
+  return secondary.find((decision) => decision.kind === 'ask') ?? withWriteBasis(primary, plan.writes, writeDecisions);
+};
+
+const writesBeyondDevices = (writes: PathPlan): boolean => writes.paths.some((target) => !HARMLESS_WRITE_TARGETS.has(target));
+
+const withWriteBasis = (primary: Decision, writes: PathPlan, writeDecisions: readonly Decision[]): Decision => {
+  if (primary.basis !== 'read_only' || !writesBeyondDevices(writes)) return primary;
+  const writing = writeDecisions.find((decision) => decision.kind === 'allow');
+  if (writing?.basis === undefined) throw new Error('a command with write targets was allowed without an allowing write decision');
+  return { ...primary, basis: writing.basis };
 };

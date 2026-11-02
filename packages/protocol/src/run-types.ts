@@ -3,7 +3,7 @@ import type { ToolFile, WorkingFacts } from './working-facts.ts';
 import type { HookExecution } from './hooks.ts';
 import type { MemoryStatus } from './memory.ts';
 import type { CompactionInputItem, InputItem, MessageInputItem } from './open-responses.ts';
-import type { PermissionDenial } from './permission-denial.ts';
+import type { ApprovalBasis, PermissionDenial } from './permission-denial.ts';
 
 export const RUN_STATUSES = [
   'QUEUED',
@@ -124,7 +124,7 @@ export type RunEventPayload =
   | { type: 'tool.elicitation.resolved'; inputId: string; responses: Record<string, ElicitationAnswerRecord> }
   | { type: 'tool.elicitation.cancelled'; inputId: string; reason: 'expired' | 'withdrawn' | 'superseded' }
   | { type: 'mcp.authorization.required'; server: string; callId?: string }
-  | { type: 'tool.started'; callId: string; idemKey: string }
+  | { type: 'tool.started'; callId: string; idemKey: string; basis?: ApprovalBasis }
   | { type: 'tool.updated'; callId: string; content: unknown[] }
   | {
       type: 'tool.completed';

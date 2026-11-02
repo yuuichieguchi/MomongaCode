@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES } from '@momonga/protocol';
 import type {
+  ApprovalBasis,
   CompactionInputItem,
   ContributionKind,
   ElicitationAnswerRecord,
@@ -200,7 +201,7 @@ describe('run event payloads', () => {
       approvalId: string;
       reason: 'expired' | 'withdrawn' | 'superseded';
     }>();
-    expectTypeOf<Payload<'tool.started'>>().toEqualTypeOf<{ type: 'tool.started'; callId: string; idemKey: string }>();
+    expectTypeOf<Payload<'tool.started'>>().toEqualTypeOf<{ type: 'tool.started'; callId: string; idemKey: string; basis?: ApprovalBasis }>();
     expectTypeOf<Payload<'tool.updated'>>().toEqualTypeOf<{ type: 'tool.updated'; callId: string; content: unknown[] }>();
     expectTypeOf<Payload<'tool.completed'>>().toEqualTypeOf<{
       type: 'tool.completed';
