@@ -6,7 +6,7 @@ import { absoluteFrom, decide, fileRuleSpecsOf, suggestAllowRule } from '@momong
 import type { Decision, PermissionRule, PermissionSubject, PolicyFilesystem } from '@momonga/policy';
 import { permissionDeniedOutput } from '@momonga/protocol';
 import type { ElicitationRequestView, PermissionDenial, PermissionMode, ToolAwait, ToolKind } from '@momonga/protocol';
-import { SandboxPolicyError, canonicalParentForm } from '@momonga/sandbox';
+import { SANDBOX_STOP_BOUND_MS, SandboxPolicyError, canonicalParentForm } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { EarlierAttemptNotStoppedError, createCallLocks } from './call-lock.ts';
 import type { CallLock } from './call-lock.ts';
@@ -27,6 +27,9 @@ const DEFAULT_MAX_INLINE_OUTPUT_CHARS = 30_000;
 const DEFAULT_MAX_PARALLEL = 8;
 const DEFAULT_READ_ONLY_RETRY = { attempts: 3, baseMs: 200, maxMs: 2000 } as const;
 const ABORT_SETTLE_LIMIT_MS = 2000;
+
+export const heldCallWaitMs = (heartbeatMs: number): number => heartbeatMs + ABORT_SETTLE_LIMIT_MS + SANDBOX_STOP_BOUND_MS;
+
 const DEFAULT_RECONCILE_GRACE_MS = 2000;
 const DEFAULT_RECONCILE_CAP_MS = 30_000;
 const ABANDON_KILL_GRACE_MS = 2000;
@@ -132,6 +135,7 @@ export type ToolExecutorOptions = {
   fs: PolicyFilesystem;
   reconcileCapMs?: number;
   reconcileGraceMs?: number;
+  heartbeatMs: number;
   onWarning(message: string): void;
   reap?: { kill?: SignalSender; timing?: ReapTiming; killGraceMs?: number };
 };
@@ -422,8 +426,15 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     dir: options.callLockDir,
     mechanism: options.kernelLock ?? hostKernelLock(),
     timing: reapTiming,
-    waitMs: reconcileCapMs,
+    waitMs: heldCallWaitMs(options.heartbeatMs),
   });
+  const releaseCallLock = (lock: CallLock): void => {
+    try {
+      lock.release();
+    } catch (error) {
+      options.onWarning(`a call lock could not be removed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
   const activeKeys = new Map<string, number>();
 
   const finalizeResult = (result: ToolResult, tool: AnyTool, limit: number): ResultOutcome['result'] => {
@@ -799,17 +810,26 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       },
       release: () => {
         clearTimeout(timer);
-        if (recordCompleted && tool.sideEffect === 'exec') fs.rmSync(processMarker, { force: true });
         const lock = heldLock;
         heldLock = undefined;
         if (lock !== undefined) {
-          if (effect === undefined) lock.release();
-          else void effect.then(lock.release, lock.release);
+          if (effect === undefined) releaseCallLock(lock);
+          else void effect.then(
+            () => releaseCallLock(lock),
+            () => releaseCallLock(lock),
+          );
         }
         batch.signal.removeEventListener('abort', onBatchAbort);
         const remaining = (activeKeys.get(key) ?? 0) - 1;
         if (remaining > 0) activeKeys.set(key, remaining);
         else activeKeys.delete(key);
+        if (recordCompleted && tool.sideEffect === 'exec') {
+          try {
+            fs.rmSync(processMarker, { force: true });
+          } catch (error) {
+            options.onWarning(`the process marker of call ${key} could not be removed: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
       },
     };
   };
@@ -1217,7 +1237,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     try {
       await reapEarlierAttempt(key, pgid);
     } finally {
-      lock.release();
+      releaseCallLock(lock);
     }
   };
 

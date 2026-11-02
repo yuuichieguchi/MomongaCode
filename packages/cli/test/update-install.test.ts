@@ -535,6 +535,33 @@ describe('momonga update: the release signature', () => {
     expectUnchanged(harness);
   });
 
+  it('names an ssh-keygen that cannot verify signatures, with an upgrade remedy, instead of reading as tampering', async (context) => {
+    const harness = await setupUpdate(context);
+    publish(harness);
+    harness.control.signature = { exitCode: 1, stdout: '', stderr: 'unknown option -- Y\nusage: ssh-keygen [-q] [-a rounds]\n' };
+
+    const error = await expectRejected(harness, 'signature_tool_unusable');
+
+    expect(error.message).toContain('ssh-keygen');
+    expect(error.message).not.toContain('not signed');
+    expect(error.remediation).toMatch(/upgrade/i);
+    expect(assetRequests(harness)).toEqual([]);
+    expectUnchanged(harness);
+  });
+
+  it('reports a tool that exits 255 and fails the known answer as unusable, not as a rejected signature', async (context) => {
+    const harness = await setupUpdate(context);
+    publish(harness);
+    harness.control.signature = { exitCode: 255, stdout: '', stderr: 'unsupported key type\n' };
+    harness.control.knownAnswer = { exitCode: 255, stdout: '', stderr: 'unsupported key type\n' };
+
+    const error = await expectRejected(harness, 'signature_tool_unusable');
+
+    expect(error.message).not.toContain('not signed');
+    expect(assetRequests(harness)).toEqual([]);
+    expectUnchanged(harness);
+  });
+
   it('does not accept a checksum listing that was altered after it was signed', async (context) => {
     const harness = await setupUpdate(context);
     publish(harness);

@@ -170,7 +170,7 @@ describe('the model agrees with the decision code', () => {
         fs: fileSystem,
         secretLocations: [sshLocation(layout)],
         exemptDirectory: null,
-        timeoutMs: 30_000,
+        budgetMs: 600_000,
       });
       const inputs: Array<[SubjectTool, Witness]> = [];
       for (let count = 0; count < INPUTS_PER_TRIAL; count += 1) {

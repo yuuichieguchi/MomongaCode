@@ -1,5 +1,7 @@
 import fs from 'node:fs';
-import { HOLDER_READ_MAX_BYTES, readHolderFile, readHolderFileSync, readHolderFromDescriptor, rewriteHolderThroughDescriptor } from './holder-file.ts';
+import { HOLDER_READ_MAX_BYTES, readHolderFile, readHolderFileSync, readHolderFromDescriptor, removeFilesThenRelease, rewriteHolderThroughDescriptor } from './holder-file.ts';
+import { fstatIdentity, lstatIdentity, sameFile } from './file-identity.ts';
+import type { LockFileIdentity } from './file-identity.ts';
 import { UnsupportedPlatformError } from './process-inspector.ts';
 import { sqliteFileLock } from './sqlite-lock.ts';
 
@@ -16,6 +18,16 @@ export type HeldKernelLock = {
   readonly descriptor: number | undefined;
   writeHolder(text: string): void;
   release(): void;
+  dispose(): void;
+};
+
+export const writeHolderOrRelease = (lock: HeldKernelLock, text: string): void => {
+  try {
+    lock.writeHolder(text);
+  } catch (error) {
+    lock.release();
+    throw error;
+  }
 };
 
 export type ClaimOutcome = { kind: 'claimed'; lock: HeldKernelLock } | { kind: 'held' };
@@ -40,11 +52,15 @@ const WOULD_BLOCK = 'EAGAIN';
 export type FileLockOps = {
   open(lockPath: string, flags: number, mode?: number): number;
   close(descriptor: number): void;
+  fstat(descriptor: number): LockFileIdentity;
+  lstat(lockPath: string): LockFileIdentity | undefined;
 };
 
 export const nodeFileLockOps: FileLockOps = {
   open: (lockPath, flags, mode) => fs.openSync(lockPath, flags, mode),
   close: (descriptor) => fs.closeSync(descriptor),
+  fstat: fstatIdentity,
+  lstat: lstatIdentity,
 };
 
 const SHARED_PROBE_FLAGS = fs.constants.O_RDONLY | O_SHLOCK | fs.constants.O_NONBLOCK | fs.constants.O_NOFOLLOW;
@@ -61,32 +77,20 @@ const holdsExclusively = (ops: FileLockOps, lockPath: string): boolean => {
   return false;
 };
 
-const heldFile = (ops: FileLockOps, descriptor: number): HeldKernelLock => {
+const heldFile = (ops: FileLockOps, lockPath: string, descriptor: number): HeldKernelLock => {
   let open = true;
+  const release = (): void => {
+    if (!open) return;
+    open = false;
+    ops.close(descriptor);
+  };
   return {
     descriptor,
     writeHolder: (text) => rewriteHolderThroughDescriptor(descriptor, text),
-    release: () => {
-      if (!open) return;
-      open = false;
-      ops.close(descriptor);
-    },
+    release,
+    dispose: () => removeFilesThenRelease([lockPath], release),
   };
 };
-
-const claimFile =
-  (ops: FileLockOps) =>
-  (lockPath: string): ClaimOutcome => {
-    const { O_RDWR, O_CREAT, O_NONBLOCK, O_NOFOLLOW } = fs.constants;
-    for (;;) {
-      try {
-        return { kind: 'claimed', lock: heldFile(ops, ops.open(lockPath, O_RDWR | O_CREAT | O_EXLOCK | O_NONBLOCK | O_NOFOLLOW, 0o600)) };
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== WOULD_BLOCK) throw error;
-        if (holdsExclusively(ops, lockPath)) return { kind: 'held' };
-      }
-    }
-  };
 
 const probeFile = (ops: FileLockOps, lockPath: string): boolean => {
   try {
@@ -96,6 +100,24 @@ const probeFile = (ops: FileLockOps, lockPath: string): boolean => {
     throw error;
   }
 };
+
+const claimFile =
+  (ops: FileLockOps) =>
+  (lockPath: string): ClaimOutcome => {
+    const { O_RDWR, O_CREAT, O_NONBLOCK, O_NOFOLLOW } = fs.constants;
+    for (;;) {
+      let descriptor: number;
+      try {
+        descriptor = ops.open(lockPath, O_RDWR | O_CREAT | O_EXLOCK | O_NONBLOCK | O_NOFOLLOW, 0o600);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== WOULD_BLOCK) throw error;
+        if (probeFile(ops, lockPath)) return { kind: 'held' };
+        continue;
+      }
+      if (sameFile(ops.fstat(descriptor), ops.lstat(lockPath))) return { kind: 'claimed', lock: heldFile(ops, lockPath, descriptor) };
+      ops.close(descriptor);
+    }
+  };
 
 const adoptFile =
   (ops: FileLockOps) =>
@@ -113,7 +135,7 @@ const adoptFile =
     if (readHolderFromDescriptor(descriptor) !== expectedHolder) {
       throw new LockAdoptionError(`${lockPath} does not carry the hand-off nonce of this hand-off`);
     }
-    const lock = heldFile(ops, descriptor);
+    const lock = heldFile(ops, lockPath, descriptor);
     lock.writeHolder(newHolder);
     return lock;
   };

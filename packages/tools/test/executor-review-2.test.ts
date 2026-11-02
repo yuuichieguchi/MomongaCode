@@ -1,4 +1,4 @@
-import { fakePolicyFilesystem } from '@momonga/testkit';
+import { TEST_HEARTBEAT_MS, fakePolicyFilesystem } from '@momonga/testkit';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -13,7 +13,7 @@ const CAP_MS = 20;
 const GRACE_MS = 20;
 
 const boundedExecutor = (harness: Harness) =>
-  createToolExecutor({ fs: fakePolicyFilesystem(),
+  createToolExecutor({ fs: fakePolicyFilesystem(), heartbeatMs: TEST_HEARTBEAT_MS,
     idempotency: harness.idempotency.port,
     blobs: harness.blobs.port,
     clock: harness.clock,

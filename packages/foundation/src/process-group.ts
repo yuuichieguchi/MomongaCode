@@ -16,6 +16,10 @@ export const realGroupTiming: GroupTiming = {
 
 export type TerminateOutcome = 'terminated' | 'killed' | 'gone';
 
+const killWaitMs = (graceMs: number): number => Math.max(graceMs, MIN_KILL_WAIT_MS);
+
+export const groupTerminationBoundMs = (graceMs: number): number => graceMs + POLL_INTERVAL_MS + killWaitMs(graceMs) + POLL_INTERVAL_MS;
+
 export interface TerminateGroupOptions {
   graceMs: number;
   termDeadline?: number;
@@ -75,7 +79,7 @@ export async function terminateGroup(pgid: number, options: TerminateGroupOption
     signalGroup(pgid, 'SIGTERM', port);
   }
   if (await waitForGroupGone(pgid, termDeadline, port, timing)) return 'terminated';
-  if (!(await forceKillGroup(pgid, { deadline: timing.now() + Math.max(options.graceMs, MIN_KILL_WAIT_MS), port, timing }))) {
+  if (!(await forceKillGroup(pgid, { deadline: timing.now() + killWaitMs(options.graceMs), port, timing }))) {
     throw new Error(`process group ${pgid} did not terminate after SIGKILL`);
   }
   return 'killed';

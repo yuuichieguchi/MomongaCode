@@ -1,4 +1,4 @@
-import { createFakeKernelLock, fakePolicyFilesystem } from '@momonga/testkit';
+import { TEST_HEARTBEAT_MS, createFakeKernelLock, fakePolicyFilesystem } from '@momonga/testkit';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createToolExecutor } from '@momonga/tools';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
@@ -11,7 +11,7 @@ const MINIMUM_LIMIT = LONGEST_MARKER.length + 2 + 2;
 
 const construct = (maxInlineOutputChars: number) => {
   const clock = makeClock();
-  return createToolExecutor({ fs: fakePolicyFilesystem(), idempotency: makeIdempotency(clock).port, blobs: makeBlobs().port, clock, maxInlineOutputChars, processMarkerDir: '/nonexistent-marker-dir', callLockDir: '/nonexistent-call-lock-dir', kernelLock: createFakeKernelLock({ inheritable: false }), onWarning: () => undefined });
+  return createToolExecutor({ fs: fakePolicyFilesystem(), heartbeatMs: TEST_HEARTBEAT_MS, idempotency: makeIdempotency(clock).port, blobs: makeBlobs().port, clock, maxInlineOutputChars, processMarkerDir: '/nonexistent-marker-dir', callLockDir: '/nonexistent-call-lock-dir', kernelLock: createFakeKernelLock({ inheritable: false }), onWarning: () => undefined });
 };
 
 const truncatedOutput = async (output: string, limit: number): Promise<{ output: string; truncated?: true }> => {

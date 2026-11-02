@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { createKernelLockMechanism } from '@momonga/foundation';
 import { EVENT_TYPES, RUN_STATUSES, TERMINAL_STATUSES } from '@momonga/protocol';
 import { CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from '@momonga/store';
 
@@ -141,6 +142,33 @@ describe('the checked configurations against the repaired recovery design', () =
       const listed = text.slice(text.search(/^(INVARIANTS|PROPERTIES)/m)).split('\n').map((line) => line.trim()).filter((line) => /^[A-Z][A-Za-z]+$/.test(line) && line !== 'INVARIANTS' && line !== 'PROPERTIES');
       for (const name of listed) expect(spec, `${file} names ${name}`).toMatch(new RegExp(`^${name} ==`, 'm'));
     }
+  });
+
+  describe('the reasoning about the call lock', () => {
+    const proseBetween = (from: string, to: string): string => {
+      const prose = spec.replace(/\(\*|\*\)/g, ' ').replace(/\s+/g, ' ');
+      const start = prose.indexOf(from);
+      const end = prose.indexOf(to, start);
+      if (start === -1 || end === -1) throw new Error(`no prose between "${from}" and "${to}"`);
+      return prose.slice(start, end);
+    };
+
+    it('argues exclusion from the mechanism the code selects on each platform', () => {
+      const argument = proseBetween('Whether the older worker', 'The lock covers Write');
+      expect(createKernelLockMechanism('linux').name).toBe('sqlite-lock');
+      expect(createKernelLockMechanism('win32').name).toBe('sqlite-lock');
+      expect(argument).toMatch(/sqlite/i);
+      expect(argument).not.toMatch(/EADDRINUSE|abstract socket|named pipe/);
+    });
+
+    it('derives the wait for a held lock from the heartbeat, the settle limit and the kill grace, not from the reconcile cap', () => {
+      const argument = proseBetween('The wait for a held lock', 'When the wait expires');
+      expect(argument).toMatch(/heartbeat/);
+      expect(argument).toMatch(/settle/);
+      expect(argument).toMatch(/kill grace/);
+      expect(argument).not.toMatch(/reconcile cap/);
+      expect(argument).not.toMatch(/10 s of the default/);
+    });
   });
 
   it('records the edges of run.status events in every configuration that checks OnlyDeclaredEdges', () => {
