@@ -1,7 +1,7 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import { RUN_API_SCHEMAS } from '@momonga/protocol';
-import type { PublicRunEvent, RunHealth } from '@momonga/protocol';
+import type { PublicRunEvent, RunHealth, RunTraceView } from '@momonga/protocol';
 import type { ApprovalView, ErrorBody, RunView, SessionView, TrustView } from './views.ts';
 
 export class ContractViolation extends Error {
@@ -28,3 +28,4 @@ export const checkTrust = guard<TrustView>(RUN_API_SCHEMAS.TrustView);
 export const checkErrorBody = guard<ErrorBody>(RUN_API_SCHEMAS.ErrorBody);
 export const checkHealth = guard<RunHealth>(RUN_API_SCHEMAS.Health);
 export const checkRunEvent = guard<PublicRunEvent>(RUN_API_SCHEMAS.PublicRunEvent);
+export const checkTrace = guard<RunTraceView>(RUN_API_SCHEMAS.RunTrace);

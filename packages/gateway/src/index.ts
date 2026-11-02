@@ -4,6 +4,8 @@ export { loadProbeRecord, resolveToolCalling, saveProbeRecord } from './probe/re
 export type { ProbeRecordKey, ResolvedToolCalling } from './probe/record.ts';
 export { ProbeTimeoutError } from './probe/client.ts';
 export { runProbe } from './probe/run-probe.ts';
+export { probeManagedFm } from './probe/probe-fm.ts';
+export type { ProbeManagedFmOptions, ProbeManagedFmResult } from './probe/probe-fm.ts';
 export type { ProbeOptions } from './probe/run-probe.ts';
 export { FmServeError, createFmServe } from './managed/fm-serve.ts';
 export type {

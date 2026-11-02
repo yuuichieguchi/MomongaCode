@@ -12,7 +12,7 @@ export const OUTPUT_FORMATS = ['text', 'json', 'stream-json'] as const;
 export type OutputFormat = (typeof OUTPUT_FORMATS)[number];
 
 export const EXIT_RUN_FAILED = 1;
-export const EXIT_INTERRUPTED = 130;
+export const EXIT_CANCELLED = 130;
 
 export type HeadlessOptions = {
   prompt: string;
@@ -148,7 +148,7 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
   }
   if (run.status === 'COMPLETED') return 0;
   ports.stderr.write(`${describeEnd(run)}\n`);
-  return run.status === 'CANCELLED' && options.interrupt.aborted ? EXIT_INTERRUPTED : EXIT_RUN_FAILED;
+  return run.status === 'CANCELLED' ? EXIT_CANCELLED : EXIT_RUN_FAILED;
 };
 
 export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options: HeadlessOptions): Promise<number> => {

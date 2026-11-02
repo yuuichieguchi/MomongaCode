@@ -28,7 +28,9 @@ export const trackDaemon = async (home: E2eHome): Promise<void> => {
   if (Number.isInteger(pid) && pid > 1) await home.ledger.add(pid, 'supervisor');
 };
 
-export const runCli = async (home: E2eHome, args: readonly string[], options: RunCliOptions = {}): Promise<CliResult> => {
+export type RunningCli = { readonly result: Promise<CliResult> };
+
+export const startCli = (home: E2eHome, args: readonly string[], options: RunCliOptions = {}): RunningCli => {
   const child = spawn(process.execPath, [CLI_BUNDLE, ...args], {
     cwd: options.cwd ?? home.project,
     env: cliEnv(home, options.env),
@@ -49,9 +51,8 @@ export const runCli = async (home: E2eHome, args: readonly string[], options: Ru
   registerE2eCleanup(() => {
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
   });
-  try {
-    return await withinBound(closed, options.boundMs ?? E2E_TEST_TIMEOUT_MS, `momonga ${args.join(' ')}`);
-  } finally {
-    await trackDaemon(home);
-  }
+  const result = withinBound(closed, options.boundMs ?? E2E_TEST_TIMEOUT_MS, `momonga ${args.join(' ')}`).finally(() => trackDaemon(home));
+  return { result };
 };
+
+export const runCli = (home: E2eHome, args: readonly string[], options: RunCliOptions = {}): Promise<CliResult> => startCli(home, args, options).result;

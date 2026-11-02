@@ -1,6 +1,6 @@
 import type { MomongaPaths } from '@momonga/foundation';
 import type { PermissionMode } from '@momonga/protocol';
-import { createGatewayModels } from '../client/gateway-client.ts';
+import { createGatewayClient } from '../client/gateway-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView, SessionView, TrustView } from '../client/views.ts';
 import { daemonReadyBoundMs, ensureDaemon } from '../daemon/ensure-daemon.ts';
@@ -87,7 +87,14 @@ export const createTuiBackend = (ports: CliPorts, paths: MomongaPaths, options: 
     resolveApproval: async (approvalId, optionId) => {
       await runtime().resolveApproval(approvalId, optionId);
     },
-    contextWindow: () => createGatewayModels({ socketPath: paths.sockets.gateway }).contextWindowOf(current().modelAlias),
+    contextWindow: async () => {
+      const gateway = createGatewayClient({ socketPath: paths.sockets.gateway });
+      try {
+        return await gateway.contextWindowOf(current().modelAlias);
+      } finally {
+        await gateway.close();
+      }
+    },
     close: async () => {
       await client?.close();
     },

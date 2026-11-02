@@ -222,6 +222,32 @@ const trustView = closed(
   ['path', 'decision'],
 );
 
+export type RunTraceSpan = {
+  traceId: string;
+  spanId: string;
+  parentSpanId: string | null;
+  name: string;
+  kind: 'INTERNAL' | 'SERVER' | 'CLIENT' | 'PRODUCER' | 'CONSUMER';
+  startMs: number;
+  endMs: number;
+  status: 'UNSET' | 'OK' | 'ERROR';
+  attributes: Record<string, unknown>;
+};
+
+export type RunTraceSummary = {
+  steps: number;
+  chatCalls: number;
+  toolCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  errorCount: number;
+  durationMs: number;
+  chatResults: { step: number; attempt: number; finishReasons: string[] }[];
+};
+
+export type RunTraceView = { runId: string; summary: RunTraceSummary; spans: RunTraceSpan[] };
+
 export type RunHealth = {
   status: 'ok';
   version: string;
@@ -352,6 +378,48 @@ export const RUN_API_SCHEMAS = {
         ),
       },
       ['id', 'runId', 'callId', 'status', 'options', 'expiresAt', 'createdAt', 'toolCall'],
+    ),
+  ),
+  RunTrace: root(
+    closed(
+      {
+        runId: string,
+        summary: closed(
+          {
+            steps: nonNegativeInteger,
+            chatCalls: nonNegativeInteger,
+            toolCalls: nonNegativeInteger,
+            inputTokens: nonNegativeInteger,
+            outputTokens: nonNegativeInteger,
+            cachedInputTokens: nonNegativeInteger,
+            errorCount: nonNegativeInteger,
+            durationMs: nonNegativeInteger,
+            chatResults: {
+              type: 'array',
+              items: closed({ step: nonNegativeInteger, attempt: integer, finishReasons: { type: 'array', items: string } }, ['step', 'attempt', 'finishReasons']),
+            },
+          },
+          ['steps', 'chatCalls', 'toolCalls', 'inputTokens', 'outputTokens', 'cachedInputTokens', 'errorCount', 'durationMs', 'chatResults'],
+        ),
+        spans: {
+          type: 'array',
+          items: closed(
+            {
+              traceId: string,
+              spanId: string,
+              parentSpanId: nullable(string),
+              name: string,
+              kind: enumOf(['INTERNAL', 'SERVER', 'CLIENT', 'PRODUCER', 'CONSUMER']),
+              startMs: integer,
+              endMs: integer,
+              status: enumOf(['UNSET', 'OK', 'ERROR']),
+              attributes: { type: 'object' },
+            },
+            ['traceId', 'spanId', 'parentSpanId', 'name', 'kind', 'startMs', 'endMs', 'status', 'attributes'],
+          ),
+        },
+      },
+      ['runId', 'summary', 'spans'],
     ),
   ),
   ErrorBody: root(

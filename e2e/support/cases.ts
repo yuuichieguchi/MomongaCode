@@ -58,7 +58,17 @@ export const E2E_CASES = [
   { id: 'a-compaction-constrained', file: 'a-compaction.test.ts', title: 'a: constrained tool calling counts the duplicated schemas and compacts within the turn', needsBash: false },
   { id: 'a-constrained-pinned-overflow', file: 'a-compaction.test.ts', title: 'a: constrained tool calling with every tool fails pinned_overflow before any upstream request', needsBash: false },
   { id: 'cli-print', file: 'cli.test.ts', title: 'cli: momonga -p completes a Glob, Read and Edit task through an autostarted daemon and the file changes', needsBash: false },
+  { id: 'cli-formats', file: 'cli.test.ts', title: 'cli: --output-format json prints one result object and stream-json prints init, every run event and the result', needsBash: false },
+  { id: 'cli-approve', file: 'cli.test.ts', title: 'cli: a -p run in default mode waits for approval, momonga approve lists and resolves it, and the edit lands', needsBash: false },
+  { id: 'cli-cancel', file: 'cli.test.ts', title: 'cli: momonga cancel ends a running -p run as CANCELLED', needsBash: false },
+  { id: 'cli-attach', file: 'cli.test.ts', title: 'cli: attach replays a finished run, --after skips what was seen, and trace summarises it', needsBash: false },
+  { id: 'cli-daemon', file: 'cli.test.ts', title: 'cli: daemon status and stop, and the next command autostarts a single daemon again', needsBash: false },
+  { id: 'cli-version-restart', file: 'cli.test.ts', title: 'cli: a daemon of another version is drained and replaced before the run', needsBash: false },
+  { id: 'cli-reconnect', file: 'cli.test.ts', title: 'cli: a runtime killed mid-run drops the event stream and the CLI resumes it with Last-Event-ID without a gap or a duplicate', needsBash: false },
+  { id: 'cli-env', file: 'cli.test.ts', title: 'cli: the environment snapshot sent at session creation carries no credentials', needsBash: false },
+  { id: 'cli-probe', file: 'cli.test.ts', title: 'cli: gateway probe fm records the measurement and reports the remedy when fm is unavailable', needsBash: false },
   { id: 'cli-pty-approval', file: 'cli-pty.test.ts', title: 'cli pty: first-run trust prompt, Edit approval with a diff, mode cycling and a clean exit through a real pty', needsBash: false },
+  { id: 'cli-pty-session', file: 'cli-pty.test.ts', title: 'cli pty: slash commands, multi-line input, esc cancels a running task, history recall and /exit through a real pty', needsBash: false },
 ] as const satisfies readonly { id: string; file: E2eCaseFile; title: string; needsBash: boolean }[];
 
 export type E2eCase = (typeof E2E_CASES)[number];

@@ -1,10 +1,12 @@
-import { Command, Option } from 'commander';
+import { Command, InvalidArgumentError, Option } from 'commander';
 import { canonicalPath, momongaPaths } from '@momonga/foundation';
 import type { EntryIo, MomongaPaths } from '@momonga/foundation';
 import { PERMISSION_MODES } from '@momonga/protocol';
 import type { PermissionMode } from '@momonga/protocol';
 import { daemonStatus, daemonStop } from './commands/daemon.ts';
+import { DEFAULT_FM_BINARY, probeFm } from './commands/gateway.ts';
 import { approve, attachRun, cancelRun } from './commands/runs.ts';
+import { showTrace } from './commands/trace.ts';
 import { runGateway, runRuntime } from './daemon/entries.ts';
 import { INTERNAL_COMMANDS, selfLauncher } from './daemon/launcher.ts';
 import { runSupervise } from './daemon/supervise.ts';
@@ -28,6 +30,14 @@ type RootOptions = {
 };
 
 export const pathsOf = (ports: Pick<CliPorts, 'home'>): MomongaPaths => momongaPaths(canonicalPath(ports.home), process.platform, {});
+
+const integerArgument =
+  (minimum: number) =>
+  (text: string): number => {
+    const value = Number(text);
+    if (!Number.isInteger(value) || value < minimum) throw new InvalidArgumentError(`expected an integer of at least ${minimum}`);
+    return value;
+  };
 
 const outputFormatOption = (): Option => new Option('--output-format <format>', 'output format of --print and attach').choices(OUTPUT_FORMATS).default('text');
 
@@ -62,14 +72,14 @@ export const buildProgram = (deps: ProgramDeps): Command => {
     .command('attach [run-id]')
     .description('follow a run until it ends; the latest run of this directory when no id is given')
     .addOption(outputFormatOption())
-    .option('--after <seq>', 'show events after this sequence number', '0')
+    .option('--after <seq>', 'show events after this sequence number', integerArgument(0), 0)
     .option('--verbose', 'print tool activity to stderr')
-    .action(async (runId: string | undefined, options: { outputFormat: OutputFormat; after: string; verbose?: true }) => {
+    .action(async (runId: string | undefined, options: { outputFormat: OutputFormat; after: number; verbose?: true }) => {
       deps.complete(
         await attachRun(ports, pathsOf(ports), {
           ...(runId === undefined ? {} : { runId }),
           format: options.outputFormat,
-          after: Number(options.after),
+          after: options.after,
           verbose: options.verbose === true,
           interrupt: deps.interrupt,
         }),
@@ -90,6 +100,14 @@ export const buildProgram = (deps: ProgramDeps): Command => {
       deps.complete(await cancelRun(ports, pathsOf(ports), runId));
     });
 
+  program
+    .command('trace [run-id]')
+    .description('show the model and tool spans of a run; the latest run of this directory when no id is given')
+    .option('--json', 'print the trace as JSON')
+    .action(async (runId: string | undefined, options: { json?: true }) => {
+      deps.complete(await showTrace(ports, pathsOf(ports), runId, options.json === true));
+    });
+
   const daemon = program.command('daemon').description('manage the background daemon');
   daemon.command('status').action(async () => {
     deps.complete(await daemonStatus(ports, pathsOf(ports)));
@@ -97,6 +115,22 @@ export const buildProgram = (deps: ProgramDeps): Command => {
   daemon.command('stop').action(async () => {
     deps.complete(await daemonStop(ports, pathsOf(ports)));
   });
+
+  const gateway = program.command('gateway').description('inspect and tune the model gateway');
+  gateway
+    .command('probe <target>')
+    .description('measure an fm target (context window, tool calling) and record the result for the gateway')
+    .option('--fm-binary <path>', 'the fm executable to probe', DEFAULT_FM_BINARY)
+    .option('--samples <count>', 'samples per measured rate', integerArgument(1))
+    .action(async (target: string, options: { fmBinary: string; samples?: number }) => {
+      deps.complete(
+        await probeFm(ports, pathsOf(ports), target, {
+          fmBinary: options.fmBinary,
+          interrupt: deps.interrupt,
+          ...(options.samples === undefined ? {} : { samples: options.samples }),
+        }),
+      );
+    });
 
   const internal = (name: string, run: (io: EntryIo) => Promise<number>): void => {
     program

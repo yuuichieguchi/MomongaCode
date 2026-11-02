@@ -1,7 +1,7 @@
 import { createUdsClient, decodeSse, isRecord } from '@momonga/foundation';
 import type { UdsResponse } from '@momonga/foundation';
-import type { PermissionMode, PublicRunEvent, RunHealth } from '@momonga/protocol';
-import { ContractViolation, checkApproval, checkErrorBody, checkHealth, checkRun, checkRunEvent, checkSession, checkTrust } from './contract.ts';
+import type { PermissionMode, PublicRunEvent, RunHealth, RunTraceView } from '@momonga/protocol';
+import { ContractViolation, checkApproval, checkTrace, checkErrorBody, checkHealth, checkRun, checkRunEvent, checkSession, checkTrust } from './contract.ts';
 import type { ApprovalView, RunView, SessionView, TrustView } from './views.ts';
 
 export class RunApiError extends Error {
@@ -55,6 +55,7 @@ export type RuntimeClient = {
   createRun(sessionId: string, input: string, options?: CreateRunOptions): Promise<{ run: RunView; location: string }>;
   getRun(id: string): Promise<RunView>;
   cancel(id: string): Promise<{ status: 200 | 202; run: RunView }>;
+  trace(runId: string): Promise<RunTraceView>;
   approvals(runId: string): Promise<ApprovalView[]>;
   getApproval(id: string): Promise<ApprovalView>;
   resolveApproval(id: string, optionId: string): Promise<ResolvedApproval>;
@@ -186,6 +187,12 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     return { status: response.status === 200 ? 200 : 202, run: runOf(body, `POST ${path}`) };
   };
 
+  const trace = async (runId: string): Promise<RunTraceView> => {
+    const path = `/v1/runs/${runId}/trace`;
+    const { body } = await send('GET', path, [200]);
+    return checkTrace(body, `GET ${path}`);
+  };
+
   const approvals = async (runId: string): Promise<ApprovalView[]> => {
     const path = `/v1/runs/${runId}/approvals`;
     const { body } = await send('GET', path, [200]);
@@ -237,6 +244,7 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     createRun,
     getRun,
     cancel,
+    trace,
     approvals,
     getApproval,
     resolveApproval,

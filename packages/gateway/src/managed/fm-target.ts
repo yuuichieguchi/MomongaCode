@@ -105,7 +105,7 @@ const countedText = (request: CountTokensRequest): string => {
     .join('\n');
 };
 
-const parseCount = (result: ExecResult): number => {
+export const parseCount = (result: ExecResult): number => {
   if (result.exitCode !== 0) {
     throw new Error(`fm count-tokens failed with exit code ${result.exitCode}: ${result.stderr.trim()}`);
   }
