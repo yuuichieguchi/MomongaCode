@@ -18,7 +18,7 @@ import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.
 const BODY_MARKER = 'PDF-SKILL-BODY-MARKER-4f7a';
 const GUIDE_MARKER = 'PDF-GUIDE-RESOURCE-MARKER-9c1e';
 const SUMMARY = 'The user asked about a pdf. The pdf skill was activated and several small files were read. Next step: report the result.';
-const LONG_REQUEST_CHARS = 9000;
+const LONG_REQUEST_CHARS = 4000;
 const LONG_REQUESTS = 3;
 
 type EventRow = { seq: number; type: string; payload_json: string };
@@ -150,7 +150,11 @@ describe('g: agent skills', () => {
       for (const post of posts.slice(1)) {
         expect(occurrences(JSON.stringify(post.body), BODY_MARKER)).toBe(isCompactionRequest(post.body) ? 0 : 1);
       }
-      for (const runId of [first.id, ...later]) expect(ofType(journalOf(home, runId), 'notice').filter((event) => !String(event.data['message']).startsWith('Tools ') || !String(event.data['message']).includes('were left out'))).toEqual([]);
+      for (const post of posts.filter((candidate) => !isCompactionRequest(candidate.body))) {
+        const tools = (post.body as { tools?: { function?: { name?: string } }[] }).tools ?? [];
+        expect(tools.map((tool) => tool.function?.name)).toContain('activate_skill');
+      }
+      for (const runId of [first.id, ...later]) expect(ofType(journalOf(home, runId), 'notice').map((event) => event.data['message'])).toEqual([]);
     } finally {
       await runtime.close();
     }
