@@ -115,14 +115,14 @@ const stepTarget = (state: string, step: string, home: string): string | undefin
   return step.startsWith('~') ? undefined : path.resolve(state, step);
 };
 
-const reachableDirectories = (context: ApprovalContext, trail: readonly DirectoryStep[]): string[] | undefined => {
+const reachableDirectories = (context: ApprovalContext, trail: readonly DirectoryStep[], changed: readonly string[]): string[] | undefined => {
   let states = [context.cwd];
   for (const step of trail) {
     if (step === null) return undefined;
     const reached = new Set(states);
     for (const state of states) {
       const target = stepTarget(state, step, context.home);
-      if (target === undefined) return undefined;
+      if (target === undefined || changed.some((entry) => lexicallyWithin(target, entry))) return undefined;
       const entry = context.fs.readEntry(target);
       if ('unresolvable' in entry) return undefined;
       if (entry.kind === 'directory') reached.add(target);
@@ -130,6 +130,21 @@ const reachableDirectories = (context: ApprovalContext, trail: readonly Director
     states = [...reached];
   }
   return states;
+};
+
+const DISCOVERY_ENTRIES: readonly string[] = ['.git', 'HEAD', 'objects', 'refs', 'commondir'];
+
+const ancestorsOf = (directory: string): string[] => {
+  const found = [directory];
+  for (let current = path.dirname(directory); current !== found[found.length - 1]; current = path.dirname(current)) found.push(current);
+  return found;
+};
+
+const discoveryAffected = (context: ApprovalContext, directory: string, changed: readonly string[]): boolean => {
+  if (changed.length === 0) return false;
+  const canonical = context.fs.canonicalise(directory);
+  const chain = [...ancestorsOf(directory), ...(canonical.ok ? ancestorsOf(canonical.path) : [])];
+  return changed.some((entry) => chain.some((ancestor) => lexicallyWithin(ancestor, entry) || DISCOVERY_ENTRIES.some((name) => lexicallyWithin(entry, path.join(ancestor, name)))));
 };
 
 const gitRepositoryAllowed = (context: ApprovalContext, directory: string, bare: boolean): boolean => {
@@ -188,15 +203,16 @@ const gitSubcommandAllowed = (git: GitParse): boolean => {
   }
 };
 
-const gitApproved = (segment: Segment, context: ApprovalContext): boolean => {
+const gitApproved = (segment: Segment, context: ApprovalContext, changed: readonly string[]): boolean => {
   const git = segment.effects.git;
   if (git === undefined || git.unknownOption || git.cwdChange || git.configOverride) return false;
   const spec = segment.effects.spec as CommandSpec;
   if (git.globals.some((entry) => DISQUALIFYING_EFFECTS.has(spec.effectOf(entry.option) ?? 'flag'))) return false;
   if (git.rest.some((word) => word.staticValue === null)) return false;
   if (!gitSubcommandAllowed(git)) return false;
-  const directories = reachableDirectories(context, segment.cwdTrail);
+  const directories = reachableDirectories(context, segment.cwdTrail, changed);
   if (directories === undefined) return false;
+  if (directories.some((directory) => discoveryAffected(context, directory, changed))) return false;
   const bare = git.globals.some((entry) => entry.option === '--bare');
   return directories.every((directory) => gitRepositoryAllowed(context, directory, bare));
 };
@@ -208,7 +224,7 @@ const wrapperApproved = (wrapper: WrapperUse): boolean => {
   return allowed === undefined || wrapper.options.every((option) => allowed.includes(option.option));
 };
 
-const segmentClass = (segment: Segment, context: ApprovalContext): ApprovalClass | undefined => {
+const segmentClass = (segment: Segment, context: ApprovalContext, changed: readonly string[]): ApprovalClass | undefined => {
   if (segment.unanalyzable || segment.commandIndex > 0) return undefined;
   const spec = segment.effects.spec;
   if (spec?.approval === undefined) return undefined;
@@ -216,7 +232,7 @@ const segmentClass = (segment: Segment, context: ApprovalContext): ApprovalClass
   if (spec.plainOperandsOnly === true && segment.wrappers.length > 0) return undefined;
   if (!programApproved(spec, segment, context)) return undefined;
   const writing = segment.effects.writes.length > 0 || segment.wrapperWrites.length > 0;
-  const approved = spec.extractor === 'git' ? gitApproved(segment, context) : plainApproved(spec, segment, context);
+  const approved = spec.extractor === 'git' ? gitApproved(segment, context, changed) : plainApproved(spec, segment, context);
   if (!approved) return undefined;
   return spec.approval === 'edit' && writing ? 'edit' : 'read-only';
 };
@@ -242,19 +258,27 @@ const changesIntoUnknownDirectory = (segment: Segment): boolean => {
   return operand === undefined || operand.staticValue === null || operand.staticValue === '-';
 };
 
-const analysisApproval = (context: ApprovalContext, analysis: Analysis): ApprovalClass | undefined => {
+const EVERYTHING = '/';
+
+const changedPathsOf = (segment: Segment, context: ApprovalContext): string[] => {
+  if (segment.effects.spec?.createsNames !== true) return [];
+  return segment.effects.writes.map((target) => ('literal' in target && !target.literal.startsWith('~') ? absoluteFrom(target.literal, context.cwd) : EVERYTHING));
+};
+
+const analysisApproval = (context: ApprovalContext, analysis: Analysis, changed: string[]): ApprovalClass | undefined => {
   if ([...analysis.redirects, ...analysis.reads].some((target) => 'unresolvable' in target)) return undefined;
   let directoryUnknown = false;
   let approval: ApprovalClass = 'read-only';
-  for (const segment of analysis.segments) {
+  for (const [position, segment] of analysis.segments.entries()) {
+    for (const inner of analysis.nested) {
+      if (inner.at === position && analysisApproval(context, inner, changed) !== 'read-only') return undefined;
+    }
     if (directoryUnknown) return undefined;
-    const kind = segmentClass(segment, context);
+    const kind = segmentClass(segment, context, changed);
     if (kind === undefined) return undefined;
     if (kind === 'edit') approval = 'edit';
+    changed.push(...changedPathsOf(segment, context));
     if (changesIntoUnknownDirectory(segment)) directoryUnknown = true;
-  }
-  for (const inner of analysis.nested) {
-    if (analysisApproval(context, inner) !== 'read-only') return undefined;
   }
   return approval;
 };
@@ -262,5 +286,5 @@ const analysisApproval = (context: ApprovalContext, analysis: Analysis): Approva
 export const commandApproval = (context: ApprovalContext, command: string, analysis: Analysis | null): ApprovalClass | undefined => {
   if (analysis === null || command.length > MAX_APPROVABLE_COMMAND_CHARS || analysis.segments.length === 0) return undefined;
   if (!insideRoots([context.cwd], context.roots, context.cwd, context.fs.canonicalise)) return undefined;
-  return analysisApproval(context, analysis);
+  return analysisApproval(context, analysis, []);
 };

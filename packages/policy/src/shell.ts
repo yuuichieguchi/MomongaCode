@@ -35,8 +35,11 @@ export type Segment = {
 export type Analysis = {
   segments: Segment[];
   redirects: Target[];
+  redirectAt: number[];
   reads: Target[];
+  readAt: number[];
   nested: Analysis[];
+  at: number;
   cwdAfter: CwdEffect;
 };
 
@@ -137,7 +140,9 @@ const scanFrom = (command: string, start: number, depth: number, incoming: Place
 
   const segments: Segment[] = [];
   const redirects: Target[] = [];
+  const redirectAt: number[] = [];
   const reads: Target[] = [];
+  const readAt: number[] = [];
   const nested: Analysis[] = [];
   let cwdState: CwdEffect = incoming.effect;
   let trail: readonly DirectoryStep[] = incoming.trail;
@@ -181,8 +186,13 @@ const scanFrom = (command: string, start: number, depth: number, incoming: Place
     if (kind === 'read-or-duplicate' && duplicatesDescriptor) return;
     if (kind === 'write-or-duplicate' && duplicatesDescriptor) return;
     const target = markRelativeUnresolvable([redirectTarget(staticValue, kind === 'write' || kind === 'write-or-duplicate')], cwdState)[0] as Target;
-    if (kind === 'read' || kind === 'read-or-duplicate') reads.push(target);
-    else redirects.push(target);
+    if (kind === 'read' || kind === 'read-or-duplicate') {
+      reads.push(target);
+      readAt.push(segments.length);
+    } else {
+      redirects.push(target);
+      redirectAt.push(segments.length);
+    }
   };
 
   const endSegment = (endIndex: number, operatorLength: number): void => {
@@ -194,7 +204,9 @@ const scanFrom = (command: string, start: number, depth: number, incoming: Place
       if (first !== undefined && first.plain && RESERVED_WORDS.has(first.value)) unsupported('shell reserved word');
       const segment = describeSegment(text, words, opaque, { effect: cwdState, trail });
       segments.push(segment);
+      const firstPayload = nested.length;
       const payloadEffect = collectPayloads(segment, nested, depth);
+      for (const payload of nested.slice(firstPayload)) payload.at = segments.length - 1;
       cwdState = strongerEffect(cwdState, payloadEffect);
       if (segmentChangesDirectory(segment)) {
         cwdState = strongerEffect(cwdState, 'changed');
@@ -219,7 +231,7 @@ const scanFrom = (command: string, start: number, depth: number, incoming: Place
   };
 
   const absorbSubstitution = (body: string): void => {
-    nested.push(scan(body, depth + 1, { effect: cwdState, trail }));
+    nested.push({ ...scan(body, depth + 1, { effect: cwdState, trail }), at: segments.length });
     absorbed();
   };
 
@@ -234,7 +246,7 @@ const scanFrom = (command: string, start: number, depth: number, incoming: Place
     if (next === '(') {
       if (command[index + 2] === '(') return unsupported('arithmetic expansion');
       const inner = scanFrom(command, index + 2, depth + 1, { effect: cwdState, trail }, true);
-      nested.push(inner.analysis);
+      nested.push({ ...inner.analysis, at: segments.length });
       absorbed();
       return inner.end;
     }
@@ -393,7 +405,7 @@ const scanFrom = (command: string, start: number, depth: number, incoming: Place
     segment.effects = pathEffectsOf(segment, strongerEffect(segment.cwdBefore, segment.cwdEffect));
     if (segment.effects.opaque) segment.unanalyzable = true;
   }
-  return { analysis: { segments, redirects, reads, nested, cwdAfter: cwdState }, end };
+  return { analysis: { segments, redirects, redirectAt, reads, readAt, nested, at: 0, cwdAfter: cwdState }, end };
 };
 
 const SHELL_COMMAND_FLAG = /^-[A-Za-z]*c[A-Za-z]*$/;
@@ -443,17 +455,28 @@ export const analyzeCommand = (command: string): Analysis | null => {
 const writesOf = (segment: Segment, resolveFor: ((segment: Segment) => string | undefined) | undefined): Target[] =>
   segment.effects.darwinWrites !== undefined && resolveFor?.(segment) === DARWIN_SED ? segment.effects.darwinWrites : segment.effects.writes;
 
-export const allWriteTargets = (analysis: Analysis, resolveFor?: (segment: Segment) => string | undefined): Target[] => [
-  ...analysis.redirects,
-  ...analysis.segments.flatMap((segment) => writesOf(segment, resolveFor)),
-  ...analysis.nested.flatMap((inner) => allWriteTargets(inner, resolveFor)),
-];
+export type ExecutionStep = { reads: Target[]; writes: Target[]; relocates: boolean };
 
-export const allReadTargets = (analysis: Analysis): Target[] => [
-  ...analysis.reads,
-  ...analysis.segments.flatMap((segment) => segment.effects.reads),
-  ...analysis.nested.flatMap(allReadTargets),
-];
+export const executionSteps = (analysis: Analysis, resolveFor?: (segment: Segment) => string | undefined): ExecutionStep[] => {
+  const steps: ExecutionStep[] = [];
+  for (let position = 0; position < analysis.segments.length; position += 1) {
+    for (const inner of analysis.nested) if (inner.at === position) steps.push(...executionSteps(inner, resolveFor));
+    steps.push({
+      reads: analysis.reads.filter((_, index) => analysis.readAt[index] === position),
+      writes: analysis.redirects.filter((_, index) => analysis.redirectAt[index] === position),
+      relocates: false,
+    });
+    const segment = analysis.segments[position] as Segment;
+    const writes = writesOf(segment, resolveFor);
+    steps.push({ reads: segment.effects.reads, writes, relocates: segment.effects.spec?.createsNames === true && writes.length > 0 });
+  }
+  return steps;
+};
+
+export const allWriteTargets = (analysis: Analysis, resolveFor?: (segment: Segment) => string | undefined): Target[] =>
+  executionSteps(analysis, resolveFor).flatMap((step) => step.writes);
+
+export const allReadTargets = (analysis: Analysis): Target[] => executionSteps(analysis).flatMap((step) => step.reads);
 
 export const programNameOf = (segment: Segment): string | undefined => nameOf(segment.words[segment.effectiveIndex]);
 

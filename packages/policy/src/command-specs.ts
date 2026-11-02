@@ -78,6 +78,7 @@ export type CommandSpecInput = {
   wrapper?: WrapperDecl;
   patternOptions?: readonly string[];
   removes?: true;
+  createsNames?: true;
   psLetters?: { allowed: string; sensitive: string };
 };
 
@@ -211,9 +212,10 @@ export const COMMAND_SPECS: readonly CommandSpec[] = [
     plainOperandsOnly: true,
     options: [...flag(...letters('achm')), ...valued('non-path', '-A', '-t', '-d'), ...valued('read', '-r')],
   }),
-  define({ names: ['mv'], approval: 'edit', operands: 'move', options: [...flag(...letters('finhv')), ...COPY_TARGET_OPTIONS] }),
+  define({ names: ['mv'], createsNames: true, approval: 'edit', operands: 'move', options: [...flag(...letters('finhv')), ...COPY_TARGET_OPTIONS] }),
   define({
     names: ['cp'],
+    createsNames: true,
     approval: 'edit',
     operands: 'copy',
     options: [
@@ -278,19 +280,19 @@ export const COMMAND_SPECS: readonly CommandSpec[] = [
   define({ names: ['ps'], approval: 'read-only', operands: 'none', options: PS_OPTIONS, psLetters: { allowed: 'AaCcfhjlMmrSTuvwXx', sensitive: 'eE' } }),
   define({ names: ['sort'], approval: 'read-only', operands: 'read-all', options: SORT_OPTIONS }),
   define({ names: ['find'], approval: 'read-only', operands: 'read-all', extractor: 'find', noClusters: true, options: FIND_OPTIONS }),
-  define({ names: ['git'], approval: 'read-only', extractor: 'git', operands: 'candidate-all', options: GIT_GLOBAL_OPTIONS }),
+  define({ names: ['git'], createsNames: true, approval: 'read-only', extractor: 'git', operands: 'candidate-all', options: GIT_GLOBAL_OPTIONS }),
 
   define({ names: ['tee'], operands: 'write-all', options: flag('-a', '-i', '-p') }),
   define({ names: ['truncate'], operands: 'write-all', options: [...flag('-c'), ...valued('non-path', '-s'), ...valued('read', '-r')] }),
-  define({ names: ['install'], extractor: 'install', operands: 'copy', options: [...flag(...letters('bCcdpsv')), ...valued('non-path', '-B', '-f', '-g', '-m', '-o', '-S', '--suffix', '--mode', '--owner', '--group'), ...COPY_TARGET_OPTIONS] }),
-  define({ names: ['ln'], extractor: 'ln', operands: 'copy', options: [...flag(...letters('sfhnviFw')), ...valued('non-path', '-S', '--suffix'), ...COPY_TARGET_OPTIONS] }),
+  define({ names: ['install'], createsNames: true, extractor: 'install', operands: 'copy', options: [...flag(...letters('bCcdpsv')), ...valued('non-path', '-B', '-f', '-g', '-m', '-o', '-S', '--suffix', '--mode', '--owner', '--group'), ...COPY_TARGET_OPTIONS] }),
+  define({ names: ['ln'], createsNames: true, extractor: 'ln', operands: 'copy', options: [...flag(...letters('sfhnviFw')), ...valued('non-path', '-S', '--suffix'), ...COPY_TARGET_OPTIONS] }),
   define({ names: ['dd'], extractor: 'dd', operands: 'none' }),
   define({ names: ['curl'], extractor: 'curl', operands: 'none', options: [...CURL_OPTIONS, ...flag('-O', '--remote-name')] }),
   define({ names: ['wget'], extractor: 'wget', operands: 'none', options: WGET_OPTIONS }),
-  define({ names: ['tar', 'bsdtar', 'gtar'], extractor: 'tar', operands: 'read-all', options: TAR_OPTIONS }),
-  define({ names: ['unzip'], extractor: 'unzip', operands: 'read-all', options: [...valued('non-path', '-x', '-P'), ...valued('write', '-d')] }),
+  define({ names: ['tar', 'bsdtar', 'gtar'], createsNames: true, extractor: 'tar', operands: 'read-all', options: TAR_OPTIONS }),
+  define({ names: ['unzip'], createsNames: true, extractor: 'unzip', operands: 'read-all', options: [...valued('non-path', '-x', '-P'), ...valued('write', '-d')] }),
   define({ names: ['zip'], operands: 'first-write-rest-read', options: [...valued('non-path', '-b', '-t', '-n', '-x', '-i'), ...valued('write', '-O', '--output-file')] }),
-  define({ names: ['rsync', 'scp'], extractor: 'transfer', operands: 'copy', options: TRANSFER_OPTIONS }),
+  define({ names: ['rsync', 'scp'], createsNames: true, extractor: 'transfer', operands: 'copy', options: TRANSFER_OPTIONS }),
   define({ names: ['patch'], extractor: 'patch', operands: 'none', options: flag('--dry-run') }),
   define({ names: ['awk', 'gawk', 'mawk'], extractor: 'awk', operands: 'read-all', options: [...valued('non-path', '-F', '-v', '--field-separator', '--assign'), ...valued('read', '-f', '--file')] }),
   define({ names: ['less'], operands: 'read-all', options: [...valued('non-path', ...letters('pPtTxyzhbjk')), ...valued('write', '-o', '-O', '--log-file')] }),
