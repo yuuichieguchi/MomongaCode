@@ -200,10 +200,15 @@ class ManagedConnection implements McpServerConnection {
     if (!('url' in config)) return { state: 'not_applicable' };
     if (Object.keys(config.headers ?? {}).some((header) => header.toLowerCase() === 'authorization')) return { state: 'static_header' };
     if (remote === undefined) throw new Error(`MCP server "${this.name}" has no credential store configured`);
+    const live = this.session;
     try {
-      await this.ensureSession();
+      if (live === undefined) await this.ensureSession();
+      else await this.listTools();
     } catch (error) {
-      if (authorizationRequiredFor(error) !== undefined) return { state: 'required' };
+      if (authorizationRequiredFor(error) !== undefined) {
+        if (live !== undefined && this.session === live) await this.discardSession(live);
+        return { state: 'required' };
+      }
       return { state: 'unreachable', detail: this.redact(errorMessage(error)) };
     }
     const stored = await remote.credentials.read(credentialKey(this.name, config.url));
