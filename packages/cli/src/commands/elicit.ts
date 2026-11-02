@@ -7,7 +7,8 @@ import type { ContentValue } from '../elicit/form.ts';
 import type { ElicitationView } from '../client/views.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
-import { activeRunIdOf } from './targets.ts';
+import { activeRunIdOf, runTreeOf } from './targets.ts';
+import type { RuntimeClient } from '../client/runtime-client.ts';
 
 export class ElicitationUsageError extends Error {
   constructor(message: string) {
@@ -82,6 +83,12 @@ const responsesFor = (view: ElicitationView, options: ElicitOptions): Record<str
   return Object.fromEntries([[request?.key ?? '', acceptedContent(view, options.set)]]);
 };
 
+export const pendingElicitationsOf = async (client: Pick<RuntimeClient, 'getRun' | 'childRuns' | 'elicitations'>, runId: string): Promise<ElicitationView[]> => {
+  const tree = await runTreeOf(client, runId);
+  const views = await Promise.all(tree.map(async ({ run }) => client.elicitations(run.id)));
+  return views.flat().filter((view) => view.status === 'pending');
+};
+
 export const elicit = async (ports: CliPorts, paths: MomongaPaths, inputId: string | undefined, options: ElicitOptions, interrupt: AbortSignal): Promise<number> => {
   const actions = chosenActions(options);
   if (actions.length > 1) throw new ElicitationUsageError(`choose one of --accept, --decline, --cancel and --responses, not ${actions.join(' and ')}`);
@@ -91,7 +98,7 @@ export const elicit = async (ports: CliPorts, paths: MomongaPaths, inputId: stri
   try {
     if (inputId === undefined) {
       const runId = await activeRunIdOf(client, ports.cwd);
-      const pending = (await client.elicitations(runId)).filter((view) => view.status === 'pending');
+      const pending = await pendingElicitationsOf(client, runId);
       ports.stdout.write(
         pending.length === 0 ? `run ${runId} has no pending elicitations\n` : `${pending.map((view) => describeElicitation(view.id, view.server, titleOf(view), view.requests)).join('\n')}\n`,
       );

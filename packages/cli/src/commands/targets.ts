@@ -30,7 +30,7 @@ export const newestSessionIdOf = async (client: RuntimeClient, cwd: string): Pro
 
 export type RunNode = { run: RunView; depth: number };
 
-export const runTreeOf = async (client: RuntimeClient, runId: string, depth = 0): Promise<RunNode[]> => {
+export const runTreeOf = async (client: Pick<RuntimeClient, 'getRun' | 'childRuns'>, runId: string, depth = 0): Promise<RunNode[]> => {
   const run = await client.getRun(runId);
   const descendants = await Promise.all((await client.childRuns(runId)).map((child) => runTreeOf(client, child.id, depth + 1)));
   return [{ run, depth }, ...descendants.flat()];
