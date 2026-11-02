@@ -2,14 +2,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  anthropicCountTokensReply,
   anthropicTextReply,
   anthropicToolUseReply,
   openResponsesTextReply,
   openResponsesToolCallReply,
+  FAKE_ANTHROPIC_COUNT_TOKENS_PATH,
   startFakeAnthropic,
   startFakeOpenResponses,
 } from '@momonga/testkit';
-import type { FakeUpstreamServer, RecordedUpstreamRequest } from '@momonga/testkit';
+import type { FakeUpstreamReply, FakeUpstreamServer, RecordedUpstreamRequest } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
 import { readDb } from './support/db.ts';
 import { createE2eHome, registerE2eCleanup } from './support/home.ts';
@@ -26,9 +28,19 @@ const SECRET_NAME = 'provider-main';
 const SECRET_VALUE = 'e2e-provider-key-7f3a91c2d4b6';
 const CAPABILITIES = { contextWindow: 8192, maxOutputTokens: 1024 };
 const PLAN_ARGUMENT_FRAGMENTS = ['{"entries": [{"content": "insp', 'ect the code", "status": "in_pro', 'gress", "priority": "high"}]}'];
+const COUNTED_INPUT_TOKENS = 50;
 const FINAL_TEXT = 'plan recorded, all done';
 
 type Adapter = 'anthropic' | 'open-responses';
+
+const startScriptedAnthropic = (socketPath: string, script: FakeUpstreamReply[]): Promise<FakeUpstreamServer> => {
+  const remaining = [...script];
+  return startFakeAnthropic({
+    apiKey: SECRET_VALUE,
+    socketPath,
+    respond: (request) => (request.path === FAKE_ANTHROPIC_COUNT_TOKENS_PATH ? anthropicCountTokensReply(COUNTED_INPUT_TOKENS) : remaining.shift()),
+  });
+};
 
 const writeSecrets = (home: E2eHome, secrets: Record<string, string>): void => {
   fs.writeFileSync(path.join(home.root, E2E_SECRETS_FILE_NAME), JSON.stringify(secrets), { mode: 0o600 });
@@ -56,7 +68,7 @@ const framesOf = async (runtime: ReturnType<typeof createRuntimeClient>, runId: 
   return frames;
 };
 
-const upstreamRequests = (upstream: FakeUpstreamServer): RecordedUpstreamRequest[] => upstream.requests.filter((request) => request.method === 'POST');
+const upstreamRequests = (upstream: FakeUpstreamServer): RecordedUpstreamRequest[] => upstream.requests.filter((request) => request.method === 'POST' && request.path !== FAKE_ANTHROPIC_COUNT_TOKENS_PATH);
 
 const filesUnder = (dir: string): string[] =>
   fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -95,11 +107,10 @@ describe('providers through real processes', () => {
   it(titleOf('providers-anthropic'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     writeSecrets(home, { [SECRET_NAME]: SECRET_VALUE });
-    const upstream = await startFakeAnthropic({
-      apiKey: SECRET_VALUE,
-      socketPath: path.join(home.root, 'a.sock'),
-      script: [anthropicToolUseReply('toolu_e2e_1', 'UpdatePlan', PLAN_ARGUMENT_FRAGMENTS), anthropicTextReply(['plan recorded, ', 'all done'])],
-    });
+    const upstream = await startScriptedAnthropic(path.join(home.root, 'a.sock'), [
+      anthropicToolUseReply('toolu_e2e_1', 'UpdatePlan', PLAN_ARGUMENT_FRAGMENTS),
+      anthropicTextReply(['plan recorded, ', 'all done']),
+    ]);
     registerE2eCleanup(() => upstream.close());
     await startProviderStack(home, 'anthropic', upstream);
     const runtime = createRuntimeClient(home);
@@ -159,7 +170,7 @@ describe('providers through real processes', () => {
   it(titleOf('providers-missing-secret'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     writeSecrets(home, {});
-    const upstream = await startFakeAnthropic({ apiKey: SECRET_VALUE, socketPath: path.join(home.root, 'a.sock'), script: [anthropicTextReply(['unreachable'])] });
+    const upstream = await startScriptedAnthropic(path.join(home.root, 'a.sock'), [anthropicTextReply(['unreachable'])]);
     registerE2eCleanup(() => upstream.close());
     await startProviderStack(home, 'anthropic', upstream);
     const runtime = createRuntimeClient(home);
@@ -177,6 +188,33 @@ describe('providers through real processes', () => {
         run.id,
       )[0];
       expect(failure?.payload_json).toContain('secret_unavailable');
+    } finally {
+      await runtime.close();
+    }
+  });
+  it(titleOf('providers-secret-added-after-start'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    const home = await createE2eHome();
+    writeSecrets(home, {});
+    const upstream = await startScriptedAnthropic(path.join(home.root, 'a.sock'), [anthropicTextReply(['now it works'])]);
+    registerE2eCleanup(() => upstream.close());
+    await startProviderStack(home, 'anthropic', upstream);
+    const runtime = createRuntimeClient(home);
+    try {
+      const { session } = await runtime.createSession();
+      const failed = await runtime.createRun(session.id, 'Say hello');
+      await until(async () => (await runtime.getRun(failed.run.id)).run.status === 'FAILED', {
+        deadlineMs: E2E_RUN_COMPLETED_BOUND_MS,
+        description: `run ${failed.run.id} is FAILED`,
+      });
+      expect(upstream.requests).toEqual([]);
+      writeSecrets(home, { [SECRET_NAME]: SECRET_VALUE });
+      const { run } = await runtime.createRun(session.id, 'Say hello again');
+      await until(async () => (await runtime.getRun(run.id)).run.status === 'COMPLETED', {
+        deadlineMs: E2E_RUN_COMPLETED_BOUND_MS,
+        description: `run ${run.id} is COMPLETED`,
+      });
+      expect(upstreamRequests(upstream)).toHaveLength(1);
+      expect(upstreamRequests(upstream)[0]?.headers['x-api-key']).toBe(SECRET_VALUE);
     } finally {
       await runtime.close();
     }

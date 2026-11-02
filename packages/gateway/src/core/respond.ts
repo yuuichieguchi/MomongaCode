@@ -21,7 +21,7 @@ import { armDeadline } from './deadline.ts';
 import { GatewayError, isRunCancelled } from './errors.ts';
 import { estimateInputTokens, estimateOutputTokens, estimatedUsage } from './estimate.ts';
 import { inputHasImages, resolveInput } from './input.ts';
-import type { ResolvedInput } from './input.ts';
+import type { ConnectionResponses, ResolvedInput } from './input.ts';
 import { baseResource } from './resource.ts';
 import { UpstreamFailure, emptyStreamFailure, failureFrom, runWithRetry } from './retry.ts';
 import type { RetryOutcome } from './retry.ts';
@@ -40,6 +40,7 @@ export type ResponseJob = {
   parent: TraceParent | undefined;
   runId: string | undefined;
   step: number | undefined;
+  connection?: ConnectionResponses;
 };
 
 type Opened = {
@@ -388,6 +389,7 @@ async function* relay(
     yield failedTerminal({ code: 'internal_error', message, type: 'server_error' }, resource.output);
     return;
   }
+  job.connection?.remember(responseId, { input: resolved.stored, output: resource.output });
   target.breaker.onSuccess();
   opened.span.succeed({ responseModel: target.model, responseId, finishReason: finishReasonOf(resource), usage });
   yield terminal;
@@ -395,7 +397,7 @@ async function* relay(
 
 export async function* executeResponse(services: Services, job: ResponseJob, control: RunControl): AsyncGenerator<StreamEvent> {
   const { signal } = control;
-  const resolved = resolveInput(services.store, services.codec, job.body.previous_response_id, job.clientInput);
+  const resolved = resolveInput(services.store, services.codec, job.body.previous_response_id, job.clientInput, job.connection);
   const candidates = await services.router.candidates(job.alias, { tools: (job.body.tools?.length ?? 0) > 0, images: inputHasImages(resolved.forAdapter) });
   const disarm = armDeadline(services, job.deadlineAt, control.abort);
   try {

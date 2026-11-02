@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import path from 'node:path';
 import { credentialEnvNames, loadUserSettings, secretNames } from '@momonga/config';
 import {
   acquireProcessLock,
@@ -8,6 +9,7 @@ import {
   announceReady,
   createJsonLogger,
   createKeychainSecretStore,
+  EntryUsageError,
   ensureMomongaDirs,
   minimalChildEnv,
   momongaPaths,
@@ -51,6 +53,7 @@ export type StartGatewayProcessOptions = {
   exec?: ExecFn;
   execWithStdin?: ExecWithStdinFn;
   secretStore?: SecretStore;
+  debugTcp?: { port: number; tokenFile: string };
   spawn?: SpawnFn;
   logger?: JsonLogger;
   stdout?: TextStream;
@@ -221,6 +224,18 @@ const createFmAdapter = async (name: string, target: Extract<ResolvedTarget, { a
     toolCallingSetting: target.toolCalling,
   });
   return createChatCompletionsAdapter({ ...withBinaryGuard(managed, context.binary), clock });
+};
+
+const DEBUG_TCP_HOST = '127.0.0.1';
+const GROUP_AND_OTHER_BITS = 0o077;
+
+const readDebugToken = (tokenFile: string): string => {
+  if (!path.isAbsolute(tokenFile)) throw new EntryUsageError(`--debug-tcp-token-file must be an absolute path, got ${tokenFile}`);
+  const mode = fs.statSync(tokenFile).mode;
+  if ((mode & GROUP_AND_OTHER_BITS) !== 0) throw new EntryUsageError(`${tokenFile} must not be readable by group or others`);
+  const token = fs.readFileSync(tokenFile, 'utf8').replace(/\n$/, '');
+  if (token === '') throw new EntryUsageError(`${tokenFile} holds an empty token`);
+  return token;
 };
 
 const readOsBuild = async (exec: ExecFn): Promise<string> => {
@@ -422,6 +437,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       dbPath: paths.databases.gateway,
       hmacKey,
       socketPath: paths.sockets.gateway,
+      ...(options.debugTcp === undefined ? {} : { debugTcp: { host: DEBUG_TCP_HOST, port: options.debugTcp.port, token: readDebugToken(options.debugTcp.tokenFile) } }),
       telemetry,
       version: options.version,
       onError: (error) => logger.error('unhandled gateway error', { err: toError(error) }),
@@ -430,6 +446,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     secretResolver.onResolved((name, value) => {
       for (const credential of credentialValuesOf({}, [], new Map([[name, value]]), (message) => logger.warn(message))) gateway.addCredential(credential);
     });
+    if (gateway.tcpPort !== undefined) logger.info('gateway.debug_listener', { data: { host: DEBUG_TCP_HOST, port: gateway.tcpPort } });
     cleanups.splice(cleanups.indexOf(closeAdapters), 1);
     cleanups.push(() => (abortRequested ? gateway.abort() : gateway.close()));
     requestGatewayAbort = () => void gateway.abort();

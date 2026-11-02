@@ -1,7 +1,13 @@
 import type { AdapterInputItem, ContentPart, InputItem } from '@momonga/protocol';
 import type { CompactionCodec } from './compaction.ts';
 import { invalidRequest, notFound } from './errors.ts';
-import type { GatewayStore } from './store.ts';
+import type { GatewayStore, StoredResponse } from './store.ts';
+
+export type ConnectionResponses = {
+  lookup(id: string): StoredResponse | undefined;
+  remember(id: string, response: StoredResponse): void;
+  evict(id: string): void;
+};
 
 export const normalizeInput = (input: string | InputItem[] | null | undefined): InputItem[] => {
   if (input === undefined || input === null) return [];
@@ -19,8 +25,10 @@ export const resolveInput = (
   codec: CompactionCodec,
   previousResponseId: string | null | undefined,
   clientInput: InputItem[],
+  connection?: ConnectionResponses,
 ): ResolvedInput => {
-  const prior = previousResponseId === undefined || previousResponseId === null ? undefined : store.getResponse(previousResponseId);
+  const prior =
+    previousResponseId === undefined || previousResponseId === null ? undefined : (connection?.lookup(previousResponseId) ?? store.getResponse(previousResponseId));
   if (previousResponseId !== undefined && previousResponseId !== null && prior === undefined) {
     throw notFound('previous_response_not_found', `previous response "${previousResponseId}" was not found or was not stored`, 'previous_response_id');
   }
