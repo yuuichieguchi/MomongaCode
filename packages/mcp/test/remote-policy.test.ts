@@ -189,3 +189,69 @@ describe('redirects', () => {
     expect(target.requests()).toBe(0);
   });
 });
+
+describe('redirects followed by the guarded fetch itself', () => {
+  const redirectTo = (location: string, status = 302): Response => new Response(null, { status, headers: { location } });
+
+  const scripted = (...responses: Response[]) => {
+    const urls: string[] = [];
+    const send = (url: URL): Promise<Response> => {
+      urls.push(url.href);
+      const next = responses.shift();
+      if (next === undefined) return Promise.reject(new Error(`unexpected request to ${url.href}`));
+      return Promise.resolve(next);
+    };
+    return { urls, send };
+  };
+
+  it('never sends the second request when a public name redirects to a private address literal', async () => {
+    const { urls, send } = scripted(redirectTo('https://169.254.169.254/latest/meta-data'));
+    const guarded = createGuardedFetch({ scope: 'project', send });
+    const response = await guarded.fetch('https://mcp.example.com/.well-known/oauth-protected-resource');
+    expect(response.status).toBe(302);
+    expect(urls).toEqual(['https://mcp.example.com/.well-known/oauth-protected-resource']);
+  });
+
+  it('refuses a same-origin redirect that adds credentials to the URL', async () => {
+    const { urls, send } = scripted(redirectTo('https://user:pass@mcp.example.com/mcp'));
+    const guarded = createGuardedFetch({ scope: 'project', send });
+    await expect(guarded.fetch('https://mcp.example.com/mcp')).rejects.toMatchObject({ violation: 'credentials_in_url' });
+    expect(urls).toHaveLength(1);
+  });
+
+  it('does not follow a redirect to another origin and hands the redirect response back', async () => {
+    const { urls, send } = scripted(redirectTo('https://elsewhere.example.net/token'));
+    const guarded = createGuardedFetch({ scope: 'project', send });
+    const response = await guarded.fetch('https://auth.example.com/token', { method: 'POST' });
+    expect(response.status).toBe(302);
+    expect(urls).toHaveLength(1);
+  });
+
+  it('follows a same-origin redirect, re-checking the target', async () => {
+    const { urls, send } = scripted(redirectTo('/other'), new Response('ok'));
+    const guarded = createGuardedFetch({ scope: 'project', send });
+    expect(await (await guarded.fetch('https://mcp.example.com/mcp')).text()).toBe('ok');
+    expect(urls).toEqual(['https://mcp.example.com/mcp', 'https://mcp.example.com/other']);
+  });
+
+  it('does not follow a method-changing redirect of a POST', async () => {
+    const { urls, send } = scripted(redirectTo('/elsewhere', 302));
+    const guarded = createGuardedFetch({ scope: 'project', send });
+    expect((await guarded.fetch('https://auth.example.com/token', { method: 'POST' })).status).toBe(302);
+    expect(urls).toHaveLength(1);
+  });
+
+  it('stops after five hops', async () => {
+    const { urls, send } = scripted(...Array.from({ length: 7 }, () => redirectTo('/again')));
+    const guarded = createGuardedFetch({ scope: 'project', send });
+    expect((await guarded.fetch('https://mcp.example.com/mcp')).status).toBe(302);
+    expect(urls).toHaveLength(6);
+  });
+
+  it('leaves redirect handling to the caller when it asks for manual', async () => {
+    const { urls, send } = scripted(redirectTo('https://169.254.169.254/'));
+    const guarded = createGuardedFetch({ scope: 'project', send });
+    expect((await guarded.fetch('https://mcp.example.com/mcp', { redirect: 'manual' })).status).toBe(302);
+    expect(urls).toHaveLength(1);
+  });
+});

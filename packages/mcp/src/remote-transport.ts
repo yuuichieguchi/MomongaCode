@@ -91,6 +91,7 @@ class RemoteTransport implements ConnectionTransport {
     const wasToolCall = this.toolCalls.delete(message.id);
     if (!wasToolCall || !('result' in message)) return message;
     const result: unknown = message.result;
+    // SDK 2.3.1 rejects any tools/call result whose resultType is "task" and drops the handle; surfacing it as an error carries the handle through the client.
     if (!isRecord(result) || result['resultType'] !== 'task') return message;
     return { jsonrpc: '2.0', id: message.id, error: { code: TASK_HANDLE_ERROR_CODE, message: 'the server returned a task handle', data: result } };
   }

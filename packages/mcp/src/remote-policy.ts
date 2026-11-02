@@ -67,18 +67,40 @@ const lookupVia = (resolver: HostResolver): LookupFunction => {
 
 export type GuardedFetch = { fetch: FetchLike; close(): Promise<void> };
 
-export type GuardedFetchOptions = { scope: McpServerScope; resolver?: HostResolver };
+type Send = (url: URL, init: RequestInit | undefined) => Promise<Response>;
 
-export const createGuardedFetch = ({ scope, resolver = systemResolver }: GuardedFetchOptions): GuardedFetch => {
+export type GuardedFetchOptions = { scope: McpServerScope; resolver?: HostResolver; send?: Send };
+
+const REDIRECT_STATUSES: ReadonlySet<number> = new Set([301, 302, 303, 307, 308]);
+const MAX_REDIRECT_HOPS = 5;
+
+const redirectTarget = (from: URL, response: Response): URL | undefined => {
+  const location = REDIRECT_STATUSES.has(response.status) ? response.headers.get('location') : null;
+  return location === null ? undefined : new URL(location, from);
+};
+
+export const createGuardedFetch = ({ scope, resolver = systemResolver, send }: GuardedFetchOptions): GuardedFetch => {
   const agent = new Agent({
     headersTimeout: 0,
     bodyTimeout: 0,
     ...(scope === 'project' ? { connect: { lookup: lookupVia(resolver) } } : {}),
   });
+  const dispatch: Send =
+    send ?? ((url, init) => undiciFetch(url, { ...(init as UndiciRequestInit | undefined), dispatcher: agent }) as unknown as Promise<Response>);
   return {
     fetch: async (input, init) => {
-      assertRemoteUrl(String(input), scope);
-      return undiciFetch(input, { ...(init as UndiciRequestInit | undefined), dispatcher: agent }) as unknown as Awaited<ReturnType<FetchLike>>;
+      let current = assertRemoteUrl(String(input), scope);
+      if (init?.redirect === 'error' || init?.redirect === 'manual') return dispatch(current, init);
+      const method = (init?.method ?? 'GET').toUpperCase();
+      for (let hops = 0; ; hops += 1) {
+        const response = await dispatch(current, { ...init, redirect: 'manual' });
+        const target = redirectTarget(current, response);
+        if (target === undefined || hops === MAX_REDIRECT_HOPS) return response;
+        const keepsMethod = method === 'GET' || response.status === 307 || response.status === 308;
+        if (!keepsMethod || target.origin !== current.origin) return response;
+        await response.body?.cancel();
+        current = assertRemoteUrl(target.href, scope);
+      }
     },
     close: () => agent.destroy(),
   };
