@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AutoClassifier, AutoClassifierRequest, PostToolHookResult, PreToolHookVerdict, ToolHooks } from '@momonga/tools';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
-import { ruleFor } from './helpers.ts';
+import { policyFor, ruleFor, sessionTmpDirOf } from './helpers.ts';
 
 const BASH = { kind: 'execute' as const, sideEffect: 'exec' as const };
 const subject = { kind: 'command' as const, tool: 'Bash', command: 'make build' };
@@ -106,6 +106,51 @@ describe('PreToolUse hooks in the permission gate', () => {
     const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(bash(executed)), [call('c1', 'Bash')], { hooks, rules }));
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed', output: 'built\n\n[PostToolUse hook]\nlint failed' } });
     expect(seen).toEqual(['pre:c1', 'post:c1:built']);
+  });
+});
+
+describe('questions only a person may answer: protected writes and removal of the workspace', () => {
+  const commandTool = (command: string, executed: string[]) =>
+    makeTool('Bash', {
+      ...BASH,
+      subject: () => ({ kind: 'command' as const, tool: 'Bash', command }),
+      execute: async () => {
+        executed.push('run');
+        return { status: 'completed' as const, output: 'done' };
+      },
+    });
+
+  it.each([
+    ['removal of the workspace', 'rm -rf .'],
+    ['a protected write', 'touch .envrc'],
+  ])('never sends %s to the auto classifier', async (_label, command) => {
+    const harness = makeHarness();
+    const executed: string[] = [];
+    const { classifier, requests } = fakeClassifier('allow');
+    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(commandTool(command, executed)), [call('c1', 'Bash')], { mode: 'auto', classifier, tmpDir: sessionTmpDirOf(harness.layout), sandboxPolicy: policyFor({ layout: harness.layout }) }));
+    expect(outcome).toMatchObject({ kind: 'needs_approval' });
+    expect(requests).toEqual([]);
+    expect(executed).toEqual([]);
+  });
+
+  it.each([
+    ['removal of the workspace', 'rm -rf .'],
+    ['a protected write', 'touch .envrc'],
+  ])('is not resolved by a hook allow for %s', async (_label, command) => {
+    const harness = makeHarness();
+    const executed: string[] = [];
+    const { hooks } = fakeHooks({ decision: 'allow', reason: 'fine' });
+    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(commandTool(command, executed)), [call('c1', 'Bash')], { hooks, tmpDir: sessionTmpDirOf(harness.layout), sandboxPolicy: policyFor({ layout: harness.layout }) }));
+    expect(outcome).toMatchObject({ kind: 'needs_approval' });
+    expect(executed).toEqual([]);
+  });
+
+  it('still lets a hook allow resolve an ordinary mode ask', async () => {
+    const harness = makeHarness();
+    const executed: string[] = [];
+    const { hooks } = fakeHooks({ decision: 'allow', reason: 'fine' });
+    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(commandTool('make build', executed)), [call('c1', 'Bash')], { hooks }));
+    expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed' } });
   });
 });
 

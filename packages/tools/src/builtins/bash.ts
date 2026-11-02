@@ -30,6 +30,10 @@ const extractCwd = (output: string, nonce: string): { output: string; cwd: strin
   return { output: output.slice(0, removeFrom) + output.slice(removeTo), cwd };
 };
 
+const bashPathFor = (env: Readonly<Record<string, string>>): string => resolveBashPath(process.platform, { ...nodeShellPorts(), env });
+
+const bashEnvOf = (env: Readonly<Record<string, string>>): Record<string, string> => ({ ...env, CDPATH: '', GIT_TERMINAL_PROMPT: '0', PAGER: 'cat', GIT_PAGER: 'cat' });
+
 const requireMarker = (ctx: ToolContext): string => {
   if (ctx.processMarker === undefined) throw new ToolExecutionError('Bash needs a process marker from the executor');
   return ctx.processMarker;
@@ -50,9 +54,9 @@ const startBackgroundJob = async (input: BashInput, ctx: ToolContext): Promise<T
     spawn: (markerFile, signal) =>
       ctx.sandbox.spawn(
         {
-          argv: ['/bin/bash', '-c', input.command],
+          argv: [bashPathFor(ctx.env), '-c', input.command],
           cwd: ctx.session.cwd,
-          env: { ...ctx.env, GIT_TERMINAL_PROMPT: '0', PAGER: 'cat', GIT_PAGER: 'cat' },
+          env: bashEnvOf(ctx.env),
           markerFile,
           ...(ctx.tmpDir === undefined ? {} : { tmpDir: ctx.tmpDir }),
         },
@@ -93,9 +97,9 @@ export const bashTool = defineTool<BashInput>({
     const script = `${trapScript(nonce)}\n${input.command}`;
     const child = ctx.sandbox.spawn(
       {
-        argv: [resolveBashPath(process.platform, { ...nodeShellPorts(), env: ctx.env }), '-c', script],
+        argv: [bashPathFor(ctx.env), '-c', script],
         cwd: ctx.session.cwd,
-        env: { ...ctx.env, GIT_TERMINAL_PROMPT: '0', PAGER: 'cat', GIT_PAGER: 'cat' },
+        env: bashEnvOf(ctx.env),
         markerFile: marker,
         ...(ctx.tmpDir === undefined ? {} : { tmpDir: ctx.tmpDir }),
       },

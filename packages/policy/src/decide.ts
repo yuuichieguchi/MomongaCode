@@ -39,6 +39,7 @@ export type Decision = {
   source: 'rule' | 'mode' | 'protected' | 'hook';
   reason: string;
   rule?: PermissionRule;
+  humanOnly?: true;
 };
 
 const GLOB_METACHARACTER = /[*?[]/;
@@ -97,7 +98,7 @@ const scanDeny = (input: DecideInput, subject: PermissionSubject, applicable: Ap
 
 const protectedDecision = (input: DecideInput, subject: PermissionSubject): Decision | undefined => {
   const reason = protectedWriteReason(input, subject);
-  return reason === undefined ? undefined : { kind: 'ask', source: 'protected', reason };
+  return reason === undefined ? undefined : { kind: 'ask', source: 'protected', reason, humanOnly: true };
 };
 
 const checkGuards = (input: DecideInput, subject: PermissionSubject): Decision | undefined =>
@@ -287,7 +288,7 @@ const removesWorkspace = (input: DecideInput, targets: readonly string[]): boole
 
 const decidePathAccess = (input: DecideInput, plan: PathPlan, tool: PolicyTool, access: 'read' | 'write'): Decision[] => {
   const decisions: Decision[] = [];
-  if (input.mode !== 'bypassPermissions' && removesWorkspace(input, plan.removes)) decisions.push(byMode('ask', 'the command removes the workspace'));
+  if (input.mode !== 'bypassPermissions' && removesWorkspace(input, plan.removes)) decisions.push({ ...byMode('ask', 'the command removes the workspace'), humanOnly: true });
   if (plan.paths.length > 0) {
     decisions.push(decideSubject(input, tool, { kind: 'path', tool: tool.name, paths: plan.paths, access }, true));
   }
@@ -315,7 +316,7 @@ export const decide = (input: DecideInput): Decision => {
   ];
   const denied = secondary.find((decision) => decision.kind === 'deny');
   if (denied !== undefined) return denied;
-  const guarded = secondary.find((decision) => decision.kind === 'ask' && decision.source === 'protected');
+  const guarded = secondary.find((decision) => decision.kind === 'ask' && decision.humanOnly === true);
   if (guarded !== undefined) return guarded;
   if (primary.kind === 'ask') return primary;
   return secondary.find((decision) => decision.kind === 'ask') ?? primary;

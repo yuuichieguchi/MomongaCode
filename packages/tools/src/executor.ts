@@ -493,7 +493,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       if (verdict?.decision === 'ask' && decision.kind === 'allow') {
         decision = { kind: 'ask', source: 'hook', reason: reasonOr(verdict.reason, 'a PreToolUse hook requires approval') };
       }
-      if (verdict?.decision === 'allow' && decision.kind === 'ask' && decision.source === 'mode') {
+      if (verdict?.decision === 'allow' && decision.kind === 'ask' && decision.source === 'mode' && decision.humanOnly !== true) {
         decision = { kind: 'allow', source: 'hook', reason: reasonOr(verdict.reason, 'allowed by a PreToolUse hook') };
       }
     }
@@ -511,7 +511,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         const effective: Decision = unsandboxedExec
           ? { kind: 'ask', source: 'mode', reason: 'no sandbox is available: file deny rules are checked on the command text only, so command execution requires approval' }
           : decision;
-        if (batch.mode === 'auto' && (effective.source === 'mode' || effective.source === 'protected')) {
+        if (batch.mode === 'auto' && effective.source === 'mode' && effective.humanOnly !== true) {
           if (batch.classifier === undefined) throw new Error('auto mode needs a classifier');
           const classified = await batch.classifier.classify({
             callId: call.callId,
