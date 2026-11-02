@@ -12,6 +12,7 @@ export interface MomongaPaths {
   run: string;
   sockets: { gateway: string; runtime: string; supervisor: string };
   locks: { gateway: string; runtime: string; supervisor: string };
+  callLocks: string;
   markers: { root: string; tools: string; mcp: string; targets: string; daemons: string };
   state: string;
   databases: { runtime: string; gateway: string };
@@ -72,6 +73,7 @@ export const momongaLayout = (
     run,
     sockets: { gateway: socket('gateway'), runtime: socket('runtime'), supervisor: socket('supervisor') },
     locks: { gateway: join(run, 'gateway.lock'), runtime: join(run, 'runtime.lock'), supervisor: join(run, 'supervisor.lock') },
+    callLocks: join(run, 'call-locks'),
     markers: {
       root: markers,
       tools: join(markers, 'tools'),
@@ -142,6 +144,7 @@ export const ensureMomongaDirs = async (paths: MomongaPaths, ports: PlatformDire
   for (const directory of [
     paths.root,
     paths.run,
+    paths.callLocks,
     paths.markers.root,
     paths.markers.tools,
     paths.markers.mcp,

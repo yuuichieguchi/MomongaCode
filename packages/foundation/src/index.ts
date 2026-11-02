@@ -107,7 +107,7 @@ export {
   supervisorMaxCloseMs,
 } from './process-contract.ts';
 export type { JsonLogger, JsonLoggerOptions, LogFields, LogLevel, LogLineInput, ReadyFields, TextStream } from './process-contract.ts';
-export { MarkerReapError, REAP_POLL_INTERVAL_MS, findHolders, holderGroups, reapMarkedProcesses, reapMarkerDirectory, reconcileProcessGroup } from './process-markers.ts';
+export { MarkerReapError, REAP_POLL_INTERVAL_MS, findHolders, holderGroups, hostReapTiming, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, reconcileProcessGroup, stoppedCommandResult } from './process-markers.ts';
 export type { MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirectoryOptions, ReapTiming } from './process-markers.ts';
 export { isProcessAlive } from './process-alive.ts';
 export type { SignalSender } from './process-alive.ts';

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { findHolders, reconcileProcessGroup } from '@momonga/foundation';
+import { findHolders, reconcileProcessGroup, stoppedCommandResult } from '@momonga/foundation';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import type { SandboxExit } from '@momonga/sandbox';
 import type { BackgroundJobs } from '../ports.ts';
@@ -149,6 +149,7 @@ export const bashTool = defineTool<BashInput>({
         output: `Started background job ${job.id}. The call was interrupted after the job started, so ${describeJobStatus(job)}.`,
       };
     }
+    if (ctx.earlierAttempt?.stopped === true) return stoppedCommandResult();
     if (record.pgid !== undefined && ctx.processMarker !== undefined) {
       return reconcileProcessGroup({ pgid: record.pgid, marker: ctx.processMarker });
     }

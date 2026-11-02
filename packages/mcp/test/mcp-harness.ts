@@ -8,7 +8,7 @@ import type { McpServerConfig, McpServerEntry, PermissionRule, RuleEffect } from
 import { createMcpPool, type McpPool } from '@momonga/mcp';
 import { createToolExecutor, createToolRegistry } from '@momonga/tools';
 import type { BlobPort, ExecutionBatchInput, IdempotencyPort, LeasedBegin, ToolCall, ToolIdempotencyRecord, ToolSet } from '@momonga/tools';
-import { MCP_LEGACY_SERVER_PATH, MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_RECORD_ENV, createFakeClock, fakePolicyFilesystem, killPidsForCleanup, type FakeClock, type ModernFixtureRecord } from '@momonga/testkit';
+import { MCP_LEGACY_SERVER_PATH, MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_RECORD_ENV, createFakeClock, createFakeKernelLock, fakePolicyFilesystem, killPidsForCleanup, type FakeClock, type ModernFixtureRecord } from '@momonga/testkit';
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
@@ -205,11 +205,15 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000)) => {
   const markers = path.join(root, 'markers');
   for (const dir of [home, project]) fs.mkdirSync(dir, { recursive: true });
   fs.mkdirSync(markers, { mode: 0o700 });
+  const callLocks = path.join(root, 'call-locks');
+  fs.mkdirSync(callLocks, { mode: 0o700 });
   const executor = createToolExecutor({ fs: fakePolicyFilesystem(),
     idempotency: makeIdempotency(),
     blobs: unusedBlobs,
     clock,
     processMarkerDir: markers,
+    callLockDir: callLocks,
+    kernelLock: createFakeKernelLock({ inheritable: false }),
     onWarning: () => undefined,
     readOnlyRetry: { attempts: 3, baseMs: 0, maxMs: 0 },
   });

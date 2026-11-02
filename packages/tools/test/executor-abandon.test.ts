@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { REAP_POLL_INTERVAL_MS, findHolders } from '@momonga/foundation';
 import type { ReapTiming, SignalSender } from '@momonga/foundation';
 import { killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
-import { makeHarness } from './harness.ts';
+import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness, HarnessOptions } from './harness.ts';
 import { deferred, keyFor } from './helpers.ts';
 
@@ -296,7 +296,7 @@ describe('executor abandon', () => {
     expect(harness.idempotency.log.filter((entry) => entry.op === 'markUnknownIfPending')).toEqual([{ op: 'markUnknownIfPending', key: KEY_B, changed: true }]);
   });
 
-  it('a marker that cannot be cleared stays on disk and onWarning is called', PROCESS_TIMEOUT, async () => {
+  it('a process that survives its kill is a typed failure, the marker stays on disk and the record is still marked UNKNOWN', PROCESS_TIMEOUT, async () => {
     const timing = fakeTiming();
     let stubborn = 0;
     const kill: SignalSender = (pid, signal) => {
@@ -308,9 +308,12 @@ describe('executor abandon', () => {
     stubborn = spawnHolder(marker, 'exec sleep 30');
     seedPending(harness, KEY_A, stubborn);
 
-    const outcomes = await harness.executor.abandon([{ callId: 'call-a', idemKey: KEY_A }], { signal: noSignal() });
+    await expect(harness.executor.abandon([{ callId: 'call-a', idemKey: KEY_A }], { signal: noSignal() })).rejects.toMatchObject({
+      name: 'EarlierAttemptNotStoppedError',
+      code: 'earlier_attempt_not_stopped',
+      reason: 'survived',
+    });
 
-    expect(outcomes).toEqual([{ idemKey: KEY_A, callId: 'call-a', outcome: 'unknown' }]);
     expect(pidAlive(stubborn)).toBe(true);
     expect(fs.existsSync(marker)).toBe(true);
     expect(harness.warnings).toEqual(
@@ -320,7 +323,7 @@ describe('executor abandon', () => {
     expect(timing.sleeps).toBe(1 + STUBBORN_GRACE_MS / REAP_POLL_INTERVAL_MS);
   });
 
-  it('a target whose marker cannot be removed becomes a warning while the others are still reaped and every target is CAS-ed', PROCESS_TIMEOUT, async () => {
+  it('a target whose marker cannot be removed is a typed failure while the others are still reaped and every target is CAS-ed', PROCESS_TIMEOUT, async () => {
     const harness = makeHarness();
     const brokenMarker = markerOf(harness, KEY_A);
     fs.mkdirSync(path.join(brokenMarker, 'nested'), { recursive: true });
@@ -329,22 +332,70 @@ describe('executor abandon', () => {
     seedPending(harness, KEY_A);
     seedPending(harness, KEY_B, pgid);
 
-    const outcomes = await harness.executor.abandon(
-      [
-        { callId: 'call-a', idemKey: KEY_A },
-        { callId: 'call-b', idemKey: KEY_B },
-      ],
-      { signal: noSignal() },
-    );
+    await expect(
+      harness.executor.abandon(
+        [
+          { callId: 'call-a', idemKey: KEY_A },
+          { callId: 'call-b', idemKey: KEY_B },
+        ],
+        { signal: noSignal() },
+      ),
+    ).rejects.toMatchObject({ name: 'EarlierAttemptNotStoppedError', reason: 'unverifiable', message: expect.stringContaining(brokenMarker) });
 
-    expect(outcomes).toEqual([
-      { idemKey: KEY_A, callId: 'call-a', outcome: 'unknown' },
-      { idemKey: KEY_B, callId: 'call-b', outcome: 'unknown' },
-    ]);
-    expect(harness.warnings.some((message) => message.includes(brokenMarker))).toBe(true);
     expect(groupExists(pgid)).toBe(false);
     expect(fs.existsSync(marker)).toBe(false);
     expect(harness.idempotency.stateOf(KEY_A)).toBe('UNKNOWN');
     expect(harness.idempotency.stateOf(KEY_B)).toBe('UNKNOWN');
+  });
+
+  it('a call lock that stays held is a typed failure, the earlier attempt is not touched and the record is still marked UNKNOWN', async () => {
+    let now = 0;
+    const timing: ReapTiming = {
+      now: () => now,
+      sleep: async (ms) => {
+        now += ms;
+      },
+    };
+    const harness = makeHarness({ executor: { reap: { timing }, reconcileCapMs: 100 } });
+    seedPending(harness, KEY_A);
+    harness.kernelLock.holdExternally(path.join(harness.callLockDir, `${KEY_A}.lock`), 4242);
+
+    await expect(harness.executor.abandon([{ callId: 'call-a', idemKey: KEY_A }], { signal: noSignal() })).rejects.toMatchObject({
+      name: 'EarlierAttemptNotStoppedError',
+      reason: 'lock_held',
+    });
+
+    expect(harness.idempotency.stateOf(KEY_A)).toBe('UNKNOWN');
+  });
+});
+
+describe('executor reconcile of a PENDING call whose earlier attempt is still running', () => {
+  it('fails with a typed error when the process survives its kill, never reconciles, keeps the record PENDING and releases the call lock', PROCESS_TIMEOUT, async () => {
+    const timing = fakeTiming();
+    let stubborn = 0;
+    const kill: SignalSender = (pid, signal) => {
+      if (signal !== 0 && (pid === stubborn || pid === -stubborn)) return;
+      process.kill(pid, signal);
+    };
+    const harness = harnessWith({ kill, timing, killGraceMs: STUBBORN_GRACE_MS });
+    const marker = markerOf(harness, KEY_A);
+    stubborn = spawnHolder(marker, 'exec sleep 30');
+    seedPending(harness, KEY_A, stubborn);
+
+    const reconciled: string[] = [];
+    const tool = makeTool('Bash', {
+      kind: 'execute',
+      sideEffect: 'exec',
+      reconcile: async () => {
+        reconciled.push('reconcile');
+        return { outcome: 'unknown', output: 'unknown' };
+      },
+    });
+
+    await expect(harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('call-a', 'Bash', {}, 'allow_once')]))).rejects.toMatchObject({ name: 'EarlierAttemptNotStoppedError', code: 'earlier_attempt_not_stopped', reason: 'survived' });
+    expect(reconciled).toEqual([]);
+    expect(pidAlive(stubborn)).toBe(true);
+    expect(harness.idempotency.stateOf(KEY_A)).toBe('PENDING');
+    expect(harness.kernelLock.isHeldBy(path.join(harness.callLockDir, `${KEY_A}.lock`))).toBeUndefined();
   });
 });

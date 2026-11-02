@@ -17,7 +17,7 @@ import type { ToolRuntimePort, Worker, WorkerOptions } from '@momonga/runtime';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { Claim, RuntimeStore, Session } from '@momonga/store';
-import { fakePolicyFilesystem, createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { fakePolicyFilesystem, createFakeClock, createFakeKernelLock, createFakeTimers } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { createToolExecutor, createToolRegistry } from '@momonga/tools';
 import type { ToolSessionState } from '@momonga/tools';
@@ -679,12 +679,14 @@ export type WorkerKit = {
 export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
   const markers = path.join(env.layout.root, 'm');
   fs.mkdirSync(markers, { recursive: true, mode: 0o700 });
+  const callLocks = path.join(env.layout.root, 'call-locks');
+  fs.mkdirSync(callLocks, { recursive: true, mode: 0o700 });
   const gateway = createFakeGateway(capabilitiesFor(100_000));
   const settings = createFakeSettings({ home: env.layout.home, project: env.layout.projectReal });
   const tracer = createFakeTracer();
   const toolbox = createFakeToolbox();
   const instructions = createFakeInstructions();
-  const executor = createToolExecutor({ fs: fakePolicyFilesystem(), idempotency: env.store.idempotency, blobs: env.store.blobs, clock: env.clock, processMarkerDir: markers, onWarning: () => undefined });
+  const executor = createToolExecutor({ fs: fakePolicyFilesystem(), idempotency: env.store.idempotency, blobs: env.store.blobs, clock: env.clock, processMarkerDir: markers, callLockDir: callLocks, kernelLock: createFakeKernelLock({ inheritable: false }), onWarning: () => undefined });
   const sessionsTmpRoot = path.join(env.layout.root, 'sessions');
   const sessionTmpDir = path.join(sessionsTmpRoot, 'session-tmp');
   fs.mkdirSync(sessionTmpDir, { recursive: true, mode: 0o700 });

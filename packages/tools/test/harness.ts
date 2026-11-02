@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { canonicalJson, resolveCanonicalPath, sha256Hex } from '@momonga/foundation';
 import { absoluteFrom } from '@momonga/policy';
-import { fakePolicyFilesystem } from '@momonga/testkit';
+import { createFakeKernelLock, fakePolicyFilesystem } from '@momonga/testkit';
 import type { PermissionSubject } from '@momonga/policy';
 import { createToolExecutor, createToolRegistry, defineTool, validateToolInput } from '@momonga/tools';
 import type { AnyTool, ExecutionBatchInput, ToolCall, ToolContext, ToolDefinition, ToolExecutorOptions, ToolSet } from '@momonga/tools';
@@ -52,12 +52,17 @@ export const makeHarness = (options: HarnessOptions = {}) => {
   const blobs = makeBlobs();
   const markerDir = path.join(layout.root, 'markers');
   fs.mkdirSync(markerDir, { mode: 0o700 });
+  const callLockDir = path.join(layout.root, 'call-locks');
+  fs.mkdirSync(callLockDir, { mode: 0o700 });
+  const kernelLock = createFakeKernelLock({ inheritable: false });
   const warnings: string[] = [];
   const executor = createToolExecutor({
     idempotency: idempotency.port,
     blobs: blobs.port,
     clock,
     processMarkerDir: markerDir,
+    callLockDir,
+    kernelLock,
     onWarning: (message: string) => {
       warnings.push(message);
     },
@@ -101,7 +106,7 @@ export const makeHarness = (options: HarnessOptions = {}) => {
     const sandboxPolicy = minimalPolicyFor({ layout, rules: batch.rules, roots: batch.roots, ...(batch.tmpDir === undefined ? {} : { tmpDir: batch.tmpDir }) });
     return { ...batch, sandboxPolicy } as unknown as ExecutionBatchInput;
   };
-  return { layout, markerDir, clock, idempotency, blobs, executor, session, started, input, warnings };
+  return { layout, markerDir, callLockDir, kernelLock, clock, idempotency, blobs, executor, session, started, input, warnings };
 };
 
 export type ExecuteFn = (input: Input, ctx: ToolContext, prepared: Record<string, unknown> | undefined) => ReturnType<ToolDefinition<Input>['execute']>;

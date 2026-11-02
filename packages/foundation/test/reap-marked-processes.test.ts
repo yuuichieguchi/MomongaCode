@@ -6,7 +6,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { killGroupsForCleanup, killPidsForCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, TrackedChild } from '@momonga/testkit';
-import { MarkerReapError, reapMarkedProcesses, reapMarkerDirectory, reconcileProcessGroup } from '@momonga/foundation';
+import { MarkerReapError, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, reconcileProcessGroup } from '@momonga/foundation';
 import type { ReapTiming } from '@momonga/foundation';
 
 const spawnedGroups: number[] = [];
@@ -417,6 +417,35 @@ describe('reapMarkedProcesses', () => {
     const result = await reapMarkedProcesses({ marker: path.join(dir, 'gone'), killGraceMs: 200, label: 'tool', onWarning: () => {}, kill, timing: fake.timing });
     expect(result).toEqual({ removed: true });
     expect(signals).toEqual([]);
+  });
+
+  it('reports that nothing was stopped for a missing marker', { timeout: 30_000 }, async () => {
+    const dir = makeDir();
+    const fake = fakeTiming();
+    const { kill } = recordingKill(fake.now);
+    const result = await reapMarkedProcessesWithReport({ marker: path.join(dir, 'gone'), killGraceMs: 200, label: 'tool', onWarning: () => {}, kill, timing: fake.timing });
+    expect(result).toEqual({ removed: true, stopped: false });
+  });
+
+  it('reports that a recorded group was stopped', { timeout: 30_000 }, async () => {
+    const dir = makeDir();
+    const marker = makeMarker(dir);
+    const group = await startGroup(dir, TERM_MARKER_SCRIPT, { fd3: marker });
+    fs.writeFileSync(marker, `${group.pgid}\n`);
+    const fake = fakeTiming();
+    const { kill } = recordingKill(fake.now);
+    const result = await reapMarkedProcessesWithReport({ marker, killGraceMs: 10_000, label: 'tool', onWarning: () => {}, kill, timing: fake.timing });
+    expect(result).toEqual({ removed: true, stopped: true });
+    await group.leaderReaped;
+  });
+
+  it('reports that a holder without a recorded group was stopped', { timeout: 30_000 }, async () => {
+    const dir = makeDir();
+    const marker = makeMarker(dir);
+    const holder = await startHolder(marker, { ignoreTerm: false });
+    const result = await reapMarkedProcessesWithReport({ marker, killGraceMs: 300, label: 'tool', onWarning: () => {} });
+    expect(result).toEqual({ removed: true, stopped: true });
+    expect(await waitUntil(() => !alive(holder))).toBe(true);
   });
 
   it('waits only through timing.sleep', { timeout: 30_000 }, async () => {

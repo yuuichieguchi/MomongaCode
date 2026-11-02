@@ -1,13 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalJson, canonicalPath, comparableContains, comparablePath, computeBackoff, fileRuleFingerprint, momongaLayout, reapMarkedProcesses, sha256Hex, volumeIsCaseInsensitive, writableAreaOf, writableCheckOf } from '@momonga/foundation';
-import type { Clock, FileRuleProvenance, PathResolution, ReapTiming, SignalSender } from '@momonga/foundation';
+import { canonicalJson, canonicalPath, comparableContains, comparablePath, computeBackoff, fileRuleFingerprint, hostKernelLock, hostReapTiming, momongaLayout, reapMarkedProcessesWithReport, sha256Hex, volumeIsCaseInsensitive, writableAreaOf, writableCheckOf } from '@momonga/foundation';
+import type { Clock, FileRuleProvenance, KernelLockMechanism, PathResolution, ReapTiming, SignalSender } from '@momonga/foundation';
 import { absoluteFrom, decide, fileRuleSpecsOf, suggestAllowRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject, PolicyFilesystem } from '@momonga/policy';
 import { permissionDeniedOutput } from '@momonga/protocol';
 import type { ElicitationRequestView, PermissionDenial, PermissionMode, ToolAwait, ToolKind } from '@momonga/protocol';
 import { SandboxPolicyError, canonicalParentForm } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
+import { EarlierAttemptNotStoppedError, createCallLocks } from './call-lock.ts';
+import type { CallLock } from './call-lock.ts';
 import { createReadAccessMatcher } from './read-access.ts';
 import type { ReadFamilyTool } from './read-access.ts';
 import type { ReadAccessMatcher } from './read-access.ts';
@@ -125,6 +127,8 @@ export type ToolExecutorOptions = {
   maxParallel?: number;
   jobs?: BackgroundJobs;
   processMarkerDir: string;
+  callLockDir: string;
+  kernelLock?: KernelLockMechanism;
   fs: PolicyFilesystem;
   reconcileCapMs?: number;
   reconcileGraceMs?: number;
@@ -368,6 +372,13 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   const maxParallel = options.maxParallel ?? DEFAULT_MAX_PARALLEL;
   const reconcileCapMs = options.reconcileCapMs ?? DEFAULT_RECONCILE_CAP_MS;
   const reconcileGraceMs = options.reconcileGraceMs ?? DEFAULT_RECONCILE_GRACE_MS;
+  const reapTiming = options.reap?.timing ?? hostReapTiming;
+  const callLocks = createCallLocks({
+    dir: options.callLockDir,
+    mechanism: options.kernelLock ?? hostKernelLock(),
+    timing: reapTiming,
+    waitMs: reconcileCapMs,
+  });
   const activeKeys = new Map<string, number>();
 
   const finalizeResult = (result: ToolResult, tool: AnyTool, limit: number): ResultOutcome['result'] => {
@@ -631,6 +642,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     ledger: LeasedIdempotencyPort;
     holding(outcome: LeasedOutcome): boolean;
     deferred: CallOutcome;
+    holdCall(): Promise<'held' | 'aborted'>;
+    trackEffect(running: Promise<unknown>): void;
     checkpoint(state: Record<string, unknown> | undefined): void;
     complete(result: ResultOutcome['result'], reconciled?: ReconcileResult['outcome']): CallOutcome;
     waiting(pending: ToolPending): CallOutcome;
@@ -645,6 +658,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     let contextClosed = false;
     let timer: NodeJS.Timeout | undefined;
     let timerMs = 0;
+    let heldLock: CallLock | undefined;
+    let effect: Promise<unknown> | undefined;
     const leaseLost = (): boolean => batch.leaseLost?.() === true;
     const ledger = idempotency.holding(batch.fence);
     const holding = (outcome: LeasedOutcome): boolean => {
@@ -713,6 +728,16 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       ledger,
       holding,
       deferred,
+      holdCall: async () => {
+        if (tool.sideEffect === 'read_only' || heldLock !== undefined) return 'held';
+        const acquired = await callLocks.acquire(key, controller.signal);
+        if (acquired === 'aborted') return 'aborted';
+        heldLock = acquired;
+        return 'held';
+      },
+      trackEffect: (running) => {
+        effect = running;
+      },
       checkpoint: (state) => {
         if (!leaseLost() && !contextClosed) holding(ledger.checkpoint(key, state));
       },
@@ -730,6 +755,12 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       release: () => {
         clearTimeout(timer);
         if (recordCompleted && tool.sideEffect === 'exec') fs.rmSync(processMarker, { force: true });
+        const lock = heldLock;
+        heldLock = undefined;
+        if (lock !== undefined) {
+          if (effect === undefined) lock.release();
+          else void effect.then(lock.release, lock.release);
+        }
         batch.signal.removeEventListener('abort', onBatchAbort);
         const remaining = (activeKeys.get(key) ?? 0) - 1;
         if (remaining > 0) activeKeys.set(key, remaining);
@@ -738,30 +769,41 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     };
   };
 
-  const reapEarlierAttempt = async (key: string, pgid: number | undefined): Promise<void> => {
+  const reapEarlierAttempt = async (key: string, pgid: number | undefined): Promise<{ stopped: boolean }> => {
     const marker = path.join(options.processMarkerDir, key);
+    let reaped: { removed: boolean; stopped: boolean };
     try {
-      await reapMarkedProcesses({
+      reaped = await reapMarkedProcessesWithReport({
         marker,
         pgid,
         killGraceMs: options.reap?.killGraceMs ?? ABANDON_KILL_GRACE_MS,
         label: 'tool',
         onWarning: options.onWarning,
+        timing: reapTiming,
         ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
-        ...(options.reap?.timing === undefined ? {} : { timing: options.reap.timing }),
       });
     } catch (error) {
-      options.onWarning(`tool marker ${marker} could not be cleaned up: ${error instanceof Error ? error.message : String(error)}`);
+      throw new EarlierAttemptNotStoppedError(
+        `the earlier attempt of call ${key} could not be verified as stopped: ${error instanceof Error ? error.message : String(error)}`,
+        'unverifiable',
+        { cause: error },
+      );
     }
+    if (!reaped.removed) {
+      throw new EarlierAttemptNotStoppedError(`a process of the earlier attempt of call ${key} survived the attempt to stop it`, 'survived');
+    }
+    return { stopped: reaped.stopped };
   };
 
   type Resumed = { kind: 'reconciled'; result: ReconcileResult } | { kind: 'outcome'; outcome: CallOutcome };
 
   const reconcileAsHolder = async (scope: CallScope, callId: string, tool: AnyTool, input: unknown, record: ToolIdempotencyRecord): Promise<Resumed> => {
+    if ((await scope.holdCall()) === 'aborted') return { kind: 'outcome', outcome: failedOutcome(callId, `${tool.name} was cancelled`) };
     if (!scope.holding(scope.ledger.authorise(record.key))) return { kind: 'outcome', outcome: scope.deferred };
-    await reapEarlierAttempt(record.key, record.pgid);
+    const earlierAttempt = await reapEarlierAttempt(record.key, record.pgid);
     try {
-      return { kind: 'reconciled', result: await reconcileWithin(tool, input, record, scope.reconcileCtx, () => scope.abortWith('timeout'), scope.closeContext) };
+      const ctx: ReconcileContext = { ...scope.reconcileCtx, earlierAttempt };
+      return { kind: 'reconciled', result: await reconcileWithin(tool, input, record, ctx, () => scope.abortWith('timeout'), scope.closeContext) };
     } catch (error) {
       return { kind: 'outcome', outcome: failedOutcome(callId, describeThrown(tool.name, error)) };
     }
@@ -861,6 +903,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
 
       const execute = async (reconciled?: ReconcileResult['outcome'], resume?: ToolResume): Promise<CallOutcome> => {
         const outputLimit = await resolveExecutionLimit();
+        if ((await scope.holdCall()) === 'aborted') return failedOutcome(callId, `${tool.name} was cancelled`);
         if (!scope.holding(scope.ledger.authorise(key))) return scope.deferred;
         const executionCtx: ToolContext = { ...toolContext, outputBudgetChars: outputLimit, ...(resume === undefined ? {} : { resume }) };
         if (tool.sideEffect === 'exec') {
@@ -895,6 +938,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         });
         scope.armTimer(timeoutMs);
         const running = runTool();
+        scope.trackEffect(running);
         const result = await Promise.race([running, aborted.then(() => undefined)]);
         if (scope.abortReason() === undefined && result !== undefined) {
           if (result instanceof ToolInputRequired) {
@@ -1122,16 +1166,29 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     });
   };
 
-  const abandonTarget = async (target: AbandonTarget): Promise<AbandonOutcome> => {
+  const stopEarlierAttempt = async (key: string, pgid: number | undefined, signal: AbortSignal): Promise<void> => {
+    const lock = await callLocks.acquire(key, signal);
+    if (lock === 'aborted') throw signal.reason;
+    try {
+      await reapEarlierAttempt(key, pgid);
+    } finally {
+      lock.release();
+    }
+  };
+
+  const abandonTarget = async (target: AbandonTarget, signal: AbortSignal): Promise<AbandonOutcome> => {
     const lookup = idempotency.get(target.idemKey);
-    if (lookup?.s === 'PENDING') await reapEarlierAttempt(target.idemKey, lookup.rec.pgid);
-    idempotency.markUnknownIfPending(target.idemKey);
+    try {
+      if (lookup?.s === 'PENDING') await stopEarlierAttempt(target.idemKey, lookup.rec.pgid, signal);
+    } finally {
+      idempotency.markUnknownIfPending(target.idemKey);
+    }
     return { idemKey: target.idemKey, callId: target.callId, outcome: 'unknown' };
   };
 
   const abandon = async (targets: readonly AbandonTarget[], { signal }: { signal: AbortSignal }): Promise<AbandonOutcome[]> => {
     signal.throwIfAborted();
-    const settled = await Promise.allSettled(targets.map((target) => abandonTarget(target)));
+    const settled = await Promise.allSettled(targets.map((target) => abandonTarget(target, signal)));
     const outcomes: AbandonOutcome[] = [];
     for (const result of settled) {
       if (result.status === 'rejected') throw result.reason;

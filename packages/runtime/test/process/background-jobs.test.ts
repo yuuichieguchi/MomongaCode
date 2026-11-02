@@ -100,7 +100,7 @@ const setup = (probes: Parameters<typeof createBackgroundJobs>[0]['probes'] = {}
       findHolders: async () => holders,
       reconcileProcessGroup: async ({ pgid }) => {
         reconciled.push({ pgid });
-        return { outcome: 'unknown', output: '', leftAlonePids: [], unsignalledPids: [] };
+        return { outcome: 'unknown', output: '', stopped: false, leftAlonePids: [], unsignalledPids: [] };
       },
       reapMarkedProcesses: async ({ marker, pgid }) => {
         reaped.push({ marker, pgid });

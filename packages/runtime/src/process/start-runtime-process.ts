@@ -21,6 +21,7 @@ import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import type { Sandbox } from '@momonga/sandbox';
 import { isFatalStoreError, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
+import { clearCallLocks } from '@momonga/tools';
 import { createFsInstructionReader } from '@momonga/context';
 import { createGatewayClient } from '../gateway-client.ts';
 import type { GatewayClient } from '../gateway-client.ts';
@@ -337,9 +338,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
     cleanups.push({ name: 'store', run: () => store.close() });
 
-    await step('tool-markers', () =>
-      reapToolMarkers({ dir: paths.markers.tools, store, killGraceMs: MARKER_REAP_KILL_GRACE_MS, onWarning, timing: reapTiming }),
-    );
+    await step('tool-markers', async () => {
+      await reapToolMarkers({ dir: paths.markers.tools, store, killGraceMs: MARKER_REAP_KILL_GRACE_MS, onWarning, timing: reapTiming });
+      await clearCallLocks(paths.callLocks);
+    });
 
     await step('tmp-sweep', async () => {
       await sweepSpawnTmp({ dir: paths.tmp.spawn, onWarning });
