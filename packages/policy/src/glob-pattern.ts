@@ -1,4 +1,4 @@
-const UNESCAPED_LITERAL = /[^A-Za-z0-9_/.-]/g;
+const UNESCAPED_LITERAL = /[^A-Za-z0-9_/.]/g;
 const ESCAPED_CHARACTER = /\\([\s\S])/g;
 
 export const escapeForGlob = (text: string): string => text.replace(UNESCAPED_LITERAL, '\\$&');

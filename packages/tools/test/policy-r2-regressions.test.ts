@@ -60,6 +60,9 @@ describe('round 2, finding 3: quoted glob characters stay literal, classes and r
     ['a quoted bracket that matches a shipped link named [a]b', 'cat "[a]"*'],
     ['a backslash-escaped bracket', 'cat \\[a\\]*'],
     ['a single-quoted bracket', "cat '[a]'*"],
+    ['a double-quoted hyphen in a class, which is the character and not a range', 'cat l[x"-"z]k'],
+    ['a single-quoted hyphen in a class', "cat l[x'-'z]k"],
+    ['a backslash-escaped hyphen in a class', 'cat l[x\\-z]k'],
   ])('asks for %s, as bash reads the secret behind the link', (_label, command) => {
     const workspace = makeDifferentialWorkspace();
     expect(workspace.runBash(command).stdout).toContain('CANARY');
@@ -103,6 +106,18 @@ describe('round 2, finding 4: a directory is a git directory exactly as git deci
     workspace.mkdir('probe/sub');
     const cwd = `${workspace.project}/probe/sub`;
     workspace.git(cwd, 'status');
+    expect(workspace.firedMarkers()).toEqual([]);
+    expect(workspace.decide('git status', { cwd }).kind).toBe('allow');
+  });
+});
+
+describe('a .git file that names a directory which is not a git directory', () => {
+  it('stops real git with a fatal error before it reads the configuration of the layout above, so decide allows', () => {
+    const workspace = makeDifferentialWorkspace();
+    const cwd = `${workspace.project}/gf/sub`;
+    const result = workspace.git(cwd, 'status');
+    expect(result.status).toBe(128);
+    expect(result.stderr).toContain('not a git repository');
     expect(workspace.firedMarkers()).toEqual([]);
     expect(workspace.decide('git status', { cwd }).kind).toBe('allow');
   });

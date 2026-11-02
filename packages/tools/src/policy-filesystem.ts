@@ -103,7 +103,8 @@ const readNoFollow = (absolute: string): StepRead =>
     { kind: 'missing' },
   );
 
-const HEAD_BYTES = 255;
+const GIT_HEADREF_BUFFER_BYTES = 256;
+const HEAD_BYTES = GIT_HEADREF_BUFFER_BYTES - 1;
 
 const isErrno = (error: unknown): boolean => typeof codeOf(error) === 'string';
 
@@ -142,7 +143,9 @@ const isSearchable = (absolute: string): boolean =>
 
 const GLOB_PROGRAM ='IFS=; shopt -s nullglob; for entry in $1; do printf "%s\\0" "$entry"; done';
 const LOCALE_VARIABLES = ['LANG', 'LC_ALL', 'LC_COLLATE', 'LC_CTYPE'] as const;
-const MAX_PATH_BYTES = 4096;
+const PATH_MAX_BYTES = 4096;
+const NUL_SEPARATOR_BYTES = 1;
+const OVERFLOW_DETECTION_ENTRIES = 1;
 
 const globEnvironment = (): Record<string, string> =>
   Object.fromEntries(LOCALE_VARIABLES.flatMap((name) => (process.env[name] === undefined ? [] : [[name, process.env[name] as string]])));
@@ -160,7 +163,7 @@ const expandGlob = (platform: NodeJS.Platform, shellPorts: ShellPorts) => (patte
     env: globEnvironment(),
     stdio: ['ignore', 'pipe', 'pipe'],
     encoding: 'utf8',
-    maxBuffer: (limit + 1) * (MAX_PATH_BYTES + 1),
+    maxBuffer: (limit + OVERFLOW_DETECTION_ENTRIES) * (PATH_MAX_BYTES + NUL_SEPARATOR_BYTES),
   });
   if (result.error !== undefined) {
     const code = codeOf(result.error);

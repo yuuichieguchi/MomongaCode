@@ -24,6 +24,11 @@ describe('the scanner carries per-character quoting in the glob pattern', () => 
     ['cat "a"?"b"', 'a?b'],
     ['cat .*/x', '.*/x'],
     ['cat [z-a]*', '[z-a]*'],
+    ['cat l[a"-"z]k', 'l[a\\-z]k'],
+    ["cat l[a'-'z]k", 'l[a\\-z]k'],
+    ['cat l[a\\-z]k', 'l[a\\-z]k'],
+    ['cat l[a-z]k', 'l[a-z]k'],
+    ['cat "a-b"*', 'a\\-b*'],
   ])('%s gives %j', (command, pattern) => {
     expect(lastWord(command)?.glob).toBe(pattern);
   });
@@ -49,8 +54,9 @@ describe('a backtick substitution inside double quotes unescapes a backslash bef
 
 describe('glob pattern helpers', () => {
   it('escapes every character that is not a plain path character, and unescapes it again', () => {
-    for (const text of ['a b', '[a]*?', 'x\\y', 'plain/path-1.txt', '~', '$HOME']) expect(unescapeGlob(escapeForGlob(text))).toBe(text);
-    expect(escapeForGlob('plain/path-1.txt')).toBe('plain/path-1.txt');
+    for (const text of ['a b', '[a]*?', 'x\\y', 'plain/path-1.txt', '~', '$HOME', 'a-z']) expect(unescapeGlob(escapeForGlob(text))).toBe(text);
+    expect(escapeForGlob('plain/path_1.txt')).toBe('plain/path_1.txt');
+    expect(escapeForGlob('a-b')).toBe('a\\-b');
   });
 
   it('finds only unescaped special characters', () => {

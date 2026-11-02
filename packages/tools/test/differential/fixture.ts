@@ -5,7 +5,7 @@ import type { RealWorkspace } from '../real-workspace.ts';
 
 export const CANARY = 'CANARY';
 
-const LAYOUTS = ['bare', 'u40', 'g40', 'big', 'xobj', 'both', 'cd1'] as const;
+const LAYOUTS = ['bare', 'u40', 'g40', 'big', 'xobj', 'both', 'cd1', 'gf'] as const;
 
 export type DifferentialWorkspace = RealWorkspace & {
   hookScript: (name: string) => string;
@@ -41,6 +41,9 @@ export const makeDifferentialWorkspace = (): DifferentialWorkspace => {
   workspace.write('../CANARY-leak', `${CANARY}-LEAK\n`);
   workspace.link(path.join(workspace.outside, 'CANARY-secret'), 'lnk');
   workspace.link(path.join(workspace.outside, 'CANARY-secret'), '[a]b');
+  workspace.link(path.join(workspace.outside, 'CANARY-secret'), 'l-k');
+  writeLayoutFiles(workspace, 'gf', 'ref: refs/heads/main\n', fsmonitorConfig(hookScript('gf')));
+  workspace.write('gf/sub/.git', 'gitdir: /nonexistent\n');
 
   writeLayoutFiles(workspace, 'bare', 'ref: refs/heads/main\n', fsmonitorConfig(hookScript('bare')));
   workspace.mkdir('bare/in');

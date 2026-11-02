@@ -104,7 +104,8 @@ const readRealNoFollow = (absolute: string): StepRead =>
     { kind: 'missing' },
   );
 
-const HEAD_BYTES = 255;
+const GIT_HEADREF_BUFFER_BYTES = 256;
+const HEAD_BYTES = GIT_HEADREF_BUFFER_BYTES - 1;
 
 const rejected = <T>(read: () => T, fallback: T): T => {
   try {

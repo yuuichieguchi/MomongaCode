@@ -16,7 +16,7 @@ export const seededRng = (seed: number): Rng => {
 
 const pick = <T>(rng: Rng, items: readonly T[]): T => items[Math.floor(rng() * items.length)] as T;
 
-const READ_NAMES = ['a', 'b', 'ab', 'lnk', '[a]b', 'sub', 'sub/f.txt', 'pl', 'bare', '.hid', 'tracked', 'deep', '../CANARY-leak', '../CANARY-top', '../outside', '../outside/CANARY-secret', 'CANARY-top', 'lnk', 'l'];
+const READ_NAMES = ['a', 'b', 'ab', 'lnk', 'l-k', '[a]b', 'sub', 'sub/f.txt', 'pl', 'bare', '.hid', 'tracked', 'deep', '../CANARY-leak', '../CANARY-top', '../outside', '../outside/CANARY-secret', 'CANARY-top', 'lnk', 'l'];
 
 const SPECIAL = /[^A-Za-z0-9_./-]/;
 
@@ -29,7 +29,7 @@ const quoteText = (rng: Rng, text: string): string => {
   return text;
 };
 
-const CLASSES = (char: string): string[] => [`[${char === '[' || char === ']' ? 'a' : char}]`, '[[:alpha:]]', '[!x]', '[a-z]', '[z-a]', '[^a]', '[[:digit:]]', '[[:alpha:][:digit:]]', '[]]'];
+const CLASSES = (char: string): string[] => [`[${char === '[' || char === ']' ? 'a' : char}]`, '[[:alpha:]]', '[!x]', '[a-z]', '[z-a]', '[^a]', '[[:digit:]]', '[[:alpha:][:digit:]]', '[]]', '[x"-"z]', "[x'-'z]", '[x\\-z]', '[a-"-"]'];
 
 const globComponent = (rng: Rng, component: string): string => {
   if (component === '..') return pick(rng, ['..', '.?', '.[.]', '.*', quoteText(rng, '..')]);
