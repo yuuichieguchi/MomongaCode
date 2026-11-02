@@ -99,7 +99,9 @@ export const createFileCredentialStore = (directory: string, options: FileCreden
   };
 
   const acquire = async (key: string): Promise<{ release(): void }> => {
-    const lockPath = `${fileFor(directory, key)}.lock`;
+    const lockDirectory = `${directory}.locks`;
+    await fs.promises.mkdir(lockDirectory, { recursive: true, mode: DIRECTORY_MODE });
+    const lockPath = path.join(lockDirectory, `${path.basename(fileFor(directory, key))}.lock`);
     for (;;) {
       try {
         return await acquireProcessLock(lockPath);
