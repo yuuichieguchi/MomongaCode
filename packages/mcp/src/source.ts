@@ -1,9 +1,12 @@
 import type { CallToolResult, Tool } from '@modelcontextprotocol/client';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import { defineTool, ToolExecutionError, TransientToolError } from '@momonga/tools';
-import type { AnyTool, ToolListOptions, ToolResult, ToolSource, ToolSourceListing } from '@momonga/tools';
+import { defineTool, ToolExecutionError, ToolInputRequired, TransientToolError } from '@momonga/tools';
+import type { AnyTool, ToolListOptions, ToolResult, ToolResume, ToolSource, ToolSourceListing } from '@momonga/tools';
 import { McpUnavailableError } from './connection.ts';
-import { isTransientRemoteFailure } from './remote-errors.ts';
+import { parseElicitationAnswer } from './input-requests.ts';
+import { McpAuthorizationError, isTransientRemoteFailure } from './remote-errors.ts';
+import { McpInputSuspension, parseCheckpoint } from './suspension.ts';
+import type { McpResume } from './suspension.ts';
 import type { McpServerConnection } from './connection.ts';
 import { sanitizeSchema } from './schema-sanitizer.ts';
 import { capText, sanitizeServerText } from './text.ts';
@@ -73,6 +76,17 @@ const mapResult = (result: CallToolResult, redact: (text: string) => string): To
   };
 };
 
+const authorizationRequiredFor = (error: unknown): McpAuthorizationError | undefined => {
+  const candidate = error instanceof Error && error.cause instanceof McpAuthorizationError ? error.cause : error;
+  return candidate instanceof McpAuthorizationError && candidate.failure === 'required' ? candidate : undefined;
+};
+
+const resumeOf = (resume: ToolResume | undefined): McpResume | undefined => {
+  if (resume?.checkpoint === undefined) return undefined;
+  const answers = Object.fromEntries(Object.entries(resume.inputResponses ?? {}).map(([key, value]) => [key, parseElicitationAnswer(key, value)]));
+  return { checkpoint: parseCheckpoint(resume.checkpoint), answers };
+};
+
 const toExecutionError = (server: string, error: unknown, redact: (text: string) => string): ToolExecutionError | TransientToolError => {
   if (error instanceof McpUnavailableError) return new ToolExecutionError(redact(error.message));
   const message = redact(`MCP server "${server}" failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -99,6 +113,8 @@ const buildTool = (
     title: () => `${sanitizeServerText(server)}: ${titleOf(tool)}`,
     subject: () => ({ kind: 'mcp', server, tool: toolPart }),
     execute: async (input, ctx) => {
+      const resume = resumeOf(ctx.resume);
+      if (resume?.checkpoint.kind === 'mrtr') ctx.checkpoint(undefined);
       let result: CallToolResult;
       try {
         result = await connection.callTool({
@@ -108,8 +124,21 @@ const buildTool = (
           timeoutMs: Math.max(1, ctx.deadlineAt - ctx.clock.now()),
           ...(ctx.traceparent === undefined ? {} : { traceparent: ctx.traceparent }),
           ...(ctx.tracestate === undefined ? {} : { tracestate: ctx.tracestate }),
+          ...(resume === undefined ? {} : { resume }),
+          onCheckpoint: (checkpoint) => ctx.checkpoint({ ...checkpoint }),
         });
       } catch (error) {
+        if (error instanceof McpInputSuspension) {
+          throw new ToolInputRequired({ server, requests: error.requests, checkpoint: { ...error.checkpoint } });
+        }
+        const unauthorized = authorizationRequiredFor(error);
+        if (unauthorized !== undefined) {
+          return {
+            status: 'failed',
+            output: connection.redact(`MCP server "${server}" requires authorization before it can be used`),
+            authorizationRequired: { server },
+          };
+        }
         throw toExecutionError(server, error, (text) => connection.redact(text));
       }
       return mapResult(result, (text) => connection.redact(text));

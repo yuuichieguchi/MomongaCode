@@ -1,6 +1,6 @@
 import type { Clock } from '@momonga/foundation';
 import type { PermissionSubject, SideEffect } from '@momonga/policy';
-import type { ToolKind } from '@momonga/protocol';
+import type { ElicitationRequestView, ToolKind } from '@momonga/protocol';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { BlobPort, ToolIdempotencyRecord } from './ports.ts';
 
@@ -22,6 +22,7 @@ export type ToolResult = {
   content?: ToolContent[];
   plan?: PlanEntry[];
   skill?: SkillActivation;
+  authorizationRequired?: { server: string };
 };
 
 export type ToolSessionState = {
@@ -35,9 +36,16 @@ export type SubjectContext = {
   roots: readonly string[];
 };
 
+export type ToolResume = {
+  checkpoint: Record<string, unknown> | undefined;
+  inputResponses: Record<string, unknown> | undefined;
+};
+
 export type ToolContext = ReconcileContext & {
   sandbox: Sandbox;
   sandboxPolicy: SandboxPolicy;
+  resume?: ToolResume;
+  checkpoint(state: Record<string, unknown> | undefined): void;
 };
 
 export type ReconcileContext = SubjectContext & {
@@ -104,5 +112,19 @@ export class TransientToolError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'TransientToolError';
+  }
+}
+
+export class ToolInputRequired extends Error {
+  readonly server: string;
+  readonly requests: ElicitationRequestView[];
+  readonly checkpoint: Record<string, unknown>;
+
+  constructor(input: { server: string; requests: ElicitationRequestView[]; checkpoint: Record<string, unknown> }) {
+    super(`${input.server} needs input from the user: ${input.requests.map((request) => request.key).join(', ')}`);
+    this.name = 'ToolInputRequired';
+    this.server = input.server;
+    this.requests = input.requests;
+    this.checkpoint = input.checkpoint;
   }
 }

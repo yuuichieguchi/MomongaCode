@@ -4,7 +4,7 @@ import { canonicalJson, canonicalPath, comparableContains, comparablePath, compu
 import type { Clock, FileRuleProvenance, PathResolution, ReapTiming, SignalSender } from '@momonga/foundation';
 import { absoluteFrom, decide, fileRuleSpecsOf, suggestAllowRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject, PolicyFilesystem } from '@momonga/policy';
-import type { PermissionMode, ToolKind } from '@momonga/protocol';
+import type { ElicitationRequestView, PermissionMode, ToolKind } from '@momonga/protocol';
 import { SandboxPolicyError, canonicalParentForm } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createReadAccessMatcher } from './read-access.ts';
@@ -13,8 +13,8 @@ import type { ReadAccessMatcher } from './read-access.ts';
 import type { BlobPort, IdempotencyPort, ToolIdempotencyRecord } from './ports.ts';
 import type { ToolSet } from './registry.ts';
 import { MINIMUM_INLINE_OUTPUT_CHARS, truncateOutput } from './truncate.ts';
-import { ToolExecutionError, ToolInputError, TransientToolError } from './types.ts';
-import type { AnyTool, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolResult, ToolSessionState } from './types.ts';
+import { ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
+import type { AnyTool, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolResult, ToolResume, ToolSessionState } from './types.ts';
 import { validateToolInput } from './validate.ts';
 
 const DEFAULT_IDEMPOTENCY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -32,6 +32,7 @@ export type ToolCall = {
   name: string;
   arguments: string | unknown;
   approval?: { kind: 'allow_once' | 'allow_always'; subjectDigest: string };
+  inputResponses?: Record<string, unknown>;
 };
 
 type BatchCallbacks = {
@@ -93,9 +94,16 @@ export type NeedsApprovalOutcome = {
   locations?: { path: string; line?: number }[];
 };
 
+export type NeedsInputOutcome = {
+  callId: string;
+  kind: 'needs_input';
+  server: string;
+  requests: ElicitationRequestView[];
+};
+
 export type DeferredOutcome = { callId: string; kind: 'deferred' };
 
-export type CallOutcome = ResultOutcome | NeedsApprovalOutcome | DeferredOutcome;
+export type CallOutcome = ResultOutcome | NeedsApprovalOutcome | NeedsInputOutcome | DeferredOutcome;
 
 export type ToolExecutorOptions = {
   idempotency: IdempotencyPort;
@@ -472,6 +480,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     abortWith(reason: AbortReason): void;
     armTimer(ms: number): void;
     closeContext(): void;
+    checkpoint(state: Record<string, unknown> | undefined): void;
     complete(result: ResultOutcome['result'], reconciled?: ReconcileResult['outcome']): CallOutcome;
     release(): void;
   };
@@ -533,6 +542,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       closeContext: () => {
         contextClosed = true;
       },
+      checkpoint: (state) => {
+        if (!leaseLost() && !contextClosed) idempotency.checkpoint(key, state);
+      },
       complete: (result, reconciled) => {
         if (leaseLost()) return deferred;
         const outcome: ResultOutcome = { callId, kind: 'result', result, idemKey: key, ...(reconciled === undefined ? {} : { reconciled }) };
@@ -591,7 +603,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     if (batch.deadlineAt - clock.now() <= 0) return failedOutcome(callId, `Run deadline exceeded before ${tool.name} could start`);
 
     const scope = openScope(batch, call, tool, key, inlineLimit, batch.deadlineAt);
-    const toolContext: ToolContext = { ...scope.reconcileCtx, sandbox: batch.sandbox, sandboxPolicy: batch.sandboxPolicy };
+    const toolContext: ToolContext = { ...scope.reconcileCtx, sandbox: batch.sandbox, sandboxPolicy: batch.sandboxPolicy, checkpoint: scope.checkpoint };
 
     try {
       let prepared: Record<string, unknown> | undefined;
@@ -628,9 +640,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         if (begun.s !== 'NEW') record = begun.rec;
       }
 
-      const execute = async (reconciled?: ReconcileResult['outcome']): Promise<CallOutcome> => {
+      const execute = async (reconciled?: ReconcileResult['outcome'], resume?: ToolResume): Promise<CallOutcome> => {
         const outputLimit = await resolveExecutionLimit();
-        const executionCtx: ToolContext = { ...toolContext, outputBudgetChars: outputLimit };
+        const executionCtx: ToolContext = { ...toolContext, outputBudgetChars: outputLimit, ...(resume === undefined ? {} : { resume }) };
         if (tool.sideEffect === 'exec') {
           fs.rmSync(scope.processMarker, { force: true });
           fs.closeSync(fs.openSync(scope.processMarker, 'wx', 0o600));
@@ -638,11 +650,12 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         const requestedMs = typeof tool.timeoutMs === 'function' ? tool.timeoutMs(input) : tool.timeoutMs;
         const timeoutMs = Math.max(0, Math.min(requestedMs, batch.deadlineAt - clock.now()));
 
-        const runTool = async (): Promise<ToolResult> => {
+        const runTool = async (): Promise<ToolResult | ToolInputRequired> => {
           for (let attempt = 0; ; attempt += 1) {
             try {
               return await tool.execute(input, executionCtx, prepared);
             } catch (error) {
+              if (error instanceof ToolInputRequired) return error;
               const retryable =
                 error instanceof TransientToolError &&
                 tool.sideEffect === 'read_only' &&
@@ -663,11 +676,19 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         scope.armTimer(timeoutMs);
         const running = runTool();
         const result = await Promise.race([running, aborted.then(() => undefined)]);
-        if (scope.abortReason() === undefined && result !== undefined) return scope.complete(finalizeResult(result, tool, outputLimit), reconciled);
+        if (scope.abortReason() === undefined && result !== undefined) {
+          if (result instanceof ToolInputRequired) {
+            scope.checkpoint(result.checkpoint);
+            return leaseHeld() ? { callId, kind: 'needs_input', server: result.server, requests: result.requests } : { callId, kind: 'deferred' };
+          }
+          return scope.complete(finalizeResult(result, tool, outputLimit), reconciled);
+        }
         await settleWithin(running, ABORT_SETTLE_LIMIT_MS);
         const output = scope.abortReason() === 'timeout' ? timedOutOutput(tool, timeoutMs) : cancelledOutput(tool);
         return scope.complete({ status: 'failed', output }, reconciled);
       };
+
+      const leaseHeld = (): boolean => batch.leaseLost?.() !== true;
 
       const admitExecution = (): CallOutcome | undefined => {
         if (gateAdmitted) return undefined;
@@ -680,6 +701,13 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       if (record === undefined) {
         await batch.onStarted?.(callId, key);
         return await execute();
+      }
+
+      const checkpoint = record.meta['checkpoint'];
+      if (isRecord(checkpoint)) {
+        const refused = admitExecution();
+        if (refused !== undefined) return refused;
+        return await execute(undefined, { checkpoint, inputResponses: call.inputResponses });
       }
 
       let reconcileOutcome: ReconcileResult;
@@ -830,7 +858,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           const performed = await perform(admission.plan);
           outcomes[index] = performed;
           announce(performed);
-          if (performed.kind === 'needs_approval') {
+          if (performed.kind === 'needs_approval' || performed.kind === 'needs_input') {
             surfaceApprovalsFrom(index + 1);
             return;
           }
@@ -841,7 +869,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           .then(
             (outcome) => {
               outcomes[index] = outcome;
-              if (outcome.kind === 'needs_approval') approvalAsked = true;
+              if (outcome.kind === 'needs_approval' || outcome.kind === 'needs_input') approvalAsked = true;
               try {
                 announce(outcome);
               } catch (error) {

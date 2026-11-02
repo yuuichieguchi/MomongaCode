@@ -148,6 +148,12 @@ const makeIdempotency = (): IdempotencyPort => {
       return { s: 'NEW' };
     },
     attachProcess: () => undefined,
+    checkpoint: (key, state) => {
+      const rec = open.get(key);
+      if (rec === undefined) return;
+      const { checkpoint: _previous, ...meta } = rec.meta;
+      open.set(key, { ...rec, meta: state === undefined ? meta : { ...meta, checkpoint: state } });
+    },
     complete: (key, result) => {
       open.delete(key);
       completed.set(key, result);
