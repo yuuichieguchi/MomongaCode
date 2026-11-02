@@ -7,7 +7,7 @@ import { createMcpPool, inheritedEnvOf } from '@momonga/mcp';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import * as runtime from '@momonga/runtime';
 import type { RuntimeStore } from '@momonga/store';
-import { MCP_MODERN_SERVER_PATH, waitFor } from '@momonga/testkit';
+import { FAKE_LEASE, MCP_MODERN_SERVER_PATH, waitFor } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import type { ToolSource } from '@momonga/tools';
 import {
@@ -404,6 +404,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
         shellHost: nodeShellHost(),
         settings: f.composition,
         reapTiming: f.reapTiming,
+        ...FAKE_LEASE,
       });
     } catch (caught) {
       error = caught;

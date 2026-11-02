@@ -34,7 +34,7 @@ describe('memory api', () => {
     const listed = await env.http('GET', '/v1/memories');
     expect(listed.status).toBe(200);
     expect(listed.json).toEqual({ memories: [user, project] });
-    expect(listed.json.memories[0].source).toEqual({ sessionId: session.id, runId: run.id, step: 1, callId: 'c1', seq: call?.seq });
+    expect(listed.json.memories[0].source).toEqual({ kind: 'tool', sessionId: session.id, runId: run.id, step: 1, callId: 'c1', seq: call?.seq });
     expectSchema('MemoriesResponse', listed.json);
 
     const read = await env.http('GET', `/v1/memories/${project.id}`);

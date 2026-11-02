@@ -274,13 +274,38 @@ export const containsByComponents = (base: PathParts, candidate: PathParts, fold
   });
 };
 
-type LocatedParts = { parts: PathParts; caseInsensitive: boolean };
+export type LocatedParts = { parts: PathParts; caseInsensitive: boolean };
 
-const locate = (value: string): LocatedParts => {
+const throughFilesStep = (candidate: string): WalkEntry => {
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(candidate);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return { kind: 'missing' };
+    throw error;
+  }
+  if (stat.isSymbolicLink()) return { kind: 'symlink', target: fs.readlinkSync(candidate) };
+  return { kind: 'directory' };
+};
+
+const canonicalThroughFiles = (value: string): string => {
+  const result = walkPath<never>(value, throughFilesStep, () => undefined);
+  if (!result.ok) {
+    if ('stepFailure' in result) {
+      const unhandled: never = result.stepFailure;
+      throw new Error(`canonicalThroughFiles: unexpected step failure ${String(unhandled)}`);
+    }
+    throw walkFailureError(value, result.failure);
+  }
+  return path.join(fs.realpathSync.native(result.prefix), ...result.tail);
+};
+
+const locateWith = (value: string, canonicalise: (input: string) => string): LocatedParts => {
   if (!path.isAbsolute(value)) throw new Error(`path must be absolute: ${value}`);
   let resolved: string | undefined;
   try {
-    resolved = canonicalPath(value);
+    resolved = canonicalise(value);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EACCES') throw error;
   }
@@ -291,6 +316,10 @@ const locate = (value: string): LocatedParts => {
     caseInsensitive: verdictForDirectory(directory, device),
   };
 };
+
+const locate = (value: string): LocatedParts => locateWith(value, canonicalPath);
+
+export const locateThroughFiles = (value: string): LocatedParts => locateWith(value, canonicalThroughFiles);
 
 export const comparableFromParts = (parts: PathParts, foldTail: boolean): string =>
   path.join(parts.existing, ...(foldTail ? parts.tail.map((component) => component.toLowerCase()) : parts.tail));

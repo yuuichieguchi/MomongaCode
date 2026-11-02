@@ -1,7 +1,7 @@
 import type { CallToolResult } from '@modelcontextprotocol/client';
 import { isRecord } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import { parseInputRequests } from './input-requests.ts';
+import { McpInputProtocolError, parseInputRequests } from './input-requests.ts';
 import type { ElicitationAnswer } from './input-requests.ts';
 import { McpTaskError } from './remote-errors.ts';
 import { McpInputSuspension } from './suspension.ts';
@@ -10,6 +10,7 @@ import { sanitizeServerText, capText } from './text.ts';
 import { pause } from './timers.ts';
 import type { McpTimers } from './timers.ts';
 
+export const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
 export const DEFAULT_TASK_POLL_MS = 1000;
 export const MIN_TASK_POLL_MS = 250;
 const MAX_TASK_MESSAGE_CHARS = 500;
@@ -69,30 +70,43 @@ export type SettleTaskOptions = {
   signal: AbortSignal;
   onCheckpoint(checkpoint: McpCheckpoint): void;
   accept(taskId: string, result: unknown): CallToolResult;
+  trackCancel(outcome: Promise<void>): void;
 };
 
-export const settleTask = async ({ start, answers, request, timers, clock, signal, onCheckpoint, accept }: SettleTaskOptions): Promise<CallToolResult> => {
+export const settleTask = async ({ start, answers, request, timers, clock, signal, onCheckpoint, accept, trackCancel }: SettleTaskOptions): Promise<CallToolResult> => {
   const answered = new Set<string>('answered' in start ? start.answered : []);
   const checkpoint = (taskId: string): McpCheckpoint => ({ kind: 'task', taskId, answered: [...answered] });
-  const cancel = (taskId: string): Promise<unknown> => request('tasks/cancel', { taskId }, undefined);
-  let ageOffsetMs = Number.NEGATIVE_INFINITY;
-  const receive = (raw: unknown): TaskView => {
-    const parsed = parseTask(raw);
-    ageOffsetMs = Math.max(ageOffsetMs, (parsed.serverAgeMs ?? 0) - clock.now());
-    return parsed;
+  const cancelThenFail = async (taskId: string, failure: McpTaskError | McpInputProtocolError): Promise<never> => {
+    try {
+      await request('tasks/cancel', { taskId }, signal);
+    } catch (cancelError) {
+      failure.cancelFailure = cancelError;
+    }
+    throw failure;
   };
-  let view: TaskView;
+  const cancelThenAbort = (taskId: string): never => {
+    trackCancel(request('tasks/cancel', { taskId }, undefined).then(() => undefined));
+    throw signal.reason;
+  };
+  let ageOffsetMs = Number.NEGATIVE_INFINITY;
+  const receive = (raw: unknown): { view: TaskView; ageMs: number } => {
+    const view = parseTask(raw);
+    const now = clock.now();
+    ageOffsetMs = Math.max(ageOffsetMs, (view.serverAgeMs ?? 0) - now);
+    return { view, ageMs: now + ageOffsetMs };
+  };
+  let received: { view: TaskView; ageMs: number };
   if ('created' in start) {
-    view = receive(start.created);
-    onCheckpoint(checkpoint(view.taskId));
+    received = receive(start.created);
+    onCheckpoint(checkpoint(received.view.taskId));
   } else {
-    view = receive(await request('tasks/get', { taskId: start.taskId }, signal));
+    received = receive(await request('tasks/get', { taskId: start.taskId }, signal));
   }
-  const { taskId } = view;
+  const { taskId } = received.view;
   for (;;) {
-    if ((view.status === 'working' || view.status === 'input_required') && view.ttlMs !== undefined && clock.now() + ageOffsetMs > view.ttlMs) {
-      await cancel(taskId);
-      throw new McpTaskError(taskId, `task ${taskId} was still ${view.status} when its ttl of ${view.ttlMs}ms ran out`);
+    const { view, ageMs } = received;
+    if ((view.status === 'working' || view.status === 'input_required') && view.ttlMs !== undefined && ageMs > view.ttlMs) {
+      return cancelThenFail(taskId, new McpTaskError(taskId, `task ${taskId} was still ${view.status} when its ttl of ${view.ttlMs}ms ran out`));
     }
     switch (view.status) {
       case 'completed':
@@ -106,8 +120,7 @@ export const settleTask = async ({ start, answers, request, timers, clock, signa
         try {
           requests = parseInputRequests(view.inputRequests);
         } catch (error) {
-          await cancel(taskId);
-          throw error;
+          return cancelThenFail(taskId, error instanceof McpInputProtocolError ? error : new McpTaskError(taskId, `task ${taskId} carried input requests that could not be read`, { cause: error }));
         }
         const fresh = requests.filter((entry) => !answered.has(entry.key));
         if (fresh.length > 0) {
@@ -123,16 +136,12 @@ export const settleTask = async ({ start, answers, request, timers, clock, signa
         break;
     }
     await pause(timers, pollDelayMs(view.pollIntervalMs), signal);
-    if (signal.aborted) {
-      await cancel(taskId);
-      throw signal.reason;
-    }
+    if (signal.aborted) return cancelThenAbort(taskId);
     try {
-      view = receive(await request('tasks/get', { taskId }, signal));
+      received = receive(await request('tasks/get', { taskId }, signal));
     } catch (error) {
       if (!signal.aborted) throw error;
-      await cancel(taskId);
-      throw signal.reason;
+      return cancelThenAbort(taskId);
     }
   }
 };

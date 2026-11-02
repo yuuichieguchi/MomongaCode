@@ -1,9 +1,14 @@
+import { setTimeout as setTimeoutPromise } from 'node:timers/promises';
 import { Deadline, createUdsClient } from '@momonga/foundation';
 
 export interface HttpResult {
   status: number;
   text: string;
+  headers: Record<string, string>;
 }
+
+export const systemSleep = (ms: number, signal: AbortSignal | undefined): Promise<void> =>
+  setTimeoutPromise(ms, undefined, signal === undefined ? {} : { signal });
 
 export interface ProbeClient {
   get(path: string): Promise<HttpResult>;
@@ -62,12 +67,12 @@ export const createProbeClient = (
     get: (path) =>
       withTimeout('GET', path, async (requestSignal) => {
         const response = await uds.request({ method: 'GET', path, signal: requestSignal });
-        return { status: response.status, text: await response.text() };
+        return { status: response.status, text: await response.text(), headers: response.headers };
       }),
     post: (path, body) =>
       withTimeout('POST', path, async (requestSignal) => {
         const response = await jsonPost(path, body, requestSignal);
-        return { status: response.status, text: await response.text() };
+        return { status: response.status, text: await response.text(), headers: response.headers };
       }),
     stream: (path, body) =>
       withTimeout(

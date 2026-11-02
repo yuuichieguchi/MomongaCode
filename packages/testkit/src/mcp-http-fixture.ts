@@ -29,6 +29,7 @@ export type McpHttpFixtureOptions = {
   challengeScope?: string;
   holdSessionDelete?: boolean;
   holdFirstTaskCancel?: boolean;
+  expireSessionOnTaskCancel?: boolean;
   path?: string;
 };
 
@@ -47,6 +48,7 @@ export type FixtureNote =
   | { type: 'session_deleted'; sessionId: string }
   | { type: 'session_delete_held' }
   | { type: 'task_cancel_held'; taskId: string }
+  | { type: 'task_cancel_session_expired'; taskId: string }
   | { type: 'stream_dropped'; tool: string };
 
 export type McpHttpFixture = {
@@ -448,6 +450,11 @@ export const startMcpHttpFixture = async (options: McpHttpFixtureOptions): Promi
     if (rpc.method === 'tasks/cancel' && options.holdFirstTaskCancel === true && !firstTaskCancelHeld) {
       firstTaskCancelHeld = true;
       note({ type: 'task_cancel_held', taskId });
+      return;
+    }
+    if (rpc.method === 'tasks/cancel' && options.expireSessionOnTaskCancel === true) {
+      note({ type: 'task_cancel_session_expired', taskId });
+      sendJson(res, 404, rpcError(undefined, -32001, 'Session not found'));
       return;
     }
     if (rpc.method === 'tasks/cancel') {

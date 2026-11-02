@@ -17,7 +17,7 @@ const noteOf = (memory: DeepReadonly<MemoryView>): string =>
   [
     `<memory id="${escapeXmlAttribute(memory.id)}" scope="${memory.scope}" origin="${memory.origin}"`,
     ` saved="${iso(memory.createdAt)}" last_used="${iso(memory.lastUsedAt)}"`,
-    ` source_run="${escapeXmlAttribute(memory.source.runId)}" source_step="${memory.source.step}">`,
+    ` source_run="${escapeXmlAttribute(memory.source.runId)}"${memory.source.kind === 'tool' ? ` source_step="${memory.source.step}"` : ''}>`,
     escapeXmlText(memory.text),
     '</memory>',
   ].join('');

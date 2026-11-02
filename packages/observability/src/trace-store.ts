@@ -3,6 +3,7 @@ import type { AttributeValue } from '@opentelemetry/api';
 import { immediateTx, migrate, openDatabase, isRecord } from '@momonga/foundation';
 import type { Clock, Migration } from '@momonga/foundation';
 import { reportError } from './errors.ts';
+import { UNKNOWN_BILLING } from './semconv.ts';
 
 export const SPAN_KINDS = ['INTERNAL', 'SERVER', 'CLIENT', 'PRODUCER', 'CONSUMER'] as const;
 export const SPAN_STATUSES = ['UNSET', 'OK', 'ERROR'] as const;
@@ -86,7 +87,7 @@ CREATE INDEX bodies_by_expiry ON bodies (expires_at_ms);
 
 const RECORD_BILLING_OF_EARLIER_CHAT_SPANS = `
 UPDATE spans
-SET attributes_json = json_set(attributes_json, '$."momonga.billing"', 'metered')
+SET attributes_json = json_set(attributes_json, '$."momonga.billing"', '${UNKNOWN_BILLING}')
 WHERE json_extract(attributes_json, '$."gen_ai.operation.name"') = 'chat'
   AND json_extract(attributes_json, '$."momonga.billing"') IS NULL;
 `;

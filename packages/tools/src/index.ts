@@ -1,5 +1,5 @@
 export { EarlierAttemptNotStoppedError, clearCallLocks } from './call-lock.ts';
-export { createToolExecutor, subjectDigestOf } from './executor.ts';
+export { createToolExecutor, heldCallWaitMs, subjectDigestOf } from './executor.ts';
 export type {
   AbandonOutcome,
   AbandonTarget,
@@ -64,7 +64,8 @@ export type { SandboxPolicyOptions } from './builtins/index.ts';
 export { nodeShellHost } from './builtins/shell.ts';
 export type { ShellHost } from './builtins/shell.ts';
 export { compileUntrustedSchema, untrustedSchemaCacheSize } from './untrusted-schema.ts';
-export { createPolicyFilesystem } from './policy-filesystem.ts';
+export { createGlobExpander, createPolicyFilesystem, nodeGlobPorts } from './policy-filesystem.ts';
+export type { GlobChild, GlobPorts } from './policy-filesystem.ts';
 export {
   MEMORY_QUERY_MAX_CHARS,
   MEMORY_SAVE_TOOL_NAME,

@@ -19,11 +19,11 @@ export type { SseEvent } from './sse.ts';
 export { createUdsClient, isUnixSocketLive, listenUnix } from './uds.ts';
 export type { UdsClient, UdsClientOptions, UdsRequestOptions, UdsResponse } from './uds.ts';
 export { uuidv7 } from './uuidv7.ts';
-export { DEFAULT_LOCK_TIMEOUT_MS, LOCK_RETRY_MS, createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
+export { DEFAULT_LOCK_TIMEOUT_MS, createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
 export type { FileLockOptions, FileLockPorts, KeyedSerializer } from './file-lock.ts';
 export { syncDirectory, syncDirectorySync, writeFileAtomically } from './atomic-file.ts';
 export type { AtomicWriteOptions } from './atomic-file.ts';
-export { forceKillGroup, groupAlive, realGroupTiming, signalGroup, terminateGroup, waitForGroupGone } from './process-group.ts';
+export { forceKillGroup, groupAlive, groupTerminationBoundMs, realGroupTiming, signalGroup, terminateGroup, waitForGroupGone } from './process-group.ts';
 export type { ForceKillGroupOptions, GroupTiming, TerminateGroupOptions, TerminateOutcome } from './process-group.ts';
 export {
   HOLDER_READ_MAX_BYTES,
@@ -46,8 +46,13 @@ export type {
   ProcessLockInspection,
   ProcessLockOptions,
 } from './process-lock.ts';
-export { createFileLock, createKernelLockMechanism, darwinFileLock, hostKernelLock, nodeFileLockOps } from './platform/kernel-lock.ts';
-export { LOCK_DATABASE_SUFFIX, sqliteFileLock } from './platform/sqlite-lock.ts';
+export { createFileLock, createKernelLockMechanism, darwinFileLock, hostKernelLock, nodeFileLockOps, writeHolderOrRelease } from './platform/kernel-lock.ts';
+export { LOCK_DATABASE_SUFFIX, createSqliteFileLock, nodeSqliteLockOps, sqliteFileLock } from './platform/sqlite-lock.ts';
+export type { OpenLockDatabase, SqliteLockOps } from './platform/sqlite-lock.ts';
+export { removeFilesThenRelease } from './platform/holder-file.ts';
+export type { LockFileIdentity } from './platform/file-identity.ts';
+export { CLAIM_POLL_MS, claimWithin } from './platform/claim-within.ts';
+export type { ClaimWithinOutcome, ClaimWithinRequest } from './platform/claim-within.ts';
 export type { ClaimOutcome, FileLockOps, HeldKernelLock, InheritedLockRequest, KernelLockMechanism } from './platform/kernel-lock.ts';
 export { judgeProcessIdentity } from './process-identity.ts';
 export type { ProcessIdentity } from './process-identity.ts';
@@ -120,8 +125,8 @@ export type { MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirec
 export { isProcessAlive } from './process-alive.ts';
 export type { SignalSender } from './process-alive.ts';
 export { LINUX_SOCKET_PATH_LIMIT, PIPE_NAME_LIMIT, SOCKET_PATH_LIMIT, assertSocketPathLength, isPipePath, pipePathFor, socketPathLimit } from './socket-path.ts';
-export { MAX_SYMLINK_HOPS, canonicalDirectory, canonicalPath, comparableContains, comparableFromParts, comparablePath, containsByComponents, setCaseSensitivityProbe, volumeIsCaseInsensitive, walkPath } from './path-compare.ts';
-export type { CanonicalDirectoryFailureCode, CanonicalDirectoryResult, CaseSensitivityProbe, PathParts, StepRead, StepReader, WalkEntry, WalkFailure, WalkFailureDetail, WalkFailureReason, WalkResult, WalkStep } from './path-compare.ts';
+export { MAX_SYMLINK_HOPS, canonicalDirectory, canonicalPath, comparableContains, comparableFromParts, comparablePath, containsByComponents, locateThroughFiles, setCaseSensitivityProbe, volumeIsCaseInsensitive, walkPath } from './path-compare.ts';
+export type { CanonicalDirectoryFailureCode, CanonicalDirectoryResult, CaseSensitivityProbe, LocatedParts, PathParts, StepRead, StepReader, WalkEntry, WalkFailure, WalkFailureDetail, WalkFailureReason, WalkResult, WalkStep } from './path-compare.ts';
 export { isTransientErrno } from './transient-errno.ts';
 export { PRIVATE_MODE, PrivateTreeError, assertPrivateRegularFile, directoryFlag, ensureWindowsPrivateTree, modeIsPrivate, noFollowFlag, ownerProblem } from './platform/privacy.ts';
 export type { OwnerProblem, PrivacyKind } from './platform/privacy.ts';
@@ -161,6 +166,7 @@ export {
   RELEASE_CHECKSUMS_ASSET,
   RELEASE_PUBLIC_KEY_PATTERN,
   RELEASE_SIGNATURE_ASSET,
+  RELEASE_SIGNATURE_KNOWN_ANSWER,
   RELEASE_SIGNATURE_NAMESPACE,
   RELEASE_SIGNATURE_TOOL,
   verifyReleaseSignature,

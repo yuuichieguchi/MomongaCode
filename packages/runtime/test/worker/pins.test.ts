@@ -26,6 +26,17 @@ const extraTool = defineTool<Record<string, unknown>>({
   execute: async () => ({ status: 'completed', output: 'extra' }),
 });
 
+describe('the recorded tool.call event', () => {
+  it('carries the side effect the tool declares, independent of its kind', async () => {
+    const env = await makeEnv();
+    env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: path.join(env.project, 'out.txt'), content: 'x' } }]));
+    const run = env.enqueue('Write the file');
+    await env.runOnce(env.worker('worker-1'));
+    const [call] = env.events(run.id).filter((event) => event.type === 'tool.call');
+    expect(call).toMatchObject({ name: 'Write', sideEffect: 'write' });
+  });
+});
+
 describe('worker pins across attempts', () => {
   it('fails with pins_mismatch when the system prompt digest differs on a later attempt', async () => {
     const env = await makeEnv();

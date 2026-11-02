@@ -3,7 +3,7 @@ import { ConfigError } from '@momonga/config';
 import { canonicalDirectory, canonicalPath, comparableContains, ensureSessionTmpDir as defaultEnsureSessionTmpDir, isTransientErrno, protectedSetFor } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
-import type { PolicyFilesystem } from '@momonga/policy';
+import type { PolicyPorts } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
 import type { ToolRuntimePort } from '../ports.ts';
 import type { SessionStates } from './session-states.ts';
@@ -11,7 +11,7 @@ import type { SessionStates } from './session-states.ts';
 export type PolicyForOptions = {
   paths: MomongaPaths;
   home: string;
-  fs: PolicyFilesystem;
+  fs: PolicyPorts;
   sessionStates: Pick<SessionStates, 'get'>;
   ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<string>;
 };

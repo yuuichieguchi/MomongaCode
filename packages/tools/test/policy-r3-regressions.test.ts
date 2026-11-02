@@ -87,19 +87,19 @@ describe('finding 2: cd falls back to the physical path', () => {
 });
 
 describe('finding 3: a glob after a relocation is not judged against the old tree', () => {
-  it('bash prints the secret through the moved link, and the glob needs approval', () => {
+  it('bash prints the secret through the moved link, and the glob needs approval', async () => {
     const workspace = makeRealWorkspace();
     withRelocatableLink(workspace);
     const command = 'mv m/z zz; cat zz*';
-    const decision = workspace.decide(command, { mode: 'acceptEdits' });
+    const decision = await workspace.decideExpanding(command, { mode: 'acceptEdits' });
     expect(workspace.runBash(command).stdout).toBe(`${SECRET}\n`);
     expect(decision.kind).toBe('ask');
   });
 
-  it('a character class has the same shape', () => {
+  it('a character class has the same shape', async () => {
     const workspace = makeRealWorkspace();
     withRelocatableLink(workspace);
-    expect(workspace.decide('mv m/z zz; cat z[z]', { mode: 'acceptEdits' }).kind).toBe('ask');
+    expect((await workspace.decideExpanding('mv m/z zz; cat z[z]', { mode: 'acceptEdits' })).kind).toBe('ask');
   });
 
   it('a literal name is the anchor the glob must match', () => {
@@ -108,10 +108,10 @@ describe('finding 3: a glob after a relocation is not judged against the old tre
     expect(workspace.decide('mv m/z zz; cat zz', { mode: 'acceptEdits' }).kind).toBe('ask');
   });
 
-  it('a glob in a directory nothing changed keeps being allowed', () => {
+  it('a glob in a directory nothing changed keeps being allowed', async () => {
     const workspace = makeRealWorkspace();
     withRelocatableLink(workspace);
-    expect(workspace.decide('mv m/z m/y; cat other/*', { mode: 'acceptEdits' }).kind).toBe('allow');
+    expect((await workspace.decideExpanding('mv m/z m/y; cat other/*', { mode: 'acceptEdits' })).kind).toBe('allow');
   });
 });
 

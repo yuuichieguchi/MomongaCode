@@ -6,6 +6,10 @@ export type GlobExpansion = { matches: string[] } | { overflow: true } | Unresol
 
 export type HeadRead = { kind: 'symlink'; target: string } | { kind: 'text'; text: string } | { kind: 'invalid' };
 
+export type GlobDeadline = { remainingMs: () => number };
+
+export type GlobExpander = (pattern: string, cwd: string, limit: number, deadline: GlobDeadline, signal: AbortSignal) => Promise<GlobExpansion>;
+
 export type PolicyFilesystem = {
   platform: NodeJS.Platform;
   canonicalise: (absolute: string) => PathResolution;
@@ -18,3 +22,7 @@ export type PolicyFilesystem = {
   isSearchable: (absolute: string) => boolean;
   gitlinks: (gitDirectory: string) => GitlinkRead | Unresolved;
 };
+
+export type PolicyPorts = Omit<PolicyFilesystem, 'expandGlob'>;
+
+export type PolicyHostFilesystem = PolicyPorts & { expandGlob: GlobExpander };

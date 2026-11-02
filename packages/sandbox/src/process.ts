@@ -1,7 +1,11 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
-import { signalGroup, terminateGroup } from '@momonga/foundation';
+import { groupTerminationBoundMs, signalGroup, terminateGroup } from '@momonga/foundation';
 import type { SandboxExit, SandboxedProcess } from './types.ts';
+
+export const SANDBOX_KILL_GRACE_MS = 1000;
+
+export const SANDBOX_STOP_BOUND_MS = groupTerminationBoundMs(SANDBOX_KILL_GRACE_MS);
 
 export interface LaunchOptions {
   file: string;

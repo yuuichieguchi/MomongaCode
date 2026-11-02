@@ -5,6 +5,7 @@ import { openZ3, Z3LoadError } from '../src/engine.ts';
 import { formatReport } from '../src/format.ts';
 import type { VerificationReport } from '../src/index.ts';
 import { exitCodeOf } from '../src/report.ts';
+import { hostFilesystemOf } from '@momonga/testkit';
 import { replayWitness } from '../src/replay.ts';
 import type { PropertyResult } from '../src/report.ts';
 import { caseSensitiveFs, makeLayout, rulesOf } from './harness.ts';
@@ -98,10 +99,11 @@ describe('reporting', () => {
       cwd: layout.project,
       fileRules: { entries: [], exemptDirectory: null, fingerprint: '', flavour: 'posix' as const },
       protectedSet: { roots: [], paths: [], lexicalPaths: [], literals: [], names: [], patterns: { entries: [], exemptDirectory: null, fingerprint: '', flavour: 'posix' as const }, issues: [] },
-      fs: fileSystem,
+      fs: hostFilesystemOf(fileSystem),
+      globBudgetMs: 1_000,
     };
 
-    const replay = replayWitness(env, 'Bash', { kind: 'command', command: 'rm x', defaultAllow: false }, { kind: 'allow', dependsOnDefault: false });
+    const replay = await replayWitness(env, 'Bash', { kind: 'command', command: 'rm x', defaultAllow: false }, { kind: 'allow', dependsOnDefault: false });
 
     expect(replay).toEqual({ agrees: false, predicted: 'allow', actual: 'deny', final: 'deny' });
   });

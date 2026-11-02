@@ -14,6 +14,8 @@ export type { LoadMcpServersOptions, LoadMcpServersResult, McpServerEntry, McpSe
 export { COMMAND_PREFIX_SUFFIX, EDIT_TOOLS, PATH_TOOLS, PATH_TOOL_RULES, hasBalancedParentheses, isPathTool, parseRule, RuleParseError } from './rule.ts';
 export type { ParseRuleOptions, PathToolName, PermissionRule, RuleEffect, RuleOrigin } from './rule.ts';
 export { SETTINGS_SCHEMA } from './settings-schema.ts';
+export { DEFAULT_FORGET_AFTER_DAYS, DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS } from './context-settings.ts';
+export type { ResolvedContextSettings, ResolvedMemorySettings, ResolvedVerificationSettings } from './context-settings.ts';
 export type { TrustOracle, UserLayer } from './layers.ts';
 export type {
   McpOAuthConfig,
@@ -35,6 +37,9 @@ export type {
   ResolvedModelTarget,
   ResolvedOpenResponsesTarget,
   TargetCapabilities,
+  ContextSettings,
+  MemorySettings,
+  VerificationSettings,
   OtlpSettings,
   PermissionsSettings,
   Settings,

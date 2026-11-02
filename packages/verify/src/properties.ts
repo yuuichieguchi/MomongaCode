@@ -152,6 +152,7 @@ export const checkRuleConsistency = async (context: QueryContext): Promise<Prope
       if (example === undefined) {
         const reach = await probe(context, 'rule-consistency', `${rule.text} reach (${tool})`, tool, [ctx.Or(term.position, term.incidental, term.strict)], new Set([index]));
         if (reach.status === 'found') example = reach.counterexample;
+        else if (reach.status === 'unknown') undecided = reach.reason;
       }
     }
     if (effective) continue;

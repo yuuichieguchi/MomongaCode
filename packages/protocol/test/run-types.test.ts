@@ -2,10 +2,12 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import { RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES } from '@momonga/protocol';
 import type {
   CompactionInputItem,
+  ContributionKind,
   ElicitationAnswerRecord,
   ElicitationRequestView,
   ImageAttachment,
   InputItem,
+  MemoryStatus,
   MessageInputItem,
   ModelResponse,
   PermissionMode,
@@ -15,6 +17,7 @@ import type {
   RunState,
   RunStatus,
   StopReason,
+  SummaryFidelity,
   TerminalStatus,
   ToolAwait,
   ToolKind,
@@ -95,7 +98,10 @@ describe('run event payloads', () => {
       | 'usage.charged'
       | 'context.compacted'
       | 'context.compaction_rejected'
+      | 'context.contribution'
+      | 'context.governing_loaded'
       | 'context.inherited'
+      | 'context.memories_loaded'
       | 'context.truncated'
       | 'instructions.loaded'
       | 'skill.activated'
@@ -169,6 +175,7 @@ describe('run event payloads', () => {
       providerCallId: string;
       name: string;
       kind: ToolKind;
+      sideEffect?: 'read_only' | 'write' | 'exec';
       title: string;
       rawInput: unknown;
       locations?: { path: string; line?: number }[];
@@ -236,9 +243,25 @@ describe('run event payloads', () => {
     }>();
     expectTypeOf<Payload<'context.compacted'>>().toEqualTypeOf<{
       type: 'context.compacted';
-      item: CompactionInputItem;
+      item: CompactionInputItem | MessageInputItem;
       summary: string;
       replacedThroughSeq: number;
+      source?: 'model' | 'deterministic';
+      fidelity?: SummaryFidelity;
+      guidelineVersion?: number;
+    }>();
+    expectTypeOf<Payload<'context.governing_loaded'>>().toEqualTypeOf<{
+      type: 'context.governing_loaded';
+      active: { id: string; textSha256: string }[];
+      conflicts: { target: string; ids: string[] }[];
+    }>();
+    expectTypeOf<Payload<'context.memories_loaded'>>().toEqualTypeOf<{
+      type: 'context.memories_loaded';
+      memories: { id: string; status: MemoryStatus }[];
+    }>();
+    expectTypeOf<Payload<'context.contribution'>>().toEqualTypeOf<{
+      type: 'context.contribution';
+      items: { kind: ContributionKind; id: string; contributed: boolean }[];
     }>();
     expectTypeOf<Payload<'context.compaction_rejected'>>().toEqualTypeOf<{
       type: 'context.compaction_rejected';

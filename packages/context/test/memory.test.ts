@@ -9,9 +9,16 @@ const memoryOf = (index: number, overrides: Partial<MemoryView> = {}): MemoryVie
   origin: 'trusted',
   project: index % 2 === 0 ? null : PROJECT,
   text: `Note number ${index}: prefer small commits.`,
-  source: { sessionId: 's1', runId: `run-${index}`, step: index, callId: `c${index}`, seq: index + 3 },
+  source: { kind: 'tool', sessionId: 's1', runId: `run-${index}`, step: index, callId: `c${index}`, seq: index + 3 },
   createdAt: Date.UTC(2026, 10, 1, 0, 0, index),
   lastUsedAt: Date.UTC(2026, 10, 2, 0, 0, index),
+  kind: 'fact',
+  state: 'active',
+  duplicateOf: null,
+  supersedes: [],
+  retiredAt: null,
+  evidence: [],
+  contributedAt: null,
   ...overrides,
 });
 

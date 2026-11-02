@@ -2,6 +2,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { protectedSetFor } from '@momonga/foundation';
 import { PERMISSION_MODES } from '@momonga/protocol';
+import { hostFilesystemOf } from '@momonga/testkit';
 import type { SubjectTool, Witness } from '../src/decision-model.ts';
 import { predictDecision } from '../src/queries.ts';
 import { isMismatch } from '../src/report.ts';
@@ -167,10 +168,10 @@ describe('the model agrees with the decision code', () => {
         home: layout.home,
         cwd: layout.project,
         protectedSet: protectedSetFor(roots, fileSystem),
-        fs: fileSystem,
+        fs: hostFilesystemOf(fileSystem),
         secretLocations: [sshLocation(layout)],
         exemptDirectory: null,
-        timeoutMs: 30_000,
+        budgetMs: 600_000,
       });
       const inputs: Array<[SubjectTool, Witness]> = [];
       for (let count = 0; count < INPUTS_PER_TRIAL; count += 1) {
@@ -191,7 +192,7 @@ describe('the model agrees with the decision code', () => {
       for (const [tool, witness] of inputs) {
         const prediction = await predictDecision(context, tool, witness);
         if (prediction === undefined) continue;
-        const replay = replayWitness(context.env, tool, witness, prediction);
+        const replay = await replayWitness(context.env, tool, witness, prediction);
         if ('skipped' in replay) continue;
         compared += 1;
         if (!isMismatch(replay)) agreed += 1;

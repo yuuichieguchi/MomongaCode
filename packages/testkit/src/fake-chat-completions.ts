@@ -25,6 +25,8 @@ export interface FakeChatCompletionsOptions {
   overflow?: 'reject' | 'queue';
   imageInput?: boolean;
   imageTokens?: FakeImageTokenModel;
+  imageSizeLimit?: { maxSide: number; status: 400 | 413 };
+  rateLimitSizedImages?: { count: number; retryAfter: string };
   guardrailTrigger?: string;
   latencyMs?: number;
   failNativeSamples?: number[];
@@ -153,20 +155,29 @@ const messageText = (message: ChatMessage): string => {
 export interface FakeImageTokenModel {
   pixelsPerToken: number;
   maxTokens: number;
+  minTokens?: number;
+  noTokensAboveSide?: number;
 }
 
 const PNG_DATA_URL = /^data:image\/png;base64,(.*)$/s;
 const PNG_HEADER_BYTES = 24;
 
-const fakeImageTokens = (part: unknown, model: FakeImageTokenModel): number => {
-  if (!isRecord(part) || part['type'] !== 'image_url' || !isRecord(part['image_url'])) return 0;
+const fakePngSize = (part: unknown): { width: number; height: number } | undefined => {
+  if (!isRecord(part) || !isRecord(part['image_url'])) return undefined;
   const url = part['image_url']['url'];
   const payload = typeof url === 'string' ? PNG_DATA_URL.exec(url)?.[1] : undefined;
-  if (payload === undefined) return model.maxTokens;
+  if (payload === undefined) return undefined;
   const header = Buffer.from(payload.slice(0, 64), 'base64');
-  if (header.length < PNG_HEADER_BYTES) return model.maxTokens;
-  const pixels = header.readUInt32BE(16) * header.readUInt32BE(20);
-  return Math.min(model.maxTokens, Math.ceil(pixels / model.pixelsPerToken));
+  return header.length < PNG_HEADER_BYTES ? undefined : { width: header.readUInt32BE(16), height: header.readUInt32BE(20) };
+};
+
+const fakeImageTokens = (part: unknown, model: FakeImageTokenModel): number => {
+  if (!isRecord(part) || part['type'] !== 'image_url' || !isRecord(part['image_url'])) return 0;
+  const size = fakePngSize(part);
+  if (size === undefined) return model.maxTokens;
+  if (model.noTokensAboveSide !== undefined && Math.max(size.width, size.height) > model.noTokensAboveSide) return 0;
+  const linear = Math.ceil((size.width * size.height) / model.pixelsPerToken);
+  return Math.max(model.minTokens ?? 0, Math.min(model.maxTokens, linear));
 };
 
 const fakeMessageImageTokens = (message: ChatMessage, model: FakeImageTokenModel | undefined): number =>
@@ -232,6 +243,7 @@ export const startFakeChatCompletions = async (
   const overflow = options.overflow ?? 'reject';
   const latencyMs = options.latencyMs ?? 0;
   const failNativeSamples = options.failNativeSamples ?? [];
+  let rateLimitedSizedImages = 0;
   const failConstrainedSamples = options.failConstrainedSamples ?? [];
   const stallNativeSamples = options.stallNativeSamples ?? [];
   const stallMs = options.stallMs ?? 2000;
@@ -343,6 +355,31 @@ export const startFakeChatCompletions = async (
         message.content.some((part: unknown) => isRecord(part) && part['type'] === 'image_url'),
     );
     if (hasImage && options.imageInput !== true) throw invalidRequest(IMAGE_UNSUPPORTED_MESSAGE, null, 'messages');
+    if (options.imageSizeLimit !== undefined) {
+      const { maxSide, status } = options.imageSizeLimit;
+      const parts = messages.flatMap((message) => (Array.isArray(message.content) ? (message.content as unknown[]) : []));
+      const oversized = parts.some((part) => {
+        const size = fakePngSize(part);
+        return size !== undefined && Math.max(size.width, size.height) > maxSide;
+      });
+      if (oversized) throw status === 413 ? new HttpFailure(413, structuredClone(FAKE_PAYLOAD_TOO_LARGE_ERROR) as unknown as Json) : invalidRequest('The image is too large.', null, 'messages');
+    }
+    if (options.rateLimitSizedImages !== undefined && rateLimitedSizedImages < options.rateLimitSizedImages.count) {
+      const sized = messages
+        .flatMap((message) => (Array.isArray(message.content) ? (message.content as unknown[]) : []))
+        .some((part) => {
+          const size = fakePngSize(part);
+          return size !== undefined && Math.max(size.width, size.height) > 1;
+        });
+      if (sized) {
+        rateLimitedSizedImages += 1;
+        throw new HttpFailure(
+          429,
+          { error: { message: 'Too many requests.', type: 'rate_limit_error', param: null, code: 'rate_limit_exceeded' } },
+          { 'retry-after': options.rateLimitSizedImages.retryAfter },
+        );
+      }
+    }
     if (
       options.guardrailTrigger !== undefined &&
       messages.some((message) => messageText(message).includes(options.guardrailTrigger as string))

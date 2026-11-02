@@ -1,4 +1,6 @@
+import type { ContributionKind, SummaryFidelity, SummarySource } from './context-record.ts';
 import type { HookExecution } from './hooks.ts';
+import type { MemoryStatus } from './memory.ts';
 import type { CompactionInputItem, InputItem, MessageInputItem } from './open-responses.ts';
 import type { PermissionDenial } from './permission-denial.ts';
 
@@ -30,6 +32,10 @@ export type StopReason = (typeof STOP_REASONS)[number];
 export type PermissionMode = (typeof PERMISSION_MODES)[number];
 export type ApprovalStatus = (typeof APPROVAL_STATUSES)[number];
 export type ToolKind = (typeof TOOL_KINDS)[number];
+
+export const SIDE_EFFECTS = ['read_only', 'write', 'exec'] as const;
+
+export type SideEffect = (typeof SIDE_EFFECTS)[number];
 
 export type PermissionOption = {
   optionId: string;
@@ -86,6 +92,7 @@ export type RunEventPayload =
       providerCallId: string;
       name: string;
       kind: ToolKind;
+      sideEffect?: SideEffect;
       title: string;
       rawInput: unknown;
       locations?: { path: string; line?: number }[];
@@ -137,7 +144,18 @@ export type RunEventPayload =
     }
   | { type: 'usage.updated'; inputTokens: number; outputTokens: number; totalTokens: number }
   | { type: 'usage.charged'; purpose: UsageChargePurpose; inputTokens: number; outputTokens: number; totalTokens: number }
-  | { type: 'context.compacted'; item: CompactionInputItem; summary: string; replacedThroughSeq: number }
+  | {
+      type: 'context.compacted';
+      item: CompactionInputItem | MessageInputItem;
+      summary: string;
+      replacedThroughSeq: number;
+      source?: SummarySource;
+      fidelity?: SummaryFidelity;
+      guidelineVersion?: number;
+    }
+  | { type: 'context.governing_loaded'; active: { id: string; textSha256: string }[]; conflicts: { target: string; ids: string[] }[] }
+  | { type: 'context.memories_loaded'; memories: { id: string; status: MemoryStatus }[] }
+  | { type: 'context.contribution'; items: { kind: ContributionKind; id: string; contributed: boolean }[] }
   | { type: 'context.compaction_rejected'; step?: number; attempt?: number; item: MessageInputItem }
   | {
       type: 'context.inherited';

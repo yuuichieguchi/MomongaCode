@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { migrate, openDatabase } from '@momonga/foundation';
-import { buildCostReport, definePriceTable, openTraceStore } from '@momonga/observability';
+import { buildCostReport, definePriceTable, formatCostReport, openTraceStore } from '@momonga/observability';
 import { createFakeClock } from '@momonga/testkit';
 import { TRACE_STORE_MIGRATIONS } from '../src/trace-store.ts';
 import { RUN_ID, START_MS, makeDir, registerCleanup } from './helpers.ts';
@@ -13,26 +13,39 @@ const insertSpan = (db: ReturnType<typeof openDatabase>, spanId: string, name: s
 };
 
 describe('the chat-span billing migration of the trace store', () => {
-  it('records earlier chat spans as metered so a cost report over history still reads, and leaves other spans alone', () => {
+  it('records earlier chat spans of any provider as unknown, and the cost report counts them apart without pricing them', () => {
     const file = path.join(makeDir(), 'traces.db');
     const legacy = openDatabase(file);
     migrate(legacy, TRACE_STORE_MIGRATIONS.slice(0, 1));
-    insertSpan(legacy, 'chat-1', 'chat m', {
+    const chatAttributes = (provider: string) => ({
       'gen_ai.operation.name': 'chat',
-      'gen_ai.provider.name': 'acme',
+      'gen_ai.provider.name': provider,
       'gen_ai.request.model': 'm1',
       'gen_ai.usage.input_tokens': 1_000_000,
       'gen_ai.usage.output_tokens': 0,
     });
+    insertSpan(legacy, 'chat-1', 'chat m', chatAttributes('acme'));
+    insertSpan(legacy, 'chat-2', 'chat m', chatAttributes('apple'));
     insertSpan(legacy, 'tool-1', 'execute_tool Read', { 'gen_ai.operation.name': 'execute_tool' });
     legacy.close();
 
     const store = openTraceStore({ path: file, clock: createFakeClock(START_MS) });
     registerCleanup(() => store.close());
-    const [chat, tool] = store.spansForRun(RUN_ID);
-    expect(chat?.attributes['momonga.billing']).toBe('metered');
-    expect(tool?.attributes).not.toHaveProperty('momonga.billing');
-    const table = definePriceTable([{ provider: 'acme', model: 'm1', effectiveFrom: '2026-01-01', inputPerMTok: 2, outputPerMTok: 8, currency: 'USD' }]);
-    expect(buildCostReport(store, [{ runId: RUN_ID, sessionId: 's' }], { table }).total).toMatchObject({ calls: 1, localCalls: 0, unpricedCalls: 0, amount: 2 });
+    const spans = store.spansForRun(RUN_ID);
+    const billingOf = (spanId: string) => spans.find((span) => span.spanId === spanId)?.attributes['momonga.billing'];
+    expect(billingOf('chat-1')).toBe('unknown');
+    expect(billingOf('chat-2')).toBe('unknown');
+    expect(spans.find((span) => span.spanId === 'tool-1')?.attributes).not.toHaveProperty('momonga.billing');
+
+    const table = definePriceTable([
+      { provider: 'acme', model: 'm1', effectiveFrom: '2026-01-01', inputPerMTok: 2, outputPerMTok: 8, currency: 'USD' },
+      { provider: 'apple', model: 'm1', effectiveFrom: '2026-01-01', inputPerMTok: 2, outputPerMTok: 8, currency: 'USD' },
+    ]);
+    const report = buildCostReport(store, [{ runId: RUN_ID, sessionId: 's' }], { table });
+    expect(report.total).toMatchObject({ calls: 2, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 2, inputTokens: 2_000_000, amount: 0, priceVersions: [] });
+    const formatted = formatCostReport(report);
+    expect(formatted).toMatch(/2 of 2 call\(s\).*unknown/);
+    expect(formatted).not.toContain('ran locally');
+    expect(formatted).not.toContain('no price entry');
   });
 });

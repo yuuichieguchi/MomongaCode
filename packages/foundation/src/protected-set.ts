@@ -82,7 +82,7 @@ type Collected = {
   issues: GitPointerIssue[];
 };
 
-const stripLineEnd = (text: string): string => text.replace(/[\r\n]+$/, '');
+const stripLineEnd = (text: string): string => text.replace(/[\r\n]+$/, '').split('\0', 1)[0] as string;
 
 export const gitFileTarget = (text: string): string | undefined => {
   const body = stripLineEnd(text);

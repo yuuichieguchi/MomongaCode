@@ -13,7 +13,7 @@ const imageTokenModelMissing = () =>
   );
 
 const tokensForDimensions = (width: number, height: number, model: ImageTokenModel): number =>
-  Math.min(model.maxTokens, Math.ceil((width * height) / model.pixelsPerToken));
+  Math.max(model.minTokens, Math.min(model.maxTokens, Math.ceil((width * height) / model.pixelsPerToken)));
 
 const tokensForBase64 = (data: string, model: ImageTokenModel): number => {
   const dimensions = dimensionsOfBase64(data);
