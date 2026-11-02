@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { fakePolicyFilesystem } from '@momonga/testkit';
 import { ConfigError } from '@momonga/config';
-import { ensureSessionTmpDir, momongaLayout, protectedSetFor } from '@momonga/foundation';
+import { HOST_RULE_ENFORCEMENT, ensureSessionTmpDir, momongaLayout, protectedSetFor } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
 import type { MomongaPaths } from '@momonga/foundation';
 import * as runtime from '@momonga/runtime';
@@ -99,7 +99,7 @@ describe('policyFor (system timers, none used)', () => {
     expect(policy.sandboxPolicy.writableRoots).toContain(tmpDir);
     expect(policy.sandboxPolicy).toEqual(
       buildSandboxPolicy({
-        fileRules: computeFileRules([], [temp.project, extra], tmpDir),
+        fileRules: computeFileRules([], [temp.project, extra], tmpDir, HOST_RULE_ENFORCEMENT),
         protectedSet,
         roots: [temp.project, extra],
         home: temp.home,

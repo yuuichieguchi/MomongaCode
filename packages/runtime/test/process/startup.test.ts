@@ -260,18 +260,55 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect(await isLockFree(temp.paths.locks.runtime)).toBe(true);
   });
 
-  it.runIf(process.platform === 'linux')('removes the empty placeholder that a killed runtime left in a workspace, found by its journal record, before any command runs', PROCESS_TIMEOUT, async () => {
-    const temp = makeRunHome();
-    writeUserSettings(temp.home, { sandbox: 'bubblewrap' });
-    await ensureMomongaDirs(temp.paths);
-    fs.writeFileSync(temp.paths.sockets.runtime, 'not a socket');
-    const leftover = path.join(temp.root, '.mcp.json');
-    fs.writeFileSync(leftover, '');
-    createPlaceholderJournal(path.join(temp.paths.state, 'placeholders')).record({ path: leftover, ...identityOf(leftover) });
-    const { started, logger } = startBare(temp, { sandboxExecPath: '/bin/true', platform: 'linux' });
-    await failureOf(started);
-    expect(fs.existsSync(leftover)).toBe(false);
-    expect(logger.entries).toContainEqual(expect.objectContaining({ level: 'warn', msg: expect.stringContaining(leftover) }));
+  describe.runIf(process.platform === 'linux')('the empty placeholder that a killed runtime left in a workspace', () => {
+    const leave = async (temp: RunHome): Promise<string> => {
+      await ensureMomongaDirs(temp.paths);
+      const leftover = path.join(temp.root, '.mcp.json');
+      const journal = createPlaceholderJournal(path.join(temp.paths.state, 'placeholders'));
+      journal.intend(leftover, Date.now());
+      fs.writeFileSync(leftover, '');
+      journal.complete(leftover, identityOf(leftover));
+      return leftover;
+    };
+
+    it.each(['bubblewrap', 'none'] as const)('is removed at start with the setting %s, found by its journal record, before any command runs', PROCESS_TIMEOUT, async (setting) => {
+      const temp = makeRunHome();
+      writeUserSettings(temp.home, { sandbox: setting });
+      const leftover = await leave(temp);
+      fs.writeFileSync(temp.paths.sockets.runtime, 'not a socket');
+      const { started, logger } = startBare(temp, { sandboxExecPath: '/bin/true', platform: 'linux' });
+      await failureOf(started);
+      expect(fs.existsSync(leftover)).toBe(false);
+      expect(logger.entries).toContainEqual(expect.objectContaining({ level: 'warn', msg: expect.stringContaining(leftover) }));
+    });
+
+    it('is removed even when bwrap is missing and the start fails because of it', PROCESS_TIMEOUT, async () => {
+      const temp = makeRunHome();
+      writeUserSettings(temp.home, { sandbox: 'bubblewrap' });
+      const leftover = await leave(temp);
+      const { started } = startBare(temp, { sandboxExecPath: path.join(temp.root, 'no-bwrap'), platform: 'linux' });
+      expect(await failureOf(started)).toBeInstanceOf(ConfigError);
+      expect(fs.existsSync(leftover)).toBe(false);
+    });
+  });
+
+  describe('a bwrap that is present but cannot create the sandbox', () => {
+    const blockedBwrap = (temp: RunHome): string => {
+      const file = path.join(temp.root, 'blocked-bwrap');
+      fs.writeFileSync(file, "#!/bin/sh\necho \"bwrap: Can't mount proc on /newroot/proc: Operation not permitted\" >&2\nexit 1\n", { mode: 0o755 });
+      return file;
+    };
+
+    it('is a ConfigError carrying the stderr of bwrap and the advice to set the sandbox to none', PROCESS_TIMEOUT, async () => {
+      const temp = makeRunHome();
+      writeUserSettings(temp.home, { sandbox: 'bubblewrap' });
+      const { started } = startBare(temp, { sandboxExecPath: blockedBwrap(temp), platform: 'linux' });
+      const error = await failureOf(started);
+      expect(error).toBeInstanceOf(ConfigError);
+      expect((error as Error).message).toContain("bwrap: Can't mount proc on /newroot/proc: Operation not permitted");
+      expect((error as Error).message).toContain(`set "sandbox": "none" in ${temp.paths.settingsFile}`);
+      expect(await isLockFree(temp.paths.locks.runtime)).toBe(true);
+    });
   });
 
   it('a sandbox kind from another operating system is a ConfigError', PROCESS_TIMEOUT, async () => {

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
-import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal } from '@momonga/sandbox';
+import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, heldMountPoints } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
 import { killGroupsForCleanup, waitFor } from '@momonga/testkit';
 import { fileRulesOf, fileSpec } from './file-rule-specs.ts';
@@ -37,6 +37,9 @@ describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', () => {
     ...overrides,
   });
 
+  const newSandbox = (): Sandbox =>
+    createBubblewrapSandbox({ tmpRoot: tempDir(), killGraceMs: KILL_GRACE_MS, journal: createPlaceholderJournal(path.join(tempDir(), 'journal')), holders: heldMountPoints });
+
   const sh = (script: string, overrides: Partial<SandboxPolicy> = {}): SandboxedProcess => {
     const proc = sandbox.spawn({ argv: ['/bin/sh', '-c', script], cwd: work, env: BASE_ENV }, policy(overrides), new AbortController().signal);
     spawned.push(proc);
@@ -46,7 +49,7 @@ describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', () => {
   beforeEach(() => {
     work = tempDir();
     outside = tempDir();
-    sandbox = createBubblewrapSandbox({ tmpRoot: tempDir(), killGraceMs: KILL_GRACE_MS, journal: createPlaceholderJournal(path.join(tempDir(), 'journal')) });
+    sandbox = newSandbox();
   });
 
   afterEach(async () => {
@@ -231,6 +234,31 @@ describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', () => {
       const exit = await held.exited;
       expect(exit.signal).toBe('SIGKILL');
       expect(fs.existsSync(path.join(work, '.git'))).toBe(false);
+    });
+
+    it('is not unlinked under a second sandbox that still holds it: the second sandbox keeps refusing a write to the name', async () => {
+      const mcp = path.join(work, '.mcp.json');
+      const second = newSandbox();
+      const gates = [path.join(outside, 'gate-a'), path.join(outside, 'gate-b')];
+      for (const gate of gates) execFileSync('/usr/bin/mkfifo', [gate]);
+      const signalling = { writableRoots: [work, outside], writeDenied: [mcp] };
+      const first = sh(`: > ${path.join(outside, 'a-ready')}; cat ${gates[0]} > /dev/null`, signalling);
+      await waitFor(() => fs.existsSync(path.join(outside, 'a-ready')));
+      expect(fs.statSync(mcp).isFile()).toBe(true);
+      const holder = second.spawn(
+        { argv: ['/bin/sh', '-c', `: > ${path.join(outside, 'b-ready')}; cat ${gates[1]} > /dev/null; (echo x > ${mcp}) 2>/dev/null && echo wrote || echo refused`], cwd: work, env: BASE_ENV },
+        policy(signalling),
+        new AbortController().signal,
+      );
+      spawned.push(holder);
+      await waitFor(() => fs.existsSync(path.join(outside, 'b-ready')));
+      fs.writeFileSync(gates[0] as string, 'open');
+      await run(first);
+      expect(fs.existsSync(mcp)).toBe(true);
+      fs.writeFileSync(gates[1] as string, 'open');
+      expect((await run(holder)).stdout.trim()).toBe('refused');
+      await run(sh('true', { writableRoots: [work, outside], writeDenied: [path.join(work, '.envrc')] }));
+      expect(fs.existsSync(mcp)).toBe(false);
     });
 
     it('stays while another process still holds it after the first one is killed, and protects until then', async () => {

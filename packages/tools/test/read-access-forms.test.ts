@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { HOST_RULE_ENFORCEMENT } from '@momonga/foundation';
 import { computeFileRules, parseRule } from '@momonga/policy';
 import type { PermissionRule } from '@momonga/policy';
 import { createReadAccessMatcher } from '../src/read-access.ts';
@@ -35,7 +36,7 @@ const denyRule = (cwd: string, text: string): PermissionRule =>
 
 const matcherFor = (cwd: string, texts: readonly string[]) => {
   const rules = texts.map((text) => denyRule(cwd, text));
-  return createReadAccessMatcher({ readDenied: [], readAllowed: [], fileRules: computeFileRules(rules, [cwd], null) });
+  return createReadAccessMatcher({ readDenied: [], readAllowed: [], fileRules: computeFileRules(rules, [cwd], null, HOST_RULE_ENFORCEMENT) });
 };
 
 const loopProject = (): string => {

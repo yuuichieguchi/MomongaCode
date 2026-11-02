@@ -54,7 +54,7 @@ const policy = (writeDenied: string[]): SandboxPolicy => ({
 describe('a process group that cannot be reaped', () => {
   it('still removes the placeholder and the private tmp dir, and reports the reap failure', async () => {
     const hooks = path.join(work, '.git', 'hooks');
-    const sandbox = createBubblewrapSandbox({ bwrapPath: path.join(base, 'bwrap'), tmpRoot: path.join(base, 'tmp'), killGraceMs: 300, journal: createPlaceholderJournal(path.join(base, 'journal')) });
+    const sandbox = createBubblewrapSandbox({ bwrapPath: path.join(base, 'bwrap'), tmpRoot: path.join(base, 'tmp'), killGraceMs: 300, journal: createPlaceholderJournal(path.join(base, 'journal')), holders: () => new Set() });
     reaper.failure = new Error('the group could not be terminated');
     const proc = sandbox.spawn({ argv: ['/bin/sh', '-c', 'true'], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy([hooks]), new AbortController().signal);
     await expect(run(proc)).rejects.toBe(reaper.failure);
@@ -72,6 +72,7 @@ describe('a process group that cannot be reaped', () => {
       tmpRoot: path.join(base, 'tmp'),
       killGraceMs: 300,
       journal: createPlaceholderJournal(path.join(base, 'journal')),
+      holders: () => new Set(),
       filesystem: {
         ...nodeFilesystemPort,
         removePlaceholder: () => {

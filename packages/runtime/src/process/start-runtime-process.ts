@@ -12,12 +12,13 @@ import {
   ProcessLockHeldError,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
   reapMarkerDirectory,
+  ruleEnforcementOf,
   systemClock,
 } from '@momonga/foundation';
 import type { Clock, JsonLogger, ProcessLock, ReadyFields, TextStream } from '@momonga/foundation';
 import { createTelemetry, exportersFor, openTraceStore } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
-import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, recoverPlaceholders } from '@momonga/sandbox';
+import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import type { Sandbox } from '@momonga/sandbox';
 import { isFatalStoreError, openRuntimeStore } from '@momonga/store';
@@ -300,12 +301,16 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
     const kind: SandboxKind = settings.sandbox;
     const sandbox: Sandbox = await step('sandbox', () => {
+      const platform = options.platform ?? process.platform;
+      const journalDirectory = path.join(paths.state, PLACEHOLDER_JOURNAL_DIRECTORY);
+      if (platform === 'linux') {
+        for (const leftover of recoverPlaceholders(createPlaceholderJournal(journalDirectory)).removed) logger.warn(`removed the empty placeholder ${leftover} that a killed runtime left in a workspace`);
+      }
       if (kind === 'none') {
         const unsandboxed = createUnsandboxed({ killGraceMs: SANDBOX_KILL_GRACE_MS });
         logger.warn('sandbox is none: Bash asks before every command');
         return unsandboxed;
       }
-      const platform = options.platform ?? process.platform;
       const required = kind === 'seatbelt' ? 'darwin' : 'linux';
       if (platform !== required) {
         throw new ConfigError(`sandbox "${kind}" is only available on ${required}; set "sandbox" in ${paths.settingsFile} to "none" to run without a sandbox (Bash will then ask before every command)`);
@@ -321,10 +326,13 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         );
       }
       if (kind === 'bubblewrap') {
-        const journal = createPlaceholderJournal(path.join(paths.state, PLACEHOLDER_JOURNAL_DIRECTORY));
-        const recovered = recoverPlaceholders(journal);
-        for (const leftover of recovered.removed) logger.warn(`removed the empty placeholder ${leftover} that a killed runtime left in a workspace`);
-        return createBubblewrapSandbox({ bwrapPath: launcherPath, tmpRoot: paths.tmp.spawn, killGraceMs: SANDBOX_KILL_GRACE_MS, journal });
+        const probe = probeBubblewrap(launcherPath);
+        if (!probe.ok) {
+          throw new ConfigError(
+            `bwrap at ${launcherPath} cannot create a sandbox on this host: ${probe.stderr}; set "sandbox": "none" in ${paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
+          );
+        }
+        return createBubblewrapSandbox({ bwrapPath: launcherPath, tmpRoot: paths.tmp.spawn, killGraceMs: SANDBOX_KILL_GRACE_MS, journal: createPlaceholderJournal(journalDirectory), holders: () => heldMountPoints() });
       }
       return createSeatbeltSandbox({ sandboxExecPath: launcherPath, tmpRoot: paths.tmp.spawn, killGraceMs: SANDBOX_KILL_GRACE_MS });
     });
@@ -411,7 +419,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         settings: composition.settings,
       });
       const memories = createMemoryPort({ store, settings: composition.settings });
-      const history = createHistoryPort({ store, settings: composition.settings, redactor });
+      const history = createHistoryPort({ store, settings: composition.settings, redactor, enforcement: ruleEnforcementOf(sandbox.kind) });
       const agents = createAgentsPort({
         home: canonicalHome,
         fileSystem: createNodeSkillFileSystem(),

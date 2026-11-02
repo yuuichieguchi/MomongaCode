@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { GIT_APPROVED_SUBCOMMANDS } from '@momonga/policy';
-import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox } from '@momonga/sandbox';
+import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, heldMountPoints } from '@momonga/sandbox';
 import type { Sandbox, SandboxCommand, SandboxPolicy } from '@momonga/sandbox';
 
 export const KILL_GRACE_MS = 300;
@@ -12,7 +12,7 @@ export const realSandbox = (tmpRoot: string): Sandbox => {
   fs.mkdirSync(tmpRoot, { recursive: true });
   if (process.platform === 'darwin') return createSeatbeltSandbox({ tmpRoot, killGraceMs: KILL_GRACE_MS });
   if (!fs.existsSync(DEFAULT_BWRAP_PATH)) throw new Error(`the read-only matrix needs real bwrap at ${DEFAULT_BWRAP_PATH}`);
-  return createBubblewrapSandbox({ tmpRoot, killGraceMs: KILL_GRACE_MS, journal: createPlaceholderJournal(`${tmpRoot}-journal`) });
+  return createBubblewrapSandbox({ tmpRoot, killGraceMs: KILL_GRACE_MS, journal: createPlaceholderJournal(`${tmpRoot}-journal`), holders: () => heldMountPoints() });
 };
 
 export type RecordedSpawn = { command: SandboxCommand; policy: SandboxPolicy };

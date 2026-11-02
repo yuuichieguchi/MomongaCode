@@ -3,7 +3,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, protectedSetFor } from '@momonga/foundation';
 import type { ProtectedSet } from '@momonga/foundation';
-import { buildSeatbeltProfile, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, planBubblewrap } from '@momonga/sandbox';
+import { buildSeatbeltProfile, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, heldMountPoints, planBubblewrap } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
 import { fakePolicyFilesystem, killGroupsForCleanup } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
@@ -14,7 +14,7 @@ const BASE_ENV = { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' };
 type Built = { roots: string[]; cwd: string };
 
 const createHostSandbox = (options: { tmpRoot: string; killGraceMs: number }): Sandbox =>
-  process.platform === 'darwin' ? createSeatbeltSandbox(options) : createBubblewrapSandbox({ ...options, journal: createPlaceholderJournal(`${options.tmpRoot}-journal`) });
+  process.platform === 'darwin' ? createSeatbeltSandbox(options) : createBubblewrapSandbox({ ...options, journal: createPlaceholderJournal(`${options.tmpRoot}-journal`), holders: () => heldMountPoints() });
 
 const admits = (policy: SandboxPolicy, cwd: string): unknown => (process.platform === 'darwin' ? buildSeatbeltProfile(policy) : planBubblewrap(policy, { cwd }));
 
@@ -259,6 +259,32 @@ describe('protected set in the kernel (real sandbox-exec on Darwin, real bwrap o
         ['a new worktree config.worktree, which git never adopts (nested-git-adoption.test.ts)', standalone, '.git/worktrees/wt/config.worktree'],
       ] as const)('allows %s', async (_label, build, target) => {
         await allowed(build, target);
+      });
+
+      describe('renaming the directory that holds a pinned file away (Linux allows renaming an ancestor of a mount point)', () => {
+        const withWorktreeConfig = (base: string): Built => {
+          const built = withWorktree(base);
+          fs.writeFileSync(path.join(built.cwd, '.git', 'worktrees', 'wt', 'config.worktree'), '[core]\n');
+          return built;
+        };
+
+        const withModuleWorktree = (base: string): Built => {
+          const built = withModule(base);
+          const admin = path.join(built.cwd, '.git', 'modules', 'a', 'worktrees', 't');
+          fs.mkdirSync(admin, { recursive: true });
+          fs.writeFileSync(path.join(admin, 'config.worktree'), '[core]\n');
+          return built;
+        };
+
+        const swap = (directory: string): string =>
+          `mv ${directory} ${directory}.old && mkdir ${directory} && printf '[core]\\n\\tfsmonitor = ./evil\\n' > ${directory}/config.worktree`;
+
+        it.each([
+          ['a worktree administrative directory', withWorktreeConfig, '.git/worktrees/wt'],
+          ['a worktree administrative directory of a module', withModuleWorktree, '.git/modules/a/worktrees/t'],
+        ] as const)('refuses to move %s away and put another with its own config.worktree in its place', async (_label, build, directory) => {
+          await refusedWithControl(build, swap(directory), stateOf(`${directory}/config.worktree`, `${directory}.old`));
+        });
       });
 
       it('plans a placeholder where the modules directory is missing, so no module can be created', async () => {

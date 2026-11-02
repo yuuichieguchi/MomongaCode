@@ -44,31 +44,146 @@ describe('the placeholder journal and the recovery at runtime start', () => {
   const noHolders = (): ReadonlySet<string> => new Set();
 
   const journaled = (journal: ReturnType<typeof createPlaceholderJournal>, target: string): void => {
+    journal.intend(target, Date.now());
     fs.writeFileSync(target, '');
-    journal.record({ path: target, ...identityOf(target) });
+    journal.complete(target, identityOf(target));
   };
 
   describe('the journal', () => {
-    it('keeps a record across instances and forgets it by path', () => {
+    it('keeps an intent and its completion across instances and forgets them by path', () => {
       const directory = path.join(tempDir(), 'journal');
       const first = createPlaceholderJournal(directory);
-      first.record({ path: '/w/.mcp.json', device: '1', inode: '2' });
-      first.record({ path: '/w/.envrc', device: '1', inode: '3' });
-      expect(createPlaceholderJournal(directory).records().sort((a, b) => a.path.localeCompare(b.path))).toEqual([
-        { path: '/w/.envrc', device: '1', inode: '3' },
-        { path: '/w/.mcp.json', device: '1', inode: '2' },
+      first.intend('/w/.mcp.json', 100);
+      first.intend('/w/.envrc', 200);
+      first.complete('/w/.envrc', { device: '1', inode: '3', birthMs: 250 });
+      expect(createPlaceholderJournal(directory).records()).toEqual([
+        { path: '/w/.envrc', intentMs: 200, identity: { device: '1', inode: '3', birthMs: 250 } },
+        { path: '/w/.mcp.json', intentMs: 100, identity: null },
       ]);
       first.forget('/w/.envrc');
-      expect(createPlaceholderJournal(directory).records()).toEqual([{ path: '/w/.mcp.json', device: '1', inode: '2' }]);
+      expect(createPlaceholderJournal(directory).records()).toEqual([{ path: '/w/.mcp.json', intentMs: 100, identity: null }]);
+    });
+
+    it('refuses to complete a path that has no intent', () => {
+      const journal = createPlaceholderJournal(path.join(tempDir(), 'journal'));
+      expect(() => journal.complete('/w/.mcp.json', { device: '1', inode: '2', birthMs: 3 })).toThrow('no intent');
     });
 
     it('refuses a malformed record instead of skipping it', () => {
       const directory = path.join(tempDir(), 'journal');
       const journal = createPlaceholderJournal(directory);
-      journal.record({ path: '/w/.mcp.json', device: '1', inode: '2' });
+      journal.intend('/w/.mcp.json', 1);
       const [entry] = fs.readdirSync(directory);
       fs.writeFileSync(path.join(directory, entry as string), '{"path": 3}');
       expect(() => journal.records()).toThrow();
+    });
+  });
+
+  describe('a kill at each step of the write-ahead sequence (intend, create, complete)', () => {
+    const intentOf = (journal: ReturnType<typeof createPlaceholderJournal>, target: string, ahead: number): void => {
+      journal.intend(target, Date.now() + ahead);
+    };
+
+    it('killed after the intent and before the create: nothing to remove, the record is dropped', () => {
+      const work = tempDir();
+      const journal = createPlaceholderJournal(path.join(tempDir(), 'journal'));
+      intentOf(journal, path.join(work, '.mcp.json'), 0);
+      expect(recoverPlaceholders(journal, { holders: noHolders })).toEqual({ removed: [], kept: [] });
+      expect(journal.records()).toEqual([]);
+    });
+
+    it('killed after the intent and before the create, with a person file of that name already there: the file stays', () => {
+      const work = tempDir();
+      const target = path.join(work, '.mcp.json');
+      fs.writeFileSync(target, '');
+      const journal = createPlaceholderJournal(path.join(tempDir(), 'journal'));
+      intentOf(journal, target, 60_000);
+      expect(recoverPlaceholders(journal, { holders: noHolders }).removed).toEqual([]);
+      expect(fs.existsSync(target)).toBe(true);
+      expect(journal.records()).toEqual([]);
+    });
+
+    it('killed after the create and before the completion: the empty file born after the intent is removed', () => {
+      const work = tempDir();
+      const target = path.join(work, '.mcp.json');
+      const journal = createPlaceholderJournal(path.join(tempDir(), 'journal'));
+      intentOf(journal, target, 0);
+      fs.writeFileSync(target, '');
+      expect(recoverPlaceholders(journal, { holders: noHolders }).removed).toEqual([target]);
+      expect(fs.existsSync(target)).toBe(false);
+      expect(journal.records()).toEqual([]);
+    });
+
+    it('killed after the create and before the completion, but the file has content: it stays', () => {
+      const work = tempDir();
+      const target = path.join(work, '.mcp.json');
+      const journal = createPlaceholderJournal(path.join(tempDir(), 'journal'));
+      intentOf(journal, target, 0);
+      fs.writeFileSync(target, '{}');
+      expect(recoverPlaceholders(journal, { holders: noHolders }).removed).toEqual([]);
+      expect(fs.readFileSync(target, 'utf8')).toBe('{}');
+    });
+
+    it('killed after the create and before the completion, while a live sandbox holds the file: it stays and the record is kept', () => {
+      const work = tempDir();
+      const target = path.join(work, '.mcp.json');
+      const journal = createPlaceholderJournal(path.join(tempDir(), 'journal'));
+      intentOf(journal, target, 0);
+      fs.writeFileSync(target, '');
+      expect(recoverPlaceholders(journal, { holders: () => new Set([target]) })).toEqual({ removed: [], kept: [target] });
+      expect(journal.records()).toHaveLength(1);
+    });
+
+    it('killed after the completion: the recorded identity decides, birth time included', () => {
+      const work = tempDir();
+      const target = path.join(work, '.mcp.json');
+      const journal = createPlaceholderJournal(path.join(tempDir(), 'journal'));
+      journal.intend(target, Date.now());
+      fs.writeFileSync(target, '');
+      const identity = identityOf(target);
+      journal.complete(target, { ...identity, birthMs: identity.birthMs + 5000 });
+      expect(recoverPlaceholders(journal, { holders: noHolders }).removed).toEqual([]);
+      expect(fs.existsSync(target)).toBe(true);
+    });
+  });
+
+  describe('heldMountPoints with a zombie thread-group leader (mounts_open_common answers EINVAL when task->nsproxy is gone)', () => {
+    const errno = (code: string): NodeJS.ErrnoException => Object.assign(new Error(code), { code });
+    const line = (mountPoint: string): string => `36 35 98:0 /null ${mountPoint} rw - tmpfs tmpfs rw\n`;
+    const portOf = (files: Record<string, string | string[] | NodeJS.ErrnoException>) => ({
+      list: (directory: string): string[] => {
+        const entry = files[directory];
+        if (entry instanceof Error) throw entry;
+        if (!Array.isArray(entry)) throw errno('ENOENT');
+        return entry;
+      },
+      read: (file: string): string => {
+        const entry = files[file];
+        if (entry instanceof Error) throw entry;
+        if (typeof entry !== 'string') throw errno('ENOENT');
+        return entry;
+      },
+    });
+
+    it('reads the mounts of a live thread when the leader has none to show', () => {
+      const port = portOf({
+        '/proc': ['12'],
+        '/proc/12/mountinfo': errno('EINVAL'),
+        '/proc/12/task': ['12', '15'],
+        '/proc/12/task/12/mountinfo': errno('EINVAL'),
+        '/proc/12/task/15/mountinfo': line('/w/.mcp.json'),
+      });
+      expect(heldMountPoints(port)).toEqual(new Set(['/w/.mcp.json']));
+    });
+
+    it('holds nothing when the leader and every thread are gone', () => {
+      const port = portOf({ '/proc': ['12'], '/proc/12/mountinfo': errno('EINVAL'), '/proc/12/task': ['12'], '/proc/12/task/12/mountinfo': errno('EINVAL') });
+      expect(heldMountPoints(port)).toEqual(new Set());
+    });
+
+    it('does not hide an error that is not about a process going away', () => {
+      const port = portOf({ '/proc': ['12'], '/proc/12/mountinfo': errno('EIO') });
+      expect(() => heldMountPoints(port)).toThrow('EIO');
     });
   });
 
@@ -146,6 +261,7 @@ describe('the placeholder journal and the recovery at runtime start', () => {
       const { work, journal } = await startHost();
       const targets = [path.join(work, '.mcp.json'), path.join(work, '.envrc')].sort();
       expect(journal.records().map((record) => record.path).sort()).toEqual(targets);
+      for (const record of journal.records()) expect(record.identity).not.toBeNull();
       for (const target of targets) expect(heldMountPoints().has(target)).toBe(true);
       expect(recoverPlaceholders(journal)).toEqual({ removed: [], kept: targets });
       for (const target of targets) expect(fs.existsSync(target)).toBe(true);

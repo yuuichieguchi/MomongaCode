@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
-import { protectedSetFor } from '@momonga/foundation';
+import { HOST_RULE_ENFORCEMENT, protectedSetFor } from '@momonga/foundation';
 import { EMPTY_GLOB_TABLE, computeFileRules, createGlobDeadline, decide, parseRule, prepareGlobs, settleGlobs } from '@momonga/policy';
 import type { Decision, GlobTable, PermissionRule, RuleEffect } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
@@ -71,7 +71,7 @@ export const makeRealWorkspace = (): RealWorkspace => {
       roots,
       home,
       cwd: options.cwd ?? project,
-      fileRules: computeFileRules(rules, roots, null),
+      fileRules: computeFileRules(rules, roots, null, HOST_RULE_ENFORCEMENT),
       protectedSet: protectedSetFor(roots, filesystem),
       fs: settleGlobs(filesystem, globs),
       searchPath: options.searchPath ?? TEST_SEARCH_PATH,

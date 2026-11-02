@@ -15,6 +15,8 @@ const GONE_CODES = ['ENOENT', 'ESRCH'];
 const DENIED_CODES = ['EACCES', 'EPERM'];
 const EXITED_STATES = ['Z', 'X'];
 
+export const BOOT_TIME_RESOLUTION_MS = 1000;
+
 type ClockParameters = { bootMs: number; ticksPerSecond: number };
 
 class UnparseableProcfs extends Error {}
@@ -67,8 +69,16 @@ export const createLinuxInspector = ({ procfs, uid, layout, timing = hostProbeTi
     }
   };
 
-  // A process is not dumpable between the exec mapping and the end of exec, so even its owner is refused for a moment.
-  const unlessUnsettled = async <T>(pid: number, absent: T, read: () => Promise<T>): Promise<T> => {
+  const startedBeforeMarker = async (pid: number, markerBirthMs: number): Promise<boolean> => {
+    if (markerBirthMs <= 0) return false;
+    const stat = await statOf(pid);
+    if (stat === undefined) return true;
+    const { bootMs, ticksPerSecond } = await clockParameters();
+    const startedMs = bootMs + Number((stat.startTicks * 1000n) / BigInt(ticksPerSecond));
+    return startedMs + 1000 / ticksPerSecond + BOOT_TIME_RESOLUTION_MS < markerBirthMs;
+  };
+
+  const unlessUnsettled = async <T>(pid: number, markerBirthMs: number, absent: T, read: () => Promise<T>): Promise<T> => {
     const deadline = timing.now() + PS_PROBE_TIMEOUT_MS;
     for (;;) {
       try {
@@ -79,6 +89,7 @@ export const createLinuxInspector = ({ procfs, uid, layout, timing = hostProbeTi
         if (await hasExited(pid)) return absent;
         const owner = await realUidOf(pid);
         if (owner === undefined || owner !== uid) return absent;
+        if (await startedBeforeMarker(pid, markerBirthMs)) return absent;
         if (timing.now() >= deadline) {
           throw new Uninspectable(`process ${pid} belongs to the current user but its descriptors are not readable (${(error as Error).message})`);
         }
@@ -87,10 +98,30 @@ export const createLinuxInspector = ({ procfs, uid, layout, timing = hostProbeTi
     }
   };
 
-  const fdsOf = (pid: number): Promise<string[]> => unlessUnsettled<string[]>(pid, [], () => procfs.list(`/proc/${pid}/fd`));
+  const fdsOf = (pid: number, markerBirthMs: number, base: string): Promise<string[]> =>
+    unlessUnsettled<string[]>(pid, markerBirthMs, [], () => procfs.list(`${base}/fd`));
 
-  const identityOfFd = (pid: number, fd: string): Promise<FileIdentity | undefined> =>
-    unlessUnsettled<FileIdentity | undefined>(pid, undefined, () => procfs.identityOf(`/proc/${pid}/fd/${fd}`));
+  const identityOfFd = (pid: number, markerBirthMs: number, base: string, fd: string): Promise<FileIdentity | undefined> =>
+    unlessUnsettled<FileIdentity | undefined>(pid, markerBirthMs, undefined, () => procfs.identityOf(`${base}/fd/${fd}`));
+
+  const liveThreadsOfZombie = async (pid: number): Promise<string[]> => {
+    const stat = await statOf(pid);
+    if (stat?.state !== 'Z') return [];
+    try {
+      return (await procfs.list(`/proc/${pid}/task`)).filter((tid) => tid !== String(pid));
+    } catch (error) {
+      if (isErrno(error, ...GONE_CODES)) return [];
+      throw error;
+    }
+  };
+
+  const holdsMarker = async (pid: number, markerBirthMs: number, base: string, target: FileIdentity): Promise<boolean> => {
+    for (const fd of await fdsOf(pid, markerBirthMs, base)) {
+      const identity = await identityOfFd(pid, markerBirthMs, base, fd);
+      if (identity !== undefined && identity.dev === target.dev && identity.ino === target.ino) return true;
+    }
+    return false;
+  };
 
   const guarded = async <T>(read: () => Promise<ProbeResult<T>>): Promise<ProbeResult<T>> => {
     try {
@@ -118,12 +149,16 @@ export const createLinuxInspector = ({ procfs, uid, layout, timing = hostProbeTi
           if (isErrno(error, 'ENOENT')) return { kind: 'gone' };
           throw error;
         }
+        const markerBirthMs = await procfs.birthMsOf(marker);
         const pids = (await procfs.list('/proc')).filter(isPidDirectoryName).map(Number);
         const holders: number[] = [];
         for (const pid of pids) {
-          for (const fd of await fdsOf(pid)) {
-            const identity = await identityOfFd(pid, fd);
-            if (identity !== undefined && identity.dev === target.dev && identity.ino === target.ino) {
+          if (await holdsMarker(pid, markerBirthMs, `/proc/${pid}`, target)) {
+            holders.push(pid);
+            continue;
+          }
+          for (const tid of await liveThreadsOfZombie(pid)) {
+            if (await holdsMarker(pid, markerBirthMs, `/proc/${pid}/task/${tid}`, target)) {
               holders.push(pid);
               break;
             }

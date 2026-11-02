@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { HOST_RULE_ENFORCEMENT } from '@momonga/foundation';
 import { computeFileRules, fileRuleSpecsOf, parseRule } from '@momonga/policy';
 import type { PermissionRule, RuleEffect, RuleOrigin } from '@momonga/policy';
 import { makeLayout } from './helpers.ts';
@@ -18,7 +19,7 @@ const ruleOf = (layout: Layout, origin: RuleOrigin, effect: RuleEffect, text: st
 };
 
 const summary = (rules: readonly PermissionRule[], roots: readonly string[]) =>
-  computeFileRules(rules, roots, null).entries.map((entry) => ({
+  computeFileRules(rules, roots, null, HOST_RULE_ENFORCEMENT).entries.map((entry) => ({
     ruleIndex: entry.ruleIndex,
     tool: entry.tool,
     access: entry.access,
@@ -100,7 +101,7 @@ describe('computeFileRules mapping', () => {
       context: { roots: [layout.project], home: layout.home, settingsRoot: layout.project, effect: 'deny' },
       provenance: { ruleText: 'Read(*.env)', layer: 'project', source: 'project-settings' },
     });
-    const [entry] = computeFileRules(rules, [layout.project], null).entries;
+    const [entry] = computeFileRules(rules, [layout.project], null, HOST_RULE_ENFORCEMENT).entries;
     expect(entry?.provenance).toEqual({ ruleText: 'Read(*.env)', layer: 'project', source: 'project-settings' });
     expect(entry?.exceptions).toHaveLength(1);
   });
@@ -143,7 +144,7 @@ describe('widening by layer', () => {
   it.each(WIDENING_TABLE)('%s from the %s layer has widening %s', (_label, origin, widening, text) => {
     const layout = makeLayout();
     for (const dir of [path.join(layout.home, 'n'), path.join(layout.project, 'x'), path.join(layout.project, 'src')]) fs.mkdirSync(dir, { mode: 0o700 });
-    const entries = computeFileRules([ruleOf(layout, origin, 'allow', text(layout))], [layout.project], null).entries;
+    const entries = computeFileRules([ruleOf(layout, origin, 'allow', text(layout))], [layout.project], null, HOST_RULE_ENFORCEMENT).entries;
     expect(entries).toHaveLength(1);
     expect(entries[0]?.widening).toBe(widening);
   });

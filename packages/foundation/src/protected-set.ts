@@ -20,7 +20,8 @@ const NESTED_GIT_DIRECTORY_PATTERNS = [
   { anchor: 'worktrees', pattern: 'worktrees/*/config.worktree' },
 ] as const;
 const PATTERN_PROVENANCE = { ruleText: 'protected set', layer: 'protected', source: 'momonga' } as const;
-const GLOB_CHARACTERS = /[\\*?[]/g;
+const PATTERN_ENFORCEMENT = 'exact-paths' as const;
+const GLOB_CHARACTERS =/[\\*?[]/g;
 
 export type EntryRead =
   | { kind: 'absent' }
@@ -312,7 +313,7 @@ export const protectedSetFor = (roots: readonly string[], ports: ProtectedSetPor
     issues: [],
   };
   for (const root of roots) collectRoot(roots, ports, collected, root);
-  const patterns = compileFileRuleSet(patternSpecsOf([...collected.patternSpecifiers], roots), roots, null, ports.canonicalise, ports.volumeProbe, flavourOf(ports.platform));
+  const patterns = compileFileRuleSet(patternSpecsOf([...collected.patternSpecifiers], roots), roots, null, ports.canonicalise, ports.volumeProbe, flavourOf(ports.platform), PATTERN_ENFORCEMENT);
   return {
     roots: [...roots],
     paths: [...collected.paths],

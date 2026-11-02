@@ -53,7 +53,7 @@ export const createPolicyFor = (options: PolicyForOptions): ToolRuntimePort['pol
   return async (session, { env, rules, readableDirectories }) => {
     const { roots, tmpDir, wrap } = await contextFor(session);
     try {
-      const fileRules = computeFileRules(rules, roots, tmpDir, undefined, undefined, undefined, ruleEnforcement);
+      const fileRules = computeFileRules(rules, roots, tmpDir, ruleEnforcement);
       const protectedSet = protectedSetFor(roots, fs);
       const skillsRoot = canonicalPath(paths.skills);
       const readAllowed = (readableDirectories ?? []).filter((directory) => comparableContains(skillsRoot, directory));

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { FileRuleError, canonicalPath, compileFileRuleSet, fileRuleBlocks, fileRuleFingerprint, resolveCanonicalPath } from '@momonga/foundation';
+import { FileRuleError, HOST_FLAVOUR, HOST_RULE_ENFORCEMENT, canonicalPath, compileFileRuleSet, fileRuleBlocks, fileRuleFingerprint, resolveCanonicalPath } from '@momonga/foundation';
 import type { FileRuleEntry, FileRuleSet, FileRuleSpec, PathResolution } from '@momonga/foundation';
 
 const CWD = '/w';
@@ -142,7 +142,7 @@ describe('compileFileRuleSet and unresolvable prefixes', () => {
 
   it('compiles a deny entry whose prefix tail does not exist yet with the real canonicaliser', () => {
     const dir = makeDir();
-    const set = compileFileRuleSet([spec(`/${dir}/missing/sub/**`, { roots: [dir] })], [dir], null, resolveCanonicalPath, caseSensitive);
+    const set = compileFileRuleSet([spec(`/${dir}/missing/sub/**`, { roots: [dir] })], [dir], null, resolveCanonicalPath, caseSensitive, HOST_FLAVOUR, HOST_RULE_ENFORCEMENT);
     expect(blockedBySet(set, path.join(dir, 'missing', 'sub', 'k'))).toBe(true);
     expect(blockedBySet(set, path.join(dir, 'missing', 'other'))).toBe(false);
   });
@@ -152,7 +152,7 @@ describe('compileFileRuleSet and a prefix below a regular file', () => {
   it('compiles a deny entry whose prefix runs below a regular file, anchored at the canonical parent plus the basename', () => {
     const dir = makeDir();
     fs.writeFileSync(path.join(dir, 'file'), 'x');
-    const set = compileFileRuleSet([spec(`/${dir}/file/sub/**`, { roots: [dir] })], [dir], null, resolveCanonicalPath, caseSensitive);
+    const set = compileFileRuleSet([spec(`/${dir}/file/sub/**`, { roots: [dir] })], [dir], null, resolveCanonicalPath, caseSensitive, HOST_FLAVOUR, HOST_RULE_ENFORCEMENT);
     expect(set.entries).toHaveLength(1);
     expect((set.entries[0] as FileRuleEntry).anchorDirectory).toBe(path.join(dir, 'file', 'sub'));
     expect(blockedBySet(set, path.join(dir, 'file', 'sub', 'k'))).toBe(true);
@@ -170,7 +170,7 @@ describe('compileFileRuleSet and a root stored in NFD', () => {
 
   it('blocks <root>/.env for Read(.env) in both the NFD and the NFC spelling', () => {
     const root = nfdRoot();
-    const set = compileFileRuleSet([spec('.env', { roots: [root] })], [root], null, resolveCanonicalPath, caseSensitive);
+    const set = compileFileRuleSet([spec('.env', { roots: [root] })], [root], null, resolveCanonicalPath, caseSensitive, HOST_FLAVOUR, HOST_RULE_ENFORCEMENT);
     const target = path.join(root, '.env');
     expect(blockedBySet(set, target.normalize('NFD'))).toBe(true);
     expect(blockedBySet(set, target.normalize('NFC'))).toBe(true);
@@ -178,7 +178,7 @@ describe('compileFileRuleSet and a root stored in NFD', () => {
 
   it('blocks <root>/sub/k for Read(//<root>/sub/**) in both the NFD and the NFC spelling', () => {
     const root = nfdRoot();
-    const set = compileFileRuleSet([spec(`/${root}/sub/**`, { roots: [root] })], [root], null, resolveCanonicalPath, caseSensitive);
+    const set = compileFileRuleSet([spec(`/${root}/sub/**`, { roots: [root] })], [root], null, resolveCanonicalPath, caseSensitive, HOST_FLAVOUR, HOST_RULE_ENFORCEMENT);
     const target = path.join(root, 'sub', 'k');
     expect(blockedBySet(set, target.normalize('NFD'))).toBe(true);
     expect(blockedBySet(set, target.normalize('NFC'))).toBe(true);

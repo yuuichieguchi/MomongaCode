@@ -15,11 +15,26 @@ export const outputDiffersByNature = (command: string): boolean => STATUS_ONLY.s
 
 export const seesOnlyItsOwnNamespace = (command: string): boolean => NAMESPACE_BOUND.some((pattern) => pattern.test(command));
 
+const PS_DESELECTING: readonly string[] = ['-N', '--deselect'];
+const PS_SELECTS_BY_PROPERTY: readonly string[] = ['-a', '-r'];
+const PS_NEEDS_LONG_FORMAT: readonly string[] = ['-y'];
+const PS_MAY_SELECT_NOTHING: readonly string[] = [...PS_DESELECTING, ...PS_SELECTS_BY_PROPERTY, ...PS_NEEDS_LONG_FORMAT];
+
+export const permittedPsStatuses = (command: string): readonly number[] => {
+  const spec = commandSpecsFor('linux').all.find((candidate) => candidate.names.includes('ps'));
+  if (spec === undefined) throw new Error('the GNU table has no ps');
+  const selects = command
+    .split(' ')
+    .slice(1)
+    .some((word) => PS_MAY_SELECT_NOTHING.includes(word) || spec.options.some((option) => option.takes !== 'none' && (word === option.name || (option.takes === 'attached' && word.startsWith(option.name)))));
+  return selects ? [0, 1] : [0];
+};
+
 const FILESYSTEM_COUNTER_LINE = /^\s*(Blocks|Inodes): /;
 
 const FILESYSTEM_STATUS = /^stat (-f|--file-system)( |$)/;
 
-const DEBUG_OUTPUT = /^file (-d|--debug)( |$)/;
+const DEBUG_OUTPUT = /^file -d( |$)/;
 
 const HEAP_ADDRESS = /0x[0-9a-f]{6,}/g;
 

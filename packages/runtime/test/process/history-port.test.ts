@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { HOST_RULE_ENFORCEMENT } from '@momonga/foundation';
 import { parseRule } from '@momonga/policy';
 import type { PermissionRule } from '@momonga/policy';
 import type { AnyTool, ToolContext, ToolResult } from '@momonga/tools';
@@ -15,7 +16,7 @@ const toolsFor = (store: RuntimeStore, session: Session, rules: RulesOf = []): A
     trusted: (candidate: Session) => store.trust.decisionFor(candidate.cwd).decision === 'trusted',
     rules: async (candidate: Session) => (typeof rules === 'function' ? rules(candidate.cwd) : rules),
   };
-  return createHistoryPort({ store, settings, redactor }).load(session).tools as AnyTool[];
+  return createHistoryPort({ store, settings, redactor, enforcement: HOST_RULE_ENFORCEMENT }).load(session).tools as AnyTool[];
 };
 
 const execute = async (tools: AnyTool[], name: string, input: unknown, runId = 'current'): Promise<ToolResult> => {

@@ -6,7 +6,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { afterEach, expect } from 'vitest';
-import { createRedactor, createUdsClient, EMPTY_FILE_RULES, momongaLayout, momongaPaths, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { createRedactor, createUdsClient, EMPTY_FILE_RULES, HOST_RULE_ENFORCEMENT, momongaLayout, momongaPaths, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import { computeFileRules } from '@momonga/policy';
@@ -722,7 +722,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
     markerDir: markers,
     policyFor: async (target: Session, policyOptions: { env: Readonly<Record<string, string>>; rules: readonly PermissionRule[] }) => ({
       roots: [target.cwd],
-      sandboxPolicy: { ...sandboxPolicy, fileRules: computeFileRules(policyOptions.rules, [target.cwd], sessionTmpDir) },
+      sandboxPolicy: { ...sandboxPolicy, fileRules: computeFileRules(policyOptions.rules, [target.cwd], sessionTmpDir, HOST_RULE_ENFORCEMENT) },
       tmpDir: sessionTmpDir,
       env: policyOptions?.env ?? target.env,
     }),

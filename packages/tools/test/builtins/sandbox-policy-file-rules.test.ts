@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { EMPTY_PROTECTED_SET, HOST_RULE_ENFORCEMENT } from '@momonga/foundation';
 import { computeFileRules, parseRule } from '@momonga/policy';
 import { SandboxPolicyError } from '@momonga/sandbox';
 import { buildSandboxPolicy } from '@momonga/tools';
@@ -14,7 +14,7 @@ const optionsFor = () => {
   const tmpDir = path.join(sessions, 's');
   fs.mkdirSync(tmpDir, { recursive: true });
   const rule = parseRule('Read(.env)', { effect: 'deny', origin: 'user', source: 'user-settings', settingsRoot: layout.project, home: layout.home, cwd: layout.project });
-  const fileRules = computeFileRules([rule], [layout.project], tmpDir);
+  const fileRules = computeFileRules([rule], [layout.project], tmpDir, HOST_RULE_ENFORCEMENT);
   const options: SandboxPolicyOptions = { roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, fileRules, protectedSet: EMPTY_PROTECTED_SET };
   return { layout, options, fileRules };
 };

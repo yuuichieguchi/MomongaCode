@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { EMPTY_PROTECTED_SET, resolveCanonicalPath } from '@momonga/foundation';
-import { decide } from '@momonga/policy';
+import { commandSpecsFor, decide } from '@momonga/policy';
 import type { Decision, PolicyFilesystem } from '@momonga/policy';
 import { BASH } from './decision-rows.ts';
 import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout } from './helpers.ts';
@@ -111,6 +111,20 @@ describe.each(['darwin', 'linux'] as const)('every follows-symlinks option appea
 
   it.runIf(platform === 'darwin')('grep -S together with -R or -r', () => {
     expect(readingLines.some((line) => line.program === 'grep' && line.link === 'tree' && hasOption(line, '-S') && (hasOption(line, '-R') || hasOption(line, '-r')))).toBe(true);
+  });
+
+  it.runIf(platform === 'linux')('every option the GNU table marks as following symbolic links has a measured line that reads through', () => {
+    const marked = commandSpecsFor('linux').all.flatMap((spec) =>
+      spec.options.filter((option) => option.effect === 'follows-symlinks').map((option) => ({ program: spec.names[0] as string, name: option.name })),
+    );
+    expect(marked.length).toBeGreaterThan(0);
+    for (const { program, name } of marked) {
+      expect(readingLines.some((line) => line.program === program && line.argv.includes(name))).toBe(true);
+    }
+  });
+
+  it.runIf(platform === 'linux')('records no line that the tool rejected as a usage error', () => {
+    for (const line of linesFor('linux')) expect(line.exit, `${line.program} ${line.argv.join(' ')}`).toBeLessThan(2);
   });
 
   it.runIf(platform === 'linux')('grep -R alone, because GNU grep -R follows every link and -r follows none below the operand', () => {

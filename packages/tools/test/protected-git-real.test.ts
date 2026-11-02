@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { isProtectedWrite, protectedSetFor } from '@momonga/foundation';
+import { HOST_RULE_ENFORCEMENT, isProtectedWrite, protectedSetFor } from '@momonga/foundation';
 import type { ProtectedSet } from '@momonga/foundation';
 import { EMPTY_GLOB_TABLE, computeFileRules, decide, settleGlobs } from '@momonga/policy';
 import type { SandboxedProcess } from '@momonga/sandbox';
@@ -201,7 +201,7 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
         roots: [repositoryRoot],
         home: path.join(root, 'home'),
         cwd: repositoryRoot,
-        fileRules: computeFileRules([], [repositoryRoot], null),
+        fileRules: computeFileRules([], [repositoryRoot], null, HOST_RULE_ENFORCEMENT),
         fs: settleGlobs(policyFilesystem(), EMPTY_GLOB_TABLE), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([repositoryRoot]),
         protectedSet: set,
       });
@@ -217,7 +217,7 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
         home: path.join(root, 'home'),
         tmpDir,
         sessionsTmpRoot: sessions,
-        fileRules: computeFileRules([], [repositoryRoot], tmpDir),
+        fileRules: computeFileRules([], [repositoryRoot], tmpDir, HOST_RULE_ENFORCEMENT),
         protectedSet: set,
       });
       const sandbox = createHostSandbox({ tmpRoot: sandboxTmp, killGraceMs: 300 });
@@ -256,7 +256,7 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
         home: path.join(root, 'home'),
         tmpDir,
         sessionsTmpRoot: sessions,
-        fileRules: computeFileRules([], [repositoryRoot], tmpDir),
+        fileRules: computeFileRules([], [repositoryRoot], tmpDir, HOST_RULE_ENFORCEMENT),
         protectedSet: setFor(repositoryRoot),
       });
       const sandbox = createHostSandbox({ tmpRoot: sandboxTmp, killGraceMs: 300 });

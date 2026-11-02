@@ -1,5 +1,5 @@
 import { canonicalPath } from '@momonga/foundation';
-import type { Redactor } from '@momonga/foundation';
+import type { Redactor, RuleEnforcement } from '@momonga/foundation';
 import { createHistoryTools, createReadDenial } from '@momonga/tools';
 import type { HistoryStorePort, ReadDenial } from '@momonga/tools';
 import { HISTORY_READ_PAGE_EVENTS } from '@momonga/store';
@@ -10,9 +10,10 @@ export type HistoryPortOptions = {
   store: Pick<RuntimeStore, 'search'>;
   settings: Pick<SettingsPort, 'trusted' | 'rules'>;
   redactor: Redactor;
+  enforcement: RuleEnforcement;
 };
 
-export const createHistoryPort = ({ store, settings, redactor }: HistoryPortOptions): HistoryPort => ({
+export const createHistoryPort = ({ store, settings, redactor, enforcement }: HistoryPortOptions): HistoryPort => ({
   load: (session) => {
     const trusted = settings.trusted(session);
     const visibility: HistoryVisibility = { trusted, project: session.cwd };
@@ -20,7 +21,7 @@ export const createHistoryPort = ({ store, settings, redactor }: HistoryPortOpti
       const own = project === session.cwd;
       const rules = await settings.rules(own ? session : { ...session, cwd: project, additionalDirectories: [] });
       const roots = own ? [session.cwd, ...session.additionalDirectories] : [project];
-      return createReadDenial({ rules, roots: roots.map(canonicalPath), cwd: project });
+      return createReadDenial({ rules, roots: roots.map(canonicalPath), cwd: project, enforcement });
     };
     const toolPort: HistoryStorePort = {
       search: async (request) => {

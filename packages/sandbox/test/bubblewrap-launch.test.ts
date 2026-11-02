@@ -47,7 +47,7 @@ const policy = (writeDenied: string[]): SandboxPolicy => ({
 
 const journal = () => createPlaceholderJournal(path.join(base, 'journal'));
 
-const sandbox = () => createBubblewrapSandbox({ bwrapPath: bwrap, tmpRoot: path.join(base, 'tmp'), killGraceMs: 300, journal: journal() });
+const sandbox = () => createBubblewrapSandbox({ bwrapPath: bwrap, tmpRoot: path.join(base, 'tmp'), killGraceMs: 300, journal: journal(), holders: () => new Set() });
 
 describe('bubblewrap launch (a stand-in bwrap that creates the /dev/null mount points; the real bwrap is exercised in bubblewrap-real.test.ts)', () => {
   it('refuses to start a command in a workspace whose protected .git is a symlink loop, with a typed error that names it', () => {
@@ -92,6 +92,7 @@ describe('bubblewrap launch (a stand-in bwrap that creates the /dev/null mount p
       tmpRoot: path.join(base, 'tmp'),
       killGraceMs: 300,
       journal: journal(),
+      holders: () => new Set(),
       spawnProcess: ((file, args, spawnOptions) => {
         const child = spawn(file, args as string[], spawnOptions as SpawnOptions);
         setImmediate(() => child.emit('error', failure));

@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
 import { computeFileRules, parseRule } from '@momonga/policy';
-import { EMPTY_PROTECTED_SET, protectedSetFor } from '@momonga/foundation';
+import { EMPTY_PROTECTED_SET, HOST_RULE_ENFORCEMENT, protectedSetFor } from '@momonga/foundation';
 import type { FileRuleSet, ProtectedSet } from '@momonga/foundation';
 import { TEST_SEARCH_PATH, fakePolicyFilesystem, isWritableFor, protectedSetWith } from '@momonga/testkit';
 import type { FakePolicyFilesystemLayout } from '@momonga/testkit';
@@ -43,7 +43,7 @@ export const ruleIn =
   (effect: RuleEffect, text: string): PermissionRule =>
     parseRule(text, { effect, origin, source: `${origin}-settings`, settingsRoot: layout.project, home: layout.home, cwd: layout.project });
 
-export const fileRulesFor = (rules: readonly PermissionRule[], roots: readonly string[]): FileRuleSet => computeFileRules(rules, roots, null);
+export const fileRulesFor = (rules: readonly PermissionRule[], roots: readonly string[]): FileRuleSet => computeFileRules(rules, roots, null, HOST_RULE_ENFORCEMENT);
 
 export type FakeFsLayout = FakePolicyFilesystemLayout;
 

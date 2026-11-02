@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createLinuxInspector } from '../../src/platform/linux-inspector.ts';
+import { BOOT_TIME_RESOLUTION_MS, createLinuxInspector } from '../../src/platform/linux-inspector.ts';
 import { auxvLayoutOf, isPidDirectoryName, parseBootTimeSeconds, parseRealUid, parseClockTicksPerSecond, parseProcStat } from '../../src/platform/linux-parsers.ts';
 import { PS_PROBE_TIMEOUT_MS, REAP_POLL_INTERVAL_MS } from '../../src/platform/probe-timing.ts';
 import type { FileIdentity, ProcFs } from '../../src/platform/procfs.ts';
@@ -20,7 +20,7 @@ const auxvOf = (pairs: Array<[bigint, bigint]>): Uint8Array => {
 
 const errno = (code: string): NodeJS.ErrnoException => Object.assign(new Error(code), { code });
 
-type FakeEntry = { text?: string; bytes?: Uint8Array; children?: string[]; identity?: FileIdentity; failure?: string };
+type FakeEntry = { text?: string; bytes?: Uint8Array; children?: string[]; identity?: FileIdentity; failure?: string; birthMs?: number };
 
 const statusOwnedBy = (uid: number): FakeEntry => ({ text: `Name:\tx\nState:\tS (sleeping)\nUid:\t${uid}\t${uid}\t${uid}\t${uid}\nGid:\t${uid}\t${uid}\t${uid}\t${uid}\n` });
 
@@ -36,6 +36,7 @@ const fakeProcfs = (entries: Record<string, FakeEntry>): ProcFs => {
     readBytes: async (file) => lookup(file).bytes ?? new Uint8Array(),
     list: async (directory) => lookup(directory).children ?? [],
     identityOf: async (file) => lookup(file).identity ?? { dev: 0n, ino: 0n },
+    birthMsOf: async (file) => lookup(file).birthMs ?? 0,
   };
 };
 
@@ -249,6 +250,66 @@ describe('linux inspector through an injected procfs', () => {
       evidence: { kind: 'opaque' },
     });
     expect(await createLinuxInspector({ procfs: fakeProcfs(entries(0)), layout: LAYOUT, uid: UID, timing: fakeTiming() }).holdersOf('/marker')).toEqual({ kind: 'value', value: [] });
+  });
+
+  describe('a same-user process that stays non-dumpable (ssh-agent, a setuid helper that kept the real uid)', () => {
+    const SLEEP_STARTED_MS = 1_700_000_000_000 + 9_876_540;
+    const TICK_MS = 1000 / 100;
+    const entriesFor = (birthMs: number): Record<string, FakeEntry> => ({
+      ...BASE_ENTRIES,
+      '/marker': { identity: { dev: 1n, ino: 1n }, birthMs },
+      '/proc': { children: ['12'] },
+      '/proc/12/fd': { failure: 'EACCES' },
+      '/proc/12/stat': { text: STAT_SLEEP },
+      '/proc/12/status': statusOwnedBy(UID),
+    });
+
+    it('holds nothing when it started before the marker existed, and the probe does not wait for it', async () => {
+      const timing = fakeTiming();
+      const inspector = createLinuxInspector({ procfs: fakeProcfs(entriesFor(SLEEP_STARTED_MS + BOOT_TIME_RESOLUTION_MS + TICK_MS + 1)), layout: LAYOUT, uid: UID, timing });
+      expect(await inspector.holdersOf('/marker')).toEqual({ kind: 'value', value: [] });
+      expect(timing.slept()).toBe(0);
+    });
+
+    it('is not skipped when the marker is younger by less than the resolution of btime and of the clock tick', async () => {
+      const timing = fakeTiming();
+      const inspector = createLinuxInspector({ procfs: fakeProcfs(entriesFor(SLEEP_STARTED_MS + BOOT_TIME_RESOLUTION_MS + TICK_MS - 1)), layout: LAYOUT, uid: UID, timing });
+      expect(await inspector.holdersOf('/marker')).toMatchObject({ kind: 'failed', evidence: { kind: 'opaque' } });
+      expect(timing.slept()).toBeGreaterThanOrEqual(PS_PROBE_TIMEOUT_MS);
+    });
+
+    it('stays unreadable, named by its pid, when it started after the marker', async () => {
+      const result = await createLinuxInspector({ procfs: fakeProcfs(entriesFor(SLEEP_STARTED_MS - 1)), layout: LAYOUT, uid: UID, timing: fakeTiming() }).holdersOf('/marker');
+      expect(result).toMatchObject({ kind: 'failed', cause: 'deterministic', evidence: { kind: 'opaque' } });
+      expect(JSON.stringify(result)).toContain('process 12 ');
+    });
+
+    it('is not skipped when the file system gives no birth time', async () => {
+      const result = await createLinuxInspector({ procfs: fakeProcfs(entriesFor(0)), layout: LAYOUT, uid: UID, timing: fakeTiming() }).holdersOf('/marker');
+      expect(result).toMatchObject({ kind: 'failed', evidence: { kind: 'opaque' } });
+    });
+  });
+
+  describe('a zombie thread-group leader whose other threads still run', () => {
+    const marker = { dev: 1n, ino: 1n };
+    const entries: Record<string, FakeEntry> = {
+      '/marker': { identity: marker },
+      '/proc': { children: ['12'] },
+      '/proc/12/fd': { failure: 'EACCES' },
+      '/proc/12/stat': { text: STAT_ZOMBIE },
+      '/proc/12/task': { children: ['12', '15'] },
+      '/proc/12/task/15/fd': { children: ['3'] },
+      '/proc/12/task/15/fd/3': { identity: marker },
+    };
+
+    it('holds the marker through a live thread', async () => {
+      expect(await createLinuxInspector({ procfs: fakeProcfs(entries), layout: LAYOUT, uid: UID }).holdersOf('/marker')).toEqual({ kind: 'value', value: [12] });
+    });
+
+    it('holds nothing when every thread is gone', async () => {
+      const gone = { ...entries, '/proc/12/task': { children: ['12'] } };
+      expect(await createLinuxInspector({ procfs: fakeProcfs(gone), layout: LAYOUT, uid: UID }).holdersOf('/marker')).toEqual({ kind: 'value', value: [] });
+    });
   });
 
   it('reads the owner from the status file, which stays readable while the process is not dumpable', () => {

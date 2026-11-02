@@ -35,14 +35,15 @@ const showsMarker = (dir: string, line: SymlinkReadLine, tree: 'a' | 'c', output
 
 const FAMILY_OF: Readonly<Record<'darwin' | 'linux', string>> = { darwin: 'Apple', linux: 'GNU' };
 
-describe('the two symlink-read fixtures', () => {
-  it.each(['darwin', 'linux'] as const)('the %s fixture has every line', (platform) => {
-    expect(symlinkReadLinesFor(platform).length).toBe(45);
+describe('the symlink-read fixtures', () => {
+  it('the Apple fixture has every line', () => {
+    expect(symlinkReadLinesFor('darwin').length).toBe(45);
   });
 
-  it('name the same commands, each measured against its own tools', () => {
-    const describeLines = (platform: 'darwin' | 'linux') => symlinkReadLinesFor(platform).map((line) => [line.program, line.argv, line.link, line.mode]);
-    expect(describeLines('linux')).toEqual(describeLines('darwin'));
+  it('the GNU fixture is generated from the table: one line per marked option, each measured against GNU tools', () => {
+    const lines = symlinkReadLinesFor('linux');
+    expect(lines.length).toBeGreaterThan(30);
+    expect(new Set(lines.map((line) => `${line.program} ${line.argv.join(' ')}`)).size).toBe(lines.length);
   });
 });
 

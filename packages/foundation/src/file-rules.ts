@@ -107,6 +107,8 @@ export type RuleEnforcement = 'seatbelt-profile' | 'exact-paths';
 
 export const HOST_RULE_ENFORCEMENT: RuleEnforcement = process.platform === 'darwin' ? 'seatbelt-profile' : 'exact-paths';
 
+export const ruleEnforcementOf = (sandboxKind: 'seatbelt' | 'bubblewrap' | 'none'): RuleEnforcement => (sandboxKind === 'seatbelt' ? 'seatbelt-profile' : 'exact-paths');
+
 const compileEntry = (
   spec: FileRuleSpec,
   pattern: FilePattern,
@@ -175,8 +177,8 @@ export const compileFileRuleSet = (
   exemptDirectory: string | null,
   canonicalise: (absolute: string) => PathResolution,
   volumeProbe: (directory: string) => boolean,
-  flavour: PathFlavour = HOST_FLAVOUR,
-  enforcement: RuleEnforcement = HOST_RULE_ENFORCEMENT,
+  flavour: PathFlavour,
+  enforcement: RuleEnforcement,
 ): FileRuleSet => {
   const inPattern = (resolution: PathResolution): PathResolution => (resolution.ok ? { ok: true, path: patternPathOf(flavour, resolution.path) } : resolution);
   const canonicaliseNative = (absolute: string): PathResolution => inPattern(canonicalise(nativePathOf(flavour, absolute)));

@@ -40,7 +40,7 @@ describe('createPolicyFor builds the file rules of the batch', () => {
     const session = createSession(store, temp.project);
     const rules = [ruleOf(temp.project, temp.home, 'Read(.env)'), ruleOf(temp.project, temp.home, 'Write(*.pem)')];
     const policy = (await policyFor(session, { env: env(), rules } as Parameters<typeof policyFor>[1])) as unknown as PolicyWithFileRules;
-    expect(policy.sandboxPolicy.fileRules).toEqual(computeFileRules(rules, policy.roots, policy.tmpDir));
+    expect(policy.sandboxPolicy.fileRules).toEqual(computeFileRules(rules, policy.roots, policy.tmpDir, 'exact-paths'));
     expect(policy.sandboxPolicy.fileRules.entries.length).toBeGreaterThan(0);
   });
 

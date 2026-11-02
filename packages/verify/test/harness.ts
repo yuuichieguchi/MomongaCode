@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll } from 'vitest';
-import { protectedSetFor } from '@momonga/foundation';
+import { HOST_RULE_ENFORCEMENT, protectedSetFor } from '@momonga/foundation';
 import { parseRule } from '@momonga/policy';
 import type { PermissionRule, PolicyFilesystem, RuleEffect } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
@@ -71,6 +71,7 @@ export const verifyScenario = (api: Z3Engine['api'], layout: Layout, rules: read
     fs: hostFilesystemOf(fileSystem),
     secretLocations: options.secretLocations ?? [sshLocation(layout)],
     exemptDirectory: null,
+    enforcement: HOST_RULE_ENFORCEMENT,
     budgetMs: options.budgetMs ?? 120_000,
   });
 };

@@ -39,6 +39,7 @@ export const SCRIPTED_INPUT_TOKENS = 10;
 export const SCRIPTED_OUTPUT_TOKENS = 5;
 export const MAX_COMPACTIONS = 2;
 export const DRY_RUN_MAX_CLAIMS = 8;
+export const GREP_AND_READ_BACK_CALLS = 2;
 export const ESCALATION_NOTICE_PREFIX = 'recent steps of the current turn were reduced from';
 
 export type ToolCallingMode = 'native' | 'constrained';
@@ -88,6 +89,7 @@ export type AcceptanceFacts = {
   readonly escalationNotices: readonly string[];
   readonly escalationStep: number | undefined;
   readonly fillersBeforeEscalation: number | undefined;
+  readonly requestsBeforeEscalation: number | undefined;
 };
 
 export type DryRun = {
@@ -237,7 +239,9 @@ export const factsOf = (journal: readonly JournalEvent[], haystack: Haystack, st
   return {
     escalationNotices: escalations.map((event) => String(event.data['message'])),
     escalationStep: typeof escalationStep === 'number' ? escalationStep : undefined,
-    fillersBeforeEscalation: escalations[0] === undefined ? undefined : Math.max(0, completed.filter((event) => event.seq < (escalations[0] as JournalEvent).seq).length - 2),
+    fillersBeforeEscalation:
+      escalations[0] === undefined ? undefined : Math.max(0, completed.filter((event) => event.seq < (escalations[0] as JournalEvent).seq).length - GREP_AND_READ_BACK_CALLS),
+    requestsBeforeEscalation: escalations[0] === undefined ? undefined : ofType(journal, 'model.requested').filter((event) => event.seq < (escalations[0] as JournalEvent).seq).length,
     status,
     stopReason,
     taskSeq,
@@ -245,7 +249,7 @@ export const factsOf = (journal: readonly JournalEvent[], haystack: Haystack, st
     grepEvictionSeq: grepEviction?.seq,
     compactionSeqs: compactions.map((event) => event.seq),
     withinTurnCompaction: compactions.some((event) => typeof event.data['replacedThroughSeq'] === 'number' && event.data['replacedThroughSeq'] > taskSeq),
-    fillersBeforeFirstCompaction: firstCompaction === undefined ? undefined : Math.max(0, completed.filter((event) => event.seq < firstCompaction).length - 2),
+    fillersBeforeFirstCompaction: firstCompaction === undefined ? undefined : Math.max(0, completed.filter((event) => event.seq < firstCompaction).length - GREP_AND_READ_BACK_CALLS),
     notices: ofType(journal, 'notice').map((event) => String(event.data['message'])),
   };
 };
@@ -260,6 +264,15 @@ export const verdictOf = (facts: AcceptanceFacts, escalates = false): string | u
   if (facts.compactionSeqs.length > MAX_COMPACTIONS) return `(d) ${facts.compactionSeqs.length} compactions, more than ${MAX_COMPACTIONS}`;
   if (facts.status !== 'COMPLETED') return `(d) the run ended ${facts.status} ${facts.stopReason ?? ''}`.trim();
   return undefined;
+};
+
+export const escalationBudgetVerdict = (facts: Pick<AcceptanceFacts, 'requestsBeforeEscalation'>, wireCounts: readonly number[], sizing: Pick<Sizing, 'ceiling'>): string | undefined => {
+  const before = facts.requestsBeforeEscalation;
+  if (before === undefined || before < 3) return `(g) too few requests before the escalation (${before ?? 'none'}) to measure the growth of a step`;
+  const previous = wireCounts[before - 1] as number;
+  const growth = Math.max(0, ...wireCounts.slice(1, before).map((count, index) => count - (wireCounts[index] as number)));
+  if (previous + growth > sizing.ceiling) return undefined;
+  return `(g) escalated although the request before it (${previous} tokens) plus one more step (${growth}) stays within the ceiling ${sizing.ceiling}`;
 };
 
 type DryRunInput = { readonly plan: PlanInput; readonly steps: readonly PlannedStep[]; readonly perturbation: number; readonly fillers: number };
@@ -310,7 +323,7 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
       defaults: RUNTIME_DEFAULTS.limits,
       toolList: () => createBuiltinTools(),
       memories: createMemoryPort({ store: env.store, settings: env.settings }),
-      history: createHistoryPort({ store: env.store, settings: env.settings, redactor: createRedactor({ credentials: [] }) }),
+      history: createHistoryPort({ store: env.store, settings: env.settings, redactor: createRedactor({ credentials: [] }), enforcement: 'exact-paths' }),
       tools: { sandbox: createUnsandboxed() },
     });
     for (let round = 0; round < DRY_RUN_MAX_CLAIMS && !TERMINAL.has(env.run(runId).status); round += 1) {
@@ -386,7 +399,8 @@ export const planScript = async (input: PlanInput, capabilities: Capabilities): 
     for (const perturbation of PERTURBATIONS) {
       const run = await dryRun({ plan: input, steps, perturbation, fillers });
       runs.push(run);
-      verdict = verdictOf(run.facts, input.spec.escalates === true) ?? singleClaimVerdict(run);
+      const budgetVerdict = input.spec.escalates === true && sizing !== undefined ? escalationBudgetVerdict(run.facts, run.wireCounts, sizing) : undefined;
+      verdict = verdictOf(run.facts, input.spec.escalates === true) ?? singleClaimVerdict(run) ?? budgetVerdict;
       if (verdict !== undefined) {
         verdict = `perturbation ${perturbation}: ${verdict}`;
         break;

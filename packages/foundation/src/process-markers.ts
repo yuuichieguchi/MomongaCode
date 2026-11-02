@@ -18,7 +18,6 @@ export { REAP_POLL_INTERVAL_MS };
 
 const defaultKill: SignalSender = hostSignalSender;
 
-
 const isAborted = (signal: AbortSignal | undefined): boolean => signal?.aborted === true;
 
 const graceSleep = async (timing: ReapTiming, ms: number, signal: AbortSignal | undefined): Promise<void> => {

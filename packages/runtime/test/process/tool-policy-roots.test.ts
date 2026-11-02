@@ -35,7 +35,7 @@ describe('createPolicyFor roots and the file rules', () => {
     const policy = (await policyFor(session, { env: {}, rules } as Parameters<typeof policyFor>[1])) as unknown as Built;
     expect(policy.roots).toEqual([temp.project, extra]);
     expect(policy.roots).not.toContain(policy.tmpDir);
-    expect(policy.sandboxPolicy.fileRules).toEqual(computeFileRules(rules, [temp.project, extra], policy.tmpDir));
+    expect(policy.sandboxPolicy.fileRules).toEqual(computeFileRules(rules, [temp.project, extra], policy.tmpDir, 'exact-paths'));
   });
 
   it('lets decide and the profile read the same entries for a rule with an additional directory', async () => {
@@ -91,7 +91,7 @@ describe('createPolicyFor with a cwd spelled through a symlink (pin)', () => {
     const rules = [ruleOf(link, temp.home, 'Read(.env)')];
     const policy = (await policyFor(session, { env: {}, rules } as Parameters<typeof policyFor>[1])) as unknown as Built;
     expect(policy.roots).toEqual([fs.realpathSync(temp.project)]);
-    expect(policy.sandboxPolicy.fileRules.fingerprint).toBe(computeFileRules(rules, policy.roots, policy.tmpDir).fingerprint);
+    expect(policy.sandboxPolicy.fileRules.fingerprint).toBe(computeFileRules(rules, policy.roots, policy.tmpDir, 'exact-paths').fingerprint);
     expect(policy.sandboxPolicy.fileRules.entries.map((entry) => entry.anchorDirectory)).toEqual([fs.realpathSync(temp.project)]);
   });
 });

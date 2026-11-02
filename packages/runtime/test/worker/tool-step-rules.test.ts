@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { EMPTY_PROTECTED_SET, HOST_RULE_ENFORCEMENT } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import { computeFileRules } from '@momonga/policy';
 import type { ToolEnv } from '@momonga/runtime';
@@ -27,7 +27,7 @@ describe('tool step rules', () => {
             readDenied: [path.dirname(env.sessionTmpDir)],
             readAllowed: [env.sessionTmpDir],
             network: 'deny',
-            fileRules: computeFileRules(options.rules ?? [], roots, env.sessionTmpDir),
+            fileRules: computeFileRules(options.rules ?? [], roots, env.sessionTmpDir, HOST_RULE_ENFORCEMENT),
           } as SandboxPolicy;
           return { roots, sandboxPolicy, tmpDir: env.sessionTmpDir, env: options.env };
         },

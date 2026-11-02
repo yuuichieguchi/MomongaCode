@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { computeFileRules, decide, matchRule } from '@momonga/policy';
 import type { PermissionRule, PermissionSubject, PolicyTool } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
-import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { EMPTY_PROTECTED_SET, HOST_RULE_ENFORCEMENT } from '@momonga/foundation';
 import { commandRow, kindIn } from './decision-rows.ts';
 import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout, ruleIn, touch } from './helpers.ts';
 
@@ -208,7 +208,7 @@ describe('S2 and S1: slash-less patterns and case', () => {
     const subject: PermissionSubject = { kind: 'path', tool: 'Read', paths: [file], access: 'read' };
     const roots = [layout.project];
     const decision = (rule: PermissionRule) =>
-      decide({ tool: READ, subject, mode: 'default', rules: [rule], roots, home: layout.home, cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor(roots), protectedSet: EMPTY_PROTECTED_SET, fileRules: computeFileRules([rule], roots, null) });
+      decide({ tool: READ, subject, mode: 'default', rules: [rule], roots, home: layout.home, cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor(roots), protectedSet: EMPTY_PROTECTED_SET, fileRules: computeFileRules([rule], roots, null, HOST_RULE_ENFORCEMENT) });
     expect(decision(make('deny', 'Read(.env)'))).toMatchObject({ kind: 'deny', source: 'rule' });
     expect(decision(make('ask', 'Read(.env)'))).toMatchObject({ kind: 'ask', source: 'rule' });
     expect(decision(make('allow', 'Read(.env)'))).toMatchObject({ kind: 'allow', source: 'rule' });

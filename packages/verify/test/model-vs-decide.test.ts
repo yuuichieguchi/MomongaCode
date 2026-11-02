@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { protectedSetFor } from '@momonga/foundation';
+import { HOST_RULE_ENFORCEMENT, protectedSetFor } from '@momonga/foundation';
 import { PERMISSION_MODES } from '@momonga/protocol';
 import { hostFilesystemOf } from '@momonga/testkit';
 import type { SubjectTool, Witness } from '../src/decision-model.ts';
@@ -171,6 +171,7 @@ describe('the model agrees with the decision code', () => {
         fs: hostFilesystemOf(fileSystem),
         secretLocations: [sshLocation(layout)],
         exemptDirectory: null,
+        enforcement: HOST_RULE_ENFORCEMENT,
         budgetMs: 600_000,
       });
       const inputs: Array<[SubjectTool, Witness]> = [];
