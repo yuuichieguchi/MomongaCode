@@ -99,7 +99,10 @@ require_env SIGNING_IDENTITY APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER MOM
 [[ "$MOMONGA_REPO" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || fail "MOMONGA_REPO must be <owner>/<repo>, got '$MOMONGA_REPO'"
 [[ "$MOMONGA_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]] || fail "MOMONGA_TEAM_ID must be a 10-character Apple Team ID, got '$MOMONGA_TEAM_ID'"
 
-readonly UPDATE_SOURCE_FLAGS=(--repo "$MOMONGA_REPO" --team-id "$MOMONGA_TEAM_ID")
+readonly RELEASE_KEY_TOOL="$ROOT/scripts/release-key.ts"
+pinned_key="$(node "$RELEASE_KEY_TOOL" print)" || fail "the installers do not pin a usable release public key; nothing was built"
+readonly pinned_key
+readonly UPDATE_SOURCE_FLAGS=(--repo "$MOMONGA_REPO" --team-id "$MOMONGA_TEAM_ID" --release-public-key "$pinned_key")
 
 cd "$ROOT"
 [ -z "$(git status --porcelain)" ] || fail "working tree is not clean"
@@ -169,6 +172,7 @@ step "checksums and their signature"
 run write_checksums
 run rm -f "$SIGNATURE"
 run ssh-keygen -Y sign -f "$RELEASE_SIGNING_KEY" -n "$SIGNATURE_NAMESPACE" "$CHECKSUMS"
+run node "$RELEASE_KEY_TOOL" verify "$CHECKSUMS" "$SIGNATURE"
 
 step "publish $tag"
 printf 'release notes:\n%s\n' "$notes"

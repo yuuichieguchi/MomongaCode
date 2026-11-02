@@ -12,9 +12,11 @@ export type FakeReleaseServer = {
   latestStatus: number;
   latestBody: string | undefined;
   readonly files: Map<string, FakeFile>;
-  publish(tag: string, assets: Readonly<Record<string, Buffer>>, options?: { checksums?: string | undefined }): void;
+  publish(tag: string, assets: Readonly<Record<string, Buffer>>, options?: { checksums?: string | undefined; signature?: string | undefined }): void;
   stop(): Promise<void>;
 };
+
+export const DEFAULT_SIGNATURE = '-----BEGIN SSH SIGNATURE-----\nscripted\n-----END SSH SIGNATURE-----\n';
 
 export const sha256Of = (body: Buffer): string => createHash('sha256').update(body).digest('hex');
 
@@ -92,6 +94,8 @@ export const startFakeReleaseServer = async (repo: string): Promise<FakeReleaseS
       for (const [name, body] of Object.entries(assets)) files.set(`${tag}/${name}`, { body });
       const checksums = 'checksums' in options ? options.checksums : checksumListing(assets);
       if (checksums !== undefined) files.set(`${tag}/SHA256SUMS`, { body: Buffer.from(checksums) });
+      const signature = 'signature' in options ? options.signature : DEFAULT_SIGNATURE;
+      if (signature !== undefined) files.set(`${tag}/SHA256SUMS.sig`, { body: Buffer.from(signature) });
     },
     stop: () =>
       new Promise<void>((resolve) => {

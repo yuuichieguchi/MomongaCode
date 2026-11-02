@@ -5,6 +5,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { nodeCommandRunner, verifyReleaseSignature } from '@momonga/foundation';
 import { repoRoot } from './bundle.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 import { HAS_POSIX_SHELL } from './support/host.ts';
@@ -227,13 +228,44 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
     expect(fs.readdirSync(path.join(prefix, 'bin'))).toEqual([]);
   });
 
+  it('reaches the same verdict as the verifier the updater and release.sh use on a genuine, a foreign-key and an altered listing', async () => {
+    const genuineSums = Buffer.from(`${sha256(GOOD_BINARY)}  ${ASSET}\n`);
+    const alteredSums = Buffer.from(`${sha256(TAMPERED_BINARY)}  ${ASSET}\n`);
+    const genuineSignature = signWith(release.privateKey, genuineSums, root);
+    const cases = [
+      { label: 'genuine', binary: GOOD_BINARY, sums: genuineSums, signature: genuineSignature, accepted: true },
+      { label: 'foreign key', binary: GOOD_BINARY, sums: genuineSums, signature: signWith(attacker.privateKey, genuineSums, root), accepted: false },
+      { label: 'altered listing', binary: TAMPERED_BINARY, sums: alteredSums, signature: genuineSignature, accepted: false },
+    ];
+    let placed = 0;
+    for (const { label, binary, sums, signature, accepted } of cases) {
+      const verdict = await verifyReleaseSignature({
+        run: nodeCommandRunner,
+        env: { PATH: '/usr/bin:/bin' },
+        place: async (content) => {
+          const file = path.join(root, `placed-${(placed += 1)}`);
+          fs.writeFileSync(file, content);
+          return { path: file, remove: async () => fs.rmSync(file) };
+        },
+        publicKey: release.publicKey,
+        checksums: sums.toString('utf8'),
+        signature: signature.toString('utf8'),
+      });
+      served = { [`/${ASSET}`]: binary, '/SHA256SUMS': sums, '/SHA256SUMS.sig': signature };
+      const outcome = await runInstall(baseEnv());
+      expect({ label, updater: verdict.kind === 'valid', installer: outcome.code === 0 }).toEqual({ label, updater: accepted, installer: accepted });
+      fs.rmSync(path.join(prefix, 'bin'), { recursive: true, force: true });
+    }
+  });
+
   it('refuses to run without a pinned release key', async () => {
     serveRelease(GOOD_BINARY, GOOD_BINARY);
     const env = baseEnv();
     delete env['MOMONGA_RELEASE_PUBLIC_KEY'];
     const outcome = await runInstall(env);
     expect(outcome.code).toBe(1);
-    expect(outcome.stderr).toContain('no release signing key is pinned');
+    expect(outcome.stderr).toContain('this installer pins no release signing key');
+    expect(outcome.stderr).toContain('set MOMONGA_RELEASE_PUBLIC_KEY to the ssh public key line the maintainers publish');
     expect(fs.existsSync(path.join(prefix, 'bin'))).toBe(false);
   });
 

@@ -23,7 +23,7 @@ const harness = () => {
     ports,
     policyVerify: () => nodePolicyVerifyHost(ports, { cacheBase: '/c/cache' }),
     entries,
-    update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
+    update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
     interrupt: new AbortController().signal,
     entryIo: (args) => ({ ...IO, argv: [...args] }) as EntryIo,
     complete: (code) => completed.push(code),

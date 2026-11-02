@@ -67,7 +67,7 @@ describe('momonga update command', () => {
   });
 
   it('propagates a typed refusal for a build without an update source', async (context) => {
-    const { program } = await programFor(context, { build: { repo: undefined, teamId: undefined } });
+    const { program } = await programFor(context, { build: { repo: undefined, teamId: undefined, publicKey: undefined } });
 
     await expect(run(program, 'update')).rejects.toMatchObject({ code: 'no_update_source' });
   });

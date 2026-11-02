@@ -151,3 +151,12 @@ export { nodeProcFs } from './platform/procfs.ts';
 export type { FileIdentity, ProcFs } from './platform/procfs.ts';
 export type { PlatformDirectoryPorts } from './momonga-paths.ts';
 export { parseChecksumListing } from './checksum-listing.ts';
+export {
+  RELEASE_CHECKSUMS_ASSET,
+  RELEASE_PUBLIC_KEY_PATTERN,
+  RELEASE_SIGNATURE_ASSET,
+  RELEASE_SIGNATURE_NAMESPACE,
+  RELEASE_SIGNATURE_TOOL,
+  verifyReleaseSignature,
+} from './release-signature.ts';
+export type { PlaceFile, PlacedFile, ReleaseSignatureVerdict, VerifyReleaseSignatureInput } from './release-signature.ts';

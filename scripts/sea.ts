@@ -18,13 +18,19 @@ export type SeaOptions = UpdateSourceInputs & {
   readonly target?: SeaTargetName;
 };
 
-export const buildSeaUnsigned = async ({ entry, output, workDir, target = 'darwin-arm64', releaseRepo, teamId }: SeaOptions): Promise<void> => {
+export const buildSeaUnsigned = async ({ entry, output, workDir, target = 'darwin-arm64', releaseRepo, teamId, releasePublicKey }: SeaOptions): Promise<void> => {
   const nodeBinary = await ensureSeaNode(nodeCacheDir, target);
   fs.rmSync(workDir, { recursive: true, force: true });
   fs.mkdirSync(workDir, { recursive: true });
   fs.mkdirSync(path.dirname(output), { recursive: true });
   const main = path.join(workDir, 'main.mjs');
-  await bundle({ entry, outfile: main, ...(releaseRepo === undefined ? {} : { releaseRepo }), ...(teamId === undefined ? {} : { teamId }) });
+  await bundle({
+    entry,
+    outfile: main,
+    ...(releaseRepo === undefined ? {} : { releaseRepo }),
+    ...(teamId === undefined ? {} : { teamId }),
+    ...(releasePublicKey === undefined ? {} : { releasePublicKey }),
+  });
   const assets = await buildZ3Assets(workDir, import.meta.url);
   const configPath = path.join(workDir, 'sea-config.json');
   fs.writeFileSync(
@@ -73,6 +79,7 @@ if (import.meta.main) {
       target: { type: 'string', default: 'darwin-arm64' },
       repo: { type: 'string' },
       'team-id': { type: 'string' },
+      'release-public-key': { type: 'string' },
     },
   });
   if (!isSeaTargetName(values.target)) throw new Error(`unknown --target ${values.target}; expected one of ${Object.keys(SEA_TARGETS).join(', ')}`);
@@ -83,6 +90,7 @@ if (import.meta.main) {
     target: values.target,
     ...(values.repo === undefined ? {} : { releaseRepo: values.repo }),
     ...(values['team-id'] === undefined ? {} : { teamId: values['team-id'] }),
+    ...(values['release-public-key'] === undefined ? {} : { releasePublicKey: values['release-public-key'] }),
   };
   if (values.unsigned) await buildSeaUnsigned(options);
   else await buildSea(options);

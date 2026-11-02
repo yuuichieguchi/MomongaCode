@@ -10,6 +10,7 @@ export const FIXTURE_REPO = 'acme/momonga';
 export const FIXTURE_TEAM_ID = 'ABCDE12345';
 export const RELEASE_URL_ENV = 'MOMONGA_FIXTURE_RELEASE_URL';
 export const REAL_CODESIGN_ENV = 'MOMONGA_FIXTURE_REAL_CODESIGN';
+export const PUBLIC_KEY_ENV = 'MOMONGA_FIXTURE_RELEASE_PUBLIC_KEY';
 
 export const runUpdateFixture = async (version: string): Promise<void> => {
   const interrupt = new AbortController();
@@ -23,7 +24,7 @@ export const runUpdateFixture = async (version: string): Promise<void> => {
     entries: daemonEntries(ports.self, ports.version),
     update: () => ({
       ...wiring,
-      build: { repo: FIXTURE_REPO, teamId: FIXTURE_TEAM_ID },
+      build: { repo: FIXTURE_REPO, teamId: FIXTURE_TEAM_ID, publicKey: process.env[PUBLIC_KEY_ENV] },
       endpoints: releaseUrl === undefined ? wiring.endpoints : { apiBaseUrl: releaseUrl, downloadBaseUrl: releaseUrl },
       ports: {
         ...wiring.ports,

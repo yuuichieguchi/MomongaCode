@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { runUpdate } from '../src/commands/update.ts';
 import { UpdateError } from '../src/update/errors.ts';
 import { assetNameFor } from '../src/update/source.ts';
-import { checksumListing } from './fake-release-server.ts';
-import { DAEMON_RESTART_BOUND_MS, NEW_BINARY, OLD_BINARY, TEAM_ID, setupUpdate } from './update-harness.ts';
+import { DEFAULT_SIGNATURE, checksumListing } from './fake-release-server.ts';
+import { DAEMON_RESTART_BOUND_MS, NEW_BINARY, OLD_BINARY, PUBLIC_KEY, TEAM_ID, setupUpdate } from './update-harness.ts';
 import type { HarnessOptions, UpdateHarness } from './update-harness.ts';
 
 const interrupt = (): AbortSignal => new AbortController().signal;
@@ -238,7 +238,9 @@ describe('momonga update: a release that must not be installed', () => {
   it('rejects a candidate that exits non-zero for --version', async (context) => {
     const harness = await setupUpdate(context);
     publish(harness);
+    const run = harness.ports.run;
     harness.ports.run = async (file, args, options) => {
+      if (file === 'ssh-keygen') return run(file, args, options);
       harness.runs.push({ file, args, options, targetContent: '', stagedContent: undefined });
       return { exitCode: 9, stdout: '', stderr: 'cannot start' };
     };
@@ -466,9 +468,89 @@ describe('momonga update: the daemon after the update', () => {
   });
 });
 
+describe('momonga update: the release signature', () => {
+  const listingOf = (harness: UpdateHarness): string => checksumListing({ [assetOf(harness)]: NEW_BINARY });
+
+  const assetRequests = (harness: UpdateHarness): string[] => harness.server.requests.filter((request) => request.includes(`/${assetOf(harness)}`));
+
+  for (const [label, options] of [
+    ['Linux', {}],
+    ['macOS', darwin],
+  ] as const) {
+    it(`on ${label} checks the signature of the checksum listing against the key the build pins, before downloading the executable`, async (context) => {
+      const harness = await setupUpdate(context, options);
+      publish(harness);
+
+      expect(await update(harness)).toBe(0);
+
+      const [check] = harness.signatureChecks;
+      expect(harness.signatureChecks).toHaveLength(1);
+      expect(check?.args.slice(0, 2)).toEqual(['-Y', 'verify']);
+      expect(check?.args).toEqual(expect.arrayContaining(['-I', 'momonga-release', '-n', 'momonga-release']));
+      expect(check?.allowedSigners).toBe(`momonga-release ${PUBLIC_KEY}\n`);
+      expect(check?.signature).toBe(DEFAULT_SIGNATURE);
+      expect(check?.options.input).toBe(listingOf(harness));
+      expect(check?.directory).toBe(harness.dir);
+      const requests = harness.server.requests;
+      expect(requests.findIndex((request) => request.endsWith('/SHA256SUMS.sig'))).toBeGreaterThan(requests.findIndex((request) => request.endsWith('/SHA256SUMS')));
+      expect(harness.directoryEntries()).toEqual(['momonga']);
+    });
+  }
+
+  it('installs nothing and downloads no executable when the signature is rejected', async (context) => {
+    const harness = await setupUpdate(context);
+    publish(harness);
+    harness.control.signature = { exitCode: 255, stdout: '', stderr: 'Could not verify signature.\n' };
+
+    const error = await expectRejected(harness, 'signature_rejected');
+
+    expect(error.message).toContain('is not signed by the release key this build pins');
+    expect(error.detail).toBe('Could not verify signature.');
+    expect(assetRequests(harness)).toEqual([]);
+    expect(harness.runs).toEqual([]);
+    expectUnchanged(harness);
+    expect(harness.released.count).toBe(1);
+  });
+
+  it('installs nothing when the release has no signature file', async (context) => {
+    const harness = await setupUpdate(context);
+    harness.server.publish('v2.0.0', { [assetOf(harness)]: NEW_BINARY }, { signature: undefined });
+
+    await expectRejected(harness, 'signature_unavailable');
+
+    expect(assetRequests(harness)).toEqual([]);
+    expect(harness.signatureChecks).toEqual([]);
+    expectUnchanged(harness);
+  });
+
+  it('names the missing OpenSSH client instead of treating the release as unsigned', async (context) => {
+    const harness = await setupUpdate(context);
+    publish(harness);
+    harness.control.signatureToolMissing = true;
+
+    const error = await expectRejected(harness, 'signature_tool_missing');
+
+    expect(error.message).toContain('ssh-keygen');
+    expect(assetRequests(harness)).toEqual([]);
+    expectUnchanged(harness);
+  });
+
+  it('does not accept a checksum listing that was altered after it was signed', async (context) => {
+    const harness = await setupUpdate(context);
+    publish(harness);
+    harness.control.signature = { exitCode: 255, stdout: '', stderr: 'Signature verification failed\n' };
+    harness.server.publish('v2.0.0', { [assetOf(harness)]: NEW_BINARY }, { checksums: checksumListing({ [assetOf(harness)]: Buffer.from('substituted') }) });
+
+    await expectRejected(harness, 'signature_rejected');
+
+    expect(assetRequests(harness)).toEqual([]);
+    expectUnchanged(harness);
+  });
+});
+
 describe('momonga update: builds that cannot update', () => {
   it('refuses to replace node when run from source, before looking at the update source', async (context) => {
-    const harness = await setupUpdate(context, { scripted: true, build: { repo: undefined, teamId: undefined } });
+    const harness = await setupUpdate(context, { scripted: true, build: { repo: undefined, teamId: undefined, publicKey: undefined } });
 
     const error = await expectRejected(harness, 'not_single_executable');
 
@@ -479,7 +561,7 @@ describe('momonga update: builds that cannot update', () => {
   });
 
   it('reports a typed error naming MOMONGA_REPO when the build has no repository', async (context) => {
-    const harness = await setupUpdate(context, { build: { repo: undefined, teamId: undefined } });
+    const harness = await setupUpdate(context, { build: { repo: undefined, teamId: undefined, publicKey: undefined } });
 
     const error = await expectRejected(harness, 'no_update_source');
 
@@ -488,8 +570,17 @@ describe('momonga update: builds that cannot update', () => {
     expect(harness.server.requests).toEqual([]);
   });
 
+  it('reports a typed error naming MOMONGA_RELEASE_PUBLIC_KEY when the build pins no release key', async (context) => {
+    const harness = await setupUpdate(context, { build: { repo: 'acme/momonga', teamId: undefined, publicKey: undefined } });
+
+    const error = await expectRejected(harness, 'no_update_source');
+
+    expect(error.message).toContain('MOMONGA_RELEASE_PUBLIC_KEY');
+    expect(harness.server.requests).toEqual([]);
+  });
+
   it('reports a typed error naming MOMONGA_TEAM_ID on macOS builds without a team', async (context) => {
-    const harness = await setupUpdate(context, { ...darwin, build: { repo: 'acme/momonga', teamId: undefined } });
+    const harness = await setupUpdate(context, { ...darwin, build: { repo: 'acme/momonga', teamId: undefined, publicKey: PUBLIC_KEY } });
 
     const error = await expectRejected(harness, 'no_update_source');
 
@@ -498,17 +589,19 @@ describe('momonga update: builds that cannot update', () => {
   });
 
   it('does not need a team on Linux', async (context) => {
-    const harness = await setupUpdate(context, { build: { repo: 'acme/momonga', teamId: undefined } });
+    const harness = await setupUpdate(context, { build: { repo: 'acme/momonga', teamId: undefined, publicKey: PUBLIC_KEY } });
     publish(harness);
 
     expect(await update(harness)).toBe(0);
   });
 
   it('rejects malformed build inputs instead of using them', async (context) => {
-    const repo = await setupUpdate(context, { build: { repo: 'no-slash', teamId: undefined } });
+    const repo = await setupUpdate(context, { build: { repo: 'no-slash', teamId: undefined, publicKey: PUBLIC_KEY } });
     await expectRejected(repo, 'invalid_update_source');
-    const team = await setupUpdate(context, { ...darwin, build: { repo: 'acme/momonga', teamId: 'abc' } });
+    const team = await setupUpdate(context, { ...darwin, build: { repo: 'acme/momonga', teamId: 'abc', publicKey: PUBLIC_KEY } });
     await expectRejected(team, 'invalid_update_source');
+    const key = await setupUpdate(context, { build: { repo: 'acme/momonga', teamId: undefined, publicKey: 'not a key\nsecond line' } });
+    await expectRejected(key, 'invalid_update_source');
   });
 
   it('has no release asset for Windows or other architectures', async (context) => {

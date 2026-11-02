@@ -24,6 +24,13 @@ describe('install.ps1', () => {
     expect(VARIABLE_FOLLOWED_BY_COLON.test('path $env:LOCALAPPDATA')).toBe(false);
   });
 
+  it('fails clearly, and says what to do, when no release key is pinned', () => {
+    const source = fs.readFileSync(SCRIPT, 'utf8');
+    expect(source).toContain("$embeddedReleasePublicKey = ''");
+    expect(source).toContain('this installer pins no release signing key');
+    expect(source).toContain('set MOMONGA_RELEASE_PUBLIC_KEY to the ssh public key line the maintainers publish');
+  });
+
   it('refuses plain http to anything but the loopback interface', () => {
     const source = fs.readFileSync(SCRIPT, 'utf8');
     expect(source).toContain("-notmatch '^https://'");
