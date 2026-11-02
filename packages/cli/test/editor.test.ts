@@ -27,6 +27,17 @@ describe('editor typing', () => {
     expect(press(emptyEditor(), 'abc', { input: '', delete: true }).state.text).toBe('ab');
   });
 
+  it('moves and deletes by whole characters, so an emoji or a joined emoji sequence is never split into surrogate halves', () => {
+    const family = '👨‍👩‍👧';
+    expect(press(emptyEditor(), 'a😀', { input: '', backspace: true }).state.text).toBe('a');
+    expect(press(emptyEditor(), `a${family}`, { input: '', backspace: true }).state.text).toBe('a');
+    expect(press(emptyEditor(), 'a😀b', { input: '', leftArrow: true }, { input: '', leftArrow: true }).state.cursor).toBe(1);
+    expect(press(emptyEditor(), 'a😀b', { input: '', home: true }, { input: '', rightArrow: true }, { input: '', rightArrow: true }).state.cursor).toBe(3);
+    const insertedBeforeEmoji = press(emptyEditor(), '😀', { input: '', leftArrow: true }, 'x').state;
+    expect(insertedBeforeEmoji.text).toBe('x😀');
+    expect(press(emptyEditor(), 'é', { input: '', backspace: true }).state.text).toBe('');
+  });
+
   it('ignores backspace at the start and meta-modified input', () => {
     expect(press(emptyEditor(), { input: '', backspace: true }).state.text).toBe('');
     expect(press(emptyEditor(), { input: 'x', meta: true }).state.text).toBe('');

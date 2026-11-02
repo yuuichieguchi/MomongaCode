@@ -14,6 +14,7 @@ const isBusy = (error: unknown): boolean =>
 
 const databasePathOf = (lockPath: string): string => `${lockPath}${LOCK_DATABASE_SUFFIX}`;
 
+// SQLite takes POSIX fcntl locks on Linux, and the kernel drops them when any descriptor of the file is closed by the same process: nothing else may open this file while a claim is held.
 const openForClaim = (databasePath: string): DatabaseSync => {
   fs.closeSync(fs.openSync(databasePath, fs.constants.O_RDWR | fs.constants.O_CREAT | noFollowFlag(), 0o600));
   return new DatabaseSync(databasePath, { timeout: 0 });

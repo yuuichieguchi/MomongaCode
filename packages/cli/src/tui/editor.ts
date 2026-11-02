@@ -28,6 +28,19 @@ export const emptyEditor = (history: readonly string[] = []): EditorState => ({ 
 
 const LINE_CONTINUATION = '\\';
 
+const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
+const characterStartBefore = (text: string, cursor: number): number => {
+  let start = 0;
+  for (const { index } of graphemes.segment(text.slice(0, cursor))) start = index;
+  return start;
+};
+
+export const characterEndAfter = (text: string, cursor: number): number => {
+  for (const { index, segment } of graphemes.segment(text)) if (index >= cursor) return index + segment.length;
+  return text.length;
+};
+
 const insert = (state: EditorState, text: string): EditorState => ({
   ...state,
   text: state.text.slice(0, state.cursor) + text + state.text.slice(state.cursor),
@@ -105,10 +118,11 @@ export const applyKey = (state: EditorState, key: KeyPress): EditorOutcome => {
   }
   if (key.backspace === true || key.delete === true) {
     if (state.cursor === 0) return { state };
-    return { state: { ...state, text: state.text.slice(0, state.cursor - 1) + state.text.slice(state.cursor), cursor: state.cursor - 1, historyIndex: undefined } };
+    const start = characterStartBefore(state.text, state.cursor);
+    return { state: { ...state, text: state.text.slice(0, start) + state.text.slice(state.cursor), cursor: start, historyIndex: undefined } };
   }
-  if (key.leftArrow === true) return { state: { ...state, cursor: Math.max(0, state.cursor - 1) } };
-  if (key.rightArrow === true) return { state: { ...state, cursor: Math.min(state.text.length, state.cursor + 1) } };
+  if (key.leftArrow === true) return { state: { ...state, cursor: state.cursor === 0 ? 0 : characterStartBefore(state.text, state.cursor) } };
+  if (key.rightArrow === true) return { state: { ...state, cursor: characterEndAfter(state.text, state.cursor) } };
   if (key.home === true) return { state: { ...state, cursor: lineStart(state.text, state.cursor) } };
   if (key.end === true) return { state: { ...state, cursor: lineEnd(state.text, state.cursor) } };
   if (key.upArrow === true) return { state: moveVertically(state, -1) ?? recall(state, -1) ?? state };
