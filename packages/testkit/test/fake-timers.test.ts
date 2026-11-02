@@ -45,6 +45,18 @@ describe('createFakeTimers', () => {
     expect(timers.pending()).toEqual([]);
   });
 
+  it('reports the clock and the earliest pending due time', () => {
+    const clock = createFakeClock(1000);
+    const timers = createFakeTimers(clock);
+    expect(timers.nextDueAt()).toBeUndefined();
+    timers.setTimeout(() => undefined, 300);
+    const early = timers.setTimeout(() => undefined, 100);
+    expect(timers.now()).toBe(1000);
+    expect(timers.nextDueAt()).toBe(1100);
+    timers.clearTimeout(early);
+    expect(timers.nextDueAt()).toBe(1300);
+  });
+
   it('rejects a negative advance', () => {
     const timers = createFakeTimers(createFakeClock(0));
     expect(() => timers.advance(-1)).toThrow(/non-negative/);

@@ -12,7 +12,6 @@ import {
   TEST_VERSION,
   createFakeSpawn,
   createRealWorkScope,
-  drive,
   fakeLauncher,
   httpOver,
   prepareHome,
@@ -62,10 +61,10 @@ const startEntry = (context: CleanupContext, options: EntryOptions = {}): EntryR
     clock,
     timers,
   });
-  const fake = createFakeSpawn();
   const markers = recordingMarkerPorts(options.markerPorts ?? {});
   const lockSleeps: number[] = [];
   const realWork = createRealWorkScope();
+  const fake = createFakeSpawn({ realWork });
   const code = realWork.run(() => runSupervisorEntry(io, {
     launcher: fakeLauncher,
     spawn: fake.port,
@@ -126,12 +125,12 @@ const childrenReady = async (run: EntryRun): Promise<void> => {
   await pumpUntil(
     run.timers,
     () => run.fake.spawnCount('gateway') >= 1 && run.fake.spawnCount('runtime') >= 1 && run.supervisorLog().filter((line) => line.msg === 'child.ready').length >= 2,
-    { stepMs: 50, maxMs: 10_000, description: 'both children ready', realWork: run.realWork },
+    { maxMs: 10_000, description: 'both children ready', realWork: run.realWork },
   );
 };
 
 const exitOf = async (run: EntryRun, maxMs = 200_000): Promise<number> => {
-  await drive(run.timers, () => run.exited(), { stepMs: 50, maxSteps: Math.ceil(maxMs / 50), description: 'entry exit', realWork: run.realWork });
+  await pumpUntil(run.timers, () => run.exited(), { maxMs, description: 'entry exit', realWork: run.realWork });
   return run.code;
 };
 
@@ -305,7 +304,7 @@ describe('runSupervisorEntry', () => {
     runtime.writeStderr('TypeError: boom');
     runtime.writeStdout('a stray stdout line');
     runtime.exit(1);
-    await pumpUntil(run.timers, () => run.fake.spawnCount('runtime') === 2, { stepMs: 50, maxMs: 10_000, realWork: run.realWork });
+    await pumpUntil(run.timers, () => run.fake.spawnCount('runtime') === 2, { maxMs: 10_000, realWork: run.realWork });
     expect(run.io.logFilePaths).toEqual([run.paths.logFiles.supervisor]);
     const lines = run.supervisorLog();
     expect(lines).toContainEqual(expect.objectContaining({ msg: 'child.stderr', child: 'runtime', childPid: runtime.pid, raw: 'TypeError: boom' }));

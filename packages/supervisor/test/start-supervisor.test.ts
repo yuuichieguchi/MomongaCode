@@ -46,7 +46,7 @@ describe('startSupervisor', () => {
       onStdout: () => order.push(`listening lock=${fs.existsSync(lockPath)} socket=${fs.existsSync(socketPath)}`),
       overrides: { watchSettings: true, settingsWatch: seam },
     });
-    await pumpUntil(h.timers, () => order.includes('watch'), { realWork: h.realWork, stepMs: 50, maxMs: 5000 });
+    await pumpUntil(h.timers, () => order.includes('watch'), { realWork: h.realWork, maxMs: 5000 });
     expect(order.slice(0, 2)).toEqual(['ready', 'listening lock=true socket=true']);
     const firstReap = order.findIndex((entry) => entry === 'findHolders' || entry === 'reapMarkerDirectory');
     const spawns = order.map((entry, index) => (entry.startsWith('spawn:') ? index : -1)).filter((index) => index >= 0);
@@ -98,12 +98,12 @@ describe('startSupervisor', () => {
       markerPorts: { findHolders: async () => [999_999], reapMarkerDirectory: () => reap.promise },
       overrides: { orphanGraceMs: 250 },
     });
-    await pumpUntil(h.timers, () => h.markers.calls.reapMarkerDirectory.length === 1, { realWork: h.realWork, stepMs: 250, maxMs: 5000 });
+    await pumpUntil(h.timers, () => h.markers.calls.reapMarkerDirectory.length === 1, { realWork: h.realWork, maxMs: 5000 });
     await pumpUntil(h.timers, () => true, { realWork: h.realWork, maxMs: 0 });
     expect(h.health().phase).toBe('reaping-orphans');
     expect(h.fake.spawnCount()).toBe(0);
     reap.resolve({ reaped: 1, kept: 0 });
-    await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { realWork: h.realWork, stepMs: 50, maxMs: 5000 });
+    await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { realWork: h.realWork, maxMs: 5000 });
     expect(h.health().phase).toBe('running');
   });
 
@@ -187,7 +187,7 @@ describe('startSupervisor', () => {
     await waitFor(() => h.markers.calls.findHolders.length > 0);
     expect(h.health().children.map((child) => child.state)).toEqual(['pending', 'pending']);
     holding = false;
-    await pumpUntil(h.timers, () => h.health().phase === 'running', { realWork: h.realWork, stepMs: 250, maxMs: 5000 });
+    await pumpUntil(h.timers, () => h.health().phase === 'running', { realWork: h.realWork, maxMs: 5000 });
     expect(h.health().children.map((child) => child.state)).toEqual(['held-config', 'held-config']);
     for (const child of h.health().children) {
       expect(child.heldReason).toBeDefined();
@@ -206,7 +206,7 @@ describe('startSupervisor', () => {
     const h = await startHarness(context, {
       overrides: { launcher: (role) => (role === 'runtime' ? { command: 'relative/bin/runtime', args: [] } : fakeLauncher(role)) },
     });
-    await pumpUntil(h.timers, () => h.child('runtime').state === 'backoff', { realWork: h.realWork, stepMs: 50, maxMs: 5000 });
+    await pumpUntil(h.timers, () => h.child('runtime').state === 'backoff', { realWork: h.realWork, maxMs: 5000 });
     expect(h.child('runtime').lastExit).toMatchObject({ code: null, signal: null, reason: 'spawn-failed' });
     expect(h.fake.spawnCount('gateway')).toBe(1);
     expect(h.fake.spawnCount('runtime')).toBe(0);
@@ -230,7 +230,7 @@ describe('startSupervisor', () => {
     explode = true;
     const fatal = settledFlag(h.supervisor.fatal);
     h.fake.latest('runtime').exit(1);
-    await pumpUntil(h.timers, () => fatal.settled(), { realWork: h.realWork, stepMs: 50, maxMs: 5000 });
+    await pumpUntil(h.timers, () => fatal.settled(), { realWork: h.realWork, maxMs: 5000 });
     expect(fatal.value()?.message).toBe('random exploded');
     const failed = h.log.withMsg('supervisor.background_failed');
     expect(failed).toHaveLength(1);
@@ -261,12 +261,11 @@ describe('startSupervisor', () => {
     await h.waitForState('runtime', 'ready');
     await h.waitForState('gateway', 'ready');
     h.fake.latest('gateway').exit(75);
-    await pumpUntil(h.timers, () => h.log.withMsg('supervisor.background_failed').length >= 1, { realWork: h.realWork, stepMs: 50, maxMs: 5000 });
+    await pumpUntil(h.timers, () => h.log.withMsg('supervisor.background_failed').length >= 1, { realWork: h.realWork, maxMs: 5000 });
     explodeRandom = true;
     h.fake.latest('runtime').exit(1);
     await pumpUntil(h.timers, () => new Set(h.log.withMsg('supervisor.background_failed').map((line) => String(line['source']))).size >= 2, {
       realWork: h.realWork,
-      stepMs: 50,
       maxMs: 5000,
     });
     await pumpUntil(h.timers, () => true, { realWork: h.realWork, maxMs: 0 });

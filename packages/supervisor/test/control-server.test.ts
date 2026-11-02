@@ -204,7 +204,7 @@ describe('startControlServer', () => {
     const { socketPath, server, timers, realWork } = await startServer(context);
     expect(fs.existsSync(`${socketPath}.lock`)).toBe(true);
     const closing = settledFlag(server.close());
-    await pumpUntil(timers, () => closing.settled(), { realWork, stepMs: 100, maxMs: 5000 });
+    await pumpUntil(timers, () => closing.settled(), { realWork, maxMs: 5000 });
     expect(fs.existsSync(socketPath)).toBe(false);
     expect(fs.existsSync(`${socketPath}.lock`)).toBe(false);
   });
@@ -219,7 +219,7 @@ describe('startControlServer', () => {
     await turns(50);
     const closing = settledFlag(server.close());
     await turns(50);
-    await pumpUntil(timers, () => closing.settled(), { realWork, stepMs: 100, maxMs: 1000 });
+    await pumpUntil(timers, () => closing.settled(), { realWork, maxMs: 1000 });
     expect(fs.existsSync(socketPath)).toBe(false);
     expect(fs.existsSync(`${socketPath}.lock`)).toBe(false);
     expect(shutdowns()).toBe(0);
@@ -320,9 +320,9 @@ describe('control API through the supervisor', () => {
       const phase = h.health().phase;
       if (observed.at(-1) !== phase) observed.push(phase);
     };
-    await pumpUntil(h.timers, () => (observe(), h.health().phase === 'running'), { realWork: h.realWork, stepMs: 50, maxMs: 5000 });
+    await pumpUntil(h.timers, () => (observe(), h.health().phase === 'running'), { realWork: h.realWork, maxMs: 5000 });
     const closing = settledFlag(h.supervisor.close());
-    await pumpUntil(h.timers, () => (observe(), closing.settled()), { realWork: h.realWork, stepMs: 50, maxMs: 120_000 });
+    await pumpUntil(h.timers, () => (observe(), closing.settled()), { realWork: h.realWork, maxMs: 120_000 });
     expect(observed).toEqual(['reaping-orphans', 'running', 'draining']);
     expect(phaseChanges(h.log)).toEqual(['reaping-orphans->running', 'running->draining']);
   });
@@ -340,7 +340,7 @@ describe('control API through the supervisor', () => {
     expect(h.health().children.map((child) => child.state)).toEqual(['stopped', 'stopped']);
     const result = await (async () => {
       const closed = settledFlag(h.supervisor.closed);
-      await pumpUntil(h.timers, () => closed.settled(), { realWork: h.realWork, stepMs: 50, maxMs: 30_000 });
+      await pumpUntil(h.timers, () => closed.settled(), { realWork: h.realWork, maxMs: 30_000 });
       return closed.value();
     })();
     expect(result).toEqual({ clean: true, killed: [], leaked: [] });
@@ -354,7 +354,7 @@ describe('control API through the supervisor', () => {
     await h.waitForState('gateway', 'ready');
     const closed = settledFlag(h.supervisor.closed);
     expect((await httpOver(context, h.paths.sockets.supervisor, 'POST', '/v1/shutdown')).status).toBe(202);
-    await pumpUntil(h.timers, () => closed.settled(), { realWork: h.realWork, stepMs: 50, maxMs: 120_000 });
+    await pumpUntil(h.timers, () => closed.settled(), { realWork: h.realWork, maxMs: 120_000 });
     expect(closed.value()).toEqual({ clean: true, killed: [], leaked: [] });
     expect(h.fake.latest('runtime').signals).toEqual(['SIGTERM']);
     expect(h.fake.latest('gateway').signals).toEqual(['SIGTERM']);
@@ -383,7 +383,7 @@ describe('control API through the supervisor', () => {
     expect(h.fake.latest('runtime').signals).toEqual(['SIGTERM']);
     h.fake.latest('runtime').exit(0);
     const closed = settledFlag(h.supervisor.closed);
-    await pumpUntil(h.timers, () => closed.settled(), { realWork: h.realWork, stepMs: 50, maxMs: 120_000 });
+    await pumpUntil(h.timers, () => closed.settled(), { realWork: h.realWork, maxMs: 120_000 });
     expect(h.fake.latest('gateway').signals).toEqual(['SIGTERM']);
   });
 
