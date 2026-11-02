@@ -63,7 +63,20 @@ export const haltRun = (ctx: ClaimContext, event: string, reason: string | undef
   return ctx.terminals.finish('FAILED', { error: { code: HOOK_STOPPED_CODE, message } });
 };
 
+const isSubagentRun = (ctx: ClaimContext): boolean => ctx.run.parentRunId !== null;
+
+const stopAlreadyRanForLastResponse = (ctx: ClaimContext): boolean => {
+  let ran = false;
+  ctx.journal.countWhere((recorded) => {
+    if (recorded.type === 'model.responded') ran = false;
+    else if (recorded.type === 'hook.completed' && recorded.hookEvent === 'Stop') ran = true;
+    return false;
+  });
+  return ran;
+};
+
 export const runStartHooks = async (ctx: ClaimContext): Promise<Flow> => {
+  if (isSubagentRun(ctx)) return 'continue';
   const session = sessionOf(ctx);
   const hooks = await ctx.options.settings.hooks(session);
   const wantsSessionStart = ctx.run.ordinal === 1 && selectHookCommands(hooks, 'SessionStart', 'startup').length > 0 && !alreadyRan(ctx, 'SessionStart');
@@ -86,6 +99,7 @@ export const runStartHooks = async (ctx: ClaimContext): Promise<Flow> => {
 };
 
 export const runStopHooks = async (ctx: ClaimContext): Promise<'continue' | 'allow'> => {
+  if (isSubagentRun(ctx) || stopAlreadyRanForLastResponse(ctx)) return 'allow';
   const session = sessionOf(ctx);
   const hooks = await ctx.options.settings.hooks(session);
   if (selectHookCommands(hooks, 'Stop', undefined).length === 0) return 'allow';

@@ -68,7 +68,7 @@ export const bashOutputTool = defineTool<BashOutputInput>({
         return { status: 'pending', awaits: { kind: 'job', jobId: job.id }, wakeAt: waitUntil };
       }
     }
-    const { job, output } = await jobs.read(ctx.runId, input.bash_id, filter === undefined ? {} : { filter });
+    const { job, output } = await jobs.read(ctx.runId, input.bash_id, { call: `${ctx.runId}/${ctx.callId}`, ...(filter === undefined ? {} : { filter }) });
     const header = `Job ${job.id}: ${describeJobStatus(job)}.`;
     return { status: 'completed', output: output === '' ? `${header}\nNo new output.` : `${header}\n${output}` };
   },

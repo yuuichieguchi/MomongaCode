@@ -913,8 +913,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         if (finished === undefined) throw new Error(`job ${id} vanished during finish`);
         return { kind: 'finished', job: decodeJob(finished) };
       }),
-    advanceRead: (id, offset) => {
-      sql.jobs.advance.run({ id, offset });
+    advanceRead: (id, offset, call) => {
+      sql.jobs.advance.run({ id, offset, call });
     },
   };
 

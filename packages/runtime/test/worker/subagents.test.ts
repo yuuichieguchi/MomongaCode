@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { createNodeSkillFileSystem } from '@momonga/skills';
 import { createAgentsPort, createChildRuns } from '@momonga/runtime';
 import type { AgentsPort } from '@momonga/runtime';
+import { createUnsandboxed } from '@momonga/sandbox';
 import { usageOf } from '@momonga/testkit';
 import { LEASE_MS, makeEnv, textOf } from './harness.ts';
 import type { Env } from './harness.ts';
@@ -212,6 +213,26 @@ describe('worker subagents', () => {
     expect(env.ofType(parent.id, 'tool.completed')).toMatchObject([{ status: 'completed', output: 'child verdict: ship it' }]);
     const key = env.fold(parent.id).pendingCalls[Object.keys(env.fold(parent.id).pendingCalls)[0] as string]?.idemKey ?? '';
     expect(env.store.idempotency.get(key)).toMatchObject({ s: 'COMPLETED', result: { kind: 'result', result: { status: 'completed', output: 'child verdict: ship it' } } });
+  });
+
+  it('runs the SessionStart, UserPromptSubmit and Stop hooks for the main run only, not for its subagent', async () => {
+    const env = await makeEnv();
+    writeAgent(env, 'reviewer');
+    const counter = path.join(env.project, 'hook-runs.txt');
+    const hook = (event: string) => [{ hooks: [{ type: 'command' as const, command: `echo ${event} >> ${counter}` }] }];
+    env.settings.hooksValue = { SessionStart: hook('SessionStart'), UserPromptSubmit: hook('UserPromptSubmit'), Stop: hook('Stop') };
+    const worker = env.worker('w1', { agents: agentsPortOf(env), tools: { sandbox: createUnsandboxed({ killGraceMs: 200 }) } });
+    const parent = env.enqueue('Review');
+    env.gateway.script.push(delegate('call-a'), textStep('child verdict'), textStep('parent done'));
+
+    await env.runOnce(worker);
+    await env.runOnce(worker);
+    await env.runOnce(worker);
+
+    expect(env.run(parent.id).status).toBe('COMPLETED');
+    expect(fs.readFileSync(counter, 'utf8').trim().split('\n').sort()).toEqual(['SessionStart', 'Stop', 'UserPromptSubmit']);
+    const [child] = env.store.listChildRuns(parent.id);
+    expect(env.ofType(child?.id ?? '', 'hook.completed')).toEqual([]);
   });
 
   it('stops the parent and its child at their shared deadline while the parent waits', async () => {

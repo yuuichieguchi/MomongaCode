@@ -12,6 +12,8 @@ export const decodeJob = (row: Row): Job => {
   const signal = reader.nullableString('signal');
   const outputHandle = reader.nullableString('output_handle');
   const endedAt = reader.nullableNumber('ended_at');
+  const readCall = reader.nullableString('read_call');
+  const readBefore = reader.nullableNumber('read_before');
   return {
     id: reader.string('id'),
     idemKey: reader.string('idem_key'),
@@ -27,6 +29,7 @@ export const decodeJob = (row: Row): Job => {
     outputStart: reader.number('output_start'),
     outputTotal: reader.number('output_total'),
     readOffset: reader.number('read_offset'),
+    ...(readCall === null || readBefore === null ? {} : { lastRead: { call: readCall, from: readBefore } }),
     startedAt: reader.number('started_at'),
     ...(endedAt === null ? {} : { endedAt }),
   };
@@ -47,5 +50,8 @@ export const prepareJobStatements = (db: DatabaseSync) => ({
        output_start = :outputStart, output_total = :outputTotal, ended_at = :endedAt
      WHERE id = :id AND status = 'running'`,
   ),
-  advance: db.prepare('UPDATE jobs SET read_offset = :offset WHERE id = :id AND read_offset < :offset'),
+  advance: db.prepare(
+    `UPDATE jobs SET read_before = CASE WHEN read_call = :call THEN read_before ELSE read_offset END, read_call = :call, read_offset = :offset
+     WHERE id = :id AND (read_call = :call OR read_offset < :offset)`,
+  ),
 });

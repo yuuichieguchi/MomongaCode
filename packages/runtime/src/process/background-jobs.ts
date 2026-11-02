@@ -179,9 +179,9 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
     return { jobId: job.id };
   };
 
-  const readWindow = async (job: Job): Promise<{ text: string; omitted: number; total: number }> => {
+  const readWindow = async (job: Job, call: string): Promise<{ text: string; omitted: number; total: number }> => {
     const entry = live.get(job.id);
-    const from = job.readOffset;
+    const from = job.lastRead?.call === call ? job.lastRead.from : job.readOffset;
     if (entry !== undefined) {
       const window = entry.output.window();
       const begin = Math.max(from, window.start);
@@ -201,10 +201,10 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       return job === undefined ? undefined : viewOf(job);
     },
     status: (runId, jobId) => viewOf(authorize(runId, jobId)),
-    read: async (runId, jobId, { filter }) => {
+    read: async (runId, jobId, { filter, call }) => {
       const job = authorize(runId, jobId);
-      const { text, omitted, total } = await readWindow(job);
-      store.jobs.advanceRead(job.id, total);
+      const { text, omitted, total } = await readWindow(job, call);
+      store.jobs.advanceRead(job.id, total, call);
       const kept = filter === undefined ? text : matching(text, filter);
       const note = omitted > 0 ? `[… ${omitted} bytes omitted …]\n` : '';
       const current = store.jobs.get(job.id) ?? job;

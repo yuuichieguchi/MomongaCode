@@ -52,7 +52,7 @@ export type BackgroundJobs = {
   start(request: BackgroundJobStart): Promise<{ jobId: string }>;
   byCall(callKey: string): JobView | undefined;
   status(runId: string, jobId: string): JobView;
-  read(runId: string, jobId: string, options: { filter?: RegExp }): Promise<BackgroundJobRead>;
+  read(runId: string, jobId: string, options: { call: string; filter?: RegExp }): Promise<BackgroundJobRead>;
   kill(runId: string, jobId: string): Promise<JobView>;
 };
 

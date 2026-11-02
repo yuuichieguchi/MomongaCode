@@ -83,8 +83,8 @@ describe('background jobs', () => {
   it('only moves the read offset forward', () => {
     const { h, session, run } = setup();
     const { job } = startJob(h.store, session.id, run.id);
-    h.store.jobs.advanceRead(job.id, 40);
-    h.store.jobs.advanceRead(job.id, 10);
+    h.store.jobs.advanceRead(job.id, 40, 'call-a');
+    h.store.jobs.advanceRead(job.id, 10, 'call-b');
     expect(h.store.jobs.get(job.id)?.readOffset).toBe(40);
   });
 });

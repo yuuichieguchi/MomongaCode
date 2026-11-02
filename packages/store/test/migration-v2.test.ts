@@ -66,7 +66,7 @@ describe('migration v2 on a populated v1 database', () => {
 
     const db = new DatabaseSync(dbPath);
     try {
-      expect(db.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => Number(row['version']))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+      expect(db.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => Number(row['version']))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
       expect(db.prepare('SELECT id, subject_digest FROM approvals ORDER BY id').all().map((row) => [row['id'], row['subject_digest']])).toEqual([
         ['appr-pending', null],
         ['appr-resolved', null],

@@ -264,6 +264,11 @@ WHERE scope = 'project'
    );
 `;
 
+const JOB_READ_REPLAY = `
+ALTER TABLE jobs ADD COLUMN read_call TEXT;
+ALTER TABLE jobs ADD COLUMN read_before INTEGER;
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -279,4 +284,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 8, name: 'link subagent runs to the run and tool call that spawned them, and record background jobs', sql: SUBAGENT_RUNS_AND_BACKGROUND_JOBS },
   { version: 9, name: 'let a session carry the MCP servers its client passed', sql: SESSION_MCP_SERVERS },
   { version: 10, name: 'record whether a memory was saved in a trusted folder', sql: MEMORY_TRUST_ORIGIN },
+  { version: 11, name: 'remember which call last read a job and where its read began, so a replayed read returns the same bytes', sql: JOB_READ_REPLAY },
 ];

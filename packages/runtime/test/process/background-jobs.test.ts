@@ -173,17 +173,17 @@ describe('background jobs', () => {
     const { jobId } = await t.start('call-1');
     const process = t.spawned[0] as FakeProcess;
     await Promise.all([process.stdoutStream.write('first\n'), process.stderrStream.write('oops\n')]);
-    const first = await t.jobs.read(t.run.id, jobId, {});
+    const first = await t.jobs.read(t.run.id, jobId, { call: 'read-1' });
     expect(first.job.status).toBe('running');
     expect(first.output.split('\n').sort()).toEqual(['first', 'oops']);
     await process.stdoutStream.write('second\n');
-    expect((await t.jobs.read(t.run.id, jobId, {})).output).toBe('second');
-    expect((await t.jobs.read(t.run.id, jobId, {})).output).toBe('');
+    expect((await t.jobs.read(t.run.id, jobId, { call: 'read-2' })).output).toBe('second');
+    expect((await t.jobs.read(t.run.id, jobId, { call: 'read-3' })).output).toBe('');
 
     await process.stdoutStream.write('third\nlast\n');
     process.exit({ code: 3, signal: null });
     await t.settled(jobId);
-    const done = await t.jobs.read(t.run.id, jobId, {});
+    const done = await t.jobs.read(t.run.id, jobId, { call: 'read-4' });
     expect(done.job).toMatchObject({ status: 'exited', exitCode: 3 });
     expect(done.output).toBe('third\nlast');
     expect(t.store.jobs.get(jobId)?.outputHandle).toMatch(/^[0-9a-f]{64}$/);
@@ -192,13 +192,26 @@ describe('background jobs', () => {
     expect(t.jobs.liveKeys().size).toBe(0);
   });
 
+  it('returns the same bytes when a read is replayed by its call after a crash, and new bytes for the next call', async () => {
+    const t = setup();
+    const { jobId } = await t.start('call-1');
+    const process = t.spawned[0] as FakeProcess;
+    await process.stdoutStream.write('first\n');
+    expect((await t.jobs.read(t.run.id, jobId, { call: 'crashed-call' })).output).toBe('first');
+    await process.stdoutStream.write('second\n');
+
+    expect((await t.jobs.read(t.run.id, jobId, { call: 'crashed-call' })).output).toBe('first\nsecond');
+    expect((await t.jobs.read(t.run.id, jobId, { call: 'next-call' })).output).toBe('');
+    await t.jobs.stopAll();
+  });
+
   it('filters new output by line and discards the lines it drops', async () => {
     const t = setup();
     const { jobId } = await t.start('call-1');
     const process = t.spawned[0] as FakeProcess;
     await process.stdoutStream.write('ok 1\nERROR a\nok 2\nERROR b\n');
-    expect((await t.jobs.read(t.run.id, jobId, { filter: /ERROR/ })).output).toBe('ERROR a\nERROR b');
-    expect((await t.jobs.read(t.run.id, jobId, {})).output).toBe('');
+    expect((await t.jobs.read(t.run.id, jobId, { call: 'read-5', filter: /ERROR/ })).output).toBe('ERROR a\nERROR b');
+    expect((await t.jobs.read(t.run.id, jobId, { call: 'read-6' })).output).toBe('');
     process.exit({ code: 0, signal: null });
     await t.settled(jobId);
   });
@@ -238,7 +251,7 @@ describe('background jobs', () => {
     t.spawned[0]?.exit({ code: 0, signal: null });
     await t.settled(jobId);
     expect(t.reconciled).toEqual([{ pgid: 4000 }]);
-    expect((await t.jobs.read(t.run.id, jobId, {})).output).toContain('Terminated 1 process(es) that outlived the job.');
+    expect((await t.jobs.read(t.run.id, jobId, { call: 'read-7' })).output).toContain('Terminated 1 process(es) that outlived the job.');
   });
 
   it.each([
