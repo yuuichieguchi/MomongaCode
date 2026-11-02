@@ -2,7 +2,8 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ConfigError, appendPermissionRule, loadMcpServers, loadSettings } from '@momonga/config';
+import { ConfigError, appendPermissionRule, systemFileLockPorts, loadMcpServers, loadSettings } from '@momonga/config';
+import type { FileLockPorts } from '@momonga/config';
 import {
   localSettingsDir,
   localSettingsPath,
@@ -87,7 +88,7 @@ describe('B6 project env hijack denylist', () => {
 describe('B7 local settings live in user scope', () => {
   it('writes appended rules under the home directory and never inside the repository', async () => {
     const tree = makeTree();
-    await appendPermissionRule({ home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow' });
+    await appendPermissionRule({ ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow' });
     expect(fs.existsSync(path.join(tree.project, '.momonga'))).toBe(false);
     expect(fs.statSync(localSettingsDir(tree)).mode & 0o777).toBe(0o700);
     expect(fs.statSync(path.join(tree.home, '.momonga', 'projects')).mode & 0o777).toBe(0o700);
@@ -113,13 +114,25 @@ describe('B7 local settings live in user scope', () => {
   });
 });
 
+const steppedFileLockPorts = (): FileLockPorts => {
+  let now = 1_000_000;
+  let sequence = 0;
+  return {
+    clock: { now: () => now },
+    sleep: async (ms) => {
+      now += ms;
+    },
+    randomHex: () => `fake${(sequence += 1).toString(16).padStart(8, '0')}`,
+  };
+};
+
 describe('B8 lock hardening', () => {
   const lockPathOf = (tree: ReturnType<typeof makeTree>): string => `${localSettingsPath(tree)}.lock`;
 
   it('times out naming the lock path and holder pid when a live process holds the lock', async () => {
     const tree = makeTree();
     writeText(lockPathOf(tree), String(process.pid));
-    const failure = appendPermissionRule({ home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow', lockTimeoutMs: 200 });
+    const failure = appendPermissionRule({ ports: steppedFileLockPorts(), home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow', lockTimeoutMs: 200 });
     await expect(failure).rejects.toThrow(/timed out/);
     await expect(failure).rejects.toThrow(lockPathOf(tree));
     await expect(failure).rejects.toThrow(String(process.pid));
@@ -130,7 +143,7 @@ describe('B8 lock hardening', () => {
     const target = writeText(path.join(makeDir(), 'victim'), 'precious');
     fs.mkdirSync(localSettingsDir(tree), { recursive: true, mode: 0o700 });
     fs.symlinkSync(target, lockPathOf(tree));
-    await appendPermissionRule({ home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow' });
+    await appendPermissionRule({ ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow' });
     expect(fs.readFileSync(target, 'utf8')).toBe('precious');
     expect(fs.existsSync(lockPathOf(tree))).toBe(false);
   });
@@ -139,7 +152,7 @@ describe('B8 lock hardening', () => {
     const tree = makeTree();
     fs.mkdirSync(lockPathOf(tree), { recursive: true, mode: 0o700 });
     await expect(
-      appendPermissionRule({ home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow', lockTimeoutMs: 200 }),
+      appendPermissionRule({ ports: steppedFileLockPorts(), home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow', lockTimeoutMs: 200 }),
     ).rejects.toThrow(/not a regular file/);
   });
 });
