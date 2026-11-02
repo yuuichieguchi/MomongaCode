@@ -3,6 +3,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createUdsClient } from '@momonga/foundation';
 import { skipCase, titleOf } from './support/cases.ts';
+import { runCli, startCli } from './support/cli.ts';
+import { prepareProduct } from './support/product.ts';
 import { readDb } from './support/db.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
@@ -237,13 +239,15 @@ const toolMessageCount = (body: unknown): number => {
   return messages.filter((message) => message['role'] === 'tool').length;
 };
 
-const jobRoutes = (home: E2eHome, second: (jobId: string) => FakeScriptedReply, final: string): FakeRoute[] => {
+const jobRoutes = (home: E2eHome, second: (jobId: string) => FakeScriptedReply, final: string): FakeRoute[] => jobRoutesIn(() => jobIdOf(home), second, final);
+
+const jobRoutesIn = (jobIdNow: () => string | undefined, second: (jobId: string) => FakeScriptedReply, final: string): FakeRoute[] => {
   const secondReply = toolCallReply('Bash', {}, 'call_second');
   return [
     {
       match: (body) => {
         if (toolMessageCount(body) !== 1) return false;
-        const jobId = jobIdOf(home);
+        const jobId = jobIdNow();
         if (jobId === undefined) return false;
         Object.assign(secondReply, second(jobId));
         return true;
@@ -374,5 +378,42 @@ describe('agents: background bash', () => {
     } finally {
       await runtime.close();
     }
+  });
+
+  it.skipIf(skipCase('cli-job-list'))(titleOf('cli-job-list'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
+    seatbeltOrSkip(context);
+    const command = 'while [ ! -f release-job ]; do sleep 0.1; done';
+    const opened: { home?: E2eHome } = {};
+    const { home } = await prepareProduct({
+      script: [toolCallReply('Bash', { command, run_in_background: true })],
+      routes: jobRoutesIn(() => (opened.home === undefined ? undefined : jobIdOf(opened.home)), (jobId) => toolCallReply('BashOutput', { bash_id: jobId, block: true, timeout: 60_000 }, 'call_output'), 'all done'),
+    });
+    opened.home = home;
+
+    const running = startCli(home, ['-p', 'Start the build', '--dangerously-skip-permissions']);
+    const listed = await until(
+      async () => {
+        const result = await runCli(home, ['jobs']);
+        return result.stdout.includes('  running  ') ? result : undefined;
+      },
+      { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the running job to be listed by momonga jobs' },
+    );
+    const jobId = jobIdOf(home);
+    if (jobId === undefined) throw new Error('no job was recorded');
+    const runId = readDb<{ run_id: string }>(home.paths.databases.runtime, 'SELECT run_id FROM jobs WHERE id = ?', jobId)[0]?.run_id;
+    expect(listed.stdout).toBe(`${jobId}  running  run ${runId}  ${command}\n`);
+    const status = await runCli(home, ['status', runId ?? '']);
+    expect(status.stdout).toBe(`${runId}  WAITING_TOOL\n`);
+
+    fs.writeFileSync(path.join(home.project, 'release-job'), '');
+    const finished = await running.result;
+    expect(finished.code).toBe(0);
+    expect(finished.stdout).toBe('all done\n');
+    expect(finished.stderr).toContain(`momonga: waiting for job ${jobId}`);
+
+    const after = await runCli(home, ['jobs']);
+    expect(after.stdout).toBe(`${jobId}  exited  exit 0  run ${runId}  ${command}\n`);
+    const asJson = await runCli(home, ['jobs', '--json']);
+    expect(JSON.parse(asJson.stdout)).toMatchObject([{ id: jobId, status: 'exited', exitCode: 0, command }]);
   });
 });

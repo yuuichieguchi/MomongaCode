@@ -1,6 +1,7 @@
 import type { ContentBlock, PermissionOption, SessionUpdate, ToolCall, ToolCallContent, ToolCallStatus, ToolCallUpdate } from '@agentclientprotocol/sdk';
 import { isRecord } from '@momonga/foundation';
 import type { ElicitationRequestView, PublicRunEvent } from '@momonga/protocol';
+import { asChildEvent } from '../run/child-events.ts';
 
 export type ClientFeatures = {
   readonly notices: boolean;
@@ -75,6 +76,14 @@ export const noticeUpdate = (features: ClientFeatures, messageId: string, level:
 const liveNotice = (features: ClientFeatures, runId: string, seq: number, level: 'info' | 'warning' | 'error', text: string): Effect[] => [
   { kind: 'update', update: noticeUpdate(features, `${runId}/notice/${seq}`, level, text) },
 ];
+
+const awaitedText = (awaits: Extract<PublicRunEvent, { type: 'tool.waiting' }>['awaits']): string =>
+  awaits.kind === 'run' ? `waiting for subagent ${awaits.agent}` : `waiting for job ${awaits.jobId}`;
+
+export const mapChildEvent = (event: PublicRunEvent, agent: string, state: MapperState, features: ClientFeatures): Effect[] => {
+  const child = asChildEvent(event, agent);
+  return child === undefined ? [] : mapRunEvent(child, 'live', state, features);
+};
 
 export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperState, features: ClientFeatures): Effect[] => {
   switch (event.type) {
@@ -165,6 +174,8 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
       return phase === 'live' ? liveNotice(features, event.runId, event.seq, event.level, event.message) : [];
     case 'mcp.authorization.required':
       return phase === 'live' ? liveNotice(features, event.runId, event.seq, 'warning', `MCP server ${event.server} needs authorization`) : [];
+    case 'tool.waiting':
+      return [toolUpdate(toolCallIdOf(event.runId, event.callId), { status: 'in_progress', content: outputContent(awaitedText(event.awaits)) })];
     case 'mode.changed':
       return phase === 'live' ? [{ kind: 'update', update: { sessionUpdate: 'current_mode_update', currentModeId: event.mode } }] : [];
     case 'run.started':
@@ -176,7 +187,6 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
     case 'instructions.loaded':
     case 'skill.activated':
     case 'approval.rule.persisted':
-    case 'tool.waiting':
     case 'job.finished':
       return [];
   }

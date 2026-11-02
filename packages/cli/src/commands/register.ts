@@ -9,7 +9,9 @@ import { elicit } from './elicit.ts';
 import { evaluate } from './evaluate.ts';
 import { mcpList, mcpLogin } from './mcp.ts';
 import { memoryDelete, memoryList, memoryShow } from './memory.ts';
+import { listJobs } from './jobs.ts';
 import { listModels } from './models.ts';
+import { showStatus } from './runs.ts';
 import { secretSet } from './secret.ts';
 
 export type CommandGroup = (program: Command, deps: ProgramDeps) => void;
@@ -145,7 +147,24 @@ const registerModels: CommandGroup = (program, deps) => {
     });
 };
 
-export const PRODUCT_COMMAND_GROUPS: readonly CommandGroup[] = [registerElicit, registerMcp, registerMemory, registerCost, registerEvaluate, registerSecret, registerModels];
+const registerRunTree: CommandGroup = (program, deps) => {
+  program
+    .command('status [run-id]')
+    .description('show a run, the subagent runs under it and the approvals waiting in them; the latest run of this directory when no id is given')
+    .option('--json', 'print the runs and approvals as JSON')
+    .action(async (runId: string | undefined, options: { json?: true }) => {
+      deps.complete(await showStatus(deps.ports, pathsOf(deps.ports), runId, options.json === true));
+    });
+  program
+    .command('jobs [session-id]')
+    .description('list the background jobs of a session, including those of its subagents; the newest session of this directory when no id is given')
+    .option('--json', 'print the jobs as JSON')
+    .action(async (sessionId: string | undefined, options: { json?: true }) => {
+      deps.complete(await listJobs(deps.ports, pathsOf(deps.ports), sessionId, options.json === true));
+    });
+};
+
+export const PRODUCT_COMMAND_GROUPS: readonly CommandGroup[] = [registerElicit, registerMcp, registerRunTree, registerMemory, registerCost, registerEvaluate, registerSecret, registerModels];
 
 export const registerProductCommands = (program: Command, deps: ProgramDeps): void => {
   for (const group of PRODUCT_COMMAND_GROUPS) group(program, deps);

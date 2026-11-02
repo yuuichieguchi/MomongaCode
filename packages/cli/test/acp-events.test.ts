@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { UnsupportedToolContent, createMapperState, mapRunEvent, toolCallIdOf, toolContentOf } from '../src/acp/events.ts';
+import { UnsupportedToolContent, createMapperState, mapChildEvent, mapRunEvent, toolCallIdOf, toolContentOf } from '../src/acp/events.ts';
 import type { ClientFeatures, Phase } from '../src/acp/events.ts';
 import { frameOf } from './acp-harness.ts';
 import type { EventPayload } from './acp-harness.ts';
@@ -258,5 +258,50 @@ describe('events that are not part of the conversation', () => {
   ] as const)('maps $type to nothing', (payload) => {
     expect(map(payload as EventPayload, { features: ALL })).toEqual([]);
     expect(map(payload as EventPayload, { phase: 'history', features: ALL })).toEqual([]);
+  });
+});
+
+describe('tool calls that wait', () => {
+  it('shows a call waiting for a subagent or a job as in progress with what it waits for', () => {
+    expect(map({ type: 'tool.waiting', callId: 'call-1', awaits: { kind: 'run', runId: 'child-1', sessionId: 's2', agent: 'reviewer' } })).toEqual([
+      { kind: 'update', update: { sessionUpdate: 'tool_call_update', toolCallId: toolCallIdOf('run-1', 'call-1'), status: 'in_progress', content: [{ type: 'content', content: { type: 'text', text: 'waiting for subagent reviewer' } }] } },
+    ]);
+    expect(map({ type: 'tool.waiting', callId: 'call-2', awaits: { kind: 'job', jobId: 'bash_1' } })).toEqual([
+      { kind: 'update', update: { sessionUpdate: 'tool_call_update', toolCallId: toolCallIdOf('run-1', 'call-2'), status: 'in_progress', content: [{ type: 'content', content: { type: 'text', text: 'waiting for job bash_1' } }] } },
+    ]);
+  });
+});
+
+describe('events of a subagent run', () => {
+  const mapChild = (payload: EventPayload, state = createMapperState()) => mapChildEvent(frameOf('child-1', 1, payload).data, 'reviewer', state, NONE);
+
+  it('announces the calls of the child under its own run and names the agent in the title', () => {
+    const state = createMapperState();
+
+    const effects = mapChild(call, state);
+
+    expect(effects).toMatchObject([{ kind: 'update', update: { sessionUpdate: 'tool_call', title: 'reviewer: Edit a.txt', status: 'pending' } }]);
+    expect(state.calls.size).toBe(1);
+  });
+
+  it('asks for the approval of a call of the child', () => {
+    const state = createMapperState();
+    mapChild(call, state);
+
+    const effects = mapChild({ type: 'tool.permission.requested', approvalId: 'ap-1', callId: 'call-1', subjectDigest: 'd', options: [], expiresAt: 10 } as EventPayload, state);
+
+    expect(effects).toMatchObject([{ kind: 'permission', approvalId: 'ap-1', toolCall: { title: 'reviewer: Edit a.txt', status: 'pending' } }]);
+  });
+
+  it('shows nothing of the text, usage or status of the child', () => {
+    const state = createMapperState();
+    for (const payload of [
+      { type: 'agent.message.delta', step: 1, attempt: 0, itemId: 'm1', text: 'Hi' },
+      { type: 'usage.updated', inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      { type: 'run.status', from: 'RUNNING', to: 'COMPLETED' },
+    ] as const) {
+      expect(mapChild(payload as EventPayload, state)).toEqual([]);
+    }
+    expect(state.contextTokens).toBeUndefined();
   });
 });

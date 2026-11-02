@@ -2,6 +2,7 @@ import type { PermissionMode, PermissionOption, PublicRunEvent, RunStatus, ToolK
 import { startFlow } from '../elicit/flow.ts';
 import { mcpAuthorizationNotice } from '../mcp/messages.ts';
 import type { ElicitationFlow } from '../elicit/flow.ts';
+import { asChildEvent } from '../run/child-events.ts';
 import { isTerminalStatus } from '../run/follow.ts';
 
 export type ToolStatus = 'requested' | 'awaiting_approval' | 'running' | 'completed' | 'failed' | 'unknown';
@@ -26,6 +27,7 @@ export type Transcript = {
   entries: readonly Entry[];
   runId: string | undefined;
   runStatus: RunStatus | undefined;
+  waiting: string | undefined;
   approval: PendingApproval | undefined;
   elicitation: PendingElicitation | undefined;
   usage: Usage;
@@ -38,6 +40,7 @@ export const initialTranscript: Transcript = {
   entries: [],
   runId: undefined,
   runStatus: undefined,
+  waiting: undefined,
   approval: undefined,
   elicitation: undefined,
   usage: EMPTY_USAGE,
@@ -159,8 +162,10 @@ export const reduceEvent = (transcript: Transcript, event: PublicRunEvent): Tran
       return appendEntry(transcript, { kind: 'notice', level: 'info', text: 'context compacted' });
     case 'notice':
       return appendEntry(transcript, { kind: 'notice', level: event.level, text: event.message });
+    case 'tool.waiting':
+      return { ...transcript, waiting: event.awaits.kind === 'run' ? `subagent ${event.awaits.agent}` : `job ${event.awaits.jobId}` };
     case 'run.status': {
-      const base = { ...transcript, runStatus: event.to };
+      const base = { ...transcript, runStatus: event.to, waiting: event.to === 'WAITING_TOOL' ? transcript.waiting : undefined };
       if (!isTerminalStatus(event.to)) return base;
       return {
         ...base,
@@ -174,6 +179,11 @@ export const reduceEvent = (transcript: Transcript, event: PublicRunEvent): Tran
     default:
       return transcript;
   }
+};
+
+export const reduceChildEvent = (transcript: Transcript, event: PublicRunEvent, agent: string): Transcript => {
+  const child = asChildEvent(event, agent);
+  return child === undefined ? transcript : reduceEvent(transcript, child);
 };
 
 export type ModeCycleInput = { current: PermissionMode; bypassAllowed: boolean };

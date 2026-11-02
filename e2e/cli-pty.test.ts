@@ -51,6 +51,44 @@ describe('cli: interactive TUI through a pty', () => {
     expect(await pty.exit()).toEqual({ code: 0, signal: null });
   });
 
+  it(titleOf('cli-pty-child-approval'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    const home = await createE2eHome();
+    const project = fs.realpathSync.native(home.project);
+    const target = path.join(project, 'config.toml');
+    fs.writeFileSync(target, 'greeting = "hello"\n');
+    await startUpstream(home, {
+      home,
+      script: [
+        toolCallReply('Agent', { description: 'edit', prompt: 'Change the greeting', subagent_type: 'editor' }, 'call_agent'),
+        toolCallReply('Read', { file_path: target }, 'call_child_read'),
+        toolCallReply('Edit', { file_path: target, old_string: '"hello"', new_string: '"hello, momonga"' }, 'call_child_edit'),
+        textReply('child edited the greeting'),
+        textReply('Edited the greeting.'),
+      ],
+    });
+    writeSettingsFile(home, baseSettings(home, sandboxChoiceOf({ home }).kind));
+    fs.mkdirSync(home.paths.agents, { recursive: true });
+    fs.writeFileSync(path.join(home.paths.agents, 'editor.md'), '---\nname: editor\ndescription: edits files\ntools: Read, Edit\n---\nYou edit files.\n');
+
+    const pty = await spawnPty(home, []);
+    await pty.waitFor('Do you trust the files in');
+    pty.write('1');
+    await pty.waitFor('mode: default');
+    pty.write('change the greeting');
+    await pty.waitFor('> change the greeting');
+    pty.write(KEYS.enter);
+    await pty.waitFor('waiting for subagent editor');
+    await pty.waitFor('Permission requested: editor: Edit');
+    await pty.waitFor('+ "hello, momonga"');
+    expect(fs.readFileSync(target, 'utf8')).toBe('greeting = "hello"\n');
+    pty.write('1');
+    await pty.waitFor('Edited the greeting.');
+    expect(fs.readFileSync(target, 'utf8')).toBe('greeting = "hello, momonga"\n');
+
+    pty.write(KEYS.ctrlD);
+    expect(await pty.exit()).toEqual({ code: 0, signal: null });
+  });
+
   it(titleOf('cli-pty-session'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const fake = await startUpstream(home, { home, script: [hangReply('working on it')] });

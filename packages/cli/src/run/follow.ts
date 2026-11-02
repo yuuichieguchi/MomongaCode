@@ -84,6 +84,8 @@ export const followEvents = async <Result>(options: FollowEventsOptions<Result>)
   }
 };
 
+export type ChildFrameHandler = (frame: RunEventFrame, agent: string) => void;
+
 export type FollowOptions = {
   client: RuntimeClient;
   clock: CliClock;
@@ -93,28 +95,78 @@ export type FollowOptions = {
   reconnectBoundMs: number;
   restoreConnection(): Promise<void>;
   onEvent(frame: RunEventFrame): void;
+  onChildEvent?: ChildFrameHandler;
   onReconnecting?(attempt: number): void;
   signal?: AbortSignal;
 };
 
-export const followRun = (options: FollowOptions): Promise<RunView> => {
-  const { client, runId } = options;
-  return followEvents<RunView>({
-    clock: options.clock,
-    random: options.random,
-    ...(options.after === undefined ? {} : { after: options.after }),
-    reconnectBoundMs: options.reconnectBoundMs,
-    open: (streamOptions) => client.streamEvents(runId, streamOptions),
-    finished: async () => {
-      const run = await client.getRun(runId);
-      return isTerminalStatus(run.status) ? run : undefined;
-    },
-    boundExceeded: (boundMs, cause) => new ReconnectBoundExceeded(runId, boundMs, cause),
-    restoreConnection: options.restoreConnection,
-    onEvent: options.onEvent,
-    ...(options.onReconnecting === undefined ? {} : { onReconnecting: options.onReconnecting }),
-    ...(options.signal === undefined ? {} : { signal: options.signal }),
-  });
+type Failure = { error: unknown };
+
+export const followRun = async (options: FollowOptions): Promise<RunView> => {
+  const { client, runId, onChildEvent } = options;
+  const stop = new AbortController();
+  const signal = options.signal === undefined ? stop.signal : AbortSignal.any([stop.signal, options.signal]);
+  const followed = new Set<string>();
+  const children: Promise<void>[] = [];
+  let childFailure: Failure | undefined;
+
+  const followChild = (childRunId: string, agent: string, handler: ChildFrameHandler): void => {
+    if (followed.has(childRunId)) return;
+    followed.add(childRunId);
+    children.push(
+      followRun({
+        client,
+        clock: options.clock,
+        random: options.random,
+        runId: childRunId,
+        reconnectBoundMs: options.reconnectBoundMs,
+        restoreConnection: options.restoreConnection,
+        onEvent: (frame) => handler(frame, agent),
+        onChildEvent: handler,
+        ...(options.onReconnecting === undefined ? {} : { onReconnecting: options.onReconnecting }),
+        signal,
+      }).then(
+        () => undefined,
+        (error: unknown) => {
+          childFailure ??= { error };
+          stop.abort();
+        },
+      ),
+    );
+  };
+
+  const onEvent = (frame: RunEventFrame): void => {
+    options.onEvent(frame);
+    const event = frame.data;
+    if (onChildEvent !== undefined && event.type === 'tool.waiting' && event.awaits.kind === 'run') followChild(event.awaits.runId, event.awaits.agent, onChildEvent);
+  };
+
+  let run: RunView;
+  try {
+    run = await followEvents<RunView>({
+      clock: options.clock,
+      random: options.random,
+      ...(options.after === undefined ? {} : { after: options.after }),
+      reconnectBoundMs: options.reconnectBoundMs,
+      open: (streamOptions) => client.streamEvents(runId, streamOptions),
+      finished: async () => {
+        const current = await client.getRun(runId);
+        return isTerminalStatus(current.status) ? current : undefined;
+      },
+      boundExceeded: (boundMs, cause) => new ReconnectBoundExceeded(runId, boundMs, cause),
+      restoreConnection: options.restoreConnection,
+      onEvent,
+      ...(options.onReconnecting === undefined ? {} : { onReconnecting: options.onReconnecting }),
+      signal,
+    });
+  } catch (error) {
+    stop.abort();
+    await Promise.all(children);
+    throw options.signal?.aborted === true || childFailure === undefined ? error : childFailure.error;
+  }
+  await Promise.all(children);
+  if (childFailure !== undefined) throw childFailure.error;
+  return run;
 };
 
 export class SessionStreamLost extends Error {

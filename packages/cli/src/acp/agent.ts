@@ -6,7 +6,7 @@ import { RunApiError } from '../client/runtime-client.ts';
 import type { RunView, SessionView } from '../client/views.ts';
 import { availableCommandsOf } from './commands.ts';
 import { elicitationAnswerOf, elicitationRequestOf } from './elicitation.ts';
-import { createMapperState, mapRunEvent, noticeUpdate } from './events.ts';
+import { createMapperState, mapChildEvent, mapRunEvent, noticeUpdate } from './events.ts';
 import type { ClientFeatures, Effect, MapperState, Phase } from './events.ts';
 import { mcpServersOf } from './mcp-servers.ts';
 import { modeStateOf, selectableModeOf } from './modes.ts';
@@ -18,6 +18,7 @@ import type { OrderedQueue, TaskGroup } from './tasks.ts';
 export type FollowRequest = {
   runId: string;
   onEvent(frame: RunEventFrame): void;
+  onChildEvent(frame: RunEventFrame, agent: string): void;
   signal: AbortSignal;
 };
 
@@ -202,10 +203,15 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
     for (const effect of mapRunEvent(event, phase, session.mapper, clientFeatures())) dispatch(session, effect);
   };
 
+  const handleChildFrame = (session: BridgeSession, frame: RunEventFrame, agent: string): void => {
+    for (const effect of mapChildEvent(frame.data, agent, session.mapper, clientFeatures())) dispatch(session, effect);
+  };
+
   const followInto = (session: BridgeSession, runId: string, replayThrough: number, onCaughtUp?: () => void): Promise<RunView> =>
     deps.follow({
       runId,
       signal: session.lifetime.signal,
+      onChildEvent: (frame, agent) => handleChildFrame(session, frame, agent),
       onEvent: (frame) => {
         handleFrame(session, frame, replayThrough);
         if (frame.data.type !== 'mode.changed' && frame.data.seq >= replayThrough) onCaughtUp?.();

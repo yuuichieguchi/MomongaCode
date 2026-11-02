@@ -143,6 +143,38 @@ describe('acp: momonga acp', () => {
     expect(await acp.finish()).toEqual({ code: 0, signal: null });
   });
 
+  it(titleOf('acp-child-permission'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    const { home, project, target } = await prepare((file) => [
+      toolCallReply('Agent', { description: 'edit', prompt: 'Change the greeting', subagent_type: 'editor' }, 'call_agent'),
+      toolCallReply('Read', { file_path: file }, 'call_child_read'),
+      toolCallReply('Edit', { file_path: file, old_string: '"hello"', new_string: '"hello, momonga"' }, 'call_child_edit'),
+      textReply('child edited the greeting'),
+      textReply(FINAL_TEXT),
+    ]);
+    fs.mkdirSync(home.paths.agents, { recursive: true });
+    fs.writeFileSync(path.join(home.paths.agents, 'editor.md'), '---\nname: editor\ndescription: edits files\ntools: Read, Edit\n---\nYou edit files.\n');
+    const acp = startAcpClient(home, {
+      permission: ({ options }) => {
+        const option = options.find((candidate) => candidate.kind === 'allow_once');
+        if (option === undefined) throw new Error(`no allow_once option among ${JSON.stringify(options)}`);
+        return { outcome: { outcome: 'selected', optionId: option.optionId } };
+      },
+    });
+    await acp.initialize();
+    const { sessionId } = await acp.agent.request('session/new', { cwd: project, mcpServers: [] });
+
+    const prompted = await acp.agent.request('session/prompt', textPrompt(sessionId, 'Change the greeting through the editor'));
+
+    expect(prompted.stopReason).toBe('end_turn');
+    expect(fs.readFileSync(target, 'utf8')).toBe(EDITED);
+    expect(acp.permissionRequests).toHaveLength(1);
+    expect(acp.permissionRequests[0]?.toolCall).toMatchObject({ kind: 'edit', title: `editor: Edit ${target}`, rawInput: { file_path: target } });
+    const waiting = updatesOf(acp.updates, 'tool_call_update').filter((update) => JSON.stringify(update).includes('waiting for subagent editor'));
+    expect(waiting).toHaveLength(1);
+    expect(messageTexts(acp.updates, 'agent_message_chunk').join('')).toBe(FINAL_TEXT);
+    expect(await acp.finish()).toEqual({ code: 0, signal: null });
+  });
+
   it(titleOf('acp-cancel'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const { home, project, fake } = await prepare(() => [hangReply('thinking about it')]);
     const acp = startAcpClient(home);

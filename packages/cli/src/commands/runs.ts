@@ -2,10 +2,11 @@ import type { MomongaPaths } from '@momonga/foundation';
 import type { PermissionOption } from '@momonga/protocol';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
+import type { RunView } from '../client/views.ts';
 import { connectRuntime } from '../run/open-session.ts';
 import { watchRun } from '../run/headless.ts';
 import type { OutputFormat } from '../run/headless.ts';
-import { activeRunIdOf, latestRunIdOf } from './targets.ts';
+import { activeRunIdOf, latestRunIdOf, runTreeOf } from './targets.ts';
 
 export class UnknownOption extends Error {
   constructor(wanted: string, offered: readonly PermissionOption[]) {
@@ -40,8 +41,11 @@ export const cancelRun = async (ports: CliPorts, paths: MomongaPaths, runId: str
   }
 };
 
-const pendingLines = (approvalId: string, title: string, options: readonly PermissionOption[]): string =>
-  [`${approvalId}  ${title}`, ...options.map((option) => `    ${option.kind}${option.name === option.kind ? '' : `  (${option.name})`}`)].join('\n');
+const pendingLines = (approvalId: string, title: string, options: readonly PermissionOption[], agent?: string): string =>
+  [
+    `${approvalId}  ${title}${agent === undefined ? '' : `  (subagent ${agent})`}`,
+    ...options.map((option) => `    ${option.kind}${option.name === option.kind ? '' : `  (${option.name})`}`),
+  ].join('\n');
 
 export const approve = async (ports: CliPorts, paths: MomongaPaths, approvalId: string | undefined, option: string | undefined): Promise<number> => {
   await ensureDaemon(ports, paths);
@@ -49,9 +53,18 @@ export const approve = async (ports: CliPorts, paths: MomongaPaths, approvalId: 
   try {
     if (approvalId === undefined) {
       const runId = await activeRunIdOf(client, ports.cwd);
-      const pending = (await client.approvals(runId)).filter((approval) => approval.status === 'pending');
+      const tree = await runTreeOf(client, runId);
+      const pending = (
+        await Promise.all(
+          tree.map(async ({ run }) =>
+            (await client.approvals(run.id)).filter((approval) => approval.status === 'pending').map((approval) => ({ approval, agent: run.agent })),
+          ),
+        )
+      ).flat();
       ports.stdout.write(
-        pending.length === 0 ? `run ${runId} has no pending approvals\n` : `${pending.map((approval) => pendingLines(approval.id, approval.toolCall.title, approval.options)).join('\n')}\n`,
+        pending.length === 0
+          ? `run ${runId} has no pending approvals\n`
+          : `${pending.map(({ approval, agent }) => pendingLines(approval.id, approval.toolCall.title, approval.options, agent)).join('\n')}\n`,
       );
       return 0;
     }
@@ -64,6 +77,32 @@ export const approve = async (ports: CliPorts, paths: MomongaPaths, approvalId: 
     if (offered === undefined) throw new UnknownOption(option, approval.options);
     const resolved = await client.resolveApproval(approval.id, offered.optionId);
     ports.stdout.write(`approval ${resolved.approval.id} ${resolved.approval.status}: ${offered.kind}; run ${resolved.run.id} is ${resolved.run.status}\n`);
+    return 0;
+  } finally {
+    await client.close();
+  }
+};
+
+const runLine = ({ run, depth }: { run: RunView; depth: number }): string =>
+  `${'  '.repeat(depth)}${run.id}  ${run.status}${run.agent === undefined ? '' : `  (subagent ${run.agent})`}`;
+
+export const showStatus = async (ports: CliPorts, paths: MomongaPaths, runId: string | undefined, json: boolean): Promise<number> => {
+  await ensureDaemon(ports, paths);
+  const client = connectRuntime(paths);
+  try {
+    const tree = await runTreeOf(client, runId ?? (await latestRunIdOf(client, ports.cwd)));
+    const pending = await Promise.all(
+      tree.map(async (node) => ({ ...node, approvals: (await client.approvals(node.run.id)).filter((approval) => approval.status === 'pending') })),
+    );
+    if (json) {
+      ports.stdout.write(`${JSON.stringify(pending.map(({ run, approvals }) => ({ run, approvals })))}\n`);
+      return 0;
+    }
+    ports.stdout.write(
+      `${pending
+        .flatMap((node) => [runLine(node), ...node.approvals.map((approval) => `${'  '.repeat(node.depth + 1)}approval ${approval.id}  ${approval.toolCall.title}`)])
+        .join('\n')}\n`,
+    );
     return 0;
   } finally {
     await client.close();

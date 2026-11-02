@@ -14,6 +14,7 @@ import type { SessionOptions } from '../run/open-session.ts';
 
 export type FollowHandlers = {
   onEvent(frame: RunEventFrame): void;
+  onChildEvent(frame: RunEventFrame, agent: string): void;
   onReconnecting(attempt: number): void;
 };
 
@@ -102,6 +103,7 @@ export const createTuiBackend = (
           await ensureDaemon(ports, paths);
         },
         onEvent: handlers.onEvent,
+        onChildEvent: handlers.onChildEvent,
         onReconnecting: handlers.onReconnecting,
         signal: closing.signal,
       }),

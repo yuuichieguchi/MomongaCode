@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PublicRunEvent } from '@momonga/protocol';
-import { initialTranscript, nextMode, reduceEvent, settledCount } from '../src/tui/transcript.ts';
+import { initialTranscript, nextMode, reduceChildEvent, reduceEvent, settledCount } from '../src/tui/transcript.ts';
 import type { Transcript } from '../src/tui/transcript.ts';
 
 const envelope = { id: 1, runId: 'r', sessionId: 's', seq: 1, step: 1, createdAt: 1 } as const;
@@ -99,5 +99,32 @@ describe('nextMode', () => {
 
   it('leaves the unavailable auto mode for the first mode', () => {
     expect(nextMode({ current: 'auto', bypassAllowed: false })).toBe('default');
+  });
+});
+
+describe('waiting and subagent runs', () => {
+  it('names what the run waits for until the run leaves the waiting status', () => {
+    const waiting = apply([
+      { type: 'run.status', from: 'RUNNING', to: 'WAITING_TOOL' },
+      { type: 'tool.waiting', callId: 'c1', awaits: { kind: 'run', runId: 'child', sessionId: 's2', agent: 'reviewer' } },
+    ]);
+    expect(waiting).toMatchObject({ runStatus: 'WAITING_TOOL', waiting: 'subagent reviewer' });
+    const job = apply([{ type: 'tool.waiting', callId: 'c2', awaits: { kind: 'job', jobId: 'bash_1' } }]);
+    expect(job.waiting).toBe('job bash_1');
+    const woken = reduceEvent(waiting, { ...envelope, type: 'run.status', from: 'WAITING_TOOL', to: 'QUEUED' } as PublicRunEvent);
+    expect(woken.waiting).toBeUndefined();
+  });
+
+  it('shows the call and the approval of a child run without touching the status or the text of the run', () => {
+    const state = [
+      { ...envelope, runId: 'child', type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'Edit', kind: 'edit', title: 'Edit /a', rawInput: {} },
+      { ...envelope, runId: 'child', type: 'tool.permission.requested', approvalId: 'ap-1', callId: 'c1', subjectDigest: 'd', options: [], expiresAt: 10 },
+      { ...envelope, runId: 'child', type: 'agent.message.delta', attempt: 0, itemId: 'm', text: 'child text' },
+      { ...envelope, runId: 'child', type: 'run.status', from: 'RUNNING', to: 'COMPLETED' },
+    ].reduce((current, event) => reduceChildEvent(current, event as PublicRunEvent, 'reviewer'), initialTranscript);
+
+    expect(state.entries).toMatchObject([{ kind: 'tool', callId: 'child/c1', title: 'reviewer: Edit /a', status: 'awaiting_approval' }]);
+    expect(state.approval).toMatchObject({ approvalId: 'ap-1', callId: 'child/c1' });
+    expect(state.runStatus).toBeUndefined();
   });
 });

@@ -22,7 +22,7 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
     environment: () => environmentSnapshot(ports),
     canonicalCwd: canonicalPath,
     daemonReady: () => (daemon ??= ensureDaemon(ports, paths).then(() => undefined)),
-    follow: ({ runId, onEvent, signal }) =>
+    follow: ({ runId, onEvent, onChildEvent, signal }) =>
       followRun({
         client: runtime,
         clock: ports.clock,
@@ -33,6 +33,7 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
           await ensureDaemon(ports, paths);
         },
         onEvent,
+        onChildEvent,
         onReconnecting: (attempt) => ports.stderr.write(`momonga: lost the event stream, reconnecting (attempt ${attempt + 1})\n`),
         signal,
       }),

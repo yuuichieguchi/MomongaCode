@@ -1,5 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import type { PermissionMode } from '@momonga/protocol';
+import type { PermissionMode, PublicRunEvent } from '@momonga/protocol';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView } from '../client/views.ts';
 import { daemonReadyBoundMs, ensureDaemon } from '../daemon/ensure-daemon.ts';
@@ -7,6 +7,7 @@ import type { CliPorts } from '../ports.ts';
 import { describeElicitation } from '../elicit/describe.ts';
 import { readImageAttachment } from '../images.ts';
 import { mcpAuthorizationNotice } from '../mcp/messages.ts';
+import { asChildEvent } from './child-events.ts';
 import { followRun } from './follow.ts';
 import { openSession } from './open-session.ts';
 import { resolveSkillInvocation } from './skill-invocation.ts';
@@ -62,7 +63,10 @@ export const describeEnd = (run: RunView): string => {
   return `momonga: run ${run.id} ${run.status}${reason === undefined ? '' : ` (${reason})`}`;
 };
 
-export type FrameSink = { handle(frame: RunEventFrame): void; finalText(): string };
+export type FrameSink = { handle(frame: RunEventFrame): void; handleChild(frame: RunEventFrame, agent: string): void; finalText(): string };
+
+const awaitedOf = (awaits: Extract<PublicRunEvent, { type: 'tool.waiting' }>['awaits']): string =>
+  awaits.kind === 'run' ? `subagent ${awaits.agent} (run ${awaits.runId})` : `job ${awaits.jobId}`;
 
 export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, format: OutputFormat, verbose: boolean): FrameSink => {
   const items = new Map<string, string>();
@@ -74,19 +78,9 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
     ports.stderr.write(`${text}\n`);
   };
 
-  const handle = (frame: RunEventFrame): void => {
-    const event = frame.data;
-    if (format === 'stream-json') ports.stdout.write(`${JSON.stringify(event)}\n`);
+  const present = (event: PublicRunEvent, agent: string | undefined): void => {
+    const by = agent === undefined ? '' : ` (subagent ${agent})`;
     switch (event.type) {
-      case 'agent.message.delta': {
-        items.set(event.itemId, `${items.get(event.itemId) ?? ''}${event.text}`);
-        if (format !== 'text') break;
-        if (lastItem !== undefined && lastItem !== event.itemId && needsNewline) ports.stdout.write('\n');
-        lastItem = event.itemId;
-        ports.stdout.write(event.text);
-        needsNewline = !event.text.endsWith('\n');
-        break;
-      }
       case 'tool.call':
         titles.set(event.callId, event.title);
         if (verbose) note(`momonga: ${event.name} ${event.title}`);
@@ -94,16 +88,19 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
       case 'tool.completed':
         if (verbose || event.status === 'failed') note(`momonga: tool ${titles.get(event.callId) ?? event.callId} ${event.status}`);
         break;
+      case 'tool.waiting':
+        note(`momonga: waiting for ${awaitedOf(event.awaits)}`);
+        break;
       case 'tool.permission.requested':
         note(
           [
-            `momonga: waiting for approval ${event.approvalId}: ${titles.get(event.callId) ?? event.callId}`,
+            `momonga: waiting for approval ${event.approvalId}${by}: ${titles.get(event.callId) ?? event.callId}`,
             ...event.options.map((option) => `  momonga approve ${event.approvalId} ${option.kind}`),
           ].join('\n'),
         );
         break;
       case 'tool.elicitation.requested':
-        note(`momonga: waiting for input ${describeElicitation(event.inputId, event.server, titles.get(event.callId) ?? event.callId, event.requests)}`);
+        note(`momonga: waiting for input${by} ${describeElicitation(event.inputId, event.server, titles.get(event.callId) ?? event.callId, event.requests)}`);
         break;
       case 'mcp.authorization.required':
         note(`momonga: ${mcpAuthorizationNotice(event.server)}`);
@@ -116,8 +113,29 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
     }
   };
 
+  const handle = (frame: RunEventFrame): void => {
+    const event = frame.data;
+    if (format === 'stream-json') ports.stdout.write(`${JSON.stringify(event)}\n`);
+    if (event.type !== 'agent.message.delta') {
+      present(event, undefined);
+      return;
+    }
+    items.set(event.itemId, `${items.get(event.itemId) ?? ''}${event.text}`);
+    if (format !== 'text') return;
+    if (lastItem !== undefined && lastItem !== event.itemId && needsNewline) ports.stdout.write('\n');
+    lastItem = event.itemId;
+    ports.stdout.write(event.text);
+    needsNewline = !event.text.endsWith('\n');
+  };
+
+  const handleChild = (frame: RunEventFrame, agent: string): void => {
+    if (format === 'stream-json') ports.stdout.write(`${JSON.stringify(frame.data)}\n`);
+    const event = asChildEvent(frame.data, agent);
+    if (event !== undefined) present(event, agent);
+  };
+
   const finalText = (): string => [...items.values()].at(-1) ?? '';
-  return { handle, finalText };
+  return { handle, handleChild, finalText };
 };
 
 export type WatchOptions = {
@@ -149,6 +167,7 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
       await ensureDaemon(ports, paths);
     },
     onEvent: sink.handle,
+    onChildEvent: sink.handleChild,
     onReconnecting: (attempt) => ports.stderr.write(`momonga: lost the event stream, reconnecting (attempt ${attempt + 1})\n`),
   });
   options.interrupt.removeEventListener('abort', cancelOnInterrupt);

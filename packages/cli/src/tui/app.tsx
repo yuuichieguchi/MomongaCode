@@ -18,7 +18,7 @@ import { applyKey, emptyEditor } from './editor.ts';
 import type { EditorState } from './editor.ts';
 import { createSlashRegistry, parseSlash, slashCompletion } from './slash.ts';
 import type { SlashCommand, SlashRegistry } from './slash.ts';
-import { appendEntry, initialTranscript, nextMode, reduceEvent, settledCount, withElicitationFlow } from './transcript.ts';
+import { appendEntry, initialTranscript, nextMode, reduceChildEvent, reduceEvent, settledCount, withElicitationFlow } from './transcript.ts';
 import type { Entry, PendingApproval, PendingElicitation, Transcript } from './transcript.ts';
 
 export type TuiOutcome = { error?: Error };
@@ -42,6 +42,7 @@ type Phase = { kind: 'starting' } | { kind: 'trust'; path: string } | { kind: 'r
 
 type TranscriptAction =
   | { kind: 'event'; frame: RunEventFrame }
+  | { kind: 'child-event'; frame: RunEventFrame; agent: string }
   | { kind: 'append'; entry: Entry }
   | { kind: 'elicitation-flow'; flow: ElicitationFlow; submitted: boolean }
   | { kind: 'run-started'; runId: string }
@@ -51,6 +52,8 @@ const transcriptReducer = (state: Transcript, action: TranscriptAction): Transcr
   switch (action.kind) {
     case 'event':
       return reduceEvent(state, action.frame.data);
+    case 'child-event':
+      return reduceChildEvent(state, action.frame.data, action.agent);
     case 'append':
       return appendEntry(state, action.entry);
     case 'elicitation-flow':
@@ -385,6 +388,10 @@ export function App(props: AppProps) {
           setReconnecting(false);
           dispatch({ kind: 'event', frame });
         },
+        onChildEvent: (frame, agent) => {
+          setReconnecting(false);
+          dispatch({ kind: 'child-event', frame, agent });
+        },
         onReconnecting: () => setReconnecting(true),
       });
       setReconnecting(false);
@@ -698,7 +705,7 @@ export function App(props: AppProps) {
       ) : null}
       {phase.kind === 'ready' ? (
         <Text dimColor>
-          {`mode: ${mode} (shift+tab) · tokens: ${formatTokens(transcript.usage.totalTokens)}${contextPercent === undefined ? '' : ` · context: ${contextPercent}%`}${imageInput ? ' · image input: paste a file path' : ''}${busy ? ' · working (esc to cancel)' : ''}${reconnecting ? ' · reconnecting…' : ''}`}
+          {`mode: ${mode} (shift+tab) · tokens: ${formatTokens(transcript.usage.totalTokens)}${transcript.waiting === undefined ? '' : ` · waiting for ${transcript.waiting}`}${contextPercent === undefined ? '' : ` · context: ${contextPercent}%`}${imageInput ? ' · image input: paste a file path' : ''}${busy ? ' · working (esc to cancel)' : ''}${reconnecting ? ' · reconnecting…' : ''}`}
         </Text>
       ) : null}
     </Box>

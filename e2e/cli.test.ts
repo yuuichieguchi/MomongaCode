@@ -117,6 +117,50 @@ describe('cli: momonga -p', () => {
     expect(fs.readFileSync(target, 'utf8')).toBe(EDITED);
   });
 
+  it(titleOf('cli-child-approval'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    const { home, target } = await prepare((file) => [
+      toolCallReply('Agent', { description: 'edit', prompt: 'Change the greeting', subagent_type: 'editor' }, 'call_agent'),
+      toolCallReply('Read', { file_path: file }, 'call_child_read'),
+      toolCallReply('Edit', { file_path: file, old_string: '"hello"', new_string: '"hello, momonga"' }, 'call_child_edit'),
+      textReply('child edited the greeting'),
+      textReply(FINAL_TEXT),
+    ]);
+    fs.mkdirSync(home.paths.agents, { recursive: true });
+    fs.writeFileSync(path.join(home.paths.agents, 'editor.md'), '---\nname: editor\ndescription: edits files\ntools: Read, Edit\n---\nYou edit files.\n');
+
+    const running = startCli(home, ['-p', 'Update the greeting']);
+    const listed = await until(
+      async () => {
+        const result = await runCli(home, ['approve']);
+        return result.stdout.includes('(subagent editor)') ? result : undefined;
+      },
+      { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the approval of the child run to be listed by momonga approve' },
+    );
+    const approvalId = listed.stdout.split('\n')[0]?.split(/\s+/)[0] ?? '';
+    expect(approvalId).not.toBe('');
+    expect(listed.stdout).toContain('allow_once');
+
+    const status = await runCli(home, ['status']);
+    expect(status.code).toBe(0);
+    const lines = status.stdout.split('\n');
+    expect(lines[0]).toMatch(/^\S+  WAITING_TOOL$/);
+    expect(lines[1]).toMatch(/^  \S+  WAITING_HUMAN  \(subagent editor\)$/);
+    expect(lines[2]).toMatch(new RegExp(`^    approval ${approvalId}  `));
+    const asJson = await runCli(home, ['status', '--json']);
+    expect(JSON.parse(asJson.stdout)).toMatchObject([{ run: { status: 'WAITING_TOOL' } }, { run: { status: 'WAITING_HUMAN', agent: 'editor' }, approvals: [{ id: approvalId }] }]);
+
+    const resolved = await runCli(home, ['approve', approvalId, 'allow_once']);
+    expect(resolved.code).toBe(0);
+
+    const finished = await running.result;
+    expect(finished.code).toBe(0);
+    expect(finished.stdout).toBe(`${FINAL_TEXT}\n`);
+    expect(finished.stderr).toContain('momonga: waiting for subagent editor');
+    expect(finished.stderr).toContain(`momonga: waiting for approval ${approvalId} (subagent editor): editor: Edit`);
+    expect(finished.stderr).toContain(`momonga approve ${approvalId} allow_once`);
+    expect(fs.readFileSync(target, 'utf8')).toBe(EDITED);
+  });
+
   it(titleOf('cli-cancel'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const { home, fake } = await prepare(() => [hangReply('thinking about it')]);
 

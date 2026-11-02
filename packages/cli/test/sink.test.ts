@@ -100,3 +100,37 @@ describe('results', () => {
     expect(describeEnd(runView({ status: 'CANCELLED' }))).toBe('momonga: run run-1 CANCELLED');
   });
 });
+
+describe('runs a tool call waits on', () => {
+  const childFrame = (event: Record<string, unknown>): RunEventFrame => {
+    const made = frame(event);
+    return { ...made, data: { ...made.data, runId: 'child-1' } as PublicRunEvent };
+  };
+
+  it('says what a call waits for', () => {
+    const { sink, err } = sinkFor('text');
+    sink.handle(frame({ type: 'tool.waiting', callId: 'c1', awaits: { kind: 'run', runId: 'child-1', sessionId: 's2', agent: 'reviewer' } }));
+    sink.handle(frame({ type: 'tool.waiting', callId: 'c2', awaits: { kind: 'job', jobId: 'bash_1' } }));
+    expect(err).toEqual(['momonga: waiting for subagent reviewer (run child-1)\n', 'momonga: waiting for job bash_1\n']);
+  });
+
+  it('reports an approval raised inside a child run with the agent and the commands that resolve it, and keeps its text out of the result', () => {
+    const { sink, out, err } = sinkFor('text');
+    sink.handleChild(childFrame({ type: 'tool.call', callId: 'c1', providerCallId: 'p', name: 'Edit', kind: 'edit', title: 'Edit /a', rawInput: {} }), 'reviewer');
+    sink.handleChild(
+      childFrame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], expiresAt: 10 }),
+      'reviewer',
+    );
+    sink.handleChild(childFrame({ type: 'agent.message.delta', attempt: 0, itemId: 'm', text: 'child text' }), 'reviewer');
+    expect(err.join('')).toBe('momonga: waiting for approval ap1 (subagent reviewer): reviewer: Edit /a\n  momonga approve ap1 allow_once\n');
+    expect(out).toEqual([]);
+    expect(sink.finalText()).toBe('');
+  });
+
+  it('writes the events of a child run to the stream-json output as they are', () => {
+    const { sink, out } = sinkFor('stream-json');
+    const event = childFrame({ type: 'agent.message.delta', attempt: 0, itemId: 'm', text: 'child text' });
+    sink.handleChild(event, 'reviewer');
+    expect(out).toEqual([`${JSON.stringify(event.data)}\n`]);
+  });
+});
