@@ -3,8 +3,9 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { hostKernelLock } from '@momonga/foundation';
 import type { ReapTiming } from '@momonga/foundation';
-import { startLockHolder } from '@momonga/testkit';
+import { startLockHolder, withTempDir } from '@momonga/testkit';
 import { clearCallLocks } from '@momonga/tools';
+import { createCallLocks } from '../src/call-lock.ts';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
 import { deferred, keyFor } from './helpers.ts';
@@ -159,6 +160,50 @@ describe('the per-call lock of the executor', () => {
 
     expect(harness.kernelLock.isHeldBy(lockPathOf(harness))).toBeUndefined();
     expect(fs.readdirSync(harness.callLockDir)).toEqual([]);
+  });
+
+  it('excludes a second acquisition inside one process through the host kernel mechanism, until the first lock is released', async (context) => {
+    const dir = withTempDir(context);
+    const polling = hostPollingTiming();
+    const locks = createCallLocks({ dir, mechanism: hostKernelLock(), timing: polling.timing, waitMs: 60_000 });
+    const none = new AbortController().signal;
+    const first = await locks.acquire(KEY, none);
+    if (first === 'aborted') throw new Error('the first acquisition was aborted');
+    let secondAcquired = false;
+    const second = locks.acquire(KEY, none).then((lock) => {
+      secondAcquired = true;
+      return lock;
+    });
+
+    await polling.polled;
+    expect(secondAcquired).toBe(false);
+    first.release();
+    const held = await second;
+    if (held === 'aborted') throw new Error('the second acquisition was aborted');
+    held.release();
+
+    expect(fs.readdirSync(dir)).toEqual([]);
+  });
+
+  it('stops waiting for the lock when the call is aborted', async () => {
+    const waiting = gatedFirstPoll();
+    const harness = makeHarness({ executor: { reap: { timing: waiting.timing } } });
+    harness.idempotency.seed(KEY, 'PENDING', { tool: 'Edit' });
+    harness.kernelLock.holdExternally(lockPathOf(harness), HOLDER_PID);
+    const trace = makeTrace();
+    const controller = new AbortController();
+
+    const batch = harness.executor.runBatch(
+      harness.input(await toolSetOf(reconcilingTool('Edit', 'write', trace)), [call('c1', 'Edit', {}, 'allow_once')], { signal: controller.signal }),
+    );
+    await Promise.race([waiting.polled, trace.firstEvent]);
+    controller.abort();
+    waiting.resume();
+    const [outcome] = await batch;
+
+    expect(outcome).toMatchObject({ kind: 'result', result: { status: 'failed' } });
+    expect(trace.events).toEqual([]);
+    expect(harness.idempotency.stateOf(KEY)).toBe('PENDING');
   });
 
   it('clears every lock file a crashed process left behind', async () => {

@@ -21,19 +21,31 @@
 (*   - session ordering of runs, snapshots, context inheritance, hooks,    *)
 (*     compaction, background jobs, graceful shutdown are not modelled     *)
 (*   - the result of reconcile is an oracle; see Reconcile                 *)
-(*   - an external effect is one atomic action (Effect)                    *)
+(*   - the check of the lease fence (Authorise) and the start of the       *)
+(*     external effect (DoEffect) are two separate steps; the effect of    *)
+(*     an exec call is a child process (child) that outlives its worker    *)
 (*                                                                         *)
 (* Configurations (scripts/tlc.sh <name>, specs/tla/<name>.cfg)            *)
-(*   RunRecovery           the code with both repairs of F1, every         *)
+(*   RunRecovery           the code with all three repairs of F1, every    *)
 (*                         invariant: holds                                *)
 (*   RunRecovery.children  parent and child run (spawn), every invariant   *)
-(*   RunRecovery.unfixed   neither repair (the code before the fix),       *)
+(*   RunRecovery.unfixed   no repair (the code before the fix),            *)
 (*                         AtMostOnceEffect: refuted                       *)
 (*   RunRecovery.fenceOnly only the lease fence at the effect start:       *)
-(*                         AtMostOnceEffect holds                          *)
+(*                         AtMostOnceEffect refuted (a takeover commits    *)
+(*                         between Authorise and DoEffect)                 *)
+(*   RunRecovery.unlocked  fence and reap, no per-call lock: the same      *)
+(*                         window, AtMostOnceEffect refuted; shows that    *)
+(*                         the reap does not close it                      *)
+(*   RunRecovery.lockOnly  per-call lock and fence, no reap:               *)
+(*                         AtMostOnceEffect holds on the split model       *)
+(*   RunRecovery.noReap    the same switches as lockOnly, checking         *)
+(*                         ReconcileSeesStoppedEffect: refuted (an orphan  *)
+(*                         child survives until the reconcile), which      *)
+(*                         shows that the reap is necessary                *)
 (*   RunRecovery.reapOnly  only the reap before reconcile:                 *)
-(*                         AtMostOnceEffect refuted; with fenceOnly this   *)
-(*                         shows the fence is necessary                    *)
+(*                         AtMostOnceEffect refuted; shows that the lock   *)
+(*                         and the fence are necessary                     *)
 (*   RunRecovery.liveNone  Settles under weak fairness, ParentCalls =      *)
 (*                         {"none"}                                        *)
 (*   RunRecovery.liveSpawn Settles under weak fairness, ParentCalls =      *)
@@ -50,23 +62,61 @@
 (* seen it (lost[w] is only set by the next heartbeat) could start the     *)
 (* external effect of a call, because fencing protected the runs row and   *)
 (* the events table but not the idempotency ledger and not the effect.     *)
-(* The repair has two parts. (1) Every ledger write that authorises or     *)
-(* records an effect (begin, the adoption of an earlier record before      *)
-(* reconcile, the authorisation at the effect start, complete) runs in     *)
-(* one SQLite transaction with a check of the lease token of the run; a    *)
-(* stale worker gets lease lost and starts nothing (LedgerFenced).         *)
-(* (2) The new owner kills the process of the older attempt before it      *)
-(* reconciles (NoReapBeforeReconcile = FALSE).                             *)
+(* The repair has three parts.                                             *)
+(* (1) Every ledger write that authorises or records an effect (begin, the *)
+(* adoption of an earlier record before reconcile, the authorisation at    *)
+(* the effect start, complete) runs in one SQLite transaction with a check *)
+(* of the lease token of the run; a stale worker gets lease lost and       *)
+(* starts nothing (LedgerFenced).                                          *)
+(* (2) A per-call kernel lock (callLockDir/<key>.lock, the KernelLock      *)
+(* mechanism of the foundation package) is taken before the authorisation  *)
+(* and held until the effect has ended and the call is recorded            *)
+(* (wlock, LockCall). The new owner acquires it before it reconciles or    *)
+(* abandons a call. The check of the fence and the start of the effect     *)
+(* are two steps (Authorise, DoEffect), so a takeover can commit between  *)
+(* them; but the new owner cannot reconcile until the lock is free, and    *)
+(* the lock is free only when the older worker has recorded or dropped the *)
+(* call (Complete, ToIdle) or its process is gone (Crash: the kernel       *)
+(* releases the lock when the process dies). A worker that acquires the    *)
+(* lock after the takeover fails Authorise and starts nothing. Whether the *)
+(* older worker is a second process or a second worker of the same         *)
+(* process makes no difference: flock on darwin is per open file           *)
+(* description and a second bind of the abstract socket or named pipe on   *)
+(* linux and windows fails with EADDRINUSE inside one process, so the      *)
+(* lock excludes both. The lock covers Write, Edit and Bash alike: it is   *)
+(* taken for every call whose tool is not read only.                      *)
+(* A call whose tool outlives its abort keeps the lock until the tool      *)
+(* returns (the scope releases it when the tool's promise settles).        *)
+(* The wait for a held lock is bounded by the reconcile cap: the older     *)
+(* worker learns of its lost lease at its next heartbeat (a third of the  *)
+(* lease, 10 s of the default 30 s) and aborts its tool, so the cap, 30 s  *)
+(* by default, exceeds the heartbeat period plus the abort settle limit of *)
+(* 2 s (executor.ts ABORT_SETTLE_LIMIT_MS). When                           *)
+(* the wait expires the call fails with a typed error (LockWaitExpired) and *)
+(* the run fails with its code.                                            *)
+(* (3) After it holds the lock the new owner stops the process of the      *)
+(* older attempt (the orphan child, which the kernel lock does not cover   *)
+(* because a child does not inherit the lock) before it reconciles         *)
+(* (NoReapBeforeReconcile = FALSE, Reap). The lock must come first: a      *)
+(* child spawned after the reap but before the lock would be missed.       *)
+(* A reap that fails, because the probe fails or because the process       *)
+(* survives its kill, is a typed failure (Reap, then Leave "FAILED"): the  *)
+(* reconcile does not run as if the older attempt were gone, the call      *)
+(* record stays PENDING and the run fails with the code of the error; it   *)
+(* is not retried. When cancel recovery cannot stop the older attempt it   *)
+(* records the call as unknown and reports the error (CancelRec).          *)
 (*                                                                         *)
-(* Residual window, not modelled: the lease check and the start of the     *)
-(* external effect are one atomic action in Effect. In the code they are   *)
-(* two steps: the check commits in the ledger transaction at the start of  *)
-(* execute in executor.ts and the effect starts when the tool spawns its   *)
-(* process, after the synchronous marker creation and the first turn of    *)
-(* the tool. A takeover that commits between the two cannot be seen by     *)
-(* the check, and its reap finds no marker holder yet. That worker's       *)
-(* complete and attachProcess are fenced, so the orphan effect is never    *)
-(* recorded as the result of the call; the new owner reconciles it.        *)
+(* F4 (modelled as the code behaves): a worker that yields (waiting for a  *)
+(* human, for a tool, or requeueing) while the run is CANCELLING does not  *)
+(* cancel it. terminals.ts yieldTo meets the conflict and calls            *)
+(* yieldLease: the run stays CANCELLING, loses its owner and its lease,    *)
+(* gets the attempt refunded and is claimed again by the next claim, which *)
+(* runs cancel recovery (LeaveYield). A worker that finishes (Leave)       *)
+(* moves a CANCELLING run directly to CANCELLED. WhenCancelling mirrors    *)
+(* both and is checked against the real terminals by                       *)
+(* packages/runtime/test/worker/terminals-cancelling-spec.test.ts. Recv    *)
+(* may also leave through Leave "FAILED", which stands for the claim       *)
+(* runner's error path ending a cancelled run with terminals.cancel.       *)
 (***************************************************************************)
 EXTENDS Naturals, Sequences, FiniteSets, TLC
 
@@ -77,6 +127,7 @@ CONSTANTS
     MaxAttempts,
     MaxTotalAttempts,
     UnfencedEffect,
+    NoCallLock,
     NoReapBeforeReconcile,
     StatusEdgesRecorded,
     ParentCalls
@@ -88,9 +139,10 @@ CONSTANTS
 (* only in the recorded edges are bisimilar, and Settles reads only the    *)
 (* current status.                                                         *)
 
-(* UnfencedEffect and NoReapBeforeReconcile switch the two repairs of F1   *)
-(* off. Both are FALSE in the code as it is now; the configurations that  *)
-(* set either to TRUE exist as evidence of why both repairs are needed.   *)
+(* UnfencedEffect, NoCallLock and NoReapBeforeReconcile switch the three  *)
+(* repairs of F1 off. All are FALSE in the code as it is now; the          *)
+(* configurations that set any of them to TRUE exist as evidence of why    *)
+(* every repair is needed.                                                 *)
 
 (* ParentCalls bounds what the model may answer in the parent run: none   *)
 (* ends the run, exec is a mutating tool without reconcile, rec is a      *)
@@ -102,6 +154,7 @@ ASSUME /\ MaxStep \in Nat \ {0}
        /\ MaxTotalAttempts \in Nat \ {0}
        /\ MaxTotalAttempts >= MaxAttempts
        /\ UnfencedEffect \in BOOLEAN
+       /\ NoCallLock \in BOOLEAN
        /\ NoReapBeforeReconcile \in BOOLEAN
        /\ StatusEdgesRecorded \in BOOLEAN
 
@@ -176,10 +229,10 @@ ToolKinds == {"exec", "rec", "spawn"}
 CallChoices(r) == IF r = Parent THEN ParentCalls ELSE {"none"}
 
 -----------------------------------------------------------------------------
-VARIABLES run, ev, appr, idem, idemRes, eff, dl,
-          pc, wr, wt, ws, lost, wcancel, wresp, wretry, wstep, flags
+VARIABLES run, ev, appr, idem, idemRes, eff, dl, child,
+          pc, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags
 
-vars == <<run, ev, appr, idem, idemRes, eff, dl, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wstep, flags>>
+vars == <<run, ev, appr, idem, idemRes, eff, dl, child, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
 
 (* run[r]    the runs row: status, lease owner/token/liveness, attempts      *)
 (* ev[r]     the events table of run r, in seq order                         *)
@@ -187,6 +240,9 @@ vars == <<run, ev, appr, idem, idemRes, eff, dl, pc, wr, wt, ws, lost, wcancel, 
 (* idem[k], idemRes[k] the idempotency table row of the call key k           *)
 (* eff[k]    count of external side effects performed for call key k        *)
 (* dl[r]     the run deadline has passed                                     *)
+(* child[k]  the process spawned by an exec call of key k is alive; it       *)
+(*           outlives its worker and holds the process marker                *)
+(* wlock[w]  worker w holds the per-call kernel lock of KeyOf(w)             *)
 (* pc.. lost the per-worker program counter and local state                  *)
 (* flags     history flags, each must stay FALSE                             *)
 
@@ -300,22 +356,25 @@ ToIdle(w) ==
     /\ wcancel' = [wcancel EXCEPT ![w] = FALSE]
     /\ wresp' = [wresp EXCEPT ![w] = "none"]
     /\ wretry' = [wretry EXCEPT ![w] = FALSE]
+    /\ wlock' = [wlock EXCEPT ![w] = FALSE]
     /\ wstep' = [wstep EXCEPT ![w] = 0]
 
 Goto(w, p) == pc' = [pc EXCEPT ![w] = p]
 
-(* Before it reconciles a PENDING record, the new owner kills the process *)
-(* of every older attempt on the same call: reapEarlierAttempt in          *)
-(* executor.ts, the mechanism of abandonTarget (reapMarkedProcesses). Only *)
-(* older attempts are killed; the caller has passed the lease fence of     *)
-(* the Begin action before it gets here.                                   *)
-ExecPcs == {"execStart", "effect", "complete", "reconcile", "reconDone"}
+KeyOf(w) == <<wr[w], wstep[w]>>
 
-Reaped(w) ==
-    [x \in Workers |->
-        IF ~NoReapBeforeReconcile /\ x # w /\ wr[x] = wr[w] /\ wstep[x] = wstep[w]
-           /\ pc[x] \in ExecPcs /\ wt[x] < wt[w]
-        THEN "idle" ELSE pc[x]]
+(* The per-call lock: callLockDir/<key>.lock in executor.ts, held through   *)
+(* the kernel lock mechanism of the foundation package. A worker releases   *)
+(* it in ToIdle (its scope ends, or its process dies and the kernel         *)
+(* releases it) and when the call is recorded.                              *)
+Held(k) == \E x \in Workers : wlock[x] /\ KeyOf(x) = k
+
+(* After it holds the lock, the new owner kills the process of the older    *)
+(* attempt on the same call: reapEarlierAttempt in executor.ts, the         *)
+(* mechanism of abandonTarget (reapMarkedProcesses). The reap either        *)
+(* stops the child or fails (the probe fails, the process survives).        *)
+Reaped(k) ==
+    [child EXCEPT ![k] = IF NoReapBeforeReconcile THEN @ ELSE FALSE]
 
 (* The lease fence of the ledger: begin, authorise, complete and the       *)
 (* effect start check the lease token of the run in the same transaction   *)
@@ -324,25 +383,45 @@ Reaped(w) ==
 (* do not change a modelled variable.                                      *)
 LedgerFenced(w) == UnfencedEffect \/ Fence(w)
 
-LedgerPcs == {"begin", "effect", "complete", "reconDone", "spawnExec"}
+LedgerPcs == {"begin", "authorise", "complete", "reconDone", "spawnExec"}
 
 StaleLedger(w) ==
     /\ pc[w] \in LedgerPcs
     /\ ~lost[w]
     /\ ~LedgerFenced(w)
     /\ ToIdle(w)
-    /\ UNCHANGED <<run, ev, appr, idem, idemRes, eff, dl, flags>>
-
-KeyOf(w) == <<wr[w], wstep[w]>>
+    /\ UNCHANGED <<run, ev, appr, idem, idemRes, eff, dl, child, flags>>
 
 ChildTerminal(S) == S.run[Child].status \in Terminal
 
-(* store.transition / store.release as called through terminals.ts *)
-WorkerTx(w, to) ==
+(* What a worker's attempt to leave does to a CANCELLING run, by the       *)
+(* terminals method it uses (terminals.ts). finish (a status the worker     *)
+(* ends the run in) meets the conflict and calls cancel: the run becomes    *)
+(* CANCELLED. yieldTo (waiting for a human or a tool, requeue) meets the    *)
+(* conflict and calls yieldLease: the run stays CANCELLING without an       *)
+(* owner and the next claim runs cancel recovery. test/spec-drift.test.ts   *)
+(* runs the real terminals and compares.                                    *)
+WhenCancelling == [finish |-> "CANCELLED", yield |-> "RELEASED"]
+
+(* The terminals a worker has: finish and cancel end the run, yieldTo and  *)
+(* yieldLease give it up. A new terminal needs a decision here.            *)
+TerminalMethods == {"finish", "yieldTo", "cancel", "yieldLease"}
+
+(* store.transition as called through terminals.finish *)
+FinishTx(w, to) ==
+    LET r == wr[w]
+    IN IF run[r].status = "CANCELLING"
+       THEN Change(Snap, r, WhenCancelling.finish, <<>>, FALSE, TRUE)
+       ELSE Change(Snap, r, to, <<>>, FALSE, TRUE)
+
+(* store.release as called through terminals.yieldTo, and releaseLease      *)
+YieldTx(w, to) ==
     LET r == wr[w]
         S == Snap
-        x == run[r]
-    IN IF x.status = "CANCELLING"
+    IN IF run[r].status = "CANCELLING" /\ WhenCancelling.yield = "RELEASED"
+       THEN [S EXCEPT !.run[r] = [@ EXCEPT !.owner = NoOwner, !.live = FALSE,
+                                   !.failed = 0, !.attempts = @ - 1]]
+       ELSE IF run[r].status = "CANCELLING"
        THEN Change(S, r, "CANCELLED", <<>>, FALSE, TRUE)
        ELSE LET target == IF to = "WAITING_HUMAN" /\ PendingStep(S, r) = {} THEN "QUEUED"
                           ELSE IF to = "WAITING_TOOL" /\ ChildTerminal(S) THEN "QUEUED"
@@ -351,21 +430,30 @@ WorkerTx(w, to) ==
             IN Change(S, r, target, <<>>, refund, TRUE)
 
 Leave(w, to) ==
-    /\ UNCHANGED <<idem, idemRes, eff, dl, flags>>
+    /\ UNCHANGED <<idem, idemRes, eff, dl, child, flags>>
     /\ ToIdle(w)
     /\ \/ /\ Fence(w)
           /\ run[wr[w]].status = "CANCELLING" \/ to \in WorkerEdges[run[wr[w]].status]
-          /\ SetStore(WorkerTx(w, to))
+          /\ SetStore(FinishTx(w, to))
+       \/ /\ ~Fence(w)
+          /\ KeepStore
+
+LeaveYield(w, to) ==
+    /\ UNCHANGED <<idem, idemRes, eff, dl, child, flags>>
+    /\ ToIdle(w)
+    /\ \/ /\ Fence(w)
+          /\ run[wr[w]].status = "CANCELLING" \/ to \in WorkerEdges[run[wr[w]].status]
+          /\ SetStore(YieldTx(w, to))
        \/ /\ ~Fence(w)
           /\ KeepStore
 
 AppendStepTo(w, evs, next, step) ==
-    /\ UNCHANGED <<idem, idemRes, eff, dl>>
+    /\ UNCHANGED <<idem, idemRes, eff, dl, child>>
     /\ \/ /\ Fence(w)
           /\ SetStore(AppendEvs(Snap, wr[w], evs))
           /\ Goto(w, next)
           /\ wstep' = [wstep EXCEPT ![w] = step]
-          /\ UNCHANGED <<wr, wt, ws, wcancel, wresp, wretry, lost>>
+          /\ UNCHANGED <<wr, wt, ws, wcancel, wresp, wretry, wlock, lost>>
           /\ flags' = [flags EXCEPT !.stale = @ \/ run[wr[w]].token # wt[w]]
        \/ /\ ~Fence(w)
           /\ KeepStore
@@ -376,11 +464,11 @@ AppendStep(w, evs, next) == AppendStepTo(w, evs, next, wstep[w])
 
 PcOnly(w, p) ==
     /\ Goto(w, p)
-    /\ UNCHANGED <<run, ev, appr, idem, idemRes, eff, dl, wr, wt, ws, lost, wcancel, wresp, wretry, wstep, flags>>
+    /\ UNCHANGED <<run, ev, appr, idem, idemRes, eff, dl, child, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
 
 Dropped(w) ==
     /\ ToIdle(w)
-    /\ UNCHANGED <<run, ev, appr, idem, idemRes, eff, dl, flags>>
+    /\ UNCHANGED <<run, ev, appr, idem, idemRes, eff, dl, child, flags>>
 
 -----------------------------------------------------------------------------
 Init ==
@@ -394,6 +482,8 @@ Init ==
     /\ idemRes = [k \in Keys |-> "none"]
     /\ eff = [k \in Keys |-> 0]
     /\ dl = [r \in Runs |-> FALSE]
+    /\ child = [k \in Keys |-> FALSE]
+    /\ wlock = [w \in Workers |-> FALSE]
     /\ pc = [w \in Workers |-> "idle"]
     /\ wr = [w \in Workers |-> Parent]
     /\ wt = [w \in Workers |-> 0]
@@ -434,7 +524,7 @@ Claim(w) ==
     /\ wcancel' = [wcancel EXCEPT ![w] = FALSE]
     /\ wretry' = [wretry EXCEPT ![w] = FALSE]
     /\ wstep' = [wstep EXCEPT ![w] = 0]
-    /\ UNCHANGED <<idem, idemRes, eff, dl, wresp, flags>>
+    /\ UNCHANGED <<idem, idemRes, eff, dl, child, wresp, wlock, flags>>
 
 ClaimNone(w) ==
     /\ pc[w] = "idle"
@@ -442,7 +532,7 @@ ClaimNone(w) ==
        IN /\ S1 # Snap
           /\ \A r \in Runs : ~(Claimable(S1, r) /\ ~Exhausted(S1.run[r]))
           /\ SetStore(S1)
-    /\ UNCHANGED <<idem, idemRes, eff, dl, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wstep, flags>>
+    /\ UNCHANGED <<idem, idemRes, eff, dl, child, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
 
 HB(w) ==
     /\ pc[w] # "idle"
@@ -454,7 +544,7 @@ HB(w) ==
        \/ /\ ~Fence(w)
           /\ lost' = [lost EXCEPT ![w] = TRUE]
           /\ UNCHANGED <<run, wcancel>>
-    /\ UNCHANGED <<ev, appr, idem, idemRes, eff, dl, pc, wr, wt, ws, wresp, wretry, wstep, flags>>
+    /\ UNCHANGED <<ev, appr, idem, idemRes, eff, dl, child, pc, wr, wt, ws, wresp, wretry, wlock, wstep, flags>>
 
 Abort(w) ==
     /\ pc[w] # "idle"
@@ -495,7 +585,7 @@ Dispatch(w) ==
     /\ pc[w] = "dispatch"
     /\ Goto(w, DispatchTarget(wr[w]))
     /\ wstep' = [wstep EXCEPT ![w] = CurStep(wr[w])]
-    /\ UNCHANGED <<run, ev, appr, idem, idemRes, eff, dl, wr, wt, ws, lost, wcancel, wresp, wretry, flags>>
+    /\ UNCHANGED <<run, ev, appr, idem, idemRes, eff, dl, child, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, flags>>
 
 Loop(w) ==
     /\ pc[w] = "loop"
@@ -516,15 +606,15 @@ Issue(w) ==
     /\ LET r == wr[w] IN
        flags' = [flags EXCEPT !.reissue = @ \/ (Responded(r, wstep[w]) /\ Fence(w))]
     /\ Goto(w, "recv")
-    /\ UNCHANGED <<run, ev, appr, idem, idemRes, eff, dl, wr, wt, ws, lost, wcancel, wresp, wretry, wstep>>
+    /\ UNCHANGED <<run, ev, appr, idem, idemRes, eff, dl, child, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep>>
 
 Recv(w) ==
     /\ pc[w] = "recv"
     /\ ~lost[w]
     /\ \/ /\ \E c \in CallChoices(wr[w]) : wresp' = [wresp EXCEPT ![w] = c]
           /\ Goto(w, "respond")
-          /\ UNCHANGED <<run, ev, appr, idem, idemRes, eff, dl, wr, wt, ws, lost, wcancel, wretry, wstep, flags>>
-       \/ Leave(w, "QUEUED")
+          /\ UNCHANGED <<run, ev, appr, idem, idemRes, eff, dl, child, wr, wt, ws, lost, wcancel, wretry, wlock, wstep, flags>>
+       \/ LeaveYield(w, "QUEUED")
        \/ Leave(w, "FAILED")
 
 Respond(w) ==
@@ -551,9 +641,9 @@ Settle(w) ==
                    /\ SetStore(AppendEvs([Snap EXCEPT !.appr[r][s] = "pending"], r,
                                       <<E("tool.permission.requested", s, "", "")>>))
                    /\ Goto(w, "yieldHuman")
-                   /\ UNCHANGED <<wr, wt, ws, lost, wcancel, wresp, wretry, wstep, flags>>
+                   /\ UNCHANGED <<wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
                 \/ /\ ~Fence(w) /\ KeepStore /\ ToIdle(w) /\ UNCHANGED flags
-             /\ UNCHANGED <<idem, idemRes, eff, dl>>
+             /\ UNCHANGED <<idem, idemRes, eff, dl, child>>
           \/ /\ kind \in {"exec", "rec"} /\ a = "pending"
              /\ PcOnly(w, "yieldHuman")
           \/ /\ kind \in {"exec", "rec"} /\ a = "resolved" /\ ResolvedChoice(r, s) = "reject"
@@ -563,9 +653,9 @@ Settle(w) ==
           \/ /\ kind = "spawn"
              /\ PcOnly(w, "begin")
 
-YieldHuman(w) == pc[w] = "yieldHuman" /\ Leave(w, "WAITING_HUMAN")
+YieldHuman(w) == pc[w] = "yieldHuman" /\ LeaveYield(w, "WAITING_HUMAN")
 
-YieldTool(w) == pc[w] = "yieldTool" /\ Leave(w, "WAITING_TOOL")
+YieldTool(w) == pc[w] = "yieldTool" /\ LeaveYield(w, "WAITING_TOOL")
 
 Begin(w) ==
     /\ pc[w] = "begin"
@@ -577,44 +667,77 @@ Begin(w) ==
           /\ wretry' = [wretry EXCEPT ![w] = FALSE]
           /\ Goto(w, "execStart")
        \/ /\ idem[k] \in {"PENDING", "UNKNOWN"}
-          /\ Goto(w, "reconcile")
+          /\ Goto(w, IF RespKind(wr[w], wstep[w]) = "spawn" THEN "spawnExec" ELSE "reconLock")
           /\ UNCHANGED <<idem, wretry>>
        \/ /\ idem[k] = "COMPLETED"
           /\ Goto(w, "journalOut")
           /\ UNCHANGED <<idem, wretry>>
-    /\ UNCHANGED <<run, ev, appr, idemRes, eff, dl, wr, wt, ws, lost, wcancel, wresp, wstep, flags>>
+    /\ UNCHANGED <<run, ev, appr, idemRes, eff, dl, child, wr, wt, ws, lost, wcancel, wresp, wlock, wstep, flags>>
 
 ExecStart(w) ==
     /\ pc[w] = "execStart"
     /\ LET r == wr[w]
            s == wstep[w]
        IN AppendStep(w, <<E("tool.started", s, RespKind(r, s), "")>>,
-                     IF RespKind(r, s) = "spawn" THEN "spawnExec" ELSE "effect")
+                     IF RespKind(r, s) = "spawn" THEN "spawnExec" ELSE "lock")
 
-Effect(w) ==
-    /\ pc[w] = "effect"
+(* execute in executor.ts: the lock is taken before the authorisation. A    *)
+(* held lock is waited for; the wait is bounded (LockWaitExpired).          *)
+LockCall(w) ==
+    /\ pc[w] = "lock"
+    /\ ~lost[w]
+    /\ NoCallLock \/ ~Held(KeyOf(w))
+    /\ wlock' = [wlock EXCEPT ![w] = ~NoCallLock]
+    /\ Goto(w, "authorise")
+    /\ UNCHANGED <<run, ev, appr, idem, idemRes, eff, dl, child, wr, wt, ws, lost, wcancel, wresp, wretry, wstep, flags>>
+
+LockWaitExpired(w) ==
+    /\ pc[w] \in {"lock", "reconLock"}
+    /\ ~NoCallLock /\ Held(KeyOf(w))
+    /\ Leave(w, "FAILED")
+
+(* ledger.authorise: the check of the lease fence *)
+Authorise(w) ==
+    /\ pc[w] = "authorise"
     /\ ~lost[w]
     /\ LedgerFenced(w)
+    /\ Goto(w, "doEffect")
+    /\ UNCHANGED <<run, ev, appr, idem, idemRes, eff, dl, child, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
+
+(* The tool starts the external effect: the write, or the spawn of the      *)
+(* child process. It checks nothing; whatever happened since Authorise      *)
+(* (a takeover) is not seen here.                                           *)
+DoEffect(w) ==
+    /\ pc[w] = "doEffect"
+    /\ ~lost[w]
     /\ LET k == KeyOf(w)
            recorded == idem[k] = "UNKNOWN" \/ idemRes[k] = "unknown"
        IN /\ eff' = [eff EXCEPT ![k] = @ + 1]
+          /\ child' = [child EXCEPT ![k] = @ \/ RespKind(wr[w], wstep[w]) = "exec"]
           /\ flags' = [flags EXCEPT !.retryUnknown = @ \/ (wretry[w] /\ recorded)]
     /\ Goto(w, "complete")
-    /\ UNCHANGED <<run, ev, appr, idem, idemRes, dl, wr, wt, ws, lost, wcancel, wresp, wretry, wstep>>
+    /\ UNCHANGED <<run, ev, appr, idem, idemRes, dl, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep>>
+
+ChildExit(k) ==
+    /\ child[k]
+    /\ child' = [child EXCEPT ![k] = FALSE]
+    /\ UNCHANGED <<run, ev, appr, idem, idemRes, eff, dl, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
 
 Complete(w) ==
     /\ pc[w] = "complete"
     /\ ~lost[w]
+    /\ ~child[KeyOf(w)]
     /\ LedgerFenced(w)
     /\ LET k == KeyOf(w) IN
        IF idem[k] \in {"PENDING", "UNKNOWN"}
        THEN /\ idem' = [idem EXCEPT ![k] = "COMPLETED"]
             /\ idemRes' = [idemRes EXCEPT ![k] = "completed"]
             /\ Goto(w, "journalOut")
+            /\ wlock' = [wlock EXCEPT ![w] = FALSE]
             /\ UNCHANGED <<wr, wt, ws, lost, wcancel, wresp, wretry, wstep>>
        ELSE /\ ToIdle(w)
             /\ UNCHANGED <<idem, idemRes>>
-    /\ UNCHANGED <<run, ev, appr, eff, dl, flags>>
+    /\ UNCHANGED <<run, ev, appr, eff, dl, child, flags>>
 
 JournalOut(w) ==
     /\ pc[w] = "journalOut"
@@ -624,6 +747,25 @@ JournalOut(w) ==
 (* yields unknown unless it is read_only; the spawn tool yields not_applied.*)
 (* A tool with reconcile reports the external truth at the moment it runs,  *)
 (* or unknown.                                                              *)
+ReconLock(w) ==
+    /\ pc[w] = "reconLock"
+    /\ ~lost[w]
+    /\ NoCallLock \/ ~Held(KeyOf(w))
+    /\ wlock' = [wlock EXCEPT ![w] = ~NoCallLock]
+    /\ Goto(w, "reap")
+    /\ UNCHANGED <<run, ev, appr, idem, idemRes, eff, dl, child, wr, wt, ws, lost, wcancel, wresp, wretry, wstep, flags>>
+
+(* reapEarlierAttempt in executor.ts. A failure of the reap is a typed      *)
+(* error (EarlierAttemptNotStopped): the reconcile does not run, the call   *)
+(* record stays PENDING, the run fails and is not retried.                  *)
+Reap(w) ==
+    /\ pc[w] = "reap"
+    /\ ~lost[w]
+    /\ \/ /\ child' = Reaped(KeyOf(w))
+          /\ Goto(w, "reconcile")
+          /\ UNCHANGED <<run, ev, appr, idem, idemRes, eff, dl, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
+       \/ Leave(w, "FAILED")
+
 Reconcile(w) ==
     /\ pc[w] = "reconcile"
     /\ ~lost[w]
@@ -631,17 +773,13 @@ Reconcile(w) ==
            s == wstep[w]
            kind == RespKind(r, s)
            k == <<r, s>>
-       IN \/ /\ kind = "spawn"
-             /\ Goto(w, "spawnExec")
-             /\ UNCHANGED wresp
-          \/ /\ kind = "exec"
+       IN \/ /\ kind = "exec"
              /\ wresp' = [wresp EXCEPT ![w] = "unknown"]
-             /\ pc' = [Reaped(w) EXCEPT ![w] = "reconDone"]
           \/ /\ kind = "rec"
              /\ \E o \in (IF eff[k] > 0 THEN {"already_applied", "unknown"} ELSE {"not_applied", "unknown"}) :
                     wresp' = [wresp EXCEPT ![w] = o]
-             /\ pc' = [Reaped(w) EXCEPT ![w] = "reconDone"]
-    /\ UNCHANGED <<run, ev, appr, idem, idemRes, eff, dl, wr, wt, ws, lost, wcancel, wretry, wstep, flags>>
+    /\ Goto(w, "reconDone")
+    /\ UNCHANGED <<run, ev, appr, idem, idemRes, eff, dl, child, wr, wt, ws, lost, wcancel, wretry, wlock, wstep, flags>>
 
 ReconDone(w) ==
     /\ pc[w] = "reconDone"
@@ -651,16 +789,17 @@ ReconDone(w) ==
            o == wresp[w]
        IN IF o = "not_applied"
           THEN /\ wretry' = [wretry EXCEPT ![w] = TRUE]
-               /\ Goto(w, "effect")
-               /\ UNCHANGED <<idem, idemRes, wr, wt, ws, lost, wcancel, wresp, wstep>>
+               /\ Goto(w, "authorise")
+               /\ UNCHANGED <<idem, idemRes, wr, wt, ws, lost, wcancel, wresp, wlock, wstep>>
           ELSE IF idem[k] \in {"PENDING", "UNKNOWN"}
           THEN /\ idem' = [idem EXCEPT ![k] = "COMPLETED"]
                /\ idemRes' = [idemRes EXCEPT ![k] = o]
                /\ Goto(w, "journalOut")
+               /\ wlock' = [wlock EXCEPT ![w] = FALSE]
                /\ UNCHANGED <<wr, wt, ws, lost, wcancel, wresp, wretry, wstep>>
           ELSE /\ ToIdle(w)
                /\ UNCHANGED <<idem, idemRes>>
-    /\ UNCHANGED <<run, ev, appr, eff, dl, flags>>
+    /\ UNCHANGED <<run, ev, appr, eff, dl, child, flags>>
 
 (* The agent tool: createChildRun is idempotent per (parent, call) and is   *)
 (* not fenced; execute returns the child's outcome when terminal, else it   *)
@@ -695,7 +834,7 @@ SpawnExec(w) ==
              /\ SetStore(created)
              /\ UNCHANGED <<idem, idemRes>>
              /\ Goto(w, "waitAppend")
-    /\ UNCHANGED <<eff, dl, wr, wt, ws, lost, wcancel, wresp, wretry, wstep, flags>>
+    /\ UNCHANGED <<eff, dl, child, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
 
 WaitAppend(w) ==
     /\ pc[w] = "waitAppend"
@@ -721,23 +860,28 @@ CancelRec(w) ==
           \/ /\ open /\ idem[k] = "UNKNOWN"
              /\ idemRes' = [idemRes EXCEPT ![k] = "unknown"]
              /\ Goto(w, "cancelJournal")
-             /\ UNCHANGED <<run, ev, appr, idem, eff, dl, wr, wt, ws, lost, wcancel, wresp, wretry, wstep, flags>>
+             /\ UNCHANGED <<run, ev, appr, idem, eff, dl, child, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
           \/ /\ open /\ idem[k] = "PENDING" /\ kind = "spawn"
              /\ idem' = [idem EXCEPT ![k] = "COMPLETED"]
              /\ idemRes' = [idemRes EXCEPT ![k] = "completed"]
              /\ Goto(w, "cancelJournal")
-             /\ UNCHANGED <<run, ev, appr, eff, dl, wr, wt, ws, lost, wcancel, wresp, wretry, wstep, flags>>
+             /\ UNCHANGED <<run, ev, appr, eff, dl, child, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
           \/ /\ open /\ idem[k] = "PENDING" /\ kind \in {"exec", "rec"}
-             /\ \E o \in (IF kind = "exec" THEN {"unknown", "abandon"}
-                          ELSE IF eff[k] > 0 THEN {"already_applied", "unknown", "abandon"}
-                          ELSE {"not_applied", "unknown", "abandon"}) :
-                  IF o = "abandon"
-                  THEN /\ idem' = [idem EXCEPT ![k] = "UNKNOWN"]
-                       /\ idemRes' = [idemRes EXCEPT ![k] = "unknown"]
-                  ELSE /\ idem' = [idem EXCEPT ![k] = "COMPLETED"]
-                       /\ idemRes' = [idemRes EXCEPT ![k] = IF o = "not_applied" THEN "completed" ELSE o]
-             /\ pc' = [Reaped(w) EXCEPT ![w] = "cancelJournal"]
-             /\ UNCHANGED <<run, ev, appr, eff, dl, wr, wt, ws, lost, wcancel, wresp, wretry, wstep, flags>>
+             /\ \/ /\ NoCallLock \/ ~Held(k)
+                   /\ child' = Reaped(k)
+                   /\ \E o \in (IF kind = "exec" THEN {"unknown", "abandon"}
+                                ELSE IF eff[k] > 0 THEN {"already_applied", "unknown", "abandon"}
+                                ELSE {"not_applied", "unknown", "abandon"}) :
+                        IF o = "abandon"
+                        THEN /\ idem' = [idem EXCEPT ![k] = "UNKNOWN"]
+                             /\ idemRes' = [idemRes EXCEPT ![k] = "unknown"]
+                        ELSE /\ idem' = [idem EXCEPT ![k] = "COMPLETED"]
+                             /\ idemRes' = [idemRes EXCEPT ![k] = IF o = "not_applied" THEN "completed" ELSE o]
+                \/ /\ UNCHANGED child
+                   /\ idem' = [idem EXCEPT ![k] = "UNKNOWN"]
+                   /\ idemRes' = [idemRes EXCEPT ![k] = "unknown"]
+             /\ Goto(w, "cancelJournal")
+             /\ UNCHANGED <<run, ev, appr, eff, dl, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
 
 CancelJournal(w) ==
     /\ pc[w] = "cancelJournal"
@@ -748,8 +892,9 @@ CancelFinish(w) == pc[w] = "cancelFinish" /\ Leave(w, "CANCELLED")
 Step(w) ==
     \/ Drive(w) \/ Started(w) \/ Dispatch(w) \/ Loop(w) \/ Issue(w) \/ Recv(w)
     \/ Respond(w) \/ Decide(w) \/ Settle(w) \/ YieldHuman(w) \/ YieldTool(w)
-    \/ Begin(w) \/ ExecStart(w) \/ Effect(w) \/ Complete(w) \/ JournalOut(w)
-    \/ Reconcile(w) \/ ReconDone(w) \/ SpawnExec(w) \/ WaitAppend(w)
+    \/ Begin(w) \/ ExecStart(w) \/ LockCall(w) \/ LockWaitExpired(w) \/ Authorise(w)
+    \/ DoEffect(w) \/ Complete(w) \/ JournalOut(w)
+    \/ ReconLock(w) \/ Reap(w) \/ Reconcile(w) \/ ReconDone(w) \/ SpawnExec(w) \/ WaitAppend(w)
     \/ CancelRec(w) \/ CancelJournal(w) \/ CancelFinish(w) \/ StaleLedger(w)
 
 -----------------------------------------------------------------------------
@@ -758,14 +903,14 @@ Step(w) ==
 Deadline(r) ==
     /\ ~dl[r]
     /\ dl' = [dl EXCEPT ![r] = TRUE]
-    /\ UNCHANGED <<run, ev, appr, idem, idemRes, eff, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wstep, flags>>
+    /\ UNCHANGED <<run, ev, appr, idem, idemRes, eff, child, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
 
 RequestCancel(r) ==
     /\ run[r].status \notin Terminal \cup {"CANCELLING", "ABSENT"}
     /\ LET to == CancelTarget(run[r].status)
        IN /\ to \in ServiceEdges[run[r].status]
           /\ SetStore(Change(Snap, r, to, <<>>, FALSE, FALSE))
-    /\ UNCHANGED <<idem, idemRes, eff, dl, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wstep, flags>>
+    /\ UNCHANGED <<idem, idemRes, eff, dl, child, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
 
 Resolve(r, s, choice) ==
     /\ appr[r][s] = "pending"
@@ -774,13 +919,13 @@ Resolve(r, s, choice) ==
            lead == <<E("tool.permission.resolved", s, choice, "")>>
            settled == run[r].status = "WAITING_HUMAN" /\ PendingStep(S0, r) = {}
        IN SetStore(IF settled THEN Change(S0, r, "QUEUED", lead, FALSE, FALSE) ELSE AppendEvs(S0, r, lead))
-    /\ UNCHANGED <<idem, idemRes, eff, dl, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wstep, flags>>
+    /\ UNCHANGED <<idem, idemRes, eff, dl, child, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
 
 SweepQueued(r) ==
     /\ run[r].status = "QUEUED" /\ dl[r]
     /\ "STOPPED" \in SweepEdges["QUEUED"]
     /\ SetStore(Change(Snap, r, "STOPPED", <<>>, FALSE, FALSE))
-    /\ UNCHANGED <<idem, idemRes, eff, dl, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wstep, flags>>
+    /\ UNCHANGED <<idem, idemRes, eff, dl, child, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
 
 SweepHuman(r) ==
     /\ run[r].status = "WAITING_HUMAN"
@@ -792,18 +937,18 @@ SweepHuman(r) ==
                    ELSE LET s == CHOOSE x \in due : TRUE
                         IN <<E("tool.permission.cancelled", s, "expired", "")>>
        IN SetStore(Change(S0, r, "STOPPED", lead, FALSE, FALSE))
-    /\ UNCHANGED <<idem, idemRes, eff, dl, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wstep, flags>>
+    /\ UNCHANGED <<idem, idemRes, eff, dl, child, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
 
 SweepTool(r) ==
     /\ run[r].status = "WAITING_TOOL" /\ dl[r]
     /\ "QUEUED" \in ServiceEdges["WAITING_TOOL"]
     /\ SetStore(Change(Snap, r, "QUEUED", <<>>, FALSE, FALSE))
-    /\ UNCHANGED <<idem, idemRes, eff, dl, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wstep, flags>>
+    /\ UNCHANGED <<idem, idemRes, eff, dl, child, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
 
 ExpireLease(r) ==
     /\ run[r].status \in ClaimStatuses /\ run[r].owner # NoOwner /\ run[r].live
     /\ run' = [run EXCEPT ![r].live = FALSE]
-    /\ UNCHANGED <<ev, appr, idem, idemRes, eff, dl, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wstep, flags>>
+    /\ UNCHANGED <<ev, appr, idem, idemRes, eff, dl, child, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
 
 HolderAlive(r) ==
     \E w \in Workers : pc[w] # "idle" /\ wr[w] = r /\ wt[w] = run[r].token /\ ~lost[w]
@@ -818,6 +963,7 @@ Next ==
     \/ \E w \in Workers : Claim(w) \/ ClaimNone(w) \/ Step(w) \/ HB(w) \/ Abort(w) \/ Crash(w)
     \/ \E r \in Runs : Deadline(r) \/ RequestCancel(r) \/ ExpireLease(r)
                        \/ SweepQueued(r) \/ SweepHuman(r) \/ SweepTool(r)
+    \/ \E k \in Keys : ChildExit(k)
     \/ \E r \in Runs, s \in Steps, c \in {"allow", "reject"} : Resolve(r, s, c)
     \/ Terminated
 
@@ -840,6 +986,8 @@ TypeOK ==
     /\ \A r \in Runs : RunTypeOK(run[r])
     /\ \A r \in Runs : \A i \in DOMAIN ev[r] : ev[r][i].k \in ModelledEvents
     /\ \A k \in Keys : idem[k] \in {"NONE", "PENDING", "UNKNOWN", "COMPLETED"}
+    /\ \A k \in Keys : child[k] \in BOOLEAN
+    /\ \A w \in Workers : wlock[w] \in BOOLEAN
 
 ContiguousEvents == \A r \in Runs : run[r].lastSeq = Len(ev[r])
 
@@ -848,6 +996,20 @@ AtMostOnePendingApproval == \A r \in Runs : Cardinality(PendingStep(Snap, r)) <=
 NoStaleAppend == ~flags.stale
 
 AtMostOnceEffect == \A k \in Keys : eff[k] <= 1
+
+(* When a worker holds the result of a reconcile, no process of the older   *)
+(* attempt is alive any more: the reconcile reported on a call that has     *)
+(* stopped.                                                                  *)
+ReconcileSeesStoppedEffect == \A w \in Workers : pc[w] = "reconDone" => ~child[KeyOf(w)]
+
+(* No worker is between the authorisation and the start of its effect       *)
+(* while another worker reconciles the same call.                           *)
+NoEffectDuringReconcile ==
+    \A w, x \in Workers :
+        (w # x /\ pc[w] \in {"reap", "reconcile", "reconDone"} /\ pc[x] = "doEffect") => KeyOf(w) # KeyOf(x)
+
+LockIsExclusive ==
+    \A w, x \in Workers : (w # x /\ wlock[w] /\ wlock[x]) => KeyOf(w) # KeyOf(x)
 
 UnknownNeverRetried == ~flags.retryUnknown
 
