@@ -6,7 +6,7 @@ export type SuperviseDeps = Omit<Parameters<SupervisorModule['runSupervisorEntry
 
 export type SuperviseOptions = {
   launcher: Parameters<SupervisorModule['runSupervisorEntry']>[1]['launcher'];
-  deps?: SuperviseDeps;
+  deps: SuperviseDeps;
 };
 
 export const runSupervise = async (io: EntryIo, options: SuperviseOptions): Promise<number> => {

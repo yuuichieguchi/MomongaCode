@@ -210,11 +210,9 @@ describe('solver limits', () => {
 });
 
 describe('the decision code failing on a modelled input', () => {
-  it('is a reported mismatch that makes the run fail: a bare Bash allow rule makes the decision code throw on every command', async () => {
+  it('does not crash on a bare Bash allow rule: the model and the decision code agree on every command', async () => {
     const { report } = await run([['allow', 'Bash']]);
 
-    expect(report.mismatches.length).toBeGreaterThan(0);
-    for (const mismatch of report.mismatches) expect(mismatch.counterexample.replay).toEqual({ crashed: expect.stringContaining('TypeError') });
-    expect(report.exitCode).toBe(1);
+    expect(report.mismatches).toEqual([]);
   }, 120_000);
 });

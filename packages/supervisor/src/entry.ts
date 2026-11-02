@@ -13,7 +13,7 @@ import type { SupervisorOptions } from './start-supervisor.ts';
 
 export type SupervisorEntryDeps = Omit<
   SupervisorOptions,
-  'home' | 'version' | 'env' | 'logger' | 'droppedLogLines' | 'stdout' | 'signal' | 'onShutdownRequested'
+  'home' | 'env' | 'logger' | 'droppedLogLines' | 'stdout' | 'signal' | 'onShutdownRequested'
 >;
 
 const pathsOf = (home: string): ReturnType<typeof momongaPaths> => momongaPaths(canonicalPath(home), process.platform, {});
@@ -21,6 +21,7 @@ const pathsOf = (home: string): ReturnType<typeof momongaPaths> => momongaPaths(
 export const runSupervisorEntry = (io: EntryIo, deps: SupervisorEntryDeps): Promise<number> =>
   runDaemonEntry(io, {
     service: SUPERVISOR_SERVICE,
+    version: deps.version,
     flags: BASE_ENTRY_FLAGS,
     maxCloseMs: () => supervisorMaxCloseMs(deps.runtime?.drainTimeoutMs ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS),
     ownLockPath: (home) => pathsOf(home).locks.supervisor,
@@ -32,7 +33,7 @@ export const runSupervisorEntry = (io: EntryIo, deps: SupervisorEntryDeps): Prom
         clock: deps.clock ?? io.clock,
         timers: deps.timers ?? io.timers,
         home: canonicalPath(context.home),
-        version: context.flags['app-version'],
+        version: context.version,
         env: context.env,
         logger: context.logger,
         droppedLogLines: context.droppedLogLines,

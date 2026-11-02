@@ -79,7 +79,6 @@ export type ChildManagerOptions = {
   role: ChildRole;
   home: string;
   paths: MomongaPaths;
-  version: string;
   launcher: Launcher;
   env: Readonly<Record<string, string | undefined>>;
   runtime?: RuntimeTuning;
@@ -367,7 +366,6 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     const resolved = resolveLaunch({
       role,
       launcher: options.launcher,
-      version: options.version,
       home: options.home,
       ...omitUndefined({ runtime: options.runtime, gateway: options.gateway }),
       baseEnv: definedEnv(options.env),
@@ -377,7 +375,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
           : runtimeEnv(merged, snapshot.settings).env,
     });
     if (role === 'gateway') reportSkippedNames(skippedNames);
-    const marker = openDaemonMarker(options.paths.markers.daemons, role);
+    const marker = openDaemonMarker(options.paths.markers.daemons, role, options.markerPorts?.files);
     try {
       const handle = options.spawn(resolved.command, resolved.args, {
         cwd: options.home,

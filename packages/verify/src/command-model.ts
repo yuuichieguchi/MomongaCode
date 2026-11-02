@@ -66,9 +66,11 @@ export const createCommandModel = (smt: Smt): CommandModel => {
   const sequence = (words: readonly string[], firstWordLanguage: (expected: string) => Re): Re =>
     smt.concat(...words.map((expected, index) => (index === 0 ? firstWordLanguage(expected) : smt.concat(spaces, smt.text(expected)))));
 
+  const wordsExpressible = (rule: PermissionRule): boolean => patternWords(commandPatternOf(rule)).every(expressible);
+
   const modelled = (rule: PermissionRule): boolean => {
     const words = patternWords(commandPatternOf(rule));
-    return words.every(expressible) && !excludedNames.includes(path.basename(words[0] as string));
+    return wordsExpressible(rule) && !excludedNames.includes(path.basename(words[0] as string));
   };
 
   const never = ctx.Bool.val(false);
@@ -108,7 +110,7 @@ export const createCommandModel = (smt: Smt): CommandModel => {
     domain: (term) => smt.member(term, command),
     excludedBlock,
     position: (term, rule) => (rule.specifier === undefined ? ctx.Bool.val(true) : modelled(rule) ? member(term, positionLanguage(commandPatternOf(rule))) : never),
-    incidental: (term, rule) => (rule.specifier === undefined || !modelled(rule) ? never : member(term, incidentalLanguage(commandPatternOf(rule)))),
+    incidental: (term, rule) => (rule.specifier === undefined || !wordsExpressible(rule) ? never : member(term, incidentalLanguage(commandPatternOf(rule)))),
     strict: (term, rule) => (rule.specifier === undefined ? ctx.Bool.val(true) : modelled(rule) ? member(term, strictLanguage(commandPatternOf(rule))) : never),
     broad: (term, rule) => (rule.specifier === undefined || !modelled(rule) ? never : member(term, broadLanguage(commandPatternOf(rule)))),
     unmodelled: (rule) => rule.specifier !== undefined && !modelled(rule),

@@ -18,8 +18,46 @@ export interface KernelLockMechanism {
   readonly name: 'file-lock' | 'abstract-socket' | 'named-pipe';
   claim(lockPath: string): Promise<ClaimOutcome>;
   isHeld(lockPath: string): Promise<boolean>;
+  readHolder(lockPath: string): Promise<string | undefined>;
+  readHolderSync(lockPath: string): string | undefined;
   readonly claimInheritable: ((lockPath: string) => ClaimOutcome) | undefined;
 }
+
+export const HOLDER_READ_MAX_BYTES = 64;
+
+const readHolderFile = async (lockPath: string): Promise<string | undefined> => {
+  let handle: fs.promises.FileHandle;
+  try {
+    handle = await fs.promises.open(lockPath, fs.constants.O_RDONLY | noFollowFlag());
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw error;
+  }
+  try {
+    const buffer = Buffer.alloc(HOLDER_READ_MAX_BYTES);
+    const { bytesRead } = await handle.read(buffer, 0, HOLDER_READ_MAX_BYTES, 0);
+    return buffer.toString('utf8', 0, bytesRead);
+  } finally {
+    await handle.close();
+  }
+};
+
+const readHolderFileSync = (lockPath: string): string | undefined => {
+  let descriptor: number;
+  try {
+    descriptor = fs.openSync(lockPath, fs.constants.O_RDONLY | noFollowFlag());
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw error;
+  }
+  try {
+    const buffer = Buffer.alloc(HOLDER_READ_MAX_BYTES);
+    const bytesRead = fs.readSync(descriptor, buffer, 0, HOLDER_READ_MAX_BYTES, 0);
+    return buffer.toString('utf8', 0, bytesRead);
+  } finally {
+    fs.closeSync(descriptor);
+  }
+};
 
 const O_SHLOCK = 0x10;
 const O_EXLOCK = 0x20;
@@ -72,6 +110,8 @@ export const darwinFileLock: KernelLockMechanism = {
   name: 'file-lock',
   claim: async (lockPath) => claimFile(lockPath),
   isHeld: async (lockPath) => probeFile(lockPath),
+  readHolder: readHolderFile,
+  readHolderSync: readHolderFileSync,
   claimInheritable: claimFile,
 };
 
@@ -143,6 +183,8 @@ const netLock = (name: 'abstract-socket' | 'named-pipe', platform: 'linux' | 'wi
   name,
   claim: (lockPath) => claimNetAddress(netLockAddress(platform, lockPath, user()), lockPath),
   isHeld: (lockPath) => probeNetAddress(netLockAddress(platform, lockPath, user())),
+  readHolder: readHolderFile,
+  readHolderSync: readHolderFileSync,
   claimInheritable: undefined,
 });
 

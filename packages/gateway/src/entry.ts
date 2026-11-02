@@ -11,17 +11,18 @@ export const GATEWAY_ENTRY_FLAGS = {
   'debug-tcp-token-file': { kind: 'string' },
 } as const satisfies FlagSpec;
 
-export type GatewayEntryDeps = { secretStore?: SecretStore };
+export type GatewayEntryDeps = { version: string; secretStore?: SecretStore };
 
-export const runGatewayEntry = (io: EntryIo, deps: GatewayEntryDeps = {}): Promise<number> =>
+export const runGatewayEntry = (io: EntryIo, deps: GatewayEntryDeps): Promise<number> =>
   runDaemonEntry(io, {
     service: 'gateway',
+    version: deps.version,
     flags: GATEWAY_ENTRY_FLAGS,
     maxCloseMs: () => GATEWAY_MAX_CLOSE_MS,
     ownLockPath: (home) => momongaPaths(canonicalPath(home), process.platform, {}).locks.gateway,
     logPath: (home) => momongaPaths(canonicalPath(home), process.platform, {}).logFiles.gateway,
     isConfigError: (error) => error instanceof ConfigError,
-    start: async ({ flags, home, env, signal, logger, stdout, acquireLock }) => {
+    start: async ({ version, flags, home, env, signal, logger, stdout, acquireLock }) => {
       installOtelErrorHandler((error) => logger.warn('otel.error', { err: error }));
       const fmBinary = flags['fm-binary'];
       const debugPort = flags['debug-tcp-port'];
@@ -32,7 +33,7 @@ export const runGatewayEntry = (io: EntryIo, deps: GatewayEntryDeps = {}): Promi
       const handle = await startGatewayProcess({
         home: canonicalPath(home),
         env,
-        version: flags['app-version'],
+        version,
         logger,
         stdout,
         signal,

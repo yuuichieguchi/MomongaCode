@@ -56,7 +56,7 @@ const startEntry = (context: CleanupContext, prepared: { home: string; paths: Mo
   const clock = createFakeClock(T0);
   const timers = createFakeTimers(clock);
   const io = createFakeEntryIo({
-    argv: [`--app-version=${TEST_VERSION}`, `--home=${home}`, '--log-target=file'],
+    argv: [`--home=${home}`, '--log-target=file'],
     home,
     env: { PATH: '/usr/bin:/bin', HOME: home, LANG: 'C' },
     clock,
@@ -67,6 +67,7 @@ const startEntry = (context: CleanupContext, prepared: { home: string; paths: Mo
   const fake = createFakeSpawn({ realWork });
   const code = realWork.run(() =>
     runSupervisorEntry(io, {
+      version: TEST_VERSION,
       launcher: fakeLauncher,
       spawn: fake.port,
       markerPorts: recordingMarkerPorts({}).ports,

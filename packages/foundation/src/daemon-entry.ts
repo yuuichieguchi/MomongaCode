@@ -42,6 +42,7 @@ export type DaemonHandle = {
 };
 
 export type DaemonStartContext<F extends FlagSpec> = {
+  version: string;
   flags: ParsedFlags<F>;
   home: string;
   env: EntryIo['env'];
@@ -55,6 +56,7 @@ export type DaemonStartContext<F extends FlagSpec> = {
 
 export type DaemonDefinition<F extends FlagSpec> = {
   service: 'runtime' | 'gateway' | 'supervisor';
+  version: string;
   flags: F;
   maxCloseMs(flags: ParsedFlags<F>): number;
   ownLockPath(home: string): string;
@@ -329,6 +331,7 @@ export const runDaemonEntry = async <F extends FlagSpec>(io: EntryIo, definition
         ? unadopted.adopt(lockPath)
         : acquireProcessLock(lockPath, describeHolder, io.lockMechanism === undefined ? {} : { mechanism: io.lockMechanism });
     started = await definition.start({
+      version: definition.version,
       flags,
       home,
       env: unadopted.withoutLockVariables(),

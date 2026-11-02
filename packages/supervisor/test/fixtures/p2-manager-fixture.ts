@@ -23,7 +23,6 @@ const manager = createChildManager({
   role: 'runtime',
   home,
   paths,
-  version: '0.0.0-fixture',
   launcher: () => ({ command: process.execPath, args: [child, ...flag('child-arg')] }),
   env: { PATH: process.env['PATH'] ?? '/usr/bin:/bin', HOME: home },
   spawn: createSpawnPort(),

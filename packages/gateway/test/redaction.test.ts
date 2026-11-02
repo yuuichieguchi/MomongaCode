@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { JSON_OBJECT_UNSUPPORTED_MESSAGE } from '@momonga/testkit';
 import { createRedactor } from '../src/core/redaction.ts';
 import { REDACTED, SK, TEST_API_KEY, expectNoCredential } from './credential-support.ts';
@@ -225,13 +225,23 @@ describe('redactor.text idempotence', () => {
 
 const fill = (unit: string, length = KIB_64): string => unit.repeat(Math.ceil(length / unit.length)).slice(0, length);
 
-const timeOf = (input: string): number => {
-  const started = performance.now();
-  text(input);
-  return performance.now() - started;
+const engineCallsOf = (input: string): number => {
+  const nativeExec = RegExp.prototype.exec;
+  let calls = 0;
+  const spy = vi.spyOn(RegExp.prototype, 'exec').mockImplementation(function (this: RegExp, subject: string) {
+    calls += 1;
+    return nativeExec.call(this, subject);
+  });
+  try {
+    text(input);
+  } finally {
+    spy.mockRestore();
+  }
+  return calls;
 };
 
-const fastestOf = (input: string, rounds = 3): number => Math.min(...Array.from({ length: rounds }, () => timeOf(input)));
+const SHORTEST_MATCH_CHARS = 3;
+const PATTERNS_RUN_PER_REDACTION = 6;
 
 type Adversarial = { name: string; build: (length: number) => string };
 
@@ -267,13 +277,15 @@ const paPbCases: Adversarial[] = [
 ];
 
 describe('redactor.text stays linear on adversarial input', () => {
-  it.for([...pdCases, ...pcCases, ...pmCases, ...paPbCases])('$name finishes within 1 s on 64 KiB', ({ build }) => {
-    expect(timeOf(build(KIB_64))).toBeLessThan(1000);
+  it.for([...pdCases, ...pcCases, ...pmCases, ...paPbCases])('$name never asks the regex engine for more than one match per three characters on 64 KiB', ({ build }) => {
+    const calls = engineCallsOf(build(KIB_64));
+    expect(calls).toBeGreaterThanOrEqual(PATTERNS_RUN_PER_REDACTION);
+    expect(calls).toBeLessThanOrEqual(PATTERNS_RUN_PER_REDACTION + KIB_64 / SHORTEST_MATCH_CHARS);
   });
 
-  it.for(pmCases)('$name scales linearly from 32 KiB to 64 KiB', ({ build }) => {
-    const half = fastestOf(build(KIB_64 / 2));
-    const full = fastestOf(build(KIB_64));
-    expect(full).toBeLessThan(4 * half + 5);
+  it.for([...pdCases, ...pcCases, ...pmCases, ...paPbCases])('$name doubles its engine calls at most when the input doubles', ({ build }) => {
+    const half = engineCallsOf(build(KIB_64 / 2));
+    const full = engineCallsOf(build(KIB_64));
+    expect(full).toBeLessThanOrEqual(2 * half);
   });
 });

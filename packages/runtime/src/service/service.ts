@@ -14,7 +14,7 @@ import type { RunLimitDefaults, SessionCreateSettings } from './app.ts';
 import type { McpAdminPort } from './input-routes.ts';
 import type { RunNotifier } from './notifier.ts';
 import { startDataVersionPoll } from './data-version-poll.ts';
-import { startApprovalSweeper } from './sweeper.ts';
+import { releaseStoppedRunsAtStartup, startApprovalSweeper } from './sweeper.ts';
 import { systemTimers } from './timers.ts';
 import type { ServiceTimers } from './timers.ts';
 
@@ -99,6 +99,9 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     skills: options.skills,
     agents: options.agents,
     isDraining: () => draining,
+    beginDraining: () => {
+      draining = true;
+    },
     health: { pid: options.pid, startedAt: options.startedAt, sandbox: options.sandboxKind },
     protectedRootAreas: options.protectedRootAreas,
     defaults: { modelAlias: options.defaults.modelAlias, runTimeoutMs: options.defaults.runTimeoutMs ?? SIX_HOURS_MS, limits: options.defaults.limits },
@@ -120,10 +123,12 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
 
   let sweeper: { close(): Promise<void> } | undefined;
   let poll: { close(): void } | undefined;
+  let startupRelease: Promise<void> = Promise.resolve();
   const stop = async (): Promise<void> => {
     await sweeper?.close();
-    poll?.close();
     closeController.abort();
+    await startupRelease;
+    poll?.close();
     const closed = closeServer(server);
     server.closeAllConnections();
     await closed;
@@ -140,6 +145,12 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
       timers,
       intervalMs: options.sweepIntervalMs ?? 1000,
       releaseStopped: options.releaseStopped,
+      onError: report,
+    });
+    startupRelease = releaseStoppedRunsAtStartup({
+      store: options.store,
+      releaseStopped: options.releaseStopped,
+      signal: closeController.signal,
       onError: report,
     });
     poll = startDataVersionPoll({

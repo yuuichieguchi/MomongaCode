@@ -68,9 +68,10 @@ export type { AppliedDigests, RestartPlanPort, SettingsDigests } from './plan.ts
 export { ERROR_KEY_PREFIX, safeChangeKey, watchSettings } from './settings-watch.ts';
 export type { SettingsWatch, WatchSettingsOptions } from './settings-watch.ts';
 export { createControlRequestHandler, respondShutdown, startControlServer } from './control-server.ts';
-export type { ControlHandlerOptions, ControlServer, ControlServerOptions, ShutdownResponseWriter } from './control-server.ts';
+export { shutdownIfIdle } from './idle-shutdown.ts';
+export type { ControlHandlerOptions, ControlServer, IdleShutdownOutcome, ControlServerOptions, ShutdownResponseWriter } from './control-server.ts';
 export { openDaemonMarker, reapDaemonMarker, reapOrphans } from './orphans.ts';
-export type { DaemonMarker, MarkerPorts, OrphanReapOptions, OrphanReapResult } from './orphans.ts';
+export type { DaemonMarker, MarkerFiles, MarkerPorts, OrphanReapOptions, OrphanReapResult } from './orphans.ts';
 export { runLaunchTask } from './launch.ts';
 export type { LaunchTaskOptions } from './launch.ts';
 export { childCloseBudgetMs, createShutdownController } from './shutdown.ts';

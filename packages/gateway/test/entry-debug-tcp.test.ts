@@ -19,11 +19,11 @@ const launch = async (context: CleanupContext, extraFlags: (home: string, aux: s
   const home = withTempDir(context, { asHome: true });
   writeSettings(home, { models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath, {}) } } });
   const io = createFakeEntryIo({
-    argv: [`--app-version=${VERSION}`, `--home=${home}`, '--log-target=stderr', ...extraFlags(home, aux)],
+    argv: [`--home=${home}`, '--log-target=stderr', ...extraFlags(home, aux)],
     home,
     env: { PATH: MINIMAL_PATH, HOME: home },
   });
-  const exit = runGatewayEntry(io);
+  const exit = runGatewayEntry(io, { version: VERSION });
   registerCleanup(context, async () => {
     if (io.exits.length === 0) io.signal('SIGINT');
     await exit.catch(() => undefined);

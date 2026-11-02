@@ -156,7 +156,6 @@ export const createManagerHarness = (context: CleanupContext, options: ManagerHa
     role,
     home,
     paths,
-    version: '1.2.3',
     launcher,
     env: options.env ?? { PATH: '/usr/bin:/bin', HOME: home, FOO: 'foo' },
     spawn: options.port ?? port,

@@ -33,8 +33,8 @@ const runDir = (paths: MomongaPaths): void => {
 type Launched = { io: FakeEntryIo; exit: Promise<number> };
 
 const launch = (context: CleanupContext, home: string, flags: readonly string[], env: Record<string, string> = {}, ioHome = home): Launched => {
-  const io = createFakeEntryIo({ argv: [`--app-version=${VERSION}`, ...flags], home: ioHome, env: { PATH: MINIMAL_PATH, HOME: ioHome, ...env } });
-  const exit = runGatewayEntry(io);
+  const io = createFakeEntryIo({ argv: [...flags], home: ioHome, env: { PATH: MINIMAL_PATH, HOME: ioHome, ...env } });
+  const exit = runGatewayEntry(io, { version: VERSION });
   registerCleanup(context, async () => {
     if (io.exits.length === 0) io.signal('SIGINT');
     await exit.catch(() => undefined);

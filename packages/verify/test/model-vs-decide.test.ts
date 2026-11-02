@@ -117,7 +117,7 @@ const ruleSetFor = (random: () => number, focus: Focus): RuleSpec[] => {
   const mixed = [...PATH_RULES, ...COMMAND_RULES, ...MCP_RULES];
   return Array.from({ length: size }, (): RuleSpec => {
     const text = pick(random, random() < 0.8 ? RULE_POOLS[focus] : mixed);
-    return [text === 'Bash' ? pick(random, ['ask', 'deny'] as const) : pick(random, EFFECTS), text];
+    return [pick(random, EFFECTS), text];
   });
 };
 

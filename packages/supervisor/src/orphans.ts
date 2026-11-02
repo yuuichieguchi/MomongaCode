@@ -8,7 +8,22 @@ import type { ChildRole } from './launcher.ts';
 import { orphansReaping, orphansWaiting, orphansWarning, writeEvent } from './log-events.ts';
 import { omitUndefined } from './omit-undefined.ts';
 
+export type MarkerFiles = {
+  createExclusive(markerPath: string, mode: number): void;
+  openReadOnly(markerPath: string): number;
+  closeDescriptor(descriptor: number): void;
+  remove(markerPath: string): void;
+};
+
+export const nodeMarkerFiles: MarkerFiles = {
+  createExclusive: (markerPath, mode) => fs.closeSync(fs.openSync(markerPath, 'wx', mode)),
+  openReadOnly: (markerPath) => fs.openSync(markerPath, 'r'),
+  closeDescriptor: (descriptor) => fs.closeSync(descriptor),
+  remove: (markerPath) => fs.rmSync(markerPath, { force: true }),
+};
+
 export type MarkerPorts = {
+  files?: MarkerFiles;
   findHolders?: typeof findHolders;
   reapMarkerDirectory?: typeof reapMarkerDirectory;
   reapMarkedProcesses?: typeof reapMarkedProcesses;
@@ -39,14 +54,14 @@ export type OrphanReapResult = { reaped: number; kept: number; aborted: boolean 
 
 const MARKER_MODE = 0o600;
 
-export const openDaemonMarker = (directory: string, role: ChildRole): DaemonMarker => {
+export const openDaemonMarker = (directory: string, role: ChildRole, files: MarkerFiles = nodeMarkerFiles): DaemonMarker => {
   const markerPath = path.join(directory, `${role}-${uuidv7()}`);
-  fs.closeSync(fs.openSync(markerPath, 'wx', MARKER_MODE));
+  files.createExclusive(markerPath, MARKER_MODE);
   let fd: number;
   try {
-    fd = fs.openSync(markerPath, 'r');
+    fd = files.openReadOnly(markerPath);
   } catch (error) {
-    fs.rmSync(markerPath, { force: true });
+    files.remove(markerPath);
     throw error;
   }
   let open = true;
@@ -56,10 +71,10 @@ export const openDaemonMarker = (directory: string, role: ChildRole): DaemonMark
     closeFd: () => {
       if (!open) return;
       open = false;
-      fs.closeSync(fd);
+      files.closeDescriptor(fd);
     },
     remove: () => {
-      fs.rmSync(markerPath, { force: true });
+      files.remove(markerPath);
     },
   };
 };

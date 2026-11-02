@@ -23,6 +23,7 @@ if (isMain) {
   const pathsOf = (home: string) => momongaPaths(home, process.platform, {});
   await runDaemonEntry(nodeEntryIo(), {
     service: role,
+    version: '0.0.0-e2e',
     flags: FIXTURE_FLAGS,
     maxCloseMs: () => 1000,
     ownLockPath: (home) => pathsOf(home).locks[role],
@@ -32,7 +33,7 @@ if (isMain) {
       context.logger.info(OWN_LOG_MSG, { data: { role } });
       for (const line of RAW_STDERR_LINES) process.stderr.write(`${line}\n`);
       announceReady(
-        { service: role, pid: process.pid, version: context.flags['app-version'], socketPath: pathsOf(context.home).sockets[role], startedAt: new Date().toISOString() },
+        { service: role, pid: process.pid, version: context.version, socketPath: pathsOf(context.home).sockets[role], startedAt: new Date().toISOString() },
         context.stdout,
       );
       process.stdout.write(`${STRAY_STDOUT_LINE}\n`);

@@ -73,9 +73,10 @@ const conservativeAnalysisStrength = (pattern: CommandPattern, analysis: Analysi
   ]);
 
 export const matchesSegment = (rule: PermissionRule, segment: Segment): boolean =>
-  strictSegmentMatches(commandPatternOf(rule), segment);
+  rule.specifier === undefined || strictSegmentMatches(commandPatternOf(rule), segment);
 
 export const commandMatchStrength = (rule: PermissionRule, command: string): MatchStrength | null => {
+  if (rule.specifier === undefined) return 'position';
   const pattern = commandPatternOf(rule);
   if (pattern.kind === 'exact' && command.trim() === pattern.text) return 'position';
   const analysis = analyzeCommand(command);

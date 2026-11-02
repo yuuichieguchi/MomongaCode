@@ -62,6 +62,7 @@ export type RunAppDeps = {
   skills: SkillsPort;
   agents: AgentCatalogPort;
   isDraining(): boolean;
+  beginDraining(): void;
   health: { pid: number; startedAt: string; sandbox: SandboxKind };
   protectedRootAreas: readonly string[];
   defaults: RunServiceDefaults;
@@ -162,6 +163,14 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     sandbox: deps.health.sandbox,
   });
 
+  const drainIfIdle: Handler = () => {
+    if (!deps.isDraining()) {
+      if (deps.store.hasActiveRun()) throw conflict('not_idle', 'a run is active, so the service keeps accepting work');
+      deps.beginDraining();
+    }
+    return json({ state: 'draining' }, 202);
+  };
+
   const drainingError = () => serviceUnavailable('draining', 'the service is draining and accepts no new work');
 
   const gatewayAliases = async (): Promise<readonly string[]> => {
@@ -212,6 +221,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     checkModeAllowed(permissionMode, bypassAllowed, settings.autoModeClassifier, aliases);
     const stripped = stripCredentialEnv(body.env, settings.credentialEnvNames);
     const mcpServers = checkedMcpServers(body.mcpServers ?? {});
+    if (deps.isDraining()) throw drainingError();
     const session = store.createSession({ cwd, env: stripped.env, permissionMode, modelAlias, bypassAllowed, additionalDirectories, mcpServers });
     return json({ session: toSessionView(store, session), strippedEnvKeys: stripped.removed }, 201, { location: `/v1/sessions/${session.id}` });
   };
@@ -295,11 +305,14 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       if (!sameRunRequest(found, idempotency.requestDigest)) throw idempotencyKeyReused();
       return json({ run: toRunView(found.run) }, 202, { location: `/v1/runs/${found.run.id}`, 'idempotent-replayed': 'true' });
     };
-    if (deps.isDraining()) {
+    const replayWhileDraining = (): Response | undefined => {
+      if (!deps.isDraining()) return undefined;
       const replayed = replay();
       if (replayed === undefined) throw drainingError();
       return replayed;
-    }
+    };
+    const drained = replayWhileDraining();
+    if (drained !== undefined) return drained;
     const replayed = replay();
     if (replayed !== undefined) return replayed;
     const skill = body.skill === undefined ? undefined : await activationOf(session, body.skill);
@@ -313,6 +326,8 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       }
       if (!capabilities.imageInput) throw imageInputUnsupported(session.modelAlias);
     }
+    const drainedDuringChecks = replayWhileDraining();
+    if (drainedDuringChecks !== undefined) return drainedDuringChecks;
     const result = store.createRunAndEnqueue(session.id, {
       input: body.input,
       ...idempotency,
@@ -479,6 +494,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   };
 
   route('/v1/health', { GET: health });
+  route('/v1/drain-if-idle', { POST: drainIfIdle });
   route('/v1/sessions', { GET: listSessions, POST: createSession });
   route('/v1/sessions/:id', { GET: getSession, PATCH: patchSession });
   route('/v1/sessions/:id/runs', { GET: listRuns, POST: createRun });

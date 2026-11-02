@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { createUdsClient, momongaPaths } from '@momonga/foundation';
 import { readJsonLinesFile, registerCleanup, startDaemonBin, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
+import packageJson from '../../package.json' with { type: 'json' };
 import { writeUserSettings } from './helpers.ts';
 import { MINIMAL_PATH, modelSettings } from './run-helpers.ts';
 
@@ -23,10 +24,10 @@ const msgs = (lines: ReadonlyArray<Record<string, unknown>>): unknown[] => lines
 describe('runtime bin (real process, §5.3)', () => {
   it('bin smoke: one ready line on stdout, SIGTERM exits 0, JSON stderr, runtime.log 0600 ending with entry.exit', PROCESS_TIMEOUT, async (context) => {
     const { home, paths, env } = prepare(context);
-    const daemon = startDaemonBin(context, BIN, ['--app-version=t', `--home=${home}`], env);
+    const daemon = startDaemonBin(context, BIN, [`--home=${home}`], env);
 
     const ready = JSON.parse(await daemon.waitForReady()) as Record<string, unknown>;
-    expect(ready).toMatchObject({ event: 'ready', service: 'runtime', version: 't', pid: daemon.child.pid, socketPath: paths.sockets.runtime });
+    expect(ready).toMatchObject({ event: 'ready', service: 'runtime', version: packageJson.version, pid: daemon.child.pid, socketPath: paths.sockets.runtime });
     daemon.child.kill('SIGTERM');
 
     expect(await daemon.waitForExit()).toBe(0);
@@ -39,7 +40,7 @@ describe('runtime bin (real process, §5.3)', () => {
 
   it('entry writes its role log by default and echoes the same lines to stderr', PROCESS_TIMEOUT, async (context) => {
     const { home, paths, env } = prepare(context);
-    const daemon = startDaemonBin(context, BIN, ['--app-version=t', `--home=${home}`], env);
+    const daemon = startDaemonBin(context, BIN, [`--home=${home}`], env);
     await daemon.waitForReady();
     daemon.child.kill('SIGTERM');
     expect(await daemon.waitForExit()).toBe(0);
@@ -53,7 +54,7 @@ describe('runtime bin (real process, §5.3)', () => {
 
   it('--log-target=file writes nothing to stderr and the role log holds every line', PROCESS_TIMEOUT, async (context) => {
     const { home, paths, env } = prepare(context);
-    const daemon = startDaemonBin(context, BIN, ['--app-version=t', `--home=${home}`, '--log-target=file'], env);
+    const daemon = startDaemonBin(context, BIN, [`--home=${home}`, '--log-target=file'], env);
     await daemon.waitForReady();
     daemon.child.kill('SIGTERM');
     expect(await daemon.waitForExit()).toBe(0);
@@ -66,7 +67,7 @@ describe('runtime bin (real process, §5.3)', () => {
 
   it('bin without supervisor does not exit on its own: it serves /v1/health and is still running', PROCESS_TIMEOUT, async (context) => {
     const { home, paths, env } = prepare(context);
-    const daemon = startDaemonBin(context, BIN, ['--app-version=t', `--home=${home}`, '--log-target=file'], env);
+    const daemon = startDaemonBin(context, BIN, [`--home=${home}`, '--log-target=file'], env);
     await daemon.waitForReady();
     const client = createUdsClient(paths.sockets.runtime);
     registerCleanup(context, () => client.close());

@@ -6,7 +6,7 @@ import { DaemonStartError, ensureDaemon, probeSupervisor, stopDaemon } from '../
 import type { DaemonPorts } from '../src/daemon/ensure-daemon.ts';
 import { createSupervisorClient } from '../src/client/supervisor-client.ts';
 import type { SelfExecutable } from '../src/ports.ts';
-import { readyChildren, recordingSpawn, startFakeRuntime, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
+import { readyChildren, recordingSpawn, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
 import type { FakeSupervisor } from './fake-supervisor.ts';
 
 const VERSION = '1.2.3';
@@ -26,12 +26,8 @@ const setup = async (context: TestContext) => {
     running.push(supervisor);
     return supervisor;
   };
-  const startRuntime = async (activeRunIds: readonly (string | null)[]): Promise<void> => {
-    const runtime = await startFakeRuntime(paths, activeRunIds);
-    registerCleanup(context, runtime.stop);
-  };
   const portsWith = (spawn: DaemonPorts['spawnDetached']): DaemonPorts => ({ version: VERSION, env: { PATH: '/usr/bin' }, home, clock: virtualClock(), self: SELF, spawnDetached: spawn });
-  return { home, paths, start, startRuntime, portsWith };
+  return { home, paths, start, portsWith };
 };
 
 describe('probeSupervisor', () => {
@@ -73,7 +69,20 @@ describe('ensureDaemon', () => {
     const health = await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS });
 
     expect(health.phase).toBe('running');
-    expect(spawned).toEqual([{ command: '/opt/node', args: ['/opt/momonga/main.js', '__supervise', `--app-version=${VERSION}`, `--home=${home}`, '--log-target=file'] }]);
+    expect(spawned).toEqual([{ command: '/opt/node', args: ['/opt/momonga/main.js', '__supervise', `--home=${home}`, '--log-target=file'] }]);
+  });
+
+  it('refuses a daemon it started whose binary reports another version than this client, naming both', async (context) => {
+    const { paths, start, portsWith } = await setup(context);
+    const { spawn } = recordingSpawn(() => {
+      void start({ version: '9.0.0' });
+      return undefined;
+    });
+
+    const failure = await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS }).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(DaemonStartError);
+    expect((failure as DaemonStartError).message).toContain(`runs version 9.0.0, not ${VERSION}`);
   });
 
   it('waits for children that are not ready yet', async (context) => {
@@ -85,9 +94,8 @@ describe('ensureDaemon', () => {
   });
 
   it('replaces an older daemon that has no active run when the caller starts work', async (context) => {
-    const { paths, start, startRuntime, portsWith } = await setup(context);
-    const old = await start({ version: '0.0.1' });
-    await startRuntime([null, null]);
+    const { paths, start, portsWith } = await setup(context);
+    const old = await start({ version: '0.0.1', activeRunIds: [null, null] });
     const { spawn, spawned } = recordingSpawn(() => {
       void start({ version: VERSION });
       return undefined;
@@ -101,9 +109,8 @@ describe('ensureDaemon', () => {
   });
 
   it('leaves an older daemon with an active run alone when the caller only replaces an idle daemon', async (context) => {
-    const { paths, start, startRuntime, portsWith } = await setup(context);
-    const old = await start({ version: '0.0.1' });
-    await startRuntime([null, 'run-7']);
+    const { paths, start, portsWith } = await setup(context);
+    const old = await start({ version: '0.0.1', activeRunIds: [null, 'run-7'] });
     const { spawn, spawned } = recordingSpawn(() => undefined);
 
     const health = await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS, replacement: 'when-idle' });
@@ -123,9 +130,8 @@ describe('ensureDaemon', () => {
   });
 
   it('never replaces a daemon for a caller that does not ask for replacement', async (context) => {
-    const { paths, start, startRuntime, portsWith } = await setup(context);
-    const old = await start({ version: '0.0.1' });
-    await startRuntime([null]);
+    const { paths, start, portsWith } = await setup(context);
+    const old = await start({ version: '0.0.1', activeRunIds: [null] });
     const { spawn, spawned } = recordingSpawn(() => undefined);
 
     const health = await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS });
@@ -136,9 +142,8 @@ describe('ensureDaemon', () => {
   });
 
   it('replaces an older daemon with active runs only when the caller asks for it unconditionally', async (context) => {
-    const { paths, start, startRuntime, portsWith } = await setup(context);
-    const old = await start({ version: '0.0.1' });
-    await startRuntime(['run-7']);
+    const { paths, start, portsWith } = await setup(context);
+    const old = await start({ version: '0.0.1', activeRunIds: ['run-7'] });
     const { spawn } = recordingSpawn(() => {
       void start({ version: VERSION });
       return undefined;
@@ -151,9 +156,8 @@ describe('ensureDaemon', () => {
   });
 
   it('never replaces a newer daemon, even when the caller asks for it unconditionally', async (context) => {
-    const { paths, start, startRuntime, portsWith } = await setup(context);
-    const newer = await start({ version: '1.2.4' });
-    await startRuntime([null]);
+    const { paths, start, portsWith } = await setup(context);
+    const newer = await start({ version: '1.2.4', activeRunIds: [null] });
     const { spawn, spawned } = recordingSpawn(() => undefined);
 
     const health = await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS, replacement: 'always' });
@@ -164,9 +168,8 @@ describe('ensureDaemon', () => {
   });
 
   it('never replaces a daemon whose version cannot be ordered against this one', async (context) => {
-    const { paths, start, startRuntime, portsWith } = await setup(context);
-    const unordered = await start({ version: 'e2e' });
-    await startRuntime([null]);
+    const { paths, start, portsWith } = await setup(context);
+    const unordered = await start({ version: 'e2e', activeRunIds: [null] });
     const { spawn } = recordingSpawn(() => undefined);
 
     const health = await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS, replacement: 'always' });

@@ -20,8 +20,8 @@ export const runMain = async (version: string, overrides: Partial<CliPorts> = {}
     let update: UpdateWiring | undefined;
     const program = buildProgram({
       ports,
-      policyVerify: nodePolicyVerifyHost(ports, pathsOf(ports)),
-      entries: daemonEntries(ports.self),
+      policyVerify: () => nodePolicyVerifyHost(ports, pathsOf(ports)),
+      entries: daemonEntries(ports.self, ports.version),
       update: () => (update ??= nodeUpdateWiring(ports, pathsOf(ports))),
       interrupt: interrupt.signal,
       entryIo,

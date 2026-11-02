@@ -22,12 +22,15 @@ export const E2E_DEPS_KEYS = [
   'intervals',
   'watchSettings',
   'launcherOverrides',
+  'version',
 ] as const;
 
 export type E2eDeps = Pick<
   SupervisorEntryDeps,
   'runtime' | 'gateway' | 'startupTimeoutMs' | 'lockWaitMs' | 'orphanGraceMs' | 'orphanReapGraceMs' | 'heldRetryMs' | 'restart' | 'intervals' | 'watchSettings'
 > & { launcherOverrides?: LauncherOverrides };
+
+export type E2eDepsFile = E2eDeps & { version: string };
 
 export type SupervisorHomeGuardInput = { env: Readonly<Record<string, string | undefined>>; userHome: string };
 
@@ -66,13 +69,14 @@ export const guardSupervisorHome = (argv: readonly string[], input: SupervisorHo
   return undefined;
 };
 
-export const parseE2eDeps = (text: string): E2eDeps => {
+export const parseE2eDeps = (text: string): E2eDepsFile => {
   const parsed: unknown = JSON.parse(text);
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error('e2e deps must be a JSON object');
   for (const key of Object.keys(parsed)) {
     if (!KNOWN_DEPS_KEYS.has(key)) throw new Error(`unknown e2e deps key ${key}`);
   }
-  return parsed as E2eDeps;
+  if (!('version' in parsed) || typeof parsed.version !== 'string') throw new Error('e2e deps must name the version of the supervisor binary');
+  return parsed as E2eDepsFile;
 };
 
 const withoutHarnessVariables = (source: Readonly<Record<string, string | undefined>>): Record<string, string | undefined> =>
@@ -106,15 +110,14 @@ export const supervisorMain = async (): Promise<void> => {
     refuse(`${E2E_DEPS_ENV} is not set`);
     return;
   }
-  let loaded: E2eDeps;
+  let loaded: E2eDepsFile;
   try {
     loaded = parseE2eDeps(fs.readFileSync(depsFile, 'utf8'));
   } catch (error) {
     refuse(error instanceof Error ? error.message : String(error));
     return;
   }
-  const { launcherOverrides, ...rest } = loaded;
-  const finished = runSupervise({ ...nodeEntryIo(), env: withoutHarnessVariables(process.env) }, { launcher: entryFileLauncher(launcherOverrides), deps: rest });
+  const { launcherOverrides, ...rest } = loaded;  const finished = runSupervise({ ...nodeEntryIo(), env: withoutHarnessVariables(process.env) }, { launcher: entryFileLauncher(launcherOverrides), deps: rest });
   watchParentDeath();
   await finished;
 };

@@ -3,10 +3,10 @@ import { isProtectedWrite, lexicallyWithin } from '@momonga/foundation';
 import type { FileRuleSet, ProtectedSet, UnresolvableReason } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import type { PermissionMode } from '@momonga/protocol';
-import { MAX_GLOB_MATCHES, commandApproval } from './approval.ts';
-import { expandBraces } from './brace-expansion.ts';
+import { commandApproval } from './approval.ts';
 import { commandCoveredByAllowRules } from './command-match.ts';
 import type { PolicyFilesystem } from './filesystem.ts';
+import { expandGlobWord } from './glob-expansion.ts';
 import { matchRule, matchStrength, ruleCoversSubject } from './match-rule.ts';
 import { absoluteFrom } from './path-match.ts';
 import { resolveSegmentProgram } from './program-resolution.ts';
@@ -43,7 +43,6 @@ export type Decision = {
   humanOnly?: true;
 };
 
-const GLOB_METACHARACTER = /[*?[]/;
 const DISCARD_TARGETS: ReadonlySet<string> = new Set(['/dev/null', '/dev/stdout', '/dev/stderr']);
 const WRITE_TOOL: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write' };
 const READ_TOOL: PolicyTool = { name: 'Read', kind: 'read', sideEffect: 'read_only' };
@@ -193,26 +192,9 @@ const worktreeOf = (input: DecideInput): string => {
 };
 
 const expandGlobTarget = (input: DecideInput, pattern: string, plan: PathPlan, place: (resolved: string) => void): void => {
-  const braced = expandBraces(pattern, MAX_GLOB_MATCHES);
-  if (braced === 'overflow') {
-    plan.unresolvable.push({ kind: 'dynamic' });
-    return;
-  }
-  for (const word of braced) {
-    const rooted = word === '~' || word.startsWith('~/') ? path.join(input.home, word.slice(1)) : word;
-    if (rooted.startsWith('~')) {
-      plan.unresolvable.push({ kind: 'other-user-home' });
-      continue;
-    }
-    if (!GLOB_METACHARACTER.test(rooted)) {
-      place(absoluteFrom(rooted, input.cwd));
-      continue;
-    }
-    const expansion = input.fs.expandGlob(rooted, input.cwd, MAX_GLOB_MATCHES);
-    if ('overflow' in expansion) plan.unresolvable.push({ kind: 'dynamic' });
-    else if ('unresolvable' in expansion) plan.unresolvable.push(expansion.unresolvable);
-    else if (expansion.matches.length === 0) place(absoluteFrom(rooted, input.cwd));
-    else for (const match of expansion.matches) place(absoluteFrom(match, input.cwd));
+  for (const word of expandGlobWord(input, pattern)) {
+    if (word.kind === 'unresolvable') plan.unresolvable.push(word.reason);
+    else place(word.absolute);
   }
 };
 

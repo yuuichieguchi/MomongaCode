@@ -9,14 +9,14 @@ export type DaemonEntries = {
   runtime(io: EntryIo): Promise<number>;
 };
 
-export const daemonEntries = (self: SelfExecutable): DaemonEntries => ({
-  supervise: (io) => runSupervise(io, { launcher: selfLauncher(self) }),
+export const daemonEntries = (self: SelfExecutable, version: string): DaemonEntries => ({
+  supervise: (io) => runSupervise(io, { launcher: selfLauncher(self), deps: { version } }),
   gateway: async (io) => {
     const { runGatewayEntry } = await import('@momonga/gateway');
-    return runGatewayEntry(io);
+    return runGatewayEntry(io, { version });
   },
   runtime: async (io) => {
     const { runRuntimeEntry } = await import('@momonga/runtime/entry');
-    return runRuntimeEntry(io);
+    return runRuntimeEntry(io, { version });
   },
 });

@@ -1,4 +1,5 @@
 import type { Claim, RuntimeStore } from '@momonga/store';
+import type { ServiceTimers } from '../service/timers.ts';
 import { LeaseLostError, ShutdownError } from './errors.ts';
 
 export type ClaimControl = {
@@ -22,12 +23,13 @@ export type ClaimControl = {
 
 export type ClaimControlOptions = {
   store: RuntimeStore;
+  timers: ServiceTimers;
   claim: Claim;
   heartbeatMs: number;
   cancelPollMs: number;
 };
 
-export const startClaimControl = ({ store, claim, heartbeatMs, cancelPollMs }: ClaimControlOptions): ClaimControl => {
+export const startClaimControl = ({ store, timers, claim, heartbeatMs, cancelPollMs }: ClaimControlOptions): ClaimControl => {
   const controller = new AbortController();
   const recovery = new AbortController();
   let leaseLost = false;
@@ -76,7 +78,24 @@ export const startClaimControl = ({ store, claim, heartbeatMs, cancelPollMs }: C
     }
   };
 
-  const heartbeat = setInterval(
+  const every = (action: () => void, intervalMs: number): (() => void) => {
+    let handle: unknown;
+    let stopped = false;
+    const arm = (): void => {
+      handle = timers.setTimeout(() => {
+        if (stopped) return;
+        action();
+        if (!stopped) arm();
+      }, intervalMs);
+    };
+    arm();
+    return () => {
+      stopped = true;
+      timers.clearTimeout(handle);
+    };
+  };
+
+  const stopHeartbeat = every(
     () =>
       guarded(() => {
         if (leaseLost) return;
@@ -87,7 +106,7 @@ export const startClaimControl = ({ store, claim, heartbeatMs, cancelPollMs }: C
     heartbeatMs,
   );
 
-  const cancelPoll = setInterval(
+  const stopCancelPoll = every(
     () =>
       guarded(() => {
         if (leaseLost) return;
@@ -126,8 +145,8 @@ export const startClaimControl = ({ store, claim, heartbeatMs, cancelPollMs }: C
     raisedDuringCancel: (error) => raisedAfterCancel.has(error),
     failure: () => failure,
     stop: () => {
-      clearInterval(heartbeat);
-      clearInterval(cancelPoll);
+      stopHeartbeat();
+      stopCancelPoll();
     },
   };
 };

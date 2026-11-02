@@ -158,7 +158,7 @@ const registerPolicy: CommandGroup = (program, deps) => {
     .option('--secret <path>', 'a further secret location to keep out of reach; repeat for several', collect, [])
     .action(async (options: { json?: true; mode?: PermissionMode; secret: string[] }) => {
       deps.complete(
-        await policyVerify(deps.ports, pathsOf(deps.ports), deps.policyVerify, {
+        await policyVerify(deps.ports, pathsOf(deps.ports), deps.policyVerify(), {
           json: options.json === true,
           secrets: options.secret,
           ...(options.mode === undefined ? {} : { mode: options.mode }),

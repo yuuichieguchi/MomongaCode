@@ -21,7 +21,7 @@ const harness = () => {
   const ports = { version: '9.9.9', home: '/h', cwd: '/c', terminal: undefined } as unknown as CliPorts;
   const program = buildProgram({
     ports,
-    policyVerify: nodePolicyVerifyHost(ports, { cacheBase: '/c/cache' }),
+    policyVerify: () => nodePolicyVerifyHost(ports, { cacheBase: '/c/cache' }),
     entries,
     update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
     interrupt: new AbortController().signal,
@@ -41,7 +41,7 @@ const run = (program: ReturnType<typeof harness>['program'], ...args: string[]):
 describe('internal daemon commands', () => {
   it.each(['__supervise', '__gateway', '__runtime'])('%s receives its flags untouched, as the supervisor contract passes them', async (name) => {
     const { program, received, completed } = harness();
-    const flags = ['--app-version=1.0.0', '--home=/h', '--lifeline-fd=3', '--log-target=file', '--worker-count=2'];
+    const flags = ['--home=/h', '--lifeline-fd=3', '--log-target=file', '--worker-count=2'];
 
     await run(program, name, ...flags);
 

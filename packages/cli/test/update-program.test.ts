@@ -30,7 +30,7 @@ const programFor = async (context: TestContext, options: HarnessOptions = {}) =>
   } as unknown as CliPorts;
   const program = buildProgram({
     ports: cli,
-    policyVerify: nodePolicyVerifyHost(cli, { cacheBase: `${harness.ports.home}/cache` }),
+    policyVerify: () => nodePolicyVerifyHost(cli, { cacheBase: `${harness.ports.home}/cache` }),
     entries,
     update: () => harness.wiring,
     interrupt: new AbortController().signal,

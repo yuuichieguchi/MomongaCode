@@ -36,10 +36,20 @@ export const createFakeKernelLock = ({ inheritable }: FakeKernelLockOptions): Fa
       },
     };
   };
+  const readHolderSync = (lockPath: string): string | undefined => {
+    try {
+      return fs.readFileSync(lockPath, 'utf8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+      throw error;
+    }
+  };
   return {
     name: 'file-lock',
     claim: async (lockPath) => claimSync(lockPath),
     isHeld: async (lockPath) => holders.has(lockPath),
+    readHolder: async (lockPath) => readHolderSync(lockPath),
+    readHolderSync,
     claimInheritable: inheritable ? claimSync : undefined,
     holdExternally: (lockPath, pid) => {
       holders.set(lockPath, 'external');

@@ -1,9 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import { LOCK_FD } from './process-contract.ts';
-import { hostKernelLock } from './platform/kernel-lock.ts';
+import { HOLDER_READ_MAX_BYTES, hostKernelLock } from './platform/kernel-lock.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
-import { noFollowFlag } from './platform/privacy.ts';
+
+export { HOLDER_READ_MAX_BYTES };
 
 export type DescribeHolder = (pid: number | undefined) => Promise<string>;
 
@@ -32,7 +33,6 @@ export class LockAdoptionError extends Error {
 
 export const LOCK_FD_ENV = 'MOMONGA_LOCK_FD';
 export const LOCK_NONCE_ENV = 'MOMONGA_LOCK_NONCE';
-export const HOLDER_READ_MAX_BYTES = 64;
 const NONCE_BYTES = 16;
 const HANDOFF_PREFIX = 'handoff:';
 
@@ -46,48 +46,13 @@ export type ProcessLockInspection = { state: 'free' } | { state: 'held'; pid: nu
 
 type RecordedHolder = { kind: 'pid'; pid: number } | { kind: 'unrecorded' };
 
-const readHolder = async (lockPath: string): Promise<RecordedHolder> => {
-  let handle: fs.promises.FileHandle;
-  try {
-    handle = await fs.promises.open(lockPath, fs.constants.O_RDONLY | noFollowFlag());
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { kind: 'unrecorded' };
-    throw error;
-  }
-  let text: string;
-  try {
-    const buffer = Buffer.alloc(HOLDER_READ_MAX_BYTES);
-    const { bytesRead } = await handle.read(buffer, 0, HOLDER_READ_MAX_BYTES, 0);
-    text = buffer.toString('utf8', 0, bytesRead);
-  } finally {
-    await handle.close();
-  }
-  return holderOf(text);
-};
-
-const holderOf = (text: string): RecordedHolder => (/^[1-9]\d{0,9}$/.test(text) ? { kind: 'pid', pid: Number(text) } : { kind: 'unrecorded' });
-
-const readHolderSync = (lockPath: string): RecordedHolder => {
-  let descriptor: number;
-  try {
-    descriptor = fs.openSync(lockPath, fs.constants.O_RDONLY | noFollowFlag());
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { kind: 'unrecorded' };
-    throw error;
-  }
-  try {
-    const buffer = Buffer.alloc(HOLDER_READ_MAX_BYTES);
-    const bytesRead = fs.readSync(descriptor, buffer, 0, HOLDER_READ_MAX_BYTES, 0);
-    return holderOf(buffer.toString('utf8', 0, bytesRead));
-  } finally {
-    fs.closeSync(descriptor);
-  }
-};
+const holderOf = (text: string | undefined): RecordedHolder =>
+  text !== undefined && /^[1-9]\d{0,9}$/.test(text) ? { kind: 'pid', pid: Number(text) } : { kind: 'unrecorded' };
 
 export const inspectProcessLock = async (lockPath: string, options: InspectProcessLockOptions = {}): Promise<ProcessLockInspection> => {
   const mechanism = options.mechanism ?? hostKernelLock();
   if (!(await mechanism.isHeld(lockPath))) return { state: 'free' };
-  const holder = await readHolder(lockPath);
+  const holder = holderOf(await mechanism.readHolder(lockPath));
   return holder.kind === 'pid' ? { state: 'held', pid: holder.pid } : { state: 'unreadable' };
 };
 
@@ -106,7 +71,7 @@ export const acquireProcessLock = async (
   const mechanism = options.mechanism ?? hostKernelLock();
   const outcome = await mechanism.claim(lockPath);
   if (outcome.kind === 'claimed') return claimed(outcome.lock);
-  const holder = await readHolder(lockPath);
+  const holder = holderOf(await mechanism.readHolder(lockPath));
   const holderPid = holder.kind === 'pid' ? holder.pid : undefined;
   throw new ProcessLockHeldError(await describeHolder(holderPid), lockPath, holderPid);
 };
@@ -125,7 +90,7 @@ export const claimLockForChild = (lockPath: string, options: ProcessLockOptions 
   if (mechanism.claimInheritable === undefined) return { kind: 'unsupported' };
   const outcome = mechanism.claimInheritable(lockPath);
   if (outcome.kind === 'held') {
-    const holder = readHolderSync(lockPath);
+    const holder = holderOf(mechanism.readHolderSync(lockPath));
     return { kind: 'held', holderPid: holder.kind === 'pid' ? holder.pid : undefined };
   }
   const { lock } = outcome;

@@ -11,7 +11,28 @@ export type ApprovalSweeperOptions = {
   onError: (error: unknown) => void;
 };
 
-export const startApprovalSweeper = (options: ApprovalSweeperOptions): { close(): Promise<void> } => {
+export type StoppedRunReleaseOptions = {
+  store: Pick<RuntimeStore, 'stoppedRunIds'>;
+  releaseStopped(runId: string, signal: AbortSignal): Promise<void>;
+  signal: AbortSignal;
+  onError: (error: unknown) => void;
+};
+
+export const releaseStoppedRunsAtStartup = async ({ store, releaseStopped, signal, onError }: StoppedRunReleaseOptions): Promise<void> => {
+  let runIds: string[];
+  try {
+    runIds = store.stoppedRunIds();
+  } catch (error) {
+    onError(error);
+    return;
+  }
+  for (const runId of runIds) {
+    if (signal.aborted) return;
+    await releaseStopped(runId, signal).catch(onError);
+  }
+};
+
+export const startApprovalSweeper =(options: ApprovalSweeperOptions): { close(): Promise<void> } => {
   const { store, clock, timers, intervalMs, releaseStopped, onError } = options;
   const closing = new AbortController();
   const releasing = new Set<Promise<void>>();

@@ -71,6 +71,7 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
   const { store, tracer } = options;
   const control = startClaimControl({
     store,
+    timers: options.timers,
     claim,
     heartbeatMs: options.heartbeatMs ?? options.leaseMs / DEFAULT_HEARTBEAT_DIVISOR,
     cancelPollMs: options.cancelPollMs ?? DEFAULT_CANCEL_POLL_MS,

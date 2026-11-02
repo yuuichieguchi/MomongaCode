@@ -10,6 +10,7 @@ import type { SupervisorChildState, SupervisorHealth, SupervisorPhase } from '@m
 import type { ChildRole } from '@momonga/supervisor';
 import { startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeRoute, FakeScriptedReply } from '@momonga/testkit';
+import { SUPERVISOR_APP_VERSION } from './app-version.ts';
 import { registerE2eCleanup } from './home.ts';
 import type { E2eHome } from './home.ts';
 import { REPO_ROOT } from './launcher.ts';
@@ -23,7 +24,7 @@ import type { E2eDeps } from './supervisor-main.ts';
 import { E2E_DRAIN_TIMEOUT_MS, E2E_LEASE_MS, E2E_READY_DEADLINE_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS, until, withinBound } from './wait.ts';
 
 export const SUPERVISOR_MAIN_PATH = path.join(REPO_ROOT, 'e2e', 'support', 'supervisor-main.ts');
-export const SUPERVISOR_APP_VERSION = 'e2e';
+export { SUPERVISOR_APP_VERSION };
 export const SUPERVISOR_ENV_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 export const STDERR_TAIL_BYTES = 64 * 1024;
 export const UPSTREAM_MODEL = 'system';
@@ -140,13 +141,13 @@ export const writeSettingsFile = (home: E2eHome, value: Readonly<Record<string, 
   fs.renameSync(temporary, target);
 };
 
-export const writeDepsFile = (home: E2eHome, deps: E2eDeps, stackNumber: number): string => {
+export const writeDepsFile = (home: E2eHome, deps: E2eDeps, stackNumber: number, version: string = SUPERVISOR_APP_VERSION): string => {
   const file = path.join(home.root, `deps-${stackNumber}.json`);
-  fs.writeFileSync(file, JSON.stringify(deps), { mode: DEPS_FILE_MODE });
+  fs.writeFileSync(file, JSON.stringify({ ...deps, version }), { mode: DEPS_FILE_MODE });
   return file;
 };
 
-export const supervisorArgv = (home: E2eHome, version: string = SUPERVISOR_APP_VERSION): string[] => [`--app-version=${version}`, `--home=${home.home}`, '--log-target=file'];
+export const supervisorArgv = (home: E2eHome): string[] => [`--home=${home.home}`, '--log-target=file'];
 
 export const supervisorEnv = (home: E2eHome, depsFile: string): Record<string, string> => ({
   PATH: SUPERVISOR_ENV_PATH,
@@ -167,8 +168,8 @@ const describeExit = (exit: SupervisorExit): string => `code ${exit.code}, signa
 
 export const spawnSupervisor = (options: SpawnSupervisorOptions): SpawnedSupervisor => {
   const { home, deps = DEFAULT_E2E_DEPS, stackNumber = 1, script = SUPERVISOR_MAIN_PATH, version } = options;
-  const depsFile = writeDepsFile(home, deps, stackNumber);
-  const child = spawn(process.execPath, [script, ...supervisorArgv(home, version)], {
+  const depsFile = writeDepsFile(home, deps, stackNumber, version);
+  const child = spawn(process.execPath, [script, ...supervisorArgv(home)], {
     env: supervisorEnv(home, depsFile),
     cwd: home.root,
     detached: true,

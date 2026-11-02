@@ -24,37 +24,34 @@ const startedChildPids = (logText: string): number[] =>
 
 describe('contract flags', () => {
   it('launcher appends the contract flags in order', () => {
-    expect(contractArgs({ role: 'runtime', version: '1.2.3', home: '/h/home' })).toEqual([
-      '--app-version=1.2.3',
+    expect(contractArgs({ role: 'runtime', home: '/h/home' })).toEqual([
       '--home=/h/home',
       `--lifeline-fd=${LIFELINE_FD}`,
       '--log-target=file',
     ]);
     const tuned = contractArgs({
       role: 'runtime',
-      version: '1.2.3',
       home: '/h/home',
       runtime: { leaseMs: 100, drainTimeoutMs: 200, workerCount: 2, sandboxExecPath: '/usr/bin/sandbox-exec' },
       gateway: { args: ['--fm-binary=/opt/fm'] },
     });
-    expect(tuned.slice(0, 4)).toEqual(['--app-version=1.2.3', '--home=/h/home', '--lifeline-fd=3', '--log-target=file']);
-    expect([...tuned.slice(4)].sort()).toEqual(['--drain-timeout-ms=200', '--lease-ms=100', '--sandbox-exec-path=/usr/bin/sandbox-exec', '--worker-count=2']);
-    const gateway = contractArgs({ role: 'gateway', version: '1.2.3', home: '/h/home', runtime: { leaseMs: 100 }, gateway: { args: ['--fm-binary=/opt/fm'] } });
-    expect(gateway).toEqual(['--app-version=1.2.3', '--home=/h/home', '--lifeline-fd=3', '--log-target=file', '--fm-binary=/opt/fm']);
+    expect(tuned.slice(0, 3)).toEqual(['--home=/h/home', '--lifeline-fd=3', '--log-target=file']);
+    expect([...tuned.slice(3)].sort()).toEqual(['--drain-timeout-ms=200', '--lease-ms=100', '--sandbox-exec-path=/usr/bin/sandbox-exec', '--worker-count=2']);
+    const gateway = contractArgs({ role: 'gateway', home: '/h/home', runtime: { leaseMs: 100 }, gateway: { args: ['--fm-binary=/opt/fm'] } });
+    expect(gateway).toEqual(['--home=/h/home', '--lifeline-fd=3', '--log-target=file', '--fm-binary=/opt/fm']);
   });
 
   it('resolveLaunch puts the launcher args before the contract flags', () => {
     const resolved = resolveLaunch({
       role: 'gateway',
       launcher: () => ({ command: '/usr/local/bin/node', args: ['__gateway'] }),
-      version: '9.9.9',
       home: '/h',
       baseEnv: { PATH: '/bin' },
       separateEnv: (merged) => merged,
     });
     expect(resolved).toEqual({
       command: '/usr/local/bin/node',
-      args: ['__gateway', '--app-version=9.9.9', '--home=/h', '--lifeline-fd=3', '--log-target=file'],
+      args: ['__gateway', '--home=/h', '--lifeline-fd=3', '--log-target=file'],
       env: { PATH: '/bin' },
     });
   });
@@ -62,7 +59,7 @@ describe('contract flags', () => {
   it('relative command is rejected', () => {
     for (const command of ['node', './bin/node', '']) {
       expect(() =>
-        resolveLaunch({ role: 'runtime', launcher: () => ({ command, args: [] }), version: '1', home: '/h', baseEnv: {}, separateEnv: (merged) => merged }),
+        resolveLaunch({ role: 'runtime', launcher: () => ({ command, args: [] }), home: '/h', baseEnv: {}, separateEnv: (merged) => merged }),
       ).toThrow(TypeError);
     }
   });
@@ -72,7 +69,6 @@ describe('contract flags', () => {
     const resolved = resolveLaunch({
       role: 'runtime',
       launcher: () => ({ command: '/bin/node', args: [], env: { OPENAI_API_KEY: 'x', EXTRA: 'e', FOO: 'override' } }),
-      version: '1',
       home: '/h',
       baseEnv: { FOO: 'base', PATH: '/bin' },
       separateEnv: (merged) => {
@@ -111,7 +107,7 @@ describe('spawn options', () => {
     expect(call?.options.detached).toBe(true);
     expect(call?.options.cwd).toBe(harness.home);
     expect(call?.command).toBe(process.execPath);
-    expect(call?.args).toEqual(['/opt/momonga/fixture-bin.ts', '--app-version=1.2.3', `--home=${harness.home}`, '--lifeline-fd=3', '--log-target=file']);
+    expect(call?.args).toEqual(['/opt/momonga/fixture-bin.ts', `--home=${harness.home}`, '--lifeline-fd=3', '--log-target=file']);
   });
 
   it('children are spawned detached: the real child leads its own group', async (context) => {

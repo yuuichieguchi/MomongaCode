@@ -417,6 +417,7 @@ export type ServiceOverrides = {
   releaseStopped?: (runId: string, signal: AbortSignal) => Promise<void>;
   runTrace?: (runId: string) => Promise<unknown>;
   imageInput?: boolean;
+  beforeCapabilities?: () => Promise<void>;
   runCost?: (runs: readonly { runId: string; sessionId: string }[]) => Promise<unknown>;
   onFatal?: boolean;
   sandboxKind?: 'seatbelt' | 'none';
@@ -467,21 +468,24 @@ export const serviceOptions = (
   sandboxKind: overrides.sandboxKind ?? 'seatbelt',
   protectedRootAreas: overrides.protectedRootAreas ?? protectedAreasOf(base.home),
   modelAliases: base.ports.modelAliases,
-  modelCapabilities: async () => ({
-    contextWindow: 8192,
-    maxOutputTokens: 2048,
-    toolCalling: 'native',
-    structuredOutput: 'none',
-    streaming: true,
-    stopSequences: true,
-    imageInput: overrides.imageInput ?? false,
-    parallelToolCalls: false,
-    schemaDialect: 'json-schema-2020-12',
-    tokenCounting: 'estimated',
-    usageReported: true,
-    maxConcurrency: 1,
-    source: 'declared',
-  }),
+  modelCapabilities: async () => {
+    await overrides.beforeCapabilities?.();
+    return {
+      contextWindow: 8192,
+      maxOutputTokens: 2048,
+      toolCalling: 'native',
+      structuredOutput: 'none',
+      streaming: true,
+      stopSequences: true,
+      imageInput: overrides.imageInput ?? false,
+      parallelToolCalls: false,
+      schemaDialect: 'json-schema-2020-12',
+      tokenCounting: 'estimated',
+      usageReported: true,
+      maxConcurrency: 1,
+      source: 'declared',
+    };
+  },
   sessionCreateSettings: base.ports.sessionCreateSettings,
   skills: overrides.skills ?? diskSkillsPort(base.home, overrides.skillsTrusted),
   agents: overrides.agents ?? diskAgentCatalog(base.home, overrides.skillsTrusted),

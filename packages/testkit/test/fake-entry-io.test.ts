@@ -6,7 +6,7 @@ import { createFakeEntryIo, parseJsonLines, waitFor } from '@momonga/testkit';
 
 const HOME = '/Users/alice';
 const LOG_PATH = path.join(HOME, '.momonga', 'logs', 'runtime.log');
-const ARGV = ['--app-version=1.0.0', `--home=${HOME}`, '--log-target=file'];
+const ARGV = [`--home=${HOME}`, '--log-target=file'];
 
 type Flags = typeof COMMON_ENTRY_FLAGS;
 
@@ -19,6 +19,7 @@ const closingDaemon = () => {
   };
   const definition: DaemonDefinition<Flags> = {
     service: 'runtime',
+    version: '1.0.0',
     flags: COMMON_ENTRY_FLAGS,
     maxCloseMs: () => 1000,
     ownLockPath: (home) => path.join(home, '.momonga', 'run', 'runtime.lock'),

@@ -27,6 +27,7 @@ export type McpHttpFixtureOptions = {
   protectedResourceMetadataPath?: string;
   challengeScope?: string;
   holdSessionDelete?: boolean;
+  holdFirstTaskCancel?: boolean;
   path?: string;
 };
 
@@ -44,6 +45,7 @@ export type FixtureNote =
   | { type: 'task_cancel'; taskId: string }
   | { type: 'session_deleted'; sessionId: string }
   | { type: 'session_delete_held' }
+  | { type: 'task_cancel_held'; taskId: string }
   | { type: 'stream_dropped'; tool: string };
 
 export type McpHttpFixture = {
@@ -143,6 +145,7 @@ export const startMcpHttpFixture = async (options: McpHttpFixtureOptions): Promi
   const events = new Map<string, StoredEvent[]>();
   const tasks = new Map<string, TaskState>();
   const slowGates = new Set<() => void>();
+  let firstTaskCancelHeld = false;
   const clientReplies = new Map<string, (result: Record<string, unknown> | undefined) => void>();
   let server: LoopbackServer | undefined;
   let streamCounter = 0;
@@ -440,6 +443,11 @@ export const startMcpHttpFixture = async (options: McpHttpFixtureOptions): Promi
       const responses = rpc.params?.['inputResponses'] as Record<string, { content?: { name?: string } }> | undefined;
       tasks.set(taskId, { status: 'completed', createdAt: state.createdAt, text: `hello ${responses?.['name']?.content?.name ?? 'nobody'}` });
       changed();
+    }
+    if (rpc.method === 'tasks/cancel' && options.holdFirstTaskCancel === true && !firstTaskCancelHeld) {
+      firstTaskCancelHeld = true;
+      note({ type: 'task_cancel_held', taskId });
+      return;
     }
     if (rpc.method === 'tasks/cancel') {
       note({ type: 'task_cancel', taskId });

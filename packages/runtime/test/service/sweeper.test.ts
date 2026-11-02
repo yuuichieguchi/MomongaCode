@@ -2,6 +2,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import * as runtime from '@momonga/runtime';
 import { afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { releaseStoppedRunsAtStartup } from '../../src/service/sweeper.ts';
 import { callsStep } from '../worker/scripts.ts';
 import { DEFAULT_TTL_MS, START_MS, attachWorkerKit, requestManualApproval, startService, toolCallPayload } from './helpers.ts';
 import type { ServiceEnv } from './helpers.ts';
@@ -49,6 +50,58 @@ describe('startApprovalSweeper', () => {
     await afterMicrotasks();
     expect(calls).toHaveLength(callsAtClose);
     expect(timers.pending()).toEqual([]);
+  });
+});
+
+describe('releaseStoppedRunsAtStartup', () => {
+  it('releases every run the store lists as stopped, in order, and reports a failed release without skipping the rest', async () => {
+    const released: string[] = [];
+    const errors: unknown[] = [];
+    const failure = new Error('release failed');
+    await releaseStoppedRunsAtStartup({
+      store: { stoppedRunIds: () => ['run-a', 'run-b', 'run-c'] },
+      releaseStopped: async (runId) => {
+        if (runId === 'run-b') throw failure;
+        released.push(runId);
+      },
+      signal: new AbortController().signal,
+      onError: (error) => errors.push(error),
+    });
+    expect(released).toEqual(['run-a', 'run-c']);
+    expect(errors).toEqual([failure]);
+  });
+
+  it('reports a store failure and releases nothing', async () => {
+    const errors: unknown[] = [];
+    const failure = new Error('store failed');
+    await releaseStoppedRunsAtStartup({
+      store: {
+        stoppedRunIds: () => {
+          throw failure;
+        },
+      },
+      releaseStopped: async () => {
+        throw new Error('must not be called');
+      },
+      signal: new AbortController().signal,
+      onError: (error) => errors.push(error),
+    });
+    expect(errors).toEqual([failure]);
+  });
+
+  it('stops releasing once the signal aborts', async () => {
+    const controller = new AbortController();
+    const released: string[] = [];
+    await releaseStoppedRunsAtStartup({
+      store: { stoppedRunIds: () => ['run-a', 'run-b'] },
+      releaseStopped: async (runId) => {
+        released.push(runId);
+        controller.abort();
+      },
+      signal: controller.signal,
+      onError: () => undefined,
+    });
+    expect(released).toEqual(['run-a']);
   });
 });
 

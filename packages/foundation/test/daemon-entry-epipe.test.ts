@@ -41,7 +41,7 @@ const exitOf = (child: TrackedChild, deadlineMs: number): Promise<number | null>
   });
 
 const startDaemon = async (context: CleanupContext, script: string, home: string, logTarget: string, extra: readonly string[] = []) => {
-  const child = spawnTracked(context, process.execPath, [script, '--app-version=9.9.9', `--home=${home}`, '--lifeline-fd=3', `--log-target=${logTarget}`, ...extra], {
+  const child = spawnTracked(context, process.execPath, [script, `--home=${home}`, '--lifeline-fd=3', `--log-target=${logTarget}`, ...extra], {
     stdio: ['ignore', 'pipe', 'pipe', 'pipe'],
   });
   let stdout = '';
@@ -124,7 +124,7 @@ describe('daemon entry with a vanished supervisor', { timeout: 30_000 }, () => {
 
   it('exit does not truncate backed-up stderr', async (context) => {
     const home = prepareHome(context);
-    const child = spawnTracked(context, process.execPath, [PROTECTED, '--app-version=9.9.9', `--home=${home}`, '--log-target=stderr', '--bulk-bytes=300000'], {
+    const child = spawnTracked(context, process.execPath, [PROTECTED, `--home=${home}`, '--log-target=stderr', '--bulk-bytes=300000'], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const stdoutStream = child.stdout as Readable;

@@ -6,6 +6,7 @@ import type { ParsedArgv, ParsedOption } from './argv.ts';
 import type { GitParse } from './git-argv.ts';
 import { GIT_LISTING_SELECTORS, GIT_LISTING_SPECS, GIT_READ_ONLY_SUBCOMMANDS, gitSubcommandSpec, reflogView } from './git-subcommands.ts';
 import type { PolicyFilesystem } from './filesystem.ts';
+import { MAX_GLOB_MATCHES, expandGlobWord } from './glob-expansion.ts';
 import type { OptionEffect, CommandSpec } from './command-specs.ts';
 import { globDirectory, sedFacts } from './path-effects.ts';
 import { absoluteFrom } from './path-match.ts';
@@ -18,7 +19,7 @@ import type { Analysis, DirectoryStep, Segment, Word } from './shell.ts';
 import type { WrapperUse } from './wrappers.ts';
 
 export const MAX_APPROVABLE_COMMAND_CHARS = 10_000;
-export const MAX_GLOB_MATCHES = 1000;
+export { MAX_GLOB_MATCHES };
 
 export type ApprovalContext = {
   fs: PolicyFilesystem;
@@ -42,10 +43,11 @@ const globAllowed = (word: Word, context: ApprovalContext): boolean => {
   const directory = globDirectory(pattern);
   const canonicalise = context.fs.canonicalise;
   if (!insideRoots([absoluteFrom(directory, context.cwd)], context.roots, context.cwd, canonicalise)) return false;
-  const expansion = context.fs.expandGlob(pattern, context.cwd, MAX_GLOB_MATCHES);
-  if ('overflow' in expansion || 'unresolvable' in expansion) return false;
-  return expansion.matches.every(
-    (match) => !path.basename(match).startsWith('-') && insideRoots([path.resolve(context.cwd, match)], context.roots, context.cwd, canonicalise),
+  return expandGlobWord(context, pattern).every(
+    (entry) =>
+      entry.kind !== 'unresolvable' &&
+      !(entry.kind === 'match' && path.basename(entry.text).startsWith('-')) &&
+      insideRoots([entry.absolute], context.roots, context.cwd, canonicalise),
   );
 };
 

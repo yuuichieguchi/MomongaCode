@@ -1,7 +1,6 @@
 import { EXIT_ALREADY_RUNNING, ENTRY_HARD_EXIT_MARGIN_MS, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, inspectProcessLock, supervisorMaxCloseMs } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { createRuntimeClient } from '../client/runtime-client.ts';
 import { createSupervisorClient } from '../client/supervisor-client.ts';
 import type { SupervisorClient } from '../client/supervisor-client.ts';
 import { DAEMON_POLL_INTERVAL_MS } from '../constants.ts';
@@ -50,7 +49,7 @@ export const daemonStopBoundMs = (): number => supervisorMaxCloseMs(RUNTIME_DEFA
 
 export const defaultDaemonBounds = async (): Promise<DaemonBounds> => ({ readyMs: await daemonReadyBoundMs(), stopMs: daemonStopBoundMs() });
 
-const superviseFlags = (ports: DaemonPorts): string[] => [`--app-version=${ports.version}`, `--home=${ports.home}`, '--log-target=file'];
+const superviseFlags = (ports: DaemonPorts): string[] => [`--home=${ports.home}`, '--log-target=file'];
 
 const unready = (health: SupervisorHealth): string | undefined => {
   if (health.phase !== 'running') return `supervisor phase ${health.phase}`;
@@ -139,20 +138,13 @@ const isStrictlyNewerThan = (clientVersion: string, daemonVersion: string): bool
   return client !== undefined && daemon !== undefined && compareVersions(client, daemon) === 1;
 };
 
-const hasNoActiveRun = async (paths: MomongaPaths, health: SupervisorHealth): Promise<boolean> => {
-  const runtime = health.children.find((child) => child.role === 'runtime');
-  if (runtime?.state !== 'ready') return false;
-  const client = createRuntimeClient({ socketPath: paths.sockets.runtime });
-  try {
-    return (await client.listSessions()).every((session) => session.activeRunId === null);
-  } finally {
-    await client.close();
-  }
-};
-
-const mayReplace = async (ports: DaemonPorts, paths: MomongaPaths, current: SupervisorHealth, replacement: DaemonReplacement): Promise<boolean> => {
+const replaceOlder = async (ports: DaemonPorts, client: SupervisorClient, current: SupervisorHealth, replacement: DaemonReplacement): Promise<boolean> => {
   if (replacement === 'never' || !isStrictlyNewerThan(ports.version, current.version)) return false;
-  return replacement === 'always' || (await hasNoActiveRun(paths, current));
+  if (replacement === 'always') {
+    await client.shutdown();
+    return true;
+  }
+  return (await client.shutdownIfIdle()).accepted;
 };
 
 export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, options: EnsureDaemonOptions = {}): Promise<SupervisorHealth> => {
@@ -167,8 +159,7 @@ export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, opti
       await waitForSupervisorGone(ports, paths, stopMs, signal);
       return await startDaemon(ports, paths, client, readyMs, signal);
     }
-    if (await mayReplace(ports, paths, current, options.replacement ?? 'never')) {
-      await client.shutdown();
+    if (await replaceOlder(ports, client, current, options.replacement ?? 'never')) {
       await waitForSupervisorGone(ports, paths, stopMs, signal);
       return await startDaemon(ports, paths, client, readyMs, signal);
     }

@@ -10,6 +10,6 @@ export type ProgramDeps = {
   entryIo(args: readonly string[]): EntryIo;
   entries: DaemonEntries;
   update(): UpdateWiring;
-  policyVerify: PolicyVerifyHost;
+  policyVerify(): PolicyVerifyHost;
   complete(code: number): void;
 };

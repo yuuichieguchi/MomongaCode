@@ -152,6 +152,7 @@ const scriptedDaemon = (overrides: Partial<DaemonDefinition<Flags>> = {}) => {
   const handle: DaemonHandle = { close, abort, fatal: fatal.promise };
   const definition: DaemonDefinition<Flags> = {
     service: 'runtime',
+    version: '1.0.0',
     flags: COMMON_ENTRY_FLAGS,
     maxCloseMs: () => MAX_CLOSE_MS,
     ownLockPath: (home) => path.join(home, '.momonga', 'run', 'runtime.lock'),
@@ -166,7 +167,7 @@ const scriptedDaemon = (overrides: Partial<DaemonDefinition<Flags>> = {}) => {
   return { definition, start, result, fatal, handle, close, abort, contexts, run: () => start.resolve(handle) };
 };
 
-const ARGV_FILE = ['--app-version=1.0.0', `--home=${HOME}`, '--log-target=file'];
+const ARGV_FILE = [`--home=${HOME}`, '--log-target=file'];
 const ARGV_LIFELINE = [...ARGV_FILE, '--lifeline-fd=3'];
 
 const launch = async (argv: readonly string[] = ARGV_FILE, overrides: Partial<DaemonDefinition<Flags>> = {}) => {
@@ -702,16 +703,16 @@ describe('usage errors before the sink exists', () => {
     expect(fake.sinkLines()).toEqual([]);
   };
 
-  it('a missing --app-version exits 78 with one JSON line on stderr and no entry.exit', async () => {
-    const fake = fakeIo([`--home=${HOME}`]);
+  it('a --app-version flag exits 78 with one JSON line on stderr and no entry.exit, because the version comes from the binary', async () => {
+    const fake = fakeIo(['--app-version=1.0.0', `--home=${HOME}`]);
     const daemon = scriptedDaemon();
     expectUsageExit(fake, daemon, await runDaemonEntry(fake.io, daemon.definition));
     expect(fake.opened).toEqual([]);
-    expect(fake.stderrRaw()).toContain('app-version');
+    expect(fake.stderrRaw()).toContain('unknown flag --app-version');
   });
 
   it('a throwing path resolution is a usage error', async () => {
-    const fake = fakeIo(['--app-version=1.0.0', '--home=relative/home', '--log-target=file']);
+    const fake = fakeIo(['--home=relative/home', '--log-target=file']);
     const daemon = scriptedDaemon({
       logPath: (home) => {
         throw new Error(`home must be absolute: ${home}`);
@@ -723,7 +724,7 @@ describe('usage errors before the sink exists', () => {
   });
 
   it('a throwing ownLockPath is a usage error', async () => {
-    const fake = fakeIo(['--app-version=1.0.0', `--home=/${'h'.repeat(80)}`, '--log-target=file']);
+    const fake = fakeIo([`--home=/${'h'.repeat(80)}`, '--log-target=file']);
     const daemon = scriptedDaemon({
       ownLockPath: () => {
         throw new Error('socket path too long: 108 bytes');
@@ -734,14 +735,14 @@ describe('usage errors before the sink exists', () => {
   });
 
   it('invalid --log-target gives 78', async () => {
-    const fake = fakeIo(['--app-version=1.0.0', `--home=${HOME}`, '--log-target=syslog']);
+    const fake = fakeIo([`--home=${HOME}`, '--log-target=syslog']);
     const daemon = scriptedDaemon();
     expectUsageExit(fake, daemon, await runDaemonEntry(fake.io, daemon.definition));
     expect(fake.stderrRaw()).toContain('syslog');
   });
 
   it('--home defaults to io.home', async () => {
-    const launched = await launchRunning(['--app-version=1.0.0', '--log-target=file']);
+    const launched = await launchRunning(['--log-target=file']);
     expect(launched.contexts[0]?.home).toBe(HOME);
     expect(launched.opened).toEqual([LOG_PATH]);
   });
@@ -755,7 +756,7 @@ describe('log targets and stdout', () => {
   };
 
   it('stdout only has the ready line', async () => {
-    const launched = await launch(['--app-version=1.0.0', `--home=${HOME}`, '--log-target=both']);
+    const launched = await launch([`--home=${HOME}`, '--log-target=both']);
     expect(launched.contexts, `start was not called: ${String(launched.entryError())}`).toHaveLength(1);
     const fields = { service: 'runtime', pid: 4242, version: '1.0.0', socketPath: `${HOME}/.momonga/run/runtime.sock`, startedAt: new Date(START_MS).toISOString() };
     const context = launched.contexts[0] as DaemonStartContext<Flags>;
@@ -770,7 +771,7 @@ describe('log targets and stdout', () => {
   });
 
   it('log target file', async () => {
-    const launched = await launchRunning(['--app-version=1.0.0', `--home=${HOME}`, '--log-target=file']);
+    const launched = await launchRunning([`--home=${HOME}`, '--log-target=file']);
     await closeCleanly(launched);
     expect(launched.opened).toEqual([LOG_PATH]);
     const messages = launched.sinkLines().map((line) => line.msg);
@@ -781,7 +782,7 @@ describe('log targets and stdout', () => {
   });
 
   it('log target both', async () => {
-    const launched = await launchRunning(['--app-version=1.0.0', `--home=${HOME}`, '--log-target=both']);
+    const launched = await launchRunning([`--home=${HOME}`, '--log-target=both']);
     await closeCleanly(launched);
     expect(launched.opened).toEqual([LOG_PATH]);
     expect(launched.sinkLines().length).toBeGreaterThanOrEqual(2);
@@ -789,7 +790,7 @@ describe('log targets and stdout', () => {
   });
 
   it('log target defaults to both', async () => {
-    const launched = await launchRunning(['--app-version=1.0.0', `--home=${HOME}`]);
+    const launched = await launchRunning([`--home=${HOME}`]);
     await closeCleanly(launched);
     expect(launched.opened).toEqual([LOG_PATH]);
     expect(launched.stderrLines()).toEqual(launched.sinkLines());
@@ -797,7 +798,7 @@ describe('log targets and stdout', () => {
   });
 
   it('log target stderr', async () => {
-    const launched = await launchRunning(['--app-version=1.0.0', `--home=${HOME}`, '--log-target=stderr']);
+    const launched = await launchRunning([`--home=${HOME}`, '--log-target=stderr']);
     await closeCleanly(launched);
     expect(launched.opened).toEqual([]);
     expect(launched.sinkLines()).toEqual([]);
@@ -805,7 +806,7 @@ describe('log targets and stdout', () => {
   });
 
   it('log sink open failure falls back to stderr', async () => {
-    const fake = fakeIo(['--app-version=1.0.0', `--home=${HOME}`, '--log-target=file']);
+    const fake = fakeIo([`--home=${HOME}`, '--log-target=file']);
     fake.failLogFile(Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' }));
     const daemon = scriptedDaemon();
     const running = runDaemonEntry(fake.io, daemon.definition);
@@ -883,7 +884,7 @@ const fakeHost = () => {
   const stderr = fakeStream();
   const exit = vi.fn();
   const host = Object.assign(new EventEmitter(), {
-    argv: ['/usr/bin/node', '/app/bin.ts', '--app-version=1.0.0'],
+    argv: ['/usr/bin/node', '/app/bin.ts', '--log-target=file'],
     env: { HOME: '/Users/host' } as Record<string, string | undefined>,
     stdout,
     stderr,
@@ -898,7 +899,7 @@ describe('nodeEntryIo', () => {
   it('nodeEntryIo smoke', () => {
     const { host, asProcess } = fakeHost();
     const io = nodeEntryIo(asProcess);
-    expect(io.argv).toEqual(['--app-version=1.0.0']);
+    expect(io.argv).toEqual(['--log-target=file']);
     expect(io.home).toBe('/Users/host');
     expect(io.env['HOME']).toBe('/Users/host');
     const handler = vi.fn();

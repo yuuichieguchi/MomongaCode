@@ -39,7 +39,7 @@ describe('momonga daemon start', () => {
     expect(await daemonStart(ports, paths)).toBe(0);
 
     expect(old.shutdowns).toBe(1);
-    expect(spawned).toEqual([{ command: '/opt/momonga', args: ['__supervise', '--app-version=2.0.0', `--home=${home}`, '--log-target=file'] }]);
+    expect(spawned).toEqual([{ command: '/opt/momonga', args: ['__supervise', `--home=${home}`, '--log-target=file'] }]);
     expect(written.join('')).toMatch(/^momonga daemon running: pid \d+, version 2\.0\.0\n$/);
   });
 });

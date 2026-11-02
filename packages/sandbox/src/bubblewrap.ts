@@ -4,6 +4,7 @@ import { fileRuleBlocks } from '@momonga/foundation';
 import type { FileRuleEntry, FileRuleSet } from '@momonga/foundation';
 import { canonicalizePath } from './canonical-path.ts';
 import { launch } from './process.ts';
+import type { LaunchOptions } from './process.ts';
 import { validateSandboxPolicy } from './profile.ts';
 import { assertExistingDirectory, removePrivateTmpDir } from './scratch.ts';
 import type { Sandbox, SandboxCommand, SandboxPolicy, SandboxedProcess } from './types.ts';
@@ -189,6 +190,7 @@ export interface BubblewrapSandboxOptions {
   tmpRoot: string;
   killGraceMs: number;
   filesystem?: FilesystemPort;
+  spawnProcess?: LaunchOptions['spawnProcess'];
 }
 
 export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sandbox {
@@ -223,6 +225,7 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
         env: { ...command.env, TMPDIR: tmpDir },
         signal,
         killGraceMs: options.killGraceMs,
+        ...(options.spawnProcess === undefined ? {} : { spawnProcess: options.spawnProcess }),
         afterExit: () => {
           release(plan);
           afterExit();

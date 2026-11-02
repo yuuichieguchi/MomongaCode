@@ -12,6 +12,7 @@ export { createRealWorkScope, quiesce };
 export type { RealWorkScope };
 import type { ChildExit, ChildHandle, SpawnPort, SpawnPortOptions } from '../../src/child-manager.ts';
 import type { ChildRole } from '../../src/launcher.ts';
+import { nodeMarkerFiles } from '../../src/orphans.ts';
 import type { MarkerPorts } from '../../src/orphans.ts';
 import { startSupervisor } from '../../src/start-supervisor.ts';
 import type { SupervisorOptions, SupervisorProcess } from '../../src/start-supervisor.ts';
@@ -317,6 +318,7 @@ export type MarkerCalls = {
 export const recordingMarkerPorts = (overrides: MarkerPorts = {}, record?: string[]): { ports: Required<MarkerPorts>; calls: MarkerCalls } => {
   const calls: MarkerCalls = { findHolders: [], reapMarkerDirectory: [], reapMarkedProcesses: [] };
   const ports: Required<MarkerPorts> = {
+    files: overrides.files ?? nodeMarkerFiles,
     findHolders: async (marker) => {
       calls.findHolders.push(marker);
       record?.push('findHolders');

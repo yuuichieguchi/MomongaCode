@@ -124,6 +124,7 @@ const scriptedDaemon = (overrides: Partial<DaemonDefinition<Flags>> = {}) => {
   const handle: DaemonHandle = { close, abort, fatal: fatal.promise };
   const definition: DaemonDefinition<Flags> = {
     service: 'runtime',
+    version: '1.0.0',
     flags: COMMON_ENTRY_FLAGS,
     maxCloseMs: () => MAX_CLOSE_MS,
     ownLockPath: (home) => path.join(home, '.momonga', 'run', 'runtime.lock'),
@@ -135,7 +136,7 @@ const scriptedDaemon = (overrides: Partial<DaemonDefinition<Flags>> = {}) => {
   return { definition, start, result, fatal, handle, close, abort, run: () => start.resolve(handle) };
 };
 
-const ARGV_FILE = ['--app-version=1.0.0', `--home=${HOME}`, '--log-target=file'];
+const ARGV_FILE = [`--home=${HOME}`, '--log-target=file'];
 
 afterEach(() => {
   vi.useRealTimers();
@@ -160,7 +161,7 @@ describe('A1: lifecycle hold and disposal', () => {
   });
 
   it('the engine releases its hold on a usage-error exit (code 78 before start)', async () => {
-    const fake = fakeIo(['--log-target=syslog', '--app-version=1.0.0', `--home=${HOME}`]);
+    const fake = fakeIo(['--log-target=syslog', `--home=${HOME}`]);
     const daemon = scriptedDaemon();
     expect(await runDaemonEntry(fake.io, daemon.definition)).toBe(78);
     expect(fake.lifecycle.filter((event) => event === 'hold')).toHaveLength(1);
@@ -253,7 +254,7 @@ describe('A1(c): nodeEntryIo', () => {
 
   it('a full entry run leaves no pending timer and listener counts return to baseline', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
-    const { host, asProcess, exit, exited } = fakeHost(['--app-version=1.0.0', '--log-target=stderr']);
+    const { host, asProcess, exit, exited } = fakeHost(['--log-target=stderr']);
     const io = nodeEntryIo(asProcess);
     const baselineTimers = vi.getTimerCount();
     const baselineSigterm = host.listenerCount('SIGTERM');

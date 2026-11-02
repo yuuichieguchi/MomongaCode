@@ -11,7 +11,7 @@ import type { SupervisorHealth } from '@momonga/protocol';
 import { createFakeClock, createFakeTimers, registerCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { respondShutdown, startControlServer } from '../src/control-server.ts';
-import type { ControlServer } from '../src/control-server.ts';
+import type { ControlServer, IdleShutdownOutcome } from '../src/control-server.ts';
 import { trackSupervisorChildren } from './support/track-supervisor-children.ts';
 import { createRealWorkScope, httpOver, phaseChanges, pumpUntil, quiesce, settledFlag, startHarness, writeMarker } from './fixtures/p3-harness.ts';
 
@@ -78,7 +78,11 @@ const runDir = (context: CleanupContext): string => {
   return dir;
 };
 
-const startServer = async (context: CleanupContext, health: () => SupervisorHealth = () => SAMPLE_HEALTH) => {
+const startServer = async (
+  context: CleanupContext,
+  health: () => SupervisorHealth = () => SAMPLE_HEALTH,
+  shutdownIfIdle: () => Promise<IdleShutdownOutcome> = () => Promise.resolve({ kind: 'accepted' }),
+) => {
   const socketPath = path.join(runDir(context), 'supervisor.sock');
   const clock = createFakeClock(0);
   const timers = createFakeTimers(clock);
@@ -89,6 +93,7 @@ const startServer = async (context: CleanupContext, health: () => SupervisorHeal
     socketPath,
     timers,
     health,
+    shutdownIfIdle,
     onShutdownRequested: () => {
       shutdowns += 1;
     },
@@ -172,6 +177,39 @@ describe('startControlServer', () => {
     await waitFor(() => server.shutdowns() === 2);
   });
 
+  it('POST /v1/shutdown-if-idle starts the drain only when the idle check accepts', async (context) => {
+    const server = await startServer(context, () => SAMPLE_HEALTH, () => Promise.resolve({ kind: 'accepted' }));
+    const accepted = await httpOver(context, server.socketPath, 'POST', '/v1/shutdown-if-idle');
+    expect(accepted.status).toBe(202);
+    expect(envelopeOf(accepted.text)).toEqual({ phase: 'draining' });
+    await waitFor(() => server.shutdowns() === 1);
+  });
+
+  it('POST /v1/shutdown-if-idle answers 409 not_idle with the reason and starts no drain when the daemon is busy', async (context) => {
+    const server = await startServer(context, () => SAMPLE_HEALTH, () => Promise.resolve({ kind: 'busy', reason: 'a run is active' }));
+    const busy = await httpOver(context, server.socketPath, 'POST', '/v1/shutdown-if-idle');
+    expect(busy.status).toBe(409);
+    expect(envelopeOf(busy.text)).toEqual({ error: { message: 'a run is active', type: 'invalid_request', param: null, code: 'not_idle' } });
+    await quiesce(server.realWork);
+    expect(server.shutdowns()).toBe(0);
+  });
+
+  it('POST /v1/shutdown-if-idle reports a failed idle check as 500 and starts no drain', async (context) => {
+    const server = await startServer(context, () => SAMPLE_HEALTH, () => Promise.reject(new Error('runtime unreachable')));
+    const failed = await httpOver(context, server.socketPath, 'POST', '/v1/shutdown-if-idle');
+    expect(failed.status).toBe(500);
+    expect(envelopeOf(failed.text)).toEqual({ error: { message: 'runtime unreachable', type: 'server_error', param: null, code: 'idle_check_failed' } });
+    await quiesce(server.realWork);
+    expect(server.shutdowns()).toBe(0);
+  });
+
+  it('GET /v1/shutdown-if-idle answers 405', async (context) => {
+    const { socketPath } = await startServer(context);
+    const response = await httpOver(context, socketPath, 'GET', '/v1/shutdown-if-idle');
+    expect(response.status).toBe(405);
+    expect(response.headers['allow']).toBe('POST');
+  });
+
   it('socket mode is 0600 and the directory 0700', async (context) => {
     const { socketPath } = await startServer(context);
     expect(fs.statSync(socketPath).mode & 0o777).toBe(0o600);
@@ -186,6 +224,7 @@ describe('startControlServer', () => {
       socketPath,
       timers: createFakeTimers(clock),
       health: () => SAMPLE_HEALTH,
+      shutdownIfIdle: () => Promise.resolve({ kind: 'accepted' }),
       onShutdownRequested: () => undefined,
       onError: () => undefined,
     });

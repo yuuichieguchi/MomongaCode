@@ -194,6 +194,37 @@ describe('mcp: client gaps', () => {
     }
   });
 
+  it.skipIf(skipCase('mcp-cancel-release-after-crash'))(titleOf('mcp-cancel-release-after-crash'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    const fixture = await startMcpHttpFixture({ era: 'modern', taskPollIntervalMs: 1, holdFirstTaskCancel: true });
+    const { home, stack } = await startRemote(fixture, [toolCallReply('mcp__remote__ask_task', {}, 'call_1'), textReply('done')]);
+    const runtime = createRuntimeClient(home);
+    try {
+      const { session } = await runtime.createSession();
+      const { run } = await runtime.createRun(session.id, 'Run the task that asks me');
+      await elicitationOf(runtime, run.id);
+
+      expect((await runtime.cancel(run.id)).run.status).toBe('CANCELLED');
+      await fixture.until(() => fixture.notes.some((note) => note.type === 'task_cancel_held'));
+      expect(fixture.notes.some((note) => note.type === 'task_cancel')).toBe(false);
+      expect(readDb<{ state: string }>(home.paths.databases.runtime, 'SELECT state FROM idempotency').some((row) => row.state === 'PENDING')).toBe(true);
+
+      const before = childOf(await stack.client.health(), 'runtime');
+      if (before.pid === undefined) throw new Error('runtime has no pid');
+      process.kill(before.pid, 'SIGKILL');
+      await stack.client.untilChild('runtime', (child) => child.state === 'ready' && child.pid !== before.pid && child.restarts === 1, E2E_RESTART_BOUND_MS);
+
+      await until(() => fixture.notes.some((note) => note.type === 'task_cancel'), { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the restarted runtime to release the parked task of the cancelled run' });
+      await until(
+        () => readDb<{ state: string }>(home.paths.databases.runtime, 'SELECT state FROM idempotency').every((row) => row.state !== 'PENDING'),
+        { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the idempotency record of the parked call to leave PENDING' },
+      );
+      expect((await runtime.getRun(run.id)).run.status).toBe('CANCELLED');
+    } finally {
+      await runtime.close();
+      await fixture.close();
+    }
+  });
+
   it.skipIf(skipCase('mcp-task-recovery'))(titleOf('mcp-task-recovery'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const fixture = await startMcpHttpFixture({ era: 'modern', taskPollIntervalMs: 1 });
     const { home, stack } = await startRemote(fixture, [toolCallReply('mcp__remote__long_task', {}, 'call_1'), textReply('done')]);

@@ -226,8 +226,15 @@ const prepareStatements = (db: DatabaseSync) => ({
   activeRunExists: db.prepare(
     `SELECT EXISTS (SELECT 1 FROM runs WHERE session_id = :sessionId AND status NOT IN (${TERMINAL_STATUSES.map((status) => `'${status}'`).join(', ')})) AS active`,
   ),
+  anyActiveRunExists: db.prepare(`SELECT EXISTS (SELECT 1 FROM runs WHERE status NOT IN (${TERMINAL_LIST})) AS active`),
   selectRunByKey: db.prepare('SELECT * FROM runs WHERE session_id = :sessionId AND idempotency_key = :key'),
   listRuns: db.prepare('SELECT * FROM runs WHERE session_id = :sessionId ORDER BY ordinal'),
+  stoppedRunIds: db.prepare(
+    `SELECT r.id FROM runs r
+     WHERE r.status IN ('STOPPED', 'CANCELLED')
+       AND EXISTS (SELECT 1 FROM idempotency i WHERE i.state = 'PENDING' AND json_extract(i.meta_json, '$.runId') = r.id)
+     ORDER BY r.created_at, r.rowid`,
+  ),
   latestRunOfSession: db.prepare('SELECT id FROM runs WHERE session_id = :sessionId ORDER BY ordinal DESC LIMIT 1'),
   nextOrdinal: db.prepare('SELECT COALESCE(MAX(ordinal), 0) + 1 AS next FROM runs WHERE session_id = :sessionId'),
   insertRun: db.prepare(RUN_INSERT_SQL),
@@ -1287,6 +1294,14 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     },
 
     pendingElicitationViews: (runId) => approvalOps.store.listPending(runId).filter((approval) => approval.kind === 'elicitation').map(elicitationViewOf),
+
+    hasActiveRun: () => {
+      const row = sql.anyActiveRunExists.get({});
+      if (row === undefined) throw new Error('could not compute whether any run is active');
+      return readerFor('runs', 'any', row).number('active') === 1;
+    },
+
+    stoppedRunIds: () => sql.stoppedRunIds.all({}).map((row) => readerFor('runs', 'stopped', row).string('id')),
 
     expireApprovals: (nowMs) => {
       const stopped: string[] = [];

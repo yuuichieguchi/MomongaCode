@@ -18,7 +18,6 @@ import { resolveSandbox } from './sandbox.ts';
 import {
   DEFAULT_E2E_DEPS,
   STDERR_TAIL_BYTES,
-  SUPERVISOR_APP_VERSION,
   SUPERVISOR_ENV_PATH,
   SUPERVISOR_MAIN_PATH,
   baseSettings,
@@ -46,7 +45,7 @@ const runToken = (): string => {
 };
 
 const runMain = (context: CleanupContext, home: string, env: Record<string, string>, homeFlag: string = home): Promise<ScriptResult> => {
-  const child = spawnTracked(context, process.execPath, [SUPERVISOR_MAIN_PATH, `--app-version=${SUPERVISOR_APP_VERSION}`, `--home=${homeFlag}`, '--log-target=file'], {
+  const child = spawnTracked(context, process.execPath, [SUPERVISOR_MAIN_PATH, `--home=${homeFlag}`, '--log-target=file'], {
     env,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
@@ -144,10 +143,9 @@ describe('supervisor-main guard', () => {
     const home = manualE2eRoot(context);
     const other = withTempDir(context);
     const input = { env: guardEnv(home), userHome: os.userInfo().homedir };
-    const versionFlag = `--app-version=${SUPERVISOR_APP_VERSION}`;
-    expect(guardSupervisorHome([versionFlag], input)).toEqual(expect.stringContaining('--home'));
-    expect(guardSupervisorHome([versionFlag, `--home=${other}`], input)).toEqual(expect.stringContaining('--home'));
-    expect(guardSupervisorHome([versionFlag, `--home=${home}`, '--log-target=file'], input)).toBeUndefined();
+    expect(guardSupervisorHome([], input)).toEqual(expect.stringContaining('--home'));
+    expect(guardSupervisorHome([`--home=${other}`], input)).toEqual(expect.stringContaining('--home'));
+    expect(guardSupervisorHome([`--home=${home}`, '--log-target=file'], input)).toBeUndefined();
   });
 });
 
@@ -155,7 +153,7 @@ describe('supervisor argv and env', () => {
   it('is exactly the BASE_ENTRY_FLAGS set, and a lifeline flag is refused', async () => {
     const home = await createE2eHome();
     const argv = supervisorArgv(home);
-    expect(parseFlags(argv, BASE_ENTRY_FLAGS)).toEqual({ 'app-version': 'e2e', home: home.home, 'log-target': 'file' });
+    expect(parseFlags(argv, BASE_ENTRY_FLAGS)).toEqual({ home: home.home, 'log-target': 'file' });
     expect(() => parseFlags([...argv, '--lifeline-fd=3'], BASE_ENTRY_FLAGS)).toThrow(EntryUsageError);
   });
 

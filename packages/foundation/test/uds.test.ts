@@ -402,6 +402,8 @@ describe('listenUnix lock options', () => {
         return { kind: 'held' };
       },
       isHeld: async () => true,
+      readHolder: async () => undefined,
+      readHolderSync: () => undefined,
       claimInheritable: undefined,
     };
     const server = http.createServer();

@@ -6,6 +6,7 @@ export type ChildRole = SupervisorChildHealth['role'];
 export type SupervisorClient = {
   health(): Promise<SupervisorHealth>;
   shutdown(): Promise<{ status: number; body: SupervisorShutdownResponse }>;
+  shutdownIfIdle(): Promise<{ accepted: boolean }>;
   close(): Promise<void>;
 };
 
@@ -62,5 +63,14 @@ export const createSupervisorClient = (options: SupervisorClientOptions): Superv
     return { status: response.status, body };
   };
 
-  return { health, shutdown, close: () => http.close() };
+  const shutdownIfIdle = async (): Promise<{ accepted: boolean }> => {
+    const response = await http.request({ method: 'POST', path: '/v1/shutdown-if-idle' });
+    const text = await response.text();
+    if (response.status === 409) return { accepted: false };
+    const body: unknown = JSON.parse(text);
+    if (response.status !== 202 || !isShutdownResponse(body)) throw new Error(`POST /v1/shutdown-if-idle answered ${response.status} with an unexpected body: ${text}`);
+    return { accepted: true };
+  };
+
+  return { health, shutdown, shutdownIfIdle, close: () => http.close() };
 };

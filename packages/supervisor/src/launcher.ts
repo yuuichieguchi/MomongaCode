@@ -29,8 +29,7 @@ const tuningFlags = (role: ChildRole, runtime: RuntimeTuning | undefined, gatewa
   ];
 };
 
-export const contractArgs = (input: { role: ChildRole; version: string; home: string; runtime?: RuntimeTuning; gateway?: GatewayTuning }): string[] => [
-  `--app-version=${input.version}`,
+export const contractArgs = (input: { role: ChildRole; home: string; runtime?: RuntimeTuning; gateway?: GatewayTuning }): string[] => [
   `--home=${input.home}`,
   `--lifeline-fd=${LIFELINE_FD}`,
   '--log-target=file',
@@ -43,7 +42,6 @@ export const childStdio = (markerFd: number, lockFd?: number): SpawnPortOptions[
 export const resolveLaunch = (input: {
   role: ChildRole;
   launcher: Launcher;
-  version: string;
   home: string;
   runtime?: RuntimeTuning;
   gateway?: GatewayTuning;
@@ -56,7 +54,7 @@ export const resolveLaunch = (input: {
   const tuning = omitUndefined({ runtime: input.runtime, gateway: input.gateway });
   return {
     command: spec.command,
-    args: [...spec.args, ...contractArgs({ role: input.role, version: input.version, home: input.home, ...tuning })],
+    args: [...spec.args, ...contractArgs({ role: input.role, home: input.home, ...tuning })],
     env: input.separateEnv(merged),
   };
 };

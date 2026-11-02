@@ -11,6 +11,67 @@ const expectDraining = (response: JsonResponse): void => {
   });
 };
 
+describe('POST /v1/drain-if-idle (fake timers)', () => {
+  it('begins draining when no run is active, so a later session or run is refused', async () => {
+    const env = await startService({ fakeTimers: true });
+    const session = await env.createSession();
+
+    const drained = await env.http('POST', '/v1/drain-if-idle');
+    expect({ status: drained.status, body: drained.json }).toEqual({ status: 202, body: { state: 'draining' } });
+
+    expectDraining(await env.http('POST', `/v1/sessions/${session.id}/runs`, { body: { input: 'hello' } }));
+    expect((await env.http('GET', '/v1/health')).json).toMatchObject({ state: 'draining' });
+  });
+
+  it('answers 409 not_idle and keeps accepting work while a run is active', async () => {
+    const env = await startService({ fakeTimers: true });
+    const session = await env.createSession();
+    const created = await env.http('POST', `/v1/sessions/${session.id}/runs`, { body: { input: 'hello' } });
+    expect(created.status).toBe(202);
+
+    const refused = await env.http('POST', '/v1/drain-if-idle');
+    expect({ status: refused.status, body: refused.json }).toEqual({
+      status: 409,
+      body: { error: { type: 'conflict', code: 'not_idle', message: expect.any(String) } },
+    });
+    expect((await env.http('GET', '/v1/health')).json).toMatchObject({ state: 'running' });
+  });
+
+  it('refuses a run whose admission checks were still pending when draining began, and stores no run', async () => {
+    const gate = Promise.withResolvers<void>();
+    const reached = Promise.withResolvers<void>();
+    const env = await startService({
+      fakeTimers: true,
+      imageInput: true,
+      beforeCapabilities: () => {
+        reached.resolve();
+        return gate.promise;
+      },
+    });
+    const session = await env.createSession();
+    const image = { mediaType: 'image/png', data: Buffer.from('fake png bytes').toString('base64') };
+
+    const pending = env.http('POST', `/v1/sessions/${session.id}/runs`, { body: { input: 'what is this', images: [image] } });
+    await reached.promise;
+    const drained = await env.http('POST', '/v1/drain-if-idle');
+    expect(drained.status).toBe(202);
+    gate.resolve();
+
+    expectDraining(await pending);
+    expect(env.store.listRuns(session.id)).toEqual([]);
+  });
+
+  it('answers 202 again once draining has begun, even with a run that was admitted before', async () => {
+    const env = await startService({ fakeTimers: true });
+    const session = await env.createSession();
+    await env.http('POST', `/v1/sessions/${session.id}/runs`, { body: { input: 'hello' } });
+    env.service.beginDraining();
+
+    const again = await env.http('POST', '/v1/drain-if-idle');
+    expect({ status: again.status, body: again.json }).toEqual({ status: 202, body: { state: 'draining' } });
+  });
+});
+
 describe('draining (fake timers)', () => {
   it('POST /v1/sessions answers 503 draining with retry-after 1', async () => {
     const env = await startService({ fakeTimers: true });

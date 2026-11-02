@@ -1,4 +1,5 @@
 import { BASE_ENTRY_FLAGS, announceReady, momongaPaths, parseFlags } from '@momonga/foundation';
+import { SUPERVISOR_APP_VERSION } from '../app-version.ts';
 
 export const STDERR_FLOOD_BYTES = 128 * 1024;
 
@@ -16,7 +17,7 @@ export const stderrFloodMain = async (argv: readonly string[] = process.argv.sli
   process.stdin.on('end', () => process.exit(0));
   process.stdin.resume();
   await writeFlood();
-  announceReady({ service: 'supervisor', pid: process.pid, version: flags['app-version'], socketPath: momongaPaths(home).sockets.supervisor, startedAt: new Date().toISOString() });
+  announceReady({ service: 'supervisor', pid: process.pid, version: SUPERVISOR_APP_VERSION, socketPath: momongaPaths(home).sockets.supervisor, startedAt: new Date().toISOString() });
 };
 
 if (import.meta.main) await stderrFloodMain();

@@ -314,6 +314,8 @@ export type RuntimeStore = {
   elicitationView(elicitationId: string): ElicitationView | undefined;
   pendingElicitationViews(runId: string): ElicitationView[];
   expireApprovals(nowMs: number): string[];
+  stoppedRunIds(): string[];
+  hasActiveRun(): boolean;
   approvalView(approvalId: string): ApprovalView | undefined;
   pendingApprovalViews(runId: string): ApprovalView[];
   writeSnapshot(claim: Claim, seq: number, state: RunState): SnapshotResult;

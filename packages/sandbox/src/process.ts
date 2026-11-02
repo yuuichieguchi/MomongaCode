@@ -13,14 +13,16 @@ export interface LaunchOptions {
   afterExit: () => void;
   markerFile?: string;
   stdin?: string;
+  spawnProcess?: typeof spawn;
 }
 
 export function launch(options: LaunchOptions): SandboxedProcess {
+  const spawnProcess = options.spawnProcess ?? spawn;
   const stdinMode = options.stdin === undefined ? 'ignore' : 'pipe';
   const markerFd = options.markerFile === undefined ? undefined : fs.openSync(options.markerFile, 'r');
   let child: ReturnType<typeof spawn>;
   try {
-    child = spawn(options.file, [...options.args], {
+    child = spawnProcess(options.file, [...options.args], {
       cwd: options.cwd,
       env: { ...options.env },
       detached: true,
@@ -74,14 +76,36 @@ export function launch(options: LaunchOptions): SandboxedProcess {
     await terminateGroup(pid, termDeadline === undefined ? { graceMs: killGraceMs } : { graceMs: killGraceMs, termDeadline });
   };
 
+  let afterExitRan = false;
+  const afterExitOnce = (): void => {
+    if (afterExitRan) return;
+    afterExitRan = true;
+    options.afterExit();
+  };
+
+  let childError: Error | undefined;
+
   const exited = new Promise<SandboxExit>((resolve, reject) => {
-    child.once('error', reject);
+    child.once('error', (error) => {
+      childError = error;
+      signal.removeEventListener('abort', onAbort);
+      reapGroup()
+        .then(() => {
+          afterExitOnce();
+          reject(error);
+        })
+        .catch(reject);
+    });
     child.once('exit', (code, exitSignal) => {
       leaderExited = true;
       signal.removeEventListener('abort', onAbort);
       reapGroup()
         .then(() => {
-          options.afterExit();
+          afterExitOnce();
+          if (childError !== undefined) {
+            reject(childError);
+            return;
+          }
           if (stdinFailure !== undefined) {
             reject(stdinFailure);
             return;

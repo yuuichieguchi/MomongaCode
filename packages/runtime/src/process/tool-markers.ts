@@ -1,10 +1,11 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { findHolders, reapMarkedProcesses } from '@momonga/foundation';
 import type { ReapTiming } from '@momonga/foundation';
 import { TERMINAL_STATUSES } from '@momonga/protocol';
 import type { IdempotencyLookup, RuntimeStore } from '@momonga/store';
 import { asError } from './as-error.ts';
+import { nodeRuntimeFiles } from './runtime-files.ts';
+import type { RuntimeFiles } from './runtime-files.ts';
 
 const IDEMPOTENCY_KEY = /^[0-9a-f]{64}$/;
 
@@ -24,6 +25,7 @@ export type ReapToolMarkersOptions = {
   onWarning(message: string): void;
   timing?: ReapTiming;
   reap?: typeof reapMarkedProcesses;
+  files?: RuntimeFiles;
 };
 
 export const reapToolMarkers = async ({
@@ -34,10 +36,11 @@ export const reapToolMarkers = async ({
   timing,
   reap = reapMarkedProcesses,
   scope = 'all',
+  files = nodeRuntimeFiles,
 }: ReapToolMarkersOptions): Promise<void> => {
   let names: string[];
   try {
-    names = await fs.promises.readdir(dir);
+    names = await files.readdir(dir);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') onWarning(`tool marker directory ${dir} could not be read: ${asError(error).message}`);
     return;
@@ -77,7 +80,7 @@ export const reapToolMarkers = async ({
     }
     if (holders.length === 0) {
       try {
-        await fs.promises.unlink(marker);
+        await files.unlink(marker);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') onWarning(`tool marker ${marker} could not be removed: ${asError(error).message}`);
       }
