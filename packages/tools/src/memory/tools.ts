@@ -19,7 +19,7 @@ type SearchInput = { query: string };
 const redactor = createRedactor({ credentials: [] });
 
 const describeMemory = (memory: MemoryView): string =>
-  `[${memory.id}] (${memory.scope} memory, ${memory.origin} origin, saved ${new Date(memory.createdAt).toISOString()} in run ${memory.source.runId} step ${memory.source.step}, last used ${new Date(memory.lastUsedAt).toISOString()}) ${memory.text}`;
+  `[${memory.id}] (${memory.scope} memory, ${memory.origin} origin, saved ${new Date(memory.createdAt).toISOString()} in run ${memory.source.runId}${memory.source.kind === 'tool' ? ` step ${memory.source.step}` : ''}, last used ${new Date(memory.lastUsedAt).toISOString()}) ${memory.text}`;
 
 const termsOf = (query: string): string[] => query.split(/\s+/).filter((term) => term !== '');
 

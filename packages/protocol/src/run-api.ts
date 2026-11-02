@@ -1,5 +1,7 @@
 import { HOOK_EVENTS, HOOK_OUTCOMES, HOOK_PRE_TOOL_DECISIONS } from './hooks.ts';
-import { MEMORY_ORIGINS, MEMORY_SCOPES } from './memory.ts';
+import { CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
+import { MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES } from './memory.ts';
+import type { SummaryFidelity, SummarySource } from './context-record.ts';
 import { PERMISSION_DENIAL_SOURCES } from './permission-denial.ts';
 import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
 import type { ImageMediaType, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent } from './run-types.ts';
@@ -123,6 +125,16 @@ const skillView = closed(
 const agentView = closed(
   { name: string, description: string, scope: enumOf(AGENT_SCOPES), location: string },
   ['name', 'description', 'scope', 'location'],
+);
+
+const summaryFidelity = closed(
+  {
+    fabricated: { type: 'array', items: string },
+    identifiers: nonNegativeInteger,
+    retained: nonNegativeInteger,
+    sections: enumOf(SUMMARY_SECTION_COVERAGES),
+  },
+  ['fabricated', 'identifiers', 'retained', 'sections'],
 );
 
 const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { properties: Record<string, JsonSchema>; required: readonly string[] }> = {
@@ -293,8 +305,31 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
     required: ['purpose', 'inputTokens', 'outputTokens', 'totalTokens'],
   },
   'context.compacted': {
-    properties: { summary: string, replacedThroughSeq: nonNegativeInteger },
+    properties: {
+      summary: string,
+      replacedThroughSeq: nonNegativeInteger,
+      source: enumOf(SUMMARY_SOURCES),
+      fidelity: summaryFidelity,
+      guidelineVersion: nonNegativeInteger,
+    },
     required: ['summary', 'replacedThroughSeq'],
+  },
+  'context.governing_loaded': {
+    properties: {
+      active: { type: 'array', items: closed({ id: string, textSha256: string }, ['id', 'textSha256']) },
+      conflicts: { type: 'array', items: closed({ target: string, ids: { type: 'array', items: string } }, ['target', 'ids']) },
+    },
+    required: ['active', 'conflicts'],
+  },
+  'context.memories_loaded': {
+    properties: { memories: { type: 'array', items: closed({ id: string, status: enumOf(MEMORY_STATUSES) }, ['id', 'status']) } },
+    required: ['memories'],
+  },
+  'context.contribution': {
+    properties: {
+      items: { type: 'array', items: closed({ kind: enumOf(CONTRIBUTION_KINDS), id: string, contributed: boolean }, ['kind', 'id', 'contributed']) },
+    },
+    required: ['items'],
   },
   'context.compaction_rejected': { properties: { attempt: integer }, required: [] },
   'context.inherited': {
@@ -382,6 +417,34 @@ const costReportView = closed(
 
 const memoryScope = enumOf(MEMORY_SCOPES);
 
+const memorySource: JsonSchema = {
+  oneOf: [
+    closed(
+      { kind: constant('tool'), sessionId: string, runId: string, step: nonNegativeInteger, callId: string, seq: nonNegativeInteger },
+      ['kind', 'sessionId', 'runId', 'step', 'callId', 'seq'],
+    ),
+    closed({ kind: constant('reflection'), sessionId: string, runId: string, ordinal: nonNegativeInteger }, ['kind', 'sessionId', 'runId', 'ordinal']),
+  ],
+};
+
+const memoryEvidence: JsonSchema = {
+  oneOf: [
+    closed({ kind: constant('file'), project: string, path: string, sha256: string }, ['kind', 'project', 'path', 'sha256']),
+    closed({ kind: constant('commit'), sha: string }, ['kind', 'sha']),
+    closed(
+      {
+        kind: constant('check'),
+        runId: string,
+        callId: string,
+        seq: nonNegativeInteger,
+        command: string,
+        exitCode: integer,
+      },
+      ['kind', 'runId', 'callId', 'seq', 'command', 'exitCode'],
+    ),
+  ],
+};
+
 const memoryView = closed(
   {
     id: string,
@@ -389,14 +452,35 @@ const memoryView = closed(
     origin: enumOf(MEMORY_ORIGINS),
     project: nullable(string),
     text: string,
-    source: closed(
-      { sessionId: string, runId: string, step: nonNegativeInteger, callId: string, seq: nonNegativeInteger },
-      ['sessionId', 'runId', 'step', 'callId', 'seq'],
-    ),
+    source: memorySource,
     createdAt: integer,
     lastUsedAt: integer,
+    kind: enumOf(MEMORY_KINDS),
+    state: enumOf(MEMORY_STATES),
+    duplicateOf: nullable(string),
+    supersedes: { type: 'array', items: string },
+    retiredAt: nullable(integer),
+    evidence: { type: 'array', items: memoryEvidence },
+    status: enumOf(MEMORY_STATUSES),
+    contributedAt: nullable(integer),
   },
-  ['id', 'scope', 'origin', 'project', 'text', 'source', 'createdAt', 'lastUsedAt'],
+  [
+    'id',
+    'scope',
+    'origin',
+    'project',
+    'text',
+    'source',
+    'createdAt',
+    'lastUsedAt',
+    'kind',
+    'state',
+    'duplicateOf',
+    'supersedes',
+    'retiredAt',
+    'evidence',
+    'contributedAt',
+  ],
 );
 
 export type SkillScope = (typeof SKILL_SCOPES)[number];
@@ -760,7 +844,7 @@ type PublicPayload =
   | { type: 'user.message'; text: string; images?: { mediaType: ImageMediaType; byteLength: number }[] }
   | { type: 'model.requested'; step: number; attempt: number; digest: string }
   | { type: 'run.started'; attempt: number }
-  | { type: 'context.compacted'; summary: string; replacedThroughSeq: number }
+  | { type: 'context.compacted'; summary: string; replacedThroughSeq: number; source?: SummarySource; fidelity?: SummaryFidelity; guidelineVersion?: number }
   | { type: 'context.compaction_rejected'; step?: number; attempt?: number }
   | {
       type: 'context.inherited';
@@ -800,7 +884,15 @@ export const toPublicRunEvent = (event: RunEvent | SessionEvent): PublicRunEvent
     case 'run.started':
       return { ...envelope, type: event.type, attempt: event.attempt };
     case 'context.compacted':
-      return { ...envelope, type: event.type, summary: event.summary, replacedThroughSeq: event.replacedThroughSeq };
+      return {
+        ...envelope,
+        type: event.type,
+        summary: event.summary,
+        replacedThroughSeq: event.replacedThroughSeq,
+        ...(event.source === undefined ? {} : { source: event.source }),
+        ...(event.fidelity === undefined ? {} : { fidelity: event.fidelity }),
+        ...(event.guidelineVersion === undefined ? {} : { guidelineVersion: event.guidelineVersion }),
+      };
     case 'context.compaction_rejected':
       return { ...envelope, type: event.type, ...(event.attempt === undefined ? {} : { attempt: event.attempt }) };
     case 'context.inherited':

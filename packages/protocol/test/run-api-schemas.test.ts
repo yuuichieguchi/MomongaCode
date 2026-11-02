@@ -547,9 +547,16 @@ describe('memory schemas', () => {
     origin: 'trusted',
     project: '/work/a',
     text: 'tests live in test/',
-    source: { sessionId: 's1', runId: 'r1', step: 2, callId: 'c1', seq: 5 },
+    source: { kind: 'tool', sessionId: 's1', runId: 'r1', step: 2, callId: 'c1', seq: 5 },
     createdAt: 1_800_000_000_000,
     lastUsedAt: 1_800_000_001_000,
+    kind: 'fact',
+    state: 'active',
+    duplicateOf: null,
+    supersedes: [],
+    retiredAt: null,
+    evidence: [],
+    contributedAt: null,
   };
 
   it('accepts a project and a user memory and rejects missing provenance, an unknown scope and extras', () => {

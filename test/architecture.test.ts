@@ -20,6 +20,7 @@ const ALL_PACKAGES = [
   'tools',
   'mcp',
   'context',
+  'memory',
   'skills',
   'agents',
   'runtime',
@@ -52,12 +53,13 @@ const MATRIX: Record<string, PackageRule> = {
   tools: rule(['protocol', 'foundation', 'policy', 'sandbox']),
   mcp: rule(['protocol', 'foundation', 'config', 'tools']),
   context: rule(['protocol', 'foundation']),
+  memory: rule(['protocol', 'foundation']),
   skills: rule(['protocol', 'foundation', 'config', 'tools']),
   agents: rule(['protocol', 'foundation', 'skills', 'tools']),
-  runtime: rule(['protocol', 'foundation', 'config', 'store', 'observability', 'policy', 'sandbox', 'tools', 'mcp', 'context', 'skills', 'agents']),
+  runtime: rule(['protocol', 'foundation', 'config', 'store', 'observability', 'policy', 'sandbox', 'tools', 'mcp', 'context', 'memory', 'skills', 'agents']),
   supervisor: rule(['protocol', 'foundation', 'config']),
   cli: rule(['protocol', 'foundation', 'config', 'eval'], ['runtime', 'gateway', 'supervisor', 'verify']),
-  eval: rule(['protocol', 'foundation']),
+  eval: rule(['protocol', 'foundation', 'memory']),
   testkit: rule(['protocol', 'foundation']),
   verify: rule(['protocol', 'foundation', 'config', 'policy']),
 };
@@ -173,6 +175,38 @@ describe('architecture: dependency matrix', () => {
       ...manifest.optionalDependencies,
     };
     expect(checkManifest(packageName, dependencies)).toEqual([]);
+  });
+});
+
+describe('architecture: memory package', () => {
+  const memoryDir = path.join(packagesDir, 'memory');
+
+  it('has an index that is the package entry point', () => {
+    expect(fs.existsSync(path.join(memoryDir, 'src', 'index.ts'))).toBe(true);
+    const manifest = JSON.parse(fs.readFileSync(path.join(memoryDir, 'package.json'), 'utf8')) as {
+      name: string;
+      exports: Record<string, string>;
+      dependencies: Record<string, string>;
+    };
+    expect(manifest.name).toBe('@momonga/memory');
+    expect(manifest.exports).toEqual({ '.': './src/index.ts' });
+    expect(manifest.dependencies).toEqual({ '@momonga/foundation': '*', '@momonga/protocol': '*' });
+  });
+
+  it('is imported by no context source and is no dependency of context', () => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(packagesDir, 'context', 'package.json'), 'utf8')) as { dependencies: Record<string, string> };
+    expect(Object.keys(manifest.dependencies)).not.toContain('@momonga/memory');
+    const importers = listSourceFiles(path.join(packagesDir, 'context', 'src')).filter((file) =>
+      extractImports(fs.readFileSync(file, 'utf8')).some(({ specifier }) => specifier.startsWith('@momonga/memory')),
+    );
+    expect(importers).toEqual([]);
+  });
+
+  it('flags context importing memory, and memory importing store', () => {
+    const contextFile = path.join(packagesDir, 'context', 'src', 'index.ts');
+    expect(checkFile('context', contextFile, "import { a } from '@momonga/memory';").map(({ reason }) => reason)).toEqual(['context may not import memory']);
+    expect(checkManifest('context', { '@momonga/memory': '*' })).toEqual(['context must not depend on @momonga/memory']);
+    expect(checkFile('memory', path.join(memoryDir, 'src', 'index.ts'), "import { s } from '@momonga/store';").map(({ reason }) => reason)).toEqual(['memory may not import store']);
   });
 });
 

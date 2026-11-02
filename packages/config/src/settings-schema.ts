@@ -2,6 +2,7 @@ import { SECRET_NAME_PATTERN } from '@momonga/foundation';
 import { HOOK_COMMAND_TYPE, PERMISSION_MODES, TARGET_BILLINGS } from '@momonga/protocol';
 
 const STRING_ARRAY = { type: 'array', items: { type: 'string' } } as const;
+const NON_EMPTY_STRING_ARRAY = { type: 'array', items: { type: 'string', minLength: 1 } } as const;
 const STRING_MAP = { type: 'object', additionalProperties: { type: 'string' } } as const;
 
 export const MCP_SERVER_SCHEMA = {
@@ -228,6 +229,31 @@ export const SETTINGS_SCHEMA = {
           additionalProperties: MODEL_TARGET_SCHEMA,
         },
       },
+      additionalProperties: false,
+    },
+    memory: {
+      type: 'object',
+      properties: {
+        reflection: {
+          type: 'object',
+          properties: { enabled: { type: 'boolean' }, maxTokens: POSITIVE_INTEGER },
+          additionalProperties: false,
+        },
+        forgetAfterDays: POSITIVE_INTEGER,
+      },
+      additionalProperties: false,
+    },
+    verification: {
+      type: 'object',
+      properties: {
+        commands: NON_EMPTY_STRING_ARRAY,
+        manifests: NON_EMPTY_STRING_ARRAY,
+      },
+      additionalProperties: false,
+    },
+    context: {
+      type: 'object',
+      properties: { adaptiveBudget: { type: 'boolean' } },
       additionalProperties: false,
     },
     autoUpdates: { type: 'boolean' },

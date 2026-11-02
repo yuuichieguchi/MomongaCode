@@ -7,7 +7,37 @@ import { START_MS, enqueue, harness, makeStoreDir, newSession, openStoreAt, rawD
 
 const fileMode = (file: string) => fs.statSync(file).mode & 0o777;
 
-const EXPECTED_TABLES = ['approvals', 'blobs', 'events', 'idempotency', 'jobs', 'memories', 'runs', 'schema_migrations', 'sessions', 'snapshots', 'trust'];
+const EXPECTED_TABLES = [
+  'approvals',
+  'blobs',
+  'compaction_guidelines',
+  'context_charges',
+  'events',
+  'governing_facts',
+  'idempotency',
+  'jobs',
+  'memories',
+  'memories_index',
+  'memories_index_config',
+  'memories_index_content',
+  'memories_index_data',
+  'memories_index_docsize',
+  'memories_index_idx',
+  'memory_evidence',
+  'reflection_jobs',
+  'runs',
+  'schema_migrations',
+  'search_cursor',
+  'search_docs',
+  'search_index',
+  'search_index_config',
+  'search_index_data',
+  'search_index_docsize',
+  'search_index_idx',
+  'sessions',
+  'snapshots',
+  'trust',
+];
 
 const RUN_COLUMNS = [
   'version',
