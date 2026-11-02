@@ -167,6 +167,33 @@ describe('mcp: client gaps', () => {
     }
   });
 
+  it.skipIf(skipCase('mcp-task-input-cancel-after-crash'))(titleOf('mcp-task-input-cancel-after-crash'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    const fixture = await startMcpHttpFixture({ era: 'modern', taskPollIntervalMs: 1 });
+    const { home, stack } = await startRemote(fixture, [toolCallReply('mcp__remote__ask_task', {}, 'call_1'), textReply('done')]);
+    const runtime = createRuntimeClient(home);
+    try {
+      const { session } = await runtime.createSession();
+      const { run } = await runtime.createRun(session.id, 'Run the task that asks me');
+      await elicitationOf(runtime, run.id);
+      expect(fixture.rpcRecords('tasks/cancel')).toHaveLength(0);
+
+      const before = childOf(await stack.client.health(), 'runtime');
+      if (before.pid === undefined) throw new Error('runtime has no pid');
+      process.kill(before.pid, 'SIGKILL');
+      await stack.client.untilChild('runtime', (child) => child.state === 'ready' && child.pid !== before.pid && child.restarts === 1, E2E_RESTART_BOUND_MS);
+
+      expect((await runtime.cancel(run.id)).run.status).toBe('CANCELLED');
+      await until(() => fixture.rpcRecords('tasks/cancel').length === 1, { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the restarted runtime to cancel the parked task' });
+      await until(
+        () => readDb<{ state: string }>(home.paths.databases.runtime, 'SELECT state FROM idempotency').every((row) => row.state !== 'PENDING'),
+        { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the idempotency record of the parked call to leave PENDING' },
+      );
+    } finally {
+      await runtime.close();
+      await fixture.close();
+    }
+  });
+
   it.skipIf(skipCase('mcp-task-recovery'))(titleOf('mcp-task-recovery'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const fixture = await startMcpHttpFixture({ era: 'modern', taskPollIntervalMs: 1 });
     const { home, stack } = await startRemote(fixture, [toolCallReply('mcp__remote__long_task', {}, 'call_1'), textReply('done')]);

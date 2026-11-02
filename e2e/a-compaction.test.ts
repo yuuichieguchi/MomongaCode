@@ -36,6 +36,8 @@ const PLANNED_CASE_TIMEOUT_MS = 4 * E2E_TEST_TIMEOUT_MS;
 const FULL_DENY = [] as const;
 const LEAN_DENY = ['Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob'] as const;
 const CONSTRAINED_DENY = ['Read', 'Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob'] as const;
+const LEAN_ESCALATION_NOTICE = 'recent steps of the current turn were reduced from 4 to 1 because the context budget was exceeded';
+const LEAN_ESCALATION_STEP = 7;
 const FULL_LINE_CHARS = [90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200] as const;
 const EXPECTED_OUTPUT_RESERVE = 1024;
 const EXPECTED_CEILING_AT_4096 = 2300;
@@ -203,11 +205,10 @@ const assertAcceptance = async (
 };
 
 const assertLeanProperties = (observed: Observed, haystack: Haystack): void => {
-  expect(
-    ofType(observed.journal, 'notice')
-      .map((event) => String(event.data['message']))
-      .filter((message) => !message.startsWith('recent steps of the current turn were reduced')),
-  ).toEqual([]);
+  const notices = ofType(observed.journal, 'notice');
+  expect(notices.map((event) => String(event.data['message']))).toEqual([LEAN_ESCALATION_NOTICE]);
+  const escalatedBefore = observed.journal.find((event) => event.type === 'model.requested' && event.seq > (notices[0] as JournalEvent).seq);
+  expect(escalatedBefore?.data['step']).toBe(LEAN_ESCALATION_STEP);
   const firstCompaction = observed.compacted[0] as JournalEvent;
   const firstEviction = ofType(observed.journal, 'context.truncated').find((event) => event.data['kind'] === 'omitted' && event.data['handle'] === haystack.handle);
   expect(firstEviction).toBeDefined();

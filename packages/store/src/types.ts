@@ -11,6 +11,7 @@ import type {
   RunState,
   RunStatus,
   SessionEvent,
+  MemoryOrigin,
   MemoryScope,
   MemoryView,
   StopReason,
@@ -245,6 +246,7 @@ export type MemoryRecord = MemoryView;
 
 export type SaveMemoryInput = {
   scope: MemoryScope;
+  origin: MemoryOrigin;
   project: string | null;
   text: string;
   runId: string;
@@ -252,12 +254,14 @@ export type SaveMemoryInput = {
   callId: string;
 };
 
+export type MemoryVisibility = { trusted: true; project: string } | { trusted: false };
+
 export type MemoryStore = {
   save(input: SaveMemoryInput): { memory: MemoryRecord; created: boolean };
   get(id: string): MemoryRecord | undefined;
   list(filter?: { scope?: MemoryScope; project?: string }): MemoryRecord[];
-  recall(project: string | undefined): MemoryRecord[];
-  search(project: string | undefined, terms: readonly string[]): MemoryRecord[];
+  recall(visibility: MemoryVisibility): MemoryRecord[];
+  search(visibility: MemoryVisibility, terms: readonly string[]): MemoryRecord[];
   markUsed(ids: readonly string[]): void;
   delete(id: string): boolean;
 };
@@ -353,6 +357,7 @@ export type Job = {
   outputStart: number;
   outputTotal: number;
   readOffset: number;
+  lastRead?: { call: string; from: number };
   startedAt: number;
   endedAt?: number;
 };
@@ -373,7 +378,7 @@ export type JobStore = {
   listRunning(): Job[];
   listForSession(sessionId: string): Job[];
   finish(id: string, result: JobResult): FinishJobResult;
-  advanceRead(id: string, offset: number): void;
+  advanceRead(id: string, offset: number, call: string): void;
 };
 
 export type ChildRunInput = {

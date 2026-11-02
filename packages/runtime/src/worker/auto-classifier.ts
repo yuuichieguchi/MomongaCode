@@ -1,9 +1,10 @@
 import { budgetFor } from '@momonga/context';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import { CLASSIFIER_VERDICT_SCHEMA, classifierAllows, outputReserveFor, parseClassifierVerdict } from '@momonga/protocol';
+import { CLASSIFIER_VERDICT_SCHEMA, classifierAllows, escapeXmlText, outputReserveFor, parseClassifierVerdict } from '@momonga/protocol';
 import type { CreateResponseBody, ResponseResource, RunEventPayload } from '@momonga/protocol';
 import type { AutoClassifier, AutoClassifierRequest } from '@momonga/tools';
 import { GatewayRequestError } from '../gateway-client.ts';
+import { GatewayFailureError } from './errors.ts';
 import type { ClaimContext } from './claim-context.ts';
 import { terminalResultOf } from './model-stream.ts';
 import type { ModelResult } from './model-stream.ts';
@@ -25,14 +26,18 @@ const userPromptOf = (ctx: ClaimContext, cwd: string, request: AutoClassifierReq
   const [first] = ctx.options.store.readRunEvents(ctx.run.id, 0, 1);
   if (first === undefined || first.type !== 'user.message') throw new Error(`run ${ctx.run.id} does not start with a user message`);
   return [
-    `<user_request>\n${first.text}\n</user_request>`,
-    `<workspace>${cwd}</workspace>`,
-    `<why_it_needs_review>${request.reason}</why_it_needs_review>`,
-    `<proposed_tool_call>\n${canonicalJson({ tool: request.toolName, summary: request.title, input: request.input })}\n</proposed_tool_call>`,
+    `<user_request>\n${escapeXmlText(first.text)}\n</user_request>`,
+    `<workspace>${escapeXmlText(cwd)}</workspace>`,
+    `<why_it_needs_review>${escapeXmlText(request.reason)}</why_it_needs_review>`,
+    `<proposed_tool_call>\n${escapeXmlText(canonicalJson({ tool: request.toolName, summary: request.title, input: request.input }))}\n</proposed_tool_call>`,
   ].join('\n');
 };
 
-type Outcome = { outcome: 'allow' | 'ask'; event: Omit<Extract<RunEventPayload, { type: 'tool.permission.classified' }>, 'type' | 'callId' | 'outcome'> };
+type Outcome = {
+  outcome: 'allow' | 'ask';
+  event: Omit<Extract<RunEventPayload, { type: 'tool.permission.classified' }>, 'type' | 'callId' | 'subjectDigest' | 'outcome'>;
+  spend?: Extract<RunEventPayload, { type: 'usage.charged' }>;
+};
 
 const asked = (event: Outcome['event']): Outcome => ({ outcome: 'ask', event });
 
@@ -67,15 +72,26 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
     for await (const event of events) terminal = terminalResultOf(event) ?? terminal;
     if (terminal === undefined) return asked({ alias: classifier, failure: 'the classifier stream ended without a terminal event' });
     if (terminal.kind === 'failed') return asked({ alias: classifier, failure: `${terminal.code ?? 'error'}: ${terminal.message}` });
-    if (terminal.incomplete) return asked({ alias: classifier, failure: 'the classifier reply was incomplete' });
+    const { usage } = terminal.response;
+    if (usage === null) throw new GatewayFailureError(`the response of the classifier ${classifier} carries no usage`);
+    const spend = {
+      type: 'usage.charged' as const,
+      purpose: 'permission_classifier' as const,
+      inputTokens: usage.input_tokens,
+      outputTokens: usage.output_tokens,
+      totalTokens: usage.total_tokens,
+    };
+    if (terminal.incomplete) return { ...asked({ alias: classifier, failure: 'the classifier reply was incomplete' }), spend };
     const verdict = parseClassifierVerdict(outputTextOf(terminal.response));
-    if ('error' in verdict) return asked({ alias: classifier, failure: verdict.error });
+    if ('error' in verdict) return { ...asked({ alias: classifier, failure: verdict.error }), spend };
     const detail = { alias: classifier, verdict: verdict.verdict, confidence: verdict.confidence, rationale: verdict.rationale };
-    return { outcome: classifierAllows(verdict) ? 'allow' : 'ask', event: detail };
+    return { outcome: classifierAllows(verdict) ? 'allow' : 'ask', event: detail, spend };
   };
 
   return {
     classify: async (request) => {
+      const recorded = ctx.journal.state.pendingCalls[request.callId]?.classification;
+      if (recorded?.subjectDigest === request.subjectDigest) return recorded.outcome;
       let result: Outcome;
       if (alias === undefined) {
         result = asked({ failure: 'no classifier alias is configured: set autoMode.classifier in the user settings' });
@@ -87,7 +103,10 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
           result = asked({ alias, failure: `${error.code}: ${error.message}` });
         }
       }
-      ctx.journal.append([{ type: 'tool.permission.classified', callId: request.callId, outcome: result.outcome, ...result.event }]);
+      ctx.journal.append([
+        ...(result.spend === undefined ? [] : [result.spend]),
+        { type: 'tool.permission.classified', callId: request.callId, subjectDigest: request.subjectDigest, outcome: result.outcome, ...result.event },
+      ]);
       return result.outcome;
     },
   };

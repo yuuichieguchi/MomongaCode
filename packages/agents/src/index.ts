@@ -13,4 +13,6 @@ export type {
   ChildRunOutcome,
   ChildRunRequest,
   ChildRuns,
+  ChildRunSpawner,
 } from './types.ts';
+export { childResultOf } from './tool.ts';

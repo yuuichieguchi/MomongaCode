@@ -46,6 +46,7 @@ export {
   finalAnswerRun,
   materializeEvents,
   toolRoundTripRun,
+  usageChargedRun,
 } from './run-event-fixtures.ts';
 export type { RecordedRun } from './run-event-fixtures.ts';
 export { drivenReapTiming, fakeReapTiming } from './fake-reap-timing.ts';

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildContext, inputCeilingFor, MIN_ROOM_TOKENS } from '@momonga/context';
+import { PinnedOverflowError, buildContext, inputCeilingFor, MIN_ROOM_TOKENS } from '@momonga/context';
 import type { FunctionTool } from '@momonga/protocol';
 import { capabilitiesFor, harness, inputFor, sourcesWith, tokensOfTools } from './helpers.ts';
 
@@ -40,5 +40,23 @@ describe('the tools a target is offered', () => {
     const second = await builtWith(1_536);
     expect(second.built.tools).toEqual(first.built.tools);
     expect(second.built.pinnedDigest).toBe(first.built.pinnedDigest);
+  });
+
+  it('do not change with the length of the task, because the task is not part of the floor', async () => {
+    const capabilities = capabilitiesFor(1_536, { maxOutputTokens: 1024 });
+    const { ports } = harness(capabilities);
+    const task = (text: string) => ({ type: 'message' as const, role: 'user' as const, content: text });
+    const short = await buildContext(inputFor(capabilities, { sources: sourcesWith({ tools: TOOLS, task: task('Do the work.') }) }), ports);
+    const longer = await buildContext(inputFor(capabilities, { sources: sourcesWith({ tools: TOOLS, task: task('Do the work. '.repeat(40)) }) }), ports);
+    expect(longer.tools).toEqual(short.tools);
+    expect(longer.notices.filter((notice) => notice.code === 'tools_dropped')).toEqual(short.notices.filter((notice) => notice.code === 'tools_dropped'));
+  });
+
+  it('leave a task that does not fit to the overflow path instead of dropping tools to make room for it', async () => {
+    const capabilities = capabilitiesFor(8_000, { maxOutputTokens: 1024 });
+    const { ports } = harness(capabilities);
+    const task = { type: 'message' as const, role: 'user' as const, content: 'long task '.repeat(6_000) };
+    const attempt = buildContext(inputFor(capabilities, { sources: sourcesWith({ tools: TOOLS, task }) }), ports);
+    await expect(attempt).rejects.toBeInstanceOf(PinnedOverflowError);
   });
 });

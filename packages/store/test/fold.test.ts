@@ -15,6 +15,7 @@ import {
   fixtureSubjectDigest,
   materializeEvents,
   toolRoundTripRun,
+  usageChargedRun,
 } from '@momonga/testkit';
 import { enqueue, harness, mustClaim, newSession, rawDb } from './helpers.ts';
 
@@ -92,6 +93,11 @@ describe('foldRunState on recorded runs', () => {
       nextItemSeq: 3,
       lastSeq: 9,
     });
+  });
+
+  it('adds the usage charged outside the main model calls to the run total', () => {
+    const state = foldAll(materializeEvents(usageChargedRun.payloads));
+    expect(state.usage).toEqual({ inputTokens: 10 + 7 + 5, outputTokens: 2 + 3 + 1, totalTokens: 12 + 10 + 6 });
   });
 
   it('folds a tool round trip', () => {

@@ -110,6 +110,7 @@ export const E2E_CASES = [
   { id: 'mcp-oauth-login', file: 'mcp-complete.test.ts', title: 'mcp: a server that needs authorization surfaces a typed event, the client logs in through the Run API and the next run succeeds', needsBash: false },
   { id: 'mcp-elicitation', file: 'mcp-complete.test.ts', title: 'mcp: an elicitation reaches the Run API as an event, the answer resumes the multi round-trip request and the run completes', needsBash: false },
   { id: 'mcp-task-input', file: 'mcp-complete.test.ts', title: 'mcp: a task that needs input is answered through tasks/update and the run completes', needsBash: false },
+  { id: 'mcp-task-input-cancel-after-crash', file: 'mcp-complete.test.ts', title: 'mcp: a runtime killed with SIGKILL while a task waits for input cancels the parked task when the run is cancelled after the restart', needsBash: false },
   { id: 'mcp-task-recovery', file: 'mcp-complete.test.ts', title: 'mcp: a runtime killed with SIGKILL during a task resumes polling the recorded task and starts no second one', needsBash: false },
   { id: 'agent-run', file: 'agents.test.ts', title: 'agents: a subagent runs as a child run, the parent waits and receives its final text, and the Run API shows the hierarchy', needsBash: false },
   { id: 'agent-cancel', file: 'agents.test.ts', title: 'agents: cancelling the parent cancels the running child and cuts its upstream connection', needsBash: false },

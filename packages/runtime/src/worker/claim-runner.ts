@@ -47,10 +47,14 @@ const cancelUpstream = async (options: WorkerOptions, control: ClaimControl, key
   const failures: string[] = [];
   const settled = Promise.all(
     keys.map(async (key) => {
+      const timeout = new AbortController();
+      const timer = options.timers.setTimeout(() => timeout.abort(new Error(`the upstream cancel exceeded ${CANCEL_UPSTREAM_TIMEOUT_MS} ms`)), CANCEL_UPSTREAM_TIMEOUT_MS);
       try {
-        await options.gateway.cancel(key, { signal: AbortSignal.timeout(CANCEL_UPSTREAM_TIMEOUT_MS) });
+        await options.gateway.cancel(key, { signal: timeout.signal });
       } catch (error) {
         failures.push(describeError(error));
+      } finally {
+        options.timers.clearTimeout(timer);
       }
     }),
   );
@@ -173,7 +177,7 @@ const requeueOrStop = (
     return;
   }
   const now = options.clock.now();
-  const backoff = computeBackoff({ attempt: memory.streak, baseMs: REQUEUE_BASE_MS, maxMs: REQUEUE_MAX_MS, random: options.random ?? Math.random });
+  const backoff = computeBackoff({ attempt: memory.streak, baseMs: REQUEUE_BASE_MS, maxMs: REQUEUE_MAX_MS, random: options.random });
   const availableAt = now + Math.max(backoff, disposition.retryAfterMs);
   const deadlineAt = options.store.getRun(claim.runId)?.deadlineAt;
   if (deadlineAt !== undefined && availableAt >= deadlineAt) {
@@ -217,10 +221,11 @@ const drive = async (
     if (control.leaseLost()) control.lost();
     const inFlight = journal.state.inFlightModelRequest;
     const keys = inFlight === undefined ? [] : [modelKey(run.id, inFlight.step, inFlight.attempt)];
-    const reconciling = reconcileStartedCalls({ options, run, session, journal, control });
-    const releasing = releaseWaitingOnCancel({ options, run, session, journal, control });
+    const recovering = releaseWaitingOnCancel({ options, run, session, journal, control }).then(() =>
+      reconcileStartedCalls({ options, run, session, journal, control }),
+    );
     const upstream = cancelUpstream(options, control, keys);
-    const settled = Promise.all([upstream, reconciling, releasing]);
+    const settled = Promise.all([upstream, recovering]);
     await Promise.race([settled, control.shutdownRequested]);
     if (control.shuttingDown()) {
       settled.catch((error: unknown) => {
@@ -240,7 +245,7 @@ const drive = async (
   }
 
   const agentPin = readAgentPin(run.pins);
-  const basePrompt = (options.systemPrompt ?? buildSystemPrompt)({ cwd: session.cwd, platform: process.platform });
+  const basePrompt = (options.systemPrompt ?? buildSystemPrompt)({ cwd: session.cwd, platform: options.platform });
   const systemPrompt = agentPin === undefined ? basePrompt : agentSystemPrompt(basePrompt, agentPin);
   const systemPromptDigest = sha256Hex(systemPrompt);
   const env = tools.envFor(session);

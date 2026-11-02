@@ -1,6 +1,6 @@
 import { canonicalJson, parseJsonOrText, sha256Hex } from '@momonga/foundation';
 import { LOOP_GROUPS_KEPT, STOP_REASONS, findDanglingOutput, userMessageContent } from '@momonga/protocol';
-import type { InputItem, RunEvent, RunState, StopReason } from '@momonga/protocol';
+import type { InputItem, RunEvent, RunEventPayload, RunState, StopReason } from '@momonga/protocol';
 import { applyInheritance } from './inherit.ts';
 import { isRecord } from './rows.ts';
 
@@ -26,6 +26,27 @@ export const initialRunState = (ids: { runId: string; sessionId: string }): RunS
   loopGroups: [],
   taskSeq: 1,
   lastSeq: 0,
+});
+
+export const spendOf = (event: RunEventPayload): RunState['usage'] | undefined => {
+  if (event.type === 'model.responded') {
+    const { input_tokens, output_tokens, total_tokens } = event.response.usage;
+    return { inputTokens: input_tokens, outputTokens: output_tokens, totalTokens: total_tokens };
+  }
+  if (event.type === 'usage.charged') return { inputTokens: event.inputTokens, outputTokens: event.outputTokens, totalTokens: event.totalTokens };
+  return undefined;
+};
+
+const requiredSpend = (event: RunEventPayload): RunState['usage'] => {
+  const spend = spendOf(event);
+  if (spend === undefined) throw new Error(`event ${event.type} carries no token spend`);
+  return spend;
+};
+
+export const addUsage = (total: RunState['usage'], spend: RunState['usage']): RunState['usage'] => ({
+  inputTokens: total.inputTokens + spend.inputTokens,
+  outputTokens: total.outputTokens + spend.outputTokens,
+  totalTokens: total.totalTokens + spend.totalTokens,
 });
 
 const toStopReason = (reason: string, state: RunState): StopReason => {
@@ -224,7 +245,6 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       const inFlight = state.inFlightModelRequest;
       const settled = inFlight !== undefined && inFlight.step === event.step && inFlight.attempt === event.attempt;
       const base = withoutStreaming(settled ? withoutInFlight(state) : state);
-      const { input_tokens, output_tokens, total_tokens } = event.response.usage;
       return {
         ...appendItems(
           base,
@@ -237,13 +257,11 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
           callIds: event.response.output.flatMap(callIdOf),
           ...(event.response.incompleteReason === undefined ? {} : { incompleteReason: event.response.incompleteReason }),
         },
-        usage: {
-          inputTokens: state.usage.inputTokens + input_tokens,
-          outputTokens: state.usage.outputTokens + output_tokens,
-          totalTokens: state.usage.totalTokens + total_tokens,
-        },
+        usage: addUsage(state.usage, requiredSpend(event)),
       };
     }
+    case 'usage.charged':
+      return { ...state, usage: addUsage(state.usage, requiredSpend(event)) };
     case 'tool.call': {
       if (state.pendingCalls[event.callId] !== undefined) {
         throw new Error(`run ${state.runId}: duplicate tool.call for call ${event.callId}`);
@@ -258,6 +276,8 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
         toolCallCounts: { ...state.toolCallCounts, [key]: (state.toolCallCounts[key] ?? 0) + 1 },
       };
     }
+    case 'tool.permission.classified':
+      return withCall(state, event.callId, event.type, (call) => ({ ...call, classification: { subjectDigest: event.subjectDigest, outcome: event.outcome } }));
     case 'tool.permission.requested':
       return withCall(state, event.callId, event.type, ({ resolution: _stale, ...call }) => ({ ...call, status: 'awaiting_approval', approvalId: event.approvalId, options: event.options, subjectDigest: event.subjectDigest, ...(event.suggestedRule === undefined ? {} : { suggestedRule: event.suggestedRule }) }));
     case 'tool.permission.resolved': {
@@ -336,7 +356,6 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
     case 'tool.waiting':
       return withCall(state, event.callId, event.type, (call) => ({ ...call, awaiting: event.awaits }));
     case 'job.finished':
-    case 'tool.permission.classified':
     case 'hook.completed':
     case 'tool.updated':
     case 'plan.updated':

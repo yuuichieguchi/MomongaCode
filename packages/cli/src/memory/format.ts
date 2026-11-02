@@ -11,6 +11,7 @@ export const formatMemory = (memory: MemoryView): string =>
   [
     `id: ${memory.id}`,
     `scope: ${memory.scope}`,
+    `origin: ${memory.origin}`,
     ...(memory.project === null ? [] : [`project: ${memory.project}`]),
     `created: ${new Date(memory.createdAt).toISOString()}`,
     `last used: ${new Date(memory.lastUsedAt).toISOString()}`,

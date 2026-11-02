@@ -114,21 +114,19 @@ const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): 
   const toolFloor = pinnedFloorFor(capabilities);
   const countWith = (offered: readonly FunctionTool[]): Promise<MeterCount> => ports.meter.count({ input: pinned, tools: offered });
   const fitsFloor = (counted: MeterCount): boolean => metering(input, ports, candidates).fits(counted) && counted.inputTokens <= toolFloor;
+  const stableFitsFloor = async (offered: readonly FunctionTool[]): Promise<boolean> =>
+    fitsFloor(await ports.meter.count({ input: pinnedLayers, tools: offered }));
   let tools = candidates;
   let pinnedCounted: MeterCount | undefined;
   if (input.pinnedTokens === undefined) {
-    pinnedCounted = await countWith(candidates);
-    if (!fitsFloor(pinnedCounted)) {
+    if (!(await stableFitsFloor(candidates))) {
       const kept: FunctionTool[] = [];
       for (const tool of candidates) {
-        if (fitsFloor(await countWith([...kept, tool]))) kept.push(tool);
+        if (await stableFitsFloor([...kept, tool])) kept.push(tool);
       }
-      const keptCounted = await countWith(kept);
-      if (kept.length > 0 || fitsFloor(keptCounted)) {
-        tools = kept;
-        pinnedCounted = keptCounted;
-      }
+      if (kept.length > 0 || (await stableFitsFloor(kept))) tools = kept;
     }
+    pinnedCounted = await countWith(tools);
   }
   const { fits } = metering(input, ports, tools);
   const leftOut = candidates.filter((tool) => !tools.includes(tool)).map((tool) => tool.name);
@@ -242,7 +240,7 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
 
   const head = await measureHead(input, ports);
   const { tools, budgetOf, fits, countInput } = metering(input, ports, head.tools);
-  const { discovered, notices, systemMessage, task, pinnedDigest, pinnedTokens, ceiling, room } = head;
+  const { discovered, notices, systemMessage, task, pinnedDigest, pinnedTokens, ceiling } = head;
 
   const fitted = await fitLayers(input, ports, head);
   const { nested, layersWith, floorOf, exceeds } = fitted;
@@ -254,8 +252,8 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
   const memoryCandidates = sources.memories ?? [];
   let memoryCount = 0;
   if (memoryCandidates.length > 0) {
-    const memoryBudget = memoryBudgetFor(room);
     const baseTokens = layersCounted.inputTokens;
+    const memoryBudget = memoryBudgetFor(ceiling - baseTokens);
     const fitsWith = async (count: number): Promise<boolean> => {
       memoryMessage = {
         type: 'message',
@@ -263,7 +261,7 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
         content: renderMemories(memoryCandidates.slice(0, count), memoryCandidates.length - count),
       };
       const counted = await countInput(floorOf(layersOf()));
-      return !exceeds(counted) && counted.inputTokens - baseTokens <= memoryBudget;
+      return !exceeds(counted) && ceiling - counted.inputTokens >= MIN_ROOM_TOKENS && counted.inputTokens - baseTokens <= memoryBudget;
     };
     if (await fitsWith(0)) {
       let low = 0;
@@ -292,8 +290,9 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
   const summaryItems: InputItem[] = sources.summary === undefined ? [] : [frozenItem(sources.summary.item)];
   const prefixDigest = chainTail(digestChain({ scope: 'prefix', tools }, [...layers, ...summaryItems]));
 
-  const itemCap = input.itemCap ?? itemCapFor(capabilities, room);
-  const summaryCap = summaryTokenCapFor(capabilities, room);
+  const roomLeft = ceiling - floorTokens;
+  const itemCap = input.itemCap ?? itemCapFor(capabilities, roomLeft);
+  const summaryCap = summaryTokenCapFor(capabilities, roomLeft);
   const callNames = new Map<string, string>();
   const countContextFor = (callId: string): ItemCountContext => {
     const name = callNames.get(callId);

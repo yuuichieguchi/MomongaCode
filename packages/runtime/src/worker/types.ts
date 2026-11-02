@@ -2,6 +2,7 @@ import type { Clock } from '@momonga/foundation';
 import type { InstructionReader } from '@momonga/context';
 import type { RuntimeStore } from '@momonga/store';
 import type { AgentsPort, GatewayPort, MemoryPort, SettingsPort, SkillsPort, ToolRuntimePort, TracerPort } from '../ports.ts';
+import type { ServiceTimers } from '../service/timers.ts';
 import type { SystemPromptContext } from '../system-prompt.ts';
 
 export type WorkerDefaults = {
@@ -43,7 +44,9 @@ export type WorkerOptions = {
   onError?: (error: unknown, context: WorkerErrorContext) => void;
   onFatal: (error: Error) => void;
   wake?: WorkerWake;
-  random?: () => number;
+  random: () => number;
+  platform: string;
+  timers: ServiceTimers;
 };
 
 export type Worker = {

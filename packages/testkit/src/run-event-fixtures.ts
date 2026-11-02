@@ -314,6 +314,19 @@ export const inheritedRun: RecordedRun = {
   ],
 };
 
+export const usageChargedRun: RecordedRun = {
+  name: 'usage charged outside the main model calls',
+  payloads: [
+    { type: 'user.message', text: 'say hi' },
+    ...started(1),
+    { type: 'model.requested', step: 1, attempt: 1, digest: 'd1', body: { input: 'say hi' } },
+    { type: 'model.responded', step: 1, attempt: 1, response: { status: 'completed', output: [assistantText('m1', 'hi')], usage: usage(10, 2) } },
+    { type: 'usage.charged', purpose: 'permission_classifier', inputTokens: 7, outputTokens: 3, totalTokens: 10 },
+    { type: 'usage.charged', purpose: 'compaction', inputTokens: 5, outputTokens: 1, totalTokens: 6 },
+    { type: 'run.status', from: 'RUNNING', to: 'COMPLETED' },
+  ],
+};
+
 export const RECORDED_RUNS: readonly RecordedRun[] = [
   finalAnswerRun,
   toolRoundTripRun,
@@ -324,4 +337,5 @@ export const RECORDED_RUNS: readonly RecordedRun[] = [
   compactionRejectedAtStreamRun,
   evictionAndRejectionRun,
   inheritedRun,
+  usageChargedRun,
 ];

@@ -529,6 +529,7 @@ describe('memory schemas', () => {
   const view = {
     id: 'mem-1',
     scope: 'project',
+    origin: 'trusted',
     project: '/work/a',
     text: 'tests live in test/',
     source: { sessionId: 's1', runId: 'r1', step: 2, callId: 'c1', seq: 5 },
@@ -540,6 +541,10 @@ describe('memory schemas', () => {
     expect(accepts('MemoryView', view)).toBe(true);
     expect(accepts('MemoryView', { ...view, scope: 'user', project: null })).toBe(true);
     expect(accepts('MemoryView', { ...view, scope: 'team' })).toBe(false);
+    expect(accepts('MemoryView', { ...view, origin: 'untrusted' })).toBe(true);
+    expect(accepts('MemoryView', { ...view, origin: 'unknown' })).toBe(false);
+    const { origin: _origin, ...withoutOrigin } = view;
+    expect(accepts('MemoryView', withoutOrigin)).toBe(false);
     expect(accepts('MemoryView', { ...view, source: { ...view.source, seq: undefined } })).toBe(false);
     expect(accepts('MemoryView', { ...view, extra: 1 })).toBe(false);
     const { lastUsedAt: _lastUsedAt, ...withoutLastUsed } = view;

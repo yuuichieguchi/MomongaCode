@@ -13,6 +13,7 @@ import type { ToolRuntimePort } from '../ports.ts';
 import type { RunNotifier } from '../service/notifier.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { createBackgroundJobs } from './background-jobs.ts';
+import { createNodeJobMarkerFiles } from './job-marker-files.ts';
 import type { BackgroundJobRegistry } from './background-jobs.ts';
 import { MCP_CLOSE_GRACE_MS, SANDBOX_KILL_GRACE_MS } from './constants.ts';
 import { createMcpAdmin, loadSessionMcpServers } from './mcp-admin.ts';
@@ -71,6 +72,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     clock,
     timers,
     markerDir: paths.markers.tools,
+    markerFiles: createNodeJobMarkerFiles(),
     killGraceMs: SANDBOX_KILL_GRACE_MS,
     reapTiming,
     onWarning: (message) => logger.warn(message),

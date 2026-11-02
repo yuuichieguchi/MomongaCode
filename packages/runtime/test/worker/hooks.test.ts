@@ -5,7 +5,7 @@ import type { HooksSettings } from '@momonga/protocol';
 import { createUnsandboxed } from '@momonga/sandbox';
 import { STOP_HOOK_FEEDBACK_PREFIX } from '../../src/worker/hook-step.ts';
 import { makeEnv } from './harness.ts';
-import { callsStep, textStep } from './scripts.ts';
+import { assistantMessage, callsStep, textStep } from './scripts.ts';
 
 const hooks = (event: keyof HooksSettings, command: string, matcher?: string): HooksSettings => ({
   [event]: [{ ...(matcher === undefined ? {} : { matcher }), hooks: [{ type: 'command', command }] }],
@@ -61,6 +61,27 @@ describe('worker hooks', () => {
     await env.runOnce(workerWithProcesses(env));
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.ofType(run.id, 'hook.completed')).toMatchObject([{ hookEvent: 'Stop', outcome: 'success' }]);
+  });
+
+  it('does not run the Stop hook again for a response whose Stop hook was journaled before a crash', async () => {
+    const env = await makeEnv();
+    const counter = path.join(env.project, 'stop-runs.txt');
+    env.settings.hooksValue = hooks('Stop', `echo run >> ${counter}`);
+    const run = env.enqueue('hello');
+    env.seed(
+      run.id,
+      [
+        { type: 'model.responded', step: 1, attempt: 1, response: { status: 'completed', output: [assistantMessage('msg_1', 'done')], usage: { input_tokens: 5, output_tokens: 1, total_tokens: 6 } } },
+        { type: 'hook.completed', hookEvent: 'Stop', command: `echo run >> ${counter}`, outcome: 'success', exitCode: 0, durationMs: 3 },
+      ],
+      'crash',
+    );
+
+    await env.runOnce(workerWithProcesses(env));
+
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(fs.existsSync(counter)).toBe(false);
+    expect(env.ofType(run.id, 'hook.completed')).toHaveLength(1);
   });
 
   it('blocks a tool call with a PreToolUse hook, records the hook execution and a structured denial', async () => {

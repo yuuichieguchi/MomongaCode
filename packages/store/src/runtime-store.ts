@@ -6,7 +6,7 @@ import { TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
 import type { ElicitationAnswerRecord, ElicitationRequestView, PermissionMode, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
 import { createApprovalStore } from './approvals.ts';
 import { createBlobStore, prepareBlobDirectory } from './blobs.ts';
-import { foldRunState, initialRunState } from './fold.ts';
+import { addUsage, foldRunState, initialRunState, spendOf } from './fold.ts';
 import { decodeEvent, decodeRun, decodeRunEvents, decodeRunState, decodeSession, encodeRunState } from './codec.ts';
 import { StoreIdentityError, isFatalStoreError } from './fatal.ts';
 import { createIdempotencyStore } from './idempotency.ts';
@@ -435,14 +435,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       const step = Math.max(current.step, payloadStep(payload));
       const seq = current.lastSeq + 1;
       insertEvent({ runId: run.id, sessionId: run.sessionId, seq, step, leaseToken: run.leaseToken, createdAt, payload });
-      const usage =
-        payload.type === 'model.responded'
-          ? {
-              inputTokens: current.usage.inputTokens + payload.response.usage.input_tokens,
-              outputTokens: current.usage.outputTokens + payload.response.usage.output_tokens,
-              totalTokens: current.usage.totalTokens + payload.response.usage.total_tokens,
-            }
-          : current.usage;
+      const spend = spendOf(payload);
+      const usage = spend === undefined ? current.usage : addUsage(current.usage, spend);
       current = { ...current, step, lastSeq: seq, usage };
     }
     return current;
@@ -919,8 +913,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         if (finished === undefined) throw new Error(`job ${id} vanished during finish`);
         return { kind: 'finished', job: decodeJob(finished) };
       }),
-    advanceRead: (id, offset) => {
-      sql.jobs.advance.run({ id, offset });
+    advanceRead: (id, offset, call) => {
+      sql.jobs.advance.run({ id, offset, call });
     },
   };
 
