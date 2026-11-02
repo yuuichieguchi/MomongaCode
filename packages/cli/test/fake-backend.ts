@@ -14,6 +14,7 @@ export const SESSION: SessionView = {
   activeRunId: null,
   latestRunId: null,
   additionalDirectories: [],
+  lastEventId: 0,
 };
 
 export const runView = (overrides: Partial<RunView> = {}): RunView => ({

@@ -166,16 +166,25 @@ describe('acp: momonga acp', () => {
     const { sessionId } = await acp.agent.request('session/new', { cwd: project, mcpServers: [] });
 
     await acp.agent.request('session/set_mode', { sessionId, modeId: 'plan' });
+    await acp.untilUpdate((notification) => notification.update.sessionUpdate === 'current_mode_update', 'the announcement of the plan mode');
 
-    const changed = updatesOf(acp.updates, 'current_mode_update');
-    expect(changed).toEqual([{ sessionUpdate: 'current_mode_update', currentModeId: 'plan' }]);
     const runtime = createRuntimeClient(home);
     try {
       const view = await runtime.json('GET', `/v1/sessions/${sessionId}`);
       expect(view.body).toMatchObject({ session: { id: sessionId, permissionMode: 'plan' } });
+
+      expect((await runtime.json('PATCH', `/v1/sessions/${sessionId}`, { permissionMode: 'acceptEdits' })).status).toBe(200);
+      await acp.untilUpdate(
+        (notification) => notification.update.sessionUpdate === 'current_mode_update' && notification.update.currentModeId === 'acceptEdits',
+        'the announcement of a mode change another client made',
+      );
     } finally {
       await runtime.close();
     }
+    expect(updatesOf(acp.updates, 'current_mode_update')).toEqual([
+      { sessionUpdate: 'current_mode_update', currentModeId: 'plan' },
+      { sessionUpdate: 'current_mode_update', currentModeId: 'acceptEdits' },
+    ]);
     expect(await codeOf(acp.agent.request('session/set_mode', { sessionId, modeId: 'bypassPermissions' }))).toBe(-32602);
     expect(await codeOf(acp.agent.request('session/set_mode', { sessionId, modeId: 'auto' }))).toBe(-32602);
     expect(await codeOf(acp.agent.request('session/set_mode', { sessionId, modeId: 'nonsense' }))).toBe(-32602);
@@ -198,6 +207,7 @@ describe('acp: momonga acp', () => {
     const loaded = await second.agent.request('session/load', { sessionId, cwd: project, mcpServers: [] });
 
     expect(loaded.modes?.currentModeId).toBe('acceptEdits');
+    expect(updatesOf(second.updates, 'current_mode_update')).toEqual([]);
     expect(messageTexts(second.updates, 'user_message_chunk')).toEqual(['Update the greeting']);
     expect(updatesOf(second.updates, 'tool_call').map((call) => ('kind' in call ? call.kind : undefined))).toEqual(['search', 'read', 'edit']);
     expect(updatesOf(second.updates, 'tool_call_update').filter((update) => 'status' in update && update.status === 'completed')).toHaveLength(3);

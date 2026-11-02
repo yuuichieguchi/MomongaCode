@@ -1,5 +1,5 @@
 import { createAcpAgent } from '../src/acp/agent.ts';
-import type { AcpDeps, FollowRequest } from '../src/acp/agent.ts';
+import type { AcpDeps, FollowRequest, FollowSessionRequest } from '../src/acp/agent.ts';
 import type { AgentApp, AnyMessage } from '@agentclientprotocol/sdk';
 import type { PublicRunEvent, SkillsResponse } from '@momonga/protocol';
 import { RunApiError } from '../src/client/runtime-client.ts';
@@ -146,6 +146,7 @@ export type FakeRuntime = RuntimeClient & {
   elicitationStatus: ElicitationView['status'];
   createRunResult: (input: string) => Promise<RunView>;
   failures: Map<string, Error>;
+  modeChanged: ((mode: SessionView['permissionMode']) => void) | undefined;
 };
 
 const unexpected = (name: string) => (): never => {
@@ -190,6 +191,7 @@ export const fakeRuntime = (): FakeRuntime => {
     elicitationStatus: 'pending',
     createRunResult: async () => runView({ id: 'run-1', status: 'QUEUED' }),
     failures: new Map(),
+    modeChanged: undefined,
     health: unexpected('health'),
     createSession: async (input): Promise<CreatedSession> => {
       record(`createSession ${JSON.stringify({ cwd: input.cwd, mcpServers: input.mcpServers })}`);
@@ -208,6 +210,7 @@ export const fakeRuntime = (): FakeRuntime => {
     },
     skills: async (id) => {
       record(`skills ${id}`);
+      await new Promise<void>((resolve) => setImmediate(resolve));
       return runtime.skillList;
     },
     setMcpServers: async (id, servers) => {
@@ -219,6 +222,7 @@ export const fakeRuntime = (): FakeRuntime => {
       const failure = runtime.failures.get('setPermissionMode');
       if (failure !== undefined) throw failure;
       runtime.session = { ...runtime.session, permissionMode: mode };
+      runtime.modeChanged?.(mode);
       return runtime.session;
     },
     createRun: async (sessionId, input, options) => {
@@ -280,17 +284,28 @@ export const fakeRuntime = (): FakeRuntime => {
     trust: unexpected('trust'),
     setTrust: unexpected('setTrust'),
     streamEvents: unexpected('streamEvents'),
+    streamSessionEvents: unexpected('streamSessionEvents'),
     close: async () => undefined,
   };
   return runtime;
 };
 
+export const modeChangedFrame = (id: number, mode: SessionView['permissionMode']): RunEventFrame => ({
+  id,
+  event: 'mode.changed',
+  data: { id, sessionId: SESSION.id, createdAt: 1, type: 'mode.changed', mode },
+});
+
 export type Harness = {
   readonly runtime: FakeRuntime;
   readonly peer: Peer;
   readonly reports: string[];
+  readonly reported: Promise<void>;
+  readonly sessionStreams: readonly FollowSessionRequest[];
   scripts: Map<string, RunScript>;
   contextWindows: Map<string, number>;
+  emitSessionEvent(frame: RunEventFrame): void;
+  failSessionStream(error: Error): void;
 };
 
 export const startAgent = (overrides: Partial<AcpDeps> = {}): Harness => {
@@ -298,6 +313,16 @@ export const startAgent = (overrides: Partial<AcpDeps> = {}): Harness => {
   const scripts = new Map<string, RunScript>();
   const contextWindows = new Map<string, number>([[SESSION.modelAlias, 8192]]);
   const reports: string[] = [];
+  const firstReport = Promise.withResolvers<void>();
+  const sessionStreams: FollowSessionRequest[] = [];
+  const failures: ((error: Error) => void)[] = [];
+  let nextEventId = 1;
+  runtime.modeChanged = (mode) => {
+    const request = sessionStreams.at(-1);
+    if (request === undefined) throw new Error('the session event stream is not open');
+    request.onEvent(modeChangedFrame(nextEventId, mode));
+    nextEventId += 1;
+  };
   const deps: AcpDeps = {
     version: '9.9.9',
     runtime,
@@ -314,12 +339,38 @@ export const startAgent = (overrides: Partial<AcpDeps> = {}): Harness => {
       if (script === undefined) throw new Error(`no script for run ${request.runId}`);
       return script(request);
     },
-    afterResponse: async () => undefined,
-    report: (message) => reports.push(message),
+    followSession: (request) =>
+      new Promise<never>((_resolve, reject) => {
+        sessionStreams.push(request);
+        failures.push(reject);
+        request.signal.addEventListener('abort', () => reject(request.signal.reason), { once: true });
+      }),
+    report: (message) => {
+      reports.push(message);
+      firstReport.resolve();
+    },
     ...overrides,
   };
   const peer = connectPeer(createAcpAgent(deps));
-  return { runtime, peer, reports, scripts, contextWindows };
+  return {
+    runtime,
+    peer,
+    reports,
+    reported: firstReport.promise,
+    sessionStreams,
+    scripts,
+    contextWindows,
+    emitSessionEvent: (frame) => {
+      const request = sessionStreams.at(-1);
+      if (request === undefined) throw new Error('the session event stream is not open');
+      request.onEvent(frame);
+    },
+    failSessionStream: (error) => {
+      const fail = failures.at(-1);
+      if (fail === undefined) throw new Error('the session event stream is not open');
+      fail(error);
+    },
+  };
 };
 
 export const notFound = (what: string): RunApiError =>

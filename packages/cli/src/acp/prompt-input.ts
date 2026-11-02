@@ -11,10 +11,9 @@ const textOf = (block: ContentBlock): string => {
     case 'resource_link':
       return `[${block.name}](${block.uri})`;
     case 'resource': {
-      if (!('text' in block.resource)) {
-        throw RequestError.invalidParams({ uri: block.resource.uri }, `the embedded resource ${block.resource.uri} is binary; only text resources are supported`);
-      }
-      return `<resource uri="${block.resource.uri}">\n${block.resource.text}\n</resource>`;
+      if ('text' in block.resource) return `<resource uri="${block.resource.uri}">\n${block.resource.text}\n</resource>`;
+      const mimeType = block.resource.mimeType === undefined || block.resource.mimeType === null ? '' : ` mimeType="${block.resource.mimeType}"`;
+      return `<resource uri="${block.resource.uri}"${mimeType} binary="true" bytes="${Buffer.byteLength(block.resource.blob, 'base64')}" />`;
     }
     case 'image':
     case 'audio':

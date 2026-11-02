@@ -2,11 +2,18 @@ import { RequestError } from '@agentclientprotocol/sdk';
 import type { StopReason } from '@agentclientprotocol/sdk';
 import type { RunView } from '../client/views.ts';
 
-const unmappable = (run: RunView, description: string): RequestError =>
-  RequestError.internalError(
-    { runId: run.id, status: run.status, ...(run.stopReason === undefined ? {} : { stopReason: run.stopReason }), ...(run.error === undefined ? {} : { error: run.error }) },
-    `run ${run.id} ${description}`,
-  );
+export const RUN_STOPPED_CODE = -32010;
+
+const detailOf = (run: RunView) => ({
+  runId: run.id,
+  status: run.status,
+  ...(run.stopReason === undefined ? {} : { stopReason: run.stopReason }),
+  ...(run.error === undefined ? {} : { error: run.error }),
+});
+
+const stopped = (run: RunView, description: string): RequestError => new RequestError(RUN_STOPPED_CODE, `run ${run.id} ${description}`, detailOf(run));
+
+const failed = (run: RunView, description: string): RequestError => RequestError.internalError(detailOf(run), `run ${run.id} ${description}`);
 
 const stoppedReasonOf = (run: RunView): StopReason => {
   const reason = run.stopReason;
@@ -22,7 +29,7 @@ const stoppedReasonOf = (run: RunView): StopReason => {
     case 'timeout':
     case 'loop':
     case 'approval_timeout':
-      throw unmappable(run, `stopped: ${reason}`);
+      throw stopped(run, `stopped: ${reason}`);
   }
 };
 
@@ -35,7 +42,7 @@ export const stopReasonOf = (run: RunView): StopReason => {
     case 'STOPPED':
       return stoppedReasonOf(run);
     case 'FAILED':
-      throw unmappable(run, `failed${run.error === undefined ? '' : `: ${run.error.code}: ${run.error.message}`}`);
+      throw failed(run, `failed${run.error === undefined ? '' : `: ${run.error.code}: ${run.error.message}`}`);
     case 'QUEUED':
     case 'RUNNING':
     case 'WAITING_TOOL':

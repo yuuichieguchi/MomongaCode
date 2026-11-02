@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PermissionOption } from '@momonga/protocol';
 import { SESSION, runView } from './fake-backend.ts';
-import { INITIALIZE, conflict, errorOf, frameOf, labelsOf, notFound, resultOf, startAgent, updatesOf } from './acp-harness.ts';
+import { INITIALIZE, conflict, errorOf, frameOf, labelsOf, modeChangedFrame, notFound, resultOf, startAgent, updatesOf } from './acp-harness.ts';
 import type { EventPayload, Harness } from './acp-harness.ts';
 import { RunApiError } from '../src/client/runtime-client.ts';
 
@@ -13,8 +13,6 @@ const OPTIONS: PermissionOption[] = [
 ];
 
 const NEW_SESSION = { cwd: SESSION.cwd, mcpServers: [] };
-
-const immediately = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 const open = async (harness: Harness, capabilities: unknown = {}): Promise<string> => {
   await harness.peer.request('initialize', { ...INITIALIZE, clientCapabilities: capabilities });
@@ -171,7 +169,7 @@ describe('session/new', () => {
   });
 
   it('announces the skills of the session as commands after it has answered', async () => {
-    const harness = startAgent({ afterResponse: immediately });
+    const harness = startAgent();
     harness.runtime.skillList = { skills: [{ name: 'pdf', description: 'Extract PDF text', scope: 'project', location: '/w/SKILL.md' }], warnings: [] };
     await harness.peer.request('initialize', INITIALIZE);
 
@@ -237,7 +235,7 @@ describe('session/prompt', () => {
   });
 
   it('runs a slash prompt that names a skill of the session with that skill', async () => {
-    const harness = startAgent({ afterResponse: immediately });
+    const harness = startAgent();
     harness.runtime.skillList = { skills: [{ name: 'pdf', description: 'Extract PDF text', scope: 'project', location: '/w/SKILL.md' }], warnings: [] };
     const sessionId = await open(harness);
     await harness.peer.untilReceived((received) => 'method' in received && received.method === 'session/update');
@@ -628,6 +626,26 @@ describe('session/cancel', () => {
     await harness.peer.close();
   });
 
+  it.each([
+    [runView({ id: 'run-1', status: 'COMPLETED' })],
+    [runView({ id: 'run-1', status: 'STOPPED', stopReason: 'max_steps' })],
+    [runView({ id: 'run-1', status: 'FAILED', error: { code: 'aborted', message: 'the model call was aborted' } })],
+  ])('answers cancelled when the run ended another way %# after the cancel was requested', async (ended) => {
+    const harness = startAgent();
+    const sessionId = await open(harness);
+    harness.scripts.set('run-1', async () => {
+      await harness.runtime.called('cancel');
+      return ended;
+    });
+
+    const pending = prompt(harness, sessionId, 'long task');
+    await harness.runtime.called('createRun');
+    await harness.peer.notify('session/cancel', { sessionId });
+
+    expect(resultOf(await pending)).toEqual({ stopReason: 'cancelled' });
+    await harness.peer.close();
+  });
+
   it('does nothing for a session without a turn or one it does not know', async () => {
     const harness = startAgent();
     const sessionId = await open(harness);
@@ -642,7 +660,7 @@ describe('session/cancel', () => {
 });
 
 describe('session/set_mode', () => {
-  it('changes the mode of the Run API session and announces it before it answers', async () => {
+  it('changes the mode of the Run API session and passes on the change the runtime reports for the session', async () => {
     const harness = startAgent();
     const sessionId = await open(harness);
 
@@ -650,9 +668,38 @@ describe('session/set_mode', () => {
 
     expect(resultOf(response)).toEqual({});
     expect(harness.runtime.calls).toContain(`setPermissionMode ${sessionId} acceptEdits`);
-    const labels = labelsOf(harness.peer.received);
-    expect(labels.slice(-2)).toEqual(['update:current_mode_update', 'result:3']);
-    expect(updatesOf(harness.peer.received).at(-1)).toEqual({ sessionUpdate: 'current_mode_update', currentModeId: 'acceptEdits' });
+    expect(updatesOf(harness.peer.received).filter((update) => update.sessionUpdate === 'current_mode_update')).toEqual([
+      { sessionUpdate: 'current_mode_update', currentModeId: 'acceptEdits' },
+    ]);
+    await harness.peer.close();
+  });
+
+  it('passes on a mode change another client made, and only the ones after the session was opened', async () => {
+    const harness = startAgent();
+    harness.runtime.session = { ...SESSION, lastEventId: 7 };
+    const sessionId = await open(harness);
+
+    harness.emitSessionEvent(modeChangedFrame(8, 'plan'));
+    await harness.peer.untilReceived((message) => updatesOf([message])[0]?.sessionUpdate === 'current_mode_update');
+
+    expect(harness.sessionStreams.map(({ sessionId: followed, after }) => ({ followed, after }))).toEqual([{ followed: sessionId, after: 7 }]);
+    expect(updatesOf(harness.peer.received).filter((update) => update.sessionUpdate === 'current_mode_update')).toEqual([
+      { sessionUpdate: 'current_mode_update', currentModeId: 'plan' },
+    ]);
+    await harness.peer.close();
+  });
+
+  it('ignores the run events that the session stream carries as well', async () => {
+    const harness = startAgent();
+    const sessionId = await open(harness);
+    await harness.peer.untilReceived((received) => updatesOf([received])[0]?.sessionUpdate === 'available_commands_update');
+
+    harness.emitSessionEvent(frameOf('run-1', 3, message('m1', 'seen by the run follower only')));
+    harness.emitSessionEvent(modeChangedFrame(9, 'plan'));
+    await harness.peer.untilReceived((received) => updatesOf([received])[0]?.sessionUpdate === 'current_mode_update');
+
+    expect(sessionId).toBe(SESSION.id);
+    expect(updatesOf(harness.peer.received).map((update) => update.sessionUpdate)).toEqual(['available_commands_update', 'current_mode_update']);
     await harness.peer.close();
   });
 
@@ -698,7 +745,7 @@ describe('session/load', () => {
   };
 
   it('replays the conversation as updates, in order, before it answers with the modes', async () => {
-    const harness = startAgent({ afterResponse: immediately });
+    const harness = startAgent();
     history(harness);
     await harness.peer.request('initialize', INITIALIZE);
 
@@ -753,7 +800,7 @@ describe('session/load', () => {
   });
 
   it('keeps forwarding the events of a run that is still going after it has answered', async () => {
-    const harness = startAgent({ afterResponse: immediately });
+    const harness = startAgent();
     harness.runtime.runs = [runView({ id: 'run-1', status: 'RUNNING', lastSeq: 2 })];
     const release = Promise.withResolvers<void>();
     harness.scripts.set('run-1', async ({ onEvent }) => {
@@ -809,11 +856,23 @@ describe('failures in the background', () => {
     await harness.peer.request('session/load', { sessionId: SESSION.id, cwd: SESSION.cwd, mcpServers: [] });
 
     fail.resolve();
-    while (harness.reports.length === 0) await immediately();
+    await harness.reported;
 
     expect(harness.reports.join('\n')).toContain('the live stream broke');
     const failure = errorOf(await prompt(harness, SESSION.id, 'hello'));
     expect(JSON.stringify(failure)).toContain('the live stream broke');
+    await harness.peer.close();
+  });
+
+  it('reports a failure of the session event stream and refuses the next prompt of that session with it', async () => {
+    const harness = startAgent();
+    const sessionId = await open(harness);
+
+    harness.failSessionStream(new Error('the session stream broke'));
+    await harness.reported;
+
+    expect(harness.reports.join('\n')).toContain('the session stream broke');
+    expect(JSON.stringify(errorOf(await prompt(harness, sessionId, 'hello')))).toContain('the session stream broke');
     await harness.peer.close();
   });
 

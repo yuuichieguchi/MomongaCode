@@ -2,10 +2,9 @@ import { ndJsonStream } from '@agentclientprotocol/sdk';
 import { canonicalPath } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { createGatewayClient } from '../client/gateway-client.ts';
-import { AFTER_RESPONSE_YIELD_MS } from '../constants.ts';
 import { daemonReadyBoundMs, ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
-import { followRun } from '../run/follow.ts';
+import { followRun, followSession } from '../run/follow.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import { createAcpAgent } from './agent.ts';
 
@@ -37,7 +36,21 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
         onReconnecting: (attempt) => ports.stderr.write(`momonga: lost the event stream, reconnecting (attempt ${attempt + 1})\n`),
         signal,
       }),
-    afterResponse: () => ports.clock.sleep(AFTER_RESPONSE_YIELD_MS),
+    followSession: ({ sessionId, after, onEvent, signal }) =>
+      followSession({
+        client: runtime,
+        clock: ports.clock,
+        random: ports.random,
+        sessionId,
+        after,
+        reconnectBoundMs,
+        restoreConnection: async () => {
+          await ensureDaemon(ports, paths);
+        },
+        onEvent,
+        onReconnecting: (attempt) => ports.stderr.write(`momonga: lost the session event stream, reconnecting (attempt ${attempt + 1})\n`),
+        signal,
+      }),
     report: (message) => ports.stderr.write(`momonga: ${message}\n`),
   });
   const connection = app.connect(ndJsonStream(stdio.output, stdio.input));

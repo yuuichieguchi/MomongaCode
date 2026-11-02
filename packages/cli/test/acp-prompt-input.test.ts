@@ -33,7 +33,6 @@ describe('promptInputOf', () => {
   it.each([
     ['an image', { type: 'image', data: 'AA==', mimeType: 'image/png' }],
     ['audio', { type: 'audio', data: 'AA==', mimeType: 'audio/wav' }],
-    ['a binary resource', { type: 'resource', resource: { uri: 'file:///w/x.bin', blob: 'AA==' } }],
   ] as const)('refuses %s with invalid params', (_label, block) => {
     expect(() => promptInputOf([block], [])).toThrow(RequestError);
     try {
@@ -41,6 +40,17 @@ describe('promptInputOf', () => {
     } catch (error) {
       expect((error as RequestError).code).toBe(-32602);
     }
+  });
+
+  it('names an embedded binary resource with its uri, type and size instead of its bytes', () => {
+    const blob = Buffer.from('0123456789').toString('base64');
+
+    expect(promptInputOf([{ type: 'resource', resource: { uri: 'file:///w/x.bin', mimeType: 'application/octet-stream', blob } }], [])).toEqual({
+      input: '<resource uri="file:///w/x.bin" mimeType="application/octet-stream" binary="true" bytes="10" />',
+    });
+    expect(promptInputOf([{ type: 'resource', resource: { uri: 'file:///w/y.bin', blob } }], [])).toEqual({
+      input: '<resource uri="file:///w/y.bin" binary="true" bytes="10" />',
+    });
   });
 
   it('refuses a prompt without text', () => {

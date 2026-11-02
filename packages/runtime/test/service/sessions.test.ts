@@ -44,6 +44,7 @@ describe('session creation, listing and reading', () => {
       activeRunId: null,
       latestRunId: null,
       additionalDirectories: [],
+      lastEventId: 0,
     });
     expect([...session.envKeys].sort()).toEqual(['LANG', 'PATH']);
   });
@@ -309,6 +310,26 @@ describe('session PATCH', () => {
     expectError(await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { permissionMode: 'plan', extra: true } }), 400, 'invalid_request');
     expectError(await env.http('PATCH', '/v1/sessions/ses_missing', { body: { permissionMode: 'plan' } }), 404, 'not_found');
     expect(env.store.getSession(session.id)?.permissionMode).toBe('default');
+  });
+});
+
+describe('session lastEventId', () => {
+  it('is the id of the newest event of the session, so a stream can start after it', async () => {
+    const env = await startService();
+    const session = await env.createSession();
+    expect(session.lastEventId).toBe(0);
+    const run = await env.createRun(session.id);
+    const claim = env.claimRun(run.id, 'worker-a');
+    env.append(claim, [{ type: 'notice', level: 'info', message: 'one' }]);
+    expect((await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { permissionMode: 'plan' } })).status).toBe(200);
+
+    const read = await env.http('GET', `/v1/sessions/${session.id}`);
+
+    const newest = env.store.readSessionEvents(session.id, 0, 1000).at(-1);
+    expect(newest).toMatchObject({ type: 'mode.changed' });
+    expect(read.json.session.lastEventId).toBe(newest?.id);
+    const stream = await env.stream(`/v1/sessions/${session.id}/events?after=${read.json.session.lastEventId}`, { idField: 'id' });
+    expect(stream.status).toBe(200);
   });
 });
 

@@ -193,9 +193,29 @@ describe('response schemas', () => {
       activeRunId: null,
       latestRunId: 'run-1',
       additionalDirectories: ['/work/shared'],
+      lastEventId: 12,
     };
     expect(accepts('SessionView', view)).toBe(true);
     expect(accepts('SessionView', { ...view, env: { PATH: '/usr/bin' } })).toBe(false);
+  });
+
+  it('SessionView requires lastEventId as a non-negative integer', () => {
+    const view = {
+      id: 'sess-1',
+      cwd: '/work/a',
+      permissionMode: 'default',
+      modelAlias: 'fm',
+      bypassAllowed: false,
+      createdAt: 1_800_000_000_000,
+      envKeys: [],
+      activeRunId: null,
+      latestRunId: null,
+      additionalDirectories: [],
+    };
+    expect(accepts('SessionView', view)).toBe(false);
+    expect(accepts('SessionView', { ...view, lastEventId: 0 })).toBe(true);
+    expect(accepts('SessionView', { ...view, lastEventId: -1 })).toBe(false);
+    expect(accepts('SessionView', { ...view, lastEventId: 1.5 })).toBe(false);
   });
 
   it('SessionView requires additionalDirectories', () => {
@@ -209,6 +229,7 @@ describe('response schemas', () => {
       envKeys: ['PATH'],
       activeRunId: null,
       latestRunId: null,
+      lastEventId: 0,
     };
     expect(accepts('SessionView', view)).toBe(false);
     expect(accepts('SessionView', { ...view, additionalDirectories: [] })).toBe(true);

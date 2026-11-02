@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PublicRunEvent } from '@momonga/protocol';
 import type { RunEventFrame, RuntimeClient } from '../src/client/runtime-client.ts';
-import { ReconnectBoundExceeded, followRun, isTerminalStatus, isTransientStreamError } from '../src/run/follow.ts';
+import { ReconnectBoundExceeded, SessionStreamLost, followRun, followSession, isTerminalStatus, isTransientStreamError } from '../src/run/follow.ts';
 import { runView } from './fake-backend.ts';
 import { virtualClock } from './fake-supervisor.ts';
 
@@ -118,6 +118,82 @@ describe('followRun', () => {
     await followRun(options(client, [], { onReconnecting: (attempt) => attempts.push(attempt) }));
 
     expect(attempts).toEqual([0, 1]);
+  });
+});
+
+describe('followSession', () => {
+  const sessionClientOf = (streams: readonly Stream[]): { client: RuntimeClient; opened: Array<number | undefined> } => {
+    const opened: Array<number | undefined> = [];
+    let next = 0;
+    const client = {
+      streamSessionEvents: async function* (_sessionId: string, streamOptions: { lastEventId?: number } = {}) {
+        opened.push(streamOptions.lastEventId);
+        const stream = streams[next];
+        next += 1;
+        if (stream === undefined) throw new Error('unexpected stream open');
+        for (const id of stream.frames) yield frame(id);
+        if (stream.thenThrow !== undefined) throw stream.thenThrow;
+      },
+    } as unknown as RuntimeClient;
+    return { client, opened };
+  };
+
+  const sessionOptions = (client: RuntimeClient, seen: number[], extra: Partial<Parameters<typeof followSession>[0]> = {}): Parameters<typeof followSession>[0] => ({
+    client,
+    clock: virtualClock(),
+    random: () => 0.5,
+    sessionId: 'session-1',
+    after: 7,
+    reconnectBoundMs: 10_000,
+    restoreConnection: async () => undefined,
+    onEvent: (received) => seen.push(received.id),
+    signal: new AbortController().signal,
+    ...extra,
+  });
+
+  it('starts after the event id it was given and reconnects from the last event it saw', async () => {
+    const seen: number[] = [];
+    const { client, opened } = sessionClientOf([{ frames: [8, 9], thenThrow: errno('UND_ERR_SOCKET') }, { frames: [10], thenThrow: new Error('stop here') }]);
+
+    await expect(followSession(sessionOptions(client, seen))).rejects.toThrow('stop here');
+
+    expect(seen).toEqual([8, 9, 10]);
+    expect(opened).toEqual([7, 9]);
+  });
+
+  it('opens a stream from the very beginning when it is told to start after nothing', async () => {
+    const { client, opened } = sessionClientOf([{ frames: [], thenThrow: new Error('stop here') }]);
+
+    await expect(followSession(sessionOptions(client, [], { after: 0 }))).rejects.toThrow('stop here');
+
+    expect(opened).toEqual([undefined]);
+  });
+
+  it('reconnects when the server ends the stream, because a session has no end', async () => {
+    const seen: number[] = [];
+    const { client, opened } = sessionClientOf([{ frames: [8] }, { frames: [9], thenThrow: new Error('stop here') }]);
+
+    await expect(followSession(sessionOptions(client, seen))).rejects.toThrow('stop here');
+
+    expect(seen).toEqual([8, 9]);
+    expect(opened).toEqual([7, 8]);
+  });
+
+  it('stops with the failure of the stream once the caller aborted', async () => {
+    const controller = new AbortController();
+    const seen: number[] = [];
+    const { client } = sessionClientOf([{ frames: [8], thenThrow: errno('ECONNRESET') }]);
+
+    await expect(followSession(sessionOptions(client, seen, { signal: controller.signal, onEvent: () => controller.abort() }))).rejects.toThrow('ECONNRESET');
+  });
+
+  it('gives up when the stream cannot be restored within the bound', async () => {
+    const { client } = sessionClientOf(Array.from({ length: 50 }, () => ({ frames: [], thenThrow: errno('ECONNREFUSED') })));
+
+    const failure = await followSession(sessionOptions(client, [], { reconnectBoundMs: 2000 })).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(SessionStreamLost);
+    expect(failure).toMatchObject({ sessionId: 'session-1', boundMs: 2000 });
   });
 });
 

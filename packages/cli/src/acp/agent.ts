@@ -1,6 +1,6 @@
 import { PROTOCOL_VERSION, RequestError, agent } from '@agentclientprotocol/sdk';
 import type { AgentApp, AgentConnection, RequestPermissionRequest, SessionUpdate } from '@agentclientprotocol/sdk';
-import type { ElicitationAnswerRecord, PermissionMode } from '@momonga/protocol';
+import type { ElicitationAnswerRecord } from '@momonga/protocol';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import { RunApiError } from '../client/runtime-client.ts';
 import type { RunView, SessionView } from '../client/views.ts';
@@ -21,6 +21,13 @@ export type FollowRequest = {
   signal: AbortSignal;
 };
 
+export type FollowSessionRequest = {
+  sessionId: string;
+  after: number;
+  onEvent(frame: RunEventFrame): void;
+  signal: AbortSignal;
+};
+
 export type AcpDeps = {
   version: string;
   runtime: RuntimeClient;
@@ -29,7 +36,7 @@ export type AcpDeps = {
   canonicalCwd(cwd: string): string;
   daemonReady(): Promise<void>;
   follow(request: FollowRequest): Promise<RunView>;
-  afterResponse(): Promise<void>;
+  followSession(request: FollowSessionRequest): Promise<never>;
   report(message: string): void;
 };
 
@@ -39,10 +46,10 @@ type BridgeSession = {
   readonly id: string;
   readonly modelAlias: string;
   readonly bypassAllowed: boolean;
-  permissionMode: PermissionMode;
   skillNames: readonly string[];
   readonly queue: OrderedQueue;
   readonly tasks: TaskGroup;
+  readonly background: TaskGroup;
   readonly mapper: MapperState;
   readonly pendingRequests: Map<string, AbortController>;
   readonly lifetime: AbortController;
@@ -223,17 +230,18 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
 
   const register = (view: SessionView): BridgeSession => {
     const lifetime = new AbortController();
+    const failed = (error: unknown): void => {
+      deps.report(`session ${view.id} failed: ${error instanceof Error ? error.message : String(error)}`);
+      lifetime.abort(error);
+    };
     const session: BridgeSession = {
       id: view.id,
       modelAlias: view.modelAlias,
       bypassAllowed: view.bypassAllowed,
-      permissionMode: view.permissionMode,
       skillNames: [],
       queue: createOrderedQueue(),
-      tasks: createTaskGroup((error) => {
-        deps.report(`session ${view.id} failed: ${error instanceof Error ? error.message : String(error)}`);
-        lifetime.abort(error);
-      }),
+      tasks: createTaskGroup(failed),
+      background: createTaskGroup(failed),
       mapper: createMapperState(),
       pendingRequests: new Map(),
       lifetime,
@@ -241,13 +249,26 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
       turn: undefined,
     };
     sessions.set(view.id, session);
+    session.background.run(async () => {
+      try {
+        await deps.followSession({
+          sessionId: view.id,
+          after: view.lastEventId,
+          signal: lifetime.signal,
+          onEvent: (frame) => {
+            if (frame.data.type === 'mode.changed') handleFrame(session, frame, 0);
+          },
+        });
+      } catch (error) {
+        if (!lifetime.signal.aborted) throw error;
+      }
+    });
     return session;
   };
 
   const announceCommands = async (session: BridgeSession): Promise<void> => {
     const { skills } = await deps.runtime.skills(session.id);
     session.skillNames = skills.map((skill) => skill.name);
-    await deps.afterResponse();
     send(session, { sessionUpdate: 'available_commands_update', availableCommands: availableCommandsOf(skills) });
     await session.queue.settled();
   };
@@ -324,10 +345,7 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
   app.onRequest('session/set_mode', async ({ params }) => {
     const session = sessionOf(params.sessionId);
     const mode = selectableModeOf(session, params.modeId);
-    const view = await viaRunApi(deps.runtime.setPermissionMode(session.id, mode));
-    session.permissionMode = view.permissionMode;
-    send(session, { sessionUpdate: 'current_mode_update', currentModeId: view.permissionMode });
-    await session.queue.settled();
+    await viaRunApi(deps.runtime.setPermissionMode(session.id, mode));
     return {};
   });
 
@@ -355,7 +373,7 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
       }
       await session.tasks.settled();
       await session.queue.settled();
-      return { stopReason: stopReasonOf(finished) };
+      return { stopReason: turn.cancelRequested ? 'cancelled' : stopReasonOf(finished) };
     } finally {
       signal.removeEventListener('abort', cancelTurn);
       session.turn = undefined;

@@ -72,6 +72,7 @@ export type RuntimeClient = {
   trust(path: string): Promise<TrustView>;
   setTrust(path: string, decision: 'trusted' | 'untrusted'): Promise<TrustView>;
   streamEvents(runId: string, options?: EventsOptions): AsyncGenerator<RunEventFrame>;
+  streamSessionEvents(sessionId: string, options?: EventsOptions): AsyncGenerator<RunEventFrame>;
   close(): Promise<void>;
 };
 
@@ -271,18 +272,22 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     return checkTrust(fieldOf(body, 'trust', description), description);
   };
 
-  async function* streamEvents(runId: string, eventsOptions: EventsOptions = {}): AsyncGenerator<RunEventFrame> {
-    const path = `/v1/runs/${runId}/events${eventsQueryOf(eventsOptions)}`;
-    const description = `GET /v1/runs/${runId}/events`;
+  async function* openEventStream(path: string, description: string, eventsOptions: EventsOptions): AsyncGenerator<RunEventFrame> {
     const response = await http.request({
       method: 'GET',
-      path,
+      path: `${path}${eventsQueryOf(eventsOptions)}`,
       headers: eventsHeadersOf(eventsOptions),
       ...(eventsOptions.signal === undefined ? {} : { signal: eventsOptions.signal }),
     });
     if (response.status !== 200) throw new RunApiError(description, response.status, await response.text());
     for await (const event of decodeSse(response.body)) yield frameOf(event, description);
   }
+
+  const streamEvents = (runId: string, eventsOptions: EventsOptions = {}): AsyncGenerator<RunEventFrame> =>
+    openEventStream(`/v1/runs/${runId}/events`, `GET /v1/runs/${runId}/events`, eventsOptions);
+
+  const streamSessionEvents = (sessionId: string, eventsOptions: EventsOptions = {}): AsyncGenerator<RunEventFrame> =>
+    openEventStream(`/v1/sessions/${sessionId}/events`, `GET /v1/sessions/${sessionId}/events`, eventsOptions);
 
   return {
     health,
@@ -305,6 +310,7 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     trust,
     setTrust,
     streamEvents,
+    streamSessionEvents,
     close: () => http.close(),
   };
 };

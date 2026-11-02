@@ -1,6 +1,6 @@
 import { RequestError } from '@agentclientprotocol/sdk';
 import { describe, expect, it } from 'vitest';
-import { stopReasonOf } from '../src/acp/stop-reason.ts';
+import { RUN_STOPPED_CODE, stopReasonOf } from '../src/acp/stop-reason.ts';
 import { runView } from './fake-backend.ts';
 
 describe('stopReasonOf', () => {
@@ -27,7 +27,7 @@ describe('stopReasonOf', () => {
     })();
 
     expect(failure).toBeInstanceOf(RequestError);
-    expect(failure).toMatchObject({ code: -32603, data: { runId: 'run-9', status: 'STOPPED', stopReason } });
+    expect(failure).toMatchObject({ code: RUN_STOPPED_CODE, data: { runId: 'run-9', status: 'STOPPED', stopReason } });
     expect((failure as Error).message).toContain(`stopped: ${stopReason}`);
   });
 
