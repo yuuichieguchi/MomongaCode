@@ -50,7 +50,7 @@ const MATRIX: Record<string, PackageRule> = {
   skills: rule(['protocol', 'foundation', 'config', 'tools']),
   runtime: rule(['protocol', 'foundation', 'config', 'store', 'observability', 'policy', 'sandbox', 'tools', 'mcp', 'context', 'skills']),
   supervisor: rule(['protocol', 'foundation', 'config']),
-  cli: rule(['protocol', 'foundation', 'config'], ['runtime', 'gateway', 'supervisor']),
+  cli: rule(['protocol', 'foundation', 'config', 'eval'], ['runtime', 'gateway', 'supervisor']),
   eval: rule(['protocol', 'foundation']),
   testkit: rule(['protocol', 'foundation']),
 };
@@ -247,9 +247,12 @@ describe('architecture: checker self-test', () => {
     expect(checkFile('cli', fileIn('cli'), "import { startSupervisor } from '@momonga/supervisor';")).toHaveLength(1);
     expect(checkFile('cli', fileIn('cli'), "const s = await import('@momonga/store');")).toHaveLength(1);
     expect(checkFile('cli', fileIn('cli'), "import { c } from '@momonga/config';")).toEqual([]);
+    expect(checkFile('cli', fileIn('cli'), "import { runDataset } from '@momonga/eval';")).toEqual([]);
+    expect(checkFile('cli', fileIn('cli'), "import { openInBrowser } from '@momonga/mcp';")).toHaveLength(1);
+    expect(checkFile('cli', fileIn('cli'), "import { buildCostReport } from '@momonga/observability';")).toHaveLength(1);
   });
 
-  it('allows eval to import protocol and foundation only and no other package may import it', () => {
+  it('allows eval to import protocol and foundation only and only cli and no runtime-side package may import it', () => {
     expect(checkFile('eval', fileIn('eval'), "import { a } from '@momonga/protocol';\nimport { b } from '@momonga/foundation';")).toEqual([]);
     for (const forbidden of ['runtime', 'gateway', 'store', 'observability', 'config', 'supervisor', 'testkit']) {
       expect(checkFile('eval', fileIn('eval'), `import { x } from '@momonga/${forbidden}';`)).toHaveLength(1);

@@ -8,6 +8,7 @@ export const SECURITY_BINARY = '/usr/bin/security';
 
 export type SecretStore = {
   read(name: string, signal: AbortSignal): Promise<string>;
+  write(name: string, value: string, signal: AbortSignal): Promise<void>;
 };
 
 export type SecretProcessResult = { exitCode: number; stdout: string; stderr: string };
@@ -45,6 +46,18 @@ export class SecretUnavailableError extends Error {
   }
 }
 
+export class SecretWriteError extends Error {
+  readonly secretName: string;
+  readonly exitCode: number;
+
+  constructor(secretName: string, exitCode: number, detail: string, backend: SecretBackend = KEYCHAIN_BACKEND) {
+    super(`the secret "${secretName}" could not be written to the ${backend.label} (exit ${exitCode}${detail === '' ? '' : `: ${detail}`})`);
+    this.name = 'SecretWriteError';
+    this.secretName = secretName;
+    this.exitCode = exitCode;
+  }
+}
+
 export class SecretEmptyError extends Error {
   readonly secretName: string;
 
@@ -63,31 +76,59 @@ export const SECRET_TOOL_BINARY = '/usr/bin/secret-tool';
 
 type SecretCommand = { file: string; args: readonly string[]; backend: SecretBackend; stdin?: string };
 
-const createCommandSecretStore = (run: SecretProcessPort, commandFor: (name: string) => SecretCommand): SecretStore => ({
+const assertNameShape = (name: string): void => {
+  if (!NAME_SHAPE.test(name)) throw new RangeError(`secret name ${JSON.stringify(name)} does not match ${SECRET_NAME_PATTERN}`);
+};
+
+const createCommandSecretStore = (
+  run: SecretProcessPort,
+  commands: { read(name: string): SecretCommand; write(name: string, value: string): SecretCommand },
+): SecretStore => ({
   read: async (name, signal) => {
-    if (!NAME_SHAPE.test(name)) throw new RangeError(`secret name ${JSON.stringify(name)} does not match ${SECRET_NAME_PATTERN}`);
-    const command = commandFor(name);
+    assertNameShape(name);
+    const command = commands.read(name);
     const result = await run(command.file, command.args, command.stdin ?? '', signal);
     if (result.exitCode !== 0) throw new SecretUnavailableError(name, result.exitCode, result.stderr.trim(), command.backend);
     const value = withoutOneTrailingNewline(result.stdout);
     if (value === '') throw new SecretEmptyError(name, command.backend);
     return value;
   },
+  write: async (name, value, signal) => {
+    assertNameShape(name);
+    if (value === '') throw new RangeError('a secret value must not be empty');
+    const command = commands.write(name, value);
+    const result = await run(command.file, command.args, command.stdin ?? '', signal);
+    if (result.exitCode !== 0) throw new SecretWriteError(name, result.exitCode, result.stderr.trim(), command.backend);
+  },
 });
 
+export const keychainWriteCommand = (name: string, value: string): string =>
+  `add-generic-password -U -s ${KEYCHAIN_SERVICE} -a ${name} -X ${Buffer.from(value, 'utf8').toString('hex')}\n`;
+
 export const createKeychainSecretStore = (run: SecretProcessPort): SecretStore =>
-  createCommandSecretStore(run, (name) => ({
-    file: SECURITY_BINARY,
-    args: ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', name, '-w'],
-    backend: KEYCHAIN_BACKEND,
-  }));
+  createCommandSecretStore(run, {
+    read: (name) => ({
+      file: SECURITY_BINARY,
+      args: ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', name, '-w'],
+      backend: KEYCHAIN_BACKEND,
+    }),
+    write: (name, value) => ({ file: SECURITY_BINARY, args: ['-i'], stdin: keychainWriteCommand(name, value), backend: KEYCHAIN_BACKEND }),
+  });
 
 export const createSecretServiceStore = (run: SecretProcessPort): SecretStore =>
-  createCommandSecretStore(run, (name) => ({
-    file: SECRET_TOOL_BINARY,
-    args: ['lookup', 'service', KEYCHAIN_SERVICE, 'account', name],
-    backend: SECRET_SERVICE_BACKEND,
-  }));
+  createCommandSecretStore(run, {
+    read: (name) => ({
+      file: SECRET_TOOL_BINARY,
+      args: ['lookup', 'service', KEYCHAIN_SERVICE, 'account', name],
+      backend: SECRET_SERVICE_BACKEND,
+    }),
+    write: (name, value) => ({
+      file: SECRET_TOOL_BINARY,
+      args: ['store', `--label=${KEYCHAIN_SERVICE}`, 'service', KEYCHAIN_SERVICE, 'account', name],
+      stdin: value,
+      backend: SECRET_SERVICE_BACKEND,
+    }),
+  });
 
 export const credentialReadScript = (target: string): string =>
   [
@@ -123,12 +164,53 @@ export const credentialReadScript = (target: string): string =>
     '[Console]::Out.Write($secret)',
   ].join('\n');
 
+export const credentialWriteScript = (target: string, userName: string): string =>
+  [
+    "$ErrorActionPreference = 'Stop'",
+    'Add-Type -TypeDefinition @\'',
+    'using System;',
+    'using System.Runtime.InteropServices;',
+    'public static class MomongaCredentialWriter {',
+    '  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] struct CREDENTIAL {',
+    '    public uint Flags; public uint Type; public string TargetName; public string Comment;',
+    '    public long LastWritten; public uint CredentialBlobSize; public IntPtr CredentialBlob;',
+    '    public uint Persist; public uint AttributeCount; public IntPtr Attributes; public string TargetAlias; public string UserName;',
+    '  }',
+    '  [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool CredWriteW(ref CREDENTIAL credential, uint flags);',
+    '  const uint CRED_TYPE_GENERIC = 1;',
+    '  const uint CRED_PERSIST_LOCAL_MACHINE = 2;',
+    '  public static int Write(string target, string userName, string secret) {',
+    '    byte[] blob = System.Text.Encoding.Unicode.GetBytes(secret);',
+    '    IntPtr pointer = Marshal.AllocHGlobal(blob.Length);',
+    '    try {',
+    '      Marshal.Copy(blob, 0, pointer, blob.Length);',
+    '      CREDENTIAL credential = new CREDENTIAL();',
+    '      credential.Type = CRED_TYPE_GENERIC; credential.TargetName = target; credential.UserName = userName;',
+    '      credential.CredentialBlobSize = (uint)blob.Length; credential.CredentialBlob = pointer; credential.Persist = CRED_PERSIST_LOCAL_MACHINE;',
+    '      return CredWriteW(ref credential, 0) ? 0 : Marshal.GetLastWin32Error();',
+    '    } finally { Marshal.FreeHGlobal(pointer); }',
+    '  }',
+    '}',
+    "'@",
+    '$secret = [Console]::In.ReadToEnd()',
+    `$status = [MomongaCredentialWriter]::Write('${target}', '${userName}', $secret)`,
+    'if ($status -ne 0) { [Console]::Error.WriteLine("CredWrite failed with Win32 error $status"); exit 2 }',
+  ].join('\n');
+
 export const createCredentialManagerStore = (run: SecretProcessPort, powershell: { file: string; args(script: string): readonly string[] }): SecretStore =>
-  createCommandSecretStore(run, (name) => ({
-    file: powershell.file,
-    args: powershell.args(credentialReadScript(`${KEYCHAIN_SERVICE}/${name}`)),
-    backend: CREDENTIAL_MANAGER_BACKEND,
-  }));
+  createCommandSecretStore(run, {
+    read: (name) => ({
+      file: powershell.file,
+      args: powershell.args(credentialReadScript(`${KEYCHAIN_SERVICE}/${name}`)),
+      backend: CREDENTIAL_MANAGER_BACKEND,
+    }),
+    write: (name, value) => ({
+      file: powershell.file,
+      args: powershell.args(credentialWriteScript(`${KEYCHAIN_SERVICE}/${name}`, KEYCHAIN_SERVICE)),
+      stdin: value,
+      backend: CREDENTIAL_MANAGER_BACKEND,
+    }),
+  });
 
 export const createPlatformSecretStore = (
   platform: NodeJS.Platform,

@@ -1,7 +1,7 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import { RUN_API_SCHEMAS } from '@momonga/protocol';
-import type { PermissionMode } from '@momonga/protocol';
+import type { ImageAttachment, PermissionMode } from '@momonga/protocol';
 import { bodyTooLarge, invalidRequest, unsupportedMediaType } from './errors.ts';
 
 export type CreateSessionBody = {
@@ -20,6 +20,7 @@ export type CreateRunBody = {
   timeoutMs?: number;
   history?: 'inherit' | 'fresh';
   skill?: string;
+  images?: ImageAttachment[];
 };
 
 export type ResolveApprovalBody = { optionId: string };

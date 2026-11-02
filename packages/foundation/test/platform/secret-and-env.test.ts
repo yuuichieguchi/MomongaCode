@@ -6,6 +6,7 @@ import {
   UnsupportedPlatformError,
   createPlatformSecretStore,
   credentialReadScript,
+  credentialWriteScript,
   minimalChildEnv,
 } from '@momonga/foundation';
 import type { SecretProcessPort, SecretProcessResult } from '@momonga/foundation';
@@ -44,6 +45,28 @@ describe('linux secret store (secret-tool lookup)', () => {
     const empty = createPlatformSecretStore('linux', port({ exitCode: 0, stdout: '\n', stderr: '' }).run);
     await expect(empty.read('k', SIGNAL)).rejects.toBeInstanceOf(SecretEmptyError);
     await expect(empty.read('bad name', SIGNAL)).rejects.toBeInstanceOf(RangeError);
+  });
+});
+
+describe('linux secret store write (secret-tool store)', () => {
+  it('passes the value on stdin only', async () => {
+    const { run, calls } = port({ exitCode: 0, stdout: '', stderr: '' });
+    await createPlatformSecretStore('linux', run).write('anthropic', 'fake-secret', SIGNAL);
+    expect(calls).toEqual([
+      { file: SECRET_TOOL_BINARY, args: ['store', '--label=momonga', 'service', 'momonga', 'account', 'anthropic'], stdin: 'fake-secret' },
+    ]);
+  });
+});
+
+describe('windows secret store write (Credential Manager through CredWrite)', () => {
+  it('reads the value from the stdin of the script, never from the encoded command', async () => {
+    const { run, calls } = port({ exitCode: 0, stdout: '', stderr: '' });
+    await createPlatformSecretStore('win32', run, { SystemRoot: 'C:\\Windows' }).write('anthropic', 'fake-secret', SIGNAL);
+    const script = Buffer.from(calls[0]?.args.at(-1) as string, 'base64').toString('utf16le');
+    expect(script).toBe(credentialWriteScript('momonga/anthropic', 'momonga'));
+    expect(script).toContain('[Console]::In.ReadToEnd()');
+    expect(script).not.toContain('fake-secret');
+    expect(calls[0]?.stdin).toBe('fake-secret');
   });
 });
 

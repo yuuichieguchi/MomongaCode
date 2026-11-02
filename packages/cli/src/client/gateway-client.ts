@@ -1,16 +1,45 @@
 import { createUdsClient, isRecord } from '@momonga/foundation';
-import type { MomongaModelList, UsageReport } from '@momonga/protocol';
+import type { Capabilities, MomongaModelEntry, MomongaModelList, UsageReport } from '@momonga/protocol';
 
 export type GatewayClient = {
+  models(): Promise<readonly MomongaModelEntry[]>;
+  capabilitiesOf(alias: string): Promise<Capabilities>;
   contextWindowOf(alias: string): Promise<number>;
   usageOf(runId: string): Promise<UsageReport>;
   close(): Promise<void>;
 };
 
+const oneOf = (value: unknown, allowed: readonly string[]): boolean => typeof value === 'string' && allowed.includes(value);
+
+const isCapabilities = (value: unknown): value is Capabilities =>
+  isRecord(value) &&
+  typeof value['contextWindow'] === 'number' &&
+  typeof value['maxOutputTokens'] === 'number' &&
+  oneOf(value['toolCalling'], ['native', 'constrained', 'none']) &&
+  oneOf(value['structuredOutput'], ['json_schema', 'none']) &&
+  typeof value['streaming'] === 'boolean' &&
+  typeof value['stopSequences'] === 'boolean' &&
+  typeof value['imageInput'] === 'boolean' &&
+  typeof value['parallelToolCalls'] === 'boolean' &&
+  oneOf(value['schemaDialect'], ['json-schema-2020-12', 'fm-generation']) &&
+  oneOf(value['tokenCounting'], ['exact', 'calibrated', 'estimated']) &&
+  typeof value['usageReported'] === 'boolean' &&
+  typeof value['maxConcurrency'] === 'number' &&
+  oneOf(value['source'], ['declared', 'probed', 'config', 'unprobed']) &&
+  (value['tokenErrorRatio'] === undefined || typeof value['tokenErrorRatio'] === 'number') &&
+  (value['probedAt'] === undefined || typeof value['probedAt'] === 'string');
+
 const isModelList = (value: unknown): value is MomongaModelList =>
   isRecord(value) &&
   Array.isArray(value['data']) &&
-  value['data'].every((entry) => isRecord(entry) && typeof entry['id'] === 'string' && isRecord(entry['capabilities']) && typeof entry['capabilities']['contextWindow'] === 'number');
+  value['data'].every(
+    (entry) =>
+      isRecord(entry) &&
+      typeof entry['id'] === 'string' &&
+      Array.isArray(entry['targets']) &&
+      entry['targets'].every((target) => typeof target === 'string') &&
+      isCapabilities(entry['capabilities']),
+  );
 
 const isCount = (value: unknown): boolean => typeof value === 'number' && Number.isInteger(value) && value >= 0;
 
@@ -34,13 +63,19 @@ export const createGatewayClient = (options: { socketPath: string }): GatewayCli
     return JSON.parse(text);
   };
 
-  const contextWindowOf = async (alias: string): Promise<number> => {
+  const models = async (): Promise<readonly MomongaModelEntry[]> => {
     const body = await getJson('/v1/momonga/models');
     if (!isModelList(body)) throw new Error(`GET /v1/momonga/models answered a body that is not a model list: ${JSON.stringify(body)}`);
-    const entry = body.data.find((candidate) => candidate.id === alias);
-    if (entry === undefined) throw new Error(`the gateway does not list the model alias ${alias}`);
-    return entry.capabilities.contextWindow;
+    return body.data;
   };
+
+  const capabilitiesOf = async (alias: string): Promise<Capabilities> => {
+    const entry = (await models()).find((candidate) => candidate.id === alias);
+    if (entry === undefined) throw new Error(`the gateway does not list the model alias ${alias}`);
+    return entry.capabilities;
+  };
+
+  const contextWindowOf = async (alias: string): Promise<number> => (await capabilitiesOf(alias)).contextWindow;
 
   const usageOf = async (runId: string): Promise<UsageReport> => {
     const path = `/v1/momonga/usage?run_id=${encodeURIComponent(runId)}`;
@@ -49,5 +84,5 @@ export const createGatewayClient = (options: { socketPath: string }): GatewayCli
     return body;
   };
 
-  return { contextWindowOf, usageOf, close: () => http.close() };
+  return { models, capabilitiesOf, contextWindowOf, usageOf, close: () => http.close() };
 };

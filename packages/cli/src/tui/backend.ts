@@ -1,12 +1,13 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import type { PermissionMode } from '@momonga/protocol';
+import type { Capabilities, ElicitationAnswerRecord, ImageAttachment, MemoryView, PermissionMode, SkillsResponse } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
-import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
+import type { MemoryFilter, RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView, SessionView, TrustView } from '../client/views.ts';
 import type { HistoryStore } from '../history-store.ts';
 import { daemonReadyBoundMs, ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { followRun } from '../run/follow.ts';
+import { readImageAttachment } from '../images.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import type { SessionOptions } from '../run/open-session.ts';
 
@@ -15,17 +16,26 @@ export type FollowHandlers = {
   onReconnecting(attempt: number): void;
 };
 
+export type StartRunOptions = { skill?: string; images?: readonly ImageAttachment[] };
+
 export type TuiBackend = {
   readonly cwd: string;
   boot(): Promise<TrustView>;
   decideTrust(decision: 'trusted' | 'untrusted'): Promise<void>;
   openSession(): Promise<SessionView>;
   setMode(mode: PermissionMode): Promise<SessionView>;
-  startRun(text: string, history: 'inherit' | 'fresh'): Promise<RunView>;
+  startRun(text: string, history: 'inherit' | 'fresh', options?: StartRunOptions): Promise<RunView>;
   follow(runId: string, handlers: FollowHandlers): Promise<RunView>;
   cancel(runId: string): Promise<void>;
   resolveApproval(approvalId: string, optionId: string): Promise<void>;
-  contextWindow(): Promise<number>;
+  resolveElicitation(inputId: string, responses: Readonly<Record<string, ElicitationAnswerRecord>>): Promise<void>;
+  openUrl(url: URL): Promise<void>;
+  skills(): Promise<SkillsResponse>;
+  memories(filter?: MemoryFilter): Promise<MemoryView[]>;
+  memory(id: string): Promise<MemoryView>;
+  deleteMemory(id: string): Promise<void>;
+  capabilities(): Promise<Capabilities>;
+  readImage(file: string): Promise<ImageAttachment>;
   loadHistory(): Promise<readonly string[]>;
   recordHistory(text: string): Promise<void>;
   close(): Promise<void>;
@@ -71,7 +81,8 @@ export const createTuiBackend = (ports: CliPorts, paths: MomongaPaths, options: 
       session = await runtime().setPermissionMode(current().id, mode);
       return session;
     },
-    startRun: async (text, history) => (await runtime().createRun(current().id, text, { history })).run,
+    startRun: async (text, history, runOptions = {}) =>
+      (await runtime().createRun(current().id, text, { history, ...runOptions })).run,
     follow: async (runId, handlers) =>
       followRun({
         client: runtime(),
@@ -92,14 +103,23 @@ export const createTuiBackend = (ports: CliPorts, paths: MomongaPaths, options: 
     resolveApproval: async (approvalId, optionId) => {
       await runtime().resolveApproval(approvalId, optionId);
     },
-    contextWindow: async () => {
+    resolveElicitation: async (inputId, responses) => {
+      await runtime().resolveElicitation(inputId, responses);
+    },
+    openUrl: (url) => ports.openUrl(url, closing.signal),
+    skills: () => runtime().skills(current().id),
+    memories: (filter) => runtime().memories(filter),
+    memory: (id) => runtime().memory(id),
+    deleteMemory: (id) => runtime().deleteMemory(id),
+    capabilities: async () => {
       const gateway = createGatewayClient({ socketPath: paths.sockets.gateway });
       try {
-        return await gateway.contextWindowOf(current().modelAlias);
+        return await gateway.capabilitiesOf(current().modelAlias);
       } finally {
         await gateway.close();
       }
     },
+    readImage: (file) => readImageAttachment(ports.files, ports.cwd, file),
     loadHistory: () => history.load(),
     recordHistory: (text) => history.append(text),
     close: async () => {

@@ -14,7 +14,7 @@ import {
   systemClock,
 } from '@momonga/foundation';
 import type { Clock, JsonLogger, ProcessLock, ReadyFields, TextStream } from '@momonga/foundation';
-import { createTelemetry, exportersFor, openTraceStore } from '@momonga/observability';
+import { buildCostReport, createTelemetry, exportersFor, openTraceStore } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createSeatbeltSandbox, createUnsandboxed } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
@@ -416,6 +416,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         protectedRootAreas: protectedRootAreasOf(paths, canonicalHome),
         notifier,
         modelAliases: async () => (await gatewayClient.models()).map((model) => model.id),
+        modelCapabilities: (alias, signal) => gatewayClient.capabilities(alias, { signal }),
         sessionCreateSettings: settingsComposition.sessionCreateSettings,
         skills: skillsPort,
         defaults: RUNTIME_DEFAULTS,
@@ -424,6 +425,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         runTrace: async (runId) => {
           await telemetry.forceFlush();
           return runTraceOf(traceStore, runId);
+        },
+        runCost: async (runs) => {
+          await telemetry.forceFlush();
+          return buildCostReport(traceStore, runs);
         },
         mcp: toolRuntime.mcpAdmin,
         onError: (error) => logger.error('service error', { err: asError(error) }),

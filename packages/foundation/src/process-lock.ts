@@ -30,7 +30,7 @@ export const GARBLED_LOCK_GRACE_MS = 2000;
 export const LOCK_START_TOLERANCE_MS = 2000;
 export const GHOST_CONFIRM_MS = 250;
 const ABANDONED_TAKEOVER_MS = 10000;
-const LOCK_RETRY_MS = 25;
+export const LOCK_RETRY_MS = 25;
 
 export type LockObservation = { kind: 'missing' } | { kind: 'pid'; pid: number; modifiedAtMs: number } | { kind: 'garbled'; modifiedAtMs: number };
 

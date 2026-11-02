@@ -1,4 +1,7 @@
 import type { PermissionMode, PermissionOption, PublicRunEvent, RunStatus, ToolKind } from '@momonga/protocol';
+import { startFlow } from '../elicit/flow.ts';
+import { mcpAuthorizationNotice } from '../mcp/messages.ts';
+import type { ElicitationFlow } from '../elicit/flow.ts';
 import { isTerminalStatus } from '../run/follow.ts';
 
 export type ToolStatus = 'requested' | 'awaiting_approval' | 'running' | 'completed' | 'failed' | 'unknown';
@@ -15,6 +18,8 @@ export type Entry =
 
 export type PendingApproval = { approvalId: string; callId: string; options: readonly PermissionOption[]; suggestedRule?: string };
 
+export type PendingElicitation = { inputId: string; callId: string; server: string; flow: ElicitationFlow; submitted: boolean };
+
 export type Usage = { inputTokens: number; outputTokens: number; totalTokens: number };
 
 export type Transcript = {
@@ -22,6 +27,7 @@ export type Transcript = {
   runId: string | undefined;
   runStatus: RunStatus | undefined;
   approval: PendingApproval | undefined;
+  elicitation: PendingElicitation | undefined;
   usage: Usage;
   contextTokens: number | undefined;
 };
@@ -33,6 +39,7 @@ export const initialTranscript: Transcript = {
   runId: undefined,
   runStatus: undefined,
   approval: undefined,
+  elicitation: undefined,
   usage: EMPTY_USAGE,
   contextTokens: undefined,
 };
@@ -60,6 +67,9 @@ const closeAssistant = (entries: readonly Entry[]): Entry[] =>
 
 const updateTool = (entries: readonly Entry[], callId: string, change: (tool: Extract<Entry, { kind: 'tool' }>) => Extract<Entry, { kind: 'tool' }>): Entry[] =>
   entries.map((entry) => (entry.kind === 'tool' && entry.callId === callId ? change(entry) : entry));
+
+export const withElicitationFlow = (transcript: Transcript, flow: ElicitationFlow, submitted = false): Transcript =>
+  transcript.elicitation === undefined ? transcript : { ...transcript, elicitation: { ...transcript.elicitation, flow, submitted } };
 
 export const appendEntry = (transcript: Transcript, entry: Entry): Transcript => ({ ...transcript, entries: [...closeAssistant(transcript.entries), entry] });
 
@@ -106,6 +116,24 @@ export const reduceEvent = (transcript: Transcript, event: PublicRunEvent): Tran
         entries: updateTool(transcript.entries, callId, (tool) => (tool.status === 'awaiting_approval' ? { ...tool, status: 'requested' } : tool)),
       };
     }
+    case 'tool.elicitation.requested':
+      return {
+        ...transcript,
+        entries: updateTool(transcript.entries, event.callId, (tool) => ({ ...tool, status: 'awaiting_approval' })),
+        elicitation: { inputId: event.inputId, callId: event.callId, server: event.server, flow: startFlow(event.requests), submitted: false },
+      };
+    case 'tool.elicitation.resolved':
+    case 'tool.elicitation.cancelled': {
+      if (transcript.elicitation?.inputId !== event.inputId) return transcript;
+      const { callId } = transcript.elicitation;
+      return {
+        ...transcript,
+        elicitation: undefined,
+        entries: updateTool(transcript.entries, callId, (tool) => (tool.status === 'awaiting_approval' ? { ...tool, status: 'requested' } : tool)),
+      };
+    }
+    case 'mcp.authorization.required':
+      return appendEntry(transcript, { kind: 'notice', level: 'warning', text: mcpAuthorizationNotice(event.server) });
     case 'tool.started':
       return { ...transcript, entries: updateTool(transcript.entries, event.callId, (tool) => ({ ...tool, status: 'running' })) };
     case 'tool.completed':
@@ -137,6 +165,7 @@ export const reduceEvent = (transcript: Transcript, event: PublicRunEvent): Tran
       return {
         ...base,
         approval: undefined,
+        elicitation: undefined,
         entries: closeAssistant(base.entries).map((entry) =>
           entry.kind === 'plan' ? { kind: 'info', text: entry.entries.map((item) => `${item.status === 'completed' ? '[x]' : '[ ]'} ${item.content}`).join('\n') } : entry,
         ),

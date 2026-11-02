@@ -5,9 +5,9 @@ import { createSecretResolver } from '../src/secrets.ts';
 
 type Pending = { name: string; signal: AbortSignal; resolve(value: string): void; reject(error: unknown): void };
 
-const controlledStore = (): { store: SecretStore; reads: Pending[] } => {
+const controlledStore = (): { store: Pick<SecretStore, 'read'>; reads: Pending[] } => {
   const reads: Pending[] = [];
-  const store: SecretStore = {
+  const store: Pick<SecretStore, 'read'> = {
     read: (name, signal) =>
       new Promise<string>((resolve, reject) => {
         reads.push({ name, signal, resolve, reject });

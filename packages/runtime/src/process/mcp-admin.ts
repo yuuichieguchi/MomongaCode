@@ -1,7 +1,7 @@
 import { loadMcpServers } from '@momonga/config';
 import type { McpServerEntry, UserLayer } from '@momonga/config';
 import type { Clock, JsonLogger } from '@momonga/foundation';
-import { McpAuthorizationError } from '@momonga/mcp';
+import { AUTHORIZATION_WAIT_MS, McpAuthorizationError } from '@momonga/mcp';
 import type { McpAuthorizingPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
 import type { McpAuthorizationView, McpServerView } from '@momonga/protocol';
 import type { RuntimeStore, Session } from '@momonga/store';
@@ -113,7 +113,8 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
     const running = attempts.get(key);
     if (running?.view.status === 'awaiting_user') return { ...running.view };
 
-    const view: McpAuthorizationView = { server: name, status: 'awaiting_user', startedAt: clock.now() };
+    const startedAt = clock.now();
+    const view: McpAuthorizationView = { server: name, status: 'awaiting_user', startedAt, expiresAt: startedAt + AUTHORIZATION_WAIT_MS };
     const controller = new AbortController();
     let surface: () => void = () => undefined;
     const surfaced = new Promise<void>((resolve) => {

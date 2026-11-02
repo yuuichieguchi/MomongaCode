@@ -1,5 +1,8 @@
 import { createParser } from 'eventsource-parser';
 
+export const SSE_RECONNECT_BASE_MS = 200;
+export const SSE_RECONNECT_MAX_MS = 5000;
+
 export interface SseEvent {
   id?: string;
   event?: string;

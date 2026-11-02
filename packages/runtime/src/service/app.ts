@@ -5,7 +5,7 @@ import { ConfigError, stripCredentialEnv } from '@momonga/config';
 import { canonicalDirectory, canonicalJson, canonicalPath, comparableContains, comparablePath, isTransientErrno, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { AUTO_MODE_UNAVAILABLE, RUN_STATUSES, isUnavailableMode } from '@momonga/protocol';
-import type { PermissionMode, RunStatus, RunTraceView } from '@momonga/protocol';
+import type { Capabilities, CostReportView, PermissionMode, RunStatus, RunTraceView } from '@momonga/protocol';
 import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
 import { sameRunRequest } from '@momonga/store';
 import type { Run, RuntimeStore, Session } from '@momonga/store';
@@ -17,6 +17,7 @@ import {
   conflict,
   configError,
   errorResponse,
+  imageInputUnsupported,
   idempotencyKeyReused,
   internalErrorResponse,
   invalidRequest,
@@ -55,6 +56,7 @@ export type RunAppDeps = {
   clock: Clock;
   version: string;
   modelAliases: () => Promise<readonly string[]>;
+  modelCapabilities: (alias: string, signal: AbortSignal) => Promise<Capabilities>;
   sessionCreateSettings: (cwd: string) => Promise<SessionCreateSettings>;
   skills: SkillsPort;
   isDraining(): boolean;
@@ -68,6 +70,7 @@ export type RunAppDeps = {
   closeSignal: AbortSignal;
   cancelUpstream?: (runId: string) => Promise<void>;
   runTrace: (runId: string) => Promise<RunTraceView | undefined>;
+  runCost: (runs: readonly { runId: string; sessionId: string }[]) => Promise<CostReportView>;
   mcp: McpAdminPort;
   onError: (error: unknown) => void;
 };
@@ -255,6 +258,16 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const replayed = replay();
     if (replayed !== undefined) return replayed;
     const skill = body.skill === undefined ? undefined : await activationOf(session, body.skill);
+    if (body.images !== undefined && body.images.length > 0) {
+      let capabilities: Capabilities;
+      try {
+        capabilities = await deps.modelCapabilities(session.modelAlias, context.req.raw.signal);
+      } catch (error) {
+        if (isGatewayUnavailable(error)) throw serviceUnavailable('gateway_unavailable', 'the model gateway is unavailable');
+        throw error;
+      }
+      if (!capabilities.imageInput) throw imageInputUnsupported(session.modelAlias);
+    }
     const result = store.createRunAndEnqueue(session.id, {
       input: body.input,
       ...idempotency,
@@ -263,6 +276,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       pins: {},
       history: body.history ?? 'inherit',
       ...(skill === undefined ? {} : { skill }),
+      ...(body.images === undefined ? {} : { images: body.images }),
     });
     if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
     if (result.kind === 'key_reused') throw idempotencyKeyReused();
@@ -292,6 +306,35 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const trace = await deps.runTrace(run.id);
     if (trace === undefined) throw notFound(`run ${run.id} has no recorded trace`);
     return json(trace);
+  };
+
+  const cost: Handler = async (context) => {
+    const runId = context.req.query('run');
+    const sessionId = context.req.query('session');
+    const requestedCwd = context.req.query('cwd');
+    const given = [runId, sessionId, requestedCwd].filter((value) => value !== undefined);
+    if (given.length > 1) throw invalidRequest('pass at most one of run, session and cwd', 'run');
+    const runsOfSession = (id: string) => store.listRuns(id).map((run) => ({ runId: run.id, sessionId: run.sessionId }));
+    let runs: { runId: string; sessionId: string }[];
+    if (runId !== undefined) {
+      const run = requireRun(runId);
+      runs = [{ runId: run.id, sessionId: run.sessionId }];
+    } else if (sessionId !== undefined) {
+      runs = runsOfSession(requireSession(sessionId).id);
+    } else if (requestedCwd !== undefined) {
+      requireAbsolute(requestedCwd, 'cwd');
+      let cwd: string;
+      try {
+        cwd = canonicalPath(requestedCwd);
+      } catch (error) {
+        if (isTransientErrno(error)) throw error;
+        throw invalidRequest(`cwd ${requestedCwd} cannot be resolved: ${(error as Error).message}`, 'cwd');
+      }
+      runs = store.listSessions({ cwd }).flatMap((session) => runsOfSession(session.id));
+    } else {
+      runs = store.listSessions().flatMap((session) => runsOfSession(session.id));
+    }
+    return json(await deps.runCost(runs));
   };
 
   const listRunApprovals: Handler = (context) => {
@@ -377,6 +420,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   route('/v1/runs/:id', { GET: getRun });
   route('/v1/runs/:id/cancel', { POST: cancelRun });
   route('/v1/runs/:id/trace', { GET: runTrace });
+  route('/v1/cost', { GET: cost });
   route('/v1/runs/:id/approvals', { GET: listRunApprovals });
   route('/v1/runs/:id/events', { GET: runEvents });
   route('/v1/approvals/:id', { GET: getApproval, POST: resolveApproval });

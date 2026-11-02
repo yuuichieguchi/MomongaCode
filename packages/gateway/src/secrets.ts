@@ -10,7 +10,7 @@ export type SecretResolver = {
 
 type Inflight = { promise: Promise<string>; controller: AbortController; waiters: number };
 
-export const createSecretResolver = (store: SecretStore): SecretResolver => {
+export const createSecretResolver = (store: Pick<SecretStore, 'read'>): SecretResolver => {
   const values = new Map<string, string>();
   const inflight = new Map<string, Inflight>();
   const listeners: SecretListener[] = [];

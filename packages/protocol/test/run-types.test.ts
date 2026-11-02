@@ -4,6 +4,7 @@ import type {
   CompactionInputItem,
   ElicitationAnswerRecord,
   ElicitationRequestView,
+  ImageAttachment,
   InputItem,
   MessageInputItem,
   ModelResponse,
@@ -98,7 +99,7 @@ describe('run event payloads', () => {
   });
 
   it('defines the conversation and lifecycle payloads', () => {
-    expectTypeOf<Payload<'user.message'>>().toEqualTypeOf<{ type: 'user.message'; text: string }>();
+    expectTypeOf<Payload<'user.message'>>().toEqualTypeOf<{ type: 'user.message'; text: string; images?: ImageAttachment[] }>();
     expectTypeOf<Payload<'run.started'>>().toEqualTypeOf<{
       type: 'run.started';
       attempt: number;

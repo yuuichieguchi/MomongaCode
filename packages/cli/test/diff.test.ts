@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clipDiff, diffOfStrings, diffOfToolInput } from '../src/tui/diff.ts';
+import { CONTEXT_LINES, clipDiff, diffOfStrings, diffOfToolInput, maxDiffLines } from '../src/tui/diff.ts';
 
 describe('diffOfStrings', () => {
   it('marks a changed line as removed and added', () => {
@@ -9,16 +9,19 @@ describe('diffOfStrings', () => {
     ]);
   });
 
-  it('keeps two lines of context around the change and drops the rest', () => {
-    const before = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].join('\n');
-    const after = ['a', 'b', 'c', 'D', 'e', 'f', 'g'].join('\n');
+  it('keeps the unified-diff default of three lines of context around the change and drops the rest', () => {
+    expect(CONTEXT_LINES).toBe(3);
+    const before = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'].join('\n');
+    const after = ['a', 'b', 'c', 'd', 'E', 'f', 'g', 'h', 'i'].join('\n');
     expect(diffOfStrings(before, after)).toEqual([
       { kind: 'context', text: 'b' },
       { kind: 'context', text: 'c' },
-      { kind: 'removed', text: 'd' },
-      { kind: 'added', text: 'D' },
-      { kind: 'context', text: 'e' },
+      { kind: 'context', text: 'd' },
+      { kind: 'removed', text: 'e' },
+      { kind: 'added', text: 'E' },
       { kind: 'context', text: 'f' },
+      { kind: 'context', text: 'g' },
+      { kind: 'context', text: 'h' },
     ]);
   });
 
@@ -61,5 +64,16 @@ describe('clipDiff', () => {
     const lines = Array.from({ length: 5 }, (_, index) => ({ kind: 'added' as const, text: String(index) }));
     expect(clipDiff(lines, 3)).toEqual({ lines: lines.slice(0, 3), omitted: 2 });
     expect(clipDiff(lines, 10)).toEqual({ lines, omitted: 0 });
+  });
+});
+
+describe('maxDiffLines', () => {
+  it('leaves the terminal rows that the approval prompt, its options and the status line do not use', () => {
+    expect(maxDiffLines(40, 4)).toBe(40 - 2 - 1 - 4 - 1 - 1 - 1);
+    expect(maxDiffLines(24, 2)).toBe(24 - 2 - 1 - 2 - 1 - 1 - 1);
+  });
+
+  it('never goes negative on a terminal shorter than the prompt', () => {
+    expect(maxDiffLines(5, 4)).toBe(0);
   });
 });

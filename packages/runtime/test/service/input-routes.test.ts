@@ -61,7 +61,7 @@ describe('elicitation routes', () => {
 });
 
 describe('MCP server routes', () => {
-  const view: McpAuthorizationView = { server: 'remote', status: 'awaiting_user', startedAt: 1, url: 'https://auth.example.test/authorize?x=1' };
+  const view: McpAuthorizationView = { server: 'remote', status: 'awaiting_user', startedAt: 1, expiresAt: 2, url: 'https://auth.example.test/authorize?x=1' };
   const server: McpServerView = { name: 'remote', scope: 'user', transport: 'http', url: 'https://mcp.example.test/mcp', auth: 'required' };
 
   it('lists servers with their auth state and starts, reads and cancels an authorization', async () => {

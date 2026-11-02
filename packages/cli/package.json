@@ -11,6 +11,7 @@
   ],
   "devDependencies": {
     "@momonga/config": "*",
+    "@momonga/eval": "*",
     "@momonga/foundation": "*",
     "@momonga/gateway": "*",
     "@momonga/protocol": "*",

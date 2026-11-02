@@ -73,6 +73,15 @@ export const unknownSkill = (message: string): ApiError =>
 export const skillUnavailable = (message: string): ApiError =>
   new ApiError({ status: 422, type: 'invalid_request', code: 'skill_unavailable', message, param: 'skill' });
 
+export const imageInputUnsupported = (alias: string): ApiError =>
+  new ApiError({
+    status: 422,
+    type: 'invalid_request',
+    code: 'image_input_unsupported',
+    message: `the model alias ${alias} does not declare image input`,
+    param: 'images',
+  });
+
 export const configError = (message: string, param?: string): ApiError =>
   new ApiError({ status: 422, type: 'invalid_request', code: 'config_error', message, ...(param === undefined ? {} : { param }) });
 

@@ -1,13 +1,14 @@
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import type { FetchLike, JSONRPCMessage, OAuthClientProvider, Transport, TransportSendOptions } from '@modelcontextprotocol/client';
 import type { McpRemoteServerConfig, McpServerScope } from '@momonga/config';
+import { SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS } from '@momonga/foundation';
 import { assertRemoteUrl } from './remote-policy.ts';
 import type { McpTimers } from './timers.ts';
 import type { StdioTransportExit } from './stdio-transport.ts';
 
 export const TASK_HANDLE_ERROR_CODE = -39001;
-export const RECONNECT_BASE_MS = 200;
-export const RECONNECT_MAX_MS = 5000;
+export const RECONNECT_BASE_MS = SSE_RECONNECT_BASE_MS;
+export const RECONNECT_MAX_MS = SSE_RECONNECT_MAX_MS;
 export const RECONNECT_GROWTH = 2;
 export const STREAM_RESUME_ATTEMPTS = 2;
 
