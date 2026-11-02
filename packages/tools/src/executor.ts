@@ -5,11 +5,12 @@ import type { Clock, FileRuleProvenance, KernelLockMechanism, PathResolution, Re
 import { absoluteFrom, createGlobDeadline, decide, fileRuleSpecsOf, globBudgetMs, prepareGlobs, settleGlobs, suggestAllowRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject, PolicyHostFilesystem } from '@momonga/policy';
 import { permissionDeniedOutput } from '@momonga/protocol';
-import type { ElicitationRequestView, PermissionDenial, PermissionMode, ToolAwait, ToolKind } from '@momonga/protocol';
+import type { ApprovalBasis, ElicitationRequestView, PermissionDenial, PermissionMode, ToolAwait, ToolKind } from '@momonga/protocol';
 import { SANDBOX_STOP_BOUND_MS, SandboxPolicyError, canonicalParentForm } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { EarlierAttemptNotStoppedError, createCallLocks } from './call-lock.ts';
 import type { CallLock } from './call-lock.ts';
+import { readOnlyContextOf } from './read-only-call.ts';
 import { createReadAccessMatcher } from './read-access.ts';
 import type { ReadFamilyTool } from './read-access.ts';
 import type { ReadAccessMatcher } from './read-access.ts';
@@ -48,7 +49,7 @@ type BatchCallbacks = {
   onLeaseLost?(): void;
   onOutcome?(outcome: ResultOutcome): void;
   traceparentFor?(callId: string): { traceparent: string; tracestate?: string } | undefined;
-  onStarted?(callId: string, idemKey: string): void | Promise<void>;
+  onStarted?(callId: string, idemKey: string, basis: ApprovalBasis): void | Promise<void>;
   onUpdate?(callId: string, content: ToolContent[]): void;
 };
 
@@ -166,6 +167,7 @@ type ExecutionPlan = {
   recovered?: ToolIdempotencyRecord;
   gateRan: boolean;
   hookInput?: unknown;
+  basis?: ApprovalBasis;
 };
 
 type RecoveryPlan = {
@@ -181,7 +183,17 @@ type RunPlan = ExecutionPlan | RecoveryPlan;
 
 type Gate = { subject: PermissionSubject; access: BatchAccess };
 
-type GateTarget = { input: unknown; subject: PermissionSubject; hookInput?: unknown };
+type GateTarget = { input: unknown; subject: PermissionSubject; hookInput?: unknown; basis?: ApprovalBasis };
+
+const allowBasisOf = (decision: Decision): ApprovalBasis => {
+  if (decision.basis === undefined) throw new Error(`an allow decision from ${decision.source} carries no basis`);
+  return decision.basis;
+};
+
+const requireBasis = (target: GateTarget): ApprovalBasis => {
+  if (target.basis === undefined) throw new Error('a call reached execution without a recorded approval basis');
+  return target.basis;
+};
 
 type GateStage = 'enforce' | 'preview';
 
@@ -570,7 +582,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         decision = { kind: 'ask', source: 'hook', reason: reasonOr(verdict.reason, 'a PreToolUse hook requires approval') };
       }
       if (verdict?.decision === 'allow' && decision.kind === 'ask' && decision.source === 'mode' && decision.humanOnly !== true) {
-        decision = { kind: 'allow', source: 'hook', reason: reasonOr(verdict.reason, 'allowed by a PreToolUse hook') };
+        decision = { kind: 'allow', source: 'hook', reason: reasonOr(verdict.reason, 'allowed by a PreToolUse hook'), basis: 'hook' };
       }
     }
     const { subject, input } = target;
@@ -597,7 +609,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
             reason: effective.reason,
             subjectDigest,
           });
-          if (classified === 'allow') return undefined;
+          if (classified === 'allow') {
+            target.basis = 'classifier';
+            return undefined;
+          }
         }
         if (hooks !== undefined) rememberVerdict(key, verdict);
         const suggestedRule =
@@ -616,7 +631,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           ...(locations === undefined ? {} : { locations }),
         };
       }
+      target.basis = 'person';
+      return undefined;
     }
+    target.basis = allowBasisOf(decision);
     return undefined;
   };
 
@@ -686,6 +704,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         batch,
         gateRan: recovered === undefined,
         ...(target.hookInput === undefined ? {} : { hookInput: target.hookInput }),
+        ...(target.basis === undefined ? {} : { basis: target.basis }),
         ...(recovered === undefined ? {} : { recovered }),
       },
     };
@@ -915,7 +934,12 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
 
   const performExecution = async (batch: ExecutionBatchInput, plan: ExecutionPlan): Promise<CallOutcome> => {
     const { call, tool, gate, key, recovered, gateRan } = plan;
-    const target: GateTarget = { input: plan.input, subject: gate.subject, ...(plan.hookInput === undefined ? {} : { hookInput: plan.hookInput }) };
+    const target: GateTarget = {
+      input: plan.input,
+      subject: gate.subject,
+      ...(plan.hookInput === undefined ? {} : { hookInput: plan.hookInput }),
+      ...(plan.basis === undefined ? {} : { basis: plan.basis }),
+    };
     const { callId } = call;
     const inlineLimit = batch.inlineLimitForReconcile ?? maxInlineOutputChars;
     let executionLimit: Promise<number> | undefined;
@@ -928,6 +952,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
 
     const scope = openScope(batch, call, tool, key, inlineLimit, batch.deadlineAt);
     const toolContext: ToolContext = { ...scope.reconcileCtx, sandbox: batch.sandbox, sandboxPolicy: batch.sandboxPolicy, checkpoint: scope.checkpoint, extendToRunDeadline: scope.extendTimerToDeadline };
+    const contextForBasis = (): ToolContext => (requireBasis(target) === 'read_only' ? readOnlyContextOf(toolContext) : toolContext);
 
     try {
       let prepared: Record<string, unknown> | undefined;
@@ -950,7 +975,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         await resolveExecutionLimit();
         if (tool.prepare !== undefined) {
           try {
-            prepared = await tool.prepare(target.input, toolContext);
+            prepared = await tool.prepare(target.input, contextForBasis());
           } catch (error) {
             return failedOutcome(callId, describeThrown(tool.name, error));
           }
@@ -977,7 +1002,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         const outputLimit = await resolveExecutionLimit();
         if ((await scope.holdCall()) === 'aborted') return failedOutcome(callId, `${tool.name} was cancelled`);
         if (!scope.holding(scope.ledger.authorise(key))) return scope.deferred;
-        const executionCtx: ToolContext = { ...toolContext, outputBudgetChars: outputLimit, ...(resume === undefined ? {} : { resume }) };
+        const executionCtx: ToolContext = { ...contextForBasis(), outputBudgetChars: outputLimit, ...(resume === undefined ? {} : { resume }) };
         if (tool.sideEffect === 'exec') {
           fs.rmSync(scope.processMarker, { force: true });
           fs.closeSync(fs.openSync(scope.processMarker, 'wx', 0o600));
@@ -1038,7 +1063,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       };
 
       if (record === undefined) {
-        await batch.onStarted?.(callId, key);
+        await batch.onStarted?.(callId, key, requireBasis(target));
         return await execute();
       }
 

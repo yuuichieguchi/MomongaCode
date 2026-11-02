@@ -184,12 +184,12 @@ describe('finding 6 (second review): a populated submodule is judged like a disc
     return hook;
   };
 
-  it.each(['git status', 'git diff', 'git status --ignore-submodules=untracked', 'git diff --ignore-submodules=untracked', 'git status --porcelain=v2', 'git diff --stat'])('%s runs the submodule fsmonitor and needs approval', (command) => {
+  it.each(['git status', 'git diff', 'git status --ignore-submodules=untracked', 'git diff --ignore-submodules=untracked', 'git status --porcelain=v2', 'git diff --stat'])('%s runs the submodule fsmonitor in a plain environment and is approved because the read-only environment stops it', (command) => {
     const workspace = makeRealWorkspace();
     const hook = withSubmodule(workspace);
     workspace.runBash(command);
     expect(hook.fired()).toBe(true);
-    expect(workspace.decide(command).kind).toBe('ask');
+    expect(workspace.decide(command).kind).toBe('allow');
   });
 
   it.each(['git status --ignore-submodules=all', 'git status --ignore-submodules=dirty', 'git status --ignore-submodules', 'git diff --ignore-submodules=all', 'git diff --ignore-submodules=dirty', 'git log -1 -p', 'git ls-files -m', 'git rev-parse HEAD'])('%s does not reach the submodule and is allowed', (command) => {
@@ -208,7 +208,7 @@ describe('finding 6 (second review): a populated submodule is judged like a disc
     expect(workspace.git(workspace.project, 'update-index', '--index-version', version).status).toBe(0);
     workspace.runBash('git status');
     expect(hook.fired()).toBe(true);
-    expect(workspace.decide('git status').kind).toBe('ask');
+    expect(workspace.decide('git status').kind).toBe('allow');
   });
 
   it('a repository without a submodule keeps being allowed', () => {
@@ -218,7 +218,7 @@ describe('finding 6 (second review): a populated submodule is judged like a disc
     expect(workspace.decide('git diff').kind).toBe('allow');
   });
 
-  it('a submodule nested in a submodule is judged too', () => {
+  it('a submodule nested in a submodule is approved too', () => {
     const workspace = makeRealWorkspace();
     const hook = hookIn(workspace);
     workspace.initRepository();
@@ -229,7 +229,7 @@ describe('finding 6 (second review): a populated submodule is judged like a disc
     workspace.git(path.join(workspace.project, 'sm', 'inner'), 'config', 'core.fsmonitor', hook.script);
     workspace.git(workspace.project, 'add', 'sm');
     workspace.runBash('git status');
-    expect(workspace.decide('git status').kind).toBe('ask');
+    expect(workspace.decide('git status').kind).toBe('allow');
   });
 });
 

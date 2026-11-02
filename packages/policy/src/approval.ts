@@ -14,6 +14,7 @@ import { absoluteFrom } from './path-match.ts';
 import { systemProgramDirectories } from './platform-specs.ts';
 import { executedByWrapper, resolveSegmentProgram } from './program-resolution.ts';
 import { discoverRepository } from './repository.ts';
+import type { RepositoryHit } from './repository.ts';
 import { insideRoots } from './roots.ts';
 import { scanSedScript } from './sed-script.ts';
 import { executionSteps } from './shell.ts';
@@ -180,6 +181,21 @@ const discoveryAffected = (context: ApprovalContext, directory: string, changed:
   return changed.some((entry) => chain.some((ancestor) => lexicallyWithin(ancestor, entry) || DISCOVERY_ENTRIES.some((name) => lexicallyWithin(entry, path.join(ancestor, name)))));
 };
 
+const configNamesNoProgram = (fs: PolicyFilesystem, gitDirectories: readonly string[]): boolean =>
+  gitDirectories.every((directory) => {
+    const read = fs.configPrograms(directory);
+    return !('unresolvable' in read) && read.keys.length === 0;
+  });
+
+const isRegisteredSubmodule = (context: ApprovalContext, hit: RepositoryHit): boolean => {
+  const { fs } = context;
+  const parent = discoverRepository(path.dirname(hit.directory), fs);
+  if ('unresolved' in parent || !parent.found || parent.hit.entry === 'bare') return false;
+  const links = fs.gitlinks(parent.hit.gitDirectories[0] as string);
+  if ('unresolvable' in links || 'unreadable' in links) return false;
+  return links.paths.some((relative) => sameDirectory(path.join(parent.hit.directory, relative), hit.directory));
+};
+
 const gitRepositoryAllowed = (context: ApprovalContext, directory: string, bare: boolean): boolean => {
   const { fs, protectedSet, isWritable } = context;
   const discovery = discoverRepository(directory, fs, { bare });
@@ -189,6 +205,7 @@ const gitRepositoryAllowed = (context: ApprovalContext, directory: string, bare:
   const roots = context.roots.map((root) => fs.canonicalise(root)).flatMap((resolution) => (resolution.ok ? [resolution.path] : []));
   const ownRoot = hit.entry === 'dotgit' ? roots.find((root) => sameDirectory(root, hit.directory)) : undefined;
   if (ownRoot !== undefined) return !protectedSet.issues.some((issue) => issue.root === ownRoot);
+  if (hit.entry === 'dotgit' && isRegisteredSubmodule(context, hit)) return configNamesNoProgram(fs, hit.gitDirectories);
   return !isWritable(hit.directory) && hit.gitDirectories.every((directory) => !isWritable(directory));
 };
 
@@ -196,10 +213,14 @@ const SUBMODULE_ENTERING_SUBCOMMANDS: ReadonlySet<string> = new Set(['status', '
 const SUBMODULE_OPTION = '--ignore-submodules';
 const NO_SUBMODULE_OPTION = '--no-ignore-submodules';
 const SUBMODULE_SKIPPING_MODES: ReadonlySet<string | undefined> = new Set([undefined, 'all', 'dirty']);
+const SUBMODULE_DIFF_OPTION = '--submodule';
+const SUBMODULE_DIFF_MODE = 'diff';
 
 const entersSubmodules = (git: GitParse): boolean => {
-  if (git.subcommand === undefined || !SUBMODULE_ENTERING_SUBCOMMANDS.has(git.subcommand)) return false;
+  if (git.subcommand === undefined) return false;
   const parsed = parseArgv(git.rest, gitSubcommandSpec(git.subcommand));
+  if (parsed.options.some((entry) => entry.option === SUBMODULE_DIFF_OPTION && entry.value === SUBMODULE_DIFF_MODE)) return true;
+  if (!SUBMODULE_ENTERING_SUBCOMMANDS.has(git.subcommand)) return false;
   const last = parsed.options.filter((entry) => entry.option === SUBMODULE_OPTION || entry.option === NO_SUBMODULE_OPTION).at(-1);
   return last === undefined || last.option === NO_SUBMODULE_OPTION || !SUBMODULE_SKIPPING_MODES.has(last.value);
 };
@@ -217,9 +238,10 @@ const submodulesAllowed = (context: ApprovalContext, directory: string, visited:
   if ('unresolvable' in links || 'unreadable' in links) return false;
   return links.paths.every((relative) => {
     const nested = path.join(hit.directory, relative);
-    if (!gitRepositoryAllowed(context, nested, false)) return false;
     const inner = discoverRepository(nested, fs);
-    return 'unresolved' in inner ? false : !inner.found || !sameDirectory(inner.hit.directory, nested) || submodulesAllowed(context, nested, visited);
+    if ('unresolved' in inner) return false;
+    if (!inner.found || !sameDirectory(inner.hit.directory, nested)) return true;
+    return configNamesNoProgram(fs, inner.hit.gitDirectories) && submodulesAllowed(context, nested, visited);
   });
 };
 

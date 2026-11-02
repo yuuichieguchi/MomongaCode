@@ -125,3 +125,5 @@ export const GIT_LISTING_SPECS: Readonly<Record<'branch' | 'tag' | 'remote', Com
   }),
   remote: define({ names: ['remote'], options: listingFlags('-n', '-v', '--verbose', '--push', '--all') }),
 };
+
+export const GIT_APPROVED_SUBCOMMANDS: readonly string[] = [...GIT_READ_ONLY_SUBCOMMANDS, ...Object.keys(GIT_LISTING_SPECS)];

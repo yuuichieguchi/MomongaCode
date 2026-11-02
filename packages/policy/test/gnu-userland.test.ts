@@ -23,13 +23,15 @@ describe('command specifications are keyed by platform (finding 9)', () => {
     expect(systemProgramDirectories('win32')).toEqual([]);
   });
 
-  it('declares the same approvable program names on both families', () => {
+  it('declares the same approvable program names on both families, except ps, which macOS cannot run in a sandbox', () => {
     const names = (platform: NodeJS.Platform) =>
       commandSpecsFor(platform)
         .all.filter((spec) => spec.approval !== undefined)
         .flatMap((spec) => spec.names)
         .sort();
-    expect(names('linux')).toEqual(names('darwin'));
+    expect(names('linux').filter((name) => name !== 'ps')).toEqual(names('darwin'));
+    expect(names('linux')).toContain('ps');
+    expect(names('darwin')).not.toContain('ps');
   });
 
   it('GNU options keep their documented arity: -D and -t are flags for ls and stat, -S is not a grep option', () => {

@@ -2,7 +2,7 @@ import { HOOK_EVENTS, HOOK_OUTCOMES, HOOK_PRE_TOOL_DECISIONS } from './hooks.ts'
 import { CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
 import { MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES } from './memory.ts';
 import type { SummaryFidelity, SummarySource } from './context-record.ts';
-import { PERMISSION_DENIAL_SOURCES } from './permission-denial.ts';
+import { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES } from './permission-denial.ts';
 import { FILE_ACCESSES } from './working-facts.ts';
 import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
 import type { ImageMediaType, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent } from './run-types.ts';
@@ -249,7 +249,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
     required: ['inputId', 'reason'],
   },
   'mcp.authorization.required': { properties: { callId: string, server: string }, required: ['server'] },
-  'tool.started': { properties: { callId: string, idemKey: string }, required: ['callId', 'idemKey'] },
+  'tool.started': { properties: { callId: string, idemKey: string, basis: enumOf(APPROVAL_BASES) }, required: ['callId', 'idemKey'] },
   'tool.updated': { properties: { callId: string, content: { type: 'array' } }, required: ['callId', 'content'] },
   'tool.completed': {
     properties: {

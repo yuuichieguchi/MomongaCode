@@ -142,6 +142,8 @@ export { UNRESOLVABLE_ERRNO_CODES, resolveCanonicalPath, unresolvableReasonOf } 
 export type { PathResolution, UnresolvableErrno, UnresolvableReason, Unresolved } from './path-resolution.ts';
 export { gitlinksOfIndex } from './git-index.ts';
 export type { GitlinkRead } from './git-index.ts';
+export { programKeysOfConfig } from './git-config-programs.ts';
+export type { ConfigPrograms } from './git-config-programs.ts';
 export { EMPTY_PROTECTED_SET, MAX_POINTER_FILE_BYTES, commondirTarget, defaultProtectedPaths, gitFileTarget, isProtectedWrite, protectedSetFor } from './protected-set.ts';
 export type { EntryRead, GitEntryReader, GitPointerIssue, ProtectedSet, ProtectedSetPorts } from './protected-set.ts';
 export { anchorFormOf, checkExceptionGrammar, checkFilePatternGrammar, fileMatcherOf, parseExceptionPattern, parseFilePattern, testFileMatcher } from './file-pattern.ts';

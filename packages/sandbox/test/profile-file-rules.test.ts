@@ -308,7 +308,7 @@ describe('device node lines (pin)', () => {
     const lines = linesOf(build(dirs, fileRulesOf([fileSpec('**', { roots: [dirs.root], home: dirs.home })], [dirs.root])));
     expect(lines.slice(-4)).toEqual([...DEVICE_NODE_LINES, '']);
     for (const line of DEVICE_NODE_LINES) expect(lines.filter((candidate) => candidate === line)).toHaveLength(2);
-    expect(lines.indexOf(DEVICE_NODE_LINES[0] as string)).toBe(7);
+    expect(lines.indexOf(DEVICE_NODE_LINES[0] as string)).toBe(10);
   });
 });
 

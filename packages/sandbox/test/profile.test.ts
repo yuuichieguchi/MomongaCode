@@ -123,6 +123,15 @@ describe('buildSeatbeltProfile', () => {
     expect(profile).toMatch(/\(allow sysctl-read/);
   });
 
+  it('allows only the named lookup services, the scheduling of the process itself and the one materialization flag that read-only programs need', () => {
+    const { profile } = buildSeatbeltProfile(policyFor(tempDir()));
+    const lookups = [...profile.matchAll(/^\(allow mach-lookup (.*)\)$/gm)].map((match) => match[1]);
+    expect(lookups).toEqual(['(global-name "com.apple.bsd.dirhelper") (global-name "com.apple.system.opendirectoryd.libinfo")']);
+    expect(profile).toContain('(allow system-sched (target self))');
+    expect(profile).toContain('(allow sysctl-write (sysctl-name "vfs.nspace.prevent_materialization"))');
+    expect(profile.match(/\(allow sysctl-write/g)).toHaveLength(1);
+  });
+
   it('canonicalizes symlinked paths with realpath, including not-yet-existing children', () => {
     const real = fs.realpathSync(tempDir());
     const linkParent = tempDir();
