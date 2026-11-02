@@ -13,19 +13,21 @@ const frame = (id: number): RunEventFrame => ({
 
 const errno = (code: string): Error => Object.assign(new Error(code), { code });
 
-type Stream = { frames: number[]; thenThrow?: Error };
+type Stream = { frames: number[]; thenThrow?: Error; neverOpens?: true; idle?: () => void };
 
 const clientOf = (streams: readonly Stream[], statuses: readonly ReturnType<typeof runView>[]): { client: RuntimeClient; opened: Array<number | undefined> } => {
   const opened: Array<number | undefined> = [];
   let next = 0;
   let polled = 0;
   const client = {
-    streamEvents: async function* (_runId: string, options: { lastEventId?: number } = {}) {
+    streamEvents: async function* (_runId: string, options: { lastEventId?: number; onOpen?: () => void } = {}) {
       opened.push(options.lastEventId);
       const stream = streams[next];
       next += 1;
       if (stream === undefined) throw new Error('unexpected stream open');
+      if (stream.neverOpens !== true) options.onOpen?.();
       for (const id of stream.frames) yield frame(id);
+      stream.idle?.();
       if (stream.thenThrow !== undefined) throw stream.thenThrow;
     },
     getRun: async () => {
@@ -61,12 +63,16 @@ describe('followRun', () => {
     expect(opened).toEqual([undefined]);
   });
 
-  it('starts after the given cursor with Last-Event-ID', async () => {
-    const { client, opened } = clientOf([{ frames: [] }], [runView()]);
+  it('hands the events up to the seen cursor to the seen handler and the rest to the event handler', async () => {
+    const seen: number[] = [];
+    const replayed: number[] = [];
+    const { client, opened } = clientOf([{ frames: [1, 2, 3, 4] }], [runView()]);
 
-    await followRun(options(client, [], { after: 7 }));
+    await followRun(options(client, seen, { seenThrough: 2, onSeenEvent: (received) => replayed.push(received.id) }));
 
-    expect(opened).toEqual([7]);
+    expect(replayed).toEqual([1, 2]);
+    expect(seen).toEqual([3, 4]);
+    expect(opened).toEqual([undefined]);
   });
 
   it('reconnects after a dropped connection from the last event it saw, without a gap or a duplicate', async () => {
@@ -97,8 +103,25 @@ describe('followRun', () => {
     await expect(followRun(options(client, []))).rejects.toThrow('the server answered 400');
   });
 
+  it('measures a second outage from its own start when the first reconnect delivered no event', async () => {
+    const clock = virtualClock();
+    const { client, opened } = clientOf(
+      [
+        { frames: [1], thenThrow: errno('ECONNRESET') },
+        { frames: [], thenThrow: errno('ECONNRESET'), idle: () => void clock.sleep(20_000) },
+        { frames: [2] },
+      ],
+      [runView({ status: 'COMPLETED' })],
+    );
+
+    const run = await followRun(options(client, [], { clock, reconnectBoundMs: 10_000 }));
+
+    expect(run.status).toBe('COMPLETED');
+    expect(opened).toEqual([undefined, 1, 1]);
+  });
+
   it('gives up when the stream cannot be restored within the bound', async () => {
-    const { client } = clientOf(Array.from({ length: 50 }, () => ({ frames: [], thenThrow: errno('ECONNREFUSED') })), []);
+    const { client } = clientOf(Array.from({ length: 50 }, () => ({ frames: [], thenThrow: errno('ECONNREFUSED'), neverOpens: true as const })), []);
 
     await expect(followRun(options(client, [], { reconnectBoundMs: 2000 }))).rejects.toBeInstanceOf(ReconnectBoundExceeded);
   });
@@ -126,11 +149,12 @@ describe('followSession', () => {
     const opened: Array<number | undefined> = [];
     let next = 0;
     const client = {
-      streamSessionEvents: async function* (_sessionId: string, streamOptions: { lastEventId?: number } = {}) {
+      streamSessionEvents: async function* (_sessionId: string, streamOptions: { lastEventId?: number; onOpen?: () => void } = {}) {
         opened.push(streamOptions.lastEventId);
         const stream = streams[next];
         next += 1;
         if (stream === undefined) throw new Error('unexpected stream open');
+        if (stream.neverOpens !== true) streamOptions.onOpen?.();
         for (const id of stream.frames) yield frame(id);
         if (stream.thenThrow !== undefined) throw stream.thenThrow;
       },
@@ -188,7 +212,7 @@ describe('followSession', () => {
   });
 
   it('gives up when the stream cannot be restored within the bound', async () => {
-    const { client } = sessionClientOf(Array.from({ length: 50 }, () => ({ frames: [], thenThrow: errno('ECONNREFUSED') })));
+    const { client } = sessionClientOf(Array.from({ length: 50 }, () => ({ frames: [], thenThrow: errno('ECONNREFUSED'), neverOpens: true as const })));
 
     const failure = await followSession(sessionOptions(client, [], { reconnectBoundMs: 2000 })).catch((error: unknown) => error);
 

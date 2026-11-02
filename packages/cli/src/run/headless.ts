@@ -64,7 +64,7 @@ export const describeEnd = (run: RunView): string => {
   return `momonga: run ${run.id} ${run.status}${reason === undefined ? '' : ` (${reason})`}`;
 };
 
-export type FrameSink = { handle(frame: RunEventFrame): void; handleChild(frame: RunEventFrame, agent: string): void; finalText(): string };
+export type FrameSink = { absorb(frame: RunEventFrame): void; handle(frame: RunEventFrame): void; handleChild(frame: RunEventFrame, agent: string): void; finalText(): string };
 
 const awaitedOf = (awaits: Extract<PublicRunEvent, { type: 'tool.waiting' }>['awaits']): string =>
   awaits.kind === 'run' ? `subagent ${awaits.agent} (run ${awaits.runId})` : `job ${awaits.jobId}`;
@@ -123,6 +123,12 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
     }
   };
 
+  const absorb = (frame: RunEventFrame): void => {
+    const event = frame.data;
+    if (event.type === 'tool.call') titles.set(event.callId, event.title);
+    if (event.type === 'agent.message.delta') items.set(event.itemId, `${items.get(event.itemId) ?? ''}${event.text}`);
+  };
+
   const handle = (frame: RunEventFrame): void => {
     const event = frame.data;
     if (format === 'stream-json') ports.stdout.write(`${JSON.stringify(event)}\n`);
@@ -145,7 +151,7 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
   };
 
   const finalText = (): string => [...items.values()].at(-1) ?? '';
-  return { handle, handleChild, finalText };
+  return { absorb, handle, handleChild, finalText };
 };
 
 export type WatchOptions = {
@@ -171,7 +177,8 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
     clock: ports.clock,
     random: ports.random,
     runId,
-    ...(options.after === undefined ? {} : { after: options.after }),
+    ...(options.after === undefined ? {} : { seenThrough: options.after }),
+    onSeenEvent: sink.absorb,
     reconnectBoundMs: await daemonReadyBoundMs(),
     restoreConnection: async () => {
       await ensureDaemon(ports, paths);

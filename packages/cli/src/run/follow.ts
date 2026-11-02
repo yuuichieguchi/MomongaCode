@@ -32,7 +32,7 @@ export class ReconnectBoundExceeded extends Error {
   }
 }
 
-export type StreamOpener = (options: { lastEventId?: number; signal?: AbortSignal }) => AsyncIterable<RunEventFrame>;
+export type StreamOpener = (options: { lastEventId?: number; signal?: AbortSignal; onOpen?: () => void }) => AsyncIterable<RunEventFrame>;
 
 export type FollowEventsOptions<Result> = {
   clock: CliClock;
@@ -59,11 +59,13 @@ export const followEvents = async <Result>(options: FollowEventsOptions<Result>)
       const streamOptions = {
         ...(cursor > 0 ? { lastEventId: cursor } : {}),
         ...(options.signal === undefined ? {} : { signal: options.signal }),
+        onOpen: () => {
+          stalledSince = undefined;
+        },
       };
       for await (const frame of options.open(streamOptions)) {
         cursor = frame.id;
         attempt = 0;
-        stalledSince = undefined;
         options.onEvent(frame);
       }
       const result = await options.finished();
@@ -91,9 +93,10 @@ export type FollowOptions = {
   clock: CliClock;
   random: () => number;
   runId: string;
-  after?: number;
+  seenThrough?: number;
   reconnectBoundMs: number;
   restoreConnection(): Promise<void>;
+  onSeenEvent?(frame: RunEventFrame): void;
   onEvent(frame: RunEventFrame): void;
   onChildEvent?: ChildFrameHandler;
   onReconnecting?(attempt: number): void;
@@ -135,7 +138,13 @@ export const followRun = async (options: FollowOptions): Promise<RunView> => {
     );
   };
 
+  const seenThrough = options.seenThrough ?? 0;
+
   const onEvent = (frame: RunEventFrame): void => {
+    if (frame.id <= seenThrough) {
+      options.onSeenEvent?.(frame);
+      return;
+    }
     options.onEvent(frame);
     const event = frame.data;
     if (onChildEvent !== undefined && event.type === 'tool.waiting' && event.awaits.kind === 'run') followChild(event.awaits.runId, event.awaits.agent, onChildEvent);
@@ -143,10 +152,16 @@ export const followRun = async (options: FollowOptions): Promise<RunView> => {
 
   let run: RunView;
   try {
+    if (onChildEvent !== undefined && seenThrough > 0) {
+      for (const child of await client.childRuns(runId)) {
+        if (isTerminalStatus(child.status)) continue;
+        if (child.agent === undefined) throw new Error(`child run ${child.id} of run ${runId} names no agent`);
+        followChild(child.id, child.agent, onChildEvent);
+      }
+    }
     run = await followEvents<RunView>({
       clock: options.clock,
       random: options.random,
-      ...(options.after === undefined ? {} : { after: options.after }),
       reconnectBoundMs: options.reconnectBoundMs,
       open: (streamOptions) => client.streamEvents(runId, streamOptions),
       finished: async () => {

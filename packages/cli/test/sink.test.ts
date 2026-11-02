@@ -28,6 +28,18 @@ describe('text format', () => {
     expect(sink.finalText()).toBe('Found it.');
   });
 
+  it('keeps the text and tool titles of events it absorbed without printing them', () => {
+    const { sink, out, err } = sinkFor('json');
+    sink.absorb(delta('a', 'Looking'));
+    sink.absorb(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p', name: 'Edit', kind: 'edit', title: 'Edit /a', rawInput: {} }));
+    sink.handle(delta('a', ' around.'));
+    sink.handle(frame({ type: 'tool.completed', callId: 'c1', status: 'failed' }));
+
+    expect(sink.finalText()).toBe('Looking around.');
+    expect(out).toEqual([]);
+    expect(err).toEqual(['momonga: tool Edit /a failed\n']);
+  });
+
   it('reports a pending approval with the commands that resolve it, on stderr', () => {
     const { sink, out, err } = sinkFor('text');
     sink.handle(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p', name: 'Edit', kind: 'edit', title: 'Edit /a', rawInput: {} }));

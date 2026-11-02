@@ -49,6 +49,16 @@ const jsonLines = (text: string): Record<string, unknown>[] =>
       return Object.fromEntries(Object.entries(parsed));
     });
 
+const rootRunOf = (treeJson: string): { id: string; lastSeq: number } => {
+  const tree: unknown = JSON.parse(treeJson);
+  const root: unknown = Array.isArray(tree) ? tree[0] : undefined;
+  const run: unknown = typeof root === 'object' && root !== null && 'run' in root ? root.run : undefined;
+  if (typeof run !== 'object' || run === null || !('id' in run) || !('lastSeq' in run) || typeof run.id !== 'string' || typeof run.lastSeq !== 'number') {
+    throw new Error(`no root run in ${treeJson}`);
+  }
+  return { id: run.id, lastSeq: run.lastSeq };
+};
+
 describe('cli: momonga -p', () => {
   it(titleOf('cli-print'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const { home, target, fake } = await prepare(editTask);
@@ -150,8 +160,17 @@ describe('cli: momonga -p', () => {
     const asJson = await runCli(home, ['status', '--json']);
     expect(JSON.parse(asJson.stdout)).toMatchObject([{ run: { status: 'WAITING_TOOL' } }, { run: { status: 'WAITING_HUMAN', agent: 'editor' }, approvals: [{ id: approvalId }] }]);
 
+    const parent = rootRunOf(asJson.stdout);
+    const attached = startCli(home, ['attach', parent.id, '--after', String(parent.lastSeq)]);
+    await until(() => attached.partialStderr().includes(`momonga: waiting for approval ${approvalId} (subagent editor)`), {
+      deadlineMs: E2E_RUN_COMPLETED_BOUND_MS,
+      description: 'the attach that resumed after the subagent wait to show the approval of the subagent',
+    });
+
     const resolved = await runCli(home, ['approve', approvalId, 'allow_once']);
     expect(resolved.code).toBe(0);
+
+    expect((await attached.result).code).toBe(0);
 
     const finished = await running.result;
     expect(finished.code).toBe(0);
@@ -192,6 +211,7 @@ describe('cli: momonga -p', () => {
     const seen = events.length - 2;
     const tail = await runCli(home, ['attach', runId, '--after', String(seen), '--output-format', 'stream-json']);
     expect(jsonLines(tail.stdout).filter((line) => line['type'] !== 'result').map((line) => line['seq'])).toEqual(events.slice(seen).map((event) => event['seq']));
+    expect(jsonLines(tail.stdout).at(-1)).toMatchObject({ type: 'result', subtype: 'success', result: FINAL_TEXT });
 
     const trace = await runCli(home, ['trace']);
     expect(trace.stderr).toBe('');

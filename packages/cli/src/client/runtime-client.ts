@@ -53,7 +53,7 @@ export class RunApiError extends Error {
 
 export type RunEventFrame = { readonly id: number; readonly event: string | undefined; readonly data: PublicRunEvent };
 
-export type EventsOptions = { after?: number; lastEventId?: number; signal?: AbortSignal };
+export type EventsOptions = { after?: number; lastEventId?: number; signal?: AbortSignal; onOpen?: () => void };
 
 export type CreateSessionInput = {
   cwd: string;
@@ -413,6 +413,7 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
       ...(eventsOptions.signal === undefined ? {} : { signal: eventsOptions.signal }),
     });
     if (response.status !== 200) throw new RunApiError(description, response.status, await response.text());
+    eventsOptions.onOpen?.();
     for await (const event of decodeSse(response.body)) yield frameOf(event, description);
   }
 

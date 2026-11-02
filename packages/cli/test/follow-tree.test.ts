@@ -3,6 +3,7 @@ import type { PublicRunEvent } from '@momonga/protocol';
 import type { RunEventFrame, RuntimeClient } from '../src/client/runtime-client.ts';
 import type { ChildFrameHandler, FollowOptions } from '../src/run/follow.ts';
 import { followRun } from '../src/run/follow.ts';
+import type { RunView } from '../src/client/views.ts';
 import { runView } from './fake-backend.ts';
 import { virtualClock } from './fake-supervisor.ts';
 
@@ -24,7 +25,7 @@ const runIdOf = (frame: RunEventFrame): string => {
 
 type Streams = Readonly<Record<string, readonly RunEventFrame[]>>;
 
-const clientOf = (streams: Streams, failing: ReadonlySet<string> = new Set()): { client: RuntimeClient; opened: { runId: string; lastEventId: number | undefined }[] } => {
+const clientOf = (streams: Streams, failing: ReadonlySet<string> = new Set(), children: readonly RunView[] = []): { client: RuntimeClient; opened: { runId: string; lastEventId: number | undefined }[] } => {
   const opened: { runId: string; lastEventId: number | undefined }[] = [];
   const client = {
     streamEvents: async function* (runId: string, options: { lastEventId?: number } = {}) {
@@ -33,6 +34,7 @@ const clientOf = (streams: Streams, failing: ReadonlySet<string> = new Set()): {
       for (const frame of streams[runId] ?? []) yield frame;
     },
     getRun: async (runId: string) => runView({ id: runId, status: 'COMPLETED' }),
+    childRuns: async (runId: string) => children.filter((child) => child.parentRunId === runId),
   } as unknown as RuntimeClient;
   return { client, opened };
 };
@@ -104,5 +106,36 @@ describe('followRun over the runs a tool call waits on', () => {
     const handler: ChildFrameHandler = () => undefined;
 
     await expect(followRun(optionsOf(client, { onChildEvent: handler }))).rejects.toThrow('stream of child is broken');
+  });
+
+  it('follows a subagent that was already waiting before the cursor the caller resumed from', async () => {
+    const child = runView({ id: 'child', status: 'WAITING_TOOL', parentRunId: 'parent', agent: 'reviewer' });
+    const { client, opened } = clientOf({ parent: [waiting('parent', 1, 'child', 'reviewer'), text('parent', 2)], child: [text('child', 1)] }, new Set(), [child]);
+    const own: number[] = [];
+    const seen: number[] = [];
+    const children: string[] = [];
+
+    await followRun(
+      optionsOf(client, {
+        seenThrough: 1,
+        onSeenEvent: (frame) => seen.push(frame.id),
+        onEvent: (frame) => own.push(frame.id),
+        onChildEvent: (frame, agent) => children.push(`${agent}:${runIdOf(frame)}:${frame.id}`),
+      }),
+    );
+
+    expect(seen).toEqual([1]);
+    expect(own).toEqual([2]);
+    expect(children).toEqual(['reviewer:child:1']);
+    expect(opened.filter((entry) => entry.runId === 'child')).toHaveLength(1);
+  });
+
+  it('does not replay a subagent that had finished by the time the caller resumed', async () => {
+    const child = runView({ id: 'child', status: 'COMPLETED', parentRunId: 'parent', agent: 'reviewer' });
+    const { client, opened } = clientOf({ parent: [waiting('parent', 1, 'child', 'reviewer'), text('parent', 2)], child: [text('child', 1)] }, new Set(), [child]);
+
+    await followRun(optionsOf(client, { seenThrough: 1, onChildEvent: () => undefined }));
+
+    expect(opened.map((entry) => entry.runId)).toEqual(['parent']);
   });
 });
