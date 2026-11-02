@@ -83,7 +83,7 @@ describe('resolveSandbox', () => {
       `e2e sandbox: sandbox-exec UNUSABLE; ${bash} bash cases will be skipped, ${E2E_CASES.length - bash} cases run with sandbox none`,
     );
     expect(bash).toBe(7);
-    expect(E2E_CASES.length - bash).toBe(43);
+    expect(E2E_CASES.length - bash).toBe(46);
   });
 });
 

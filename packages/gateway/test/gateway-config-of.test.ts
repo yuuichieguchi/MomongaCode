@@ -32,6 +32,22 @@ describe('gatewayConfigOf provider names', () => {
     });
   });
 
+  it('names an anthropic target anthropic and an open-responses target by its provider setting, otherwise by the OpenAI format flavor', async () => {
+    const targets = await targetsFor({
+      targets: {
+        claude: { adapter: 'anthropic', model: 'm', baseUrl: 'https://api.example.com', apiKeyEnv: 'ANTHROPIC_API_KEY', capabilities: CAPABILITIES },
+        relay: { adapter: 'open-responses', model: 'm', baseUrl: 'https://api.example.com/v1', provider: 'acme', capabilities: CAPABILITIES },
+        plainRelay: { adapter: 'open-responses', model: 'm', baseUrl: 'https://api.example.com/v1', capabilities: CAPABILITIES },
+      },
+      aliases: { default: 'claude' },
+    });
+    expect(Object.fromEntries(Object.entries(targets).map(([name, target]) => [name, target.provider]))).toEqual({
+      claude: 'anthropic',
+      relay: 'acme',
+      plainRelay: 'openai',
+    });
+  });
+
   it('names the implicit default target apple', async () => {
     const targets = await targetsFor({});
     expect(Object.values(targets).map((target) => target.provider)).toEqual(['apple']);

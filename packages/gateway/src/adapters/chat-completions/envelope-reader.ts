@@ -1,5 +1,5 @@
 import { canonicalJson } from '@momonga/foundation';
-import { MalformedOutputError } from './failures.ts';
+import { MalformedOutputError } from '../shared/failures.ts';
 import type { JsonEvent } from './incremental-json.ts';
 import { ValueBuilder } from './value-builder.ts';
 

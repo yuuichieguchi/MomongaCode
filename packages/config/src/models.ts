@@ -2,13 +2,19 @@ import path from 'node:path';
 import { canonicalPath, comparableContains, isLoopbackHost } from '@momonga/foundation';
 import { layoutOf } from './layout.ts';
 import type {
+  AnthropicTarget,
   ChatCompletionsTarget,
   FmTarget,
   ModelAlias,
+  ModelTarget,
   ModelsSettings,
+  OpenResponsesTarget,
+  ResolvedAnthropicTarget,
   ResolvedChatCompletionsTarget,
   ResolvedFmTarget,
   ResolvedModelTarget,
+  ResolvedOpenResponsesTarget,
+  TargetCapabilities,
 } from './settings.ts';
 
 export type ResolvedModels = {
@@ -49,38 +55,95 @@ const checkSocketPath = (socketPath: string, home: string, where: string): void 
   }
 };
 
-const resolveChatCompletions = (target: ChatCompletionsTarget, home: string, where: string): ResolvedChatCompletionsTarget => {
+type RemoteTargetInput = {
+  baseUrl?: string;
+  socketPath?: string;
+  apiKeyEnv?: string;
+  apiKeySecret?: string;
+  capabilities: Pick<TargetCapabilities, 'contextWindow' | 'maxOutputTokens'> & Partial<TargetCapabilities>;
+  maxConcurrency?: number;
+  admissionTimeoutMs?: number;
+};
+
+type CapabilityDefaults = Omit<TargetCapabilities, 'contextWindow' | 'maxOutputTokens'>;
+
+const CHAT_COMPLETIONS_CAPABILITY_DEFAULTS: CapabilityDefaults = {
+  structuredOutput: 'none',
+  streaming: true,
+  stopSequences: true,
+  imageInput: false,
+  parallelToolCalls: false,
+  schemaDialect: 'json-schema-2020-12',
+  tokenCounting: 'estimated',
+  usageReported: true,
+  source: 'config',
+};
+
+const OPEN_RESPONSES_CAPABILITY_DEFAULTS: CapabilityDefaults = {
+  ...CHAT_COMPLETIONS_CAPABILITY_DEFAULTS,
+  stopSequences: false,
+};
+
+const ANTHROPIC_CAPABILITY_DEFAULTS: CapabilityDefaults = {
+  ...OPEN_RESPONSES_CAPABILITY_DEFAULTS,
+  parallelToolCalls: true,
+};
+
+const DEFAULT_REMOTE_MAX_CONCURRENCY = 4;
+
+const resolveRemote = (target: RemoteTargetInput, defaults: CapabilityDefaults, home: string, where: string) => {
   const { baseUrl, socketPath } = target;
   if ((baseUrl === undefined) === (socketPath === undefined)) {
     throw new Error(`${where}: exactly one of baseUrl and socketPath is required`);
   }
   if (baseUrl !== undefined) checkBaseUrl(baseUrl, where);
   if (socketPath !== undefined) checkSocketPath(socketPath, home, where);
-  const maxConcurrency = target.maxConcurrency ?? 4;
+  const maxConcurrency = target.maxConcurrency ?? DEFAULT_REMOTE_MAX_CONCURRENCY;
   return {
-    adapter: 'chat-completions',
-    model: target.model,
     ...(baseUrl === undefined ? {} : { baseUrl }),
     ...(socketPath === undefined ? {} : { socketPath }),
     ...(target.apiKeyEnv === undefined ? {} : { apiKeyEnv: target.apiKeyEnv }),
-    ...(target.provider === undefined ? {} : { provider: target.provider }),
-    toolCalling: target.toolCalling ?? 'native',
-    capabilities: {
-      structuredOutput: 'none',
-      streaming: true,
-      stopSequences: true,
-      imageInput: false,
-      parallelToolCalls: false,
-      schemaDialect: 'json-schema-2020-12',
-      tokenCounting: 'estimated',
-      usageReported: true,
-      source: 'config',
-      ...target.capabilities,
-      maxConcurrency,
-    },
+    ...(target.apiKeySecret === undefined ? {} : { apiKeySecret: target.apiKeySecret }),
+    capabilities: { ...defaults, ...target.capabilities, maxConcurrency },
     maxConcurrency,
     admissionTimeoutMs: target.admissionTimeoutMs ?? 30000,
   };
+};
+
+const resolveChatCompletions = (target: ChatCompletionsTarget, home: string, where: string): ResolvedChatCompletionsTarget => ({
+  adapter: 'chat-completions',
+  model: target.model,
+  toolCalling: target.toolCalling ?? 'native',
+  ...(target.provider === undefined ? {} : { provider: target.provider }),
+  ...resolveRemote(target, CHAT_COMPLETIONS_CAPABILITY_DEFAULTS, home, where),
+});
+
+const resolveOpenResponses = (target: OpenResponsesTarget, home: string, where: string): ResolvedOpenResponsesTarget => ({
+  adapter: 'open-responses',
+  model: target.model,
+  toolCalling: target.toolCalling ?? 'native',
+  ...(target.provider === undefined ? {} : { provider: target.provider }),
+  ...resolveRemote(target, OPEN_RESPONSES_CAPABILITY_DEFAULTS, home, where),
+});
+
+const resolveAnthropic = (target: AnthropicTarget, home: string, where: string): ResolvedAnthropicTarget => ({
+  adapter: 'anthropic',
+  model: target.model,
+  toolCalling: 'native',
+  ...resolveRemote(target, ANTHROPIC_CAPABILITY_DEFAULTS, home, where),
+});
+
+const resolveTarget = (target: ModelTarget, home: string, where: string): ResolvedModelTarget => {
+  switch (target.adapter) {
+    case 'fm':
+      return resolveFm(target);
+    case 'chat-completions':
+      return resolveChatCompletions(target, home, where);
+    case 'open-responses':
+      return resolveOpenResponses(target, home, where);
+    case 'anthropic':
+      return resolveAnthropic(target, home, where);
+  }
 };
 
 export const resolveModels = (models: ModelsSettings | undefined, { source, home, warnings }: ResolveModelsOptions): ResolvedModels => {
@@ -88,7 +151,7 @@ export const resolveModels = (models: ModelsSettings | undefined, { source, home
   const targets: Record<string, ResolvedModelTarget> = {};
   for (const [name, target] of configured) {
     const where = `${source}: models.targets.${name}`;
-    targets[name] = target.adapter === 'fm' ? resolveFm(target) : resolveChatCompletions(target, home, where);
+    targets[name] = resolveTarget(target, home, where);
   }
   if (configured.length === 0) targets[DEFAULT_FM_NAME] = resolveFm({ adapter: 'fm' });
 
@@ -110,10 +173,20 @@ export const resolveModels = (models: ModelsSettings | undefined, { source, home
   return { aliases, targets };
 };
 
-export const credentialEnvNames = (settings: { models: { targets: Record<string, ResolvedModelTarget> } }): string[] => {
+type ResolvedTargets = { models: { targets: Record<string, ResolvedModelTarget> } };
+
+export const credentialEnvNames = (settings: ResolvedTargets): string[] => {
   const names = new Set<string>();
   for (const target of Object.values(settings.models.targets)) {
-    if (target.adapter === 'chat-completions' && target.apiKeyEnv !== undefined) names.add(target.apiKeyEnv);
+    if (target.adapter !== 'fm' && target.apiKeyEnv !== undefined) names.add(target.apiKeyEnv);
+  }
+  return [...names].sort();
+};
+
+export const secretNames = (settings: ResolvedTargets): string[] => {
+  const names = new Set<string>();
+  for (const target of Object.values(settings.models.targets)) {
+    if (target.adapter !== 'fm' && target.apiKeySecret !== undefined) names.add(target.apiKeySecret);
   }
   return [...names].sort();
 };

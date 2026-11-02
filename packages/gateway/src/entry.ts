@@ -1,6 +1,6 @@
 import { ConfigError } from '@momonga/config';
 import { COMMON_ENTRY_FLAGS, GATEWAY_MAX_CLOSE_MS, canonicalPath, momongaPaths, runDaemonEntry } from '@momonga/foundation';
-import type { EntryIo, FlagSpec } from '@momonga/foundation';
+import type { EntryIo, FlagSpec, SecretStore } from '@momonga/foundation';
 import { installOtelErrorHandler } from '@momonga/observability';
 import { startGatewayProcess } from './process.ts';
 
@@ -9,7 +9,9 @@ export const GATEWAY_ENTRY_FLAGS = {
   'fm-binary': { kind: 'string' },
 } as const satisfies FlagSpec;
 
-export const runGatewayEntry = (io: EntryIo): Promise<number> =>
+export type GatewayEntryDeps = { secretStore?: SecretStore };
+
+export const runGatewayEntry = (io: EntryIo, deps: GatewayEntryDeps = {}): Promise<number> =>
   runDaemonEntry(io, {
     service: 'gateway',
     flags: GATEWAY_ENTRY_FLAGS,
@@ -28,6 +30,7 @@ export const runGatewayEntry = (io: EntryIo): Promise<number> =>
         stdout,
         signal,
         ...(fmBinary === undefined ? {} : { fmBinary }),
+        ...(deps.secretStore === undefined ? {} : { secretStore: deps.secretStore }),
       });
       return { close: handle.close, abort: handle.abort, fatal: handle.fatal };
     },

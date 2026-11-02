@@ -15,7 +15,8 @@ export const GATEWAY_CONFIG_DEFAULTS = {
 } as const satisfies Omit<GatewayConfig, 'models'>;
 
 export const FM_PROVIDER_NAME = 'apple';
-export const CHAT_COMPLETIONS_DEFAULT_PROVIDER_NAME = 'openai';
+export const ANTHROPIC_PROVIDER_NAME = 'anthropic';
+export const OPENAI_FORMAT_PROVIDER_NAME = 'openai';
 
 export const FM_SERVE_DEFAULTS = {
   healthTimeoutMs: 10_000,

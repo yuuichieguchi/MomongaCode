@@ -1,5 +1,5 @@
 import type { AdapterInputItem, AdapterRequest, FunctionTool, ToolChoice } from '@momonga/protocol';
-import { textOfContent } from './input-text.ts';
+import { SYSTEM_PART_SEPARATOR, systemTextOf } from '../shared/system-text.ts';
 import { nativeHistoryOf, plainHistoryOf } from './plain-history.ts';
 import type { ChatMessage } from './plain-history.ts';
 
@@ -14,19 +14,6 @@ export type ChatRequestBody = {
   max_tokens?: number;
   temperature?: number;
   top_p?: number;
-};
-
-export const SYSTEM_PART_SEPARATOR = '\n\n';
-
-export const systemTextOf = (instructions: string | null | undefined, input: readonly AdapterInputItem[]): string[] => {
-  const parts: string[] = [];
-  if (instructions !== undefined && instructions !== null && instructions !== '') parts.push(instructions);
-  for (const item of input) {
-    if (item.type === 'message' && (item.role === 'system' || item.role === 'developer')) {
-      parts.push(textOfContent(item.content));
-    }
-  }
-  return parts.filter((part) => part !== '');
 };
 
 const toolOf = (tool: FunctionTool): unknown => ({

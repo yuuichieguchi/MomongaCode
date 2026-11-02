@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { COMPACTION_INSTRUCTIONS_MARKER } from '@momonga/gateway';
 import type { AdapterCompactRequest, AdapterInputItem } from '@momonga/protocol';
-import { summaryRequestOf } from '../src/adapters/chat-completions/compact.ts';
+import { summaryRequestOf } from '../src/adapters/shared/compact.ts';
 import { userText } from './cc-support.ts';
 import { AGENT_CONTEXT_LABEL, KEEP_CLAUSE, RESTATE_CLAUSE, TRANSCRIPT_TAIL, instructionsFor } from './cc-compact-support.ts';
 

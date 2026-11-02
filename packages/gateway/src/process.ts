@@ -1,24 +1,35 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import { credentialEnvNames, loadUserSettings } from '@momonga/config';
+import { credentialEnvNames, loadUserSettings, secretNames } from '@momonga/config';
 import {
   acquireProcessLock,
+  SecretEmptyError,
+  SecretUnavailableError,
   announceReady,
   createJsonLogger,
+  createKeychainSecretStore,
   ensureMomongaDirs,
   minimalChildEnv,
   momongaPaths,
   secretKeyFile,
   systemClock,
 } from '@momonga/foundation';
-import type { Clock, JsonLogger, MomongaPaths, ReadyFields, TextStream } from '@momonga/foundation';
+import type { Clock, JsonLogger, MomongaPaths, ReadyFields, SecretStore, TextStream } from '@momonga/foundation';
 import { closeTelemetry, createTelemetry, exportersFor, openTraceStore } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import type { AdapterTarget, Capabilities, ProviderAdapter } from '@momonga/protocol';
+import { createAnthropicAdapter } from './adapters/anthropic/adapter.ts';
 import { createChatCompletionsAdapter } from './adapters/chat-completions/adapter.ts';
-import type { ChatCompletionsEndpoint } from './adapters/chat-completions/types.ts';
-import { CHAT_COMPLETIONS_DEFAULT_PROVIDER_NAME, FM_PROVIDER_NAME, FM_SERVE_DEFAULTS, GATEWAY_CONFIG_DEFAULTS } from './defaults.ts';
-import { missingApiKeyError } from './core/errors.ts';
+import { createOpenResponsesAdapter } from './adapters/open-responses/adapter.ts';
+import type { UpstreamEndpoint } from './adapters/shared/http-client.ts';
+import {
+  ANTHROPIC_PROVIDER_NAME,
+  FM_PROVIDER_NAME,
+  FM_SERVE_DEFAULTS,
+  GATEWAY_CONFIG_DEFAULTS,
+  OPENAI_FORMAT_PROVIDER_NAME,
+} from './defaults.ts';
+import { missingApiKeyError, secretUnavailableError } from './core/errors.ts';
 import { MIN_CREDENTIAL_CHARS } from './core/redaction.ts';
 import { FmServeError, createFmServe } from './managed/fm-serve.ts';
 import type { ExecFn, FmServe, SpawnFn } from './managed/fm-serve.ts';
@@ -37,6 +48,7 @@ export type StartGatewayProcessOptions = {
   fmBinary?: string;
   exec?: ExecFn;
   execWithStdin?: ExecWithStdinFn;
+  secretStore?: SecretStore;
   spawn?: SpawnFn;
   logger?: JsonLogger;
   stdout?: TextStream;
@@ -69,7 +81,7 @@ const OS_BUILD_COMMAND = '/usr/bin/sw_vers';
 
 type ResolvedTargets = Awaited<ReturnType<typeof loadUserSettings>>['settings']['models']['targets'];
 type ResolvedTarget = ResolvedTargets[string];
-type ChatCompletionsTarget = Extract<ResolvedTarget, { adapter: 'chat-completions' }>;
+type RemoteTarget = Exclude<ResolvedTarget, { adapter: 'fm' }>;
 
 const realTimers: GatewayTimers = {
   setTimeout: (callback, ms) => setTimeout(callback, ms),
@@ -114,37 +126,76 @@ const withBinaryGuard = (managed: ManagedFmTarget, binary: string): ManagedFmTar
   };
 };
 
-const endpointOf = (target: ChatCompletionsTarget): ChatCompletionsEndpoint => {
+const endpointOf = (target: RemoteTarget): UpstreamEndpoint => {
   if (target.socketPath !== undefined) return { kind: 'unix', socketPath: target.socketPath };
   if (target.baseUrl !== undefined) return { kind: 'tcp', baseUrl: target.baseUrl };
-  throw new Error('chat-completions target has neither socketPath nor baseUrl');
+  throw new Error(`${target.adapter} target has neither socketPath nor baseUrl`);
 };
 
-const capabilitiesOf = (target: ChatCompletionsTarget): Capabilities => ({ ...target.capabilities, toolCalling: target.toolCalling });
+const capabilitiesOf = (target: RemoteTarget): Capabilities => ({ ...target.capabilities, toolCalling: target.toolCalling });
 
-const apiKeyReader =
-  (env: StartGatewayProcessOptions['env'], apiKeyEnv: string | undefined) =>
-  (_target: AdapterTarget): string | undefined => {
+type ResolvedSecrets = { values: ReadonlyMap<string, string>; failures: ReadonlyMap<string, Error> };
+
+const resolveSecrets = async (store: SecretStore, names: readonly string[], signal: AbortSignal): Promise<ResolvedSecrets> => {
+  const values = new Map<string, string>();
+  const failures = new Map<string, Error>();
+  for (const name of names) {
+    try {
+      values.set(name, await store.read(name, signal));
+    } catch (error) {
+      if (!(error instanceof SecretUnavailableError || error instanceof SecretEmptyError)) throw error;
+      failures.set(name, error);
+    }
+  }
+  return { values, failures };
+};
+
+const apiKeyReader = (
+  env: StartGatewayProcessOptions['env'],
+  secrets: ResolvedSecrets,
+  target: Pick<RemoteTarget, 'apiKeyEnv' | 'apiKeySecret'>,
+): ((target: AdapterTarget) => Promise<string | undefined>) => {
+  const { apiKeyEnv, apiKeySecret } = target;
+  return async (_target) => {
+    if (apiKeySecret !== undefined) {
+      const failure = secrets.failures.get(apiKeySecret);
+      if (failure !== undefined) throw secretUnavailableError(apiKeySecret, failure);
+      const value = secrets.values.get(apiKeySecret);
+      if (value === undefined) throw new Error(`the secret "${apiKeySecret}" was not resolved at startup`);
+      return value;
+    }
     if (apiKeyEnv === undefined) return undefined;
     const value = env[apiKeyEnv];
     if (value === undefined || value === '') throw missingApiKeyError(apiKeyEnv);
     return value;
   };
+};
+
+const requiredKey = async (read: ReturnType<typeof apiKeyReader>, target: AdapterTarget): Promise<string> => {
+  const key = await read(target);
+  if (key === undefined) throw new Error(`the anthropic target "${target.name}" has no credential reference`);
+  return key;
+};
 
 const credentialValuesOf = (
   env: StartGatewayProcessOptions['env'],
   envNames: readonly string[],
+  secretValues: ReadonlyMap<string, string>,
   warn: (message: string) => void,
-): string[] =>
-  envNames.flatMap((name) => {
-    const value = env[name];
+): string[] => {
+  const labelled: Array<[string, string | undefined]> = [
+    ...envNames.map((name): [string, string | undefined] => [name, env[name]]),
+    ...[...secretValues].map(([name, value]): [string, string | undefined] => [`secret ${name}`, value]),
+  ];
+  return labelled.flatMap(([label, value]) => {
     if (value === undefined || value.trim() === '') return [];
     if (value.trim().length < MIN_CREDENTIAL_CHARS) {
-      warn(`${name} holds fewer than ${MIN_CREDENTIAL_CHARS} characters, so its value is not redacted from upstream text`);
+      warn(`${label} holds fewer than ${MIN_CREDENTIAL_CHARS} characters, so its value is not redacted from upstream text`);
       return [];
     }
     return [value];
   });
+};
 
 type FmContext = {
   paths: MomongaPaths;
@@ -173,8 +224,17 @@ const readOsBuild = async (exec: ExecFn): Promise<string> => {
   return result.stdout.trim();
 };
 
-const providerNameOf = (target: ResolvedTarget): string =>
-  target.adapter === 'fm' ? FM_PROVIDER_NAME : (target.provider ?? CHAT_COMPLETIONS_DEFAULT_PROVIDER_NAME);
+const providerNameOf = (target: ResolvedTarget): string => {
+  switch (target.adapter) {
+    case 'fm':
+      return FM_PROVIDER_NAME;
+    case 'anthropic':
+      return ANTHROPIC_PROVIDER_NAME;
+    case 'chat-completions':
+    case 'open-responses':
+      return target.provider ?? OPENAI_FORMAT_PROVIDER_NAME;
+  }
+};
 
 export const gatewayConfigOf = (targets: ResolvedTargets, aliases: Record<string, string | string[]>): GatewayConfig => ({
   models: {
@@ -318,19 +378,34 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
             binarySha256: await sha256OfFile(binary),
           };
     signal?.throwIfAborted();
+    const referencedSecrets = secretNames(settings);
+    const secretStore =
+      options.secretStore ?? createKeychainSecretStore(options.execWithStdin ?? createExecWithStdin(childEnv));
+    const secrets =
+      referencedSecrets.length === 0
+        ? { values: new Map<string, string>(), failures: new Map<string, Error>() }
+        : await resolveSecrets(secretStore, referencedSecrets, signal ?? new AbortController().signal);
+    for (const [name, failure] of secrets.failures) logger.warn(`secret ${name} is unavailable: ${failure.message}`);
+    signal?.throwIfAborted();
     for (const [name, target] of targets) {
       signal?.throwIfAborted();
       if (target.adapter === 'fm') {
         if (fmContext === undefined) throw new Error('fm context is missing for an fm target');
         adapters[name] = await createFmAdapter(name, target, fmContext, clock);
-      } else {
-        adapters[name] = createChatCompletionsAdapter({
-          resolveEndpoint: async () => endpointOf(target),
-          toolCalling: () => target.toolCalling,
-          capabilities: async () => capabilitiesOf(target),
-          apiKey: apiKeyReader(options.env, target.apiKeyEnv),
-          clock,
-        });
+        continue;
+      }
+      const readKey = apiKeyReader(options.env, secrets, target);
+      const common = { resolveEndpoint: async () => endpointOf(target), capabilities: async () => capabilitiesOf(target), clock };
+      switch (target.adapter) {
+        case 'chat-completions':
+          adapters[name] = createChatCompletionsAdapter({ ...common, toolCalling: () => target.toolCalling, apiKey: readKey });
+          break;
+        case 'open-responses':
+          adapters[name] = createOpenResponsesAdapter({ ...common, apiKey: readKey });
+          break;
+        case 'anthropic':
+          adapters[name] = createAnthropicAdapter({ ...common, apiKey: (adapterTarget) => requiredKey(readKey, adapterTarget) });
+          break;
       }
     }
 
@@ -338,7 +413,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const gateway = await createGateway({
       config: gatewayConfigOf(settings.models.targets, settings.models.aliases),
       adapters,
-      credentials: credentialValuesOf(options.env, credentialEnvNames(settings), (message) => logger.warn(message)),
+      credentials: credentialValuesOf(options.env, credentialEnvNames(settings), secrets.values, (message) => logger.warn(message)),
       clock,
       timers,
       dbPath: paths.databases.gateway,

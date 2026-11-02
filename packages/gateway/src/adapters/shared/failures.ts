@@ -44,6 +44,7 @@ export class UpstreamHttpError extends Error {
   readonly upstreamMessage: string;
   readonly retryAfterMs: number | undefined;
   readonly guardrail: boolean;
+  readonly retryHint: boolean | undefined;
 
   constructor(
     status: number,
@@ -51,6 +52,7 @@ export class UpstreamHttpError extends Error {
     upstreamMessage: string,
     retryAfterMs: number | undefined,
     guardrail: boolean,
+    retryHint?: boolean,
   ) {
     super(`the upstream responded with HTTP ${status}: ${upstreamMessage}`);
     this.name = 'UpstreamHttpError';
@@ -59,6 +61,7 @@ export class UpstreamHttpError extends Error {
     this.upstreamMessage = upstreamMessage;
     this.retryAfterMs = retryAfterMs;
     this.guardrail = guardrail;
+    this.retryHint = retryHint;
   }
 }
 

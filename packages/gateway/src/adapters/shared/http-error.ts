@@ -1,0 +1,48 @@
+import { parseRetryAfter } from '@momonga/foundation';
+import type { Clock } from '@momonga/foundation';
+import { readTextLimited } from './body-reading.ts';
+import { UpstreamHttpError } from './failures.ts';
+import type { CompletionResponse } from './http-client.ts';
+import { MAX_ERROR_BODY_BYTES } from './limits.ts';
+
+export type UpstreamErrorDetail = { code?: string | null; message?: string };
+
+export type ErrorDetailReader = (parsed: unknown) => UpstreamErrorDetail;
+
+export const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+export const httpErrorOf = async (
+  response: CompletionResponse,
+  clock: Clock,
+  readDetail: ErrorDetailReader,
+  isGuardrail: (status: number, body: unknown) => boolean,
+): Promise<UpstreamHttpError> => {
+  const { text } = await readTextLimited(response.body, MAX_ERROR_BODY_BYTES);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+  }
+  const detail = readDetail(parsed);
+  const message = detail.message ?? text;
+  const shouldRetry = response.headers['x-should-retry'];
+  return new UpstreamHttpError(
+    response.status,
+    detail.code ?? null,
+    message === '' ? `HTTP ${response.status}` : message,
+    parseRetryAfter(response.headers['retry-after'], clock.now()),
+    isGuardrail(response.status, parsed),
+    shouldRetry === 'false' ? false : undefined,
+  );
+};
+
+export const nestedErrorDetail: ErrorDetailReader = (parsed) => {
+  const detail = isRecord(parsed) ? parsed['error'] : undefined;
+  if (!isRecord(detail)) return {};
+  return {
+    ...(typeof detail['message'] === 'string' ? { message: detail['message'] } : {}),
+    ...(typeof detail['code'] === 'string' ? { code: detail['code'] } : {}),
+  };
+};

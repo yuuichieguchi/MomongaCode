@@ -15,7 +15,8 @@ export type E2eCaseFile =
   | 'skills.test.ts'
   | 'eval-runner.test.ts'
   | 'otlp-export.test.ts'
-  | 'open-responses-compliance.test.ts';
+  | 'open-responses-compliance.test.ts'
+  | 'providers.test.ts';
 
 export const E2E_CASES = [
   { id: 'b1-join', file: 'b1-model-call.test.ts', title: 'b1 join: restarted runtime joins the in-flight upstream call', needsBash: false },
@@ -68,6 +69,9 @@ export const E2E_CASES = [
   { id: 'otlp-export', file: 'otlp-export.test.ts', title: 'otlp: a run exports GenAI spans from the gateway and the runtime to a loopback collector when settings opt in', needsBash: false },
   { id: 'cost-report', file: 'otlp-export.test.ts', title: 'cost: per-run and per-session cost comes from the usage the gateway recorded in its trace store', needsBash: false },
   { id: 'open-responses-compliance', file: 'open-responses-compliance.test.ts', title: 'open responses: the official compliance suite runs against the gateway TCP debug listener and matches the declared support matrix', needsBash: false },
+  { id: 'providers-anthropic', file: 'providers.test.ts', title: 'providers: a run with a tool call completes through the Anthropic adapter with a stored secret', needsBash: false },
+  { id: 'providers-open-responses', file: 'providers.test.ts', title: 'providers: a run with a tool call completes through the Open Responses relay with a stored secret', needsBash: false },
+  { id: 'providers-missing-secret', file: 'providers.test.ts', title: 'providers: a run fails with secret_unavailable when the stored secret is missing and the upstream is never called', needsBash: false },
 ] as const satisfies readonly { id: string; file: E2eCaseFile; title: string; needsBash: boolean }[];
 
 export type E2eCase = (typeof E2E_CASES)[number];

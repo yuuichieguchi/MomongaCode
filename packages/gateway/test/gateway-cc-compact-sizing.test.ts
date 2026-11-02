@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CountTokensResult } from '@momonga/protocol';
-import { UpstreamHttpError } from '../src/adapters/chat-completions/failures.ts';
+import { UpstreamHttpError } from '../src/adapters/shared/failures.ts';
 import { waitFor } from '@momonga/testkit';
 import { getJson, postJson, readJson } from './gateway-helpers.ts';
 import type { Harness } from './gateway-helpers.ts';
