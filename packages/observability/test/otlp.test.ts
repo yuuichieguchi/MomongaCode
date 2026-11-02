@@ -31,7 +31,7 @@ const recordRun = (h: ReturnType<typeof harness>) => {
   const agentContext = trace.setSpan(ROOT_CONTEXT, agent);
   const chat = startChatSpan(
     h.telemetry.tracer,
-    { providerName: 'openai', requestModel: 'model-x', maxTokens: 512, stream: true, runId: RUN_ID, step: 1, attempt: 1 },
+    { providerName: 'openai', billing: 'metered', requestModel: 'model-x', maxTokens: 512, stream: true, runId: RUN_ID, step: 1, attempt: 1 },
     agentContext,
   );
   recordChatResponse(chat, { responseModel: 'model-x', responseId: 'resp_1', finishReasons: ['tool_calls'], usage: { inputTokens: 100, outputTokens: 20, cachedInputTokens: 40 } });
@@ -106,6 +106,7 @@ describe('OTLP export of GenAI spans to a loopback collector', () => {
       'momonga.run_id': RUN_ID,
       'momonga.step': 1,
       'momonga.attempt': 1,
+      'momonga.billing': 'metered',
     });
     expect(toolSpan.attributes).toEqual({
       'gen_ai.operation.name': 'execute_tool',

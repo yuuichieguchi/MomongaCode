@@ -15,6 +15,24 @@ const targetsFor = async (models: Record<string, unknown>) => {
 
 const CAPABILITIES = { contextWindow: 8192, maxOutputTokens: 1024 };
 
+describe('gatewayConfigOf billing', () => {
+  it('declares an fm target local, a remote target metered unless the user declares it local', async () => {
+    const targets = await targetsFor({
+      targets: {
+        onDevice: { adapter: 'fm' },
+        hosted: { adapter: 'chat-completions', model: 'm', baseUrl: 'https://api.example.com/v1', provider: 'acme', capabilities: CAPABILITIES },
+        selfHosted: { adapter: 'chat-completions', model: 'm', baseUrl: 'http://127.0.0.1:8000/v1', provider: 'vllm', billing: 'local', capabilities: CAPABILITIES },
+      },
+      aliases: { default: 'onDevice' },
+    });
+    expect(Object.fromEntries(Object.entries(targets).map(([name, target]) => [name, target.billing]))).toEqual({
+      onDevice: 'local',
+      hosted: 'metered',
+      selfHosted: 'local',
+    });
+  });
+});
+
 describe('gatewayConfigOf provider names', () => {
   it('names an fm target apple, and a chat-completions target by its provider setting', async () => {
     const targets = await targetsFor({

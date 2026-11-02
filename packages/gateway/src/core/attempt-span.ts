@@ -1,5 +1,5 @@
 import { recordChatRequestContent, recordChatResponse, recordChatResponseContent, recordError, startChatSpan } from '@momonga/observability';
-import type { Telemetry } from '@momonga/observability';
+import type { ChatBilling, Telemetry } from '@momonga/observability';
 import type { AdapterInputItem, FunctionTool, ItemField, Usage } from '@momonga/protocol';
 import { chatRequestContentOf, chatResponseMessagesOf } from './chat-content.ts';
 
@@ -9,6 +9,7 @@ export type AttemptSpanInput = {
   telemetry: Telemetry | undefined;
   parent: TraceParent | undefined;
   providerName: string;
+  billing: ChatBilling;
   requestModel: string;
   maxTokens: number | undefined;
   stream: boolean;
@@ -32,6 +33,7 @@ export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
     input.telemetry.tracer,
     {
       providerName: input.providerName,
+      billing: input.billing,
       requestModel: input.requestModel,
       stream: input.stream,
       attempt: input.attempt,

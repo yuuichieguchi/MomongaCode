@@ -35,7 +35,7 @@ export const fakeSkillFileSystem = (files: Readonly<Record<string, string>> = {}
       listings.push(directory);
       const real = resolve(directory);
       if (!directories().has(real)) return undefined;
-      const entries = new Map<string, DirectoryEntry['kind']>();
+      const entries = new Map<string, 'file' | 'directory'>();
       for (const file of contents.keys()) {
         if (!file.startsWith(`${real}/`)) continue;
         const [first, ...rest] = file.slice(real.length + 1).split('/');

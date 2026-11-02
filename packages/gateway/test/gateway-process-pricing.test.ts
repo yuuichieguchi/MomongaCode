@@ -9,14 +9,14 @@ import { userInput } from './gateway-helpers.ts';
 const CAPABILITIES = { contextWindow: 8192, maxOutputTokens: 1024 };
 const PRICE = { provider: 'acme', model: 'local-fake', effectiveFrom: '2026-01-01', inputPerMTok: 1_000_000, outputPerMTok: 2_000_000, currency: 'USD' };
 
-const startPricedGateway = async (context: CleanupContext, pricing: unknown[] | undefined) => {
+const startPricedGateway = async (context: CleanupContext, pricing: unknown[] | undefined, billing?: 'local') => {
   const upstream = await startFakeOpenResponses({ script: [openResponsesTextReply(['priced'])] });
   registerCleanup(context, () => upstream.close());
   const home = withTempDir(context, { asHome: true });
   writeSettings(home, {
     models: {
       aliases: { fast: ['local'] },
-      targets: { local: { adapter: 'open-responses', provider: 'acme', model: 'local-fake', socketPath: upstream.socketPath, capabilities: CAPABILITIES } },
+      targets: { local: { adapter: 'open-responses', provider: 'acme', model: 'local-fake', socketPath: upstream.socketPath, capabilities: CAPABILITIES, ...(billing === undefined ? {} : { billing }) } },
     },
     ...(pricing === undefined ? {} : { pricing }),
   });
@@ -65,6 +65,12 @@ describe('cost reporting with user-configured prices', () => {
     const client = await startPricedGateway(context, undefined);
     const { report } = await costOfRun(client);
     expect(report.total).toMatchObject({ calls: 1, unpricedCalls: 1, amount: 0, priceVersions: [] });
+  });
+
+  it('reports a call to a target the user declared local as local, at no cost and not as unpriced', async (context) => {
+    const client = await startPricedGateway(context, undefined, 'local');
+    const { report } = await costOfRun(client);
+    expect(report.total).toMatchObject({ calls: 1, localCalls: 1, unpricedCalls: 0, amount: 0, priceVersions: [] });
   });
 
   it('keeps a call unpriced when the declared price is for another model', async (context) => {

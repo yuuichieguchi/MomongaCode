@@ -47,6 +47,7 @@ export type TargetSpec = {
   kind?: string;
   provider?: string;
   model: string;
+  billing?: GatewayConfig['models']['targets'][string]['billing'];
   maxConcurrency?: number;
   admissionTimeoutMs?: number;
   capabilities?: GatewayConfig['models']['targets'][string]['capabilities'];
@@ -73,6 +74,7 @@ export const buildConfig = (overrides: ConfigOverrides = {}): GatewayConfig => {
       kind: spec.kind ?? 'scripted',
       provider: spec.provider ?? 'scripted',
       model: spec.model,
+      billing: spec.billing ?? 'metered',
       maxConcurrency: spec.maxConcurrency ?? 4,
       admissionTimeoutMs: spec.admissionTimeoutMs ?? 5000,
       ...(spec.capabilities === undefined ? {} : { capabilities: spec.capabilities }),

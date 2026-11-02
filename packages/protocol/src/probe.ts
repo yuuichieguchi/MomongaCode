@@ -1,4 +1,4 @@
-import type { HealthResult } from './capabilities.ts';
+import type { HealthResult, ImageTokenModel } from './capabilities.ts';
 
 export const PROBE_KEYWORDS = [
   'enum',
@@ -25,6 +25,7 @@ export type ProbeReport = {
   stopSequences: boolean;
   maxConcurrency: number;
   imageInputAccepted: boolean;
+  imageTokens?: ImageTokenModel;
   guardrail: { errorShape?: unknown };
   tokenCalibration?: { ratio: number; errorBound: number };
 };

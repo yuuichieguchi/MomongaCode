@@ -1,7 +1,7 @@
 import { CircuitBreaker } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import { sizingRatioFor } from '@momonga/protocol';
-import type { Capabilities, GatewayHealth, HealthResult, ProviderAdapter, TargetHealth } from '@momonga/protocol';
+import { applyCapabilityOverride, imageCapability, sizingRatioFor } from '@momonga/protocol';
+import type { Capabilities, CapabilityOverride, GatewayHealth, HealthResult, ImageCapability, ProviderAdapter, TargetBilling, TargetHealth } from '@momonga/protocol';
 import { createAdmissionGate } from './admission.ts';
 import type { AdmissionGate } from './admission.ts';
 import { invalidRequest, notFound } from './errors.ts';
@@ -14,10 +14,11 @@ export type TargetRuntime = {
   name: string;
   provider: string;
   model: string;
+  billing: TargetBilling;
   adapter: GuardedAdapter;
   breaker: CircuitBreaker;
   gate: AdmissionGate;
-  capabilityOverride: Partial<Capabilities> | undefined;
+  capabilityOverride: CapabilityOverride | undefined;
 };
 
 export type CandidateRequirements = { tools?: boolean; images?: boolean };
@@ -56,15 +57,13 @@ const weakest = <T extends string>(values: readonly T[], rank: Record<T, number>
 const mergedErrorRatio = (all: readonly Capabilities[]): Pick<Capabilities, 'tokenErrorRatio'> =>
   all.some((entry) => entry.tokenErrorRatio !== undefined) ? { tokenErrorRatio: Math.max(...all.map(sizingRatioFor)) } : {};
 
-const mergedImageTokens = (all: readonly Capabilities[]): Pick<Capabilities, 'imageTokens'> => {
+const mergedImageCapability = (all: readonly Capabilities[]): ImageCapability => {
   const models = all.flatMap((entry) => (entry.imageTokens === undefined ? [] : [entry.imageTokens]));
-  if (models.length !== all.length) return {};
-  return {
-    imageTokens: {
-      pixelsPerToken: Math.min(...models.map((model) => model.pixelsPerToken)),
-      maxTokens: Math.max(...models.map((model) => model.maxTokens)),
-    },
-  };
+  if (models.length !== all.length) return imageCapability(false, undefined);
+  return imageCapability(true, {
+    pixelsPerToken: Math.min(...models.map((model) => model.pixelsPerToken)),
+    maxTokens: Math.max(...models.map((model) => model.maxTokens)),
+  });
 };
 
 const mergeCapabilities = (all: readonly [Capabilities, ...Capabilities[]]): Capabilities => {
@@ -76,8 +75,7 @@ const mergeCapabilities = (all: readonly [Capabilities, ...Capabilities[]]): Cap
     structuredOutput: all.some((entry) => entry.structuredOutput === 'none') ? 'none' : 'json_schema',
     streaming: all.every((entry) => entry.streaming),
     stopSequences: all.every((entry) => entry.stopSequences),
-    imageInput: all.every((entry) => entry.imageInput),
-    ...mergedImageTokens(all),
+    ...mergedImageCapability(all),
     parallelToolCalls: all.every((entry) => entry.parallelToolCalls),
     schemaDialect: all.some((entry) => entry.schemaDialect === 'guided-generation') ? 'guided-generation' : 'json-schema-2020-12',
     tokenCounting: weakest(all.map((entry) => entry.tokenCounting), TOKEN_COUNTING_RANK),
@@ -100,6 +98,7 @@ export const createRouter = (options: RouterOptions): Router => {
       name,
       provider: target.provider,
       model: target.model,
+      billing: target.billing,
       adapter: guardAdapter(requireEntry(adapters, name, 'adapter'), options.redactor),
       breaker: new CircuitBreaker({ failureThreshold: config.breaker.failureThreshold, openMs: config.breaker.openMs, clock }),
       gate: createAdmissionGate({
@@ -125,7 +124,7 @@ export const createRouter = (options: RouterOptions): Router => {
   const capabilitiesOf = async (target: TargetRuntime): Promise<Capabilities> => {
     const declared = await target.adapter.capabilities({ name: target.name, model: target.model });
     if (target.capabilityOverride === undefined) return declared;
-    return { ...declared, ...target.capabilityOverride, source: 'config' };
+    return { ...applyCapabilityOverride(declared, target.capabilityOverride), source: 'config' };
   };
 
   const aliasCapabilitiesOf = async (alias: string): Promise<Capabilities> => {

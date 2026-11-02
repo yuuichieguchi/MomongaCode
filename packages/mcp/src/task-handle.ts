@@ -1,10 +1,9 @@
 import type { JSONRPCMessage } from '@modelcontextprotocol/client';
+import { isRecord } from '@momonga/foundation';
 
 export const TASK_HANDLE_ERROR_CODE = -39001;
 
 type RequestId = string | number;
-
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export const taskHandleOf = (code: unknown, data: unknown): Record<string, unknown> | undefined =>
   code === TASK_HANDLE_ERROR_CODE && isRecord(data) && data['resultType'] === 'task' ? data : undefined;

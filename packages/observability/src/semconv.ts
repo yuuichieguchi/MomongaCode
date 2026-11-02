@@ -69,6 +69,7 @@ export const MOMONGA_ATTRIBUTES = {
   runId: 'momonga.run_id',
   step: 'momonga.step',
   attempt: 'momonga.attempt',
+  billing: 'momonga.billing',
 } as const;
 
 export const OPERATIONS = {

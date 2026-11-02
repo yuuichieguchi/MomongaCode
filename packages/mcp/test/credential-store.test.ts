@@ -1,7 +1,10 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ensureMomongaDirs, momongaLayout } from '@momonga/foundation';
+import type { FileLockPorts } from '@momonga/foundation';
+import { startLockHolder } from '@momonga/testkit';
 import { createFileCredentialStore, createMemoryCredentialStore, mcpCredentialDirectory } from '@momonga/mcp';
 import { makeDir } from './mcp-harness.ts';
 
@@ -76,6 +79,42 @@ describe('file credential store updates', () => {
     fs.mkdirSync(path.join(directory, file as string));
     await expect(store.write('k', 'two')).rejects.toThrow();
     expect(fs.readdirSync(directory).filter((name) => name.endsWith('.tmp'))).toEqual([]);
+  });
+});
+
+describe('file credential store while another process holds the key lock', () => {
+  const steppedPorts = (): FileLockPorts => {
+    let now = 1_000_000;
+    return {
+      clock: { now: () => now },
+      sleep: async (ms) => {
+        now += ms;
+      },
+      randomHex: () => 'cafe0001',
+    };
+  };
+
+  const heldStore = async (context: Parameters<typeof startLockHolder>[0]) => {
+    const directory = path.join(makeDir(), 'creds');
+    const store = createFileCredentialStore(directory, { ports: steppedPorts(), lockTimeoutMs: 100 });
+    await store.write('k', 'tokens');
+    const lockPath = path.join(`${directory}.locks`, `${createHash('sha256').update('k').digest('hex')}.json.lock`);
+    const holder = await startLockHolder(context, lockPath);
+    return { store, holder };
+  };
+
+  it.for(['update', 'write', 'remove'] as const)('%s waits for the lock and gives up at the timeout, naming the holder', async (operation, context) => {
+    const { store, holder } = await heldStore(context);
+    const attempt =
+      operation === 'update' ? store.update('k', () => 'changed') : operation === 'write' ? store.write('k', 'changed') : store.remove('k');
+    await expect(attempt).rejects.toThrow(`held by process ${holder.pid}`);
+    expect(await store.read('k')).toBe('tokens');
+  });
+
+  it('keeps serving other keys while one key is held', async (context) => {
+    const { store } = await heldStore(context);
+    await store.write('other', 'free');
+    expect(await store.read('other')).toBe('free');
   });
 });
 

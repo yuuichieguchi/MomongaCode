@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto';
 import type { ChatCompletionsAdapter } from '@momonga/gateway';
-import type { Capabilities, ToolCallingMode } from '@momonga/protocol';
+import { applyCapabilityOverride } from '@momonga/protocol';
+import type { CapabilityOverride, ToolCallingMode } from '@momonga/protocol';
 import type { FakeChatCompletionsServer, FakeScriptedReply } from '@momonga/testkit';
 import { HMAC_KEY, startGateway } from './gateway-helpers.ts';
 import type { ConfigOverrides, Harness } from './gateway-helpers.ts';
@@ -67,11 +68,11 @@ export const serverErrorReply = (): FakeScriptedReply => ({
 export const ccAdapterFor = (
   fake: FakeChatCompletionsServer,
   toolCalling: ToolCallingMode = 'native',
-  capabilities: Partial<Capabilities> = {},
+  capabilities: CapabilityOverride = {},
 ): ChatCompletionsAdapter =>
   makeAdapter(fake, {
     toolCalling: () => toolCalling,
-    capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling, ...capabilities }),
+    capabilities: async () => applyCapabilityOverride({ ...CC_CAPABILITIES, toolCalling }, capabilities),
   });
 
 export const startCcGateway = (

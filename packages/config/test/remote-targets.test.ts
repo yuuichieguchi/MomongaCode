@@ -46,6 +46,7 @@ describe('anthropic target', () => {
       baseUrl: 'https://api.anthropic.com',
       apiKeySecret: 'anthropic-main',
       toolCalling: 'native',
+      billing: 'metered',
       capabilities: {
         contextWindow: 200000,
         maxOutputTokens: 8192,
@@ -125,6 +126,7 @@ describe('open-responses target', () => {
       model: 'llama-fake',
       baseUrl: 'http://127.0.0.1:11434/v1',
       toolCalling: 'native',
+      billing: 'metered',
       capabilities: {
         contextWindow: 200000,
         maxOutputTokens: 8192,

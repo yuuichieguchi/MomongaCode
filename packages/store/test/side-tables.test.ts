@@ -252,7 +252,7 @@ describe('blobs', () => {
     const open = vi.spyOn(fs, 'openSync');
     try {
       store.blobs.put('durable', { mediaType: 'text/plain' });
-      expect(open.mock.calls.some(([target, flags]) => target === path.join(dir, 'blobs') && flags === 'r')).toBe(true);
+      expect(open.mock.calls.some(([target, flags]) => target === path.join(dir, 'blobs') && flags === fs.constants.O_RDONLY)).toBe(true);
     } finally {
       open.mockRestore();
     }

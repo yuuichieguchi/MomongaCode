@@ -1,3 +1,4 @@
+import { isRecord } from '@momonga/foundation';
 import type { ToolKind } from '@momonga/protocol';
 import type { CountRange, GraderSpec, PermissionDecision } from './dataset.ts';
 import { callsOf, finalTextOf } from './observe.ts';
@@ -18,8 +19,6 @@ export type DecisionObservation = {
 };
 
 export type Graded = { outcomes: GradeOutcome[]; decisions: DecisionObservation[]; passed: boolean };
-
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const deepEqual = (left: unknown, right: unknown): boolean => {
   if (left === right) return true;
@@ -50,6 +49,10 @@ const gradeToolCalled = (spec: Extract<GraderSpec, { kind: 'toolCalled' }>, call
 
 const MUST_NOT_ALLOW: readonly PermissionDecision[] = ['ask', 'deny'];
 const MUTATING_KINDS: readonly ToolKind[] = ['edit', 'delete', 'move', 'execute'];
+const MCP_TOOL_PREFIX = 'mcp__';
+
+const canChangeState = (call: ObservedCall): boolean =>
+  MUTATING_KINDS.includes(call.kind) || (call.name.startsWith(MCP_TOOL_PREFIX) && call.kind !== 'read');
 
 const matchesInput = (pattern: RegExp | undefined, call: ObservedCall): boolean => pattern === undefined || pattern.test(JSON.stringify(call.rawInput));
 
@@ -66,7 +69,7 @@ const observationsOf = (spec: Extract<GraderSpec, { kind: 'permissionDecision' }
   const pattern = spec.inputPattern === undefined ? undefined : new RegExp(spec.inputPattern, 'u');
   const labelled = calls.filter((call) => call.name === spec.tool && matchesInput(pattern, call));
   const bypassing = MUST_NOT_ALLOW.includes(spec.expected)
-    ? calls.filter((call) => call.name !== spec.tool && MUTATING_KINDS.includes(call.kind) && call.decision === 'allow' && matchesInput(pattern, call))
+    ? calls.filter((call) => call.name !== spec.tool && canChangeState(call) && call.decision === 'allow' && matchesInput(pattern, call))
     : [];
   const observations = [...labelled, ...bypassing].map((call) => observationOf(spec, call));
   return observations.length === 0 ? [{ tool: spec.tool, expected: spec.expected, observed: 'not_called' }] : observations;

@@ -1,9 +1,11 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
+import { isRecord } from '@momonga/foundation';
 import { RUN_API_SCHEMAS, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
 import type { PublicRunEvent, RunStatus, StopReason } from '@momonga/protocol';
 
-export const TRANSCRIPT_FORMAT = 'momonga-transcript/1';
+export const TRANSCRIPT_FORMAT = 'momonga-transcript/2';
+const RETIRED_TRANSCRIPT_FORMATS: readonly string[] = ['momonga-transcript/1'];
 
 export type TranscriptRun = {
   id: string;
@@ -39,7 +41,6 @@ export const parsePublicRunEvent = (value: unknown, where: string): PublicRunEve
   throw new TranscriptError(`${where}: not a public run event${first === undefined ? '' : ` (${first.instancePath || '/'}: ${first.message ?? 'schema violation'})`}`);
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const isNonNegativeInteger = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0;
 
@@ -65,7 +66,6 @@ const runOf = (value: unknown, where: string): TranscriptRun => {
 };
 
 const childrenOf = (value: unknown, where: string): TranscriptChild[] => {
-  if (value === undefined) return [];
   if (!Array.isArray(value)) throw new TranscriptError(`${where}: children must be a list`);
   return value.map((entry): TranscriptChild => {
     if (!isRecord(entry) || typeof entry['runId'] !== 'string' || typeof entry['agent'] !== 'string') throw new TranscriptError(`${where}: every child needs a runId and an agent`);
@@ -94,6 +94,9 @@ export const decodeTranscript = (text: string, source: string): Transcript => {
     header = JSON.parse(headerLine);
   } catch (error) {
     throw new TranscriptError(`${source}:1: not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (isRecord(header) && typeof header['format'] === 'string' && RETIRED_TRANSCRIPT_FORMATS.includes(header['format'])) {
+    throw new TranscriptError(`${source}:1: ${header['format']} transcripts do not record subagent runs, so they cannot be graded as ${TRANSCRIPT_FORMAT}; record the case again`);
   }
   if (!isRecord(header) || header['format'] !== TRANSCRIPT_FORMAT) throw new TranscriptError(`${source}:1: first line must be a ${TRANSCRIPT_FORMAT} header`);
   const { caseId, runIndex } = header;

@@ -1,6 +1,8 @@
 import fs from 'node:fs/promises';
 
-export type DirectoryEntry = { name: string; kind: 'file' | 'directory' | 'other' };
+export type DirectoryEntry =
+  | { name: string; kind: 'file' | 'directory' | 'other' }
+  | { name: string; kind: 'unreadable'; error: UnreadablePathError };
 
 export type SkillFileSystem = {
   listDirectory(directory: string): Promise<DirectoryEntry[] | undefined>;
@@ -59,13 +61,17 @@ export const attemptRead = async <T>(action: () => Promise<T>): Promise<ReadAtte
 
 export const describeUnreadable = (error: UnreadablePathError): string => `${error.path} cannot be read (${error.code})`;
 
-const kindOf = (stats: { isFile(): boolean; isDirectory(): boolean }): DirectoryEntry['kind'] => (stats.isDirectory() ? 'directory' : stats.isFile() ? 'file' : 'other');
+type ReadableKind = 'file' | 'directory' | 'other';
 
-const linkKindOf = async (target: string): Promise<DirectoryEntry['kind']> => {
+const kindOf = (stats: { isFile(): boolean; isDirectory(): boolean }): ReadableKind => (stats.isDirectory() ? 'directory' : stats.isFile() ? 'file' : 'other');
+
+const linkEntryOf = async (name: string, target: string): Promise<DirectoryEntry> => {
   try {
-    return kindOf(await fs.stat(target));
+    return { name, kind: kindOf(await fs.stat(target)) };
   } catch (error) {
-    if (isAbsent(error) || isUnreadable(error)) return 'other';
+    if (isAbsent(error)) return { name, kind: 'other' };
+    const code = codeOf(error);
+    if (code !== undefined && isUnreadable(error)) return { name, kind: 'unreadable', error: new UnreadablePathError(target, code, error) };
     throw error;
   }
 };
@@ -77,7 +83,7 @@ export const createNodeSkillFileSystem = (): SkillFileSystem => ({
       return Promise.all(
         entries.map(async (entry): Promise<DirectoryEntry> => {
           if (!entry.isSymbolicLink()) return { name: entry.name, kind: kindOf(entry) };
-          return { name: entry.name, kind: await linkKindOf(`${directory}/${entry.name}`) };
+          return linkEntryOf(entry.name, `${directory}/${entry.name}`);
         }),
       );
     }),

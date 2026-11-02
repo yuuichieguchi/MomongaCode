@@ -13,6 +13,7 @@ export type EvalRunApi = {
   events(runId: string): AsyncIterable<PublicRunEvent>;
   getRun(runId: string): Promise<TranscriptRun>;
   resolveApproval(approvalId: string, optionId: string): Promise<void>;
+  cancelRun(runId: string): Promise<void>;
 };
 
 export type EvalPorts = {
@@ -22,8 +23,8 @@ export type EvalPorts = {
 };
 
 export class EvalError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = 'EvalError';
   }
 }
@@ -43,6 +44,15 @@ const driveRun = async (ports: EvalPorts, golden: GoldenCase, rootRunId: string)
   const following: Promise<void>[] = [];
   let childFailure: { error: unknown } | undefined;
 
+  const abandon = async (error: unknown): Promise<void> => {
+    childFailure ??= { error };
+    try {
+      await ports.api.cancelRun(rootRunId);
+    } catch (cancelError) {
+      throw new EvalError(`case ${golden.id}: cancelling run ${rootRunId} after a subagent run failed also failed: ${cancelError instanceof Error ? cancelError.message : String(cancelError)}`, { cause: error });
+    }
+  };
+
   const follow = async (runId: string, sink: PublicRunEvent[]): Promise<void> => {
     for await (const event of ports.api.events(runId)) {
       sink.push(event);
@@ -51,11 +61,7 @@ const driveRun = async (ports: EvalPorts, golden: GoldenCase, rootRunId: string)
         followed.add(event.awaits.runId);
         const child: TranscriptChild = { runId: event.awaits.runId, agent: event.awaits.agent, events: [] };
         children.push(child);
-        following.push(
-          follow(child.runId, child.events).catch((error: unknown) => {
-            childFailure ??= { error };
-          }),
-        );
+        following.push(follow(child.runId, child.events).catch(abandon));
       }
     }
   };

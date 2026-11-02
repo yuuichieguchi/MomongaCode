@@ -1,6 +1,8 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import { applyCapabilityOverride } from '@momonga/protocol';
 import type {
   Capabilities,
+  CapabilityOverride,
   ContentPart,
   CountTokensRequest,
   CountTokensResult,
@@ -31,25 +33,25 @@ export const PROJECT = '/proj';
 export const USER_AGENTS = '/home/u/.momonga/AGENTS.md';
 export const ROOT_AGENTS = '/proj/AGENTS.md';
 
-export const capabilitiesFor = (
-  contextWindow: number,
-  overrides: Partial<Capabilities> = {},
-): Capabilities => ({
-  contextWindow,
-  maxOutputTokens: 4096,
-  toolCalling: 'native',
-  structuredOutput: 'none',
-  streaming: true,
-  stopSequences: false,
-  imageInput: false,
-  parallelToolCalls: false,
-  schemaDialect: 'json-schema-2020-12',
-  tokenCounting: 'exact',
-  usageReported: true,
-  maxConcurrency: 1,
-  source: 'declared',
-  ...overrides,
-});
+export const capabilitiesFor = (contextWindow: number, overrides: CapabilityOverride = {}): Capabilities =>
+  applyCapabilityOverride(
+    {
+      contextWindow,
+      maxOutputTokens: 4096,
+      toolCalling: 'native',
+      structuredOutput: 'none',
+      streaming: true,
+      stopSequences: false,
+      imageInput: false,
+      parallelToolCalls: false,
+      schemaDialect: 'json-schema-2020-12',
+      tokenCounting: 'exact',
+      usageReported: true,
+      maxConcurrency: 1,
+      source: 'declared',
+    },
+    overrides,
+  );
 
 export const tokensOfText = (text: string): number => Math.ceil(text.length / 4);
 

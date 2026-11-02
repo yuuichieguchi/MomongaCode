@@ -221,7 +221,7 @@ describe('image capability filter', () => {
 
   it('skips a target without imageInput and uses the next one that declares it', async () => {
     const plain = createScriptedAdapter({ calls: [] });
-    const seeing = createScriptedAdapter({ calls: [{ events: textResponseEvents({ model: 'model-b', chunks: ['seen'] }) }], capabilities: { imageInput: true } });
+    const seeing = createScriptedAdapter({ calls: [{ events: textResponseEvents({ model: 'model-b', chunks: ['seen'] }) }], capabilities: { imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600 } } });
     const { client } = await startGateway({
       adapters: { a: plain, b: seeing },
       config: { aliases: { fast: ['a', 'b'] }, targets: { a: { model: 'model-a' }, b: { model: 'model-b' } } },

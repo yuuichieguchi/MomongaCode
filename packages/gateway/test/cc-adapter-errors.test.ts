@@ -31,6 +31,13 @@ describe('chat-completions error classification', () => {
     expect(result.error.type).toBe('too_many_requests');
   });
 
+  it('fails a stream that sends only [DONE] with the retryable empty_upstream_stream before any event', async () => {
+    const fake = await startFake({ scenario: 'tools-ok', script: [{ kind: 'raw-sse', events: ['[DONE]'] }] });
+    const result = await classified(fake);
+    expect(result.retryable).toBe(true);
+    expect(result.error.code).toBe('empty_upstream_stream');
+  });
+
   it.each([500, 502, 503])('maps %i to a retryable server_error', async (status) => {
     const fake = await startFake({
       scenario: 'tools-ok',

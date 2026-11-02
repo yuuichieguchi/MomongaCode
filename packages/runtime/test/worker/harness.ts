@@ -7,7 +7,8 @@ import { canonicalJson, EMPTY_FILE_RULES, sha256Hex, EMPTY_PROTECTED_SET } from 
 import type { PermissionRule } from '@momonga/config';
 import type { InstructionReader } from '@momonga/context';
 import { computeFileRules } from '@momonga/policy';
-import type { Capabilities, PermissionMode, RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
+import { applyCapabilityOverride } from '@momonga/protocol';
+import type { Capabilities, CapabilityOverride, PermissionMode, RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { createAgentLoader } from '@momonga/agents';
 import { createSkillsPort, createWorker } from '@momonga/runtime';
 import type { AgentCatalogPort, MemoryPort, SkillsPort, ToolEnv, ToolRuntimePort, Worker, WorkerOptions } from '@momonga/runtime';
@@ -39,22 +40,25 @@ export const TEST_PROMPT_PREFIX = 'You are the MomongaCode test agent working in
 
 export const testSystemPrompt = ({ cwd }: { cwd: string; platform: string }): string => `${TEST_PROMPT_PREFIX} ${cwd}.`;
 
-export const capabilitiesFor = (contextWindow: number, overrides: Partial<Capabilities> = {}): Capabilities => ({
-  contextWindow,
-  maxOutputTokens: 4096,
-  toolCalling: 'native',
-  structuredOutput: 'none',
-  streaming: true,
-  stopSequences: false,
-  imageInput: false,
-  parallelToolCalls: false,
-  schemaDialect: 'json-schema-2020-12',
-  tokenCounting: 'exact',
-  usageReported: true,
-  maxConcurrency: 1,
-  source: 'declared',
-  ...overrides,
-});
+export const capabilitiesFor = (contextWindow: number, overrides: CapabilityOverride = {}): Capabilities =>
+  applyCapabilityOverride(
+    {
+      contextWindow,
+      maxOutputTokens: 4096,
+      toolCalling: 'native',
+      structuredOutput: 'none',
+      streaming: true,
+      stopSequences: false,
+      imageInput: false,
+      parallelToolCalls: false,
+      schemaDialect: 'json-schema-2020-12',
+      tokenCounting: 'exact',
+      usageReported: true,
+      maxConcurrency: 1,
+      source: 'declared',
+    },
+    overrides,
+  );
 
 export const fakeSandbox: Sandbox = {
   kind: 'seatbelt',

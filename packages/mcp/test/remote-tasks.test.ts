@@ -95,12 +95,76 @@ describe('tasks extension over streamable HTTP', () => {
     const timers = observedTimers(clock);
     const { connection } = makeRemoteConnection({ fixture, timers, clock });
     await connection.listTools();
-    const { outcome } = await startLongTask(fixture, timers, connection);
-    clock.set(1_005_000);
+    const { outcome, taskId } = await startLongTask(fixture, timers, connection);
+    clock.set(1_005_001);
     timers.advance(MIN_TASK_POLL_MS);
     const settled = await outcome;
     expect('error' in settled && settled.error).toBeInstanceOf(McpTaskError);
     expect('error' in settled && (settled.error as Error).message).toContain('ttl of 5000ms');
+    expect(fixture.notes.filter((note) => note.type === 'task_cancel')).toEqual([{ type: 'task_cancel', taskId }]);
+  });
+
+  it('measures the ttl on the server clock, so a local clock far ahead of the server does not fail a healthy task', async () => {
+    const clock = createFakeClock(1_000_000);
+    const serverCreatedAt = new Date(1_000_000 - 3_600_000).toISOString();
+    const fixture = await startHttpFixture({ era: 'modern', taskPollIntervalMs: 1, taskTtlMs: 5000, taskCreatedAt: serverCreatedAt });
+    const timers = observedTimers(clock);
+    const { connection } = makeRemoteConnection({ fixture, timers, clock });
+    await connection.listTools();
+    const { outcome, taskId } = await startLongTask(fixture, timers, connection);
+    fixture.completeTask(taskId, 'still healthy');
+    timers.advance(MIN_TASK_POLL_MS);
+    const settled = await outcome;
+    expect('value' in settled && textOf(settled.value)).toBe('still healthy');
+    expect(fixture.notes.filter((note) => note.type === 'task_cancel')).toEqual([]);
+  });
+
+  it('uses the age the server reports through lastUpdatedAt when it already exceeds the ttl', async () => {
+    const clock = createFakeClock(1_000_000);
+    const fixture = await startHttpFixture({
+      era: 'modern',
+      taskPollIntervalMs: 1,
+      taskTtlMs: 5000,
+      taskCreatedAt: new Date(1_000_000).toISOString(),
+      taskLastUpdatedAt: new Date(1_006_000).toISOString(),
+    });
+    const timers = observedTimers(clock);
+    const { connection } = makeRemoteConnection({ fixture, timers, clock });
+    await connection.listTools();
+    const outcome = connection.callTool({ name: 'long_task', arguments: {}, timeoutMs: CALL_TIMEOUT_MS }).then(
+      (value) => ({ value }),
+      (error: unknown) => ({ error }),
+    );
+    const settled = await outcome;
+    expect('error' in settled && (settled.error as Error).message).toContain('ttl of 5000ms');
+    expect(fixture.notes.filter((note) => note.type === 'task_cancel')).toHaveLength(1);
+  });
+
+  it('does not fail a task with ttlMs 0 on the response that created it, and returns its result when the next poll finds it done', async () => {
+    const clock = createFakeClock(1_000_000);
+    const fixture = await startHttpFixture({ era: 'modern', taskPollIntervalMs: 1, taskTtlMs: 0, taskCreatedAt: new Date(1_000_000).toISOString() });
+    const timers = observedTimers(clock);
+    const { connection } = makeRemoteConnection({ fixture, timers, clock });
+    await connection.listTools();
+    const { outcome, taskId } = await startLongTask(fixture, timers, connection);
+    fixture.completeTask(taskId, 'done at once');
+    timers.advance(MIN_TASK_POLL_MS);
+    const settled = await outcome;
+    expect('value' in settled && textOf(settled.value)).toBe('done at once');
+  });
+
+  it('cancels and fails a task with ttlMs 0 that a later poll still finds working', async () => {
+    const clock = createFakeClock(1_000_000);
+    const fixture = await startHttpFixture({ era: 'modern', taskPollIntervalMs: 1, taskTtlMs: 0, taskCreatedAt: new Date(1_000_000).toISOString() });
+    const timers = observedTimers(clock);
+    const { connection } = makeRemoteConnection({ fixture, timers, clock });
+    await connection.listTools();
+    const { outcome, taskId } = await startLongTask(fixture, timers, connection);
+    clock.set(1_000_001);
+    timers.advance(MIN_TASK_POLL_MS);
+    const settled = await outcome;
+    expect('error' in settled && settled.error).toBeInstanceOf(McpTaskError);
+    expect(fixture.notes.filter((note) => note.type === 'task_cancel')).toEqual([{ type: 'task_cancel', taskId }]);
   });
 
   it('returns the result of a task that finished even when its ttl has passed', async () => {

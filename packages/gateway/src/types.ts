@@ -1,14 +1,15 @@
 import type { Clock } from '@momonga/foundation';
 import type { Telemetry } from '@momonga/observability';
-import type { Capabilities, CostReportView, ProviderAdapter } from '@momonga/protocol';
+import type { CapabilityOverride, CostReportView, ProviderAdapter, TargetBilling } from '@momonga/protocol';
 
 export type GatewayTargetConfig = {
   kind: string;
   provider: string;
   model: string;
+  billing: TargetBilling;
   maxConcurrency: number;
   admissionTimeoutMs: number;
-  capabilities?: Partial<Capabilities>;
+  capabilities?: CapabilityOverride;
 };
 
 export type GatewayConfig = {

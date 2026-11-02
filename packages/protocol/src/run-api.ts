@@ -355,6 +355,7 @@ const trustView = closed(
 
 const costTotalsProperties: Record<string, JsonSchema> = {
   calls: nonNegativeInteger,
+  localCalls: nonNegativeInteger,
   unpricedCalls: nonNegativeInteger,
   inputTokens: nonNegativeInteger,
   outputTokens: nonNegativeInteger,
@@ -475,6 +476,7 @@ export type JobView = {
 export type JobsResponse = { jobs: JobView[] };
 export type CostTotalsView = {
   calls: number;
+  localCalls: number;
   unpricedCalls: number;
   inputTokens: number;
   outputTokens: number;

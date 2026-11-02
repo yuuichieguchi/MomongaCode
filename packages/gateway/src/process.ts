@@ -225,6 +225,7 @@ export const gatewayConfigOf = (targets: ResolvedTargets, aliases: Record<string
           kind: target.adapter,
           provider: providerNameOf(target),
           model: target.model,
+          billing: target.billing,
           maxConcurrency: target.maxConcurrency,
           admissionTimeoutMs: target.admissionTimeoutMs,
         },

@@ -84,7 +84,17 @@ CREATE INDEX bodies_by_span ON bodies (span_id, id);
 CREATE INDEX bodies_by_expiry ON bodies (expires_at_ms);
 `;
 
-const MIGRATIONS: readonly Migration[] = [{ version: 1, name: 'initial', sql: INITIAL_SCHEMA }];
+const RECORD_BILLING_OF_EARLIER_CHAT_SPANS = `
+UPDATE spans
+SET attributes_json = json_set(attributes_json, '$."momonga.billing"', 'metered')
+WHERE json_extract(attributes_json, '$."gen_ai.operation.name"') = 'chat'
+  AND json_extract(attributes_json, '$."momonga.billing"') IS NULL;
+`;
+
+export const TRACE_STORE_MIGRATIONS: readonly Migration[] = [
+  { version: 1, name: 'initial', sql: INITIAL_SCHEMA },
+  { version: 2, name: 'chat-span-billing', sql: RECORD_BILLING_OF_EARLIER_CHAT_SPANS },
+];
 
 type Row = Record<string, SQLOutputValue>;
 
@@ -309,7 +319,7 @@ const createStore = (db: DatabaseSync, statements: Statements, clock: Clock): Tr
 export const openTraceStore = (options: OpenTraceStoreOptions): TraceStore => {
   const db = openDatabase(options.path);
   try {
-    migrate(db, MIGRATIONS);
+    migrate(db, TRACE_STORE_MIGRATIONS);
     db.exec('PRAGMA secure_delete = ON');
     const store = createStore(db, prepareStatements(db), options.clock);
     try {

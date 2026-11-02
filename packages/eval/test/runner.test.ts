@@ -5,10 +5,10 @@ import type { PublicRunEvent } from '@momonga/protocol';
 import { approvalTranscript, callsTranscript, finalAnswerTranscript, goldenCase } from './fixtures.ts';
 import type { Transcript } from '@momonga/eval';
 
-type Scripted = { sessions: string[]; runs: string[]; resolved: { approvalId: string; optionId: string }[]; api: EvalRunApi };
+type Scripted = { sessions: string[]; runs: string[]; resolved: { approvalId: string; optionId: string }[]; cancelled: string[]; api: EvalRunApi };
 
 const scriptedApi = (transcripts: Transcript[]): Scripted => {
-  const record: Scripted = { sessions: [], runs: [], resolved: [], api: undefined as unknown as EvalRunApi };
+  const record: Scripted = { sessions: [], runs: [], resolved: [], cancelled: [], api: undefined as unknown as EvalRunApi };
   const byRun = new Map(transcripts.map((transcript) => [transcript.run.id, transcript]));
   const childEvents = new Map(transcripts.flatMap((transcript) => transcript.children.map((child) => [child.runId, child.events] as const)));
   const queue = [...transcripts];
@@ -33,6 +33,9 @@ const scriptedApi = (transcripts: Transcript[]): Scripted => {
     },
     resolveApproval: async (approvalId, optionId) => {
       record.resolved.push({ approvalId, optionId });
+    },
+    cancelRun: async (runId) => {
+      record.cancelled.push(runId);
     },
   };
   return record;
@@ -101,6 +104,72 @@ describe('runDataset', () => {
     expect(recorded?.children.map((child) => [child.runId, child.agent])).toEqual([['child-1', 'writer']]);
     expect(report.decisions.falseAllow).toMatchObject({ successes: 0, trials: 1 });
     expect(report.passed).toBe(true);
+  });
+
+  describe('a subagent follower that fails while the root run is still open', () => {
+    const delegating = () => {
+      const parent = callsTranscript('delegate', [{ callId: 'agent1', name: 'Agent', kind: 'other', rawInput: {}, decision: 'allow' }]);
+      const waiting = { ...(parent.events[0] as PublicRunEvent), type: 'tool.waiting', callId: 'agent1', awaits: { kind: 'run', runId: 'child-1', sessionId: 's-child', agent: 'writer' } } as unknown as PublicRunEvent;
+      const childEvents = callsTranscript('child', [{ callId: 'w1', name: 'Write', kind: 'edit', rawInput: {}, decision: 'ask' }]).events;
+      return { parent, waiting, childEvents };
+    };
+
+    it('cancels the root run at once instead of waiting for the root stream to end by itself', async () => {
+      const { parent, waiting, childEvents } = delegating();
+      const scripted = scriptedApi([parent]);
+      const rootCancelled = Promise.withResolvers<void>();
+      const failure = new Error('approval endpoint unreachable');
+      const api: EvalRunApi = {
+        ...scripted.api,
+        events: async function* (runId) {
+          if (runId === 'child-1') {
+            for (const event of childEvents) yield event;
+            return;
+          }
+          for (const event of [...parent.events, waiting]) yield event;
+          await rootCancelled.promise;
+        },
+        resolveApproval: async () => {
+          throw failure;
+        },
+        cancelRun: async (runId) => {
+          scripted.cancelled.push(runId);
+          rootCancelled.resolve();
+        },
+      };
+      await expect(
+        runDataset({ format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'delegate', graders: [{ kind: 'status', equals: 'COMPLETED' }] })] }, { api, workspace }),
+      ).rejects.toBe(failure);
+      expect(scripted.cancelled).toEqual([parent.run.id]);
+    });
+
+    it('reports a failed cancellation together with the follower failure that caused it', async () => {
+      const { parent, waiting, childEvents } = delegating();
+      const scripted = scriptedApi([parent]);
+      const failure = new Error('approval endpoint unreachable');
+      const api: EvalRunApi = {
+        ...scripted.api,
+        events: async function* (runId) {
+          for (const event of runId === 'child-1' ? childEvents : [...parent.events, waiting]) yield event;
+        },
+        resolveApproval: async () => {
+          throw failure;
+        },
+        cancelRun: async () => {
+          throw new Error('cancel refused');
+        },
+      };
+      const rejection = await runDataset(
+        { format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'delegate', graders: [{ kind: 'status', equals: 'COMPLETED' }] })] },
+        { api, workspace },
+      ).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(rejection).toBeInstanceOf(EvalError);
+      expect((rejection as EvalError).message).toContain('cancel refused');
+      expect((rejection as EvalError).cause).toBe(failure);
+    });
   });
 
   it('lets an infrastructure failure propagate', async () => {

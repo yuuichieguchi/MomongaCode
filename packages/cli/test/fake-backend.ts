@@ -1,4 +1,5 @@
-import type { Capabilities, ElicitationAnswerRecord, ImageAttachment, MemoryView, PermissionMode, SkillView } from '@momonga/protocol';
+import { applyCapabilityOverride } from '@momonga/protocol';
+import type { Capabilities, CapabilityOverride, ElicitationAnswerRecord, ImageAttachment, MemoryView, PermissionMode, SkillView } from '@momonga/protocol';
 import type { RunEventFrame } from '../src/client/runtime-client.ts';
 import type { RunView, SessionView, TrustView } from '../src/client/views.ts';
 import type { FollowHandlers, StartRunOptions, TuiBackend } from '../src/tui/backend.ts';
@@ -64,22 +65,25 @@ export type FakeBackendOptions = {
   modelPending?: Promise<void>;
 };
 
-export const capabilitiesOf = (overrides: Partial<Capabilities> = {}): Capabilities => ({
-  contextWindow: 8192,
-  maxOutputTokens: 2048,
-  toolCalling: 'native',
-  structuredOutput: 'none',
-  streaming: true,
-  stopSequences: true,
-  imageInput: false,
-  parallelToolCalls: false,
-  schemaDialect: 'json-schema-2020-12',
-  tokenCounting: 'estimated',
-  usageReported: true,
-  maxConcurrency: 1,
-  source: 'declared',
-  ...overrides,
-});
+export const capabilitiesOf = (overrides: CapabilityOverride = {}): Capabilities =>
+  applyCapabilityOverride(
+    {
+      contextWindow: 8192,
+      maxOutputTokens: 2048,
+      toolCalling: 'native',
+      structuredOutput: 'none',
+      streaming: true,
+      stopSequences: true,
+      imageInput: false,
+      parallelToolCalls: false,
+      schemaDialect: 'json-schema-2020-12',
+      tokenCounting: 'estimated',
+      usageReported: true,
+      maxConcurrency: 1,
+      source: 'declared',
+    },
+    overrides,
+  );
 
 export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
   const calls: string[] = [];
@@ -174,7 +178,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     },
     model: async () => {
       if (options.modelPending !== undefined) await options.modelPending;
-      return { id: session.modelAlias, object: 'model', targets: [...(options.targets ?? ['primary'])], capabilities: capabilitiesOf({ contextWindow: options.contextWindow ?? 8192, imageInput: options.imageInput ?? false }) };
+      return { id: session.modelAlias, object: 'model', targets: [...(options.targets ?? ['primary'])], capabilities: capabilitiesOf({ contextWindow: options.contextWindow ?? 8192, ...(options.imageInput === true ? { imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600 } } : {}) }) };
     },
     startupNotices: async () => [...(options.startupNotices ?? []), ...(options.skillWarnings ?? [])],
     readImage: async (file) => {

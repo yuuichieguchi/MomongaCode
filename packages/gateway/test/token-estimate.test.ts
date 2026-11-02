@@ -14,7 +14,7 @@ describe('token estimation by the text itself', () => {
     ['Japanese', 'こんにちは世界、これは日本語の文章です。'],
     ['Chinese', '这是一个用于测试令牌估算的中文句子。'],
     ['Korean', '이것은 토큰 추정을 시험하기 위한 문장입니다'],
-    ['Arabic', 'هذه جملة لاختبار تقدير الرموز'],
+    ['Hindi', 'यह टोकन अनुमान का परीक्षण करने वाला वाक्य है'],
   ])('counts at least one token per %s character', (_name, text) => {
     const letters = [...text].filter((character) => /\p{L}|\p{P}/u.test(character) && character !== ' ').length;
     expect(tokensOfText(text)).toBeGreaterThanOrEqual(letters);

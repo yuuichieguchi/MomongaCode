@@ -62,6 +62,9 @@ const skillDirectoriesUnder = async (
     const entries = listing.value;
     if (entries === undefined) continue;
     visited += 1;
+    for (const entry of entries) {
+      if (entry.kind === 'unreadable') warnings.push(`Skill scan skipped ${describeUnreadable(entry.error)}`);
+    }
     if (entries.some((entry) => entry.name === SKILL_FILE_NAME && entry.kind === 'file')) {
       found.push(next.directory);
       continue;

@@ -115,12 +115,12 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
       try {
         for await (const message of decodeSse(boundedSseBytes(response.body, MAX_SSE_EVENT_BYTES))) {
           ctx.signal.throwIfAborted();
+          if (message.data === DONE_MARKER) break;
           if (opening !== undefined) {
             const events = opening;
             opening = undefined;
             for (const event of events) yield event;
           }
-          if (message.data === DONE_MARKER) break;
           for (const event of driver.accept(message.data)) {
             ctx.signal.throwIfAborted();
             yield event;

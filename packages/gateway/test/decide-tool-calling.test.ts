@@ -42,6 +42,7 @@ describe('capabilitiesFromProbe', () => {
     const report = makeReport(1, 1);
     report.stopSequences = true;
     report.imageInputAccepted = true;
+    report.imageTokens = { pixelsPerToken: 700, maxTokens: 1500 };
     report.maxConcurrency = 2;
     report.streaming = { supported: true, doneSentinel: true, usageInStream: true };
     const capabilities = capabilitiesFromProbe(report, { mode: 'native' });
@@ -52,6 +53,7 @@ describe('capabilitiesFromProbe', () => {
       streaming: true,
       stopSequences: true,
       imageInput: true,
+      imageTokens: { pixelsPerToken: 700, maxTokens: 1500 },
       parallelToolCalls: false,
       schemaDialect: 'json-schema-2020-12',
       tokenCounting: 'calibrated',
@@ -62,6 +64,14 @@ describe('capabilitiesFromProbe', () => {
     });
     expect(capabilities.maxOutputTokens).toBeGreaterThan(0);
     expect(capabilities.maxOutputTokens).toBeLessThanOrEqual(4096);
+  });
+
+  it('refuses image input when the probe accepted an image but measured no token model', () => {
+    const report = makeReport(1, 1);
+    report.imageInputAccepted = true;
+    const capabilities = capabilitiesFromProbe(report, { mode: 'native' });
+    expect(capabilities.imageInput).toBe(false);
+    expect(capabilities.imageTokens).toBeUndefined();
   });
 
   it('reflects missing structured output, streaming, usage and calibration', () => {

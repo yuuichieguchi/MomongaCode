@@ -16,24 +16,32 @@ describe('protocol capability types', () => {
   });
 
   it('defines Capabilities', () => {
-    expectTypeOf<Capabilities>().toEqualTypeOf<{
-      contextWindow: number;
-      maxOutputTokens: number;
-      toolCalling: ToolCallingMode;
-      structuredOutput: 'json_schema' | 'none';
-      streaming: boolean;
-      stopSequences: boolean;
-      imageInput: boolean;
-      imageTokens?: { pixelsPerToken: number; maxTokens: number };
-      parallelToolCalls: boolean;
-      schemaDialect: 'json-schema-2020-12' | 'guided-generation';
-      tokenCounting: 'exact' | 'calibrated' | 'estimated';
-      tokenErrorRatio?: number;
-      usageReported: boolean;
-      maxConcurrency: number;
-      source: 'declared' | 'probed' | 'config' | 'unprobed';
-      probedAt?: string;
-    }>();
+    expectTypeOf<Capabilities>().toEqualTypeOf<
+      {
+        contextWindow: number;
+        maxOutputTokens: number;
+        toolCalling: ToolCallingMode;
+        structuredOutput: 'json_schema' | 'none';
+        streaming: boolean;
+        stopSequences: boolean;
+        parallelToolCalls: boolean;
+        schemaDialect: 'json-schema-2020-12' | 'guided-generation';
+        tokenCounting: 'exact' | 'calibrated' | 'estimated';
+        tokenErrorRatio?: number;
+        usageReported: boolean;
+        maxConcurrency: number;
+        source: 'declared' | 'probed' | 'config' | 'unprobed';
+        probedAt?: string;
+      } & (
+        | { imageInput: false; imageTokens?: undefined }
+        | { imageInput: true; imageTokens: { pixelsPerToken: number; maxTokens: number } }
+      )
+    >();
+  });
+
+  it('cannot express image input without a token model', () => {
+    expectTypeOf<Extract<Capabilities, { imageInput: true; imageTokens?: undefined }>>().toBeNever();
+    expectTypeOf<Capabilities['imageTokens']>().toEqualTypeOf<{ pixelsPerToken: number; maxTokens: number } | undefined>();
   });
 
   it('defines HealthResult', () => {
@@ -62,6 +70,7 @@ describe('protocol capability types', () => {
       stopSequences: boolean;
       maxConcurrency: number;
       imageInputAccepted: boolean;
+      imageTokens?: { pixelsPerToken: number; maxTokens: number };
       guardrail: { errorShape?: unknown };
       tokenCalibration?: { ratio: number; errorBound: number };
     }>();

@@ -28,7 +28,7 @@ const captureErrors = (): unknown[] => {
 };
 
 const chatSpan = (tracer: Parameters<typeof startChatSpan>[0]) =>
-  startChatSpan(tracer, { providerName: 'openai', requestModel: 'gpt-x', stream: false, runId: RUN_ID, step: 1, attempt: 1 });
+  startChatSpan(tracer, { providerName: 'openai', billing: 'metered', requestModel: 'gpt-x', stream: false, runId: RUN_ID, step: 1, attempt: 1 });
 
 const bodiesEnabled = { enabled: true, retentionMs: 1000 };
 

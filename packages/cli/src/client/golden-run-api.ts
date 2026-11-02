@@ -2,7 +2,7 @@ import type { PublicRunEvent } from '@momonga/protocol';
 import type { EvalRunApi } from '@momonga/eval';
 import type { RuntimeClient } from './runtime-client.ts';
 
-export const goldenRunApi = (client: Pick<RuntimeClient, 'createSession' | 'createRun' | 'streamEvents' | 'getRun' | 'resolveApproval'>): EvalRunApi => {
+export const goldenRunApi = (client: Pick<RuntimeClient, 'createSession' | 'createRun' | 'streamEvents' | 'getRun' | 'resolveApproval' | 'cancel'>): EvalRunApi => {
   async function* events(runId: string): AsyncGenerator<PublicRunEvent> {
     for await (const frame of client.streamEvents(runId)) yield frame.data;
   }
@@ -18,6 +18,9 @@ export const goldenRunApi = (client: Pick<RuntimeClient, 'createSession' | 'crea
     },
     resolveApproval: async (approvalId, optionId) => {
       await client.resolveApproval(approvalId, optionId);
+    },
+    cancelRun: async (runId) => {
+      await client.cancel(runId);
     },
   };
 };

@@ -19,6 +19,7 @@ export {
 } from './spans.ts';
 export type {
   AgentSpanInput,
+  ChatBilling,
   ChatRequestContent,
   ChatResponse,
   ChatSpanInput,

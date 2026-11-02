@@ -1,4 +1,5 @@
 import type { CallToolResult } from '@modelcontextprotocol/client';
+import { isRecord } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { parseInputRequests } from './input-requests.ts';
 import type { ElicitationAnswer } from './input-requests.ts';
@@ -19,7 +20,7 @@ export type TaskParams = { taskId: string; inputResponses?: Record<string, Elici
 
 export type TaskRequester = (method: TaskMethod, params: TaskParams, signal: AbortSignal | undefined) => Promise<unknown>;
 
-type TaskBase = { taskId: string; pollIntervalMs: number | undefined; expiresAt: number | undefined; ttlMs: number | undefined };
+type TaskBase = { taskId: string; pollIntervalMs: number | undefined; serverAgeMs: number | undefined; ttlMs: number | undefined };
 
 type TaskView =
   | (TaskBase & { status: 'working' })
@@ -27,8 +28,6 @@ type TaskView =
   | (TaskBase & { status: 'completed'; result: unknown })
   | (TaskBase & { status: 'failed'; error: unknown })
   | (TaskBase & { status: 'cancelled'; message: string | undefined });
-
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export const parseTask = (value: unknown): TaskView => {
   if (!isRecord(value) || typeof value['taskId'] !== 'string') throw new McpTaskError('', 'the server returned a task without a taskId');
@@ -38,7 +37,9 @@ export const parseTask = (value: unknown): TaskView => {
   const ttl = value['ttlMs'];
   const ttlMs = typeof ttl === 'number' && Number.isFinite(ttl) && ttl >= 0 ? ttl : undefined;
   const createdAt = typeof value['createdAt'] === 'string' ? Date.parse(value['createdAt']) : Number.NaN;
-  const base: TaskBase = { taskId, pollIntervalMs, ttlMs, expiresAt: ttlMs === undefined || Number.isNaN(createdAt) ? undefined : createdAt + ttlMs };
+  const lastUpdatedAt = typeof value['lastUpdatedAt'] === 'string' ? Date.parse(value['lastUpdatedAt']) : Number.NaN;
+  const serverAgeMs = Number.isNaN(createdAt) || Number.isNaN(lastUpdatedAt) || lastUpdatedAt < createdAt ? undefined : lastUpdatedAt - createdAt;
+  const base: TaskBase = { taskId, pollIntervalMs, ttlMs, serverAgeMs };
   const status = value['status'];
   if (status === 'working') return { ...base, status };
   if (status === 'input_required') return { ...base, status, inputRequests: value['inputRequests'] };
@@ -74,16 +75,23 @@ export const settleTask = async ({ start, answers, request, timers, clock, signa
   const answered = new Set<string>('answered' in start ? start.answered : []);
   const checkpoint = (taskId: string): McpCheckpoint => ({ kind: 'task', taskId, answered: [...answered] });
   const cancel = (taskId: string): Promise<unknown> => request('tasks/cancel', { taskId }, undefined);
+  let ageOffsetMs = Number.NEGATIVE_INFINITY;
+  const receive = (raw: unknown): TaskView => {
+    const parsed = parseTask(raw);
+    ageOffsetMs = Math.max(ageOffsetMs, (parsed.serverAgeMs ?? 0) - clock.now());
+    return parsed;
+  };
   let view: TaskView;
   if ('created' in start) {
-    view = parseTask(start.created);
+    view = receive(start.created);
     onCheckpoint(checkpoint(view.taskId));
   } else {
-    view = parseTask(await request('tasks/get', { taskId: start.taskId }, signal));
+    view = receive(await request('tasks/get', { taskId: start.taskId }, signal));
   }
   const { taskId } = view;
   for (;;) {
-    if ((view.status === 'working' || view.status === 'input_required') && view.expiresAt !== undefined && clock.now() >= view.expiresAt) {
+    if ((view.status === 'working' || view.status === 'input_required') && view.ttlMs !== undefined && clock.now() + ageOffsetMs > view.ttlMs) {
+      await cancel(taskId);
       throw new McpTaskError(taskId, `task ${taskId} was still ${view.status} when its ttl of ${view.ttlMs}ms ran out`);
     }
     switch (view.status) {
@@ -120,7 +128,7 @@ export const settleTask = async ({ start, answers, request, timers, clock, signa
       throw signal.reason;
     }
     try {
-      view = parseTask(await request('tasks/get', { taskId }, signal));
+      view = receive(await request('tasks/get', { taskId }, signal));
     } catch (error) {
       if (!signal.aborted) throw error;
       await cancel(taskId);

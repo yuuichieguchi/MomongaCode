@@ -97,7 +97,7 @@ describe('propagation', () => {
     const remote = telemetry.propagation.extract({ ...headers });
     const chat = startChatSpan(
       telemetry.tracer,
-      { providerName: 'openai', requestModel: 'gpt-x', stream: true, runId: RUN_ID, step: 1, attempt: 1 },
+      { providerName: 'openai', billing: 'metered', requestModel: 'gpt-x', stream: true, runId: RUN_ID, step: 1, attempt: 1 },
       remote,
     );
     chat.end(clock.now());

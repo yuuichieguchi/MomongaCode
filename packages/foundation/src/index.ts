@@ -19,6 +19,10 @@ export type { SseEvent } from './sse.ts';
 export { createUdsClient, isUnixSocketLive, listenUnix } from './uds.ts';
 export type { UdsClient, UdsClientOptions, UdsRequestOptions, UdsResponse } from './uds.ts';
 export { uuidv7 } from './uuidv7.ts';
+export { DEFAULT_LOCK_TIMEOUT_MS, LOCK_RETRY_MS, createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
+export type { FileLockOptions, FileLockPorts, KeyedSerializer } from './file-lock.ts';
+export { syncDirectory, syncDirectorySync, writeFileAtomically } from './atomic-file.ts';
+export type { AtomicWriteOptions } from './atomic-file.ts';
 export { forceKillGroup, groupAlive, realGroupTiming, signalGroup, terminateGroup, waitForGroupGone } from './process-group.ts';
 export type { ForceKillGroupOptions, GroupTiming, TerminateGroupOptions, TerminateOutcome } from './process-group.ts';
 export {
