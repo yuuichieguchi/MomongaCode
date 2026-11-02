@@ -26,7 +26,8 @@ export type E2eCaseFile =
   | 'mcp-complete.test.ts'
   | 'agents.test.ts'
   | 'acp.test.ts'
-  | 'hooks-auto.test.ts';
+  | 'hooks-auto.test.ts'
+  | 'hooks-auto-cli.test.ts';
 
 export const E2E_CASES = [
   { id: 'b1-join', file: 'b1-model-call.test.ts', title: 'b1 join: restarted runtime joins the in-flight upstream call', needsBash: false },
@@ -144,6 +145,10 @@ export const E2E_CASES = [
   { id: 'auto-allow', file: 'hooks-auto.test.ts', title: 'auto: a confident safe verdict from the classifier alias runs the write without an approval', needsBash: false },
   { id: 'auto-fallback', file: 'hooks-auto.test.ts', title: 'auto: an unsafe verdict and a malformed verdict each fall back to an approval request for the person', needsBash: false },
   { id: 'auto-eval-false-allow', file: 'hooks-auto.test.ts', title: 'auto eval: the auto-mode golden dataset reports the measured false-allow rate of the classifier against the fake upstream', needsBash: false },
+  { id: 'cli-hook-denial', file: 'hooks-auto-cli.test.ts', title: 'cli: a -p run whose PreToolUse hook blocks a write prints the hook run and the denial by its source, and the file is not written', needsBash: true },
+  { id: 'cli-auto-print', file: 'hooks-auto-cli.test.ts', title: 'cli: a -p run in auto mode prints the classifier verdict that allowed the write and the file changes', needsBash: false },
+  { id: 'cli-auto-unavailable', file: 'hooks-auto-cli.test.ts', title: 'cli: a -p run in auto mode without a configured classifier fails with mode_unavailable stated plainly and never calls the model', needsBash: false },
+  { id: 'cli-user-prompt-blocked', file: 'hooks-auto-cli.test.ts', title: 'cli: a -p run whose UserPromptSubmit hook blocks the prompt prints the hook run and states that the prompt was blocked', needsBash: true },
 ] as const satisfies readonly { id: string; file: E2eCaseFile; title: string; needsBash: boolean }[];
 
 export type E2eCase = (typeof E2E_CASES)[number];

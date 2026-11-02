@@ -1,6 +1,9 @@
-import type { PermissionMode, PermissionOption, PublicRunEvent, RunStatus, ToolKind } from '@momonga/protocol';
+import type { PermissionDenial, PermissionMode, PermissionOption, PublicRunEvent, RunStatus, ToolKind } from '@momonga/protocol';
 import { startFlow } from '../elicit/flow.ts';
 import { mcpAuthorizationNotice } from '../mcp/messages.ts';
+import { selectableModes } from '../modes.ts';
+import type { ModeAvailability } from '../modes.ts';
+import { classificationLevel, describeClassification, describeHook, hookLevel } from '../policy-messages.ts';
 import type { ElicitationFlow } from '../elicit/flow.ts';
 import { asChildEvent } from '../run/child-events.ts';
 import { isTerminalStatus } from '../run/follow.ts';
@@ -12,7 +15,7 @@ export type PlanEntry = { content: string; priority: 'high' | 'medium' | 'low'; 
 export type Entry =
   | { kind: 'user'; text: string }
   | { kind: 'assistant'; itemId: string; text: string; open: boolean }
-  | { kind: 'tool'; callId: string; name: string; title: string; toolKind: ToolKind; rawInput: unknown; status: ToolStatus; output?: string }
+  | { kind: 'tool'; callId: string; name: string; title: string; toolKind: ToolKind; rawInput: unknown; status: ToolStatus; output?: string; denial?: PermissionDenial }
   | { kind: 'plan'; entries: readonly PlanEntry[] }
   | { kind: 'notice'; level: 'info' | 'warning' | 'error'; text: string }
   | { kind: 'info'; text: string };
@@ -140,7 +143,25 @@ export const reduceEvent = (transcript: Transcript, event: PublicRunEvent): Tran
     case 'tool.started':
       return { ...transcript, entries: updateTool(transcript.entries, event.callId, (tool) => ({ ...tool, status: 'running' })) };
     case 'tool.completed':
-      return { ...transcript, entries: updateTool(transcript.entries, event.callId, (tool) => ({ ...tool, status: event.status, output: event.output })) };
+      return {
+        ...transcript,
+        entries: updateTool(transcript.entries, event.callId, (tool) => ({
+          ...tool,
+          status: event.status,
+          output: event.output,
+          ...(event.denial === undefined ? {} : { denial: event.denial }),
+        })),
+      };
+    case 'hook.completed':
+      return appendEntry(transcript, { kind: 'notice', level: hookLevel(event), text: describeHook(event) });
+    case 'tool.permission.classified': {
+      const title = transcript.entries.find((entry) => entry.kind === 'tool' && entry.callId === event.callId);
+      return appendEntry(transcript, {
+        kind: 'notice',
+        level: classificationLevel(event),
+        text: describeClassification(event, title?.kind === 'tool' ? title.title : event.callId),
+      });
+    }
     case 'tool.reconciled':
       return {
         ...transcript,
@@ -186,12 +207,10 @@ export const reduceChildEvent = (transcript: Transcript, event: PublicRunEvent, 
   return child === undefined ? transcript : reduceEvent(transcript, child);
 };
 
-export type ModeCycleInput = { current: PermissionMode; bypassAllowed: boolean };
+export type ModeCycleInput = ModeAvailability & { current: PermissionMode };
 
-export const MODE_CYCLE: readonly PermissionMode[] = ['default', 'acceptEdits', 'plan', 'bypassPermissions'];
-
-export const nextMode = ({ current, bypassAllowed }: ModeCycleInput): PermissionMode => {
-  const available = MODE_CYCLE.filter((mode) => mode !== 'bypassPermissions' || bypassAllowed);
+export const nextMode = ({ current, ...availability }: ModeCycleInput): PermissionMode => {
+  const available = selectableModes(availability);
   const index = available.indexOf(current);
   const next = available[(index + 1) % available.length];
   if (next === undefined) throw new Error('no permission mode is available to cycle to');

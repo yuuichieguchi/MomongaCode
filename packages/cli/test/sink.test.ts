@@ -61,6 +61,47 @@ describe('text format', () => {
   });
 });
 
+describe('hooks, auto mode and denials', () => {
+  const call = (callId: string, title: string) => frame({ type: 'tool.call', callId, providerCallId: 'p', name: 'Write', kind: 'edit', title, rawInput: {} });
+
+  it('prints every hook run with its outcome, and the message of a blocking one', () => {
+    const { sink, err } = sinkFor('text');
+    sink.handle(frame({ type: 'hook.completed', hookEvent: 'PreToolUse', command: 'check.sh', outcome: 'blocked', exitCode: 2, decision: 'deny', message: 'writes are frozen', callId: 'c1', durationMs: 3 }));
+    sink.handle(frame({ type: 'hook.completed', hookEvent: 'SessionStart', command: 'warm.sh', outcome: 'success', exitCode: 0, durationMs: 3 }));
+    expect(err).toEqual([
+      'momonga: hook PreToolUse blocked (exit 2, decision deny): check.sh\n  writes are frozen\n',
+      'momonga: hook SessionStart succeeded (exit 0): warm.sh\n',
+    ]);
+  });
+
+  it('prints the classifier verdict under the title of the call, or the reason it could not decide', () => {
+    const { sink, err } = sinkFor('text');
+    sink.handle(call('c1', 'Write /a'));
+    sink.handle(frame({ type: 'tool.permission.classified', callId: 'c1', alias: 'guard', outcome: 'ask', verdict: 'unsafe', confidence: 'high', rationale: 'writes outside the workspace' }));
+    sink.handle(frame({ type: 'tool.permission.classified', callId: 'c1', alias: 'guard', outcome: 'ask', failure: 'the classifier reply is not JSON' }));
+    expect(err).toEqual([
+      'momonga: auto mode asks you about Write /a; classifier guard judged Write /a unsafe with high confidence: writes outside the workspace\n',
+      'momonga: auto mode could not classify Write /a, so it asks you: the classifier reply is not JSON\n',
+    ]);
+  });
+
+  it('names the source of a denial instead of calling the tool merely failed', () => {
+    const { sink, err } = sinkFor('text');
+    sink.handle(call('c1', 'Write /a'));
+    sink.handle(frame({ type: 'tool.completed', callId: 'c1', status: 'failed', output: 'Permission denied: no', denial: { source: 'sandbox', reason: '/a is outside the writable roots' } }));
+    expect(err).toEqual(['momonga: tool Write /a denied by the sandbox: /a is outside the writable roots\n']);
+  });
+
+  it('states that a hook blocked the prompt or stopped the run', () => {
+    expect(describeEnd(runView({ status: 'FAILED', error: { code: 'user_prompt_blocked', message: 'no prompts today' } }))).toBe(
+      'momonga: run run-1 FAILED (a UserPromptSubmit hook blocked the prompt: no prompts today)',
+    );
+    expect(describeEnd(runView({ status: 'FAILED', error: { code: 'hook_stopped', message: 'PostToolUse hook halted' } }))).toBe(
+      'momonga: run run-1 FAILED (a hook stopped the run: PostToolUse hook halted)',
+    );
+  });
+});
+
 describe('json formats', () => {
   it('prints nothing while the run goes on for json, so stdout holds only the result', () => {
     const { sink, out } = sinkFor('json');

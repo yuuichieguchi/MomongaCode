@@ -7,6 +7,7 @@ import type { CliPorts } from '../ports.ts';
 import { describeElicitation } from '../elicit/describe.ts';
 import { readImageAttachment } from '../images.ts';
 import { mcpAuthorizationNotice } from '../mcp/messages.ts';
+import { describeClassification, describeDenial, describeHook, describeRunError } from '../policy-messages.ts';
 import { asChildEvent } from './child-events.ts';
 import { followRun } from './follow.ts';
 import { openSession } from './open-session.ts';
@@ -59,7 +60,7 @@ export const resultOf = (run: RunView, result: string): RunResult => ({
 });
 
 export const describeEnd = (run: RunView): string => {
-  const reason = run.error === undefined ? run.stopReason : `${run.error.code}: ${run.error.message}`;
+  const reason = run.error === undefined ? run.stopReason : describeRunError(run.error);
   return `momonga: run ${run.id} ${run.status}${reason === undefined ? '' : ` (${reason})`}`;
 };
 
@@ -86,7 +87,16 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
         if (verbose) note(`momonga: ${event.name} ${event.title}`);
         break;
       case 'tool.completed':
-        if (verbose || event.status === 'failed') note(`momonga: tool ${titles.get(event.callId) ?? event.callId} ${event.status}`);
+        if (verbose || event.status === 'failed') {
+          const outcome = event.denial === undefined ? event.status : describeDenial(event.denial);
+          note(`momonga: tool ${titles.get(event.callId) ?? event.callId} ${outcome}`);
+        }
+        break;
+      case 'hook.completed':
+        note(`momonga: ${describeHook(event, agent)}`);
+        break;
+      case 'tool.permission.classified':
+        note(`momonga: ${describeClassification(event, titles.get(event.callId) ?? event.callId)}`);
         break;
       case 'tool.waiting':
         note(`momonga: waiting for ${awaitedOf(event.awaits)}`);

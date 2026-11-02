@@ -60,6 +60,7 @@ export type FakeBackendOptions = {
   images?: Readonly<Record<string, ImageAttachment>>;
   targets?: readonly string[];
   startupNotices?: readonly string[];
+  autoModeAvailable?: boolean;
   modelPending?: Promise<void>;
 };
 
@@ -131,6 +132,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       record('openSession');
       return session;
     },
+    autoModeAvailable: async () => options.autoModeAvailable ?? false,
     setMode: async (mode: PermissionMode) => {
       record(`mode:${mode}`);
       session = { ...session, permissionMode: mode };

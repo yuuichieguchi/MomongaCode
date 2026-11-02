@@ -1,6 +1,7 @@
 import type { ContentBlock, PermissionOption, SessionUpdate, ToolCall, ToolCallContent, ToolCallStatus, ToolCallUpdate } from '@agentclientprotocol/sdk';
 import { isRecord } from '@momonga/foundation';
 import type { ElicitationRequestView, PublicRunEvent } from '@momonga/protocol';
+import { classificationLevel, describeClassification, describeDenial, describeHook, hookLevel } from '../policy-messages.ts';
 import { asChildEvent } from '../run/child-events.ts';
 
 export type ClientFeatures = {
@@ -130,7 +131,12 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
       return [
         toolUpdate(toolCallIdOf(event.runId, event.callId), {
           status: event.status,
-          content: event.content === undefined ? outputContent(event.output) : toolContentOf(event.content),
+          content:
+            event.denial !== undefined
+              ? outputContent(describeDenial(event.denial))
+              : event.content === undefined
+                ? outputContent(event.output)
+                : toolContentOf(event.content),
           rawOutput: event.output,
         }),
       ];
@@ -188,8 +194,12 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
     case 'skill.activated':
     case 'approval.rule.persisted':
     case 'job.finished':
-    case 'hook.completed':
-    case 'tool.permission.classified':
       return [];
+    case 'hook.completed':
+      return phase === 'live' ? liveNotice(features, event.runId, event.seq, hookLevel(event), describeHook(event)) : [];
+    case 'tool.permission.classified': {
+      const subject = state.calls.get(toolCallIdOf(event.runId, event.callId))?.title ?? event.callId;
+      return phase === 'live' ? liveNotice(features, event.runId, event.seq, classificationLevel(event), describeClassification(event, subject)) : [];
+    }
   }
 };

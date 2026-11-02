@@ -5,7 +5,7 @@ import { createGatewayClient } from '../client/gateway-client.ts';
 import { daemonReadyBoundMs, ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { followRun, followSession } from '../run/follow.ts';
-import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
+import { autoModeConfigured, connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import { createAcpAgent } from './agent.ts';
 
 export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: AbortSignal): Promise<number> => {
@@ -20,6 +20,7 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
     runtime,
     contextWindowOf: (modelAlias) => gateway.contextWindowOf(modelAlias),
     environment: () => environmentSnapshot(ports),
+    autoModeAvailable: () => autoModeConfigured(ports),
     canonicalCwd: canonicalPath,
     daemonReady: () => (daemon ??= ensureDaemon(ports, paths).then(() => undefined)),
     follow: ({ runId, onEvent, onChildEvent, signal }) =>

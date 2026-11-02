@@ -6,6 +6,8 @@ import type { ElicitationDecision, ElicitationFlow } from '../elicit/flow.ts';
 import type { RunEventFrame } from '../client/runtime-client.ts';
 import type { RunView } from '../client/views.ts';
 import { describeAttachment, pastedImagePaths } from '../images.ts';
+import { describeFailure } from '../failure.ts';
+import { describeDenial } from '../policy-messages.ts';
 import { describeEnd } from '../run/headless.ts';
 import type { StartRunOptions, TuiBackend } from './backend.ts';
 import { DEFAULT_SLASH_COMMANDS } from './commands/index.ts';
@@ -146,7 +148,8 @@ function EntryView({ entry }: { entry: Entry }) {
           <Text>
             {toolMark(entry.status)} {entry.title}
           </Text>
-          {entry.status === 'failed' && entry.output !== undefined ? <Text color="red">{entry.output.split('\n').slice(0, 3).join('\n')}</Text> : null}
+          {entry.status === 'failed' && entry.denial !== undefined ? <Text color="red">{describeDenial(entry.denial)}</Text> : null}
+          {entry.status === 'failed' && entry.denial === undefined && entry.output !== undefined ? <Text color="red">{entry.output.split('\n').slice(0, 3).join('\n')}</Text> : null}
           {entry.status === 'unknown' && entry.output !== undefined ? <Text color="yellow">{entry.output}</Text> : null}
         </Box>
       );
@@ -266,6 +269,7 @@ export function App(props: AppProps) {
   const [editor, setEditor] = useState<EditorState>(emptyEditor());
   const [mode, setModeState] = useState<PermissionMode>(props.initialMode ?? 'default');
   const [bypassAllowed, setBypassAllowed] = useState(false);
+  const [autoAvailable, setAutoAvailable] = useState(false);
   const [busy, setBusy] = useState(false);
   const [approvalIndex, setApprovalIndexState] = useState(0);
   const [model, setModel] = useState<MomongaModelEntry | undefined>(undefined);
@@ -321,7 +325,7 @@ export function App(props: AppProps) {
   };
 
   const reportError = (error: unknown): void => {
-    dispatch({ kind: 'append', entry: { kind: 'notice', level: 'error', text: errorOf(error).message } });
+    dispatch({ kind: 'append', entry: { kind: 'notice', level: 'error', text: describeFailure(error) } });
   };
 
   const openSession = async (): Promise<void> => {
@@ -329,6 +333,7 @@ export function App(props: AppProps) {
     setModeState(session.permissionMode);
     setAlias(session.modelAlias);
     setBypassAllowed(session.bypassAllowed);
+    setAutoAvailable(await backend.autoModeAvailable());
     replaceEditor(emptyEditor(await backend.loadHistory()));
     setPhase({ kind: 'ready' });
     void backend.model().then(setModel, (error: unknown) => {
@@ -415,6 +420,7 @@ export function App(props: AppProps) {
     await command.run(parsed.args, {
       mode,
       bypassAllowed,
+      autoAvailable,
       commands: slash.list(),
       backend,
       info: note,
@@ -575,7 +581,7 @@ export function App(props: AppProps) {
 
   const cycleMode = (): void => {
     backend
-      .setMode(nextMode({ current: mode, bypassAllowed }))
+      .setMode(nextMode({ current: mode, bypassAllowed, autoAvailable }))
       .then((session) => setModeState(session.permissionMode), reportError);
   };
 

@@ -345,6 +345,7 @@ export const startAgent = (overrides: Partial<AcpDeps> = {}): Harness => {
       return size;
     },
     environment: async () => ({ HOME: '/h' }),
+    autoModeAvailable: async () => false,
     canonicalCwd: (cwd) => cwd,
     daemonReady: async () => undefined,
     follow: async (request) => {

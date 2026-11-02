@@ -43,6 +43,7 @@ describe('built-in commands', () => {
     const context: SlashContext = {
       mode: 'default',
       bypassAllowed: false,
+      autoAvailable: false,
       commands: BUILTIN_SLASH_COMMANDS,
       backend: fakeBackend(),
       startRun: async () => undefined,
@@ -64,12 +65,18 @@ describe('built-in commands', () => {
     expect(infos[0]).not.toContain('auto');
   });
 
+  it('/mode lists auto when a classifier is configured', async () => {
+    const { context, infos } = contextOf({ autoAvailable: true });
+    await run('mode', '', context);
+    expect(infos[0]).toBe('permission mode: default (available: default, acceptEdits, plan, auto)');
+  });
+
   it('/mode sets a known mode and refuses an unknown one', async () => {
     const { context, infos, modes } = contextOf();
     await run('mode', 'acceptEdits', context);
     await run('mode', 'turbo', context);
     expect(modes).toEqual(['acceptEdits']);
-    expect(infos).toEqual(['unknown permission mode turbo; available: default, acceptEdits, plan, bypassPermissions']);
+    expect(infos).toEqual(['unknown permission mode turbo; available: default, acceptEdits, plan']);
   });
 
   it('/clear and /exit call their hooks', async () => {
@@ -100,6 +107,7 @@ const contextWith = (backendOptions: FakeBackendOptions = {}) => {
   const context: SlashContext = {
     mode: 'default',
     bypassAllowed: false,
+    autoAvailable: false,
     commands: DEFAULT_SLASH_COMMANDS,
     backend,
     info: (text) => void infos.push(text),

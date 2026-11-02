@@ -168,6 +168,17 @@ describe('App input', () => {
     app.unmount();
   });
 
+  it('includes auto in the cycle only when a classifier is configured', async () => {
+    const { backend, app } = await start({ autoModeAvailable: true });
+    await untilFrame(app, 'mode: default');
+    for (const mode of ['acceptEdits', 'plan', 'auto', 'default']) {
+      app.stdin.write(KEYS.shiftTab);
+      await untilFrame(app, `mode: ${mode}`);
+    }
+    expect(backend.calls.filter((call) => call.startsWith('mode:'))).toEqual(['mode:acceptEdits', 'mode:plan', 'mode:auto', 'mode:default']);
+    app.unmount();
+  });
+
   it('includes bypassPermissions in the cycle when the session may use it', async () => {
     const { backend, app } = await start({ session: { permissionMode: 'plan', bypassAllowed: true } });
     await untilFrame(app, 'mode: plan');

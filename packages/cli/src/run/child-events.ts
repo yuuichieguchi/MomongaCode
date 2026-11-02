@@ -6,6 +6,9 @@ export const asChildEvent = (event: PublicRunEvent, agent: string): PublicRunEve
   switch (event.type) {
     case 'tool.call':
       return { ...event, callId: qualified(event.runId, event.callId), title: `${agent}: ${event.title}` };
+    case 'hook.completed':
+      return event.callId === undefined ? event : { ...event, callId: qualified(event.runId, event.callId) };
+    case 'tool.permission.classified':
     case 'tool.permission.requested':
     case 'tool.elicitation.requested':
     case 'tool.started':

@@ -34,6 +34,7 @@ export type AcpDeps = {
   runtime: RuntimeClient;
   contextWindowOf(modelAlias: string): Promise<number>;
   environment(): Promise<Record<string, string>>;
+  autoModeAvailable(): Promise<boolean>;
   canonicalCwd(cwd: string): string;
   daemonReady(): Promise<void>;
   follow(request: FollowRequest): Promise<RunView>;
@@ -47,6 +48,7 @@ type BridgeSession = {
   readonly id: string;
   readonly modelAlias: string;
   readonly bypassAllowed: boolean;
+  readonly autoAvailable: boolean;
   skillNames: readonly string[];
   readonly queue: OrderedQueue;
   readonly tasks: TaskGroup;
@@ -234,7 +236,7 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
     await caughtUp.promise;
   };
 
-  const register = (view: SessionView): BridgeSession => {
+  const register = (view: SessionView, autoAvailable: boolean): BridgeSession => {
     const lifetime = new AbortController();
     const failed = (error: unknown): void => {
       deps.report(`session ${view.id} failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -244,6 +246,7 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
       id: view.id,
       modelAlias: view.modelAlias,
       bypassAllowed: view.bypassAllowed,
+      autoAvailable,
       skillNames: [],
       queue: createOrderedQueue(),
       tasks: createTaskGroup(failed),
@@ -318,9 +321,9 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
     const mcpServers = mcpServersOf(params.mcpServers);
     await deps.daemonReady();
     const created = await viaRunApi(deps.runtime.createSession({ cwd: params.cwd, env: await deps.environment(), mcpServers }));
-    const session = register(created.session);
+    const session = register(created.session, await deps.autoModeAvailable());
     announceAfterResponse(session);
-    return { sessionId: session.id, modes: modeStateOf(created.session) };
+    return { sessionId: session.id, modes: modeStateOf({ ...session, permissionMode: created.session.permissionMode }) };
   });
 
   app.onRequest('session/load', async ({ params }) => {
@@ -335,7 +338,7 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
       throw RequestError.invalidParams({ cwd: params.cwd, sessionCwd: existing.cwd }, `session ${existing.id} belongs to ${existing.cwd}, not ${params.cwd}`);
     }
     const view = await viaRunApi(deps.runtime.setMcpServers(existing.id, mcpServers));
-    const session = register(view);
+    const session = register(view, await deps.autoModeAvailable());
     try {
       for (const run of await deps.runtime.listRuns(view.id)) await replayRun(session, run);
       await session.queue.settled();
@@ -345,7 +348,7 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
       throw error;
     }
     announceAfterResponse(session);
-    return { modes: modeStateOf(view) };
+    return { modes: modeStateOf({ ...session, permissionMode: view.permissionMode }) };
   });
 
   app.onRequest('session/set_mode', async ({ params }) => {

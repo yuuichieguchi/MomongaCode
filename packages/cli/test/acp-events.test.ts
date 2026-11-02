@@ -239,6 +239,45 @@ describe('notices', () => {
     ]);
   });
 
+  it('shows a hook run with its outcome, exit code and message, live only', () => {
+    const hook = { type: 'hook.completed', hookEvent: 'PreToolUse', command: 'check.sh', outcome: 'blocked', exitCode: 2, decision: 'deny', message: 'writes are frozen', durationMs: 4, callId: 'call-1' } as const;
+    expect(map(hook, { features: ALL })).toEqual([
+      { kind: 'update', update: { sessionUpdate: 'notice', severity: 'warning', title: 'hook PreToolUse blocked (exit 2, decision deny): check.sh\n  writes are frozen' } },
+    ]);
+    expect(map(hook, { phase: 'history', features: ALL })).toEqual([]);
+  });
+
+  it('shows the verdict of the auto mode classifier under the title of the call', () => {
+    const state = createMapperState();
+    map(call, { state });
+
+    const effects = map(
+      { type: 'tool.permission.classified', callId: 'call-1', alias: 'guard', outcome: 'allow', verdict: 'safe', confidence: 'high', rationale: 'inside the workspace' },
+      { state, features: ALL },
+    );
+
+    expect(effects).toEqual([
+      { kind: 'update', update: { sessionUpdate: 'notice', severity: 'info', title: 'auto mode allowed Edit a.txt; classifier guard judged Edit a.txt safe with high confidence: inside the workspace' } },
+    ]);
+  });
+
+  it('shows the source of a permission denial as the content of the failed call', () => {
+    const effects = map({ type: 'tool.completed', callId: 'call-1', status: 'failed', output: 'Permission denied: writes are frozen', denial: { source: 'hook', reason: 'writes are frozen' } });
+
+    expect(effects).toEqual([
+      {
+        kind: 'update',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'run-1/call-1',
+          status: 'failed',
+          content: [{ type: 'content', content: { type: 'text', text: 'denied by a hook: writes are frozen' } }],
+          rawOutput: 'Permission denied: writes are frozen',
+        },
+      },
+    ]);
+  });
+
   it('keeps notices out of a replayed history', () => {
     expect(map({ type: 'notice', level: 'warning', message: 'live only' }, { phase: 'history', features: ALL })).toEqual([]);
     expect(map({ type: 'mcp.authorization.required', server: 'docs' }, { phase: 'history', features: ALL })).toEqual([]);

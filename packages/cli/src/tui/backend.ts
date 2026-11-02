@@ -9,7 +9,7 @@ import type { CliPorts } from '../ports.ts';
 import { followRun } from '../run/follow.ts';
 import type { NoticeSource } from './notices.ts';
 import { readImageAttachment } from '../images.ts';
-import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
+import { autoModeConfigured, connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import type { SessionOptions } from '../run/open-session.ts';
 
 export type FollowHandlers = {
@@ -26,6 +26,7 @@ export type TuiBackend = {
   decideTrust(decision: 'trusted' | 'untrusted'): Promise<void>;
   openSession(): Promise<SessionView>;
   setMode(mode: PermissionMode): Promise<SessionView>;
+  autoModeAvailable(): Promise<boolean>;
   startRun(text: string, history: 'inherit' | 'fresh', options?: StartRunOptions): Promise<RunView>;
   follow(runId: string, handlers: FollowHandlers): Promise<RunView>;
   cancel(runId: string): Promise<void>;
@@ -90,6 +91,7 @@ export const createTuiBackend = (
       session = await runtime().setPermissionMode(current().id, mode);
       return session;
     },
+    autoModeAvailable: () => autoModeConfigured(ports),
     startRun: async (text, history, runOptions = {}) =>
       (await runtime().createRun(current().id, text, { history, ...runOptions })).run,
     follow: async (runId, handlers) =>

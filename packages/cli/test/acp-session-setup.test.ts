@@ -43,28 +43,35 @@ describe('mcpServersOf', () => {
 
 describe('modeStateOf', () => {
   it('offers default, acceptEdits and plan, and never auto', () => {
-    const state = modeStateOf({ permissionMode: 'acceptEdits', bypassAllowed: false });
+    const state = modeStateOf({ permissionMode: 'acceptEdits', bypassAllowed: false, autoAvailable: false });
 
     expect(state.currentModeId).toBe('acceptEdits');
     expect(state.availableModes.map((mode) => mode.id)).toEqual(['default', 'acceptEdits', 'plan']);
     for (const mode of state.availableModes) expect(mode.description).toBeTruthy();
   });
 
+  it('adds auto after plan when a classifier is configured', () => {
+    const state = modeStateOf({ permissionMode: 'auto', bypassAllowed: false, autoAvailable: true });
+
+    expect(state.currentModeId).toBe('auto');
+    expect(state.availableModes.map((mode) => mode.id)).toEqual(['default', 'acceptEdits', 'plan', 'auto']);
+  });
+
   it('adds bypassPermissions when the session may use it', () => {
-    expect(modeStateOf({ permissionMode: 'default', bypassAllowed: true }).availableModes.map((mode) => mode.id)).toEqual(['default', 'acceptEdits', 'plan', 'bypassPermissions']);
+    expect(modeStateOf({ permissionMode: 'default', bypassAllowed: true, autoAvailable: false }).availableModes.map((mode) => mode.id)).toEqual(['default', 'acceptEdits', 'plan', 'bypassPermissions']);
   });
 });
 
 describe('selectableModeOf', () => {
   it('returns a mode the session offers', () => {
-    expect(selectableModeOf({ bypassAllowed: false }, 'plan')).toBe('plan');
-    expect(selectableModeOf({ bypassAllowed: true }, 'bypassPermissions')).toBe('bypassPermissions');
+    expect(selectableModeOf({ bypassAllowed: false, autoAvailable: false }, 'plan')).toBe('plan');
+    expect(selectableModeOf({ bypassAllowed: true, autoAvailable: false }, 'bypassPermissions')).toBe('bypassPermissions');
   });
 
   it.each([
-    [{ bypassAllowed: false }, 'bypassPermissions'],
-    [{ bypassAllowed: true }, 'auto'],
-    [{ bypassAllowed: true }, 'nonsense'],
+    [{ bypassAllowed: false, autoAvailable: false }, 'bypassPermissions'],
+    [{ bypassAllowed: true, autoAvailable: false }, 'auto'],
+    [{ bypassAllowed: true, autoAvailable: false }, 'nonsense'],
   ])('refuses %j %s with invalid params', (source, modeId) => {
     expect(() => selectableModeOf(source, modeId)).toThrow(RequestError);
     expect(() => selectableModeOf(source, modeId)).toThrow(`the mode ${modeId} is not available in this session`);

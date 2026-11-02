@@ -723,6 +723,19 @@ describe('session/set_mode', () => {
     await harness.peer.close();
   });
 
+  it('offers auto between plan and bypassPermissions only when a classifier is configured, and applies it', async () => {
+    const harness = startAgent({ autoModeAvailable: async () => true });
+    harness.runtime.session = { ...SESSION, bypassAllowed: true };
+    await harness.peer.request('initialize', INITIALIZE);
+
+    const result = resultOf(await harness.peer.request('session/new', { cwd: SESSION.cwd, mcpServers: [] })) as { sessionId: string; modes: { availableModes: { id: string }[] } };
+
+    expect(result.modes.availableModes.map((mode) => mode.id)).toEqual(['default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions']);
+    expect(resultOf(await harness.peer.request('session/set_mode', { sessionId: result.sessionId, modeId: 'auto' }))).toEqual({});
+    expect(harness.runtime.calls).toContain(`setPermissionMode ${result.sessionId} auto`);
+    await harness.peer.close();
+  });
+
   it('turns a refusal of the Run API into invalid params', async () => {
     const harness = startAgent();
     const sessionId = await open(harness);

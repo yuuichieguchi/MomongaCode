@@ -20,6 +20,11 @@ export const environmentSnapshot = async (ports: Pick<DaemonPorts, 'env' | 'home
   return stripCredentialEnv(defined, credentialEnvNames(settings)).env;
 };
 
+export const autoModeConfigured = async (ports: Pick<DaemonPorts, 'home'>): Promise<boolean> => {
+  const { settings } = await loadUserSettings({ home: ports.home });
+  return settings.autoMode?.classifier !== undefined;
+};
+
 export const connectRuntime = (paths: MomongaPaths): RuntimeClient => createRuntimeClient({ socketPath: paths.sockets.runtime });
 
 export const openSession = async (ports: DaemonPorts & { cwd: string }, paths: MomongaPaths, options: SessionOptions): Promise<CliSession> => {

@@ -88,17 +88,48 @@ describe('settledCount', () => {
   });
 });
 
+describe('hooks, auto mode and denials', () => {
+  it('keeps the denial on the failed call', () => {
+    const state = apply([call, { type: 'tool.completed', callId: 'c1', status: 'failed', output: 'Permission denied: no', denial: { source: 'rule', reason: 'Write(/a) is denied' } }]);
+    expect(state.entries[0]).toMatchObject({ status: 'failed', denial: { source: 'rule', reason: 'Write(/a) is denied' } });
+  });
+
+  it('appends a notice for a hook run at the level of its outcome', () => {
+    const state = apply([
+      { type: 'hook.completed', hookEvent: 'PreToolUse', command: 'check.sh', outcome: 'blocked', exitCode: 2, message: 'frozen', durationMs: 1 },
+      { type: 'hook.completed', hookEvent: 'PostToolUse', command: 'fmt.sh', outcome: 'success', exitCode: 0, durationMs: 1 },
+      { type: 'hook.completed', hookEvent: 'PostToolUse', command: 'fmt.sh', outcome: 'timed_out', durationMs: 1 },
+    ]);
+    expect(state.entries).toEqual([
+      { kind: 'notice', level: 'warning', text: 'hook PreToolUse blocked (exit 2): check.sh\n  frozen' },
+      { kind: 'notice', level: 'info', text: 'hook PostToolUse succeeded (exit 0): fmt.sh' },
+      { kind: 'notice', level: 'error', text: 'hook PostToolUse timed out: fmt.sh' },
+    ]);
+  });
+
+  it('appends a notice for the classifier verdict under the title of the call', () => {
+    const state = apply([call, { type: 'tool.permission.classified', callId: 'c1', alias: 'guard', outcome: 'allow', verdict: 'safe', confidence: 'high' }]);
+    expect(state.entries[1]).toEqual({ kind: 'notice', level: 'info', text: 'auto mode allowed Read /a; classifier guard judged Read /a safe with high confidence' });
+  });
+});
+
 describe('nextMode', () => {
   it('cycles default, acceptEdits, plan and back, skipping bypassPermissions unless the session may use it', () => {
-    expect(nextMode({ current: 'default', bypassAllowed: false })).toBe('acceptEdits');
-    expect(nextMode({ current: 'acceptEdits', bypassAllowed: false })).toBe('plan');
-    expect(nextMode({ current: 'plan', bypassAllowed: false })).toBe('default');
-    expect(nextMode({ current: 'plan', bypassAllowed: true })).toBe('bypassPermissions');
-    expect(nextMode({ current: 'bypassPermissions', bypassAllowed: true })).toBe('default');
+    expect(nextMode({ current: 'default', bypassAllowed: false, autoAvailable: false })).toBe('acceptEdits');
+    expect(nextMode({ current: 'acceptEdits', bypassAllowed: false, autoAvailable: false })).toBe('plan');
+    expect(nextMode({ current: 'plan', bypassAllowed: false, autoAvailable: false })).toBe('default');
+    expect(nextMode({ current: 'plan', bypassAllowed: true, autoAvailable: false })).toBe('bypassPermissions');
+    expect(nextMode({ current: 'bypassPermissions', bypassAllowed: true, autoAvailable: false })).toBe('default');
   });
 
   it('leaves the unavailable auto mode for the first mode', () => {
-    expect(nextMode({ current: 'auto', bypassAllowed: false })).toBe('default');
+    expect(nextMode({ current: 'auto', bypassAllowed: false, autoAvailable: false })).toBe('default');
+  });
+
+  it('puts auto between plan and bypassPermissions when a classifier is configured', () => {
+    expect(nextMode({ current: 'plan', bypassAllowed: false, autoAvailable: true })).toBe('auto');
+    expect(nextMode({ current: 'auto', bypassAllowed: false, autoAvailable: true })).toBe('default');
+    expect(nextMode({ current: 'auto', bypassAllowed: true, autoAvailable: true })).toBe('bypassPermissions');
   });
 });
 

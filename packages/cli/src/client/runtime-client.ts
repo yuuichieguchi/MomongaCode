@@ -28,6 +28,7 @@ export class RunApiError extends Error {
   readonly status: number;
   readonly body: unknown;
   readonly code: string | undefined;
+  readonly reason: string;
 
   constructor(description: string, status: number, text: string) {
     let body: unknown = text;
@@ -43,6 +44,7 @@ export class RunApiError extends Error {
     }
     super(`${description} answered ${status}: ${message}`);
     this.name = 'RunApiError';
+    this.reason = message;
     this.status = status;
     this.body = body;
     this.code = code;

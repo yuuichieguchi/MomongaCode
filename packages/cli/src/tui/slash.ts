@@ -1,10 +1,11 @@
 import { PERMISSION_MODES } from '@momonga/protocol';
 import type { PermissionMode } from '@momonga/protocol';
+import { selectableModes } from '../modes.ts';
+import type { ModeAvailability } from '../modes.ts';
 import type { TuiBackend } from './backend.ts';
 
-export type SlashContext = {
+export type SlashContext = ModeAvailability & {
   readonly mode: PermissionMode;
-  readonly bypassAllowed: boolean;
   readonly commands: readonly SlashCommand[];
   readonly backend: TuiBackend;
   info(text: string): void;
@@ -100,12 +101,12 @@ const mode: SlashCommand = {
   description: 'show or set the permission mode',
   run: async (args, context) => {
     if (args === '') {
-      context.info(`permission mode: ${context.mode} (available: ${PERMISSION_MODES.filter((candidate) => candidate !== 'auto').join(', ')})`);
+      context.info(`permission mode: ${context.mode} (available: ${selectableModes(context).join(', ')})`);
       return;
     }
     const chosen = PERMISSION_MODES.find((candidate) => candidate === args);
     if (chosen === undefined) {
-      context.info(`unknown permission mode ${args}; available: ${PERMISSION_MODES.filter((candidate) => candidate !== 'auto').join(', ')}`);
+      context.info(`unknown permission mode ${args}; available: ${selectableModes(context).join(', ')}`);
       return;
     }
     await context.setMode(chosen);
