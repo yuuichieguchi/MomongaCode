@@ -16,6 +16,8 @@ export const GATEWAY_CONFIG_DEFAULTS = {
   websocketConnectionMs: SIXTY_MINUTES_MS,
 } as const satisfies Omit<GatewayConfig, 'models'>;
 
+export const UPSTREAM_LIVENESS_DEFAULTS = { headersTimeoutMs: 600_000, bodyTimeoutMs: 600_000 } as const;
+
 export const FM_PROVIDER_NAME = 'apple';
 export const ANTHROPIC_PROVIDER_NAME = 'anthropic';
 export const OPENAI_FORMAT_PROVIDER_NAME = 'openai';

@@ -17,7 +17,7 @@ export const CONNECTION_LIMIT_CODE = 'websocket_connection_limit_reached';
 const GOING_AWAY = 1001;
 const NORMAL_CLOSURE = 1000;
 const FORBIDDEN_FIELDS = ['stream', 'stream_options', 'background'] as const;
-const NO_HEADERS = { idempotencyKey: undefined, deadlineMs: undefined, traceparent: undefined, tracestate: undefined } as const;
+const DEADLINE_HEADER = 'momonga-deadline-ms';
 
 export type WebSocketTransportOptions = {
   services: Services;
@@ -84,6 +84,7 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
 
   class Connection {
     private readonly socket: WebSocket;
+    private readonly deadlineMs: string | undefined;
     private readonly state = createConnectionResponses();
     private readonly queue: Array<{ text: string; bytes: number }> = [];
     private queuedBytes = 0;
@@ -93,8 +94,9 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
     private closing = false;
     private expired = false;
 
-    constructor(socket: WebSocket) {
+    constructor(socket: WebSocket, deadlineMs: string | undefined) {
       this.socket = socket;
+      this.deadlineMs = deadlineMs;
       connections.add(this);
       this.limitTimer = services.timers.setTimeout(() => {
         this.expire().catch((error: unknown) => {
@@ -192,7 +194,12 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
       try {
         const body = parseCreateEvent(text);
         previousId = typeof body['previous_response_id'] === 'string' ? body['previous_response_id'] : undefined;
-        submission = responses.submit({ ...body, stream: true }, NO_HEADERS, this.lifetime.signal, this.state);
+        submission = responses.submit(
+          { ...body, stream: true },
+          { idempotencyKey: undefined, deadlineMs: this.deadlineMs, traceparent: undefined, tracestate: undefined },
+          this.lifetime.signal,
+          this.state,
+        );
         for (;;) {
           const step = await submission.events.next();
           if (step.done === true) break;
@@ -232,7 +239,8 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
           refuse(socket, '503 Service Unavailable');
           return;
         }
-        wss.handleUpgrade(request, socket, head, (client) => void new Connection(client));
+        const deadlineHeader = request.headers[DEADLINE_HEADER];
+        wss.handleUpgrade(request, socket, head, (client) => void new Connection(client, Array.isArray(deadlineHeader) ? deadlineHeader.join(', ') : deadlineHeader));
       });
     },
     beginClose: () => {

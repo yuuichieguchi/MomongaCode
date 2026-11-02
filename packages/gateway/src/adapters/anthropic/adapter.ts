@@ -62,7 +62,7 @@ const asAdapterInput = (request: CountTokensRequest): AdapterInputItem[] =>
   });
 
 export const createAnthropicAdapter = (options: AnthropicAdapterOptions): AnthropicAdapter => {
-  const pool = createEndpointPool({ label: ANTHROPIC_PROVIDER_LABEL, unixPath: ANTHROPIC_MESSAGES_PATH, urlSuffix: ANTHROPIC_MESSAGES_PATH });
+  const pool = createEndpointPool({ label: ANTHROPIC_PROVIDER_LABEL, unixPath: ANTHROPIC_MESSAGES_PATH, urlSuffix: ANTHROPIC_MESSAGES_PATH }, options.liveness);
   const { health } = options;
   let closing: Promise<void> | undefined;
   let closed = false;

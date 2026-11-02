@@ -19,7 +19,7 @@ import type { OpenResponsesAdapter, OpenResponsesAdapterOptions } from './types.
 const neverGuardrail = (): boolean => false;
 
 export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions): OpenResponsesAdapter => {
-  const pool = createEndpointPool({ label: OPEN_RESPONSES_PROVIDER_LABEL, unixPath: OPEN_RESPONSES_PATH, urlSuffix: OPEN_RESPONSES_SUFFIX });
+  const pool = createEndpointPool({ label: OPEN_RESPONSES_PROVIDER_LABEL, unixPath: OPEN_RESPONSES_PATH, urlSuffix: OPEN_RESPONSES_SUFFIX }, options.liveness);
   const { health } = options;
   let closing: Promise<void> | undefined;
   let closed = false;
