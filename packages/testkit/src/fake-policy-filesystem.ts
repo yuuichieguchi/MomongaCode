@@ -98,6 +98,13 @@ const readRealNoFollow = (absolute: string): StepRead =>
     { kind: 'missing' },
   );
 
+const noFollowFromEntry = (entry: EntryRead): StepRead => {
+  if ('unresolvable' in entry) return entry;
+  if (entry.kind === 'directory') return { kind: 'directory' };
+  if (entry.kind === 'absent') return { kind: 'missing' };
+  return { kind: 'other' };
+};
+
 export const fakePolicyFilesystem = (layout: FakePolicyFilesystemLayout = {}): RecordingPolicyFilesystem => {
   const programs = layout.programs ?? APPLE_PROGRAMS;
   const globs = layout.globs ?? {};
@@ -116,7 +123,10 @@ export const fakePolicyFilesystem = (layout: FakePolicyFilesystemLayout = {}): R
     },
     expandGlob: (pattern, cwd) => globs[path.resolve(cwd, pattern)] ?? globs[pattern] ?? { matches: [] },
     readEntry: (absolute) => entries[absolute] ?? readRealEntry(absolute),
-    readNoFollow: (absolute) => readRealNoFollow(absolute),
+    readNoFollow: (absolute) => {
+      const entry = entries[absolute];
+      return entry === undefined ? readRealNoFollow(absolute) : noFollowFromEntry(entry);
+    },
     ...layout.overrides,
   };
 };

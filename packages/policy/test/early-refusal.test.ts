@@ -27,12 +27,13 @@ const writeTargetsOf = (command: string) => {
 describe('candidate targets', () => {
   it('gives git checkout .env a candidate target, not a literal', () => {
     const targets = writeTargetsOf('git checkout .env');
-    expect(targets).toContainEqual({ candidate: '.env' });
+    expect(targets).toContainEqual({ candidate: '.env', removes: true });
     expect(targets).not.toContainEqual({ literal: '.env' });
+    expect(targets).not.toContainEqual({ literal: '.env', removes: true });
   });
 
   it('gives an operand after -- a literal write target', () => {
-    expect(writeTargetsOf('git checkout -- .env')).toContainEqual({ literal: '.env' });
+    expect(writeTargetsOf('git checkout -- .env')).toContainEqual({ literal: '.env', removes: true });
   });
 });
 

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { GIT_AND_LINK_ROWS, PROTECTED_ROWS, cellAt, columnModes, commandRow, contextOf, decideRow, kindIn, P } from './decision-rows.ts';
+import { GIT_AND_LINK_ROWS, PROTECTED_ROWS, cellAt, columnModes, commandRow, contextOf, decideRow, kindIn, P, validGitDirectory } from './decision-rows.ts';
 import type { Row } from './decision-rows.ts';
 import { touch } from './helpers.ts';
 
@@ -79,7 +79,7 @@ describe('git approval follows repository discovery from the persisted cwd', () 
   });
 
   it('refuses the approval in project/sub when sub/.git exists on disk (pin)', () => {
-    const row = commandRow('git status', { cwd: (layout) => P(layout, 'sub'), prepare: (layout) => void touch(P(layout, 'sub', '.git', 'config')) });
+    const row = commandRow('git status', { cwd: (layout) => P(layout, 'sub'), prepare: (layout) => validGitDirectory(layout, 'sub') });
     expect(kindIn(row, 'default')).toBe('ask');
   });
 

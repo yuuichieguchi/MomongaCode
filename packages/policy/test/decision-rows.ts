@@ -90,6 +90,13 @@ const gitDirectory = (layout: Layout, ...parts: string[]): void => {
   touch(P(layout, ...parts, '.git', 'config'));
 };
 
+export const validGitDirectory = (layout: Layout, ...parts: string[]): void => {
+  const gitPath = P(layout, ...parts, '.git');
+  fs.mkdirSync(path.join(gitPath, 'objects'), { recursive: true });
+  fs.mkdirSync(path.join(gitPath, 'refs'), { recursive: true });
+  fs.writeFileSync(path.join(gitPath, 'HEAD'), 'ref: refs/heads/main\n');
+};
+
 const symlinkTo = (target: string, link: string): void => {
   fs.mkdirSync(path.dirname(link), { recursive: true });
   fs.symlinkSync(target, link);
@@ -237,11 +244,29 @@ export const GUARD_ROWS: readonly Row[] = [
   },
 ];
 
-const subGit = (layout: Layout): FakeFsLayout => ({ entries: { [P(layout, 'sub', '.git')]: { kind: 'directory', canonical: P(layout, 'sub', '.git') } } });
+const subGitDirectoryOnly = (layout: Layout): FakeFsLayout => ({ entries: { [P(layout, 'sub', '.git')]: { kind: 'directory', canonical: P(layout, 'sub', '.git') } } });
+
+const subGit = (layout: Layout): FakeFsLayout => ({
+  entries: {
+    [P(layout, 'sub', '.git')]: { kind: 'directory', canonical: P(layout, 'sub', '.git') },
+    [P(layout, 'sub', '.git', 'objects')]: { kind: 'directory', canonical: P(layout, 'sub', '.git', 'objects') },
+    [P(layout, 'sub', '.git', 'refs')]: { kind: 'directory', canonical: P(layout, 'sub', '.git', 'refs') },
+    [P(layout, 'sub', '.git', 'HEAD')]: { kind: 'file', text: 'ref: refs/heads/main\n' },
+  },
+});
 
 export const GIT_AND_LINK_ROWS: readonly Row[] = [
   { id: 'GS1', command: 'git status', after: allow4, pin: false },
   { id: 'GS2', command: 'git status', after: askExceptBypass, pin: true, cwd: (layout) => P(layout, 'sub'), fs: subGit, prepare: (layout) => fs.mkdirSync(P(layout, 'sub')) },
+  {
+    id: 'GS5',
+    command: 'git status',
+    after: allow4,
+    pin: true,
+    cwd: (layout) => P(layout, 'sub'),
+    fs: subGitDirectoryOnly,
+    prepare: (layout) => fs.mkdirSync(P(layout, 'sub')),
+  },
   { id: 'GS3', command: 'git status', after: allow4, pin: false, cwd: (layout) => P(layout, 'sub'), prepare: (layout) => fs.mkdirSync(P(layout, 'sub')) },
   {
     id: 'GS4',

@@ -33,3 +33,23 @@ describe('fakePolicyFilesystem unreadable entries (V13)', () => {
     expect(fakePolicyFilesystem().readNoFollow(link)).toEqual({ unresolvable: { kind: 'errno', code: 'EACCES' } });
   });
 });
+
+describe('fakePolicyFilesystem readNoFollow consults entries', () => {
+  it('maps directory, file, oversize, absent and unresolved entries', () => {
+    const unresolvable = { unresolvable: { kind: 'errno', code: 'EACCES' } } as const;
+    const fake = fakePolicyFilesystem({
+      entries: {
+        '/fake/dir': { kind: 'directory', canonical: '/fake/dir' },
+        '/fake/file': { kind: 'file', text: 'x' },
+        '/fake/big': { kind: 'oversize' },
+        '/fake/absent': { kind: 'absent' },
+        '/fake/unresolved': unresolvable,
+      },
+    });
+    expect(fake.readNoFollow('/fake/dir')).toEqual({ kind: 'directory' });
+    expect(fake.readNoFollow('/fake/file')).toEqual({ kind: 'other' });
+    expect(fake.readNoFollow('/fake/big')).toEqual({ kind: 'other' });
+    expect(fake.readNoFollow('/fake/absent')).toEqual({ kind: 'missing' });
+    expect(fake.readNoFollow('/fake/unresolved')).toEqual(unresolvable);
+  });
+});
