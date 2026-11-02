@@ -16,7 +16,7 @@ const prepare = (context: CleanupContext) => {
   const home = withTempDir(context, { asHome: true });
   const aux = withTempDir(context);
   writeUserSettings(home, { sandbox: 'none', ...modelSettings(path.join(aux, 'up.sock')) });
-  return { home, paths: momongaPaths(home, 'darwin', {}), env: { PATH: MINIMAL_PATH, HOME: home, TMPDIR: aux } };
+  return { home, paths: momongaPaths(home, process.platform, {}), env: { PATH: MINIMAL_PATH, HOME: home, TMPDIR: aux } };
 };
 
 const msgs = (lines: ReadonlyArray<Record<string, unknown>>): unknown[] => lines.map((line) => line['msg']);

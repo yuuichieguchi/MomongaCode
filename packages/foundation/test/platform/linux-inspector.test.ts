@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { createLinuxInspector } from '../../src/platform/linux-inspector.ts';
-import { auxvLayoutOf, isPidDirectoryName, parseBootTimeSeconds, parseClockTicksPerSecond, parseProcStat } from '../../src/platform/linux-parsers.ts';
+import { auxvLayoutOf, isPidDirectoryName, parseBootTimeSeconds, parseRealUid, parseClockTicksPerSecond, parseProcStat } from '../../src/platform/linux-parsers.ts';
+import { PS_PROBE_TIMEOUT_MS, REAP_POLL_INTERVAL_MS } from '../../src/platform/probe-timing.ts';
 import type { FileIdentity, ProcFs } from '../../src/platform/procfs.ts';
 
 const STAT_SLEEP = '4242 (sleep) S 4200 4242 4200 34816 4242 4194304 120 0 0 0 0 0 0 0 20 0 1 0 987654 5517312 189 18446744073709551615 1 1 0 0 0 0 0 0 0 0 0 0 17 3 0 0 0 0 0';
+const STAT_ZOMBIE = STAT_SLEEP.replace(' S ', ' Z ');
 const STAT_AWKWARD_COMM = '77 (a) b (c)) R 1 77 77 0 -1 4194560 10 0 0 0 1 2 0 0 20 0 4 0 5000 1000 10 18446744073709551615 0 0 0 0 0 0 0 0 0 0 0 0 17 0 0 0 0 0 0';
 
 const auxvOf = (pairs: Array<[bigint, bigint]>): Uint8Array => {
@@ -18,7 +20,9 @@ const auxvOf = (pairs: Array<[bigint, bigint]>): Uint8Array => {
 
 const errno = (code: string): NodeJS.ErrnoException => Object.assign(new Error(code), { code });
 
-type FakeEntry = { text?: string; bytes?: Uint8Array; children?: string[]; identity?: FileIdentity; failure?: string; owner?: number };
+type FakeEntry = { text?: string; bytes?: Uint8Array; children?: string[]; identity?: FileIdentity; failure?: string };
+
+const statusOwnedBy = (uid: number): FakeEntry => ({ text: `Name:\tx\nState:\tS (sleeping)\nUid:\t${uid}\t${uid}\t${uid}\t${uid}\nGid:\t${uid}\t${uid}\t${uid}\t${uid}\n` });
 
 const fakeProcfs = (entries: Record<string, FakeEntry>): ProcFs => {
   const lookup = (file: string): FakeEntry => {
@@ -32,7 +36,17 @@ const fakeProcfs = (entries: Record<string, FakeEntry>): ProcFs => {
     readBytes: async (file) => lookup(file).bytes ?? new Uint8Array(),
     list: async (directory) => lookup(directory).children ?? [],
     identityOf: async (file) => lookup(file).identity ?? { dev: 0n, ino: 0n },
-    ownerOf: async (file) => lookup(file).owner ?? 0,
+  };
+};
+
+const fakeTiming = () => {
+  let elapsed = 0;
+  return {
+    now: () => elapsed,
+    sleep: async (ms: number): Promise<void> => {
+      elapsed += ms;
+    },
+    slept: () => elapsed,
   };
 };
 
@@ -144,7 +158,8 @@ describe('linux inspector through an injected procfs', () => {
       '/proc/11/fd': { children: ['0'] },
       '/proc/11/fd/0': { identity: { dev: 64769n, ino: 5001n } },
       '/proc/12/fd': { failure: 'EACCES' },
-      '/proc/12': { owner: 0 },
+      '/proc/12/status': statusOwnedBy(0),
+      '/proc/12/stat': { text: STAT_SLEEP },
       '/proc/13/fd': { children: ['4', '5'] },
       '/proc/13/fd/4': { failure: 'ENOENT' },
       '/proc/13/fd/5': { identity: marker },
@@ -153,16 +168,92 @@ describe('linux inspector through an injected procfs', () => {
     expect(await inspector.holdersOf('/marker')).toEqual({ kind: 'value', value: [10, 13] });
   });
 
-  it('does not call a same-user process with unreadable descriptors "not a holder": the answer is unknown', async () => {
+  it('does not call a same-user process with unreadable descriptors "not a holder": the answer is unknown now and may be known after its exec completes', async () => {
     const procfs = fakeProcfs({
       '/marker': { identity: { dev: 1n, ino: 1n } },
       '/proc': { children: ['12'] },
       '/proc/12/fd': { failure: 'EACCES' },
-      '/proc/12': { owner: UID },
+      '/proc/12/status': statusOwnedBy(UID),
+      '/proc/12/stat': { text: STAT_SLEEP },
     });
-    const result = await createLinuxInspector({ procfs, layout: LAYOUT, uid: UID }).holdersOf('/marker');
+    const timing = fakeTiming();
+    const result = await createLinuxInspector({ procfs, layout: LAYOUT, uid: UID, timing }).holdersOf('/marker');
     expect(result).toMatchObject({ kind: 'failed', cause: 'deterministic', evidence: { kind: 'opaque' } });
     expect(result.kind === 'failed' ? result.evidence.detail : '').toContain('process 12 belongs to the current user');
+    expect(timing.slept()).toBe(Math.ceil(PS_PROBE_TIMEOUT_MS / REAP_POLL_INTERVAL_MS) * REAP_POLL_INTERVAL_MS);
+  });
+
+  it('waits for a same-user process to become readable and then reads it', async () => {
+    const marker = { dev: 1n, ino: 1n };
+    const entries: Record<string, FakeEntry> = {
+      '/marker': { identity: marker },
+      '/proc': { children: ['12'] },
+      '/proc/12/stat': { text: STAT_SLEEP },
+      '/proc/12/status': statusOwnedBy(UID),
+      '/proc/12/fd': { children: ['3'] },
+      '/proc/12/fd/3': { identity: marker },
+    };
+    const inner = fakeProcfs(entries);
+    let refusals = 3;
+    const procfs: ProcFs = {
+      ...inner,
+      list: (directory) => {
+        if (directory !== '/proc/12/fd' || refusals === 0) return inner.list(directory);
+        refusals -= 1;
+        return Promise.reject(errno('EACCES'));
+      },
+    };
+    const timing = fakeTiming();
+    expect(await createLinuxInspector({ procfs, layout: LAYOUT, uid: UID, timing }).holdersOf('/marker')).toEqual({ kind: 'value', value: [12] });
+    expect(timing.slept()).toBe(3 * REAP_POLL_INTERVAL_MS);
+  });
+
+  it('treats a zombie whose descriptor directory is denied as holding nothing, even when it is owned by the current user', async () => {
+    const marker = { dev: 1n, ino: 1n };
+    const procfs = fakeProcfs({
+      '/marker': { identity: marker },
+      '/proc': { children: ['12', '13'] },
+      '/proc/12/fd': { failure: 'EACCES' },
+      '/proc/12/status': statusOwnedBy(UID),
+      '/proc/12/stat': { text: STAT_ZOMBIE },
+      '/proc/13/fd': { children: ['3'] },
+      '/proc/13/fd/3': { identity: marker },
+    });
+    expect(await createLinuxInspector({ procfs, layout: LAYOUT, uid: UID }).holdersOf('/marker')).toEqual({ kind: 'value', value: [13] });
+  });
+
+  it('treats a descriptor that is denied because its process became a zombie as not holding the marker', async () => {
+    const marker = { dev: 1n, ino: 1n };
+    const procfs = fakeProcfs({
+      '/marker': { identity: marker },
+      '/proc': { children: ['12'] },
+      '/proc/12/fd': { children: ['3'] },
+      '/proc/12/fd/3': { failure: 'EACCES' },
+      '/proc/12/stat': { text: STAT_ZOMBIE },
+    });
+    expect(await createLinuxInspector({ procfs, layout: LAYOUT, uid: UID }).holdersOf('/marker')).toEqual({ kind: 'value', value: [] });
+  });
+
+  it('keeps a denied descriptor of a live same-user process an unknown answer and skips one of another user', async () => {
+    const entries = (uid: number): Record<string, FakeEntry> => ({
+      '/marker': { identity: { dev: 1n, ino: 1n } },
+      '/proc': { children: ['12'] },
+      '/proc/12/fd': { children: ['3'] },
+      '/proc/12/fd/3': { failure: 'EACCES' },
+      '/proc/12/stat': { text: STAT_SLEEP },
+      '/proc/12/status': statusOwnedBy(uid),
+    });
+    expect(await createLinuxInspector({ procfs: fakeProcfs(entries(UID)), layout: LAYOUT, uid: UID, timing: fakeTiming() }).holdersOf('/marker')).toMatchObject({
+      kind: 'failed',
+      cause: 'deterministic',
+      evidence: { kind: 'opaque' },
+    });
+    expect(await createLinuxInspector({ procfs: fakeProcfs(entries(0)), layout: LAYOUT, uid: UID, timing: fakeTiming() }).holdersOf('/marker')).toEqual({ kind: 'value', value: [] });
+  });
+
+  it('reads the owner from the status file, which stays readable while the process is not dumpable', () => {
+    expect(parseRealUid(statusOwnedBy(1234).text as string)).toBe(1234);
+    expect(() => parseRealUid('Name:\tx\n')).toThrow('no Uid line');
   });
 
   it('treats a missing marker as gone and classifies other failures', async () => {

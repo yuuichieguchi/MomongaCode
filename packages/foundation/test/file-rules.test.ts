@@ -58,7 +58,7 @@ const compile = (
   specs: readonly FileRuleSpec[],
   options: { exempt?: string | null; canonicalise?: (absolute: string) => PathResolution; volumeProbe?: (directory: string) => boolean; roots?: readonly string[] } = {},
 ): FileRuleSet =>
-  compileFileRuleSet(specs, options.roots ?? ROOTS, options.exempt ?? null, options.canonicalise ?? identity, options.volumeProbe ?? caseSensitive);
+  compileFileRuleSet(specs, options.roots ?? ROOTS, options.exempt ?? null, options.canonicalise ?? identity, options.volumeProbe ?? caseSensitive, 'posix', 'seatbelt-profile');
 
 const blockedBySet = (set: FileRuleSet, requested: string, resolved: string = requested): boolean =>
   set.entries.some((entry: FileRuleEntry) => fileRuleBlocks(set, entry, requested, resolved));
@@ -92,6 +92,23 @@ describe('compileFileRuleSet and the volume probe', () => {
     expect((error as FileRuleError).code).toBe('kernel_not_exact');
     expect((error as FileRuleError).reason).toBe('case_sensitive_volume');
     expect((error as FileRuleError).provenance).toEqual(given.provenance);
+  });
+
+  it.each([
+    ['a widening allow entry', widening],
+    ['an entry with exceptions', withExceptions],
+  ])('rejects %s on a case-sensitive volume when a Seatbelt profile enforces it', (_label, given) => {
+    const error = thrownBy(() => compileFileRuleSet([given], ROOTS, null, identity, caseSensitive, 'posix', 'seatbelt-profile'));
+    expect((error as FileRuleError).code).toBe('kernel_not_exact');
+  });
+
+  it.each([
+    ['a widening allow entry', widening],
+    ['an entry with exceptions', withExceptions],
+  ])('compiles %s on a case-sensitive volume when exact paths enforce it', (_label, given) => {
+    const set = compileFileRuleSet([given], ROOTS, null, identity, caseSensitive, 'posix', 'exact-paths');
+    expect(set.entries).toHaveLength(1);
+    expect((set.entries[0] as FileRuleEntry).ignoreCase).toBe(false);
   });
 
   it('compiles a deny entry on both volume kinds', () => {

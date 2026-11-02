@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { canonicalJson, ensureSessionTmpDir as defaultEnsureSessionTmpDir, sha256Hex } from '@momonga/foundation';
-import type { Clock, JsonLogger, MomongaPaths, ReapTiming } from '@momonga/foundation';
+import type { Clock, JsonLogger, MomongaPaths, ReapTiming, RuleEnforcement } from '@momonga/foundation';
 import { createFileCredentialStore, createMcpPool, inheritedEnvOf, mcpCredentialDirectory } from '@momonga/mcp';
 import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
 import type { Sandbox } from '@momonga/sandbox';
@@ -107,7 +107,8 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   });
   const mcpPools = createMcpPoolCache({ store, notifier, timers, logger, report });
   const sessionStates = createSessionStates({ clock, store, logger });
-  const policyOptions = { paths, home, fs: policyFilesystem, sessionStates, ensureSessionTmpDir };
+  const ruleEnforcement: RuleEnforcement = sandbox.kind === 'seatbelt' ? 'seatbelt-profile' : 'exact-paths';
+  const policyOptions = { paths, home, fs: policyFilesystem, ruleEnforcement, sessionStates, ensureSessionTmpDir };
   const policyFor = createPolicyFor(policyOptions);
   const recoveryContextFor = createRecoveryContextFor(policyOptions);
 

@@ -147,7 +147,8 @@ export { anchorFormOf, checkExceptionGrammar, checkFilePatternGrammar, fileMatch
 export type { Expression, FileMatcher, FilePattern, FilePatternContext, GlobSegment, MatcherForm } from './file-pattern.ts';
 export { HOST_FLAVOUR, flavourOf, nativePathOf, patternPathOf, specifierOf } from './path-flavour.ts';
 export type { PathFlavour } from './path-flavour.ts';
-export { EMPTY_FILE_RULES, FileRuleError, compileFileRuleSet, inWritableArea, lexicallyWithin, writableAreaOf, writableCheckOf, fileRuleBlocks, fileRuleFingerprint } from './file-rules.ts';
+export type { RuleEnforcement } from './file-rules.ts';
+export { EMPTY_FILE_RULES, FileRuleError, HOST_RULE_ENFORCEMENT, compileFileRuleSet, inWritableArea, lexicallyWithin, writableAreaOf, writableCheckOf, fileRuleBlocks, fileRuleFingerprint } from './file-rules.ts';
 export type { FileRuleAccess, FileRuleEffect, FileRuleEntry, FileRuleException, FileRuleProvenance, FileRuleSet, FileRuleSpec, WritableArea } from './file-rules.ts';
 export { nodeCommandRunner, nodeSyncCommandRunner } from './platform/command-runner.ts';
 export type { CommandOptions, CommandResult, CommandRunner, SyncCommandRunner } from './platform/command-runner.ts';
@@ -169,6 +170,7 @@ export {
   RELEASE_SIGNATURE_KNOWN_ANSWER,
   RELEASE_SIGNATURE_NAMESPACE,
   RELEASE_SIGNATURE_TOOL,
+  SIGNATURE_REJECTED_EXIT_CODE,
   verifyReleaseSignature,
 } from './release-signature.ts';
 export type { PlaceFile, PlacedFile, ReleaseSignatureVerdict, VerifyReleaseSignatureInput } from './release-signature.ts';

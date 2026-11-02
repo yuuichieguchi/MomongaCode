@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { canonicalPath } from '@momonga/foundation';
+import { EMPTY_SYMLINK_SUPPORTED } from '@momonga/testkit';
 
 const tempDirs: string[] = [];
 
@@ -174,7 +175,7 @@ describe('canonicalPath honours a trailing slash like the kernel', () => {
   });
 });
 
-describe('canonicalPath with an empty symlink target', () => {
+describe.runIf(EMPTY_SYMLINK_SUPPORTED)('canonicalPath with an empty symlink target', () => {
   it('throws for the link itself', () => {
     const d = makeDir();
     fs.symlinkSync('', path.join(d, 'e'));

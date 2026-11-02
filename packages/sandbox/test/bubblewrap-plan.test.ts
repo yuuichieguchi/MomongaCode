@@ -267,6 +267,14 @@ describe('planBubblewrap', () => {
     expect(scratch).toBeGreaterThan(restore);
   });
 
+  it('remounts every masked directory read-only after the masks and the restored entries, so a write to it fails instead of vanishing into the tmpfs', () => {
+    const { args } = planBubblewrap(policy({ readDenied: [sessions], readAllowed: [mine], writeDenied: [sessions] }), { cwd: work, tmpDir: mine });
+    const remount = args.findIndex((value, index) => value === '--remount-ro' && args[index + 1] === sessions);
+    expect(remount).toBeGreaterThan(args.findIndex((value, index) => value === '--tmpfs' && args[index + 1] === sessions));
+    expect(remount).toBeGreaterThan(indexOfTriple(args, '--bind', mine));
+    expect(args.filter((value) => value === '--remount-ro')).toHaveLength(1);
+  });
+
   it('gives the private scratch directory last, after every mask', () => {
     const scratch = path.join(base, 'scratch');
     fs.mkdirSync(scratch);

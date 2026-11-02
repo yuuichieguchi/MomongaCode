@@ -4,7 +4,7 @@ import type { Readable, Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { EntryUsageError, isProcessAlive, watchLifeline } from '@momonga/foundation';
-import { registerCleanup, spawnTracked, withTempDir } from '@momonga/testkit';
+import { LSOF_PATH, registerCleanup, spawnTracked, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { TrackedChild } from '@momonga/testkit';
 
@@ -95,7 +95,7 @@ describe('watchLifeline with real processes', { timeout: 20_000 }, () => {
         process.kill(grandchild, 'SIGKILL');
       } catch {}
     });
-    const lsof = spawnTracked(context, '/usr/sbin/lsof', ['-a', '-p', String(grandchild), '-d', '3'], { stdio: ['ignore', 'pipe', 'ignore'] });
+    const lsof = spawnTracked(context, LSOF_PATH, ['-a', '-p', String(grandchild), '-d', '3'], { stdio: ['ignore', 'pipe', 'ignore'] });
     const lsofOutput = collect(lsof);
     await exitOf(lsof, 10_000);
     expect(lsofOutput.text()).toMatch(/unix/i);

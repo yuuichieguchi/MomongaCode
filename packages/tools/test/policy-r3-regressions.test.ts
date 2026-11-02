@@ -234,13 +234,16 @@ describe('finding 6 (second review): a populated submodule is judged like a disc
 });
 
 describe('finding 5: --show-signature runs gpg from the search path', () => {
-  const signed = (workspace: RealWorkspace): { hook: ReturnType<typeof hookIn>; searchPath: string } => {
+  const signed = (workspace: RealWorkspace): { hook: ReturnType<typeof hookIn>; searchPath: string; executionPath: string } => {
     const hook = hookIn(workspace);
     workspace.initRepository();
     signHead(workspace);
-    workspace.mkdir('bin');
-    fs.copyFileSync(hook.script, path.join(workspace.project, 'bin', 'gpg'));
-    return { hook, searchPath: `/usr/bin:/bin:${path.join(workspace.project, 'bin')}` };
+    const planted = workspace.mkdir('bin');
+    fs.copyFileSync(hook.script, path.join(planted, 'gpg'));
+    const systemTools = path.join(workspace.base, 'system-tools');
+    fs.mkdirSync(systemTools);
+    for (const program of ['git', 'touch']) fs.symlinkSync(`/usr/bin/${program}`, path.join(systemTools, program));
+    return { hook, searchPath: `/usr/bin:/bin:${planted}`, executionPath: `${systemTools}:${planted}` };
   };
 
   const signedWithTag = (workspace: RealWorkspace): ReturnType<typeof signed> => {
@@ -252,8 +255,8 @@ describe('finding 5: --show-signature runs gpg from the search path', () => {
 
   it.each(['git log --show-signature -1', 'git show --show-signature -s', 'git log --format=%GG -1', 'git rev-list --format=%GG --max-count=1 HEAD', 'git for-each-ref --format="%(signature)"', 'git log --pretty=format:%+GG -1'])('%s runs the planted gpg and needs approval', (command) => {
     const workspace = makeRealWorkspace();
-    const { hook, searchPath } = signed(workspace);
-    workspace.runBash(command, workspace.project, { PATH: searchPath });
+    const { hook, searchPath, executionPath } = signed(workspace);
+    workspace.runBash(command, workspace.project, { PATH: executionPath });
     expect(hook.fired()).toBe(true);
     expect(workspace.decide(command, { searchPath }).kind).toBe('ask');
   });
@@ -273,8 +276,8 @@ describe('finding 5: --show-signature runs gpg from the search path', () => {
     "git for-each-ref --sort '*signature'",
   ])('%s runs the planted gpg and needs approval (ref-filter, sort key, shortlog group)', (command) => {
     const workspace = makeRealWorkspace();
-    const { hook, searchPath } = signedWithTag(workspace);
-    workspace.runBash(command, workspace.project, { PATH: searchPath });
+    const { hook, searchPath, executionPath } = signedWithTag(workspace);
+    workspace.runBash(command, workspace.project, { PATH: executionPath });
     expect(hook.fired()).toBe(true);
     expect(workspace.decide(command, { searchPath }).kind).toBe('ask');
   });
@@ -287,8 +290,8 @@ describe('finding 5: --show-signature runs gpg from the search path', () => {
 
   it.each(['git for-each-ref --sort=refname', 'git for-each-ref --sort=-committerdate', "git for-each-ref '--format=%(refname) %(contents:signature)'", 'git branch --sort=refname', "git shortlog --group=format:%an HEAD", 'git shortlog --group=author HEAD'])('keeps allowing %s', (command) => {
     const workspace = makeRealWorkspace();
-    const { hook, searchPath } = signedWithTag(workspace);
-    workspace.runBash(command, workspace.project, { PATH: searchPath });
+    const { hook, searchPath, executionPath } = signedWithTag(workspace);
+    workspace.runBash(command, workspace.project, { PATH: executionPath });
     expect(hook.fired()).toBe(false);
     expect(workspace.decide(command, { searchPath }).kind).toBe('allow');
   });
@@ -301,9 +304,9 @@ describe('finding 5: --show-signature runs gpg from the search path', () => {
 
   it('git rev-list --show-signature does not reach gpg and keeps being allowed', () => {
     const workspace = makeRealWorkspace();
-    const { hook, searchPath } = signed(workspace);
+    const { hook, searchPath, executionPath } = signed(workspace);
     const command = 'git rev-list --show-signature --format=%h --max-count=1 HEAD';
-    workspace.runBash(command, workspace.project, { PATH: searchPath });
+    workspace.runBash(command, workspace.project, { PATH: executionPath });
     expect(hook.fired()).toBe(false);
     expect(workspace.decide(command, { searchPath }).kind).toBe('allow');
   });

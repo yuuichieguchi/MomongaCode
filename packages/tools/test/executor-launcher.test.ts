@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { EMPTY_PROTECTED_SET, momongaLayout } from '@momonga/foundation';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { computeFileRules } from '@momonga/policy';
@@ -108,7 +108,7 @@ describe('executor: the launcher link is always write-denied without following i
   it('still refuses writes into the momonga root and the keychains', async () => {
     const { home, attempt } = launcherHarness('plain');
     expectRefused(await attempt(path.join(home, '.momonga', 'x')));
-    expectRefused(await attempt(path.join(home, 'Library', 'Keychains', 'x')));
+    expectRefused(await attempt(path.join(momongaLayout(home).keychains, 'x')));
   });
 });
 

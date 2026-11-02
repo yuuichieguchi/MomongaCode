@@ -23,7 +23,7 @@ const validHome = async (context: CleanupContext, target: Record<string, unknown
   registerCleanup(context, () => fake.close());
   const home = withTempDir(context, { asHome: true });
   writeSettings(home, { models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath, target) } } });
-  return { home, paths: momongaPaths(home, 'darwin', {}), fake };
+  return { home, paths: momongaPaths(home, process.platform, {}), fake };
 };
 
 const runDir = (paths: MomongaPaths): void => {

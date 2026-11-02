@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
+import { LSOF_PATH, killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 import { findHolders, holderGroups, reconcileProcessGroup } from '@momonga/foundation';
 import type { ReapTiming } from '@momonga/foundation';
 
@@ -22,7 +22,7 @@ afterEach(async () => {
 
 const holdersOf = (file: string): number[] => {
   try {
-    return execFileSync('/usr/sbin/lsof', ['-t', '--', file], { env: { LC_ALL: 'C' }, encoding: 'utf8' })
+    return execFileSync(LSOF_PATH, ['-t', '--', file], { env: { LC_ALL: 'C' }, encoding: 'utf8' })
       .split('\n')
       .filter((line) => line !== '')
       .map(Number);
@@ -63,12 +63,17 @@ const makeMarker = (dir: string, name = 'marker'): string => {
 
 type Group = { pgid: number; dir: string; leaderReaped: Promise<void> };
 
+const SANDBOX_LAUNCHER = (writable: string): string[] =>
+  process.platform === 'darwin'
+    ? ['/usr/bin/sandbox-exec', '-p', '(version 1)(allow default)']
+    : ['/usr/bin/bwrap', '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--bind', writable, writable];
+
 const startGroup = async (
   dir: string,
   script: string,
   options: { fd3?: string; sandboxed?: boolean; readyFiles?: string[] } = {},
 ): Promise<Group> => {
-  const argv = options.sandboxed === true ? ['/usr/bin/sandbox-exec', '-p', '(version 1)(allow default)', '/bin/sh', '-c', script] : ['/bin/sh', '-c', script];
+  const argv = options.sandboxed === true ? [...SANDBOX_LAUNCHER(dir), '/bin/sh', '-c', script] : ['/bin/sh', '-c', script];
   const fd = options.fd3 === undefined ? undefined : fs.openSync(options.fd3, 'r');
   try {
     const child = spawn(argv[0] as string, argv.slice(1), {
@@ -186,7 +191,7 @@ describe('reconcileProcessGroup', () => {
     expect(await waitUntil(() => !alive(holder), 5000)).toBe(true);
   });
 
-  it('recognizes a group running under sandbox-exec through the marker', { timeout: 20_000 }, async () => {
+  it('recognizes a group running under the platform sandbox launcher through the marker', { timeout: 20_000 }, async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, TERM_MARKER_SCRIPT, { fd3: marker, sandboxed: true });

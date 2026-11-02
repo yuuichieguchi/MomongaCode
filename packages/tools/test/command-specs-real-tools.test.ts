@@ -33,11 +33,10 @@ const showsMarker = (dir: string, line: SymlinkReadLine, tree: 'a' | 'c', output
   return output.includes(SECRET_CONTENT.trim()) || output.includes(SECRET_ENTRY);
 };
 
-describe('recursive and link-following options against the real Apple tools (5.2a)', () => {
+describe.runIf(process.platform === 'darwin')('recursive and link-following options against the real Apple tools (5.2a)', () => {
   let dir = '';
 
   beforeEach(() => {
-    if (process.platform !== 'darwin') throw new Error('Darwin required');
     dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-sl-')));
     buildSymlinkLayout(dir);
   });

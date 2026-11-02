@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { SECURITY_BINARY, KEYCHAIN_SERVICE, createJsonLogger, createUdsClient, systemClock } from '@momonga/foundation';
+import { SECRET_TOOL_BINARY, SECURITY_BINARY, KEYCHAIN_SERVICE, createJsonLogger, createUdsClient, systemClock } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
@@ -22,6 +22,19 @@ import { REDACTED, expectNoCredential } from './credential-support.ts';
 const SECRET = 'sk-ant-api03-stored-in-keychain-0001';
 const SECRET_NAME = 'anthropic-main';
 const CAPABILITIES = { contextWindow: 200000, maxOutputTokens: 8192 };
+
+const HOST_STORE =
+  process.platform === 'darwin'
+    ? {
+        lookup: { file: SECURITY_BINARY, args: ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', SECRET_NAME, '-w'] },
+        missingExit: 44,
+        storeCommand: `security add-generic-password -s ${KEYCHAIN_SERVICE} -a ${SECRET_NAME} -w`,
+      }
+    : {
+        lookup: { file: SECRET_TOOL_BINARY, args: ['lookup', 'service', KEYCHAIN_SERVICE, 'account', SECRET_NAME] },
+        missingExit: 1,
+        storeCommand: `secret-tool store --label=${KEYCHAIN_SERVICE} service ${KEYCHAIN_SERVICE} account ${SECRET_NAME}`,
+      };
 
 type Stack = {
   home: string;
@@ -88,9 +101,7 @@ describe('stored secrets in the gateway process', () => {
     expect(response.status).toBe(200);
     expect(JSON.parse(response.text).status).toBe('completed');
     expect(stack.anthropic.requests[0]?.headers['x-api-key']).toBe(SECRET);
-    expect(stack.security.calls).toEqual([
-      { file: SECURITY_BINARY, args: ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', SECRET_NAME, '-w'], stdin: '' },
-    ]);
+    expect(stack.security.calls).toEqual([{ ...HOST_STORE.lookup, stdin: '' }]);
     expect(fs.readFileSync(homePaths(stack.home).settings, 'utf8')).not.toContain(SECRET);
   });
 
@@ -119,8 +130,8 @@ describe('stored secrets in the gateway process', () => {
     expect(response.status).toBe(401);
     const error = JSON.parse(response.text).error;
     expect(error).toMatchObject({ type: 'invalid_request', code: 'secret_unavailable', param: SECRET_NAME });
-    expect(error.message).toContain('exit 44');
-    expect(error.message).toContain(`security add-generic-password -s ${KEYCHAIN_SERVICE} -a ${SECRET_NAME} -w`);
+    expect(error.message).toContain(`exit ${HOST_STORE.missingExit}`);
+    expect(error.message).toContain(HOST_STORE.storeCommand);
     expect(error.message).toContain('reads a missing secret again on the next request');
     expect(stack.anthropic.requests).toEqual([]);
     expect(stack.logText()).toContain(`secret ${SECRET_NAME} is unavailable`);

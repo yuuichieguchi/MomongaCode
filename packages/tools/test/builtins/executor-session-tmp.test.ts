@@ -12,7 +12,7 @@ const ACCEPT = { mode: 'acceptEdits' } as const;
 const fixture = async () => {
   const tools = await makeBuiltins();
   const { home, project } = tools.layout;
-  const sessions = momongaLayout(home, 'darwin', {}).tmp.sessions;
+  const sessions = momongaLayout(home, process.platform, {}).tmp.sessions;
   const tmpDir = path.join(sessions, 'session-1');
   const sibling = path.join(sessions, 'session-2');
   for (const dir of [tmpDir, sibling]) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });

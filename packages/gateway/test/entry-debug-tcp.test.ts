@@ -59,7 +59,7 @@ describe('gateway entry debug listener flags', () => {
     const { io, home } = await launch(context, () => []);
     await until(() => io.stdoutLines().length > 0 || io.exits.length > 0, 'the ready line or an exit', 30_000);
     expect(parseJsonLines(io.stderrLines()).some((line) => line['msg'] === 'gateway.debug_listener')).toBe(false);
-    expect(fs.existsSync(momongaPaths(home, 'darwin', {}).sockets.gateway)).toBe(true);
+    expect(fs.existsSync(momongaPaths(home, process.platform, {}).sockets.gateway)).toBe(true);
   });
 
   it.for([

@@ -264,10 +264,11 @@ describe('an entry whose lexical form differs from its canonical form', () => {
     }
   });
 
-  it('emits the read deny for a rule spelled through the /var symlink at both spellings', () => {
+  it('emits the read deny for a rule spelled through a symlinked directory at both spellings', () => {
     const dirs = layout();
-    expect(dirs.root.startsWith('/private/')).toBe(true);
-    const lexical = path.join(dirs.root.slice('/private'.length), 'secret');
+    const alias = path.join(path.dirname(dirs.root), 'alias');
+    fs.symlinkSync(dirs.root, alias);
+    const lexical = path.join(alias, 'secret');
     const profile = build(dirs, fileRulesOf([fileSpec(`/${lexical}/**`, { roots: [dirs.root], home: dirs.home })], [dirs.root]));
     expect(paramValues(profile, 'FILE_DENY_READ')).toEqual([path.join(dirs.root, 'secret'), lexical].sort());
   });

@@ -5,22 +5,19 @@ import type { SignalSender } from './process-alive.ts';
 import { hostSignalSender } from './platform/group-port.ts';
 import { ProbeFailedError, valueOrThrow } from './platform/inspector-types.ts';
 import { noFollowFlag } from './platform/privacy.ts';
+import { REAP_POLL_INTERVAL_MS, hostProbeTiming } from './platform/probe-timing.ts';
+import type { ProbeTiming } from './platform/probe-timing.ts';
 import type { ProcessInspector } from './platform/inspector-types.ts';
 import { defaultProcessInspector } from './platform/process-inspector.ts';
 
-export type ReapTiming = {
-  now(): number;
-  sleep(ms: number): Promise<void>;
-};
+export type ReapTiming = ProbeTiming;
 
-export const hostReapTiming: ReapTiming = {
-  now: () => Date.now(),
-  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-};
+export const hostReapTiming: ReapTiming = hostProbeTiming;
+
+export { REAP_POLL_INTERVAL_MS };
 
 const defaultKill: SignalSender = hostSignalSender;
 
-export const REAP_POLL_INTERVAL_MS = 25;
 
 const isAborted = (signal: AbortSignal | undefined): boolean => signal?.aborted === true;
 

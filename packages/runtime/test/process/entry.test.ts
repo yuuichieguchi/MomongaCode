@@ -42,7 +42,7 @@ const validHome = (context: CleanupContext): Home => {
   const home = withTempDir(context, { asHome: true });
   const aux = withTempDir(context);
   writeUserSettings(home, { sandbox: 'none', ...modelSettings(path.join(aux, 'up.sock')) });
-  return { home, paths: momongaPaths(home, 'darwin', {}), aux };
+  return { home, paths: momongaPaths(home, process.platform, {}), aux };
 };
 
 const runDir = (paths: MomongaPaths): void => {

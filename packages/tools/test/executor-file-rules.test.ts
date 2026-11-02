@@ -9,7 +9,7 @@ import type { PermissionRule, RuleEffect } from '@momonga/policy';
 import type { Sandbox, SandboxCommand, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
 import type { CallOutcome } from '@momonga/tools';
 import { createReadAccessMatcher } from '../src/read-access.ts';
-import { BASE_PATH, RG_PATH, makeBuiltins, resultOf } from './builtins/fixtures.ts';
+import { JS_BACKEND_PATH, RG_PATH, makeBuiltins, resultOf } from './builtins/fixtures.ts';
 import type { Builtins } from './builtins/fixtures.ts';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import { minimalPolicyFor } from './helpers.ts';
@@ -121,7 +121,7 @@ describe('executor guards read the user file rules', () => {
     const tools = await makeBuiltins();
     tools.write('.env', 'secret');
     const visible = tools.write('notes.txt', 'secret');
-    const outcome = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { env: { PATH: BASE_PATH, LANG: 'C' } }));
+    const outcome = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { env: { PATH: JS_BACKEND_PATH, LANG: 'C' } }));
     expect(resultOf(outcome).output).toBe(visible);
   });
 
@@ -380,7 +380,7 @@ describe('Grep(...) and Glob(...) entries apply to their own tool only (pins)', 
     const visible = tools.write('notes.txt', 'KEY\n');
     fs.utimesSync(visible, 2_000_000, 2_000_000);
     fs.utimesSync(secret, 1_000_000, 1_000_000);
-    return { tools, secret, visible, options: withRules(tools, [ruleOf(tools, 'deny', ruleText)], { env: { PATH: BASE_PATH, LANG: 'C' } }) };
+    return { tools, secret, visible, options: withRules(tools, [ruleOf(tools, 'deny', ruleText)], { env: { PATH: JS_BACKEND_PATH, LANG: 'C' } }) };
   };
 
   it('a Glob deny hides the file from Glob and leaves Read and Grep alone', async () => {

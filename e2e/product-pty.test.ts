@@ -30,6 +30,8 @@ const leave = async (pty: PtySession): Promise<void> => {
   expect(await pty.exit()).toEqual({ code: 0, signal: null });
 };
 
+const wrappedText = (phrase: string): RegExp => new RegExp(phrase.split(' ').map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\s│]+'));
+
 const pasted = (text: string): string => `\u001b[200~${text}\u001b[201~`;
 
 describe('momonga secret set through a pty', () => {
@@ -186,9 +188,9 @@ describe('MCP input in the terminal', () => {
     pty.write('1');
     await pty.waitFor('model: default → primary');
     await pty.waitFor('! Agent at');
-    await pty.waitFor('broken.md was skipped: the description is missing or empty');
+    await pty.waitFor(wrappedText('broken.md was skipped: the description is missing or empty'));
     await pty.waitFor('! Skill at');
-    await pty.waitFor('SKILL.md was skipped: the description is missing or empty');
+    await pty.waitFor(wrappedText('SKILL.md was skipped: the description is missing or empty'));
     await leave(pty);
   });
 });

@@ -17,7 +17,7 @@ const setup = async () => {
   const temp = await makeTempHome();
   const { store, clock } = openStore(temp);
   const states = runtime.createSessionStates({ clock, store, logger: makeLogger() });
-  const policyFor = runtime.createPolicyFor({ paths: temp.paths, home: temp.home, sessionStates: states, fs: fakePolicyFilesystem() });
+  const policyFor = runtime.createPolicyFor({ paths: temp.paths, home: temp.home, sessionStates: states, fs: fakePolicyFilesystem(), ruleEnforcement: 'exact-paths' });
   return { temp, store, policyFor };
 };
 

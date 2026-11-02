@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { momongaLayout } from '@momonga/foundation';
 import { keyFor } from '../helpers.ts';
 import { approvalOf, makeBuiltins, resultOf, sha256 } from './fixtures.ts';
 
@@ -148,7 +149,7 @@ describe('Write', () => {
 
   it('is denied inside a readDenied path even with approval in bypass mode', async () => {
     const tools = await makeBuiltins();
-    const file = path.join(tools.layout.home, 'Library', 'Keychains', 'login.keychain');
+    const file = path.join(momongaLayout(tools.layout.home).keychains, 'login.keychain');
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const result = resultOf(await tools.run('Write', { file_path: file, content: 'x' }, { mode: 'bypassPermissions' }, 'allow_once'));
     expect(result).toEqual({ status: 'failed', output: `Permission denied: ${file} is blocked by the sandbox policy`, denial: { source: 'sandbox', reason: `${file} is blocked by the sandbox policy` } });

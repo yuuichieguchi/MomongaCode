@@ -10,7 +10,7 @@ import { makeLayout } from '../helpers.ts';
 
 const fixture = () => {
   const layout = makeLayout();
-  const sessions = momongaLayout(layout.home, 'darwin', {}).tmp.sessions;
+  const sessions = momongaLayout(layout.home, process.platform, {}).tmp.sessions;
   const tmpDir = path.join(sessions, 'session-1');
   fs.mkdirSync(tmpDir, { recursive: true });
   return { layout, sessions, tmpDir };
@@ -29,7 +29,7 @@ describe('buildSandboxPolicy always-denied writes', () => {
       const { layout, sessions, tmpDir } = fixture();
       const policy = buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: rootsOf(layout), home: layout.home, tmpDir, sessionsTmpRoot: sessions });
       expect(policy.writeDenied).toEqual(
-        expect.arrayContaining([path.join(layout.home, '.momonga'), path.join(layout.home, 'Library', 'Keychains'), sessions]),
+        expect.arrayContaining([path.join(layout.home, '.momonga'), momongaLayout(layout.home).keychains, sessions]),
       );
     });
   }
@@ -56,7 +56,7 @@ describe('buildSandboxPolicy session tmp invariants', () => {
     const { layout, sessions, tmpDir } = fixture();
     const ssh = path.join(layout.home, '.ssh');
     const policy = buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, extraReadDenied: [ssh] });
-    expect(policy.readDenied).toEqual([path.join(layout.home, '.momonga'), path.join(layout.home, 'Library', 'Keychains'), sessions, ssh]);
+    expect(policy.readDenied).toEqual([path.join(layout.home, '.momonga'), momongaLayout(layout.home).keychains, sessions, ssh]);
   });
 
   it('allows reading tmpDir without a readAllowed option', () => {
@@ -127,9 +127,9 @@ describe('buildSandboxPolicy readAllowed validation', () => {
     ).toThrow();
   });
 
-  it('throws for an entry inside home/Library/Keychains', () => {
+  it('throws for an entry inside the platform keychains', () => {
     const { layout, sessions, tmpDir } = fixture();
-    const inside = path.join(layout.home, 'Library', 'Keychains', 'sub');
+    const inside = path.join(momongaLayout(layout.home).keychains, 'sub');
     fs.mkdirSync(inside, { recursive: true });
     expect(() =>
       buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: EMPTY_FILE_RULES, roots: [layout.project], home: layout.home, tmpDir, sessionsTmpRoot: sessions, readAllowed: [inside] }),

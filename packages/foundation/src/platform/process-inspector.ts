@@ -3,11 +3,13 @@ import type { CommandRunner } from './command-runner.ts';
 import { createDarwinInspector } from './darwin-inspector.ts';
 import type { ProcessInspector } from './inspector-types.ts';
 import { createLinuxInspector } from './linux-inspector.ts';
+import { PS_PROBE_TIMEOUT_MS, hostProbeTiming } from './probe-timing.ts';
+import type { ProbeTiming } from './probe-timing.ts';
 import { nodeProcFs } from './procfs.ts';
 import type { ProcFs } from './procfs.ts';
 import { createWindowsInspector } from './windows-inspector.ts';
 
-export const PS_PROBE_TIMEOUT_MS = 2000;
+export { PS_PROBE_TIMEOUT_MS };
 
 export type InspectorPorts = {
   run: CommandRunner;
@@ -15,6 +17,7 @@ export type InspectorPorts = {
   env: Readonly<Record<string, string | undefined>>;
   uid(): number;
   startTimeoutMs: number;
+  timing: ProbeTiming;
 };
 
 export class UnsupportedPlatformError extends Error {
@@ -32,14 +35,14 @@ const hostUid = (): number => {
   return process.getuid();
 };
 
-export const hostInspectorPorts = (): InspectorPorts => ({ run: nodeCommandRunner, procfs: nodeProcFs, env: process.env, uid: hostUid, startTimeoutMs: PS_PROBE_TIMEOUT_MS });
+export const hostInspectorPorts = (): InspectorPorts => ({ run: nodeCommandRunner, procfs: nodeProcFs, env: process.env, uid: hostUid, startTimeoutMs: PS_PROBE_TIMEOUT_MS, timing: hostProbeTiming });
 
 export const createProcessInspector = (platform: NodeJS.Platform, ports: InspectorPorts): ProcessInspector => {
   switch (platform) {
     case 'darwin':
       return createDarwinInspector({ run: ports.run, startTimeoutMs: ports.startTimeoutMs });
     case 'linux':
-      return createLinuxInspector({ procfs: ports.procfs, uid: ports.uid() });
+      return createLinuxInspector({ procfs: ports.procfs, uid: ports.uid(), timing: ports.timing });
     case 'win32':
       return createWindowsInspector({ run: ports.run, env: ports.env });
     default:

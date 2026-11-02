@@ -6,18 +6,18 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { isProtectedWrite, protectedSetFor } from '@momonga/foundation';
 import type { ProtectedSet } from '@momonga/foundation';
 import { EMPTY_GLOB_TABLE, computeFileRules, decide, settleGlobs } from '@momonga/policy';
-import { createSeatbeltSandbox } from '@momonga/sandbox';
 import type { SandboxedProcess } from '@momonga/sandbox';
 import { TEST_SEARCH_PATH, isWritableFor } from '@momonga/testkit';
 import { buildSandboxPolicy, createPolicyFilesystem } from '@momonga/tools';
+import { createHostSandbox } from './helpers.ts';
 
-const APPLE_GIT = '/usr/bin/git';
+const SYSTEM_GIT = '/usr/bin/git';
 const SEARCH_PATH = '/usr/bin:/bin';
 
 let root = '';
 let gitEnv: NodeJS.ProcessEnv = {};
 
-const git = (cwd: string, ...args: string[]) => spawnSync(APPLE_GIT, args, { cwd, env: gitEnv, encoding: 'utf8' });
+const git = (cwd: string, ...args: string[]) => spawnSync(SYSTEM_GIT, args, { cwd, env: gitEnv, encoding: 'utf8' });
 
 const gitOk = (cwd: string, ...args: string[]): string => {
   const result = git(cwd, ...args);
@@ -66,8 +66,7 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
   let submodule = '';
 
   beforeAll(() => {
-    if (process.platform !== 'darwin') throw new Error('Darwin required');
-    if (!fs.existsSync(APPLE_GIT)) throw new Error(`Apple git required at ${APPLE_GIT}`);
+    if (!fs.existsSync(SYSTEM_GIT)) throw new Error(`system git required at ${SYSTEM_GIT}`);
     root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-git-')));
     const home = path.join(root, 'home');
     fs.mkdirSync(home);
@@ -221,7 +220,7 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
         fileRules: computeFileRules([], [repositoryRoot], tmpDir),
         protectedSet: set,
       });
-      const sandbox = createSeatbeltSandbox({ tmpRoot: sandboxTmp, killGraceMs: 300 });
+      const sandbox = createHostSandbox({ tmpRoot: sandboxTmp, killGraceMs: 300 });
       const result = await finish(
         sandbox.spawn(
           { argv: ['/bin/sh', '-c', 'mkdir -p inner && printf "[core]\\n\\tfsmonitor = touch MARKER\\n" > inner/config'], cwd: repositoryRoot, env: { PATH: SEARCH_PATH } },
@@ -260,15 +259,23 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
         fileRules: computeFileRules([], [repositoryRoot], tmpDir),
         protectedSet: setFor(repositoryRoot),
       });
-      const sandbox = createSeatbeltSandbox({ tmpRoot: sandboxTmp, killGraceMs: 300 });
+      const sandbox = createHostSandbox({ tmpRoot: sandboxTmp, killGraceMs: 300 });
       return finish(sandbox.spawn({ argv: ['/bin/sh', '-c', script], cwd: repositoryRoot, env: { PATH: SEARCH_PATH } }, policy, new AbortController().signal));
+    };
+
+    const refusedByKernel = async (repositoryRoot: string, script: string): Promise<void> => {
+      if (process.platform === 'darwin') {
+        expect((await sandboxed(repositoryRoot, script)).code).not.toBe(0);
+        return;
+      }
+      await expect(sandboxed(repositoryRoot, script)).rejects.toMatchObject({ name: 'SandboxPolicyError', code: 'protected_link_not_pinnable' });
     };
 
     it('builds a policy for .git -> .git and refuses removing the link', async () => {
       const repositoryRoot = path.join(root, 'loop');
       fs.mkdirSync(repositoryRoot);
       fs.symlinkSync('.git', path.join(repositoryRoot, '.git'));
-      expect((await sandboxed(repositoryRoot, 'rm .git')).code).not.toBe(0);
+      await refusedByKernel(repositoryRoot, 'rm .git');
       expect(fs.lstatSync(path.join(repositoryRoot, '.git')).isSymbolicLink()).toBe(true);
     });
 
@@ -279,7 +286,7 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
       fs.chmodSync(locked, 0o000);
       fs.symlinkSync('locked/z', path.join(repositoryRoot, '.git'));
       try {
-        expect((await sandboxed(repositoryRoot, 'rm .git')).code).not.toBe(0);
+        await refusedByKernel(repositoryRoot, 'rm .git');
         expect(fs.lstatSync(path.join(repositoryRoot, '.git')).isSymbolicLink()).toBe(true);
       } finally {
         fs.chmodSync(locked, 0o700);
@@ -310,7 +317,7 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
       const repositoryRoot = path.join(root, `linked-${label}`);
       fs.mkdirSync(path.join(repositoryRoot, 'realgit', 'hooks'), { recursive: true });
       fs.symlinkSync('realgit', path.join(repositoryRoot, '.git'));
-      expect((await sandboxed(repositoryRoot, script)).code).not.toBe(0);
+      await refusedByKernel(repositoryRoot, script);
       expect(fs.readlinkSync(path.join(repositoryRoot, '.git'))).toBe('realgit');
     });
   });

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { EMPTY_FILE_RULES, defaultProtectedPaths } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, defaultProtectedPaths, momongaLayout } from '@momonga/foundation';
 import { protectedSetWith } from '@momonga/testkit';
 import type { ProtectedSet } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
@@ -91,8 +91,8 @@ describe('buildSandboxPolicy', () => {
     const policy = buildSandboxPolicy({ protectedSet, fileRules: EMPTY_FILE_RULES, roots: ['/w/a', '/w/b'], home: '/Users/me', tmpDir: '/s/sessions/one', sessionsTmpRoot: '/s/sessions' });
     expect({ ...policy, writeDenied: sortedWriteDenied(policy) }).toEqual({
       writableRoots: ['/w/a', '/w/b', '/s/sessions/one'],
-      writeDenied: [...protectedSet.paths, '/Users/me/.momonga', '/Users/me/Library/Keychains', '/s/sessions'].sort(),
-      readDenied: [path.join('/Users/me', '.momonga'), path.join('/Users/me', 'Library', 'Keychains'), '/s/sessions'],
+      writeDenied: [...protectedSet.paths, '/Users/me/.momonga', momongaLayout('/Users/me').keychains, '/s/sessions'].sort(),
+      readDenied: [path.join('/Users/me', '.momonga'), momongaLayout('/Users/me').keychains, '/s/sessions'],
       writeDeniedLiterals: ['/Users/me/.local/bin/momonga'],
       fileRules: EMPTY_FILE_RULES,
       protectedSet,
@@ -104,7 +104,7 @@ describe('buildSandboxPolicy', () => {
   it('derives writeDenied from the paths of the set, not from the roots', () => {
     const protectedSet = protectedSetWith(['/w/a'], ['/w/a/.git', '/w/main/.git/hooks', '/w/main/.git/config']);
     const policy = buildSandboxPolicy({ protectedSet, fileRules: EMPTY_FILE_RULES, roots: ['/w/a'], home: '/h', tmpDir: '/s/sessions/one', sessionsTmpRoot: '/s/sessions' });
-    expect(sortedWriteDenied(policy)).toEqual(['/w/a/.git', '/w/main/.git/hooks', '/w/main/.git/config', '/h/.momonga', '/h/Library/Keychains', '/s/sessions'].sort());
+    expect(sortedWriteDenied(policy)).toEqual(['/w/a/.git', '/w/main/.git/hooks', '/w/main/.git/config', '/h/.momonga', momongaLayout('/h').keychains, '/s/sessions'].sort());
     expect(policy.writeDenied).not.toContain('/w/a/.git/hooks');
   });
 
@@ -130,8 +130,8 @@ describe('buildSandboxPolicy', () => {
     });
     expect({ ...policy, writeDenied: sortedWriteDenied(policy) }).toEqual({
       writableRoots: ['/w/a', '/s/sessions/one', '/cache'],
-      writeDenied: [...defaultProtectedPaths('/w/a'), '/h/.momonga', '/h/Library/Keychains', '/s/sessions'].sort(),
-      readDenied: ['/h/.momonga', '/h/Library/Keychains', '/s/sessions', '/h/.ssh'],
+      writeDenied: [...defaultProtectedPaths('/w/a'), '/h/.momonga', momongaLayout('/h').keychains, '/s/sessions'].sort(),
+      readDenied: ['/h/.momonga', momongaLayout('/h').keychains, '/s/sessions', '/h/.ssh'],
       writeDeniedLiterals: ['/h/.local/bin/momonga'],
       fileRules: EMPTY_FILE_RULES,
       protectedSet,

@@ -274,7 +274,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       workerId,
       leaseMs: LEASE_MS,
       random: () => 0.5,
-      platform: 'darwin',
+      platform: process.platform,
       timers: systemTimers,
       systemPrompt: testSystemPrompt,
       home,

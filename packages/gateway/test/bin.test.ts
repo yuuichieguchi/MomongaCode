@@ -15,7 +15,7 @@ const prepare = (context: CleanupContext) => {
   const home = withTempDir(context, { asHome: true });
   const aux = withTempDir(context);
   writeSettings(home, { models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(path.join(aux, 'up.sock')) } } });
-  return { home, paths: momongaPaths(home, 'darwin', {}), env: { PATH: MINIMAL_PATH, HOME: home, TMPDIR: aux } };
+  return { home, paths: momongaPaths(home, process.platform, {}), env: { PATH: MINIMAL_PATH, HOME: home, TMPDIR: aux } };
 };
 
 describe('gateway bin (real process, §5.3)', () => {

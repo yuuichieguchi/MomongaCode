@@ -384,7 +384,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     if (fs.existsSync(upper)) {
       const viaCase = await startRuntimeProcess({ home: upper, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout: captureStream() });
       try {
-        expect(viaCase.ready.socketPath).toBe(momongaPaths(stack.temp.home, 'darwin', {}).sockets.runtime);
+        expect(viaCase.ready.socketPath).toBe(momongaPaths(stack.temp.home, process.platform, {}).sockets.runtime);
       } finally {
         await viaCase.close();
       }

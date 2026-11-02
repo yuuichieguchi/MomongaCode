@@ -3,7 +3,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, protectedSetFor } from '@momonga/foundation';
 import type { ProtectedSet } from '@momonga/foundation';
-import { buildSeatbeltProfile, createSeatbeltSandbox } from '@momonga/sandbox';
+import { buildSeatbeltProfile, createBubblewrapSandbox, createSeatbeltSandbox, planBubblewrap } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
 import { fakePolicyFilesystem, killGroupsForCleanup } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
@@ -13,7 +13,21 @@ const BASE_ENV = { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' };
 
 type Built = { roots: string[]; cwd: string };
 
-describe('protected set in the kernel (real sandbox-exec, 5.13)', () => {
+const createHostSandbox = (options: { tmpRoot: string; killGraceMs: number }): Sandbox =>
+  process.platform === 'darwin' ? createSeatbeltSandbox(options) : createBubblewrapSandbox(options);
+
+const admits = (policy: SandboxPolicy, cwd: string): unknown => (process.platform === 'darwin' ? buildSeatbeltProfile(policy) : planBubblewrap(policy, { cwd }));
+
+const startRefusal = (policy: SandboxPolicy, cwd: string): unknown => {
+  try {
+    admits(policy, cwd);
+    return undefined;
+  } catch (error) {
+    return error;
+  }
+};
+
+describe('protected set in the kernel (real sandbox-exec on Darwin, real bwrap on Linux, 5.13)', () => {
   let created: string[] = [];
   let unlock: string[] = [];
   let spawned: SandboxedProcess[] = [];
@@ -54,10 +68,15 @@ describe('protected set in the kernel (real sandbox-exec, 5.13)', () => {
     const target = build(protectedBase);
     const set = setOf(target.roots);
     const policy = policyOf(target.roots, set);
-    expect(() => buildSeatbeltProfile(policy)).not.toThrow();
     const before = unchanged(target.cwd);
-    const refused = await sh(target.cwd, script, policy);
-    expect(refused.code).not.toBe(0);
+    const refusedToStart = startRefusal(policy, target.cwd);
+    if (refusedToStart === undefined) {
+      const refused = await sh(target.cwd, script, policy);
+      expect(refused.code).not.toBe(0);
+    } else {
+      expect(process.platform).not.toBe('darwin');
+      expect(refusedToStart).toMatchObject({ name: 'SandboxPolicyError', code: 'protected_link_not_pinnable' });
+    }
     expect(unchanged(target.cwd)).toEqual(before);
 
     const control = build(tempDir());
@@ -81,8 +100,7 @@ describe('protected set in the kernel (real sandbox-exec, 5.13)', () => {
   const stateOf = (...names: string[]) => (cwd: string) => names.map((name) => `${name}=${describeEntry(path.join(cwd, name))}`).join(' ');
 
   beforeEach(() => {
-    if (process.platform !== 'darwin') throw new Error('Darwin required');
-    sandbox = createSeatbeltSandbox({ tmpRoot: tempDir(), killGraceMs: KILL_GRACE_MS });
+    sandbox = createHostSandbox({ tmpRoot: tempDir(), killGraceMs: KILL_GRACE_MS });
   });
 
   afterEach(async () => {
@@ -194,7 +212,7 @@ describe('protected set in the kernel (real sandbox-exec, 5.13)', () => {
       const built = worktreeBoth(base);
       const roots = [built.cwd];
       const policy = policyOf(roots, setOf(roots));
-      expect(() => buildSeatbeltProfile(policy)).not.toThrow();
+      expect(() => admits(policy, built.cwd)).not.toThrow();
       const inside = await sh(built.cwd, 'printf x > inside.txt', policy);
       expect(inside.code).toBe(0);
       expect(fs.readFileSync(path.join(built.cwd, 'inside.txt'), 'utf8')).toBe('x');

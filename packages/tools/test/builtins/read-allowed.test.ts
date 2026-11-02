@@ -1,10 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { BASE_PATH, RG_BIN, RG_PATH, makeBuiltins, resultOf } from './fixtures.ts';
+import { HAS_RG, JS_BACKEND_PATH, RG_PATH, makeBuiltins, resultOf } from './fixtures.ts';
 import type { Builtins } from './fixtures.ts';
 
-const HAS_RG = process.platform === 'darwin' && fs.existsSync(RG_BIN) && fs.existsSync('/usr/bin/sandbox-exec');
 const PROCESS_TIMEOUT = { timeout: 30_000 };
 
 const fixture = async (options: { realSandbox?: boolean } = {}) => {
@@ -82,26 +81,26 @@ describe('readAllowed inside a readDenied root (builtins)', () => {
 
   it('Grep with the JS backend searches the allowed dir', async () => {
     const fx = await fixture();
-    const result = resultOf(await grep(fx.tools, { path: fx.ok }, fx.sandboxPolicy, BASE_PATH));
+    const result = resultOf(await grep(fx.tools, { path: fx.ok }, fx.sandboxPolicy, JS_BACKEND_PATH));
     expect(result.status).toBe('completed');
     expect(linesOf(result.output)).toEqual([fx.allowedFile]);
   });
 
   it('Grep with the JS backend from the project finds the allowed file and skips denied siblings', async () => {
     const fx = await fixture();
-    const result = resultOf(await grep(fx.tools, {}, fx.sandboxPolicy, BASE_PATH));
+    const result = resultOf(await grep(fx.tools, {}, fx.sandboxPolicy, JS_BACKEND_PATH));
     expect(linesOf(result.output)).toEqual([fx.visibleFile, fx.allowedFile].sort());
   });
 
   it('Grep with the JS backend skips a symlink in the allowed dir that points into home/.momonga', async () => {
     const fx = await fixture();
     fs.symlinkSync(fx.token, path.join(fx.ok, 'link.txt'));
-    const result = resultOf(await grep(fx.tools, { path: fx.ok }, fx.sandboxPolicy, BASE_PATH));
+    const result = resultOf(await grep(fx.tools, { path: fx.ok }, fx.sandboxPolicy, JS_BACKEND_PATH));
     expect(linesOf(result.output)).toEqual([fx.allowedFile]);
   });
 });
 
-describe.runIf(HAS_RG)('readAllowed inside a readDenied root (Grep with ripgrep under real Seatbelt)', () => {
+describe.runIf(HAS_RG)('readAllowed inside a readDenied root (Grep with ripgrep under the real sandbox)', () => {
   it('searches the allowed dir', PROCESS_TIMEOUT, async () => {
     const fx = await fixture({ realSandbox: true });
     const result = resultOf(await grep(fx.tools, { path: fx.ok }, fx.sandboxPolicy, RG_PATH));

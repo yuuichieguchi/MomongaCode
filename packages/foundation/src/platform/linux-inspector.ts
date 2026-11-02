@@ -1,16 +1,19 @@
 import os from 'node:os';
 import { failureOfError, isErrno, probeFailed } from './inspector-types.ts';
 import type { ProbeFailure, ProbeResult, ProcessInspector } from './inspector-types.ts';
-import { auxvLayoutOf, isPidDirectoryName, parseBootTimeSeconds, parseClockTicksPerSecond, parseProcStat } from './linux-parsers.ts';
+import { auxvLayoutOf, isPidDirectoryName, parseBootTimeSeconds, parseClockTicksPerSecond, parseProcStat, parseRealUid } from './linux-parsers.ts';
 import type { AuxvLayout } from './linux-parsers.ts';
+import { PS_PROBE_TIMEOUT_MS, REAP_POLL_INTERVAL_MS, hostProbeTiming } from './probe-timing.ts';
+import type { ProbeTiming } from './probe-timing.ts';
 import type { FileIdentity, ProcFs } from './procfs.ts';
 
-export type LinuxInspectorPorts = { procfs: ProcFs; uid: number; layout?: AuxvLayout };
+export type LinuxInspectorPorts = { procfs: ProcFs; uid: number; layout?: AuxvLayout; timing?: ProbeTiming };
 
 const hostLayout = (): AuxvLayout => auxvLayoutOf(process.arch, os.endianness());
 
 const GONE_CODES = ['ENOENT', 'ESRCH'];
 const DENIED_CODES = ['EACCES', 'EPERM'];
+const EXITED_STATES = ['Z', 'X'];
 
 type ClockParameters = { bootMs: number; ticksPerSecond: number };
 
@@ -29,7 +32,7 @@ const parsed = <T>(read: () => T): T => {
 const failureOf = (error: unknown): ProbeFailure =>
   error instanceof UnparseableProcfs ? probeFailed({ kind: 'unparseable', detail: error.message }) : failureOfError(error);
 
-export const createLinuxInspector = ({ procfs, uid, layout }: LinuxInspectorPorts): ProcessInspector => {
+export const createLinuxInspector = ({ procfs, uid, layout, timing = hostProbeTiming }: LinuxInspectorPorts): ProcessInspector => {
   let clock: ClockParameters | undefined;
   const clockParameters = async (): Promise<ClockParameters> => {
     if (clock !== undefined) return clock;
@@ -49,32 +52,45 @@ export const createLinuxInspector = ({ procfs, uid, layout }: LinuxInspectorPort
     }
   };
 
-  const fdsOf = async (pid: number): Promise<string[]> => {
-    try {
-      return await procfs.list(`/proc/${pid}/fd`);
-    } catch (error) {
-      if (isErrno(error, ...GONE_CODES)) return [];
-      if (!isErrno(error, ...DENIED_CODES)) throw error;
-      let owner: number;
-      try {
-        owner = await procfs.ownerOf(`/proc/${pid}`);
-      } catch (ownerError) {
-        if (isErrno(ownerError, ...GONE_CODES)) return [];
-        throw ownerError;
-      }
-      if (owner !== uid) return [];
-      throw new Uninspectable(`process ${pid} belongs to the current user but its descriptors are not readable (${(error as Error).message})`);
-    }
+  const hasExited = async (pid: number): Promise<boolean> => {
+    const stat = await statOf(pid);
+    return stat === undefined || EXITED_STATES.includes(stat.state);
   };
 
-  const identityOfFd = async (pid: number, fd: string): Promise<FileIdentity | undefined> => {
+  const realUidOf = async (pid: number): Promise<number | undefined> => {
     try {
-      return await procfs.identityOf(`/proc/${pid}/fd/${fd}`);
+      const text = await procfs.readText(`/proc/${pid}/status`);
+      return parsed(() => parseRealUid(text));
     } catch (error) {
       if (isErrno(error, ...GONE_CODES)) return undefined;
       throw error;
     }
   };
+
+  // A process is not dumpable between the exec mapping and the end of exec, so even its owner is refused for a moment.
+  const unlessUnsettled = async <T>(pid: number, absent: T, read: () => Promise<T>): Promise<T> => {
+    const deadline = timing.now() + PS_PROBE_TIMEOUT_MS;
+    for (;;) {
+      try {
+        return await read();
+      } catch (error) {
+        if (isErrno(error, ...GONE_CODES)) return absent;
+        if (!isErrno(error, ...DENIED_CODES)) throw error;
+        if (await hasExited(pid)) return absent;
+        const owner = await realUidOf(pid);
+        if (owner === undefined || owner !== uid) return absent;
+        if (timing.now() >= deadline) {
+          throw new Uninspectable(`process ${pid} belongs to the current user but its descriptors are not readable (${(error as Error).message})`);
+        }
+        await timing.sleep(REAP_POLL_INTERVAL_MS);
+      }
+    }
+  };
+
+  const fdsOf = (pid: number): Promise<string[]> => unlessUnsettled<string[]>(pid, [], () => procfs.list(`/proc/${pid}/fd`));
+
+  const identityOfFd = (pid: number, fd: string): Promise<FileIdentity | undefined> =>
+    unlessUnsettled<FileIdentity | undefined>(pid, undefined, () => procfs.identityOf(`/proc/${pid}/fd/${fd}`));
 
   const guarded = async <T>(read: () => Promise<ProbeResult<T>>): Promise<ProbeResult<T>> => {
     try {

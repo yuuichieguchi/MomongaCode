@@ -222,10 +222,12 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
   }
 
   const readMounts: Mount[] = [];
+  const maskedDirectories: string[] = [];
   const mask = (target: string): void => {
     const kind = kindOf(target);
     if (kind === undefined) return;
     const resolved = port.realpath(target);
+    if (kind === 'directory') maskedDirectories.push(resolved);
     readMounts.push({ depth: depthOf(resolved), args: kind === 'directory' ? ['--tmpfs', resolved] : ['--ro-bind', '/dev/null', resolved] });
   };
   for (const target of readDenied) mask(target);
@@ -252,6 +254,7 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
     ...byDepth(readMounts),
     ...reallow,
     ...scratch,
+    ...unique(maskedDirectories).flatMap((directory) => ['--remount-ro', directory]),
     '--chdir',
     options.cwd,
   ];

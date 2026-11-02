@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { momongaPaths } from '@momonga/foundation';
+import { momongaLayout, momongaPaths } from '@momonga/foundation';
 import { RUNTIME_DEFAULTS, asError, protectedRootAreasOf, reapTimingOf } from '@momonga/runtime';
 import { createFakeClock, createFakeTimers } from '@momonga/testkit';
 
@@ -69,15 +69,10 @@ describe('shared runtime helpers (system timers; reapTimingOf uses fake timers)'
     expect(timing.now()).toBe(START_MS + 525);
   });
 
-  it('protectedRootAreasOf returns home/.momonga, home/Library/Keychains and the tmp root', () => {
+  it('protectedRootAreasOf returns home/.momonga, the platform keychains and the tmp root', () => {
     const home = tempHome();
-    const paths = momongaPaths(home, 'darwin', {});
-    expect(protectedRootAreasOf(paths, home)).toEqual([
-      path.join(home, '.momonga'),
-      path.join(home, 'Library', 'Keychains'),
-      path.join(home, 'Library', 'Caches', 'momonga', 'tmp'),
-    ]);
-    expect(protectedRootAreasOf(paths, home)[2]).toBe(paths.tmp.root);
+    const paths = momongaPaths(home, process.platform, {});
+    expect(protectedRootAreasOf(paths, home)).toEqual([path.join(home, '.momonga'), momongaLayout(home).keychains, paths.tmp.root]);
   });
 
   it('RUNTIME_DEFAULTS has the documented values', () => {
