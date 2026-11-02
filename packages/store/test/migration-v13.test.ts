@@ -91,6 +91,7 @@ const insertDoc = (db: DatabaseSync, id: number, body: string, overrides: Fields
     seq_to: 2,
     at: 1,
     body,
+    paths_json: '[]',
     ...overrides,
   };
   insertRow(db, 'search_docs', fields, verb);
@@ -140,7 +141,8 @@ describe('migration v13', () => {
     const db = migratedDb();
     expect(columnsOf(db, 'reflection_jobs')).toEqual(['run_id', 'state', 'attempts', 'last_error', 'created_at', 'updated_at']);
     expect(columnsOf(db, 'compaction_guidelines')).toEqual(['version', 'text', 'parent', 'created_at', 'adopted_at', 'report_json']);
-    expect(columnsOf(db, 'search_docs')).toEqual(['id', 'level', 'session_id', 'run_id', 'step', 'project', 'origin', 'outcome', 'seq_from', 'seq_to', 'at', 'body']);
+    expect(columnsOf(db, 'search_docs')).toEqual(['id', 'level', 'session_id', 'run_id', 'step', 'project', 'origin', 'outcome', 'seq_from', 'seq_to', 'at', 'body', 'paths_json']);
+    expect(columnsOf(db, 'runs')).toContain('origin');
     expect(columnsOf(db, 'memory_evidence')).toEqual(['memory_id', 'ordinal', 'kind', 'project', 'path', 'sha256', 'sha', 'run_id', 'call_id', 'seq', 'command', 'exit_code']);
     expect(columnsOf(db, 'governing_facts')).not.toContain('polarity');
   });
@@ -152,6 +154,42 @@ describe('migration v13', () => {
 
   it('allows only one search cursor row', () => {
     expect(() => migratedDb().prepare('INSERT INTO search_cursor (id, last_event_id) VALUES (2, 0)').run()).toThrow(/CHECK/);
+  });
+});
+
+describe('run origin', () => {
+  it('gives a run recorded before the column the untrusted origin, because its trust state was not recorded', () => {
+    const dbPath = path.join(makeStoreDir(), 'runtime.db');
+    const old = new DatabaseSync(dbPath);
+    try {
+      migrate(old, MIGRATIONS.filter((migration) => migration.version <= 12));
+      insertRow(old, 'sessions', { id: 's1', cwd: '/work/a', env_json: '{}', permission_mode: 'default', model_alias: 'fm', created_at: START_MS });
+      insertRow(old, 'runs', {
+        id: 'r1',
+        session_id: 's1',
+        ordinal: 1,
+        status: 'COMPLETED',
+        version: 0,
+        lease_token: 0,
+        available_at: START_MS,
+        attempts: 0,
+        failed_attempts: 0,
+        cancel_requested: 0,
+        deadline_at: START_MS,
+        limits_json: '{}',
+        usage_json: '{}',
+        step: 0,
+        last_seq: 0,
+        pins: '{}',
+        dead_letter: 0,
+        created_at: START_MS,
+      });
+    } finally {
+      old.close();
+    }
+    fs.chmodSync(dbPath, 0o600);
+    openStoreAt(dbPath, createFakeClock(START_MS + 2)).close();
+    expect(rawDb(dbPath).prepare("SELECT origin FROM runs WHERE id = 'r1'").get()?.['origin']).toBe('untrusted');
   });
 });
 

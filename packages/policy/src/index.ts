@@ -5,7 +5,7 @@ export type { DecideInput, Decision } from './decide.ts';
 export { matchRule, ruleCoversSubject } from './match-rule.ts';
 export { INERT_PRINTERS, commandPatternOf } from './command-match.ts';
 export type { CommandPattern } from './command-match.ts';
-export { RESERVED_WORDS, analyzeCommand, programNameOf } from './shell.ts';
+export { RESERVED_WORDS, analyzeCommand, programNameOf, readPathsOfCommand } from './shell.ts';
 export type { Analysis, Segment } from './shell.ts';
 export { ASSIGNMENT } from './shell-lexemes.ts';
 export { computeFileRules, fileRuleSpecsOf } from './file-rules.ts';

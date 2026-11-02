@@ -507,6 +507,28 @@ export const allWriteTargets = (analysis: Analysis, resolveFor?: (segment: Segme
 
 export const allReadTargets = (analysis: Analysis): Target[] => executionSteps(analysis).flatMap((step) => step.reads);
 
+const GLOB_METACHARACTER = /[*?[{]/;
+
+const globDirectory = (glob: string): string => {
+  const wildcard = glob.search(GLOB_METACHARACTER);
+  const literalPrefix = wildcard === -1 ? glob : glob.slice(0, wildcard);
+  const slash = literalPrefix.lastIndexOf('/');
+  if (slash === -1) return '.';
+  return slash === 0 ? '/' : literalPrefix.slice(0, slash);
+};
+
+export const readPathsOfCommand = (command: string, specs: CommandSpecs): string[] => {
+  const analysis = analyzeCommand(command, specs);
+  if (analysis === null) return [];
+  const paths = allReadTargets(analysis).flatMap((target): string[] => {
+    if ('literal' in target) return [target.literal];
+    if ('candidate' in target) return [target.candidate];
+    if ('glob' in target) return [globDirectory(target.glob)];
+    return [];
+  });
+  return [...new Set(paths)];
+};
+
 export const programNameOf = (segment: Segment): string | undefined => nameOf(segment.words[segment.effectiveIndex]);
 
 const redirectTarget = (staticValue: string | null, output: boolean): Target => {

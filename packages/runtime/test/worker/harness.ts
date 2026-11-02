@@ -11,7 +11,7 @@ import { applyCapabilityOverride } from '@momonga/protocol';
 import type { Capabilities, CapabilityOverride, PermissionMode, RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { createAgentLoader } from '@momonga/agents';
 import { createSkillsPort, createWorker } from '@momonga/runtime';
-import type { AgentCatalogPort, MemoryPort, SkillsPort, ToolEnv, ToolRuntimePort, Worker, WorkerOptions } from '@momonga/runtime';
+import type { AgentCatalogPort, HistoryPort, MemoryPort, SkillsPort, ToolEnv, ToolRuntimePort, Worker, WorkerOptions } from '@momonga/runtime';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import { foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
@@ -85,6 +85,8 @@ afterEach(async () => {
 });
 
 export const inertMemoryPort: MemoryPort = { load: () => ({ memories: [], tools: [], markUsed: () => undefined }) };
+
+export const inertHistoryPort: HistoryPort = { load: () => ({ tools: [] }) };
 
 export const diskSkillsPort = (home: string, trusted: () => boolean = () => true): SkillsPort =>
   createSkillsPort({ loader: createSkillLoader({ home, fileSystem: createNodeSkillFileSystem() }), settings: { trusted } });
@@ -268,6 +270,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       settings,
       skills: diskSkillsPort(home, () => settings.trustedValue),
       memories: inertMemoryPort,
+      history: inertHistoryPort,
       tools: { ...toolRuntime(toolList ?? (() => toolbox.tools())), ...toolOverrides },
       tracer,
       clock,

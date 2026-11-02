@@ -1,4 +1,4 @@
-import type { Clock } from '@momonga/foundation';
+import type { Clock, Redactor } from '@momonga/foundation';
 import type {
   ElicitationAnswerRecord,
   ElicitationRequestView,
@@ -244,10 +244,12 @@ export type BlobByteSlice = BlobSlice & { offset: number; length: number };
 
 export type BlobStore = {
   handleFor(content: string): string;
-  put(data: string | Uint8Array, options: { mediaType: string }): BlobRef;
-  read(handle: string, range: BlobLineRange): Promise<BlobSlice>;
-  read(handle: string, range: BlobByteRange): Promise<BlobByteSlice>;
+  put(data: string | Uint8Array, options: { mediaType: string; runId?: string }): BlobRef;
+  read(handle: string, range: BlobLineRange, scope?: BlobScope): Promise<BlobSlice>;
+  read(handle: string, range: BlobByteRange, scope?: BlobScope): Promise<BlobByteSlice>;
 };
+
+export type BlobScope = { runId: string };
 
 export type TrustDecision = 'trusted' | 'untrusted';
 
@@ -280,6 +282,56 @@ export type MemoryStore = {
   search(visibility: MemoryVisibility, terms: readonly string[]): MemoryRecord[];
   markUsed(ids: readonly string[]): void;
   delete(id: string): boolean;
+};
+
+export type HistoryVisibility = { trusted: boolean; project: string };
+
+export type HistoryScope = 'project' | 'all';
+
+export type HistoryStepHit = { step: number; seqFrom: number; seqTo: number; snippet: string };
+
+export type HistoryAnchor = {
+  runId: string;
+  sessionId: string;
+  project: string;
+  origin: MemoryOrigin;
+  outcome: string;
+  at: number;
+  seqFrom: number;
+  seqTo: number;
+  snippet: string;
+  steps: HistoryStepHit[];
+};
+
+export type HistoryQueryRequest = {
+  query: string;
+  scope: HistoryScope;
+  scanLimit?: number;
+  candidateLimit?: number;
+  readDenied?: (path: string, project: string) => boolean;
+};
+
+export type HistoryQueryResult = { anchors: HistoryAnchor[]; searched?: number; withheld?: number };
+
+export type HistoryReadRequest = {
+  runId: string;
+  step?: number;
+  seqFrom?: number;
+  seqTo?: number;
+  limit: number;
+  redactor: Redactor;
+};
+
+export type HistoryReadResult =
+  | { kind: 'ok'; runId: string; project: string; origin: MemoryOrigin; events: RunEvent[]; callPaths: Record<string, string[]>; nextSeq: number | null }
+  | { kind: 'not_visible' };
+
+export type SearchStore = {
+  indexBatch(options: { limit: number; redactor: Redactor; maxChars?: number }): { runs: number };
+  visibleProjects(visibility: HistoryVisibility, scope: HistoryScope): string[];
+  query(visibility: HistoryVisibility, request: HistoryQueryRequest): HistoryQueryResult;
+  readRange(visibility: HistoryVisibility, request: HistoryReadRequest): HistoryReadResult;
+  projectOf(visibility: HistoryVisibility, runId: string): string | undefined;
 };
 
 export type RuntimeStore = {
@@ -347,6 +399,7 @@ export type RuntimeStore = {
   blobs: BlobStore;
   trust: TrustStore;
   memories: MemoryStore;
+  search: SearchStore;
   close(): void;
 };
 

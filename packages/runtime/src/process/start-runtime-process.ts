@@ -6,6 +6,7 @@ import {
   announceReady,
   canonicalPath,
   createJsonLogger,
+  createRedactor,
   ensureMomongaDirs,
   momongaPaths,
   ProcessLockHeldError,
@@ -62,6 +63,7 @@ import { protectedRootAreasOf } from './protected-areas.ts';
 import { reapTimingOf } from './reap-timing.ts';
 import type { SandboxKind } from './sandbox-kind.ts';
 import { createSettingsComposition } from './settings-port.ts';
+import { createHistoryPort } from './history-port.ts';
 import { createMemoryPort } from './memory-port.ts';
 import { createAgentsPort } from './agents-port.ts';
 import { createChildRuns } from './child-runs.ts';
@@ -134,6 +136,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   }
   const sandboxExecPath = options.sandboxExecPath;
   const clock = options.clock ?? systemClock;
+  const redactor = createRedactor({ credentials: [] });
   const timers = options.timers ?? systemTimers;
   const logger = options.logger ?? createJsonLogger({ service: 'runtime', clock });
   const stdout = options.stdout ?? process.stdout;
@@ -399,15 +402,16 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         settings: composition.settings,
       });
       const memories = createMemoryPort({ store, settings: composition.settings });
+      const history = createHistoryPort({ store, settings: composition.settings, redactor });
       const agents = createAgentsPort({
         home: canonicalHome,
         fileSystem: createNodeSkillFileSystem(),
         settings: composition.settings,
         runs: createChildRuns({ store, modelAliases: async () => (await gatewayClient.models()).map((model) => model.id) }),
       });
-      return { composition, runtime, tracker, skills, memories, agents };
+      return { composition, runtime, tracker, skills, memories, history, agents };
     });
-    const { composition: settingsComposition, runtime: toolRuntime, tracker, skills: skillsPort, memories: memoriesPort, agents: agentsPort } = ports;
+    const { composition: settingsComposition, runtime: toolRuntime, tracker, skills: skillsPort, memories: memoriesPort, history: historyPort, agents: agentsPort } = ports;
     await step('background-jobs', () => toolRuntime.jobs.reconcileOrphans());
     cleanups.push({ name: 'background-jobs', run: () => toolRuntime.jobs.stopAll() });
     cleanups.push({
@@ -423,6 +427,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       createRunService({
         store,
         clock,
+        redactor,
         home: canonicalHome,
         version,
         socketPath: paths.sockets.runtime,
@@ -462,6 +467,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           settings: settingsComposition.settings,
           skills: skillsPort,
           memories: memoriesPort,
+          history: historyPort,
           agents: agentsPort,
           tools: toolRuntime.port,
           tracer,

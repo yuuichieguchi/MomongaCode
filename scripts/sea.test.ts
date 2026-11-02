@@ -85,6 +85,10 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('single executable built from the f
     expect(run('sqlite').stdout).toBe('sqlite total=42\n');
   });
 
+  it('serves FTS5 with the trigram tokenizer, which cannot match terms under three characters', () => {
+    expect(run('fts5-trigram').stdout).toBe('fts5 english=1 japanese=1 short=0\n');
+  });
+
   it("renders Ink's React tree", () => {
     expect(run('ink').stdout).toContain('ink output=ink-rendered');
   });

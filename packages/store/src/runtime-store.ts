@@ -19,6 +19,7 @@ import type { Row } from './rows.ts';
 import { sameRunRequest } from './run-request.ts';
 import { MIGRATIONS } from './schema.ts';
 import { CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from './transitions.ts';
+import { createSearchStore } from './search.ts';
 import { createTrustStore } from './trust.ts';
 import type {
   Approval,
@@ -108,10 +109,10 @@ const CLAIM_ORDER = 'ORDER BY r.available_at, r.created_at, r.rowid';
 const RUN_INSERT_SQL = `
   INSERT INTO runs (
     id, session_id, ordinal, idempotency_key, request_digest, previous_run_id, history_mode, parent_run_id, parent_call_id, status, version, lease_token,
-    available_at, attempts, failed_attempts, cancel_requested, deadline_at, limits_json, usage_json, step, last_seq, pins, dead_letter, created_at
+    available_at, attempts, failed_attempts, cancel_requested, deadline_at, limits_json, usage_json, step, last_seq, pins, dead_letter, created_at, origin
   ) VALUES (
     :id, :sessionId, :ordinal, :idempotencyKey, :requestDigest, :previousRunId, :historyMode, :parentRunId, :parentCallId, 'QUEUED', 0, 0,
-    :availableAt, 0, 0, 0, :deadlineAt, :limits, :usage, 0, 0, :pins, 0, :createdAt
+    :availableAt, 0, 0, 0, :deadlineAt, :limits, :usage, 0, 0, :pins, 0, :createdAt, :origin
   )
 `;
 
@@ -315,6 +316,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   }
   const sql = statements;
   const approvalOps = createApprovalStore(db, clock);
+  const trust = createTrustStore(db, clock, home);
+  const originOf = (cwd: string): 'trusted' | 'untrusted' => (trust.decisionFor(cwd).decision === 'trusted' ? 'trusted' : 'untrusted');
   const touched = new Map<string, { runId?: string; sessionId: string }>();
 
   const recordTouch = (sessionId: string, runId: string | null): void => {
@@ -939,7 +942,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     createRunAndEnqueue: (sessionId, input) =>
       transaction<CreateRunResult>(() => {
-        if (sql.selectSession.get({ id: sessionId }) === undefined) return { kind: 'not_found' };
+        const sessionRow = sql.selectSession.get({ id: sessionId });
+        if (sessionRow === undefined) return { kind: 'not_found' };
         if (input.idempotencyKey !== undefined) {
           const existing = findRunByIdempotencyKey(sessionId, input.idempotencyKey);
           if (existing !== undefined) {
@@ -968,6 +972,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           usage: canonicalJson({ inputTokens: 0, outputTokens: 0, totalTokens: 0 }),
           pins: canonicalJson(input.pins),
           createdAt: now,
+          origin: originOf(decodeSession(sessionRow).cwd),
         });
         const inserted = appendPayloads(requireRun(id), [
           { type: 'user.message', text: input.input, ...(input.images === undefined ? {} : { images: input.images }) },
@@ -1021,6 +1026,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           usage: canonicalJson({ inputTokens: 0, outputTokens: 0, totalTokens: 0 }),
           pins: canonicalJson(input.pins),
           createdAt: now,
+          origin: originOf(parentSession.cwd),
         });
         writeRun(appendPayloads(requireRun(runId), [{ type: 'user.message', text: input.input }]));
         return { kind: 'created', run: requireRun(runId), session: requireSession(sessionId) };
@@ -1303,8 +1309,9 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     idempotency: createIdempotencyStore(db, clock, (fence) => fenced(fence) !== undefined),
     approvals: approvalOps.store,
     blobs: createBlobStore(db, clock, blobDirectory),
-    trust: createTrustStore(db, clock, home),
+    trust,
     memories: createMemoryStore(db, clock),
+    search: createSearchStore(db),
 
     dataVersion: () => {
       const row = sql.dataVersion.get();

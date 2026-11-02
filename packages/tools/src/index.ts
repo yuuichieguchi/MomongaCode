@@ -74,3 +74,17 @@ export {
   createMemoryTools,
 } from './memory/index.ts';
 export type { MemoryStorePort, MemorySaveRequest, MemoryToolsOptions } from './memory/index.ts';
+export { HISTORY_QUERY_MAX_CHARS, HISTORY_READ_TOOL_NAME, HISTORY_SEARCH_TOOL_NAME, createHistoryTools, createReadDenial } from './history/index.ts';
+export type {
+  HistoryAnchor,
+  HistoryReadPage,
+  HistoryReadRequest,
+  HistoryScope,
+  HistorySearchRequest,
+  HistorySearchResult,
+  HistoryStepHit,
+  HistoryStorePort,
+  HistoryToolsOptions,
+  ReadDenial,
+  ReadDenialOptions,
+} from './history/index.ts';

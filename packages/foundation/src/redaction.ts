@@ -1,10 +1,13 @@
-export const REDACTED_MARKER = '[REDACTED]';
+import { safeSlice } from './text-slice.ts';
+
+export const REDACTED_MARKER ='[REDACTED]';
 export const MIN_CREDENTIAL_CHARS = 8;
 export const MAX_REDACTED_CHARS = 1024;
 const TRUNCATION_SUFFIX = ' …[truncated]';
 
 export type Redactor = {
   text(input: string): string;
+  whole(input: string): string;
   add(credential: string): void;
 };
 
@@ -33,14 +36,9 @@ const variantsOf = (value: string): string[] => {
 const exactValuesOf = (credentials: readonly string[]): string[] =>
   [...new Set(credentials.flatMap(variantsOf))].sort((left, right) => right.length - left.length);
 
-const isHighSurrogate = (code: number): boolean => code >= 0xd800 && code <= 0xdbff;
-const isLowSurrogate = (code: number): boolean => code >= 0xdc00 && code <= 0xdfff;
-
 const capped = (input: string): string => {
   if (input.length <= MAX_REDACTED_CHARS) return input;
-  let end = MAX_REDACTED_CHARS - TRUNCATION_SUFFIX.length;
-  if (isHighSurrogate(input.charCodeAt(end - 1)) && isLowSurrogate(input.charCodeAt(end))) end -= 1;
-  return input.slice(0, end) + TRUNCATION_SUFFIX;
+  return safeSlice(input, 0, MAX_REDACTED_CHARS - TRUNCATION_SUFFIX.length) + TRUNCATION_SUFFIX;
 };
 
 export const createRedactor = (options: RedactorOptions): Redactor => {
@@ -50,7 +48,7 @@ export const createRedactor = (options: RedactorOptions): Redactor => {
     credentials.push(credential);
     exactValues = exactValuesOf(credentials);
   };
-  const text = (input: string): string => {
+  const whole = (input: string): string => {
     let output = input;
     for (const value of exactValues) output = output.split(value).join(REDACTED_MARKER);
     output = output.replace(MASKED_CREDENTIAL, REDACTED_MARKER);
@@ -63,7 +61,8 @@ export const createRedactor = (options: RedactorOptions): Redactor => {
     output = output.replace(CREDENTIAL_FIELD, (match, name: string, separator: string, value: string) =>
       HAS_DIGIT.test(value) && HAS_LETTER.test(value) ? `${name}${separator}${REDACTED_MARKER}` : match,
     );
-    return capped(output);
+    return output;
   };
-  return { text, add };
+  const text = (input: string): string => capped(whole(input));
+  return { text, whole, add };
 };
