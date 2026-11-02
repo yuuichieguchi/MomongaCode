@@ -45,6 +45,7 @@ export type ChatCompletionsTarget = {
   baseUrl?: string;
   socketPath?: string;
   apiKeyEnv?: string;
+  provider?: string;
   toolCalling?: 'native' | 'constrained';
   capabilities: Pick<TargetCapabilities, 'contextWindow' | 'maxOutputTokens'> & Partial<TargetCapabilities>;
   maxConcurrency?: number;
@@ -67,6 +68,7 @@ export type ResolvedChatCompletionsTarget = {
   baseUrl?: string;
   socketPath?: string;
   apiKeyEnv?: string;
+  provider?: string;
   toolCalling: 'native' | 'constrained';
   capabilities: TargetCapabilities & { maxConcurrency: number };
   maxConcurrency: number;

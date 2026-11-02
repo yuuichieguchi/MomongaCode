@@ -63,6 +63,7 @@ const resolveChatCompletions = (target: ChatCompletionsTarget, home: string, whe
     ...(baseUrl === undefined ? {} : { baseUrl }),
     ...(socketPath === undefined ? {} : { socketPath }),
     ...(target.apiKeyEnv === undefined ? {} : { apiKeyEnv: target.apiKeyEnv }),
+    ...(target.provider === undefined ? {} : { provider: target.provider }),
     toolCalling: target.toolCalling ?? 'native',
     capabilities: {
       structuredOutput: 'none',

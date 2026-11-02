@@ -1,13 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { GENAI_SEMCONV } from '@momonga/observability';
+import { systemClock } from '@momonga/foundation';
+import { GENAI_SEMCONV, buildCostReport, formatCostReport, openTraceStore } from '@momonga/observability';
 import { OTLP_SPAN_KIND, decodeOtlpSpans, startOtlpCollector } from '@momonga/testkit';
 import type { DecodedOtlpSpan, OtlpCollector } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
 import { createE2eHome, registerE2eCleanup } from './support/home.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
 import { shutdownBarrier, startStack } from './support/stack.ts';
+import { UPSTREAM_MODEL, UPSTREAM_TARGET } from './support/stack.ts';
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
@@ -85,10 +87,68 @@ describe('OTLP export through real processes', () => {
       expect(chat.parentSpanId).toBe(agent.spanId);
       expect(chat.name).toBe('chat system');
       expect(chat.attributes).toMatchObject({ 'gen_ai.request.model': 'system', 'gen_ai.response.finish_reasons': expect.any(Array), 'momonga.run_id': runId });
-      expect(typeof chat.attributes['gen_ai.provider.name']).toBe('string');
+      expect(chat.attributes['gen_ai.provider.name']).toBe('openai');
       expect(chat.attributes['gen_ai.usage.input_tokens']).toBe(10);
       expect(chat.attributes['gen_ai.usage.output_tokens']).toBe(5);
     }
     expect(JSON.stringify(collector.requests.map((request) => request.body))).not.toContain('otlp notes');
+  });
+
+  it(titleOf('cost-report'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    const home = await createE2eHome();
+    const file = path.join(home.project, 'notes.txt');
+    fs.writeFileSync(file, 'cost notes\n');
+    const stack = await startStack({
+      home,
+      script: [toolCallReply('Read', { file_path: file }), textReply('read it')],
+      settings: {
+        models: {
+          aliases: { default: [UPSTREAM_TARGET] },
+          targets: {
+            [UPSTREAM_TARGET]: {
+              adapter: 'chat-completions',
+              model: UPSTREAM_MODEL,
+              socketPath: home.upstreamSocket,
+              provider: 'apple',
+              capabilities: { contextWindow: 8192, maxOutputTokens: 1024 },
+            },
+          },
+        },
+      },
+    });
+    const runtime = createRuntimeClient(home);
+    let runId: string;
+    let sessionId: string;
+    try {
+      const { session } = await runtime.createSession();
+      sessionId = session.id;
+      runId = (await runtime.createRun(session.id, 'Read notes.txt')).run.id;
+      const stream = runtime.events(runId);
+      await stream.toEnd(E2E_RUN_COMPLETED_BOUND_MS);
+      await stream.close();
+    } finally {
+      await runtime.close();
+    }
+    await shutdownBarrier(stack);
+
+    const store = openTraceStore({ path: home.paths.traces.gateway, clock: systemClock });
+    try {
+      const report = buildCostReport(store, [{ runId, sessionId }]);
+      console.log(formatCostReport(report));
+      expect(report.runs).toHaveLength(1);
+      expect(report.sessions).toMatchObject([{ sessionId, runIds: [runId], calls: 2 }]);
+      expect(report.total).toMatchObject({
+        calls: 2,
+        unpricedCalls: 0,
+        inputTokens: 20,
+        outputTokens: 10,
+        cachedInputTokens: 0,
+        amount: 0,
+        currency: 'USD',
+        priceVersions: ['1970-01-01'],
+      });
+    } finally {
+      store.close();
+    }
   });
 });

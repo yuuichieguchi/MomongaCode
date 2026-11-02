@@ -4,6 +4,7 @@ import type { Capabilities, ProviderAdapter } from '@momonga/protocol';
 
 export type GatewayTargetConfig = {
   kind: string;
+  provider: string;
   model: string;
   maxConcurrency: number;
   admissionTimeoutMs: number;

@@ -34,7 +34,7 @@ type SuiteResult = { id: string; name: string; status: 'passed' | 'failed' | 'sk
 type SuiteOutput = { summary: { passed: number; failed: number; skipped: number; total: number }; results: SuiteResult[] };
 
 const gatewayConfig: GatewayConfig = {
-  models: { aliases: { [MODEL_ALIAS]: ['fm'] }, targets: { fm: { kind: 'chat-completions', model: 'system', maxConcurrency: 4, admissionTimeoutMs: 5000 } } },
+  models: { aliases: { [MODEL_ALIAS]: ['fm'] }, targets: { fm: { kind: 'chat-completions', provider: 'openai', model: 'system', maxConcurrency: 4, admissionTimeoutMs: 5000 } } },
   retry: { maxAttempts: 3, baseMs: 100, maxMs: 10_000 },
   breaker: { failureThreshold: 5, openMs: 30_000 },
   limits: { maxBodyBytes: 1_000_000, maxIdempotencyFrameBytes: 8_000_000, idempotencyReaderStallMs: 30_000 },

@@ -270,6 +270,15 @@ describe('chat-completions target schema', () => {
     expect(models.targets['remote']).toMatchObject({ apiKeyEnv });
   });
 
+  it.each(['openai', 'azure.ai.openai', 'gcp.vertex_ai', 'my-gateway'])('accepts provider %j', async (provider) => {
+    const models = await expectAccepted({ targets: { remote: chatTarget({ provider }) }, aliases: { default: 'remote' } });
+    expect(models.targets['remote']).toMatchObject({ provider });
+  });
+
+  it.each(['', 'OpenAI', '1x', 'has space'])('rejects provider %j', async (provider) => {
+    await expectRejected({ targets: { remote: chatTarget({ provider }) } });
+  });
+
   it.each(['1KEY', 'BAD-NAME', 'HAS SPACE', '', 'X=Y'])('rejects apiKeyEnv %j', async (apiKeyEnv) => {
     await expectRejected({ targets: { remote: chatTarget({ apiKeyEnv }) } });
   });

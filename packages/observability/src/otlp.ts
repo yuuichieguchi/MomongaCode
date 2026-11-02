@@ -6,8 +6,9 @@ export type OtlpExporterSettings = { endpoint: string; headers?: Record<string, 
 
 const TRACES_PATH = 'v1/traces';
 
-export const OTLP_TEARDOWN_SHARE = 0.2;
-export const OTLP_EXPORT_TIMEOUT_MS = RUNTIME_TEARDOWN_BUDGET_MS * OTLP_TEARDOWN_SHARE;
+export const OTLP_TEARDOWN_SHARE = 0.5;
+export const OTLP_EXPORTS_PER_TEARDOWN = 2;
+export const OTLP_EXPORT_TIMEOUT_MS = (RUNTIME_TEARDOWN_BUDGET_MS * OTLP_TEARDOWN_SHARE) / OTLP_EXPORTS_PER_TEARDOWN;
 
 export type OtlpExporterOptions = { timeoutMs?: number };
 

@@ -9,7 +9,7 @@ export type CollectedOtlpRequest = {
   body: unknown;
 };
 
-export type OtlpCollectorResponse = { status: number; body?: string };
+export type OtlpCollectorResponse = { status: number; body?: string } | { hang: true };
 
 export type OtlpCollector = {
   endpoint: string;
@@ -30,6 +30,7 @@ export const startOtlpCollector = async (): Promise<OtlpCollector> => {
   const server = http.createServer((request, reply) => {
     void readBody(request).then((raw) => {
       requests.push({ method: request.method ?? '', path: request.url ?? '', headers: request.headers, raw, body: raw === '' ? undefined : JSON.parse(raw) });
+      if ('hang' in response) return;
       reply.writeHead(response.status, { 'content-type': 'application/json' });
       reply.end(response.body ?? '');
     });

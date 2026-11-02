@@ -21,7 +21,7 @@ export type {
   TracePropagation,
 } from './telemetry.ts';
 export { createTraceStoreExporter } from './trace-exporter.ts';
-export { OTLP_EXPORT_TIMEOUT_MS, OTLP_TEARDOWN_SHARE, createOtlpTraceExporter, exportersFor, otlpTracesUrl } from './otlp.ts';
+export { OTLP_EXPORTS_PER_TEARDOWN, OTLP_EXPORT_TIMEOUT_MS, OTLP_TEARDOWN_SHARE, createOtlpTraceExporter, exportersFor, otlpTracesUrl } from './otlp.ts';
 export type { OtlpExporterOptions, OtlpExporterSettings } from './otlp.ts';
 export { openTraceStore } from './trace-store.ts';
 export type {

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ROOT_CONTEXT, trace } from '@opentelemetry/api';
 import {
   GENAI_SEMCONV,
+  OTLP_EXPORTS_PER_TEARDOWN,
   OTLP_EXPORT_TIMEOUT_MS,
   OTLP_TEARDOWN_SHARE,
   createOtlpTraceExporter,
@@ -182,6 +183,19 @@ describe('failure isolation of the OTLP exporter', () => {
     expect(reported.slice(before).map((error) => error.message).join('\n')).toMatch(/ECONNREFUSED|fetch failed|connect/i);
   });
 
+  it('bounds flush and shutdown by the export timeout when the collector accepts the connection and never answers', async () => {
+    const collector = await startOtlpCollector();
+    registerCleanup(() => collector.close());
+    collector.respondWith({ hang: true });
+    const h = fixture(collector, undefined, UNREACHABLE_EXPORT_TIMEOUT_MS);
+    const before = reported.length;
+    expect(() => recordRun(h)).not.toThrow();
+    await expect(h.telemetry.forceFlush()).resolves.toBeUndefined();
+    await expect(h.telemetry.shutdown()).resolves.toBeUndefined();
+    expect(collector.requests.length).toBeGreaterThan(0);
+    expect(reported.length).toBeGreaterThan(before);
+  });
+
   it('still writes the local trace store when the collector rejects the export', async () => {
     const collector = await startOtlpCollector();
     registerCleanup(() => collector.close());
@@ -205,9 +219,10 @@ describe('OTLP exporter configuration', () => {
     expect(() => otlpTracesUrl('not a url')).toThrow();
   });
 
-  it('bounds an export, retries included, by a fifth of the runtime teardown budget', () => {
-    expect(OTLP_EXPORT_TIMEOUT_MS).toBe(RUNTIME_TEARDOWN_BUDGET_MS * OTLP_TEARDOWN_SHARE);
-    expect(OTLP_EXPORT_TIMEOUT_MS).toBe(2000);
+  it('lets the flush and the shutdown export together take at most half of the runtime teardown budget', () => {
+    expect(OTLP_EXPORT_TIMEOUT_MS * OTLP_EXPORTS_PER_TEARDOWN).toBe(RUNTIME_TEARDOWN_BUDGET_MS * OTLP_TEARDOWN_SHARE);
+    expect(OTLP_EXPORT_TIMEOUT_MS * OTLP_EXPORTS_PER_TEARDOWN).toBeLessThan(RUNTIME_TEARDOWN_BUDGET_MS);
+    expect(OTLP_EXPORT_TIMEOUT_MS).toBe(2500);
   });
 
   it('exports nothing unless telemetry settings name an OTLP endpoint', () => {

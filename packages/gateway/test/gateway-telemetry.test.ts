@@ -54,4 +54,29 @@ describe('gateway telemetry', () => {
     expect(succeeded?.attributes['gen_ai.usage.input_tokens']).toBe(17);
     expect(succeeded?.attributes['gen_ai.usage.output_tokens']).toBe(5);
   });
+
+  it('names the configured provider of the target, not the adapter kind, on the chat span', async () => {
+    const clock = createFakeClock(START_MS);
+    const memory = new InMemorySpanExporter();
+    const telemetry = createTelemetry({
+      serviceName: 'momonga-gateway-test',
+      serviceVersion: '0.0.0',
+      clock,
+      exporters: [memory],
+      batch: { maxQueueSize: 2048, scheduledDelayMs: 60_000, maxExportBatchSize: 512 },
+    });
+    registerCleanup(() => telemetry.shutdown());
+    const primary = createScriptedAdapter({ calls: [{ events: textResponseEvents({ model: 'scripted-primary', chunks: ['ok'], usage: usageOf(3, 1) }) }] });
+    const { client } = await startGateway({
+      adapters: { primary },
+      clock,
+      telemetry,
+      config: { targets: { primary: { model: 'scripted-primary', provider: 'apple' } } },
+    });
+    expect((await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') }))).status).toBe(200);
+    await telemetry.forceFlush();
+    const [chat] = memory.getFinishedSpans().filter((span) => span.attributes['gen_ai.operation.name'] === 'chat');
+    expect(chat?.attributes['gen_ai.provider.name']).toBe('apple');
+    expect(chat?.name).toBe('chat scripted-primary');
+  });
 });

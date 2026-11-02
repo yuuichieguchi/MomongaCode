@@ -61,6 +61,7 @@ export const E2E_CASES = [
   { id: 'eval-starter', file: 'eval-runner.test.ts', title: 'eval: the starter dataset runs through the Run API against the fake upstream and reports pass and false-allow rates', needsBash: false },
   { id: 'eval-false-allow', file: 'eval-runner.test.ts', title: 'eval: a write allowed by acceptEdits and labelled ask is counted as a false allow; a blocked read labelled deny is observed as deny', needsBash: false },
   { id: 'otlp-export', file: 'otlp-export.test.ts', title: 'otlp: a run exports GenAI spans from the gateway and the runtime to a loopback collector when settings opt in', needsBash: false },
+  { id: 'cost-report', file: 'otlp-export.test.ts', title: 'cost: per-run and per-session cost comes from the usage the gateway recorded in its trace store', needsBash: false },
   { id: 'open-responses-compliance', file: 'open-responses-compliance.test.ts', title: 'open responses: the official compliance suite runs against the gateway TCP debug listener and matches the declared support matrix', needsBash: false },
 ] as const satisfies readonly { id: string; file: E2eCaseFile; title: string; needsBash: boolean }[];
 
