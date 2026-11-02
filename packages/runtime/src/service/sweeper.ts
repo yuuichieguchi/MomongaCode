@@ -12,7 +12,7 @@ export type ApprovalSweeperOptions = {
 };
 
 export type StoppedRunReleaseOptions = {
-  store: Pick<RuntimeStore, 'stoppedRunIds'>;
+  store: Pick<RuntimeStore, 'terminalRunIdsWithCheckpoint'>;
   releaseStopped(runId: string, signal: AbortSignal): Promise<void>;
   signal: AbortSignal;
   onError: (error: unknown) => void;
@@ -21,7 +21,7 @@ export type StoppedRunReleaseOptions = {
 export const releaseStoppedRunsAtStartup = async ({ store, releaseStopped, signal, onError }: StoppedRunReleaseOptions): Promise<void> => {
   let runIds: string[];
   try {
-    runIds = store.stoppedRunIds();
+    runIds = store.terminalRunIdsWithCheckpoint();
   } catch (error) {
     onError(error);
     return;

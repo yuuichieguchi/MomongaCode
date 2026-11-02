@@ -330,7 +330,7 @@ export type RuntimeStore = {
   elicitationView(elicitationId: string): ElicitationView | undefined;
   pendingElicitationViews(runId: string): ElicitationView[];
   expireApprovals(nowMs: number): string[];
-  stoppedRunIds(): string[];
+  terminalRunIdsWithCheckpoint(): string[];
   hasActiveRun(): boolean;
   approvalView(approvalId: string): ApprovalView | undefined;
   pendingApprovalViews(runId: string): ApprovalView[];
