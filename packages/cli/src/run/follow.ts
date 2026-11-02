@@ -39,7 +39,7 @@ export type ReconnectPolicy = {
   random: () => number;
   reconnectBoundMs: number;
   boundExceeded(boundMs: number, cause: unknown): Error;
-  restoreConnection(): Promise<void>;
+  restoreConnection(signal: AbortSignal | undefined): Promise<void>;
   onReconnecting?(attempt: number): void;
   signal?: AbortSignal;
 };
@@ -65,7 +65,7 @@ const createReconnector = (policy: ReconnectPolicy): Reconnector => {
         policy.signal,
       );
       attempt += 1;
-      await policy.restoreConnection();
+      await policy.restoreConnection(policy.signal);
     },
   };
 };
@@ -134,7 +134,7 @@ export type FollowOptions = {
   runId: string;
   seenThrough?: number;
   reconnectBoundMs: number;
-  restoreConnection(): Promise<void>;
+  restoreConnection(signal: AbortSignal | undefined): Promise<void>;
   onSeenEvent?(frame: RunEventFrame): void;
   onEvent(frame: RunEventFrame): void;
   onChildEvent?: ChildFrameHandler;
@@ -242,7 +242,7 @@ export type FollowSessionOptions = {
   sessionId: string;
   after: number;
   reconnectBoundMs: number;
-  restoreConnection(): Promise<void>;
+  restoreConnection(signal: AbortSignal | undefined): Promise<void>;
   onEvent(frame: RunEventFrame): void;
   onReconnecting?(attempt: number): void;
   signal: AbortSignal;

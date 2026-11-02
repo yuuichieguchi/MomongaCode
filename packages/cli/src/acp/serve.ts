@@ -2,7 +2,7 @@ import { ndJsonStream } from '@agentclientprotocol/sdk';
 import { canonicalPath } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { createGatewayClient } from '../client/gateway-client.ts';
-import { daemonReadyBoundMs, ensureDaemon } from '../daemon/ensure-daemon.ts';
+import { daemonReadyBoundMs, ensureDaemon, restoreDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { DaemonUnreachable, followRun, followSession, retryAfterRestore } from '../run/follow.ts';
 import { autoModeConfigured, connectRuntime, environmentSnapshot } from '../run/open-session.ts';
@@ -31,9 +31,7 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
           random: ports.random,
           reconnectBoundMs,
           boundExceeded: (boundMs, cause) => new DaemonUnreachable(boundMs, cause),
-          restoreConnection: async () => {
-            await ensureDaemon(ports, paths);
-          },
+          restoreConnection: restoreDaemon(ports, paths),
           onReconnecting: (attempt) => ports.stderr.write(`momonga: lost the connection to the daemon, reconnecting (attempt ${attempt + 1})\n`),
           signal,
         },
@@ -46,9 +44,7 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
         random: ports.random,
         runId,
         reconnectBoundMs,
-        restoreConnection: async () => {
-          await ensureDaemon(ports, paths);
-        },
+        restoreConnection: restoreDaemon(ports, paths),
         onEvent,
         onChildEvent,
         onReconnecting: (attempt) => ports.stderr.write(`momonga: lost the event stream, reconnecting (attempt ${attempt + 1})\n`),
@@ -62,9 +58,7 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
         sessionId,
         after,
         reconnectBoundMs,
-        restoreConnection: async () => {
-          await ensureDaemon(ports, paths);
-        },
+        restoreConnection: restoreDaemon(ports, paths),
         onEvent,
         onReconnecting: (attempt) => ports.stderr.write(`momonga: lost the session event stream, reconnecting (attempt ${attempt + 1})\n`),
         signal,
@@ -73,7 +67,8 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
   });
   const connection = app.connect(ndJsonStream(stdio.output, stdio.input));
   const closeOnInterrupt = (): void => connection.close();
-  interrupt.addEventListener('abort', closeOnInterrupt, { once: true });
+  if (interrupt.aborted) closeOnInterrupt();
+  else interrupt.addEventListener('abort', closeOnInterrupt, { once: true });
   try {
     await connection.closed;
   } finally {

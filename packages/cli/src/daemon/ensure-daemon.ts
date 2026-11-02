@@ -153,6 +153,12 @@ const replaceOlder = async (
   return (await client.shutdownIfIdle(signal)).accepted;
 };
 
+export const restoreDaemon =
+  (ports: DaemonPorts, paths: MomongaPaths) =>
+  async (signal: AbortSignal | undefined): Promise<void> => {
+    await ensureDaemon(ports, paths, signal === undefined ? {} : { signal });
+  };
+
 export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, options: EnsureDaemonOptions = {}): Promise<SupervisorHealth> => {
   const { signal } = options;
   signal?.throwIfAborted();

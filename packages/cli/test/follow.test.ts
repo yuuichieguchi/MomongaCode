@@ -87,6 +87,20 @@ describe('followRun', () => {
     expect(restored).toEqual([0]);
   });
 
+  it('hands the caller signal to the connection restore, so that an interrupt can stop a restore in progress', async () => {
+    const seen: number[] = [];
+    const received: Array<AbortSignal | undefined> = [];
+    const { client } = clientOf([{ frames: [1], thenThrow: errno('ECONNRESET') }, { frames: [2] }], [runView({ status: 'COMPLETED' })]);
+    const controller = new AbortController();
+
+    await followRun(options(client, seen, { signal: controller.signal, restoreConnection: async (signal) => void received.push(signal) }));
+
+    expect(received).toHaveLength(1);
+    expect(received[0]?.aborted).toBe(false);
+    controller.abort();
+    expect(received[0]?.aborted).toBe(true);
+  });
+
   it('reconnects when the stream ends before the run is terminal', async () => {
     const seen: number[] = [];
     const { client, opened } = clientOf([{ frames: [1] }, { frames: [2] }], [runView({ status: 'RUNNING' }), runView({ status: 'COMPLETED' })]);
