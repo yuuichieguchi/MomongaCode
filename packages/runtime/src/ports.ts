@@ -10,8 +10,9 @@ import type {
   StreamEvent,
 } from '@momonga/protocol';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
+import type { SkillSet } from '@momonga/skills';
 import type { Session } from '@momonga/store';
-import type { ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
+import type { AnyTool, ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
 
 export type { Clock };
 
@@ -38,6 +39,10 @@ export type SettingsPort = {
   trusted(session: Session): boolean;
 };
 
+export type SkillsPort = {
+  load(session: Session): Promise<SkillSet>;
+};
+
 export type ToolEnv = Readonly<Record<string, string>>;
 
 export type ToolPolicy = {
@@ -51,9 +56,9 @@ export type RecoveryContext = { roots: readonly string[]; tmpDir: string; env: T
 
 export type ToolRuntimePort = {
   envFor(session: Session): ToolEnv;
-  toolSet(runId: string, options: { signal: AbortSignal; env: ToolEnv }): Promise<ToolSet>;
+  toolSet(runId: string, options: { signal: AbortSignal; env: ToolEnv; additionalTools?: readonly AnyTool[] }): Promise<ToolSet>;
   recoveryToolSet(options: { signal: AbortSignal }): Promise<ToolSet>;
-  policyFor(session: Session, options: { env: ToolEnv; rules: readonly PermissionRule[] }): Promise<ToolPolicy>;
+  policyFor(session: Session, options: { env: ToolEnv; rules: readonly PermissionRule[]; readableDirectories?: readonly string[] }): Promise<ToolPolicy>;
   recoveryContextFor(session: Session, options: { env: ToolEnv }): Promise<RecoveryContext>;
   executor: ToolExecutor;
   sandbox: Sandbox;

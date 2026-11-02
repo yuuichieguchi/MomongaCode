@@ -84,7 +84,7 @@ const userMarker = (text: string): InputItem => ({ type: 'message', role: 'user'
 const inconsistent = (previous: RunState, detail: string): InheritanceError =>
   new InheritanceError('previous_run_inconsistent', `run ${previous.runId}: ${detail}`);
 
-const digestOf = (payload: Pick<InheritedPayload, 'history' | 'nextItemSeq' | 'summary' | 'evicted' | 'mode'>): string =>
+const digestOf = (payload: Pick<InheritedPayload, 'history' | 'nextItemSeq' | 'summary' | 'evicted' | 'mode' | 'activatedSkills'>): string =>
   sha256Hex(
     canonicalJson({
       history: payload.history,
@@ -92,6 +92,7 @@ const digestOf = (payload: Pick<InheritedPayload, 'history' | 'nextItemSeq' | 's
       summary: payload.summary ?? null,
       evicted: payload.evicted,
       mode: payload.mode ?? null,
+      ...(payload.activatedSkills === undefined ? {} : { activatedSkills: payload.activatedSkills }),
     }),
   );
 
@@ -180,6 +181,7 @@ export const projectInheritance = (previous: RunState, outcome: InheritanceOutco
     markers,
     ...(previous.mode === undefined ? {} : { fromMode: previous.mode }),
     ...(mode === undefined ? {} : { mode }),
+    ...(previous.activatedSkills.length === 0 ? {} : { activatedSkills: previous.activatedSkills.map((skill) => ({ ...skill })) }),
   };
   return { ...unsigned, digest: digestOf(unsigned) };
 };
@@ -204,8 +206,10 @@ export const applyInheritance = (state: RunState, payload: InheritedPayload): Ru
     throw new Error(`run ${state.runId}: context.inherited carries item seqs that are not strictly increasing below nextItemSeq`);
   }
   const { summary: _summary, mode: _mode, ...rest } = state;
+  const carried = payload.activatedSkills ?? [];
   return {
     ...rest,
+    activatedSkills: [...carried, ...state.activatedSkills.filter((skill) => !carried.some((entry) => entry.name === skill.name))],
     history,
     nextItemSeq: payload.nextItemSeq + 1,
     taskSeq: payload.nextItemSeq,

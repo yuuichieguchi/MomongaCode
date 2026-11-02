@@ -7,6 +7,7 @@ import { isFatalStoreError } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import { asError } from '../process/as-error.ts';
 import type { SandboxKind } from '../process/sandbox-kind.ts';
+import type { SkillsPort } from '../ports.ts';
 import { createRunApp } from './app.ts';
 import type { RunLimitDefaults, SessionCreateSettings } from './app.ts';
 import type { RunNotifier } from './notifier.ts';
@@ -31,6 +32,7 @@ export type RunServiceOptions = {
   notifier: RunNotifier;
   modelAliases: () => Promise<readonly string[]>;
   sessionCreateSettings: (cwd: string) => Promise<SessionCreateSettings>;
+  skills: SkillsPort;
   defaults: { modelAlias: string; runTimeoutMs?: number; limits: RunLimitDefaults };
   timers?: ServiceTimers;
   keepAliveMs?: number;
@@ -85,6 +87,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     version: options.version,
     modelAliases: options.modelAliases,
     sessionCreateSettings: options.sessionCreateSettings,
+    skills: options.skills,
     isDraining: () => draining,
     health: { pid: options.pid, startedAt: options.startedAt, sandbox: options.sandboxKind },
     protectedRootAreas: options.protectedRootAreas,

@@ -1,4 +1,4 @@
-import { comparableContains } from '@momonga/foundation';
+import { comparableContains, momongaLayout } from '@momonga/foundation';
 import type { FileRuleSet, ProtectedSet } from '@momonga/foundation';
 import { SandboxPolicyError, alwaysWriteDenied, assertAbsoluteEntries, canonicalizePath, validateSandboxPolicy } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
@@ -41,8 +41,9 @@ export const buildSandboxPolicy = (options: SandboxPolicyOptions): SandboxPolicy
   };
   validateSandboxPolicy(policy, { tmpDir: options.tmpDir });
   const homeGuards = denied.subtrees.map(canonicalizePath);
+  const skillsRoot = canonicalizePath(momongaLayout(options.home).skills);
   for (const entry of readAllowed.map(canonicalizePath)) {
-    if (homeGuards.some((guard) => comparableContains(guard, entry))) {
+    if (homeGuards.some((guard) => comparableContains(guard, entry)) && !comparableContains(skillsRoot, entry)) {
       throw new SandboxPolicyError('read_allowed_inside_owned_root', `readAllowed entry must not lie inside ${denied.root} or ${denied.keychains}: ${entry}`, { path: entry });
     }
   }

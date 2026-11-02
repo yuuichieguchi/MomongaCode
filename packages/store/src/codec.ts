@@ -110,6 +110,7 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   'context.inherited': true,
   'context.truncated': true,
   'instructions.loaded': true,
+  'skill.activated': true,
   'approval.rule.persisted': true,
   notice: true,
 };
@@ -230,6 +231,9 @@ const isInherited = (value: unknown): boolean =>
 const isLoadedInstruction = (value: unknown): boolean =>
   isRecord(value) && typeof value['path'] === 'string' && typeof value['textSha256'] === 'string';
 
+const isActivatedSkill = (value: unknown): boolean =>
+  isRecord(value) && typeof value['name'] === 'string' && typeof value['content'] === 'string';
+
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 
 const isSha256 = (value: unknown): boolean => typeof value === 'string' && SHA256_HEX.test(value);
@@ -247,7 +251,7 @@ const isLoopOpen = (value: unknown): boolean =>
   isRecord(value['outputs']) &&
   Object.values(value['outputs']).every(isSha256);
 
-export const SNAPSHOT_STATE_VERSION = 7;
+export const SNAPSHOT_STATE_VERSION = 8;
 
 export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
 
@@ -288,6 +292,8 @@ export const decodeRunState = (identity: string, value: unknown): RunState | und
     Object.values(state['steps']).every(isStep) &&
     Array.isArray(state['loadedInstructions']) &&
     state['loadedInstructions'].every(isLoadedInstruction) &&
+    Array.isArray(state['activatedSkills']) &&
+    state['activatedSkills'].every(isActivatedSkill) &&
     (state['streaming'] === undefined || isStreaming(state['streaming'])) &&
     (state['mode'] === undefined || PERMISSION_MODES.some((mode) => mode === state['mode'])) &&
     Number.isInteger(state['taskSeq']) &&

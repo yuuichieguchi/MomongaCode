@@ -22,6 +22,7 @@ export const initialRunState = (ids: { runId: string; sessionId: string }): RunS
   toolCallCounts: {},
   steps: {},
   loadedInstructions: [],
+  activatedSkills: [],
   loopGroups: [],
   taskSeq: 1,
   lastSeq: 0,
@@ -192,6 +193,9 @@ const withInstruction = (current: RunState['loadedInstructions'], path: string, 
     ? current.map((entry) => (entry.path === path ? { path, textSha256 } : entry))
     : [...current, { path, textSha256 }];
 
+const withSkill = (current: RunState['activatedSkills'], skill: RunState['activatedSkills'][number]): RunState['activatedSkills'] =>
+  current.some((entry) => entry.name === skill.name) ? current : [...current, skill];
+
 const applyEvent = (state: RunState, event: RunEvent): RunState => {
   switch (event.type) {
     case 'user.message': {
@@ -313,6 +317,8 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       return state;
     case 'instructions.loaded':
       return { ...state, loadedInstructions: withInstruction(state.loadedInstructions, event.path, sha256Hex(event.content)) };
+    case 'skill.activated':
+      return { ...state, activatedSkills: withSkill(state.activatedSkills, { name: event.name, content: event.content }) };
     case 'approval.rule.persisted': {
       const entry = Object.entries(state.pendingCalls).find(([, call]) => call.approvalId === event.approvalId);
       if (entry === undefined) throw new Error(`run ${state.runId}: ${event.type} refers to unknown approval ${event.approvalId}`);

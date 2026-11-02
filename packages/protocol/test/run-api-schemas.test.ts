@@ -19,6 +19,7 @@ const SCHEMA_NAMES = [
   'TrustView',
   'TrustResponse',
   'PutTrustRequest',
+  'SkillsResponse',
 ] as const;
 
 type SchemaName = (typeof SCHEMA_NAMES)[number];
@@ -90,6 +91,8 @@ describe('request schemas', () => {
     expect(accepts('CreateRunRequest', { input: '😀'.repeat(1_000_000) })).toBe(true);
     expect(accepts('CreateRunRequest', { input: 'a'.repeat(1_000_001) })).toBe(false);
     expect(accepts('CreateRunRequest', { input: 'x', extra: 1 })).toBe(false);
+    expect(accepts('CreateRunRequest', { input: 'x', skill: 'pdf-processing' })).toBe(true);
+    expect(accepts('CreateRunRequest', { input: 'x', skill: '' })).toBe(false);
   });
 
   it.each([
@@ -446,6 +449,20 @@ describe('PublicRunEvent projection', () => {
 
   it('reduces instructions.loaded to the path', () => {
     const reduced = { ...RUN_ENVELOPE, type: 'instructions.loaded', path: '/work/a/AGENTS.md' };
+    expect(accepts('PublicRunEvent', reduced)).toBe(true);
+    expect(accepts('PublicRunEvent', { ...reduced, content: 'secret' })).toBe(false);
+  });
+
+  it('describes the skills of a session', () => {
+    const skill = { name: 'pdf-processing', description: 'Extract PDF text', scope: 'project', location: '/work/.agents/skills/pdf-processing/SKILL.md' };
+    expect(accepts('SkillsResponse', { skills: [skill], warnings: ['shadowed'] })).toBe(true);
+    expect(accepts('SkillsResponse', { skills: [{ ...skill, scope: 'org' }], warnings: [] })).toBe(false);
+    expect(accepts('SkillsResponse', { skills: [{ ...skill, body: 'x' }], warnings: [] })).toBe(false);
+    expect(accepts('SkillsResponse', { skills: [] })).toBe(false);
+  });
+
+  it('reduces skill.activated to the name', () => {
+    const reduced = { ...RUN_ENVELOPE, type: 'skill.activated', name: 'pdf-processing' };
     expect(accepts('PublicRunEvent', reduced)).toBe(true);
     expect(accepts('PublicRunEvent', { ...reduced, content: 'secret' })).toBe(false);
   });

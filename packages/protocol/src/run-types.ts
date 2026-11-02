@@ -42,6 +42,8 @@ export type ModelResponse = {
   usage: { input_tokens: number; output_tokens: number; total_tokens: number };
 };
 
+export type ActivatedSkillRecord = { name: string; content: string };
+
 export type RunEventPayload =
   | { type: 'user.message'; text: string }
   | { type: 'run.started'; attempt: number; now: number; pins: Record<string, unknown>; mode?: PermissionMode }
@@ -103,10 +105,12 @@ export type RunEventPayload =
       markers: { seq: number; kind: 'interrupted' | 'unprocessed' | 'dropped' | 'mode_changed' }[];
       fromMode?: PermissionMode;
       mode?: PermissionMode;
+      activatedSkills?: ActivatedSkillRecord[];
       digest: string;
     }
   | { type: 'context.truncated'; callId: string; handle: string; kind: 'omitted' | 'truncated' }
   | { type: 'instructions.loaded'; path: string; content: string }
+  | { type: 'skill.activated'; name: string; content: string }
   | { type: 'approval.rule.persisted'; approvalId: string; effect: 'allow' | 'deny'; rule: string }
   | { type: 'notice'; level: 'info' | 'warning' | 'error'; message: string };
 
@@ -162,6 +166,7 @@ export type RunState = {
   steps: Record<number, { toolChoice: string; summary: boolean }>;
   lastResponse?: { step: number; incomplete: boolean; incompleteReason?: string; refusal: boolean; callIds: string[] };
   loadedInstructions: { path: string; textSha256: string }[];
+  activatedSkills: ActivatedSkillRecord[];
   streaming?: { step: number; attempt: number; seen: boolean; items: { itemId: string; text: string }[] };
   mode?: PermissionMode;
   taskSeq: number;

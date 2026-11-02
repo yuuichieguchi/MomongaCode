@@ -50,6 +50,32 @@ const expectWrapped = (error: unknown, sessionId: string): void => {
 
 const sessionTmpDirOf = (temp: TempHome, session: Session): string => path.join(temp.paths.tmp.sessions, session.id);
 
+describe('policyFor and readable skill directories', () => {
+  it('allows reading a skill directory below ~/.momonga/skills while the rest of ~/.momonga stays denied', async () => {
+    const { temp, store, policyFor } = await setup();
+    const session = createSession(store, temp.project);
+    const skill = makeDir(temp.paths.skills, 'pdf');
+    const sibling = makeDir(temp.paths.root, 'projects-copy');
+
+    const policy = await policyFor(session, { env: env(), rules: [], readableDirectories: [skill, sibling] });
+
+    expect(policy.sandboxPolicy.readAllowed).toContain(skill);
+    expect(policy.sandboxPolicy.readAllowed).not.toContain(sibling);
+    expect(policy.sandboxPolicy.readDenied).toContain(temp.paths.root);
+    expect(policy.sandboxPolicy.writeDenied).toContain(temp.paths.root);
+  });
+
+  it('leaves skill directories elsewhere out of the sandbox exceptions because nothing denies them', async () => {
+    const { temp, store, policyFor } = await setup();
+    const session = createSession(store, temp.project);
+    const agentsSkill = makeDir(temp.home, '.agents', 'skills', 'pdf');
+
+    const policy = await policyFor(session, { env: env(), rules: [], readableDirectories: [agentsSkill] });
+
+    expect(policy.sandboxPolicy.readAllowed).not.toContain(agentsSkill);
+  });
+});
+
 describe('policyFor (system timers, none used)', () => {
   it('policyFor creates a 0700 tmp dir, roots exclude it, the protected set covers the same roots and writableRoots include it', async () => {
     const { temp, store, policyFor } = await setup();

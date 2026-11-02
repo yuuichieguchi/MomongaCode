@@ -53,10 +53,10 @@ const storedSnapshot = (leading: readonly RunEventPayload[] = []) => {
   return { store, run, state, events, mutate, storedJson };
 };
 
-describe('snapshot state version 7', () => {
-  it('writes stateVersion 7', () => {
+describe('snapshot state version 8', () => {
+  it('writes stateVersion 8', () => {
     const { storedJson } = storedSnapshot();
-    expect(storedJson()['stateVersion']).toBe(7);
+    expect(storedJson()['stateVersion']).toBe(8);
   });
 
   it('round-trips taskSeq and inherited for an inheriting run', () => {

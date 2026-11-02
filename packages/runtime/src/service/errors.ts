@@ -67,6 +67,12 @@ export const idempotencyKeyReused = (): ApiError =>
 export const serviceUnavailable = (code: 'draining' | 'gateway_unavailable', message: string): ApiError =>
   new ApiError({ status: 503, type: 'server_error', code, message, headers: { 'retry-after': '1' } });
 
+export const unknownSkill = (message: string): ApiError =>
+  new ApiError({ status: 422, type: 'invalid_request', code: 'unknown_skill', message, param: 'skill' });
+
+export const skillUnavailable = (message: string): ApiError =>
+  new ApiError({ status: 422, type: 'invalid_request', code: 'skill_unavailable', message, param: 'skill' });
+
 export const configError = (message: string, param?: string): ApiError =>
   new ApiError({ status: 422, type: 'invalid_request', code: 'config_error', message, ...(param === undefined ? {} : { param }) });
 

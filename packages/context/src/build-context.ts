@@ -6,6 +6,7 @@ import { ContextOverflowError, PinnedOverflowError, PinnedRoomError, PrefixChang
 import { discoverInstructions } from './instructions.ts';
 import type { DiscoveredInstructions } from './instructions.ts';
 import { DEFAULT_KEEP_RECENT_STEPS, DEFAULT_KEEP_RECENT_TURNS, positiveInteger, protectionRungsOf, retainedHistoryOf, shapeOf } from './levels.ts';
+import { heldSkillOf, pointToHeldSkill } from './skill-output.ts';
 import { headAndTail, omittedMarker, outputTextOf, truncatedMarker, withOutput } from './tool-output.ts';
 import type {
   BuildContextInput,
@@ -97,7 +98,9 @@ const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): 
   });
   const systemMessage: MessageInputItem = { type: 'message', role: 'system', content: sources.systemPrompt };
   const task = frozenItem(sources.task);
-  const instructionMessages = [discovered.user, discovered.root].flatMap((file) => (file === undefined ? [] : [file.message]));
+  const catalogMessages: MessageInputItem[] =
+    sources.skillCatalog === undefined ? [] : [{ type: 'message', role: 'developer', content: sources.skillCatalog }];
+  const instructionMessages = [...catalogMessages, ...[discovered.user, discovered.root].flatMap((file) => (file === undefined ? [] : [file.message]))];
   const pinnedLayers: InputItem[] = [systemMessage, ...instructionMessages];
   const pinned: InputItem[] = [...pinnedLayers, task];
   const pinnedDigest = chainTail(digestChain({ scope: 'pinned-items' }, pinned));
@@ -212,11 +215,15 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
     }
   };
 
-  const historyItems = retainedHistoryOf(sources.history, sources.summary).map((entry) => ({
-    seq: entry.seq,
-    item: frozenItem(entry.item),
-    ...(entry.handle === undefined ? {} : { handle: entry.handle }),
-  }));
+  const historyItems = retainedHistoryOf(sources.history, sources.summary).map((entry) => {
+    const item = frozenItem(entry.item);
+    const held = heldSkillOf(item, sources.activatedSkills) !== undefined;
+    return {
+      seq: entry.seq,
+      item: pointToHeldSkill(item, sources.activatedSkills),
+      ...(entry.handle === undefined || held ? {} : { handle: entry.handle }),
+    };
+  });
 
   for (const entry of historyItems) {
     if (entry.item.type === 'function_call') callNames.set(entry.item.call_id, entry.item.name);

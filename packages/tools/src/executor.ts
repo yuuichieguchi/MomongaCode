@@ -50,6 +50,7 @@ type BatchCore = BatchCallbacks & {
   mode: PermissionMode;
   home: string;
   roots: readonly string[];
+  readRoots?: readonly string[];
   tmpDir?: string;
   env: Readonly<Record<string, string>>;
   session: ToolSessionState;
@@ -354,6 +355,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       output: truncated.output,
       ...(result.content === undefined ? {} : { content: result.content }),
       ...(result.plan === undefined ? {} : { plan: result.plan }),
+      ...(result.skill === undefined ? {} : { skill: result.skill }),
       ...('truncated' in truncated ? { truncated: truncated.truncated, handle: truncated.handle } : {}),
     };
   };
@@ -377,6 +379,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       mode: batch.mode,
       rules: batch.rules,
       roots: [...rootsOf(batch)],
+      ...(batch.readRoots === undefined ? {} : { readRoots: batch.readRoots }),
       home: batch.home,
       cwd,
       fileRules: batch.sandboxPolicy.fileRules,

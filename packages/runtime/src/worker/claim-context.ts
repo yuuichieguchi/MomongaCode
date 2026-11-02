@@ -1,5 +1,6 @@
 import type { TokenMeter } from '@momonga/context';
 import type { Capabilities, FunctionTool } from '@momonga/protocol';
+import type { SkillSet } from '@momonga/skills';
 import type { Claim, Run, StatusPatch } from '@momonga/store';
 import type { ToolSet } from '@momonga/tools';
 import type { ToolEnv, TraceSpan } from '../ports.ts';
@@ -25,6 +26,7 @@ export type ClaimContext = {
   capabilities: Capabilities;
   limits: RunLimits;
   toolSet: ToolSet;
+  skills: SkillSet;
   env: ToolEnv;
   functionTools: FunctionTool[];
   systemPrompt: string;

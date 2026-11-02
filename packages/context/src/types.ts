@@ -31,6 +31,7 @@ export type ContextSources = {
   tools: readonly FunctionTool[];
   task: DeepReadonly<MessageInputItem>;
   taskSeq: number;
+  skillCatalog?: string;
   activatedSkills: readonly ActivatedSkill[];
   history: readonly HistoryItem[];
   summary?: ContextSummary;

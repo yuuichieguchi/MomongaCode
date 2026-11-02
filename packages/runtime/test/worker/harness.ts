@@ -8,9 +8,10 @@ import type { PermissionRule } from '@momonga/config';
 import type { InstructionReader } from '@momonga/context';
 import { computeFileRules } from '@momonga/policy';
 import type { Capabilities, PermissionMode, RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
-import { createWorker } from '@momonga/runtime';
-import type { ToolEnv, ToolRuntimePort, Worker, WorkerOptions } from '@momonga/runtime';
+import { createSkillsPort, createWorker } from '@momonga/runtime';
+import type { SkillsPort, ToolEnv, ToolRuntimePort, Worker, WorkerOptions } from '@momonga/runtime';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
+import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import { foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
 import type { Claim, Run, RuntimeStore, Session } from '@momonga/store';
 import { fakePolicyFilesystem, createFakeClock } from '@momonga/testkit';
@@ -76,6 +77,9 @@ afterEach(async () => {
   }
   if (errors.length > 0) throw errors[0];
 });
+
+export const diskSkillsPort = (home: string, trusted: () => boolean = () => true): SkillsPort =>
+  createSkillsPort({ loader: createSkillLoader({ home, fileSystem: createNodeSkillFileSystem() }), settings: { trusted } });
 
 export type FakeInstructions = InstructionReader & { files: Map<string, string>; reads: string[] };
 
@@ -208,9 +212,9 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       portCalls.envFor.push({ sessionId: target.id, env });
       return env;
     },
-    toolSet: async (runId: string, toolSetOptions: { signal: AbortSignal; env: ToolEnv }) => {
+    toolSet: async (runId: string, toolSetOptions: { signal: AbortSignal; env: ToolEnv; additionalTools?: readonly AnyTool[] }) => {
       portCalls.toolSet.push({ runId, signal: toolSetOptions?.signal, env: toolSetOptions?.env });
-      return snapshotTools(toolList());
+      return snapshotTools([...toolList(), ...(toolSetOptions.additionalTools ?? [])]);
     },
     recoveryToolSet: async (recoveryOptions: { signal: AbortSignal }) => {
       portCalls.recoveryToolSet.push({ signal: recoveryOptions?.signal });
@@ -240,6 +244,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       store,
       gateway,
       settings,
+      skills: diskSkillsPort(home, () => settings.trustedValue),
       tools: { ...toolRuntime(toolList ?? (() => toolbox.tools())), ...toolOverrides },
       tracer,
       clock,
@@ -266,7 +271,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
 
   const enqueue = (
     input = 'Say hello',
-    extra: { limits?: Record<string, unknown>; deadlineAt?: number; history?: 'inherit' | 'fresh' } = {},
+    extra: { limits?: Record<string, unknown>; deadlineAt?: number; history?: 'inherit' | 'fresh'; skill?: { name: string; content: string } } = {},
   ): Run =>
     createdRun(
       store.createRunAndEnqueue(session.id, {
@@ -275,6 +280,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
         limits: extra.limits ?? {},
         pins: {},
         ...(extra.history === undefined ? {} : { history: extra.history }),
+        ...(extra.skill === undefined ? {} : { skill: extra.skill }),
       }),
     );
 
