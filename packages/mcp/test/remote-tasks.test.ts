@@ -89,6 +89,34 @@ describe('tasks extension over streamable HTTP', () => {
     expect(fixture.notes.filter((note) => note.type === 'task_cancel')).toHaveLength(1);
   });
 
+  it('treats a working task as unusable once createdAt plus ttlMs has passed', async () => {
+    const clock = createFakeClock(1_000_000);
+    const fixture = await startHttpFixture({ era: 'modern', taskPollIntervalMs: 1, taskTtlMs: 5000, taskCreatedAt: new Date(1_000_000).toISOString() });
+    const timers = observedTimers(clock);
+    const { connection } = makeRemoteConnection({ fixture, timers, clock });
+    await connection.listTools();
+    const { outcome } = await startLongTask(fixture, timers, connection);
+    clock.set(1_005_000);
+    timers.advance(MIN_TASK_POLL_MS);
+    const settled = await outcome;
+    expect('error' in settled && settled.error).toBeInstanceOf(McpTaskError);
+    expect('error' in settled && (settled.error as Error).message).toContain('ttl of 5000ms');
+  });
+
+  it('returns the result of a task that finished even when its ttl has passed', async () => {
+    const clock = createFakeClock(1_000_000);
+    const fixture = await startHttpFixture({ era: 'modern', taskPollIntervalMs: 1, taskTtlMs: 5000, taskCreatedAt: new Date(1_000_000).toISOString() });
+    const timers = observedTimers(clock);
+    const { connection } = makeRemoteConnection({ fixture, timers, clock });
+    await connection.listTools();
+    const { outcome, taskId } = await startLongTask(fixture, timers, connection);
+    clock.set(1_100_000);
+    fixture.completeTask(taskId, 'late but done');
+    timers.advance(MIN_TASK_POLL_MS);
+    const settled = await outcome;
+    expect('value' in settled && textOf(settled.value)).toBe('late but done');
+  });
+
   it('reports a failed task with its JSON-RPC error', async () => {
     const { fixture, timers, connection } = await setup();
     const { outcome, taskId } = await startLongTask(fixture, timers, connection);

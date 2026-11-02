@@ -56,10 +56,11 @@ export type RemoteHarnessOptions = {
   oauth?: { clientId?: string; scope?: string; callbackPort?: number };
   closeInCleanup?: boolean;
   resolver?: HostResolver;
+  clock?: FakeClock;
 };
 
 export const makeRemoteConnection = (options: RemoteHarnessOptions) => {
-  const clock = createFakeClock(1_000_000);
+  const clock = options.clock ?? createFakeClock(1_000_000);
   const store = options.store ?? createMemoryCredentialStore();
   let tokenCounter = 0;
   const remote: McpRemotePorts = {

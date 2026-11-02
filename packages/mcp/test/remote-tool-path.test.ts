@@ -58,6 +58,24 @@ describe.each(['modern', 'legacy'] as const)('a remote tool through the executor
   });
 });
 
+describe('a task through the executor', () => {
+  it('outlives the tool timeout and finishes when the server completes it', async () => {
+    const fixture = await startHttpFixture({ era: 'modern', taskPollIntervalMs: 1 });
+    const { connection } = makeRemoteConnection({ fixture });
+    const registry = createToolRegistry();
+    registry.addSource(createMcpToolSource({ server: 'remote', connection, requestTimeoutMs: 20 }));
+    const toolSet = await registry.snapshot();
+    const running = makeExecutor().resultOf(toolSet, 'mcp__remote__long_task', {});
+    await fixture.until(() => fixture.rpcRecords('tasks/get').length >= 2);
+    const [taskId] = fixture.taskIds();
+    fixture.completeTask(taskId as string, 'done after the tool timeout');
+    const result = await running;
+    expect(result.status).toBe('completed');
+    expect(result.output).toBe('done after the tool timeout');
+    expect(fixture.notes.filter((note) => note.type === 'task_cancel')).toEqual([]);
+  });
+});
+
 describe('transient failures', () => {
   it('retries a read-only remote tool once its stream was cut, and runs it a second time', async () => {
     const { toolSet, harness, fixture } = await setup('modern');

@@ -1,4 +1,5 @@
 import type { CallToolResult } from '@modelcontextprotocol/client';
+import type { Clock } from '@momonga/foundation';
 import { parseInputRequests } from './input-requests.ts';
 import type { ElicitationAnswer } from './input-requests.ts';
 import { McpTaskError } from './remote-errors.ts';
@@ -18,12 +19,14 @@ export type TaskParams = { taskId: string; inputResponses?: Record<string, Elici
 
 export type TaskRequester = (method: TaskMethod, params: TaskParams, signal: AbortSignal | undefined) => Promise<unknown>;
 
+type TaskBase = { taskId: string; pollIntervalMs: number | undefined; expiresAt: number | undefined; ttlMs: number | undefined };
+
 type TaskView =
-  | { status: 'working'; taskId: string; pollIntervalMs: number | undefined }
-  | { status: 'input_required'; taskId: string; pollIntervalMs: number | undefined; inputRequests: unknown }
-  | { status: 'completed'; taskId: string; pollIntervalMs: number | undefined; result: unknown }
-  | { status: 'failed'; taskId: string; pollIntervalMs: number | undefined; error: unknown }
-  | { status: 'cancelled'; taskId: string; pollIntervalMs: number | undefined; message: string | undefined };
+  | (TaskBase & { status: 'working' })
+  | (TaskBase & { status: 'input_required'; inputRequests: unknown })
+  | (TaskBase & { status: 'completed'; result: unknown })
+  | (TaskBase & { status: 'failed'; error: unknown })
+  | (TaskBase & { status: 'cancelled'; message: string | undefined });
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -32,14 +35,18 @@ export const parseTask = (value: unknown): TaskView => {
   const taskId = value['taskId'];
   const poll = value['pollIntervalMs'];
   const pollIntervalMs = typeof poll === 'number' && Number.isFinite(poll) ? poll : undefined;
+  const ttl = value['ttlMs'];
+  const ttlMs = typeof ttl === 'number' && Number.isFinite(ttl) && ttl >= 0 ? ttl : undefined;
+  const createdAt = typeof value['createdAt'] === 'string' ? Date.parse(value['createdAt']) : Number.NaN;
+  const base: TaskBase = { taskId, pollIntervalMs, ttlMs, expiresAt: ttlMs === undefined || Number.isNaN(createdAt) ? undefined : createdAt + ttlMs };
   const status = value['status'];
-  if (status === 'working') return { status, taskId, pollIntervalMs };
-  if (status === 'input_required') return { status, taskId, pollIntervalMs, inputRequests: value['inputRequests'] };
-  if (status === 'completed') return { status, taskId, pollIntervalMs, result: value['result'] };
-  if (status === 'failed') return { status, taskId, pollIntervalMs, error: value['error'] };
+  if (status === 'working') return { ...base, status };
+  if (status === 'input_required') return { ...base, status, inputRequests: value['inputRequests'] };
+  if (status === 'completed') return { ...base, status, result: value['result'] };
+  if (status === 'failed') return { ...base, status, error: value['error'] };
   if (status === 'cancelled') {
     const message = value['statusMessage'];
-    return { status, taskId, pollIntervalMs, message: typeof message === 'string' ? message : undefined };
+    return { ...base, status, message: typeof message === 'string' ? message : undefined };
   }
   throw new McpTaskError(taskId, `the server returned task ${taskId} with an unknown status`);
 };
@@ -57,12 +64,13 @@ export type SettleTaskOptions = {
   answers: Record<string, ElicitationAnswer>;
   request: TaskRequester;
   timers: McpTimers;
+  clock: Clock;
   signal: AbortSignal;
   onCheckpoint(checkpoint: McpCheckpoint): void;
   accept(taskId: string, result: unknown): CallToolResult;
 };
 
-export const settleTask = async ({ start, answers, request, timers, signal, onCheckpoint, accept }: SettleTaskOptions): Promise<CallToolResult> => {
+export const settleTask = async ({ start, answers, request, timers, clock, signal, onCheckpoint, accept }: SettleTaskOptions): Promise<CallToolResult> => {
   const answered = new Set<string>('answered' in start ? start.answered : []);
   const checkpoint = (taskId: string): McpCheckpoint => ({ kind: 'task', taskId, answered: [...answered] });
   const cancel = (taskId: string): Promise<unknown> => request('tasks/cancel', { taskId }, undefined);
@@ -75,6 +83,9 @@ export const settleTask = async ({ start, answers, request, timers, signal, onCh
   }
   const { taskId } = view;
   for (;;) {
+    if ((view.status === 'working' || view.status === 'input_required') && view.expiresAt !== undefined && clock.now() >= view.expiresAt) {
+      throw new McpTaskError(taskId, `task ${taskId} was still ${view.status} when its ttl of ${view.ttlMs}ms ran out`);
+    }
     switch (view.status) {
       case 'completed':
         return accept(taskId, view.result);

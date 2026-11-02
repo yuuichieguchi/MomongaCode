@@ -622,6 +622,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     abortReason(): AbortReason | undefined;
     abortWith(reason: AbortReason): void;
     armTimer(ms: number): void;
+    timerMs(): number;
+    extendTimerToDeadline(): void;
     disarmTimer(): void;
     closeContext(): void;
     checkpoint(state: Record<string, unknown> | undefined): void;
@@ -637,6 +639,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     let recordCompleted = false;
     let contextClosed = false;
     let timer: NodeJS.Timeout | undefined;
+    let timerMs = 0;
     const leaseLost = (): boolean => batch.leaseLost?.() === true;
     const abortWith = (reason: AbortReason): void => {
       if (abortReason !== undefined) return;
@@ -683,7 +686,14 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       abortReason: () => abortReason,
       abortWith,
       armTimer: (ms) => {
+        timerMs = ms;
         timer = setTimeout(() => abortWith('timeout'), ms);
+      },
+      timerMs: () => timerMs,
+      extendTimerToDeadline: () => {
+        clearTimeout(timer);
+        timerMs = Math.max(0, deadlineAt - clock.now());
+        timer = setTimeout(() => abortWith('timeout'), timerMs);
       },
       disarmTimer: () => clearTimeout(timer),
       closeContext: () => {
@@ -763,7 +773,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     if (batch.deadlineAt - clock.now() <= 0) return failedOutcome(callId, `Run deadline exceeded before ${tool.name} could start`);
 
     const scope = openScope(batch, call, tool, key, inlineLimit, batch.deadlineAt);
-    const toolContext: ToolContext = { ...scope.reconcileCtx, sandbox: batch.sandbox, sandboxPolicy: batch.sandboxPolicy, checkpoint: scope.checkpoint };
+    const toolContext: ToolContext = { ...scope.reconcileCtx, sandbox: batch.sandbox, sandboxPolicy: batch.sandboxPolicy, checkpoint: scope.checkpoint, extendToRunDeadline: scope.extendTimerToDeadline };
 
     try {
       let prepared: Record<string, unknown> | undefined;
@@ -852,7 +862,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           return scope.complete(finalizeResult(hooked, tool, outputLimit), reconciled);
         }
         await settleWithin(running, ABORT_SETTLE_LIMIT_MS);
-        const output = scope.abortReason() === 'timeout' ? timedOutOutput(tool, timeoutMs) : cancelledOutput(tool);
+        const output = scope.abortReason() === 'timeout' ? timedOutOutput(tool, scope.timerMs()) : cancelledOutput(tool);
         return scope.complete({ status: 'failed', output }, reconciled);
       };
 

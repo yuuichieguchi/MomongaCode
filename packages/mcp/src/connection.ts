@@ -399,6 +399,7 @@ class ManagedConnection implements McpServerConnection {
         answers: input.resume?.answers ?? {},
         request,
         timers: this.timers,
+        clock: this.options.clock,
         signal: stop.signal,
         onCheckpoint: (next) => {
           attempt.taskCheckpoint = next;

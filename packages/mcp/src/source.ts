@@ -110,6 +110,7 @@ const buildTool = (
     execute: async (input, ctx) => {
       const resume = resumeOf(ctx.resume);
       if (resume?.checkpoint.kind === 'mrtr' || resume?.checkpoint.kind === 'parked') ctx.checkpoint(undefined);
+      if (resume?.checkpoint.kind === 'task') ctx.extendToRunDeadline();
       let result: CallToolResult;
       try {
         result = await connection.callTool({
@@ -120,7 +121,10 @@ const buildTool = (
           ...(ctx.traceparent === undefined ? {} : { traceparent: ctx.traceparent }),
           ...(ctx.tracestate === undefined ? {} : { tracestate: ctx.tracestate }),
           ...(resume === undefined ? {} : { resume }),
-          onCheckpoint: (checkpoint) => ctx.checkpoint({ ...checkpoint }),
+          onCheckpoint: (checkpoint) => {
+            if (checkpoint.kind === 'task') ctx.extendToRunDeadline();
+            ctx.checkpoint({ ...checkpoint });
+          },
         });
       } catch (error) {
         if (error instanceof McpInputSuspension) {
