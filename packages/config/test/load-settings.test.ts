@@ -167,6 +167,18 @@ describe('loadSettings security restrictions', () => {
   it.each([
     ['project', projectSettingsPath],
     ['local', localSettingsPath],
+  ] as const)('discards autoUpdates from %s settings with a warning', async (_label, locate) => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { autoUpdates: true });
+    const file = writeJson(locate(tree), { autoUpdates: false });
+    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    expect(result.settings.autoUpdates).toBe(true);
+    expect(result.warnings).toContain(`${file}: autoUpdates is only honored in user settings; discarded`);
+  });
+
+  it.each([
+    ['project', projectSettingsPath],
+    ['local', localSettingsPath],
   ] as const)('ignores bypassPermissions from %s settings with a warning', async (_label, locate) => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { permissions: { defaultMode: 'acceptEdits' } });

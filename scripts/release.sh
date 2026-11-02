@@ -40,6 +40,16 @@ require_env() {
   done
 }
 
+verify_team_id() {
+  if [ "$DRY_RUN" = "1" ]; then
+    run codesign --display --verbose=4 "$BINARY"
+    return
+  fi
+  local display
+  display="$(codesign --display --verbose=4 "$BINARY" 2>&1)" || fail "codesign --display failed: $display"
+  printf '%s\n' "$display" | grep -Fxq "TeamIdentifier=$MOMONGA_TEAM_ID" || fail "the signed binary does not carry TeamIdentifier=$MOMONGA_TEAM_ID"
+}
+
 write_checksums() {
   (cd "$OUT_DIR" && shasum -a 256 "$ASSET_NAME" "${OTHER_ASSETS[@]}" > "$CHECKSUMS_NAME")
 }
@@ -49,8 +59,12 @@ case "$DRY_RUN" in
   *) fail "DRY_RUN must be 0 or 1, got '$DRY_RUN'" ;;
 esac
 
-require_env SIGNING_IDENTITY APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER MOMONGA_REPO
+require_env SIGNING_IDENTITY APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER MOMONGA_REPO MOMONGA_TEAM_ID
 [ -f "$APPLE_API_KEY" ] || fail "APPLE_API_KEY must be the path of the App Store Connect .p8 key file"
+[[ "$MOMONGA_REPO" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || fail "MOMONGA_REPO must be <owner>/<repo>, got '$MOMONGA_REPO'"
+[[ "$MOMONGA_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]] || fail "MOMONGA_TEAM_ID must be a 10-character Apple Team ID, got '$MOMONGA_TEAM_ID'"
+
+readonly UPDATE_SOURCE_FLAGS=(--repo "$MOMONGA_REPO" --team-id "$MOMONGA_TEAM_ID")
 
 cd "$ROOT"
 [ -z "$(git status --porcelain)" ] || fail "working tree is not clean"
@@ -71,11 +85,12 @@ fi
 
 step "build single executable"
 run mkdir -p "$OUT_DIR"
-run npm run sea -- --unsigned --output "$BINARY"
+run npm run sea -- --unsigned --output "$BINARY" "${UPDATE_SOURCE_FLAGS[@]}"
 
 step "sign with Developer ID (hardened runtime, JIT entitlement)"
 run codesign --sign "$SIGNING_IDENTITY" --force --timestamp --options runtime --entitlements "$ENTITLEMENTS" "$BINARY"
 run codesign --verify --strict --verbose=2 "$BINARY"
+verify_team_id
 run "$BINARY" --version
 
 step "archive for notarization"
@@ -94,7 +109,7 @@ run spctl --assess --type execute --verbose=4 "$BINARY"
 
 step "build linux and windows executables"
 for index in "${!OTHER_TARGETS[@]}"; do
-  run npm run sea -- --unsigned --target "${OTHER_TARGETS[$index]}" --output "$OUT_DIR/${OTHER_ASSETS[$index]}"
+  run npm run sea -- --unsigned --target "${OTHER_TARGETS[$index]}" --output "$OUT_DIR/${OTHER_ASSETS[$index]}" "${UPDATE_SOURCE_FLAGS[@]}"
 done
 
 step "checksums"

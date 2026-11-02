@@ -68,6 +68,11 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
     delete restricted.telemetry;
   }
 
+  if (settings.autoUpdates !== undefined) {
+    warnings.push(`${source}: autoUpdates is only honored in user settings; discarded`);
+    delete restricted.autoUpdates;
+  }
+
   if (settings.permissions?.defaultMode === 'bypassPermissions') {
     warnings.push(`${source}: bypassPermissions is only honored in user settings and on the command line; ignored`);
     const { defaultMode: _ignored, ...remaining } = settings.permissions;

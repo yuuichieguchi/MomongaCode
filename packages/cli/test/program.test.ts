@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import type { DaemonEntries } from '../src/daemon/entries.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
+import type { UpdatePorts } from '../src/update/ports.ts';
+import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
 
 const IO = { name: 'io' } as unknown as EntryIo;
 
@@ -19,6 +21,7 @@ const harness = () => {
   const program = buildProgram({
     ports,
     entries,
+    update: { ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 },
     interrupt: new AbortController().signal,
     entryIo: (args) => ({ ...IO, argv: [...args] }) as EntryIo,
     complete: (code) => completed.push(code),
