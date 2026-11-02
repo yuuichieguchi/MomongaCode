@@ -16,6 +16,7 @@ export type TranscriptRun = {
   stopReason?: StopReason;
   step: number;
   usage: { inputTokens: number; outputTokens: number; totalTokens: number };
+  modelAlias?: string;
 };
 
 export type TranscriptChild = { runId: string; agent: string; events: PublicRunEvent[] };
@@ -49,7 +50,8 @@ const isNonNegativeInteger = (value: unknown): value is number => Number.isInteg
 
 const runOf = (value: unknown, where: string): TranscriptRun => {
   if (!isRecord(value)) throw new TranscriptError(`${where}: run must be an object`);
-  const { id, status, stopReason, step, usage } = value;
+  const { id, status, stopReason, step, usage, modelAlias } = value;
+  if (modelAlias !== undefined && (typeof modelAlias !== 'string' || modelAlias === '')) throw new TranscriptError(`${where}: run.modelAlias must be a non-empty string`);
   if (typeof id !== 'string' || id === '') throw new TranscriptError(`${where}: run.id must be a non-empty string`);
   if (typeof status !== 'string' || !(RUN_STATUSES as readonly string[]).includes(status)) throw new TranscriptError(`${where}: run.status is not a run status`);
   if (stopReason !== undefined && (typeof stopReason !== 'string' || !(STOP_REASONS as readonly string[]).includes(stopReason))) {
@@ -65,6 +67,7 @@ const runOf = (value: unknown, where: string): TranscriptRun => {
     ...(stopReason === undefined ? {} : { stopReason: stopReason as StopReason }),
     step,
     usage: { inputTokens: usage['inputTokens'], outputTokens: usage['outputTokens'], totalTokens: usage['totalTokens'] },
+    ...(modelAlias === undefined ? {} : { modelAlias }),
   };
 };
 
@@ -85,7 +88,21 @@ export const encodeTranscript = (transcript: Transcript): string => {
     children: transcript.children.map(({ runId, agent }) => ({ runId, agent })),
   };
   const childLines = transcript.children.flatMap((child) => child.events.map((event) => ({ childRunId: child.runId, event })));
-  return [header, ...transcript.events, ...childLines].map((line) => JSON.stringify(line)).join('\n') + '\n';
+  const end = { end: true, events: transcript.events.length, childEvents: childLines.length };
+  return [header, ...transcript.events, ...childLines, end].map((line) => JSON.stringify(line)).join('\n') + '\n';
+};
+
+const endRecordOf = (line: string | undefined, source: string): { events: number; childEvents: number } => {
+  let parsed: unknown;
+  try {
+    parsed = line === undefined ? undefined : JSON.parse(line);
+  } catch {
+    parsed = undefined;
+  }
+  if (!isRecord(parsed) || parsed['end'] !== true || !isNonNegativeInteger(parsed['events']) || !isNonNegativeInteger(parsed['childEvents'])) {
+    throw new TranscriptError(`${source}: the transcript has no end record, so it may have been cut short`);
+  }
+  return { events: parsed['events'], childEvents: parsed['childEvents'] };
 };
 
 export const decodeTranscript = (text: string, source: string): Transcript => {
@@ -107,8 +124,9 @@ export const decodeTranscript = (text: string, source: string): Transcript => {
   if (!isNonNegativeInteger(runIndex)) throw new TranscriptError(`${source}:1: runIndex must be a non-negative integer`);
   const run = runOf(header['run'], `${source}:1`);
   const children = childrenOf(header['children'], `${source}:1`);
+  const end = endRecordOf(eventLines.at(-1), source);
   const events: PublicRunEvent[] = [];
-  eventLines.forEach((line, index) => {
+  eventLines.slice(0, -1).forEach((line, index) => {
     const lineNumber = index + 2;
     let parsed: unknown;
     try {
@@ -124,5 +142,9 @@ export const decodeTranscript = (text: string, source: string): Transcript => {
     }
     events.push(parsePublicRunEvent(parsed, `${source}:${lineNumber}`));
   });
+  const childEvents = children.reduce((sum, child) => sum + child.events.length, 0);
+  if (events.length !== end.events || childEvents !== end.childEvents) {
+    throw new TranscriptError(`${source}: the end record counts ${end.events} run events and ${end.childEvents} child events but the file holds ${events.length} and ${childEvents}`);
+  }
   return { caseId, runIndex, run, events, children };
 };

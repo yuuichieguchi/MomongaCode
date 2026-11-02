@@ -1,5 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { parseContextDataset } from './context-dataset.ts';
+import type { ContextDataset } from './context-dataset.ts';
+import { encodeContextReport, parseContextReport } from './context-report.ts';
+import type { ContextReport } from './context-report.ts';
 import { parseDataset } from './dataset.ts';
 import type { GoldenDataset } from './dataset.ts';
 import { decodeTranscript, encodeTranscript } from './transcript.ts';
@@ -21,6 +25,12 @@ export const nodeEvalFiles: EvalFiles = {
 };
 
 export const loadDataset = async (files: EvalFiles, file: string): Promise<GoldenDataset> => parseDataset(await files.readText(file), file);
+
+export const loadContextDataset = async (files: EvalFiles, file: string): Promise<ContextDataset> => parseContextDataset(await files.readText(file), file);
+
+export const loadContextReport = async (files: EvalFiles, file: string): Promise<ContextReport> => parseContextReport(await files.readText(file), file);
+
+export const saveContextReport = (files: EvalFiles, file: string, report: ContextReport): Promise<void> => files.writeText(file, encodeContextReport(report));
 
 export const transcriptFileName = (transcript: Transcript): string => `${transcript.caseId}.${transcript.runIndex}${TRANSCRIPT_FILE_SUFFIX}`;
 

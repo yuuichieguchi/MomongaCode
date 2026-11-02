@@ -103,15 +103,20 @@ export const runDataset = async (dataset: GoldenDataset, ports: EvalPorts): Prom
   return buildReport(dataset, results);
 };
 
-export const replayDataset = (dataset: GoldenDataset, transcripts: readonly Transcript[]): EvalReport => {
-  const known = new Set(dataset.cases.map((golden) => golden.id));
+export const transcriptsByCase = <C extends GoldenCase>(cases: readonly C[], transcripts: readonly Transcript[]): { golden: C; recorded: Transcript[] }[] => {
+  const known = new Set(cases.map((golden) => golden.id));
   for (const transcript of transcripts) {
     if (!known.has(transcript.caseId)) throw new EvalError(`transcript for unknown case ${transcript.caseId}`);
   }
-  const results = dataset.cases.map((golden) => {
+  return cases.map((golden) => {
     const recorded = transcripts.filter((transcript) => transcript.caseId === golden.id).sort((a, b) => a.runIndex - b.runIndex);
     if (recorded.length !== golden.runs) throw new EvalError(`case ${golden.id} expects ${golden.runs} recorded run(s) but ${recorded.length} transcript(s) were given`);
-    return resultOf(golden, recorded);
+    return { golden, recorded };
   });
-  return buildReport(dataset, results);
 };
+
+export const replayDataset = (dataset: GoldenDataset, transcripts: readonly Transcript[]): EvalReport =>
+  buildReport(
+    dataset,
+    transcriptsByCase(dataset.cases, transcripts).map(({ golden, recorded }) => resultOf(golden, recorded)),
+  );

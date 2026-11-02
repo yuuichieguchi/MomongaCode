@@ -3,7 +3,7 @@ import type { PublicRunEvent, SideEffect, ToolKind } from '@momonga/protocol';
 import type { PermissionDecision } from './dataset.ts';
 import type { Transcript } from './transcript.ts';
 
-type EventOf<T extends PublicRunEvent['type']> = Extract<PublicRunEvent, { type: T }>;
+export type EventOf<T extends PublicRunEvent['type']> = Extract<PublicRunEvent, { type: T }>;
 
 export type ObservedCall = {
   runId: string;
@@ -15,7 +15,7 @@ export type ObservedCall = {
   decision: PermissionDecision | 'unresolved';
 };
 
-const eventsOfType = <T extends PublicRunEvent['type']>(events: readonly PublicRunEvent[], type: T): EventOf<T>[] =>
+export const eventsOfType = <T extends PublicRunEvent['type']>(events: readonly PublicRunEvent[], type: T): EventOf<T>[] =>
   events.filter((event): event is EventOf<T> => event.type === type);
 
 export const finalTextOf = (events: readonly PublicRunEvent[]): string | undefined => {
