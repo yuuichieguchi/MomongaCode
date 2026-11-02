@@ -5,7 +5,8 @@ export { CircuitBreaker } from './circuit-breaker.ts';
 export type { CircuitBreakerOptions, CircuitState } from './circuit-breaker.ts';
 export { systemClock } from './clock.ts';
 export type { Clock } from './clock.ts';
-export { Deadline } from './deadline.ts';
+export { Deadline, realDeadlineTiming } from './deadline.ts';
+export type { DeadlineTiming } from './deadline.ts';
 export { isRecord, parseJsonOrText } from './json.ts';
 export { MAX_REDACTED_CHARS, MIN_CREDENTIAL_CHARS, REDACTED_MARKER, createRedactor } from './redaction.ts';
 export type { Redactor, RedactorOptions } from './redaction.ts';
@@ -18,8 +19,8 @@ export type { SseEvent } from './sse.ts';
 export { createUdsClient, isUnixSocketLive, listenUnix } from './uds.ts';
 export type { UdsClient, UdsClientOptions, UdsRequestOptions, UdsResponse } from './uds.ts';
 export { uuidv7 } from './uuidv7.ts';
-export { forceKillGroup, groupAlive, signalGroup, terminateGroup, waitForGroupGone } from './process-group.ts';
-export type { ForceKillGroupOptions, TerminateGroupOptions, TerminateOutcome } from './process-group.ts';
+export { forceKillGroup, groupAlive, realGroupTiming, signalGroup, terminateGroup, waitForGroupGone } from './process-group.ts';
+export type { ForceKillGroupOptions, GroupTiming, TerminateGroupOptions, TerminateOutcome } from './process-group.ts';
 export {
   HOLDER_READ_MAX_BYTES,
   LOCK_FD_ENV,

@@ -9,6 +9,7 @@ import { repoRoot } from './bundle.ts';
 import { bundle } from './bundle.ts';
 import { buildSea } from './sea.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
+import { RUNS_MACOS_ARM64_ARTIFACTS } from './support/host.ts';
 
 const FIXTURE_REPO = 'acme/momonga';
 const ASSET = 'momonga-darwin-arm64';
@@ -17,7 +18,7 @@ const MAIN_ENTRY = `${repoRoot}packages/cli/src/main.ts`;
 type Installation = { bin: string; dir: string; home: string };
 type Outcome = { code: number | null; stdout: string; stderr: string };
 
-describe('self-update on built single executables', () => {
+describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('self-update on built single executables', () => {
   let root = '';
   let v1 = '';
   let v2 = '';
@@ -209,7 +210,7 @@ describe('self-update on built single executables', () => {
   });
 });
 
-describe('build-time update source', () => {
+describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('build-time update source', () => {
   let root = '';
 
   beforeAll(() => {

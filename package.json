@@ -12,6 +12,7 @@
   "scripts": {
     "test": "vitest run --project unit",
     "test:e2e": "vitest run --project e2e",
+    "test:packaging": "vitest run --project packaging",
     "typecheck": "tsc -p tsconfig.json",
     "bundle": "node scripts/bundle.ts",
     "sea": "node scripts/sea.ts",

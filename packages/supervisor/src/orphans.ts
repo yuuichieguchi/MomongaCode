@@ -12,6 +12,7 @@ export type MarkerPorts = {
   findHolders?: typeof findHolders;
   reapMarkerDirectory?: typeof reapMarkerDirectory;
   reapMarkedProcesses?: typeof reapMarkedProcesses;
+  listMarkers?: (markersDir: string) => Promise<string[]>;
 };
 
 export type DaemonMarker = {
@@ -30,7 +31,7 @@ export type OrphanReapOptions = {
   timers: SupervisorTimers;
   signal: AbortSignal;
   logger: JsonLogger;
-  reapTiming?: ReapTiming;
+  reapTiming: ReapTiming;
   markerPorts?: MarkerPorts;
 };
 
@@ -79,6 +80,8 @@ export const reapDaemonMarker = async (input: { marker: string; logger: JsonLogg
   }
 };
 
+const listMarkerNames = (markersDir: string): Promise<string[]> => fs.promises.readdir(markersDir);
+
 const PHASE_ONE_MARGIN_MS = 2000;
 
 const failureOf = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
@@ -102,7 +105,8 @@ export const reapOrphans = async (options: OrphanReapOptions): Promise<OrphanRea
   const { signal, logger } = options;
   const holdersOf = options.markerPorts?.findHolders ?? findHolders;
   const reapDirectory = options.markerPorts?.reapMarkerDirectory ?? reapMarkerDirectory;
-  const now = options.reapTiming?.now ?? ((): number => Date.now());
+  const { now } = options.reapTiming;
+  const listNames = options.markerPorts?.listMarkers ?? listMarkerNames;
   const warn = (detail: string): void => writeEvent(logger, orphansWarning({ detail }));
 
   const countHolders = async (markers: readonly string[]): Promise<number> => {
@@ -112,7 +116,7 @@ export const reapOrphans = async (options: OrphanReapOptions): Promise<OrphanRea
 
   const listMarkers = async (): Promise<string[]> => {
     try {
-      return (await fs.promises.readdir(options.markersDir)).map((name) => path.join(options.markersDir, name));
+      return (await listNames(options.markersDir)).map((name) => path.join(options.markersDir, name));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
       throw error;
@@ -159,7 +163,7 @@ export const reapOrphans = async (options: OrphanReapOptions): Promise<OrphanRea
     label: 'daemon',
     onWarning: warn,
     signal,
-    ...omitUndefined({ timing: options.reapTiming }),
+    timing: options.reapTiming,
   });
   return { reaped: result.reaped, kept: result.kept, aborted: signal.aborted };
 };

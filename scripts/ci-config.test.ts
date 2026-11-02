@@ -1,0 +1,41 @@
+import fs from 'node:fs';
+import { describe, expect, it } from 'vitest';
+import { repoRoot } from './bundle.ts';
+import { SEA_NODE_VERSION } from './node-runtime.ts';
+
+const workflow = fs.readFileSync(`${repoRoot}.github/workflows/ci.yml`, 'utf8');
+const vitestConfig = fs.readFileSync(`${repoRoot}vitest.config.ts`, 'utf8');
+const packageJson = JSON.parse(fs.readFileSync(`${repoRoot}package.json`, 'utf8')) as { scripts: Record<string, string> };
+
+describe('CI configuration', () => {
+  it('runs on the Node version the single executable ships', () => {
+    expect(fs.readFileSync(`${repoRoot}.node-version`, 'utf8').trim()).toBe(SEA_NODE_VERSION);
+    expect(workflow).toContain('node-version-file: .node-version');
+    expect(workflow).not.toMatch(/^\s*node-version:/m);
+  });
+
+  it('runs typecheck and every test project', () => {
+    for (const script of ['typecheck', 'test', 'test:e2e', 'test:packaging']) {
+      expect(workflow).toContain(`run: npm ${script === 'test' ? '' : 'run '}${script}`);
+    }
+    expect(packageJson.scripts['test:packaging']).toBe('vitest run --project packaging');
+  });
+
+  it('installs the compliance fixtures that the e2e project needs', () => {
+    expect(workflow).toContain('npm ci --prefix compliance/open-responses');
+  });
+
+  it('declares read-only token permissions at the top level', () => {
+    expect(workflow).toMatch(/^permissions:\n {2}contents: read\n/m);
+  });
+
+  it('pins every action to a full commit SHA', () => {
+    const uses = [...workflow.matchAll(/^\s*- uses: (\S+)/gm)].map((match) => match[1] as string);
+    expect(uses.length).toBeGreaterThan(0);
+    for (const reference of uses) expect(reference).toMatch(/^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/);
+  });
+
+  it('a project with no matching test file fails the run instead of passing green', () => {
+    expect(vitestConfig).not.toContain('passWithNoTests');
+  });
+});

@@ -4,7 +4,6 @@ import { E2E_HOOK_TIMEOUT_MS } from './e2e/support/wait.ts';
 export default defineConfig({
   test: {
     pool: 'forks',
-    passWithNoTests: true,
     teardownTimeout: E2E_HOOK_TIMEOUT_MS,
     projects: [
       {

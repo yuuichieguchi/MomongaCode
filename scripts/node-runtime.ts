@@ -78,8 +78,18 @@ const download = async (url: string): Promise<Buffer> => {
 
 const archiveMatchesPin = (archive: string, pinned: string): boolean => fs.existsSync(archive) && sha256OfFile(archive) === pinned;
 
-export const extractArchiveArgs = (target: SeaTarget, archive: string, cacheDir: string): readonly string[] =>
-  target.archiveExtension === 'tar.gz' ? ['-xzf', archive, '-C', cacheDir] : ['-xf', archive, '-C', cacheDir];
+export type ExtractCommand = { readonly file: string; readonly args: readonly string[] };
+
+export const extractCommand = (target: SeaTarget, archive: string, cacheDir: string, platform: NodeJS.Platform, env: Readonly<Record<string, string | undefined>>): ExtractCommand => {
+  if (platform === 'win32') {
+    const systemRoot = env['SystemRoot'];
+    if (systemRoot === undefined) throw new Error('SystemRoot is required to find the Windows tar.exe');
+    return { file: `${systemRoot}\\System32\\tar.exe`, args: target.archiveExtension === 'tar.gz' ? ['-xzf', archive, '-C', cacheDir] : ['-xf', archive, '-C', cacheDir] };
+  }
+  if (target.archiveExtension === 'tar.gz') return { file: '/usr/bin/tar', args: ['-xzf', archive, '-C', cacheDir] };
+  if (platform === 'darwin') return { file: '/usr/bin/tar', args: ['-xf', archive, '-C', cacheDir] };
+  return { file: '/usr/bin/unzip', args: ['-q', '-o', archive, '-d', cacheDir] };
+};
 
 export const ensureSeaNode = async (cacheDir: string, targetName: SeaTargetName = SEA_NODE_PLATFORM): Promise<string> => {
   const target = SEA_TARGETS[targetName];
@@ -101,6 +111,7 @@ export const ensureSeaNode = async (cacheDir: string, targetName: SeaTargetName 
   }
   const extracted = path.join(cacheDir, archiveStemOf(target));
   fs.rmSync(extracted, { recursive: true, force: true });
-  execFileSync(process.platform === 'win32' ? 'tar' : '/usr/bin/tar', [...extractArchiveArgs(target, archive, cacheDir)]);
+  const { file, args } = extractCommand(target, archive, cacheDir, process.platform, process.env);
+  execFileSync(file, [...args]);
   return path.join(extracted, ...target.nodeRelativePath);
 };

@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -7,6 +7,7 @@ import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { repoRoot } from './bundle.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
+import { HAS_POSIX_SHELL } from './support/host.ts';
 
 const INSTALL_SCRIPT = `${repoRoot}scripts/install.sh`;
 const ASSET = 'momonga-darwin-arm64';
@@ -14,6 +15,21 @@ const GOOD_BINARY = Buffer.from('#!/bin/sh\necho momonga-installed\n');
 const TAMPERED_BINARY = Buffer.from('#!/bin/sh\necho momonga-tampered\n');
 
 const sha256 = (bytes: Buffer): string => createHash('sha256').update(bytes).digest('hex');
+
+const SIGNATURE_NAMESPACE = 'momonga-release';
+
+const generateKey = (directory: string, name: string): { privateKey: string; publicKey: string } => {
+  const privateKey = path.join(directory, name);
+  execFileSync('/usr/bin/ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-C', name, '-f', privateKey]);
+  return { privateKey, publicKey: fs.readFileSync(`${privateKey}.pub`, 'utf8').trim().split(' ').slice(0, 2).join(' ') };
+};
+
+const signWith = (privateKey: string, contents: Buffer, directory: string): Buffer => {
+  const file = path.join(directory, `sums-${Math.random().toString(16).slice(2)}`);
+  fs.writeFileSync(file, contents);
+  execFileSync('/usr/bin/ssh-keygen', ['-Y', 'sign', '-q', '-f', privateKey, '-n', SIGNATURE_NAMESPACE, file]);
+  return fs.readFileSync(`${file}.sig`);
+};
 
 type Served = Record<string, Buffer>;
 
@@ -41,12 +57,14 @@ const runInstall = (env: NodeJS.ProcessEnv): Promise<Outcome> =>
     });
   });
 
-describe('install.sh', () => {
+describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
   let root = '';
   let server: http.Server;
   let served: Served = {};
   let prefix = '';
   let baseUrl = '';
+  let release = { privateKey: '', publicKey: '' };
+  let attacker = { privateKey: '', publicKey: '' };
 
   const target = (): string => path.join(prefix, 'bin', 'momonga');
   const unameStub = (os: string, machine: string): string => {
@@ -59,13 +77,20 @@ describe('install.sh', () => {
     HOME: root,
     MOMONGA_INSTALL_PREFIX: prefix,
     MOMONGA_RELEASE_BASE_URL: baseUrl,
+    MOMONGA_RELEASE_PUBLIC_KEY: release.publicKey,
   });
+  const signedSums = (sums: string, key = release.privateKey): Served => {
+    const bytes = Buffer.from(sums);
+    return { '/SHA256SUMS': bytes, '/SHA256SUMS.sig': signWith(key, bytes, root) };
+  };
   const serveRelease = (binary: Buffer, sumsFor: Buffer): void => {
-    served = { [`/${ASSET}`]: binary, '/SHA256SUMS': Buffer.from(`${sha256(sumsFor)}  ${ASSET}\n`) };
+    served = { [`/${ASSET}`]: binary, ...signedSums(`${sha256(sumsFor)}  ${ASSET}\n`) };
   };
 
   beforeAll(async () => {
     root = createTempRoot();
+    release = generateKey(root, 'release_key');
+    attacker = generateKey(root, 'attacker_key');
     server = await listen(() => served);
     baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
@@ -127,7 +152,7 @@ describe('install.sh', () => {
   });
 
   it('refuses a checksum file without an entry for the artifact', async () => {
-    served = { [`/${ASSET}`]: GOOD_BINARY, '/SHA256SUMS': Buffer.from(`${sha256(GOOD_BINARY)}  other-file\n`) };
+    served = { [`/${ASSET}`]: GOOD_BINARY, ...signedSums(`${sha256(GOOD_BINARY)}  other-file\n`) };
     const outcome = await runInstall(baseEnv());
     expect(outcome.code).toBe(1);
     expect(outcome.stderr).toBe(`install.sh: SHA256SUMS has no valid entry for ${ASSET}\n`);
@@ -135,7 +160,7 @@ describe('install.sh', () => {
   });
 
   it('fails when the artifact is not published', async () => {
-    served = { '/SHA256SUMS': Buffer.from(`${sha256(GOOD_BINARY)}  ${ASSET}\n`) };
+    served = signedSums(`${sha256(GOOD_BINARY)}  ${ASSET}\n`);
     const outcome = await runInstall(baseEnv());
     expect(outcome.code).not.toBe(0);
     expect(outcome.stderr).toContain('404');
@@ -157,7 +182,7 @@ describe('install.sh', () => {
     ['x86_64', 'momonga-linux-x64'],
     ['aarch64', 'momonga-linux-arm64'],
   ])('installs the %s Linux artifact as %s', async (machine, asset) => {
-    served = { [`/${asset}`]: GOOD_BINARY, '/SHA256SUMS': Buffer.from(`${sha256(GOOD_BINARY)}  ${asset}\n`) };
+    served = { [`/${asset}`]: GOOD_BINARY, ...signedSums(`${sha256(GOOD_BINARY)}  ${asset}\n`) };
     const outcome = await runInstall({ ...baseEnv(), PATH: `${unameStub('Linux', machine)}:/usr/bin:/bin` });
     expect(outcome.code).toBe(0);
     expect(fs.readFileSync(target())).toEqual(GOOD_BINARY);
@@ -175,5 +200,48 @@ describe('install.sh', () => {
     const outcome = await runInstall(env);
     expect(outcome.code).toBe(1);
     expect(outcome.stderr).toBe('install.sh: set MOMONGA_REPO=<owner>/<repo> or MOMONGA_RELEASE_BASE_URL\n');
+  });
+
+  it('refuses a release whose checksums are signed by another key, even when the binary matches them', async () => {
+    served = { [`/${ASSET}`]: TAMPERED_BINARY, ...signedSums(`${sha256(TAMPERED_BINARY)}  ${ASSET}\n`, attacker.privateKey) };
+    const outcome = await runInstall(baseEnv());
+    expect(outcome.code).toBe(1);
+    expect(outcome.stderr).toBe('install.sh: SHA256SUMS is not signed by the pinned release key; nothing was installed\n');
+    expect(fs.readdirSync(path.join(prefix, 'bin'))).toEqual([]);
+  });
+
+  it('refuses checksums altered after they were signed', async () => {
+    const genuine = signedSums(`${sha256(GOOD_BINARY)}  ${ASSET}\n`);
+    served = { [`/${ASSET}`]: TAMPERED_BINARY, '/SHA256SUMS': Buffer.from(`${sha256(TAMPERED_BINARY)}  ${ASSET}\n`), '/SHA256SUMS.sig': genuine['/SHA256SUMS.sig'] as Buffer };
+    const outcome = await runInstall(baseEnv());
+    expect(outcome.code).toBe(1);
+    expect(outcome.stderr).toContain('is not signed by the pinned release key');
+    expect(fs.readdirSync(path.join(prefix, 'bin'))).toEqual([]);
+  });
+
+  it('refuses a release that publishes no signature', async () => {
+    served = { [`/${ASSET}`]: GOOD_BINARY, '/SHA256SUMS': Buffer.from(`${sha256(GOOD_BINARY)}  ${ASSET}\n`) };
+    const outcome = await runInstall(baseEnv());
+    expect(outcome.code).not.toBe(0);
+    expect(outcome.stderr).toContain('404');
+    expect(fs.readdirSync(path.join(prefix, 'bin'))).toEqual([]);
+  });
+
+  it('refuses to run without a pinned release key', async () => {
+    serveRelease(GOOD_BINARY, GOOD_BINARY);
+    const env = baseEnv();
+    delete env['MOMONGA_RELEASE_PUBLIC_KEY'];
+    const outcome = await runInstall(env);
+    expect(outcome.code).toBe(1);
+    expect(outcome.stderr).toContain('no release signing key is pinned');
+    expect(fs.existsSync(path.join(prefix, 'bin'))).toBe(false);
+  });
+
+  it.each(['http://example.com/releases', 'http://127.0.0.1.evil.example/releases', 'http://127.0.0.1:80@evil.example/releases', 'ftp://example.com/releases'])('refuses the release location %s', async (location) => {
+    serveRelease(GOOD_BINARY, GOOD_BINARY);
+    const outcome = await runInstall({ ...baseEnv(), MOMONGA_RELEASE_BASE_URL: location });
+    expect(outcome.code).toBe(1);
+    expect(outcome.stderr).toBe(`install.sh: the release location must be https (plain http is accepted only on the loopback interface), got ${location}\n`);
+    expect(fs.existsSync(path.join(prefix, 'bin'))).toBe(false);
   });
 });

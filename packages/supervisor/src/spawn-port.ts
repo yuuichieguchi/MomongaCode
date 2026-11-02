@@ -5,7 +5,7 @@ import type { ChildExit, ChildHandle, SpawnPort } from './child-manager.ts';
 
 const endedReadable = (): Readable => Readable.from([]);
 
-export const createSpawnPort = (): SpawnPort => (command, args, options) => {
+export const createSpawnPort = (platform: NodeJS.Platform = process.platform): SpawnPort => (command, args, options) => {
   const child = spawn(command, [...args], { cwd: options.cwd, env: { ...options.env }, detached: options.detached, windowsHide: true, stdio: [...options.stdio] });
   const errorListeners: ((error: NodeJS.ErrnoException) => void)[] = [];
   const exitListeners: ((exit: ChildExit) => void)[] = [];
@@ -35,6 +35,11 @@ export const createSpawnPort = (): SpawnPort => (command, args, options) => {
       exitListeners.push(listener);
     },
     kill: (signal) => {
+      if (platform === 'win32') {
+        if (lifeline === null) throw new Error(`cannot stop ${command}: it has no lifeline and signals terminate a Windows process without a graceful close`);
+        lifeline.destroy();
+        return;
+      }
       child.kill(signal);
     },
     killGroup: () => {

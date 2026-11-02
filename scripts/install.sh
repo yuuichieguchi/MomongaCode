@@ -2,6 +2,9 @@
 set -euo pipefail
 
 readonly CHECKSUMS_NAME="SHA256SUMS"
+readonly SIGNATURE_NAME="SHA256SUMS.sig"
+readonly SIGNATURE_NAMESPACE="momonga-release"
+readonly EMBEDDED_RELEASE_PUBLIC_KEY=""
 
 fail() {
   printf 'install.sh: %s\n' "$*" >&2
@@ -33,6 +36,19 @@ else
   fi
 fi
 
+public_key="${MOMONGA_RELEASE_PUBLIC_KEY:-$EMBEDDED_RELEASE_PUBLIC_KEY}"
+[ -n "$public_key" ] || fail "no release signing key is pinned: set MOMONGA_RELEASE_PUBLIC_KEY to the ssh public key line published by the maintainers"
+command -v ssh-keygen > /dev/null || fail "ssh-keygen is required to verify the release signature"
+
+loopback_http='^http://(127\.0\.0\.1|localhost|\[::1\])(:[0-9]+)?(/.*)?$'
+if [[ "$base_url" == https://* ]]; then
+  transport="https"
+elif [[ "$base_url" =~ $loopback_http ]]; then
+  transport="http"
+else
+  fail "the release location must be https (plain http is accepted only on the loopback interface), got $base_url"
+fi
+
 bin_dir="$prefix/bin"
 target="$bin_dir/momonga"
 
@@ -41,10 +57,14 @@ staging="$(mktemp -d "$bin_dir/.momonga-install.XXXXXX")"
 trap 'rm -rf "$staging"' EXIT
 
 fetch() {
-  curl --fail --silent --show-error --location --proto-redir '=https' --output "$2" "$1"
+  curl --fail --silent --show-error --location --proto "=$transport" --proto-redir '=https' --output "$2" "$1"
 }
 
 fetch "$base_url/$CHECKSUMS_NAME" "$staging/$CHECKSUMS_NAME"
+fetch "$base_url/$SIGNATURE_NAME" "$staging/$SIGNATURE_NAME"
+printf '%s %s\n' "$SIGNATURE_NAMESPACE" "$public_key" > "$staging/allowed_signers"
+ssh-keygen -Y verify -f "$staging/allowed_signers" -I "$SIGNATURE_NAMESPACE" -n "$SIGNATURE_NAMESPACE" -s "$staging/$SIGNATURE_NAME" < "$staging/$CHECKSUMS_NAME" > /dev/null 2>&1 \
+  || fail "$CHECKSUMS_NAME is not signed by the pinned release key; nothing was installed"
 fetch "$base_url/$ASSET_NAME" "$staging/$ASSET_NAME"
 
 expected="$(awk -v asset="$ASSET_NAME" '$2 == asset { print $1 }' "$staging/$CHECKSUMS_NAME")"

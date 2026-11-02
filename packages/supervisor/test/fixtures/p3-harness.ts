@@ -333,6 +333,7 @@ export const recordingMarkerPorts = (overrides: MarkerPorts = {}, record?: strin
       fs.rmSync(options.marker, { force: true });
       return { removed: true };
     },
+    listMarkers: (markersDir) => (overrides.listMarkers === undefined ? fs.promises.readdir(markersDir) : overrides.listMarkers(markersDir)),
   };
   return { ports, calls };
 };
