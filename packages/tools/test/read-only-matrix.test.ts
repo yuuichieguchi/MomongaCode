@@ -10,7 +10,7 @@ import { TEST_SEARCH_PATH, isWritableFor } from '@momonga/testkit';
 import { buildSandboxPolicy, createPolicyFilesystem } from '@momonga/tools';
 import { makeBuiltins, resultOf } from './builtins/fixtures.ts';
 import { collect } from './read-only-collect.ts';
-import { approvableForms, outputDiffersByNature } from './read-only-forms.ts';
+import { approvableForms, exitStatusOf, normalised, outputDiffersByNature, seesOnlyItsOwnNamespace } from './read-only-forms.ts';
 import { HAS_REAL_SANDBOX, realSandbox, recordingSandbox } from './read-only-support.ts';
 import type { RecordedSpawn } from './read-only-support.ts';
 
@@ -58,14 +58,14 @@ describe.runIf(HAS_REAL_SANDBOX)('every approvable command form prints the same 
 
   const runPlain = (command: string) => {
     const done = spawnSync('/bin/bash', ['-c', command], { cwd: project, env: plainEnv, encoding: 'utf8', maxBuffer: PLAIN_OUTPUT_LIMIT_BYTES, stdio: ['ignore', 'pipe', 'pipe'] });
-    return { stdout: done.stdout, stderr: done.stderr, status: done.status };
+    return { stdout: done.stdout, stderr: done.stderr, status: exitStatusOf(done) };
   };
 
   const sandboxed = async (command: string) => {
     const { markerFile: _spentMarker, ...replayed } = spawned.command;
     const child = inner.spawn({ ...replayed, argv: ['/bin/bash', '-c', command], cwd: project }, spawned.policy, new AbortController().signal);
     const [stdout, stderr, exit] = await Promise.all([collect(child.stdout), collect(child.stderr), child.exited]);
-    return { stdout, stderr, status: exit.code };
+    return { stdout, stderr, status: exitStatusOf({ status: exit.code, signal: exit.signal as NodeJS.Signals | null }) };
   };
 
   beforeAll(async () => {
@@ -130,10 +130,25 @@ describe.runIf(HAS_REAL_SANDBOX)('every approvable command form prints the same 
     expect(spawned.policy.writableRoots).not.toContain(project);
     const plain = runPlain(command);
     const result = await sandboxed(command);
+    if (seesOnlyItsOwnNamespace(command)) {
+      expect([0, 1]).toContain(result.status);
+      return;
+    }
     if (outputDiffersByNature(command)) {
       expect(result.status).toBe(plain.status);
       return;
     }
-    expect(result).toEqual({ stdout: plain.stdout, stderr: plain.stderr, status: plain.status });
+    expect({ stdout: normalised(command, result.stdout), stderr: normalised(command, result.stderr), status: result.status }).toEqual({
+      stdout: normalised(command, plain.stdout),
+      stderr: normalised(command, plain.stderr),
+      status: plain.status,
+    });
+  });
+
+  it.runIf(process.platform === 'linux')('ps inside the sandbox lists only the sandbox own processes, so its output cannot match the host', async () => {
+    const outside = runPlain('ps -e -o pid=').stdout.trim().split('\n').length;
+    const inside = (await sandboxed('ps -e -o pid=')).stdout.trim().split('\n');
+    expect(outside).toBeGreaterThan(inside.length);
+    expect(inside.length).toBeLessThanOrEqual(4);
   });
 });

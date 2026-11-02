@@ -77,9 +77,10 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     expect(result).toMatchObject({ status, exitCode });
   });
 
-  it('reports no exit code when the shell is killed by a signal', PROCESS_TIMEOUT, async () => {
+  it('reports the exit code the sandbox reports for a shell killed by a signal: none under Seatbelt, 128 + 9 from bubblewrap, which exits for its child', PROCESS_TIMEOUT, async () => {
     const tools = await makeBuiltins({ realSandbox: true });
-    expect(resultOf(await bash(tools, 'kill -9 $$')).exitCode).toBeUndefined();
+    const SIGKILL_EXIT_FROM_BUBBLEWRAP = 137;
+    expect(resultOf(await bash(tools, 'kill -9 $$')).exitCode).toBe(process.platform === 'darwin' ? undefined : SIGKILL_EXIT_FROM_BUBBLEWRAP);
   });
 
   it('fails with the signal name when the shell is killed by a signal', PROCESS_TIMEOUT, async () => {

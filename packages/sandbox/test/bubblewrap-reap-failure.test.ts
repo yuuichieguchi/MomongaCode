@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
-import { createBubblewrapSandbox, nodeFilesystemPort } from '@momonga/sandbox';
+import { createBubblewrapSandbox, createPlaceholderJournal, nodeFilesystemPort } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { makeTempDir, run } from './helpers.ts';
 
@@ -54,7 +54,7 @@ const policy = (writeDenied: string[]): SandboxPolicy => ({
 describe('a process group that cannot be reaped', () => {
   it('still removes the placeholder and the private tmp dir, and reports the reap failure', async () => {
     const hooks = path.join(work, '.git', 'hooks');
-    const sandbox = createBubblewrapSandbox({ bwrapPath: path.join(base, 'bwrap'), tmpRoot: path.join(base, 'tmp'), killGraceMs: 300 });
+    const sandbox = createBubblewrapSandbox({ bwrapPath: path.join(base, 'bwrap'), tmpRoot: path.join(base, 'tmp'), killGraceMs: 300, journal: createPlaceholderJournal(path.join(base, 'journal')) });
     reaper.failure = new Error('the group could not be terminated');
     const proc = sandbox.spawn({ argv: ['/bin/sh', '-c', 'true'], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy([hooks]), new AbortController().signal);
     await expect(run(proc)).rejects.toBe(reaper.failure);
@@ -71,6 +71,7 @@ describe('a process group that cannot be reaped', () => {
       bwrapPath: path.join(base, 'bwrap'),
       tmpRoot: path.join(base, 'tmp'),
       killGraceMs: 300,
+      journal: createPlaceholderJournal(path.join(base, 'journal')),
       filesystem: {
         ...nodeFilesystemPort,
         removePlaceholder: () => {

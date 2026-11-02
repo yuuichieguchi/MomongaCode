@@ -302,6 +302,94 @@ describe('planBubblewrap', () => {
     expect(indexOfTriple(args, '--ro-bind', path.join(work, 'free.txt'))).toBe(-1);
   });
 
+  describe('the anchors of the nested git directories', () => {
+    const gitDir = (): string => path.join(work, '.git');
+    const modules = (): string => path.join(gitDir(), 'modules');
+
+    const moduleAt = (directory: string): void => {
+      fs.mkdirSync(path.join(directory, 'objects'), { recursive: true });
+      fs.mkdirSync(path.join(directory, 'refs'));
+      fs.writeFileSync(path.join(directory, 'HEAD'), 'ref: refs/heads/main\n');
+    };
+
+    const anchored = (): SandboxPolicy =>
+      policy({ protectedSet: { ...EMPTY_PROTECTED_SET, roots: [work], moduleAnchors: [modules()], worktreeAnchors: [path.join(gitDir(), 'worktrees')] } });
+
+    const positionOf = (args: readonly string[], flag: string, target: string): number => indexOfTriple(args, flag, target);
+
+    it('reserves a missing modules directory with a placeholder so the kernel refuses a new module', () => {
+      fs.mkdirSync(gitDir());
+      const plan = planBubblewrap(anchored(), { cwd: work });
+      expect(plan.placeholders).toContain(modules());
+      expect(indexOfTriple(plan.args, '--ro-bind', modules())).toBe(-1);
+      expect(plan.args.findIndex((value, index) => value === '--ro-bind' && plan.args[index + 1] === '/dev/null' && plan.args[index + 2] === modules())).toBeGreaterThan(0);
+    });
+
+    it('binds an existing modules directory read-only and each module git directory writable after it', () => {
+      moduleAt(path.join(modules(), 'a'));
+      const { args } = planBubblewrap(anchored(), { cwd: work });
+      const anchor = positionOf(args, '--ro-bind', modules());
+      const module = positionOf(args, '--bind', path.join(modules(), 'a'));
+      expect(anchor).toBeGreaterThan(0);
+      expect(module).toBeGreaterThan(anchor);
+    });
+
+    it('pins hooks, config and config.worktree of a module whether they exist or not', () => {
+      const module = path.join(modules(), 'a');
+      moduleAt(module);
+      fs.mkdirSync(path.join(module, 'hooks'));
+      const plan = planBubblewrap(anchored(), { cwd: work });
+      expect(positionOf(plan.args, '--ro-bind', path.join(module, 'hooks'))).toBeGreaterThan(0);
+      expect(plan.placeholders).toEqual(expect.arrayContaining([path.join(module, 'config'), path.join(module, 'config.worktree')]));
+      expect(plan.placeholders).not.toContain(path.join(module, 'hooks'));
+    });
+
+    it('applies the same rule to the modules directory of a module', () => {
+      const module = path.join(modules(), 'a');
+      moduleAt(module);
+      moduleAt(path.join(module, 'modules', 'b'));
+      const plan = planBubblewrap(anchored(), { cwd: work });
+      expect(positionOf(plan.args, '--ro-bind', path.join(module, 'modules'))).toBeGreaterThan(positionOf(plan.args, '--bind', module));
+      expect(positionOf(plan.args, '--bind', path.join(module, 'modules', 'b'))).toBeGreaterThan(positionOf(plan.args, '--ro-bind', path.join(module, 'modules')));
+      expect(plan.placeholders).toContain(path.join(module, 'modules', 'b', 'config'));
+    });
+
+    it('reserves the modules directory of a module that has none', () => {
+      moduleAt(path.join(modules(), 'a'));
+      const plan = planBubblewrap(anchored(), { cwd: work });
+      expect(plan.placeholders).toContain(path.join(modules(), 'a', 'modules'));
+    });
+
+    it('walks through a plain directory to a module whose name has a slash and leaves the plain directory read-only', () => {
+      moduleAt(path.join(modules(), 'group', 'b'));
+      const plan = planBubblewrap(anchored(), { cwd: work });
+      expect(positionOf(plan.args, '--bind', path.join(modules(), 'group', 'b'))).toBeGreaterThan(0);
+      expect(positionOf(plan.args, '--bind', path.join(modules(), 'group'))).toBe(-1);
+      expect(plan.placeholders).toContain(path.join(modules(), 'group', 'b', 'config'));
+    });
+
+    it('does not mistake a directory without HEAD, objects and refs for a module', () => {
+      fs.mkdirSync(path.join(modules(), 'a', 'objects'), { recursive: true });
+      const { args } = planBubblewrap(anchored(), { cwd: work });
+      expect(positionOf(args, '--bind', path.join(modules(), 'a'))).toBe(-1);
+    });
+
+    it('pins config.worktree of each existing worktree and leaves the worktrees directory writable', () => {
+      fs.mkdirSync(path.join(gitDir(), 'worktrees', 'wt'), { recursive: true });
+      const plan = planBubblewrap(anchored(), { cwd: work });
+      expect(plan.placeholders).toContain(path.join(gitDir(), 'worktrees', 'wt', 'config.worktree'));
+      expect(positionOf(plan.args, '--ro-bind', path.join(gitDir(), 'worktrees'))).toBe(-1);
+    });
+
+    it('ignores an anchor that lies outside every writable root', () => {
+      const elsewhere = path.join(base, 'elsewhere', 'modules');
+      fs.mkdirSync(elsewhere, { recursive: true });
+      const plan = planBubblewrap(policy({ protectedSet: { ...EMPTY_PROTECTED_SET, moduleAnchors: [elsewhere] } }), { cwd: work });
+      expect(plan.placeholders).toEqual([]);
+      expect(positionOf(plan.args, '--ro-bind', elsewhere)).toBe(-1);
+    });
+  });
+
   it('rejects the same invalid policies as the seatbelt profile', () => {
     expect(() => planBubblewrap(policy({ readAllowed: [mine] }), { cwd: work })).toThrowError(expect.objectContaining({ code: 'read_allowed_not_inside_denied' }));
     expect(() => planBubblewrap(policy({ writeDenied: ['relative'] }), { cwd: work })).toThrowError(expect.objectContaining({ code: 'entry_not_absolute' }));

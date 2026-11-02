@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '@momonga/config';
 import { ProcessLockHeldError, ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
 import type { Worker, WorkerOptions } from '@momonga/runtime';
+import { createPlaceholderJournal, identityOf } from '@momonga/sandbox';
 import { afterMicrotasks, createFakeClock, startLockHolder } from '@momonga/testkit';
 import { START_MS, errnoError, trackGroup, writeInvalidUserSettings, writeUserSettings } from './helpers.ts';
 import {
@@ -257,6 +258,20 @@ describe('startRuntimeProcess startup (system timers)', () => {
       `bwrap is not available at ${missing}; set "sandbox": "none" in ${temp.paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
     );
     expect(await isLockFree(temp.paths.locks.runtime)).toBe(true);
+  });
+
+  it.runIf(process.platform === 'linux')('removes the empty placeholder that a killed runtime left in a workspace, found by its journal record, before any command runs', PROCESS_TIMEOUT, async () => {
+    const temp = makeRunHome();
+    writeUserSettings(temp.home, { sandbox: 'bubblewrap' });
+    await ensureMomongaDirs(temp.paths);
+    fs.writeFileSync(temp.paths.sockets.runtime, 'not a socket');
+    const leftover = path.join(temp.root, '.mcp.json');
+    fs.writeFileSync(leftover, '');
+    createPlaceholderJournal(path.join(temp.paths.state, 'placeholders')).record({ path: leftover, ...identityOf(leftover) });
+    const { started, logger } = startBare(temp, { sandboxExecPath: '/bin/true', platform: 'linux' });
+    await failureOf(started);
+    expect(fs.existsSync(leftover)).toBe(false);
+    expect(logger.entries).toContainEqual(expect.objectContaining({ level: 'warn', msg: expect.stringContaining(leftover) }));
   });
 
   it('a sandbox kind from another operating system is a ConfigError', PROCESS_TIMEOUT, async () => {

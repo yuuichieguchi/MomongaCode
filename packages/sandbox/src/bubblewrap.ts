@@ -7,6 +7,8 @@ import { launch } from './process.ts';
 import type { LaunchOptions } from './process.ts';
 import { SandboxPolicyError } from './policy-error.ts';
 import { validateSandboxPolicy } from './profile.ts';
+import { identityOf } from './placeholder-journal.ts';
+import type { PlaceholderIdentity, PlaceholderJournal } from './placeholder-journal.ts';
 import { assertExistingDirectory, removePrivateTmpDir } from './scratch.ts';
 import type { DirectoryPort } from './scratch.ts';
 import type { Sandbox, SandboxCommand, SandboxPolicy, SandboxedProcess } from './types.ts';
@@ -22,6 +24,7 @@ export type FilesystemPort = {
   isSymbolicLink(target: string): boolean;
   realpath(target: string): string;
   children(directory: string): Array<{ path: string; kind: EntryKind | 'other' }> | Unreachable;
+  createPlaceholder(target: string): PlaceholderIdentity;
   removePlaceholder(target: string): void;
   requireExecutable(file: string): void;
   makeTempDirectory(parent: string, prefix: string): string;
@@ -51,6 +54,10 @@ export const nodeFilesystemPort: FilesystemPort = {
     }),
   isSymbolicLink: (target) => inspected(false, () => fs.lstatSync(target, { throwIfNoEntry: false })?.isSymbolicLink() ?? false) === true,
   realpath: (target) => fs.realpathSync(target),
+  createPlaceholder: (target) => {
+    fs.closeSync(fs.openSync(target, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL, PLACEHOLDER_MODE));
+    return identityOf(target);
+  },
   removePlaceholder: (target) => {
     const stat = fs.lstatSync(target, { throwIfNoEntry: false });
     if (stat !== undefined && stat.isFile() && stat.size === 0) fs.unlinkSync(target);
@@ -75,6 +82,10 @@ const unique = (values: readonly string[]): string[] => [...new Set(values)];
 const depthOf = (target: string): number => target.split('/').filter((part) => part !== '').length;
 
 const byDepth = (mounts: readonly Mount[]): string[] => [...mounts].sort((left, right) => left.depth - right.depth).flatMap((mount) => mount.args);
+
+const PLACEHOLDER_MODE = 0o644;
+
+const MODULE_PINNED_ENTRIES = ['hooks', 'config', 'config.worktree'] as const;
 
 const SYSTEMD_RESOLVE_DIRECTORY = '/run/systemd/resolve';
 
@@ -211,13 +222,44 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
     const set = policy.protectedSet.patterns.entries.includes(entry) ? policy.protectedSet.patterns : policy.fileRules;
     for (const target of blockedPaths(set, entry, inspector)) protect(target, writeMounts);
   }
+  const readOnlyDirectories = new Set<string>();
+  const isGitDirectory = (directory: string): boolean =>
+    kindOf(path.join(directory, 'HEAD')) === 'file' && kindOf(path.join(directory, 'objects')) === 'directory' && kindOf(path.join(directory, 'refs')) === 'directory';
+  const anchorModules = (anchor: string): void => {
+    if (!insideRoots(anchor)) return;
+    if (kindOf(anchor) !== 'directory') {
+      protect(anchor, writeMounts);
+      return;
+    }
+    readOnlyDirectories.add(anchor);
+    writeMounts.push({ depth: depthOf(anchor), args: ['--ro-bind', anchor, anchor] });
+    walkModules(anchor);
+  };
+  const walkModules = (directory: string): void => {
+    for (const child of inspector.children(directory)) {
+      if (child.kind !== 'directory') continue;
+      if (!isGitDirectory(child.path)) {
+        readOnlyDirectories.add(child.path);
+        walkModules(child.path);
+        continue;
+      }
+      writeMounts.push({ depth: depthOf(child.path), args: ['--bind', child.path, child.path] });
+      for (const name of MODULE_PINNED_ENTRIES) protect(path.join(child.path, name), writeMounts);
+      anchorModules(path.join(child.path, 'modules'));
+    }
+  };
+  for (const anchor of policy.protectedSet.moduleAnchors) anchorModules(anchor);
+  for (const anchor of policy.protectedSet.worktreeAnchors) {
+    if (!insideRoots(anchor) || kindOf(anchor) !== 'directory') continue;
+    for (const child of inspector.children(anchor)) if (child.kind === 'directory') protect(path.join(child.path, 'config.worktree'), writeMounts);
+  }
   const pinMounts: Mount[] = [];
   const pinnedFrom = unique([...writeDenied, ...literals]).map((literal) => (kindOf(literal) === undefined ? undefined : port.realpath(literal)));
   const pinned = [...pinnedFrom.flatMap((target) => (target === undefined ? [] : [target])), ...unique(placeholders)];
   for (const target of pinned) {
     for (let ancestor = path.dirname(target); ancestor !== path.dirname(ancestor); ancestor = path.dirname(ancestor)) {
       const inside = insideRoots(ancestor);
-      if (inside && !writableAreas.includes(ancestor) && kindOf(ancestor) === 'directory') pinMounts.push({ depth: depthOf(ancestor), args: ['--bind', ancestor, ancestor] });
+      if (inside && !writableAreas.includes(ancestor) && !readOnlyDirectories.has(ancestor) && kindOf(ancestor) === 'directory') pinMounts.push({ depth: depthOf(ancestor), args: ['--bind', ancestor, ancestor] });
     }
   }
 
@@ -266,6 +308,7 @@ export interface BubblewrapSandboxOptions {
   tmpRoot: string;
   killGraceMs: number;
   filesystem?: FilesystemPort;
+  journal: PlaceholderJournal;
   spawnProcess?: LaunchOptions['spawnProcess'];
 }
 
@@ -276,7 +319,22 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
   const tmpRoot = filesystem.realpath(options.tmpRoot);
   const directories: DirectoryPort = { isDirectory: (target) => filesystem.kindOf(target) === 'directory' };
   const held = new Map<string, number>();
+  const { journal } = options;
+  const discard = (placeholder: string): void => {
+    filesystem.removePlaceholder(placeholder);
+    journal.forget(placeholder);
+  };
   const hold = (plan: BubblewrapPlan): void => {
+    const created: string[] = [];
+    try {
+      for (const placeholder of plan.placeholders.filter((candidate) => !held.has(candidate))) {
+        journal.record({ path: placeholder, ...filesystem.createPlaceholder(placeholder) });
+        created.push(placeholder);
+      }
+    } catch (error) {
+      for (const placeholder of created) discard(placeholder);
+      throw error;
+    }
     for (const placeholder of plan.placeholders) held.set(placeholder, (held.get(placeholder) ?? 0) + 1);
   };
   const release = (plan: BubblewrapPlan): void => {
@@ -287,7 +345,7 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
         continue;
       }
       held.delete(placeholder);
-      filesystem.removePlaceholder(placeholder);
+      discard(placeholder);
     }
   };
   const launchWith = (command: SandboxCommand, plan: BubblewrapPlan, tmpDir: string, signal: AbortSignal, afterExit: () => void): SandboxedProcess => {

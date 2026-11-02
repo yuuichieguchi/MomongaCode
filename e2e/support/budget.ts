@@ -1,10 +1,10 @@
-import { canonicalJson } from '@momonga/foundation';
+import { canonicalJson, createRedactor } from '@momonga/foundation';
 import { createFsInstructionReader } from '@momonga/context';
 import { COMPACTION_INSTRUCTIONS_MARKER, wireOf, wireTokensOf } from '@momonga/gateway';
 import type { ChatWire } from '@momonga/gateway';
 import { ESTIMATED_ERROR_BOUND_RATIO, marginFloorFor, summaryItemTokensFor, summaryTokenCapFor } from '@momonga/protocol';
 import type { Capabilities, CountTokensResult, FunctionCallItem, RunEvent } from '@momonga/protocol';
-import { RUNTIME_DEFAULTS, buildSystemPrompt, createGatewayClient, createMemoryPort } from '@momonga/runtime';
+import { RUNTIME_DEFAULTS, buildSystemPrompt, createGatewayClient, createHistoryPort, createMemoryPort } from '@momonga/runtime';
 import type { GatewayPort } from '@momonga/runtime';
 import { createUnsandboxed } from '@momonga/sandbox';
 import type { FakeRoute, FakeScriptedReply } from '@momonga/testkit';
@@ -39,6 +39,7 @@ export const SCRIPTED_INPUT_TOKENS = 10;
 export const SCRIPTED_OUTPUT_TOKENS = 5;
 export const MAX_COMPACTIONS = 2;
 export const DRY_RUN_MAX_CLAIMS = 8;
+export const ESCALATION_NOTICE_PREFIX = 'recent steps of the current turn were reduced from';
 
 export type ToolCallingMode = 'native' | 'constrained';
 
@@ -50,6 +51,7 @@ export type PlanCaseSpec = {
   readonly deny: readonly string[];
   readonly grid: readonly FillerShape[];
   readonly probeFillers: number;
+  readonly escalates?: true;
 };
 
 export type ScriptCall = { readonly name: string; readonly arguments: Readonly<Record<string, unknown>> };
@@ -83,6 +85,9 @@ export type AcceptanceFacts = {
   readonly withinTurnCompaction: boolean;
   readonly fillersBeforeFirstCompaction: number | undefined;
   readonly notices: readonly string[];
+  readonly escalationNotices: readonly string[];
+  readonly escalationStep: number | undefined;
+  readonly fillersBeforeEscalation: number | undefined;
 };
 
 export type DryRun = {
@@ -226,7 +231,13 @@ export const factsOf = (journal: readonly JournalEvent[], haystack: Haystack, st
   const grepEviction = ofType(journal, 'context.truncated').find(
     (event) => event.data['kind'] === 'omitted' && event.data['handle'] === haystack.handle && event.data['callId'] === grep?.data['callId'],
   );
+  const escalations = ofType(journal, 'notice').filter((event) => String(event.data['message']).startsWith(ESCALATION_NOTICE_PREFIX));
+  const afterEscalation = escalations[0] === undefined ? undefined : ofType(journal, 'model.requested').find((event) => event.seq > (escalations[0] as JournalEvent).seq);
+  const escalationStep = afterEscalation?.data['step'];
   return {
+    escalationNotices: escalations.map((event) => String(event.data['message'])),
+    escalationStep: typeof escalationStep === 'number' ? escalationStep : undefined,
+    fillersBeforeEscalation: escalations[0] === undefined ? undefined : Math.max(0, completed.filter((event) => event.seq < (escalations[0] as JournalEvent).seq).length - 2),
     status,
     stopReason,
     taskSeq,
@@ -239,7 +250,8 @@ export const factsOf = (journal: readonly JournalEvent[], haystack: Haystack, st
   };
 };
 
-export const verdictOf = (facts: AcceptanceFacts): string | undefined => {
+export const verdictOf = (facts: AcceptanceFacts, escalates = false): string | undefined => {
+  if (escalates && facts.escalationNotices.length !== 1) return `(f) ${facts.escalationNotices.length} escalation notices, expected exactly one`;
   if (!facts.grepTruncatedWithHandle) return '(a) the Grep output was not tool-truncated with its handle';
   if (facts.compactionSeqs.length === 0) return `(c) no context.compacted (status ${facts.status} ${facts.stopReason ?? ''})`.trim();
   const firstCompaction = facts.compactionSeqs[0] as number;
@@ -298,6 +310,7 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
       defaults: RUNTIME_DEFAULTS.limits,
       toolList: () => createBuiltinTools(),
       memories: createMemoryPort({ store: env.store, settings: env.settings }),
+      history: createHistoryPort({ store: env.store, settings: env.settings, redactor: createRedactor({ credentials: [] }) }),
       tools: { sandbox: createUnsandboxed() },
     });
     for (let round = 0; round < DRY_RUN_MAX_CLAIMS && !TERMINAL.has(env.run(runId).status); round += 1) {
@@ -358,17 +371,22 @@ export const planScript = async (input: PlanInput, capabilities: Capabilities): 
     if (probe.pinned !== undefined) sizing ??= sizingFor(capabilities, probe.pinned);
     const needed = probe.facts.fillersBeforeFirstCompaction;
     if (needed === undefined) {
-      attempts.push({ shape, runs: [probe], verdict: `probe: ${verdictOf(probe.facts) ?? 'no compaction'}` });
+      attempts.push({ shape, runs: [probe], verdict: `probe: ${verdictOf(probe.facts, input.spec.escalates === true) ?? 'no compaction'}` });
       continue;
     }
-    const fillers = needed + 1;
+    const escalatesAt = probe.facts.fillersBeforeEscalation;
+    if (input.spec.escalates === true && escalatesAt === undefined) {
+      attempts.push({ shape, runs: [probe], verdict: `probe: ${verdictOf(probe.facts, true) ?? 'no escalation'}` });
+      continue;
+    }
+    const fillers = Math.max(needed, escalatesAt ?? 0) + 1;
     const steps = plannedSteps(input.home.project, input.haystack, shape, fillers);
     const runs: DryRun[] = [];
     let verdict: string | undefined;
     for (const perturbation of PERTURBATIONS) {
       const run = await dryRun({ plan: input, steps, perturbation, fillers });
       runs.push(run);
-      verdict = verdictOf(run.facts) ?? singleClaimVerdict(run);
+      verdict = verdictOf(run.facts, input.spec.escalates === true) ?? singleClaimVerdict(run);
       if (verdict !== undefined) {
         verdict = `perturbation ${perturbation}: ${verdict}`;
         break;

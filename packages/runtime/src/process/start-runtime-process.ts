@@ -17,7 +17,7 @@ import {
 import type { Clock, JsonLogger, ProcessLock, ReadyFields, TextStream } from '@momonga/foundation';
 import { createTelemetry, exportersFor, openTraceStore } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
-import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createSeatbeltSandbox, createUnsandboxed } from '@momonga/sandbox';
+import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, recoverPlaceholders } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import type { Sandbox } from '@momonga/sandbox';
 import { isFatalStoreError, openRuntimeStore } from '@momonga/store';
@@ -114,6 +114,7 @@ type StartedWorker = { id: string; worker: Worker };
 
 const DEFAULT_SANDBOX_EXEC_PATH = '/usr/bin/sandbox-exec';
 const DEFAULT_LEASE_MS = 30_000;
+const PLACEHOLDER_JOURNAL_DIRECTORY = 'placeholders';
 
 const assertPositiveInteger = (name: string, value: number): void => {
   if (!Number.isSafeInteger(value) || value <= 0) throw new RangeError(`${name} must be a positive integer, got ${value}`);
@@ -319,7 +320,12 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           { cause: error },
         );
       }
-      if (kind === 'bubblewrap') return createBubblewrapSandbox({ bwrapPath: launcherPath, tmpRoot: paths.tmp.spawn, killGraceMs: SANDBOX_KILL_GRACE_MS });
+      if (kind === 'bubblewrap') {
+        const journal = createPlaceholderJournal(path.join(paths.state, PLACEHOLDER_JOURNAL_DIRECTORY));
+        const recovered = recoverPlaceholders(journal);
+        for (const leftover of recovered.removed) logger.warn(`removed the empty placeholder ${leftover} that a killed runtime left in a workspace`);
+        return createBubblewrapSandbox({ bwrapPath: launcherPath, tmpRoot: paths.tmp.spawn, killGraceMs: SANDBOX_KILL_GRACE_MS, journal });
+      }
       return createSeatbeltSandbox({ sandboxExecPath: launcherPath, tmpRoot: paths.tmp.spawn, killGraceMs: SANDBOX_KILL_GRACE_MS });
     });
 

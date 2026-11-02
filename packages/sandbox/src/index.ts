@@ -11,4 +11,6 @@ export { createUnsandboxed } from './unsandboxed.ts';
 export { SANDBOX_KILL_GRACE_MS, SANDBOX_STOP_BOUND_MS } from './process.ts';
 export type { Sandbox, SandboxCommand, SandboxExit, SandboxPolicy, SandboxedProcess } from './types.ts';
 export { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, nodeFilesystemPort, planBubblewrap } from './bubblewrap.ts';
+export { createPlaceholderJournal, heldMountPoints, identityOf, recoverPlaceholders } from './placeholder-journal.ts';
+export type { PlaceholderIdentity, PlaceholderJournal, PlaceholderRecord, RecoveryPorts, RecoveryResult } from './placeholder-journal.ts';
 export type { BubblewrapOptions, BubblewrapPlan, BubblewrapSandboxOptions, FilesystemPort } from './bubblewrap.ts';

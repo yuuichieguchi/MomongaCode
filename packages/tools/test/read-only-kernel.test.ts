@@ -7,7 +7,7 @@ import { computeFileRules } from '@momonga/policy';
 import { makeBuiltins, resultOf } from './builtins/fixtures.ts';
 import type { Builtins } from './builtins/fixtures.ts';
 import { makeLayout, policyFor, ruleFor } from './helpers.ts';
-import { HAS_REAL_SANDBOX, realSandbox, recordingSandbox, scratchRootOf } from './read-only-support.ts';
+import { HAS_REAL_SANDBOX, REFUSED_WRITE_MESSAGE, realSandbox, recordingSandbox, scratchRootOf } from './read-only-support.ts';
 import type { RecordedSpawn } from './read-only-support.ts';
 
 const forced = vi.hoisted(() => ({ decision: { kind: 'allow', source: 'mode', reason: 'forced by the test', basis: 'read_only' } }));
@@ -100,7 +100,7 @@ describe.runIf(HAS_REAL_SANDBOX)('rule 2 under the real kernel, with decide forc
   it('rule 6: a refused write comes back as a failed command, once', async () => {
     const result = await stage.bash(': > pwn');
     expect(result.status).toBe('failed');
-    expect(result.output).toContain('Operation not permitted');
+    expect(result.output).toContain(REFUSED_WRITE_MESSAGE);
     expect(result.output).toContain('[exit code 1]');
     expect(stage.spawns).toHaveLength(1);
   });
@@ -151,7 +151,7 @@ describe.runIf(HAS_REAL_SANDBOX)('rule 2 under the real kernel, with decide forc
   it('the session temporary directory is not writable', async () => {
     const result = await stage.bash(`: > ${stage.tmpDir}/pwn`);
     expect(result.status).toBe('failed');
-    expect(result.output).toContain('Operation not permitted');
+    expect(result.output).toContain(REFUSED_WRITE_MESSAGE);
     expect(fs.existsSync(path.join(stage.tmpDir, 'pwn'))).toBe(false);
   });
 

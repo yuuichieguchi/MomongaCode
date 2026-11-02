@@ -33,6 +33,8 @@ describe('the protected set judges Windows paths component by component', () => 
     lexicalPaths: [],
     literals: [],
     names: ['.git'],
+    moduleAnchors: [],
+    worktreeAnchors: [],
     patterns: { ...EMPTY_FILE_RULES, flavour: 'win32' as const },
     issues: [],
   };

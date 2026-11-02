@@ -10,9 +10,10 @@ export type SymlinkReadLine = {
   readsThrough: boolean;
 };
 
-export const SYMLINK_READ_LINES: readonly SymlinkReadLine[] = JSON.parse(
-  fs.readFileSync(path.resolve(import.meta.dirname, '..', '..', '..', 'test', 'fixtures', 'symlink-reads.json'), 'utf8'),
-) as SymlinkReadLine[];
+const FIXTURE_FILES: Readonly<Record<'darwin' | 'linux', string>> = { darwin: 'symlink-reads.json', linux: 'symlink-reads-gnu.json' };
+
+export const symlinkReadLinesFor = (platform: 'darwin' | 'linux'): readonly SymlinkReadLine[] =>
+  JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '..', '..', '..', 'test', 'fixtures', FIXTURE_FILES[platform]), 'utf8')) as SymlinkReadLine[];
 
 export const SECRET_CONTENT = 'TOPSECRET x\n';
 export const SECRET_ENTRY = 'innerSecretName';

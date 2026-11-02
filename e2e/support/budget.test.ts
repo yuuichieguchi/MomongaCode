@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PERTURBATIONS, budgetFor, dryRun, factsOf, verdictOf, isCompactionRequest, journalOfRows, ofType, plannedSteps, summaryRoute, summaryTextOf, upstreamRepliesOf, wireTokensOfBody, acceptanceTarget } from './budget.ts';
+import { ESCALATION_NOTICE_PREFIX, PERTURBATIONS, budgetFor, dryRun, factsOf, verdictOf, isCompactionRequest, journalOfRows, ofType, plannedSteps, summaryRoute, summaryTextOf, upstreamRepliesOf, wireTokensOfBody, acceptanceTarget } from './budget.ts';
 import type { FillerShape, JournalEvent, PlanCaseSpec } from './budget.ts';
 import { readDb } from './db.ts';
 import { createGatewayCountClient } from './gateway-count.ts';
@@ -86,6 +86,29 @@ describe('planner acceptance criteria', () => {
   ])('rejects a dry run where $label', ({ evictionSeq, compactions, status, verdict }) => {
     expect(verdictOf(factsOf(syntheticJournal(evictionSeq, compactions), SYNTHETIC_HAYSTACK, status, undefined))).toMatch(new RegExp(`^${verdict.replace(/[()]/g, '\\$&')}`));
   });
+
+  describe('a case that must escalate', () => {
+    const withEscalation = (journal: JournalEvent[]): JournalEvent[] =>
+      [
+        ...journal,
+        { seq: 6, type: 'notice', data: { message: `${ESCALATION_NOTICE_PREFIX} 4 to 1 because the context budget was exceeded` } },
+        { seq: 9, type: 'model.requested', data: { step: 7 } },
+      ].sort((left, right) => left.seq - right.seq);
+
+    it('reads the step of the request that follows the notice from the measured journal', () => {
+      const facts = factsOf(withEscalation(syntheticJournal(8, [{ seq: 10, through: 7 }])), SYNTHETIC_HAYSTACK, 'COMPLETED', undefined);
+      expect(facts.escalationStep).toBe(7);
+      expect(facts.fillersBeforeEscalation).toBe(0);
+      expect(verdictOf(facts, true)).toBeUndefined();
+    });
+
+    it('rejects a dry run that did not escalate, whatever the path length did to the counts', () => {
+      const facts = factsOf(syntheticJournal(8, [{ seq: 10, through: 7 }]), SYNTHETIC_HAYSTACK, 'COMPLETED', undefined);
+      expect(facts.escalationStep).toBeUndefined();
+      expect(verdictOf(facts, true)).toMatch(/^\(f\) 0 escalation notices/);
+      expect(verdictOf(facts)).toBeUndefined();
+    });
+  });
 });
 
 describe('acceptance (a) support', () => {
@@ -115,7 +138,7 @@ describe('acceptance (a) support', () => {
     { label: 'native, full tools', spec: { name: 'fidelity-native', toolCalling: 'native', deny: [], grid: [], probeFillers: 0 }, shape: { tool: 'Read', lineChars: 90 }, fillers: 6 },
     {
       label: 'native, Read, Grep and ReadOutput',
-      spec: { name: 'fidelity-lean', toolCalling: 'native', deny: ['Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob'], grid: [], probeFillers: 0 },
+      spec: { name: 'fidelity-lean', toolCalling: 'native', deny: ['Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob', 'HistorySearch', 'HistoryRead'], grid: [], probeFillers: 0 },
       shape: { tool: 'Read', lineChars: 90 },
       fillers: 12,
     },

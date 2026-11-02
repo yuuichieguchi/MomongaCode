@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
-import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox } from '@momonga/sandbox';
+import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
 import { killGroupsForCleanup, waitFor } from '@momonga/testkit';
 import { fileRulesOf, fileSpec } from './file-rule-specs.ts';
@@ -46,7 +46,7 @@ describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', () => {
   beforeEach(() => {
     work = tempDir();
     outside = tempDir();
-    sandbox = createBubblewrapSandbox({ tmpRoot: tempDir(), killGraceMs: KILL_GRACE_MS });
+    sandbox = createBubblewrapSandbox({ tmpRoot: tempDir(), killGraceMs: KILL_GRACE_MS, journal: createPlaceholderJournal(path.join(tempDir(), 'journal')) });
   });
 
   afterEach(async () => {

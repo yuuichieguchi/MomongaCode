@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { EMPTY_FILE_RULES, fileRuleFingerprint } from '@momonga/foundation';
+import { EMPTY_PROTECTED_SET, fileRuleFingerprint } from '@momonga/foundation';
 import { fileRuleSpecsOf } from '@momonga/policy';
 import type { PermissionRule } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
@@ -60,7 +60,7 @@ describe('the harness batch keeps the R1a fingerprint with the protected set add
     const rules = [ruleFor(harness.layout)('deny', 'Read(.env)')];
     const batch = harness.input(await toolSetOf(), [], { rules });
     const roots = [harness.layout.project];
-    expect(batch.sandboxPolicy.protectedSet).toEqual({ roots: [], paths: [], lexicalPaths: [], literals: [], names: [], patterns: EMPTY_FILE_RULES, issues: [] });
+    expect(batch.sandboxPolicy.protectedSet).toEqual(EMPTY_PROTECTED_SET);
     expect(batch.sandboxPolicy.fileRules.fingerprint).toBe(fileRuleFingerprint(fileRuleSpecsOf(rules, roots), roots, null));
   });
 });

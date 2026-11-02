@@ -1,3 +1,4 @@
+import os from 'node:os';
 import { GIT_LISTING_SPECS, GIT_OPTION_TABLES, commandSpecsFor } from '@momonga/policy';
 import type { CommandSpecs } from '@momonga/policy';
 
@@ -6,9 +7,30 @@ type Option = Spec['options'][number];
 
 const DISQUALIFYING: ReadonlySet<string> = new Set(['write', 'exec', 'opens-path', 'sensitive', 'cwd', 'root', 'delete', 'symlink-create', 'follows-symlinks']);
 
-const STATUS_ONLY: readonly RegExp[] = [/^ps( |$)/, /^time /, /^sort (-R|--random-sort)( |$)/, /^file (-D|--debug)( |$)/, /^git rev-parse --(before|after|since|until)=/];
+const STATUS_ONLY: readonly RegExp[] = [/^time /, /^sort (-R|--random-sort)( |$)/, /^file (-D|--debug)( |$)/, /^git rev-parse --(before|after|since|until)=/];
+
+const NAMESPACE_BOUND: readonly RegExp[] = [/^ps( |$)/];
 
 export const outputDiffersByNature = (command: string): boolean => STATUS_ONLY.some((pattern) => pattern.test(command));
+
+export const seesOnlyItsOwnNamespace = (command: string): boolean => NAMESPACE_BOUND.some((pattern) => pattern.test(command));
+
+const FILESYSTEM_COUNTER_LINE = /^\s*(Blocks|Inodes): /;
+
+const FILESYSTEM_STATUS = /^stat (-f|--file-system)( |$)/;
+
+const DEBUG_OUTPUT = /^file (-d|--debug)( |$)/;
+
+const HEAP_ADDRESS = /0x[0-9a-f]{6,}/g;
+
+export const normalised = (command: string, output: string): string => {
+  if (DEBUG_OUTPUT.test(command)) return output.replace(HEAP_ADDRESS, '0xADDRESS');
+  if (FILESYSTEM_STATUS.test(command)) return output.split('\n').filter((line) => !FILESYSTEM_COUNTER_LINE.test(line)).join('\n');
+  return output;
+};
+
+export const exitStatusOf = (done: { status: number | null; signal: NodeJS.Signals | null }): number | null =>
+  done.signal === null ? done.status : 128 + (os.constants.signals[done.signal] as number);
 
 const NEVER_EXITS: ReadonlySet<string> = new Set(['tail -f', 'tail -F', 'tail --follow', 'tail --retry']);
 

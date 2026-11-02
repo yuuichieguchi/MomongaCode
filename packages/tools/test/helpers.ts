@@ -9,7 +9,7 @@ import { computeFileRules, parseRule } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
 import type { LeaseFence, LeasedIdempotencyPort } from '@momonga/tools';
 import type { PermissionRule, RuleEffect } from '@momonga/policy';
-import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createSeatbeltSandbox, validateSandboxPolicy } from '@momonga/sandbox';
+import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, validateSandboxPolicy } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 
 const SEATBELT_PATH = '/usr/bin/sandbox-exec';
@@ -17,7 +17,7 @@ const SEATBELT_PATH = '/usr/bin/sandbox-exec';
 export const HAS_REAL_SANDBOX = (process.platform === 'darwin' && fs.existsSync(SEATBELT_PATH)) || (process.platform === 'linux' && fs.existsSync(DEFAULT_BWRAP_PATH));
 
 export const createHostSandbox = (options: { tmpRoot: string; killGraceMs: number }): Sandbox =>
-  process.platform === 'darwin' ? createSeatbeltSandbox(options) : createBubblewrapSandbox(options);
+  process.platform === 'darwin' ? createSeatbeltSandbox(options) : createBubblewrapSandbox({ ...options, journal: createPlaceholderJournal(`${options.tmpRoot}-journal`) });
 
 const cleanups: Array<() => void> = [];
 
