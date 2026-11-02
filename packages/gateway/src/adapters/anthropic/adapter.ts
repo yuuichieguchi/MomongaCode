@@ -4,27 +4,63 @@ import type {
   AdapterCompactRequest,
   AdapterCompactResult,
   AdapterContext,
+  AdapterCountTokensResult,
+  AdapterInputItem,
   AdapterRequest,
   AdapterTarget,
+  CountTokensRequest,
   StreamEvent,
 } from '@momonga/protocol';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
-import { boundedSseBytes } from '../shared/body-reading.ts';
+import { normalizeInput } from '../../core/input.ts';
+import { boundedSseBytes, readTextLimited } from '../shared/body-reading.ts';
 import { createUpstreamClassifier } from '../shared/classify.ts';
 import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
-import { StreamFailure, UpstreamProtocolError } from '../shared/failures.ts';
+import { StreamFailure, UnsupportedInputError, UpstreamProtocolError } from '../shared/failures.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
+import type { CompletionResponse } from '../shared/http-client.ts';
 import { httpErrorOf } from '../shared/http-error.ts';
-import { MAX_SSE_EVENT_BYTES } from '../shared/limits.ts';
+import { assertImageInputSupported } from '../shared/image-part.ts';
+import { MAX_SSE_EVENT_BYTES, MAX_UNARY_BODY_BYTES } from '../shared/limits.ts';
 import { ResponseEmitter } from '../shared/response-emitter.ts';
-import { ANTHROPIC_MESSAGES_PATH, ANTHROPIC_PROVIDER_LABEL, ANTHROPIC_VERSION } from './constants.ts';
+import {
+  ANTHROPIC_COUNT_TOKENS_SUBPATH,
+  ANTHROPIC_MESSAGES_PATH,
+  ANTHROPIC_PROVIDER_LABEL,
+  ANTHROPIC_VERSION,
+  MAX_PAUSE_CONTINUATIONS,
+} from './constants.ts';
 import { anthropicErrorDetail } from './errors.ts';
 import { parseAnthropicEvent } from './events.ts';
-import { buildMessagesBody } from './request.ts';
+import type { AnthropicUsageFields } from './events.ts';
+import { assertCountable, buildCountTokensBody, buildMessagesBody } from './request.ts';
+import type { AnthropicRequestBody } from './request.ts';
 import { AnthropicStreamDriver } from './stream-driver.ts';
 import type { AnthropicAdapter, AnthropicAdapterOptions } from './types.ts';
 
 const neverGuardrail = (): boolean => false;
+
+type Paused = { content: Record<string, unknown>[]; usage: AnthropicUsageFields };
+
+const countTokensOf = (text: string): number => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new UpstreamProtocolError('the upstream count_tokens reply is not valid JSON');
+  }
+  const tokens = typeof parsed === 'object' && parsed !== null ? (parsed as { input_tokens?: unknown }).input_tokens : undefined;
+  if (typeof tokens !== 'number' || !Number.isSafeInteger(tokens) || tokens < 0) {
+    throw new UpstreamProtocolError('the upstream count_tokens reply lacks a non-negative integer input_tokens');
+  }
+  return tokens;
+};
+
+const asAdapterInput = (request: CountTokensRequest): AdapterInputItem[] =>
+  normalizeInput(request.input).map((item) => {
+    if (item.type === 'compaction') throw new UnsupportedInputError('unsupported_input', 'a compaction item must be decoded before token counting', 'input');
+    return item;
+  });
 
 export const createAnthropicAdapter = (options: AnthropicAdapterOptions): AnthropicAdapter => {
   const pool = createEndpointPool({ label: ANTHROPIC_PROVIDER_LABEL, unixPath: ANTHROPIC_MESSAGES_PATH, urlSuffix: ANTHROPIC_MESSAGES_PATH });
@@ -32,71 +68,127 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
   let closing: Promise<void> | undefined;
   let closed = false;
 
-  const maxTokensOf = async (target: AdapterTarget): Promise<number> => (await options.capabilities(target)).maxOutputTokens;
+  const headersFor = (apiKey: string, accept: string): Record<string, string> => ({
+    'content-type': 'application/json',
+    accept,
+    'x-api-key': apiKey,
+    'anthropic-version': ANTHROPIC_VERSION,
+  });
 
-  async function* create(request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
+  async function* readSegment(response: CompletionResponse, driver: AnthropicStreamDriver, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
+    try {
+      for await (const message of decodeSse(boundedSseBytes(response.body, MAX_SSE_EVENT_BYTES))) {
+        ctx.signal.throwIfAborted();
+        for (const event of driver.accept(parseAnthropicEvent(message.data))) {
+          ctx.signal.throwIfAborted();
+          yield event;
+        }
+        if (driver.concluded) return;
+      }
+      for (const event of driver.end()) {
+        ctx.signal.throwIfAborted();
+        yield event;
+      }
+    } catch (error) {
+      if (!(error instanceof UpstreamProtocolError) || !driver.hasStarted) throw error;
+      for (const event of driver.fail(error)) {
+        ctx.signal.throwIfAborted();
+        yield event;
+      }
+    }
+  }
+
+  async function* stream(request: AdapterRequest, ctx: AdapterContext, cacheBreakpoints: boolean): AsyncGenerator<StreamEvent> {
     if (closed) throw new Error('the anthropic adapter is closed');
-    const body = buildMessagesBody(request, await maxTokensOf(ctx.target));
+    const capabilities = await options.capabilities(ctx.target);
+    assertImageInputSupported(request.input, capabilities);
+    const base = buildMessagesBody(request, capabilities.maxOutputTokens, { cacheBreakpoints });
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     try {
       const endpoint = await options.resolveEndpoint(ctx.target);
       const apiKey = await options.apiKey(ctx.target, signal);
-      const response = await pool.clientFor(endpoint).post({
-        headers: {
-          'content-type': 'application/json',
-          accept: 'text/event-stream',
-          'x-api-key': apiKey,
-          'anthropic-version': ANTHROPIC_VERSION,
-        },
-        body: JSON.stringify(body),
-        signal,
-      });
-      if (response.status !== 200) throw await httpErrorOf(response, options.clock, anthropicErrorDetail, neverGuardrail);
-
-      const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request });
-      const driver = new AnthropicStreamDriver(emitter);
-      try {
-        for await (const message of decodeSse(boundedSseBytes(response.body, MAX_SSE_EVENT_BYTES))) {
-          ctx.signal.throwIfAborted();
-          for (const event of driver.accept(parseAnthropicEvent(message.data))) {
+      let emitter: ResponseEmitter | undefined;
+      let paused: Paused | undefined;
+      for (let continuation = 0; ; continuation += 1) {
+        const body: AnthropicRequestBody =
+          paused === undefined ? base : { ...base, messages: [...base.messages, { role: 'assistant', content: paused.content }] };
+        const response = await pool.clientFor(endpoint).post({ headers: headersFor(apiKey, 'text/event-stream'), body: JSON.stringify(body), signal });
+        if (response.status !== 200) throw await httpErrorOf(response, options.clock, anthropicErrorDetail, neverGuardrail);
+        emitter ??= new ResponseEmitter({ clock: options.clock, model: request.model, request });
+        const driver = new AnthropicStreamDriver(emitter, paused === undefined ? undefined : { usage: paused.usage });
+        yield* readSegment(response, driver, ctx);
+        if (!driver.paused) return;
+        if (continuation >= MAX_PAUSE_CONTINUATIONS) {
+          for (const event of driver.fail({
+            code: 'pause_turn_limit_exceeded',
+            errorType: 'model_error',
+            message: `the upstream paused the turn more than ${MAX_PAUSE_CONTINUATIONS} times in a row`,
+          })) {
             ctx.signal.throwIfAborted();
             yield event;
           }
-          if (driver.terminated) return;
+          return;
         }
-        for (const event of driver.end()) {
-          ctx.signal.throwIfAborted();
-          yield event;
-        }
-      } catch (error) {
-        if (!(error instanceof UpstreamProtocolError) || !driver.hasStarted) throw error;
-        for (const event of driver.fail(error)) {
-          ctx.signal.throwIfAborted();
-          yield event;
-        }
+        paused = { content: [...(paused?.content ?? []), ...driver.pausedContent()], usage: driver.accumulatedUsage() };
       }
     } finally {
       upstream.abort();
     }
   }
 
+  const create = (request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> => stream(request, ctx, true);
+
+  const countTokens = async (request: CountTokensRequest, ctx: AdapterContext): Promise<AdapterCountTokensResult> => {
+    if (closed) throw new Error('the anthropic adapter is closed');
+    const capabilities = await options.capabilities(ctx.target);
+    const input = asAdapterInput(request);
+    assertImageInputSupported(input, capabilities);
+    const body = buildCountTokensBody({
+      model: request.model,
+      input,
+      ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
+      ...(request.tools === undefined ? {} : { tools: request.tools }),
+      ...(request.tool_choice === undefined ? {} : { tool_choice: request.tool_choice }),
+    });
+    assertCountable(body);
+    const upstream = new AbortController();
+    const signal = AbortSignal.any([ctx.signal, upstream.signal]);
+    try {
+      const endpoint = await options.resolveEndpoint(ctx.target);
+      const apiKey = await options.apiKey(ctx.target, signal);
+      const response = await pool.clientFor(endpoint).post({
+        headers: headersFor(apiKey, 'application/json'),
+        body: JSON.stringify(body),
+        signal,
+        subpath: ANTHROPIC_COUNT_TOKENS_SUBPATH,
+      });
+      if (response.status !== 200) throw await httpErrorOf(response, options.clock, anthropicErrorDetail, neverGuardrail);
+      const { text, truncated } = await readTextLimited(response.body, MAX_UNARY_BODY_BYTES);
+      if (truncated) throw new UpstreamProtocolError(`the upstream count_tokens reply exceeds ${MAX_UNARY_BODY_BYTES} bytes`);
+      return { input_tokens: countTokensOf(text), method: 'exact', error_bound: 0 };
+    } finally {
+      upstream.abort();
+    }
+  };
+
   const compact = async (request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult> => {
-    const cap = request.momonga?.max_summary_tokens ?? summaryTokenCapFor(await options.capabilities(ctx.target));
+    const capabilities = await options.capabilities(ctx.target);
+    const cap = request.momonga?.max_summary_tokens ?? summaryTokenCapFor(capabilities);
     const summaryRequest = summaryRequestOf(request, cap);
-    for await (const event of create(summaryRequest, ctx)) {
+    for await (const event of stream(summaryRequest, ctx, false)) {
       const collected = summaryOfTerminal(event, cap);
       if (collected === undefined) continue;
       const usage =
         collected.usage ??
-        estimatedUsage(wireTokensOf(buildMessagesBody(summaryRequest, cap)), tokensForText(collected.summary));
+        estimatedUsage(wireTokensOf(buildMessagesBody(summaryRequest, cap, { cacheBreakpoints: false })), tokensForText(collected.summary));
       return { summary: collected.summary, usage };
     }
     throw new StreamFailure('upstream_protocol_error', 'model_error', 'the upstream ended without a terminal event');
   };
 
-  const renderCompactWire = (request: AdapterCompactRequest, target: AdapterTarget, cap: number): Record<string, unknown> => {
-    const { model: _model, stream: _stream, max_tokens: _maxTokens, ...wire } = buildMessagesBody(summaryRequestOf(request, cap), cap);
+  const renderCompactWire = (request: AdapterCompactRequest, _target: AdapterTarget, cap: number): Record<string, unknown> => {
+    const { model: _model, stream: _stream, max_tokens: _maxTokens, ...wire } = buildMessagesBody(summaryRequestOf(request, cap), cap, { cacheBreakpoints: false });
     return wire;
   };
 
@@ -104,6 +196,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
     kind: ANTHROPIC_PROVIDER_LABEL,
     capabilities: (target) => options.capabilities(target),
     create,
+    countTokens,
     compact,
     renderCompactWire,
     classify: createUpstreamClassifier(ANTHROPIC_PROVIDER_LABEL),

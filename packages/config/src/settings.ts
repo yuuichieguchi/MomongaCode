@@ -60,8 +60,7 @@ export type ChatCompletionsTarget = {
   admissionTimeoutMs?: number;
 };
 
-export type RemoteTargetCapabilities = Pick<TargetCapabilities, 'contextWindow' | 'maxOutputTokens'> &
-  Partial<Omit<TargetCapabilities, 'imageInput'>>;
+export type RemoteTargetCapabilities = Pick<TargetCapabilities, 'contextWindow' | 'maxOutputTokens'> & Partial<TargetCapabilities>;
 
 export type OpenResponsesTarget = {
   adapter: 'open-responses';

@@ -53,7 +53,7 @@ describe('anthropic target', () => {
         imageInput: false,
         parallelToolCalls: true,
         schemaDialect: 'json-schema-2020-12',
-        tokenCounting: 'estimated',
+        tokenCounting: 'exact',
         usageReported: true,
         source: 'config',
         maxConcurrency: 4,
@@ -91,8 +91,14 @@ describe('anthropic target', () => {
     await expectRejected({ claude: anthropicTarget({ capabilities: { maxOutputTokens: 8192 } }) });
   });
 
-  it('rejects a declared imageInput, which the adapter does not implement', async () => {
-    await expectRejected({ claude: anthropicTarget({ capabilities: { ...CAPABILITIES, imageInput: true } }) }, 'imageInput');
+  it('accepts a declared imageInput', async () => {
+    const { result } = await loadWithTargets({ claude: anthropicTarget({ capabilities: { ...CAPABILITIES, imageInput: true } }) });
+    expect(result.settings.models.targets['claude']).toMatchObject({ capabilities: { imageInput: true } });
+  });
+
+  it('accepts a declared imageInput on an open-responses target', async () => {
+    const { result } = await loadWithTargets({ local: openResponsesTarget({ capabilities: { ...CAPABILITIES, imageInput: true } }) });
+    expect(result.settings.models.targets['local']).toMatchObject({ capabilities: { imageInput: true } });
   });
 
   it('rejects a plain http baseUrl for a non-loopback host', async () => {

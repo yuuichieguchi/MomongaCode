@@ -1,8 +1,52 @@
-import type { FakeSseFrame, FakeUpstreamReply, FakeUpstreamServer } from './fake-sse-upstream.ts';
+import type { FakeSseFrame, FakeUpstreamReply, FakeUpstreamServer, RecordedUpstreamRequest } from './fake-sse-upstream.ts';
 import { startFakeSseUpstream } from './fake-sse-upstream.ts';
 
 export const FAKE_ANTHROPIC_VERSION = '2023-06-01';
 export const FAKE_ANTHROPIC_PATH = '/v1/messages';
+export const FAKE_ANTHROPIC_COUNT_TOKENS_PATH = '/v1/messages/count_tokens';
+
+const COUNT_TOKENS_FIELDS: ReadonlySet<string> = new Set(['messages', 'model', 'system', 'thinking', 'tool_choice', 'tools']);
+const MAX_CACHE_BREAKPOINTS = 4;
+
+const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const blocksOf = (body: Record<string, unknown>): Record<string, unknown>[] => {
+  const nested = (value: unknown): Record<string, unknown>[] =>
+    Array.isArray(value) ? value.filter(isObject).flatMap((block) => [block, ...nested(block['content'])]) : [];
+  const messages = Array.isArray(body['messages']) ? body['messages'].filter(isObject) : [];
+  return [
+    ...(Array.isArray(body['tools']) ? body['tools'].filter(isObject) : []),
+    ...nested(body['system']),
+    ...messages.flatMap((message) => nested(message['content'])),
+  ];
+};
+
+const invalidRequest = (message: string): FakeUpstreamReply => anthropicErrorReply(400, 'invalid_request_error', message);
+
+const validateAnthropicRequest = (request: RecordedUpstreamRequest): FakeUpstreamReply | undefined => {
+  const { body } = request;
+  if (!isObject(body)) return invalidRequest('the request body must be a JSON object');
+  const counting = request.path === FAKE_ANTHROPIC_COUNT_TOKENS_PATH;
+  if (typeof body['model'] !== 'string') return invalidRequest('model: Field required');
+  if (!Array.isArray(body['messages'])) return invalidRequest('messages: Field required');
+  if (counting) {
+    const extra = Object.keys(body).find((key) => !COUNT_TOKENS_FIELDS.has(key));
+    if (extra !== undefined) return invalidRequest(`${extra}: Extra inputs are not permitted`);
+  } else if (typeof body['max_tokens'] !== 'number') {
+    return invalidRequest('max_tokens: Field required');
+  }
+  if (body['system'] !== undefined && typeof body['system'] !== 'string' && !Array.isArray(body['system'])) {
+    return invalidRequest('system: must be a string or an array of text blocks');
+  }
+  const blocks = blocksOf(body);
+  if (blocks.filter((block) => block['cache_control'] !== undefined).length > MAX_CACHE_BREAKPOINTS) {
+    return invalidRequest(`A maximum of ${MAX_CACHE_BREAKPOINTS} blocks with cache_control may be provided`);
+  }
+  if (counting && blocks.some((block) => block['type'] === 'image' && isObject(block['source']) && block['source']['type'] === 'url')) {
+    return invalidRequest('image blocks with a url source cannot be counted; send the image as base64');
+  }
+  return undefined;
+};
 
 export type FakeAnthropicOptions = {
   apiKey: string;
@@ -26,6 +70,8 @@ export const anthropicErrorReply = (status: number, type: string, message: strin
 export const startFakeAnthropic = (options: FakeAnthropicOptions): Promise<FakeUpstreamServer> =>
   startFakeSseUpstream({
     path: FAKE_ANTHROPIC_PATH,
+    extraPaths: [FAKE_ANTHROPIC_COUNT_TOKENS_PATH],
+    validate: validateAnthropicRequest,
     ...(options.script === undefined ? {} : { script: options.script }),
     ...(options.respond === undefined ? {} : { respond: options.respond }),
     ...(options.socketPath === undefined ? {} : { socketPath: options.socketPath }),
@@ -96,3 +142,12 @@ export const anthropicTextReply = (chunks: readonly string[], usage?: AnthropicU
 
 export const anthropicToolUseReply = (id: string, name: string, jsonFragments: readonly string[]): FakeUpstreamReply =>
   anthropicStream([anthropicMessageStart(), ...anthropicToolUseBlock(0, id, name, jsonFragments), ...anthropicMessageEnd('tool_use')]);
+
+export const anthropicCountTokensReply = (inputTokens: number): FakeUpstreamReply => ({ kind: 'json', body: { input_tokens: inputTokens } });
+
+export const anthropicBlockStart = (index: number, contentBlock: Record<string, unknown>): FakeSseFrame =>
+  frame('content_block_start', { index, content_block: contentBlock });
+
+export const anthropicBlockDelta = (index: number, delta: Record<string, unknown>): FakeSseFrame => frame('content_block_delta', { index, delta });
+
+export const anthropicBlockStop = (index: number): FakeSseFrame => frame('content_block_stop', { index });

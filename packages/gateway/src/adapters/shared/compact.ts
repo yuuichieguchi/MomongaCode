@@ -1,7 +1,8 @@
 import { SUMMARY_ACCEPT_RATIO } from '@momonga/protocol';
-import type { AdapterCompactRequest, AdapterInputItem, AdapterRequest, ResponseResource, StreamEvent } from '@momonga/protocol';
+import type { AdapterCompactRequest, AdapterInputItem, AdapterRequest, ContentPart, InputImagePart, ResponseResource, StreamEvent } from '@momonga/protocol';
 import { tokensForText } from '../../core/estimate.ts';
 import { CompactionReplyError, StreamFailure } from './failures.ts';
+import { hasImagePart, isImagePart } from './image-part.ts';
 import { escapeAttribute, neutralizeMarkup, textOfContent } from './input-text.ts';
 
 export const COMPACTION_INSTRUCTIONS_MARKER =
@@ -26,32 +27,73 @@ const instructionsFor = (cap: number, retainsUserRequest: boolean): string =>
     'If an <earlier_summary> element is present, merge it into your note.',
   ].join('\n');
 
-const elementOf = (item: AdapterInputItem): string | undefined => {
+type Piece = string | InputImagePart;
+
+const textRun = (parts: readonly ContentPart[]): string => neutralizeMarkup(textOfContent(parts));
+
+const piecesOfContent = (content: string | readonly ContentPart[]): Piece[] => {
+  if (!hasImagePart(content)) return [neutralizeMarkup(textOfContent(content))];
+  const pieces: Piece[] = [];
+  let run: ContentPart[] = [];
+  const flush = (): void => {
+    if (run.length > 0) pieces.push(textRun(run));
+    run = [];
+  };
+  for (const part of content as readonly ContentPart[]) {
+    if (isImagePart(part)) {
+      flush();
+      pieces.push(part);
+    } else {
+      run.push(part);
+    }
+  }
+  flush();
+  return pieces;
+};
+
+const elementOf = (item: AdapterInputItem): Piece[] | undefined => {
   switch (item.type) {
     case 'reasoning':
       return undefined;
     case 'compaction_summary':
-      return `<earlier_summary>${neutralizeMarkup(item.summary)}</earlier_summary>`;
+      return [`<earlier_summary>${neutralizeMarkup(item.summary)}</earlier_summary>`];
     case 'function_call':
-      return `<tool_call id="${escapeAttribute(item.call_id)}" name="${escapeAttribute(item.name)}">${neutralizeMarkup(item.arguments)}</tool_call>`;
+      return [`<tool_call id="${escapeAttribute(item.call_id)}" name="${escapeAttribute(item.name)}">${neutralizeMarkup(item.arguments)}</tool_call>`];
     case 'function_call_output':
-      return `<tool_result id="${escapeAttribute(item.call_id)}">${neutralizeMarkup(textOfContent(item.output))}</tool_result>`;
+      return [`<tool_result id="${escapeAttribute(item.call_id)}">`, ...piecesOfContent(item.output), '</tool_result>'];
     case 'message':
       if (item.role === 'system') return undefined;
-      return `<item role="${item.role}">${neutralizeMarkup(textOfContent(item.content))}</item>`;
+      return [`<item role="${item.role}">`, ...piecesOfContent(item.content), '</item>'];
   }
+};
+
+const coalesced = (pieces: readonly Piece[]): Piece[] =>
+  pieces.reduce<Piece[]>((merged, piece) => {
+    const last = merged.at(-1);
+    if (typeof piece === 'string' && typeof last === 'string') merged[merged.length - 1] = `${last}${piece}`;
+    else merged.push(piece);
+    return merged;
+  }, []);
+
+const transcriptOf = (items: readonly AdapterInputItem[]): string | ContentPart[] => {
+  const elements = items.flatMap((item) => {
+    const element = elementOf(item);
+    return element === undefined ? [] : [element];
+  });
+  const pieces = coalesced(['<transcript>', ...elements.flatMap((element) => ['\n', ...element]), `\n</transcript>\n${TRANSCRIPT_REQUEST}`]);
+  return pieces.every((piece) => typeof piece === 'string')
+    ? pieces.join('')
+    : pieces.map((piece): ContentPart => (typeof piece === 'string' ? { type: 'input_text', text: piece } : piece));
 };
 
 export const summaryRequestOf = (request: AdapterCompactRequest, cap: number): AdapterRequest => {
   const fixed = instructionsFor(cap, request.momonga?.retains_user_request === true);
   const agent = request.instructions;
   const instructions = agent === undefined || agent === null || agent === '' ? fixed : `${fixed}\n\n${AGENT_CONTEXT_LABEL}\n${agent}`;
-  const elements = request.input.flatMap((item) => elementOf(item) ?? []);
-  const transcript = `${['<transcript>', ...elements, '</transcript>'].join('\n')}\n${TRANSCRIPT_REQUEST}`;
   return {
     model: request.model,
     instructions,
-    input: [{ type: 'message', role: 'user', content: transcript }],
+    input: [{ type: 'message', role: 'user', content: transcriptOf(request.input) }],
     max_output_tokens: cap,
   };
 };

@@ -18,6 +18,8 @@ import type { Clock, JsonLogger, MomongaPaths, ReadyFields, SecretStore, TextStr
 import { closeTelemetry, createTelemetry, exportersFor, openTraceStore } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import type { AdapterTarget, Capabilities, ProviderAdapter } from '@momonga/protocol';
+import { createSecretResolver } from './secrets.ts';
+import type { SecretResolver } from './secrets.ts';
 import { createAnthropicAdapter } from './adapters/anthropic/adapter.ts';
 import { createChatCompletionsAdapter } from './adapters/chat-completions/adapter.ts';
 import { createOpenResponsesAdapter } from './adapters/open-responses/adapter.ts';
@@ -134,35 +136,38 @@ const endpointOf = (target: RemoteTarget): UpstreamEndpoint => {
 
 const capabilitiesOf = (target: RemoteTarget): Capabilities => ({ ...target.capabilities, toolCalling: target.toolCalling });
 
-type ResolvedSecrets = { values: ReadonlyMap<string, string>; failures: ReadonlyMap<string, Error> };
+const startupFailureOf = (error: unknown): Error | undefined =>
+  error instanceof SecretUnavailableError || error instanceof SecretEmptyError ? error : undefined;
 
-const resolveSecrets = async (store: SecretStore, names: readonly string[], signal: AbortSignal): Promise<ResolvedSecrets> => {
-  const values = new Map<string, string>();
+const warmSecrets = async (resolver: SecretResolver, names: readonly string[], signal: AbortSignal): Promise<ReadonlyMap<string, Error>> => {
   const failures = new Map<string, Error>();
   for (const name of names) {
     try {
-      values.set(name, await store.read(name, signal));
+      await resolver.read(name, signal);
     } catch (error) {
-      if (!(error instanceof SecretUnavailableError || error instanceof SecretEmptyError)) throw error;
-      failures.set(name, error);
+      const failure = startupFailureOf(error);
+      if (failure === undefined) throw error;
+      failures.set(name, failure);
     }
   }
-  return { values, failures };
+  return failures;
 };
 
 const apiKeyReader = (
   env: StartGatewayProcessOptions['env'],
-  secrets: ResolvedSecrets,
+  resolver: SecretResolver,
   target: Pick<RemoteTarget, 'apiKeyEnv' | 'apiKeySecret'>,
-): ((target: AdapterTarget) => Promise<string | undefined>) => {
+): ((target: AdapterTarget, signal: AbortSignal) => Promise<string | undefined>) => {
   const { apiKeyEnv, apiKeySecret } = target;
-  return async (_target) => {
+  return async (_target, signal) => {
     if (apiKeySecret !== undefined) {
-      const failure = secrets.failures.get(apiKeySecret);
-      if (failure !== undefined) throw secretUnavailableError(apiKeySecret, failure);
-      const value = secrets.values.get(apiKeySecret);
-      if (value === undefined) throw new Error(`the secret "${apiKeySecret}" was not resolved at startup`);
-      return value;
+      try {
+        return await resolver.read(apiKeySecret, signal);
+      } catch (error) {
+        const failure = startupFailureOf(error);
+        if (failure === undefined) throw error;
+        throw secretUnavailableError(apiKeySecret, failure);
+      }
     }
     if (apiKeyEnv === undefined) return undefined;
     const value = env[apiKeyEnv];
@@ -171,8 +176,8 @@ const apiKeyReader = (
   };
 };
 
-const requiredKey = async (read: ReturnType<typeof apiKeyReader>, target: AdapterTarget): Promise<string> => {
-  const key = await read(target);
+const requiredKey = async (read: ReturnType<typeof apiKeyReader>, target: AdapterTarget, signal: AbortSignal): Promise<string> => {
+  const key = await read(target, signal);
   if (key === undefined) throw new Error(`the anthropic target "${target.name}" has no credential reference`);
   return key;
 };
@@ -381,11 +386,9 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const referencedSecrets = secretNames(settings);
     const secretStore =
       options.secretStore ?? createKeychainSecretStore(options.execWithStdin ?? createExecWithStdin(childEnv));
-    const secrets =
-      referencedSecrets.length === 0
-        ? { values: new Map<string, string>(), failures: new Map<string, Error>() }
-        : await resolveSecrets(secretStore, referencedSecrets, signal ?? new AbortController().signal);
-    for (const [name, failure] of secrets.failures) logger.warn(`secret ${name} is unavailable: ${failure.message}`);
+    const secretResolver = createSecretResolver(secretStore);
+    const secretFailures = await warmSecrets(secretResolver, referencedSecrets, signal ?? new AbortController().signal);
+    for (const [name, failure] of secretFailures) logger.warn(`secret ${name} is unavailable: ${failure.message}`);
     signal?.throwIfAborted();
     for (const [name, target] of targets) {
       signal?.throwIfAborted();
@@ -394,7 +397,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         adapters[name] = await createFmAdapter(name, target, fmContext, clock);
         continue;
       }
-      const readKey = apiKeyReader(options.env, secrets, target);
+      const readKey = apiKeyReader(options.env, secretResolver, target);
       const common = { resolveEndpoint: async () => endpointOf(target), capabilities: async () => capabilitiesOf(target), clock };
       switch (target.adapter) {
         case 'chat-completions':
@@ -404,7 +407,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
           adapters[name] = createOpenResponsesAdapter({ ...common, apiKey: readKey });
           break;
         case 'anthropic':
-          adapters[name] = createAnthropicAdapter({ ...common, apiKey: (adapterTarget) => requiredKey(readKey, adapterTarget) });
+          adapters[name] = createAnthropicAdapter({ ...common, apiKey: (adapterTarget, signal) => requiredKey(readKey, adapterTarget, signal) });
           break;
       }
     }
@@ -413,7 +416,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const gateway = await createGateway({
       config: gatewayConfigOf(settings.models.targets, settings.models.aliases),
       adapters,
-      credentials: credentialValuesOf(options.env, credentialEnvNames(settings), secrets.values, (message) => logger.warn(message)),
+      credentials: credentialValuesOf(options.env, credentialEnvNames(settings), secretResolver.resolved(), (message) => logger.warn(message)),
       clock,
       timers,
       dbPath: paths.databases.gateway,
@@ -423,6 +426,9 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       version: options.version,
       onError: (error) => logger.error('unhandled gateway error', { err: toError(error) }),
       onFatal: latchFatal,
+    });
+    secretResolver.onResolved((name, value) => {
+      for (const credential of credentialValuesOf({}, [], new Map([[name, value]]), (message) => logger.warn(message))) gateway.addCredential(credential);
     });
     cleanups.splice(cleanups.indexOf(closeAdapters), 1);
     cleanups.push(() => (abortRequested ? gateway.abort() : gateway.close()));

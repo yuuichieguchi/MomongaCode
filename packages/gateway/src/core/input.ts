@@ -1,4 +1,4 @@
-import type { AdapterInputItem, InputItem } from '@momonga/protocol';
+import type { AdapterInputItem, ContentPart, InputItem } from '@momonga/protocol';
 import type { CompactionCodec } from './compaction.ts';
 import { invalidRequest, notFound } from './errors.ts';
 import type { GatewayStore } from './store.ts';
@@ -37,3 +37,13 @@ export const resolveInput = (
   });
   return { stored, forAdapter };
 };
+
+const partsHaveImage = (content: string | readonly ContentPart[]): boolean =>
+  typeof content !== 'string' && content.some((part) => part.type === 'input_image');
+
+export const inputHasImages = (input: readonly (AdapterInputItem | InputItem)[]): boolean =>
+  input.some((item) => {
+    if (item.type === 'message') return partsHaveImage(item.content);
+    if (item.type === 'function_call_output') return partsHaveImage(item.output);
+    return false;
+  });

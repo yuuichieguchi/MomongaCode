@@ -91,12 +91,13 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
   const closeController = new AbortController();
   const forceCloseController = new AbortController();
   try {
+    const redactor = createRedactor({ credentials: options.credentials });
     const services: Services = {
       config: options.config,
       clock,
       timers,
       random: options.random ?? Math.random,
-      router: createRouter({ config: options.config, adapters: options.adapters, clock, timers, redactor: createRedactor({ credentials: options.credentials }) }),
+      router: createRouter({ config: options.config, adapters: options.adapters, clock, timers, redactor }),
       store,
       codec: createCompactionCodec(options.hmacKey),
       telemetry: options.telemetry,
@@ -177,6 +178,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       get abandonedRuns() {
         return abandonedRuns;
       },
+      addCredential: (credential) => redactor.add(credential),
       close,
       abort: () => {
         requestAbort();

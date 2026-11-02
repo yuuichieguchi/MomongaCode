@@ -20,7 +20,7 @@ import type { BreakerVerdict } from './breaker-verdict.ts';
 import { armDeadline } from './deadline.ts';
 import { GatewayError, isRunCancelled } from './errors.ts';
 import { estimateInputTokens, estimateOutputTokens, estimatedUsage } from './estimate.ts';
-import { resolveInput } from './input.ts';
+import { inputHasImages, resolveInput } from './input.ts';
 import type { ResolvedInput } from './input.ts';
 import { baseResource } from './resource.ts';
 import { UpstreamFailure, emptyStreamFailure, failureFrom, runWithRetry } from './retry.ts';
@@ -396,7 +396,7 @@ async function* relay(
 export async function* executeResponse(services: Services, job: ResponseJob, control: RunControl): AsyncGenerator<StreamEvent> {
   const { signal } = control;
   const resolved = resolveInput(services.store, services.codec, job.body.previous_response_id, job.clientInput);
-  const candidates = await services.router.candidates(job.alias, { tools: (job.body.tools?.length ?? 0) > 0 });
+  const candidates = await services.router.candidates(job.alias, { tools: (job.body.tools?.length ?? 0) > 0, images: inputHasImages(resolved.forAdapter) });
   const disarm = armDeadline(services, job.deadlineAt, control.abort);
   try {
     const outcome = await runWithRetry({

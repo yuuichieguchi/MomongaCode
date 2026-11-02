@@ -5,6 +5,7 @@ const TRUNCATION_SUFFIX = ' …[truncated]';
 
 export type Redactor = {
   text(input: string): string;
+  add(credential: string): void;
 };
 
 export type RedactorOptions = {
@@ -43,7 +44,12 @@ const capped = (input: string): string => {
 };
 
 export const createRedactor = (options: RedactorOptions): Redactor => {
-  const exactValues = exactValuesOf(options.credentials);
+  const credentials = [...options.credentials];
+  let exactValues = exactValuesOf(credentials);
+  const add = (credential: string): void => {
+    credentials.push(credential);
+    exactValues = exactValuesOf(credentials);
+  };
   const text = (input: string): string => {
     let output = input;
     for (const value of exactValues) output = output.split(value).join(REDACTED_MARKER);
@@ -59,5 +65,5 @@ export const createRedactor = (options: RedactorOptions): Redactor => {
     );
     return capped(output);
   };
-  return { text };
+  return { text, add };
 };

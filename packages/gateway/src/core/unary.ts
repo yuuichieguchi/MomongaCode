@@ -13,10 +13,10 @@ import type {
   LenientItems,
 } from '@momonga/protocol';
 import { armDeadline, parseDeadlineHeader, withDeadline } from './deadline.ts';
-import { errorBoundFor, estimateInputTokens, wireTokensOf } from './estimate.ts';
+import { errorBoundFor, estimateInputTokens, imageTokensOfWire, wireTokensOf } from './estimate.ts';
 import { ClientDisconnectedError, GatewayError, detachedRunExpiredError, gatewayErrorFromBody, gatewayClosedError, invalidRequest, isRunCancelled, runCancelledError } from './errors.ts';
 import { parseIdempotencyKey, reusedError } from './idempotency.ts';
-import { normalizeInput, resolveInput } from './input.ts';
+import { inputHasImages, normalizeInput, resolveInput } from './input.ts';
 import { failureFrom, runWithRetry } from './retry.ts';
 import type { RetryOutcome } from './retry.ts';
 import type { TargetRuntime } from './router.ts';
@@ -113,7 +113,10 @@ const countWire = async (
     ),
   );
   outcome.target.breaker.onSuccess();
-  return outcome.value;
+  const imageTokens = imageTokensOfWire(wire);
+  if (imageTokens === 0) return outcome.value;
+  const total = outcome.value.input_tokens + imageTokens;
+  return { input_tokens: total, method: 'estimated', error_bound: errorBoundFor(total) };
 };
 
 const countTokens = async (
@@ -128,6 +131,7 @@ const countTokens = async (
   const target = services.router.targetsOf(request.model)[0];
   if (target === undefined) throw new Error(`model alias "${request.model}" has no targets`);
   const resolved = resolveInput(services.store, services.codec, undefined, normalizeInput(request.input));
+  await services.router.narrow(request.model, [target], { images: inputHasImages(resolved.forAdapter) });
   const renderWire = target.adapter.renderWire;
   if (renderWire !== undefined) {
     const lenient = request.momonga?.lenient_items;
@@ -177,7 +181,8 @@ const compactOnce = async (
 ): Promise<CompactResource> => {
   const targets = services.router.targetsOf(request.model);
   const resolved = resolveInput(services.store, services.codec, request.previous_response_id, normalizeInput(request.input));
-  const supporting = targets.filter((target) => target.adapter.compact !== undefined);
+  const eligible = await services.router.narrow(request.model, targets, { images: inputHasImages(resolved.forAdapter) });
+  const supporting = eligible.filter((target) => target.adapter.compact !== undefined);
   if (supporting.length === 0) {
     throw invalidRequest('capability_unsupported', `no target of model alias "${request.model}" supports compaction`, 'model');
   }

@@ -54,6 +54,7 @@ export type Gateway = {
   readonly startedAt: string;
   readonly tcpPort: number | undefined;
   readonly abandonedRuns: number;
+  addCredential(credential: string): void;
   close(): Promise<void>;
   abort(): Promise<void>;
 };

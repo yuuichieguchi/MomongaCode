@@ -1,13 +1,23 @@
-import type { StreamEvent, Usage } from '@momonga/protocol';
+import type { ErrorType, StreamEvent, Usage } from '@momonga/protocol';
 import { UpstreamProtocolError } from '../shared/failures.ts';
 import { MAX_TOOL_CALLS } from '../shared/limits.ts';
 import type { ResponseEmitter } from '../shared/response-emitter.ts';
+import { AssistantRecorder } from './assistant-recorder.ts';
 import type { AnthropicStreamEvent, AnthropicUsageFields } from './events.ts';
 import { streamErrorOf } from './errors.ts';
 
-type BlockState = { kind: 'text' } | { kind: 'tool'; receivedArguments: boolean } | { kind: 'ignored' };
+type BlockState = { kind: 'text' } | { kind: 'tool'; key: number; receivedArguments: boolean } | { kind: 'ignored' };
 
 const EMPTY_ARGUMENTS = '{}';
+const USAGE_KEYS = ['input_tokens', 'output_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens'] as const;
+
+const addUsage = (left: AnthropicUsageFields, right: AnthropicUsageFields): AnthropicUsageFields => {
+  const sum: AnthropicUsageFields = {};
+  for (const key of USAGE_KEYS) {
+    if (left[key] !== undefined || right[key] !== undefined) sum[key] = (left[key] ?? 0) + (right[key] ?? 0);
+  }
+  return sum;
+};
 
 const usageOf = (fields: AnthropicUsageFields): Usage | undefined => {
   if (Object.keys(fields).length === 0) return undefined;
@@ -22,23 +32,47 @@ const usageOf = (fields: AnthropicUsageFields): Usage | undefined => {
   };
 };
 
+export type Continuation = { usage: AnthropicUsageFields };
+
 export class AnthropicStreamDriver {
   private readonly emitter: ResponseEmitter;
   private readonly blocks = new Map<number, BlockState>();
-  private usage: AnthropicUsageFields = {};
+  private readonly recorder = new AssistantRecorder();
+  private readonly carriedUsage: AnthropicUsageFields;
+  private readonly resumed: boolean;
+  private segmentUsage: AnthropicUsageFields = {};
   private stopReason: string | undefined;
-  private started = false;
+  private segmentStarted = false;
+  private pausedTurn = false;
 
-  constructor(emitter: ResponseEmitter) {
+  constructor(emitter: ResponseEmitter, continuation?: Continuation) {
     this.emitter = emitter;
+    this.resumed = continuation !== undefined;
+    this.carriedUsage = continuation?.usage ?? {};
   }
 
   get hasStarted(): boolean {
-    return this.started;
+    return this.resumed || this.segmentStarted;
   }
 
   get terminated(): boolean {
     return this.emitter.terminated;
+  }
+
+  get paused(): boolean {
+    return this.pausedTurn;
+  }
+
+  get concluded(): boolean {
+    return this.emitter.terminated || this.pausedTurn;
+  }
+
+  pausedContent(): Record<string, unknown>[] {
+    return this.recorder.content();
+  }
+
+  accumulatedUsage(): AnthropicUsageFields {
+    return addUsage(this.carriedUsage, this.segmentUsage);
   }
 
   accept(event: AnthropicStreamEvent): StreamEvent[] {
@@ -46,32 +80,32 @@ export class AnthropicStreamDriver {
     try {
       this.apply(event);
     } catch (error) {
-      if (!this.started || !(error instanceof UpstreamProtocolError)) throw error;
+      if (!this.hasStarted || !(error instanceof UpstreamProtocolError)) throw error;
       this.emitter.fail(error.code, error.errorType, error.message);
     }
     return this.emitter.take();
   }
 
   end(): StreamEvent[] {
-    if (this.emitter.terminated) return this.emitter.take();
+    if (this.concluded) return this.emitter.take();
     const failure = new UpstreamProtocolError('the upstream stream ended without a message_stop event');
-    if (!this.started) throw failure;
+    if (!this.hasStarted) throw failure;
     return this.fail(failure);
   }
 
-  fail(failure: UpstreamProtocolError): StreamEvent[] {
+  fail(failure: { code: string; errorType: ErrorType; message: string }): StreamEvent[] {
     if (!this.emitter.terminated) this.emitter.fail(failure.code, failure.errorType, failure.message);
     return this.emitter.take();
   }
 
   private apply(event: AnthropicStreamEvent): void {
     if (event.type === 'error') throw streamErrorOf(event.errorType, event.message);
-    if (!this.started) {
+    if (!this.segmentStarted) {
       if (event.type === 'ping' || event.type === 'unknown') return;
       if (event.type !== 'message_start') throw new UpstreamProtocolError(`the upstream sent ${event.type} before message_start`);
-      this.started = true;
-      this.usage = { ...event.usage };
-      this.emitter.start();
+      this.segmentStarted = true;
+      this.segmentUsage = { ...event.usage };
+      if (!this.resumed) this.emitter.start();
       return;
     }
     switch (event.type) {
@@ -91,7 +125,7 @@ export class AnthropicStreamDriver {
         return;
       case 'message_delta':
         if (event.stopReason !== undefined) this.stopReason = event.stopReason;
-        this.usage = { ...this.usage, ...event.usage };
+        this.segmentUsage = { ...this.segmentUsage, ...event.usage };
         return;
       case 'message_stop':
         this.conclude();
@@ -102,6 +136,7 @@ export class AnthropicStreamDriver {
   private startBlock(event: Extract<AnthropicStreamEvent, { type: 'content_block_start' }>): void {
     if (this.blocks.has(event.index)) throw new UpstreamProtocolError(`the upstream started content block ${event.index} twice`);
     const { block } = event;
+    this.recorder.start(event.index, block);
     if (block.kind === 'text') {
       this.blocks.set(event.index, { kind: 'text' });
       if (block.text !== '') this.emitter.appendText(block.text);
@@ -110,8 +145,9 @@ export class AnthropicStreamDriver {
     if (block.kind === 'tool_use') {
       if (this.emitter.callCount >= MAX_TOOL_CALLS) throw new UpstreamProtocolError(`the upstream sent more than ${MAX_TOOL_CALLS} tool calls`);
       if (block.id === '' || block.name === '') throw new UpstreamProtocolError(`tool_use block ${event.index} lacks an id or a name`);
-      this.blocks.set(event.index, { kind: 'tool', receivedArguments: false });
-      this.emitter.beginCall(event.index, block.id, block.name);
+      const key = this.emitter.callCount;
+      this.blocks.set(event.index, { kind: 'tool', key, receivedArguments: false });
+      this.emitter.beginCall(key, block.id, block.name);
       return;
     }
     this.blocks.set(event.index, { kind: 'ignored' });
@@ -121,7 +157,8 @@ export class AnthropicStreamDriver {
     const block = this.blocks.get(event.index);
     if (block === undefined) throw new UpstreamProtocolError(`the upstream sent a delta for the unopened content block ${event.index}`);
     const { delta } = event;
-    if (delta.kind === 'other' || block.kind === 'ignored') return;
+    this.recorder.apply(event.index, delta);
+    if (delta.kind === 'other' || delta.kind === 'thinking' || delta.kind === 'signature' || delta.kind === 'citation' || block.kind === 'ignored') return;
     if (delta.kind === 'text') {
       if (block.kind !== 'text') throw new UpstreamProtocolError(`a text delta arrived for the tool_use block ${event.index}`);
       this.emitter.appendText(delta.text);
@@ -129,17 +166,18 @@ export class AnthropicStreamDriver {
     }
     if (block.kind !== 'tool') throw new UpstreamProtocolError(`an input_json delta arrived for the text block ${event.index}`);
     if (delta.partialJson !== '') block.receivedArguments = true;
-    this.emitter.appendCallArguments(event.index, delta.partialJson);
+    this.emitter.appendCallArguments(block.key, delta.partialJson);
   }
 
   private stopBlock(index: number): void {
     const block = this.blocks.get(index);
     if (block === undefined) throw new UpstreamProtocolError(`the upstream stopped the unopened content block ${index}`);
-    if (block.kind === 'tool' && !block.receivedArguments) this.emitter.appendCallArguments(index, EMPTY_ARGUMENTS);
+    if (block.kind === 'tool' && !block.receivedArguments) this.emitter.appendCallArguments(block.key, EMPTY_ARGUMENTS);
+    this.recorder.stop(index);
   }
 
   private conclude(): void {
-    const usage = usageOf(this.usage);
+    const usage = usageOf(this.accumulatedUsage());
     switch (this.stopReason) {
       case undefined:
         throw new UpstreamProtocolError('the upstream sent message_stop without a stop_reason');
@@ -147,6 +185,10 @@ export class AnthropicStreamDriver {
       case 'stop_sequence':
       case 'tool_use':
         this.emitter.complete(usage);
+        return;
+      case 'pause_turn':
+        if (this.recorder.unfinished > 0) throw new UpstreamProtocolError('the upstream paused the turn with a content block still open');
+        this.pausedTurn = true;
         return;
       case 'max_tokens':
         this.emitter.incomplete('max_output_tokens', usage);

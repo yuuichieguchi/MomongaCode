@@ -12,12 +12,9 @@ const textOfPart = (part: ContentPart): string => {
     case 'refusal':
       return part.refusal;
     case 'input_image':
+      throw new UnsupportedInputError('unsupported_input', 'an input_image part cannot appear where only text is carried', 'input');
     case 'input_file':
-      throw new UnsupportedInputError(
-        'unsupported_input',
-        `the upstream adapter does not support ${part.type} content`,
-        'input',
-      );
+      throw new UnsupportedInputError('unsupported_input', 'the upstream adapter does not support input_file content', 'input');
   }
 };
 

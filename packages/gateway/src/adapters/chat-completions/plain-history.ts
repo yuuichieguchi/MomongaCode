@@ -3,6 +3,7 @@ import { compactionSummaryMessage } from '@momonga/protocol';
 import type { AdapterInputItem } from '@momonga/protocol';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { escapeAttribute, neutralizeMarkup, textOfContent } from '../shared/input-text.ts';
+import { userContentOf } from './user-content.ts';
 import { mergeAdjacentUserMessages } from './merge-user-messages.ts';
 
 export type ChatMessage = Record<string, unknown>;
@@ -61,7 +62,7 @@ export const plainHistoryOf = (input: readonly AdapterInputItem[], options: Plai
       }
       messages.push({ role: 'user', content: toolResultBlock(item.call_id, name, textOfContent(item.output)) });
     } else if (item.role === 'user') {
-      messages.push({ role: 'user', content: textOfContent(item.content) });
+      messages.push({ role: 'user', content: userContentOf(item.content) });
     } else if (item.role === 'assistant') {
       const text = textOfContent(item.content);
       messages.push({ role: 'assistant', content: options.envelopeReplies ? finalReplyText(text) : text });
@@ -90,8 +91,10 @@ export const nativeHistoryOf = (input: readonly AdapterInputItem[]): ChatMessage
       messages.push(summaryMessageOf(item.summary));
     } else if (item.type === 'function_call_output') {
       messages.push({ role: 'tool', tool_call_id: item.call_id, content: textOfContent(item.output) });
-    } else if (item.role === 'user' || item.role === 'assistant') {
-      messages.push({ role: item.role, content: textOfContent(item.content) });
+    } else if (item.role === 'user') {
+      messages.push({ role: 'user', content: userContentOf(item.content) });
+    } else if (item.role === 'assistant') {
+      messages.push({ role: 'assistant', content: textOfContent(item.content) });
     }
   }
   flushCalls();

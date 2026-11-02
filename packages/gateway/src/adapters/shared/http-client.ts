@@ -15,6 +15,7 @@ export type CompletionPost = {
   headers: Record<string, string>;
   body: string;
   signal: AbortSignal;
+  subpath?: string;
 };
 
 type EndpointClient = {
@@ -34,19 +35,19 @@ const lowercased = (headers: Record<string, string | string[] | undefined>): Rec
 const unixClient = (socketPath: string, route: EndpointRoute): EndpointClient => {
   const client = createUdsClient(socketPath, { headersTimeoutMs: 0, bodyTimeoutMs: 0 });
   return {
-    post: (options) => client.request({ method: 'POST', path: route.unixPath, ...options }),
+    post: ({ subpath, ...options }) => client.request({ method: 'POST', path: `${route.unixPath}${subpath ?? ''}`, ...options }),
     close: () => client.close(),
   };
 };
 
 const tcpClient = (baseUrl: string, route: EndpointRoute): EndpointClient => {
   const base = new URL(baseUrl);
-  const url = new URL(`${base.pathname.replace(/\/+$/, '')}${route.urlSuffix}`, base.origin);
+  const urlFor = (subpath: string | undefined): URL => new URL(`${base.pathname.replace(/\/+$/, '')}${route.urlSuffix}${subpath ?? ''}`, base.origin);
   const agent = new Agent({ headersTimeout: 0, bodyTimeout: 0 });
   let closing: Promise<void> | undefined;
   return {
     post: async (options) => {
-      const response = await request(url, {
+      const response = await request(urlFor(options.subpath), {
         dispatcher: agent,
         method: 'POST',
         headers: options.headers,
