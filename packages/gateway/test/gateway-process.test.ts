@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ConfigError } from '@momonga/config';
 import { FM_SERVE_DEFAULTS, GATEWAY_CONFIG_DEFAULTS } from '@momonga/gateway';
-import { FAKE_DETERMINISTIC_REPLY, createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { FAKE_DETERMINISTIC_REPLY, createFakeClock, createFakeTimers, startLockHolder } from '@momonga/testkit';
 import { START_MS, expectErrorBody, getJson, outputText, postJson, readJson, userInput } from './gateway-helpers.ts';
 import { startFake } from './cc-support.ts';
 import {
@@ -17,6 +17,7 @@ import {
   spawnSleeper,
   writeSettings,
 } from './gateway-process-helpers.ts';
+import { inspectProcessLock } from '@momonga/foundation';
 
 const API_KEY_VALUE = 'momonga-test-api-key';
 const body = { model: 'fast', input: userInput('hi') };
@@ -49,12 +50,11 @@ describe('startGatewayProcess', { timeout: 30_000 }, () => {
     expect(health.body).toMatchObject({ version: PROCESS_VERSION, apiVersion: 1, pid: process.pid, state: 'running', startedAt: ready.startedAt });
   });
 
-  it('takes run/gateway.lock before opening gateway.db, so a second instance fails without touching it', async () => {
+  it('takes run/gateway.lock before opening gateway.db, so a second instance fails without touching it', async (context) => {
     const { home } = await ccHome();
     const paths = homePaths(home);
     fs.mkdirSync(`${paths.root}/run`, { recursive: true, mode: 0o700 });
-    const holder = spawnSleeper();
-    fs.writeFileSync(paths.lock, `${holder}\n`, { mode: 0o600 });
+    const holder = (await startLockHolder(context, paths.lock)).pid;
     await expect(launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION })).rejects.toThrow(String(holder));
     expect(fs.existsSync(paths.db)).toBe(false);
     expect(fs.existsSync(paths.key)).toBe(false);
@@ -78,7 +78,7 @@ describe('startGatewayProcess', { timeout: 30_000 }, () => {
       (error: unknown) => error,
     );
     expect(failure).toBeInstanceOf(ConfigError);
-    expect(fs.existsSync(paths.lock)).toBe(false);
+    expect((await inspectProcessLock(paths.lock)).state).toBe('free');
     expect(fs.existsSync(paths.db)).toBe(false);
     expect(fs.existsSync(paths.key)).toBe(false);
   });
@@ -107,7 +107,7 @@ describe('startGatewayProcess', { timeout: 30_000 }, () => {
       `gateway.db exists but gateway.key is missing at ${paths.key}; stored compaction items can no longer be verified. Move ${paths.db} aside to start fresh.`,
     );
     expect(fs.existsSync(paths.key)).toBe(false);
-    expect(fs.existsSync(paths.lock)).toBe(false);
+    expect((await inspectProcessLock(paths.lock)).state).toBe('free');
   });
 
   it('close() releases the lock and removes the socket, and is idempotent', async () => {
@@ -117,7 +117,7 @@ describe('startGatewayProcess', { timeout: 30_000 }, () => {
     expect(fs.existsSync(paths.lock)).toBe(true);
     expect(fs.readFileSync(paths.lock, 'utf8').trim()).toBe(String(process.pid));
     await handle.close();
-    expect(fs.existsSync(paths.lock)).toBe(false);
+    expect((await inspectProcessLock(paths.lock)).state).toBe('free');
     expect(fs.existsSync(paths.socket)).toBe(false);
     await handle.close();
     const again = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });

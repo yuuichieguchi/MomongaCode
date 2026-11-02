@@ -1,10 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ProbeFailedError, findHolders, probeFailed, reapMarkedProcesses } from '@momonga/foundation';
+import { ProbeFailedError, findHolders, probeFailed, reapMarkedProcesses, reapMarkerDirectory } from '@momonga/foundation';
 import type { ProbeResult, ProcessInspector } from '@momonga/foundation';
-import { createFakeClock, createFakeTimers, withTempDir } from '@momonga/testkit';
-import { fakeReapTiming } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, drivenReapTiming, fakeReapTiming, waitFor, withTempDir } from '@momonga/testkit';
 
 const transient = probeFailed({ kind: 'errno', code: 'EMFILE', detail: 'too many open files' });
 const deterministic = probeFailed({ kind: 'exit', exitCode: 2, detail: 'lsof exited with 2: bad' });
@@ -96,5 +95,38 @@ describe('the recorded group of a marker', () => {
       inspector: inspectorOf(() => ({ kind: 'value', value: [] })),
     });
     expect(result).toEqual({ removed: true });
+  });
+});
+
+describe('reaping on time that only the test drives', () => {
+  it('shows two markers waiting at the same time and a holder that never leaves, instead of finishing inside a synchronous sleep', async (context) => {
+    const directory = withTempDir(context);
+    fs.writeFileSync(path.join(directory, 'a'), '', { mode: 0o600 });
+    fs.writeFileSync(path.join(directory, 'b'), '', { mode: 0o600 });
+    const clock = createFakeClock(0);
+    const timers = createFakeTimers(clock);
+    const warnings: string[] = [];
+    const signalled: number[] = [];
+    const reaping = reapMarkerDirectory({
+      dir: directory,
+      killGraceMs: 100,
+      label: 'daemon',
+      onWarning: (message) => warnings.push(message),
+      kill: (pid) => void signalled.push(pid),
+      timing: drivenReapTiming(clock, timers),
+      inspector: inspectorOf(() => ({ kind: 'value', value: [4242] })),
+    });
+    let settled = false;
+    void reaping.then(() => (settled = true));
+    await waitFor(() => timers.pending().length === 2, { description: 'both markers waiting out the grace at once' });
+    expect(settled).toBe(false);
+    expect(clock.now()).toBe(0);
+    for (let step = 0; step < 20 && !settled; step += 1) {
+      timers.advance(25);
+      await waitFor(() => settled || timers.pending().length === 2, { description: 'the markers to poll again' });
+    }
+    expect(await reaping).toEqual({ reaped: 0, kept: 2 });
+    expect(warnings).toHaveLength(2);
+    expect(fs.readdirSync(directory).sort()).toEqual(['a', 'b']);
   });
 });

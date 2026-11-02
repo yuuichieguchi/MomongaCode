@@ -8,3 +8,11 @@ export const fakeReapTiming = (clock: FakeClock, timers: FakeTimers): { now(): n
     return Promise.resolve();
   },
 });
+
+export const drivenReapTiming = (clock: FakeClock, timers: FakeTimers): { now(): number; sleep(ms: number): Promise<void> } => ({
+  now: () => clock.now(),
+  sleep: (ms) =>
+    new Promise<void>((resolve) => {
+      timers.setTimeout(resolve, ms);
+    }),
+});

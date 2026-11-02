@@ -2,10 +2,11 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { findHolders, inspectProcessLock } from '@momonga/foundation';
+import { findHolders, hostKernelLock, inspectProcessLock } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { ORPHAN_REAP_GRACE_MS } from '@momonga/supervisor';
+import { LOCK_HOLDER_MAIN } from '@momonga/testkit';
 import type { ChildRole } from '@momonga/supervisor';
 import { skipCase, titleOf } from './support/cases.ts';
 import { createE2eHome, registerE2eCleanup } from './support/home.ts';
@@ -41,7 +42,7 @@ import {
 
 const S1C_PHASE1_ORPHAN_GRACE_MS = 30_000;
 const S7_LOCK_WAIT_MS = 1500;
-const GHOST_LOCK_AGE_MS = 60 * 60 * 1000;
+const HANDS_LOCK_TO_CHILD = hostKernelLock().claimInheritable !== undefined;
 const FIXTURE_SLEEP_SECONDS = '300';
 const CHANGED_MODEL = 'system-changed';
 
@@ -92,7 +93,25 @@ const startSleepFixture = async (home: E2eHome): Promise<number> => {
   return pid;
 };
 
-const writeLock = (lockPath: string, pid: number): void => {
+const startLockHolderFixture = async (home: E2eHome, lockPath: string): Promise<number> => {
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true, mode: 0o700 });
+  const child = spawn(process.execPath, [LOCK_HOLDER_MAIN, lockPath], { detached: true, stdio: ['ignore', 'pipe', 'ignore'] });
+  child.unref();
+  const pid = child.pid;
+  if (pid === undefined) throw new Error('lock holder fixture did not start');
+  await home.ledger.add(pid, 'fixture');
+  registerE2eCleanup(() => {
+    if (isAlive(pid)) process.kill(pid, 'SIGKILL');
+  });
+  await new Promise<void>((resolve, reject) => {
+    child.once('exit', () => reject(new Error('lock holder fixture exited before holding the lock')));
+    child.stdout?.once('data', () => resolve());
+  });
+  return pid;
+};
+
+const writeStaleLock = (lockPath: string, pid: number): void => {
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true, mode: 0o700 });
   fs.writeFileSync(lockPath, String(pid), { mode: 0o600 });
 };
 
@@ -526,29 +545,40 @@ describe('supervisor cases', () => {
 
   it(titleOf('s7'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
-    const sleepPid = await startSleepFixture(home);
-    writeLock(home.paths.locks.runtime, sleepPid);
-    expect(await inspectProcessLock(home.paths.locks.runtime)).toEqual({ state: 'held', pid: sleepPid });
+    const holderPid = await startLockHolderFixture(home, home.paths.locks.runtime);
+    expect(await inspectProcessLock(home.paths.locks.runtime)).toEqual({ state: 'held', pid: holderPid });
 
     const stack = await startStack({ home, deps: { ...DEFAULT_E2E_DEPS, lockWaitMs: S7_LOCK_WAIT_MS }, readiness: false });
     const external = await stack.client.untilChild('runtime', (child) => child.state === 'external', E2E_RESTART_BOUND_MS);
-    expect(external.lastExit).toMatchObject({ code: 75, reason: 'lock-held' });
     expect(external.restarts).toBe(0);
     expect(external.pid).toBeUndefined();
     const externalRecords = supervisorLog(home.paths, stack.ready.pid);
-    expect(ofChild(externalRecords, 'child.spawn', 'runtime')).toHaveLength(1);
-    expect(ofChild(externalRecords, 'child.exit', 'runtime')).toEqual([expect.objectContaining({ code: 75, reason: 'lock-held' })]);
-    expect(ofChild(externalRecords, 'child.external', 'runtime')).toEqual([expect.objectContaining({ holderPid: sleepPid })]);
+    expect(ofChild(externalRecords, 'child.external', 'runtime')).toEqual([expect.objectContaining({ holderPid })]);
     expect(ofChild(externalRecords, 'child.backoff', 'runtime')).toEqual([]);
-    expect(isAlive(sleepPid)).toBe(true);
+    if (HANDS_LOCK_TO_CHILD) {
+      expect(external.lastExit).toBeUndefined();
+      expect(ofChild(externalRecords, 'child.spawn', 'runtime')).toEqual([]);
+      expect(ofChild(externalRecords, 'child.exit', 'runtime')).toEqual([]);
+    } else {
+      expect(external.lastExit).toMatchObject({ code: 75, reason: 'lock-held' });
+      expect(ofChild(externalRecords, 'child.spawn', 'runtime')).toHaveLength(1);
+      expect(ofChild(externalRecords, 'child.exit', 'runtime')).toEqual([expect.objectContaining({ code: 75, reason: 'lock-held' })]);
+    }
+    expect(isAlive(holderPid)).toBe(true);
 
-    process.kill(sleepPid, 'SIGKILL');
-    await until(() => !isAlive(sleepPid), { deadlineMs: E2E_MARGIN_MS, description: 'sleep fixture gone' });
+    process.kill(holderPid, 'SIGKILL');
+    await until(() => !isAlive(holderPid), { deadlineMs: E2E_MARGIN_MS, description: 'lock holder fixture gone' });
     const ready = await stack.client.untilChild('runtime', (child) => child.state === 'ready', E2E_LOCK_FREE_BOUND_MS);
-    expect(ready.restarts).toBe(1);
     const records = supervisorLog(home.paths, stack.ready.pid);
-    expect(ofChild(records, 'child.spawn', 'runtime').map((record) => record.reason)).toEqual(['initial', 'lock-free']);
-    expect(ofChild(records, 'child.exit', 'runtime')).toHaveLength(1);
+    if (HANDS_LOCK_TO_CHILD) {
+      expect(ready.restarts).toBe(0);
+      expect(ofChild(records, 'child.spawn', 'runtime').map((record) => record.reason)).toEqual(['lock-free']);
+      expect(ofChild(records, 'child.exit', 'runtime')).toEqual([]);
+    } else {
+      expect(ready.restarts).toBe(1);
+      expect(ofChild(records, 'child.spawn', 'runtime').map((record) => record.reason)).toEqual(['initial', 'lock-free']);
+      expect(ofChild(records, 'child.exit', 'runtime')).toHaveLength(1);
+    }
     expect(await inspectProcessLock(home.paths.locks.runtime)).toEqual({ state: 'held', pid: ready.pid });
   });
 
@@ -556,11 +586,8 @@ describe('supervisor cases', () => {
     const home = await createE2eHome();
     const runtimeGhost = await startSleepFixture(home);
     const gatewayGhost = await startSleepFixture(home);
-    writeLock(home.paths.locks.runtime, runtimeGhost);
-    writeLock(home.paths.locks.gateway, gatewayGhost);
-    const past = new Date(Date.now() - GHOST_LOCK_AGE_MS);
-    fs.utimesSync(home.paths.locks.runtime, past, past);
-    fs.utimesSync(home.paths.locks.gateway, past, past);
+    writeStaleLock(home.paths.locks.runtime, runtimeGhost);
+    writeStaleLock(home.paths.locks.gateway, gatewayGhost);
 
     const stack = await startStack({ home });
     const health = await stack.client.health();

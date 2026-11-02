@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createScriptedAdapter, textResponseEvents, waitFor } from '@momonga/testkit';
 import { outputText, postJson, readJson, startGateway, userInput } from './gateway-helpers.ts';
+import { inspectProcessLock } from '@momonga/foundation';
 
 describe('gateway persistence and lifecycle', () => {
   it('creates the database directory 0700 and the database file 0600', async () => {
@@ -30,7 +31,7 @@ describe('gateway persistence and lifecycle', () => {
     const settled = await inFlight;
     if ('status' in settled) expect(settled.status).not.toBe(200);
     expect(fs.existsSync(socketPath)).toBe(false);
-    expect(fs.existsSync(`${socketPath}.lock`)).toBe(false);
+    expect((await inspectProcessLock(`${socketPath}.lock`)).state).toBe('free');
     expect(timers.pending()).toEqual([]);
   });
 

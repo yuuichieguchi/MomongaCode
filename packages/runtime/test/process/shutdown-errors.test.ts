@@ -113,7 +113,7 @@ describe('shutdown and logging errors (system timers, in-process gateway)', () =
     control.failDrain = new Error('beginDraining failed');
     const result = await launched.handle[method]();
     expect(result.clean).toBe(false);
-    expect(isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
+    expect(await isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
     expect(control.storeCloses).toBe(1);
     expect(fs.existsSync(stack.temp.paths.sockets.runtime)).toBe(false);
   }, 60_000);
@@ -124,7 +124,7 @@ describe('shutdown and logging errors (system timers, in-process gateway)', () =
     control.flushError = new Error('flush failed');
     await launched.handle.close();
     expect(control.shutdowns).toBe(1);
-    expect(isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
+    expect(await isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
   });
 
   it('a non-fatal service error is logged as service error and does not latch', PROCESS_TIMEOUT, async () => {
@@ -161,6 +161,6 @@ describe('shutdown and logging errors (system timers, in-process gateway)', () =
     expect((error as Error).message).toBe(`${temp.paths.sockets.runtime} exists and is not a socket`);
     expect(entriesNamed(logger, 'startup.cleanup_failed').map((entry) => entry.fields?.err)).toEqual([flushError]);
     expect(control.shutdowns).toBe(1);
-    expect(isLockFree(temp.paths.locks.runtime)).toBe(true);
+    expect(await isLockFree(temp.paths.locks.runtime)).toBe(true);
   });
 });

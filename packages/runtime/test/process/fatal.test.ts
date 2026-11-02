@@ -15,7 +15,7 @@ describe('fatal errors under a running runtime (system timers, in-process gatewa
     expect(aborted).toEqual({ clean: false, fatal, abandoned: [], stragglers: [] });
     const closing = launched.handle.close();
     expect(await closing).toBe(aborted);
-    expect(isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
+    expect(await isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
   });
 
   it('fatal stays pending after a normal close', PROCESS_TIMEOUT, async () => {

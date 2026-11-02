@@ -6,6 +6,7 @@ import { EXIT_ALREADY_RUNNING, EXIT_CONFIG, EXIT_FAILURE, ProcessLockHeldError, 
 import { trackGroup, writeInvalidUserSettings, writeUserSettings } from './helpers.ts';
 import { RUNTIME_VERSION, captureStream, failureOf, hookLogger, launchRuntime, makeRunHome, runtimeAlreadyRunningError, startRuntimeProcess, startStack } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
+import { startLockHolder } from '@momonga/testkit';
 
 const PROCESS_TIMEOUT = { timeout: 60_000 };
 
@@ -40,12 +41,11 @@ describe('exit classes of startRuntimeProcess errors (system timers)', () => {
     expect(exitClassOf(foreign)).toBe(1);
   });
 
-  it('a ProcessLockHeldError from listenUnix (lockPath <runtime.sock>.lock) is classified as exit 1', PROCESS_TIMEOUT, async () => {
+  it('a ProcessLockHeldError from listenUnix (lockPath <runtime.sock>.lock) is classified as exit 1', PROCESS_TIMEOUT, async (context) => {
     const temp = makeRunHome();
     writeUserSettings(temp.home, { sandbox: 'none' });
     await ensureMomongaDirs(temp.paths);
-    const holder = spawnDetachedSleeper();
-    fs.writeFileSync(`${temp.paths.sockets.runtime}.lock`, `${holder}\n`, { mode: 0o600 });
+    const holder = (await startLockHolder(context, `${temp.paths.sockets.runtime}.lock`)).pid;
     const error = await startFailure(temp);
     expect(error).toBeInstanceOf(ProcessLockHeldError);
     expect((error as ProcessLockHeldError).lockPath).toBe(`${temp.paths.sockets.runtime}.lock`);

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { waitFor } from '@momonga/testkit';
 import { startGateway, userInput } from './gateway-helpers.ts';
 import { bigTextEvents, createHangingAdapter, openUnreadStream } from './gateway-support.ts';
+import { inspectProcessLock } from '@momonga/foundation';
 
 describe('close() with a non-reading client and an adapter that ignores its signal', () => {
   it('resolves after closeGraceMs, removes the socket and lock, leaves no timers, and reports abandoned runs', async () => {
@@ -18,7 +19,7 @@ describe('close() with a non-reading client and an adapter that ignores its sign
 
     expect(primary.signals[0]?.aborted).toBe(true);
     expect(fs.existsSync(socketPath)).toBe(false);
-    expect(fs.existsSync(`${socketPath}.lock`)).toBe(false);
+    expect((await inspectProcessLock(`${socketPath}.lock`)).state).toBe('free');
     expect(timers.pending()).toEqual([]);
     expect(gateway.abandonedRuns).toBe(1);
   });

@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { vi } from 'vitest';
-import { createUdsClient, momongaPaths } from '@momonga/foundation';
+import { createUdsClient, inspectProcessLock, momongaPaths } from '@momonga/foundation';
 import type { Clock, JsonLogger, MomongaPaths, ReadyFields, TextStream, UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import * as runtime from '@momonga/runtime';
@@ -305,11 +305,7 @@ export const failureOf = async (promise: Promise<unknown>): Promise<unknown> =>
     (error: unknown) => error,
   );
 
-export const isLockFree = (lockPath: string): boolean => {
-  if (!fs.existsSync(lockPath)) return true;
-  const content = fs.readFileSync(lockPath, 'utf8').trim();
-  return content !== String(process.pid);
-};
+export const isLockFree = async (lockPath: string): Promise<boolean> => (await inspectProcessLock(lockPath)).state === 'free';
 
 export const readDb = <T>(dbPath: string, sql: string, ...params: (string | number)[]): T[] => {
   const db = new DatabaseSync(dbPath, { readOnly: true });

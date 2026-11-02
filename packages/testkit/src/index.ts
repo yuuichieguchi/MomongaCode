@@ -24,7 +24,7 @@ export type {
 } from './fake-chat-completions.ts';
 export { generateInstance, collectAllowedNames, findUsedKeywords } from './schema-instance.ts';
 export type { JsonSchema, InstancePreferences } from './schema-instance.ts';
-export { startLockHolder } from './lock-holder.ts';
+export { LOCK_HOLDER_MAIN, startLockHolder } from './lock-holder.ts';
 export { createFakeKernelLock } from './fake-kernel-lock.ts';
 export type { FakeKernelLock, FakeKernelLockOptions } from './fake-kernel-lock.ts';
 export { createFakeClock } from './fake-clock.ts';
@@ -48,7 +48,7 @@ export {
   toolRoundTripRun,
 } from './run-event-fixtures.ts';
 export type { RecordedRun } from './run-event-fixtures.ts';
-export { fakeReapTiming } from './fake-reap-timing.ts';
+export { drivenReapTiming, fakeReapTiming } from './fake-reap-timing.ts';
 export { createFakeTimers } from './fake-timers.ts';
 export type { FakeTimers, PendingTimer } from './fake-timers.ts';
 export { afterMicrotasks, waitFor } from './wait-for.ts';

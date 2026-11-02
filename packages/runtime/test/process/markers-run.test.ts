@@ -137,7 +137,7 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
     expect(stepsLogged(logger).at(-1)).toBe('tool-markers');
     expect(stepsLogged(logger, 'teardown.step')).toEqual(['store', 'lock']);
     expect(groupExists(holder)).toBe(true);
-    expect(isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
+    expect(await isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
     expect(stdout.chunks).toEqual([]);
   });
 });
