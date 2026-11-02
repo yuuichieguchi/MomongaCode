@@ -1,4 +1,4 @@
-import { GENAI_SEMCONV, MOMONGA_ATTRIBUTES, OPERATIONS } from './semconv.ts';
+import { GENAI_SEMCONV, MOMONGA_ATTRIBUTES, OPERATIONS, UNKNOWN_BILLING } from './semconv.ts';
 import { amountOfUnits, computeCostUnits } from './cost.ts';
 import type { PriceTable } from './cost.ts';
 import type { SpanRecord, TraceStore } from './trace-store.ts';
@@ -11,6 +11,7 @@ export type CostTotals = {
   calls: number;
   localCalls: number;
   unpricedCalls: number;
+  unknownBillingCalls: number;
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
@@ -29,6 +30,7 @@ type Accumulator = {
   calls: number;
   localCalls: number;
   unpricedCalls: number;
+  unknownBillingCalls: number;
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
@@ -40,6 +42,7 @@ const emptyAccumulator = (): Accumulator => ({
   calls: 0,
   localCalls: 0,
   unpricedCalls: 0,
+  unknownBillingCalls: 0,
   inputTokens: 0,
   outputTokens: 0,
   cachedInputTokens: 0,
@@ -51,6 +54,7 @@ const merge = (target: Accumulator, source: Accumulator): void => {
   target.calls += source.calls;
   target.localCalls += source.localCalls;
   target.unpricedCalls += source.unpricedCalls;
+  target.unknownBillingCalls += source.unknownBillingCalls;
   target.inputTokens += source.inputTokens;
   target.outputTokens += source.outputTokens;
   target.cachedInputTokens += source.cachedInputTokens;
@@ -62,6 +66,7 @@ const totalsOf = (accumulator: Accumulator): CostTotals => ({
   calls: accumulator.calls,
   localCalls: accumulator.localCalls,
   unpricedCalls: accumulator.unpricedCalls,
+  unknownBillingCalls: accumulator.unknownBillingCalls,
   inputTokens: accumulator.inputTokens,
   outputTokens: accumulator.outputTokens,
   cachedInputTokens: accumulator.cachedInputTokens,
@@ -98,8 +103,13 @@ const accumulateRun = (store: TraceStore, runId: string, table: PriceTable): Acc
     accumulator.inputTokens += usage.inputTokens;
     accumulator.outputTokens += usage.outputTokens;
     accumulator.cachedInputTokens += usage.cachedInputTokens;
-    if (stringAttribute(span, MOMONGA_ATTRIBUTES.billing) === 'local') {
+    const billing = stringAttribute(span, MOMONGA_ATTRIBUTES.billing);
+    if (billing === 'local') {
       accumulator.localCalls += 1;
+      continue;
+    }
+    if (billing === UNKNOWN_BILLING) {
+      accumulator.unknownBillingCalls += 1;
       continue;
     }
     const priced = computeCostUnits({
@@ -147,7 +157,8 @@ const describeTotals = (totals: CostTotals): string => {
   const versions = totals.priceVersions.length === 0 ? 'none' : totals.priceVersions.join(',');
   const local = totals.localCalls === 0 ? '' : `, ${totals.localCalls} of ${totals.calls} call(s) ran locally and cost nothing`;
   const unpriced = totals.unpricedCalls === 0 ? '' : `, ${totals.unpricedCalls} of ${totals.calls} call(s) have no price entry and are not counted`;
-  return `${totals.calls} call(s), ${totals.inputTokens} input (${totals.cachedInputTokens} cached) + ${totals.outputTokens} output tokens, ${totals.amount} ${totals.currency} at price version ${versions}${local}${unpriced}`;
+  const unknown = totals.unknownBillingCalls === 0 ? '' : `, ${totals.unknownBillingCalls} of ${totals.calls} call(s) have unknown billing and are not counted`;
+  return `${totals.calls} call(s), ${totals.inputTokens} input (${totals.cachedInputTokens} cached) + ${totals.outputTokens} output tokens, ${totals.amount} ${totals.currency} at price version ${versions}${local}${unpriced}${unknown}`;
 };
 
 export const formatCostReport = (report: CostReport): string => {

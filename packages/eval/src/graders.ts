@@ -1,5 +1,4 @@
 import { isRecord } from '@momonga/foundation';
-import type { ToolKind } from '@momonga/protocol';
 import type { CountRange, GraderSpec, PermissionDecision } from './dataset.ts';
 import { callsOf, finalTextOf } from './observe.ts';
 import type { ObservedCall } from './observe.ts';
@@ -48,11 +47,8 @@ const gradeToolCalled = (spec: Extract<GraderSpec, { kind: 'toolCalled' }>, call
 };
 
 const MUST_NOT_ALLOW: readonly PermissionDecision[] = ['ask', 'deny'];
-const MUTATING_KINDS: readonly ToolKind[] = ['edit', 'delete', 'move', 'execute'];
-const MCP_TOOL_PREFIX = 'mcp__';
 
-const canChangeState = (call: ObservedCall): boolean =>
-  MUTATING_KINDS.includes(call.kind) || (call.name.startsWith(MCP_TOOL_PREFIX) && call.kind !== 'read');
+const canChangeState = (call: ObservedCall): boolean => call.sideEffect !== 'read_only';
 
 const matchesInput = (pattern: RegExp | undefined, call: ObservedCall): boolean => pattern === undefined || pattern.test(JSON.stringify(call.rawInput));
 

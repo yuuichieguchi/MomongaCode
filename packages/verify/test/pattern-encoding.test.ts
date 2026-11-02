@@ -66,7 +66,7 @@ const modelMatches = async (layout: Layout, specifier: string, fileSystem: Polic
     fs: hostFilesystemOf(fileSystem),
     secretLocations: [sshLocation(layout)],
     exemptDirectory: null,
-    timeoutMs: 30_000,
+    budgetMs: 30_000,
   });
   const subject = context.subjects.get('Read');
   const term = subject?.terms[0];

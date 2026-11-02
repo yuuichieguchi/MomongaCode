@@ -8,6 +8,7 @@ import { reconcileStartedCalls, releaseWaitingOnCancel } from './cancel-recovery
 import { startClaimControl } from './claim-control.ts';
 import type { ClaimControl } from './claim-control.ts';
 import { dispositionOf } from './gateway-policy.ts';
+import { heartbeatMsFor } from './heartbeat.ts';
 import { describeError, LeaseLostError, ShutdownError } from './errors.ts';
 import { inlineLimitForItemCap, inlineOutputLimitFor } from './inline-limit.ts';
 import { measurePinnedFor } from './context-step.ts';
@@ -25,7 +26,6 @@ import type { WorkerOptions } from './types.ts';
 import type { TraceSpan } from '../ports.ts';
 import { modelKey } from '../model-key.ts';
 import { buildSystemPrompt } from '../system-prompt.ts';
-import { heartbeatMsFor } from './heartbeat.ts';
 import { summaryStopReason } from './wrap-up.ts';
 import { reportError } from './report.ts';
 import { GatewayRequestError } from '../gateway-client.ts';

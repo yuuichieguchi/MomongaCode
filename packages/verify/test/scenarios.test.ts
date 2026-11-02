@@ -205,7 +205,7 @@ describe('rules that cannot take effect or that contradict', () => {
 });
 
 describe('solver limits', () => {
-  it('reports unknown, never proved, for a query the solver cannot finish within its timeout', async () => {
+  it('reports unknown, never proved, for a query the solver cannot finish within the verification budget', async () => {
     const { report } = await run(
       [
         ['allow', 'Bash(git:*)'],
@@ -213,7 +213,7 @@ describe('solver limits', () => {
         ['deny', 'Bash(rm:*)'],
         ['allow', 'Bash(ls:*)'],
       ],
-      { timeoutMs: 1 },
+      { budgetMs: 1 },
     );
 
     const unknown = report.results.filter((result) => result.verdict.status === 'unknown');

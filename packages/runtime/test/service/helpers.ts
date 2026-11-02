@@ -477,7 +477,7 @@ export const serviceOptions = (
       structuredOutput: 'none',
       streaming: true,
       stopSequences: true,
-      ...protocol.imageCapability(overrides.imageInput === true, overrides.imageInput === true ? { pixelsPerToken: 750, maxTokens: 1600 } : undefined),
+      ...protocol.imageCapability(overrides.imageInput === true, overrides.imageInput === true ? { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } : undefined),
       parallelToolCalls: false,
       schemaDialect: 'json-schema-2020-12',
       tokenCounting: 'estimated',
@@ -506,7 +506,7 @@ export const serviceOptions = (
       report: {
         runs: [],
         sessions: [],
-        total: { calls: 0, unpricedCalls: 0, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, amount: 0, currency: 'USD', priceVersions: [] },
+        total: { calls: 0, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 0, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, amount: 0, currency: 'USD', priceVersions: [] },
       },
       text: 'cost report',
     })),

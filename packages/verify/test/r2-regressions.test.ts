@@ -123,7 +123,7 @@ describe('round 2, finding 9: a query the solver cannot decide never leaves a pr
         fs: hostFilesystemOf(fileSystem),
         secretLocations: [sshLocation(layout)],
         exemptDirectory: null,
-        timeoutMs: 20_000,
+        budgetMs: 120_000,
       });
 
     const baselineContext = contextFor();

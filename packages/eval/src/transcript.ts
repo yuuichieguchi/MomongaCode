@@ -4,8 +4,11 @@ import { isRecord } from '@momonga/foundation';
 import { RUN_API_SCHEMAS, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
 import type { PublicRunEvent, RunStatus, StopReason } from '@momonga/protocol';
 
-export const TRANSCRIPT_FORMAT = 'momonga-transcript/2';
-const RETIRED_TRANSCRIPT_FORMATS: readonly string[] = ['momonga-transcript/1'];
+export const TRANSCRIPT_FORMAT = 'momonga-transcript/3';
+const RETIRED_TRANSCRIPT_FORMATS: Readonly<Record<string, string>> = {
+  'momonga-transcript/1': 'subagent runs',
+  'momonga-transcript/2': 'the side effect of a tool call',
+};
 
 export type TranscriptRun = {
   id: string;
@@ -95,8 +98,8 @@ export const decodeTranscript = (text: string, source: string): Transcript => {
   } catch (error) {
     throw new TranscriptError(`${source}:1: not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
-  if (isRecord(header) && typeof header['format'] === 'string' && RETIRED_TRANSCRIPT_FORMATS.includes(header['format'])) {
-    throw new TranscriptError(`${source}:1: ${header['format']} transcripts do not record subagent runs, so they cannot be graded as ${TRANSCRIPT_FORMAT}; record the case again`);
+  if (isRecord(header) && typeof header['format'] === 'string' && Object.hasOwn(RETIRED_TRANSCRIPT_FORMATS, header['format'])) {
+    throw new TranscriptError(`${source}:1: ${header['format']} transcripts do not record ${RETIRED_TRANSCRIPT_FORMATS[header['format']]}, so they cannot be graded as ${TRANSCRIPT_FORMAT}; record the case again`);
   }
   if (!isRecord(header) || header['format'] !== TRANSCRIPT_FORMAT) throw new TranscriptError(`${source}:1: first line must be a ${TRANSCRIPT_FORMAT} header`);
   const { caseId, runIndex } = header;

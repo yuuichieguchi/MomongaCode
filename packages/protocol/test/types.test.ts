@@ -34,14 +34,14 @@ describe('protocol capability types', () => {
         probedAt?: string;
       } & (
         | { imageInput: false; imageTokens?: undefined }
-        | { imageInput: true; imageTokens: { pixelsPerToken: number; maxTokens: number } }
+        | { imageInput: true; imageTokens: { pixelsPerToken: number; maxTokens: number; minTokens: number } }
       )
     >();
   });
 
   it('cannot express image input without a token model', () => {
     expectTypeOf<Extract<Capabilities, { imageInput: true; imageTokens?: undefined }>>().toBeNever();
-    expectTypeOf<Capabilities['imageTokens']>().toEqualTypeOf<{ pixelsPerToken: number; maxTokens: number } | undefined>();
+    expectTypeOf<Capabilities['imageTokens']>().toEqualTypeOf<{ pixelsPerToken: number; maxTokens: number; minTokens: number } | undefined>();
   });
 
   it('defines HealthResult', () => {
@@ -70,7 +70,7 @@ describe('protocol capability types', () => {
       stopSequences: boolean;
       maxConcurrency: number;
       imageInputAccepted: boolean;
-      imageTokens?: { pixelsPerToken: number; maxTokens: number };
+      imageTokens?: { pixelsPerToken: number; maxTokens: number; minTokens: number };
       guardrail: { errorShape?: unknown };
       tokenCalibration?: { ratio: number; errorBound: number };
     }>();

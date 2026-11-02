@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ProbeTimeoutError, runProbe } from '@momonga/gateway';
+import { capabilitiesFromProbe, ProbeTimeoutError, runProbe } from '@momonga/gateway';
 import { Deadline } from '@momonga/foundation';
 import type { ProbeReport } from '@momonga/protocol';
 import {
@@ -9,6 +9,7 @@ import {
   type FakeChatCompletionsOptions,
   type FakeChatCompletionsServer,
 } from '@momonga/testkit';
+import { isProbeReport } from '../src/probe/report-schema.ts';
 
 const servers: FakeChatCompletionsServer[] = [];
 afterEach(async () => {
@@ -140,14 +141,132 @@ describe('runProbe server features', () => {
     const { report } = await probe({ scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600 } });
     expect(report.imageInputAccepted).toBe(true);
     expect(report.imageTokens?.maxTokens).toBe(1600);
+    expect(report.imageTokens?.minTokens).toBe(1);
     expect(report.imageTokens?.pixelsPerToken).toBeGreaterThan(740);
     expect(report.imageTokens?.pixelsPerToken).toBeLessThan(760);
   });
 
-  it('reports no image token model when the endpoint caps no image within the probe range', async () => {
+  it('models an endpoint that caps no image within the probe range, with the measured cost of the largest image as a floor for the cap', async () => {
     const { report } = await probe({ scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 100_000 } });
     expect(report.imageInputAccepted).toBe(true);
+    expect(report.imageTokens?.pixelsPerToken).toBeGreaterThan(740);
+    expect(report.imageTokens?.pixelsPerToken).toBeLessThan(760);
+    expect(report.imageTokens?.maxTokens).toBeGreaterThanOrEqual(5593);
+    expect(report.imageTokens?.maxTokens).toBeLessThanOrEqual(100_000);
+    expect(isProbeReport(report)).toBe(true);
+    expect(capabilitiesFromProbe(report, { mode: 'native' }).imageInput).toBe(true);
+  });
+
+  it('keeps doubling past 2048 px while the cost still grows, so a linear endpoint is not recorded with the cost of 2048 px as its cap', async () => {
+    const { report } = await probe({ scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 100_000 } });
+    expect(report.imageTokens?.maxTokens).toBeGreaterThanOrEqual(Math.ceil(8192 ** 2 / 750));
+  });
+
+  it('stops doubling once the cost has plateaued and reports the plateau as the cap', async () => {
+    const { fake } = await probe({ scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600 } });
+    const sides = fake.requests.flatMap((request) => {
+      const content = (request.body as { messages?: { content?: unknown }[] } | undefined)?.messages?.[0]?.content;
+      if (!Array.isArray(content)) return [];
+      const image = content.find((part: unknown) => typeof part === 'object' && part !== null && 'image_url' in part) as { image_url: { url: string } } | undefined;
+      if (image === undefined) return [];
+      return [Buffer.from(image.image_url.url.split(',')[1]?.slice(0, 64) ?? '', 'base64').readUInt32BE(16)];
+    });
+    expect(Math.max(...sides)).toBe(4096);
+  });
+
+  it('takes pixelsPerToken from a size below the plateau when the cap is reached below the 512 px reference', async () => {
+    const { report } = await probe({ scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 328, maxTokens: 200 } });
+    expect(report.imageTokens?.maxTokens).toBe(200);
+    expect(report.imageTokens?.pixelsPerToken).toBeGreaterThan(320);
+    expect(report.imageTokens?.pixelsPerToken).toBeLessThan(336);
+  });
+
+  it('reports no image token model when every size below the plateau costs the floor', async () => {
+    const { report } = await probe({ scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 100_000, maxTokens: 100, minTokens: 50 } });
+    expect(report.imageInputAccepted).toBe(true);
     expect(report.imageTokens).toBeUndefined();
+    expect(isProbeReport(report)).toBe(true);
+  });
+
+  it('limits the output of every image measurement request to one token', async () => {
+    const { fake } = await probe({ scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600 } });
+    const imagePrompts = fake.requests.filter((request) => JSON.stringify(request.body ?? '').includes('Describe this image.'));
+    expect(imagePrompts.length).toBeGreaterThan(3);
+    expect(imagePrompts.every((request) => (request.body as { max_tokens?: number }).max_tokens === 1)).toBe(true);
+  });
+
+  it('waits for Retry-After on a 429 and repeats the request, keeping the whole probe', async () => {
+    const waits: number[] = [];
+    const { report } = await probe(
+      {
+        scenario: 'tools-ok',
+        imageInput: true,
+        imageTokens: { pixelsPerToken: 750, maxTokens: 1600 },
+        rateLimitSizedImages: { count: 2, retryAfter: '3' },
+        contextWindow: 8192,
+        contextSizeExposure: 'models',
+      },
+      { sleep: async (ms) => void waits.push(ms) },
+    );
+    expect(waits).toEqual([3000, 3000]);
+    expect(report.contextWindow).toEqual({ value: 8192, method: 'reported' });
+    expect(report.imageTokens?.maxTokens).toBe(1600);
+  });
+
+  it('does not wait for a Retry-After longer than a step may take, and fails the step', async () => {
+    const waits: number[] = [];
+    await expect(
+      probe(
+        { scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600 }, rateLimitSizedImages: { count: 1, retryAfter: '3600' } },
+        { sleep: async (ms) => void waits.push(ms), stepTimeoutMs: 5000 },
+      ),
+    ).rejects.toThrow(/HTTP 429/);
+    expect(waits).toEqual([]);
+  });
+
+  it.each([400, 413] as const)('treats an HTTP %i for the large image as a measured size limit and keeps the rest of the probe', async (status) => {
+    const { report } = await probe({
+      scenario: 'tools-ok',
+      imageInput: true,
+      imageTokens: { pixelsPerToken: 750, maxTokens: 100_000 },
+      imageSizeLimit: { maxSide: 1024, status },
+      contextWindow: 8192,
+      contextSizeExposure: 'models',
+    });
+    expect(report.contextWindow).toEqual({ value: 8192, method: 'reported' });
+    expect(report.imageInputAccepted).toBe(true);
+    expect(report.imageTokens?.pixelsPerToken).toBeGreaterThan(740);
+    expect(report.imageTokens?.pixelsPerToken).toBeLessThan(760);
+    expect(report.imageTokens?.maxTokens).toBeGreaterThanOrEqual(1345);
+    expect(report.imageTokens?.maxTokens).toBeLessThanOrEqual(1399);
+  });
+
+  it('keeps the rest of the probe when even the small measurement image is over the size limit', async () => {
+    const { report } = await probe({
+      scenario: 'tools-ok',
+      imageInput: true,
+      imageTokens: { pixelsPerToken: 750, maxTokens: 100_000 },
+      imageSizeLimit: { maxSide: 256, status: 413 },
+      contextWindow: 8192,
+      contextSizeExposure: 'models',
+    });
+    expect(report.contextWindow).toEqual({ value: 8192, method: 'reported' });
+    expect(report.imageInputAccepted).toBe(true);
+    expect(report.imageTokens?.maxTokens).toBeLessThanOrEqual(88);
+  });
+
+  it('measures a per-image minimum, so a fixed cost per image is estimated at that cost for a small image', async () => {
+    const { report } = await probe({ scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 576, minTokens: 576 } });
+    expect(report.imageTokens?.minTokens).toBe(576);
+    expect(report.imageTokens?.maxTokens).toBe(576);
+    expect(isProbeReport(report)).toBe(true);
+  });
+
+  it('classifies a large image that adds no tokens as no usable model instead of reporting a cap of zero', async () => {
+    const { report } = await probe({ scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 100_000, noTokensAboveSide: 1024 } });
+    expect(report.imageInputAccepted).toBe(true);
+    expect(report.imageTokens).toBeUndefined();
+    expect(isProbeReport(report)).toBe(true);
   });
 
   it('reports no image token model when usage is not reported', async () => {

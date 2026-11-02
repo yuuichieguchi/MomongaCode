@@ -96,9 +96,16 @@ const MEMORY: MemoryView = {
   origin: 'trusted',
   project: '/work/project',
   text: 'The build uses pnpm.\nSecond line.',
-  source: { sessionId: 's1', runId: 'r1', step: 2, callId: 'c1', seq: 9 },
+  source: { kind: 'tool', sessionId: 's1', runId: 'r1', step: 2, callId: 'c1', seq: 9 },
   createdAt: 0,
   lastUsedAt: 1000,
+  kind: 'fact',
+  state: 'active',
+  duplicateOf: null,
+  supersedes: [],
+  retiredAt: null,
+  evidence: [],
+  contributedAt: null,
 };
 
 const contextWith = (backendOptions: FakeBackendOptions = {}) => {

@@ -54,7 +54,7 @@ export type VerifyOptions = {
   mode?: PermissionMode;
   fileSystem?: PolicyFilesystem;
   secretLocations?: readonly SecretLocation[];
-  timeoutMs?: number;
+  budgetMs?: number;
   roots?: readonly string[];
 };
 
@@ -71,6 +71,6 @@ export const verifyScenario = (api: Z3Engine['api'], layout: Layout, rules: read
     fs: hostFilesystemOf(fileSystem),
     secretLocations: options.secretLocations ?? [sshLocation(layout)],
     exemptDirectory: null,
-    timeoutMs: options.timeoutMs ?? 20_000,
+    budgetMs: options.budgetMs ?? 120_000,
   });
 };

@@ -9,7 +9,7 @@ export { RESERVED_WORDS, analyzeCommand, programNameOf } from './shell.ts';
 export type { Analysis, Segment } from './shell.ts';
 export { ASSIGNMENT } from './shell-lexemes.ts';
 export { computeFileRules, fileRuleSpecsOf } from './file-rules.ts';
-export type { DecisionKind, PermissionSubject, PolicyTool, SideEffect } from './types.ts';
+export type { DecisionKind, PermissionSubject, PolicyTool } from './types.ts';
 export { modelVisibleTools } from './visible-tools.ts';
 export type { VisibleToolsOptions } from './visible-tools.ts';
 export { suggestAllowRule } from './suggest-allow-rule.ts';

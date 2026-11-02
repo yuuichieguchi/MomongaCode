@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { EMPTY_PROTECTED_SET, resolveCanonicalPath, volumeIsCaseInsensitive } from '@momonga/foundation';
+import { TEST_HEARTBEAT_MS } from './test-support.ts';
 import type { EntryRead, PathResolution, ProtectedSet, StepRead, Unresolved, UnresolvableErrno } from '@momonga/foundation';
 
 export type FakeProgramResolution = { program: string } | { none: true };
@@ -198,7 +199,9 @@ export const hostFilesystemOf = <T extends FakePolicyFilesystem>(fake: T): HostO
   expandGlob: async (pattern, cwd, limit) => fake.expandGlob(pattern, cwd, limit),
 });
 
-export const FAKE_LEASE = { leaseMs: 30_000, heartbeatMs: 10_000 } as const;
+const LEASE_PER_HEARTBEAT = 3;
+
+export const FAKE_LEASE = { leaseMs: LEASE_PER_HEARTBEAT * TEST_HEARTBEAT_MS, heartbeatMs: TEST_HEARTBEAT_MS } as const;
 
 export const protectedSetWith = (roots: readonly string[], paths: readonly string[]): ProtectedSet => ({ ...EMPTY_PROTECTED_SET, roots, paths });
 
