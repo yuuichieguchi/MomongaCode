@@ -5,7 +5,7 @@ import type { McpRemotePorts } from './remote-ports.ts';
 import type { McpMarkerOptions } from './stdio-transport.ts';
 import type { McpTimers } from './timers.ts';
 import { createManagedConnection } from './connection.ts';
-import type { McpServerDiagnostics } from './connection.ts';
+import type { McpAuthProbe, McpServerDiagnostics } from './connection.ts';
 import { createMcpToolSource } from './source.ts';
 
 export type McpPoolOptions = {
@@ -29,7 +29,10 @@ export type McpPool = {
   diagnostics(): McpServerDiagnostics[];
 };
 
-export type McpAuthorizingPool = McpPool & { authorize(server: string, signal: AbortSignal): Promise<void> };
+export type McpAuthorizingPool = McpPool & {
+  authorize(server: string, signal: AbortSignal): Promise<void>;
+  authState(server: string): Promise<McpAuthProbe>;
+};
 
 export const createMcpPool = (options: McpPoolOptions): McpAuthorizingPool => {
   const { servers, projectDir, baseEnv, clock } = options;
@@ -51,6 +54,10 @@ export const createMcpPool = (options: McpPoolOptions): McpAuthorizingPool => {
       ...(options.closeGraceMs === undefined ? {} : { closeGraceMs: options.closeGraceMs }),
     }),
   );
+  const connectionNamed = (server: string): Promise<(typeof connections)[number]> => {
+    const connection = connections.find((candidate) => candidate.name === server);
+    return connection === undefined ? Promise.reject(new Error(`no MCP server named "${server}" in this pool`)) : Promise.resolve(connection);
+  };
   return {
     sources: connections.map((connection) =>
       createMcpToolSource({
@@ -63,10 +70,7 @@ export const createMcpPool = (options: McpPoolOptions): McpAuthorizingPool => {
       await Promise.all(connections.map((connection) => connection.close()));
     },
     diagnostics: () => connections.map((connection) => connection.diagnostics()),
-    authorize: (server, signal) => {
-      const connection = connections.find((candidate) => candidate.name === server);
-      if (connection === undefined) return Promise.reject(new Error(`no MCP server named "${server}" in this pool`));
-      return connection.authorize(signal);
-    },
+    authorize: (server, signal) => connectionNamed(server).then((connection) => connection.authorize(signal)),
+    authState: (server) => connectionNamed(server).then((connection) => connection.authState()),
   };
 };

@@ -394,7 +394,13 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       return { composition, runtime, tracker, skills, memories };
     });
     const { composition: settingsComposition, runtime: toolRuntime, tracker, skills: skillsPort, memories: memoriesPort } = ports;
-    cleanups.push({ name: 'mcp-pools', run: () => toolRuntime.mcpPools.closeAll() });
+    cleanups.push({
+      name: 'mcp-pools',
+      run: async () => {
+        await toolRuntime.mcpPools.closeAll();
+        await toolRuntime.mcpAdmin.close();
+      },
+    });
     cleanups.push({ name: 'cancel-upstream', run: () => tracker.settle(CANCEL_UPSTREAM_SETTLE_MS) });
 
     const runService = await step('service', () =>
@@ -419,6 +425,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           await telemetry.forceFlush();
           return runTraceOf(traceStore, runId);
         },
+        mcp: toolRuntime.mcpAdmin,
         onError: (error) => logger.error('service error', { err: asError(error) }),
         onFatal: latchFatal,
       }),

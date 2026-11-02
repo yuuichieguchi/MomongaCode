@@ -1,7 +1,7 @@
 import { PinnedOverflowError } from '@momonga/context';
 import { parseJsonOrText } from '@momonga/foundation';
 import type { PermissionOption, RunEventPayload, RunState } from '@momonga/protocol';
-import type { CallOutcome, NeedsApprovalOutcome, ResultOutcome, ToolCall } from '@momonga/tools';
+import type { CallOutcome, NeedsApprovalOutcome, NeedsInputOutcome, ResultOutcome, ToolCall } from '@momonga/tools';
 import { validateToolInput } from '@momonga/tools';
 import type { Session } from '@momonga/store';
 import type { TraceSpan } from '../ports.ts';
@@ -58,6 +58,9 @@ export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
     settled,
     ...(result.plan === undefined ? [] : [{ type: 'plan.updated' as const, entries: result.plan }]),
     ...(result.skill === undefined ? [] : [{ type: 'skill.activated' as const, name: result.skill.name, content: result.skill.content }]),
+    ...(result.authorizationRequired === undefined
+      ? []
+      : [{ type: 'mcp.authorization.required' as const, callId, server: result.authorizationRequired.server }]),
   ];
 };
 
@@ -89,6 +92,18 @@ const requestApproval = (ctx: ClaimContext, outcome: NeedsApprovalOutcome): void
   journal.sync();
 };
 
+const requestInput = (ctx: ClaimContext, outcome: NeedsInputOutcome): void => {
+  const { options, journal } = ctx;
+  const created = options.store.requestElicitation(ctx.claim, {
+    callId: outcome.callId,
+    expiresAt: Math.min(options.clock.now() + ctx.limits.approvalTtlMs, ctx.run.deadlineAt),
+    server: outcome.server,
+    requests: outcome.requests,
+  });
+  if (created.kind === 'lease_lost') ctx.control.lost();
+  journal.sync();
+};
+
 const persistRule = async (
   ctx: ClaimContext,
   session: Session,
@@ -113,7 +128,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   const { options, journal, run } = ctx;
   recordCalls(ctx);
   const entries = Object.entries(journal.state.pendingCalls);
-  if (entries.some(([, call]) => call.status === 'awaiting_approval')) return ctx.terminals.yieldTo('WAITING_HUMAN');
+  if (entries.some(([, call]) => call.status === 'awaiting_approval' || call.status === 'awaiting_input')) return ctx.terminals.yieldTo('WAITING_HUMAN');
   const runnable = entries.filter(([, call]) => call.status === 'requested' || call.status === 'started');
   if (runnable.length === 0) return 'continue';
 
@@ -134,7 +149,8 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
       resolution?.kind === 'allow_once' || resolution?.kind === 'allow_always'
         ? { approval: { kind: resolution.kind, subjectDigest: resolution.subjectDigest } }
         : {};
-    calls.push({ callId, name: call.name, arguments: call.arguments, ...approval });
+    const inputResponses = call.inputResolution === undefined ? {} : { inputResponses: call.inputResolution.responses };
+    calls.push({ callId, name: call.name, arguments: call.arguments, ...approval, ...inputResponses });
   }
   if (rejected.length > 0) journal.append(rejected);
   if (calls.length === 0) return 'continue';
@@ -192,7 +208,9 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   if (ctx.control.shuttingDown()) return ctx.terminals.yieldLease();
 
   const asking = outcomes.filter((outcome): outcome is NeedsApprovalOutcome => outcome.kind === 'needs_approval');
-  if (asking.length === 0) return 'continue';
+  const waiting = outcomes.filter((outcome): outcome is NeedsInputOutcome => outcome.kind === 'needs_input');
+  if (asking.length === 0 && waiting.length === 0) return 'continue';
   for (const outcome of asking) requestApproval(ctx, outcome);
+  for (const outcome of waiting) requestInput(ctx, outcome);
   return ctx.terminals.yieldTo('WAITING_HUMAN');
 };

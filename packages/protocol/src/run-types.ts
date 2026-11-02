@@ -35,6 +35,15 @@ export type PermissionOption = {
   kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';
 };
 
+export type ElicitationRequestView =
+  | { key: string; mode: 'form'; message: string; requestedSchema: Record<string, unknown> }
+  | { key: string; mode: 'url'; message: string; url: string };
+
+export type ElicitationAnswerRecord =
+  | { action: 'accept'; content?: Record<string, string | number | boolean | string[]> }
+  | { action: 'decline' }
+  | { action: 'cancel' };
+
 export type ModelResponse = {
   status: 'completed' | 'incomplete';
   incompleteReason?: string;
@@ -73,6 +82,10 @@ export type RunEventPayload =
     }
   | { type: 'tool.permission.resolved'; approvalId: string; optionId: string; rulePersisted?: boolean }
   | { type: 'tool.permission.cancelled'; approvalId: string; reason: 'expired' | 'withdrawn' | 'superseded' }
+  | { type: 'tool.elicitation.requested'; inputId: string; callId: string; server: string; requests: ElicitationRequestView[] }
+  | { type: 'tool.elicitation.resolved'; inputId: string; responses: Record<string, ElicitationAnswerRecord> }
+  | { type: 'tool.elicitation.cancelled'; inputId: string; reason: 'expired' | 'withdrawn' | 'superseded' }
+  | { type: 'mcp.authorization.required'; server: string; callId?: string }
   | { type: 'tool.started'; callId: string; idemKey: string }
   | { type: 'tool.updated'; callId: string; content: unknown[] }
   | {
@@ -130,7 +143,7 @@ export type RunEventEnvelope = {
 
 export type RunEvent = RunEventPayload extends infer Payload ? (Payload extends unknown ? Payload & RunEventEnvelope : never) : never;
 
-export type PendingCallStatus = 'requested' | 'awaiting_approval' | 'started' | 'completed' | 'reconciled';
+export type PendingCallStatus = 'requested' | 'awaiting_approval' | 'awaiting_input' | 'started' | 'completed' | 'reconciled';
 
 export type RunState = {
   runId: string;
@@ -158,6 +171,8 @@ export type RunState = {
       subjectDigest?: string;
       suggestedRule?: string;
       resolution?: { optionId: string; kind: PermissionOption['kind']; subjectDigest: string; suggestedRule?: string; rulePersisted?: true };
+      input?: { inputId: string; server: string; requests: ElicitationRequestView[] };
+      inputResolution?: { inputId: string; responses: Record<string, ElicitationAnswerRecord> };
     }
   >;
   inFlightModelRequest?: { step: number; attempt: number; digest: string; body: unknown; requestedSeq: number };

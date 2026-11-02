@@ -7,7 +7,7 @@ import type { AnyTool } from './types.ts';
 
 const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
-export type ToolSourceListing = { tools: AnyTool[]; notices: string[] };
+export type ToolSourceListing = { tools: AnyTool[]; notices: string[]; authorizationRequired?: string[] };
 
 export type ToolListOptions = { signal?: AbortSignal };
 
@@ -21,6 +21,7 @@ export type ToolSet = {
   readonly digest: string;
   readonly tools: readonly AnyTool[];
   readonly notices: readonly string[];
+  readonly authorizationRequired: readonly string[];
   get(name: string): AnyTool | undefined;
   forModel(options: { mode: PermissionMode; rules: PermissionRule[] }): FunctionTool[];
 };
@@ -40,7 +41,7 @@ const assertRegistrable = (tool: AnyTool): void => {
 const digestOf = (tools: readonly AnyTool[]): string =>
   sha256Hex(canonicalJson(tools.map((tool) => [tool.name, tool.description, tool.kind, tool.sideEffect, tool.inputSchema])));
 
-const buildToolSet = (tools: readonly AnyTool[], notices: readonly string[]): ToolSet => {
+const buildToolSet = (tools: readonly AnyTool[], notices: readonly string[], authorizationRequired: readonly string[]): ToolSet => {
   const frozenTools = Object.freeze([...tools]);
   const frozenNotices = Object.freeze([...notices]);
   const byName = new Map(frozenTools.map((tool) => [tool.name, tool]));
@@ -48,6 +49,7 @@ const buildToolSet = (tools: readonly AnyTool[], notices: readonly string[]): To
     digest: digestOf(frozenTools),
     tools: frozenTools,
     notices: frozenNotices,
+    authorizationRequired: Object.freeze([...authorizationRequired]),
     get: (name) => byName.get(name),
     forModel: ({ mode, rules }) => {
       const visible = new Set(modelVisibleTools([...frozenTools], { mode, rules }).map((tool) => tool.name));
@@ -76,6 +78,7 @@ export const createToolRegistry = (): ToolRegistry => {
       const tools: AnyTool[] = [...builtins];
       const taken = new Set(tools.map((tool) => tool.name));
       const notices: string[] = [];
+      const authorizationRequired: string[] = [];
       for (const source of sources) {
         signal?.throwIfAborted();
         const listOptions: ToolListOptions = signal === undefined ? {} : { signal };
@@ -86,6 +89,7 @@ export const createToolRegistry = (): ToolRegistry => {
           } else {
             const listing = await source.listWithNotices(listOptions);
             listed = listing.tools;
+            authorizationRequired.push(...(listing.authorizationRequired ?? []));
             for (const notice of listing.notices) notices.push(`Tool source ${JSON.stringify(source.id)}: ${notice}`);
           }
         } catch (error) {
@@ -108,7 +112,7 @@ export const createToolRegistry = (): ToolRegistry => {
           tools.push(tool);
         }
       }
-      return buildToolSet(tools, notices);
+      return buildToolSet(tools, notices, authorizationRequired);
     },
   };
 };

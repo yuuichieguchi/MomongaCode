@@ -2,12 +2,15 @@ import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { modeIsPrivate, noFollowFlag } from '@momonga/foundation';
+import type { MomongaPaths } from '@momonga/foundation';
 
 export interface McpCredentialStore {
   read(key: string): Promise<string | undefined>;
   write(key: string, value: string): Promise<void>;
   remove(key: string): Promise<void>;
 }
+
+export const mcpCredentialDirectory = (paths: Pick<MomongaPaths, 'state'>): string => path.join(paths.state, 'mcp-credentials');
 
 export const createMemoryCredentialStore = (): McpCredentialStore => {
   const entries = new Map<string, string>();

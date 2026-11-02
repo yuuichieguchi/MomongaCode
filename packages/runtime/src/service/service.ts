@@ -11,6 +11,7 @@ import type { SandboxKind } from '../process/sandbox-kind.ts';
 import type { SkillsPort } from '../ports.ts';
 import { createRunApp } from './app.ts';
 import type { RunLimitDefaults, SessionCreateSettings } from './app.ts';
+import type { McpAdminPort } from './input-routes.ts';
 import type { RunNotifier } from './notifier.ts';
 import { startDataVersionPoll } from './data-version-poll.ts';
 import { startApprovalSweeper } from './sweeper.ts';
@@ -42,6 +43,7 @@ export type RunServiceOptions = {
   maxBodyBytes?: number;
   cancelUpstream?: (runId: string) => Promise<void>;
   runTrace: (runId: string) => Promise<RunTraceView | undefined>;
+  mcp: McpAdminPort;
   onError?: (error: unknown) => void;
   onFatal?: (error: Error) => void;
 };
@@ -100,6 +102,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     maxBodyBytes: options.maxBodyBytes ?? TWO_MIB,
     closeSignal: closeController.signal,
     runTrace: options.runTrace,
+    mcp: options.mcp,
     ...(options.cancelUpstream === undefined ? {} : { cancelUpstream: options.cancelUpstream }),
     onError: report,
   });

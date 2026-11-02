@@ -1,10 +1,9 @@
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
-import { loadMcpServers } from '@momonga/config';
 import { canonicalJson, ensureSessionTmpDir as defaultEnsureSessionTmpDir, sha256Hex } from '@momonga/foundation';
 import type { Clock, JsonLogger, MomongaPaths, ReapTiming } from '@momonga/foundation';
-import { createFileCredentialStore, createMcpPool, inheritedEnvOf, openInBrowser } from '@momonga/mcp';
-import type { McpPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
+import { createFileCredentialStore, createMcpPool, inheritedEnvOf, mcpCredentialDirectory } from '@momonga/mcp';
+import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
 import type { Sandbox } from '@momonga/sandbox';
 import type { RuntimeStore } from '@momonga/store';
 import { createBuiltinTools, createPolicyFilesystem, createToolExecutor, createToolRegistry } from '@momonga/tools';
@@ -14,6 +13,8 @@ import type { ToolRuntimePort } from '../ports.ts';
 import type { RunNotifier } from '../service/notifier.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { MCP_CLOSE_GRACE_MS } from './constants.ts';
+import { createMcpAdmin, loadSessionMcpServers } from './mcp-admin.ts';
+import type { McpAdmin } from './mcp-admin.ts';
 import { createMcpPoolCache } from './mcp-pool-cache.ts';
 import type { McpPoolCache } from './mcp-pool-cache.ts';
 import { createSessionStates } from './session-states.ts';
@@ -34,6 +35,7 @@ export type ToolRuntimeOptions = {
   settings: Pick<SettingsComposition, 'envFor' | 'takeUserSnapshot' | 'loadSessionSettings' | 'trustOracle'>;
   reapTiming: ReapTiming;
   createPool?: (options: McpPoolOptions) => McpPool;
+  createAdminPool?: (options: McpPoolOptions) => McpAuthorizingPool;
   mcpRemote?: McpRemotePorts;
   ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<string>;
   policyFilesystem?: PolicyFilesystem;
@@ -42,6 +44,7 @@ export type ToolRuntimeOptions = {
 export type ToolRuntime = {
   port: ToolRuntimePort;
   mcpPools: McpPoolCache;
+  mcpAdmin: McpAdmin;
   sessionStates: SessionStates;
   inFlightKeys(): ReadonlySet<string>;
 };
@@ -53,9 +56,9 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   if (!path.isAbsolute(home)) throw new TypeError(`home must be an absolute path, got ${home}`);
   const createPool = options.createPool ?? createMcpPool;
   const mcpRemote: McpRemotePorts = options.mcpRemote ?? {
-    credentials: createFileCredentialStore(path.join(paths.state, 'mcp-credentials')),
+    credentials: createFileCredentialStore(mcpCredentialDirectory(paths)),
     randomToken: () => randomBytes(32).toString('base64url'),
-    openAuthorizationUrl: (url, signal) => openInBrowser(url, signal, process.env),
+    openAuthorizationUrl: () => Promise.reject(new Error('the daemon never opens a browser; authorization URLs are handed to the client through the Run API')),
   };
   const ensureSessionTmpDir = options.ensureSessionTmpDir ?? defaultEnsureSessionTmpDir;
 
@@ -68,6 +71,17 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     processMarkerDir: paths.markers.tools,
     onWarning: (message) => logger.warn(message),
     reap: { timing: reapTiming },
+  });
+  const mcpAdmin = createMcpAdmin({
+    home,
+    store,
+    clock,
+    timers,
+    logger,
+    report,
+    settings,
+    remote: mcpRemote,
+    createPool: options.createAdminPool ?? createMcpPool,
   });
   const mcpPools = createMcpPoolCache({ store, notifier, timers, logger, report });
   const sessionStates = createSessionStates({ clock, store, logger });
@@ -86,7 +100,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     let acquiredHere = false;
     try {
       const loaded = await settings.loadSessionSettings(session.cwd, snapshot);
-      const mcp = await loadMcpServers({ home, projectDir: session.cwd, trust: settings.trustOracle, env, user: snapshot.user });
+      const mcp = await loadSessionMcpServers({ home, settings }, session, env, snapshot.user);
       const sources: McpPool['sources'] = [];
       if (mcp.enabled.length > 0) {
         const servers = mcp.enabled;
@@ -148,5 +162,5 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     sessionState: (session) => sessionStates.get(session),
   };
 
-  return { port, mcpPools, sessionStates, inFlightKeys: () => executor.inFlightKeys() };
+  return { port, mcpPools, mcpAdmin, sessionStates, inFlightKeys: () => executor.inFlightKeys() };
 };

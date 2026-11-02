@@ -19,6 +19,7 @@ export type IdempotencyPort = {
   get(key: string): ToolIdempotencyLookup | undefined;
   begin(key: string, options: { expiresAt: number; meta: Record<string, unknown> }): ToolIdempotencyBegin;
   attachProcess(key: string, process: { pgid: number; startedAt: number }): void;
+  checkpoint(key: string, state: Record<string, unknown> | undefined): void;
   complete(key: string, result: unknown): void;
   markUnknown(key: string): void;
   markUnknownIfPending(key: string): boolean;

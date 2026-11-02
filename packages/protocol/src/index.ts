@@ -23,8 +23,12 @@ export { compactionSummaryMessage, decodeCompactionSummary } from './compaction-
 export { PROBE_KEYWORDS } from './probe.ts';
 export type { ProbeKeyword, ProbeReport } from './probe.ts';
 export { RUN_API_SCHEMAS, toPublicRunEvent } from './run-api.ts';
+export { MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES } from './run-api.ts';
 export type {
   JsonSchema,
+  McpAuthState,
+  McpAuthorizationView,
+  McpServerView,
   PublicRunEvent,
   RunHealth,
   RunTraceSpan,
@@ -43,6 +47,8 @@ export { APPROVAL_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMIN
 export type {
   ActivatedSkillRecord,
   ApprovalStatus,
+  ElicitationAnswerRecord,
+  ElicitationRequestView,
   ModelResponse,
   PendingCallStatus,
   PermissionMode,

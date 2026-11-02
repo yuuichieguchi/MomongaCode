@@ -41,13 +41,6 @@ export class McpTaskError extends Error {
   }
 }
 
-export class McpInputRequiredError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'McpInputRequiredError';
-  }
-}
-
 const TRANSIENT_HTTP_STATUSES: ReadonlySet<number> = new Set([429, 502, 503, 504]);
 const TRANSIENT_SOCKET_CODES: ReadonlySet<string> = new Set(['UND_ERR_SOCKET', 'ECONNRESET', 'ECONNREFUSED', 'EPIPE', 'ETIMEDOUT']);
 
@@ -75,3 +68,8 @@ export const isSessionExpired = (error: unknown): boolean => error instanceof Sd
 
 export const isUnauthorized = (error: unknown): boolean =>
   error instanceof SdkHttpError && error.code === SdkErrorCode.ClientHttpAuthentication;
+
+export const authorizationRequiredFor = (error: unknown): McpAuthorizationError | undefined => {
+  const candidate = error instanceof Error && error.cause instanceof McpAuthorizationError ? error.cause : error;
+  return candidate instanceof McpAuthorizationError && candidate.failure === 'required' ? candidate : undefined;
+};

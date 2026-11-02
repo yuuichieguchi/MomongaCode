@@ -60,6 +60,7 @@ type Entry = { kind: 'open'; rec: FakeRecord } | { kind: 'completed'; result: un
 export type IdempotencyLog =
   | { op: 'begin'; key: string; expiresAt: number; meta: Record<string, unknown>; s: FakeBegin['s'] }
   | { op: 'attachProcess'; key: string; pgid: number; startedAt: number }
+  | { op: 'checkpoint'; key: string; state: Record<string, unknown> | undefined }
   | { op: 'complete'; key: string; result: unknown }
   | { op: 'markUnknown'; key: string }
   | { op: 'markUnknownIfPending'; key: string; changed: boolean };
@@ -96,6 +97,13 @@ export const makeIdempotency = (clock: { now(): number }) => {
       log.push({ op: 'attachProcess', key, ...processInfo });
       const existing = records.get(key);
       if (existing?.kind === 'open') existing.rec = { ...existing.rec, ...processInfo };
+    },
+    checkpoint(key: string, state: Record<string, unknown> | undefined): void {
+      log.push({ op: 'checkpoint', key, state });
+      const existing = records.get(key);
+      if (existing?.kind !== 'open') return;
+      const { checkpoint: _previous, ...meta } = existing.rec.meta;
+      existing.rec = { ...existing.rec, meta: state === undefined ? meta : { ...meta, checkpoint: state } };
     },
     complete(key: string, result: unknown): void {
       log.push({ op: 'complete', key, result });

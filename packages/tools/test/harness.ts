@@ -111,7 +111,7 @@ export type BoundApproval = { kind: ApprovalKind; subjectDigest: string };
 
 export type ApprovalSpec = ApprovalKind | BoundApproval;
 
-export type HarnessCall = { callId: string; name: string; arguments: unknown; approval?: ApprovalSpec };
+export type HarnessCall = { callId: string; name: string; arguments: unknown; approval?: ApprovalSpec; inputResponses?: Record<string, unknown> };
 
 export const UNRESOLVED_SUBJECT_DIGEST = 'unresolved-subject';
 

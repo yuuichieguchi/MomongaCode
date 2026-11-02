@@ -24,9 +24,11 @@ export type CreateRunBody = {
 
 export type ResolveApprovalBody = { optionId: string };
 
+export type ResolveElicitationBody = { responses: Record<string, unknown> };
+
 export type PutTrustBody = { path: string; decision: 'trusted' | 'untrusted' };
 
-type RequestSchemaName = 'CreateSessionRequest' | 'PatchSessionRequest' | 'CreateRunRequest' | 'ResolveApprovalRequest' | 'PutTrustRequest';
+type RequestSchemaName = 'CreateSessionRequest' | 'PatchSessionRequest' | 'CreateRunRequest' | 'ResolveApprovalRequest' | 'ResolveElicitationRequest' | 'PutTrustRequest';
 
 const ajv = new Ajv2020.default({ strict: false, allErrors: true });
 
@@ -35,6 +37,7 @@ const validators: Record<RequestSchemaName, ValidateFunction> = {
   PatchSessionRequest: ajv.compile(RUN_API_SCHEMAS.PatchSessionRequest),
   CreateRunRequest: ajv.compile(RUN_API_SCHEMAS.CreateRunRequest),
   ResolveApprovalRequest: ajv.compile(RUN_API_SCHEMAS.ResolveApprovalRequest),
+  ResolveElicitationRequest: ajv.compile(RUN_API_SCHEMAS.ResolveElicitationRequest),
   PutTrustRequest: ajv.compile(RUN_API_SCHEMAS.PutTrustRequest),
 };
 

@@ -39,6 +39,21 @@ const permissionOption = closed(
   ['optionId', 'name', 'kind'],
 );
 
+const elicitationRequest = {
+  oneOf: [
+    closed({ key: string, mode: constant('form'), message: string, requestedSchema: { type: 'object' } }, ['key', 'mode', 'message', 'requestedSchema']),
+    closed({ key: string, mode: constant('url'), message: string, url: string }, ['key', 'mode', 'message', 'url']),
+  ],
+} as const satisfies JsonSchema;
+
+const elicitationAnswer = {
+  oneOf: [
+    closed({ action: constant('accept'), content: { type: 'object' } }, ['action']),
+    closed({ action: constant('decline') }, ['action']),
+    closed({ action: constant('cancel') }, ['action']),
+  ],
+} as const satisfies JsonSchema;
+
 const usage = closed({ inputTokens: nonNegativeInteger, outputTokens: nonNegativeInteger, totalTokens: nonNegativeInteger }, [
   'inputTokens',
   'outputTokens',
@@ -131,6 +146,19 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
     properties: { approvalId: string, reason: enumOf(['expired', 'withdrawn', 'superseded']) },
     required: ['approvalId', 'reason'],
   },
+  'tool.elicitation.requested': {
+    properties: { inputId: string, callId: string, server: string, requests: { type: 'array', items: elicitationRequest } },
+    required: ['inputId', 'callId', 'server', 'requests'],
+  },
+  'tool.elicitation.resolved': {
+    properties: { inputId: string, responses: { type: 'object', additionalProperties: elicitationAnswer } },
+    required: ['inputId', 'responses'],
+  },
+  'tool.elicitation.cancelled': {
+    properties: { inputId: string, reason: enumOf(['expired', 'withdrawn', 'superseded']) },
+    required: ['inputId', 'reason'],
+  },
+  'mcp.authorization.required': { properties: { callId: string, server: string }, required: ['server'] },
   'tool.started': { properties: { callId: string, idemKey: string }, required: ['callId', 'idemKey'] },
   'tool.updated': { properties: { callId: string, content: { type: 'array' } }, required: ['callId', 'content'] },
   'tool.completed': {
@@ -281,6 +309,30 @@ export type RunTraceSummary = {
 
 export type RunTraceView = { runId: string; summary: RunTraceSummary; spans: RunTraceSpan[] };
 
+export const MCP_AUTH_STATES = ['not_applicable', 'static_header', 'not_required', 'authorized', 'required', 'unreachable'] as const;
+
+export const MCP_AUTHORIZATION_STATUSES = ['awaiting_user', 'completed', 'failed'] as const;
+
+export type McpAuthState = (typeof MCP_AUTH_STATES)[number];
+
+export type McpAuthorizationView = {
+  server: string;
+  status: (typeof MCP_AUTHORIZATION_STATUSES)[number];
+  startedAt: number;
+  url?: string;
+  failure?: { code: string; message: string };
+};
+
+export type McpServerView = {
+  name: string;
+  scope: 'user' | 'project';
+  transport: 'stdio' | 'http';
+  url?: string;
+  auth: McpAuthState;
+  detail?: string;
+  authorization?: McpAuthorizationView;
+};
+
 export type RunHealth = {
   status: 'ok';
   version: string;
@@ -318,6 +370,57 @@ export const RUN_API_SCHEMAS = {
     ),
   ),
   ResolveApprovalRequest: root(closed({ optionId: { type: 'string', minLength: 1 } }, ['optionId'])),
+  McpAuthorizationView: root(
+    closed(
+      {
+        server: string,
+        status: enumOf(MCP_AUTHORIZATION_STATUSES),
+        startedAt: integer,
+        url: string,
+        failure: closed({ code: string, message: string }, ['code', 'message']),
+      },
+      ['server', 'status', 'startedAt'],
+    ),
+  ),
+  McpServersResponse: root(
+    closed(
+      {
+        servers: {
+          type: 'array',
+          items: closed(
+            {
+              name: string,
+              scope: enumOf(['user', 'project']),
+              transport: enumOf(['stdio', 'http']),
+              url: string,
+              auth: enumOf(MCP_AUTH_STATES),
+              detail: string,
+              authorization: { type: 'object' },
+            },
+            ['name', 'scope', 'transport', 'auth'],
+          ),
+        },
+      },
+      ['servers'],
+    ),
+  ),
+  ResolveElicitationRequest: root(closed({ responses: { type: 'object', additionalProperties: elicitationAnswer } }, ['responses'])),
+  ElicitationView: root(
+    closed(
+      {
+        id: string,
+        runId: string,
+        callId: string,
+        status: enumOf(APPROVAL_STATUSES),
+        server: string,
+        requests: { type: 'array', items: elicitationRequest },
+        expiresAt: integer,
+        createdAt: integer,
+        toolCall: closed({ callId: string, name: string, title: string }, ['callId', 'name', 'title']),
+      },
+      ['id', 'runId', 'callId', 'status', 'server', 'requests', 'expiresAt', 'createdAt', 'toolCall'],
+    ),
+  ),
   Health: root(
     closed(
       {

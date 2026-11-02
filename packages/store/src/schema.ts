@@ -215,6 +215,13 @@ CREATE INDEX memories_by_project ON memories (project);
 CREATE INDEX memories_by_recency ON memories (last_used_at DESC, created_at DESC);
 `;
 
+const ELICITATION_APPROVALS = `
+ALTER TABLE approvals ADD COLUMN kind TEXT NOT NULL DEFAULT 'permission' CHECK (kind IN ('permission', 'elicitation'));
+ALTER TABLE approvals ADD COLUMN server TEXT;
+ALTER TABLE approvals ADD COLUMN requests_json TEXT;
+ALTER TABLE approvals ADD COLUMN responses_json TEXT;
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -226,4 +233,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 4, name: 'snapshot the additional directories of a session', sql: SESSION_ADDITIONAL_DIRECTORIES },
   { version: 5, name: 'record whether a run inherits the history of its predecessor', sql: RUN_HISTORY_MODE },
   { version: 6, name: 'store long-term memories with their scope, source and use times', sql: LONG_TERM_MEMORIES },
+  { version: 7, name: 'let an approval carry an MCP elicitation and its answers', sql: ELICITATION_APPROVALS },
 ];

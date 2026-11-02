@@ -1,5 +1,7 @@
 import type { Clock } from '@momonga/foundation';
 import type {
+  ElicitationAnswerRecord,
+  ElicitationRequestView,
   PermissionMode,
   PermissionOption,
   RunEvent,
@@ -139,6 +141,7 @@ export type IdempotencyStore = {
   get(key: string): IdempotencyLookup | undefined;
   begin(key: string, options: { expiresAt: number; meta: Record<string, unknown> }): IdempotencyBegin;
   attachProcess(key: string, process: { pgid: number; startedAt: number }): void;
+  checkpoint(key: string, state: Record<string, unknown> | undefined): void;
   complete(key: string, result: unknown): void;
   markUnknown(key: string): void;
   markUnknownIfPending(key: string): boolean;
@@ -149,8 +152,12 @@ export type Approval = {
   id: string;
   runId: string;
   callId: string;
+  kind: 'permission' | 'elicitation';
   status: 'pending' | 'resolved' | 'superseded' | 'expired' | 'withdrawn';
   options: PermissionOption[];
+  server?: string;
+  requests?: ElicitationRequestView[];
+  responses?: Record<string, ElicitationAnswerRecord>;
   expiresAt: number;
   createdAt: number;
   optionId?: string;
@@ -176,6 +183,26 @@ export type ApprovalView = {
     locations?: { path: string; line?: number }[];
   };
 };
+
+export type ElicitationView = {
+  id: string;
+  runId: string;
+  callId: string;
+  status: Approval['status'];
+  server: string;
+  requests: ElicitationRequestView[];
+  expiresAt: number;
+  createdAt: number;
+  toolCall: { callId: string; name: string; title: string };
+};
+
+export type ResolveElicitationResult =
+  | { kind: 'ok'; elicitation: Approval; run: Run }
+  | NotFound
+  | { kind: 'approval_not_pending'; status: Approval['status'] }
+  | { kind: 'request_missing' }
+  | { kind: 'run_cancelled' }
+  | { kind: 'wrong_kind' };
 
 export type ApprovalStore = {
   get(id: string): Approval | undefined;
@@ -264,6 +291,13 @@ export type RuntimeStore = {
     },
   ): RequestApprovalResult;
   resolveApproval(approvalId: string, optionId: string): ResolveApprovalResult;
+  requestElicitation(
+    claim: Claim,
+    input: { callId: string; expiresAt: number; server: string; requests: ElicitationRequestView[] },
+  ): RequestApprovalResult;
+  resolveElicitation(elicitationId: string, responses: Record<string, ElicitationAnswerRecord>): ResolveElicitationResult;
+  elicitationView(elicitationId: string): ElicitationView | undefined;
+  pendingElicitationViews(runId: string): ElicitationView[];
   expireApprovals(nowMs: number): string[];
   approvalView(approvalId: string): ApprovalView | undefined;
   pendingApprovalViews(runId: string): ApprovalView[];

@@ -20,7 +20,8 @@ export type E2eCaseFile =
   | 'mcp-remote.test.ts'
   | 'cli.test.ts'
   | 'cli-pty.test.ts'
-  | 'memory.test.ts';
+  | 'memory.test.ts'
+  | 'mcp-complete.test.ts';
 
 export const E2E_CASES = [
   { id: 'b1-join', file: 'b1-model-call.test.ts', title: 'b1 join: restarted runtime joins the in-flight upstream call', needsBash: false },
@@ -97,6 +98,10 @@ export const E2E_CASES = [
   { id: 'memory-persist', file: 'memory.test.ts', title: 'memory: a memory saved after approval in one session reaches a later session with its provenance across a runtime restart, and a deleted one is gone', needsBash: false },
   { id: 'memory-project-trust', file: 'memory.test.ts', title: 'memory: project memories load only in a trusted folder and cannot be saved in an untrusted one', needsBash: false },
   { id: 'memory-secret-and-data', file: 'memory.test.ts', title: 'memory: a secret is refused before any approval and a recalled note cannot break out of its data block', needsBash: false },
+  { id: 'mcp-oauth-login', file: 'mcp-complete.test.ts', title: 'mcp: a server that needs authorization surfaces a typed event, the client logs in through the Run API and the next run succeeds', needsBash: false },
+  { id: 'mcp-elicitation', file: 'mcp-complete.test.ts', title: 'mcp: an elicitation reaches the Run API as an event, the answer resumes the multi round-trip request and the run completes', needsBash: false },
+  { id: 'mcp-task-input', file: 'mcp-complete.test.ts', title: 'mcp: a task that needs input is answered through tasks/update and the run completes', needsBash: false },
+  { id: 'mcp-task-recovery', file: 'mcp-complete.test.ts', title: 'mcp: a runtime killed with SIGKILL during a task resumes polling the recorded task and starts no second one', needsBash: false },
 ] as const satisfies readonly { id: string; file: E2eCaseFile; title: string; needsBash: boolean }[];
 
 export type E2eCase = (typeof E2E_CASES)[number];

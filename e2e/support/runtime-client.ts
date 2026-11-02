@@ -1,3 +1,4 @@
+import { createUdsClient } from '@momonga/foundation';
 import type { PermissionMode, RunHealth } from '@momonga/protocol';
 import { RunApiError, createRuntimeClient as createProductClient } from '../../packages/cli/src/client/runtime-client.ts';
 import type { RuntimeClient as ProductClient } from '../../packages/cli/src/client/runtime-client.ts';
@@ -6,6 +7,8 @@ import type { E2eHome } from './home.ts';
 import { until } from './wait.ts';
 
 export type { ApprovalView, RunView, SessionView };
+
+const JSON_HEADERS = { 'content-type': 'application/json' };
 
 export const SESSION_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 
@@ -37,6 +40,7 @@ export type RuntimeClient = {
   eventsStatus(id: string, options: EventsOptions): Promise<RawResponse>;
   approvals(runId: string): Promise<ApprovalView[]>;
   resolveApproval(id: string, optionId: string): Promise<RawResponse>;
+  json(method: string, path: string, body?: unknown): Promise<RawResponse>;
   health(): Promise<RunHealth>;
   close(): Promise<void>;
 };
@@ -47,6 +51,7 @@ type StreamOutcome = { kind: 'match'; frame: RunEventFrame } | { kind: 'ended' }
 
 export const createRuntimeClient = (home: E2eHome): RuntimeClient => {
   const product: ProductClient = createProductClient({ socketPath: home.paths.sockets.runtime });
+  const http = createUdsClient(home.paths.sockets.runtime);
   const openStreams = new Set<{ abort(): Promise<void> }>();
 
   const createSession = async (options: CreateSessionOptions = {}): Promise<{ session: SessionView }> => {
@@ -161,8 +166,19 @@ export const createRuntimeClient = (home: E2eHome): RuntimeClient => {
     }
   };
 
+  const json = async (method: string, path: string, body?: unknown): Promise<RawResponse> => {
+    const response = await http.request({
+      method,
+      path,
+      ...(body === undefined ? {} : { headers: JSON_HEADERS, body: JSON.stringify(body) }),
+    });
+    const text = await response.text();
+    return { status: response.status, body: text === '' ? undefined : JSON.parse(text) };
+  };
+
   const close = async (): Promise<void> => {
     await Promise.all([...openStreams].map((stream) => stream.abort()));
+    await http.close();
     await product.close();
   };
 
@@ -175,6 +191,7 @@ export const createRuntimeClient = (home: E2eHome): RuntimeClient => {
     eventsStatus,
     approvals: (runId) => product.approvals(runId),
     resolveApproval,
+    json,
     health: () => product.health(),
     close,
   };
