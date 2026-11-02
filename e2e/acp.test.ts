@@ -73,6 +73,7 @@ describe('acp: momonga acp', () => {
     expect(second.sessionId).not.toBe(first.sessionId);
     const status = await runCli(home, ['daemon', 'status']);
     expect(status.code).toBe(0);
+    expect(await acp.finish()).toEqual({ code: 0, signal: null });
   });
 
   it(titleOf('acp-edit-task'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
