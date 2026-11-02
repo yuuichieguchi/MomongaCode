@@ -6,7 +6,7 @@ import type { SandboxPolicy } from '@momonga/sandbox';
 export type SandboxPolicyOptions = {
   roots: readonly string[];
   home: string;
-  tmpDir: string;
+  tmpDir?: string;
   sessionsTmpRoot: string;
   fileRules: FileRuleSet;
   protectedSet: ProtectedSet;
@@ -21,16 +21,17 @@ const unique = (values: readonly string[]): string[] => [...new Set(values)];
 export const buildSandboxPolicy = (options: SandboxPolicyOptions): SandboxPolicy => {
   assertAbsoluteEntries('writable_root_not_absolute', 'roots', options.roots);
   assertAbsoluteEntries('entry_not_absolute', 'home', [options.home]);
-  assertAbsoluteEntries('entry_not_absolute', 'tmpDir', [options.tmpDir]);
+  assertAbsoluteEntries('entry_not_absolute', 'tmpDir', options.tmpDir === undefined ? [] : [options.tmpDir]);
   assertAbsoluteEntries('entry_not_absolute', 'sessionsTmpRoot', [options.sessionsTmpRoot]);
   assertAbsoluteEntries('entry_not_absolute', 'extraWritable', options.extraWritable ?? []);
   assertAbsoluteEntries('entry_not_absolute', 'extraReadDenied', options.extraReadDenied ?? []);
   assertAbsoluteEntries('entry_not_absolute', 'readAllowed', options.readAllowed ?? []);
   const denied = alwaysWriteDenied(options.home);
   const readDenied = [...denied.subtrees, options.sessionsTmpRoot, ...(options.extraReadDenied ?? [])];
-  const readAllowed = unique([options.tmpDir, ...(options.readAllowed ?? [])]);
+  const ownTmp = options.tmpDir === undefined ? [] : [options.tmpDir];
+  const readAllowed = unique([...ownTmp, ...(options.readAllowed ?? [])]);
   const policy: SandboxPolicy = {
-    writableRoots: [...options.roots, options.tmpDir, ...(options.extraWritable ?? [])],
+    writableRoots: [...options.roots, ...ownTmp, ...(options.extraWritable ?? [])],
     writeDenied: unique([...denied.subtrees, options.sessionsTmpRoot, ...options.protectedSet.paths]),
     writeDeniedLiterals: [...denied.literals],
     readDenied,
@@ -39,7 +40,7 @@ export const buildSandboxPolicy = (options: SandboxPolicyOptions): SandboxPolicy
     fileRules: options.fileRules,
     protectedSet: options.protectedSet,
   };
-  validateSandboxPolicy(policy, { tmpDir: options.tmpDir });
+  validateSandboxPolicy(policy, options.tmpDir === undefined ? {} : { tmpDir: options.tmpDir });
   const homeGuards = denied.subtrees.map(canonicalizePath);
   const skillsRoot = canonicalizePath(momongaLayout(options.home).skills);
   for (const entry of readAllowed.map(canonicalizePath)) {

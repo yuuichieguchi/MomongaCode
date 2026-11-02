@@ -59,7 +59,7 @@ const CLEARED_GIT_VARIABLES: ReadonlySet<string> = new Set([
 
 const INHERITED_CONFIG_VARIABLE = /^GIT_CONFIG_(COUNT|KEY_[0-9]+|VALUE_[0-9]+)$/;
 
-const readOnlyEnvironment = (env: Readonly<Record<string, string>>): Record<string, string> => ({
+export const readOnlyEnvironment = (env: Readonly<Record<string, string>>): Record<string, string> => ({
   ...Object.fromEntries(Object.entries(env).filter(([name]) => !CLEARED_GIT_VARIABLES.has(name) && !INHERITED_CONFIG_VARIABLE.test(name))),
   GIT_OPTIONAL_LOCKS: '0',
   GIT_NO_LAZY_FETCH: '1',
@@ -68,7 +68,7 @@ const readOnlyEnvironment = (env: Readonly<Record<string, string>>): Record<stri
   ...Object.fromEntries(READ_ONLY_GIT_CONFIG.flatMap(([key, value], index) => [[`GIT_CONFIG_KEY_${index}`, key], [`GIT_CONFIG_VALUE_${index}`, value]])),
 });
 
-const readOnlySandboxPolicy = (policy: SandboxPolicy): SandboxPolicy => ({
+export const readOnlySandboxPolicy = (policy: SandboxPolicy): SandboxPolicy => ({
   ...policy,
   writableRoots: [],
   fileRules: { ...policy.fileRules, entries: policy.fileRules.entries.map((entry) => (entry.widening ? { ...entry, widening: false } : entry)) },

@@ -65,7 +65,7 @@ import { reapTimingOf } from './reap-timing.ts';
 import type { SandboxKind } from './sandbox-kind.ts';
 import { createSettingsComposition } from './settings-port.ts';
 import { createGovernancePort } from '../governance/governance-port.ts';
-import { EVIDENCE_TMP_ID, createEvidenceRunner } from './evidence-run.ts';
+import { createEvidenceRunner } from './evidence-run.ts';
 import { createHistoryPort } from './history-port.ts';
 import { createMemoryPort } from './memory-port.ts';
 import { createAgentsPort } from './agents-port.ts';
@@ -540,7 +540,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
               root: paths.tmp.sessions,
               store,
               now: clock.now(),
-              hasInMemoryState: (sessionId) => sessionId === EVIDENCE_TMP_ID || toolRuntime.sessionStates.has(sessionId),
+              hasInMemoryState: (sessionId) => toolRuntime.sessionStates.has(sessionId),
               onWarning,
             });
           },
