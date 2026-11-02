@@ -1,7 +1,7 @@
 import { PinnedOverflowError } from '@momonga/context';
-import { parseJsonOrText } from '@momonga/foundation';
-import type { PermissionOption, RunEventPayload, RunState } from '@momonga/protocol';
-import type { CallOutcome, NeedsApprovalOutcome, ResultOutcome, ToolCall } from '@momonga/tools';
+import { canonicalJson, parseJsonOrText } from '@momonga/foundation';
+import type { PermissionOption, RunEventPayload, RunState, ToolAwait } from '@momonga/protocol';
+import type { CallOutcome, NeedsApprovalOutcome, ResultOutcome, ToolCall, WaitingOutcome } from '@momonga/tools';
 import { validateToolInput } from '@momonga/tools';
 import type { Session } from '@momonga/store';
 import type { TraceSpan } from '../ports.ts';
@@ -192,7 +192,31 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   if (ctx.control.shuttingDown()) return ctx.terminals.yieldLease();
 
   const asking = outcomes.filter((outcome): outcome is NeedsApprovalOutcome => outcome.kind === 'needs_approval');
-  if (asking.length === 0) return 'continue';
-  for (const outcome of asking) requestApproval(ctx, outcome);
-  return ctx.terminals.yieldTo('WAITING_HUMAN');
+  if (asking.length > 0) {
+    for (const outcome of asking) requestApproval(ctx, outcome);
+    return ctx.terminals.yieldTo('WAITING_HUMAN');
+  }
+  const waiting = outcomes.filter((outcome): outcome is WaitingOutcome => outcome.kind === 'waiting');
+  if (waiting.length === 0) return 'continue';
+  return yieldForTools(ctx, waiting);
+};
+
+const sameAwait = (left: ToolAwait | undefined, right: ToolAwait): boolean => left !== undefined && canonicalJson(left) === canonicalJson(right);
+
+const yieldForTools = (ctx: ClaimContext, waiting: readonly WaitingOutcome[]): Flow => {
+  const fresh = waiting.filter((outcome) => !sameAwait(ctx.journal.state.pendingCalls[outcome.callId]?.awaiting, outcome.awaits));
+  if (fresh.length > 0) {
+    ctx.journal.append(
+      fresh.map((outcome): RunEventPayload => ({
+        type: 'tool.waiting',
+        callId: outcome.callId,
+        awaits: outcome.awaits,
+        ...(outcome.wakeAt === undefined ? {} : { wakeAt: outcome.wakeAt }),
+      })),
+    );
+  }
+  const wakeAt = Math.min(ctx.run.deadlineAt, ...waiting.map((outcome) => outcome.wakeAt ?? ctx.run.deadlineAt));
+  const runIds = waiting.flatMap((outcome) => (outcome.awaits.kind === 'run' ? [outcome.awaits.runId] : []));
+  const jobIds = waiting.flatMap((outcome) => (outcome.awaits.kind === 'job' ? [outcome.awaits.jobId] : []));
+  return ctx.terminals.yieldTo('WAITING_TOOL', wakeAt, { refundAttempt: true, awaits: { runIds, jobIds } });
 };

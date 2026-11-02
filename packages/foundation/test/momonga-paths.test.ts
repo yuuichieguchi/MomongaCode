@@ -50,6 +50,7 @@ const expectedLayout = (home: string, cacheBase: string) => {
     },
     projects: path.join(root, 'projects'),
     skills: path.join(root, 'skills'),
+    agents: path.join(root, 'agents'),
     launcher: path.join(home, '.local', 'bin', 'momonga'),
     keychains: path.join(home, 'Library', 'Keychains'),
     cacheBase,

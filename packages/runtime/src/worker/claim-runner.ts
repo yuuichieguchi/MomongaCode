@@ -1,3 +1,4 @@
+import { agentSystemPrompt, readAgentPin } from '@momonga/agents';
 import { createTokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex } from '@momonga/foundation';
 import { isFatalStoreError } from '@momonga/store';
@@ -235,12 +236,27 @@ const drive = async (
     return;
   }
 
-  const systemPrompt = (options.systemPrompt ?? buildSystemPrompt)({ cwd: session.cwd, platform: process.platform });
+  const agentPin = readAgentPin(run.pins);
+  const basePrompt = (options.systemPrompt ?? buildSystemPrompt)({ cwd: session.cwd, platform: process.platform });
+  const systemPrompt = agentPin === undefined ? basePrompt : agentSystemPrompt(basePrompt, agentPin);
   const systemPromptDigest = sha256Hex(systemPrompt);
   const env = tools.envFor(session);
   const skills = await options.skills.load(session);
   const activationTool = skills.activationTool({ isActive: (name) => journal.state.activatedSkills.some((skill) => skill.name === name) });
-  const toolSet = await tools.toolSet(run.id, { signal: control.signal, env, additionalTools: activationTool === undefined ? [] : [activationTool] });
+  const agentSet = run.parentRunId === null && options.agents !== undefined ? await options.agents.load(session) : undefined;
+  const agentTool = options.agents === undefined ? undefined : agentSet?.tool(options.agents.runs);
+  const toolSet = await tools.toolSet(run.id, {
+    signal: control.signal,
+    env,
+    additionalTools: [activationTool, agentTool].filter((tool) => tool !== undefined),
+    ...(agentPin?.tools === undefined ? {} : { only: agentPin.tools }),
+  });
+  if (agentPin?.tools !== undefined && toolSet.tools.length === 0) {
+    terminals.finish('FAILED', {
+      error: { code: 'agent_without_tools', message: `none of the tools ${agentPin.tools.map((name) => JSON.stringify(name)).join(', ')} of subagent ${agentPin.name} exists` },
+    });
+    return;
+  }
   const recorded = journal.state.pins;
   const pins: RunPins =
     recorded === undefined
@@ -253,7 +269,7 @@ const drive = async (
       : readPins(recorded);
   journal.append([{ type: 'run.started', attempt: claim.attempt, now: clock.now(), pins: { ...pins }, mode: session.permissionMode }]);
   const knownNotes = new Set(journal.state.notes.map((note) => note.message));
-  const toolNotices = [...skills.warnings, ...toolSet.notices].filter((message) => !knownNotes.has(message));
+  const toolNotices = [...skills.warnings, ...(agentSet?.warnings ?? []), ...toolSet.notices].filter((message) => !knownNotes.has(message));
   if (toolNotices.length > 0) journal.append([...new Set(toolNotices)].map((message) => ({ type: 'notice', level: 'warning', message })));
 
   if (recorded !== undefined) {

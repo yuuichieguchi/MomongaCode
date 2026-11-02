@@ -236,6 +236,8 @@ describe('response schemas', () => {
       lastSeq: 9,
       previousRunId: 'run-0',
       history: 'inherit',
+      parentRunId: null,
+      parentCallId: null,
     };
     expect(accepts('RunView', view)).toBe(true);
     expect(accepts('RunView', { ...view, error: { code: 'max_attempts', message: 'x' } })).toBe(true);
@@ -258,6 +260,8 @@ describe('response schemas', () => {
       lastSeq: 1,
       previousRunId: 'run-1',
       history: 'inherit',
+      parentRunId: null,
+      parentCallId: null,
     };
     expect(accepts('RunView', view)).toBe(true);
     expect(accepts('RunView', { ...view, previousRunId: null, history: 'fresh' })).toBe(true);

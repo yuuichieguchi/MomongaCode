@@ -5,6 +5,7 @@ export { createWorker } from './worker/worker.ts';
 export type { Worker, WorkerBlobs, WorkerDefaults, WorkerErrorContext, WorkerOptions, WorkerWake } from './worker/types.ts';
 export type {
   AgentSpanInput,
+  AgentsPort,
   AppendedRule,
   Clock,
   GatewayCallOptions,
@@ -52,6 +53,12 @@ export { createSettingsComposition } from './process/settings-port.ts';
 export type { SettingsComposition, SettingsCompositionOptions, UserSnapshot } from './process/settings-port.ts';
 export { createPolicyFor, createRecoveryContextFor } from './process/tool-policy.ts';
 export type { PolicyForOptions } from './process/tool-policy.ts';
+export { createAgentsPort } from './process/agents-port.ts';
+export type { AgentsPortOptions } from './process/agents-port.ts';
+export { createChildRuns, finalTextOf } from './process/child-runs.ts';
+export type { ChildRunsOptions } from './process/child-runs.ts';
+export { createBackgroundJobs } from './process/background-jobs.ts';
+export type { BackgroundJobRegistry, BackgroundJobsOptions } from './process/background-jobs.ts';
 export { createSkillsPort } from './process/skills-port.ts';
 export type { SkillsPortOptions } from './process/skills-port.ts';
 export { createToolRuntime } from './process/tool-runtime.ts';

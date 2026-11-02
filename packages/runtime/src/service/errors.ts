@@ -42,7 +42,7 @@ export const methodNotAllowed = (allowed: readonly string[]): ApiError =>
     headers: { allow: allowed.join(', ') },
   });
 
-export const conflict = (code: 'approval_not_pending' | 'mode_unavailable' | 'run_cancelled', message: string): ApiError =>
+export const conflict = (code: 'approval_not_pending' | 'child_session' | 'mode_unavailable' | 'run_cancelled', message: string): ApiError =>
   new ApiError({ status: 409, type: 'conflict', code, message });
 
 export const bodyTooLarge = (maxBytes: number): ApiError =>

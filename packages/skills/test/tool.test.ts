@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ToolExecutionError, createToolRegistry, validateToolInput } from '@momonga/tools';
-import type { AnyTool, ToolContext } from '@momonga/tools';
+import type { AnyTool, ToolContext, ToolResult } from '@momonga/tools';
 import { ACTIVATE_SKILL_TOOL_NAME, createSkillLoader } from '@momonga/skills';
 import { fakeSkillFileSystem, skillFile } from './fake-file-system.ts';
 
@@ -17,7 +17,11 @@ const toolOf = async (isActive: (name: string) => boolean = () => false, fileSys
   return tool;
 };
 
-const run = (tool: AnyTool, name: string) => tool.execute({ name }, {} as ToolContext, undefined);
+const run = async (tool: AnyTool, name: string): Promise<ToolResult> => {
+  const result = await tool.execute({ name }, {} as ToolContext, undefined);
+  if (result.status === 'pending') throw new Error('activate_skill must not wait');
+  return result;
+};
 
 describe('activate_skill tool', () => {
   it('is named activate_skill and constrains name to the catalog as an enum', async () => {

@@ -9,6 +9,7 @@ import type {
   CreateResponseBody,
   StreamEvent,
 } from '@momonga/protocol';
+import type { AgentSet, ChildRuns } from '@momonga/agents';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { SkillSet } from '@momonga/skills';
 import type { Session } from '@momonga/store';
@@ -43,6 +44,8 @@ export type SkillsPort = {
   load(session: Session): Promise<SkillSet>;
 };
 
+export type AgentsPort = { load(session: Session): Promise<AgentSet>; runs: ChildRuns };
+
 export type ToolEnv = Readonly<Record<string, string>>;
 
 export type ToolPolicy = {
@@ -56,7 +59,7 @@ export type RecoveryContext = { roots: readonly string[]; tmpDir: string; env: T
 
 export type ToolRuntimePort = {
   envFor(session: Session): ToolEnv;
-  toolSet(runId: string, options: { signal: AbortSignal; env: ToolEnv; additionalTools?: readonly AnyTool[] }): Promise<ToolSet>;
+  toolSet(runId: string, options: { signal: AbortSignal; env: ToolEnv; additionalTools?: readonly AnyTool[]; only?: readonly string[] }): Promise<ToolSet>;
   recoveryToolSet(options: { signal: AbortSignal }): Promise<ToolSet>;
   policyFor(session: Session, options: { env: ToolEnv; rules: readonly PermissionRule[]; readableDirectories?: readonly string[] }): Promise<ToolPolicy>;
   recoveryContextFor(session: Session, options: { env: ToolEnv }): Promise<RecoveryContext>;

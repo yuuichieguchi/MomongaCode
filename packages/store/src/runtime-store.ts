@@ -10,6 +10,7 @@ import { foldRunState, initialRunState } from './fold.ts';
 import { decodeEvent, decodeRun, decodeRunEvents, decodeRunState, decodeSession, encodeRunState } from './codec.ts';
 import { StoreIdentityError, isFatalStoreError } from './fatal.ts';
 import { createIdempotencyStore } from './idempotency.ts';
+import { decodeJob, prepareJobStatements } from './jobs.ts';
 import { InheritanceError, applyInheritance, projectInheritance, retractsTask } from './inherit.ts';
 import type { InheritanceOutcome, InheritedPayload } from './inherit.ts';
 import { corrupt, expectOneOf, expectRecord, isRecord, readerFor } from './rows.ts';
@@ -23,9 +24,12 @@ import type {
   Claim,
   ClaimStatus,
   Conflict,
+  CreateChildRunResult,
   CreateRunResult,
+  FinishJobResult,
   HeartbeatResult,
   InheritContextResult,
+  JobStore,
   LeaseLost,
   LoadedRun,
   Run,
@@ -36,8 +40,10 @@ import type {
   RuntimeStore,
   RuntimeStoreOptions,
   ServiceMutationResult,
+  Session,
   SetPermissionModeResult,
   StatusPatch,
+  WaitTargets,
 } from './types.ts';
 
 const CLAIM_STATUSES = ['RUNNING', 'CANCELLING'] as const;
@@ -138,11 +144,11 @@ const CLAIM_ORDER = 'ORDER BY r.available_at, r.created_at, r.rowid';
 
 const RUN_INSERT_SQL = `
   INSERT INTO runs (
-    id, session_id, ordinal, idempotency_key, request_digest, previous_run_id, history_mode, status, version, lease_token, available_at, attempts,
-    failed_attempts, cancel_requested, deadline_at, limits_json, usage_json, step, last_seq, pins, dead_letter, created_at
+    id, session_id, ordinal, idempotency_key, request_digest, previous_run_id, history_mode, parent_run_id, parent_call_id, status, version, lease_token,
+    available_at, attempts, failed_attempts, cancel_requested, deadline_at, limits_json, usage_json, step, last_seq, pins, dead_letter, created_at
   ) VALUES (
-    :id, :sessionId, :ordinal, :idempotencyKey, :requestDigest, :previousRunId, :historyMode, 'QUEUED', 0, 0, :availableAt, 0,
-    0, 0, :deadlineAt, :limits, :usage, 0, 0, :pins, 0, :createdAt
+    :id, :sessionId, :ordinal, :idempotencyKey, :requestDigest, :previousRunId, :historyMode, :parentRunId, :parentCallId, 'QUEUED', 0, 0,
+    :availableAt, 0, 0, 0, :deadlineAt, :limits, :usage, 0, 0, :pins, 0, :createdAt
   )
 `;
 
@@ -172,6 +178,10 @@ const FENCE_SQL = `
   RETURNING *
 `;
 
+const TERMINAL_LIST = TERMINAL_STATUSES.map((status) => `'${status}'`).join(', ');
+
+const ROOT_SESSION = 'NOT EXISTS (SELECT 1 FROM runs child WHERE child.session_id = s.id AND child.parent_run_id IS NOT NULL)';
+
 const prepareStatements = (db: DatabaseSync) => ({
   insertSession: db.prepare(
     `INSERT INTO sessions (id, cwd, env_json, permission_mode, model_alias, bypass_allowed, additional_directories_json, created_at)
@@ -180,8 +190,31 @@ const prepareStatements = (db: DatabaseSync) => ({
   updateSessionMode: db.prepare('UPDATE sessions SET permission_mode = :permissionMode WHERE id = :id'),
   sessionMaxEventId: db.prepare('SELECT COALESCE(MAX(id), 0) AS max_id FROM events WHERE session_id = :sessionId'),
   selectSession: db.prepare('SELECT * FROM sessions WHERE id = :id'),
-  listSessions: db.prepare('SELECT * FROM sessions ORDER BY created_at, rowid'),
-  listSessionsByCwd: db.prepare('SELECT * FROM sessions WHERE cwd = :cwd ORDER BY created_at, rowid'),
+  listSessions: db.prepare(`SELECT * FROM sessions s WHERE ${ROOT_SESSION} ORDER BY created_at, rowid`),
+  listSessionsByCwd: db.prepare(`SELECT * FROM sessions s WHERE cwd = :cwd AND ${ROOT_SESSION} ORDER BY created_at, rowid`),
+  childRuns: db.prepare('SELECT * FROM runs WHERE parent_run_id = :runId ORDER BY created_at, rowid'),
+  childByCall: db.prepare('SELECT * FROM runs WHERE parent_run_id = :parentRunId AND parent_call_id = :parentCallId'),
+  parentSessionOf: db.prepare(
+    'SELECT p.session_id AS parent_session_id FROM runs c JOIN runs p ON p.id = c.parent_run_id WHERE c.session_id = :sessionId AND c.parent_run_id IS NOT NULL LIMIT 1',
+  ),
+  descendantSessionRuns: db.prepare(
+    `WITH RECURSIVE tree(id) AS (SELECT id FROM runs WHERE session_id = :sessionId UNION SELECT c.id FROM runs c JOIN tree t ON c.parent_run_id = t.id)
+     SELECT r.session_id AS session_id FROM runs r JOIN tree t ON r.id = t.id WHERE r.session_id <> :sessionId AND r.status NOT IN (${TERMINAL_LIST})`,
+  ),
+  treeTokens: db.prepare(
+    `WITH RECURSIVE tree(id) AS (SELECT :rootId UNION ALL SELECT r.id FROM runs r JOIN tree t ON r.parent_run_id = t.id)
+     SELECT COALESCE(SUM(json_extract(r.usage_json, '$.totalTokens')), 0) AS total FROM runs r JOIN tree t ON r.id = t.id`,
+  ),
+  waitingInSessionTree: db.prepare(
+    `WITH RECURSIVE tree(session_id) AS (
+       SELECT :rootSessionId
+       UNION
+       SELECT c.session_id FROM runs c JOIN runs p ON c.parent_run_id = p.id JOIN tree t ON p.session_id = t.session_id
+     )
+     SELECT r.id FROM runs r WHERE r.status = 'WAITING_TOOL' AND r.session_id IN (SELECT session_id FROM tree) ORDER BY r.created_at, r.rowid`,
+  ),
+  activeRunsOfSession: db.prepare(`SELECT id FROM runs WHERE session_id = :sessionId AND status NOT IN (${TERMINAL_LIST}) ORDER BY ordinal`),
+  jobs: prepareJobStatements(db),
   dataVersion: db.prepare('PRAGMA data_version'),
   selectRun: db.prepare('SELECT * FROM runs WHERE id = :id'),
   latestSessionEventTime: db.prepare('SELECT created_at FROM events WHERE session_id = :sessionId ORDER BY id DESC LIMIT 1'),
@@ -208,6 +241,7 @@ const prepareStatements = (db: DatabaseSync) => ({
            OR EXISTS (SELECT 1 FROM approvals a WHERE a.run_id = r.id AND a.status = 'pending' AND a.expires_at <= :nowMs)
          )
        )
+       OR (r.status = 'WAITING_TOOL' AND r.available_at <= :nowMs)
      ORDER BY r.created_at, r.rowid`,
   ),
   toolCallEvent: db.prepare(
@@ -435,7 +469,29 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     if (patch.stopReason !== undefined) next.stopReason = patch.stopReason;
     if (patch.error !== undefined) next.error = patch.error;
     writeRun(next);
+    if (isTerminal(to) || to === 'CANCELLING') cancelChildren(run.id);
+    if (isTerminal(to)) wakeParent(run);
     return requireRun(run.id);
+  };
+
+  const cancelTargetOf = (status: RunStatus): RunStatus => (status === 'QUEUED' || status === 'WAITING_HUMAN' ? 'CANCELLED' : 'CANCELLING');
+
+  const cancelChildren = (runId: string): void => {
+    for (const row of sql.childRuns.all({ runId })) {
+      const child = decodeRun(row);
+      if (isTerminal(child.status) || child.status === 'CANCELLING') continue;
+      changeStatus(child, cancelTargetOf(child.status), { edges: SERVICE_TRANSITIONS });
+    }
+  };
+
+  const wakeRun = (runId: string): void => {
+    const run = requireRun(runId);
+    if (run.status !== 'WAITING_TOOL') return;
+    changeStatus(run, 'QUEUED', { edges: SERVICE_TRANSITIONS, availableAt: clock.now() });
+  };
+
+  const wakeParent = (child: Run): void => {
+    if (child.parentRunId !== null) wakeRun(child.parentRunId);
   };
 
   const deadLetter = (run: Run): void => {
@@ -495,6 +551,11 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const stopWaitingRun = (run: Run, nowMs: number): boolean => {
     if (run.status === 'QUEUED' && run.deadlineAt <= nowMs) {
       changeStatus(run, 'STOPPED', { edges: SWEEP_TRANSITIONS, patch: { stopReason: 'timeout' } });
+      return true;
+    }
+    if (run.status === 'WAITING_TOOL') {
+      if (run.availableAt > nowMs) return false;
+      changeStatus(run, 'QUEUED', { edges: SERVICE_TRANSITIONS, availableAt: nowMs });
       return true;
     }
     if (run.status !== 'WAITING_HUMAN') return false;
@@ -692,6 +753,107 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return { kind: 'inherited' };
     });
 
+  const requireSession = (sessionId: string): Session => {
+    const row = sql.selectSession.get({ id: sessionId });
+    if (row === undefined) throw new Error(`unknown session ${sessionId}`);
+    return decodeSession(row);
+  };
+
+  const rootSessionIdOf = (sessionId: string): string => {
+    let current = sessionId;
+    for (;;) {
+      const row = sql.parentSessionOf.get({ sessionId: current });
+      if (row === undefined) return current;
+      current = readerFor('runs', current, row).string('parent_session_id');
+    }
+  };
+
+  const rootRunIdOf = (runId: string): string => {
+    let current = requireRun(runId);
+    while (current.parentRunId !== null) current = requireRun(current.parentRunId);
+    return current.id;
+  };
+
+  const awaitsSettled = (targets: WaitTargets): boolean =>
+    targets.runIds.some((runId) => isTerminal(requireRun(runId).status)) ||
+    targets.jobIds.some((jobId) => {
+      const row = sql.jobs.select.get({ id: jobId });
+      if (row === undefined) throw new Error(`unknown job ${jobId}`);
+      return decodeJob(row).status !== 'running';
+    });
+
+  const propagateMode = (sessionId: string, mode: PermissionMode): void => {
+    const reached = new Set<string>();
+    for (const row of sql.descendantSessionRuns.all({ sessionId })) reached.add(readerFor('runs', sessionId, row).string('session_id'));
+    for (const reachedId of reached) {
+      if (requireSession(reachedId).permissionMode === mode) continue;
+      sql.updateSessionMode.run({ id: reachedId, permissionMode: mode });
+      insertEvent({ runId: null, sessionId: reachedId, seq: null, step: null, leaseToken: null, createdAt: clock.now(), payload: { type: 'mode.changed', mode } });
+    }
+  };
+
+  const jobs: JobStore = {
+    start: (input) =>
+      transaction(() => {
+        const existing = sql.jobs.selectByKey.get({ idemKey: input.idemKey });
+        if (existing !== undefined) return { job: decodeJob(existing), created: false };
+        sql.jobs.insert.run({ ...input, sessionId: rootSessionIdOf(input.sessionId), startedAt: clock.now() });
+        const row = sql.jobs.select.get({ id: input.id });
+        if (row === undefined) throw new Error(`job ${input.id} vanished during start`);
+        return { job: decodeJob(row), created: true };
+      }),
+    attachProcess: (id, pgid) => {
+      if (Number(sql.jobs.attach.run({ id, pgid }).changes) !== 1) throw new Error(`cannot attach a process to job ${id}: it is not running`);
+    },
+    get: (id) => {
+      const row = sql.jobs.select.get({ id });
+      return row === undefined ? undefined : decodeJob(row);
+    },
+    byIdemKey: (idemKey) => {
+      const row = sql.jobs.selectByKey.get({ idemKey });
+      return row === undefined ? undefined : decodeJob(row);
+    },
+    listRunning: () => sql.jobs.running.all().map(decodeJob),
+    listForSession: (sessionId) => sql.jobs.forSession.all({ sessionId: rootSessionIdOf(sessionId) }).map(decodeJob),
+    finish: (id, result) =>
+      transaction<FinishJobResult>(() => {
+        const row = sql.jobs.select.get({ id });
+        if (row === undefined) return { kind: 'not_found' };
+        const job = decodeJob(row);
+        if (job.status !== 'running') return { kind: 'already_finished', job };
+        sql.jobs.finish.run({
+          id,
+          status: result.status,
+          exitCode: result.exitCode ?? null,
+          signal: result.signal ?? null,
+          outputHandle: result.output?.handle ?? null,
+          outputStart: result.output?.start ?? 0,
+          outputTotal: result.output?.total ?? 0,
+          endedAt: clock.now(),
+        });
+        const event: RunEventPayload = {
+          type: 'job.finished',
+          jobId: id,
+          status: result.status,
+          ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
+          ...(result.signal === undefined ? {} : { signal: result.signal }),
+        };
+        for (const active of sql.activeRunsOfSession.all({ sessionId: job.sessionId })) {
+          const run = requireRun(readerFor('runs', job.sessionId, active).string('id'));
+          writeRun({ ...appendPayloads(run, [event]), version: run.version + 1 });
+        }
+        for (const waiting of sql.waitingInSessionTree.all({ rootSessionId: job.sessionId })) {
+          wakeRun(readerFor('runs', job.sessionId, waiting).string('id'));
+        }
+        const finished = sql.jobs.select.get({ id });
+        if (finished === undefined) throw new Error(`job ${id} vanished during finish`);
+        return { kind: 'finished', job: decodeJob(finished) };
+      }),
+    advanceRead: (id, offset) => {
+      sql.jobs.advance.run({ id, offset });
+    },
+  };
+
   const store: RuntimeStore = {
     createSession: (input) =>
       transaction(() => {
@@ -726,6 +888,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         const session = decodeSession(row);
         if (session.permissionMode === mode) return { kind: 'ok', session, changed: false };
         sql.updateSessionMode.run({ id: sessionId, permissionMode: mode });
+        propagateMode(sessionId, mode);
         insertEvent({ runId: null, sessionId, seq: null, step: null, leaseToken: null, createdAt: clock.now(), payload: { type: 'mode.changed', mode } });
         return { kind: 'ok', session: { ...session, permissionMode: mode }, changed: true };
       }),
@@ -753,6 +916,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           requestDigest: input.requestDigest ?? null,
           previousRunId: previous === undefined ? null : readerFor('runs', sessionId, previous).string('id'),
           historyMode: input.history ?? 'inherit',
+          parentRunId: null,
+          parentCallId: null,
           availableAt: now,
           deadlineAt: now + input.timeoutMs,
           limits: canonicalJson(input.limits),
@@ -767,6 +932,66 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         writeRun(inserted);
         return { kind: 'created', run: requireRun(id) };
       }),
+
+    createChildRun: (input) =>
+      transaction<CreateChildRunResult>(() => {
+        const existing = sql.childByCall.get({ parentRunId: input.parentRunId, parentCallId: input.parentCallId });
+        if (existing !== undefined) {
+          const run = decodeRun(existing);
+          return { kind: 'existing', run, session: requireSession(run.sessionId) };
+        }
+        const parentRow = sql.selectRun.get({ id: input.parentRunId });
+        if (parentRow === undefined) return { kind: 'parent_not_active', status: 'missing' };
+        const parent = decodeRun(parentRow);
+        if (isTerminal(parent.status) || parent.status === 'CANCELLING' || parent.cancelRequested) {
+          return { kind: 'parent_not_active', status: parent.status };
+        }
+        const parentSession = requireSession(parent.sessionId);
+        const now = clock.now();
+        const sessionId = uuidv7(clock);
+        sql.insertSession.run({
+          id: sessionId,
+          cwd: parentSession.cwd,
+          env: canonicalJson(parentSession.env),
+          permissionMode: parentSession.permissionMode,
+          modelAlias: input.modelAlias ?? parentSession.modelAlias,
+          bypassAllowed: parentSession.bypassAllowed ? 1 : 0,
+          additionalDirectories: canonicalJson(parentSession.additionalDirectories),
+          createdAt: now,
+        });
+        const runId = uuidv7(clock);
+        sql.insertRun.run({
+          id: runId,
+          sessionId,
+          ordinal: 1,
+          idempotencyKey: null,
+          requestDigest: null,
+          previousRunId: null,
+          historyMode: 'fresh',
+          parentRunId: parent.id,
+          parentCallId: input.parentCallId,
+          availableAt: now,
+          deadlineAt: parent.deadlineAt,
+          limits: canonicalJson(parent.limits),
+          usage: canonicalJson({ inputTokens: 0, outputTokens: 0, totalTokens: 0 }),
+          pins: canonicalJson(input.pins),
+          createdAt: now,
+        });
+        writeRun(appendPayloads(requireRun(runId), [{ type: 'user.message', text: input.input }]));
+        return { kind: 'created', run: requireRun(runId), session: requireSession(sessionId) };
+      }),
+
+    listChildRuns: (runId) => sql.childRuns.all({ runId }).map(decodeRun),
+
+    treeTokens: (runId) => {
+      const row = sql.treeTokens.get({ rootId: rootRunIdOf(runId) });
+      if (row === undefined) throw new Error(`could not compute the token usage of the run tree of ${runId}`);
+      return readerFor('runs', runId, row).number('total');
+    },
+
+    rootSessionId: rootSessionIdOf,
+
+    jobs,
 
     findRunByIdempotencyKey,
 
@@ -859,6 +1084,9 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         if (to === 'WAITING_HUMAN' && approvalOps.store.listPending(run.id).length === 0) {
           return moveWorker(run, CLAIM_STATUSES, 'QUEUED', { availableAt: clock.now(), ...refund });
         }
+        if (to === 'WAITING_TOOL' && options?.awaits !== undefined && awaitsSettled(options.awaits)) {
+          return moveWorker(run, CLAIM_STATUSES, 'QUEUED', { availableAt: clock.now(), ...refund });
+        }
         return moveWorker(run, CLAIM_STATUSES, to, { ...(availableAt === undefined ? {} : { availableAt }), ...refund });
       }),
 
@@ -883,7 +1111,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         if (row === undefined) return { kind: 'not_found' };
         const run = decodeRun(row);
         if (isTerminal(run.status) || run.status === 'CANCELLING') return { kind: 'ok', run, changed: false };
-        const to: RunStatus = run.status === 'QUEUED' || run.status === 'WAITING_HUMAN' ? 'CANCELLED' : 'CANCELLING';
+        const to = cancelTargetOf(run.status);
         if (!SERVICE_TRANSITIONS[run.status].includes(to)) throw new Error(`run ${runId} in status ${run.status} cannot be cancelled`);
         return { kind: 'ok', run: changeStatus(run, to, { edges: SERVICE_TRANSITIONS }), changed: true };
       }),

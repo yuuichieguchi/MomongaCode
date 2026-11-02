@@ -13,7 +13,9 @@ import type { PolicyFilesystem } from '@momonga/policy';
 import type { ToolRuntimePort } from '../ports.ts';
 import type { RunNotifier } from '../service/notifier.ts';
 import type { ServiceTimers } from '../service/timers.ts';
-import { MCP_CLOSE_GRACE_MS } from './constants.ts';
+import { createBackgroundJobs } from './background-jobs.ts';
+import type { BackgroundJobRegistry } from './background-jobs.ts';
+import { MCP_CLOSE_GRACE_MS, SANDBOX_KILL_GRACE_MS } from './constants.ts';
 import { createMcpPoolCache } from './mcp-pool-cache.ts';
 import type { McpPoolCache } from './mcp-pool-cache.ts';
 import { createSessionStates } from './session-states.ts';
@@ -43,6 +45,7 @@ export type ToolRuntime = {
   port: ToolRuntimePort;
   mcpPools: McpPoolCache;
   sessionStates: SessionStates;
+  jobs: BackgroundJobRegistry;
   inFlightKeys(): ReadonlySet<string>;
 };
 
@@ -60,7 +63,18 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   const ensureSessionTmpDir = options.ensureSessionTmpDir ?? defaultEnsureSessionTmpDir;
 
   const policyFilesystem = options.policyFilesystem ?? createPolicyFilesystem();
+  const jobs = createBackgroundJobs({
+    store,
+    clock,
+    timers,
+    markerDir: paths.markers.tools,
+    killGraceMs: SANDBOX_KILL_GRACE_MS,
+    reapTiming,
+    onWarning: (message) => logger.warn(message),
+    report,
+  });
   const executor = createToolExecutor({
+    jobs,
     fs: policyFilesystem,
     idempotency: store.idempotency,
     blobs: store.blobs,
@@ -75,7 +89,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   const policyFor = createPolicyFor(policyOptions);
   const recoveryContextFor = createRecoveryContextFor(policyOptions);
 
-  const toolSet: ToolRuntimePort['toolSet'] = async (runId, { signal, env, additionalTools }) => {
+  const toolSet: ToolRuntimePort['toolSet'] = async (runId, { signal, env, additionalTools, only }) => {
     const run = store.getRun(runId);
     if (run === undefined) throw new Error(`run ${runId} does not exist`);
     const session = store.getSession(run.sessionId);
@@ -115,7 +129,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
       for (const tool of createBuiltinTools()) registry.register(tool);
       for (const tool of additionalTools ?? []) registry.register(tool);
       for (const source of sources) registry.addSource(source);
-      const set = await registry.snapshot({ signal });
+      const set = await registry.snapshot({ signal, ...(only === undefined ? {} : { only }) });
 
       const notices = dedupe([
         ...loaded.warnings,
@@ -148,5 +162,5 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     sessionState: (session) => sessionStates.get(session),
   };
 
-  return { port, mcpPools, sessionStates, inFlightKeys: () => executor.inFlightKeys() };
+  return { port, mcpPools, sessionStates, jobs, inFlightKeys: () => new Set([...executor.inFlightKeys(), ...jobs.liveKeys()]) };
 };

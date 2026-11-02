@@ -59,6 +59,8 @@ import { protectedRootAreasOf } from './protected-areas.ts';
 import { reapTimingOf } from './reap-timing.ts';
 import type { SandboxKind } from './sandbox-kind.ts';
 import { createSettingsComposition } from './settings-port.ts';
+import { createAgentsPort } from './agents-port.ts';
+import { createChildRuns } from './child-runs.ts';
 import { createSkillsPort } from './skills-port.ts';
 import { runTeardown } from './teardown.ts';
 import type { TeardownStep } from './teardown.ts';
@@ -379,9 +381,17 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         loader: createSkillLoader({ home: canonicalHome, fileSystem: createNodeSkillFileSystem() }),
         settings: composition.settings,
       });
-      return { composition, runtime, tracker, skills };
+      const agents = createAgentsPort({
+        home: canonicalHome,
+        fileSystem: createNodeSkillFileSystem(),
+        settings: composition.settings,
+        runs: createChildRuns({ store, modelAliases: async () => (await gatewayClient.models()).map((model) => model.id) }),
+      });
+      return { composition, runtime, tracker, skills, agents };
     });
-    const { composition: settingsComposition, runtime: toolRuntime, tracker, skills: skillsPort } = ports;
+    const { composition: settingsComposition, runtime: toolRuntime, tracker, skills: skillsPort, agents: agentsPort } = ports;
+    await step('background-jobs', () => toolRuntime.jobs.reconcileOrphans());
+    cleanups.push({ name: 'background-jobs', run: () => toolRuntime.jobs.stopAll() });
     cleanups.push({ name: 'mcp-pools', run: () => toolRuntime.mcpPools.closeAll() });
     cleanups.push({ name: 'cancel-upstream', run: () => tracker.settle(CANCEL_UPSTREAM_SETTLE_MS) });
 
@@ -418,6 +428,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           gateway: gatewayClient,
           settings: settingsComposition.settings,
           skills: skillsPort,
+          agents: agentsPort,
           tools: toolRuntime.port,
           tracer,
           clock,

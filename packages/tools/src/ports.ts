@@ -1,3 +1,6 @@
+import type { JobView } from '@momonga/protocol';
+import type { SandboxedProcess } from '@momonga/sandbox';
+
 export type ToolIdempotencyRecord = {
   key: string;
   state: 'PENDING' | 'UNKNOWN';
@@ -31,4 +34,23 @@ export type BlobPort = {
     handle: string,
     range: { offset: number; length: number },
   ): Promise<{ text: string; totalLines: number; totalBytes: number; offset: number; length: number }>;
+};
+
+export type BackgroundJobStart = {
+  runId: string;
+  callKey: string;
+  callId: string;
+  command: string;
+  timeoutMs: number;
+  spawn(markerFile: string, signal: AbortSignal): SandboxedProcess;
+};
+
+export type BackgroundJobRead = { job: JobView; output: string };
+
+export type BackgroundJobs = {
+  start(request: BackgroundJobStart): Promise<{ jobId: string }>;
+  byCall(callKey: string): JobView | undefined;
+  status(runId: string, jobId: string): JobView;
+  read(runId: string, jobId: string, options: { filter?: RegExp }): Promise<BackgroundJobRead>;
+  kill(runId: string, jobId: string): Promise<JobView>;
 };

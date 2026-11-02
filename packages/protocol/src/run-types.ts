@@ -44,6 +44,12 @@ export type ModelResponse = {
 
 export type ActivatedSkillRecord = { name: string; content: string };
 
+export const JOB_STATUSES = ['running', 'exited', 'killed', 'unknown'] as const;
+
+export type JobStatus = (typeof JOB_STATUSES)[number];
+
+export type ToolAwait = { kind: 'run'; runId: string; sessionId: string; agent: string } | { kind: 'job'; jobId: string };
+
 export type RunEventPayload =
   | { type: 'user.message'; text: string }
   | { type: 'run.started'; attempt: number; now: number; pins: Record<string, unknown>; mode?: PermissionMode }
@@ -85,6 +91,8 @@ export type RunEventPayload =
       handle?: string;
     }
   | { type: 'tool.reconciled'; callId: string; outcome: 'already_applied' | 'not_applied' | 'unknown'; output: string }
+  | { type: 'tool.waiting'; callId: string; awaits: ToolAwait; wakeAt?: number }
+  | { type: 'job.finished'; jobId: string; status: Exclude<JobStatus, 'running'>; exitCode?: number; signal?: string }
   | {
       type: 'plan.updated';
       entries: { content: string; priority: 'high' | 'medium' | 'low'; status: 'pending' | 'in_progress' | 'completed' }[];
@@ -153,6 +161,7 @@ export type RunState = {
       arguments: unknown;
       status: PendingCallStatus;
       idemKey?: string;
+      awaiting?: ToolAwait;
       approvalId?: string;
       options?: PermissionOption[];
       subjectDigest?: string;

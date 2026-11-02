@@ -212,9 +212,11 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       portCalls.envFor.push({ sessionId: target.id, env });
       return env;
     },
-    toolSet: async (runId: string, toolSetOptions: { signal: AbortSignal; env: ToolEnv; additionalTools?: readonly AnyTool[] }) => {
+    toolSet: async (runId: string, toolSetOptions: { signal: AbortSignal; env: ToolEnv; additionalTools?: readonly AnyTool[]; only?: readonly string[] }) => {
       portCalls.toolSet.push({ runId, signal: toolSetOptions?.signal, env: toolSetOptions?.env });
-      return snapshotTools([...toolList(), ...(toolSetOptions.additionalTools ?? [])]);
+      const registry = createToolRegistry();
+      for (const tool of [...toolList(), ...(toolSetOptions.additionalTools ?? [])]) registry.register(tool);
+      return registry.snapshot(toolSetOptions.only === undefined ? {} : { only: toolSetOptions.only });
     },
     recoveryToolSet: async (recoveryOptions: { signal: AbortSignal }) => {
       portCalls.recoveryToolSet.push({ signal: recoveryOptions?.signal });

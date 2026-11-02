@@ -7,10 +7,10 @@ import { buildSandboxPolicy, createBuiltinTools, createToolRegistry } from '@mom
 import type { AnyTool } from '@momonga/tools';
 import { makeBuiltins } from './fixtures.ts';
 
-const NAMES = ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash', 'ReadOutput', 'UpdatePlan'];
+const NAMES = ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash', 'BashOutput', 'KillBash', 'ReadOutput', 'UpdatePlan'];
 
 describe('createBuiltinTools', () => {
-  it('returns the eight tools in order', () => {
+  it('returns the ten tools in order', () => {
     expect(createBuiltinTools().map((tool: AnyTool) => tool.name)).toEqual(NAMES);
   });
 
@@ -25,6 +25,8 @@ describe('createBuiltinTools', () => {
       ['Edit', 'edit', 'write', 30_000],
       ['Glob', 'search', 'read_only', 60_000],
       ['Grep', 'search', 'read_only', 60_000],
+      ['BashOutput', 'execute', 'read_only', 10_000],
+      ['KillBash', 'execute', 'write', 30_000],
       ['ReadOutput', 'read', 'read_only', 10_000],
       ['UpdatePlan', 'think', 'read_only', 5_000],
     ]);
@@ -34,6 +36,8 @@ describe('createBuiltinTools', () => {
     expect(timeoutOf({ command: 'x' })).toBe(120_000);
     expect(timeoutOf({ command: 'x', timeout: 5000 })).toBe(5000);
     expect(timeoutOf({ command: 'x', timeout: 600_000 })).toBe(600_000);
+    expect(timeoutOf({ command: 'x', timeout: 7_200_000 })).toBe(600_000);
+    expect(timeoutOf({ command: 'x', timeout: 7_200_000, run_in_background: true })).toBe(120_000);
   });
 
   it('registers every schema under the strict registry', async () => {
@@ -54,7 +58,9 @@ describe('createBuiltinTools', () => {
       Edit: ['file_path', 'new_string', 'old_string', 'replace_all'],
       Glob: ['path', 'pattern'],
       Grep: ['-A', '-B', '-C', '-i', '-n', 'glob', 'head_limit', 'multiline', 'offset', 'output_mode', 'path', 'pattern', 'type'],
-      Bash: ['command', 'description', 'timeout'],
+      Bash: ['command', 'description', 'run_in_background', 'timeout'],
+      BashOutput: ['bash_id', 'block', 'filter', 'timeout'],
+      KillBash: ['shell_id'],
       ReadOutput: ['handle', 'limit', 'offset'],
       UpdatePlan: ['entries'],
     });

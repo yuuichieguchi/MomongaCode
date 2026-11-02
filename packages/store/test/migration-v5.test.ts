@@ -64,8 +64,8 @@ describe('migration v5 on a populated v4 database', () => {
   it('records the fifth migration with its name', () => {
     const { dbPath } = migrated();
     const rows = rawDb(dbPath).prepare('SELECT version, name FROM schema_migrations ORDER BY version').all();
-    expect(rows.map((row) => Number(row['version']))).toEqual([1, 2, 3, 4, 5]);
-    expect(rows.at(-1)?.['name']).toBe('record whether a run inherits the history of its predecessor');
+    expect(rows.map((row) => Number(row['version']))).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(rows.find((row) => Number(row['version']) === 5)?.['name']).toBe('record whether a run inherits the history of its predecessor');
   });
 
   it('backfills inherit only for queued runs with a predecessor that never started, and fresh for every other row', () => {

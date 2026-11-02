@@ -1,0 +1,73 @@
+import { ChildRunError, pinOf } from '@momonga/agents';
+import type { ChildRunOutcome, ChildRuns } from '@momonga/agents';
+import { TERMINAL_STATUSES } from '@momonga/protocol';
+import type { InputItem, RunState } from '@momonga/protocol';
+import { foldRunState, initialRunState } from '@momonga/store';
+import type { Run, RuntimeStore } from '@momonga/store';
+
+export type ChildRunsOptions = {
+  store: Pick<RuntimeStore, 'createChildRun' | 'listChildRuns' | 'load'>;
+  modelAliases(): Promise<readonly string[]>;
+};
+
+type TerminalStatus = Extract<ChildRunOutcome, { state: 'finished' }>['status'];
+
+const isTerminalStatus = (status: Run['status']): status is TerminalStatus => (TERMINAL_STATUSES as readonly string[]).includes(status);
+
+const textOfItem = (item: InputItem): string | undefined => {
+  if (item.type !== 'message' || item.role !== 'assistant' || !Array.isArray(item.content)) return undefined;
+  const parts = item.content.flatMap((part) => (part.type === 'output_text' ? [part.text] : []));
+  return parts.length === 0 ? undefined : parts.join('');
+};
+
+export const finalTextOf = (state: RunState): string => {
+  for (let index = state.history.length - 1; index >= 0; index -= 1) {
+    const entry = state.history[index];
+    const text = entry === undefined ? undefined : textOfItem(entry.item);
+    if (text !== undefined) return text;
+  }
+  return '';
+};
+
+export const createChildRuns = ({ store, modelAliases }: ChildRunsOptions): ChildRuns => {
+  const foldedFinalText = (run: Run): string => {
+    const loaded = store.load(run.id);
+    const state = loaded.tail.reduce(foldRunState, loaded.snapshot?.state ?? initialRunState({ runId: run.id, sessionId: run.sessionId }));
+    return finalTextOf(state);
+  };
+
+  const outcomeOf = (run: Run): ChildRunOutcome => {
+    if (!isTerminalStatus(run.status)) return { state: 'running', runId: run.id, sessionId: run.sessionId };
+    return {
+      state: 'finished',
+      runId: run.id,
+      sessionId: run.sessionId,
+      status: run.status,
+      ...(run.stopReason === undefined ? {} : { stopReason: run.stopReason }),
+      ...(run.error === undefined ? {} : { error: run.error }),
+      text: foldedFinalText(run),
+    };
+  };
+
+  return {
+    spawn: async ({ parentRunId, parentCallId, agent, prompt }) => {
+      const known = store.listChildRuns(parentRunId).find((child) => child.parentCallId === parentCallId);
+      if (known !== undefined) return outcomeOf(known);
+      if (agent.model !== undefined) {
+        const aliases = await modelAliases();
+        if (!aliases.includes(agent.model)) {
+          throw new ChildRunError(`Subagent ${agent.name} asks for the model alias "${agent.model}", which is not configured. Available aliases: ${aliases.join(', ')}`);
+        }
+      }
+      const created = store.createChildRun({
+        parentRunId,
+        parentCallId,
+        input: prompt,
+        pins: { agent: pinOf(agent) },
+        ...(agent.model === undefined ? {} : { modelAlias: agent.model }),
+      });
+      if (created.kind === 'parent_not_active') throw new ChildRunError(`A subagent cannot start because the run is ${created.status}`);
+      return outcomeOf(created.run);
+    },
+  };
+};

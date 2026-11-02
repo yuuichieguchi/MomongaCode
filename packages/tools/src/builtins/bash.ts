@@ -2,13 +2,17 @@ import { randomBytes } from 'node:crypto';
 import { findHolders, reconcileProcessGroup } from '@momonga/foundation';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import type { SandboxExit } from '@momonga/sandbox';
-import type { ToolContext } from '../types.ts';
+import type { BackgroundJobs } from '../ports.ts';
+import type { ReconcileContext, ToolContext, ToolResult } from '../types.ts';
+import { describeJobStatus } from './jobs.ts';
 import { canonicalDirectories, insideAny } from './paths.ts';
 
-type BashInput = { command: string; timeout?: number; description?: string };
+type BashInput = { command: string; timeout?: number; description?: string; run_in_background?: boolean };
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_TIMEOUT_MS = 600_000;
+export const DEFAULT_BACKGROUND_TIMEOUT_MS = 1_800_000;
+export const MAX_BACKGROUND_TIMEOUT_MS = 7_200_000;
 const TITLE_CHARS = 80;
 const HEAD_BYTES = 4 * 1024 * 1024;
 const TAIL_BYTES = 4 * 1024 * 1024;
@@ -99,26 +103,59 @@ const requireMarker = (ctx: ToolContext): string => {
   return ctx.processMarker;
 };
 
+const requireJobs = (ctx: ReconcileContext): BackgroundJobs => {
+  if (ctx.jobs === undefined) throw new ToolExecutionError('Background jobs are not available in this runtime');
+  return ctx.jobs;
+};
+
+const startBackgroundJob = async (input: BashInput, ctx: ToolContext): Promise<ToolResult> => {
+  const { jobId } = await requireJobs(ctx).start({
+    runId: ctx.runId,
+    callKey: ctx.idemKey,
+    callId: ctx.callId,
+    command: input.command,
+    timeoutMs: input.timeout ?? DEFAULT_BACKGROUND_TIMEOUT_MS,
+    spawn: (markerFile, signal) =>
+      ctx.sandbox.spawn(
+        {
+          argv: ['/bin/bash', '-c', input.command],
+          cwd: ctx.session.cwd,
+          env: { ...ctx.env, GIT_TERMINAL_PROMPT: '0', PAGER: 'cat', GIT_PAGER: 'cat' },
+          markerFile,
+          ...(ctx.tmpDir === undefined ? {} : { tmpDir: ctx.tmpDir }),
+        },
+        ctx.sandboxPolicy,
+        signal,
+      ),
+  });
+  return {
+    status: 'completed',
+    output: `Started background job ${jobId}. Read its output with BashOutput (bash_id ${jobId}) and stop it with KillBash (shell_id ${jobId}).`,
+  };
+};
+
 export const bashTool = defineTool<BashInput>({
   name: 'Bash',
   description:
-    'Runs a shell command with /bin/bash inside a sandbox, in the current working directory. Output combines stdout and stderr. A cd that stays inside the workspace persists to later calls. timeout is in milliseconds (default 120000, maximum 600000). No process started by the command outlives it.',
+    'Runs a shell command with /bin/bash inside a sandbox, in the current working directory. Output combines stdout and stderr. A cd that stays inside the workspace persists to later calls. timeout is in milliseconds (default 120000, maximum 600000). No process started by the command outlives it. With run_in_background the command starts as a background job and the call returns its job id at once; read its output with BashOutput and stop it with KillBash. For a background job timeout is the time the job may run (default 1800000, maximum 7200000); a job ends with its command, with KillBash, at its time limit, or when MomongaCode stops.',
   kind: 'execute',
   sideEffect: 'exec',
   inputSchema: {
     type: 'object',
     properties: {
       command: { type: 'string', minLength: 1, description: 'The command to run' },
-      timeout: { type: 'integer', minimum: 1, maximum: MAX_TIMEOUT_MS, description: 'Timeout in milliseconds' },
+      timeout: { type: 'integer', minimum: 1, maximum: MAX_BACKGROUND_TIMEOUT_MS, description: 'Timeout in milliseconds' },
       description: { type: 'string', description: 'Short description of what the command does' },
+      run_in_background: { type: 'boolean', description: 'Run the command as a background job and return its job id immediately' },
     },
     required: ['command'],
     additionalProperties: false,
   },
-  timeoutMs: (input) => Math.min(input.timeout ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS),
+  timeoutMs: (input) => Math.min(input.run_in_background === true ? DEFAULT_TIMEOUT_MS : (input.timeout ?? DEFAULT_TIMEOUT_MS), MAX_TIMEOUT_MS),
   title: (input) => input.description ?? input.command.slice(0, TITLE_CHARS),
   subject: (input) => ({ kind: 'command', tool: 'Bash', command: input.command }),
   execute: async (input, ctx) => {
+    if (input.run_in_background === true) return startBackgroundJob(input, ctx);
     const marker = requireMarker(ctx);
     const nonce = randomBytes(16).toString('hex');
     const script = `${trapScript(nonce)}\n${input.command}`;
@@ -179,7 +216,15 @@ export const bashTool = defineTool<BashInput>({
     if (exit.code !== 0) return { status: 'failed', output: `${output}${output === '' ? '' : '\n'}[exit code ${exit.code}]` };
     return { status: 'completed', output };
   },
-  reconcile: async (_input, record, ctx) => {
+  reconcile: async (input, record, ctx) => {
+    if (input.run_in_background === true) {
+      const job = requireJobs(ctx).byCall(ctx.idemKey);
+      if (job === undefined) return { outcome: 'not_applied', output: '' };
+      return {
+        outcome: 'already_applied',
+        output: `Started background job ${job.id}. The call was interrupted after the job started, so ${describeJobStatus(job)}.`,
+      };
+    }
     if (record.pgid !== undefined && ctx.processMarker !== undefined) {
       return reconcileProcessGroup({ pgid: record.pgid, marker: ctx.processMarker });
     }

@@ -19,6 +19,7 @@ export interface MomongaPaths {
   logFiles: { supervisor: string; gateway: string; runtime: string };
   projects: string;
   skills: string;
+  agents: string;
   launcher: string;
   keychains: string;
   cacheBase: string;
@@ -74,6 +75,7 @@ export const momongaLayout = (
     },
     projects: path.join(root, 'projects'),
     skills: path.join(root, 'skills'),
+    agents: path.join(root, 'agents'),
     launcher: path.join(home, '.local', 'bin', 'momonga'),
     keychains: path.join(home, 'Library', 'Keychains'),
     cacheBase,

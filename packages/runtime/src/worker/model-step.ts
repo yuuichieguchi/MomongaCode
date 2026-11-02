@@ -22,7 +22,7 @@ const isRequestBody = (value: unknown): value is CreateResponseBody => isRecord(
 const limitReached = (ctx: ClaimContext): LimitReason | undefined => {
   const state = ctx.journal.state;
   if (state.step >= ctx.limits.maxSteps) return 'max_steps';
-  if (state.usage.totalTokens >= ctx.limits.maxTotalTokens) return 'budget';
+  if (ctx.options.store.treeTokens(ctx.run.id) >= ctx.limits.maxTotalTokens) return 'budget';
   return undefined;
 };
 
