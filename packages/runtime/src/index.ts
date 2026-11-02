@@ -48,6 +48,8 @@ export { RUNTIME_DEFAULTS } from './process/defaults.ts';
 export { protectedRootAreasOf } from './process/protected-areas.ts';
 export { reapTimingOf } from './process/reap-timing.ts';
 export type { SandboxKind } from './process/sandbox-kind.ts';
+export { createMcpAdmin } from './process/mcp-admin.ts';
+export type { McpAdmin, McpAdminOptions } from './process/mcp-admin.ts';
 export { createMcpPoolCache } from './process/mcp-pool-cache.ts';
 export type { McpPoolCache, McpPoolCacheOptions } from './process/mcp-pool-cache.ts';
 export { createSessionStates } from './process/session-states.ts';

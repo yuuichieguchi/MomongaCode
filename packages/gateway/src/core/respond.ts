@@ -110,6 +110,7 @@ const openAttempt = async (
     runId: job.runId,
     step: job.step,
     attempt: attemptNumber,
+    request: { input: resolved.forAdapter, instructions: job.body.instructions, tools: job.body.tools },
   });
   try {
     const stream = target.adapter.create(adapterRequestFor(job, resolved, target), {
@@ -391,7 +392,7 @@ async function* relay(
   }
   job.connection?.remember(responseId, { input: resolved.stored, output: resource.output });
   target.breaker.onSuccess();
-  opened.span.succeed({ responseModel: target.model, responseId, finishReason: finishReasonOf(resource), usage });
+  opened.span.succeed({ responseModel: target.model, responseId, finishReason: finishReasonOf(resource), usage, output: resource.output });
   yield terminal;
 }
 

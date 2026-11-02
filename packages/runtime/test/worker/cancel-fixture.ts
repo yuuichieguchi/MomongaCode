@@ -94,6 +94,3 @@ export const recordingStore = (env: Env): RecordingStore => {
 export const fatalStoreError = (message = 'database disk image is malformed'): Error =>
   Object.assign(new Error(message), { code: 'ERR_SQLITE_ERROR', errcode: 11, errstr: 'database disk image is malformed' });
 
-export const flushTurns = async (rounds = 50): Promise<void> => {
-  for (let index = 0; index < rounds; index += 1) await new Promise<void>((resolve) => setImmediate(resolve));
-};

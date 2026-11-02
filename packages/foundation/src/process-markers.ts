@@ -18,7 +18,7 @@ const realTiming: ReapTiming = {
 
 const defaultKill: SignalSender = hostSignalSender;
 
-const POLL_INTERVAL_MS = 25;
+export const REAP_POLL_INTERVAL_MS = 25;
 
 const isAborted = (signal: AbortSignal | undefined): boolean => signal?.aborted === true;
 
@@ -31,7 +31,7 @@ const graceSleep = async (timing: ReapTiming, ms: number, signal: AbortSignal | 
   while (!signal.aborted) {
     const remaining = deadline - timing.now();
     if (remaining <= 0) return;
-    await timing.sleep(Math.min(POLL_INTERVAL_MS, remaining));
+    await timing.sleep(Math.min(REAP_POLL_INTERVAL_MS, remaining));
   }
 };
 
@@ -161,7 +161,7 @@ const signalHoldersOnly = async (
   const deadline = timing.now() + killGraceMs;
   let remaining = await findHolders(marker, inspector);
   while (remaining.length > 0 && timing.now() < deadline && !isAborted(signal)) {
-    await timing.sleep(POLL_INTERVAL_MS);
+    await timing.sleep(REAP_POLL_INTERVAL_MS);
     remaining = await findHolders(marker, inspector);
   }
   const dropped = holders.filter((pid) => !remaining.includes(pid) && isProcessAlive(pid, kill));
@@ -214,7 +214,7 @@ export const reapMarkedProcesses = async ({
   const deadline = timing.now() + killGraceMs;
   let remaining = await findHolders(marker, inspector);
   while (remaining.length > 0 && timing.now() < deadline) {
-    await timing.sleep(POLL_INTERVAL_MS);
+    await timing.sleep(REAP_POLL_INTERVAL_MS);
     remaining = await findHolders(marker, inspector);
   }
   if (remaining.length > 0) {

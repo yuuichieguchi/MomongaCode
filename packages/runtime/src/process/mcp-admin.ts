@@ -1,5 +1,6 @@
 import { loadMcpServers } from '@momonga/config';
 import type { McpServerEntry, UserLayer } from '@momonga/config';
+import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { Clock, JsonLogger } from '@momonga/foundation';
 import { AUTHORIZATION_WAIT_MS, McpAuthorizationError } from '@momonga/mcp';
 import type { McpAuthorizingPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
@@ -9,7 +10,7 @@ import type { ToolEnv } from '../ports.ts';
 import { invalidRequest, notFound } from '../service/errors.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { asError } from './as-error.ts';
-import { MCP_CLOSE_GRACE_MS } from './constants.ts';
+import { MCP_CLOSE_GRACE_MS, POOL_IDLE_CLOSE_MS } from './constants.ts';
 import type { SettingsComposition } from './settings-port.ts';
 
 export type McpAdmin = {
@@ -32,6 +33,8 @@ export type McpAdminOptions = {
   createPool(options: McpPoolOptions): McpAuthorizingPool;
 };
 
+type ProbePool = { pool: McpAuthorizingPool; users: number; idle?: unknown };
+
 type Attempt = {
   view: McpAuthorizationView;
   controller: AbortController;
@@ -53,6 +56,8 @@ const failureOf = (error: unknown): { code: string; message: string } =>
 export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
   const { clock, report } = options;
   const attempts = new Map<string, Attempt>();
+  const probePools = new Map<string, ProbePool>();
+  const closing = new Set<Promise<void>>();
 
   const sessionOf = (sessionId: string): Session => {
     const session = options.store.getSession(sessionId);
@@ -80,10 +85,39 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
 
   const keyOf = (sessionId: string, name: string): string => `${sessionId}/${name}`;
 
+  const closeProbePool = (key: string, entry: ProbePool): void => {
+    if (probePools.get(key) !== entry) return;
+    probePools.delete(key);
+    const settled = entry.pool.close().catch(report);
+    const tracked = settled.finally(() => {
+      closing.delete(tracked);
+    });
+    closing.add(tracked);
+  };
+
+  const acquireProbePool = (key: string, create: () => McpAuthorizingPool): ProbePool => {
+    const existing = probePools.get(key);
+    const entry = existing ?? { pool: create(), users: 0 };
+    if (existing === undefined) probePools.set(key, entry);
+    if (entry.idle !== undefined) {
+      options.timers.clearTimeout(entry.idle);
+      delete entry.idle;
+    }
+    entry.users += 1;
+    return entry;
+  };
+
+  const releaseProbePool = (key: string, entry: ProbePool): void => {
+    entry.users -= 1;
+    if (entry.users === 0) entry.idle = options.timers.setTimeout(() => closeProbePool(key, entry), POOL_IDLE_CLOSE_MS);
+  };
+
   const servers: McpAdmin['servers'] = async (sessionId, signal) => {
     const session = sessionOf(sessionId);
     const loaded = await loadSessionMcpServers(options, session, options.settings.envFor(session));
-    const pool = poolFor(loaded.enabled, session, options.remote);
+    const key = sha256Hex(canonicalJson({ session: session.id, cwd: session.cwd, servers: loaded.enabled }));
+    const held = acquireProbePool(key, () => poolFor(loaded.enabled, session, options.remote));
+    const { pool } = held;
     try {
       const views: McpServerView[] = [];
       for (const entry of loaded.enabled) {
@@ -102,7 +136,7 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
       }
       return views;
     } finally {
-      await pool.close();
+      releaseProbePool(key, held);
     }
   };
 
@@ -164,7 +198,12 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
     },
     close: async () => {
       for (const attempt of attempts.values()) attempt.controller.abort(new Error('the runtime is shutting down'));
+      for (const [key, entry] of [...probePools]) {
+        if (entry.idle !== undefined) options.timers.clearTimeout(entry.idle);
+        closeProbePool(key, entry);
+      }
       await Promise.all([...attempts.values()].map((attempt) => attempt.settled));
+      await Promise.all(closing);
     },
   };
 };

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ToolExecutionError } from '@momonga/tools';
 import type { ToolContext, ToolResult } from '@momonga/tools';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
+import { waitFor } from '@momonga/testkit';
 import { keyFor } from './helpers.ts';
 
 const KEY = keyFor('run-1', 1, 'c1');
@@ -14,14 +15,6 @@ const gate = (): Gate => {
     open = resolve;
   });
   return { opened, open };
-};
-
-const until = async (predicate: () => boolean, description: string): Promise<void> => {
-  const deadline = Date.now() + 10_000;
-  while (!predicate()) {
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${description}`);
-    await new Promise<void>((resolve) => setImmediate(resolve));
-  }
 };
 
 const execTool = (execute: (ctx: ToolContext) => Promise<ToolResult>) =>
@@ -164,7 +157,7 @@ describe('executor: inFlightKeys (§8)', () => {
     zombieRelease.open();
     const [deferred] = await zombie;
     expect(deferred).toMatchObject({ kind: 'deferred' });
-    await until(() => !harness.executor.inFlightKeys().has(KEY), 'the zombie perform to drop its count');
+    await waitFor(() => !harness.executor.inFlightKeys().has(KEY), { description: 'the zombie perform to drop its count' });
     expect(harness.executor.inFlightKeys().size).toBe(0);
   });
 });

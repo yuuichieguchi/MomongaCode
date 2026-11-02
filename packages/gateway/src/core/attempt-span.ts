@@ -1,6 +1,7 @@
-import { recordChatResponse, recordError, startChatSpan } from '@momonga/observability';
+import { recordChatRequestContent, recordChatResponse, recordChatResponseContent, recordError, startChatSpan } from '@momonga/observability';
 import type { Telemetry } from '@momonga/observability';
-import type { Usage } from '@momonga/protocol';
+import type { AdapterInputItem, FunctionTool, ItemField, Usage } from '@momonga/protocol';
+import { chatRequestContentOf, chatResponseMessagesOf } from './chat-content.ts';
 
 export type TraceParent = ReturnType<Telemetry['propagation']['extract']>;
 
@@ -14,11 +15,12 @@ export type AttemptSpanInput = {
   runId: string | undefined;
   step: number | undefined;
   attempt: number;
+  request: { input: readonly AdapterInputItem[]; instructions: string | null | undefined; tools: readonly FunctionTool[] | null | undefined };
 };
 
 export type AttemptSpan = {
   note(name: string, message: string): void;
-  succeed(info: { responseModel: string; responseId: string; finishReason: string; usage: Usage }): void;
+  succeed(info: { responseModel: string; responseId: string; finishReason: string; usage: Usage; output: readonly ItemField[] }): void;
   fail(errorType: string, error: unknown, message: string): void;
 };
 
@@ -39,6 +41,10 @@ export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
     },
     input.parent,
   );
+  const { telemetry } = input;
+  if (telemetry.captureMessageContent) {
+    recordChatRequestContent(span, chatRequestContentOf(input.request.input, input.request.instructions, input.request.tools));
+  }
   let ended = false;
   const end = (): void => {
     if (ended) return;
@@ -62,6 +68,7 @@ export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
           reasoningTokens: info.usage.output_tokens_details.reasoning_tokens,
         },
       });
+      if (telemetry.captureMessageContent) recordChatResponseContent(span, chatResponseMessagesOf(info.output, info.finishReason));
       end();
     },
     fail: (errorType, error, message) => {

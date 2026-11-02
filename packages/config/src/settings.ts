@@ -159,7 +159,7 @@ export const defaultSandboxSetting = (platform: NodeJS.Platform = process.platfo
 
 export type OtlpSettings = { endpoint: string; headers?: Record<string, string> };
 
-export type TelemetrySettings = { otlp?: OtlpSettings };
+export type TelemetrySettings = { otlp?: OtlpSettings; captureMessageContent?: boolean };
 
 export type Settings = {
   permissions?: PermissionsSettings;

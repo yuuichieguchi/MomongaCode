@@ -131,6 +131,7 @@ describe('POST /v1/sessions/:id/runs with a skill', () => {
           throw new SkillActivationError('the SKILL.md of skill "pdf" no longer exists');
         },
         activationTool: () => undefined,
+        recoveryTool: () => undefined,
       }),
     };
     const env = await startService({ skills: failing });

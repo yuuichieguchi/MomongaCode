@@ -19,8 +19,38 @@ const TOOLS = [
 
 const WITH_ID_TOOL = { name: 'with_id', description: 'Input and output schemas carry $id', inputSchema: withIdInputSchema(), outputSchema: withIdOutputSchema() };
 
-const listedTools = (): Array<Record<string, unknown>> =>
-  requestedExtraTools(process.env[FIXTURE_EXTRA_TOOLS_ENV]).includes('with_id') ? [...TOOLS, WITH_ID_TOOL] : TOOLS;
+const ASK_NAME_TOOL = { name: 'ask_name', description: 'Asks the user for a name with a server-initiated elicitation', inputSchema: { type: 'object', properties: {} } };
+
+const listedTools = (): Array<Record<string, unknown>> => {
+  const extras = requestedExtraTools(process.env[FIXTURE_EXTRA_TOOLS_ENV]);
+  return [...TOOLS, ...(extras.includes('with_id') ? [WITH_ID_TOOL] : []), ...(extras.includes('ask_name') ? [ASK_NAME_TOOL] : [])];
+};
+
+const ELICITATION_REQUEST_ID = 'server-elicit-1';
+
+let askingCall: number | string | undefined;
+
+const askName = (callId: number | string): void => {
+  askingCall = callId;
+  write({
+    jsonrpc: '2.0',
+    id: ELICITATION_REQUEST_ID,
+    method: 'elicitation/create',
+    params: {
+      mode: 'form',
+      message: 'Who are you?',
+      requestedSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
+    },
+  });
+};
+
+const answerName = (result: Record<string, unknown>): void => {
+  if (askingCall === undefined) return;
+  const callId = askingCall;
+  askingCall = undefined;
+  const content = result['content'] as { name?: string } | undefined;
+  respond(callId, { content: [{ type: 'text', text: result['action'] === 'accept' ? `hello ${content?.name}` : `elicitation ${String(result['action'])}` }] });
+};
 
 const write = (message: Record<string, unknown>): void => {
   process.stdout.write(`${JSON.stringify(message)}\n`);
@@ -47,7 +77,11 @@ const callTool = (params: Record<string, unknown>): Record<string, unknown> => {
   }
 };
 
-const handle = (request: JsonRpcRequest): void => {
+const handle = (request: JsonRpcRequest & { result?: Record<string, unknown>; error?: unknown }): void => {
+  if (request.id === ELICITATION_REQUEST_ID && request.method === undefined) {
+    if (request.result !== undefined) answerName(request.result);
+    return;
+  }
   if (request.id === undefined) return;
   switch (request.method) {
     case 'initialize':
@@ -64,6 +98,10 @@ const handle = (request: JsonRpcRequest): void => {
       respond(request.id, { tools: listedTools() });
       return;
     case 'tools/call':
+      if (request.params?.['name'] === 'ask_name') {
+        askName(request.id);
+        return;
+      }
       respond(request.id, callTool(request.params ?? {}));
       return;
     default:

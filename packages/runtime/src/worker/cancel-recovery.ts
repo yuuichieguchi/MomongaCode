@@ -5,6 +5,7 @@ import type { ClaimControl } from './claim-control.ts';
 import { describeError, LeaseLostError, ShutdownError } from './errors.ts';
 import type { Journal } from './journal.ts';
 import { reportError } from './report.ts';
+import { releaseWaitingCalls } from './release-waiting.ts';
 import { outcomePayloads } from './tool-step.ts';
 import type { WorkerOptions } from './types.ts';
 
@@ -20,6 +21,33 @@ const ABANDONED_OUTPUT =
   'The call was interrupted and could not be reconciled before the run was cancelled. Its effect is unknown; inspect the current state before retrying it.';
 
 type StartedCall = ToolCall & { idemKey?: string };
+
+const yieldsOrFails = (control: ClaimControl, error: unknown): boolean =>
+  error instanceof LeaseLostError || error instanceof ShutdownError || control.leaseLost() || control.shuttingDown() || isFatalStoreError(error);
+
+export const releaseWaitingOnCancel = async ({ options, run, session, journal, control }: CancelRecoveryInput): Promise<void> => {
+  try {
+    await releaseWaitingCalls({
+      tools: options.tools,
+      run,
+      session,
+      pendingCalls: journal.state.pendingCalls,
+      signal: control.recoverySignal,
+    });
+  } catch (error) {
+    if (yieldsOrFails(control, error)) throw error;
+    const hookFailure = reportError(options, error, { workerId: options.workerId, runId: run.id });
+    journal.append([
+      {
+        type: 'notice',
+        level: 'error',
+        message: `Calls waiting for input could not be released before the run was cancelled: ${describeError(error)}${
+          hookFailure === undefined ? '' : ` (the error hook also failed: ${hookFailure})`
+        }`,
+      },
+    ]);
+  }
+};
 
 export const reconcileStartedCalls = async ({ options, run, session, journal, control }: CancelRecoveryInput): Promise<void> => {
   const startedEntries = Object.entries(journal.state.pendingCalls).filter(([, call]) => call.status === 'started');
@@ -43,18 +71,19 @@ export const reconcileStartedCalls = async ({ options, run, session, journal, co
   const settled = new Set<string>();
   const failures: Array<{ error: unknown; hookFailure: string | undefined }> = [];
 
-  const yieldsOrFails = (error: unknown): boolean =>
-    error instanceof LeaseLostError || error instanceof ShutdownError || control.leaseLost() || control.shuttingDown() || isFatalStoreError(error);
-
   const absorb = (error: unknown): void => {
-    if (yieldsOrFails(error)) throw error;
+    if (yieldsOrFails(control, error)) throw error;
     failures.push({ error, hookFailure: reportError(options, error, { workerId: options.workerId, runId: run.id }) });
   };
 
   try {
     const { tools } = options;
     const env = tools.envFor(session);
-    const toolSet = await tools.recoveryToolSet({ signal: control.recoverySignal });
+    const recoveryTool = (await options.skills.load(session)).recoveryTool();
+    const toolSet = await tools.recoveryToolSet({
+      signal: control.recoverySignal,
+      ...(recoveryTool === undefined ? {} : { additionalTools: [recoveryTool] }),
+    });
     const recoverable = started.filter((call) => toolSet.get(call.name) !== undefined);
     if (recoverable.length > 0) {
       const context = await tools.recoveryContextFor(session, { env });

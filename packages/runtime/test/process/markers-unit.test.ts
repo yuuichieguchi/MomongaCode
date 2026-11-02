@@ -62,7 +62,6 @@ const holdMarker = async (marker: string): Promise<number> => {
   }
   for (let attempt = 0; attempt < 200; attempt += 1) {
     if ((await findHolders(marker)).includes(pid)) return pid;
-    await new Promise<void>((resolve) => setImmediate(resolve));
   }
   throw new Error(`process ${pid} never showed up as a holder of ${marker}`);
 };

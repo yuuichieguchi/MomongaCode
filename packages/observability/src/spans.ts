@@ -1,8 +1,9 @@
 import { SpanKind, SpanStatusCode } from '@opentelemetry/api';
 import type { Context, Span, Tracer } from '@opentelemetry/api';
-import { EXCEPTION_EVENT, GENAI_SEMCONV, MOMONGA_ATTRIBUTES, OPERATIONS } from './semconv.ts';
+import { EXCEPTION_EVENT, GENAI_CONTENT_SEMCONV, GENAI_SEMCONV, MOMONGA_ATTRIBUTES, OPERATIONS } from './semconv.ts';
 
 const A = GENAI_SEMCONV.attributes;
+const C = GENAI_CONTENT_SEMCONV;
 
 export type AgentSpanInput = {
   agentName: string;
@@ -37,6 +38,23 @@ export type ChatUsage = {
   cachedInputTokens?: number;
   reasoningTokens?: number;
 };
+
+export type GenAiPart =
+  | { type: 'text'; content: string }
+  | { type: 'tool_call'; id: string; name: string; arguments: unknown }
+  | { type: 'tool_call_response'; id: string; response: unknown };
+
+export type GenAiMessage = { role: string; parts: readonly GenAiPart[]; finish_reason?: string };
+
+export type GenAiToolDefinition = { type: 'function'; name: string; description?: string; parameters?: unknown };
+
+export type ChatRequestContent = {
+  systemInstructions?: readonly GenAiPart[];
+  inputMessages: readonly GenAiMessage[];
+  toolDefinitions?: readonly GenAiToolDefinition[];
+};
+
+export type ToolContent = { arguments: unknown; result?: unknown };
 
 export type ChatResponse = {
   responseModel?: string;
@@ -99,6 +117,25 @@ export const recordChatResponse = (span: Span, response: ChatResponse): void => 
     ...(response.timeToFirstChunkMs === undefined
       ? {}
       : { [A.ATTR_GEN_AI_RESPONSE_TIME_TO_FIRST_CHUNK]: response.timeToFirstChunkMs / 1000 }),
+  });
+};
+
+export const recordChatRequestContent = (span: Span, content: ChatRequestContent): void => {
+  span.setAttributes({
+    ...(content.systemInstructions === undefined ? {} : { [C.ATTR_GEN_AI_SYSTEM_INSTRUCTIONS]: JSON.stringify(content.systemInstructions) }),
+    [C.ATTR_GEN_AI_INPUT_MESSAGES]: JSON.stringify(content.inputMessages),
+    ...(content.toolDefinitions === undefined ? {} : { [C.ATTR_GEN_AI_TOOL_DEFINITIONS]: JSON.stringify(content.toolDefinitions) }),
+  });
+};
+
+export const recordChatResponseContent = (span: Span, outputMessages: readonly GenAiMessage[]): void => {
+  span.setAttribute(C.ATTR_GEN_AI_OUTPUT_MESSAGES, JSON.stringify(outputMessages));
+};
+
+export const recordToolContent = (span: Span, content: ToolContent): void => {
+  span.setAttributes({
+    [C.ATTR_GEN_AI_TOOL_CALL_ARGUMENTS]: JSON.stringify(content.arguments),
+    ...(content.result === undefined ? {} : { [C.ATTR_GEN_AI_TOOL_CALL_RESULT]: JSON.stringify(content.result) }),
   });
 };
 

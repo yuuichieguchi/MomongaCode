@@ -234,15 +234,3 @@ export const deferred = <T>(): Deferred<T> => {
   });
   return { promise, resolve, reject };
 };
-
-export const flush = async (rounds = 20): Promise<void> => {
-  for (let index = 0; index < rounds; index += 1) await new Promise<void>((resolve) => setImmediate(resolve));
-};
-
-export const until = async (condition: () => boolean, rounds = 500): Promise<void> => {
-  for (let index = 0; index < rounds; index += 1) {
-    if (condition()) return;
-    await new Promise<void>((resolve) => setImmediate(resolve));
-  }
-  throw new Error('condition was not reached');
-};

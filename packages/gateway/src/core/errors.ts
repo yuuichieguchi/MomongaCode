@@ -37,6 +37,7 @@ const STATUS_BY_CODE: Record<string, number> = {
   authentication_failed: 401,
   missing_api_key: 401,
   secret_unavailable: 401,
+  precondition_failed: 412,
 };
 
 export const statusFor = (type: ErrorType, code: string | null): number =>
@@ -63,7 +64,7 @@ export const serverError = (status: number, code: string, message: string): Gate
 
 export const gatewayClosedError = (): GatewayError => serverError(503, 'gateway_closed', 'the gateway is shutting down');
 
-export const SKIPPABLE_CODES: ReadonlySet<string> = new Set(['missing_api_key', 'authentication_failed', 'secret_unavailable']);
+export const SKIPPABLE_CODES: ReadonlySet<string> = new Set(['missing_api_key', 'authentication_failed', 'secret_unavailable', 'precondition_failed']);
 
 export const missingApiKeyError = (apiKeyEnv: string): GatewayError =>
   new GatewayError({

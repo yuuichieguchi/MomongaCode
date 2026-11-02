@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { afterMicrotasks } from '@momonga/testkit';
 import { createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxedProcess } from '@momonga/sandbox';
 import { keyFor } from '../helpers.ts';
@@ -233,7 +234,7 @@ describe('review 4: Bash stream errors', () => {
       }),
     };
     const [outcome] = await tools.executor.runBatch(tools.batch('Bash', { command: 'echo hi' }, { sandbox: failingSandbox }, 'allow_once'));
-    for (let round = 0; round < 20; round += 1) await new Promise<void>((resolve) => setImmediate(resolve));
+    await afterMicrotasks();
     expect(resultOf(outcome).status).toBe('failed');
     expect(unhandled).toEqual([]);
     expect([...returned].sort()).toEqual(['stderr', 'stdout']);

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { StoreIdentityError } from '@momonga/store';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { START_MS, errnoError } from './helpers.ts';
 import {
   RUNTIME_VERSION,
@@ -9,7 +9,6 @@ import {
   captureStream,
   entriesNamed,
   failureOf,
-  flushTurns,
   hookLogger,
   isLockFree,
   launchRuntime,
@@ -30,7 +29,7 @@ const fakeTime = () => {
 
 const tick = async (timers: ReturnType<typeof createFakeTimers>, ms: number): Promise<void> => {
   timers.advance(ms);
-  await flushTurns();
+  await afterMicrotasks();
 };
 
 const injectStatFailure = (file: string, error: Error) => {

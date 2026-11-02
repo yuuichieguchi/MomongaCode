@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ensureMomongaDirs } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
-import { createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
+import { afterMicrotasks, createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
 import { START_MS } from './helpers.ts';
 import {
@@ -13,7 +13,6 @@ import {
   entriesNamed,
   eventTypes,
   finishApprovingPrompts,
-  flushTurns,
   launchRuntime,
   readDb,
   scriptedToolCall,
@@ -36,7 +35,7 @@ const fakeTime = () => {
 const advanceStepwise = async (timers: FakeTimers, totalMs: number, stepMs: number): Promise<void> => {
   for (let elapsed = 0; elapsed < totalMs; elapsed += stepMs) {
     timers.advance(Math.min(stepMs, totalMs - elapsed));
-    await flushTurns();
+    await afterMicrotasks();
   }
 };
 
@@ -71,10 +70,10 @@ describe('runtime periodic timers (fake timers and fake clock, in-process gatewa
     await launchRuntime(stack.temp, { clock, fakeTimers: timers });
     expect(idempotencyKeys(stack.temp)).toEqual([EXPIRED_KEY, LIVE_KEY]);
     timers.advance(HOUR_MS - 1);
-    await flushTurns();
+    await afterMicrotasks();
     expect(idempotencyKeys(stack.temp)).toEqual([EXPIRED_KEY, LIVE_KEY]);
     timers.advance(1);
-    await flushTurns();
+    await afterMicrotasks();
     expect(idempotencyKeys(stack.temp)).toEqual([LIVE_KEY]);
   });
 
@@ -88,7 +87,7 @@ describe('runtime periodic timers (fake timers and fake clock, in-process gatewa
     fs.mkdirSync(knownDir, { recursive: true });
     fs.mkdirSync(unknownDir, { recursive: true });
     timers.advance(HOUR_MS - 1);
-    await flushTurns();
+    await afterMicrotasks();
     expect(fs.existsSync(unknownDir)).toBe(true);
     timers.advance(1);
     await waitFor(() => fs.readdirSync(stack.temp.paths.tmp.sessions).join(',') === known.id, {

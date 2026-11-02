@@ -3,7 +3,7 @@ import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { initialRunState } from '@momonga/store';
 import type { LoadedRun, Run } from '@momonga/store';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { createCancelUpstream } from '../../src/process/cancel-upstream.ts';
 import { START_MS } from './helpers.ts';
 
@@ -13,10 +13,6 @@ const SESSION_ID = '01900000-0000-7000-8000-000000000002';
 afterEach(() => {
   vi.restoreAllMocks();
 });
-
-const flush = async (): Promise<void> => {
-  for (let turn = 0; turn < 5; turn += 1) await new Promise<void>((resolve) => setImmediate(resolve));
-};
 
 const expectedKey = (runId: string, step: number, attempt: number): string => sha256Hex(canonicalJson([runId, step, attempt]));
 
@@ -160,7 +156,7 @@ describe('createCancelUpstream (fake timers, fake store and fake gateway client)
 
       await expect(tracker.cancel(RUN_ID)).rejects.toBe(failure);
       await tracker.settle(1000);
-      await flush();
+      await afterMicrotasks();
 
       expect(unhandled).toEqual([]);
     } finally {
@@ -179,13 +175,13 @@ describe('createCancelUpstream (fake timers, fake store and fake gateway client)
     const { timers } = fakeTime();
     const tracker = createCancelUpstream({ store: fakeStore({ [RUN_ID]: { tail: [requested(1, 1, 1)] } }), gatewayClient: gateway, timers });
     const cancelled = tracker.cancel(RUN_ID);
-    await flush();
+    await afterMicrotasks();
 
     let settled = false;
     const settling = tracker.settle(1000).then(() => {
       settled = true;
     });
-    await flush();
+    await afterMicrotasks();
     expect(settled).toBe(false);
 
     answer(true);
@@ -201,23 +197,23 @@ describe('createCancelUpstream (fake timers, fake store and fake gateway client)
     const { timers } = fakeTime();
     const tracker = createCancelUpstream({ store: fakeStore({ [RUN_ID]: { tail: [requested(1, 1, 1)] } }), gatewayClient: gateway, timers });
     void tracker.cancel(RUN_ID).catch(() => undefined);
-    await flush();
+    await afterMicrotasks();
 
     let settled = false;
     void tracker.settle(1000).then(() => {
       settled = true;
     });
-    await flush();
+    await afterMicrotasks();
     expect(settled).toBe(false);
     expect(gateway.calls[0]?.signal.aborted).toBe(false);
     expect(timers.pending().map((timer) => timer.delayMs)).toEqual([1000]);
 
     timers.advance(999);
-    await flush();
+    await afterMicrotasks();
     expect(settled).toBe(false);
 
     timers.advance(1);
-    await flush();
+    await afterMicrotasks();
 
     expect(settled).toBe(true);
     expect(gateway.calls[0]?.signal.aborted).toBe(true);

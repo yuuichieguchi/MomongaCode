@@ -8,6 +8,7 @@ import { START_MS, bodyDigest, createdRun, makeEnv, toolKey } from './harness.ts
 import type { Env } from './harness.ts';
 import { callsStep, functionCallItem, gated, textStep } from './scripts.ts';
 import type { ScriptStep } from './fake-gateway.ts';
+import { afterMicrotasks } from '@momonga/testkit';
 
 const FIXED_RANDOM = (): number => 0.5;
 
@@ -16,10 +17,6 @@ const REQUEST_BODY = { model: 'fm', input: [{ type: 'message', role: 'user', con
 const requested = (): RunEventPayload => ({ type: 'model.requested', step: 1, attempt: 1, digest: bodyDigest(REQUEST_BODY), body: REQUEST_BODY });
 
 const serverError = (): ScriptStep => ({ events: [], error: new GatewayRequestError({ status: 500, type: 'server_error', code: 'internal_error', message: 'boom' }) });
-
-const flushTasks = async (): Promise<void> => {
-  for (let round = 0; round < 5; round += 1) await new Promise<void>((resolve) => setImmediate(resolve));
-};
 
 const startedMarkSeed = (env: Env, runId: string): void => {
   const key = toolKey(runId, 1, 'call_m_1');
@@ -205,7 +202,7 @@ describe('WS1: quiet detached cancel recovery', () => {
     await within(worker.abort('shutdown'), 5_000, 'the shutdown abort to resolve');
     gate.resolve();
     await thrown.promise;
-    await flushTasks();
+    await afterMicrotasks();
 
     expect(reported).toEqual([]);
     expect(env.run(run.id)).toMatchObject({ status: 'CANCELLING', leaseOwner: null });

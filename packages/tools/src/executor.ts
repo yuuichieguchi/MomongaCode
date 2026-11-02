@@ -121,16 +121,19 @@ export type ToolExecutorOptions = {
   reconcileCapMs?: number;
   reconcileGraceMs?: number;
   onWarning(message: string): void;
-  reap?: { kill?: SignalSender; timing?: ReapTiming };
+  reap?: { kill?: SignalSender; timing?: ReapTiming; killGraceMs?: number };
 };
 
 export type AbandonTarget = { callId: string; idemKey: string };
 
 export type AbandonOutcome = { idemKey: string; callId: string; outcome: 'unknown' };
 
+export type ReleaseTarget = { callId: string; name: string; idemKey: string };
+
 export type ToolExecutor = {
   runBatch(input: BatchInput): Promise<CallOutcome[]>;
   abandon(targets: readonly AbandonTarget[], options: { signal: AbortSignal }): Promise<AbandonOutcome[]>;
+  release(targets: readonly ReleaseTarget[], options: { toolSet: ToolSet; signal: AbortSignal }): Promise<void>;
 };
 
 export type InspectableToolExecutor = ToolExecutor & { inFlightKeys(): ReadonlySet<string> };
@@ -920,7 +923,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         await reapMarkedProcesses({
           marker,
           pgid: lookup.rec.pgid,
-          killGraceMs: ABANDON_KILL_GRACE_MS,
+          killGraceMs: options.reap?.killGraceMs ?? ABANDON_KILL_GRACE_MS,
           label: 'tool',
           onWarning: options.onWarning,
           ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
@@ -945,5 +948,20 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     return outcomes;
   };
 
-  return { runBatch, abandon, inFlightKeys: () => new Set(activeKeys.keys()) };
+  const releaseTarget = async (target: ReleaseTarget, toolSet: ToolSet, signal: AbortSignal): Promise<void> => {
+    const lookup = idempotency.get(target.idemKey);
+    if (lookup?.s !== 'PENDING') return;
+    const checkpoint = lookup.rec.meta['checkpoint'];
+    if (!isRecord(checkpoint)) return;
+    await toolSet.get(target.name)?.releaseCheckpoint?.(checkpoint, { signal });
+    idempotency.checkpoint(target.idemKey, undefined);
+    idempotency.markUnknownIfPending(target.idemKey);
+  };
+
+  const release = async (targets: readonly ReleaseTarget[], { toolSet, signal }: { toolSet: ToolSet; signal: AbortSignal }): Promise<void> => {
+    signal.throwIfAborted();
+    await Promise.all(targets.map((target) => releaseTarget(target, toolSet, signal)));
+  };
+
+  return { runBatch, abandon, release, inFlightKeys: () => new Set(activeKeys.keys()) };
 };

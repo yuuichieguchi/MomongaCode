@@ -159,9 +159,10 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     }
   };
 
-  const recoveryToolSet: ToolRuntimePort['recoveryToolSet'] = async ({ signal }) => {
+  const recoveryToolSet: ToolRuntimePort['recoveryToolSet'] = async ({ signal, additionalTools }) => {
     const registry = createToolRegistry();
     for (const tool of createBuiltinTools()) registry.register(tool);
+    for (const tool of additionalTools ?? []) registry.register(tool);
     return registry.snapshot({ signal });
   };
 

@@ -1,13 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { startPeriodic } from '../../src/process/periodic.ts';
 import { START_MS, makeReporter } from './helpers.ts';
 
 const INTERVAL_MS = 1_000;
-
-const flush = async (): Promise<void> => {
-  for (let turn = 0; turn < 5; turn += 1) await new Promise<void>((resolve) => setImmediate(resolve));
-};
 
 const deferred = () => {
   let resolve: () => void = () => undefined;
@@ -33,16 +29,16 @@ describe('startPeriodic (fake timers)', () => {
 
     expect(timers.pending().map((timer) => timer.delayMs)).toEqual([INTERVAL_MS]);
     timers.advance(INTERVAL_MS - 1);
-    await flush();
+    await afterMicrotasks();
     expect(runs).toEqual([]);
 
     timers.advance(1);
-    await flush();
+    await afterMicrotasks();
     expect(runs).toEqual([START_MS + 1_000]);
     expect(timers.pending().map((timer) => timer.dueAt)).toEqual([START_MS + 2_000]);
 
     timers.advance(INTERVAL_MS);
-    await flush();
+    await afterMicrotasks();
     expect(runs).toEqual([START_MS + 1_000, START_MS + 2_000]);
     expect(reporter.errors).toEqual([]);
   });
@@ -61,19 +57,19 @@ describe('startPeriodic (fake timers)', () => {
       },
     });
     timers.advance(INTERVAL_MS);
-    await flush();
+    await afterMicrotasks();
     expect(gates).toHaveLength(1);
     expect(timers.pending()).toEqual([]);
 
     timers.advance(INTERVAL_MS * 5);
-    await flush();
+    await afterMicrotasks();
     expect(gates).toHaveLength(1);
 
     gates[0]?.resolve();
-    await flush();
+    await afterMicrotasks();
     expect(timers.pending().map((timer) => timer.delayMs)).toEqual([INTERVAL_MS]);
     timers.advance(INTERVAL_MS);
-    await flush();
+    await afterMicrotasks();
     expect(gates).toHaveLength(2);
   });
 
@@ -97,7 +93,7 @@ describe('startPeriodic (fake timers)', () => {
 
     for (let tick = 0; tick < 3; tick += 1) {
       timers.advance(INTERVAL_MS);
-      await flush();
+      await afterMicrotasks();
     }
 
     expect(calls).toBe(3);
@@ -114,7 +110,7 @@ describe('startPeriodic (fake timers)', () => {
 
     expect(timers.pending()).toEqual([]);
     timers.advance(INTERVAL_MS * 3);
-    await flush();
+    await afterMicrotasks();
     expect(calls).toBe(0);
   });
 
@@ -132,17 +128,17 @@ describe('startPeriodic (fake timers)', () => {
       },
     });
     timers.advance(INTERVAL_MS);
-    await flush();
+    await afterMicrotasks();
     expect(calls).toBe(1);
 
     const stopped = periodic.stop();
     gate.resolve();
     await stopped;
-    await flush();
+    await afterMicrotasks();
 
     expect(timers.pending()).toEqual([]);
     timers.advance(INTERVAL_MS * 3);
-    await flush();
+    await afterMicrotasks();
     expect(calls).toBe(1);
   });
 
@@ -151,7 +147,7 @@ describe('startPeriodic (fake timers)', () => {
     const gate = deferred();
     const periodic = startPeriodic({ intervalMs: INTERVAL_MS, timers, report: makeReporter().report, run: () => gate.promise });
     timers.advance(INTERVAL_MS);
-    await flush();
+    await afterMicrotasks();
 
     let settled = false;
     const stopped = periodic.stop();
@@ -159,11 +155,11 @@ describe('startPeriodic (fake timers)', () => {
     void stopped.then(() => {
       settled = true;
     });
-    await flush();
+    await afterMicrotasks();
     expect(settled).toBe(false);
 
     gate.resolve();
-    await flush();
+    await afterMicrotasks();
     expect(settled).toBe(true);
     expect(timers.pending()).toEqual([]);
   });
@@ -175,7 +171,7 @@ describe('startPeriodic (fake timers)', () => {
     const failure = new Error('run failed');
     const periodic = startPeriodic({ intervalMs: INTERVAL_MS, timers, report: reporter.report, run: () => gate.promise });
     timers.advance(INTERVAL_MS);
-    await flush();
+    await afterMicrotasks();
 
     const outcome = periodic.stop().then(
       () => 'resolved',
@@ -195,7 +191,7 @@ describe('startPeriodic (fake timers)', () => {
     void periodic.stop().then(() => {
       settled = true;
     });
-    await flush();
+    await afterMicrotasks();
 
     expect(settled).toBe(true);
   });

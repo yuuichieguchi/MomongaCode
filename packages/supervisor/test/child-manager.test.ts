@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { GHOST_CONFIRM_MS, acquireProcessLock } from '@momonga/foundation';
-import { registerCleanup, waitFor } from '@momonga/testkit';
+import { afterMicrotasks, registerCleanup, waitFor } from '@momonga/testkit';
 import { DEFAULT_INTERVALS, HELD_RETRY_MS, KILL_CONFIRM_MS, STABLE_AFTER_MS, STARTUP_KILL_GRACE_MS, STARTUP_TIMEOUT_MS, STDIO_FLUSH_MS } from '../src/constants.ts';
 import { errnoError } from './support/p2-fake-spawn-port.ts';
 import { createManagerHarness, T0 } from './support/p2-manager-harness.ts';
@@ -9,10 +9,6 @@ import type { ManagerHarness } from './support/p2-manager-harness.ts';
 
 const RUNTIME_SHUTDOWN_BUDGET_MS = 50_000;
 const RUNTIME_ABORT_BUDGET_MS = 20_000;
-
-const settle = async (turns = 50): Promise<void> => {
-  for (let index = 0; index < turns; index += 1) await new Promise<void>((resolve) => setImmediate(resolve));
-};
 
 const exitAndWait = async (harness: ManagerHarness, state: string, code: number | null, signal: NodeJS.Signals | null = null): Promise<void> => {
   harness.port.last().exit(code, signal);
@@ -221,7 +217,7 @@ describe('exit classification in the manager', () => {
     await exitAndWait(harness, 'waiting-lock', 75);
     for (let step = 0; step < 120; step += 1) {
       harness.timers.advance(5000);
-      await settle(5);
+      await afterMicrotasks();
     }
     expect(harness.spawnCount()).toBe(1);
     expect(harness.manager.state()).toBe('waiting-lock');
@@ -564,7 +560,7 @@ describe('stop', () => {
     expect(harness.manager.state()).toBe('stopped');
     expect(harness.events('child.unkillable')).toEqual([expect.objectContaining({ level: 'error', child: 'runtime', childPid: 41_000 })]);
     harness.port.last().exit(null, 'SIGKILL');
-    await settle();
+    await afterMicrotasks();
     expect(harness.manager.state()).toBe('stopped');
     expect(harness.spawnCount()).toBe(1);
   });
@@ -592,7 +588,7 @@ describe('exit handling mechanics', () => {
     draining.draining.value = true;
     draining.manager.enterDraining();
     await exitAndWait(draining, 'stopped', 1);
-    await settle();
+    await afterMicrotasks();
     expect(draining.reapCalls).toEqual([]);
     expect(draining.manager.unreapedMarkers()).toEqual([`${draining.paths.markers.daemons}/${marker}`]);
     expect(draining.timers.pending()).toEqual([]);
@@ -619,9 +615,9 @@ describe('exit handling mechanics', () => {
     harness.spawnInitial();
     const child = harness.port.last();
     child.exit(1, null, { endPipes: false });
-    await settle();
+    await afterMicrotasks();
     harness.timers.advance(STDIO_FLUSH_MS - 1);
-    await settle();
+    await afterMicrotasks();
     expect(harness.manager.state()).toBe('starting');
     harness.timers.advance(1);
     await waitFor(() => harness.manager.state() === 'backoff');
@@ -705,12 +701,12 @@ describe('draining is enforced by the manager', () => {
   });
 });
 
-const settledWithin = async <T>(promise: Promise<T>, turns = 50): Promise<{ settled: true; value: T } | { settled: false }> => {
+const settledWithin = async <T>(promise: Promise<T>): Promise<{ settled: true; value: T } | { settled: false }> => {
   let outcome: { settled: true; value: T } | { settled: false } = { settled: false };
   void promise.then((value) => {
     outcome = { settled: true, value };
   });
-  await settle(turns);
+  await afterMicrotasks();
   return outcome;
 };
 
@@ -743,14 +739,14 @@ describe('a life without a process', () => {
     harness.port.nextFailure = { kind: 'spawn-error', error: errnoError('ENOENT', 'spawn ENOENT') };
     harness.spawnInitial();
     harness.timers.advance(STARTUP_TIMEOUT_MS);
-    await settle();
+    await afterMicrotasks();
     expect(harness.port.last().signals).toEqual([]);
     expect(harness.manager.state()).toBe('backoff');
     expect(harness.events('child.backoff')).toHaveLength(1);
     const backoffDelay = harness.events('child.backoff')[0]?.['delayMs'];
     expect(typeof backoffDelay).toBe('number');
     harness.timers.advance(backoffDelay as number);
-    await settle();
+    await afterMicrotasks();
     expect(harness.spawnCount()).toBe(2);
     expect(spawnReasons(harness)).toEqual(['initial', 'backoff']);
     expect(harness.backgroundErrors).toEqual([]);
@@ -770,7 +766,7 @@ describe('a life without a process', () => {
     harness.port.nextFailure = { kind: 'spawn-error', error: errnoError('ENOENT', 'spawn ENOENT') };
     harness.spawnInitial();
     harness.draining.value = true;
-    await settle();
+    await afterMicrotasks();
     expect(harness.manager.state()).toBe('stopped');
     expect(harness.timers.pending()).toEqual([]);
     expect(harness.events('child.backoff')).toEqual([]);
@@ -783,7 +779,7 @@ describe('stops of a life whose exit is still being handled', () => {
     harness.spawnInitial();
     const first = harness.port.last();
     first.exit(1, null, { endPipes: false });
-    await settle();
+    await afterMicrotasks();
     const stopping = harness.manager.stop('shutdown', 'term');
     harness.manager.spawnWith(harness.settings.snapshot(), 'initial');
     expect(harness.spawnCount()).toBe(2);

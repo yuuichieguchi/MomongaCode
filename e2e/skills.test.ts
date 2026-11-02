@@ -4,11 +4,12 @@ import { describe, expect, it } from 'vitest';
 import { createUdsClient } from '@momonga/foundation';
 import { isCompactionRequest, journalOfRows, ofType, summaryRoute } from './support/budget.ts';
 import type { JournalEvent } from './support/budget.ts';
-import { titleOf } from './support/cases.ts';
+import { skipCase, titleOf } from './support/cases.ts';
 import { readDb } from './support/db.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { SESSION_PATH, createRuntimeClient } from './support/runtime-client.ts';
+import { seatbeltOrSkip } from './support/sandbox.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
 import { startStack } from './support/stack.ts';
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
@@ -233,6 +234,42 @@ describe('g: agent skills', () => {
       expect(completed[2]?.data['status']).toBe('failed');
       expect(String(completed[2]?.data['output'])).toContain('is blocked by the sandbox policy');
       expect(String(completed[2]?.data['output'])).toContain(home.paths.settingsFile);
+      expect(chatCompletions(stack.fake)).toHaveLength(4);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it.skipIf(skipCase('g-skills-bash-resource'))(titleOf('g-skills-bash-resource'), { timeout: 2 * E2E_TEST_TIMEOUT_MS }, async (context) => {
+    seatbeltOrSkip(context);
+    const home = await createE2eHome();
+    const directory = writeSkill(home.paths.skills, 'pdf', 'Extract PDF text', { 'references/guide.md': `${GUIDE_MARKER}\n` });
+    const guide = path.join(directory, 'references', 'guide.md');
+    const stack = await startStack({
+      home,
+      needsBash: true,
+      script: [
+        toolCallReply('activate_skill', { name: 'pdf' }, 'call_skill'),
+        toolCallReply('Bash', { command: `cat '${guide}'; echo rc=$?` }, 'call_guide'),
+        toolCallReply('Bash', { command: `cat '${home.paths.settingsFile}'; echo rc=$?` }, 'call_settings'),
+        textReply('Read the guide.'),
+      ],
+    });
+    expect(stack.sandbox).toBe('seatbelt');
+    const runtime = createRuntimeClient(home);
+    try {
+      expect((await runtime.health()).sandbox).toBe('seatbelt');
+      const { session } = await runtime.createSession();
+      const { run } = await runtime.createRun(session.id, 'Use the pdf guide');
+      await runToEnd(runtime, run.id);
+
+      expect(statusOf(home, run.id)).toEqual({ status: 'COMPLETED', stopReason: null, error: null });
+      const completed = ofType(journalOf(home, run.id), 'tool.completed');
+      expect(completed).toHaveLength(3);
+      expect(String(completed[1]?.data['output'])).toContain(GUIDE_MARKER);
+      expect(String(completed[1]?.data['output'])).toContain('rc=0');
+      expect(String(completed[2]?.data['output'])).toContain('Operation not permitted');
+      expect(String(completed[2]?.data['output'])).toContain('rc=1');
       expect(chatCompletions(stack.fake)).toHaveLength(4);
     } finally {
       await runtime.close();

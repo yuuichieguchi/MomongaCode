@@ -4,10 +4,10 @@ import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
-import { createFakeClock, createFakeTimers, spawnTracked, withTempDir } from '@momonga/testkit';
+import { afterMicrotasks, createFakeClock, createFakeTimers, spawnTracked, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { START_MS, createRun, createSession, trackGroup, writeUserSettings } from './helpers.ts';
-import { RUNTIME_VERSION, captureStream, failureOf, flushTurns, hookLogger, isLockFree, launchRuntime, modelSettings, prepareStack, readDb, startRuntimeProcess, stepsLogged, waitForCondition } from './run-helpers.ts';
+import { RUNTIME_VERSION, captureStream, failureOf, hookLogger, isLockFree, launchRuntime, modelSettings, prepareStack, readDb, startRuntimeProcess, stepsLogged, waitForCondition } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
 
 const control = vi.hoisted(() => ({ lookupError: undefined as Error | undefined }));
@@ -216,7 +216,7 @@ describe('dead-lettered runs: real holders (§8)', () => {
 
     for (let elapsed = 0; elapsed < 4 * SWEEP_MS && (groupExists(pgid) || fs.existsSync(marker)); elapsed += 1000) {
       timers.advance(1000);
-      await flushTurns();
+      await afterMicrotasks();
       await new Promise<void>((resolve) => setTimeout(resolve, 10));
     }
 

@@ -17,6 +17,8 @@ import { capabilitiesFromProbe } from '../probe/decide.ts';
 import type { KeywordSupport } from '../probe/envelope.ts';
 import { loadProbeRecord, resolveToolCalling } from '../probe/record.ts';
 import type { ProbeRecordKey } from '../probe/record.ts';
+import { LICENSE_NOT_ACCEPTED_EXIT_CODE, LICENSE_REMEDIATION, PRECONDITION_MESSAGE, outputOf } from './fm-serve.ts';
+import { PreconditionFailedError } from '../adapters/shared/failures.ts';
 import type { ExecResult, FmServe } from './fm-serve.ts';
 
 export type ExecWithStdinFn = (
@@ -106,6 +108,9 @@ const countedText = (request: CountTokensRequest): string => {
 };
 
 export const parseCount = (result: ExecResult): number => {
+  if (result.exitCode === LICENSE_NOT_ACCEPTED_EXIT_CODE) {
+    throw new PreconditionFailedError(PRECONDITION_MESSAGE, outputOf(result), LICENSE_REMEDIATION);
+  }
   if (result.exitCode !== 0) {
     throw new Error(`fm count-tokens failed with exit code ${result.exitCode}: ${result.stderr.trim()}`);
   }

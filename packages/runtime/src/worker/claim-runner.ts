@@ -4,7 +4,7 @@ import { computeBackoff, sha256Hex } from '@momonga/foundation';
 import { isFatalStoreError } from '@momonga/store';
 import type { Claim } from '@momonga/store';
 import type { ClaimContext, Flow, RunMemory, Terminals } from './claim-context.ts';
-import { reconcileStartedCalls } from './cancel-recovery.ts';
+import { reconcileStartedCalls, releaseWaitingOnCancel } from './cancel-recovery.ts';
 import { startClaimControl } from './claim-control.ts';
 import type { ClaimControl } from './claim-control.ts';
 import { dispositionOf } from './gateway-policy.ts';
@@ -17,6 +17,7 @@ import { readRunLimits } from './limits.ts';
 import { decideAfterResponse, responsePending, resumeInFlight, runModelStep } from './model-step.ts';
 import { readPins } from './pins.ts';
 import type { RunPins } from './pins.ts';
+import { createSkillAdmission } from './skill-admission.ts';
 import { createTerminals } from './terminals.ts';
 import { settleCalls } from './tool-step.ts';
 import type { WorkerOptions } from './types.ts';
@@ -216,8 +217,9 @@ const drive = async (
     const inFlight = journal.state.inFlightModelRequest;
     const keys = inFlight === undefined ? [] : [modelKey(run.id, inFlight.step, inFlight.attempt)];
     const reconciling = reconcileStartedCalls({ options, run, session, journal, control });
+    const releasing = releaseWaitingOnCancel({ options, run, session, journal, control });
     const upstream = cancelUpstream(options, control, keys);
-    const settled = Promise.all([upstream, reconciling]);
+    const settled = Promise.all([upstream, reconciling, releasing]);
     await Promise.race([settled, control.shutdownRequested]);
     if (control.shuttingDown()) {
       settled.catch((error: unknown) => {
@@ -242,7 +244,8 @@ const drive = async (
   const systemPromptDigest = sha256Hex(systemPrompt);
   const env = tools.envFor(session);
   const skills = await options.skills.load(session);
-  const activationTool = skills.activationTool({ isActive: (name) => journal.state.activatedSkills.some((skill) => skill.name === name) });
+  const admit = createSkillAdmission(() => ctx);
+  const activationTool = skills.activationTool({ isActive: (name) => journal.state.activatedSkills.some((skill) => skill.name === name), admit });
   const recalled = options.memories.load(session);
   const agentSet = run.parentRunId === null && options.agents !== undefined ? await options.agents.load(session) : undefined;
   const agentTool = options.agents === undefined ? undefined : agentSet?.tool(options.agents.runs);

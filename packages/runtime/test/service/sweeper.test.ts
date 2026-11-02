@@ -1,11 +1,10 @@
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as runtime from '@momonga/runtime';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { callsStep } from '../worker/scripts.ts';
 import { DEFAULT_TTL_MS, START_MS, attachWorkerKit, requestManualApproval, startService, toolCallPayload } from './helpers.ts';
-
-const flush = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+import type { ServiceEnv } from './helpers.ts';
 
 type Sweeper = { close(): void | Promise<void> };
 
@@ -30,26 +29,64 @@ describe('startApprovalSweeper', () => {
       },
     };
 
-    const sweeper = startSweeper({ store, clock, timers, intervalMs: 1000, onError: (error: unknown) => errors.push(error) });
+    const sweeper = startSweeper({ store, clock, timers, intervalMs: 1000, releaseStopped: async () => undefined, onError: (error: unknown) => errors.push(error) });
 
     timers.advance(1000);
-    await flush();
+    await afterMicrotasks();
     expect(calls.filter((now) => now !== START_MS)).toEqual([START_MS + 1000]);
     expect(errors).toEqual([failure]);
     timers.advance(1000);
-    await flush();
+    await afterMicrotasks();
     expect(calls.filter((now) => now !== START_MS)).toEqual([START_MS + 1000, START_MS + 2000]);
     timers.advance(3000);
-    await flush();
+    await afterMicrotasks();
     expect(calls.filter((now) => now !== START_MS)).toEqual([START_MS + 1000, START_MS + 2000, START_MS + 3000, START_MS + 4000, START_MS + 5000]);
     expect(errors).toEqual([failure]);
 
     await sweeper.close();
     const callsAtClose = calls.length;
     timers.advance(5000);
-    await flush();
+    await afterMicrotasks();
     expect(calls).toHaveLength(callsAtClose);
     expect(timers.pending()).toEqual([]);
+  });
+});
+
+describe('startApprovalSweeper release of stopped runs', () => {
+  it('releases every run it stopped, reports a failed release and keeps sweeping, and aborts pending releases on close', async () => {
+    const clock = createFakeClock(START_MS);
+    const timers = createFakeTimers(clock);
+    const released: string[] = [];
+    const signals: AbortSignal[] = [];
+    const errors: unknown[] = [];
+    const failure = new Error('release failed');
+    let stopped: string[] = ['run-a', 'run-b'];
+    const store = {
+      expireApprovals: (): string[] => {
+        const now = stopped;
+        stopped = [];
+        return now;
+      },
+    };
+    const sweeper = startSweeper({
+      store,
+      clock,
+      timers,
+      intervalMs: 1000,
+      releaseStopped: async (runId: string, signal: AbortSignal) => {
+        released.push(runId);
+        signals.push(signal);
+        if (runId === 'run-a') throw failure;
+      },
+      onError: (error: unknown) => errors.push(error),
+    });
+
+    timers.advance(1000);
+    await sweeper.close();
+
+    expect(released).toEqual(['run-a', 'run-b']);
+    expect(errors).toEqual([failure]);
+    expect(signals.every((signal) => signal.aborted)).toBe(true);
   });
 });
 
@@ -114,5 +151,65 @@ describe('sweeper inside the run service', () => {
     expect((await env.getRun(run.id)).status).toBe('RUNNING');
     expect((await env.getRun(run.id)).lastSeq).toBe(before);
     expect((await env.http('GET', `/v1/approvals/${approvalId}`)).json.approval.status).toBe('pending');
+  });
+});
+
+describe('release of runs that stop while waiting for input', () => {
+  const REQUESTS = [{ key: 'who', mode: 'form' as const, message: 'Who?', requestedSchema: { type: 'object' } }];
+
+  const waitingForInput = async (env: ServiceEnv, expiresAt: number) => {
+    const session = await env.createSession();
+    const run = await env.createRun(session.id);
+    const claim = env.claimRun(run.id);
+    env.append(claim, [toolCallPayload('call_1', path.join(env.layout.projectReal, 'a.txt'))]);
+    const requested = env.store.requestElicitation(claim, { callId: 'call_1', expiresAt, server: 'remote', requests: REQUESTS });
+    if (requested.kind !== 'ok') throw new Error('expected an elicitation');
+    expect(env.store.release(claim, 'WAITING_HUMAN').kind).toBe('ok');
+    return { run, id: requested.approval.id };
+  };
+
+  it('releases a run whose request for input expired', async () => {
+    const releases: string[] = [];
+    const env = await startService({ fakeTimers: true, sweepIntervalMs: 1000, releaseStopped: async (runId) => void releases.push(runId) });
+    const timers = env.timers;
+    if (timers === undefined) throw new Error('fake timers missing');
+    const { run } = await waitingForInput(env, START_MS + 5000);
+
+    timers.advance(5000);
+
+    expect(await env.getRun(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
+    expect(releases).toEqual([run.id]);
+  });
+
+  it('releases a waiting run that the client cancels and reports a failed release without failing the cancel', async () => {
+    const failure = new Error('the server is unreachable');
+    const releases: string[] = [];
+    const env = await startService({
+      releaseStopped: async (runId) => {
+        releases.push(runId);
+        throw failure;
+      },
+    });
+    const { run } = await waitingForInput(env, START_MS + 60_000);
+
+    const cancelled = await env.http('POST', `/v1/runs/${run.id}/cancel`);
+
+    expect(cancelled.status).toBe(202);
+    expect(cancelled.json.run.status).toBe('CANCELLED');
+    await vi.waitFor(() => expect(env.errors).toContain(failure));
+    expect(releases).toEqual([run.id]);
+  });
+
+  it('does not release a run that is cancelled while running or that is already terminal', async () => {
+    const releases: string[] = [];
+    const env = await startService({ releaseStopped: async (runId) => void releases.push(runId) });
+    const session = await env.createSession();
+    const running = await env.createRun(session.id);
+    env.claimRun(running.id);
+
+    await env.http('POST', `/v1/runs/${running.id}/cancel`);
+    await env.http('POST', `/v1/runs/${running.id}/cancel`);
+
+    expect(releases).toEqual([]);
   });
 });

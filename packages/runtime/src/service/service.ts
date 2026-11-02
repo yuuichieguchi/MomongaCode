@@ -44,6 +44,7 @@ export type RunServiceOptions = {
   dataVersionPollMs?: number;
   maxBodyBytes?: number;
   cancelUpstream?: (runId: string) => Promise<void>;
+  releaseStopped(runId: string, signal: AbortSignal): Promise<void>;
   runTrace: (runId: string) => Promise<RunTraceView | undefined>;
   runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal) => Promise<{ report: CostReportView; text: string }>;
   mcp: McpAdminPort;
@@ -106,6 +107,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     keepAliveMs: options.keepAliveMs ?? 15_000,
     maxBodyBytes: options.maxBodyBytes ?? TWO_MIB,
     closeSignal: closeController.signal,
+    releaseStopped: options.releaseStopped,
     runTrace: options.runTrace,
     runCost: options.runCost,
     mcp: options.mcp,
@@ -116,10 +118,10 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
   const server = http.createServer(getRequestListener((request, env) => app.fetch(request, env)));
   await listenUnix(server, options.socketPath);
 
-  let sweeper: { close(): void } | undefined;
+  let sweeper: { close(): Promise<void> } | undefined;
   let poll: { close(): void } | undefined;
   const stop = async (): Promise<void> => {
-    sweeper?.close();
+    await sweeper?.close();
     poll?.close();
     closeController.abort();
     const closed = closeServer(server);
@@ -137,6 +139,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
       clock: options.clock,
       timers,
       intervalMs: options.sweepIntervalMs ?? 1000,
+      releaseStopped: options.releaseStopped,
       onError: report,
     });
     poll = startDataVersionPoll({

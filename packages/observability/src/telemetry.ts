@@ -48,6 +48,7 @@ export type TelemetryOptions = {
   exporters?: readonly SpanExporter[];
   batch?: BatchOptions;
   bodies?: BodyCaptureOptions;
+  captureMessageContent?: boolean;
 };
 
 export type CapturedBody = { kind: BodyKind; content: string };
@@ -59,6 +60,7 @@ export type TracePropagation = {
 
 export type Telemetry = {
   tracer: ClockedTracer;
+  captureMessageContent: boolean;
   propagation: TracePropagation;
   recordBody(span: Span, body: CapturedBody): void;
   forceFlush(): Promise<void>;
@@ -104,6 +106,7 @@ export const createTelemetry = (options: TelemetryOptions): Telemetry => {
 
   return {
     tracer,
+    captureMessageContent: options.captureMessageContent === true,
     propagation: {
       inject: (context) => {
         const carrier: Record<string, string> = {};

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fixtureCompactionItem } from '@momonga/testkit';
+import { afterMicrotasks, fixtureCompactionItem } from '@momonga/testkit';
 import { LEASE_MS, START_MS, expectError, openStore, startService, waitUntil } from './helpers.ts';
 import type { ServiceEnv, StreamEvent } from './helpers.ts';
 
@@ -95,7 +95,7 @@ describe('run stream under concurrent writes', () => {
         lateCursors.push(cursor - 7);
         late.push(await env.stream(`/v1/runs/${run.id}/events`, { headers: { 'last-event-id': String(cursor - 7) } }));
       }
-      await new Promise<void>((resolve) => setImmediate(resolve));
+      await afterMicrotasks();
     }
     const transition = env.store.transition(claim, ['RUNNING'], 'COMPLETED');
     expect(transition.kind).toBe('ok');

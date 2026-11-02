@@ -1,4 +1,3 @@
-import { AsyncLocalStorage, createHook } from 'node:async_hooks';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -6,9 +5,11 @@ import { PassThrough } from 'node:stream';
 import { createJsonLogger, momongaPaths } from '@momonga/foundation';
 import type { JsonLogger, MomongaPaths, TextStream } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { onTestFinished } from 'vitest';
-import { createFakeClock, createFakeTimers, registerCleanup, waitFor, withTempDir } from '@momonga/testkit';
-import type { CleanupContext, FakeClock, FakeTimers, JsonLine } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, createRealWorkScope, quiesce, registerCleanup, settleRealWork, waitFor, waitForRealWork, withTempDir } from '@momonga/testkit';
+import type { CleanupContext, FakeClock, FakeTimers, JsonLine, RealWorkScope } from '@momonga/testkit';
+
+export { createRealWorkScope, quiesce };
+export type { RealWorkScope };
 import type { ChildExit, ChildHandle, SpawnPort, SpawnPortOptions } from '../../src/child-manager.ts';
 import type { ChildRole } from '../../src/launcher.ts';
 import type { MarkerPorts } from '../../src/orphans.ts';
@@ -18,81 +19,6 @@ import type { SupervisorOptions, SupervisorProcess } from '../../src/start-super
 export const T0 = Date.parse('2026-01-01T00:00:00.000Z');
 export const HARNESS_CLOSE_BOUND_MS = 2_000_000;
 export const TEST_VERSION = '9.9.9-test';
-
-export const turns = async (count = 20): Promise<void> => {
-  for (let index = 0; index < count; index += 1) await new Promise<void>((resolve) => setImmediate(resolve));
-};
-
-const ONE_SHOT_REQUEST_TYPE_LIST = [
-  'FSREQCALLBACK',
-  'FSREQPROMISE',
-  'FILEHANDLECLOSEREQ',
-  'GETADDRINFOREQWRAP',
-  'GETNAMEINFOREQWRAP',
-  'QUERYWRAP',
-  'TCPCONNECTWRAP',
-  'PIPECONNECTWRAP',
-  'WRITEWRAP',
-  'SHUTDOWNWRAP',
-  'Immediate',
-] as const;
-
-type OneShotRequestType = (typeof ONE_SHOT_REQUEST_TYPE_LIST)[number];
-
-const ONE_SHOT_REQUEST_TYPES: ReadonlySet<string> = new Set<OneShotRequestType>(ONE_SHOT_REQUEST_TYPE_LIST);
-
-export type RealWorkScope = {
-  run<T>(fn: () => T): T;
-  inFlight(): boolean;
-  describe(): string;
-  dispose(): void;
-};
-
-export const createRealWorkScope = (): RealWorkScope => {
-  const storage = new AsyncLocalStorage<object>();
-  const token = {};
-  const requests = new Map<number, string>();
-  const timers = new Map<number, { hasRef(): boolean }>();
-  const hook = createHook({
-    init: (asyncId, type, _trigger, resource) => {
-      if (storage.getStore() !== token) return;
-      if (ONE_SHOT_REQUEST_TYPES.has(type)) requests.set(asyncId, type);
-      else if (type === 'Timeout' && 'hasRef' in resource && typeof resource.hasRef === 'function') timers.set(asyncId, resource as { hasRef(): boolean });
-    },
-    destroy: (asyncId) => {
-      requests.delete(asyncId);
-      timers.delete(asyncId);
-    },
-  }).enable();
-  const refTimerCount = (): number => [...timers.values()].filter((timer) => timer.hasRef()).length;
-  const scope: RealWorkScope = {
-    run: (fn) => storage.run(token, fn),
-    inFlight: () => requests.size > 0 || refTimerCount() > 0,
-    describe: () => {
-      const counts = new Map<string, number>();
-      for (const type of requests.values()) counts.set(type, (counts.get(type) ?? 0) + 1);
-      const requestSummary = [...counts].map(([type, count]) => `${type}=${String(count)}`).join(',');
-      return `real work in flight: requests[${requestSummary}] refTimers=${String(refTimerCount())}`;
-    },
-    dispose: () => {
-      hook.disable();
-      requests.clear();
-      timers.clear();
-    },
-  };
-  onTestFinished(() => {
-    scope.dispose();
-  });
-  return scope;
-};
-
-const waitForWithRealWork = async (realWork: RealWorkScope, predicate: () => boolean, description: string): Promise<void> => {
-  try {
-    await waitFor(predicate, { description });
-  } catch (error) {
-    throw new Error(`${error instanceof Error ? error.message : String(error)}; ${realWork.describe()}`, { cause: error });
-  }
-};
 
 export type CapturedLog = {
   readonly logger: JsonLogger;
@@ -411,13 +337,6 @@ export const recordingMarkerPorts = (overrides: MarkerPorts = {}, record?: strin
   return { ports, calls };
 };
 
-const macrotask = (): Promise<void> => new Promise<void>((resolve) => setImmediate(resolve));
-
-const settle = async (realWork: RealWorkScope, done: () => boolean, description: string): Promise<void> => {
-  await macrotask();
-  await waitForWithRealWork(realWork, () => done() || !realWork.inFlight(), `${description} or quiet real work`);
-};
-
 const advanceToDue = (timers: FakeTimers, due: number): void => {
   timers.advance(Math.max(0, due - timers.now()));
 };
@@ -425,13 +344,13 @@ const advanceToDue = (timers: FakeTimers, due: number): void => {
 export const pump = async (timers: FakeTimers, realWork: RealWorkScope, ms: number): Promise<void> => {
   const target = timers.now() + ms;
   for (;;) {
-    await settle(realWork, () => false, 'fake time to pump');
+    await settleRealWork(realWork, () => false, 'fake time to pump');
     const due = timers.nextDueAt();
     if (due === undefined || due > target) break;
     advanceToDue(timers, due);
   }
   advanceToDue(timers, target);
-  await settle(realWork, () => false, 'fake time pumped');
+  await settleRealWork(realWork, () => false, 'fake time pumped');
 };
 
 export const pumpUntil = async (
@@ -444,11 +363,11 @@ export const pumpUntil = async (
   const description = options.description ?? 'condition';
   const startedAt = timers.now();
   for (;;) {
-    await settle(realWork, predicate, description);
+    await settleRealWork(realWork, predicate, description);
     if (predicate()) return;
     const due = timers.nextDueAt();
     if (due === undefined) {
-      await waitForWithRealWork(realWork, () => predicate() || timers.nextDueAt() !== undefined || realWork.inFlight(), `${description} or a pending fake timer`);
+      await waitForRealWork(realWork, () => predicate() || timers.nextDueAt() !== undefined || realWork.inFlight(), `${description} or a pending fake timer`);
       continue;
     }
     if (due - startedAt > maxMs) throw new Error(`pumpUntil: ${description} not met within ${maxMs} fake ms`);

@@ -8,6 +8,7 @@ export { probeManagedFm } from './probe/probe-fm.ts';
 export type { ProbeManagedFmOptions, ProbeManagedFmResult } from './probe/probe-fm.ts';
 export type { ProbeOptions } from './probe/run-probe.ts';
 export { FmServeError, createFmServe } from './managed/fm-serve.ts';
+export { PreconditionFailedError } from './adapters/shared/failures.ts';
 export type {
   ExecFn,
   ExecResult,

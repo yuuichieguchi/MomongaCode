@@ -342,7 +342,7 @@ describe('projectInheritance: pinned_overflow', () => {
   it('replaces the task of a step-0 pinned_overflow run in place by the dropped marker, with no other marker', () => {
     const state = foldOf([task('x'.repeat(50)), ...claimed('default'), ended('FAILED', 'pinned_overflow')]);
     expect(state.step).toBe(0);
-    const payload = project(state, { status: 'FAILED', errorCode: 'pinned_overflow' });
+    const payload = project(state, { status: 'FAILED', errorCode: 'pinned_overflow', carriedSkills: [] });
     expect(payload.history).toEqual([markerEntry(1, MARKER_TEXT.dropped)]);
     expect(payload.markers).toEqual([{ seq: 1, kind: 'dropped' }]);
     expect(payload.nextItemSeq).toBe(2);
@@ -362,7 +362,7 @@ describe('projectInheritance: pinned_overflow', () => {
     });
     const state = foldOf([task('x'.repeat(50)), inherited, ...claimed('default'), ended('FAILED', 'pinned_overflow')]);
     expect(state.taskSeq).toBe(3);
-    const payload = project(state, { status: 'FAILED', errorCode: 'pinned_overflow' });
+    const payload = project(state, { status: 'FAILED', errorCode: 'pinned_overflow', carriedSkills: [] });
     expect(payload.history).toEqual([...inherited.history, markerEntry(3, MARKER_TEXT.dropped)]);
     expect(payload.markers).toEqual([{ seq: 3, kind: 'dropped' }]);
     expect(payload.nextItemSeq).toBe(4);
@@ -379,12 +379,50 @@ describe('projectInheritance: pinned_overflow', () => {
       ended('FAILED', 'pinned_overflow'),
     ]);
     expect(state.step).toBe(1);
-    const payload = project(state, { status: 'FAILED', errorCode: 'pinned_overflow' });
+    const payload = project(state, { status: 'FAILED', errorCode: 'pinned_overflow', carriedSkills: [] });
     expect(payload.history).toEqual(state.history);
     expect(payload.history[0]).toEqual({ seq: 1, item: taskItem('Write') });
     expect(payload.markers).toEqual([]);
     expect(payload.closures).toEqual([]);
     expect(payload.nextItemSeq).toBe(state.nextItemSeq);
+  });
+});
+
+describe('projectInheritance: skills of a pinned_overflow run', () => {
+  const skill = (name: string): RunEventPayload => ({ type: 'skill.activated', name, content: `${name} body` });
+  const carriedPdf = inheritedEvent({
+    fromRunId: 'run-older',
+    fromLastSeq: 5,
+    history: [{ seq: 1, item: taskItem('first') }],
+    nextItemSeq: 2,
+    mode: 'default',
+    activatedSkills: [{ name: 'pdf', content: 'pdf body' }],
+  });
+
+  it('drops the skills a step-0 pinned_overflow run brought itself and keeps the ones it inherited', () => {
+    const state = foldOf([task('x'), carriedPdf, skill('huge'), ...claimed('default'), ended('FAILED', 'pinned_overflow')]);
+    expect(state.activatedSkills.map((entry) => entry.name)).toEqual(['pdf', 'huge']);
+    const payload = project(state, { status: 'FAILED', errorCode: 'pinned_overflow', carriedSkills: ['pdf'] });
+    expect(payload.activatedSkills).toEqual([{ name: 'pdf', content: 'pdf body' }]);
+    expectWellFormed(payload);
+  });
+
+  it('carries no skill forward when a first run brought the only one', () => {
+    const state = foldOf([task('x'), skill('huge'), ...claimed('default'), ended('FAILED', 'pinned_overflow')]);
+    const payload = project(state, { status: 'FAILED', errorCode: 'pinned_overflow', carriedSkills: [] });
+    expect(payload.activatedSkills).toBeUndefined();
+    expectWellFormed(payload);
+  });
+
+  it('keeps every skill when pinned_overflow happened after the first model request', () => {
+    const state = foldOf([task('x'), skill('big'), ...claimed('default'), requested(1), responded(1, [assistantItem('m1', 'hi')]), ended('FAILED', 'pinned_overflow')]);
+    const payload = project(state, { status: 'FAILED', errorCode: 'pinned_overflow', carriedSkills: [] });
+    expect(payload.activatedSkills).toEqual([{ name: 'big', content: 'big body' }]);
+  });
+
+  it('refuses to project a step-0 pinned_overflow run whose carried skills are unknown', () => {
+    const state = foldOf([task('x'), skill('huge'), ...claimed('default'), ended('FAILED', 'pinned_overflow')]);
+    expect(() => project(state, { status: 'FAILED', errorCode: 'pinned_overflow' })).toThrow('the skills carried into a step-0 pinned_overflow run are not known');
   });
 });
 

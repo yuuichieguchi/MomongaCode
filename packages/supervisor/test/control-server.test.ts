@@ -13,7 +13,7 @@ import type { CleanupContext } from '@momonga/testkit';
 import { respondShutdown, startControlServer } from '../src/control-server.ts';
 import type { ControlServer } from '../src/control-server.ts';
 import { trackSupervisorChildren } from './support/track-supervisor-children.ts';
-import { createRealWorkScope, httpOver, phaseChanges, pumpUntil, settledFlag, startHarness, turns, writeMarker } from './fixtures/p3-harness.ts';
+import { createRealWorkScope, httpOver, phaseChanges, pumpUntil, quiesce, settledFlag, startHarness, writeMarker } from './fixtures/p3-harness.ts';
 
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
@@ -96,10 +96,7 @@ const startServer = async (context: CleanupContext, health: () => SupervisorHeal
   }));
   registerCleanup(context, async () => {
     const closing = settledFlag(server.close());
-    for (let round = 0; round < 50 && !closing.settled(); round += 1) {
-      timers.advance(1000);
-      await turns(5);
-    }
+    await pumpUntil(timers, () => closing.settled(), { realWork, maxMs: 50_000, description: 'the control server to close' });
   });
   return { socketPath, server, timers, realWork, shutdowns: () => shutdowns, errors };
 };
@@ -151,7 +148,7 @@ describe('startControlServer', () => {
     const large = await httpOver(context, server.socketPath, 'POST', '/v1/shutdown', 'x'.repeat(2048));
     expect(large.status).toBe(413);
     expect(envelopeOf(large.text)).toEqual({ error: { message: expect.any(String), type: 'invalid_request', param: null, code: 'payload_too_large' } });
-    await turns();
+    await quiesce(server.realWork);
     expect(server.shutdowns()).toBe(1);
   });
 
@@ -164,7 +161,7 @@ describe('startControlServer', () => {
     raw.write('POST /v1/shutdown HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n\r\n');
     raw.destroy();
     await waitFor(() => server.shutdowns() > 0, { description: 'drain requested after the client vanished', maxTurns: 20_000 });
-    await turns(50);
+    await quiesce(server.realWork);
     expect(server.shutdowns()).toBe(1);
   });
 
@@ -216,9 +213,9 @@ describe('startControlServer', () => {
     raw.on('error', () => undefined);
     await new Promise<void>((resolve) => raw.once('connect', () => resolve()));
     raw.write('POST /v1/shutdown HTTP/1.1\r\nHost: localhost\r\nContent-Length: 100\r\n\r\nabc');
-    await turns(50);
+    await quiesce(realWork);
     const closing = settledFlag(server.close());
-    await turns(50);
+    await quiesce(realWork);
     await pumpUntil(timers, () => closing.settled(), { realWork, maxMs: 1000 });
     expect(fs.existsSync(socketPath)).toBe(false);
     expect(fs.existsSync(`${socketPath}.lock`)).toBe(false);
@@ -232,14 +229,18 @@ describe('startControlServer', () => {
     const raw = net.connect(socketPath);
     raw.on('error', () => undefined);
     await new Promise<void>((resolve) => raw.once('connect', () => resolve()));
+    const requested = new Promise<void>((resolve) => server.once('request', () => resolve()));
     raw.write('POST /v1/shutdown HTTP/1.1\r\nHost: localhost\r\nContent-Length: 100\r\n\r\nabc');
-    await turns(50);
+    await requested;
     let closed = false;
     server.close(() => {
       closed = true;
     });
     server.closeIdleConnections();
-    await turns(200);
+    const open = await new Promise<number>((resolve, reject) => {
+      server.getConnections((error, count) => (error === null ? resolve(count) : reject(error)));
+    });
+    expect(open).toBe(1);
     expect(closed).toBe(false);
     server.closeAllConnections();
     await waitFor(() => closed, { description: 'close after closeAllConnections' });
@@ -366,7 +367,7 @@ describe('control API through the supervisor', () => {
     await h.waitForState('runtime', 'ready');
     expect((await httpOver(context, h.paths.sockets.supervisor, 'POST', '/v1/shutdown')).status).toBe(202);
     await waitFor(() => requested === 1);
-    await turns(50);
+    await quiesce(h.realWork);
     expect(h.fake.latest('runtime').signals).toEqual([]);
   });
 
@@ -378,7 +379,7 @@ describe('control API through the supervisor', () => {
     expect((await httpOver(context, h.paths.sockets.supervisor, 'POST', '/v1/shutdown')).status).toBe(202);
     await waitFor(() => h.fake.latest('runtime').signals.length === 1);
     expect((await httpOver(context, h.paths.sockets.supervisor, 'POST', '/v1/shutdown')).status).toBe(202);
-    await turns(50);
+    await quiesce(h.realWork);
     expect(h.log.withMsg('shutdown.begin')).toHaveLength(1);
     expect(h.fake.latest('runtime').signals).toEqual(['SIGTERM']);
     h.fake.latest('runtime').exit(0);

@@ -10,6 +10,7 @@ export type {
   InspectableToolExecutor,
   NeedsApprovalOutcome,
   NeedsInputOutcome,
+  ReleaseTarget,
   ResultOutcome,
   ToolCall,
   ToolExecutor,

@@ -80,4 +80,72 @@ describe('tools that wait for a person', () => {
       undefined,
     ]);
   });
+
+  describe('releasing a call that waits for a person', () => {
+    const KEY = keyFor('run-1', 1, 'c1');
+    const TASK = { kind: 'task', taskId: 't1', answered: [] };
+    const target = { callId: 'c1', name: 'Poll', idemKey: KEY };
+    const noSignal = (): AbortSignal => new AbortController().signal;
+
+    it('hands the checkpoint to the tool, clears it and marks the record unknown', async () => {
+      const harness = makeHarness();
+      const released: Array<Record<string, unknown>> = [];
+      const tool = makeTool('Poll', {
+        ...WRITE,
+        releaseCheckpoint: async (checkpoint) => {
+          released.push(checkpoint);
+        },
+      });
+      harness.idempotency.seed(KEY, 'PENDING', { tool: 'Poll', checkpoint: TASK });
+
+      await harness.executor.release([target], { toolSet: await toolSetOf(tool), signal: noSignal() });
+
+      expect(released).toEqual([TASK]);
+      const lookup = harness.idempotency.port.get(KEY);
+      expect(lookup).toMatchObject({ s: 'UNKNOWN' });
+      expect(lookup && 'rec' in lookup ? lookup.rec.meta : undefined).not.toHaveProperty('checkpoint');
+    });
+
+    it('keeps the record and its checkpoint when the tool fails to release it', async () => {
+      const harness = makeHarness();
+      const failure = new Error('the server is unreachable');
+      const tool = makeTool('Poll', {
+        ...WRITE,
+        releaseCheckpoint: async () => {
+          throw failure;
+        },
+      });
+      harness.idempotency.seed(KEY, 'PENDING', { tool: 'Poll', checkpoint: TASK });
+
+      await expect(harness.executor.release([target], { toolSet: await toolSetOf(tool), signal: noSignal() })).rejects.toBe(failure);
+
+      expect(harness.idempotency.port.get(KEY)).toMatchObject({ s: 'PENDING', rec: { meta: { checkpoint: TASK } } });
+    });
+
+    it('clears a checkpoint of a tool that has no hook and leaves records without a checkpoint alone', async () => {
+      const harness = makeHarness();
+      const plain = makeTool('Poll', WRITE);
+      harness.idempotency.seed(KEY, 'PENDING', { tool: 'Poll', checkpoint: TASK });
+      const otherKey = keyFor('run-1', 1, 'c2');
+      harness.idempotency.seed(otherKey, 'PENDING', { tool: 'Poll' });
+
+      await harness.executor.release(
+        [target, { callId: 'c2', name: 'Poll', idemKey: otherKey }],
+        { toolSet: await toolSetOf(plain), signal: noSignal() },
+      );
+
+      expect(harness.idempotency.port.get(KEY)).toMatchObject({ s: 'UNKNOWN' });
+      expect(harness.idempotency.port.get(otherKey)).toMatchObject({ s: 'PENDING' });
+    });
+
+    it('rejects with the abort reason before touching anything when the signal is aborted', async () => {
+      const harness = makeHarness();
+      harness.idempotency.seed(KEY, 'PENDING', { tool: 'Poll', checkpoint: TASK });
+      const aborted = AbortSignal.abort(new Error('closing'));
+
+      await expect(harness.executor.release([target], { toolSet: await toolSetOf(makeTool('Poll', WRITE)), signal: aborted })).rejects.toThrow('closing');
+
+      expect(harness.idempotency.port.get(KEY)).toMatchObject({ s: 'PENDING' });
+    });
+  });
 });

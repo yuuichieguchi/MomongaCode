@@ -119,7 +119,7 @@ export type BatchInput = Parameters<ToolExecutor['runBatch']>[0];
 export type PortCalls = {
   envFor: { sessionId: string; env: ToolEnv }[];
   toolSet: { runId: string; signal: AbortSignal | undefined; env: ToolEnv | undefined }[];
-  recoveryToolSet: { signal: AbortSignal | undefined }[];
+  recoveryToolSet: { signal: AbortSignal | undefined; additionalTools: readonly AnyTool[] }[];
   policyFor: { sessionId: string; env: ToolEnv | undefined }[];
   abandon: { targets: AbandonTarget[]; signal: AbortSignal }[];
 };
@@ -226,9 +226,10 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       for (const tool of [...toolList(), ...(toolSetOptions.additionalTools ?? [])]) registry.register(tool);
       return registry.snapshot(toolSetOptions.only === undefined ? {} : { only: toolSetOptions.only });
     },
-    recoveryToolSet: async (recoveryOptions: { signal: AbortSignal }) => {
-      portCalls.recoveryToolSet.push({ signal: recoveryOptions?.signal });
-      return snapshotTools(toolList());
+    recoveryToolSet: async (recoveryOptions: { signal: AbortSignal; additionalTools?: readonly AnyTool[] }) => {
+      const additionalTools = recoveryOptions.additionalTools ?? [];
+      portCalls.recoveryToolSet.push({ signal: recoveryOptions?.signal, additionalTools });
+      return snapshotTools([...toolList(), ...additionalTools]);
     },
     executor,
     sandbox: fakeSandbox,

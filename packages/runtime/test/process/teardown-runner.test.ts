@@ -1,14 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { runTeardown } from '../../src/process/teardown.ts';
 import type { TeardownStep } from '../../src/process/teardown.ts';
 import { START_MS, makeLogger } from './helpers.ts';
 
 const BUDGET_MS = 10_000;
-
-const flush = async (): Promise<void> => {
-  for (let turn = 0; turn < 5; turn += 1) await new Promise<void>((resolve) => setImmediate(resolve));
-};
 
 const hanging = (name: string): TeardownStep => ({ name, run: () => new Promise<void>(() => undefined) });
 
@@ -39,15 +35,15 @@ const harness = (steps: readonly TeardownStep[], failureEvent?: string) => {
 describe('runTeardown (fake timers, fake steps)', () => {
   it('a hanging step is abandoned after the remaining budget and logged with teardown.abandoned', async () => {
     const h = harness([hanging('service')]);
-    await flush();
+    await afterMicrotasks();
 
     expect(h.timers.pending().map((timer) => timer.delayMs)).toEqual([10_000]);
     h.timers.advance(9_999);
-    await flush();
+    await afterMicrotasks();
     expect(h.result()).toBeUndefined();
 
     h.timers.advance(1);
-    await flush();
+    await afterMicrotasks();
 
     expect(h.result()).toEqual(['service']);
     expect(h.logger.entries.filter((entry) => entry.msg === 'teardown.abandoned')).toEqual([{ level: 'warn', msg: 'teardown.abandoned', fields: { step: 'service' } }]);
@@ -56,14 +52,14 @@ describe('runTeardown (fake timers, fake steps)', () => {
   it('the remaining budget is the total budget minus the time already spent by earlier steps', async () => {
     const first = controlled('timers');
     const h = harness([first, hanging('workers')]);
-    await flush();
+    await afterMicrotasks();
     h.clock.advance(3_000);
     first.finish();
-    await flush();
+    await afterMicrotasks();
 
     expect(h.timers.pending().map((timer) => timer.delayMs)).toEqual([7_000]);
     h.timers.advance(7_000);
-    await flush();
+    await afterMicrotasks();
     expect(h.result()).toEqual(['workers']);
   });
 
@@ -77,14 +73,14 @@ describe('runTeardown (fake timers, fake steps)', () => {
       },
     });
     const h = harness([tracked('service'), tracked('mcp-pools')]);
-    await flush();
+    await afterMicrotasks();
     h.timers.advance(10_000);
-    await flush();
+    await afterMicrotasks();
 
     expect(started).toEqual(['service', 'mcp-pools']);
     expect(h.timers.pending().map((timer) => timer.delayMs)).toEqual([0]);
     h.timers.advance(0);
-    await flush();
+    await afterMicrotasks();
     expect(h.result()).toEqual(['service', 'mcp-pools']);
   });
 
@@ -95,9 +91,9 @@ describe('runTeardown (fake timers, fake steps)', () => {
       { name: 'store', run: () => void ran.push('store') },
       { name: 'lock', run: () => void ran.push('lock') },
     ]);
-    await flush();
+    await afterMicrotasks();
     h.timers.advance(10_000);
-    await flush();
+    await afterMicrotasks();
 
     expect(ran).toEqual(['store', 'lock']);
     expect(h.result()).toEqual(['gateway-client']);
@@ -115,7 +111,7 @@ describe('runTeardown (fake timers, fake steps)', () => {
       { name: 'telemetry', run: () => Promise.reject(new Error('async failure')) },
       { name: 'store', run: () => void ran.push('store') },
     ]);
-    await flush();
+    await afterMicrotasks();
 
     expect(h.result()).toEqual([]);
     expect(ran).toEqual(['store']);
@@ -141,13 +137,13 @@ describe('runTeardown (fake timers, fake steps)', () => {
 
   it('abandoned step names are returned in order', async () => {
     const h = harness([hanging('workers'), { name: 'service', run: () => Promise.resolve() }, hanging('mcp-pools'), hanging('telemetry')]);
-    await flush();
+    await afterMicrotasks();
     h.timers.advance(10_000);
-    await flush();
+    await afterMicrotasks();
     h.timers.advance(0);
-    await flush();
+    await afterMicrotasks();
     h.timers.advance(0);
-    await flush();
+    await afterMicrotasks();
 
     expect(h.result()).toEqual(['workers', 'mcp-pools', 'telemetry']);
   });
@@ -161,11 +157,11 @@ describe('runTeardown (fake timers, fake steps)', () => {
     expect(h.timers.pending()).toEqual([]);
 
     const abandoned = harness([hanging('mcp-pools'), { name: 'gateway-client', run: () => Promise.resolve() }]);
-    await flush();
+    await afterMicrotasks();
     abandoned.timers.advance(10_000);
-    await flush();
+    await afterMicrotasks();
     abandoned.timers.advance(0);
-    await flush();
+    await afterMicrotasks();
     expect(abandoned.result()).toEqual(['mcp-pools']);
     expect(abandoned.timers.pending()).toEqual([]);
   });
@@ -187,7 +183,7 @@ describe('runTeardown (fake timers, fake steps)', () => {
       ],
       failureEvent,
     );
-    await flush();
+    await afterMicrotasks();
 
     const failures = h.logger.entries.filter((entry) => entry.level === 'error');
     expect(failures.map((entry) => [entry.msg, entry.fields?.step, entry.fields?.err])).toEqual([

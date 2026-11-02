@@ -4,7 +4,7 @@ import { MIN_ROOM_TOKENS, budgetFor, inputCeilingFor, itemCapFor, memoryBudgetFo
 import { chainTail, digestChain, frozenItem } from './digests.ts';
 import { ContextOverflowError, PinnedOverflowError, PinnedRoomError, PrefixChangedError } from './errors.ts';
 import { discoverInstructions } from './instructions.ts';
-import type { DiscoveredInstructions } from './instructions.ts';
+import type { DiscoveredInstructions, LoadedInstructionFile } from './instructions.ts';
 import { DEFAULT_KEEP_RECENT_STEPS, DEFAULT_KEEP_RECENT_TURNS, positiveInteger, protectionRungsOf, retainedHistoryOf, shapeOf } from './levels.ts';
 import { renderMemories } from './memory.ts';
 import { heldSkillOf, pointToHeldSkill } from './skill-output.ts';
@@ -156,6 +156,69 @@ const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): 
   return { discovered, notices: [...discovered.notices, ...toolNotices], tools, systemMessage, task, pinnedLayers, pinnedDigest, pinnedTokens, ceiling, room };
 };
 
+type FittedLayers = {
+  nested: LoadedInstructionFile[];
+  layers: InputItem[];
+  counted: MeterCount;
+  layersWith(memory: MessageInputItem | undefined): InputItem[];
+  floorOf(layerItems: readonly InputItem[]): InputItem[];
+  exceeds(counted: MeterCount): boolean;
+};
+
+const fitLayers = async (input: BuildContextInput, ports: BuildContextPorts, head: Head): Promise<FittedLayers> => {
+  const { sources } = input;
+  const { tools, fits, countInput } = metering(input, ports, head.tools);
+  const { systemMessage, task, pinnedLayers, notices, ceiling } = head;
+  const nested = [...head.discovered.nested];
+  const skillMessages: MessageInputItem[] = sources.activatedSkills.map((skill) => ({
+    type: 'message',
+    role: 'developer',
+    content: `Activated skill ${skill.name}:\n${skill.content}`,
+  }));
+  const layersWith = (memory: MessageInputItem | undefined): InputItem[] => [
+    ...pinnedLayers,
+    ...(memory === undefined ? [] : [memory]),
+    ...nested.map((file) => file.message),
+    ...skillMessages,
+  ];
+  const floorOf = (layerItems: readonly InputItem[]): InputItem[] => [...layerItems, task];
+  const exceeds = (counted: MeterCount): boolean => !fits(counted) || counted.inputTokens > ceiling;
+  const leavesNoRoom = (counted: MeterCount): boolean => ceiling - counted.inputTokens < MIN_ROOM_TOKENS;
+  let layers = layersWith(undefined);
+  let counted = await countInput(floorOf(layers));
+  while ((exceeds(counted) || leavesNoRoom(counted)) && nested.length > 0) {
+    const dropped = nested.shift();
+    if (dropped === undefined) break;
+    notices.push({
+      code: 'instructions_dropped',
+      message: `${dropped.instruction.path} was dropped because the context budget was exceeded`,
+    });
+    layers = layersWith(undefined);
+    counted = await countInput(floorOf(layers));
+  }
+  if (exceeds(counted)) {
+    throw new PinnedOverflowError({
+      pinnedTokens: counted.inputTokens,
+      ceiling,
+      breakdown: await breakdownOf(input, ports, systemMessage, layers.slice(1), task, tools),
+    });
+  }
+  if (leavesNoRoom(counted)) {
+    throw new PinnedRoomError({
+      pinnedTokens: counted.inputTokens,
+      ceiling,
+      room: ceiling - counted.inputTokens,
+      minimum: MIN_ROOM_TOKENS,
+      breakdown: await breakdownOf(input, ports, systemMessage, layers.slice(1), task, tools),
+    });
+  }
+  return { nested, layers, counted, layersWith, floorOf, exceeds };
+};
+
+export const measureLayers = async (input: BuildContextInput, ports: BuildContextPorts): Promise<void> => {
+  await fitLayers(input, ports, await measureHead(input, ports));
+};
+
 export const measurePinned = async (input: BuildContextInput, ports: BuildContextPorts): Promise<PinnedMeasure> => {
   const { pinnedTokens, ceiling, room } = await measureHead(input, ports);
   return {
@@ -179,42 +242,14 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
 
   const head = await measureHead(input, ports);
   const { tools, budgetOf, fits, countInput } = metering(input, ports, head.tools);
-  const { discovered, notices, systemMessage, task, pinnedLayers, pinnedDigest, pinnedTokens, ceiling, room } = head;
+  const { discovered, notices, systemMessage, task, pinnedDigest, pinnedTokens, ceiling, room } = head;
 
-  const nested = [...discovered.nested];
-  const skillMessages: MessageInputItem[] = sources.activatedSkills.map((skill) => ({
-    type: 'message',
-    role: 'developer',
-    content: `Activated skill ${skill.name}:\n${skill.content}`,
-  }));
+  const fitted = await fitLayers(input, ports, head);
+  const { nested, layersWith, floorOf, exceeds } = fitted;
+  let layers = fitted.layers;
+  let layersCounted = fitted.counted;
   let memoryMessage: MessageInputItem | undefined;
-  const layersOf = (): InputItem[] => [
-    ...pinnedLayers,
-    ...(memoryMessage === undefined ? [] : [memoryMessage]),
-    ...nested.map((file) => file.message),
-    ...skillMessages,
-  ];
-  const floorOf = (layerItems: readonly InputItem[]): InputItem[] => [...layerItems, task];
-  const exceeds = (counted: MeterCount): boolean => !fits(counted) || counted.inputTokens > ceiling;
-  let layers = layersOf();
-  let layersCounted = await countInput(floorOf(layers));
-  while (exceeds(layersCounted) && nested.length > 0) {
-    const dropped = nested.shift();
-    if (dropped === undefined) break;
-    notices.push({
-      code: 'instructions_dropped',
-      message: `${dropped.instruction.path} was dropped because the context budget was exceeded`,
-    });
-    layers = layersOf();
-    layersCounted = await countInput(floorOf(layers));
-  }
-  if (exceeds(layersCounted)) {
-    throw new PinnedOverflowError({
-      pinnedTokens: layersCounted.inputTokens,
-      ceiling,
-      breakdown: await breakdownOf(input, ports, systemMessage, layers.slice(1), task, tools),
-    });
-  }
+  const layersOf = (): InputItem[] => layersWith(memoryMessage);
 
   const memoryCandidates = sources.memories ?? [];
   let memoryCount = 0;

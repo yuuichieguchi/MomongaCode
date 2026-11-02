@@ -2,7 +2,7 @@ import { defineTool, ToolExecutionError } from '@momonga/tools';
 import type { AnyTool } from '@momonga/tools';
 import { ACTIVATE_SKILL_TIMEOUT_MS, ACTIVATE_SKILL_TOOL_NAME } from './constants.ts';
 import { SkillActivationError } from './types.ts';
-import type { Skill, SkillContent } from './types.ts';
+import type { Skill, SkillAdmission, SkillContent } from './types.ts';
 
 type ActivateSkillInput = { name: string };
 
@@ -10,9 +10,10 @@ export type ActivationToolDependencies = {
   skills: readonly Skill[];
   activate(name: string): Promise<SkillContent>;
   isActive(name: string): boolean;
+  admit(skill: SkillContent): Promise<SkillAdmission>;
 };
 
-export const createActivateSkillTool = ({ skills, activate, isActive }: ActivationToolDependencies): AnyTool => {
+export const createActivateSkillTool = ({ skills, activate, isActive, admit }: ActivationToolDependencies): AnyTool => {
   const claimed = new Set<string>();
   return defineTool<ActivateSkillInput>({
     name: ACTIVATE_SKILL_TOOL_NAME,
@@ -37,6 +38,8 @@ export const createActivateSkillTool = ({ skills, activate, isActive }: Activati
       claimed.add(input.name);
       try {
         const skill = await activate(input.name);
+        const admission = await admit(skill);
+        if (!admission.admitted) throw new ToolExecutionError(admission.reason);
         return { status: 'completed', output: skill.content, skill };
       } catch (error) {
         claimed.delete(input.name);

@@ -124,6 +124,15 @@ const persistRule = async (
   );
 };
 
+const recordToolContent = (spans: ReadonlyMap<string, TraceSpan>, calls: readonly ToolCall[], outcome: ResultOutcome): void => {
+  const call = calls.find((candidate) => candidate.callId === outcome.callId);
+  if (call === undefined) return;
+  spans.get(outcome.callId)?.recordToolContent({
+    arguments: typeof call.arguments === 'string' ? parseJsonOrText(call.arguments) : call.arguments,
+    result: outcome.result.output,
+  });
+};
+
 export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   const { options, journal, run } = ctx;
   recordCalls(ctx);
@@ -191,7 +200,10 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
         spans.set(callId, span);
         return { traceparent: span.traceparent };
       },
-      onOutcome: (outcome) => journal.append(outcomePayloads(outcome)),
+      onOutcome: (outcome) => {
+        journal.append(outcomePayloads(outcome));
+        recordToolContent(spans, calls, outcome);
+      },
       onStarted: (callId, idemKey) => journal.append([{ type: 'tool.started', callId, idemKey }]),
       onUpdate: (callId, content) => journal.append([{ type: 'tool.updated', callId, content }]),
     });

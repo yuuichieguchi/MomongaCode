@@ -19,6 +19,7 @@ import { makeReport } from './report-fixture.ts';
 
 const BINARY = '/usr/bin/fm';
 const POLL_MS = 25;
+const LICENSE_NOTICE = 'YOU HAVE NOT AGREED TO THE FM TERMS';
 const RECORD_KEY: ProbeRecordKey = { target: 'fm', binarySha256: 'ab'.repeat(32), osBuild: '25A100' };
 const ALL_TRUE = { enum: true, anyOf: true, const: true, pattern: true, minimum: true, nested: true, additionalProperties: true };
 
@@ -68,6 +69,7 @@ type Setup = {
   report?: ProbeReport;
   licenseExitCode?: number;
   countStdout?: string;
+  countExitCode?: number;
 };
 
 const setup = async (config: Setup = {}) => {
@@ -109,7 +111,9 @@ const setup = async (config: Setup = {}) => {
   const execCalls: ExecCall[] = [];
   const exec = async (file: string, args: readonly string[], stdin: string): Promise<ExecResult> => {
     execCalls.push({ file, args, stdin });
-    return { exitCode: 0, stdout: config.countStdout ?? '20\n', stderr: '' };
+    return config.countExitCode === undefined
+      ? { exitCode: 0, stdout: config.countStdout ?? '20\n', stderr: '' }
+      : { exitCode: config.countExitCode, stdout: '', stderr: LICENSE_NOTICE };
   };
   const managed: ManagedFmTarget = await createManagedFmTarget({
     fmServe,
@@ -203,6 +207,38 @@ describe('createManagedFmTarget token counting', () => {
       '{"description":"Run a command","name":"Bash","parameters":{"properties":{},"type":"object"}}',
       'count these words',
     ]);
+  });
+});
+
+describe('createManagedFmTarget unlicensed token counting', () => {
+  it('rejects fm count-tokens exit 69 with a precondition failure carrying the remedy', async () => {
+    const { managed } = await setup({ countExitCode: 69 });
+    await expect(managed.countTokens(TARGET, { model: 'fast', input: 'count these words' }, new AbortController().signal)).rejects.toMatchObject({
+      name: 'PreconditionFailedError',
+      detail: LICENSE_NOTICE,
+      remediation: 'sudo fm license',
+    });
+  });
+
+  it('answers /v1/momonga/count_tokens with a non-retryable precondition_failed carrying the remedy', async () => {
+    const { managed, clock, execCalls } = await setup({ countExitCode: 69 });
+    const { client } = await startGateway({
+      adapters: { fm: adapterFor(managed, clock) },
+      config: { aliases: { fast: ['fm'] }, targets: { fm: { model: 'system' } } },
+    });
+    const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'fast', input: 'count these words' }));
+    expect(response.status).toBe(412);
+    expect(response.body.error).toMatchObject({ type: 'invalid_request', code: 'precondition_failed' });
+    expect(response.body.error.message).toContain('sudo fm license');
+    expect(response.body.error.message).toContain(LICENSE_NOTICE);
+    expect(execCalls).toHaveLength(1);
+  });
+
+  it('classifies a precondition failure of the stream path as non-retryable precondition_failed', async () => {
+    const { managed, clock } = await setup({ licenseExitCode: 69 });
+    const adapter = adapterFor(managed, clock);
+    const { error } = await collect(adapter, { model: 'system', input: [userText('hi')] });
+    expect(adapter.classify(error)).toMatchObject({ retryable: false, error: { type: 'invalid_request', code: 'precondition_failed' } });
   });
 });
 

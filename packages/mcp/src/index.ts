@@ -18,6 +18,7 @@ export { MRTR_MAX_ROUNDS, MRTR_STATE_ONLY_PACING_MS, TASKS_EXTENSION } from './c
 export { McpElicitationAnswerError, McpInputProtocolError, parseElicitationAnswer, parseElicitationAnswers, parseInputRequests } from './input-requests.ts';
 export type { ElicitationAnswer, ElicitationContentValue, ElicitationRequest } from './input-requests.ts';
 export { McpInputSuspension, parseCheckpoint } from './suspension.ts';
+export { McpParkedInputLostError } from './parked-input.ts';
 export type { McpCheckpoint, McpResume } from './suspension.ts';
 export { validateStructuredOutput } from './output-validation.ts';
 export { AUTHORIZATION_WAIT_MS, authorizeMcpServer } from './authorize.ts';

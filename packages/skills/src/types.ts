@@ -12,7 +12,9 @@ export type Skill = {
 
 export type SkillContent = { name: string; content: string };
 
-export type ActivationToolOptions = { isActive(name: string): boolean };
+export type SkillAdmission = { admitted: true } | { admitted: false; reason: string };
+
+export type ActivationToolOptions = { isActive(name: string): boolean; admit(skill: SkillContent): Promise<SkillAdmission> };
 
 export type SkillSet = {
   skills: readonly Skill[];
@@ -21,6 +23,7 @@ export type SkillSet = {
   catalog: string | undefined;
   activate(name: string): Promise<SkillContent>;
   activationTool(options: ActivationToolOptions): AnyTool | undefined;
+  recoveryTool(): AnyTool | undefined;
 };
 
 export type SkillLoadRequest = { projectRoot: string; trusted: boolean };

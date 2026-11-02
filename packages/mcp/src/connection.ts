@@ -8,6 +8,8 @@ import { createMcpOAuthProvider } from './oauth-provider.ts';
 import type { McpOAuthProvider } from './oauth-provider.ts';
 import { parseInputRequests } from './input-requests.ts';
 import { validateStructuredOutput } from './output-validation.ts';
+import { createParkedInputs } from './parked-input.ts';
+import type { ParkedInputs } from './parked-input.ts';
 import { McpAuthorizationError, McpRemotePolicyError, McpTaskError, authorizationRequiredFor, isSessionExpired } from './remote-errors.ts';
 import { credentialKey } from './oauth-provider.ts';
 import { createGuardedFetch } from './remote-policy.ts';
@@ -74,6 +76,7 @@ export interface McpServerConnection {
   readonly instructions: string | undefined;
   listTools(options?: { signal?: AbortSignal }): Promise<Tool[]>;
   callTool(input: McpCallToolInput): Promise<CallToolResult>;
+  releaseCheckpoint(checkpoint: McpCheckpoint, options?: { signal?: AbortSignal }): Promise<void>;
   redact(text: string): string;
   diagnostics(): McpServerDiagnostics;
   close(): Promise<void>;
@@ -137,10 +140,12 @@ class ManagedConnection implements McpServerConnection {
   private closing: Promise<void> | undefined;
   private pendingTransport: ConnectionTransport | undefined;
   private readonly lifetime = new AbortController();
+  private readonly inputs: ParkedInputs;
 
   constructor(options: McpConnectionOptions) {
     this.options = options;
     this.name = options.name;
+    this.inputs = createParkedInputs(options.clock.now());
     this.random = options.random ?? Math.random;
     this.timers = options.timers ?? systemTimers;
     this.breaker = new CircuitBreaker({
@@ -200,10 +205,15 @@ class ManagedConnection implements McpServerConnection {
     if (!('url' in config)) return { state: 'not_applicable' };
     if (Object.keys(config.headers ?? {}).some((header) => header.toLowerCase() === 'authorization')) return { state: 'static_header' };
     if (remote === undefined) throw new Error(`MCP server "${this.name}" has no credential store configured`);
+    const live = this.session;
     try {
-      await this.ensureSession();
+      if (live === undefined) await this.ensureSession();
+      else await this.listTools();
     } catch (error) {
-      if (authorizationRequiredFor(error) !== undefined) return { state: 'required' };
+      if (authorizationRequiredFor(error) !== undefined) {
+        if (live !== undefined && this.session === live) await this.discardSession(live);
+        return { state: 'required' };
+      }
       return { state: 'unreachable', detail: this.redact(errorMessage(error)) };
     }
     const stored = await remote.credentials.read(credentialKey(this.name, config.url));
@@ -251,12 +261,29 @@ class ManagedConnection implements McpServerConnection {
       try {
         const tool = await this.definitionOf(session, input.name, input.signal);
         const { resume } = input;
+        if (resume?.checkpoint.kind === 'parked') return await this.inputs.resume(resume.checkpoint.parkId, resume.answers, input.signal);
         if (resume?.checkpoint.kind === 'task') {
           return await this.settle(session, tool, input, { taskId: resume.checkpoint.taskId, answered: resume.checkpoint.answered }, timeout);
         }
-        return await this.driveRounds(session, tool, input, timeout);
+        return await this.inputs.run(input.signal, (signal) => this.driveRounds(session, tool, { ...input, signal }, timeout));
       } catch (error) {
         if (error instanceof McpInputSuspension) throw error;
+        throw this.failure(session.transport, error);
+      }
+    });
+  }
+
+  async releaseCheckpoint(checkpoint: McpCheckpoint, options?: { signal?: AbortSignal }): Promise<void> {
+    if (checkpoint.kind === 'parked') {
+      this.inputs.release(checkpoint.parkId);
+      return;
+    }
+    if (checkpoint.kind !== 'task') return;
+    const signal = options?.signal;
+    await this.withLiveSession(signal, async (session) => {
+      try {
+        await this.taskRequester(session.client)('tasks/cancel', { taskId: checkpoint.taskId }, signal);
+      } catch (error) {
         throw this.failure(session.transport, error);
       }
     });
@@ -343,11 +370,7 @@ class ManagedConnection implements McpServerConnection {
     if (signal?.aborted === true) forward();
     signal?.addEventListener('abort', forward, { once: true });
     const deadline = this.timers.setTimeout(() => stop.abort(new Error(`task did not finish within ${timeout}ms`)), timeout);
-    const request: TaskRequester = async (method, params, requestSignal) =>
-      client.request({ method, params }, PASS_THROUGH, {
-        timeout: this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
-        ...(requestSignal === undefined ? {} : { signal: requestSignal }),
-      });
+    const request = this.taskRequester(client);
     try {
       return await settleTask({
         start,
@@ -365,6 +388,14 @@ class ManagedConnection implements McpServerConnection {
       this.timers.clearTimeout(deadline);
       signal?.removeEventListener('abort', forward);
     }
+  }
+
+  private taskRequester(client: Session['client']): TaskRequester {
+    return async (method, params, requestSignal) =>
+      client.request({ method, params }, PASS_THROUGH, {
+        timeout: this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
+        ...(requestSignal === undefined ? {} : { signal: requestSignal }),
+      });
   }
 
   private async withLiveSession<T>(signal: AbortSignal | undefined, operation: (session: Session) => Promise<T>): Promise<T> {
@@ -391,6 +422,7 @@ class ManagedConnection implements McpServerConnection {
 
   private async shutdown(): Promise<void> {
     this.lifetime.abort();
+    this.inputs.closeAll();
     await this.pendingTransport?.close();
     await this.connecting?.catch(() => undefined);
     this.state = 'closed';
@@ -541,6 +573,7 @@ class ManagedConnection implements McpServerConnection {
         listChanged: { tools: { autoRefresh: false, debounceMs: 0, onChanged: () => undefined } },
       },
     );
+    client.setRequestHandler('elicitation/create', async (request) => this.inputs.serverRequest(request.params));
     client.onerror = (error) => {
       this.lastError = error.message;
     };
@@ -588,6 +621,7 @@ class ManagedConnection implements McpServerConnection {
   private handleClose(client: Client, transport: ConnectionTransport): void {
     if (this.session?.client !== client) return;
     this.session = undefined;
+    this.inputs.closeAll();
     if (this.closing !== undefined) return;
     this.state = 'disconnected';
     this.lastError = describeExit(transport) ?? this.lastError ?? 'connection closed';

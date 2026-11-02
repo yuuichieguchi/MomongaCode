@@ -80,3 +80,58 @@ describe('gateway telemetry', () => {
     expect(chat?.name).toBe('chat scripted-primary');
   });
 });
+
+describe('gateway telemetry message content', () => {
+  const contentRun = async (captureMessageContent: boolean | undefined) => {
+    const clock = createFakeClock(START_MS);
+    const memory = new InMemorySpanExporter();
+    const telemetry = createTelemetry({
+      serviceName: 'momonga-gateway-test',
+      serviceVersion: '0.0.0',
+      clock,
+      exporters: [memory],
+      batch: { maxQueueSize: 2048, scheduledDelayMs: 60_000, maxExportBatchSize: 512 },
+      ...(captureMessageContent === undefined ? {} : { captureMessageContent }),
+    });
+    registerCleanup(() => telemetry.shutdown());
+    const primary = createScriptedAdapter({ calls: [{ events: textResponseEvents({ model: 'scripted-primary', chunks: ['the answer'], usage: usageOf(3, 1) }) }] });
+    const { client } = await startGateway({ adapters: { primary }, clock, telemetry });
+    const body = {
+      model: 'fast',
+      instructions: 'Be terse.',
+      input: [
+        { type: 'message', role: 'user', content: 'what is in a.txt?' },
+        { type: 'function_call', call_id: 'call_1', name: 'Read', arguments: '{"file_path":"a.txt"}' },
+        { type: 'function_call_output', call_id: 'call_1', output: 'file text' },
+      ],
+      tools: [{ type: 'function', name: 'Read', description: 'Read a file', parameters: { type: 'object' } }],
+    };
+    expect((await readJson(await postJson(client, '/v1/responses', body))).status).toBe(200);
+    await telemetry.forceFlush();
+    const [chat] = memory.getFinishedSpans().filter((span) => span.attributes['gen_ai.operation.name'] === 'chat');
+    return chat?.attributes ?? {};
+  };
+
+  it('exports no message content unless the user opted in', async () => {
+    const attributes = await contentRun(undefined);
+
+    for (const key of ['gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.output.messages', 'gen_ai.tool.definitions']) {
+      expect(attributes).not.toHaveProperty(key);
+    }
+  });
+
+  it('exports the instructions, the input and output messages and the tool definitions as the pinned opt-in attributes when the user opted in', async () => {
+    const attributes = await contentRun(true);
+
+    expect(JSON.parse(String(attributes['gen_ai.system_instructions']))).toEqual([{ type: 'text', content: 'Be terse.' }]);
+    expect(JSON.parse(String(attributes['gen_ai.input.messages']))).toEqual([
+      { role: 'user', parts: [{ type: 'text', content: 'what is in a.txt?' }] },
+      { role: 'assistant', parts: [{ type: 'tool_call', id: 'call_1', name: 'Read', arguments: { file_path: 'a.txt' } }] },
+      { role: 'tool', parts: [{ type: 'tool_call_response', id: 'call_1', response: 'file text' }] },
+    ]);
+    expect(JSON.parse(String(attributes['gen_ai.output.messages']))).toEqual([
+      { role: 'assistant', parts: [{ type: 'text', content: 'the answer' }], finish_reason: 'stop' },
+    ]);
+    expect(JSON.parse(String(attributes['gen_ai.tool.definitions']))).toEqual([{ type: 'function', name: 'Read', description: 'Read a file', parameters: { type: 'object' } }]);
+  });
+});

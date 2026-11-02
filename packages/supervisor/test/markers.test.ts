@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { isProcessAlive, momongaPaths } from '@momonga/foundation';
-import { registerCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
+import { afterMicrotasks, registerCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import { openDaemonMarker } from '../src/orphans.ts';
 import { errnoError } from './support/p2-fake-spawn-port.ts';
 import { createManagerHarness } from './support/p2-manager-harness.ts';
@@ -186,7 +186,7 @@ describe('daemon markers at child exit', () => {
       harness.timers.advance(250);
       expect(harness.spawnCount()).toBe(2);
     }
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await afterMicrotasks();
     expect(rejections).toEqual([]);
   });
 

@@ -1,15 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { isProcessAlive } from '@momonga/foundation';
-import { registerCleanup } from '@momonga/testkit';
+import { afterMicrotasks, registerCleanup } from '@momonga/testkit';
 import { errnoError } from './support/p2-fake-spawn-port.ts';
 import { createManagerHarness } from './support/p2-manager-harness.ts';
 import { pollUntil } from './support/p2-poll.ts';
 import { CHILD_FIXTURE, portOptions, readOnlyScratchFd, watch } from './support/p2-real-children.ts';
 import { trackedSpawnPort } from './support/tracked-spawn-port.ts';
-
-const settle = async (): Promise<void> => {
-  for (let index = 0; index < 20; index += 1) await new Promise<void>((resolve) => setImmediate(resolve));
-};
 
 describe('child manager with the real SpawnPort', () => {
   it('error event after spawn does not become an uncaught exception', async (context) => {
@@ -35,7 +31,7 @@ describe('child manager with the real SpawnPort', () => {
     expect(harness.events('child.error')[0]?.['err']).toMatchObject({ message: 'write EPIPE' });
     await pollUntil(() => harness.manager.state() === 'backoff', 5000, 'exit handled');
     expect(harness.manager.health().lastExit).toMatchObject({ code: 0, signal: null, reason: 'unexpected-clean' });
-    await settle();
+    await afterMicrotasks();
     expect(uncaught).toEqual([]);
   }, 15_000);
 
