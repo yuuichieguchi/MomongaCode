@@ -89,6 +89,8 @@ const errorTypeOf = (failure: unknown): string => {
   return 'cancelled';
 };
 
+const thrownSpanType = (error: unknown): string => (error instanceof GatewayError ? error.body.type : 'server_error');
+
 const messageOf = (failure: unknown): string => (failure instanceof Error ? failure.message : String(failure));
 
 const openAttempt = async (
@@ -189,7 +191,10 @@ const orderedItems = (items: Map<number, ItemField>): ItemField[] =>
 
 const messageOfError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-type RelayProgress = { concluded: boolean };
+type RelayProgress = { concluded: boolean; thrown: { error: unknown } | undefined };
+
+const verdictOfThrown = (error: unknown): BreakerVerdict =>
+  error instanceof GatewayError ? breakerVerdictOf(error.body.type, error.body.code ?? null) : 'failure';
 
 async function* relay(
   services: Services,
@@ -198,20 +203,28 @@ async function* relay(
   outcome: RetryOutcome<Opened>,
   control: RunControl,
 ): AsyncGenerator<StreamEvent> {
-  const progress: RelayProgress = { concluded: false };
+  const progress: RelayProgress = { concluded: false, thrown: undefined };
   const { value: opened, target } = outcome;
   try {
     yield* relaySteps(services, job, resolved, outcome, control, progress);
+  } catch (error) {
+    if (!control.signal.aborted) progress.thrown = { error };
+    throw error;
   } finally {
     opened.release();
     if (!progress.concluded) {
-      target.breaker.onNeutral();
+      const { thrown } = progress;
+      applyBreakerVerdict(target.breaker, thrown === undefined ? 'neutral' : verdictOfThrown(thrown.error));
       try {
         await opened.iterator.return?.();
       } catch (error) {
         opened.span.note('momonga.adapter_cleanup_error', messageOfError(error));
       }
-      opened.span.fail('cancelled', control.signal.reason ?? new ClientDisconnectedError(), 'the response stream was closed before it completed');
+      if (thrown === undefined) {
+        opened.span.fail('cancelled', control.signal.reason ?? new ClientDisconnectedError(), 'the response stream was closed before it completed');
+      } else {
+        opened.span.fail(thrownSpanType(thrown.error), thrown.error, messageOf(thrown.error));
+      }
     }
   }
 }
