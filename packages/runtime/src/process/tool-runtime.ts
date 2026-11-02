@@ -174,6 +174,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     recoveryContextFor,
     executor,
     sandbox,
+    markerDir: paths.markers.tools,
     sessionState: (session) => sessionStates.get(session),
   };
 

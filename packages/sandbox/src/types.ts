@@ -17,6 +17,7 @@ export interface SandboxCommand {
   env: Readonly<Record<string, string>>;
   markerFile?: string;
   tmpDir?: string;
+  stdin?: string;
 }
 
 export interface SandboxExit {

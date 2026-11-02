@@ -1,6 +1,6 @@
 import { RequestError } from '@agentclientprotocol/sdk';
 import type { SessionMode, SessionModeState } from '@agentclientprotocol/sdk';
-import { PERMISSION_MODES, isUnavailableMode } from '@momonga/protocol';
+import { PERMISSION_MODES } from '@momonga/protocol';
 import type { PermissionMode } from '@momonga/protocol';
 
 const DESCRIPTIONS: Readonly<Record<PermissionMode, { name: string; description: string }>> = {
@@ -14,7 +14,7 @@ const DESCRIPTIONS: Readonly<Record<PermissionMode, { name: string; description:
 export type ModeSource = { readonly permissionMode: PermissionMode; readonly bypassAllowed: boolean };
 
 const selectableModes = (source: Pick<ModeSource, 'bypassAllowed'>): PermissionMode[] =>
-  PERMISSION_MODES.filter((mode) => !isUnavailableMode(mode) && (mode !== 'bypassPermissions' || source.bypassAllowed));
+  PERMISSION_MODES.filter((mode) => mode !== 'auto' && (mode !== 'bypassPermissions' || source.bypassAllowed));
 
 export const modeStateOf = (source: ModeSource): SessionModeState => ({
   currentModeId: source.permissionMode,

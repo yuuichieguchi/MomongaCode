@@ -1,5 +1,5 @@
 import { SECRET_NAME_PATTERN } from '@momonga/foundation';
-import { PERMISSION_MODES } from '@momonga/protocol';
+import { HOOK_COMMAND_TYPE, PERMISSION_MODES } from '@momonga/protocol';
 
 const STRING_ARRAY = { type: 'array', items: { type: 'string' } } as const;
 const STRING_MAP = { type: 'object', additionalProperties: { type: 'string' } } as const;
@@ -157,6 +157,27 @@ const MODEL_TARGET_SCHEMA = {
   oneOf: [FM_TARGET_SCHEMA, CHAT_COMPLETIONS_TARGET_SCHEMA, OPEN_RESPONSES_TARGET_SCHEMA, ANTHROPIC_TARGET_SCHEMA],
 } as const;
 
+const HOOK_COMMAND_SCHEMA = {
+  type: 'object',
+  properties: {
+    type: { const: HOOK_COMMAND_TYPE },
+    command: { type: 'string', minLength: 1 },
+    timeout: POSITIVE_INTEGER,
+  },
+  required: ['type', 'command'],
+  additionalProperties: false,
+} as const;
+
+const HOOK_MATCHER_GROUP_SCHEMA = {
+  type: 'object',
+  properties: {
+    matcher: { type: 'string' },
+    hooks: { type: 'array', items: HOOK_COMMAND_SCHEMA, minItems: 1 },
+  },
+  required: ['hooks'],
+  additionalProperties: false,
+} as const;
+
 export const SETTINGS_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
   type: 'object',
@@ -173,6 +194,12 @@ export const SETTINGS_SCHEMA = {
       additionalProperties: false,
     },
     env: STRING_MAP,
+    hooks: { type: 'object', additionalProperties: { type: 'array', items: HOOK_MATCHER_GROUP_SCHEMA } },
+    autoMode: {
+      type: 'object',
+      properties: { classifier: { type: 'string', minLength: 1 } },
+      additionalProperties: false,
+    },
     enabledMcpjsonServers: STRING_ARRAY,
     disabledMcpjsonServers: STRING_ARRAY,
     enableAllProjectMcpServers: { type: 'boolean' },

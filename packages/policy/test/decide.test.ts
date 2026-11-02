@@ -2,7 +2,6 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { decide } from '@momonga/policy';
 import type { DecisionKind, PermissionSubject, PolicyTool } from '@momonga/policy';
-import { AUTO_MODE_UNAVAILABLE } from '@momonga/protocol';
 import type { PermissionMode } from '@momonga/protocol';
 import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout, ruleIn, touch } from './helpers.ts';
@@ -10,7 +9,7 @@ import type { Layout } from './helpers.ts';
 
 type Case = { label: string; tool: PolicyTool; subject: (layout: Layout) => PermissionSubject; ruleText: string };
 
-const MODES = ['default', 'acceptEdits', 'plan', 'bypassPermissions'] as const;
+const MODES = ['default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions'] as const;
 
 const READ: PolicyTool = { name: 'Read', kind: 'read', sideEffect: 'read_only' };
 const GREP: PolicyTool = { name: 'Grep', kind: 'search', sideEffect: 'read_only' };
@@ -32,18 +31,18 @@ const pathSubject =
   });
 
 const CASES: Array<Case & { defaults: Record<(typeof MODES)[number], DecisionKind> }> = [
-  { label: 'Read inside roots', tool: READ, subject: pathSubject('Read', 'project', 'read'), ruleText: 'Read', defaults: { default: 'allow', acceptEdits: 'allow', plan: 'allow', bypassPermissions: 'allow' } },
-  { label: 'Grep inside roots', tool: GREP, subject: pathSubject('Grep', 'project', 'read'), ruleText: 'Grep', defaults: { default: 'allow', acceptEdits: 'allow', plan: 'allow', bypassPermissions: 'allow' } },
-  { label: 'Read outside roots', tool: READ, subject: pathSubject('Read', 'outside', 'read'), ruleText: 'Read', defaults: { default: 'ask', acceptEdits: 'ask', plan: 'ask', bypassPermissions: 'allow' } },
-  { label: 'Edit inside roots', tool: EDIT, subject: pathSubject('Edit', 'project', 'write'), ruleText: 'Edit', defaults: { default: 'ask', acceptEdits: 'allow', plan: 'deny', bypassPermissions: 'allow' } },
-  { label: 'Write inside roots', tool: WRITE, subject: pathSubject('Write', 'project', 'write'), ruleText: 'Write', defaults: { default: 'ask', acceptEdits: 'allow', plan: 'deny', bypassPermissions: 'allow' } },
-  { label: 'Edit outside roots', tool: EDIT, subject: pathSubject('Edit', 'outside', 'write'), ruleText: 'Edit', defaults: { default: 'ask', acceptEdits: 'ask', plan: 'deny', bypassPermissions: 'allow' } },
-  { label: 'Bash', tool: BASH, subject: () => ({ kind: 'command', tool: 'Bash', command: 'make build' }), ruleText: 'Bash(make build)', defaults: { default: 'ask', acceptEdits: 'ask', plan: 'ask', bypassPermissions: 'allow' } },
-  { label: 'UpdatePlan', tool: PLAN, subject: () => ({ kind: 'none', tool: 'UpdatePlan' }), ruleText: 'UpdatePlan', defaults: { default: 'allow', acceptEdits: 'allow', plan: 'allow', bypassPermissions: 'allow' } },
-  { label: 'MemorySave to the user scope', tool: MEMORY_SAVE, subject: () => ({ kind: 'memory', tool: 'MemorySave', scope: 'user' }), ruleText: 'MemorySave', defaults: { default: 'ask', acceptEdits: 'ask', plan: 'deny', bypassPermissions: 'allow' } },
-  { label: 'MemorySave to the project scope', tool: MEMORY_SAVE, subject: () => ({ kind: 'memory', tool: 'MemorySave', scope: 'project' }), ruleText: 'MemorySave', defaults: { default: 'ask', acceptEdits: 'ask', plan: 'deny', bypassPermissions: 'allow' } },
-  { label: 'MCP exec tool', tool: MCP_EXEC, subject: () => ({ kind: 'mcp', server: 'srv', tool: 'run' }), ruleText: 'mcp__srv__run', defaults: { default: 'ask', acceptEdits: 'ask', plan: 'deny', bypassPermissions: 'allow' } },
-  { label: 'MCP read_only tool', tool: MCP_READ, subject: () => ({ kind: 'mcp', server: 'srv', tool: 'list' }), ruleText: 'mcp__srv', defaults: { default: 'ask', acceptEdits: 'ask', plan: 'ask', bypassPermissions: 'allow' } },
+  { label: 'Read inside roots', tool: READ, subject: pathSubject('Read', 'project', 'read'), ruleText: 'Read', defaults: { default: 'allow', auto: 'allow', acceptEdits: 'allow', plan: 'allow', bypassPermissions: 'allow' } },
+  { label: 'Grep inside roots', tool: GREP, subject: pathSubject('Grep', 'project', 'read'), ruleText: 'Grep', defaults: { default: 'allow', auto: 'allow', acceptEdits: 'allow', plan: 'allow', bypassPermissions: 'allow' } },
+  { label: 'Read outside roots', tool: READ, subject: pathSubject('Read', 'outside', 'read'), ruleText: 'Read', defaults: { default: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'ask', bypassPermissions: 'allow' } },
+  { label: 'Edit inside roots', tool: EDIT, subject: pathSubject('Edit', 'project', 'write'), ruleText: 'Edit', defaults: { default: 'ask', auto: 'ask', acceptEdits: 'allow', plan: 'deny', bypassPermissions: 'allow' } },
+  { label: 'Write inside roots', tool: WRITE, subject: pathSubject('Write', 'project', 'write'), ruleText: 'Write', defaults: { default: 'ask', auto: 'ask', acceptEdits: 'allow', plan: 'deny', bypassPermissions: 'allow' } },
+  { label: 'Edit outside roots', tool: EDIT, subject: pathSubject('Edit', 'outside', 'write'), ruleText: 'Edit', defaults: { default: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'deny', bypassPermissions: 'allow' } },
+  { label: 'Bash', tool: BASH, subject: () => ({ kind: 'command', tool: 'Bash', command: 'make build' }), ruleText: 'Bash(make build)', defaults: { default: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'ask', bypassPermissions: 'allow' } },
+  { label: 'UpdatePlan', tool: PLAN, subject: () => ({ kind: 'none', tool: 'UpdatePlan' }), ruleText: 'UpdatePlan', defaults: { default: 'allow', auto: 'allow', acceptEdits: 'allow', plan: 'allow', bypassPermissions: 'allow' } },
+  { label: 'MemorySave to the user scope', tool: MEMORY_SAVE, subject: () => ({ kind: 'memory', tool: 'MemorySave', scope: 'user' }), ruleText: 'MemorySave', defaults: { default: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'deny', bypassPermissions: 'allow' } },
+  { label: 'MemorySave to the project scope', tool: MEMORY_SAVE, subject: () => ({ kind: 'memory', tool: 'MemorySave', scope: 'project' }), ruleText: 'MemorySave', defaults: { default: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'deny', bypassPermissions: 'allow' } },
+  { label: 'MCP exec tool', tool: MCP_EXEC, subject: () => ({ kind: 'mcp', server: 'srv', tool: 'run' }), ruleText: 'mcp__srv__run', defaults: { default: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'deny', bypassPermissions: 'allow' } },
+  { label: 'MCP read_only tool', tool: MCP_READ, subject: () => ({ kind: 'mcp', server: 'srv', tool: 'list' }), ruleText: 'mcp__srv', defaults: { default: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'ask', bypassPermissions: 'allow' } },
 ];
 
 const expectedWithRule = (effect: 'allow' | 'ask' | 'deny', mode: (typeof MODES)[number], c: Case, layout: Layout): DecisionKind => {
@@ -126,9 +125,9 @@ describe('decide precedence', () => {
     expect(decision.kind).toBe('allow');
   });
 
-  it('refuses auto mode instead of allowing', () => {
+  it('keeps a deny rule in force in auto mode', () => {
     const layout = makeLayout();
-    expect(() => run(layout, CASES[0]!, 'auto', ['allow'])).toThrow(AUTO_MODE_UNAVAILABLE.message);
+    expect(run(layout, CASES[3]!, 'auto', ['deny'])).toMatchObject({ kind: 'deny', source: 'rule' });
   });
 });
 

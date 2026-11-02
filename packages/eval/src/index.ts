@@ -2,7 +2,7 @@ export { ASK_RESPONSES, DATASET_FORMAT, DATASET_SCHEMA, DatasetError, PERMISSION
 export type { AskResponse, CountRange, GoldenCase, GoldenDataset, GraderSpec, PermissionDecision } from './dataset.ts';
 export { grade } from './graders.ts';
 export type { DecisionObservation, GradeOutcome, Graded } from './graders.ts';
-export { PERMISSION_DENIED_OUTPUT_PREFIX, callsOf, finalTextOf } from './observe.ts';
+export { callsOf, finalTextOf } from './observe.ts';
 export type { ObservedCall } from './observe.ts';
 export { buildReport, formatReport } from './report.ts';
 export type { CaseReport, CaseResult, DecisionReport, EvalReport, RunVerdict } from './report.ts';

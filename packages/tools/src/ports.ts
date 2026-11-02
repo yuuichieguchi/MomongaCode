@@ -55,3 +55,14 @@ export type BackgroundJobs = {
   read(runId: string, jobId: string, options: { filter?: RegExp }): Promise<BackgroundJobRead>;
   kill(runId: string, jobId: string): Promise<JobView>;
 };
+
+export type AutoClassifierRequest = {
+  callId: string;
+  toolName: string;
+  title: string;
+  input: unknown;
+  reason: string;
+  subjectDigest: string;
+};
+
+export type AutoClassifier = { classify(request: AutoClassifierRequest): Promise<'allow' | 'ask'> };

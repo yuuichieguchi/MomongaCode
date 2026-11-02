@@ -7,6 +7,7 @@ import type {
   CountTokensRequest,
   CountTokensResult,
   CreateResponseBody,
+  HooksSettings,
   StreamEvent,
 } from '@momonga/protocol';
 import type { MemoryView } from '@momonga/protocol';
@@ -37,6 +38,8 @@ export type AppendedRule = { effect: 'allow' | 'deny'; rule: string };
 
 export type SettingsPort = {
   rules(session: Session): Promise<PermissionRule[]>;
+  hooks(session: Session): Promise<HooksSettings>;
+  autoModeClassifier(): string | undefined;
   appendRule(session: Session, entry: AppendedRule): Promise<void>;
   trusted(session: Session): boolean;
 };
@@ -78,6 +81,7 @@ export type ToolRuntimePort = {
   recoveryContextFor(session: Session, options: { env: ToolEnv }): Promise<RecoveryContext>;
   executor: ToolExecutor;
   sandbox: Sandbox;
+  markerDir: string;
   sessionState(session: Session): ToolSessionState;
 };
 

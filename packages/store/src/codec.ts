@@ -108,6 +108,8 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   'model.stream.restarted': true,
   'tool.call': true,
   'tool.permission.requested': true,
+  'tool.permission.classified': true,
+  'hook.completed': true,
   'tool.permission.resolved': true,
   'tool.permission.cancelled': true,
   'tool.elicitation.requested': true,

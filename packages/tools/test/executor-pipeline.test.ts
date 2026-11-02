@@ -69,7 +69,7 @@ describe('executor pipeline early exits', () => {
       protectedSet: EMPTY_PROTECTED_SET,
     });
     expect(expected.kind).toBe('deny');
-    expect(outcomes).toEqual([{ callId: 'c1', kind: 'result', result: { status: 'failed', output: `Permission denied: ${expected.reason}` } }]);
+    expect(outcomes).toEqual([{ callId: 'c1', kind: 'result', result: { status: 'failed', output: `Permission denied: ${expected.reason}`, denial: { source: 'rule', reason: expected.reason } } }]);
     expect(probe.calls).toEqual([]);
     expect(harness.idempotency.records.size).toBe(0);
   });

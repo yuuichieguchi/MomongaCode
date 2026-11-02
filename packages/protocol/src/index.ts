@@ -50,7 +50,34 @@ export type { MemoriesResponse, MemoryResponse, MemoryScope, MemorySource, Memor
 export { imageDataUrl, userMessageContent } from './user-content.ts';
 export { escapeXmlAttribute, escapeXmlText } from './xml.ts';
 export { SKILL_CONTENT_CLOSE_TAG, skillContentOpenTag } from './skill-content.ts';
-export { AUTO_MODE_UNAVAILABLE, isUnavailableMode } from './auto-mode.ts';
+export {
+  AUTO_MODE_UNAVAILABLE,
+  CLASSIFIER_CONFIDENCES,
+  CLASSIFIER_VERDICTS,
+  CLASSIFIER_VERDICT_SCHEMA,
+  classifierAllows,
+  parseClassifierVerdict,
+} from './auto-mode.ts';
+export type { ClassifierVerdict } from './auto-mode.ts';
+export {
+  HOOK_BLOCKING_EXIT_CODE,
+  HOOK_COMMAND_TYPE,
+  HOOK_DEFAULT_TIMEOUT_SECONDS,
+  HOOK_EVENTS,
+  HOOK_OUTCOMES,
+  HOOK_PRE_TOOL_DECISIONS,
+  HOOK_MATCHER_EVENTS,
+  HOOK_STOPPED_CODE,
+  USER_PROMPT_BLOCKED_CODE,
+  STOP_HOOK_MAX_CONTINUATIONS,
+  USER_PROMPT_HOOK_DEFAULT_TIMEOUT_SECONDS,
+  hookMatcherError,
+  hookMatcherMatches,
+  hookTimeoutMs,
+} from './hooks.ts';
+export type { HookCommand, HookEvent, HookExecution, HookMatcherGroup, HookOutcome, HookPreToolDecision, HooksSettings } from './hooks.ts';
+export { PERMISSION_DENIAL_SOURCES, permissionDeniedOutput } from './permission-denial.ts';
+export type { PermissionDenial, PermissionDenialSource } from './permission-denial.ts';
 export { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS } from './run-types.ts';
 export type {
   ActivatedSkillRecord,

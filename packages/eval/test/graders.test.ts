@@ -58,14 +58,20 @@ describe('programmatic graders', () => {
     expect(graded.passed).toBe(false);
   });
 
-  it('observes deny only from the Permission denied output of a call that never started', () => {
+  it('observes deny only from the structured denial of a call that never started', () => {
     const transcript = toolRoundTripTranscript('c', 0);
     const events = transcript.events.filter((event) => event.type !== 'tool.started').map((event) =>
-      event.type === 'tool.completed' ? { ...event, status: 'failed' as const, output: 'Permission denied: /w/a.txt is blocked' } : event,
+      event.type === 'tool.completed'
+        ? { ...event, status: 'failed' as const, output: 'Permission denied: /w/a.txt is blocked', denial: { source: 'sandbox' as const, reason: '/w/a.txt is blocked' } }
+        : event,
     );
     const denied = grade([{ kind: 'permissionDecision', tool: 'Read', expected: 'deny' }], { ...transcript, events });
     expect(denied.decisions[0]?.observed).toBe('deny');
-    const otherFailure = events.map((event) => (event.type === 'tool.completed' ? { ...event, output: 'invalid arguments' } : event));
+    const otherFailure = events.map((event) => {
+      if (event.type !== 'tool.completed') return event;
+      const { denial: _denial, ...rest } = event;
+      return { ...rest, output: 'Permission denied: looks like a denial but carries no signal' };
+    });
     const unresolved = grade([{ kind: 'permissionDecision', tool: 'Read', expected: 'deny' }], { ...transcript, events: otherFailure });
     expect(unresolved.decisions[0]?.observed).toBe('unresolved');
   });

@@ -1,14 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { PermissionMode } from '@momonga/protocol';
+import type { HooksSettings, PermissionMode } from '@momonga/protocol';
 import { canonicalDirectory, comparableContains } from '@momonga/foundation';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
-import { loadLayers, rejectAutoMode } from './layers.ts';
+import { loadLayers, normalizeHooks } from './layers.ts';
 import type { Layer, TrustOracle, UserLayer } from './layers.ts';
 import { EDIT_TOOLS, NEGATION_PREFIX, isPathTool, parseRule, RuleParseError } from './rule.ts';
 import type { PermissionRule, RuleEffect, RuleOrigin } from './rule.ts';
 import { assertSettings, defaultSandboxSetting } from './settings.ts';
-import type { McpServerConfig, SandboxSetting, Settings, TelemetrySettings } from './settings.ts';
+import type { AutoModeSettings, McpServerConfig, SandboxSetting, Settings, TelemetrySettings } from './settings.ts';
 import type { ResolvedModels } from './models.ts';
 
 
@@ -24,6 +24,8 @@ export type ResolvedPermissions = {
 export type ResolvedSettings = {
   permissions: ResolvedPermissions;
   env: Record<string, string>;
+  hooks: HooksSettings;
+  autoMode?: AutoModeSettings;
   enabledMcpjsonServers: string[];
   disabledMcpjsonServers: string[];
   enableAllProjectMcpServers?: boolean;
@@ -113,6 +115,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
   const merged: ResolvedSettings = {
     permissions: { allow: [], ask: [], deny: [], additionalDirectories: [] },
     env: {},
+    hooks: {},
     enabledMcpjsonServers: [],
     disabledMcpjsonServers: [],
     mcpServers: {},
@@ -121,7 +124,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     sandbox: defaultSandboxSetting(),
   };
   for (const layer of layers) {
-    const { permissions, env, enabledMcpjsonServers, disabledMcpjsonServers, enableAllProjectMcpServers, mcpServers, autoUpdates, sandbox, telemetry } =
+    const { permissions, env, hooks, autoMode, enabledMcpjsonServers, disabledMcpjsonServers, enableAllProjectMcpServers, mcpServers, autoUpdates, sandbox, telemetry } =
       layer.settings;
     if (permissions?.defaultMode !== undefined) {
       merged.permissions.defaultMode = permissions.defaultMode;
@@ -138,6 +141,11 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
       }
     }
     Object.assign(merged.env, env);
+    for (const [event, groups] of Object.entries(hooks ?? {})) {
+      const key = event as keyof HooksSettings;
+      merged.hooks[key] = [...(merged.hooks[key] ?? []), ...groups];
+    }
+    if (autoMode !== undefined) merged.autoMode = autoMode;
     merged.enabledMcpjsonServers.push(...(enabledMcpjsonServers ?? []));
     merged.disabledMcpjsonServers.push(...(disabledMcpjsonServers ?? []));
     if (enableAllProjectMcpServers !== undefined) merged.enableAllProjectMcpServers = enableAllProjectMcpServers;
@@ -152,16 +160,16 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
 export const loadSettings = async ({ home, projectDir, cli, trust, user }: LoadSettingsOptions): Promise<LoadSettingsResult> => {
   const loaded = await loadLayers({ home, projectDir, trust, ...(user === undefined ? {} : { user }) });
   let cliSettings: Settings;
+  const cliWarnings: string[] = [];
   try {
-    cliSettings = assertSettings(cli, 'cli');
-    rejectAutoMode(cliSettings, 'cli');
+    cliSettings = normalizeHooks(assertSettings(cli, 'cli'), 'cli', cliWarnings);
   } catch (error) {
     rethrowIfTransient(error);
     throw toConfigError(error);
   }
   if (cliSettings.models !== undefined) throw new ConfigError('cli: models settings are only honored in user settings');
   const layers: Layer[] = [...loaded.layers, { origin: 'cli', source: 'cli', root: projectDir, ruleRoot: projectDir, settings: cliSettings }];
-  const warnings = [...loaded.warnings];
+  const warnings = [...loaded.warnings, ...cliWarnings];
   const rules = layers.flatMap((layer) => parseLayerRules(layer, home, projectDir, warnings));
   const settings = mergeLayers(layers, loaded.models, home, projectDir, warnings);
   return { settings, rules, warnings, files: loaded.files };

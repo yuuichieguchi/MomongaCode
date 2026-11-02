@@ -9,6 +9,7 @@ import { isLoop } from './loop-detection.ts';
 import { streamModel } from './model-stream.ts';
 import type { ModelResult } from './model-stream.ts';
 import { summaryStopReason } from './wrap-up.ts';
+import { runStopHooks } from './hook-step.ts';
 import { recordCalls, settleCalls } from './tool-step.ts';
 
 const MODEL_ATTEMPT = 1;
@@ -54,6 +55,7 @@ export const decideAfterResponse = async (ctx: ClaimContext): Promise<Flow> => {
   if (response.refusal) return terminals.finish('STOPPED', { stopReason: 'refusal' });
   if (response.callIds.length === 0) {
     if (response.incomplete) return incompleteFailure(response.incompleteReason, terminals);
+    if ((await runStopHooks(ctx)) === 'continue') return 'continue';
     return terminals.finish('COMPLETED');
   }
   if (isLoop(journal.state, ctx.limits.loopThreshold)) {

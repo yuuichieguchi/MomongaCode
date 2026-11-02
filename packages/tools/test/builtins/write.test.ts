@@ -151,7 +151,7 @@ describe('Write', () => {
     const file = path.join(tools.layout.home, 'Library', 'Keychains', 'login.keychain');
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const result = resultOf(await tools.run('Write', { file_path: file, content: 'x' }, { mode: 'bypassPermissions' }, 'allow_once'));
-    expect(result).toEqual({ status: 'failed', output: `Permission denied: ${file} is blocked by the sandbox policy` });
+    expect(result).toEqual({ status: 'failed', output: `Permission denied: ${file} is blocked by the sandbox policy`, denial: { source: 'sandbox', reason: `${file} is blocked by the sandbox policy` } });
     expect(fs.existsSync(file)).toBe(false);
   });
 

@@ -17,6 +17,11 @@ export type {
   ToolExecutorOptions,
   WaitingOutcome,
 } from './executor.ts';
+export type { AutoClassifier, AutoClassifierRequest } from './ports.ts';
+export { createToolHooks, runSessionStart, runStop, runUserPromptSubmit, hasStopHooks, resolvePreToolUse } from './hooks/events.ts';
+export type { PostToolHookResult, PreToolHookVerdict, PromptHookResult, SessionStartHookResult, StopHookResult, ToolHookCall, ToolHooks } from './hooks/events.ts';
+export type { HookReply, HookRunContext } from './hooks/run.ts';
+export { selectHookCommands } from './hooks/run.ts';
 export type {
   BackgroundJobRead,
   BackgroundJobStart,

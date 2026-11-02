@@ -233,6 +233,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     },
     executor,
     sandbox: fakeSandbox,
+    markerDir: markers,
     policyFor: async (target: Session, policyOptions: { env: ToolEnv; rules: readonly PermissionRule[] }) => {
       portCalls.policyFor.push({ sessionId: target.id, env: policyOptions?.env });
       const roots = [target.cwd, EXTRA_ROOT];

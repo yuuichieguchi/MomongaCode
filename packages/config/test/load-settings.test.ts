@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SETTINGS_SCHEMA, loadSettings } from '@momonga/config';
-import { AUTO_MODE_UNAVAILABLE } from '@momonga/protocol';
+import type { HookMatcherGroup } from '@momonga/protocol';
 import {
   distrusting,
   localSettingsPath,
@@ -20,11 +20,13 @@ describe('SETTINGS_SCHEMA', () => {
     expect(SETTINGS_SCHEMA.type).toBe('object');
     expect(Object.keys(SETTINGS_SCHEMA.properties).sort()).toEqual(
       [
+        'autoMode',
         'autoUpdates',
         'disabledMcpjsonServers',
         'enableAllProjectMcpServers',
         'enabledMcpjsonServers',
         'env',
+        'hooks',
         'mcpServers',
         'models',
         'permissions',
@@ -203,17 +205,85 @@ describe('loadSettings security restrictions', () => {
     expect(fromCli.settings.permissions?.defaultMode).toBe('bypassPermissions');
   });
 
-  it('rejects auto mode from user settings', async () => {
+  it('accepts auto mode and the classifier alias from user settings and auto mode from cli', async () => {
     const tree = makeTree();
-    writeJson(userSettingsPath(tree), { permissions: { defaultMode: 'auto' } });
-    await expect(loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toThrow(AUTO_MODE_UNAVAILABLE.message);
+    writeJson(userSettingsPath(tree), { permissions: { defaultMode: 'auto' }, autoMode: { classifier: 'guard' } });
+    const fromUser = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    expect(fromUser.settings.permissions.defaultMode).toBe('auto');
+    expect(fromUser.settings.permissions.defaultModeOrigin).toBe('user');
+    expect(fromUser.settings.autoMode).toEqual({ classifier: 'guard' });
+    const other = makeTree();
+    const fromCli = await loadSettings({ home: other.home, projectDir: other.project, cli: { permissions: { defaultMode: 'auto' } }, trust: trusting(other) });
+    expect(fromCli.settings.permissions.defaultMode).toBe('auto');
   });
 
-  it('rejects auto mode from cli', async () => {
+  it.each([
+    ['project', projectSettingsPath],
+    ['local', localSettingsPath],
+  ] as const)('ignores auto mode and discards autoMode from %s settings with a warning', async (_label, locate) => {
     const tree = makeTree();
-    await expect(
-      loadSettings({ home: tree.home, projectDir: tree.project, cli: { permissions: { defaultMode: 'auto' } }, trust: trusting(tree) }),
-    ).rejects.toThrow(AUTO_MODE_UNAVAILABLE.message);
+    writeJson(userSettingsPath(tree), { permissions: { defaultMode: 'acceptEdits' }, autoMode: { classifier: 'guard' } });
+    const file = writeJson(locate(tree), { permissions: { defaultMode: 'auto' }, autoMode: { classifier: 'attacker' } });
+    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    expect(result.settings.permissions.defaultMode).toBe('acceptEdits');
+    expect(result.settings.autoMode).toEqual({ classifier: 'guard' });
+    expect(result.warnings.some((w) => w.includes('auto mode') && w.includes(file))).toBe(true);
+    expect(result.warnings.some((w) => w.includes('autoMode') && w.includes(file))).toBe(true);
+  });
+});
+
+describe('loadSettings hooks', () => {
+  const hookGroup = (command: string, matcher?: string): HookMatcherGroup => ({
+    ...(matcher === undefined ? {} : { matcher }),
+    hooks: [{ type: 'command', command, timeout: 5 }],
+  });
+
+  it('concatenates hook groups user < project < local < cli', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { hooks: { PreToolUse: [hookGroup('user', 'Bash')] } });
+    writeJson(projectSettingsPath(tree), { hooks: { PreToolUse: [hookGroup('project')], Stop: [hookGroup('stop')] } });
+    writeJson(localSettingsPath(tree), { hooks: { PreToolUse: [hookGroup('local')] } });
+    const result = await loadSettings({
+      home: tree.home,
+      projectDir: tree.project,
+      cli: { hooks: { PreToolUse: [hookGroup('cli')] } },
+      trust: trusting(tree),
+    });
+    expect(result.settings.hooks.PreToolUse?.map((group) => group.hooks[0]?.command)).toEqual(['user', 'project', 'local', 'cli']);
+    expect(result.settings.hooks.Stop?.map((group) => group.hooks[0]?.command)).toEqual(['stop']);
+  });
+
+  it('loads project hooks only when the folder is trusted', async () => {
+    const tree = makeTree();
+    const file = writeJson(projectSettingsPath(tree), { hooks: { Stop: [hookGroup('project-stop')] } });
+    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: distrusting() });
+    expect(result.settings.hooks).toEqual({});
+    expect(result.warnings.some((w) => w.includes('not trusted') && w.includes(file))).toBe(true);
+  });
+
+  it('drops an unsupported hook event with a warning', async () => {
+    const tree = makeTree();
+    const file = writeJson(userSettingsPath(tree), { hooks: { Notification: [hookGroup('n')], Stop: [hookGroup('s')] } });
+    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    expect(Object.keys(result.settings.hooks)).toEqual(['Stop']);
+    expect(result.warnings.some((w) => w.includes('Notification') && w.includes(file))).toBe(true);
+  });
+
+  it.each([
+    ['an http hook', { type: 'http', url: 'http://localhost' }],
+    ['a command hook with an unknown field', { type: 'command', command: 'x', async: true }],
+    ['a command hook without a command', { type: 'command' }],
+    ['a zero timeout', { type: 'command', command: 'x', timeout: 0 }],
+  ])('rejects %s', async (_label, hook) => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { hooks: { Stop: [{ hooks: [hook] }] } });
+    await expect(loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toThrow(/invalid settings/);
+  });
+
+  it('rejects a matcher that is not a valid regular expression', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { hooks: { PreToolUse: [hookGroup('x', '(')] } });
+    await expect(loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toThrow(/matcher/);
   });
 });
 

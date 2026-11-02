@@ -336,6 +336,8 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
     case 'tool.waiting':
       return withCall(state, event.callId, event.type, (call) => ({ ...call, awaiting: event.awaits }));
     case 'job.finished':
+    case 'tool.permission.classified':
+    case 'hook.completed':
     case 'tool.updated':
     case 'plan.updated':
     case 'usage.updated':

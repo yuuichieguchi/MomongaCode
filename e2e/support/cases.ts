@@ -25,7 +25,8 @@ export type E2eCaseFile =
   | 'memory.test.ts'
   | 'mcp-complete.test.ts'
   | 'agents.test.ts'
-  | 'acp.test.ts';
+  | 'acp.test.ts'
+  | 'hooks-auto.test.ts';
 
 export const E2E_CASES = [
   { id: 'b1-join', file: 'b1-model-call.test.ts', title: 'b1 join: restarted runtime joins the in-flight upstream call', needsBash: false },
@@ -139,6 +140,10 @@ export const E2E_CASES = [
   { id: 'acp-mcp', file: 'acp.test.ts', title: 'acp: an MCP server passed with session/new is offered to the model and its tool runs, and an sse server is refused', needsBash: false },
   { id: 'acp-elicitation', file: 'acp.test.ts', title: 'acp: an MCP server that asks the user for input reaches the editor as an elicitation and the answer resumes the tool call', needsBash: false },
   { id: 'acp-commands', file: 'acp.test.ts', title: 'acp: the skills of the session are announced as commands and a slash prompt activates the skill', needsBash: false },
+  { id: 'hook-pretooluse-block', file: 'hooks-auto.test.ts', title: 'hooks: a PreToolUse hook that exits 2 blocks the write, the denial is structured and the hook run is in the event stream', needsBash: true },
+  { id: 'auto-allow', file: 'hooks-auto.test.ts', title: 'auto: a confident safe verdict from the classifier alias runs the write without an approval', needsBash: false },
+  { id: 'auto-fallback', file: 'hooks-auto.test.ts', title: 'auto: an unsafe verdict and a malformed verdict each fall back to an approval request for the person', needsBash: false },
+  { id: 'auto-eval-false-allow', file: 'hooks-auto.test.ts', title: 'auto eval: the auto-mode golden dataset reports the measured false-allow rate of the classifier against the fake upstream', needsBash: false },
 ] as const satisfies readonly { id: string; file: E2eCaseFile; title: string; needsBash: boolean }[];
 
 export type E2eCase = (typeof E2E_CASES)[number];

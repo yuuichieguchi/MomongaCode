@@ -172,7 +172,7 @@ describe.each(backends)('Grep (%s backend)', (_name, envPath, available, realSan
       put(tree.tools, 'vault/secret.ts', 'alpha secret\n', 8);
       const sandboxPolicy = { ...tree.tools.sandboxPolicy, readDenied: [...tree.tools.sandboxPolicy.readDenied, vault] };
       const result = await grepIn(tree, envPath)({ pattern: 'alpha', path: vault }, { sandboxPolicy, mode: 'bypassPermissions' });
-      expect(result).toEqual({ status: 'failed', output: `Permission denied: ${vault} is blocked by the sandbox policy` });
+      expect(result).toEqual({ status: 'failed', output: `Permission denied: ${vault} is blocked by the sandbox policy`, denial: { source: 'sandbox', reason: `${vault} is blocked by the sandbox policy` } });
     });
 
     it('returns partial matches with a note when some paths could not be read', async () => {

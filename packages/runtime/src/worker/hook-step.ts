@@ -1,0 +1,111 @@
+import { HOOK_STOPPED_CODE, STOP_HOOK_MAX_CONTINUATIONS, USER_PROMPT_BLOCKED_CODE } from '@momonga/protocol';
+import type { HookExecution, HooksSettings, RunEventPayload } from '@momonga/protocol';
+import { runSessionStart, runStop, runUserPromptSubmit, selectHookCommands } from '@momonga/tools';
+import type { HookRunContext } from '@momonga/tools';
+import type { Session } from '@momonga/store';
+import type { PermissionRule } from '@momonga/config';
+import type { ToolPolicy } from '../ports.ts';
+import type { ClaimContext, Flow } from './claim-context.ts';
+
+export const STOP_HOOK_FEEDBACK_PREFIX = '[Stop hook feedback]\n';
+export const HOOK_CONTEXT_PREFIX = 'hook context';
+
+const hookCompleted = (execution: HookExecution): RunEventPayload => ({ type: 'hook.completed', ...execution });
+
+const contextMessage = (event: string, parts: readonly string[]): RunEventPayload[] =>
+  parts.length === 0 ? [] : [{ type: 'user.message', text: `[${event} ${HOOK_CONTEXT_PREFIX}]\n${parts.join('\n')}` }];
+
+const sessionOf = (ctx: ClaimContext): Session => {
+  const session = ctx.options.store.getSession(ctx.run.sessionId);
+  if (session === undefined) throw new Error(`unknown session ${ctx.run.sessionId}`);
+  return session;
+};
+
+export const hookRunContextFor = (
+  ctx: ClaimContext,
+  session: Session,
+  hooks: HooksSettings,
+  policy: ToolPolicy,
+  report: (execution: HookExecution) => void,
+): HookRunContext => ({
+  hooks,
+  sandbox: ctx.options.tools.sandbox,
+  sandboxPolicy: policy.sandboxPolicy,
+  env: policy.env,
+  cwd: ctx.options.tools.sessionState(session).cwd,
+  projectDir: session.cwd,
+  tmpDir: policy.tmpDir,
+  markerDir: ctx.options.tools.markerDir,
+  runId: ctx.run.id,
+  session: { id: session.id, permissionMode: session.permissionMode },
+  clock: ctx.options.clock,
+  signal: ctx.control.signal,
+  deadlineAt: ctx.run.deadlineAt,
+  report,
+});
+
+type LifecycleHooks = { context: HookRunContext; executions: HookExecution[]; session: Session };
+
+const lifecycleHooksFor = async (ctx: ClaimContext, hooks: HooksSettings): Promise<LifecycleHooks> => {
+  const session = sessionOf(ctx);
+  const rules: PermissionRule[] = await ctx.options.settings.rules(session);
+  const policy = await ctx.options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories });
+  const executions: HookExecution[] = [];
+  return { context: hookRunContextFor(ctx, session, hooks, policy, (execution) => executions.push(execution)), executions, session };
+};
+
+const alreadyRan = (ctx: ClaimContext, event: HookExecution['hookEvent']): boolean =>
+  ctx.journal.countWhere((recorded) => recorded.type === 'hook.completed' && recorded.hookEvent === event) > 0;
+
+export const haltRun = (ctx: ClaimContext, event: string, reason: string | undefined): Flow => {
+  const message = reason === undefined || reason === '' ? `a ${event} hook stopped the run` : reason;
+  ctx.journal.append([{ type: 'notice', level: 'warning', message: `Stopped by a ${event} hook: ${message}` }]);
+  return ctx.terminals.finish('FAILED', { error: { code: HOOK_STOPPED_CODE, message } });
+};
+
+export const runStartHooks = async (ctx: ClaimContext): Promise<Flow> => {
+  const session = sessionOf(ctx);
+  const hooks = await ctx.options.settings.hooks(session);
+  const wantsSessionStart = ctx.run.ordinal === 1 && selectHookCommands(hooks, 'SessionStart', 'startup').length > 0 && !alreadyRan(ctx, 'SessionStart');
+  const wantsPrompt = selectHookCommands(hooks, 'UserPromptSubmit', undefined).length > 0 && !alreadyRan(ctx, 'UserPromptSubmit');
+  if (!wantsSessionStart && !wantsPrompt) return 'continue';
+  const lifecycle = await lifecycleHooksFor(ctx, hooks);
+  if (wantsSessionStart) {
+    const started = await runSessionStart(lifecycle.context, 'startup');
+    ctx.journal.append([...lifecycle.executions.splice(0).map(hookCompleted), ...contextMessage('SessionStart', started.context)]);
+    if (started.halt !== undefined) return haltRun(ctx, 'SessionStart', started.halt.reason);
+  }
+  if (wantsPrompt) {
+    const [first] = ctx.options.store.readRunEvents(ctx.run.id, 0, 1);
+    if (first === undefined || first.type !== 'user.message') throw new Error(`run ${ctx.run.id} does not start with a user message`);
+    const result = await runUserPromptSubmit(lifecycle.context, first.text);
+    ctx.journal.append([...lifecycle.executions.splice(0).map(hookCompleted), ...(result.blocked === undefined ? contextMessage('UserPromptSubmit', result.context) : [])]);
+    if (result.blocked !== undefined) return ctx.terminals.finish('FAILED', { error: { code: USER_PROMPT_BLOCKED_CODE, message: result.blocked } });
+  }
+  return 'continue';
+};
+
+export const runStopHooks = async (ctx: ClaimContext): Promise<'continue' | 'allow'> => {
+  const session = sessionOf(ctx);
+  const hooks = await ctx.options.settings.hooks(session);
+  if (selectHookCommands(hooks, 'Stop', undefined).length === 0) return 'allow';
+  const continuations = ctx.journal.countWhere((recorded) => recorded.type === 'user.message' && recorded.text.startsWith(STOP_HOOK_FEEDBACK_PREFIX));
+  if (continuations >= STOP_HOOK_MAX_CONTINUATIONS) {
+    ctx.journal.append([
+      { type: 'notice', level: 'warning', message: `Stop hooks asked the agent to continue ${STOP_HOOK_MAX_CONTINUATIONS} times; the run stops now.` },
+    ]);
+    return 'allow';
+  }
+  const lifecycle = await lifecycleHooksFor(ctx, hooks);
+  const result = await runStop(lifecycle.context, continuations > 0);
+  if (result.halt !== undefined) {
+    ctx.journal.append([
+      ...lifecycle.executions.map(hookCompleted),
+      { type: 'notice', level: 'info', message: `A Stop hook ended the run: ${result.halt.reason ?? 'no reason given'}` },
+    ]);
+    return 'allow';
+  }
+  const feedback: RunEventPayload[] = result.continueWith === undefined ? [] : [{ type: 'user.message', text: `${STOP_HOOK_FEEDBACK_PREFIX}${result.continueWith}` }];
+  ctx.journal.append([...lifecycle.executions.map(hookCompleted), ...feedback]);
+  return result.continueWith === undefined ? 'allow' : 'continue';
+};

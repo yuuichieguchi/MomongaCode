@@ -46,6 +46,7 @@ export const createSettingsComposition = ({ home, cache, store }: SettingsCompos
       ...(origin === undefined || origin === 'cli' ? {} : { defaultModeOrigin: origin }),
       additionalDirectories: permissions.additionalDirectories,
       credentialEnvNames: credentialEnvNames(snapshot.settings),
+      ...(snapshot.settings.autoMode?.classifier === undefined ? {} : { autoModeClassifier: snapshot.settings.autoMode.classifier }),
     };
   };
 
@@ -54,6 +55,8 @@ export const createSettingsComposition = ({ home, cache, store }: SettingsCompos
 
   const settings: SettingsPort = {
     rules: async (session) => (await loadSessionSettings(session.cwd, takeUserSnapshot())).rules,
+    hooks: async (session) => (await loadSessionSettings(session.cwd, takeUserSnapshot())).settings.hooks,
+    autoModeClassifier: () => takeUserSnapshot().settings.autoMode?.classifier,
     appendRule: (session, { effect, rule }) => appendPermissionRule({ home, projectDir: session.cwd, rule, effect }),
     trusted: (session) => store.trust.decisionFor(session.cwd).decision === 'trusted',
   };

@@ -188,6 +188,8 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
     case 'skill.activated':
     case 'approval.rule.persisted':
     case 'job.finished':
+    case 'hook.completed':
+    case 'tool.permission.classified':
       return [];
   }
 };

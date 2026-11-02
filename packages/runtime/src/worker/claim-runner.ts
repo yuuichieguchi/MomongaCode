@@ -11,6 +11,7 @@ import { dispositionOf } from './gateway-policy.ts';
 import { describeError, LeaseLostError, ShutdownError } from './errors.ts';
 import { inlineLimitForItemCap, inlineOutputLimitFor } from './inline-limit.ts';
 import { measurePinnedFor } from './context-step.ts';
+import { runStartHooks } from './hook-step.ts';
 import { openJournal } from './journal.ts';
 import type { Journal } from './journal.ts';
 import { readRunLimits } from './limits.ts';
@@ -326,6 +327,7 @@ const drive = async (
     compaction: { suppressedUntilStep: 0 },
   };
 
+  if ((await runStartHooks(ctx)) === 'done') return;
   if (responsePending(journal.state)) {
     if ((await decideAfterResponse(ctx)) === 'done') return;
   } else if ((await settleCalls(ctx)) === 'done') {
