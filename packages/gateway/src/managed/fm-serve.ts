@@ -3,6 +3,7 @@ import { createUdsClient, isUnixSocketLive, type UdsClient } from '@momonga/foun
 import type { HealthResult } from '@momonga/protocol';
 import { createExecFn, createGroupSpawn, createPlainSpawn, reapStaleFmGroups } from './fm-processes.ts';
 import type { ChildEnv } from './fm-processes.ts';
+import { PreconditionFailedError } from '../adapters/shared/failures.ts';
 
 export interface ExecResult {
   exitCode: number;
@@ -56,7 +57,7 @@ export interface FmServe {
   health(): Promise<HealthResult>;
 }
 
-export type FmServeFailureReason = 'unhealthy' | 'precondition_failed' | 'not_running';
+export type FmServeFailureReason = 'unhealthy' | 'not_running';
 
 export class FmServeError extends Error {
   readonly reason: FmServeFailureReason;
@@ -77,7 +78,9 @@ export class FmServeError extends Error {
   }
 }
 
-const LICENSE_NOT_ACCEPTED_EXIT_CODE = 69;
+export const PRECONDITION_MESSAGE = 'fm preconditions are not satisfied';
+export const LICENSE_NOT_ACCEPTED_EXIT_CODE = 69;
+export const LICENSE_REMEDIATION = 'sudo fm license';
 const HEALTH_POLL_INTERVAL_MS = 25;
 
 const defaultTimers: FmServeTimers = {
@@ -95,7 +98,7 @@ const isConnectionFailure = (error: unknown): boolean => {
   return typeof code === 'string' && (CONNECTION_FAILURE_CODES.has(code) || code.startsWith('UND_ERR'));
 };
 
-const outputOf = (result: ExecResult): string => `${result.stdout}\n${result.stderr}`.trim();
+export const outputOf = (result: ExecResult): string => `${result.stdout}\n${result.stderr}`.trim();
 
 type State = 'idle' | 'starting' | 'running' | 'restarting' | 'failed' | 'precondition_failed' | 'stopped';
 
@@ -171,7 +174,7 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
         ok: false,
         reason: 'precondition_failed',
         detail: outputOf(license),
-        remediation: 'sudo fm license',
+        remediation: LICENSE_REMEDIATION,
       };
     }
     if (license.exitCode !== 0) {
@@ -407,7 +410,7 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
       if (unmet !== undefined) {
         state = 'precondition_failed';
         failure = unmet;
-        throw new FmServeError('precondition_failed', 'fm preconditions are not satisfied', unmet.detail, unmet.remediation);
+        throw new PreconditionFailedError(PRECONDITION_MESSAGE, unmet.detail, unmet.remediation);
       }
       await claimSocketPath();
       if (generation !== startGeneration) throw stoppedDuringStart();
@@ -418,9 +421,9 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
       if (launched !== undefined) await terminate(launched);
       await closeClient(startClient);
       if (generation !== startGeneration) throw stoppedDuringStart();
-      if (error instanceof FmServeError && error.reason !== 'precondition_failed') {
+      if (error instanceof FmServeError) {
         enterFailed(error.reason, error.detail);
-      } else if (!(error instanceof FmServeError)) {
+      } else if (!(error instanceof PreconditionFailedError)) {
         state = 'idle';
       }
       throw error;

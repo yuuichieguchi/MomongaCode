@@ -226,7 +226,7 @@ describe('createFmServe preconditions', () => {
         ? { exitCode: 69, stdout: '', stderr: 'The license agreement has not been accepted.' }
         : { exitCode: 0, stdout: '', stderr: '' };
     const { server, spawn, exec: execMock } = setup({ exec });
-    await expect(server.start()).rejects.toMatchObject({ reason: 'precondition_failed' });
+    await expect(server.start()).rejects.toMatchObject({ name: 'PreconditionFailedError' });
     expect(spawn).not.toHaveBeenCalled();
     expect(execMock).toHaveBeenCalledWith('/usr/bin/fm', ['license', '--status']);
     const health = await server.health();
@@ -241,7 +241,7 @@ describe('createFmServe preconditions', () => {
         ? { exitCode: 1, stdout: 'Apple Intelligence is not enabled on this device.', stderr: '' }
         : { exitCode: 0, stdout: '', stderr: '' };
     const { server, spawn, exec: execMock } = setup({ exec });
-    await expect(server.start()).rejects.toMatchObject({ reason: 'precondition_failed' });
+    await expect(server.start()).rejects.toMatchObject({ name: 'PreconditionFailedError' });
     expect(spawn).not.toHaveBeenCalled();
     expect(execMock).toHaveBeenCalledWith('/usr/bin/fm', ['available']);
     const health = await server.health();

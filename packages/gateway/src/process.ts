@@ -34,7 +34,8 @@ import {
 } from './defaults.ts';
 import { missingApiKeyError, secretUnavailableError } from './core/errors.ts';
 import { MIN_CREDENTIAL_CHARS } from './core/redaction.ts';
-import { FmServeError, createFmServe } from './managed/fm-serve.ts';
+import { PRECONDITION_MESSAGE, createFmServe } from './managed/fm-serve.ts';
+import { PreconditionFailedError } from './adapters/shared/failures.ts';
 import type { ExecFn, FmServe, SpawnFn } from './managed/fm-serve.ts';
 import { createExecFn, createExecWithStdin } from './managed/fm-processes.ts';
 import { readOsBuild, sha256OfFile } from './managed/fm-record-key.ts';
@@ -109,7 +110,7 @@ const withBinaryGuard = (managed: ManagedFmTarget, binary: string): ManagedFmTar
     ...managed,
     resolveEndpoint: async (target) => {
       if (!(await binaryUsable(binary))) {
-        throw new FmServeError('precondition_failed', 'fm preconditions are not satisfied', detail, undefined);
+        throw new PreconditionFailedError(PRECONDITION_MESSAGE, detail, undefined);
       }
       return managed.resolveEndpoint(target);
     },

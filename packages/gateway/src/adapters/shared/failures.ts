@@ -78,3 +78,15 @@ export class CompactionReplyError extends Error {
     this.retryable = retryable;
   }
 }
+
+export class PreconditionFailedError extends Error {
+  readonly detail: string | undefined;
+  readonly remediation: string | undefined;
+
+  constructor(message: string, detail: string | undefined, remediation: string | undefined) {
+    super(message);
+    this.name = 'PreconditionFailedError';
+    this.detail = detail;
+    this.remediation = remediation;
+  }
+}

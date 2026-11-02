@@ -43,7 +43,7 @@ describe('probeManagedFm', () => {
 
     const failure = await probeManagedFm({ ...options(paths), binary: unlicensed }).catch((error: unknown) => error);
 
-    expect(failure).toMatchObject({ name: 'FmServeError', reason: 'precondition_failed', remediation: 'sudo fm license' });
+    expect(failure).toMatchObject({ name: 'PreconditionFailedError', remediation: 'sudo fm license' });
     expect(fs.existsSync(paths.probeDir)).toBe(false);
   });
 });

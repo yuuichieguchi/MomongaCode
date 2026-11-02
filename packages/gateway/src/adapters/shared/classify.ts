@@ -1,5 +1,5 @@
 import type { ClassifiedError, ErrorBody } from '@momonga/protocol';
-import { CompactionReplyError, StreamFailure, UnsupportedInputError, UpstreamHttpError } from './failures.ts';
+import { CompactionReplyError, PreconditionFailedError, StreamFailure, UnsupportedInputError, UpstreamHttpError } from './failures.ts';
 
 const CONNECTION_CODES: ReadonlySet<string> = new Set([
   'ECONNREFUSED',
@@ -71,6 +71,10 @@ export const createUpstreamClassifier =
     }
     if (error instanceof StreamFailure) {
       return { retryable: error.errorType !== 'invalid_request' && error.errorType !== 'not_found', error: body(error.errorType, error.code, error.message) };
+    }
+    if (error instanceof PreconditionFailedError) {
+      const lines = [error.message, ...(error.detail === undefined ? [] : [error.detail]), ...(error.remediation === undefined ? [] : [`remedy: ${error.remediation}`])];
+      return { retryable: false, error: body('invalid_request', 'precondition_failed', lines.join('\n')) };
     }
     if (error instanceof UnsupportedInputError) {
       return { retryable: false, error: body('invalid_request', error.code, error.message, error.param) };
