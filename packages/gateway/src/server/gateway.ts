@@ -119,6 +119,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       unary,
       tracker,
       startedAtSeconds: Math.floor(startedAtMs / 1000),
+      costReport: options.costReport,
       startedAt,
       version: options.version,
       onError: options.onError,

@@ -37,7 +37,7 @@ export interface FakeChatCompletionsOptions {
 
 export interface FakeRoute {
   match: (body: unknown) => boolean;
-  reply: FakeScriptedReply;
+  reply: FakeScriptedReply | ((body: unknown) => FakeScriptedReply);
 }
 
 export interface FakeStreamChunk {
@@ -517,7 +517,8 @@ export const startFakeChatCompletions = async (
         const routeIndex = routes.findIndex((route) => route.match(body));
         if (routeIndex >= 0) {
           routeHits[routeIndex] = (routeHits[routeIndex] as number) + 1;
-          await serveScripted((routes[routeIndex] as FakeRoute).reply, response);
+          const { reply } = routes[routeIndex] as FakeRoute;
+          await serveScripted(typeof reply === 'function' ? reply(body) : reply, response);
           return;
         }
         const held = holds.shift();

@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { isSea } from 'node:sea';
+import { nodeEvalFiles } from '@momonga/eval';
 import { createExecWithStdin, createPlatformSecretStore, openInBrowser, systemClock } from '@momonga/foundation';
 import type { CliClock, CliFiles, CliPorts, SelfExecutable, SpawnDetached } from './ports.ts';
 
@@ -26,9 +27,10 @@ const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
 export const nodeClock: CliClock = { now: () => systemClock.now(), sleep };
 
 export const nodeFiles: CliFiles = {
+  ...nodeEvalFiles,
   readBytes: (file) => fs.readFile(file),
+  ensureDirectory: async (directory) => void (await fs.mkdir(directory, { recursive: true })),
   makeTempDirectory: (prefix) => fs.mkdtemp(path.join(os.tmpdir(), prefix)),
-  writeText: (file, text) => fs.writeFile(file, text, { flag: 'wx' }),
   removeTree: (directory) => fs.rm(directory, { recursive: true, force: true }),
 };
 

@@ -44,7 +44,7 @@ export type RunServiceOptions = {
   maxBodyBytes?: number;
   cancelUpstream?: (runId: string) => Promise<void>;
   runTrace: (runId: string) => Promise<RunTraceView | undefined>;
-  runCost: (runs: readonly { runId: string; sessionId: string }[]) => Promise<CostReportView>;
+  runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal) => Promise<{ report: CostReportView; text: string }>;
   mcp: McpAdminPort;
   onError?: (error: unknown) => void;
   onFatal?: (error: Error) => void;

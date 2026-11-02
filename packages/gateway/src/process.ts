@@ -16,7 +16,7 @@ import {
   systemClock,
 } from '@momonga/foundation';
 import type { Clock, JsonLogger, MomongaPaths, ReadyFields, SecretStore, TextStream } from '@momonga/foundation';
-import { closeTelemetry, createTelemetry, exportersFor, openTraceStore } from '@momonga/observability';
+import { buildCostReport, closeTelemetry, formatCostReport, createTelemetry, exportersFor, openTraceStore } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import type { AdapterTarget, Capabilities, ProviderAdapter } from '@momonga/protocol';
 import { createSecretResolver } from './secrets.ts';
@@ -420,6 +420,11 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       socketPath: paths.sockets.gateway,
       ...(options.debugTcp === undefined ? {} : { debugTcp: { host: DEBUG_TCP_HOST, port: options.debugTcp.port, token: readDebugToken(options.debugTcp.tokenFile) } }),
       telemetry,
+      costReport: async (runs) => {
+        await telemetry.forceFlush();
+        const report = buildCostReport(traceStore, runs);
+        return { report, text: formatCostReport(report) };
+      },
       version: options.version,
       onError: (error) => logger.error('unhandled gateway error', { err: toError(error) }),
       onFatal: latchFatal,

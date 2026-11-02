@@ -14,5 +14,3 @@ export { TRANSCRIPT_FORMAT, TranscriptError, decodeTranscript, encodeTranscript,
 export type { Transcript, TranscriptRun } from './transcript.ts';
 export { loadDataset, loadTranscripts, nodeEvalFiles, saveTranscript, transcriptFileName } from './files.ts';
 export type { EvalFiles } from './files.ts';
-export { createUdsEvalRunApi } from './uds-run-api.ts';
-export type { UdsEvalRunApi } from './uds-run-api.ts';

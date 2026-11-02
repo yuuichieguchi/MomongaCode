@@ -2,7 +2,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import type { ChildProcessByStdio } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { CLI_BUNDLE, cliEnv } from './cli.ts';
+import { CLI_BUNDLE, CLI_FAKES_BUNDLE, cliEnv, fakePortsEnv } from './cli.ts';
 import { registerE2eCleanup } from './home.ts';
 import type { E2eHome } from './home.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, until } from './wait.ts';
@@ -41,19 +41,21 @@ export type PtySession = {
 
 const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 
-export const spawnPty = async (home: E2eHome, args: readonly string[], env: Readonly<Record<string, string>> = {}): Promise<PtySession> => {
+export const spawnPty = async (home: E2eHome, args: readonly string[], env: Readonly<Record<string, string>> = {}, options: { fakes?: true } = {}): Promise<PtySession> => {
+  const bundle = options.fakes === true ? CLI_FAKES_BUNDLE : CLI_BUNDLE;
+  const childEnv = options.fakes === true ? { ...fakePortsEnv(home), ...env } : env;
   fifoCounter += 1;
   const fifo = path.join(home.root, `pty-input-${fifoCounter}`);
   execFileSync(MKFIFO_BINARY, [fifo]);
   const transcript = path.join(home.root, `pty-output-${fifoCounter}`);
   const exitFile = path.join(home.root, `pty-exit-${fifoCounter}`);
-  const command = `stty cols ${PTY_COLUMNS} rows ${PTY_ROWS}; ${shellQuote(process.execPath)} ${shellQuote(CLI_BUNDLE)} ${args.map(shellQuote).join(' ')}; echo $? > ${shellQuote(exitFile)}`;
+  const command = `stty cols ${PTY_COLUMNS} rows ${PTY_ROWS}; ${shellQuote(process.execPath)} ${shellQuote(bundle)} ${args.map(shellQuote).join(' ')}; echo $? > ${shellQuote(exitFile)}`;
   const child: ChildProcessByStdio<null, null, null> = spawn(
     '/bin/sh',
     ['-c', 'cat "$3" | "$1" -q -F "$4" /bin/sh -c "$2"', 'sh', SCRIPT_BINARY, command, fifo, transcript],
     {
       cwd: home.project,
-      env: { ...cliEnv(home, env), TERM: 'xterm-256color' },
+      env: { ...cliEnv(home, childEnv), TERM: 'xterm-256color' },
       detached: true,
       stdio: ['ignore', 'ignore', 'ignore'],
     },

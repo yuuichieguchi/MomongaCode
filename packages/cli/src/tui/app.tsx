@@ -28,6 +28,7 @@ export type AppProps = {
   initialMode: PermissionMode | undefined;
   initialPrompt?: string;
   initialImages?: readonly string[];
+  initialSkill?: string;
   slash?: SlashRegistry;
   onExit(outcome: TuiOutcome): void;
 };
@@ -436,9 +437,16 @@ export function App(props: AppProps) {
   };
 
   const sendInitialPrompt = useEffectEvent((): void => {
-    if (props.initialPrompt === undefined || initialPromptSent.current) return;
+    if (initialPromptSent.current) return;
     initialPromptSent.current = true;
-    submit(props.initialPrompt).catch(reportError);
+    const { initialPrompt, initialImages, initialSkill } = props;
+    const send = async (): Promise<void> => {
+      if (initialImages !== undefined && initialImages.length > 0) await attach(initialImages);
+      if (initialPrompt === undefined) return;
+      if (initialSkill === undefined) await submit(initialPrompt);
+      else await runPrompt(initialPrompt, { skill: initialSkill });
+    };
+    send().catch(reportError);
   });
 
   useEffect(() => {

@@ -3,6 +3,7 @@ import { toPublicRunEvent } from '@momonga/protocol';
 import { expectError, startService } from './helpers.ts';
 
 const PNG_BYTES = Buffer.from('fake png bytes');
+const totals = { calls: 1, unpricedCalls: 0, inputTokens: 2, outputTokens: 3, cachedInputTokens: 0, amount: 0.5, currency: 'USD', priceVersions: ['v1'] };
 const IMAGE = { mediaType: 'image/png', data: PNG_BYTES.toString('base64') };
 
 describe('POST /v1/sessions/:id/runs with images', () => {
@@ -42,14 +43,20 @@ describe('POST /v1/sessions/:id/runs with images', () => {
 });
 
 describe('GET /v1/cost', () => {
-  const totals = { calls: 1, unpricedCalls: 0, inputTokens: 2, outputTokens: 3, cachedInputTokens: 0, amount: 0.5, currency: 'USD', priceVersions: ['v1'] };
+  it('answers the text rendering of the report when the format is text', async () => {
+    const env = await startService({ runCost: async () => ({ report: { runs: [], sessions: [], total: totals }, text: 'the text report' }) });
+    const response = await env.http('GET', '/v1/cost?format=text');
+    expect(response.status).toBe(200);
+    expect(response.text).toBe('the text report\n');
+  });
+
 
   it('prices every run when no filter is given and answers what the cost port returns', async () => {
     const asked: unknown[] = [];
     const env = await startService({
       runCost: async (runs) => {
         asked.push(runs);
-        return { runs: [], sessions: [], total: totals };
+        return { report: { runs: [], sessions: [], total: totals }, text: 'the text report' };
       },
     });
     const session = await env.createSession();
@@ -67,7 +74,7 @@ describe('GET /v1/cost', () => {
     const env = await startService({
       runCost: async (runs) => {
         asked.push(runs);
-        return { runs: [], sessions: [], total: totals };
+        return { report: { runs: [], sessions: [], total: totals }, text: 'the text report' };
       },
     });
     const session = await env.createSession();
@@ -80,6 +87,7 @@ describe('GET /v1/cost', () => {
     const expected = [{ runId: run.id, sessionId: session.id }];
     expect(asked).toEqual([expected, expected, expected]);
     expectError(await env.http('GET', `/v1/cost?run=${run.id}&session=${session.id}`), 400, 'invalid_request');
+    expectError(await env.http('GET', '/v1/cost?format=xml'), 400, 'invalid_request');
     expectError(await env.http('GET', '/v1/cost?run=missing'), 404, 'not_found');
     expectError(await env.http('GET', '/v1/cost?cwd=relative'), 400, 'invalid_request');
   });

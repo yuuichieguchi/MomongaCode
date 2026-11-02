@@ -1,35 +1,30 @@
 import { Command, InvalidArgumentError, Option } from 'commander';
-import { canonicalPath, momongaPaths } from '@momonga/foundation';
-import type { EntryIo, MomongaPaths } from '@momonga/foundation';
+import type { EntryIo } from '@momonga/foundation';
 import { PERMISSION_MODES } from '@momonga/protocol';
 import type { PermissionMode } from '@momonga/protocol';
 import { daemonStatus, daemonStop } from './commands/daemon.ts';
+import { registerProductCommands } from './commands/register.ts';
 import { DEFAULT_FM_BINARY, probeFm } from './commands/gateway.ts';
 import { approve, attachRun, cancelRun } from './commands/runs.ts';
 import { showTrace } from './commands/trace.ts';
-import type { DaemonEntries } from './daemon/entries.ts';
 import { INTERNAL_COMMANDS } from './daemon/launcher.ts';
-import type { CliPorts } from './ports.ts';
+import { pathsOf } from './paths.ts';
+import type { ProgramDeps } from './program-deps.ts';
 import { OUTPUT_FORMATS, runHeadless } from './run/headless.ts';
 import type { OutputFormat } from './run/headless.ts';
-
-export type ProgramDeps = {
-  ports: CliPorts;
-  interrupt: AbortSignal;
-  entryIo(args: readonly string[]): EntryIo;
-  entries: DaemonEntries;
-  complete(code: number): void;
-};
 
 type RootOptions = {
   print?: string;
   outputFormat: OutputFormat;
   permissionMode?: PermissionMode;
   dangerouslySkipPermissions?: true;
+  skill?: string;
+  image: string[];
   verbose?: true;
 };
 
-export const pathsOf = (ports: Pick<CliPorts, 'home'>): MomongaPaths => momongaPaths(canonicalPath(ports.home), process.platform, {});
+export { pathsOf } from './paths.ts';
+export type { ProgramDeps } from './program-deps.ts';
 
 const integerArgument =
   (minimum: number) =>
@@ -38,6 +33,8 @@ const integerArgument =
     if (!Number.isInteger(value) || value < minimum) throw new InvalidArgumentError(`expected an integer of at least ${minimum}`);
     return value;
   };
+
+const collectValues = (value: string, previous: string[]): string[] => [...previous, value];
 
 const outputFormatOption = (): Option => new Option('--output-format <format>', 'output format of --print and attach').choices(OUTPUT_FORMATS).default('text');
 
@@ -52,6 +49,8 @@ export const buildProgram = (deps: ProgramDeps): Command => {
     .addOption(outputFormatOption())
     .addOption(new Option('--permission-mode <mode>', 'permission mode of the session').choices(PERMISSION_MODES))
     .option('--dangerously-skip-permissions', 'run in bypassPermissions mode')
+    .option('--skill <name>', 'run the prompt with this skill activated')
+    .option('--image <path>', 'attach an image to the prompt; repeat for several (needs a model that declares image input)', collectValues, [])
     .option('--verbose', 'print tool activity to stderr')
     .action(async (prompt: string | undefined, options: RootOptions) => {
       const permissionMode = options.dangerouslySkipPermissions === true ? 'bypassPermissions' : options.permissionMode;
@@ -60,12 +59,12 @@ export const buildProgram = (deps: ProgramDeps): Command => {
         ...(options.dangerouslySkipPermissions === true ? { bypassAllowed: true } : {}),
       };
       if (options.print !== undefined) {
-        deps.complete(await runHeadless(ports, pathsOf(ports), { prompt: options.print, format: options.outputFormat, verbose: options.verbose === true, interrupt: deps.interrupt, ...session }));
+        deps.complete(await runHeadless(ports, pathsOf(ports), { prompt: options.print, format: options.outputFormat, verbose: options.verbose === true, interrupt: deps.interrupt, ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...session }));
         return;
       }
       if (ports.terminal === undefined) throw new Error('the interactive session needs a terminal; pass --print <prompt> to run without one');
       const { runInteractive } = await import('./tui/run-interactive.tsx');
-      deps.complete(await runInteractive(ports, pathsOf(ports), ports.terminal, { ...(prompt === undefined ? {} : { prompt }), ...session }));
+      deps.complete(await runInteractive(ports, pathsOf(ports), ports.terminal, { ...(prompt === undefined ? {} : { prompt }), ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...session }));
     });
 
   program
@@ -131,6 +130,8 @@ export const buildProgram = (deps: ProgramDeps): Command => {
         }),
       );
     });
+
+  registerProductCommands(program, deps);
 
   const internal = (name: string, run: (io: EntryIo) => Promise<number>): void => {
     program

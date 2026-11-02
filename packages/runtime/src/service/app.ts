@@ -70,7 +70,7 @@ export type RunAppDeps = {
   closeSignal: AbortSignal;
   cancelUpstream?: (runId: string) => Promise<void>;
   runTrace: (runId: string) => Promise<RunTraceView | undefined>;
-  runCost: (runs: readonly { runId: string; sessionId: string }[]) => Promise<CostReportView>;
+  runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal) => Promise<{ report: CostReportView; text: string }>;
   mcp: McpAdminPort;
   onError: (error: unknown) => void;
 };
@@ -334,7 +334,10 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     } else {
       runs = store.listSessions().flatMap((session) => runsOfSession(session.id));
     }
-    return json(await deps.runCost(runs));
+    const format = context.req.query('format') ?? 'json';
+    if (format !== 'json' && format !== 'text') throw invalidRequest('format must be json or text', 'format');
+    const { report, text } = await deps.runCost(runs, context.req.raw.signal);
+    return format === 'json' ? json(report) : new Response(`${text}\n`, { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8' } });
   };
 
   const listRunApprovals: Handler = (context) => {

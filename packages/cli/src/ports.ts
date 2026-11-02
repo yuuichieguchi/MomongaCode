@@ -28,8 +28,11 @@ export type Terminal = { stdin: NodeJS.ReadStream; stdout: NodeJS.WriteStream };
 
 export type CliFiles = {
   readBytes(file: string): Promise<Uint8Array>;
-  makeTempDirectory(prefix: string): Promise<string>;
+  readText(file: string): Promise<string>;
   writeText(file: string, text: string): Promise<void>;
+  listFiles(directory: string): Promise<string[]>;
+  ensureDirectory(directory: string): Promise<void>;
+  makeTempDirectory(prefix: string): Promise<string>;
   removeTree(directory: string): Promise<void>;
 };
 

@@ -100,6 +100,7 @@ export type RuntimeClient = {
   memory(id: string): Promise<MemoryView>;
   deleteMemory(id: string): Promise<void>;
   cost(filter?: CostFilter): Promise<CostReportView>;
+  costText(filter?: CostFilter): Promise<string>;
   trust(path: string): Promise<TrustView>;
   setTrust(path: string, decision: 'trusted' | 'untrusted'): Promise<TrustView>;
   streamEvents(runId: string, options?: EventsOptions): AsyncGenerator<RunEventFrame>;
@@ -156,7 +157,7 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     method: string,
     path: string,
     expected: readonly number[],
-    init: { body?: unknown; headers?: Record<string, string> } = {},
+    init: { body?: unknown; headers?: Record<string, string>; raw?: true } = {},
   ): Promise<{ response: UdsResponse; body: unknown }> => {
     const description = `${method} ${path}`;
     const headers = { ...(init.body === undefined ? {} : JSON_HEADERS), ...init.headers };
@@ -168,7 +169,7 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     });
     const text = await response.text();
     if (!expected.includes(response.status)) throw new RunApiError(description, response.status, text);
-    return { response, body: response.status === 204 ? undefined : parsed(text, description) };
+    return { response, body: response.status === 204 ? undefined : init.raw === true ? text : parsed(text, description) };
   };
 
   const sessionOf = (body: unknown, description: string): SessionView => checkSession(fieldOf(body, 'session', description), description);
@@ -327,12 +328,18 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     await send('DELETE', `/v1/memories/${encodeURIComponent(id)}`, [204]);
   };
 
+  const costPath = (filter: CostFilter, format: 'json' | 'text'): string => `/v1/cost?${new URLSearchParams({ ...filter, format }).toString()}`;
+
   const cost = async (filter: CostFilter = {}): Promise<CostReportView> => {
-    const query = new URLSearchParams(Object.entries(filter));
-    const text = query.toString();
-    const path = `/v1/cost${text === '' ? '' : `?${text}`}`;
+    const path = costPath(filter, 'json');
     const { body } = await send('GET', path, [200]);
     return checkCostReport(body, `GET ${path}`);
+  };
+
+  const costText = async (filter: CostFilter = {}): Promise<string> => {
+    const { body } = await send('GET', costPath(filter, 'text'), [200], { raw: true });
+    if (typeof body !== 'string') throw new ContractViolation('GET /v1/cost', 'the text report is not text');
+    return body;
   };
 
   const trust = async (path: string): Promise<TrustView> => {
@@ -384,6 +391,7 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     memory,
     deleteMemory,
     cost,
+    costText,
     trust,
     setTrust,
     streamEvents,

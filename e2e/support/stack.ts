@@ -51,6 +51,7 @@ export type StartStackOptions = {
   routes?: FakeRoute[];
   target?: StackTarget;
   upstream?: FakeChatCompletionsServer;
+  upstreamImageInput?: boolean;
   readiness?: Partial<StackReadiness> | false;
   readinessDeadlineMs?: number;
   supervisorScript?: string;
@@ -266,6 +267,7 @@ export const startUpstream = async (home: E2eHome, options: StartStackOptions): 
     scenario: 'tools-ok',
     maxConcurrency: 8,
     socketPath: home.upstreamSocket,
+    ...(options.upstreamImageInput === undefined ? {} : { imageInput: options.upstreamImageInput }),
     ...(options.script === undefined ? {} : { script: options.script }),
     ...(options.routes === undefined ? {} : { routes: options.routes }),
   });

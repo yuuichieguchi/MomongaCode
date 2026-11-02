@@ -20,6 +20,8 @@ export type E2eCaseFile =
   | 'mcp-remote.test.ts'
   | 'cli.test.ts'
   | 'cli-pty.test.ts'
+  | 'product-cli.test.ts'
+  | 'product-pty.test.ts'
   | 'memory.test.ts'
   | 'mcp-complete.test.ts';
 
@@ -71,8 +73,8 @@ export const E2E_CASES = [
   { id: 'g-skills-explicit', file: 'skills.test.ts', title: 'g: the Run API lists the skills of a session and a run started with a skill has it active before the first model call', needsBash: false },
   { id: 'g-skills-resources', file: 'skills.test.ts', title: 'g: bundled resources of a user skill are read without approval in default mode and the rest of ~/.momonga stays denied', needsBash: false },
   { id: 'g-skills-untrusted', file: 'skills.test.ts', title: 'g: an untrusted folder offers no project skills', needsBash: false },
-  { id: 'eval-starter', file: 'eval-runner.test.ts', title: 'eval: the starter dataset runs through the Run API against the fake upstream and reports pass and false-allow rates', needsBash: false },
-  { id: 'eval-false-allow', file: 'eval-runner.test.ts', title: 'eval: a write allowed by acceptEdits and labelled ask is counted as a false allow; a blocked read labelled deny is observed as deny', needsBash: false },
+  { id: 'eval-starter', file: 'eval-runner.test.ts', title: 'eval: momonga eval runs the starter dataset through the daemon against the fake upstream, records transcripts and replays them to the same report', needsBash: false },
+  { id: 'eval-false-allow', file: 'eval-runner.test.ts', title: 'eval: momonga eval exits 1 and counts a write allowed by acceptEdits and labelled ask as a false allow, while a blocked read labelled deny is observed as deny', needsBash: false },
   { id: 'otlp-export', file: 'otlp-export.test.ts', title: 'otlp: a run exports GenAI spans from the gateway and the runtime to a loopback collector when settings opt in', needsBash: false },
   { id: 'cost-report', file: 'otlp-export.test.ts', title: 'cost: per-run and per-session cost comes from the usage the gateway recorded in its trace store', needsBash: false },
   { id: 'open-responses-compliance', file: 'open-responses-compliance.test.ts', title: 'open responses: the official compliance suite runs against the gateway TCP debug listener and matches the declared support matrix', needsBash: false },
@@ -102,6 +104,19 @@ export const E2E_CASES = [
   { id: 'mcp-elicitation', file: 'mcp-complete.test.ts', title: 'mcp: an elicitation reaches the Run API as an event, the answer resumes the multi round-trip request and the run completes', needsBash: false },
   { id: 'mcp-task-input', file: 'mcp-complete.test.ts', title: 'mcp: a task that needs input is answered through tasks/update and the run completes', needsBash: false },
   { id: 'mcp-task-recovery', file: 'mcp-complete.test.ts', title: 'mcp: a runtime killed with SIGKILL during a task resumes polling the recorded task and starts no second one', needsBash: false },
+  { id: 'cli-models', file: 'product-cli.test.ts', title: 'cli: momonga models lists the aliases with the capabilities the gateway declares, as text and as JSON', needsBash: false },
+  { id: 'cli-cost', file: 'product-cli.test.ts', title: 'cli: momonga cost reports the calls and tokens of a run, of its session and of the folder, as text and as JSON', needsBash: false },
+  { id: 'cli-memory', file: 'product-cli.test.ts', title: 'cli: momonga memory lists, shows and deletes a memory the agent saved, with its source', needsBash: false },
+  { id: 'cli-skill-print', file: 'product-cli.test.ts', title: 'cli: momonga -p runs a skill through a leading /skill-name and through --skill, and sends any other slash text as plain text', needsBash: false },
+  { id: 'cli-image-print', file: 'product-cli.test.ts', title: 'cli: momonga -p --image sends the image to a model that declares image input and fails with image_input_unsupported for one that does not', needsBash: false },
+  { id: 'cli-elicit-print', file: 'product-cli.test.ts', title: 'cli: a -p run waiting for MCP input prints the request and the momonga elicit command, and the answer given with it resumes the run', needsBash: false },
+  { id: 'cli-mcp-login', file: 'product-cli.test.ts', title: 'cli: momonga mcp list shows an unauthorized server, mcp login opens the browser through the port and authorizes it, and --no-browser prints the URL only', needsBash: false },
+  { id: 'cli-mcp-notice', file: 'product-cli.test.ts', title: 'cli: a -p run that needs MCP authorization prints the momonga mcp login command', needsBash: false },
+  { id: 'cli-secret', file: 'product-pty.test.ts', title: 'cli pty: momonga secret set reads the value hidden from the terminal twice and stores it through the secret store port', needsBash: false },
+  { id: 'cli-skill-pty', file: 'product-pty.test.ts', title: 'cli pty: a /skill-name is completed with tab from the skills of the session and starts a run with the skill', needsBash: false },
+  { id: 'cli-memory-pty', file: 'product-pty.test.ts', title: 'cli pty: /memory lists, shows and deletes the memories in the terminal', needsBash: false },
+  { id: 'cli-image-pty', file: 'product-pty.test.ts', title: 'cli pty: pasting an image path attaches the image for a model that declares image input and sends it with the prompt', needsBash: false },
+  { id: 'cli-elicit-pty', file: 'product-pty.test.ts', title: 'cli pty: an MCP form is filled and validated in the terminal, and a url request shows the full URL and opens it only after consent', needsBash: false },
 ] as const satisfies readonly { id: string; file: E2eCaseFile; title: string; needsBash: boolean }[];
 
 export type E2eCase = (typeof E2E_CASES)[number];

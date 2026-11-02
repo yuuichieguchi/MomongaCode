@@ -4,8 +4,12 @@ import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView } from '../client/views.ts';
 import { daemonReadyBoundMs, ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
+import { describeElicitation } from '../elicit/describe.ts';
+import { readImageAttachment } from '../images.ts';
+import { mcpAuthorizationNotice } from '../mcp/messages.ts';
 import { followRun } from './follow.ts';
 import { openSession } from './open-session.ts';
+import { resolveSkillInvocation } from './skill-invocation.ts';
 
 export const OUTPUT_FORMATS = ['text', 'json', 'stream-json'] as const;
 
@@ -19,6 +23,8 @@ export type HeadlessOptions = {
   format: OutputFormat;
   permissionMode?: PermissionMode;
   bypassAllowed?: boolean;
+  skill?: string;
+  images?: readonly string[];
   verbose: boolean;
   interrupt: AbortSignal;
 };
@@ -96,6 +102,12 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
           ].join('\n'),
         );
         break;
+      case 'tool.elicitation.requested':
+        note(`momonga: waiting for input ${describeElicitation(event.inputId, event.server, titles.get(event.callId) ?? event.callId, event.requests)}`);
+        break;
+      case 'mcp.authorization.required':
+        note(`momonga: ${mcpAuthorizationNotice(event.server)}`);
+        break;
       case 'notice':
         note(`momonga: ${event.level}: ${event.message}`);
         break;
@@ -158,7 +170,12 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
   });
   try {
     const sessionId = session.created.session.id;
-    const { run: started } = await session.client.createRun(sessionId, options.prompt);
+    const invocation = await resolveSkillInvocation(session.client, sessionId, options.prompt, options.skill);
+    const images = await Promise.all((options.images ?? []).map((file) => readImageAttachment(ports.files, ports.cwd, file)));
+    const { run: started } = await session.client.createRun(sessionId, invocation.input, {
+      ...(invocation.skill === undefined ? {} : { skill: invocation.skill }),
+      ...(images.length === 0 ? {} : { images }),
+    });
     if (options.format === 'stream-json') {
       ports.stdout.write(
         `${JSON.stringify({ type: 'system', subtype: 'init', session_id: sessionId, run_id: started.id, cwd: ports.cwd, permission_mode: session.created.session.permissionMode, stripped_env_keys: session.created.strippedEnvKeys })}\n`,

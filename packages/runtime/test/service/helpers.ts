@@ -491,9 +491,12 @@ export const serviceOptions = (
   runCost:
     overrides.runCost ??
     (async () => ({
-      runs: [],
-      sessions: [],
-      total: { calls: 0, unpricedCalls: 0, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, amount: 0, currency: 'USD', priceVersions: [] },
+      report: {
+        runs: [],
+        sessions: [],
+        total: { calls: 0, unpricedCalls: 0, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, amount: 0, currency: 'USD', priceVersions: [] },
+      },
+      text: 'cost report',
     })),
   onError: (error: unknown) => base.errors.push(error),
   ...(base.fatals === undefined ? {} : { onFatal: (error: Error) => base.fatals?.push(error) }),

@@ -14,7 +14,7 @@ import {
   systemClock,
 } from '@momonga/foundation';
 import type { Clock, JsonLogger, ProcessLock, ReadyFields, TextStream } from '@momonga/foundation';
-import { buildCostReport, createTelemetry, exportersFor, openTraceStore } from '@momonga/observability';
+import { createTelemetry, exportersFor, openTraceStore } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createSeatbeltSandbox, createUnsandboxed } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
@@ -426,10 +426,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           await telemetry.forceFlush();
           return runTraceOf(traceStore, runId);
         },
-        runCost: async (runs) => {
-          await telemetry.forceFlush();
-          return buildCostReport(traceStore, runs);
-        },
+        runCost: (runs, signal) => gatewayClient.cost(runs, signal),
         mcp: toolRuntime.mcpAdmin,
         onError: (error) => logger.error('service error', { err: asError(error) }),
         onFatal: latchFatal,
