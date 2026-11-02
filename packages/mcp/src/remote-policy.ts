@@ -71,14 +71,6 @@ type Send = (url: URL, init: RequestInit | undefined) => Promise<Response>;
 
 export type GuardedFetchOptions = { scope: McpServerScope; resolver?: HostResolver; send?: Send };
 
-const REDIRECT_STATUSES: ReadonlySet<number> = new Set([301, 302, 303, 307, 308]);
-const MAX_REDIRECT_HOPS = 5;
-
-const redirectTarget = (from: URL, response: Response): URL | undefined => {
-  const location = REDIRECT_STATUSES.has(response.status) ? response.headers.get('location') : null;
-  return location === null ? undefined : new URL(location, from);
-};
-
 export const createGuardedFetch = ({ scope, resolver = systemResolver, send }: GuardedFetchOptions): GuardedFetch => {
   const agent = new Agent({
     headersTimeout: 0,
@@ -88,20 +80,7 @@ export const createGuardedFetch = ({ scope, resolver = systemResolver, send }: G
   const dispatch: Send =
     send ?? ((url, init) => undiciFetch(url, { ...(init as UndiciRequestInit | undefined), dispatcher: agent }) as unknown as Promise<Response>);
   return {
-    fetch: async (input, init) => {
-      let current = assertRemoteUrl(String(input), scope);
-      if (init?.redirect === 'error' || init?.redirect === 'manual') return dispatch(current, init);
-      const method = (init?.method ?? 'GET').toUpperCase();
-      for (let hops = 0; ; hops += 1) {
-        const response = await dispatch(current, { ...init, redirect: 'manual' });
-        const target = redirectTarget(current, response);
-        if (target === undefined || hops === MAX_REDIRECT_HOPS) return response;
-        const keepsMethod = method === 'GET' || response.status === 307 || response.status === 308;
-        if (!keepsMethod || target.origin !== current.origin) return response;
-        await response.body?.cancel();
-        current = assertRemoteUrl(target.href, scope);
-      }
-    },
+    fetch: async (input, init) => dispatch(assertRemoteUrl(String(input), scope), { ...init, redirect: init?.redirect === 'error' ? 'error' : 'manual' }),
     close: () => agent.destroy(),
   };
 };
