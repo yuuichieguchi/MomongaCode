@@ -1,0 +1,131 @@
+import { describe, expect, it } from 'vitest';
+import type { MemoryEvidence, MemoryKind } from '@momonga/protocol';
+import type { MemoryRecord, MemoryStore, RuntimeStore } from '@momonga/store';
+import { callEvent, enqueue, harness, mustClaim, newSession } from './helpers.ts';
+
+const PROJECT = '/work/a';
+const VISIBLE = { trusted: true, project: PROJECT } as const;
+
+type Outcome = { kind: string; memory?: MemoryRecord };
+
+type Lifecycle = MemoryStore & {
+  saveCandidate(input: { scope: 'project' | 'user'; origin: 'trusted'; project: string | null; text: string; runId: string; ordinal: number; kind: MemoryKind; evidence: readonly MemoryEvidence[] }): { memory: MemoryRecord; created: boolean };
+  candidates(filter?: { project?: string }): MemoryRecord[];
+  accept(id: string): Outcome;
+  reject(id: string): Outcome;
+  markDuplicate(id: string, of: string): Outcome;
+  archive(id: string): Outcome;
+  restore(id: string): Outcome;
+};
+
+const lifecycleOf = (store: RuntimeStore): Lifecycle => store.memories as Lifecycle;
+
+const started = () => {
+  const { store, clock } = harness();
+  const session = newSession(store, PROJECT);
+  const run = enqueue(store, session.id);
+  const claim = mustClaim(store, 'w1');
+  expect(store.append(claim, ['c1', 'c2', 'c3'].map(callEvent)).kind).toBe('ok');
+  const memories = lifecycleOf(store);
+  const candidate = (ordinal: number, text: string, kind: MemoryKind = 'fact') =>
+    memories.saveCandidate({ scope: 'project', origin: 'trusted', project: PROJECT, text, runId: run.id, ordinal, kind, evidence: [] });
+  const saved = (callId: string, text: string) => store.memories.save({ origin: 'trusted', scope: 'project', project: PROJECT, text, runId: run.id, step: 1, callId }).memory;
+  return { store, clock, session, run, memories, candidate, saved };
+};
+
+const ids = (records: readonly MemoryRecord[]): string[] => records.map((record) => record.id);
+
+describe('candidates', () => {
+  it('stores a candidate with its reflection source and state', () => {
+    const { session, run, candidate } = started();
+    const { memory, created } = candidate(2, 'tests need a seed', 'procedure');
+    expect(created).toBe(true);
+    expect(memory).toMatchObject({ state: 'candidate', kind: 'procedure', text: 'tests need a seed', source: { kind: 'reflection', sessionId: session.id, runId: run.id, ordinal: 2 } });
+  });
+
+  it('is idempotent per ordinal, so a retried job adds nothing', () => {
+    const { candidate } = started();
+    const first = candidate(0, 'one');
+    const again = candidate(0, 'one');
+    expect(again.created).toBe(false);
+    expect(again.memory.id).toBe(first.memory.id);
+  });
+
+  it('is never recalled, ranked, or found by a plain search, and only an explicit all finds it', () => {
+    const { store, candidate } = started();
+    const { memory } = candidate(0, 'seeded fixture note');
+    expect(store.memories.recall(VISIBLE)).toEqual([]);
+    expect(store.memories.search(VISIBLE, ['seeded'])).toEqual([]);
+    expect(store.memories.matchingIds(VISIBLE, ['seeded']).size).toBe(0);
+    expect(ids(store.memories.search(VISIBLE, ['seeded'], { include: 'all' }))).toEqual([memory.id]);
+  });
+
+  it('lists what waits for a person, per project', () => {
+    const { memories, candidate, saved } = started();
+    saved('c1', 'active note');
+    const { memory } = candidate(0, 'waiting');
+    expect(ids(memories.candidates({ project: PROJECT }))).toEqual([memory.id]);
+    expect(memories.candidates({ project: '/work/other' })).toEqual([]);
+  });
+});
+
+describe('accept and reject', () => {
+  it('makes an accepted candidate recallable and takes it off the list', () => {
+    const { store, memories, candidate } = started();
+    const { memory } = candidate(0, 'waiting');
+    expect(memories.accept(memory.id)).toMatchObject({ kind: 'accepted', memory: { id: memory.id, state: 'active' } });
+    expect(ids(store.memories.recall(VISIBLE))).toEqual([memory.id]);
+    expect(memories.candidates()).toEqual([]);
+  });
+
+  it('never makes a rejected candidate live', () => {
+    const { store, memories, candidate } = started();
+    const { memory } = candidate(0, 'waiting');
+    expect(memories.reject(memory.id).kind).toBe('rejected');
+    expect(store.memories.recall(VISIBLE)).toEqual([]);
+    expect(memories.candidates()).toEqual([]);
+    expect(memories.accept(memory.id).kind).not.toBe('accepted');
+  });
+
+  it('accepts only a candidate', () => {
+    const { memories, saved } = started();
+    expect(memories.accept(saved('c1', 'active note').id).kind).toBe('not_candidate');
+    expect(memories.accept('missing').kind).toBe('not_found');
+  });
+});
+
+describe('duplicate and archive', () => {
+  it('records duplicate_of and hides the copy from recall, while all still finds it', () => {
+    const { store, memories, saved } = started();
+    const older = saved('c1', 'same text');
+    const newer = saved('c2', 'same text');
+    expect(memories.markDuplicate(newer.id, older.id)).toMatchObject({ memory: { state: 'duplicate', duplicateOf: older.id } });
+    expect(ids(store.memories.recall(VISIBLE))).toEqual([older.id]);
+    expect(ids(store.memories.search(VISIBLE, ['same'], { include: 'all' })).sort()).toEqual([older.id, newer.id].sort());
+  });
+
+  it('archives without deleting and restores to active', () => {
+    const { store, memories, saved } = started();
+    const note = saved('c1', 'old habit');
+    expect(memories.archive(note.id)).toMatchObject({ memory: { state: 'archived' } });
+    expect(store.memories.recall(VISIBLE)).toEqual([]);
+    expect(store.memories.search(VISIBLE, ['habit'])).toEqual([]);
+    expect(ids(store.memories.search(VISIBLE, ['habit'], { include: 'all' }))).toEqual([note.id]);
+    expect(memories.restore(note.id)).toMatchObject({ kind: 'restored', memory: { state: 'active' } });
+    expect(ids(store.memories.recall(VISIBLE))).toEqual([note.id]);
+  });
+
+  it('counts a restore as a use, so the next sweep does not archive it again', () => {
+    const { clock, memories, saved } = started();
+    const note = saved('c1', 'old habit');
+    memories.archive(note.id);
+    clock.advance(1000);
+    expect(memories.restore(note.id).memory?.lastUsedAt).toBe(clock.now());
+  });
+
+  it('restores only an archived memory', () => {
+    const { memories, saved } = started();
+    expect(memories.restore(saved('c1', 'active note').id).kind).toBe('not_archived');
+    expect(memories.restore('missing').kind).toBe('not_found');
+  });
+});
