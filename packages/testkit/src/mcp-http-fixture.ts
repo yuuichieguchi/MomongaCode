@@ -24,6 +24,7 @@ export type McpHttpFixtureOptions = {
   taskTtlMs?: number | null;
   legacyTasks?: true;
   taskCreatedAt?: string;
+  taskLastUpdatedAt?: string;
   protectedResourceMetadataPath?: string;
   challengeScope?: string;
   holdSessionDelete?: boolean;
@@ -183,7 +184,7 @@ export const startMcpHttpFixture = async (options: McpHttpFixtureOptions): Promi
     taskId,
     status: state.status,
     createdAt: state.createdAt,
-    lastUpdatedAt: state.createdAt,
+    lastUpdatedAt: options.taskLastUpdatedAt ?? state.createdAt,
     ttlMs: options.taskTtlMs ?? null,
     ...(options.taskPollIntervalMs === null ? {} : { pollIntervalMs: options.taskPollIntervalMs ?? 1 }),
     ...(state.status === 'input_required' ? { inputRequests: NAME_REQUEST } : {}),
