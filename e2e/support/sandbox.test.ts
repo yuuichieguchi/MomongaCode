@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { E2E_CASES, caseOf, skipCase, titleOf } from './cases.ts';
+import type { E2eCase } from './cases.ts';
 import {
   SANDBOX_EXEC_PATH,
   SANDBOX_FALLBACK,
@@ -76,14 +77,17 @@ describe('resolveSandbox', () => {
     expect(resolveSandbox({ needsBash }, probe)).toEqual(expected);
   });
 
-  it('sandboxLine counts from the registry', () => {
-    const bash = E2E_CASES.filter((entry) => entry.needsBash).length;
-    expect(sandboxLine({ usable: true }, E2E_CASES)).toBe('e2e sandbox: seatbelt (sandbox-exec usable)');
-    expect(sandboxLine({ usable: false, stderr: 'x' }, E2E_CASES)).toBe(
-      `e2e sandbox: sandbox-exec UNUSABLE; ${bash} bash cases will be skipped, ${E2E_CASES.length - bash} cases run with sandbox none`,
-    );
-    expect(bash).toBe(7);
-    expect(E2E_CASES.length - bash).toBe(51);
+  it('sandboxLine counts the cases it is given, not a fixed set', () => {
+    const bashCase = E2E_CASES.find((entry) => entry.needsBash);
+    const plainCase = E2E_CASES.find((entry) => !entry.needsBash);
+    if (bashCase === undefined || plainCase === undefined) throw new Error('the registry has no bash case or no plain case to build from');
+    const registryOf = (bash: number, plain: number): E2eCase[] => [...Array.from({ length: bash }, () => bashCase), ...Array.from({ length: plain }, () => plainCase)];
+    expect(sandboxLine({ usable: true }, registryOf(2, 3))).toBe('e2e sandbox: seatbelt (sandbox-exec usable)');
+    for (const [bash, plain] of [[2, 3], [0, 4], [5, 0], [3, 11]] as const) {
+      expect(sandboxLine({ usable: false, stderr: 'x' }, registryOf(bash, plain))).toBe(
+        `e2e sandbox: sandbox-exec UNUSABLE; ${bash} bash cases will be skipped, ${plain} cases run with sandbox none`,
+      );
+    }
   });
 });
 

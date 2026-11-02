@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { describe, expect, it } from 'vitest';
 import { createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
 
@@ -43,6 +44,29 @@ describe('createFakeTimers', () => {
     timers.advance(20);
     expect(fired).toBe(false);
     expect(timers.pending()).toEqual([]);
+  });
+
+  it('reports the clock and the earliest pending due time', () => {
+    const clock = createFakeClock(1000);
+    const timers = createFakeTimers(clock);
+    expect(timers.nextDueAt()).toBeUndefined();
+    timers.setTimeout(() => undefined, 300);
+    const early = timers.setTimeout(() => undefined, 100);
+    expect(timers.now()).toBe(1000);
+    expect(timers.nextDueAt()).toBe(1100);
+    timers.clearTimeout(early);
+    expect(timers.nextDueAt()).toBe(1300);
+  });
+
+  it('runs a callback in the async context that scheduled it, not the context that advances', () => {
+    const storage = new AsyncLocalStorage<string>();
+    const timers = createFakeTimers(createFakeClock(0));
+    const seen: Array<string | undefined> = [];
+    storage.run('scheduler', () => {
+      timers.setTimeout(() => seen.push(storage.getStore()), 10);
+    });
+    storage.run('advancer', () => timers.advance(10));
+    expect(seen).toEqual(['scheduler']);
   });
 
   it('rejects a negative advance', () => {

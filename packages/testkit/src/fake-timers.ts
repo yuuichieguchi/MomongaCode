@@ -1,3 +1,4 @@
+import { AsyncResource } from 'node:async_hooks';
 import type { FakeClock } from './fake-clock.ts';
 
 export type PendingTimer = { id: number; delayMs: number; dueAt: number };
@@ -7,6 +8,8 @@ export type FakeTimers = {
   clearTimeout(handle: unknown): void;
   advance(ms: number): void;
   pending(): PendingTimer[];
+  now(): number;
+  nextDueAt(): number | undefined;
 };
 
 type Entry = PendingTimer & { callback: () => void };
@@ -26,7 +29,7 @@ export const createFakeTimers = (clock: FakeClock): FakeTimers => {
     setTimeout: (callback, ms) => {
       const delayMs = Math.max(0, Number.isFinite(ms) ? ms : 0);
       const id = nextId++;
-      entries.set(id, { id, delayMs, dueAt: clock.now() + delayMs, callback });
+      entries.set(id, { id, delayMs, dueAt: clock.now() + delayMs, callback: AsyncResource.bind(callback) });
       return id;
     },
     clearTimeout: (handle) => {
@@ -42,6 +45,8 @@ export const createFakeTimers = (clock: FakeClock): FakeTimers => {
       }
       clock.set(target);
     },
+    now: () => clock.now(),
+    nextDueAt: () => earliestDue(Number.POSITIVE_INFINITY)?.dueAt,
     pending: () =>
       [...entries.values()].sort((a, b) => a.id - b.id).map(({ id, delayMs, dueAt }) => ({ id, delayMs, dueAt })),
   };

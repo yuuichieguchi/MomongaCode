@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import {
   ENTRY_HARD_EXIT_MARGIN_MS,
@@ -9,7 +8,6 @@ import {
   RUNTIME_ABORT_BUDGET_MS,
   RUNTIME_TEARDOWN_BUDGET_MS,
   SHUTDOWN_MARGIN_MS,
-  reapMarkerDirectory,
   runtimeMaxCloseMs,
   supervisorMaxCloseMs,
 } from '@momonga/foundation';
@@ -41,8 +39,6 @@ const RUNTIME_TERM_BOUND = runtimeMaxCloseMs(DEFAULT_DRAIN) + SHUTDOWN_MARGIN_MS
 const GATEWAY_TERM_BOUND = GATEWAY_MAX_CLOSE_MS + SHUTDOWN_MARGIN_MS;
 const RUNTIME_INT_BOUND = RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS + SHUTDOWN_MARGIN_MS;
 
-const HOLDER_FIXTURE = fileURLToPath(new URL('./fixtures/p3-marker-holder.ts', import.meta.url));
-
 const running = async (context: CleanupContext, options: HarnessOptions = {}): Promise<Harness> => {
   const h = await startHarness(context, options);
   await h.waitForState('gateway', 'ready', 10_000);
@@ -50,9 +46,9 @@ const running = async (context: CleanupContext, options: HarnessOptions = {}): P
   return h;
 };
 
-const finish = async (h: Harness, promise: Promise<SupervisorCloseResult>, maxMs = 200_000, stepMs = 50): Promise<SupervisorCloseResult> => {
+const finish = async (h: Harness, promise: Promise<SupervisorCloseResult>, maxMs = 200_000): Promise<SupervisorCloseResult> => {
   const flag = settledFlag(promise);
-  await pumpUntil(h.timers, () => flag.settled(), { realWork: h.realWork, stepMs, maxMs, description: 'close settles' });
+  await pumpUntil(h.timers, () => flag.settled(), { realWork: h.realWork, maxMs, description: 'close settles' });
   const value = flag.value();
   if (value === undefined) throw new Error('close rejected');
   return value;
@@ -90,7 +86,7 @@ describe('shutdown order and bounds', () => {
     h.fake.setBehaviour('runtime', { onTerm: 'ignore' });
     const start = h.clock.now();
     const closing = h.supervisor.close();
-    await pumpUntil(h.timers, () => h.fake.latest('runtime').groupKills > 0, { realWork: h.realWork, stepMs: 50, maxMs: RUNTIME_TERM_BOUND + 1000 });
+    await pumpUntil(h.timers, () => h.fake.latest('runtime').groupKills > 0, { realWork: h.realWork, maxMs: RUNTIME_TERM_BOUND + 1000 });
     expect(h.clock.now() - start).toBeGreaterThanOrEqual(RUNTIME_TERM_BOUND);
     expect(h.clock.now() - start).toBeLessThanOrEqual(RUNTIME_TERM_BOUND + 50);
     const result = await finish(h, closing);
@@ -110,7 +106,7 @@ describe('shutdown order and bounds', () => {
     const closing = h.supervisor.close();
     await waitFor(() => h.fake.latest('gateway').signals.length === 1);
     const signalledAt = h.clock.now();
-    await pumpUntil(h.timers, () => h.fake.latest('gateway').groupKills > 0, { realWork: h.realWork, stepMs: 50, maxMs: GATEWAY_TERM_BOUND + 1000 });
+    await pumpUntil(h.timers, () => h.fake.latest('gateway').groupKills > 0, { realWork: h.realWork, maxMs: GATEWAY_TERM_BOUND + 1000 });
     expect(h.clock.now() - signalledAt).toBeGreaterThanOrEqual(GATEWAY_TERM_BOUND);
     expect(h.clock.now() - signalledAt).toBeLessThanOrEqual(GATEWAY_TERM_BOUND + 50);
     expect(await finish(h, closing)).toEqual({ clean: false, killed: ['gateway'], leaked: [] });
@@ -125,11 +121,11 @@ describe('shutdown order and bounds', () => {
     await waitFor(() => h.fake.latest('runtime').signals.length === 1 && h.fake.latest('gateway').signals.length === 1);
     expect(h.fake.latest('runtime').signals).toEqual(['SIGINT']);
     expect(h.fake.latest('gateway').signals).toEqual(['SIGINT']);
-    await pumpUntil(h.timers, () => h.fake.latest('gateway').groupKills > 0, { realWork: h.realWork, stepMs: 50, maxMs: GATEWAY_ABORT_BUDGET_MS + 1000 });
+    await pumpUntil(h.timers, () => h.fake.latest('gateway').groupKills > 0, { realWork: h.realWork, maxMs: GATEWAY_ABORT_BUDGET_MS + 1000 });
     expect(h.clock.now() - start).toBeGreaterThanOrEqual(GATEWAY_ABORT_BUDGET_MS);
     expect(h.clock.now() - start).toBeLessThanOrEqual(GATEWAY_ABORT_BUDGET_MS + 50);
     expect(h.fake.latest('runtime').groupKills).toBe(0);
-    await pumpUntil(h.timers, () => h.fake.latest('runtime').groupKills > 0, { realWork: h.realWork, stepMs: 50, maxMs: RUNTIME_INT_BOUND });
+    await pumpUntil(h.timers, () => h.fake.latest('runtime').groupKills > 0, { realWork: h.realWork, maxMs: RUNTIME_INT_BOUND });
     expect(h.clock.now() - start).toBeGreaterThanOrEqual(RUNTIME_INT_BOUND);
     expect(h.clock.now() - start).toBeLessThanOrEqual(RUNTIME_INT_BOUND + 50);
     const result = await finish(h, aborting);
@@ -158,7 +154,7 @@ describe('shutdown order and bounds', () => {
     await turns(50);
     expect(h.fake.latest('runtime').signals).toEqual(['SIGTERM', 'SIGINT']);
     expect(h.fake.latest('gateway').signals).toEqual(['SIGINT']);
-    await pumpUntil(h.timers, () => h.fake.latest('runtime').groupKills > 0, { realWork: h.realWork, stepMs: 50, maxMs: RUNTIME_TERM_BOUND });
+    await pumpUntil(h.timers, () => h.fake.latest('runtime').groupKills > 0, { realWork: h.realWork, maxMs: RUNTIME_TERM_BOUND });
     expect(h.clock.now() - escalatedAt).toBeGreaterThanOrEqual(RUNTIME_INT_BOUND);
     expect(h.clock.now() - escalatedAt).toBeLessThanOrEqual(RUNTIME_INT_BOUND + 50);
     await finish(h, closing);
@@ -169,7 +165,7 @@ describe('shutdown order and bounds', () => {
     const h = await startHarness(context, { overrides: { startupTimeoutMs: 1000 } });
     h.fake.setBehaviour('runtime', { autoReady: false, onTerm: 'ignore' });
     await h.waitForState('gateway', 'ready', 10_000);
-    await pumpUntil(h.timers, () => h.fake.of('runtime').some((child) => child.signals.length > 0), { realWork: h.realWork, stepMs: 50, maxMs: 5000 });
+    await pumpUntil(h.timers, () => h.fake.of('runtime').some((child) => child.signals.length > 0), { realWork: h.realWork, maxMs: 5000 });
     const closing = h.supervisor.close();
     await turns(50);
     const runtime = h.fake.latest('runtime');
@@ -187,7 +183,7 @@ describe('shutdown order and bounds', () => {
     h.fake.setBehaviour('runtime', { onTerm: 'ignore' });
     writeSettings(h.home, validSettings({ model: 'gpt-changed' }));
     watch.fire();
-    await pumpUntil(h.timers, () => h.fake.latest('runtime').signals.length === 1, { realWork: h.realWork, stepMs: 50, maxMs: 10_000 });
+    await pumpUntil(h.timers, () => h.fake.latest('runtime').signals.length === 1, { realWork: h.realWork, maxMs: 10_000 });
     const closing = h.supervisor.close();
     await turns(50);
     expect(h.fake.latest('runtime').signals).toEqual(['SIGTERM']);
@@ -202,9 +198,9 @@ describe('shutdown order and bounds', () => {
     const h = await running(context);
     h.fake.setBehaviour('runtime', { onTerm: 'ignore', onKill: 'ignore' });
     const closing = h.supervisor.close();
-    await pumpUntil(h.timers, () => h.fake.latest('runtime').groupKills > 0, { realWork: h.realWork, stepMs: 50, maxMs: RUNTIME_TERM_BOUND + 1000 });
+    await pumpUntil(h.timers, () => h.fake.latest('runtime').groupKills > 0, { realWork: h.realWork, maxMs: RUNTIME_TERM_BOUND + 1000 });
     const killedAt = h.clock.now();
-    await pumpUntil(h.timers, () => h.fake.latest('gateway').signals.length > 0, { realWork: h.realWork, stepMs: 50, maxMs: KILL_CONFIRM_MS + 1000 });
+    await pumpUntil(h.timers, () => h.fake.latest('gateway').signals.length > 0, { realWork: h.realWork, maxMs: KILL_CONFIRM_MS + 1000 });
     expect(h.clock.now() - killedAt).toBeGreaterThanOrEqual(KILL_CONFIRM_MS);
     expect(h.clock.now() - killedAt).toBeLessThanOrEqual(KILL_CONFIRM_MS + 50);
     const result = await finish(h, closing);
@@ -257,7 +253,7 @@ describe('shutdown order and bounds', () => {
     });
     h.fake.latest('gateway').exit(78);
     h.fake.latest('runtime').exit(75);
-    await pumpUntil(h.timers, () => h.child('gateway').state === 'held-config' && h.child('runtime').state === 'external', { realWork: h.realWork, stepMs: 50, maxMs: 10_000 });
+    await pumpUntil(h.timers, () => h.child('gateway').state === 'held-config' && h.child('runtime').state === 'external', { realWork: h.realWork, maxMs: 10_000 });
     const start = h.clock.now();
     const result = await finish(h, h.supervisor.close());
     expect(result).toEqual({ clean: true, killed: [], leaked: [] });
@@ -290,7 +286,7 @@ describe('shutdown order and bounds', () => {
 });
 
 const pump200 = async (h: Harness): Promise<void> => {
-  await pumpUntil(h.timers, () => true, { realWork: h.realWork, stepMs: 50, maxMs: 0 });
+  await pumpUntil(h.timers, () => true, { realWork: h.realWork, maxMs: 0 });
   for (let step = 0; step < 10; step += 1) {
     h.timers.advance(50);
     await turns();
@@ -314,7 +310,7 @@ describe('shutdown and marker reaps', () => {
     await waitFor(() => h.markers.calls.reapMarkedProcesses.some((call) => markerRole(call.marker) === 'runtime'));
     const closing = h.supervisor.close();
     const closed = settledFlag(closing);
-    await pumpUntil(h.timers, () => h.fake.latest('gateway').signals.length === 1, { realWork: h.realWork, stepMs: 50, maxMs: 200_000, description: 'gateway signalled at step 3' });
+    await pumpUntil(h.timers, () => h.fake.latest('gateway').signals.length === 1, { realWork: h.realWork, maxMs: 200_000, description: 'gateway signalled at step 3' });
     await pump(h.timers, h.realWork, STDIO_FLUSH_MS + 1000);
     expect(closed.settled()).toBe(false);
     reap.resolve({ removed: true });
@@ -364,7 +360,7 @@ describe('shutdown and marker reaps', () => {
       },
     });
     h.fake.latest('runtime').exit(75);
-    await pumpUntil(h.timers, () => probes === 1, { realWork: h.realWork, stepMs: 50, maxMs: 5000 });
+    await pumpUntil(h.timers, () => probes === 1, { realWork: h.realWork, maxMs: 5000 });
     const closing = h.supervisor.close();
     await turns();
     probe.resolve(Date.now() + 60_000);
@@ -403,7 +399,7 @@ describe('shutdown and marker reaps', () => {
       },
     });
     const closing = h.supervisor.close();
-    const result = await finish(h, closing, 200_000, 50);
+    const result = await finish(h, closing, 200_000);
     expect(result.clean).toBe(true);
     expect(step4At).toBeDefined();
     expect(h.clock.now() - (step4At ?? 0)).toBeLessThanOrEqual(SHUTDOWN_REAP_BOUND_MS + SHUTDOWN_RELEASE_BOUND_MS);
@@ -430,7 +426,7 @@ describe('shutdown and marker reaps', () => {
       },
     });
     const closing = h.supervisor.close();
-    await pumpUntil(h.timers, () => pending.length === 2, { realWork: h.realWork, stepMs: 50, maxMs: 20_000 });
+    await pumpUntil(h.timers, () => pending.length === 2, { realWork: h.realWork, maxMs: 20_000 });
     expect(pending.map((entry) => markerRole(entry.marker)).sort()).toEqual(['gateway', 'runtime']);
     const position = (entry: string): number => h.order.indexOf(entry);
     const firstReap = position('reapMarkedProcesses');
@@ -451,7 +447,7 @@ describe('shutdown and marker reaps', () => {
     });
     for (const role of ['runtime', 'gateway'] as const) h.fake.setBehaviour(role, { onTerm: 'ignore', holdPipes: true });
     const start = h.clock.now();
-    const result = await finish(h, h.supervisor.close(), supervisorMaxCloseMs(drain) + 10_000, 50);
+    const result = await finish(h, h.supervisor.close(), supervisorMaxCloseMs(drain) + 10_000);
     const elapsed = h.clock.now() - start;
     const floor = runtimeMaxCloseMs(drain) + SHUTDOWN_MARGIN_MS + GATEWAY_MAX_CLOSE_MS + SHUTDOWN_MARGIN_MS + 2 * STDIO_FLUSH_MS + SHUTDOWN_REAP_BOUND_MS;
     expect(elapsed).toBeGreaterThanOrEqual(floor);
@@ -497,9 +493,9 @@ describe('shutdown and marker reaps', () => {
     });
     const h = await running(context);
     const closing = h.supervisor.close();
-    await pumpUntil(h.timers, () => h.log.withMsg('shutdown.step').some((line) => line['shutdownStep'] === 5), { realWork: h.realWork, stepMs: 50, maxMs: 200_000, description: 'step 5 reached' });
+    await pumpUntil(h.timers, () => h.log.withMsg('shutdown.step').some((line) => line['shutdownStep'] === 5), { realWork: h.realWork, maxMs: 200_000, description: 'step 5 reached' });
     const stepFiveAt = h.clock.now();
-    const result = await finish(h, closing, SHUTDOWN_RELEASE_BOUND_MS + 1000, 50);
+    const result = await finish(h, closing, SHUTDOWN_RELEASE_BOUND_MS + 1000);
     expect(hung.length).toBeGreaterThan(0);
     expect(h.clock.now() - stepFiveAt).toBeGreaterThanOrEqual(SHUTDOWN_RELEASE_BOUND_MS);
     expect(h.clock.now() - stepFiveAt).toBeLessThanOrEqual(SHUTDOWN_RELEASE_BOUND_MS + 100);
@@ -517,7 +513,7 @@ describe('shutdown and marker reaps', () => {
     await new Promise<void>((resolve) => raw.once('connect', () => resolve()));
     raw.write('POST /v1/shutdown HTTP/1.1\r\nHost: localhost\r\nContent-Length: 100\r\n\r\nabc');
     await turns(50);
-    const result = await finish(h, h.supervisor.close(), 120_000, 50);
+    const result = await finish(h, h.supervisor.close(), 120_000);
     expect(result.clean).toBe(true);
     expect(fs.existsSync(h.paths.sockets.supervisor)).toBe(false);
     expect(fs.existsSync(`${h.paths.sockets.supervisor}.lock`)).toBe(false);
@@ -533,7 +529,7 @@ describe('shutdown and coordinated restarts', () => {
     h.fake.setBehaviour('gateway', { autoReady: false });
     writeSettings(h.home, validSettings({ model: 'gpt-changed' }));
     watch.fire();
-    await pumpUntil(h.timers, () => h.fake.spawnCount('gateway') === 2, { realWork: h.realWork, stepMs: 50, maxMs: 20_000 });
+    await pumpUntil(h.timers, () => h.fake.spawnCount('gateway') === 2, { realWork: h.realWork, maxMs: 20_000 });
     expect(h.fake.spawnCount('runtime')).toBe(1);
     const spawnsAtClose = h.fake.spawnCount();
     await finish(h, h.supervisor.close());
@@ -564,11 +560,11 @@ describe('shutdown during the orphan reap', () => {
 
   it('shutdown during phase 1 of the reap spawns nothing, signals nothing and keeps the markers', async (context) => {
     const h = await startHarness(context, inPhase1());
-    await pumpUntil(h.timers, () => h.markers.calls.findHolders.length >= 2, { realWork: h.realWork, stepMs: 250, maxMs: 5000 });
+    await pumpUntil(h.timers, () => h.markers.calls.findHolders.length >= 2, { realWork: h.realWork, maxMs: 5000 });
     const closing = settledFlag(h.supervisor.close());
     await waitFor(() => h.health().phase === 'draining');
     expect(h.health().children.map((child) => child.state)).toEqual(['stopped', 'stopped']);
-    await pumpUntil(h.timers, () => closing.settled(), { realWork: h.realWork, stepMs: 250, maxMs: SHUTDOWN_RELEASE_BOUND_MS + 1000 });
+    await pumpUntil(h.timers, () => closing.settled(), { realWork: h.realWork, maxMs: SHUTDOWN_RELEASE_BOUND_MS + 1000 });
     expect(closing.value()).toEqual({ clean: true, killed: [], leaked: [] });
     expect(h.markers.calls.reapMarkerDirectory).toEqual([]);
     expect(h.markers.calls.reapMarkedProcesses).toEqual([]);
@@ -588,7 +584,7 @@ describe('shutdown during the orphan reap', () => {
     trigger = () => {
       closing = h.supervisor.close();
     };
-    await pumpUntil(h.timers, () => closing !== undefined, { realWork: h.realWork, stepMs: 250, maxMs: 5000 });
+    await pumpUntil(h.timers, () => closing !== undefined, { realWork: h.realWork, maxMs: 5000 });
     await finish(h, closing ?? Promise.reject(new Error('no close')));
     expect(h.markers.calls.reapMarkerDirectory).toEqual([]);
     expect(h.fake.spawnCount()).toBe(0);
@@ -610,7 +606,7 @@ describe('shutdown during the orphan reap', () => {
   it.for(['close', 'abort', 'post'] as const)('shutdown during phase 2 of the reap aborts it, then spawns nothing (%s)', async (trigger, context) => {
     const seen: { aborted?: boolean } = {};
     const h = await startHarness(context, inPhase2((options) => untilAborted(options, seen)));
-    await pumpUntil(h.timers, () => h.markers.calls.reapMarkerDirectory.length === 1, { realWork: h.realWork, stepMs: 250, maxMs: 5000 });
+    await pumpUntil(h.timers, () => h.markers.calls.reapMarkerDirectory.length === 1, { realWork: h.realWork, maxMs: 5000 });
     expect(seen.aborted).toBe(false);
     const signal = h.markers.calls.reapMarkerDirectory[0]?.signal;
     expect(signal).toBeDefined();
@@ -636,9 +632,9 @@ describe('shutdown during the orphan reap', () => {
       }),
       overrides: { orphanGraceMs: 250, orphanReapGraceMs: 200 },
     });
-    await pumpUntil(h.timers, () => h.markers.calls.reapMarkerDirectory.length === 1, { realWork: h.realWork, stepMs: 250, maxMs: 5000 });
+    await pumpUntil(h.timers, () => h.markers.calls.reapMarkerDirectory.length === 1, { realWork: h.realWork, maxMs: 5000 });
     const triggerAt = h.clock.now();
-    const result = await finish(h, h.supervisor.close(), 20_000, 25);
+    const result = await finish(h, h.supervisor.close(), 20_000);
     expect(h.clock.now() - triggerAt).toBeGreaterThanOrEqual(200);
     expect(h.clock.now() - triggerAt).toBeLessThanOrEqual(200 + SHUTDOWN_RELEASE_BOUND_MS);
     expect(result).toEqual({ clean: true, killed: [], leaked: [] });
@@ -648,64 +644,20 @@ describe('shutdown during the orphan reap', () => {
   });
 
   it('shutdown during phase 2 is prompt', async (context) => {
-    let holderExit: Promise<{ code: number | null; signal: NodeJS.Signals | null }> | undefined;
-    let killAt: number | undefined;
-    let reapCalledAt: number | undefined;
-    let h: Harness | undefined;
-    h = await startHarness(context, {
-      prepare: (_home, paths) => {
-        const marker = writeMarker(paths, 'runtime-0190a0a0-0000-7000-8000-00000000000a');
-        const fd = fs.openSync(marker, 'r');
-        try {
-          const child = spawnTracked(context, process.execPath, [HOLDER_FIXTURE], {
-            stdio: ['pipe', 'ignore', 'ignore', fd],
-            env: { ...process.env, P3_TRAP_TERM: '1' },
-          });
-          holderExit = new Promise((resolve) =>
-            child.once('exit', (code, signal) => {
-              killAt = h?.clock.now();
-              resolve({ code, signal });
-            }),
-          );
-        } finally {
-          fs.closeSync(fd);
-        }
-      },
-      markerPorts: {
-        reapMarkerDirectory: (options) => {
-          reapCalledAt = h?.clock.now();
-          return reapMarkerDirectory(options);
-        },
-        findHolders: (await import('@momonga/foundation')).findHolders,
-      },
-      overrides: {
-        orphanGraceMs: 250,
-        orphanReapGraceMs: 1000,
-        reapTiming: {
-          now: () => h?.clock.now() ?? 0,
-          sleep: (ms) => {
-            h?.timers.advance(ms);
-            return Promise.resolve();
-          },
-        },
-      },
+    const seen: { aborted?: boolean } = {};
+    const h = await startHarness(context, {
+      ...inPhase2((options) => untilAborted(options, seen)),
+      overrides: { orphanGraceMs: 250, orphanReapGraceMs: 1000 },
     });
-    const harness = h;
-    for (let step = 0; step < 200 && reapCalledAt === undefined; step += 1) {
-      await waitFor(() => reapCalledAt !== undefined || harness.timers.pending().length > 0);
-      if (reapCalledAt === undefined) harness.timers.advance(250);
-    }
-    expect(reapCalledAt).toBeDefined();
-    await waitFor(() => harness.clock.now() >= (reapCalledAt ?? 0) + 100, { description: '100 fake ms into phase 2' });
-    const triggerAt = harness.clock.now();
-    const closing = settledFlag(harness.supervisor.close());
-    await waitFor(() => closing.settled(), { description: 'close after phase 2 trigger' });
-    await expect(holderExit).resolves.toEqual({ code: null, signal: 'SIGKILL' });
-    expect((killAt ?? Number.POSITIVE_INFINITY) - triggerAt).toBeLessThanOrEqual(25 + 50);
-    expect(harness.clock.now() - triggerAt).toBeLessThan(500);
+    await pumpUntil(h.timers, () => h.markers.calls.reapMarkerDirectory.length === 1, { realWork: h.realWork, maxMs: 5000 });
+    await pump(h.timers, h.realWork, 100);
+    const triggerAt = h.clock.now();
+    const closing = settledFlag(h.supervisor.close());
+    await pumpUntil(h.timers, () => closing.settled(), { realWork: h.realWork, maxMs: 500, description: 'close after phase 2 trigger' });
+    expect(h.clock.now() - triggerAt).toBeLessThan(500);
     expect(closing.value()).toEqual({ clean: true, killed: [], leaked: [] });
-    expect(harness.log.withMsg('orphans.reaped')).toEqual([expect.objectContaining({ kept: 0 })]);
-    expect(harness.fake.spawnCount()).toBe(0);
+    expect(h.log.withMsg('orphans.reaped')).toEqual([expect.objectContaining({ reaped: 1, kept: 0 })]);
+    expect(h.fake.spawnCount()).toBe(0);
   });
 
   it('a shutdown trigger between ready and the first launch step spawns nothing', async (context) => {

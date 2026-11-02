@@ -16,6 +16,7 @@ import { startSupervisor } from '../../src/start-supervisor.ts';
 import type { SupervisorOptions, SupervisorProcess } from '../../src/start-supervisor.ts';
 
 export const T0 = Date.parse('2026-01-01T00:00:00.000Z');
+export const HARNESS_CLOSE_BOUND_MS = 2_000_000;
 export const TEST_VERSION = '9.9.9-test';
 
 export const turns = async (count = 20): Promise<void> => {
@@ -33,6 +34,7 @@ const ONE_SHOT_REQUEST_TYPE_LIST = [
   'PIPECONNECTWRAP',
   'WRITEWRAP',
   'SHUTDOWNWRAP',
+  'Immediate',
 ] as const;
 
 type OneShotRequestType = (typeof ONE_SHOT_REQUEST_TYPE_LIST)[number];
@@ -191,7 +193,17 @@ export const fakeLauncher = (role: ChildRole): { command: string; args: readonly
 
 const errno = (code: string): NodeJS.ErrnoException => Object.assign(new Error(`spawn ${code}`), { code });
 
-export const createFakeSpawn = (options: { clock?: { now(): number }; firstPid?: number; record?: string[]; behaviours?: Partial<Record<ChildRole, Partial<ChildBehaviour>>> } = {}): FakeSpawn => {
+export type FakeSpawnOptions = {
+  clock?: { now(): number };
+  firstPid?: number;
+  record?: string[];
+  behaviours?: Partial<Record<ChildRole, Partial<ChildBehaviour>>>;
+  realWork?: RealWorkScope;
+};
+
+export const createFakeSpawn = (options: FakeSpawnOptions = {}): FakeSpawn => {
+  const scoped = <T>(fn: () => T): T => (options.realWork === undefined ? fn() : options.realWork.run(fn));
+  const later = (fn: () => void): void => scoped(() => void setImmediate(fn));
   const children: FakeChild[] = [];
   const events: SpawnEvent[] = [];
   const order = options.record ?? [];
@@ -225,7 +237,7 @@ export const createFakeSpawn = (options: { clock?: { now(): number }; firstPid?:
         kill: () => undefined,
         killGroup: () => undefined,
       };
-      setImmediate(() => {
+      later(() => {
         for (const listener of errorListeners) listener(errno('ENOENT'));
       });
       return handle;
@@ -250,11 +262,11 @@ export const createFakeSpawn = (options: { clock?: { now(): number }; firstPid?:
       behaviour: { ...behaviours[role] },
       exited: undefined,
       ready: (fields = {}) => {
-        stdout.write(
+        scoped(() => stdout.write(
           `${JSON.stringify({ event: 'ready', service: fields.service ?? role, pid: fields.pid ?? pid, version: TEST_VERSION, socketPath: `/fake/run/${role}.sock`, startedAt: new Date(T0).toISOString() })}\n`,
-        );
+        ));
       },
-      exit: (code, signal = null) => {
+      exit: (code, signal = null) => scoped(() => {
         if (child.exited !== undefined) return;
         child.exited = { code, signal };
         events.push({ kind: 'exit', role, pid, at: now(), detail: `${code}:${signal}` });
@@ -264,13 +276,13 @@ export const createFakeSpawn = (options: { clock?: { now(): number }; firstPid?:
           stderr.end();
         }
         for (const listener of exitListeners) listener({ code, signal });
-      },
-      writeStdout: (line) => void stdout.write(`${line}\n`),
-      writeStderr: (line) => void stderr.write(`${line}\n`),
+      }),
+      writeStdout: (line) => scoped(() => void stdout.write(`${line}\n`)),
+      writeStderr: (line) => scoped(() => void stderr.write(`${line}\n`)),
     };
     const react = (reaction: TermReaction): void => {
       if (reaction === 'ignore') return;
-      setImmediate(() => child.exit(reaction === 'exit0' ? 0 : 1));
+      later(() => child.exit(reaction === 'exit0' ? 0 : 1));
     };
     const handle: ChildHandle = {
       pid,
@@ -285,25 +297,25 @@ export const createFakeSpawn = (options: { clock?: { now(): number }; firstPid?:
         order.push(`${signal}:${role}`);
         if (child.exited !== undefined) return;
         if (everyoneDies) {
-          setImmediate(() => child.exit(null, signal));
+          later(() => child.exit(null, signal));
           return;
         }
         if (signal === 'SIGTERM') react(child.behaviour.onTerm);
         else if (signal === 'SIGINT') react(child.behaviour.onInt);
-        else if (signal === 'SIGKILL' && child.behaviour.onKill === 'die') setImmediate(() => child.exit(null, 'SIGKILL'));
+        else if (signal === 'SIGKILL' && child.behaviour.onKill === 'die') later(() => child.exit(null, 'SIGKILL'));
       },
       killGroup: () => {
         child.groupKills += 1;
         events.push({ kind: 'killGroup', role, pid, at: now() });
         order.push(`SIGKILL-group:${role}`);
         if (child.exited !== undefined) return;
-        if (everyoneDies || child.behaviour.onKill === 'die') setImmediate(() => child.exit(null, 'SIGKILL'));
+        if (everyoneDies || child.behaviour.onKill === 'die') later(() => child.exit(null, 'SIGKILL'));
       },
     };
     children.push(child);
     events.push({ kind: 'spawn', role, pid, at: now() });
     order.push(`spawn:${role}`);
-    if (child.behaviour.autoReady) setImmediate(() => child.ready());
+    if (child.behaviour.autoReady) later(() => child.ready());
     return handle;
   };
 
@@ -327,7 +339,7 @@ export const createFakeSpawn = (options: { clock?: { now(): number }; firstPid?:
     failNext: (role, mode) => void failures[role].push(mode),
     dieOnAnySignal: () => {
       everyoneDies = true;
-      for (const child of children) if (child.exited === undefined && (child.signals.length > 0 || child.groupKills > 0)) setImmediate(() => child.exit(null, 'SIGKILL'));
+      for (const child of children) if (child.exited === undefined && (child.signals.length > 0 || child.groupKills > 0)) later(() => child.exit(null, 'SIGKILL'));
     },
   };
 };
@@ -399,36 +411,48 @@ export const recordingMarkerPorts = (overrides: MarkerPorts = {}, record?: strin
   return { ports, calls };
 };
 
-export const pump = async (timers: FakeTimers, realWork: RealWorkScope, ms: number, stepMs = 50): Promise<void> => {
-  let remaining = ms;
-  await turns();
-  while (remaining > 0) {
-    await waitForWithRealWork(realWork, () => !realWork.inFlight(), 'real work before advancing fake time');
-    const step = Math.min(stepMs, remaining);
-    timers.advance(step);
-    remaining -= step;
-    await turns();
+const macrotask = (): Promise<void> => new Promise<void>((resolve) => setImmediate(resolve));
+
+const settle = async (realWork: RealWorkScope, done: () => boolean, description: string): Promise<void> => {
+  await macrotask();
+  await waitForWithRealWork(realWork, () => done() || !realWork.inFlight(), `${description} or quiet real work`);
+};
+
+const advanceToDue = (timers: FakeTimers, due: number): void => {
+  timers.advance(Math.max(0, due - timers.now()));
+};
+
+export const pump = async (timers: FakeTimers, realWork: RealWorkScope, ms: number): Promise<void> => {
+  const target = timers.now() + ms;
+  for (;;) {
+    await settle(realWork, () => false, 'fake time to pump');
+    const due = timers.nextDueAt();
+    if (due === undefined || due > target) break;
+    advanceToDue(timers, due);
   }
+  advanceToDue(timers, target);
+  await settle(realWork, () => false, 'fake time pumped');
 };
 
 export const pumpUntil = async (
   timers: FakeTimers,
   predicate: () => boolean,
-  options: { realWork: RealWorkScope; stepMs?: number; maxMs?: number; description?: string },
+  options: { realWork: RealWorkScope; maxMs?: number; description?: string },
 ): Promise<void> => {
   const { realWork } = options;
-  const stepMs = options.stepMs ?? 50;
   const maxMs = options.maxMs ?? 600_000;
   const description = options.description ?? 'condition';
-  let elapsed = 0;
-  await turns();
-  while (!predicate()) {
-    if (elapsed >= maxMs) throw new Error(`pumpUntil: ${description} not met after ${maxMs} fake ms`);
-    await waitForWithRealWork(realWork, () => predicate() || !realWork.inFlight(), `${description} or quiet real work`);
+  const startedAt = timers.now();
+  for (;;) {
+    await settle(realWork, predicate, description);
     if (predicate()) return;
-    timers.advance(stepMs);
-    elapsed += stepMs;
-    await turns();
+    const due = timers.nextDueAt();
+    if (due === undefined) {
+      await waitForWithRealWork(realWork, () => predicate() || timers.nextDueAt() !== undefined || realWork.inFlight(), `${description} or a pending fake timer`);
+      continue;
+    }
+    if (due - startedAt > maxMs) throw new Error(`pumpUntil: ${description} not met within ${maxMs} fake ms`);
+    advanceToDue(timers, due);
   }
 };
 
@@ -493,14 +517,14 @@ export const startHarness = async (context: CleanupContext, options: HarnessOpti
   const clock = createFakeClock(T0);
   const timers = createFakeTimers(clock);
   const order: string[] = options.order ?? [];
-  const fake = createFakeSpawn({ clock, record: order, ...(options.behaviours === undefined ? {} : { behaviours: options.behaviours }) });
+  const fake = createFakeSpawn({ clock, realWork, record: order, ...(options.behaviours === undefined ? {} : { behaviours: options.behaviours }) });
   const log = captureLog(clock);
   const stdout = captureText((chunk) => {
     order.push('ready');
     options.onStdout?.(chunk);
   });
   const markers = recordingMarkerPorts(options.markerPorts ?? {}, order);
-  const supervisor = await realWork.run(() => startSupervisor({
+  const started = await realWork.run(() => startSupervisor({
     home,
     version: TEST_VERSION,
     launcher: options.overrides?.launcher ?? fakeLauncher,
@@ -515,15 +539,15 @@ export const startHarness = async (context: CleanupContext, options: HarnessOpti
     watchSettings: false,
     ...options.overrides,
   }));
+  const supervisor: SupervisorProcess = {
+    ...started,
+    close: () => realWork.run(() => started.close()),
+    abort: () => realWork.run(() => started.abort()),
+  };
   registerCleanup(context, async () => {
     fake.dieOnAnySignal();
     const closing = settledFlag(supervisor.abort());
-    let rounds = 0;
-    while (!closing.settled() && rounds < 2000) {
-      timers.advance(1000);
-      await turns(5);
-      rounds += 1;
-    }
+    await pumpUntil(timers, () => closing.settled(), { realWork, maxMs: HARNESS_CLOSE_BOUND_MS, description: 'harness abort settles' });
   });
   const health = (): SupervisorHealth => supervisor.health();
   const child = (role: ChildRole): SupervisorHealth['children'][number] => {
@@ -628,19 +652,3 @@ export const writeLockFile = (lockPath: string, pid: number, mtimeMs?: number): 
   if (mtimeMs !== undefined) fs.utimesSync(lockPath, mtimeMs / 1000, mtimeMs / 1000);
 };
 
-export const drive = async (
-  timers: FakeTimers,
-  done: () => boolean,
-  options: { realWork: RealWorkScope; stepMs?: number; maxSteps?: number; description?: string },
-): Promise<void> => {
-  const { realWork } = options;
-  const stepMs = options.stepMs ?? 50;
-  const maxSteps = options.maxSteps ?? 10_000;
-  for (let step = 0; step < maxSteps && !done(); step += 1) {
-    await waitForWithRealWork(realWork, () => done() || (timers.pending().length > 0 && !realWork.inFlight()), options.description ?? 'next fake timer');
-    if (done()) return;
-    timers.advance(stepMs);
-    await turns(5);
-  }
-  if (!done()) throw new Error(`drive: ${options.description ?? 'condition'} not met after ${maxSteps} steps`);
-};

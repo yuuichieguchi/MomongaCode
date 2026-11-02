@@ -7,7 +7,7 @@ export type SupervisorChildrenTracker = {
   record(health: SupervisorHealth): void;
 };
 
-const HEALTH_TIMEOUT_MS = 3000;
+export const DEFAULT_HEALTH_TIMEOUT_MS = 3000;
 
 const UNREACHABLE_CODES: ReadonlySet<unknown> = new Set(['ECONNREFUSED', 'ENOENT']);
 
@@ -26,8 +26,8 @@ const childPidsFromBody = (body: unknown): number[] => {
   });
 };
 
-const fetchChildPids = async (socketPath: string): Promise<number[]> => {
-  const client = createUdsClient(socketPath, { headersTimeoutMs: HEALTH_TIMEOUT_MS, bodyTimeoutMs: HEALTH_TIMEOUT_MS });
+const fetchChildPids = async (socketPath: string, healthTimeoutMs: number): Promise<number[]> => {
+  const client = createUdsClient(socketPath, { headersTimeoutMs: healthTimeoutMs, bodyTimeoutMs: healthTimeoutMs });
   try {
     const response = await client.request({ method: 'GET', path: '/v1/health' });
     if (response.status !== 200) throw new Error(`supervisor health answered ${response.status}`);
@@ -40,12 +40,12 @@ const fetchChildPids = async (socketPath: string): Promise<number[]> => {
   }
 };
 
-export const trackSupervisorChildren = (context: CleanupContext, socketPath: string): SupervisorChildrenTracker => {
+export const trackSupervisorChildren = (context: CleanupContext, socketPath: string, healthTimeoutMs = DEFAULT_HEALTH_TIMEOUT_MS): SupervisorChildrenTracker => {
   const pids = new Set<number>();
   registerCleanup(context, async () => {
     let fetchFailure: { error: unknown } | undefined;
     try {
-      for (const pid of await fetchChildPids(socketPath)) pids.add(pid);
+      for (const pid of await fetchChildPids(socketPath, healthTimeoutMs)) pids.add(pid);
     } catch (error) {
       fetchFailure = { error };
     }
