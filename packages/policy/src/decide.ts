@@ -3,7 +3,8 @@ import { isProtectedWrite, lexicallyWithin } from '@momonga/foundation';
 import type { FileRuleSet, ProtectedSet, UnresolvableReason } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import type { PermissionMode } from '@momonga/protocol';
-import { commandApproval } from './approval.ts';
+import { MAX_GLOB_MATCHES, commandApproval } from './approval.ts';
+import { expandBraces } from './brace-expansion.ts';
 import { commandCoveredByAllowRules } from './command-match.ts';
 import type { PolicyFilesystem } from './filesystem.ts';
 import { matchRule, matchStrength, ruleCoversSubject } from './match-rule.ts';
@@ -40,6 +41,7 @@ export type Decision = {
   rule?: PermissionRule;
 };
 
+const GLOB_METACHARACTER = /[*?[]/;
 const DISCARD_TARGETS: ReadonlySet<string> = new Set(['/dev/null', '/dev/stdout', '/dev/stderr']);
 const WRITE_TOOL: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write' };
 const READ_TOOL: PolicyTool = { name: 'Read', kind: 'read', sideEffect: 'read_only' };
@@ -188,6 +190,30 @@ const worktreeOf = (input: DecideInput): string => {
   return canonicalCwd;
 };
 
+const expandGlobTarget = (input: DecideInput, pattern: string, plan: PathPlan): void => {
+  const braced = expandBraces(pattern, MAX_GLOB_MATCHES);
+  if (braced === 'overflow') {
+    plan.unresolvable.push({ kind: 'dynamic' });
+    return;
+  }
+  for (const word of braced) {
+    const rooted = word === '~' || word.startsWith('~/') ? path.join(input.home, word.slice(1)) : word;
+    if (rooted.startsWith('~')) {
+      plan.unresolvable.push({ kind: 'other-user-home' });
+      continue;
+    }
+    if (!GLOB_METACHARACTER.test(rooted)) {
+      plan.paths.push(absoluteFrom(rooted, input.cwd));
+      continue;
+    }
+    const expansion = input.fs.expandGlob(rooted, input.cwd, MAX_GLOB_MATCHES);
+    if ('overflow' in expansion) plan.unresolvable.push({ kind: 'dynamic' });
+    else if ('unresolvable' in expansion) plan.unresolvable.push(expansion.unresolvable);
+    else if (expansion.matches.length === 0) plan.paths.push(absoluteFrom(rooted, input.cwd));
+    else plan.paths.push(...expansion.matches.map((match) => absoluteFrom(match, input.cwd)));
+  }
+};
+
 const resolveTargets = (input: DecideInput, targets: readonly Target[]): PathPlan => {
   const plan: PathPlan = { paths: [], removes: [], candidates: [], unresolvable: [], needsApproval: false };
   const resolve = (text: string): string | undefined => {
@@ -204,6 +230,8 @@ const resolveTargets = (input: DecideInput, targets: readonly Target[]): PathPla
       const resolved = target.below === undefined ? worktree : path.join(worktree, target.below);
       plan.paths.push(resolved);
       plan.removes.push(resolved);
+    } else if ('glob' in target) {
+      expandGlobTarget(input, target.glob, plan);
     } else if ('candidate' in target) {
       const resolved = resolve(target.candidate);
       if (resolved === undefined) continue;

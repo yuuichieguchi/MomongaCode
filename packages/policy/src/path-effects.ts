@@ -31,7 +31,7 @@ export const DARWIN_SED = '/usr/bin/sed';
 
 const operandTarget = (word: Word, access: 'read' | 'write'): Target => {
   if (word.staticValue !== null) return targetOfText(word.staticValue);
-  if (access === 'read' && word.glob) return { literal: globDirectory(word.value) };
+  if (access === 'read' && word.glob) return { glob: word.value };
   return DYNAMIC;
 };
 
