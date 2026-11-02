@@ -73,7 +73,7 @@ describe('the startup screen through a pty', () => {
     const screen = pty.screen();
     console.log(screen.slice(screen.indexOf('╭')));
     expect(screen).toContain('MomongaCode v0.0.0');
-    expect(screen).toContain('◉ ◉');
+    expect(screen).toContain('(•ᴥ•)');
     expect(screen).toContain('mode: default');
     await leave(pty);
   });

@@ -5,12 +5,17 @@ export type StartupConfig = { version: string; home: string; color: boolean };
 
 export type StartupModel = { alias: string; targets: readonly string[] | undefined };
 
+const FUR = '#a9744f';
+const MEMBRANE = '#7fb2c9';
+const FACE = '#f1dfc4';
+
 const ART: readonly (readonly { text: string; color?: string }[])[] = [
-  [{ text: '  ' }, { text: '▟▙', color: '#a9744f' }, { text: '     ' }, { text: '▟▙', color: '#a9744f' }],
-  [{ text: ' ' }, { text: '▐', color: '#a9744f' }, { text: '▓', color: '#c99a6e' }, { text: ' ◉ ◉ ', color: '#f1dfc4' }, { text: '▓', color: '#c99a6e' }, { text: '▌', color: '#a9744f' }],
-  [{ text: '◢', color: '#7fb2c9' }, { text: '▓▓▓', color: '#7fb2c9' }, { text: '╲▼╱', color: '#f1dfc4' }, { text: '▓▓▓', color: '#7fb2c9' }, { text: '◣', color: '#7fb2c9' }],
-  [{ text: '◥', color: '#7fb2c9' }, { text: '▓▓▓▓', color: '#7fb2c9' }, { text: '▒', color: '#f1dfc4' }, { text: '▓▓▓▓', color: '#7fb2c9' }, { text: '◤', color: '#7fb2c9' }],
-  [{ text: '   ' }, { text: '▀▘', color: '#a9744f' }, { text: ' ' }, { text: '▝▀', color: '#a9744f' }],
+  [{ text: '      ' }, { text: '∩   ∩', color: FUR }],
+  [{ text: '  ' }, { text: '╭───', color: MEMBRANE }, { text: '(', color: FUR }, { text: '•ᴥ•', color: FACE }, { text: ')', color: FUR }, { text: '───╮', color: MEMBRANE }],
+  [{ text: ' ' }, { text: '╭╯░░░░░░░░░░░╰╮', color: MEMBRANE }],
+  [{ text: ' ' }, { text: '╰╮░░░░░░░░░░░╭╯', color: MEMBRANE }],
+  [{ text: '  ' }, { text: '╰─╯ ╰─', color: MEMBRANE }, { text: '┬', color: FUR }, { text: '─╯ ╰─╯', color: MEMBRANE }],
+  [{ text: '        ' }, { text: '╰╮', color: FUR }],
 ];
 
 const lengthOfRow = (row: readonly { text: string }[]): number => row.reduce((total, part) => total + [...part.text].length, 0);

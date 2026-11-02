@@ -12,7 +12,7 @@ const COLORED = /\u001b\[(?:3[0-7]|9[0-7]|38;)/;
 
 const config = (overrides: Partial<StartupConfig> = {}): StartupConfig => ({ version: '1.2.3', home: '/Users/ada', color: true, ...overrides });
 
-const bannerRows = (output: string): string[] => output.split('\n').filter((row) => /[▟▐◢◥▀]/.test(row));
+const bannerRows = (output: string): string[] => output.split('\n').filter((row) => /[∩•░┬]/.test(row));
 
 const widthOf = (app: Awaited<ReturnType<typeof start>>['app'], columns: number): void => {
   Object.defineProperty(app.stdout, 'columns', { value: columns, configurable: true });
@@ -25,7 +25,7 @@ describe('startup screen', () => {
     expect(screen).toContain('MomongaCode v1.2.3');
     expect(screen).toContain('mode: default');
     expect(screen).toContain('~/projects/demo');
-    expect(screen).toContain('◉ ◉');
+    expect(screen).toContain('•ᴥ•');
     expect(screen).not.toContain('! ');
     app.unmount();
   });
@@ -50,7 +50,7 @@ describe('startup screen', () => {
     const { app } = await start({ session: { cwd: '/Users/ada/p' } }, { startup: config() });
     widthOf(app, needed - 1);
     const screen = await untilFrame(app, 'MomongaCode v1.2.3');
-    expect(screen).not.toContain('◉');
+    expect(screen).not.toContain('•ᴥ•');
     app.unmount();
   });
 
