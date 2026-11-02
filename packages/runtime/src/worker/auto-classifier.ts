@@ -35,7 +35,7 @@ const userPromptOf = (ctx: ClaimContext, cwd: string, request: AutoClassifierReq
 
 type Outcome = {
   outcome: 'allow' | 'ask';
-  event: Omit<Extract<RunEventPayload, { type: 'tool.permission.classified' }>, 'type' | 'callId' | 'outcome'>;
+  event: Omit<Extract<RunEventPayload, { type: 'tool.permission.classified' }>, 'type' | 'callId' | 'subjectDigest' | 'outcome'>;
   spend?: Extract<RunEventPayload, { type: 'usage.charged' }>;
 };
 
@@ -90,6 +90,8 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
 
   return {
     classify: async (request) => {
+      const recorded = ctx.journal.state.pendingCalls[request.callId]?.classification;
+      if (recorded?.subjectDigest === request.subjectDigest) return recorded.outcome;
       let result: Outcome;
       if (alias === undefined) {
         result = asked({ failure: 'no classifier alias is configured: set autoMode.classifier in the user settings' });
@@ -103,7 +105,7 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
       }
       ctx.journal.append([
         ...(result.spend === undefined ? [] : [result.spend]),
-        { type: 'tool.permission.classified', callId: request.callId, outcome: result.outcome, ...result.event },
+        { type: 'tool.permission.classified', callId: request.callId, subjectDigest: request.subjectDigest, outcome: result.outcome, ...result.event },
       ]);
       return result.outcome;
     },

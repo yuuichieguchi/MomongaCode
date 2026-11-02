@@ -187,6 +187,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
   'tool.permission.classified': {
     properties: {
       callId: string,
+      subjectDigest: string,
       alias: string,
       outcome: enumOf(['allow', 'ask']),
       verdict: enumOf(['safe', 'unsafe']),
@@ -194,7 +195,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
       rationale: string,
       failure: string,
     },
-    required: ['callId', 'outcome'],
+    required: ['callId', 'subjectDigest', 'outcome'],
   },
   'hook.completed': {
     properties: {

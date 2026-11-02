@@ -101,6 +101,7 @@ export type RunEventPayload =
   | {
       type: 'tool.permission.classified';
       callId: string;
+      subjectDigest: string;
       alias?: string;
       outcome: 'allow' | 'ask';
       verdict?: 'safe' | 'unsafe';
@@ -204,6 +205,7 @@ export type RunState = {
       options?: PermissionOption[];
       subjectDigest?: string;
       suggestedRule?: string;
+      classification?: { subjectDigest: string; outcome: 'allow' | 'ask' };
       resolution?: { optionId: string; kind: PermissionOption['kind']; subjectDigest: string; suggestedRule?: string; rulePersisted?: true };
       input?: { inputId: string; server: string; requests: ElicitationRequestView[] };
       inputResolution?: { inputId: string; responses: Record<string, ElicitationAnswerRecord> };

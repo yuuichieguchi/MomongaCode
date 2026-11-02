@@ -276,6 +276,8 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
         toolCallCounts: { ...state.toolCallCounts, [key]: (state.toolCallCounts[key] ?? 0) + 1 },
       };
     }
+    case 'tool.permission.classified':
+      return withCall(state, event.callId, event.type, (call) => ({ ...call, classification: { subjectDigest: event.subjectDigest, outcome: event.outcome } }));
     case 'tool.permission.requested':
       return withCall(state, event.callId, event.type, ({ resolution: _stale, ...call }) => ({ ...call, status: 'awaiting_approval', approvalId: event.approvalId, options: event.options, subjectDigest: event.subjectDigest, ...(event.suggestedRule === undefined ? {} : { suggestedRule: event.suggestedRule }) }));
     case 'tool.permission.resolved': {
@@ -354,7 +356,6 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
     case 'tool.waiting':
       return withCall(state, event.callId, event.type, (call) => ({ ...call, awaiting: event.awaits }));
     case 'job.finished':
-    case 'tool.permission.classified':
     case 'hook.completed':
     case 'tool.updated':
     case 'plan.updated':

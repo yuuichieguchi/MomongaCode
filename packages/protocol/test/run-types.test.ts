@@ -207,6 +207,7 @@ describe('run event payloads', () => {
     expectTypeOf<Payload<'tool.permission.classified'>>().toEqualTypeOf<{
       type: 'tool.permission.classified';
       callId: string;
+      subjectDigest: string;
       alias?: string;
       outcome: 'allow' | 'ask';
       verdict?: 'safe' | 'unsafe';
@@ -320,6 +321,7 @@ describe('RunState', () => {
           subjectDigest?: string;
           options?: PermissionOption[];
           suggestedRule?: string;
+          classification?: { subjectDigest: string; outcome: 'allow' | 'ask' };
           resolution?: {
             optionId: string;
             kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';

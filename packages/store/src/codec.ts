@@ -221,6 +221,10 @@ const isPendingCall = (value: unknown): boolean =>
   PENDING_STATUSES.some((status) => status === value['status']) &&
   (value['subjectDigest'] === undefined || typeof value['subjectDigest'] === 'string') &&
   (value['suggestedRule'] === undefined || typeof value['suggestedRule'] === 'string') &&
+  (value['classification'] === undefined ||
+    (isRecord(value['classification']) &&
+      typeof value['classification']['subjectDigest'] === 'string' &&
+      (value['classification']['outcome'] === 'allow' || value['classification']['outcome'] === 'ask'))) &&
   (value['options'] === undefined ||
     (Array.isArray(value['options']) &&
       value['options'].every((option) => isRecord(option) && typeof option['optionId'] === 'string' && isPermissionKind(option['kind'])))) &&
