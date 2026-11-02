@@ -16,6 +16,7 @@ export interface ConnectionTransport extends Transport {
   readonly pgid: number | undefined;
   diagnostics(): { stderrTail: string; exit: StdioTransportExit | null };
   terminateSession(): Promise<void>;
+  toolCallsDelivered(): number;
 }
 
 export type RemoteTransportOptions = {
@@ -31,6 +32,7 @@ class RemoteTransport implements ConnectionTransport {
   onerror?: ((error: Error) => void) | undefined;
   private handler: Transport['onmessage'];
   private readonly taskHandles = createTaskHandleRewriter();
+  private delivered = 0;
   private readonly inner: StreamableHTTPClientTransport;
 
   constructor(inner: StreamableHTTPClientTransport) {
@@ -74,7 +76,8 @@ class RemoteTransport implements ConnectionTransport {
 
   async send(message: JSONRPCMessage, options?: TransportSendOptions): Promise<void> {
     this.taskHandles.outbound(message);
-    return this.inner.send(message, options as Parameters<StreamableHTTPClientTransport['send']>[1]);
+    await this.inner.send(message, options as Parameters<StreamableHTTPClientTransport['send']>[1]);
+    if ('method' in message && message.method === 'tools/call') this.delivered += 1;
   }
 
   async close(): Promise<void> {
@@ -84,6 +87,10 @@ class RemoteTransport implements ConnectionTransport {
 
   terminateSession(): Promise<void> {
     return this.inner.terminateSession();
+  }
+
+  toolCallsDelivered(): number {
+    return this.delivered;
   }
 }
 

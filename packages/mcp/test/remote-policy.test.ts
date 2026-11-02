@@ -230,7 +230,7 @@ describe('redirect handling of the guarded fetch', () => {
   const redirectTo = (location: string, status = 302): Response => new Response(null, { status, headers: { location } });
 
   const scripted = (...responses: Response[]) => {
-    const calls: { url: string; redirect: RequestRedirect | undefined }[] = [];
+    const calls: { url: string; redirect: RequestInit['redirect'] }[] = [];
     const send = (url: URL, init: RequestInit | undefined): Promise<Response> => {
       calls.push({ url: url.href, redirect: init?.redirect });
       const next = responses.shift();

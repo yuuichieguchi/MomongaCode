@@ -1,7 +1,9 @@
+import { SdkError, SdkErrorCode } from '@modelcontextprotocol/client';
 import type { CallToolResult } from '@modelcontextprotocol/client';
 import { McpInputProtocolError, parseInputRequests } from './input-requests.ts';
 import type { ElicitationAnswer, ElicitationRequest } from './input-requests.ts';
 import { McpInputSuspension } from './suspension.ts';
+import type { McpTimers } from './timers.ts';
 
 export const SERVER_REQUEST_KEY = 'elicitation';
 
@@ -29,17 +31,18 @@ type Flight = {
   asked: Deferred<ElicitationRequest>;
   answer: Deferred<ElicitationAnswer> | undefined;
   detach: () => void;
+  deadline: unknown;
 };
 
 export type ParkedInputs = {
-  run(signal: AbortSignal | undefined, start: (signal: AbortSignal) => Promise<CallToolResult>): Promise<CallToolResult>;
-  resume(parkId: string, answers: Record<string, ElicitationAnswer>, signal: AbortSignal | undefined): Promise<CallToolResult>;
+  run(signal: AbortSignal | undefined, timeoutMs: number, start: (signal: AbortSignal, endBudget: () => void) => Promise<CallToolResult>): Promise<CallToolResult>;
+  resume(parkId: string, answers: Record<string, ElicitationAnswer>, timeoutMs: number, signal: AbortSignal | undefined): Promise<CallToolResult>;
   release(parkId: string): void;
   serverRequest(params: unknown): Promise<ElicitationAnswer>;
   closeAll(): void;
 };
 
-export const createParkedInputs = (epoch: number): ParkedInputs => {
+export const createParkedInputs = (epoch: number, timers: McpTimers): ParkedInputs => {
   const active = new Set<Flight>();
   const parked = new Map<string, Flight>();
   let counter = 0;
@@ -55,7 +58,18 @@ export const createParkedInputs = (epoch: number): ParkedInputs => {
     flight.detach = () => signal.removeEventListener('abort', forward);
   };
 
+  const disarm = (flight: Flight): void => {
+    if (flight.deadline !== undefined) timers.clearTimeout(flight.deadline);
+    flight.deadline = undefined;
+  };
+
+  const arm = (flight: Flight, timeoutMs: number): void => {
+    disarm(flight);
+    flight.deadline = timers.setTimeout(() => flight.abort.abort(new SdkError(SdkErrorCode.RequestTimeout, 'Request timed out', { timeout: timeoutMs })), timeoutMs);
+  };
+
   const finish = (flight: Flight): void => {
+    disarm(flight);
     active.delete(flight);
     parked.delete(flight.id);
     flight.detach();
@@ -73,6 +87,7 @@ export const createParkedInputs = (epoch: number): ParkedInputs => {
       finish(flight);
       return outcome.result;
     }
+    disarm(flight);
     flight.detach();
     active.delete(flight);
     parked.set(flight.id, flight);
@@ -87,17 +102,18 @@ export const createParkedInputs = (epoch: number): ParkedInputs => {
   };
 
   return {
-    run: (signal, start) => {
+    run: (signal, timeoutMs, start) => {
       counter += 1;
       const abort = new AbortController();
-      const flight: Flight = { id: `${epoch}-${counter}`, abort, call: Promise.resolve({ content: [] }), asked: deferred(), answer: undefined, detach: () => undefined };
+      const flight: Flight = { id: `${epoch}-${counter}`, abort, call: Promise.resolve({ content: [] }), asked: deferred(), answer: undefined, detach: () => undefined, deadline: undefined };
       attach(flight, signal);
       active.add(flight);
-      flight.call = start(abort.signal);
+      arm(flight, timeoutMs);
+      flight.call = start(abort.signal, () => disarm(flight));
       return settle(flight);
     },
 
-    resume: (parkId, answers, signal) => {
+    resume: (parkId, answers, timeoutMs, signal) => {
       const flight = parked.get(parkId);
       if (flight === undefined) return Promise.reject(new McpParkedInputLostError(parkId));
       const answer = answers[SERVER_REQUEST_KEY];
@@ -108,6 +124,7 @@ export const createParkedInputs = (epoch: number): ParkedInputs => {
       flight.answer = undefined;
       attach(flight, signal);
       active.add(flight);
+      arm(flight, timeoutMs);
       waiting.resolve(answer);
       return settle(flight);
     },
