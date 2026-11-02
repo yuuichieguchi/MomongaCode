@@ -222,6 +222,34 @@ ALTER TABLE approvals ADD COLUMN requests_json TEXT;
 ALTER TABLE approvals ADD COLUMN responses_json TEXT;
 `;
 
+const SUBAGENT_RUNS_AND_BACKGROUND_JOBS = `
+ALTER TABLE runs ADD COLUMN parent_run_id TEXT REFERENCES runs (id);
+ALTER TABLE runs ADD COLUMN parent_call_id TEXT;
+CREATE UNIQUE INDEX runs_by_parent_call ON runs (parent_run_id, parent_call_id) WHERE parent_run_id IS NOT NULL;
+CREATE INDEX runs_by_parent ON runs (parent_run_id) WHERE parent_run_id IS NOT NULL;
+
+CREATE TABLE jobs (
+  id TEXT PRIMARY KEY,
+  idem_key TEXT NOT NULL UNIQUE,
+  session_id TEXT NOT NULL REFERENCES sessions (id),
+  run_id TEXT NOT NULL REFERENCES runs (id),
+  call_id TEXT NOT NULL,
+  command TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('running', 'exited', 'killed', 'unknown')),
+  pgid INTEGER,
+  exit_code INTEGER,
+  signal TEXT,
+  output_handle TEXT,
+  output_start INTEGER NOT NULL,
+  output_total INTEGER NOT NULL,
+  read_offset INTEGER NOT NULL,
+  started_at INTEGER NOT NULL,
+  ended_at INTEGER
+);
+CREATE INDEX jobs_by_session ON jobs (session_id, started_at);
+CREATE INDEX jobs_by_status ON jobs (status);
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -234,4 +262,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 5, name: 'record whether a run inherits the history of its predecessor', sql: RUN_HISTORY_MODE },
   { version: 6, name: 'store long-term memories with their scope, source and use times', sql: LONG_TERM_MEMORIES },
   { version: 7, name: 'let an approval carry an MCP elicitation and its answers', sql: ELICITATION_APPROVALS },
+  { version: 8, name: 'link subagent runs to the run and tool call that spawned them, and record background jobs', sql: SUBAGENT_RUNS_AND_BACKGROUND_JOBS },
 ];

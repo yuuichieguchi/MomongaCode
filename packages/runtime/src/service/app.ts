@@ -37,7 +37,7 @@ import { registerInputRoutes } from './input-routes.ts';
 import type { McpAdminPort } from './input-routes.ts';
 import { registerTrustRoutes } from './trust.ts';
 import type { ServiceTimers } from './timers.ts';
-import { isTerminalStatus, toRunView, toSessionView, toSkillView } from './views.ts';
+import { isTerminalStatus, toJobView, toRunView, toSessionView, toSkillView } from './views.ts';
 
 export type RunLimitDefaults = { maxSteps: number; maxTotalTokens: number; approvalTtlMs: number; loopThreshold: number };
 
@@ -206,6 +206,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
 
   const patchSession: Handler = async (context) => {
     const session = requireSession(context.req.param('id') ?? '');
+    requireRootSession(session);
     const body = validateBody<PatchSessionBody>('PatchSessionRequest', await readJson(context.req.raw, PATCH_MEDIA_TYPES, deps.maxBodyBytes));
     checkModeAllowed(body.permissionMode, session.bypassAllowed);
     const result = store.setPermissionMode(session.id, body.permissionMode);
@@ -237,6 +238,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
 
   const createRun: Handler = async (context) => {
     const session = requireSession(context.req.param('id') ?? '');
+    requireRootSession(session);
     const idempotencyKey = parseIdempotencyKey(context.req.header('idempotency-key') ?? null);
     const parsed = await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes);
     const body = validateBody<CreateRunBody>('CreateRunRequest', parsed);
@@ -270,6 +272,22 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       location: `/v1/runs/${result.run.id}`,
       ...(result.kind === 'existing' ? { 'idempotent-replayed': 'true' } : {}),
     });
+  };
+
+  const listChildRuns: Handler = (context) => {
+    const run = requireRun(context.req.param('id') ?? '');
+    return json({ runs: store.listChildRuns(run.id).map(toRunView) });
+  };
+
+  const listJobs: Handler = (context) => {
+    const session = requireSession(context.req.param('id') ?? '');
+    return json({ jobs: store.jobs.listForSession(session.id).map(toJobView) });
+  };
+
+  const requireRootSession = (session: Session): void => {
+    if (store.rootSessionId(session.id) !== session.id) {
+      throw conflict('child_session', `session ${session.id} belongs to a subagent run and takes no direct requests`);
+    }
   };
 
   const getRun: Handler = (context) => json({ run: toRunView(requireRun(context.req.param('id') ?? '')) });
@@ -373,8 +391,10 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   route('/v1/sessions/:id', { GET: getSession, PATCH: patchSession });
   route('/v1/sessions/:id/runs', { GET: listRuns, POST: createRun });
   route('/v1/sessions/:id/skills', { GET: listSkills });
+  route('/v1/sessions/:id/jobs', { GET: listJobs });
   route('/v1/sessions/:id/events', { GET: sessionEvents });
   route('/v1/runs/:id', { GET: getRun });
+  route('/v1/runs/:id/children', { GET: listChildRuns });
   route('/v1/runs/:id/cancel', { POST: cancelRun });
   route('/v1/runs/:id/trace', { GET: runTrace });
   route('/v1/runs/:id/approvals', { GET: listRunApprovals });

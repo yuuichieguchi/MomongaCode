@@ -25,6 +25,8 @@ export type { ProbeKeyword, ProbeReport } from './probe.ts';
 export { RUN_API_SCHEMAS, toPublicRunEvent } from './run-api.ts';
 export { MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES } from './run-api.ts';
 export type {
+  JobView,
+  JobsResponse,
   JsonSchema,
   McpAuthState,
   McpAuthorizationView,
@@ -43,12 +45,13 @@ export type { MemoriesResponse, MemoryResponse, MemoryScope, MemorySource, Memor
 export { escapeXmlAttribute, escapeXmlText } from './xml.ts';
 export { SKILL_CONTENT_CLOSE_TAG, skillContentOpenTag } from './skill-content.ts';
 export { AUTO_MODE_UNAVAILABLE, isUnavailableMode } from './auto-mode.ts';
-export { APPROVAL_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS } from './run-types.ts';
+export { APPROVAL_STATUSES, JOB_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS } from './run-types.ts';
 export type {
   ActivatedSkillRecord,
   ApprovalStatus,
   ElicitationAnswerRecord,
   ElicitationRequestView,
+  JobStatus,
   ModelResponse,
   PendingCallStatus,
   PermissionMode,
@@ -62,6 +65,7 @@ export type {
   SessionEventPayload,
   StopReason,
   TerminalStatus,
+  ToolAwait,
   ToolKind,
 } from './run-types.ts';
 export { ERROR_TYPES, OPEN_RESPONSES_STREAM_EVENT_TYPES, OPEN_RESPONSES_VERSION, TERMINAL_STREAM_EVENT_TYPES } from './open-responses.ts';

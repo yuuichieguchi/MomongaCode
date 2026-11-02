@@ -61,6 +61,8 @@ import { reapTimingOf } from './reap-timing.ts';
 import type { SandboxKind } from './sandbox-kind.ts';
 import { createSettingsComposition } from './settings-port.ts';
 import { createMemoryPort } from './memory-port.ts';
+import { createAgentsPort } from './agents-port.ts';
+import { createChildRuns } from './child-runs.ts';
 import { createSkillsPort } from './skills-port.ts';
 import { runTeardown } from './teardown.ts';
 import type { TeardownStep } from './teardown.ts';
@@ -391,9 +393,17 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         settings: composition.settings,
       });
       const memories = createMemoryPort({ store, settings: composition.settings });
-      return { composition, runtime, tracker, skills, memories };
+      const agents = createAgentsPort({
+        home: canonicalHome,
+        fileSystem: createNodeSkillFileSystem(),
+        settings: composition.settings,
+        runs: createChildRuns({ store, modelAliases: async () => (await gatewayClient.models()).map((model) => model.id) }),
+      });
+      return { composition, runtime, tracker, skills, memories, agents };
     });
-    const { composition: settingsComposition, runtime: toolRuntime, tracker, skills: skillsPort, memories: memoriesPort } = ports;
+    const { composition: settingsComposition, runtime: toolRuntime, tracker, skills: skillsPort, memories: memoriesPort, agents: agentsPort } = ports;
+    await step('background-jobs', () => toolRuntime.jobs.reconcileOrphans());
+    cleanups.push({ name: 'background-jobs', run: () => toolRuntime.jobs.stopAll() });
     cleanups.push({
       name: 'mcp-pools',
       run: async () => {
@@ -442,6 +452,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           settings: settingsComposition.settings,
           skills: skillsPort,
           memories: memoriesPort,
+          agents: agentsPort,
           tools: toolRuntime.port,
           tracer,
           clock,

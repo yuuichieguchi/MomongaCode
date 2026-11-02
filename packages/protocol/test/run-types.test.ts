@@ -15,6 +15,7 @@ import type {
   RunStatus,
   StopReason,
   TerminalStatus,
+  ToolAwait,
   ToolKind,
 } from '@momonga/protocol';
 
@@ -75,6 +76,8 @@ describe('run event payloads', () => {
       | 'tool.call'
       | 'tool.permission.requested'
       | 'tool.permission.resolved'
+      | 'tool.waiting'
+      | 'job.finished'
       | 'tool.permission.cancelled'
       | 'tool.elicitation.requested'
       | 'tool.elicitation.resolved'
@@ -297,6 +300,7 @@ describe('RunState', () => {
           arguments: unknown;
           status: 'requested' | 'awaiting_approval' | 'awaiting_input' | 'started' | 'completed' | 'reconciled';
           idemKey?: string;
+          awaiting?: ToolAwait;
           approvalId?: string;
           subjectDigest?: string;
           options?: PermissionOption[];

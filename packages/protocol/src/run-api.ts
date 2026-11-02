@@ -1,4 +1,4 @@
-import { APPROVAL_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TOOL_KINDS } from './run-types.ts';
+import { APPROVAL_STATUSES, JOB_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TOOL_KINDS } from './run-types.ts';
 import { MEMORY_SCOPES } from './memory.ts';
 import type { RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent } from './run-types.ts';
 
@@ -73,6 +73,29 @@ const runLimits = closed(
 const location = closed({ path: string, line: nonNegativeInteger }, ['path']);
 
 const SKILL_SCOPES = ['project', 'user'] as const;
+
+const toolAwait: JsonSchema = {
+  oneOf: [
+    closed({ kind: constant('run'), runId: string, sessionId: string, agent: string }, ['kind', 'runId', 'sessionId', 'agent']),
+    closed({ kind: constant('job'), jobId: string }, ['kind', 'jobId']),
+  ],
+};
+
+const jobView = closed(
+  {
+    id: string,
+    sessionId: string,
+    runId: string,
+    callId: string,
+    command: string,
+    status: enumOf(JOB_STATUSES),
+    exitCode: integer,
+    signal: string,
+    startedAt: integer,
+    endedAt: integer,
+  },
+  ['id', 'sessionId', 'runId', 'callId', 'command', 'status', 'startedAt'],
+);
 
 const skillView = closed(
   { name: string, description: string, scope: enumOf(SKILL_SCOPES), location: string },
@@ -175,6 +198,14 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
   'tool.reconciled': {
     properties: { callId: string, outcome: enumOf(['already_applied', 'not_applied', 'unknown']), output: string },
     required: ['callId', 'outcome', 'output'],
+  },
+  'tool.waiting': {
+    properties: { callId: string, awaits: toolAwait, wakeAt: integer },
+    required: ['callId', 'awaits'],
+  },
+  'job.finished': {
+    properties: { jobId: string, status: enumOf(JOB_STATUSES.filter((status) => status !== 'running')), exitCode: integer, signal: string },
+    required: ['jobId', 'status'],
   },
   'plan.updated': {
     properties: {
@@ -333,6 +364,21 @@ export type McpServerView = {
   authorization?: McpAuthorizationView;
 };
 
+export type JobView = {
+  id: string;
+  sessionId: string;
+  runId: string;
+  callId: string;
+  command: string;
+  status: (typeof JOB_STATUSES)[number];
+  exitCode?: number;
+  signal?: string;
+  startedAt: number;
+  endedAt?: number;
+};
+
+export type JobsResponse = { jobs: JobView[] };
+
 export type RunHealth = {
   status: 'ok';
   version: string;
@@ -342,6 +388,46 @@ export type RunHealth = {
   state: 'running' | 'draining';
   sandbox: 'seatbelt' | 'bubblewrap' | 'none';
 };
+
+const runView = closed(
+  {
+    id: string,
+    sessionId: string,
+    ordinal: integer,
+    status: enumOf(RUN_STATUSES),
+    stopReason: enumOf(STOP_REASONS),
+    error: closed({ code: string, message: string }, ['code', 'message']),
+    usage,
+    step: nonNegativeInteger,
+    limits: runLimits,
+    createdAt: integer,
+    deadlineAt: integer,
+    cancelRequested: boolean,
+    lastSeq: nonNegativeInteger,
+    previousRunId: nullable(string),
+    history: historyMode,
+    parentRunId: nullable(string),
+    parentCallId: nullable(string),
+    agent: string,
+  },
+  [
+    'id',
+    'sessionId',
+    'ordinal',
+    'status',
+    'usage',
+    'step',
+    'limits',
+    'createdAt',
+    'deadlineAt',
+    'cancelRequested',
+    'lastSeq',
+    'previousRunId',
+    'history',
+    'parentRunId',
+    'parentCallId',
+  ],
+);
 
 export const RUN_API_SCHEMAS = {
   CreateSessionRequest: root(
@@ -455,42 +541,7 @@ export const RUN_API_SCHEMAS = {
   TrustView: root(trustView),
   TrustResponse: root(closed({ trust: trustView }, ['trust'])),
   PutTrustRequest: root(closed({ path: { type: 'string', minLength: 1 }, decision: enumOf(['trusted', 'untrusted']) }, ['path', 'decision'])),
-  RunView: root(
-    closed(
-      {
-        id: string,
-        sessionId: string,
-        ordinal: integer,
-        status: enumOf(RUN_STATUSES),
-        stopReason: enumOf(STOP_REASONS),
-        error: closed({ code: string, message: string }, ['code', 'message']),
-        usage,
-        step: nonNegativeInteger,
-        limits: runLimits,
-        createdAt: integer,
-        deadlineAt: integer,
-        cancelRequested: boolean,
-        lastSeq: nonNegativeInteger,
-        previousRunId: nullable(string),
-        history: historyMode,
-      },
-      [
-        'id',
-        'sessionId',
-        'ordinal',
-        'status',
-        'usage',
-        'step',
-        'limits',
-        'createdAt',
-        'deadlineAt',
-        'cancelRequested',
-        'lastSeq',
-        'previousRunId',
-        'history',
-      ],
-    ),
-  ),
+  RunView: root(runView),
   ApprovalView: root(
     closed(
       {
@@ -517,6 +568,9 @@ export const RUN_API_SCHEMAS = {
       ['id', 'runId', 'callId', 'status', 'options', 'expiresAt', 'createdAt', 'toolCall'],
     ),
   ),
+  JobView: root(jobView),
+  JobsResponse: root(closed({ jobs: { type: 'array', items: jobView } }, ['jobs'])),
+  ChildRunsResponse: root(closed({ runs: { type: 'array', items: runView } }, ['runs'])),
   SkillsResponse: root(closed({ skills: { type: 'array', items: skillView }, warnings: { type: 'array', items: string } }, ['skills', 'warnings'])),
   RunTrace: root(
     closed(

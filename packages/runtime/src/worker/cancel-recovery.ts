@@ -1,6 +1,6 @@
 import { isFatalStoreError } from '@momonga/store';
 import type { Run, Session } from '@momonga/store';
-import type { AbandonTarget, ToolCall } from '@momonga/tools';
+import type { AbandonTarget, ResultOutcome, ToolCall } from '@momonga/tools';
 import type { ClaimControl } from './claim-control.ts';
 import { describeError, LeaseLostError, ShutdownError } from './errors.ts';
 import type { Journal } from './journal.ts';
@@ -22,8 +22,17 @@ const ABANDONED_OUTPUT =
 type StartedCall = ToolCall & { idemKey?: string };
 
 export const reconcileStartedCalls = async ({ options, run, session, journal, control }: CancelRecoveryInput): Promise<void> => {
-  const started: StartedCall[] = Object.entries(journal.state.pendingCalls)
-    .filter(([, call]) => call.status === 'started')
+  const startedEntries = Object.entries(journal.state.pendingCalls).filter(([, call]) => call.status === 'started');
+  for (const [callId, call] of startedEntries) {
+    if (call.awaiting?.kind !== 'run') continue;
+    const output = `Subagent ${call.awaiting.agent} was cancelled.`;
+    const outcome: ResultOutcome = { callId, kind: 'result', result: { status: 'failed', output }, ...(call.idemKey === undefined ? {} : { idemKey: call.idemKey }) };
+    const lookup = call.idemKey === undefined ? undefined : options.store.idempotency.get(call.idemKey);
+    if (call.idemKey !== undefined && lookup !== undefined && lookup.s !== 'COMPLETED') options.store.idempotency.complete(call.idemKey, outcome);
+    journal.append(outcomePayloads(outcome));
+  }
+  const started: StartedCall[] = startedEntries
+    .filter(([, call]) => call.awaiting?.kind !== 'run')
     .map(([callId, call]) => ({
       callId,
       name: call.name,

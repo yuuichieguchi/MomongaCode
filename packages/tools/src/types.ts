@@ -1,8 +1,8 @@
 import type { Clock } from '@momonga/foundation';
 import type { PermissionSubject, SideEffect } from '@momonga/policy';
-import type { ElicitationRequestView, ToolKind } from '@momonga/protocol';
+import type { ElicitationRequestView, ToolAwait, ToolKind } from '@momonga/protocol';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
-import type { BlobPort, ToolIdempotencyRecord } from './ports.ts';
+import type { BackgroundJobs, BlobPort, ToolIdempotencyRecord } from './ports.ts';
 
 export type ToolContent =
   | { type: 'content'; content: { type: 'text'; text: string } }
@@ -24,6 +24,8 @@ export type ToolResult = {
   skill?: SkillActivation;
   authorizationRequired?: { server: string };
 };
+
+export type ToolPending = { status: 'pending'; awaits: ToolAwait; wakeAt?: number };
 
 export type ToolSessionState = {
   cwd: string;
@@ -63,6 +65,7 @@ export type ReconcileContext = SubjectContext & {
   deadlineAt: number;
   blobs: BlobPort;
   clock: Clock;
+  jobs?: BackgroundJobs;
   session: ToolSessionState;
   attachProcess(process: { pgid: number; startedAt: number }): void;
   update(content: ToolContent[]): void;
@@ -80,13 +83,14 @@ export type ToolDefinition<Input> = {
   sideEffect: SideEffect;
   inputSchema: Record<string, unknown>;
   pagesOutput?: true;
+  requiresJobs?: true;
   schemaMode?: 'strict' | 'lenient';
   timeoutMs: number | ((input: Input) => number);
   title(input: Input): string;
   locations?(input: Input): { path: string; line?: number }[];
   subject(input: Input, ctx: SubjectContext): PermissionSubject;
   prepare?(input: Input, ctx: ToolContext): Promise<Record<string, unknown>>;
-  execute(input: Input, ctx: ToolContext, prepared: Record<string, unknown> | undefined): Promise<ToolResult>;
+  execute(input: Input, ctx: ToolContext, prepared: Record<string, unknown> | undefined): Promise<ToolResult | ToolPending>;
   reconcile?(input: Input, record: ToolIdempotencyRecord, ctx: ReconcileContext): Promise<ReconcileResult>;
 };
 

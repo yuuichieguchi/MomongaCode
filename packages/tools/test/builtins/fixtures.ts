@@ -6,7 +6,7 @@ import { killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createBuiltinTools } from '@momonga/tools';
-import type { CallOutcome, ExecutionBatchInput, NeedsApprovalOutcome, ResultOutcome, ToolSet } from '@momonga/tools';
+import type { BackgroundJobs, CallOutcome, ExecutionBatchInput, NeedsApprovalOutcome, ResultOutcome, ToolSet } from '@momonga/tools';
 import type { PermissionRule } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
 import { call, makeHarness, toolSetOf } from '../harness.ts';
@@ -78,8 +78,11 @@ export type RunExtra = Partial<Omit<ExecutionBatchInput, 'recoverOnly'>> & { mod
 
 export type Builtins = Awaited<ReturnType<typeof makeBuiltins>>;
 
-export const makeBuiltins = async (options: { maxInlineOutputChars?: number; realSandbox?: boolean } = {}) => {
-  const harness = makeHarness(options.maxInlineOutputChars === undefined ? {} : { maxInlineOutputChars: options.maxInlineOutputChars });
+export const makeBuiltins = async (options: { maxInlineOutputChars?: number; realSandbox?: boolean; jobs?: BackgroundJobs; sandbox?: Sandbox } = {}) => {
+  const harness = makeHarness({
+    ...(options.maxInlineOutputChars === undefined ? {} : { maxInlineOutputChars: options.maxInlineOutputChars }),
+    ...(options.jobs === undefined ? {} : { executor: { jobs: options.jobs } }),
+  });
   const { layout } = harness;
   const sessionsTmpRoot = sessionsTmpRootOf(layout);
   const tmpDir = sessionTmpDirOf(layout);
@@ -87,7 +90,7 @@ export const makeBuiltins = async (options: { maxInlineOutputChars?: number; rea
   fs.mkdirSync(sandboxTmpRoot);
   const toolSet: ToolSet = await toolSetOf(...createBuiltinTools());
   const sandboxPolicy: SandboxPolicy = policyFor({ layout, tmpDir });
-  const sandbox: Sandbox | undefined = options.realSandbox === true ? createSeatbeltSandbox({ tmpRoot: sandboxTmpRoot, killGraceMs: 300 }) : undefined;
+  const sandbox: Sandbox | undefined = options.sandbox ?? (options.realSandbox === true ? createSeatbeltSandbox({ tmpRoot: sandboxTmpRoot, killGraceMs: 300 }) : undefined);
   let counter = 0;
   const nextCallId = (): string => {
     counter += 1;

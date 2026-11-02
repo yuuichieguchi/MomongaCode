@@ -1,0 +1,54 @@
+import type { AnyTool } from '@momonga/tools';
+
+export type AgentScope = 'project' | 'user';
+
+export type AgentDefinition = {
+  name: string;
+  description: string;
+  prompt: string;
+  tools?: readonly string[];
+  model?: string;
+  scope: AgentScope;
+  location: string;
+};
+
+export type AgentPin = {
+  name: string;
+  description: string;
+  prompt: string;
+  tools?: string[];
+  model?: string;
+};
+
+export type ChildRunOutcome =
+  | { state: 'running'; runId: string; sessionId: string }
+  | {
+      state: 'finished';
+      runId: string;
+      sessionId: string;
+      status: 'COMPLETED' | 'STOPPED' | 'FAILED' | 'CANCELLED';
+      stopReason?: string;
+      error?: { code: string; message: string };
+      text: string;
+    };
+
+export type ChildRunRequest = { parentRunId: string; parentCallId: string; agent: AgentDefinition; prompt: string };
+
+export type ChildRuns = { spawn(request: ChildRunRequest): Promise<ChildRunOutcome> };
+
+export type AgentSet = {
+  agents: readonly AgentDefinition[];
+  warnings: readonly string[];
+  tool(runs: ChildRuns): AnyTool | undefined;
+};
+
+export type AgentLoadRequest = { projectRoot: string; trusted: boolean };
+
+export type AgentLoader = { load(request: AgentLoadRequest): Promise<AgentSet> };
+
+export class ChildRunError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'ChildRunError';
+  }
+}

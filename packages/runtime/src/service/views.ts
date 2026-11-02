@@ -1,9 +1,28 @@
+import { readAgentPin } from '@momonga/agents';
 import { TERMINAL_STATUSES } from '@momonga/protocol';
-import type { RunStatus, SkillView } from '@momonga/protocol';
+import type { JobView, RunStatus, SkillView } from '@momonga/protocol';
 import type { Skill } from '@momonga/skills';
-import type { Run, RuntimeStore, Session } from '@momonga/store';
+import type { Job, Run, RuntimeStore, Session } from '@momonga/store';
+
+const agentNameOf = (run: Run): { agent?: string } => {
+  const pin = readAgentPin(run.pins);
+  return pin === undefined ? {} : { agent: pin.name };
+};
 
 export const isTerminalStatus = (status: RunStatus): boolean => (TERMINAL_STATUSES as readonly RunStatus[]).includes(status);
+
+export const toJobView = (job: Job): JobView => ({
+  id: job.id,
+  sessionId: job.sessionId,
+  runId: job.runId,
+  callId: job.callId,
+  command: job.command,
+  status: job.status,
+  ...(job.exitCode === undefined ? {} : { exitCode: job.exitCode }),
+  ...(job.signal === undefined ? {} : { signal: job.signal }),
+  startedAt: job.startedAt,
+  ...(job.endedAt === undefined ? {} : { endedAt: job.endedAt }),
+});
 
 export const toRunView = (run: Run) => ({
   id: run.id,
@@ -21,6 +40,9 @@ export const toRunView = (run: Run) => ({
   lastSeq: run.lastSeq,
   previousRunId: run.previousRunId,
   history: run.history,
+  parentRunId: run.parentRunId,
+  parentCallId: run.parentCallId,
+  ...agentNameOf(run),
 });
 
 export const toSessionView = (store: RuntimeStore, session: Session) => {

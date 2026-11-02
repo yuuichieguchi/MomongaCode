@@ -14,8 +14,12 @@ export type {
   ToolCall,
   ToolExecutor,
   ToolExecutorOptions,
+  WaitingOutcome,
 } from './executor.ts';
 export type {
+  BackgroundJobRead,
+  BackgroundJobStart,
+  BackgroundJobs,
   BlobPort,
   IdempotencyPort,
   ToolIdempotencyBegin,
@@ -24,7 +28,7 @@ export type {
 } from './ports.ts';
 export { createToolRegistry } from './registry.ts';
 export { MINIMUM_INLINE_OUTPUT_CHARS } from './truncate.ts';
-export type { ToolListOptions, ToolRegistry, ToolSet, ToolSource, ToolSourceListing } from './registry.ts';
+export type { SnapshotOptions, ToolListOptions, ToolRegistry, ToolSet, ToolSource, ToolSourceListing } from './registry.ts';
 export { defineTool, ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
 export type {
   AnyTool,
@@ -36,6 +40,7 @@ export type {
   ToolContent,
   ToolContext,
   ToolDefinition,
+  ToolPending,
   ToolResult,
   ToolResume,
   ToolSessionState,

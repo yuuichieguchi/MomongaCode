@@ -4,17 +4,17 @@ import { canonicalJson, canonicalPath, comparableContains, comparablePath, compu
 import type { Clock, FileRuleProvenance, PathResolution, ReapTiming, SignalSender } from '@momonga/foundation';
 import { absoluteFrom, decide, fileRuleSpecsOf, suggestAllowRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject, PolicyFilesystem } from '@momonga/policy';
-import type { ElicitationRequestView, PermissionMode, ToolKind } from '@momonga/protocol';
+import type { ElicitationRequestView, PermissionMode, ToolAwait, ToolKind } from '@momonga/protocol';
 import { SandboxPolicyError, canonicalParentForm } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createReadAccessMatcher } from './read-access.ts';
 import type { ReadFamilyTool } from './read-access.ts';
 import type { ReadAccessMatcher } from './read-access.ts';
-import type { BlobPort, IdempotencyPort, ToolIdempotencyRecord } from './ports.ts';
+import type { BackgroundJobs, BlobPort, IdempotencyPort, ToolIdempotencyRecord } from './ports.ts';
 import type { ToolSet } from './registry.ts';
 import { MINIMUM_INLINE_OUTPUT_CHARS, truncateOutput } from './truncate.ts';
 import { ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
-import type { AnyTool, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolResult, ToolResume, ToolSessionState } from './types.ts';
+import type { AnyTool, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState } from './types.ts';
 import { validateToolInput } from './validate.ts';
 
 const DEFAULT_IDEMPOTENCY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -103,7 +103,9 @@ export type NeedsInputOutcome = {
 
 export type DeferredOutcome = { callId: string; kind: 'deferred' };
 
-export type CallOutcome = ResultOutcome | NeedsApprovalOutcome | NeedsInputOutcome | DeferredOutcome;
+export type WaitingOutcome = { callId: string; kind: 'waiting'; awaits: ToolAwait; wakeAt?: number };
+
+export type CallOutcome = ResultOutcome | NeedsApprovalOutcome | NeedsInputOutcome | DeferredOutcome | WaitingOutcome;
 
 export type ToolExecutorOptions = {
   idempotency: IdempotencyPort;
@@ -113,6 +115,7 @@ export type ToolExecutorOptions = {
   maxInlineOutputChars?: number;
   readOnlyRetry?: { attempts: number; baseMs: number; maxMs: number };
   maxParallel?: number;
+  jobs?: BackgroundJobs;
   processMarkerDir: string;
   fs: PolicyFilesystem;
   reconcileCapMs?: number;
@@ -482,6 +485,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     closeContext(): void;
     checkpoint(state: Record<string, unknown> | undefined): void;
     complete(result: ResultOutcome['result'], reconciled?: ReconcileResult['outcome']): CallOutcome;
+    waiting(pending: ToolPending): CallOutcome;
     release(): void;
   };
 
@@ -521,6 +525,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       deadlineAt,
       blobs,
       clock,
+      ...(options.jobs === undefined ? {} : { jobs: options.jobs }),
       session: batch.session,
       attachProcess: (processInfo) => {
         if (!leaseLost() && !contextClosed) idempotency.attachProcess(key, processInfo);
@@ -551,6 +556,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         idempotency.complete(key, outcome);
         recordCompleted = true;
         return outcome;
+      },
+      waiting: (pending) => {
+        if (leaseLost()) return deferred;
+        return { callId, kind: 'waiting', awaits: pending.awaits, ...(pending.wakeAt === undefined ? {} : { wakeAt: pending.wakeAt }) };
       },
       release: () => {
         clearTimeout(timer);
@@ -650,7 +659,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         const requestedMs = typeof tool.timeoutMs === 'function' ? tool.timeoutMs(input) : tool.timeoutMs;
         const timeoutMs = Math.max(0, Math.min(requestedMs, batch.deadlineAt - clock.now()));
 
-        const runTool = async (): Promise<ToolResult | ToolInputRequired> => {
+        const runTool = async (): Promise<ToolResult | ToolPending | ToolInputRequired> => {
           for (let attempt = 0; ; attempt += 1) {
             try {
               return await tool.execute(input, executionCtx, prepared);
@@ -681,6 +690,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
             scope.checkpoint(result.checkpoint);
             return leaseHeld() ? { callId, kind: 'needs_input', server: result.server, requests: result.requests } : { callId, kind: 'deferred' };
           }
+          if (result.status === 'pending') return scope.waiting(result);
           return scope.complete(finalizeResult(result, tool, outputLimit), reconciled);
         }
         await settleWithin(running, ABORT_SETTLE_LIMIT_MS);

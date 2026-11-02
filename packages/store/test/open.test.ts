@@ -7,7 +7,7 @@ import { START_MS, enqueue, harness, makeStoreDir, newSession, openStoreAt, rawD
 
 const fileMode = (file: string) => fs.statSync(file).mode & 0o777;
 
-const EXPECTED_TABLES = ['approvals', 'blobs', 'events', 'idempotency', 'memories', 'runs', 'schema_migrations', 'sessions', 'snapshots', 'trust'];
+const EXPECTED_TABLES = ['approvals', 'blobs', 'events', 'idempotency', 'jobs', 'memories', 'runs', 'schema_migrations', 'sessions', 'snapshots', 'trust'];
 
 const RUN_COLUMNS = [
   'version',

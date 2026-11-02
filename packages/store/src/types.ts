@@ -2,6 +2,7 @@ import type { Clock } from '@momonga/foundation';
 import type {
   ElicitationAnswerRecord,
   ElicitationRequestView,
+  JobStatus,
   PermissionMode,
   PermissionOption,
   RunEvent,
@@ -63,6 +64,8 @@ export type Run = {
   usage: { inputTokens: number; outputTokens: number; totalTokens: number };
   previousRunId: string | null;
   history: HistoryMode;
+  parentRunId: string | null;
+  parentCallId: string | null;
   error?: RunError;
 };
 
@@ -265,7 +268,7 @@ export type RuntimeStore = {
   heartbeat(claim: Claim): HeartbeatResult;
   append(claim: Claim, events: readonly RunEventPayload[]): AppendResult;
   transition(claim: Claim, from: readonly RunStatus[], to: RunStatus, patch?: StatusPatch): RunMutationResult;
-  release(claim: Claim, to: RunStatus, availableAt?: number, options?: { refundAttempt?: boolean }): RunMutationResult;
+  release(claim: Claim, to: RunStatus, availableAt?: number, options?: { refundAttempt?: boolean; awaits?: WaitTargets }): RunMutationResult;
   releaseLease(claim: Claim, options: { availableAt: number; refundAttempt?: boolean }): RunMutationResult;
   requestCancel(runId: string): RequestCancelResult;
   setPermissionMode(sessionId: string, mode: PermissionMode): SetPermissionModeResult;
@@ -304,6 +307,11 @@ export type RuntimeStore = {
   writeSnapshot(claim: Claim, seq: number, state: RunState): SnapshotResult;
   inheritContext(claim: Claim, options: { mode: PermissionMode }): InheritContextResult;
   dataVersion(): number;
+  createChildRun(input: ChildRunInput): CreateChildRunResult;
+  listChildRuns(runId: string): Run[];
+  treeTokens(runId: string): number;
+  rootSessionId(sessionId: string): string;
+  jobs: JobStore;
   idempotency: IdempotencyStore;
   approvals: ApprovalStore;
   blobs: BlobStore;
@@ -321,3 +329,55 @@ export type RuntimeStoreOptions = {
   maxTotalAttempts: number;
   onCommit?: (touched: { runId?: string; sessionId: string }[]) => void;
 };
+
+export type Job = {
+  id: string;
+  idemKey: string;
+  sessionId: string;
+  runId: string;
+  callId: string;
+  command: string;
+  status: JobStatus;
+  pgid?: number;
+  exitCode?: number;
+  signal?: string;
+  outputHandle?: string;
+  outputStart: number;
+  outputTotal: number;
+  readOffset: number;
+  startedAt: number;
+  endedAt?: number;
+};
+
+export type StartJobInput = { id: string; idemKey: string; sessionId: string; runId: string; callId: string; command: string };
+
+export type JobOutputRef = { handle: string; start: number; total: number };
+
+export type JobResult = { status: Exclude<JobStatus, 'running'>; exitCode?: number; signal?: string; output?: JobOutputRef };
+
+export type FinishJobResult = { kind: 'finished'; job: Job } | { kind: 'already_finished'; job: Job } | NotFound;
+
+export type JobStore = {
+  start(input: StartJobInput): { job: Job; created: boolean };
+  attachProcess(id: string, pgid: number): void;
+  get(id: string): Job | undefined;
+  byIdemKey(idemKey: string): Job | undefined;
+  listRunning(): Job[];
+  listForSession(sessionId: string): Job[];
+  finish(id: string, result: JobResult): FinishJobResult;
+  advanceRead(id: string, offset: number): void;
+};
+
+export type ChildRunInput = {
+  parentRunId: string;
+  parentCallId: string;
+  input: string;
+  pins: Record<string, unknown>;
+  modelAlias?: string;
+};
+
+export type CreateChildRunResult =
+  | { kind: 'created' | 'existing'; run: Run; session: Session }
+  | { kind: 'parent_not_active'; status: RunStatus | 'missing' };
+
+export type WaitTargets = { runIds: readonly string[]; jobIds: readonly string[] };

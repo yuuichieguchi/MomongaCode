@@ -287,7 +287,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect(error).not.toBeInstanceOf(AggregateError);
     expect((error as Error).message).toBe(`${temp.paths.sockets.runtime} exists and is not a socket`);
     expect(stepsLogged(logger).at(-1)).toBe('service');
-    expect(stepsLogged(logger, 'teardown.step')).toEqual(['cancel-upstream', 'mcp-pools', 'gateway-client', 'telemetry', 'trace-store', 'store', 'lock']);
+    expect(stepsLogged(logger, 'teardown.step')).toEqual(['cancel-upstream', 'mcp-pools', 'background-jobs', 'gateway-client', 'telemetry', 'trace-store', 'store', 'lock']);
     expect(control.events).toEqual(['trace-store.close', 'store.close']);
     expect(isLockFree(temp.paths.locks.runtime)).toBe(true);
     expect(stdout.chunks).toEqual([]);
@@ -326,7 +326,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect(await failureOf(started)).toBe(fatal);
     expect(logger.entries).toContainEqual(expect.objectContaining({ level: 'error', msg: 'runtime.fatal', fields: expect.objectContaining({ err: fatal }) }));
     expect(stepsLogged(logger)).toEqual([...STARTUP_STEPS]);
-    expect(stepsLogged(logger, 'teardown.step')).toEqual(['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'gateway-client', 'telemetry', 'trace-store', 'store', 'lock']);
+    expect(stepsLogged(logger, 'teardown.step')).toEqual(['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'gateway-client', 'telemetry', 'trace-store', 'store', 'lock']);
     expect(control.events.at(-1)).toBe('store.close');
     expect(isLockFree(temp.paths.locks.runtime)).toBe(true);
     expect(stdout.chunks).toEqual([]);
@@ -413,7 +413,7 @@ describe('startup cancellation through signal (system timers)', () => {
     ['lock', ['lock']],
     ['store', ['store', 'lock']],
     ['telemetry', ['telemetry', 'trace-store', 'store', 'lock']],
-    ['workers', ['workers', 'service', 'cancel-upstream', 'mcp-pools', 'gateway-client', 'telemetry', 'trace-store', 'store', 'lock']],
+    ['workers', ['workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'gateway-client', 'telemetry', 'trace-store', 'store', 'lock']],
   ] as const)(
     'a signal aborted by the logger hook during step %s unwinds the registered cleanups and throws the reason unchanged, with no ready line and the lock free',
     async (step, teardown) => {
@@ -434,7 +434,7 @@ describe('startup cancellation through signal (system timers)', () => {
     60_000,
   );
 
-  it('a signal aborted during step 15 is honoured before the ready line', PROCESS_TIMEOUT, async () => {
+  it('a signal aborted during step 16 is honoured before the ready line', PROCESS_TIMEOUT, async () => {
     const temp = sandboxNoneHome();
     const controller = new AbortController();
     const reason = new Error('cancelled at ready');
@@ -445,7 +445,7 @@ describe('startup cancellation through signal (system timers)', () => {
     const error = await failureOf(startRuntimeProcess({ home: temp.home, version: RUNTIME_VERSION, logger, stdout, signal: controller.signal }));
     expect(error).toBe(reason);
     expect(stepsLogged(logger)).toEqual([...STARTUP_STEPS]);
-    expect(stepsLogged(logger, 'teardown.step')).toEqual(['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'gateway-client', 'telemetry', 'trace-store', 'store', 'lock']);
+    expect(stepsLogged(logger, 'teardown.step')).toEqual(['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'gateway-client', 'telemetry', 'trace-store', 'store', 'lock']);
     expect(stdout.chunks).toEqual([]);
     expect(entriesNamed(logger, 'runtime ready')).toEqual([]);
     expect(isLockFree(temp.paths.locks.runtime)).toBe(true);

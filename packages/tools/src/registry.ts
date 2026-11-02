@@ -11,6 +11,8 @@ export type ToolSourceListing = { tools: AnyTool[]; notices: string[]; authoriza
 
 export type ToolListOptions = { signal?: AbortSignal };
 
+export type SnapshotOptions = ToolListOptions & { only?: readonly string[] };
+
 export type ToolSource = {
   id: string;
   list(options?: ToolListOptions): Promise<AnyTool[]>;
@@ -23,13 +25,13 @@ export type ToolSet = {
   readonly notices: readonly string[];
   readonly authorizationRequired: readonly string[];
   get(name: string): AnyTool | undefined;
-  forModel(options: { mode: PermissionMode; rules: PermissionRule[] }): FunctionTool[];
+  forModel(options: { mode: PermissionMode; rules: PermissionRule[]; jobs?: boolean }): FunctionTool[];
 };
 
 export type ToolRegistry = {
   register(tool: AnyTool): void;
   addSource(source: ToolSource): void;
-  snapshot(options?: ToolListOptions): Promise<ToolSet>;
+  snapshot(options?: SnapshotOptions): Promise<ToolSet>;
 };
 
 const assertRegistrable = (tool: AnyTool): void => {
@@ -51,10 +53,10 @@ const buildToolSet = (tools: readonly AnyTool[], notices: readonly string[], aut
     notices: frozenNotices,
     authorizationRequired: Object.freeze([...authorizationRequired]),
     get: (name) => byName.get(name),
-    forModel: ({ mode, rules }) => {
+    forModel: ({ mode, rules, jobs = false }) => {
       const visible = new Set(modelVisibleTools([...frozenTools], { mode, rules }).map((tool) => tool.name));
       return frozenTools
-        .filter((tool) => visible.has(tool.name))
+        .filter((tool) => visible.has(tool.name) && (jobs || tool.requiresJobs !== true))
         .map((tool) => ({ type: 'function', name: tool.name, description: tool.description, parameters: tool.inputSchema, strict: false }));
     },
   };
@@ -112,7 +114,16 @@ export const createToolRegistry = (): ToolRegistry => {
           tools.push(tool);
         }
       }
-      return buildToolSet(tools, notices, authorizationRequired);
+      const only = options?.only;
+      if (only === undefined) return buildToolSet(tools, notices, authorizationRequired);
+      const allowed = new Set(only);
+      const unresolved = only.filter((name) => !tools.some((tool) => tool.name === name));
+      if (unresolved.length > 0) notices.push(`Tools ${unresolved.map((name) => JSON.stringify(name)).join(', ')} are not available and were left out`);
+      return buildToolSet(
+        tools.filter((tool) => allowed.has(tool.name)),
+        notices,
+        authorizationRequired,
+      );
     },
   };
 };

@@ -80,6 +80,8 @@ export const decodeRun = (row: Row): Run => {
     usage: decodeUsage(identity, reader.json('usage_json')),
     previousRunId: reader.nullableString('previous_run_id'),
     history: expectOneOf('runs', identity, 'history_mode', HISTORY_MODES, reader.string('history_mode')),
+    parentRunId: reader.nullableString('parent_run_id'),
+    parentCallId: reader.nullableString('parent_call_id'),
   };
   if (stopReason !== null) run.stopReason = expectOneOf('runs', identity, 'stop_reason', STOP_REASONS, stopReason);
   if (errorJson !== null) run.error = decodeRunError(identity, errorJson);
@@ -107,6 +109,8 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   'tool.updated': true,
   'tool.completed': true,
   'tool.reconciled': true,
+  'tool.waiting': true,
+  'job.finished': true,
   'plan.updated': true,
   'usage.updated': true,
   'context.compacted': true,
@@ -192,8 +196,14 @@ const isSummary = (value: unknown): boolean =>
   typeof value['summary'] === 'string' &&
   Number.isInteger(value['replacedThroughSeq']);
 
+const isAwait = (value: unknown): boolean =>
+  isRecord(value) &&
+  ((value['kind'] === 'run' && typeof value['runId'] === 'string' && typeof value['sessionId'] === 'string' && typeof value['agent'] === 'string') ||
+    (value['kind'] === 'job' && typeof value['jobId'] === 'string'));
+
 const isPendingCall = (value: unknown): boolean =>
   isRecord(value) &&
+  (value['awaiting'] === undefined || isAwait(value['awaiting'])) &&
   typeof value['name'] === 'string' &&
   typeof value['providerCallId'] === 'string' &&
   PENDING_STATUSES.some((status) => status === value['status']) &&

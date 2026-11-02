@@ -51,7 +51,7 @@ export const contextInputOf = (ctx: ClaimContext, wrapUp: WrapUpReason | undefin
     model: ctx.alias,
     sources: {
       systemPrompt: ctx.systemPrompt,
-      tools: ctx.functionTools,
+      tools: ctx.functionTools(),
       task: { type: 'message', role: 'user', content: [{ type: 'input_text', text: taskTextOf(ctx) }] },
       taskSeq: state.taskSeq,
       ...(ctx.skills.catalog === undefined ? {} : { skillCatalog: ctx.skills.catalog }),

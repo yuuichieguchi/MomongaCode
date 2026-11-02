@@ -29,6 +29,8 @@ export const runView = (overrides: Partial<RunView> = {}): RunView => ({
   cancelRequested: false,
   lastSeq: 1,
   previousRunId: null,
+  parentRunId: null,
+  parentCallId: null,
   history: 'inherit',
   ...overrides,
 });

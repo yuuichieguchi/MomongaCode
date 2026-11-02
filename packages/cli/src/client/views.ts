@@ -30,6 +30,8 @@ export type RunView = {
   readonly cancelRequested: boolean;
   readonly lastSeq: number;
   readonly previousRunId: string | null;
+  readonly parentRunId: string | null;
+  readonly parentCallId: string | null;
   readonly history: 'inherit' | 'fresh';
 };
 

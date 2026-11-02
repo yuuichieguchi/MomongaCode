@@ -92,7 +92,7 @@ describe('acceptance (a) support', () => {
   it('startStack forwards routes, exposes routeHits and applies the per-case target', { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const route = { match: (body: unknown) => JSON.stringify(body).includes(ROUTED_TASK), reply: textReply('routed') };
-    const stack = await startStack({ home, sandbox: 'none', target: acceptanceTarget('native'), routes: [route], script: [textReply('scripted')] });
+    const stack = await startStack({ home, sandbox: 'none', target: acceptanceTarget('native'), settings: { permissions: { deny: ['MemorySave', 'MemorySearch'] } }, routes: [route], script: [textReply('scripted')] });
     const count = createGatewayCountClient(home.paths.sockets.gateway);
     const capabilities = await count.capabilities();
     expect({ contextWindow: capabilities.contextWindow, maxOutputTokens: capabilities.maxOutputTokens, toolCalling: capabilities.toolCalling }).toEqual({
@@ -112,7 +112,7 @@ describe('acceptance (a) support', () => {
   });
 
   const FIDELITY: readonly { label: string; spec: PlanCaseSpec; shape: FillerShape; fillers: number }[] = [
-    { label: 'native, full tools', spec: { name: 'fidelity-native', toolCalling: 'native', deny: [], grid: [], probeFillers: 0 }, shape: { tool: 'Read', lineChars: 90 }, fillers: 6 },
+    { label: 'native, full tools', spec: { name: 'fidelity-native', toolCalling: 'native', deny: ['MemorySave', 'MemorySearch'], grid: [], probeFillers: 0 }, shape: { tool: 'Read', lineChars: 90 }, fillers: 6 },
     {
       label: 'native, Read, Grep and ReadOutput',
       spec: { name: 'fidelity-lean', toolCalling: 'native', deny: ['Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob'], grid: [], probeFillers: 0 },
