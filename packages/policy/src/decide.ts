@@ -45,7 +45,9 @@ export type Decision = {
 const WRITE_TOOL: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write' };
 const READ_TOOL: PolicyTool = { name: 'Read', kind: 'read', sideEffect: 'read_only' };
 
-const describeRule = (rule: PermissionRule): string => `${rule.text} (${rule.origin}: ${rule.source})`;
+const HARMLESS_WRITE_TARGETS: ReadonlySet<string> = new Set(['/dev/null']);
+
+const describeRule =(rule: PermissionRule): string => `${rule.text} (${rule.origin}: ${rule.source})`;
 
 const basisOf = (kind: DecisionKind, basis: ApprovalBasis): { basis?: ApprovalBasis } => (kind === 'allow' ? { basis } : {});
 
@@ -245,10 +247,8 @@ export const decide = (input: DecideInput): Decision => {
   if (input.subject.kind !== 'command' || primary.kind === 'deny') return primary;
 
   const plan = planPathAccess(input, input.subject.command);
-  const secondary = [
-    ...decidePathAccess(input, plan.writes, WRITE_TOOL, 'write'),
-    ...decidePathAccess(input, plan.reads, READ_TOOL, 'read'),
-  ];
+  const writeDecisions = decidePathAccess(input, plan.writes, WRITE_TOOL, 'write');
+  const secondary = [...writeDecisions, ...decidePathAccess(input, plan.reads, READ_TOOL, 'read')];
   const denied = secondary.find((decision) => decision.kind === 'deny');
   if (denied !== undefined) return denied;
   const humanOnly = secondary.find((decision) => decision.kind === 'ask' && decision.humanOnly === true);
@@ -256,5 +256,14 @@ export const decide = (input: DecideInput): Decision => {
   if (primary.kind === 'ask' && primary.source !== 'mode') return primary;
   if (humanOnly !== undefined) return humanOnly;
   if (primary.kind === 'ask') return primary;
-  return secondary.find((decision) => decision.kind === 'ask') ?? primary;
+  return secondary.find((decision) => decision.kind === 'ask') ?? withWriteBasis(primary, plan.writes, writeDecisions);
+};
+
+const writesBeyondDevices = (writes: PathPlan): boolean => writes.paths.some((target) => !HARMLESS_WRITE_TARGETS.has(target));
+
+const withWriteBasis = (primary: Decision, writes: PathPlan, writeDecisions: readonly Decision[]): Decision => {
+  if (primary.basis !== 'read_only' || !writesBeyondDevices(writes)) return primary;
+  const writing = writeDecisions.find((decision) => decision.kind === 'allow');
+  if (writing?.basis === undefined) throw new Error('a command with write targets was allowed without an allowing write decision');
+  return { ...primary, basis: writing.basis };
 };

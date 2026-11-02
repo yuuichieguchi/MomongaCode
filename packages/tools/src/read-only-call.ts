@@ -47,6 +47,14 @@ const CLEARED_GIT_VARIABLES: ReadonlySet<string> = new Set([
   'GIT_PROXY_COMMAND',
   'GIT_EXEC_PATH',
   'GIT_MAN_VIEWER',
+  'GIT_ALLOW_PROTOCOL',
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_INDEX_FILE',
+  'GIT_COMMON_DIR',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_ATTR_SOURCE',
 ]);
 
 const INHERITED_CONFIG_VARIABLE = /^GIT_CONFIG_(COUNT|KEY_[0-9]+|VALUE_[0-9]+)$/;
@@ -54,6 +62,7 @@ const INHERITED_CONFIG_VARIABLE = /^GIT_CONFIG_(COUNT|KEY_[0-9]+|VALUE_[0-9]+)$/
 const readOnlyEnvironment = (env: Readonly<Record<string, string>>): Record<string, string> => ({
   ...Object.fromEntries(Object.entries(env).filter(([name]) => !CLEARED_GIT_VARIABLES.has(name) && !INHERITED_CONFIG_VARIABLE.test(name))),
   GIT_OPTIONAL_LOCKS: '0',
+  GIT_NO_LAZY_FETCH: '1',
   GIT_TERMINAL_PROMPT: '0',
   GIT_CONFIG_COUNT: String(READ_ONLY_GIT_CONFIG.length),
   ...Object.fromEntries(READ_ONLY_GIT_CONFIG.flatMap(([key, value], index) => [[`GIT_CONFIG_KEY_${index}`, key], [`GIT_CONFIG_VALUE_${index}`, value]])),

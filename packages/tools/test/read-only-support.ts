@@ -73,6 +73,14 @@ export const CLEARED_GIT_VARIABLES: readonly string[] = [
   'GIT_PROXY_COMMAND',
   'GIT_EXEC_PATH',
   'GIT_MAN_VIEWER',
+  'GIT_ALLOW_PROTOCOL',
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_INDEX_FILE',
+  'GIT_COMMON_DIR',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_ATTR_SOURCE',
 ];
 
 export const configuredKeys = (env: Readonly<Record<string, string | undefined>>): string[] => {

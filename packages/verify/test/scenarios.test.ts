@@ -39,9 +39,18 @@ describe('a clean rule set', () => {
       expect(result.doesNotProve.length).toBeGreaterThan(0);
       const limits = result.doesNotProve.join('\n');
       expect(limits).toContain('read-only approval');
-      expect(limits).toContain('kernel sandbox');
-      expect(limits).toContain('git environment');
+      if (result.id === 'secret-reach') {
+        expect(limits).toContain('does not stop reads');
+        expect(limits).not.toContain('no writable path');
+      } else {
+        expect(limits).toContain('no writable path except the per-spawn scratch directory');
+        expect(limits).toContain('fixed git environment');
+      }
     }
+    const limitsOf = (id: PropertyId): string => report.results.find((result) => result.id === id)?.doesNotProve.join('\n') ?? '';
+    expect(limitsOf('deny-precedence')).toContain('deny rules are decided before the mode default');
+    expect(limitsOf('rule-consistency')).toContain('the sandbox never makes a rule redundant');
+    expect(limitsOf('bash-admission')).toContain('open yes or no');
     expect(report.outsideProof.join('\n')).toContain('arbitrary shell command');
     expect(report.solver).toMatch(/^Z3 \d+\.\d+\.\d+/);
   }, 180_000);

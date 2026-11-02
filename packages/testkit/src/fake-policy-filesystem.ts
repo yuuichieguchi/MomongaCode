@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { EMPTY_PROTECTED_SET, resolveCanonicalPath, volumeIsCaseInsensitive } from '@momonga/foundation';
+import { EMPTY_PROTECTED_SET, gitlinksOfIndex, programKeysOfConfig, resolveCanonicalPath, volumeIsCaseInsensitive } from '@momonga/foundation';
 import { TEST_HEARTBEAT_MS } from './test-support.ts';
-import type { EntryRead, PathResolution, ProtectedSet, StepRead, Unresolved, UnresolvableErrno } from '@momonga/foundation';
+import type { ConfigPrograms, EntryRead, GitlinkRead, PathResolution, ProtectedSet, StepRead, Unresolved, UnresolvableErrno } from '@momonga/foundation';
 
 export type FakeProgramResolution = { program: string } | { none: true };
 export type FakeGlobExpansion = { matches: string[] } | { overflow: true } | Unresolved;
@@ -19,6 +19,8 @@ export type FakePolicyFilesystem = {
   readNoFollow: (absolutePath: string) => StepRead;
   readHead: (absolutePath: string) => FakeHeadRead;
   isSearchable: (absolutePath: string) => boolean;
+  gitlinks: (gitDirectory: string) => GitlinkRead | Unresolved;
+  configPrograms: (gitDirectory: string) => ConfigPrograms | Unresolved;
 };
 
 export type FakeResolveCall = { name: string; cwd: string; searchPath: string | undefined; isWritable: (absolute: string) => boolean };
@@ -184,6 +186,8 @@ export const fakePolicyFilesystem = (layout: FakePolicyFilesystemLayout = {}): R
       if (entry === undefined) return isRealSearchable(absolute);
       return !('unresolvable' in entry) && entry.kind === 'directory';
     },
+    gitlinks: (gitDirectory) => typedRead<GitlinkRead | Unresolved>(() => gitlinksOfIndex(fs.readFileSync(path.join(gitDirectory, 'index'))), new Set(['ENOENT', 'ENOTDIR']), { paths: [] }),
+    configPrograms: (gitDirectory) => typedRead<ConfigPrograms | Unresolved>(() => ({ keys: programKeysOfConfig(fs.readFileSync(path.join(gitDirectory, 'config'), 'utf8')) }), new Set(['ENOENT', 'ENOTDIR']), { keys: [] }),
     ...layout.overrides,
   };
 };

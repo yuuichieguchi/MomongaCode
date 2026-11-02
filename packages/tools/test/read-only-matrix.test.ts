@@ -19,6 +19,7 @@ const GLOB_BUDGET_MS = 60_000;
 const PLAIN_OUTPUT_LIMIT_BYTES = 64 * 1024 * 1024;
 
 const FORMS = approvableForms(process.platform);
+const OTHER_PLATFORM: NodeJS.Platform = process.platform === 'darwin' ? 'linux' : 'darwin';
 
 describe.runIf(HAS_REAL_SANDBOX)('every approvable command form prints the same under the read-only sandbox', () => {
   let base = '';
@@ -27,14 +28,15 @@ describe.runIf(HAS_REAL_SANDBOX)('every approvable command form prints the same 
   let plainEnv: NodeJS.ProcessEnv = {};
   let inner: Sandbox;
   let spawned: RecordedSpawn;
-  const filesystem = createPolicyFilesystem();
+  const hostFilesystem = createPolicyFilesystem();
+  const filesystem = hostFilesystem;
 
   const git = (...args: string[]): void => {
     const result = spawnSync('/usr/bin/git', args, { cwd: project, env: { ...plainEnv, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t', GIT_AUTHOR_DATE: FIXED_DATE, GIT_COMMITTER_DATE: FIXED_DATE }, encoding: 'utf8' });
     if (result.status !== 0) throw new Error(`git ${args.join(' ')}: ${result.stderr}`);
   };
 
-  const decideOn = async (command: string) => {
+  const decideOn = async (command: string, filesystem = hostFilesystem) => {
     const roots = [project];
     const subject = { kind: 'command', tool: 'Bash', command } as const;
     const globs = await prepareGlobs({ expand: filesystem.expandGlob, platform: filesystem.platform, subject, cwd: project, home, deadline: createGlobDeadline(GLOB_BUDGET_MS), signal: new AbortController().signal });
@@ -100,6 +102,25 @@ describe.runIf(HAS_REAL_SANDBOX)('every approvable command form prints the same 
   it('the generator covers the spec tables', () => {
     expect(FORMS.length).toBeGreaterThan(1000);
     for (const expected of ['sort tracked', 'ls --color=1 tracked', 'git log -1 --oneline', 'git status --short', 'grep -c one tracked']) expect(FORMS.filter((form) => form.startsWith(expected.split(' ').slice(0, 2).join(' '))).length).toBeGreaterThan(0);
+  });
+
+  it('generates the forms of the Darwin table and of the GNU table, and ps only from the GNU one', () => {
+    const darwin = approvableForms('darwin');
+    const linux = approvableForms('linux');
+    expect(darwin.length).toBeGreaterThan(1000);
+    expect(linux.length).toBeGreaterThan(1000);
+    expect(darwin.some((form) => /^ps( |$)/.test(form))).toBe(false);
+    expect(linux.some((form) => /^ps( |$)/.test(form))).toBe(true);
+    for (const expected of ['git branch --list', 'git tag --list', 'git remote -v', 'git reflog show']) {
+      expect(darwin.some((form) => form.startsWith(expected))).toBe(true);
+      expect(linux.some((form) => form.startsWith(expected))).toBe(true);
+    }
+  });
+
+  it.each(approvableForms(OTHER_PLATFORM))(`%s is approved on the ${OTHER_PLATFORM} table, which runs on its own platform`, async (command) => {
+    const decision = await decideOn(command, createPolicyFilesystem(OTHER_PLATFORM));
+    expect(decision.kind).toBe('allow');
+    expect(decision.basis).toBe('read_only');
   });
 
   it.each(FORMS)('%s', async (command) => {

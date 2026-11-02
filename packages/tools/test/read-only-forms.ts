@@ -1,4 +1,4 @@
-import { GIT_OPTION_TABLES, commandSpecsFor } from '@momonga/policy';
+import { GIT_LISTING_SPECS, GIT_OPTION_TABLES, commandSpecsFor } from '@momonga/policy';
 import type { CommandSpecs } from '@momonga/policy';
 
 type Spec = CommandSpecs['all'][number];
@@ -6,7 +6,7 @@ type Option = Spec['options'][number];
 
 const DISQUALIFYING: ReadonlySet<string> = new Set(['write', 'exec', 'opens-path', 'sensitive', 'cwd', 'root', 'delete', 'symlink-create', 'follows-symlinks']);
 
-const STATUS_ONLY: readonly RegExp[] = [/^time /, /^sort (-R|--random-sort)( |$)/, /^file (-D|--debug)( |$)/, /^git rev-parse --(before|after|since|until)=/];
+const STATUS_ONLY: readonly RegExp[] = [/^ps( |$)/, /^time /, /^sort (-R|--random-sort)( |$)/, /^file (-D|--debug)( |$)/, /^git rev-parse --(before|after|since|until)=/];
 
 export const outputDiffersByNature = (command: string): boolean => STATUS_ONLY.some((pattern) => pattern.test(command));
 
@@ -122,10 +122,27 @@ const gitForms = (subcommand: string, form: { before: string; after: string }): 
   return options.filter((option) => !excluded.includes(option.name)).map((option) => join('git', subcommand, form.before, wordsFor(option), form.after));
 };
 
+const LISTING_SELECTOR: Readonly<Record<'branch' | 'tag', string>> = { branch: '--list', tag: '--list' };
+
+const listingForms = (subcommand: 'branch' | 'tag'): string[] =>
+  GIT_LISTING_SPECS[subcommand].options
+    .filter((option) => option.name !== LISTING_SELECTOR[subcommand])
+    .map((option) => join('git', subcommand, LISTING_SELECTOR[subcommand], wordsFor(option)));
+
+const REMOTE_OPTIONS_WITHOUT_OPERAND: readonly string[] = ['-v', '--verbose'];
+
+const remoteForms = (): string[] => REMOTE_OPTIONS_WITHOUT_OPERAND.map((name) => `git remote ${name}`);
+
+const reflogForms = (): string[] => gitForms('log', { before: '', after: '' }).map((form) => form.replace(/^git log/, 'git reflog show'));
+
 export const approvableForms = (platform: NodeJS.Platform): string[] => [
   ...new Set([
     ...SEQUENCES,
     ...commandSpecsFor(platform).all.flatMap(plainForms),
     ...Object.entries(GIT_READ_FORMS).flatMap(([subcommand, form]) => gitForms(subcommand, form)),
+    ...listingForms('branch'),
+    ...listingForms('tag'),
+    ...remoteForms(),
+    ...reflogForms(),
   ]),
 ];

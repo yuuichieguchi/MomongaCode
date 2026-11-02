@@ -56,6 +56,23 @@ describe('rule 1: only the read-only analysis gives basis read_only', () => {
   });
 });
 
+describe('review 1: a command that writes is not read-only, whoever approves the write', () => {
+  it.each(['echo hi > out', 'ls > out', 'cat tracked >> out'])('acceptEdits approves %s as an edit', (command) => {
+    const decision = prepared().decide(command, { mode: 'acceptEdits' });
+    expect(decision).toMatchObject({ kind: 'allow', basis: 'mode' });
+  });
+
+  it('an allow rule for the target gives the basis rule, not read_only', () => {
+    const decision = prepared().decide('echo hi > out', { rules: [['allow', 'Edit(./out)']] });
+    expect(decision).toMatchObject({ kind: 'allow' });
+    expect(decision.basis).toBe('rule');
+  });
+
+  it.each(['ls 2>/dev/null', 'cat tracked > /dev/null', 'ls >/dev/null 2>&1'])('%s stays read-only: /dev/null is not a write', (command) => {
+    expect(prepared().decide(command)).toMatchObject({ kind: 'allow', basis: 'read_only' });
+  });
+});
+
 describe('rule 3: help is not a read form, so a manual viewer variable is never reached', () => {
   it.each(['git help status', 'git status --help', 'git --help', 'git help -m status', 'git log --man'])('%s is not approvable as read-only', (command) => {
     const decision = prepared().decide(command);

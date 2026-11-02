@@ -84,6 +84,19 @@ const change = (workspace: RealWorkspace): void => void workspace.write('tracked
 
 const askingRemote = async (): Promise<string[]> => ['ls-remote', await authenticatingServer()];
 
+const missingBlob = (workspace: RealWorkspace): string => workspace.git(workspace.project, 'rev-parse', 'HEAD:tracked').stdout.trim();
+
+const asPartialClone = (workspace: RealWorkspace, url: string): void => {
+  const hash = missingBlob(workspace);
+  fs.rmSync(path.join(workspace.project, '.git', 'objects', hash.slice(0, 2), hash.slice(2)));
+  configure(workspace, 'core.repositoryformatversion', '1');
+  configure(workspace, 'extensions.partialclone', 'origin');
+  configure(workspace, 'remote.origin.promisor', 'true');
+  configure(workspace, 'remote.origin.url', url);
+};
+
+const readMissingBlob = (workspace: RealWorkspace): string[] => ['cat-file', '-p', missingBlob(workspace)];
+
 const SIGNATURE_ROWS: readonly Row[] = [
   { id: 'gpg.program', plant: (w, p) => (configure(w, 'gpg.program', p.script), withSignature(w, ['-----BEGIN PGP SIGNATURE-----', '', 'AAAA', '-----END PGP SIGNATURE-----'])), args: () => ['log', '--show-signature', '-1'] },
   {
@@ -145,6 +158,26 @@ const KEY_ROWS: readonly Row[] = [
 ];
 
 const VARIABLE_ROWS: readonly Row[] = [
+  {
+    id: 'GIT_ALLOW_PROTOCOL with a lazy fetch of ext::',
+    plant: (w, p) => {
+      asPartialClone(w, `ext::${p.script}`);
+      return { GIT_ALLOW_PROTOCOL: 'ext' };
+    },
+    args: (w) => readMissingBlob(w),
+  },
+  {
+    id: 'a protocol name that is not listed, with a lazy fetch',
+    plant: (w, p) => {
+      const helpers = w.mkdir('../outside/helpers');
+      fs.copyFileSync(p.script, path.join(helpers, 'git-remote-foo'));
+      fs.chmodSync(path.join(helpers, 'git-remote-foo'), 0o755);
+      asPartialClone(w, 'foo::x');
+      configure(w, 'protocol.foo.allow', 'always');
+      return { PATH: `${helpers}:/usr/bin:/bin` };
+    },
+    args: (w) => readMissingBlob(w),
+  },
   { id: 'GIT_EXTERNAL_DIFF', plant: (w, p) => (change(w), { GIT_EXTERNAL_DIFF: p.script }), args: () => ['diff'] },
   { id: 'GIT_PAGER', tty: true, plant: (_w, p) => ({ GIT_PAGER: p.script }), args: () => ['-p', 'log', '-1'] },
   { id: 'GIT_EDITOR', plant: (_w, p) => ({ GIT_EDITOR: p.script }), args: () => ['commit', '--allow-empty'] },
@@ -177,6 +210,20 @@ describe.runIf(HAS_REAL_SANDBOX)('rule 3: the environment of a read-only call, w
   it('clears the program variables, whatever the parent environment holds', async () => {
     const env = await callEnvironment(Object.fromEntries(CLEARED_GIT_VARIABLES.map((name) => [name, '/planted'])));
     for (const name of CLEARED_GIT_VARIABLES) expect(env[name] ?? '').toBe('');
+  });
+
+  it('forbids lazy fetching', async () => {
+    expect((await callEnvironment())['GIT_NO_LAZY_FETCH']).toBe('1');
+  });
+
+  it('reads the repository the analysis judged, whatever repository variables the parent holds', async () => {
+    const workspace = makeRealWorkspace();
+    workspace.initRepository();
+    const other = workspace.initRepository('../outside/other');
+    const parent = { HOME: workspace.home, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_DIR: path.join(other, '.git'), GIT_WORK_TREE: other, GIT_INDEX_FILE: path.join(other, '.git', 'index') };
+    const env = await callEnvironment(parent);
+    const reported = execFileSync('/usr/bin/git', ['rev-parse', '--absolute-git-dir'], { cwd: workspace.project, env: env as NodeJS.ProcessEnv, encoding: 'utf8' }).trim();
+    expect(reported).toBe(path.join(workspace.project, '.git'));
   });
 
   it('keeps GIT_PAGER at cat, whatever the parent environment holds', async () => {
