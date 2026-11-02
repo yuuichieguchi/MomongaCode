@@ -8,9 +8,10 @@ import type {
   ProviderAdapter,
   ToolCallingMode,
 } from '@momonga/protocol';
+import type { UpstreamEndpoint } from '../shared/http-client.ts';
 import type { KeywordSupport } from '../../probe/envelope.ts';
 
-export type ChatCompletionsEndpoint = { kind: 'unix'; socketPath: string } | { kind: 'tcp'; baseUrl: string };
+export type ChatCompletionsEndpoint = UpstreamEndpoint;
 
 export type ChatCompletionsAdapterOptions = {
   resolveEndpoint: (target: AdapterTarget) => Promise<ChatCompletionsEndpoint>;

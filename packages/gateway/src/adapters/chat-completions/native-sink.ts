@@ -1,6 +1,6 @@
-import { UpstreamProtocolError } from './failures.ts';
-import { MAX_TOOL_CALLS } from './limits.ts';
-import type { ResponseEmitter } from './response-emitter.ts';
+import { UpstreamProtocolError } from '../shared/failures.ts';
+import { MAX_TOOL_CALLS } from '../shared/limits.ts';
+import type { ResponseEmitter } from '../shared/response-emitter.ts';
 import type { ContentSink } from './stream-driver.ts';
 import type { ToolCallFragment } from './upstream-chunk.ts';
 

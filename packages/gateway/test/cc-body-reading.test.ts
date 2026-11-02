@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readTextLimited } from '../src/adapters/chat-completions/body-reading.ts';
+import { readTextLimited } from '../src/adapters/shared/body-reading.ts';
 
 const encoder = new TextEncoder();
 

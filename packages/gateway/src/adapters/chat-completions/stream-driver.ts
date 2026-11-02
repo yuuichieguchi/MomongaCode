@@ -1,6 +1,6 @@
 import type { StreamEvent, Usage } from '@momonga/protocol';
-import { StreamFailure, UpstreamProtocolError } from './failures.ts';
-import type { ResponseEmitter } from './response-emitter.ts';
+import { StreamFailure, UpstreamProtocolError } from '../shared/failures.ts';
+import type { ResponseEmitter } from '../shared/response-emitter.ts';
 import { parseUpstreamChunk } from './upstream-chunk.ts';
 import type { ToolCallFragment } from './upstream-chunk.ts';
 

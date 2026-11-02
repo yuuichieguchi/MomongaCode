@@ -1,5 +1,5 @@
 import type { Usage } from '@momonga/protocol';
-import { UpstreamProtocolError } from './failures.ts';
+import { UpstreamProtocolError } from '../shared/failures.ts';
 
 export type ToolCallFragment = {
   index: number;

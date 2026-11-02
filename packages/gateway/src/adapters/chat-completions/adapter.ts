@@ -1,5 +1,4 @@
-import { decodeSse, parseRetryAfter } from '@momonga/foundation';
-import type { Clock } from '@momonga/foundation';
+import { decodeSse } from '@momonga/foundation';
 import { summaryTokenCapFor } from '@momonga/protocol';
 import type {
   AdapterCompactRequest,
@@ -13,20 +12,21 @@ import type {
 } from '@momonga/protocol';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
 import { classifyChatCompletionsError, matchesGuardrailCode } from './classify.ts';
-import { boundedSseBytes, readTextLimited } from './body-reading.ts';
+import { boundedSseBytes } from '../shared/body-reading.ts';
 import { buildConstrainedBody } from './constrained-request.ts';
-import { summaryOfTerminal, summaryRequestOf } from './compact.ts';
+import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { createConstrainedSink } from './constrained-sink.ts';
 import type { ConstrainedPlan } from './constrained-sink.ts';
-import { StreamFailure, UnsupportedInputError, UpstreamHttpError } from './failures.ts';
-import { createEndpointPool } from './http-client.ts';
-import type { CompletionResponse } from './http-client.ts';
-import { MAX_ERROR_BODY_BYTES, MAX_SSE_EVENT_BYTES } from './limits.ts';
+import { StreamFailure, UnsupportedInputError } from '../shared/failures.ts';
+import { createEndpointPool } from '../shared/http-client.ts';
+import { httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
+import { MAX_SSE_EVENT_BYTES } from '../shared/limits.ts';
+import { CHAT_COMPLETIONS_PATH, CHAT_COMPLETIONS_SUFFIX } from './limits.ts';
 import { buildNativeBody } from './native-request.ts';
 import type { ChatRequestBody } from './native-request.ts';
 import { createNativeSink } from './native-sink.ts';
 import { nativeHistoryOf, plainHistoryOf } from './plain-history.ts';
-import { ResponseEmitter } from './response-emitter.ts';
+import { ResponseEmitter } from '../shared/response-emitter.ts';
 import { StreamDriver } from './stream-driver.ts';
 import type { ChatCompletionsAdapter, ChatCompletionsAdapterOptions } from './types.ts';
 import { wireOf } from './wire.ts';
@@ -45,40 +45,8 @@ const FULL_KEYWORD_SUPPORT: KeywordSupport = {
 
 const DONE_MARKER = '[DONE]';
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const httpErrorOf = async (
-  response: CompletionResponse,
-  clock: Clock,
-  isGuardrail: (status: number, body: unknown) => boolean,
-): Promise<UpstreamHttpError> => {
-  const { text } = await readTextLimited(response.body, MAX_ERROR_BODY_BYTES);
-  let message = text;
-  let code: string | null = null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-    const detail = isRecord(parsed) ? parsed['error'] : undefined;
-    if (isRecord(detail)) {
-      if (typeof detail['message'] === 'string') message = detail['message'];
-      if (typeof detail['code'] === 'string') code = detail['code'];
-    }
-  } catch (error) {
-    if (!(error instanceof SyntaxError)) throw error;
-  }
-  const retryAfterMs = parseRetryAfter(response.headers['retry-after'], clock.now());
-  return new UpstreamHttpError(
-    response.status,
-    code,
-    message === '' ? `HTTP ${response.status}` : message,
-    retryAfterMs,
-    isGuardrail(response.status, parsed),
-  );
-};
-
 export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOptions): ChatCompletionsAdapter => {
-  const pool = createEndpointPool();
+  const pool = createEndpointPool({ label: 'chat-completions', unixPath: CHAT_COMPLETIONS_PATH, urlSuffix: CHAT_COMPLETIONS_SUFFIX });
   const { health, countTokens, isGuardrail } = options;
   let closing: Promise<void> | undefined;
   let closed = false;
@@ -134,7 +102,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
         signal,
       });
       if (response.status !== 200) {
-        throw await httpErrorOf(response, options.clock, (status, parsed) =>
+        throw await httpErrorOf(response, options.clock, nestedErrorDetail, (status, parsed) =>
           isGuardrail === undefined ? matchesGuardrailCode(parsed) : isGuardrail(ctx.target, status, parsed),
         );
       }

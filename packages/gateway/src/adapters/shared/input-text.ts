@@ -15,7 +15,7 @@ const textOfPart = (part: ContentPart): string => {
     case 'input_file':
       throw new UnsupportedInputError(
         'unsupported_input',
-        `the chat-completions adapter does not support ${part.type} content`,
+        `the upstream adapter does not support ${part.type} content`,
         'input',
       );
   }

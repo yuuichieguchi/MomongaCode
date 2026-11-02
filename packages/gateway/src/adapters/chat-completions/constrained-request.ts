@@ -2,7 +2,7 @@ import { canonicalJson } from '@momonga/foundation';
 import type { AdapterRequest, FunctionTool } from '@momonga/protocol';
 import { buildToolsEnvelope } from '../../probe/envelope.ts';
 import type { KeywordSupport } from '../../probe/envelope.ts';
-import { UnsupportedInputError } from './failures.ts';
+import { UnsupportedInputError } from '../shared/failures.ts';
 import { SYSTEM_PART_SEPARATOR, samplingOf, systemTextOf } from './native-request.ts';
 import type { ChatRequestBody } from './native-request.ts';
 import { plainHistoryOf } from './plain-history.ts';

@@ -1,8 +1,8 @@
 import { canonicalJson } from '@momonga/foundation';
 import { compactionSummaryMessage } from '@momonga/protocol';
 import type { AdapterInputItem } from '@momonga/protocol';
-import { UnsupportedInputError } from './failures.ts';
-import { escapeAttribute, neutralizeMarkup, textOfContent } from './input-text.ts';
+import { UnsupportedInputError } from '../shared/failures.ts';
+import { escapeAttribute, neutralizeMarkup, textOfContent } from '../shared/input-text.ts';
 import { mergeAdjacentUserMessages } from './merge-user-messages.ts';
 
 export type ChatMessage = Record<string, unknown>;

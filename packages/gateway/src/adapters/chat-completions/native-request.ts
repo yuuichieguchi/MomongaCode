@@ -1,5 +1,5 @@
 import type { AdapterInputItem, AdapterRequest, FunctionTool, ToolChoice } from '@momonga/protocol';
-import { textOfContent } from './input-text.ts';
+import { textOfContent } from '../shared/input-text.ts';
 import { nativeHistoryOf, plainHistoryOf } from './plain-history.ts';
 import type { ChatMessage } from './plain-history.ts';
 
