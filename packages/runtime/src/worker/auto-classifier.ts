@@ -1,6 +1,6 @@
 import { budgetFor } from '@momonga/context';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import { CLASSIFIER_VERDICT_SCHEMA, classifierAllows, outputReserveFor, parseClassifierVerdict } from '@momonga/protocol';
+import { CLASSIFIER_VERDICT_SCHEMA, classifierAllows, escapeXmlText, outputReserveFor, parseClassifierVerdict } from '@momonga/protocol';
 import type { CreateResponseBody, ResponseResource, RunEventPayload } from '@momonga/protocol';
 import type { AutoClassifier, AutoClassifierRequest } from '@momonga/tools';
 import { GatewayRequestError } from '../gateway-client.ts';
@@ -26,10 +26,10 @@ const userPromptOf = (ctx: ClaimContext, cwd: string, request: AutoClassifierReq
   const [first] = ctx.options.store.readRunEvents(ctx.run.id, 0, 1);
   if (first === undefined || first.type !== 'user.message') throw new Error(`run ${ctx.run.id} does not start with a user message`);
   return [
-    `<user_request>\n${first.text}\n</user_request>`,
-    `<workspace>${cwd}</workspace>`,
-    `<why_it_needs_review>${request.reason}</why_it_needs_review>`,
-    `<proposed_tool_call>\n${canonicalJson({ tool: request.toolName, summary: request.title, input: request.input })}\n</proposed_tool_call>`,
+    `<user_request>\n${escapeXmlText(first.text)}\n</user_request>`,
+    `<workspace>${escapeXmlText(cwd)}</workspace>`,
+    `<why_it_needs_review>${escapeXmlText(request.reason)}</why_it_needs_review>`,
+    `<proposed_tool_call>\n${escapeXmlText(canonicalJson({ tool: request.toolName, summary: request.title, input: request.input }))}\n</proposed_tool_call>`,
   ].join('\n');
 };
 
