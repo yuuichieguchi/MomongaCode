@@ -1,7 +1,6 @@
 import { isOptionWord, parseOptionAt } from './argv.ts';
 import type { ParsedOption } from './argv.ts';
-import { specOf } from './command-specs.ts';
-import type { CommandSpec } from './command-specs.ts';
+import type { CommandSpec, CommandSpecs } from './command-specs.ts';
 import type { Word } from './shell.ts';
 
 export type GitParse = {
@@ -15,8 +14,8 @@ export type GitParse = {
 
 const CONFIG_OVERRIDE_OPTIONS: readonly string[] = ['-c', '--config-env'];
 
-export const parseGit = (args: readonly Word[]): GitParse => {
-  const spec = specOf('git') as CommandSpec;
+export const parseGit = (args: readonly Word[], specs: CommandSpecs): GitParse => {
+  const spec = specs.specOf('git') as CommandSpec;
   const globals: ParsedOption[] = [];
   let index = 0;
   while (index < args.length && isOptionWord(args[index] as Word)) {

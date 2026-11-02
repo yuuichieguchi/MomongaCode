@@ -101,7 +101,7 @@ describe.runIf(process.platform === 'darwin')('Bash (real Seatbelt)', () => {
 
   it('builds the environment from ctx.env plus the git and pager overrides', PROCESS_TIMEOUT, async () => {
     const tools = await makeBuiltins({ realSandbox: true });
-    const env = { PATH: '/usr/bin:/bin', MOMONGA_PROBE: 'probe-value', PAGER: 'less' };
+    const env = { PATH: '/usr/bin:/bin', MOMONGA_PROBE: 'probe-value', PAGER: 'less', CDPATH: '/tmp' };
     const result = resultOf(await bash(tools, 'env', { env }));
     const lines = result.output.split('\n');
     expect(lines).toContain('MOMONGA_PROBE=probe-value');
@@ -109,6 +109,7 @@ describe.runIf(process.platform === 'darwin')('Bash (real Seatbelt)', () => {
     expect(lines).toContain('GIT_TERMINAL_PROMPT=0');
     expect(lines).toContain('PAGER=cat');
     expect(lines).toContain('GIT_PAGER=cat');
+    expect(lines).toContain('CDPATH=');
     expect(lines.some((line) => line.startsWith('HOME='))).toBe(false);
     expect(lines.some((line) => line.startsWith('USER='))).toBe(false);
   });

@@ -63,6 +63,7 @@ describe('planBubblewrap', () => {
       kindOf: (target) => (target === '/run/systemd/resolve' ? 'directory' : fs.statSync(target, { throwIfNoEntry: false })?.isDirectory() ? 'directory' : undefined),
       realpath: (target) => target,
       children: () => [],
+      removePlaceholder: () => undefined,
     };
     expect(indexOfTriple(planBubblewrap(policy({ network: 'allow' }), { cwd: work }, port).args, '--ro-bind', '/run/systemd/resolve')).toBeGreaterThan(0);
     expect(indexOfTriple(planBubblewrap(policy({ network: 'deny' }), { cwd: work }, port).args, '--ro-bind', '/run/systemd/resolve')).toBe(-1);
@@ -76,18 +77,35 @@ describe('planBubblewrap', () => {
     expect(indexOfTriple(args, '--bind', extra)).toBeGreaterThan(0);
   });
 
-  it('remounts existing write-denied paths read-only after the writable binds and reports missing ones as unprotected', () => {
+  it('remounts existing write-denied paths read-only after the writable binds', () => {
     const hooks = path.join(work, '.git', 'hooks');
     const config = path.join(work, '.git', 'config');
     fs.mkdirSync(hooks, { recursive: true });
-    const missing = path.join(work, '.mcp.json');
-    const plan = planBubblewrap(policy({ writeDenied: [hooks], writeDeniedLiterals: [config, missing] }), { cwd: work });
     fs.writeFileSync(config, '');
-    const withConfig = planBubblewrap(policy({ writeDenied: [hooks], writeDeniedLiterals: [config, missing] }), { cwd: work });
+    const plan = planBubblewrap(policy({ writeDenied: [hooks], writeDeniedLiterals: [config] }), { cwd: work });
     expect(indexOfTriple(plan.args, '--ro-bind', hooks)).toBeGreaterThan(indexOfTriple(plan.args, '--bind', work));
-    expect(plan.unprotected).toEqual([config, missing]);
-    expect(withConfig.unprotected).toEqual([missing]);
-    expect(indexOfTriple(withConfig.args, '--ro-bind', config)).toBeGreaterThan(0);
+    expect(indexOfTriple(plan.args, '--ro-bind', config)).toBeGreaterThan(0);
+    expect(plan.placeholders).toEqual([]);
+  });
+
+  it('reserves the first missing component of a protected path under a writable root with /dev/null, so nothing can create it', () => {
+    const hooks = path.join(work, '.git', 'hooks');
+    const config = path.join(work, '.git', 'config');
+    const mcp = path.join(work, '.mcp.json');
+    const plan = planBubblewrap(policy({ writeDenied: [hooks], writeDeniedLiterals: [config, mcp] }), { cwd: work });
+    const reserved = plan.args.flatMap((value, index) => (value === '--ro-bind' && plan.args[index + 1] === '/dev/null' ? [plan.args[index + 2]] : []));
+    expect(reserved.sort()).toEqual([path.join(work, '.git'), mcp].sort());
+    expect(plan.placeholders.sort()).toEqual([path.join(work, '.git'), mcp].sort());
+    expect(indexOfTriple(plan.args, '--ro-bind', hooks)).toBe(-1);
+  });
+
+  it('reserves the missing hooks directory of an existing .git and pins nothing outside the writable roots', () => {
+    fs.mkdirSync(path.join(work, '.git'));
+    const hooks = path.join(work, '.git', 'hooks');
+    const outside = path.join(home, 'missing', 'deep');
+    const plan = planBubblewrap(policy({ writeDenied: [hooks, outside] }), { cwd: work });
+    expect(plan.placeholders).toEqual([hooks]);
+    expect(indexOfTriple(plan.args, '--bind', path.join(work, '.git'))).toBeGreaterThan(0);
   });
 
   it('pins the directories between a protected path and the writable root so they cannot be renamed away', () => {

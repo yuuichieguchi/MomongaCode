@@ -16,6 +16,7 @@ export type FilesystemPort = {
   kindOf(target: string): EntryKind | undefined;
   realpath(target: string): string;
   children(directory: string): Array<{ path: string; kind: EntryKind | 'other' }>;
+  removePlaceholder(target: string): void;
 };
 
 export const nodeFilesystemPort: FilesystemPort = {
@@ -25,6 +26,10 @@ export const nodeFilesystemPort: FilesystemPort = {
     return stat.isDirectory() ? 'directory' : 'file';
   },
   realpath: (target) => fs.realpathSync(target),
+  removePlaceholder: (target) => {
+    const stat = fs.lstatSync(target, { throwIfNoEntry: false });
+    if (stat !== undefined && stat.isFile() && stat.size === 0) fs.unlinkSync(target);
+  },
   children: (directory) =>
     fs.readdirSync(directory, { withFileTypes: true }).map((entry) => ({
       path: path.join(directory, entry.name),
@@ -34,7 +39,7 @@ export const nodeFilesystemPort: FilesystemPort = {
 
 export type BubblewrapOptions = { tmpDir?: string; scratchDir?: string; cwd: string };
 
-export type BubblewrapPlan = { args: string[]; unprotected: string[] };
+export type BubblewrapPlan = { args: string[]; placeholders: string[] };
 
 type Mount = { depth: number; args: string[] };
 
@@ -80,7 +85,7 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
   const readAllowed = unique((policy.readAllowed ?? []).map(canonicalizePath));
   const sessionTmpDir = options.tmpDir === undefined ? undefined : canonicalizePath(options.tmpDir);
   const scratchDir = options.scratchDir === undefined ? undefined : canonicalizePath(options.scratchDir);
-  const unprotected: string[] = [];
+  const placeholders: string[] = [];
 
   const base: string[] = ['--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--tmpfs', '/run'];
   if (policy.network === 'allow' && port.kindOf(SYSTEMD_RESOLVE_DIRECTORY) === 'directory') {
@@ -94,10 +99,30 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
     if (closure.kind === 'subpath' && port.kindOf(closure.path) !== undefined) writableBinds.push('--bind', closure.path, closure.path);
   }
 
+  const insideRoots = (target: string): boolean => roots.some((root) => target.startsWith(`${root}/`));
+
+  const firstMissingComponent = (target: string): string | undefined => {
+    let missing = target;
+    for (let parent = path.dirname(missing); parent !== missing; parent = path.dirname(missing)) {
+      const kind = port.kindOf(parent);
+      if (kind === 'directory') return missing;
+      if (kind === 'file') return undefined;
+      missing = parent;
+    }
+    return undefined;
+  };
+
+  const reserve = (target: string, mounts: Mount[]): void => {
+    const missing = firstMissingComponent(target);
+    if (missing === undefined || !insideRoots(missing) || placeholders.includes(missing)) return;
+    placeholders.push(missing);
+    mounts.push({ depth: depthOf(missing), args: ['--ro-bind', '/dev/null', missing] });
+  };
+
   const protect = (target: string, mounts: Mount[]): void => {
     const kind = port.kindOf(target);
     if (kind === undefined) {
-      unprotected.push(target);
+      reserve(target, mounts);
       return;
     }
     const resolved = port.realpath(target);
@@ -113,8 +138,10 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
     for (const target of blockedPaths(set, entry, port)) protect(target, writeMounts);
   }
   const pinMounts: Mount[] = [];
-  for (const target of unique([...writeDenied, ...literals]).flatMap((literal) => (port.kindOf(literal) === undefined ? [] : [literal]))) {
-    for (let ancestor = path.dirname(port.realpath(target)); ancestor !== path.dirname(ancestor); ancestor = path.dirname(ancestor)) {
+  const pinnedFrom = unique([...writeDenied, ...literals]).map((literal) => (port.kindOf(literal) === undefined ? undefined : port.realpath(literal)));
+  const pinned = [...pinnedFrom.flatMap((target) => (target === undefined ? [] : [target])), ...unique(placeholders)];
+  for (const target of pinned) {
+    for (let ancestor = path.dirname(target); ancestor !== path.dirname(ancestor); ancestor = path.dirname(ancestor)) {
       const inside = roots.some((root) => ancestor.startsWith(`${root}/`));
       if (inside && !roots.includes(ancestor) && port.kindOf(ancestor) === 'directory') pinMounts.push({ depth: depthOf(ancestor), args: ['--bind', ancestor, ancestor] });
     }
@@ -154,7 +181,7 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
     '--chdir',
     options.cwd,
   ];
-  return { args, unprotected: unique(unprotected) };
+  return { args, placeholders: unique(placeholders) };
 }
 
 export interface BubblewrapSandboxOptions {
@@ -169,17 +196,43 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
   fs.accessSync(bwrapPath, fs.constants.X_OK);
   const tmpRoot = fs.realpathSync(options.tmpRoot);
   const filesystem = options.filesystem ?? nodeFilesystemPort;
-  const launchWith = (command: SandboxCommand, plan: BubblewrapPlan, tmpDir: string, signal: AbortSignal, afterExit: () => void): SandboxedProcess =>
-    launch({
-      file: bwrapPath,
-      args: [...plan.args, '--', ...command.argv],
-      cwd: command.cwd,
-      ...(command.markerFile === undefined ? {} : { markerFile: command.markerFile }),
-      env: { ...command.env, TMPDIR: tmpDir },
-      signal,
-      killGraceMs: options.killGraceMs,
-      afterExit,
-    });
+  const held = new Map<string, number>();
+  const hold = (plan: BubblewrapPlan): void => {
+    for (const placeholder of plan.placeholders) held.set(placeholder, (held.get(placeholder) ?? 0) + 1);
+  };
+  const release = (plan: BubblewrapPlan): void => {
+    for (const placeholder of plan.placeholders) {
+      const remaining = (held.get(placeholder) ?? 1) - 1;
+      if (remaining > 0) {
+        held.set(placeholder, remaining);
+        continue;
+      }
+      held.delete(placeholder);
+      filesystem.removePlaceholder(placeholder);
+    }
+  };
+  const launchWith = (command: SandboxCommand, plan: BubblewrapPlan, tmpDir: string, signal: AbortSignal, afterExit: () => void): SandboxedProcess => {
+    hold(plan);
+    try {
+      return launch({
+        file: bwrapPath,
+        args: [...plan.args, '--', ...command.argv],
+        cwd: command.cwd,
+        ...(command.markerFile === undefined ? {} : { markerFile: command.markerFile }),
+        ...(command.stdin === undefined ? {} : { stdin: command.stdin }),
+        env: { ...command.env, TMPDIR: tmpDir },
+        signal,
+        killGraceMs: options.killGraceMs,
+        afterExit: () => {
+          release(plan);
+          afterExit();
+        },
+      });
+    } catch (error) {
+      release(plan);
+      throw error;
+    }
+  };
 
   return {
     kind: 'bubblewrap',

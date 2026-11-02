@@ -6,6 +6,7 @@ export type Target =
   | { literal: string; removes?: true; needsApproval?: true }
   | { worktree: true; removes: true; below?: string }
   | { candidate: string; removes?: true }
+  | { glob: string }
   | { unresolvable: UnresolvableReason };
 
 export type CwdEffect = 'none' | 'changed' | 'root-changed';
@@ -26,13 +27,16 @@ export const targetOfText = (text: string | null): Target => {
   return { literal: text };
 };
 
+const textOf = (target: { literal: string } | { candidate: string } | { glob: string }): string =>
+  'literal' in target ? target.literal : 'glob' in target ? target.glob : target.candidate;
+
 export const markRelativeUnresolvable = (targets: readonly Target[], effect: CwdEffect): Target[] => {
   if (effect === 'none') return [...targets];
   return targets.map((target): Target => {
     if ('unresolvable' in target) return target;
     if (effect === 'root-changed') return { unresolvable: { kind: 'root-changed' } };
     if ('worktree' in target) return { unresolvable: { kind: 'cwd-changed' } };
-    const text = 'literal' in target ? target.literal : target.candidate;
+    const text = textOf(target);
     return isCwdRelative(text) ? { unresolvable: { kind: 'cwd-changed' } } : target;
   });
 };
@@ -43,10 +47,10 @@ export const markConfigOverride = (targets: readonly Target[]): Target[] =>
   targets.flatMap((target): Target[] => {
     if ('unresolvable' in target) return [target];
     if (!('worktree' in target)) {
-      const text = 'literal' in target ? target.literal : target.candidate;
+      const text = textOf(target);
       if (!isCwdRelative(text)) return [target];
     }
-    return target.removes === true ? [target, CONFIG_OVERRIDE_UNRESOLVABLE] : [CONFIG_OVERRIDE_UNRESOLVABLE];
+    return 'removes' in target && target.removes === true ? [target, CONFIG_OVERRIDE_UNRESOLVABLE] : [CONFIG_OVERRIDE_UNRESOLVABLE];
   });
 
 export const describeReason = (reason: UnresolvableReason): string => (reason.kind === 'errno' ? reason.code : reason.kind);

@@ -1,5 +1,6 @@
 import path from 'node:path';
-import { specOf } from './command-specs.ts';
+import { commandSpecsFor } from './platform-specs.ts';
+import type { CommandSpecs } from './command-specs.ts';
 import { DARWIN_SED, pathEffectsOf } from './path-effects.ts';
 import type { ProgramEffects } from './path-effects.ts';
 import { ASSIGNMENT } from './shell-lexemes.ts';
@@ -9,6 +10,10 @@ import { locateEffectiveCommand } from './wrappers.ts';
 import type { WrapperUse } from './wrappers.ts';
 
 export type Word = { value: string; literal: boolean; plain: boolean; glob: boolean; staticValue: string | null };
+
+export type DirectoryStep = string | null;
+
+export type Place = { effect: CwdEffect; trail: readonly DirectoryStep[] };
 
 export type Segment = {
   text: string;
@@ -24,14 +29,18 @@ export type Segment = {
   wrapperWrites: Target[];
   cwdEffect: CwdEffect;
   cwdBefore: CwdEffect;
+  cwdTrail: readonly DirectoryStep[];
   effects: ProgramEffects;
 };
 
 export type Analysis = {
   segments: Segment[];
   redirects: Target[];
+  redirectAt: number[];
   reads: Target[];
+  readAt: number[];
   nested: Analysis[];
+  at: number;
   cwdAfter: CwdEffect;
 };
 
@@ -70,51 +79,19 @@ const skipBackticks = (source: string, open: number): number => {
   return unsupported('unterminated backtick');
 };
 
-const skipDoubleQuoted = (source: string, open: number): number => {
-  let index = open + 1;
-  while (index < source.length) {
-    const char = source[index];
-    if (char === '\\') index += 2;
-    else if (char === '"') return index + 1;
-    else if (char === '$' && source[index + 1] === '(') index = findClosingParenthesis(source, index + 2) + 1;
-    else if (char === '`') index = skipBackticks(source, index);
-    else index += 1;
-  }
-  return unsupported('unterminated double quote');
-};
-
-const findClosingParenthesis = (source: string, from: number): number => {
-  let depth = 1;
-  let index = from;
-  while (index < source.length) {
-    const char = source[index];
-    if (char === '\\') index += 2;
-    else if (char === "'") index = skipSingleQuoted(source, index);
-    else if (char === '"') index = skipDoubleQuoted(source, index);
-    else if (char === '`') index = skipBackticks(source, index);
-    else {
-      if (char === '(') depth += 1;
-      if (char === ')') depth -= 1;
-      if (depth === 0) return index;
-      index += 1;
-    }
-  }
-  return unsupported('unterminated command substitution');
-};
-
 const nameOf = (word: Word | undefined): string | undefined =>
   word !== undefined && word.literal ? path.basename(word.value) : undefined;
 
 const EMPTY_EFFECTS: ProgramEffects = { writes: [], reads: [], opaque: false };
 
-const describeSegment = (text: string, words: Word[], opaque: boolean, cwdBefore: CwdEffect): Segment => {
+const describeSegment = (text: string, words: Word[], opaque: boolean, place: Place, specs: CommandSpecs): Segment => {
   let commandIndex = 0;
   while (commandIndex < words.length && ASSIGNMENT.test((words[commandIndex] as Word).value)) commandIndex += 1;
-  const effective = locateEffectiveCommand(words);
+  const effective = locateEffectiveCommand(words, specs);
   const effectiveWord = words[effective.index];
   const strictWord = words[effective.strictIndex];
   const strictName = nameOf(strictWord);
-  const prefixEligible = !opaque && strictName !== undefined && specOf(strictName)?.neverPrefix !== true;
+  const prefixEligible = !opaque && strictName !== undefined && specs.specOf(strictName)?.neverPrefix !== true;
   const unanalyzable = effective.unanalyzable || (effectiveWord !== undefined && !effectiveWord.literal);
   return {
     text,
@@ -129,28 +106,50 @@ const describeSegment = (text: string, words: Word[], opaque: boolean, cwdBefore
     wrappers: effective.wrappers,
     wrapperWrites: effective.writes,
     cwdEffect: effective.cwdEffect,
-    cwdBefore,
+    cwdBefore: place.effect,
+    cwdTrail: place.trail,
     effects: EMPTY_EFFECTS,
   };
 };
 
-const segmentChangesDirectory = (segment: Segment): boolean => {
+const segmentChangesDirectory = (segment: Segment, specs: CommandSpecs): boolean => {
   const word = segment.words[segment.effectiveIndex];
-  return word !== undefined && word.literal && !word.value.includes('/') && specOf(word.value)?.changesDirectory === true;
+  return word !== undefined && word.literal && !word.value.includes('/') && specs.specOf(word.value)?.changesDirectory === true;
 };
 
-const scan = (command: string, depth: number, incoming: CwdEffect): Analysis => {
-  if (depth > MAX_NESTING) return unsupported('nesting too deep');
+const NAVIGATION_FLAGS: ReadonlySet<string> = new Set(['-L', '-P', '--']);
+
+const directoryStepOf = (segment: Segment): DirectoryStep => {
+  const word = segment.words[segment.effectiveIndex];
+  if (word === undefined || word.value !== 'cd') return null;
+  const operands = segment.words.slice(segment.effectiveIndex + 1).filter((arg) => !(arg.literal && NAVIGATION_FLAGS.has(arg.value)));
+  if (operands.length === 0) return '~';
+  const [only] = operands;
+  if (operands.length !== 1 || only === undefined || only.staticValue === null || only.staticValue.startsWith('-')) return null;
+  return only.staticValue;
+};
+
+const scan = (command: string, depth: number, incoming: Place, specs: CommandSpecs): Analysis => {
   if (FORBIDDEN_CONTROL.test(command)) return unsupported('control character');
+  return scanFrom(command, 0, depth, incoming, false, specs).analysis;
+};
+
+type Scanned = { analysis: Analysis; end: number };
+
+const scanFrom = (command: string, start: number, depth: number, incoming: Place, inSubstitution: boolean, specs: CommandSpecs): Scanned => {
+  if (depth > MAX_NESTING) return unsupported('nesting too deep');
 
   const segments: Segment[] = [];
   const redirects: Target[] = [];
+  const redirectAt: number[] = [];
   const reads: Target[] = [];
+  const readAt: number[] = [];
   const nested: Analysis[] = [];
-  let cwdState: CwdEffect = incoming;
+  let cwdState: CwdEffect = incoming.effect;
+  let trail: readonly DirectoryStep[] = incoming.trail;
   let words: Word[] = [];
   let opaque = false;
-  let segmentStart = 0;
+  let segmentStart = start;
   let word = freshWord();
   let pending: PendingRedirect | null = null;
 
@@ -188,8 +187,13 @@ const scan = (command: string, depth: number, incoming: CwdEffect): Analysis => 
     if (kind === 'read-or-duplicate' && duplicatesDescriptor) return;
     if (kind === 'write-or-duplicate' && duplicatesDescriptor) return;
     const target = markRelativeUnresolvable([redirectTarget(staticValue, kind === 'write' || kind === 'write-or-duplicate')], cwdState)[0] as Target;
-    if (kind === 'read' || kind === 'read-or-duplicate') reads.push(target);
-    else redirects.push(target);
+    if (kind === 'read' || kind === 'read-or-duplicate') {
+      reads.push(target);
+      readAt.push(segments.length);
+    } else {
+      redirects.push(target);
+      redirectAt.push(segments.length);
+    }
   };
 
   const endSegment = (endIndex: number, operatorLength: number): void => {
@@ -199,10 +203,18 @@ const scan = (command: string, depth: number, incoming: CwdEffect): Analysis => 
     if (text !== '') {
       const first = words[0];
       if (first !== undefined && first.plain && RESERVED_WORDS.has(first.value)) unsupported('shell reserved word');
-      const segment = describeSegment(text, words, opaque, cwdState);
+      const segment = describeSegment(text, words, opaque, { effect: cwdState, trail }, specs);
       segments.push(segment);
-      cwdState = strongerEffect(cwdState, collectPayloads(segment, nested, depth));
-      if (segmentChangesDirectory(segment)) cwdState = strongerEffect(cwdState, 'changed');
+      const firstPayload = nested.length;
+      const payloadEffect = collectPayloads(segment, nested, depth, specs);
+      for (const payload of nested.slice(firstPayload)) payload.at = segments.length - 1;
+      cwdState = strongerEffect(cwdState, payloadEffect);
+      if (segmentChangesDirectory(segment, specs)) {
+        cwdState = strongerEffect(cwdState, 'changed');
+        trail = [...trail, directoryStepOf(segment)];
+      } else if (payloadEffect !== 'none') {
+        trail = [...trail, null];
+      }
     }
     words = [];
     opaque = false;
@@ -220,7 +232,11 @@ const scan = (command: string, depth: number, incoming: CwdEffect): Analysis => 
   };
 
   const absorbSubstitution = (body: string): void => {
-    nested.push(scan(body, depth + 1, cwdState));
+    nested.push({ ...scan(body, depth + 1, { effect: cwdState, trail }, specs), at: segments.length });
+    absorbed();
+  };
+
+  const absorbed = (): void => {
     opaque = true;
     markDynamic();
     word.plain = false;
@@ -230,9 +246,10 @@ const scan = (command: string, depth: number, incoming: CwdEffect): Analysis => 
     const next = command[index + 1];
     if (next === '(') {
       if (command[index + 2] === '(') return unsupported('arithmetic expansion');
-      const close = findClosingParenthesis(command, index + 2);
-      absorbSubstitution(command.slice(index + 2, close));
-      return close + 1;
+      const inner = scanFrom(command, index + 2, depth + 1, { effect: cwdState, trail }, true, specs);
+      nested.push({ ...inner.analysis, at: segments.length });
+      absorbed();
+      return inner.end;
     }
     if (next === '{' || next === '[') return unsupported('parameter or arithmetic expansion');
     if (!quoted && (next === "'" || next === '"')) return unsupported('quoted dollar string');
@@ -277,12 +294,19 @@ const scan = (command: string, depth: number, incoming: CwdEffect): Analysis => 
     return unsupported('unterminated double quote');
   };
 
-  let index = 0;
+  let index = start;
+  let end = command.length;
+  let closed = false;
   while (index < command.length) {
     const char = command[index] as string;
     const next = command[index + 1];
 
-    if (char === ' ' || char === '\t') {
+    if (char === ')' && inSubstitution) {
+      endSegment(index, 0);
+      end = index + 1;
+      closed = true;
+      break;
+    } else if (char === ' ' || char === '\t') {
       flushWord();
       index += 1;
     } else if (char === '\n') {
@@ -375,38 +399,42 @@ const scan = (command: string, depth: number, incoming: CwdEffect): Analysis => 
       index += 1;
     }
   }
-  endSegment(command.length, 0);
+  if (inSubstitution && !closed) return unsupported('unterminated command substitution');
+  if (!closed) endSegment(command.length, 0);
 
   for (const segment of segments) {
-    segment.effects = pathEffectsOf(segment, strongerEffect(segment.cwdBefore, segment.cwdEffect));
+    segment.effects = pathEffectsOf(segment, strongerEffect(segment.cwdBefore, segment.cwdEffect), specs);
     if (segment.effects.opaque) segment.unanalyzable = true;
   }
-  return { segments, redirects, reads, nested, cwdAfter: cwdState };
+  return { analysis: { segments, redirects, redirectAt, reads, readAt, nested, at: 0, cwdAfter: cwdState }, end };
 };
 
 const SHELL_COMMAND_FLAG = /^-[A-Za-z]*c[A-Za-z]*$/;
 
-const collectPayloads = (segment: Segment, nested: Analysis[], depth: number): CwdEffect => {
-  const inherited = strongerEffect(segment.cwdBefore, segment.cwdEffect);
+const collectPayloads = (segment: Segment, nested: Analysis[], depth: number, specs: CommandSpecs): CwdEffect => {
+  const inherited: Place = {
+    effect: strongerEffect(segment.cwdBefore, segment.cwdEffect),
+    trail: segment.cwdEffect === 'none' ? segment.cwdTrail : [...segment.cwdTrail, null],
+  };
   for (const payload of segment.wrapperPayloads) {
-    if (payload.literal) nested.push(scan(payload.value, depth + 1, inherited));
+    if (payload.literal) nested.push(scan(payload.value, depth + 1, inherited, specs));
     else segment.unanalyzable = true;
   }
   const name = nameOf(segment.words[segment.effectiveIndex]);
   if (name === undefined) return 'none';
   const rest = segment.words.slice(segment.effectiveIndex + 1);
-  const payloadKind = specOf(name)?.payload;
+  const payloadKind = specs.specOf(name)?.payload;
   if (payloadKind === 'shell') {
     const flagIndex = rest.findIndex((word) => word.literal && SHELL_COMMAND_FLAG.test(word.value));
     const payload = flagIndex === -1 ? undefined : rest[flagIndex + 1];
-    if (payload !== undefined && payload.literal) nested.push(scan(payload.value, depth + 1, inherited));
+    if (payload !== undefined && payload.literal) nested.push(scan(payload.value, depth + 1, inherited, specs));
     else segment.unanalyzable = true;
   } else if (payloadKind === 'eval') {
     if (!rest.every((word) => word.literal)) {
       segment.unanalyzable = true;
       return 'changed';
     }
-    const inner = scan(rest.map((word) => word.value).join(' '), depth + 1, inherited);
+    const inner = scan(rest.map((word) => word.value).join(' '), depth + 1, inherited, specs);
     nested.push(inner);
     return inner.cwdAfter;
   } else if (payloadKind === 'source') {
@@ -416,9 +444,11 @@ const collectPayloads = (segment: Segment, nested: Analysis[], depth: number): C
   return 'none';
 };
 
-export const analyzeCommand = (command: string): Analysis | null => {
+export const STRUCTURAL_SPECS: CommandSpecs = commandSpecsFor('darwin');
+
+export const analyzeCommand = (command: string, specs: CommandSpecs = STRUCTURAL_SPECS): Analysis | null => {
   try {
-    return scan(command, 0, 'none');
+    return scan(command, 0, { effect: 'none', trail: [] }, specs);
   } catch (error) {
     if (error instanceof UnsupportedConstruct) return null;
     throw error;
@@ -428,17 +458,28 @@ export const analyzeCommand = (command: string): Analysis | null => {
 const writesOf = (segment: Segment, resolveFor: ((segment: Segment) => string | undefined) | undefined): Target[] =>
   segment.effects.darwinWrites !== undefined && resolveFor?.(segment) === DARWIN_SED ? segment.effects.darwinWrites : segment.effects.writes;
 
-export const allWriteTargets = (analysis: Analysis, resolveFor?: (segment: Segment) => string | undefined): Target[] => [
-  ...analysis.redirects,
-  ...analysis.segments.flatMap((segment) => writesOf(segment, resolveFor)),
-  ...analysis.nested.flatMap((inner) => allWriteTargets(inner, resolveFor)),
-];
+export type ExecutionStep = { reads: Target[]; writes: Target[]; relocates: boolean };
 
-export const allReadTargets = (analysis: Analysis): Target[] => [
-  ...analysis.reads,
-  ...analysis.segments.flatMap((segment) => segment.effects.reads),
-  ...analysis.nested.flatMap(allReadTargets),
-];
+export const executionSteps = (analysis: Analysis, resolveFor?: (segment: Segment) => string | undefined): ExecutionStep[] => {
+  const steps: ExecutionStep[] = [];
+  for (let position = 0; position < analysis.segments.length; position += 1) {
+    for (const inner of analysis.nested) if (inner.at === position) steps.push(...executionSteps(inner, resolveFor));
+    steps.push({
+      reads: analysis.reads.filter((_, index) => analysis.readAt[index] === position),
+      writes: analysis.redirects.filter((_, index) => analysis.redirectAt[index] === position),
+      relocates: false,
+    });
+    const segment = analysis.segments[position] as Segment;
+    const writes = writesOf(segment, resolveFor);
+    steps.push({ reads: segment.effects.reads, writes, relocates: segment.effects.spec?.createsNames === true && writes.length > 0 });
+  }
+  return steps;
+};
+
+export const allWriteTargets = (analysis: Analysis, resolveFor?: (segment: Segment) => string | undefined): Target[] =>
+  executionSteps(analysis, resolveFor).flatMap((step) => step.writes);
+
+export const allReadTargets = (analysis: Analysis): Target[] => executionSteps(analysis).flatMap((step) => step.reads);
 
 export const programNameOf = (segment: Segment): string | undefined => nameOf(segment.words[segment.effectiveIndex]);
 

@@ -286,6 +286,23 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
       }
     });
 
+    it('builds a policy for a .git file at mode 000 and protects the pointer without throwing', async () => {
+      const repositoryRoot = path.join(root, 'unreadable-pointer');
+      fs.mkdirSync(repositoryRoot);
+      const pointer = path.join(repositoryRoot, '.git');
+      fs.writeFileSync(pointer, 'gitdir: elsewhere\n');
+      fs.chmodSync(pointer, 0o000);
+      try {
+        const set = setFor(repositoryRoot);
+        expect(set.issues).toMatchObject([{ root: repositoryRoot, file: pointer, problem: 'unresolvable' }]);
+        expect(isProtectedWrite(set, pointer, probes())).toBe(true);
+        expect((await sandboxed(repositoryRoot, 'rm .git')).code).not.toBe(0);
+        expect(fs.existsSync(pointer)).toBe(true);
+      } finally {
+        fs.chmodSync(pointer, 0o600);
+      }
+    });
+
     it.each([
       ['replacing', 'rm .git && mkdir -p .git/hooks && echo x > .git/hooks/pre-commit'],
       ['re-pointing', 'mkdir other && ln -sfn other .git'],

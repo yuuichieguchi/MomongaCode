@@ -11,6 +11,7 @@ export type UnresolvableReason =
   | { kind: 'dynamic' }
   | { kind: 'other-user-home' }
   | { kind: 'config-override' }
+  | { kind: 'earlier-segment' }
   | { kind: 'unanalyzable' };
 
 export type Unresolved = { unresolvable: UnresolvableReason };

@@ -2,6 +2,8 @@ import path from 'node:path';
 import { EMPTY_FILE_RULES, compileFileRuleSet, fileRuleBlocks, lexicallyWithin } from './file-rules.ts';
 import type { FileRuleSet, FileRuleSpec } from './file-rules.ts';
 import { containsByComponents, walkPath } from './path-compare.ts';
+import { flavourOf, patternPathOf } from './path-flavour.ts';
+import type { PathFlavour } from './path-flavour.ts';
 import type { StepReader, WalkResult } from './path-compare.ts';
 import type { PathResolution, Unresolved, UnresolvableReason } from './path-resolution.ts';
 
@@ -34,6 +36,7 @@ export type ProtectedSetPorts = {
   readNoFollow: StepReader;
   canonicalise: (absolute: string) => PathResolution;
   volumeProbe: (directory: string) => boolean;
+  platform: NodeJS.Platform;
 };
 
 export type GitPointerIssue = {
@@ -79,26 +82,23 @@ type Collected = {
   issues: GitPointerIssue[];
 };
 
-const stripLineEnd = (text: string): string => {
-  if (text.endsWith('\r\n')) return text.slice(0, -2);
-  return text.endsWith('\n') ? text.slice(0, -1) : text;
-};
+const stripLineEnd = (text: string): string => text.replace(/[\r\n]+$/, '');
 
-const gitFileTarget = (text: string): string | undefined => {
+export const gitFileTarget = (text: string): string | undefined => {
   const body = stripLineEnd(text);
   const target = body.startsWith(GITDIR_PREFIX) ? body.slice(GITDIR_PREFIX.length) : '';
   return target === '' ? undefined : target;
 };
 
-const commondirTarget = (text: string): string | undefined => {
+export const commondirTarget = (text: string): string | undefined => {
   const target = stripLineEnd(text);
   return target === '' ? undefined : target;
 };
 
-const componentsOf = (value: string): string[] => value.split('/').filter((component) => component !== '');
+const componentsOf = (value: string, flavour: PathFlavour): string[] => value.split(flavour === 'win32' ? /[\\/]/ : '/').filter((component) => component !== '');
 
-const lexicallyContains = (base: string, candidate: string, fold: boolean): boolean =>
-  containsByComponents({ existing: '/', tail: componentsOf(base) }, { existing: '/', tail: componentsOf(candidate) }, fold);
+const lexicallyContains = (base: string, candidate: string, fold: boolean, flavour: PathFlavour): boolean =>
+  containsByComponents({ existing: '/', tail: componentsOf(base, flavour) }, { existing: '/', tail: componentsOf(candidate, flavour) }, fold);
 
 const entriesOf = (directory: string, names: readonly string[]): string[] => names.map((name) => path.join(directory, name));
 
@@ -161,7 +161,7 @@ const registerCommonDirectory = (
       continue;
     }
     for (const { pattern } of NESTED_GIT_DIRECTORY_PATTERNS.filter((entry) => entry.anchor === anchor)) {
-      collected.patternSpecifiers.add(`//${escapeGlob(commonDir.slice(1))}/${pattern}`);
+      collected.patternSpecifiers.add(`//${escapeGlob(patternPathOf(flavourOf(ports.platform), commonDir).slice(1))}/${pattern}`);
     }
   }
 };
@@ -255,6 +255,8 @@ const collectRoot = (roots: readonly string[], ports: ProtectedSetPorts, collect
   const read = ports.readEntry(pointer);
   if ('unresolvable' in read) {
     protectUnresolvable(roots, ports, collected, { root, file: pointer }, pointer, read.unresolvable);
+    collected.literals.add(pointer);
+    collected.literals.add(parentCanonicalForm(pointer, ports.canonicalise));
     return;
   }
   switch (read.kind) {
@@ -295,7 +297,7 @@ const patternSpecsOf = (specifiers: readonly string[], roots: readonly string[])
 export const protectedSetFor = (roots: readonly string[], ports: ProtectedSetPorts): ProtectedSet => {
   const collected: Collected = { paths: new Set(), lexicalPaths: new Set(), literals: new Set(), patternSpecifiers: new Set(), issues: [] };
   for (const root of roots) collectRoot(roots, ports, collected, root);
-  const patterns = compileFileRuleSet(patternSpecsOf([...collected.patternSpecifiers], roots), roots, null, ports.canonicalise, ports.volumeProbe);
+  const patterns = compileFileRuleSet(patternSpecsOf([...collected.patternSpecifiers], roots), roots, null, ports.canonicalise, ports.volumeProbe, flavourOf(ports.platform));
   return {
     roots: [...roots],
     paths: [...collected.paths],
@@ -312,20 +314,21 @@ type Probes = { canonicalise: (absolute: string) => PathResolution; volumeProbe:
 const foldedEqual = (left: string, right: string, fold: boolean): boolean => (fold ? left.toLowerCase() === right.toLowerCase() : left === right);
 
 export const isProtectedWrite = (set: ProtectedSet, canonicalTarget: string, probes: Probes): boolean => {
-  const fold = probes.volumeProbe(canonicalTarget);
+  const flavour = set.patterns.flavour;
+  const fold = flavour === 'win32' || probes.volumeProbe(canonicalTarget);
   const coveredByPath = (entry: string): boolean => {
     const resolution = probes.canonicalise(entry);
-    return lexicallyContains(resolution.ok ? resolution.path : entry, canonicalTarget, fold);
+    return lexicallyContains(resolution.ok ? resolution.path : entry, canonicalTarget, fold, flavour);
   };
   if (set.paths.some(coveredByPath)) return true;
-  if (set.lexicalPaths.some((entry) => lexicallyContains(entry, canonicalTarget, fold))) return true;
+  if (set.lexicalPaths.some((entry) => lexicallyContains(entry, canonicalTarget, fold, flavour))) return true;
   const literalMatches = (entry: string): boolean =>
     foldedEqual(entry, canonicalTarget, fold) || foldedEqual(parentCanonicalForm(entry, probes.canonicalise), canonicalTarget, fold);
   if (set.literals.some(literalMatches)) return true;
   const names = set.names.map((name) => (fold ? name.toLowerCase() : name));
   const underNamedComponent = set.roots.some((root) => {
-    if (!lexicallyContains(root, canonicalTarget, fold)) return false;
-    const inside = componentsOf(canonicalTarget).slice(componentsOf(root).length);
+    if (!lexicallyContains(root, canonicalTarget, fold, flavour)) return false;
+    const inside = componentsOf(canonicalTarget, flavour).slice(componentsOf(root, flavour).length);
     return inside.some((component) => names.includes(fold ? component.toLowerCase() : component));
   });
   if (underNamedComponent) return true;

@@ -17,7 +17,7 @@ const fail = (): never => {
   throw new Unparsable();
 };
 
-type Cursor = { text: string; index: number };
+type Cursor = { text: string; index: number; brackets: boolean };
 
 const peek = (cursor: Cursor): string | undefined => cursor.text[cursor.index];
 
@@ -56,7 +56,7 @@ const readDelimited = (cursor: Cursor, delimiter: string, bracketed: boolean): s
   while (cursor.index < cursor.text.length) {
     const char = cursor.text[cursor.index] as string;
     if (char === '\\') cursor.index += 2;
-    else if (bracketed && char === '[') skipBracketExpression(cursor);
+    else if (bracketed && cursor.brackets && char === '[') skipBracketExpression(cursor);
     else if (char === delimiter) {
       cursor.index += 1;
       return cursor.text.slice(start, cursor.index - 1);
@@ -203,8 +203,10 @@ const readCommand = (cursor: Cursor, collected: Collected): void => {
   fail();
 };
 
-export const scanSedScript = (script: string): SedScan => {
-  const cursor: Cursor = { text: script, index: 0 };
+export type SedDialect = 'bsd' | 'gnu';
+
+const scanWith = (script: string, brackets: boolean): SedScan => {
+  const cursor: Cursor = { text: script, index: 0, brackets };
   const collected: Collected = { writes: [], reads: [], simple: true };
   let commands = 0;
   try {
@@ -223,4 +225,12 @@ export const scanSedScript = (script: string): SedScan => {
     return { simple: false, writes: [...collected.writes, DYNAMIC], reads: collected.reads };
   }
   return { simple: collected.simple && commands > 0, writes: collected.writes, reads: collected.reads };
+};
+
+export const scanSedScript = (script: string, dialect: SedDialect = 'bsd'): SedScan => {
+  const bracketAware = scanWith(script, true);
+  if (dialect === 'bsd') return bracketAware;
+  const bracketBlind = scanWith(script, false);
+  if (JSON.stringify(bracketAware) === JSON.stringify(bracketBlind)) return bracketAware;
+  return { simple: false, writes: [...bracketAware.writes, ...bracketBlind.writes, DYNAMIC], reads: [...bracketAware.reads, ...bracketBlind.reads] };
 };

@@ -78,6 +78,8 @@ export type CommandSpecInput = {
   wrapper?: WrapperDecl;
   patternOptions?: readonly string[];
   removes?: true;
+  createsNames?: true;
+  dialect?: 'bsd' | 'gnu';
   psLetters?: { allowed: string; sensitive: string };
 };
 
@@ -88,14 +90,14 @@ export type CommandSpec = CommandSpecInput & {
   effectOf(option: string): OptionEffect | undefined;
 };
 
-const decl = (effect: OptionEffect, takes: OptionTakes, names: readonly string[]): OptionDecl[] => names.map((name) => ({ name, takes, effect }));
+export const decl = (effect: OptionEffect, takes: OptionTakes, names: readonly string[]): OptionDecl[] => names.map((name) => ({ name, takes, effect }));
 
-const flag = (...names: string[]): OptionDecl[] => decl('flag', 'none', names);
-const valued = (effect: OptionEffect, ...names: string[]): OptionDecl[] => decl(effect, 'value', names);
-const optionalValue = (effect: OptionEffect, ...names: string[]): OptionDecl[] => decl(effect, 'attached', names);
-const marked = (effect: OptionEffect, ...names: string[]): OptionDecl[] => decl(effect, 'none', names);
-const letters = (text: string): string[] => [...text].map((letter) => `-${letter}`);
-const when = (conditions: OptionCondition, options: readonly OptionDecl[]): OptionDecl[] => options.map((option) => ({ ...option, applies: conditions }));
+export const flag = (...names: string[]): OptionDecl[] => decl('flag', 'none', names);
+export const valued = (effect: OptionEffect, ...names: string[]): OptionDecl[] => decl(effect, 'value', names);
+export const optionalValue = (effect: OptionEffect, ...names: string[]): OptionDecl[] => decl(effect, 'attached', names);
+export const marked = (effect: OptionEffect, ...names: string[]): OptionDecl[] => decl(effect, 'none', names);
+export const letters = (text: string): string[] => [...text].map((letter) => `-${letter}`);
+export const when = (conditions: OptionCondition, options: readonly OptionDecl[]): OptionDecl[] => options.map((option) => ({ ...option, applies: conditions }));
 
 export const define = (input: CommandSpecInput): CommandSpec => {
   const options = input.options ?? [];
@@ -109,33 +111,9 @@ export const define = (input: CommandSpecInput): CommandSpec => {
   };
 };
 
-const GREP_OPTIONS: readonly OptionDecl[] = [
-  ...flag(...letters('abcEFGHhIiJLlMnOopqRrsUVvwXxZz')),
-  ...flag('--recursive', '--line-buffered', '--null', '--ignore-case', '--invert-match', '--word-regexp', '--line-regexp', '--count', '--files-with-matches', '--files-without-match', '--line-number', '--no-messages', '--quiet', '--silent', '--with-filename', '--no-filename', '--only-matching', '--extended-regexp', '--fixed-strings', '--basic-regexp', '--perl-regexp', '--text', '--binary', '--null-data', '--initial-tab', '--no-group-separator'),
-  ...valued('non-path', ...letters('ABCdDm'), '-e', '--regexp', '--binary-files', '--label', '--max-count', '--after-context', '--before-context', '--directories', '--devices', '--include', '--exclude', '--include-dir', '--exclude-dir'),
-  ...valued('read', '-f', '--file'),
-  ...optionalValue('non-path', '--color', '--colour', '--context'),
-  ...when({ any: ['-R', '-r', '--recursive', '-d=recurse', '--directories=recurse'] }, marked('follows-symlinks', '-S')),
-];
-
 const SEARCH_OPTIONS: readonly OptionDecl[] = [
   ...valued('non-path', ...letters('emABCdDgtTjME'), '--regexp', '--max-count', '--include', '--exclude', '--exclude-dir', '--label', '--context', '--after-context', '--before-context', '--binary-files', '--directories', '--devices', '--glob', '--type', '--type-not', '--threads', '--max-columns', '--encoding', '--max-depth'),
   ...valued('read', '-f', '--file'),
-];
-
-const DIFF_OPTIONS: readonly OptionDecl[] = [
-  ...flag(...letters('aBbcdEefilNnpqsTtuwy'), '--brief', '--ed', '--expand-tabs', '--forward-ed', '--ignore-all-space', '--ignore-case', '--ignore-space-change', '--initial-tab', '--minimal', '--no-dereference', '--no-ignore-file-name-case', '--normal', '--paginate', '--rcs', '--show-c-function', '--speed-large-files', '--starting-file', '--strip-trailing-cr', '--text', '--unified'),
-  ...valued('non-path', '-A', '-C', '-D', '-F', '-I', '-L', '-U', '-x', '-S', '--algorithm', '--tabsize', '--label', '--ignore-matching-lines', '--show-function-line', '--context', '--ifdef', '--changed-group-format'),
-  ...valued('read', '-X'),
-  ...optionalValue('non-path', '--color'),
-  ...when({ none: ['--no-dereference'] }, marked('follows-symlinks', '-r', '--recursive')),
-];
-
-const LS_OPTIONS: readonly OptionDecl[] = [
-  ...flag(...letters('@ABCFGHIOPRSTUWabcdefghiklmnopqrstuvwxy1%,')),
-  ...marked('follows-symlinks', '-L'),
-  ...valued('non-path', '-D'),
-  ...optionalValue('non-path', '--color'),
 ];
 
 const CURL_OPTIONS: readonly OptionDecl[] = [
@@ -161,31 +139,8 @@ const TRANSFER_OPTIONS: readonly OptionDecl[] = [
   ...marked('delete', '--delete', '--delete-before', '--delete-after', '--delete-during', '--delete-delay', '--delete-excluded'),
 ];
 
-const COPY_TARGET_OPTIONS: readonly OptionDecl[] = [...valued('write', '-t', '--target-directory')];
+export const COPY_TARGET_OPTIONS: readonly OptionDecl[] = [...valued('write', '-t', '--target-directory')];
 
-const SORT_OPTIONS: readonly OptionDecl[] = [
-  ...flag(...letters('bcCdfghiRMmnrsuVz')),
-  ...valued('non-path', '-k', '-S', '-t', '--key', '--field-separator', '--buffer-size'),
-  ...valued('write', '-o', '-T', '--output', '--temporary-directory'),
-  ...valued('exec', '--compress-program'),
-];
-
-const PS_OPTIONS: readonly OptionDecl[] = [
-  ...flag(...letters('ACcefhjlMmrSTvwXxL')),
-  ...marked('sensitive', '-E'),
-  ...valued('non-path', '-O', '-o', '-G', '-g', '-u', '-p', '-t', '-U'),
-];
-
-const FIND_OPTIONS: readonly OptionDecl[] = [
-  ...flag('-H', '-P', '-E', '-X', '-d', '-s', '-x', '-depth', '-prune', '-print', '-print0', '-empty', '-not', '-a', '-o', '-and', '-or', '-xdev', '-mount', '-true', '-false', '-ls', '-nouser', '-nogroup', '!', '(', ')'),
-  ...marked('follows-symlinks', '-L', '-follow'),
-  ...valued('read', '-f', '-newer', '-samefile'),
-  ...valued('non-path', '-name', '-iname', '-path', '-ipath', '-wholename', '-iwholename', '-regex', '-iregex', '-type', '-size', '-mtime', '-atime', '-ctime', '-mmin', '-amin', '-cmin', '-perm', '-user', '-group', '-uid', '-gid', '-maxdepth', '-mindepth', '-links', '-inum', '-fstype', '-flags', '-lname', '-ilname'),
-  ...marked('delete', '-delete'),
-  ...decl('exec', 'command', ['-exec', '-execdir', '-ok', '-okdir']),
-  ...valued('exec', '-fprint', '-fprint0', '-fprintf', '-fls', '-files0-from'),
-  ...marked('exec', '-rm'),
-];
 
 const GIT_GLOBAL_OPTIONS: readonly OptionDecl[] = [
   ...flag('-p', '--paginate', '-P', '--no-pager', '--no-optional-locks', '--no-replace-objects', '--literal-pathspecs', '--glob-pathspecs', '--noglob-pathspecs', '--icase-pathspecs', '--no-advice', '--bare', '--version', '--help', '--html-path', '--man-path', '--info-path'),
@@ -200,58 +155,8 @@ const SHELL_NAMES = ['sh', 'bash', 'zsh', 'dash', 'ksh', 'fish', 'csh', 'tcsh', 
 const STRIPPED = (extra: Partial<WrapperDecl> = {}): WrapperDecl => ({ strip: 'always', approvable: true, ...extra });
 const WRAPPED = (extra: Partial<WrapperDecl> = {}): WrapperDecl => ({ ...extra });
 
-export const COMMAND_SPECS: readonly CommandSpec[] = [
-  define({ names: ['mkdir'], approval: 'edit', operands: 'write-all', options: [...flag('-p', '-v'), ...valued('non-path', '-m')] }),
-  define({ names: ['rmdir'], approval: 'edit', operands: 'write-all', removes: true, options: flag('-p', '-v') }),
-  define({ names: ['rm'], approval: 'edit', operands: 'write-all', removes: true, options: flag(...letters('fidIRrvWx')) }),
-  define({
-    names: ['touch'],
-    approval: 'edit',
-    operands: 'write-all',
-    plainOperandsOnly: true,
-    options: [...flag(...letters('achm')), ...valued('non-path', '-A', '-t', '-d'), ...valued('read', '-r')],
-  }),
-  define({ names: ['mv'], approval: 'edit', operands: 'move', options: [...flag(...letters('finhv')), ...COPY_TARGET_OPTIONS] }),
-  define({
-    names: ['cp'],
-    approval: 'edit',
-    operands: 'copy',
-    options: [
-      ...flag(...letters('RHPfinaclNpSvXx')),
-      ...marked('symlink-create', '-s'),
-      ...marked('follows-symlinks', '-L'),
-      ...COPY_TARGET_OPTIONS,
-    ],
-  }),
-  define({
-    names: ['sed'],
-    approval: 'edit',
-    operands: 'read-all',
-    extractor: 'sed',
-    options: [...flag(...letters('EHalnru')), ...valued('payload', '-e'), ...valued('opens-path', '-f'), ...valued('non-path', '-i', '-I')],
-  }),
-  define({ names: ['ls'], approval: 'read-only', operands: 'read-all', options: LS_OPTIONS }),
-  define({ names: ['cat'], approval: 'read-only', operands: 'read-all', options: flag(...letters('belnstuv')) }),
-  define({ names: ['head'], approval: 'read-only', operands: 'read-all', options: valued('non-path', '-n', '-c') }),
-  define({ names: ['tail'], approval: 'read-only', operands: 'read-all', options: [...flag('-F', '-f', '-r', '-q', '-v'), ...valued('non-path', '-b', '-c', '-n')] }),
-  define({ names: ['wc'], approval: 'read-only', operands: 'read-all', options: flag(...letters('Lclmw')) }),
-  define({ names: ['grep'], approval: 'read-only', operands: 'pattern-first', patternOptions: ['-e', '-f', '--regexp', '--file'], options: GREP_OPTIONS }),
-  define({ names: ['egrep', 'fgrep'], operands: 'pattern-first', patternOptions: ['-e', '-f', '--regexp', '--file'], options: GREP_OPTIONS }),
+export const NEUTRAL_SPECS: readonly CommandSpec[] = [
   define({ names: ['rg'], operands: 'pattern-first', patternOptions: ['-e', '-f', '--regexp', '--file', '--files'], options: [...SEARCH_OPTIONS, ...flag('--files')] }),
-  define({ names: ['diff'], approval: 'read-only', operands: 'read-all', options: DIFF_OPTIONS }),
-  define({
-    names: ['stat'],
-    approval: 'read-only',
-    operands: 'read-all',
-    options: [...flag(...letters('Fnqlrsx')), ...marked('follows-symlinks', '-L'), ...valued('non-path', '-f', '-t')],
-  }),
-  define({
-    names: ['du'],
-    approval: 'read-only',
-    operands: 'read-all',
-    options: [...flag(...letters('AclnxHPghkmas')), ...marked('follows-symlinks', '-L'), ...valued('non-path', '-d', '-B', '-I', '-t')],
-  }),
-  define({ names: ['which'], approval: 'read-only', operands: 'none', options: flag('-a', '-s') }),
   define({ names: ['pwd'], approval: 'read-only', builtin: true, operands: 'none', options: flag('-L', '-P') }),
   define({ names: ['echo'], approval: 'read-only', builtin: true, operands: 'none', options: flag('-n', '-e', '-E') }),
   define({
@@ -264,33 +169,19 @@ export const COMMAND_SPECS: readonly CommandSpec[] = [
     options: flag('-L', '-P'),
   }),
   define({ names: ['pushd', 'popd'], changesDirectory: true, extractor: 'cd', operands: 'read-all', options: flag('-n') }),
-  define({
-    names: ['file'],
-    approval: 'read-only',
-    operands: 'read-all',
-    options: [
-      ...flag(...letters('bcdDhiIkLnNprsvz'), '--exclude-quiet', '--extension', '--mime-encoding', '--mime-type'),
-      ...valued('opens-path', '-f', '-m', '-M'),
-      ...marked('opens-path', '-C'),
-      ...valued('non-path', '-P'),
-    ],
-  }),
-  define({ names: ['ps'], approval: 'read-only', operands: 'none', options: PS_OPTIONS, psLetters: { allowed: 'AaCcfhjlMmrSTuvwXx', sensitive: 'eE' } }),
-  define({ names: ['sort'], approval: 'read-only', operands: 'read-all', options: SORT_OPTIONS }),
-  define({ names: ['find'], approval: 'read-only', operands: 'read-all', extractor: 'find', noClusters: true, options: FIND_OPTIONS }),
-  define({ names: ['git'], approval: 'read-only', extractor: 'git', operands: 'candidate-all', options: GIT_GLOBAL_OPTIONS }),
+  define({ names: ['git'], createsNames: true, approval: 'read-only', extractor: 'git', operands: 'candidate-all', options: GIT_GLOBAL_OPTIONS }),
 
   define({ names: ['tee'], operands: 'write-all', options: flag('-a', '-i', '-p') }),
   define({ names: ['truncate'], operands: 'write-all', options: [...flag('-c'), ...valued('non-path', '-s'), ...valued('read', '-r')] }),
-  define({ names: ['install'], extractor: 'install', operands: 'copy', options: [...flag(...letters('bCcdpsv')), ...valued('non-path', '-B', '-f', '-g', '-m', '-o', '-S', '--suffix', '--mode', '--owner', '--group'), ...COPY_TARGET_OPTIONS] }),
-  define({ names: ['ln'], extractor: 'ln', operands: 'copy', options: [...flag(...letters('sfhnviFw')), ...valued('non-path', '-S', '--suffix'), ...COPY_TARGET_OPTIONS] }),
+  define({ names: ['install'], createsNames: true, extractor: 'install', operands: 'copy', options: [...flag(...letters('bCcdpsv')), ...valued('non-path', '-B', '-f', '-g', '-m', '-o', '-S', '--suffix', '--mode', '--owner', '--group'), ...COPY_TARGET_OPTIONS] }),
+  define({ names: ['ln'], createsNames: true, extractor: 'ln', operands: 'copy', options: [...flag(...letters('sfhnviFw')), ...valued('non-path', '-S', '--suffix'), ...COPY_TARGET_OPTIONS] }),
   define({ names: ['dd'], extractor: 'dd', operands: 'none' }),
   define({ names: ['curl'], extractor: 'curl', operands: 'none', options: [...CURL_OPTIONS, ...flag('-O', '--remote-name')] }),
   define({ names: ['wget'], extractor: 'wget', operands: 'none', options: WGET_OPTIONS }),
-  define({ names: ['tar', 'bsdtar', 'gtar'], extractor: 'tar', operands: 'read-all', options: TAR_OPTIONS }),
-  define({ names: ['unzip'], extractor: 'unzip', operands: 'read-all', options: [...valued('non-path', '-x', '-P'), ...valued('write', '-d')] }),
+  define({ names: ['tar', 'bsdtar', 'gtar'], createsNames: true, extractor: 'tar', operands: 'read-all', options: TAR_OPTIONS }),
+  define({ names: ['unzip'], createsNames: true, extractor: 'unzip', operands: 'read-all', options: [...valued('non-path', '-x', '-P'), ...valued('write', '-d')] }),
   define({ names: ['zip'], operands: 'first-write-rest-read', options: [...valued('non-path', '-b', '-t', '-n', '-x', '-i'), ...valued('write', '-O', '--output-file')] }),
-  define({ names: ['rsync', 'scp'], extractor: 'transfer', operands: 'copy', options: TRANSFER_OPTIONS }),
+  define({ names: ['rsync', 'scp'], createsNames: true, extractor: 'transfer', operands: 'copy', options: TRANSFER_OPTIONS }),
   define({ names: ['patch'], extractor: 'patch', operands: 'none', options: flag('--dry-run') }),
   define({ names: ['awk', 'gawk', 'mawk'], extractor: 'awk', operands: 'read-all', options: [...valued('non-path', '-F', '-v', '--field-separator', '--assign'), ...valued('read', '-f', '--file')] }),
   define({ names: ['less'], operands: 'read-all', options: [...valued('non-path', ...letters('pPtTxyzhbjk')), ...valued('write', '-o', '-O', '--log-file')] }),
@@ -401,7 +292,12 @@ export const COMMAND_SPECS: readonly CommandSpec[] = [
   define({ names: ['osascript', 'lua'], namePattern: /^(osascript|lua[0-9.]*)$/, extractor: 'interpreter', inlineOptions: /^-[A-Za-z]*e/ }),
 ];
 
-const SPECS_BY_NAME: ReadonlyMap<string, CommandSpec> = new Map(COMMAND_SPECS.flatMap((spec) => spec.names.map((name) => [name, spec] as const)));
+export type CommandSpecs = {
+  all: readonly CommandSpec[];
+  specOf(name: string): CommandSpec | undefined;
+};
 
-export const specOf = (name: string): CommandSpec | undefined =>
-  SPECS_BY_NAME.get(name) ?? COMMAND_SPECS.find((spec) => spec.namePattern?.test(name) === true);
+export const specsOf = (all: readonly CommandSpec[]): CommandSpecs => {
+  const byName = new Map(all.flatMap((spec) => spec.names.map((name) => [name, spec] as const)));
+  return { all, specOf: (name) => byName.get(name) ?? all.find((spec) => spec.namePattern?.test(name) === true) };
+};

@@ -76,7 +76,7 @@ describe('worker hooks', () => {
     expect(env.ofType(run.id, 'tool.completed')).toMatchObject([{ status: 'failed', denial: { source: 'hook', reason: 'writes are frozen' } }]);
   });
 
-  it('records a timed out PreToolUse hook as non-blocking and runs the write', async () => {
+  it('turns a timed out PreToolUse hook into an approval request, so a deny policy never fails open', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     const target = path.join(env.project, 'out.txt');
     env.settings.hooksValue = { PreToolUse: [{ hooks: [{ type: 'command', command: 'sleep 30', timeout: 1 }] }] };
@@ -84,6 +84,9 @@ describe('worker hooks', () => {
     const run = env.enqueue('write it');
     await env.runOnce(workerWithProcesses(env));
     expect(env.ofType(run.id, 'hook.completed')).toMatchObject([{ outcome: 'timed_out' }]);
+    expect(fs.existsSync(target)).toBe(false);
+    env.resolveApproval(run.id, 'allow_once');
+    await env.runOnce(workerWithProcesses(env));
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(fs.readFileSync(target, 'utf8')).toBe('x');
   });

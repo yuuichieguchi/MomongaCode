@@ -101,6 +101,16 @@ describe('PreToolUse hook processes', () => {
     expect(executions[0]).toMatchObject({ outcome: 'success', exitCode: 0, decision: 'ask' });
   });
 
+  it('lets a deny from another hook win over a failed hook, and a failed hook win over an allow', async () => {
+    const allow = JSON.stringify({ hookSpecificOutput: { permissionDecision: 'allow' } });
+    const deny = JSON.stringify({ hookSpecificOutput: { permissionDecision: 'deny' } });
+    const failing = { type: 'command' as const, command: 'exit 1' };
+    const withAllow = contextFor({ PreToolUse: [{ hooks: [failing, { type: 'command', command: `echo '${allow}'` }] }] });
+    expect(await createToolHooks(withAllow.context).preToolUse(call)).toMatchObject({ decision: 'ask' });
+    const withDeny = contextFor({ PreToolUse: [{ hooks: [failing, { type: 'command', command: `echo '${deny}'` }] }] });
+    expect(await createToolHooks(withDeny.context).preToolUse(call)).toMatchObject({ decision: 'deny' });
+  });
+
   it('applies deny over ask over allow across hooks', async () => {
     const decide = (decision: string) => JSON.stringify({ hookSpecificOutput: { permissionDecision: decision } });
     const hooks: HooksSettings = {
@@ -111,13 +121,13 @@ describe('PreToolUse hook processes', () => {
     expect(executions).toHaveLength(3);
   });
 
-  it('keeps a non-blocking failure visible and does not decide', async () => {
+  it('turns a failed hook into an ask carrying the failure, so a deny policy never fails open', async () => {
     const { context, executions } = contextFor(settings('PreToolUse', 'echo "boom" >&2; exit 1'));
-    expect(await createToolHooks(context).preToolUse(call)).toBeUndefined();
+    expect(await createToolHooks(context).preToolUse(call)).toMatchObject({ decision: 'ask', reason: expect.stringContaining('boom') });
     expect(executions).toMatchObject([{ outcome: 'error', exitCode: 1, message: 'boom' }]);
   });
 
-  it('reports invalid and unsupported JSON as an error without deciding', async () => {
+  it('reports invalid and unsupported JSON as an error and asks', async () => {
     for (const body of [
       '{"hookSpecificOutput":{"permissionDecision":"defer"}}',
       '{"hookSpecificOutput":{"updatedToolOutput":"x"}}',
@@ -126,15 +136,15 @@ describe('PreToolUse hook processes', () => {
       '{not json',
     ]) {
       const { context, executions } = contextFor(settings('PreToolUse', `printf '%s' '${body}'`));
-      expect(await createToolHooks(context).preToolUse(call)).toBeUndefined();
+      expect(await createToolHooks(context).preToolUse(call)).toMatchObject({ decision: 'ask' });
       expect(executions[0]).toMatchObject({ outcome: 'error', exitCode: 0 });
     }
   });
 
-  it('reports a timeout without deciding and kills the process group', async () => {
+  it('reports a timeout as an ask and kills the process group', async () => {
     const pidFile = path.join(dir, 'pid');
     const { context, executions } = contextFor(settings('PreToolUse', `echo $$ > ${pidFile}; sleep 30`), { deadlineAt: Date.now() + 300 });
-    expect(await createToolHooks(context).preToolUse(call)).toBeUndefined();
+    expect(await createToolHooks(context).preToolUse(call)).toMatchObject({ decision: 'ask' });
     expect(executions[0]).toMatchObject({ outcome: 'timed_out' });
     const pid = Number(fs.readFileSync(pidFile, 'utf8'));
     expect(() => process.kill(pid, 0)).toThrow();

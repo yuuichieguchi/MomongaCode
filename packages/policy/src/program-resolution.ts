@@ -46,18 +46,22 @@ const resolveWord = (word: string, searchPath: string | undefined, context: Reso
 
 const isCommandP = (wrapper: WrapperUse): boolean => wrapper.name === 'command' && wrapper.options.some((option) => option.option === '-p');
 
-const isResolvedWrapper = (wrapper: WrapperUse): boolean => wrapper.spec.wrapper?.program === true || wrapper.word.value.includes('/');
+const runsProgram = (wrapper: WrapperUse): boolean => wrapper.spec.wrapper?.program === true;
+
+export const executedByWrapper = (segment: Segment): boolean => segment.wrappers.some(runsProgram);
 
 export const resolveSegmentProgram = (segment: Segment, context: ResolutionContext): ProgramResolution => {
   const word = segment.words[segment.effectiveIndex];
   if (word === undefined || !word.literal) return unresolved;
   if (segment.words.slice(0, segment.effectiveIndex).some((entry) => PATH_ASSIGNMENT.test(entry.value))) return unresolved;
   let lookupPath = context.searchPath;
+  let executed = false;
   for (const wrapper of segment.wrappers) {
     if (wrapper.name === 'env') {
       if (wrapper.options.some((option) => ENV_PATH_DISQUALIFIERS.includes(option.option))) return unresolved;
     } else if (!wrapper.stripped) return unresolved;
-    if (isResolvedWrapper(wrapper) && !('program' in resolveWord(wrapper.word.value, lookupPath, context, true))) return unresolved;
+    if ((executed || runsProgram(wrapper) || wrapper.word.value.includes('/')) && !('program' in resolveWord(wrapper.word.value, lookupPath, context, true))) return unresolved;
+    executed = executed || runsProgram(wrapper);
     lookupPath = isCommandP(wrapper) ? DEFAULT_COMMAND_PATH : context.searchPath;
   }
   return resolveWord(word.value, lookupPath, context, false);

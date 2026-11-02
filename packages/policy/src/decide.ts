@@ -3,15 +3,17 @@ import { isProtectedWrite, lexicallyWithin } from '@momonga/foundation';
 import type { FileRuleSet, ProtectedSet, UnresolvableReason } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import type { PermissionMode } from '@momonga/protocol';
-import { commandApproval } from './approval.ts';
+import { MAX_GLOB_MATCHES, commandApproval } from './approval.ts';
+import { expandBraces } from './brace-expansion.ts';
 import { commandCoveredByAllowRules } from './command-match.ts';
 import type { PolicyFilesystem } from './filesystem.ts';
 import { matchRule, matchStrength, ruleCoversSubject } from './match-rule.ts';
 import { absoluteFrom } from './path-match.ts';
 import { resolveSegmentProgram } from './program-resolution.ts';
+import { commandSpecsFor } from './platform-specs.ts';
 import { discoverRepository } from './repository.ts';
 import { insideRoots } from './roots.ts';
-import { allReadTargets, allWriteTargets, analyzeCommand, looseRedirectTargets, programNameOf } from './shell.ts';
+import { analyzeCommand, executionSteps, looseRedirectTargets, programNameOf } from './shell.ts';
 import type { Analysis, Segment } from './shell.ts';
 import { describeReason, markRelativeUnresolvable, targetOfText } from './targets.ts';
 import type { Target } from './targets.ts';
@@ -38,8 +40,10 @@ export type Decision = {
   source: 'rule' | 'mode' | 'protected' | 'hook';
   reason: string;
   rule?: PermissionRule;
+  humanOnly?: true;
 };
 
+const GLOB_METACHARACTER = /[*?[]/;
 const DISCARD_TARGETS: ReadonlySet<string> = new Set(['/dev/null', '/dev/stdout', '/dev/stderr']);
 const WRITE_TOOL: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write' };
 const READ_TOOL: PolicyTool = { name: 'Read', kind: 'read', sideEffect: 'read_only' };
@@ -95,7 +99,7 @@ const scanDeny = (input: DecideInput, subject: PermissionSubject, applicable: Ap
 
 const protectedDecision = (input: DecideInput, subject: PermissionSubject): Decision | undefined => {
   const reason = protectedWriteReason(input, subject);
-  return reason === undefined ? undefined : { kind: 'ask', source: 'protected', reason };
+  return reason === undefined ? undefined : { kind: 'ask', source: 'protected', reason, humanOnly: true };
 };
 
 const checkGuards = (input: DecideInput, subject: PermissionSubject): Decision | undefined =>
@@ -129,7 +133,7 @@ const modeDefault = (input: DecideInput, subject: PermissionSubject): Decision =
 };
 
 const commandDefault = (input: DecideInput, command: string): Decision => {
-  const approval = commandApproval(input, command, analyzeCommand(command));
+  const approval = commandApproval(input, command, analyzeCommand(command, commandSpecsFor(input.fs.platform)));
   if (approval === 'read-only') return byMode('allow', 'read-only command');
   if (approval === 'edit' && input.mode === 'acceptEdits') return byMode('allow', 'acceptEdits mode allows filesystem commands inside the workspace');
   return byMode('ask', 'shell commands require approval');
@@ -188,12 +192,44 @@ const worktreeOf = (input: DecideInput): string => {
   return canonicalCwd;
 };
 
-const resolveTargets = (input: DecideInput, targets: readonly Target[]): PathPlan => {
+const expandGlobTarget = (input: DecideInput, pattern: string, plan: PathPlan, place: (resolved: string) => void): void => {
+  const braced = expandBraces(pattern, MAX_GLOB_MATCHES);
+  if (braced === 'overflow') {
+    plan.unresolvable.push({ kind: 'dynamic' });
+    return;
+  }
+  for (const word of braced) {
+    const rooted = word === '~' || word.startsWith('~/') ? path.join(input.home, word.slice(1)) : word;
+    if (rooted.startsWith('~')) {
+      plan.unresolvable.push({ kind: 'other-user-home' });
+      continue;
+    }
+    if (!GLOB_METACHARACTER.test(rooted)) {
+      place(absoluteFrom(rooted, input.cwd));
+      continue;
+    }
+    const expansion = input.fs.expandGlob(rooted, input.cwd, MAX_GLOB_MATCHES);
+    if ('overflow' in expansion) plan.unresolvable.push({ kind: 'dynamic' });
+    else if ('unresolvable' in expansion) plan.unresolvable.push(expansion.unresolvable);
+    else if (expansion.matches.length === 0) place(absoluteFrom(rooted, input.cwd));
+    else for (const match of expansion.matches) place(absoluteFrom(match, input.cwd));
+  }
+};
+
+const resolveTargets = (input: DecideInput, targets: readonly Target[], mutated: readonly string[]): PathPlan => {
   const plan: PathPlan = { paths: [], removes: [], candidates: [], unresolvable: [], needsApproval: false };
   const resolve = (text: string): string | undefined => {
     if (DISCARD_TARGETS.has(text)) return undefined;
     if (text === '~' || text.startsWith('~/')) return path.join(input.home, text.slice(1));
     return absoluteFrom(text, input.cwd);
+  };
+  const shadowed = (resolved: string): boolean => mutated.some((changed) => lexicallyWithin(resolved, changed));
+  const noteShadow = (resolved: string): void => {
+    if (shadowed(resolved)) plan.unresolvable.push({ kind: 'earlier-segment' });
+  };
+  const place = (resolved: string): void => {
+    plan.paths.push(resolved);
+    noteShadow(resolved);
   };
   let worktree: string | undefined;
   for (const target of targets) {
@@ -202,17 +238,20 @@ const resolveTargets = (input: DecideInput, targets: readonly Target[]): PathPla
     } else if ('worktree' in target) {
       worktree ??= worktreeOf(input);
       const resolved = target.below === undefined ? worktree : path.join(worktree, target.below);
-      plan.paths.push(resolved);
+      place(resolved);
       plan.removes.push(resolved);
+    } else if ('glob' in target) {
+      expandGlobTarget(input, target.glob, plan, place);
     } else if ('candidate' in target) {
       const resolved = resolve(target.candidate);
       if (resolved === undefined) continue;
       plan.candidates.push(resolved);
+      noteShadow(resolved);
       if (target.removes === true) plan.removes.push(resolved);
     } else {
       const resolved = resolve(target.literal);
       if (resolved === undefined) continue;
-      plan.paths.push(resolved);
+      place(resolved);
       if (target.removes === true) plan.removes.push(resolved);
       if (target.needsApproval === true) plan.needsApproval = true;
     }
@@ -228,20 +267,36 @@ const sedResolution =
     return 'program' in resolution ? resolution.program : undefined;
   };
 
-const analysisPlan = (input: DecideInput, analysis: Analysis): { writes: PathPlan; reads: PathPlan } => ({
-  writes: resolveTargets(input, allWriteTargets(analysis, sedResolution(input))),
-  reads: resolveTargets(input, allReadTargets(analysis)),
+const mergePlans = (plans: readonly PathPlan[]): PathPlan => ({
+  paths: plans.flatMap((plan) => plan.paths),
+  removes: plans.flatMap((plan) => plan.removes),
+  candidates: plans.flatMap((plan) => plan.candidates),
+  unresolvable: plans.flatMap((plan) => plan.unresolvable),
+  needsApproval: plans.some((plan) => plan.needsApproval),
 });
+
+const analysisPlan = (input: DecideInput, analysis: Analysis): { writes: PathPlan; reads: PathPlan } => {
+  const mutated: string[] = [];
+  const writes: PathPlan[] = [];
+  const reads: PathPlan[] = [];
+  for (const step of executionSteps(analysis, sedResolution(input))) {
+    reads.push(resolveTargets(input, step.reads, mutated));
+    const written = resolveTargets(input, step.writes, mutated);
+    writes.push(written);
+    if (step.relocates) mutated.push(...written.paths, ...written.candidates);
+  }
+  return { writes: mergePlans(writes), reads: mergePlans(reads) };
+};
 
 const looseUnresolvable: UnresolvableReason = { kind: 'unanalyzable' };
 
 const planPathAccess = (input: DecideInput, command: string): { writes: PathPlan; reads: PathPlan } => {
-  const analysis = analyzeCommand(command);
+  const analysis = analyzeCommand(command, commandSpecsFor(input.fs.platform));
   if (analysis !== null) return analysisPlan(input, analysis);
-  const loose = resolveTargets(input, markRelativeUnresolvable(looseRedirectTargets(command).map((text) => targetOfText(text)), 'changed'));
+  const loose = resolveTargets(input, markRelativeUnresolvable(looseRedirectTargets(command).map((text) => targetOfText(text)), 'changed'), []);
   return {
     writes: { ...loose, paths: loose.paths.filter((target) => path.isAbsolute(target)), unresolvable: command.includes('>') ? [looseUnresolvable] : [] },
-    reads: { ...resolveTargets(input, []), unresolvable: command.includes('<') ? [looseUnresolvable] : [] },
+    reads: { ...resolveTargets(input, [], []), unresolvable: command.includes('<') ? [looseUnresolvable] : [] },
   };
 };
 
@@ -259,7 +314,7 @@ const removesWorkspace = (input: DecideInput, targets: readonly string[]): boole
 
 const decidePathAccess = (input: DecideInput, plan: PathPlan, tool: PolicyTool, access: 'read' | 'write'): Decision[] => {
   const decisions: Decision[] = [];
-  if (input.mode !== 'bypassPermissions' && removesWorkspace(input, plan.removes)) decisions.push(byMode('ask', 'the command removes the workspace'));
+  if (input.mode !== 'bypassPermissions' && removesWorkspace(input, plan.removes)) decisions.push({ ...byMode('ask', 'the command removes the workspace'), humanOnly: true });
   if (plan.paths.length > 0) {
     decisions.push(decideSubject(input, tool, { kind: 'path', tool: tool.name, paths: plan.paths, access }, true));
   }
@@ -287,8 +342,10 @@ export const decide = (input: DecideInput): Decision => {
   ];
   const denied = secondary.find((decision) => decision.kind === 'deny');
   if (denied !== undefined) return denied;
-  const guarded = secondary.find((decision) => decision.kind === 'ask' && decision.source === 'protected');
-  if (guarded !== undefined) return guarded;
+  const humanOnly = secondary.find((decision) => decision.kind === 'ask' && decision.humanOnly === true);
+  if (humanOnly?.source === 'protected') return humanOnly;
+  if (primary.kind === 'ask' && primary.source !== 'mode') return primary;
+  if (humanOnly !== undefined) return humanOnly;
   if (primary.kind === 'ask') return primary;
   return secondary.find((decision) => decision.kind === 'ask') ?? primary;
 };

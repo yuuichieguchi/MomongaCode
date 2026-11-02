@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseGit } from '../src/git-argv.ts';
+import { STRUCTURAL_SPECS } from '../src/shell.ts';
 import { analyzeCommand, allWriteTargets } from '../src/shell.ts';
 import type { Word } from '../src/shell.ts';
 
@@ -11,7 +12,7 @@ const argsOf = (command: string): Word[] => {
 };
 
 const parsed = (command: string) => {
-  const result = parseGit(argsOf(command));
+  const result = parseGit(argsOf(command), STRUCTURAL_SPECS);
   return {
     subcommand: result.subcommand,
     rest: result.rest.map((word) => word.value),

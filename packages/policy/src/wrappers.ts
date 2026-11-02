@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { isOptionWord, parseOptionAt } from './argv.ts';
 import type { ParsedOption } from './argv.ts';
-import { specOf } from './command-specs.ts';
+import type { CommandSpecs } from './command-specs.ts';
 import type { CommandSpec } from './command-specs.ts';
 import { ASSIGNMENT } from './shell-lexemes.ts';
 import type { Word } from './shell.ts';
@@ -44,7 +44,7 @@ const recordOptionEffect = (found: EffectiveCommand, spec: CommandSpec, option: 
   else if (effect === 'root') found.cwdEffect = strongerEffect(found.cwdEffect, 'root-changed');
 };
 
-export const locateEffectiveCommand = (words: Word[]): EffectiveCommand => {
+export const locateEffectiveCommand = (words: Word[], specs: CommandSpecs): EffectiveCommand => {
   const found: EffectiveCommand = { index: -1, strictIndex: -1, unanalyzable: false, payloads: [], wrappers: [], cwdEffect: 'none', writes: [] };
   let stripping = true;
   let index = 0;
@@ -56,7 +56,7 @@ export const locateEffectiveCommand = (words: Word[]): EffectiveCommand => {
     while (index < words.length && ASSIGNMENT.test((words[index] as Word).value)) index += 1;
     const word = words[index];
     if (word === undefined) return found;
-    const spec = word.literal ? specOf(path.basename(word.value)) : undefined;
+    const spec = word.literal ? specs.specOf(path.basename(word.value)) : undefined;
     const wrapper = spec?.wrapper;
     if (spec === undefined || wrapper === undefined) {
       settleStrict(index);

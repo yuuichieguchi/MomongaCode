@@ -32,6 +32,10 @@ const haltOf = (replies: readonly HookReply[]): { reason: string | undefined } |
 
 const decisionOf = (reply: HookReply): { decision: HookPreToolDecision; reason: string | undefined } | undefined => {
   if (reply.execution.outcome === 'blocked') return { decision: 'deny', reason: reply.execution.message };
+  if (reply.execution.outcome === 'error' || reply.execution.outcome === 'timed_out') {
+    const detail = reply.execution.message === undefined || reply.execution.message === '' ? reply.execution.outcome : reply.execution.message;
+    return { decision: 'ask', reason: `the PreToolUse hook ${reply.execution.command} failed (${detail}), so its verdict is unknown` };
+  }
   const decision = reply.output?.decision;
   if (decision === undefined || decision === 'block') return undefined;
   return { decision, reason: reply.output?.reason };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { COMMAND_SPECS } from '@momonga/policy';
+import { commandSpecsFor } from '@momonga/policy';
 import { MODE_RULE } from './inheritance-support.ts';
 
 const listed = (text: string, pattern: RegExp): string[] => {
@@ -16,8 +16,8 @@ const EDIT_LIST = /filesystem commands (.*?) inside the workspace/;
 
 describe('model-facing mode texts name exactly the approvable programs (3.12)', () => {
   it('names the read-only set in the default and plan texts and the edit set in the acceptEdits text', () => {
-    const readOnly = COMMAND_SPECS.filter((model) => model.approval === 'read-only').flatMap((model) => model.names);
-    const edit = COMMAND_SPECS.filter((model) => model.approval === 'edit').flatMap((model) => model.names);
+    const readOnly = commandSpecsFor('darwin').all.filter((model) => model.approval === 'read-only').flatMap((model) => model.names);
+    const edit = commandSpecsFor('darwin').all.filter((model) => model.approval === 'edit').flatMap((model) => model.names);
     expect(readOnly.length).toBeGreaterThan(0);
     expect(edit.length).toBeGreaterThan(0);
     expect(new Set(listed(MODE_RULE.default, READ_ONLY_LIST))).toEqual(new Set(readOnly));
