@@ -1,8 +1,9 @@
 import type { CallToolResult, Tool } from '@modelcontextprotocol/client';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import { defineTool, ToolExecutionError } from '@momonga/tools';
+import { defineTool, ToolExecutionError, TransientToolError } from '@momonga/tools';
 import type { AnyTool, ToolListOptions, ToolResult, ToolSource, ToolSourceListing } from '@momonga/tools';
 import { McpUnavailableError } from './connection.ts';
+import { isTransientRemoteFailure } from './remote-errors.ts';
 import type { McpServerConnection } from './connection.ts';
 import { sanitizeSchema } from './schema-sanitizer.ts';
 import { capText, sanitizeServerText } from './text.ts';
@@ -59,11 +60,11 @@ const mapContentBlock = (block: CallToolResult['content'][number]): string => {
   }
 };
 
-const mapResult = (result: CallToolResult): ToolResult => {
+const mapResult = (result: CallToolResult, redact: (text: string) => string): ToolResult => {
   const hasText = result.content.some((block) => block.type === 'text');
   const rendered = result.content.map(mapContentBlock);
   if (result.structuredContent !== undefined && !hasText) rendered.push(canonicalJson(result.structuredContent));
-  let output = rendered.join('\n');
+  let output = redact(rendered.join('\n'));
   if (output === '') output = NO_OUTPUT;
   return {
     status: result.isError === true ? 'failed' : 'completed',
@@ -72,9 +73,10 @@ const mapResult = (result: CallToolResult): ToolResult => {
   };
 };
 
-const toExecutionError = (server: string, error: unknown): ToolExecutionError => {
-  if (error instanceof McpUnavailableError) return new ToolExecutionError(error.message);
-  return new ToolExecutionError(`MCP server "${server}" failed: ${error instanceof Error ? error.message : String(error)}`);
+const toExecutionError = (server: string, error: unknown, redact: (text: string) => string): ToolExecutionError | TransientToolError => {
+  if (error instanceof McpUnavailableError) return new ToolExecutionError(redact(error.message));
+  const message = redact(`MCP server "${server}" failed: ${error instanceof Error ? error.message : String(error)}`);
+  return isTransientRemoteFailure(error) ? new TransientToolError(message) : new ToolExecutionError(message);
 };
 
 const buildTool = (
@@ -108,9 +110,9 @@ const buildTool = (
           ...(ctx.tracestate === undefined ? {} : { tracestate: ctx.tracestate }),
         });
       } catch (error) {
-        throw toExecutionError(server, error);
+        throw toExecutionError(server, error, (text) => connection.redact(text));
       }
-      return mapResult(result);
+      return mapResult(result, (text) => connection.redact(text));
     },
   });
 };

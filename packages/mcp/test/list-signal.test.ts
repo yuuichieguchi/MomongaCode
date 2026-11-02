@@ -27,6 +27,7 @@ const connectionFor = (extra: Partial<McpConnectionOptions> = {}): McpServerConn
   const connection = createManagedConnection({
     name: 'modern',
     config: modernServer,
+    scope: 'user',
     projectDir: makeDir(),
     baseEnv: BASE_ENV,
     clock: createFakeClock(1_000_000),

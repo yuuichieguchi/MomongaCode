@@ -14,6 +14,7 @@ export type { ParseRuleOptions, PathToolName, PermissionRule, RuleEffect, RuleOr
 export { SETTINGS_SCHEMA } from './settings-schema.ts';
 export type { TrustOracle, UserLayer } from './layers.ts';
 export type {
+  McpOAuthConfig,
   McpRemoteServerConfig,
   McpServerConfig,
   McpStdioServerConfig,

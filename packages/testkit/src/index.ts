@@ -161,3 +161,15 @@ export {
 export type { FakeOpenResponsesOptions, TerminalSpec } from './fake-open-responses.ts';
 export { createFakeSecretStore, createFakeSecurityPort } from './fake-secrets.ts';
 export type { FakeSecretStore, FakeSecurityPort } from './fake-secrets.ts';
+export { readBody, sendJson, startLoopbackServer } from './loopback-http.ts';
+export type { LoopbackHandler, LoopbackServer } from './loopback-http.ts';
+export { startMcpOauthFixture } from './mcp-oauth-fixture.ts';
+export type { AuthorizeMode, McpOauthFixture, OauthFixtureRecord, TokenVerdict } from './mcp-oauth-fixture.ts';
+export {
+  HTTP_FIXTURE_LEGACY_VERSION,
+  HTTP_FIXTURE_MODERN_VERSION,
+  HTTP_FIXTURE_RECONNECT_DELAY_MS,
+  HTTP_FIXTURE_TASKS_EXTENSION,
+  startMcpHttpFixture,
+} from './mcp-http-fixture.ts';
+export type { FixtureNote, McpHttpFixture, McpHttpFixtureEra, McpHttpFixtureOptions, RecordedHttpRequest } from './mcp-http-fixture.ts';

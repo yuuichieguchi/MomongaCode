@@ -21,9 +21,18 @@ export const MCP_SERVER_SCHEMA = {
     {
       type: 'object',
       properties: {
-        type: { type: 'string', enum: ['http', 'sse'] },
+        type: { type: 'string', const: 'http' },
         url: { type: 'string', minLength: 1 },
         headers: STRING_MAP,
+        oauth: {
+          type: 'object',
+          properties: {
+            clientId: { type: 'string', minLength: 1 },
+            scope: { type: 'string', minLength: 1 },
+            callbackPort: { type: 'integer', minimum: 1, maximum: 65535 },
+          },
+          additionalProperties: false,
+        },
       },
       required: ['type', 'url'],
       additionalProperties: false,

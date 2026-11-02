@@ -16,7 +16,8 @@ export type E2eCaseFile =
   | 'eval-runner.test.ts'
   | 'otlp-export.test.ts'
   | 'open-responses-compliance.test.ts'
-  | 'providers.test.ts';
+  | 'providers.test.ts'
+  | 'mcp-remote.test.ts';
 
 export const E2E_CASES = [
   { id: 'b1-join', file: 'b1-model-call.test.ts', title: 'b1 join: restarted runtime joins the in-flight upstream call', needsBash: false },
@@ -35,6 +36,8 @@ export const E2E_CASES = [
   { id: 'mt3', file: 'multi-turn.test.ts', title: 'mt3: a cancelled predecessor with partial text is inherited with a merged marker', needsBash: false },
   { id: 'mt4', file: 'multi-turn.test.ts', title: 'mt4: history fresh starts a new conversation that later runs inherit', needsBash: false },
   { id: 'mcp-orphan', file: 'mcp-orphan.test.ts', title: 'mcp: a live MCP server tree is gone after the runtime is killed and restarted', needsBash: true },
+  { id: 'mcp-remote-modern', file: 'mcp-remote.test.ts', title: 'mcp remote: a run calls tools of a 2026-07-28 streamable HTTP server, including a multi round-trip tool', needsBash: false },
+  { id: 'mcp-remote-legacy', file: 'mcp-remote.test.ts', title: 'mcp remote: a run calls a tool of a 2025-11-25 streamable HTTP server over a session', needsBash: false },
   { id: 's1', file: 'supervisor.test.ts', title: 'S1 supervisor SIGKILL: children close themselves, observably', needsBash: false },
   { id: 's1b', file: 'supervisor.test.ts', title: 'S1b wedged orphan is reaped by the next supervisor, observably', needsBash: false },
   { id: 's1c-phase1', file: 'supervisor.test.ts', title: 'S1c shutdown during the reap is bounded and spawns nothing', needsBash: false },
