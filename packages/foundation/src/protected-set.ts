@@ -255,6 +255,8 @@ const collectRoot = (roots: readonly string[], ports: ProtectedSetPorts, collect
   const read = ports.readEntry(pointer);
   if ('unresolvable' in read) {
     protectUnresolvable(roots, ports, collected, { root, file: pointer }, pointer, read.unresolvable);
+    collected.literals.add(pointer);
+    collected.literals.add(parentCanonicalForm(pointer, ports.canonicalise));
     return;
   }
   switch (read.kind) {
