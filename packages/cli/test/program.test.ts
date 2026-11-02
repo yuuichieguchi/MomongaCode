@@ -5,6 +5,7 @@ import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
 import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
+import { nodePolicyVerifyHost } from '../src/verify/host.ts';
 
 const IO = { name: 'io' } as unknown as EntryIo;
 
@@ -20,6 +21,7 @@ const harness = () => {
   const ports = { version: '9.9.9', home: '/h', cwd: '/c', terminal: undefined } as unknown as CliPorts;
   const program = buildProgram({
     ports,
+    policyVerify: nodePolicyVerifyHost(ports, { cacheBase: '/c/cache' }),
     entries,
     update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
     interrupt: new AbortController().signal,

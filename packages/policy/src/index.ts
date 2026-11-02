@@ -1,8 +1,12 @@
 export { parseRule, RuleParseError } from '@momonga/config';
 export type { ParseRuleOptions, PermissionRule, RuleEffect, RuleOrigin } from '@momonga/config';
-export { decide } from './decide.ts';
+export { decide, decidePrimary } from './decide.ts';
 export type { DecideInput, Decision } from './decide.ts';
-export { matchRule } from './match-rule.ts';
+export { matchRule, ruleCoversSubject } from './match-rule.ts';
+export { INERT_PRINTERS, commandPatternOf } from './command-match.ts';
+export type { CommandPattern } from './command-match.ts';
+export { RESERVED_WORDS } from './shell.ts';
+export { ASSIGNMENT } from './shell-lexemes.ts';
 export { computeFileRules, fileRuleSpecsOf } from './file-rules.ts';
 export type { DecisionKind, PermissionSubject, PolicyTool, SideEffect } from './types.ts';
 export { modelVisibleTools } from './visible-tools.ts';

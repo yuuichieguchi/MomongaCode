@@ -331,8 +331,10 @@ const decidePathAccess = (input: DecideInput, plan: PathPlan, tool: PolicyTool, 
   return decisions;
 };
 
+export const decidePrimary = (input: DecideInput): Decision => decideSubject(input, input.tool, input.subject, false);
+
 export const decide = (input: DecideInput): Decision => {
-  const primary = decideSubject(input, input.tool, input.subject, false);
+  const primary = decidePrimary(input);
   if (input.subject.kind !== 'command' || primary.kind === 'deny') return primary;
 
   const plan = planPathAccess(input, input.subject.command);

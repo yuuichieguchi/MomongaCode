@@ -123,6 +123,7 @@ export const E2E_CASES = [
   { id: 'bg-runtime-kill', file: 'agents.test.ts', title: 'background bash: the runtime killed while a run waits on a job leaves the job unknown, kills its process group and wakes the run', needsBash: true },
   { id: 'cli-job-list', file: 'agents.test.ts', title: 'cli: momonga jobs lists a running background job and then its exit, and momonga status shows the run waiting on it', needsBash: true },
   { id: 'cli-models', file: 'product-cli.test.ts', title: 'cli: momonga models lists the aliases with the capabilities the gateway declares, as text and as JSON', needsBash: false },
+  { id: 'cli-policy-verify', file: 'product-cli.test.ts', title: 'cli: momonga policy verify proves a clean rule set and states what it does not prove, and exits non-zero with a counterexample when an allow rule admits a denied subcommand or reaches a secret', needsBash: false },
   { id: 'cli-cost', file: 'product-cli.test.ts', title: 'cli: momonga cost reports the calls and tokens of a run, of its session and of the folder, as text and as JSON', needsBash: false },
   { id: 'cli-memory', file: 'product-cli.test.ts', title: 'cli: momonga memory lists, shows and deletes a memory the agent saved, with its source', needsBash: false },
   { id: 'cli-skill-print', file: 'product-cli.test.ts', title: 'cli: momonga -p runs a skill through a leading /skill-name and through --skill, and sends any other slash text as plain text', needsBash: false },
