@@ -27,6 +27,7 @@ const ALL_PACKAGES = [
   'cli',
   'eval',
   'testkit',
+  'verify',
 ] as const;
 
 interface PackageRule {
@@ -55,9 +56,10 @@ const MATRIX: Record<string, PackageRule> = {
   agents: rule(['protocol', 'foundation', 'skills', 'tools']),
   runtime: rule(['protocol', 'foundation', 'config', 'store', 'observability', 'policy', 'sandbox', 'tools', 'mcp', 'context', 'skills', 'agents']),
   supervisor: rule(['protocol', 'foundation', 'config']),
-  cli: rule(['protocol', 'foundation', 'config', 'eval'], ['runtime', 'gateway', 'supervisor']),
+  cli: rule(['protocol', 'foundation', 'config', 'eval'], ['runtime', 'gateway', 'supervisor', 'verify']),
   eval: rule(['protocol', 'foundation']),
   testkit: rule(['protocol', 'foundation']),
+  verify: rule(['protocol', 'foundation', 'config', 'policy']),
 };
 
 export interface ImportSpecifier {
@@ -268,6 +270,24 @@ describe('architecture: checker self-test', () => {
     expect(checkFile('gateway', fileIn('gateway'), "import { e } from '@momonga/eval';")).toHaveLength(1);
   });
 
+  it('allows cli to import verify only dynamically, and verify to import protocol, foundation, config and policy only', () => {
+    expect(checkFile('cli', fileIn('cli'), "const v = await import('@momonga/verify');")).toEqual([]);
+    expect(checkFile('cli', fileIn('cli'), "import { verifyPermissions } from '@momonga/verify';")).toHaveLength(1);
+    expect(checkFile('runtime', fileIn('runtime'), "const v = await import('@momonga/verify');")).toHaveLength(1);
+    expect(
+      checkFile(
+        'verify',
+        fileIn('verify'),
+        "import { a } from '@momonga/protocol';\nimport { b } from '@momonga/foundation';\nimport { c } from '@momonga/config';\nimport { d } from '@momonga/policy';",
+      ),
+    ).toEqual([]);
+    for (const forbidden of ['tools', 'sandbox', 'runtime', 'store', 'gateway', 'cli', 'testkit']) {
+      expect(checkFile('verify', fileIn('verify'), `import { x } from '@momonga/${forbidden}';`)).toHaveLength(1);
+    }
+    expect(checkManifest('verify', { '@momonga/tools': '*' })).toEqual(['verify must not depend on @momonga/tools']);
+    expect(checkManifest('policy', { '@momonga/verify': '*' })).toEqual(['policy must not depend on @momonga/verify']);
+  });
+
   it('forbids @momonga/testkit everywhere except testkit', () => {
     expect(checkFile('runtime', fileIn('runtime'), "import { f } from '@momonga/testkit';")).toHaveLength(1);
     expect(checkFile('cli', fileIn('cli'), "const t = await import('@momonga/testkit');")).toHaveLength(1);
@@ -295,7 +315,37 @@ describe('architecture: checker self-test', () => {
   });
 });
 
-const UNKNOWN_WRITER_CALL = /\b(markUnknown|markUnknownIfPending)\s*\((?![^()]*\)\s*[:{])/g;
+const Z3_VALUE_IMPORT = /^\s*(?:import|export)\s+(?!type\b)[^;]*?\bfrom\s*['"]z3-solver['"]|\bimport\s*\(\s*['"]z3-solver['"]\s*\)|\bimport\s+['"]z3-solver['"]/m;
+
+export const importsZ3AsValue = (source: string): boolean => Z3_VALUE_IMPORT.test(source);
+
+describe('architecture: the Z3 solver is loaded only through the verify engine', () => {
+  it('no package imports z3-solver as a value; the engine requires the entry it is given', () => {
+    const offenders = packageNames
+      .flatMap((name) => listSourceFiles(path.join(packagesDir, name, 'src')))
+      .filter((file) => importsZ3AsValue(fs.readFileSync(file, 'utf8')))
+      .map((file) => path.relative(root, file));
+    expect(offenders).toEqual([]);
+  });
+
+  it('the matcher separates value imports from type imports', () => {
+    expect(importsZ3AsValue("import { init } from 'z3-solver';")).toBe(true);
+    expect(importsZ3AsValue("const z = await import('z3-solver');")).toBe(true);
+    expect(importsZ3AsValue("import 'z3-solver';")).toBe(true);
+    expect(importsZ3AsValue("import type { Context } from 'z3-solver';")).toBe(false);
+    expect(importsZ3AsValue("import { openZ3 } from './engine.ts';")).toBe(false);
+  });
+
+  it('only the explicit policy verify command reaches the verify package', () => {
+    const importers = packageNames
+      .flatMap((name) => listSourceFiles(path.join(packagesDir, name, 'src')))
+      .filter((file) => /\bimport\s*\(\s*['"]@momonga\/verify['"]\s*\)/.test(fs.readFileSync(file, 'utf8')))
+      .map((file) => path.relative(root, file));
+    expect(importers).toEqual(['packages/cli/src/verify/host.ts']);
+  });
+});
+
+const UNKNOWN_WRITER_CALL =/\b(markUnknown|markUnknownIfPending)\s*\((?![^()]*\)\s*[:{])/g;
 const UNKNOWN_WRITER_ALLOWLIST = ['packages/tools/src/executor.ts'];
 
 export const unknownWriterCalls = (source: string): string[] => [...source.matchAll(UNKNOWN_WRITER_CALL)].map((match) => match[1] as string);

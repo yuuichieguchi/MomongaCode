@@ -39,7 +39,7 @@ export const MAX_NESTING = 8;
 const FORBIDDEN_CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f]/;
 const DOUBLE_QUOTE_ESCAPABLE = '$`"\\';
 
-const RESERVED_WORDS: ReadonlySet<string> = new Set([
+export const RESERVED_WORDS: ReadonlySet<string> = new Set([
   'if', 'then', 'else', 'elif', 'fi', 'for', 'while', 'until', 'do', 'done', 'case', 'esac', 'in',
   'function', 'select', 'coproc', '{', '}', '!', '[[', ']]',
 ]);

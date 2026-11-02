@@ -4,6 +4,7 @@ import { describeFailure } from '../../../packages/cli/src/failure.ts';
 import { nodePorts } from '../../../packages/cli/src/node-ports.ts';
 import { buildProgram, pathsOf } from '../../../packages/cli/src/program.ts';
 import { nodeUpdateWiring } from '../../../packages/cli/src/update/wiring.ts';
+import { nodePolicyVerifyHost } from '../../../packages/cli/src/verify/host.ts';
 
 export const FIXTURE_REPO = 'acme/momonga';
 export const FIXTURE_TEAM_ID = 'ABCDE12345';
@@ -18,6 +19,7 @@ export const runUpdateFixture = async (version: string): Promise<void> => {
   const wiring = nodeUpdateWiring(ports, pathsOf(ports));
   const program = buildProgram({
     ports,
+    policyVerify: nodePolicyVerifyHost(ports, pathsOf(ports)),
     entries: daemonEntries(ports.self),
     update: {
       ...wiring,

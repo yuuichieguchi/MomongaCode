@@ -57,6 +57,7 @@ export type { SessionStates, SessionStatesOptions } from './process/session-stat
 export { createSettingsComposition } from './process/settings-port.ts';
 export type { SettingsComposition, SettingsCompositionOptions, UserSnapshot } from './process/settings-port.ts';
 export { createPolicyFor, createRecoveryContextFor } from './process/tool-policy.ts';
+export { createPolicyFilesystem } from '@momonga/tools';
 export type { PolicyForOptions } from './process/tool-policy.ts';
 export { createMemoryPort } from './process/memory-port.ts';
 export type { MemoryPortOptions } from './process/memory-port.ts';

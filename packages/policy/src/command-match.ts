@@ -5,14 +5,14 @@ import { ASSIGNMENT } from './shell-lexemes.ts';
 import { analyzeCommand } from './shell.ts';
 import type { Analysis, Segment, Word } from './shell.ts';
 
-const INERT_PRINTERS: ReadonlySet<string> = new Set(['echo', 'printf']);
+export const INERT_PRINTERS: ReadonlySet<string> = new Set(['echo', 'printf']);
 const WORD_PIECE_SEPARATOR = /[=!]/;
 
 export type MatchStrength = 'position' | 'incidental';
 
-type CommandPattern = { kind: 'exact'; text: string } | { kind: 'prefix'; words: string[] };
+export type CommandPattern = { kind: 'exact'; text: string } | { kind: 'prefix'; words: string[] };
 
-const patternOf = (rule: PermissionRule): CommandPattern => {
+export const commandPatternOf = (rule: PermissionRule): CommandPattern => {
   const specifier = rule.specifier as string;
   if (specifier.endsWith(COMMAND_PREFIX_SUFFIX)) {
     return { kind: 'prefix', words: specifier.slice(0, -COMMAND_PREFIX_SUFFIX.length).trim().split(/\s+/) };
@@ -73,10 +73,10 @@ const conservativeAnalysisStrength = (pattern: CommandPattern, analysis: Analysi
   ]);
 
 export const matchesSegment = (rule: PermissionRule, segment: Segment): boolean =>
-  strictSegmentMatches(patternOf(rule), segment);
+  strictSegmentMatches(commandPatternOf(rule), segment);
 
 export const commandMatchStrength = (rule: PermissionRule, command: string): MatchStrength | null => {
-  const pattern = patternOf(rule);
+  const pattern = commandPatternOf(rule);
   if (pattern.kind === 'exact' && command.trim() === pattern.text) return 'position';
   const analysis = analyzeCommand(command);
   if (rule.effect === 'allow') {

@@ -6,6 +6,7 @@ import type { CliPorts } from './ports.ts';
 import { pathsOf } from './paths.ts';
 import { buildProgram } from './program.ts';
 import { nodeUpdateWiring } from './update/wiring.ts';
+import { nodePolicyVerifyHost } from './verify/host.ts';
 
 const entryIo = (args: readonly string[]): ReturnType<typeof nodeEntryIo> => ({ ...nodeEntryIo(), argv: [...args] });
 
@@ -19,6 +20,7 @@ export const runMain = async (version: string, overrides: Partial<CliPorts> = {}
     ports,
     entries: daemonEntries(ports.self),
     update: nodeUpdateWiring(ports, pathsOf(ports)),
+    policyVerify: nodePolicyVerifyHost(ports, pathsOf(ports)),
     interrupt: interrupt.signal,
     entryIo,
     complete: (code) => {

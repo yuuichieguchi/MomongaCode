@@ -6,6 +6,7 @@ import { bundle, defaultEntry, repoRoot } from './bundle.ts';
 import type { UpdateSourceInputs } from './bundle.ts';
 import { SEA_TARGETS, ensureSeaNode, isSeaTargetName } from './node-runtime.ts';
 import type { SeaTargetName } from './node-runtime.ts';
+import { buildZ3Assets } from './z3-assets.ts';
 
 export const nodeCacheDir = `${repoRoot}.cache/node`;
 export const entitlementsPath = `${repoRoot}scripts/sea-entitlements.plist`;
@@ -24,6 +25,7 @@ export const buildSeaUnsigned = async ({ entry, output, workDir, target = 'darwi
   fs.mkdirSync(path.dirname(output), { recursive: true });
   const main = path.join(workDir, 'main.mjs');
   await bundle({ entry, outfile: main, ...(releaseRepo === undefined ? {} : { releaseRepo }), ...(teamId === undefined ? {} : { teamId }) });
+  const assets = await buildZ3Assets(workDir, import.meta.url);
   const configPath = path.join(workDir, 'sea-config.json');
   fs.writeFileSync(
     configPath,
@@ -36,6 +38,7 @@ export const buildSeaUnsigned = async ({ entry, output, workDir, target = 'darwi
       useCodeCache: false,
       useSnapshot: false,
       execArgvExtension: 'none',
+      assets,
     }),
   );
   const runner = target === hostSeaTarget() ? nodeBinary : await ensureSeaNode(nodeCacheDir, hostSeaTarget());

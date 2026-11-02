@@ -40,7 +40,47 @@ describe('momonga models, cost and memory', () => {
     expect(json).toMatchObject([{ id: 'default', targets: ['primary'], capabilities: { contextWindow: 8192, maxOutputTokens: 1024, imageInput: true } }]);
   });
 
-  it(titleOf('cli-cost'), { timeout: 2 * E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('cli-policy-verify'), { timeout: 3 * E2E_TEST_TIMEOUT_MS }, async () => {
+    type Report = {
+      results: { id: string; verdict: { status: string; findings?: { counterexample?: { witness: { command?: string }; replay: { agrees?: boolean } } }[] } }[];
+      mismatches: unknown[];
+      outsideProof: string[];
+      exitCode: number;
+    };
+    const clean = await prepareProduct({ settings: { permissions: { allow: ['Bash(git status:*)'], deny: ['Bash(git push:*)'] } } });
+
+    const text = await runCli(clean.home, ['policy', 'verify']);
+    expect(text.stderr).toBe('');
+    expect(text.code).toBe(0);
+    expect(text.stdout).toContain('[PROVED ] the rules leave no route to secrets');
+    expect(text.stdout).toContain('Outside the proof:');
+    expect(text.stdout).toContain('does not prove:');
+    const cleanJson = jsonOf((await runCli(clean.home, ['policy', 'verify', '--json'])).stdout) as Report;
+    expect(cleanJson.results.map((result) => [result.id, result.verdict.status])).toEqual([
+      ['deny-precedence', 'proved'],
+      ['secret-reach', 'proved'],
+      ['rule-consistency', 'proved'],
+      ['bash-admission', 'proved'],
+    ]);
+    expect(cleanJson.mismatches).toEqual([]);
+    expect(cleanJson.exitCode).toBe(0);
+    expect(cleanJson.outsideProof.length).toBeGreaterThan(0);
+
+    const escape = await prepareProduct({ settings: { permissions: { allow: ['Bash(git:*)', 'Read(~/**)'], deny: ['Bash(git push:*)'] } } });
+    const refuted = await runCli(escape.home, ['policy', 'verify']);
+    expect(refuted.code).toBe(1);
+    expect(refuted.stdout).toContain('[REFUTED] a Bash allow rule does not admit a denied program or subcommand');
+    expect(refuted.stdout).toContain('[REFUTED] the rules leave no route to secrets');
+    expect(refuted.stdout).toContain('the decision code agrees (allow)');
+    const refutedJson = jsonOf((await runCli(escape.home, ['policy', 'verify', '--json'])).stdout) as Report;
+    expect(refutedJson.mismatches).toEqual([]);
+    expect(refutedJson.exitCode).toBe(1);
+    const bash = refutedJson.results.find((result) => result.id === 'bash-admission');
+    expect(bash?.verdict.status).toBe('refuted');
+    expect(bash?.verdict.findings?.[0]?.counterexample?.replay.agrees).toBe(true);
+  });
+
+  it(titleOf('cli-cost'),{ timeout: 2 * E2E_TEST_TIMEOUT_MS }, async () => {
     const { home } = await prepareProduct({ script: [textReply('first'), textReply('second')] });
     expect((await runCli(home, ['-p', 'one'])).stdout).toBe('first\n');
     const second = await runCli(home, ['-p', 'two', '--output-format', 'json']);

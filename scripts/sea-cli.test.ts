@@ -121,6 +121,30 @@ describe('single executable built from the real CLI entry', () => {
     expect(family.map((row) => row.command)).toEqual(family.map(() => binary));
   });
 
+  it('proves the permission rules of a folder with the Z3 solver it carries, extracting the solver once into the cache folder', async () => {
+    const original = fs.readFileSync(paths.settingsFile, 'utf8');
+    fs.writeFileSync(paths.settingsFile, JSON.stringify({ ...(JSON.parse(original) as Record<string, unknown>), permissions: { allow: ['Bash(git status:*)'], deny: ['Bash(git push:*)'] } }));
+    try {
+      const first = await run('policy', 'verify', '--json');
+
+      expect(first.stderr).toBe('');
+      expect(first.status).toBe(0);
+      const report = JSON.parse(first.stdout) as { solver: string; results: { id: string; verdict: { status: string } }[]; outsideProof: string[] };
+      expect(report.solver).toMatch(/^Z3 \d+\.\d+\.\d+/);
+      expect(report.results.map((result) => result.verdict.status)).toEqual(['proved', 'proved', 'proved', 'proved']);
+      expect(report.outsideProof.length).toBeGreaterThan(0);
+      const extracted = fs.readdirSync(paths.cacheBase).filter((name) => name.startsWith('z3-'));
+      expect(extracted).toHaveLength(1);
+      expect(fs.readdirSync(path.join(paths.cacheBase, extracted[0] as string)).sort()).toEqual(['z3-api.cjs', 'z3-built.js']);
+
+      const second = await run('policy', 'verify', '--json');
+      expect(second.status).toBe(0);
+      expect(fs.readdirSync(paths.cacheBase).filter((name) => name.startsWith('z3-'))).toEqual(extracted);
+    } finally {
+      fs.writeFileSync(paths.settingsFile, original);
+    }
+  });
+
   it('stops the daemon through momonga daemon stop', async () => {
     const before = familyOf(Number(/pid (\d+)/.exec((await run('daemon', 'status')).stdout)?.[1]), processTable());
 

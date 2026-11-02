@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import { Option } from 'commander';
-import { MEMORY_SCOPES } from '@momonga/protocol';
-import type { MemoryScope } from '@momonga/protocol';
+import { MEMORY_SCOPES, PERMISSION_MODES } from '@momonga/protocol';
+import type { MemoryScope, PermissionMode } from '@momonga/protocol';
 import { pathsOf } from '../paths.ts';
 import type { ProgramDeps } from '../program-deps.ts';
 import { showCost } from './cost.ts';
@@ -11,6 +11,7 @@ import { mcpList, mcpLogin } from './mcp.ts';
 import { memoryDelete, memoryList, memoryShow } from './memory.ts';
 import { listJobs } from './jobs.ts';
 import { listModels } from './models.ts';
+import { policyVerify } from './policy.ts';
 import { showStatus } from './runs.ts';
 import { secretSet } from './secret.ts';
 
@@ -147,6 +148,25 @@ const registerModels: CommandGroup = (program, deps) => {
     });
 };
 
+const registerPolicy: CommandGroup = (program, deps) => {
+  const policy = program.command('policy').description('check the permission rules of this folder');
+  policy
+    .command('verify')
+    .description('prove that no allow rule gets around a deny rule, that no rule leaves a route to secrets, and that every rule can take effect; states what is proved and what is not')
+    .option('--json', 'print the report as JSON')
+    .addOption(new Option('--mode <mode>', 'the permission mode to check; the default mode of the settings when omitted').choices(PERMISSION_MODES))
+    .option('--secret <path>', 'a further secret location to keep out of reach; repeat for several', collect, [])
+    .action(async (options: { json?: true; mode?: PermissionMode; secret: string[] }) => {
+      deps.complete(
+        await policyVerify(deps.ports, pathsOf(deps.ports), deps.policyVerify, {
+          json: options.json === true,
+          secrets: options.secret,
+          ...(options.mode === undefined ? {} : { mode: options.mode }),
+        }),
+      );
+    });
+};
+
 const registerRunTree: CommandGroup = (program, deps) => {
   program
     .command('status [run-id]')
@@ -164,7 +184,7 @@ const registerRunTree: CommandGroup = (program, deps) => {
     });
 };
 
-export const PRODUCT_COMMAND_GROUPS: readonly CommandGroup[] = [registerElicit, registerMcp, registerRunTree, registerMemory, registerCost, registerEvaluate, registerSecret, registerModels];
+export const PRODUCT_COMMAND_GROUPS: readonly CommandGroup[] = [registerElicit, registerMcp, registerRunTree, registerMemory, registerCost, registerEvaluate, registerSecret, registerModels, registerPolicy];
 
 export const registerProductCommands = (program: Command, deps: ProgramDeps): void => {
   for (const group of PRODUCT_COMMAND_GROUPS) group(program, deps);
