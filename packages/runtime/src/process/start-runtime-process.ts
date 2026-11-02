@@ -347,7 +347,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     cleanups.push({ name: 'trace-store', run: () => traceStore.close() });
 
     const telemetry: Telemetry = await step('telemetry', () =>
-      createTelemetry({ serviceName: 'momonga-runtime', serviceVersion: version, clock, store: traceStore, exporters: exportersFor(settings.telemetry) }),
+      createTelemetry({ serviceName: 'momonga-runtime', serviceVersion: version, clock, store: traceStore, exporters: exportersFor(settings.telemetry), captureMessageContent: settings.telemetry?.captureMessageContent === true }),
     );
     cleanups.push({
       name: 'telemetry',

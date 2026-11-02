@@ -27,6 +27,32 @@ describe('telemetry setting', () => {
     await expect(failure).rejects.toThrow('/telemetry/otlp/endpoint');
   });
 
+  it('turns message content capture on only when the user sets captureMessageContent', async () => {
+    const tree = makeTree();
+    expect((await loadUserSettings({ home: tree.home })).settings.telemetry).toBeUndefined();
+    writeJson(userSettingsPath(tree), { telemetry: { ...OTLP, captureMessageContent: true } });
+    const result = await loadUserSettings({ home: tree.home });
+    expect(result.settings.telemetry).toEqual({ ...OTLP, captureMessageContent: true });
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('rejects a captureMessageContent that is not a boolean', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { telemetry: { captureMessageContent: 'yes' } });
+    await expect(loadUserSettings({ home: tree.home })).rejects.toThrow('/telemetry/captureMessageContent');
+  });
+
+  it.each([
+    ['project', projectSettingsPath],
+    ['local', localSettingsPath],
+  ])('discards captureMessageContent from %s settings so a repository cannot turn capture on', async (_name, locate) => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { telemetry: OTLP });
+    writeJson(locate(tree), { telemetry: { captureMessageContent: true } });
+    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    expect(result.settings.telemetry).toEqual(OTLP);
+  });
+
   it('rejects an unknown telemetry property', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { telemetry: { otlp: { endpoint: 'http://127.0.0.1:4318', captureContent: true } } });

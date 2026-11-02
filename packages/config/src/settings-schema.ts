@@ -206,6 +206,7 @@ export const SETTINGS_SCHEMA = {
           required: ['endpoint'],
           additionalProperties: false,
         },
+        captureMessageContent: { type: 'boolean' },
       },
       additionalProperties: false,
     },

@@ -344,6 +344,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       clock,
       store: traceStore,
       exporters: exportersFor(settings.telemetry),
+      captureMessageContent: settings.telemetry?.captureMessageContent === true,
     });
     cleanups.push(() => closeTelemetry(telemetry, traceStore));
 

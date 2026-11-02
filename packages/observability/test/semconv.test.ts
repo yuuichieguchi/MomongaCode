@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ATTR_ERROR_TYPE } from '@opentelemetry/semantic-conventions';
 import * as incubating from '@opentelemetry/semantic-conventions/incubating';
-import { GENAI_SEMCONV } from '@momonga/observability';
+import { GENAI_CONTENT_SEMCONV, GENAI_SEMCONV } from '@momonga/observability';
 
 const EXPECTED_KEYS = {
   ATTR_GEN_AI_OPERATION_NAME: 'gen_ai.operation.name',
@@ -56,5 +56,21 @@ describe('GENAI_SEMCONV', () => {
     }
     expect(ATTR_ERROR_TYPE).toBe('error.type');
     expect(attributes['ATTR_ERROR_TYPE']).toBe('error.type');
+  });
+});
+
+describe('GENAI_CONTENT_SEMCONV', () => {
+  it('exposes exactly the opt-in content keys of the pinned version, each equal to the incubating export and the literal string', () => {
+    const expected = {
+      ATTR_GEN_AI_SYSTEM_INSTRUCTIONS: 'gen_ai.system_instructions',
+      ATTR_GEN_AI_INPUT_MESSAGES: 'gen_ai.input.messages',
+      ATTR_GEN_AI_OUTPUT_MESSAGES: 'gen_ai.output.messages',
+      ATTR_GEN_AI_TOOL_DEFINITIONS: 'gen_ai.tool.definitions',
+      ATTR_GEN_AI_TOOL_CALL_ARGUMENTS: 'gen_ai.tool.call.arguments',
+      ATTR_GEN_AI_TOOL_CALL_RESULT: 'gen_ai.tool.call.result',
+    };
+    const exported = incubating as unknown as Record<string, unknown>;
+    expect(GENAI_CONTENT_SEMCONV).toEqual(expected);
+    for (const [name, literal] of Object.entries(expected)) expect(exported[name], name).toBe(literal);
   });
 });

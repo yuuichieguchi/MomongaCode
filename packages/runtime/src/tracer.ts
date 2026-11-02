@@ -1,4 +1,4 @@
-import { contextOf, recordError, startAgentSpan, startToolSpan, traceparentOf } from '@momonga/observability';
+import { contextOf, recordError, recordToolContent, startAgentSpan, startToolSpan, traceparentOf } from '@momonga/observability';
 import type { Telemetry } from '@momonga/observability';
 import type { Span } from '@opentelemetry/api';
 import { GatewayRequestError } from './gateway-client.ts';
@@ -20,8 +20,11 @@ const errorTypeOf = (error: unknown): string => {
   return typeof constructor === 'function' && constructor.name !== '' ? constructor.name : 'unknown';
 };
 
-const traceSpanOf = (span: Span): TraceSpan => ({
+const traceSpanOf = (span: Span, captureMessageContent: boolean): TraceSpan => ({
   traceparent: traceparentOf(span),
+  recordToolContent: (content) => {
+    if (captureMessageContent) recordToolContent(span, content);
+  },
   end: (error) => {
     if (error !== undefined) recordError(span, error, errorTypeOf(error), error instanceof GatewayRequestError ? error.message : undefined);
     span.end();
@@ -38,6 +41,7 @@ export const createTracerPort = (telemetry: Telemetry): TracerPort => ({
         runId: input.runId,
         attempt: input.attempt,
       }),
+      telemetry.captureMessageContent,
     ),
   startToolSpan: (parent, input) =>
     traceSpanOf(
@@ -46,5 +50,6 @@ export const createTracerPort = (telemetry: Telemetry): TracerPort => ({
         { toolName: input.toolName, toolCallId: input.callId, toolType: input.toolType, runId: input.runId, step: input.step },
         contextOf(parent.traceparent),
       ),
+      telemetry.captureMessageContent,
     ),
 });

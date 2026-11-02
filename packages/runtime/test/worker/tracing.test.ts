@@ -35,6 +35,17 @@ describe('worker tracing', () => {
     }
   });
 
+  it('hands the arguments and the result of each call to its execute_tool span', async () => {
+    const env = await makeEnv();
+    env.gateway.script.push(callsStep([{ callId: 'call_e_1', name: 'Echo', args: { value: 'one' } }]), textStep('Echoed.'));
+    env.enqueue('Echo once');
+
+    await env.runOnce(env.worker());
+
+    const [tool] = env.tracer.spans.filter((span) => span.kind === 'tool');
+    expect(tool?.content).toEqual([{ arguments: { value: 'one' }, result: 'echo:one' }]);
+  });
+
   it('opens a fresh invoke_agent span for each claim of the same run', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: path.join(env.project, 'a.txt'), content: 'a' } }]));

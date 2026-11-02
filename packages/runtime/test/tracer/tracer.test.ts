@@ -22,7 +22,7 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-const setup = () => {
+const setup = (captureMessageContent?: boolean) => {
   const clock = createFakeClock(START_MS);
   const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'tr-'));
   fs.chmodSync(dir, 0o700);
@@ -30,7 +30,7 @@ const setup = () => {
   const store = openTraceStore({ path: path.join(dir, 'traces.db'), clock });
   cleanups.push(() => store.close());
   const memory = new InMemorySpanExporter();
-  const telemetry = createTelemetry({ serviceName: 'momonga-test', serviceVersion: '9.9.9', clock, store, exporters: [memory], batch: QUIET_BATCH });
+  const telemetry = createTelemetry({ serviceName: 'momonga-test', serviceVersion: '9.9.9', clock, store, exporters: [memory], batch: QUIET_BATCH, ...(captureMessageContent === undefined ? {} : { captureMessageContent }) });
   cleanups.push(() => telemetry.shutdown());
   const tracer = createTracerPort(telemetry);
   const finished = async (): Promise<ReadableSpan[]> => {
@@ -110,7 +110,7 @@ describe('createTracerPort tool span', () => {
 
   it('parents on a span known only by its traceparent', async () => {
     const { tracer, finished } = setup();
-    const remoteParent = { traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', end: () => {} };
+    const remoteParent = { traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', recordToolContent: () => {}, end: () => {} };
     tracer.startToolSpan(remoteParent, TOOL).end();
     const span = await onlySpan(finished);
     expect(span.spanContext().traceId).toBe('0af7651916cd43dd8448eb211c80319c');
@@ -164,5 +164,40 @@ describe('createTracerPort error message rule', () => {
     const event = exceptionEvent(span);
     expect(event?.attributes).not.toHaveProperty('exception.message');
     expect(JSON.stringify({ attributes: span.attributes, events: span.events, status: span.status })).not.toContain('SENTINEL-user-secret-7f3a');
+  });
+});
+
+describe('createTracerPort message content', () => {
+  const CONTENT = { arguments: { command: 'echo hi' }, result: 'hi' };
+
+  it('records no tool content by default', async () => {
+    const { tracer, finished } = setup();
+    const agent = tracer.startAgentSpan(AGENT);
+    const tool = tracer.startToolSpan(agent, TOOL);
+    tool.recordToolContent(CONTENT);
+    tool.end();
+    agent.end();
+
+    const spans = await finished();
+
+    const keys = spans.flatMap((span) => Object.keys(span.attributes));
+    expect(keys).not.toContain('gen_ai.tool.call.arguments');
+    expect(keys).not.toContain('gen_ai.tool.call.result');
+  });
+
+  it('records the arguments and the result on the tool span as JSON when the user opted in', async () => {
+    const { tracer, finished } = setup(true);
+    const agent = tracer.startAgentSpan(AGENT);
+    const tool = tracer.startToolSpan(agent, TOOL);
+    tool.recordToolContent(CONTENT);
+    tool.end();
+    agent.end();
+
+    const spans = await finished();
+
+    const toolSpan = spans.find((span) => span.attributes['gen_ai.operation.name'] === 'execute_tool');
+    expect(toolSpan?.attributes['gen_ai.tool.call.arguments']).toBe(JSON.stringify(CONTENT.arguments));
+    expect(toolSpan?.attributes['gen_ai.tool.call.result']).toBe(JSON.stringify(CONTENT.result));
+    expect(spans.find((span) => span.attributes['gen_ai.operation.name'] === 'invoke_agent')?.attributes).not.toHaveProperty('gen_ai.tool.call.arguments');
   });
 });

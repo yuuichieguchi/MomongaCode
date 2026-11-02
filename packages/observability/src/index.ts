@@ -6,9 +6,29 @@ export type { Cost, CostInput, CostUnits, CostUsage, PriceEntry, PriceTable } fr
 export { buildCostReport, formatCostReport } from './cost-report.ts';
 export type { CostReport, CostReportOptions, CostTotals, CostedRun, RunCost, SessionCost } from './cost-report.ts';
 export type { ClockedSpan, ClockedTracer } from './clocked-tracer.ts';
-export { GENAI_SEMCONV } from './semconv.ts';
-export { recordChatResponse, recordError, startAgentSpan, startChatSpan, startToolSpan } from './spans.ts';
-export type { AgentSpanInput, ChatResponse, ChatSpanInput, ChatUsage, ToolSpanInput } from './spans.ts';
+export { GENAI_CONTENT_SEMCONV, GENAI_SEMCONV } from './semconv.ts';
+export {
+  recordChatRequestContent,
+  recordChatResponse,
+  recordChatResponseContent,
+  recordError,
+  recordToolContent,
+  startAgentSpan,
+  startChatSpan,
+  startToolSpan,
+} from './spans.ts';
+export type {
+  AgentSpanInput,
+  ChatRequestContent,
+  ChatResponse,
+  ChatSpanInput,
+  ChatUsage,
+  GenAiMessage,
+  GenAiPart,
+  GenAiToolDefinition,
+  ToolContent,
+  ToolSpanInput,
+} from './spans.ts';
 export { summarizeRun } from './summary.ts';
 export type { ChatResult, RunSummary } from './summary.ts';
 export { closeTelemetry, contextOf, createTelemetry, traceparentOf } from './telemetry.ts';

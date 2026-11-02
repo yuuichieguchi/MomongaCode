@@ -6,6 +6,7 @@ export type RecordedSpan = {
   parent?: string;
   input: Record<string, unknown>;
   ended: number;
+  content: Array<{ arguments: unknown; result?: unknown }>;
 };
 
 export type FakeTracer = TracerPort & { spans: RecordedSpan[] };
@@ -23,10 +24,14 @@ export const createFakeTracer = (): FakeTracer => {
       ...(parent === undefined ? {} : { parent: parent.traceparent }),
       input,
       ended: 0,
+      content: [],
     };
     tracer.spans.push(span);
     return {
       traceparent: span.traceparent,
+      recordToolContent: (content) => {
+        span.content.push(content);
+      },
       end: () => {
         span.ended += 1;
       },
