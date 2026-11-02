@@ -103,12 +103,19 @@ const compileException = (
   return { exact: fileMatcherOf(parsed, directory, 'exact'), subset: fileMatcherOf(parsed, directory, 'subset') };
 };
 
+export type RuleEnforcement = 'seatbelt-profile' | 'exact-paths';
+
+export const HOST_RULE_ENFORCEMENT: RuleEnforcement = process.platform === 'darwin' ? 'seatbelt-profile' : 'exact-paths';
+
+export const ruleEnforcementOf = (sandboxKind: 'seatbelt' | 'bubblewrap' | 'none'): RuleEnforcement => (sandboxKind === 'seatbelt' ? 'seatbelt-profile' : 'exact-paths');
+
 const compileEntry = (
   spec: FileRuleSpec,
   pattern: FilePattern,
   canonicalise: (absolute: string) => PathResolution,
   volumeProbe: (directory: string) => boolean,
   flavour: PathFlavour,
+  enforcement: RuleEnforcement,
 ): FileRuleEntry => {
   const lexicalDirectory = lexicalDirectoryOf(pattern.directory);
   const resolution = resolveBelowRegularFile(pattern.directory, canonicalise);
@@ -123,7 +130,7 @@ const compileEntry = (
   const lexical = anchorDirectory === lexicalDirectory ? null : matchersAt(lexicalDirectory);
   const widening = isWidening(spec, pattern);
   const caseInsensitive = resolution.ok ? flavour === 'win32' || volumeProbe(anchorDirectory) : false;
-  if (resolution.ok && !caseInsensitive) {
+  if (resolution.ok && !caseInsensitive && enforcement === 'seatbelt-profile') {
     if (widening) throw notExact(spec, 'a write allow rule that widens the sandbox');
     if (spec.exceptions.length > 0) throw notExact(spec, 'a rule with ! exceptions');
   }
@@ -170,7 +177,8 @@ export const compileFileRuleSet = (
   exemptDirectory: string | null,
   canonicalise: (absolute: string) => PathResolution,
   volumeProbe: (directory: string) => boolean,
-  flavour: PathFlavour = HOST_FLAVOUR,
+  flavour: PathFlavour,
+  enforcement: RuleEnforcement,
 ): FileRuleSet => {
   const inPattern = (resolution: PathResolution): PathResolution => (resolution.ok ? { ok: true, path: patternPathOf(flavour, resolution.path) } : resolution);
   const canonicaliseNative = (absolute: string): PathResolution => inPattern(canonicalise(nativePathOf(flavour, absolute)));
@@ -187,7 +195,7 @@ export const compileFileRuleSet = (
         );
       }
       const translated = inPatternSpace(spec, flavour);
-      return parseFilePattern(translated.specifier, translated.context).map((pattern) => compileEntry(translated, pattern, canonicaliseNative, probeNative, flavour));
+      return parseFilePattern(translated.specifier, translated.context).map((pattern) => compileEntry(translated, pattern, canonicaliseNative, probeNative, flavour, enforcement));
     }),
     exemptDirectory: exemptDirectory === null ? null : patternPathOf(flavour, exemptDirectory.normalize('NFC')),
     fingerprint: fileRuleFingerprint(specs, roots, exemptDirectory),

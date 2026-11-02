@@ -191,6 +191,10 @@ export const sseIterator = (response: UdsResponse): AsyncIterator<SseFrame> => {
       if (step.done === true) return { done: true, value: undefined };
       return { done: false, value: { event: step.value.event, data: JSON.parse(step.value.data) } };
     },
+    return: async () => {
+      await source.return?.(undefined);
+      return { done: true, value: undefined };
+    },
   };
 };
 

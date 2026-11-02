@@ -3,14 +3,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { protectedSetFor } from '@momonga/foundation';
+import { HOST_RULE_ENFORCEMENT, protectedSetFor } from '@momonga/foundation';
 import { EMPTY_GLOB_TABLE, computeFileRules, createGlobDeadline, decide, prepareGlobs, settleGlobs } from '@momonga/policy';
 import type { Sandbox } from '@momonga/sandbox';
 import { TEST_SEARCH_PATH, isWritableFor } from '@momonga/testkit';
 import { buildSandboxPolicy, createPolicyFilesystem } from '@momonga/tools';
 import { makeBuiltins, resultOf } from './builtins/fixtures.ts';
 import { collect } from './read-only-collect.ts';
-import { approvableForms, outputDiffersByNature } from './read-only-forms.ts';
+import { approvableForms, exitStatusOf, normalised, outputDiffersByNature, permittedPsStatuses, seesOnlyItsOwnNamespace } from './read-only-forms.ts';
 import { HAS_REAL_SANDBOX, realSandbox, recordingSandbox, withoutRefusedXcrunCacheWrite } from './read-only-support.ts';
 import type { RecordedSpawn } from './read-only-support.ts';
 
@@ -48,7 +48,7 @@ describe.runIf(HAS_REAL_SANDBOX)('every approvable command form prints the same 
       roots,
       home,
       cwd: project,
-      fileRules: computeFileRules([], roots, null),
+      fileRules: computeFileRules([], roots, null, HOST_RULE_ENFORCEMENT),
       protectedSet: protectedSetFor(roots, filesystem),
       fs: settleGlobs(filesystem, globs ?? EMPTY_GLOB_TABLE),
       searchPath: TEST_SEARCH_PATH,
@@ -58,14 +58,18 @@ describe.runIf(HAS_REAL_SANDBOX)('every approvable command form prints the same 
 
   const runPlain = (command: string) => {
     const done = spawnSync('/bin/bash', ['-c', command], { cwd: project, env: plainEnv, encoding: 'utf8', maxBuffer: PLAIN_OUTPUT_LIMIT_BYTES, stdio: ['ignore', 'pipe', 'pipe'] });
-    return { stdout: done.stdout, stderr: done.stderr, status: done.status };
+    return { stdout: done.stdout, stderr: done.stderr, status: exitStatusOf(done) };
   };
 
   const sandboxed = async (command: string) => {
     const { markerFile: _spentMarker, ...replayed } = spawned.command;
     const child = inner.spawn({ ...replayed, argv: ['/bin/bash', '-c', command], cwd: project }, spawned.policy, new AbortController().signal);
     const [stdout, stderr, exit] = await Promise.all([collect(child.stdout), collect(child.stderr), child.exited]);
-    return { stdout, stderr: withoutRefusedXcrunCacheWrite(stderr, process.platform), status: exit.code };
+    return {
+      stdout,
+      stderr: withoutRefusedXcrunCacheWrite(stderr, process.platform),
+      status: exitStatusOf({ status: exit.code, signal: exit.signal as NodeJS.Signals | null }),
+    };
   };
 
   beforeAll(async () => {
@@ -90,7 +94,7 @@ describe.runIf(HAS_REAL_SANDBOX)('every approvable command form prints the same 
     const recorded = recordingSandbox(inner);
     const built = await makeBuiltins({ sandbox: recorded.sandbox });
     const roots = [project];
-    const sandboxPolicy = buildSandboxPolicy({ roots, home, tmpDir, sessionsTmpRoot: path.join(base, 'sessions'), fileRules: computeFileRules([], roots, tmpDir), protectedSet: protectedSetFor(roots, filesystem), network: 'deny' });
+    const sandboxPolicy = buildSandboxPolicy({ roots, home, tmpDir, sessionsTmpRoot: path.join(base, 'sessions'), fileRules: computeFileRules([], roots, tmpDir, HOST_RULE_ENFORCEMENT), protectedSet: protectedSetFor(roots, filesystem), network: 'deny' });
     resultOf(await built.run('Bash', { command: 'pwd' }, { env: plainEnv as Record<string, string>, roots, home, tmpDir, sandboxPolicy, session: { cwd: project, readLedger: new Map() } }));
     spawned = recorded.spawns[0] as RecordedSpawn;
   });
@@ -130,10 +134,37 @@ describe.runIf(HAS_REAL_SANDBOX)('every approvable command form prints the same 
     expect(spawned.policy.writableRoots).not.toContain(project);
     const plain = runPlain(command);
     const result = await sandboxed(command);
+    if (seesOnlyItsOwnNamespace(command)) {
+      expect(permittedPsStatuses(command)).toContain(result.status);
+      return;
+    }
     if (outputDiffersByNature(command)) {
       expect(result.status).toBe(plain.status);
       return;
     }
-    expect(result).toEqual({ stdout: plain.stdout, stderr: plain.stderr, status: plain.status });
+    expect({ stdout: normalised(command, result.stdout), stderr: normalised(command, result.stderr), status: result.status }).toEqual({
+      stdout: normalised(command, plain.stdout),
+      stderr: normalised(command, plain.stderr),
+      status: plain.status,
+    });
+  });
+
+  it.runIf(process.platform === 'linux')('ps inside the sandbox lists only the sandbox own processes, so its output cannot match the host', async () => {
+    const outside = runPlain('ps -e -o pid=').stdout.trim().split('\n').length;
+    const result = await sandboxed('echo "SHELL=$$"; ps -e -o pid=');
+    expect(result.status).toBe(0);
+    const [shellLine, ...listed] = result.stdout.trim().split('\n');
+    const shellPid = (shellLine as string).replace('SHELL=', '').trim();
+    const inside = listed.map((line) => line.trim());
+    expect(inside.length).toBeGreaterThan(0);
+    expect(inside).toContain(shellPid);
+    expect(outside).toBeGreaterThan(inside.length);
+    expect(inside.length).toBeLessThanOrEqual(4);
+  });
+
+  it('the status rule of a ps form can fail: a ps form that selects nothing may exit 1, every other must exit 0', () => {
+    expect(permittedPsStatuses('ps -e')).toEqual([0]);
+    expect(permittedPsStatuses('ps -g 1')).toEqual([0, 1]);
+    expect(permittedPsStatuses('ps -N')).toEqual([0, 1]);
   });
 });

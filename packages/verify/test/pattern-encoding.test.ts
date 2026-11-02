@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fileRuleBlocks, protectedSetFor } from '@momonga/foundation';
+import { HOST_RULE_ENFORCEMENT, fileRuleBlocks, protectedSetFor } from '@momonga/foundation';
 import type { PolicyFilesystem } from '@momonga/policy';
 import { hostFilesystemOf } from '@momonga/testkit';
 import type { Witness } from '../src/decision-model.ts';
@@ -66,6 +66,7 @@ const modelMatches = async (layout: Layout, specifier: string, fileSystem: Polic
     fs: hostFilesystemOf(fileSystem),
     secretLocations: [sshLocation(layout)],
     exemptDirectory: null,
+    enforcement: HOST_RULE_ENFORCEMENT,
     budgetMs: 30_000,
   });
   const subject = context.subjects.get('Read');

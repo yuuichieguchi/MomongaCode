@@ -1,0 +1,183 @@
+import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { createBubblewrapSandbox, createPlaceholderJournal, recoverPlaceholders } from '@momonga/sandbox';
+import type { PlaceholderJournal, SandboxPolicy } from '@momonga/sandbox';
+import { makeTempDir, run } from './helpers.ts';
+
+const STAND_IN_BWRAP = `#!/bin/sh
+while [ "$1" != "--" ]; do
+  if [ "$1" = "--ro-bind" ] && [ "$2" = "/dev/null" ] && [ ! -e "$3" ]; then : > "$3"; fi
+  shift
+done
+shift
+exec "$@"
+`;
+
+const KILL_HOST = fileURLToPath(new URL('./placeholder-kill-host.ts', import.meta.url));
+
+type Failure = { method: 'intend' | 'complete' | 'forget'; nth: number; persistent: boolean };
+
+const failingJournal = (inner: PlaceholderJournal, failure: Failure): PlaceholderJournal => {
+  const calls = { intend: 0, complete: 0, forget: 0 };
+  let dead = false;
+  const guard = <T>(method: Failure['method'], act: () => T): T => {
+    calls[method] += 1;
+    if (dead || (method === failure.method && calls[method] === failure.nth)) {
+      dead = dead || failure.persistent;
+      throw new Error(`the journal failed at ${method} ${calls[method]}`);
+    }
+    return act();
+  };
+  return {
+    intend: (target, intentMs) => guard('intend', () => inner.intend(target, intentMs)),
+    complete: (target, identity) => guard('complete', () => inner.complete(target, identity)),
+    forget: (target) => guard('forget', () => inner.forget(target)),
+    records: () => inner.records(),
+  };
+};
+
+describe('the life of a placeholder (stand-in bwrap)', () => {
+  let base = '';
+  let work = '';
+  let tmpRoot = '';
+  let journalDirectory = '';
+  let held: ReadonlySet<string> = new Set();
+
+  const mcp = (): string => path.join(work, '.mcp.json');
+  const envrc = (): string => path.join(work, '.envrc');
+
+  const policy = (): SandboxPolicy => ({
+    writableRoots: [work],
+    writeDenied: [mcp(), envrc()],
+    writeDeniedLiterals: [],
+    readDenied: [],
+    network: 'deny',
+    fileRules: EMPTY_FILE_RULES,
+    protectedSet: EMPTY_PROTECTED_SET,
+  });
+
+  const sandboxWith = (journal: PlaceholderJournal) =>
+    createBubblewrapSandbox({ bwrapPath: path.join(base, 'bwrap'), tmpRoot, killGraceMs: 300, journal, holders: () => held });
+
+  const start = (journal: PlaceholderJournal, script: string) =>
+    sandboxWith(journal).spawn({ argv: ['/bin/sh', '-c', script], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy(), new AbortController().signal);
+
+  beforeEach(() => {
+    base = fs.realpathSync(makeTempDir());
+    work = path.join(base, 'work');
+    tmpRoot = path.join(base, 'tmp');
+    journalDirectory = path.join(base, 'journal');
+    fs.mkdirSync(work);
+    fs.mkdirSync(tmpRoot);
+    fs.writeFileSync(path.join(base, 'bwrap'), STAND_IN_BWRAP, { mode: 0o755 });
+    held = new Set();
+  });
+
+  afterEach(() => {
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+
+  const real = (): PlaceholderJournal => createPlaceholderJournal(journalDirectory);
+
+  describe('a journal that fails while the placeholders are created', () => {
+    it('fails at the first intent: nothing is created and the error is the journal error', () => {
+      expect(() => start(failingJournal(real(), { method: 'intend', nth: 1, persistent: false }), 'true')).toThrow('the journal failed at intend 1');
+      expect(fs.readdirSync(work)).toEqual([]);
+      expect(real().records()).toEqual([]);
+    });
+
+    it('fails at the completion of the first placeholder: the file it created is removed, the intent forgotten, the original error kept', () => {
+      expect(() => start(failingJournal(real(), { method: 'complete', nth: 1, persistent: false }), 'true')).toThrow('the journal failed at complete 1');
+      expect(fs.readdirSync(work)).toEqual([]);
+      expect(real().records()).toEqual([]);
+    });
+
+    it('fails at the completion of the second placeholder: the first is released too', () => {
+      expect(() => start(failingJournal(real(), { method: 'complete', nth: 2, persistent: false }), 'true')).toThrow('the journal failed at complete 2');
+      expect(fs.readdirSync(work)).toEqual([]);
+      expect(real().records()).toEqual([]);
+    });
+
+    it('fails to clean up as well: every cleanup is tried, every failure is reported with the original one', () => {
+      try {
+        start(failingJournal(real(), { method: 'complete', nth: 2, persistent: true }), 'true');
+        expect.unreachable('the spawn should have failed');
+      } catch (error) {
+        expect(error).toBeInstanceOf(AggregateError);
+        const messages = (error as AggregateError).errors.map((entry: Error) => entry.message);
+        expect(messages[0]).toBe('the journal failed at complete 2');
+        expect(messages.length).toBeGreaterThanOrEqual(3);
+      }
+      expect(fs.readdirSync(work).sort()).toEqual([]);
+    });
+
+  });
+
+  describe('a host SIGKILL injected through the journal at each step', () => {
+    const killedAt = async (step: 'before-intend' | 'before-complete' | 'after-complete') => {
+      const host = spawn(process.execPath, [KILL_HOST, work, tmpRoot, journalDirectory, path.join(base, 'bwrap'), step], { stdio: 'inherit' });
+      const exit = await new Promise<string | null>((resolve) => host.once('exit', (_code, signal) => resolve(signal)));
+      expect(exit).toBe('SIGKILL');
+    };
+
+    it('before the intent is written: no file, no record', async () => {
+      await killedAt('before-intend');
+      expect(fs.readdirSync(work)).toEqual([]);
+      expect(real().records()).toEqual([]);
+    });
+
+    it('after the file was created and before the completion: an intent-only record, and recovery removes the empty file', async () => {
+      await killedAt('before-complete');
+      expect(fs.readdirSync(work)).toEqual(['.mcp.json']);
+      expect(real().records().map((record) => record.identity)).toEqual([null]);
+      expect(recoverPlaceholders(real(), { holders: () => new Set() }).removed).toEqual([mcp()]);
+      expect(fs.readdirSync(work)).toEqual([]);
+    });
+
+    it('after the completion and before the spawn: a complete record, and recovery removes the empty file', async () => {
+      await killedAt('after-complete');
+      expect(real().records().map((record) => record.identity === null)).toEqual([false]);
+      expect(recoverPlaceholders(real(), { holders: () => new Set() }).removed).toEqual([mcp()]);
+      expect(fs.readdirSync(work)).toEqual([]);
+    });
+  });
+
+  describe('a journal that fails while the placeholders are released', () => {
+    it('keeps releasing the other placeholders and still removes the private tmp directory, then reports the failure', async () => {
+      const proc = start(failingJournal(real(), { method: 'forget', nth: 1, persistent: false }), 'true');
+      await expect(run(proc)).rejects.toThrow('the journal failed at forget 1');
+      expect(fs.readdirSync(work)).toEqual([]);
+      expect(fs.readdirSync(tmpRoot)).toEqual([]);
+    });
+  });
+
+  describe('release removes only the file it created', () => {
+    it('leaves a person file that replaced the placeholder during the command', async () => {
+      await run(start(real(), `rm ${mcp()} && : > ${mcp()}`));
+      expect(fs.existsSync(mcp())).toBe(true);
+      expect(fs.existsSync(envrc())).toBe(false);
+      expect(real().records()).toEqual([]);
+    });
+  });
+
+  describe('release while another sandbox still holds the path (another runtime on the same workspace)', () => {
+    it('leaves the file and keeps the record, then removes it at a later release once nobody holds it', async () => {
+      const journal = real();
+      const sandbox = sandboxWith(journal);
+      const command = { argv: ['/bin/sh', '-c', 'true'], cwd: work, env: { PATH: '/usr/bin:/bin' } };
+      held = new Set([mcp()]);
+      await run(sandbox.spawn(command, policy(), new AbortController().signal));
+      expect(fs.existsSync(mcp())).toBe(true);
+      expect(fs.existsSync(envrc())).toBe(false);
+      expect(journal.records().map((record) => record.path)).toEqual([mcp()]);
+      held = new Set();
+      await run(sandbox.spawn({ ...command, argv: ['/bin/sh', '-c', 'true'] }, { ...policy(), writeDenied: [envrc()] }, new AbortController().signal));
+      expect(fs.existsSync(mcp())).toBe(false);
+      expect(journal.records()).toEqual([]);
+    });
+  });
+});

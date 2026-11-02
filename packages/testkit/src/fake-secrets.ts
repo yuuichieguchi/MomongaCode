@@ -1,4 +1,4 @@
-import { KEYCHAIN_SERVICE, SECURITY_BINARY, SecretUnavailableError } from '@momonga/foundation';
+import { KEYCHAIN_SERVICE, SECRET_TOOL_BINARY, SECURITY_BINARY, SecretUnavailableError } from '@momonga/foundation';
 import type { SecretProcessPort, SecretStore } from '@momonga/foundation';
 
 export type FakeSecretStore = SecretStore & { readonly reads: string[]; readonly writes: Array<{ name: string; value: string }> };
@@ -42,6 +42,15 @@ export const createFakeSecurityPort = (
     if (write !== null && write[1] === KEYCHAIN_SERVICE) {
       onWrite(write[2] as string, Buffer.from(write[3] as string, 'hex').toString('utf8'));
       return { exitCode: 0, stdout: '', stderr: '' };
+    }
+    if (file === SECRET_TOOL_BINARY && args.length === 6 && args[0] === `store` && args[1] === `--label=${KEYCHAIN_SERVICE}` && args[2] === 'service' && args[3] === KEYCHAIN_SERVICE && args[4] === 'account') {
+      onWrite(args[5] as string, stdin);
+      return { exitCode: 0, stdout: '', stderr: '' };
+    }
+    if (file === SECRET_TOOL_BINARY && args.length === 5 && args[0] === 'lookup' && args[1] === 'service' && args[2] === KEYCHAIN_SERVICE && args[3] === 'account' && stdin === '') {
+      const stored = secrets()[args[4] as string];
+      if (stored === undefined) return { exitCode: 1, stdout: '', stderr: '' };
+      return { exitCode: 0, stdout: stored, stderr: '' };
     }
     const [command, serviceFlag, service, accountFlag, account, printFlag, ...rest] = args;
     const recognised =

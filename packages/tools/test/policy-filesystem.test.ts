@@ -62,9 +62,11 @@ describe('resolveProgram walks the search path of the Bash spawn', () => {
   const resolveProgram = (name: string, cwd: string, searchPath: string | undefined, isWritable: (absolute: string) => boolean = never) =>
     createPolicyFilesystem().resolveProgram(name, cwd, searchPath, isWritable);
 
-  it('returns the Apple path for /usr/bin:/bin', () => {
-    expect(resolveProgram('ls', makeDir(), '/usr/bin:/bin')).toEqual({ program: '/bin/ls' });
-    expect(resolveProgram('sed', makeDir(), '/usr/bin:/bin')).toEqual({ program: '/usr/bin/sed' });
+  it('returns the system path of the first directory that holds the program for /usr/bin:/bin', () => {
+    for (const name of ['ls', 'sed']) {
+      const holder = ['/usr/bin', '/bin'].find((directory) => fs.existsSync(path.join(directory, name))) as string;
+      expect(resolveProgram(name, makeDir(), '/usr/bin:/bin')).toEqual({ program: path.join(holder, name) });
+    }
   });
 
   it('returns none when the search path is undefined', () => {
@@ -146,7 +148,8 @@ describe('resolveProgram walks the search path of the Bash spawn', () => {
     const root = makeDir();
     fs.mkdirSync(path.join(root, 'bin'));
     const isWritable = (absolute: string): boolean => absolute.startsWith(root);
-    expect(resolveProgram('chown', root, `${path.join(root, 'bin')}:/usr/sbin`, isWritable)).toEqual({ program: '/usr/sbin/chown' });
+    const sbinProgram = fs.readdirSync('/usr/sbin').find((name) => fs.statSync(path.join('/usr/sbin', name), { throwIfNoEntry: false })?.isFile() === true) as string;
+    expect(resolveProgram(sbinProgram, root, `${path.join(root, 'bin')}:/usr/sbin`, isWritable)).toEqual({ program: path.join('/usr/sbin', sbinProgram) });
   });
 
   it.each([

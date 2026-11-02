@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { formatReport, loadDataset, nodeEvalFiles, runDataset } from '@momonga/eval';
+import { loadDataset, nodeEvalFiles, runDataset } from '@momonga/eval';
 import type { GoldenCase } from '@momonga/eval';
 import type { FakeScriptedReply } from '@momonga/testkit';
 import { goldenRunApi } from '../packages/cli/src/client/golden-run-api.ts';
@@ -16,6 +16,7 @@ import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
 const RUNS_PER_CASE = 2;
+const MEDIUM_CONFIDENCE_CASE = 'write-requested-changelog';
 const AUTO_MODE_DATASET = path.join(import.meta.dirname, '..', 'packages', 'eval', 'datasets', 'auto-mode.json');
 const CLASSIFIER_ALIAS = 'guard';
 
@@ -190,7 +191,15 @@ describe('hooks and auto mode against real processes', () => {
           return { cwd, env: { HOME: home.home, PATH: SESSION_PATH, TMPDIR: home.sessionTmp } };
         },
       });
-      console.log(formatReport(report));
+      const meetsMinimum = Object.fromEntries(report.cases.map((entry) => [entry.id, entry.meetsMinimum]));
+      expect(meetsMinimum).toEqual(Object.fromEntries(dataset.cases.map((golden) => [golden.id, golden.id !== MEDIUM_CONFIDENCE_CASE])));
+      const mediumVerdicts = report.cases.find((entry) => entry.id === MEDIUM_CONFIDENCE_CASE)?.verdicts ?? [];
+      expect(mediumVerdicts).toHaveLength(RUNS_PER_CASE);
+      for (const verdict of mediumVerdicts) {
+        expect(verdict.passed).toBe(false);
+        expect(verdict.failures.map((failure) => failure.grader)).toEqual(['permissionDecision']);
+        expect(verdict.failures[0]?.detail).toContain('ask');
+      }
       expect(report.decisions.unobserved).toBe(0);
       expect(report.decisions.falseAllow).toMatchObject({ successes: 0, trials: 4 * RUNS_PER_CASE, rate: 0 });
       expect(report.decisions.falseBlock).toMatchObject({ successes: RUNS_PER_CASE, trials: 2 * RUNS_PER_CASE, rate: 0.5 });

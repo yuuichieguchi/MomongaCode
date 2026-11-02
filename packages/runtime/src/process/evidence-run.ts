@@ -1,5 +1,5 @@
 import { canonicalDirectory, protectedSetFor } from '@momonga/foundation';
-import type { MomongaPaths } from '@momonga/foundation';
+import type { MomongaPaths, RuleEnforcement } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
 import type { PolicyPorts } from '@momonga/policy';
 import { SandboxPolicyError } from '@momonga/sandbox';
@@ -13,6 +13,7 @@ export type EvidenceRunnerOptions = {
   fs: PolicyPorts;
   sandbox: Sandbox;
   env: Readonly<Record<string, string>>;
+  enforcement: RuleEnforcement;
 };
 
 const textOf = async (stream: AsyncIterable<Uint8Array>): Promise<string> => {
@@ -22,7 +23,7 @@ const textOf = async (stream: AsyncIterable<Uint8Array>): Promise<string> => {
 };
 
 export const createEvidenceRunner =
-  ({ paths, home, fs, sandbox, env }: EvidenceRunnerOptions) =>
+  ({ paths, home, fs, sandbox, env, enforcement }: EvidenceRunnerOptions) =>
   (project: string): EvidenceRun =>
   async (command, signal) => {
     const root = canonicalDirectory(project);
@@ -35,7 +36,7 @@ export const createEvidenceRunner =
           roots: [],
           home,
           sessionsTmpRoot: paths.tmp.sessions,
-          fileRules: computeFileRules([], roots, null),
+          fileRules: computeFileRules([], roots, null, enforcement),
           protectedSet: protectedSetFor(roots, fs),
           network: command.network,
         }),

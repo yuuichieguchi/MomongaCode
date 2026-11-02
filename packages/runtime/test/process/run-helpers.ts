@@ -96,7 +96,7 @@ export const makeRunHome = (): RunHome => {
   fs.mkdirSync(home, { mode: 0o700 });
   const project = path.join(root, 'p');
   fs.mkdirSync(project);
-  return { root, home, paths: momongaPaths(home, 'darwin', {}), project };
+  return { root, home, paths: momongaPaths(home, process.platform, {}), project };
 };
 
 const restoreModes = (directory: string): void => {

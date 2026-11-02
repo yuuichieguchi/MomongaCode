@@ -1,14 +1,14 @@
 import path from 'node:path';
 import { ConfigError } from '@momonga/config';
 import { canonicalDirectory, canonicalPath, comparableContains, ensureSessionTmpDir as defaultEnsureSessionTmpDir, isTransientErrno, protectedSetFor } from '@momonga/foundation';
-import type { MomongaPaths } from '@momonga/foundation';
+import type { MomongaPaths, RuleEnforcement } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
 import type { PolicyPorts } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
 import type { ToolRuntimePort } from '../ports.ts';
 import type { SessionStates } from './session-states.ts';
 
-export type PolicyForOptions = {
+export type RecoveryContextOptions = {
   paths: MomongaPaths;
   home: string;
   fs: PolicyPorts;
@@ -16,12 +16,14 @@ export type PolicyForOptions = {
   ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<string>;
 };
 
+export type PolicyForOptions = RecoveryContextOptions & { ruleEnforcement: RuleEnforcement };
+
 const wrapperFor =
   (sessionId: string) =>
   (cause: unknown): ConfigError =>
     cause instanceof ConfigError ? cause : new ConfigError(`the tool policy for session ${sessionId} could not be built: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
 
-const contextBuilder = ({ paths, home, sessionStates, ensureSessionTmpDir = defaultEnsureSessionTmpDir }: PolicyForOptions) => {
+const contextBuilder = ({ paths, home, sessionStates, ensureSessionTmpDir = defaultEnsureSessionTmpDir }: RecoveryContextOptions) => {
   if (!path.isAbsolute(home)) throw new TypeError(`home must be an absolute path, got ${home}`);
   return async (session: Parameters<ToolRuntimePort['policyFor']>[0]): Promise<{ roots: string[]; tmpDir: string; wrap: (cause: unknown) => ConfigError }> => {
     const wrap = wrapperFor(session.id);
@@ -45,13 +47,13 @@ const contextBuilder = ({ paths, home, sessionStates, ensureSessionTmpDir = defa
 };
 
 export const createPolicyFor = (options: PolicyForOptions): ToolRuntimePort['policyFor'] => {
-  const { paths, home, fs } = options;
+  const { paths, home, fs, ruleEnforcement } = options;
   const contextFor = contextBuilder(options);
 
   return async (session, { env, rules, readableDirectories }) => {
     const { roots, tmpDir, wrap } = await contextFor(session);
     try {
-      const fileRules = computeFileRules(rules, roots, tmpDir);
+      const fileRules = computeFileRules(rules, roots, tmpDir, ruleEnforcement);
       const protectedSet = protectedSetFor(roots, fs);
       const skillsRoot = canonicalPath(paths.skills);
       const readAllowed = (readableDirectories ?? []).filter((directory) => comparableContains(skillsRoot, directory));
@@ -64,7 +66,7 @@ export const createPolicyFor = (options: PolicyForOptions): ToolRuntimePort['pol
   };
 };
 
-export const createRecoveryContextFor = (options: PolicyForOptions): ToolRuntimePort['recoveryContextFor'] => {
+export const createRecoveryContextFor = (options: RecoveryContextOptions): ToolRuntimePort['recoveryContextFor'] => {
   const contextFor = contextBuilder(options);
   return async (session, { env }) => {
     const { roots, tmpDir } = await contextFor(session);

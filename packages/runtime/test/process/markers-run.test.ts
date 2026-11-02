@@ -151,7 +151,7 @@ const trackedRunHome = (context: CleanupContext): RunHome => {
   const home = withTempDir(context, { asHome: true });
   const root = withTempDir(context);
   writeUserSettings(home, { sandbox: 'none', ...modelSettings(path.join(root, 'up.sock')) });
-  return { root, home, paths: momongaPaths(home, 'darwin', {}), project: root };
+  return { root, home, paths: momongaPaths(home, process.platform, {}), project: root };
 };
 
 const trackedHolder = (context: CleanupContext, marker: string): number => {

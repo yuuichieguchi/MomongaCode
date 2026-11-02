@@ -3,13 +3,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { SECRET_CONTENT, SECRET_ENTRY, SYMLINK_READ_LINES, buildSymlinkLayout } from './symlink-layout.ts';
+import { SECRET_CONTENT, SECRET_ENTRY, buildSymlinkLayout, symlinkReadLinesFor } from './symlink-layout.ts';
 import type { SymlinkReadLine } from './symlink-layout.ts';
 
 const SEARCH_PATH = ['/usr/bin', '/bin'];
 const SUCCESS_EXITS: Readonly<Record<string, readonly number[]>> = { grep: [0, 1], diff: [0, 1] };
 
-const resolveApple = (program: string): string | undefined =>
+const resolveSystemTool = (program: string): string | undefined =>
   SEARCH_PATH.map((directory) => path.join(directory, program)).find((candidate) => fs.existsSync(candidate));
 
 const isSuccess = (line: SymlinkReadLine): boolean => (SUCCESS_EXITS[line.program] ?? [0]).includes(line.exit);
@@ -33,26 +33,37 @@ const showsMarker = (dir: string, line: SymlinkReadLine, tree: 'a' | 'c', output
   return output.includes(SECRET_CONTENT.trim()) || output.includes(SECRET_ENTRY);
 };
 
-describe('recursive and link-following options against the real Apple tools (5.2a)', () => {
+const FAMILY_OF: Readonly<Record<'darwin' | 'linux', string>> = { darwin: 'Apple', linux: 'GNU' };
+
+describe('the symlink-read fixtures', () => {
+  it('the Apple fixture has every line', () => {
+    expect(symlinkReadLinesFor('darwin').length).toBe(45);
+  });
+
+  it('the GNU fixture is generated from the table: one line per marked option, each measured against GNU tools', () => {
+    const lines = symlinkReadLinesFor('linux');
+    expect(lines.length).toBeGreaterThan(30);
+    expect(new Set(lines.map((line) => `${line.program} ${line.argv.join(' ')}`)).size).toBe(lines.length);
+  });
+});
+
+describe.each(['darwin', 'linux'] as const)('recursive and link-following options against the real %s tools (5.2a)', (platform) => {
+  const hosted = process.platform === platform;
   let dir = '';
 
   beforeEach(() => {
-    if (process.platform !== 'darwin') throw new Error('Darwin required');
+    if (!hosted) return;
     dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-sl-')));
     buildSymlinkLayout(dir);
   });
 
   afterEach(() => {
-    fs.rmSync(dir, { recursive: true, force: true });
+    if (hosted) fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('has every line of the fixture', () => {
-    expect(SYMLINK_READ_LINES.length).toBe(45);
-  });
-
-  for (const line of SYMLINK_READ_LINES) {
-    it(`${line.program} ${line.argv.join(' ')} (${line.link}) reads through: ${String(line.readsThrough)}`, () => {
-      const binary = resolveApple(line.program);
+  for (const line of symlinkReadLinesFor(platform)) {
+    it.runIf(hosted)(`${FAMILY_OF[platform]}: ${line.program} ${line.argv.join(' ')} (${line.link}) reads through: ${String(line.readsThrough)}`, () => {
+      const binary = resolveSystemTool(line.program);
       expect(binary === `/bin/${line.program}` || binary === `/usr/bin/${line.program}`).toBe(true);
 
       const result = run(dir, binary as string, line.argv);

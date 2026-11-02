@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createSeatbeltSandbox, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { killGroupsForCleanup } from '@momonga/testkit';
+import { LSOF_PATH, killGroupsForCleanup } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
 
 const BASE_ENV = { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' };
@@ -23,7 +23,7 @@ const readLinesUntil = async (stream: AsyncIterable<Uint8Array>, done: (lines: s
 
 const holdersOf = (file: string): number[] => {
   try {
-    return execFileSync('/usr/sbin/lsof', ['-t', '--', file], { env: { LC_ALL: 'C' }, encoding: 'utf8' })
+    return execFileSync(LSOF_PATH, ['-t', '--', file], { env: { LC_ALL: 'C' }, encoding: 'utf8' })
       .split('\n')
       .filter((line) => line !== '')
       .map(Number);

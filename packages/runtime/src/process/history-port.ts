@@ -1,5 +1,5 @@
 import { canonicalPath } from '@momonga/foundation';
-import type { Clock, Redactor } from '@momonga/foundation';
+import type { Clock, Redactor, RuleEnforcement } from '@momonga/foundation';
 import { permissionRulesFor } from '../governance/rules.ts';
 import { createHistoryTools, createReadDenial } from '@momonga/tools';
 import type { HistoryStorePort, ReadDenial } from '@momonga/tools';
@@ -13,9 +13,10 @@ export type HistoryPortOptions = {
   clock: Clock;
   home: string;
   redactor: Redactor;
+  enforcement: RuleEnforcement;
 };
 
-export const createHistoryPort = ({ store, settings, clock, home, redactor }: HistoryPortOptions): HistoryPort => ({
+export const createHistoryPort = ({ store, settings, clock, home, redactor, enforcement }: HistoryPortOptions): HistoryPort => ({
   load: (session) => {
     const trusted = settings.trusted(session);
     const visibility: HistoryVisibility = { trusted, project: session.cwd };
@@ -23,7 +24,7 @@ export const createHistoryPort = ({ store, settings, clock, home, redactor }: Hi
       const own = project === session.cwd;
       const rules = await permissionRulesFor({ store, settings, clock, home }, own ? session : { ...session, cwd: project, additionalDirectories: [] });
       const roots = own ? [session.cwd, ...session.additionalDirectories] : [project];
-      return createReadDenial({ rules, roots: roots.map(canonicalPath), cwd: project });
+      return createReadDenial({ rules, roots: roots.map(canonicalPath), cwd: project, enforcement });
     };
     const toolPort: HistoryStorePort = {
       search: async (request) => {

@@ -12,12 +12,13 @@ import {
   ProcessLockHeldError,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
   reapMarkerDirectory,
+  ruleEnforcementOf,
   systemClock,
 } from '@momonga/foundation';
 import type { Clock, JsonLogger, ProcessLock, ReadyFields, TextStream } from '@momonga/foundation';
 import { createTelemetry, exportersFor, openTraceStore } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
-import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createSeatbeltSandbox, createUnsandboxed } from '@momonga/sandbox';
+import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import type { Sandbox } from '@momonga/sandbox';
 import { isFatalStoreError, openRuntimeStore } from '@momonga/store';
@@ -116,6 +117,7 @@ type StartedWorker = { id: string; worker: Worker };
 
 const DEFAULT_SANDBOX_EXEC_PATH = '/usr/bin/sandbox-exec';
 const DEFAULT_LEASE_MS = 30_000;
+const PLACEHOLDER_JOURNAL_DIRECTORY = 'placeholders';
 
 const assertPositiveInteger = (name: string, value: number): void => {
   if (!Number.isSafeInteger(value) || value <= 0) throw new RangeError(`${name} must be a positive integer, got ${value}`);
@@ -301,12 +303,16 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
     const kind: SandboxKind = settings.sandbox;
     const sandbox: Sandbox = await step('sandbox', () => {
+      const platform = options.platform ?? process.platform;
+      const journalDirectory = path.join(paths.state, PLACEHOLDER_JOURNAL_DIRECTORY);
+      if (platform === 'linux') {
+        for (const leftover of recoverPlaceholders(createPlaceholderJournal(journalDirectory)).removed) logger.warn(`removed the empty placeholder ${leftover} that a killed runtime left in a workspace`);
+      }
       if (kind === 'none') {
         const unsandboxed = createUnsandboxed({ killGraceMs: SANDBOX_KILL_GRACE_MS });
         logger.warn('sandbox is none: Bash asks before every command');
         return unsandboxed;
       }
-      const platform = options.platform ?? process.platform;
       const required = kind === 'seatbelt' ? 'darwin' : 'linux';
       if (platform !== required) {
         throw new ConfigError(`sandbox "${kind}" is only available on ${required}; set "sandbox" in ${paths.settingsFile} to "none" to run without a sandbox (Bash will then ask before every command)`);
@@ -321,7 +327,15 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           { cause: error },
         );
       }
-      if (kind === 'bubblewrap') return createBubblewrapSandbox({ bwrapPath: launcherPath, tmpRoot: paths.tmp.spawn, killGraceMs: SANDBOX_KILL_GRACE_MS });
+      if (kind === 'bubblewrap') {
+        const probe = probeBubblewrap(launcherPath);
+        if (!probe.ok) {
+          throw new ConfigError(
+            `bwrap at ${launcherPath} cannot create a sandbox on this host: ${probe.stderr}; set "sandbox": "none" in ${paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
+          );
+        }
+        return createBubblewrapSandbox({ bwrapPath: launcherPath, tmpRoot: paths.tmp.spawn, killGraceMs: SANDBOX_KILL_GRACE_MS, journal: createPlaceholderJournal(journalDirectory), holders: () => heldMountPoints() });
+      }
       return createSeatbeltSandbox({ sandboxExecPath: launcherPath, tmpRoot: paths.tmp.spawn, killGraceMs: SANDBOX_KILL_GRACE_MS });
     });
 
@@ -412,9 +426,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         fs: createPolicyFilesystem(),
         sandbox,
         env: process.env['PATH'] === undefined ? {} : { PATH: process.env['PATH'] },
+        enforcement: ruleEnforcementOf(sandbox.kind),
       });
       const memories = createMemoryPort({ store, settings: composition.settings, evidenceRun: (session) => evidenceRunFor(session.cwd) });
-      const history = createHistoryPort({ store, settings: composition.settings, clock, home: canonicalHome, redactor });
+      const history = createHistoryPort({ store, settings: composition.settings, clock, home: canonicalHome, redactor, enforcement: ruleEnforcementOf(sandbox.kind) });
       const governance = createGovernancePort({ store, settings: composition.settings });
       const agents = createAgentsPort({
         home: canonicalHome,

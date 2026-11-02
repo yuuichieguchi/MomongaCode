@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
+import { HOST_RULE_ENFORCEMENT, ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
 import { SandboxPolicyError, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxCommand, SandboxPolicy } from '@momonga/sandbox';
 import { fakePolicyFilesystem, withTempDir } from '@momonga/testkit';
@@ -29,7 +29,7 @@ describe('the evidence runner', () => {
     await ensureMomongaDirs(paths);
     const project = fs.realpathSync(withTempDir(context));
     const { sandbox, spawned } = sandboxAnswering('abc\n', 0);
-    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandbox, env: { PATH: '/usr/bin' } })(project);
+    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), enforcement: HOST_RULE_ENFORCEMENT,sandbox, env: { PATH: '/usr/bin' } })(project);
 
     const caller = new AbortController();
     const result = await run({ argv: ['git', 'rev-parse', 'HEAD'], cwd: project, env: { GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0' }, network: 'deny' }, caller.signal);
@@ -62,7 +62,7 @@ describe('the evidence runner', () => {
     await ensureMomongaDirs(paths);
     const project = fs.realpathSync(withTempDir(context));
     const { sandbox, spawned } = sandboxAnswering('', 0);
-    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandbox, env: { GIT_SSH_COMMAND: '/planted', GIT_DIR: '/elsewhere', GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.pager', GIT_CONFIG_VALUE_0: '/planted' } })(project);
+    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), enforcement: HOST_RULE_ENFORCEMENT,sandbox, env: { GIT_SSH_COMMAND: '/planted', GIT_DIR: '/elsewhere', GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.pager', GIT_CONFIG_VALUE_0: '/planted' } })(project);
     await run({ argv: ['git', 'status'], cwd: project, env: {}, network: 'deny' }, new AbortController().signal);
     const env = spawned[0]?.command.env ?? {};
     expect(env['GIT_SSH_COMMAND']).toBeUndefined();
@@ -76,7 +76,7 @@ describe('the evidence runner', () => {
     await ensureMomongaDirs(paths);
     const project = fs.realpathSync(withTempDir(context));
     const { sandbox } = sandboxAnswering('', null);
-    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandbox, env: {} })(project);
+    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), enforcement: HOST_RULE_ENFORCEMENT,sandbox, env: {} })(project);
     await expect(run({ argv: ['git', 'status'], cwd: project, env: {}, network: 'deny' }, new AbortController().signal)).resolves.toEqual({ exitCode: null, stdout: '' });
   });
 
@@ -95,7 +95,7 @@ describe('the evidence runner', () => {
         return child;
       },
     };
-    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandbox, env: {} })(project);
+    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), enforcement: HOST_RULE_ENFORCEMENT,sandbox, env: {} })(project);
     const caller = new AbortController();
     const answer = run({ argv: ['/bin/sleep', '60'], cwd: project, env: {}, network: 'deny' }, caller.signal);
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -119,7 +119,7 @@ describe('the evidence runner', () => {
     const paths = momongaPaths(home);
     await ensureMomongaDirs(paths);
     const { sandbox, spawned } = sandboxAnswering('', 0);
-    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandbox, env: {} })('/no/such/project');
+    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), enforcement: HOST_RULE_ENFORCEMENT,sandbox, env: {} })('/no/such/project');
     await expect(run({ argv: ['git', 'status'], cwd: '/no/such/project', env: {}, network: 'deny' }, new AbortController().signal)).resolves.toEqual({ exitCode: null });
     expect(spawned).toEqual([]);
   });
@@ -143,7 +143,7 @@ describe('the evidence runner', () => {
     };
     const command = { argv: ['git', 'status'], cwd: project, env: {}, network: 'deny' as const };
     const signal = new AbortController().signal;
-    await expect(createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandbox: refusing, env: {} })(project)(command, signal)).resolves.toEqual({ exitCode: null });
-    await expect(createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandbox: broken, env: {} })(project)(command, signal)).rejects.toThrow('a defect');
+    await expect(createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), enforcement: HOST_RULE_ENFORCEMENT,sandbox: refusing, env: {} })(project)(command, signal)).resolves.toEqual({ exitCode: null });
+    await expect(createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), enforcement: HOST_RULE_ENFORCEMENT,sandbox: broken, env: {} })(project)(command, signal)).rejects.toThrow('a defect');
   });
 });

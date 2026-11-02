@@ -1,0 +1,17 @@
+set -eu
+apt-get update -qq
+apt-get install -y -qq bubblewrap git lsof procps ripgrep tini openssh-client > /dev/null
+apt-get install -y -qq build-essential libcurl4-openssl-dev libssl-dev zlib1g-dev libexpat1-dev xz-utils > /dev/null
+mkdir /opt/git-build
+curl -fsSL https://mirrors.edge.kernel.org/pub/software/scm/git/git-2.54.0.tar.xz | tar -xJ -C /opt/git-build --strip-components=1
+make -C /opt/git-build -j"$(nproc)" prefix=/usr NO_GETTEXT=1 NO_TCLTK=1 NO_PERL=1 NO_PYTHON=1 all install > /opt/git-build.log 2>&1
+git --version
+useradd -m dev
+mkdir /home/dev/src
+tar -xf - -C /home/dev/src
+chown -R dev:dev /home/dev/src
+node --version
+bwrap --version
+su dev -c 'cd /home/dev/src && npm ci --no-audit --no-fund > /home/dev/npm-ci.log 2>&1 && tail -3 /home/dev/npm-ci.log'
+if [ "${WITH_COMPLIANCE:-}" = 1 ]; then su dev -c 'cd /home/dev/src && npm ci --no-audit --no-fund --prefix compliance/open-responses > /home/dev/compliance-ci.log 2>&1 && tail -3 /home/dev/compliance-ci.log'; fi
+tini -s -- su dev -c "cd /home/dev/src && $* ; echo EXIT=\$?"

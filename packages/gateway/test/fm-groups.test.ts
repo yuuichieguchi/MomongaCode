@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createFmServe } from '@momonga/gateway';
 import { createGroupSpawn } from '../src/managed/fm-processes.ts';
 import type { FmServe } from '@momonga/gateway';
-import { createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
+import { LSOF_PATH, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { registerCleanup } from './gateway-helpers.ts';
 import { MINIMAL_PATH, isAlive, makeHome, pause, until } from './gateway-process-helpers.ts';
 
@@ -265,7 +265,7 @@ const plantStaleHolder = (markers: string): { marker: string; holder: number } =
 
 const waitForHolder = async (marker: string, pid: number): Promise<void> => {
   await until(() => {
-    const result = execFileSync('/usr/sbin/lsof', ['-t', marker], { encoding: 'utf8' }).split('\n');
+    const result = execFileSync(LSOF_PATH, ['-t', marker], { encoding: 'utf8' }).split('\n');
     return result.includes(String(pid));
   }, 'the holder to open the marker');
 };

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadProbeRecord, probeManagedFm } from '@momonga/gateway';
-import { createFakeFm } from '@momonga/testkit';
+import { createFakeFm, fakeExec } from '@momonga/testkit';
 import { makeHome } from './gateway-process-helpers.ts';
 
 const setup = async (): Promise<{ dir: string; binary: string; probeDir: string; socketPath: string }> => {
@@ -19,6 +19,7 @@ const options = (paths: Awaited<ReturnType<typeof setup>>, warnings: string[] = 
   socketPath: paths.socketPath,
   env: { PATH: '/usr/bin:/bin', HOME: paths.dir },
   samples: 2,
+  exec: fakeExec,
   onWarning: (message: string) => void warnings.push(message),
 });
 

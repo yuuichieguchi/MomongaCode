@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '@momonga/config';
-import { momongaPaths, volumeIsCaseInsensitive } from '@momonga/foundation';
+import { momongaLayout, momongaPaths, volumeIsCaseInsensitive } from '@momonga/foundation';
 import { GatewayRequestError } from '@momonga/runtime';
 import { MODEL_ALIAS, expectError, expectSchema, onCleanup, startService } from './helpers.ts';
 import type { JsonResponse, ServiceEnv } from './helpers.ts';
@@ -39,8 +39,8 @@ const expectConfigError = (response: JsonResponse, message: string, param?: stri
 };
 
 const areasOf = (env: ServiceEnv) => {
-  const paths = momongaPaths(env.layout.home, 'darwin', {});
-  return { momonga: paths.root, keychains: path.join(env.layout.home, 'Library', 'Keychains'), tmpRoot: paths.tmp.root, spawn: paths.tmp.spawn };
+  const paths = momongaPaths(env.layout.home, process.platform, {});
+  return { momonga: paths.root, keychains: momongaLayout(env.layout.home).keychains, tmpRoot: paths.tmp.root, spawn: paths.tmp.spawn };
 };
 
 describe('session create validation (fake timers)', () => {
@@ -111,7 +111,7 @@ describe('session create validation (fake timers)', () => {
     const areas = areasOf(env);
     mkdir(areas.keychains);
     mkdir(areas.tmpRoot);
-    const library = path.join(env.layout.home, 'Library');
+    const library = path.dirname(areas.keychains);
     const atHome = await post(env, { cwd: env.layout.home });
     expect(atHome.status).toBe(201);
     expect(atHome.json.session.cwd).toBe(env.layout.home);

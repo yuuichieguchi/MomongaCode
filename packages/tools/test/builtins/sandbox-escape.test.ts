@@ -1,21 +1,21 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { momongaLayout, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { momongaLayout, EMPTY_PROTECTED_SET, HOST_RULE_ENFORCEMENT } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
+import { HAS_REAL_SANDBOX } from '../helpers.ts';
 import { makeBuiltins, resultOf } from './fixtures.ts';
 import type { Builtins, RunExtra } from './fixtures.ts';
 
 const PROCESS_TIMEOUT = { timeout: 30_000 };
-const HAS_SEATBELT = process.platform === 'darwin' && fs.existsSync('/usr/bin/sandbox-exec');
 
 const escapeFixture = async (realSandbox: boolean) => {
   const tools = await makeBuiltins({ realSandbox });
   const { home, outside } = tools.layout;
   const momonga = path.join(home, '.momonga');
-  const keychains = path.join(home, 'Library', 'Keychains');
-  const sessions = momongaLayout(home, 'darwin', {}).tmp.sessions;
+  const keychains = momongaLayout(home).keychains;
+  const sessions = momongaLayout(home, process.platform, {}).tmp.sessions;
   const mine = path.join(sessions, 'session-1');
   const other = path.join(sessions, 'session-2');
   for (const dir of [momonga, keychains, mine, other]) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -24,7 +24,7 @@ const escapeFixture = async (realSandbox: boolean) => {
     roots,
     home,
     session: { cwd, readLedger: new Map() },
-    sandboxPolicy: buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: computeFileRules([], roots, mine), roots, home, tmpDir: mine, sessionsTmpRoot: sessions }),
+    sandboxPolicy: buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: computeFileRules([], roots, mine, HOST_RULE_ENFORCEMENT), roots, home, tmpDir: mine, sessionsTmpRoot: sessions }),
     tmpDir: mine,
   });
   return { tools, home, momonga, keychains, sessions, mine, other, markerFor, extraFor };
@@ -32,7 +32,7 @@ const escapeFixture = async (realSandbox: boolean) => {
 
 const bash = (tools: Builtins, command: string, extra: RunExtra) => tools.run('Bash', { command }, extra, 'allow_once');
 
-describe.runIf(HAS_SEATBELT)('always-denied writes under real Seatbelt Bash', () => {
+describe.runIf(HAS_REAL_SANDBOX)('always-denied writes under real sandbox Bash', () => {
   it('cwd / cannot write home/.momonga', PROCESS_TIMEOUT, async () => {
     const fx = await escapeFixture(true);
     const target = path.join(fx.momonga, 'x');

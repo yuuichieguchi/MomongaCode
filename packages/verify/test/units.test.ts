@@ -98,7 +98,7 @@ describe('reporting', () => {
       home: layout.home,
       cwd: layout.project,
       fileRules: { entries: [], exemptDirectory: null, fingerprint: '', flavour: 'posix' as const },
-      protectedSet: { roots: [], paths: [], lexicalPaths: [], literals: [], names: [], patterns: { entries: [], exemptDirectory: null, fingerprint: '', flavour: 'posix' as const }, issues: [] },
+      protectedSet: { roots: [], paths: [], lexicalPaths: [], literals: [], names: [], moduleAnchors: [], worktreeAnchors: [], patterns: { entries: [], exemptDirectory: null, fingerprint: '', flavour: 'posix' as const }, issues: [] },
       fs: hostFilesystemOf(fileSystem),
       globBudgetMs: 1_000,
     };

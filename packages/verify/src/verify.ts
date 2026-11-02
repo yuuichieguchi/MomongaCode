@@ -1,5 +1,5 @@
 import { systemClock } from '@momonga/foundation';
-import type { Clock, ProtectedSet } from '@momonga/foundation';
+import type { Clock, ProtectedSet, RuleEnforcement } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
 import type { PermissionRule, PolicyHostFilesystem } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
@@ -26,6 +26,7 @@ export type VerifyRequest = {
   fs: PolicyHostFilesystem;
   secretLocations: readonly SecretLocation[];
   exemptDirectory: string | null;
+  enforcement: RuleEnforcement;
   budgetMs: number;
   clock?: Clock;
 };
@@ -56,9 +57,9 @@ const unmodelledNotes = (context: QueryContext, rules: readonly PermissionRule[]
 };
 
 export const buildQueryContext = (api: Z3Api, request: VerifyRequest): QueryContext => {
-  const { rules, roots, mode, home, cwd, protectedSet, fs, secretLocations, exemptDirectory, budgetMs } = request;
+  const { rules, roots, mode, home, cwd, protectedSet, fs, secretLocations, exemptDirectory, enforcement, budgetMs } = request;
   const budget = startBudget(request.clock ?? systemClock, budgetMs);
-  const fileRules = computeFileRules(rules, roots, exemptDirectory, fs.canonicalise, fs.volumeProbe);
+  const fileRules = computeFileRules(rules, roots, exemptDirectory, enforcement, fs.canonicalise, fs.volumeProbe);
   const alphabet = alphabetFor([
     home,
     cwd,

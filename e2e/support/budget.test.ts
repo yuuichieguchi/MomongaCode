@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PERTURBATIONS, budgetFor, dryRun, factsOf, verdictOf, isCompactionRequest, journalOfRows, ofType, plannedSteps, summaryRoute, summaryTextOf, upstreamRepliesOf, wireTokensOfBody, acceptanceTarget } from './budget.ts';
+import { ESCALATION_NOTICE_PREFIX, GREP_AND_READ_BACK_CALLS, PERTURBATIONS, escalationBudgetVerdict, budgetFor, dryRun, factsOf, verdictOf, isCompactionRequest, journalOfRows, ofType, plannedSteps, summaryRoute, summaryTextOf, upstreamRepliesOf, wireTokensOfBody, acceptanceTarget } from './budget.ts';
 import type { FillerShape, JournalEvent, PlanCaseSpec } from './budget.ts';
 import { readDb } from './db.ts';
 import { createGatewayCountClient } from './gateway-count.ts';
@@ -86,6 +86,56 @@ describe('planner acceptance criteria', () => {
   ])('rejects a dry run where $label', ({ evictionSeq, compactions, status, verdict }) => {
     expect(verdictOf(factsOf(syntheticJournal(evictionSeq, compactions), SYNTHETIC_HAYSTACK, status, undefined))).toMatch(new RegExp(`^${verdict.replace(/[()]/g, '\\$&')}`));
   });
+
+  describe('a case that must escalate', () => {
+    const withEscalation = (journal: JournalEvent[]): JournalEvent[] =>
+      [
+        ...journal,
+        { seq: 6, type: 'notice', data: { message: `${ESCALATION_NOTICE_PREFIX} 4 to 1 because the context budget was exceeded` } },
+        { seq: 9, type: 'model.requested', data: { step: 7 } },
+      ].sort((left, right) => left.seq - right.seq);
+
+    it('reads the step of the request that follows the notice from the measured journal', () => {
+      const facts = factsOf(withEscalation(syntheticJournal(8, [{ seq: 10, through: 7 }])), SYNTHETIC_HAYSTACK, 'COMPLETED', undefined);
+      expect(facts.escalationStep).toBe(7);
+      expect(facts.fillersBeforeEscalation).toBe(0);
+      expect(verdictOf(facts, true)).toBeUndefined();
+    });
+
+    it('counts the Grep and the read-back as the two calls that are not fillers', () => {
+      expect(GREP_AND_READ_BACK_CALLS).toBe(2);
+      const journal = [
+        ...syntheticJournal(8, [{ seq: 10, through: 7 }]),
+        { seq: 11, type: 'tool.completed', data: { callId: 'f2' } },
+        { seq: 12, type: 'notice', data: { message: `${ESCALATION_NOTICE_PREFIX} 4 to 1 because the context budget was exceeded` } },
+      ].sort((left, right) => left.seq - right.seq);
+      expect(factsOf(journal, SYNTHETIC_HAYSTACK, 'COMPLETED', undefined).fillersBeforeEscalation).toBe(4 - GREP_AND_READ_BACK_CALLS);
+    });
+
+    describe('the escalation has to follow from the budget', () => {
+      const sizing = { ceiling: 2300 };
+      const facts = (requestsBeforeEscalation: number) => ({ requestsBeforeEscalation }) as Parameters<typeof escalationBudgetVerdict>[0];
+
+      it('accepts an escalation after a request whose next step would not fit the ceiling', () => {
+        expect(escalationBudgetVerdict(facts(5), [1596, 1919, 2072, 2196, 2321, 2241], sizing)).toBeUndefined();
+      });
+
+      it('rejects an escalation that happened while the next step still fitted, as a rule moved earlier would do', () => {
+        expect(escalationBudgetVerdict(facts(3), [1000, 1100, 1200, 1300], sizing)).toMatch(/^\(g\) escalated although/);
+      });
+
+      it('rejects an escalation with too few requests before it to see a growth', () => {
+        expect(escalationBudgetVerdict(facts(1), [1596, 1919], sizing)).toMatch(/^\(g\) /);
+      });
+    });
+
+    it('rejects a dry run that did not escalate, whatever the path length did to the counts', () => {
+      const facts = factsOf(syntheticJournal(8, [{ seq: 10, through: 7 }]), SYNTHETIC_HAYSTACK, 'COMPLETED', undefined);
+      expect(facts.escalationStep).toBeUndefined();
+      expect(verdictOf(facts, true)).toMatch(/^\(f\) 0 escalation notices/);
+      expect(verdictOf(facts)).toBeUndefined();
+    });
+  });
 });
 
 describe('acceptance (a) support', () => {
@@ -115,7 +165,7 @@ describe('acceptance (a) support', () => {
     { label: 'native, full tools', spec: { name: 'fidelity-native', toolCalling: 'native', deny: [], grid: [], probeFillers: 0 }, shape: { tool: 'Read', lineChars: 90 }, fillers: 6 },
     {
       label: 'native, Read, Grep and ReadOutput',
-      spec: { name: 'fidelity-lean', toolCalling: 'native', deny: ['Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob'], grid: [], probeFillers: 0 },
+      spec: { name: 'fidelity-lean', toolCalling: 'native', deny: ['Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob', 'HistorySearch', 'HistoryRead'], grid: [], probeFillers: 0 },
       shape: { tool: 'Read', lineChars: 90 },
       fillers: 12,
     },

@@ -78,6 +78,7 @@ describe('a client that stops reading', () => {
     for (let step = await second.next(); step.done !== true; step = await second.next()) types.push(step.value.data.type as string);
     expect(types).toContain('response.completed');
     expect(adapter.calls).toHaveLength(2);
+    await first.return?.();
   });
 });
 

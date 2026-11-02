@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
-import { SandboxPolicyError, createBubblewrapSandbox } from '@momonga/sandbox';
+import { SandboxPolicyError, createBubblewrapSandbox, createPlaceholderJournal } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { waitFor } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
@@ -45,9 +45,11 @@ const policy = (writeDenied: string[]): SandboxPolicy => ({
   protectedSet: EMPTY_PROTECTED_SET,
 });
 
-const sandbox = () => createBubblewrapSandbox({ bwrapPath: bwrap, tmpRoot: path.join(base, 'tmp'), killGraceMs: 300 });
+const journal = () => createPlaceholderJournal(path.join(base, 'journal'));
 
-describe('bubblewrap launch (a stand-in bwrap that creates the /dev/null mount points; the real bwrap never ran on this host)', () => {
+const sandbox = () => createBubblewrapSandbox({ bwrapPath: bwrap, tmpRoot: path.join(base, 'tmp'), killGraceMs: 300, journal: journal(), holders: () => new Set() });
+
+describe('bubblewrap launch (a stand-in bwrap that creates the /dev/null mount points; the real bwrap is exercised in bubblewrap-real.test.ts)', () => {
   it('refuses to start a command in a workspace whose protected .git is a symlink loop, with a typed error that names it', () => {
     const git = path.join(work, '.git');
     fs.symlinkSync('.git', git);
@@ -89,6 +91,8 @@ describe('bubblewrap launch (a stand-in bwrap that creates the /dev/null mount p
       bwrapPath: bwrap,
       tmpRoot: path.join(base, 'tmp'),
       killGraceMs: 300,
+      journal: journal(),
+      holders: () => new Set(),
       spawnProcess: ((file, args, spawnOptions) => {
         const child = spawn(file, args as string[], spawnOptions as SpawnOptions);
         setImmediate(() => child.emit('error', failure));

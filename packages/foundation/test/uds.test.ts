@@ -5,10 +5,19 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ProcessLockHeldError, createUdsClient, inspectProcessLock, listenUnix } from '@momonga/foundation';
+import { LOCK_DATABASE_SUFFIX, ProcessLockHeldError, createUdsClient, hostKernelLock, socketPathLimit, inspectProcessLock, listenUnix } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
 import { registerCleanup, withTempDir } from '@momonga/testkit';
 import { startHolder } from './support/lock-processes.ts';
+
+const SQLITE_JOURNAL_SUFFIX = '-journal';
+
+const filesBesideHeldSocket = (socketName: string): string[] => {
+  const lock = `${socketName}.lock`;
+  if (hostKernelLock().name === 'file-lock') return [socketName, lock];
+  const database = `${lock}${LOCK_DATABASE_SUFFIX}`;
+  return [socketName, lock, database, `${database}${SQLITE_JOURNAL_SUFFIX}`];
+};
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
@@ -82,20 +91,22 @@ describe('listenUnix', () => {
     expect(fs.existsSync(socketPath)).toBe(false);
   });
 
-  it('rejects socket paths of 104 bytes or more with a clear error', async () => {
+  it('rejects socket paths of the platform limit or more with a clear error', async () => {
+    const limit = socketPathLimit(process.platform);
     const dir = makeDir();
-    const name = 'x'.repeat(104 - Buffer.byteLength(dir) - 1);
+    const name = 'x'.repeat(limit - Buffer.byteLength(dir) - 1);
     const socketPath = path.join(dir, name);
-    expect(Buffer.byteLength(socketPath)).toBe(104);
+    expect(Buffer.byteLength(socketPath)).toBe(limit);
     const server = echoServer();
-    await expect(listenUnix(server, socketPath)).rejects.toThrow(/104/);
+    await expect(listenUnix(server, socketPath)).rejects.toThrow(new RegExp(String(limit)));
     expect(server.listening).toBe(false);
   });
 
-  it('accepts a socket path of 103 bytes', async () => {
+  it('accepts a socket path one byte below the platform limit', async () => {
+    const limit = socketPathLimit(process.platform) - 1;
     const dir = makeDir();
-    const socketPath = path.join(dir, 'y'.repeat(103 - Buffer.byteLength(dir) - 1));
-    expect(Buffer.byteLength(socketPath)).toBe(103);
+    const socketPath = path.join(dir, 'y'.repeat(limit - Buffer.byteLength(dir) - 1));
+    expect(Buffer.byteLength(socketPath)).toBe(limit);
     await listenUnix(echoServer(), socketPath);
     expect(fs.statSync(socketPath).isSocket()).toBe(true);
   });
@@ -195,13 +206,13 @@ describe('listenUnix locking', () => {
     expect(outcomes.filter((outcome) => outcome === 'lost')).toHaveLength(3);
     const winner = children[outcomes.indexOf('won')];
     expect(fs.readFileSync(`${socketPath}.lock`, 'utf8')).toBe(String(winner?.pid));
-    expect(fs.readdirSync(dir).sort()).toEqual(['takeover.sock', 'takeover.sock.lock']);
+    expect(fs.readdirSync(dir).sort()).toEqual(filesBesideHeldSocket('takeover.sock'));
   });
 
   it('holds the kernel lock without any temporary file beside the socket', async (context) => {
     const socketPath = path.join(withTempDir(context), 'atomic.sock');
     await listenUnix(echoServer(), socketPath);
-    expect(fs.readdirSync(path.dirname(socketPath)).sort()).toEqual(['atomic.sock', 'atomic.sock.lock']);
+    expect(fs.readdirSync(path.dirname(socketPath)).sort()).toEqual(filesBesideHeldSocket('atomic.sock'));
     expect(await inspectProcessLock(`${socketPath}.lock`)).toEqual({ state: 'held', pid: process.pid });
   });
 

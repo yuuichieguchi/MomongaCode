@@ -3,7 +3,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, protectedSetFor } from '@momonga/foundation';
 import type { ProtectedSet } from '@momonga/foundation';
-import { buildSeatbeltProfile, createSeatbeltSandbox } from '@momonga/sandbox';
+import { buildSeatbeltProfile, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, heldMountPoints, planBubblewrap } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
 import { fakePolicyFilesystem, killGroupsForCleanup } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
@@ -13,7 +13,21 @@ const BASE_ENV = { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' };
 
 type Built = { roots: string[]; cwd: string };
 
-describe('protected set in the kernel (real sandbox-exec, 5.13)', () => {
+const createHostSandbox = (options: { tmpRoot: string; killGraceMs: number }): Sandbox =>
+  process.platform === 'darwin' ? createSeatbeltSandbox(options) : createBubblewrapSandbox({ ...options, journal: createPlaceholderJournal(`${options.tmpRoot}-journal`), holders: () => heldMountPoints() });
+
+const admits = (policy: SandboxPolicy, cwd: string): unknown => (process.platform === 'darwin' ? buildSeatbeltProfile(policy) : planBubblewrap(policy, { cwd }));
+
+const startRefusal = (policy: SandboxPolicy, cwd: string): unknown => {
+  try {
+    admits(policy, cwd);
+    return undefined;
+  } catch (error) {
+    return error;
+  }
+};
+
+describe('protected set in the kernel (real sandbox-exec on Darwin, real bwrap on Linux, 5.13)', () => {
   let created: string[] = [];
   let unlock: string[] = [];
   let spawned: SandboxedProcess[] = [];
@@ -54,10 +68,15 @@ describe('protected set in the kernel (real sandbox-exec, 5.13)', () => {
     const target = build(protectedBase);
     const set = setOf(target.roots);
     const policy = policyOf(target.roots, set);
-    expect(() => buildSeatbeltProfile(policy)).not.toThrow();
     const before = unchanged(target.cwd);
-    const refused = await sh(target.cwd, script, policy);
-    expect(refused.code).not.toBe(0);
+    const refusedToStart = startRefusal(policy, target.cwd);
+    if (refusedToStart === undefined) {
+      const refused = await sh(target.cwd, script, policy);
+      expect(refused.code).not.toBe(0);
+    } else {
+      expect(process.platform).not.toBe('darwin');
+      expect(refusedToStart).toMatchObject({ name: 'SandboxPolicyError', code: 'protected_link_not_pinnable' });
+    }
     expect(unchanged(target.cwd)).toEqual(before);
 
     const control = build(tempDir());
@@ -81,8 +100,7 @@ describe('protected set in the kernel (real sandbox-exec, 5.13)', () => {
   const stateOf = (...names: string[]) => (cwd: string) => names.map((name) => `${name}=${describeEntry(path.join(cwd, name))}`).join(' ');
 
   beforeEach(() => {
-    if (process.platform !== 'darwin') throw new Error('Darwin required');
-    sandbox = createSeatbeltSandbox({ tmpRoot: tempDir(), killGraceMs: KILL_GRACE_MS });
+    sandbox = createHostSandbox({ tmpRoot: tempDir(), killGraceMs: KILL_GRACE_MS });
   });
 
   afterEach(async () => {
@@ -171,18 +189,111 @@ describe('protected set in the kernel (real sandbox-exec, 5.13)', () => {
       return { roots: [root], cwd: root };
     };
 
-    it.each(['.git/modules/subm/hooks/x', '.git/modules/a/modules/b/config', '.git/worktrees/wt/config.worktree', '.git/modules/a/refs/heads/config'])(
-      'refuses a write to %s',
-      async (target) => {
-        await refusedWithControl(standalone, `mkdir -p "$(dirname ${target})" && printf x > ${target}`, stateOf(target));
-      },
-    );
+    const withModule = (base: string): Built => {
+      const built = standalone(base);
+      const module = path.join(built.cwd, '.git', 'modules', 'a');
+      fs.mkdirSync(path.join(module, 'objects'), { recursive: true });
+      fs.mkdirSync(path.join(module, 'refs'));
+      fs.writeFileSync(path.join(module, 'HEAD'), 'ref: refs/heads/main\n');
+      return built;
+    };
 
-    it.each(['.git/modules/subm/objects/x', '.git/worktrees/wt/HEAD'])('allows a write to %s', async (target) => {
-      const built = standalone(tempDir());
-      const result = await sh(built.cwd, `mkdir -p "$(dirname ${target})" && printf x > ${target}`, policyOf(built.roots, setOf(built.roots)));
+    const withWorktree = (base: string): Built => {
+      const built = standalone(base);
+      const admin = path.join(built.cwd, '.git', 'worktrees', 'wt');
+      fs.mkdirSync(admin, { recursive: true });
+      fs.writeFileSync(path.join(admin, 'HEAD'), 'ref: refs/heads/main\n');
+      return built;
+    };
+
+    const write = (target: string): string => `mkdir -p "$(dirname ${target})" && printf x > ${target}`;
+
+    const allowed = async (build: (base: string) => Built, target: string): Promise<void> => {
+      const built = build(tempDir());
+      const result = await sh(built.cwd, write(target), policyOf(built.roots, setOf(built.roots)));
       expect(result.code).toBe(0);
       expect(fs.readFileSync(path.join(built.cwd, target), 'utf8')).toBe('x');
+    };
+
+    describe.runIf(process.platform === 'darwin')('Seatbelt: the profile regex covers paths that do not exist yet', () => {
+      it.each([
+        ['a new module hooks directory', standalone, '.git/modules/subm/hooks/x'],
+        ['a new nested module config', standalone, '.git/modules/a/modules/b/config'],
+        ['a new worktree config.worktree', standalone, '.git/worktrees/wt/config.worktree'],
+        ['a config file below an existing module refs', withModule, '.git/modules/a/refs/heads/config'],
+        ['a new hooks file in an existing module', withModule, '.git/modules/a/hooks/x'],
+        ['a config.worktree of an existing worktree', withWorktree, '.git/worktrees/wt/config.worktree'],
+      ] as const)('refuses %s', async (_label, build, target) => {
+        await refusedWithControl(build, write(target), stateOf(target));
+      });
+
+      it.each([
+        ['a new module objects file', standalone, '.git/modules/subm/objects/x'],
+        ['an objects file of an existing module', withModule, '.git/modules/a/objects/x'],
+        ['a worktree HEAD', standalone, '.git/worktrees/wt/HEAD'],
+      ] as const)('allows %s', async (_label, build, target) => {
+        await allowed(build, target);
+      });
+    });
+
+    describe.runIf(process.platform === 'linux')('bubblewrap: the kernel can only pin what exists, so a read-only anchor stands for the pattern', () => {
+      it.each([
+        ['a new module (the whole child of the modules anchor)', standalone, '.git/modules/subm/hooks/x'],
+        ['a new module objects file', standalone, '.git/modules/subm/objects/x'],
+        ['a new nested module config', standalone, '.git/modules/a/modules/b/config'],
+        ['a new module beside an existing one', withModule, '.git/modules/b/HEAD'],
+        ['a hooks file of an existing module', withModule, '.git/modules/a/hooks/x'],
+        ['a config file of an existing module', withModule, '.git/modules/a/config'],
+        ['a config.worktree of an existing module', withModule, '.git/modules/a/config.worktree'],
+        ['a module nested in an existing module', withModule, '.git/modules/a/modules/b/objects/x'],
+        ['a config.worktree of an existing worktree', withWorktree, '.git/worktrees/wt/config.worktree'],
+      ] as const)('refuses %s', async (_label, build, target) => {
+        await refusedWithControl(build, write(target), stateOf(target));
+      });
+
+      it.each([
+        ['an objects file of an existing module', withModule, '.git/modules/a/objects/x'],
+        ['a ref of an existing module', withModule, '.git/modules/a/refs/heads/x'],
+        ['a config file below the refs of an existing module, which git never adopts (nested-git-adoption.test.ts)', withModule, '.git/modules/a/refs/heads/config'],
+        ['a worktree HEAD', standalone, '.git/worktrees/wt/HEAD'],
+        ['a new worktree config.worktree, which git never adopts (nested-git-adoption.test.ts)', standalone, '.git/worktrees/wt/config.worktree'],
+      ] as const)('allows %s', async (_label, build, target) => {
+        await allowed(build, target);
+      });
+
+      describe('renaming the directory that holds a pinned file away (Linux allows renaming an ancestor of a mount point)', () => {
+        const withWorktreeConfig = (base: string): Built => {
+          const built = withWorktree(base);
+          fs.writeFileSync(path.join(built.cwd, '.git', 'worktrees', 'wt', 'config.worktree'), '[core]\n');
+          return built;
+        };
+
+        const withModuleWorktree = (base: string): Built => {
+          const built = withModule(base);
+          const admin = path.join(built.cwd, '.git', 'modules', 'a', 'worktrees', 't');
+          fs.mkdirSync(admin, { recursive: true });
+          fs.writeFileSync(path.join(admin, 'config.worktree'), '[core]\n');
+          return built;
+        };
+
+        const swap = (directory: string): string =>
+          `mv ${directory} ${directory}.old && mkdir ${directory} && printf '[core]\\n\\tfsmonitor = ./evil\\n' > ${directory}/config.worktree`;
+
+        it.each([
+          ['a worktree administrative directory', withWorktreeConfig, '.git/worktrees/wt'],
+          ['a worktree administrative directory of a module', withModuleWorktree, '.git/modules/a/worktrees/t'],
+        ] as const)('refuses to move %s away and put another with its own config.worktree in its place', async (_label, build, directory) => {
+          await refusedWithControl(build, swap(directory), stateOf(`${directory}/config.worktree`, `${directory}.old`));
+        });
+      });
+
+      it('plans a placeholder where the modules directory is missing, so no module can be created', async () => {
+        const built = standalone(tempDir());
+        fs.rmdirSync(path.join(built.cwd, '.git', 'modules'));
+        const refused = await sh(built.cwd, 'mkdir .git/modules', policyOf(built.roots, setOf(built.roots)));
+        expect(refused.code).not.toBe(0);
+        expect(fs.existsSync(path.join(built.cwd, '.git', 'modules'))).toBe(false);
+      });
     });
 
     it('refuses a write below a missing-target directory', async () => {
@@ -194,7 +305,7 @@ describe('protected set in the kernel (real sandbox-exec, 5.13)', () => {
       const built = worktreeBoth(base);
       const roots = [built.cwd];
       const policy = policyOf(roots, setOf(roots));
-      expect(() => buildSeatbeltProfile(policy)).not.toThrow();
+      expect(() => admits(policy, built.cwd)).not.toThrow();
       const inside = await sh(built.cwd, 'printf x > inside.txt', policy);
       expect(inside.code).toBe(0);
       expect(fs.readFileSync(path.join(built.cwd, 'inside.txt'), 'utf8')).toBe('x');

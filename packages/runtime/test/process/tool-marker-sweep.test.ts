@@ -17,7 +17,7 @@ const NON_SWEEP_LEASE_MS = 7000;
 const trackedTempHome = async (context: CleanupContext): Promise<TempHome> => {
   const home = withTempDir(context, { asHome: true });
   const root = withTempDir(context);
-  const paths = momongaPaths(home, 'darwin', {});
+  const paths = momongaPaths(home, process.platform, {});
   await ensureMomongaDirs(paths);
   const project = path.join(root, 'p');
   fs.mkdirSync(project);
@@ -28,7 +28,7 @@ const trackedRunHome = (context: CleanupContext): RunHome => {
   const home = withTempDir(context, { asHome: true });
   const root = withTempDir(context);
   writeUserSettings(home, { sandbox: 'none', ...modelSettings(path.join(root, 'up.sock')) });
-  return { root, home, paths: momongaPaths(home, 'darwin', {}), project: root };
+  return { root, home, paths: momongaPaths(home, process.platform, {}), project: root };
 };
 
 describe('tool marker sweep wiring (§8)', () => {

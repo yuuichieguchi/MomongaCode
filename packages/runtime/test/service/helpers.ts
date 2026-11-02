@@ -6,7 +6,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { afterEach, expect } from 'vitest';
-import { createRedactor, createUdsClient, EMPTY_FILE_RULES, momongaPaths, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { createRedactor, createUdsClient, EMPTY_FILE_RULES, HOST_RULE_ENFORCEMENT, momongaLayout, momongaPaths, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import { computeFileRules } from '@momonga/policy';
@@ -138,8 +138,8 @@ export const createFakePorts = (): FakePorts => {
 };
 
 export const protectedAreasOf = (home: string): string[] => {
-  const paths = momongaPaths(home, 'darwin', {});
-  return [paths.root, path.join(home, 'Library', 'Keychains'), paths.tmp.root];
+  const paths = momongaPaths(home, process.platform, {});
+  return [paths.root, momongaLayout(home).keychains, paths.tmp.root];
 };
 
 const ajv = new Ajv2020.default({ strict: false, allErrors: true });
@@ -723,7 +723,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
     markerDir: markers,
     policyFor: async (target: Session, policyOptions: { env: Readonly<Record<string, string>>; rules: readonly PermissionRule[] }) => ({
       roots: [target.cwd],
-      sandboxPolicy: { ...sandboxPolicy, fileRules: computeFileRules(policyOptions.rules, [target.cwd], sessionTmpDir) },
+      sandboxPolicy: { ...sandboxPolicy, fileRules: computeFileRules(policyOptions.rules, [target.cwd], sessionTmpDir, HOST_RULE_ENFORCEMENT) },
       tmpDir: sessionTmpDir,
       env: policyOptions?.env ?? target.env,
     }),

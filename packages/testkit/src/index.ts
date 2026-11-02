@@ -25,6 +25,8 @@ export type {
 export { generateInstance, collectAllowedNames, findUsedKeywords } from './schema-instance.ts';
 export type { JsonSchema, InstancePreferences } from './schema-instance.ts';
 export { LOCK_HOLDER_MAIN, startLockHolder } from './lock-holder.ts';
+export { LSOF_PATH } from './lsof.ts';
+export { EMPTY_SYMLINK_SUPPORTED } from './empty-symlink.ts';
 export { createFakeKernelLock } from './fake-kernel-lock.ts';
 export type { FakeKernelLock, FakeKernelLockOptions } from './fake-kernel-lock.ts';
 export { createFakeClock } from './fake-clock.ts';

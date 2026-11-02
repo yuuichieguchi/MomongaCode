@@ -20,7 +20,8 @@ const NESTED_GIT_DIRECTORY_PATTERNS = [
   { anchor: 'worktrees', pattern: 'worktrees/*/config.worktree' },
 ] as const;
 const PATTERN_PROVENANCE = { ruleText: 'protected set', layer: 'protected', source: 'momonga' } as const;
-const GLOB_CHARACTERS = /[\\*?[]/g;
+const PATTERN_ENFORCEMENT = 'exact-paths' as const;
+const GLOB_CHARACTERS =/[\\*?[]/g;
 
 export type EntryRead =
   | { kind: 'absent' }
@@ -52,6 +53,8 @@ export type ProtectedSet = {
   lexicalPaths: readonly string[];
   literals: readonly string[];
   names: readonly string[];
+  moduleAnchors: readonly string[];
+  worktreeAnchors: readonly string[];
   patterns: FileRuleSet;
   issues: readonly GitPointerIssue[];
 };
@@ -62,6 +65,8 @@ export const EMPTY_PROTECTED_SET: ProtectedSet = {
   lexicalPaths: [],
   literals: [],
   names: [],
+  moduleAnchors: [],
+  worktreeAnchors: [],
   patterns: EMPTY_FILE_RULES,
   issues: [],
 };
@@ -78,6 +83,8 @@ type Collected = {
   paths: Set<string>;
   lexicalPaths: Set<string>;
   literals: Set<string>;
+  moduleAnchors: Set<string>;
+  worktreeAnchors: Set<string>;
   patternSpecifiers: Set<string>;
   issues: GitPointerIssue[];
 };
@@ -160,6 +167,7 @@ const registerCommonDirectory = (
       protectUnresolvable(roots, ports, collected, issue, directory, resolution.reason);
       continue;
     }
+    (anchor === 'modules' ? collected.moduleAnchors : collected.worktreeAnchors).add(resolution.path);
     for (const { pattern } of NESTED_GIT_DIRECTORY_PATTERNS.filter((entry) => entry.anchor === anchor)) {
       collected.patternSpecifiers.add(`//${escapeGlob(patternPathOf(flavourOf(ports.platform), commonDir).slice(1))}/${pattern}`);
     }
@@ -295,15 +303,25 @@ const patternSpecsOf = (specifiers: readonly string[], roots: readonly string[])
   }));
 
 export const protectedSetFor = (roots: readonly string[], ports: ProtectedSetPorts): ProtectedSet => {
-  const collected: Collected = { paths: new Set(), lexicalPaths: new Set(), literals: new Set(), patternSpecifiers: new Set(), issues: [] };
+  const collected: Collected = {
+    paths: new Set(),
+    lexicalPaths: new Set(),
+    literals: new Set(),
+    moduleAnchors: new Set(),
+    worktreeAnchors: new Set(),
+    patternSpecifiers: new Set(),
+    issues: [],
+  };
   for (const root of roots) collectRoot(roots, ports, collected, root);
-  const patterns = compileFileRuleSet(patternSpecsOf([...collected.patternSpecifiers], roots), roots, null, ports.canonicalise, ports.volumeProbe, flavourOf(ports.platform));
+  const patterns = compileFileRuleSet(patternSpecsOf([...collected.patternSpecifiers], roots), roots, null, ports.canonicalise, ports.volumeProbe, flavourOf(ports.platform), PATTERN_ENFORCEMENT);
   return {
     roots: [...roots],
     paths: [...collected.paths],
     lexicalPaths: [...collected.lexicalPaths],
     literals: [...collected.literals],
     names: [GIT_NAME],
+    moduleAnchors: [...collected.moduleAnchors],
+    worktreeAnchors: [...collected.worktreeAnchors],
     patterns,
     issues: collected.issues,
   };

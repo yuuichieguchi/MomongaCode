@@ -51,7 +51,7 @@ export const makeTempHome = async (): Promise<TempHome> => {
   });
   const home = path.join(root, 'h');
   fs.mkdirSync(home, { mode: 0o700 });
-  const paths = momongaPaths(home, 'darwin', {});
+  const paths = momongaPaths(home, process.platform, {});
   await ensureMomongaDirs(paths);
   const project = path.join(root, 'p');
   fs.mkdirSync(project);

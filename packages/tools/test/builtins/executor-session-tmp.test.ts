@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { momongaLayout, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { momongaLayout, EMPTY_PROTECTED_SET, HOST_RULE_ENFORCEMENT } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
 import { makeBuiltins, resultOf } from './fixtures.ts';
@@ -12,7 +12,7 @@ const ACCEPT = { mode: 'acceptEdits' } as const;
 const fixture = async () => {
   const tools = await makeBuiltins();
   const { home, project } = tools.layout;
-  const sessions = momongaLayout(home, 'darwin', {}).tmp.sessions;
+  const sessions = momongaLayout(home, process.platform, {}).tmp.sessions;
   const tmpDir = path.join(sessions, 'session-1');
   const sibling = path.join(sessions, 'session-2');
   for (const dir of [tmpDir, sibling]) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -21,7 +21,7 @@ const fixture = async () => {
     ...ACCEPT,
     roots: [project],
     tmpDir,
-    sandboxPolicy: buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: computeFileRules([], [project], tmpDir), roots: [project], home, tmpDir, sessionsTmpRoot: sessions }),
+    sandboxPolicy: buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: computeFileRules([], [project], tmpDir, HOST_RULE_ENFORCEMENT), roots: [project], home, tmpDir, sessionsTmpRoot: sessions }),
   };
   return { tools, sessions, tmpDir, sibling, extra };
 };

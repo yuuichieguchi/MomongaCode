@@ -5,6 +5,7 @@ import { FM_SERVE_DEFAULTS } from '../defaults.ts';
 import { createExecFn, createExecWithStdin } from '../managed/fm-processes.ts';
 import { readOsBuild, sha256OfFile } from '../managed/fm-record-key.ts';
 import { createFmServe } from '../managed/fm-serve.ts';
+import type { ExecFn } from '../managed/fm-serve.ts';
 import { parseCount } from '../managed/fm-target.ts';
 import { decideToolCalling } from './decide.ts';
 import { saveProbeRecord } from './record.ts';
@@ -19,6 +20,7 @@ export type ProbeManagedFmOptions = {
   env: Readonly<Record<string, string | undefined>>;
   samples?: number;
   signal?: AbortSignal;
+  exec?: ExecFn;
   onWarning(message: string): void;
 };
 
@@ -26,7 +28,7 @@ export type ProbeManagedFmResult = { report: ProbeReport; toolCalling: ToolCalli
 
 export const probeManagedFm = async (options: ProbeManagedFmOptions): Promise<ProbeManagedFmResult> => {
   const childEnv = minimalChildEnv(options.env);
-  const exec = createExecFn(childEnv);
+  const exec = options.exec ?? createExecFn(childEnv);
   const execWithStdin = createExecWithStdin(childEnv);
   const record: ProbeRecordKey = {
     target: options.target,

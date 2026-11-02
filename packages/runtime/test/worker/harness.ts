@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
-import { canonicalJson, EMPTY_FILE_RULES, sha256Hex, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { canonicalJson, EMPTY_FILE_RULES, HOST_RULE_ENFORCEMENT, sha256Hex, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import type { InstructionReader } from '@momonga/context';
 import { computeFileRules } from '@momonga/policy';
@@ -253,7 +253,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     policyFor: async (target: Session, policyOptions: { env: ToolEnv; rules: readonly PermissionRule[] }) => {
       portCalls.policyFor.push({ sessionId: target.id, env: policyOptions?.env });
       const roots = [target.cwd, EXTRA_ROOT];
-      const fileRules = computeFileRules(policyOptions.rules, roots, sessionTmpDir);
+      const fileRules = computeFileRules(policyOptions.rules, roots, sessionTmpDir, HOST_RULE_ENFORCEMENT);
       return { roots, sandboxPolicy: { ...sandboxPolicy, fileRules }, tmpDir: sessionTmpDir, env: policyOptions?.env ?? target.env };
     },
     recoveryContextFor: async (target: Session, recoveryOptions: { env: ToolEnv }) => ({ roots: [target.cwd, EXTRA_ROOT], tmpDir: sessionTmpDir, env: recoveryOptions.env }),
@@ -282,7 +282,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       workerId,
       leaseMs: LEASE_MS,
       random: () => 0.5,
-      platform: 'darwin',
+      platform: process.platform,
       timers: systemTimers,
       systemPrompt: testSystemPrompt,
       home,

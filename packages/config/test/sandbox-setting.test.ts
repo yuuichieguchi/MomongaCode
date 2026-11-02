@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SETTINGS_SCHEMA, loadSettings, loadUserSettings } from '@momonga/config';
+import { defaultSandboxSetting } from '../src/settings.ts';
 import { localSettingsPath, makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 
 describe('sandbox setting', () => {
@@ -8,10 +9,18 @@ describe('sandbox setting', () => {
     expect(properties['sandbox']).toEqual({ enum: ['seatbelt', 'bubblewrap', 'none'] });
   });
 
-  it('defaults to seatbelt for user settings', async () => {
+  it.each([
+    ['darwin', 'seatbelt'],
+    ['linux', 'bubblewrap'],
+    ['win32', 'none'],
+  ] as const)('defaults to %s -> %s by platform', (platform, expected) => {
+    expect(defaultSandboxSetting(platform)).toBe(expected);
+  });
+
+  it('defaults to the platform sandbox for user settings', async () => {
     const tree = makeTree();
     const result = await loadUserSettings({ home: tree.home });
-    expect(result.settings.sandbox).toBe('seatbelt');
+    expect(result.settings.sandbox).toBe(defaultSandboxSetting());
   });
 
   it('resolves none from user settings', async () => {
@@ -30,10 +39,10 @@ describe('sandbox setting', () => {
     await expect(failure).rejects.toThrow('/sandbox');
   });
 
-  it('defaults to seatbelt in loadSettings', async () => {
+  it('defaults to the platform sandbox in loadSettings', async () => {
     const tree = makeTree();
     const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
-    expect(result.settings.sandbox).toBe('seatbelt');
+    expect(result.settings.sandbox).toBe(defaultSandboxSetting());
   });
 
   it('honours user settings in loadSettings', async () => {
@@ -47,7 +56,7 @@ describe('sandbox setting', () => {
     const tree = makeTree();
     const file = writeJson(projectSettingsPath(tree), { sandbox: 'none' });
     const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
-    expect(result.settings.sandbox).toBe('seatbelt');
+    expect(result.settings.sandbox).toBe(defaultSandboxSetting());
     expect(result.warnings.filter((w) => w.includes(file) && w.includes('sandbox'))).toHaveLength(1);
   });
 
@@ -55,7 +64,7 @@ describe('sandbox setting', () => {
     const tree = makeTree();
     const file = writeJson(localSettingsPath(tree), { sandbox: 'none' });
     const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
-    expect(result.settings.sandbox).toBe('seatbelt');
+    expect(result.settings.sandbox).toBe(defaultSandboxSetting());
     expect(result.warnings.filter((w) => w.includes(file) && w.includes('sandbox'))).toHaveLength(1);
   });
 

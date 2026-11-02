@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { keyFor, noneSandbox } from '../helpers.ts';
+import { LSOF_PATH } from '@momonga/testkit';
+import { HAS_REAL_SANDBOX, keyFor, noneSandbox } from '../helpers.ts';
 import { approvalOf, isAlive, makeBuiltins, onCleanup, resultOf, trackGroup, trackPid, waitFor } from './fixtures.ts';
 import type { Builtins } from './fixtures.ts';
 
@@ -17,7 +18,7 @@ const attachedGroups = (tools: Builtins): number[] =>
 
 const holdersOf = (file: string): number[] => {
   try {
-    return execFileSync('/usr/sbin/lsof', ['-t', '--', file], { env: { LC_ALL: 'C' }, encoding: 'utf8' })
+    return execFileSync(LSOF_PATH, ['-t', '--', file], { env: { LC_ALL: 'C' }, encoding: 'utf8' })
       .split('\n')
       .filter((line) => line !== '')
       .map(Number);
@@ -26,7 +27,24 @@ const holdersOf = (file: string): number[] => {
   }
 };
 
-describe.runIf(process.platform === 'darwin')('Bash (real Seatbelt)', () => {
+const groupsOf = (pids: readonly number[]): number[] => {
+  const listing = new Map(
+    execFileSync('/bin/ps', ['-A', '-o', 'pid=,pgid='], { encoding: 'utf8' })
+      .split('\n')
+      .filter((line) => line.trim() !== '')
+      .map((line) => line.trim().split(/\s+/).map(Number) as [number, number]),
+  );
+  return pids.flatMap((pid) => (listing.has(pid) ? [listing.get(pid) as number] : []));
+};
+
+const processesWithArgument = (argument: string): number[] =>
+  execFileSync('/bin/ps', ['-A', '-o', 'pid=,args='], { encoding: 'utf8' })
+    .split('\n')
+    .filter((line) => line.includes(argument))
+    .map((line) => Number(line.trim().split(/\s+/)[0]))
+    .filter((pid) => pid !== process.pid);
+
+describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
   it('runs the command and returns its output without the cwd marker', PROCESS_TIMEOUT, async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const result = resultOf(await bash(tools, 'echo hello'));
@@ -59,16 +77,18 @@ describe.runIf(process.platform === 'darwin')('Bash (real Seatbelt)', () => {
     expect(result).toMatchObject({ status, exitCode });
   });
 
-  it('reports no exit code when the shell is killed by a signal', PROCESS_TIMEOUT, async () => {
+  it('reports the exit code the sandbox reports for a shell killed by a signal: none under Seatbelt, 128 + 9 from bubblewrap, which exits for its child', PROCESS_TIMEOUT, async () => {
     const tools = await makeBuiltins({ realSandbox: true });
-    expect(resultOf(await bash(tools, 'kill -9 $$')).exitCode).toBeUndefined();
+    const SIGKILL_EXIT_FROM_BUBBLEWRAP = 137;
+    expect(resultOf(await bash(tools, 'kill -9 $$')).exitCode).toBe(process.platform === 'darwin' ? undefined : SIGKILL_EXIT_FROM_BUBBLEWRAP);
   });
 
   it('fails with the signal name when the shell is killed by a signal', PROCESS_TIMEOUT, async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const result = resultOf(await bash(tools, 'kill -9 $$'));
     expect(result.status).toBe('failed');
-    expect(result.output.trimEnd().endsWith('[terminated by SIGKILL]')).toBe(true);
+    const reported = process.platform === 'darwin' ? '[terminated by SIGKILL]' : '[exit code 137]';
+    expect(result.output.trimEnd().endsWith(reported)).toBe(true);
   });
 
   it('runs in the session cwd', PROCESS_TIMEOUT, async () => {
@@ -192,7 +212,10 @@ describe.runIf(process.platform === 'darwin')('Bash (real Seatbelt)', () => {
     const callId = 'attach';
     const result = resultOf(await bash(tools, 'echo $$', {}, callId));
     const entries = tools.idempotency.log.filter((entry) => entry.op === 'attachProcess');
-    expect(entries).toEqual([{ op: 'attachProcess', key: keyFor('run-1', 1, callId), pgid: Number(result.output.trim()), startedAt: tools.clock.now() }]);
+    const innerPid = Number(result.output.trim());
+    expect(entries).toEqual([{ op: 'attachProcess', key: keyFor('run-1', 1, callId), pgid: process.platform === 'darwin' ? innerPid : expect.any(Number), startedAt: tools.clock.now() }]);
+    expect(entries[0]?.pgid).toBeGreaterThan(1);
+    if (process.platform !== 'darwin') expect(entries[0]?.pgid).not.toBe(innerPid);
   });
 
   it('passes the process marker so the child holds it', PROCESS_TIMEOUT, async () => {
@@ -206,7 +229,14 @@ describe.runIf(process.platform === 'darwin')('Bash (real Seatbelt)', () => {
     const groups = attachedGroups(tools);
     groups.forEach(trackGroup);
     expect(groups).toHaveLength(1);
-    expect(holdersOf(marker)).toContain(groups[0]);
+    const holders = holdersOf(marker);
+    if (process.platform === 'darwin') {
+      expect(holders).toContain(groups[0]);
+    } else {
+      const heldGroups = groupsOf(holders);
+      expect(heldGroups.length).toBeGreaterThan(0);
+      expect(new Set(heldGroups)).toEqual(new Set([groups[0]]));
+    }
     fs.writeFileSync(go, '');
     expect(resultOf(await running).output.trimEnd()).toBe('done');
   });
@@ -249,9 +279,14 @@ describe.runIf(process.platform === 'darwin')('Bash (real Seatbelt)', () => {
     const script = `perl -e 'use POSIX; POSIX::setsid(); open(my $f, ">", $ARGV[0]); close $f; sleep 30' ${ready} >/dev/null 2>&1 & while [ ! -e ${ready} ]; do sleep 0.05; done; echo "pid:$!"`;
     const result = resultOf(await bash(tools, script));
     const pid = Number(/pid:(\d+)/.exec(result.output)?.[1]);
-    trackPid(pid);
-    expect(result.output).toContain('Terminated 1 process(es) that outlived the command.');
-    expect(await waitFor(() => !isAlive(pid), 5000)).toBe(true);
+    if (process.platform === 'darwin') {
+      trackPid(pid);
+      expect(result.output).toContain('Terminated 1 process(es) that outlived the command.');
+      expect(await waitFor(() => !isAlive(pid), 5000)).toBe(true);
+      return;
+    }
+    expect(result.output).not.toContain('outlived the command');
+    expect(await waitFor(() => processesWithArgument(ready).length === 0, 5000)).toBe(true);
   });
 
   it('known limitation: a setsid process that closed fd 3 outlives the command', PROCESS_TIMEOUT, async () => {
@@ -260,9 +295,13 @@ describe.runIf(process.platform === 'darwin')('Bash (real Seatbelt)', () => {
     const script = `perl -e 'use POSIX; POSIX::setsid(); open(my $f, ">", $ARGV[0]); close $f; sleep 30' ${ready} >/dev/null 2>&1 3>&- & while [ ! -e ${ready} ]; do sleep 0.05; done; echo "pid:$!"`;
     const result = resultOf(await bash(tools, script));
     const pid = Number(/pid:(\d+)/.exec(result.output)?.[1]);
-    trackPid(pid);
     expect(result.output).not.toContain('outlived the command');
-    expect(isAlive(pid)).toBe(true);
+    if (process.platform === 'darwin') {
+      trackPid(pid);
+      expect(isAlive(pid)).toBe(true);
+      return;
+    }
+    expect(await waitFor(() => processesWithArgument(ready).length === 0, 5000)).toBe(true);
   });
 
   it('keeps large output bounded with a head, tail and omitted-bytes marker', PROCESS_TIMEOUT, async () => {

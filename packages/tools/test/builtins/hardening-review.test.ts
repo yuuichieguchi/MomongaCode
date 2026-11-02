@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { volumeIsCaseInsensitive } from '@momonga/policy';
 import { SandboxPolicyError, validateSandboxPolicy } from '@momonga/sandbox';
-import { BASE_PATH, RG_BIN, RG_PATH, makeBuiltins, resultOf } from './fixtures.ts';
+import { HAS_RG, JS_BACKEND_PATH, RG_PATH, makeBuiltins, resultOf } from './fixtures.ts';
 import type { Builtins } from './fixtures.ts';
 
 afterEach(() => {
@@ -94,7 +94,7 @@ describe('walking toward an allowed entry never reads inside the denied dir', ()
 
   it('Grep with the JS backend finds the allowed file despite an ignore-all file in the denied dir', async () => {
     const fx = await fixture();
-    const result = resultOf(await fx.tools.run('Grep', { pattern: 'alpha' }, { sandboxPolicy: fx.sandboxPolicy, env: { PATH: BASE_PATH, LANG: 'C' } }));
+    const result = resultOf(await fx.tools.run('Grep', { pattern: 'alpha' }, { sandboxPolicy: fx.sandboxPolicy, env: { PATH: JS_BACKEND_PATH, LANG: 'C' } }));
     expect(lines(result.output)).toEqual([fx.visibleFile, fx.allowedFile].sort());
   });
 
@@ -142,9 +142,8 @@ describe('Write through a dangling relative symlink reached via a directory syml
   });
 });
 
-const HAS_RG = fs.existsSync(RG_BIN) && fs.existsSync('/usr/bin/sandbox-exec');
 const grepBackends: Array<[string, string, boolean, boolean]> = [
-  ['JS fallback', BASE_PATH, true, false],
+  ['JS fallback', JS_BACKEND_PATH, true, false],
   ['ripgrep', RG_PATH, HAS_RG, true],
 ];
 

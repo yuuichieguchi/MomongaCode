@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EMPTY_FILE_RULES, compileFileRuleSet, fileRuleBlocks, isProtectedWrite, nativePathOf, patternPathOf, specifierOf } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, HOST_RULE_ENFORCEMENT, compileFileRuleSet, fileRuleBlocks, isProtectedWrite, nativePathOf, patternPathOf, specifierOf } from '@momonga/foundation';
 import type { FileRuleSpec, PathFlavour } from '@momonga/foundation';
 
 const ROOT = 'C:\\proj';
@@ -17,7 +17,7 @@ const specOf = (specifier: string, tool: FileRuleSpec['tool'] = 'Read'): FileRul
 });
 
 const compiled = (specifier: string, flavour: PathFlavour = 'win32') =>
-  compileFileRuleSet([specOf(specifier)], [ROOT], null, (absolute) => ({ ok: true, path: absolute }), () => false, flavour);
+  compileFileRuleSet([specOf(specifier)], [ROOT], null, (absolute) => ({ ok: true, path: absolute }), () => false, flavour, HOST_RULE_ENFORCEMENT);
 
 const blocks = (specifier: string, candidate: string): boolean => {
   const set = compiled(specifier);
@@ -33,6 +33,8 @@ describe('the protected set judges Windows paths component by component', () => 
     lexicalPaths: [],
     literals: [],
     names: ['.git'],
+    moduleAnchors: [],
+    worktreeAnchors: [],
     patterns: { ...EMPTY_FILE_RULES, flavour: 'win32' as const },
     issues: [],
   };
@@ -100,6 +102,7 @@ describe('Windows file rules match canonical Windows paths', () => {
       (absolute) => ({ ok: true, path: absolute }),
       () => false,
       'posix',
+      HOST_RULE_ENFORCEMENT,
     );
     const [entry] = set.entries;
     expect(set.flavour).toBe('posix');
@@ -121,7 +124,7 @@ describe('Windows file rules match canonical Windows paths', () => {
 
   it.each(['C:\\proj\\sub\\keep', '\\\\srv\\share\\keep'])('refuses the ! pattern %s, which could never match and would leave the deny wider than the author meant', (exception) => {
     const spec: FileRuleSpec = { ...specOf('sub\\**'), exceptions: [exception] };
-    expect(() => compileFileRuleSet([spec], [ROOT], null, (absolute) => ({ ok: true, path: absolute }), () => false, 'win32')).toThrow(expect.objectContaining({ code: 'unsupported_pattern', reason: 'absolute_exception' }));
+    expect(() => compileFileRuleSet([spec], [ROOT], null, (absolute) => ({ ok: true, path: absolute }), () => false, 'win32', HOST_RULE_ENFORCEMENT)).toThrow(expect.objectContaining({ code: 'unsupported_pattern', reason: 'absolute_exception' }));
   });
 
   it('does not block a different file whose name only starts the same way', () => {

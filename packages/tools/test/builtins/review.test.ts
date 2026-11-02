@@ -6,11 +6,10 @@ import { afterMicrotasks } from '@momonga/testkit';
 import { createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxedProcess } from '@momonga/sandbox';
 import { keyFor } from '../helpers.ts';
-import { BASE_PATH, RG_BIN, RG_PATH, makeBuiltins, onCleanup, resultOf, sha256 } from './fixtures.ts';
+import { HAS_RG, JS_BACKEND_PATH, RG_PATH, makeBuiltins, onCleanup, resultOf, sha256 } from './fixtures.ts';
 import type { Builtins, RunExtra } from './fixtures.ts';
 
 const BASE_TIME = 1_700_000_000;
-const HAS_RG = process.platform === 'darwin' && fs.existsSync(RG_BIN);
 const ACCEPT = { mode: 'acceptEdits' } as const;
 
 const put = (tools: Builtins, relative: string, content: string, secondsAfterBase = 0): string => {
@@ -131,7 +130,7 @@ describe('review 2: non-regular files are refused without opening them', () => {
   it('Grep with the JS backend refuses a FIFO path promptly', { timeout: 20_000 }, async () => {
     const tools = await makeBuiltins();
     const fifo = makeFifo(tools.layout.project, 'pipe');
-    const outcome = await runWithin(tools, 'Grep', { pattern: 'alpha', path: fifo }, { env: { PATH: BASE_PATH } }, PROMPT_MS, () => unblockFifo(fifo));
+    const outcome = await runWithin(tools, 'Grep', { pattern: 'alpha', path: fifo }, { env: { PATH: JS_BACKEND_PATH } }, PROMPT_MS, () => unblockFifo(fifo));
     expect(outcome.hung).toBe(false);
     expect(outcome.result?.status).toBe('failed');
     expect(outcome.result?.output).toContain(`${fifo} is not a regular file`);
@@ -324,7 +323,7 @@ describe('review 7: symlinked files into readDenied and dangling symlinks', () =
 
   it('Grep with the JS backend skips them', async () => {
     const { tools, older, newer } = await makeLinkedTree();
-    const result = resultOf(await tools.run('Grep', { pattern: 'alpha' }, { env: { PATH: BASE_PATH } }));
+    const result = resultOf(await tools.run('Grep', { pattern: 'alpha' }, { env: { PATH: JS_BACKEND_PATH } }));
     expect(result.status).toBe('completed');
     expect(result.output.split('\n')).toEqual([newer, older]);
   });
@@ -355,7 +354,7 @@ describe.runIf(process.platform === 'darwin')('review 8: readDenied comparison i
     const visible = put(tools, 'visible.txt', 'alpha', 1);
     put(tools, 'vault/secret.txt', 'alpha', 2);
     const sandboxPolicy = withReadDenied(tools, path.join(tools.layout.project, 'VAULT'));
-    const result = resultOf(await tools.run('Grep', { pattern: 'alpha' }, { sandboxPolicy, env: { PATH: BASE_PATH } }));
+    const result = resultOf(await tools.run('Grep', { pattern: 'alpha' }, { sandboxPolicy, env: { PATH: JS_BACKEND_PATH } }));
     expect(result.output.split('\n')).toEqual([visible]);
   });
 });
@@ -363,7 +362,7 @@ describe.runIf(process.platform === 'darwin')('review 8: readDenied comparison i
 describe('review 9: Grep parity for type and .rgignore', () => {
   const backends: Array<[string, string, boolean, boolean]> = [
     ['ripgrep', RG_PATH, HAS_RG, true],
-    ['JS fallback', BASE_PATH, true, false],
+    ['JS fallback', JS_BACKEND_PATH, true, false],
   ];
 
   describe.each(backends)('%s backend', (_name, envPath, available, realSandbox) => {
@@ -389,7 +388,7 @@ describe('review 9: Grep parity for type and .rgignore', () => {
     const outputs: string[] = [];
     for (const [envPath, realSandbox] of [
       [RG_PATH, true],
-      [BASE_PATH, false],
+      [JS_BACKEND_PATH, false],
     ] as const) {
       const tools = await makeBuiltins({ realSandbox });
       put(tools, 'a.ts', 'alpha\n');

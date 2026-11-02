@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { compileFileRuleSet, resolveCanonicalPath, volumeIsCaseInsensitive, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { HOST_FLAVOUR, HOST_RULE_ENFORCEMENT, compileFileRuleSet, resolveCanonicalPath, volumeIsCaseInsensitive, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
@@ -234,7 +234,7 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000)) => {
       env: {},
       session: { cwd: project, readLedger: new Map() },
       sandbox: unusedSandbox,
-      sandboxPolicy: { writableRoots: [project], writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: compileFileRuleSet([], [project], null, resolveCanonicalPath, volumeIsCaseInsensitive), readDenied: [], network: 'deny' },
+      sandboxPolicy: { writableRoots: [project], writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: compileFileRuleSet([], [project], null, resolveCanonicalPath, volumeIsCaseInsensitive, HOST_FLAVOUR, HOST_RULE_ENFORCEMENT), readDenied: [], network: 'deny' },
       deadlineAt: clock.now() + 600_000,
       signal: new AbortController().signal,
       ...extra,

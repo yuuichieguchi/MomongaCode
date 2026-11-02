@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { loadSettings, parseGovernanceRule } from '@momonga/config';
-import { canonicalDirectory, canonicalPath, protectedSetFor } from '@momonga/foundation';
+import { canonicalDirectory, canonicalPath, protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { PermissionMode, PolicyGovernanceResponse } from '@momonga/protocol';
 import { formatGovernanceVerification } from '../rule/format.ts';
@@ -68,6 +68,7 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
       fs,
       secretLocations,
       exemptDirectory: null,
+      enforcement: ruleEnforcementOf(loaded.settings.sandbox),
       budgetMs: VERIFY_BUDGET_MS,
     });
     const hasGovernance = governance.rules.length > 0 || governance.textOnly.length > 0;

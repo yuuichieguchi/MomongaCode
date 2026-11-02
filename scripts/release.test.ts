@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { SIGNATURE_REJECTED_EXIT_CODE } from '@momonga/foundation';
 import { repoRoot } from './bundle.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 import { HAS_POSIX_SHELL } from './support/host.ts';
@@ -26,7 +27,11 @@ fi`,
   xcrun: `printf '{"id":"fake-submission","status":"%s"}\\n' "\${STUB_NOTARY_STATUS:-Accepted}"`,
   spctl: `exit "\${STUB_SPCTL_EXIT:-0}"`,
   codesign: `if [ "$1" = "--display" ]; then printf 'Authority=Developer ID\\nTeamIdentifier=%s\\n' "\${STUB_TEAM_ID:-FAKE000000}" >&2; fi`,
-  'ssh-keygen': `case " $* " in *" verify "*) exit "\${STUB_SSH_VERIFY_EXIT:-0}" ;; esac
+  'ssh-keygen': `case " $* " in *" verify "*)
+  signers=''
+  while [ $# -gt 0 ]; do if [ "$1" = -f ]; then signers=$2; fi; shift; done
+  if [ -n "\${STUB_SSH_REJECT_KEY:-}" ] && ! grep -qF "$STUB_SSH_REJECT_KEY" "$signers"; then exit 0; fi
+  exit "\${STUB_SSH_VERIFY_EXIT:-0}" ;; esac
 for last; do :; done
 printf 'signature' > "$last.sig"`,
   gh: `case "$1 $2" in
@@ -279,7 +284,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
   it('does not publish when the key pinned in the installers does not verify the signature it just made', () => {
     commit('second change');
 
-    const result = release({ STUB_SSH_VERIFY_EXIT: '1' });
+    const result = release({ STUB_SSH_VERIFY_EXIT: String(SIGNATURE_REJECTED_EXIT_CODE), STUB_SSH_REJECT_KEY: PINNED_KEY });
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('is not signed by the release key pinned in the installers; refusing to publish');

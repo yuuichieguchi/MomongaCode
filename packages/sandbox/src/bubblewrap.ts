@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileRuleBlocks } from '@momonga/foundation';
@@ -7,6 +8,8 @@ import { launch } from './process.ts';
 import type { LaunchOptions } from './process.ts';
 import { SandboxPolicyError } from './policy-error.ts';
 import { validateSandboxPolicy } from './profile.ts';
+import { identityOf, isStillThePlaceholder } from './placeholder-journal.ts';
+import type { PlaceholderIdentity, PlaceholderJournal } from './placeholder-journal.ts';
 import { assertExistingDirectory, removePrivateTmpDir } from './scratch.ts';
 import type { DirectoryPort } from './scratch.ts';
 import type { Sandbox, SandboxCommand, SandboxPolicy, SandboxedProcess } from './types.ts';
@@ -22,7 +25,8 @@ export type FilesystemPort = {
   isSymbolicLink(target: string): boolean;
   realpath(target: string): string;
   children(directory: string): Array<{ path: string; kind: EntryKind | 'other' }> | Unreachable;
-  removePlaceholder(target: string): void;
+  createPlaceholder(target: string): PlaceholderIdentity;
+  removePlaceholder(target: string, identity: PlaceholderIdentity): void;
   requireExecutable(file: string): void;
   makeTempDirectory(parent: string, prefix: string): string;
   removePrivateDirectory(directory: string): void;
@@ -51,9 +55,12 @@ export const nodeFilesystemPort: FilesystemPort = {
     }),
   isSymbolicLink: (target) => inspected(false, () => fs.lstatSync(target, { throwIfNoEntry: false })?.isSymbolicLink() ?? false) === true,
   realpath: (target) => fs.realpathSync(target),
-  removePlaceholder: (target) => {
-    const stat = fs.lstatSync(target, { throwIfNoEntry: false });
-    if (stat !== undefined && stat.isFile() && stat.size === 0) fs.unlinkSync(target);
+  createPlaceholder: (target) => {
+    fs.closeSync(fs.openSync(target, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL, PLACEHOLDER_MODE));
+    return identityOf(target);
+  },
+  removePlaceholder: (target, identity) => {
+    if (isStillThePlaceholder(target, identity)) fs.unlinkSync(target);
   },
   children: (directory) =>
     inspected<Array<{ path: string; kind: EntryKind | 'other' }>>([], () =>
@@ -75,6 +82,10 @@ const unique = (values: readonly string[]): string[] => [...new Set(values)];
 const depthOf = (target: string): number => target.split('/').filter((part) => part !== '').length;
 
 const byDepth = (mounts: readonly Mount[]): string[] => [...mounts].sort((left, right) => left.depth - right.depth).flatMap((mount) => mount.args);
+
+const PLACEHOLDER_MODE = 0o644;
+
+const MODULE_PINNED_ENTRIES = ['hooks', 'config', 'config.worktree'] as const;
 
 const SYSTEMD_RESOLVE_DIRECTORY = '/run/systemd/resolve';
 
@@ -187,7 +198,12 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
     mounts.push({ depth: depthOf(missing), args: ['--ro-bind', '/dev/null', missing] });
   };
 
+  const mounted: string[] = [];
+
   const protect = (target: string, mounts: Mount[]): void => {
+    if (insideRoots(target) && port.isSymbolicLink(target)) {
+      throw new SandboxPolicyError('protected_link_not_pinnable', `bubblewrap cannot pin the symbolic link ${target}: a mount cannot sit on a link name, so the link could be replaced from inside the sandbox`, { path: target });
+    }
     const kind = kindOf(target);
     if (kind === undefined) {
       reserve(target, mounts);
@@ -195,37 +211,72 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
     }
     const resolved = port.realpath(target);
     if (heldPlaceholders.has(resolved) && !placeholders.includes(resolved)) placeholders.push(resolved);
+    mounted.push(resolved);
     mounts.push({ depth: depthOf(resolved), args: ['--ro-bind', resolved, resolved] });
   };
 
   const writeMounts: Mount[] = [];
   const literals = unique([...policy.writeDeniedLiterals, ...policy.protectedSet.literals]);
-  for (const literal of literals) {
-    if (insideRoots(literal) && port.isSymbolicLink(literal)) {
-      throw new SandboxPolicyError('protected_link_not_pinnable', `bubblewrap cannot pin the symbolic link ${literal}: a mount cannot sit on a link name, so the link could be replaced from inside the sandbox`, { path: literal });
-    }
-  }
   for (const target of [...writeDenied, ...literals]) protect(target, writeMounts);
   const userDenies = [...policy.fileRules.entries, ...policy.protectedSet.patterns.entries].filter(isUserDeny);
   for (const entry of userDenies.filter((candidate) => candidate.access === 'write')) {
     const set = policy.protectedSet.patterns.entries.includes(entry) ? policy.protectedSet.patterns : policy.fileRules;
     for (const target of blockedPaths(set, entry, inspector)) protect(target, writeMounts);
   }
+  const readOnlyDirectories = new Set<string>();
+  const isGitDirectory = (directory: string): boolean =>
+    kindOf(path.join(directory, 'HEAD')) === 'file' && kindOf(path.join(directory, 'objects')) === 'directory' && kindOf(path.join(directory, 'refs')) === 'directory';
+  const anchorModules = (anchor: string): void => {
+    if (!insideRoots(anchor)) return;
+    if (kindOf(anchor) !== 'directory') {
+      protect(anchor, writeMounts);
+      return;
+    }
+    readOnlyDirectories.add(anchor);
+    writeMounts.push({ depth: depthOf(anchor), args: ['--ro-bind', anchor, anchor] });
+    walkModules(anchor);
+  };
+  const walkModules = (directory: string): void => {
+    for (const child of inspector.children(directory)) {
+      if (child.kind !== 'directory') continue;
+      if (!isGitDirectory(child.path)) {
+        readOnlyDirectories.add(child.path);
+        walkModules(child.path);
+        continue;
+      }
+      writeMounts.push({ depth: depthOf(child.path), args: ['--bind', child.path, child.path] });
+      for (const name of MODULE_PINNED_ENTRIES) protect(path.join(child.path, name), writeMounts);
+      anchorModules(path.join(child.path, 'modules'));
+      pinWorktrees(path.join(child.path, 'worktrees'));
+    }
+  };
+  const pinWorktrees = (anchor: string): void => {
+    if (!insideRoots(anchor) || kindOf(anchor) !== 'directory') return;
+    for (const child of inspector.children(anchor)) if (child.kind === 'directory') protect(path.join(child.path, 'config.worktree'), writeMounts);
+  };
+  for (const anchor of policy.protectedSet.moduleAnchors) anchorModules(anchor);
+  for (const anchor of policy.protectedSet.worktreeAnchors) pinWorktrees(anchor);
   const pinMounts: Mount[] = [];
-  const pinnedFrom = unique([...writeDenied, ...literals]).map((literal) => (kindOf(literal) === undefined ? undefined : port.realpath(literal)));
-  const pinned = [...pinnedFrom.flatMap((target) => (target === undefined ? [] : [target])), ...unique(placeholders)];
+  const pinned = [...unique(mounted), ...unique(placeholders)];
+  const pinnedAncestors = new Set<string>();
   for (const target of pinned) {
     for (let ancestor = path.dirname(target); ancestor !== path.dirname(ancestor); ancestor = path.dirname(ancestor)) {
       const inside = insideRoots(ancestor);
-      if (inside && !writableAreas.includes(ancestor) && kindOf(ancestor) === 'directory') pinMounts.push({ depth: depthOf(ancestor), args: ['--bind', ancestor, ancestor] });
+      if (!inside || pinnedAncestors.has(ancestor)) continue;
+      if (!writableAreas.includes(ancestor) && !readOnlyDirectories.has(ancestor) && kindOf(ancestor) === 'directory') {
+        pinnedAncestors.add(ancestor);
+        pinMounts.push({ depth: depthOf(ancestor), args: ['--bind', ancestor, ancestor] });
+      }
     }
   }
 
   const readMounts: Mount[] = [];
+  const maskedDirectories: string[] = [];
   const mask = (target: string): void => {
     const kind = kindOf(target);
     if (kind === undefined) return;
     const resolved = port.realpath(target);
+    if (kind === 'directory') maskedDirectories.push(resolved);
     readMounts.push({ depth: depthOf(resolved), args: kind === 'directory' ? ['--tmpfs', resolved] : ['--ro-bind', '/dev/null', resolved] });
   };
   for (const target of readDenied) mask(target);
@@ -252,17 +303,54 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
     ...byDepth(readMounts),
     ...reallow,
     ...scratch,
+    ...unique(maskedDirectories).flatMap((directory) => ['--remount-ro', directory]),
     '--chdir',
     options.cwd,
   ];
   return { args, placeholders: unique(placeholders) };
 }
 
+export const BWRAP_PROBE_ARGUMENTS: readonly string[] = [
+  '--unshare-pid',
+  '--unshare-ipc',
+  '--unshare-net',
+  '--die-with-parent',
+  '--ro-bind',
+  '/',
+  '/',
+  '--dev',
+  '/dev',
+  '--proc',
+  '/proc',
+  '--tmpfs',
+  '/run',
+  '--',
+  '/bin/true',
+];
+
+export type ProbeRunner = (file: string, args: readonly string[]) => { status: number | null; stderr: string };
+
+export type BubblewrapProbe = { ok: true } | { ok: false; stderr: string };
+
+const nodeProbeRunner: ProbeRunner = (file, args) => {
+  const done = spawnSync(file, [...args], { encoding: 'utf8' });
+  if (done.error !== undefined) throw done.error;
+  return { status: done.status, stderr: done.stderr };
+};
+
+export const probeBubblewrap = (bwrapPath: string, run: ProbeRunner = nodeProbeRunner): BubblewrapProbe => {
+  const { status, stderr } = run(bwrapPath, BWRAP_PROBE_ARGUMENTS);
+  if (status === 0) return { ok: true };
+  return { ok: false, stderr: status === null ? 'bwrap ended without an exit status' : stderr.trim() };
+};
+
 export interface BubblewrapSandboxOptions {
   bwrapPath?: string;
   tmpRoot: string;
   killGraceMs: number;
   filesystem?: FilesystemPort;
+  journal: PlaceholderJournal;
+  holders: () => ReadonlySet<string>;
   spawnProcess?: LaunchOptions['spawnProcess'];
 }
 
@@ -273,10 +361,68 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
   const tmpRoot = filesystem.realpath(options.tmpRoot);
   const directories: DirectoryPort = { isDirectory: (target) => filesystem.kindOf(target) === 'directory' };
   const held = new Map<string, number>();
+  const { journal, holders } = options;
+  const owned = new Map<string, PlaceholderIdentity | undefined>();
+  const kept = new Map<string, PlaceholderIdentity | undefined>();
+
+  const attemptAll = (steps: ReadonlyArray<() => void>): unknown[] => {
+    const failures: unknown[] = [];
+    for (const step of steps) {
+      try {
+        step();
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    return failures;
+  };
+  const throwAll = (failures: readonly unknown[]): void => {
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1) throw new AggregateError(failures, failures.map((failure) => (failure as Error).message).join('; '));
+  };
+
+  const remove = (placeholder: string, identity: PlaceholderIdentity | undefined): void => {
+    if (identity !== undefined) filesystem.removePlaceholder(placeholder, identity);
+    journal.forget(placeholder);
+  };
+  const discard = (placeholder: string): void => {
+    const identity = owned.get(placeholder);
+    owned.delete(placeholder);
+    if (holders().has(placeholder)) {
+      kept.set(placeholder, identity);
+      return;
+    }
+    remove(placeholder, identity);
+  };
+  const sweepKept = (): void => {
+    if (kept.size === 0) return;
+    const stillHeld = holders();
+    for (const [placeholder, identity] of [...kept]) {
+      if (stillHeld.has(placeholder)) continue;
+      kept.delete(placeholder);
+      remove(placeholder, identity);
+    }
+  };
   const hold = (plan: BubblewrapPlan): void => {
+    const begun: string[] = [];
+    try {
+      for (const placeholder of plan.placeholders.filter((candidate) => !held.has(candidate))) {
+        journal.intend(placeholder, Date.now());
+        begun.push(placeholder);
+        owned.set(placeholder, undefined);
+        const identity = filesystem.createPlaceholder(placeholder);
+        owned.set(placeholder, identity);
+        journal.complete(placeholder, identity);
+      }
+    } catch (error) {
+      const failures = attemptAll(begun.map((placeholder) => () => remove(placeholder, owned.get(placeholder))));
+      for (const placeholder of begun) owned.delete(placeholder);
+      throwAll([error, ...failures]);
+    }
     for (const placeholder of plan.placeholders) held.set(placeholder, (held.get(placeholder) ?? 0) + 1);
   };
   const release = (plan: BubblewrapPlan): void => {
+    const steps: Array<() => void> = [];
     for (const placeholder of plan.placeholders) {
       const remaining = (held.get(placeholder) ?? 1) - 1;
       if (remaining > 0) {
@@ -284,8 +430,10 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
         continue;
       }
       held.delete(placeholder);
-      filesystem.removePlaceholder(placeholder);
+      steps.push(() => discard(placeholder));
     }
+    steps.push(sweepKept);
+    throwAll(attemptAll(steps));
   };
   const launchWith = (command: SandboxCommand, plan: BubblewrapPlan, tmpDir: string, signal: AbortSignal, afterExit: () => void): SandboxedProcess => {
     hold(plan);
@@ -300,13 +448,10 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
         signal,
         killGraceMs: options.killGraceMs,
         ...(options.spawnProcess === undefined ? {} : { spawnProcess: options.spawnProcess }),
-        afterExit: () => {
-          release(plan);
-          afterExit();
-        },
+        afterExit: () => throwAll(attemptAll([() => release(plan), afterExit])),
       });
     } catch (error) {
-      release(plan);
+      throwAll([error, ...attemptAll([() => release(plan)])]);
       throw error;
     }
   };

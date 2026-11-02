@@ -34,10 +34,9 @@ import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.
 
 const PLANNED_CASE_TIMEOUT_MS = 4 * E2E_TEST_TIMEOUT_MS;
 const FULL_DENY = [] as const;
-const LEAN_DENY = ['Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob'] as const;
+const LEAN_DENY = ['Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob', 'HistorySearch', 'HistoryRead'] as const;
 const CONSTRAINED_DENY = ['Read', 'Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob'] as const;
 const LEAN_ESCALATION_NOTICE = 'recent steps of the current turn were reduced from 4 to 1 because the context budget was exceeded';
-const LEAN_ESCALATION_STEP = 7;
 const FULL_LINE_CHARS = [90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200] as const;
 const EXPECTED_OUTPUT_RESERVE = 1024;
 const EXPECTED_CEILING_AT_4096 = 2300;
@@ -54,7 +53,7 @@ const PLANNED_CASES: readonly PlannedCase[] = [
   {
     id: 'a-compaction-lean',
     title: titleOf('a-compaction-lean'),
-    spec: { name: 'a-compaction-lean', toolCalling: 'native', deny: LEAN_DENY, grid: [{ tool: 'Read', lineChars: 90 }], probeFillers: 16 },
+    spec: { name: 'a-compaction-lean', toolCalling: 'native', deny: LEAN_DENY, grid: [{ tool: 'Read', lineChars: 90 }], probeFillers: 16, escalates: true },
   },
   {
     id: 'a-compaction-constrained',
@@ -204,11 +203,13 @@ const assertAcceptance = async (
   expect(journal.filter((event) => event.type === 'run.status' && event.data['to'] === 'STOPPED')).toEqual([]);
 };
 
-const assertLeanProperties = (observed: Observed, haystack: Haystack): void => {
+const assertLeanProperties = (observed: Observed, haystack: Haystack, plan: Plan): void => {
   const notices = ofType(observed.journal, 'notice');
   expect(notices.map((event) => String(event.data['message']))).toEqual([LEAN_ESCALATION_NOTICE]);
   const escalatedBefore = observed.journal.find((event) => event.type === 'model.requested' && event.seq > (notices[0] as JournalEvent).seq);
-  expect(escalatedBefore?.data['step']).toBe(LEAN_ESCALATION_STEP);
+  const planned = plan.runs.find((run) => run.perturbation === 0);
+  expect(planned?.facts.escalationStep).toBeDefined();
+  expect(escalatedBefore?.data['step']).toBe(planned?.facts.escalationStep);
   const firstCompaction = observed.compacted[0] as JournalEvent;
   const firstEviction = ofType(observed.journal, 'context.truncated').find((event) => event.data['kind'] === 'omitted' && event.data['handle'] === haystack.handle);
   expect(firstEviction).toBeDefined();
@@ -244,7 +245,7 @@ describe('a: within-turn truncation and compaction at W=4096', () => {
     const observed = observe(stack, runId);
 
     await assertAcceptance(observed, { stack, haystack, summary, capabilities, count, plan });
-    if (id === 'a-compaction-lean') assertLeanProperties(observed, haystack);
+    if (id === 'a-compaction-lean') assertLeanProperties(observed, haystack, plan);
     if (spec.toolCalling === 'constrained') assertConstrainedWire(observed);
   });
 

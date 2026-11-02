@@ -20,6 +20,12 @@ export const parseProcStat = (content: string): ProcStat => {
   return { state, parentPid: Number(parentPid), groupId: Number(groupId), startTicks: BigInt(startTicks) };
 };
 
+export const parseRealUid = (content: string): number => {
+  const match = /^Uid:\s+(\d+)/m.exec(content);
+  if (match === null) throw new Error('/proc/<pid>/status has no Uid line');
+  return Number(match[1]);
+};
+
 export const parseBootTimeSeconds = (content: string): number => {
   const match = /^btime\s+(\d+)$/m.exec(content);
   if (match === null) throw new Error('/proc/stat has no btime line');

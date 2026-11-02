@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, expect } from 'vitest';
 import { killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
-import { createSeatbeltSandbox } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createBuiltinTools } from '@momonga/tools';
 import type { BackgroundJobs, CallOutcome, ExecutionBatchInput, NeedsApprovalOutcome, ResultOutcome, ToolSet } from '@momonga/tools';
@@ -11,10 +10,13 @@ import type { PermissionRule } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
 import { call, makeHarness, toolSetOf } from '../harness.ts';
 import type { ApprovalSpec } from '../harness.ts';
-import { policyFor, sessionTmpDirOf, sessionsTmpRootOf } from '../helpers.ts';
+import { HAS_REAL_SANDBOX, createHostSandbox, policyFor, sessionTmpDirOf, sessionsTmpRootOf } from '../helpers.ts';
 
 export const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
-export const RG_BIN = '/opt/homebrew/bin/rg';
+export const JS_BACKEND_PATH = '/nonexistent-ripgrep-directory';
+const RG_CANDIDATES = ['/opt/homebrew/bin/rg', '/usr/bin/rg'];
+export const RG_BIN = RG_CANDIDATES.find((candidate) => fs.existsSync(candidate)) ?? (RG_CANDIDATES[0] as string);
+export const HAS_RG = fs.existsSync(RG_BIN) && HAS_REAL_SANDBOX;
 export const RG_PATH = `${path.dirname(RG_BIN)}:${BASE_PATH}`;
 export const BASE_ENV = { PATH: BASE_PATH, LANG: 'C' };
 
@@ -90,7 +92,7 @@ export const makeBuiltins = async (options: { maxInlineOutputChars?: number; rea
   fs.mkdirSync(sandboxTmpRoot);
   const toolSet: ToolSet = await toolSetOf(...createBuiltinTools());
   const sandboxPolicy: SandboxPolicy = policyFor({ layout, tmpDir });
-  const sandbox: Sandbox | undefined = options.sandbox ?? (options.realSandbox === true ? createSeatbeltSandbox({ tmpRoot: sandboxTmpRoot, killGraceMs: 300 }) : undefined);
+  const sandbox: Sandbox | undefined = options.sandbox ?? (options.realSandbox === true ? createHostSandbox({ tmpRoot: sandboxTmpRoot, killGraceMs: 300 }) : undefined);
   let counter = 0;
   const nextCallId = (): string => {
     counter += 1;

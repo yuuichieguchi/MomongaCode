@@ -1,4 +1,4 @@
-import { compileFileRuleSet, resolveCanonicalPath, volumeIsCaseInsensitive } from '@momonga/foundation';
+import { HOST_FLAVOUR, HOST_RULE_ENFORCEMENT, compileFileRuleSet, resolveCanonicalPath, volumeIsCaseInsensitive } from '@momonga/foundation';
 import type { FileRuleSet, FileRuleSpec } from '@momonga/foundation';
 
 export type FileSpecOptions = {
@@ -32,6 +32,6 @@ export const fileSpec = (specifier: string, options: FileSpecOptions): FileRuleS
 export const indexed = (specs: readonly FileRuleSpec[]): FileRuleSpec[] => specs.map((spec, ruleIndex) => ({ ...spec, ruleIndex }));
 
 export const fileRulesOf = (specs: readonly FileRuleSpec[], roots: readonly string[], exemptDirectory: string | null = null): FileRuleSet =>
-  compileFileRuleSet(indexed(specs), roots, exemptDirectory, resolveCanonicalPath, volumeIsCaseInsensitive);
+  compileFileRuleSet(indexed(specs), roots, exemptDirectory, resolveCanonicalPath, volumeIsCaseInsensitive, HOST_FLAVOUR, HOST_RULE_ENFORCEMENT);
 
 export const escapeKernel = (value: string): string => value.replace(/[.*+?()[\]{}|^$\\]/g, '\\$&');

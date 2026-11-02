@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { fakePolicyFilesystem } from '@momonga/testkit';
 import { ConfigError } from '@momonga/config';
-import { ensureSessionTmpDir, protectedSetFor } from '@momonga/foundation';
+import { HOST_RULE_ENFORCEMENT, ensureSessionTmpDir, momongaLayout, protectedSetFor } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
 import type { MomongaPaths } from '@momonga/foundation';
 import * as runtime from '@momonga/runtime';
@@ -23,6 +23,7 @@ const setup = async (options: { ensure?: EnsureTmpDir; sessionStates?: { get(ses
     paths: temp.paths,
     home: temp.home,
     fs: fakePolicyFilesystem(),
+    ruleEnforcement: 'exact-paths',
     sessionStates: (options.sessionStates ?? states) as typeof states,
     ...(options.ensure === undefined ? {} : { ensureSessionTmpDir: options.ensure }),
   });
@@ -98,7 +99,7 @@ describe('policyFor (system timers, none used)', () => {
     expect(policy.sandboxPolicy.writableRoots).toContain(tmpDir);
     expect(policy.sandboxPolicy).toEqual(
       buildSandboxPolicy({
-        fileRules: computeFileRules([], [temp.project, extra], tmpDir),
+        fileRules: computeFileRules([], [temp.project, extra], tmpDir, HOST_RULE_ENFORCEMENT),
         protectedSet,
         roots: [temp.project, extra],
         home: temp.home,
@@ -109,7 +110,7 @@ describe('policyFor (system timers, none used)', () => {
     );
     expect(policy.sandboxPolicy.network).toBe('deny');
     expect(policy.sandboxPolicy.readDenied).toEqual(
-      expect.arrayContaining([path.join(temp.home, '.momonga'), path.join(temp.home, 'Library', 'Keychains'), temp.paths.tmp.sessions]),
+      expect.arrayContaining([path.join(temp.home, '.momonga'), momongaLayout(temp.home).keychains, temp.paths.tmp.sessions]),
     );
   });
 
@@ -322,7 +323,7 @@ describe('policyFor (system timers, none used)', () => {
     const sessionStates = runtime.createSessionStates({ clock, store, logger: makeLogger() });
     let error: unknown;
     try {
-      runtime.createPolicyFor({ paths: temp.paths, home: 'relative/home', sessionStates, fs: fakePolicyFilesystem() });
+      runtime.createPolicyFor({ paths: temp.paths, home: 'relative/home', sessionStates, fs: fakePolicyFilesystem(), ruleEnforcement: 'exact-paths' });
     } catch (caught) {
       error = caught;
     }

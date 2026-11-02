@@ -1,13 +1,23 @@
 import fs from 'node:fs';
-import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, momongaLayout } from '@momonga/foundation';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { alwaysWriteDenied, buildSeatbeltProfile } from '@momonga/sandbox';
+import { alwaysWriteDenied, buildSeatbeltProfile, canonicalizePath } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { withTempDir } from '@momonga/testkit';
 import { createLauncherFixture, launcherLinksFile, recordLauncherLinks } from './launcher-fixture.ts';
 
-const sortedUnique = (values: readonly string[]): string[] => [...new Set(values)].sort();
+const keychainsOf = (home: string): string => momongaLayout(home).keychains;
+
+const keychainAncestors = (home: string): string[] => {
+  const found: string[] = [];
+  const keychains = canonicalizePath(keychainsOf(home));
+  const canonicalHome = canonicalizePath(home);
+  for (let directory = path.dirname(keychains); directory !== canonicalHome; directory = path.dirname(directory)) found.push(directory);
+  return [...found, canonicalHome];
+};
+
+const sortedUnique =(values: readonly string[]): string[] => [...new Set(values)].sort();
 
 const paramsOfRule = (profile: string, params: Record<string, string>, rule: string): string[] => {
   const pattern = new RegExp(`^\\(deny ${rule.replace('*', '\\*')} \\(literal \\(param "([^"]+)"\\)\\)\\)$`, 'gm');
@@ -30,7 +40,7 @@ describe('alwaysWriteDenied', () => {
     const { home } = createLauncherFixture(withTempDir(context), 'plain');
     const denied = alwaysWriteDenied(home);
     expect(denied.root).toBe(path.join(home, '.momonga'));
-    expect(denied.keychains).toBe(path.join(home, 'Library', 'Keychains'));
+    expect(denied.keychains).toBe(keychainsOf(home));
     expect([...denied.subtrees]).toEqual([denied.root, denied.keychains]);
     expect(sortedUnique(denied.literals)).toEqual([path.join(home, '.local', 'bin', 'momonga')]);
   });
@@ -39,7 +49,7 @@ describe('alwaysWriteDenied', () => {
     const { home } = createLauncherFixture(withTempDir(context), 'symlinked');
     const denied = alwaysWriteDenied(home);
     expect(denied.root).toBe(path.join(home, '.momonga'));
-    expect(denied.keychains).toBe(path.join(home, 'Library', 'Keychains'));
+    expect(denied.keychains).toBe(keychainsOf(home));
     expect([...denied.subtrees]).toEqual([denied.root, denied.keychains]);
     expect(sortedUnique(denied.literals)).toEqual(
       sortedUnique([path.join(home, '.local', 'bin', 'momonga'), path.join(home, 'dotfiles', 'local', 'bin', 'momonga')]),
@@ -59,7 +69,7 @@ describe('buildSeatbeltProfile with writeDeniedLiterals', () => {
     const { profile, params } = buildSeatbeltProfile(policyFor(home));
     expect(sortedUnique(paramsOfRule(profile, params, 'file-write*'))).toEqual([path.join(home, '.local', 'bin', 'momonga')]);
     expect(sortedUnique(paramsOfRule(profile, params, 'file-write-unlink'))).toEqual(
-      sortedUnique([path.join(home, '.local', 'bin'), path.join(home, '.local'), path.join(home, 'Library'), home]),
+      sortedUnique([path.join(home, '.local', 'bin'), path.join(home, '.local'), ...keychainAncestors(home)]),
     );
   });
 
@@ -76,8 +86,7 @@ describe('buildSeatbeltProfile with writeDeniedLiterals', () => {
         path.join(home, 'dotfiles', 'local', 'bin'),
         path.join(home, 'dotfiles', 'local'),
         path.join(home, 'dotfiles'),
-        path.join(home, 'Library'),
-        home,
+        ...keychainAncestors(home),
       ]),
     );
   });
@@ -98,7 +107,7 @@ describe('buildSeatbeltProfile with writeDeniedLiterals', () => {
     const { home } = createLauncherFixture(withTempDir(context), 'plain');
     const { profile, params } = buildSeatbeltProfile(policyFor(home));
     const subtreeDenied = [...profile.matchAll(/^\(deny file-write\* \(subpath \(param "([^"]+)"\)\)\)$/gm)].map((match) => params[match[1] ?? '']);
-    expect(subtreeDenied).toEqual(expect.arrayContaining([path.join(home, '.momonga'), path.join(home, 'Library', 'Keychains')]));
+    expect(subtreeDenied).toEqual(expect.arrayContaining([path.join(home, '.momonga'), keychainsOf(home)]));
   });
 });
 
@@ -146,8 +155,7 @@ describe('alwaysWriteDenied reads the installer launcher-links record', () => {
         path.join(home, 'opt'),
         path.join(home, '.local', 'bin'),
         path.join(home, '.local'),
-        path.join(home, 'Library'),
-        home,
+        ...keychainAncestors(home),
       ]),
     );
   });

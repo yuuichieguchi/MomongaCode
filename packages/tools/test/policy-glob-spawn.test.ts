@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { protectedSetFor } from '@momonga/foundation';
+import { HOST_RULE_ENFORCEMENT, protectedSetFor } from '@momonga/foundation';
 import { MAX_GLOB_MATCHES, computeFileRules, createGlobDeadline, decide, prepareGlobs, settleGlobs } from '@momonga/policy';
 import type { DecideInput, GlobDeadline } from '@momonga/policy';
 import { TEST_SEARCH_PATH, isWritableFor } from '@momonga/testkit';
@@ -149,7 +149,7 @@ describe('expandGlob stays inside the decision budget (HIGH-1)', () => {
       roots,
       home: workspace.home,
       cwd: workspace.project,
-      fileRules: computeFileRules([], roots, null),
+      fileRules: computeFileRules([], roots, null, HOST_RULE_ENFORCEMENT),
       protectedSet: protectedSetFor(roots, host),
       fs: settleGlobs(host, globs),
       searchPath: TEST_SEARCH_PATH,

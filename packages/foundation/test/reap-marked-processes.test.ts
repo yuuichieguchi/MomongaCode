@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { killGroupsForCleanup, killPidsForCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
+import { LSOF_PATH, killGroupsForCleanup, killPidsForCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, TrackedChild } from '@momonga/testkit';
 import { MarkerReapError, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, reconcileProcessGroup } from '@momonga/foundation';
 import type { ReapTiming } from '@momonga/foundation';
@@ -24,7 +24,7 @@ afterEach(async () => {
 
 const holdersOf = (file: string): number[] => {
   try {
-    return execFileSync('/usr/sbin/lsof', ['-t', '--', file], { env: { LC_ALL: 'C' }, encoding: 'utf8' })
+    return execFileSync(LSOF_PATH, ['-t', '--', file], { env: { LC_ALL: 'C' }, encoding: 'utf8' })
       .split('\n')
       .filter((line) => line !== '')
       .map(Number);

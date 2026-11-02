@@ -3,14 +3,21 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
-import { EMPTY_PROTECTED_SET, canonicalJson, protectedSetFor, sha256Hex } from '@momonga/foundation';
+import { EMPTY_PROTECTED_SET, HOST_RULE_ENFORCEMENT, canonicalJson, protectedSetFor, sha256Hex } from '@momonga/foundation';
 import { fakePolicyFilesystem } from '@momonga/testkit';
 import { computeFileRules, parseRule } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
 import type { LeaseFence, LeasedIdempotencyPort } from '@momonga/tools';
 import type { PermissionRule, RuleEffect } from '@momonga/policy';
-import { validateSandboxPolicy } from '@momonga/sandbox';
+import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, heldMountPoints, validateSandboxPolicy } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
+
+const SEATBELT_PATH = '/usr/bin/sandbox-exec';
+
+export const HAS_REAL_SANDBOX = (process.platform === 'darwin' && fs.existsSync(SEATBELT_PATH)) || (process.platform === 'linux' && fs.existsSync(DEFAULT_BWRAP_PATH));
+
+export const createHostSandbox = (options: { tmpRoot: string; killGraceMs: number }): Sandbox =>
+  process.platform === 'darwin' ? createSeatbeltSandbox(options) : createBubblewrapSandbox({ ...options, journal: createPlaceholderJournal(`${options.tmpRoot}-journal`), holders: () => heldMountPoints() });
 
 const cleanups: Array<() => void> = [];
 
@@ -238,7 +245,7 @@ export const minimalPolicyFor = ({ layout, rules = [], roots = [layout.project],
     writeDeniedLiterals: [],
     readDenied: [],
     network: 'deny',
-    fileRules: computeFileRules(rules, roots, tmpDir ?? null),
+    fileRules: computeFileRules(rules, roots, tmpDir ?? null, HOST_RULE_ENFORCEMENT),
     protectedSet: EMPTY_PROTECTED_SET,
   };
   validateSandboxPolicy(policy, tmpDir === undefined ? {} : { tmpDir });
@@ -251,7 +258,7 @@ export const policyFor = ({ layout, rules = [], roots = [layout.project], tmpDir
     home: layout.home,
     tmpDir,
     sessionsTmpRoot: sessionsTmpRootOf(layout),
-    fileRules: computeFileRules(rules, roots, tmpDir),
+    fileRules: computeFileRules(rules, roots, tmpDir, HOST_RULE_ENFORCEMENT),
     protectedSet: protectedSetFor(roots, fakePolicyFilesystem()),
     network: 'deny',
   });

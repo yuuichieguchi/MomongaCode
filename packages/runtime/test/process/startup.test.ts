@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '@momonga/config';
 import { ProcessLockHeldError, ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
 import type { Worker, WorkerOptions } from '@momonga/runtime';
+import { createPlaceholderJournal, identityOf } from '@momonga/sandbox';
 import { afterMicrotasks, createFakeClock, startLockHolder } from '@momonga/testkit';
 import { START_MS, errnoError, trackGroup, writeInvalidUserSettings, writeUserSettings } from './helpers.ts';
 import {
@@ -259,6 +260,57 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect(await isLockFree(temp.paths.locks.runtime)).toBe(true);
   });
 
+  describe.runIf(process.platform === 'linux')('the empty placeholder that a killed runtime left in a workspace', () => {
+    const leave = async (temp: RunHome): Promise<string> => {
+      await ensureMomongaDirs(temp.paths);
+      const leftover = path.join(temp.root, '.mcp.json');
+      const journal = createPlaceholderJournal(path.join(temp.paths.state, 'placeholders'));
+      journal.intend(leftover, Date.now());
+      fs.writeFileSync(leftover, '');
+      journal.complete(leftover, identityOf(leftover));
+      return leftover;
+    };
+
+    it.each(['bubblewrap', 'none'] as const)('is removed at start with the setting %s, found by its journal record, before any command runs', PROCESS_TIMEOUT, async (setting) => {
+      const temp = makeRunHome();
+      writeUserSettings(temp.home, { sandbox: setting });
+      const leftover = await leave(temp);
+      fs.writeFileSync(temp.paths.sockets.runtime, 'not a socket');
+      const { started, logger } = startBare(temp, { sandboxExecPath: '/bin/true', platform: 'linux' });
+      await failureOf(started);
+      expect(fs.existsSync(leftover)).toBe(false);
+      expect(logger.entries).toContainEqual(expect.objectContaining({ level: 'warn', msg: expect.stringContaining(leftover) }));
+    });
+
+    it('is removed even when bwrap is missing and the start fails because of it', PROCESS_TIMEOUT, async () => {
+      const temp = makeRunHome();
+      writeUserSettings(temp.home, { sandbox: 'bubblewrap' });
+      const leftover = await leave(temp);
+      const { started } = startBare(temp, { sandboxExecPath: path.join(temp.root, 'no-bwrap'), platform: 'linux' });
+      expect(await failureOf(started)).toBeInstanceOf(ConfigError);
+      expect(fs.existsSync(leftover)).toBe(false);
+    });
+  });
+
+  describe('a bwrap that is present but cannot create the sandbox', () => {
+    const blockedBwrap = (temp: RunHome): string => {
+      const file = path.join(temp.root, 'blocked-bwrap');
+      fs.writeFileSync(file, "#!/bin/sh\necho \"bwrap: Can't mount proc on /newroot/proc: Operation not permitted\" >&2\nexit 1\n", { mode: 0o755 });
+      return file;
+    };
+
+    it('is a ConfigError carrying the stderr of bwrap and the advice to set the sandbox to none', PROCESS_TIMEOUT, async () => {
+      const temp = makeRunHome();
+      writeUserSettings(temp.home, { sandbox: 'bubblewrap' });
+      const { started } = startBare(temp, { sandboxExecPath: blockedBwrap(temp), platform: 'linux' });
+      const error = await failureOf(started);
+      expect(error).toBeInstanceOf(ConfigError);
+      expect((error as Error).message).toContain("bwrap: Can't mount proc on /newroot/proc: Operation not permitted");
+      expect((error as Error).message).toContain(`set "sandbox": "none" in ${temp.paths.settingsFile}`);
+      expect(await isLockFree(temp.paths.locks.runtime)).toBe(true);
+    });
+  });
+
   it('a sandbox kind from another operating system is a ConfigError', PROCESS_TIMEOUT, async () => {
     const temp = makeRunHome();
     writeUserSettings(temp.home, { sandbox: 'seatbelt' });
@@ -384,7 +436,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     if (fs.existsSync(upper)) {
       const viaCase = await startRuntimeProcess({ home: upper, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout: captureStream() });
       try {
-        expect(viaCase.ready.socketPath).toBe(momongaPaths(stack.temp.home, 'darwin', {}).sockets.runtime);
+        expect(viaCase.ready.socketPath).toBe(momongaPaths(stack.temp.home, process.platform, {}).sockets.runtime);
       } finally {
         await viaCase.close();
       }

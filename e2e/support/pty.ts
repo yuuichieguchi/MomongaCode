@@ -11,6 +11,9 @@ import { E2E_RUN_COMPLETED_BOUND_MS, until } from './wait.ts';
 export const SCRIPT_BINARY = '/usr/bin/script';
 export const MKFIFO_BINARY = '/usr/bin/mkfifo';
 
+const SCRIPT_INVOCATION =
+  process.platform === 'darwin' ? 'cat "$3" | "$1" -q -F "$4" /bin/sh -c "$2"' : 'cat "$3" | "$1" -q -f -c "$2" "$4"';
+
 let fifoCounter = 0;
 export const PTY_COLUMNS = 100;
 export const PTY_ROWS = 40;
@@ -53,7 +56,7 @@ export const spawnPty = async (home: E2eHome, args: readonly string[], env: Read
   const command = `stty cols ${PTY_COLUMNS} rows ${PTY_ROWS}; ${shellQuote(process.execPath)} ${shellQuote(bundle)} ${args.map(shellQuote).join(' ')}; echo $? > ${shellQuote(exitFile)}`;
   const child: ChildProcessByStdio<null, null, null> = spawn(
     '/bin/sh',
-    ['-c', 'cat "$3" | "$1" -q -F "$4" /bin/sh -c "$2"', 'sh', SCRIPT_BINARY, command, fifo, transcript],
+    ['-c', SCRIPT_INVOCATION, 'sh', SCRIPT_BINARY, command, fifo, transcript],
     {
       cwd: home.project,
       env: { ...cliEnv(home, childEnv), TERM: 'xterm-256color' },

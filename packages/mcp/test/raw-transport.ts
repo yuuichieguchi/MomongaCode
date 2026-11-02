@@ -6,7 +6,7 @@ import { afterEach } from 'vitest';
 import type { McpStdioServerConfig } from '@momonga/config';
 import { createStdioTransport } from '@momonga/mcp';
 import type { StdioTransport, StdioTransportOptions } from '@momonga/mcp';
-import { MCP_RAW_STDIO_SERVER_PATH, killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
+import { LSOF_PATH, MCP_RAW_STDIO_SERVER_PATH, killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
@@ -66,7 +66,7 @@ export const eventually = async (condition: () => boolean | Promise<boolean>, de
 
 export const descriptorPath = (pid: number, fd: number): Promise<string | undefined> =>
   new Promise((resolve, reject) => {
-    execFile('/usr/sbin/lsof', ['-a', '-p', String(pid), '-d', String(fd), '-Fn'], { env: { LC_ALL: 'C' } }, (error, stdout) => {
+    execFile(LSOF_PATH, ['-a', '-p', String(pid), '-d', String(fd), '-Fn'], { env: { LC_ALL: 'C' } }, (error, stdout) => {
       if (error !== null && String(error.code) !== '1') {
         reject(error);
         return;

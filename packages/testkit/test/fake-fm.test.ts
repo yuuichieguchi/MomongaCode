@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { FAKE_DETERMINISTIC_REPLY, FAKE_OS_BUILD, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
+import { FAKE_DETERMINISTIC_REPLY, FAKE_OS_BUILD, LSOF_PATH, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 
 const MINIMAL_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 const TESTKIT_SRC_URL = pathToFileURL(path.resolve(import.meta.dirname, '..', 'src')).href;
@@ -229,7 +229,7 @@ const isAlive = (pid: number): boolean => {
 const pgidOf = (pid: number): number => Number(execFileSync('/bin/ps', ['-o', 'pgid=', '-p', String(pid)], { encoding: 'utf8' }).trim());
 
 const holdersOf = (file: string): number[] => {
-  const result = spawnSync('/usr/sbin/lsof', ['-t', file], { encoding: 'utf8' });
+  const result = spawnSync(LSOF_PATH, ['-t', file], { encoding: 'utf8' });
   return result.stdout
     .split('\n')
     .filter((line) => line !== '')

@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { UNRESOLVABLE_ERRNO_CODES, canonicalPath, resolveCanonicalPath, walkPath } from '@momonga/foundation';
+import { EMPTY_SYMLINK_SUPPORTED } from '@momonga/testkit';
 
 const tempDirs: string[] = [];
 
@@ -95,7 +96,7 @@ describe('canonicalPath coded failures', () => {
     expect(error.code).toBe('ELOOP');
   });
 
-  it('keeps the empty link message and carries ENOENT', () => {
+  it.runIf(EMPTY_SYMLINK_SUPPORTED)('keeps the empty link message and carries ENOENT', () => {
     const dir = makeDir();
     const empty = path.join(dir, 'empty');
     fs.symlinkSync('', empty);

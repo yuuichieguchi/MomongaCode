@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ProcessLockHeldError, listenUnix, momongaPaths, parseReadyLine, inspectProcessLock } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { createFakeClock, createFakeTimers, registerCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
+import { LSOF_PATH, createFakeClock, createFakeTimers, registerCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { createControlRequestHandler, respondShutdown, startControlServer } from '../src/control-server.ts';
 import type { ControlServer, IdleShutdownOutcome } from '../src/control-server.ts';
@@ -485,7 +485,7 @@ const TCP_LISTENER_FIXTURE = fileURLToPath(new URL('./fixtures/p3b-tcp-listener.
 type ListenProbe = { status: number | null; stdout: string; stderr: string; names: string[] };
 
 const probeTcpListeners = (pid: number): ListenProbe => {
-  const run = spawnSync('/usr/sbin/lsof', ['-a', '-p', String(pid), '-i', 'TCP', '-sTCP:LISTEN', '-n', '-P', '-Fn'], { encoding: 'utf8' });
+  const run = spawnSync(LSOF_PATH, ['-a', '-p', String(pid), '-i', 'TCP', '-sTCP:LISTEN', '-n', '-P', '-Fn'], { encoding: 'utf8' });
   const names = run.stdout
     .split('\n')
     .filter((line) => line.startsWith('n'))

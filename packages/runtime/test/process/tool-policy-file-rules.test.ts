@@ -15,7 +15,7 @@ const setup = async () => {
   const temp = await makeTempHome();
   const { store, clock } = openStore(temp);
   const states = runtime.createSessionStates({ clock, store, logger: makeLogger() });
-  const policyFor = runtime.createPolicyFor({ paths: temp.paths, home: temp.home, sessionStates: states, fs: fakePolicyFilesystem() });
+  const policyFor = runtime.createPolicyFor({ paths: temp.paths, home: temp.home, sessionStates: states, fs: fakePolicyFilesystem(), ruleEnforcement: 'exact-paths' });
   return { temp, store, policyFor };
 };
 
@@ -40,7 +40,7 @@ describe('createPolicyFor builds the file rules of the batch', () => {
     const session = createSession(store, temp.project);
     const rules = [ruleOf(temp.project, temp.home, 'Read(.env)'), ruleOf(temp.project, temp.home, 'Write(*.pem)')];
     const policy = (await policyFor(session, { env: env(), rules } as Parameters<typeof policyFor>[1])) as unknown as PolicyWithFileRules;
-    expect(policy.sandboxPolicy.fileRules).toEqual(computeFileRules(rules, policy.roots, policy.tmpDir));
+    expect(policy.sandboxPolicy.fileRules).toEqual(computeFileRules(rules, policy.roots, policy.tmpDir, 'exact-paths'));
     expect(policy.sandboxPolicy.fileRules.entries.length).toBeGreaterThan(0);
   });
 

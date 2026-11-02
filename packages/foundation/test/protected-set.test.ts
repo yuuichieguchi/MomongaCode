@@ -93,7 +93,33 @@ describe('defaultProtectedPaths (moved from sandbox)', () => {
 
 describe('EMPTY_PROTECTED_SET', () => {
   it('holds nothing and the empty file-rule set', () => {
-    expect(EMPTY_PROTECTED_SET).toEqual({ roots: [], paths: [], lexicalPaths: [], literals: [], names: [], patterns: EMPTY_FILE_RULES, issues: [] });
+    expect(EMPTY_PROTECTED_SET).toEqual({ roots: [], paths: [], lexicalPaths: [], literals: [], names: [], moduleAnchors: [], worktreeAnchors: [], patterns: EMPTY_FILE_RULES, issues: [] });
+  });
+});
+
+describe('the anchors of the nested git directories', () => {
+  it('names the modules and worktrees directories of a .git directory, present or not', () => {
+    const set = protectedSetFor([ROOT], portsOf({}));
+    expect(set.moduleAnchors).toEqual([`${ROOT}/.git/modules`]);
+    expect(set.worktreeAnchors).toEqual([`${ROOT}/.git/worktrees`]);
+  });
+
+  it('names the common directory of a linked worktree, once for the pointer and its main repository', () => {
+    const set = protectedSetFor([ROOT], portsOf(worktreeTree(), [ROOT]));
+    expect(set.moduleAnchors).toEqual([`${MAIN_GIT}/modules`]);
+    expect(set.worktreeAnchors).toEqual([`${MAIN_GIT}/worktrees`]);
+  });
+
+  it('names the anchors of every root without repeating one', () => {
+    const other = '/w/other';
+    const set = protectedSetFor([ROOT, other], portsOf({}, [ROOT, other]));
+    expect(set.moduleAnchors).toEqual([`${ROOT}/.git/modules`, `${other}/.git/modules`]);
+  });
+
+  it('leaves an unresolvable modules directory to the literals rather than naming it as an anchor', () => {
+    const modules = `${ROOT}/.git/modules`;
+    const set = protectedSetFor([ROOT], portsOf({ noFollow: { [`${ROOT}/.git`]: { kind: 'directory' }, [modules]: { kind: 'symlink', target: 'modules' } }, unresolvableBelow: { [modules]: 'ELOOP' } }));
+    expect(set.moduleAnchors).not.toContain(modules);
   });
 });
 
