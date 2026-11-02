@@ -39,6 +39,7 @@ const BACKOFF_BASE_MS = 200;
 const BACKOFF_MAX_MS = 5000;
 const MIN_SECRET_CHARS = 8;
 const SECRET_HEADER = /auth|token|key|secret|cookie|password/i;
+const DESCRIPTIVE_HEADER = /^(accept(-charset|-encoding|-language)?|content-(type|language)|cache-control|user-agent)$/i;
 const REDACTED = '[redacted]';
 
 export const MRTR_MAX_ROUNDS = 10;
@@ -154,6 +155,7 @@ class ManagedConnection implements McpServerConnection {
     });
     if ('headers' in options.config) {
       for (const [header, value] of Object.entries(options.config.headers ?? {})) {
+        if (DESCRIPTIVE_HEADER.test(header)) continue;
         const secretive = SECRET_HEADER.test(header);
         this.trackSecret(value, secretive);
         if (secretive) for (const part of value.split(/\s+/)) this.trackSecret(part, false);

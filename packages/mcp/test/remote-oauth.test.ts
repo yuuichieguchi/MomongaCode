@@ -240,6 +240,16 @@ describe('credentials never leave the connection', () => {
     expect(connection.redact(`oops ${FAKE_STATIC_TOKEN}`)).toBe('oops [redacted]');
   });
 
+  it('redacts the value of every configured header except the standard descriptive ones', async () => {
+    const fixture = await startHttpFixture({ era: 'modern' });
+    const { connection } = makeRemoteConnection({
+      fixture,
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Api-Key': 'key-value-12345', 'X-Workspace': 'workspace-secret-678', Authorization: 'Bearer bearer-secret-9' },
+    });
+    expect(connection.redact('payload application/json end')).toBe('payload application/json end');
+    expect(connection.redact('a key-value-12345 b workspace-secret-678 c bearer-secret-9 d')).toBe('a [redacted] b [redacted] c [redacted] d');
+  });
+
   it('keeps the file credential store owner-only and holds tokens nowhere else', async () => {
     const directory = path.join(makeDir(), 'mcp-credentials');
     const { connection, oauth, fixture } = await setup({ store: createFileCredentialStore(directory) });
