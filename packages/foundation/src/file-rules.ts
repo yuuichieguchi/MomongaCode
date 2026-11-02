@@ -3,6 +3,8 @@ import { canonicalJson, sha256Hex } from './canonical-json.ts';
 import { comparableContains } from './path-compare.ts';
 import { FileRuleError, fileMatcherOf, parseExceptionPattern, parseFilePattern, testExpression, testFileMatcher } from './file-pattern.ts';
 import type { Expression, FileMatcher, FilePattern, FilePatternContext } from './file-pattern.ts';
+import { HOST_FLAVOUR, nativePathOf, patternPathOf, specifierOf } from './path-flavour.ts';
+import type { PathFlavour } from './path-flavour.ts';
 import { unresolvableReasonOf } from './path-resolution.ts';
 import type { PathResolution, UnresolvableReason } from './path-resolution.ts';
 
@@ -46,12 +48,12 @@ export type FileRuleEntry = {
   provenance: FileRuleProvenance;
 };
 
-export type FileRuleSet = { entries: readonly FileRuleEntry[]; exemptDirectory: string | null; fingerprint: string };
+export type FileRuleSet = { entries: readonly FileRuleEntry[]; exemptDirectory: string | null; fingerprint: string; flavour: PathFlavour };
 
 export const fileRuleFingerprint = (specs: readonly FileRuleSpec[], roots: readonly string[], exemptDirectory: string | null): string =>
   sha256Hex(canonicalJson({ specs, roots, exemptDirectory }));
 
-export const EMPTY_FILE_RULES: FileRuleSet = { entries: [], exemptDirectory: null, fingerprint: fileRuleFingerprint([], [], null) };
+export const EMPTY_FILE_RULES: FileRuleSet = { entries: [], exemptDirectory: null, fingerprint: fileRuleFingerprint([], [], null), flavour: 'posix' };
 
 const isWidening = (spec: FileRuleSpec, pattern: FilePattern): boolean => {
   if (spec.effect !== 'allow' || spec.access !== 'write') return false;
@@ -106,6 +108,7 @@ const compileEntry = (
   pattern: FilePattern,
   canonicalise: (absolute: string) => PathResolution,
   volumeProbe: (directory: string) => boolean,
+  flavour: PathFlavour,
 ): FileRuleEntry => {
   const lexicalDirectory = lexicalDirectoryOf(pattern.directory);
   const resolution = resolveBelowRegularFile(pattern.directory, canonicalise);
@@ -119,7 +122,7 @@ const compileEntry = (
   const canonical = matchersAt(anchorDirectory);
   const lexical = anchorDirectory === lexicalDirectory ? null : matchersAt(lexicalDirectory);
   const widening = isWidening(spec, pattern);
-  const caseInsensitive = resolution.ok ? volumeProbe(anchorDirectory) : false;
+  const caseInsensitive = resolution.ok ? flavour === 'win32' || volumeProbe(anchorDirectory) : false;
   if (resolution.ok && !caseInsensitive) {
     if (widening) throw notExact(spec, 'a write allow rule that widens the sandbox');
     if (spec.exceptions.length > 0) throw notExact(spec, 'a rule with ! exceptions');
@@ -150,17 +153,38 @@ const compileEntry = (
   };
 };
 
+const inPatternSpace = (spec: FileRuleSpec, flavour: PathFlavour): FileRuleSpec => ({
+  ...spec,
+  specifier: specifierOf(flavour, spec.specifier),
+  context: {
+    ...spec.context,
+    roots: spec.context.roots.map((root) => patternPathOf(flavour, root)),
+    home: patternPathOf(flavour, spec.context.home),
+    settingsRoot: patternPathOf(flavour, spec.context.settingsRoot),
+  },
+});
+
 export const compileFileRuleSet = (
   specs: readonly FileRuleSpec[],
   roots: readonly string[],
   exemptDirectory: string | null,
   canonicalise: (absolute: string) => PathResolution,
   volumeProbe: (directory: string) => boolean,
-): FileRuleSet => ({
-  entries: specs.flatMap((spec) => parseFilePattern(spec.specifier, spec.context).map((pattern) => compileEntry(spec, pattern, canonicalise, volumeProbe))),
-  exemptDirectory: exemptDirectory?.normalize('NFC') ?? null,
-  fingerprint: fileRuleFingerprint(specs, roots, exemptDirectory),
-});
+  flavour: PathFlavour = HOST_FLAVOUR,
+): FileRuleSet => {
+  const inPattern = (resolution: PathResolution): PathResolution => (resolution.ok ? { ok: true, path: patternPathOf(flavour, resolution.path) } : resolution);
+  const canonicaliseNative = (absolute: string): PathResolution => inPattern(canonicalise(nativePathOf(flavour, absolute)));
+  const probeNative = (directory: string): boolean => volumeProbe(nativePathOf(flavour, directory));
+  return {
+    entries: specs.flatMap((spec) => {
+      const translated = inPatternSpace(spec, flavour);
+      return parseFilePattern(translated.specifier, translated.context).map((pattern) => compileEntry(translated, pattern, canonicaliseNative, probeNative, flavour));
+    }),
+    exemptDirectory: exemptDirectory === null ? null : patternPathOf(flavour, exemptDirectory.normalize('NFC')),
+    fingerprint: fileRuleFingerprint(specs, roots, exemptDirectory),
+    flavour,
+  };
+};
 
 const ancestorsOrSelf = (target: string): string[] => {
   const found: string[] = [];
@@ -189,7 +213,9 @@ const underExemption = (set: FileRuleSet, entry: FileRuleEntry, resolved: string
   return target === exempt || target.startsWith(`${exempt}/`);
 };
 
-export const fileRuleBlocks = (set: FileRuleSet, entry: FileRuleEntry, requested: string, resolved: string): boolean => {
+export const fileRuleBlocks = (set: FileRuleSet, entry: FileRuleEntry, requestedNative: string, resolvedNative: string): boolean => {
+  const requested = patternPathOf(set.flavour, requestedNative);
+  const resolved = patternPathOf(set.flavour, resolvedNative);
   if (entry.unresolved !== null || underExemption(set, entry, resolved)) return false;
   const requestedHit = matcherBlocks(entry, entry.exactLexical ?? entry.exact, requested);
   const resolvedHit = matcherBlocks(entry, entry.exact, resolved);

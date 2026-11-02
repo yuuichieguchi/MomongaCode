@@ -1,5 +1,5 @@
-import { compileFileRuleSet, resolveCanonicalPath, volumeIsCaseInsensitive } from '@momonga/foundation';
-import type { FileRuleSet, FileRuleSpec, PathResolution } from '@momonga/foundation';
+import { HOST_FLAVOUR, compileFileRuleSet, resolveCanonicalPath, volumeIsCaseInsensitive } from '@momonga/foundation';
+import type { FileRuleSet, FileRuleSpec, PathFlavour, PathResolution } from '@momonga/foundation';
 import { PATH_TOOL_RULES, isPathTool } from '@momonga/config';
 import type { PermissionRule } from '@momonga/config';
 
@@ -27,4 +27,5 @@ export const computeFileRules = (
   exemptDirectory: string | null,
   canonicalise: (absolute: string) => PathResolution = resolveCanonicalPath,
   volumeProbe: (directory: string) => boolean = volumeIsCaseInsensitive,
-): FileRuleSet => compileFileRuleSet(fileRuleSpecsOf(rules, roots), roots, exemptDirectory, canonicalise, volumeProbe);
+  flavour: PathFlavour = HOST_FLAVOUR,
+): FileRuleSet => compileFileRuleSet(fileRuleSpecsOf(rules, roots), roots, exemptDirectory, canonicalise, volumeProbe, flavour);

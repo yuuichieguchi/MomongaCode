@@ -43,6 +43,7 @@ const portsOf = (tree: FakeTree, roots: readonly string[] = [ROOT]): ProtectedSe
     return { ok: true, path: absolute };
   };
   return {
+    platform: 'darwin',
     readEntry: (absolute) => {
       const entry = tree.entries?.[absolute];
       if (entry instanceof Error) throw entry;
