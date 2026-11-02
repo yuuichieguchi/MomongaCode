@@ -330,7 +330,7 @@ const drive = async (
     meter: createTokenMeter({ counter: { count: (request) => control.recordingRaised(gateway.countTokens(request, { signal: control.signal })) }, model: pins.modelAlias, capabilities: pins.capabilities }),
     pinnedDigest: { value: undefined },
     memory,
-    compaction: { suppressedUntilStep: 0 },
+    verificationCommands: (await options.settings.verification(session)).commands,
   };
 
   if ((await runStartHooks(ctx)) === 'done') return;

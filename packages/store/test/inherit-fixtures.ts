@@ -118,7 +118,9 @@ export const partialEntry = (seq: number, text: string): HistoryEntry => ({
   item: { type: 'message', role: 'assistant', status: 'incomplete', content: [{ type: 'output_text', text, annotations: [] }] },
 });
 
-export const inheritedDigest = (payload: Pick<InheritedEvent, 'history' | 'nextItemSeq' | 'summary' | 'evicted' | 'mode' | 'activatedSkills'>): string =>
+export const inheritedDigest = (
+  payload: Pick<InheritedEvent, 'history' | 'nextItemSeq' | 'summary' | 'evicted' | 'mode' | 'activatedSkills' | 'workingFacts'>,
+): string =>
   sha256Hex(
     canonicalJson({
       history: payload.history,
@@ -127,6 +129,7 @@ export const inheritedDigest = (payload: Pick<InheritedEvent, 'history' | 'nextI
       evicted: payload.evicted,
       mode: payload.mode ?? null,
       ...(payload.activatedSkills === undefined ? {} : { activatedSkills: payload.activatedSkills }),
+      ...(payload.workingFacts === undefined ? {} : { workingFacts: payload.workingFacts }),
     }),
   );
 

@@ -3,6 +3,7 @@ import { CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from '
 import { MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES } from './memory.ts';
 import type { SummaryFidelity, SummarySource } from './context-record.ts';
 import { PERMISSION_DENIAL_SOURCES } from './permission-denial.ts';
+import { FILE_ACCESSES } from './working-facts.ts';
 import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
 import type { ImageMediaType, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent } from './run-types.ts';
 
@@ -258,6 +259,8 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
       truncated: boolean,
       handle: string,
       denial: closed({ source: enumOf(PERMISSION_DENIAL_SOURCES), reason: string }, ['source', 'reason']),
+      files: { type: 'array', items: closed({ path: string, sha256: string, access: enumOf(FILE_ACCESSES) }, ['path', 'sha256', 'access']) },
+      exitCode: integer,
     },
     required: ['callId', 'status', 'output'],
   },

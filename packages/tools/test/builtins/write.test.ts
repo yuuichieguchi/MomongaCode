@@ -17,6 +17,14 @@ describe('Write', () => {
     expect(tools.session.readLedger.get(file)).toEqual({ sha256: sha256('a\nb\nc'), mtimeMs: fs.statSync(file).mtimeMs });
   });
 
+  it('reports the written file with the hash of its new content as a structured fact', async () => {
+    const tools = await makeBuiltins();
+    const file = path.join(tools.layout.project, 'fact.txt');
+    const result = resultOf(await tools.run('Write', { file_path: file, content: 'a\nb' }, { mode: 'acceptEdits' }));
+    expect(result.files).toEqual([{ path: file, sha256: sha256('a\nb'), access: 'write' }]);
+    expect(result.exitCode).toBeUndefined();
+  });
+
   it('records path, preHash and postHash as the prepared state', async () => {
     const tools = await makeBuiltins();
     const created = path.join(tools.layout.project, 'p.txt');

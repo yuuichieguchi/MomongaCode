@@ -106,7 +106,7 @@ describe('worker gateway error policy: fatal 4xx', () => {
     expect(env.gateway.streams).toEqual([]);
   });
 
-  it('continues without compaction and warns when a proactive compact rejects with invalid_request', async () => {
+  it('composes the deterministic summary and records the code when a proactive compact rejects with invalid_request', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
     const run = env.enqueue('Task one');
     const responded = (step: number, text: string): RunEventPayload => ({
@@ -137,8 +137,9 @@ describe('worker gateway error policy: fatal 4xx', () => {
     expect(env.gateway.compacts).toHaveLength(1);
     expect(env.run(run.id)).toMatchObject({ status: 'COMPLETED' });
     expect(env.gateway.streams).toHaveLength(1);
-    expect(env.ofType(run.id, 'notice').map((event) => ({ level: event.level, message: event.message }))).toEqual([
-      { level: 'warning', message: 'Compaction failed (invalid_request): compaction input is invalid; continuing without it' },
+    expect(env.ofType(run.id, 'context.compacted')).toEqual([expect.objectContaining({ source: 'deterministic' })]);
+    expect(env.ofType(run.id, 'notice').map((event) => event.message)).toEqual([
+      'Compaction summary failed (invalid_request): compaction input is invalid; the deterministic summary was used',
     ]);
   });
 });

@@ -11,6 +11,14 @@ describe('Read', () => {
     expect(result).toMatchObject({ status: 'completed', output: '     1\talpha\n     2\tbeta' });
   });
 
+  it('reports the hash of the whole file as a structured fact, also for a page of it', async () => {
+    const tools = await makeBuiltins();
+    const content = 'alpha\nbeta\ngamma\n';
+    const file = tools.write('fact.txt', content);
+    const page = resultOf(await tools.run('Read', { file_path: file, offset: 2, limit: 1 }));
+    expect(page.files).toEqual([{ path: file, sha256: sha256(content), access: 'read' }]);
+  });
+
   it('reads at most 2000 lines by default and notes where to continue', async () => {
     const tools = await makeBuiltins({ maxInlineOutputChars: 100_000 });
     const file = tools.write('long.txt', range(1, 2500).map((n) => `row ${n}`).join('\n'));

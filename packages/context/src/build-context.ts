@@ -6,7 +6,9 @@ import { ContextOverflowError, PinnedOverflowError, PinnedRoomError, PrefixChang
 import { discoverInstructions } from './instructions.ts';
 import type { DiscoveredInstructions, LoadedInstructionFile } from './instructions.ts';
 import { DEFAULT_KEEP_RECENT_STEPS, DEFAULT_KEEP_RECENT_TURNS, positiveInteger, protectionRungsOf, retainedHistoryOf, shapeOf } from './levels.ts';
+import { textOfItem } from './item-text.ts';
 import { renderMemories } from './memory.ts';
+import { workingStateMessage } from './working-state.ts';
 import { heldSkillOf, pointToHeldSkill } from './skill-output.ts';
 import { headAndTail, omittedMarker, outputTextOf, truncatedMarker, withOutput } from './tool-output.ts';
 import type {
@@ -288,6 +290,8 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
   const floorTokens = layersCounted.inputTokens;
 
   const summaryItems: InputItem[] = sources.summary === undefined ? [] : [frozenItem(sources.summary.item)];
+  const workingStateItems: InputItem[] =
+    sources.summary === undefined || sources.workingState === undefined ? [] : [workingStateMessage(sources.workingState)];
   const prefixDigest = chainTail(digestChain({ scope: 'prefix', tools }, [...layers, ...summaryItems]));
 
   const roomLeft = ceiling - floorTokens;
@@ -393,7 +397,7 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
     const items = slots.map((slot) => slot.item);
     const taskIndex = slots.findIndex((slot) => slot.seq > sources.taskSeq);
     const ordered = taskIndex < 0 ? [...items, task] : [...items.slice(0, taskIndex), task, ...items.slice(taskIndex)];
-    return [...layers, ...summaryItems, ...ordered, ...trailing];
+    return [...layers, ...summaryItems, ...ordered, ...workingStateItems, ...trailing];
   };
 
   const evictOldest = async (): Promise<boolean> => {
@@ -432,6 +436,13 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
     return cuts;
   };
 
+  const workingStateGrowth = async (): Promise<number> => {
+    if (sources.projectedWorkingState === undefined) return 0;
+    const projected = await meter.countItem(workingStateMessage(sources.projectedWorkingState), countContextFor(''));
+    const current = workingStateItems[0] === undefined ? 0 : await meter.countItem(workingStateItems[0], countContextFor(''));
+    return Math.max(0, projected - current);
+  };
+
   const compactionFor = async (
     kind: 'proactive' | 'forced',
     deficit: number,
@@ -454,7 +465,7 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
             },
           };
     }
-    const item = summaryItemTokensFor(summaryCap);
+    const item = summaryItemTokensFor(summaryCap) + (await workingStateGrowth());
     const layersOnly = (await countInput(layers)).inputTokens;
     const taskTokens = floorTokens - layersOnly;
     const summaryCeiling = summaryInputCeilingFor(capabilities);
@@ -492,7 +503,14 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
       const items = prefix.map((slot) => slot.item);
       const taskAt = prefix.findIndex((slot) => slot.seq > sources.taskSeq);
       const compactionInput = taskAt < 0 ? items : [...items.slice(0, taskAt), task, ...items.slice(taskAt)];
-      return { plan: { throughSeq, input: [...summaryItems, ...compactionInput], summaryTokenCap: summaryCap } };
+      return {
+        plan: {
+          throughSeq,
+          input: [...summaryItems, ...compactionInput],
+          summaryTokenCap: summaryCap,
+          pinnedText: [...layers, task].map((item) => textOfItem(item)).join('\n'),
+        },
+      };
     }
     return { blocked: overBudget as CompactionBlock };
   };

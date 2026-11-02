@@ -1,4 +1,5 @@
 import type { ContributionKind, SummaryFidelity, SummarySource } from './context-record.ts';
+import type { ToolFile, WorkingFacts } from './working-facts.ts';
 import type { HookExecution } from './hooks.ts';
 import type { MemoryStatus } from './memory.ts';
 import type { CompactionInputItem, InputItem, MessageInputItem } from './open-responses.ts';
@@ -129,6 +130,8 @@ export type RunEventPayload =
       truncated?: boolean;
       handle?: string;
       denial?: PermissionDenial;
+      files?: ToolFile[];
+      exitCode?: number;
     }
   | { type: 'tool.reconciled'; callId: string; outcome: 'already_applied' | 'not_applied' | 'unknown'; output: string }
   | { type: 'tool.waiting'; callId: string; awaits: ToolAwait; wakeAt?: number }
@@ -159,6 +162,7 @@ export type RunEventPayload =
       history: { seq: number; item: InputItem; callId?: string; handle?: string }[];
       nextItemSeq: number;
       summary?: { item: CompactionInputItem | MessageInputItem; summary: string; replacedThroughSeq: number };
+      workingFacts?: WorkingFacts;
       evicted: string[];
       closures: { callId: string; seq: number; effect: 'not_executed' | 'unknown'; announced: boolean }[];
       partial?: { seq: number };
@@ -203,6 +207,7 @@ export type RunState = {
   history: { seq: number; item: InputItem; callId?: string; handle?: string }[];
   nextItemSeq: number;
   summary?: { item: CompactionInputItem | MessageInputItem; summary: string; replacedThroughSeq: number };
+  workingFacts: WorkingFacts;
   evicted: string[];
   pins?: Record<string, unknown>;
   pendingCalls: Record<

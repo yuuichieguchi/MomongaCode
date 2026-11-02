@@ -1,5 +1,5 @@
-import { parseRule } from '@momonga/config';
-import type { PermissionRule } from '@momonga/config';
+import { DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS, parseRule } from '@momonga/config';
+import type { PermissionRule, ResolvedVerificationSettings } from '@momonga/config';
 import type { HooksSettings } from '@momonga/protocol';
 import type { SettingsPort } from '@momonga/runtime';
 import type { Session } from '@momonga/store';
@@ -12,6 +12,7 @@ export type FakeSettings = SettingsPort & {
   rulesHook: ((read: number) => Promise<void>) | undefined;
   trustedValue: boolean;
   hooksValue: HooksSettings;
+  verificationValue: ResolvedVerificationSettings;
   classifierAlias: string | undefined;
 };
 
@@ -26,8 +27,10 @@ export const createFakeSettings = (layout: { home: string; project: string }): F
     rulesHook: undefined,
     trustedValue: true,
     hooksValue: {},
+    verificationValue: { commands: [...DEFAULT_VERIFICATION_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS] },
     classifierAlias: undefined,
     hooks: async () => settings.hooksValue,
+    verification: async () => settings.verificationValue,
     autoModeClassifier: () => settings.classifierAlias,
     rules: async (session) => {
       settings.ruleReads += 1;

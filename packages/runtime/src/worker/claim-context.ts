@@ -41,7 +41,7 @@ export type ClaimContext = {
   meter: TokenMeter;
   pinnedDigest: { value: string | undefined };
   memory: RunMemory;
-  compaction: { suppressedUntilStep: number };
+  verificationCommands: readonly string[];
 };
 
 export type RunMemory = { streak: number; interruptions: number; deadlineAt: number };

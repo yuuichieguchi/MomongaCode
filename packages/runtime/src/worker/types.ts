@@ -15,6 +15,7 @@ export type WorkerDefaults = {
 export type WorkerBlobs = {
   handleFor(content: string): string;
   put(data: string, options: { mediaType: string }): { handle: string };
+  read(handle: string, range: { offset: number; length: number }): Promise<{ text: string; totalBytes: number }>;
 };
 
 export type WorkerErrorContext = { runId?: string; workerId: string };

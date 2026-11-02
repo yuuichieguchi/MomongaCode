@@ -56,6 +56,28 @@ describe('fold of context.inherited', () => {
     expect(state.lastSeq).toBe(2);
   });
 
+  it('carries the working facts of the source run into the child and maps the rebased task to its own event', () => {
+    const facts = {
+      written: [{ path: '/p/a.ts', sha256: 'a'.repeat(64), seq: 0 }],
+      commands: [{ command: 'make lint', failed: true, seq: 0 }],
+      messages: [{ text: 'use two spaces', seq: 0 }],
+      itemEvents: [],
+    };
+    const state = nextRun([task('And again'), inheritedEvent({ fromRunId: 'run-prev', fromLastSeq: 4, history: [], nextItemSeq: 3, workingFacts: facts })]);
+    expect(state.workingFacts).toEqual({ ...facts, taskText: 'And again', itemEvents: [{ itemSeq: 3, eventSeq: 1 }] });
+  });
+
+  it('records the task of every run as its task text, apart from the messages', () => {
+    const state = nextRun([task('And again'), INHERITED]);
+    expect(state.workingFacts.taskText).toBe('And again');
+    expect(state.workingFacts.messages).toEqual([]);
+  });
+
+  it('gives a child of a payload without working facts none, so an older event still folds', () => {
+    const state = nextRun([task('And again'), INHERITED]);
+    expect(state.workingFacts).toEqual({ written: [], commands: [], messages: [], taskText: 'And again', itemEvents: [{ itemSeq: 7, eventSeq: 1 }] });
+  });
+
   it('starts every run with taskSeq 1', () => {
     expect(initialRunState({ runId: 'r', sessionId: 's' }).taskSeq).toBe(1);
     expect(nextRun([task('alone')]).taskSeq).toBe(1);

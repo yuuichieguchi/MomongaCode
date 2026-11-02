@@ -28,6 +28,7 @@ import type { HistoryItem } from '@momonga/context';
 const capabilities = capabilitiesFor(4000);
 const ITEM_CAP = 730;
 const SUMMARY_CAP = 240;
+const PINNED_TEXT = 'You are MomongaCode.\nDo the task.';
 
 const itemsOf = (history: readonly HistoryItem[], throughSeq: number): InputItem[] =>
   history.filter((entry) => entry.seq <= throughSeq).map((entry) => entry.item as InputItem);
@@ -40,7 +41,7 @@ describe('proactive compaction inside one turn', () => {
     const built = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }), level: 0 }), harness(capabilities).ports);
 
     expect(built.inputTokens).toBe(2378);
-    expect(built.compaction).toEqual({ throughSeq: 4, summaryTokenCap: SUMMARY_CAP, input: [TASK, ...itemsOf(history, 4)] });
+    expect(built.compaction).toEqual({ throughSeq: 4, summaryTokenCap: SUMMARY_CAP, input: [TASK, ...itemsOf(history, 4)], pinnedText: PINNED_TEXT });
   });
 
   it('gives no hint when the region is below twice the summary item', async () => {
@@ -61,13 +62,35 @@ describe('proactive compaction inside one turn', () => {
   });
 });
 
+describe('the working state a compaction adds', () => {
+  const history = stepsOf([930, 930, 2205, 2205, 2205, 2205]);
+  const overflowWith = (projectedWorkingState: string | undefined) =>
+    overflowOf(
+      inputFor(capabilities, { sources: sourcesWith({ history, ...(projectedWorkingState === undefined ? {} : { projectedWorkingState }) }), level: 0 }),
+      harness(capabilities).ports,
+    );
+
+  it('closes the deficit when the summary and a small working state fit', async () => {
+    const error = await overflowWith('replaced: HistoryRead seqFrom: 1, seqTo: 9');
+    expect(error.compaction?.throughSeq).toBe(4);
+  });
+
+  it('does not close the deficit when the summary alone would, but the summary plus the working state would not', async () => {
+    expect((await overflowWith(undefined)).compaction?.throughSeq).toBe(4);
+    const error = await overflowWith('w'.repeat(4400));
+    expect(error.compaction).toBeUndefined();
+    expect(error.compactionBlockedBy?.reason).toBe('deficit_not_closed');
+  });
+
+});
+
 describe('forced compaction inside one turn', () => {
   it('accepts a cut whose region closes the deficit although it fails the proactive gain rule', async () => {
     const history = stepsOf([930, 930, 2205, 2205, 2205, 2205]);
     const error = await overflowOf(inputFor(capabilities, { sources: sourcesWith({ history }), level: 0 }), harness(capabilities).ports);
 
     expect(error.inputTokens).toBe(2946);
-    expect(error.compaction).toEqual({ throughSeq: 4, summaryTokenCap: SUMMARY_CAP, input: [TASK, ...itemsOf(history, 4)] });
+    expect(error.compaction).toEqual({ throughSeq: 4, summaryTokenCap: SUMMARY_CAP, input: [TASK, ...itemsOf(history, 4)], pinnedText: PINNED_TEXT });
   });
 
   it('takes the latest cut before the last step at the last level', async () => {
@@ -97,10 +120,10 @@ describe('forced compaction inside one turn', () => {
   });
 
   it.for([
-    { chars: 9879, inputTokens: 2944, fits: true },
-    { chars: 9883, inputTokens: 2945, fits: false },
+    { chars: 9235, inputTokens: 2944, fits: true },
+    { chars: 9239, inputTokens: 2945, fits: false },
   ])('includes the task in the summary request budget (step of $chars characters)', async ({ chars, inputTokens, fits }) => {
-    const history = [argsCall(1, 'c0', chars), output(2, 'c0', 'ok'), argsCall(3, 'c1', 1439), output(4, 'c1', 'ok')];
+    const history = [argsCall(1, 'c0', chars), output(2, 'c0', 'ok'), argsCall(3, 'c1', 2083), output(4, 'c1', 'ok')];
     const error = await overflowOf(inputFor(capabilities, { sources: sourcesWith({ history }), level: 1 }), harness(capabilities).ports);
 
     expect(error.inputTokens).toBe(inputTokens);

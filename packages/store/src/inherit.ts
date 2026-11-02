@@ -1,5 +1,5 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import { findDanglingOutput, findUnpairedCalls } from '@momonga/protocol';
+import { emptyWorkingFacts, findDanglingOutput, findUnpairedCalls, inheritedWorkingFacts } from '@momonga/protocol';
 import { hasConsistentSeqs } from './seqs.ts';
 import type { InputItem, PermissionMode, RunEventPayload, RunState, StopReason, TerminalStatus } from '@momonga/protocol';
 
@@ -84,7 +84,7 @@ const userMarker = (text: string): InputItem => ({ type: 'message', role: 'user'
 const inconsistent = (previous: RunState, detail: string): InheritanceError =>
   new InheritanceError('previous_run_inconsistent', `run ${previous.runId}: ${detail}`);
 
-const digestOf = (payload: Pick<InheritedPayload, 'history' | 'nextItemSeq' | 'summary' | 'evicted' | 'mode' | 'activatedSkills'>): string =>
+const digestOf = (payload: Pick<InheritedPayload, 'history' | 'nextItemSeq' | 'summary' | 'evicted' | 'mode' | 'activatedSkills' | 'workingFacts'>): string =>
   sha256Hex(
     canonicalJson({
       history: payload.history,
@@ -93,6 +93,7 @@ const digestOf = (payload: Pick<InheritedPayload, 'history' | 'nextItemSeq' | 's
       evicted: payload.evicted,
       mode: payload.mode ?? null,
       ...(payload.activatedSkills === undefined ? {} : { activatedSkills: payload.activatedSkills }),
+      ...(payload.workingFacts === undefined ? {} : { workingFacts: payload.workingFacts }),
     }),
   );
 
@@ -177,6 +178,7 @@ export const projectInheritance = (previous: RunState, outcome: InheritanceOutco
     history,
     nextItemSeq,
     ...(previous.summary === undefined ? {} : { summary: previous.summary }),
+    workingFacts: inheritedWorkingFacts(previous.workingFacts, !retracted),
     evicted: [...previous.evicted],
     closures,
     ...(partial === undefined ? {} : { partial }),
@@ -213,6 +215,11 @@ export const applyInheritance = (state: RunState, payload: InheritedPayload): Ru
     ...rest,
     activatedSkills: [...carried, ...state.activatedSkills.filter((skill) => !carried.some((entry) => entry.name === skill.name))],
     history,
+    workingFacts: {
+      ...(payload.workingFacts ?? emptyWorkingFacts()),
+      ...(state.workingFacts.taskText === undefined ? {} : { taskText: state.workingFacts.taskText }),
+      itemEvents: state.workingFacts.itemEvents.map((entry) => ({ itemSeq: payload.nextItemSeq, eventSeq: entry.eventSeq })),
+    },
     nextItemSeq: payload.nextItemSeq + 1,
     taskSeq: payload.nextItemSeq,
     evicted: [...payload.evicted].sort(),

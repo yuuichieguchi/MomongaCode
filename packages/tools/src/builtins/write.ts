@@ -64,6 +64,7 @@ export const writeTool = defineTool<WriteInput>({
       status: 'completed',
       output: `${stat === undefined ? 'Created' : 'Updated'} ${plan.path} (${lines})${warning === undefined ? '' : `\n${warning}`}`,
       content: [{ type: 'diff', path: plan.path, oldText, newText: input.content }],
+      files: [{ path: plan.path, sha256: plan.postHash, access: 'write' }],
     };
   },
   reconcile: async (_input, record) => reconcileWrite(record, 'Write'),
