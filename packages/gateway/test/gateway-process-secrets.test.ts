@@ -61,7 +61,9 @@ const startStack = async (
     logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: { write: (chunk: string) => (lines.push(chunk), true) }, level: 'debug' }),
     stdout: { write: () => true },
   });
-  registerCleanup(context, () => handle.close());
+  registerCleanup(context, async () => {
+    await handle.close();
+  });
   const client = createUdsClient(handle.socketPath);
   registerCleanup(context, () => client.close());
   return { home, client, handle, anthropic, openResponses, security, logText: () => lines.join('') };
@@ -164,7 +166,9 @@ describe('stored secrets in the gateway process', () => {
     });
     const security = createFakeSecurityPort(() => ({}));
     const handle = await startGatewayProcess({ home, env: baseEnv(home), version: PROCESS_VERSION, execWithStdin: security, stdout: { write: () => true } });
-    registerCleanup(context, () => handle.close());
+    registerCleanup(context, async () => {
+    await handle.close();
+  });
     expect(security.calls).toEqual([]);
   });
 });
