@@ -1,20 +1,41 @@
 import { build } from 'esbuild';
 import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 
-const root = fileURLToPath(new URL('..', import.meta.url));
+export const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 
-await build({
-  entryPoints: [`${root}packages/cli/src/main.ts`],
-  outfile: `${root}packages/cli/dist/main.js`,
-  platform: 'node',
-  format: 'esm',
-  target: 'node24',
-  bundle: true,
-  alias: { 'react-devtools-core': `${root}scripts/empty-module.ts` },
-  banner: {
-    js: [
-      '#!/usr/bin/env node',
-      "import { createRequire as __momongaCreateRequire } from 'node:module'; const require = __momongaCreateRequire(import.meta.url);",
-    ].join('\n'),
-  },
-});
+export const defaultEntry = `${repoRoot}packages/cli/src/main.ts`;
+export const defaultOutfile = `${repoRoot}packages/cli/dist/main.js`;
+
+export type BundleOptions = {
+  readonly entry: string;
+  readonly outfile: string;
+};
+
+export const bundle = async ({ entry, outfile }: BundleOptions): Promise<void> => {
+  await build({
+    entryPoints: [entry],
+    outfile,
+    platform: 'node',
+    format: 'esm',
+    target: 'node24',
+    bundle: true,
+    alias: { 'react-devtools-core': `${repoRoot}scripts/empty-module.ts` },
+    banner: {
+      js: [
+        '#!/usr/bin/env node',
+        "import { createRequire as __momongaCreateRequire } from 'node:module'; const require = __momongaCreateRequire(import.meta.url);",
+      ].join('\n'),
+    },
+  });
+};
+
+if (import.meta.main) {
+  const { values } = parseArgs({
+    options: {
+      entry: { type: 'string', default: defaultEntry },
+      outfile: { type: 'string', default: defaultOutfile },
+    },
+  });
+  await bundle({ entry: values.entry, outfile: values.outfile });
+}
