@@ -137,7 +137,7 @@ const startBackgroundJob = async (input: BashInput, ctx: ToolContext): Promise<T
 export const bashTool = defineTool<BashInput>({
   name: 'Bash',
   description:
-    'Runs a shell command with /bin/bash inside a sandbox, in the current working directory. Output combines stdout and stderr. A cd that stays inside the workspace persists to later calls. timeout is in milliseconds (default 120000, maximum 600000). No process started by the command outlives it. With run_in_background the command starts as a background job and the call returns its job id at once; read its output with BashOutput and stop it with KillBash. For a background job timeout is the time the job may run (default 1800000, maximum 7200000); a job ends with its command, with KillBash, at its time limit, or when MomongaCode stops.',
+    'Runs a shell command with /bin/bash inside a sandbox, in the current working directory. Output combines stdout and stderr. A cd that stays inside the workspace persists to later calls. timeout is in milliseconds (default 120000, maximum 600000). No process started by the command outlives it. run_in_background starts a background job and returns its id; read it with BashOutput and stop it with KillBash. For a job, timeout is its time limit (default 1800000, maximum 7200000).',
   kind: 'execute',
   sideEffect: 'exec',
   inputSchema: {
@@ -146,7 +146,7 @@ export const bashTool = defineTool<BashInput>({
       command: { type: 'string', minLength: 1, description: 'The command to run' },
       timeout: { type: 'integer', minimum: 1, maximum: MAX_BACKGROUND_TIMEOUT_MS, description: 'Timeout in milliseconds' },
       description: { type: 'string', description: 'Short description of what the command does' },
-      run_in_background: { type: 'boolean', description: 'Run the command as a background job and return its job id immediately' },
+      run_in_background: { type: 'boolean' },
     },
     required: ['command'],
     additionalProperties: false,

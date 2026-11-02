@@ -298,7 +298,7 @@ const drive = async (
     toolSet,
     skills,
     env,
-    functionTools: toolSet.forModel({ mode: session.permissionMode, rules }),
+    functionTools: () => toolSet.forModel({ mode: session.permissionMode, rules, jobs: store.jobs.listForSession(session.id).length > 0 }),
     systemPrompt,
     inlineLimitForReconcile: inlineOutputLimitFor(pins.capabilities),
     inlineLimitForExecution: () => {

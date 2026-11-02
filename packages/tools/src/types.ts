@@ -75,6 +75,7 @@ export type ToolDefinition<Input> = {
   sideEffect: SideEffect;
   inputSchema: Record<string, unknown>;
   pagesOutput?: true;
+  requiresJobs?: true;
   schemaMode?: 'strict' | 'lenient';
   timeoutMs: number | ((input: Input) => number);
   title(input: Input): string;

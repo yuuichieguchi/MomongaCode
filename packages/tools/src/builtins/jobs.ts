@@ -38,16 +38,17 @@ const compileFilter = (pattern: string): RegExp => {
 export const bashOutputTool = defineTool<BashOutputInput>({
   name: 'BashOutput',
   description:
-    'Reads the output a background job (started with Bash run_in_background) has produced since the last BashOutput call, and reports whether the job is running, exited or stopped. filter keeps only the output lines that match a regular expression; the other new lines are discarded. With block true the call waits until the job ends or timeout milliseconds pass (default 30000, maximum 600000).',
+    'Reads the new output of a background job (Bash run_in_background) and reports whether it runs, exited or was stopped. filter keeps only new lines matching a regular expression. block waits until the job ends or timeout ms pass (default 30000, maximum 600000).',
   kind: 'execute',
   sideEffect: 'read_only',
+  requiresJobs: true,
   inputSchema: {
     type: 'object',
     properties: {
-      bash_id: { type: 'string', minLength: 1, description: 'The job id returned by Bash' },
-      filter: { type: 'string', minLength: 1, description: 'Regular expression; only matching lines of the new output are returned' },
-      block: { type: 'boolean', description: 'Wait for the job to end' },
-      timeout: { type: 'integer', minimum: 1, maximum: MAX_OUTPUT_WAIT_MS, description: 'How long block may wait, in milliseconds' },
+      bash_id: { type: 'string', minLength: 1 },
+      filter: { type: 'string', minLength: 1 },
+      block: { type: 'boolean' },
+      timeout: { type: 'integer', minimum: 1, maximum: MAX_OUTPUT_WAIT_MS },
     },
     required: ['bash_id'],
     additionalProperties: false,
@@ -76,12 +77,13 @@ export const bashOutputTool = defineTool<BashOutputInput>({
 
 export const killBashTool = defineTool<KillBashInput>({
   name: 'KillBash',
-  description: 'Stops a background job started with Bash run_in_background, together with every process it started. Stopping a job that has already ended reports how it ended.',
+  description: 'Stops a background job and the processes it started.',
   kind: 'execute',
   sideEffect: 'write',
+  requiresJobs: true,
   inputSchema: {
     type: 'object',
-    properties: { shell_id: { type: 'string', minLength: 1, description: 'The job id returned by Bash' } },
+    properties: { shell_id: { type: 'string', minLength: 1 } },
     required: ['shell_id'],
     additionalProperties: false,
   },

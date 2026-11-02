@@ -45,7 +45,8 @@ describe('createBuiltinTools', () => {
     for (const tool of createBuiltinTools()) registry.register(tool);
     const toolSet = await registry.snapshot();
     expect(toolSet.tools.map((tool: AnyTool) => tool.name)).toEqual(NAMES);
-    expect(toolSet.forModel({ mode: 'default', rules: [] }).map((tool) => tool.name)).toEqual(NAMES);
+    expect(toolSet.forModel({ mode: 'default', rules: [] }).map((tool) => tool.name)).toEqual(NAMES.filter((name) => name !== 'BashOutput' && name !== 'KillBash'));
+    expect(toolSet.forModel({ mode: 'default', rules: [], jobs: true }).map((tool) => tool.name)).toEqual(NAMES);
   });
 
   it('uses Claude Code input property names', () => {

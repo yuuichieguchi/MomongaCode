@@ -154,6 +154,11 @@ describe('agents: subagents', () => {
       await childStream.close();
       expect(childFrames.at(-1)?.data).toMatchObject({ type: 'run.status', to: 'CANCELLED' });
       expect(framesOfType(childFrames, 'model.responded')).toEqual([]);
+      const parentStream = runtime.events(run.id);
+      const parentFrames = await parentStream.toEnd(E2E_MARGIN_MS);
+      await parentStream.close();
+      expect(framesOfType(parentFrames, 'tool.completed').map((frame) => [frame.data['status'], frame.data['output']])).toEqual([['failed', 'Subagent reviewer was cancelled.']]);
+      expect(framesOfType(parentFrames, 'tool.reconciled')).toEqual([]);
 
       await shutdownBarrier(stack);
       expect(chatCompletions(stack.fake)).toHaveLength(2);

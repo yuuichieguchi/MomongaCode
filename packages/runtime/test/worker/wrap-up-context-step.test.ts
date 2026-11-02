@@ -44,7 +44,7 @@ const contextFor = (state: RunState) => {
     alias: 'fm',
     capabilities,
     systemPrompt: SYSTEM_PROMPT,
-    functionTools: [ECHO_TOOL],
+    functionTools: () => [ECHO_TOOL],
     skills: { catalog: undefined },
     journal: {
       state,

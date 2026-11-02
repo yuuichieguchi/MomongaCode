@@ -24,7 +24,7 @@ export type ToolSet = {
   readonly tools: readonly AnyTool[];
   readonly notices: readonly string[];
   get(name: string): AnyTool | undefined;
-  forModel(options: { mode: PermissionMode; rules: PermissionRule[] }): FunctionTool[];
+  forModel(options: { mode: PermissionMode; rules: PermissionRule[]; jobs?: boolean }): FunctionTool[];
 };
 
 export type ToolRegistry = {
@@ -51,10 +51,10 @@ const buildToolSet = (tools: readonly AnyTool[], notices: readonly string[]): To
     tools: frozenTools,
     notices: frozenNotices,
     get: (name) => byName.get(name),
-    forModel: ({ mode, rules }) => {
+    forModel: ({ mode, rules, jobs = false }) => {
       const visible = new Set(modelVisibleTools([...frozenTools], { mode, rules }).map((tool) => tool.name));
       return frozenTools
-        .filter((tool) => visible.has(tool.name))
+        .filter((tool) => visible.has(tool.name) && (jobs || tool.requiresJobs !== true))
         .map((tool) => ({ type: 'function', name: tool.name, description: tool.description, parameters: tool.inputSchema, strict: false }));
     },
   };

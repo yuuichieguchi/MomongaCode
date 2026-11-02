@@ -28,7 +28,7 @@ export type ClaimContext = {
   toolSet: ToolSet;
   skills: SkillSet;
   env: ToolEnv;
-  functionTools: FunctionTool[];
+  functionTools(): FunctionTool[];
   systemPrompt: string;
   inlineLimitForReconcile: number;
   inlineLimitForExecution: () => Promise<number>;

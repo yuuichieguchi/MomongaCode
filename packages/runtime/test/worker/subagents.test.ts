@@ -185,6 +185,10 @@ describe('worker subagents', () => {
     await env.runOnce(worker);
     expect(env.run(parent.id).status).toBe('CANCELLED');
     expect(env.gateway.streams).toHaveLength(1);
+    expect(env.ofType(parent.id, 'tool.completed')).toMatchObject([{ status: 'failed', output: 'Subagent reviewer was cancelled.' }]);
+    expect(env.ofType(parent.id, 'tool.reconciled')).toEqual([]);
+    const key = env.fold(parent.id).pendingCalls[Object.keys(env.fold(parent.id).pendingCalls)[0] as string]?.idemKey ?? '';
+    expect(env.store.idempotency.get(key)).toMatchObject({ s: 'COMPLETED' });
   });
 
   it('stops the parent and its child at their shared deadline while the parent waits', async () => {
