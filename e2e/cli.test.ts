@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createFakeFm } from '@momonga/testkit';
+import cliPackage from '../packages/cli/package.json' with { type: 'json' };
 import type { FakeScriptedReply } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
 import { runCli, startCli } from './support/cli.ts';
@@ -9,9 +10,10 @@ import { readDb } from './support/db.ts';
 import { supervisorLog } from './support/log-reader.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
-import { baseSettings, sandboxChoiceOf, startStack, startUpstream, writeSettingsFile } from './support/stack.ts';
+import { DEFAULT_E2E_DEPS, baseSettings, sandboxChoiceOf, startStack, startUpstream, writeSettingsFile } from './support/stack.ts';
 import { chatCompletions, hangReply, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
-import { E2E_MARGIN_MS, E2E_RECOVERY_BOUND_MS, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
+import { pidOf } from './support/supervisor-client.ts';
+import { E2E_RESTART_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
 
 const ORIGINAL = 'greeting = "hello"\n';
 const EDITED = 'greeting = "hello, momonga"\n';
@@ -45,12 +47,6 @@ const jsonLines = (text: string): Record<string, unknown>[] =>
       if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error(`not a JSON object line: ${line}`);
       return Object.fromEntries(Object.entries(parsed));
     });
-
-const pidOfRole = async (home: E2eHome, role: 'gateway' | 'runtime'): Promise<number | undefined> => {
-  const status = await runCli(home, ['daemon', 'status']);
-  const match = new RegExp(`${role}: ready \\(pid (\\d+)\\)`).exec(status.stdout);
-  return match === null ? undefined : Number(match[1]);
-};
 
 describe('cli: momonga -p', () => {
   it(titleOf('cli-print'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
@@ -227,21 +223,15 @@ describe('cli: momonga -p', () => {
   });
 
   it(titleOf('cli-reconnect'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
-    const { home, fake } = await prepare(() => [textReply('survived the restart')]);
-    expect((await runCli(home, ['daemon', 'status'])).code).toBe(1);
-    const hold = fake.hold();
+    const home = await createE2eHome();
+    const stack = await startStack({ home, script: [textReply('survived the restart')], version: cliPackage.version, deps: { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY } });
+    const hold = stack.fake.hold();
 
     const running = startCli(home, ['-p', 'Say hello', '--output-format', 'stream-json']);
     await hold.waitForRequest();
-    const runtimePid = await until(() => pidOfRole(home, 'runtime'), { deadlineMs: E2E_MARGIN_MS, description: 'the runtime pid in daemon status' });
-    process.kill(runtimePid, 'SIGKILL');
-    await until(
-      async () => {
-        const pid = await pidOfRole(home, 'runtime');
-        return pid !== undefined && pid !== runtimePid;
-      },
-      { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the supervisor to restart the runtime' },
-    );
+    const oldRuntime = pidOf(await stack.client.health(), 'runtime');
+    process.kill(oldRuntime, 'SIGKILL');
+    await stack.client.untilChild('runtime', (child) => child.state === 'ready' && child.pid !== undefined && child.pid !== oldRuntime, E2E_RESTART_BOUND_MS);
     hold.release();
 
     const finished = await running.result;
@@ -251,7 +241,7 @@ describe('cli: momonga -p', () => {
     const sequence = lines.slice(1, -1).map((event) => event['seq']);
     expect(sequence).toEqual(sequence.map((_, index) => index + 1));
     expect(lines.at(-1)).toMatchObject({ type: 'result', subtype: 'success', result: 'survived the restart' });
-    expect(chatCompletions(fake)).toHaveLength(1);
+    expect(chatCompletions(stack.fake)).toHaveLength(1);
   });
 
   it(titleOf('cli-env'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
