@@ -29,7 +29,7 @@ export type RealWorkspace = {
   exists(relative: string): boolean;
   read(relative: string): string;
   decide(command: string, options?: { mode?: PermissionMode; cwd?: string; searchPath?: string; rules?: ReadonlyArray<readonly [RuleEffect, string]> }): Decision;
-  runBash(command: string, cwd?: string): { stdout: string; stderr: string; status: number | null };
+  runBash(command: string, cwd?: string, extra?: Record<string, string>): { stdout: string; stderr: string; status: number | null };
   env(extra?: Record<string, string>): NodeJS.ProcessEnv;
   git(cwd: string, ...args: string[]): { stdout: string; stderr: string; status: number | null };
   initRepository(relative?: string): string;
@@ -99,8 +99,8 @@ export const makeRealWorkspace = (): RealWorkspace => {
         isWritable: isWritableFor(roots),
       });
     },
-    runBash: (command, cwd = project) => {
-      const result = spawnSync(REAL_BASH, ['-c', command], { cwd, env: env(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    runBash: (command, cwd = project, extra = {}) => {
+      const result = spawnSync(REAL_BASH, ['-c', command], { cwd, env: env(extra), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
       return { stdout: result.stdout, stderr: result.stderr, status: result.status };
     },
     env,

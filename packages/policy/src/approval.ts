@@ -9,7 +9,7 @@ import type { PolicyFilesystem } from './filesystem.ts';
 import type { OptionEffect, CommandSpec } from './command-specs.ts';
 import { globDirectory, sedFacts } from './path-effects.ts';
 import { absoluteFrom } from './path-match.ts';
-import { resolveSegmentProgram } from './program-resolution.ts';
+import { executedByWrapper, resolveSegmentProgram } from './program-resolution.ts';
 import { discoverRepository } from './repository.ts';
 import { insideRoots } from './roots.ts';
 import { scanSedScript } from './sed-script.ts';
@@ -102,7 +102,7 @@ const sedAllowed = (parsed: ParsedArgv): boolean => {
 };
 
 const programApproved = (spec: CommandSpec, segment: Segment, context: ApprovalContext): boolean => {
-  if (spec.builtin === true && !(segment.words[segment.effectiveIndex] as Word).value.includes('/')) return true;
+  if (spec.builtin === true && !(segment.words[segment.effectiveIndex] as Word).value.includes('/') && !executedByWrapper(segment)) return true;
   const resolution = resolveSegmentProgram(segment, context);
   if (!('program' in resolution)) return false;
   return APPLE_DIRECTORIES.some((directory) => resolution.program === path.join(directory, spec.names[0] as string));
