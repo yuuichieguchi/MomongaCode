@@ -13,6 +13,7 @@ export type FakeSettings = SettingsPort & {
   trustedValue: boolean;
   hooksValue: HooksSettings;
   verificationValue: ResolvedVerificationSettings;
+  contextValue: { adaptiveBudget: boolean; autoCompact: boolean };
   classifierAlias: string | undefined;
 };
 
@@ -28,9 +29,11 @@ export const createFakeSettings = (layout: { home: string; project: string }): F
     trustedValue: true,
     hooksValue: {},
     verificationValue: { commands: [...DEFAULT_VERIFICATION_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS] },
+    contextValue: { adaptiveBudget: false, autoCompact: true },
     classifierAlias: undefined,
     hooks: async () => settings.hooksValue,
     verification: async () => settings.verificationValue,
+    context: async () => settings.contextValue,
     autoModeClassifier: () => settings.classifierAlias,
     rules: async (session) => {
       settings.ruleReads += 1;
