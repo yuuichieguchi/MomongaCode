@@ -1,40 +1,25 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { findHolders, reapMarkerDirectory, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
+import { runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import type { ReapMarkerDirectoryOptions } from '@momonga/foundation';
 import { createFakeClock, createFakeTimers, fakeReapTiming, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
-import type { CleanupContext, FakeTimers, TrackedChild } from '@momonga/testkit';
+import type { CleanupContext } from '@momonga/testkit';
 import { ORPHAN_REAP_GRACE_MS, SHUTDOWN_RELEASE_BOUND_MS } from '../src/constants.ts';
 import { reapOrphans } from '../src/orphans.ts';
 import type { MarkerPorts, OrphanReapOptions, OrphanReapResult } from '../src/orphans.ts';
-import { writeLockFile, captureLog, httpOver, pumpUntil, settledFlag, startHarness, writeMarker } from './fixtures/p3-harness.ts';
+import { writeLockFile, captureLog, createRealWorkScope, httpOver, pumpUntil, settledFlag, startHarness, writeMarker } from './fixtures/p3-harness.ts';
 
-const HOLDER_FIXTURE = fileURLToPath(new URL('./fixtures/p3-marker-holder.ts', import.meta.url));
+const HOLDER_PID = 999_999;
 
-type Holder = { child: TrackedChild; stdout(): string; exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }> };
-
-const startHolder = async (context: CleanupContext, marker: string, options: { trapTerm?: boolean; onLine?: (line: string) => void } = {}): Promise<Holder> => {
-  const fd = fs.openSync(marker, 'r');
-  let child: TrackedChild;
-  try {
-    child = spawnTracked(context, process.execPath, [HOLDER_FIXTURE], {
-      stdio: ['pipe', 'pipe', 'ignore', fd],
-      env: { ...process.env, P3_TRAP_TERM: options.trapTerm === true ? '1' : '0' },
-    });
-  } finally {
-    fs.closeSync(fd);
-  }
-  let text = '';
-  child.stdout?.setEncoding('utf8');
-  child.stdout?.on('data', (chunk: string) => {
-    text += chunk;
-    for (const line of chunk.split('\n')) if (line !== '') options.onLine?.(line);
-  });
-  const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => child.once('exit', (code, signal) => resolve({ code, signal })));
-  await waitFor(() => text.includes('ready'), { description: 'holder ready' });
-  return { child, stdout: () => text, exited };
+const liveHolder = (): { findHolders: NonNullable<MarkerPorts['findHolders']>; exit(): void } => {
+  let alive = true;
+  return {
+    findHolders: async () => (alive ? [HOLDER_PID] : []),
+    exit: () => {
+      alive = false;
+    },
+  };
 };
 
 const markersDir = (context: CleanupContext): string => {
@@ -43,20 +28,12 @@ const markersDir = (context: CleanupContext): string => {
   return dir;
 };
 
-const drive = async (timers: FakeTimers, done: () => boolean, stepMs: number, maxSteps = 400): Promise<void> => {
-  for (let step = 0; step < maxSteps && !done(); step += 1) {
-    await waitFor(() => done() || timers.pending().length > 0, { description: 'next reap tick' });
-    if (done()) return;
-    timers.advance(stepMs);
-  }
-  if (!done()) throw new Error('drive: reap did not finish');
-};
-
 const reapSetup = (dir: string, overrides: Partial<OrphanReapOptions> = {}) => {
   const clock = createFakeClock(0);
   const timers = createFakeTimers(clock);
   const log = captureLog(clock);
   const controller = new AbortController();
+  const realWork = createRealWorkScope();
   const options: OrphanReapOptions = {
     markersDir: dir,
     orphanGraceMs: 10_000,
@@ -68,7 +45,9 @@ const reapSetup = (dir: string, overrides: Partial<OrphanReapOptions> = {}) => {
     reapTiming: fakeReapTiming(clock, timers),
     ...overrides,
   };
-  return { clock, timers, log, controller, options };
+  const reap = (): ReturnType<typeof settledFlag<OrphanReapResult>> => settledFlag(realWork.run(() => reapOrphans(options)));
+  const until = (done: () => boolean, maxMs: number): Promise<void> => pumpUntil(timers, done, { realWork, maxMs, description: 'orphan reap' });
+  return { clock, timers, log, controller, options, reap, until };
 };
 
 const recorded = (overrides: MarkerPorts = {}) => {
@@ -96,60 +75,54 @@ describe('reapOrphans', () => {
     expect(log.withMsg('orphans.waiting')).toEqual([expect.objectContaining({ markers: 0, holders: 0 })]);
   });
 
-  it('marker without holders is just removed', async (context) => {
+  it('markers without holders go straight to the reap', async (context) => {
     const dir = markersDir(context);
-    const marker = path.join(dir, 'runtime-01');
-    fs.writeFileSync(marker, '', { mode: 0o600 });
-    const { options, log } = reapSetup(dir);
+    fs.writeFileSync(path.join(dir, 'runtime-01'), '', { mode: 0o600 });
+    const { calls, ports } = recorded({ reapMarkerDirectory: async () => ({ reaped: 1, kept: 0 }) });
+    const { options, log } = reapSetup(dir, { markerPorts: ports });
     await expect(reapOrphans(options)).resolves.toEqual({ reaped: 1, kept: 0, aborted: false });
-    expect(fs.existsSync(marker)).toBe(false);
+    expect(calls.findHolders).toBe(1);
+    expect(calls.reap).toHaveLength(1);
     expect(log.withMsg('orphans.waiting')).toEqual([expect.objectContaining({ markers: 1, holders: 0 })]);
   });
 
-  it('phase 1 does not signal a holder that exits on its own', async (context) => {
+  it('phase 1 waits for a holder that exits on its own and then reaps without a signal request', async (context) => {
     const dir = markersDir(context);
-    const marker = path.join(dir, 'runtime-02');
-    fs.writeFileSync(marker, '', { mode: 0o600 });
-    const holder = await startHolder(context, marker);
-    const { options, timers, clock } = reapSetup(dir);
-    const result = settledFlag(reapOrphans(options));
-    await drive(timers, () => clock.now() >= 3000, 250);
+    fs.writeFileSync(path.join(dir, 'runtime-02'), '', { mode: 0o600 });
+    const holder = liveHolder();
+    const { calls, ports } = recorded({ findHolders: holder.findHolders, reapMarkerDirectory: async () => ({ reaped: 1, kept: 0 }) });
+    const { options, clock, reap, until } = reapSetup(dir, { markerPorts: ports });
+    const result = reap();
+    await until(() => clock.now() >= 3000, 3000);
     expect(result.settled()).toBe(false);
-    holder.child.stdin?.end();
-    await expect(holder.exited).resolves.toEqual({ code: 0, signal: null });
-    await drive(timers, () => result.settled(), 250);
-    expect(holder.stdout()).not.toContain('TERM');
+    expect(calls.reap).toEqual([]);
+    holder.exit();
+    await until(() => result.settled(), options.orphanGraceMs);
+    expect(clock.now()).toBeLessThan(options.orphanGraceMs);
+    expect(calls.reap).toHaveLength(1);
     expect(result.value()).toEqual({ reaped: 1, kept: 0, aborted: false });
-    expect(fs.existsSync(marker)).toBe(false);
   });
 
-  it('an orphan that ignores SIGTERM is SIGKILLed after phase 2 grace, and orphanGraceMs shortens phase 1', async (context) => {
+  it('orphanGraceMs shortens phase 1 and the reap starts at its end', async (context) => {
     const dir = markersDir(context);
-    const marker = path.join(dir, 'runtime-03');
-    fs.writeFileSync(marker, '', { mode: 0o600 });
-    const { options, timers, clock, log } = reapSetup(dir, { orphanGraceMs: 1000 });
-    let termAt: number | undefined;
-    const holder = await startHolder(context, marker, {
-      trapTerm: true,
-      onLine: (line) => {
-        if (line === 'TERM') termAt ??= clock.now();
+    fs.writeFileSync(path.join(dir, 'runtime-03'), '', { mode: 0o600 });
+    const holder = liveHolder();
+    let reapAt: number | undefined;
+    let setup: ReturnType<typeof reapSetup> | undefined;
+    const { ports } = recorded({
+      findHolders: holder.findHolders,
+      reapMarkerDirectory: async () => {
+        reapAt = setup?.clock.now();
+        return { reaped: 1, kept: 0 };
       },
     });
-    let killAt: number | undefined;
-    void holder.exited.then(() => {
-      killAt = clock.now();
-    });
-    const result = settledFlag(reapOrphans(options));
-    await drive(timers, () => result.settled(), 250);
-    await holder.exited;
-    await expect(holder.exited).resolves.toEqual({ code: null, signal: 'SIGKILL' });
-    expect(termAt).toBeDefined();
-    expect(termAt ?? 0).toBeGreaterThanOrEqual(1000);
-    expect(termAt ?? 0).toBeLessThan(1000 + 250 + 100);
-    expect((killAt ?? 0) - (termAt ?? 0)).toBeGreaterThanOrEqual(150);
-    expect((killAt ?? 0) - (termAt ?? 0)).toBeLessThanOrEqual(450);
+    setup = reapSetup(dir, { markerPorts: ports, orphanGraceMs: 1000 });
+    const { log, reap, until } = setup;
+    const result = reap();
+    await until(() => result.settled(), 5000);
+    expect(reapAt ?? 0).toBeGreaterThanOrEqual(1000);
+    expect(reapAt ?? 0).toBeLessThan(1000 + 250 + 100);
     expect(result.value()).toEqual({ reaped: 1, kept: 0, aborted: false });
-    expect(fs.existsSync(marker)).toBe(false);
     expect(log.withMsg('orphans.waiting')).toEqual([expect.objectContaining({ markers: 1, holders: 1 })]);
     expect(log.withMsg('orphans.reaping')).toEqual([expect.objectContaining({ holders: 1 })]);
   });
@@ -159,9 +132,9 @@ describe('reapOrphans', () => {
     fs.writeFileSync(path.join(dir, 'runtime-04'), '');
     const { calls, ports } = recorded({ findHolders: async () => [999_999] });
     const bound = runtimeMaxCloseMs(30_000) + 2000;
-    const { options, timers, clock } = reapSetup(dir, { markerPorts: ports, orphanGraceMs: 10 * bound });
-    const result = settledFlag(reapOrphans(options));
-    await drive(timers, () => calls.reap.length > 0, 250, 1000);
+    const { clock, reap, until } = reapSetup(dir, { markerPorts: ports, orphanGraceMs: 10 * bound });
+    const result = reap();
+    await until(() => calls.reap.length > 0, 250000);
     expect(clock.now()).toBeGreaterThanOrEqual(bound);
     expect(clock.now()).toBeLessThanOrEqual(bound + 250);
     await waitFor(() => result.settled());
@@ -171,9 +144,9 @@ describe('reapOrphans', () => {
     const dir = markersDir(context);
     fs.writeFileSync(path.join(dir, 'gateway-05'), '');
     const { calls, ports } = recorded({ findHolders: async () => [999_999] });
-    const { options, timers, controller, log } = reapSetup(dir, { markerPorts: ports, orphanGraceMs: 500 });
-    const result = settledFlag(reapOrphans(options));
-    await drive(timers, () => result.settled(), 250);
+    const { options, reap, until, controller, log } = reapSetup(dir, { markerPorts: ports, orphanGraceMs: 500 });
+    const result = reap();
+    await until(() => result.settled(), 100000);
     expect(calls.reap).toHaveLength(1);
     const call = calls.reap[0];
     expect(call?.abortedAtCall).toBe(false);
@@ -190,12 +163,12 @@ describe('reapOrphans', () => {
     const marker = path.join(dir, 'runtime-06');
     fs.writeFileSync(marker, '');
     const { calls, ports } = recorded({ findHolders: async () => [999_999] });
-    const { options, timers, controller } = reapSetup(dir, { markerPorts: ports, orphanGraceMs: 10_000 });
-    const result = settledFlag(reapOrphans(options));
-    await drive(timers, () => calls.findHolders >= 3, 250);
+    const { reap, until, controller } = reapSetup(dir, { markerPorts: ports, orphanGraceMs: 10_000 });
+    const result = reap();
+    await until(() => calls.findHolders >= 3, 100000);
     controller.abort();
     const before = calls.findHolders;
-    await drive(timers, () => result.settled(), 250, 4);
+    await until(() => result.settled(), 1000);
     expect(result.value()).toMatchObject({ aborted: true });
     expect(calls.findHolders).toBeLessThanOrEqual(before + 1);
     expect(calls.reap).toEqual([]);
@@ -214,8 +187,8 @@ describe('reapOrphans', () => {
     });
     const setup = reapSetup(dir, { markerPorts: ports, orphanGraceMs: 500 });
     controller = setup.controller;
-    const result = settledFlag(reapOrphans(setup.options));
-    await drive(setup.timers, () => result.settled(), 250, 20);
+    const result = setup.reap();
+    await setup.until(() => result.settled(), 5000);
     expect(result.value()).toMatchObject({ aborted: true });
     expect(calls.reap).toEqual([]);
   });
@@ -227,9 +200,9 @@ describe('reapOrphans', () => {
       findHolders: () => Promise.reject(new Error('lsof: not found')),
       reapMarkerDirectory: async () => ({ reaped: 1, kept: 0 }),
     });
-    const { options, timers, log } = reapSetup(dir, { markerPorts: ports });
-    const result = settledFlag(reapOrphans(options));
-    await drive(timers, () => result.settled(), 250, 10);
+    const { reap, until, log } = reapSetup(dir, { markerPorts: ports });
+    const result = reap();
+    await until(() => result.settled(), 2500);
     expect(result.value()).toEqual({ reaped: 1, kept: 0, aborted: false });
     expect(calls.reap).toHaveLength(1);
     expect(log.withMsg('orphans.warning').length).toBeGreaterThanOrEqual(1);
@@ -251,8 +224,8 @@ describe('reapOrphans', () => {
     if (variant === 'a readdir failure') fs.chmodSync(dir, 0o000);
     const setup = reapSetup(dir, { markerPorts: ports });
     log = setup.log;
-    const result = settledFlag(reapOrphans(setup.options));
-    await drive(setup.timers, () => result.settled(), 250, 10);
+    const result = setup.reap();
+    await setup.until(() => result.settled(), 2500);
     fs.chmodSync(dir, 0o700);
     expect(reapingAtCall).toEqual([[0]]);
     const messages = setup.log.messages();
@@ -264,9 +237,9 @@ describe('reapOrphans', () => {
     fs.writeFileSync(path.join(dir, 'runtime-09'), '');
     fs.chmodSync(dir, 0o000);
     const { calls, ports } = recorded();
-    const { options, timers, log } = reapSetup(dir, { markerPorts: ports });
-    const result = settledFlag(reapOrphans(options));
-    await drive(timers, () => result.settled(), 250, 10);
+    const { reap, until, log } = reapSetup(dir, { markerPorts: ports });
+    const result = reap();
+    await until(() => result.settled(), 2500);
     fs.chmodSync(dir, 0o700);
     expect(result.value()).toMatchObject({ aborted: false });
     expect(calls.findHolders).toBe(0);
@@ -288,8 +261,8 @@ describe('reapOrphans', () => {
     });
     const setup = reapSetup(dir, { markerPorts: ports, orphanGraceMs: 250 });
     controller = setup.controller;
-    const result = settledFlag(reapOrphans(setup.options));
-    await drive(setup.timers, () => result.settled(), 250, 20);
+    const result = setup.reap();
+    await setup.until(() => result.settled(), 5000);
     expect(calls.reap).toHaveLength(1);
     expect(result.value()).toEqual<OrphanReapResult>({ reaped: 1, kept: 0, aborted: true });
   });
@@ -302,21 +275,20 @@ describe('orphan reap at supervisor start', () => {
   });
 
   it('start reaps daemon markers before the first spawn', async (context) => {
-    let marker = '';
-    const holderReady: Array<Promise<Holder>> = [];
+    const holder = liveHolder();
     const h = await startHarness(context, {
-      prepare: (_home, paths) => {
-        marker = writeMarker(paths, 'runtime-0190a0a0-0000-7000-8000-000000000001');
-        holderReady.push(startHolder(context, marker));
+      prepare: (_home, paths) => void writeMarker(paths, 'runtime-0190a0a0-0000-7000-8000-000000000001'),
+      markerPorts: {
+        findHolders: holder.findHolders,
+        reapMarkerDirectory: async () => {
+          holder.exit();
+          return { reaped: 1, kept: 0 };
+        },
       },
-      markerPorts: { findHolders, reapMarkerDirectory },
       overrides: { orphanGraceMs: 500, orphanReapGraceMs: 200 },
     });
-    const holder = await holderReady[0];
-    await drive(h.timers, () => h.fake.spawnCount() === 2, 250);
-    expect(holder?.stdout()).toContain('TERM');
-    await expect(holder?.exited).resolves.toEqual({ code: 143, signal: null });
-    expect(fs.existsSync(marker)).toBe(false);
+    await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { realWork: h.realWork, maxMs: 100_000, description: 'both children spawned after the reap' });
+    expect(h.markers.calls.reapMarkerDirectory).toEqual([expect.objectContaining({ dir: h.paths.markers.daemons, killGraceMs: 200 })]);
     const messages = h.log.messages();
     expect(messages.indexOf('orphans.reaped')).toBeGreaterThanOrEqual(0);
     expect(messages.indexOf('orphans.reaped')).toBeLessThan(messages.indexOf('child.spawn'));
@@ -354,7 +326,7 @@ describe('orphan reap at supervisor start', () => {
       markerPorts: { findHolders: async () => (holding ? [999_999] : []) },
       overrides: { orphanGraceMs: 60_000 },
     });
-    await pumpUntil(h.timers, () => h.markers.calls.findHolders.length >= 3, { realWork: h.realWork, stepMs: 250, maxMs: 5000 });
+    await pumpUntil(h.timers, () => h.markers.calls.findHolders.length >= 3, { realWork: h.realWork, maxMs: 5000 });
     expect(h.health().phase).toBe('reaping-orphans');
     expect(h.fake.spawnCount()).toBe(0);
     holding = false;
@@ -370,10 +342,10 @@ describe('orphan reap at supervisor start', () => {
         expect(health.children.map((child) => child.state)).toEqual(['pending', 'pending']);
         return false;
       },
-      { realWork: h.realWork, stepMs: 250, maxMs: 5000 },
+      { realWork: h.realWork, maxMs: 5000 },
     );
     expect(observedTogether).toBe(true);
-    await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { realWork: h.realWork, stepMs: 50, maxMs: 5000 });
+    await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { realWork: h.realWork, maxMs: 5000 });
     const messages = h.log.messages();
     const reapedAt = messages.indexOf('orphans.reaped');
     expect(reapedAt).toBeGreaterThanOrEqual(0);
@@ -394,7 +366,7 @@ describe('orphan reap at supervisor start', () => {
       markerPorts: { findHolders: async () => [999_999], reapMarkerDirectory: async () => ({ reaped: 0, kept: 1 }) },
       overrides: { orphanGraceMs: 250, startTimeOf: async () => 0, lockWaitMs: 3_600_000 },
     });
-    await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { realWork: h.realWork, stepMs: 250, maxMs: 5000 });
+    await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { realWork: h.realWork, maxMs: 5000 });
     expect(h.log.withMsg('orphans.reaped')).toEqual([expect.objectContaining({ reaped: 0, kept: 1, level: 'warn' })]);
     h.fake.latest('runtime').exit(75);
     await h.waitForState('runtime', 'waiting-lock', 5000);
@@ -407,7 +379,7 @@ describe('orphan reap at supervisor start', () => {
       markerPorts: { findHolders: async () => [999_999] },
       overrides: { orphanGraceMs: 250 },
     });
-    await pumpUntil(h.timers, () => h.markers.calls.reapMarkerDirectory.length === 1, { realWork: h.realWork, stepMs: 250, maxMs: 5000 });
+    await pumpUntil(h.timers, () => h.markers.calls.reapMarkerDirectory.length === 1, { realWork: h.realWork, maxMs: 5000 });
     expect(h.markers.calls.reapMarkerDirectory[0]?.killGraceMs).toBe(ORPHAN_REAP_GRACE_MS);
     expect(h.markers.calls.reapMarkerDirectory[0]?.dir).toBe(h.paths.markers.daemons);
   });
@@ -419,8 +391,8 @@ describe('orphan reap at supervisor start', () => {
       overrides: { runtime: { drainTimeoutMs: 1000 } },
     });
     const bound = runtimeMaxCloseMs(1000) + 2000;
-    await pumpUntil(h.timers, () => h.clock.now() - Date.parse('2026-01-01T00:00:00.000Z') >= bound - 300, { realWork: h.realWork, stepMs: 250, maxMs: bound });
+    await pumpUntil(h.timers, () => h.clock.now() - Date.parse('2026-01-01T00:00:00.000Z') >= bound - 300, { realWork: h.realWork, maxMs: bound });
     expect(h.markers.calls.reapMarkerDirectory).toEqual([]);
-    await pumpUntil(h.timers, () => h.markers.calls.reapMarkerDirectory.length === 1, { realWork: h.realWork, stepMs: 250, maxMs: 1000 });
+    await pumpUntil(h.timers, () => h.markers.calls.reapMarkerDirectory.length === 1, { realWork: h.realWork, maxMs: 1000 });
   });
 });

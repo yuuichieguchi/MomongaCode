@@ -52,8 +52,8 @@ export const labelHealthResponse = (role: ChildRole, response: { status: number;
   return 'healthy';
 };
 
-export const probeExternalHealth: HealthProbe = async (role, socketPath) => {
-  const client = createUdsClient(socketPath, { headersTimeoutMs: PROBE_HEADERS_TIMEOUT_MS, bodyTimeoutMs: PROBE_HEADERS_TIMEOUT_MS });
+export const createExternalHealthProbe = (timeoutMs: number): HealthProbe => async (role, socketPath) => {
+  const client = createUdsClient(socketPath, { headersTimeoutMs: timeoutMs, bodyTimeoutMs: timeoutMs });
   try {
     const response = await client.request({ method: 'GET', path: HEALTH_PATHS[role] });
     const body = await response.text();
@@ -64,6 +64,8 @@ export const probeExternalHealth: HealthProbe = async (role, socketPath) => {
     await client.destroy();
   }
 };
+
+export const probeExternalHealth: HealthProbe = createExternalHealthProbe(PROBE_HEADERS_TIMEOUT_MS);
 
 export const holderPidOf = (inspection: ProcessLockInspection): number | undefined => (inspection.state === 'held' ? inspection.pid : undefined);
 

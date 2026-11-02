@@ -58,15 +58,13 @@ describe('trackSupervisorChildren', () => {
     expect(isProcessAlive(recorded.pid)).toBe(false);
   });
 
-  it('a supervisor socket that never answers fails the cleanup within a few seconds and still kills the recorded pids', { timeout: 15_000 }, async (context) => {
+  it('a supervisor socket that never answers fails the cleanup at the health timeout and still kills the recorded pids', async (context) => {
     const socketPath = await serveSupervisorSocket(context, () => undefined);
     const recorded = spawnTracked(context, '/bin/sleep', ['30'], { stdio: 'ignore' });
     const tracking = capturedCleanups();
-    const tracker = trackSupervisorChildren(tracking.context, socketPath);
+    const tracker = trackSupervisorChildren(tracking.context, socketPath, 50);
     tracker.record(healthNaming(recorded.pid));
-    const startedAt = Date.now();
     await expect(tracking.run()).rejects.toThrow();
-    expect(Date.now() - startedAt).toBeLessThan(10_000);
     expect(isProcessAlive(recorded.pid)).toBe(false);
   });
 

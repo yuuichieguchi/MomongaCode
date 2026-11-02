@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createFakeClock, createFakeTimers } from '@momonga/testkit';
-import { createRealWorkScope, drive } from './fixtures/p3-harness.ts';
+import { createRealWorkScope, pump, pumpUntil } from './fixtures/p3-harness.ts';
 
 const realIoRoundTrips = async (count: number): Promise<void> => {
   const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'drive-contract-'));
@@ -19,7 +19,7 @@ const realIoRoundTrips = async (count: number): Promise<void> => {
   }
 };
 
-describe('drive', () => {
+describe('pumpUntil', () => {
   it('meets a condition reached through real I/O alone without advancing fake time past an unrelated pending timer', async () => {
     const clock = createFakeClock(0);
     const timers = createFakeTimers(clock);
@@ -34,10 +34,9 @@ describe('drive', () => {
         ioDone = true;
       });
     });
-    await drive(timers, () => ioDone, {
+    await pumpUntil(timers, () => ioDone, {
       realWork,
-      stepMs: 50,
-      maxSteps: 10,
+      maxMs: 500,
       description: 'real I/O',
     });
     expect(ioDone).toBe(true);
@@ -52,10 +51,9 @@ describe('drive', () => {
     timers.setTimeout(() => {
       fired = true;
     }, 200);
-    await drive(timers, () => fired, {
+    await pumpUntil(timers, () => fired, {
       realWork: createRealWorkScope(),
-      stepMs: 50,
-      maxSteps: 4,
+      maxMs: 200,
       description: 'fake timer',
     });
     expect(clock.now()).toBe(200);
@@ -78,9 +76,8 @@ describe('drive', () => {
         ioDone = true;
       })();
     });
-    await drive(timers, () => ioDone, {
-      stepMs: 50,
-      maxSteps: 10,
+    await pumpUntil(timers, () => ioDone, {
+      maxMs: 500,
       description: 'real I/O gated by a pre-existing real timer',
       realWork,
     });
@@ -106,10 +103,9 @@ describe('drive', () => {
     const scoped = await startScoped();
     const testBodyTimer = setTimeout(() => undefined, 5000);
     try {
-      await drive(timers, scoped.fired, {
+      await pumpUntil(timers, scoped.fired, {
         realWork: scoped.realWork,
-        stepMs: 50,
-        maxSteps: 4,
+        maxMs: 200,
         description: 'fake timer with a test-body real timer pending',
       });
       expect(scoped.fired()).toBe(true);
@@ -117,5 +113,47 @@ describe('drive', () => {
     } finally {
       clearTimeout(testBodyTimer);
     }
+  });
+
+  it('advances directly to the next pending timer however far away it is', async () => {
+    const clock = createFakeClock(0);
+    const timers = createFakeTimers(clock);
+    const advances: number[] = [];
+    const originalAdvance = timers.advance;
+    timers.advance = (ms) => {
+      advances.push(ms);
+      originalAdvance(ms);
+    };
+    let fired = false;
+    timers.setTimeout(() => {
+      fired = true;
+    }, 86_400_000);
+    await pumpUntil(timers, () => fired, { realWork: createRealWorkScope(), maxMs: 86_400_000, description: 'a day-long timer' });
+    expect(advances).toEqual([86_400_000]);
+    expect(clock.now()).toBe(86_400_000);
+  });
+
+  it('fails when the next timer lies beyond the fake bound', async () => {
+    const clock = createFakeClock(0);
+    const timers = createFakeTimers(clock);
+    timers.setTimeout(() => undefined, 1000);
+    await expect(pumpUntil(timers, () => false, { realWork: createRealWorkScope(), maxMs: 999, description: 'never' })).rejects.toThrow(/never not met within 999 fake ms/);
+    expect(clock.now()).toBe(0);
+  });
+});
+
+describe('pump', () => {
+  it('fires every timer due inside the window in order and leaves the clock at the window end', async () => {
+    const clock = createFakeClock(0);
+    const timers = createFakeTimers(clock);
+    const fired: number[] = [];
+    timers.setTimeout(() => {
+      fired.push(clock.now());
+      timers.setTimeout(() => fired.push(clock.now()), 300);
+    }, 100);
+    timers.setTimeout(() => fired.push(clock.now()), 5000);
+    await pump(timers, createRealWorkScope(), 1000);
+    expect(fired).toEqual([100, 400]);
+    expect(clock.now()).toBe(1000);
   });
 });

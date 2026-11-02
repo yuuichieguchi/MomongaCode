@@ -10,9 +10,9 @@ import {
   TEST_VERSION,
   createFakeSpawn,
   createRealWorkScope,
-  drive,
   fakeLauncher,
   prepareHome,
+  pumpUntil,
   recordingMarkerPorts,
   turns,
   validSettings,
@@ -65,9 +65,9 @@ const startEntry = (context: CleanupContext, prepare: (paths: MomongaPaths) => v
     clock,
     timers,
   });
-  const fake = createFakeSpawn();
   const lockSleeps: number[] = [];
   const realWork = createRealWorkScope();
+  const fake = createFakeSpawn({ realWork });
   const code = realWork.run(() =>
     runSupervisorEntry(io, {
       launcher: fakeLauncher,
@@ -114,12 +114,7 @@ const startEntry = (context: CleanupContext, prepare: (paths: MomongaPaths) => v
 };
 
 const exitOf = async (run: SlowRun, maxMs: number): Promise<number> => {
-  await drive(run.timers, () => run.exited(), {
-    stepMs: 50,
-    maxSteps: Math.ceil(maxMs / 50),
-    description: 'entry exit',
-    realWork: run.realWork,
-  });
+  await pumpUntil(run.timers, () => run.exited(), { maxMs, description: 'entry exit', realWork: run.realWork });
   return run.code;
 };
 
