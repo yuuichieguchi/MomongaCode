@@ -19,6 +19,7 @@ import { fakePolicyFilesystem, createFakeClock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 import { createToolExecutor, createToolRegistry } from '@momonga/tools';
 import type { AbandonTarget, AnyTool, ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
+import { systemTimers } from '../../src/service/timers.ts';
 import { within } from './deferred.ts';
 import { createFakeGateway } from './fake-gateway.ts';
 import type { FakeGateway } from './fake-gateway.ts';
@@ -263,6 +264,9 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       clock,
       workerId,
       leaseMs: LEASE_MS,
+      random: () => 0.5,
+      platform: 'darwin',
+      timers: systemTimers,
       systemPrompt: testSystemPrompt,
       home,
       blobs: store.blobs,

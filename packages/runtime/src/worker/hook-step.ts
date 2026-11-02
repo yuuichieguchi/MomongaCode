@@ -99,10 +99,10 @@ export const runStartHooks = async (ctx: ClaimContext): Promise<Flow> => {
 };
 
 export const runStopHooks = async (ctx: ClaimContext): Promise<'continue' | 'allow'> => {
-  if (isSubagentRun(ctx) || stopAlreadyRanForLastResponse(ctx)) return 'allow';
+  if (isSubagentRun(ctx)) return 'allow';
   const session = sessionOf(ctx);
   const hooks = await ctx.options.settings.hooks(session);
-  if (selectHookCommands(hooks, 'Stop', undefined).length === 0) return 'allow';
+  if (selectHookCommands(hooks, 'Stop', undefined).length === 0 || stopAlreadyRanForLastResponse(ctx)) return 'allow';
   const continuations = ctx.journal.countWhere((recorded) => recorded.type === 'user.message' && recorded.text.startsWith(STOP_HOOK_FEEDBACK_PREFIX));
   if (continuations >= STOP_HOOK_MAX_CONTINUATIONS) {
     ctx.journal.append([

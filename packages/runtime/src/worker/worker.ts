@@ -111,9 +111,9 @@ export const createWorker = (options: WorkerOptions): Worker => {
         resolve();
         return;
       }
-      const timer = setTimeout(done, idlePollMs);
+      const timer = options.timers.setTimeout(done, idlePollMs);
       function done(): void {
-        clearTimeout(timer);
+        options.timers.clearTimeout(timer);
         interruptSleep = undefined;
         resolve();
       }
