@@ -3,6 +3,7 @@ import path from 'node:path';
 import { isProcessAlive } from './process-alive.ts';
 import type { SignalSender } from './process-alive.ts';
 import { hostSignalSender } from './platform/group-port.ts';
+import { ProbeFailedError, valueOrThrow } from './platform/inspector-types.ts';
 import type { ProcessInspector } from './platform/inspector-types.ts';
 import { defaultProcessInspector } from './platform/process-inspector.ts';
 
@@ -36,10 +37,28 @@ const graceSleep = async (timing: ReapTiming, ms: number, signal: AbortSignal | 
 };
 
 export const findHolders = async (marker: string, inspector: ProcessInspector = defaultProcessInspector()): Promise<number[]> =>
-  (await inspector.holdersOf(marker)).filter((pid) => pid !== process.pid);
+  valueOrThrow(`listing the holders of ${marker}`, await inspector.holdersOf(marker), []).filter((pid) => pid !== process.pid);
 
-const groupsByHolder = (holders: readonly number[], candidateGroups: readonly number[], inspector: ProcessInspector): Promise<Map<number, number>> =>
-  inspector.groupsOf(holders, candidateGroups);
+const groupsByHolder = async (holders: readonly number[], candidateGroups: readonly number[], inspector: ProcessInspector): Promise<Map<number, number>> =>
+  valueOrThrow(`reading the process groups of ${holders.join(',')}`, await inspector.groupsOf(holders, candidateGroups), new Map<number, number>());
+
+const holdersUntil = async (
+  marker: string,
+  inspector: ProcessInspector,
+  timing: ReapTiming,
+  deadline: number,
+  signal: AbortSignal | undefined,
+): Promise<number[]> => {
+  for (;;) {
+    try {
+      return await findHolders(marker, inspector);
+    } catch (error) {
+      const retryable = error instanceof ProbeFailedError && error.probeCause === 'transient' && timing.now() < deadline && !isAborted(signal);
+      if (!retryable) throw error;
+      await timing.sleep(REAP_POLL_INTERVAL_MS);
+    }
+  }
+};
 
 export const holderGroups = async (
   holders: readonly number[],
@@ -84,7 +103,7 @@ export const reconcileProcessGroup = async (
   }: { killGraceMs?: number; kill?: SignalSender; timing?: ReapTiming; signal?: AbortSignal; inspector?: ProcessInspector } = {},
 ): Promise<MarkerReconcileResult> => {
   const { pgid, marker } = recorded;
-  const holders = await findHolders(marker, inspector);
+  const holders = await holdersUntil(marker, inspector, timing, timing.now() + killGraceMs, signal);
   const groupAlive = isProcessAlive(-pgid, kill);
   if (!groupAlive && holders.length === 0) return unknownResult('The interrupted command is no longer running.');
   if (holders.length === 0) {
@@ -100,7 +119,7 @@ export const reconcileProcessGroup = async (
   const unsignalled = new Set(signalTargets(kill, termTargets, 'SIGTERM'));
   await graceSleep(timing, killGraceMs, signal);
 
-  const remaining = await findHolders(marker, inspector);
+  const remaining = await holdersUntil(marker, inspector, timing, timing.now() + killGraceMs, signal);
   const stillInGroup = groupVerified && isProcessAlive(-pgid, kill) && remaining.length > 0 && (await holderGroups(remaining, [pgid], inspector)).includes(pgid);
   const killTargets = [...(stillInGroup ? [-pgid] : []), ...remaining];
   for (const pid of signalTargets(kill, killTargets, 'SIGKILL')) unsignalled.add(pid);
@@ -132,8 +151,18 @@ export type ReapMarkedProcessesOptions = {
 
 const MARKER_CONTENT = /^\d+\n?$/;
 
+export const MARKER_READ_MAX_BYTES = 32;
+
 const readRecordedGroup = async (marker: string): Promise<number | undefined> => {
-  const content = await fs.promises.readFile(marker, 'utf8');
+  const handle = await fs.promises.open(marker, fs.constants.O_RDONLY | (process.platform === 'win32' ? 0 : fs.constants.O_NOFOLLOW));
+  let content: string;
+  try {
+    const buffer = Buffer.alloc(MARKER_READ_MAX_BYTES + 1);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    content = bytesRead > MARKER_READ_MAX_BYTES ? '' : buffer.toString('utf8', 0, bytesRead);
+  } finally {
+    await handle.close();
+  }
   return MARKER_CONTENT.test(content) ? Number(content.trim()) : undefined;
 };
 
@@ -156,13 +185,13 @@ const signalHoldersOnly = async (
   signal: AbortSignal | undefined,
   inspector: ProcessInspector,
 ): Promise<HolderPass> => {
-  const holders = (await findHolders(marker, inspector)).filter((pid) => pid > 1);
-  const unsignalled = new Set(signalTargets(kill, holders, 'SIGTERM'));
   const deadline = timing.now() + killGraceMs;
-  let remaining = await findHolders(marker, inspector);
+  const holders = (await holdersUntil(marker, inspector, timing, deadline, signal)).filter((pid) => pid > 1);
+  const unsignalled = new Set(signalTargets(kill, holders, 'SIGTERM'));
+  let remaining = await holdersUntil(marker, inspector, timing, deadline, signal);
   while (remaining.length > 0 && timing.now() < deadline && !isAborted(signal)) {
     await timing.sleep(REAP_POLL_INTERVAL_MS);
-    remaining = await findHolders(marker, inspector);
+    remaining = await holdersUntil(marker, inspector, timing, deadline, signal);
   }
   const dropped = holders.filter((pid) => !remaining.includes(pid) && isProcessAlive(pid, kill));
   for (const pid of signalTargets(kill, remaining.filter((pid) => pid > 1), 'SIGKILL')) unsignalled.add(pid);
@@ -212,10 +241,10 @@ export const reapMarkedProcesses = async ({
     }
   }
   const deadline = timing.now() + killGraceMs;
-  let remaining = await findHolders(marker, inspector);
+  let remaining = await holdersUntil(marker, inspector, timing, deadline, undefined);
   while (remaining.length > 0 && timing.now() < deadline) {
     await timing.sleep(REAP_POLL_INTERVAL_MS);
-    remaining = await findHolders(marker, inspector);
+    remaining = await holdersUntil(marker, inspector, timing, deadline, undefined);
   }
   if (remaining.length > 0) {
     onWarning(`${label} marker ${marker} kept: process ${joinPids(remaining)} still hold it after cleanup; the next start will retry`);
@@ -238,6 +267,19 @@ export type ReapMarkerDirectoryOptions = {
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
+export class MarkerReapError extends AggregateError {
+  readonly dir: string;
+
+  constructor(dir: string, label: string, failures: ReadonlyArray<{ marker: string; reason: unknown }>) {
+    super(
+      failures.map((failure) => failure.reason),
+      `${label} markers in ${dir} could not be reaped: ${failures.map((failure) => `${failure.marker}: ${messageOf(failure.reason)}`).join('; ')}`,
+    );
+    this.name = 'MarkerReapError';
+    this.dir = dir;
+  }
+}
+
 export const reapMarkerDirectory = async ({
   dir,
   killGraceMs,
@@ -253,19 +295,27 @@ export const reapMarkerDirectory = async ({
     names = await fs.promises.readdir(dir);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { reaped: 0, kept: 0 };
-    onWarning(`${label} marker directory ${dir} could not be read: ${messageOf(error)}`);
-    return { reaped: 0, kept: 0 };
+    throw error;
   }
   const markers = names.map((name) => path.join(dir, name));
-  const settled = await Promise.allSettled(
-    markers.map((marker) => reapMarkedProcesses({ marker, killGraceMs, label, onWarning, ...(kill === undefined ? {} : { kill }), ...(timing === undefined ? {} : { timing }), ...(signal === undefined ? {} : { signal }), ...(inspector === undefined ? {} : { inspector }) })),
+  const outcomes = await Promise.all(
+    markers.map(async (marker): Promise<{ marker: string; removed: boolean } | { marker: string; failure: unknown }> => {
+      try {
+        const { removed } = await reapMarkedProcesses({ marker, killGraceMs, label, onWarning, ...(kill === undefined ? {} : { kill }), ...(timing === undefined ? {} : { timing }), ...(signal === undefined ? {} : { signal }), ...(inspector === undefined ? {} : { inspector }) });
+        return { marker, removed };
+      } catch (failure) {
+        return { marker, failure };
+      }
+    }),
   );
   let reaped = 0;
   let kept = 0;
-  settled.forEach((outcome, index) => {
-    if (outcome.status === 'rejected') onWarning(`${label} marker ${markers[index]} could not be reaped: ${messageOf(outcome.reason)}`);
-    else if (outcome.value.removed) reaped += 1;
+  const failures: Array<{ marker: string; reason: unknown }> = [];
+  for (const outcome of outcomes) {
+    if ('failure' in outcome) failures.push({ marker: outcome.marker, reason: outcome.failure });
+    else if (outcome.removed) reaped += 1;
     else kept += 1;
-  });
+  }
+  if (failures.length > 0) throw new MarkerReapError(dir, label, failures);
   return { reaped, kept };
 };

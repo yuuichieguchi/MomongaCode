@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, findHolders, reapMarkedProcesses, reapMarkerDirectory, runtimeMaxCloseMs, uuidv7 } from '@momonga/foundation';
+import { RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, findHolders, isTransientFailure, reapMarkedProcesses, reapMarkerDirectory, runtimeMaxCloseMs, uuidv7 } from '@momonga/foundation';
 import type { JsonLogger, ReapTiming } from '@momonga/foundation';
 import { DAEMON_MARKER_KILL_GRACE_MS } from './constants.ts';
 import type { SupervisorTimers } from './constants.ts';
@@ -110,40 +110,48 @@ export const reapOrphans = async (options: OrphanReapOptions): Promise<OrphanRea
     return lists.reduce((total, list) => total + list.length, 0);
   };
 
-  let markers: string[] | undefined;
-  try {
-    markers = (await fs.promises.readdir(options.markersDir)).map((name) => path.join(options.markersDir, name));
-  } catch (error) {
-    warn(`daemon marker directory ${options.markersDir} could not be listed: ${failureOf(error).message}`);
-  }
-
-  if (signal.aborted) return { reaped: 0, kept: 0, aborted: true };
-
-  let holders = 0;
-  if (markers !== undefined) {
-    if (markers.length === 0) {
-      writeEvent(logger, orphansWaiting({ markers: 0, holders: 0 }));
-      return { reaped: 0, kept: 0, aborted: false };
-    }
-    const graceMs = Math.min(options.orphanGraceMs, runtimeMaxCloseMs(options.drainTimeoutMs ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS) + PHASE_ONE_MARGIN_MS);
-    const deadline = now() + graceMs;
+  const listMarkers = async (): Promise<string[]> => {
     try {
-      holders = await countHolders(markers);
-      writeEvent(logger, orphansWaiting({ markers: markers.length, holders }));
-      while (holders > 0) {
-        await sleepUnlessAborted(options, options.orphanPollMs);
-        if (signal.aborted) return { reaped: 0, kept: 0, aborted: true };
-        holders = await countHolders(markers);
-        if (signal.aborted) return { reaped: 0, kept: 0, aborted: true };
-        if (holders > 0 && now() >= deadline) break;
-      }
+      return (await fs.promises.readdir(options.markersDir)).map((name) => path.join(options.markersDir, name));
     } catch (error) {
-      warn(`daemon marker holders could not be listed: ${failureOf(error).message}`);
-      holders = 0;
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw error;
     }
-  }
+  };
+
+  const markers = await listMarkers();
 
   if (signal.aborted) return { reaped: 0, kept: 0, aborted: true };
+
+  if (markers.length === 0) {
+    writeEvent(logger, orphansWaiting({ markers: 0, holders: 0 }));
+    return { reaped: 0, kept: 0, aborted: false };
+  }
+  const graceMs = Math.min(options.orphanGraceMs, runtimeMaxCloseMs(options.drainTimeoutMs ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS) + PHASE_ONE_MARGIN_MS);
+  const deadline = now() + graceMs;
+
+  const observe = async (): Promise<number | undefined> => {
+    try {
+      return await countHolders(markers);
+    } catch (error) {
+      if (isTransientFailure(error) && now() < deadline) {
+        warn(`daemon marker holders could not be listed yet: ${failureOf(error).message}`);
+        return undefined;
+      }
+      throw error;
+    }
+  };
+
+  let holders = await observe();
+  if (holders !== undefined) writeEvent(logger, orphansWaiting({ markers: markers.length, holders }));
+  while (holders === undefined || holders > 0) {
+    await sleepUnlessAborted(options, options.orphanPollMs);
+    if (signal.aborted) return { reaped: 0, kept: 0, aborted: true };
+    holders = await observe();
+    if (signal.aborted) return { reaped: 0, kept: 0, aborted: true };
+    if (holders !== undefined && holders > 0 && now() >= deadline) break;
+  }
+
   writeEvent(logger, orphansReaping({ holders }));
   const result = await reapDirectory({
     dir: options.markersDir,

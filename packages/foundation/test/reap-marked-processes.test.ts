@@ -6,7 +6,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { killGroupsForCleanup, killPidsForCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, TrackedChild } from '@momonga/testkit';
-import { reapMarkedProcesses, reapMarkerDirectory, reconcileProcessGroup } from '@momonga/foundation';
+import { MarkerReapError, reapMarkedProcesses, reapMarkerDirectory, reconcileProcessGroup } from '@momonga/foundation';
 import type { ReapTiming } from '@momonga/foundation';
 
 const spawnedGroups: number[] = [];
@@ -524,7 +524,7 @@ describe('reapMarkerDirectory', () => {
     expect(await waitUntil(() => !alive(other))).toBe(true);
   });
 
-  it('turns a failing target into a warning and still reaps the others', { timeout: 30_000 }, async () => {
+  it('reaps the other markers when one target fails, then reports the failure instead of counting it', { timeout: 30_000 }, async () => {
     const dir = makeDir();
     const markerDir = path.join(dir, 'markers');
     fs.mkdirSync(markerDir);
@@ -538,24 +538,23 @@ describe('reapMarkerDirectory', () => {
       if (pid === broken && signal !== 0) throw errnoError('EINVAL', pid);
       return false;
     });
-    const warnings: string[] = [];
-    const result = await reapMarkerDirectory({ dir: markerDir, killGraceMs: 200, label: 'tool', onWarning: (m) => warnings.push(m), kill, timing: fake.timing });
-    expect(result.reaped).toBe(2);
+    const outcome = await reapMarkerDirectory({ dir: markerDir, killGraceMs: 200, label: 'tool', onWarning: () => undefined, kill, timing: fake.timing }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(outcome).toBeInstanceOf(MarkerReapError);
+    expect((outcome as MarkerReapError).message).toContain(`${failing}: kill EINVAL ${broken}`);
+    expect((outcome as MarkerReapError).errors).toHaveLength(1);
     expect(fs.existsSync(first)).toBe(false);
     expect(fs.existsSync(second)).toBe(false);
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain(`kill EINVAL ${broken}`);
+    expect(fs.existsSync(failing)).toBe(true);
     for (const holder of holders) expect(await waitUntil(() => !alive(holder))).toBe(true);
   });
 
-  it('turns a readdir error other than ENOENT into a warning', { timeout: 30_000 }, async () => {
+  it('propagates a readdir error other than ENOENT', { timeout: 30_000 }, async () => {
     const dir = makeDir();
     const notADirectory = makeMarker(dir, 'file');
-    const warnings: string[] = [];
-    const result = await reapMarkerDirectory({ dir: notADirectory, killGraceMs: 200, label: 'tool', onWarning: (m) => warnings.push(m), timing: fakeTiming().timing });
-    expect(result).toEqual({ reaped: 0, kept: 0 });
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain('ENOTDIR');
+    await expect(reapMarkerDirectory({ dir: notADirectory, killGraceMs: 200, label: 'tool', onWarning: () => undefined, timing: fakeTiming().timing })).rejects.toMatchObject({ code: 'ENOTDIR' });
   });
 });
 

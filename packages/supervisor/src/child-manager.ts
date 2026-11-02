@@ -1,15 +1,16 @@
 import type { Duplex, Readable } from 'node:stream';
 import type { ResolvedSettings, UserSettingsCache, UserSettingsSnapshot } from '@momonga/config';
 import {
-  GATEWAY_MAX_CLOSE_MS,
   RUNTIME_ABORT_BUDGET_MS,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
   RUNTIME_TEARDOWN_BUDGET_MS,
   SHUTDOWN_MARGIN_MS,
+  claimLockForChild,
+  gatewayStopBudgetMs,
   parseReadyLine,
-  runtimeMaxCloseMs,
+  runtimeStopBudgetMs,
 } from '@momonga/foundation';
-import type { Clock, JsonLogger, LockTiming, MomongaPaths, ProcessStartProbe, ReadyFields } from '@momonga/foundation';
+import type { Clock, JsonLogger, KernelLockMechanism, LockHandoff, LockHandoffClaim, MomongaPaths, ReadyFields } from '@momonga/foundation';
 import type { SupervisorChildHealth, SupervisorChildState, SupervisorExitReason } from '@momonga/protocol';
 import { captureStream, createOutputLimiter } from './capture.ts';
 import { definedEnv, gatewayEnv, runtimeEnv, COLLIDING_CREDENTIAL_DETAIL } from './child-env.ts';
@@ -50,7 +51,7 @@ export type SpawnPortOptions = {
   cwd: string;
   env: Readonly<Record<string, string>>;
   detached: true;
-  stdio: readonly ['ignore', 'pipe', 'pipe', 'pipe', number];
+  stdio: readonly ['ignore', 'pipe', 'pipe', 'pipe', number] | readonly ['ignore', 'pipe', 'pipe', 'pipe', number, number];
 };
 
 export type ChildHandle = {
@@ -94,11 +95,11 @@ export type ChildManagerOptions = {
   startupTimeoutMs: number;
   heldRetryMs: number;
   lockWaitMs: number;
-  startTimeOf?: ProcessStartProbe;
-  lockTiming?: LockTiming;
+  lockMechanism?: KernelLockMechanism;
   markerPorts?: MarkerPorts;
   isDraining(): boolean;
   onBackgroundError(error: unknown, source: string): void;
+  onTransientError(error: unknown, source: string): void;
 };
 
 export type ChildManager = {
@@ -121,9 +122,9 @@ export type ChildManager = {
 
 export const stopBudgetMs = (role: ChildRole, mode: StopMode, drainTimeoutMs: number): number => {
   if (role === 'runtime') {
-    return mode === 'term' ? runtimeMaxCloseMs(drainTimeoutMs) + SHUTDOWN_MARGIN_MS : RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS + SHUTDOWN_MARGIN_MS;
+    return mode === 'term' ? runtimeStopBudgetMs(drainTimeoutMs) : RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS + SHUTDOWN_MARGIN_MS;
   }
-  return mode === 'term' ? GATEWAY_MAX_CLOSE_MS + SHUTDOWN_MARGIN_MS : GATEWAY_ABORT_BUDGET_MS;
+  return mode === 'term' ? gatewayStopBudgetMs() : GATEWAY_ABORT_BUDGET_MS;
 };
 
 type LifeTimerName = 'startup' | 'stable' | 'budget' | 'confirm';
@@ -137,6 +138,7 @@ type Life = {
   lastStderrLine: string | undefined;
   stopReason: StopReason | undefined;
   stopMode: StopMode | undefined;
+  budgetEndsAt: number | undefined;
   stopPromise: Promise<ChildStopResult> | undefined;
   resolveStop: ((result: ChildStopResult) => void) | undefined;
   groupKilled: boolean;
@@ -279,10 +281,10 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       lockPath: options.paths.locks[role],
       socketPath: options.paths.sockets[role],
       lockWaitMs: options.lockWaitMs,
-      lockPollMs: options.intervals.lockPollMs,
+      lockWatchIntervalMs: options.intervals.lockWatchIntervalMs,
       externalPollMs: options.intervals.externalPollMs,
       timers,
-      ...omitUndefined({ startTimeOf: options.startTimeOf, timing: options.lockTiming }),
+      ...omitUndefined({ mechanism: options.lockMechanism }),
       onFree: () => {
         if (isStale()) return;
         spawnFresh('lock-free');
@@ -297,6 +299,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
         if (isStale() || external === undefined) return;
         external = { ...external, probe };
       },
+      onTransient: options.onTransientError,
       onBackgroundError: options.onBackgroundError,
     });
   };
@@ -359,7 +362,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     recordFailureWithoutProcess(reason, stopReason);
   };
 
-  const spawnProcess = (snapshot: Extract<UserSettingsSnapshot, { settings: unknown }>): { marker: DaemonMarker; handle: ChildHandle } => {
+  const spawnProcess = (snapshot: Extract<UserSettingsSnapshot, { settings: unknown }>, handoff: LockHandoff | undefined): { marker: DaemonMarker; handle: ChildHandle } => {
     const skippedNames: string[] = [];
     const resolved = resolveLaunch({
       role,
@@ -376,7 +379,12 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     if (role === 'gateway') reportSkippedNames(skippedNames);
     const marker = openDaemonMarker(options.paths.markers.daemons, role);
     try {
-      const handle = options.spawn(resolved.command, resolved.args, { cwd: options.home, env: resolved.env, detached: true, stdio: childStdio(marker.fd) });
+      const handle = options.spawn(resolved.command, resolved.args, {
+        cwd: options.home,
+        env: handoff === undefined ? resolved.env : { ...resolved.env, ...handoff.env },
+        detached: true,
+        stdio: childStdio(marker.fd, handoff?.descriptor),
+      });
       return { marker, handle };
     } catch (error) {
       marker.closeFd();
@@ -531,17 +539,32 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       hold(snapshot.error.message, 'settings');
       return;
     }
+    let claim: LockHandoffClaim;
+    try {
+      claim = claimLockForChild(options.paths.locks[role], omitUndefined({ mechanism: options.lockMechanism }));
+    } catch (error) {
+      launches += 1;
+      failWithoutProcess('spawn-failed', error);
+      return;
+    }
+    if (claim.kind === 'held') {
+      enterWaitingLock();
+      return;
+    }
+    const handoff = claim.kind === 'claimed' ? claim.handoff : undefined;
     launches += 1;
     appliedSettings = snapshot.settings;
     heldReason = undefined;
     readyAt = undefined;
     let started: { marker: DaemonMarker; handle: ChildHandle };
     try {
-      started = spawnProcess(snapshot);
+      started = spawnProcess(snapshot, handoff);
     } catch (error) {
+      handoff?.closeParentCopy();
       failWithoutProcess('spawn-failed', error);
       return;
     }
+    handoff?.closeParentCopy();
     const { marker, handle } = started;
     marker.closeFd();
     const life: Life = {
@@ -553,6 +576,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       lastStderrLine: undefined,
       stopReason: undefined,
       stopMode: undefined,
+      budgetEndsAt: undefined,
       stopPromise: undefined,
       resolveStop: undefined,
       groupKilled: false,
@@ -600,6 +624,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
 
   const armBudget = (life: Life, ms: number): void => {
     clearLifeTimer(life, 'budget');
+    life.budgetEndsAt = clock.now() + ms;
     life.timers.budget = schedule('stop-budget-timer', ms, () => {
       life.timers.budget = undefined;
       if (life.exited) return;
@@ -640,7 +665,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       if (mode === 'int' && life.stopMode === 'term' && life.pid !== undefined) {
         life.stopMode = 'int';
         life.handle.kill('SIGINT');
-        if (!life.groupKilled) armBudget(life, budgetFor(life.stopReason, 'int'));
+        if (!life.groupKilled && life.budgetEndsAt !== undefined) armBudget(life, Math.min(budgetFor(life.stopReason, 'int'), Math.max(0, life.budgetEndsAt - clock.now())));
       }
       return life.stopPromise as Promise<ChildStopResult>;
     }

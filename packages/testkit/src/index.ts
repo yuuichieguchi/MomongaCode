@@ -24,6 +24,9 @@ export type {
 } from './fake-chat-completions.ts';
 export { generateInstance, collectAllowedNames, findUsedKeywords } from './schema-instance.ts';
 export type { JsonSchema, InstancePreferences } from './schema-instance.ts';
+export { startLockHolder } from './lock-holder.ts';
+export { createFakeKernelLock } from './fake-kernel-lock.ts';
+export type { FakeKernelLock, FakeKernelLockOptions } from './fake-kernel-lock.ts';
 export { createFakeClock } from './fake-clock.ts';
 export type { FakeClock } from './fake-clock.ts';
 export {

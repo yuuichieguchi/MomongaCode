@@ -18,7 +18,7 @@ const auxvOf = (pairs: Array<[bigint, bigint]>): Uint8Array => {
 
 const errno = (code: string): NodeJS.ErrnoException => Object.assign(new Error(code), { code });
 
-type FakeEntry = { text?: string; bytes?: Uint8Array; children?: string[]; identity?: FileIdentity; failure?: string };
+type FakeEntry = { text?: string; bytes?: Uint8Array; children?: string[]; identity?: FileIdentity; failure?: string; owner?: number };
 
 const fakeProcfs = (entries: Record<string, FakeEntry>): ProcFs => {
   const lookup = (file: string): FakeEntry => {
@@ -32,10 +32,12 @@ const fakeProcfs = (entries: Record<string, FakeEntry>): ProcFs => {
     readBytes: async (file) => lookup(file).bytes ?? new Uint8Array(),
     list: async (directory) => lookup(directory).children ?? [],
     identityOf: async (file) => lookup(file).identity ?? { dev: 0n, ino: 0n },
+    ownerOf: async (file) => lookup(file).owner ?? 0,
   };
 };
 
 const LAYOUT = auxvLayoutOf('x64', 'LE');
+const UID = 1000;
 const BASE_ENTRIES: Record<string, FakeEntry> = {
   '/proc/stat': { text: 'cpu  1 2 3 4\nbtime 1700000000\nprocesses 5\n' },
   '/proc/self/auxv': { bytes: auxvOf([[33n, 140737488355328n], [17n, 100n], [0n, 0n]]) },
@@ -85,27 +87,53 @@ describe('proc parsers (formats from proc_pid_stat(5), proc_stat(5), getauxval(3
 
 describe('linux inspector through an injected procfs', () => {
   it('computes the start time as boot time plus starttime ticks', async () => {
-    const inspector = createLinuxInspector({ procfs: fakeProcfs({ ...BASE_ENTRIES, '/proc/4242/stat': { text: STAT_SLEEP } }), layout: LAYOUT });
-    expect(await inspector.startTimeOf(4242)).toBe(1700000000000 + 9876540);
+    const inspector = createLinuxInspector({ procfs: fakeProcfs({ ...BASE_ENTRIES, '/proc/4242/stat': { text: STAT_SLEEP } }), layout: LAYOUT, uid: UID });
+    expect(await inspector.startTimeOf(4242)).toEqual({ kind: 'value', value: 1700000000000 + 9876540 });
   });
 
-  it('reports a missing process as undefined and propagates other read failures', async () => {
-    const inspector = createLinuxInspector({ procfs: fakeProcfs({ ...BASE_ENTRIES, '/proc/9/stat': { failure: 'EIO' } }), layout: LAYOUT });
-    expect(await inspector.startTimeOf(8)).toBeUndefined();
-    await expect(inspector.startTimeOf(9)).rejects.toThrow('EIO');
+  it('reports a missing process as gone and a failed read as a failure classified by errno', async () => {
+    const inspector = createLinuxInspector({
+      procfs: fakeProcfs({ ...BASE_ENTRIES, '/proc/9/stat': { failure: 'EIO' }, '/proc/10/stat': { failure: 'EACCES' } }),
+      layout: LAYOUT,
+      uid: UID,
+    });
+    expect(await inspector.startTimeOf(8)).toEqual({ kind: 'gone' });
+    expect(await inspector.startTimeOf(9)).toMatchObject({ kind: 'failed', cause: 'transient', evidence: { kind: 'errno', code: 'EIO' } });
+    expect(await inspector.startTimeOf(10)).toMatchObject({ kind: 'failed', cause: 'deterministic', evidence: { kind: 'errno', code: 'EACCES' } });
   });
 
-  it('reads boot parameters once', async () => {
+  it('reports a stat line it cannot parse as a deterministic failure', async () => {
+    const inspector = createLinuxInspector({ procfs: fakeProcfs({ ...BASE_ENTRIES, '/proc/7/stat': { text: '7 broken' } }), layout: LAYOUT, uid: UID });
+    expect(await inspector.startTimeOf(7)).toMatchObject({ kind: 'failed', cause: 'deterministic', evidence: { kind: 'unparseable' } });
+  });
+
+  it('reads boot parameters once after they were read successfully', async () => {
     let reads = 0;
     const procfs = fakeProcfs({ ...BASE_ENTRIES, '/proc/4242/stat': { text: STAT_SLEEP } });
     const counting: ProcFs = { ...procfs, readText: (file) => ((reads += file === '/proc/stat' ? 1 : 0), procfs.readText(file)) };
-    const inspector = createLinuxInspector({ procfs: counting, layout: LAYOUT });
+    const inspector = createLinuxInspector({ procfs: counting, layout: LAYOUT, uid: UID });
     await inspector.startTimeOf(4242);
     await inspector.startTimeOf(4242);
     expect(reads).toBe(1);
   });
 
-  it('lists the pids whose descriptors resolve to the marker file identity', async () => {
+  it('does not cache a failed read of the boot parameters', async () => {
+    let failing = true;
+    const procfs = fakeProcfs({ ...BASE_ENTRIES, '/proc/4242/stat': { text: STAT_SLEEP } });
+    const flaky: ProcFs = {
+      ...procfs,
+      readText: (file) => {
+        if (file === '/proc/stat' && failing) return Promise.reject(errno('EMFILE'));
+        return procfs.readText(file);
+      },
+    };
+    const inspector = createLinuxInspector({ procfs: flaky, layout: LAYOUT, uid: UID });
+    expect(await inspector.startTimeOf(4242)).toMatchObject({ kind: 'failed', cause: 'transient' });
+    failing = false;
+    expect(await inspector.startTimeOf(4242)).toEqual({ kind: 'value', value: 1700000000000 + 9876540 });
+  });
+
+  it('lists the pids whose descriptors resolve to the marker file identity, skipping processes of other users whose descriptors are denied', async () => {
     const marker = { dev: 64769n, ino: 5000n };
     const procfs = fakeProcfs({
       '/marker': { identity: marker },
@@ -116,32 +144,50 @@ describe('linux inspector through an injected procfs', () => {
       '/proc/11/fd': { children: ['0'] },
       '/proc/11/fd/0': { identity: { dev: 64769n, ino: 5001n } },
       '/proc/12/fd': { failure: 'EACCES' },
+      '/proc/12': { owner: 0 },
       '/proc/13/fd': { children: ['4', '5'] },
       '/proc/13/fd/4': { failure: 'ENOENT' },
       '/proc/13/fd/5': { identity: marker },
     });
-    const inspector = createLinuxInspector({ procfs, layout: LAYOUT });
-    expect(await inspector.holdersOf('/marker')).toEqual([10, 13]);
+    const inspector = createLinuxInspector({ procfs, layout: LAYOUT, uid: UID });
+    expect(await inspector.holdersOf('/marker')).toEqual({ kind: 'value', value: [10, 13] });
   });
 
-  it('treats a missing marker as having no holders and propagates unexpected failures', async () => {
-    const inspector = createLinuxInspector({ procfs: fakeProcfs({ '/proc': { children: [] }, '/broken': { failure: 'EIO' } }), layout: LAYOUT });
-    expect(await inspector.holdersOf('/missing')).toEqual([]);
-    await expect(inspector.holdersOf('/broken')).rejects.toThrow('EIO');
+  it('does not call a same-user process with unreadable descriptors "not a holder": the answer is unknown', async () => {
+    const procfs = fakeProcfs({
+      '/marker': { identity: { dev: 1n, ino: 1n } },
+      '/proc': { children: ['12'] },
+      '/proc/12/fd': { failure: 'EACCES' },
+      '/proc/12': { owner: UID },
+    });
+    const result = await createLinuxInspector({ procfs, layout: LAYOUT, uid: UID }).holdersOf('/marker');
+    expect(result).toMatchObject({ kind: 'failed', cause: 'deterministic', evidence: { kind: 'opaque' } });
+    expect(result.kind === 'failed' ? result.evidence.detail : '').toContain('process 12 belongs to the current user');
   });
 
-  it('does not hide an unexpected failure while reading a descriptor directory', async () => {
+  it('treats a missing marker as gone and classifies other failures', async () => {
+    const inspector = createLinuxInspector({ procfs: fakeProcfs({ '/proc': { children: [] }, '/broken': { failure: 'EIO' } }), layout: LAYOUT, uid: UID });
+    expect(await inspector.holdersOf('/missing')).toEqual({ kind: 'gone' });
+    expect(await inspector.holdersOf('/broken')).toMatchObject({ kind: 'failed', cause: 'transient', evidence: { code: 'EIO' } });
+  });
+
+  it('does not hide a failure while reading a descriptor directory', async () => {
     const procfs = fakeProcfs({ '/marker': { identity: { dev: 1n, ino: 1n } }, '/proc': { children: ['10'] }, '/proc/10/fd': { failure: 'EIO' } });
-    await expect(createLinuxInspector({ procfs, layout: LAYOUT }).holdersOf('/marker')).rejects.toThrow('EIO');
+    expect(await createLinuxInspector({ procfs, layout: LAYOUT, uid: UID }).holdersOf('/marker')).toMatchObject({ kind: 'failed', cause: 'transient' });
   });
 
   it('maps pids to their process group and omits pids that are gone', async () => {
-    const inspector = createLinuxInspector({ procfs: fakeProcfs({ ...BASE_ENTRIES, '/proc/4242/stat': { text: STAT_SLEEP }, '/proc/77/stat': { text: STAT_AWKWARD_COMM } }), layout: LAYOUT });
-    expect(await inspector.groupsOf([4242, 77, 5], [])).toEqual(
-      new Map([
+    const inspector = createLinuxInspector({
+      procfs: fakeProcfs({ ...BASE_ENTRIES, '/proc/4242/stat': { text: STAT_SLEEP }, '/proc/77/stat': { text: STAT_AWKWARD_COMM } }),
+      layout: LAYOUT,
+      uid: UID,
+    });
+    expect(await inspector.groupsOf([4242, 77, 5], [])).toEqual({
+      kind: 'value',
+      value: new Map([
         [4242, 4242],
         [77, 77],
       ]),
-    );
+    });
   });
 });

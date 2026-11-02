@@ -6,7 +6,8 @@ import type { FlagSpec, ParsedFlags } from './entry-flags.ts';
 import { watchLifeline } from './lifeline.ts';
 import { ENTRY_HARD_EXIT_MARGIN_MS, EXIT_ALREADY_RUNNING, EXIT_CONFIG, EXIT_FAILURE, EXIT_OK, STDIO_EXIT_FLUSH_MS, createJsonLogger } from './process-contract.ts';
 import type { JsonLogger, TextStream } from './process-contract.ts';
-import { ProcessLockHeldError } from './process-lock.ts';
+import { ProcessLockHeldError, UnadoptedEnv, acquireProcessLock } from './process-lock.ts';
+import type { DescribeHolder, ProcessLock } from './process-lock.ts';
 import { LOG_KEEP, LOG_MAX_BYTES, createRotatingLogFile } from './rotating-log.ts';
 import type { RotatingLogFile } from './rotating-log.ts';
 
@@ -47,6 +48,7 @@ export type DaemonStartContext<F extends FlagSpec> = {
   stdout: TextStream;
   droppedLogLines(): number;
   requestShutdown(): void;
+  acquireLock(lockPath: string, describeHolder?: DescribeHolder): Promise<ProcessLock>;
 };
 
 export type DaemonDefinition<F extends FlagSpec> = {
@@ -319,7 +321,20 @@ export const runDaemonEntry = async <F extends FlagSpec>(io: EntryIo, definition
 
   let started: DaemonHandle;
   try {
-    started = await definition.start({ flags, home, env: io.env, signal: controller.signal, logger, stdout: io.stdout, droppedLogLines: sink.droppedLogLines, requestShutdown });
+    const unadopted = new UnadoptedEnv(io.env);
+    const acquireLock = async (lockPath: string, describeHolder?: DescribeHolder): Promise<ProcessLock> =>
+      unadopted.handedOff ? unadopted.adopt(lockPath) : acquireProcessLock(lockPath, describeHolder);
+    started = await definition.start({
+      flags,
+      home,
+      env: unadopted.withoutLockVariables(),
+      signal: controller.signal,
+      logger,
+      stdout: io.stdout,
+      droppedLogLines: sink.droppedLogLines,
+      requestShutdown,
+      acquireLock,
+    });
   } catch (error) {
     if (shutdownTrigger !== undefined) {
       logger.warn('entry.startup_cancelled', { err: toError(error) });

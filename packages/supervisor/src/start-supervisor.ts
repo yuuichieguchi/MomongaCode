@@ -2,9 +2,7 @@ import path from 'node:path';
 import type fs from 'node:fs';
 import { createUserSettingsCache, userSettingsChangeKey } from '@momonga/config';
 import {
-  GATEWAY_MAX_CLOSE_MS,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
-  SHUTDOWN_MARGIN_MS,
   acquireProcessLock,
   announceReady,
   canonicalPath,
@@ -14,18 +12,18 @@ import {
   runtimeMaxCloseMs,
   systemClock,
 } from '@momonga/foundation';
-import type { Clock, JsonLogger, LockTiming, ProcessStartProbe, ReadyFields, ReapTiming, TextStream } from '@momonga/foundation';
+import type { Clock, JsonLogger, KernelLockMechanism, ProcessLock, ReadyFields, ReapTiming, TextStream } from '@momonga/foundation';
 import type { SupervisorHealth, SupervisorPhase } from '@momonga/protocol';
 import { SUPERVISOR_API_VERSION } from '@momonga/protocol';
 import { createChildManager } from './child-manager.ts';
 import type { ChildManager, SpawnPort } from './child-manager.ts';
-import { HELD_RETRY_MS, ORPHAN_REAP_GRACE_MS, STARTUP_TIMEOUT_MS, SUPERVISOR_SERVICE, resolveIntervals } from './constants.ts';
+import { HELD_RETRY_MS, LOCK_WAIT_DEADLINE_MS, ORPHAN_REAP_GRACE_MS, STARTUP_TIMEOUT_MS, SUPERVISOR_SERVICE, resolveIntervals } from './constants.ts';
 import type { SupervisorIntervals, SupervisorTimers } from './constants.ts';
 import { startControlServer } from './control-server.ts';
 import type { ControlServer } from './control-server.ts';
 import { runLaunchTask } from './launch.ts';
 import type { ChildRole, GatewayTuning, Launcher, RuntimeTuning } from './launcher.ts';
-import { phaseChange, planBegin, planEnd, settingsChanged, settingsEvaluated, settingsInvalid, settingsReadFailed, settingsWarning, supervisorBackgroundFailed, writeEvent } from './log-events.ts';
+import { phaseChange, planBegin, planEnd, settingsChanged, settingsEvaluated, settingsInvalid, settingsReadFailed, settingsWarning, supervisorBackgroundFailed, supervisorBackgroundTransient, writeEvent } from './log-events.ts';
 import { omitUndefined } from './omit-undefined.ts';
 import type { MarkerPorts } from './orphans.ts';
 import { digestsOf, planRoles, runRestartPlan } from './plan.ts';
@@ -57,9 +55,9 @@ export type SupervisorOptions = {
   random?: () => number;
   logger?: JsonLogger;
   droppedLogLines?: () => number;
-  startTimeOf?: ProcessStartProbe;
   reapTiming?: ReapTiming;
-  lockTiming?: LockTiming;
+  lockMechanism?: KernelLockMechanism;
+  acquireLock?: (lockPath: string) => Promise<ProcessLock>;
   markerPorts?: MarkerPorts;
   stdout?: TextStream;
   spawn: SpawnPort;
@@ -98,10 +96,10 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
   const canonicalHome = canonicalPath(options.home);
   const paths = momongaPaths(canonicalHome, process.platform, {});
   const env = { ...(options.env ?? process.env) };
-  const lockOptions = omitUndefined({ startTimeOf: options.startTimeOf, timing: options.lockTiming });
+  const lockOptions = omitUndefined({ mechanism: options.lockMechanism });
 
   await ensureMomongaDirs(paths);
-  const lock = await acquireProcessLock(paths.locks.supervisor, undefined, lockOptions);
+  const lock = await (options.acquireLock ?? ((lockPath) => acquireProcessLock(lockPath, undefined, lockOptions)))(paths.locks.supervisor);
 
   let server: ControlServer | undefined;
   try {
@@ -124,6 +122,15 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
     });
 
     const log = writeEvent.bind(undefined, logger);
+
+    const reportedTransient = new Map<string, string>();
+
+    const reportTransient = (error: unknown, source: string): void => {
+      const failure = failureOf(error);
+      if (reportedTransient.get(source) === failure.message) return;
+      reportedTransient.set(source, failure.message);
+      log(supervisorBackgroundTransient({ source }, failure));
+    };
 
     const reportBackground = (error: unknown, source: string): void => {
       const failure = failureOf(error);
@@ -166,10 +173,11 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         intervals,
         startupTimeoutMs,
         heldRetryMs: options.heldRetryMs ?? HELD_RETRY_MS,
-        lockWaitMs: options.lockWaitMs ?? (role === 'runtime' ? runtimeMaxCloseMs(drainTimeoutMs) : GATEWAY_MAX_CLOSE_MS) + SHUTDOWN_MARGIN_MS,
+        lockWaitMs: options.lockWaitMs ?? LOCK_WAIT_DEADLINE_MS,
         isDraining: () => draining,
         onBackgroundError: reportBackground,
-        ...omitUndefined({ runtime: options.runtime, gateway: options.gateway, startTimeOf: options.startTimeOf, lockTiming: options.lockTiming, markerPorts: options.markerPorts }),
+        onTransientError: reportTransient,
+        ...omitUndefined({ runtime: options.runtime, gateway: options.gateway, lockMechanism: options.lockMechanism, markerPorts: options.markerPorts }),
       });
 
     const gateway = createManager('gateway');

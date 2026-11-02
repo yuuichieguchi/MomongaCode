@@ -21,30 +21,30 @@ export { uuidv7 } from './uuidv7.ts';
 export { forceKillGroup, groupAlive, signalGroup, terminateGroup, waitForGroupGone } from './process-group.ts';
 export type { ForceKillGroupOptions, TerminateGroupOptions, TerminateOutcome } from './process-group.ts';
 export {
-  GARBLED_LOCK_GRACE_MS,
-  GHOST_CONFIRM_MS,
-  LOCK_START_TOLERANCE_MS,
+  HOLDER_READ_MAX_BYTES,
+  LOCK_FD_ENV,
+  LOCK_NONCE_ENV,
+  LockAdoptionError,
   ProcessLockHeldError,
+  UnadoptedEnv,
   acquireProcessLock,
-  createLockVerdictMemo,
-  defaultProcessStartProbe,
-  createProcessStartProbe,
-  PS_PROBE_TIMEOUT_MS,
+  claimLockForChild,
   inspectProcessLock,
-  LOCK_RETRY_MS,
 } from './process-lock.ts';
 export type {
   AcquireProcessLockOptions,
   DescribeHolder,
   InspectProcessLockOptions,
-  LockTiming,
-  LockVerdictMemo,
+  LockHandoff,
+  LockHandoffClaim,
   ProcessLock,
   ProcessLockInspection,
-  ProcessStartProbe,
-  ProbeExecFile,
-  ProcessStartProbeDependencies,
+  ProcessLockOptions,
 } from './process-lock.ts';
+export { ABSTRACT_SOCKET_PREFIX, PIPE_LOCK_PREFIX, claimNetAddress, createKernelLockMechanism, darwinFileLock, hostKernelLock, netLockAddress, probeNetAddress } from './platform/kernel-lock.ts';
+export type { ClaimOutcome, HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
+export { judgeProcessIdentity } from './process-identity.ts';
+export type { ProcessIdentity } from './process-identity.ts';
 export { SessionTmpDirError, adapterSocketPath, ensureMomongaDirs, ensureSessionTmpDir, momongaLayout, momongaPaths, rotatedLogPath } from './momonga-paths.ts';
 export type { MomongaPaths } from './momonga-paths.ts';
 export { createExecWithStdin } from './exec-with-stdin.ts';
@@ -75,6 +75,7 @@ export {
   EXIT_OK,
   DAEMON_MARKER_FD,
   ENTRY_HARD_EXIT_MARGIN_MS,
+  LOCK_FD,
   GATEWAY_MAX_CLOSE_MS,
   LIFELINE_FD,
   MINIMAL_CHILD_ENV_LC_PREFIX,
@@ -87,7 +88,14 @@ export {
   RUNTIME_TEARDOWN_BUDGET_MS,
   SHUTDOWN_MARGIN_MS,
   STDIO_EXIT_FLUSH_MS,
-  SUPERVISOR_FINALIZE_MS,
+  CHILD_STDIO_FLUSH_MS,
+  KILL_CONFIRM_MS,
+  SHUTDOWN_DRAIN_BOUND_MS,
+  SHUTDOWN_REAP_BOUND_MS,
+  SHUTDOWN_RELEASE_BOUND_MS,
+  gatewayStopBudgetMs,
+  killedChildSettleMs,
+  runtimeStopBudgetMs,
   announceReady,
   createJsonLogger,
   formatLogLine,
@@ -97,7 +105,7 @@ export {
   supervisorMaxCloseMs,
 } from './process-contract.ts';
 export type { JsonLogger, JsonLoggerOptions, LogFields, LogLevel, LogLineInput, ReadyFields, TextStream } from './process-contract.ts';
-export { REAP_POLL_INTERVAL_MS, findHolders, holderGroups, reapMarkedProcesses, reapMarkerDirectory, reconcileProcessGroup } from './process-markers.ts';
+export { MarkerReapError, REAP_POLL_INTERVAL_MS, findHolders, holderGroups, reapMarkedProcesses, reapMarkerDirectory, reconcileProcessGroup } from './process-markers.ts';
 export type { MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirectoryOptions, ReapTiming } from './process-markers.ts';
 export { isProcessAlive } from './process-alive.ts';
 export type { SignalSender } from './process-alive.ts';
@@ -124,8 +132,9 @@ export { EMPTY_FILE_RULES, FileRuleError, compileFileRuleSet, inWritableArea, le
 export type { FileRuleAccess, FileRuleEffect, FileRuleEntry, FileRuleException, FileRuleProvenance, FileRuleSet, FileRuleSpec, WritableArea } from './file-rules.ts';
 export { nodeCommandRunner, nodeSyncCommandRunner } from './platform/command-runner.ts';
 export type { CommandOptions, CommandResult, CommandRunner, SyncCommandRunner } from './platform/command-runner.ts';
-export type { ProcessInspector } from './platform/inspector-types.ts';
-export { UnsupportedPlatformError, createProcessInspector, defaultProcessInspector, hostInspectorPorts } from './platform/process-inspector.ts';
+export { ProbeFailedError, classifyProbeCause, failureOfError, isTransientFailure, probeFailed, valueOrThrow } from './platform/inspector-types.ts';
+export type { ProbeCause, ProbeEvidence, ProbeFailure, ProbeResult, ProcessInspector } from './platform/inspector-types.ts';
+export { PS_PROBE_TIMEOUT_MS, UnsupportedPlatformError, createProcessInspector, defaultProcessInspector, hostInspectorPorts } from './platform/process-inspector.ts';
 export type { InspectorPorts } from './platform/process-inspector.ts';
 export { createProcessGroupPort, createSignalSender, hostProcessGroupPort, hostSignalSender, posixGroupPort } from './platform/group-port.ts';
 export type { ProcessGroupPort } from './platform/group-port.ts';

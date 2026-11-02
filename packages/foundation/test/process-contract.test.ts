@@ -16,7 +16,14 @@ import {
   RUNTIME_TEARDOWN_BUDGET_MS,
   SHUTDOWN_MARGIN_MS,
   STDIO_EXIT_FLUSH_MS,
-  SUPERVISOR_FINALIZE_MS,
+  CHILD_STDIO_FLUSH_MS,
+  KILL_CONFIRM_MS,
+  SHUTDOWN_DRAIN_BOUND_MS,
+  SHUTDOWN_REAP_BOUND_MS,
+  SHUTDOWN_RELEASE_BOUND_MS,
+  gatewayStopBudgetMs,
+  killedChildSettleMs,
+  runtimeStopBudgetMs,
   announceReady,
   createJsonLogger,
   formatLogLine,
@@ -225,47 +232,45 @@ describe('close budgets', () => {
     expect(runtimeMaxCloseMs(1)).toBe(15_001);
   });
 
-  it('pins GATEWAY_MAX_CLOSE_MS, the margins, the stdio flush and the supervisor finalize budget', () => {
+  it('pins GATEWAY_MAX_CLOSE_MS, the margins and the stdio flushes', () => {
     expect(GATEWAY_MAX_CLOSE_MS).toBe(15_000);
     expect(ENTRY_HARD_EXIT_MARGIN_MS).toBe(3000);
     expect(SHUTDOWN_MARGIN_MS).toBe(5000);
     expect(STDIO_EXIT_FLUSH_MS).toBe(1000);
-    expect(SUPERVISOR_FINALIZE_MS).toBe(11_000);
+    expect(CHILD_STDIO_FLUSH_MS).toBe(1000);
+  });
+
+  it('pins the supervisor shutdown bounds', () => {
+    expect([KILL_CONFIRM_MS, SHUTDOWN_DRAIN_BOUND_MS, SHUTDOWN_REAP_BOUND_MS, SHUTDOWN_RELEASE_BOUND_MS]).toEqual([5000, 2000, 4000, 5000]);
   });
 
   it('ENTRY_HARD_EXIT_MARGIN_MS + STDIO_EXIT_FLUSH_MS < SHUTDOWN_MARGIN_MS', () => {
     expect(ENTRY_HARD_EXIT_MARGIN_MS + STDIO_EXIT_FLUSH_MS).toBeLessThan(SHUTDOWN_MARGIN_MS);
   });
 
-  it('supervisorMaxCloseMs', () => {
-    expect(supervisorMaxCloseMs(30_000)).toBe(81_000);
-    expect(supervisorMaxCloseMs(0)).toBe(51_000);
+  it('a child that had to be group-killed settles within the kill confirmation plus one stdio flush', () => {
+    expect(killedChildSettleMs()).toBe(KILL_CONFIRM_MS + CHILD_STDIO_FLUSH_MS);
+  });
+
+  it('the stop budgets are the child close budgets plus the shutdown margin', () => {
+    expect(runtimeStopBudgetMs(30_000)).toBe(runtimeMaxCloseMs(30_000) + SHUTDOWN_MARGIN_MS);
+    expect(gatewayStopBudgetMs()).toBe(GATEWAY_MAX_CLOSE_MS + SHUTDOWN_MARGIN_MS);
+  });
+
+  it('supervisorMaxCloseMs counts every wait of the orderly shutdown once', () => {
+    expect(supervisorMaxCloseMs(30_000)).toBe(93_000);
+    expect(supervisorMaxCloseMs(0)).toBe(63_000);
     for (const drain of [1, 1000, 12_345]) {
-      const runtimeBound = drain + 15_000 + 5000;
-      const gatewayBound = 15_000 + 5000;
-      expect(supervisorMaxCloseMs(drain), String(drain)).toBe(runtimeBound + gatewayBound + 11_000);
-    }
-  });
-
-  it('SUPERVISOR_FINALIZE_MS is the sum of its three terms', () => {
-    const supervisorStdioFlushMs = 1000;
-    const exitHandlerFlushes = 2 * supervisorStdioFlushMs;
-    const shutdownReapCapMs = 4000;
-    const shutdownReleaseBoundMs = 5000;
-    expect(SUPERVISOR_FINALIZE_MS).toBe(exitHandlerFlushes + shutdownReapCapMs + shutdownReleaseBoundMs);
-  });
-
-  it('the engine deadline lies beyond the orderly worst case', () => {
-    const exitHandlerFlushes = 2 * 1000;
-    const shutdownReapCapMs = 4000;
-    const shutdownReleaseBoundMs = 5000;
-    for (const drain of [0, 1000, 30_000]) {
-      const runtimeBound = runtimeMaxCloseMs(drain) + SHUTDOWN_MARGIN_MS;
-      const gatewayBound = GATEWAY_MAX_CLOSE_MS + SHUTDOWN_MARGIN_MS;
-      const orderlyWorstCase = runtimeBound + gatewayBound + exitHandlerFlushes + shutdownReapCapMs + shutdownReleaseBoundMs;
-      const engineDeadline = supervisorMaxCloseMs(drain) + ENTRY_HARD_EXIT_MARGIN_MS;
-      expect(engineDeadline, String(drain)).toBeGreaterThan(orderlyWorstCase);
-      expect(engineDeadline - orderlyWorstCase, String(drain)).toBe(3000);
+      const steps = [
+        SHUTDOWN_DRAIN_BOUND_MS,
+        runtimeStopBudgetMs(drain),
+        KILL_CONFIRM_MS + CHILD_STDIO_FLUSH_MS,
+        gatewayStopBudgetMs(),
+        KILL_CONFIRM_MS + CHILD_STDIO_FLUSH_MS,
+        SHUTDOWN_REAP_BOUND_MS,
+        SHUTDOWN_RELEASE_BOUND_MS,
+      ];
+      expect(supervisorMaxCloseMs(drain), String(drain)).toBe(steps.reduce((sum, step) => sum + step, 0));
     }
   });
 });

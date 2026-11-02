@@ -1,5 +1,6 @@
 import type { CommandRunner, SyncCommandRunner } from './command-runner.ts';
-import type { ProcessInspector } from './inspector-types.ts';
+import { failureOfError, probeFailed } from './inspector-types.ts';
+import type { ProbeFailure, ProbeResult, ProcessInspector } from './inspector-types.ts';
 import { groupMembers, groupOfPid, parsePidList, parseProcessTable, parseStartTimeMs } from './windows-parsers.ts';
 import { PROCESS_TABLE_SCRIPT, holdersScript, powershellArgs, powershellPath, startTimeScript, taskkillPath } from './windows-scripts.ts';
 
@@ -10,25 +11,63 @@ export type WindowsInspectorPorts = { run: CommandRunner; env: Readonly<Record<s
 const probeEnv = (env: Readonly<Record<string, string | undefined>>): Record<string, string> =>
   Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined));
 
-export const createWindowsPowerShell = ({ run, env, timeoutMs = WINDOWS_PROBE_TIMEOUT_MS }: WindowsInspectorPorts) => {
-  const execute = async (script: string): Promise<string> => {
-    const result = await run(powershellPath(env), powershellArgs(script), { env: probeEnv(env), timeoutMs });
-    if (result.exitCode !== 0) throw new Error(`powershell exited with ${result.exitCode}: ${result.stderr.trim()}`);
-    return result.stdout;
-  };
-  return execute;
+class PowerShellExit extends Error {
+  readonly exitCode: number;
+
+  constructor(exitCode: number, message: string) {
+    super(message);
+    this.exitCode = exitCode;
+  }
+}
+
+class PowerShellOutputUnparseable extends Error {}
+
+const parseOutput = <T>(parse: () => T): T => {
+  try {
+    return parse();
+  } catch (error) {
+    throw new PowerShellOutputUnparseable((error as Error).message);
+  }
 };
 
-export const createWindowsInspector = (ports: WindowsInspectorPorts): ProcessInspector => {
-  const execute = createWindowsPowerShell(ports);
+const failureOf = (error: unknown): ProbeFailure => {
+  if (error instanceof PowerShellExit) return probeFailed({ kind: 'exit', exitCode: error.exitCode, detail: error.message });
+  if (error instanceof PowerShellOutputUnparseable) return probeFailed({ kind: 'unparseable', detail: error.message });
+  return failureOfError(error);
+};
+
+export const createWindowsInspector = ({ run, env, timeoutMs = WINDOWS_PROBE_TIMEOUT_MS }: WindowsInspectorPorts): ProcessInspector => {
+  const execute = async (script: string): Promise<string> => {
+    const result = await run(powershellPath(env), powershellArgs(script), { env: probeEnv(env), timeoutMs });
+    if (result.exitCode !== 0) throw new PowerShellExit(result.exitCode, `powershell exited with ${result.exitCode}: ${result.stderr.trim()}`);
+    return result.stdout;
+  };
+  const guarded = async <T>(read: () => Promise<ProbeResult<T>>): Promise<ProbeResult<T>> => {
+    try {
+      return await read();
+    } catch (error) {
+      return failureOf(error);
+    }
+  };
   return {
-    startTimeOf: async (pid) => parseStartTimeMs(await execute(startTimeScript(pid))),
-    holdersOf: async (marker) => parsePidList(await execute(holdersScript(marker))),
-    groupsOf: async (pids, candidateGroups) => {
-      const rows = parseProcessTable(await execute(PROCESS_TABLE_SCRIPT));
-      const alive = new Set(rows.map((row) => row.pid));
-      return new Map(pids.filter((pid) => alive.has(pid)).map((pid) => [pid, groupOfPid(rows, pid, candidateGroups)]));
-    },
+    startTimeOf: (pid) =>
+      guarded(async () => {
+        const output = await execute(startTimeScript(pid));
+        const startedAt = parseOutput(() => parseStartTimeMs(output));
+        return startedAt === undefined ? { kind: 'gone' } : { kind: 'value', value: startedAt };
+      }),
+    holdersOf: (marker) =>
+      guarded(async () => {
+        const output = await execute(holdersScript(marker));
+        return { kind: 'value', value: parseOutput(() => parsePidList(output)) };
+      }),
+    groupsOf: (pids, candidateGroups) =>
+      guarded(async () => {
+        const output = await execute(PROCESS_TABLE_SCRIPT);
+        const rows = parseOutput(() => parseProcessTable(output));
+        const alive = new Set(rows.map((row) => row.pid));
+        return { kind: 'value', value: new Map(pids.filter((pid) => alive.has(pid)).map((pid) => [pid, groupOfPid(rows, pid, candidateGroups)])) };
+      }),
   };
 };
 

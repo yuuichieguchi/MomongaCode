@@ -1,161 +1,173 @@
 import { spawn } from 'node:child_process';
 import net from 'node:net';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
-import { ProcessLockHeldError, acquireProcessLock, isProcessAlive, listenUnix } from '@momonga/foundation';
+import { describe, expect, it } from 'vitest';
+import { ProcessLockHeldError, acquireProcessLock, hostKernelLock, inspectProcessLock, isProcessAlive, listenUnix } from '@momonga/foundation';
+import { registerCleanup, withTempDir } from '@momonga/testkit';
+import { exitOf, startHolder } from './support/lock-processes.ts';
 
-const tempDirs: string[] = [];
-const children: number[] = [];
-
-afterEach(() => {
-  for (const pid of children.splice(0)) {
-    try {
-      process.kill(pid, 'SIGKILL');
-    } catch {}
-  }
-  for (const dir of tempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
-});
-
-const makeDir = (): string => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-lock-'));
-  fs.chmodSync(dir, 0o700);
-  tempDirs.push(dir);
-  return dir;
-};
+const FILE_LOCK = hostKernelLock().name === 'file-lock';
 
 const deadPid = async (): Promise<number> => {
-  const child = spawn('/usr/bin/true', [], { stdio: 'ignore' });
+  const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
   const pid = child.pid;
   if (pid === undefined) throw new Error('spawn failed');
   await new Promise<void>((resolve) => child.once('exit', () => resolve()));
   return pid;
 };
 
-const livePid = (): number => {
-  const child = spawn('/bin/sleep', ['60'], { stdio: 'ignore' });
-  if (child.pid === undefined) throw new Error('spawn failed');
-  children.push(child.pid);
-  return child.pid;
-};
-
 describe('acquireProcessLock', () => {
-  it('creates the lock file holding the current pid', async () => {
-    const lockPath = path.join(makeDir(), 'gateway.lock');
+  it('records the current pid as the holder', async (context) => {
+    const lockPath = path.join(withTempDir(context), 'gateway.lock');
     const lock = await acquireProcessLock(lockPath);
-    expect(fs.readFileSync(lockPath, 'utf8').trim()).toBe(String(process.pid));
-    await lock.release();
+    registerCleanup(context, () => lock.release());
+    expect(fs.readFileSync(lockPath, 'utf8')).toBe(String(process.pid));
+    expect(await inspectProcessLock(lockPath)).toEqual({ state: 'held', pid: process.pid });
   });
 
-  it('removes the lock file on release', async () => {
-    const lockPath = path.join(makeDir(), 'gateway.lock');
+  it('can be acquired again after release', async (context) => {
+    const lockPath = path.join(withTempDir(context), 'gateway.lock');
+    (await acquireProcessLock(lockPath)).release();
+    expect(await inspectProcessLock(lockPath)).toEqual({ state: 'free' });
+    const again = await acquireProcessLock(lockPath);
+    registerCleanup(context, () => again.release());
+    expect(await inspectProcessLock(lockPath)).toEqual({ state: 'held', pid: process.pid });
+  });
+
+  it('releasing twice releases once', async (context) => {
+    const lockPath = path.join(withTempDir(context), 'gateway.lock');
     const lock = await acquireProcessLock(lockPath);
-    await lock.release();
+    lock.release();
+    lock.release();
+    const again = await acquireProcessLock(lockPath);
+    registerCleanup(context, () => again.release());
+  });
+
+  it('refuses a second acquisition by the same live process', async (context) => {
+    const lockPath = path.join(withTempDir(context), 'runtime.lock');
+    const lock = await acquireProcessLock(lockPath);
+    registerCleanup(context, () => lock.release());
+    await expect(acquireProcessLock(lockPath)).rejects.toThrow(String(process.pid));
+  });
+
+  it('throws without waiting when another process holds the lock, naming its pid', async (context) => {
+    const lockPath = path.join(withTempDir(context), 'gateway.lock');
+    const holder = await startHolder(context, lockPath);
+    await expect(acquireProcessLock(lockPath)).rejects.toThrow(String(holder.pid));
+    expect(await inspectProcessLock(lockPath)).toEqual({ state: 'held', pid: holder.pid });
+  });
+
+  it('is free the moment a SIGKILLed holder is gone, with no stale state to recover', async (context) => {
+    const lockPath = path.join(withTempDir(context), 'gateway.lock');
+    const holder = await startHolder(context, lockPath);
+    holder.kill('SIGKILL');
+    expect(await exitOf(holder)).toEqual({ code: null, signal: 'SIGKILL' });
+    expect(await inspectProcessLock(lockPath)).toEqual({ state: 'free' });
+    const lock = await acquireProcessLock(lockPath);
+    registerCleanup(context, () => lock.release());
+    expect(await inspectProcessLock(lockPath)).toEqual({ state: 'held', pid: process.pid });
+  });
+
+  it('ignores a pid left in the file by a dead holder', async (context) => {
+    const lockPath = path.join(withTempDir(context), 'gateway.lock');
+    fs.writeFileSync(lockPath, String(await deadPid()), { mode: 0o600 });
+    expect(await inspectProcessLock(lockPath)).toEqual({ state: 'free' });
+    const lock = await acquireProcessLock(lockPath);
+    registerCleanup(context, () => lock.release());
+    expect(fs.readFileSync(lockPath, 'utf8')).toBe(String(process.pid));
+  });
+
+  it.skipIf(!FILE_LOCK)('keeps the lock file in place on release so that no second inode can ever be locked beside it', async (context) => {
+    const lockPath = path.join(withTempDir(context), 'gateway.lock');
+    (await acquireProcessLock(lockPath)).release();
+    const inode = fs.statSync(lockPath).ino;
+    const lock = await acquireProcessLock(lockPath);
+    registerCleanup(context, () => lock.release());
+    expect(fs.statSync(lockPath).ino).toBe(inode);
+  });
+
+  it.skipIf(!FILE_LOCK)('refuses to follow a symbolic link at the lock path', async (context) => {
+    const dir = withTempDir(context);
+    const target = path.join(dir, 'elsewhere');
+    fs.writeFileSync(target, '');
+    const lockPath = path.join(dir, 'gateway.lock');
+    fs.symlinkSync(target, lockPath);
+    await expect(acquireProcessLock(lockPath)).rejects.toMatchObject({ code: 'ELOOP' });
+  });
+});
+
+describe('inspectProcessLock', () => {
+  it('reports a missing lock as free without creating it', async (context) => {
+    const lockPath = path.join(withTempDir(context), 'runtime.lock');
+    expect(await inspectProcessLock(lockPath)).toEqual({ state: 'free' });
     expect(fs.existsSync(lockPath)).toBe(false);
   });
 
-  it('can be acquired again after release', async () => {
-    const lockPath = path.join(makeDir(), 'gateway.lock');
-    await (await acquireProcessLock(lockPath)).release();
-    const again = await acquireProcessLock(lockPath);
-    expect(fs.readFileSync(lockPath, 'utf8').trim()).toBe(String(process.pid));
-    await again.release();
+  it('reports a held lock whose holder has not recorded its pid as unreadable, never as free', async (context) => {
+    const lockPath = path.join(withTempDir(context), 'runtime.lock');
+    const mechanism = hostKernelLock();
+    const outcome = await mechanism.claim(lockPath);
+    if (outcome.kind !== 'claimed') throw new Error('the lock was not free');
+    registerCleanup(context, () => outcome.lock.release());
+    expect(await inspectProcessLock(lockPath)).toEqual({ state: 'unreadable' });
   });
 
-  it('throws without waiting when a live process holds the lock, naming its pid', async () => {
-    const lockPath = path.join(makeDir(), 'gateway.lock');
-    const holder = livePid();
-    fs.writeFileSync(lockPath, String(holder), { mode: 0o600 });
-    const started = Date.now();
-    await expect(async () => acquireProcessLock(lockPath)).rejects.toThrow(String(holder));
-    expect(Date.now() - started).toBeLessThan(1000);
-    expect(fs.readFileSync(lockPath, 'utf8').trim()).toBe(String(holder));
-  });
-
-  it('refuses a second acquisition by the same live process', async () => {
-    const lockPath = path.join(makeDir(), 'runtime.lock');
-    const lock = await acquireProcessLock(lockPath);
-    await expect(async () => acquireProcessLock(lockPath)).rejects.toThrow(String(process.pid));
-    await lock.release();
-  });
-
-  it('takes over a lock left by a dead process', async () => {
-    const lockPath = path.join(makeDir(), 'gateway.lock');
-    const dead = await deadPid();
-    fs.writeFileSync(lockPath, String(dead), { mode: 0o600 });
-    const lock = await acquireProcessLock(lockPath);
-    expect(fs.readFileSync(lockPath, 'utf8').trim()).toBe(String(process.pid));
-    await lock.release();
-  });
-
-  it('does not remove a lock that another process has since taken', async () => {
-    const lockPath = path.join(makeDir(), 'gateway.lock');
-    const lock = await acquireProcessLock(lockPath);
-    const other = livePid();
-    fs.rmSync(lockPath);
-    fs.writeFileSync(lockPath, String(other), { mode: 0o600 });
-    await lock.release();
-    expect(fs.readFileSync(lockPath, 'utf8').trim()).toBe(String(other));
+  it('treats an over-long holder record as unreadable', async (context) => {
+    const lockPath = path.join(withTempDir(context), 'runtime.lock');
+    const mechanism = hostKernelLock();
+    const outcome = await mechanism.claim(lockPath);
+    if (outcome.kind !== 'claimed') throw new Error('the lock was not free');
+    registerCleanup(context, () => outcome.lock.release());
+    outcome.lock.writeHolder(`${'7'.repeat(10_000)}`);
+    expect(await inspectProcessLock(lockPath)).toEqual({ state: 'unreadable' });
   });
 });
 
 describe('ProcessLockHeldError', () => {
-  it('throws ProcessLockHeldError with holderPid and lockPath', async () => {
-    const lockPath = path.join(makeDir(), 'runtime.lock');
-    const holder = livePid();
-    fs.writeFileSync(lockPath, String(holder), { mode: 0o600 });
+  it('carries holderPid and lockPath and the holder description as the message', async (context) => {
+    const lockPath = path.join(withTempDir(context), 'runtime.lock');
+    const holder = await startHolder(context, lockPath);
     const failure = await acquireProcessLock(lockPath, async (pid) => `held by ${pid} for test`).then(
       () => undefined,
       (error: unknown) => error,
     );
     expect(failure).toBeInstanceOf(ProcessLockHeldError);
-    expect(failure).toBeInstanceOf(Error);
-    expect((failure as ProcessLockHeldError).holderPid).toBe(holder);
+    expect((failure as ProcessLockHeldError).holderPid).toBe(holder.pid);
     expect((failure as ProcessLockHeldError).lockPath).toBe(lockPath);
-    expect((failure as ProcessLockHeldError).message).toBe(`held by ${holder} for test`);
+    expect((failure as ProcessLockHeldError).message).toBe(`held by ${holder.pid} for test`);
   });
 
-  it('uses the default holder description as the message', async () => {
-    const lockPath = path.join(makeDir(), 'runtime.lock');
-    const holder = livePid();
-    fs.writeFileSync(lockPath, String(holder), { mode: 0o600 });
+  it('uses the default holder description as the message', async (context) => {
+    const lockPath = path.join(withTempDir(context), 'runtime.lock');
+    const holder = await startHolder(context, lockPath);
     const failure = await acquireProcessLock(lockPath).then(
       () => undefined,
       (error: unknown) => error,
     );
-    expect(failure).toBeInstanceOf(ProcessLockHeldError);
-    expect((failure as Error).message).toBe(`${lockPath} is held by live process ${holder}; remove it if that process is not momonga`);
+    expect((failure as Error).message).toBe(`${lockPath} is held by live process ${holder.pid}`);
   });
 
-  it('listenUnix surfaces ProcessLockHeldError', async () => {
-    const dir = makeDir();
+  it('listenUnix surfaces ProcessLockHeldError', async (context) => {
+    const dir = withTempDir(context);
     const socketPath = path.join(dir, 'r.sock');
-    const holder = livePid();
-    fs.writeFileSync(`${socketPath}.lock`, String(holder), { mode: 0o600 });
+    const holder = await startHolder(context, `${socketPath}.lock`);
     const server = net.createServer();
-    try {
-      const failure = await listenUnix(server, socketPath).then(
-        () => undefined,
-        (error: unknown) => error,
-      );
-      expect(failure).toBeInstanceOf(ProcessLockHeldError);
-      expect((failure as ProcessLockHeldError).holderPid).toBe(holder);
-      expect((failure as ProcessLockHeldError).lockPath).toBe(`${socketPath}.lock`);
-      expect((failure as Error).message).toContain(`${socketPath} is already in use by process ${holder}`);
-    } finally {
-      server.close();
-    }
+    registerCleanup(context, () => void server.close());
+    const failure = await listenUnix(server, socketPath).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(ProcessLockHeldError);
+    expect((failure as ProcessLockHeldError).holderPid).toBe(holder.pid);
+    expect((failure as ProcessLockHeldError).lockPath).toBe(`${socketPath}.lock`);
+    expect((failure as Error).message).toBe(`${socketPath} is already in use by process ${holder.pid} (lock ${socketPath}.lock)`);
   });
 });
 
 describe('isProcessAlive', () => {
   it('reports the current process as alive', () => {
     expect(isProcessAlive(process.pid)).toBe(true);
-  });
-
-  it('reports a running child as alive', () => {
-    expect(isProcessAlive(livePid())).toBe(true);
   });
 
   it('reports an exited process as dead', async () => {

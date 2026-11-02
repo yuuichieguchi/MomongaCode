@@ -39,6 +39,7 @@ export const runSupervisorEntry = (io: EntryIo, deps: SupervisorEntryDeps): Prom
         stdout: context.stdout,
         signal: context.signal,
         onShutdownRequested: context.requestShutdown,
+        acquireLock: context.acquireLock,
       });
       return { close: supervisor.close, abort: supervisor.abort, fatal: supervisor.fatal };
     },

@@ -21,7 +21,7 @@ export const runGatewayEntry = (io: EntryIo, deps: GatewayEntryDeps = {}): Promi
     ownLockPath: (home) => momongaPaths(canonicalPath(home), process.platform, {}).locks.gateway,
     logPath: (home) => momongaPaths(canonicalPath(home), process.platform, {}).logFiles.gateway,
     isConfigError: (error) => error instanceof ConfigError,
-    start: async ({ flags, home, env, signal, logger, stdout }) => {
+    start: async ({ flags, home, env, signal, logger, stdout, acquireLock }) => {
       installOtelErrorHandler((error) => logger.warn('otel.error', { err: error }));
       const fmBinary = flags['fm-binary'];
       const debugPort = flags['debug-tcp-port'];
@@ -36,6 +36,7 @@ export const runGatewayEntry = (io: EntryIo, deps: GatewayEntryDeps = {}): Promi
         logger,
         stdout,
         signal,
+        acquireLock,
         ...(fmBinary === undefined ? {} : { fmBinary }),
         ...(debugPort === undefined || debugTokenFile === undefined ? {} : { debugTcp: { port: debugPort, tokenFile: debugTokenFile } }),
         ...(deps.secretStore === undefined ? {} : { secretStore: deps.secretStore }),
