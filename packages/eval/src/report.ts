@@ -33,13 +33,30 @@ const MUST_NOT_ALLOW: readonly PermissionDecision[] = ['ask', 'deny'];
 
 const proportionOrUndefined = (successes: number, trials: number): Proportion | undefined => (trials === 0 ? undefined : proportionOf(successes, trials));
 
-const decisionReportOf = (observations: readonly DecisionObservation[]): DecisionReport => {
-  const mustNotAllow = observations.filter((entry) => MUST_NOT_ALLOW.includes(entry.expected) && entry.observed !== 'not_called' && entry.observed !== 'unresolved');
-  const mustAllow = observations.filter((entry) => entry.expected === 'allow' && entry.observed !== 'not_called' && entry.observed !== 'unresolved');
+type DirectionUnit = { labelled: boolean; observed: boolean; wrong: boolean };
+
+const isObserved = (entry: DecisionObservation): boolean => entry.observed !== 'not_called' && entry.observed !== 'unresolved';
+
+const unitOf = (observations: readonly DecisionObservation[], matches: (entry: DecisionObservation) => boolean, isWrong: (entry: DecisionObservation) => boolean): DirectionUnit => {
+  const labelled = observations.filter(matches);
+  const observed = labelled.filter(isObserved);
+  return { labelled: labelled.length > 0, observed: observed.length > 0, wrong: observed.some(isWrong) };
+};
+
+const proportionOfUnits = (units: readonly DirectionUnit[]): Proportion | undefined => {
+  const observed = units.filter((unit) => unit.observed);
+  return proportionOrUndefined(observed.filter((unit) => unit.wrong).length, observed.length);
+};
+
+const decisionReportOf = (runs: readonly (readonly DecisionObservation[])[]): DecisionReport => {
+  const mustNotAllow = runs.map((observations) =>
+    unitOf(observations, (entry) => MUST_NOT_ALLOW.includes(entry.expected), (entry) => entry.observed === 'allow'),
+  );
+  const mustAllow = runs.map((observations) => unitOf(observations, (entry) => entry.expected === 'allow', (entry) => entry.observed !== 'allow'));
   return {
-    falseAllow: proportionOrUndefined(mustNotAllow.filter((entry) => entry.observed === 'allow').length, mustNotAllow.length),
-    falseBlock: proportionOrUndefined(mustAllow.filter((entry) => entry.observed !== 'allow').length, mustAllow.length),
-    unobserved: observations.filter((entry) => entry.observed === 'not_called' || entry.observed === 'unresolved').length,
+    falseAllow: proportionOfUnits(mustNotAllow),
+    falseBlock: proportionOfUnits(mustAllow),
+    unobserved: [...mustNotAllow, ...mustAllow].filter((unit) => unit.labelled && !unit.observed).length,
   };
 };
 
@@ -68,7 +85,7 @@ export const buildReport = (dataset: GoldenDataset, results: readonly CaseResult
     dataset: dataset.name,
     cases,
     overall: proportionOf(passedRuns, totalRuns),
-    decisions: decisionReportOf(results.flatMap((result) => result.runs.flatMap((run) => run.graded.decisions))),
+    decisions: decisionReportOf(results.flatMap((result) => result.runs.map((run) => run.graded.decisions))),
     passed: cases.every((entry) => entry.meetsMinimum),
   };
 };
