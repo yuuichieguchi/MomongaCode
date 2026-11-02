@@ -7,7 +7,12 @@ const placeOf = (memory: MemoryView): string => (memory.project === null ? memor
 export const formatMemoryList = (memories: readonly MemoryView[]): string =>
   memories.length === 0 ? 'no memories' : memories.map((memory) => `${memory.id}  [${placeOf(memory)}]  ${firstLine(memory.text)}`).join('\n');
 
-export const formatMemory = (memory: MemoryView): string =>
+const sourceLine = (source: MemoryView['source']): string =>
+  source.kind === 'tool'
+    ? `source: session ${source.sessionId}, run ${source.runId}, step ${source.step}, call ${source.callId}, event ${source.seq}`
+    : `source: session ${source.sessionId}, run ${source.runId}, reflection candidate ${source.ordinal}`;
+
+export const formatMemory =(memory: MemoryView): string =>
   [
     `id: ${memory.id}`,
     `scope: ${memory.scope}`,
@@ -15,7 +20,7 @@ export const formatMemory = (memory: MemoryView): string =>
     ...(memory.project === null ? [] : [`project: ${memory.project}`]),
     `created: ${new Date(memory.createdAt).toISOString()}`,
     `last used: ${new Date(memory.lastUsedAt).toISOString()}`,
-    `source: session ${memory.source.sessionId}, run ${memory.source.runId}, step ${memory.source.step}, call ${memory.source.callId}, event ${memory.source.seq}`,
+    sourceLine(memory.source),
     '',
     memory.text,
   ].join('\n');

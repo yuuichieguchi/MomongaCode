@@ -6,13 +6,30 @@ export const MEMORY_ORIGINS = ['trusted', 'untrusted'] as const;
 
 export type MemoryOrigin = (typeof MEMORY_ORIGINS)[number];
 
-export type MemorySource = {
-  sessionId: string;
-  runId: string;
-  step: number;
-  callId: string;
-  seq: number;
-};
+export type MemorySource =
+  | { kind: 'tool'; sessionId: string; runId: string; step: number; callId: string; seq: number }
+  | { kind: 'reflection'; sessionId: string; runId: string; ordinal: number };
+
+export const MEMORY_KINDS = ['fact', 'episode', 'procedure'] as const;
+
+export type MemoryKind = (typeof MEMORY_KINDS)[number];
+
+export const MEMORY_STATES = ['active', 'candidate', 'archived', 'duplicate'] as const;
+
+export type MemoryState = (typeof MEMORY_STATES)[number];
+
+export const MEMORY_EVIDENCE_KINDS = ['file', 'commit', 'check'] as const;
+
+export type MemoryEvidenceKind = (typeof MEMORY_EVIDENCE_KINDS)[number];
+
+export const MEMORY_STATUSES = ['verified', 'unbound', 'unverifiable', 'stale'] as const;
+
+export type MemoryStatus = (typeof MEMORY_STATUSES)[number];
+
+export type MemoryEvidence =
+  | { kind: 'file'; project: string; path: string; sha256: string }
+  | { kind: 'commit'; sha: string }
+  | { kind: 'check'; runId: string; callId: string; seq: number; command: string; exitCode: number };
 
 export type MemoryView = {
   id: string;
@@ -23,6 +40,14 @@ export type MemoryView = {
   source: MemorySource;
   createdAt: number;
   lastUsedAt: number;
+  kind: MemoryKind;
+  state: MemoryState;
+  duplicateOf: string | null;
+  supersedes: string[];
+  retiredAt: number | null;
+  evidence: MemoryEvidence[];
+  contributedAt: number | null;
+  status?: MemoryStatus;
 };
 
 export type MemoriesResponse = { memories: MemoryView[] };

@@ -363,6 +363,9 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
     case 'tool.updated':
     case 'plan.updated':
     case 'usage.updated':
+    case 'context.governing_loaded':
+    case 'context.memories_loaded':
+    case 'context.contribution':
       return state;
     case 'instructions.loaded':
       return { ...state, loadedInstructions: withInstruction(state.loadedInstructions, event.path, sha256Hex(event.content)) };

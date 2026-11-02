@@ -274,6 +274,199 @@ const IDEMPOTENCY_LEASE_TOKEN = `
 ALTER TABLE idempotency ADD COLUMN lease_token INTEGER;
 `;
 
+const EVIDENCE_BASED_CONTEXT = `
+ALTER TABLE memories ADD COLUMN kind TEXT NOT NULL DEFAULT 'fact' CHECK (kind IN ('fact', 'episode', 'procedure'));
+ALTER TABLE memories ADD COLUMN duplicate_of TEXT;
+ALTER TABLE memories ADD COLUMN state TEXT NOT NULL DEFAULT 'active' CHECK (
+  state IN ('active', 'candidate', 'archived', 'duplicate') AND ((state = 'duplicate') = (duplicate_of IS NOT NULL))
+);
+ALTER TABLE memories ADD COLUMN supersedes_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE memories ADD COLUMN retired_at INTEGER;
+ALTER TABLE memories ADD COLUMN contributed_at INTEGER;
+ALTER TABLE memories ADD COLUMN source_kind TEXT NOT NULL DEFAULT 'tool' CHECK (
+  source_kind IN ('tool', 'reflection')
+  AND ((source_kind = 'reflection') = (source_call_id GLOB 'reflection:[0-9]*' AND substr(source_call_id, 12) NOT GLOB '*[^0-9]*'))
+);
+CREATE INDEX memories_by_state ON memories (state, project);
+
+CREATE TRIGGER memories_reject_replace BEFORE INSERT ON memories WHEN EXISTS (
+  SELECT 1 FROM memories WHERE id = NEW.id OR (source_run_id = NEW.source_run_id AND source_call_id = NEW.source_call_id)
+) BEGIN
+  SELECT RAISE(ABORT, 'memories are not replaced: the row exists');
+END;
+
+CREATE TRIGGER memories_retired_at_write_once BEFORE UPDATE OF retired_at ON memories WHEN OLD.retired_at IS NOT NULL BEGIN
+  SELECT RAISE(ABORT, 'memories.retired_at is write-once');
+END;
+
+CREATE VIRTUAL TABLE memories_index USING fts5(memory_id UNINDEXED, text, tokenize = 'trigram');
+INSERT INTO memories_index (memory_id, text) SELECT id, text FROM memories;
+CREATE TRIGGER memories_index_insert AFTER INSERT ON memories BEGIN
+  INSERT INTO memories_index (memory_id, text) VALUES (NEW.id, NEW.text);
+END;
+CREATE TRIGGER memories_index_delete AFTER DELETE ON memories BEGIN
+  DELETE FROM memories_index WHERE memory_id = OLD.id;
+END;
+CREATE TRIGGER memories_index_update AFTER UPDATE OF text ON memories BEGIN
+  DELETE FROM memories_index WHERE memory_id = OLD.id;
+  INSERT INTO memories_index (memory_id, text) VALUES (NEW.id, NEW.text);
+END;
+
+CREATE TABLE memory_evidence (
+  memory_id TEXT NOT NULL REFERENCES memories (id) ON DELETE CASCADE,
+  ordinal INTEGER NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('file', 'commit', 'check')),
+  project TEXT,
+  path TEXT,
+  sha256 TEXT,
+  sha TEXT,
+  run_id TEXT,
+  call_id TEXT,
+  seq INTEGER,
+  command TEXT,
+  exit_code INTEGER,
+  PRIMARY KEY (memory_id, ordinal),
+  CHECK (
+    kind <> 'file'
+    OR (project IS NOT NULL AND path IS NOT NULL AND sha256 IS NOT NULL
+      AND sha IS NULL AND run_id IS NULL AND call_id IS NULL AND seq IS NULL AND command IS NULL AND exit_code IS NULL)
+  ),
+  CHECK (
+    kind <> 'commit'
+    OR (sha IS NOT NULL
+      AND project IS NULL AND path IS NULL AND sha256 IS NULL AND run_id IS NULL AND call_id IS NULL AND seq IS NULL AND command IS NULL AND exit_code IS NULL)
+  ),
+  CHECK (
+    kind <> 'check'
+    OR (run_id IS NOT NULL AND call_id IS NOT NULL AND seq IS NOT NULL AND command IS NOT NULL AND exit_code IS NOT NULL
+      AND project IS NULL AND path IS NULL AND sha256 IS NULL AND sha IS NULL)
+  )
+);
+
+CREATE TABLE governing_facts (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('constraint', 'preference', 'commitment', 'role', 'identity')),
+  target TEXT NOT NULL,
+  text TEXT NOT NULL,
+  scope_level TEXT NOT NULL CHECK (scope_level IN ('user', 'project')),
+  project TEXT,
+  paths_json TEXT NOT NULL,
+  valid_from INTEGER NOT NULL,
+  valid_until INTEGER,
+  retired_at INTEGER,
+  supersedes_json TEXT NOT NULL,
+  enforcement_behavior TEXT CHECK (enforcement_behavior IS NULL OR enforcement_behavior IN ('deny', 'ask')),
+  enforcement_rule TEXT,
+  source_kind TEXT NOT NULL CHECK (source_kind IN ('command', 'proposal')),
+  source_at INTEGER,
+  source_session_id TEXT,
+  source_run_id TEXT,
+  source_seq INTEGER,
+  source_call_id TEXT,
+  CHECK ((scope_level = 'project') = (project IS NOT NULL)),
+  CHECK (scope_level = 'project' OR paths_json = '[]'),
+  CHECK ((enforcement_behavior IS NULL) = (enforcement_rule IS NULL)),
+  CHECK (
+    source_kind <> 'command'
+    OR (source_at IS NOT NULL AND source_session_id IS NULL AND source_run_id IS NULL AND source_seq IS NULL AND source_call_id IS NULL)
+  ),
+  CHECK (
+    source_kind <> 'proposal'
+    OR (source_at IS NULL AND source_session_id IS NOT NULL AND source_run_id IS NOT NULL AND source_seq IS NOT NULL AND source_call_id IS NOT NULL)
+  )
+);
+CREATE INDEX governing_facts_by_project ON governing_facts (project);
+CREATE UNIQUE INDEX governing_facts_by_source ON governing_facts (source_run_id, source_call_id) WHERE source_kind = 'proposal';
+CREATE TRIGGER governing_facts_reject_replace BEFORE INSERT ON governing_facts WHEN EXISTS (SELECT 1 FROM governing_facts WHERE id = NEW.id) BEGIN
+  SELECT RAISE(ABORT, 'governing_facts are append-only: the row exists');
+END;
+CREATE TRIGGER governing_facts_retired_at_write_once BEFORE UPDATE OF retired_at ON governing_facts WHEN OLD.retired_at IS NOT NULL BEGIN
+  SELECT RAISE(ABORT, 'governing_facts.retired_at is write-once');
+END;
+CREATE TRIGGER governing_facts_reject_rewrite BEFORE UPDATE OF
+  id, kind, target, text, scope_level, project, paths_json, valid_from, valid_until, supersedes_json,
+  enforcement_behavior, enforcement_rule, source_kind, source_at, source_session_id, source_run_id, source_seq, source_call_id
+ON governing_facts BEGIN
+  SELECT RAISE(ABORT, 'governing_facts are append-only: only retired_at may be set');
+END;
+CREATE TRIGGER governing_facts_reject_delete BEFORE DELETE ON governing_facts BEGIN
+  SELECT RAISE(ABORT, 'governing_facts are append-only: DELETE is not allowed');
+END;
+
+CREATE TABLE search_docs (
+  id INTEGER PRIMARY KEY,
+  level TEXT NOT NULL CHECK (level IN ('run', 'step')),
+  session_id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  step INTEGER,
+  project TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('trusted', 'untrusted')),
+  outcome TEXT NOT NULL,
+  seq_from INTEGER NOT NULL,
+  seq_to INTEGER NOT NULL,
+  at INTEGER NOT NULL,
+  body TEXT NOT NULL,
+  CHECK ((level = 'step') = (step IS NOT NULL))
+);
+CREATE INDEX search_docs_by_run ON search_docs (run_id, level, seq_from);
+CREATE INDEX search_docs_by_project ON search_docs (project, at DESC);
+CREATE TRIGGER search_docs_reject_replace BEFORE INSERT ON search_docs WHEN EXISTS (SELECT 1 FROM search_docs WHERE id = NEW.id) BEGIN
+  SELECT RAISE(ABORT, 'search_docs are not replaced: the row exists');
+END;
+CREATE VIRTUAL TABLE search_index USING fts5(body, content = 'search_docs', content_rowid = 'id', tokenize = 'trigram');
+CREATE TRIGGER search_docs_index_insert AFTER INSERT ON search_docs BEGIN
+  INSERT INTO search_index (rowid, body) VALUES (NEW.id, NEW.body);
+END;
+CREATE TRIGGER search_docs_index_delete AFTER DELETE ON search_docs BEGIN
+  INSERT INTO search_index (search_index, rowid, body) VALUES ('delete', OLD.id, OLD.body);
+END;
+CREATE TRIGGER search_docs_index_update AFTER UPDATE ON search_docs BEGIN
+  INSERT INTO search_index (search_index, rowid, body) VALUES ('delete', OLD.id, OLD.body);
+  INSERT INTO search_index (rowid, body) VALUES (NEW.id, NEW.body);
+END;
+CREATE TRIGGER search_docs_session_delete AFTER DELETE ON sessions BEGIN
+  DELETE FROM search_docs WHERE session_id = OLD.id;
+END;
+
+CREATE TABLE search_cursor (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  last_event_id INTEGER NOT NULL
+);
+INSERT INTO search_cursor (id, last_event_id) VALUES (1, 0);
+
+CREATE TABLE reflection_jobs (
+  run_id TEXT PRIMARY KEY REFERENCES runs (id),
+  state TEXT NOT NULL CHECK (state IN ('pending', 'running', 'done', 'failed')),
+  attempts INTEGER NOT NULL,
+  last_error TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX reflection_jobs_by_state ON reflection_jobs (state, created_at);
+
+CREATE TABLE context_charges (
+  id INTEGER PRIMARY KEY,
+  purpose TEXT NOT NULL CHECK (purpose IN ('reflection', 'guideline')),
+  run_id TEXT REFERENCES runs (id),
+  project TEXT NOT NULL,
+  model TEXT NOT NULL,
+  input_tokens INTEGER NOT NULL CHECK (input_tokens >= 0),
+  output_tokens INTEGER NOT NULL CHECK (output_tokens >= 0),
+  total_tokens INTEGER NOT NULL CHECK (total_tokens >= 0),
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX context_charges_by_run ON context_charges (run_id) WHERE run_id IS NOT NULL;
+
+CREATE TABLE compaction_guidelines (
+  version INTEGER PRIMARY KEY,
+  text TEXT NOT NULL,
+  parent INTEGER REFERENCES compaction_guidelines (version),
+  created_at INTEGER NOT NULL,
+  adopted_at INTEGER,
+  report_json TEXT NOT NULL
+);
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -291,4 +484,9 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 10, name: 'record whether a memory was saved in a trusted folder', sql: MEMORY_TRUST_ORIGIN },
   { version: 11, name: 'remember which call last read a job and where its read began, so a replayed read returns the same bytes', sql: JOB_READ_REPLAY },
   { version: 12, name: 'record the lease token under which an idempotency record was begun or adopted', sql: IDEMPOTENCY_LEASE_TOKEN },
+  {
+    version: 13,
+    name: 'add governing facts, memory evidence and lifecycle, the hierarchical search index, reflection jobs and compaction guidelines',
+    sql: EVIDENCE_BASED_CONTEXT,
+  },
 ];

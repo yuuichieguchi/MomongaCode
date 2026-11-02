@@ -186,6 +186,12 @@ export type PriceEntrySettings = {
 
 export type AutoModeSettings = { classifier?: string };
 
+export type MemorySettings = { reflection?: { enabled?: boolean; maxTokens?: number }; forgetAfterDays?: number };
+
+export type VerificationSettings = { commands?: string[]; manifests?: string[] };
+
+export type ContextSettings = { adaptiveBudget?: boolean };
+
 export type Settings = {
   permissions?: PermissionsSettings;
   env?: Record<string, string>;
@@ -200,6 +206,9 @@ export type Settings = {
   sandbox?: SandboxSetting;
   telemetry?: TelemetrySettings;
   pricing?: PriceEntrySettings[];
+  memory?: MemorySettings;
+  verification?: VerificationSettings;
+  context?: ContextSettings;
 };
 
 export type HookGroups = NonNullable<HooksSettings[keyof HooksSettings]>;
