@@ -96,6 +96,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
   const forceCloseController = new AbortController();
   try {
     const redactor = createRedactor({ credentials: options.credentials });
+    options.credentialFeed?.((credential) => redactor.add(credential));
     const services: Services = {
       config: options.config,
       clock,

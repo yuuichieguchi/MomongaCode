@@ -416,6 +416,10 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       config: gatewayConfigOf(settings.models.targets, settings.models.aliases),
       adapters,
       credentials: credentialValuesOf(options.env, credentialEnvNames(settings), secretResolver.resolved(), (message) => logger.warn(message)),
+      credentialFeed: (add) =>
+        secretResolver.onResolved((name, value) => {
+          for (const credential of credentialValuesOf({}, [], new Map([[name, value]]), (message) => logger.warn(message))) add(credential);
+        }),
       clock,
       timers,
       dbPath: paths.databases.gateway,
@@ -431,9 +435,6 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       version: options.version,
       onError: (error) => logger.error('unhandled gateway error', { err: toError(error) }),
       onFatal: latchFatal,
-    });
-    secretResolver.onResolved((name, value) => {
-      for (const credential of credentialValuesOf({}, [], new Map([[name, value]]), (message) => logger.warn(message))) gateway.addCredential(credential);
     });
     if (gateway.tcpPort !== undefined) logger.info('gateway.debug_listener', { data: { host: DEBUG_TCP_HOST, port: gateway.tcpPort } });
     cleanups.splice(cleanups.indexOf(closeAdapters), 1);

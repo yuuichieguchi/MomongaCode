@@ -112,6 +112,7 @@ export type HarnessOptions = {
   debugTcp?: GatewayOptions['debugTcp'];
   onError?: GatewayOptions['onError'];
   credentials?: readonly string[];
+  credentialFeed?: GatewayOptions['credentialFeed'];
 };
 
 export const startGateway = async (options: HarnessOptions): Promise<Harness> => {
@@ -122,6 +123,7 @@ export const startGateway = async (options: HarnessOptions): Promise<Harness> =>
   const dbPath = path.join(dir, 'state', 'gateway.db');
   const gateway = await createGateway({
     credentials: options.credentials ?? [],
+    ...(options.credentialFeed === undefined ? {} : { credentialFeed: options.credentialFeed }),
     config: buildConfig(options.config),
     adapters: options.adapters,
     clock,

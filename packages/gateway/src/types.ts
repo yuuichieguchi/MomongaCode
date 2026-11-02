@@ -37,6 +37,7 @@ export type GatewayOptions = {
   config: GatewayConfig;
   adapters: Record<string, ProviderAdapter>;
   credentials: readonly string[];
+  credentialFeed?: (add: (credential: string) => void) => void;
   clock: Clock;
   timers: GatewayTimers;
   dbPath: string;
