@@ -1,8 +1,10 @@
+import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import { TEST_RUN_ENV } from '@momonga/testkit';
 import { E2E_CASES } from './support/cases.ts';
+import { BUNDLE_SCRIPT } from './support/launcher.ts';
 import { E2E_RUN_ENV } from './support/run-env.ts';
 import { SANDBOX_ENV, encodeSandboxProbe, runSandboxProbe, sandboxLine } from './support/sandbox.ts';
 import { runE2eTeardown } from './support/teardown.ts';
@@ -22,6 +24,7 @@ export default function setup(): () => Promise<void> {
   const run = randomBytes(2).toString('hex');
   process.env[E2E_RUN_ENV] = run;
   process.env[TEST_RUN_ENV] = run;
+  execFileSync(process.execPath, [BUNDLE_SCRIPT], { stdio: 'inherit' });
   const probe = runSandboxProbe();
   process.env[SANDBOX_ENV] = encodeSandboxProbe(probe);
   console.log(sandboxLine(probe, E2E_CASES));

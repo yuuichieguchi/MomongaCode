@@ -1,0 +1,5 @@
+export const POLL_INTERVAL_MS = 50;
+
+export const RECONNECT_FIRST_RETRY_MS = 250;
+
+export const RECONNECT_MAX_INTERVAL_MS = 5000;

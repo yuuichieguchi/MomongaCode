@@ -1,0 +1,92 @@
+import { PERMISSION_MODES } from '@momonga/protocol';
+import type { PermissionMode } from '@momonga/protocol';
+
+export type SlashContext = {
+  readonly mode: PermissionMode;
+  readonly bypassAllowed: boolean;
+  readonly commands: readonly SlashCommand[];
+  info(text: string): void;
+  clear(): void;
+  exit(): void;
+  setMode(mode: PermissionMode): Promise<void>;
+};
+
+export type SlashCommand = {
+  readonly name: string;
+  readonly aliases?: readonly string[];
+  readonly description: string;
+  readonly usage?: string;
+  run(args: string, context: SlashContext): Promise<void> | void;
+};
+
+export type SlashRegistry = {
+  list(): readonly SlashCommand[];
+  find(name: string): SlashCommand | undefined;
+};
+
+export const createSlashRegistry = (commands: readonly SlashCommand[]): SlashRegistry => ({
+  list: () => commands,
+  find: (name) => commands.find((command) => command.name === name || command.aliases?.includes(name) === true),
+});
+
+export type ParsedSlash = { name: string; args: string };
+
+export const parseSlash = (line: string): ParsedSlash | undefined => {
+  const trimmed = line.trim();
+  const match = /^\/([^\s/]+)(?:\s+([\s\S]*))?$/.exec(trimmed);
+  if (match === null) return undefined;
+  return { name: match[1] as string, args: (match[2] ?? '').trim() };
+};
+
+const help: SlashCommand = {
+  name: 'help',
+  description: 'list the slash commands and key bindings',
+  run: (_args, context) => {
+    context.info(
+      [
+        'Slash commands',
+        ...context.commands.map((command) => `  /${command.name}${command.usage === undefined ? '' : ` ${command.usage}`}  ${command.description}`),
+        'Keys',
+        '  enter submit, backslash+enter or ctrl+j new line, up/down history',
+        '  shift+tab cycle the permission mode, esc cancel the run, ctrl+d exit',
+      ].join('\n'),
+    );
+  },
+};
+
+const clear: SlashCommand = {
+  name: 'clear',
+  description: 'clear the screen and start a new conversation',
+  run: (_args, context) => {
+    context.clear();
+  },
+};
+
+const exit: SlashCommand = {
+  name: 'exit',
+  aliases: ['quit'],
+  description: 'leave momonga; a running task continues in the daemon',
+  run: (_args, context) => {
+    context.exit();
+  },
+};
+
+const mode: SlashCommand = {
+  name: 'mode',
+  usage: '[mode]',
+  description: 'show or set the permission mode',
+  run: async (args, context) => {
+    if (args === '') {
+      context.info(`permission mode: ${context.mode} (available: ${PERMISSION_MODES.filter((candidate) => candidate !== 'auto').join(', ')})`);
+      return;
+    }
+    const chosen = PERMISSION_MODES.find((candidate) => candidate === args);
+    if (chosen === undefined) {
+      context.info(`unknown permission mode ${args}; available: ${PERMISSION_MODES.filter((candidate) => candidate !== 'auto').join(', ')}`);
+      return;
+    }
+    await context.setMode(chosen);
+  },
+};
+
+export const BUILTIN_SLASH_COMMANDS: readonly SlashCommand[] = [help, clear, mode, exit];

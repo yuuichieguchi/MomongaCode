@@ -6,7 +6,7 @@ export type { CircuitBreakerOptions, CircuitState } from './circuit-breaker.ts';
 export { systemClock } from './clock.ts';
 export type { Clock } from './clock.ts';
 export { Deadline } from './deadline.ts';
-export { parseJsonOrText } from './json.ts';
+export { isRecord, parseJsonOrText } from './json.ts';
 export { immediateTx, migrate, openDatabase, readTx } from './sqlite.ts';
 export type { MigrateResult, Migration, OpenDatabaseOptions } from './sqlite.ts';
 export { decodeSse, encodeSse } from './sse.ts';

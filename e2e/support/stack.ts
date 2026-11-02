@@ -236,9 +236,9 @@ export const spawnSupervisor = (options: SpawnSupervisorOptions): SpawnedSupervi
   return { child, pid, depsFile, ready, exitState: () => exit, stdoutLines: () => [...stdoutLines], stderrTail, exited: exitGate.promise };
 };
 
-type SandboxChoice = { kind: StackSandbox; sandboxFallback?: string };
+export type SandboxChoice = { kind: StackSandbox; sandboxFallback?: string };
 
-const sandboxChoiceOf = (options: StartStackOptions): SandboxChoice => {
+export const sandboxChoiceOf = (options: StartStackOptions): SandboxChoice => {
   if (options.sandbox !== undefined) return { kind: options.sandbox };
   const resolution = resolveSandbox({ needsBash: options.needsBash ?? false });
   if (resolution.kind === 'skip') throw new Error(resolution.reason);
@@ -246,7 +246,7 @@ const sandboxChoiceOf = (options: StartStackOptions): SandboxChoice => {
   return { kind: 'seatbelt' };
 };
 
-const settingsOf = (home: E2eHome, kind: StackSandbox, options: StartStackOptions): Readonly<Record<string, unknown>> | string => {
+export const settingsOf = (home: E2eHome, kind: StackSandbox, options: StartStackOptions): Readonly<Record<string, unknown>> | string => {
   if (options.settingsText !== undefined) return options.settingsText;
   const base = options.target === undefined ? baseSettings(home, kind) : settingsWithTarget(baseSettings(home, kind), options.target);
   return { ...base, ...options.settings };
@@ -255,7 +255,7 @@ const settingsOf = (home: E2eHome, kind: StackSandbox, options: StartStackOption
 const satisfied = (health: SupervisorHealth, wanted: StackReadiness): boolean =>
   health.phase === wanted.phase && ROLES.every((role) => health.children.find((child) => child.role === role)?.state === wanted.children[role]);
 
-const startUpstream = async (home: E2eHome, options: StartStackOptions): Promise<FakeChatCompletionsServer> => {
+export const startUpstream = async (home: E2eHome, options: StartStackOptions): Promise<FakeChatCompletionsServer> => {
   if (options.upstream !== undefined) {
     if (options.script !== undefined) throw new Error('startStack: script cannot be combined with a caller-supplied upstream');
     if (options.routes !== undefined) throw new Error('startStack: routes cannot be combined with a caller-supplied upstream');

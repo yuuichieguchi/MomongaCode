@@ -1,0 +1,117 @@
+import { Command, Option } from 'commander';
+import { canonicalPath, momongaPaths } from '@momonga/foundation';
+import type { EntryIo, MomongaPaths } from '@momonga/foundation';
+import { PERMISSION_MODES } from '@momonga/protocol';
+import type { PermissionMode } from '@momonga/protocol';
+import { daemonStatus, daemonStop } from './commands/daemon.ts';
+import { approve, attachRun, cancelRun } from './commands/runs.ts';
+import { runGateway, runRuntime } from './daemon/entries.ts';
+import { INTERNAL_COMMANDS, selfLauncher } from './daemon/launcher.ts';
+import { runSupervise } from './daemon/supervise.ts';
+import type { CliPorts } from './ports.ts';
+import { OUTPUT_FORMATS, runHeadless } from './run/headless.ts';
+import type { OutputFormat } from './run/headless.ts';
+
+export type ProgramDeps = {
+  ports: CliPorts;
+  interrupt: AbortSignal;
+  entryIo(args: readonly string[]): EntryIo;
+  complete(code: number): void;
+};
+
+type RootOptions = {
+  print?: string;
+  outputFormat: OutputFormat;
+  permissionMode?: PermissionMode;
+  dangerouslySkipPermissions?: true;
+  verbose?: true;
+};
+
+export const pathsOf = (ports: Pick<CliPorts, 'home'>): MomongaPaths => momongaPaths(canonicalPath(ports.home), process.platform, {});
+
+const outputFormatOption = (): Option => new Option('--output-format <format>', 'output format of --print and attach').choices(OUTPUT_FORMATS).default('text');
+
+export const buildProgram = (deps: ProgramDeps): Command => {
+  const { ports } = deps;
+  const program = new Command();
+  program.name('momonga').version(ports.version).enablePositionalOptions().showHelpAfterError();
+
+  program
+    .argument('[prompt]', 'initial prompt of the interactive session')
+    .option('-p, --print <prompt>', 'run the prompt without a terminal UI and print the result')
+    .addOption(outputFormatOption())
+    .addOption(new Option('--permission-mode <mode>', 'permission mode of the session').choices(PERMISSION_MODES))
+    .option('--dangerously-skip-permissions', 'run in bypassPermissions mode')
+    .option('--verbose', 'print tool activity to stderr')
+    .action(async (prompt: string | undefined, options: RootOptions) => {
+      const permissionMode = options.dangerouslySkipPermissions === true ? 'bypassPermissions' : options.permissionMode;
+      const session = {
+        ...(permissionMode === undefined ? {} : { permissionMode }),
+        ...(options.dangerouslySkipPermissions === true ? { bypassAllowed: true } : {}),
+      };
+      if (options.print !== undefined) {
+        deps.complete(await runHeadless(ports, pathsOf(ports), { prompt: options.print, format: options.outputFormat, verbose: options.verbose === true, interrupt: deps.interrupt, ...session }));
+        return;
+      }
+      if (ports.terminal === undefined) throw new Error('the interactive session needs a terminal; pass --print <prompt> to run without one');
+      const { runInteractive } = await import('./tui/run-interactive.tsx');
+      deps.complete(await runInteractive(ports, pathsOf(ports), ports.terminal, { ...(prompt === undefined ? {} : { prompt }), ...session }));
+    });
+
+  program
+    .command('attach [run-id]')
+    .description('follow a run until it ends; the latest run of this directory when no id is given')
+    .addOption(outputFormatOption())
+    .option('--after <seq>', 'show events after this sequence number', '0')
+    .option('--verbose', 'print tool activity to stderr')
+    .action(async (runId: string | undefined, options: { outputFormat: OutputFormat; after: string; verbose?: true }) => {
+      deps.complete(
+        await attachRun(ports, pathsOf(ports), {
+          ...(runId === undefined ? {} : { runId }),
+          format: options.outputFormat,
+          after: Number(options.after),
+          verbose: options.verbose === true,
+          interrupt: deps.interrupt,
+        }),
+      );
+    });
+
+  program
+    .command('approve [approval-id] [option]')
+    .description('list pending approvals, show one, or resolve it with allow_once, allow_always, reject_once or reject_always')
+    .action(async (approvalId: string | undefined, option: string | undefined) => {
+      deps.complete(await approve(ports, pathsOf(ports), approvalId, option));
+    });
+
+  program
+    .command('cancel [run-id]')
+    .description('cancel a run; the running run of this directory when no id is given')
+    .action(async (runId: string | undefined) => {
+      deps.complete(await cancelRun(ports, pathsOf(ports), runId));
+    });
+
+  const daemon = program.command('daemon').description('manage the background daemon');
+  daemon.command('status').action(async () => {
+    deps.complete(await daemonStatus(ports, pathsOf(ports)));
+  });
+  daemon.command('stop').action(async () => {
+    deps.complete(await daemonStop(ports, pathsOf(ports)));
+  });
+
+  const internal = (name: string, run: (io: EntryIo) => Promise<number>): void => {
+    program
+      .command(name, { hidden: true })
+      .helpOption(false)
+      .allowUnknownOption()
+      .allowExcessArguments()
+      .argument('[args...]')
+      .action(async (args: string[]) => {
+        deps.complete(await run(deps.entryIo(args)));
+      });
+  };
+  internal(INTERNAL_COMMANDS.supervise, (io) => runSupervise(io, { launcher: selfLauncher(ports.self) }));
+  internal(INTERNAL_COMMANDS.gateway, runGateway);
+  internal(INTERNAL_COMMANDS.runtime, runRuntime);
+
+  return program;
+};

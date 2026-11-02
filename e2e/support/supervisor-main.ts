@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { BASE_ENTRY_FLAGS, nodeEntryIo, parseFlags } from '@momonga/foundation';
-import { createSpawnPort, runSupervisorEntry } from '@momonga/supervisor';
 import type { SupervisorEntryDeps } from '@momonga/supervisor';
+import { runSupervise } from '../../packages/cli/src/daemon/supervise.ts';
 import { entryFileLauncher } from './launcher.ts';
 import type { LauncherOverrides } from './launcher.ts';
 import { E2E_DIR_PREFIX, E2E_RUN_ENV, E2E_RUN_PATTERN } from './run-env.ts';
@@ -114,8 +114,7 @@ export const supervisorMain = async (): Promise<void> => {
     return;
   }
   const { launcherOverrides, ...rest } = loaded;
-  const deps: SupervisorEntryDeps = { ...rest, launcher: entryFileLauncher(launcherOverrides), spawn: createSpawnPort() };
-  const finished = runSupervisorEntry({ ...nodeEntryIo(), env: withoutHarnessVariables(process.env) }, deps);
+  const finished = runSupervise({ ...nodeEntryIo(), env: withoutHarnessVariables(process.env) }, { launcher: entryFileLauncher(launcherOverrides), deps: rest });
   watchParentDeath();
   await finished;
 };
