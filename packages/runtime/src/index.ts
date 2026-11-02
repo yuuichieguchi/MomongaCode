@@ -5,6 +5,7 @@ export { createWorker } from './worker/worker.ts';
 export type { Worker, WorkerBlobs, WorkerDefaults, WorkerErrorContext, WorkerOptions, WorkerWake } from './worker/types.ts';
 export type {
   AgentSpanInput,
+  AgentCatalogPort,
   AgentsPort,
   AppendedRule,
   Clock,

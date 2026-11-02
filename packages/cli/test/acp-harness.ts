@@ -282,6 +282,9 @@ export const fakeRuntime = (): FakeRuntime => {
       };
     },
     elicitations: unexpected('elicitations'),
+    agents: unexpected('agents'),
+    jobs: unexpected('jobs'),
+    childRuns: unexpected('childRuns'),
     mcpServers: unexpected('mcpServers'),
     startMcpAuthorization: unexpected('startMcpAuthorization'),
     mcpAuthorization: unexpected('mcpAuthorization'),

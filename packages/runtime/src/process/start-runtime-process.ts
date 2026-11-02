@@ -429,6 +429,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         modelCapabilities: (alias, signal) => gatewayClient.capabilities(alias, { signal }),
         sessionCreateSettings: settingsComposition.sessionCreateSettings,
         skills: skillsPort,
+        agents: agentsPort,
         defaults: RUNTIME_DEFAULTS,
         timers,
         cancelUpstream: tracker.cancel,

@@ -10,7 +10,7 @@ import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
 import { sameRunRequest } from '@momonga/store';
 import type { Run, RuntimeStore, Session } from '@momonga/store';
 import { GatewayRequestError } from '../gateway-client.ts';
-import type { SkillsPort } from '../ports.ts';
+import type { AgentCatalogPort, SkillsPort } from '../ports.ts';
 import type { SandboxKind } from '../process/sandbox-kind.ts';
 import {
   ApiError,
@@ -38,7 +38,7 @@ import { registerInputRoutes } from './input-routes.ts';
 import type { McpAdminPort } from './input-routes.ts';
 import { registerTrustRoutes } from './trust.ts';
 import type { ServiceTimers } from './timers.ts';
-import { isTerminalStatus, toJobView, toRunView, toSessionView, toSkillView } from './views.ts';
+import { isTerminalStatus, toJobView, toAgentView, toRunView, toSessionView, toSkillView } from './views.ts';
 
 export type RunLimitDefaults = { maxSteps: number; maxTotalTokens: number; approvalTtlMs: number; loopThreshold: number };
 
@@ -59,6 +59,7 @@ export type RunAppDeps = {
   modelCapabilities: (alias: string, signal: AbortSignal) => Promise<Capabilities>;
   sessionCreateSettings: (cwd: string) => Promise<SessionCreateSettings>;
   skills: SkillsPort;
+  agents: AgentCatalogPort;
   isDraining(): boolean;
   health: { pid: number; startedAt: string; sandbox: SandboxKind };
   protectedRootAreas: readonly string[];
@@ -260,6 +261,11 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     return json({ skills: skills.skills.map(toSkillView), warnings: [...skills.warnings] });
   };
 
+  const listAgents: Handler = async (context) => {
+    const agents = await deps.agents.load(requireSession(context.req.param('id') ?? ''));
+    return json({ agents: agents.agents.map(toAgentView), warnings: [...agents.warnings] });
+  };
+
   const createRun: Handler = async (context) => {
     const session = requireSession(context.req.param('id') ?? '');
     requireRootSession(session);
@@ -458,6 +464,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   route('/v1/sessions/:id', { GET: getSession, PATCH: patchSession });
   route('/v1/sessions/:id/runs', { GET: listRuns, POST: createRun });
   route('/v1/sessions/:id/skills', { GET: listSkills });
+  route('/v1/sessions/:id/agents', { GET: listAgents });
   route('/v1/sessions/:id/jobs', { GET: listJobs });
   route('/v1/sessions/:id/events', { GET: sessionEvents });
   route('/v1/runs/:id', { GET: getRun });

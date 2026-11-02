@@ -40,6 +40,9 @@ export type {
   RunTraceView,
   SkillScope,
   SkillView,
+  AgentScope,
+  AgentView,
+  AgentsResponse,
   SkillsResponse,
 } from './run-api.ts';
 export { MEMORY_SCOPES } from './memory.ts';

@@ -1,6 +1,7 @@
 import { readAgentPin } from '@momonga/agents';
+import type { AgentDefinition } from '@momonga/agents';
 import { TERMINAL_STATUSES } from '@momonga/protocol';
-import type { JobView, RunStatus, SkillView } from '@momonga/protocol';
+import type { AgentView, JobView, RunStatus, SkillView } from '@momonga/protocol';
 import type { Skill } from '@momonga/skills';
 import type { Job, Run, RuntimeStore, Session } from '@momonga/store';
 
@@ -67,4 +68,11 @@ export const toSkillView = (skill: Skill): SkillView => ({
   description: skill.description,
   scope: skill.scope,
   location: skill.location,
+});
+
+export const toAgentView = (agent: AgentDefinition): AgentView => ({
+  name: agent.name,
+  description: agent.description,
+  scope: agent.scope,
+  location: agent.location,
 });

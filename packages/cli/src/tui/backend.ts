@@ -7,7 +7,6 @@ import type { HistoryStore } from '../history-store.ts';
 import { daemonReadyBoundMs, ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { followRun } from '../run/follow.ts';
-import { defaultNoticeSources } from './notices.ts';
 import type { NoticeSource } from './notices.ts';
 import { readImageAttachment } from '../images.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
@@ -49,7 +48,7 @@ export const createTuiBackend = (
   paths: MomongaPaths,
   options: SessionOptions,
   history: HistoryStore,
-  noticeSources: readonly NoticeSource[] = defaultNoticeSources(ports),
+  noticeSources: readonly NoticeSource[],
 ): TuiBackend => {
   let client: RuntimeClient | undefined;
   let session: SessionView | undefined;
@@ -128,7 +127,7 @@ export const createTuiBackend = (
         await gateway.close();
       }
     },
-    startupNotices: async () => (await Promise.all(noticeSources.map((source) => source()))).flat(),
+    startupNotices: async () => (await Promise.all(noticeSources.map((source) => source({ runtime: runtime(), session: current() })))).flat(),
     readImage: (file) => readImageAttachment(ports.files, ports.cwd, file),
     loadHistory: () => history.load(),
     recordHistory: (text) => history.append(text),

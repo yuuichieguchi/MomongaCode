@@ -172,4 +172,23 @@ describe('MCP input in the terminal', () => {
       await fixture.close();
     }
   });
+
+  it(titleOf('cli-startup-notices'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    const { home } = await prepareProduct();
+    const agents = path.join(home.project, '.momonga', 'agents');
+    fs.mkdirSync(agents, { recursive: true });
+    fs.writeFileSync(path.join(agents, 'broken.md'), '---\nname: broken\n---\nYou are broken.\n');
+    const skills = path.join(home.project, '.agents', 'skills', 'nameless');
+    fs.mkdirSync(skills, { recursive: true });
+    fs.writeFileSync(path.join(skills, 'SKILL.md'), '---\nname: nameless\n---\nBody.\n');
+    const pty = await spawnWithFakes(home);
+    await pty.waitFor('Do you trust the files in');
+    pty.write('1');
+    await pty.waitFor('model: default → primary');
+    await pty.waitFor('! Agent at');
+    await pty.waitFor('broken.md was skipped: the description is missing or empty');
+    await pty.waitFor('! Skill at');
+    await pty.waitFor('SKILL.md was skipped: the description is missing or empty');
+    await leave(pty);
+  });
 });

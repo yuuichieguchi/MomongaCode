@@ -1,6 +1,6 @@
 import { waitFor } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
-import { UPDATE_CHECK_COMMAND, runBackgroundCheck, startBackgroundCheck } from '../src/update/background.ts';
+import { UPDATE_CHECK_COMMAND, announceUpdate, runBackgroundCheck, startBackgroundCheck } from '../src/update/background.ts';
 import { assetNameFor } from '../src/update/source.ts';
 import { NEW_BINARY, OLD_BINARY, setupUpdate } from './update-harness.ts';
 import type { HarnessOptions, UpdateHarness } from './update-harness.ts';
@@ -84,42 +84,54 @@ describe('startBackgroundCheck: what the user command does', () => {
     await expect(startBackgroundCheck(harness.wiring)).rejects.toMatchObject({ code: 'invalid_update_source' });
   });
 
-  it('announces an installed update once and keeps checking on schedule', async (context) => {
+  it('returns an installed update once for the caller to show and marks it announced', async (context) => {
     const harness = await setupUpdate(context);
     harness.state.value = { checkedAt: 0, outcome: { kind: 'installed', version: '2.0.0' }, announced: false };
 
-    await startBackgroundCheck(harness.wiring);
-    await startBackgroundCheck(harness.wiring);
+    expect(await announceUpdate(harness.wiring)).toBe('momonga 2.0.0 was installed in the background; you are running 1.0.0');
+    expect(await announceUpdate(harness.wiring)).toBeUndefined();
 
-    expect(harness.stderr).toEqual(['momonga: momonga 2.0.0 was installed in the background; you are running 1.0.0\n']);
+    expect(harness.stderr).toEqual([]);
     expect(harness.state.value).toEqual({ checkedAt: 0, outcome: { kind: 'installed', version: '2.0.0' }, announced: true });
   });
 
-  it('announces an update of the running version as an update', async (context) => {
+  it('returns an update of the running version as an update', async (context) => {
     const harness = await setupUpdate(context, { version: '2.0.0' });
     harness.state.value = { checkedAt: 0, outcome: { kind: 'installed', version: '2.0.0' }, announced: false };
 
-    await startBackgroundCheck(harness.wiring);
-
-    expect(harness.stderr).toEqual(['momonga: momonga was updated to 2.0.0 in the background\n']);
+    expect(await announceUpdate(harness.wiring)).toBe('momonga was updated to 2.0.0 in the background');
   });
 
-  it('announces a failed check once with its code and the command that explains it', async (context) => {
+  it('returns a failed check with its code and the command that explains it', async (context) => {
     const harness = await setupUpdate(context);
     harness.state.value = { checkedAt: 0, outcome: { kind: 'failed', code: 'checksum_mismatch', message: 'sha256 differs' }, announced: false };
 
-    await startBackgroundCheck(harness.wiring);
-
-    expect(harness.stderr).toEqual(['momonga: the background update check failed (checksum_mismatch): sha256 differs; run `momonga update` for details\n']);
+    expect(await announceUpdate(harness.wiring)).toBe('the background update check failed (checksum_mismatch): sha256 differs; run `momonga update` for details');
   });
 
   it('stays quiet about an up-to-date result', async (context) => {
     const harness = await setupUpdate(context);
     harness.state.value = { checkedAt: 0, outcome: { kind: 'up_to_date' }, announced: false };
 
+    expect(await announceUpdate(harness.wiring)).toBeUndefined();
+  });
+
+  it('leaves an unannounced result for the announcement when it schedules the check', async (context) => {
+    const harness = await setupUpdate(context);
+    harness.state.value = { checkedAt: 0, outcome: { kind: 'installed', version: '2.0.0' }, announced: false };
+
     await startBackgroundCheck(harness.wiring);
 
     expect(harness.stderr).toEqual([]);
+    expect(harness.state.value).toEqual({ checkedAt: 0, outcome: { kind: 'installed', version: '2.0.0' }, announced: false });
+  });
+
+  it('announces nothing when autoUpdates is off', async (context) => {
+    const harness = await setupUpdate(context);
+    harness.control.autoUpdates = false;
+    harness.state.value = { checkedAt: 0, outcome: { kind: 'installed', version: '2.0.0' }, announced: false };
+
+    expect(await announceUpdate(harness.wiring)).toBeUndefined();
   });
 
   it('rejects a state file it cannot read rather than ignoring it', async (context) => {

@@ -50,18 +50,22 @@ const noticeOf = (ports: UpdatePorts, state: UpdateState): string | undefined =>
 const isDue = (state: UpdateState | undefined, now: number, intervalMs: number): boolean =>
   state === undefined || state.checkedAt > now || now - state.checkedAt >= intervalMs;
 
+const isEnabled = async (wiring: UpdateWiring): Promise<boolean> => isApplicable(wiring) && (await wiring.ports.autoUpdates());
+
+export const announceUpdate = async (wiring: UpdateWiring): Promise<string | undefined> => {
+  const { ports } = wiring;
+  if (!(await isEnabled(wiring))) return undefined;
+  const state = await readState(ports);
+  if (state === undefined) return undefined;
+  const notice = noticeOf(ports, state);
+  if (notice !== undefined) await ports.state.write({ ...state, announced: true });
+  return notice;
+};
+
 export const startBackgroundCheck = async (wiring: UpdateWiring): Promise<void> => {
   const { ports } = wiring;
-  if (!isApplicable(wiring)) return;
-  if (!(await ports.autoUpdates())) return;
+  if (!(await isEnabled(wiring))) return;
   const state = await readState(ports);
-  if (state !== undefined) {
-    const notice = noticeOf(ports, state);
-    if (notice !== undefined) {
-      ports.stderr.write(`momonga: ${notice}\n`);
-      await ports.state.write({ ...state, announced: true });
-    }
-  }
   if (!isDue(state, ports.clock.now(), wiring.checkIntervalMs)) return;
   const invocation = selfInvocation(ports.self, UPDATE_CHECK_COMMAND);
   const child = ports.spawnDetached({ command: invocation.command, args: invocation.args, env: ports.env, cwd: ports.home });

@@ -1,14 +1,16 @@
 import type { McpServerConfig } from '@momonga/config';
 import { createUdsClient, decodeSse, isRecord } from '@momonga/foundation';
 import type { UdsResponse } from '@momonga/foundation';
-import type { CostReportView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryView, PermissionMode, PublicRunEvent, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
+import type { AgentsResponse, CostReportView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryView, PermissionMode, PublicRunEvent, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
 import {
   ContractViolation,
+  checkAgents,
   checkApproval,
   checkCostReport,
   checkElicitation,
   checkErrorBody,
   checkHealth,
+  checkJobs,
   checkMcpAuthorization,
   checkMcpServers,
   checkMemories,
@@ -85,6 +87,9 @@ export type RuntimeClient = {
   listSessions(cwd: string): Promise<SessionView[]>;
   listRuns(sessionId: string): Promise<RunView[]>;
   skills(sessionId: string): Promise<SkillsResponse>;
+  agents(sessionId: string): Promise<AgentsResponse>;
+  jobs(sessionId: string): Promise<JobView[]>;
+  childRuns(runId: string): Promise<RunView[]>;
   setMcpServers(sessionId: string, servers: Readonly<Record<string, McpServerConfig>>): Promise<SessionView>;
   setPermissionMode(sessionId: string, mode: PermissionMode): Promise<SessionView>;
   createRun(sessionId: string, input: string, options?: CreateRunOptions): Promise<{ run: RunView; location: string }>;
@@ -221,6 +226,24 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     const path = `/v1/sessions/${sessionId}/skills`;
     const { body } = await send('GET', path, [200]);
     return checkSkills(body, `GET ${path}`);
+  };
+
+  const agents = async (sessionId: string): Promise<AgentsResponse> => {
+    const path = `/v1/sessions/${sessionId}/agents`;
+    const { body } = await send('GET', path, [200]);
+    return checkAgents(body, `GET ${path}`);
+  };
+
+  const jobs = async (sessionId: string): Promise<JobView[]> => {
+    const path = `/v1/sessions/${sessionId}/jobs`;
+    const { body } = await send('GET', path, [200]);
+    return checkJobs(body, `GET ${path}`).jobs;
+  };
+
+  const childRuns = async (runId: string): Promise<RunView[]> => {
+    const path = `/v1/runs/${runId}/children`;
+    const { body } = await send('GET', path, [200]);
+    return listOf(body, 'runs', `GET ${path}`).map((entry) => checkRun(entry, `GET ${path}`));
   };
 
   const setMcpServers = async (sessionId: string, servers: Readonly<Record<string, McpServerConfig>>): Promise<SessionView> => {
@@ -404,6 +427,9 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     listSessions,
     listRuns,
     skills,
+    agents,
+    jobs,
+    childRuns,
     setMcpServers,
     setPermissionMode,
     createRun,

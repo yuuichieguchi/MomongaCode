@@ -80,6 +80,26 @@ describe('the background check around user commands', () => {
     expect(second.harness.spawned).toHaveLength(0);
   });
 
+  it('announces an unannounced result on stderr before an ordinary command', async (context) => {
+    const { program, harness } = await programFor(context);
+    harness.state.value = { checkedAt: 0, outcome: { kind: 'installed', version: '2.0.0' }, announced: false };
+
+    await run(program, 'daemon', 'status');
+
+    expect(harness.stderr.join('')).toContain('momonga: momonga 2.0.0 was installed in the background; you are running 1.0.0');
+    expect(harness.state.value).toMatchObject({ announced: true });
+  });
+
+  it('leaves the result of the update check to the startup screen before an interactive session', async (context) => {
+    const { program, harness } = await programFor(context);
+    harness.state.value = { checkedAt: 0, outcome: { kind: 'installed', version: '2.0.0' }, announced: false };
+
+    await expect(run(program)).rejects.toThrow('the interactive session needs a terminal');
+
+    expect(harness.stderr.join('')).toBe('');
+    expect(harness.state.value).toMatchObject({ announced: false });
+  });
+
   it('reports a check that cannot be scheduled and still runs the command', async (context) => {
     const { program, harness, completed } = await programFor(context);
     harness.state.value = { nonsense: true };

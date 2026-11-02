@@ -338,11 +338,10 @@ export function App(props: AppProps) {
       },
     );
     void backend.skills().then(
-      ({ skills, warnings }) => {
+      ({ skills }) => {
         const taken = new Set(baseSlash.list().flatMap((command) => [command.name, ...(command.aliases ?? [])]));
         const loaded = skillCommands(skills, taken);
         setSkillSlash(loaded.commands);
-        setNotices((previous) => [...previous, ...warnings]);
         if (loaded.shadowed.length > 0) note(`skills shadowed by a built-in command and reachable only through the model: ${loaded.shadowed.join(', ')}`);
       },
       (error: unknown) => {

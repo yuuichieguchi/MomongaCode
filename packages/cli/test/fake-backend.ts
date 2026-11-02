@@ -174,7 +174,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       if (options.modelPending !== undefined) await options.modelPending;
       return { id: session.modelAlias, object: 'model', targets: [...(options.targets ?? ['primary'])], capabilities: capabilitiesOf({ contextWindow: options.contextWindow ?? 8192, imageInput: options.imageInput ?? false }) };
     },
-    startupNotices: async () => [...(options.startupNotices ?? [])],
+    startupNotices: async () => [...(options.startupNotices ?? []), ...(options.skillWarnings ?? [])],
     readImage: async (file) => {
       const image = options.images?.[file];
       if (image === undefined) throw new Error(`no such image ${file}`);

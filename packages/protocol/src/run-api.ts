@@ -88,6 +88,7 @@ const runLimits = closed(
 const location = closed({ path: string, line: nonNegativeInteger }, ['path']);
 
 const SKILL_SCOPES = ['project', 'user'] as const;
+const AGENT_SCOPES = ['project', 'user'] as const;
 
 const toolAwait: JsonSchema = {
   oneOf: [
@@ -114,6 +115,11 @@ const jobView = closed(
 
 const skillView = closed(
   { name: string, description: string, scope: enumOf(SKILL_SCOPES), location: string },
+  ['name', 'description', 'scope', 'location'],
+);
+
+const agentView = closed(
+  { name: string, description: string, scope: enumOf(AGENT_SCOPES), location: string },
   ['name', 'description', 'scope', 'location'],
 );
 
@@ -352,6 +358,12 @@ export type SkillScope = (typeof SKILL_SCOPES)[number];
 export type SkillView = { name: string; description: string; scope: SkillScope; location: string };
 
 export type SkillsResponse = { skills: SkillView[]; warnings: string[] };
+
+export type AgentScope = (typeof AGENT_SCOPES)[number];
+
+export type AgentView = { name: string; description: string; scope: AgentScope; location: string };
+
+export type AgentsResponse = { agents: AgentView[]; warnings: string[] };
 
 export type RunTraceSpan = {
   traceId: string;
@@ -632,6 +644,7 @@ export const RUN_API_SCHEMAS = {
   JobsResponse: root(closed({ jobs: { type: 'array', items: jobView } }, ['jobs'])),
   ChildRunsResponse: root(closed({ runs: { type: 'array', items: runView } }, ['runs'])),
   SkillsResponse: root(closed({ skills: { type: 'array', items: skillView }, warnings: { type: 'array', items: string } }, ['skills', 'warnings'])),
+  AgentsResponse: root(closed({ agents: { type: 'array', items: agentView }, warnings: { type: 'array', items: string } }, ['agents', 'warnings'])),
   RunTrace: root(
     closed(
       {

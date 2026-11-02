@@ -1,7 +1,7 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import { RUN_API_SCHEMAS } from '@momonga/protocol';
-import type { CostReportView, MemoriesResponse, MemoryResponse, McpAuthorizationView, McpServerView, PublicRunEvent, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
+import type { AgentsResponse, CostReportView, JobsResponse, MemoriesResponse, MemoryResponse, McpAuthorizationView, McpServerView, PublicRunEvent, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
 import type { ApprovalView, ElicitationView, ErrorBody, RunView, SessionView, TrustView } from './views.ts';
 
 export class ContractViolation extends Error {
@@ -30,6 +30,8 @@ export const checkHealth = guard<RunHealth>(RUN_API_SCHEMAS.Health);
 export const checkRunEvent = guard<PublicRunEvent>(RUN_API_SCHEMAS.PublicRunEvent);
 export const checkTrace = guard<RunTraceView>(RUN_API_SCHEMAS.RunTrace);
 export const checkSkills = guard<SkillsResponse>(RUN_API_SCHEMAS.SkillsResponse);
+export const checkAgents = guard<AgentsResponse>(RUN_API_SCHEMAS.AgentsResponse);
+export const checkJobs = guard<JobsResponse>(RUN_API_SCHEMAS.JobsResponse);
 export const checkElicitation = guard<ElicitationView>(RUN_API_SCHEMAS.ElicitationView);
 export const checkMcpServers = guard<{ servers: McpServerView[] }>(RUN_API_SCHEMAS.McpServersResponse);
 export const checkMcpAuthorization = guard<McpAuthorizationView>(RUN_API_SCHEMAS.McpAuthorizationView);

@@ -29,7 +29,7 @@ import type { FakeSettings } from '../worker/fake-settings.ts';
 import { createFakeToolbox } from '../worker/fake-tools.ts';
 import type { FakeToolbox } from '../worker/fake-tools.ts';
 import { createFakeTracer } from '../worker/fake-tracer.ts';
-import { capabilitiesFor, createFakeInstructions, diskSkillsPort, fakeSandbox, testSystemPrompt } from '../worker/harness.ts';
+import { capabilitiesFor, createFakeInstructions, diskAgentCatalog, diskSkillsPort, fakeSandbox, testSystemPrompt } from '../worker/harness.ts';
 
 export const START_MS = 1_800_000_000_000;
 export const LEASE_MS = 30_000;
@@ -182,6 +182,7 @@ export const validateJsonBody = (status: number, body: unknown): void => {
   }
   if (typeof body !== 'object' || body === null) return;
   if ('skills' in body && 'warnings' in body) expectSchema('SkillsResponse', body);
+  if ('agents' in body && 'warnings' in body) expectSchema('AgentsResponse', body);
   for (const [key, name] of Object.entries(VIEW_KEYS)) if (key in body) expectSchema(name, (body as Record<string, unknown>)[key]);
   for (const [key, name] of Object.entries(LIST_KEYS)) {
     if (!(key in body)) continue;
@@ -417,6 +418,7 @@ export type ServiceOverrides = {
   sandboxKind?: 'seatbelt' | 'none';
   protectedRootAreas?: readonly string[];
   skills?: runtime.SkillsPort;
+  agents?: runtime.AgentCatalogPort;
   skillsTrusted?: () => boolean;
   mcp?: McpAdminPort;
 };
@@ -478,6 +480,7 @@ export const serviceOptions = (
   }),
   sessionCreateSettings: base.ports.sessionCreateSettings,
   skills: overrides.skills ?? diskSkillsPort(base.home, overrides.skillsTrusted),
+  agents: overrides.agents ?? diskAgentCatalog(base.home, overrides.skillsTrusted),
   mcp: overrides.mcp ?? unusedMcpAdmin,
   defaults: { modelAlias: MODEL_ALIAS, runTimeoutMs: DEFAULT_TIMEOUT_MS, limits: { ...DEFAULT_LIMITS } },
   notifier: base.notifier,

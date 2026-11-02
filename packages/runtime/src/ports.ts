@@ -55,7 +55,9 @@ export type MemoryPort = {
   load(session: Session): MemorySet;
 };
 
-export type AgentsPort = { load(session: Session): Promise<AgentSet>; runs: ChildRuns };
+export type AgentCatalogPort = { load(session: Session): Promise<AgentSet> };
+
+export type AgentsPort = AgentCatalogPort & { runs: ChildRuns };
 
 export type ToolEnv = Readonly<Record<string, string>>;
 

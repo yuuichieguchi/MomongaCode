@@ -8,8 +8,9 @@ import type { PermissionRule } from '@momonga/config';
 import type { InstructionReader } from '@momonga/context';
 import { computeFileRules } from '@momonga/policy';
 import type { Capabilities, PermissionMode, RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
+import { createAgentLoader } from '@momonga/agents';
 import { createSkillsPort, createWorker } from '@momonga/runtime';
-import type { MemoryPort, SkillsPort, ToolEnv, ToolRuntimePort, Worker, WorkerOptions } from '@momonga/runtime';
+import type { AgentCatalogPort, MemoryPort, SkillsPort, ToolEnv, ToolRuntimePort, Worker, WorkerOptions } from '@momonga/runtime';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import { foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
@@ -82,6 +83,11 @@ export const inertMemoryPort: MemoryPort = { load: () => ({ memories: [], tools:
 
 export const diskSkillsPort = (home: string, trusted: () => boolean = () => true): SkillsPort =>
   createSkillsPort({ loader: createSkillLoader({ home, fileSystem: createNodeSkillFileSystem() }), settings: { trusted } });
+
+export const diskAgentCatalog = (home: string, trusted: () => boolean = () => true): AgentCatalogPort => {
+  const loader = createAgentLoader({ home, fileSystem: createNodeSkillFileSystem() });
+  return { load: (session) => loader.load({ projectRoot: session.cwd, trusted: trusted() }) };
+};
 
 export type FakeInstructions = InstructionReader & { files: Map<string, string>; reads: string[] };
 

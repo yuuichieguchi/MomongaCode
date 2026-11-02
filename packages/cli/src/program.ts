@@ -7,7 +7,7 @@ import { daemonStart, daemonStatus, daemonStop } from './commands/daemon.ts';
 import { registerProductCommands } from './commands/register.ts';
 import { runUpdate } from './commands/update.ts';
 import { describeFailure } from './failure.ts';
-import { UPDATE_CHECK_COMMAND, runBackgroundCheck, startBackgroundCheck } from './update/background.ts';
+import { UPDATE_CHECK_COMMAND, announceUpdate, runBackgroundCheck, startBackgroundCheck } from './update/background.ts';
 import { DEFAULT_FM_BINARY, probeFm } from './commands/gateway.ts';
 import { approve, attachRun, cancelRun } from './commands/runs.ts';
 import { showTrace } from './commands/trace.ts';
@@ -16,6 +16,8 @@ import { pathsOf } from './paths.ts';
 import type { ProgramDeps } from './program-deps.ts';
 import { OUTPUT_FORMATS, runHeadless } from './run/headless.ts';
 import type { OutputFormat } from './run/headless.ts';
+
+const startsInteractiveSession = (program: Command, action: Command): boolean => action === program && action.opts<RootOptions>().print === undefined;
 
 const isBackgroundCheckExempt = (commandName: string): boolean => commandName.startsWith('__') || commandName === 'update';
 
@@ -52,6 +54,10 @@ export const buildProgram = (deps: ProgramDeps): Command => {
   program.hook('preAction', async (_program, action) => {
     if (isBackgroundCheckExempt(action.name())) return;
     try {
+      if (!startsInteractiveSession(program, action)) {
+        const notice = await announceUpdate(deps.update);
+        if (notice !== undefined) ports.stderr.write(`momonga: ${notice}\n`);
+      }
       await startBackgroundCheck(deps.update);
     } catch (error) {
       ports.stderr.write(`momonga: the background update check was not started: ${describeFailure(error)}\n`);
@@ -79,7 +85,7 @@ export const buildProgram = (deps: ProgramDeps): Command => {
       }
       if (ports.terminal === undefined) throw new Error('the interactive session needs a terminal; pass --print <prompt> to run without one');
       const { runInteractive } = await import('./tui/run-interactive.tsx');
-      deps.complete(await runInteractive(ports, pathsOf(ports), ports.terminal, { ...(prompt === undefined ? {} : { prompt }), ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...session }));
+      deps.complete(await runInteractive(ports, pathsOf(ports), ports.terminal, { ...(prompt === undefined ? {} : { prompt }), ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...session }, deps.update));
     });
 
   program
