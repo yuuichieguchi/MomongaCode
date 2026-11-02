@@ -53,10 +53,30 @@ const storedSnapshot = (leading: readonly RunEventPayload[] = []) => {
   return { store, run, state, events, mutate, storedJson };
 };
 
-describe('snapshot state version 8', () => {
-  it('writes stateVersion 8', () => {
+const CALL: RunEventPayload = { type: 'tool.call', callId: 'c1', providerCallId: 'c1', name: 'Write', kind: 'edit', title: 'Write', rawInput: {} };
+
+const classifiedWithoutDigest = { type: 'tool.permission.classified', callId: 'c1', outcome: 'allow' } as unknown as RunEventPayload;
+
+describe('snapshot state version 9', () => {
+  it('writes stateVersion 9', () => {
     const { storedJson } = storedSnapshot();
-    expect(storedJson()['stateVersion']).toBe(8);
+    expect(storedJson()['stateVersion']).toBe(9);
+  });
+
+  it('treats a version 8 snapshot as absent and rebuilds it from the journal', () => {
+    const { store, run, state, events, mutate } = storedSnapshot();
+    mutate("json_set(state_json, '$.stateVersion', 8)");
+    const loaded = store.load(run.id);
+    expect(loaded.snapshot).toBeUndefined();
+    expect(loaded.tail).toEqual(events);
+    expect(loaded.tail.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }) as RunState)).toEqual(state);
+  });
+
+  it('folds a classification journaled without a subject digest into no classification, so the snapshot stays readable', () => {
+    const { store, run, state } = storedSnapshot([CALL, classifiedWithoutDigest]);
+    expect(state.pendingCalls['c1']).toBeDefined();
+    expect(state.pendingCalls['c1']).not.toHaveProperty('classification');
+    expect(store.load(run.id).snapshot?.state).toEqual(state);
   });
 
   it('round-trips taskSeq and inherited for an inheriting run', () => {
