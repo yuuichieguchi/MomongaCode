@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { LOCK_FD } from './process-contract.ts';
 import { hostKernelLock } from './platform/kernel-lock.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
+import { noFollowFlag } from './platform/privacy.ts';
 
 export type DescribeHolder = (pid: number | undefined) => Promise<string>;
 
@@ -48,7 +49,7 @@ type RecordedHolder = { kind: 'pid'; pid: number } | { kind: 'unrecorded' };
 const readHolder = async (lockPath: string): Promise<RecordedHolder> => {
   let handle: fs.promises.FileHandle;
   try {
-    handle = await fs.promises.open(lockPath, fs.constants.O_RDONLY | (process.platform === 'win32' ? 0 : fs.constants.O_NOFOLLOW));
+    handle = await fs.promises.open(lockPath, fs.constants.O_RDONLY | noFollowFlag());
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { kind: 'unrecorded' };
     throw error;
@@ -69,7 +70,7 @@ const holderOf = (text: string): RecordedHolder => (/^[1-9]\d{0,9}$/.test(text) 
 const readHolderSync = (lockPath: string): RecordedHolder => {
   let descriptor: number;
   try {
-    descriptor = fs.openSync(lockPath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    descriptor = fs.openSync(lockPath, fs.constants.O_RDONLY | noFollowFlag());
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { kind: 'unrecorded' };
     throw error;

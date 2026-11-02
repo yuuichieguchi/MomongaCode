@@ -49,7 +49,7 @@ describe('claiming and probing a listening address (run against a filesystem soc
 
   it('does not map an address it cannot bind to held', async (context) => {
     const dir = withTempDir(context);
-    await expect(claimNetAddress(path.join(dir, 'missing', 'l.sock'), path.join(dir, 'l.lock'))).rejects.toBeInstanceOf(Error);
+    await expect(claimNetAddress(path.join(dir, 'missing', 'l.sock'), path.join(dir, 'l.lock'))).rejects.toMatchObject({ syscall: 'listen', code: expect.stringMatching(/^E[A-Z]+$/) });
   });
 
   it('does not map a probe failure to free', async (context) => {

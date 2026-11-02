@@ -4,6 +4,7 @@ import { isProcessAlive } from './process-alive.ts';
 import type { SignalSender } from './process-alive.ts';
 import { hostSignalSender } from './platform/group-port.ts';
 import { ProbeFailedError, valueOrThrow } from './platform/inspector-types.ts';
+import { noFollowFlag } from './platform/privacy.ts';
 import type { ProcessInspector } from './platform/inspector-types.ts';
 import { defaultProcessInspector } from './platform/process-inspector.ts';
 
@@ -154,7 +155,7 @@ const MARKER_CONTENT = /^\d+\n?$/;
 export const MARKER_READ_MAX_BYTES = 32;
 
 const readRecordedGroup = async (marker: string): Promise<number | undefined> => {
-  const handle = await fs.promises.open(marker, fs.constants.O_RDONLY | (process.platform === 'win32' ? 0 : fs.constants.O_NOFOLLOW));
+  const handle = await fs.promises.open(marker, fs.constants.O_RDONLY | noFollowFlag());
   let content: string;
   try {
     const buffer = Buffer.alloc(MARKER_READ_MAX_BYTES + 1);
