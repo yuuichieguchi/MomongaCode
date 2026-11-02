@@ -19,10 +19,6 @@ export const T0 = Date.parse('2026-01-01T00:00:00.000Z');
 export const HARNESS_CLOSE_BOUND_MS = 2_000_000;
 export const TEST_VERSION = '9.9.9-test';
 
-export const turns = async (count = 20): Promise<void> => {
-  for (let index = 0; index < count; index += 1) await new Promise<void>((resolve) => setImmediate(resolve));
-};
-
 const ONE_SHOT_REQUEST_TYPE_LIST = [
   'FSREQCALLBACK',
   'FSREQPROMISE',
@@ -417,6 +413,8 @@ const settle = async (realWork: RealWorkScope, done: () => boolean, description:
   await macrotask();
   await waitForWithRealWork(realWork, () => done() || !realWork.inFlight(), `${description} or quiet real work`);
 };
+
+export const quiesce = (realWork: RealWorkScope): Promise<void> => settle(realWork, () => false, 'quiet real work');
 
 const advanceToDue = (timers: FakeTimers, due: number): void => {
   timers.advance(Math.max(0, due - timers.now()));

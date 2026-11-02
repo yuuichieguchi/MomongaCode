@@ -8,7 +8,7 @@ import type { CleanupContext } from '@momonga/testkit';
 import { PROBE_HEADERS_TIMEOUT_MS, createExternalHealthProbe, holderPidOf, labelHealthResponse, probeExternalHealth, watchLock } from '../src/lock-watch.ts';
 import type { ExternalProbe, LockWatchOptions, ProbeOutcome } from '../src/lock-watch.ts';
 import type { ChildRole } from '../src/launcher.ts';
-import { createRealWorkScope, pump, pumpUntil, startHarness, turns } from './fixtures/p3-harness.ts';
+import { createRealWorkScope, pump, pumpUntil, quiesce, startHarness } from './fixtures/p3-harness.ts';
 
 describe('labelHealthResponse', () => {
   it('external probe labels', () => {
@@ -178,7 +178,7 @@ describe('watchLock', () => {
     const h = watchHarness({ lockWaitMs: 1000 });
     await pumpUntil(h.timers, () => h.events.some((event) => event.startsWith('external')), { realWork: h.realWork, maxMs: 5000 });
     const enteredAt = h.clock.now();
-    await turns();
+    await quiesce(h.realWork);
     expect(h.probes).toEqual([enteredAt]);
     expect(h.events).toContain('probe:unreachable');
     await pumpUntil(h.timers, () => h.clock.now() >= enteredAt + 60_000, { realWork: h.realWork });
@@ -243,7 +243,7 @@ describe('watchLock', () => {
     await pumpUntil(h.timers, () => h.scripted.inspections.length > 0, { realWork: h.realWork, maxMs: 2000 });
     h.watch.stop();
     release({ state: 'free' });
-    await turns();
+    await quiesce(h.realWork);
     expect(h.events).toEqual([]);
     expect(h.timers.pending()).toEqual([]);
   });
@@ -267,13 +267,13 @@ describe('watchLock', () => {
         releases.push(resolve);
       });
     h.timers.advance(100);
-    await turns();
+    await quiesce(h.realWork);
     expect(releases).toHaveLength(1);
     h.timers.advance(300);
-    await turns();
+    await quiesce(h.realWork);
     expect(h.events).toEqual([]);
     releases[0]?.({ state: 'held', pid: 4321 });
-    await turns();
+    await quiesce(h.realWork);
     expect(h.events).toEqual(['external:4321@400', 'probe:unreachable']);
     h.watch.stop();
     expect(h.timers.pending()).toEqual([]);

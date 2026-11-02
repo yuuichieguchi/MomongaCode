@@ -17,7 +17,6 @@ import {
   prepareHome,
   pumpUntil,
   recordingMarkerPorts,
-  turns,
   validSettings,
   writeLockFile,
   writeMarker,
@@ -94,10 +93,7 @@ const startEntry = (context: CleanupContext, options: EntryOptions = {}): EntryR
   registerCleanup(context, async () => {
     fake.dieOnAnySignal();
     io.signal('SIGINT');
-    for (let round = 0; round < 2000 && !done; round += 1) {
-      timers.advance(1000);
-      await turns(5);
-    }
+    await pumpUntil(timers, () => done, { realWork, maxMs: 2_000_000, description: 'the supervisor entry to finish' });
   });
   return {
     realWork,
