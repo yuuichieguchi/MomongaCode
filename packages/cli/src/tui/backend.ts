@@ -1,5 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import type { Capabilities, ElicitationAnswerRecord, ImageAttachment, MemoryView, PermissionMode, SkillsResponse } from '@momonga/protocol';
+import type { ElicitationAnswerRecord, ImageAttachment, MemoryView, MomongaModelEntry, PermissionMode, SkillsResponse } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import type { MemoryFilter, RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView, SessionView, TrustView } from '../client/views.ts';
@@ -7,6 +7,8 @@ import type { HistoryStore } from '../history-store.ts';
 import { daemonReadyBoundMs, ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { followRun } from '../run/follow.ts';
+import { defaultNoticeSources } from './notices.ts';
+import type { NoticeSource } from './notices.ts';
 import { readImageAttachment } from '../images.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import type { SessionOptions } from '../run/open-session.ts';
@@ -34,14 +36,21 @@ export type TuiBackend = {
   memories(filter?: MemoryFilter): Promise<MemoryView[]>;
   memory(id: string): Promise<MemoryView>;
   deleteMemory(id: string): Promise<void>;
-  capabilities(): Promise<Capabilities>;
+  model(): Promise<MomongaModelEntry>;
+  startupNotices(): Promise<readonly string[]>;
   readImage(file: string): Promise<ImageAttachment>;
   loadHistory(): Promise<readonly string[]>;
   recordHistory(text: string): Promise<void>;
   close(): Promise<void>;
 };
 
-export const createTuiBackend = (ports: CliPorts, paths: MomongaPaths, options: SessionOptions, history: HistoryStore): TuiBackend => {
+export const createTuiBackend = (
+  ports: CliPorts,
+  paths: MomongaPaths,
+  options: SessionOptions,
+  history: HistoryStore,
+  noticeSources: readonly NoticeSource[] = defaultNoticeSources(ports),
+): TuiBackend => {
   let client: RuntimeClient | undefined;
   let session: SessionView | undefined;
   const closing = new AbortController();
@@ -111,14 +120,15 @@ export const createTuiBackend = (ports: CliPorts, paths: MomongaPaths, options: 
     memories: (filter) => runtime().memories(filter),
     memory: (id) => runtime().memory(id),
     deleteMemory: (id) => runtime().deleteMemory(id),
-    capabilities: async () => {
+    model: async () => {
       const gateway = createGatewayClient({ socketPath: paths.sockets.gateway });
       try {
-        return await gateway.capabilitiesOf(current().modelAlias);
+        return await gateway.modelOf(current().modelAlias);
       } finally {
         await gateway.close();
       }
     },
+    startupNotices: async () => (await Promise.all(noticeSources.map((source) => source()))).flat(),
     readImage: (file) => readImageAttachment(ports.files, ports.cwd, file),
     loadHistory: () => history.load(),
     recordHistory: (text) => history.append(text),

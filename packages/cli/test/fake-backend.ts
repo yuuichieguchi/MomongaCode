@@ -55,6 +55,9 @@ export type FakeBackendOptions = {
   memories?: readonly MemoryView[];
   openUrlFailure?: Error;
   images?: Readonly<Record<string, ImageAttachment>>;
+  targets?: readonly string[];
+  startupNotices?: readonly string[];
+  modelPending?: Promise<void>;
 };
 
 export const capabilitiesOf = (overrides: Partial<Capabilities> = {}): Capabilities => ({
@@ -164,9 +167,11 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       record(`memory-delete:${id}`);
       memories = memories.filter((memory) => memory.id !== id);
     },
-    capabilities: async () => {
-      return capabilitiesOf({ contextWindow: options.contextWindow ?? 8192, imageInput: options.imageInput ?? false });
+    model: async () => {
+      if (options.modelPending !== undefined) await options.modelPending;
+      return { id: session.modelAlias, object: 'model', targets: [...(options.targets ?? ['primary'])], capabilities: capabilitiesOf({ contextWindow: options.contextWindow ?? 8192, imageInput: options.imageInput ?? false }) };
     },
+    startupNotices: async () => [...(options.startupNotices ?? [])],
     readImage: async (file) => {
       const image = options.images?.[file];
       if (image === undefined) throw new Error(`no such image ${file}`);

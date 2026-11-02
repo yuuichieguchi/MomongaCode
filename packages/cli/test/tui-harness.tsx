@@ -16,7 +16,7 @@ export const frame = (event: Record<string, unknown>): RunEventFrame => {
   return { id: sequence, event: String(event['type']), data: { ...base, id: sequence, seq: sequence, ...event } as PublicRunEvent };
 };
 
-export const start = async (options: FakeBackendOptions = {}, extra: Pick<AppProps, 'initialPrompt' | 'initialImages'> = {}) => {
+export const start = async (options: FakeBackendOptions = {}, extra: Pick<AppProps, 'initialPrompt' | 'initialImages' | 'startup'> = {}) => {
   const backend = fakeBackend(options);
   const outcomes: TuiOutcome[] = [];
   const exited = Promise.withResolvers<TuiOutcome>();

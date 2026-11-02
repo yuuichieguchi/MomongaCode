@@ -17,7 +17,7 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
     outcome = result;
   };
   const instance = render(
-    <App backend={backend} initialMode={options.permissionMode} {...(options.prompt === undefined ? {} : { initialPrompt: options.prompt })}
+    <App backend={backend} initialMode={options.permissionMode} startup={{ version: ports.version, home: ports.home, color: (ports.env['NO_COLOR'] ?? '') === '' }} {...(options.prompt === undefined ? {} : { initialPrompt: options.prompt })}
       {...(options.skill === undefined ? {} : { initialSkill: options.skill })}
       {...(options.images === undefined ? {} : { initialImages: options.images })}
       onExit={onExit}

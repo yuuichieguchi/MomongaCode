@@ -3,6 +3,7 @@ import type { Capabilities, MomongaModelEntry, MomongaModelList, UsageReport } f
 
 export type GatewayClient = {
   models(): Promise<readonly MomongaModelEntry[]>;
+  modelOf(alias: string): Promise<MomongaModelEntry>;
   capabilitiesOf(alias: string): Promise<Capabilities>;
   contextWindowOf(alias: string): Promise<number>;
   usageOf(runId: string): Promise<UsageReport>;
@@ -69,11 +70,13 @@ export const createGatewayClient = (options: { socketPath: string }): GatewayCli
     return body.data;
   };
 
-  const capabilitiesOf = async (alias: string): Promise<Capabilities> => {
+  const modelOf = async (alias: string): Promise<MomongaModelEntry> => {
     const entry = (await models()).find((candidate) => candidate.id === alias);
     if (entry === undefined) throw new Error(`the gateway does not list the model alias ${alias}`);
-    return entry.capabilities;
+    return entry;
   };
+
+  const capabilitiesOf = async (alias: string): Promise<Capabilities> => (await modelOf(alias)).capabilities;
 
   const contextWindowOf = async (alias: string): Promise<number> => (await capabilitiesOf(alias)).contextWindow;
 
@@ -84,5 +87,5 @@ export const createGatewayClient = (options: { socketPath: string }): GatewayCli
     return body;
   };
 
-  return { models, capabilitiesOf, contextWindowOf, usageOf, close: () => http.close() };
+  return { models, modelOf, capabilitiesOf, contextWindowOf, usageOf, close: () => http.close() };
 };

@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useReducer, useRef, useState } from 'react';
 import { Box, Static, Text, useApp, useInput, usePaste, useStdout, useWindowSize } from 'ink';
-import type { Capabilities, ImageAttachment, PermissionMode, PermissionOption } from '@momonga/protocol';
+import type { Capabilities, ImageAttachment, MomongaModelEntry, PermissionMode, PermissionOption } from '@momonga/protocol';
 import { currentField, currentRequest, decide, enterValue, leaveFields, withError } from '../elicit/flow.ts';
 import type { ElicitationDecision, ElicitationFlow } from '../elicit/flow.ts';
 import type { RunEventFrame } from '../client/runtime-client.ts';
@@ -9,6 +9,8 @@ import { describeAttachment, pastedImagePaths } from '../images.ts';
 import { describeEnd } from '../run/headless.ts';
 import type { StartRunOptions, TuiBackend } from './backend.ts';
 import { DEFAULT_SLASH_COMMANDS } from './commands/index.ts';
+import { StartupScreen } from './startup.tsx';
+import type { StartupConfig } from './startup.tsx';
 import { skillCommands } from './commands/skills.ts';
 import { clipDiff, diffOfToolInput, maxDiffLines } from './diff.ts';
 import type { DiffLine } from './diff.ts';
@@ -21,6 +23,8 @@ import type { Entry, PendingApproval, PendingElicitation, Transcript } from './t
 
 export type TuiOutcome = { error?: Error };
 
+type StaticItem = { kind: 'banner' } | { kind: 'entry'; entry: Entry };
+
 type Attachment = { file: string; image: ImageAttachment };
 
 export type AppProps = {
@@ -29,6 +33,7 @@ export type AppProps = {
   initialPrompt?: string;
   initialImages?: readonly string[];
   initialSkill?: string;
+  startup?: StartupConfig;
   slash?: SlashRegistry;
   onExit(outcome: TuiOutcome): void;
 };
@@ -260,7 +265,10 @@ export function App(props: AppProps) {
   const [bypassAllowed, setBypassAllowed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [approvalIndex, setApprovalIndexState] = useState(0);
-  const [capabilities, setCapabilities] = useState<Capabilities | undefined>(undefined);
+  const [model, setModel] = useState<MomongaModelEntry | undefined>(undefined);
+  const [alias, setAlias] = useState<string | undefined>(undefined);
+  const [notices, setNotices] = useState<readonly string[]>([]);
+  const capabilities: Capabilities | undefined = model?.capabilities;
   const [attachments, setAttachmentsState] = useState<readonly Attachment[]>([]);
   const [elicitEditor, setElicitEditor] = useState<EditorState>(emptyEditor());
   const [epoch, setEpoch] = useState(0);
@@ -316,18 +324,25 @@ export function App(props: AppProps) {
   const openSession = async (): Promise<void> => {
     const session = await backend.openSession();
     setModeState(session.permissionMode);
+    setAlias(session.modelAlias);
     setBypassAllowed(session.bypassAllowed);
     replaceEditor(emptyEditor(await backend.loadHistory()));
     setPhase({ kind: 'ready' });
-    void backend.capabilities().then(setCapabilities, (error: unknown) => {
-      dispatch({ kind: 'append', entry: { kind: 'notice', level: 'warning', text: `model capabilities unavailable: ${errorOf(error).message}` } });
+    void backend.model().then(setModel, (error: unknown) => {
+      dispatch({ kind: 'append', entry: { kind: 'notice', level: 'warning', text: `model information unavailable: ${errorOf(error).message}` } });
     });
+    void backend.startupNotices().then(
+      (found) => setNotices((previous) => [...previous, ...found]),
+      (error: unknown) => {
+        dispatch({ kind: 'append', entry: { kind: 'notice', level: 'warning', text: `startup notices unavailable: ${errorOf(error).message}` } });
+      },
+    );
     void backend.skills().then(
       ({ skills, warnings }) => {
         const taken = new Set(baseSlash.list().flatMap((command) => [command.name, ...(command.aliases ?? [])]));
         const loaded = skillCommands(skills, taken);
         setSkillSlash(loaded.commands);
-        for (const warning of warnings) note(warning);
+        setNotices((previous) => [...previous, ...warnings]);
         if (loaded.shadowed.length > 0) note(`skills shadowed by a built-in command and reachable only through the model: ${loaded.shadowed.join(', ')}`);
       },
       (error: unknown) => {
@@ -638,18 +653,26 @@ export function App(props: AppProps) {
   const pendingTitle = transcript.elicitation === undefined ? '' : (transcript.entries.find((entry): entry is Extract<Entry, { kind: 'tool' }> => entry.kind === 'tool' && entry.callId === transcript.elicitation?.callId)?.title ?? transcript.elicitation.callId);
   const completion = phase.kind === 'ready' ? slashCompletion(editor.text, slash.list()) : undefined;
 
+  const banner =
+    props.startup === undefined || alias === undefined ? null : (
+      <StartupScreen config={props.startup} model={{ alias, targets: model?.targets }} mode={mode} cwd={backend.cwd} notices={notices} />
+    );
+  const staticItems: StaticItem[] = [
+    ...(banner !== null && transcript.entries.length > 0 ? [{ kind: 'banner' } as const] : []),
+    ...transcript.entries.slice(0, settled).map((entry): StaticItem => ({ kind: 'entry', entry })),
+  ];
+
   return (
     <Box flexDirection="column">
-      <Static key={epoch} items={transcript.entries.slice(0, settled)}>
-        {(entry, index) => (
-          <Box key={index}>
-            <EntryView entry={entry} />
-          </Box>
+      <Static key={epoch} items={staticItems}>
+        {(item, index) => (
+          <Box key={index}>{item.kind === 'banner' ? banner : <EntryView entry={item.entry} />}</Box>
         )}
       </Static>
       {transcript.entries.slice(settled).map((entry, index) => (
         <EntryView key={index} entry={entry} />
       ))}
+      {phase.kind === 'ready' && transcript.entries.length === 0 ? banner : null}
       {phase.kind === 'starting' ? <Text dimColor>starting the momonga daemon…</Text> : null}
       {phase.kind === 'trust' ? (
         <Box flexDirection="column" borderStyle="round" paddingX={1}>
