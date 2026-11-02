@@ -202,7 +202,7 @@ describe('tasks extension over streamable HTTP', () => {
     expect(checkpoint.kind).toBe('task');
     expect(fixture.rpcRecords('tasks/cancel')).toHaveLength(0);
 
-    await connection.cancelTask((checkpoint as Extract<McpCheckpoint, { kind: 'task' }>).taskId);
+    await connection.releaseCheckpoint(checkpoint);
 
     const taskId = fixture.taskIds()[0] as string;
     expect(fixture.notes.filter((note) => note.type === 'task_cancel')).toEqual([{ type: 'task_cancel', taskId }]);

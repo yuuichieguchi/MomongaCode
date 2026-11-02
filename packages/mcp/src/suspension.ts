@@ -2,7 +2,8 @@ import type { ElicitationAnswer, ElicitationRequest } from './input-requests.ts'
 
 export type McpCheckpoint =
   | { kind: 'mrtr'; rounds: number; requestState?: string }
-  | { kind: 'task'; taskId: string; answered: string[] };
+  | { kind: 'task'; taskId: string; answered: string[] }
+  | { kind: 'parked'; parkId: string };
 
 export type McpResume = { checkpoint: McpCheckpoint; answers: Record<string, ElicitationAnswer> };
 
@@ -33,6 +34,11 @@ export const parseCheckpoint = (value: unknown): McpCheckpoint => {
     if (typeof taskId !== 'string' || taskId === '') throw new TypeError('a task checkpoint needs a taskId');
     if (!Array.isArray(answered) || !answered.every((key) => typeof key === 'string')) throw new TypeError('a task checkpoint needs answered keys');
     return { kind: 'task', taskId, answered: answered as string[] };
+  }
+  if (value['kind'] === 'parked') {
+    const { parkId } = value;
+    if (typeof parkId !== 'string' || parkId === '') throw new TypeError('a parked checkpoint needs a parkId');
+    return { kind: 'parked', parkId };
   }
   throw new TypeError(`unknown MCP checkpoint kind ${JSON.stringify(value['kind'])}`);
 };

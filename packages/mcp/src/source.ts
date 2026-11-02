@@ -109,7 +109,7 @@ const buildTool = (
     subject: () => ({ kind: 'mcp', server, tool: toolPart }),
     execute: async (input, ctx) => {
       const resume = resumeOf(ctx.resume);
-      if (resume?.checkpoint.kind === 'mrtr') ctx.checkpoint(undefined);
+      if (resume?.checkpoint.kind === 'mrtr' || resume?.checkpoint.kind === 'parked') ctx.checkpoint(undefined);
       let result: CallToolResult;
       try {
         result = await connection.callTool({
@@ -138,10 +138,7 @@ const buildTool = (
       }
       return mapResult(result, (text) => connection.redact(text));
     },
-    releaseCheckpoint: async (checkpoint, ctx) => {
-      const held = parseCheckpoint(checkpoint);
-      if (held.kind === 'task') await connection.cancelTask(held.taskId, { signal: ctx.signal });
-    },
+    releaseCheckpoint: (checkpoint, ctx) => connection.releaseCheckpoint(parseCheckpoint(checkpoint), { signal: ctx.signal }),
   });
 };
 

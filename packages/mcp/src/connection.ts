@@ -8,6 +8,8 @@ import { createMcpOAuthProvider } from './oauth-provider.ts';
 import type { McpOAuthProvider } from './oauth-provider.ts';
 import { parseInputRequests } from './input-requests.ts';
 import { validateStructuredOutput } from './output-validation.ts';
+import { createParkedInputs } from './parked-input.ts';
+import type { ParkedInputs } from './parked-input.ts';
 import { McpAuthorizationError, McpRemotePolicyError, McpTaskError, authorizationRequiredFor, isSessionExpired } from './remote-errors.ts';
 import { credentialKey } from './oauth-provider.ts';
 import { createGuardedFetch } from './remote-policy.ts';
@@ -74,7 +76,7 @@ export interface McpServerConnection {
   readonly instructions: string | undefined;
   listTools(options?: { signal?: AbortSignal }): Promise<Tool[]>;
   callTool(input: McpCallToolInput): Promise<CallToolResult>;
-  cancelTask(taskId: string, options?: { signal?: AbortSignal }): Promise<void>;
+  releaseCheckpoint(checkpoint: McpCheckpoint, options?: { signal?: AbortSignal }): Promise<void>;
   redact(text: string): string;
   diagnostics(): McpServerDiagnostics;
   close(): Promise<void>;
@@ -138,10 +140,12 @@ class ManagedConnection implements McpServerConnection {
   private closing: Promise<void> | undefined;
   private pendingTransport: ConnectionTransport | undefined;
   private readonly lifetime = new AbortController();
+  private readonly inputs: ParkedInputs;
 
   constructor(options: McpConnectionOptions) {
     this.options = options;
     this.name = options.name;
+    this.inputs = createParkedInputs(options.clock.now());
     this.random = options.random ?? Math.random;
     this.timers = options.timers ?? systemTimers;
     this.breaker = new CircuitBreaker({
@@ -257,10 +261,11 @@ class ManagedConnection implements McpServerConnection {
       try {
         const tool = await this.definitionOf(session, input.name, input.signal);
         const { resume } = input;
+        if (resume?.checkpoint.kind === 'parked') return await this.inputs.resume(resume.checkpoint.parkId, resume.answers, input.signal);
         if (resume?.checkpoint.kind === 'task') {
           return await this.settle(session, tool, input, { taskId: resume.checkpoint.taskId, answered: resume.checkpoint.answered }, timeout);
         }
-        return await this.driveRounds(session, tool, input, timeout);
+        return await this.inputs.run(input.signal, (signal) => this.driveRounds(session, tool, { ...input, signal }, timeout));
       } catch (error) {
         if (error instanceof McpInputSuspension) throw error;
         throw this.failure(session.transport, error);
@@ -268,11 +273,16 @@ class ManagedConnection implements McpServerConnection {
     });
   }
 
-  async cancelTask(taskId: string, options?: { signal?: AbortSignal }): Promise<void> {
+  async releaseCheckpoint(checkpoint: McpCheckpoint, options?: { signal?: AbortSignal }): Promise<void> {
+    if (checkpoint.kind === 'parked') {
+      this.inputs.release(checkpoint.parkId);
+      return;
+    }
+    if (checkpoint.kind !== 'task') return;
     const signal = options?.signal;
     await this.withLiveSession(signal, async (session) => {
       try {
-        await this.taskRequester(session.client)('tasks/cancel', { taskId }, signal);
+        await this.taskRequester(session.client)('tasks/cancel', { taskId: checkpoint.taskId }, signal);
       } catch (error) {
         throw this.failure(session.transport, error);
       }
@@ -412,6 +422,7 @@ class ManagedConnection implements McpServerConnection {
 
   private async shutdown(): Promise<void> {
     this.lifetime.abort();
+    this.inputs.closeAll();
     await this.pendingTransport?.close();
     await this.connecting?.catch(() => undefined);
     this.state = 'closed';
@@ -562,6 +573,7 @@ class ManagedConnection implements McpServerConnection {
         listChanged: { tools: { autoRefresh: false, debounceMs: 0, onChanged: () => undefined } },
       },
     );
+    client.setRequestHandler('elicitation/create', async (request) => this.inputs.serverRequest(request.params));
     client.onerror = (error) => {
       this.lastError = error.message;
     };
@@ -609,6 +621,7 @@ class ManagedConnection implements McpServerConnection {
   private handleClose(client: Client, transport: ConnectionTransport): void {
     if (this.session?.client !== client) return;
     this.session = undefined;
+    this.inputs.closeAll();
     if (this.closing !== undefined) return;
     this.state = 'disconnected';
     this.lastError = describeExit(transport) ?? this.lastError ?? 'connection closed';
