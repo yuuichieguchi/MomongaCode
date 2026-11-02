@@ -107,6 +107,36 @@ describe('Windows file rules match canonical Windows paths', () => {
     expect(entry !== undefined && fileRuleBlocks(set, entry, '/etc/other', '/etc/other')).toBe(false);
   });
 
+  it.each([
+    ['an alternate data stream', 'C:\\secret\\key.txt::$DATA'],
+    ['a named stream', 'C:\\secret\\key.txt:hidden'],
+    ['a trailing dot', 'C:\\secret\\key.txt.'],
+    ['trailing dots and spaces', 'C:\\secret\\key.txt. . '],
+    ['a trailing dot on a directory name', 'C:\\secret.\\key.txt'],
+    ['the plain name', 'C:\\secret\\key.txt'],
+  ])('blocks the same file when it is named with %s, as Windows resolves it', (_label, candidate) => {
+    expect(blocks('C:\\secret\\key.txt', candidate)).toBe(true);
+    expect(blocks('C:\\secret\\**', candidate)).toBe(true);
+  });
+
+  it.each(['C:\\proj\\sub\\keep', '\\\\srv\\share\\keep'])('refuses the ! pattern %s, which could never match and would leave the deny wider than the author meant', (exception) => {
+    const spec: FileRuleSpec = { ...specOf('sub\\**'), exceptions: [exception] };
+    expect(() => compileFileRuleSet([spec], [ROOT], null, (absolute) => ({ ok: true, path: absolute }), () => false, 'win32')).toThrow(expect.objectContaining({ code: 'unsupported_pattern', reason: 'absolute_exception' }));
+  });
+
+  it('does not block a different file whose name only starts the same way', () => {
+    expect(blocks('C:\\secret\\key.txt', 'C:\\secret\\key.txt.bak')).toBe(false);
+    expect(blocks('C:\\secret\\key.txt', 'C:\\secret\\key.txt2:stream')).toBe(false);
+  });
+
+  it('keeps names on POSIX byte for byte, where a colon and a trailing dot are ordinary characters', () => {
+    const set = compiled('//etc/key.txt', 'posix');
+    const [entry] = set.entries;
+    expect(entry !== undefined && fileRuleBlocks(set, entry, '/etc/key.txt::$DATA', '/etc/key.txt::$DATA')).toBe(false);
+    expect(entry !== undefined && fileRuleBlocks(set, entry, '/etc/key.txt.', '/etc/key.txt.')).toBe(false);
+    expect(entry !== undefined && fileRuleBlocks(set, entry, '/etc/key.txt', '/etc/key.txt')).toBe(true);
+  });
+
   it('shows that without the flavour the same rule silently matched nothing', () => {
     const set = compiled('C:\\secret\\**', 'posix');
     const [entry] = set.entries;
