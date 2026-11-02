@@ -79,18 +79,15 @@ type Collected = {
   issues: GitPointerIssue[];
 };
 
-const stripLineEnd = (text: string): string => {
-  if (text.endsWith('\r\n')) return text.slice(0, -2);
-  return text.endsWith('\n') ? text.slice(0, -1) : text;
-};
+const stripLineEnd = (text: string): string => text.replace(/[\r\n]+$/, '');
 
-const gitFileTarget = (text: string): string | undefined => {
+export const gitFileTarget = (text: string): string | undefined => {
   const body = stripLineEnd(text);
   const target = body.startsWith(GITDIR_PREFIX) ? body.slice(GITDIR_PREFIX.length) : '';
   return target === '' ? undefined : target;
 };
 
-const commondirTarget = (text: string): string | undefined => {
+export const commondirTarget = (text: string): string | undefined => {
   const target = stripLineEnd(text);
   return target === '' ? undefined : target;
 };

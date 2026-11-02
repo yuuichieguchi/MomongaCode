@@ -13,8 +13,7 @@ import { resolveSegmentProgram } from './program-resolution.ts';
 import { discoverRepository } from './repository.ts';
 import { insideRoots } from './roots.ts';
 import { scanSedScript } from './sed-script.ts';
-import type { Analysis, Segment, Word } from './shell.ts';
-import { programNameOf } from './shell.ts';
+import type { Analysis, DirectoryStep, Segment, Word } from './shell.ts';
 import type { WrapperUse } from './wrappers.ts';
 
 export const MAX_APPROVABLE_COMMAND_CHARS = 10_000;
@@ -23,6 +22,7 @@ export const MAX_GLOB_MATCHES = 1000;
 export type ApprovalContext = {
   fs: PolicyFilesystem;
   cwd: string;
+  home: string;
   roots: readonly string[];
   searchPath: string | undefined;
   isWritable: (absolute: string) => boolean;
@@ -71,11 +71,13 @@ const optionsAllowed = (spec: CommandSpec, options: readonly ParsedOption[]): bo
   const present = presentOptions(options);
   return options.every(({ option }) => {
     const decl = spec.declOf(option);
-    if (decl === undefined) return false;
+    if (decl === undefined) return spec.numericOptions === true && NUMERIC_OPTION.test(option);
     const effect = conditionHolds(decl, present) ? decl.effect : 'flag';
     return !DISQUALIFYING_EFFECTS.has(effect);
   });
 };
+
+const NUMERIC_OPTION = /^-\d+$/;
 
 const SENSITIVE_PS_WORD = (sensitive: string): RegExp => new RegExp(`^-[A-Za-z]*[${sensitive}]`);
 
@@ -108,9 +110,31 @@ const programApproved = (spec: CommandSpec, segment: Segment, context: ApprovalC
 
 const sameDirectory = (left: string, right: string): boolean => lexicallyWithin(left, right) && lexicallyWithin(right, left);
 
-const gitRepositoryAllowed = (context: ApprovalContext): boolean => {
+const stepTarget = (state: string, step: string, home: string): string | undefined => {
+  if (step === '~' || step.startsWith('~/')) return path.join(home, step.slice(1));
+  return step.startsWith('~') ? undefined : path.resolve(state, step);
+};
+
+const reachableDirectories = (context: ApprovalContext, trail: readonly DirectoryStep[]): string[] | undefined => {
+  let states = [context.cwd];
+  for (const step of trail) {
+    if (step === null) return undefined;
+    const reached = new Set(states);
+    for (const state of states) {
+      const target = stepTarget(state, step, context.home);
+      if (target === undefined) return undefined;
+      const entry = context.fs.readEntry(target);
+      if ('unresolvable' in entry) return undefined;
+      if (entry.kind === 'directory') reached.add(target);
+    }
+    states = [...reached];
+  }
+  return states;
+};
+
+const gitRepositoryAllowed = (context: ApprovalContext, directory: string, bare: boolean): boolean => {
   const { fs, protectedSet, isWritable } = context;
-  const discovery = discoverRepository(context.cwd, fs);
+  const discovery = discoverRepository(directory, fs, { bare });
   if ('unresolved' in discovery) return false;
   if (!discovery.found) return true;
   const { hit } = discovery;
@@ -170,7 +194,11 @@ const gitApproved = (segment: Segment, context: ApprovalContext): boolean => {
   const spec = segment.effects.spec as CommandSpec;
   if (git.globals.some((entry) => DISQUALIFYING_EFFECTS.has(spec.effectOf(entry.option) ?? 'flag'))) return false;
   if (git.rest.some((word) => word.staticValue === null)) return false;
-  return gitSubcommandAllowed(git) && gitRepositoryAllowed(context);
+  if (!gitSubcommandAllowed(git)) return false;
+  const directories = reachableDirectories(context, segment.cwdTrail);
+  if (directories === undefined) return false;
+  const bare = git.globals.some((entry) => entry.option === '--bare');
+  return directories.every((directory) => gitRepositoryAllowed(context, directory, bare));
 };
 
 const wrapperApproved = (wrapper: WrapperUse): boolean => {
@@ -218,14 +246,11 @@ const analysisApproval = (context: ApprovalContext, analysis: Analysis): Approva
   if ([...analysis.redirects, ...analysis.reads].some((target) => 'unresolvable' in target)) return undefined;
   let directoryUnknown = false;
   let approval: ApprovalClass = 'read-only';
-  const hasGit = analysis.segments.some((segment) => programNameOf(segment) === 'git');
   for (const segment of analysis.segments) {
     if (directoryUnknown) return undefined;
     const kind = segmentClass(segment, context);
     if (kind === undefined) return undefined;
     if (kind === 'edit') approval = 'edit';
-    const name = programNameOf(segment);
-    if (hasGit && (name === 'cd' || name === 'pushd' || name === 'popd')) return undefined;
     if (changesIntoUnknownDirectory(segment)) directoryUnknown = true;
   }
   for (const inner of analysis.nested) {

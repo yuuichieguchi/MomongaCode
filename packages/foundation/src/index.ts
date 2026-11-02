@@ -116,7 +116,7 @@ export { StartupCancelled, exitCodeForStartError, nodeEntryIo, runDaemonEntry } 
 export type { DaemonCloseResult, DaemonDefinition, DaemonHandle, DaemonStartContext, EntryIo, EntrySignal, LogTarget } from './daemon-entry.ts';
 export { UNRESOLVABLE_ERRNO_CODES, resolveCanonicalPath, unresolvableReasonOf } from './path-resolution.ts';
 export type { PathResolution, UnresolvableErrno, UnresolvableReason, Unresolved } from './path-resolution.ts';
-export { EMPTY_PROTECTED_SET, MAX_POINTER_FILE_BYTES, defaultProtectedPaths, isProtectedWrite, protectedSetFor } from './protected-set.ts';
+export { EMPTY_PROTECTED_SET, MAX_POINTER_FILE_BYTES, commondirTarget, defaultProtectedPaths, gitFileTarget, isProtectedWrite, protectedSetFor } from './protected-set.ts';
 export type { EntryRead, GitEntryReader, GitPointerIssue, ProtectedSet, ProtectedSetPorts } from './protected-set.ts';
 export { anchorFormOf, checkExceptionGrammar, checkFilePatternGrammar, fileMatcherOf, parseExceptionPattern, parseFilePattern, testFileMatcher } from './file-pattern.ts';
 export type { Expression, FileMatcher, FilePattern, FilePatternContext, GlobSegment, MatcherForm } from './file-pattern.ts';

@@ -180,7 +180,7 @@ describe('git closed grammar (P2-4d, B9)', () => {
 
   it.each(['git diff a.txt f', 'git blame --contents a.txt README.md', 'git grep -f a.txt', 'git log --oneline', 'git status --short', 'git diff --no-index a.txt f'])('%s allows', (command) => allows(command));
 
-  it('asks for cd src && git log', () => asks('cd src && git log'));
+  it('allows cd src && git log because discovery from src finds no repository the workspace controls', () => allows('cd src && git log'));
 });
 
 describe('sort -o, ps, grep -d (P2-2, P2-4)', () => {
@@ -210,7 +210,7 @@ describe('mutation rows', () => {
 describe('direct approval assertions (V8)', () => {
   const approval = (command: string, layout = makeLayout(), filesystem = fakeFs()) =>
     commandApproval(
-      { roots: [layout.project], cwd: layout.project, fs: filesystem, searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]), protectedSet: EMPTY_PROTECTED_SET },
+      { roots: [layout.project], cwd: layout.project, home: layout.home, fs: filesystem, searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]), protectedSet: EMPTY_PROTECTED_SET },
       command,
       analyzeCommand(command),
     );
