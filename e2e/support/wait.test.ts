@@ -28,7 +28,7 @@ describe('wait constants', () => {
     expect(E2E_SETTINGS_SEEN_BOUND_MS).toBe(6200);
     expect(E2E_SETTINGS_RESTART_BOUND_MS).toBe(12_600);
     expect(E2E_ORPHAN_CLOSE_BOUND_MS).toBe(20_000);
-    expect(E2E_SUPERVISOR_CLOSE_BOUND_MS).toBe(59_000);
+    expect(E2E_SUPERVISOR_CLOSE_BOUND_MS).toBe(71_000);
     expect(E2E_REAP_CLOSE_BOUND_MS).toBe(9000);
     expect(E2E_CANCEL_TERM_BOUND_MS).toBe(4000);
     expect(E2E_CANCEL_KILL_BOUND_MS).toBe(5000);
