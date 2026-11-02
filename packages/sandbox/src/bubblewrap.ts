@@ -5,6 +5,7 @@ import type { FileRuleEntry, FileRuleSet } from '@momonga/foundation';
 import { canonicalizePath } from './canonical-path.ts';
 import { launch } from './process.ts';
 import type { LaunchOptions } from './process.ts';
+import { SandboxPolicyError } from './policy-error.ts';
 import { validateSandboxPolicy } from './profile.ts';
 import { assertExistingDirectory, removePrivateTmpDir } from './scratch.ts';
 import type { DirectoryPort } from './scratch.ts';
@@ -14,40 +15,53 @@ export const DEFAULT_BWRAP_PATH = '/usr/bin/bwrap';
 
 export type EntryKind = 'file' | 'directory';
 
+export type Unreachable = 'unreachable';
+
 export type FilesystemPort = {
-  kindOf(target: string): EntryKind | undefined;
+  kindOf(target: string): EntryKind | undefined | Unreachable;
+  isSymbolicLink(target: string): boolean;
   realpath(target: string): string;
-  children(directory: string): Array<{ path: string; kind: EntryKind | 'other' }>;
+  children(directory: string): Array<{ path: string; kind: EntryKind | 'other' }> | Unreachable;
   removePlaceholder(target: string): void;
   requireExecutable(file: string): void;
   makeTempDirectory(parent: string, prefix: string): string;
   removePrivateDirectory(directory: string): void;
 };
 
+const inspected = <T>(absent: T, read: () => T): T | Unreachable => {
+  try {
+    return read();
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOTDIR') return absent;
+    if (code === 'ELOOP' || code === 'EACCES') return 'unreachable';
+    throw error;
+  }
+};
+
 export const nodeFilesystemPort: FilesystemPort = {
   requireExecutable: (file) => fs.accessSync(file, fs.constants.X_OK),
   makeTempDirectory: (parent, prefix) => fs.mkdtempSync(path.join(parent, prefix)),
   removePrivateDirectory: removePrivateTmpDir,
-  kindOf: (target) => {
-    try {
+  kindOf: (target) =>
+    inspected<EntryKind | undefined>(undefined, () => {
       const stat = fs.statSync(target, { throwIfNoEntry: false });
       if (stat === undefined) return undefined;
       return stat.isDirectory() ? 'directory' : 'file';
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOTDIR') return undefined;
-      throw error;
-    }
-  },
+    }),
+  isSymbolicLink: (target) => inspected(false, () => fs.lstatSync(target, { throwIfNoEntry: false })?.isSymbolicLink() ?? false) === true,
   realpath: (target) => fs.realpathSync(target),
   removePlaceholder: (target) => {
     const stat = fs.lstatSync(target, { throwIfNoEntry: false });
     if (stat !== undefined && stat.isFile() && stat.size === 0) fs.unlinkSync(target);
   },
   children: (directory) =>
-    fs.readdirSync(directory, { withFileTypes: true }).map((entry) => ({
-      path: path.join(directory, entry.name),
-      kind: entry.isSymbolicLink() ? 'other' : entry.isDirectory() ? 'directory' : entry.isFile() ? 'file' : 'other',
-    })),
+    inspected<Array<{ path: string; kind: EntryKind | 'other' }>>([], () =>
+      fs.readdirSync(directory, { withFileTypes: true }).map((entry) => ({
+        path: path.join(directory, entry.name),
+        kind: entry.isSymbolicLink() ? 'other' : entry.isDirectory() ? 'directory' : entry.isFile() ? 'file' : 'other',
+      })),
+    ),
 };
 
 export type BubblewrapOptions = { tmpDir?: string; scratchDir?: string; cwd: string; heldPlaceholders?: ReadonlySet<string> };
@@ -72,7 +86,12 @@ const forms = (entry: FileRuleEntry): Array<{ directory: string }> => [
   ...(entry.denyLexical === null ? [] : [{ directory: entry.lexicalDirectory }]),
 ];
 
-const blockedPaths = (set: FileRuleSet, entry: FileRuleEntry, port: FilesystemPort): string[] => {
+type Inspector = {
+  kindOf(target: string): EntryKind | undefined;
+  children(directory: string): Array<{ path: string; kind: EntryKind | 'other' }>;
+};
+
+const blockedPaths = (set: FileRuleSet, entry: FileRuleEntry, port: Inspector): string[] => {
   const found: string[] = [];
   const visit = (candidate: string, kind: EntryKind | 'other'): void => {
     const blocked = fileRuleBlocks(set, entry, candidate, candidate);
@@ -116,7 +135,8 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
   for (const entry of policy.fileRules.entries) {
     if (!entry.widening) continue;
     const closure = entry.subset.closure;
-    if (closure.kind === 'subpath' && port.kindOf(closure.path) !== undefined) {
+    const closureKind = closure.kind === 'subpath' ? port.kindOf(closure.path) : undefined;
+    if (closure.kind === 'subpath' && (closureKind === 'directory' || closureKind === 'file')) {
       writableBinds.push('--bind', closure.path, closure.path);
       wideningAreas.push(closure.path);
     }
@@ -125,10 +145,34 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
 
   const insideRoots = (target: string): boolean => writableAreas.some((area) => target.startsWith(`${area}/`));
 
+  const changeable = (target: string): boolean => insideRoots(target) || writableAreas.some((area) => area === target || area.startsWith(`${target}/`));
+
+  const refuseUnreachable = (target: string): void => {
+    if (changeable(target)) {
+      throw new SandboxPolicyError('protected_path_unreadable', `bubblewrap cannot inspect ${target}, so it cannot plan the mounts that protect the workspace`, { path: target });
+    }
+  };
+
+  const inspector: Inspector = {
+    kindOf: (target) => {
+      const kind = port.kindOf(target);
+      if (kind !== 'unreachable') return kind;
+      refuseUnreachable(target);
+      return undefined;
+    },
+    children: (directory) => {
+      const found = port.children(directory);
+      if (found !== 'unreachable') return found;
+      refuseUnreachable(directory);
+      return [];
+    },
+  };
+  const kindOf = inspector.kindOf;
+
   const firstMissingComponent = (target: string): string | undefined => {
     let missing = target;
     for (let parent = path.dirname(missing); parent !== missing; parent = path.dirname(missing)) {
-      const kind = port.kindOf(parent);
+      const kind = kindOf(parent);
       if (kind === 'directory') return missing;
       if (kind === 'file') return heldPlaceholders.has(parent) ? parent : undefined;
       missing = parent;
@@ -144,7 +188,7 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
   };
 
   const protect = (target: string, mounts: Mount[]): void => {
-    const kind = port.kindOf(target);
+    const kind = kindOf(target);
     if (kind === undefined) {
       reserve(target, mounts);
       return;
@@ -156,25 +200,30 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
 
   const writeMounts: Mount[] = [];
   const literals = unique([...policy.writeDeniedLiterals, ...policy.protectedSet.literals]);
+  for (const literal of literals) {
+    if (insideRoots(literal) && port.isSymbolicLink(literal)) {
+      throw new SandboxPolicyError('protected_link_not_pinnable', `bubblewrap cannot pin the symbolic link ${literal}: a mount cannot sit on a link name, so the link could be replaced from inside the sandbox`, { path: literal });
+    }
+  }
   for (const target of [...writeDenied, ...literals]) protect(target, writeMounts);
   const userDenies = [...policy.fileRules.entries, ...policy.protectedSet.patterns.entries].filter(isUserDeny);
   for (const entry of userDenies.filter((candidate) => candidate.access === 'write')) {
     const set = policy.protectedSet.patterns.entries.includes(entry) ? policy.protectedSet.patterns : policy.fileRules;
-    for (const target of blockedPaths(set, entry, port)) protect(target, writeMounts);
+    for (const target of blockedPaths(set, entry, inspector)) protect(target, writeMounts);
   }
   const pinMounts: Mount[] = [];
-  const pinnedFrom = unique([...writeDenied, ...literals]).map((literal) => (port.kindOf(literal) === undefined ? undefined : port.realpath(literal)));
+  const pinnedFrom = unique([...writeDenied, ...literals]).map((literal) => (kindOf(literal) === undefined ? undefined : port.realpath(literal)));
   const pinned = [...pinnedFrom.flatMap((target) => (target === undefined ? [] : [target])), ...unique(placeholders)];
   for (const target of pinned) {
     for (let ancestor = path.dirname(target); ancestor !== path.dirname(ancestor); ancestor = path.dirname(ancestor)) {
       const inside = insideRoots(ancestor);
-      if (inside && !writableAreas.includes(ancestor) && port.kindOf(ancestor) === 'directory') pinMounts.push({ depth: depthOf(ancestor), args: ['--bind', ancestor, ancestor] });
+      if (inside && !writableAreas.includes(ancestor) && kindOf(ancestor) === 'directory') pinMounts.push({ depth: depthOf(ancestor), args: ['--bind', ancestor, ancestor] });
     }
   }
 
   const readMounts: Mount[] = [];
   const mask = (target: string): void => {
-    const kind = port.kindOf(target);
+    const kind = kindOf(target);
     if (kind === undefined) return;
     const resolved = port.realpath(target);
     readMounts.push({ depth: depthOf(resolved), args: kind === 'directory' ? ['--tmpfs', resolved] : ['--ro-bind', '/dev/null', resolved] });
@@ -182,9 +231,9 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
   for (const target of readDenied) mask(target);
   for (const entry of userDenies.filter((candidate) => candidate.access === 'read')) {
     const set = policy.protectedSet.patterns.entries.includes(entry) ? policy.protectedSet.patterns : policy.fileRules;
-    for (const target of blockedPaths(set, entry, port)) mask(target);
+    for (const target of blockedPaths(set, entry, inspector)) mask(target);
   }
-  const reallow: string[] = readAllowed.flatMap((target) => (port.kindOf(target) === undefined ? [] : ['--ro-bind', target, target]));
+  const reallow: string[] = readAllowed.flatMap((target) => (kindOf(target) === undefined ? [] : ['--ro-bind', target, target]));
 
   const scratch: string[] = [...new Set([...(sessionTmpDir === undefined ? [] : [sessionTmpDir]), ...(scratchDir === undefined ? [] : [scratchDir])])].flatMap((dir) => [
     '--bind',

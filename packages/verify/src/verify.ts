@@ -1,6 +1,6 @@
 import type { ProtectedSet } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
-import type { PermissionRule, PolicyFilesystem } from '@momonga/policy';
+import type { PermissionRule, PolicyHostFilesystem } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
 import { alphabetFor } from './char-set.ts';
 import { createCommandModel } from './command-model.ts';
@@ -21,7 +21,7 @@ export type VerifyRequest = {
   home: string;
   cwd: string;
   protectedSet: ProtectedSet;
-  fs: PolicyFilesystem;
+  fs: PolicyHostFilesystem;
   secretLocations: readonly SecretLocation[];
   exemptDirectory: string | null;
   timeoutMs: number;
@@ -76,7 +76,7 @@ export const buildQueryContext = (api: Z3Api, request: VerifyRequest): QueryCont
   const models = { smt, paths, commands, rules, mode };
   return {
     models,
-    env: { rules, roots, mode, home, cwd, fileRules, protectedSet, fs },
+    env: { rules, roots, mode, home, cwd, fileRules, protectedSet, fs, globBudgetMs: timeoutMs },
     timeoutMs,
     subjects: buildSubjects(models),
     mismatches: [],

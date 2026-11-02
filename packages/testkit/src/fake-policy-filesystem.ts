@@ -107,11 +107,13 @@ const readRealNoFollow = (absolute: string): StepRead =>
 const GIT_HEADREF_BUFFER_BYTES = 256;
 const HEAD_BYTES = GIT_HEADREF_BUFFER_BYTES - 1;
 
+const PASSED_OVER_BY_GIT: ReadonlySet<string> = new Set(['ENOENT', 'ENOTDIR', 'EACCES', 'ELOOP', 'ENAMETOOLONG']);
+
 const rejected = <T>(read: () => T, fallback: T): T => {
   try {
     return read();
   } catch (error) {
-    if (typeof errnoOf(error) === 'string') return fallback;
+    if (PASSED_OVER_BY_GIT.has(errnoOf(error) ?? '')) return fallback;
     throw error;
   }
 };
@@ -137,6 +139,7 @@ const headFromEntry = (entry: EntryRead): FakeHeadRead => ('unresolvable' in ent
 
 const isRealSearchable = (absolute: string): boolean =>
   rejected(() => {
+    fs.lstatSync(absolute);
     fs.accessSync(absolute, fs.constants.X_OK);
     return true;
   }, false);
@@ -183,6 +186,19 @@ export const fakePolicyFilesystem = (layout: FakePolicyFilesystemLayout = {}): R
     ...layout.overrides,
   };
 };
+
+export type FakeGlobDeadline = { remainingMs: () => number };
+
+export type HostOf<T extends FakePolicyFilesystem> = Omit<T, 'expandGlob'> & {
+  expandGlob: (pattern: string, cwd: string, limit: number, deadline: FakeGlobDeadline) => Promise<FakeGlobExpansion>;
+};
+
+export const hostFilesystemOf = <T extends FakePolicyFilesystem>(fake: T): HostOf<T> => ({
+  ...fake,
+  expandGlob: async (pattern, cwd, limit) => fake.expandGlob(pattern, cwd, limit),
+});
+
+export const FAKE_LEASE = { leaseMs: 30_000, heartbeatMs: 10_000 } as const;
 
 export const protectedSetWith = (roots: readonly string[], paths: readonly string[]): ProtectedSet => ({ ...EMPTY_PROTECTED_SET, roots, paths });
 

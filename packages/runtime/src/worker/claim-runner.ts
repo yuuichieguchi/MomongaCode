@@ -25,11 +25,11 @@ import type { WorkerOptions } from './types.ts';
 import type { TraceSpan } from '../ports.ts';
 import { modelKey } from '../model-key.ts';
 import { buildSystemPrompt } from '../system-prompt.ts';
+import { heartbeatMsFor } from './heartbeat.ts';
 import { summaryStopReason } from './wrap-up.ts';
 import { reportError } from './report.ts';
 import { GatewayRequestError } from '../gateway-client.ts';
 
-const DEFAULT_HEARTBEAT_DIVISOR = 3;
 const DEFAULT_CANCEL_POLL_MS = 250;
 const REQUEUE_BASE_MS = 1000;
 const REQUEUE_MAX_MS = 60_000;
@@ -73,7 +73,7 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
     store,
     timers: options.timers,
     claim,
-    heartbeatMs: options.heartbeatMs ?? options.leaseMs / DEFAULT_HEARTBEAT_DIVISOR,
+    heartbeatMs: options.heartbeatMs ?? heartbeatMsFor(options.leaseMs),
     cancelPollMs: options.cancelPollMs ?? DEFAULT_CANCEL_POLL_MS,
   });
   const detach = host.attach(control);

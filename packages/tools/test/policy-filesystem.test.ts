@@ -263,60 +263,81 @@ describe('readNoFollow', () => {
 });
 
 describe('expandGlob', () => {
-  const filesystem = () => createPolicyFilesystem();
+  const noAbort = new AbortController().signal;
+  const filesystem = () => {
+    const host = createPolicyFilesystem();
+    return { expandGlob: (pattern: string, cwd: string, limit: number, deadline: { remainingMs: () => number }) => host.expandGlob(pattern, cwd, limit, deadline, noAbort) };
+  };
+  const open = { remainingMs: () => 60_000 };
 
-  it('expands like the shell: a leading * does not match dotfiles', () => {
+  it('expands like the shell: a leading * does not match dotfiles', async () => {
     const dir = makeDir();
     for (const name of ['a.md', 'b.md', '.hidden.md', 'c.txt']) fs.writeFileSync(path.join(dir, name), '');
-    const result = filesystem().expandGlob('*.md', dir, 1000);
+    const result = await filesystem().expandGlob('*.md', dir, 1000, open);
     expect('matches' in result ? [...result.matches].map((match) => path.resolve(dir, match)).sort() : result).toEqual([path.join(dir, 'a.md'), path.join(dir, 'b.md')]);
   });
 
-  it('returns no match for a pattern directory that does not exist', () => {
-    expect(filesystem().expandGlob('missing/*.md', makeDir(), 1000)).toEqual({ matches: [] });
+  it('returns no match for a pattern directory that does not exist', async () => {
+    expect(await filesystem().expandGlob('missing/*.md', makeDir(), 1000, open)).toEqual({ matches: [] });
   });
 
-  it('overflows when more than limit paths match, and not at the limit', () => {
+  it('returns no match when the working directory itself does not exist', async () => {
+    expect(await filesystem().expandGlob('*', path.join(makeDir(), 'gone'), 1000, open)).toEqual({ matches: [] });
+  });
+
+  it('overflows when more than limit paths match, and not at the limit', async () => {
     const dir = makeDir();
     for (let index = 0; index < 4; index += 1) fs.writeFileSync(path.join(dir, `f${index}.md`), '');
-    expect(filesystem().expandGlob('*.md', dir, 3)).toEqual({ overflow: true });
-    expect(filesystem().expandGlob('*.md', dir, 4)).toEqual({ matches: ['f0.md', 'f1.md', 'f2.md', 'f3.md'] });
+    expect(await filesystem().expandGlob('*.md', dir, 3, open)).toEqual({ overflow: true });
+    expect(await filesystem().expandGlob('*.md', dir, 4, open)).toEqual({ matches: ['f0.md', 'f1.md', 'f2.md', 'f3.md'] });
   });
 
-  it('sees a directory the shell cannot open as the shell does: no match', () => {
+  it('sees a directory the shell cannot open as the shell does: no match', async () => {
     requireNonRoot();
     const dir = makeDir();
     const locked = path.join(dir, 'locked');
     fs.mkdirSync(locked);
     fs.chmodSync(locked, 0o000);
-    expect(filesystem().expandGlob('locked/*', dir, 1000)).toEqual({ matches: [] });
+    expect(await filesystem().expandGlob('locked/*', dir, 1000, open)).toEqual({ matches: [] });
   });
 
-  it('keeps a backslash-escaped bracket literal and expands a POSIX class', () => {
+  it('keeps a backslash-escaped bracket literal and expands a POSIX class', async () => {
     const dir = makeDir();
     for (const name of ['[a]b', 'ab', 'lnk']) fs.writeFileSync(path.join(dir, name), '');
-    expect(filesystem().expandGlob('\\[a\\]*', dir, 1000)).toEqual({ matches: ['[a]b'] });
-    expect(filesystem().expandGlob('l[[:alpha:]]k', dir, 1000)).toEqual({ matches: ['lnk'] });
+    expect(await filesystem().expandGlob('\\[a\\]*', dir, 1000, open)).toEqual({ matches: ['[a]b'] });
+    expect(await filesystem().expandGlob('l[[:alpha:]]k', dir, 1000, open)).toEqual({ matches: ['lnk'] });
   });
 
-  it('treats a range that is out of order as a word without matches instead of failing', () => {
+  it('treats a range that is out of order as a word without matches instead of failing', async () => {
     const dir = makeDir();
     fs.writeFileSync(path.join(dir, 'a'), '');
-    expect(filesystem().expandGlob('[z-a]*', dir, 1000)).toEqual({ matches: [] });
+    expect(await filesystem().expandGlob('[z-a]*', dir, 1000, open)).toEqual({ matches: [] });
   });
 
-  it('matches what the shell matches for a leading dot, whichever bash version runs', () => {
+  it('matches what the shell matches for a leading dot, whichever bash version runs', async () => {
     const dir = makeDir();
     fs.mkdirSync(path.join(dir, 'sub'));
     fs.writeFileSync(path.join(dir, '.hidden'), '');
-    const result = filesystem().expandGlob('.*', dir, 1000);
+    const result = await filesystem().expandGlob('.*', dir, 1000, open);
     const shell = spawnSync('/bin/bash', ['-c', 'shopt -s nullglob; printf "%s\\n" .*'], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     expect('matches' in result ? result.matches : result).toEqual(shell.stdout.split('\n').filter((entry) => entry !== ''));
   });
 
-  it('cannot determine the matches when no bash is found for the platform', () => {
+  it('cannot determine the matches when no bash is found for the platform', async () => {
     const withoutBash = createPolicyFilesystem('win32', { isExecutable: never, env: {} });
-    expect(withoutBash.expandGlob('*', makeDir(), 1000)).toEqual({ unresolvable: { kind: 'dynamic' } });
+    expect(await withoutBash.expandGlob('*', makeDir(), 1000, open, noAbort)).toEqual({ unresolvable: { kind: 'dynamic' } });
+  });
+
+  it('yields to the event loop while the shell expands, so a heartbeat timer can fire', async () => {
+    const dir = makeDir();
+    fs.writeFileSync(path.join(dir, 'a'), '');
+    const order: string[] = [];
+    const pending = filesystem()
+      .expandGlob('*', dir, 1000, open)
+      .then(() => order.push('expanded'));
+    setImmediate(() => order.push('event loop turn'));
+    await pending;
+    expect(order).toEqual(['event loop turn', 'expanded']);
   });
 });
 
@@ -351,6 +372,81 @@ describe('readHead and isSearchable answer as git does', () => {
     expect(filesystem.isSearchable(path.join(dir, 'directory'))).toBe(true);
     expect(filesystem.isSearchable(path.join(dir, 'plain'))).toBe(false);
     expect(filesystem.isSearchable(path.join(dir, 'missing'))).toBe(false);
+  });
+});
+
+describe('readHead and isSearchable pass over what git passes over and rethrow the rest (item 8)', () => {
+  it.each(['EACCES', 'ELOOP', 'ENAMETOOLONG'])('reads %s on HEAD as invalid, as real git passes over such a layout', (code) => {
+    const dir = makeDir();
+    const head = path.join(dir, 'HEAD');
+    injectErrno(code, head);
+    expect(createPolicyFilesystem().readHead(head)).toEqual({ kind: 'invalid' });
+  });
+
+  it.each(['EIO', 'EMFILE', 'ENFILE'])('rethrows %s from HEAD unchanged', (code) => {
+    const dir = makeDir();
+    const head = path.join(dir, 'HEAD');
+    injectErrno(code, head);
+    expect((thrownBy(() => createPolicyFilesystem().readHead(head)) as NodeJS.ErrnoException)?.code).toBe(code);
+  });
+
+  it.each(['EIO', 'EMFILE', 'ENFILE'])('rethrows %s from objects unchanged', (code) => {
+    const dir = makeDir();
+    const objects = path.join(dir, 'objects');
+    injectErrno(code, objects);
+    expect((thrownBy(() => createPolicyFilesystem().isSearchable(objects)) as NodeJS.ErrnoException)?.code).toBe(code);
+  });
+
+  it('is not searchable for objects below a directory that cannot be searched, as real git passes over such a layout', () => {
+    requireNonRoot();
+    const dir = makeDir();
+    const locked = path.join(dir, 'locked');
+    fs.mkdirSync(locked);
+    fs.chmodSync(locked, 0o000);
+    expect(createPolicyFilesystem().isSearchable(path.join(locked, 'objects'))).toBe(false);
+  });
+
+  it.each(['ELOOP', 'ENAMETOOLONG'])('is not searchable for objects that give %s', (code) => {
+    const dir = makeDir();
+    const objects = path.join(dir, 'objects');
+    injectErrno(code, objects);
+    expect(createPolicyFilesystem().isSearchable(objects)).toBe(false);
+  });
+
+  it('control: ENOENT and ENOTDIR on HEAD mean no repository', () => {
+    const dir = makeDir();
+    fs.writeFileSync(path.join(dir, 'file'), '');
+    expect(createPolicyFilesystem().readHead(path.join(dir, 'missing'))).toEqual({ kind: 'invalid' });
+    expect(createPolicyFilesystem().readHead(path.join(dir, 'file', 'HEAD'))).toEqual({ kind: 'invalid' });
+  });
+});
+
+describe('pointer files and link targets keep the bytes (review item 10)', () => {
+  const invalid = Buffer.from([0x67, 0x69, 0x74, 0x64, 0x69, 0x72, 0x3a, 0x20, 0x2e, 0x2e, 0x2f, 0x65, 0x76, 0x69, 0x6c, 0xff]);
+
+  it('reads a pointer file whose bytes are not UTF-8 as dynamic, and one that is UTF-8 as text', () => {
+    const dir = makeDir();
+    fs.writeFileSync(path.join(dir, 'bad'), invalid);
+    fs.writeFileSync(path.join(dir, 'good'), 'gitdir: ../é\n');
+    const filesystem = createPolicyFilesystem();
+    expect(filesystem.readEntry(path.join(dir, 'bad'))).toEqual({ unresolvable: { kind: 'dynamic' } });
+    expect(filesystem.readEntry(path.join(dir, 'good'))).toEqual({ kind: 'file', text: 'gitdir: ../é\n' });
+  });
+
+  it('reads a link target whose bytes are not UTF-8 as dynamic', () => {
+    const dir = makeDir();
+    const link = path.join(dir, 'link');
+    fs.symlinkSync('plain', link);
+    const original = fs.readlinkSync as (...args: unknown[]) => unknown;
+    vi.spyOn(fs, 'readlinkSync').mockImplementation(((target: unknown, options: unknown) =>
+      target === link && options === 'buffer' ? Buffer.from([0x6c, 0xff]) : original(target, options)) as never);
+    expect(createPolicyFilesystem().readNoFollow(link)).toEqual({ unresolvable: { kind: 'dynamic' } });
+  });
+
+  it('control: a UTF-8 link target is read as before', () => {
+    const dir = makeDir();
+    fs.symlinkSync('é/target', path.join(dir, 'link'));
+    expect(createPolicyFilesystem().readNoFollow(path.join(dir, 'link'))).toEqual({ kind: 'symlink', target: 'é/target' });
   });
 });
 

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { protectedSetFor } from '@momonga/foundation';
+import { hostFilesystemOf } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import type { PropertyId, PropertyResult, VerificationReport } from '../src/index.ts';
 import { checkBashAdmission, checkDenyPrecedence, checkRuleConsistency, checkSecretReach } from '../src/properties.ts';
@@ -119,7 +120,7 @@ describe('round 2, finding 9: a query the solver cannot decide never leaves a pr
         home: layout.home,
         cwd: layout.project,
         protectedSet: protectedSetFor(roots, fileSystem),
-        fs: fileSystem,
+        fs: hostFilesystemOf(fileSystem),
         secretLocations: [sshLocation(layout)],
         exemptDirectory: null,
         timeoutMs: 20_000,

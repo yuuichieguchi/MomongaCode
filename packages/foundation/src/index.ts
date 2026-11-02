@@ -120,8 +120,8 @@ export type { MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirec
 export { isProcessAlive } from './process-alive.ts';
 export type { SignalSender } from './process-alive.ts';
 export { LINUX_SOCKET_PATH_LIMIT, PIPE_NAME_LIMIT, SOCKET_PATH_LIMIT, assertSocketPathLength, isPipePath, pipePathFor, socketPathLimit } from './socket-path.ts';
-export { MAX_SYMLINK_HOPS, canonicalDirectory, canonicalPath, comparableContains, comparableFromParts, comparablePath, containsByComponents, setCaseSensitivityProbe, volumeIsCaseInsensitive, walkPath } from './path-compare.ts';
-export type { CanonicalDirectoryFailureCode, CanonicalDirectoryResult, CaseSensitivityProbe, PathParts, StepRead, StepReader, WalkEntry, WalkFailure, WalkFailureDetail, WalkFailureReason, WalkResult, WalkStep } from './path-compare.ts';
+export { MAX_SYMLINK_HOPS, canonicalDirectory, canonicalPath, comparableContains, comparableFromParts, comparablePath, containsByComponents, locateThroughFiles, setCaseSensitivityProbe, volumeIsCaseInsensitive, walkPath } from './path-compare.ts';
+export type { CanonicalDirectoryFailureCode, CanonicalDirectoryResult, CaseSensitivityProbe, LocatedParts, PathParts, StepRead, StepReader, WalkEntry, WalkFailure, WalkFailureDetail, WalkFailureReason, WalkResult, WalkStep } from './path-compare.ts';
 export { isTransientErrno } from './transient-errno.ts';
 export { PRIVATE_MODE, PrivateTreeError, assertPrivateRegularFile, directoryFlag, ensureWindowsPrivateTree, modeIsPrivate, noFollowFlag, ownerProblem } from './platform/privacy.ts';
 export type { OwnerProblem, PrivacyKind } from './platform/privacy.ts';

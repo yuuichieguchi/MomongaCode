@@ -29,28 +29,28 @@ describe('round 2, finding 1: a backtick substitution inside double quotes is re
 });
 
 describe('round 2, finding 2: a dot-led glob reaches whatever the real bash makes it reach', () => {
-  it('asks for .*/name when bash expands .* to ..', () => {
+  it('asks for .*/name when bash expands .* to ..', async () => {
     const workspace = makeDifferentialWorkspace();
     const reaches = expandedBy(workspace, '.*', workspace.project).includes('..');
     const command = 'cat .*/CANARY-leak';
     expect(workspace.runBash(command).stdout.includes('CANARY') === reaches).toBe(true);
-    expect(workspace.decide(command).kind).toBe(reaches ? 'ask' : 'allow');
-    expect(workspace.decide(command, { rules: CAT }).kind).toBe(reaches ? 'ask' : 'allow');
+    expect((await workspace.decideExpanding(command)).kind).toBe(reaches ? 'ask' : 'allow');
+    expect((await workspace.decideExpanding(command, { rules: CAT })).kind).toBe(reaches ? 'ask' : 'allow');
   });
 
-  it('asks for .?/.?/.?/name three levels up when bash lets .? match ..', () => {
+  it('asks for .?/.?/.?/name three levels up when bash lets .? match ..', async () => {
     const workspace = makeDifferentialWorkspace();
     const cwd = `${workspace.project}/deep/x`;
     const reaches = expandedBy(workspace, '.?', cwd).includes('..');
     const command = 'cat .?/.?/.?/CANARY-top';
     expect(workspace.runBash(command, cwd).stdout.includes('CANARY')).toBe(reaches);
-    expect(workspace.decide(command, { cwd }).kind).toBe(reaches ? 'ask' : 'allow');
+    expect((await workspace.decideExpanding(command, { cwd })).kind).toBe(reaches ? 'ask' : 'allow');
   });
 
-  it('asks for ls .* when bash expands it to ..', () => {
+  it('asks for ls .* when bash expands it to ..', async () => {
     const workspace = makeDifferentialWorkspace();
     const reaches = expandedBy(workspace, '.*', workspace.project).includes('..');
-    expect(workspace.decide('ls .*').kind).toBe(reaches ? 'ask' : 'allow');
+    expect((await workspace.decideExpanding('ls .*')).kind).toBe(reaches ? 'ask' : 'allow');
   });
 });
 
@@ -63,19 +63,18 @@ describe('round 2, finding 3: quoted glob characters stay literal, classes and r
     ['a double-quoted hyphen in a class, which is the character and not a range', 'cat l[x"-"z]k'],
     ['a single-quoted hyphen in a class', "cat l[x'-'z]k"],
     ['a backslash-escaped hyphen in a class', 'cat l[x\\-z]k'],
-  ])('asks for %s, as bash reads the secret behind the link', (_label, command) => {
+  ])('asks for %s, as bash reads the secret behind the link', async (_label, command) => {
     const workspace = makeDifferentialWorkspace();
     expect(workspace.runBash(command).stdout).toContain('CANARY');
-    expect(workspace.decide(command).kind).toBe('ask');
-    expect(workspace.decide(command, { rules: CAT }).kind).toBe('ask');
+    expect((await workspace.decideExpanding(command)).kind).toBe('ask');
+    expect((await workspace.decideExpanding(command, { rules: CAT })).kind).toBe('ask');
   });
 
-  it('does not throw for a range that is out of order and judges the word as bash does', () => {
+  it('does not throw for a range that is out of order and judges the word as bash does', async () => {
     const workspace = makeDifferentialWorkspace();
     const command = 'cat [z-a]*';
     expect(workspace.runBash(command).status).not.toBe(0);
-    expect(() => workspace.decide(command)).not.toThrow();
-    expect(workspace.decide(command).kind).toBe('allow');
+    await expect(workspace.decideExpanding(command)).resolves.toMatchObject({ kind: 'allow' });
   });
 });
 

@@ -109,13 +109,13 @@ const traceViolations = (workspace: DifferentialWorkspace, stderr: string, start
 
 const SHELL = '/bin/bash';
 
-export const runCase = (workspace: DifferentialWorkspace, input: Case): Outcome => {
+export const runCase = async (workspace: DifferentialWorkspace, input: Case): Promise<Outcome> => {
   const cwd = input.cwd ?? workspace.project;
   const mode = input.mode ?? 'default';
   const searchPath = input.searchPath;
   let decision: Decision;
   try {
-    decision = workspace.decide(input.command, {
+    decision = await workspace.decideExpanding(input.command, {
       mode,
       cwd,
       ...(input.rules === undefined ? {} : { rules: input.rules }),

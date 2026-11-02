@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fileRuleBlocks, protectedSetFor } from '@momonga/foundation';
 import type { PolicyFilesystem } from '@momonga/policy';
+import { hostFilesystemOf } from '@momonga/testkit';
 import type { Witness } from '../src/decision-model.ts';
 import { buildQueryContext } from '../src/verify.ts';
 import { UnsupportedRegexError, parseRegexSource } from '../src/regex-source.ts';
@@ -62,7 +63,7 @@ const modelMatches = async (layout: Layout, specifier: string, fileSystem: Polic
     home: layout.home,
     cwd: layout.project,
     protectedSet: protectedSetFor(roots, fileSystem),
-    fs: fileSystem,
+    fs: hostFilesystemOf(fileSystem),
     secretLocations: [sshLocation(layout)],
     exemptDirectory: null,
     timeoutMs: 30_000,

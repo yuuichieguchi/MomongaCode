@@ -6,7 +6,7 @@ import { protectedSetFor } from '@momonga/foundation';
 import { parseRule } from '@momonga/policy';
 import type { PermissionRule, PolicyFilesystem, RuleEffect } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
-import { fakePolicyFilesystem } from '@momonga/testkit';
+import { fakePolicyFilesystem, hostFilesystemOf } from '@momonga/testkit';
 import { openZ3, resolveInstalledZ3, verifyPermissions } from '../src/index.ts';
 import type { SecretLocation, VerificationReport, Z3Engine } from '../src/index.ts';
 
@@ -68,7 +68,7 @@ export const verifyScenario = (api: Z3Engine['api'], layout: Layout, rules: read
     home: layout.home,
     cwd: layout.project,
     protectedSet: protectedSetFor(roots, fileSystem),
-    fs: fileSystem,
+    fs: hostFilesystemOf(fileSystem),
     secretLocations: options.secretLocations ?? [sshLocation(layout)],
     exemptDirectory: null,
     timeoutMs: options.timeoutMs ?? 20_000,

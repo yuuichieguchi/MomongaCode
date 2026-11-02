@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { fakePolicyFilesystem } from '@momonga/testkit';
+import { fakePolicyFilesystem, hostFilesystemOf } from '@momonga/testkit';
 import { createPolicyFilesystem } from '@momonga/tools';
 import type { ToolExecutorOptions } from '@momonga/tools';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
@@ -31,7 +31,7 @@ const setup = (fsPort: ToolExecutorOptions['fs']) => {
 describe('executor passes the search path and the writable check to the resolver (3.13)', () => {
   it('passes batch.env.PATH and an isWritable built from the sandbox policy', async () => {
     const recording = fakePolicyFilesystem();
-    const { harness, extra, tmp, sandboxPolicy } = setup(recording);
+    const { harness, extra, tmp, sandboxPolicy } = setup(hostFilesystemOf(recording));
     const searchPath = `${extra}:/usr/bin:/bin`;
     await harness.executor.runBatch(
       harness.input(await toolSetOf(commandTool('sed -n 1p f', [])), [call('c1', 'Bash')], { env: { PATH: searchPath }, sandboxPolicy }),
