@@ -128,9 +128,13 @@ export type StepReader = (absolutePath: string) => StepRead;
 
 const DIRECTORY_REQUIRED = '/';
 
-const componentsOf = (value: string): string[] => {
-  const components = value.split('/').filter((component) => component !== '' && component !== '.');
-  return value.endsWith('/') ? [...components, DIRECTORY_REQUIRED] : components;
+const separatorsOf = (flavor: path.PlatformPath): RegExp => (flavor.sep === '\\' ? /[\\/]/ : /\//);
+
+const endsWithSeparator = (value: string, flavor: path.PlatformPath): boolean => separatorsOf(flavor).test(value.slice(-1));
+
+const componentsOf = (value: string, flavor: path.PlatformPath): string[] => {
+  const components = value.split(separatorsOf(flavor)).filter((component) => component !== '' && component !== '.');
+  return endsWithSeparator(value, flavor) ? [...components, DIRECTORY_REQUIRED] : components;
 };
 
 const errnoFailure = (code: 'ELOOP' | 'ENOENT' | 'ENOTDIR', candidate: string, prefix: string, detail?: WalkFailureDetail): WalkResult<never> => ({
@@ -138,19 +142,20 @@ const errnoFailure = (code: 'ELOOP' | 'ENOENT' | 'ENOTDIR', candidate: string, p
   failure: { reason: { kind: 'errno', code }, candidate, prefix, ...(detail === undefined ? {} : { detail }) },
 });
 
-export const walkPath = <F>(input: string, step: WalkStep<F>, onLink: (name: string) => void): WalkResult<F> => {
-  if (!path.isAbsolute(input)) throw new Error(`path must be absolute: ${input}`);
-  const pending = componentsOf(input).reverse();
-  let prefix: string = path.sep;
+export const walkPath = <F>(input: string, step: WalkStep<F>, onLink: (name: string) => void, flavor: path.PlatformPath = path): WalkResult<F> => {
+  if (!flavor.isAbsolute(input)) throw new Error(`path must be absolute: ${input}`);
+  const inputRoot = flavor.parse(input).root;
+  const pending = componentsOf(input.slice(inputRoot.length), flavor).reverse();
+  let prefix: string = inputRoot;
   let hops = MAX_SYMLINK_HOPS;
   while (pending.length > 0) {
     const component = pending.pop() as string;
     if (component === DIRECTORY_REQUIRED) continue;
     if (component === '..') {
-      prefix = path.dirname(prefix);
+      prefix = flavor.dirname(prefix);
       continue;
     }
-    const candidate = path.join(prefix, component);
+    const candidate = flavor.join(prefix, component);
     const entry = step(candidate);
     if ('stepFailure' in entry) return { ok: false, stepFailure: entry.stepFailure, candidate, prefix };
     if (entry.kind === 'missing') {
@@ -164,8 +169,9 @@ export const walkPath = <F>(input: string, step: WalkStep<F>, onLink: (name: str
       hops -= 1;
       if (hops < 0) return errnoFailure('ELOOP', candidate, prefix);
       if (entry.target === '') return errnoFailure('ENOENT', candidate, prefix, 'empty-link');
-      if (path.isAbsolute(entry.target)) prefix = path.sep;
-      pending.push(...componentsOf(entry.target).reverse());
+      const targetRoot = flavor.isAbsolute(entry.target) ? flavor.parse(entry.target).root : '';
+      if (targetRoot !== '') prefix = targetRoot;
+      pending.push(...componentsOf(entry.target.slice(targetRoot.length), flavor).reverse());
       continue;
     }
     if (pending.length > 0 && entry.kind !== 'directory') return errnoFailure('ENOTDIR', candidate, prefix);
@@ -250,17 +256,19 @@ export const canonicalDirectory = (input: string): CanonicalDirectoryResult => {
 
 export type PathParts = { existing: string; tail: readonly string[] };
 
-const componentsOfPath = (value: string): string[] => value.split('/').filter((component) => component !== '');
+const componentsOfPath = (value: string, flavor: path.PlatformPath = path): string[] => value.split(separatorsOf(flavor)).filter((component) => component !== '');
 
-export const containsByComponents = (base: PathParts, candidate: PathParts, foldTail: boolean): boolean => {
-  const baseExisting = componentsOfPath(base.existing);
-  const candidateExisting = componentsOfPath(candidate.existing);
+export const containsByComponents = (base: PathParts, candidate: PathParts, foldTail: boolean, flavor: path.PlatformPath = path): boolean => {
+  const baseExisting = componentsOfPath(base.existing, flavor);
+  const candidateExisting = componentsOfPath(candidate.existing, flavor);
   const baseAll = [...baseExisting, ...base.tail];
   const candidateAll = [...candidateExisting, ...candidate.tail];
   if (baseAll.length > candidateAll.length) return false;
   const exactCount = Math.min(baseExisting.length, candidateExisting.length);
+  const driveFolds = flavor.sep === '\\';
   return baseAll.every((component, index) => {
     const other = candidateAll[index] as string;
+    if (index === 0 && driveFolds) return component.toLowerCase() === other.toLowerCase();
     if (index < exactCount) return component === other;
     return foldTail ? component.toLowerCase() === other.toLowerCase() : component === other;
   });

@@ -9,6 +9,8 @@ readonly OUT_DIR="$ROOT/dist/release"
 readonly BINARY="$OUT_DIR/$ASSET_NAME"
 readonly ARCHIVE="$OUT_DIR/$ASSET_NAME.zip"
 readonly CHECKSUMS="$OUT_DIR/$CHECKSUMS_NAME"
+readonly OTHER_TARGETS=(linux-x64 linux-arm64 win-x64)
+readonly OTHER_ASSETS=(momonga-linux-x64 momonga-linux-arm64 momonga-win-x64.exe)
 
 DRY_RUN="${DRY_RUN:-0}"
 
@@ -39,7 +41,7 @@ require_env() {
 }
 
 write_checksums() {
-  (cd "$OUT_DIR" && shasum -a 256 "$ASSET_NAME" > "$CHECKSUMS_NAME")
+  (cd "$OUT_DIR" && shasum -a 256 "$ASSET_NAME" "${OTHER_ASSETS[@]}" > "$CHECKSUMS_NAME")
 }
 
 case "$DRY_RUN" in
@@ -90,6 +92,11 @@ fi
 step "assess with Gatekeeper"
 run spctl --assess --type execute --verbose=4 "$BINARY"
 
+step "build linux and windows executables"
+for index in "${!OTHER_TARGETS[@]}"; do
+  run npm run sea -- --unsigned --target "${OTHER_TARGETS[$index]}" --output "$OUT_DIR/${OTHER_ASSETS[$index]}"
+done
+
 step "checksums"
 run write_checksums
 
@@ -97,4 +104,4 @@ step "publish $tag"
 printf 'release notes:\n%s\n' "$notes"
 run git tag --annotate "$tag" --message "$tag" "$commit"
 run git push origin "refs/tags/$tag"
-run gh release create "$tag" "$BINARY" "$CHECKSUMS" --repo "$MOMONGA_REPO" --verify-tag --title "$tag" --notes "$notes"
+run gh release create "$tag" "$BINARY" "${OTHER_ASSETS[@]/#/$OUT_DIR/}" "$CHECKSUMS" --repo "$MOMONGA_REPO" --verify-tag --title "$tag" --notes "$notes"

@@ -1,7 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 
-readonly ASSET_NAME="momonga-darwin-arm64"
 readonly CHECKSUMS_NAME="SHA256SUMS"
 
 fail() {
@@ -9,8 +8,17 @@ fail() {
   exit 1
 }
 
-[ "$(uname -s)" = "Darwin" ] || fail "unsupported OS $(uname -s): only macOS is supported"
-[ "$(uname -m)" = "arm64" ] || fail "unsupported architecture $(uname -m): only Apple silicon (arm64) is supported"
+os="$(uname -s)"
+machine="$(uname -m)"
+case "$os/$machine" in
+  Darwin/arm64) ASSET_NAME="momonga-darwin-arm64" ;;
+  Linux/x86_64) ASSET_NAME="momonga-linux-x64" ;;
+  Linux/aarch64 | Linux/arm64) ASSET_NAME="momonga-linux-arm64" ;;
+  Darwin/*) fail "unsupported architecture $machine: only Apple silicon (arm64) is supported on macOS" ;;
+  Linux/*) fail "unsupported architecture $machine: only x86_64 and aarch64 are supported on Linux" ;;
+  *) fail "unsupported OS $os: only macOS and Linux are supported; use install.ps1 on Windows" ;;
+esac
+readonly ASSET_NAME
 
 prefix="${MOMONGA_INSTALL_PREFIX:-$HOME/.local}"
 
@@ -45,7 +53,11 @@ case "$expected" in
 esac
 [ "${#expected}" -eq 64 ] || fail "$CHECKSUMS_NAME has no valid entry for $ASSET_NAME"
 
-actual="$(shasum -a 256 "$staging/$ASSET_NAME" | awk '{ print $1 }')"
+if command -v sha256sum > /dev/null; then
+  actual="$(sha256sum "$staging/$ASSET_NAME" | awk '{ print $1 }')"
+else
+  actual="$(shasum -a 256 "$staging/$ASSET_NAME" | awk '{ print $1 }')"
+fi
 if [ "$actual" != "$expected" ]; then
   fail "sha256 mismatch for $ASSET_NAME: expected $expected, got $actual; nothing was installed"
 fi
