@@ -11,7 +11,7 @@ import { buildSandboxPolicy, createPolicyFilesystem } from '@momonga/tools';
 import { makeBuiltins, resultOf } from './builtins/fixtures.ts';
 import { collect } from './read-only-collect.ts';
 import { approvableForms, outputDiffersByNature } from './read-only-forms.ts';
-import { HAS_REAL_SANDBOX, realSandbox, recordingSandbox } from './read-only-support.ts';
+import { HAS_REAL_SANDBOX, realSandbox, recordingSandbox, withoutRefusedXcrunCacheWrite } from './read-only-support.ts';
 import type { RecordedSpawn } from './read-only-support.ts';
 
 const FIXED_DATE = '2001-01-01T00:00:00Z';
@@ -65,7 +65,7 @@ describe.runIf(HAS_REAL_SANDBOX)('every approvable command form prints the same 
     const { markerFile: _spentMarker, ...replayed } = spawned.command;
     const child = inner.spawn({ ...replayed, argv: ['/bin/bash', '-c', command], cwd: project }, spawned.policy, new AbortController().signal);
     const [stdout, stderr, exit] = await Promise.all([collect(child.stdout), collect(child.stderr), child.exited]);
-    return { stdout, stderr, status: exit.code };
+    return { stdout, stderr: withoutRefusedXcrunCacheWrite(stderr, process.platform), status: exit.code };
   };
 
   beforeAll(async () => {
