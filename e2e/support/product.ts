@@ -32,7 +32,7 @@ export const prepareProduct = async (options: ProductOptions = {}): Promise<Prod
   });
   const base = baseSettings(home, sandboxChoiceOf({ home }).kind);
   const capabilities = {
-    ...(options.imageInput === true ? { imageInput: true } : {}),
+    ...(options.imageInput === true ? { imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600 } } : {}),
     ...(options.contextWindow === undefined ? {} : { contextWindow: options.contextWindow }),
   };
   writeSettingsFile(home, { ...withCapabilities(base, capabilities), ...options.settings });

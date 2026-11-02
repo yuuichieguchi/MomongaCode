@@ -53,6 +53,7 @@ const startProviderStack = async (home: E2eHome, adapter: Adapter, upstream: Fak
     socketPath: upstream.socketPath,
     apiKeySecret: SECRET_NAME,
     capabilities: CAPABILITIES,
+    ...(adapter === 'open-responses' ? { provider: 'fake' } : {}),
   };
   return startStack({
     home,
