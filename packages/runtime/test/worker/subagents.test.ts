@@ -72,6 +72,30 @@ describe('worker subagents', () => {
     expect(env.gateway.streams).toHaveLength(3);
   });
 
+  it('runs the child of a plan-mode parent in plan mode, so a Write it attempts is denied and nothing is written', async () => {
+    const env = await makeEnv({ mode: 'plan' });
+    writeAgent(env, 'writer', 'tools: Write\n', 'You write files.');
+    const worker = env.worker('w1', { agents: agentsPortOf(env) });
+    const parent = env.enqueue('Plan the change');
+    const target = path.join(env.project, 'planted.txt');
+    env.gateway.script.push(
+      delegate('call-a', 'writer', 'Create planted.txt'),
+      callsStep([{ callId: 'w1', name: 'Write', args: { file_path: target, content: 'planted' } }]),
+      textStep('the write was refused'),
+      textStep('parent done'),
+    );
+
+    for (let turn = 0; turn < 8 && env.run(parent.id).status !== 'COMPLETED'; turn += 1) await env.runOnce(worker);
+
+    const [child] = env.store.listChildRuns(parent.id);
+    if (child === undefined) throw new Error('the parent did not create a child run');
+    expect(env.store.getSession(child.sessionId)?.permissionMode).toBe('plan');
+    expect(fs.existsSync(target)).toBe(false);
+    expect(env.ofType(child.id, 'tool.completed')).toMatchObject([{ status: 'failed', denial: { source: expect.any(String) } }]);
+    expect(env.ofType(child.id, 'tool.started')).toEqual([]);
+    expect(env.run(parent.id).status).toBe('COMPLETED');
+  });
+
   it('keeps the parent waiting when it is woken before its child ends, without a second tool.waiting event', async () => {
     const env = await makeEnv();
     writeAgent(env, 'reviewer');
