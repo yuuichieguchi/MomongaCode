@@ -102,7 +102,7 @@ const openAttempt = async (
   const span = startAttemptSpan({
     telemetry: services.telemetry,
     parent: job.parent,
-    providerName: target.adapter.kind,
+    providerName: target.provider,
     requestModel: target.model,
     maxTokens: job.body.max_output_tokens ?? undefined,
     stream: job.body.stream === true,

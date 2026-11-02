@@ -12,12 +12,12 @@ import {
   systemClock,
 } from '@momonga/foundation';
 import type { Clock, JsonLogger, MomongaPaths, ReadyFields, TextStream } from '@momonga/foundation';
-import { closeTelemetry, createTelemetry, openTraceStore } from '@momonga/observability';
+import { closeTelemetry, createTelemetry, exportersFor, openTraceStore } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import type { AdapterTarget, Capabilities, ProviderAdapter } from '@momonga/protocol';
 import { createChatCompletionsAdapter } from './adapters/chat-completions/adapter.ts';
 import type { ChatCompletionsEndpoint } from './adapters/chat-completions/types.ts';
-import { FM_SERVE_DEFAULTS, GATEWAY_CONFIG_DEFAULTS } from './defaults.ts';
+import { CHAT_COMPLETIONS_DEFAULT_PROVIDER_NAME, FM_PROVIDER_NAME, FM_SERVE_DEFAULTS, GATEWAY_CONFIG_DEFAULTS } from './defaults.ts';
 import { missingApiKeyError } from './core/errors.ts';
 import { MIN_CREDENTIAL_CHARS } from './core/redaction.ts';
 import { FmServeError, createFmServe } from './managed/fm-serve.ts';
@@ -173,13 +173,22 @@ const readOsBuild = async (exec: ExecFn): Promise<string> => {
   return result.stdout.trim();
 };
 
-const gatewayConfigOf = (targets: ResolvedTargets, aliases: Record<string, string | string[]>): GatewayConfig => ({
+const providerNameOf = (target: ResolvedTarget): string =>
+  target.adapter === 'fm' ? FM_PROVIDER_NAME : (target.provider ?? CHAT_COMPLETIONS_DEFAULT_PROVIDER_NAME);
+
+export const gatewayConfigOf = (targets: ResolvedTargets, aliases: Record<string, string | string[]>): GatewayConfig => ({
   models: {
     aliases: Object.fromEntries(Object.entries(aliases).map(([alias, members]) => [alias, [members].flat()])),
     targets: Object.fromEntries(
       Object.entries(targets).map(([name, target]) => [
         name,
-        { kind: target.adapter, model: target.model, maxConcurrency: target.maxConcurrency, admissionTimeoutMs: target.admissionTimeoutMs },
+        {
+          kind: target.adapter,
+          provider: providerNameOf(target),
+          model: target.model,
+          maxConcurrency: target.maxConcurrency,
+          admissionTimeoutMs: target.admissionTimeoutMs,
+        },
       ]),
     ),
   },
@@ -267,7 +276,13 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       dependentPath: paths.databases.gateway,
     });
     const traceStore: TraceStore = openTraceStore({ path: paths.traces.gateway, clock });
-    const telemetry: Telemetry = createTelemetry({ serviceName: 'momonga-gateway', serviceVersion: options.version, clock, store: traceStore });
+    const telemetry: Telemetry = createTelemetry({
+      serviceName: 'momonga-gateway',
+      serviceVersion: options.version,
+      clock,
+      store: traceStore,
+      exporters: exportersFor(settings.telemetry),
+    });
     cleanups.push(() => closeTelemetry(telemetry, traceStore));
 
     signal?.throwIfAborted();

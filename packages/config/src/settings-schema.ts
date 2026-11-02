@@ -32,6 +32,7 @@ export const MCP_SERVER_SCHEMA = {
 
 export const TARGET_NAME_PATTERN = '^[A-Za-z][A-Za-z0-9._-]*$';
 export const ENV_NAME_PATTERN = '^[A-Za-z_][A-Za-z0-9_]*$';
+export const PROVIDER_NAME_PATTERN = '^[a-z][a-z0-9._-]*$';
 
 const POSITIVE_INTEGER = { type: 'integer', minimum: 1 } as const;
 const NON_NEGATIVE_INTEGER = { type: 'integer', minimum: 0 } as const;
@@ -77,6 +78,7 @@ const CHAT_COMPLETIONS_TARGET_SCHEMA = {
     baseUrl: { type: 'string', minLength: 1 },
     socketPath: { type: 'string', minLength: 1 },
     apiKeyEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
+    provider: { type: 'string', pattern: PROVIDER_NAME_PATTERN },
     toolCalling: { enum: ['native', 'constrained'] },
     capabilities: TARGET_CAPABILITIES_SCHEMA,
     maxConcurrency: POSITIVE_INTEGER,
@@ -129,6 +131,21 @@ export const SETTINGS_SCHEMA = {
     },
     autoUpdates: { type: 'boolean' },
     sandbox: { enum: ['seatbelt', 'none'] },
+    telemetry: {
+      type: 'object',
+      properties: {
+        otlp: {
+          type: 'object',
+          properties: {
+            endpoint: { type: 'string', pattern: '^https?://[^\\s]+$' },
+            headers: STRING_MAP,
+          },
+          required: ['endpoint'],
+          additionalProperties: false,
+        },
+      },
+      additionalProperties: false,
+    },
   },
 } as const;
 

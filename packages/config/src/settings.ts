@@ -45,6 +45,7 @@ export type ChatCompletionsTarget = {
   baseUrl?: string;
   socketPath?: string;
   apiKeyEnv?: string;
+  provider?: string;
   toolCalling?: 'native' | 'constrained';
   capabilities: Pick<TargetCapabilities, 'contextWindow' | 'maxOutputTokens'> & Partial<TargetCapabilities>;
   maxConcurrency?: number;
@@ -67,6 +68,7 @@ export type ResolvedChatCompletionsTarget = {
   baseUrl?: string;
   socketPath?: string;
   apiKeyEnv?: string;
+  provider?: string;
   toolCalling: 'native' | 'constrained';
   capabilities: TargetCapabilities & { maxConcurrency: number };
   maxConcurrency: number;
@@ -84,6 +86,10 @@ export type ModelsSettings = {
 
 export type SandboxSetting = 'seatbelt' | 'none';
 
+export type OtlpSettings = { endpoint: string; headers?: Record<string, string> };
+
+export type TelemetrySettings = { otlp?: OtlpSettings };
+
 export type Settings = {
   permissions?: PermissionsSettings;
   env?: Record<string, string>;
@@ -94,6 +100,7 @@ export type Settings = {
   models?: ModelsSettings;
   autoUpdates?: boolean;
   sandbox?: SandboxSetting;
+  telemetry?: TelemetrySettings;
 };
 
 export type McpServersFile = { mcpServers?: Record<string, unknown> };

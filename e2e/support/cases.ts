@@ -12,7 +12,10 @@ export type E2eCaseFile =
   | 'd-approvals.test.ts'
   | 'e-sse-reconnect.test.ts'
   | 'a-compaction.test.ts'
-  | 'skills.test.ts';
+  | 'skills.test.ts'
+  | 'eval-runner.test.ts'
+  | 'otlp-export.test.ts'
+  | 'open-responses-compliance.test.ts';
 
 export const E2E_CASES = [
   { id: 'b1-join', file: 'b1-model-call.test.ts', title: 'b1 join: restarted runtime joins the in-flight upstream call', needsBash: false },
@@ -60,6 +63,11 @@ export const E2E_CASES = [
   { id: 'g-skills-explicit', file: 'skills.test.ts', title: 'g: the Run API lists the skills of a session and a run started with a skill has it active before the first model call', needsBash: false },
   { id: 'g-skills-resources', file: 'skills.test.ts', title: 'g: bundled resources of a user skill are read without approval in default mode and the rest of ~/.momonga stays denied', needsBash: false },
   { id: 'g-skills-untrusted', file: 'skills.test.ts', title: 'g: an untrusted folder offers no project skills', needsBash: false },
+  { id: 'eval-starter', file: 'eval-runner.test.ts', title: 'eval: the starter dataset runs through the Run API against the fake upstream and reports pass and false-allow rates', needsBash: false },
+  { id: 'eval-false-allow', file: 'eval-runner.test.ts', title: 'eval: a write allowed by acceptEdits and labelled ask is counted as a false allow; a blocked read labelled deny is observed as deny', needsBash: false },
+  { id: 'otlp-export', file: 'otlp-export.test.ts', title: 'otlp: a run exports GenAI spans from the gateway and the runtime to a loopback collector when settings opt in', needsBash: false },
+  { id: 'cost-report', file: 'otlp-export.test.ts', title: 'cost: per-run and per-session cost comes from the usage the gateway recorded in its trace store', needsBash: false },
+  { id: 'open-responses-compliance', file: 'open-responses-compliance.test.ts', title: 'open responses: the official compliance suite runs against the gateway TCP debug listener and matches the declared support matrix', needsBash: false },
 ] as const satisfies readonly { id: string; file: E2eCaseFile; title: string; needsBash: boolean }[];
 
 export type E2eCase = (typeof E2E_CASES)[number];

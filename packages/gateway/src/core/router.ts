@@ -12,6 +12,7 @@ import type { GatewayConfig, GatewayTimers } from '../types.ts';
 
 export type TargetRuntime = {
   name: string;
+  provider: string;
   model: string;
   adapter: GuardedAdapter;
   breaker: CircuitBreaker;
@@ -82,6 +83,7 @@ export const createRouter = (options: RouterOptions): Router => {
   for (const [name, target] of Object.entries(config.models.targets)) {
     targets.set(name, {
       name,
+      provider: target.provider,
       model: target.model,
       adapter: guardAdapter(requireEntry(adapters, name, 'adapter'), options.redactor),
       breaker: new CircuitBreaker({ failureThreshold: config.breaker.failureThreshold, openMs: config.breaker.openMs, clock }),

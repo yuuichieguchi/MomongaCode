@@ -45,6 +45,7 @@ export const TEST_VERSION = '0.0.0-test';
 
 export type TargetSpec = {
   kind?: string;
+  provider?: string;
   model: string;
   maxConcurrency?: number;
   admissionTimeoutMs?: number;
@@ -69,6 +70,7 @@ export const buildConfig = (overrides: ConfigOverrides = {}): GatewayConfig => {
   for (const [name, spec] of Object.entries(specs)) {
     targets[name] = {
       kind: spec.kind ?? 'scripted',
+      provider: spec.provider ?? 'scripted',
       model: spec.model,
       maxConcurrency: spec.maxConcurrency ?? 4,
       admissionTimeoutMs: spec.admissionTimeoutMs ?? 5000,

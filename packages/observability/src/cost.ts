@@ -100,7 +100,11 @@ const findEntry = (table: PriceTable, provider: string, model: string, atMs: num
       undefined,
     );
 
-export const computeCost = (input: CostInput): Cost | null => {
+export type CostUnits = { units: bigint; currency: 'USD'; priceVersion: string };
+
+export const amountOfUnits = (units: bigint): number => toAmount(units);
+
+export const computeCostUnits = (input: CostInput): CostUnits | null => {
   const { usage } = input;
   const cachedInputTokens = usage.cachedInputTokens ?? 0;
   assertTokenCount('inputTokens', usage.inputTokens);
@@ -120,5 +124,10 @@ export const computeCost = (input: CostInput): Cost | null => {
     BigInt(usage.inputTokens - cachedInputTokens) * inputRate +
     BigInt(cachedInputTokens) * cachedRate +
     BigInt(usage.outputTokens) * outputRate;
-  return { amount: toAmount(units), currency: entry.currency, priceVersion: entry.effectiveFrom };
+  return { units, currency: entry.currency, priceVersion: entry.effectiveFrom };
+};
+
+export const computeCost = (input: CostInput): Cost | null => {
+  const priced = computeCostUnits(input);
+  return priced === null ? null : { amount: toAmount(priced.units), currency: priced.currency, priceVersion: priced.priceVersion };
 };

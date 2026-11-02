@@ -1,8 +1,10 @@
 export { createBodyQueue } from './body-queue.ts';
 export type { BodyQueue, BodyQueueLimits } from './body-queue.ts';
 export { installOtelErrorHandler } from './errors.ts';
-export { PRICE_TABLE, computeCost, definePriceTable } from './cost.ts';
-export type { Cost, CostInput, CostUsage, PriceEntry, PriceTable } from './cost.ts';
+export { PRICE_TABLE, amountOfUnits, computeCost, computeCostUnits, definePriceTable } from './cost.ts';
+export type { Cost, CostInput, CostUnits, CostUsage, PriceEntry, PriceTable } from './cost.ts';
+export { buildCostReport, formatCostReport } from './cost-report.ts';
+export type { CostReport, CostReportOptions, CostTotals, CostedRun, RunCost, SessionCost } from './cost-report.ts';
 export type { ClockedSpan, ClockedTracer } from './clocked-tracer.ts';
 export { GENAI_SEMCONV } from './semconv.ts';
 export { recordChatResponse, recordError, startAgentSpan, startChatSpan, startToolSpan } from './spans.ts';
@@ -19,6 +21,8 @@ export type {
   TracePropagation,
 } from './telemetry.ts';
 export { createTraceStoreExporter } from './trace-exporter.ts';
+export { OTLP_EXPORTS_PER_TEARDOWN, OTLP_EXPORT_TIMEOUT_MS, OTLP_TEARDOWN_SHARE, createOtlpTraceExporter, exportersFor, otlpTracesUrl } from './otlp.ts';
+export type { OtlpExporterOptions, OtlpExporterSettings } from './otlp.ts';
 export { openTraceStore } from './trace-store.ts';
 export type {
   BodyKind,

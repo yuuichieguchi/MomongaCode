@@ -114,3 +114,5 @@ export { DAEMON_BIN_EXIT_DEADLINE_MS, DAEMON_BIN_READY_DEADLINE_MS, readJsonLine
 export type { DaemonBin } from './daemon-bin.ts';
 export { APPLE_PROGRAMS, TEST_SEARCH_PATH, fakePolicyFilesystem, isWritableFor, protectedSetWith } from './fake-policy-filesystem.ts';
 export type { FakeGlobExpansion, FakePolicyFilesystem, FakePolicyFilesystemLayout, FakeProgramResolution, FakeResolveCall, RecordingPolicyFilesystem } from './fake-policy-filesystem.ts';
+export { OTLP_SPAN_KIND, decodeOtlpSpans, otlpAttributes, startOtlpCollector } from './otlp-collector.ts';
+export type { CollectedOtlpRequest, DecodedOtlpSpan, OtlpCollector, OtlpCollectorResponse } from './otlp-collector.ts';
