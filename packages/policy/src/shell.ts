@@ -1,5 +1,6 @@
 import path from 'node:path';
-import { specOf } from './command-specs.ts';
+import { commandSpecsFor } from './platform-specs.ts';
+import type { CommandSpecs } from './command-specs.ts';
 import { DARWIN_SED, pathEffectsOf } from './path-effects.ts';
 import type { ProgramEffects } from './path-effects.ts';
 import { ASSIGNMENT } from './shell-lexemes.ts';
@@ -83,14 +84,14 @@ const nameOf = (word: Word | undefined): string | undefined =>
 
 const EMPTY_EFFECTS: ProgramEffects = { writes: [], reads: [], opaque: false };
 
-const describeSegment = (text: string, words: Word[], opaque: boolean, place: Place): Segment => {
+const describeSegment = (text: string, words: Word[], opaque: boolean, place: Place, specs: CommandSpecs): Segment => {
   let commandIndex = 0;
   while (commandIndex < words.length && ASSIGNMENT.test((words[commandIndex] as Word).value)) commandIndex += 1;
-  const effective = locateEffectiveCommand(words);
+  const effective = locateEffectiveCommand(words, specs);
   const effectiveWord = words[effective.index];
   const strictWord = words[effective.strictIndex];
   const strictName = nameOf(strictWord);
-  const prefixEligible = !opaque && strictName !== undefined && specOf(strictName)?.neverPrefix !== true;
+  const prefixEligible = !opaque && strictName !== undefined && specs.specOf(strictName)?.neverPrefix !== true;
   const unanalyzable = effective.unanalyzable || (effectiveWord !== undefined && !effectiveWord.literal);
   return {
     text,
@@ -111,9 +112,9 @@ const describeSegment = (text: string, words: Word[], opaque: boolean, place: Pl
   };
 };
 
-const segmentChangesDirectory = (segment: Segment): boolean => {
+const segmentChangesDirectory = (segment: Segment, specs: CommandSpecs): boolean => {
   const word = segment.words[segment.effectiveIndex];
-  return word !== undefined && word.literal && !word.value.includes('/') && specOf(word.value)?.changesDirectory === true;
+  return word !== undefined && word.literal && !word.value.includes('/') && specs.specOf(word.value)?.changesDirectory === true;
 };
 
 const NAVIGATION_FLAGS: ReadonlySet<string> = new Set(['-L', '-P', '--']);
@@ -128,14 +129,14 @@ const directoryStepOf = (segment: Segment): DirectoryStep => {
   return only.staticValue;
 };
 
-const scan = (command: string, depth: number, incoming: Place): Analysis => {
+const scan = (command: string, depth: number, incoming: Place, specs: CommandSpecs): Analysis => {
   if (FORBIDDEN_CONTROL.test(command)) return unsupported('control character');
-  return scanFrom(command, 0, depth, incoming, false).analysis;
+  return scanFrom(command, 0, depth, incoming, false, specs).analysis;
 };
 
 type Scanned = { analysis: Analysis; end: number };
 
-const scanFrom = (command: string, start: number, depth: number, incoming: Place, inSubstitution: boolean): Scanned => {
+const scanFrom = (command: string, start: number, depth: number, incoming: Place, inSubstitution: boolean, specs: CommandSpecs): Scanned => {
   if (depth > MAX_NESTING) return unsupported('nesting too deep');
 
   const segments: Segment[] = [];
@@ -202,13 +203,13 @@ const scanFrom = (command: string, start: number, depth: number, incoming: Place
     if (text !== '') {
       const first = words[0];
       if (first !== undefined && first.plain && RESERVED_WORDS.has(first.value)) unsupported('shell reserved word');
-      const segment = describeSegment(text, words, opaque, { effect: cwdState, trail });
+      const segment = describeSegment(text, words, opaque, { effect: cwdState, trail }, specs);
       segments.push(segment);
       const firstPayload = nested.length;
-      const payloadEffect = collectPayloads(segment, nested, depth);
+      const payloadEffect = collectPayloads(segment, nested, depth, specs);
       for (const payload of nested.slice(firstPayload)) payload.at = segments.length - 1;
       cwdState = strongerEffect(cwdState, payloadEffect);
-      if (segmentChangesDirectory(segment)) {
+      if (segmentChangesDirectory(segment, specs)) {
         cwdState = strongerEffect(cwdState, 'changed');
         trail = [...trail, directoryStepOf(segment)];
       } else if (payloadEffect !== 'none') {
@@ -231,7 +232,7 @@ const scanFrom = (command: string, start: number, depth: number, incoming: Place
   };
 
   const absorbSubstitution = (body: string): void => {
-    nested.push({ ...scan(body, depth + 1, { effect: cwdState, trail }), at: segments.length });
+    nested.push({ ...scan(body, depth + 1, { effect: cwdState, trail }, specs), at: segments.length });
     absorbed();
   };
 
@@ -245,7 +246,7 @@ const scanFrom = (command: string, start: number, depth: number, incoming: Place
     const next = command[index + 1];
     if (next === '(') {
       if (command[index + 2] === '(') return unsupported('arithmetic expansion');
-      const inner = scanFrom(command, index + 2, depth + 1, { effect: cwdState, trail }, true);
+      const inner = scanFrom(command, index + 2, depth + 1, { effect: cwdState, trail }, true, specs);
       nested.push({ ...inner.analysis, at: segments.length });
       absorbed();
       return inner.end;
@@ -402,7 +403,7 @@ const scanFrom = (command: string, start: number, depth: number, incoming: Place
   if (!closed) endSegment(command.length, 0);
 
   for (const segment of segments) {
-    segment.effects = pathEffectsOf(segment, strongerEffect(segment.cwdBefore, segment.cwdEffect));
+    segment.effects = pathEffectsOf(segment, strongerEffect(segment.cwdBefore, segment.cwdEffect), specs);
     if (segment.effects.opaque) segment.unanalyzable = true;
   }
   return { analysis: { segments, redirects, redirectAt, reads, readAt, nested, at: 0, cwdAfter: cwdState }, end };
@@ -410,30 +411,30 @@ const scanFrom = (command: string, start: number, depth: number, incoming: Place
 
 const SHELL_COMMAND_FLAG = /^-[A-Za-z]*c[A-Za-z]*$/;
 
-const collectPayloads = (segment: Segment, nested: Analysis[], depth: number): CwdEffect => {
+const collectPayloads = (segment: Segment, nested: Analysis[], depth: number, specs: CommandSpecs): CwdEffect => {
   const inherited: Place = {
     effect: strongerEffect(segment.cwdBefore, segment.cwdEffect),
     trail: segment.cwdEffect === 'none' ? segment.cwdTrail : [...segment.cwdTrail, null],
   };
   for (const payload of segment.wrapperPayloads) {
-    if (payload.literal) nested.push(scan(payload.value, depth + 1, inherited));
+    if (payload.literal) nested.push(scan(payload.value, depth + 1, inherited, specs));
     else segment.unanalyzable = true;
   }
   const name = nameOf(segment.words[segment.effectiveIndex]);
   if (name === undefined) return 'none';
   const rest = segment.words.slice(segment.effectiveIndex + 1);
-  const payloadKind = specOf(name)?.payload;
+  const payloadKind = specs.specOf(name)?.payload;
   if (payloadKind === 'shell') {
     const flagIndex = rest.findIndex((word) => word.literal && SHELL_COMMAND_FLAG.test(word.value));
     const payload = flagIndex === -1 ? undefined : rest[flagIndex + 1];
-    if (payload !== undefined && payload.literal) nested.push(scan(payload.value, depth + 1, inherited));
+    if (payload !== undefined && payload.literal) nested.push(scan(payload.value, depth + 1, inherited, specs));
     else segment.unanalyzable = true;
   } else if (payloadKind === 'eval') {
     if (!rest.every((word) => word.literal)) {
       segment.unanalyzable = true;
       return 'changed';
     }
-    const inner = scan(rest.map((word) => word.value).join(' '), depth + 1, inherited);
+    const inner = scan(rest.map((word) => word.value).join(' '), depth + 1, inherited, specs);
     nested.push(inner);
     return inner.cwdAfter;
   } else if (payloadKind === 'source') {
@@ -443,9 +444,11 @@ const collectPayloads = (segment: Segment, nested: Analysis[], depth: number): C
   return 'none';
 };
 
-export const analyzeCommand = (command: string): Analysis | null => {
+export const STRUCTURAL_SPECS: CommandSpecs = commandSpecsFor('darwin');
+
+export const analyzeCommand = (command: string, specs: CommandSpecs = STRUCTURAL_SPECS): Analysis | null => {
   try {
-    return scan(command, 0, { effect: 'none', trail: [] });
+    return scan(command, 0, { effect: 'none', trail: [] }, specs);
   } catch (error) {
     if (error instanceof UnsupportedConstruct) return null;
     throw error;

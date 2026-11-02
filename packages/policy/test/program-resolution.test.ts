@@ -22,7 +22,7 @@ const resolve = (command: string, layout: FakeFsLayout = {}) => {
 };
 
 describe('resolveSegmentProgram (3.13)', () => {
-  it('uses a word containing / as written, normalised against the cwd, without the port', () => {
+  it('walks a word containing / through its links and does not consult the port', () => {
     expect(resolve('./sed -n p f').calls).toEqual([]);
     expect(resolve('./sed -n p f').result).not.toEqual({ program: '/usr/bin/sed' });
     expect(resolve('/opt/homebrew/bin/sed -n p f').result).toEqual({ program: '/opt/homebrew/bin/sed' });

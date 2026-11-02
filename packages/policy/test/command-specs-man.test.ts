@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { parseArgv } from '../src/argv.ts';
-import { specOf } from '../src/command-specs.ts';
+import { commandSpecsFor } from '../src/platform-specs.ts';
+
+const specOf = commandSpecsFor('darwin').specOf;
 import { analyzeCommand, allWriteTargets } from '../src/shell.ts';
 import type { Word } from '../src/shell.ts';
 

@@ -4,9 +4,9 @@ import type { ParsedArgv, ParsedOption } from './argv.ts';
 import { parseGit } from './git-argv.ts';
 import { GIT_READ_ONLY_SUBCOMMANDS, gitSubcommandSpec, reflogView } from './git-subcommands.ts';
 import type { GitParse } from './git-argv.ts';
-import { specOf } from './command-specs.ts';
-import type { CommandSpec } from './command-specs.ts';
+import type { CommandSpec, CommandSpecs } from './command-specs.ts';
 import { scanSedScript } from './sed-script.ts';
+import type { SedDialect } from './sed-script.ts';
 import type { Segment, Word } from './shell.ts';
 import { DYNAMIC, markConfigOverride, markRelativeUnresolvable, targetOfOption, targetOfText } from './targets.ts';
 import type { CwdEffect, Target } from './targets.ts';
@@ -142,14 +142,14 @@ export type SedFacts = {
 };
 
 export const sedFacts = (parsed: ParsedArgv): SedFacts => {
-  const expressions = optionValues(parsed, '-e');
-  const scriptFiles = optionValues(parsed, '-f');
+  const expressions = optionValues(parsed, '-e', '--expression');
+  const scriptFiles = optionValues(parsed, '-f', '--file');
   const scriptGivenByOption = expressions.length > 0 || scriptFiles.length > 0;
   const [first, ...rest] = parsed.operands;
   const scripts: Array<string | null> = expressions.map((entry) => (entry.dynamic === true ? null : (entry.value ?? '')));
   const files = scriptGivenByOption ? parsed.operands : rest;
   if (!scriptGivenByOption && first !== undefined) scripts.push(first.staticValue);
-  const extension = optionsNamed(parsed, '-i', '-I')[0];
+  const extension = optionsNamed(parsed, '-i', '-I', '--in-place')[0];
   return { scripts, scriptFiles, files, inPlace: extension !== undefined, extension };
 };
 
@@ -158,11 +158,11 @@ const backupTargets = (files: readonly Word[], extension: ParsedOption | undefin
   if (extension.dynamic === true) return files.length > 0 ? [DYNAMIC] : [];
   const suffix = extension.value ?? '';
   if (suffix === '') return [];
-  if (suffix.includes('/')) return files.length > 0 ? [DYNAMIC] : [];
+  if (suffix.includes('/') || suffix.includes('*')) return files.length > 0 ? [DYNAMIC] : [];
   return files.map((file): Target => (file.staticValue === null ? DYNAMIC : targetOfText(`${file.staticValue}${suffix}`)));
 };
 
-const scriptTargets = (scripts: ReadonlyArray<string | null>): { writes: Target[]; reads: Target[] } => {
+const scriptTargets = (scripts: ReadonlyArray<string | null>, dialect: SedDialect): { writes: Target[]; reads: Target[] } => {
   const writes: Target[] = [];
   const reads: Target[] = [];
   for (const script of scripts) {
@@ -170,7 +170,7 @@ const scriptTargets = (scripts: ReadonlyArray<string | null>): { writes: Target[
       writes.push(DYNAMIC);
       continue;
     }
-    const scan = scanSedScript(script);
+    const scan = scanSedScript(script, dialect);
     writes.push(...scan.writes);
     reads.push(...scan.reads);
   }
@@ -233,7 +233,13 @@ const uniqueTargets = (targets: readonly Target[]): Target[] => {
 
 const sedEffects = (spec: CommandSpec, args: readonly Word[], parsed: ParsedArgv): ProgramEffects => {
   const facts = sedFacts(parsed);
-  const script = scriptTargets(facts.scripts);
+  if (spec.dialect === 'gnu') {
+    const own = scriptTargets(facts.scripts, 'gnu');
+    const writes = [...own.writes, ...(facts.inPlace ? [...targetsOf(facts.files, 'write'), ...backupTargets(facts.files, facts.extension)] : [])];
+    const reads = [...facts.scriptFiles.map(targetOfOption), ...own.reads, ...(facts.inPlace ? [] : targetsOf(facts.files, 'read'))];
+    return { writes: uniqueTargets(writes), reads: uniqueTargets(reads), opaque: false, spec, parsed };
+  }
+  const script = scriptTargets(facts.scripts, 'bsd');
   const darwinFiles = targetsOf(facts.files, 'write');
   const gnu = gnuSedReading(args);
   const gnuFiles = targetsOf(gnu.files, 'write');
@@ -482,8 +488,8 @@ const gitSubcommandEffects = (subcommand: string, allWords: readonly Word[]): { 
   }
 };
 
-const gitEffects = (args: readonly Word[], spec: CommandSpec): ProgramEffects => {
-  const git = parseGit(args);
+const gitEffects = (args: readonly Word[], spec: CommandSpec, specs: CommandSpecs): ProgramEffects => {
+  const git = parseGit(args, specs);
   if (git.subcommand === undefined) return { ...NONE, spec, git };
   const found = gitSubcommandEffects(git.subcommand, git.rest);
   const mark = (targets: Target[]): Target[] => {
@@ -519,10 +525,10 @@ const perlWrites = (args: readonly Word[]): Target[] => {
   return targetsOf(scriptGiven ? operands : operands.slice(1), 'write');
 };
 
-const programEffects = (name: string, spec: CommandSpec, args: readonly Word[]): ProgramEffects => {
+const programEffects = (name: string, spec: CommandSpec, args: readonly Word[], specs: CommandSpecs): ProgramEffects => {
   if (spec.extractor === 'interpreter') return interpreterEffects(name, spec, args);
   if (spec.extractor === 'dd') return { ...ddEffects(args), spec };
-  if (spec.extractor === 'git') return gitEffects(args, spec);
+  if (spec.extractor === 'git') return gitEffects(args, spec, specs);
   if (spec.extractor === 'tar') return tarEffects(args, spec);
   const parsed = parseArgv(args, spec);
   switch (spec.extractor) {
@@ -552,13 +558,13 @@ const programEffects = (name: string, spec: CommandSpec, args: readonly Word[]):
   }
 };
 
-export const pathEffectsOf = (segment: Segment, effect: CwdEffect): ProgramEffects => {
+export const pathEffectsOf = (segment: Segment, effect: CwdEffect, specs: CommandSpecs): ProgramEffects => {
   const program = segment.words[segment.effectiveIndex];
   if (program === undefined) return { ...NONE, writes: [...segment.wrapperWrites] };
-  const spec = program.literal ? specOf(path.basename(program.value)) : undefined;
+  const spec = program.literal ? specs.specOf(path.basename(program.value)) : undefined;
   if (spec === undefined) return { ...NONE, writes: [...segment.wrapperWrites] };
   const name = path.basename(program.value);
-  const found = programEffects(name, spec, segment.words.slice(segment.effectiveIndex + 1));
+  const found = programEffects(name, spec, segment.words.slice(segment.effectiveIndex + 1), specs);
   const withWrapperWrites = (targets: Target[]): Target[] => [...segment.wrapperWrites, ...markRelativeUnresolvable(targets, effect)];
   return {
     ...found,

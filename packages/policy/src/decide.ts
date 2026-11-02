@@ -10,6 +10,7 @@ import type { PolicyFilesystem } from './filesystem.ts';
 import { matchRule, matchStrength, ruleCoversSubject } from './match-rule.ts';
 import { absoluteFrom } from './path-match.ts';
 import { resolveSegmentProgram } from './program-resolution.ts';
+import { commandSpecsFor } from './platform-specs.ts';
 import { discoverRepository } from './repository.ts';
 import { insideRoots } from './roots.ts';
 import { analyzeCommand, executionSteps, looseRedirectTargets, programNameOf } from './shell.ts';
@@ -132,7 +133,7 @@ const modeDefault = (input: DecideInput, subject: PermissionSubject): Decision =
 };
 
 const commandDefault = (input: DecideInput, command: string): Decision => {
-  const approval = commandApproval(input, command, analyzeCommand(command));
+  const approval = commandApproval(input, command, analyzeCommand(command, commandSpecsFor(input.fs.platform)));
   if (approval === 'read-only') return byMode('allow', 'read-only command');
   if (approval === 'edit' && input.mode === 'acceptEdits') return byMode('allow', 'acceptEdits mode allows filesystem commands inside the workspace');
   return byMode('ask', 'shell commands require approval');
@@ -290,7 +291,7 @@ const analysisPlan = (input: DecideInput, analysis: Analysis): { writes: PathPla
 const looseUnresolvable: UnresolvableReason = { kind: 'unanalyzable' };
 
 const planPathAccess = (input: DecideInput, command: string): { writes: PathPlan; reads: PathPlan } => {
-  const analysis = analyzeCommand(command);
+  const analysis = analyzeCommand(command, commandSpecsFor(input.fs.platform));
   if (analysis !== null) return analysisPlan(input, analysis);
   const loose = resolveTargets(input, markRelativeUnresolvable(looseRedirectTargets(command).map((text) => targetOfText(text)), 'changed'), []);
   return {

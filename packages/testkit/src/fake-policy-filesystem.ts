@@ -7,6 +7,7 @@ export type FakeProgramResolution = { program: string } | { none: true };
 export type FakeGlobExpansion = { matches: string[] } | { overflow: true } | Unresolved;
 
 export type FakePolicyFilesystem = {
+  platform: NodeJS.Platform;
   canonicalise: (absolute: string) => PathResolution;
   volumeProbe: (directory: string) => boolean;
   resolveProgram: (name: string, cwd: string, searchPath: string | undefined, isWritable: (absolute: string) => boolean) => FakeProgramResolution;
@@ -20,6 +21,7 @@ export type FakeResolveCall = { name: string; cwd: string; searchPath: string | 
 export type RecordingPolicyFilesystem = FakePolicyFilesystem & { resolveCalls: FakeResolveCall[] };
 
 export type FakePolicyFilesystemLayout = {
+  platform?: NodeJS.Platform;
   programs?: Readonly<Record<string, string>>;
   programsBySearchPath?: Readonly<Record<string, Readonly<Record<string, string>>>>;
   globs?: Readonly<Record<string, FakeGlobExpansion>>;
@@ -112,6 +114,7 @@ export const fakePolicyFilesystem = (layout: FakePolicyFilesystemLayout = {}): R
   const resolveCalls: FakeResolveCall[] = [];
   return {
     resolveCalls,
+    platform: layout.platform ?? 'darwin',
     canonicalise: (absolute) => resolveCanonicalPath(absolute),
     volumeProbe: (directory) => volumeIsCaseInsensitive(directory),
     resolveProgram: (name, cwd, searchPath, isWritable) => {

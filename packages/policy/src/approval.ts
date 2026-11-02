@@ -9,6 +9,7 @@ import type { PolicyFilesystem } from './filesystem.ts';
 import type { OptionEffect, CommandSpec } from './command-specs.ts';
 import { globDirectory, sedFacts } from './path-effects.ts';
 import { absoluteFrom } from './path-match.ts';
+import { systemProgramDirectories } from './platform-specs.ts';
 import { executedByWrapper, resolveSegmentProgram } from './program-resolution.ts';
 import { discoverRepository } from './repository.ts';
 import { insideRoots } from './roots.ts';
@@ -33,7 +34,6 @@ export type ApprovalClass = 'read-only' | 'edit';
 
 const DISQUALIFYING_EFFECTS: ReadonlySet<OptionEffect> = new Set(['write', 'exec', 'opens-path', 'sensitive', 'cwd', 'root', 'delete', 'symlink-create', 'follows-symlinks']);
 const CAPABLE_EFFECTS: ReadonlySet<OptionEffect> = new Set(['write', 'exec', 'delete', 'opens-path', 'sensitive']);
-const APPLE_DIRECTORIES: readonly string[] = ['/bin', '/usr/bin'];
 
 
 const globAllowed = (word: Word, context: ApprovalContext): boolean => {
@@ -95,17 +95,17 @@ const psAllowed = (spec: CommandSpec, segment: Segment, operands: readonly Word[
   return !later.some((word) => word.literal && sensitiveWord.test(word.value));
 };
 
-const sedAllowed = (parsed: ParsedArgv): boolean => {
+const sedAllowed = (spec: CommandSpec, parsed: ParsedArgv): boolean => {
   const facts = sedFacts(parsed);
   if (facts.scripts.length === 0 || facts.scriptFiles.length > 0) return false;
-  return facts.scripts.every((script) => script !== null && scanSedScript(script).simple);
+  return facts.scripts.every((script) => script !== null && scanSedScript(script, spec.dialect ?? 'bsd').simple);
 };
 
 const programApproved = (spec: CommandSpec, segment: Segment, context: ApprovalContext): boolean => {
   if (spec.builtin === true && !(segment.words[segment.effectiveIndex] as Word).value.includes('/') && !executedByWrapper(segment)) return true;
   const resolution = resolveSegmentProgram(segment, context);
   if (!('program' in resolution)) return false;
-  return APPLE_DIRECTORIES.some((directory) => resolution.program === path.join(directory, spec.names[0] as string));
+  return systemProgramDirectories(context.fs.platform).some((directory) => resolution.program === path.join(directory, spec.names[0] as string));
 };
 
 const sameDirectory = (left: string, right: string): boolean => lexicallyWithin(left, right) && lexicallyWithin(right, left);
@@ -244,7 +244,7 @@ const plainApproved = (spec: CommandSpec, segment: Segment, context: ApprovalCon
   if (!optionsAllowed(spec, parsed.options)) return false;
   if (spec.plainOperandsOnly === true && parsed.options.length > 0) return false;
   if (!operandsAllowed(spec, parsed.operands, context)) return false;
-  if (spec.extractor === 'sed' && !sedAllowed(parsed)) return false;
+  if (spec.extractor === 'sed' && !sedAllowed(spec, parsed)) return false;
   if (spec.extractor === 'cd' && parsed.operands.some((word) => word.staticValue === '-')) return false;
   if (!psAllowed(spec, segment, parsed.operands)) return false;
   return true;

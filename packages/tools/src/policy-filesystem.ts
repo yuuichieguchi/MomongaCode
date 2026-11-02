@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { MAX_POINTER_FILE_BYTES, resolveCanonicalPath, unresolvableReasonOf, volumeIsCaseInsensitive } from '@momonga/foundation';
 import type { EntryRead, StepRead, Unresolved } from '@momonga/foundation';
+import { systemProgramDirectories } from '@momonga/policy';
 import type { GlobExpansion, PolicyFilesystem, ProgramResolution } from '@momonga/policy';
 
-const APPLE_DIRECTORIES: readonly string[] = ['/bin', '/usr/bin'];
 const GLOB_CHARACTER = /[*?[]/;
 const NOT_THERE: ReadonlySet<string> = new Set(['ENOENT', 'ENOTDIR']);
 const MISSING: ReadonlySet<string> = new Set(['ENOENT']);
@@ -35,29 +35,30 @@ const holdsProgram = (directory: string, name: string): boolean => {
   }
 };
 
-const holderAt = (entry: string, cwd: string, name: string, isWritable: (absolute: string) => boolean, unsafeBefore: boolean): Holder | undefined => {
+const holderAt = (system: readonly string[], entry: string, cwd: string, name: string, isWritable: (absolute: string) => boolean, unsafeBefore: boolean): Holder | undefined => {
   const directory = path.resolve(cwd, entry);
   if (!holdsProgram(directory, name)) return undefined;
   const absolute = path.isAbsolute(entry);
   return {
-    apple: APPLE_DIRECTORIES.includes(directory),
-    exact: absolute && APPLE_DIRECTORIES.includes(entry),
+    apple: system.includes(directory),
+    exact: absolute && system.includes(entry),
     unsafe: unsafeBefore || !absolute || isWritable(entry),
     program: path.join(directory, name),
   };
 };
 
-const resolveProgram = (name: string, cwd: string, searchPath: string | undefined, isWritable: (absolute: string) => boolean): ProgramResolution => {
+const resolveProgram = (platform: NodeJS.Platform) => (name: string, cwd: string, searchPath: string | undefined, isWritable: (absolute: string) => boolean): ProgramResolution => {
   if (searchPath === undefined) return { none: true };
+  const system = systemProgramDirectories(platform);
   const entries = searchPath.split(':');
   let unsafeBefore = false;
   for (const [index, entry] of entries.entries()) {
-    const landing = holderAt(entry, cwd, name, isWritable, unsafeBefore);
+    const landing = holderAt(system, entry, cwd, name, isWritable, unsafeBefore);
     if (landing !== undefined) {
       if (landing.apple) return landing.exact && !landing.unsafe ? { program: landing.program } : { none: true };
       if (!landing.unsafe) return { program: landing.program };
       const appleBehind = entries.slice(index + 1).some((later) => {
-        const holder = holderAt(later, cwd, name, isWritable, true);
+        const holder = holderAt(system, later, cwd, name, isWritable, true);
         return holder !== undefined && holder.exact;
       });
       return appleBehind ? { none: true } : { program: landing.program };
@@ -175,10 +176,11 @@ const expandGlob = (pattern: string, cwd: string, limit: number): GlobExpansion 
   return { matches: bases.sort() };
 };
 
-export const createPolicyFilesystem = (): PolicyFilesystem => ({
+export const createPolicyFilesystem = (platform: NodeJS.Platform = process.platform): PolicyFilesystem => ({
+  platform,
   canonicalise: (absolute) => resolveCanonicalPath(absolute),
   volumeProbe: (directory) => volumeIsCaseInsensitive(directory),
-  resolveProgram,
+  resolveProgram: resolveProgram(platform),
   expandGlob,
   readEntry,
   readNoFollow,
