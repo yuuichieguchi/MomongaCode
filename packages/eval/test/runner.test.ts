@@ -81,7 +81,7 @@ describe('runDataset', () => {
   });
 
   it('follows a subagent run announced by tool.waiting and answers its approval requests', async () => {
-    const parent = callsTranscript('delegate', [{ callId: 'agent1', name: 'Agent', kind: 'other', rawInput: {}, decision: 'allow' }]);
+    const parent = callsTranscript('delegate', [{ callId: 'agent1', name: 'Agent', kind: 'other', sideEffect: 'read_only', rawInput: {}, decision: 'allow' }]);
     const waiting = { ...(parent.events[0] as PublicRunEvent), type: 'tool.waiting', callId: 'agent1', awaits: { kind: 'run', runId: 'child-1', sessionId: 's-child', agent: 'writer' } } as unknown as PublicRunEvent;
     const withChild: Transcript = {
       ...parent,
@@ -108,11 +108,77 @@ describe('runDataset', () => {
 
   describe('a subagent follower that fails while the root run is still open', () => {
     const delegating = () => {
-      const parent = callsTranscript('delegate', [{ callId: 'agent1', name: 'Agent', kind: 'other', rawInput: {}, decision: 'allow' }]);
+      const parent = callsTranscript('delegate', [{ callId: 'agent1', name: 'Agent', kind: 'other', sideEffect: 'read_only', rawInput: {}, decision: 'allow' }]);
       const waiting = { ...(parent.events[0] as PublicRunEvent), type: 'tool.waiting', callId: 'agent1', awaits: { kind: 'run', runId: 'child-1', sessionId: 's-child', agent: 'writer' } } as unknown as PublicRunEvent;
       const childEvents = callsTranscript('child', [{ callId: 'w1', name: 'Write', kind: 'edit', rawInput: {}, decision: 'ask' }]).events;
       return { parent, waiting, childEvents };
     };
+
+    const failuresOf = (rejection: unknown): readonly unknown[] => {
+      const cause = (rejection as EvalError).cause;
+      if (!(cause instanceof AggregateError)) throw new Error('expected an AggregateError cause');
+      return cause.errors;
+    };
+
+    it('cancels the root run and stops waiting when the root follower itself fails', async () => {
+      const parent = callsTranscript('delegate', [{ callId: 'w0', name: 'Write', kind: 'edit', rawInput: {}, decision: 'ask' }]);
+      const scripted = scriptedApi([parent]);
+      const rootCancelled = Promise.withResolvers<void>();
+      const failure = new Error('approval endpoint unreachable');
+      const api: EvalRunApi = {
+        ...scripted.api,
+        events: async function* () {
+          for (const event of parent.events) yield event;
+          await rootCancelled.promise;
+        },
+        resolveApproval: async () => {
+          throw failure;
+        },
+        cancelRun: async (runId) => {
+          scripted.cancelled.push(runId);
+          rootCancelled.resolve();
+        },
+      };
+      await expect(
+        runDataset({ format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'delegate', graders: [{ kind: 'status', equals: 'COMPLETED' }] })] }, { api, workspace }),
+      ).rejects.toBe(failure);
+      expect(scripted.cancelled).toEqual([parent.run.id]);
+    });
+
+    it('surfaces the original follower failure together with the error the cancel provoked on the root stream', async () => {
+      const { parent, waiting, childEvents } = delegating();
+      const scripted = scriptedApi([parent]);
+      const failure = new Error('approval endpoint unreachable');
+      const derived = new Error('root stream closed by cancel');
+      const rootCancelled = Promise.withResolvers<void>();
+      const api: EvalRunApi = {
+        ...scripted.api,
+        events: async function* (runId) {
+          if (runId === 'child-1') {
+            for (const event of childEvents) yield event;
+            return;
+          }
+          for (const event of [...parent.events, waiting]) yield event;
+          await rootCancelled.promise;
+          throw derived;
+        },
+        resolveApproval: async () => {
+          throw failure;
+        },
+        cancelRun: async () => {
+          rootCancelled.resolve();
+        },
+      };
+      const rejection = await runDataset(
+        { format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'delegate', graders: [{ kind: 'status', equals: 'COMPLETED' }] })] },
+        { api, workspace },
+      ).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(rejection).toBeInstanceOf(EvalError);
+      expect(failuresOf(rejection)).toEqual([failure, derived]);
+    });
 
     it('cancels the root run at once instead of waiting for the root stream to end by itself', async () => {
       const { parent, waiting, childEvents } = delegating();
@@ -168,7 +234,89 @@ describe('runDataset', () => {
       );
       expect(rejection).toBeInstanceOf(EvalError);
       expect((rejection as EvalError).message).toContain('cancel refused');
-      expect((rejection as EvalError).cause).toBe(failure);
+      expect(failuresOf(rejection)).toContain(failure);
+    });
+
+    it('leaves no unhandled rejection when the cancel fails while the root stream is still open', async () => {
+      const { parent, waiting, childEvents } = delegating();
+      const scripted = scriptedApi([parent]);
+      const failure = new Error('approval endpoint unreachable');
+      const cancelFailed = Promise.withResolvers<void>();
+      const unhandled: unknown[] = [];
+      const recordUnhandled = (reason: unknown): void => void unhandled.push(reason);
+      const nodeReportedUnhandledRejections = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+      const api: EvalRunApi = {
+        ...scripted.api,
+        events: async function* (runId) {
+          if (runId === 'child-1') {
+            for (const event of childEvents) yield event;
+            return;
+          }
+          for (const event of [...parent.events, waiting]) yield event;
+          await cancelFailed.promise;
+          await nodeReportedUnhandledRejections();
+        },
+        resolveApproval: async () => {
+          throw failure;
+        },
+        cancelRun: async () => {
+          cancelFailed.resolve();
+          throw new Error('cancel refused');
+        },
+      };
+      process.on('unhandledRejection', recordUnhandled);
+      try {
+        const rejection = await runDataset(
+          { format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'delegate', graders: [{ kind: 'status', equals: 'COMPLETED' }] })] },
+          { api, workspace },
+        ).then(
+          () => undefined,
+          (error: unknown) => error,
+        );
+        await nodeReportedUnhandledRejections();
+        expect(unhandled).toEqual([]);
+        expect(rejection).toBeInstanceOf(EvalError);
+        expect((rejection as EvalError).message).toContain('cancel refused');
+        expect(failuresOf(rejection)).toContain(failure);
+      } finally {
+        process.off('unhandledRejection', recordUnhandled);
+      }
+    });
+
+    it('waits for the other followers before reporting that the root stream broke', async () => {
+      const { parent, waiting } = delegating();
+      const scripted = scriptedApi([parent]);
+      const childMayFinish = Promise.withResolvers<void>();
+      const rootFailure = new Error('root stream broke');
+      const finished: string[] = [];
+      const api: EvalRunApi = {
+        ...scripted.api,
+        events: async function* (runId) {
+          if (runId === 'child-1') {
+            await childMayFinish.promise;
+            finished.push('child');
+            return;
+          }
+          for (const event of [...parent.events, waiting]) yield event;
+          throw rootFailure;
+        },
+      };
+      const outcome = runDataset(
+        { format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'delegate', graders: [{ kind: 'status', equals: 'COMPLETED' }] })] },
+        { api, workspace },
+      ).then(
+        () => 'resolved',
+        (error: unknown) => {
+          finished.push('reported');
+          return error;
+        },
+      );
+      const nodeTurn = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+      await nodeTurn();
+      expect(finished).toEqual([]);
+      childMayFinish.resolve();
+      expect(await outcome).toBe(rootFailure);
+      expect(finished).toEqual(['child', 'reported']);
     });
   });
 

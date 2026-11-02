@@ -3,7 +3,7 @@ import { credentialEnvNames, loadSettings, loadUserSettings, secretNames } from 
 import { makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 
 const CAPABILITIES = { contextWindow: 200000, maxOutputTokens: 8192 };
-const IMAGE_TOKENS = { pixelsPerToken: 750, maxTokens: 1600 };
+const IMAGE_TOKENS = { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 };
 
 const anthropicTarget = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   adapter: 'anthropic',

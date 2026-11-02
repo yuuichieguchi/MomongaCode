@@ -80,8 +80,12 @@ const reportSchema: JSONSchemaType<ProbeReport> = {
     imageTokens: {
       type: 'object',
       nullable: true,
-      required: ['pixelsPerToken', 'maxTokens'],
-      properties: { pixelsPerToken: { type: 'number', exclusiveMinimum: 0 }, maxTokens: { type: 'integer', minimum: 1 } },
+      required: ['pixelsPerToken', 'maxTokens', 'minTokens'],
+      properties: {
+        pixelsPerToken: { type: 'number', exclusiveMinimum: 0 },
+        maxTokens: { type: 'integer', minimum: 1 },
+        minTokens: { type: 'integer', minimum: 1 },
+      },
     },
     guardrail: { type: 'object', required: [], properties: { errorShape: anyJson } },
     tokenCalibration: {

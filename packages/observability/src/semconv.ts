@@ -72,6 +72,8 @@ export const MOMONGA_ATTRIBUTES = {
   billing: 'momonga.billing',
 } as const;
 
+export const UNKNOWN_BILLING = 'unknown';
+
 export const OPERATIONS = {
   agent: 'invoke_agent',
   chat: 'chat',

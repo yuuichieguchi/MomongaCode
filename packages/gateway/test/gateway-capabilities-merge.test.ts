@@ -4,7 +4,7 @@ import type { Capabilities } from '@momonga/protocol';
 import { createScriptedAdapter } from '@momonga/testkit';
 import { getJson, startGateway } from './gateway-helpers.ts';
 
-const IMAGE_MODEL = { pixelsPerToken: 750, maxTokens: 1600 };
+const IMAGE_MODEL = { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 };
 
 const strong: Capabilities = {
   contextWindow: 8192,
@@ -138,12 +138,17 @@ describe('alias image token model on /v1/momonga/models', () => {
   };
 
   it('reports the smallest pixelsPerToken and the largest maxTokens when every target declares a model', async () => {
-    const merged = await mergedOf(sees({ pixelsPerToken: 750, maxTokens: 1600 }), sees({ pixelsPerToken: 500, maxTokens: 1000 }));
-    expect(merged.imageTokens).toEqual({ pixelsPerToken: 500, maxTokens: 1600 });
+    const merged = await mergedOf(sees({ pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 }), sees({ pixelsPerToken: 500, maxTokens: 1000, minTokens: 1 }));
+    expect(merged.imageTokens).toEqual({ pixelsPerToken: 500, maxTokens: 1600, minTokens: 1 });
+  });
+
+  it('reports the largest per-image minimum, so the merged model never underestimates a small image on any target', async () => {
+    const merged = await mergedOf(sees({ pixelsPerToken: 750, maxTokens: 1600, minTokens: 85 }), sees({ pixelsPerToken: 500, maxTokens: 1000, minTokens: 576 }));
+    expect(merged.imageTokens).toEqual({ pixelsPerToken: 500, maxTokens: 1600, minTokens: 576 });
   });
 
   it('omits the model when a target of the alias declares none', async () => {
-    const merged = await mergedOf(sees({ pixelsPerToken: 750, maxTokens: 1600 }), sees(undefined));
+    const merged = await mergedOf(sees({ pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 }), sees(undefined));
     expect(merged.imageTokens).toBeUndefined();
   });
 });

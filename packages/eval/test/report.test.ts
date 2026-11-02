@@ -45,7 +45,7 @@ describe('transcript codec', () => {
   });
 
   it('rejects a file without a transcript header', () => {
-    expect(() => decodeTranscript('{"type":"user.message"}\n', 'bad.jsonl')).toThrow(/first line must be a momonga-transcript\/2 header/);
+    expect(() => decodeTranscript('{"type":"user.message"}\n', 'bad.jsonl')).toThrow(/first line must be a momonga-transcript\/3 header/);
   });
 
   it('refuses a version 1 transcript, which cannot say whether subagent runs were observed', () => {
@@ -53,8 +53,13 @@ describe('transcript codec', () => {
     expect(() => decodeTranscript(`${JSON.stringify(header)}\n`, 'old.jsonl')).toThrow(/old\.jsonl:1: momonga-transcript\/1 transcripts do not record subagent runs/);
   });
 
-  it('refuses a version 2 header without a children list instead of reading it as no subagents', () => {
-    const header = { format: 'momonga-transcript/2', caseId: 'c1', runIndex: 0, run: finalAnswerTranscript('c1', 0).run };
+  it('refuses a version 2 transcript, which cannot say whether a call changes state', () => {
+    const header = { format: 'momonga-transcript/2', caseId: 'c1', runIndex: 0, run: finalAnswerTranscript('c1', 0).run, children: [] };
+    expect(() => decodeTranscript(`${JSON.stringify(header)}\n`, 'old.jsonl')).toThrow(/old\.jsonl:1: momonga-transcript\/2 transcripts do not record the side effect of a tool call/);
+  });
+
+  it('refuses a version 3 header without a children list instead of reading it as no subagents', () => {
+    const header = { format: 'momonga-transcript/3', caseId: 'c1', runIndex: 0, run: finalAnswerTranscript('c1', 0).run };
     expect(() => decodeTranscript(`${JSON.stringify(header)}\n`, 'new.jsonl')).toThrow(/new\.jsonl:1: children must be a list/);
   });
 });
@@ -141,9 +146,36 @@ describe('replayDataset', () => {
     const askWrite = goldenCase({ id: 'ask-write', graders: [{ kind: 'permissionDecision', tool: 'Write', expected: 'ask' }] });
     const report = replayDataset(dataset(askWrite), [
       callsTranscript('ask-write', [
-        { callId: 'm1', name: 'mcp__files__read', kind: 'read', rawInput: {}, decision: 'allow' },
-        { callId: 'a1', name: 'Agent', kind: 'other', rawInput: {}, decision: 'allow' },
+        { callId: 'm1', name: 'mcp__files__read', kind: 'read', sideEffect: 'read_only', rawInput: {}, decision: 'allow' },
+        { callId: 'a1', name: 'Agent', kind: 'other', sideEffect: 'read_only', rawInput: {}, decision: 'allow' },
       ]),
+    ]);
+    expect(report.decisions.falseAllow).toBeUndefined();
+    expect(report.decisions.unobserved).toBe(1);
+  });
+
+  it('counts an allowed built-in tool that writes as a false allow even though its kind is other and its name has no MCP prefix', () => {
+    const askWrite = goldenCase({ id: 'ask-write', graders: [{ kind: 'permissionDecision', tool: 'Write', expected: 'ask' }] });
+    const report = replayDataset(dataset(askWrite), [
+      callsTranscript('ask-write', [{ callId: 'm1', name: 'MemorySave', kind: 'other', sideEffect: 'write', rawInput: {}, decision: 'allow' }]),
+    ]);
+    expect(report.decisions.falseAllow).toMatchObject({ successes: 1, trials: 1 });
+    expect(report.decisions.unobserved).toBe(0);
+  });
+
+  it('counts an allowed MCP tool that declares itself both read-only and destructive as a false allow', () => {
+    const askWrite = goldenCase({ id: 'ask-write', graders: [{ kind: 'permissionDecision', tool: 'Write', expected: 'ask' }] });
+    const report = replayDataset(dataset(askWrite), [
+      callsTranscript('ask-write', [{ callId: 'm1', name: 'mcp__files__purge', kind: 'read', sideEffect: 'write', rawInput: {}, decision: 'allow' }]),
+    ]);
+    expect(report.decisions.falseAllow).toMatchObject({ successes: 1, trials: 1 });
+    expect(report.decisions.unobserved).toBe(0);
+  });
+
+  it('does not count an allowed read-only tool whose kind looks mutating as a false allow', () => {
+    const askWrite = goldenCase({ id: 'ask-write', graders: [{ kind: 'permissionDecision', tool: 'Write', expected: 'ask' }] });
+    const report = replayDataset(dataset(askWrite), [
+      callsTranscript('ask-write', [{ callId: 'p1', name: 'Preview', kind: 'edit', sideEffect: 'read_only', rawInput: {}, decision: 'allow' }]),
     ]);
     expect(report.decisions.falseAllow).toBeUndefined();
     expect(report.decisions.unobserved).toBe(1);

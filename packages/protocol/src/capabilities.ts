@@ -4,7 +4,7 @@ export type ToolCallingSetting = 'native' | 'constrained' | 'auto';
 export const TARGET_BILLINGS = ['metered', 'local'] as const;
 export type TargetBilling = (typeof TARGET_BILLINGS)[number];
 
-export type ImageTokenModel = { pixelsPerToken: number; maxTokens: number };
+export type ImageTokenModel = { pixelsPerToken: number; maxTokens: number; minTokens: number };
 
 export type ImageCapability =
   | { imageInput: false; imageTokens?: undefined }
@@ -17,7 +17,7 @@ export const imageCapability = (imageInput: boolean, imageTokens: ImageTokenMode
   }
   if (imageTokens === undefined) {
     throw new Error(
-      `${prefix}capabilities.imageInput is true, so capabilities.imageTokens ({ pixelsPerToken, maxTokens }) must declare how the target counts an image`,
+      `${prefix}capabilities.imageInput is true, so capabilities.imageTokens ({ pixelsPerToken, maxTokens, minTokens }) must declare how the target counts an image`,
     );
   }
   return { imageInput: true, imageTokens };

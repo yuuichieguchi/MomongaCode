@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createFakeClock } from '@momonga/testkit';
-import { MIN_TASK_POLL_MS, McpInputSuspension, McpParkedInputLostError } from '@momonga/mcp';
+import { MIN_TASK_POLL_MS, McpInputSuspension, McpParkedInputLostError, McpTaskError } from '@momonga/mcp';
 import { makeRemoteConnection, observedTimers, startHttpFixture, textOf } from './remote-harness.ts';
 
 const CALL_TIMEOUT_MS = 1_000_000;
@@ -27,6 +27,32 @@ describe('a session that expires after a tool call created a task', () => {
     expect(callsOf(fixture, 'long_task')).toHaveLength(1);
     expect(fixture.taskIds()).toEqual([taskId]);
     expect(fixture.rpcRecords('initialize').map((record) => record.status)).toEqual([200, 200]);
+  });
+});
+
+describe('a task past its ttl whose tasks/cancel meets an expired session', () => {
+  it('fails with the ttl error and does not discard the session or rerun the call', async () => {
+    const fixture = await startHttpFixture({
+      era: 'legacy',
+      legacyTasks: true,
+      taskPollIntervalMs: 1,
+      taskTtlMs: 5000,
+      taskCreatedAt: new Date(1_000_000).toISOString(),
+      taskLastUpdatedAt: new Date(1_006_000).toISOString(),
+      expireSessionOnTaskCancel: true,
+    });
+    const { connection } = makeRemoteConnection({ fixture, timers: observedTimers(createFakeClock(1_000_000)) });
+    await connection.listTools();
+
+    const failure = await connection.callTool({ name: 'long_task', arguments: {}, timeoutMs: CALL_TIMEOUT_MS }).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(McpTaskError);
+    expect((failure as McpTaskError).message).toContain('ttl of 5000ms');
+    expect((failure as McpTaskError).cancelFailure).toBeDefined();
+    expect((failure as McpTaskError).cause).toBeUndefined();
+    expect(callsOf(fixture, 'long_task')).toHaveLength(1);
+    expect(fixture.rpcRecords('tasks/cancel')).toHaveLength(1);
+    expect(fixture.rpcRecords('initialize')).toHaveLength(1);
   });
 });
 

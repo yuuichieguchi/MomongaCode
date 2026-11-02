@@ -72,8 +72,8 @@ const TARGET_CAPABILITIES_SCHEMA = {
     imageInput: { type: 'boolean' },
     imageTokens: {
       type: 'object',
-      properties: { pixelsPerToken: { type: 'number', exclusiveMinimum: 0 }, maxTokens: POSITIVE_INTEGER },
-      required: ['pixelsPerToken', 'maxTokens'],
+      properties: { pixelsPerToken: { type: 'number', exclusiveMinimum: 0 }, maxTokens: POSITIVE_INTEGER, minTokens: POSITIVE_INTEGER },
+      required: ['pixelsPerToken', 'maxTokens', 'minTokens'],
       additionalProperties: false,
     },
     parallelToolCalls: { type: 'boolean' },

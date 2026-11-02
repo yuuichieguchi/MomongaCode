@@ -63,6 +63,7 @@ const mergedImageCapability = (all: readonly Capabilities[]): ImageCapability =>
   return imageCapability(true, {
     pixelsPerToken: Math.min(...models.map((model) => model.pixelsPerToken)),
     maxTokens: Math.max(...models.map((model) => model.maxTokens)),
+    minTokens: Math.max(...models.map((model) => model.minTokens)),
   });
 };
 

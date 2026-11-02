@@ -42,14 +42,14 @@ const driveRun = async (ports: EvalPorts, golden: GoldenCase, rootRunId: string)
   const children: TranscriptChild[] = [];
   const followed = new Set<string>([rootRunId]);
   const following: Promise<void>[] = [];
-  let childFailure: { error: unknown } | undefined;
+  const failures: unknown[] = [];
 
   const abandon = async (error: unknown): Promise<void> => {
-    childFailure ??= { error };
+    failures.push(error);
     try {
       await ports.api.cancelRun(rootRunId);
     } catch (cancelError) {
-      throw new EvalError(`case ${golden.id}: cancelling run ${rootRunId} after a subagent run failed also failed: ${cancelError instanceof Error ? cancelError.message : String(cancelError)}`, { cause: error });
+      failures.push(new EvalError(`case ${golden.id}: cancelling run ${rootRunId} after a run failed also failed: ${cancelError instanceof Error ? cancelError.message : String(cancelError)}`, { cause: cancelError }));
     }
   };
 
@@ -66,9 +66,15 @@ const driveRun = async (ports: EvalPorts, golden: GoldenCase, rootRunId: string)
     }
   };
 
-  await follow(rootRunId, events);
+  await follow(rootRunId, events).catch(abandon);
   for (let index = 0; index < following.length; index += 1) await following[index];
-  if (childFailure !== undefined) throw childFailure.error;
+  const [first, ...rest] = failures;
+  if (rest.length > 0) {
+    throw new EvalError(`case ${golden.id}: ${failures.length} failures: ${failures.map((failure) => (failure instanceof Error ? failure.message : String(failure))).join('; ')}`, {
+      cause: new AggregateError(failures),
+    });
+  }
+  if (failures.length === 1) throw first;
   return { events, children };
 };
 
