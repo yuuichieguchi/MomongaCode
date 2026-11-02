@@ -22,7 +22,7 @@ const insertMemory = (db: DatabaseSync, id: string, scope: 'user' | 'project', s
 };
 
 describe('migration v10', () => {
-  it('marks memories saved in a trusted folder or a folder below one as trusted, every other user memory as untrusted, and project memories as trusted', () => {
+  it('marks memories saved in a folder whose nearest trust decision is trusted as trusted, every other user memory as untrusted, and project memories as trusted', () => {
     const dbPath = path.join(makeStoreDir(), 'runtime.db');
     const db = new DatabaseSync(dbPath);
     try {
@@ -34,11 +34,14 @@ describe('migration v10', () => {
       insertSession(db, 'sibling-prefix', '/work/trusted-other');
       insertSession(db, 'refused', '/work/refused');
       insertSession(db, 'unknown', '/work/unknown');
+      db.prepare("INSERT INTO trust (path, decision, decided_at) VALUES ('/work/trusted/refused-below', 'untrusted', ?)").run(START_MS);
+      insertSession(db, 'refused-below-trusted', '/work/trusted/refused-below/sub');
       insertMemory(db, 'm-in', 'user', 'in-trusted');
       insertMemory(db, 'm-below', 'user', 'below-trusted');
       insertMemory(db, 'm-sibling', 'user', 'sibling-prefix');
       insertMemory(db, 'm-refused', 'user', 'refused');
       insertMemory(db, 'm-unknown', 'user', 'unknown');
+      insertMemory(db, 'm-refused-below', 'user', 'refused-below-trusted');
       insertMemory(db, 'm-project', 'project', 'unknown');
     } finally {
       db.close();
@@ -54,6 +57,7 @@ describe('migration v10', () => {
       'm-sibling': 'untrusted',
       'm-refused': 'untrusted',
       'm-unknown': 'untrusted',
+      'm-refused-below': 'untrusted',
       'm-project': 'trusted',
     });
   });

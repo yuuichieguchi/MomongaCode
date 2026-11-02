@@ -258,10 +258,11 @@ const MEMORY_TRUST_ORIGIN = `
 ALTER TABLE memories ADD COLUMN origin TEXT NOT NULL DEFAULT 'untrusted' CHECK (origin IN ('trusted', 'untrusted'));
 UPDATE memories SET origin = 'trusted'
 WHERE scope = 'project'
-   OR EXISTS (
-     SELECT 1 FROM sessions s JOIN trust t ON t.decision = 'trusted' AND (s.cwd = t.path OR substr(s.cwd, 1, length(t.path) + 1) = t.path || '/')
+   OR (
+     SELECT t.decision FROM sessions s JOIN trust t ON (s.cwd = t.path OR substr(s.cwd, 1, length(t.path) + 1) = t.path || '/')
      WHERE s.id = memories.source_session_id
-   );
+     ORDER BY length(t.path) DESC LIMIT 1
+   ) = 'trusted';
 `;
 
 const JOB_READ_REPLAY = `
