@@ -80,9 +80,20 @@ describe('mergeAdjacentUserMessages', () => {
     expect(mergeAdjacentUserMessages(messages)).toEqual(messages);
   });
 
-  it('leaves a user message without string content unmerged', () => {
+  it('merges a string user message and a parts user message into one parts message', () => {
+    const image = { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } };
     const messages: ChatMessage[] = [
       { role: 'user', content: 'text' },
+      { role: 'user', content: [{ type: 'text', text: 'parts' }, image] },
+    ];
+    expect(mergeAdjacentUserMessages(messages)).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'text' }, { type: 'text', text: 'parts' }, image] },
+    ]);
+  });
+
+  it('does not merge an assistant or tool message with a user message of parts', () => {
+    const messages: ChatMessage[] = [
+      { role: 'tool', tool_call_id: 'c', content: 'out' },
       { role: 'user', content: [{ type: 'text', text: 'parts' }] },
     ];
     expect(mergeAdjacentUserMessages(messages)).toEqual(messages);

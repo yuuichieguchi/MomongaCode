@@ -91,7 +91,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     try {
       const endpoint = await options.resolveEndpoint(ctx.target);
-      const apiKey = await options.apiKey?.(ctx.target);
+      const apiKey = await options.apiKey?.(ctx.target, signal);
       const response = await pool.clientFor(endpoint).post({
         headers: {
           'content-type': 'application/json',

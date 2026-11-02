@@ -138,6 +138,11 @@ export {
   anthropicTextReply,
   anthropicToolUseBlock,
   anthropicToolUseReply,
+  anthropicCountTokensReply,
+  anthropicBlockStart,
+  anthropicBlockDelta,
+  anthropicBlockStop,
+  FAKE_ANTHROPIC_COUNT_TOKENS_PATH,
   startFakeAnthropic,
 } from './fake-anthropic.ts';
 export type { AnthropicUsage, FakeAnthropicOptions } from './fake-anthropic.ts';

@@ -7,15 +7,19 @@ export type AnthropicUsageFields = {
   cache_read_input_tokens?: number;
 };
 
-export type AnthropicContentBlock =
+export type AnthropicContentBlock = { raw: Record<string, unknown> } & (
   | { kind: 'text'; text: string }
   | { kind: 'tool_use'; id: string; name: string }
   | { kind: 'thinking' }
-  | { kind: 'other' };
+  | { kind: 'other' }
+);
 
 export type AnthropicDelta =
   | { kind: 'text'; text: string }
   | { kind: 'input_json'; partialJson: string }
+  | { kind: 'thinking'; thinking: string }
+  | { kind: 'signature'; signature: string }
+  | { kind: 'citation'; citation: unknown }
   | { kind: 'other' };
 
 export type AnthropicStreamEvent =
@@ -67,10 +71,12 @@ const usageOf = (value: unknown): AnthropicUsageFields => {
 const blockOf = (value: unknown): AnthropicContentBlock => {
   if (!isRecord(value)) throw invalid('content_block must be an object');
   const type = requiredString(value, 'type', 'content_block');
-  if (type === 'text') return { kind: 'text', text: typeof value['text'] === 'string' ? value['text'] : '' };
-  if (type === 'tool_use') return { kind: 'tool_use', id: requiredString(value, 'id', 'content_block'), name: requiredString(value, 'name', 'content_block') };
-  if (type === 'thinking' || type === 'redacted_thinking') return { kind: 'thinking' };
-  return { kind: 'other' };
+  if (type === 'text') return { raw: value, kind: 'text', text: typeof value['text'] === 'string' ? value['text'] : '' };
+  if (type === 'tool_use') {
+    return { raw: value, kind: 'tool_use', id: requiredString(value, 'id', 'content_block'), name: requiredString(value, 'name', 'content_block') };
+  }
+  if (type === 'thinking' || type === 'redacted_thinking') return { raw: value, kind: 'thinking' };
+  return { raw: value, kind: 'other' };
 };
 
 const deltaOf = (value: unknown): AnthropicDelta => {
@@ -78,6 +84,9 @@ const deltaOf = (value: unknown): AnthropicDelta => {
   const type = requiredString(value, 'type', 'delta');
   if (type === 'text_delta') return { kind: 'text', text: requiredString(value, 'text', 'delta') };
   if (type === 'input_json_delta') return { kind: 'input_json', partialJson: requiredString(value, 'partial_json', 'delta') };
+  if (type === 'thinking_delta') return { kind: 'thinking', thinking: requiredString(value, 'thinking', 'delta') };
+  if (type === 'signature_delta') return { kind: 'signature', signature: requiredString(value, 'signature', 'delta') };
+  if (type === 'citations_delta') return { kind: 'citation', citation: value['citation'] };
   return { kind: 'other' };
 };
 

@@ -5,6 +5,7 @@ import { armDeadline } from './deadline.ts';
 import { gatewayClosedError, invalidRequest, runCancelledError } from './errors.ts';
 import { createIdempotencyRegistry, parseIdempotencyKey } from './idempotency.ts';
 import { normalizeInput } from './input.ts';
+import type { ConnectionResponses } from './input.ts';
 import { executeResponse } from './respond.ts';
 import type { ResponseJob } from './respond.ts';
 import { NEVER_EVICTED, startBufferedRun, startDirectRun } from './run.ts';
@@ -26,7 +27,7 @@ export type Submission = {
 };
 
 export type ResponsesService = {
-  submit(rawBody: unknown, headers: SubmitHeaders, signal: AbortSignal): Submission;
+  submit(rawBody: unknown, headers: SubmitHeaders, signal: AbortSignal, connection?: ConnectionResponses): Submission;
   cancel(idempotencyKey: string | undefined): boolean;
   abortUnkeyed(reason: unknown): void;
   abortAll(reason: unknown): void;
@@ -100,7 +101,7 @@ export const createResponsesService = (services: Services, validator: RequestVal
   const keyedRuns = new Set<SharedRun>();
 
   return {
-    submit: (rawBody, headers, signal) => {
+    submit: (rawBody, headers, signal, connection) => {
       if (services.closeSignal.aborted) throw gatewayClosedError();
       const body = validator.parseCreate(rawBody);
       const deadlineAt = parseDeadlineHeader(headers.deadlineMs, services.clock.now());
@@ -129,6 +130,7 @@ export const createResponsesService = (services: Services, validator: RequestVal
         idempotency: key === undefined || digest === undefined ? undefined : { key, digest },
         deadlineAt,
         parent,
+        ...(connection === undefined ? {} : { connection }),
         runId: body.metadata?.['run_id'],
         step: parseStep(body.metadata?.['step']),
       };

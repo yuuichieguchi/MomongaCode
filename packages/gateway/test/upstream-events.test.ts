@@ -27,7 +27,10 @@ describe('parseAnthropicEvent', () => {
   it('classifies unknown event, block and delta types as ignorable', () => {
     expect(parseAnthropicEvent('{"type":"future"}')).toEqual({ type: 'unknown', name: 'future' });
     expect(parseAnthropicEvent('{"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use"}}')).toMatchObject({ block: { kind: 'other' } });
-    expect(parseAnthropicEvent('{"type":"content_block_delta","index":0,"delta":{"type":"citations_delta"}}')).toMatchObject({ delta: { kind: 'other' } });
+    expect(parseAnthropicEvent('{"type":"content_block_delta","index":0,"delta":{"type":"brand_new_delta"}}')).toMatchObject({ delta: { kind: 'other' } });
+    expect(parseAnthropicEvent('{"type":"content_block_delta","index":0,"delta":{"type":"citations_delta","citation":{"a":1}}}')).toMatchObject({ delta: { kind: 'citation', citation: { a: 1 } } });
+    expect(parseAnthropicEvent('{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"t"}}')).toMatchObject({ delta: { kind: 'thinking', thinking: 't' } });
+    expect(parseAnthropicEvent('{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"s"}}')).toMatchObject({ delta: { kind: 'signature', signature: 's' } });
   });
 });
 

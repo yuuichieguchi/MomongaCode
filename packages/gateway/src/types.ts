@@ -23,6 +23,7 @@ export type GatewayConfig = {
   closeGraceMs: number;
   sseKeepAliveMs: number;
   detachedMaxMs: number;
+  websocketConnectionMs: number;
 };
 
 export type GatewayTimers = {
@@ -54,6 +55,7 @@ export type Gateway = {
   readonly startedAt: string;
   readonly tcpPort: number | undefined;
   readonly abandonedRuns: number;
+  addCredential(credential: string): void;
   close(): Promise<void>;
   abort(): Promise<void>;
 };

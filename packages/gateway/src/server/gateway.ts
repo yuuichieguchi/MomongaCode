@@ -16,6 +16,8 @@ import type { Gateway, GatewayOptions } from '../types.ts';
 import { createApp } from './app.ts';
 import { checkGatewayOptions, isLoopbackAddress } from './config-check.ts';
 import { createRequestTracker } from './tracker.ts';
+import { createWebSocketTransport } from './websocket.ts';
+import type { WebSocketTransport } from './websocket.ts';
 
 type FetchHandler = Parameters<typeof getRequestListener>[0];
 
@@ -32,12 +34,13 @@ const unauthorized = (): Response => {
   return new Response(JSON.stringify({ error: error.body }), { status: 401, headers: { 'content-type': 'application/json' } });
 };
 
+const tokenMatches = (token: string, authorization: string | null): boolean =>
+  timingSafeEqual(digestOf(bearerTokenOf(authorization)), digestOf(token));
+
 const requireToken =
   (token: string, inner: FetchHandler): FetchHandler =>
-  (request, env) => {
-    const presented = digestOf(bearerTokenOf(request.headers.get('authorization')));
-    return timingSafeEqual(presented, digestOf(token)) ? inner(request, env) : unauthorized();
-  };
+  (request, env) =>
+    tokenMatches(token, request.headers.get('authorization')) ? inner(request, env) : unauthorized();
 
 const listenTcp = (server: http.Server, host: string, port: number): Promise<number> =>
   new Promise((resolve, reject) => {
@@ -88,15 +91,17 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
   const validator = createRequestValidator();
   const store = openGatewayStore(options.dbPath, createStoredDataChecks());
   const servers: http.Server[] = [];
+  const transports: WebSocketTransport[] = [];
   const closeController = new AbortController();
   const forceCloseController = new AbortController();
   try {
+    const redactor = createRedactor({ credentials: options.credentials });
     const services: Services = {
       config: options.config,
       clock,
       timers,
       random: options.random ?? Math.random,
-      router: createRouter({ config: options.config, adapters: options.adapters, clock, timers, redactor: createRedactor({ credentials: options.credentials }) }),
+      router: createRouter({ config: options.config, adapters: options.adapters, clock, timers, redactor }),
       store,
       codec: createCompactionCodec(options.hmacKey),
       telemetry: options.telemetry,
@@ -120,7 +125,16 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
     });
     const handler: FetchHandler = (request, env) => app.fetch(request, env);
 
+    const webSocket = createWebSocketTransport({
+      services,
+      responses,
+      tracker,
+      connectionLimitMs: options.config.websocketConnectionMs,
+      ...(options.onError === undefined ? {} : { onError: options.onError }),
+    });
+    transports.push(webSocket);
     const unixServer = http.createServer(getRequestListener(handler));
+    webSocket.attach(unixServer);
     servers.push(unixServer);
     await listenUnix(unixServer, options.socketPath);
     if (options.onFatal !== undefined) watchServerErrors(unixServer, options.onFatal);
@@ -128,7 +142,18 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
     let tcpPort: number | undefined;
     let tcpServer: http.Server | undefined;
     if (options.debugTcp !== undefined) {
-      tcpServer = http.createServer(getRequestListener(requireToken(options.debugTcp.token, handler)));
+      const { token } = options.debugTcp;
+      const tcpSockets = createWebSocketTransport({
+        services,
+        responses,
+        tracker,
+        connectionLimitMs: options.config.websocketConnectionMs,
+        authorize: (request) => tokenMatches(token, request.headers.authorization ?? null),
+        ...(options.onError === undefined ? {} : { onError: options.onError }),
+      });
+      transports.push(tcpSockets);
+      tcpServer = http.createServer(getRequestListener(requireToken(token, handler)));
+      tcpSockets.attach(tcpServer);
       servers.push(tcpServer);
       tcpPort = await listenTcp(tcpServer, options.debugTcp.host, options.debugTcp.port);
       assertLoopbackBinding(tcpServer);
@@ -146,6 +171,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
         const reason = gatewayClosedError();
         closeController.abort(reason);
         responses.abortUnkeyed(reason);
+        for (const transport of transports) transport.beginClose();
         const closed = servers.map((server) => closeServer(server));
         for (const server of servers) server.closeIdleConnections();
         let graceHandle: unknown;
@@ -161,6 +187,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
           responses.abortAll(reason);
           unary.abortAll(reason);
         }
+        for (const transport of transports) transport.terminateAll();
         for (const server of servers) server.closeAllConnections();
         await Promise.all(closed);
         const adapterFailures = await closeAdapters(options.adapters);
@@ -177,6 +204,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       get abandonedRuns() {
         return abandonedRuns;
       },
+      addCredential: (credential) => redactor.add(credential),
       close,
       abort: () => {
         requestAbort();

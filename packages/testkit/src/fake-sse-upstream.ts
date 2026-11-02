@@ -8,6 +8,7 @@ export type FakeSseFrame = { event?: string; data: unknown };
 
 export type FakeUpstreamReply =
   | { kind: 'stream'; frames: FakeSseFrame[]; trailer?: 'end' | 'reset' }
+  | { kind: 'json'; body: unknown }
   | { kind: 'error'; status: number; body: unknown; headers?: Record<string, string> }
   | { kind: 'hang'; frames?: FakeSseFrame[] };
 
@@ -20,6 +21,8 @@ export type RecordedUpstreamRequest = {
 
 export type FakeUpstreamOptions = {
   path: string;
+  extraPaths?: readonly string[];
+  validate?: (request: RecordedUpstreamRequest) => FakeUpstreamReply | undefined;
   script?: FakeUpstreamReply[];
   respond?: (request: RecordedUpstreamRequest) => FakeUpstreamReply | undefined;
   authenticate?: (headers: http.IncomingHttpHeaders) => FakeUpstreamReply | undefined;
@@ -55,6 +58,11 @@ const startStream = async (response: http.ServerResponse, frames: readonly FakeS
 };
 
 const serve = async (reply: FakeUpstreamReply, response: http.ServerResponse): Promise<void> => {
+  if (reply.kind === 'json') {
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(JSON.stringify(reply.body));
+    return;
+  }
   if (reply.kind === 'error') {
     response.writeHead(reply.status, { 'content-type': 'application/json', ...reply.headers });
     response.end(JSON.stringify(reply.body));
@@ -93,13 +101,18 @@ export const startFakeSseUpstream = async (options: FakeUpstreamOptions): Promis
       response.once('close', () => {
         if (!response.writableFinished) disconnectCount += 1;
       });
-      if (recorded.method !== 'POST' || recorded.path !== options.path) {
+      if (recorded.method !== 'POST' || (recorded.path !== options.path && !(options.extraPaths ?? []).includes(recorded.path))) {
         await serve({ kind: 'error', status: 404, body: { error: { message: `no route for ${recorded.method} ${recorded.path}` } } }, response);
         return;
       }
       const rejected = options.authenticate?.(request.headers);
       if (rejected !== undefined) {
         await serve(rejected, response);
+        return;
+      }
+      const invalid = options.validate?.(recorded);
+      if (invalid !== undefined) {
+        await serve(invalid, response);
         return;
       }
       const reply = options.respond === undefined ? script.shift() : options.respond(recorded);

@@ -9,10 +9,12 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => server.close()));
 });
 
+const VALID_BODY = JSON.stringify({ model: 'm', max_tokens: 1, messages: [], input: [] });
+
 const post = async (server: FakeUpstreamServer, path: string, headers: Record<string, string>) => {
   const client = createUdsClient(server.socketPath);
   try {
-    const response = await client.request({ method: 'POST', path, headers: { 'content-type': 'application/json', ...headers }, body: '{"q":1}' });
+    const response = await client.request({ method: 'POST', path, headers: { 'content-type': 'application/json', ...headers }, body: VALID_BODY });
     const frames: Array<{ event: string | undefined; data: string }> = [];
     if (response.status === 200) for await (const frame of decodeSse(response.body)) frames.push({ event: frame.event, data: frame.data });
     return { status: response.status, frames, text: response.status === 200 ? '' : await response.text() };

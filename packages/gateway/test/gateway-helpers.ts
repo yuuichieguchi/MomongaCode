@@ -62,6 +62,7 @@ export type ConfigOverrides = {
   closeGraceMs?: number;
   sseKeepAliveMs?: number;
   detachedMaxMs?: number;
+  websocketConnectionMs?: number;
 };
 
 export const buildConfig = (overrides: ConfigOverrides = {}): GatewayConfig => {
@@ -86,6 +87,7 @@ export const buildConfig = (overrides: ConfigOverrides = {}): GatewayConfig => {
     closeGraceMs: overrides.closeGraceMs ?? 1000,
     sseKeepAliveMs: overrides.sseKeepAliveMs ?? 15_000,
     detachedMaxMs: overrides.detachedMaxMs ?? 1_800_000,
+    websocketConnectionMs: overrides.websocketConnectionMs ?? 3_600_000,
   };
 };
 

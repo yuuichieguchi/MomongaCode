@@ -121,9 +121,38 @@ describe('stored secrets in the gateway process', () => {
     expect(error).toMatchObject({ type: 'invalid_request', code: 'secret_unavailable', param: SECRET_NAME });
     expect(error.message).toContain('exit 44');
     expect(error.message).toContain(`security add-generic-password -s ${KEYCHAIN_SERVICE} -a ${SECRET_NAME} -w`);
-    expect(error.message).toContain('then restart the gateway');
+    expect(error.message).toContain('reads a missing secret again on the next request');
     expect(stack.anthropic.requests).toEqual([]);
     expect(stack.logText()).toContain(`secret ${SECRET_NAME} is unavailable`);
+  });
+
+  it('reads a secret that was added after start on the next request, then stops reading it', async (context) => {
+    const secrets: Record<string, string> = {};
+    const stack = await startStack(context, { secrets, anthropicScript: [anthropicTextReply(['a']), anthropicTextReply(['b'])] });
+    expect((await post(stack.client, request)).status).toBe(401);
+    expect(stack.security.calls).toHaveLength(2);
+    secrets[SECRET_NAME] = SECRET;
+    const added = await post(stack.client, request);
+    expect(added.status).toBe(200);
+    expect(stack.anthropic.requests[0]?.headers['x-api-key']).toBe(SECRET);
+    expect(stack.security.calls).toHaveLength(3);
+    expect((await post(stack.client, request)).status).toBe(200);
+    expect(stack.security.calls).toHaveLength(3);
+  });
+
+  it('redacts a secret that was resolved after start from upstream error text', async (context) => {
+    const secrets: Record<string, string> = {};
+    const stack = await startStack(context, {
+      secrets,
+      anthropicScript: [anthropicErrorReply(400, 'invalid_request_error', `bad request, key ${SECRET} was echoed`)],
+    });
+    expect((await post(stack.client, request)).status).toBe(401);
+    secrets[SECRET_NAME] = SECRET;
+    const response = await post(stack.client, request);
+    expect(response.status).toBe(400);
+    expectNoCredential(response.text, SECRET);
+    expect(response.text).toContain(REDACTED);
+    expect(stack.logText()).not.toContain(SECRET);
   });
 
   it('falls through to the next target of the alias when a target secret is unavailable', async (context) => {

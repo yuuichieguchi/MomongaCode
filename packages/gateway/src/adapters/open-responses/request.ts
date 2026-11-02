@@ -1,6 +1,7 @@
 import { compactionSummaryMessage } from '@momonga/protocol';
 import type { AdapterInputItem, AdapterRequest, ContentPart, InputItem } from '@momonga/protocol';
 import { UnsupportedInputError } from '../shared/failures.ts';
+import { imageUrlOf, isImagePart } from '../shared/image-part.ts';
 
 export type OpenResponsesRequestBody = {
   model: string;
@@ -18,15 +19,18 @@ export type OpenResponsesRequestBody = {
 
 const TEXT_PART_TYPES: ReadonlySet<ContentPart['type']> = new Set(['input_text', 'output_text', 'summary_text', 'refusal']);
 
-const textOnly = (content: string | ContentPart[]): string | ContentPart[] => {
+const relayable = (content: string | ContentPart[], allowed: ReadonlySet<ContentPart['type']>): string | ContentPart[] => {
   if (typeof content === 'string') return content;
   for (const part of content) {
-    if (!TEXT_PART_TYPES.has(part.type)) {
-      throw new UnsupportedInputError('unsupported_input', `the upstream adapter does not support ${part.type} content`, 'input');
+    if (!allowed.has(part.type)) {
+      throw new UnsupportedInputError('unsupported_input', `the upstream adapter does not support ${part.type} content here`, 'input');
     }
+    if (isImagePart(part)) imageUrlOf(part);
   }
   return content;
 };
+
+const USER_PART_TYPES: ReadonlySet<ContentPart['type']> = new Set([...TEXT_PART_TYPES, 'input_image']);
 
 const itemOf = (item: AdapterInputItem): InputItem | undefined => {
   switch (item.type) {
@@ -35,11 +39,11 @@ const itemOf = (item: AdapterInputItem): InputItem | undefined => {
     case 'compaction_summary':
       return compactionSummaryMessage(item.summary);
     case 'message':
-      return { type: 'message', role: item.role, content: textOnly(item.content) };
+      return { type: 'message', role: item.role, content: relayable(item.content, item.role === 'user' ? USER_PART_TYPES : TEXT_PART_TYPES) };
     case 'function_call':
       return { type: 'function_call', call_id: item.call_id, name: item.name, arguments: item.arguments };
     case 'function_call_output':
-      return { type: 'function_call_output', call_id: item.call_id, output: textOnly(item.output) };
+      return { type: 'function_call_output', call_id: item.call_id, output: relayable(item.output, USER_PART_TYPES) };
   }
 };
 

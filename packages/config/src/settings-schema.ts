@@ -96,13 +96,6 @@ const EXACTLY_ONE_API_KEY = {
   ],
 } as const;
 
-const { imageInput: _imageInput, ...REMOTE_CAPABILITY_PROPERTIES } = TARGET_CAPABILITIES_SCHEMA.properties;
-
-const REMOTE_TARGET_CAPABILITIES_SCHEMA = {
-  ...TARGET_CAPABILITIES_SCHEMA,
-  properties: REMOTE_CAPABILITY_PROPERTIES,
-} as const;
-
 const CHAT_COMPLETIONS_TARGET_SCHEMA = {
   type: 'object',
   properties: {
@@ -132,7 +125,7 @@ const OPEN_RESPONSES_TARGET_SCHEMA = {
     ...API_KEY_PROPERTIES,
     provider: { type: 'string', pattern: PROVIDER_NAME_PATTERN },
     toolCalling: { enum: ['native', 'none'] },
-    capabilities: REMOTE_TARGET_CAPABILITIES_SCHEMA,
+    capabilities: TARGET_CAPABILITIES_SCHEMA,
     maxConcurrency: POSITIVE_INTEGER,
     admissionTimeoutMs: NON_NEGATIVE_INTEGER,
   },
@@ -149,7 +142,7 @@ const ANTHROPIC_TARGET_SCHEMA = {
     baseUrl: { type: 'string', minLength: 1 },
     socketPath: { type: 'string', minLength: 1 },
     ...API_KEY_PROPERTIES,
-    capabilities: REMOTE_TARGET_CAPABILITIES_SCHEMA,
+    capabilities: TARGET_CAPABILITIES_SCHEMA,
     maxConcurrency: POSITIVE_INTEGER,
     admissionTimeoutMs: NON_NEGATIVE_INTEGER,
   },

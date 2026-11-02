@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  anthropicBlockDelta,
+  anthropicBlockStart,
+  anthropicBlockStop,
+  anthropicCountTokensReply,
   anthropicErrorEvent,
   anthropicErrorReply,
   anthropicMessageEnd,
@@ -11,6 +15,7 @@ import {
   anthropicToolUseReply,
   waitFor,
 } from '@momonga/testkit';
+import { MAX_PAUSE_CONTINUATIONS } from '../src/adapters/anthropic/constants.ts';
 import { expectErrorBody, postJson, readJson, userInput } from './gateway-helpers.ts';
 import { FAKE_API_KEY, REMOTE_CAPABILITIES, readFileTool, startAnthropicGateway, streamResponse, terminalOf, textOf, typesOf } from './upstream-gateway-support.ts';
 
@@ -46,8 +51,8 @@ describe('anthropic adapter through the gateway: text', () => {
       model: 'upstream-model',
       max_tokens: REMOTE_CAPABILITIES.maxOutputTokens,
       stream: true,
-      system: 'be brief',
-      messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+      system: [{ type: 'text', text: 'be brief', cache_control: { type: 'ephemeral' } }],
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hello', cache_control: { type: 'ephemeral' } }] }],
       temperature: 0.5,
       top_p: 0.9,
     });
@@ -126,6 +131,7 @@ describe('anthropic adapter through the gateway: tool calls', () => {
         name: 'read_file',
         description: 'Read a file from the workspace',
         input_schema: readFileTool.parameters,
+        cache_control: { type: 'ephemeral' },
       },
     ]);
     expect(body.tool_choice).toBeUndefined();
@@ -158,7 +164,7 @@ describe('anthropic adapter through the gateway: tool calls', () => {
         role: 'user',
         content: [
           { type: 'tool_result', tool_use_id: 'call_abc', content: 'contents' },
-          { type: 'text', text: 'thanks' },
+          { type: 'text', text: 'thanks', cache_control: { type: 'ephemeral' } },
         ],
       },
     ]);
@@ -211,7 +217,7 @@ describe('anthropic adapter through the gateway: terminal semantics', () => {
     expect(terminal.response.incomplete_details).toEqual({ reason: 'content_filter' });
   });
 
-  it.for(['pause_turn', 'compaction', 'brand_new_reason'])('fails the response for the unsupported stop reason %s', async (reason) => {
+  it.for(['compaction', 'brand_new_reason'])('fails the response for the unsupported stop reason %s', async (reason) => {
     const gateway = await startAnthropicGateway({
       script: [anthropicStream([anthropicMessageStart(), ...anthropicTextBlock(0, ['x']), ...anthropicMessageEnd(reason)])],
     });
@@ -327,7 +333,7 @@ describe('anthropic adapter through the gateway: failures', () => {
 
 describe('anthropic adapter through the gateway: compaction', () => {
   it('summarises through the same streaming path', async () => {
-    const gateway = await startAnthropicGateway({ script: [anthropicTextReply(['The user asked for X; file a.ts was read.'])] });
+    const gateway = await startAnthropicGateway({ script: [anthropicCountTokensReply(80), anthropicTextReply(['The user asked for X; file a.ts was read.'])] });
     const response = await readJson(
       await postJson(gateway.client, '/v1/responses/compact', {
         model: 'fast',
@@ -336,8 +342,120 @@ describe('anthropic adapter through the gateway: compaction', () => {
     );
     expect(response.status).toBe(200);
     expect(response.body.output[0].type).toBe('compaction');
-    const body = gateway.fake.requests[0]?.body as { system: string; messages: Array<{ content: Array<{ text: string }> }> };
-    expect(body.system).toContain('handoff note');
+    expect(gateway.fake.requests[0]?.path).toBe('/v1/messages/count_tokens');
+    const body = gateway.fake.requests[1]?.body as { system: Array<{ text: string; cache_control?: unknown }>; messages: Array<{ content: Array<{ text: string; cache_control?: unknown }> }> };
+    expect(body.system[0]?.text).toContain('handoff note');
+    expect(JSON.stringify(body)).not.toContain('cache_control');
     expect(body.messages[0]?.content[0]?.text).toContain('<tool_result id="c1">body</tool_result>');
+  });
+});
+
+describe('anthropic adapter through the gateway: pause_turn', () => {
+  const pausedSegment = anthropicStream([
+    anthropicMessageStart({ input_tokens: 10, output_tokens: 1 }),
+    anthropicBlockStart(0, { type: 'thinking', thinking: '', signature: '' }),
+    anthropicBlockDelta(0, { type: 'thinking_delta', thinking: 'plan' }),
+    anthropicBlockDelta(0, { type: 'signature_delta', signature: 'sig-1' }),
+    anthropicBlockStop(0),
+    ...anthropicTextBlock(1, ['part one, ']),
+    anthropicBlockStart(2, { type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search', input: {} }),
+    anthropicBlockDelta(2, { type: 'input_json_delta', partial_json: '{"query":' }),
+    anthropicBlockDelta(2, { type: 'input_json_delta', partial_json: '"momonga"}' }),
+    anthropicBlockStop(2),
+    ...anthropicMessageEnd('pause_turn', { output_tokens: 5 }),
+  ]);
+
+  it('continues the paused turn with the received content as an assistant message and joins the segments into one response', async () => {
+    const gateway = await startAnthropicGateway({
+      script: [pausedSegment, anthropicStream([anthropicMessageStart({ input_tokens: 20, output_tokens: 1 }), ...anthropicTextBlock(0, ['part two']), ...anthropicMessageEnd('end_turn', { output_tokens: 7 })])],
+    });
+    const frames = await streamResponse(gateway, { tools: [readFileTool] });
+    const terminal = terminalOf(frames);
+    expect(terminal.type).toBe('response.completed');
+    expect(textOf(terminal.response)).toBe('part one, part two');
+    expect(typesOf(frames).filter((type) => type === 'response.created')).toHaveLength(1);
+    expect(terminal.response.usage).toMatchObject({ input_tokens: 30, output_tokens: 12, total_tokens: 42 });
+    expect(gateway.fake.requests).toHaveLength(2);
+    const [first, second] = gateway.fake.requests.map((request) => request.body as { messages: Array<{ role: string; content: unknown }>; tools: unknown });
+    expect(second?.tools).toEqual(first?.tools);
+    expect(second?.messages.slice(0, first?.messages.length)).toEqual(first?.messages);
+    expect(second?.messages.at(-1)).toEqual({
+      role: 'assistant',
+      content: [
+        { type: 'thinking', thinking: 'plan', signature: 'sig-1' },
+        { type: 'text', text: 'part one, ' },
+        { type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search', input: { query: 'momonga' } },
+      ],
+    });
+  });
+
+  it('keeps the earlier paused content when the turn pauses again', async () => {
+    const secondPause = anthropicStream([anthropicMessageStart(), ...anthropicTextBlock(0, ['middle, ']), ...anthropicMessageEnd('pause_turn')]);
+    const gateway = await startAnthropicGateway({
+      script: [pausedSegment, secondPause, anthropicTextReply(['end'])],
+    });
+    const terminal = terminalOf(await streamResponse(gateway));
+    expect(textOf(terminal.response)).toBe('part one, middle, end');
+    const third = gateway.fake.requests[2]?.body as { messages: Array<{ role: string; content: Array<{ type: string; text?: string }> }> };
+    expect(third.messages.at(-1)?.content.map((block) => block.type)).toEqual(['thinking', 'text', 'server_tool_use', 'text']);
+    expect(third.messages.filter((message) => message.role === 'assistant')).toHaveLength(1);
+  });
+
+  it('fails the response with a typed code when the turn pauses more than the continuation cap', async () => {
+    const gateway = await startAnthropicGateway({ respond: () => anthropicStream([anthropicMessageStart(), ...anthropicTextBlock(0, ['x']), ...anthropicMessageEnd('pause_turn')]) });
+    const terminal = terminalOf(await streamResponse(gateway));
+    expect(terminal.type).toBe('response.failed');
+    expect(terminal.response.error).toMatchObject({ code: 'pause_turn_limit_exceeded' });
+    expect(gateway.fake.requests).toHaveLength(MAX_PAUSE_CONTINUATIONS + 1);
+  });
+});
+
+describe('anthropic adapter through the gateway: count_tokens', () => {
+  const count = (gateway: Awaited<ReturnType<typeof startAnthropicGateway>>, body: Record<string, unknown>) =>
+    postJson(gateway.client, '/v1/momonga/count_tokens', { model: 'fast', ...body }).then(readJson);
+
+  it('counts through the Anthropic endpoint with the documented request fields and reports an exact count', async () => {
+    const gateway = await startAnthropicGateway({ script: [anthropicCountTokensReply(321)] });
+    const response = await count(gateway, { instructions: 'be brief', input: userInput('hello'), tools: [readFileTool] });
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ input_tokens: 321, method: 'exact', error_bound: 0 });
+    const [request] = gateway.fake.requests;
+    expect(request?.path).toBe('/v1/messages/count_tokens');
+    expect(request?.headers['x-api-key']).toBe(FAKE_API_KEY);
+    expect(Object.keys(request?.body as object).sort()).toEqual(['messages', 'model', 'system', 'tools']);
+    expect(JSON.stringify(request?.body)).not.toContain('cache_control');
+  });
+
+  it('refuses locally to count an image given by URL because the endpoint cannot', async () => {
+    const gateway = await startAnthropicGateway({ script: [anthropicCountTokensReply(1)], capabilities: { ...REMOTE_CAPABILITIES, imageInput: true } });
+    const response = await count(gateway, { input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'https://example.com/a.png' }] }] });
+    expect(response.status).toBe(400);
+    expect(gateway.fake.requests).toEqual([]);
+  });
+
+  it('propagates an upstream failure instead of estimating', async () => {
+    const gateway = await startAnthropicGateway({ script: [anthropicErrorReply(400, 'invalid_request_error', 'bad count')] });
+    const response = await count(gateway, { input: userInput('hello') });
+    expect(response.status).toBe(400);
+  });
+});
+
+describe('anthropic adapter through the gateway: images', () => {
+  const PNG = 'data:image/png;base64,iVBORw0KGgo=';
+  const imageInput = [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'see' }, { type: 'input_image', image_url: PNG }] }];
+
+  it('sends the image block when the target declares imageInput', async () => {
+    const gateway = await startAnthropicGateway({ script: [anthropicTextReply(['ok'])], capabilities: { ...REMOTE_CAPABILITIES, imageInput: true } });
+    const terminal = terminalOf(await streamResponse(gateway, { input: imageInput as never }));
+    expect(terminal.type).toBe('response.completed');
+    const body = gateway.fake.requests[0]?.body as { messages: Array<{ content: Array<{ type: string }> }> };
+    expect(body.messages[0]?.content.map((block) => block.type)).toEqual(['text', 'image']);
+  });
+
+  it('rejects the request before any upstream call when the target does not declare imageInput', async () => {
+    const gateway = await startAnthropicGateway({ script: [anthropicTextReply(['ok'])] });
+    const response = await postJson(gateway.client, '/v1/responses', { model: 'fast', input: imageInput });
+    expect(response.status).toBe(400);
+    expect(gateway.fake.requests).toEqual([]);
   });
 });

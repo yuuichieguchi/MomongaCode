@@ -20,13 +20,16 @@ export type TargetRuntime = {
   capabilityOverride: Partial<Capabilities> | undefined;
 };
 
+export type CandidateRequirements = { tools?: boolean; images?: boolean };
+
 export type Router = {
   aliases(): string[];
   hasAlias(alias: string): boolean;
   targetsOf(alias: string): TargetRuntime[];
   capabilitiesOf(target: TargetRuntime): Promise<Capabilities>;
   aliasCapabilitiesOf(alias: string): Promise<Capabilities>;
-  candidates(alias: string, requirements: { tools: boolean }): Promise<TargetRuntime[]>;
+  candidates(alias: string, requirements: CandidateRequirements): Promise<TargetRuntime[]>;
+  narrow(alias: string, targets: readonly TargetRuntime[], requirements: CandidateRequirements): Promise<TargetRuntime[]>;
   health(): Promise<Pick<GatewayHealth, 'ok' | 'targets'>>;
 };
 
@@ -120,22 +123,33 @@ export const createRouter = (options: RouterOptions): Router => {
     return mergeCapabilities([first, ...rest]);
   };
 
+  const narrow = async (alias: string, all: readonly TargetRuntime[], requirements: CandidateRequirements): Promise<TargetRuntime[]> => {
+    let remaining = [...all];
+    if (requirements.tools === true) {
+      const capabilities = await Promise.all(remaining.map((target) => capabilitiesOf(target)));
+      remaining = remaining.filter((_, index) => (capabilities[index] as Capabilities).toolCalling !== 'none');
+      if (remaining.length === 0) {
+        throw invalidRequest('capability_unsupported', `no target of model alias "${alias}" supports tool calling`, 'tools');
+      }
+    }
+    if (requirements.images === true) {
+      const capabilities = await Promise.all(remaining.map((target) => capabilitiesOf(target)));
+      remaining = remaining.filter((_, index) => (capabilities[index] as Capabilities).imageInput);
+      if (remaining.length === 0) {
+        throw invalidRequest('capability_unsupported', `no target of model alias "${alias}" supports image input`, 'input');
+      }
+    }
+    return remaining;
+  };
+
   return {
     aliases: () => [...aliasTargets.keys()],
     hasAlias: (alias) => aliasTargets.has(alias),
     targetsOf,
     capabilitiesOf,
     aliasCapabilitiesOf,
-    candidates: async (alias, requirements) => {
-      const all = targetsOf(alias);
-      if (!requirements.tools) return all;
-      const capabilities = await Promise.all(all.map((target) => capabilitiesOf(target)));
-      const supported = all.filter((_, index) => (capabilities[index] as Capabilities).toolCalling !== 'none');
-      if (supported.length === 0) {
-        throw invalidRequest('capability_unsupported', `no target of model alias "${alias}" supports tool calling`, 'tools');
-      }
-      return supported;
-    },
+    candidates: (alias, requirements) => narrow(alias, targetsOf(alias), requirements),
+    narrow,
     health: async () => {
       const entries = await Promise.all(
         [...targets.values()].map(async (target) => {

@@ -34,6 +34,7 @@ export const checkGatewayOptions = (options: GatewayOptions): void => {
   requirePositiveInteger('closeGraceMs', config.closeGraceMs);
   requirePositiveInteger('sseKeepAliveMs', config.sseKeepAliveMs);
   requirePositiveInteger('detachedMaxMs', config.detachedMaxMs);
+  requirePositiveInteger('websocketConnectionMs', config.websocketConnectionMs);
   if (options.hmacKey.length < MIN_HMAC_KEY_BYTES) {
     throw new Error(`createGateway: hmacKey must be at least ${MIN_HMAC_KEY_BYTES} bytes, got ${options.hmacKey.length}`);
   }
