@@ -137,7 +137,7 @@ const startBackgroundJob = async (input: BashInput, ctx: ToolContext): Promise<T
 export const bashTool = defineTool<BashInput>({
   name: 'Bash',
   description:
-    'Runs a shell command with /bin/bash inside a sandbox, in the current working directory. Output combines stdout and stderr. A cd that stays inside the workspace persists to later calls. timeout is in milliseconds (default 120000, maximum 600000). No process started by the command outlives it. run_in_background starts a background job and returns its id; read it with BashOutput and stop it with KillBash. For a job, timeout is its time limit (default 1800000, maximum 7200000).',
+    'Runs a shell command with /bin/bash inside a sandbox, in the current working directory. Output combines stdout and stderr. A cd that stays inside the workspace persists to later calls. timeout is in milliseconds (default 120000, maximum 600000). No process started by the command outlives it. run_in_background starts a background job and returns its id for BashOutput and KillBash; timeout is then its time limit.',
   kind: 'execute',
   sideEffect: 'exec',
   inputSchema: {
