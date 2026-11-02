@@ -42,11 +42,12 @@ export type IdempotencyPort = {
 };
 
 export type BlobPort = {
-  put(data: string | Uint8Array, options: { mediaType: string }): { handle: string; sha256: string; byteLength: number; lineCount: number };
-  read(handle: string, range: { lineStart: number; lineEnd: number }): Promise<{ text: string; totalLines: number; totalBytes: number }>;
+  put(data: string | Uint8Array, options: { mediaType: string; runId?: string }): { handle: string; sha256: string; byteLength: number; lineCount: number };
+  read(handle: string, range: { lineStart: number; lineEnd: number }, scope?: { runId: string }): Promise<{ text: string; totalLines: number; totalBytes: number }>;
   read(
     handle: string,
     range: { offset: number; length: number },
+    scope?: { runId: string },
   ): Promise<{ text: string; totalLines: number; totalBytes: number; offset: number; length: number }>;
 };
 

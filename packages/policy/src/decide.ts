@@ -111,6 +111,8 @@ const modeDefault = (input: DecideInput, subject: PermissionSubject): Decision =
       return byMode('ask', `MCP tool mcp__${subject.server}__${subject.tool} requires approval`);
     case 'memory':
       return byMode('ask', `saving a ${subject.scope} memory requires approval because it persists into later sessions`);
+    case 'history':
+      return byMode('ask', `reading the recorded history of ${subject.project === 'all' ? 'every project' : subject.project} requires approval because it reaches outside this project`);
     case 'command':
       return commandDefault(input, subject.command);
     case 'path': {

@@ -105,7 +105,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       }
       await drain(pumps);
       const window = entry.output.window();
-      const stored = window.bytes.length === 0 ? undefined : store.blobs.put(window.bytes, { mediaType: 'text/plain' });
+      const stored = window.bytes.length === 0 ? undefined : store.blobs.put(window.bytes, { mediaType: 'text/plain', runId: job.runId });
       const result: JobResult = {
         status: entry.stopReason === undefined ? 'exited' : 'killed',
         ...(exit.code === null ? {} : { exitCode: exit.code }),

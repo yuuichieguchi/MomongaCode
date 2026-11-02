@@ -77,7 +77,7 @@ const portsOf = (ctx: ClaimContext): BuildContextPorts => ({
   meter: ctx.meter,
   blobs: {
     handleFor: (content) => ctx.options.blobs.handleFor(content),
-    put: async (text, blobOptions) => ctx.options.blobs.put(text, blobOptions),
+    put: async (text, blobOptions) => ctx.options.blobs.put(text, { ...blobOptions, runId: ctx.run.id }),
   },
   instructions: ctx.options.instructionReader,
 });

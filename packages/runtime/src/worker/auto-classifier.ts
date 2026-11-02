@@ -1,6 +1,6 @@
 import { budgetFor } from '@momonga/context';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import { CLASSIFIER_VERDICT_SCHEMA, classifierAllows, escapeXmlText, outputReserveFor, parseClassifierVerdict } from '@momonga/protocol';
+import { CLASSIFIER_VERDICT_SCHEMA, assistantTextOf, classifierAllows, escapeXmlText, outputReserveFor, parseClassifierVerdict } from '@momonga/protocol';
 import type { CreateResponseBody, ResponseResource, RunEventPayload } from '@momonga/protocol';
 import type { AutoClassifier, AutoClassifierRequest } from '@momonga/tools';
 import { GatewayRequestError } from '../gateway-client.ts';
@@ -16,11 +16,7 @@ export const CLASSIFIER_INSTRUCTIONS = [
   'Set confidence to "high" only when nothing in the call leaves you unsure. Reply with the JSON object only.',
 ].join('\n');
 
-const outputTextOf = (response: ResponseResource): string =>
-  response.output
-    .flatMap((item) => (item.type === 'message' ? item.content : []))
-    .flatMap((part) => (part.type === 'output_text' ? [part.text] : []))
-    .join('');
+const outputTextOf = (response: ResponseResource): string => assistantTextOf(response.output);
 
 const userPromptOf = (ctx: ClaimContext, cwd: string, request: AutoClassifierRequest): string => {
   const [first] = ctx.options.store.readRunEvents(ctx.run.id, 0, 1);
