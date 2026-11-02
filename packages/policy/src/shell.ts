@@ -70,38 +70,6 @@ const skipBackticks = (source: string, open: number): number => {
   return unsupported('unterminated backtick');
 };
 
-const skipDoubleQuoted = (source: string, open: number): number => {
-  let index = open + 1;
-  while (index < source.length) {
-    const char = source[index];
-    if (char === '\\') index += 2;
-    else if (char === '"') return index + 1;
-    else if (char === '$' && source[index + 1] === '(') index = findClosingParenthesis(source, index + 2) + 1;
-    else if (char === '`') index = skipBackticks(source, index);
-    else index += 1;
-  }
-  return unsupported('unterminated double quote');
-};
-
-const findClosingParenthesis = (source: string, from: number): number => {
-  let depth = 1;
-  let index = from;
-  while (index < source.length) {
-    const char = source[index];
-    if (char === '\\') index += 2;
-    else if (char === "'") index = skipSingleQuoted(source, index);
-    else if (char === '"') index = skipDoubleQuoted(source, index);
-    else if (char === '`') index = skipBackticks(source, index);
-    else {
-      if (char === '(') depth += 1;
-      if (char === ')') depth -= 1;
-      if (depth === 0) return index;
-      index += 1;
-    }
-  }
-  return unsupported('unterminated command substitution');
-};
-
 const nameOf = (word: Word | undefined): string | undefined =>
   word !== undefined && word.literal ? path.basename(word.value) : undefined;
 
@@ -140,8 +108,14 @@ const segmentChangesDirectory = (segment: Segment): boolean => {
 };
 
 const scan = (command: string, depth: number, incoming: CwdEffect): Analysis => {
-  if (depth > MAX_NESTING) return unsupported('nesting too deep');
   if (FORBIDDEN_CONTROL.test(command)) return unsupported('control character');
+  return scanFrom(command, 0, depth, incoming, false).analysis;
+};
+
+type Scanned = { analysis: Analysis; end: number };
+
+const scanFrom = (command: string, start: number, depth: number, incoming: CwdEffect, inSubstitution: boolean): Scanned => {
+  if (depth > MAX_NESTING) return unsupported('nesting too deep');
 
   const segments: Segment[] = [];
   const redirects: Target[] = [];
@@ -150,7 +124,7 @@ const scan = (command: string, depth: number, incoming: CwdEffect): Analysis => 
   let cwdState: CwdEffect = incoming;
   let words: Word[] = [];
   let opaque = false;
-  let segmentStart = 0;
+  let segmentStart = start;
   let word = freshWord();
   let pending: PendingRedirect | null = null;
 
@@ -221,6 +195,10 @@ const scan = (command: string, depth: number, incoming: CwdEffect): Analysis => 
 
   const absorbSubstitution = (body: string): void => {
     nested.push(scan(body, depth + 1, cwdState));
+    absorbed();
+  };
+
+  const absorbed = (): void => {
     opaque = true;
     markDynamic();
     word.plain = false;
@@ -230,9 +208,10 @@ const scan = (command: string, depth: number, incoming: CwdEffect): Analysis => 
     const next = command[index + 1];
     if (next === '(') {
       if (command[index + 2] === '(') return unsupported('arithmetic expansion');
-      const close = findClosingParenthesis(command, index + 2);
-      absorbSubstitution(command.slice(index + 2, close));
-      return close + 1;
+      const inner = scanFrom(command, index + 2, depth + 1, cwdState, true);
+      nested.push(inner.analysis);
+      absorbed();
+      return inner.end;
     }
     if (next === '{' || next === '[') return unsupported('parameter or arithmetic expansion');
     if (!quoted && (next === "'" || next === '"')) return unsupported('quoted dollar string');
@@ -277,12 +256,19 @@ const scan = (command: string, depth: number, incoming: CwdEffect): Analysis => 
     return unsupported('unterminated double quote');
   };
 
-  let index = 0;
+  let index = start;
+  let end = command.length;
+  let closed = false;
   while (index < command.length) {
     const char = command[index] as string;
     const next = command[index + 1];
 
-    if (char === ' ' || char === '\t') {
+    if (char === ')' && inSubstitution) {
+      endSegment(index, 0);
+      end = index + 1;
+      closed = true;
+      break;
+    } else if (char === ' ' || char === '\t') {
       flushWord();
       index += 1;
     } else if (char === '\n') {
@@ -375,13 +361,14 @@ const scan = (command: string, depth: number, incoming: CwdEffect): Analysis => 
       index += 1;
     }
   }
-  endSegment(command.length, 0);
+  if (inSubstitution && !closed) return unsupported('unterminated command substitution');
+  if (!closed) endSegment(command.length, 0);
 
   for (const segment of segments) {
     segment.effects = pathEffectsOf(segment, strongerEffect(segment.cwdBefore, segment.cwdEffect));
     if (segment.effects.opaque) segment.unanalyzable = true;
   }
-  return { segments, redirects, reads, nested, cwdAfter: cwdState };
+  return { analysis: { segments, redirects, reads, nested, cwdAfter: cwdState }, end };
 };
 
 const SHELL_COMMAND_FLAG = /^-[A-Za-z]*c[A-Za-z]*$/;
