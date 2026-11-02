@@ -7,13 +7,25 @@ export type ApprovalSweeperOptions = {
   clock: Clock;
   timers: ServiceTimers;
   intervalMs: number;
+  releaseStopped(runId: string, signal: AbortSignal): Promise<void>;
   onError: (error: unknown) => void;
 };
 
-export const startApprovalSweeper = (options: ApprovalSweeperOptions): { close(): void } => {
-  const { store, clock, timers, intervalMs, onError } = options;
+export const startApprovalSweeper = (options: ApprovalSweeperOptions): { close(): Promise<void> } => {
+  const { store, clock, timers, intervalMs, releaseStopped, onError } = options;
+  const closing = new AbortController();
+  const releasing = new Set<Promise<void>>();
   let closed = false;
   let handle: unknown;
+
+  const release = (runId: string): void => {
+    const tracked = releaseStopped(runId, closing.signal)
+      .catch(onError)
+      .finally(() => {
+        releasing.delete(tracked);
+      });
+    releasing.add(tracked);
+  };
 
   const arm = (): void => {
     handle = timers.setTimeout(sweep, intervalMs);
@@ -21,7 +33,7 @@ export const startApprovalSweeper = (options: ApprovalSweeperOptions): { close()
 
   function sweep(): void {
     try {
-      store.expireApprovals(clock.now());
+      for (const runId of store.expireApprovals(clock.now())) release(runId);
     } catch (error) {
       onError(error);
     }
@@ -30,9 +42,11 @@ export const startApprovalSweeper = (options: ApprovalSweeperOptions): { close()
 
   arm();
   return {
-    close: () => {
+    close: async () => {
       closed = true;
       timers.clearTimeout(handle);
+      closing.abort(new Error('the service is closing'));
+      await Promise.all(releasing);
     },
   };
 };

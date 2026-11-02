@@ -3,7 +3,7 @@ import { computeBackoff, sha256Hex } from '@momonga/foundation';
 import { isFatalStoreError } from '@momonga/store';
 import type { Claim } from '@momonga/store';
 import type { ClaimContext, Flow, RunMemory, Terminals } from './claim-context.ts';
-import { reconcileStartedCalls } from './cancel-recovery.ts';
+import { reconcileStartedCalls, releaseWaitingOnCancel } from './cancel-recovery.ts';
 import { startClaimControl } from './claim-control.ts';
 import type { ClaimControl } from './claim-control.ts';
 import { dispositionOf } from './gateway-policy.ts';
@@ -216,8 +216,9 @@ const drive = async (
     const inFlight = journal.state.inFlightModelRequest;
     const keys = inFlight === undefined ? [] : [modelKey(run.id, inFlight.step, inFlight.attempt)];
     const reconciling = reconcileStartedCalls({ options, run, session, journal, control });
+    const releasing = releaseWaitingOnCancel({ options, run, session, journal, control });
     const upstream = cancelUpstream(options, control, keys);
-    const settled = Promise.all([upstream, reconciling]);
+    const settled = Promise.all([upstream, reconciling, releasing]);
     await Promise.race([settled, control.shutdownRequested]);
     if (control.shuttingDown()) {
       settled.catch((error: unknown) => {

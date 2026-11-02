@@ -187,4 +187,26 @@ describe('tasks extension over streamable HTTP', () => {
     expect(fixture.rpcRecords('tasks/update')).toHaveLength(1);
     expect(fixture.rpcRecords('tools/call').filter((record) => record.rpc?.params['name'] === 'ask_task')).toHaveLength(1);
   });
+
+  it('cancels a task that waits for input on the server when the caller gives it up', async () => {
+    const { fixture, timers, connection } = await setup();
+    const scheduled = timers.nextScheduled(isPoll);
+    const outcome = connection.callTool({ name: 'ask_task', arguments: {}, timeoutMs: CALL_TIMEOUT_MS }).then(
+      (value) => ({ value }),
+      (error: unknown) => ({ error }),
+    );
+    await scheduled;
+    timers.advance(MIN_TASK_POLL_MS);
+    const suspended = await outcome;
+    const { checkpoint } = ('error' in suspended ? suspended.error : undefined) as McpInputSuspension;
+    expect(checkpoint.kind).toBe('task');
+    expect(fixture.rpcRecords('tasks/cancel')).toHaveLength(0);
+
+    await connection.cancelTask((checkpoint as Extract<McpCheckpoint, { kind: 'task' }>).taskId);
+
+    const taskId = fixture.taskIds()[0] as string;
+    expect(fixture.notes.filter((note) => note.type === 'task_cancel')).toEqual([{ type: 'task_cancel', taskId }]);
+    expect(fixture.rpcRecords('tasks/cancel')).toHaveLength(1);
+    expect(fixture.rpcRecords('tasks/cancel')[0]?.headers['mcp-name']).toBe(taskId);
+  });
 });

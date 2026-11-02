@@ -138,6 +138,10 @@ const buildTool = (
       }
       return mapResult(result, (text) => connection.redact(text));
     },
+    releaseCheckpoint: async (checkpoint, ctx) => {
+      const held = parseCheckpoint(checkpoint);
+      if (held.kind === 'task') await connection.cancelTask(held.taskId, { signal: ctx.signal });
+    },
   });
 };
 

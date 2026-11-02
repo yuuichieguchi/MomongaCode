@@ -74,6 +74,7 @@ export interface McpServerConnection {
   readonly instructions: string | undefined;
   listTools(options?: { signal?: AbortSignal }): Promise<Tool[]>;
   callTool(input: McpCallToolInput): Promise<CallToolResult>;
+  cancelTask(taskId: string, options?: { signal?: AbortSignal }): Promise<void>;
   redact(text: string): string;
   diagnostics(): McpServerDiagnostics;
   close(): Promise<void>;
@@ -267,6 +268,17 @@ class ManagedConnection implements McpServerConnection {
     });
   }
 
+  async cancelTask(taskId: string, options?: { signal?: AbortSignal }): Promise<void> {
+    const signal = options?.signal;
+    await this.withLiveSession(signal, async (session) => {
+      try {
+        await this.taskRequester(session.client)('tasks/cancel', { taskId }, signal);
+      } catch (error) {
+        throw this.failure(session.transport, error);
+      }
+    });
+  }
+
   close(): Promise<void> {
     this.closing ??= this.shutdown();
     return this.closing;
@@ -348,11 +360,7 @@ class ManagedConnection implements McpServerConnection {
     if (signal?.aborted === true) forward();
     signal?.addEventListener('abort', forward, { once: true });
     const deadline = this.timers.setTimeout(() => stop.abort(new Error(`task did not finish within ${timeout}ms`)), timeout);
-    const request: TaskRequester = async (method, params, requestSignal) =>
-      client.request({ method, params }, PASS_THROUGH, {
-        timeout: this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
-        ...(requestSignal === undefined ? {} : { signal: requestSignal }),
-      });
+    const request = this.taskRequester(client);
     try {
       return await settleTask({
         start,
@@ -370,6 +378,14 @@ class ManagedConnection implements McpServerConnection {
       this.timers.clearTimeout(deadline);
       signal?.removeEventListener('abort', forward);
     }
+  }
+
+  private taskRequester(client: Session['client']): TaskRequester {
+    return async (method, params, requestSignal) =>
+      client.request({ method, params }, PASS_THROUGH, {
+        timeout: this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
+        ...(requestSignal === undefined ? {} : { signal: requestSignal }),
+      });
   }
 
   private async withLiveSession<T>(signal: AbortSignal | undefined, operation: (session: Session) => Promise<T>): Promise<T> {

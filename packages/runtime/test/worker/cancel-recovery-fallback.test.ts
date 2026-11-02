@@ -207,6 +207,7 @@ describe('cancel recovery fallback', () => {
             input.onOutcome?.(settled);
             throw new Error('the batch broke after one outcome');
           },
+          release: (targets, options) => env.executor.release(targets, options),
           abandon: (targets, options) => env.executor.abandon(targets, options),
         },
       },
@@ -234,6 +235,7 @@ describe('cancel recovery fallback', () => {
             input.onOutcome?.({ callId: MARK.callId, kind: 'result', reconciled: 'already_applied', result: { status: 'completed', output: 'already marked one' } });
             throw new Error('the batch broke');
           },
+          release: (targets, options) => env.executor.release(targets, options),
           abandon: (targets, options) => env.executor.abandon(targets, options),
         },
       },
@@ -383,6 +385,7 @@ describe('cancel recovery fallback', () => {
       tools: {
         executor: {
           runBatch: (input) => env.executor.runBatch(input),
+          release: (targets, options) => env.executor.release(targets, options),
           abandon: async () => {
             throw fatal;
           },
@@ -409,6 +412,7 @@ describe('cancel recovery fallback', () => {
       tools: {
         executor: {
           runBatch: (input) => env.executor.runBatch(input),
+          release: (targets, options) => env.executor.release(targets, options),
           abandon: async () => {
             throw new Error('lsof is not available');
           },

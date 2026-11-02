@@ -67,6 +67,7 @@ export type RunAppDeps = {
   maxBodyBytes: number;
   closeSignal: AbortSignal;
   cancelUpstream?: (runId: string) => Promise<void>;
+  releaseStopped(runId: string, signal: AbortSignal): Promise<void>;
   runTrace: (runId: string) => Promise<RunTraceView | undefined>;
   mcp: McpAdminPort;
   onError: (error: unknown) => void;
@@ -282,6 +283,9 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     if (deps.cancelUpstream !== undefined && before?.status === 'QUEUED' && result.changed && result.run.status === 'CANCELLED') {
       const cancelUpstream = deps.cancelUpstream;
       void (async () => cancelUpstream(id))().catch(deps.onError);
+    }
+    if ((before?.status === 'WAITING_HUMAN' || before?.status === 'QUEUED') && result.changed && result.run.status === 'CANCELLED') {
+      void (async () => deps.releaseStopped(id, deps.closeSignal))().catch(deps.onError);
     }
     const settled = isTerminalStatus(result.run.status) && !result.changed;
     return json({ run: toRunView(result.run) }, settled ? 200 : 202);

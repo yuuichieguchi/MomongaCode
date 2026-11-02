@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { ElicitationRequestView } from '@momonga/protocol';
 import { ToolInputRequired, defineTool } from '@momonga/tools';
 import type { AnyTool } from '@momonga/tools';
-import { START_MS, makeEnv } from './harness.ts';
+import { START_MS, makeEnv, toolKey } from './harness.ts';
 import type { Env } from './harness.ts';
-import { callsStep, textStep } from './scripts.ts';
+import { callsStep, functionCallItem, textStep } from './scripts.ts';
 
 const DEFAULT_TTL_MS = 30 * 60 * 1000;
 const SERVER = 'remote';
@@ -15,7 +15,9 @@ const REQUESTS: ElicitationRequestView[] = [
 
 type Seen = { checkpoint: unknown; inputResponses: unknown };
 
-const askTool = (seen: Seen[]): AnyTool =>
+type Release = (checkpoint: Record<string, unknown>) => Promise<void>;
+
+const askTool = (seen: Seen[], release?: Release): AnyTool =>
   defineTool<Record<string, unknown>>({
     name: 'Ask',
     description: 'Asks the user for a name before answering',
@@ -25,6 +27,7 @@ const askTool = (seen: Seen[]): AnyTool =>
     timeoutMs: 60_000,
     title: () => 'Ask',
     subject: () => ({ kind: 'none', tool: 'Ask' }),
+    ...(release === undefined ? {} : { releaseCheckpoint: release }),
     execute: async (_input, ctx) => {
       seen.push({ checkpoint: ctx.resume?.checkpoint, inputResponses: ctx.resume?.inputResponses });
       const answered = ctx.resume?.inputResponses?.['who'];
@@ -33,10 +36,10 @@ const askTool = (seen: Seen[]): AnyTool =>
     },
   });
 
-const ask = async (env: Env, seen: Seen[], limits: Record<string, unknown> = {}) => {
+const ask = async (env: Env, seen: Seen[], limits: Record<string, unknown> = {}, release?: Release) => {
   env.gateway.script.push(callsStep([{ callId: 'call_ask', name: 'Ask', args: {} }]));
   const run = env.enqueue('Ask the user', { limits });
-  const outcome = await env.runOnce(env.worker('worker-1', { toolList: () => [askTool(seen)] }));
+  const outcome = await env.runOnce(env.worker('worker-1', { toolList: () => [askTool(seen, release)] }));
   return { run, outcome };
 };
 
@@ -111,5 +114,64 @@ describe('worker input request', () => {
 
     expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
     expect(env.ofType(run.id, 'tool.elicitation.cancelled')).toEqual([expect.objectContaining({ reason: 'expired' })]);
+  });
+});
+
+describe('cancelling a run that waits for input', () => {
+  const USAGE = { input_tokens: 50, output_tokens: 5, total_tokens: 55 };
+
+  const seedAwaiting = (env: Env) => {
+    const run = env.enqueue('Ask the user');
+    const key = toolKey(run.id, 1, 'call_ask');
+    env.seed(
+      run.id,
+      [
+        { type: 'model.responded', step: 1, attempt: 1, response: { status: 'completed', output: [functionCallItem({ callId: 'call_ask', name: 'Ask', args: {} })], usage: USAGE } },
+        { type: 'tool.call', callId: 'call_ask', providerCallId: 'call_ask', name: 'Ask', kind: 'other', title: 'Ask', rawInput: {} },
+        { type: 'tool.started', callId: 'call_ask', idemKey: key },
+        { type: 'tool.elicitation.requested', inputId: 'input-1', callId: 'call_ask', server: SERVER, requests: REQUESTS },
+      ],
+      'crash',
+    );
+    env.store.idempotency.begin(key, { expiresAt: START_MS + 86_400_000, meta: { tool: 'Ask' } });
+    env.store.idempotency.checkpoint(key, CHECKPOINT);
+    expect(env.cancel(run.id).status).toBe('CANCELLING');
+    return { run, key };
+  };
+
+  it('hands the checkpoint of the waiting call to its tool, clears it and cancels the run', async () => {
+    const env = await makeEnv();
+    const released: Array<Record<string, unknown>> = [];
+    const { run, key } = seedAwaiting(env);
+
+    await env.runOnce(env.worker('worker-1', { toolList: () => [askTool([], async (checkpoint) => void released.push(checkpoint))] }));
+
+    expect(env.run(run.id).status).toBe('CANCELLED');
+    expect(released).toEqual([CHECKPOINT]);
+    const lookup = env.store.idempotency.get(key);
+    expect(lookup).toMatchObject({ s: 'UNKNOWN' });
+    expect(lookup && 'rec' in lookup ? lookup.rec.meta : undefined).not.toHaveProperty('checkpoint');
+    expect(env.ofType(run.id, 'notice').filter((notice) => notice.level === 'error')).toEqual([]);
+  });
+
+  it('cancels the run and journals an error notice when the tool cannot release the checkpoint, keeping the record for retry', async () => {
+    const env = await makeEnv();
+    const { run, key } = seedAwaiting(env);
+
+    await env.runOnce(
+      env.worker('worker-1', {
+        toolList: () => [
+          askTool([], async () => {
+            throw new Error('the server is unreachable');
+          }),
+        ],
+      }),
+    );
+
+    expect(env.run(run.id).status).toBe('CANCELLED');
+    expect(env.ofType(run.id, 'notice').filter((notice) => notice.level === 'error').map((notice) => notice.message)).toEqual([
+      'Calls waiting for input could not be released before the run was cancelled: the server is unreachable',
+    ]);
+    expect(env.store.idempotency.get(key)).toMatchObject({ s: 'PENDING', rec: { meta: { checkpoint: CHECKPOINT } } });
   });
 });

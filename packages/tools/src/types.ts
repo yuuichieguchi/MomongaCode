@@ -88,6 +88,7 @@ export type ToolDefinition<Input> = {
   prepare?(input: Input, ctx: ToolContext): Promise<Record<string, unknown>>;
   execute(input: Input, ctx: ToolContext, prepared: Record<string, unknown> | undefined): Promise<ToolResult>;
   reconcile?(input: Input, record: ToolIdempotencyRecord, ctx: ReconcileContext): Promise<ReconcileResult>;
+  releaseCheckpoint?(checkpoint: Record<string, unknown>, ctx: { signal: AbortSignal }): Promise<void>;
 };
 
 export type AnyTool = ToolDefinition<unknown>;

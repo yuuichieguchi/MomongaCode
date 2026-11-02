@@ -36,6 +36,7 @@ import { createWorker } from '../worker/worker.ts';
 import type { Worker } from '../worker/types.ts';
 import { asError } from './as-error.ts';
 import { createCancelUpstream } from './cancel-upstream.ts';
+import { createStoppedRunReleaser } from './release-stopped.ts';
 import type { CancelUpstreamTracker } from './cancel-upstream.ts';
 import {
   CANCEL_UPSTREAM_SETTLE_MS,
@@ -421,6 +422,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         defaults: RUNTIME_DEFAULTS,
         timers,
         cancelUpstream: tracker.cancel,
+        releaseStopped: createStoppedRunReleaser({ store, tools: toolRuntime.port }),
         runTrace: async (runId) => {
           await telemetry.forceFlush();
           return runTraceOf(traceStore, runId);

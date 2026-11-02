@@ -57,6 +57,31 @@ describe('MCP tools that need a person', () => {
   });
 });
 
+describe('MCP tools that release a checkpoint', () => {
+  it('cancels the recorded task on the server and leaves a client-held multi round-trip checkpoint alone', async () => {
+    const fixture = await startHttpFixture({ era: 'modern', taskPollIntervalMs: 1 });
+    const { connection } = makeRemoteConnection({ fixture });
+    const tool = await toolNamed(connection, 'ask_task');
+    const signal = new AbortController().signal;
+
+    await tool.releaseCheckpoint?.({ kind: 'mrtr', rounds: 1, requestState: 's' }, { signal });
+    expect(fixture.rpcRecords('tasks/cancel')).toHaveLength(0);
+
+    const checkpoints: Array<Record<string, unknown> | undefined> = [];
+    const controller = new AbortController();
+    const running = tool.execute({}, ctxOf({ signal: controller.signal }, checkpoints), undefined).catch(() => undefined);
+    await fixture.until(() => checkpoints.length > 0);
+    const [taskId] = fixture.taskIds();
+
+    await tool.releaseCheckpoint?.(checkpoints[0] as Record<string, unknown>, { signal });
+
+    expect(fixture.rpcRecords('tasks/cancel')).toHaveLength(1);
+    expect(fixture.rpcRecords('tasks/cancel')[0]?.rpc?.params).toMatchObject({ taskId });
+    controller.abort(new Error('stop'));
+    await running;
+  });
+});
+
 describe('MCP servers that need authorization', () => {
   it('lists no tools and names the server instead of failing the whole snapshot', async () => {
     const oauth = await startOauthFixture();
