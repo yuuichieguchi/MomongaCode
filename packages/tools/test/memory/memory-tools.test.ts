@@ -13,9 +13,16 @@ const viewOf = (overrides: Partial<MemoryView> = {}): MemoryView => ({
   origin: 'trusted',
   project: null,
   text: 'prefers tabs',
-  source: { sessionId: 's1', runId: 'run-1', step: 1, callId: 'c1', seq: 4 },
+  source: { kind: 'tool', sessionId: 's1', runId: 'run-1', step: 1, callId: 'c1', seq: 4 },
   createdAt: Date.UTC(2026, 10, 2),
   lastUsedAt: Date.UTC(2026, 10, 3),
+  kind: 'fact',
+  state: 'active',
+  duplicateOf: null,
+  supersedes: [],
+  retiredAt: null,
+  evidence: [],
+  contributedAt: null,
   ...overrides,
 });
 
@@ -123,7 +130,7 @@ describe('memory tools', () => {
   });
 
   it('searches by words and shows the provenance of each match without asking', async () => {
-    const { port, searched } = fakePort([viewOf(), viewOf({ id: 'mem-2', scope: 'project', project: '/p', text: 'run make', source: { sessionId: 's2', runId: 'run-9', step: 3, callId: 'c7', seq: 12 } })]);
+    const { port, searched } = fakePort([viewOf(), viewOf({ id: 'mem-2', scope: 'project', project: '/p', text: 'run make', source: { kind: 'tool', sessionId: 's2', runId: 'run-9', step: 3, callId: 'c7', seq: 12 } })]);
     const harness = makeHarness();
     const [outcome] = await harness.executor.runBatch(harness.input(await toolSet(port), [call('c1', MEMORY_SEARCH_TOOL_NAME, { query: ' tabs   make ' })]));
     expect(searched).toEqual([['tabs', 'make']]);

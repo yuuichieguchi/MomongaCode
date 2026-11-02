@@ -47,8 +47,24 @@ export type {
   AgentsResponse,
   SkillsResponse,
 } from './run-api.ts';
-export { MEMORY_ORIGINS, MEMORY_SCOPES } from './memory.ts';
-export type { MemoriesResponse, MemoryOrigin, MemoryResponse, MemoryScope, MemorySource, MemoryView } from './memory.ts';
+export { MEMORY_EVIDENCE_KINDS, MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES } from './memory.ts';
+export type {
+  MemoriesResponse,
+  MemoryEvidence,
+  MemoryEvidenceKind,
+  MemoryKind,
+  MemoryOrigin,
+  MemoryResponse,
+  MemoryScope,
+  MemorySource,
+  MemoryState,
+  MemoryStatus,
+  MemoryView,
+} from './memory.ts';
+export { GOVERNING_KINDS } from './governance.ts';
+export type { GoverningFactView, GoverningKind } from './governance.ts';
+export { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
+export type { ContextChargePurpose, ContributionKind, SummaryFidelity, SummarySectionCoverage, SummarySource } from './context-record.ts';
 export { imageDataUrl, userMessageContent } from './user-content.ts';
 export { escapeXmlAttribute, escapeXmlText } from './xml.ts';
 export { SKILL_CONTENT_CLOSE_TAG, skillContentOpenTag } from './skill-content.ts';

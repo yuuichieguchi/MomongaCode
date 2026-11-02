@@ -22,17 +22,20 @@ describe('SETTINGS_SCHEMA', () => {
       [
         'autoMode',
         'autoUpdates',
+        'context',
         'disabledMcpjsonServers',
         'enableAllProjectMcpServers',
         'enabledMcpjsonServers',
         'env',
         'hooks',
         'mcpServers',
+        'memory',
         'models',
         'permissions',
         'pricing',
         'sandbox',
         'telemetry',
+        'verification',
       ].sort(),
     );
   });
