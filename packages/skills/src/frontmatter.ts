@@ -41,7 +41,13 @@ const parseMapping = (yamlText: string): MappingParse => {
   const document = parseDocument(yamlText, { logLevel: 'silent', uniqueKeys: true });
   const [firstError] = document.errors;
   if (firstError !== undefined) return { kind: 'syntax', message: firstError.message };
-  const value: unknown = document.toJS();
+  let value: unknown;
+  try {
+    value = document.toJS();
+  } catch (error) {
+    if (error instanceof ReferenceError) return { kind: 'syntax', message: error.message };
+    throw error;
+  }
   if (value === null || value === undefined) return { kind: 'mapping', fields: {} };
   if (typeof value !== 'object' || Array.isArray(value)) return { kind: 'shape' };
   return { kind: 'mapping', fields: { ...value } };
