@@ -34,8 +34,8 @@ export const nodeSpawnDetached: SpawnDetached = (spec) => {
   return { exit };
 };
 
-export const nodeSelf = (argv: readonly string[]): SelfExecutable => {
-  if (isSea()) return { kind: 'single-binary', execPath: process.execPath };
+export const nodeSelf = (argv: readonly string[], singleBinary: () => boolean): SelfExecutable => {
+  if (singleBinary()) return { kind: 'single-binary', execPath: process.execPath };
   const script = argv[1];
   if (script === undefined) throw new Error('cannot locate the momonga entry script: process.argv[1] is empty');
   return { kind: 'script', execPath: process.execPath, script: path.resolve(script) };
@@ -50,7 +50,7 @@ export const nodePorts = (version: string): CliPorts => ({
   stderr: process.stderr,
   clock: nodeClock,
   random: Math.random,
-  self: nodeSelf(process.argv),
+  self: nodeSelf(process.argv, isSea),
   spawnDetached: nodeSpawnDetached,
   terminal: process.stdin.isTTY && process.stdout.isTTY ? { stdin: process.stdin, stdout: process.stdout } : undefined,
 });

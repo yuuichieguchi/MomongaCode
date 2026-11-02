@@ -3,6 +3,7 @@ import type { PermissionMode } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView, SessionView, TrustView } from '../client/views.ts';
+import type { HistoryStore } from '../history-store.ts';
 import { daemonReadyBoundMs, ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { followRun } from '../run/follow.ts';
@@ -25,10 +26,12 @@ export type TuiBackend = {
   cancel(runId: string): Promise<void>;
   resolveApproval(approvalId: string, optionId: string): Promise<void>;
   contextWindow(): Promise<number>;
+  loadHistory(): Promise<readonly string[]>;
+  recordHistory(text: string): Promise<void>;
   close(): Promise<void>;
 };
 
-export const createTuiBackend = (ports: CliPorts, paths: MomongaPaths, options: SessionOptions): TuiBackend => {
+export const createTuiBackend = (ports: CliPorts, paths: MomongaPaths, options: SessionOptions, history: HistoryStore): TuiBackend => {
   let client: RuntimeClient | undefined;
   let session: SessionView | undefined;
 
@@ -95,6 +98,8 @@ export const createTuiBackend = (ports: CliPorts, paths: MomongaPaths, options: 
         await gateway.close();
       }
     },
+    loadHistory: () => history.load(),
+    recordHistory: (text) => history.append(text),
     close: async () => {
       await client?.close();
     },

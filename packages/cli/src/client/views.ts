@@ -24,6 +24,7 @@ export type RunView = {
   readonly error?: { readonly code: string; readonly message: string };
   readonly usage: RunUsage;
   readonly step: number;
+  readonly limits: { readonly maxSteps?: number; readonly maxTotalTokens?: number; readonly approvalTtlMs?: number; readonly loopThreshold?: number };
   readonly createdAt: number;
   readonly deadlineAt: number;
   readonly cancelRequested: boolean;

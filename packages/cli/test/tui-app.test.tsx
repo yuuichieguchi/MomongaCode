@@ -246,6 +246,19 @@ describe('App input', () => {
     app.unmount();
   });
 
+  it('starts with the history of earlier sessions and records every submission', async () => {
+    const { backend, app } = await start({ history: ['from yesterday'] });
+    await untilFrame(app, 'mode: default');
+    app.stdin.write(KEYS.up);
+    await untilFrame(app, '> from yesterday');
+    app.stdin.write(KEYS.ctrlC);
+    await type(app, '/help', '> /help');
+    app.stdin.write(KEYS.enter);
+    await untilOutput(app, 'Slash commands');
+    expect(backend.recorded).toEqual(['/help']);
+    app.unmount();
+  });
+
   it('refuses a second message while a run is active and says how to cancel', async () => {
     const { backend, app } = await start();
     await untilFrame(app, 'mode: default');

@@ -23,6 +23,7 @@ export const runView = (overrides: Partial<RunView> = {}): RunView => ({
   status: 'COMPLETED',
   usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
   step: 1,
+  limits: {},
   createdAt: 1,
   deadlineAt: 2,
   cancelRequested: false,
@@ -36,15 +37,17 @@ export type FakeBackend = TuiBackend & {
   readonly calls: string[];
   called(call: string): Promise<void>;
   readonly started: { text: string; history: 'inherit' | 'fresh' }[];
+  readonly recorded: string[];
   emit(frame: RunEventFrame): void;
   finish(run: RunView): void;
 };
 
-export type FakeBackendOptions = { trust?: TrustView; session?: Partial<SessionView>; contextWindow?: number };
+export type FakeBackendOptions = { trust?: TrustView; session?: Partial<SessionView>; contextWindow?: number; history?: readonly string[] };
 
 export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
   const calls: string[] = [];
   const started: { text: string; history: 'inherit' | 'fresh' }[] = [];
+  const recorded: string[] = [];
   let handlers: FollowHandlers | undefined;
   let finishRun: ((run: RunView) => void) | undefined;
   let session: SessionView = { ...SESSION, ...options.session };
@@ -65,6 +68,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     cwd: session.cwd,
     calls,
     started,
+    recorded,
     called: (call) =>
       new Promise<void>((resolve) => {
         if (calls.includes(call)) resolve();
@@ -107,6 +111,10 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       record(`approve:${approvalId}:${optionId}`);
     },
     contextWindow: async () => options.contextWindow ?? 8192,
+    loadHistory: async () => options.history ?? [],
+    recordHistory: async (text) => {
+      recorded.push(text);
+    },
     close: async () => {
       record('close');
     },

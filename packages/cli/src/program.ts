@@ -7,9 +7,8 @@ import { daemonStatus, daemonStop } from './commands/daemon.ts';
 import { DEFAULT_FM_BINARY, probeFm } from './commands/gateway.ts';
 import { approve, attachRun, cancelRun } from './commands/runs.ts';
 import { showTrace } from './commands/trace.ts';
-import { runGateway, runRuntime } from './daemon/entries.ts';
-import { INTERNAL_COMMANDS, selfLauncher } from './daemon/launcher.ts';
-import { runSupervise } from './daemon/supervise.ts';
+import type { DaemonEntries } from './daemon/entries.ts';
+import { INTERNAL_COMMANDS } from './daemon/launcher.ts';
 import type { CliPorts } from './ports.ts';
 import { OUTPUT_FORMATS, runHeadless } from './run/headless.ts';
 import type { OutputFormat } from './run/headless.ts';
@@ -18,6 +17,7 @@ export type ProgramDeps = {
   ports: CliPorts;
   interrupt: AbortSignal;
   entryIo(args: readonly string[]): EntryIo;
+  entries: DaemonEntries;
   complete(code: number): void;
 };
 
@@ -143,9 +143,9 @@ export const buildProgram = (deps: ProgramDeps): Command => {
         deps.complete(await run(deps.entryIo(args)));
       });
   };
-  internal(INTERNAL_COMMANDS.supervise, (io) => runSupervise(io, { launcher: selfLauncher(ports.self) }));
-  internal(INTERNAL_COMMANDS.gateway, runGateway);
-  internal(INTERNAL_COMMANDS.runtime, runRuntime);
+  internal(INTERNAL_COMMANDS.supervise, deps.entries.supervise);
+  internal(INTERNAL_COMMANDS.gateway, deps.entries.gateway);
+  internal(INTERNAL_COMMANDS.runtime, deps.entries.runtime);
 
   return program;
 };

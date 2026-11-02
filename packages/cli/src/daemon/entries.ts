@@ -1,11 +1,22 @@
 import type { EntryIo } from '@momonga/foundation';
+import type { SelfExecutable } from '../ports.ts';
+import { selfLauncher } from './launcher.ts';
+import { runSupervise } from './supervise.ts';
 
-export const runGateway = async (io: EntryIo): Promise<number> => {
-  const { runGatewayEntry } = await import('@momonga/gateway');
-  return runGatewayEntry(io);
+export type DaemonEntries = {
+  supervise(io: EntryIo): Promise<number>;
+  gateway(io: EntryIo): Promise<number>;
+  runtime(io: EntryIo): Promise<number>;
 };
 
-export const runRuntime = async (io: EntryIo): Promise<number> => {
-  const { runRuntimeEntry } = await import('@momonga/runtime/entry');
-  return runRuntimeEntry(io);
-};
+export const daemonEntries = (self: SelfExecutable): DaemonEntries => ({
+  supervise: (io) => runSupervise(io, { launcher: selfLauncher(self) }),
+  gateway: async (io) => {
+    const { runGatewayEntry } = await import('@momonga/gateway');
+    return runGatewayEntry(io);
+  },
+  runtime: async (io) => {
+    const { runRuntimeEntry } = await import('@momonga/runtime/entry');
+    return runRuntimeEntry(io);
+  },
+});

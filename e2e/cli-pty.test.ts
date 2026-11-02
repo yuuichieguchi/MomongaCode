@@ -95,5 +95,7 @@ describe('cli: interactive TUI through a pty', () => {
     await pty.waitFor('> /exit');
     pty.write(KEYS.enter);
     expect(await pty.exit()).toEqual({ code: 0, signal: null });
+    const history = fs.readFileSync(path.join(home.paths.state, 'history.jsonl'), 'utf8').split('\n').filter((line) => line !== '');
+    expect(history.map((line) => JSON.parse(line))).toEqual(['/help', '/mode plan', 'line one\nline two', '/exit']);
   });
 });

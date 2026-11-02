@@ -337,8 +337,8 @@ const runProbeImporters = (): string[] =>
     })
     .map((file) => path.relative(root, file));
 
-describe('architecture: the probe stays unwired', () => {
-  it('runProbe has no importer outside tests', () => {
-    expect(runProbeImporters()).toEqual([]);
+describe('architecture: the probe runs only on request', () => {
+  it('runProbe is imported only by the explicit probe command of the gateway package', () => {
+    expect(runProbeImporters()).toEqual(['packages/gateway/src/probe/probe-fm.ts']);
   });
 });

@@ -239,6 +239,7 @@ export function App(props: AppProps) {
     const session = await backend.openSession();
     setModeState(session.permissionMode);
     setBypassAllowed(session.bypassAllowed);
+    replaceEditor(emptyEditor(await backend.loadHistory()));
     setPhase({ kind: 'ready' });
     void backend.contextWindow().then(setContextWindow, (error: unknown) => {
       dispatch({ kind: 'append', entry: { kind: 'notice', level: 'warning', text: `context window unavailable: ${errorOf(error).message}` } });
@@ -411,7 +412,10 @@ export function App(props: AppProps) {
     }
     const outcome = applyKey(editorRef.current, { ...key, input });
     replaceEditor(outcome.state);
-    if (outcome.submit !== undefined) submitSafely(outcome.submit);
+    if (outcome.submit !== undefined) {
+      backend.recordHistory(outcome.submit).catch(reportError);
+      submitSafely(outcome.submit);
+    }
   });
 
   const settled = settledCount(transcript.entries);

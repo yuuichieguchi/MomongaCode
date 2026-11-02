@@ -1,5 +1,7 @@
 import { render } from 'ink';
+import path from 'node:path';
 import type { MomongaPaths } from '@momonga/foundation';
+import { createHistoryStore } from '../history-store.ts';
 import type { CliPorts, Terminal } from '../ports.ts';
 import type { SessionOptions } from '../run/open-session.ts';
 import { App } from './app.tsx';
@@ -9,7 +11,7 @@ import { createTuiBackend } from './backend.ts';
 export type InteractiveOptions = SessionOptions & { prompt?: string };
 
 export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, terminal: Terminal, options: InteractiveOptions): Promise<number> => {
-  const backend = createTuiBackend(ports, paths, options);
+  const backend = createTuiBackend(ports, paths, options, createHistoryStore(path.join(paths.state, 'history.jsonl')));
   let outcome: TuiOutcome = {};
   const onExit = (result: TuiOutcome): void => {
     outcome = result;

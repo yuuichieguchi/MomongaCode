@@ -6,6 +6,7 @@ import type { FakeScriptedReply } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
 import { runCli, startCli } from './support/cli.ts';
 import { readDb } from './support/db.ts';
+import { supervisorLog } from './support/log-reader.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { baseSettings, sandboxChoiceOf, startStack, startUpstream, writeSettingsFile } from './support/stack.ts';
@@ -158,6 +159,32 @@ describe('cli: momonga -p', () => {
     expect(trace.stdout).toMatch(/4 model calls, 3 tool calls/);
     const traceJson = jsonLines((await runCli(home, ['trace', runId, '--json'])).stdout)[0];
     expect(traceJson).toMatchObject({ runId, summary: { toolCalls: 3 }, usage: { total: { total_tokens: 60 } } });
+  });
+
+  it(titleOf('cli-interrupt'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    const { home, fake } = await prepare(() => [hangReply('thinking about it')]);
+
+    const running = startCli(home, ['-p', 'Take your time']);
+    await until(() => chatCompletions(fake).length > 0, { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the upstream to receive the request' });
+    running.interrupt();
+
+    const finished = await running.result;
+    expect(finished.code).toBe(130);
+    expect(finished.stderr).toContain('CANCELLED');
+    const [row] = readDb<{ status: string }>(home.paths.databases.runtime, 'SELECT status FROM runs');
+    expect(row?.status).toBe('CANCELLED');
+  });
+
+  it(titleOf('cli-race'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+    const { home } = await prepare(() => [textReply('one'), textReply('two')]);
+
+    const [first, second] = await Promise.all([runCli(home, ['-p', 'a']), runCli(home, ['-p', 'b'])]);
+
+    expect([first.code, second.code]).toEqual([0, 0]);
+    expect([first.stdout, second.stdout].sort()).toEqual(['one\n', 'two\n']);
+    const supervisorPid = Number(/pid (\d+)/.exec((await runCli(home, ['daemon', 'status'])).stdout)?.[1]);
+    const spawns = supervisorLog(home.paths, supervisorPid).filter((record) => record.msg === 'child.spawn');
+    expect(spawns.map((record) => record['child']).sort()).toEqual(['gateway', 'runtime']);
   });
 
   it(titleOf('cli-daemon'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {

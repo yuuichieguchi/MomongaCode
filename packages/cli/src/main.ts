@@ -1,5 +1,6 @@
 import { nodeEntryIo } from '@momonga/foundation';
 import packageJson from '../package.json' with { type: 'json' };
+import { daemonEntries } from './daemon/entries.ts';
 import { describeFailure } from './failure.ts';
 import { nodePorts } from './node-ports.ts';
 import { buildProgram } from './program.ts';
@@ -9,8 +10,11 @@ process.once('SIGINT', () => interrupt.abort());
 
 const entryIo = (args: readonly string[]): ReturnType<typeof nodeEntryIo> => ({ ...nodeEntryIo(), argv: [...args] });
 
+const ports = nodePorts(packageJson.version);
+
 const program = buildProgram({
-  ports: nodePorts(packageJson.version),
+  ports,
+  entries: daemonEntries(ports.self),
   interrupt: interrupt.signal,
   entryIo,
   complete: (code) => {
