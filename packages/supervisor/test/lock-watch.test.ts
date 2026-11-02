@@ -90,7 +90,7 @@ describe('probeExternalHealth', () => {
     await expect(createExternalHealthProbe(20)('gateway', socket)).resolves.toBe('unreachable');
   });
 
-  it('the default probe is the one built from PROBE_HEADERS_TIMEOUT_MS', () => {
+  it('the production probe timeout stays within 2000 ms', () => {
     expect(PROBE_HEADERS_TIMEOUT_MS).toBeLessThanOrEqual(2000);
   });
 });
