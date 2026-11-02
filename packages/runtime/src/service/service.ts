@@ -3,6 +3,7 @@ import path from 'node:path';
 import { getRequestListener } from '@hono/node-server';
 import { canonicalPath, comparableContains, listenUnix } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
+import type { RunTraceView } from '@momonga/protocol';
 import { isFatalStoreError } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import { asError } from '../process/as-error.ts';
@@ -40,6 +41,7 @@ export type RunServiceOptions = {
   dataVersionPollMs?: number;
   maxBodyBytes?: number;
   cancelUpstream?: (runId: string) => Promise<void>;
+  runTrace: (runId: string) => Promise<RunTraceView | undefined>;
   onError?: (error: unknown) => void;
   onFatal?: (error: Error) => void;
 };
@@ -97,6 +99,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     keepAliveMs: options.keepAliveMs ?? 15_000,
     maxBodyBytes: options.maxBodyBytes ?? TWO_MIB,
     closeSignal: closeController.signal,
+    runTrace: options.runTrace,
     ...(options.cancelUpstream === undefined ? {} : { cancelUpstream: options.cancelUpstream }),
     onError: report,
   });

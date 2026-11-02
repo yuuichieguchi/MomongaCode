@@ -193,7 +193,7 @@ describe('process ledger: persistence', () => {
 });
 
 describe('process ledger: sources', () => {
-  it('collects from health, the supervisor logs, the database, the record files and the marker holders', async (context) => {
+  it('collects from health, the supervisor lock, the supervisor logs, the database, the record files and the marker holders', async (context) => {
     const home = withTempDir(context, { asHome: true });
     const paths = momongaPaths(home);
     fs.mkdirSync(path.dirname(paths.logFiles.supervisor), { recursive: true, mode: 0o700 });
@@ -210,10 +210,12 @@ describe('process ledger: sources', () => {
     const readyFile = path.join(home, 'gc.ready');
     fs.writeFileSync(recordFile, `${JSON.stringify({ type: 'ready', pid: 801 })}\n${JSON.stringify({ type: 'list', cursor: null })}\n${JSON.stringify({ type: 'grandchild', pid: 802 })}\n`);
     fs.writeFileSync(readyFile, '803');
+    fs.mkdirSync(paths.run, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(paths.locks.supervisor, '301');
     fs.mkdirSync(paths.markers.tools, { recursive: true, mode: 0o700 });
     const marker = path.join(paths.markers.tools, 'tool-marker');
     fs.writeFileSync(marker, '');
-    const world = fakeWorld({ 401: 1, 601: 1, 602: 1, 701: 1, 801: 1, 802: 1, 803: 1, 901: 1, 990: 1 });
+    const world = fakeWorld({ 301: 1, 401: 1, 601: 1, 602: 1, 701: 1, 801: 1, 802: 1, 803: 1, 901: 1, 990: 1 });
     const ports: LedgerPorts = {
       ...world.ports,
       findHolders: async (file) => (fs.realpathSync(file) === fs.realpathSync(marker) ? [901] : []),
@@ -223,6 +225,7 @@ describe('process ledger: sources', () => {
     await ledger.collect({ health: async () => healthWith([401]), paths, recordFiles: [recordFile, readyFile] });
     const bySource = Object.fromEntries(ledger.entries().map((entry) => [entry.pgid, entry.source]));
     expect(bySource).toEqual({
+      301: 'supervisor',
       401: 'health',
       601: 'supervisor-log',
       602: 'supervisor-log',

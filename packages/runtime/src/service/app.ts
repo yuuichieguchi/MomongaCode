@@ -5,7 +5,7 @@ import { ConfigError, stripCredentialEnv } from '@momonga/config';
 import { canonicalDirectory, canonicalJson, canonicalPath, comparableContains, comparablePath, isTransientErrno, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { AUTO_MODE_UNAVAILABLE, RUN_STATUSES, isUnavailableMode } from '@momonga/protocol';
-import type { PermissionMode, RunStatus } from '@momonga/protocol';
+import type { PermissionMode, RunStatus, RunTraceView } from '@momonga/protocol';
 import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
 import { sameRunRequest } from '@momonga/store';
 import type { Run, RuntimeStore, Session } from '@momonga/store';
@@ -64,6 +64,7 @@ export type RunAppDeps = {
   maxBodyBytes: number;
   closeSignal: AbortSignal;
   cancelUpstream?: (runId: string) => Promise<void>;
+  runTrace: (runId: string) => Promise<RunTraceView | undefined>;
   onError: (error: unknown) => void;
 };
 
@@ -282,6 +283,13 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     return json({ run: toRunView(result.run) }, settled ? 200 : 202);
   };
 
+  const runTrace: Handler = async (context) => {
+    const run = requireRun(context.req.param('id') ?? '');
+    const trace = await deps.runTrace(run.id);
+    if (trace === undefined) throw notFound(`run ${run.id} has no recorded trace`);
+    return json(trace);
+  };
+
   const listRunApprovals: Handler = (context) => {
     const run = requireRun(context.req.param('id') ?? '');
     return json({ approvals: store.pendingApprovalViews(run.id) });
@@ -364,6 +372,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   route('/v1/sessions/:id/events', { GET: sessionEvents });
   route('/v1/runs/:id', { GET: getRun });
   route('/v1/runs/:id/cancel', { POST: cancelRun });
+  route('/v1/runs/:id/trace', { GET: runTrace });
   route('/v1/runs/:id/approvals', { GET: listRunApprovals });
   route('/v1/runs/:id/events', { GET: runEvents });
   route('/v1/approvals/:id', { GET: getApproval, POST: resolveApproval });

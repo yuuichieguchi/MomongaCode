@@ -397,6 +397,7 @@ export type ServiceOverrides = {
   clock?: FakeClock;
   wrapStore?: (store: RuntimeStore) => RuntimeStore;
   cancelUpstream?: (runId: string) => Promise<void>;
+  runTrace?: (runId: string) => Promise<unknown>;
   onFatal?: boolean;
   sandboxKind?: 'seatbelt' | 'none';
   protectedRootAreas?: readonly string[];
@@ -454,6 +455,7 @@ export const serviceOptions = (
   ...(overrides.maxBodyBytes === undefined ? {} : { maxBodyBytes: overrides.maxBodyBytes }),
   ...(overrides.timers === undefined ? {} : { timers: overrides.timers }),
   ...(overrides.cancelUpstream === undefined ? {} : { cancelUpstream: overrides.cancelUpstream }),
+  runTrace: overrides.runTrace ?? (async () => undefined),
   onError: (error: unknown) => base.errors.push(error),
   ...(base.fatals === undefined ? {} : { onFatal: (error: Error) => base.fatals?.push(error) }),
 });

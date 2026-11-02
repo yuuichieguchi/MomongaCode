@@ -23,7 +23,17 @@ export { compactionSummaryMessage, decodeCompactionSummary } from './compaction-
 export { PROBE_KEYWORDS } from './probe.ts';
 export type { ProbeKeyword, ProbeReport } from './probe.ts';
 export { RUN_API_SCHEMAS, toPublicRunEvent } from './run-api.ts';
-export type { JsonSchema, PublicRunEvent, RunHealth, SkillScope, SkillView, SkillsResponse } from './run-api.ts';
+export type {
+  JsonSchema,
+  PublicRunEvent,
+  RunHealth,
+  RunTraceSpan,
+  RunTraceSummary,
+  RunTraceView,
+  SkillScope,
+  SkillView,
+  SkillsResponse,
+} from './run-api.ts';
 export { SKILL_CONTENT_CLOSE_TAG, skillContentOpenTag } from './skill-content.ts';
 export { AUTO_MODE_UNAVAILABLE, isUnavailableMode } from './auto-mode.ts';
 export { APPROVAL_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS } from './run-types.ts';

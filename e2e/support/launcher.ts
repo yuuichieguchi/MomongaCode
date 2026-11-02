@@ -4,6 +4,8 @@ import type { ChildRole, Launcher } from '@momonga/supervisor';
 
 export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
+export const BUNDLE_SCRIPT = path.join(REPO_ROOT, 'scripts', 'bundle.ts');
+
 export const ROLE_BIN_PATHS: Readonly<Record<ChildRole, string>> = {
   runtime: path.join(REPO_ROOT, 'packages', 'runtime', 'src', 'bin.ts'),
   gateway: path.join(REPO_ROOT, 'packages', 'gateway', 'src', 'bin.ts'),

@@ -179,6 +179,12 @@ export const createProcessLedger = (options: CreateProcessLedgerOptions): Proces
     }
   };
 
+  const collectSupervisorLock = async (paths: MomongaPaths): Promise<void> => {
+    const text = readTextIfPresent(paths.locks.supervisor);
+    const pid = text === undefined ? Number.NaN : Number.parseInt(text, 10);
+    if (Number.isInteger(pid) && pid > 1) await add(pid, 'supervisor');
+  };
+
   const collectDatabase = async (paths: MomongaPaths): Promise<void> => {
     for (const row of readDb(paths.databases.runtime, TOOL_GROUPS_SQL)) {
       if (typeof row['pgid'] === 'number') await add(row['pgid'], 'db');
@@ -215,7 +221,7 @@ export const createProcessLedger = (options: CreateProcessLedgerOptions): Proces
   };
 
   const perPollSteps = ({ paths, recordFiles }: LedgerCheapSources): (() => Promise<void>)[] => [
-    ...(paths === undefined ? [] : [() => collectSupervisorLogs(paths), () => collectDatabase(paths)]),
+    ...(paths === undefined ? [] : [() => collectSupervisorLock(paths), () => collectSupervisorLogs(paths), () => collectDatabase(paths)]),
     ...(recordFiles === undefined ? [] : [() => collectRecordFiles(recordFiles)]),
   ];
 

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { credentialEnvNames, loadUserSettings, secretNames } from '@momonga/config';
 import {
@@ -34,6 +33,7 @@ import { MIN_CREDENTIAL_CHARS } from './core/redaction.ts';
 import { FmServeError, createFmServe } from './managed/fm-serve.ts';
 import type { ExecFn, FmServe, SpawnFn } from './managed/fm-serve.ts';
 import { createExecFn, createExecWithStdin } from './managed/fm-processes.ts';
+import { readOsBuild, sha256OfFile } from './managed/fm-record-key.ts';
 import { createManagedFmTarget } from './managed/fm-target.ts';
 import type { ExecWithStdinFn, ManagedFmTarget } from './managed/fm-target.ts';
 import { createGateway } from './server/gateway.ts';
@@ -77,7 +77,6 @@ const toError = (error: unknown): Error => (error instanceof Error ? error : new
 const failuresOf = (error: unknown): Error[] => (error instanceof AggregateError ? error.errors.map(toError) : [toError(error)]);
 
 const DEFAULT_FM_BINARY = '/usr/bin/fm';
-const OS_BUILD_COMMAND = '/usr/bin/sw_vers';
 
 type ResolvedTargets = Awaited<ReturnType<typeof loadUserSettings>>['settings']['models']['targets'];
 type ResolvedTarget = ResolvedTargets[string];
@@ -86,18 +85,6 @@ type RemoteTarget = Exclude<ResolvedTarget, { adapter: 'fm' }>;
 const realTimers: GatewayTimers = {
   setTimeout: (callback, ms) => setTimeout(callback, ms),
   clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout),
-};
-
-const sha256OfFile = async (file: string): Promise<string> => {
-  try {
-    return createHash('sha256')
-      .update(await fs.promises.readFile(file))
-      .digest('hex');
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT' || code === 'EACCES') return '';
-    throw error;
-  }
 };
 
 const binaryUsable = async (file: string): Promise<boolean> => {
@@ -216,12 +203,6 @@ const createFmAdapter = async (name: string, target: Extract<ResolvedTarget, { a
     toolCallingSetting: target.toolCalling,
   });
   return createChatCompletionsAdapter({ ...withBinaryGuard(managed, context.binary), clock });
-};
-
-const readOsBuild = async (exec: ExecFn): Promise<string> => {
-  const result = await exec(OS_BUILD_COMMAND, ['-buildVersion']);
-  if (result.exitCode !== 0) throw new Error(`sw_vers -buildVersion exited with ${result.exitCode}: ${result.stderr.trim()}`);
-  return result.stdout.trim();
 };
 
 const providerNameOf = (target: ResolvedTarget): string => {

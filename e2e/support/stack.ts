@@ -54,6 +54,7 @@ export type StartStackOptions = {
   readiness?: Partial<StackReadiness> | false;
   readinessDeadlineMs?: number;
   supervisorScript?: string;
+  version?: string;
 };
 
 export type SupervisorExit = { code: number | null; signal: NodeJS.Signals | null };
@@ -69,7 +70,7 @@ export type SpawnedSupervisor = {
   exited: Promise<SupervisorExit>;
 };
 
-export type SpawnSupervisorOptions = { home: E2eHome; deps?: E2eDeps; stackNumber?: number; script?: string };
+export type SpawnSupervisorOptions = { home: E2eHome; deps?: E2eDeps; stackNumber?: number; script?: string; version?: string };
 
 export type E2eStack = {
   readonly home: E2eHome;
@@ -142,7 +143,7 @@ export const writeDepsFile = (home: E2eHome, deps: E2eDeps, stackNumber: number)
   return file;
 };
 
-export const supervisorArgv = (home: E2eHome): string[] => [`--app-version=${SUPERVISOR_APP_VERSION}`, `--home=${home.home}`, '--log-target=file'];
+export const supervisorArgv = (home: E2eHome, version: string = SUPERVISOR_APP_VERSION): string[] => [`--app-version=${version}`, `--home=${home.home}`, '--log-target=file'];
 
 export const supervisorEnv = (home: E2eHome, depsFile: string): Record<string, string> => ({
   PATH: SUPERVISOR_ENV_PATH,
@@ -162,9 +163,9 @@ const trimToUtf8Boundary = (bytes: Buffer): Buffer => {
 const describeExit = (exit: SupervisorExit): string => `code ${exit.code}, signal ${exit.signal}`;
 
 export const spawnSupervisor = (options: SpawnSupervisorOptions): SpawnedSupervisor => {
-  const { home, deps = DEFAULT_E2E_DEPS, stackNumber = 1, script = SUPERVISOR_MAIN_PATH } = options;
+  const { home, deps = DEFAULT_E2E_DEPS, stackNumber = 1, script = SUPERVISOR_MAIN_PATH, version } = options;
   const depsFile = writeDepsFile(home, deps, stackNumber);
-  const child = spawn(process.execPath, [script, ...supervisorArgv(home)], {
+  const child = spawn(process.execPath, [script, ...supervisorArgv(home, version)], {
     env: supervisorEnv(home, depsFile),
     cwd: home.root,
     detached: true,
@@ -236,9 +237,9 @@ export const spawnSupervisor = (options: SpawnSupervisorOptions): SpawnedSupervi
   return { child, pid, depsFile, ready, exitState: () => exit, stdoutLines: () => [...stdoutLines], stderrTail, exited: exitGate.promise };
 };
 
-type SandboxChoice = { kind: StackSandbox; sandboxFallback?: string };
+export type SandboxChoice = { kind: StackSandbox; sandboxFallback?: string };
 
-const sandboxChoiceOf = (options: StartStackOptions): SandboxChoice => {
+export const sandboxChoiceOf = (options: StartStackOptions): SandboxChoice => {
   if (options.sandbox !== undefined) return { kind: options.sandbox };
   const resolution = resolveSandbox({ needsBash: options.needsBash ?? false });
   if (resolution.kind === 'skip') throw new Error(resolution.reason);
@@ -246,7 +247,7 @@ const sandboxChoiceOf = (options: StartStackOptions): SandboxChoice => {
   return { kind: 'seatbelt' };
 };
 
-const settingsOf = (home: E2eHome, kind: StackSandbox, options: StartStackOptions): Readonly<Record<string, unknown>> | string => {
+export const settingsOf = (home: E2eHome, kind: StackSandbox, options: StartStackOptions): Readonly<Record<string, unknown>> | string => {
   if (options.settingsText !== undefined) return options.settingsText;
   const base = options.target === undefined ? baseSettings(home, kind) : settingsWithTarget(baseSettings(home, kind), options.target);
   return { ...base, ...options.settings };
@@ -255,7 +256,7 @@ const settingsOf = (home: E2eHome, kind: StackSandbox, options: StartStackOption
 const satisfied = (health: SupervisorHealth, wanted: StackReadiness): boolean =>
   health.phase === wanted.phase && ROLES.every((role) => health.children.find((child) => child.role === role)?.state === wanted.children[role]);
 
-const startUpstream = async (home: E2eHome, options: StartStackOptions): Promise<FakeChatCompletionsServer> => {
+export const startUpstream = async (home: E2eHome, options: StartStackOptions): Promise<FakeChatCompletionsServer> => {
   if (options.upstream !== undefined) {
     if (options.script !== undefined) throw new Error('startStack: script cannot be combined with a caller-supplied upstream');
     if (options.routes !== undefined) throw new Error('startStack: routes cannot be combined with a caller-supplied upstream');
@@ -279,7 +280,7 @@ export const startStack = async (options: StartStackOptions): Promise<E2eStack> 
   const choice = sandboxChoiceOf(options);
   const fake = await startUpstream(home, options);
   writeSettingsFile(home, settingsOf(home, choice.kind, options));
-  const supervisor = spawnSupervisor({ home, deps: options.deps ?? DEFAULT_E2E_DEPS, stackNumber: 1, ...(options.supervisorScript === undefined ? {} : { script: options.supervisorScript }) });
+  const supervisor = spawnSupervisor({ home, deps: options.deps ?? DEFAULT_E2E_DEPS, stackNumber: 1, ...(options.supervisorScript === undefined ? {} : { script: options.supervisorScript }), ...(options.version === undefined ? {} : { version: options.version }) });
   const ready = await supervisor.ready(deadlineMs);
   const client = createSupervisorClient(home);
   registerE2eCleanup(() => client.close());

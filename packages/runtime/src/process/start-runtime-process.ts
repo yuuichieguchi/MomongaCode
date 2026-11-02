@@ -28,6 +28,7 @@ import { createTracerPort } from '../tracer.ts';
 import { createRunNotifier } from '../service/notifier.ts';
 import type { RunNotifier } from '../service/notifier.ts';
 import { createRunService } from '../service/service.ts';
+import { runTraceOf } from '../service/trace-view.ts';
 import type { RunService } from '../service/service.ts';
 import { systemTimers } from '../service/timers.ts';
 import type { ServiceTimers } from '../service/timers.ts';
@@ -403,6 +404,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         defaults: RUNTIME_DEFAULTS,
         timers,
         cancelUpstream: tracker.cancel,
+        runTrace: async (runId) => {
+          await telemetry.forceFlush();
+          return runTraceOf(traceStore, runId);
+        },
         onError: (error) => logger.error('service error', { err: asError(error) }),
         onFatal: latchFatal,
       }),

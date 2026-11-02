@@ -1,0 +1,47 @@
+import { isRecord } from '@momonga/foundation';
+
+export type DiffLine = { kind: 'context' | 'removed' | 'added' | 'header'; text: string };
+
+export const MAX_DIFF_LINES = 40;
+
+export const CONTEXT_LINES = 2;
+
+const linesOf = (text: string): string[] => (text === '' ? [] : text.split('\n'));
+
+export const diffOfStrings = (oldText: string, newText: string): DiffLine[] => {
+  const before = linesOf(oldText);
+  const after = linesOf(newText);
+  let prefix = 0;
+  while (prefix < before.length && prefix < after.length && before[prefix] === after[prefix]) prefix += 1;
+  let suffix = 0;
+  while (suffix < before.length - prefix && suffix < after.length - prefix && before[before.length - 1 - suffix] === after[after.length - 1 - suffix]) suffix += 1;
+  return [
+    ...before.slice(Math.max(0, prefix - CONTEXT_LINES), prefix).map((text): DiffLine => ({ kind: 'context', text })),
+    ...before.slice(prefix, before.length - suffix).map((text): DiffLine => ({ kind: 'removed', text })),
+    ...after.slice(prefix, after.length - suffix).map((text): DiffLine => ({ kind: 'added', text })),
+    ...before.slice(before.length - suffix, before.length - suffix + CONTEXT_LINES).map((text): DiffLine => ({ kind: 'context', text })),
+  ];
+};
+
+export const diffOfToolInput = (name: string, rawInput: unknown): DiffLine[] | undefined => {
+  if (!isRecord(rawInput)) return undefined;
+  const filePath = rawInput['file_path'];
+  if (typeof filePath !== 'string') return undefined;
+  if (name === 'Edit') {
+    const oldString = rawInput['old_string'];
+    const newString = rawInput['new_string'];
+    if (typeof oldString !== 'string' || typeof newString !== 'string') return undefined;
+    return [{ kind: 'header', text: filePath }, ...diffOfStrings(oldString, newString)];
+  }
+  if (name === 'Write') {
+    const content = rawInput['content'];
+    if (typeof content !== 'string') return undefined;
+    return [{ kind: 'header', text: filePath }, ...diffOfStrings('', content)];
+  }
+  return undefined;
+};
+
+export const clipDiff = (lines: readonly DiffLine[], max: number = MAX_DIFF_LINES): { lines: DiffLine[]; omitted: number } => ({
+  lines: lines.slice(0, max),
+  omitted: Math.max(0, lines.length - max),
+});
