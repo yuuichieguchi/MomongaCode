@@ -4,7 +4,7 @@ import type { MomongaPaths } from '@momonga/foundation';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import { daemonReadyBoundMs, ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
-import { followRun, followSession } from '../run/follow.ts';
+import { DaemonUnreachable, followRun, followSession, retryAfterRestore } from '../run/follow.ts';
 import { autoModeConfigured, connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import { createAcpAgent } from './agent.ts';
 
@@ -24,6 +24,21 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
     daemonReady: async () => {
       await ensureDaemon(ports, paths, { replacement: 'when-idle', signal: interrupt });
     },
+    retryAfterRestore: (operation, signal) =>
+      retryAfterRestore(
+        {
+          clock: ports.clock,
+          random: ports.random,
+          reconnectBoundMs,
+          boundExceeded: (boundMs, cause) => new DaemonUnreachable(boundMs, cause),
+          restoreConnection: async () => {
+            await ensureDaemon(ports, paths);
+          },
+          onReconnecting: (attempt) => ports.stderr.write(`momonga: lost the connection to the daemon, reconnecting (attempt ${attempt + 1})\n`),
+          signal,
+        },
+        operation,
+      ),
     follow: ({ runId, onEvent, onChildEvent, signal }) =>
       followRun({
         client: runtime,

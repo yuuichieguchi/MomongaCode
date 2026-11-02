@@ -4,6 +4,8 @@ import { SESSION, runView } from './fake-backend.ts';
 import { INITIALIZE, conflict, errorOf, frameOf, labelsOf, modeChangedFrame, notFound, resultOf, startAgent, updatesOf } from './acp-harness.ts';
 import type { EventPayload, Harness } from './acp-harness.ts';
 import { RunApiError } from '../src/client/runtime-client.ts';
+import { DaemonUnreachable, retryAfterRestore } from '../src/run/follow.ts';
+import { virtualClock } from './fake-supervisor.ts';
 
 const OPTIONS: PermissionOption[] = [
   { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
@@ -434,6 +436,65 @@ describe('permission requests', () => {
     await harness.peer.close();
   });
 
+  it('does not ask the client about an approval that was withdrawn while it was being read', async () => {
+    const harness = startAgent();
+    const sessionId = await open(harness);
+    const reading = Promise.withResolvers<void>();
+    const read = Promise.withResolvers<void>();
+    const readApproval = harness.runtime.getApproval;
+    harness.runtime.getApproval = async (id) => {
+      reading.resolve();
+      await read.promise;
+      return readApproval(id);
+    };
+    harness.peer.answerRequests(() => {
+      throw new Error('the client must not be asked');
+    });
+    harness.scripts.set('run-1', async ({ onEvent }) => {
+      onEvent(frameOf('run-1', 1, toolCall()));
+      onEvent(frameOf('run-1', 2, { type: 'tool.permission.requested', approvalId: 'approval-1', callId: 'call-1', options: OPTIONS, subjectDigest: 'd' }));
+      await reading.promise;
+      onEvent(frameOf('run-1', 3, { type: 'tool.permission.cancelled', approvalId: 'approval-1', reason: 'withdrawn' }));
+      read.resolve();
+      return finishedRun('CANCELLED');
+    });
+
+    await prompt(harness, sessionId, 'edit');
+
+    expect(labelsOf(harness.peer.received)).not.toContain('session/request_permission');
+    await harness.peer.close();
+  });
+
+  it('keeps the session alive when the daemon connection drops while an approval is read, and asks once the daemon is back', async () => {
+    const restored: number[] = [];
+    const clock = virtualClock();
+    const harness = startAgent({
+      retryAfterRestore: (operation, signal) =>
+        retryAfterRestore(
+          {
+            clock,
+            random: () => 0.5,
+            reconnectBoundMs: 10_000,
+            boundExceeded: (boundMs, cause) => new DaemonUnreachable(boundMs, cause),
+            restoreConnection: async () => void restored.push(restored.length),
+            signal,
+          },
+          operation,
+        ),
+    });
+    const sessionId = await open(harness);
+    harness.runtime.failures.set('getApproval', Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }));
+    harness.peer.answerRequests(() => ({ outcome: { outcome: 'selected', optionId: 'allow_once' } }));
+    requestedScript(harness, () => harness.runtime.called('resolveApproval'));
+
+    expect(resultOf(await prompt(harness, sessionId, 'edit'))).toEqual({ stopReason: 'end_turn' });
+
+    expect(restored).toEqual([0]);
+    expect(harness.reports).toEqual([]);
+    expect(harness.runtime.calls.filter((call) => call.startsWith('getApproval'))).toHaveLength(2);
+    await harness.peer.close();
+  });
+
   it('treats an approval that was resolved elsewhere in the meantime as settled', async () => {
     const harness = startAgent();
     const sessionId = await open(harness);
@@ -809,6 +870,20 @@ describe('session/load', () => {
     const failure = errorOf(await harness.peer.request('session/load', { sessionId: SESSION.id, cwd: SESSION.cwd, mcpServers: [] }));
 
     expect(failure.code).toBe(-32600);
+    await harness.peer.close();
+  });
+
+  it('loads a session again on the same connection after its first load failed in the background', async () => {
+    const harness = startAgent();
+    history(harness);
+    await harness.peer.request('initialize', INITIALIZE);
+    await harness.peer.request('session/load', { sessionId: SESSION.id, cwd: SESSION.cwd, mcpServers: [] });
+    harness.failSessionStream(new Error('the session stream broke'));
+    await harness.reported;
+
+    const response = await harness.peer.request('session/load', { sessionId: SESSION.id, cwd: SESSION.cwd, mcpServers: [] });
+
+    expect(resultOf(response)).toMatchObject({ modes: expect.anything() });
     await harness.peer.close();
   });
 

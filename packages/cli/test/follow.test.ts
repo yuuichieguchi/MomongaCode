@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PublicRunEvent } from '@momonga/protocol';
 import type { RunEventFrame, RuntimeClient } from '../src/client/runtime-client.ts';
-import { ReconnectBoundExceeded, SessionStreamLost, followRun, followSession, isTerminalStatus, isTransientStreamError } from '../src/run/follow.ts';
+import { DaemonUnreachable, ReconnectBoundExceeded, SessionStreamLost, followRun, followSession, isTerminalStatus, isTransientStreamError, retryAfterRestore } from '../src/run/follow.ts';
 import { runView } from './fake-backend.ts';
 import { virtualClock } from './fake-supervisor.ts';
 
@@ -218,6 +218,62 @@ describe('followSession', () => {
 
     expect(failure).toBeInstanceOf(SessionStreamLost);
     expect(failure).toMatchObject({ sessionId: 'session-1', boundMs: 2000 });
+  });
+});
+
+describe('retryAfterRestore', () => {
+  const policyOf = (restored: number[], extra: Partial<Parameters<typeof retryAfterRestore>[0]> = {}): Parameters<typeof retryAfterRestore>[0] => ({
+    clock: virtualClock(),
+    random: () => 0.5,
+    reconnectBoundMs: 10_000,
+    boundExceeded: (boundMs, cause) => new DaemonUnreachable(boundMs, cause),
+    restoreConnection: async () => void restored.push(restored.length),
+    ...extra,
+  });
+
+  it('runs the operation again after restoring the connection when it failed with a lost connection', async () => {
+    const restored: number[] = [];
+    let calls = 0;
+
+    const value = await retryAfterRestore(policyOf(restored), async () => {
+      calls += 1;
+      if (calls === 1) throw errno('ECONNRESET');
+      return 'done';
+    });
+
+    expect(value).toBe('done');
+    expect(restored).toEqual([0]);
+  });
+
+  it('does not retry a failure that is not a lost connection', async () => {
+    const restored: number[] = [];
+
+    await expect(
+      retryAfterRestore(policyOf(restored), async () => {
+        throw new Error('the server answered 400');
+      }),
+    ).rejects.toThrow('the server answered 400');
+    expect(restored).toEqual([]);
+  });
+
+  it('gives up with a typed error once the connection stayed lost for the bound', async () => {
+    const failure = await retryAfterRestore(policyOf([], { reconnectBoundMs: 2000 }), async () => {
+      throw errno('ECONNREFUSED');
+    }).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(DaemonUnreachable);
+    expect(failure).toMatchObject({ boundMs: 2000 });
+  });
+
+  it('does not retry once the caller aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      retryAfterRestore(policyOf([], { signal: controller.signal }), async () => {
+        throw errno('ECONNRESET');
+      }),
+    ).rejects.toThrow('ECONNRESET');
   });
 });
 

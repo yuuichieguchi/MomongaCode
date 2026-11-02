@@ -37,6 +37,7 @@ export type AcpDeps = {
   autoModeAvailable(): Promise<boolean>;
   canonicalCwd(cwd: string): string;
   daemonReady(): Promise<void>;
+  retryAfterRestore<T>(operation: () => Promise<T>, signal: AbortSignal): Promise<T>;
   follow(request: FollowRequest): Promise<RunView>;
   followSession(request: FollowSessionRequest): Promise<never>;
   report(message: string): void;
@@ -114,13 +115,15 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
 
   const contextWindowOf = (session: BridgeSession): Promise<number> => (session.contextWindow ??= deps.contextWindowOf(session.modelAlias));
 
+  const durably = <T>(session: BridgeSession, operation: () => Promise<T>): Promise<T> => deps.retryAfterRestore(operation, session.lifetime.signal);
+
   const askPermission = async (session: BridgeSession, effect: Extract<Effect, { kind: 'permission' }>): Promise<void> => {
-    await session.queue.settled();
-    const approval = await deps.runtime.getApproval(effect.approvalId);
-    if (approval.status !== 'pending') return;
     const controller = new AbortController();
     session.pendingRequests.set(effect.approvalId, controller);
     try {
+      await session.queue.settled();
+      const approval = await durably(session, () => deps.runtime.getApproval(effect.approvalId));
+      if (approval.status !== 'pending' || controller.signal.aborted) return;
       const request: RequestPermissionRequest = {
         sessionId: session.id,
         toolCall: effect.toolCall,
@@ -128,7 +131,8 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
       };
       const response = await peer().request('session/request_permission', request, { cancellationSignal: controller.signal });
       if (response.outcome.outcome === 'cancelled') return;
-      await deps.runtime.resolveApproval(effect.approvalId, response.outcome.optionId);
+      const { optionId } = response.outcome;
+      await durably(session, () => deps.runtime.resolveApproval(effect.approvalId, optionId));
     } catch (error) {
       if (error instanceof RequestError && error.code === REQUEST_CANCELLED && controller.signal.aborted) return;
       if (error instanceof RunApiError && error.code === 'approval_not_pending') return;
@@ -158,15 +162,15 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
   };
 
   const askElicitation = async (session: BridgeSession, effect: Extract<Effect, { kind: 'elicitation' }>): Promise<void> => {
-    await session.queue.settled();
-    const view = await deps.runtime.getElicitation(effect.inputId);
-    if (view.status !== 'pending') return;
     const controller = new AbortController();
     session.pendingRequests.set(effect.inputId, controller);
     try {
+      await session.queue.settled();
+      const view = await durably(session, () => deps.runtime.getElicitation(effect.inputId));
+      if (view.status !== 'pending' || controller.signal.aborted) return;
       const responses: Record<string, ElicitationAnswerRecord> = {};
       for (const request of effect.requests) responses[request.key] = await answerElicitation(session, effect, request, controller.signal);
-      await deps.runtime.resolveElicitation(effect.inputId, responses);
+      await durably(session, () => deps.runtime.resolveElicitation(effect.inputId, responses));
     } catch (error) {
       if (error instanceof RequestError && error.code === REQUEST_CANCELLED && controller.signal.aborted) return;
       if (error instanceof RunApiError && error.code === 'approval_not_pending') return;
@@ -276,7 +280,7 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
   };
 
   const announceCommands = async (session: BridgeSession): Promise<void> => {
-    const { skills } = await deps.runtime.skills(session.id);
+    const { skills } = await durably(session, () => deps.runtime.skills(session.id));
     session.skillNames = skills.map((skill) => skill.name);
     send(session, { sessionUpdate: 'available_commands_update', availableCommands: availableCommandsOf(skills) });
     await session.queue.settled();
@@ -286,9 +290,10 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
     session.tasks.run(() => announceCommands(session));
   };
 
-  const cancelTurnOf = async (turn: Turn): Promise<void> => {
+  const cancelTurnOf = async (session: BridgeSession, turn: Turn): Promise<void> => {
     turn.cancelRequested = true;
-    if (turn.runId !== undefined) await deps.runtime.cancel(turn.runId);
+    const { runId } = turn;
+    if (runId !== undefined) await durably(session, () => deps.runtime.cancel(runId));
   };
 
   app.onConnect((opened) => {
@@ -327,7 +332,7 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
   });
 
   app.onRequest('session/load', async ({ params }) => {
-    if (sessions.has(params.sessionId)) throw RequestError.invalidRequest({ sessionId: params.sessionId }, `session ${params.sessionId} is already loaded on this connection`);
+    if (sessions.get(params.sessionId)?.lifetime.signal.aborted === false) throw RequestError.invalidRequest({ sessionId: params.sessionId }, `session ${params.sessionId} is already loaded on this connection`);
     const mcpServers = mcpServersOf(params.mcpServers);
     await deps.daemonReady();
     const existing = await deps.runtime.getSession(params.sessionId).catch((error: unknown) => {
@@ -366,7 +371,7 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
     session.turn = turn;
     const cancelTurn = (): void => {
       if (connection?.signal.aborted === true) return;
-      session.tasks.run(() => cancelTurnOf(turn));
+      session.tasks.run(() => cancelTurnOf(session, turn));
     };
     signal.addEventListener('abort', cancelTurn, { once: true });
     try {
@@ -390,8 +395,8 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
   });
 
   app.onNotification('session/cancel', async ({ params }) => {
-    const turn = sessions.get(params.sessionId)?.turn;
-    if (turn !== undefined) await cancelTurnOf(turn);
+    const session = sessions.get(params.sessionId);
+    if (session?.turn !== undefined) await cancelTurnOf(session, session.turn);
   });
 
   return app;
