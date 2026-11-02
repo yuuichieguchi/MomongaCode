@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { createRunNotifier } from '@momonga/runtime';
 import type { RunEvent } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { afterMicrotasks, waitFor, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 import { eventStreamResponse } from '../../src/service/event-stream.ts';
 import { START_MS, expectError, onCleanup, openStore, startService, waitUntil } from './helpers.ts';
@@ -180,7 +180,7 @@ describe('SS2 HEAD and OPTIONS', () => {
     expect(response.headers['content-type']).toMatch(/^text\/event-stream/);
     expect(await response.text()).toBe('');
     expect(env.notifier.subscriberCount()).toBe(0);
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await afterMicrotasks();
     expect(env.notifier.subscriberCount()).toBe(0);
   });
 
@@ -329,7 +329,7 @@ describe('SS5 coverage gaps', () => {
       }),
     );
     const reads = responses.map((response) => response.body?.getReader().read());
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await waitFor(() => notifier.subscriberCount() === 3, { description: 'three subscribers' });
     expect(notifier.subscriberCount()).toBe(3);
 
     closeController.abort();

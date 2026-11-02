@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { TransientToolError } from '@momonga/tools';
 import type { ToolContext } from '@momonga/tools';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
-import { keyFor, until } from './helpers.ts';
+import { waitFor } from '@momonga/testkit';
+import { keyFor } from './helpers.ts';
 
 const waitForAbort = (ctx: ToolContext): Promise<{ status: 'failed'; output: string }> =>
   new Promise((resolve) => {
@@ -113,7 +114,7 @@ describe('cancellation', () => {
       },
     });
     const pending = harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Read')], { signal: controller.signal }));
-    await until(() => running);
+    await waitFor(() => running, { description: '() => running' });
     controller.abort();
     const outcomes = await pending;
     expect(outputOf(outcomes[0])).toBe('Read was cancelled');
@@ -135,7 +136,7 @@ describe('cancellation', () => {
     const pending = harness.executor.runBatch(
       harness.input(await toolSetOf(tool), [call('c1', 'Write'), call('c2', 'Write')], { signal: controller.signal }),
     );
-    await until(() => executions.length === 1);
+    await waitFor(() => executions.length === 1, { description: '() => executions.length === 1' });
     controller.abort();
     const outcomes = await pending;
     const first = outputOf(outcomes[0]);

@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
-import { createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
+import { afterMicrotasks, createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
 import { START_MS } from './helpers.ts';
-import { HOUR_MS, entriesNamed, flushTurns, launchRuntime, settledState, startStack } from './run-helpers.ts';
+import { HOUR_MS, entriesNamed, launchRuntime, settledState, startStack } from './run-helpers.ts';
 
 type Injection = { error: Error; frame: string } | undefined;
 
@@ -105,7 +105,7 @@ const sweepSource = async (launched: Awaited<ReturnType<typeof launchFake>>, err
   control.sessionActivity = { error, frame: 'tmp-sweep' };
   launched.timers.advance(HOUR_MS);
   await waitFor(() => control.injected > 0, { description: 'the hourly session sweep to reach sessionActivity' });
-  await flushTurns();
+  await afterMicrotasks();
 };
 
 const poolCheckSource = async (launched: Awaited<ReturnType<typeof launchFake>>, error: Error): Promise<void> => {
@@ -116,7 +116,7 @@ const poolCheckSource = async (launched: Awaited<ReturnType<typeof launchFake>>,
   control.getRun = { error, frame: 'mcp-pool-cache' };
   launched.timers.advance(POOL_REFERENCE_AUDIT_MS);
   await waitFor(() => control.injected > 0, { description: 'the pool reference audit to reach getRun' });
-  await flushTurns();
+  await afterMicrotasks();
 };
 
 const MCP_SETTINGS = { mcpServers: { fx: { command: '/usr/bin/true', args: [] } } };
@@ -127,7 +127,7 @@ describe('error routing of composition-owned callbacks through report (fake time
     const error = fatalStoreError();
     control.purge = { error, frame: '' };
     launched.timers.advance(HOUR_MS);
-    await flushTurns();
+    await afterMicrotasks();
     await expectLatched(launched, error);
   });
 
@@ -136,10 +136,10 @@ describe('error routing of composition-owned callbacks through report (fake time
     const error = new Error('purge failed');
     control.purge = { error, frame: '' };
     launched.timers.advance(HOUR_MS);
-    await flushTurns();
+    await afterMicrotasks();
     await expectLoggedOnly(launched, error);
     launched.timers.advance(HOUR_MS);
-    await flushTurns();
+    await afterMicrotasks();
     expect(control.injected).toBe(2);
   });
 

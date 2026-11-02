@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { waitFor } from '@momonga/testkit';
+import { afterMicrotasks, waitFor } from '@momonga/testkit';
 import { launchRuntime, startStack, waitForStatus } from './run-helpers.ts';
 import type { Stack } from './run-helpers.ts';
 
@@ -21,10 +21,6 @@ const excess = (baseline: Map<string, number>): Record<string, number> => {
   return result;
 };
 
-const settleTurns = async (): Promise<void> => {
-  for (let turn = 0; turn < 10; turn += 1) await new Promise<void>((resolve) => setImmediate(resolve));
-};
-
 const runOnce = async (stack: Stack): Promise<void> => {
   const launched = await launchRuntime(stack.temp);
   const session = await launched.createSession();
@@ -38,7 +34,7 @@ describe('leak contract (system timers, in-process gateway)', () => {
   it('leaves no runtime-created handles after a clean close', PROCESS_TIMEOUT, async () => {
     const stack = await startStack();
     await runOnce(stack);
-    await settleTurns();
+    await afterMicrotasks();
     const baseline = counts();
     await runOnce(stack);
     await waitFor(() => Object.keys(excess(baseline)).length === 0, { maxTurns: 5000, description: 'runtime handles to be released' });

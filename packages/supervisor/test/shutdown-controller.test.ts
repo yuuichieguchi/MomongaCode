@@ -78,10 +78,6 @@ const settledResult = (promise: Promise<SupervisorCloseResult>) => {
   return () => value;
 };
 
-const flushTurns = async (count = 20): Promise<void> => {
-  for (let index = 0; index < count; index += 1) await new Promise<void>((resolve) => setImmediate(resolve));
-};
-
 describe('shutdown step 4 per-marker joins', () => {
   it('a hung in-flight reap of marker A does not block the retry of marker B before the bound', async () => {
     const hung: Reap = new Promise(() => undefined);
@@ -113,7 +109,7 @@ describe('shutdown step 5 late close rejection', () => {
     expect(h.fatals).toEqual([]);
     const late = new Error('control server close failed late');
     control.reject(late);
-    await flushTurns();
+    await waitFor(() => h.fatals.length > 0, { description: 'the late close rejection reaches onFatal' });
     expect(h.fatals).toEqual([late]);
   });
 });

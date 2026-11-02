@@ -7,7 +7,7 @@ import type { ReapTiming, SignalSender } from '@momonga/foundation';
 import { killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 import { makeHarness } from './harness.ts';
 import type { Harness, HarnessOptions } from './harness.ts';
-import { keyFor } from './helpers.ts';
+import { deferred, keyFor } from './helpers.ts';
 
 const PROCESS_TIMEOUT = { timeout: 30_000 };
 const STUBBORN_GRACE_MS = 100;
@@ -39,8 +39,6 @@ const groupExists = (pgid: number): boolean => {
     return (error as NodeJS.ErrnoException).code === 'EPERM';
   }
 };
-
-const turn = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 const eventually = async (condition: () => Promise<boolean> | boolean, description: string, attempts = 2000): Promise<void> => {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -83,6 +81,7 @@ const noSignal = (): AbortSignal => new AbortController().signal;
 
 const fakeTiming = (overlapTarget = 1): ReapTiming & { active: number; maxActive: number; sleeps: number } => {
   let now = 0;
+  const overlapped = deferred<void>();
   const timing = {
     active: 0,
     maxActive: 0,
@@ -92,9 +91,8 @@ const fakeTiming = (overlapTarget = 1): ReapTiming & { active: number; maxActive
       timing.sleeps += 1;
       timing.active += 1;
       timing.maxActive = Math.max(timing.maxActive, timing.active);
-      const deadline = Date.now() + 5000;
-      while (timing.maxActive < overlapTarget && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 5));
-      await turn();
+      if (timing.maxActive >= overlapTarget) overlapped.resolve();
+      await overlapped.promise;
       timing.active -= 1;
       now += ms;
     },

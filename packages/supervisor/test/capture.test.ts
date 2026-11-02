@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { createFakeClock, withTempDir } from '@momonga/testkit';
+import { afterMicrotasks, createFakeClock, withTempDir } from '@momonga/testkit';
 import { createJsonLogger, formatLogLine, momongaPaths } from '@momonga/foundation';
 import { captureStream, createOutputLimiter, DEFAULT_OUTPUT_LIMITS, truncateRaw } from '../src/capture.ts';
 import { OUTPUT_MAX_BYTES_PER_MINUTE } from '../src/constants.ts';
@@ -164,8 +164,7 @@ describe('output limiter', () => {
     const stream = new PassThrough();
     const done = captureStream({ stream, kind: 'stderr', role: 'runtime', childPid: 31, service: 'supervisor', logger: log.logger, limiter });
     for (let index = 0; index < 10_000; index += 1) stream.write(`flood line ${index}\n`);
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await afterMicrotasks();
     clock.advance(1000);
     stream.write('after the window\n');
     stream.end();
@@ -238,7 +237,7 @@ describe('output limiter', () => {
     const stream = new PassThrough();
     stream.destroy();
     await captureStream({ stream, kind: 'stderr', role: 'runtime', childPid: 9, service: 'supervisor', logger: log.logger, limiter });
-    for (let index = 0; index < 10; index += 1) await new Promise<void>((resolve) => setImmediate(resolve));
+    await afterMicrotasks();
     expect(flushes).toBe(1);
   });
 
@@ -263,7 +262,7 @@ describe('output limiter', () => {
     const seconds = 59;
     for (let second = 0; second < seconds; second += 1) {
       for (let index = 0; index < linesPerSecond; index += 1) stream.write(`${raw}\n`);
-      for (let turn = 0; turn < 3; turn += 1) await new Promise<void>((resolve) => setImmediate(resolve));
+      await afterMicrotasks();
       clock.advance(1000);
     }
     stream.end();

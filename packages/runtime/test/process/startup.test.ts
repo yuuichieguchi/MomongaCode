@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '@momonga/config';
 import { ProcessLockHeldError, ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
 import type { Worker, WorkerOptions } from '@momonga/runtime';
-import { createFakeClock } from '@momonga/testkit';
+import { afterMicrotasks, createFakeClock } from '@momonga/testkit';
 import { START_MS, errnoError, trackGroup, writeInvalidUserSettings, writeUserSettings } from './helpers.ts';
 import {
   RUNTIME_VERSION,
@@ -456,7 +456,7 @@ describe('startup cancellation through signal (system timers)', () => {
     const controller = new AbortController();
     const launched = await launchRuntime(stack.temp, { signal: controller.signal });
     controller.abort(new Error('too late'));
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await afterMicrotasks();
     const health = await launched.http('GET', '/v1/health');
     expect(health.status).toBe(200);
     expect(health.json).toMatchObject({ state: 'running' });

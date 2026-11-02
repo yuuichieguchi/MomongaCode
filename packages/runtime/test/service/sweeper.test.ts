@@ -1,12 +1,10 @@
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import * as runtime from '@momonga/runtime';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { callsStep } from '../worker/scripts.ts';
 import { DEFAULT_TTL_MS, START_MS, attachWorkerKit, requestManualApproval, startService, toolCallPayload } from './helpers.ts';
 import type { ServiceEnv } from './helpers.ts';
-
-const flush = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 type Sweeper = { close(): void | Promise<void> };
 
@@ -34,21 +32,21 @@ describe('startApprovalSweeper', () => {
     const sweeper = startSweeper({ store, clock, timers, intervalMs: 1000, releaseStopped: async () => undefined, onError: (error: unknown) => errors.push(error) });
 
     timers.advance(1000);
-    await flush();
+    await afterMicrotasks();
     expect(calls.filter((now) => now !== START_MS)).toEqual([START_MS + 1000]);
     expect(errors).toEqual([failure]);
     timers.advance(1000);
-    await flush();
+    await afterMicrotasks();
     expect(calls.filter((now) => now !== START_MS)).toEqual([START_MS + 1000, START_MS + 2000]);
     timers.advance(3000);
-    await flush();
+    await afterMicrotasks();
     expect(calls.filter((now) => now !== START_MS)).toEqual([START_MS + 1000, START_MS + 2000, START_MS + 3000, START_MS + 4000, START_MS + 5000]);
     expect(errors).toEqual([failure]);
 
     await sweeper.close();
     const callsAtClose = calls.length;
     timers.advance(5000);
-    await flush();
+    await afterMicrotasks();
     expect(calls).toHaveLength(callsAtClose);
     expect(timers.pending()).toEqual([]);
   });

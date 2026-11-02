@@ -8,7 +8,7 @@ import type { Clock, JsonLogger, MomongaPaths, ReadyFields, TextStream, UdsClien
 import { startGatewayProcess } from '@momonga/gateway';
 import * as runtime from '@momonga/runtime';
 import type { ServiceTimers } from '@momonga/runtime';
-import { startFakeChatCompletions } from '@momonga/testkit';
+import { afterMicrotasks, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsOptions, FakeChatCompletionsServer, FakeResponseHold, FakeTimers } from '@momonga/testkit';
 import { makeLogger, onCleanup, writeUserSettings } from './helpers.ts';
 import type { LogEntry, RecordingLogger } from './helpers.ts';
@@ -232,7 +232,7 @@ export const waitForTimer = (timers: FakeTimers, delayMs: number, description: s
 export const fireTimer = async (timers: FakeTimers, delayMs: number, description: string, exclude: ReadonlySet<number> = new Set()): Promise<void> => {
   await waitForTimer(timers, delayMs, description, exclude);
   timers.advance(delayMs);
-  await flushTurns();
+  await afterMicrotasks();
 };
 
 export const timerIds = (timers: FakeTimers): ReadonlySet<number> => new Set(timers.pending().map((timer) => timer.id));
@@ -350,12 +350,8 @@ export const settledState = async (promise: Promise<unknown>): Promise<'settled'
       settled = true;
     },
   );
-  for (let turn = 0; turn < 10; turn += 1) await new Promise<void>((resolve) => setImmediate(resolve));
+  await afterMicrotasks();
   return settled ? 'settled' : 'pending';
-};
-
-export const flushTurns = async (turns = 10): Promise<void> => {
-  for (let turn = 0; turn < turns; turn += 1) await new Promise<void>((resolve) => setImmediate(resolve));
 };
 
 export const eventTypes = (temp: RunHome, runId: string): string[] =>

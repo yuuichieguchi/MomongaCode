@@ -10,12 +10,12 @@ import {
   ABANDONED_OUTPUT,
   RECONCILE_FAILURE_PREFIX,
   fatalStoreError,
-  flushTurns,
   groupExists,
   recordingStore,
   seedStartedCalls,
   spawnMarkerHolder,
 } from './cancel-fixture.ts';
+import { afterMicrotasks } from '@momonga/testkit';
 
 const PROCESS_TIMEOUT = { timeout: 30_000 };
 
@@ -316,7 +316,7 @@ describe('cancel recovery fallback', () => {
     });
 
     await within(env.runOnce(worker), 10_000, 'the worker to give up the run');
-    await flushTurns();
+    await afterMicrotasks();
 
     expect(env.portCalls.abandon).toEqual([]);
     expect(store.appends.filter((append) => append.runId === run.id)).toEqual([]);
@@ -342,7 +342,7 @@ describe('cancel recovery fallback', () => {
 
     await within(env.runOnce(worker), 10_000, 'the worker to yield');
     await within(shutdown ?? Promise.resolve(), 10_000, 'the shutdown');
-    await flushTurns();
+    await afterMicrotasks();
 
     expect(env.portCalls.abandon).toEqual([]);
     expect(store.appends.filter((append) => append.runId === run.id)).toEqual([]);

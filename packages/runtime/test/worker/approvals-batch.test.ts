@@ -3,6 +3,7 @@ import type { RuntimeStore } from '@momonga/store';
 import { deferred, waitUntil, within } from './deferred.ts';
 import { START_MS, makeEnv } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
+import { waitFor } from '@momonga/testkit';
 
 describe('worker approval expiry', () => {
   it('caps the approval expiry at the run deadline', async () => {
@@ -78,7 +79,7 @@ describe('worker wake hook', () => {
     const worker = env.worker('worker-1', { store, idlePollMs: 60_000, wake });
     worker.start();
     await within(idle.promise, 2_000, 'the worker to find no run');
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await waitFor(() => listeners.size === 1, { description: 'the worker to register its wake listener' });
     expect(listeners.size).toBe(1);
 
     env.gateway.script.push(textStep('Hello.'));

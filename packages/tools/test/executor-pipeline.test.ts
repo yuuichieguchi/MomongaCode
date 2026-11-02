@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { EMPTY_PROTECTED_SET, canonicalJson, resolveCanonicalPath, sha256Hex } from '@momonga/foundation';
-import { TEST_SEARCH_PATH, fakePolicyFilesystem, isWritableFor, protectedSetWith } from '@momonga/testkit';
+import { TEST_SEARCH_PATH, afterMicrotasks, fakePolicyFilesystem, isWritableFor, protectedSetWith } from '@momonga/testkit';
 import { computeFileRules, decide, suggestAllowRule } from '@momonga/policy';
 import { ToolExecutionError, ToolInputError } from '@momonga/tools';
 import type { ToolContext } from '@momonga/tools';
@@ -405,8 +405,7 @@ describe('executor execution', () => {
         },
       }),
     );
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await afterMicrotasks();
     expect(order).toEqual([`started:c1:${keyFor('run-1', 1, 'c1')}`]);
     release();
     await running;

@@ -3,7 +3,7 @@ import type { RuntimeStore } from '@momonga/store';
 import { waitUntil, within } from './deferred.ts';
 import { makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
-import { fatalStoreError, flushTurns } from './cancel-fixture.ts';
+import { fatalStoreError } from './cancel-fixture.ts';
 import { gated, textStep } from './scripts.ts';
 
 const SLOW = { timeout: 30_000 };
@@ -50,7 +50,6 @@ describe('worker fatal store errors', () => {
 
     worker.start();
     await waitUntil(() => fatals.length > 0, 10_000, 'onFatal');
-    await flushTurns(200);
     await within(worker.stop(), 10_000, 'the worker to stop');
 
     expect(fatals).toEqual([fatal]);
@@ -84,7 +83,6 @@ describe('worker fatal store errors', () => {
 
     worker.start();
     await waitUntil(() => fatals.length > 0, 10_000, 'onFatal');
-    await flushTurns(200);
     await within(worker.stop(), 10_000, 'the worker to stop');
 
     expect(fatals).toHaveLength(1);
@@ -117,7 +115,6 @@ describe('worker fatal store errors', () => {
     } finally {
       blocked.gate.release.resolve();
     }
-    await flushTurns(200);
     await within(worker.stop(), 10_000, 'the worker to stop');
 
     expect(fatals).toHaveLength(1);
@@ -143,7 +140,6 @@ describe('worker fatal store errors', () => {
 
     worker.start();
     await waitUntil(() => fatals.length > 0, 10_000, 'onFatal');
-    await flushTurns(200);
     await within(worker.stop(), 10_000, 'the worker to stop');
 
     expect(fatals).toEqual([failure]);

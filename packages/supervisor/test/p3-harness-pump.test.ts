@@ -91,7 +91,7 @@ describe('pumpUntil', () => {
     const timers = createFakeTimers(clock);
     const startScoped = async () => {
       const realWork = createRealWorkScope();
-      await new Promise<void>((resolve) => setImmediate(resolve));
+      await Promise.resolve();
       let fired = false;
       realWork.run(() => {
         timers.setTimeout(() => {

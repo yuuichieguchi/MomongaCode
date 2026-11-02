@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { isProcessAlive } from '@momonga/foundation';
+import { afterMicrotasks } from '@momonga/testkit';
 import { pollUntil, processGroupOf } from './support/p2-poll.ts';
 import { CHILD_FIXTURE, portOptions, readOnlyScratchFd, watch } from './support/p2-real-children.ts';
 import { trackedSpawnPort } from './support/tracked-spawn-port.ts';
@@ -27,7 +28,7 @@ describe('real SpawnPort', () => {
     handle.onExit((exit) => exits.push(exit));
     const error = await new Promise<NodeJS.ErrnoException>((resolve) => handle.onSpawnError(resolve));
     expect(error.code).toBe('ENOENT');
-    for (let index = 0; index < 20; index += 1) await new Promise<void>((resolve) => setImmediate(resolve));
+    await afterMicrotasks();
     expect(exits).toEqual([]);
   }, 15_000);
 

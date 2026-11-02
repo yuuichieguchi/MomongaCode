@@ -3,8 +3,9 @@ import { GatewayRequestError } from '@momonga/runtime';
 import { waitUntil, within } from './deferred.ts';
 import { makeEnv } from './harness.ts';
 import type { ScriptStep } from './fake-gateway.ts';
-import { RECONCILE_FAILURE_PREFIX, fatalStoreError, flushTurns, seedStartedCalls } from './cancel-fixture.ts';
+import { RECONCILE_FAILURE_PREFIX, fatalStoreError, seedStartedCalls } from './cancel-fixture.ts';
 import { gated, textStep } from './scripts.ts';
+import { afterMicrotasks } from '@momonga/testkit';
 
 const SLOW = { timeout: 30_000 };
 
@@ -39,10 +40,9 @@ describe('worker onFatal containment', () => {
 
       worker.start();
       await waitUntil(() => fatalCalls > 0, 10_000, 'onFatal');
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      await flushTurns(200);
+      await afterMicrotasks();
       await within(worker.stop(), 10_000, 'the worker to stop');
-      await flushTurns(200);
+      await afterMicrotasks();
 
       expect(fatalCalls).toBe(1);
       expect(unhandled).toEqual([]);
@@ -77,8 +77,7 @@ describe('worker onFatal containment when the poll loop dies', () => {
 
       worker.start();
       await waitUntil(() => fatalCalls > 0, 10_000, 'onFatal');
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      await flushTurns(200);
+      await afterMicrotasks();
 
       expect(fatalCalls).toBe(1);
       expect(unhandled).toEqual([]);
@@ -163,7 +162,7 @@ describe('worker start after a fatal error', () => {
     const claimsBefore = claims;
 
     expect(() => worker.start()).toThrow(/fatal/i);
-    await flushTurns(200);
+    await afterMicrotasks();
     expect(claims).toBe(claimsBefore);
     expect(fatals).toEqual([fatal]);
     await within(worker.stop(), 10_000, 'the worker to stop again');
