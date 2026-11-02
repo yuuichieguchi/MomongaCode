@@ -14,7 +14,6 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
   const runtime = connectRuntime(paths);
   const gateway = createGatewayClient({ socketPath: paths.sockets.gateway });
   const reconnectBoundMs = await daemonReadyBoundMs();
-  let daemon: Promise<void> | undefined;
   const app = createAcpAgent({
     version: ports.version,
     runtime,
@@ -22,7 +21,9 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
     environment: () => environmentSnapshot(ports),
     autoModeAvailable: () => autoModeConfigured(ports),
     canonicalCwd: canonicalPath,
-    daemonReady: () => (daemon ??= ensureDaemon(ports, paths).then(() => undefined)),
+    daemonReady: async () => {
+      await ensureDaemon(ports, paths, { replacement: 'when-idle', signal: interrupt });
+    },
     follow: ({ runId, onEvent, onChildEvent, signal }) =>
       followRun({
         client: runtime,

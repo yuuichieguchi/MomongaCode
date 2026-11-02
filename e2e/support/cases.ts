@@ -135,6 +135,7 @@ export const E2E_CASES = [
   { id: 'cli-image-pty', file: 'product-pty.test.ts', title: 'cli pty: pasting an image path attaches the image for a model that declares image input and sends it with the prompt', needsBash: false },
   { id: 'cli-startup-notices', file: 'product-pty.test.ts', title: 'cli pty: the startup screen lists the load warnings of the agents and the skills of the session', needsBash: false },
   { id: 'cli-elicit-pty', file: 'product-pty.test.ts', title: 'cli pty: an MCP form is filled and validated in the terminal, and a url request shows the full URL and opens it only after consent', needsBash: false },
+  { id: 'acp-daemon-restart', file: 'acp.test.ts', title: 'acp: session/new starts the daemon again after it was stopped while the connection stayed open', needsBash: false },
   { id: 'acp-edit-task', file: 'acp.test.ts', title: 'acp: a prompt that globs, reads and edits a file streams tool calls with their kinds, a diff and a usage update while stdout carries protocol frames only', needsBash: false },
   { id: 'acp-permission', file: 'acp.test.ts', title: 'acp: in default mode the edit asks the client with the four options; allow_once applies it and reject_once leaves the file and tells the model', needsBash: false },
   { id: 'acp-child-permission', file: 'acp.test.ts', title: 'acp: an approval raised inside a subagent run reaches the client as session/request_permission, and the parent turn ends after it is answered', needsBash: false },
