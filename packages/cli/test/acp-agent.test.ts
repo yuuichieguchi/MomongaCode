@@ -671,6 +671,47 @@ describe('session/cancel', () => {
     await harness.peer.close();
   });
 
+  it('retries the deferred cancel across a daemon restart like every other call, instead of failing the turn', async () => {
+    const restored: number[] = [];
+    const clock = virtualClock();
+    const harness = startAgent({
+      retryAfterRestore: (operation, signal) =>
+        retryAfterRestore(
+          {
+            clock,
+            random: () => 0.5,
+            reconnectBoundMs: 10_000,
+            boundExceeded: (boundMs, cause) => new DaemonUnreachable(boundMs, cause),
+            restoreConnection: async () => void restored.push(restored.length),
+            signal,
+          },
+          operation,
+        ),
+    });
+    const sessionId = await open(harness);
+    const created = Promise.withResolvers<void>();
+    harness.runtime.createRunResult = async () => {
+      await created.promise;
+      return runView({ id: 'run-1', status: 'QUEUED' });
+    };
+    harness.runtime.failures.set('cancel', Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }));
+    harness.scripts.set('run-1', async () => {
+      await harness.runtime.called('cancel');
+      return finishedRun('CANCELLED');
+    });
+
+    const pending = prompt(harness, sessionId, 'long task');
+    await harness.runtime.called('createRun');
+    await harness.peer.notify('session/cancel', { sessionId });
+    await harness.peer.request('session/set_mode', { sessionId, modeId: 'plan' });
+    created.resolve();
+
+    expect(resultOf(await pending)).toEqual({ stopReason: 'cancelled' });
+    expect(restored).toEqual([0]);
+    expect(harness.runtime.calls.filter((call) => call === 'cancel run-1')).toHaveLength(2);
+    await harness.peer.close();
+  });
+
   it('cancels the run when the client cancels the prompt request itself', async () => {
     const harness = startAgent();
     const sessionId = await open(harness);

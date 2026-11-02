@@ -377,7 +377,7 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
     try {
       const { run } = await viaRunApi(deps.runtime.createRun(session.id, prompt.input, prompt.skill === undefined ? {} : { skill: prompt.skill }));
       turn.runId = run.id;
-      if (turn.cancelRequested) await deps.runtime.cancel(run.id);
+      if (turn.cancelRequested) await durably(session, () => deps.runtime.cancel(run.id));
       let finished: RunView;
       try {
         finished = await followInto(session, run.id, 0);

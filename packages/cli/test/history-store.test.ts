@@ -74,6 +74,19 @@ describe('history store', () => {
     await expect(createHistoryStore(nodeFiles, file).load()).rejects.toThrow(`input history ${file} is corrupt at line 2`);
   });
 
+  it('names the physical line of a corrupt entry even when blank lines precede it, and says how to recover', async (context) => {
+    const file = path.join(withTempDir(context), 'history.jsonl');
+    fs.writeFileSync(file, '"fine"\n\n\nnot json\n');
+
+    const failure = await createHistoryStore(nodeFiles, file).load().then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect((failure as Error).message).toContain(`input history ${file} is corrupt at line 4`);
+    expect((failure as Error).message).toContain('delete the file to start with an empty history');
+  });
+
   it('rejects an entry that is not a string', async (context) => {
     const file = path.join(withTempDir(context), 'history.jsonl');
     fs.writeFileSync(file, '{"text":"x"}\n');
