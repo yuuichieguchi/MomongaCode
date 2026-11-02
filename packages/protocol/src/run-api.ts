@@ -1,3 +1,4 @@
+import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
 import { HOOK_EVENTS, HOOK_OUTCOMES, HOOK_PRE_TOOL_DECISIONS } from './hooks.ts';
 import { CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
 import { MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES } from './memory.ts';
@@ -448,6 +449,42 @@ const memoryEvidence: JsonSchema = {
   ],
 };
 
+const governingEnforcement = closed({ behavior: enumOf(GOVERNING_ENFORCEMENT_BEHAVIORS), rule: { type: 'string', minLength: 1 } }, ['behavior', 'rule']);
+
+const governingScope: JsonSchema = {
+  oneOf: [
+    closed({ level: constant('user') }, ['level']),
+    closed({ level: constant('project'), project: { type: 'string', minLength: 1 }, paths: { type: 'array', items: { type: 'string', minLength: 1 } } }, ['level', 'project', 'paths']),
+  ],
+};
+
+const governingFactView = closed(
+  {
+    id: string,
+    kind: enumOf(GOVERNING_KINDS),
+    target: string,
+    text: string,
+    scope: governingScope,
+    validFrom: integer,
+    validUntil: nullable(integer),
+    retiredAt: nullable(integer),
+    supersedes: { type: 'array', items: string },
+    enforcement: nullable(governingEnforcement),
+    source: {
+      oneOf: [
+        closed({ kind: constant('command'), at: integer }, ['kind', 'at']),
+        closed({ kind: constant('proposal'), sessionId: string, runId: string, seq: nonNegativeInteger, callId: string }, ['kind', 'sessionId', 'runId', 'seq', 'callId']),
+      ],
+    },
+  },
+  ['id', 'kind', 'target', 'text', 'scope', 'validFrom', 'validUntil', 'retiredAt', 'supersedes', 'enforcement', 'source'],
+);
+
+const ruleSize = closed(
+  { target: string, contextWindow: nonNegativeInteger, tokens: nonNegativeInteger, percent: { type: 'number', minimum: 0 } },
+  ['target', 'contextWindow', 'tokens', 'percent'],
+);
+
 const memoryView = closed(
   {
     id: string,
@@ -482,6 +519,7 @@ const memoryView = closed(
     'supersedes',
     'retiredAt',
     'evidence',
+    'status',
     'contributedAt',
   ],
 );
@@ -826,6 +864,33 @@ export const RUN_API_SCHEMAS = {
   MemoryView: root(memoryView),
   MemoriesResponse: root(closed({ memories: { type: 'array', items: memoryView } }, ['memories'])),
   MemoryResponse: root(closed({ memory: memoryView }, ['memory'])),
+  GoverningFactView: root(governingFactView),
+  AddRuleRequest: root(
+    closed(
+      {
+        kind: enumOf(GOVERNING_KINDS),
+        target: { type: 'string', minLength: 1 },
+        text: { type: 'string', minLength: 1 },
+        scope: governingScope,
+        validUntil: nullable(integer),
+        supersedes: { type: 'array', items: string },
+        enforcement: nullable(governingEnforcement),
+      },
+      ['kind', 'target', 'text', 'scope'],
+    ),
+  ),
+  RuleAddResponse: root(closed({ fact: governingFactView, size: { type: 'array', items: ruleSize }, warnings: { type: 'array', items: string } }, ['fact', 'size', 'warnings'])),
+  RuleResponse: root(closed({ fact: governingFactView }, ['fact'])),
+  RulesResponse: root(closed({ facts: { type: 'array', items: governingFactView } }, ['facts'])),
+  PolicyGovernanceResponse: root(
+    closed(
+      {
+        rules: { type: 'array', items: closed({ id: string, behavior: enumOf(GOVERNING_ENFORCEMENT_BEHAVIORS), rule: string }, ['id', 'behavior', 'rule']) },
+        textOnly: { type: 'array', items: governingFactView },
+      },
+      ['rules', 'textOnly'],
+    ),
+  ),
   ErrorBody: root(
     closed({ error: closed({ type: string, code: string, message: string, param: string }, ['type', 'code', 'message']) }, ['error']),
   ),

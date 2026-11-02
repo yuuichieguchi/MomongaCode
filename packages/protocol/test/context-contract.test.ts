@@ -77,7 +77,7 @@ describe('context types', () => {
     expectTypeOf<MemoryView['supersedes']>().toEqualTypeOf<string[]>();
     expectTypeOf<MemoryView['retiredAt']>().toEqualTypeOf<number | null>();
     expectTypeOf<MemoryView['contributedAt']>().toEqualTypeOf<number | null>();
-    expectTypeOf<MemoryView['status']>().toEqualTypeOf<MemoryStatus | undefined>();
+    expectTypeOf<MemoryView['status']>().toEqualTypeOf<MemoryStatus>();
   });
 
   it('defines the memory source as a union on its kind', () => {
@@ -112,22 +112,22 @@ describe('MemoryView schema additions', () => {
     expect(acceptsMemory({ ...full, state: 'duplicate', duplicateOf: 'm0' })).toBe(true);
   });
 
-  it('accepts a stored view whose status is not computed yet', () => {
-    expect(acceptsMemory(stored)).toBe(true);
+  it('rejects a stored view whose status is not computed yet, because status is computed at every read', () => {
+    expect(acceptsMemory(stored)).toBe(false);
   });
 
-  it.each(['kind', 'state', 'duplicateOf', 'supersedes', 'retiredAt', 'contributedAt', 'evidence'])('requires %s', (field) => {
-    expect(acceptsMemory(stored)).toBe(true);
-    const { [field]: _removed, ...without } = stored as Record<string, unknown>;
+  it.each(['kind', 'state', 'duplicateOf', 'supersedes', 'retiredAt', 'contributedAt', 'evidence', 'status'])('requires %s', (field) => {
+    expect(acceptsMemory(full)).toBe(true);
+    const { [field]: _removed, ...without } = full as Record<string, unknown>;
     expect(acceptsMemory(without)).toBe(false);
   });
 
   it('accepts a reflection source and rejects a source without its kind or with fields of the other kind', () => {
     const reflection = { sessionId: 's1', runId: 'r1', ordinal: 0 };
-    expect(acceptsMemory({ ...stored, source: { kind: 'reflection', ...reflection } })).toBe(true);
-    expect(acceptsMemory({ ...stored, source: reflection })).toBe(false);
-    expect(acceptsMemory({ ...stored, source: { kind: 'reflection', ...reflection, callId: 'c1' } })).toBe(false);
-    expect(acceptsMemory({ ...stored, source: { kind: 'tool', sessionId: 's1', runId: 'r1', ordinal: 0 } })).toBe(false);
+    expect(acceptsMemory({ ...full, source: { kind: 'reflection', ...reflection } })).toBe(true);
+    expect(acceptsMemory({ ...full, source: reflection })).toBe(false);
+    expect(acceptsMemory({ ...full, source: { kind: 'reflection', ...reflection, callId: 'c1' } })).toBe(false);
+    expect(acceptsMemory({ ...full, source: { kind: 'tool', sessionId: 's1', runId: 'r1', ordinal: 0 } })).toBe(false);
   });
 
   it('rejects an unknown kind, state, status and evidence kind, and malformed evidence', () => {

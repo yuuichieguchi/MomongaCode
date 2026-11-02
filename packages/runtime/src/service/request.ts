@@ -30,7 +30,14 @@ export type ResolveElicitationBody = { responses: Record<string, unknown> };
 
 export type PutTrustBody = { path: string; decision: 'trusted' | 'untrusted' };
 
-type RequestSchemaName = 'CreateSessionRequest' | 'PatchSessionRequest' | 'CreateRunRequest' | 'ResolveApprovalRequest' | 'ResolveElicitationRequest' | 'PutTrustRequest';
+type RequestSchemaName =
+  | 'CreateSessionRequest'
+  | 'PatchSessionRequest'
+  | 'CreateRunRequest'
+  | 'ResolveApprovalRequest'
+  | 'ResolveElicitationRequest'
+  | 'PutTrustRequest'
+  | 'AddRuleRequest';
 
 const ajv = new Ajv2020.default({ strict: false, allErrors: true });
 
@@ -41,6 +48,7 @@ const validators: Record<RequestSchemaName, ValidateFunction> = {
   ResolveApprovalRequest: ajv.compile(RUN_API_SCHEMAS.ResolveApprovalRequest),
   ResolveElicitationRequest: ajv.compile(RUN_API_SCHEMAS.ResolveElicitationRequest),
   PutTrustRequest: ajv.compile(RUN_API_SCHEMAS.PutTrustRequest),
+  AddRuleRequest: ajv.compile(RUN_API_SCHEMAS.AddRuleRequest),
 };
 
 export const JSON_MEDIA_TYPES = ['application/json'] as const;

@@ -62,7 +62,7 @@ describe('PinnedOverflowError names the ceiling and the breakdown', () => {
     const systemTokens = tokensOfItem({ type: 'message', role: 'system', content: 's'.repeat(4000) });
     expect(pinned.ceiling).toBe(736);
     expect(pinned.pinnedTokens).toBe(systemTokens + tokensOfTools([READ_TOOL]) + tokensOfItem(TASK));
-    expect(pinned.breakdown).toEqual({ systemPrompt: systemTokens, tools: tokensOfTools([READ_TOOL]), instructions: 0, task: tokensOfItem(TASK) });
+    expect(pinned.breakdown).toEqual({ systemPrompt: systemTokens, tools: tokensOfTools([READ_TOOL]), instructions: 0, governing: 0, task: tokensOfItem(TASK) });
   });
 });
 

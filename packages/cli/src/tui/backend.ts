@@ -1,5 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import type { ElicitationAnswerRecord, ImageAttachment, MemoryView, MomongaModelEntry, PermissionMode, SkillsResponse } from '@momonga/protocol';
+import type { AddRuleRequest, ElicitationAnswerRecord, GoverningFactView, ImageAttachment, MemoryView, MomongaModelEntry, PermissionMode, RuleAddResponse, SkillsResponse } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import type { MemoryFilter, RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView, SessionView, TrustView } from '../client/views.ts';
@@ -37,6 +37,11 @@ export type TuiBackend = {
   memories(filter?: MemoryFilter): Promise<MemoryView[]>;
   memory(id: string): Promise<MemoryView>;
   deleteMemory(id: string): Promise<void>;
+  memoryHistory(id: string): Promise<MemoryView[]>;
+  rules(): Promise<GoverningFactView[]>;
+  addRule(request: AddRuleRequest): Promise<RuleAddResponse>;
+  retireRule(id: string): Promise<GoverningFactView>;
+  ruleHistory(id: string): Promise<GoverningFactView[]>;
   model(): Promise<MomongaModelEntry>;
   startupNotices(): Promise<readonly string[]>;
   readImage(file: string): Promise<ImageAttachment>;
@@ -121,6 +126,11 @@ export const createTuiBackend = (
     memories: (filter) => runtime().memories(filter),
     memory: (id) => runtime().memory(id),
     deleteMemory: (id) => runtime().deleteMemory(id),
+    memoryHistory: (id) => runtime().memoryHistory(id),
+    rules: () => runtime().rules(current().cwd),
+    addRule: (request) => runtime().addRule(request),
+    retireRule: (id) => runtime().retireRule(id),
+    ruleHistory: (id) => runtime().ruleHistory(id),
     model: async () => {
       const gateway = createGatewayClient({ socketPath: paths.sockets.gateway });
       try {

@@ -15,6 +15,7 @@
     "@momonga/context": "*",
     "@momonga/foundation": "*",
     "@momonga/mcp": "*",
+    "@momonga/memory": "*",
     "@momonga/observability": "*",
     "@momonga/policy": "*",
     "@momonga/protocol": "*",

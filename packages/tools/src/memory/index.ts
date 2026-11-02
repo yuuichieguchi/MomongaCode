@@ -5,5 +5,5 @@ export {
   MEMORY_SEARCH_TOOL_NAME,
   MEMORY_TEXT_MAX_CHARS,
 } from './constants.ts';
-export type { MemoryStorePort, MemorySaveRequest, MemoryToolsOptions } from './port.ts';
+export type { MemoryStorePort, MemorySaveRequest, MemorySearchOptions, MemoryToolsOptions } from './port.ts';
 export { createMemoryTools } from './tools.ts';

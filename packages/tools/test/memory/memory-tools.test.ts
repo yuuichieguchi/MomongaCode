@@ -23,23 +23,26 @@ const viewOf = (overrides: Partial<MemoryView> = {}): MemoryView => ({
   retiredAt: null,
   evidence: [],
   contributedAt: null,
+  status: 'unbound',
   ...overrides,
 });
 
 const fakePort = (found: MemoryView[] = []) => {
   const saved: MemorySaveRequest[] = [];
   const searched: string[][] = [];
+  const includes: string[] = [];
   const port: MemoryStorePort = {
     save: (request) => {
       saved.push(request);
       return { memory: viewOf({ scope: request.scope, text: request.text }), created: true };
     },
-    search: (terms) => {
+    search: (terms, options) => {
       searched.push([...terms]);
+      includes.push(options.include);
       return found;
     },
   };
-  return { port, saved, searched };
+  return { port, saved, searched, includes };
 };
 
 const toolSet = async (port: MemoryStorePort, trusted = true) => toolSetOf(...createMemoryTools({ port, trusted }));
@@ -137,9 +140,42 @@ describe('memory tools', () => {
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed' } });
     const output = outcome?.kind === 'result' ? outcome.result.output : '';
     expect(output.split('\n')).toEqual([
-      '[mem-1] (user memory, trusted origin, saved 2026-11-02T00:00:00.000Z in run run-1 step 1, last used 2026-11-03T00:00:00.000Z) prefers tabs',
-      '[mem-2] (project memory, trusted origin, saved 2026-11-02T00:00:00.000Z in run run-9 step 3, last used 2026-11-03T00:00:00.000Z) run make',
+      '[mem-1] (user memory, trusted origin, status unbound, saved 2026-11-02T00:00:00.000Z in run run-1 step 1, last used 2026-11-03T00:00:00.000Z) prefers tabs',
+      '[mem-2] (project memory, trusted origin, status unbound, saved 2026-11-02T00:00:00.000Z in run run-9 step 3, last used 2026-11-03T00:00:00.000Z) run make',
     ]);
+  });
+
+  it('asks the port for live memories by default and for all of them on request', async () => {
+    const { port, includes } = fakePort();
+    const harness = makeHarness();
+    const set = await toolSet(port);
+    await harness.executor.runBatch(
+      harness.input(set, [call('c1', MEMORY_SEARCH_TOOL_NAME, { query: 'tabs' }), call('c2', MEMORY_SEARCH_TOOL_NAME, { query: 'tabs', include: 'all' })]),
+    );
+    expect(includes).toEqual(['live', 'all']);
+  });
+
+  it('shows status and, for memories that are no longer live, their validity', async () => {
+    const retired = viewOf({ id: 'mem-old', status: 'stale', state: 'archived', retiredAt: Date.UTC(2026, 10, 4), supersedes: ['mem-older'] });
+    const harness = makeHarness();
+    const [outcome] = await harness.executor.runBatch(
+      harness.input(await toolSet(fakePort([retired]).port), [call('c1', MEMORY_SEARCH_TOOL_NAME, { query: 'tabs', include: 'all' })]),
+    );
+    const output = outcome?.kind === 'result' ? outcome.result.output : '';
+    expect(output).toBe(
+      '[mem-old] (user memory, trusted origin, status stale, state archived, retired 2026-11-04T00:00:00.000Z, supersedes mem-older, saved 2026-11-02T00:00:00.000Z in run run-1 step 1, last used 2026-11-03T00:00:00.000Z) prefers tabs',
+    );
+  });
+
+  it('passes kind, paths and supersedes to the port only when the model gave them', async () => {
+    const { port, saved } = fakePort();
+    const harness = makeHarness();
+    await harness.executor.runBatch(
+      harness.input(await toolSet(port), [
+        call('c1', MEMORY_SAVE_TOOL_NAME, { text: 'parser lives in src/parser.ts', scope: 'project', kind: 'fact', paths: ['src/parser.ts'], supersedes: ['mem-9'] }, 'allow_once'),
+      ]),
+    );
+    expect(saved).toEqual([{ scope: 'project', text: 'parser lives in src/parser.ts', runId: 'run-1', step: 1, callId: 'c1', kind: 'fact', paths: ['src/parser.ts'], supersedes: ['mem-9'] }]);
   });
 
   it('caps the matches it shows and says how many were left out', async () => {

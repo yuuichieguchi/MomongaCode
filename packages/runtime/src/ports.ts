@@ -51,12 +51,19 @@ export type SkillsPort = {
 
 export type MemorySet = {
   memories: readonly MemoryView[];
+  rank(query: string): readonly MemoryView[];
   tools: readonly AnyTool[];
   markUsed(ids: readonly string[]): void;
 };
 
 export type MemoryPort = {
-  load(session: Session): MemorySet;
+  load(session: Session): Promise<MemorySet>;
+};
+
+export type GovernanceSet = { tools: readonly AnyTool[] };
+
+export type GovernancePort = {
+  load(session: Session): GovernanceSet;
 };
 
 export type HistorySet = { tools: readonly AnyTool[] };

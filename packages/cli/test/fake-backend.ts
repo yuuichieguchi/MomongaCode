@@ -1,5 +1,5 @@
 import { applyCapabilityOverride } from '@momonga/protocol';
-import type { Capabilities, CapabilityOverride, ElicitationAnswerRecord, ImageAttachment, MemoryView, PermissionMode, SkillView } from '@momonga/protocol';
+import type { Capabilities, CapabilityOverride, ElicitationAnswerRecord, GoverningFactView, ImageAttachment, MemoryView, PermissionMode, SkillView } from '@momonga/protocol';
 import type { RunEventFrame } from '../src/client/runtime-client.ts';
 import type { RunView, SessionView, TrustView } from '../src/client/views.ts';
 import type { FollowHandlers, StartRunOptions, TuiBackend } from '../src/tui/backend.ts';
@@ -57,6 +57,7 @@ export type FakeBackendOptions = {
   skills?: readonly SkillView[];
   skillWarnings?: readonly string[];
   memories?: readonly MemoryView[];
+  rules?: readonly GoverningFactView[];
   openUrlFailure?: Error;
   images?: Readonly<Record<string, ImageAttachment>>;
   targets?: readonly string[];
@@ -91,6 +92,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
   const elicitationAnswers: FakeBackend['elicitationAnswers'] = [];
   const openedUrls: string[] = [];
   let memories: MemoryView[] = [...(options.memories ?? [])];
+  let rules: GoverningFactView[] = [...(options.rules ?? [])];
   const recorded: string[] = [];
   let handlers: FollowHandlers | undefined;
   let finishRun: ((run: RunView) => void) | undefined;
@@ -176,6 +178,38 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       record(`memory-delete:${id}`);
       memories = memories.filter((memory) => memory.id !== id);
     },
+    memoryHistory: async (id) => {
+      record(`memory-history:${id}`);
+      return memories.filter((memory) => memory.id === id);
+    },
+    rules: async () => rules,
+    addRule: async (request) => {
+      record(`rule-add:${request.target}`);
+      const fact: GoverningFactView = {
+        id: `rule-${rules.length + 1}`,
+        kind: request.kind,
+        target: request.target,
+        text: request.text,
+        scope: request.scope,
+        validFrom: 0,
+        validUntil: request.validUntil ?? null,
+        retiredAt: null,
+        supersedes: request.supersedes ?? [],
+        enforcement: request.enforcement ?? null,
+        source: { kind: 'command', at: 0 },
+      };
+      rules = [...rules, fact];
+      return { fact, size: [], warnings: [] };
+    },
+    retireRule: async (id) => {
+      record(`rule-retire:${id}`);
+      const found = rules.find((fact) => fact.id === id);
+      if (found === undefined) throw new Error(`rule ${id} does not exist`);
+      const retired = { ...found, retiredAt: 1 };
+      rules = rules.map((fact) => (fact.id === id ? retired : fact));
+      return retired;
+    },
+    ruleHistory: async (id) => rules.filter((fact) => fact.id === id),
     model: async () => {
       if (options.modelPending !== undefined) await options.modelPending;
       return { id: session.modelAlias, object: 'model', targets: [...(options.targets ?? ['primary'])], capabilities: capabilitiesOf({ contextWindow: options.contextWindow ?? 8192, ...(options.imageInput === true ? { imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } } : {}) }) };

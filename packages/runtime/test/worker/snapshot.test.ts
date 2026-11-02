@@ -38,7 +38,7 @@ describe('worker snapshots', () => {
     expect(state?.pendingCalls[env.gateway.callId('call_w_1')]?.suggestedRule).toBe(`Write(/${target})`);
   });
 
-  it('writes the snapshot with state version 10, carrying the recorded mode, the task seq, the loop groups and the working facts', async (context) => {
+  it('writes the snapshot with state version 11, carrying the recorded mode, the task seq, the loop groups and the working facts', async (context) => {
     const env = await makeEnv({ mode: 'acceptEdits' });
     env.gateway.script.push(textStep('Done.'));
     const run = env.enqueue();
@@ -48,7 +48,7 @@ describe('worker snapshots', () => {
     const row = db.prepare('SELECT state_json FROM snapshots WHERE run_id = ? ORDER BY seq DESC LIMIT 1').get(run.id) as { state_json: string } | undefined;
     expect(row).toBeDefined();
     const stored = JSON.parse(row!.state_json) as Record<string, unknown>;
-    expect(stored['stateVersion']).toBe(10);
+    expect(stored['stateVersion']).toBe(11);
     expect(stored['loopGroups']).toEqual([]);
     expect(stored['workingFacts']).toMatchObject({ written: [], commands: [], messages: [] });
     expect(stored['mode']).toBe('acceptEdits');

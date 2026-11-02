@@ -5,6 +5,8 @@ import { MEMORY_EVIDENCE_KINDS, MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEM
 import type { MemoryEvidence, MemoryOrigin, MemoryScope, MemorySource } from '@momonga/protocol';
 import { corrupt, expectOneOf, readerFor } from './rows.ts';
 import type { Row, RowReader } from './rows.ts';
+import { revisionChain } from './revision-chain.ts';
+import { asciiLower, instrFilters, partitionTerms, quoted } from './search-terms.ts';
 import type { MemoryRecord, MemoryStore, MemoryVisibility, SaveMemoryInput } from './types.ts';
 
 const REFLECTION_CALL_ID = /^reflection:(\d+)$/;
@@ -70,28 +72,40 @@ const decodeMemory = (row: Row, evidence: MemoryEvidence[]): MemoryRecord => {
 
 const RECENCY = 'ORDER BY last_used_at DESC, created_at DESC, id';
 
+const DEFAULT_MEMORY_KIND = 'fact';
+
 const RECALLABLE = `state = 'active' AND retired_at IS NULL AND NOT EXISTS (
   SELECT 1 FROM memories AS successor, json_each(successor.supersedes_json) AS replaced
   WHERE replaced.value = memories.id AND successor.state <> 'candidate'
 )`;
+
+const VISIBLE_TRUSTED = "((scope = 'user' AND origin = 'trusted') OR project = :project)";
+
+const VISIBLE_UNTRUSTED = "scope = 'user'";
+
+const indexMatch = (parameter: string): string => `memories.id IN (SELECT memory_id FROM memories_index WHERE memories_index MATCH ${parameter})`;
 
 export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore => {
   const toolCallEvent = db.prepare(
     "SELECT seq, session_id FROM events WHERE run_id = :runId AND type = 'tool.call' AND json_extract(payload_json, '$.callId') = :callId LIMIT 1",
   );
   const insert = db.prepare(
-    `INSERT INTO memories (id, scope, origin, project, text, source_session_id, source_run_id, source_step, source_call_id, source_seq, created_at, last_used_at)
-     VALUES (:id, :scope, :origin, :project, :text, :sessionId, :runId, :step, :callId, :seq, :now, :now)`,
+    `INSERT INTO memories (id, scope, origin, project, text, source_session_id, source_run_id, source_step, source_call_id, source_seq, created_at, last_used_at, kind, supersedes_json)
+     VALUES (:id, :scope, :origin, :project, :text, :sessionId, :runId, :step, :callId, :seq, :now, :now, :kind, :supersedesJson)`,
   );
+  const insertEvidence = db.prepare(
+    `INSERT INTO memory_evidence (memory_id, ordinal, kind, project, path, sha256, sha, run_id, call_id, seq, command, exit_code)
+     VALUES (:memoryId, :ordinal, :kind, :project, :path, :sha256, :sha, :runId, :callId, :seq, :command, :exitCode)`,
+  );
+  const successors = db.prepare('SELECT m.* FROM memories m, json_each(m.supersedes_json) AS replaced WHERE replaced.value = :id');
+  const retireOnce = db.prepare('UPDATE memories SET retired_at = :now WHERE id = :id AND retired_at IS NULL');
   const bySource = db.prepare('SELECT * FROM memories WHERE source_run_id = :runId AND source_call_id = :callId');
   const byId = db.prepare('SELECT * FROM memories WHERE id = :id');
   const all = db.prepare('SELECT * FROM memories ORDER BY created_at, id');
   const byScope = db.prepare('SELECT * FROM memories WHERE scope = :scope ORDER BY created_at, id');
   const byProject = db.prepare('SELECT * FROM memories WHERE project = :project ORDER BY created_at, id');
-  const visibleInTrustedProject = db.prepare(
-    `SELECT * FROM memories WHERE ((scope = 'user' AND origin = 'trusted') OR project = :project) AND ${RECALLABLE} ${RECENCY}`,
-  );
-  const visibleUntrusted = db.prepare(`SELECT * FROM memories WHERE scope = 'user' AND ${RECALLABLE} ${RECENCY}`);
+  const visibleInTrustedProject = db.prepare(`SELECT * FROM memories WHERE ${VISIBLE_TRUSTED} AND ${RECALLABLE} ${RECENCY}`);
+  const visibleUntrusted = db.prepare(`SELECT * FROM memories WHERE ${VISIBLE_UNTRUSTED} AND ${RECALLABLE} ${RECENCY}`);
   const evidenceOf = db.prepare('SELECT * FROM memory_evidence WHERE memory_id = :id ORDER BY ordinal');
   const decode = (row: Row): MemoryRecord => {
     const id = String(row['id']);
@@ -113,6 +127,24 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
   const visible = (visibility: MemoryVisibility): MemoryRecord[] =>
     (visibility.trusted ? visibleInTrustedProject.all({ project: visibility.project }) : visibleUntrusted.all()).map(decode);
 
+  const visibilityOf = (visibility: MemoryVisibility): { sql: string; params: Record<string, string> } =>
+    visibility.trusted ? { sql: VISIBLE_TRUSTED, params: { project: visibility.project } } : { sql: VISIBLE_UNTRUSTED, params: {} };
+
+  const evidenceParams = (memoryId: string, ordinal: number, entry: MemoryEvidence) => ({
+    memoryId,
+    ordinal,
+    kind: entry.kind,
+    project: entry.kind === 'file' ? entry.project : null,
+    path: entry.kind === 'file' ? entry.path : null,
+    sha256: entry.kind === 'file' ? entry.sha256 : null,
+    sha: entry.kind === 'commit' ? entry.sha : null,
+    runId: entry.kind === 'check' ? entry.runId : null,
+    callId: entry.kind === 'check' ? entry.callId : null,
+    seq: entry.kind === 'check' ? entry.seq : null,
+    command: entry.kind === 'check' ? entry.command : null,
+    exitCode: entry.kind === 'check' ? entry.exitCode : null,
+  });
+
   return {
     save: (input) =>
       immediateTx(db, () => {
@@ -122,8 +154,13 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
         const existing = bySource.get({ runId: input.runId, callId: input.callId });
         if (existing !== undefined) return { memory: decode(existing), created: false };
         const source = requireSource(input);
+        const supersedes = input.supersedes ?? [];
+        for (const id of supersedes) {
+          if (byId.get({ id }) === undefined) throw new RangeError(`memory ${id} cannot be superseded: it does not exist`);
+        }
+        const id = uuidv7(clock);
         insert.run({
-          id: uuidv7(clock),
+          id,
           scope: input.scope,
           origin: input.origin,
           project: input.project,
@@ -134,7 +171,10 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
           callId: input.callId,
           seq: source.seq,
           now: clock.now(),
+          kind: input.kind ?? DEFAULT_MEMORY_KIND,
+          supersedesJson: JSON.stringify(supersedes),
         });
+        (input.evidence ?? []).forEach((entry, ordinal) => void insertEvidence.run(evidenceParams(id, ordinal, entry)));
         const row = bySource.get({ runId: input.runId, callId: input.callId });
         if (row === undefined) throw new Error(`memory ${input.runId}/${input.callId} vanished after it was saved`);
         return { memory: decode(row), created: true };
@@ -149,9 +189,54 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
       return all.all().map(decode);
     },
     recall: visible,
-    search: (visibility, terms) => {
-      const needles = terms.map((term) => term.toLowerCase());
-      return visible(visibility).filter((memory) => needles.every((needle) => memory.text.toLowerCase().includes(needle)));
+    search: (visibility, terms, options = { include: 'live' }) => {
+      const { indexed, short } = partitionTerms(terms.map(asciiLower));
+      const filters = instrFilters('memories.text', short);
+      const scope = visibilityOf(visibility);
+      const live = options.include === 'live' ? ` AND ${RECALLABLE}` : '';
+      const match = indexed.length === 0 ? '' : ` AND ${indexMatch(':match')}`;
+      const params = { ...scope.params, ...filters.params, ...(indexed.length === 0 ? {} : { match: indexed.map(quoted).join(' ') }) };
+      return db
+        .prepare(`SELECT * FROM memories WHERE ${scope.sql}${live}${match}${filters.sql} ${RECENCY}`)
+        .all(params)
+        .map(decode);
+    },
+    matchingIds: (visibility, terms) => {
+      const { indexed, short } = partitionTerms(terms.map(asciiLower));
+      const scope = visibilityOf(visibility);
+      const alternatives = [
+        ...(indexed.length === 0 ? [] : [indexMatch(':match')]),
+        ...short.map((_term, index) => `instr(lower(memories.text), :short${index}) > 0`),
+      ];
+      if (alternatives.length === 0) return new Set();
+      const params = {
+        ...scope.params,
+        ...Object.fromEntries(short.map((term, index) => [`short${index}`, term])),
+        ...(indexed.length === 0 ? {} : { match: indexed.map(quoted).join(' OR ') }),
+      };
+      const rows = db.prepare(`SELECT id FROM memories WHERE ${scope.sql} AND ${RECALLABLE} AND (${alternatives.join(' OR ')})`).all(params);
+      return new Set(rows.map((row) => readerFor('memories', 'matching', row).string('id')));
+    },
+    retire: (id) =>
+      immediateTx(db, () => {
+        const before = byId.get({ id });
+        if (before === undefined) return undefined;
+        const retired = Number(retireOnce.run({ id, now: clock.now() }).changes) === 1;
+        const row = byId.get({ id });
+        if (row === undefined) throw new Error(`memory ${id} vanished after it was retired`);
+        return { retired, memory: decode(row) };
+      }),
+    history: (id) => {
+      const start = byId.get({ id });
+      if (start === undefined) return [];
+      const lookup = {
+        byId: (memoryId: string): MemoryRecord | undefined => {
+          const row = byId.get({ id: memoryId });
+          return row === undefined ? undefined : decode(row);
+        },
+        successorsOf: (memoryId: string): MemoryRecord[] => successors.all({ id: memoryId }).map(decode),
+      };
+      return revisionChain(decode(start), lookup, (memory) => memory.createdAt);
     },
     markUsed: (ids) => {
       const now = clock.now();

@@ -455,10 +455,12 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
     case 'hook.completed':
     case 'tool.updated':
     case 'usage.updated':
-    case 'context.governing_loaded':
-    case 'context.memories_loaded':
     case 'context.contribution':
       return state;
+    case 'context.governing_loaded':
+      return { ...state, governingLoaded: { active: event.active, conflicts: event.conflicts } };
+    case 'context.memories_loaded':
+      return { ...state, memoriesLoaded: event.memories };
     case 'instructions.loaded':
       return { ...state, loadedInstructions: withInstruction(state.loadedInstructions, event.path, sha256Hex(event.content)) };
     case 'skill.activated':

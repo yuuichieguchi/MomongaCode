@@ -1,7 +1,7 @@
 import type { Clock } from '@momonga/foundation';
 import type { InstructionReader } from '@momonga/context';
 import type { RuntimeStore } from '@momonga/store';
-import type { AgentsPort, GatewayPort, HistoryPort, MemoryPort, SettingsPort, SkillsPort, ToolRuntimePort, TracerPort } from '../ports.ts';
+import type { AgentsPort, GatewayPort, GovernancePort, HistoryPort, MemoryPort, SettingsPort, SkillsPort, ToolRuntimePort, TracerPort } from '../ports.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import type { SystemPromptContext } from '../system-prompt.ts';
 
@@ -29,6 +29,7 @@ export type WorkerOptions = {
   skills: SkillsPort;
   memories: MemoryPort;
   history: HistoryPort;
+  governance: GovernancePort;
   agents?: AgentsPort;
   tools: ToolRuntimePort;
   tracer: TracerPort;

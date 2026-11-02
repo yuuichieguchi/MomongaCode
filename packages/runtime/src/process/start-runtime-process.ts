@@ -22,7 +22,7 @@ import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import type { Sandbox } from '@momonga/sandbox';
 import { isFatalStoreError, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { clearCallLocks, nodeShellHost } from '@momonga/tools';
+import { clearCallLocks, createPolicyFilesystem, nodeShellHost } from '@momonga/tools';
 import { createFsInstructionReader } from '@momonga/context';
 import { createGatewayClient } from '../gateway-client.ts';
 import type { GatewayClient } from '../gateway-client.ts';
@@ -64,6 +64,8 @@ import { protectedRootAreasOf } from './protected-areas.ts';
 import { reapTimingOf } from './reap-timing.ts';
 import type { SandboxKind } from './sandbox-kind.ts';
 import { createSettingsComposition } from './settings-port.ts';
+import { createGovernancePort } from '../governance/governance-port.ts';
+import { EVIDENCE_TMP_ID, createEvidenceRunner } from './evidence-run.ts';
 import { createHistoryPort } from './history-port.ts';
 import { createMemoryPort } from './memory-port.ts';
 import { createAgentsPort } from './agents-port.ts';
@@ -404,17 +406,35 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         loader: createSkillLoader({ home: canonicalHome, fileSystem: createNodeSkillFileSystem() }),
         settings: composition.settings,
       });
-      const memories = createMemoryPort({ store, settings: composition.settings });
-      const history = createHistoryPort({ store, settings: composition.settings, redactor });
+      const evidenceRunFor = createEvidenceRunner({
+        paths,
+        home: canonicalHome,
+        fs: createPolicyFilesystem(),
+        sandbox,
+        env: process.env['PATH'] === undefined ? {} : { PATH: process.env['PATH'] },
+      });
+      const memories = createMemoryPort({ store, settings: composition.settings, evidenceRun: (session) => evidenceRunFor(session.cwd) });
+      const history = createHistoryPort({ store, settings: composition.settings, clock, home: canonicalHome, redactor });
+      const governance = createGovernancePort({ store, settings: composition.settings });
       const agents = createAgentsPort({
         home: canonicalHome,
         fileSystem: createNodeSkillFileSystem(),
         settings: composition.settings,
         runs: createChildRuns({ store, modelAliases: async () => (await gatewayClient.models()).map((model) => model.id) }),
       });
-      return { composition, runtime, tracker, skills, memories, history, agents };
+      return { composition, runtime, tracker, skills, memories, history, governance, agents, evidenceRunFor };
     });
-    const { composition: settingsComposition, runtime: toolRuntime, tracker, skills: skillsPort, memories: memoriesPort, history: historyPort, agents: agentsPort } = ports;
+    const {
+      composition: settingsComposition,
+      runtime: toolRuntime,
+      tracker,
+      skills: skillsPort,
+      memories: memoriesPort,
+      history: historyPort,
+      governance: governancePort,
+      agents: agentsPort,
+      evidenceRunFor,
+    } = ports;
     await step('background-jobs', () => toolRuntime.jobs.reconcileOrphans());
     cleanups.push({ name: 'background-jobs', run: () => toolRuntime.jobs.stopAll() });
     cleanups.push({
@@ -444,6 +464,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         sessionCreateSettings: settingsComposition.sessionCreateSettings,
         skills: skillsPort,
         agents: agentsPort,
+        evidenceRun: evidenceRunFor,
         defaults: RUNTIME_DEFAULTS,
         timers,
         cancelUpstream: tracker.cancel,
@@ -471,6 +492,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           skills: skillsPort,
           memories: memoriesPort,
           history: historyPort,
+          governance: governancePort,
           agents: agentsPort,
           tools: toolRuntime.port,
           tracer,
@@ -518,7 +540,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
               root: paths.tmp.sessions,
               store,
               now: clock.now(),
-              hasInMemoryState: (sessionId) => toolRuntime.sessionStates.has(sessionId),
+              hasInMemoryState: (sessionId) => sessionId === EVIDENCE_TMP_ID || toolRuntime.sessionStates.has(sessionId),
               onWarning,
             });
           },

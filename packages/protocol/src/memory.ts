@@ -31,7 +31,7 @@ export type MemoryEvidence =
   | { kind: 'commit'; sha: string }
   | { kind: 'check'; runId: string; callId: string; seq: number; command: string; exitCode: number };
 
-export type MemoryView = {
+export type MemoryRecord = {
   id: string;
   scope: MemoryScope;
   origin: MemoryOrigin;
@@ -47,8 +47,9 @@ export type MemoryView = {
   retiredAt: number | null;
   evidence: MemoryEvidence[];
   contributedAt: number | null;
-  status?: MemoryStatus;
 };
+
+export type MemoryView = MemoryRecord & { status: MemoryStatus };
 
 export type MemoriesResponse = { memories: MemoryView[] };
 

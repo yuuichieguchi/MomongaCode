@@ -240,6 +240,8 @@ export type RunState = {
   steps: Record<number, { toolChoice: string; summary: boolean }>;
   lastResponse?: { step: number; incomplete: boolean; incompleteReason?: string; refusal: boolean; callIds: string[] };
   loadedInstructions: { path: string; textSha256: string }[];
+  governingLoaded?: { active: { id: string; textSha256: string }[]; conflicts: { target: string; ids: string[] }[] };
+  memoriesLoaded?: { id: string; status: MemoryStatus }[];
   activatedSkills: ActivatedSkillRecord[];
   streaming?: { step: number; attempt: number; seen: boolean; items: { itemId: string; text: string }[] };
   mode?: PermissionMode;

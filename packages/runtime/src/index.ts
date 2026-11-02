@@ -11,6 +11,8 @@ export type {
   Clock,
   GatewayCallOptions,
   GatewayPort,
+  GovernancePort,
+  GovernanceSet,
   HistoryPort,
   HistorySet,
   MemoryPort,
@@ -65,6 +67,12 @@ export { createPolicyFilesystem } from '@momonga/tools';
 export type { PolicyForOptions } from './process/tool-policy.ts';
 export { createMemoryPort } from './process/memory-port.ts';
 export type { MemoryPortOptions } from './process/memory-port.ts';
+export { createGovernancePort } from './governance/governance-port.ts';
+export type { GovernancePortOptions } from './governance/governance-port.ts';
+export { enforcedFactsFor, governanceRulesOf, permissionRulesFor, ruleParses } from './governance/rules.ts';
+export type { PermissionRuleSources } from './governance/rules.ts';
+export { MemoryEvidenceError, bindMemoryEvidence, createEvidencePorts, readGitHead } from './memory/evidence.ts';
+export type { BindMemoryEvidenceInput, EvidenceCommand, EvidenceCommandResult, EvidencePortsOptions, EvidenceRun } from './memory/evidence.ts';
 export { createHistoryPort } from './process/history-port.ts';
 export type { HistoryPortOptions } from './process/history-port.ts';
 export { createAgentsPort } from './process/agents-port.ts';

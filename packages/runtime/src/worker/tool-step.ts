@@ -5,11 +5,12 @@ import type { CallOutcome, NeedsApprovalOutcome, NeedsInputOutcome, ResultOutcom
 import { validateToolInput } from '@momonga/tools';
 import type { Session } from '@momonga/store';
 import { createToolHooks } from '@momonga/tools';
+import { permissionRulesFor } from '../governance/rules.ts';
 import { createAutoClassifier } from './auto-classifier.ts';
 import { haltRun, hookRunContextFor } from './hook-step.ts';
 import type { TraceSpan } from '../ports.ts';
 import type { ClaimContext, Flow } from './claim-context.ts';
-import { pinnedOverflowFailure } from './context-step.ts';
+import { pinnedFailureFor } from './context-step.ts';
 import { ownEntries } from './own-entries.ts';
 
 export const REJECTED_OUTPUT = 'The user rejected this tool call.';
@@ -173,7 +174,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
 
   const step = journal.state.step;
   if (ctx.control.yieldRequested()) return ctx.terminals.yieldLease();
-  const rules = await options.settings.rules(session);
+  const rules = await permissionRulesFor(options, session);
   const policy = await options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories });
   const hookSettings = await options.settings.hooks(session);
   const hasToolHooks = hookSettings.PreToolUse !== undefined || hookSettings.PostToolUse !== undefined;
@@ -234,7 +235,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   } catch (error) {
     for (const span of spans.values()) span.end(error);
     if (error instanceof PinnedOverflowError) {
-      ctx.terminals.finish('FAILED', { error: pinnedOverflowFailure(ctx, error) });
+      ctx.terminals.finish('FAILED', { error: pinnedFailureFor(ctx, error) });
       return 'done';
     }
     throw error;

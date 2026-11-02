@@ -4,6 +4,7 @@ import { runSessionStart, runStop, runUserPromptSubmit, selectHookCommands } fro
 import type { HookRunContext } from '@momonga/tools';
 import type { Session } from '@momonga/store';
 import type { PermissionRule } from '@momonga/config';
+import { permissionRulesFor } from '../governance/rules.ts';
 import type { ToolPolicy } from '../ports.ts';
 import type { ClaimContext, Flow } from './claim-context.ts';
 
@@ -49,7 +50,7 @@ type LifecycleHooks = { context: HookRunContext; executions: HookExecution[]; se
 
 const lifecycleHooksFor = async (ctx: ClaimContext, hooks: HooksSettings): Promise<LifecycleHooks> => {
   const session = sessionOf(ctx);
-  const rules: PermissionRule[] = await ctx.options.settings.rules(session);
+  const rules: PermissionRule[] = await permissionRulesFor(ctx.options, session);
   const policy = await ctx.options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories });
   const executions: HookExecution[] = [];
   return { context: hookRunContextFor(ctx, session, hooks, policy, (execution) => executions.push(execution)), executions, session };

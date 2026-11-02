@@ -7,6 +7,7 @@ import { decodeRunEvents } from './codec.ts';
 import { corrupt, expectOneOf, isRecord, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
 import { HISTORY_CANDIDATE_LIMIT, HISTORY_READ_PAGE_CHARS, HISTORY_SCAN_LIMIT, HISTORY_SEARCH_ANCHOR_LIMIT, HISTORY_SNIPPET_MAX_CHARS, HISTORY_STEP_HITS_PER_ANCHOR } from './search-constants.ts';
+import { asciiLower, instrFilters, partitionTerms, quoted, termsOf } from './search-terms.ts';
 import { INDEXED_PAYLOAD_TYPES, buildDocuments, locationPathsOf } from './search-documents.ts';
 import type { RecordedEvent } from './search-documents.ts';
 import type { HistoryAnchor, HistoryQueryRequest, HistoryQueryResult, HistoryReadRequest, HistoryReadResult, HistoryScope, HistoryStepHit, HistoryVisibility, SearchStore } from './types.ts';
@@ -17,15 +18,7 @@ const TERMINAL_LIST = TERMINAL_STATUSES.map((status) => `'${status}'`).join(', '
 
 const INDEXED_EVENT_TYPES = INDEXED_PAYLOAD_TYPES.map((type) => `'${type}'`).join(', ');
 
-const MIN_INDEXED_TERM_CHARS = 3;
-
 const ELLIPSIS = '…';
-
-const asciiLower = (text: string): string => text.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
-
-const termsOf = (query: string): string[] => query.split(/\s+/).filter((term) => term !== '').map(asciiLower);
-
-const quoted = (term: string): string => `"${term.replaceAll('"', '""')}"`;
 
 const snippetOf = (body: string, terms: readonly string[]): string => {
   const lowered = asciiLower(body);
@@ -168,15 +161,9 @@ export const createSearchStore = (db: DatabaseSync): SearchStore => {
     };
   };
 
-  const shortFilters = (shortTerms: readonly string[]): { sql: string; params: Record<string, string> } => ({
-    sql: shortTerms.map((_term, index) => ` AND instr(lower(d.body), :short${index}) > 0`).join(''),
-    params: Object.fromEntries(shortTerms.map((term, index) => [`short${index}`, term])),
-  });
-
   const candidatesFor = (visibility: HistoryVisibility, request: HistoryQueryRequest, terms: readonly string[]): { candidates: Candidate[]; searched?: number } => {
-    const indexedTerms = terms.filter((term) => [...term].length >= MIN_INDEXED_TERM_CHARS);
-    const shortTerms = terms.filter((term) => [...term].length < MIN_INDEXED_TERM_CHARS);
-    const filters = shortFilters(shortTerms);
+    const { indexed: indexedTerms, short: shortTerms } = partitionTerms(terms);
+    const filters = instrFilters('d.body', shortTerms);
     const visible = visibilityClause(visibility, request.scope);
     if (indexedTerms.length > 0) {
       const candidateLimit = request.candidateLimit ?? HISTORY_CANDIDATE_LIMIT;

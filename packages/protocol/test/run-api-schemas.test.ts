@@ -556,6 +556,7 @@ describe('memory schemas', () => {
     supersedes: [],
     retiredAt: null,
     evidence: [],
+    status: 'unbound',
     contributedAt: null,
   };
 

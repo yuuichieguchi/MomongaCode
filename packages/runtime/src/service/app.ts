@@ -33,7 +33,10 @@ import type { EventSource } from './event-stream.ts';
 import type { RunNotifier } from './notifier.ts';
 import { JSON_MEDIA_TYPES, PATCH_MEDIA_TYPES, parseCursor, parseIdempotencyKey, readJson, validateBody } from './request.ts';
 import type { CreateRunBody, CreateSessionBody, PatchSessionBody, ResolveApprovalBody } from './request.ts';
+import { createRecordViews } from '../memory/views.ts';
+import type { EvidenceRun } from '../memory/evidence.ts';
 import { registerMemoryRoutes } from './memories.ts';
+import { registerRuleRoutes } from './rules.ts';
 import { registerInputRoutes } from './input-routes.ts';
 import type { McpAdminPort } from './input-routes.ts';
 import { registerTrustRoutes } from './trust.ts';
@@ -61,6 +64,7 @@ export type RunAppDeps = {
   sessionCreateSettings: (cwd: string) => Promise<SessionCreateSettings>;
   skills: SkillsPort;
   agents: AgentCatalogPort;
+  evidenceRun: (project: string) => EvidenceRun;
   isDraining(): boolean;
   beginDraining(): void;
   health: { pid: number; startedAt: string; sandbox: SandboxKind };
@@ -512,7 +516,15 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   route('/v1/runs/:id/events', { GET: runEvents });
   route('/v1/approvals/:id', { GET: getApproval, POST: resolveApproval });
   registerTrustRoutes(route, { store, maxBodyBytes: deps.maxBodyBytes });
-  registerMemoryRoutes(route, { store });
+  registerMemoryRoutes(route, { store, views: createRecordViews({ store, evidenceRun: deps.evidenceRun }) });
+  registerRuleRoutes(route, {
+    store,
+    clock: deps.clock,
+    modelAliases: deps.modelAliases,
+    modelCapabilities: deps.modelCapabilities,
+    maxBodyBytes: deps.maxBodyBytes,
+    closeSignal: deps.closeSignal,
+  });
   registerInputRoutes(route, { store, mcp: deps.mcp, maxBodyBytes: deps.maxBodyBytes, closeSignal: deps.closeSignal });
 
   app.notFound(() => errorResponse(notFound('no such route')));

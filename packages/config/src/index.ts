@@ -11,8 +11,8 @@ export type { LoadUserSettingsOptions, LoadUserSettingsResult, UserSettingsCache
 export type { LoadSettingsOptions, LoadSettingsResult, ResolvedPermissions, ResolvedSettings } from './load-settings.ts';
 export { assertSessionMcpServers, loadMcpServers } from './mcp-servers.ts';
 export type { LoadMcpServersOptions, LoadMcpServersResult, McpServerEntry, McpServerFailure, McpServerScope } from './mcp-servers.ts';
-export { COMMAND_PREFIX_SUFFIX, EDIT_TOOLS, PATH_TOOLS, PATH_TOOL_RULES, hasBalancedParentheses, isPathTool, parseRule, RuleParseError } from './rule.ts';
-export type { ParseRuleOptions, PathToolName, PermissionRule, RuleEffect, RuleOrigin } from './rule.ts';
+export { COMMAND_PREFIX_SUFFIX, EDIT_TOOLS, checkRuleText, parseGovernanceRule, PATH_TOOLS, PATH_TOOL_RULES, hasBalancedParentheses, isPathTool, parseRule, RuleParseError } from './rule.ts';
+export type { GovernanceRuleEntry, ParseRuleOptions, PathToolName, PermissionRule, RuleEffect, RuleLayer, RuleOrigin } from './rule.ts';
 export { SETTINGS_SCHEMA } from './settings-schema.ts';
 export { DEFAULT_FORGET_AFTER_DAYS, DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS } from './context-settings.ts';
 export type { ResolvedContextSettings, ResolvedMemorySettings, ResolvedVerificationSettings } from './context-settings.ts';

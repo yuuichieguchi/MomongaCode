@@ -1,10 +1,21 @@
-import type { MemoryScope, MemoryView } from '@momonga/protocol';
+import type { MemoryKind, MemoryScope, MemoryView } from '@momonga/protocol';
 
-export type MemorySaveRequest = { scope: MemoryScope; text: string; runId: string; step: number; callId: string };
+export type MemorySaveRequest = {
+  scope: MemoryScope;
+  text: string;
+  runId: string;
+  step: number;
+  callId: string;
+  kind?: MemoryKind;
+  paths?: string[];
+  supersedes?: string[];
+};
+
+export type MemorySearchOptions = { include: 'live' | 'all' };
 
 export type MemoryStorePort = {
-  save(request: MemorySaveRequest): { memory: MemoryView; created: boolean };
-  search(terms: readonly string[]): MemoryView[];
+  save(request: MemorySaveRequest): { memory: MemoryView; created: boolean } | Promise<{ memory: MemoryView; created: boolean }>;
+  search(terms: readonly string[], options: MemorySearchOptions): MemoryView[] | Promise<MemoryView[]>;
 };
 
 export type MemoryToolsOptions = { port: MemoryStorePort; trusted: boolean };

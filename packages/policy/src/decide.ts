@@ -55,6 +55,10 @@ const byRule = (kind: DecisionKind, rule: PermissionRule, verb: string): Decisio
 
 const byMode = (kind: DecisionKind, reason: string): Decision => ({ kind, source: 'mode', reason });
 
+const isGoverning = (rule: PermissionRule): boolean => rule.layer === 'governance';
+
+const askByRule = (rule: PermissionRule, verb: string): Decision => ({ ...byRule('ask', rule, verb), ...(isGoverning(rule) ? { humanOnly: true as const } : {}) });
+
 const isEmptySet = (set: ProtectedSet): boolean =>
   set.paths.length === 0 && set.lexicalPaths.length === 0 && set.literals.length === 0 && set.names.length === 0 && set.patterns.entries.length === 0;
 
@@ -83,7 +87,8 @@ const scanDeny = (input: DecideInput, subject: PermissionSubject, applicable: Ap
     .filter(({ rule }) => rule.effect === 'deny')
     .map(({ rule, ruleIndex }) => ({ rule, strength: matchStrength(rule, subject, input.fileRules, ruleIndex) }));
   const position = hits.find((hit) => hit.strength === 'position');
-  const incidental = hits.find((hit) => hit.strength === 'incidental');
+  const incidentals = hits.filter((hit) => hit.strength === 'incidental');
+  const incidental = incidentals.find((hit) => isGoverning(hit.rule)) ?? incidentals[0];
   const denied =
     position !== undefined
       ? byRule('deny', position.rule, 'denied')
@@ -103,6 +108,9 @@ const checkGuards = (input: DecideInput, subject: PermissionSubject): Decision |
 
 const modeDefault = (input: DecideInput, subject: PermissionSubject): Decision => {
   const { mode, roots, cwd } = input;
+  if (subject.kind === 'governance') {
+    return { ...byMode('ask', 'adding a governing fact needs a person to approve it in every mode, because it binds later sessions'), humanOnly: true };
+  }
   if (mode === 'bypassPermissions') return byMode('allow', 'bypassPermissions mode allows everything not explicitly denied');
   switch (subject.kind) {
     case 'none':
@@ -143,6 +151,8 @@ const decideSubject = (input: DecideInput, tool: PolicyTool, subject: Permission
   const { denied, incidental } = scanDeny(input, subject, applicable);
   if (denied !== undefined) return denied;
 
+  if (subject.kind === 'governance') return modeDefault(input, subject);
+
   if (!commandDerived && mode === 'plan' && tool.sideEffect !== 'read_only' && subject.kind !== 'command') {
     return byMode('deny', `plan mode only allows read-only tools; ${tool.name} has side effect ${tool.sideEffect}`);
   }
@@ -150,12 +160,15 @@ const decideSubject = (input: DecideInput, tool: PolicyTool, subject: Permission
   const guarded = protectedDecision(input, subject);
   if (guarded !== undefined) return guarded;
 
-  const asked = applicable.find(({ rule, ruleIndex }) => rule.effect === 'ask' && matchRule(rule, subject, fileRules, ruleIndex));
+  const askRules = applicable.filter(({ rule, ruleIndex }) => rule.effect === 'ask' && matchRule(rule, subject, fileRules, ruleIndex));
+  const governingAsk = askRules.find(({ rule }) => isGoverning(rule));
+  if (governingAsk !== undefined) return askByRule(governingAsk.rule, 'approval required');
+  const asked = askRules[0];
   if (asked !== undefined) {
     if (mode === 'bypassPermissions') return byMode('allow', `bypassPermissions mode overrides ask rule ${describeRule(asked.rule)}`);
     return byRule('ask', asked.rule, 'approval required');
   }
-  if (incidental !== undefined) return byRule('ask', incidental, 'approval required (the rule words appear as an argument)');
+  if (incidental !== undefined) return askByRule(incidental, 'approval required (the rule words appear as an argument)');
 
   const allowRules = applicable.filter(({ rule }) => rule.effect === 'allow');
   const allowed =

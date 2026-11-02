@@ -11,6 +11,7 @@ import { decodeEvent, decodeRun, decodeRunEvents, decodeRunState, decodeSession,
 import { StoreIdentityError, isFatalStoreError } from './fatal.ts';
 import { createIdempotencyStore } from './idempotency.ts';
 import { decodeJob, prepareJobStatements } from './jobs.ts';
+import { createGoverningFactStore } from './governing.ts';
 import { createMemoryStore } from './memories.ts';
 import { InheritanceError, applyInheritance, projectInheritance, retractsTask } from './inherit.ts';
 import type { InheritanceOutcome, InheritedPayload } from './inherit.ts';
@@ -1311,6 +1312,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     blobs: createBlobStore(db, clock, blobDirectory),
     trust,
     memories: createMemoryStore(db, clock),
+    governing: createGoverningFactStore(db, clock),
     search: createSearchStore(db),
 
     dataVersion: () => {

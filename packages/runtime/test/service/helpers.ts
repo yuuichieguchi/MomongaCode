@@ -29,7 +29,7 @@ import type { FakeSettings } from '../worker/fake-settings.ts';
 import { createFakeToolbox } from '../worker/fake-tools.ts';
 import type { FakeToolbox } from '../worker/fake-tools.ts';
 import { createFakeTracer } from '../worker/fake-tracer.ts';
-import { capabilitiesFor, createFakeInstructions, diskAgentCatalog, diskSkillsPort, fakeSandbox, inertHistoryPort, testSystemPrompt } from '../worker/harness.ts';
+import { capabilitiesFor, createFakeInstructions, diskAgentCatalog, diskSkillsPort, fakeSandbox, inertGovernancePort, inertHistoryPort, testSystemPrompt, unavailableEvidenceRun } from '../worker/harness.ts';
 
 export const START_MS = 1_800_000_000_000;
 export const LEASE_MS = 30_000;
@@ -490,6 +490,7 @@ export const serviceOptions = (
   sessionCreateSettings: base.ports.sessionCreateSettings,
   skills: overrides.skills ?? diskSkillsPort(base.home, overrides.skillsTrusted),
   agents: overrides.agents ?? diskAgentCatalog(base.home, overrides.skillsTrusted),
+  evidenceRun: unavailableEvidenceRun,
   mcp: overrides.mcp ?? unusedMcpAdmin,
   defaults: { modelAlias: MODEL_ALIAS, runTimeoutMs: DEFAULT_TIMEOUT_MS, limits: { ...DEFAULT_LIMITS } },
   notifier: base.notifier,
@@ -741,8 +742,9 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
       gateway,
       settings,
       skills: diskSkillsPort(env.layout.home),
-      memories: runtime.createMemoryPort({ store: env.store, settings }),
+      memories: runtime.createMemoryPort({ store: env.store, settings, evidenceRun: unavailableEvidenceRun }),
       history: inertHistoryPort,
+      governance: inertGovernancePort,
       tools,
       tracer,
       clock: env.clock,

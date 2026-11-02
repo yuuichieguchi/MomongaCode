@@ -3,6 +3,7 @@ import type { FunctionCallOutputInputItem, FunctionTool, InputItem, MessageInput
 import { MIN_ROOM_TOKENS, budgetFor, inputCeilingFor, itemCapFor, memoryBudgetFor, summaryInputCeilingFor, pinnedFloorFor } from './budget.ts';
 import { chainTail, digestChain, frozenItem } from './digests.ts';
 import { ContextOverflowError, PinnedOverflowError, PinnedRoomError, PrefixChangedError } from './errors.ts';
+import { governingMessageOf, governingNoticesOf, loadedGoverningOf } from './governing.ts';
 import { discoverInstructions } from './instructions.ts';
 import type { DiscoveredInstructions, LoadedInstructionFile } from './instructions.ts';
 import { DEFAULT_KEEP_RECENT_STEPS, DEFAULT_KEEP_RECENT_TURNS, positiveInteger, protectionRungsOf, retainedHistoryOf, shapeOf } from './levels.ts';
@@ -57,6 +58,7 @@ type Head = {
   systemMessage: MessageInputItem;
   task: InputItem;
   pinnedLayers: InputItem[];
+  governing: MessageInputItem[];
   pinnedDigest: string;
   pinnedTokens: number;
   ceiling: number;
@@ -74,10 +76,10 @@ const metering = (input: BuildContextInput, ports: BuildContextPorts, tools: rea
 };
 
 const breakdownOf = async (
-  input: BuildContextInput,
   ports: BuildContextPorts,
   systemMessage: MessageInputItem,
-  instructions: readonly InputItem[],
+  layerItems: readonly InputItem[],
+  governing: readonly InputItem[],
   task: InputItem,
   tools: readonly FunctionTool[],
 ): Promise<PinnedBreakdown> => {
@@ -86,7 +88,11 @@ const breakdownOf = async (
   return {
     systemPrompt: await countOf([systemMessage], []),
     tools: await countOf([], tools),
-    instructions: await countOf(instructions, []),
+    instructions: await countOf(
+      layerItems.filter((item) => item !== systemMessage && !governing.includes(item)),
+      [],
+    ),
+    governing: await countOf(governing, []),
     task: await countOf([task], []),
   };
 };
@@ -112,12 +118,14 @@ const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): 
   if (input.expectedPinnedDigest !== undefined && input.expectedPinnedDigest !== pinnedDigest) {
     throw new PrefixChangedError(input.expectedPinnedDigest, pinnedDigest);
   }
+  const governing = governingMessageOf(sources.governing);
   const ceiling = inputCeilingFor(capabilities);
   const toolFloor = pinnedFloorFor(capabilities);
-  const countWith = (offered: readonly FunctionTool[]): Promise<MeterCount> => ports.meter.count({ input: pinned, tools: offered });
+  const countWith = (offered: readonly FunctionTool[]): Promise<MeterCount> =>
+    ports.meter.count({ input: [...pinnedLayers, ...governing, task], tools: offered });
   const fitsFloor = (counted: MeterCount): boolean => metering(input, ports, candidates).fits(counted) && counted.inputTokens <= toolFloor;
   const stableFitsFloor = async (offered: readonly FunctionTool[]): Promise<boolean> =>
-    fitsFloor(await ports.meter.count({ input: pinnedLayers, tools: offered }));
+    fitsFloor(await ports.meter.count({ input: [...pinnedLayers, ...governing], tools: offered }));
   let tools = candidates;
   let pinnedCounted: MeterCount | undefined;
   if (input.pinnedTokens === undefined) {
@@ -141,7 +149,7 @@ const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): 
   }
   const pinnedTokens = input.pinnedTokens ?? (pinnedCounted as MeterCount).inputTokens;
   if (pinnedTokens > ceiling || (pinnedCounted !== undefined && !fits(pinnedCounted))) {
-    throw new PinnedOverflowError({ pinnedTokens, ceiling, breakdown: await breakdownOf(input, ports, systemMessage, instructionMessages, task, tools) });
+    throw new PinnedOverflowError({ pinnedTokens, ceiling, breakdown: await breakdownOf(ports, systemMessage, instructionMessages, governing, task, tools) });
   }
   const room = ceiling - pinnedTokens;
   if (room < MIN_ROOM_TOKENS) {
@@ -150,10 +158,22 @@ const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): 
       ceiling,
       room,
       minimum: MIN_ROOM_TOKENS,
-      breakdown: await breakdownOf(input, ports, systemMessage, instructionMessages, task, tools),
+      breakdown: await breakdownOf(ports, systemMessage, instructionMessages, governing, task, tools),
     });
   }
-  return { discovered, notices: [...discovered.notices, ...toolNotices], tools, systemMessage, task, pinnedLayers, pinnedDigest, pinnedTokens, ceiling, room };
+  return {
+    discovered,
+    notices: [...discovered.notices, ...governingNoticesOf(sources.governing), ...toolNotices],
+    tools,
+    systemMessage,
+    task,
+    pinnedLayers,
+    governing,
+    pinnedDigest,
+    pinnedTokens,
+    ceiling,
+    room,
+  };
 };
 
 type FittedLayers = {
@@ -168,7 +188,7 @@ type FittedLayers = {
 const fitLayers = async (input: BuildContextInput, ports: BuildContextPorts, head: Head): Promise<FittedLayers> => {
   const { sources } = input;
   const { tools, fits, countInput } = metering(input, ports, head.tools);
-  const { systemMessage, task, pinnedLayers, notices, ceiling } = head;
+  const { systemMessage, task, pinnedLayers, governing, notices, ceiling } = head;
   const nested = [...head.discovered.nested];
   const skillMessages: MessageInputItem[] = sources.activatedSkills.map((skill) => ({
     type: 'message',
@@ -177,6 +197,7 @@ const fitLayers = async (input: BuildContextInput, ports: BuildContextPorts, hea
   }));
   const layersWith = (memory: MessageInputItem | undefined): InputItem[] => [
     ...pinnedLayers,
+    ...governing,
     ...(memory === undefined ? [] : [memory]),
     ...nested.map((file) => file.message),
     ...skillMessages,
@@ -200,7 +221,7 @@ const fitLayers = async (input: BuildContextInput, ports: BuildContextPorts, hea
     throw new PinnedOverflowError({
       pinnedTokens: counted.inputTokens,
       ceiling,
-      breakdown: await breakdownOf(input, ports, systemMessage, layers.slice(1), task, tools),
+      breakdown: await breakdownOf(ports, systemMessage, layers, governing, task, tools),
     });
   }
   if (leavesNoRoom(counted)) {
@@ -209,7 +230,7 @@ const fitLayers = async (input: BuildContextInput, ports: BuildContextPorts, hea
       ceiling,
       room: ceiling - counted.inputTokens,
       minimum: MIN_ROOM_TOKENS,
-      breakdown: await breakdownOf(input, ports, systemMessage, layers.slice(1), task, tools),
+      breakdown: await breakdownOf(ports, systemMessage, layers, governing, task, tools),
     });
   }
   return { nested, layers, counted, layersWith, floorOf, exceeds };
@@ -535,7 +556,7 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
       level: levelIndex,
       lastLevel,
       protection,
-      breakdown: lastLevel ? await breakdownOf(input, ports, systemMessage, layers.slice(1), task, tools) : undefined,
+      breakdown: lastLevel ? await breakdownOf(ports, systemMessage, layers, head.governing, task, tools) : undefined,
       evictions: reported(),
       compaction: 'plan' in outcome ? outcome.plan : undefined,
       compactionBlockedBy: 'blocked' in outcome ? outcome.blocked : undefined,
@@ -576,5 +597,6 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
       .filter((file) => file !== undefined)
       .map((file) => file.instruction),
     loadedMemoryIds: memoryCandidates.slice(0, memoryCount).map((memory) => memory.id),
+    loadedGoverning: loadedGoverningOf(sources.governing),
   };
 };

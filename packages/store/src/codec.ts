@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { FILE_ACCESSES, LOOP_GROUPS_KEPT, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
+import { FILE_ACCESSES, LOOP_GROUPS_KEPT, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
 import type { RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload } from '@momonga/protocol';
 import { hasConsistentSeqs } from './seqs.ts';
 import { corrupt, expectOneOf, expectRecord, expectStringRecord, isRecord, readerFor } from './rows.ts';
@@ -285,6 +285,15 @@ const isInherited = (value: unknown): boolean =>
 const isLoadedInstruction = (value: unknown): boolean =>
   isRecord(value) && typeof value['path'] === 'string' && typeof value['textSha256'] === 'string';
 
+const isGoverningLoaded = (value: unknown): boolean =>
+  isRecord(value) &&
+  Array.isArray(value['active']) &&
+  value['active'].every((entry) => isRecord(entry) && typeof entry['id'] === 'string' && typeof entry['textSha256'] === 'string') &&
+  Array.isArray(value['conflicts']) &&
+  value['conflicts'].every((entry) => isRecord(entry) && typeof entry['target'] === 'string' && Array.isArray(entry['ids']) && entry['ids'].every((id) => typeof id === 'string'));
+
+const isMemoryLoaded = (value: unknown): boolean => isRecord(value) && typeof value['id'] === 'string' && MEMORY_STATUSES.some((status) => status === value['status']);
+
 const isActivatedSkill = (value: unknown): boolean =>
   isRecord(value) && typeof value['name'] === 'string' && typeof value['content'] === 'string';
 
@@ -343,7 +352,7 @@ const isWorkingFacts = (value: unknown): boolean =>
   isArrayOf(value['itemEvents'], (entry) => isRecord(entry) && Number.isInteger(entry['itemSeq']) && Number.isInteger(entry['eventSeq'])) &&
   (value['replacedThroughEventSeq'] === undefined || Number.isInteger(value['replacedThroughEventSeq']));
 
-export const SNAPSHOT_STATE_VERSION = 10;
+export const SNAPSHOT_STATE_VERSION = 11;
 
 export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
 
@@ -385,6 +394,8 @@ export const decodeRunState = (identity: string, value: unknown): RunState | und
     Object.values(state['steps']).every(isStep) &&
     Array.isArray(state['loadedInstructions']) &&
     state['loadedInstructions'].every(isLoadedInstruction) &&
+    (state['governingLoaded'] === undefined || isGoverningLoaded(state['governingLoaded'])) &&
+    (state['memoriesLoaded'] === undefined || isArrayOf(state['memoriesLoaded'], isMemoryLoaded)) &&
     Array.isArray(state['activatedSkills']) &&
     state['activatedSkills'].every(isActivatedSkill) &&
     (state['streaming'] === undefined || isStreaming(state['streaming'])) &&

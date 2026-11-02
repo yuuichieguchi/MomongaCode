@@ -1,5 +1,7 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { systemClock } from '@momonga/foundation';
+import type { Clock } from '@momonga/foundation';
 import { parseRule } from '@momonga/policy';
 import type { PermissionRule } from '@momonga/policy';
 import type { AnyTool, ToolContext, ToolResult } from '@momonga/tools';
@@ -10,12 +12,12 @@ import { FAKE_KEY, finishedRun, indexAll, openRun, projectDir, redactor } from '
 
 type RulesOf = PermissionRule[] | ((cwd: string) => PermissionRule[]);
 
-const toolsFor = (store: RuntimeStore, session: Session, rules: RulesOf = []): AnyTool[] => {
+const toolsFor = (store: RuntimeStore, session: Session, rules: RulesOf = [], clock: Clock = systemClock): AnyTool[] => {
   const settings = {
     trusted: (candidate: Session) => store.trust.decisionFor(candidate.cwd).decision === 'trusted',
     rules: async (candidate: Session) => (typeof rules === 'function' ? rules(candidate.cwd) : rules),
   };
-  return createHistoryPort({ store, settings, redactor }).load(session).tools as AnyTool[];
+  return createHistoryPort({ store, settings, clock, home: '/home/user', redactor }).load(session).tools as AnyTool[];
 };
 
 const execute = async (tools: AnyTool[], name: string, input: unknown, runId = 'current'): Promise<ToolResult> => {
@@ -94,6 +96,34 @@ describe('history tools over the real store', () => {
     expect(read.output).toContain('inside the open file');
     expect(read.output).not.toContain('inside the secret file');
     expect(read.output).not.toContain(secret);
+    expect(read.output).toMatch(/1 recorded tool results were withheld/);
+  });
+
+  it('withholds what a governance deny rule of the run project covers, with no settings rule at all', async () => {
+    const { store, dir, clock } = harness();
+    const [a, b] = [projectDir(dir, 'a'), projectDir(dir, 'b')];
+    store.trust.set(a, 'trusted');
+    store.trust.set(b, 'trusted');
+    const secret = path.join(b, 'secret', 'key.txt');
+    const reader = finishedRun(store, a, 'reader task');
+    const owner = finishedRun(store, b, 'owner task', [{ tool: { name: 'Read', path: secret, output: 'govterm inside the secret file' } }]);
+    indexAll(store);
+    store.governing.add({
+      kind: 'constraint',
+      target: 'secrets',
+      text: 'Never read the secret directory.',
+      scope: { level: 'project', project: b, paths: [] },
+      validUntil: null,
+      supersedes: [],
+      enforcement: { behavior: 'deny', rule: 'Read(./secret/**)' },
+      source: { kind: 'command' },
+    });
+    const tools = toolsFor(store, store.getSession(reader.sessionId) as Session, [], clock);
+    const searched = await execute(tools, 'HistorySearch', { query: 'govterm', scope: 'all' });
+    expect(searched.output).not.toContain('inside the secret file');
+    expect(searched.output).toMatch(/1 recorded results were withheld/);
+    const read = await execute(tools, 'HistoryRead', { runId: owner.id }, reader.id);
+    expect(read.output).not.toContain('inside the secret file');
     expect(read.output).toMatch(/1 recorded tool results were withheld/);
   });
 

@@ -35,7 +35,10 @@ const contextFor = (state: RunState) => {
       store: {
         getSession: () => ({ id: 'session_wrap', cwd: '/project/wrap' }),
         readRunEvents: () => [{ type: 'user.message', text: TASK_TEXT }],
+        governing: { list: () => [] },
       },
+      clock: { now: () => 0 },
+      tools: { sessionState: () => ({ cwd: '/project/wrap' }) },
       settings: { trusted: () => true },
       blobs: { handleFor: () => 'blob-1', put: async () => ({ handle: 'blob-1' }) },
       instructionReader: { read: async () => undefined, exists: async () => false, realpath: async (target: string) => target },
@@ -46,7 +49,7 @@ const contextFor = (state: RunState) => {
     systemPrompt: SYSTEM_PROMPT,
     functionTools: () => [ECHO_TOOL],
     skills: { catalog: undefined },
-    recalled: { memories: [], tools: [], markUsed: () => undefined },
+    recalled: { memories: [], rank: () => [], tools: [], markUsed: () => undefined },
     usedMemoryIds: new Set<string>(),
     journal: {
       state,

@@ -106,6 +106,7 @@ const MEMORY: MemoryView = {
   retiredAt: null,
   evidence: [],
   contributedAt: null,
+  status: 'unbound',
 };
 
 const contextWith = (backendOptions: FakeBackendOptions = {}) => {

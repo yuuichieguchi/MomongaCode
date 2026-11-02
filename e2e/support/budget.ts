@@ -12,7 +12,7 @@ import { usageOf } from '@momonga/testkit';
 import { createBuiltinTools } from '@momonga/tools';
 import { budgetFor, itemCapFor } from '../../packages/context/src/budget.ts';
 import { errorBoundFor } from '../../packages/gateway/src/core/estimate.ts';
-import { makeEnv } from '../../packages/runtime/test/worker/harness.ts';
+import { makeEnv, unavailableEvidenceRun } from '../../packages/runtime/test/worker/harness.ts';
 import type { ScriptStep } from '../../packages/runtime/test/worker/fake-gateway.ts';
 import { outputStep, textStep } from '../../packages/runtime/test/worker/scripts.ts';
 import { HAYSTACK_LINE_COUNT, HAYSTACK_READ_BACK_LINE, NEEDLE, writeFiller } from './haystack.ts';
@@ -297,7 +297,7 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
       instructionReader: createFsInstructionReader(),
       defaults: RUNTIME_DEFAULTS.limits,
       toolList: () => createBuiltinTools(),
-      memories: createMemoryPort({ store: env.store, settings: env.settings }),
+      memories: createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun }),
       tools: { sandbox: createUnsandboxed() },
     });
     for (let round = 0; round < DRY_RUN_MAX_CLAIMS && !TERMINAL.has(env.run(runId).status); round += 1) {

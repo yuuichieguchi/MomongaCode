@@ -56,19 +56,19 @@ const adapterIn = (mode: ToolCallingMode) => {
 };
 
 describe('wire counting for the full builtin tool set at fm\'s window', () => {
-  it('counts the constrained wire with the tool listing and the envelope: 4113 tokens, not the 2390 counted before', async () => {
+  it('counts the constrained wire with the tool listing and the envelope: 4187 tokens, not the 2464 counted before', async () => {
     const request = await firstRequest();
     expect(request.tools?.map((tool) => tool.name)).toEqual(['Read', 'Glob', 'Grep', 'ReadOutput', 'Write', 'Edit', 'Bash', 'UpdatePlan', 'BashOutput', 'KillBash']);
     const adapter = adapterIn('constrained');
-    expect(estimateInputTokens({ input: request.input, tools: request.tools })).toBe(2390);
-    expect(wireTokensOf(adapter.renderWire?.(request, { name: 'fm', model: 'system' }) as never)).toBe(4113);
+    expect(estimateInputTokens({ input: request.input, tools: request.tools })).toBe(2464);
+    expect(wireTokensOf(adapter.renderWire?.(request, { name: 'fm', model: 'system' }) as never)).toBe(4187);
   });
 
   it('keeps the native wire within 1% of the old count', async () => {
     const request = await firstRequest();
     const native = wireTokensOf(adapterIn('native').renderWire?.(request, { name: 'fm', model: 'system' }) as never);
-    expect(native).toBe(2372);
-    expect(Math.abs(native - 2390)).toBeLessThanOrEqual(Math.ceil(0.01 * 2390));
+    expect(native).toBe(2446);
+    expect(Math.abs(native - 2464)).toBeLessThanOrEqual(Math.ceil(0.01 * 2464));
   });
 
   it('puts the constrained first request above W - R = 3072 at a 4096 window', async () => {

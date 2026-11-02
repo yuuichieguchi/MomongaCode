@@ -1,4 +1,5 @@
 import { agentSystemPrompt, readAgentPin } from '@momonga/agents';
+import { permissionRulesFor } from '../governance/rules.ts';
 import { createTokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex } from '@momonga/foundation';
 import { isFatalStoreError } from '@momonga/store';
@@ -11,7 +12,7 @@ import { dispositionOf } from './gateway-policy.ts';
 import { heartbeatMsFor } from './heartbeat.ts';
 import { describeError, LeaseLostError, ShutdownError } from './errors.ts';
 import { inlineLimitForItemCap, inlineOutputLimitFor } from './inline-limit.ts';
-import { measurePinnedFor } from './context-step.ts';
+import { governingFailureAtStart, measurePinnedFor } from './context-step.ts';
 import { runStartHooks } from './hook-step.ts';
 import { openJournal } from './journal.ts';
 import type { Journal } from './journal.ts';
@@ -253,13 +254,15 @@ const drive = async (
   const skills = await options.skills.load(session);
   const admit = createSkillAdmission(() => ctx);
   const activationTool = skills.activationTool({ isActive: (name) => journal.state.activatedSkills.some((skill) => skill.name === name), admit });
-  const recalled = options.memories.load(session);
+  const recalled = await options.memories.load(session);
   const agentSet = run.parentRunId === null && options.agents !== undefined ? await options.agents.load(session) : undefined;
   const agentTool = options.agents === undefined ? undefined : agentSet?.tool(options.agents.runs);
   const toolSet = await tools.toolSet(run.id, {
     signal: control.signal,
     env,
-    additionalTools: [activationTool, agentTool, ...recalled.tools, ...options.history.load(session).tools].filter((tool) => tool !== undefined),
+    additionalTools: [activationTool, agentTool, ...recalled.tools, ...options.history.load(session).tools, ...options.governance.load(session).tools].filter(
+      (tool) => tool !== undefined,
+    ),
     ...(agentPin?.tools === undefined ? {} : { only: agentPin.tools }),
   });
   if (agentPin?.tools !== undefined && toolSet.tools.length === 0) {
@@ -302,7 +305,7 @@ const drive = async (
   }
 
   const limits = readRunLimits(run.limits, options.defaults);
-  const rules = await options.settings.rules(session);
+  const rules = await permissionRulesFor(options, session);
   let measuredInlineLimit: Promise<number> | undefined;
   const ctx: ClaimContext = {
     options,
@@ -333,6 +336,11 @@ const drive = async (
     verificationCommands: (await options.settings.verification(session)).commands,
   };
 
+  const governingFailure = await governingFailureAtStart(ctx);
+  if (governingFailure !== undefined) {
+    terminals.finish('FAILED', { error: governingFailure });
+    return;
+  }
   if ((await runStartHooks(ctx)) === 'done') return;
   if (responsePending(journal.state)) {
     if ((await decideAfterResponse(ctx)) === 'done') return;

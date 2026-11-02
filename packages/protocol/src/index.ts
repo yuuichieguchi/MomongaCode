@@ -86,6 +86,7 @@ export type {
   MemoryEvidenceKind,
   MemoryKind,
   MemoryOrigin,
+  MemoryRecord,
   MemoryResponse,
   MemoryScope,
   MemorySource,
@@ -93,8 +94,19 @@ export type {
   MemoryStatus,
   MemoryView,
 } from './memory.ts';
-export { GOVERNING_KINDS } from './governance.ts';
-export type { GoverningFactView, GoverningKind } from './governance.ts';
+export { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
+export type {
+  AddRuleRequest,
+  GovernanceRuleView,
+  GoverningEnforcement,
+  GoverningFactView,
+  GoverningKind,
+  PolicyGovernanceResponse,
+  RuleAddResponse,
+  RuleResponse,
+  RuleSize,
+  RulesResponse,
+} from './governance.ts';
 export { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
 export type { ContextChargePurpose, ContributionKind, SummaryFidelity, SummarySectionCoverage, SummarySource } from './context-record.ts';
 export { imageDataUrl, userMessageContent } from './user-content.ts';

@@ -1,8 +1,9 @@
 import path from 'node:path';
-import { loadSettings } from '@momonga/config';
+import { loadSettings, parseGovernanceRule } from '@momonga/config';
 import { canonicalDirectory, canonicalPath, protectedSetFor } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import type { PermissionMode } from '@momonga/protocol';
+import type { PermissionMode, PolicyGovernanceResponse } from '@momonga/protocol';
+import { formatGovernanceVerification } from '../rule/format.ts';
 import { connectRuntime } from '../run/open-session.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
@@ -36,12 +37,15 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
   await ensureDaemon(ports, paths);
   const runtime = connectRuntime(paths);
   let trusted: boolean;
+  let governance: PolicyGovernanceResponse;
   try {
     trusted = (await runtime.trust(ports.cwd)).decision === 'trusted';
+    governance = await runtime.policyGovernance(ports.cwd);
   } finally {
     await runtime.close();
   }
   const loaded = await loadSettings({ home: ports.home, projectDir: ports.cwd, cli: {}, trust: { isTrusted: () => trusted } });
+  const governanceRules = governance.rules.map((entry) => parseGovernanceRule(entry, { home: ports.home, project: ports.cwd }));
   const roots = rootsOf(ports.cwd, loaded.settings.permissions.additionalDirectories);
   const mode = options.mode ?? loaded.settings.permissions.defaultMode ?? 'default';
   const verifier = await host.loadVerifier();
@@ -55,7 +59,7 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
   const engine = await host.openSolver(verifier);
   try {
     const report = await verifier.verifyPermissions(engine.api, {
-      rules: loaded.rules,
+      rules: [...loaded.rules, ...governanceRules],
       roots,
       mode,
       home,
@@ -66,7 +70,12 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
       exemptDirectory: null,
       budgetMs: VERIFY_BUDGET_MS,
     });
-    ports.stdout.write(`${options.json ? JSON.stringify(report) : verifier.formatReport(report)}\n`);
+    const hasGovernance = governance.rules.length > 0 || governance.textOnly.length > 0;
+    ports.stdout.write(
+      options.json
+        ? `${JSON.stringify(hasGovernance ? { ...report, governance } : report)}\n`
+        : `${verifier.formatReport(report)}\n${hasGovernance ? `${formatGovernanceVerification(governance)}\n` : ''}`,
+    );
     for (const warning of loaded.warnings) ports.stderr.write(`warning: ${warning}\n`);
     return report.exitCode;
   } finally {

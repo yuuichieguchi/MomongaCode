@@ -1,7 +1,7 @@
 import type { McpServerConfig } from '@momonga/config';
 import { createUdsClient, decodeSse, isRecord } from '@momonga/foundation';
 import type { UdsResponse } from '@momonga/foundation';
-import type { AgentsResponse, CostReportView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryView, PermissionMode, PublicRunEvent, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
+import type { AddRuleRequest, AgentsResponse, CostReportView, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, RuleAddResponse, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
 import {
   ContractViolation,
   checkAgents,
@@ -15,6 +15,10 @@ import {
   checkMcpServers,
   checkMemories,
   checkMemory,
+  checkPolicyGovernance,
+  checkRule,
+  checkRuleAdd,
+  checkRules,
   checkRun,
   checkRunEvent,
   checkSession,
@@ -112,6 +116,12 @@ export type RuntimeClient = {
   memories(filter?: MemoryFilter): Promise<MemoryView[]>;
   memory(id: string): Promise<MemoryView>;
   deleteMemory(id: string): Promise<void>;
+  memoryHistory(id: string): Promise<MemoryView[]>;
+  rules(project: string): Promise<GoverningFactView[]>;
+  addRule(request: AddRuleRequest): Promise<RuleAddResponse>;
+  retireRule(id: string): Promise<GoverningFactView>;
+  ruleHistory(id: string): Promise<GoverningFactView[]>;
+  policyGovernance(project: string): Promise<PolicyGovernanceResponse>;
   cost(filter?: CostFilter): Promise<CostReportView>;
   costText(filter?: CostFilter): Promise<string>;
   trust(path: string): Promise<TrustView>;
@@ -379,6 +389,41 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     await send('DELETE', `/v1/memories/${encodeURIComponent(id)}`, [204]);
   };
 
+  const memoryHistory = async (id: string): Promise<MemoryView[]> => {
+    const path = `/v1/memories/${encodeURIComponent(id)}/history`;
+    const { body } = await send('GET', path, [200]);
+    return checkMemories(body, `GET ${path}`).memories;
+  };
+
+  const rules = async (project: string): Promise<GoverningFactView[]> => {
+    const path = `/v1/rules?project=${encodeURIComponent(project)}`;
+    const { body } = await send('GET', path, [200]);
+    return checkRules(body, `GET ${path}`).facts;
+  };
+
+  const addRule = async (request: AddRuleRequest): Promise<RuleAddResponse> => {
+    const { body } = await send('POST', '/v1/rules', [201], { body: request });
+    return checkRuleAdd(body, 'POST /v1/rules');
+  };
+
+  const retireRule = async (id: string): Promise<GoverningFactView> => {
+    const path = `/v1/rules/${encodeURIComponent(id)}/retire`;
+    const { body } = await send('POST', path, [200]);
+    return checkRule(body, `POST ${path}`).fact;
+  };
+
+  const ruleHistory = async (id: string): Promise<GoverningFactView[]> => {
+    const path = `/v1/rules/${encodeURIComponent(id)}/history`;
+    const { body } = await send('GET', path, [200]);
+    return checkRules(body, `GET ${path}`).facts;
+  };
+
+  const policyGovernance = async (project: string): Promise<PolicyGovernanceResponse> => {
+    const path = `/v1/policy/governance?project=${encodeURIComponent(project)}`;
+    const { body } = await send('GET', path, [200]);
+    return checkPolicyGovernance(body, `GET ${path}`);
+  };
+
   const costPath = (filter: CostFilter, format: 'json' | 'text'): string => `/v1/cost?${new URLSearchParams({ ...filter, format }).toString()}`;
 
   const cost = async (filter: CostFilter = {}): Promise<CostReportView> => {
@@ -452,6 +497,12 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     memories,
     memory,
     deleteMemory,
+    memoryHistory,
+    rules,
+    addRule,
+    retireRule,
+    ruleHistory,
+    policyGovernance,
     cost,
     costText,
     trust,

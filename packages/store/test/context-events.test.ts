@@ -35,10 +35,24 @@ describe('context events in the journal', () => {
     expect(decodeEvent(row(payload))).toEqual({ ...payload, ...ENVELOPE });
   });
 
-  it.each(NEW_EVENTS)('folds %s without changing state beyond the seq', (type, fields) => {
+  it.each(NEW_EVENTS.filter(([type]) => type === 'context.contribution'))('folds %s without changing state beyond the seq', (type, fields) => {
     const before = start();
     const after = foldRunState(before, { type, ...fields, ...ENVELOPE } as unknown as RunEvent);
     expect(after).toEqual({ ...before, step: 1, lastSeq: 5 });
+  });
+
+  it('folds context.governing_loaded into the set last loaded, and the next one replaces it', () => {
+    const [, first] = NEW_EVENTS[0] as [string, Record<string, unknown>];
+    const loaded = foldRunState(start(), { type: 'context.governing_loaded', ...first, ...ENVELOPE } as unknown as RunEvent);
+    expect(loaded.governingLoaded).toEqual({ active: [{ id: 'g1', textSha256: 'aa' }], conflicts: [{ target: 'pandas', ids: ['g1', 'g2'] }] });
+    const emptied = foldRunState(loaded, { type: 'context.governing_loaded', active: [], conflicts: [], ...ENVELOPE } as unknown as RunEvent);
+    expect(emptied.governingLoaded).toEqual({ active: [], conflicts: [] });
+  });
+
+  it('folds context.memories_loaded into the set last loaded', () => {
+    const [, fields] = NEW_EVENTS[1] as [string, Record<string, unknown>];
+    const loaded = foldRunState(start(), { type: 'context.memories_loaded', ...fields, ...ENVELOPE } as unknown as RunEvent);
+    expect(loaded.memoriesLoaded).toEqual([{ id: 'm1', status: 'verified' }]);
   });
 
   it('decodes and folds a context.compacted recorded before source, fidelity and guidelineVersion', () => {
@@ -89,6 +103,6 @@ describe('context events in the journal', () => {
       ...ENVELOPE,
     } as RunEvent;
     expect(foldRunState(start(), event).summary).toEqual({ item, summary: 'so far', replacedThroughSeq: 3 });
-    expect(SNAPSHOT_STATE_VERSION).toBe(10);
+    expect(SNAPSHOT_STATE_VERSION).toBe(11);
   });
 });

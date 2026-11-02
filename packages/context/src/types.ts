@@ -4,6 +4,7 @@ import type {
   CountTokensRequest,
   CountTokensResult,
   FunctionTool,
+  GoverningFactView,
   InputItem,
   MemoryView,
   MessageInputItem,
@@ -27,6 +28,11 @@ export type ActivatedSkill = { name: string; content: string };
 
 export type ContextSummary = { item: DeepReadonly<CompactionInputItem | MessageInputItem>; replacedThroughSeq: number };
 
+export type ContextGoverning = {
+  active: readonly DeepReadonly<GoverningFactView>[];
+  conflicts: readonly { target: string; ids: readonly string[] }[];
+};
+
 export type ContextSources = {
   systemPrompt: string;
   tools: readonly FunctionTool[];
@@ -34,6 +40,7 @@ export type ContextSources = {
   taskSeq: number;
   skillCatalog?: string;
   activatedSkills: readonly ActivatedSkill[];
+  governing?: ContextGoverning;
   memories?: readonly DeepReadonly<MemoryView>[];
   history: readonly HistoryItem[];
   summary?: ContextSummary;
@@ -132,6 +139,7 @@ export type NoticeCode =
   | 'instructions_outside_project'
   | 'nested_instructions_untrusted'
   | 'instructions_dropped'
+  | 'governing_conflict'
   | 'memories_dropped'
   | 'tools_dropped'
   | 'recent_turns_shrunk'
@@ -147,7 +155,7 @@ export type ContextBudget = { W: number; R: number; I: number; margin: number };
 
 export type ProtectionLevel = { keepTurns: number; keepSteps: number };
 
-export type PinnedBreakdown = { systemPrompt: number; tools: number; instructions: number; task: number };
+export type PinnedBreakdown = { systemPrompt: number; tools: number; instructions: number; governing: number; task: number };
 
 export type CompactionPlan = { throughSeq: number; input: InputItem[]; summaryTokenCap: number; pinnedText: string };
 
@@ -175,4 +183,7 @@ export type BuiltContext = {
   notices: ContextNotice[];
   loadedInstructions: LoadedInstruction[];
   loadedMemoryIds: string[];
+  loadedGoverning: LoadedGoverning;
 };
+
+export type LoadedGoverning = { active: { id: string; textSha256: string }[]; conflicts: { target: string; ids: string[] }[] };

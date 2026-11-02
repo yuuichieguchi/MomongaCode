@@ -1,14 +1,15 @@
 import type { Command } from 'commander';
-import { Option } from 'commander';
-import { MEMORY_SCOPES, PERMISSION_MODES } from '@momonga/protocol';
-import type { MemoryScope, PermissionMode } from '@momonga/protocol';
+import { InvalidArgumentError, Option } from 'commander';
+import { GOVERNING_KINDS, MEMORY_SCOPES, PERMISSION_MODES } from '@momonga/protocol';
+import type { GoverningEnforcement, GoverningKind, MemoryScope, PermissionMode } from '@momonga/protocol';
 import { pathsOf } from '../paths.ts';
 import type { ProgramDeps } from '../program-deps.ts';
 import { showCost } from './cost.ts';
 import { elicit } from './elicit.ts';
 import { evaluate } from './evaluate.ts';
 import { mcpList, mcpLogin } from './mcp.ts';
-import { memoryDelete, memoryList, memoryShow } from './memory.ts';
+import { memoryDelete, memoryHistory, memoryList, memoryShow } from './memory.ts';
+import { ruleAdd, ruleHistory, ruleList, ruleRetire } from './rule.ts';
 import { listJobs } from './jobs.ts';
 import { listModels } from './models.ts';
 import { policyVerify } from './policy.ts';
@@ -86,10 +87,82 @@ const registerMemory: CommandGroup = (program, deps) => {
       deps.complete(await memoryShow(deps.ports, pathsOf(deps.ports), id, options.json === true));
     });
   memory
+    .command('history <id>')
+    .description('show a memory with the notes it replaced and the ones that replaced it, and their validity')
+    .option('--json', 'print the memories as JSON')
+    .action(async (id: string, options: { json?: true }) => {
+      deps.complete(await memoryHistory(deps.ports, pathsOf(deps.ports), id, options.json === true));
+    });
+  memory
     .command('delete <id>')
     .description('delete a memory')
     .action(async (id: string) => {
       deps.complete(await memoryDelete(deps.ports, pathsOf(deps.ports), id));
+    });
+};
+
+type RuleAddFlags = { kind: GoverningKind; user?: true; path: string[]; deny?: string; ask?: string; supersedes: string[]; until?: string; json?: true };
+
+const enforcementOf = (flags: RuleAddFlags): GoverningEnforcement | null => {
+  if (flags.deny !== undefined && flags.ask !== undefined) throw new InvalidArgumentError('use either --deny or --ask, not both');
+  if (flags.deny !== undefined) return { behavior: 'deny', rule: flags.deny };
+  if (flags.ask !== undefined) return { behavior: 'ask', rule: flags.ask };
+  return null;
+};
+
+const untilOf = (text: string | undefined): number | undefined => {
+  if (text === undefined) return undefined;
+  const parsed = Date.parse(text);
+  if (Number.isNaN(parsed)) throw new InvalidArgumentError(`--until ${JSON.stringify(text)} is not a date`);
+  return parsed;
+};
+
+const registerRule: CommandGroup = (program, deps) => {
+  const rule = program.command('rule').description('standing rules that bind every run of a folder or of all folders');
+  rule
+    .command('add <target> <text...>')
+    .description('add a rule; --deny or --ask makes it enforced by the permission system')
+    .addOption(new Option('--kind <kind>', 'the kind of rule').choices(GOVERNING_KINDS).default('constraint'))
+    .option('--user', 'apply in every folder instead of this one')
+    .option('--path <glob>', 'apply only when this path pattern is touched; repeat for several', collect, [])
+    .option('--deny <rule>', 'a permission rule to deny, for example "Bash(rm:*)"')
+    .option('--ask <rule>', 'a permission rule to ask about, for example "Bash(git push:*)"')
+    .option('--supersedes <id>', 'the id of the rule this one replaces; repeat for several', collect, [])
+    .option('--until <date>', 'the date after which the rule no longer applies')
+    .option('--json', 'print the result as JSON')
+    .action(async (target: string, text: string[], flags: RuleAddFlags) => {
+      const until = untilOf(flags.until);
+      deps.complete(
+        await ruleAdd(deps.ports, pathsOf(deps.ports), target, text.join(' '), {
+          kind: flags.kind,
+          user: flags.user === true,
+          paths: flags.path,
+          enforcement: enforcementOf(flags),
+          supersedes: flags.supersedes,
+          ...(until === undefined ? {} : { until }),
+          json: flags.json === true,
+        }),
+      );
+    });
+  rule
+    .command('list')
+    .description('list the rules of this folder and the rules for every folder, enforced or text-only')
+    .option('--json', 'print the rules as JSON')
+    .action(async (options: { json?: true }) => {
+      deps.complete(await ruleList(deps.ports, pathsOf(deps.ports), options.json === true));
+    });
+  rule
+    .command('retire <id>')
+    .description('retire a rule; a retired rule stays in the history')
+    .action(async (id: string) => {
+      deps.complete(await ruleRetire(deps.ports, pathsOf(deps.ports), id));
+    });
+  rule
+    .command('history <id>')
+    .description('show the rules a rule replaced and the ones that replaced it, with their validity')
+    .option('--json', 'print the rules as JSON')
+    .action(async (id: string, options: { json?: true }) => {
+      deps.complete(await ruleHistory(deps.ports, pathsOf(deps.ports), id, options.json === true));
     });
 };
 
@@ -184,7 +257,7 @@ const registerRunTree: CommandGroup = (program, deps) => {
     });
 };
 
-export const PRODUCT_COMMAND_GROUPS: readonly CommandGroup[] = [registerElicit, registerMcp, registerRunTree, registerMemory, registerCost, registerEvaluate, registerSecret, registerModels, registerPolicy];
+export const PRODUCT_COMMAND_GROUPS: readonly CommandGroup[] = [registerElicit, registerMcp, registerRunTree, registerMemory, registerRule, registerCost, registerEvaluate, registerSecret, registerModels, registerPolicy];
 
 export const registerProductCommands = (program: Command, deps: ProgramDeps): void => {
   for (const group of PRODUCT_COMMAND_GROUPS) group(program, deps);

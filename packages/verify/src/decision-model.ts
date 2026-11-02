@@ -6,7 +6,9 @@ import type { CommandModel } from './command-model.ts';
 import type { PathModel } from './path-model.ts';
 import type { Smt } from './smt.ts';
 
-export const SUBJECT_TOOLS = ['Read', 'Glob', 'Grep', 'Write', 'Bash', 'mcp'] as const;
+const isGoverning = (rule: PermissionRule): boolean => rule.layer === 'governance';
+
+export const SUBJECT_TOOLS =['Read', 'Glob', 'Grep', 'Write', 'Bash', 'mcp'] as const;
 export type SubjectTool = (typeof SUBJECT_TOOLS)[number];
 
 export type Witness =
@@ -155,6 +157,7 @@ export const ruleEffectCases = (models: DecisionModels, subject: SubjectModel, t
   const denyPosition = anyOf(smt, ofEffect('deny').map((other) => other.position));
   const denyIncidental = anyOf(smt, ofEffect('deny').map((other) => ctx.And(ctx.Not(other.position), other.incidental)));
   const askMatch = anyOf(smt, ofEffect('ask').map((other) => ctx.Or(other.position, other.incidental)));
+  const governingAskMatch = anyOf(smt, ofEffect('ask').filter((other) => isGoverning(other.rule)).map((other) => ctx.Or(other.position, other.incidental)));
   const allowMatch = anyOf(smt, ofEffect('allow').map((other) => other.strict));
   const noDenyOrPlan = ctx.And(ctx.Not(bypass ? ctx.Or(denyPosition, denyIncidental) : denyPosition), ctx.Not(subject.planDeny));
   const unguarded = ctx.And(noDenyOrPlan, ctx.Not(subject.guard));
@@ -168,9 +171,8 @@ export const ruleEffectCases = (models: DecisionModels, subject: SubjectModel, t
       return [decisive, incidentalOnly];
     }
     case 'ask':
-      return bypass
-        ? []
-        : [ctx.And(ctx.Or(term.position, term.incidental), unguarded, ctx.Not(askMatch), ctx.Not(denyIncidental), ctx.Or(allowMatch, subject.defaultAllow))];
+      if (bypass) return isGoverning(term.rule) ? [ctx.And(ctx.Or(term.position, term.incidental), unguarded, ctx.Not(governingAskMatch))] : [];
+      return [ctx.And(ctx.Or(term.position, term.incidental), unguarded, ctx.Not(askMatch), ctx.Not(denyIncidental), ctx.Or(allowMatch, subject.defaultAllow))];
   }
 };
 
@@ -184,6 +186,7 @@ export const outcomeOf = (models: DecisionModels, subject: SubjectModel, exclude
   const denyPosition = anyOf(smt, ofEffect('deny').map((term) => term.position));
   const denyIncidental = anyOf(smt, ofEffect('deny').map((term) => ctx.And(ctx.Not(term.position), term.incidental)));
   const askMatch = anyOf(smt, ofEffect('ask').map((term) => ctx.Or(term.position, term.incidental)));
+  const governingAskMatch = anyOf(smt, ofEffect('ask').filter((term) => isGoverning(term.rule)).map((term) => ctx.Or(term.position, term.incidental)));
   const allowMatch = anyOf(smt, ofEffect('allow').map((term) => term.strict));
 
   const denied = bypass ? ctx.Or(denyPosition, denyIncidental) : denyPosition;
@@ -198,7 +201,9 @@ export const outcomeOf = (models: DecisionModels, subject: SubjectModel, exclude
   const allowedByRule = ctx.And(afterIncidental, allowMatch);
   const allowedByDefault = ctx.And(afterIncidental, ctx.Not(allowMatch), subject.defaultAllow);
   const askedByDefault = ctx.And(afterIncidental, ctx.Not(allowMatch), ctx.Not(subject.defaultAllow));
-  const allow = ctx.Or(allowedByRule, allowedByDefault, bypass ? asked : ctx.Bool.val(false));
-  const ask = ctx.Or(guarded, bypass ? ctx.Bool.val(false) : asked, incidentalAsk, askedByDefault);
+  const askOverridden = bypass ? ctx.And(asked, ctx.Not(governingAskMatch)) : ctx.Bool.val(false);
+  const askHeld = bypass ? ctx.And(asked, governingAskMatch) : asked;
+  const allow = ctx.Or(allowedByRule, allowedByDefault, askOverridden);
+  const ask = ctx.Or(guarded, askHeld, incidentalAsk, askedByDefault);
   return { deny, ask, allow, allowedByRule, allowedByDefault, byDefault: ctx.Or(allowedByDefault, askedByDefault), guarded, asked, incidentalAsk, undecidedByDenyOrAsk: afterIncidental };
 };

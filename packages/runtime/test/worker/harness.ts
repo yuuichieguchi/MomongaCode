@@ -11,7 +11,7 @@ import { applyCapabilityOverride } from '@momonga/protocol';
 import type { Capabilities, CapabilityOverride, PermissionMode, RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { createAgentLoader } from '@momonga/agents';
 import { createSkillsPort, createWorker } from '@momonga/runtime';
-import type { AgentCatalogPort, HistoryPort, MemoryPort, SkillsPort, ToolEnv, ToolRuntimePort, Worker, WorkerOptions } from '@momonga/runtime';
+import type { AgentCatalogPort, EvidenceRun, GovernancePort, HistoryPort, MemoryPort, SkillsPort, ToolEnv, ToolRuntimePort, Worker, WorkerOptions } from '@momonga/runtime';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import { foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
@@ -84,9 +84,13 @@ afterEach(async () => {
   if (errors.length > 0) throw errors[0];
 });
 
-export const inertMemoryPort: MemoryPort = { load: () => ({ memories: [], tools: [], markUsed: () => undefined }) };
+export const inertMemoryPort: MemoryPort = { load: async () => ({ memories: [], rank: () => [], tools: [], markUsed: () => undefined }) };
 
 export const inertHistoryPort: HistoryPort = { load: () => ({ tools: [] }) };
+
+export const inertGovernancePort: GovernancePort = { load: () => ({ tools: [] }) };
+
+export const unavailableEvidenceRun = (): EvidenceRun => async () => ({ exitCode: 128 });
 
 export const diskSkillsPort = (home: string, trusted: () => boolean = () => true): SkillsPort =>
   createSkillsPort({ loader: createSkillLoader({ home, fileSystem: createNodeSkillFileSystem() }), settings: { trusted } });
@@ -271,6 +275,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       skills: diskSkillsPort(home, () => settings.trustedValue),
       memories: inertMemoryPort,
       history: inertHistoryPort,
+      governance: inertGovernancePort,
       tools: { ...toolRuntime(toolList ?? (() => toolbox.tools())), ...toolOverrides },
       tracer,
       clock,

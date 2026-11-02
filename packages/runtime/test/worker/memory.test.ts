@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { InputItem } from '@momonga/protocol';
 import { createMemoryPort } from '@momonga/runtime';
 import type { Worker } from '@momonga/runtime';
-import { makeEnv, textOf } from './harness.ts';
+import { makeEnv, textOf, unavailableEvidenceRun } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 
@@ -11,7 +11,7 @@ const FAKE_KEY = 'sk-abcdefghijklmnopqrstuvwxyz0123456789';
 const save = (callId: string, text: string, scope: 'user' | 'project' = 'user') =>
   callsStep([{ callId, name: 'MemorySave', args: { text, scope } }]);
 
-const memoryWorker = (env: Env, id: string): Worker => env.worker(id, { memories: createMemoryPort({ store: env.store, settings: env.settings }) });
+const memoryWorker = (env: Env, id: string): Worker => env.worker(id, { memories: createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun }) });
 
 const inputOf = (env: Env, index: number): InputItem[] => {
   const body = env.gateway.streams[index]?.body;

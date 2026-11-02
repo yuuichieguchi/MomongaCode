@@ -12,12 +12,15 @@ import {
   textOfItem,
   workingStateCapFor,
 } from '@momonga/context';
-import type { ActivatedSkill, BuildContextInput, BuildContextPorts, BuiltContext, CompactionPlan, ContextEviction, PinnedMeasure } from '@momonga/context';
+import type { ActivatedSkill, BuildContextInput, BuildContextPorts, BuiltContext, CompactionPlan, ContextEviction, LoadedGoverning, PinnedMeasure, TouchedPath } from '@momonga/context';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import { resolveGoverning } from '@momonga/memory';
+import type { Session } from '@momonga/store';
 import { compactionSummaryMessage, decodeCompactionSummary, tokensForText, userMessageContent } from '@momonga/protocol';
 import type { CompactRequest, CompactResource, CompactionInputItem, ContentPart, MessageInputItem, RunEvent, RunEventPayload, RunState, SummaryFidelity } from '@momonga/protocol';
 import { foldRunState } from '@momonga/store';
 import { GatewayRequestError } from '../gateway-client.ts';
+import { recallQueryOf } from '../memory/recall-query.ts';
 import type { WorkerBlobs } from './types.ts';
 import type { ClaimContext } from './claim-context.ts';
 import { touchedPathsOf } from './touched-paths.ts';
@@ -52,11 +55,25 @@ const sessionOf = (ctx: ClaimContext) => {
   return session;
 };
 
-const taskContentOf = (ctx: ClaimContext): ContentPart[] => {
+const taskOf = (ctx: ClaimContext): { content: ContentPart[]; text: string } => {
   const [first] = ctx.options.store.readRunEvents(ctx.run.id, 0, 1);
   if (first === undefined || first.type !== 'user.message') throw new Error(`run ${ctx.run.id} does not start with a user message`);
-  return userMessageContent(first.text, first.images);
+  return { content: userMessageContent(first.text, first.images), text: first.text };
 };
+
+type GoverningScan = 'active' | 'live';
+
+const governingFor = (ctx: ClaimContext, session: Session, touched: readonly TouchedPath[], scan: GoverningScan) =>
+  resolveGoverning(ctx.options.store.governing.list({ project: session.cwd }), {
+    now: ctx.options.clock.now(),
+    project: session.cwd,
+    touchedPaths: [...touched.map((entry) => entry.path), ctx.options.tools.sessionState(session).cwd],
+    ...(scan === 'live' ? { ignorePaths: true } : {}),
+  });
+
+const governingKeyOf = (governing: LoadedGoverning): string => canonicalJson({ active: governing.active, conflicts: governing.conflicts });
+
+const EMPTY_GOVERNING: LoadedGoverning = { active: [], conflicts: [] };
 
 const workingStateOf = (ctx: ClaimContext, state: RunState): string | undefined =>
   state.summary === undefined
@@ -66,23 +83,26 @@ const workingStateOf = (ctx: ClaimContext, state: RunState): string | undefined 
 const projectedWorkingStateOf = (ctx: ClaimContext, state: RunState): string | undefined =>
   state.history.length === 0 ? undefined : workingStateOf(ctx, projectCompaction(ctx, state.nextItemSeq - 1, compactionSummaryMessage(''), ''));
 
-export const contextInputOf = (ctx: ClaimContext, wrapUp: WrapUpReason | undefined, level: number): BuildContextInput => {
+export const contextInputOf = (ctx: ClaimContext, wrapUp: WrapUpReason | undefined, level: number, scan: GoverningScan = 'active'): BuildContextInput => {
   const { options, journal } = ctx;
   const state = journal.state;
   const session = sessionOf(ctx);
   const workingState = workingStateOf(ctx, state);
   const projectedWorkingState = projectedWorkingStateOf(ctx, state);
+  const task = taskOf(ctx);
+  const touchedPaths = touchedPathsOf(state.history, session.cwd);
   return {
     capabilities: ctx.capabilities,
     model: ctx.alias,
     sources: {
       systemPrompt: ctx.systemPrompt,
       tools: ctx.functionTools(),
-      task: { type: 'message', role: 'user', content: taskContentOf(ctx) },
+      task: { type: 'message', role: 'user', content: task.content },
       taskSeq: state.taskSeq,
       ...(ctx.skills.catalog === undefined ? {} : { skillCatalog: ctx.skills.catalog }),
       activatedSkills: state.activatedSkills,
-      memories: ctx.recalled.memories,
+      governing: governingFor(ctx, session, touchedPaths, scan),
+      memories: ctx.recalled.rank(recallQueryOf(task.text, touchedPaths.map((entry) => entry.path), session.cwd)),
       history: state.history
         .filter((entry) => entry.seq !== state.taskSeq)
         .map((entry) => ({ seq: entry.seq, item: entry.item, ...(entry.handle === undefined ? {} : { handle: entry.handle }) })),
@@ -91,7 +111,7 @@ export const contextInputOf = (ctx: ClaimContext, wrapUp: WrapUpReason | undefin
       ...(projectedWorkingState === undefined ? {} : { projectedWorkingState }),
     },
     evicted: new Set(state.evicted),
-    touchedPaths: touchedPathsOf(state.history, session.cwd),
+    touchedPaths,
     trusted: options.settings.trusted(session),
     projectRoot: session.cwd,
     home: options.home,
@@ -301,6 +321,16 @@ const recordContextFacts = (ctx: ClaimContext, built: BuiltContext): void => {
     if (recorded?.textSha256 === instruction.textSha256) continue;
     payloads.push({ type: 'instructions.loaded', path: instruction.path, content: instruction.text });
   }
+  const { governingLoaded, memoriesLoaded } = ctx.journal.state;
+  if (governingKeyOf(built.loadedGoverning) !== governingKeyOf(governingLoaded ?? EMPTY_GOVERNING)) {
+    payloads.push({ type: 'context.governing_loaded', ...built.loadedGoverning });
+  }
+  const loadedMemories = built.loadedMemoryIds.map((id) => {
+    const memory = ctx.recalled.memories.find((candidate) => candidate.id === id);
+    if (memory === undefined) throw new Error(`the context loaded memory ${id}, which the run did not recall`);
+    return { id, status: memory.status };
+  });
+  if (canonicalJson(loadedMemories) !== canonicalJson(memoriesLoaded ?? [])) payloads.push({ type: 'context.memories_loaded', memories: loadedMemories });
   if (payloads.length > 0) ctx.journal.append(payloads);
   const unmarked = built.loadedMemoryIds.filter((id) => !ctx.usedMemoryIds.has(id));
   if (unmarked.length > 0) {
@@ -336,20 +366,39 @@ export const recoverRejectedCompaction = (ctx: ClaimContext, error: unknown, pos
   return 'recovered';
 };
 
-export const pinnedOverflowFailure = (ctx: ClaimContext, error: PinnedOverflowError): { code: 'pinned_overflow'; message: string } => {
+const governingShare = (governing: number): string => (governing === 0 ? '' : `, governing facts ${governing}`);
+
+const namedFacts = (error: PinnedOverflowError, ids: readonly string[]): string =>
+  error.breakdown.governing === 0 ? '' : ` Governing facts take ${error.breakdown.governing} of those tokens${ids.length === 0 ? '' : ` (${ids.join(', ')})`}; retire or shorten one with momonga rule.`;
+
+export const pinnedOverflowFailure = (ctx: Pick<ClaimContext, 'capabilities'>, error: PinnedOverflowError, governingIds: readonly string[] = []): { code: 'pinned_overflow'; message: string } => {
   const { W, R } = budgetFor(ctx.capabilities, 0);
   if (error instanceof PinnedRoomError) {
     return {
       code: 'pinned_overflow',
-      message: `The pinned context fits (${error.pinnedTokens} of ${error.ceiling} tokens) but leaves only ${error.room} tokens for the conversation; at least ${error.minimum} are needed for one tool call, one tool result, a summary and the working state. Reduce the fixed prefix (deny rules for unused tools, plan mode, shorter instructions) or use a larger window.`,
+      message: `The pinned context fits (${error.pinnedTokens} of ${error.ceiling} tokens) but leaves only ${error.room} tokens for the conversation; at least ${error.minimum} are needed for one tool call, one tool result, a summary and the working state. Reduce the fixed prefix (deny rules for unused tools, plan mode, shorter instructions) or use a larger window.${namedFacts(error, governingIds)}`,
     };
   }
-  const { systemPrompt, tools, instructions, task } = error.breakdown;
+  const { systemPrompt, tools, instructions, governing, task } = error.breakdown;
   const percent = error.pinnedTokens === 0 ? 0 : Math.round((100 * tools) / error.pinnedTokens);
   return {
     code: 'pinned_overflow',
-    message: `The pinned context needs ${error.pinnedTokens} tokens but at most ${error.ceiling} fit (window ${W}, output reserve ${R}, estimation margin ${W - R - error.ceiling}). Breakdown: system prompt ${systemPrompt}, tool definitions ${tools} (${percent}%), instructions ${instructions}, task ${task}. Reduce it with deny rules for tools you do not need, \`plan\` mode, a shorter task or AGENTS.md, or a model with a larger context window.`,
+    message: `The pinned context needs ${error.pinnedTokens} tokens but at most ${error.ceiling} fit (window ${W}, output reserve ${R}, estimation margin ${W - R - error.ceiling}). Breakdown: system prompt ${systemPrompt}, tool definitions ${tools} (${percent}%), instructions ${instructions}${governingShare(governing)}, task ${task}. Reduce it with deny rules for tools you do not need, \`plan\` mode, a shorter task or AGENTS.md, or a model with a larger context window.${namedFacts(error, governingIds)}`,
   };
+};
+
+export const pinnedFailureFor = (ctx: ClaimContext, error: PinnedOverflowError): { code: 'pinned_overflow'; message: string } =>
+  pinnedOverflowFailure(ctx, error, governingFor(ctx, sessionOf(ctx), [], 'live').active.map((fact) => fact.id));
+
+export const governingFailureAtStart = async (ctx: ClaimContext): Promise<{ code: 'pinned_overflow'; message: string } | undefined> => {
+  if (governingFor(ctx, sessionOf(ctx), [], 'live').active.length === 0) return undefined;
+  try {
+    await measurePinned(contextInputOf(ctx, undefined, 0, 'live'), portsOf(ctx));
+    return undefined;
+  } catch (error) {
+    if (error instanceof PinnedOverflowError) return pinnedFailureFor(ctx, error);
+    throw error;
+  }
 };
 
 type FinalAttempt = {
@@ -371,7 +420,7 @@ const budgetStopNotice = (ctx: ClaimContext, error: ContextOverflowError, attemp
   const prefix =
     breakdown === undefined
       ? `${error.pinnedTokens}`
-      : `${error.pinnedTokens} (system prompt ${breakdown.systemPrompt}, tool definitions ${breakdown.tools}, instructions ${breakdown.instructions}, task ${breakdown.task})`;
+      : `${error.pinnedTokens} (system prompt ${breakdown.systemPrompt}, tool definitions ${breakdown.tools}, instructions ${breakdown.instructions}${governingShare(breakdown.governing)}, task ${breakdown.task})`;
   const reason =
     error.compactionBlockedBy?.message ??
     (attempt.triedAtLastLevel ? 'the compaction at this level did not free enough room' : 'no compaction was available');
@@ -419,7 +468,7 @@ export const buildNext = async (ctx: ClaimContext, options: { wrapUp?: WrapUpRea
       built = await buildOnce(ctx, options.wrapUp, level);
     } catch (error) {
       if (error instanceof PinnedOverflowError) {
-        ctx.terminals.finish('FAILED', { error: pinnedOverflowFailure(ctx, error) });
+        ctx.terminals.finish('FAILED', { error: pinnedFailureFor(ctx, error) });
         return { kind: 'done' };
       }
       if (error instanceof GatewayRequestError && error.code === 'invalid_compaction') {

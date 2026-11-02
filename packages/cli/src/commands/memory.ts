@@ -2,7 +2,7 @@ import path from 'node:path';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { MemoryScope } from '@momonga/protocol';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
-import { formatMemory, formatMemoryList } from '../memory/format.ts';
+import { formatMemory, formatMemoryHistory, formatMemoryList } from '../memory/format.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
 
@@ -29,6 +29,18 @@ export const memoryShow = async (ports: CliPorts, paths: MomongaPaths, id: strin
   try {
     const memory = await client.memory(id);
     ports.stdout.write(`${json ? JSON.stringify(memory) : formatMemory(memory)}\n`);
+    return 0;
+  } finally {
+    await client.close();
+  }
+};
+
+export const memoryHistory = async (ports: CliPorts, paths: MomongaPaths, id: string, json: boolean): Promise<number> => {
+  await ensureDaemon(ports, paths);
+  const client = connectRuntime(paths);
+  try {
+    const memories = await client.memoryHistory(id);
+    ports.stdout.write(`${json ? JSON.stringify(memories) : formatMemoryHistory(memories)}\n`);
     return 0;
   } finally {
     await client.close();

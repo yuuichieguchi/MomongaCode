@@ -4,6 +4,10 @@ import type { FileRuleAccess, FileRuleSpec } from '@momonga/foundation';
 export type RuleEffect = 'allow' | 'ask' | 'deny';
 export type RuleOrigin = 'user' | 'project' | 'local' | 'cli';
 
+export const RULE_LAYERS = ['governance'] as const;
+
+export type RuleLayer = (typeof RULE_LAYERS)[number];
+
 export type PermissionRule = {
   text: string;
   tool: string;
@@ -15,6 +19,7 @@ export type PermissionRule = {
   home: string;
   cwd: string;
   exceptions?: readonly string[];
+  layer?: RuleLayer;
 };
 
 export type ParseRuleOptions = {
@@ -24,6 +29,7 @@ export type ParseRuleOptions = {
   settingsRoot: string;
   home: string;
   cwd: string;
+  layer?: RuleLayer;
 };
 
 export class RuleParseError extends Error {
@@ -54,7 +60,7 @@ export const EDIT_TOOLS: ReadonlySet<string> = new Set(PATH_TOOLS.filter((tool) 
 export const isPathTool = (tool: string): tool is PathToolName => Object.hasOwn(PATH_TOOL_RULES, tool);
 
 const SPECIFIER_TOOLS: readonly string[] = [...PATH_TOOLS, 'Bash'];
-const PLAIN_TOOLS: readonly string[] = [...SPECIFIER_TOOLS, 'ReadOutput', 'UpdatePlan', 'MemorySave', 'MemorySearch', 'HistorySearch', 'HistoryRead'];
+const PLAIN_TOOLS: readonly string[] = [...SPECIFIER_TOOLS, 'ReadOutput', 'UpdatePlan', 'MemorySave', 'MemorySearch', 'HistorySearch', 'HistoryRead', 'RulePropose'];
 const MCP_NAME = /^[A-Za-z0-9_-]+$/;
 
 export const hasBalancedParentheses = (value: string): boolean => {
@@ -99,7 +105,7 @@ const validateSpecifier = (text: string, tool: string, specifier: string): void 
   }
 };
 
-export const parseRule = (text: string, options: ParseRuleOptions): PermissionRule => {
+export const checkRuleText = (text: string): { tool: string; specifier: string | undefined } => {
   const open = text.indexOf('(');
   const tool = open === -1 ? text : text.slice(0, open);
   if (open !== -1 && !text.endsWith(')')) throw new RuleParseError(text, 'missing closing parenthesis');
@@ -112,8 +118,25 @@ export const parseRule = (text: string, options: ParseRuleOptions): PermissionRu
     throw new RuleParseError(text, 'unknown tool');
   }
   if (specifier !== undefined) validateSpecifier(text, tool, specifier);
+  return { tool, specifier };
+};
 
-  const { effect, origin, source, settingsRoot, home, cwd } = options;
-  const base = { text, tool, effect, origin, source, settingsRoot, home, cwd };
+export type GovernanceRuleEntry = { id: string; behavior: 'deny' | 'ask'; rule: string };
+
+export const parseGovernanceRule = (entry: GovernanceRuleEntry, context: { home: string; project: string }): PermissionRule =>
+  parseRule(entry.rule, {
+    effect: entry.behavior,
+    origin: 'user',
+    source: `governing fact ${entry.id}`,
+    settingsRoot: context.project,
+    home: context.home,
+    cwd: context.project,
+    layer: 'governance',
+  });
+
+export const parseRule = (text: string, options: ParseRuleOptions): PermissionRule => {
+  const { tool, specifier } = checkRuleText(text);
+  const { effect, origin, source, settingsRoot, home, cwd, layer } = options;
+  const base = { text, tool, effect, origin, source, settingsRoot, home, cwd, ...(layer === undefined ? {} : { layer }) };
   return specifier === undefined ? base : { ...base, specifier };
 };

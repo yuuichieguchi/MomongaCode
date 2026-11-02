@@ -11,9 +11,14 @@ import type {
   RunState,
   RunStatus,
   SessionEvent,
+  GoverningEnforcement,
+  GoverningFactView,
+  GoverningKind,
+  MemoryEvidence,
+  MemoryKind,
   MemoryOrigin,
+  MemoryRecord,
   MemoryScope,
-  MemoryView,
   StopReason,
   ToolKind,
 } from '@momonga/protocol';
@@ -260,7 +265,7 @@ export type TrustStore = {
   clear(path: string): void;
 };
 
-export type MemoryRecord = MemoryView;
+export type { MemoryRecord };
 
 export type SaveMemoryInput = {
   scope: MemoryScope;
@@ -270,18 +275,45 @@ export type SaveMemoryInput = {
   runId: string;
   step: number;
   callId: string;
+  kind?: MemoryKind;
+  supersedes?: readonly string[];
+  evidence?: readonly MemoryEvidence[];
 };
 
 export type MemoryVisibility = { trusted: true; project: string } | { trusted: false };
+
+export type MemoryInclude = 'live' | 'all';
 
 export type MemoryStore = {
   save(input: SaveMemoryInput): { memory: MemoryRecord; created: boolean };
   get(id: string): MemoryRecord | undefined;
   list(filter?: { scope?: MemoryScope; project?: string }): MemoryRecord[];
   recall(visibility: MemoryVisibility): MemoryRecord[];
-  search(visibility: MemoryVisibility, terms: readonly string[]): MemoryRecord[];
+  search(visibility: MemoryVisibility, terms: readonly string[], options?: { include: MemoryInclude }): MemoryRecord[];
+  matchingIds(visibility: MemoryVisibility, terms: readonly string[]): Set<string>;
+  retire(id: string): { retired: boolean; memory: MemoryRecord } | undefined;
+  history(id: string): MemoryRecord[];
   markUsed(ids: readonly string[]): void;
   delete(id: string): boolean;
+};
+
+export type AddGoverningFactInput = {
+  kind: GoverningKind;
+  target: string;
+  text: string;
+  scope: GoverningFactView['scope'];
+  validUntil: number | null;
+  supersedes: readonly string[];
+  enforcement: GoverningEnforcement | null;
+  source: { kind: 'command' } | { kind: 'proposal'; sessionId: string; runId: string; seq: number; callId: string };
+};
+
+export type GoverningFactStore = {
+  add(input: AddGoverningFactInput): { fact: GoverningFactView; created: boolean };
+  get(id: string): GoverningFactView | undefined;
+  list(filter?: { project: string }): GoverningFactView[];
+  retire(id: string): { retired: boolean; fact: GoverningFactView } | undefined;
+  history(id: string): GoverningFactView[];
 };
 
 export type HistoryVisibility = { trusted: boolean; project: string };
@@ -399,6 +431,7 @@ export type RuntimeStore = {
   blobs: BlobStore;
   trust: TrustStore;
   memories: MemoryStore;
+  governing: GoverningFactStore;
   search: SearchStore;
   close(): void;
 };
