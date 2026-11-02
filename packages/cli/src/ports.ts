@@ -24,6 +24,8 @@ export type SelfExecutable =
 
 export type Sink = { write(text: string): void };
 
+export type AcpStdio = { input: ReadableStream<Uint8Array>; output: WritableStream<Uint8Array> };
+
 export type Terminal = { stdin: NodeJS.ReadStream; stdout: NodeJS.WriteStream };
 
 export type CliFiles = {
@@ -51,4 +53,5 @@ export type CliPorts = {
   files: CliFiles;
   openUrl(url: URL, signal: AbortSignal): Promise<void>;
   secretStore(): SecretStore;
+  acpStdio?: () => AcpStdio;
 };

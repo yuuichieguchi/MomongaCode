@@ -1,3 +1,4 @@
+import type { McpServerConfig } from '@momonga/config';
 import { createUdsClient, decodeSse, isRecord } from '@momonga/foundation';
 import type { UdsResponse } from '@momonga/foundation';
 import type { CostReportView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryView, PermissionMode, PublicRunEvent, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
@@ -56,6 +57,7 @@ export type CreateSessionInput = {
   permissionMode?: PermissionMode;
   modelAlias?: string;
   bypassAllowed?: boolean;
+  mcpServers?: Readonly<Record<string, McpServerConfig>>;
 };
 
 export type CreateRunOptions = {
@@ -79,7 +81,11 @@ export type ResolvedApproval = { approval: ApprovalView; run: RunView };
 export type RuntimeClient = {
   health(): Promise<RunHealth>;
   createSession(input: CreateSessionInput): Promise<CreatedSession>;
+  getSession(id: string): Promise<SessionView>;
   listSessions(cwd: string): Promise<SessionView[]>;
+  listRuns(sessionId: string): Promise<RunView[]>;
+  skills(sessionId: string): Promise<SkillsResponse>;
+  setMcpServers(sessionId: string, servers: Readonly<Record<string, McpServerConfig>>): Promise<SessionView>;
   setPermissionMode(sessionId: string, mode: PermissionMode): Promise<SessionView>;
   createRun(sessionId: string, input: string, options?: CreateRunOptions): Promise<{ run: RunView; location: string }>;
   getRun(id: string): Promise<RunView>;
@@ -104,6 +110,7 @@ export type RuntimeClient = {
   trust(path: string): Promise<TrustView>;
   setTrust(path: string, decision: 'trusted' | 'untrusted'): Promise<TrustView>;
   streamEvents(runId: string, options?: EventsOptions): AsyncGenerator<RunEventFrame>;
+  streamSessionEvents(sessionId: string, options?: EventsOptions): AsyncGenerator<RunEventFrame>;
   close(): Promise<void>;
 };
 
@@ -190,11 +197,36 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
         ...(input.permissionMode === undefined ? {} : { permissionMode: input.permissionMode }),
         ...(input.modelAlias === undefined ? {} : { modelAlias: input.modelAlias }),
         ...(input.bypassAllowed === undefined ? {} : { bypassAllowed: input.bypassAllowed }),
+        ...(input.mcpServers === undefined ? {} : { mcpServers: input.mcpServers }),
       },
     });
     const stripped = listOf(body, 'strippedEnvKeys', description);
     if (!stripped.every((key): key is string => typeof key === 'string')) throw new ContractViolation(description, 'strippedEnvKeys holds a non-string');
     return { session: sessionOf(body, description), strippedEnvKeys: stripped };
+  };
+
+  const getSession = async (id: string): Promise<SessionView> => {
+    const path = `/v1/sessions/${id}`;
+    const { body } = await send('GET', path, [200]);
+    return sessionOf(body, `GET ${path}`);
+  };
+
+  const listRuns = async (sessionId: string): Promise<RunView[]> => {
+    const path = `/v1/sessions/${sessionId}/runs`;
+    const { body } = await send('GET', path, [200]);
+    return listOf(body, 'runs', `GET ${path}`).map((entry) => checkRun(entry, `GET ${path}`));
+  };
+
+  const skills = async (sessionId: string): Promise<SkillsResponse> => {
+    const path = `/v1/sessions/${sessionId}/skills`;
+    const { body } = await send('GET', path, [200]);
+    return checkSkills(body, `GET ${path}`);
+  };
+
+  const setMcpServers = async (sessionId: string, servers: Readonly<Record<string, McpServerConfig>>): Promise<SessionView> => {
+    const path = `/v1/sessions/${sessionId}`;
+    const { body } = await send('PATCH', path, [200], { body: { mcpServers: servers } });
+    return sessionOf(body, `PATCH ${path}`);
   };
 
   const listSessions = async (cwd: string): Promise<SessionView[]> => {
@@ -254,12 +286,6 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     const path = `/v1/approvals/${id}`;
     const { body } = await send('POST', path, [200], { body: { optionId } });
     return { approval: checkApproval(fieldOf(body, 'approval', `POST ${path}`), `POST ${path}`), run: runOf(body, `POST ${path}`) };
-  };
-
-  const skills = async (sessionId: string): Promise<SkillsResponse> => {
-    const path = `/v1/sessions/${sessionId}/skills`;
-    const { body } = await send('GET', path, [200]);
-    return checkSkills(body, `GET ${path}`);
   };
 
   const elicitations = async (runId: string): Promise<ElicitationView[]> => {
@@ -354,12 +380,10 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     return checkTrust(fieldOf(body, 'trust', description), description);
   };
 
-  async function* streamEvents(runId: string, eventsOptions: EventsOptions = {}): AsyncGenerator<RunEventFrame> {
-    const path = `/v1/runs/${runId}/events${eventsQueryOf(eventsOptions)}`;
-    const description = `GET /v1/runs/${runId}/events`;
+  async function* openEventStream(path: string, description: string, eventsOptions: EventsOptions): AsyncGenerator<RunEventFrame> {
     const response = await http.request({
       method: 'GET',
-      path,
+      path: `${path}${eventsQueryOf(eventsOptions)}`,
       headers: eventsHeadersOf(eventsOptions),
       ...(eventsOptions.signal === undefined ? {} : { signal: eventsOptions.signal }),
     });
@@ -367,10 +391,20 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     for await (const event of decodeSse(response.body)) yield frameOf(event, description);
   }
 
+  const streamEvents = (runId: string, eventsOptions: EventsOptions = {}): AsyncGenerator<RunEventFrame> =>
+    openEventStream(`/v1/runs/${runId}/events`, `GET /v1/runs/${runId}/events`, eventsOptions);
+
+  const streamSessionEvents = (sessionId: string, eventsOptions: EventsOptions = {}): AsyncGenerator<RunEventFrame> =>
+    openEventStream(`/v1/sessions/${sessionId}/events`, `GET /v1/sessions/${sessionId}/events`, eventsOptions);
+
   return {
     health,
     createSession,
+    getSession,
     listSessions,
+    listRuns,
+    skills,
+    setMcpServers,
     setPermissionMode,
     createRun,
     getRun,
@@ -379,7 +413,6 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     approvals,
     getApproval,
     resolveApproval,
-    skills,
     elicitations,
     getElicitation,
     resolveElicitation,
@@ -395,6 +428,7 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     trust,
     setTrust,
     streamEvents,
+    streamSessionEvents,
     close: () => http.close(),
   };
 };

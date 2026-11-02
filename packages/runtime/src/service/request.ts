@@ -10,9 +10,10 @@ export type CreateSessionBody = {
   permissionMode?: PermissionMode;
   modelAlias?: string;
   bypassAllowed?: boolean;
+  mcpServers?: Record<string, Record<string, unknown>>;
 };
 
-export type PatchSessionBody = { permissionMode: PermissionMode };
+export type PatchSessionBody = { permissionMode?: PermissionMode; mcpServers?: Record<string, Record<string, unknown>> };
 
 export type CreateRunBody = {
   input: string;

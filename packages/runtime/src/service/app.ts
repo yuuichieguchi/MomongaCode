@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { ConfigError, stripCredentialEnv } from '@momonga/config';
+import { ConfigError, assertSessionMcpServers, stripCredentialEnv } from '@momonga/config';
 import { canonicalDirectory, canonicalJson, canonicalPath, comparableContains, comparablePath, isTransientErrno, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { AUTO_MODE_UNAVAILABLE, RUN_STATUSES, isUnavailableMode } from '@momonga/protocol';
@@ -99,6 +99,16 @@ const checkModeAllowed = (mode: PermissionMode, bypassAllowed: boolean): void =>
   }
 };
 
+const checkedMcpServers = (servers: Record<string, Record<string, unknown>>): Record<string, Record<string, unknown>> => {
+  try {
+    assertSessionMcpServers(servers);
+  } catch (error) {
+    if (error instanceof Error) throw invalidRequest(error.message, 'mcpServers');
+    throw error;
+  }
+  return servers;
+};
+
 const parseStatusFilter = (raw: string | null): RunStatus[] | undefined => {
   if (raw === null) return undefined;
   const statuses = raw.split(',');
@@ -187,7 +197,8 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       body.bypassAllowed === true || (settings.defaultMode === 'bypassPermissions' && settings.defaultModeOrigin === 'user');
     checkModeAllowed(permissionMode, bypassAllowed);
     const stripped = stripCredentialEnv(body.env, settings.credentialEnvNames);
-    const session = store.createSession({ cwd, env: stripped.env, permissionMode, modelAlias, bypassAllowed, additionalDirectories });
+    const mcpServers = checkedMcpServers(body.mcpServers ?? {});
+    const session = store.createSession({ cwd, env: stripped.env, permissionMode, modelAlias, bypassAllowed, additionalDirectories, mcpServers });
     return json({ session: toSessionView(store, session), strippedEnvKeys: stripped.removed }, 201, { location: `/v1/sessions/${session.id}` });
   };
 
@@ -211,10 +222,20 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const session = requireSession(context.req.param('id') ?? '');
     requireRootSession(session);
     const body = validateBody<PatchSessionBody>('PatchSessionRequest', await readJson(context.req.raw, PATCH_MEDIA_TYPES, deps.maxBodyBytes));
-    checkModeAllowed(body.permissionMode, session.bypassAllowed);
-    const result = store.setPermissionMode(session.id, body.permissionMode);
-    if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
-    return json({ session: toSessionView(store, result.session) });
+    if (body.permissionMode !== undefined) checkModeAllowed(body.permissionMode, session.bypassAllowed);
+    const mcpServers = body.mcpServers === undefined ? undefined : checkedMcpServers(body.mcpServers);
+    let current = session;
+    if (mcpServers !== undefined) {
+      const replaced = store.setSessionMcpServers(session.id, mcpServers);
+      if (replaced.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
+      current = replaced.session;
+    }
+    if (body.permissionMode !== undefined) {
+      const result = store.setPermissionMode(session.id, body.permissionMode);
+      if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
+      current = result.session;
+    }
+    return json({ session: toSessionView(store, current) });
   };
 
   const listRuns: Handler = (context) => {

@@ -45,6 +45,7 @@ import type {
   ServiceMutationResult,
   Session,
   SetPermissionModeResult,
+  SetSessionMcpServersResult,
   StatusPatch,
   WaitTargets,
 } from './types.ts';
@@ -187,9 +188,10 @@ const ROOT_SESSION = 'NOT EXISTS (SELECT 1 FROM runs child WHERE child.session_i
 
 const prepareStatements = (db: DatabaseSync) => ({
   insertSession: db.prepare(
-    `INSERT INTO sessions (id, cwd, env_json, permission_mode, model_alias, bypass_allowed, additional_directories_json, created_at)
-     VALUES (:id, :cwd, :env, :permissionMode, :modelAlias, :bypassAllowed, :additionalDirectories, :createdAt)`,
+    `INSERT INTO sessions (id, cwd, env_json, permission_mode, model_alias, bypass_allowed, additional_directories_json, mcp_servers_json, created_at)
+     VALUES (:id, :cwd, :env, :permissionMode, :modelAlias, :bypassAllowed, :additionalDirectories, :mcpServers, :createdAt)`,
   ),
+  updateSessionMcpServers: db.prepare('UPDATE sessions SET mcp_servers_json = :mcpServers WHERE id = :id'),
   updateSessionMode: db.prepare('UPDATE sessions SET permission_mode = :permissionMode WHERE id = :id'),
   sessionMaxEventId: db.prepare('SELECT COALESCE(MAX(id), 0) AS max_id FROM events WHERE session_id = :sessionId'),
   selectSession: db.prepare('SELECT * FROM sessions WHERE id = :id'),
@@ -923,6 +925,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           modelAlias: input.modelAlias,
           bypassAllowed: input.bypassAllowed === true ? 1 : 0,
           additionalDirectories: canonicalJson(input.additionalDirectories ?? []),
+          mcpServers: canonicalJson(input.mcpServers ?? {}),
           createdAt: clock.now(),
         });
         const row = sql.selectSession.get({ id });
@@ -948,6 +951,14 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         propagateMode(sessionId, mode);
         insertEvent({ runId: null, sessionId, seq: null, step: null, leaseToken: null, createdAt: clock.now(), payload: { type: 'mode.changed', mode } });
         return { kind: 'ok', session: { ...session, permissionMode: mode }, changed: true };
+      }),
+
+    setSessionMcpServers: (sessionId, servers) =>
+      transaction<SetSessionMcpServersResult>(() => {
+        const row = sql.selectSession.get({ id: sessionId });
+        if (row === undefined) return { kind: 'not_found' };
+        sql.updateSessionMcpServers.run({ id: sessionId, mcpServers: canonicalJson(servers) });
+        return { kind: 'ok', session: { ...decodeSession(row), mcpServers: servers } };
       }),
 
     createRunAndEnqueue: (sessionId, input) =>

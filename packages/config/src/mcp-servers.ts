@@ -9,7 +9,7 @@ import type { TrustOracle, UserLayer } from './layers.ts';
 import { assertMcpServer, assertMcpServersFile } from './settings.ts';
 import type { McpServerConfig, McpServersFile, Settings } from './settings.ts';
 
-export type McpServerScope = 'user' | 'project';
+export type McpServerScope = 'user' | 'project' | 'session';
 
 export type McpServerEntry = { name: string; scope: McpServerScope; config: McpServerConfig };
 
@@ -21,6 +21,7 @@ export type LoadMcpServersOptions = {
   trust: TrustOracle;
   env: Readonly<Record<string, string | undefined>>;
   user?: UserLayer;
+  sessionServers?: Readonly<Record<string, unknown>>;
 };
 
 export type LoadMcpServersResult = {
@@ -198,7 +199,19 @@ const readProjectServers = async (
   return file.mcpServers;
 };
 
-export const loadMcpServers = async ({ home, projectDir, trust, env, user }: LoadMcpServersOptions): Promise<LoadMcpServersResult> => {
+const SESSION_SOURCE = 'the MCP servers passed with the session';
+
+export const assertSessionMcpServers = (value: unknown): Record<string, McpServerConfig> => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(`${SESSION_SOURCE} must be an object`);
+  return Object.fromEntries(
+    Object.entries(value).map(([name, config]) => {
+      assertServerName(name, SESSION_SOURCE);
+      return [name, assertMcpServer(config, SESSION_SOURCE, name)];
+    }),
+  );
+};
+
+export const loadMcpServers = async ({ home, projectDir, trust, env, user, sessionServers }: LoadMcpServersOptions): Promise<LoadMcpServersResult> => {
   const loaded = await loadLayersForUser({ home, projectDir, trust, ...(user === undefined ? {} : { user }) });
   const warnings = [...loaded.warnings];
   const userSettings = loaded.layers.find((layer) => layer.origin === 'user');
@@ -229,6 +242,23 @@ export const loadMcpServers = async ({ home, projectDir, trust, env, user }: Loa
         rethrowIfTransient(error);
         throw toConfigError(error);
       }
+    }
+  }
+
+  if (sessionServers !== undefined) {
+    let validated: Record<string, McpServerConfig>;
+    try {
+      validated = assertSessionMcpServers(sessionServers);
+    } catch (error) {
+      throw toConfigError(error);
+    }
+    for (const [name, config] of Object.entries(validated)) {
+      if (seen.has(name)) {
+        failed.push({ name, reason: `the user settings already define an MCP server named ${JSON.stringify(name)}` });
+        continue;
+      }
+      seen.add(name);
+      enabled.push({ name, scope: 'session', config });
     }
   }
 

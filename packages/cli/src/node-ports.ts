@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { Readable, Writable } from 'node:stream';
 import { isSea } from 'node:sea';
 import { nodeEvalFiles } from '@momonga/eval';
 import { createExecWithStdin, createPlatformSecretStore, openInBrowser, systemClock } from '@momonga/foundation';
@@ -66,4 +67,5 @@ export const nodePorts = (version: string): CliPorts => ({
   files: nodeFiles,
   openUrl: (url, signal) => openInBrowser(url, signal, process.env),
   secretStore: () => createPlatformSecretStore(process.platform, createExecWithStdin(undefined), process.env),
+  acpStdio: () => ({ input: Readable.toWeb(process.stdin), output: Writable.toWeb(process.stdout) }),
 });

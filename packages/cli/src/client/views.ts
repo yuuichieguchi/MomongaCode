@@ -11,6 +11,7 @@ export type SessionView = {
   readonly activeRunId: string | null;
   readonly latestRunId: string | null;
   readonly additionalDirectories: readonly string[];
+  readonly lastEventId: number;
 };
 
 export type RunUsage = { readonly inputTokens: number; readonly outputTokens: number; readonly totalTokens: number };

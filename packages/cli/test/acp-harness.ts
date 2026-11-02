@@ -1,0 +1,392 @@
+import { createAcpAgent } from '../src/acp/agent.ts';
+import type { AcpDeps, FollowRequest, FollowSessionRequest } from '../src/acp/agent.ts';
+import type { AgentApp, AnyMessage } from '@agentclientprotocol/sdk';
+import type { PublicRunEvent, SkillsResponse } from '@momonga/protocol';
+import { RunApiError } from '../src/client/runtime-client.ts';
+import type { CreatedSession, RunEventFrame, RuntimeClient } from '../src/client/runtime-client.ts';
+import type { ApprovalView, ElicitationView, RunView, SessionView } from '../src/client/views.ts';
+import { SESSION, runView } from './fake-backend.ts';
+
+export type EventPayload = PublicRunEvent extends infer Event
+  ? Event extends unknown
+    ? Omit<Event, 'id' | 'runId' | 'sessionId' | 'seq' | 'step' | 'createdAt'> & { step?: number }
+    : never
+  : never;
+
+export const frameOf = (runId: string, seq: number, payload: EventPayload): RunEventFrame => ({
+  id: seq,
+  event: payload.type,
+  data: { id: seq, runId, sessionId: SESSION.id, seq, step: 1, createdAt: 1, ...payload } as PublicRunEvent,
+});
+
+export type Peer = {
+  readonly received: readonly AnyMessage[];
+  request(method: string, params: unknown): Promise<AnyMessage>;
+  notify(method: string, params: unknown): Promise<void>;
+  untilReceived(predicate: (message: AnyMessage) => boolean): Promise<AnyMessage>;
+  answerRequests(handler: (method: string, params: unknown) => unknown): void;
+  close(): Promise<void>;
+};
+
+const isRequest = (message: AnyMessage): message is AnyMessage & { id: string | number | null; method: string } => 'method' in message && 'id' in message;
+
+const isResponseTo = (message: AnyMessage, id: number): boolean => !('method' in message) && 'id' in message && message.id === id;
+
+export const connectPeer = (app: AgentApp): Peer => {
+  const toAgent = new TransformStream<AnyMessage, AnyMessage>();
+  const fromAgent = new TransformStream<AnyMessage, AnyMessage>();
+  const connection = app.connect({ readable: toAgent.readable, writable: fromAgent.writable });
+  const writer = toAgent.writable.getWriter();
+  const received: AnyMessage[] = [];
+  const listeners = new Set<() => void>();
+  let handler: ((method: string, params: unknown) => unknown) | undefined;
+  let nextId = 1;
+  const answering = new Set<Promise<void>>();
+
+  const answer = async (message: AnyMessage & { id: string | number | null; method: string }): Promise<void> => {
+    if (handler === undefined) throw new Error(`the agent sent the request ${message.method} and the test has no handler`);
+    try {
+      const result = await handler(message.method, 'params' in message ? message.params : undefined);
+      await writer.write({ jsonrpc: '2.0', id: message.id, result });
+    } catch (error) {
+      const code = typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'number' ? error.code : -32603;
+      await writer.write({ jsonrpc: '2.0', id: message.id, error: { code, message: error instanceof Error ? error.message : String(error) } });
+    }
+  };
+
+  const reader = fromAgent.readable.getReader();
+  const reading = (async () => {
+    for (;;) {
+      const next = await reader.read();
+      if (next.done) return;
+      const message = next.value;
+      received.push(message);
+      if (isRequest(message)) {
+        const tracked: Promise<void> = answer(message).finally(() => {
+          answering.delete(tracked);
+        });
+        answering.add(tracked);
+      }
+      for (const listener of [...listeners]) listener();
+    }
+  })();
+
+  const untilReceived = (predicate: (message: AnyMessage) => boolean): Promise<AnyMessage> =>
+    new Promise((resolve) => {
+      const check = (): boolean => {
+        const found = received.find(predicate);
+        if (found === undefined) return false;
+        listeners.delete(check);
+        resolve(found);
+        return true;
+      };
+      if (!check()) listeners.add(check);
+    });
+
+  return {
+    received,
+    request: async (method, params) => {
+      const id = nextId;
+      nextId += 1;
+      await writer.write({ jsonrpc: '2.0', id, method, params });
+      return untilReceived((message) => isResponseTo(message, id));
+    },
+    notify: (method, params) => writer.write({ jsonrpc: '2.0', method, params }),
+    untilReceived,
+    answerRequests: (next) => {
+      handler = next;
+    },
+    close: async () => {
+      await writer.close();
+      connection.close();
+      await connection.closed;
+      await reader.cancel();
+      await Promise.all([reading, ...answering]);
+    },
+  };
+};
+
+export const resultOf = (message: AnyMessage): unknown => {
+  if (!('result' in message)) throw new Error(`expected a result, got ${JSON.stringify(message)}`);
+  return message.result;
+};
+
+export const errorOf = (message: AnyMessage): { code: number; message: string; data?: unknown } => {
+  if (!('error' in message)) throw new Error(`expected an error, got ${JSON.stringify(message)}`);
+  return message.error;
+};
+
+export const updatesOf = (received: readonly AnyMessage[]): { sessionUpdate: string; [key: string]: unknown }[] =>
+  received.flatMap((message) => {
+    if (!('method' in message) || message.method !== 'session/update' || typeof message.params !== 'object' || message.params === null || !('update' in message.params)) return [];
+    const update = message.params.update;
+    return typeof update === 'object' && update !== null && 'sessionUpdate' in update && typeof update.sessionUpdate === 'string'
+      ? [{ ...update, sessionUpdate: update.sessionUpdate }]
+      : [];
+  });
+
+export const labelsOf = (received: readonly AnyMessage[]): string[] =>
+  received.map((message) => {
+    if ('method' in message) {
+      if (message.method === 'session/update') return `update:${updatesOf([message])[0]?.sessionUpdate}`;
+      return message.method;
+    }
+    return 'result' in message ? `result:${String(message.id)}` : `error:${String(message.id)}`;
+  });
+
+export type RunScript = (request: FollowRequest) => Promise<RunView>;
+
+export type FakeRuntime = RuntimeClient & {
+  readonly calls: string[];
+  called(prefix: string): Promise<void>;
+  session: SessionView;
+  runs: RunView[];
+  skillList: SkillsResponse;
+  approvalStatus: ApprovalView['status'];
+  elicitationStatus: ElicitationView['status'];
+  createRunResult: (input: string) => Promise<RunView>;
+  failures: Map<string, Error>;
+  modeChanged: ((mode: SessionView['permissionMode']) => void) | undefined;
+};
+
+const unexpected = (name: string) => (): never => {
+  throw new Error(`the test did not expect ${name}`);
+};
+
+export const approvalView = (overrides: Partial<ApprovalView> = {}): ApprovalView => ({
+  id: 'approval-1',
+  runId: 'run-1',
+  callId: 'call-1',
+  status: 'pending',
+  options: [],
+  expiresAt: 10,
+  createdAt: 1,
+  toolCall: { callId: 'call-1', name: 'Edit', title: 'Edit a.txt', kind: 'edit' },
+  ...overrides,
+});
+
+export const fakeRuntime = (): FakeRuntime => {
+  const calls: string[] = [];
+  const waiters = new Set<() => void>();
+  const record = (call: string): void => {
+    calls.push(call);
+    for (const waiter of [...waiters]) waiter();
+  };
+  const runtime: FakeRuntime = {
+    calls,
+    called: (prefix) =>
+      new Promise((resolve) => {
+        const check = (): boolean => {
+          if (!calls.some((call) => call.startsWith(prefix))) return false;
+          waiters.delete(check);
+          resolve();
+          return true;
+        };
+        if (!check()) waiters.add(check);
+      }),
+    session: SESSION,
+    runs: [],
+    skillList: { skills: [], warnings: [] },
+    approvalStatus: 'pending',
+    elicitationStatus: 'pending',
+    createRunResult: async () => runView({ id: 'run-1', status: 'QUEUED' }),
+    failures: new Map(),
+    modeChanged: undefined,
+    health: unexpected('health'),
+    createSession: async (input): Promise<CreatedSession> => {
+      record(`createSession ${JSON.stringify({ cwd: input.cwd, mcpServers: input.mcpServers })}`);
+      return { session: runtime.session, strippedEnvKeys: [] };
+    },
+    getSession: async (id) => {
+      record(`getSession ${id}`);
+      const failure = runtime.failures.get('getSession');
+      if (failure !== undefined) throw failure;
+      return runtime.session;
+    },
+    listSessions: unexpected('listSessions'),
+    listRuns: async (id) => {
+      record(`listRuns ${id}`);
+      return runtime.runs;
+    },
+    skills: async (id) => {
+      record(`skills ${id}`);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      return runtime.skillList;
+    },
+    setMcpServers: async (id, servers) => {
+      record(`setMcpServers ${id} ${JSON.stringify(servers)}`);
+      return runtime.session;
+    },
+    setPermissionMode: async (id, mode) => {
+      record(`setPermissionMode ${id} ${mode}`);
+      const failure = runtime.failures.get('setPermissionMode');
+      if (failure !== undefined) throw failure;
+      runtime.session = { ...runtime.session, permissionMode: mode };
+      runtime.modeChanged?.(mode);
+      return runtime.session;
+    },
+    createRun: async (sessionId, input, options) => {
+      record(`createRun ${sessionId} ${JSON.stringify({ input, ...(options?.skill === undefined ? {} : { skill: options.skill }) })}`);
+      const failure = runtime.failures.get('createRun');
+      if (failure !== undefined) throw failure;
+      return { run: await runtime.createRunResult(input), location: '/v1/runs/run-1' };
+    },
+    getRun: unexpected('getRun'),
+    cancel: async (id) => {
+      record(`cancel ${id}`);
+      return { status: 202, run: runView({ id, status: 'CANCELLING' }) };
+    },
+    trace: unexpected('trace'),
+    approvals: unexpected('approvals'),
+    getApproval: async (id) => {
+      record(`getApproval ${id}`);
+      return approvalView({ id, status: runtime.approvalStatus });
+    },
+    resolveApproval: async (id, optionId) => {
+      record(`resolveApproval ${id} ${optionId}`);
+      const failure = runtime.failures.get('resolveApproval');
+      if (failure !== undefined) throw failure;
+      return { approval: approvalView({ id, status: 'resolved' }), run: runView({ status: 'RUNNING' }) };
+    },
+    getElicitation: async (id) => {
+      record(`getElicitation ${id}`);
+      return {
+        id,
+        runId: 'run-1',
+        callId: 'call-1',
+        status: runtime.elicitationStatus,
+        server: 'remote',
+        requests: [],
+        expiresAt: 10,
+        createdAt: 1,
+        toolCall: { callId: 'call-1', name: 'mcp__remote__ask', title: 'Ask' },
+      };
+    },
+    resolveElicitation: async (id, responses) => {
+      record(`resolveElicitation ${id} ${JSON.stringify(responses)}`);
+      const failure = runtime.failures.get('resolveElicitation');
+      if (failure !== undefined) throw failure;
+      return {
+        elicitation: {
+          id,
+          runId: 'run-1',
+          callId: 'call-1',
+          status: 'resolved',
+          server: 'remote',
+          requests: [],
+          expiresAt: 10,
+          createdAt: 1,
+          toolCall: { callId: 'call-1', name: 'mcp__remote__ask', title: 'Ask' },
+        },
+        run: runView({ status: 'RUNNING' }),
+      };
+    },
+    elicitations: unexpected('elicitations'),
+    mcpServers: unexpected('mcpServers'),
+    startMcpAuthorization: unexpected('startMcpAuthorization'),
+    mcpAuthorization: unexpected('mcpAuthorization'),
+    cancelMcpAuthorization: unexpected('cancelMcpAuthorization'),
+    memories: unexpected('memories'),
+    memory: unexpected('memory'),
+    deleteMemory: unexpected('deleteMemory'),
+    cost: unexpected('cost'),
+    costText: unexpected('costText'),
+    trust: unexpected('trust'),
+    setTrust: unexpected('setTrust'),
+    streamEvents: unexpected('streamEvents'),
+    streamSessionEvents: unexpected('streamSessionEvents'),
+    close: async () => undefined,
+  };
+  return runtime;
+};
+
+export const modeChangedFrame = (id: number, mode: SessionView['permissionMode']): RunEventFrame => ({
+  id,
+  event: 'mode.changed',
+  data: { id, sessionId: SESSION.id, createdAt: 1, type: 'mode.changed', mode },
+});
+
+export type Harness = {
+  readonly runtime: FakeRuntime;
+  readonly peer: Peer;
+  readonly reports: string[];
+  readonly reported: Promise<void>;
+  readonly sessionStreams: readonly FollowSessionRequest[];
+  scripts: Map<string, RunScript>;
+  contextWindows: Map<string, number>;
+  emitSessionEvent(frame: RunEventFrame): void;
+  failSessionStream(error: Error): void;
+};
+
+export const startAgent = (overrides: Partial<AcpDeps> = {}): Harness => {
+  const runtime = fakeRuntime();
+  const scripts = new Map<string, RunScript>();
+  const contextWindows = new Map<string, number>([[SESSION.modelAlias, 8192]]);
+  const reports: string[] = [];
+  const firstReport = Promise.withResolvers<void>();
+  const sessionStreams: FollowSessionRequest[] = [];
+  const failures: ((error: Error) => void)[] = [];
+  let nextEventId = 1;
+  runtime.modeChanged = (mode) => {
+    const request = sessionStreams.at(-1);
+    if (request === undefined) throw new Error('the session event stream is not open');
+    request.onEvent(modeChangedFrame(nextEventId, mode));
+    nextEventId += 1;
+  };
+  const deps: AcpDeps = {
+    version: '9.9.9',
+    runtime,
+    contextWindowOf: async (alias) => {
+      const size = contextWindows.get(alias);
+      if (size === undefined) throw new Error(`no context window for ${alias}`);
+      return size;
+    },
+    environment: async () => ({ HOME: '/h' }),
+    canonicalCwd: (cwd) => cwd,
+    daemonReady: async () => undefined,
+    follow: async (request) => {
+      const script = scripts.get(request.runId);
+      if (script === undefined) throw new Error(`no script for run ${request.runId}`);
+      return script(request);
+    },
+    followSession: (request) =>
+      new Promise<never>((_resolve, reject) => {
+        sessionStreams.push(request);
+        failures.push(reject);
+        request.signal.addEventListener('abort', () => reject(request.signal.reason), { once: true });
+      }),
+    report: (message) => {
+      reports.push(message);
+      firstReport.resolve();
+    },
+    ...overrides,
+  };
+  const peer = connectPeer(createAcpAgent(deps));
+  return {
+    runtime,
+    peer,
+    reports,
+    reported: firstReport.promise,
+    sessionStreams,
+    scripts,
+    contextWindows,
+    emitSessionEvent: (frame) => {
+      const request = sessionStreams.at(-1);
+      if (request === undefined) throw new Error('the session event stream is not open');
+      request.onEvent(frame);
+    },
+    failSessionStream: (error) => {
+      const fail = failures.at(-1);
+      if (fail === undefined) throw new Error('the session event stream is not open');
+      fail(error);
+    },
+  };
+};
+
+export const notFound = (what: string): RunApiError =>
+  new RunApiError(`GET /v1/${what}`, 404, JSON.stringify({ error: { type: 'invalid_request_error', code: 'not_found', message: `${what} does not exist` } }));
+
+export const conflict = (code: string, message: string): RunApiError =>
+  new RunApiError('POST /v1/x', 409, JSON.stringify({ error: { type: 'invalid_request_error', code, message } }));
+
+export const INITIALIZE = { protocolVersion: 1, clientCapabilities: {} };

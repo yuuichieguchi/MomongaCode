@@ -141,13 +141,18 @@ export const openStore = (temp: TempHome, clock: FakeClock = createFakeClock(STA
   return { store, notifier, clock, timers: createFakeTimers(clock) };
 };
 
-export const createSession = (store: RuntimeStore, cwd: string, extra: { env?: Record<string, string>; additionalDirectories?: readonly string[] } = {}): Session =>
+export const createSession = (
+  store: RuntimeStore,
+  cwd: string,
+  extra: { env?: Record<string, string>; additionalDirectories?: readonly string[]; mcpServers?: Record<string, Record<string, unknown>> } = {},
+): Session =>
   store.createSession({
     cwd,
     env: extra.env ?? {},
     permissionMode: 'default',
     modelAlias: 'default',
     ...(extra.additionalDirectories === undefined ? {} : { additionalDirectories: extra.additionalDirectories }),
+    ...(extra.mcpServers === undefined ? {} : { mcpServers: extra.mcpServers }),
   });
 
 export const createRun = (store: RuntimeStore, sessionId: string): string => {

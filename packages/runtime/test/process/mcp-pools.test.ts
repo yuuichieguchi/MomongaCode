@@ -112,6 +112,22 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     expect(f.counting.created[0]?.projectDir).toBe(f.temp.project);
   });
 
+  it('offers the tools of the servers a session carries and reports a name the user settings already use', PROCESS_TIMEOUT, async () => {
+    const f = await realFixture();
+    writeUserSettings(f.temp.home, { mcpServers: { taken: fixtureServer } });
+    const session = createSession(f.store, f.temp.project, { mcpServers: { fx: fixtureServer, taken: fixtureServer } });
+
+    const set = await f.toolRuntime.port.toolSet(createRun(f.store, session.id), { signal: signalNever(), env: toolEnv() });
+
+    expect(set.tools.map((tool) => tool.name)).toContain('mcp__fx__echo');
+    expect(set.notices.filter((notice) => notice.startsWith('MCP server taken was skipped: '))).toHaveLength(1);
+    expect(f.counting.created).toHaveLength(1);
+    expect(f.counting.created[0]?.servers.map((server) => [server.name, server.scope])).toEqual([
+      ['taken', 'user'],
+      ['fx', 'session'],
+    ]);
+  });
+
   describe('a new pool for the next run after', () => {
     it('an approval change', PROCESS_TIMEOUT, async () => {
       const f = await makeRuntimeFixture();

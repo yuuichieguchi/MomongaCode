@@ -28,6 +28,7 @@ const constant = (value: string): JsonSchema => ({ type: 'string', const: value 
 const boundedInteger = (minimum: number, maximum: number): JsonSchema => ({ type: 'integer', minimum, maximum });
 
 const permissionMode = enumOf(PERMISSION_MODES);
+const sessionMcpServers: JsonSchema = { type: 'object', additionalProperties: { type: 'object' } };
 const historyMode = enumOf(['inherit', 'fresh']);
 
 const permissionOption = closed(
@@ -395,7 +396,7 @@ export type McpAuthorizationView = {
 
 export type McpServerView = {
   name: string;
-  scope: 'user' | 'project';
+  scope: 'user' | 'project' | 'session';
   transport: 'stdio' | 'http';
   url?: string;
   auth: McpAuthState;
@@ -493,11 +494,12 @@ export const RUN_API_SCHEMAS = {
         permissionMode,
         modelAlias: { type: 'string', minLength: 1 },
         bypassAllowed: boolean,
+        mcpServers: sessionMcpServers,
       },
       ['cwd', 'env'],
     ),
   ),
-  PatchSessionRequest: root(closed({ permissionMode }, ['permissionMode'])),
+  PatchSessionRequest: root({ ...closed({ permissionMode, mcpServers: sessionMcpServers }, []), minProperties: 1 }),
   CreateRunRequest: root(
     closed(
       {
@@ -533,7 +535,7 @@ export const RUN_API_SCHEMAS = {
           items: closed(
             {
               name: string,
-              scope: enumOf(['user', 'project']),
+              scope: enumOf(['user', 'project', 'session']),
               transport: enumOf(['stdio', 'http']),
               url: string,
               auth: enumOf(MCP_AUTH_STATES),
@@ -591,8 +593,9 @@ export const RUN_API_SCHEMAS = {
         activeRunId: nullable(string),
         latestRunId: nullable(string),
         additionalDirectories: { type: 'array', items: string },
+        lastEventId: nonNegativeInteger,
       },
-      ['id', 'cwd', 'permissionMode', 'modelAlias', 'bypassAllowed', 'createdAt', 'envKeys', 'activeRunId', 'latestRunId', 'additionalDirectories'],
+      ['id', 'cwd', 'permissionMode', 'modelAlias', 'bypassAllowed', 'createdAt', 'envKeys', 'activeRunId', 'latestRunId', 'additionalDirectories', 'lastEventId'],
     ),
   ),
   TrustView: root(trustView),

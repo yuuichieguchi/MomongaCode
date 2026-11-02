@@ -17,6 +17,8 @@ import type {
   ToolKind,
 } from '@momonga/protocol';
 
+export type SessionMcpServers = Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+
 export type Session = {
   id: string;
   cwd: string;
@@ -25,6 +27,7 @@ export type Session = {
   modelAlias: string;
   bypassAllowed: boolean;
   additionalDirectories: readonly string[];
+  mcpServers: SessionMcpServers;
   createdAt: number;
 };
 
@@ -35,6 +38,7 @@ export type CreateSessionInput = {
   modelAlias: string;
   bypassAllowed?: boolean;
   additionalDirectories?: readonly string[];
+  mcpServers?: SessionMcpServers;
 };
 
 export type RunError = { code: string; message: string };
@@ -101,6 +105,7 @@ export type NotFound = { kind: 'not_found' };
 export type CreateRunResult = { kind: 'created' | 'existing'; run: Run } | NotFound | { kind: 'key_reused' };
 export type RequestCancelResult = { kind: 'ok'; run: Run; changed: boolean } | NotFound;
 export type SetPermissionModeResult = { kind: 'ok'; session: Session; changed: boolean } | NotFound;
+export type SetSessionMcpServersResult = { kind: 'ok'; session: Session } | NotFound;
 export type ResolveApprovalResult =
   | { kind: 'ok'; approval: Approval; run: Run }
   | NotFound
@@ -274,6 +279,7 @@ export type RuntimeStore = {
   releaseLease(claim: Claim, options: { availableAt: number; refundAttempt?: boolean }): RunMutationResult;
   requestCancel(runId: string): RequestCancelResult;
   setPermissionMode(sessionId: string, mode: PermissionMode): SetPermissionModeResult;
+  setSessionMcpServers(sessionId: string, servers: SessionMcpServers): SetSessionMcpServersResult;
   listRuns(sessionId: string, statuses?: readonly RunStatus[]): Run[];
   appendAsService(
     runId: string,

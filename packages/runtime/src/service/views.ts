@@ -58,6 +58,7 @@ export const toSessionView = (store: RuntimeStore, session: Session) => {
     additionalDirectories: [...session.additionalDirectories],
     activeRunId: runs.find((run) => !isTerminalStatus(run.status))?.id ?? null,
     latestRunId: runs.at(-1)?.id ?? null,
+    lastEventId: store.sessionMaxEventId(session.id),
   };
 };
 

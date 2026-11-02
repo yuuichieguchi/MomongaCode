@@ -250,6 +250,10 @@ CREATE INDEX jobs_by_session ON jobs (session_id, started_at);
 CREATE INDEX jobs_by_status ON jobs (status);
 `;
 
+const SESSION_MCP_SERVERS = `
+ALTER TABLE sessions ADD COLUMN mcp_servers_json TEXT NOT NULL DEFAULT '{}';
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -263,4 +267,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 6, name: 'store long-term memories with their scope, source and use times', sql: LONG_TERM_MEMORIES },
   { version: 7, name: 'let an approval carry an MCP elicitation and its answers', sql: ELICITATION_APPROVALS },
   { version: 8, name: 'link subagent runs to the run and tool call that spawned them, and record background jobs', sql: SUBAGENT_RUNS_AND_BACKGROUND_JOBS },
+  { version: 9, name: 'let a session carry the MCP servers its client passed', sql: SESSION_MCP_SERVERS },
 ];
