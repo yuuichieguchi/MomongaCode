@@ -6,6 +6,7 @@ export type ClaimControl = {
   readonly signal: AbortSignal;
   readonly recoverySignal: AbortSignal;
   lost(): never;
+  noteLeaseLost(): void;
   leaseLost(): boolean;
   cancelRequested(): boolean;
   shuttingDown(): boolean;
@@ -123,6 +124,7 @@ export const startClaimControl = ({ store, timers, claim, heartbeatMs, cancelPol
       markLost();
       throw new LeaseLostError();
     },
+    noteLeaseLost: markLost,
     leaseLost: () => leaseLost,
     cancelRequested: () => cancelRequested,
     shuttingDown: () => shuttingDown,

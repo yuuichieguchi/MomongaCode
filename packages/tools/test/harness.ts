@@ -80,6 +80,7 @@ export const makeHarness = (options: HarnessOptions = {}) => {
       bindApproval(entry, toolSet, { cwd: (extra.session ?? session).cwd, home: extra.home ?? layout.home, roots: extra.roots ?? [layout.project] }),
     ),
     toolSet,
+    fence: { runId: 'run-1', workerId: 'w1', leaseToken: 1 },
     runId: 'run-1',
     step: 1,
     mode: 'default',

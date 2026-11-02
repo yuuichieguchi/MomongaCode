@@ -97,8 +97,9 @@ describe('releasing the checkpoint of a call whose input request was withdrawn',
       ],
       'hold',
     );
-    env.store.idempotency.begin(key, { expiresAt: START_MS + 86_400_000, meta: { tool: 'Ask' } });
-    env.store.idempotency.checkpoint(key, CHECKPOINT);
+    const ledger = env.store.idempotency.holding(claim);
+    ledger.begin(key, { expiresAt: START_MS + 86_400_000, meta: { tool: 'Ask' } });
+    ledger.checkpoint(key, CHECKPOINT);
     expect(env.store.requestElicitation(claim, { callId: 'call_ask', expiresAt: START_MS + 60_000, server: SERVER, requests: REQUESTS }).kind).toBe('ok');
     env.clock.advance(31_000);
     expect(env.cancel(run.id).status).toBe('CANCELLING');

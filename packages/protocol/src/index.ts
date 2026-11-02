@@ -22,7 +22,7 @@ export { findDanglingOutput, findUnpairedCalls } from './call-pairing.ts';
 export { compactionSummaryMessage, decodeCompactionSummary } from './compaction-summary.ts';
 export { PROBE_KEYWORDS } from './probe.ts';
 export type { ProbeKeyword, ProbeReport } from './probe.ts';
-export { RUN_API_SCHEMAS, base64ByteLength, toPublicRunEvent } from './run-api.ts';
+export { EVENT_TYPES, RUN_API_SCHEMAS, base64ByteLength, toPublicRunEvent } from './run-api.ts';
 export { MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES } from './run-api.ts';
 export type {
   JobView,

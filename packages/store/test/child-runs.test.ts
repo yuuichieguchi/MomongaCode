@@ -217,6 +217,29 @@ describe('waiting for a child', () => {
     expect(mustRun(h.store, parent.id).status).toBe('WAITING_HUMAN');
   });
 
+  it('leaves a parent that waits for a human only at the decision or the expiry of the approval, whatever its child did', () => {
+    const decided = harness();
+    const first = runningParent(decided);
+    const firstChild = spawn(decided.store, mustRun(decided.store, first.parent.id), 'call-1');
+    const firstApproval = parkWaitingHuman(decided.store, first.claim);
+    decided.store.requestCancel(firstChild.run.id);
+    expect(mustRun(decided.store, first.parent.id).status).toBe('WAITING_HUMAN');
+    expect(decided.store.resolveApproval(firstApproval.id, 'allow_once').kind).toBe('ok');
+    expect(mustRun(decided.store, first.parent.id).status).toBe('QUEUED');
+
+    const expired = harness();
+    const second = runningParent(expired);
+    const secondChild = spawn(expired.store, mustRun(expired.store, second.parent.id), 'call-1');
+    const secondApproval = parkWaitingHuman(expired.store, second.claim);
+    expired.store.requestCancel(secondChild.run.id);
+    expired.clock.set(secondApproval.expiresAt - 1);
+    expect(expired.store.expireApprovals(expired.clock.now())).toEqual([]);
+    expect(mustRun(expired.store, second.parent.id).status).toBe('WAITING_HUMAN');
+    expired.clock.set(secondApproval.expiresAt);
+    expect(expired.store.expireApprovals(expired.clock.now())).toEqual([second.parent.id]);
+    expect(mustRun(expired.store, second.parent.id)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
+  });
+
   it('wakes a parked parent when its wake time arrives', () => {
     const h = harness();
     const { parent, claim } = runningParent(h);

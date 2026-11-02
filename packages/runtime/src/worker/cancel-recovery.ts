@@ -1,6 +1,6 @@
 import { childResultOf } from '@momonga/agents';
 import { isFatalStoreError } from '@momonga/store';
-import type { Run, Session } from '@momonga/store';
+import type { Claim, Run, Session } from '@momonga/store';
 import type { AbandonTarget, ResultOutcome, ToolCall } from '@momonga/tools';
 import type { ClaimControl } from './claim-control.ts';
 import { describeError, LeaseLostError, ShutdownError } from './errors.ts';
@@ -12,6 +12,7 @@ import type { WorkerOptions } from './types.ts';
 
 export type CancelRecoveryInput = {
   options: WorkerOptions;
+  claim: Claim;
   run: Run;
   session: Session;
   journal: Journal;
@@ -50,7 +51,7 @@ export const releaseWaitingOnCancel = async ({ options, run, session, journal, c
   }
 };
 
-export const reconcileStartedCalls = async ({ options, run, session, journal, control }: CancelRecoveryInput): Promise<void> => {
+export const reconcileStartedCalls = async ({ options, claim, run, session, journal, control }: CancelRecoveryInput): Promise<void> => {
   const startedEntries = Object.entries(journal.state.pendingCalls).filter(([, call]) => call.status === 'started');
   for (const [callId, call] of startedEntries) {
     if (call.awaiting?.kind !== 'run') continue;
@@ -60,7 +61,9 @@ export const reconcileStartedCalls = async ({ options, run, session, journal, co
     const result = child.state === 'finished' ? childResultOf(call.awaiting.agent, child) : { status: 'failed' as const, output: `Subagent ${call.awaiting.agent} was cancelled.` };
     const outcome: ResultOutcome = { callId, kind: 'result', result, ...(call.idemKey === undefined ? {} : { idemKey: call.idemKey }) };
     const lookup = call.idemKey === undefined ? undefined : options.store.idempotency.get(call.idemKey);
-    if (call.idemKey !== undefined && lookup !== undefined && lookup.s !== 'COMPLETED') options.store.idempotency.complete(call.idemKey, outcome);
+    if (call.idemKey !== undefined && lookup !== undefined && lookup.s !== 'COMPLETED') {
+      if (options.store.idempotency.holding(claim).complete(call.idemKey, outcome).kind === 'lease_lost') control.lost();
+    }
     journal.append(outcomePayloads(outcome));
   }
   const started: StartedCall[] = startedEntries
@@ -94,6 +97,7 @@ export const reconcileStartedCalls = async ({ options, run, session, journal, co
       await tools.executor.runBatch({
         calls: recoverable.map(({ callId, name, arguments: args }) => ({ callId, name, arguments: args })),
         toolSet,
+        fence: claim,
         runId: run.id,
         step: journal.state.step,
         mode: session.permissionMode,
@@ -107,6 +111,7 @@ export const reconcileStartedCalls = async ({ options, run, session, journal, co
         signal: control.recoverySignal,
         recoverOnly: true,
         leaseLost: () => control.leaseLost() || control.shuttingDown(),
+        onLeaseLost: control.noteLeaseLost,
         onOutcome: (outcome) => {
           settled.add(outcome.callId);
           journal.append(outcomePayloads(outcome));

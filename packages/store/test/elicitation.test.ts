@@ -88,19 +88,23 @@ describe('elicitation gates', () => {
 describe('idempotency checkpoint', () => {
   it('stores, replaces and clears the checkpoint of a pending key', () => {
     const { store } = harness();
-    store.idempotency.begin('k', { expiresAt: START_MS + 1000, meta: { tool: 't' } });
-    store.idempotency.checkpoint('k', { kind: 'task', taskId: 'a' });
-    store.idempotency.checkpoint('k', { kind: 'task', taskId: 'b' });
+    enqueue(store, newSession(store).id);
+    const ledger = store.idempotency.holding(mustClaim(store, 'worker-1'));
+    ledger.begin('k', { expiresAt: START_MS + 1000, meta: { tool: 't' } });
+    ledger.checkpoint('k', { kind: 'task', taskId: 'a' });
+    ledger.checkpoint('k', { kind: 'task', taskId: 'b' });
     expect(store.idempotency.get('k')).toMatchObject({ s: 'PENDING', rec: { meta: { tool: 't', checkpoint: { kind: 'task', taskId: 'b' } } } });
-    store.idempotency.checkpoint('k', undefined);
+    store.idempotency.clearCheckpoint('k');
     const lookup = store.idempotency.get('k');
     expect(lookup?.s === 'PENDING' && 'checkpoint' in lookup.rec.meta).toBe(false);
   });
 
   it('refuses a checkpoint for a key that is not pending', () => {
     const { store } = harness();
-    store.idempotency.begin('k', { expiresAt: START_MS + 1000, meta: {} });
-    store.idempotency.complete('k', { ok: true });
-    expect(() => store.idempotency.checkpoint('k', { a: 1 })).toThrow(/no record in state PENDING/);
+    enqueue(store, newSession(store).id);
+    const ledger = store.idempotency.holding(mustClaim(store, 'worker-1'));
+    ledger.begin('k', { expiresAt: START_MS + 1000, meta: {} });
+    ledger.complete('k', { ok: true });
+    expect(() => ledger.checkpoint('k', { a: 1 })).toThrow(/no record in state PENDING/);
   });
 });

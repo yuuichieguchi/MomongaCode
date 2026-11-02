@@ -123,7 +123,7 @@ describe('cancelling a run that waits for input', () => {
   const seedAwaiting = (env: Env) => {
     const run = env.enqueue('Ask the user');
     const key = toolKey(run.id, 1, 'call_ask');
-    env.seed(
+    const claim = env.seed(
       run.id,
       [
         { type: 'model.responded', step: 1, attempt: 1, response: { status: 'completed', output: [functionCallItem({ callId: 'call_ask', name: 'Ask', args: {} })], usage: USAGE } },
@@ -133,8 +133,9 @@ describe('cancelling a run that waits for input', () => {
       ],
       'crash',
     );
-    env.store.idempotency.begin(key, { expiresAt: START_MS + 86_400_000, meta: { tool: 'Ask' } });
-    env.store.idempotency.checkpoint(key, CHECKPOINT);
+    const ledger = env.store.idempotency.holding(claim);
+    ledger.begin(key, { expiresAt: START_MS + 86_400_000, meta: { tool: 'Ask' } });
+    ledger.checkpoint(key, CHECKPOINT);
     expect(env.cancel(run.id).status).toBe('CANCELLING');
     return { run, key };
   };
