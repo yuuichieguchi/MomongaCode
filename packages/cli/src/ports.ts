@@ -36,10 +36,14 @@ export type CliFiles = {
   ensureDirectory(directory: string): Promise<void>;
   makeTempDirectory(prefix: string): Promise<string>;
   removeTree(directory: string): Promise<void>;
+  readTextIfPresent(file: string): Promise<string | undefined>;
+  appendText(file: string, text: string, modes: { directory: number; file: number }): Promise<void>;
+  rename(from: string, to: string): Promise<void>;
 };
 
 export type CliPorts = {
   version: string;
+  platform: NodeJS.Platform;
   env: Readonly<Record<string, string | undefined>>;
   cwd: string;
   home: string;

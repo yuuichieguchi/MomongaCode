@@ -119,7 +119,7 @@ const definedEnv = (env: Readonly<Record<string, string | undefined>>): Record<s
 
 export const nodeUpdatePorts = (ports: CliPorts, paths: MomongaPaths): UpdatePorts => ({
   version: ports.version,
-  platform: process.platform,
+  platform: ports.platform,
   arch: process.arch,
   home: ports.home,
   self: ports.self,

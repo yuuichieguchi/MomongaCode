@@ -1,11 +1,12 @@
-import fs from 'node:fs';
-import path from 'node:path';
+import type { CliFiles } from './ports.ts';
 
-const BASH_DEFAULT_HISTSIZE = 500;
-
-export const HISTORY_ENTRIES = BASH_DEFAULT_HISTSIZE;
+export const HISTORY_ENTRIES = 500;
 
 export const HISTORY_FILE_MODE = 0o600;
+
+export const HISTORY_DIRECTORY_MODE = 0o700;
+
+export const PREVIOUS_HISTORY_SUFFIX = '.1';
 
 export type HistoryStore = {
   load(): Promise<readonly string[]>;
@@ -30,33 +31,27 @@ const parseEntry = (file: string, line: string, number: number): string => {
   return parsed;
 };
 
-const readLines = async (file: string): Promise<string[]> => {
-  let text: string;
-  try {
-    text = await fs.promises.readFile(file, 'utf8');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
-    throw error;
-  }
-  return text.split('\n').filter((line) => line !== '');
+const readEntries = async (files: Pick<CliFiles, 'readTextIfPresent'>, file: string): Promise<string[]> => {
+  const text = await files.readTextIfPresent(file);
+  if (text === undefined) return [];
+  return text
+    .split('\n')
+    .filter((line) => line !== '')
+    .map((line, index) => parseEntry(file, line, index + 1));
 };
 
-export const createHistoryStore = (file: string): HistoryStore => {
+export const createHistoryStore = (files: Pick<CliFiles, 'readTextIfPresent' | 'appendText' | 'rename'>, file: string): HistoryStore => {
+  const previous = `${file}${PREVIOUS_HISTORY_SUFFIX}`;
+
   const load = async (): Promise<readonly string[]> => {
-    const lines = await readLines(file);
-    const entries = lines.map((line, index) => parseEntry(file, line, index + 1));
-    if (entries.length <= 2 * HISTORY_ENTRIES) return entries.slice(-HISTORY_ENTRIES);
-    const kept = entries.slice(-HISTORY_ENTRIES);
-    const temporary = `${file}.${process.pid}.tmp`;
-    await fs.promises.writeFile(temporary, kept.map((entry) => `${JSON.stringify(entry)}\n`).join(''), { mode: HISTORY_FILE_MODE });
-    await fs.promises.rename(temporary, file);
-    return kept;
+    const older = await readEntries(files, previous);
+    const current = await readEntries(files, file);
+    if (current.length >= HISTORY_ENTRIES) await files.rename(file, previous);
+    return [...older, ...current].slice(-HISTORY_ENTRIES);
   };
 
-  const append = async (text: string): Promise<void> => {
-    await fs.promises.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
-    await fs.promises.appendFile(file, `${JSON.stringify(text)}\n`, { mode: HISTORY_FILE_MODE });
-  };
+  const append = (text: string): Promise<void> =>
+    files.appendText(file, `${JSON.stringify(text)}\n`, { directory: HISTORY_DIRECTORY_MODE, file: HISTORY_FILE_MODE });
 
   return { load, append };
 };

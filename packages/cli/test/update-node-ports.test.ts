@@ -20,6 +20,7 @@ const unusedPort = (name: string): never =>
 const cliPortsFor =(home: string): CliPorts =>
   ({
     version: '1.0.0',
+    platform: 'linux',
     env: { PATH: '/usr/bin', UNSET: undefined },
     cwd: home,
     home,

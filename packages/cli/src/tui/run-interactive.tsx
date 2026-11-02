@@ -14,7 +14,7 @@ import { defaultNoticeSources } from './notices.ts';
 export type InteractiveOptions = SessionOptions & { prompt?: string; skill?: string; images?: readonly string[] };
 
 export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, terminal: Terminal, options: InteractiveOptions, update: UpdateWiring): Promise<number> => {
-  const backend = createTuiBackend(ports, paths, options, createHistoryStore(path.join(paths.state, 'history.jsonl')), defaultNoticeSources(ports, update));
+  const backend = createTuiBackend(ports, paths, options, createHistoryStore(ports.files, path.join(paths.state, 'history.jsonl')), defaultNoticeSources(ports, update));
   let outcome: TuiOutcome = {};
   const onExit = (result: TuiOutcome): void => {
     outcome = result;
