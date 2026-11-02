@@ -21,7 +21,7 @@ import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import type { Sandbox } from '@momonga/sandbox';
 import { isFatalStoreError, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { clearCallLocks } from '@momonga/tools';
+import { clearCallLocks, nodeShellHost } from '@momonga/tools';
 import { createFsInstructionReader } from '@momonga/context';
 import { createGatewayClient } from '../gateway-client.ts';
 import type { GatewayClient } from '../gateway-client.ts';
@@ -389,6 +389,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         logger,
         report,
         sandbox,
+        shellHost: nodeShellHost(),
         settings: composition,
         reapTiming,
       });

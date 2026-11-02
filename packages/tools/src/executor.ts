@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalJson, canonicalPath, comparableContains, comparablePath, computeBackoff, fileRuleFingerprint, hostKernelLock, hostReapTiming, momongaLayout, reapMarkedProcessesWithReport, sha256Hex, volumeIsCaseInsensitive, writableAreaOf, writableCheckOf } from '@momonga/foundation';
+import { canonicalJson, canonicalPath, comparableContains, containsByComponents, comparablePath, computeBackoff, fileRuleFingerprint, hostKernelLock, hostReapTiming, momongaLayout, reapMarkedProcessesWithReport, sha256Hex, volumeIsCaseInsensitive, writableAreaOf, writableCheckOf } from '@momonga/foundation';
 import type { Clock, FileRuleProvenance, KernelLockMechanism, PathResolution, ReapTiming, SignalSender } from '@momonga/foundation';
 import { absoluteFrom, decide, fileRuleSpecsOf, suggestAllowRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject, PolicyFilesystem } from '@momonga/policy';
@@ -238,25 +238,70 @@ const launcherGuardKeys = (literals: readonly string[]): Set<string> =>
       .map(parentCanonicalKey),
   );
 
+type BelowPlaceholder = { placeholder: string; tail: readonly string[] };
+
+const isEmptyRegularFile = (target: string): boolean => {
+  const stat = fs.lstatSync(target);
+  return stat.isFile() && stat.size === 0;
+};
+
+const belowPlaceholderOf = (target: string): BelowPlaceholder | undefined => {
+  try {
+    canonicalPath(target);
+    return undefined;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOTDIR') return undefined;
+  }
+  for (let ancestor = path.dirname(target); ancestor !== path.dirname(ancestor); ancestor = path.dirname(ancestor)) {
+    let real: string;
+    try {
+      real = canonicalPath(ancestor);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOTDIR') throw error;
+      continue;
+    }
+    return isEmptyRegularFile(real) ? { placeholder: real, tail: path.relative(ancestor, target).split(path.sep) } : undefined;
+  }
+  return undefined;
+};
+
 const createWriteGuard = (batch: ExecutionBatchInput): ((subject: PermissionSubject, cwd: string) => string | undefined) => {
   batch.sandboxPolicy.writableRoots.forEach(canonicalPath);
   const layout = momongaLayout(batch.home);
   const homeGuards = new Set([layout.root, layout.keychains]);
   const approvalGated = new Set(batch.sandboxPolicy.protectedSet.paths);
-  const guards = batch.sandboxPolicy.writeDenied.filter((entry) => homeGuards.has(entry) || !approvalGated.has(entry)).map(canonicalPath);
+  const entries = batch.sandboxPolicy.writeDenied.filter((entry) => homeGuards.has(entry) || !approvalGated.has(entry));
+  const belowPlaceholderGuards: BelowPlaceholder[] = [];
+  const guards: string[] = [];
+  for (const entry of entries) {
+    const below = belowPlaceholderOf(entry);
+    if (below === undefined) guards.push(canonicalPath(entry));
+    else belowPlaceholderGuards.push(below);
+  }
   const launcherKeys = launcherGuardKeys(batch.sandboxPolicy.writeDeniedLiterals);
   const blocksLauncher = (resolved: string): boolean => launcherKeys.has(parentCanonicalKey(resolved));
   const exempt = batch.tmpDir === undefined ? undefined : canonicalPath(batch.tmpDir);
-  const blocksResolved = (resolved: string): boolean =>
-    guards.some((guard) => comparableContains(guard, resolved)) && !(exempt !== undefined && comparableContains(exempt, resolved));
+  const exemptContains = (resolved: string): boolean => exempt !== undefined && comparableContains(exempt, resolved);
+  const blocksResolved = (resolved: string): boolean => guards.some((guard) => comparableContains(guard, resolved)) && !exemptContains(resolved);
+  const blocksBelowPlaceholder = (below: BelowPlaceholder): boolean => {
+    const foldTail = volumeIsCaseInsensitive(path.dirname(below.placeholder));
+    const inGuardedTree =
+      guards.some((guard) => comparableContains(guard, below.placeholder)) ||
+      belowPlaceholderGuards.some((guard) => guard.placeholder === below.placeholder && containsByComponents({ existing: guard.placeholder, tail: guard.tail }, { existing: below.placeholder, tail: below.tail }, foldTail));
+    return inGuardedTree && !exemptContains(below.placeholder);
+  };
+  const blocks = (resolved: string, canonicalise: boolean): boolean => {
+    const below = belowPlaceholderOf(resolved);
+    if (below !== undefined) return blocksBelowPlaceholder(below);
+    return blocksResolved(canonicalise ? canonicalPath(resolved) : resolved);
+  };
   return (subject, cwd) => {
     if (subject.kind !== 'path' || subject.access !== 'write') return undefined;
-    return subject.paths.find(
-      (target) =>
-        blocksResolved(canonicalPath(absoluteFrom(target, cwd))) ||
-        blocksResolved(path.resolve(cwd, target)) ||
-        blocksLauncher(path.resolve(cwd, target)),
-    );
+    return subject.paths.find((target) => {
+      const absolute = absoluteFrom(target, cwd);
+      const lexical = path.resolve(cwd, target);
+      return blocks(absolute, true) || blocks(lexical, false) || (belowPlaceholderOf(lexical) === undefined && blocksLauncher(lexical));
+    });
   };
 };
 

@@ -19,7 +19,7 @@ import { openRuntimeStore } from '@momonga/store';
 import type { Claim, RuntimeStore, Session } from '@momonga/store';
 import { fakePolicyFilesystem, createFakeClock, createFakeKernelLock, createFakeTimers } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
-import { createToolExecutor, createToolRegistry } from '@momonga/tools';
+import { createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import type { ToolSessionState } from '@momonga/tools';
 import { within } from '../worker/deferred.ts';
 import { createFakeGateway } from '../worker/fake-gateway.ts';
@@ -717,6 +717,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
     recoveryToolSet: async () => snapshotToolbox(),
     executor,
     sandbox: fakeSandbox,
+    shellHost: nodeShellHost(),
     markerDir: markers,
     policyFor: async (target: Session, policyOptions: { env: Readonly<Record<string, string>>; rules: readonly PermissionRule[] }) => ({
       roots: [target.cwd],

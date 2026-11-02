@@ -18,7 +18,7 @@ import { foldRunState, initialRunState, openRuntimeStore } from '@momonga/store'
 import type { Claim, Run, RuntimeStore, Session } from '@momonga/store';
 import { fakePolicyFilesystem, createFakeClock, createFakeKernelLock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
-import { createToolExecutor, createToolRegistry } from '@momonga/tools';
+import { createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import type { AbandonTarget, AnyTool, ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
 import { systemTimers } from '../../src/service/timers.ts';
 import { within } from './deferred.ts';
@@ -242,6 +242,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     },
     executor,
     sandbox: fakeSandbox,
+    shellHost: nodeShellHost(),
     markerDir: markers,
     policyFor: async (target: Session, policyOptions: { env: ToolEnv; rules: readonly PermissionRule[] }) => {
       portCalls.policyFor.push({ sessionId: target.id, env: policyOptions?.env });

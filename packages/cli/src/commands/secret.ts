@@ -3,7 +3,7 @@ import type { MomongaPaths } from '@momonga/foundation';
 import { createSupervisorClient } from '../client/supervisor-client.ts';
 import { probeSupervisor } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
-import { readHiddenLine } from '../terminal/hidden-prompt.ts';
+import { withHiddenInput } from '../terminal/hidden-prompt.ts';
 
 export class SecretInputError extends Error {
   constructor(message: string) {
@@ -24,10 +24,12 @@ const NAME_SHAPE = new RegExp(SECRET_NAME_PATTERN);
 export const secretSet = async (ports: CliPorts, paths: MomongaPaths, name: string, interrupt: AbortSignal): Promise<number> => {
   if (!NAME_SHAPE.test(name)) throw new SecretInputError(`secret name ${JSON.stringify(name)} does not match ${SECRET_NAME_PATTERN}`);
   if (ports.terminal === undefined) throw new SecretInputError('momonga secret set reads the value from the terminal; run it in an interactive terminal');
-  const value = await readHiddenLine(ports.terminal, `Value for secret ${name} (input is hidden): `, interrupt);
-  if (value === '') throw new SecretInputError('a secret value must not be empty');
-  const again = await readHiddenLine(ports.terminal, 'Enter it again to confirm: ', interrupt);
-  if (again !== value) throw new SecretInputError('the two entries differ; nothing was stored');
+  const value = await withHiddenInput(ports.terminal, interrupt, async (read) => {
+    const entered = await read(`Value for secret ${name} (input is hidden): `);
+    if (entered === '') throw new SecretInputError('a secret value must not be empty');
+    if ((await read('Enter it again to confirm: ')) !== entered) throw new SecretInputError('the two entries differ; nothing was stored');
+    return entered;
+  });
   const store = ports.secretStore();
   await store.write(name, value, interrupt);
   if ((await store.read(name, interrupt)) !== value) throw new SecretVerificationError(name);

@@ -6,7 +6,7 @@ import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, reapMarkerDirectory } from '@mom
 import type { HookExecution, HooksSettings } from '@momonga/protocol';
 import { createUnsandboxed } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
-import { createToolHooks, runStop, runUserPromptSubmit, runSessionStart } from '@momonga/tools';
+import { createToolHooks, nodeShellHost, runStop, runUserPromptSubmit, runSessionStart } from '@momonga/tools';
 import type { HookRunContext } from '@momonga/tools';
 
 let dir = '';
@@ -42,6 +42,7 @@ const contextFor = (hooks: HooksSettings, overrides: Partial<HookRunContext> = {
     sandbox: createUnsandboxed({ killGraceMs: 200 }),
     sandboxPolicy: policy(),
     env: { PATH: '/usr/bin:/bin' },
+    shellHost: nodeShellHost(),
     cwd: dir,
     projectDir: dir,
     markerDir,

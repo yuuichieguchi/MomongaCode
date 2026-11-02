@@ -15,7 +15,7 @@ import type { AgentSet, ChildRuns } from '@momonga/agents';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { SkillSet } from '@momonga/skills';
 import type { Session } from '@momonga/store';
-import type { AnyTool, ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
+import type { AnyTool, ShellHost, ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
 
 export type { Clock };
 
@@ -81,6 +81,7 @@ export type ToolRuntimePort = {
   recoveryContextFor(session: Session, options: { env: ToolEnv }): Promise<RecoveryContext>;
   executor: ToolExecutor;
   sandbox: Sandbox;
+  shellHost: ShellHost;
   markerDir: string;
   sessionState(session: Session): ToolSessionState;
 };
