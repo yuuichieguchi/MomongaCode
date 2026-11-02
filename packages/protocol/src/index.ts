@@ -1,4 +1,4 @@
-export type { Capabilities, HealthResult, ToolCallingMode, ToolCallingSetting } from './capabilities.ts';
+export type { Capabilities, HealthResult, ImageTokenModel, ToolCallingMode, ToolCallingSetting } from './capabilities.ts';
 export {
   COMPACTION_INSTRUCTIONS_VERSION,
   ESTIMATED_ERROR_BOUND_RATIO,

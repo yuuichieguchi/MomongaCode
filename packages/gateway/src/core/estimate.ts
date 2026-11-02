@@ -1,6 +1,6 @@
 import { canonicalJson } from '@momonga/foundation';
 import { ESTIMATED_ERROR_BOUND_RATIO } from '@momonga/protocol';
-import type { AdapterInputItem, FunctionTool, ItemField, Usage } from '@momonga/protocol';
+import type { AdapterInputItem, FunctionTool, ImageTokenModel, ItemField, Usage } from '@momonga/protocol';
 import { withoutImages } from './image-tokens.ts';
 
 const NARROW_UNITS_PER_TOKEN = 4;
@@ -27,15 +27,15 @@ export type EstimateInput = {
   tools?: readonly FunctionTool[] | undefined;
 };
 
-export const estimateInputTokens = (request: EstimateInput): number => {
-  const { value, imageTokens } = withoutImages([request.instructions ?? null, request.tools ?? [], request.input]);
+export const estimateInputTokens = (request: EstimateInput, imageModel?: ImageTokenModel): number => {
+  const { value, imageTokens } = withoutImages([request.instructions ?? null, request.tools ?? [], request.input], imageModel);
   return tokensForText(canonicalJson(value)) + imageTokens;
 };
 
-export const imageTokensOfWire = (wire: unknown): number => withoutImages(wire).imageTokens;
+export const imageTokensOfWire = (wire: unknown, imageModel?: ImageTokenModel): number => withoutImages(wire, imageModel).imageTokens;
 
-export const wireTokensOf = (wire: unknown): number => {
-  const { value, imageTokens } = withoutImages(wire);
+export const wireTokensOf = (wire: unknown, imageModel?: ImageTokenModel): number => {
+  const { value, imageTokens } = withoutImages(wire, imageModel);
   return tokensForText(JSON.stringify(value)) + imageTokens;
 };
 

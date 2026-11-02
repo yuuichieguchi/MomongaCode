@@ -6,6 +6,7 @@ import { localSettingsPath, makeTree, projectSettingsPath, trusting, userSetting
 import type { Tree } from './helpers.ts';
 
 const CAPABILITIES = { contextWindow: 128000, maxOutputTokens: 4096 };
+const IMAGE_TOKENS = { pixelsPerToken: 500, maxTokens: 2000 };
 
 const chatTarget = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   adapter: 'chat-completions',
@@ -181,7 +182,7 @@ describe('chat-completions target schema', () => {
     const models = await expectAccepted({
       targets: {
         remote: chatTarget({
-          capabilities: { ...CAPABILITIES, structuredOutput: 'json_schema', streaming: false, tokenCounting: 'exact', imageInput: true },
+          capabilities: { ...CAPABILITIES, structuredOutput: 'json_schema', streaming: false, tokenCounting: 'exact', imageInput: true, imageTokens: IMAGE_TOKENS },
         }),
       },
       aliases: { default: 'remote' },
@@ -189,6 +190,21 @@ describe('chat-completions target schema', () => {
     expect(models.targets['remote']).toMatchObject({
       capabilities: { structuredOutput: 'json_schema', streaming: false, tokenCounting: 'exact', imageInput: true, stopSequences: true },
     });
+  });
+
+  it('requires imageTokens when a remote target declares imageInput', async () => {
+    await expectRejected(
+      { targets: { remote: chatTarget({ capabilities: { ...CAPABILITIES, imageInput: true } }) }, aliases: { default: 'remote' } },
+      'capabilities.imageTokens',
+    );
+  });
+
+  it('keeps the declared imageTokens on the resolved capabilities', async () => {
+    const models = await expectAccepted({
+      targets: { remote: chatTarget({ capabilities: { ...CAPABILITIES, imageInput: true, imageTokens: IMAGE_TOKENS } }) },
+      aliases: { default: 'remote' },
+    });
+    expect(models.targets['remote']).toMatchObject({ capabilities: { imageTokens: IMAGE_TOKENS } });
   });
 
   it.each(['http://127.0.0.1:8080/v1', 'http://localhost:1234/v1', 'http://[::1]:8080/v1', 'https://api.example.com/v1', 'https://api.example.com:8443/openai/v1'])(

@@ -100,9 +100,18 @@ const countWire = async (
   signal: AbortSignal,
   deadlineAt: number | undefined,
 ): Promise<CountTokensResult> => {
+  const { imageTokens: imageModel } = await services.router.capabilitiesOf(target);
+  const adapterCountWire = target.adapter.countWire;
+  if (adapterCountWire !== undefined) {
+    const counted = await callTargets(services, [target], signal, deadlineAt, (chosen, attemptNumber, guarded) =>
+      adapterCountWire.call(chosen.adapter, wire, { signal: guarded, target: { name: chosen.name, model: chosen.model }, attempt: attemptNumber }),
+    );
+    counted.target.breaker.onSuccess();
+    return counted.value;
+  }
   const adapterCountTokens = target.adapter.countTokens;
   if (adapterCountTokens === undefined) {
-    const tokens = wireTokensOf(wire);
+    const tokens = wireTokensOf(wire, imageModel);
     return { input_tokens: tokens, method: 'estimated', error_bound: errorBoundFor(tokens) };
   }
   const outcome = await callTargets(services, [target], signal, deadlineAt, (chosen, attemptNumber, guarded) =>
@@ -113,7 +122,7 @@ const countWire = async (
     ),
   );
   outcome.target.breaker.onSuccess();
-  const imageTokens = imageTokensOfWire(wire);
+  const imageTokens = imageTokensOfWire(wire, imageModel);
   if (imageTokens === 0) return outcome.value;
   const total = outcome.value.input_tokens + imageTokens;
   return { input_tokens: total, method: 'estimated', error_bound: errorBoundFor(total) };
@@ -154,7 +163,10 @@ const countTokens = async (
   );
   const adapterCountTokens = target.adapter.countTokens;
   if (adapterCountTokens === undefined) {
-    const inputTokens = estimateInputTokens({ input: resolved.forAdapter, instructions: request.instructions, tools: request.tools });
+    const inputTokens = estimateInputTokens(
+      { input: resolved.forAdapter, instructions: request.instructions, tools: request.tools },
+      (await services.router.capabilitiesOf(target)).imageTokens,
+    );
     return { input_tokens: inputTokens, method: 'estimated', error_bound: errorBoundFor(inputTokens) };
   }
   const outcome = await callTargets(services, [target], signal, deadlineAt, (chosen, attemptNumber, guarded) =>

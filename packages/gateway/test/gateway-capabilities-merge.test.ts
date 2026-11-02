@@ -113,3 +113,29 @@ describe('alias capabilities on /v1/momonga/models', () => {
     expect(await capabilitiesOf('single')).toEqual(middle);
   });
 });
+
+describe('alias image token model on /v1/momonga/models', () => {
+  const sees = (imageTokens: Capabilities['imageTokens']): Capabilities => ({ ...strong, ...(imageTokens === undefined ? {} : { imageTokens }) });
+
+  const mergedOf = async (first: Capabilities, second: Capabilities): Promise<Capabilities> => {
+    const { client } = await startGateway({
+      adapters: { first: createScriptedAdapter({ calls: [], capabilities: first }), second: createScriptedAdapter({ calls: [], capabilities: second }) },
+      config: {
+        aliases: { both: ['first', 'second'] },
+        targets: { first: { model: 'model-first' }, second: { model: 'model-second' } },
+      },
+    });
+    const response = await getJson(client, '/v1/momonga/models');
+    return response.body.data.find((entry: { id: string }) => entry.id === 'both').capabilities;
+  };
+
+  it('reports the smallest pixelsPerToken and the largest maxTokens when every target declares a model', async () => {
+    const merged = await mergedOf(sees({ pixelsPerToken: 750, maxTokens: 1600 }), sees({ pixelsPerToken: 500, maxTokens: 1000 }));
+    expect(merged.imageTokens).toEqual({ pixelsPerToken: 500, maxTokens: 1600 });
+  });
+
+  it('omits the model when a target of the alias declares none', async () => {
+    const merged = await mergedOf(sees({ pixelsPerToken: 750, maxTokens: 1600 }), sees(undefined));
+    expect(merged.imageTokens).toBeUndefined();
+  });
+});

@@ -69,6 +69,12 @@ const TARGET_CAPABILITIES_SCHEMA = {
     streaming: { type: 'boolean' },
     stopSequences: { type: 'boolean' },
     imageInput: { type: 'boolean' },
+    imageTokens: {
+      type: 'object',
+      properties: { pixelsPerToken: { type: 'number', exclusiveMinimum: 0 }, maxTokens: POSITIVE_INTEGER },
+      required: ['pixelsPerToken', 'maxTokens'],
+      additionalProperties: false,
+    },
     parallelToolCalls: { type: 'boolean' },
     schemaDialect: { enum: ['json-schema-2020-12', 'guided-generation'] },
     tokenCounting: { enum: ['exact', 'calibrated', 'estimated'] },

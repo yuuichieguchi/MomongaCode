@@ -100,12 +100,16 @@ const resolveRemote = (target: RemoteTargetInput, defaults: CapabilityDefaults, 
   if (baseUrl !== undefined) checkBaseUrl(baseUrl, where);
   if (socketPath !== undefined) checkSocketPath(socketPath, home, where);
   const maxConcurrency = target.maxConcurrency ?? DEFAULT_REMOTE_MAX_CONCURRENCY;
+  const capabilities = { ...defaults, ...target.capabilities, maxConcurrency };
+  if (capabilities.imageInput && capabilities.imageTokens === undefined) {
+    throw new Error(`${where}: capabilities.imageInput is true, so capabilities.imageTokens ({ pixelsPerToken, maxTokens }) must declare how the target counts an image`);
+  }
   return {
     ...(baseUrl === undefined ? {} : { baseUrl }),
     ...(socketPath === undefined ? {} : { socketPath }),
     ...(target.apiKeyEnv === undefined ? {} : { apiKeyEnv: target.apiKeyEnv }),
     ...(target.apiKeySecret === undefined ? {} : { apiKeySecret: target.apiKeySecret }),
-    capabilities: { ...defaults, ...target.capabilities, maxConcurrency },
+    capabilities,
     maxConcurrency,
     admissionTimeoutMs: target.admissionTimeoutMs ?? 30000,
   };

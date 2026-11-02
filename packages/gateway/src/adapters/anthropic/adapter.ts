@@ -33,6 +33,7 @@ import { anthropicErrorDetail } from './errors.ts';
 import { parseAnthropicEvent } from './events.ts';
 import type { AnthropicUsageFields } from './events.ts';
 import { assertCountable, buildCountTokensBody, buildMessagesBody } from './request.ts';
+import type { AnthropicCountTokensBody } from './request.ts';
 import type { AnthropicRequestBody } from './request.ts';
 import { AnthropicStreamDriver } from './stream-driver.ts';
 import type { AnthropicAdapter, AnthropicAdapterOptions } from './types.ts';
@@ -137,16 +138,8 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
 
   const create = (request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> => stream(request, ctx, true);
 
-  const countTokens = async (request: CountTokensRequest, ctx: AdapterContext): Promise<AdapterCountTokensResult> => {
+  const postCount = async (body: AnthropicCountTokensBody, ctx: AdapterContext): Promise<AdapterCountTokensResult> => {
     if (closed) throw new Error('the anthropic adapter is closed');
-    const input = asAdapterInput(request);
-    const body = buildCountTokensBody({
-      model: request.model,
-      input,
-      ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
-      ...(request.tools === undefined ? {} : { tools: request.tools }),
-      ...(request.tool_choice === undefined ? {} : { tool_choice: request.tool_choice }),
-    });
     assertCountable(body);
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
@@ -168,6 +161,32 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
     }
   };
 
+  const countTokens = (request: CountTokensRequest, ctx: AdapterContext): Promise<AdapterCountTokensResult> =>
+    postCount(
+      buildCountTokensBody({
+        model: request.model,
+        input: asAdapterInput(request),
+        ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
+        ...(request.tools === undefined ? {} : { tools: request.tools }),
+        ...(request.tool_choice === undefined ? {} : { tool_choice: request.tool_choice }),
+      }),
+      ctx,
+    );
+
+  const countWire = (wire: Record<string, unknown>, ctx: AdapterContext): Promise<AdapterCountTokensResult> => {
+    const { system, messages, tools, tool_choice: toolChoice } = wire as Omit<AnthropicCountTokensBody, 'model'>;
+    return postCount(
+      {
+        model: ctx.target.model,
+        ...(system === undefined ? {} : { system }),
+        messages,
+        ...(tools === undefined ? {} : { tools }),
+        ...(toolChoice === undefined ? {} : { tool_choice: toolChoice }),
+      },
+      ctx,
+    );
+  };
+
   const compact = async (request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult> => {
     const capabilities = await options.capabilities(ctx.target);
     const cap = request.momonga?.max_summary_tokens ?? summaryTokenCapFor(capabilities);
@@ -177,7 +196,10 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
       if (collected === undefined) continue;
       const usage =
         collected.usage ??
-        estimatedUsage(wireTokensOf(buildMessagesBody(summaryRequest, cap, { cacheBreakpoints: false })), tokensForText(collected.summary));
+        estimatedUsage(
+          wireTokensOf(buildMessagesBody(summaryRequest, cap, { cacheBreakpoints: false }), capabilities.imageTokens),
+          tokensForText(collected.summary),
+        );
       return { summary: collected.summary, usage };
     }
     throw new StreamFailure('upstream_protocol_error', 'model_error', 'the upstream ended without a terminal event');
@@ -193,6 +215,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
     capabilities: (target) => options.capabilities(target),
     create,
     countTokens,
+    countWire,
     compact,
     renderCompactWire,
     classify: createUpstreamClassifier(ANTHROPIC_PROVIDER_LABEL),

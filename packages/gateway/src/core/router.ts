@@ -56,6 +56,17 @@ const weakest = <T extends string>(values: readonly T[], rank: Record<T, number>
 const mergedErrorRatio = (all: readonly Capabilities[]): Pick<Capabilities, 'tokenErrorRatio'> =>
   all.some((entry) => entry.tokenErrorRatio !== undefined) ? { tokenErrorRatio: Math.max(...all.map(sizingRatioFor)) } : {};
 
+const mergedImageTokens = (all: readonly Capabilities[]): Pick<Capabilities, 'imageTokens'> => {
+  const models = all.flatMap((entry) => (entry.imageTokens === undefined ? [] : [entry.imageTokens]));
+  if (models.length !== all.length) return {};
+  return {
+    imageTokens: {
+      pixelsPerToken: Math.min(...models.map((model) => model.pixelsPerToken)),
+      maxTokens: Math.max(...models.map((model) => model.maxTokens)),
+    },
+  };
+};
+
 const mergeCapabilities = (all: readonly [Capabilities, ...Capabilities[]]): Capabilities => {
   const [first] = all;
   return {
@@ -66,6 +77,7 @@ const mergeCapabilities = (all: readonly [Capabilities, ...Capabilities[]]): Cap
     streaming: all.every((entry) => entry.streaming),
     stopSequences: all.every((entry) => entry.stopSequences),
     imageInput: all.every((entry) => entry.imageInput),
+    ...mergedImageTokens(all),
     parallelToolCalls: all.every((entry) => entry.parallelToolCalls),
     schemaDialect: all.some((entry) => entry.schemaDialect === 'guided-generation') ? 'guided-generation' : 'json-schema-2020-12',
     tokenCounting: weakest(all.map((entry) => entry.tokenCounting), TOKEN_COUNTING_RANK),

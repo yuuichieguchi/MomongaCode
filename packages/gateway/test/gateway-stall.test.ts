@@ -27,7 +27,9 @@ const openSocket = (url: string): Promise<WebSocket> =>
 const rawUpgrade = (socketPath: string, target: string): Promise<string> =>
   new Promise((resolve, reject) => {
     const connection = net.connect(socketPath);
-    registerCleanup(() => connection.destroy());
+    registerCleanup(() => {
+      connection.destroy();
+    });
     let received = '';
     connection.on('data', (chunk) => {
       received += chunk.toString('latin1');

@@ -327,7 +327,10 @@ async function* relay(
   const usage =
     reported ??
     estimatedUsage(
-      estimateInputTokens({ input: resolved.forAdapter, instructions: job.body.instructions, tools: job.body.tools ?? undefined }),
+      estimateInputTokens(
+        { input: resolved.forAdapter, instructions: job.body.instructions, tools: job.body.tools ?? undefined },
+        (await services.router.capabilitiesOf(target)).imageTokens,
+      ),
       estimateOutputTokens(upstreamOutput),
     );
   const usageSource: UsageSource = reported === null ? 'estimated' : 'reported';

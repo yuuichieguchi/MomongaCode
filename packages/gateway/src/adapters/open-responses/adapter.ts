@@ -76,12 +76,13 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
   }
 
   const compact = async (request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult> => {
-    const cap = request.momonga?.max_summary_tokens ?? summaryTokenCapFor(await options.capabilities(ctx.target));
+    const capabilities = await options.capabilities(ctx.target);
+    const cap = request.momonga?.max_summary_tokens ?? summaryTokenCapFor(capabilities);
     const summaryRequest = summaryRequestOf(request, cap);
     for await (const event of create(summaryRequest, ctx)) {
       const collected = summaryOfTerminal(event, cap);
       if (collected === undefined) continue;
-      const usage = collected.usage ?? estimatedUsage(wireTokensOf(buildResponsesBody(summaryRequest)), tokensForText(collected.summary));
+      const usage = collected.usage ?? estimatedUsage(wireTokensOf(buildResponsesBody(summaryRequest), capabilities.imageTokens), tokensForText(collected.summary));
       return { summary: collected.summary, usage };
     }
     throw new StreamFailure('upstream_protocol_error', 'model_error', 'the upstream ended without a terminal event');

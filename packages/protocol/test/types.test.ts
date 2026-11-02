@@ -24,6 +24,7 @@ describe('protocol capability types', () => {
       streaming: boolean;
       stopSequences: boolean;
       imageInput: boolean;
+      imageTokens?: { pixelsPerToken: number; maxTokens: number };
       parallelToolCalls: boolean;
       schemaDialect: 'json-schema-2020-12' | 'guided-generation';
       tokenCounting: 'exact' | 'calibrated' | 'estimated';

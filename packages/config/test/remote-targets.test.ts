@@ -3,6 +3,7 @@ import { credentialEnvNames, loadSettings, loadUserSettings, secretNames } from 
 import { makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 
 const CAPABILITIES = { contextWindow: 200000, maxOutputTokens: 8192 };
+const IMAGE_TOKENS = { pixelsPerToken: 750, maxTokens: 1600 };
 
 const anthropicTarget = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   adapter: 'anthropic',
@@ -92,12 +93,12 @@ describe('anthropic target', () => {
   });
 
   it('accepts a declared imageInput', async () => {
-    const { result } = await loadWithTargets({ claude: anthropicTarget({ capabilities: { ...CAPABILITIES, imageInput: true } }) });
+    const { result } = await loadWithTargets({ claude: anthropicTarget({ capabilities: { ...CAPABILITIES, imageInput: true, imageTokens: IMAGE_TOKENS } }) });
     expect(result.settings.models.targets['claude']).toMatchObject({ capabilities: { imageInput: true } });
   });
 
   it('accepts a declared imageInput on an open-responses target', async () => {
-    const { result } = await loadWithTargets({ local: openResponsesTarget({ capabilities: { ...CAPABILITIES, imageInput: true } }) });
+    const { result } = await loadWithTargets({ local: openResponsesTarget({ capabilities: { ...CAPABILITIES, imageInput: true, imageTokens: IMAGE_TOKENS } }) });
     expect(result.settings.models.targets['local']).toMatchObject({ capabilities: { imageInput: true } });
   });
 
