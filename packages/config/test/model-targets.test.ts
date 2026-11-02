@@ -194,6 +194,23 @@ describe('chat-completions target schema', () => {
     });
   });
 
+  it.each(['http://user:hunter2@api.example.com/v1', 'https://user:hunter2@api.example.com/v1', 'http://user:hunter2@127.0.0.1:8080/v1'])(
+    'refuses userinfo in %s without printing the password',
+    async (baseUrl) => {
+      const tree = makeTree();
+      const failure = loadWithTargets(tree, { targets: { remote: chatTarget({ baseUrl }) }, aliases: { default: 'remote' } });
+      await expect(failure).rejects.toThrow('must not contain userinfo');
+      await expect(failure).rejects.not.toThrow(/hunter2/);
+    },
+  );
+
+  it('does not print the credential of a cleartext remote URL', async () => {
+    const tree = makeTree();
+    const failure = loadWithTargets(tree, { targets: { remote: chatTarget({ baseUrl: 'http://api.example.com/v1?key=hunter2' }) }, aliases: { default: 'remote' } });
+    await expect(failure).rejects.toThrow('must use https');
+    await expect(failure).rejects.not.toThrow(/hunter2/);
+  });
+
   it.each(['chat-completions', 'open-responses'])('requires provider on a %s target', async (adapter) => {
     const { provider: _provider, ...withoutProvider } = chatTarget({ adapter });
     await expectRejected({ targets: { remote: withoutProvider }, aliases: { default: 'remote' } }, 'provider');

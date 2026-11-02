@@ -159,7 +159,7 @@ export const readUserLayer = (home: string): UserLayer => {
   }
 };
 
-const exists = async (file: string): Promise<boolean> => {
+export const exists = async (file: string): Promise<boolean> => {
   try {
     await fs.promises.access(file);
     return true;

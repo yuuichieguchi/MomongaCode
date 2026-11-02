@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { canonicalPath, comparableContains, isLoopbackHost } from '@momonga/foundation';
+import { canonicalPath, comparableContains, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
 import { layoutOf } from './layout.ts';
 import type {
   AnthropicTarget,
@@ -36,15 +36,8 @@ const resolveFm = (target: FmTarget): ResolvedFmTarget => ({
 });
 
 const checkBaseUrl = (baseUrl: string, where: string): void => {
-  let url: URL;
-  try {
-    url = new URL(baseUrl);
-  } catch (error) {
-    throw new Error(`${where}: baseUrl ${JSON.stringify(baseUrl)} is not a valid URL`, { cause: error });
-  }
-  const secure = url.protocol === 'https:' || (url.protocol === 'http:' && isLoopbackHost(url.hostname));
-  if (!secure) throw new Error(`${where}: baseUrl ${JSON.stringify(baseUrl)} must use https: (http: is only allowed for loopback hosts)`);
-  if (url.username !== '' || url.password !== '') throw new Error(`${where}: baseUrl must not contain userinfo`);
+  const problem = transportUrlProblem(baseUrl);
+  if (problem !== undefined) throw new Error(`${where}: ${transportUrlMessage('baseUrl', baseUrl, problem)}`);
   if (baseUrl.includes('?') || baseUrl.includes('#')) throw new Error(`${where}: baseUrl must not contain a query or fragment`);
 };
 

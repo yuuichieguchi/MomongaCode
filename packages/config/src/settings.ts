@@ -1,5 +1,6 @@
 import type { ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
 import Ajv2020 from 'ajv/dist/2020.js';
+import { transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
 import type { Capabilities, HooksSettings, PermissionMode } from '@momonga/protocol';
 import { MCP_SERVERS_FILE_SCHEMA, MCP_SERVER_SCHEMA, SETTINGS_SCHEMA } from './settings-schema.ts';
 
@@ -218,8 +219,13 @@ export const assertSettings = (value: unknown, source: string): Settings => {
   if (isRecord(value) && isRecord(value['mcpServers'])) {
     for (const [name, server] of Object.entries(value['mcpServers'])) assertNotHttpSse(server, source, name);
   }
-  if (validateSettings(value)) return value;
-  throw new Error(`${source}: invalid settings at ${describeErrors(validateSettings.errors)}`);
+  if (!validateSettings(value)) throw new Error(`${source}: invalid settings at ${describeErrors(validateSettings.errors)}`);
+  const endpoint = value.telemetry?.otlp?.endpoint;
+  if (endpoint !== undefined) {
+    const problem = transportUrlProblem(endpoint);
+    if (problem !== undefined) throw new Error(`${source}: ${transportUrlMessage('telemetry.otlp.endpoint', endpoint, problem)}`);
+  }
+  return value;
 };
 
 export const assertMcpServersFile = (value: unknown, source: string): McpServersFile => {

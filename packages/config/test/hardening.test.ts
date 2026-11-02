@@ -156,29 +156,26 @@ describe('S6 credential variables in project .mcp.json', () => {
     expect(result.warnings.filter((w) => w.includes('"gh"') && w.includes('GITHUB_TOKEN'))).toHaveLength(1);
   });
 
-  it('refuses variables named by apiKeyEnv in user model targets', async () => {
+  const remoteTargets = {
+    'chat-completions': { adapter: 'chat-completions', provider: 'fake', model: 'x', baseUrl: 'https://api.example.com/v1' },
+    'open-responses': { adapter: 'open-responses', provider: 'fake', model: 'x', baseUrl: 'https://api.example.com/v1' },
+    anthropic: { adapter: 'anthropic', model: 'x', baseUrl: 'https://api.example.com' },
+  };
+
+  it.each(Object.entries(remoteTargets))('refuses variables named by apiKeyEnv in a user %s target', async (_adapter, target) => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), {
       enableAllProjectMcpServers: true,
       models: {
-        targets: {
-          m: {
-            adapter: 'chat-completions',
-            provider: 'fake',
-            model: 'x',
-            baseUrl: 'https://api.example.com/v1',
-            apiKeyEnv: 'ACME_CRED',
-            capabilities: { contextWindow: 8192, maxOutputTokens: 1024 },
-          },
-        },
+        targets: { m: { ...target, apiKeyEnv: 'MY_MODEL_KEY', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } } },
         aliases: { default: 'm' },
       },
     });
-    writeJson(mcpJsonPath(tree), { mcpServers: { s: { command: 's', args: ['${ACME_CRED}'] } } });
-    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { ACME_CRED: 'v' } });
+    writeJson(mcpJsonPath(tree), { mcpServers: { s: { command: 's', args: ['${MY_MODEL_KEY}'] } } });
+    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: { MY_MODEL_KEY: 'v' } });
     expect(result.enabled).toEqual([]);
     expect(result.pendingApproval).toEqual([]);
-    expect(result.warnings.filter((w) => w.includes('"s"') && w.includes('ACME_CRED'))).toHaveLength(1);
+    expect(result.warnings.filter((w) => w.includes('"s"') && w.includes('MY_MODEL_KEY'))).toHaveLength(1);
   });
 
   it('still lets user-scope servers expand credentials', async () => {

@@ -129,6 +129,28 @@ describe('loadSettings trust gate', () => {
 });
 
 describe('loadSettings security restrictions', () => {
+  describe('telemetry.otlp.endpoint transport', () => {
+    const load = async (endpoint: string) => {
+      const tree = makeTree();
+      writeJson(userSettingsPath(tree), { telemetry: { otlp: { endpoint, headers: { authorization: 'Bearer t' } } } });
+      return loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    };
+
+    it.each(['http://127.0.0.1:4318', 'http://localhost:4318', 'http://[::1]:4318', 'https://collector.example'])('accepts %s', async (endpoint) => {
+      expect((await load(endpoint)).settings.telemetry?.otlp?.endpoint).toBe(endpoint);
+    });
+
+    it('refuses cleartext to a remote host', async () => {
+      await expect(load('http://collector.example')).rejects.toThrow(/telemetry\.otlp\.endpoint .*must use https/);
+    });
+
+    it('refuses userinfo without printing the password', async () => {
+      const failure = load('https://user:hunter2@collector.example');
+      await expect(failure).rejects.toThrow('must not contain userinfo');
+      await expect(failure).rejects.not.toThrow(/hunter2/);
+    });
+  });
+
   describe('pricing', () => {
     const entry = { provider: 'acme', model: 'm1', effectiveFrom: '2026-01-01', inputPerMTok: 2, outputPerMTok: 8, currency: 'USD' };
 

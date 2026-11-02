@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readJsonFile } from './json-file.ts';
 import { looksLikeCredentialName } from './credential-env.ts';
-import { loadLayers } from './layers.ts';
+import { exists, loadLayers } from './layers.ts';
+import { credentialEnvNames } from './models.ts';
 import type { LoadedLayers } from './layers.ts';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import type { TrustOracle, UserLayer } from './layers.ts';
@@ -114,25 +115,6 @@ const tryExpand = (expand: () => McpServerConfig): { config: McpServerConfig } |
 const SENSITIVE_VARIABLE = /(URL|DSN|PAT|CREDENTIAL|CONN|SESSION|COOKIE)/i;
 
 const allowAnyVariable: VariableGuard = () => false;
-
-const credentialVariableNames = (settings: Settings | undefined): Set<string> => {
-  const names = new Set<string>();
-  for (const target of Object.values(settings?.models?.targets ?? {})) {
-    if (target.adapter === 'chat-completions' && target.apiKeyEnv !== undefined) names.add(target.apiKeyEnv);
-  }
-  return names;
-};
-
-const fileExists = async (file: string): Promise<boolean> => {
-  try {
-    await fs.promises.access(file);
-    return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
-    rethrowIfTransient(error);
-    throw toConfigError(error);
-  }
-};
 
 const loadLayersForUser = async (options: Pick<LoadMcpServersOptions, 'home' | 'projectDir' | 'trust' | 'user'>): Promise<LoadedLayers> => {
   try {
@@ -264,11 +246,11 @@ export const loadMcpServers = async ({ home, projectDir, trust, env, user, sessi
 
   const mcpJson = path.join(projectDir, '.mcp.json');
   if (!trust.isTrusted(projectDir)) {
-    if (await fileExists(mcpJson)) warnings.push(`project ${projectDir} is not trusted; ${mcpJson} was not read`);
+    if (await exists(mcpJson)) warnings.push(`project ${projectDir} is not trusted; ${mcpJson} was not read`);
     return { enabled, pendingApproval, failed, warnings };
   }
 
-  const protectedNames = credentialVariableNames(userSettings?.settings);
+  const protectedNames = new Set(credentialEnvNames({ models: loaded.models }));
   const refuseCredentialVariable: VariableGuard = (variable) => looksLikeCredentialName(variable) || SENSITIVE_VARIABLE.test(variable) || protectedNames.has(variable);
   const projectServers = await readProjectServers(mcpJson, projectDir, seen, warnings);
   for (const [name, rawConfig] of Object.entries(projectServers ?? {})) {
