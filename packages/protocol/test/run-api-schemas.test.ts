@@ -24,6 +24,7 @@ const SCHEMA_NAMES = [
   'MemoriesResponse',
   'MemoryResponse',
   'McpServersResponse',
+  'CostReport',
 ] as const;
 
 type SchemaName = (typeof SCHEMA_NAMES)[number];
@@ -518,6 +519,20 @@ describe('PublicRunEvent projection', () => {
     expect(accepts('PublicRunEvent', { ...sessionEvent, step: 0 })).toBe(false);
     expect(accepts('PublicRunEvent', { ...sessionEvent, leaseToken: 0 })).toBe(false);
     expect(accepts('PublicRunEvent', { ...sessionEvent, mode: 'yolo' })).toBe(false);
+  });
+
+  it('carries the side effect of a tool call and accepts only the values the policy knows', () => {
+    const call = { ...RUN_ENVELOPE, step: 1, type: 'tool.call', callId: 'c1', providerCallId: 'c1', name: 'MemorySave', kind: 'other', title: 'MemorySave', rawInput: {} };
+    for (const sideEffect of ['read_only', 'write', 'exec']) expect(accepts('PublicRunEvent', { ...call, sideEffect })).toBe(true);
+    expect(accepts('PublicRunEvent', { ...call, sideEffect: 'harmless' })).toBe(false);
+  });
+
+  it('counts calls of unknown billing in every cost total', () => {
+    const totals = { calls: 1, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 1, inputTokens: 2, outputTokens: 3, cachedInputTokens: 0, amount: 0, currency: 'USD', priceVersions: [] };
+    const { unknownBillingCalls: _unknownBillingCalls, ...withoutUnknown } = totals;
+    const report = (entry: typeof withoutUnknown) => ({ runs: [{ runId: 'r', sessionId: 's', ...entry }], sessions: [{ sessionId: 's', runIds: ['r'], ...entry }], total: entry });
+    expect(accepts('CostReport', report(totals))).toBe(true);
+    expect(accepts('CostReport', report(withoutUnknown))).toBe(false);
   });
 
   it('rejects an unknown event type', () => {

@@ -15,6 +15,8 @@ export type ElicitationContentValue = string | number | boolean | string[];
 export type ElicitationAnswer = { action: 'accept'; content?: Record<string, ElicitationContentValue> } | { action: 'decline' } | { action: 'cancel' };
 
 export class McpInputProtocolError extends Error {
+  cancelFailure?: unknown;
+
   constructor(message: string) {
     super(message);
     this.name = 'McpInputProtocolError';

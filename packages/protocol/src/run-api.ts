@@ -1,7 +1,7 @@
 import { HOOK_EVENTS, HOOK_OUTCOMES, HOOK_PRE_TOOL_DECISIONS } from './hooks.ts';
 import { MEMORY_ORIGINS, MEMORY_SCOPES } from './memory.ts';
 import { PERMISSION_DENIAL_SOURCES } from './permission-denial.ts';
-import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
+import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
 import type { ImageMediaType, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent } from './run-types.ts';
 
 const DRAFT_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
@@ -174,6 +174,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
       providerCallId: string,
       name: string,
       kind: enumOf(TOOL_KINDS),
+      sideEffect: enumOf(SIDE_EFFECTS),
       title: string,
       rawInput: anything,
       locations: { type: 'array', items: location },
@@ -357,6 +358,7 @@ const costTotalsProperties: Record<string, JsonSchema> = {
   calls: nonNegativeInteger,
   localCalls: nonNegativeInteger,
   unpricedCalls: nonNegativeInteger,
+  unknownBillingCalls: nonNegativeInteger,
   inputTokens: nonNegativeInteger,
   outputTokens: nonNegativeInteger,
   cachedInputTokens: nonNegativeInteger,
@@ -478,6 +480,7 @@ export type CostTotalsView = {
   calls: number;
   localCalls: number;
   unpricedCalls: number;
+  unknownBillingCalls: number;
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;

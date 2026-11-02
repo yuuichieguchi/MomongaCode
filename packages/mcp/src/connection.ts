@@ -24,14 +24,13 @@ import type { McpMarkerOptions } from './stdio-transport.ts';
 import { McpInputSuspension } from './suspension.ts';
 import type { McpCheckpoint, McpResume } from './suspension.ts';
 import { taskHandleOf } from './task-handle.ts';
-import { settleTask } from './tasks.ts';
+import { DEFAULT_REQUEST_TIMEOUT_MS, settleTask } from './tasks.ts';
 import type { SettleTaskOptions, TaskRequester } from './tasks.ts';
 import { pause, systemTimers } from './timers.ts';
 import type { McpTimers } from './timers.ts';
 
 const CLIENT_NAME = 'momonga';
 const CLIENT_VERSION = '0.0.0';
-const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
 const DEFAULT_CONNECT_TIMEOUT_MS = 30_000;
 const DEFAULT_RESET_AFTER_MS = 60_000;
 const FAILURE_THRESHOLD = 3;
@@ -405,6 +404,10 @@ class ManagedConnection implements McpServerConnection {
           attempt.taskCheckpoint = next;
           input.onCheckpoint?.(next);
         },
+        trackCancel: (outcome) =>
+          void outcome.catch((error: unknown) => {
+            this.lastError = `tasks/cancel for an aborted call failed: ${errorMessage(error)}`;
+          }),
         accept: (taskId, value) => {
           if (!isCallToolResult(value)) throw new McpTaskError(taskId, `task ${taskId} completed with a result that is not a tool result`);
           return validateStructuredOutput(input.name, tool, value);

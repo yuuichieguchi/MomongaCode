@@ -461,7 +461,7 @@ describe('anthropic adapter through the gateway: count_tokens', () => {
   });
 });
 
-const SEEING = { imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600 } } as const;
+const SEEING = { imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } } as const;
 
 describe('anthropic adapter through the gateway: images', () => {
   const PNG = 'data:image/png;base64,iVBORw0KGgo=';

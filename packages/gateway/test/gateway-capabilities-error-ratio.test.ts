@@ -11,7 +11,7 @@ const base: Capabilities = {
   streaming: true,
   stopSequences: true,
   imageInput: true,
-  imageTokens: { pixelsPerToken: 750, maxTokens: 1600 },
+  imageTokens: { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 },
   parallelToolCalls: true,
   schemaDialect: 'json-schema-2020-12',
   tokenCounting: 'exact',

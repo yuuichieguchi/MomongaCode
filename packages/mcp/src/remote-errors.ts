@@ -33,9 +33,10 @@ export class McpAuthorizationError extends Error {
 
 export class McpTaskError extends Error {
   readonly taskId: string;
+  cancelFailure?: unknown;
 
-  constructor(taskId: string, message: string) {
-    super(message);
+  constructor(taskId: string, message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = 'McpTaskError';
     this.taskId = taskId;
   }

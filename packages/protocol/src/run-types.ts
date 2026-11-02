@@ -31,6 +31,10 @@ export type PermissionMode = (typeof PERMISSION_MODES)[number];
 export type ApprovalStatus = (typeof APPROVAL_STATUSES)[number];
 export type ToolKind = (typeof TOOL_KINDS)[number];
 
+export const SIDE_EFFECTS = ['read_only', 'write', 'exec'] as const;
+
+export type SideEffect = (typeof SIDE_EFFECTS)[number];
+
 export type PermissionOption = {
   optionId: string;
   name: string;
@@ -86,6 +90,7 @@ export type RunEventPayload =
       providerCallId: string;
       name: string;
       kind: ToolKind;
+      sideEffect?: SideEffect;
       title: string;
       rawInput: unknown;
       locations?: { path: string; line?: number }[];

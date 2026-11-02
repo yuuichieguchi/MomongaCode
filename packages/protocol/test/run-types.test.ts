@@ -169,6 +169,7 @@ describe('run event payloads', () => {
       providerCallId: string;
       name: string;
       kind: ToolKind;
+      sideEffect?: 'read_only' | 'write' | 'exec';
       title: string;
       rawInput: unknown;
       locations?: { path: string; line?: number }[];
