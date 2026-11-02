@@ -20,7 +20,29 @@
 (*   - one tool call per model step; one child run (C) of one parent (P)   *)
 (*   - session ordering of runs, snapshots, context inheritance, hooks,    *)
 (*     compaction, background jobs, graceful shutdown are not modelled     *)
-(*   - the result of reconcile is an oracle; see ReconcileOracle           *)
+(*   - the result of reconcile is an oracle; see Reconcile                 *)
+(*   - an external effect is one atomic action (Effect)                    *)
+(*                                                                         *)
+(* Configurations (scripts/tlc.sh <name>, specs/tla/<name>.cfg)            *)
+(*   RunRecovery           the code as it is, every invariant: refutes     *)
+(*                         AtMostOnceEffect (finding F1)                   *)
+(*   RunRecovery.rest      the code as it is, every invariant except       *)
+(*                         AtMostOnceEffect: holds                         *)
+(*   RunRecovery.children  parent and child run (spawn), every invariant   *)
+(*   RunRecovery.fenceOnly F1 repaired by checking the lease token when    *)
+(*                         the effect starts (EffectFenced)                *)
+(*   RunRecovery.reapOnly  F1 not repaired by reaping the older attempt    *)
+(*                         before reconcile alone                          *)
+(*   RunRecovery.fixed     both repairs, every invariant: holds            *)
+(*   RunRecovery.live      Settles under weak fairness                     *)
+(*                                                                         *)
+(* F1: a worker whose lease was taken over and who has not yet seen it     *)
+(* (lost[w] is only set by the next heartbeat) can start the external      *)
+(* effect of a call. Fencing protects the runs row and the events table,   *)
+(* not the idempotency ledger and not the effect. The resume path in       *)
+(* executor.ts (performExecution, after reconcileWithin returned           *)
+(* not_applied) starts the effect without any lease check, so at-most-once *)
+(* holds only if no stale worker reaches that point.                       *)
 (***************************************************************************)
 EXTENDS Naturals, Sequences, FiniteSets, TLC
 
@@ -31,8 +53,14 @@ CONSTANTS
     MaxAttempts,
     MaxTotalAttempts,
     EffectFenced,
-    ReapBeforeReconcile
+    ReapBeforeReconcile,
+    ParentCalls
 
+(* ParentCalls bounds what the model may answer in the parent run: none   *)
+(* ends the run, exec is a mutating tool without reconcile, rec is a      *)
+(* mutating tool with reconcile (both need approval), spawn starts the    *)
+(* child run. The cfg files split the state space along this set.        *)
+ASSUME ParentCalls \subseteq {"none", "exec", "rec", "spawn"}
 ASSUME ReapBeforeReconcile \in BOOLEAN
 ASSUME /\ MaxStep \in Nat \ {0}
        /\ MaxAttempts \in Nat \ {0}
@@ -108,7 +136,7 @@ ModelledEvents == {"user.message", "run.started", "run.status", "model.requested
 
 ToolKinds == {"exec", "rec", "spawn"}
 
-CallChoices(r) == IF r = Parent THEN {"none", "exec", "rec", "spawn"} ELSE {"none"}
+CallChoices(r) == IF r = Parent THEN ParentCalls ELSE {"none"}
 
 -----------------------------------------------------------------------------
 VARIABLES run, ev, appr, idem, idemRes, eff, dl,
