@@ -21,7 +21,7 @@ type Outcomes = {
 
 type Snapshot = { compactionSeq: number } & Outcomes;
 
-const HISTORY_READ_TOOL = 'HistoryRead';
+export const HISTORY_READ_TOOL = 'HistoryRead';
 
 const callKey = (call: CallRecord): string => `${call.name}\n${canonicalJson(call.input)}`;
 
@@ -31,7 +31,7 @@ const commandOf = (call: CallRecord): string | undefined => {
   return typeof command === 'string' ? command : undefined;
 };
 
-const WHOLE_RUN_FROM = 1;
+export const WHOLE_RUN_FROM = 1;
 
 const lineRangeOf = (call: CallRecord): LineRange => {
   const input = isRecord(call.input) ? call.input : {};

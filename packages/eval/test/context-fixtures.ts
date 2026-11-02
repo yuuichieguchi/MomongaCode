@@ -13,7 +13,31 @@ export const compacted = (replacedThroughSeq: number, source?: SummarySource, fi
   ...(fidelity === undefined ? {} : { fidelity }),
 });
 
-export const fidelity = (fabricated: string[], identifiers: number, retained: number): SummaryFidelity => ({ fabricated, identifiers, retained, sections: 'complete' });
+export const summarized = (replacedThroughSeq: number, summary: SummaryFidelity): RunEventPayload =>
+  compacted(replacedThroughSeq, summary.fabricated.length === 0 ? 'model' : 'deterministic', summary);
+
+export const answer = (text: string): RunEventPayload => ({
+  type: 'model.responded',
+  step: 1,
+  attempt: 1,
+  response: {
+    status: 'completed',
+    output: [{ type: 'message', id: 'answer', role: 'assistant', content: [{ type: 'output_text', text }] }],
+    usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+  },
+});
+
+export const padding = (count: number): RunEventPayload[] => Array.from({ length: count }, (_unused, index) => ({ type: 'notice', level: 'info', message: `padding ${index}` }));
+
+export const marked = (payloads: readonly RunEventPayload[], callId: string): { seqFrom: number; seqTo: number } => {
+  const events = publicEventsOf(payloads);
+  const start = events.find((event) => event.type === 'tool.call' && event.callId === callId);
+  const end = events.find((event) => event.type === 'tool.completed' && event.callId === callId);
+  if (start === undefined || end === undefined || !('seq' in start) || !('seq' in end)) throw new Error(`no marked call ${callId}`);
+  return { seqFrom: start.seq, seqTo: end.seq };
+};
+
+export const fidelity =(fabricated: string[], identifiers: number, retained: number): SummaryFidelity => ({ fabricated, identifiers, retained, sections: 'complete' });
 
 export const governing = (...ids: string[]): RunEventPayload => ({
   type: 'context.governing_loaded',
@@ -51,19 +75,34 @@ export const historyRead = (callId: string, seqFrom: number, seqTo: number): Run
   { type: 'tool.completed', callId, status: 'completed', output: '' },
 ];
 
-export const denied = (callId: string, command: string): RunEventPayload[] => [
+export const failedHistoryRead = (callId: string, seqFrom: number, seqTo: number): RunEventPayload[] => [
+  call(callId, 'HistoryRead', { seqFrom, seqTo }),
+  { type: 'tool.completed', callId, status: 'failed', output: 'no such range' },
+];
+
+export const deniedHistoryRead = (callId: string, seqFrom: number, seqTo: number): RunEventPayload[] => [
+  call(callId, 'HistoryRead', { seqFrom, seqTo }),
+  { type: 'tool.completed', callId, status: 'failed', output: 'denied', denial: { source: 'rule', reason: 'denied' } },
+];
+
+export const denied =(callId: string, command: string): RunEventPayload[] => [
   call(callId, 'Bash', { command }),
   { type: 'tool.completed', callId, status: 'failed', output: 'denied', denial: { source: 'rule', reason: 'denied' } },
 ];
 
-export const recorded = (caseId: string, runIndex: number, payloads: readonly RunEventPayload[], options: { status?: RunStatus; totalTokens?: number } = {}): Transcript => {
+export const recorded = (
+  caseId: string,
+  runIndex: number,
+  payloads: readonly RunEventPayload[],
+  options: { status?: RunStatus; totalTokens?: number; children?: Transcript['children']; modelAlias?: string } = {},
+): Transcript => {
   const totalTokens = options.totalTokens ?? 100;
   return {
     caseId,
     runIndex,
-    run: { id: `run-${caseId}-${runIndex}`, status: options.status ?? 'COMPLETED', step: 1, usage: { inputTokens: totalTokens - 1, outputTokens: 1, totalTokens } },
+    run: { id: `run-${caseId}-${runIndex}`, status: options.status ?? 'COMPLETED', step: 1, usage: { inputTokens: totalTokens - 1, outputTokens: 1, totalTokens }, ...(options.modelAlias === undefined ? {} : { modelAlias: options.modelAlias }) },
     events: publicEventsOf(payloads),
-    children: [],
+    children: options.children ?? [],
   };
 };
 
@@ -75,7 +114,7 @@ export const contextCase = (id: string, scenario: string, compaction: 'on' | 'of
   permissionMode: 'default',
   onAsk: 'reject_once',
   runs: 1,
-  minPassRate: 0,
+  minPassRate: 1,
   rules: [],
   revisionDepth: 0,
   noise: { level: 0, topics: ['testing'] },

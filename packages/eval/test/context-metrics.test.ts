@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { bindingRuleIds, compactionFactsOf, governanceOf, lossSignalsOf, recalledOf, retrievalOf } from '@momonga/eval';
 import type { ContextRule } from '@momonga/eval';
-import { bash, compacted, denied, fidelity, governing, historyRead, memories, read } from './context-fixtures.ts';
+import { bash, compacted, denied, deniedHistoryRead, failedHistoryRead, fidelity, governing, historyRead, marked, memories, padding, read, summarized } from './context-fixtures.ts';
 import { publicEventsOf } from './fixtures.ts';
 
 const rule = (id: string, overrides: Partial<ContextRule> = {}): ContextRule => ({
@@ -26,6 +26,10 @@ describe('bindingRuleIds', () => {
 
   it('does not revive what a retired successor replaced', () => {
     expect(bindingRuleIds([rule('g1'), rule('g2', { supersedes: ['g1'], live: false })])).toEqual([]);
+  });
+
+  it('does not let an out-of-scope rule supersede one that is in force', () => {
+    expect(bindingRuleIds([rule('a'), rule('b', { supersedes: ['a'], inScope: false })])).toEqual(['a']);
   });
 
   it('keeps both maxima of a true conflict', () => {
@@ -78,8 +82,20 @@ describe('governanceOf, against the revision rows of paper 8', () => {
     expect(governanceOf(depthOne, publicEventsOf([governing('g2', 'unrelated')]))).toEqual({ fidelity: 1, consistency: 1, minimality: 1 });
   });
 
-  it('reads R from the last event, the set in effect at the end of the run', () => {
-    expect(governanceOf(depthOne, publicEventsOf([governing('g1'), governing('g2')]))).toEqual({ fidelity: 1, consistency: 1, minimality: 1 });
+  it('reads fidelity and minimality from the last load, the set in effect at the end of the run', () => {
+    expect(governanceOf(depthOne, publicEventsOf([governing('g1'), governing('g2')]))).toEqual({ fidelity: 1, consistency: 0, minimality: 1 });
+  });
+
+  it('breaks consistency when any load of the run held a stale set, even one corrected later', () => {
+    expect(governanceOf(depthOne, publicEventsOf([governing('g2'), governing('g1', 'g2'), governing('g2')]))?.consistency).toBe(0);
+    expect(governanceOf(depthOne, publicEventsOf([governing('g2'), governing('g2')]))?.consistency).toBe(1);
+  });
+
+  it('measures a case whose rules are all retired: loading a stale one is consistency 0 and minimality 0', () => {
+    const retired = [rule('g1'), rule('g2', { supersedes: ['g1'], live: false })];
+    expect(bindingRuleIds(retired)).toEqual([]);
+    expect(governanceOf(retired, publicEventsOf([governing('g1')]))).toEqual({ fidelity: undefined, consistency: 0, minimality: 0 });
+    expect(governanceOf(retired, publicEventsOf([governing()]))).toEqual({ fidelity: undefined, consistency: 1, minimality: undefined });
   });
 
   it('is undefined for a case with no binding rule', () => {
@@ -98,30 +114,53 @@ describe('recalledOf', () => {
 });
 
 describe('retrievalOf', () => {
+  const early = [...read('r1', '/p/a.ts', 'one'), ...read('r2', '/p/b.ts', 'two'), ...padding(2)];
+  const gold = [marked(early, 'r1'), marked(early, 'r2')];
+
   it('measures seq overlap between HistoryRead ranges and the gold ranges', () => {
-    const events = publicEventsOf(historyRead('c1', 7, 10));
-    expect(retrievalOf([{ seqFrom: 5, seqTo: 8 }], events)).toEqual({ relevant: 2, retrieved: 4, gold: 4 });
+    const events = publicEventsOf([...early, ...historyRead('c1', 3, 6)]);
+    expect(retrievalOf(gold, events)).toEqual({ relevant: 2, retrieved: 4, gold: 4 });
   });
 
   it('counts a seq once when ranges overlap', () => {
-    const events = publicEventsOf([...historyRead('c1', 1, 3), ...historyRead('c2', 2, 4)]);
-    expect(retrievalOf([{ seqFrom: 3, seqTo: 3 }, { seqFrom: 3, seqTo: 6 }], events)).toEqual({ relevant: 2, retrieved: 4, gold: 4 });
+    const events = publicEventsOf([...early, ...historyRead('c1', 1, 3), ...historyRead('c2', 2, 4)]);
+    expect(retrievalOf([marked(early, 'r2'), marked(early, 'r2')], events)).toEqual({ relevant: 2, retrieved: 4, gold: 2 });
   });
 
   it('reports nothing retrieved when no range was read', () => {
-    expect(retrievalOf([{ seqFrom: 1, seqTo: 2 }], [])).toEqual({ relevant: 0, retrieved: 0, gold: 2 });
+    expect(retrievalOf(gold, [])).toEqual({ relevant: 0, retrieved: 0, gold: 4 });
+  });
+
+  it('counts only reads that delivered something: a denied or failed HistoryRead retrieved nothing', () => {
+    expect(retrievalOf(gold, publicEventsOf([...early, ...deniedHistoryRead('c1', 1, 4)]))).toEqual({ relevant: 0, retrieved: 0, gold: 4 });
+    expect(retrievalOf(gold, publicEventsOf([...early, ...failedHistoryRead('c1', 1, 4)]))).toEqual({ relevant: 0, retrieved: 0, gold: 4 });
+  });
+
+  it('does not count a call that has not completed', () => {
+    const events = publicEventsOf(historyRead('c1', 1, 4).slice(0, 1));
+    expect(retrievalOf(gold, events).retrieved).toBe(0);
+  });
+
+  it('cannot retrieve seqs that did not exist when the call was made', () => {
+    const events = publicEventsOf([...early, ...historyRead('c1', 1, 100000)]);
+    expect(retrievalOf(gold, events)).toEqual({ relevant: 4, retrieved: 7, gold: 4 });
   });
 });
 
 describe('compactionFactsOf', () => {
-  it('counts only model summaries for fabrication and leaves unlabelled ones out', () => {
+  it('counts every summary the model produced, accepted or rejected, and measures retention on accepted ones only', () => {
     const events = publicEventsOf([
-      compacted(1, 'model', fidelity(['ghost.ts'], 4, 3)),
-      compacted(2, 'model', fidelity([], 2, 2)),
-      compacted(3, 'deterministic', fidelity(['x'], 8, 0)),
+      summarized(1, fidelity(['ghost.ts'], 4, 3)),
+      summarized(2, fidelity([], 2, 2)),
+      compacted(3, 'deterministic', fidelity([], 8, 0)),
       compacted(4),
     ]);
-    expect(compactionFactsOf(events)).toEqual({ compactions: 4, modelSummaries: 2, fabricatedSummaries: 1, identifiers: 6, retained: 5, unclassified: 1 });
+    expect(compactionFactsOf(events)).toEqual({ compactions: 4, modelSummaries: 3, fabricatedSummaries: 1, identifiers: 2, retained: 2, unclassified: 1 });
+  });
+
+  it('sees fabrication that the runtime records as a rejected summary with source deterministic', () => {
+    const events = publicEventsOf([summarized(1, fidelity(['ghost.ts'], 4, 3))]);
+    expect(compactionFactsOf(events)).toMatchObject({ modelSummaries: 1, fabricatedSummaries: 1, identifiers: 0, retained: 0 });
   });
 });
 

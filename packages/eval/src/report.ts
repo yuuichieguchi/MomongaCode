@@ -31,7 +31,7 @@ export type EvalReport = {
 
 const MUST_NOT_ALLOW: readonly PermissionDecision[] = ['ask', 'deny'];
 
-export const proportionOrUndefined =(successes: number, trials: number): Proportion | undefined => (trials === 0 ? undefined : proportionOf(successes, trials));
+export const proportionOrUndefined = (successes: number, trials: number): Proportion | undefined => (trials === 0 ? undefined : proportionOf(successes, trials));
 
 type DirectionUnit = { labelled: boolean; observed: boolean; wrong: boolean };
 
@@ -92,7 +92,7 @@ export const buildReport = (dataset: GoldenDataset, results: readonly CaseResult
 
 export const percent = (value: number): string => `${(value * 100).toFixed(1)}%`;
 
-export const describeProportion =(proportion: Proportion): string =>
+export const describeProportion = (proportion: Proportion): string =>
   `${proportion.successes}/${proportion.trials} = ${percent(proportion.rate)} (95% Wilson ${percent(proportion.low)}..${percent(proportion.high)})`;
 
 export const formatReport = (report: EvalReport): string => {

@@ -1,15 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { CONTEXT_DATASET_FORMAT, EvalError, buildContextReport, compareContextReports, formatContextComparison, formatContextReport, pairedBootstrap, parseContextDataset, proportionOf } from '@momonga/eval';
+import { CONTEXT_DATASET_FORMAT, EvalError, buildContextReport, formatContextReport, pairedBootstrap, parseContextDataset, proportionOf } from '@momonga/eval';
 import type { Transcript } from '@momonga/eval';
 import type { RunEventPayload, SummaryFidelity } from '@momonga/protocol';
-import { bash, compacted, contextCase, fidelity, governing, historyRead, memories, recorded } from './context-fixtures.ts';
+import { bash, compacted, contextCase, fidelity, governing, historyRead, marked, memories, padding, recorded, summarized } from './context-fixtures.ts';
+
+type Variant = { s1On?: 'COMPLETED' | 'FAILED'; tokens?: Partial<Record<'s1-on' | 's1-off' | 's2-on' | 's2-off', number>>; extra?: RunEventPayload[]; summary?: SummaryFidelity };
+
+const s1OnPayloads = (summary: SummaryFidelity, extra: RunEventPayload[]): RunEventPayload[] => [
+  governing('r'),
+  memories('stale', 'verified'),
+  ...bash('b0', 'npm test', 'failed'),
+  summarized(4, summary),
+  ...extra,
+  ...historyRead('h1', 3, 6),
+];
 
 const dataset = parseContextDataset(
   JSON.stringify({
     format: CONTEXT_DATASET_FORMAT,
     name: 'sample',
     cases: [
-      { ...contextCase('s1-on', 's1', 'on'), rules: [{ id: 'r', kind: 'constraint', target: 't', text: 'x', inScope: true, live: true, supersedes: [] }], gold: [{ seqFrom: 1, seqTo: 4 }] },
+      { ...contextCase('s1-on', 's1', 'on'), rules: [{ id: 'r', kind: 'constraint', target: 't', text: 'x', inScope: true, live: true, supersedes: [] }], gold: [marked(s1OnPayloads(fidelity([], 2, 2), []), 'b0')] },
       { ...contextCase('s1-off', 's1', 'off'), rules: [{ id: 'r', kind: 'constraint', target: 't', text: 'x', inScope: true, live: true, supersedes: [] }] },
       contextCase('s2-on', 's2', 'on'),
       contextCase('s2-off', 's2', 'off'),
@@ -18,18 +29,16 @@ const dataset = parseContextDataset(
   'sample.json',
 );
 
-type Variant = { s1On?: 'COMPLETED' | 'FAILED'; tokens?: Partial<Record<'s1-on' | 's1-off' | 's2-on' | 's2-off', number>>; extra?: RunEventPayload[]; summary?: SummaryFidelity };
-
 const transcriptsOf = ({ s1On = 'FAILED', tokens = {}, extra = [], summary = fidelity([], 2, 2) }: Variant = {}): Transcript[] => [
-  recorded('s1-on', 0, [governing('r'), memories('stale', 'verified'), ...bash('b0', 'npm test', 'failed'), compacted(4, 'model', summary), ...extra, ...historyRead('h1', 3, 6)], { status: s1On, totalTokens: tokens['s1-on'] ?? 300 }),
+  recorded('s1-on', 0, s1OnPayloads(summary, extra), { status: s1On, totalTokens: tokens['s1-on'] ?? 300 }),
   recorded('s1-off', 0, [governing('r')], { totalTokens: tokens['s1-off'] ?? 100 }),
-  recorded('s2-on', 0, [...bash('b0', 'npm test', 'failed'), compacted(2, 'model', summary), ...extra], { totalTokens: tokens['s2-on'] ?? 100 }),
+  recorded('s2-on', 0, [...bash('b0', 'npm test', 'failed'), summarized(2, summary), ...extra], { totalTokens: tokens['s2-on'] ?? 100 }),
   recorded('s2-off', 0, [], { totalTokens: tokens['s2-off'] ?? 100 }),
 ];
 
-const realReport = (variant: Variant = {}) => buildContextReport({ dataset, transcripts: transcriptsOf(variant), model: 'real' });
+const bareTranscripts = (): Transcript[] => dataset.cases.map((entry) => recorded(entry.id, 0, entry.gold === undefined ? [] : padding(4)));
 
-const checkOf = (name: string, baseline = realReport(), candidate = realReport({ s1On: 'COMPLETED' })) => compareContextReports(baseline, candidate, { seed: 1 }).gate.checks.find((check) => check.name === name);
+const realReport =(variant: Variant = {}) => buildContextReport({ dataset, transcripts: transcriptsOf(variant), model: 'real', seed: 1 });
 
 describe('pairedBootstrap', () => {
   const spread = [1, -2, 3, 0, 5, -1, 2, 2, 7, -3];
@@ -70,29 +79,34 @@ describe('pairedBootstrap', () => {
 describe('buildContextReport', () => {
   const report = realReport();
 
-  it('reports rates through proportionOf', () => {
+  it('reports the rate of compacted runs through the Wilson interval, the unit being a run', () => {
     expect(report.metrics.continuationRate).toEqual(proportionOf(1, 2));
-    expect(report.metrics.fabricationRate).toEqual(proportionOf(0, 2));
-    expect(report.metrics.identifierRetention).toEqual(proportionOf(4, 4));
-    expect(report.metrics.memoryStaleRate).toEqual(proportionOf(1, 2));
   });
 
-  it('pools retrieval over seqs against the gold ranges', () => {
-    expect(report.metrics.retrievalPrecision).toEqual(proportionOf(2, 4));
-    expect(report.metrics.retrievalRecall).toEqual(proportionOf(2, 4));
+  it('reports rates whose trials cluster inside a case with a case-level bootstrap interval, not Wilson', () => {
+    expect(report.metrics.fabricationRate).toMatchObject({ successes: 0, trials: 2, clusters: 2, low: 0, high: 0 });
+    expect(report.metrics.identifierRetention).toMatchObject({ successes: 4, trials: 4, clusters: 2 });
+    expect(report.metrics.memoryStaleRate).toMatchObject({ successes: 1, trials: 2, clusters: 1 });
+    expect(report.metrics.memoryStaleRate?.high).toBe(0.5);
+  });
+
+  it('pools retrieval over seqs against the gold ranges that a marked call fixes', () => {
+    expect(report.metrics.retrievalPrecision).toMatchObject({ successes: 2, trials: 4, clusters: 1 });
+    expect(report.metrics.retrievalRecall).toMatchObject({ successes: 2, trials: 2, clusters: 1 });
   });
 
   it('pools governance over the cases that define rules', () => {
-    expect(report.metrics.governanceFidelity).toEqual(proportionOf(2, 2));
+    expect(report.metrics.governanceFidelity).toMatchObject({ successes: 2, trials: 2, clusters: 2 });
     expect(report.metrics.governanceConsistency).toEqual(proportionOf(2, 2));
-    expect(report.metrics.governanceMinimality).toEqual(proportionOf(2, 2));
+    expect(report.metrics.governanceMinimality).toMatchObject({ successes: 2, trials: 2, clusters: 2 });
   });
 
   it('excludes undefined minimality and shrinks n', () => {
     const transcripts = transcriptsOf().map((entry) => (entry.caseId === 's1-off' ? recorded('s1-off', 0, []) : entry));
-    const scored = buildContextReport({ dataset, transcripts, model: 'real' });
-    expect(scored.metrics.governanceMinimality).toEqual(proportionOf(1, 1));
-    expect(scored.metrics.governanceFidelity).toEqual(proportionOf(1, 2));
+    const scored = buildContextReport({ dataset, transcripts, model: 'real', seed: 1 });
+    expect(scored.metrics.governanceMinimality).toMatchObject({ successes: 1, trials: 1 });
+    expect(scored.metrics.governanceFidelity).toMatchObject({ successes: 1, trials: 2 });
+    expect(scored.governanceRunsWithoutEvent).toBe(1);
   });
 
   it('counts contrastive failures per scenario with n as the pair count', () => {
@@ -110,7 +124,7 @@ describe('buildContextReport', () => {
   });
 
   it('leaves a metric with no trials undefined instead of inventing a rate', () => {
-    const bare = buildContextReport({ dataset, transcripts: dataset.cases.map((entry) => recorded(entry.id, 0, [])), model: 'real' });
+    const bare = buildContextReport({ dataset, transcripts: bareTranscripts(), model: 'real', seed: 1 });
     expect(bare.metrics.fabricationRate).toBeUndefined();
     expect(bare.metrics.memoryStaleRate).toBeUndefined();
     expect(bare.metrics.lossSignalsPerCompaction).toBeUndefined();
@@ -118,17 +132,17 @@ describe('buildContextReport', () => {
 
   it('counts compactions recorded without a source apart', () => {
     const transcripts = transcriptsOf().map((entry) => (entry.caseId === 's2-on' ? recorded('s2-on', 0, [compacted(0)]) : entry));
-    const scored = buildContextReport({ dataset, transcripts, model: 'real' });
+    const scored = buildContextReport({ dataset, transcripts, model: 'real', seed: 1 });
     expect(scored.metrics.fabricationRate?.trials).toBe(1);
     expect(scored.unclassifiedCompactions).toBe(1);
   });
 
   it('refuses a missing transcript', () => {
-    expect(() => buildContextReport({ dataset, transcripts: transcriptsOf().slice(1), model: 'real' })).toThrow(EvalError);
+    expect(() => buildContextReport({ dataset, transcripts: transcriptsOf().slice(1), model: 'real', seed: 1 })).toThrow(EvalError);
   });
 
   it('marks the provenance and what is meaningless for a fake model', () => {
-    const fake = buildContextReport({ dataset, transcripts: transcriptsOf(), model: 'fake' });
+    const fake = buildContextReport({ dataset, transcripts: transcriptsOf(), model: 'fake', seed: 1 });
     expect(fake.model).toBe('fake');
     expect(fake.meaningless).toEqual(['continuationRate', 'contrastiveFailures', 'fabricationRate', 'identifierRetention', 'lossSignalsPerCompaction', 'retrievalPrecision', 'retrievalRecall', 'tokensPerSuccess']);
     expect(report.model).toBe('real');
@@ -146,91 +160,15 @@ describe('formatContextReport', () => {
   });
 
   it('says that a fake result proves only the machinery, and lists the meaningless metrics', () => {
-    const text = formatContextReport(buildContextReport({ dataset, transcripts: transcriptsOf(), model: 'fake' }));
+    const text = formatContextReport(buildContextReport({ dataset, transcripts: transcriptsOf(), model: 'fake', seed: 1 }));
     expect(text).toContain('model: fake');
     expect(text).toContain('machinery');
     expect(text).toMatch(/meaningless.*continuationRate/);
   });
 
   it('prints n/a for an undefined metric', () => {
-    const bare = buildContextReport({ dataset, transcripts: dataset.cases.map((entry) => recorded(entry.id, 0, [])), model: 'real' });
+    const bare = buildContextReport({ dataset, transcripts: bareTranscripts(), model: 'real', seed: 1 });
     expect(formatContextReport(bare)).toMatch(/fabricationRate n\/a/);
   });
 });
 
-describe('compareContextReports', () => {
-  const fixed = realReport({ s1On: 'COMPLETED' });
-
-  it('passes when contrastive failures drop and nothing else worsens', () => {
-    const { gate } = compareContextReports(realReport(), fixed, { seed: 1 });
-    expect(gate.checks.map((check) => [check.name, check.passed])).toEqual([
-      ['real_model', true],
-      ['contrastiveFailures', true],
-      ['fabricationRate', true],
-      ['lossSignalsPerCompaction', true],
-      ['tokensPerSuccess', true],
-    ]);
-    expect(gate.passed).toBe(true);
-  });
-
-  it('reports paired differences with n', () => {
-    const { differences } = compareContextReports(realReport(), realReport({ s1On: 'COMPLETED', tokens: { 's1-off': 150, 's2-on': 150, 's2-off': 150 } }), { seed: 1 });
-    expect(differences.tokensPerSuccess).toEqual({ mean: 50, low: 50, high: 50, n: 3 });
-    expect(differences.lossSignalsPerCompaction).toEqual({ mean: 0, low: 0, high: 0, n: 2 });
-  });
-
-  it('fails when contrastive failures are only equal', () => {
-    const { gate } = compareContextReports(realReport(), realReport(), { seed: 1 });
-    expect(gate.passed).toBe(false);
-    expect(gate.checks.find((check) => check.name === 'contrastiveFailures')?.passed).toBe(false);
-  });
-
-  it('fails when contrastive failures rise', () => {
-    expect(compareContextReports(fixed, realReport(), { seed: 1 }).gate.passed).toBe(false);
-  });
-
-  it('fails when the fabrication rate leaves the baseline Wilson interval', () => {
-    expect(proportionOf(0, 2).high).toBeLessThan(1);
-    const candidate = realReport({ s1On: 'COMPLETED', summary: fidelity(['ghost.ts'], 2, 2) });
-    expect(checkOf('fabricationRate', realReport(), candidate)?.passed).toBe(false);
-  });
-
-  it('allows a fabrication rate inside the baseline Wilson interval', () => {
-    const baseline = realReport({ summary: fidelity(['ghost.ts'], 2, 2) });
-    expect(checkOf('fabricationRate', baseline, realReport({ s1On: 'COMPLETED', summary: fidelity(['ghost.ts'], 2, 2) }))?.passed).toBe(true);
-  });
-
-  it('fails when every paired compaction loses more', () => {
-    const candidate = realReport({ s1On: 'COMPLETED', extra: bash('b1', 'npm test', 'failed') });
-    expect(checkOf('lossSignalsPerCompaction', realReport(), candidate)?.passed).toBe(false);
-  });
-
-  it('fails when every paired success costs more tokens', () => {
-    const candidate = realReport({ s1On: 'COMPLETED', tokens: { 's1-off': 150, 's2-on': 150, 's2-off': 150 } });
-    expect(checkOf('tokensPerSuccess', realReport(), candidate)?.passed).toBe(false);
-  });
-
-  it('tolerates a token change whose interval spans zero', () => {
-    const candidate = realReport({ s1On: 'COMPLETED', tokens: { 's1-off': 130, 's2-on': 70 } });
-    expect(checkOf('tokensPerSuccess', realReport(), candidate)?.passed).toBe(true);
-  });
-
-  it('refuses reports over different cases, because they cannot be paired', () => {
-    const other = { ...fixed, cases: fixed.cases.slice(1) };
-    expect(() => compareContextReports(realReport(), other, { seed: 1 })).toThrow(EvalError);
-  });
-
-  it('never passes a fake model through the gate', () => {
-    const fake = (s1On: 'COMPLETED' | 'FAILED') => buildContextReport({ dataset, transcripts: transcriptsOf({ s1On }), model: 'fake' });
-    const { gate } = compareContextReports(fake('FAILED'), fake('COMPLETED'), { seed: 1 });
-    expect(gate.passed).toBe(false);
-    expect(gate.checks.find((check) => check.name === 'real_model')?.passed).toBe(false);
-  });
-
-  it('prints each difference with n, each check, and the verdict', () => {
-    const passing = formatContextComparison(compareContextReports(realReport(), fixed, { seed: 1 }));
-    expect(passing).toMatch(/tokensPerSuccess .*n=/);
-    expect(passing).toMatch(/gate: PASS/);
-    expect(formatContextComparison(compareContextReports(realReport(), realReport(), { seed: 1 }))).toMatch(/gate: FAIL[\s\S]*contrastiveFailures/);
-  });
-});

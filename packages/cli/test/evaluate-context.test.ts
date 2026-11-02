@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { CONTEXT_DATASET_FORMAT, DATASET_FORMAT, encodeTranscript } from '@momonga/eval';
 import type { Transcript } from '@momonga/eval';
 import type { EntryIo } from '@momonga/foundation';
+import { toPublicRunEvent } from '@momonga/protocol';
+import { fixtureCompactionItem, materializeEvents } from '@momonga/testkit';
 import type { DaemonEntries } from '../src/daemon/entries.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
@@ -24,7 +26,13 @@ const pairedCase = (id: string, scenario: string, compaction: 'on' | 'off') => (
   graders: [{ kind: 'status', equals: 'COMPLETED' }],
 });
 
-const CONTEXT_DATASET = JSON.stringify({ format: CONTEXT_DATASET_FORMAT, name: 'sample', cases: [pairedCase('a-on', 'a', 'on'), pairedCase('a-off', 'a', 'off')] });
+const SCENARIOS = ['a', 'b', 'c', 'd'] as const;
+
+const CONTEXT_DATASET = JSON.stringify({
+  format: CONTEXT_DATASET_FORMAT,
+  name: 'sample',
+  cases: SCENARIOS.flatMap((scenario) => [pairedCase(`${scenario}-on`, scenario, 'on'), pairedCase(`${scenario}-off`, scenario, 'off')]),
+});
 
 const GOLDEN_DATASET = JSON.stringify({
   format: DATASET_FORMAT,
@@ -32,20 +40,28 @@ const GOLDEN_DATASET = JSON.stringify({
   cases: [{ id: 'a-on', input: 'x', permissionMode: 'default', onAsk: 'reject_once', runs: 1, minPassRate: 1, graders: [{ kind: 'status', equals: 'COMPLETED' }] }],
 });
 
+const compactionEvents = (caseId: string): Transcript['events'] =>
+  materializeEvents(
+    [{ type: 'context.compacted', item: fixtureCompactionItem(`cmp-${caseId}`, 'summary'), summary: 'summary', replacedThroughSeq: 1, source: 'model', fidelity: { fabricated: [], identifiers: 1, retained: 1, sections: 'complete' } }],
+    { runId: `run-${caseId}` },
+  ).map(toPublicRunEvent);
+
 const transcript = (caseId: string, status: 'COMPLETED' | 'FAILED' = 'COMPLETED'): Transcript => ({
   caseId,
   runIndex: 0,
   run: { id: `run-${caseId}`, status, step: 1, usage: { inputTokens: 9, outputTokens: 1, totalTokens: 10 } },
-  events: [],
+  events: caseId.endsWith('-on') ? compactionEvents(caseId) : [],
   children: [],
 });
 
-const harness = (onStatus: 'COMPLETED' | 'FAILED' = 'COMPLETED') => {
+const harness = (failingOn: number = 0) => {
   const stored = new Map<string, string>([
     ['/w/context.json', CONTEXT_DATASET],
     ['/w/golden.json', GOLDEN_DATASET],
-    ['/w/t/a-on.0.transcript.jsonl', encodeTranscript(transcript('a-on', onStatus))],
-    ['/w/t/a-off.0.transcript.jsonl', encodeTranscript(transcript('a-off'))],
+    ...SCENARIOS.flatMap((scenario, index): [string, string][] => [
+      [`/w/t/${scenario}-on.0.transcript.jsonl`, encodeTranscript(transcript(`${scenario}-on`, index < failingOn ? 'FAILED' : 'COMPLETED'))],
+      [`/w/t/${scenario}-off.0.transcript.jsonl`, encodeTranscript(transcript(`${scenario}-off`))],
+    ]),
     ['/w/g/a-on.0.transcript.jsonl', encodeTranscript(transcript('a-on'))],
   ]);
   const stdout: string[] = [];
@@ -86,8 +102,8 @@ const harness = (onStatus: 'COMPLETED' | 'FAILED' = 'COMPLETED') => {
 
 const run = (program: ReturnType<typeof harness>['program'], ...args: string[]): Promise<unknown> => program.parseAsync(args, { from: 'user' });
 
-const reportFile = async (name: string, onStatus: 'COMPLETED' | 'FAILED', model: 'fake' | 'real'): Promise<string> => {
-  const { program, stored } = harness(onStatus);
+const reportFile = async (name: string, failingOn: number, model: 'fake' | 'real'): Promise<string> => {
+  const { program, stored } = harness(failingOn);
   await run(program, 'eval', 'context', 'context.json', '--replay', 't', '--model', model, '--report', name);
   const text = stored.get(`/w/${name}`);
   if (text === undefined) throw new Error('the command stored no report');
@@ -104,9 +120,14 @@ describe('momonga eval context', () => {
   });
 
   it('exits 1 when a case misses its required pass rate', async () => {
-    const { program, completed } = harness('FAILED');
+    const { program, completed } = harness(1);
     await run(program, 'eval', 'context', 'context.json', '--replay', 't', '--model', 'fake');
     expect(completed).toEqual([1]);
+  });
+
+  it('says why a live run is refused and how to record transcripts to replay', async () => {
+    const { program } = harness();
+    await expect(run(program, 'eval', 'context', 'context.json', '--model', 'real')).rejects.toThrow(/golden copy.*momonga eval <copy> --record/s);
   });
 
   it('requires the provenance of a replay instead of guessing it', async () => {
@@ -120,7 +141,7 @@ describe('momonga eval context', () => {
   });
 
   it('stores a report that compare can read', async () => {
-    const parsed: unknown = JSON.parse(await reportFile('a.json', 'COMPLETED', 'real'));
+    const parsed: unknown = JSON.parse(await reportFile('a.json', 0, 'real'));
     expect(parsed).toMatchObject({ dataset: 'sample', model: 'real' });
   });
 });
@@ -135,19 +156,19 @@ describe('momonga eval compare', () => {
   };
 
   it('exits 0 and prints PASS when the candidate clears the gate', async () => {
-    const { completed, stdout } = await comparing(await reportFile('a.json', 'FAILED', 'real'), await reportFile('b.json', 'COMPLETED', 'real'));
+    const { completed, stdout } = await comparing(await reportFile('a.json', 2, 'real'), await reportFile('b.json', 0, 'real'));
     expect(stdout.join('')).toContain('gate: PASS');
     expect(completed).toEqual([0]);
   });
 
   it('exits 1 and prints FAIL when it does not', async () => {
-    const { completed, stdout } = await comparing(await reportFile('a.json', 'COMPLETED', 'real'), await reportFile('b.json', 'FAILED', 'real'));
+    const { completed, stdout } = await comparing(await reportFile('a.json', 0, 'real'), await reportFile('b.json', 1, 'real'));
     expect(stdout.join('')).toContain('gate: FAIL');
     expect(completed).toEqual([1]);
   });
 
   it('exits 1 for fake reports', async () => {
-    const { completed } = await comparing(await reportFile('a.json', 'FAILED', 'fake'), await reportFile('b.json', 'COMPLETED', 'fake'));
+    const { completed } = await comparing(await reportFile('a.json', 2, 'fake'), await reportFile('b.json', 0, 'fake'));
     expect(completed).toEqual([1]);
   });
 

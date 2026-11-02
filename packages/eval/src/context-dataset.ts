@@ -72,6 +72,7 @@ export const CONTEXT_DATASET_SCHEMA = {
         type: 'object',
         properties: {
           ...goldenCaseSchema.properties,
+          minPassRate: { type: 'number', exclusiveMinimum: 0, maximum: 1 },
           scenario: string,
           compaction: { enum: [...COMPACTION_SETTINGS] },
           rules: { type: 'array', items: ruleSchema },
@@ -118,7 +119,7 @@ const ajv = new Ajv2020.default({ strict: true });
 const validateContextDataset: ValidateFunction<ContextDataset> = ajv.compile<ContextDataset>(CONTEXT_DATASET_SCHEMA);
 
 export const bindingRuleIds = (rules: readonly ContextRule[]): string[] => {
-  const superseded = new Set(rules.flatMap((rule) => rule.supersedes));
+  const superseded = new Set(rules.filter((rule) => rule.inScope).flatMap((rule) => rule.supersedes));
   return rules.filter((rule) => rule.live && rule.inScope && !superseded.has(rule.id)).map((rule) => rule.id);
 };
 

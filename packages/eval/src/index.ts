@@ -10,8 +10,8 @@ export { EvalError, replayDataset, runDataset } from './runner.ts';
 export type { EvalPorts, EvalRunApi, EvalWorkspace } from './runner.ts';
 export { WILSON_Z_95, proportionOf } from './stats.ts';
 export type { Proportion } from './stats.ts';
-export { BOOTSTRAP_RESAMPLES, BOOTSTRAP_TAIL_RANK, pairedBootstrap } from './bootstrap.ts';
-export type { BootstrapInterval } from './bootstrap.ts';
+export { BOOTSTRAP_RESAMPLES, BOOTSTRAP_TAIL_RANK, MINIMUM_PAIRS, clusterBootstrap, pairedBootstrap } from './bootstrap.ts';
+export type { BootstrapInterval, Cluster, ClusterInterval } from './bootstrap.ts';
 export { COMPACTION_SETTINGS, CONTEXT_DATASET_FORMAT, CONTEXT_DATASET_SCHEMA, bindingRuleIds, noiseTurnsFor, parseContextDataset } from './context-dataset.ts';
 export type { CompactionSetting, ContextCase, ContextDataset, ContextRule, GoldRange, NoiseTurn, WorkspaceStep } from './context-dataset.ts';
 export { compactionFactsOf, governanceCountsOf, governanceOf, lossSignalsOf, recalledOf, retrievalOf } from './context-metrics.ts';
@@ -21,11 +21,13 @@ export {
   CONTEXT_REPORT_FORMAT,
   MODEL_DEPENDENT_METRICS,
   buildContextReport,
+  datasetDigestOf,
+  describeClustered,
   encodeContextReport,
   formatContextReport,
   parseContextReport,
 } from './context-report.ts';
-export type { ContextCaseReport, ContextMetrics, ContextModel, ContextReport, ModelDependentMetric } from './context-report.ts';
+export type { ClusteredProportion, ContextCaseReport, ContextMetrics, ContextModel, ContextReport, ModelDependentMetric } from './context-report.ts';
 export { GATE_CHECKS, compareContextReports, formatContextComparison } from './context-compare.ts';
 export type { ContextComparison, GateCheck, GateCheckName } from './context-compare.ts';
 export { TRANSCRIPT_FORMAT, TranscriptError, decodeTranscript, encodeTranscript, parsePublicRunEvent } from './transcript.ts';

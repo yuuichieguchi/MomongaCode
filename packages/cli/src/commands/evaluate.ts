@@ -69,7 +69,8 @@ export type EvaluateContextOptions = { replay?: string; model?: ContextModel; re
 export const evaluateContext = async (ports: CliPorts, datasetFile: string, options: EvaluateContextOptions): Promise<number> => {
   if (options.replay === undefined) {
     throw new EvaluateUsageError(
-      'eval context replays recorded runs with --replay <directory>: the runtime cannot yet switch compaction off, load governing rules or play noise turns, so a live run could not honour the dataset',
+      'eval context replays recorded runs with --replay <directory>. The runtime cannot yet switch compaction off, load governing rules or play noise turns, so a live run could not honour the dataset. ' +
+        '`eval --record` refuses a context dataset because it requires the golden format; to record transcripts, make a golden copy of the dataset with the same case ids, input, files and graders and run `momonga eval <copy> --record <directory>`, then replay that directory here',
     );
   }
   if (options.model === undefined) {
@@ -77,7 +78,7 @@ export const evaluateContext = async (ports: CliPorts, datasetFile: string, opti
   }
   const dataset = await loadContextDataset(ports.files, path.resolve(ports.cwd, datasetFile));
   const transcripts = await loadTranscripts(ports.files, path.resolve(ports.cwd, options.replay));
-  const report = buildContextReport({ dataset, transcripts, model: options.model });
+  const report = buildContextReport({ dataset, transcripts, model: options.model, seed: CONTEXT_BOOTSTRAP_SEED });
   if (options.report !== undefined) await saveContextReport(ports.files, path.resolve(ports.cwd, options.report), report);
   ports.stdout.write(`${formatContextReport(report)}\n`);
   return report.passed ? 0 : 1;

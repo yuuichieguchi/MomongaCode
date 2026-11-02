@@ -1,5 +1,5 @@
 import { isRecord } from '@momonga/foundation';
-import { compactionLossSignals } from '@momonga/memory';
+import { HISTORY_READ_TOOL, WHOLE_RUN_FROM, compactionLossSignals } from '@momonga/memory';
 import type { CompactionLossKind } from '@momonga/memory';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { bindingRuleIds } from './context-dataset.ts';
@@ -7,25 +7,32 @@ import type { ContextRule, GoldRange } from './context-dataset.ts';
 import { eventsOfType } from './observe.ts';
 import { EvalError } from './runner.ts';
 
-export type GovernanceCounts = { binding: number; bindingLoaded: number; loaded: number; consistent: boolean };
+export type GovernanceCounts = { binding: number; bindingLoaded: number; loaded: number; consistent: boolean; loads: number };
 
-export type GovernanceScore = { fidelity: number; consistency: number; minimality: number | undefined };
+export type GovernanceScore = { fidelity: number | undefined; consistency: number; minimality: number | undefined };
+
+const sameSet = (left: ReadonlySet<string>, right: ReadonlySet<string>): boolean => left.size === right.size && [...left].every((id) => right.has(id));
 
 export const governanceCountsOf = (rules: readonly ContextRule[], events: readonly PublicRunEvent[]): GovernanceCounts | undefined => {
+  if (rules.length === 0) return undefined;
   const binding = new Set(bindingRuleIds(rules));
-  if (binding.size === 0) return undefined;
   const defined = new Set(rules.map((rule) => rule.id));
-  const last = eventsOfType(events, 'context.governing_loaded').at(-1);
-  const loaded = new Set((last?.active ?? []).map((fact) => fact.id).filter((id) => defined.has(id)));
-  const bindingLoaded = [...binding].filter((id) => loaded.has(id)).length;
-  return { binding: binding.size, bindingLoaded, loaded: loaded.size, consistent: loaded.size === binding.size && bindingLoaded === binding.size };
+  const loads = eventsOfType(events, 'context.governing_loaded').map((event) => new Set(event.active.map((fact) => fact.id).filter((id) => defined.has(id))));
+  const last = loads.at(-1) ?? new Set<string>();
+  return {
+    binding: binding.size,
+    bindingLoaded: [...binding].filter((id) => last.has(id)).length,
+    loaded: last.size,
+    consistent: (loads.length === 0 ? [last] : loads).every((load) => sameSet(load, binding)),
+    loads: loads.length,
+  };
 };
 
 export const governanceOf = (rules: readonly ContextRule[], events: readonly PublicRunEvent[]): GovernanceScore | undefined => {
   const counts = governanceCountsOf(rules, events);
   if (counts === undefined) return undefined;
   return {
-    fidelity: counts.bindingLoaded / counts.binding,
+    fidelity: counts.binding === 0 ? undefined : counts.bindingLoaded / counts.binding,
     consistency: counts.consistent ? 1 : 0,
     minimality: counts.loaded === 0 ? undefined : counts.bindingLoaded / counts.loaded,
   };
@@ -41,10 +48,6 @@ export const recalledOf = (events: readonly PublicRunEvent[]): Recalled => {
 export type Retrieval = { relevant: number; retrieved: number; gold: number };
 
 type SequencedEvent = Extract<PublicRunEvent, { seq: number }>;
-
-const HISTORY_READ_TOOL = 'HistoryRead';
-
-const WHOLE_RUN_FROM = 1;
 
 const isSequenced = (event: PublicRunEvent): event is SequencedEvent => 'seq' in event;
 
@@ -65,13 +68,17 @@ const overlapOf = (left: readonly GoldRange[], right: readonly GoldRange[]): num
 
 const historyRangesOf = (events: readonly PublicRunEvent[]): GoldRange[] => {
   const sequenced = events.filter(isSequenced);
-  const lastSeq = sequenced.reduce((last, event) => Math.max(last, event.seq), 0);
+  const delivered = new Set(
+    eventsOfType(events, 'tool.completed')
+      .filter((done) => done.status === 'completed' && done.denial === undefined)
+      .map((done) => done.callId),
+  );
   return eventsOfType(events, 'tool.call').flatMap((call) => {
-    if (call.name !== HISTORY_READ_TOOL || !isRecord(call.rawInput)) return [];
+    if (call.name !== HISTORY_READ_TOOL || !delivered.has(call.callId) || !isRecord(call.rawInput)) return [];
     const { runId, step, seqFrom, seqTo } = call.rawInput;
     if (runId !== undefined && runId !== call.runId) return [];
     let from = typeof seqFrom === 'number' ? seqFrom : WHOLE_RUN_FROM;
-    let to = typeof seqTo === 'number' ? seqTo : lastSeq;
+    let to = Math.min(typeof seqTo === 'number' ? seqTo : call.seq, call.seq);
     if (typeof step === 'number') {
       const stepSeqs = sequenced.filter((event) => event.step === step).map((event) => event.seq);
       if (stepSeqs.length === 0) return [];
@@ -99,13 +106,14 @@ export type CompactionFacts = {
 
 export const compactionFactsOf = (events: readonly PublicRunEvent[]): CompactionFacts => {
   const compactions = eventsOfType(events, 'context.compacted');
-  const measured = compactions.flatMap((event) => (event.source === 'model' && event.fidelity !== undefined ? [event.fidelity] : []));
+  const produced = compactions.flatMap((event) => (event.fidelity === undefined ? [] : [{ source: event.source, fidelity: event.fidelity }]));
+  const accepted = produced.filter((summary) => summary.source === 'model');
   return {
     compactions: compactions.length,
-    modelSummaries: measured.length,
-    fabricatedSummaries: measured.filter((fidelity) => fidelity.fabricated.length > 0).length,
-    identifiers: measured.reduce((sum, fidelity) => sum + fidelity.identifiers, 0),
-    retained: measured.reduce((sum, fidelity) => sum + fidelity.retained, 0),
+    modelSummaries: produced.length,
+    fabricatedSummaries: produced.filter((summary) => summary.fidelity.fabricated.length > 0).length,
+    identifiers: accepted.reduce((sum, summary) => sum + summary.fidelity.identifiers, 0),
+    retained: accepted.reduce((sum, summary) => sum + summary.fidelity.retained, 0),
     unclassified: compactions.filter((event) => event.source === undefined || (event.source === 'model' && event.fidelity === undefined)).length,
   };
 };

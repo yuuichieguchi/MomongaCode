@@ -1,5 +1,8 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
+import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import { clusterBootstrap } from './bootstrap.ts';
+import type { Cluster } from './bootstrap.ts';
 import { COMPACTION_SETTINGS } from './context-dataset.ts';
 import type { CompactionSetting, ContextCase, ContextDataset } from './context-dataset.ts';
 import { compactionFactsOf, governanceCountsOf, lossSignalsOf, recalledOf, retrievalOf } from './context-metrics.ts';
@@ -43,28 +46,33 @@ export type ContextCaseReport = {
   lossSignals: number;
 };
 
+export type ClusteredProportion = Proportion & { clusters: number };
+
 export type ContextMetrics = {
   continuationRate: Proportion | undefined;
   contrastiveFailures: { count: number; n: number };
   lossSignalsPerCompaction: { value: number; signals: number; compactions: number; n: number } | undefined;
-  fabricationRate: Proportion | undefined;
-  identifierRetention: Proportion | undefined;
-  governanceFidelity: Proportion | undefined;
+  fabricationRate: ClusteredProportion | undefined;
+  identifierRetention: ClusteredProportion | undefined;
+  governanceFidelity: ClusteredProportion | undefined;
   governanceConsistency: Proportion | undefined;
-  governanceMinimality: Proportion | undefined;
-  memoryStaleRate: Proportion | undefined;
-  retrievalPrecision: Proportion | undefined;
-  retrievalRecall: Proportion | undefined;
+  governanceMinimality: ClusteredProportion | undefined;
+  memoryStaleRate: ClusteredProportion | undefined;
+  retrievalPrecision: ClusteredProportion | undefined;
+  retrievalRecall: ClusteredProportion | undefined;
   tokensPerSuccess: { value: number; tokens: number; successes: number; n: number } | undefined;
 };
 
 export type ContextReport = {
   format: typeof CONTEXT_REPORT_FORMAT;
   dataset: string;
+  datasetDigest: string;
   model: ContextModel;
+  modelAliases: string[];
   metrics: ContextMetrics;
   meaningless: ModelDependentMetric[];
   unclassifiedCompactions: number;
+  governanceRunsWithoutEvent: number;
   cases: ContextCaseReport[];
   passed: boolean;
 };
@@ -77,19 +85,43 @@ type RunMeasure = {
   governance: GovernanceCounts | undefined;
   recalled: Recalled;
   retrieval: Retrieval | undefined;
+  modelAlias: string | undefined;
 };
 
-const measureRun = (entry: ContextCase, transcript: Transcript): RunMeasure => ({
-  passed: grade(entry.graders, transcript).passed,
-  tokens: transcript.run.usage.totalTokens,
-  facts: compactionFactsOf(transcript.events),
-  signals: lossSignalsOf(transcript.events).length,
-  governance: governanceCountsOf(entry.rules, transcript.events),
-  recalled: recalledOf(transcript.events),
-  retrieval: entry.gold === undefined ? undefined : retrievalOf(entry.gold, transcript.events),
+const total = <T>(items: readonly T[], pick: (item: T) => number): number => items.reduce((sum, item) => sum + pick(item), 0);
+
+const sumFacts = (list: readonly CompactionFacts[]): CompactionFacts => ({
+  compactions: total(list, (facts) => facts.compactions),
+  modelSummaries: total(list, (facts) => facts.modelSummaries),
+  fabricatedSummaries: total(list, (facts) => facts.fabricatedSummaries),
+  identifiers: total(list, (facts) => facts.identifiers),
+  retained: total(list, (facts) => facts.retained),
+  unclassified: total(list, (facts) => facts.unclassified),
 });
 
-const total = <T>(items: readonly T[], pick: (item: T) => number): number => items.reduce((sum, item) => sum + pick(item), 0);
+const lastSeqOf = (events: Transcript['events']): number => events.reduce((last, event) => ('seq' in event ? Math.max(last, event.seq) : last), 0);
+
+const measureRun = (entry: ContextCase, transcript: Transcript): RunMeasure => {
+  const runs = [transcript.events, ...transcript.children.map((child) => child.events)];
+  const facts = sumFacts(runs.map((events) => compactionFactsOf(events)));
+  if (entry.compaction === 'off' && facts.compactions > 0) {
+    throw new EvalError(`case ${entry.id} has compaction off but its run ${transcript.run.id} holds ${facts.compactions} compaction(s), so the pair would compare nothing`);
+  }
+  const beyond = (entry.gold ?? []).find((range) => range.seqTo > lastSeqOf(transcript.events));
+  if (beyond !== undefined) {
+    throw new EvalError(`case ${entry.id} has the gold range ${beyond.seqFrom}..${beyond.seqTo} but run ${transcript.run.id} ends at seq ${lastSeqOf(transcript.events)}`);
+  }
+  return {
+    passed: grade(entry.graders, transcript).passed,
+    tokens: transcript.run.usage.totalTokens,
+    facts,
+    signals: total(runs, (events) => lossSignalsOf(events).length),
+    governance: governanceCountsOf(entry.rules, transcript.events),
+    recalled: recalledOf(transcript.events),
+    retrieval: entry.gold === undefined ? undefined : retrievalOf(entry.gold, transcript.events),
+    modelAlias: transcript.run.modelAlias,
+  };
+};
 
 const caseReportOf = (entry: ContextCase, measures: readonly RunMeasure[]): ContextCaseReport => {
   const passedRuns = measures.filter((measure) => measure.passed).length;
@@ -117,63 +149,97 @@ const contrastiveFailuresOf = (cases: readonly ContextCaseReport[]): ContextMetr
     const on = cases.find((entry) => entry.scenario === scenario && entry.compaction === 'on');
     const off = cases.find((entry) => entry.scenario === scenario && entry.compaction === 'off');
     if (on === undefined || off === undefined) throw new EvalError(`scenario ${scenario} has no on and off pair`);
-    return off.passed && !on.passed;
+    return on.compactions > 0 && off.passed && !on.passed;
   });
-  return { count: failures.length, n: scenarios.length };
+  const measurable = scenarios.filter((scenario) => cases.some((entry) => entry.scenario === scenario && entry.compaction === 'on' && entry.compactions > 0));
+  return { count: failures.length, n: measurable.length };
 };
 
-const metricsOf = (cases: readonly ContextCaseReport[], graded: readonly { entry: ContextCase; measure: RunMeasure }[]): ContextMetrics => {
-  const measures = graded.map(({ measure }) => measure);
-  const onRuns = graded.filter(({ entry }) => entry.compaction === 'on');
+type MeasuredCase = { entry: ContextCase; measures: RunMeasure[] };
+
+const clusteredOver = (measured: readonly MeasuredCase[], seed: number, pick: (measure: RunMeasure) => Cluster): ClusteredProportion | undefined => {
+  const clusters = measured
+    .map(({ measures }) => ({ numerator: total(measures, (measure) => pick(measure).numerator), denominator: total(measures, (measure) => pick(measure).denominator) }))
+    .filter((cluster) => cluster.denominator > 0);
+  if (clusters.length === 0) return undefined;
+  const interval = clusterBootstrap(clusters, { seed });
+  return {
+    successes: total(clusters, (cluster) => cluster.numerator),
+    trials: total(clusters, (cluster) => cluster.denominator),
+    rate: interval.value,
+    low: interval.low,
+    high: interval.high,
+    clusters: interval.clusters,
+  };
+};
+
+const metricsOf = (cases: readonly ContextCaseReport[], measured: readonly MeasuredCase[], seed: number): ContextMetrics => {
+  const measures = measured.flatMap((entry) => entry.measures);
+  const compactedRuns = measures.filter((measure) => measure.facts.compactions > 0);
   const governed = measures.flatMap((measure) => (measure.governance === undefined ? [] : [measure.governance]));
-  const minimal = governed.filter((counts) => counts.loaded > 0);
-  const retrievals = measures.flatMap((measure) => (measure.retrieval === undefined ? [] : [measure.retrieval]));
   const compactions = total(measures, (measure) => measure.facts.compactions);
   const signals = total(measures, (measure) => measure.signals);
   const tokens = total(measures, (measure) => measure.tokens);
   const successes = measures.filter((measure) => measure.passed).length;
-  const relevant = total(retrievals, (retrieval) => retrieval.relevant);
+  const cluster = (pick: (measure: RunMeasure) => Cluster) => clusteredOver(measured, seed, pick);
+  const none: Cluster = { numerator: 0, denominator: 0 };
   return {
-    continuationRate: proportionOrUndefined(onRuns.filter(({ measure }) => measure.passed).length, onRuns.length),
+    continuationRate: proportionOrUndefined(compactedRuns.filter((measure) => measure.passed).length, compactedRuns.length),
     contrastiveFailures: contrastiveFailuresOf(cases),
     lossSignalsPerCompaction: compactions === 0 ? undefined : { value: signals / compactions, signals, compactions, n: compactions },
-    fabricationRate: proportionOrUndefined(total(measures, (measure) => measure.facts.fabricatedSummaries), total(measures, (measure) => measure.facts.modelSummaries)),
-    identifierRetention: proportionOrUndefined(total(measures, (measure) => measure.facts.retained), total(measures, (measure) => measure.facts.identifiers)),
-    governanceFidelity: proportionOrUndefined(total(governed, (counts) => counts.bindingLoaded), total(governed, (counts) => counts.binding)),
+    fabricationRate: cluster((measure) => ({ numerator: measure.facts.fabricatedSummaries, denominator: measure.facts.modelSummaries })),
+    identifierRetention: cluster((measure) => ({ numerator: measure.facts.retained, denominator: measure.facts.identifiers })),
+    governanceFidelity: cluster((measure) => (measure.governance === undefined ? none : { numerator: measure.governance.bindingLoaded, denominator: measure.governance.binding })),
     governanceConsistency: proportionOrUndefined(governed.filter((counts) => counts.consistent).length, governed.length),
-    governanceMinimality: proportionOrUndefined(total(minimal, (counts) => counts.bindingLoaded), total(minimal, (counts) => counts.loaded)),
-    memoryStaleRate: proportionOrUndefined(total(measures, (measure) => measure.recalled.stale), total(measures, (measure) => measure.recalled.recalled)),
-    retrievalPrecision: proportionOrUndefined(relevant, total(retrievals, (retrieval) => retrieval.retrieved)),
-    retrievalRecall: proportionOrUndefined(relevant, total(retrievals, (retrieval) => retrieval.gold)),
+    governanceMinimality: cluster((measure) =>
+      measure.governance === undefined || measure.governance.loaded === 0 ? none : { numerator: measure.governance.bindingLoaded, denominator: measure.governance.loaded },
+    ),
+    memoryStaleRate: cluster((measure) => ({ numerator: measure.recalled.stale, denominator: measure.recalled.recalled })),
+    retrievalPrecision: cluster((measure) => (measure.retrieval === undefined ? none : { numerator: measure.retrieval.relevant, denominator: measure.retrieval.retrieved })),
+    retrievalRecall: cluster((measure) => (measure.retrieval === undefined ? none : { numerator: measure.retrieval.relevant, denominator: measure.retrieval.gold })),
     tokensPerSuccess: successes === 0 ? undefined : { value: tokens / successes, tokens, successes, n: successes },
   };
 };
 
-export const buildContextReport = (input: { dataset: ContextDataset; transcripts: readonly Transcript[]; model: ContextModel }): ContextReport => {
+export const datasetDigestOf = (dataset: ContextDataset): string => sha256Hex(canonicalJson(dataset));
+
+export const buildContextReport = (input: { dataset: ContextDataset; transcripts: readonly Transcript[]; model: ContextModel; seed: number }): ContextReport => {
   const measured = transcriptsByCase(input.dataset.cases, input.transcripts).map(({ golden, recorded }) => ({
     entry: golden,
     measures: recorded.map((transcript) => measureRun(golden, transcript)),
   }));
-  const graded = measured.flatMap(({ entry, measures }) => measures.map((measure) => ({ entry, measure })));
   const cases = measured.map(({ entry, measures }) => caseReportOf(entry, measures));
+  const measures = measured.flatMap((item) => item.measures);
   return {
     format: CONTEXT_REPORT_FORMAT,
     dataset: input.dataset.name,
+    datasetDigest: datasetDigestOf(input.dataset),
     model: input.model,
-    metrics: metricsOf(cases, graded),
+    modelAliases: [...new Set(measures.flatMap((measure) => (measure.modelAlias === undefined ? [] : [measure.modelAlias])))].sort(),
+    metrics: metricsOf(cases, measured, input.seed),
     meaningless: input.model === 'fake' ? [...MODEL_DEPENDENT_METRICS] : [],
-    unclassifiedCompactions: total(graded, ({ measure }) => measure.facts.unclassified),
+    unclassifiedCompactions: total(measures, (measure) => measure.facts.unclassified),
+    governanceRunsWithoutEvent: measures.filter((measure) => measure.governance !== undefined && measure.governance.loads === 0).length,
     cases,
     passed: cases.every((entry) => entry.meetsMinimum),
   };
 };
 
-const describeOptional = (name: string, value: Proportion | undefined, absence: string): string =>
-  `${name} ${value === undefined ? `n/a (${absence})` : describeProportion(value)}`;
+export const describeClustered = (value: ClusteredProportion): string =>
+  `${value.successes}/${value.trials} = ${percent(value.rate)} (95% bootstrap over ${value.clusters} case(s) ${percent(value.low)}..${percent(value.high)})`;
+
+const describeOptional = (name: string, value: Proportion | ClusteredProportion | undefined, absence: string): string => {
+  if (value === undefined) return `${name} n/a (${absence})`;
+  return `${name} ${'clusters' in value ? describeClustered(value) : describeProportion(value)}`;
+};
 
 export const formatContextReport = (report: ContextReport): string => {
   const { metrics } = report;
-  const lines = [`dataset ${report.dataset}: ${report.passed ? 'PASS' : 'FAIL'}`, `model: ${report.model}`];
+  const aliases = report.modelAliases.length === 0 ? 'none recorded' : report.modelAliases.join(', ');
+  const lines = [
+    `dataset ${report.dataset}: ${report.passed ? 'PASS' : 'FAIL'}`,
+    `model: ${report.model} (declared by the operator; the aliases the runs pinned: ${aliases})`,
+  ];
   if (report.model === 'fake') {
     lines.push('a fake model proves only that the machinery works; none of these numbers says anything about the quality of the context');
     lines.push(`meaningless for a fake model: ${report.meaningless.join(', ')}`);
@@ -183,7 +249,7 @@ export const formatContextReport = (report: ContextReport): string => {
       `  ${entry.meetsMinimum ? 'ok  ' : 'FAIL'} ${entry.id} (scenario ${entry.scenario}, compaction ${entry.compaction}): pass rate ${describeProportion(entry.passRate)}, required at least ${percent(entry.minPassRate)}`,
     );
   }
-  lines.push(describeOptional('continuationRate', metrics.continuationRate, 'no run with compaction on'));
+  lines.push(describeOptional('continuationRate', metrics.continuationRate, 'no run compacted'));
   lines.push(`contrastiveFailures ${metrics.contrastiveFailures.count} of ${metrics.contrastiveFailures.n} scenarios, n=${metrics.contrastiveFailures.n}`);
   const loss = metrics.lossSignalsPerCompaction;
   lines.push(
@@ -206,6 +272,7 @@ export const formatContextReport = (report: ContextReport): string => {
       : `tokensPerSuccess ${tokens.value.toFixed(1)} (${tokens.tokens} tokens / ${tokens.successes} successes), n=${tokens.n}`,
   );
   lines.push(`unclassifiedCompactions ${report.unclassifiedCompactions}`);
+  lines.push(`governanceRunsWithoutEvent ${report.governanceRunsWithoutEvent} (runs of cases with rules that loaded no governing set; each counts as an empty set)`);
   return lines.join('\n');
 };
 
@@ -216,32 +283,37 @@ const closed = (properties: Record<string, unknown>, required: readonly string[]
 
 const proportionSchema = closed({ successes: count, trials: count, rate, low: rate, high: rate }, ['successes', 'trials', 'rate', 'low', 'high']);
 
+const clusteredSchema = closed({ successes: count, trials: count, rate, low: rate, high: rate, clusters: count }, ['successes', 'trials', 'rate', 'low', 'high', 'clusters']);
+
 const CONTEXT_REPORT_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
   ...closed(
     {
       format: { const: CONTEXT_REPORT_FORMAT },
       dataset: { type: 'string', minLength: 1 },
+      datasetDigest: { type: 'string', pattern: '^[0-9a-f]{64}$' },
       model: { enum: [...CONTEXT_MODELS] },
+      modelAliases: { type: 'array', items: { type: 'string', minLength: 1 } },
       metrics: closed(
         {
           continuationRate: proportionSchema,
           contrastiveFailures: closed({ count, n: count }, ['count', 'n']),
           lossSignalsPerCompaction: closed({ value: rate, signals: count, compactions: count, n: count }, ['value', 'signals', 'compactions', 'n']),
-          fabricationRate: proportionSchema,
-          identifierRetention: proportionSchema,
-          governanceFidelity: proportionSchema,
+          fabricationRate: clusteredSchema,
+          identifierRetention: clusteredSchema,
+          governanceFidelity: clusteredSchema,
           governanceConsistency: proportionSchema,
-          governanceMinimality: proportionSchema,
-          memoryStaleRate: proportionSchema,
-          retrievalPrecision: proportionSchema,
-          retrievalRecall: proportionSchema,
+          governanceMinimality: clusteredSchema,
+          memoryStaleRate: clusteredSchema,
+          retrievalPrecision: clusteredSchema,
+          retrievalRecall: clusteredSchema,
           tokensPerSuccess: closed({ value: rate, tokens: count, successes: count, n: count }, ['value', 'tokens', 'successes', 'n']),
         },
         ['contrastiveFailures'],
       ),
       meaningless: { type: 'array', items: { enum: [...MODEL_DEPENDENT_METRICS] } },
       unclassifiedCompactions: count,
+      governanceRunsWithoutEvent: count,
       cases: {
         type: 'array',
         items: closed(
@@ -264,7 +336,7 @@ const CONTEXT_REPORT_SCHEMA = {
       },
       passed: { type: 'boolean' },
     },
-    ['format', 'dataset', 'model', 'metrics', 'meaningless', 'unclassifiedCompactions', 'cases', 'passed'],
+    ['format', 'dataset', 'datasetDigest', 'model', 'modelAliases', 'metrics', 'meaningless', 'unclassifiedCompactions', 'governanceRunsWithoutEvent', 'cases', 'passed'],
   ),
 } as const;
 

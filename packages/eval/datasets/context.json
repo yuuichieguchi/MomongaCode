@@ -10,13 +10,12 @@
       "permissionMode": "acceptEdits",
       "onAsk": "reject_once",
       "runs": 1,
-      "minPassRate": 0,
+      "minPassRate": 1,
       "files": { "src/parse.ts": "export const parse = (text) => text.trim();\n", "src/main.ts": "import { parse } from './parse.ts';\n" },
       "rules": [{ "id": "use-esm", "kind": "constraint", "target": "module-format", "text": "Use ES modules only.", "inScope": true, "live": true, "supersedes": [] }],
       "revisionDepth": 0,
       "noise": { "level": 12, "topics": ["bundling", "imports"] },
-      "gold": [{ "seqFrom": 2, "seqTo": 6 }],
-      "graders": [{ "kind": "status", "equals": "COMPLETED" }]
+      "graders": [{ "kind": "status", "equals": "COMPLETED" }, { "kind": "finalTextMatches", "pattern": "src/parser\\.ts" }]
     },
     {
       "id": "rename-module-off",
@@ -26,12 +25,12 @@
       "permissionMode": "acceptEdits",
       "onAsk": "reject_once",
       "runs": 1,
-      "minPassRate": 0,
+      "minPassRate": 1,
       "files": { "src/parse.ts": "export const parse = (text) => text.trim();\n", "src/main.ts": "import { parse } from './parse.ts';\n" },
       "rules": [{ "id": "use-esm", "kind": "constraint", "target": "module-format", "text": "Use ES modules only.", "inScope": true, "live": true, "supersedes": [] }],
       "revisionDepth": 0,
       "noise": { "level": 12, "topics": ["bundling", "imports"] },
-      "graders": [{ "kind": "status", "equals": "COMPLETED" }]
+      "graders": [{ "kind": "status", "equals": "COMPLETED" }, { "kind": "finalTextMatches", "pattern": "src/parser\\.ts" }]
     },
     {
       "id": "revised-test-runner-on",
@@ -41,7 +40,7 @@
       "permissionMode": "acceptEdits",
       "onAsk": "reject_once",
       "runs": 1,
-      "minPassRate": 0,
+      "minPassRate": 1,
       "files": { "src/date.ts": "export const year = (at) => new Date(at).getUTCFullYear();\n" },
       "rules": [
         { "id": "runner-1", "kind": "constraint", "target": "test-runner", "text": "Run tests with jest.", "inScope": true, "live": true, "supersedes": [] },
@@ -51,8 +50,7 @@
       ],
       "revisionDepth": 2,
       "noise": { "level": 25, "topics": ["testing", "assertions"] },
-      "gold": [{ "seqFrom": 3, "seqTo": 9 }],
-      "graders": [{ "kind": "status", "equals": "COMPLETED" }]
+      "graders": [{ "kind": "status", "equals": "COMPLETED" }, { "kind": "finalTextMatches", "pattern": "^(?![\\s\\S]*\\b(jest|mocha)\\b)[\\s\\S]*\\bvitest\\b" }]
     },
     {
       "id": "revised-test-runner-off",
@@ -62,7 +60,7 @@
       "permissionMode": "acceptEdits",
       "onAsk": "reject_once",
       "runs": 1,
-      "minPassRate": 0,
+      "minPassRate": 1,
       "files": { "src/date.ts": "export const year = (at) => new Date(at).getUTCFullYear();\n" },
       "rules": [
         { "id": "runner-1", "kind": "constraint", "target": "test-runner", "text": "Run tests with jest.", "inScope": true, "live": true, "supersedes": [] },
@@ -72,7 +70,7 @@
       ],
       "revisionDepth": 2,
       "noise": { "level": 25, "topics": ["testing", "assertions"] },
-      "graders": [{ "kind": "status", "equals": "COMPLETED" }]
+      "graders": [{ "kind": "status", "equals": "COMPLETED" }, { "kind": "finalTextMatches", "pattern": "^(?![\\s\\S]*\\b(jest|mocha)\\b)[\\s\\S]*\\bvitest\\b" }]
     },
     {
       "id": "file-changed-between-runs-on",
@@ -82,14 +80,13 @@
       "permissionMode": "default",
       "onAsk": "reject_once",
       "runs": 2,
-      "minPassRate": 0,
+      "minPassRate": 1,
       "files": { "config.ts": "export const LIMIT = 10;\n" },
       "workspace": [{ "beforeRun": 1, "write": { "config.ts": "export const LIMIT = 20;\n" } }],
       "rules": [],
       "revisionDepth": 0,
       "noise": { "level": 0, "topics": ["configuration"] },
-      "gold": [{ "seqFrom": 1, "seqTo": 4 }],
-      "graders": [{ "kind": "status", "equals": "COMPLETED" }]
+      "graders": [{ "kind": "status", "equals": "COMPLETED" }, { "kind": "toolCalled", "name": "Read" }, { "kind": "finalTextMatches", "pattern": "\\b(10|20)\\b" }]
     },
     {
       "id": "file-changed-between-runs-off",
@@ -99,13 +96,13 @@
       "permissionMode": "default",
       "onAsk": "reject_once",
       "runs": 2,
-      "minPassRate": 0,
+      "minPassRate": 1,
       "files": { "config.ts": "export const LIMIT = 10;\n" },
       "workspace": [{ "beforeRun": 1, "write": { "config.ts": "export const LIMIT = 20;\n" } }],
       "rules": [],
       "revisionDepth": 0,
       "noise": { "level": 0, "topics": ["configuration"] },
-      "graders": [{ "kind": "status", "equals": "COMPLETED" }]
+      "graders": [{ "kind": "status", "equals": "COMPLETED" }, { "kind": "toolCalled", "name": "Read" }, { "kind": "finalTextMatches", "pattern": "\\b(10|20)\\b" }]
     }
   ]
 }

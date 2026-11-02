@@ -1,8 +1,8 @@
 import fs from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import { CONTEXT_DATASET_FORMAT, DatasetError, bindingRuleIds, buildContextReport, noiseTurnsFor, parseContextDataset, parseDataset } from '@momonga/eval';
-import type { Transcript } from '@momonga/eval';
-import { contextCase, governing, recorded } from './context-fixtures.ts';
+import type { ContextCase, Transcript } from '@momonga/eval';
+import { answer, contextCase, fidelity, governing, read, recorded, summarized } from './context-fixtures.ts';
 
 const pair = (scenario: string, overrides: Record<string, unknown> = {}) => [
   { ...contextCase(`${scenario}-on`, scenario, 'on'), ...overrides },
@@ -53,6 +53,7 @@ describe('parseContextDataset', () => {
     ['a workspace remove that escapes', pair('s', { runs: 2, workspace: [{ beforeRun: 1, remove: ['/etc/passwd'] }] }), /relative paths inside the workspace/],
     ['a scenario without its off case', [pair('s')[0]], /scenario s needs exactly one on case and one off case/],
     ['a scenario with two on cases', [pair('s')[0], { ...pair('s')[0], id: 'other' }], /scenario s needs exactly one on case and one off case/],
+    ['a case that requires nothing', pair('s', { minPassRate: 0 }), /invalid dataset at \/cases\/0\/minPassRate/],
     ['a pair with different inputs', [pair('s')[0], { ...pair('s')[1], input: 'something else' }], /scenario s.*differ/],
     ['a pair with different rules', [pair('s')[0], { ...pair('s')[1], rules: [rule('a')] }], /scenario s.*differ/],
     ['a pair with different workspaces', [{ ...pair('s')[0], runs: 2 }, { ...pair('s')[1], runs: 3 }], /scenario s.*differ/],
@@ -102,18 +103,54 @@ describe('the starter dataset', () => {
     expect(bindingRuleIds(revised.rules)).toEqual(['runner-3']);
   });
 
-  it('runs on the replay path with no model and proves the machinery', async () => {
+  it('sets a minimum on every case, because a minimum of 0 would pass a run that failed', async () => {
+    const dataset = await load();
+    expect(dataset.cases.every((entry) => entry.minPassRate > 0)).toBe(true);
+  });
+
+  const answers: Record<string, (runIndex: number) => string> = {
+    'rename-module': () => 'Renamed src/parse.ts to src/parser.ts and updated the import in src/main.ts.',
+    'revised-test-runner': () => 'Added the date test and ran it with vitest.',
+    'file-changed-between-runs': (runIndex) => `LIMIT is ${runIndex === 0 ? 10 : 20}.`,
+  };
+
+  const replayOf = async (answerFor: (entry: ContextCase, runIndex: number) => string) => {
     const dataset = await load();
     const transcripts: Transcript[] = dataset.cases.flatMap((entry) =>
-      Array.from({ length: entry.runs }, (_unused, runIndex) => recorded(entry.id, runIndex, [governing(...bindingRuleIds(entry.rules))], { totalTokens: 50 })),
+      Array.from({ length: entry.runs }, (_unused, runIndex) => {
+        const content = `export const LIMIT = ${runIndex === 0 ? 10 : 20};\n`;
+        const payloads = [
+          governing(...bindingRuleIds(entry.rules)),
+          ...read('rd', 'config.ts', content),
+          ...(entry.compaction === 'on' ? [summarized(4, fidelity([], 2, 2))] : []),
+          answer(answerFor(entry, runIndex)),
+        ];
+        return recorded(entry.id, runIndex, payloads, { totalTokens: 50, modelAlias: 'alias-1' });
+      }),
     );
-    const report = buildContextReport({ dataset, transcripts, model: 'fake' });
+    return buildContextReport({ dataset, transcripts, model: 'fake', seed: 1 });
+  };
+
+  it('replays end to end: the right answers pass every case, compaction and governance included', async () => {
+    const report = await replayOf((entry, runIndex) => answers[entry.scenario]!(runIndex));
+    expect(report.passed).toBe(true);
     expect(report.model).toBe('fake');
-    expect(report.metrics.continuationRate?.trials).toBe(4);
+    expect(report.modelAliases).toEqual(['alias-1']);
+    expect(report.metrics.continuationRate).toMatchObject({ successes: 4, trials: 4 });
+    expect(report.metrics.contrastiveFailures).toEqual({ count: 0, n: 3 });
     expect(report.metrics.governanceFidelity).toMatchObject({ successes: 4, trials: 4 });
     expect(report.metrics.governanceConsistency).toMatchObject({ successes: 4, trials: 4 });
     expect(report.metrics.governanceMinimality).toMatchObject({ successes: 4, trials: 4 });
+    expect(report.metrics.fabricationRate).toMatchObject({ successes: 0, trials: 4 });
     expect(report.metrics.tokensPerSuccess).toMatchObject({ value: 50, n: 8 });
+  });
+
+  it('tells a wrong answer from a right one: the superseded runner, a rename that never happened, and no value', async () => {
+    const wrong: Record<string, string> = { 'rename-module': 'Done.', 'revised-test-runner': 'Ran the tests with jest.', 'file-changed-between-runs': 'It is set.' };
+    const report = await replayOf((entry, runIndex) => (entry.compaction === 'on' ? wrong[entry.scenario]! : answers[entry.scenario]!(runIndex)));
+    expect(report.passed).toBe(false);
+    expect(report.metrics.contrastiveFailures).toEqual({ count: 3, n: 3 });
+    expect(report.metrics.continuationRate).toMatchObject({ successes: 0, trials: 4 });
   });
 });
 
