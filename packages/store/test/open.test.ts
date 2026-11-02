@@ -9,6 +9,7 @@ const fileMode = (file: string) => fs.statSync(file).mode & 0o777;
 
 const EXPECTED_TABLES = [
   'approvals',
+  'blob_owners',
   'blobs',
   'compaction_guidelines',
   'context_charges',

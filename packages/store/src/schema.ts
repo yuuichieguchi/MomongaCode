@@ -393,6 +393,8 @@ CREATE TRIGGER governing_facts_reject_delete BEFORE DELETE ON governing_facts BE
   SELECT RAISE(ABORT, 'governing_facts are append-only: DELETE is not allowed');
 END;
 
+ALTER TABLE runs ADD COLUMN origin TEXT NOT NULL DEFAULT 'untrusted' CHECK (origin IN ('trusted', 'untrusted'));
+
 CREATE TABLE search_docs (
   id INTEGER PRIMARY KEY,
   level TEXT NOT NULL CHECK (level IN ('run', 'step')),
@@ -406,6 +408,7 @@ CREATE TABLE search_docs (
   seq_to INTEGER NOT NULL,
   at INTEGER NOT NULL,
   body TEXT NOT NULL,
+  paths_json TEXT NOT NULL,
   CHECK ((level = 'step') = (step IS NOT NULL))
 );
 CREATE INDEX search_docs_by_run ON search_docs (run_id, level, seq_from);
@@ -427,6 +430,20 @@ END;
 CREATE TRIGGER search_docs_session_delete AFTER DELETE ON sessions BEGIN
   DELETE FROM search_docs WHERE session_id = OLD.id;
 END;
+
+CREATE INDEX events_by_status_change ON events (id) WHERE type = 'run.status';
+
+CREATE TABLE blob_owners (
+  sha256 TEXT NOT NULL REFERENCES blobs (sha256),
+  run_id TEXT NOT NULL REFERENCES runs (id),
+  PRIMARY KEY (sha256, run_id)
+);
+CREATE INDEX blob_owners_by_run ON blob_owners (run_id);
+INSERT OR IGNORE INTO blob_owners (sha256, run_id)
+  SELECT json_extract(payload_json, '$.handle'), run_id FROM events
+  WHERE run_id IS NOT NULL AND json_extract(payload_json, '$.handle') IN (SELECT sha256 FROM blobs);
+INSERT OR IGNORE INTO blob_owners (sha256, run_id)
+  SELECT output_handle, run_id FROM jobs WHERE output_handle IS NOT NULL AND output_handle IN (SELECT sha256 FROM blobs);
 
 CREATE TABLE search_cursor (
   id INTEGER PRIMARY KEY CHECK (id = 1),

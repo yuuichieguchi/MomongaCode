@@ -425,11 +425,16 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   };
   const activeKeys = new Map<string, number>();
 
-  const finalizeResult = (result: ToolResult, tool: AnyTool, limit: number): ResultOutcome['result'] => {
+  const scopedBlobs = (runId: string): BlobPort => ({
+    put: (data, putOptions) => blobs.put(data, { ...putOptions, runId }),
+    read: ((handle: string, range: never) => blobs.read(handle, range, { runId })) as BlobPort['read'],
+  });
+
+  const finalizeResult = (result: ToolResult, tool: AnyTool, limit: number, runId: string): ResultOutcome['result'] => {
     const truncated =
       tool.pagesOutput === true && result.output.length <= limit
         ? { output: result.output }
-        : truncateOutput(result.output, limit, blobs);
+        : truncateOutput(result.output, limit, scopedBlobs(runId));
     return {
       status: result.status,
       output: truncated.output,
@@ -751,7 +756,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       env: batch.env,
       signal: controller.signal,
       deadlineAt,
-      blobs,
+      blobs: scopedBlobs(batch.runId),
       clock,
       ...(options.jobs === undefined ? {} : { jobs: options.jobs }),
       session: batch.session,
@@ -891,10 +896,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       if (resumed.kind === 'outcome') return resumed.outcome;
       const reconcileOutcome = resumed.result;
       if (reconcileOutcome.outcome === 'not_applied') {
-        return scope.complete(finalizeResult({ status: 'failed', output: cancelledOutput(tool) }, tool, inlineLimit), 'not_applied');
+        return scope.complete(finalizeResult({ status: 'failed', output: cancelledOutput(tool) }, tool, inlineLimit, batch.runId), 'not_applied');
       }
       const status = reconcileOutcome.outcome === 'already_applied' ? 'completed' : 'failed';
-      return scope.complete(finalizeResult({ status, output: reconcileOutcome.output }, tool, inlineLimit), reconcileOutcome.outcome);
+      return scope.complete(finalizeResult({ status, output: reconcileOutcome.output }, tool, inlineLimit, batch.runId), reconcileOutcome.outcome);
     } finally {
       scope.release();
     }
@@ -1015,7 +1020,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           if (result.status === 'pending') return scope.waiting(result);
           scope.disarmTimer();
           const hooked = await applyPostToolHooks(batch, call, tool, target.input, result);
-          return scope.complete(finalizeResult(hooked, tool, outputLimit), reconciled);
+          return scope.complete(finalizeResult(hooked, tool, outputLimit, batch.runId), reconciled);
         }
         await settleWithin(running, ABORT_SETTLE_LIMIT_MS);
         const output = scope.abortReason() === 'timeout' ? timedOutOutput(tool, scope.timerMs()) : cancelledOutput(tool);
@@ -1053,7 +1058,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         return await execute('not_applied');
       }
       const status = reconcileOutcome.outcome === 'already_applied' ? 'completed' : 'failed';
-      return scope.complete(finalizeResult({ status, output: reconcileOutcome.output }, tool, inlineLimit), reconcileOutcome.outcome);
+      return scope.complete(finalizeResult({ status, output: reconcileOutcome.output }, tool, inlineLimit, batch.runId), reconcileOutcome.outcome);
     } finally {
       scope.release();
     }

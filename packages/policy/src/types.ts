@@ -7,6 +7,7 @@ export type PermissionSubject =
   | { kind: 'command'; tool: string; command: string }
   | { kind: 'mcp'; server: string; tool: string }
   | { kind: 'memory'; tool: string; scope: MemoryScope }
+  | { kind: 'history'; tool: string; project: string }
   | { kind: 'none'; tool: string };
 
 export type DecisionKind = 'allow' | 'ask' | 'deny';

@@ -21,11 +21,13 @@ const contextFor = (options: { failAppendOnce?: boolean; summaryText?: string; h
   const appended: RunEventPayload[] = [];
   const requests: { request: CompactRequest; idempotencyKey: string }[] = [];
   const produced = new Map<string, CompactResource>();
+  const readScopes: unknown[] = [];
   let appendFailures = options.failAppendOnce === true ? 1 : 0;
   const ctx = {
     options: {
       blobs: {
-        read: async (handle: string) => {
+        read: async (handle: string, _range: unknown, scope: unknown) => {
+          readScopes.push(scope);
           throw Object.assign(new Error(`unknown blob ${handle}`), { code: 'BLOB_NOT_FOUND' });
         },
       },
@@ -78,7 +80,7 @@ const contextFor = (options: { failAppendOnce?: boolean; summaryText?: string; h
     },
     agentSpan: { traceparent: undefined },
   } as unknown as ClaimContext;
-  return { ctx, appended, requests, produced };
+  return { ctx, appended, requests, produced, readScopes };
 };
 
 const keyOf = (request: CompactRequest): string => sha256Hex(canonicalJson(['run_compact', 'compact', sha256Hex(canonicalJson(request))]));
@@ -144,6 +146,14 @@ describe('compactThrough', () => {
     expect(appended.at(-1)).toMatchObject({ type: 'context.compacted', source: 'deterministic', fidelity: { fabricated: ['src/only/in-blob.ts'] } });
     const notice = appended.find((payload) => payload.type === 'notice');
     expect(notice).toMatchObject({ level: 'warning', message: expect.stringContaining(BLOB) });
+  });
+
+  it('reads a recorded blob scoped to the run being compacted', async () => {
+    const { ctx, readScopes } = contextFor({ summaryText: 'STATE:\nnothing to name', history: withBlob });
+
+    await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText });
+
+    expect(readScopes).toEqual([{ runId: 'run_compact' }]);
   });
 
   it('keeps a model summary whose tokens are all found in readable text, and still says the blob was unreadable', async () => {

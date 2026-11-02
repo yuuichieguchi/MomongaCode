@@ -259,7 +259,7 @@ const drive = async (
   const toolSet = await tools.toolSet(run.id, {
     signal: control.signal,
     env,
-    additionalTools: [activationTool, agentTool, ...recalled.tools].filter((tool) => tool !== undefined),
+    additionalTools: [activationTool, agentTool, ...recalled.tools, ...options.history.load(session).tools].filter((tool) => tool !== undefined),
     ...(agentPin?.tools === undefined ? {} : { only: agentPin.tools }),
   });
   if (agentPin?.tools !== undefined && toolSet.tools.length === 0) {

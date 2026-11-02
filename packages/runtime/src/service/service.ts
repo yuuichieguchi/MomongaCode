@@ -2,7 +2,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { getRequestListener } from '@hono/node-server';
 import { canonicalPath, comparableContains, listenUnix } from '@momonga/foundation';
-import type { Clock } from '@momonga/foundation';
+import type { Clock, Redactor } from '@momonga/foundation';
 import type { Capabilities, CostReportView, RunTraceView } from '@momonga/protocol';
 import { isFatalStoreError } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
@@ -14,6 +14,7 @@ import type { RunLimitDefaults, SessionCreateSettings } from './app.ts';
 import type { McpAdminPort } from './input-routes.ts';
 import type { RunNotifier } from './notifier.ts';
 import { startDataVersionPoll } from './data-version-poll.ts';
+import { SEARCH_INDEX_BATCH_RUNS, startSearchSweeper } from './search-sweeper.ts';
 import { releaseStoppedRunsAtStartup, startApprovalSweeper } from './sweeper.ts';
 import { systemTimers } from './timers.ts';
 import type { ServiceTimers } from './timers.ts';
@@ -24,6 +25,7 @@ const TWO_MIB = 2 * 1024 * 1024;
 export type RunServiceOptions = {
   store: RuntimeStore;
   clock: Clock;
+  redactor: Redactor;
   home: string;
   version: string;
   socketPath: string;
@@ -122,9 +124,11 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
   await listenUnix(server, options.socketPath);
 
   let sweeper: { close(): Promise<void> } | undefined;
+  let searchSweeper: { close(): Promise<void> } | undefined;
   let poll: { close(): void } | undefined;
   let startupRelease: Promise<void> = Promise.resolve();
   const stop = async (): Promise<void> => {
+    await searchSweeper?.close();
     await sweeper?.close();
     closeController.abort();
     await startupRelease;
@@ -145,6 +149,14 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
       timers,
       intervalMs: options.sweepIntervalMs ?? 1000,
       releaseStopped: options.releaseStopped,
+      onError: report,
+    });
+    searchSweeper = startSearchSweeper({
+      store: options.store,
+      timers,
+      intervalMs: options.sweepIntervalMs ?? 1000,
+      batchSize: SEARCH_INDEX_BATCH_RUNS,
+      redactor: options.redactor,
       onError: report,
     });
     startupRelease = releaseStoppedRunsAtStartup({

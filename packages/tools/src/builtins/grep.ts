@@ -356,6 +356,7 @@ export const grepTool = defineTool<GrepInput>({
   },
   timeoutMs: 60_000,
   title: (input) => `Grep ${input.pattern}`,
+  locations: (input) => [{ path: input.path ?? '.' }],
   subject: (input, ctx) => {
     if (input.type !== undefined) extensionsForType(input.type);
     return { kind: 'path', tool: 'Grep', paths: [requireAbsolute('path', input.path ?? ctx.cwd)], access: 'read' };

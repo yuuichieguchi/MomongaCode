@@ -59,6 +59,12 @@ export type MemoryPort = {
   load(session: Session): MemorySet;
 };
 
+export type HistorySet = { tools: readonly AnyTool[] };
+
+export type HistoryPort = {
+  load(session: Session): HistorySet;
+};
+
 export type AgentCatalogPort = { load(session: Session): Promise<AgentSet> };
 
 export type AgentsPort = AgentCatalogPort & { runs: ChildRuns };

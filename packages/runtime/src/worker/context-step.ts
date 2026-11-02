@@ -105,7 +105,7 @@ const portsOf = (ctx: ClaimContext): BuildContextPorts => ({
   meter: ctx.meter,
   blobs: {
     handleFor: (content) => ctx.options.blobs.handleFor(content),
-    put: async (text, blobOptions) => ctx.options.blobs.put(text, blobOptions),
+    put: async (text, blobOptions) => ctx.options.blobs.put(text, { ...blobOptions, runId: ctx.run.id }),
   },
   instructions: ctx.options.instructionReader,
 });
@@ -127,9 +127,9 @@ type CompactedPayload = Extract<RunEventPayload, { type: 'context.compacted' }>;
 type CompactedEvent = Extract<RunEvent, { type: 'context.compacted' }>;
 type CompactionSource = Pick<CompactionPlan, 'throughSeq' | 'input' | 'summaryTokenCap' | 'pinnedText'>;
 
-const wholeBlobText = async (blobs: WorkerBlobs, handle: string): Promise<string> => {
-  const { totalBytes } = await blobs.read(handle, { offset: 0, length: 0 });
-  return (await blobs.read(handle, { offset: 0, length: totalBytes })).text;
+const wholeBlobText = async (blobs: WorkerBlobs, handle: string, scope: { runId: string }): Promise<string> => {
+  const { totalBytes } = await blobs.read(handle, { offset: 0, length: 0 }, scope);
+  return (await blobs.read(handle, { offset: 0, length: totalBytes }, scope)).text;
 };
 
 type RegionText = { text: string; unreadable: { handle: string; reason: string }[] };
@@ -142,7 +142,7 @@ const replacedRegionText = async (ctx: ClaimContext, plan: CompactionSource): Pr
       if (entry.handle === undefined || entry.item.type !== 'function_call_output') return textOfItem(entry.item);
       const { handle } = entry;
       try {
-        return await wholeBlobText(ctx.options.blobs, handle);
+        return await wholeBlobText(ctx.options.blobs, handle, { runId: ctx.run.id });
       } catch (error) {
         unreadable.push({ handle, reason: error instanceof Error ? error.message : String(error) });
         return textOfItem(entry.item);

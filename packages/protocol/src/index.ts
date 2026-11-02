@@ -78,6 +78,7 @@ export type {
   AgentsResponse,
   SkillsResponse,
 } from './run-api.ts';
+export { assistantTextOf } from './assistant-text.ts';
 export { MEMORY_EVIDENCE_KINDS, MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES } from './memory.ts';
 export type {
   MemoriesResponse,

@@ -4,7 +4,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { immediateTx, modeIsPrivate, sha256Hex, syncDirectorySync, uuidv7 } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { readerFor } from './rows.ts';
-import type { BlobByteRange, BlobByteSlice, BlobLineRange, BlobRef, BlobSlice, BlobStore } from './types.ts';
+import type { BlobByteRange, BlobByteSlice, BlobLineRange, BlobRef, BlobScope, BlobSlice, BlobStore } from './types.ts';
 
 const BLOB_DIRECTORY_MODE = 0o700;
 const BLOB_FILE_MODE = 0o600;
@@ -142,19 +142,28 @@ export const createBlobStore = (db: DatabaseSync, clock: Clock, dir: string): Bl
      ON CONFLICT (sha256) DO NOTHING`,
   );
   const select = db.prepare('SELECT * FROM blobs WHERE sha256 = :sha256');
+  const own = db.prepare('INSERT OR IGNORE INTO blob_owners (sha256, run_id) VALUES (:sha256, :runId)');
+  const readableBy = db.prepare(
+    `SELECT 1 AS readable FROM blob_owners o
+     JOIN runs owner ON owner.id = o.run_id
+     JOIN runs reader ON reader.id = :runId
+     WHERE o.sha256 = :sha256 AND owner.session_id = reader.session_id LIMIT 1`,
+  );
 
-  const locate = (handle: string): { file: string; totalBytes: number; totalLines: number } => {
+  const locate = (handle: string, scope: BlobScope | undefined): { file: string; totalBytes: number; totalLines: number } => {
     if (!HANDLE_PATTERN.test(handle)) throw new Error(`invalid blob handle "${handle}": expected a 64-character lowercase hex sha256`);
     const row = select.get({ sha256: handle });
-    if (row === undefined) throw Object.assign(new Error(`unknown blob ${handle}`), { code: 'BLOB_NOT_FOUND' });
+    if (row === undefined || (scope !== undefined && readableBy.get({ sha256: handle, runId: scope.runId }) === undefined)) {
+      throw Object.assign(new Error(`unknown blob ${handle}`), { code: 'BLOB_NOT_FOUND' });
+    }
     const reader = readerFor('blobs', handle, row);
     return { file: path.join(dir, handle), totalBytes: reader.number('byte_length'), totalLines: reader.number('line_count') };
   };
 
-  async function read(handle: string, range: BlobLineRange): Promise<BlobSlice>;
-  async function read(handle: string, range: BlobByteRange): Promise<BlobByteSlice>;
-  async function read(handle: string, range: BlobLineRange | BlobByteRange): Promise<BlobSlice | BlobByteSlice> {
-    const { file, totalBytes, totalLines } = locate(handle);
+  async function read(handle: string, range: BlobLineRange, scope?: BlobScope): Promise<BlobSlice>;
+  async function read(handle: string, range: BlobByteRange, scope?: BlobScope): Promise<BlobByteSlice>;
+  async function read(handle: string, range: BlobLineRange | BlobByteRange, scope?: BlobScope): Promise<BlobSlice | BlobByteSlice> {
+    const { file, totalBytes, totalLines } = locate(handle, scope);
     if ('lineStart' in range) {
       if (!Number.isInteger(range.lineStart) || range.lineStart < 1 || !Number.isInteger(range.lineEnd) || range.lineEnd < range.lineStart) {
         throw new RangeError(`blob line range must satisfy 1 <= lineStart <= lineEnd, got ${range.lineStart}..${range.lineEnd}`);
@@ -186,6 +195,7 @@ export const createBlobStore = (db: DatabaseSync, clock: Clock, dir: string): Bl
       const lineCount = countLines(bytes);
       immediateTx(db, () => {
         insert.run({ sha256, byteLength: bytes.length, lineCount, mediaType: options.mediaType, createdAt: clock.now() });
+        if (options.runId !== undefined) own.run({ sha256, runId: options.runId });
       });
       return { handle: sha256, sha256, byteLength: bytes.length, lineCount } satisfies BlobRef;
     },

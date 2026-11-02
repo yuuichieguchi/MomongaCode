@@ -1,6 +1,6 @@
 import { ChildRunError, pinOf } from '@momonga/agents';
 import type { ChildRunOutcome, ChildRuns } from '@momonga/agents';
-import { TERMINAL_STATUSES } from '@momonga/protocol';
+import { TERMINAL_STATUSES, assistantTextOf } from '@momonga/protocol';
 import type { InputItem, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import type { Run, RuntimeStore } from '@momonga/store';
@@ -15,9 +15,8 @@ type TerminalStatus = Extract<ChildRunOutcome, { state: 'finished' }>['status'];
 const isTerminalStatus = (status: Run['status']): status is TerminalStatus => (TERMINAL_STATUSES as readonly string[]).includes(status);
 
 const textOfItem = (item: InputItem): string | undefined => {
-  if (item.type !== 'message' || item.role !== 'assistant' || !Array.isArray(item.content)) return undefined;
-  const parts = item.content.flatMap((part) => (part.type === 'output_text' ? [part.text] : []));
-  return parts.length === 0 ? undefined : parts.join('');
+  const text = assistantTextOf([item]);
+  return text === '' ? undefined : text;
 };
 
 export const finalTextOf = (state: RunState): string => {
