@@ -18,7 +18,7 @@ import type { AttemptSpan, TraceParent } from './attempt-span.ts';
 import { applyBreakerVerdict, breakerVerdictOf } from './breaker-verdict.ts';
 import type { BreakerVerdict } from './breaker-verdict.ts';
 import { armDeadline } from './deadline.ts';
-import { GatewayError, isRunCancelled } from './errors.ts';
+import { ClientDisconnectedError, GatewayError, isRunCancelled } from './errors.ts';
 import { estimateInputTokens, estimateOutputTokens, estimatedUsage } from './estimate.ts';
 import { inputHasImages, resolveInput } from './input.ts';
 import type { ConnectionResponses, ResolvedInput } from './input.ts';
@@ -189,12 +189,40 @@ const orderedItems = (items: Map<number, ItemField>): ItemField[] =>
 
 const messageOfError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
+type RelayProgress = { concluded: boolean };
+
 async function* relay(
   services: Services,
   job: ResponseJob,
   resolved: ResolvedInput,
   outcome: RetryOutcome<Opened>,
   control: RunControl,
+): AsyncGenerator<StreamEvent> {
+  const progress: RelayProgress = { concluded: false };
+  const { value: opened, target } = outcome;
+  try {
+    yield* relaySteps(services, job, resolved, outcome, control, progress);
+  } finally {
+    opened.release();
+    if (!progress.concluded) {
+      target.breaker.onNeutral();
+      try {
+        await opened.iterator.return?.();
+      } catch (error) {
+        opened.span.note('momonga.adapter_cleanup_error', messageOfError(error));
+      }
+      opened.span.fail('cancelled', control.signal.reason ?? new ClientDisconnectedError(), 'the response stream was closed before it completed');
+    }
+  }
+}
+
+async function* relaySteps(
+  services: Services,
+  job: ResponseJob,
+  resolved: ResolvedInput,
+  outcome: RetryOutcome<Opened>,
+  control: RunControl,
+  progress: RelayProgress,
 ): AsyncGenerator<StreamEvent> {
   const { signal } = control;
   const { value: opened, target, attempts, fallbackFrom } = outcome;
@@ -307,6 +335,7 @@ async function* relay(
   if (interruption !== undefined) {
     applyBreakerVerdict(target.breaker, interruption.verdict);
     opened.span.fail(interruption.spanType, interruption.error, interruption.message);
+    progress.concluded = true;
     yield failedTerminal({ code: interruption.code, message: interruption.message, type: interruption.type }, orderedItems(doneItems));
     return;
   }
@@ -319,6 +348,7 @@ async function* relay(
     const error = terminalEvent.response.error;
     applyBreakerVerdict(target.breaker, breakerVerdictOf(error.type ?? 'server_error', error.code));
     opened.span.fail(error.type ?? 'server_error', new Error(error.message), error.message);
+    progress.concluded = true;
     yield failedTerminal({ ...error, type: error.type ?? 'server_error' }, upstreamOutput);
     return;
   }
@@ -352,7 +382,9 @@ async function* relay(
 
   if (isRunCancelled(signal.reason)) {
     const cancelled = signal.reason as GatewayError;
+    target.breaker.onNeutral();
     opened.span.fail('cancelled', cancelled, cancelled.message);
+    progress.concluded = true;
     yield failedTerminal({ code: 'run_cancelled', message: cancelled.message, type: 'server_error' }, resource.output);
     return;
   }
@@ -389,13 +421,16 @@ async function* relay(
   }
   if (commitFailure !== undefined) {
     const message = `the gateway could not persist the response: ${messageOfError(commitFailure)}`;
+    target.breaker.onNeutral();
     opened.span.fail('server_error', commitFailure, message);
+    progress.concluded = true;
     yield failedTerminal({ code: 'internal_error', message, type: 'server_error' }, resource.output);
     return;
   }
   job.connection?.remember(responseId, { input: resolved.stored, output: resource.output });
   target.breaker.onSuccess();
   opened.span.succeed({ responseModel: target.model, responseId, finishReason: finishReasonOf(resource), usage, output: resource.output });
+  progress.concluded = true;
   yield terminal;
 }
 
