@@ -194,6 +194,7 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
     case 'skill.activated':
     case 'approval.rule.persisted':
     case 'job.finished':
+    case 'usage.charged':
       return [];
     case 'hook.completed':
       return phase === 'live' ? liveNotice(features, event.runId, event.seq, hookLevel(event), describeHook(event)) : [];

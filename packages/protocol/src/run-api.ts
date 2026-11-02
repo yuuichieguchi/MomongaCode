@@ -1,7 +1,7 @@
 import { HOOK_EVENTS, HOOK_OUTCOMES, HOOK_PRE_TOOL_DECISIONS } from './hooks.ts';
 import { MEMORY_SCOPES } from './memory.ts';
 import { PERMISSION_DENIAL_SOURCES } from './permission-denial.ts';
-import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TOOL_KINDS } from './run-types.ts';
+import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
 import type { ImageMediaType, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent } from './run-types.ts';
 
 const DRAFT_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
@@ -280,6 +280,15 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
   'usage.updated': {
     properties: { inputTokens: nonNegativeInteger, outputTokens: nonNegativeInteger, totalTokens: nonNegativeInteger },
     required: ['inputTokens', 'outputTokens', 'totalTokens'],
+  },
+  'usage.charged': {
+    properties: {
+      purpose: enumOf(USAGE_CHARGE_PURPOSES),
+      inputTokens: nonNegativeInteger,
+      outputTokens: nonNegativeInteger,
+      totalTokens: nonNegativeInteger,
+    },
+    required: ['purpose', 'inputTokens', 'outputTokens', 'totalTokens'],
   },
   'context.compacted': {
     properties: { summary: string, replacedThroughSeq: nonNegativeInteger },

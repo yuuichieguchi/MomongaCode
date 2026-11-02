@@ -124,6 +124,7 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   'job.finished': true,
   'plan.updated': true,
   'usage.updated': true,
+  'usage.charged': true,
   'context.compacted': true,
   'context.compaction_rejected': true,
   'context.inherited': true,

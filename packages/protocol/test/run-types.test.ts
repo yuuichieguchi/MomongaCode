@@ -92,6 +92,7 @@ describe('run event payloads', () => {
       | 'tool.reconciled'
       | 'plan.updated'
       | 'usage.updated'
+      | 'usage.charged'
       | 'context.compacted'
       | 'context.compaction_rejected'
       | 'context.inherited'

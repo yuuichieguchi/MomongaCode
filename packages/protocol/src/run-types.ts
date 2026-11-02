@@ -61,6 +61,10 @@ export type ModelResponse = {
 
 export type ActivatedSkillRecord = { name: string; content: string };
 
+export const USAGE_CHARGE_PURPOSES = ['compaction', 'permission_classifier'] as const;
+
+export type UsageChargePurpose = (typeof USAGE_CHARGE_PURPOSES)[number];
+
 export const JOB_STATUSES = ['running', 'exited', 'killed', 'unknown'] as const;
 
 export type JobStatus = (typeof JOB_STATUSES)[number];
@@ -131,6 +135,7 @@ export type RunEventPayload =
       entries: { content: string; priority: 'high' | 'medium' | 'low'; status: 'pending' | 'in_progress' | 'completed' }[];
     }
   | { type: 'usage.updated'; inputTokens: number; outputTokens: number; totalTokens: number }
+  | { type: 'usage.charged'; purpose: UsageChargePurpose; inputTokens: number; outputTokens: number; totalTokens: number }
   | { type: 'context.compacted'; item: CompactionInputItem; summary: string; replacedThroughSeq: number }
   | { type: 'context.compaction_rejected'; step?: number; attempt?: number; item: MessageInputItem }
   | {

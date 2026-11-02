@@ -117,6 +117,13 @@ export const compactThrough = async (ctx: ClaimContext, plan: Pick<CompactionPla
   if (compaction === undefined) throw new Error(`the compaction response for run ${ctx.run.id} holds no compaction item`);
   journal.append([
     {
+      type: 'usage.charged',
+      purpose: 'compaction',
+      inputTokens: resource.usage.input_tokens,
+      outputTokens: resource.usage.output_tokens,
+      totalTokens: resource.usage.total_tokens,
+    },
+    {
       type: 'context.compacted',
       item: { type: 'compaction', id: compaction.id, encrypted_content: compaction.encrypted_content },
       summary: decodeCompactionSummary(compaction.encrypted_content) ?? '',

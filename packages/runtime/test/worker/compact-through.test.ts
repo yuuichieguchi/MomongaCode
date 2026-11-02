@@ -60,7 +60,10 @@ describe('compactThrough', () => {
     expect(sent?.request).toEqual({ model: 'fm', input, momonga: { max_summary_tokens: 240, retains_user_request: true } });
     expect('instructions' in (sent?.request ?? {})).toBe(false);
     expect(sent?.idempotencyKey).toBe(keyOf(sent?.request as CompactRequest));
-    expect(appended).toEqual([expect.objectContaining({ type: 'context.compacted', replacedThroughSeq: 3, summary: 'S' })]);
+    expect(appended).toEqual([
+      expect.objectContaining({ type: 'usage.charged', purpose: 'compaction' }),
+      expect.objectContaining({ type: 'context.compacted', replacedThroughSeq: 3, summary: 'S' }),
+    ]);
   });
 
   it('derives a new key when only the cap differs', async () => {
