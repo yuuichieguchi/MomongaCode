@@ -10,7 +10,7 @@ import { parseInputRequests } from './input-requests.ts';
 import { validateStructuredOutput } from './output-validation.ts';
 import { createParkedInputs } from './parked-input.ts';
 import type { ParkedInputs } from './parked-input.ts';
-import { McpAuthorizationError, McpRemotePolicyError, McpTaskError, authorizationRequiredFor, isSessionExpired } from './remote-errors.ts';
+import { McpRemotePolicyError, McpTaskError, authorizationRequiredFor, deterministicRemoteFailureOf, findInCauseChain, isSessionExpired } from './remote-errors.ts';
 import { credentialKey } from './oauth-provider.ts';
 import { createGuardedFetch } from './remote-policy.ts';
 import type { GuardedFetch } from './remote-policy.ts';
@@ -44,7 +44,7 @@ export const MRTR_MAX_ROUNDS = 10;
 export const MRTR_STATE_ONLY_PACING_MS = 250;
 export const TASKS_EXTENSION = 'io.modelcontextprotocol/tasks';
 
-export type McpAuthProbe = { state: 'not_applicable' | 'static_header' | 'not_required' | 'authorized' | 'required' | 'unreachable'; detail?: string };
+export type McpAuthProbe = { state: 'not_applicable' | 'static_header' | 'not_required' | 'authorized' | 'required' | 'refused' | 'unreachable'; detail?: string };
 
 export type McpServerState = 'idle' | 'connected' | 'disconnected' | 'unavailable' | 'closed';
 
@@ -116,8 +116,6 @@ const describeExit = (transport: ConnectionTransport): string | undefined => {
 };
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
-
-const isDeterministicRemoteFailure = (error: unknown): boolean => error instanceof McpRemotePolicyError || error instanceof McpAuthorizationError;
 
 class ManagedConnection implements McpServerConnection {
   readonly name: string;
@@ -214,6 +212,8 @@ class ManagedConnection implements McpServerConnection {
         if (live !== undefined && this.session === live) await this.discardSession(live);
         return { state: 'required' };
       }
+      const refusal = findInCauseChain(error, (candidate): candidate is McpRemotePolicyError => candidate instanceof McpRemotePolicyError);
+      if (refusal !== undefined) return { state: 'refused', detail: this.redact(refusal.message) };
       return { state: 'unreachable', detail: this.redact(errorMessage(error)) };
     }
     const stored = await remote.credentials.read(credentialKey(this.name, config.url));
@@ -591,9 +591,11 @@ class ManagedConnection implements McpServerConnection {
       this.lastError = failure.message;
       await client.close();
       await guarded?.close();
-      if (isDeterministicRemoteFailure(error)) {
+      const deterministic = deterministicRemoteFailureOf(error);
+      if (deterministic !== undefined) {
         this.state = 'disconnected';
-        throw failure;
+        this.lastError = deterministic.message;
+        throw deterministic instanceof McpRemotePolicyError ? deterministic : failure;
       }
       this.consecutiveFailures += 1;
       this.breaker.onFailure();

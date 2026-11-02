@@ -44,14 +44,20 @@ export class McpTaskError extends Error {
 const TRANSIENT_HTTP_STATUSES: ReadonlySet<number> = new Set([429, 502, 503, 504]);
 const TRANSIENT_SOCKET_CODES: ReadonlySet<string> = new Set(['UND_ERR_SOCKET', 'ECONNRESET', 'ECONNREFUSED', 'EPIPE', 'ETIMEDOUT']);
 
-const causeCode = (error: unknown): string | undefined => {
+const MAX_CAUSE_DEPTH = 4;
+
+export const findInCauseChain = <T extends Error>(error: unknown, matches: (candidate: Error) => candidate is T): T | undefined => {
   let current: unknown = error;
-  for (let depth = 0; depth < 4 && current instanceof Error; depth += 1) {
-    const code = (current as Error & { code?: unknown }).code;
-    if (typeof code === 'string') return code;
+  for (let depth = 0; depth < MAX_CAUSE_DEPTH && current instanceof Error; depth += 1) {
+    if (matches(current)) return current;
     current = current.cause;
   }
   return undefined;
+};
+
+const causeCode = (error: unknown): string | undefined => {
+  const withCode = findInCauseChain(error, (candidate): candidate is Error & { code: string } => typeof (candidate as Error & { code?: unknown }).code === 'string');
+  return withCode?.code;
 };
 
 export const isTransientRemoteFailure = (error: unknown): boolean => {
@@ -64,12 +70,14 @@ export const isTransientRemoteFailure = (error: unknown): boolean => {
   return false;
 };
 
-export const isSessionExpired = (error: unknown): boolean => error instanceof SdkHttpError && error.status === 404;
+export const isSessionExpired = (error: unknown): boolean =>
+  findInCauseChain(error, (candidate): candidate is SdkHttpError => candidate instanceof SdkHttpError && candidate.status === 404) !== undefined;
 
 export const isUnauthorized = (error: unknown): boolean =>
   error instanceof SdkHttpError && error.code === SdkErrorCode.ClientHttpAuthentication;
 
-export const authorizationRequiredFor = (error: unknown): McpAuthorizationError | undefined => {
-  const candidate = error instanceof Error && error.cause instanceof McpAuthorizationError ? error.cause : error;
-  return candidate instanceof McpAuthorizationError && candidate.failure === 'required' ? candidate : undefined;
-};
+export const authorizationRequiredFor = (error: unknown): McpAuthorizationError | undefined =>
+  findInCauseChain(error, (candidate): candidate is McpAuthorizationError => candidate instanceof McpAuthorizationError && candidate.failure === 'required');
+
+export const deterministicRemoteFailureOf = (error: unknown): McpRemotePolicyError | McpAuthorizationError | undefined =>
+  findInCauseChain(error, (candidate): candidate is McpRemotePolicyError | McpAuthorizationError => candidate instanceof McpRemotePolicyError || candidate instanceof McpAuthorizationError);

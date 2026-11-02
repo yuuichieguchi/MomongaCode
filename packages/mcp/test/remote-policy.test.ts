@@ -175,6 +175,42 @@ describe('resolved addresses', () => {
   });
 });
 
+describe('a refusal raised while the HTTP client resolves the host name', () => {
+  const rebinding: HostResolver = () => Promise.resolve([{ address: '127.0.0.1', family: 4 }]);
+
+  const rebound = async () => {
+    const server = await countingServer((_req, res) => res.end('reached'));
+    const harness = makeRemoteConnection({
+      fixture: { url: `https://rebind.example.test:${server.port}/mcp` },
+      scope: 'project',
+      resolver: rebinding,
+    });
+    return { ...harness, server };
+  };
+
+  it('keeps its type and its reason on every call and never opens the circuit', async () => {
+    const { connection, server } = await rebound();
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const failure = await connection.listTools().then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(McpRemotePolicyError);
+      expect(failure).toMatchObject({ violation: 'non_public_resolved_address' });
+      expect((failure as Error).message).toContain('non-public address (127.0.0.1)');
+    }
+    expect(connection.diagnostics().state).toBe('disconnected');
+    expect(server.requests()).toBe(0);
+  });
+
+  it('is reported by authState as refused with the reason, not as unreachable', async () => {
+    const { connection } = await rebound();
+    const probe = await connection.authState();
+    expect(probe.state).toBe('refused');
+    expect(probe.detail).toContain('non-public address (127.0.0.1)');
+  });
+});
+
 describe('redirects', () => {
   it('does not follow a redirect from the MCP endpoint to another origin', async () => {
     const target = await countingServer((_req, res) => res.end('internal'));
