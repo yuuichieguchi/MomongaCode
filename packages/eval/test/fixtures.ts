@@ -41,8 +41,15 @@ export type ScriptedCall = {
   callId: string;
   name: string;
   kind: 'read' | 'edit' | 'execute' | 'other';
+  sideEffect?: 'read_only' | 'write' | 'exec';
   rawInput: Record<string, unknown>;
   decision: 'allow' | 'ask' | 'deny';
+};
+
+const sideEffectOf = (call: ScriptedCall): NonNullable<ScriptedCall['sideEffect']> => {
+  if (call.sideEffect !== undefined) return call.sideEffect;
+  if (call.kind === 'read') return 'read_only';
+  return call.kind === 'execute' ? 'exec' : 'write';
 };
 
 const OPTIONS = [
@@ -51,7 +58,7 @@ const OPTIONS = [
 ];
 
 const payloadsOfCall = (call: ScriptedCall): RunEventPayload[] => [
-  { type: 'tool.call', callId: call.callId, providerCallId: call.callId, name: call.name, kind: call.kind, title: call.name, rawInput: call.rawInput },
+  { type: 'tool.call', callId: call.callId, providerCallId: call.callId, name: call.name, kind: call.kind, sideEffect: sideEffectOf(call), title: call.name, rawInput: call.rawInput },
   ...(call.decision === 'ask'
     ? [{ type: 'tool.permission.requested' as const, approvalId: `a-${call.callId}`, callId: call.callId, options: OPTIONS, subjectDigest: `digest-${call.callId}` }]
     : call.decision === 'allow'

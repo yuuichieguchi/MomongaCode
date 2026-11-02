@@ -7,6 +7,7 @@ import { summaryRequestOf } from '../src/adapters/shared/compact.ts';
 import { UnsupportedInputError } from '../src/adapters/shared/failures.ts';
 import { estimateInputTokens, wireTokensOf } from '../src/core/estimate.ts';
 import { dimensionsOfBase64 } from '../src/core/image-size.ts';
+import { withoutImages } from '../src/core/image-tokens.ts';
 import { expectErrorBody, outputText, postJson, readJson, startGateway } from './gateway-helpers.ts';
 
 const png = (width: number, height: number): string => {
@@ -17,6 +18,28 @@ const png = (width: number, height: number): string => {
   bytes.writeUInt32BE(height, 20);
   return bytes.toString('base64');
 };
+
+describe('the per-image minimum of an image token model', () => {
+  const tokensOf = (side: number): number =>
+    withoutImages({ type: 'image_url', image_url: { url: `data:image/png;base64,${png(side, side)}` } }, { pixelsPerToken: 750, maxTokens: 1600, minTokens: 85 }).imageTokens;
+
+  it('raises a small image to the minimum', () => {
+    expect(tokensOf(100)).toBe(85);
+  });
+
+  it('leaves a size between the minimum and the cap on the pixel rate', () => {
+    expect(tokensOf(1000)).toBe(1334);
+  });
+
+  it('holds a large image at the cap', () => {
+    expect(tokensOf(2000)).toBe(1600);
+  });
+
+  it('estimates a fixed cost for a 100 px image at that cost', () => {
+    const fixed = { pixelsPerToken: 455, maxTokens: 576, minTokens: 576 };
+    expect(withoutImages({ type: 'image_url', image_url: { url: `data:image/png;base64,${png(100, 100)}` } }, fixed).imageTokens).toBe(576);
+  });
+});
 
 const gif = (width: number, height: number): string => {
   const bytes = Buffer.alloc(13);
@@ -87,7 +110,7 @@ describe('image dimensions', () => {
 
 describe('image token estimate', () => {
   const imageInput = (url: string): AdapterInputItem[] => [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: url }] }];
-  const MODEL = { pixelsPerToken: 750, maxTokens: 1600 };
+  const MODEL = { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 };
 
   it('counts an image from its dimensions, not from the length of its base64', () => {
     const huge = `data:image/png;base64,${png(750, 100)}${'A'.repeat(2_000_000)}`;
@@ -107,7 +130,7 @@ describe('image token estimate', () => {
   });
 
   it('derives the count from the declared model of the target', () => {
-    const declared = { pixelsPerToken: 100, maxTokens: 500 };
+    const declared = { pixelsPerToken: 100, maxTokens: 500, minTokens: 1 };
     const sized = estimateInputTokens({ input: imageInput(`data:image/png;base64,${png(300, 100)}`) }, declared);
     const capped = estimateInputTokens({ input: imageInput(`data:image/png;base64,${png(750, 100)}`) }, declared);
     const unknown = estimateInputTokens({ input: imageInput('https://example.com/a.png') }, declared);
@@ -221,7 +244,7 @@ describe('image capability filter', () => {
 
   it('skips a target without imageInput and uses the next one that declares it', async () => {
     const plain = createScriptedAdapter({ calls: [] });
-    const seeing = createScriptedAdapter({ calls: [{ events: textResponseEvents({ model: 'model-b', chunks: ['seen'] }) }], capabilities: { imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600 } } });
+    const seeing = createScriptedAdapter({ calls: [{ events: textResponseEvents({ model: 'model-b', chunks: ['seen'] }) }], capabilities: { imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } } });
     const { client } = await startGateway({
       adapters: { a: plain, b: seeing },
       config: { aliases: { fast: ['a', 'b'] }, targets: { a: { model: 'model-a' }, b: { model: 'model-b' } } },

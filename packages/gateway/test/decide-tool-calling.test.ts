@@ -42,7 +42,7 @@ describe('capabilitiesFromProbe', () => {
     const report = makeReport(1, 1);
     report.stopSequences = true;
     report.imageInputAccepted = true;
-    report.imageTokens = { pixelsPerToken: 700, maxTokens: 1500 };
+    report.imageTokens = { pixelsPerToken: 700, maxTokens: 1500, minTokens: 1 };
     report.maxConcurrency = 2;
     report.streaming = { supported: true, doneSentinel: true, usageInStream: true };
     const capabilities = capabilitiesFromProbe(report, { mode: 'native' });
@@ -53,7 +53,7 @@ describe('capabilitiesFromProbe', () => {
       streaming: true,
       stopSequences: true,
       imageInput: true,
-      imageTokens: { pixelsPerToken: 700, maxTokens: 1500 },
+      imageTokens: { pixelsPerToken: 700, maxTokens: 1500, minTokens: 1 },
       parallelToolCalls: false,
       schemaDialect: 'json-schema-2020-12',
       tokenCounting: 'calibrated',

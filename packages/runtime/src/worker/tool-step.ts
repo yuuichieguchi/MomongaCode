@@ -28,6 +28,7 @@ const callPayload = (ctx: ClaimContext, item: { call_id: string; name: string; a
     providerCallId: item.call_id,
     name: item.name,
     kind: tool?.kind ?? 'other',
+    ...(tool === undefined ? {} : { sideEffect: tool.sideEffect }),
     title: tool !== undefined && input !== undefined ? tool.title(input) : item.name,
     rawInput,
     ...(locations === undefined ? {} : { locations }),
