@@ -24,7 +24,7 @@ const probe = async (
 ): Promise<{ report: ProbeReport; fake: FakeChatCompletionsServer }> => {
   const fake = await startFakeChatCompletions(options);
   servers.push(fake);
-  const report = await runProbe({ socketPath: fake.socketPath, now: fixedNow, ...probeOptions });
+  const report = await runProbe({ socketPath: fake.socketPath, managedHealthRoute: true, now: fixedNow, ...probeOptions });
   return { report, fake };
 };
 

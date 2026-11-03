@@ -12,8 +12,10 @@ export type EndpointRecord = { identity: string; report: ProbeReport };
 
 const FILE_NAME_HASH_CHARS = 32;
 
-const fileOf = (dir: string, key: EndpointKey): string =>
-  path.join(dir, `endpoint-${sha256Hex(canonicalJson([key.endpoint, key.model])).slice(0, FILE_NAME_HASH_CHARS)}.json`);
+export const endpointRecordFileName = (key: EndpointKey): string =>
+  `endpoint-${sha256Hex(canonicalJson([key.endpoint, key.model])).slice(0, FILE_NAME_HASH_CHARS)}.json`;
+
+const fileOf = (dir: string, key: EndpointKey): string => path.join(dir, endpointRecordFileName(key));
 
 export const endpointIdentityOf = (modelsBody: unknown, model: string): string => {
   const data = field(modelsBody, 'data');

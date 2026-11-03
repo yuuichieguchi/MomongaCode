@@ -143,9 +143,13 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
   }
   const causes = fallbackCauses.map((cause) => `${cause.target}: ${cause.message}`).join('; ');
   const unreachable = fallbackCauses.length > 0 && fallbackCauses.every((cause) => cause.code === UNREACHABLE_CODE);
-  throw serverError(
-    503,
-    unreachable ? 'all_targets_unreachable' : 'all_targets_unavailable',
-    `every candidate target is unavailable because its circuit breaker is open (${causes})`,
-  );
+  const trialsFailed = candidates.every((candidate) => candidate.breaker.trialFailed);
+  const waitMs = Math.max(...candidates.map((candidate) => candidate.breaker.remainingOpenMs()));
+  throw new GatewayError({
+    status: 503,
+    type: 'server_error',
+    code: unreachable && trialsFailed ? 'all_targets_unreachable' : 'all_targets_unavailable',
+    message: `every candidate target is unavailable because its circuit breaker is open (${causes})`,
+    headers: waitMs > 0 ? { 'retry-after': String(Math.ceil(waitMs / 1000)) } : {},
+  });
 };

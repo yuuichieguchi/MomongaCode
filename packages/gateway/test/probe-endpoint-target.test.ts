@@ -38,6 +38,15 @@ describe('probeEndpointTarget', () => {
     expect(chatBodies.every((body) => body.model === 'qwen-fake')).toBe(true);
   });
 
+  it('never asks a chat-completions target for /health, whatever the transport', async () => {
+    const fake = await startFake({ scenario: 'tools-ok', modelId: 'qwen-fake', models: MODELS });
+
+    await probeEndpointTarget({ probeRecordDir: makeDir(), upstream: { kind: 'unix', socketPath: fake.socketPath }, model: 'qwen-fake', apiKey: undefined, samples: 1 });
+
+    expect(fake.requests.filter((request) => request.path === '/health')).toEqual([]);
+    expect(fake.requests.filter((request) => request.path === '/v1/models').length).toBeGreaterThan(0);
+  });
+
   it('records the constrained mode for an endpoint whose native tool calls are unreliable', async () => {
     const fake = await startFake({ scenario: 'tools-ok', modelId: 'qwen-fake', models: MODELS, nativeValidity: 0.2 });
 

@@ -1219,6 +1219,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         };
       }),
 
+    maxTotalAttempts,
+
     checkIdentity: () => {
       let current: fs.Stats;
       try {

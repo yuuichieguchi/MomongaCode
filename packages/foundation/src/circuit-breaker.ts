@@ -16,6 +16,7 @@ export class CircuitBreaker {
   private consecutiveFailures = 0;
   private openedAt = 0;
   private trialStartedAt = 0;
+  private lastTrialFailed = false;
 
   constructor(options: CircuitBreakerOptions) {
     if (!Number.isInteger(options.failureThreshold) || options.failureThreshold < 1) {
@@ -31,6 +32,16 @@ export class CircuitBreaker {
 
   get state(): CircuitState {
     return this.current;
+  }
+
+  get trialFailed(): boolean {
+    return this.lastTrialFailed;
+  }
+
+  remainingOpenMs(): number {
+    if (this.current === 'closed') return 0;
+    const since = this.current === 'open' ? this.openedAt : this.trialStartedAt;
+    return Math.max(0, this.openMs - (this.clock.now() - since));
   }
 
   canPass(): boolean {
@@ -51,6 +62,7 @@ export class CircuitBreaker {
     if (this.current === 'open') return;
     this.current = 'closed';
     this.consecutiveFailures = 0;
+    this.lastTrialFailed = false;
   }
 
   onNeutral(): void {
@@ -59,6 +71,7 @@ export class CircuitBreaker {
 
   onFailure(): void {
     if (this.current === 'half-open') {
+      this.lastTrialFailed = true;
       this.trip();
       return;
     }

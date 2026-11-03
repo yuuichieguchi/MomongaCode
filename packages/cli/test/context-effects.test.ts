@@ -5,7 +5,8 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { nodeFiles } from '../src/node-ports.ts';
 import { OWNER_FILE, ROOT_PREFIX, caseEnvironment } from '../src/eval/context-host.ts';
-import { copyProbeRecord, listEvalRoots, nodeContextEffects, readEvalOwner } from '../src/eval/context-effects.ts';
+import { endpointRecordFileName } from '@momonga/gateway';
+import { copyEndpointProbeRecord, copyProbeRecord, listEvalRoots, nodeContextEffects, readEvalOwner } from '../src/eval/context-effects.ts';
 import type { CliPorts } from '../src/ports.ts';
 
 const directories: string[] = [];
@@ -114,6 +115,27 @@ describe('the environment of a session inside a case', () => {
     const env = await nodeContextEffects(portsWith(personHome(), personEnv)).sessionEnv(root);
     const seen = execFileSync('/bin/bash', ['-c', 'printf %s "$HOME"'], { env }).toString();
     expect(seen).toBe(root);
+  });
+});
+
+describe('copyEndpointProbeRecord', () => {
+  const key = { endpoint: 'http://127.0.0.1:11434/v1', model: 'qwen' };
+  const record = JSON.stringify({ ...key, identity: 'x', report: { anything: true } });
+  const fileOf = (dir: string): string => path.join(dir, endpointRecordFileName(key));
+
+  it('copies the record of an endpoint and model byte for byte under the same file name', async () => {
+    const from = temporary();
+    const to = path.join(temporary(), 'state', 'probe');
+    fs.writeFileSync(fileOf(from), record);
+    expect(await copyEndpointProbeRecord(nodeFiles, from, to, key)).toBe(true);
+    expect(fs.readFileSync(fileOf(to), 'utf8')).toBe(record);
+    expect(fs.statSync(fileOf(to)).mode & 0o777).toBe(0o600);
+  });
+
+  it('copies nothing when the endpoint was never probed', async () => {
+    const to = path.join(temporary(), 'probe');
+    expect(await copyEndpointProbeRecord(nodeFiles, temporary(), to, key)).toBe(false);
+    expect(fs.existsSync(to)).toBe(false);
   });
 });
 

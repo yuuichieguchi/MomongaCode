@@ -15,6 +15,34 @@ const tripOpen = (breaker: CircuitBreaker) => {
   }
 };
 
+describe('CircuitBreaker cooldown and trial outcome', () => {
+  it('reports the cooldown that remains while open and none while closed', () => {
+    const { breaker, clock } = make();
+    expect(breaker.remainingOpenMs()).toBe(0);
+    tripOpen(breaker);
+    expect(breaker.remainingOpenMs()).toBe(5000);
+    clock.advance(2000);
+    expect(breaker.remainingOpenMs()).toBe(3000);
+    clock.advance(3000);
+    expect(breaker.remainingOpenMs()).toBe(0);
+  });
+
+  it('knows that the half-open trial failed, until a success', () => {
+    const { breaker, clock } = make();
+    tripOpen(breaker);
+    expect(breaker.trialFailed).toBe(false);
+    clock.advance(5000);
+    expect(breaker.canPass()).toBe(true);
+    breaker.onFailure();
+    expect(breaker.state).toBe('open');
+    expect(breaker.trialFailed).toBe(true);
+    clock.advance(5000);
+    expect(breaker.canPass()).toBe(true);
+    breaker.onSuccess();
+    expect(breaker.trialFailed).toBe(false);
+  });
+});
+
 describe('CircuitBreaker', () => {
   it('starts closed and lets calls pass', () => {
     const { breaker } = make();

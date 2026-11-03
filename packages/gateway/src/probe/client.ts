@@ -74,6 +74,7 @@ export const createProbeClient = (
   endpoint: ProbeEndpoint,
   signal: AbortSignal | undefined,
   stepTimeoutMs: number,
+  hasHealthRoute = false,
 ): ProbeClient => {
   const { uds, paths, headers: authHeaders } = transportOf(endpoint);
 
@@ -107,7 +108,7 @@ export const createProbeClient = (
     });
 
   return {
-    hasHealthRoute: endpoint.kind === 'unix',
+    hasHealthRoute,
     get: (route) =>
       withTimeout('GET', paths[route], async (requestSignal) => {
         const response = await uds.request({ method: 'GET', path: paths[route], headers: authHeaders, signal: requestSignal });

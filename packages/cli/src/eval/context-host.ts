@@ -38,6 +38,7 @@ export type ContextHostEffects = {
   ownerPid: number;
   readSecret(name: string, signal: AbortSignal): Promise<string>;
   copyProbeRecord(target: string, paths: MomongaPaths): Promise<void>;
+  copyEndpointProbeRecord(probe: EndpointProbe, paths: MomongaPaths): Promise<void>;
   listRoots(): Promise<string[]>;
   readOwner(root: string): Promise<number | 'unreadable' | undefined>;
   isAlive(pid: number): boolean;
@@ -72,7 +73,10 @@ const membersOf = (models: ResolvedModels, alias: string): string[] => {
 
 export type SecretCredential = { envName: string; secretName: string };
 
+export type EndpointProbe = { upstream: { kind: 'unix'; socketPath: string } | { kind: 'tcp'; baseUrl: string }; model: string };
+
 export type LiveSettings = {
+  endpointProbes: EndpointProbe[];
   models: ModelsSettings;
   sandbox?: SandboxSetting;
   credentials: SecretCredential[];
@@ -88,6 +92,7 @@ export const liveSettingsFor = (user: UserModels, alias: string): LiveSettings =
   const targets: NonNullable<ModelsSettings['targets']> = {};
   const credentials: SecretCredential[] = [];
   const fmTargets: string[] = [];
+  const endpointProbes: EndpointProbe[] = [];
   for (const name of members) {
     const resolved = user.resolved.targets[name];
     if (resolved === undefined) throw new ContextHostError(`the alias ${alias} names the target ${name}, which is not defined`);
@@ -98,6 +103,10 @@ export const liveSettingsFor = (user: UserModels, alias: string): LiveSettings =
       fmTargets.push(name);
       targets[name] = declared;
       continue;
+    }
+    if (resolved.adapter === 'chat-completions' && resolved.toolCalling === 'auto') {
+      const upstream = resolved.socketPath !== undefined ? ({ kind: 'unix', socketPath: resolved.socketPath } as const) : ({ kind: 'tcp', baseUrl: resolved.baseUrl as string } as const);
+      endpointProbes.push({ upstream, model: resolved.model });
     }
     if (resolved.adapter !== 'fm' && resolved.apiKeySecret !== undefined) {
       const envName = `${GENERATED_KEY_PREFIX}${credentials.length}`;
@@ -113,6 +122,7 @@ export const liveSettingsFor = (user: UserModels, alias: string): LiveSettings =
     ...(user.sandbox === undefined ? {} : { sandbox: user.sandbox }),
     credentials,
     fmTargets,
+    endpointProbes,
   };
 };
 
@@ -207,10 +217,11 @@ export const createContextHosts = (
     const paths = momongaLayout(root, effects.platform, {});
     record.paths = paths;
     await effects.prepare(paths);
-    const { models, sandbox, fmTargets } = options.settings;
+    const { models, sandbox, fmTargets, endpointProbes } = options.settings;
     const base = { models, ...(sandbox === undefined ? {} : { sandbox }) };
     await effects.writeFile(paths.settingsFile, `${JSON.stringify(caseSettingsFor(base, { compaction: entry.compaction }), null, 2)}\n`);
     for (const target of fmTargets) await effects.copyProbeRecord(target, paths);
+    for (const probe of endpointProbes) await effects.copyEndpointProbeRecord(probe, paths);
     const workspace = path.join(root, WORKSPACE_DIRECTORY);
     await effects.makeDirectory(workspace);
     for (const [name, content] of Object.entries(entry.files ?? {})) await effects.writeFile(path.join(workspace, name), content);

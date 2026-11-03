@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createChatCompletionsAdapter, GATEWAY_CONFIG_DEFAULTS } from '@momonga/gateway';
 import { createFakeClock } from '@momonga/testkit';
 import { START_MS, expectErrorBody, postJson, readJson, startGateway, userInput } from './gateway-helpers.ts';
-import { CC_CAPABILITIES } from './cc-support.ts';
+import { CC_CAPABILITIES, startFake } from './cc-support.ts';
 
 const request = { model: 'fast', input: userInput('hi'), stream: false };
 
@@ -28,7 +28,7 @@ describe('a target that refuses connections', () => {
       capabilities: async () => CC_CAPABILITIES,
       clock: createFakeClock(START_MS),
     });
-    const { client } = await startGateway({
+    const { client, clock } = await startGateway({
       adapters: { dead: adapter },
       config: {
         aliases: { fast: ['dead'] },
@@ -45,12 +45,56 @@ describe('a target that refuses connections', () => {
     }
     expect(connectAttempts).toBe(GATEWAY_CONFIG_DEFAULTS.breaker.failureThreshold);
 
-    const open = await readJson(await postJson(client, '/v1/responses', request));
+    const cooling = await readJson(await postJson(client, '/v1/responses', request));
 
-    expect(open.status).toBe(503);
-    expectErrorBody(open.body, { type: 'server_error', code: 'all_targets_unreachable' });
-    expect(open.body.error.message).toContain('dead');
-    expect(open.body.error.message).toContain('the chat-completions upstream is unreachable');
+    expect(cooling.status).toBe(503);
+    expectErrorBody(cooling.body, { type: 'server_error', code: 'all_targets_unavailable' });
+    expect(cooling.headers['retry-after']).toBe(String(GATEWAY_CONFIG_DEFAULTS.breaker.openMs / 1000));
+    expect(cooling.body.error.message).toContain('the chat-completions upstream is unreachable');
     expect(connectAttempts).toBe(GATEWAY_CONFIG_DEFAULTS.breaker.failureThreshold);
+
+    clock.advance(GATEWAY_CONFIG_DEFAULTS.breaker.openMs);
+    const trial = await readJson(await postJson(client, '/v1/responses', request));
+    expect(trial.status).toBe(502);
+    expect(connectAttempts).toBe(GATEWAY_CONFIG_DEFAULTS.breaker.failureThreshold + 1);
+
+    const dead = await readJson(await postJson(client, '/v1/responses', request));
+
+    expect(dead.status).toBe(503);
+    expectErrorBody(dead.body, { type: 'server_error', code: 'all_targets_unreachable' });
+    expect(dead.body.error.message).toContain('dead');
+    expect(dead.body.error.message).toContain('the chat-completions upstream is unreachable');
+    expect(connectAttempts).toBe(GATEWAY_CONFIG_DEFAULTS.breaker.failureThreshold + 1);
+  });
+
+  it('serves the call again when the target comes back within the cooldown', async () => {
+    const baseUrl = await refusedBaseUrl();
+    const fake = await startFake({ scenario: 'tools-ok' });
+    let alive = false;
+    const adapter = createChatCompletionsAdapter({
+      resolveEndpoint: async () => (alive ? { kind: 'unix', socketPath: fake.socketPath } : { kind: 'tcp', baseUrl }),
+      toolCalling: () => 'native',
+      capabilities: async () => CC_CAPABILITIES,
+      clock: createFakeClock(START_MS),
+    });
+    const { client, clock } = await startGateway({
+      adapters: { dead: adapter },
+      config: {
+        aliases: { fast: ['dead'] },
+        targets: { dead: { model: 'upstream-model' } },
+        retry: { maxAttempts: 1 },
+        breaker: GATEWAY_CONFIG_DEFAULTS.breaker,
+      },
+    });
+    for (let call = 1; call <= GATEWAY_CONFIG_DEFAULTS.breaker.failureThreshold; call += 1) {
+      await readJson(await postJson(client, '/v1/responses', request));
+    }
+    expect((await readJson(await postJson(client, '/v1/responses', request))).status).toBe(503);
+
+    alive = true;
+    clock.advance(GATEWAY_CONFIG_DEFAULTS.breaker.openMs);
+    const served = await readJson(await postJson(client, '/v1/responses', request));
+
+    expect(served.status).toBe(200);
   });
 });

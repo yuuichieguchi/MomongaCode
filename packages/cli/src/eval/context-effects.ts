@@ -48,6 +48,21 @@ export const copyProbeRecord = async (files: Pick<CliPorts['files'], 'readTextIf
   return true;
 };
 
+export const copyEndpointProbeRecord = async (
+  files: Pick<CliPorts['files'], 'readTextIfPresent' | 'writeText'>,
+  from: string,
+  to: string,
+  key: { endpoint: string; model: string },
+): Promise<boolean> => {
+  const { endpointRecordFileName } = await import('@momonga/gateway');
+  const name = endpointRecordFileName(key);
+  const text = await files.readTextIfPresent(path.join(from, name));
+  if (text === undefined) return false;
+  await fs.mkdir(to, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
+  await files.writeText(path.join(to, name), text);
+  return true;
+};
+
 const ownerOf = (text: string | undefined): number | undefined => (text !== undefined && /^\d+$/.test(text.trim()) ? Number(text.trim()) : undefined);
 
 const UNREADABLE_CODES: ReadonlySet<string | undefined> = new Set(['EACCES', 'EPERM', 'ENOTDIR', 'ELOOP']);
@@ -84,6 +99,10 @@ export const nodeContextEffects = (ports: CliPorts): ContextHostEffects => ({
   ownerPid: process.pid,
   isAlive: isProcessAlive,
   readSecret: (name, signal) => ports.secretStore().read(name, signal),
+  copyEndpointProbeRecord: async (probe, paths) => {
+    const { endpointKeyOf } = await import('@momonga/gateway');
+    await copyEndpointProbeRecord(ports.files, pathsOf(ports).probe, paths.probe, { endpoint: endpointKeyOf(probe.upstream), model: probe.model });
+  },
   copyProbeRecord: async (target, paths) => void (await copyProbeRecord(ports.files, pathsOf(ports).probe, paths.probe, target)),
   listRoots: () => listEvalRoots(shortTempBase(ports.platform), ports.platform === 'win32' ? undefined : process.getuid?.()),
   readOwner: (root) => readEvalOwner(ports.files, root),

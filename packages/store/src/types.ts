@@ -479,6 +479,7 @@ export type RuntimeStore = {
   findRunByIdempotencyKey(sessionId: string, key: string): { run: Run; requestDigest: string | null } | undefined;
   sessionActivity(sessionId: string): { lastActivityAt: number; hasActiveRun: boolean } | undefined;
   checkIdentity(): void;
+  readonly maxTotalAttempts: number;
   getRun(id: string): Run | undefined;
   claim(workerId: string): Claim | null;
   heartbeat(claim: Claim): HeartbeatResult;

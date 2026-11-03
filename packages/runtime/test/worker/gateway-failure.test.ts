@@ -42,18 +42,18 @@ describe('worker gateway failures', () => {
     env.gateway.script.push(failedStep('upstream_unavailable'), failedStep('upstream_unavailable'), failedStep('upstream_unavailable'), textStep('never sent'));
     const run = env.enqueue('Work');
 
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
       expect(await env.runOnce(env.worker(`worker-${attempt}`))).toBe('yielded');
       const current = env.run(run.id);
       expect(current.status).toBe('QUEUED');
       env.clock.set(Math.max(env.clock.now(), current.availableAt));
     }
 
-    expect(await env.runOnce(env.worker('worker-final'))).toBe('idle');
+    expect(await env.runOnce(env.worker('worker-3'))).toBe('yielded');
     const final = env.run(run.id);
     expect(final.status).toBe('FAILED');
-    expect(final.deadLetter).toBe(true);
     expect(final.error?.code).toBe('max_total_attempts');
+    expect(final.error?.message).toBe(`run ${run.id} exceeded 3 total attempts; the last attempt failed with: upstream_unavailable: upstream failed with upstream_unavailable`);
     expect(env.gateway.streams).toHaveLength(3);
     expect(new Set(env.gateway.streams.map((stream) => stream.idempotencyKey))).toEqual(new Set([modelKey(run.id, 1, 1)]));
     expect(env.gateway.script).toHaveLength(1);

@@ -10,6 +10,7 @@ export interface ProbeOptions {
   socketPath?: string;
   baseUrl?: string;
   headers?: Record<string, string>;
+  managedHealthRoute?: boolean;
   model?: string;
   samples?: number;
   countTokens?: (text: string) => Promise<number>;
@@ -132,7 +133,7 @@ const endpointOf = (options: ProbeOptions): ProbeEndpoint => {
 };
 
 export const runProbe = async (options: ProbeOptions): Promise<ProbeReport> => {
-  const client = createProbeClient(endpointOf(options), options.signal, options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS);
+  const client = createProbeClient(endpointOf(options), options.signal, options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS, options.managedHealthRoute === true);
   try {
     return await probeWith(client, options);
   } finally {

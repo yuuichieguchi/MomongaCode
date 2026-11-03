@@ -180,6 +180,16 @@ const requeueOrStop = (
     terminals.finish('STOPPED', { stopReason: 'timeout' });
     return;
   }
+  const attempts = (options.store.getRun(claim.runId)?.attempts ?? 0) - (disposition.refund ? 1 : 0);
+  if (attempts >= options.store.maxTotalAttempts) {
+    terminals.finish('FAILED', {
+      error: {
+        code: 'max_total_attempts',
+        message: `run ${claim.runId} exceeded ${options.store.maxTotalAttempts} total attempts; the last attempt failed with: ${describeError(cause)}`,
+      },
+    });
+    return;
+  }
   const now = options.clock.now();
   const backoff = computeBackoff({ attempt: memory.streak, baseMs: REQUEUE_BASE_MS, maxMs: REQUEUE_MAX_MS, random: options.random });
   const availableAt = now + Math.max(backoff, disposition.retryAfterMs);

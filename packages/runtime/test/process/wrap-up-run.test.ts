@@ -120,7 +120,9 @@ describe('wrap-up call on the wire (in-process gateway, fake chat-completions up
     const terminal = await advanceUntil(stack.temp, runId, clock, timers);
 
     const view = (await launched.http('GET', `/v1/runs/${runId}`)).json.run;
-    expect({ terminal, error: view.error }).toEqual({ terminal: 'FAILED', error: EXPECTED_DEAD_LETTER(runId) });
+    expect(terminal).toBe('FAILED');
+    expect(view.error.code).toBe(EXPECTED_DEAD_LETTER(runId).code);
+    expect(view.error.message).toContain(`run ${runId} exceeded ${STORE_MAX_TOTAL_ATTEMPTS} total attempts; the last attempt failed with: `);
     expect(clock.now() - START_MS).toBeLessThan(view.deadlineAt - START_MS);
     expect(stack.completions()).toBeGreaterThanOrEqual(2);
     expect(stack.completions()).toBeLessThanOrEqual(1 + STORE_MAX_TOTAL_ATTEMPTS);

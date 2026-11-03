@@ -80,6 +80,7 @@ const harness = (behaviour: Behaviour = {}) => {
   const files = new Map<string, string>();
   const startEnvs: Record<string, string>[] = [];
   const probeCopies: string[] = [];
+  const endpointProbeCopies: string[] = [];
   const secretReads: string[] = [];
   const removedDirectories: string[] = [];
   const inputs: string[] = [];
@@ -151,6 +152,8 @@ const harness = (behaviour: Behaviour = {}) => {
       return value;
     },
     copyProbeRecord: async (target, paths) => void probeCopies.push(`${target} -> ${paths.probe}`),
+    copyEndpointProbeRecord: async (probe, paths) =>
+      void endpointProbeCopies.push(`${probe.upstream.kind === 'unix' ? probe.upstream.socketPath : probe.upstream.baseUrl} ${probe.model} -> ${paths.probe}`),
     listRoots: async () => [...roots.keys(), ...(behaviour.staleRoots ?? []).map((stale) => stale.root), ...(behaviour.unreadableRoots ?? [])],
     readOwner: async (root) => {
       if (behaviour.unreadableRoots?.includes(root) === true) return 'unreadable';
@@ -200,7 +203,7 @@ const harness = (behaviour: Behaviour = {}) => {
       holders.set(stale.root, stale.holder);
     }
   }
-  return { effects, sessionRoots, roots, alive, terminated, stopped, memories, trusted, files, startEnvs, probeCopies, secretReads, removedDirectories, inputs, addedRules, adopted, order };
+  return { effects, sessionRoots, roots, alive, terminated, stopped, memories, trusted, files, startEnvs, probeCopies, endpointProbeCopies, secretReads, removedDirectories, inputs, addedRules, adopted, order };
 };
 
 const input = (extra: Partial<Parameters<typeof runContextLive>[1]> = {}): Parameters<typeof runContextLive>[1] => ({
@@ -364,6 +367,27 @@ describe('the settings, credentials and probe records of a live run', () => {
     const context = harness();
     await runContextLive(context.effects, input({ models }));
     expect(context.probeCopies).toEqual(['t -> /tmp/mc-xxxxxx0/.momonga/state/probe', 't -> /tmp/mc-xxxxxx1/.momonga/state/probe']);
+  });
+
+  it('names the endpoint probe record of a chat-completions target with toolCalling auto', () => {
+    const models = userModels();
+    models.resolved.targets['t'] = target({ toolCalling: 'auto' as never });
+    models.declared.targets = { ...models.declared.targets, t: { ...declaredTarget, toolCalling: 'auto' } as never };
+    const settings = liveSettingsFor(models, 'default');
+    expect(settings.endpointProbes).toEqual([{ upstream: { kind: 'tcp', baseUrl: 'https://upstream.invalid/v1' }, model: 'm' }]);
+    expect(liveSettingsFor(userModels(), 'default').endpointProbes).toEqual([]);
+  });
+
+  it('copies the endpoint probe record of an auto target into every case home', async () => {
+    const models = userModels();
+    models.resolved.targets['t'] = target({ toolCalling: 'auto' as never });
+    models.declared.targets = { ...models.declared.targets, t: { ...declaredTarget, toolCalling: 'auto' } as never };
+    const context = harness();
+    await runContextLive(context.effects, input({ models }));
+    expect(context.endpointProbeCopies).toEqual([
+      'https://upstream.invalid/v1 m -> /tmp/mc-xxxxxx0/.momonga/state/probe',
+      'https://upstream.invalid/v1 m -> /tmp/mc-xxxxxx1/.momonga/state/probe',
+    ]);
   });
 });
 
