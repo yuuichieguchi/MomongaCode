@@ -3,8 +3,8 @@ export type { BodyQueue, BodyQueueLimits } from './body-queue.ts';
 export { installOtelErrorHandler } from './errors.ts';
 export { amountOfUnits, computeCost, computeCostUnits, definePriceTable } from './cost.ts';
 export type { Cost, CostInput, CostUnits, CostUsage, PriceEntry, PriceTable } from './cost.ts';
-export { buildCostReport, formatCostReport } from './cost-report.ts';
-export type { CostReport, CostReportOptions, CostTotals, CostedRun, RunCost, SessionCost } from './cost-report.ts';
+export { RUN_ROLE, buildCostReport, formatCostReport } from './cost-report.ts';
+export type { CostReport, CostReportOptions, CostTotals, CostedRun, RoleCost, RunCost, SessionCost } from './cost-report.ts';
 export type { ClockedSpan, ClockedTracer } from './clocked-tracer.ts';
 export { GENAI_CONTENT_SEMCONV, GENAI_SEMCONV } from './semconv.ts';
 export {

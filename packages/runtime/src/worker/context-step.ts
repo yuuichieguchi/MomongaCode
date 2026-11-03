@@ -232,8 +232,22 @@ const deterministicCompaction = (ctx: ClaimContext, plan: CompactionSource, guid
 
 export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource): Promise<void> => {
   const { journal, options } = ctx;
+  const roleAlias = ctx.roles.compaction;
+  if (roleAlias !== undefined) {
+    const { maxOutputTokens } = await options.gateway.capabilities(roleAlias, { signal: ctx.control.signal });
+    if (plan.summaryTokenCap > maxOutputTokens) {
+      journal.append([
+        noticeOf(
+          'compaction_failed',
+          `Compaction summary failed: models.roles.compaction names alias ${roleAlias}, whose maxOutputTokens ${maxOutputTokens} cannot hold the summary cap of ${plan.summaryTokenCap} tokens; the deterministic summary was used`,
+        ),
+        deterministicCompaction(ctx, plan, NO_ADOPTED_GUIDELINE),
+      ]);
+      return;
+    }
+  }
   const request: CompactRequest = {
-    model: ctx.alias,
+    model: roleAlias ?? ctx.alias,
     input: plan.input,
     momonga: { max_summary_tokens: plan.summaryTokenCap, retains_user_request: true, ...(ctx.guideline === undefined ? {} : { guideline: ctx.guideline.text }) },
   };
@@ -248,6 +262,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
         deadlineAt: ctx.run.deadlineAt,
         signal: ctx.control.signal,
         traceparent: ctx.agentSpan.traceparent,
+        runId: ctx.run.id,
       }),
     );
   } catch (error) {

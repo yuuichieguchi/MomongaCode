@@ -27,6 +27,7 @@ export type ChatSpanInput = {
   step?: number;
   attempt: number;
   target?: string;
+  role?: string;
 };
 
 export type ToolSpanInput = {
@@ -103,6 +104,7 @@ export const startChatSpan = (tracer: Tracer, input: ChatSpanInput, parent?: Con
         ...(input.step === undefined ? {} : { [MOMONGA_ATTRIBUTES.step]: input.step }),
         [MOMONGA_ATTRIBUTES.attempt]: input.attempt,
         ...(input.target === undefined ? {} : { [MOMONGA_ATTRIBUTES.target]: input.target }),
+        ...(input.role === undefined ? {} : { [MOMONGA_ATTRIBUTES.role]: input.role }),
       },
     },
     parent,

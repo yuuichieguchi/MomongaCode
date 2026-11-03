@@ -72,7 +72,7 @@ describe('the compaction role', () => {
   });
 
   it('guards a role meant for another call: a reflection role does not move compaction', async () => {
-    const { env, run } = await prepared({ reflection: 'cheap', classifier: 'cheap', analysis: 'cheap' });
+    const { env, run } = await prepared({ reflection: 'cheap', analysis: 'cheap' });
     await drive(env, run.id);
     expect(env.gateway.compacts.map((compact) => compact.request.model)).toEqual(['fm']);
   });
@@ -156,11 +156,10 @@ describe('the pinned roles', () => {
   });
 });
 
-describe('the classifier role', () => {
-  const autoSetup = async (roles: Record<string, string>) => {
+describe('the capability check of autoMode.classifier', () => {
+  const autoSetup = async (classifier: string) => {
     const env = await makeEnv({ mode: 'auto' });
-    env.settings.classifierAlias = undefined;
-    env.settings.rolesValue = { ...roles };
+    env.settings.classifierAlias = classifier;
     const target = path.join(env.project, 'out.txt');
     const write = callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'x' } }]);
     return { env, target, write };
@@ -168,8 +167,8 @@ describe('the classifier role', () => {
 
   const VERDICT = JSON.stringify({ verdict: 'safe', confidence: 'high', rationale: 'writes a file the user asked for' });
 
-  it('guards a classifier role that is ignored: the verdict is asked of the classifier role alias', async () => {
-    const { env, target, write } = await autoSetup({ classifier: 'judge' });
+  it('guards a classifier alias that is ignored: the verdict is asked of the autoMode.classifier alias', async () => {
+    const { env, target, write } = await autoSetup('judge');
     env.gateway.capabilitiesByAlias['judge'] = capabilitiesFor(100_000, { structuredOutput: 'json_schema' });
     env.gateway.script.push(write, textStep(VERDICT), textStep('Written.'));
     const run = env.enqueue('Write out.txt');
@@ -179,8 +178,8 @@ describe('the classifier role', () => {
     expect(fs.readFileSync(target, 'utf8')).toBe('x');
   });
 
-  it('guards a verdict asked of a model that cannot give one in shape: a classifier role without structured output asks the person and names the role and the capability', async () => {
-    const { env, target, write } = await autoSetup({ classifier: 'judge' });
+  it('guards a verdict asked of a model that cannot give one in shape: a classifier alias without structured output asks the person and names the setting, the alias and the capability', async () => {
+    const { env, target, write } = await autoSetup('judge');
     env.gateway.capabilitiesByAlias['judge'] = capabilitiesFor(100_000, { structuredOutput: 'none' });
     env.gateway.script.push(write);
     const run = env.enqueue('Write out.txt');
@@ -189,7 +188,8 @@ describe('the classifier role', () => {
     expect(env.gateway.streams).toHaveLength(1);
     const [classified] = env.ofType(run.id, 'tool.permission.classified');
     expect(classified).toMatchObject({ outcome: 'ask' });
-    expect(classified?.failure).toContain('models.roles.classifier');
+    expect(classified?.failure).toContain('autoMode.classifier');
+    expect(classified?.failure).toContain('judge');
     expect(classified?.failure).toContain('structured output');
     expect(fs.existsSync(target)).toBe(false);
   });

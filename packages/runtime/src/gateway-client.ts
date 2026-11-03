@@ -1,6 +1,6 @@
 import { createUdsClient, decodeSse, parseRetryAfter } from '@momonga/foundation';
 import type { UdsClient, UdsResponse } from '@momonga/foundation';
-import { COMPACTION_RESULT_EVENT, ERROR_TYPES, STREAM_IDLE_HEADER } from '@momonga/protocol';
+import { COMPACTION_RESULT_EVENT, ERROR_TYPES, RUN_ID_HEADER, STREAM_IDLE_HEADER } from '@momonga/protocol';
 import type { GatewayCostReportView } from '@momonga/protocol';
 import type {
   Capabilities,
@@ -216,10 +216,11 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
     });
   };
 
-  const callHeaders = (call: { idempotencyKey: string; deadlineAt: number; traceparent?: string }): Record<string, string> => ({
+  const callHeaders = (call: { idempotencyKey: string; deadlineAt: number; traceparent?: string; runId?: string }): Record<string, string> => ({
     'idempotency-key': sfString(call.idempotencyKey),
     'momonga-deadline-ms': String(Math.max(1, call.deadlineAt - clock.now())),
     ...(call.traceparent === undefined ? {} : { traceparent: call.traceparent }),
+    ...(call.runId === undefined ? {} : { [RUN_ID_HEADER]: call.runId }),
   });
 
   const assertDeadlineOpen = (deadlineAt: number): void => {

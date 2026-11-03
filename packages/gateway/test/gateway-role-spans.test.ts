@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { InMemorySpanExporter } from '@opentelemetry/sdk-trace';
 import { createTelemetry } from '@momonga/observability';
+import { RUN_ID_HEADER } from '@momonga/protocol';
 import { createFakeClock, createScriptedAdapter, textResponseEvents, usageOf } from '@momonga/testkit';
 import { START_MS, postJson, readJson, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
 
@@ -54,5 +55,12 @@ describe('the role of a model call on its chat span', () => {
     expect(spans[0]?.attributes['momonga.target']).toBe('primary');
     expect(spans[0]?.attributes['gen_ai.usage.input_tokens']).toBe(response.body.usage.input_tokens);
     expect(spans[0]?.attributes['gen_ai.usage.output_tokens']).toBe(response.body.usage.output_tokens);
+  });
+
+  it('guards a compaction charged to no run: the run id header puts the compaction span on its run', async () => {
+    const { client, chats } = await tracedGateway(0);
+    const response = await readJson(await postJson(client, '/v1/responses/compact', { model: 'fast', input: userInput('read a.txt') }, { [RUN_ID_HEADER]: 'run-7', 'idempotency-key': 'key-1' }));
+    expect(response.status).toBe(200);
+    expect((await chats()).map((span) => span.attributes['momonga.run_id'])).toEqual(['run-7']);
   });
 });

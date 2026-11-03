@@ -85,9 +85,14 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     const events = readAllRunEvents(store, runId);
     const started = events.find((event) => event.type === 'run.started');
     if (started === undefined) throw new Error(`run ${runId} has no run.started event`);
-    const { modelAlias: alias } = readPins(started.pins);
+    const pins = readPins(started.pins);
+    const alias = pins.roles.reflection ?? pins.modelAlias;
     const [capabilities, verification] = await Promise.all([gateway.capabilities(alias, { signal }), settings.verification(session)]);
     const structured = capabilities.structuredOutput === 'json_schema';
+    if (pins.roles.reflection !== undefined && !structured) {
+      store.reflection.finish(runId, `models.roles.reflection names alias ${alias}, which has no structured output to hold the reflection schema`);
+      return;
+    }
     const body: CreateResponseBody = {
       model: alias,
       instructions: REFLECTION_INSTRUCTIONS,

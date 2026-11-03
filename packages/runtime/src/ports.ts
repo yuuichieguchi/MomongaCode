@@ -1,4 +1,4 @@
-import type { PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedVerificationSettings } from '@momonga/config';
+import type { ModelRoles, PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedVerificationSettings } from '@momonga/config';
 import type { Clock } from '@momonga/foundation';
 import type {
   Capabilities,
@@ -24,6 +24,7 @@ export type GatewayCallOptions = {
   deadlineAt: number;
   signal: AbortSignal;
   traceparent?: string;
+  runId?: string;
 };
 
 export type GatewayPort = {
@@ -43,6 +44,7 @@ export type SettingsPort = {
   memory(target: Pick<Session, 'cwd'>): Promise<ResolvedMemorySettings>;
   context(session: Session): Promise<ResolvedContextSettings>;
   autoModeClassifier(): string | undefined;
+  modelRoles(): ModelRoles;
   appendRule(session: Session, entry: AppendedRule): Promise<void>;
   trusted(session: Session): boolean;
 };

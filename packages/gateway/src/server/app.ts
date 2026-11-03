@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { STREAM_IDLE_HEADER } from '@momonga/protocol';
+import { RUN_ID_HEADER, STREAM_IDLE_HEADER } from '@momonga/protocol';
 import type { GatewayCostReportView, GatewayHealth, ModelList, MomongaModelList } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, invalidRequest, notFound } from '../core/errors.ts';
 import type { ResponsesService, SubmitHeaders } from '../core/responses-service.ts';
@@ -104,7 +104,11 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     let streaming = false;
     try {
       const idleBoundMs = streamIdleBoundOf(context.req.header(STREAM_IDLE_HEADER));
-      const work = unary.compact(raw, context.req.raw.signal, context.req.header('momonga-deadline-ms'), context.req.header('idempotency-key'));
+      const work = unary.compact(raw, context.req.raw.signal, context.req.header('momonga-deadline-ms'), context.req.header('idempotency-key'), {
+        runId: context.req.header(RUN_ID_HEADER),
+        traceparent: context.req.header('traceparent'),
+        tracestate: context.req.header('tracestate'),
+      });
       if (idleBoundMs === undefined) return context.json(await work);
       streaming = true;
       return compactSseResponse(work, {

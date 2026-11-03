@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createUdsClient } from '@momonga/foundation';
+import { ESTIMATED_CHARACTERS_PER_TOKEN } from '@momonga/protocol';
 import { isCompactionRequest, journalOfRows, ofType, summaryRoute } from './support/budget.ts';
 import type { JournalEvent } from './support/budget.ts';
 import { titleOf } from './support/cases.ts';
@@ -16,8 +17,8 @@ const SUMMARY_TARGET = 'summarizer';
 const SUMMARY_MODEL = 'summary-model';
 const SUMMARY_ALIAS = 'cheap';
 const SUMMARY = 'The user sent several long requests about unrelated subjects. Next step: answer the latest request.';
-const LONG_REQUEST_CHARS = 4000;
 const LONG_REQUESTS = 3;
+const REQUEST_WINDOW_SHARE = 8;
 const SCRIPTED_OUTPUT_TOKENS = 5;
 
 type EventRow = { seq: number; type: string; payload_json: string };
@@ -35,7 +36,12 @@ const roleSettings = (home: E2eHome): Record<string, unknown> => {
   };
 };
 
-const journalOf = (home: E2eHome, runId: string): JournalEvent[] =>
+const contextWindowOf = (home: E2eHome): number => {
+  const models = baseSettings(home, 'none')['models'] as { targets: Record<string, { capabilities: { contextWindow: number } }> };
+  return (models.targets[UPSTREAM_TARGET] as { capabilities: { contextWindow: number } }).capabilities.contextWindow;
+};
+
+const journalOf =(home: E2eHome, runId: string): JournalEvent[] =>
   journalOfRows(readDb<EventRow>(home.paths.databases.runtime, 'SELECT seq, type, payload_json FROM events WHERE run_id = ? ORDER BY seq', runId));
 
 const runToEnd = async (runtime: RuntimeClient, runId: string): Promise<void> => {
@@ -60,6 +66,8 @@ const modelOf = (body: unknown): unknown => (body as { model?: unknown }).model;
 describe('roles: a compaction role alias', () => {
   it(titleOf('roles-compaction'), { timeout: 4 * E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
+    const window = contextWindowOf(home);
+    const longRequestChars = ESTIMATED_CHARACTERS_PER_TOKEN * Math.ceil(window / REQUEST_WINDOW_SHARE);
     const script = [textReply('Hello.')];
     for (let index = 0; index < LONG_REQUESTS; index += 1) script.push(textReply(`Noted ${index + 1}.`));
     const stack = await startStack({ home, sandbox: 'none', settings: roleSettings(home), script, routes: [summaryRoute(SUMMARY)] });
@@ -73,7 +81,7 @@ describe('roles: a compaction role alias', () => {
       await runToEnd(runtime, first.id);
       runIds.push(first.id);
       for (let index = 0; index < LONG_REQUESTS; index += 1) {
-        const long = `Request ${index + 1}. ${`filler words about unrelated subjects ${index} `.repeat(LONG_REQUEST_CHARS)}`.slice(0, LONG_REQUEST_CHARS);
+        const long = `Request ${index + 1}. ${`filler words about unrelated subjects ${index} `.repeat(longRequestChars)}`.slice(0, longRequestChars);
         const { run } = await runtime.createRun(session.id, long);
         await runToEnd(runtime, run.id);
         runIds.push(run.id);
@@ -83,7 +91,7 @@ describe('roles: a compaction role alias', () => {
     }
 
     const compactions = runIds.flatMap((runId) => ofType(journalOf(home, runId), 'context.compacted'));
-    expect(compactions.length).toBeGreaterThanOrEqual(1);
+    expect(compactions.length, `each of ${LONG_REQUESTS} requests holds 1/${REQUEST_WINDOW_SHARE} of the ${window}-token window: one fits beside the prompt of the run, and together they pass the compaction threshold`).toBeGreaterThanOrEqual(1);
     expect(compactions.every((event) => event.data['source'] === 'model')).toBe(true);
 
     const posts = chatCompletions(stack.fake);

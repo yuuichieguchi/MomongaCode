@@ -1,6 +1,8 @@
 import { SECRET_NAME_PATTERN } from '@momonga/foundation';
 import { HOOK_COMMAND_TYPE, PERMISSION_MODES, REASONING_EFFORTS, TARGET_BILLINGS } from '@momonga/protocol';
 
+export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const;
+
 const STRING_ARRAY = { type: 'array', items: { type: 'string' } } as const;
 const NON_EMPTY_STRING_ARRAY = { type: 'array', items: { type: 'string', minLength: 1 } } as const;
 const STRING_MAP = { type: 'object', additionalProperties: { type: 'string' } } as const;
@@ -243,6 +245,11 @@ export const SETTINGS_SCHEMA = {
           type: 'object',
           propertyNames: { pattern: TARGET_NAME_PATTERN },
           additionalProperties: MODEL_TARGET_SCHEMA,
+        },
+        roles: {
+          type: 'object',
+          properties: Object.fromEntries(MODEL_ROLES.map((role) => [role, { type: 'string', minLength: 1 }])),
+          additionalProperties: false,
         },
       },
       additionalProperties: false,

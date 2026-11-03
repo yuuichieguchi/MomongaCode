@@ -71,6 +71,7 @@ export const MOMONGA_ATTRIBUTES = {
   attempt: 'momonga.attempt',
   billing: 'momonga.billing',
   target: 'momonga.target',
+  role: 'momonga.role',
   failureMessage: 'momonga.failure_message',
   fallbackCauses: 'momonga.fallback_causes',
 } as const;

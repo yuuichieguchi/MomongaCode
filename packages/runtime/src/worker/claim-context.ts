@@ -1,3 +1,4 @@
+import type { ModelRoles } from '@momonga/config';
 import type { TokenMeter } from '@momonga/context';
 import type { Capabilities, FunctionTool } from '@momonga/protocol';
 import type { SkillSet } from '@momonga/skills';
@@ -24,6 +25,7 @@ export type ClaimContext = {
   run: Run;
   alias: string;
   capabilities: Capabilities;
+  roles: ModelRoles;
   memoryShare?: number;
   guideline?: { version: number; text: string };
   limits: RunLimits;

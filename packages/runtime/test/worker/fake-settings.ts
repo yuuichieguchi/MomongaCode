@@ -17,8 +17,8 @@ export type FakeSettings = SettingsPort & {
   contextValue: ResolvedContextSettings;
   context: (session: Session) => Promise<ResolvedContextSettings>;
   classifierAlias: string | undefined;
-  rolesValue: Partial<Record<'compaction' | 'reflection' | 'analysis' | 'classifier', string>>;
-  modelRoles: () => Partial<Record<'compaction' | 'reflection' | 'analysis' | 'classifier', string>>;
+  rolesValue: Partial<Record<'compaction' | 'reflection' | 'analysis', string>>;
+  modelRoles: () => Partial<Record<'compaction' | 'reflection' | 'analysis', string>>;
 };
 
 export const createFakeSettings = (layout: { home: string; project: string }): FakeSettings => {

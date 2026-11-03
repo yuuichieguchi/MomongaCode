@@ -10,7 +10,7 @@ export type {
   ToolCallingMode,
   ToolCallingSetting,
 } from './capabilities.ts';
-export { COMPACTION_RESULT_EVENT, STREAM_IDLE_HEADER } from './headers.ts';
+export { COMPACTION_RESULT_EVENT, RUN_ID_HEADER, STREAM_IDLE_HEADER } from './headers.ts';
 export {
   COMPACTION_INSTRUCTIONS_VERSION,
   ESTIMATED_CHARACTERS_PER_TOKEN,
@@ -95,6 +95,7 @@ export type {
   CostReportView,
   CostFallbackView,
   CostTotalsView,
+  RoleCostView,
   FallbackCauseView,
   GatewayCostReportView,
   JsonSchema,

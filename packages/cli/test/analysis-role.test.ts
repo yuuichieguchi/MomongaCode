@@ -4,7 +4,7 @@ import * as contextCommand from '../src/commands/context.ts';
 type Capabilities = { contextWindow: number; maxOutputTokens: number; structuredOutput: 'json_schema' | 'none' };
 
 type AnalysisModelFor = (input: {
-  roles: Partial<Record<'compaction' | 'reflection' | 'analysis' | 'classifier', string>>;
+  roles: Partial<Record<'compaction' | 'reflection' | 'analysis', string>>;
   alias: string;
   capabilitiesOf: (alias: string) => Promise<Capabilities>;
 }) => Promise<{ alias: string; capabilities: Capabilities }>;

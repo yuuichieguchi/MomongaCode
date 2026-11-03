@@ -11,7 +11,9 @@ export type CostedRun = { runId: string; sessionId: string };
 
 export type CostFallback = { answeredBy: string; calls: number; failed: FallbackCause[] };
 
-export type CostTotals = {
+export const RUN_ROLE = 'run';
+
+export type RoleCost = {
   fallbackCalls?: number;
   fallbacks?: CostFallback[];
   calls: number;
@@ -25,6 +27,8 @@ export type CostTotals = {
   currency: 'USD';
   priceVersions: string[];
 };
+
+export type CostTotals = RoleCost & { roles: Record<string, RoleCost> };
 
 export type RunCost = CostTotals & { runId: string; sessionId: string };
 export type SessionCost = CostTotals & { sessionId: string; runIds: string[] };
@@ -43,10 +47,12 @@ type Accumulator = {
   units: bigint;
   priceVersions: Set<string>;
   fallbacks: Map<string, CostFallback>;
+  roles: Map<string, Accumulator>;
 };
 
 const emptyAccumulator = (): Accumulator => ({
   fallbacks: new Map(),
+  roles: new Map(),
   calls: 0,
   localCalls: 0,
   unpricedCalls: 0,
@@ -69,6 +75,11 @@ const merge = (target: Accumulator, source: Accumulator): void => {
   target.units += source.units;
   for (const version of source.priceVersions) target.priceVersions.add(version);
   for (const fallback of source.fallbacks.values()) addFallback(target, fallback.answeredBy, fallback.failed, fallback.calls);
+  for (const [role, sourceRole] of source.roles) {
+    const targetRole = target.roles.get(role) ?? emptyAccumulator();
+    merge(targetRole, sourceRole);
+    target.roles.set(role, targetRole);
+  }
 };
 
 const addFallback = (accumulator: Accumulator, answeredBy: string, failed: FallbackCause[], calls: number): void => {
@@ -93,7 +104,7 @@ const fallbackTotalsOf = (accumulator: Accumulator): Pick<CostTotals, 'fallbackC
   return { fallbackCalls: fallbacks.reduce((total, fallback) => total + fallback.calls, 0), fallbacks };
 };
 
-const totalsOf = (accumulator: Accumulator): CostTotals => ({
+const roleTotalsOf = (accumulator: Accumulator): RoleCost => ({
   ...fallbackTotalsOf(accumulator),
   calls: accumulator.calls,
   localCalls: accumulator.localCalls,
@@ -105,6 +116,11 @@ const totalsOf = (accumulator: Accumulator): CostTotals => ({
   amount: amountOfUnits(accumulator.units),
   currency: 'USD',
   priceVersions: [...accumulator.priceVersions].sort(),
+});
+
+const totalsOf = (accumulator: Accumulator): CostTotals => ({
+  ...roleTotalsOf(accumulator),
+  roles: Object.fromEntries([...accumulator.roles].map(([role, forRole]) => [role, roleTotalsOf(forRole)])),
 });
 
 const stringAttribute = (span: SpanRecord, key: string): string => {
@@ -123,42 +139,57 @@ const tokenAttribute = (span: SpanRecord, key: string, required: boolean): numbe
 const isBilledChat = (span: SpanRecord): boolean =>
   span.attributes[A.ATTR_GEN_AI_OPERATION_NAME] === OPERATIONS.chat && span.attributes[A.ATTR_GEN_AI_USAGE_INPUT_TOKENS] !== undefined;
 
+const roleOf = (span: SpanRecord): string => {
+  const value = span.attributes[MOMONGA_ATTRIBUTES.role];
+  if (value === undefined) return RUN_ROLE;
+  if (typeof value !== 'string') throw new TypeError(`chat span ${span.spanId} attribute ${MOMONGA_ATTRIBUTES.role} must be a string`);
+  return value;
+};
+
+const addSpan = (accumulator: Accumulator, span: SpanRecord, table: PriceTable): void => {
+  const usage = {
+    inputTokens: tokenAttribute(span, A.ATTR_GEN_AI_USAGE_INPUT_TOKENS, true),
+    outputTokens: tokenAttribute(span, A.ATTR_GEN_AI_USAGE_OUTPUT_TOKENS, true),
+    cachedInputTokens: tokenAttribute(span, A.ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS, false),
+  };
+  accumulator.calls += 1;
+  const causes = fallbackCausesOf(span);
+  if (causes !== undefined) addFallback(accumulator, stringAttribute(span, MOMONGA_ATTRIBUTES.target), causes, 1);
+  accumulator.inputTokens += usage.inputTokens;
+  accumulator.outputTokens += usage.outputTokens;
+  accumulator.cachedInputTokens += usage.cachedInputTokens;
+  const billing = stringAttribute(span, MOMONGA_ATTRIBUTES.billing);
+  if (billing === 'local') {
+    accumulator.localCalls += 1;
+    return;
+  }
+  if (billing === UNKNOWN_BILLING) {
+    accumulator.unknownBillingCalls += 1;
+    return;
+  }
+  const priced = computeCostUnits({
+    provider: stringAttribute(span, A.ATTR_GEN_AI_PROVIDER_NAME),
+    model: stringAttribute(span, A.ATTR_GEN_AI_REQUEST_MODEL),
+    usage,
+    at: new Date(span.startMs),
+    table,
+  });
+  if (priced === null) {
+    accumulator.unpricedCalls += 1;
+  } else {
+    accumulator.units += priced.units;
+    accumulator.priceVersions.add(priced.priceVersion);
+  }
+};
+
 const accumulateRun = (store: TraceStore, runId: string, table: PriceTable): Accumulator => {
   const accumulator = emptyAccumulator();
   for (const span of store.spansForRun(runId).filter(isBilledChat)) {
-    const usage = {
-      inputTokens: tokenAttribute(span, A.ATTR_GEN_AI_USAGE_INPUT_TOKENS, true),
-      outputTokens: tokenAttribute(span, A.ATTR_GEN_AI_USAGE_OUTPUT_TOKENS, true),
-      cachedInputTokens: tokenAttribute(span, A.ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS, false),
-    };
-    accumulator.calls += 1;
-    const causes = fallbackCausesOf(span);
-    if (causes !== undefined) addFallback(accumulator, stringAttribute(span, MOMONGA_ATTRIBUTES.target), causes, 1);
-    accumulator.inputTokens += usage.inputTokens;
-    accumulator.outputTokens += usage.outputTokens;
-    accumulator.cachedInputTokens += usage.cachedInputTokens;
-    const billing = stringAttribute(span, MOMONGA_ATTRIBUTES.billing);
-    if (billing === 'local') {
-      accumulator.localCalls += 1;
-      continue;
-    }
-    if (billing === UNKNOWN_BILLING) {
-      accumulator.unknownBillingCalls += 1;
-      continue;
-    }
-    const priced = computeCostUnits({
-      provider: stringAttribute(span, A.ATTR_GEN_AI_PROVIDER_NAME),
-      model: stringAttribute(span, A.ATTR_GEN_AI_REQUEST_MODEL),
-      usage,
-      at: new Date(span.startMs),
-      table,
-    });
-    if (priced === null) {
-      accumulator.unpricedCalls += 1;
-    } else {
-      accumulator.units += priced.units;
-      accumulator.priceVersions.add(priced.priceVersion);
-    }
+    addSpan(accumulator, span, table);
+    const role = roleOf(span);
+    const forRole = accumulator.roles.get(role) ?? emptyAccumulator();
+    addSpan(forRole, span, table);
+    accumulator.roles.set(role, forRole);
   }
   return accumulator;
 };
@@ -187,7 +218,7 @@ export const buildCostReport = (store: TraceStore, runs: readonly CostedRun[], o
   };
 };
 
-const describeTotals = (totals: CostTotals): string => {
+const describeTotals = (totals: RoleCost): string => {
   const versions = totals.priceVersions.length === 0 ? 'none' : totals.priceVersions.join(',');
   const local = totals.localCalls === 0 ? '' : `, ${totals.localCalls} of ${totals.calls} call(s) ran locally and cost nothing`;
   const unpriced = totals.unpricedCalls === 0 ? '' : `, ${totals.unpricedCalls} of ${totals.calls} call(s) have no price entry and are not counted`;
@@ -201,10 +232,16 @@ const describeTotals = (totals: CostTotals): string => {
 
 export const formatCostReport = (report: CostReport): string => {
   const lines = ['cost report'];
+  const roleLines = (totals: CostTotals, indent: string): string[] =>
+    Object.entries(totals.roles)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([role, forRole]) => `${indent}role ${role}: ${describeTotals(forRole)}`);
   for (const session of report.sessions) {
-    lines.push(`  session ${session.sessionId}: ${describeTotals(session)}`);
-    for (const run of report.runs.filter((entry) => entry.sessionId === session.sessionId)) lines.push(`    run ${run.runId}: ${describeTotals(run)}`);
+    lines.push(`  session ${session.sessionId}: ${describeTotals(session)}`, ...roleLines(session, '    '));
+    for (const run of report.runs.filter((entry) => entry.sessionId === session.sessionId)) {
+      lines.push(`    run ${run.runId}: ${describeTotals(run)}`, ...roleLines(run, '      '));
+    }
   }
-  lines.push(`  total: ${describeTotals(report.total)}`);
+  lines.push(`  total: ${describeTotals(report.total)}`, ...roleLines(report.total, '    '));
   return lines.join('\n');
 };

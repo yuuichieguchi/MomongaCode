@@ -13,7 +13,7 @@ const chatTarget = (model: string): Record<string, unknown> => ({
 
 const TWO_TARGETS = { main: chatTarget('big'), small: chatTarget('little') };
 const ALIASES = { default: 'main', cheap: 'small', judge: ['small', 'main'] };
-const ALL_ROLES = { compaction: 'cheap', reflection: 'judge', analysis: 'default', classifier: 'judge' };
+const ALL_ROLES = { compaction: 'cheap', reflection: 'judge', analysis: 'default' };
 
 const load = (tree: Tree) => loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
 
@@ -58,7 +58,7 @@ describe('models.roles in user settings', () => {
     expect(loadUserModels({ home: tree.home }).resolved.roles).toEqual({ analysis: 'cheap' });
   });
 
-  it.each(['compaction', 'reflection', 'analysis', 'classifier'])('guards a call sent to nowhere: %s naming an unknown alias is refused with its path', async (role) => {
+  it.each(['compaction', 'reflection', 'analysis'])('guards a call sent to nowhere: %s naming an unknown alias is refused with its path', async (role) => {
     await expectRejected({ targets: TWO_TARGETS, aliases: ALIASES, roles: { [role]: 'ghost-alias' } }, `models.roles.${role}`, 'ghost-alias');
   });
 
@@ -68,6 +68,10 @@ describe('models.roles in user settings', () => {
 
   it('guards a misspelt role that would be silently ignored: an unknown role is refused', async () => {
     await expectRejected({ targets: TWO_TARGETS, aliases: ALIASES, roles: { planner: 'cheap' } }, 'roles');
+  });
+
+  it('guards a second classifier setting: autoMode.classifier is the only one, so a classifier role is refused', async () => {
+    await expectRejected({ targets: TWO_TARGETS, aliases: ALIASES, roles: { classifier: 'judge' } }, 'roles');
   });
 
   it('guards an empty name: a role value must be a non-empty string', async () => {
