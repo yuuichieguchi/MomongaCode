@@ -255,7 +255,7 @@ describe('the reflection call', () => {
     await queued(env);
     env.gateway.script.push(textStep(CANDIDATE_REPLY([]), { usage: { ...usageOf(100, 20), input_tokens_details: { cached_tokens: 40 } } }));
     await env.reflector().runOne(SIGNAL);
-    expect(env.api.contextCharges.list()).toMatchObject([{ purpose: 'reflection', detail: { cachedInputTokens: 40, timing: { durationMs: expect.any(Number) } } }]);
+    expect(env.api.contextCharges.list()).toMatchObject([{ purpose: 'reflection', detail: { responseId: expect.stringMatching(/\S/), cachedInputTokens: 40, timing: { durationMs: expect.any(Number) } } }]);
   });
 
   it('charges context_charges and leaves the terminal run untouched', async () => {

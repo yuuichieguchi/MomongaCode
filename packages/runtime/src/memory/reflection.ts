@@ -54,6 +54,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     let terminal: ModelResult | undefined;
     let usage: Usage | null = null;
     let extension: MomongaResponseExtension | undefined;
+    let responseId: string | undefined;
     let firstEventMs: number | undefined;
     const startedAt = clock.now();
     const events = gateway.stream(body, {
@@ -68,11 +69,13 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       if (event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed') {
         usage = event.response.usage;
         extension = event.response.momonga;
+        responseId = event.response.id;
       }
     }
     if (terminal === undefined) throw new Error(`the reflection call of run ${runId} ended without a terminal event`);
     const timing: CallTiming = { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: clock.now() - startedAt };
-    return { terminal, usage, detail: billedDetailOf(usage, extension, timing) };
+    if (responseId === undefined) throw new Error(`the reflection call of run ${runId} ended without a response`);
+    return { terminal, usage, detail: billedDetailOf(usage, extension, timing, responseId) };
   };
 
   const reflect = async (runId: string, signal: AbortSignal, ledger: ChargeLedger): Promise<void> => {

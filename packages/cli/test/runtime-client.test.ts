@@ -230,6 +230,8 @@ describe('the token anatomy endpoints', () => {
     cacheHitRatio: null,
     timeToFirstToken: null,
     duration: null,
+    roles: { run: { calls: 1, timeToFirstToken: null, duration: null, totalDurationMs: null, timingNotRecorded: 1 } },
+    callsWithoutResponseId: 0,
     cost: { amount: null, currency: 'USD', unpricedCalls: 1 },
     unpriced: [],
     inconsistentUsage: [{ runId: 'run-1', provider: 'acme', model: 'm1', step: 2, reason: 'cached input (60) and written input (50) together exceed the input (100)' }],

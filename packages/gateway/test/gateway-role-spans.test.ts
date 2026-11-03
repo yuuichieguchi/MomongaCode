@@ -84,6 +84,18 @@ describe('the role of a model call on its chat span', () => {
     expect((await chats()).map((span) => span.attributes['gen_ai.response.id'])).toEqual([response.body.id]);
   });
 
+  it('replays a stored result under the same response id and records no new chat span', async () => {
+    const { client, chats } = await tracedGateway(2);
+    const body = { model: 'fast', input: userInput('hi'), metadata: { run_id: 'run-1', step: '1' } };
+    const first = await readJson(await postJson(client, '/v1/responses', body, { 'idempotency-key': 'key-replay' }));
+    const second = await readJson(await postJson(client, '/v1/responses', body, { 'idempotency-key': 'key-replay' }));
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(second.body.id).toBe(first.body.id);
+    expect((await chats()).map((span) => span.attributes['gen_ai.response.id'])).toEqual([first.body.id]);
+  });
+
   it('guards a compaction charged to no run: the run id header puts the compaction span on its run', async () => {
     const { client, chats } = await tracedGateway(0);
     const response = await readJson(await postJson(client, '/v1/responses/compact', { model: 'fast', input: userInput('read a.txt') }, { [RUN_ID_HEADER]: 'run-7', 'idempotency-key': 'key-1' }));

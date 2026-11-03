@@ -162,6 +162,7 @@ export type RunEventPayload =
       inputTokens: number;
       outputTokens: number;
       totalTokens: number;
+      responseId?: string;
       cachedInputTokens?: number;
       cacheWriteInputTokens?: number;
       cost?: ModelCost;

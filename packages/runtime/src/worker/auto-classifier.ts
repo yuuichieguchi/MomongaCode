@@ -87,7 +87,7 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
       inputTokens: usage.input_tokens,
       outputTokens: usage.output_tokens,
       totalTokens: usage.total_tokens,
-      ...billedDetailOf(usage, terminal.response.momonga, timing),
+      ...billedDetailOf(usage, terminal.response.momonga, timing, terminal.response.id),
     };
     if (terminal.incomplete) return { ...asked({ alias: classifier, failure: 'the classifier reply was incomplete' }), spend };
     const verdict = parseClassifierVerdict(outputTextOf(terminal.response));

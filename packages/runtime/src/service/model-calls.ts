@@ -1,7 +1,7 @@
 import { MAX_BILLED_CALLS_PAGE, RUNLESS, RUN_ROLE, buildCostBreakdown, formatCostBreakdown } from '@momonga/observability';
 import type { BreakdownCall, CostBreakdown, UnjoinedRecord } from '@momonga/observability';
-import type { BilledCallsCursorView, BilledCallsPageView, BilledCallView, RunTraceCall } from '@momonga/protocol';
-import type { ModelCallRecord } from '@momonga/store';
+import type { BilledCallsCursorView, BilledCallsPageView, BilledCallView, CallTiming, RunTraceCall } from '@momonga/protocol';
+import type { ModelCallRecord, RuntimeStore } from '@momonga/store';
 import { gatewayProtocolError } from '../gateway-client.ts';
 
 export const traceCallsOf = (records: readonly ModelCallRecord[]): RunTraceCall[] =>
@@ -34,6 +34,7 @@ const responsesOf = (records: readonly ModelCallRecord[]): Response[] => {
 const breakdownCallOf = (call: BilledCallView, joined: Partial<Response>): BreakdownCall => ({
   runId: call.runId,
   ...(call.step === undefined ? {} : { step: call.step }),
+  ...(call.role === undefined ? {} : { role: call.role }),
   provider: call.provider,
   model: call.model,
   billing: call.billing,
@@ -49,8 +50,27 @@ const breakdownCallOf = (call: BilledCallView, joined: Partial<Response>): Break
 
 const isMain = (call: BilledCallView): boolean => (call.role ?? RUN_ROLE) === RUN_ROLE;
 
-export const joinRunCalls = (runId: string, billed: readonly BilledCallView[], records: readonly ModelCallRecord[]): { calls: BreakdownCall[]; unjoined: UnjoinedRecord[] } => {
+export type SideTiming = { responseId: string; timing: CallTiming };
+
+export const sideTimingsOfRun = (store: Pick<RuntimeStore, 'readRunEventsOfTypes' | 'contextCharges'>, runId: string): SideTiming[] => {
+  const charged = store.readRunEventsOfTypes(runId, ['usage.charged']).flatMap((event) =>
+    event.type === 'usage.charged' && event.responseId !== undefined && event.timing !== undefined ? [{ responseId: event.responseId, timing: event.timing }] : [],
+  );
+  const reflected = store.contextCharges
+    .list({ runIds: [runId] })
+    .flatMap((charge) => (charge.detail?.responseId !== undefined && charge.detail.timing !== undefined ? [{ responseId: charge.detail.responseId, timing: charge.detail.timing }] : []));
+  return [...charged, ...reflected];
+};
+
+export const joinRunCalls = (
+  runId: string,
+  billed: readonly BilledCallView[],
+  records: readonly ModelCallRecord[],
+  sideTimingList: readonly SideTiming[],
+): { calls: BreakdownCall[]; unjoined: UnjoinedRecord[]; withoutResponseId: number } => {
   const responses = responsesOf(records);
+  const sideTimings = new Map(sideTimingList.map((entry) => [entry.responseId, entry.timing]));
+  let withoutResponseId = 0;
   const firstById = new Map<string, Response>();
   for (const response of responses) {
     if (response.id !== undefined && !firstById.has(response.id)) firstById.set(response.id, response);
@@ -61,10 +81,11 @@ export const joinRunCalls = (runId: string, billed: readonly BilledCallView[], r
   for (const call of billed) {
     const stepField = call.step === undefined ? {} : { step: call.step };
     if (!isMain(call)) {
-      calls.push(breakdownCallOf(call, {}));
+      const timing = call.responseId === undefined ? undefined : sideTimings.get(call.responseId);
+      calls.push(breakdownCallOf(call, timing === undefined ? {} : { timing }));
     } else if (call.responseId === undefined) {
       calls.push(breakdownCallOf(call, {}));
-      unjoined.push({ runId, ...stepField, reason: 'a billed model call records no response id' });
+      withoutResponseId += 1;
     } else {
       const answer = firstById.get(call.responseId);
       calls.push(breakdownCallOf(call, answer ?? {}));
@@ -73,13 +94,11 @@ export const joinRunCalls = (runId: string, billed: readonly BilledCallView[], r
     }
   }
   for (const response of responses) {
-    if (response.id === undefined) {
-      unjoined.push({ runId, step: response.step, reason: 'a recorded model response has no id' });
-    } else if (!matched.has(response.id) && firstById.get(response.id) === response) {
+    if (response.id !== undefined && !matched.has(response.id) && firstById.get(response.id) === response) {
       unjoined.push({ runId, step: response.step, reason: 'a recorded model response has no billed model call' });
     }
   }
-  return { calls, unjoined };
+  return { calls, unjoined, withoutResponseId };
 };
 
 const isCursorNumber = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
@@ -90,6 +109,7 @@ export type CostBreakdownSources = {
   runIds: readonly string[];
   recordsOf: (runId: string) => readonly ModelCallRecord[];
   fetchPage: (runIds: readonly string[], cursor: BilledCallsCursorView, limit: number) => Promise<BilledCallsPageView>;
+  sideTimingsOf?: (runId: string) => readonly SideTiming[];
   pageSize?: number;
 };
 
@@ -117,12 +137,13 @@ export const costBreakdownOf = async (sources: CostBreakdownSources): Promise<{ 
       runId,
       billed.filter((call) => call.runId === runId),
       sources.recordsOf(runId),
+      sources.sideTimingsOf === undefined ? [] : sources.sideTimingsOf(runId),
     ),
   );
   const runless = billed.filter((call) => call.runId === RUNLESS).map((call) => breakdownCallOf(call, {}));
   const breakdown = buildCostBreakdown(
     [...joined.flatMap((entry) => entry.calls), ...runless],
-    { unjoined: joined.flatMap((entry) => entry.unjoined) },
+    { unjoined: joined.flatMap((entry) => entry.unjoined), callsWithoutResponseId: joined.reduce((sum, entry) => sum + entry.withoutResponseId, 0) },
   );
   return { breakdown, text: formatCostBreakdown(breakdown) };
 };

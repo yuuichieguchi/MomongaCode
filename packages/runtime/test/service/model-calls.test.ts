@@ -106,23 +106,67 @@ describe('costBreakdownOf', () => {
     expect(breakdown.billed.inputTokens).toBe(5);
     expect(breakdown.layers.callsWithoutAnatomy).toBe(1);
     expect(breakdown.duration).toBeNull();
-    expect(breakdown.unjoined).toEqual([
-      { runId: 'r1', step: 1, reason: 'a billed model call records no response id' },
-      { runId: 'r1', step: 1, reason: 'a recorded model response has no billed model call' },
-    ]);
+    expect(breakdown.callsWithoutResponseId).toBe(1);
+    expect(breakdown.unjoined).toEqual([{ runId: 'r1', step: 1, reason: 'a recorded model response has no billed model call' }]);
   });
 
-  it('reports a recorded response with no billed call, and a recorded response with no id, instead of failing', async () => {
+  it('counts a run recorded in the old shape once, as calls recorded before response ids, and lists nothing under unjoined', async () => {
+    const oldCalls = [unidentified(billed('r1', 1, 5)), unidentified(billed('r1', 2, 6))];
+    const oldRecords: ModelCallRecord[] = [
+      requested(1),
+      { kind: 'responded', seq: 12, step: 1, attempt: 1, timing: { durationMs: 9 } },
+      requested(2),
+      { kind: 'responded', seq: 22, step: 2, attempt: 1, timing: { durationMs: 9 } },
+    ];
+
+    const { breakdown, text } = await costBreakdownOf({ runIds: ['r1'], recordsOf: () => oldRecords, fetchPage: pagedOver(oldCalls, ['r1']).fetchPage });
+
+    expect(breakdown.calls).toBe(2);
+    expect(breakdown.callsWithoutResponseId).toBe(2);
+    expect(breakdown.unjoined).toEqual([]);
+    expect(breakdown.layers.callsWithoutAnatomy).toBe(2);
+    expect(text.match(/before response ids/g)).toHaveLength(1);
+    expect(text).toContain('2 calls recorded before response ids: layers and timing not recorded');
+    expect(text).not.toContain('unjoined');
+  });
+
+  it('gives each side call the timing of the charge that carries its response id, and counts one without as not recorded', async () => {
+    const calls = [
+      billed('r1', 1, 1),
+      billed('r1', 1, 10, { role: 'compaction', responseId: 'resp_compact' }),
+      billed('r1', 2, 10, { role: 'compaction', responseId: 'resp_untimed' }),
+      billed('r1', 2, 4, { role: 'classifier', responseId: 'resp_judge' }),
+      billed('r1', undefined, 4, { role: 'reflection', responseId: 'resp_reflect' }),
+    ];
+    const timings = [
+      { responseId: 'resp_compact', timing: { firstEventMs: 3000, durationMs: 62_000 } },
+      { responseId: 'resp_judge', timing: { durationMs: 800 } },
+      { responseId: 'resp_reflect', timing: { durationMs: 5000 } },
+    ];
+
+    const { breakdown } = await costBreakdownOf({
+      runIds: ['r1'],
+      recordsOf: () => [requested(1), responded(1, idOf('r1', 1))],
+      sideTimingsOf: () => timings,
+      fetchPage: pagedOver(calls, ['r1']).fetchPage,
+    });
+
+    expect(breakdown.roles['compaction']).toMatchObject({ calls: 2, totalDurationMs: 62_000, timingNotRecorded: 1, timeToFirstToken: { n: 1 } });
+    expect(breakdown.roles['classifier']).toMatchObject({ calls: 1, totalDurationMs: 800, timingNotRecorded: 0 });
+    expect(breakdown.roles['reflection']).toMatchObject({ calls: 1, totalDurationMs: 5000 });
+    expect(breakdown.roles['run']).toMatchObject({ calls: 1, totalDurationMs: 9 });
+    expect(breakdown.duration?.n).toBe(1);
+    expect(breakdown.unjoined).toEqual([]);
+  });
+
+  it('reports a recorded response that carries an id and has no billed call instead of failing', async () => {
     const lonely = await costBreakdownOf({
       runIds: ['r1'],
-      recordsOf: () => [requested(1), responded(1, idOf('r1', 1)), requested(2), responded(2, 'resp_unbilled'), { kind: 'responded', seq: 90, step: 3, attempt: 1 }],
+      recordsOf: () => [requested(1), responded(1, idOf('r1', 1)), requested(2), responded(2, 'resp_unbilled')],
       fetchPage: pagedOver([billed('r1', 1, 1)], ['r1']).fetchPage,
     });
 
-    expect(lonely.breakdown.unjoined).toEqual([
-      { runId: 'r1', step: 2, reason: 'a recorded model response has no billed model call' },
-      { runId: 'r1', step: 3, reason: 'a recorded model response has no id' },
-    ]);
+    expect(lonely.breakdown.unjoined).toEqual([{ runId: 'r1', step: 2, reason: 'a recorded model response has no billed model call' }]);
     expect(lonely.text).toContain('unjoined: run r1, step 2');
   });
 

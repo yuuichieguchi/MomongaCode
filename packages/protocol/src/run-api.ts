@@ -175,7 +175,7 @@ const modelCost = closed({ amount: { type: 'number', minimum: 0 }, currency: con
 const callTiming = closed({ firstEventMs: nonNegativeInteger, durationMs: nonNegativeInteger }, ['durationMs']);
 
 const billedDetail = closed(
-  { cachedInputTokens: nonNegativeInteger, cacheWriteInputTokens: nonNegativeInteger, cost: modelCost, timing: callTiming },
+  { responseId: string, cachedInputTokens: nonNegativeInteger, cacheWriteInputTokens: nonNegativeInteger, cost: modelCost, timing: callTiming },
   [],
 );
 
@@ -354,6 +354,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
       inputTokens: nonNegativeInteger,
       outputTokens: nonNegativeInteger,
       totalTokens: nonNegativeInteger,
+      responseId: string,
       cachedInputTokens: nonNegativeInteger,
       cacheWriteInputTokens: nonNegativeInteger,
       cost: modelCost,
@@ -549,6 +550,13 @@ const costBreakdownView = closed(
     cacheHitRatio: nullable({ type: 'number' }),
     timeToFirstToken: timingSummary,
     duration: timingSummary,
+    roles: {
+      type: 'object',
+      additionalProperties: closed(
+        { calls: nonNegativeInteger, timeToFirstToken: timingSummary, duration: timingSummary, totalDurationMs: nullable(nonNegativeInteger), timingNotRecorded: nonNegativeInteger },
+        ['calls', 'timeToFirstToken', 'duration', 'totalDurationMs', 'timingNotRecorded'],
+      ),
+    },
     cost: closed({ amount: nullable({ type: 'number' }), currency: constant('USD'), unpricedCalls: nonNegativeInteger }, ['amount', 'currency', 'unpricedCalls']),
     unpriced: {
       type: 'array',
@@ -558,9 +566,10 @@ const costBreakdownView = closed(
       type: 'array',
       items: closed({ runId: string, provider: string, model: string, step: nonNegativeInteger, reason: string }, ['runId', 'provider', 'model', 'reason']),
     },
+    callsWithoutResponseId: nonNegativeInteger,
     unjoined: { type: 'array', items: closed({ runId: string, step: nonNegativeInteger, reason: string }, ['runId', 'reason']) },
   },
-  ['calls', 'layers', 'billed', 'cacheHitRatio', 'timeToFirstToken', 'duration', 'cost', 'unpriced', 'inconsistentUsage', 'unjoined'],
+  ['calls', 'layers', 'billed', 'cacheHitRatio', 'timeToFirstToken', 'duration', 'roles', 'cost', 'unpriced', 'inconsistentUsage', 'callsWithoutResponseId', 'unjoined'],
 );
 
 const memoryScope = enumOf(MEMORY_SCOPES);

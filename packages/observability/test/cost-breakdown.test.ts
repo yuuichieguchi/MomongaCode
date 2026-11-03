@@ -112,6 +112,38 @@ describe('buildCostBreakdown', () => {
     expect(text).toContain('inconsistent usage: acme/m1 (run run-a, step 4)');
   });
 
+  it('reports time to first token, duration and total duration for the main calls and for each side role, counting a side call without timing as not recorded', () => {
+    const side = (role: string, timing?: BreakdownCall['timing']): BreakdownCall =>
+      callOf({ role, usage: { inputTokens: 10, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 1, reasoningTokens: 0 }, ...(timing === undefined ? {} : { timing }) });
+    const calls = [...THREE_CALLS, side('compaction', { durationMs: 60_000 }), side('compaction', { firstEventMs: 4000, durationMs: 30_000 }), side('compaction'), side('classifier', { durationMs: 700 })];
+
+    const breakdown = buildCostBreakdown(calls, { table: TABLE });
+
+    expect(breakdown.timeToFirstToken).toEqual({ median: 200, p95: 300, n: 3 });
+    expect(breakdown.duration).toEqual({ median: 2000, p95: 3000, n: 3 });
+    expect(breakdown.roles['run']).toMatchObject({ calls: 3, totalDurationMs: 6000, timingNotRecorded: 0, duration: { n: 3 } });
+    expect(breakdown.roles['compaction']).toEqual({
+      calls: 3,
+      timeToFirstToken: { median: 4000, p95: 4000, n: 1 },
+      duration: { median: 30_000, p95: 60_000, n: 2 },
+      totalDurationMs: 90_000,
+      timingNotRecorded: 1,
+    });
+    expect(breakdown.roles['classifier']).toMatchObject({ calls: 1, timeToFirstToken: null, totalDurationMs: 700, timingNotRecorded: 0 });
+    const text = formatCostBreakdown(breakdown);
+    expect(text).toContain('role compaction: 3 call(s), total duration 90000 ms, time to first token: median 4000 ms');
+    expect(text).toContain('1 call(s) with no timing recorded');
+  });
+
+  it('counts the calls recorded before response ids once, with their layers and timing not recorded', () => {
+    const breakdown = buildCostBreakdown(THREE_CALLS, { table: TABLE, callsWithoutResponseId: 2 });
+
+    expect(breakdown.callsWithoutResponseId).toBe(2);
+    expect(breakdown.unjoined).toEqual([]);
+    expect(formatCostBreakdown(breakdown)).toContain('2 calls recorded before response ids: layers and timing not recorded');
+    expect(formatCostBreakdown(buildCostBreakdown(THREE_CALLS, { table: TABLE }))).not.toContain('before response ids');
+  });
+
   it('measures layer shares over the calls that recorded an anatomy and counts the older ones without it', () => {
     const older = callOf({ usage: { inputTokens: 5000, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 5, reasoningTokens: 0 } });
     const breakdown = buildCostBreakdown([...THREE_CALLS, older], { table: TABLE });

@@ -34,7 +34,7 @@ export type ModelCost = { amount: number; currency: 'USD'; priceVersion: string 
 
 export type CallTiming = { firstEventMs?: number; durationMs: number };
 
-export type BilledDetail = { cachedInputTokens?: number; cacheWriteInputTokens?: number; cost?: ModelCost; timing?: CallTiming };
+export type BilledDetail = { responseId?: string; cachedInputTokens?: number; cacheWriteInputTokens?: number; cost?: ModelCost; timing?: CallTiming };
 
 export type BilledTokensView = {
   inputTokens: number;
@@ -47,6 +47,14 @@ export type BilledTokensView = {
 
 export type TimingSummaryView = { median: number; p95: number; n: number };
 
+export type RoleBreakdownView = {
+  calls: number;
+  timeToFirstToken: TimingSummaryView | null;
+  duration: TimingSummaryView | null;
+  totalDurationMs: number | null;
+  timingNotRecorded: number;
+};
+
 export type UnpricedCallView = { runId: string; provider: string; model: string; step?: number; reason: string };
 
 export type CostBreakdownView = {
@@ -56,9 +64,11 @@ export type CostBreakdownView = {
   cacheHitRatio: number | null;
   timeToFirstToken: TimingSummaryView | null;
   duration: TimingSummaryView | null;
+  roles: Record<string, RoleBreakdownView>;
   cost: { amount: number | null; currency: 'USD'; unpricedCalls: number };
   unpriced: UnpricedCallView[];
   inconsistentUsage: UnpricedCallView[];
+  callsWithoutResponseId: number;
   unjoined: UnjoinedView[];
 };
 

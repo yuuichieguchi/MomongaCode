@@ -129,6 +129,7 @@ export type {
   UnjoinedView,
   CostBreakdownView,
   ModelCost,
+  RoleBreakdownView,
   TimingSummaryView,
   TokenAnatomy,
   TokenAnatomyLayers,

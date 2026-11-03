@@ -113,7 +113,7 @@ describe('compactThrough', () => {
 
     await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText });
 
-    expect(appended[0]).toMatchObject({ type: 'usage.charged', purpose: 'compaction', timing: { durationMs: 40 } });
+    expect(appended[0]).toMatchObject({ type: 'usage.charged', purpose: 'compaction', timing: { durationMs: 40 }, responseId: 'compaction_1' });
   });
 
   it('derives a new key when only the cap differs', async () => {

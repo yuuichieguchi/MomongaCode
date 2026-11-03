@@ -89,7 +89,8 @@ export const terminalResultOf = (event: StreamEvent): ModelResult | undefined =>
   }
 };
 
-export const billedDetailOf = (usage: Usage | null, extension: MomongaResponseExtension | undefined, timing: CallTiming): BilledDetail => ({
+export const billedDetailOf = (usage: Usage | null, extension: MomongaResponseExtension | undefined, timing: CallTiming, responseId: string): BilledDetail => ({
+  responseId,
   ...(usage === null ? {} : { cachedInputTokens: usage.input_tokens_details.cached_tokens }),
   ...(extension?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: extension.cacheWriteInputTokens }),
   ...(extension?.cost === undefined ? {} : { cost: extension.cost }),
