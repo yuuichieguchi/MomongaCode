@@ -38,11 +38,17 @@ describe('the last reflection job of a folder', () => {
     const run = await env.createRun(session.id);
     const none = await env.http('GET', `/v1/runs/${run.id}/reflection`);
     expect(none.status).toBe(200);
-    expect(none.json).toEqual({ job: null, charges: [] });
+    expect(none.json).toEqual({ job: null, charges: [], queuedAhead: 0 });
     expectSchema('RunReflection', none.json);
 
     const jobs = env.store.reflection as unknown as Settling;
+    const other = await env.createRun(session.id);
+    jobs.enqueue(other.id);
+    env.clock.advance(5);
     jobs.enqueue(run.id);
+    const queued = await env.http('GET', `/v1/runs/${run.id}/reflection`);
+    expect(queued.json).toMatchObject({ job: { state: 'pending' }, queuedAhead: 1 });
+    expectSchema('RunReflection', queued.json);
     jobs.begin(run.id);
     const detail = { cachedInputTokens: 40, cost: { amount: 0.5, currency: 'USD', priceVersion: '2026-01-01' }, timing: { firstEventMs: 3, durationMs: 9 } };
     jobs.complete({

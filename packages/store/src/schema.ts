@@ -280,6 +280,8 @@ ALTER TABLE reflection_jobs ADD COLUMN dropped_json TEXT;
 
 const CONTEXT_CHARGE_DETAIL = `
 ALTER TABLE context_charges ADD COLUMN detail_json TEXT;
+CREATE UNIQUE INDEX context_charges_by_response ON context_charges (json_extract(detail_json, '$.responseId'))
+  WHERE json_extract(detail_json, '$.responseId') IS NOT NULL;
 `;
 
 const EVIDENCE_BASED_CONTEXT = `

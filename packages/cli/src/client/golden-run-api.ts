@@ -11,12 +11,20 @@ export type ReflectionSettle = {
   signal?: AbortSignal;
 };
 
-const abortion = (signal: AbortSignal | undefined): Promise<never> =>
-  new Promise<never>((_resolve, reject) => {
-    if (signal === undefined) return;
-    if (signal.aborted) reject(signal.reason);
-    signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+const pause = async (settle: ReflectionSettle): Promise<void> => {
+  const { signal } = settle;
+  if (signal === undefined) return settle.wait(settle.pollMs);
+  let onAbort: (() => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
   });
+  try {
+    await Promise.race([settle.wait(settle.pollMs, signal), aborted]);
+  } finally {
+    if (onAbort !== undefined) signal.removeEventListener('abort', onAbort);
+  }
+};
 
 export const goldenRunApi = (
   client: Pick<RuntimeClient, 'createSession' | 'createRun' | 'streamEvents' | 'getRun' | 'runReflection' | 'resolveApproval' | 'cancel'>,
@@ -61,25 +69,28 @@ export const goldenRunApi = (
       };
     },
     reflectionOf: async (runId) => {
-      const aborted = abortion(settle.signal);
-      void aborted.catch(() => undefined);
-      const watchedAt = settle.now();
+      let watchedAt = settle.now();
+      let queueSeen = Number.POSITIVE_INFINITY;
       let attemptSeenAt: number | undefined;
       for (;;) {
         settle.signal?.throwIfAborted();
-        const { job, charges } = await client.runReflection(runId);
+        const { job, charges, queuedAhead } = await client.runReflection(runId);
+        if (queuedAhead < queueSeen) {
+          if (queueSeen !== Number.POSITIVE_INFINITY) watchedAt = settle.now();
+          queueSeen = queuedAhead;
+        }
         const state = job === null ? 'none' : job.state;
         const answer = { state, ...(charges.length === 0 ? {} : { charges }) } as const;
         if (state !== 'pending' && state !== 'running') return answer;
         if (attemptSeenAt === undefined && job !== null && (job.state === 'running' || job.attempts > 0)) attemptSeenAt = settle.now();
         if (attemptSeenAt === undefined) {
-          if (settle.now() - watchedAt >= settle.pendingBoundMs) {
+          if (settle.now() - watchedAt >= settle.pendingBoundMs + queuedAhead * settle.attemptBoundMs) {
             return { ...answer, reason: 'the runtime was busy with other runs, so the reflection did not start' };
           }
         } else if (settle.now() - attemptSeenAt >= settle.attemptBoundMs) {
           return { ...answer, reason: `the reflection job was still ${state} after ${settle.attemptBoundMs} ms, the bound of its attempts` };
         }
-        await Promise.race([settle.wait(settle.pollMs, settle.signal), aborted]);
+        await pause(settle);
       }
     },
     resolveApproval: async (approvalId, optionId) => {

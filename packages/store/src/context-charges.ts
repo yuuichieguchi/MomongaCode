@@ -24,6 +24,16 @@ const decodeCharge = (row: Row): ContextCharge => {
   };
 };
 
+export class DuplicateChargeError extends Error {
+  readonly responseId: string;
+
+  constructor(responseId: string, options?: ErrorOptions) {
+    super(`the response ${responseId} is already charged, so the call is not charged twice`, options);
+    this.name = 'DuplicateChargeError';
+    this.responseId = responseId;
+  }
+}
+
 export const createContextChargeStore = (db: DatabaseSync, clock: Clock): ContextChargeStore => {
   const insert = db.prepare(
     `INSERT INTO context_charges (purpose, run_id, project, model, input_tokens, output_tokens, total_tokens, created_at, detail_json)
@@ -34,7 +44,15 @@ export const createContextChargeStore = (db: DatabaseSync, clock: Clock): Contex
     record: (input: ContextChargeInput) => {
       expectOneOf('context_charges', 'new', 'purpose', CONTEXT_CHARGE_PURPOSES, input.purpose);
       const { detail, ...columns } = input;
-      const { lastInsertRowid } = insert.run({ ...columns, now: clock.now(), detailJson: detail === undefined ? null : JSON.stringify(detail) });
+      let lastInsertRowid: number | bigint;
+      try {
+        ({ lastInsertRowid } = insert.run({ ...columns, now: clock.now(), detailJson: detail === undefined ? null : JSON.stringify(detail) }));
+      } catch (error) {
+        if (detail?.responseId !== undefined && error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
+          throw new DuplicateChargeError(detail.responseId, { cause: error });
+        }
+        throw error;
+      }
       const row = select.get({ id: Number(lastInsertRowid) });
       if (row === undefined) throw new Error('a context charge vanished after it was recorded');
       return decodeCharge(row);

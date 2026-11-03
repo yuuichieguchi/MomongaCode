@@ -189,7 +189,19 @@ describe('hooks and auto mode against real processes', () => {
           attemptBoundMs: E2E_REFLECTION_ATTEMPTS_BOUND_MS,
           pollMs: REFLECTION_POLL_MS,
           now: () => Date.now(),
-          wait: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+          wait: (milliseconds, signal) =>
+            new Promise<void>((resolve, reject) => {
+              signal?.throwIfAborted();
+              const timer = setTimeout(resolve, milliseconds);
+              signal?.addEventListener(
+                'abort',
+                () => {
+                  clearTimeout(timer);
+                  reject(signal.reason);
+                },
+                { once: true },
+              );
+            }),
         }),
         workspace: async (golden, runIndex) => {
           const cwd = workspaceOf(golden, runIndex);

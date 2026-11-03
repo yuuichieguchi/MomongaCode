@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { MIN_SUMMARY_TOKENS, tokensForText } from '@momonga/protocol';
 import type { AdoptGuidelineRequest, RecordContextChargeRequest } from '@momonga/protocol';
-import { GuidelineConflictError, GuidelineTextError } from '@momonga/store';
+import { DuplicateChargeError, GuidelineConflictError, GuidelineTextError } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import { conflict, invalidRequest, notFound } from './errors.ts';
 import type { Handler, RouteRegistrar } from './app.ts';
@@ -45,11 +45,12 @@ export const registerGuidelineRoutes = (route: RouteRegistrar, deps: GuidelineRo
 
   const recordCharge: Handler = async (context) => {
     const body = validateBody<RecordContextChargeRequest>('RecordContextChargeRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
-    const responseId = body.detail?.responseId;
-    if (responseId !== undefined && contextCharges.list({}).some((entry) => entry.detail?.responseId === responseId)) {
-      throw conflict('duplicate_charge', `the response ${responseId} is already charged, so the call is not charged twice`);
+    try {
+      return json({ charge: contextCharges.record({ ...body, runId: null, project: canonicalProject(body.project, 'project') }) }, 201);
+    } catch (error) {
+      if (error instanceof DuplicateChargeError) throw conflict('duplicate_charge', error.message);
+      throw error;
     }
-    return json({ charge: contextCharges.record({ ...body, runId: null, project: canonicalProject(body.project, 'project') }) }, 201);
   };
 
   route('/v1/guidelines', { GET: listGuidelines, POST: adoptGuideline });

@@ -166,11 +166,18 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
     });
   };
 
+  let generationCount = 0;
   const startGeneration = (key: string, body: CreateResponseBody): Generation => {
     const scripted = gateway.script.shift();
     if (scripted === undefined) throw new Error(`fake gateway: no scripted step left for key ${key}`);
     const observed: ScriptStep = scripted.autoUsage === true ? { ...scripted, events: withObservedUsage(scripted.events, body) } : scripted;
-    const step: ScriptStep = gateway.rewriteCallIds ? { ...observed, events: withIssuedCallIds(observed.events) } : observed;
+    generationCount += 1;
+    const issuedId = `resp_generation_${generationCount}`;
+    const identified: ScriptStep = {
+      ...observed,
+      events: observed.events.map((event) => ('response' in event && typeof event.response === 'object' && event.response !== null ? ({ ...event, response: { ...event.response, id: issuedId } } as StreamEvent) : event)),
+    };
+    const step: ScriptStep = gateway.rewriteCallIds ? { ...identified, events: withIssuedCallIds(identified.events) } : identified;
     gateway.generations.set(key, (gateway.generations.get(key) ?? 0) + 1);
     if (step.gate !== undefined) gates.push(step.gate.release);
     const outcome = (async () => {

@@ -42,6 +42,11 @@ export const createReflectionStore = (
   const insert = db.prepare("INSERT OR IGNORE INTO reflection_jobs (run_id, state, attempts, created_at, updated_at) VALUES (:runId, 'pending', 0, :now, :now)");
   const select = db.prepare('SELECT * FROM reflection_jobs WHERE run_id = :runId');
   const oldestOpen = db.prepare("SELECT * FROM reflection_jobs WHERE state IN ('pending', 'running') ORDER BY created_at, rowid");
+  const ahead = db.prepare(
+    `SELECT COUNT(*) AS n FROM reflection_jobs o JOIN reflection_jobs t ON t.run_id = :runId
+     WHERE o.state IN ('pending', 'running') AND o.run_id != t.run_id
+       AND (o.created_at < t.created_at OR (o.created_at = t.created_at AND o.rowid < t.rowid))`,
+  );
   const begin = db.prepare("UPDATE reflection_jobs SET state = 'running', attempts = attempts + 1, updated_at = :now WHERE run_id = :runId AND state IN ('pending', 'running')");
   const latestForProject = db.prepare(
     `SELECT j.* FROM reflection_jobs j
@@ -85,6 +90,11 @@ export const createReflectionStore = (
     latestForProject: (project) => {
       const row = latestForProject.get({ project });
       return row === undefined ? undefined : decodeJob(row);
+    },
+    aheadOf: (runId) => {
+      const row = ahead.get({ runId });
+      if (row === undefined) throw new Error(`could not count the reflection jobs ahead of ${runId}`);
+      return readerFor('reflection_jobs', runId, row).number('n');
     },
     next: (exclude = new Set()) => oldestOpen.all().map(decodeJob).find((job) => !exclude.has(job.runId)),
     begin: (runId) => {

@@ -113,7 +113,7 @@ const harness = (behaviour: Behaviour = {}) => {
         if (behaviour.hang === true) await new Promise<void>(() => undefined);
       },
       getRun: async (id: string) => ({ id, sessionId: `s${counter}`, status: 'COMPLETED', step: 1, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 1 } }),
-      runReflection: async () => ({ job: null, charges: [] }),
+      runReflection: async () => ({ job: null, charges: [], queuedAhead: 0 }),
       resolveApproval: async () => ({}),
       cancel: async () => ({ status: 200, run: {} }),
       addRule: async (request: unknown) => {

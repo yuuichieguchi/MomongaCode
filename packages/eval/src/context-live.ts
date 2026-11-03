@@ -196,6 +196,7 @@ const runCase = async (
     const outcome = await driveWithin(run.id);
     const info = await measure(run.id);
     const reflection = await host.api.reflectionOf(run.id);
+    state.spent += (reflection.charges ?? []).reduce((sum, charge) => sum + charge.totalTokens, 0);
     const noise = entry.noiseTurns.length === 0 ? {} : { noiseTokens, noiseReflectionsUnsettled };
     if (!outcome.expired) return emit({ caseId: entry.id, runIndex, run: info, ...outcome.driven, reflection, ...tagged(), ...noise });
     stop = DEADLINE_REASON;

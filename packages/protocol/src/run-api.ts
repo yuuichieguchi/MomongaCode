@@ -817,7 +817,7 @@ export type ContextChargeView = {
   detail?: BilledDetail;
 };
 
-export type RunReflectionView = { job: ReflectionJobView | null; charges: ContextChargeView[] };
+export type RunReflectionView = { job: ReflectionJobView | null; charges: ContextChargeView[]; queuedAhead: number };
 
 export type ContextChargesView = { charges: ContextChargeView[]; totalTokens: number };
 
@@ -1102,7 +1102,7 @@ export const RUN_API_SCHEMAS = {
   MemoriesResponse: root(closed({ memories: { type: 'array', items: memoryView } }, ['memories'])),
   MemoryResponse: root(closed({ memory: memoryView }, ['memory'])),
   ReflectionResponse: root(closed({ job: nullable(reflectionJobView) }, ['job'])),
-  RunReflection: root(closed({ job: nullable(reflectionJobView), charges: { type: 'array', items: contextChargeView } }, ['job', 'charges'])),
+  RunReflection: root(closed({ job: nullable(reflectionJobView), charges: { type: 'array', items: contextChargeView }, queuedAhead: nonNegativeInteger }, ['job', 'charges', 'queuedAhead'])),
   PromoteMemoryRequest: root(closed({ skill: string }, ['skill'])),
   PromoteMemoryResponse: root(closed({ path: string }, ['path'])),
   AddMemoryRequest: root(

@@ -4,7 +4,7 @@ import { DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS } from '@
 import { canonicalJson, momongaPaths, sha256Hex } from '@momonga/foundation';
 import type { MemoryRecord, RunEventPayload } from '@momonga/protocol';
 import { protectedRootAreasOf } from '@momonga/runtime';
-import { usageOf } from '@momonga/testkit';
+import { createFakeTimers, usageOf } from '@momonga/testkit';
 import type { RuntimeStore } from '@momonga/store';
 import { MEMORY_TEXT_MAX_CHARS, createMemoryTools } from '@momonga/tools';
 import { REQUEUE_BASE_MS, REQUEUE_MAX_MS } from '../../src/process/constants.ts';
@@ -65,6 +65,7 @@ const setup = ({ enabled = true, maxTokens, window = 100_000, structured = true,
       evidenceRun: () => async () => ({ exitCode: null }),
       maxAttempts: MAX_ATTEMPTS,
       attemptTimeoutMs: 600_000,
+      timers: createFakeTimers(clock),
       random: () => 0.5,
       ...extra,
     });
@@ -445,7 +446,7 @@ describe('the charge of a reflection', () => {
         property === 'memories' ? { ...target.memories, [method]: () => { throw failure; } } : Reflect.get(target, property, receiver),
     });
 
-  it('commits the charge with the candidates and the finish, so a candidate that cannot be stored leaves one charge for the attempt and the retry charges its own', async () => {
+  it('commits the charge with the candidates and the finish, so a candidate that cannot be stored leaves one charge for the attempt, and the retry, which the gateway answers from the stored response, charges nothing more', async () => {
     const env = setup();
     const run = await queued(env);
     const reflector = env.reflector();
@@ -458,7 +459,7 @@ describe('the charge of a reflection', () => {
     healed(env.dbPath, 'memories');
     env.clock.advance(REQUEUE_MAX_MS);
     expect(await reflector.runOne(SIGNAL)).toBe('ran');
-    expect(env.api.contextCharges.list()).toMatchObject([{ runId: run.id, totalTokens: 120 }, { runId: run.id, totalTokens: 120 }]);
+    expect(env.api.contextCharges.list()).toMatchObject([{ runId: run.id, totalTokens: 120 }]);
     expect(env.api.memories.candidates()).toHaveLength(1);
     expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', attempts: 2 });
   });
@@ -510,7 +511,7 @@ describe('the charge of a reflection', () => {
     expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'running', attempts: 1 });
   });
 
-  it('records the charge together with the failure when a later step throws on the last attempt', async () => {
+  it('records the charge once, with the failure, when a later step throws on every attempt and the gateway replays the one response', async () => {
     const env = setup();
     const run = await queued(env);
     const failure = new Error('the memory list failed');
@@ -521,7 +522,7 @@ describe('the charge of a reflection', () => {
       await expect(reflector.runOne(SIGNAL)).rejects.toBe(failure);
     }
     expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'failed', attempts: MAX_ATTEMPTS, lastError: 'the memory list failed' });
-    expect(env.api.contextCharges.list()).toHaveLength(MAX_ATTEMPTS);
+    expect(env.api.contextCharges.list()).toHaveLength(1);
   });
 
   it('records the charge of an aborted attempt whose usage had come back, and still gives the attempt back', async () => {
@@ -573,10 +574,56 @@ describe('candidates of a reflection', () => {
     const hangsUntilAborted = (_command: unknown, signal: AbortSignal) =>
       new Promise<{ exitCode: null }>((resolve) => signal.addEventListener('abort', () => resolve({ exitCode: null }), { once: true }));
 
-    await expect(env.reflector(() => true, env.store, { evidenceRun: () => hangsUntilAborted, attemptTimeoutMs: 40 }).runOne(SIGNAL)).rejects.toThrow();
+    const timers = createFakeTimers(env.clock);
+    let evidenceStarted!: () => void;
+    const started = new Promise<void>((resolve) => void (evidenceStarted = resolve));
+    const hangs = (_command: unknown, signal: AbortSignal) => {
+      evidenceStarted();
+      return hangsUntilAborted(_command, signal);
+    };
+
+    const turn = env.reflector(() => true, env.store, { evidenceRun: () => hangs, attemptTimeoutMs: 40_000, timers }).runOne(SIGNAL);
+    const failure = expect(turn).rejects.toThrow();
+    await started;
+    timers.advance(40_000);
+    await failure;
 
     expect(env.api.memories.candidates()).toEqual([]);
     expect(env.api.reflection.get(run.id)?.state).not.toBe('done');
+    expect(env.api.contextCharges.list()).toMatchObject([{ purpose: 'reflection', runId: run.id }]);
+    expect(timers.pending()).toEqual([]);
+  });
+
+  it('does not charge a replayed response a second time: the gateway answers the retry of a failed attempt with the stored response under the same id', async () => {
+    const env = setup();
+    const run = env.finishedRun(VERIFIED(env.project));
+    const timers = createFakeTimers(env.clock);
+    env.gateway.script.push(textStep(CANDIDATE_REPLY([])), textStep(CANDIDATE_REPLY([])));
+    const sameId = {
+      ...env.gateway,
+      capabilities: env.gateway.capabilities,
+      stream: (body: never, options: never) =>
+        (async function* () {
+          for await (const event of env.gateway.stream(body, options)) {
+            yield 'response' in event ? { ...event, response: { ...event.response, id: 'resp_replayed' } } : event;
+          }
+        })(),
+    };
+    const reflector = env.reflector(() => true, env.store, { gateway: sameId, timers });
+    const failing = env.api as unknown as { reflection: { complete: (completion: unknown) => unknown } };
+    const original = failing.reflection.complete.bind(failing.reflection);
+    let failures = 1;
+    failing.reflection.complete = (completion) => {
+      if (failures-- > 0) throw new Error('the store failed after the model call');
+      return original(completion);
+    };
+
+    await expect(reflector.runOne(SIGNAL)).rejects.toThrow();
+    env.clock.advance(FIRST_BACKOFF_MS * 4);
+    expect(await reflector.runOne(SIGNAL)).toBe('ran');
+
+    expect(env.api.reflection.get(run.id)?.state).toBe('done');
+    expect(env.api.contextCharges.list()).toHaveLength(1);
   });
 
   it('stores a candidate bound to a journal path, with the recorded hash', async () => {

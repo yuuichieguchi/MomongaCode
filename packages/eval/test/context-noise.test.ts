@@ -112,6 +112,37 @@ describe('noise turns of a live run', () => {
     expect(decodeTranscript(encodeTranscript(first), 'x').noiseReflectionsUnsettled).toBe(1);
   });
 
+  it('counts the reflection charge of a noise run against the dataset cap: the cap is reached only with the charge, and the next case stops with the cost-cap reason', async () => {
+    const charge = { id: 1, purpose: 'reflection' as const, runId: 'n', project: '/w', model: 'm', inputTokens: 30, outputTokens: 5, totalTokens: 35, createdAt: 1 };
+    const dataset = datasetOf(NOISE);
+    const expanded = expandContextDataset(dataset, 3);
+    const cap = { bounds: { datasetTokens: 40, caseDeadlineMs: {} } };
+    const tokensOf = (input: string): number => (input === 'work on a' ? 10 : 7);
+
+    const without = await runContextDataset(expanded, ports(host(tokensOf).open, cap));
+    expect(without.transcripts.map((transcript) => transcript.stopped)).toEqual([undefined, undefined]);
+
+    const lastNoise = expanded.cases[0]?.noiseTurns.at(-1)?.user;
+    const charged = host(tokensOf, undefined, (input) => (input === lastNoise ? { state: 'done', charges: [charge] } : { state: 'none' }));
+    const withCharge = await runContextDataset(expanded, ports(charged.open, cap));
+    expect(withCharge.transcripts[0]?.stopped).toEqual(expect.stringContaining('cost cap'));
+    expect(withCharge.transcripts[0]?.events).toEqual([]);
+    expect(charged.inputs).not.toContain('work on a');
+  });
+
+  it('counts the reflection charge of the measured run against the dataset cap too, so the next case stops when the cap is reached with it', async () => {
+    const charge = { id: 1, purpose: 'reflection' as const, runId: 'n', project: '/w', model: 'm', inputTokens: 30, outputTokens: 5, totalTokens: 35, createdAt: 1 };
+    const expanded = expandContextDataset(datasetOf({}), 3);
+    const cap = { bounds: { datasetTokens: 40, caseDeadlineMs: {} } };
+
+    const without = await runContextDataset(expanded, ports(host(() => 10).open, cap));
+    expect(without.transcripts.map((transcript) => transcript.stopped)).toEqual([undefined, undefined]);
+
+    const charged = await runContextDataset(expanded, ports(host(() => 10, undefined, () => ({ state: 'done', charges: [charge] })).open, cap));
+    expect(charged.transcripts.map((transcript) => transcript.stopped)).toEqual([undefined, expect.stringContaining('cost cap')]);
+    expect(charged.transcripts[0]?.run.usage.totalTokens).toBe(10);
+  });
+
   it('keeps the noise tokens through the transcript file and the report file', async () => {
     const dataset = datasetOf(NOISE);
     const { transcripts } = await runContextDataset(expandContextDataset(dataset, 3), ports(host(() => 5).open));

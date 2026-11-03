@@ -1,3 +1,4 @@
+import { getEventListeners } from 'node:events';
 import { describe, expect, it } from 'vitest';
 import type { ContextChargeView, ReflectionJobView, RunReflectionView } from '@momonga/protocol';
 import { goldenRunApi } from '../src/client/golden-run-api.ts';
@@ -8,14 +9,16 @@ const charge = (id: number): ContextChargeView => ({ id, purpose: 'reflection', 
 
 type Bounds = { pendingBoundMs: number; attemptBoundMs: number; pollMs: number };
 
-const apiOver = (views: RunReflectionView[], waits: number[], bounds: Bounds = { pendingBoundMs: 2000, attemptBoundMs: 5000, pollMs: 1000 }, options: { signal?: AbortSignal; stepMs?: number; onWait?: () => void } = {}) => {
+type View = Omit<RunReflectionView, 'queuedAhead'> & { queuedAhead?: number };
+
+const apiOver = (views: View[], waits: number[], bounds: Bounds = { pendingBoundMs: 2000, attemptBoundMs: 5000, pollMs: 1000 }, options: { signal?: AbortSignal; stepMs?: number; onWait?: () => void } = {}) => {
   let reads = 0;
   let clock = 0;
   const client = {
     runReflection: async (): Promise<RunReflectionView> => {
-      const view = views[Math.min(reads, views.length - 1)] as RunReflectionView;
+      const view = views[Math.min(reads, views.length - 1)] as View;
       reads += 1;
-      return view;
+      return { queuedAhead: 0, ...view };
     },
   };
   const api = goldenRunApi(client as never, undefined, {
@@ -66,6 +69,25 @@ describe('the reflection of a run in the golden run api', () => {
     expect(waits).toEqual([1000, 1000]);
   });
 
+  it('extends the pickup bound by the attempts bound of every job queued ahead, read at each poll, so a held reflector does not make the case unsettled', async () => {
+    const waits: number[] = [];
+    const held = (queuedAhead: number): View => ({ job: job('pending'), charges: [], queuedAhead });
+    const { api } = apiOver([held(1), held(1), held(1), held(1), held(0), { job: job('running'), charges: [] }, { job: job('done'), charges: [charge(1)] }], waits);
+
+    expect(await api.reflectionOf('run-1')).toEqual({ state: 'done', charges: [charge(1)] });
+    expect(waits).toHaveLength(6);
+  });
+
+  it('still gives up with the busy reason once the queue ahead and the pickup interval are spent', async () => {
+    const waits: number[] = [];
+    const { api } = apiOver([{ job: job('pending'), charges: [], queuedAhead: 1 }], waits);
+
+    const answer = await api.reflectionOf('run-1');
+
+    expect(answer.reason).toBe('the runtime was busy with other runs, so the reflection did not start');
+    expect(waits).toHaveLength(7);
+  });
+
   it('applies the attempt bound, measured from the first sign of an attempt, once the job has started', async () => {
     const waits: number[] = [];
     const { api } = apiOver([{ job: job('pending'), charges: [] }, { job: job('running'), charges: [] }], waits);
@@ -95,6 +117,22 @@ describe('the reflection of a run in the golden run api', () => {
 
     expect(reads()).toBe(1);
     expect(waits).toEqual([1000]);
+  });
+
+  it('leaves no abort listener behind: at most one while it waits, none after many polls and after an abort', async () => {
+    const controller = new AbortController();
+    const seen: number[] = [];
+    const pending = Array.from({ length: 40 }, () => ({ job: job('pending'), charges: [], queuedAhead: 100 }));
+    const { api } = apiOver([...pending, { job: job('done'), charges: [] }], [], { pendingBoundMs: 1_000_000, attemptBoundMs: 5000, pollMs: 1000 }, {
+      signal: controller.signal,
+      onWait: () => void seen.push(getEventListeners(controller.signal, 'abort').length),
+    });
+
+    await api.reflectionOf('run-1');
+    await api.reflectionOf('run-1');
+
+    expect(Math.max(...seen)).toBeLessThanOrEqual(1);
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
   });
 
   it('sends no request at all when the signal has already fired', async () => {

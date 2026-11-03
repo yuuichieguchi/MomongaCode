@@ -583,6 +583,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         evidenceRun: evidenceRunFor,
         maxAttempts: STORE_MAX_ATTEMPTS,
         attemptTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs,
+        timers,
         random: Math.random,
       });
       const upkeepSchedule = createMemoryUpkeepSchedule({

@@ -454,6 +454,7 @@ export type ReflectionStore = {
   enqueue(runId: string): boolean;
   get(runId: string): ReflectionJob | undefined;
   latestForProject(project: string): ReflectionJob | undefined;
+  aheadOf(runId: string): number;
   next(exclude?: ReadonlySet<string>): ReflectionJob | undefined;
   begin(runId: string): ReflectionJob;
   release(runId: string): ReflectionJob;

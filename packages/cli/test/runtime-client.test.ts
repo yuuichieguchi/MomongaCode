@@ -252,8 +252,8 @@ describe('the token anatomy endpoints', () => {
   });
 
   it('reads the reflection job and every charge of a run and refuses a body that still names a single charge', async (context) => {
-    const good = await serve(context, () => json(200, { job: null, charges: [] }));
-    expect(await good.client.runReflection('run-1')).toEqual({ job: null, charges: [] });
+    const good = await serve(context, () => json(200, { job: null, charges: [], queuedAhead: 0 }));
+    expect(await good.client.runReflection('run-1')).toEqual({ job: null, charges: [], queuedAhead: 0 });
     expect(good.seen[0]?.url).toBe('/v1/runs/run-1/reflection');
 
     const bad = await serve(context, () => json(200, { job: null, charge: null }));

@@ -2,7 +2,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS } from '@momonga/config';
 import type { RunEventPayload } from '@momonga/protocol';
-import { usageOf } from '@momonga/testkit';
+import { createFakeTimers, usageOf } from '@momonga/testkit';
 import type { RuntimeStore } from '@momonga/store';
 import { enqueue, harness, makeStoreDir, mustClaim, newSession } from '../../../store/test/helpers.ts';
 import { createFakeGateway } from '../worker/fake-gateway.ts';
@@ -61,6 +61,7 @@ const setup = () => {
       evidenceRun: () => async () => ({ exitCode: null }),
       maxAttempts: 3,
       attemptTimeoutMs: 600_000,
+      timers: createFakeTimers(clock),
       random: () => 0.5,
     });
   const verified: RunEventPayload[] = [...fileTool('w1', 'Write', { path: path.join(project, 'src/a.ts'), sha256: SHA, access: 'write' }), ...bash('t1', 'npm test', 0, 'ok')];

@@ -101,7 +101,7 @@ const reflectionOf = (value: unknown, where: string): TranscriptReflection => {
     throw new TranscriptError(`${where}: reflection.state must be none or a reflection job state`);
   }
   if (reason !== undefined && (typeof reason !== 'string' || reason === '')) throw new TranscriptError(`${where}: reflection.reason must be a non-empty string`);
-  if (charges !== undefined && !validateReflectionView({ job: null, charges })) {
+  if (charges !== undefined && !validateReflectionView({ job: null, charges, queuedAhead: 0 })) {
     throw new TranscriptError(`${where}: reflection.charges are not context charges: ${ajv.errorsText(validateReflectionView.errors, { dataVar: 'reflection' })}`);
   }
   return {

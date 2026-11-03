@@ -7,7 +7,7 @@ import { memoryTextProblem } from '@momonga/tools';
 import type { ContextChargeInput, RuntimeStore, SaveCandidateInput } from '@momonga/store';
 import type { GatewayPort, SettingsPort } from '../ports.ts';
 import { REQUEUE_BASE_MS, REQUEUE_MAX_MS } from '../process/constants.ts';
-import { RUNTIME_DEFAULTS } from '../process/defaults.ts';
+import type { ServiceTimers } from '../service/timers.ts';
 import { readPins } from '../worker/pins.ts';
 import { isRunVerified } from './verified-run.ts';
 import { readAllRunEvents } from '../process/run-events.ts';
@@ -27,6 +27,7 @@ export type ReflectorOptions = {
   evidenceRun: (project: string) => EvidenceRun;
   maxAttempts: number;
   attemptTimeoutMs: number;
+  timers: ServiceTimers;
   random: () => number;
 };
 
@@ -123,7 +124,8 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       metadata: { run_id: runId, purpose: 'reflection' },
     };
     const { terminal, usage, detail } = await complete(runId, body, signal);
-    if (usage !== null) {
+    const replayed = detail.responseId !== undefined && store.contextCharges.list({ runIds: [runId] }).some((charge) => charge.detail?.responseId === detail.responseId);
+    if (usage !== null && !replayed) {
       ledger.unrecorded = {
         detail,
         purpose: 'reflection',
@@ -213,7 +215,13 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       running = true;
       const ledger: ChargeLedger = {};
       try {
-        await reflect(job.runId, AbortSignal.any([signal, AbortSignal.timeout(options.attemptTimeoutMs)]), ledger);
+        const deadline = new AbortController();
+        const timer = options.timers.setTimeout(() => deadline.abort(new Error(`the reflection attempt passed its deadline of ${options.attemptTimeoutMs} ms`)), options.attemptTimeoutMs);
+        try {
+          await reflect(job.runId, AbortSignal.any([signal, deadline.signal]), ledger);
+        } finally {
+          options.timers.clearTimeout(timer);
+        }
         retryAt.delete(job.runId);
         return 'ran';
       } catch (error) {

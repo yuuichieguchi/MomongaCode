@@ -137,6 +137,7 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDe
     const view: RunReflectionView = {
       job: job === undefined ? null : { runId: job.runId, state: job.state, attempts: job.attempts, reason: job.lastError, dropped: job.dropped, updatedAt: job.updatedAt },
       charges: deps.store.contextCharges.list({ runIds: [runId] }).filter((entry) => entry.purpose === 'reflection'),
+      queuedAhead: job === undefined ? 0 : reflection.aheadOf(runId),
     };
     return json(view, 200);
   };
