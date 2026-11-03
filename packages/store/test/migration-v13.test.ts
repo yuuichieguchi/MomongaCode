@@ -108,8 +108,8 @@ const memoryIds = (db: DatabaseSync, term: string): string[] =>
   db.prepare('SELECT memory_id FROM memories_index WHERE memories_index MATCH ? ORDER BY memory_id').all(`"${term}"`).map((row) => String(row['memory_id']));
 
 describe('migration v13', () => {
-  it('is the last migration', () => {
-    expect(MIGRATIONS.map((migration) => migration.version).at(-1)).toBe(13);
+  it('is followed only by the migration that records dropped reflection candidates', () => {
+    expect(MIGRATIONS.map((migration) => migration.version).slice(12)).toEqual([13, 14]);
   });
 
   it('preserves an existing memory and gives it the defaults of the new columns', () => {
@@ -139,7 +139,7 @@ describe('migration v13', () => {
 
   it('creates the tables with the contract columns', () => {
     const db = migratedDb();
-    expect(columnsOf(db, 'reflection_jobs')).toEqual(['run_id', 'state', 'attempts', 'last_error', 'created_at', 'updated_at']);
+    expect(columnsOf(db, 'reflection_jobs')).toEqual(['run_id', 'state', 'attempts', 'last_error', 'created_at', 'updated_at', 'dropped_json']);
     expect(columnsOf(db, 'compaction_guidelines')).toEqual(['version', 'text', 'parent', 'created_at', 'adopted_at', 'report_json']);
     expect(columnsOf(db, 'search_docs')).toEqual(['id', 'level', 'session_id', 'run_id', 'step', 'project', 'origin', 'outcome', 'seq_from', 'seq_to', 'at', 'body', 'paths_json']);
     expect(columnsOf(db, 'runs')).toContain('origin');

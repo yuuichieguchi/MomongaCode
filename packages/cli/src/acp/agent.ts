@@ -1,5 +1,5 @@
 import { PROTOCOL_VERSION, RequestError, agent } from '@agentclientprotocol/sdk';
-import type { AgentApp, AgentConnection, RequestPermissionRequest, SessionUpdate } from '@agentclientprotocol/sdk';
+import type { AgentApp, AgentConnection, RequestPermissionRequest, SessionConfigOption, SessionUpdate } from '@agentclientprotocol/sdk';
 import type { ElicitationAnswerRecord } from '@momonga/protocol';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import { RunApiError } from '../client/runtime-client.ts';
@@ -10,6 +10,7 @@ import { createMapperState, mapChildEvent, mapRunEvent, noticeUpdate } from './e
 import type { ClientFeatures, Effect, MapperState, Phase } from './events.ts';
 import { mcpServersOf } from './mcp-servers.ts';
 import { modeStateOf, selectableModeOf } from './modes.ts';
+import { modelOptionOf, selectableAliasOf } from './models.ts';
 import { promptInputOf } from './prompt-input.ts';
 import { stopReasonOf } from './stop-reason.ts';
 import { createOrderedQueue, createTaskGroup } from './tasks.ts';
@@ -33,6 +34,7 @@ export type AcpDeps = {
   version: string;
   runtime: RuntimeClient;
   contextWindowOf(modelAlias: string): Promise<number>;
+  modelAliases(): Promise<readonly string[]>;
   environment(): Promise<Record<string, string>>;
   autoModeAvailable(): Promise<boolean>;
   canonicalCwd(cwd: string): string;
@@ -47,7 +49,7 @@ type Turn = { runId: string | undefined; cancelRequested: boolean };
 
 type BridgeSession = {
   readonly id: string;
-  readonly modelAlias: string;
+  modelAlias: string;
   readonly bypassAllowed: boolean;
   readonly autoAvailable: boolean;
   skillNames: readonly string[];
@@ -114,6 +116,14 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
   };
 
   const contextWindowOf = (session: BridgeSession): Promise<number> => (session.contextWindow ??= deps.contextWindowOf(session.modelAlias));
+
+  const applyModel = (session: BridgeSession, modelAlias: string): void => {
+    if (session.modelAlias === modelAlias) return;
+    session.modelAlias = modelAlias;
+    session.contextWindow = undefined;
+  };
+
+  const configOptionsOf = async (session: BridgeSession): Promise<SessionConfigOption[]> => [modelOptionOf(await deps.modelAliases(), session.modelAlias)];
 
   const durably = <T>(session: BridgeSession, operation: () => Promise<T>): Promise<T> => deps.retryAfterRestore(operation, session.lifetime.signal);
 
@@ -191,6 +201,12 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
           await peer().notify('session/update', { sessionId: session.id, update: { sessionUpdate: 'usage_update', used: effect.used, size } });
         });
         return;
+      case 'model':
+        session.queue.enqueue(async () => {
+          applyModel(session, effect.modelAlias);
+          await peer().notify('session/update', { sessionId: session.id, update: { sessionUpdate: 'config_option_update', configOptions: await configOptionsOf(session) } });
+        });
+        return;
       case 'permission':
         session.tasks.run(() => askPermission(session, effect));
         return;
@@ -220,7 +236,7 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
       onChildEvent: (frame, agent) => handleChildFrame(session, frame, agent),
       onEvent: (frame) => {
         handleFrame(session, frame, replayThrough);
-        if (frame.data.type !== 'mode.changed' && frame.data.seq >= replayThrough) onCaughtUp?.();
+        if ('seq' in frame.data && frame.data.seq >= replayThrough) onCaughtUp?.();
       },
     });
 
@@ -269,7 +285,7 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
           after: view.lastEventId,
           signal: lifetime.signal,
           onEvent: (frame) => {
-            if (frame.data.type === 'mode.changed') handleFrame(session, frame, 0);
+            if (frame.data.type === 'mode.changed' || frame.data.type === 'model.changed') handleFrame(session, frame, 0);
           },
         });
       } catch (error) {
@@ -328,7 +344,7 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
     const created = await viaRunApi(deps.runtime.createSession({ cwd: params.cwd, env: await deps.environment(), mcpServers }));
     const session = register(created.session, await deps.autoModeAvailable());
     announceAfterResponse(session);
-    return { sessionId: session.id, modes: modeStateOf({ ...session, permissionMode: created.session.permissionMode }) };
+    return { sessionId: session.id, modes: modeStateOf({ ...session, permissionMode: created.session.permissionMode }), configOptions: await configOptionsOf(session) };
   });
 
   app.onRequest('session/load', async ({ params }) => {
@@ -353,7 +369,7 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
       throw error;
     }
     announceAfterResponse(session);
-    return { modes: modeStateOf({ ...session, permissionMode: view.permissionMode }) };
+    return { modes: modeStateOf({ ...session, permissionMode: view.permissionMode }), configOptions: await configOptionsOf(session) };
   });
 
   app.onRequest('session/set_mode', async ({ params }) => {
@@ -361,6 +377,15 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
     const mode = selectableModeOf(session, params.modeId);
     await viaRunApi(deps.runtime.setPermissionMode(session.id, mode));
     return {};
+  });
+
+  app.onRequest('session/set_config_option', async ({ params }) => {
+    const session = sessionOf(params.sessionId);
+    const aliases = await deps.modelAliases();
+    const alias = selectableAliasOf(aliases, { configId: params.configId, value: params.value });
+    const view = await viaRunApi(deps.runtime.setModelAlias(session.id, alias));
+    applyModel(session, view.modelAlias);
+    return { configOptions: [modelOptionOf(aliases, view.modelAlias)] };
   });
 
   app.onRequest('session/prompt', async ({ params, signal }) => {

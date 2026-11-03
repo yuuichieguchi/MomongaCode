@@ -4,7 +4,7 @@ import type { MomongaPaths } from '@momonga/foundation';
 import type { MemoryKind, MemoryScope, MemoryView } from '@momonga/protocol';
 import type { RuntimeClient } from '../client/runtime-client.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
-import { formatMemory, formatMemoryHistory, formatMemoryList } from '../memory/format.ts';
+import { formatMemory, formatMemoryHistory, formatMemoryList, formatReflection } from '../memory/format.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
 
@@ -76,7 +76,7 @@ export const memoryReview = async (ports: CliPorts, paths: MomongaPaths, options
   try {
     const waiting = await client.memories({ state: 'candidate', project: ports.cwd });
     if (options.json) ports.stdout.write(`${JSON.stringify(waiting)}\n`);
-    else if (waiting.length === 0) ports.stdout.write('no memories waiting for review\n');
+    else if (waiting.length === 0) ports.stdout.write(`no memories waiting for review\n${formatReflection(await client.lastReflection(ports.cwd))}\n`);
     else ports.stdout.write(`${waiting.map(formatMemory).join('\n\n')}\n\nmomonga memory review accept <id> keeps a memory, momonga memory review reject <id> discards it\n`);
     return 0;
   } finally {

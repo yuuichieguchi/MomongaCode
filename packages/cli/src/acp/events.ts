@@ -15,6 +15,7 @@ export type Phase = 'history' | 'live';
 export type Effect =
   | { readonly kind: 'update'; readonly update: SessionUpdate }
   | { readonly kind: 'usage'; readonly used: number }
+  | { readonly kind: 'model'; readonly modelAlias: string }
   | { readonly kind: 'permission'; readonly approvalId: string; readonly toolCall: ToolCallUpdate; readonly options: readonly PermissionOption[] }
   | {
       readonly kind: 'elicitation';
@@ -184,6 +185,8 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
       return [toolUpdate(toolCallIdOf(event.runId, event.callId), { status: 'in_progress', content: outputContent(awaitedText(event.awaits)) })];
     case 'mode.changed':
       return phase === 'live' ? [{ kind: 'update', update: { sessionUpdate: 'current_mode_update', currentModeId: event.mode } }] : [];
+    case 'model.changed':
+      return phase === 'live' ? [{ kind: 'model', modelAlias: event.modelAlias }] : [];
     case 'run.started':
     case 'run.status':
     case 'model.requested':

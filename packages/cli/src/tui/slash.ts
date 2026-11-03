@@ -6,6 +6,7 @@ import type { TuiBackend } from './backend.ts';
 
 export type SlashContext = ModeAvailability & {
   readonly mode: PermissionMode;
+  readonly modelAlias: string;
   readonly commands: readonly SlashCommand[];
   readonly backend: TuiBackend;
   info(text: string): void;
@@ -13,6 +14,7 @@ export type SlashContext = ModeAvailability & {
   clear(): void;
   exit(): void;
   setMode(mode: PermissionMode): Promise<void>;
+  setModel(modelAlias: string): Promise<void>;
 };
 
 export type SlashCommand = {
@@ -113,4 +115,29 @@ const mode: SlashCommand = {
   },
 };
 
-export const BUILTIN_SLASH_COMMANDS: readonly SlashCommand[] = [help, clear, mode, exit];
+const model: SlashCommand = {
+  name: 'model',
+  usage: '[alias]',
+  description: 'list the model aliases with the current one marked, or switch the model from the next task',
+  run: async (args, context) => {
+    const entries = await context.backend.models();
+    if (args === '') {
+      context.info(
+        [
+          'models (the current one is marked *):',
+          ...entries.map((entry) => `  ${entry.id === context.modelAlias ? '*' : ' '} ${entry.id}  ${entry.capabilities.contextWindow}-token window`),
+          'switch with /model <alias>; a change applies from the next task',
+        ].join('\n'),
+      );
+      return;
+    }
+    const chosen = entries.find((entry) => entry.id === args);
+    if (chosen === undefined) {
+      context.info(`unknown model ${args}; available: ${entries.map((entry) => entry.id).join(', ')}`);
+      return;
+    }
+    await context.setModel(chosen.id);
+  },
+};
+
+export const BUILTIN_SLASH_COMMANDS: readonly SlashCommand[] = [help, clear, mode, model, exit];

@@ -15,7 +15,9 @@ import { capabilitiesFor } from '../worker/harness.ts';
 import { failedStep, textStep } from '../worker/scripts.ts';
 import { bash, exported, fileTool, finishClaimed } from './reflection-fixture.ts';
 
-type Job = { state: string; attempts: number; lastError: string | null };
+type Dropped = { ordinal: number; text: string | null; cause: 'text_rule' | 'duplicate' | 'evidence'; reason: string };
+
+type Job = { state: string; attempts: number; lastError: string | null; dropped: Dropped[] };
 
 type Api = {
   reflection: {
@@ -151,7 +153,7 @@ describe('job creation and the decision to call', () => {
     expect(env.gateway.streams).toHaveLength(1);
     expect(env.api.reflection.get(inspected.id)).toMatchObject({ state: 'done', lastError: null });
     const alone = env.finishedRun(bash('t1', 'npm test', 0, 'ok'));
-    env.gateway.script.push(textStep(CANDIDATE_REPLY([])));
+    env.gateway.script.push(textStep(CANDIDATE_REPLY([], 'a second, different note')));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
     expect(env.gateway.streams).toHaveLength(2);
     expect(env.api.reflection.get(alone.id)).toMatchObject({ state: 'done', lastError: null });
@@ -709,6 +711,67 @@ describe('candidates of a reflection', () => {
     const env = setup();
     await reflected(env, only('   \n  '));
     expect(env.api.memories.candidates()).toEqual([]);
+  });
+});
+
+describe('the record of why a reflection produced nothing', () => {
+  const reflected = async (env: Env, reply: string) => {
+    const run = env.finishedRun(VERIFIED(env.project));
+    await env.job(run.id);
+    env.gateway.script.push(textStep(reply));
+    await env.reflector().runOne(SIGNAL);
+    return run;
+  };
+
+  it('records that the model proposed no candidates, on a job that ends done', async () => {
+    const env = setup();
+    const run = await reflected(env, JSON.stringify({ candidates: [] }));
+    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', lastError: 'the model proposed no candidates', dropped: [] });
+  });
+
+  it('records a candidate dropped by the text rule with the rule that refused it', async () => {
+    const env = setup();
+    const reply = JSON.stringify({
+      candidates: [
+        { text: 'deploy key sk-abcdefghijklmnopqrstuvwxyz0123456789', kind: 'fact', paths: [] },
+        { text: 'plain note', kind: 'fact', paths: [] },
+      ],
+    });
+    const run = await reflected(env, reply);
+    const job = env.api.reflection.get(run.id);
+    expect(job?.dropped).toEqual([{ ordinal: 0, text: null, cause: 'text_rule', reason: expect.stringContaining('credential') }]);
+    expect(JSON.stringify(job)).not.toContain('sk-abcdefghijklmnopqrstuvwxyz0123456789');
+    expect(job?.lastError).toBeNull();
+  });
+
+  it('records a candidate dropped because it repeats a memory that is already known', async () => {
+    const env = setup();
+    await reflected(env, JSON.stringify({ candidates: [{ text: 'prefer the seeded fixture', kind: 'fact', paths: [] }] }));
+    const run = await reflected(env, JSON.stringify({ candidates: [{ text: '  prefer the   seeded fixture', kind: 'fact', paths: [] }] }));
+    const job = env.api.reflection.get(run.id);
+    expect(job?.dropped).toEqual([{ ordinal: 0, text: '  prefer the   seeded fixture', cause: 'duplicate', reason: expect.stringMatching(/already|repeat/i) }]);
+    expect(job?.lastError).toBe('every candidate the model proposed was dropped');
+  });
+
+  it('records a candidate whose evidence could not be bound, with the reason of the binding', async () => {
+    const env = setup();
+    const reply = JSON.stringify({
+      candidates: [
+        { text: 'honest note', kind: 'fact', paths: ['src/a.ts'] },
+        { text: 'bound to a file the run never saw', kind: 'fact', paths: ['src/never-read.ts'] },
+      ],
+    });
+    const run = await reflected(env, reply);
+    const job = env.api.reflection.get(run.id);
+    expect(job?.dropped).toEqual([{ ordinal: 1, text: 'bound to a file the run never saw', cause: 'evidence', reason: expect.stringContaining('src/never-read.ts') }]);
+    expect(job?.lastError).toBeNull();
+    expect(env.api.memories.candidates().map((memory) => memory.text)).toEqual(['honest note']);
+  });
+
+  it('records nothing for a job that kept every candidate', async () => {
+    const env = setup();
+    const run = await reflected(env, CANDIDATE_REPLY(['src/a.ts']));
+    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', lastError: null, dropped: [] });
   });
 });
 

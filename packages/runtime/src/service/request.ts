@@ -13,7 +13,7 @@ export type CreateSessionBody = {
   mcpServers?: Record<string, Record<string, unknown>>;
 };
 
-export type PatchSessionBody = { permissionMode?: PermissionMode; mcpServers?: Record<string, Record<string, unknown>> };
+export type PatchSessionBody = { permissionMode?: PermissionMode; modelAlias?: string; mcpServers?: Record<string, Record<string, unknown>> };
 
 export type CreateRunBody = {
   input: string;

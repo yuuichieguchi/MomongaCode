@@ -53,6 +53,7 @@ import type {
   RuntimeStoreOptions,
   ServiceMutationResult,
   Session,
+  SetModelAliasResult,
   SetPermissionModeResult,
   SetSessionMcpServersResult,
   StatusPatch,
@@ -159,6 +160,7 @@ const prepareStatements = (db: DatabaseSync) => ({
   ),
   updateSessionMcpServers: db.prepare('UPDATE sessions SET mcp_servers_json = :mcpServers WHERE id = :id'),
   updateSessionMode: db.prepare('UPDATE sessions SET permission_mode = :permissionMode WHERE id = :id'),
+  updateSessionModelAlias: db.prepare('UPDATE sessions SET model_alias = :modelAlias WHERE id = :id'),
   sessionMaxEventId: db.prepare('SELECT COALESCE(MAX(id), 0) AS max_id FROM events WHERE session_id = :sessionId'),
   selectSession: db.prepare('SELECT * FROM sessions WHERE id = :id'),
   listSessions: db.prepare(`SELECT * FROM sessions s WHERE ${ROOT_SESSION} ORDER BY created_at, rowid`),
@@ -1010,6 +1012,25 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         propagateMode(sessionId, mode);
         insertEvent({ runId: null, sessionId, seq: null, step: null, leaseToken: null, createdAt: clock.now(), payload: { type: 'mode.changed', mode } });
         return { kind: 'ok', session: { ...session, permissionMode: mode }, changed: true };
+      }),
+
+    setModelAlias: (sessionId, modelAlias: string) =>
+      transaction<SetModelAliasResult>(() => {
+        const row = sql.selectSession.get({ id: sessionId });
+        if (row === undefined) return { kind: 'not_found' };
+        const session = decodeSession(row);
+        if (session.modelAlias === modelAlias) return { kind: 'ok', session, changed: false };
+        sql.updateSessionModelAlias.run({ id: sessionId, modelAlias });
+        insertEvent({
+          runId: null,
+          sessionId,
+          seq: null,
+          step: null,
+          leaseToken: null,
+          createdAt: clock.now(),
+          payload: { type: 'model.changed', modelAlias, previousModelAlias: session.modelAlias },
+        });
+        return { kind: 'ok', session: { ...session, modelAlias }, changed: true };
       }),
 
     setSessionMcpServers: (sessionId, servers) =>

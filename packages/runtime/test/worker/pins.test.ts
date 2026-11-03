@@ -51,15 +51,33 @@ describe('worker pins across attempts', () => {
     expect(env.gateway.streams).toHaveLength(1);
   });
 
-  it('fails with pins_mismatch when the session model alias differs on a later attempt', async () => {
+  it('keeps the alias the run pinned when the session alias changes before a later attempt', async () => {
     const env = await makeEnv();
     const run = await waitForApproval(env);
     env.setModelAlias('other-model');
+    env.gateway.script.push(textStep('Written.'));
 
     await env.runOnce(env.worker('worker-2'));
 
-    expect(env.run(run.id)).toMatchObject({ status: 'FAILED', error: { code: 'pins_mismatch' } });
-    expect(env.gateway.streams).toHaveLength(1);
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(env.gateway.streams.map((stream) => stream.body.model)).toEqual(['fm', 'fm']);
+    const starts = env.ofType(run.id, 'run.started');
+    expect(starts[1]?.pins).toEqual(starts[0]?.pins);
+  });
+
+  it('pins the changed alias in a run that starts after the change', async () => {
+    const env = await makeEnv();
+    env.gateway.script.push(textStep('First.'), textStep('Second.'));
+    const first = env.enqueue('First task');
+    await env.runOnce(env.worker('worker-1'));
+    env.setModelAlias('other-model');
+    const second = env.enqueue('Second task');
+    await env.runOnce(env.worker('worker-1'));
+
+    expect(env.run(first.id).status).toBe('COMPLETED');
+    expect(env.run(second.id).status).toBe('COMPLETED');
+    expect(env.gateway.streams.map((stream) => stream.body.model)).toEqual(['fm', 'other-model']);
+    expect(env.ofType(second.id, 'run.started')[0]?.pins).toMatchObject({ modelAlias: 'other-model' });
   });
 
   it('emits a notice and continues when the tool set digest differs on a later attempt', async () => {

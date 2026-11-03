@@ -20,6 +20,8 @@ import type {
   MemoryOrigin,
   MemoryRecord,
   MemoryScope,
+  ReflectionDrop,
+  ReflectionJobState,
   StopReason,
   ToolKind,
 } from '@momonga/protocol';
@@ -113,6 +115,8 @@ export type NotFound = { kind: 'not_found' };
 export type CreateRunResult = { kind: 'created' | 'existing'; run: Run } | NotFound | { kind: 'key_reused' };
 export type RequestCancelResult = { kind: 'ok'; run: Run; changed: boolean } | NotFound;
 export type SetPermissionModeResult = { kind: 'ok'; session: Session; changed: boolean } | NotFound;
+
+export type SetModelAliasResult = { kind: 'ok'; session: Session; changed: boolean } | NotFound;
 export type SetSessionMcpServersResult = { kind: 'ok'; session: Session } | NotFound;
 export type ResolveApprovalResult =
   | { kind: 'ok'; approval: Approval; run: Run }
@@ -411,9 +415,10 @@ export type SearchStore = {
 
 export type ReflectionJob = {
   runId: string;
-  state: 'pending' | 'running' | 'done' | 'failed';
+  state: ReflectionJobState;
   attempts: number;
   lastError: string | null;
+  dropped: ReflectionDrop[];
   createdAt: number;
   updatedAt: number;
 };
@@ -432,6 +437,7 @@ export type ReflectionCompletion = {
   runId: string;
   charge: ContextChargeInput | null;
   candidates: readonly SaveCandidateInput[];
+  dropped?: readonly ReflectionDrop[];
   reason?: string;
 };
 
@@ -439,6 +445,7 @@ export type ReflectionStore = {
   runOrigin(runId: string): MemoryOrigin | undefined;
   enqueue(runId: string): boolean;
   get(runId: string): ReflectionJob | undefined;
+  latestForProject(project: string): ReflectionJob | undefined;
   next(exclude?: ReadonlySet<string>): ReflectionJob | undefined;
   begin(runId: string): ReflectionJob;
   release(runId: string): ReflectionJob;
@@ -488,6 +495,7 @@ export type RuntimeStore = {
   releaseLease(claim: Claim, options: { availableAt: number; refundAttempt?: boolean }): RunMutationResult;
   requestCancel(runId: string): RequestCancelResult;
   setPermissionMode(sessionId: string, mode: PermissionMode): SetPermissionModeResult;
+  setModelAlias(sessionId: string, modelAlias: string): SetModelAliasResult;
   setSessionMcpServers(sessionId: string, servers: SessionMcpServers): SetSessionMcpServersResult;
   listRuns(sessionId: string, statuses?: readonly RunStatus[]): Run[];
   appendAsService(

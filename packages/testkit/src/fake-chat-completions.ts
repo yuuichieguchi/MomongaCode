@@ -48,11 +48,15 @@ export interface FakeStreamChunk {
   finishReason?: string | null;
 }
 
+export type FakeFixedUsage = { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+
+export type FakeRequestUsage = { prompt: 'request'; completion_tokens: number; tokensOf?: (requestBody: unknown) => number };
+
 export type FakeScriptedReply =
   | {
       kind: 'stream';
       chunks: FakeStreamChunk[];
-      usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+      usage?: FakeFixedUsage | FakeRequestUsage;
       done?: boolean;
     }
   | { kind: 'error'; status: number; body: unknown; headers?: Record<string, string> }
@@ -187,6 +191,20 @@ const fakeMessageImageTokens = (message: ChatMessage, model: FakeImageTokenModel
 
 export const countFakePromptTokens = (messages: readonly ChatMessage[], imageModel?: FakeImageTokenModel): number =>
   messages.reduce((total, message) => total + countFakeTokens(messageText(message)) + 4 + fakeMessageImageTokens(message, imageModel), 0);
+
+const FAKE_CHARACTERS_PER_PROMPT_TOKEN = 4;
+
+export const countFakeRequestTokens = (body: unknown): number => {
+  const messages = isRecord(body) ? body['messages'] : undefined;
+  const tools = isRecord(body) ? body['tools'] : undefined;
+  return Math.ceil(JSON.stringify([messages ?? [], tools ?? []]).length / FAKE_CHARACTERS_PER_PROMPT_TOKEN);
+};
+
+const resolvedUsage = (usage: FakeFixedUsage | FakeRequestUsage, body: unknown): FakeFixedUsage => {
+  if (!('prompt' in usage)) return usage;
+  const promptTokens = (usage.tokensOf ?? countFakeRequestTokens)(body);
+  return { prompt_tokens: promptTokens, completion_tokens: usage.completion_tokens, total_tokens: promptTokens + usage.completion_tokens };
+};
 
 export const isValidAtIndex = (index: number, rate: number): boolean => {
   const percent = Math.round(rate * 100);
@@ -489,7 +507,7 @@ export const startFakeChatCompletions = async (
     }
   };
 
-  const serveScripted = async (reply: FakeScriptedReply, response: http.ServerResponse): Promise<void> => {
+  const serveScripted = async (reply: FakeScriptedReply, response: http.ServerResponse, requestBody: unknown): Promise<void> => {
     if (reply.kind === 'error') {
       writeJson(response, reply.status, reply.body, reply.headers ?? {});
       return;
@@ -510,7 +528,7 @@ export const startFakeChatCompletions = async (
     writeScriptedChunks(response, reply.chunks, id);
     if (reply.usage !== undefined) {
       response.write(
-        `data: ${JSON.stringify({ id, object: 'chat.completion.chunk', created: 0, model: modelId, choices: [], usage: reply.usage })}\n\n`,
+        `data: ${JSON.stringify({ id, object: 'chat.completion.chunk', created: 0, model: modelId, choices: [], usage: resolvedUsage(reply.usage, requestBody) })}\n\n`,
       );
     }
     if (reply.done !== false) response.write('data: [DONE]\n\n');
@@ -580,7 +598,7 @@ export const startFakeChatCompletions = async (
         if (routeIndex >= 0) {
           routeHits[routeIndex] = (routeHits[routeIndex] as number) + 1;
           const { reply } = routes[routeIndex] as FakeRoute;
-          await serveScripted(typeof reply === 'function' ? reply(body) : reply, response);
+          await serveScripted(typeof reply === 'function' ? reply(body) : reply, response, body);
           return;
         }
         const held = holds.shift();
@@ -591,7 +609,7 @@ export const startFakeChatCompletions = async (
         }
         const scripted = script.shift();
         if (scripted !== undefined) {
-          await serveScripted(scripted, response);
+          await serveScripted(scripted, response, body);
           return;
         }
         if (inFlight >= maxConcurrency && overflow === 'reject') {

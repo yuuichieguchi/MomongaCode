@@ -6,6 +6,7 @@ export type { FidelitySource } from './summary-fidelity.ts';
 export { WORKING_STATE_MESSAGE_MIN_TOKENS, criticalIdentifiersOf, renderWorkingState, workingStateCapFor, workingStateMessage } from './working-state.ts';
 export type { WorkingStateOptions } from './working-state.ts';
 export { buildContext, measureLayers, measurePinned } from './build-context.ts';
+export { HANDLE_READER_TOOL } from './tool-output.ts';
 export { ContextOverflowError, PinnedOverflowError, PinnedRoomError, PrefixChangedError } from './errors.ts';
 export { createFsInstructionReader } from './fs-instruction-reader.ts';
 export { INSTRUCTION_FILE_LIMIT_BYTES } from './instructions.ts';

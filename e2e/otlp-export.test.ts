@@ -10,7 +10,7 @@ import { createE2eHome, registerE2eCleanup } from './support/home.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
 import { shutdownBarrier, startStack } from './support/stack.ts';
 import { UPSTREAM_MODEL, UPSTREAM_TARGET } from './support/stack.ts';
-import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
+import { chatCompletions, reportedTokensOfRequest, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
 const startCollector = async (): Promise<OtlpCollector> => {
@@ -80,6 +80,8 @@ describe('OTLP export through real processes', () => {
     expect(tool.parentSpanId).toBe(agent.spanId);
     expect(tool.attributes).toMatchObject({ 'gen_ai.operation.name': 'execute_tool', 'gen_ai.tool.name': 'Read', 'gen_ai.tool.type': 'function', 'momonga.run_id': runId });
 
+    const reportedInputs = chatCompletions(stack.fake).map((request) => reportedTokensOfRequest(request.body));
+    expect(chats.map((chat) => chat.attributes['gen_ai.usage.input_tokens']).sort()).toEqual([...reportedInputs].sort());
     for (const chat of chats) {
       expect(chat.service).toBe('momonga-gateway');
       expect(chat.kind).toBe(OTLP_SPAN_KIND.CLIENT);
@@ -88,7 +90,6 @@ describe('OTLP export through real processes', () => {
       expect(chat.name).toBe('chat system');
       expect(chat.attributes).toMatchObject({ 'gen_ai.request.model': 'system', 'gen_ai.response.finish_reasons': expect.any(Array), 'momonga.run_id': runId });
       expect(chat.attributes['gen_ai.provider.name']).toBe('fake');
-      expect(chat.attributes['gen_ai.usage.input_tokens']).toBe(10);
       expect(chat.attributes['gen_ai.usage.output_tokens']).toBe(5);
     }
     expect(JSON.stringify(collector.requests.map((request) => request.body))).not.toContain('otlp notes');
@@ -143,7 +144,7 @@ describe('OTLP export through real processes', () => {
       expect(report.total).toMatchObject({
         calls: 2,
         unpricedCalls: 0,
-        inputTokens: 20,
+        inputTokens: chatCompletions(stack.fake).reduce((sum, request) => sum + reportedTokensOfRequest(request.body), 0),
         outputTokens: 10,
         cachedInputTokens: 0,
         amount: 0,

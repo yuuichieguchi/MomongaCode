@@ -101,10 +101,59 @@ describe('momonga memory review', () => {
     expect(out.join('')).toContain('note m1');
   });
 
-  it('says when nothing waits', async (context) => {
-    const { paths, ports, out } = await setup(context, () => ({ status: 200, body: { memories: [] } }));
+  const jobView = (overrides: Record<string, unknown> = {}) => ({
+    runId: 'run-9',
+    state: 'done',
+    attempts: 1,
+    reason: 'every candidate the model proposed was dropped',
+    dropped: [
+      { ordinal: 0, text: 'unbound note', cause: 'evidence', reason: 'src/x.ts was not read or written in this run' },
+      { ordinal: 1, text: null, cause: 'text_rule', reason: 'looks like a credential' },
+      { ordinal: 2, text: 'repeated note', cause: 'duplicate', reason: 'the same text is already a live memory' },
+    ],
+    updatedAt: 0,
+    ...overrides,
+  });
+
+  const answerBy = (job: unknown) => (seen: Seen) =>
+    seen.url.startsWith('/v1/reflection') ? { status: 200, body: { job } } : { status: 200, body: { memories: [] } };
+
+  it('says when nothing waits, and asks for the last reflection of this folder', async (context) => {
+    const { paths, ports, project, seen, out } = await setup(context, answerBy(null));
     await command('memoryReview')(ports, paths, { json: false });
-    expect(out.join('')).toBe('no memories waiting for review\n');
+    expect(requests(seen)).toEqual([`GET /v1/memories?state=candidate&project=${encodeURIComponent(project)}`, `GET /v1/reflection?project=${encodeURIComponent(project)}`]);
+    expect(out.join('')).toBe('no memories waiting for review\nno reflection has run in this folder yet\n');
+  });
+
+  it('gives the reasons of the last reflection when nothing waits', async (context) => {
+    const { paths, ports, out } = await setup(context, answerBy(jobView()));
+    await command('memoryReview')(ports, paths, { json: false });
+    const text = out.join('');
+    expect(text).toContain('no memories waiting for review');
+    expect(text).toContain('run run-9');
+    expect(text).toContain('every candidate the model proposed was dropped');
+    expect(text).toContain('candidate 0 dropped, evidence could not be bound: src/x.ts was not read or written in this run');
+    expect(text).toContain('"unbound note"');
+    expect(text).toContain('candidate 1 dropped, refused by the text rule: looks like a credential');
+    expect(text).toContain('candidate 2 dropped, already known: the same text is already a live memory');
+  });
+
+  it('gives the reason of a reflection that produced nothing without any dropped candidate', async (context) => {
+    const { paths, ports, out } = await setup(context, answerBy(jobView({ reason: 'the model proposed no candidates', dropped: [] })));
+    await command('memoryReview')(ports, paths, { json: false });
+    expect(out.join('')).toContain('the model proposed no candidates');
+  });
+
+  it('does not ask for the reflection while candidates wait', async (context) => {
+    const { paths, ports, seen } = await setup(context, () => ({ status: 200, body: { memories: [memory('m1')] } }));
+    await command('memoryReview')(ports, paths, { json: false });
+    expect(requests(seen)).toHaveLength(1);
+  });
+
+  it('keeps the JSON output the list of memories', async (context) => {
+    const { paths, ports, out } = await setup(context, () => ({ status: 200, body: { memories: [] } }));
+    await command('memoryReview')(ports, paths, { json: true });
+    expect(JSON.parse(out.join(''))).toEqual([]);
   });
 
   it('accepts by id', async (context) => {

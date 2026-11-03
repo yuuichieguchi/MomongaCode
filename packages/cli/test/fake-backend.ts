@@ -65,6 +65,8 @@ export type FakeBackendOptions = {
   startupNotices?: readonly string[];
   autoModeAvailable?: boolean;
   modelPending?: Promise<void>;
+  aliases?: readonly string[];
+  windows?: Readonly<Record<string, number>>;
 };
 
 export const capabilitiesOf = (overrides: CapabilityOverride = {}): Capabilities =>
@@ -140,6 +142,18 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       return session;
     },
     autoModeAvailable: async () => options.autoModeAvailable ?? false,
+    models: async () =>
+      (options.aliases ?? [session.modelAlias]).map((id) => ({
+        id,
+        object: 'model',
+        targets: [...(options.targets ?? ['primary'])],
+        capabilities: capabilitiesOf({ contextWindow: options.windows?.[id] ?? options.contextWindow ?? 8192 }),
+      })),
+    setModel: async (modelAlias: string) => {
+      record(`model:${modelAlias}`);
+      session = { ...session, modelAlias };
+      return session;
+    },
     setMode: async (mode: PermissionMode) => {
       record(`mode:${mode}`);
       session = { ...session, permissionMode: mode };
@@ -213,7 +227,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     ruleHistory: async (id) => rules.filter((fact) => fact.id === id),
     model: async () => {
       if (options.modelPending !== undefined) await options.modelPending;
-      return { id: session.modelAlias, object: 'model', targets: [...(options.targets ?? ['primary'])], capabilities: capabilitiesOf({ contextWindow: options.contextWindow ?? 8192, ...(options.imageInput === true ? { imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } } : {}) }) };
+      return { id: session.modelAlias, object: 'model', targets: [...(options.targets ?? ['primary'])], capabilities: capabilitiesOf({ contextWindow: options.windows?.[session.modelAlias] ?? options.contextWindow ?? 8192, ...(options.imageInput === true ? { imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } } : {}) }) };
     },
     startupNotices: async () => [...(options.startupNotices ?? []), ...(options.skillWarnings ?? [])],
     readImage: async (file) => {

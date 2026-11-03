@@ -267,7 +267,7 @@ describe('App slash commands', () => {
     await type(app, '/help', '> /help');
     app.stdin.write(KEYS.enter);
     const output = await untilOutput(app, 'Slash commands');
-    for (const name of ['/help', '/clear', '/mode', '/exit']) expect(output).toContain(name);
+    for (const name of ['/help', '/clear', '/mode', '/model [alias]', '/exit']) expect(output).toContain(name);
     app.unmount();
   });
 
@@ -281,6 +281,52 @@ describe('App slash commands', () => {
     await type(app, '/mode nonsense', '> /mode nonsense');
     app.stdin.write(KEYS.enter);
     await untilOutput(app, 'unknown permission mode nonsense');
+    app.unmount();
+  });
+
+  it('/model lists the aliases with the current one marked', async () => {
+    const { app } = await start({ aliases: ['default', 'qwen-local'] });
+    await untilFrame(app, 'mode: default');
+    await type(app, '/model', '> /model');
+    app.stdin.write(KEYS.enter);
+    const output = await untilOutput(app, 'switch with /model <alias>');
+    expect(output).toContain('* default');
+    expect(output).toContain('qwen-local');
+    expect(output).not.toContain('* qwen-local');
+    app.unmount();
+  });
+
+  it('/model switches the model of the session and the context size the status line measures against', async () => {
+    const { backend, app } = await start({ aliases: ['default', 'qwen-local'], windows: { default: 8192, 'qwen-local': 32768 } });
+    await untilFrame(app, 'mode: default');
+    await type(app, '/model qwen-local', '> /model qwen-local');
+    app.stdin.write(KEYS.enter);
+    await untilOutput(app, 'model: qwen-local; applies from the next task');
+    expect(backend.calls).toContain('model:qwen-local');
+    await runStarted(backend, app, 'what is here');
+    backend.emit(frame({ type: 'model.responded', attempt: 0, response: { status: 'completed', output: [], usage: { input_tokens: 1500, output_tokens: 100, total_tokens: 1600 } } }));
+    backend.emit(frame({ type: 'usage.updated', inputTokens: 1500, outputTokens: 100, totalTokens: 1600 }));
+    await untilFrame(app, 'tokens: 1.6k · context: 5%');
+    app.unmount();
+  });
+
+  it('/model refuses an alias that is not listed', async () => {
+    const { backend, app } = await start({ aliases: ['default', 'qwen-local'] });
+    await untilFrame(app, 'mode: default');
+    await type(app, '/model turbo', '> /model turbo');
+    app.stdin.write(KEYS.enter);
+    await untilOutput(app, 'unknown model turbo; available: default, qwen-local');
+    expect(backend.calls.some((call) => call.startsWith('model:'))).toBe(false);
+    app.unmount();
+  });
+
+  it('/model says that a running task keeps its model', async () => {
+    const { backend, app } = await start({ aliases: ['default', 'qwen-local'] });
+    await untilFrame(app, 'mode: default');
+    await runStarted(backend, app, 'long task');
+    await type(app, '/model qwen-local', '> /model qwen-local');
+    app.stdin.write(KEYS.enter);
+    await untilOutput(app, 'model: qwen-local; the running task keeps default, the next task uses qwen-local');
     app.unmount();
   });
 

@@ -274,6 +274,10 @@ const IDEMPOTENCY_LEASE_TOKEN = `
 ALTER TABLE idempotency ADD COLUMN lease_token INTEGER;
 `;
 
+const REFLECTION_DROPPED_CANDIDATES = `
+ALTER TABLE reflection_jobs ADD COLUMN dropped_json TEXT;
+`;
+
 const EVIDENCE_BASED_CONTEXT = `
 CREATE TABLE memories_rebuilt (
   id TEXT PRIMARY KEY,
@@ -553,4 +557,5 @@ export const MIGRATIONS: readonly Migration[] = [
     name: 'add governing facts, memory evidence and lifecycle, the hierarchical search index, reflection jobs and compaction guidelines',
     sql: EVIDENCE_BASED_CONTEXT,
   },
+  { version: 14, name: 'record the candidates a reflection dropped and why', sql: REFLECTION_DROPPED_CANDIDATES },
 ];

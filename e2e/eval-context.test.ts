@@ -7,7 +7,7 @@ import { titleOf } from './support/cases.ts';
 import { runCli } from './support/cli.ts';
 import { createE2eHome } from './support/home.ts';
 import { baseSettings, sandboxChoiceOf, startUpstream, writeSettingsFile } from './support/stack.ts';
-import { chatCompletions, textReply } from './support/upstream.ts';
+import { SCRIPTED_USAGE, chatCompletions, textReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
 const LONG_STEPS = 14;
@@ -53,7 +53,7 @@ const longRoute = (): FakeRoute => {
             finishReason: 'tool_calls',
           },
         ],
-        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+        usage: SCRIPTED_USAGE,
       };
     },
   };

@@ -8,7 +8,7 @@ import { titleOf } from './support/cases.ts';
 import { runCli } from './support/cli.ts';
 import { createE2eHome } from './support/home.ts';
 import { baseSettings, sandboxChoiceOf, startUpstream, writeSettingsFile } from './support/stack.ts';
-import { chatCompletions, textReply } from './support/upstream.ts';
+import { SCRIPTED_USAGE, chatCompletions, textReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
 const STEPS = 14;
@@ -61,7 +61,7 @@ const walkRoute = (task: string, file: string, fragile: boolean): FakeRoute => {
               finishReason: 'tool_calls',
             },
           ],
-          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+          usage: SCRIPTED_USAGE,
         };
       }
       const text = bodyText(body);
@@ -80,8 +80,28 @@ const candidates = (): FakeRoute => ({
   },
 });
 
-const ROUTES: FakeRoute[] = [
-  { match: (body) => isCompactionRequest(body) && bodyText(body).includes(WINNER), reply: textReply(KEEPING_SUMMARY) },
+const escaped = (text: string): string => JSON.stringify(text).slice(1, -1);
+
+const guidelineFree = (body: unknown): unknown =>
+  JSON.parse(
+    bodyText(body)
+      .replaceAll(escaped(`\n${WINNER}`), '')
+      .replace(new RegExp(`${escaped(`\n${LOSER} Variant `).replaceAll('\\', '\\\\')}\\d+\\.`, 'g'), '')
+      .replaceAll(escaped(KEEPING_SUMMARY), escaped(PLAIN_SUMMARY)),
+  );
+
+const STABLE_USAGE = { ...SCRIPTED_USAGE, tokensOf: (body: unknown): number => SCRIPTED_USAGE.tokensOf(guidelineFree(body)) };
+
+const stable = (route: FakeRoute): FakeRoute => ({
+  match: route.match,
+  reply: (body) => {
+    const reply = typeof route.reply === 'function' ? route.reply(body) : route.reply;
+    return reply.kind === 'stream' ? { ...reply, usage: STABLE_USAGE } : reply;
+  },
+});
+
+const UNSTABLE_ROUTES: FakeRoute[] = [
+  { match: (body) => isCompactionRequest(body) &&bodyText(body).includes(WINNER), reply: textReply(KEEPING_SUMMARY) },
   { match: isCompactionRequest, reply: textReply(PLAIN_SUMMARY) },
   { match: (body) => bodyText(body).includes(JSON.stringify(GUIDELINE_ANALYSIS_INSTRUCTIONS).slice(1, -1)), reply: textReply(CONTRASTIVE_ANALYSIS) },
   candidates(),
@@ -90,6 +110,8 @@ const ROUTES: FakeRoute[] = [
   walkRoute(STURDY_TASKS[1] as string, 'second.txt', false),
   walkRoute(STURDY_TASKS[2] as string, 'third.txt', false),
 ];
+
+const ROUTES: FakeRoute[] = UNSTABLE_ROUTES.map(stable);
 
 const paired = (scenario: string, input: string, file: string): Record<string, unknown>[] =>
   (['on', 'off'] as const).map((compaction) => ({

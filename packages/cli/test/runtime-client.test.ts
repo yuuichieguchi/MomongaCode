@@ -140,6 +140,22 @@ describe('sessions', () => {
     expect(`${seen[0]?.method} ${seen[0]?.url}`).toBe('PATCH /v1/sessions/session-1');
     expect(JSON.parse(seen[0]?.body ?? '')).toEqual({ mcpServers: servers });
   });
+
+  it('switches the model alias of a session with a PATCH that carries nothing else, and returns the session', async (context) => {
+    const { client, seen } = await serve(context, () => json(200, { session: { ...SESSION, modelAlias: 'fm-large' } }));
+
+    const session = await client.setModelAlias('session-1', 'fm-large');
+
+    expect(`${seen[0]?.method} ${seen[0]?.url}`).toBe('PATCH /v1/sessions/session-1');
+    expect(JSON.parse(seen[0]?.body ?? '')).toEqual({ modelAlias: 'fm-large' });
+    expect(session.modelAlias).toBe('fm-large');
+  });
+
+  it('keeps the refusal of an alias the gateway does not list', async (context) => {
+    const { client } = await serve(context, () => json(400, { error: { type: 'invalid_request_error', code: 'invalid_request', message: 'unknown model alias nope', param: 'modelAlias' } }));
+
+    await expect(client.setModelAlias('session-1', 'nope')).rejects.toMatchObject({ status: 400, reason: expect.stringContaining('unknown model alias nope') });
+  });
 });
 
 describe('elicitations', () => {

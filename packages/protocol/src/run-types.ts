@@ -183,7 +183,9 @@ export type RunEventPayload =
   | { type: 'approval.rule.persisted'; approvalId: string; effect: 'allow' | 'deny'; rule: string }
   | { type: 'notice'; level: 'info' | 'warning' | 'error'; message: string; code?: string };
 
-export type SessionEventPayload = { type: 'mode.changed'; mode: PermissionMode };
+export type SessionEventPayload =
+  | { type: 'mode.changed'; mode: PermissionMode }
+  | { type: 'model.changed'; modelAlias: string; previousModelAlias: string };
 
 export type SessionEvent = SessionEventPayload & { id: number; sessionId: string; createdAt: number };
 

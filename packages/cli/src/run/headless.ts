@@ -26,6 +26,7 @@ export type HeadlessOptions = {
   format: OutputFormat;
   permissionMode?: PermissionMode;
   bypassAllowed?: boolean;
+  modelAlias?: string;
   skill?: string;
   images?: readonly string[];
   verbose: boolean;
@@ -206,6 +207,7 @@ const openInterruptibleSession = async (ports: CliPorts, paths: MomongaPaths, op
       signal: options.interrupt,
       ...(options.permissionMode === undefined ? {} : { permissionMode: options.permissionMode }),
       ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),
+      ...(options.modelAlias === undefined ? {} : { modelAlias: options.modelAlias }),
     });
   } catch (error) {
     if (options.interrupt.aborted && error === options.interrupt.reason) return undefined;

@@ -4,6 +4,7 @@ import type { FakeChatCompletionsServer, FakeRoute, FakeScriptedReply, RecordedR
 import { createE2eHome } from './home.ts';
 import type { E2eHome } from './home.ts';
 import { UPSTREAM_TARGET, baseSettings, sandboxChoiceOf, startUpstream, writeSettingsFile } from './stack.ts';
+import { E2E_IMAGE_TOKENS } from './upstream.ts';
 
 export type ProductOptions = {
   script?: FakeScriptedReply[];
@@ -32,7 +33,7 @@ export const prepareProduct = async (options: ProductOptions = {}): Promise<Prod
   });
   const base = baseSettings(home, sandboxChoiceOf({ home }).kind);
   const capabilities = {
-    ...(options.imageInput === true ? { imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } } : {}),
+    ...(options.imageInput === true ? { imageInput: true, imageTokens: E2E_IMAGE_TOKENS } : {}),
     ...(options.contextWindow === undefined ? {} : { contextWindow: options.contextWindow }),
   };
   writeSettingsFile(home, { ...withCapabilities(base, capabilities), ...options.settings });

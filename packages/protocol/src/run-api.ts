@@ -1,7 +1,7 @@
 import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
 import { HOOK_EVENTS, HOOK_OUTCOMES, HOOK_PRE_TOOL_DECISIONS } from './hooks.ts';
 import { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
-import { MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES } from './memory.ts';
+import { MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES, REFLECTION_DROP_CAUSES, REFLECTION_JOB_STATES } from './memory.ts';
 import type { ContextChargePurpose, SummaryFidelity, SummarySource } from './context-record.ts';
 import { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES } from './permission-denial.ts';
 import { FILE_ACCESSES } from './working-facts.ts';
@@ -295,6 +295,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
     required: ['entries'],
   },
   'mode.changed': { properties: { mode: permissionMode }, required: ['mode'] },
+  'model.changed': { properties: { modelAlias: { type: 'string', minLength: 1 }, previousModelAlias: { type: 'string', minLength: 1 } }, required: ['modelAlias', 'previousModelAlias'] },
   'usage.updated': {
     properties: { inputTokens: nonNegativeInteger, outputTokens: nonNegativeInteger, totalTokens: nonNegativeInteger },
     required: ['inputTokens', 'outputTokens', 'totalTokens'],
@@ -374,7 +375,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
 
 const publicEventVariant = (type: keyof typeof PAYLOAD_SCHEMAS): JsonSchema => {
   const { properties, required } = PAYLOAD_SCHEMAS[type];
-  if (type === 'mode.changed') {
+  if (type === 'mode.changed' || type === 'model.changed') {
     return closed(
       { id: integer, sessionId: string, createdAt: integer, type: constant(type), ...properties },
       ['id', 'sessionId', 'createdAt', 'type', ...required],
@@ -553,6 +554,24 @@ const memoryView = closed(
     'status',
     'contributedAt',
   ],
+);
+
+const reflectionJobView = closed(
+  {
+    runId: string,
+    state: enumOf(REFLECTION_JOB_STATES),
+    attempts: nonNegativeInteger,
+    reason: nullable(string),
+    dropped: {
+      type: 'array',
+      items: closed(
+        { ordinal: nonNegativeInteger, text: nullable(string), cause: enumOf(REFLECTION_DROP_CAUSES), reason: string },
+        ['ordinal', 'text', 'cause', 'reason'],
+      ),
+    },
+    updatedAt: integer,
+  },
+  ['runId', 'state', 'attempts', 'reason', 'dropped', 'updatedAt'],
 );
 
 export type SkillScope = (typeof SKILL_SCOPES)[number];
@@ -759,7 +778,7 @@ export const RUN_API_SCHEMAS = {
       ['cwd', 'env'],
     ),
   ),
-  PatchSessionRequest: root({ ...closed({ permissionMode, mcpServers: sessionMcpServers }, []), minProperties: 1 }),
+  PatchSessionRequest: root({ ...closed({ permissionMode, modelAlias: { type: 'string', minLength: 1 }, mcpServers: sessionMcpServers }, []), minProperties: 1 }),
   CreateRunRequest: root(
     closed(
       {
@@ -939,6 +958,7 @@ export const RUN_API_SCHEMAS = {
   MemoryView: root(memoryView),
   MemoriesResponse: root(closed({ memories: { type: 'array', items: memoryView } }, ['memories'])),
   MemoryResponse: root(closed({ memory: memoryView }, ['memory'])),
+  ReflectionResponse: root(closed({ job: nullable(reflectionJobView) }, ['job'])),
   PromoteMemoryRequest: root(closed({ skill: string }, ['skill'])),
   PromoteMemoryResponse: root(closed({ path: string }, ['path'])),
   AddMemoryRequest: root(

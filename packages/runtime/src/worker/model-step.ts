@@ -68,11 +68,18 @@ export const decideAfterResponse = async (ctx: ClaimContext): Promise<Flow> => {
   return settleCalls(ctx);
 };
 
+type InputObservation = { inputDigest: string; estimatedTokens: number; marginTokens: number };
+
+const truncationFailure = (reported: number, observation: InputObservation): { code: 'input_truncated'; message: string } => ({
+  code: 'input_truncated',
+  message: `The server reported ${reported} input tokens for a context the token meter counts as ${observation.estimatedTokens} tokens, which is more than the estimation margin of ${observation.marginTokens} tokens below it. The server likely truncated the input without saying so. Set the server's context length to the target's context window, or lower the target's contextWindow to what the server serves.`,
+});
+
 const handleResult = async (
   ctx: ClaimContext,
   result: ModelResult,
   position: { step: number; attempt: number },
-  observation: { inputDigest: string } | undefined,
+  observation: InputObservation | undefined,
 ): Promise<Flow> => {
   const { journal, terminals } = ctx;
   if (result.kind === 'failed') {
@@ -117,7 +124,13 @@ const handleResult = async (
   ]);
   ctx.memory.streak = 0;
   ctx.memory.interruptions = 0;
-  if (observation !== undefined) ctx.meter.observe({ inputDigest: observation.inputDigest, inputTokens: response.momonga?.contextInputTokens ?? usage.input_tokens });
+  if (observation !== undefined) {
+    const reported = response.momonga?.contextInputTokens ?? usage.input_tokens;
+    ctx.meter.observe({ inputDigest: observation.inputDigest, inputTokens: reported });
+    if (reported < observation.estimatedTokens - observation.marginTokens) {
+      return terminals.finish('FAILED', { error: truncationFailure(reported, observation) });
+    }
+  }
   return decideAfterResponse(ctx);
 };
 
@@ -193,5 +206,7 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
     { type: 'model.requested', step: position.step, attempt: position.attempt, digest: sha256Hex(canonicalJson(body)), body },
   ]);
   const streamed = await streamRecovering(ctx, body, position);
-  return streamed.kind === 'flow' ? streamed.flow : handleResult(ctx, streamed.result, position, summarising ? undefined : { inputDigest: built.inputDigest });
+  return streamed.kind === 'flow'
+    ? streamed.flow
+    : handleResult(ctx, streamed.result, position, summarising ? undefined : { inputDigest: built.inputDigest, estimatedTokens: built.inputTokens, marginTokens: built.budget.margin });
 };

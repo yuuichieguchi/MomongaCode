@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -6,7 +7,7 @@ import { readDb } from './support/db.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { TOOL_GROUPS_SQL } from './support/ledger.ts';
-import { groupAlive } from './support/process.ts';
+import { groupAlive, isAlive } from './support/process.ts';
 import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
 import { seatbeltOrSkip } from './support/sandbox.ts';
 import { DEFAULT_E2E_DEPS, startStack } from './support/stack.ts';
@@ -26,6 +27,61 @@ const linesOf = (file: string): string[] | undefined => {
 
 const toolGroupsOf = (home: E2eHome): number[] =>
   readDb<{ pgid: number }>(home.paths.databases.runtime, TOOL_GROUPS_SQL).map((row) => Number(row.pgid));
+
+const processTable = (): { pid: number; pgid: number }[] =>
+  execFileSync('/bin/ps', ['-ax', '-o', 'pid=,pgid='], { encoding: 'utf8' })
+    .split('\n')
+    .flatMap((line) => {
+      const [pid, pgid] = line.trim().split(/\s+/).map(Number);
+      return pid === undefined || pgid === undefined || Number.isNaN(pid) || Number.isNaN(pgid) ? [] : [{ pid, pgid }];
+    });
+
+const membersOf = (pgid: number): number[] => processTable().filter((entry) => entry.pgid === pgid).map((entry) => entry.pid);
+
+const groupOfPid = (pid: number): number | undefined => processTable().find((entry) => entry.pid === pid)?.pgid;
+
+const pidIn = (file: string): number | undefined => {
+  const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim() : '';
+  return /^\d+$/.test(text) ? Number(text) : undefined;
+};
+
+const ESCAPE_GROUP = `perl -e 'use POSIX qw(setsid); setsid(); exec "sleep", "60"'`;
+
+const killRuntimeDuringBash = async (command: (files: { effect: string; shell: string; background: string; escaped: string }) => string, context: Parameters<typeof seatbeltOrSkip>[0]) => {
+  seatbeltOrSkip(context);
+  const home = await createE2eHome();
+  const files = {
+    effect: path.join(home.project, 'effect.log'),
+    shell: path.join(home.project, 'shell.pid'),
+    background: path.join(home.project, 'background.pid'),
+    escaped: path.join(home.project, 'escaped.pid'),
+  };
+  const stack = await startStack({
+    home,
+    needsBash: true,
+    deps: { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY },
+    script: [toolCallReply('Bash', { command: command(files) }), textReply('done')],
+  });
+  const runtime = createRuntimeClient(home);
+  const { session } = await runtime.createSession();
+  const { run } = await runtime.createRun(session.id, 'Say hello');
+  await until(() => linesOf(files.effect)?.length === 1, { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'effect.log has one line' });
+  const [pgid] = await until(
+    () => {
+      const groups = toolGroupsOf(home);
+      return groups.length > 0 ? groups : undefined;
+    },
+    { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'idempotency row with a pgid' },
+  );
+  const oldRuntimePid = childOf(await stack.client.health(), 'runtime').pid;
+  if (oldRuntimePid === undefined || pgid === undefined) throw new Error('the runtime or the tool group is unknown');
+  const kill = (): void => {
+    process.kill(oldRuntimePid, 'SIGKILL');
+  };
+  const completed = (): Promise<unknown> =>
+    until(async () => (await runtime.getRun(run.id)).run.status === 'COMPLETED', { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: `run ${run.id} COMPLETED after recovery` });
+  return { home, files, pgid, runId: run.id, runtime, stack, kill, completed };
+};
 
 describe('b2: Bash under seatbelt', () => {
   it.skipIf(skipCase('b2-seatbelt'))(titleOf('b2-seatbelt'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
@@ -143,6 +199,72 @@ describe('b2: Bash under seatbelt', () => {
       expect(childOf(after, 'gateway').pid).toBe(oldGatewayPid);
     } finally {
       await runtime.close();
+    }
+  });
+
+  it.skipIf(skipCase('b2-reap-group'))(titleOf('b2-reap-group'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
+    const killed = await killRuntimeDuringBash(
+      (files) => `echo $$ > ${files.shell}; sleep 60 & echo $! > ${files.background}; echo effect >> ${files.effect}; sleep 60`,
+      context,
+    );
+    try {
+      const shell = await until(() => pidIn(killed.files.shell), { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the shell pid' });
+      const background = await until(() => pidIn(killed.files.background), { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the background sleep pid' });
+      const members = membersOf(killed.pgid);
+      expect(members).toEqual(expect.arrayContaining([shell, background]));
+      expect(members.length).toBeGreaterThanOrEqual(3);
+
+      killed.kill();
+      await killed.completed();
+
+      expect(groupAlive(killed.pgid)).toBe(false);
+      expect(membersOf(killed.pgid)).toEqual([]);
+      for (const pid of members) expect(isAlive(pid)).toBe(false);
+      expect(linesOf(killed.files.effect)).toEqual(['effect']);
+    } finally {
+      await killed.runtime.close();
+    }
+  });
+
+  it.skipIf(skipCase('b2-reap-escapee'))(titleOf('b2-reap-escapee'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
+    const killed = await killRuntimeDuringBash(
+      (files) => `${ESCAPE_GROUP} & echo $! > ${files.escaped}; echo effect >> ${files.effect}; sleep 60`,
+      context,
+    );
+    try {
+      const escaped = await until(() => pidIn(killed.files.escaped), { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the escaping process pid' });
+      await until(() => groupOfPid(escaped) === escaped, { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the escaping process leading a group of its own' });
+      expect(isAlive(escaped)).toBe(true);
+      expect(membersOf(killed.pgid)).not.toContain(escaped);
+
+      killed.kill();
+      await killed.completed();
+
+      expect(groupAlive(killed.pgid)).toBe(false);
+      expect(isAlive(escaped)).toBe(false);
+    } finally {
+      await killed.runtime.close();
+    }
+  });
+
+  it.skipIf(skipCase('b2-reap-escapee-dropped'))(titleOf('b2-reap-escapee-dropped'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
+    const killed = await killRuntimeDuringBash(
+      (files) => `(exec 3>&-; exec ${ESCAPE_GROUP}) & echo $! > ${files.escaped}; echo effect >> ${files.effect}; sleep 60`,
+      context,
+    );
+    let escaped: number | undefined;
+    try {
+      escaped = await until(() => pidIn(killed.files.escaped), { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the escaping process pid' });
+      await until(() => groupOfPid(escaped as number) === escaped, { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the escaping process leading a group of its own' });
+
+      killed.kill();
+      await killed.completed();
+
+      expect(groupAlive(killed.pgid)).toBe(false);
+      expect(isAlive(escaped)).toBe(true);
+    } finally {
+      if (escaped !== undefined && isAlive(escaped)) process.kill(escaped, 'SIGKILL');
+      await killed.runtime.close();
     }
   });
 });

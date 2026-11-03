@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PermissionOption } from '@momonga/protocol';
 import { SESSION, runView } from './fake-backend.ts';
-import { INITIALIZE, conflict, errorOf, frameOf, labelsOf, modeChangedFrame, notFound, resultOf, startAgent, updatesOf } from './acp-harness.ts';
+import { INITIALIZE, MODEL_ALIASES, conflict, errorOf, frameOf, labelsOf, modeChangedFrame, modelChangedFrame, notFound, resultOf, startAgent, updatesOf } from './acp-harness.ts';
 import type { EventPayload, Harness } from './acp-harness.ts';
 import { RunApiError } from '../src/client/runtime-client.ts';
 import { DaemonUnreachable, retryAfterRestore } from '../src/run/follow.ts';
@@ -104,6 +104,16 @@ describe('session/new', () => {
           { id: 'plan', name: 'Plan', description: 'Offer read-only tools so the agent can plan without changing anything' },
         ],
       },
+      configOptions: [
+        {
+          id: 'model',
+          name: 'Model',
+          category: 'model',
+          type: 'select',
+          currentValue: SESSION.modelAlias,
+          options: MODEL_ALIASES.map((alias) => ({ value: alias, name: alias })),
+        },
+      ],
     });
     expect(harness.runtime.calls[0]).toBe(
       `createSession ${JSON.stringify({
@@ -845,6 +855,87 @@ describe('session/set_mode', () => {
     harness.runtime.failures.set('setPermissionMode', conflict('mode_unavailable', 'auto mode is not available yet'));
 
     expect(errorOf(await harness.peer.request('session/set_mode', { sessionId, modeId: 'plan' }))).toMatchObject({ code: -32602, data: { code: 'mode_unavailable' } });
+    await harness.peer.close();
+  });
+});
+
+describe('model selection', () => {
+  const modelOption = (currentValue: string) => ({
+    id: 'model',
+    name: 'Model',
+    category: 'model',
+    type: 'select',
+    currentValue,
+    options: MODEL_ALIASES.map((alias) => ({ value: alias, name: alias })),
+  });
+
+  const configUpdates = (harness: Harness) => updatesOf(harness.peer.received).filter((update) => update.sessionUpdate === 'config_option_update');
+
+  it('offers the configured aliases as the model config option of a new session, the current one selected', async () => {
+    const harness = startAgent();
+    await harness.peer.request('initialize', INITIALIZE);
+
+    const result = resultOf(await harness.peer.request('session/new', NEW_SESSION)) as { configOptions: unknown };
+
+    expect(result.configOptions).toEqual([modelOption(SESSION.modelAlias)]);
+    await harness.peer.close();
+  });
+
+  it('offers it again when a session is loaded, with the alias the session has now', async () => {
+    const harness = startAgent();
+    harness.runtime.session = { ...SESSION, modelAlias: 'fm-large' };
+    await harness.peer.request('initialize', INITIALIZE);
+
+    const result = resultOf(await harness.peer.request('session/load', { sessionId: SESSION.id, ...NEW_SESSION })) as { configOptions: unknown };
+
+    expect(result.configOptions).toEqual([modelOption('fm-large')]);
+    await harness.peer.close();
+  });
+
+  it('switches the alias of the Run API session on session/set_config_option and answers the full option list', async () => {
+    const harness = startAgent();
+    const sessionId = await open(harness);
+
+    const response = resultOf(await harness.peer.request('session/set_config_option', { sessionId, configId: 'model', value: 'fm-large' }));
+
+    expect(response).toEqual({ configOptions: [modelOption('fm-large')] });
+    expect(harness.runtime.calls).toContain(`setModelAlias ${sessionId} fm-large`);
+    await harness.peer.close();
+  });
+
+  it('passes on the model.changed event of the session as a config option update', async () => {
+    const harness = startAgent();
+    await open(harness);
+
+    harness.emitSessionEvent(modelChangedFrame(5, 'fm-large', SESSION.modelAlias));
+    await harness.peer.untilReceived((message) => updatesOf([message])[0]?.sessionUpdate === 'config_option_update');
+
+    expect(configUpdates(harness)).toEqual([{ sessionUpdate: 'config_option_update', configOptions: [modelOption('fm-large')] }]);
+    await harness.peer.close();
+  });
+
+  it('refuses an option it does not offer and an alias it does not list, without asking the Run API', async () => {
+    const harness = startAgent();
+    const sessionId = await open(harness);
+
+    const unknownOption = errorOf(await harness.peer.request('session/set_config_option', { sessionId, configId: 'temperature', value: 'high' }));
+    const unknownAlias = errorOf(await harness.peer.request('session/set_config_option', { sessionId, configId: 'model', value: 'not-an-alias' }));
+
+    expect(unknownOption.code).toBe(-32602);
+    expect(unknownAlias.code).toBe(-32602);
+    expect(harness.runtime.calls.some((call) => call.startsWith('setModelAlias'))).toBe(false);
+    await harness.peer.close();
+  });
+
+  it('turns a refusal of the Run API into invalid params', async () => {
+    const harness = startAgent();
+    const sessionId = await open(harness);
+    harness.runtime.failures.set('setModelAlias', conflict('model_unavailable', 'the gateway lists no such alias'));
+
+    expect(errorOf(await harness.peer.request('session/set_config_option', { sessionId, configId: 'model', value: 'fm-large' }))).toMatchObject({
+      code: -32602,
+      data: { code: 'model_unavailable' },
+    });
     await harness.peer.close();
   });
 });

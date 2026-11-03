@@ -147,6 +147,7 @@ export type FakeRuntime = RuntimeClient & {
   createRunResult: (input: string) => Promise<RunView>;
   failures: Map<string, Error>;
   modeChanged: ((mode: SessionView['permissionMode']) => void) | undefined;
+  modelAliasChanged: ((modelAlias: string, previousModelAlias: string) => void) | undefined;
 };
 
 const unexpected = (name: string) => (): never => {
@@ -192,6 +193,7 @@ export const fakeRuntime = (): FakeRuntime => {
     createRunResult: async () => runView({ id: 'run-1', status: 'QUEUED' }),
     failures: new Map(),
     modeChanged: undefined,
+    modelAliasChanged: undefined,
     health: unexpected('health'),
     createSession: async (input): Promise<CreatedSession> => {
       record(`createSession ${JSON.stringify({ cwd: input.cwd, mcpServers: input.mcpServers })}`);
@@ -223,6 +225,15 @@ export const fakeRuntime = (): FakeRuntime => {
       if (failure !== undefined) throw failure;
       runtime.session = { ...runtime.session, permissionMode: mode };
       runtime.modeChanged?.(mode);
+      return runtime.session;
+    },
+    setModelAlias: async (id, modelAlias) => {
+      record(`setModelAlias ${id} ${modelAlias}`);
+      const failure = runtime.failures.get('setModelAlias');
+      if (failure !== undefined) throw failure;
+      const previousModelAlias = runtime.session.modelAlias;
+      runtime.session = { ...runtime.session, modelAlias };
+      runtime.modelAliasChanged?.(modelAlias, previousModelAlias);
       return runtime.session;
     },
     createRun: async (sessionId, input, options) => {
@@ -300,6 +311,7 @@ export const fakeRuntime = (): FakeRuntime => {
     mcpAuthorization: unexpected('mcpAuthorization'),
     cancelMcpAuthorization: unexpected('cancelMcpAuthorization'),
     memories: unexpected('memories'),
+    lastReflection: unexpected('lastReflection'),
     memory: unexpected('memory'),
     addMemory: unexpected('addMemory'),
     deleteMemory: unexpected('deleteMemory'),
@@ -334,6 +346,14 @@ export const modeChangedFrame = (id: number, mode: SessionView['permissionMode']
   data: { id, sessionId: SESSION.id, createdAt: 1, type: 'mode.changed', mode },
 });
 
+export const modelChangedFrame = (id: number, modelAlias: string, previousModelAlias: string): RunEventFrame => ({
+  id,
+  event: 'model.changed',
+  data: { id, sessionId: SESSION.id, createdAt: 1, type: 'model.changed', modelAlias, previousModelAlias },
+});
+
+export const MODEL_ALIASES = [SESSION.modelAlias, 'fm-large'] as const;
+
 export type Harness = {
   readonly runtime: FakeRuntime;
   readonly peer: Peer;
@@ -361,9 +381,16 @@ export const startAgent = (overrides: Partial<AcpDeps> = {}): Harness => {
     request.onEvent(modeChangedFrame(nextEventId, mode));
     nextEventId += 1;
   };
+  runtime.modelAliasChanged = (modelAlias, previousModelAlias) => {
+    const request = sessionStreams.at(-1);
+    if (request === undefined) throw new Error('the session event stream is not open');
+    request.onEvent(modelChangedFrame(nextEventId, modelAlias, previousModelAlias));
+    nextEventId += 1;
+  };
   const deps: AcpDeps = {
     version: '9.9.9',
     runtime,
+    modelAliases: async () => [...MODEL_ALIASES],
     contextWindowOf: async (alias) => {
       const size = contextWindows.get(alias);
       if (size === undefined) throw new Error(`no context window for ${alias}`);

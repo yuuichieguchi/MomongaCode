@@ -298,10 +298,9 @@ const drive = async (
   }
 
   if (recorded !== undefined) {
-    if (pins.modelAlias !== session.modelAlias || pins.systemPromptDigest !== systemPromptDigest) {
-      const drift = pins.modelAlias !== session.modelAlias ? 'the model alias' : 'the system prompt';
+    if (pins.systemPromptDigest !== systemPromptDigest) {
       terminals.finish('FAILED', {
-        error: { code: 'pins_mismatch', message: `${drift} changed since this run started, so it cannot be resumed` },
+        error: { code: 'pins_mismatch', message: 'the system prompt changed since this run started, so it cannot be resumed' },
       });
       return;
     }

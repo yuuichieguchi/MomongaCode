@@ -73,6 +73,27 @@ export type AddMemoryRequest = {
   paths?: string[];
 };
 
+export const REFLECTION_DROP_CAUSES = ['text_rule', 'duplicate', 'evidence'] as const;
+
+export type ReflectionDropCause = (typeof REFLECTION_DROP_CAUSES)[number];
+
+export type ReflectionDrop = { ordinal: number; text: string | null; cause: ReflectionDropCause; reason: string };
+
+export const REFLECTION_JOB_STATES = ['pending', 'running', 'done', 'failed'] as const;
+
+export type ReflectionJobState = (typeof REFLECTION_JOB_STATES)[number];
+
+export type ReflectionJobView = {
+  runId: string;
+  state: ReflectionJobState;
+  attempts: number;
+  reason: string | null;
+  dropped: ReflectionDrop[];
+  updatedAt: number;
+};
+
+export type ReflectionResponse = { job: ReflectionJobView | null };
+
 export type MemoriesResponse = { memories: MemoryView[] };
 
 export type MemoryResponse = { memory: MemoryView };

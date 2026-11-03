@@ -1,21 +1,34 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { immediateTx } from '@momonga/foundation';
+import { canonicalJson, immediateTx } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import { MEMORY_ORIGINS } from '@momonga/protocol';
-import { expectOneOf, readerFor } from './rows.ts';
+import { MEMORY_ORIGINS, REFLECTION_DROP_CAUSES, REFLECTION_JOB_STATES } from '@momonga/protocol';
+import type { ReflectionDrop } from '@momonga/protocol';
+import { corrupt, expectOneOf, expectRecord, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
 import type { ContextChargeStore, MemoryStore, ReflectionJob, ReflectionStore } from './types.ts';
 
-const JOB_STATES = ['pending', 'running', 'done', 'failed'] as const;
+const decodeDropped = (identity: string, value: unknown): ReflectionDrop[] => {
+  if (value === null) return [];
+  if (!Array.isArray(value)) throw corrupt('reflection_jobs', identity, 'column dropped_json must be a JSON array');
+  return value.map((entry: unknown): ReflectionDrop => {
+    const record = expectRecord('reflection_jobs', identity, 'dropped_json', entry);
+    const { ordinal, text, cause, reason } = record;
+    if (typeof ordinal !== 'number' || (text !== null && typeof text !== 'string') || typeof cause !== 'string' || typeof reason !== 'string') {
+      throw corrupt('reflection_jobs', identity, 'column dropped_json holds an entry of the wrong shape');
+    }
+    return { ordinal, text, cause: expectOneOf('reflection_jobs', identity, 'dropped_json', REFLECTION_DROP_CAUSES, cause), reason };
+  });
+};
 
 const decodeJob = (row: Row): ReflectionJob => {
   const identity = String(row['run_id']);
   const reader = readerFor('reflection_jobs', identity, row);
   return {
     runId: reader.string('run_id'),
-    state: expectOneOf('reflection_jobs', identity, 'state', JOB_STATES, reader.string('state')),
+    state: expectOneOf('reflection_jobs', identity, 'state', REFLECTION_JOB_STATES, reader.string('state')),
     attempts: reader.number('attempts'),
     lastError: reader.nullableString('last_error'),
+    dropped: decodeDropped(identity, reader.nullableJson('dropped_json')),
     createdAt: reader.number('created_at'),
     updatedAt: reader.number('updated_at'),
   };
@@ -30,7 +43,17 @@ export const createReflectionStore = (
   const select = db.prepare('SELECT * FROM reflection_jobs WHERE run_id = :runId');
   const oldestOpen = db.prepare("SELECT * FROM reflection_jobs WHERE state IN ('pending', 'running') ORDER BY created_at, rowid");
   const begin = db.prepare("UPDATE reflection_jobs SET state = 'running', attempts = attempts + 1, updated_at = :now WHERE run_id = :runId AND state IN ('pending', 'running')");
-  const finish = db.prepare("UPDATE reflection_jobs SET state = 'done', last_error = :reason, updated_at = :now WHERE run_id = :runId AND state = 'running'");
+  const latestForProject = db.prepare(
+    `SELECT j.* FROM reflection_jobs j
+     JOIN runs r ON r.id = j.run_id
+     JOIN sessions s ON s.id = r.session_id
+     WHERE s.cwd = :project
+     ORDER BY j.updated_at DESC, j.rowid DESC
+     LIMIT 1`,
+  );
+  const finish = db.prepare(
+    "UPDATE reflection_jobs SET state = 'done', last_error = :reason, dropped_json = :dropped, updated_at = :now WHERE run_id = :runId AND state = 'running'",
+  );
   const fail = db.prepare("UPDATE reflection_jobs SET state = 'failed', last_error = :reason, updated_at = :now WHERE run_id = :runId AND state = 'running'");
   const release = db.prepare("UPDATE reflection_jobs SET attempts = attempts - 1, updated_at = :now WHERE run_id = :runId AND state = 'running' AND attempts > 0");
   const origin = db.prepare('SELECT origin FROM runs WHERE id = :runId');
@@ -41,8 +64,11 @@ export const createReflectionStore = (
     return decodeJob(row);
   };
 
-  const finishJob = (runId: string, reason: string | undefined): ReflectionJob => {
-    if (Number(finish.run({ runId, reason: reason ?? null, now: clock.now() }).changes) !== 1) throw new Error(`reflection job ${runId} cannot finish: it is not running`);
+  const finishJob = (runId: string, reason: string | undefined, dropped: readonly ReflectionDrop[] = []): ReflectionJob => {
+    const recorded = dropped.length === 0 ? null : canonicalJson(dropped);
+    if (Number(finish.run({ runId, reason: reason ?? null, dropped: recorded, now: clock.now() }).changes) !== 1) {
+      throw new Error(`reflection job ${runId} cannot finish: it is not running`);
+    }
     return required(runId);
   };
 
@@ -56,6 +82,10 @@ export const createReflectionStore = (
       const row = select.get({ runId });
       return row === undefined ? undefined : decodeJob(row);
     },
+    latestForProject: (project) => {
+      const row = latestForProject.get({ project });
+      return row === undefined ? undefined : decodeJob(row);
+    },
     next: (exclude = new Set()) => oldestOpen.all().map(decodeJob).find((job) => !exclude.has(job.runId)),
     begin: (runId) => {
       if (Number(begin.run({ runId, now: clock.now() }).changes) !== 1) throw new Error(`reflection job ${runId} cannot begin: it is missing or finished`);
@@ -66,11 +96,11 @@ export const createReflectionStore = (
       return required(runId);
     },
     finish: (runId, reason) => finishJob(runId, reason),
-    complete: ({ runId, charge, candidates, reason }) =>
+    complete: ({ runId, charge, candidates, dropped, reason }) =>
       immediateTx(db, () => {
         if (charge !== null) writers.contextCharges.record(charge);
         for (const candidate of candidates) writers.memories.saveCandidate(candidate);
-        return finishJob(runId, reason);
+        return finishJob(runId, reason, dropped);
       }),
     fail: (runId, reason, charge) =>
       immediateTx(db, () => {

@@ -2,7 +2,7 @@ import { canonicalJson, computeBackoff, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { normalizeMemoryText } from '@momonga/memory';
 import { assistantTextOf, summaryTokenCapFor } from '@momonga/protocol';
-import type { CreateResponseBody, Usage } from '@momonga/protocol';
+import type { CreateResponseBody, ReflectionDrop, Usage } from '@momonga/protocol';
 import { memoryTextProblem } from '@momonga/tools';
 import type { ContextChargeInput, RuntimeStore, SaveCandidateInput } from '@momonga/store';
 import type { GatewayPort, SettingsPort } from '../ports.ts';
@@ -34,6 +34,10 @@ export type ReflectorTurn = 'idle' | 'busy' | 'ran';
 export type Reflector = { runOne(signal: AbortSignal): Promise<ReflectorTurn> };
 
 const DEDUPLICATED_STATES: readonly string[] = ['active', 'candidate', 'rejected'];
+
+const NO_CANDIDATES_REASON = 'the model proposed no candidates';
+const ALL_DROPPED_REASON = 'every candidate the model proposed was dropped';
+const DUPLICATE_REASON = 'the same text is already a live memory, a candidate waiting for review, or a candidate a person rejected';
 
 type ChargeLedger = { unrecorded?: ContextChargeInput };
 
@@ -109,8 +113,8 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     }
     if (terminal.kind === 'failed') throw new Error(`the reflection call of run ${runId} failed: ${terminal.code ?? 'error'}: ${terminal.message}`);
     if (usage === null) throw new Error(`the reflection response of run ${runId} carries no usage`);
-    const settle = (candidates: readonly SaveCandidateInput[], reason?: string): void => {
-      store.reflection.complete({ runId, charge: ledger.unrecorded ?? null, candidates, ...(reason === undefined ? {} : { reason }) });
+    const settle = (candidates: readonly SaveCandidateInput[], reason?: string, dropped: readonly ReflectionDrop[] = []): void => {
+      store.reflection.complete({ runId, charge: ledger.unrecorded ?? null, candidates, dropped, ...(reason === undefined ? {} : { reason }) });
       delete ledger.unrecorded;
     };
     const parsed = parseReflectionReply(assistantTextOf(terminal.response.output));
@@ -126,9 +130,18 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
         .map((memory) => normalizeMemoryText(memory.text)),
     );
     const accepted: { ordinal: number; candidate: (typeof parsed.candidates)[number]; evidence: Awaited<ReturnType<typeof bindMemoryEvidence>> }[] = [];
+    const dropped: ReflectionDrop[] = [];
     for (const [ordinal, candidate] of parsed.candidates.entries()) {
       const normalized = normalizeMemoryText(candidate.text);
-      if (memoryTextProblem(candidate.text) !== undefined || known.has(normalized)) continue;
+      const problem = memoryTextProblem(candidate.text);
+      if (problem !== undefined) {
+        dropped.push({ ordinal, text: null, cause: 'text_rule', reason: problem.message });
+        continue;
+      }
+      if (known.has(normalized)) {
+        dropped.push({ ordinal, text: candidate.text, cause: 'duplicate', reason: DUPLICATE_REASON });
+        continue;
+      }
       try {
         const evidence = await bindMemoryEvidence({
           runId,
@@ -143,9 +156,16 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
         accepted.push({ ordinal, candidate, evidence });
       } catch (error) {
         if (!(error instanceof MemoryEvidenceError)) throw error;
+        dropped.push({ ordinal, text: candidate.text, cause: 'evidence', reason: error.message });
       }
     }
-    settle(accepted.map(({ ordinal, candidate, evidence }) => ({ scope: 'project', origin: 'trusted', project, text: candidate.text, runId, ordinal, kind: candidate.kind, evidence })));
+    const nothingKept = accepted.length === 0;
+    const reason = !nothingKept ? undefined : parsed.candidates.length === 0 ? NO_CANDIDATES_REASON : ALL_DROPPED_REASON;
+    settle(
+      accepted.map(({ ordinal, candidate, evidence }) => ({ scope: 'project', origin: 'trusted', project, text: candidate.text, runId, ordinal, kind: candidate.kind, evidence })),
+      reason,
+      dropped,
+    );
   };
 
   const recordUnrecorded = (ledger: ChargeLedger, cause: unknown): void => {

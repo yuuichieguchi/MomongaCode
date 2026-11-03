@@ -424,8 +424,10 @@ export function App(props: AppProps) {
       note(`unknown command /${parsed.name}; /help lists the commands`);
       return true;
     }
+    if (alias === undefined) throw new Error('a slash command ran before the session was open');
     await command.run(parsed.args, {
       mode,
+      modelAlias: alias,
       bypassAllowed,
       autoAvailable,
       commands: slash.list(),
@@ -449,6 +451,19 @@ export function App(props: AppProps) {
         const session = await backend.setMode(chosen);
         setModeState(session.permissionMode);
         note(`permission mode: ${session.permissionMode}`);
+      },
+      setModel: async (chosen) => {
+        const previous = alias;
+        const session = await backend.setModel(chosen);
+        setAlias(session.modelAlias);
+        note(
+          busy
+            ? `model: ${session.modelAlias}; the running task keeps ${previous}, the next task uses ${session.modelAlias}`
+            : `model: ${session.modelAlias}; applies from the next task`,
+        );
+        void backend.model().then(setModel, (error: unknown) => {
+          dispatch({ kind: 'append', entry: { kind: 'notice', level: 'warning', text: `model information unavailable: ${errorOf(error).message}` } });
+        });
       },
     });
     return true;

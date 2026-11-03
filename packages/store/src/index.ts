@@ -94,6 +94,7 @@ export type {
   ServiceMutationResult,
   Session,
   SessionMcpServers,
+  SetModelAliasResult,
   SetPermissionModeResult,
   SetSessionMcpServersResult,
   SnapshotResult,

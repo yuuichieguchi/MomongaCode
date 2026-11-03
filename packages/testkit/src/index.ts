@@ -8,6 +8,7 @@ export {
   STOP_UNSUPPORTED_MESSAGE,
   TOOLS_UNSUPPORTED_MESSAGE,
   countFakePromptTokens,
+  countFakeRequestTokens,
   countFakeTokens,
   isValidAtIndex,
   startFakeChatCompletions,
@@ -15,6 +16,8 @@ export {
 export type {
   FakeChatCompletionsOptions,
   FakeChatCompletionsServer,
+  FakeFixedUsage,
+  FakeRequestUsage,
   FakeRoute,
   FakeScenario,
   FakeResponseHold,

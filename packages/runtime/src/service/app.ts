@@ -258,8 +258,14 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       const settings = await sessionSettingsOf(session.cwd);
       checkModeAllowed(body.permissionMode, session.bypassAllowed, settings.autoModeClassifier, await gatewayAliases());
     }
+    if (body.modelAlias !== undefined && !(await gatewayAliases()).includes(body.modelAlias)) throw invalidRequest(`unknown model alias ${body.modelAlias}`, 'modelAlias');
     const mcpServers = body.mcpServers === undefined ? undefined : checkedMcpServers(body.mcpServers);
     let current = session;
+    if (body.modelAlias !== undefined) {
+      const switched = store.setModelAlias(session.id, body.modelAlias);
+      if (switched.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
+      current = switched.session;
+    }
     if (mcpServers !== undefined) {
       const replaced = store.setSessionMcpServers(session.id, mcpServers);
       if (replaced.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);

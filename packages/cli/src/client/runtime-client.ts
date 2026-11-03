@@ -1,7 +1,7 @@
 import type { McpServerConfig } from '@momonga/config';
 import { createUdsClient, decodeSse, isRecord } from '@momonga/foundation';
 import type { UdsResponse } from '@momonga/foundation';
-import type { AddMemoryRequest, AddRuleRequest, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, RuleAddResponse, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
+import type { AddMemoryRequest, AddRuleRequest, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RuleAddResponse, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
 import {
   ContractViolation,
   checkAgents,
@@ -20,6 +20,7 @@ import {
   checkMemory,
   checkPolicyGovernance,
   checkPromoted,
+  checkReflection,
   checkRule,
   checkRuleAdd,
   checkRules,
@@ -102,6 +103,7 @@ export type RuntimeClient = {
   childRuns(runId: string): Promise<RunView[]>;
   setMcpServers(sessionId: string, servers: Readonly<Record<string, McpServerConfig>>): Promise<SessionView>;
   setPermissionMode(sessionId: string, mode: PermissionMode): Promise<SessionView>;
+  setModelAlias(sessionId: string, modelAlias: string): Promise<SessionView>;
   createRun(sessionId: string, input: string, options?: CreateRunOptions): Promise<{ run: RunView; location: string }>;
   getRun(id: string): Promise<RunView>;
   cancel(id: string): Promise<{ status: 200 | 202; run: RunView }>;
@@ -118,6 +120,7 @@ export type RuntimeClient = {
   mcpAuthorization(sessionId: string, server: string): Promise<McpAuthorizationView>;
   cancelMcpAuthorization(sessionId: string, server: string): Promise<void>;
   memories(filter?: MemoryFilter): Promise<MemoryView[]>;
+  lastReflection(project: string): Promise<ReflectionJobView | null>;
   memory(id: string): Promise<MemoryView>;
   addMemory(request: AddMemoryRequest): Promise<MemoryView>;
   deleteMemory(id: string): Promise<void>;
@@ -289,6 +292,12 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     return sessionOf(body, `PATCH ${path}`);
   };
 
+  const setModelAlias = async (sessionId: string, modelAlias: string): Promise<SessionView> => {
+    const path = `/v1/sessions/${sessionId}`;
+    const { body } = await send('PATCH', path, [200], { body: { modelAlias } });
+    return sessionOf(body, `PATCH ${path}`);
+  };
+
   const createRun = async (sessionId: string, input: string, runOptions: CreateRunOptions = {}): Promise<{ run: RunView; location: string }> => {
     const path = `/v1/sessions/${sessionId}/runs`;
     const { response, body } = await send('POST', path, [202], {
@@ -391,6 +400,12 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     const path = `/v1/memories${memoriesQueryOf(filter)}`;
     const { body } = await send('GET', path, [200]);
     return checkMemories(body, `GET ${path}`).memories;
+  };
+
+  const lastReflection = async (project: string): Promise<ReflectionJobView | null> => {
+    const path = `/v1/reflection?project=${encodeURIComponent(project)}`;
+    const { body } = await send('GET', path, [200]);
+    return checkReflection(body, `GET ${path}`).job;
   };
 
   const memory = async (id: string): Promise<MemoryView> => {
@@ -532,6 +547,7 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     childRuns,
     setMcpServers,
     setPermissionMode,
+    setModelAlias,
     createRun,
     getRun,
     cancel,
@@ -547,6 +563,7 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     mcpAuthorization,
     cancelMcpAuthorization,
     memories,
+    lastReflection,
     memory,
     addMemory,
     deleteMemory,

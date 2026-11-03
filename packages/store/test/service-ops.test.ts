@@ -162,6 +162,41 @@ describe('setPermissionMode', () => {
   });
 });
 
+describe('setModelAlias', () => {
+  it('updates the session and appends one session-scoped model.changed event naming both aliases', () => {
+    const { clock, store } = harness();
+    const session = newSession(store);
+    const run = enqueue(store, session.id);
+    clock.advance(3);
+
+    const result = store.setModelAlias(session.id, 'other');
+
+    expect(result).toEqual({ kind: 'ok', changed: true, session: { ...session, modelAlias: 'other' } });
+    expect(store.getSession(session.id)?.modelAlias).toBe('other');
+    expect(store.readSessionEvents(session.id, 0, 100).at(-1)).toEqual({
+      id: expect.any(Number),
+      sessionId: session.id,
+      createdAt: START_MS + 3,
+      type: 'model.changed',
+      modelAlias: 'other',
+      previousModelAlias: session.modelAlias,
+    });
+    expect(store.readRunEvents(run.id, 0, 100).map((event) => event.type)).toEqual(['user.message']);
+  });
+
+  it('returns ok without a change and appends nothing for the current alias', () => {
+    const { store } = harness();
+    const session = newSession(store);
+    expect(store.setModelAlias(session.id, session.modelAlias)).toEqual({ kind: 'ok', changed: false, session });
+    expect(store.readSessionEvents(session.id, 0, 100)).toEqual([]);
+  });
+
+  it('returns not_found for an unknown session', () => {
+    const { store } = harness();
+    expect(store.setModelAlias('ghost', 'other')).toEqual({ kind: 'not_found' });
+  });
+});
+
 describe('readSessionEvents', () => {
   it('returns run events of every run and session events in global id order', () => {
     const { store } = harness();

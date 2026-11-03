@@ -25,6 +25,7 @@ type RootOptions = {
   print?: string;
   outputFormat: OutputFormat;
   permissionMode?: PermissionMode;
+  model?: string;
   dangerouslySkipPermissions?: true;
   skill?: string;
   image: string[];
@@ -70,6 +71,7 @@ export const buildProgram = (deps: ProgramDeps): Command => {
     .option('-p, --print <prompt>', 'run the prompt without a terminal UI and print the result')
     .addOption(outputFormatOption())
     .addOption(new Option('--permission-mode <mode>', 'permission mode of the session').choices(PERMISSION_MODES))
+    .option('--model <alias>', 'the model alias of the session; momonga models lists them, and /model switches it in an interactive session')
     .option('--dangerously-skip-permissions', 'run in bypassPermissions mode')
     .option('--skill <name>', 'run the prompt with this skill activated')
     .option('--image <path>', 'attach an image to the prompt; repeat for several (needs a model that declares image input)', collectValues, [])
@@ -78,6 +80,7 @@ export const buildProgram = (deps: ProgramDeps): Command => {
       const permissionMode = options.dangerouslySkipPermissions === true ? 'bypassPermissions' : options.permissionMode;
       const session = {
         ...(permissionMode === undefined ? {} : { permissionMode }),
+        ...(options.model === undefined ? {} : { modelAlias: options.model }),
         ...(options.dangerouslySkipPermissions === true ? { bypassAllowed: true } : {}),
       };
       if (options.print !== undefined) {

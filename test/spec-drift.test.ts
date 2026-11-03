@@ -43,6 +43,7 @@ const UNMODELLED_EVENT_TYPES = [
   'job.finished',
   'mcp.authorization.required',
   'mode.changed',
+  'model.changed',
   'model.stream.restarted',
   'notice',
   'plan.updated',

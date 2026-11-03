@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { AUTO_MODE_UNAVAILABLE } from '@momonga/protocol';
-import { DECLARED_CREDENTIAL, MODEL_ALIAS, OTHER_ALIAS, SERVICE_PID, SERVICE_VERSION, STARTED_AT, START_MS, expectError, startService } from './helpers.ts';
+import { DECLARED_CREDENTIAL, MODEL_ALIAS, OTHER_ALIAS, SERVICE_PID, SERVICE_VERSION, STARTED_AT, START_MS, expectError, expectSchema, startService } from './helpers.ts';
 
 const SECRET = 'hunter2-value';
 const TOKEN_PREFIX = 'sk-';
@@ -329,6 +329,75 @@ describe('session PATCH', () => {
     expectError(await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { permissionMode: 'plan', extra: true } }), 400, 'invalid_request');
     expectError(await env.http('PATCH', '/v1/sessions/ses_missing', { body: { permissionMode: 'plan' } }), 404, 'not_found');
     expect(env.store.getSession(session.id)?.permissionMode).toBe('default');
+  });
+});
+
+describe('session PATCH of the model alias', () => {
+  it('switches the alias and appends one session-scoped model.changed that names both aliases', async () => {
+    const env = await startService();
+    const session = await env.createSession();
+
+    const patched = await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { modelAlias: OTHER_ALIAS } });
+
+    expect(patched.status).toBe(200);
+    expect(patched.json.session).toMatchObject({ id: session.id, modelAlias: OTHER_ALIAS });
+    expect(env.store.getSession(session.id)?.modelAlias).toBe(OTHER_ALIAS);
+    const events = env.store.readSessionEvents(session.id, 0, 1000);
+    expect(events.filter((event) => event.type === 'model.changed')).toEqual([
+      { id: expect.any(Number), sessionId: session.id, createdAt: expect.any(Number), type: 'model.changed', modelAlias: OTHER_ALIAS, previousModelAlias: session.modelAlias },
+    ]);
+    const stream = await env.stream(`/v1/sessions/${session.id}/events`, { idField: 'id' });
+    const seen = await stream.until((event) => event.type === 'model.changed');
+    expect(seen.at(-1)).toMatchObject({ type: 'model.changed', modelAlias: OTHER_ALIAS, previousModelAlias: session.modelAlias, sessionId: session.id });
+    expect(seen.at(-1)).not.toHaveProperty('runId');
+  });
+
+  it('appends no event when the alias is unchanged', async () => {
+    const env = await startService();
+    const session = await env.createSession();
+    const before = env.store.readSessionEvents(session.id, 0, 1000).length;
+
+    const unchanged = await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { modelAlias: session.modelAlias } });
+
+    expect(unchanged.status).toBe(200);
+    expect(env.store.readSessionEvents(session.id, 0, 1000)).toHaveLength(before);
+  });
+
+  it('refuses an alias the gateway does not list, and leaves the session as it was', async () => {
+    const env = await startService();
+    const session = await env.createSession();
+    expectError(await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { modelAlias: 'unknown-model' } }), 400, 'invalid_request');
+    expect(env.store.getSession(session.id)?.modelAlias).toBe(session.modelAlias);
+    expect(env.store.readSessionEvents(session.id, 0, 1000).filter((event) => event.type === 'model.changed')).toEqual([]);
+  });
+
+  it('changes the session while a run is active, without touching the run or its journal', async () => {
+    const env = await startService();
+    const session = await env.createSession();
+    const run = await env.createRun(session.id);
+    env.append(env.claimRun(run.id), env.notices(1));
+    const before = env.runEvents(run.id);
+
+    const patched = await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { modelAlias: OTHER_ALIAS } });
+
+    expect(patched.status).toBe(200);
+    expect(patched.json.session).toMatchObject({ modelAlias: OTHER_ALIAS, activeRunId: run.id });
+    expect(env.runEvents(run.id)).toEqual(before);
+    expect((await env.getRun(run.id)).status).toBe('RUNNING');
+  });
+
+  it('can be combined with a mode change in one request', async () => {
+    const env = await startService();
+    const session = await env.createSession();
+    const patched = await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { modelAlias: OTHER_ALIAS, permissionMode: 'plan' } });
+    expect(patched.json.session).toMatchObject({ modelAlias: OTHER_ALIAS, permissionMode: 'plan' });
+  });
+
+  it('is answered with the schema of the session view', async () => {
+    const env = await startService();
+    const session = await env.createSession();
+    const patched = await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { modelAlias: OTHER_ALIAS } });
+    expectSchema('SessionView', patched.json.session);
   });
 });
 

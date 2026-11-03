@@ -7,7 +7,7 @@ import { OPEN_LOG_FILE_NAME, runCli, runCliWithFakes, startCli, startCliWithFake
 import type { CliResult } from './support/cli.ts';
 import type { E2eHome } from './support/home.ts';
 import { PNG_BYTES, prepareProduct, requestText, writePng, writeUserSkill } from './support/product.ts';
-import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
+import { chatCompletions, reportedTokensOfRequest, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, policyVerifyBoundMs, until } from './support/wait.ts';
 
 const WINDOW_WITH_ROOM_FOR_ALL_TOOLS_AND_AN_IMAGE = 32768;
@@ -87,14 +87,17 @@ describe('momonga models, cost and memory', () => {
   });
 
   it(titleOf('cli-cost'),{ timeout: 2 * E2E_TEST_TIMEOUT_MS }, async () => {
-    const { home } = await prepareProduct({ script: [textReply('first'), textReply('second')] });
+    const { home, fake } = await prepareProduct({ script: [textReply('first'), textReply('second')] });
     expect((await runCli(home, ['-p', 'one'])).stdout).toBe('first\n');
     const second = await runCli(home, ['-p', 'two', '--output-format', 'json']);
     const secondRun = jsonOf(second.stdout) as { run_id: string; session_id: string };
+    const requests = chatCompletions(fake);
+    expect(requests).toHaveLength(2);
+    const inputTokens = requests.reduce((total, request) => total + reportedTokensOfRequest(request.body), 0);
 
     const report = jsonOf((await runCli(home, ['cost', '--json'])).stdout) as { runs: { runId: string; calls: number }[]; sessions: unknown[]; total: { calls: number; inputTokens: number; outputTokens: number } };
     expect(report.runs).toHaveLength(2);
-    expect(report.total).toMatchObject({ calls: 2, inputTokens: 20, outputTokens: 10 });
+    expect(report.total).toMatchObject({ calls: 2, inputTokens, outputTokens: 10 });
 
     const single = jsonOf((await runCli(home, ['cost', secondRun.run_id, '--json'])).stdout) as { runs: { runId: string }[]; total: { calls: number } };
     expect(single.runs.map((run) => run.runId)).toEqual([secondRun.run_id]);
@@ -105,7 +108,7 @@ describe('momonga models, cost and memory', () => {
     const text = await runCli(home, ['cost', '--all']);
     expect(text.code).toBe(0);
     expect(text.stdout).toContain('cost report');
-    expect(text.stdout).toContain('total: 2 call(s), 20 input (0 cached) + 10 output tokens');
+    expect(text.stdout).toContain(`total: 2 call(s), ${inputTokens} input (0 cached) + 10 output tokens`);
     const mixed = await runCli(home, ['cost', secondRun.run_id, '--all']);
     expect(mixed.code).toBe(1);
     expect(mixed.stderr).toContain('choose one of a run id, --session and --all');

@@ -18,6 +18,7 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
     version: ports.version,
     runtime,
     contextWindowOf: (modelAlias) => gateway.contextWindowOf(modelAlias),
+    modelAliases: async () => (await gateway.models()).map((model) => model.id),
     environment: () => environmentSnapshot(ports),
     autoModeAvailable: () => autoModeConfigured(ports),
     canonicalCwd: canonicalPath,

@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import { MEMORY_SCOPES, MEMORY_STATES } from '@momonga/protocol';
-import type { AddMemoryRequest, MemoryScope, MemoryState, PromoteMemoryRequest } from '@momonga/protocol';
+import type { AddMemoryRequest, MemoryScope, MemoryState, PromoteMemoryRequest, ReflectionResponse } from '@momonga/protocol';
 import { isValidSkillName } from '@momonga/skills';
 import type { MemoryChange, RuntimeStore } from '@momonga/store';
 import { MemoryAddRefusal, prepareCommandMemory } from '../memory/add-memory.ts';
@@ -32,7 +32,7 @@ const stateOf = (raw: string | undefined): MemoryState | undefined => {
 const projectOf = (raw: string | undefined): string | undefined => (raw === undefined ? undefined : canonicalProject(raw, 'project'));
 
 export type MemoryRoutesDeps = {
-  store: Pick<RuntimeStore, 'memories' | 'trust'>;
+  store: Pick<RuntimeStore, 'memories' | 'reflection' | 'trust'>;
   views: RecordViews;
   evidenceRun: (project: string) => EvidenceRun;
   maxBodyBytes: number;
@@ -41,7 +41,7 @@ export type MemoryRoutesDeps = {
 };
 
 export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDeps): void => {
-  const { memories, trust } = deps.store;
+  const { memories, reflection, trust } = deps.store;
   const { views } = deps;
   const boundOf = (context: Context): AbortSignal => AbortSignal.any([deps.closeSignal, context.req.raw.signal]);
 
@@ -121,6 +121,17 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDe
     return new Response(null, { status: 204 });
   };
 
+  const latestReflection: Handler = (context) => {
+    const raw = context.req.query('project');
+    if (raw === undefined) throw invalidRequest('project is required', 'project');
+    const job = reflection.latestForProject(canonicalProject(raw, 'project'));
+    const view: ReflectionResponse = {
+      job: job === undefined ? null : { runId: job.runId, state: job.state, attempts: job.attempts, reason: job.lastError, dropped: job.dropped, updatedAt: job.updatedAt },
+    };
+    return json(view, 200);
+  };
+
+  route('/v1/reflection', { GET: latestReflection });
   route('/v1/memories', { GET: listMemories, POST: addMemory });
   route('/v1/memories/:id', { GET: getMemory, DELETE: deleteMemory });
   route('/v1/memories/:id/history', { GET: memoryHistory });

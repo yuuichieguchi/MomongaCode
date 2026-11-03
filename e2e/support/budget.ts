@@ -21,7 +21,7 @@ import type { E2eHome } from './home.ts';
 import { E2E_MODEL_ALIAS } from './gateway-count.ts';
 import { SESSION_PATH } from './runtime-client.ts';
 import { SUPERVISOR_APP_VERSION } from './stack.ts';
-import { envelopeFinalReply, envelopeToolCallsReply, textReply, toolCallReply } from './upstream.ts';
+import { envelopeFinalReply, envelopeToolCallsReply, textReply, toolCallReply, wireTokensOfRequest } from './upstream.ts';
 
 export { budgetFor, errorBoundFor, wireOf, wireTokensOf };
 
@@ -35,7 +35,7 @@ export const HIGH_MARK_RATIO = 0.7;
 export const EVICT_LOW_WATER = 0.5;
 export const MIN_ITEM_CAP = 64;
 export const PERTURBATIONS: readonly number[] = [0, -2, 2];
-export const SCRIPTED_INPUT_TOKENS = 10;
+export const REPORTED_BELOW_ESTIMATE_TOKENS = Math.floor(marginFloorFor(ACCEPTANCE_WINDOW) / 2);
 export const SCRIPTED_OUTPUT_TOKENS = 5;
 export const MAX_COMPACTIONS = 2;
 export const DRY_RUN_MAX_CLAIMS = 8;
@@ -143,7 +143,7 @@ export const isCompactionRequest = (body: unknown): boolean => systemTextOf(body
 
 export const summaryRoute = (summary: string): FakeRoute => ({ match: isCompactionRequest, reply: textReply(summary) });
 
-export const wireTokensOfBody = (body: unknown): number => wireTokensOf(wireOf(body as Parameters<typeof wireOf>[0]) as ChatWire);
+export const wireTokensOfBody = wireTokensOfRequest;
 
 export const sizingFor = (capabilities: Capabilities, pinned: number): Sizing => {
   const { W, R } = budgetFor(capabilities, 0);
@@ -197,7 +197,7 @@ export const upstreamRepliesOf = (steps: readonly PlannedStep[], toolCalling: To
       : envelopeToolCallsReply([step.call]);
   });
 
-const scriptedUsage = () => usageOf(SCRIPTED_INPUT_TOKENS, SCRIPTED_OUTPUT_TOKENS);
+const scriptedUsage = () => usageOf(0, SCRIPTED_OUTPUT_TOKENS);
 
 export const dryRunStepsOf = (steps: readonly PlannedStep[], toolCalling: ToolCallingMode): ScriptStep[] =>
   steps.map((step, index) => {
@@ -289,8 +289,19 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
     fake.script = dryRunStepsOf(steps, plan.spec.toolCalling);
     const counts: CountTokensResult[] = [];
     const observedCounts: number[] = [];
+    const reportingStream = async function* (body: Parameters<GatewayPort['stream']>[0], options: Parameters<GatewayPort['stream']>[1]) {
+      const counted = await client.countTokens(body as Parameters<GatewayPort['countTokens']>[0], { signal: options.signal });
+      const reported = Math.max(0, counted.input_tokens + perturbation - REPORTED_BELOW_ESTIMATE_TOKENS);
+      for await (const event of fake.stream(body, options)) {
+        if (event.type === 'response.completed' || event.type === 'response.incomplete') {
+          yield { ...event, response: { ...event.response, usage: usageOf(reported, SCRIPTED_OUTPUT_TOKENS) } };
+        } else {
+          yield event;
+        }
+      }
+    };
     const gateway: GatewayPort = {
-      stream: (body, options) => fake.stream(body, options),
+      stream: reportingStream,
       cancel: (key, options) => fake.cancel(key, options),
       compact: (request, options) => client.compact(request, options),
       capabilities: (alias, options) => client.capabilities(alias, options),

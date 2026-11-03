@@ -11,7 +11,7 @@ import { textOfItem } from './item-text.ts';
 import { renderMemories } from './memory.ts';
 import { workingStateMessage } from './working-state.ts';
 import { heldSkillOf, pointToHeldSkill } from './skill-output.ts';
-import { headAndTail, omittedMarker, outputTextOf, truncatedMarker, withOutput } from './tool-output.ts';
+import { HANDLE_READER_TOOL, headAndTail, omittedMarker, outputTextOf, truncatedMarker, withOutput } from './tool-output.ts';
 import type {
   BuildContextInput,
   BuildContextPorts,
@@ -66,6 +66,13 @@ type Head = {
 };
 
 const candidateToolsOf = (input: BuildContextInput): FunctionTool[] => (input.tools === 'none' ? [] : [...input.sources.tools]);
+
+const holdsHandles = (input: BuildContextInput): boolean =>
+  input.evicted.size > 0 ||
+  retainedHistoryOf(input.sources.history, input.sources.summary).some((entry) => entry.handle !== undefined || entry.item.type === 'function_call_output');
+
+const requiredToolsOf = (input: BuildContextInput, candidates: readonly FunctionTool[]): FunctionTool[] =>
+  holdsHandles(input) ? candidates.filter((tool) => tool.name === HANDLE_READER_TOOL) : [];
 
 const metering = (input: BuildContextInput, ports: BuildContextPorts, tools: readonly FunctionTool[]) => {
   const { capabilities } = input;
@@ -130,11 +137,12 @@ const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): 
   let pinnedCounted: MeterCount | undefined;
   if (input.pinnedTokens === undefined) {
     if (!(await stableFitsFloor(candidates))) {
-      const kept: FunctionTool[] = [];
+      const required = requiredToolsOf(input, candidates);
+      const kept: FunctionTool[] = [...required];
       for (const tool of candidates) {
-        if (await stableFitsFloor([...kept, tool])) kept.push(tool);
+        if (!required.includes(tool) && (await stableFitsFloor([...kept, tool]))) kept.push(tool);
       }
-      if (kept.length > 0 || (await stableFitsFloor(kept))) tools = kept;
+      if (kept.length > 0 || (await stableFitsFloor(kept))) tools = candidates.filter((tool) => kept.includes(tool));
     }
     pinnedCounted = await countWith(tools);
   }

@@ -31,29 +31,32 @@ describe('registry', () => {
     expect(registry.find('nope')).toBeUndefined();
   });
 
-  it('offers at least help, clear, mode and exit', () => {
-    expect(registry.list().map((command) => command.name)).toEqual(expect.arrayContaining(['help', 'clear', 'mode', 'exit']));
+  it('offers at least help, clear, mode, model and exit', () => {
+    expect(registry.list().map((command) => command.name)).toEqual(expect.arrayContaining(['help', 'clear', 'mode', 'model', 'exit']));
   });
 });
 
 describe('built-in commands', () => {
-  const contextOf = (overrides: Partial<SlashContext> = {}): { context: SlashContext; infos: string[]; modes: string[] } => {
+  const contextOf = (overrides: Partial<SlashContext> = {}, backendOptions: FakeBackendOptions = {}): { context: SlashContext; infos: string[]; modes: string[]; models: string[] } => {
     const infos: string[] = [];
     const modes: string[] = [];
+    const models: string[] = [];
     const context: SlashContext = {
       mode: 'default',
+      modelAlias: 'default',
       bypassAllowed: false,
       autoAvailable: false,
       commands: BUILTIN_SLASH_COMMANDS,
-      backend: fakeBackend(),
+      backend: fakeBackend(backendOptions),
       startRun: async () => undefined,
       info: (text) => void infos.push(text),
       clear: () => void infos.push('cleared'),
       exit: () => void infos.push('exited'),
       setMode: async (mode) => void modes.push(mode),
+      setModel: async (alias) => void models.push(alias),
       ...overrides,
     };
-    return { context, infos, modes };
+    return { context, infos, modes, models };
   };
   const run = (name: string, args: string, context: SlashContext) => createSlashRegistry(BUILTIN_SLASH_COMMANDS).find(name)?.run(args, context);
 
@@ -77,6 +80,28 @@ describe('built-in commands', () => {
     await run('mode', 'turbo', context);
     expect(modes).toEqual(['acceptEdits']);
     expect(infos).toEqual(['unknown permission mode turbo; available: default, acceptEdits, plan']);
+  });
+
+  it('/model without an argument lists the aliases with the current one marked and says when a switch applies', async () => {
+    const { context, infos } = contextOf({ modelAlias: 'qwen-local' }, { aliases: ['default', 'qwen-local'], windows: { default: 8192, 'qwen-local': 32768 } });
+    await run('model', '', context);
+    expect(infos).toEqual([
+      ['models (the current one is marked *):', '    default  8192-token window', '  * qwen-local  32768-token window', 'switch with /model <alias>; a change applies from the next task'].join('\n'),
+    ]);
+  });
+
+  it('/model switches to a listed alias and refuses one that is not listed', async () => {
+    const { context, infos, models } = contextOf({}, { aliases: ['default', 'qwen-local'] });
+    await run('model', 'qwen-local', context);
+    await run('model', 'turbo', context);
+    expect(models).toEqual(['qwen-local']);
+    expect(infos).toEqual(['unknown model turbo; available: default, qwen-local']);
+  });
+
+  it('/model is described in the help with its usage', async () => {
+    const { context, infos } = contextOf();
+    await run('help', '', context);
+    expect(infos[0]).toContain('/model [alias]  list the model aliases with the current one marked, or switch the model from the next task');
   });
 
   it('/clear and /exit call their hooks', async () => {
@@ -116,6 +141,7 @@ const contextWith = (backendOptions: FakeBackendOptions = {}) => {
   const backend = fakeBackend(backendOptions);
   const context: SlashContext = {
     mode: 'default',
+    modelAlias: 'default',
     bypassAllowed: false,
     autoAvailable: false,
     commands: DEFAULT_SLASH_COMMANDS,
@@ -125,6 +151,7 @@ const contextWith = (backendOptions: FakeBackendOptions = {}) => {
     clear: () => undefined,
     exit: () => undefined,
     setMode: async () => undefined,
+    setModel: async () => undefined,
   };
   return { context, infos, runs, backend };
 };
@@ -133,7 +160,7 @@ describe('slashCompletion', () => {
   const commands = createSlashRegistry([...BUILTIN_SLASH_COMMANDS, ...skillCommands([PDF, PR], new Set()).commands]).list();
 
   it('lists every command that starts with what was typed and completes the longest common prefix', () => {
-    expect(slashCompletion('/', commands)?.names).toEqual(['help', 'clear', 'mode', 'exit', 'pdf', 'pr-review']);
+    expect(slashCompletion('/', commands)?.names).toEqual(['help', 'clear', 'mode', 'model', 'exit', 'pdf', 'pr-review']);
     expect(slashCompletion('/p', commands)).toEqual({ names: ['pdf', 'pr-review'], completed: '/p' });
     expect(slashCompletion('/pr', commands)).toEqual({ names: ['pr-review'], completed: '/pr-review ' });
   });

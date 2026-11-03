@@ -1,6 +1,18 @@
+import { wireOf, wireTokensOf } from '@momonga/gateway';
+import type { ChatWire } from '@momonga/gateway';
+import { ESTIMATED_ERROR_BOUND_RATIO } from '@momonga/protocol';
 import type { FakeChatCompletionsServer, FakeScriptedReply, RecordedRequest } from '@momonga/testkit';
 
-export const SCRIPTED_USAGE = { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } as const;
+export const E2E_IMAGE_TOKENS = { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } as const;
+
+export const wireTokensOfRequest = (body: unknown): number => wireTokensOf(wireOf(body as Parameters<typeof wireOf>[0]) as ChatWire, E2E_IMAGE_TOKENS);
+
+export const reportedTokensOfRequest = (body: unknown): number => {
+  const estimated = wireTokensOfRequest(body);
+  return estimated - Math.floor((ESTIMATED_ERROR_BOUND_RATIO * estimated) / 2);
+};
+
+export const SCRIPTED_USAGE = { prompt: 'request', completion_tokens: 5, tokensOf: reportedTokensOfRequest } as const;
 
 export type ChatMessage = { readonly role: string; readonly content: unknown; readonly tool_call_id?: string; readonly tool_calls?: unknown };
 

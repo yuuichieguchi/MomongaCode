@@ -10,11 +10,13 @@ export const outputTextOf = (output: FunctionCallOutputInputItem['output']): str
     ? output
     : output.map((part) => ('text' in part ? part.text : 'refusal' in part ? part.refusal : '')).join('\n');
 
+export const HANDLE_READER_TOOL = 'ReadOutput';
+
 export const omittedMarker = (tokens: number, handle: string): string =>
-  `[tool output omitted: ${tokens} tokens; stored as ${handle}; read it with ReadOutput]`;
+  `[tool output omitted: ${tokens} tokens; stored as ${handle}; read it with ${HANDLE_READER_TOOL}]`;
 
 export const truncatedMarker = (tokens: number, handle: string): string =>
-  `[… ${tokens} tokens omitted; full output stored as ${handle}; read it with ReadOutput …]`;
+  `[… ${tokens} tokens omitted; full output stored as ${handle}; read it with ${HANDLE_READER_TOOL} …]`;
 
 export const withOutput = (item: FunctionCallOutputInputItem, output: string): FunctionCallOutputInputItem => ({
   ...item,

@@ -1,5 +1,5 @@
 import { describeMemoryValidity } from '@momonga/protocol';
-import type { MemoryView } from '@momonga/protocol';
+import type { MemoryView, ReflectionDrop, ReflectionJobView } from '@momonga/protocol';
 
 const firstLine = (text: string): string => text.split('\n')[0] ?? '';
 
@@ -37,6 +37,22 @@ const sourceLine = (source: MemoryView['source']): string => {
     case 'command':
       return `source: added by a person with momonga memory add at ${new Date(source.at).toISOString()}`;
   }
+};
+
+const DROP_CAUSE_LABELS: Record<ReflectionDrop['cause'], string> = {
+  text_rule: 'refused by the text rule',
+  duplicate: 'already known',
+  evidence: 'evidence could not be bound',
+};
+
+const droppedLine = (drop: ReflectionDrop): string =>
+  `  candidate ${drop.ordinal} dropped, ${DROP_CAUSE_LABELS[drop.cause]}: ${drop.reason}${drop.text === null ? '' : `\n    ${JSON.stringify(firstLine(drop.text))}`}`;
+
+export const formatReflection = (job: ReflectionJobView | null): string => {
+  if (job === null) return 'no reflection has run in this folder yet';
+  const headline = `the last reflection of this folder (run ${job.runId}, ${iso(job.updatedAt)}) is ${job.state}`;
+  const reason = job.reason === null ? [] : [`  ${job.reason}`];
+  return [headline, ...reason, ...job.dropped.map(droppedLine)].join('\n');
 };
 
 export const formatMemory =(memory: MemoryView): string =>

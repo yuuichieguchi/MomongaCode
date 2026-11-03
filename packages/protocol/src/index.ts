@@ -90,7 +90,18 @@ export type {
   SkillsResponse,
 } from './run-api.ts';
 export { assistantTextOf } from './assistant-text.ts';
-export { DEFAULT_MEMORY_KIND, describeMemoryValidity, MEMORY_EVIDENCE_KINDS, MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES } from './memory.ts';
+export {
+  DEFAULT_MEMORY_KIND,
+  describeMemoryValidity,
+  MEMORY_EVIDENCE_KINDS,
+  MEMORY_KINDS,
+  MEMORY_ORIGINS,
+  MEMORY_SCOPES,
+  MEMORY_STATES,
+  MEMORY_STATUSES,
+  REFLECTION_DROP_CAUSES,
+  REFLECTION_JOB_STATES,
+} from './memory.ts';
 export type {
   AddMemoryRequest,
   MemoriesResponse,
@@ -107,6 +118,11 @@ export type {
   MemoryView,
   PromoteMemoryRequest,
   PromoteMemoryResponse,
+  ReflectionDrop,
+  ReflectionDropCause,
+  ReflectionJobState,
+  ReflectionJobView,
+  ReflectionResponse,
 } from './memory.ts';
 export { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
 export type {

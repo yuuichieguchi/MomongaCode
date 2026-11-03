@@ -10,7 +10,7 @@ import type { E2eHome } from './support/home.ts';
 import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
 import { shutdownBarrier, startStack } from './support/stack.ts';
-import { chatCompletions, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
+import { chatCompletions, messagesOf, reportedTokensOfRequest, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
 
 type Json = Record<string, any>;
@@ -110,9 +110,13 @@ describe('learning loop', () => {
       const cost = await runCli(home, ['cost']);
       expect(cost.code).toBe(0);
       expect(cost.stdout).toContain(`reflection run ${first.id}`);
-      expect(cost.stdout).toContain('10 input + 5 output = 15 tokens');
+      const reflectionInput = reportedTokensOfRequest(requests[3]?.body);
+      expect(cost.stdout).toContain(`${reflectionInput} input + 5 output = ${reflectionInput + 5} tokens`);
       const costJson = JSON.parse((await runCli(home, ['cost', '--json'])).stdout) as { contextCharges: { charges: Json[]; totalTokens: number } };
-      expect(costJson.contextCharges).toMatchObject({ totalTokens: 15, charges: [{ purpose: 'reflection', runId: first.id, project, inputTokens: 10, outputTokens: 5, totalTokens: 15 }] });
+      expect(costJson.contextCharges).toMatchObject({
+        totalTokens: reflectionInput + 5,
+        charges: [{ purpose: 'reflection', runId: first.id, project, inputTokens: reflectionInput, outputTokens: 5, totalTokens: reflectionInput + 5 }],
+      });
 
       const { run: second } = await runtime.createRun(session.id, 'Say hello', { history: 'fresh' });
       expect((await toEnd(runtime, second.id)).at(-1)?.data['to']).toBe('COMPLETED');
@@ -120,7 +124,7 @@ describe('learning loop', () => {
 
       const accepted = await runCli(home, ['memory', 'review', 'accept', memoryId]);
       expect(accepted.stdout).toBe(`accepted memory ${memoryId}\n`);
-      expect((await runCli(home, ['memory', 'review'])).stdout).toBe('no memories waiting for review\n');
+      expect((await runCli(home, ['memory', 'review'])).stdout).toMatch(/^no memories waiting for review\nthe last reflection of this folder \(run \S+, \S+\) is done\n {2}the run is not a verified success\n$/);
 
       const { run: third } = await runtime.createRun(session.id, 'Save the same note again', { history: 'fresh' });
       await approveEachAskUntilEnd(runtime, third.id, 1);

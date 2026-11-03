@@ -26,6 +26,8 @@ export type TuiBackend = {
   decideTrust(decision: 'trusted' | 'untrusted'): Promise<void>;
   openSession(): Promise<SessionView>;
   setMode(mode: PermissionMode): Promise<SessionView>;
+  models(): Promise<readonly MomongaModelEntry[]>;
+  setModel(modelAlias: string): Promise<SessionView>;
   autoModeAvailable(): Promise<boolean>;
   startRun(text: string, history: 'inherit' | 'fresh', options?: StartRunOptions): Promise<RunView>;
   follow(runId: string, handlers: FollowHandlers): Promise<RunView>;
@@ -94,6 +96,18 @@ export const createTuiBackend = (
     },
     setMode: async (mode) => {
       session = await runtime().setPermissionMode(current().id, mode);
+      return session;
+    },
+    models: async () => {
+      const gateway = createGatewayClient({ socketPath: paths.sockets.gateway });
+      try {
+        return await gateway.models();
+      } finally {
+        await gateway.close();
+      }
+    },
+    setModel: async (modelAlias) => {
+      session = await runtime().setModelAlias(current().id, modelAlias);
       return session;
     },
     autoModeAvailable: () => autoModeConfigured(ports),

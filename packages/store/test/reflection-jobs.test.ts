@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { RuntimeStore } from '@momonga/store';
 import { START_MS, callEvent, enqueue, harness, makeStoreDir, mustClaim, newSession, rawDb } from './helpers.ts';
 
-type Job = { runId: string; state: string; attempts: number; lastError: string | null; createdAt: number; updatedAt: number };
+type Job = { runId: string; state: string; attempts: number; lastError: string | null; dropped: { ordinal: number; text: string | null; cause: string; reason: string }[]; createdAt: number; updatedAt: number };
 
 type Jobs = {
   runOrigin(runId: string): string | undefined;
   enqueue(runId: string): boolean;
   get(runId: string): Job | undefined;
+  latestForProject(project: string): Job | undefined;
   next(exclude?: ReadonlySet<string>): Job | undefined;
   begin(runId: string): Job;
   finish(runId: string, reason?: string): Job;
@@ -32,7 +33,7 @@ describe('reflection jobs', () => {
     const { jobs, first } = setup();
     expect(jobs.enqueue(first.id)).toBe(true);
     expect(jobs.enqueue(first.id)).toBe(false);
-    expect(jobs.get(first.id)).toEqual({ runId: first.id, state: 'pending', attempts: 0, lastError: null, createdAt: START_MS, updatedAt: START_MS });
+    expect(jobs.get(first.id)).toEqual({ runId: first.id, state: 'pending', attempts: 0, lastError: null, dropped: [], createdAt: START_MS, updatedAt: START_MS });
   });
 
   it('is written in the terminal transition of a completed root run, in the same step as the status', () => {
@@ -129,10 +130,12 @@ describe('reflection jobs', () => {
   });
 });
 
+type Dropped = { ordinal: number; text: string | null; cause: string; reason: string };
+
 type Charge = { purpose: 'reflection'; runId: string; project: string; model: string; inputTokens: number; outputTokens: number; totalTokens: number };
 
 type Settling = Jobs & {
-  complete(input: { runId: string; charge: Charge | null; candidates: Record<string, unknown>[]; reason?: string }): Job;
+  complete(input: { runId: string; charge: Charge | null; candidates: Record<string, unknown>[]; dropped?: Dropped[]; reason?: string }): Job;
   fail(runId: string, reason: string, charge?: Charge): Job;
   release(runId: string): Job;
 };
@@ -170,6 +173,54 @@ describe('settling a reflection job', () => {
     expect(done).toMatchObject({ state: 'done', lastError: 'kept two' });
     expect(store.contextCharges.list()).toHaveLength(1);
     expect(store.memories.candidates().map((memory) => memory.text)).toEqual(['one', 'two']);
+  });
+
+  it('keeps the dropped candidates with the job and reads them back whole', () => {
+    const { settling, first } = started();
+    const dropped: Dropped[] = [
+      { ordinal: 0, text: null, cause: 'text_rule', reason: 'looks like a credential' },
+      { ordinal: 2, text: 'repeated note', cause: 'duplicate', reason: 'already known' },
+      { ordinal: 3, text: 'unbound note', cause: 'evidence', reason: 'src/x.ts was not read' },
+    ];
+    settling.complete({ runId: first.id, charge: null, candidates: [], dropped, reason: 'every candidate the model proposed was dropped' });
+    expect(settling.get(first.id)).toMatchObject({ state: 'done', lastError: 'every candidate the model proposed was dropped', dropped });
+  });
+
+  it('refuses to read a dropped candidate of an unknown cause', () => {
+    const { store, settling, first, dbPath } = started();
+    settling.complete({ runId: first.id, charge: null, candidates: [], dropped: [{ ordinal: 0, text: 'x', cause: 'duplicate', reason: 'r' }] });
+    rawDb(dbPath).prepare('UPDATE reflection_jobs SET dropped_json = ? WHERE run_id = ?').run('[{"ordinal":0,"text":"x","cause":"bored","reason":"r"}]', first.id);
+    expect(() => (store.reflection as unknown as Jobs).get(first.id)).toThrow(/dropped_json/);
+  });
+
+  it('finds the latest job of the runs of one folder', () => {
+    const env = setup();
+    const other = enqueue(env.store, newSession(env.store, '/work/b').id, 'elsewhere');
+    const jobs = env.store.reflection as unknown as Settling;
+    jobs.enqueue(env.first.id);
+    jobs.begin(env.first.id);
+    jobs.finish(env.first.id, 'first folder, first job');
+    env.clock.advance(1);
+    jobs.enqueue(other.id);
+    jobs.begin(other.id);
+    jobs.finish(other.id, 'second folder');
+    expect(jobs.latestForProject('/work/a')).toMatchObject({ runId: env.first.id, lastError: 'first folder, first job' });
+    expect(jobs.latestForProject('/work/b')).toMatchObject({ runId: other.id, lastError: 'second folder' });
+    expect(jobs.latestForProject('/work/none')).toBeUndefined();
+  });
+
+  it('answers the newest settled job of a folder when it has several', () => {
+    const env = setup();
+    const second = enqueue(env.store, env.session.id, 'again');
+    const jobs = env.store.reflection as unknown as Settling;
+    jobs.enqueue(env.first.id);
+    jobs.begin(env.first.id);
+    jobs.finish(env.first.id, 'older');
+    env.clock.advance(5);
+    jobs.enqueue(second.id);
+    jobs.begin(second.id);
+    jobs.finish(second.id, 'newer');
+    expect(jobs.latestForProject('/work/a')).toMatchObject({ runId: second.id, lastError: 'newer' });
   });
 
   it('records no charge when it is given none', () => {

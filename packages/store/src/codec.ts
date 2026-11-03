@@ -139,7 +139,7 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   notice: true,
 };
 
-const SESSION_EVENT_TYPES: Record<SessionEventPayload['type'], true> = { 'mode.changed': true };
+const SESSION_EVENT_TYPES: Record<SessionEventPayload['type'], true> = { 'mode.changed': true, 'model.changed': true };
 
 const isToolFile = (value: unknown): boolean =>
   isRecord(value) &&
@@ -179,6 +179,13 @@ const decodeSessionEvent = (row: Row, identity: string, type: string, payload: R
     throw corrupt('events', identity, `column run_id is NULL but type "${type}" is not a session event type`);
   }
   const envelope = { id: reader.number('id'), sessionId: reader.string('session_id'), createdAt: reader.number('created_at') };
+  if (type === 'model.changed') {
+    const { modelAlias, previousModelAlias } = payload;
+    if (typeof modelAlias !== 'string' || typeof previousModelAlias !== 'string') {
+      throw corrupt('events', identity, 'payload_json modelAlias and previousModelAlias must be strings');
+    }
+    return { type: 'model.changed', modelAlias, previousModelAlias, ...envelope };
+  }
   const mode = payload['mode'];
   if (typeof mode !== 'string') throw corrupt('events', identity, 'payload_json mode must be a string');
   return { type: 'mode.changed', mode: expectOneOf('events', identity, 'payload_json', PERMISSION_MODES, mode), ...envelope };

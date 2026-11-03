@@ -9,7 +9,7 @@ import { startGatewayProcess } from '@momonga/gateway';
 import * as runtime from '@momonga/runtime';
 import type { ServiceTimers } from '@momonga/runtime';
 import { afterMicrotasks, startFakeChatCompletions } from '@momonga/testkit';
-import type { FakeChatCompletionsOptions, FakeChatCompletionsServer, FakeResponseHold, FakeTimers } from '@momonga/testkit';
+import type { FakeChatCompletionsOptions, FakeChatCompletionsServer, FakeFixedUsage, FakeRequestUsage, FakeResponseHold, FakeTimers } from '@momonga/testkit';
 import { makeLogger, onCleanup, writeUserSettings } from './helpers.ts';
 import type { LogEntry, RecordingLogger } from './helpers.ts';
 import { openEventStream, sendJson } from '../service/helpers.ts';
@@ -357,7 +357,12 @@ export const eventTypes = (temp: RunHome, runId: string): string[] =>
 export const recordPgid = (temp: RunHome): number | undefined =>
   readDb<{ pgid: number | null }>(temp.paths.databases.runtime, 'SELECT pgid FROM idempotency WHERE pgid IS NOT NULL').map((row) => row.pgid ?? undefined)[0];
 
-export const scriptedToolCall = (name: string, args: Record<string, unknown>, callId = 'call_1') => ({
+export const scriptedToolCall = (
+  name: string,
+  args: Record<string, unknown>,
+  callId = 'call_1',
+  usage: FakeFixedUsage | FakeRequestUsage = { prompt: 'request', completion_tokens: 5 },
+) => ({
   kind: 'stream' as const,
   chunks: [
     {
@@ -365,7 +370,7 @@ export const scriptedToolCall = (name: string, args: Record<string, unknown>, ca
       finishReason: 'tool_calls',
     },
   ],
-  usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+  usage,
 });
 
 export const approveOnce = async (launched: Pick<Launched, 'http'>, runId: string): Promise<void> => {
