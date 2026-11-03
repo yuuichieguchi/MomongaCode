@@ -162,12 +162,16 @@ export const parseJsonText = (text: string, source: string): unknown => {
 
 export type ReadJsonFileOptions = { confineTo?: string };
 
+const ABSENT_CODES: ReadonlySet<string | undefined> = new Set(['ENOENT', 'ENOTDIR']);
+
+export const isAbsentPathError = (error: unknown): boolean => ABSENT_CODES.has((error as NodeJS.ErrnoException).code);
+
 const assertReadable = async (file: string, confineTo: string | undefined): Promise<boolean> => {
   let link: fs.Stats;
   try {
     link = await fs.promises.lstat(file);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    if (isAbsentPathError(error)) return false;
     throw error;
   }
   if (link.isSymbolicLink()) {
@@ -196,7 +200,7 @@ export const readJsonFile = async (file: string, options: ReadJsonFileOptions = 
   try {
     text = await fs.promises.readFile(file, 'utf8');
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { found: false };
+    if (isAbsentPathError(error)) return { found: false };
     throw error;
   }
   return { found: true, value: parseJsonText(text, file) };
@@ -207,7 +211,7 @@ export const readJsonFileSync = (file: string): JsonFile => {
   try {
     link = fs.lstatSync(file);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { found: false };
+    if (isAbsentPathError(error)) return { found: false };
     throw error;
   }
   if (link.isSymbolicLink()) {

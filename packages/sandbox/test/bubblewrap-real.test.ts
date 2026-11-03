@@ -286,4 +286,30 @@ describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', { timeout: REAL_PRO
     const exit = await proc.exited;
     expect(exit.killedBy).toBe('abort');
   });
+
+  it('gives a running command that ignores SIGTERM the whole kill grace, because bwrap itself, which would end the sandbox at once, is not sent SIGTERM', async () => {
+    const controller = new AbortController();
+    const ready = path.join(work, 'ready');
+    const proc = sandbox.spawn({ argv: ['/bin/sh', '-c', `trap '' TERM; : > ${ready}; sleep 30`], cwd: work, env: BASE_ENV }, policy(), controller.signal);
+    spawned.push(proc);
+    await waitFor(() => fs.existsSync(ready), { description: 'the command is running' });
+    const abortedAt = Date.now();
+    controller.abort();
+    const exit = await proc.exited;
+    expect(Date.now() - abortedAt).toBeGreaterThanOrEqual(KILL_GRACE_MS);
+    expect(exit.killedBy).toBe('grace-kill');
+  });
+
+  it('sends SIGTERM to a running command, which bwrap reports as exit code 143', async () => {
+    const controller = new AbortController();
+    const ready = path.join(work, 'ready');
+    const proc = sandbox.spawn({ argv: ['/bin/sh', '-c', `: > ${ready}; sleep 30`], cwd: work, env: BASE_ENV }, policy(), controller.signal);
+    spawned.push(proc);
+    await waitFor(() => fs.existsSync(ready), { description: 'the command is running' });
+    const abortedAt = Date.now();
+    controller.abort();
+    const exit = await proc.exited;
+    expect(Date.now() - abortedAt).toBeLessThan(KILL_GRACE_MS);
+    expect(exit).toMatchObject({ code: 143, signal: null, killedBy: 'abort' });
+  });
 });

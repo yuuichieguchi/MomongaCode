@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { HOOK_EVENTS, HOOK_MATCHER_EVENTS, hookMatcherError } from '@momonga/protocol';
 import { rethrowIfTransient, toConfigError } from './config-error.ts';
 import { looksLikeCredentialName } from './credential-env.ts';
-import { readJsonFile, readJsonFileSync } from './json-file.ts';
+import { isAbsentPathError, readJsonFile, readJsonFileSync } from './json-file.ts';
 import type { JsonFile } from './json-file.ts';
 import { layoutOf } from './layout.ts';
 import { resolveModels } from './models.ts';
@@ -165,7 +165,7 @@ export const exists = async (file: string): Promise<boolean> => {
     await fs.promises.access(file);
     return true;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    if (isAbsentPathError(error)) return false;
     rethrowIfTransient(error);
     throw toConfigError(error);
   }

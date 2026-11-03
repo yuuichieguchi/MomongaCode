@@ -1,5 +1,6 @@
 import { hostProcessGroupPort } from './platform/group-port.ts';
 import type { ProcessGroupPort } from './platform/group-port.ts';
+import type { GroupMembersReader } from './platform/group-members.ts';
 
 const POLL_INTERVAL_MS = 10;
 const MIN_KILL_WAIT_MS = 1000;
@@ -34,6 +35,24 @@ function assertSignalableGroup(pgid: number): void {
 export function signalGroup(pgid: number, signal: NodeJS.Signals, port: ProcessGroupPort = hostProcessGroupPort()): void {
   assertSignalableGroup(pgid);
   port.signal(pgid, signal);
+}
+
+export type ProcessSignalSender = (pid: number, signal: NodeJS.Signals) => void;
+
+const sendToProcess: ProcessSignalSender = (pid, signal) => void process.kill(pid, signal);
+
+export function signalGroupExceptLeader(pgid: number, signal: NodeJS.Signals, members: GroupMembersReader, send: ProcessSignalSender = sendToProcess): number {
+  assertSignalableGroup(pgid);
+  const followers = members(pgid).filter((pid) => pid !== pgid);
+  for (const pid of followers) {
+    try {
+      send(pid, signal);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'ESRCH' && code !== 'EPERM') throw error;
+    }
+  }
+  return followers.length;
 }
 
 export function groupAlive(pgid: number, port: ProcessGroupPort = hostProcessGroupPort()): boolean {

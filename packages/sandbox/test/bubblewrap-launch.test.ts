@@ -148,3 +148,91 @@ describe('bubblewrap launch (a stand-in bwrap that creates the /dev/null mount p
     expect(fs.readFileSync(path.join(work, '.git'), 'utf8')).toBe('kept\n');
   });
 });
+
+const MONITORING_BWRAP = `#!/bin/sh
+while [ "$1" != "--" ]; do shift; done
+shift
+"$@" &
+child=$!
+trap 'kill -KILL 0' TERM
+wait $child
+`;
+
+const SETTING_UP_BWRAP = `#!/bin/sh
+trap 'kill -KILL 0' TERM
+exec 9< "$SETUP_GATE"
+while [ "$1" != "--" ]; do shift; done
+shift
+exec "$@"
+`;
+
+const psGroupMembers = (pgid: number): number[] =>
+  execFileSync('/bin/ps', ['-A', '-o', 'pid=,pgid='], { encoding: 'utf8' })
+    .split('\n')
+    .flatMap((line) => {
+      const [pid, group] = line.trim().split(/\s+/).map(Number);
+      return pid !== undefined && group === pgid ? [pid] : [];
+    });
+
+describe('bubblewrap cancel (a stand-in bwrap that, like bwrap --die-with-parent, runs the command as its child, dies of SIGTERM and takes the sandbox down with it)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+  const GRACE_MS = 300;
+
+  const cancelAfterReady = async (script: (ready: string) => string): Promise<{ elapsedMs: number; exit: Awaited<ReturnType<typeof run>> }> => {
+    const monitoring = path.join(base, 'monitoring-bwrap');
+    fs.writeFileSync(monitoring, MONITORING_BWRAP, { mode: 0o755 });
+    const monitored = createBubblewrapSandbox({
+      bwrapPath: monitoring,
+      tmpRoot: path.join(base, 'tmp'),
+      killGraceMs: GRACE_MS,
+      journal: journal(),
+      holders: () => new Set(),
+      groupMembers: psGroupMembers,
+    });
+    const ready = path.join(base, 'ready');
+    const controller = new AbortController();
+    const proc = monitored.spawn({ argv: ['/bin/sh', '-c', script(ready)], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy([]), controller.signal);
+    const finished = run(proc);
+    await waitFor(() => fs.existsSync(ready), { description: 'the command is ready' });
+    const abortedAt = Date.now();
+    controller.abort();
+    const exit = await finished;
+    return { elapsedMs: Date.now() - abortedAt, exit };
+  };
+
+  it('gives a command that ignores SIGTERM the whole kill grace before SIGKILL, because bwrap itself is not sent SIGTERM', async () => {
+    const { elapsedMs, exit } = await cancelAfterReady((ready) => `trap '' TERM; : > ${ready}; sleep 30`);
+    expect(elapsedMs).toBeGreaterThanOrEqual(GRACE_MS);
+    expect(exit.killedBy).toBe('grace-kill');
+  });
+
+  it('sends SIGTERM to bwrap itself when the abort comes before bwrap has started the command, because no command waits for the grace', async () => {
+    const monitoring = path.join(base, 'monitoring-bwrap');
+    fs.writeFileSync(monitoring, SETTING_UP_BWRAP, { mode: 0o755 });
+    const gate = path.join(base, 'setup-gate');
+    execFileSync('/usr/bin/mkfifo', [gate]);
+    const monitored = createBubblewrapSandbox({
+      bwrapPath: monitoring,
+      tmpRoot: path.join(base, 'tmp'),
+      killGraceMs: GRACE_MS,
+      journal: journal(),
+      holders: () => new Set(),
+      groupMembers: psGroupMembers,
+    });
+    const controller = new AbortController();
+    const proc = monitored.spawn({ argv: ['/bin/sh', '-c', 'sleep 30'], cwd: work, env: { PATH: '/usr/bin:/bin', SETUP_GATE: gate } }, policy([]), controller.signal);
+    const finished = run(proc);
+    await waitFor(() => psGroupMembers(proc.pgid).length === 1, { description: 'bwrap is setting up alone in its group' });
+    const abortedAt = Date.now();
+    controller.abort();
+    const exit = await finished;
+    expect(Date.now() - abortedAt).toBeLessThan(GRACE_MS);
+    expect(exit.killedBy).toBe('abort');
+  });
+
+  it('sends SIGTERM to the command, which stops before the grace ends, and bwrap reports its death as 128 + the signal', async () => {
+    const { elapsedMs, exit } = await cancelAfterReady((ready) => `: > ${ready}; sleep 30`);
+    expect(elapsedMs).toBeLessThan(GRACE_MS);
+    expect(exit.killedBy).toBe('abort');
+    expect(exit.code).toBe(143);
+  });
+});

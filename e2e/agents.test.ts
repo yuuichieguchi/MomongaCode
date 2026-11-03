@@ -12,7 +12,7 @@ import { TOOL_GROUPS_SQL } from './support/ledger.ts';
 import { groupAlive } from './support/process.ts';
 import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
-import { sandboxOrSkip } from './support/sandbox.ts';
+import { SANDBOX_ENDS_WITH_RUNTIME, SIGTERM_DEATH, productSandbox, sandboxOrSkip } from './support/sandbox.ts';
 import { DEFAULT_E2E_DEPS, shutdownBarrier, startStack } from './support/stack.ts';
 import { childOf } from './support/supervisor-client.ts';
 import { chatCompletions, hangReply, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
@@ -320,13 +320,15 @@ describe('agents: background bash', () => {
       const jobId = jobIdOf(home);
       if (jobId === undefined) throw new Error('no job was recorded');
       const job = jobRow(home, jobId);
-      expect(job).toMatchObject({ status: 'killed', signal: 'SIGTERM' });
+      const death = SIGTERM_DEATH[productSandbox()];
+      expect(job).toMatchObject({ status: 'killed', exit_code: death.exitCode, signal: death.signal });
       expect(groupAlive(job?.pgid as number)).toBe(false);
       const stream = runtime.events(run.id);
       const frames = await stream.toEnd(E2E_MARGIN_MS);
       await stream.close();
       expect(framesOfType(frames, 'job.finished').map((frame) => frame.data)).toMatchObject([{ jobId, status: 'killed' }]);
-      expect(framesOfType(frames, 'tool.completed').map((frame) => String(frame.data['output'])).at(-1)).toBe(`Job ${jobId}: it was stopped (SIGTERM).`);
+      const stopped = death.signal === null ? 'it was stopped' : `it was stopped (${death.signal})`;
+      expect(framesOfType(frames, 'tool.completed').map((frame) => String(frame.data['output'])).at(-1)).toBe(`Job ${jobId}: ${stopped}.`);
       expect(readDb(home.paths.databases.runtime, TOOL_GROUPS_SQL).length).toBeGreaterThan(0);
       expect(fs.readdirSync(home.paths.markers.tools)).toEqual([]);
       await shutdownBarrier(stack);
@@ -359,7 +361,7 @@ describe('agents: background bash', () => {
       const oldRuntimePid = childOf(before, 'runtime').pid;
       if (oldRuntimePid === undefined) throw new Error('runtime has no pid');
       process.kill(oldRuntimePid, 'SIGKILL');
-      expect(groupAlive(pgid)).toBe(true);
+      if (!SANDBOX_ENDS_WITH_RUNTIME[productSandbox()]) expect(groupAlive(pgid)).toBe(true);
 
       await untilStatus(runtime, run.id, 'COMPLETED', E2E_RUN_COMPLETED_BOUND_MS);
       expect(groupAlive(pgid)).toBe(false);

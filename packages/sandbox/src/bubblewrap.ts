@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileRuleBlocks } from '@momonga/foundation';
-import type { FileRuleEntry, FileRuleSet } from '@momonga/foundation';
+import { fileRuleBlocks, procGroupMembers, signalGroup, signalGroupExceptLeader } from '@momonga/foundation';
+import type { FileRuleEntry, FileRuleSet, GroupMembersReader } from '@momonga/foundation';
 import { canonicalizePath } from './canonical-path.ts';
 import { SANDBOX_STOP_BOUND_MS, launch } from './process.ts';
 import type { LaunchOptions } from './process.ts';
@@ -359,11 +359,16 @@ export interface BubblewrapSandboxOptions {
   journal: PlaceholderJournal;
   holders: () => ReadonlySet<string>;
   spawnProcess?: LaunchOptions['spawnProcess'];
+  groupMembers?: GroupMembersReader;
 }
 
 export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sandbox {
   const bwrapPath = options.bwrapPath ?? DEFAULT_BWRAP_PATH;
   const filesystem = options.filesystem ?? nodeFilesystemPort;
+  const groupMembers = options.groupMembers ?? procGroupMembers;
+  const signalSandboxTerm = (pgid: number): void => {
+    if (signalGroupExceptLeader(pgid, 'SIGTERM', groupMembers) === 0) signalGroup(pgid, 'SIGTERM');
+  };
   filesystem.requireExecutable(bwrapPath);
   const tmpRoot = filesystem.realpath(options.tmpRoot);
   const directories: DirectoryPort = { isDirectory: (target) => filesystem.kindOf(target) === 'directory' };
@@ -479,6 +484,7 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
         env: { ...command.env, TMPDIR: tmpDir },
         signal,
         killGraceMs: options.killGraceMs,
+        signalTerm: signalSandboxTerm,
         ...(options.spawnProcess === undefined ? {} : { spawnProcess: options.spawnProcess }),
         afterExit: () => throwAll(attemptAll([() => release(plan), afterExit])),
       });

@@ -18,7 +18,10 @@ export interface LaunchOptions {
   markerFile?: string;
   stdin?: string;
   spawnProcess?: typeof spawn;
+  signalTerm?: (pgid: number) => void;
 }
+
+const signalWholeGroupTerm = (pgid: number): void => signalGroup(pgid, 'SIGTERM');
 
 export function launch(options: LaunchOptions): SandboxedProcess {
   const spawnProcess = options.spawnProcess ?? spawn;
@@ -48,6 +51,7 @@ export function launch(options: LaunchOptions): SandboxedProcess {
     throw new Error(`failed to open output pipes for ${options.file}`);
   }
   const { signal, killGraceMs } = options;
+  const signalTerm = options.signalTerm ?? signalWholeGroupTerm;
   let stdinFailure: Error | undefined;
   if (options.stdin !== undefined && stdin !== null) {
     stdin.on('error', (error: NodeJS.ErrnoException) => {
@@ -64,7 +68,7 @@ export function launch(options: LaunchOptions): SandboxedProcess {
     if (killedBy !== undefined) return;
     killedBy = 'abort';
     termDeadline = Date.now() + killGraceMs;
-    signalGroup(pid, 'SIGTERM');
+    signalTerm(pid);
     graceTimer = setTimeout(() => {
       graceTimer = undefined;
       if (!leaderExited) killedBy = 'grace-kill';

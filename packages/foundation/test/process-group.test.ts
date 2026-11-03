@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { forceKillGroup, groupAlive, signalGroup, terminateGroup, waitForGroupGone } from '@momonga/foundation';
+import { forceKillGroup, groupAlive, procGroupMembers, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
 
 const FORK_STORM_TEST_TIMEOUT_MS = 4 * REAL_PROCESS_TEST_TIMEOUT_MS;
@@ -171,6 +171,67 @@ describe('signalGroup', () => {
 
   it.each([0, 1, -5, 2.5])('refuses the unsafe group id %s', (pgid) => {
     expect(() => signalGroup(pgid, 'SIGTERM')).toThrow(/refusing to signal process group/);
+  });
+});
+
+const psGroupMembers = (pgid: number): number[] =>
+  spawnSync('ps', ['-A', '-o', 'pid=,pgid='], { encoding: 'utf8' })
+    .stdout.split('\n')
+    .flatMap((line) => {
+      const [pid, group] = line.trim().split(/\s+/).map(Number);
+      return pid !== undefined && group === pgid ? [pid] : [];
+    });
+
+describe('signalGroupExceptLeader', () => {
+  it('delivers the signal to every member of the group but its leader', async () => {
+    const group = await spawnGroup('normal');
+    signalGroupExceptLeader(group.pgid, 'SIGTERM', psGroupMembers);
+    expect(await waitForGroupGone(group.pgid, Date.now() + 50)).toBe(false);
+    const deadline = Date.now() + 5000;
+    while (pidAlive(group.grandchildPid) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(pidAlive(group.grandchildPid)).toBe(false);
+    expect(pidAlive(group.pgid)).toBe(true);
+  });
+
+  it('tolerates a member that is gone or owned by another user', () => {
+    const refusals = ['ESRCH', 'EPERM'].map((code) => Object.assign(new Error(code), { code }));
+    const sent: number[] = [];
+    const send = (pid: number): void => {
+      sent.push(pid);
+      const refusal = refusals[sent.length - 1];
+      if (refusal !== undefined) throw refusal;
+    };
+    expect(signalGroupExceptLeader(4000, 'SIGTERM', () => [4000, 4001, 4002, 4003], send)).toBe(3);
+    expect(sent).toEqual([4001, 4002, 4003]);
+  });
+
+  it('signals nobody and answers 0 when the leader is the only member', () => {
+    const sent: number[] = [];
+    expect(signalGroupExceptLeader(4000, 'SIGTERM', () => [4000], (pid) => void sent.push(pid))).toBe(0);
+    expect(sent).toEqual([]);
+  });
+
+  it('propagates any other failure to signal a member', () => {
+    const failure = Object.assign(new Error('EINVAL'), { code: 'EINVAL' });
+    expect(() =>
+      signalGroupExceptLeader(4000, 'SIGTERM', () => [4001], () => {
+        throw failure;
+      }),
+    ).toThrow(failure);
+  });
+
+  it.each([0, 1, -5, 2.5])('refuses the unsafe group id %s', (pgid) => {
+    expect(() => signalGroupExceptLeader(pgid, 'SIGTERM', () => [])).toThrow(/refusing to signal process group/);
+  });
+});
+
+describe.skipIf(process.platform !== 'linux')('procGroupMembers (Linux /proc)', () => {
+  it('lists the leader and the grandchild of a live group and nothing outside it', async () => {
+    const group = await spawnGroup('normal');
+    const members = procGroupMembers(group.pgid);
+    expect(members).toEqual(expect.arrayContaining([group.pgid, group.grandchildPid]));
+    expect(members).not.toContain(process.pid);
+    expect([...members].sort((left, right) => left - right)).toEqual([...psGroupMembers(group.pgid)].sort((left, right) => left - right));
   });
 });
 

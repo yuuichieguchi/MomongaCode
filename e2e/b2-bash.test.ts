@@ -7,9 +7,9 @@ import { readDb } from './support/db.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { TOOL_GROUPS_SQL } from './support/ledger.ts';
-import { groupAlive, isAlive } from './support/process.ts';
+import { groupAlive, hostPidOf, isAlive } from './support/process.ts';
 import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
-import { REFUSED_WRITE_TEXT, platformSandbox, productSandbox, sandboxOrSkip } from './support/sandbox.ts';
+import { REFUSED_WRITE_TEXT, SANDBOX_ENDS_WITH_RUNTIME, platformSandbox, productSandbox, sandboxOrSkip } from './support/sandbox.ts';
 import { DEFAULT_E2E_DEPS, startStack } from './support/stack.ts';
 import { childOf } from './support/supervisor-client.ts';
 import { chatCompletions, messagesOf, precedingAssistantCallId, textReply, toolCallReply } from './support/upstream.ts';
@@ -40,9 +40,17 @@ const membersOf = (pgid: number): number[] => processTable().filter((entry) => e
 
 const groupOfPid = (pid: number): number | undefined => processTable().find((entry) => entry.pid === pid)?.pgid;
 
-const pidIn = (file: string): number | undefined => {
+const innerPidIn = (file: string): number | undefined => {
   const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim() : '';
   return /^\d+$/.test(text) ? Number(text) : undefined;
+};
+
+const insideMemberOf = (pgid: number): number | undefined => membersOf(pgid).find((pid) => pid !== pgid);
+
+const hostPidIn = (file: string, pgid: number): number | undefined => {
+  const inner = innerPidIn(file);
+  const insideMember = insideMemberOf(pgid);
+  return inner === undefined || insideMember === undefined ? undefined : hostPidOf(inner, insideMember);
 };
 
 const ESCAPE_GROUP = `perl -e 'use POSIX qw(setsid); setsid(); exec "sleep", "60"'`;
@@ -164,7 +172,7 @@ describe('b2: Bash under the platform sandbox', () => {
       expect(chatCompletions(stack.fake)).toHaveLength(1);
 
       process.kill(oldRuntimePid, 'SIGKILL');
-      expect(groupAlive(pgid)).toBe(true);
+      if (!SANDBOX_ENDS_WITH_RUNTIME[productSandbox()]) expect(groupAlive(pgid)).toBe(true);
 
       await until(async () => (await runtime.getRun(run.id)).run.status === 'COMPLETED', {
         deadlineMs: E2E_RUN_COMPLETED_BOUND_MS,
@@ -208,8 +216,8 @@ describe('b2: Bash under the platform sandbox', () => {
       context,
     );
     try {
-      const shell = await until(() => pidIn(killed.files.shell), { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the shell pid' });
-      const background = await until(() => pidIn(killed.files.background), { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the background sleep pid' });
+      const shell = await until(() => hostPidIn(killed.files.shell, killed.pgid), { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the host pid of the shell' });
+      const background = await until(() => hostPidIn(killed.files.background, killed.pgid), { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the host pid of the background sleep' });
       const members = membersOf(killed.pgid);
       expect(members).toEqual(expect.arrayContaining([shell, background]));
       expect(members.length).toBeGreaterThanOrEqual(3);
@@ -232,7 +240,7 @@ describe('b2: Bash under the platform sandbox', () => {
       context,
     );
     try {
-      const escaped = await until(() => pidIn(killed.files.escaped), { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the escaping process pid' });
+      const escaped = await until(() => hostPidIn(killed.files.escaped, killed.pgid), { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the host pid of the escaping process' });
       await until(() => groupOfPid(escaped) === escaped, { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the escaping process leading a group of its own' });
       expect(isAlive(escaped)).toBe(true);
       expect(membersOf(killed.pgid)).not.toContain(escaped);
@@ -254,14 +262,14 @@ describe('b2: Bash under the platform sandbox', () => {
     );
     let escaped: number | undefined;
     try {
-      escaped = await until(() => pidIn(killed.files.escaped), { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the escaping process pid' });
+      escaped = await until(() => hostPidIn(killed.files.escaped, killed.pgid), { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the host pid of the escaping process' });
       await until(() => groupOfPid(escaped as number) === escaped, { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the escaping process leading a group of its own' });
 
       killed.kill();
       await killed.completed();
 
       expect(groupAlive(killed.pgid)).toBe(false);
-      expect(isAlive(escaped)).toBe(true);
+      expect(isAlive(escaped)).toBe(!SANDBOX_ENDS_WITH_RUNTIME[productSandbox()]);
     } finally {
       if (escaped !== undefined && isAlive(escaped)) process.kill(escaped, 'SIGKILL');
       await killed.runtime.close();

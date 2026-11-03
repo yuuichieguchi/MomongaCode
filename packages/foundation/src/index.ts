@@ -26,8 +26,10 @@ export { DEFAULT_LOCK_TIMEOUT_MS, createKeyedSerializer, systemFileLockPorts, wi
 export type { FileLockOptions, FileLockPorts, KeyedSerializer } from './file-lock.ts';
 export { syncDirectory, syncDirectorySync, writeFileAtomically } from './atomic-file.ts';
 export type { AtomicWriteOptions } from './atomic-file.ts';
-export { forceKillGroup, groupAlive, groupTerminationBoundMs, realGroupTiming, signalGroup, terminateGroup, waitForGroupGone } from './process-group.ts';
-export type { ForceKillGroupOptions, GroupTiming, TerminateGroupOptions, TerminateOutcome } from './process-group.ts';
+export { forceKillGroup, groupAlive, groupTerminationBoundMs, realGroupTiming, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from './process-group.ts';
+export type { ForceKillGroupOptions, GroupTiming, ProcessSignalSender, TerminateGroupOptions, TerminateOutcome } from './process-group.ts';
+export { procGroupMembers } from './platform/group-members.ts';
+export type { GroupMembersReader } from './platform/group-members.ts';
 export {
   HOLDER_READ_MAX_BYTES,
   LOCK_FD_ENV,

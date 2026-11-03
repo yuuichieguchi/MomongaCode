@@ -20,6 +20,13 @@ export const REFUSED_WRITE_TEXT: Readonly<Record<ProductSandbox, string>> = { se
 
 export const REFUSED_READ_TEXT: Readonly<Record<ProductSandbox, string>> = { seatbelt: 'Operation not permitted', bubblewrap: 'No such file or directory' };
 
+export const SIGTERM_DEATH: Readonly<Record<ProductSandbox, { exitCode: number | null; signal: NodeJS.Signals | null }>> = {
+  seatbelt: { exitCode: null, signal: 'SIGTERM' },
+  bubblewrap: { exitCode: 143, signal: null },
+};
+
+export const SANDBOX_ENDS_WITH_RUNTIME: Readonly<Record<ProductSandbox, boolean>> = { seatbelt: false, bubblewrap: true };
+
 export type SandboxProbe = { usable: true; kind: ProductSandbox } | { usable: false; kind: SandboxSetting; stderr: string };
 
 export type SandboxProbeRunner = ProbeRunner;

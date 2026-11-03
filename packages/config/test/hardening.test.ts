@@ -8,6 +8,7 @@ import { hostKernelLock } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder } from '@momonga/testkit';
 import { settingsLockPath } from '../src/file-lock.ts';
 import {
+  distrusting,
   localSettingsDir,
   localSettingsPath,
   makeDir,
@@ -264,6 +265,36 @@ describe('N2 file type checks', () => {
     fs.mkdirSync(path.dirname(userSettingsPath(tree)), { recursive: true });
     fs.symlinkSync(real, userSettingsPath(tree));
     expect((await load(tree)).settings.autoUpdates).toBe(false);
+  });
+});
+
+describe('a regular file named .momonga in the project, as a bubblewrap placeholder leaves it while a background job runs', () => {
+  const plantPlaceholder = (tree: ReturnType<typeof makeTree>): void => {
+    fs.writeFileSync(path.join(tree.project, '.momonga'), '');
+  };
+
+  it('loads the settings as if the project had no settings files', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { autoUpdates: false });
+    plantPlaceholder(tree);
+    const result = await load(tree);
+    expect(result.settings.autoUpdates).toBe(false);
+    expect(result.files).toEqual([userSettingsPath(tree)]);
+  });
+
+  it('loads the MCP servers as if the project had no settings files', async () => {
+    const tree = makeTree();
+    plantPlaceholder(tree);
+    const result = await loadMcpServers({ home: tree.home, projectDir: tree.project, trust: trusting(tree), env: {} });
+    expect(result.enabled).toEqual([]);
+    expect(result.pendingApproval).toEqual([]);
+  });
+
+  it('loads the settings of an untrusted project as if it had no settings files', async () => {
+    const tree = makeTree();
+    plantPlaceholder(tree);
+    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: distrusting() });
+    expect(result.files).toEqual([]);
   });
 });
 
