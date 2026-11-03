@@ -17,6 +17,11 @@ export const skillWarningSource: NoticeSource = async ({ runtime, session }) => 
 
 export const agentWarningSource: NoticeSource = async ({ runtime, session }) => (await runtime.agents(session.id)).warnings;
 
+export const memoryReviewNoticeSource: NoticeSource = async ({ runtime, session }) => {
+  const waiting = await runtime.memories({ state: 'candidate', project: session.cwd });
+  return waiting.length === 0 ? [] : [`${waiting.length} ${waiting.length === 1 ? 'memory is' : 'memories are'} waiting for your review: run momonga memory review`];
+};
+
 export const updateNoticeSource =
   (update: UpdateWiring): NoticeSource =>
   async () => {
@@ -29,4 +34,5 @@ export const defaultNoticeSources = (ports: Pick<CliPorts, 'home'>, update: Upda
   updateNoticeSource(update),
   skillWarningSource,
   agentWarningSource,
+  memoryReviewNoticeSource,
 ];

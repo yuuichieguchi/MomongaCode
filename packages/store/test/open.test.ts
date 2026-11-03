@@ -25,6 +25,7 @@ const EXPECTED_TABLES = [
   'memories_index_docsize',
   'memories_index_idx',
   'memory_evidence',
+  'memory_replacements',
   'reflection_jobs',
   'runs',
   'schema_migrations',

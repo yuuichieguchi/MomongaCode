@@ -25,6 +25,7 @@ export type E2eCaseFile =
   | 'product-cli.test.ts'
   | 'product-pty.test.ts'
   | 'memory.test.ts'
+  | 'learning-loop.test.ts'
   | 'mcp-complete.test.ts'
   | 'agents.test.ts'
   | 'acp.test.ts'
@@ -114,6 +115,7 @@ export const E2E_CASES = [
   { id: 'providers-secret-added-after-start', file: 'providers.test.ts', title: 'providers: a secret stored after the gateway started is used on the next run without a restart', needsBash: false },
   { id: 'memory-persist', file: 'memory.test.ts', title: 'memory: a memory saved after approval in one session reaches a later session with its provenance across a runtime restart, and a deleted one is gone', needsBash: false },
   { id: 'memory-project-trust', file: 'memory.test.ts', title: 'memory: project memories load only in a trusted folder and cannot be saved in an untrusted one', needsBash: false },
+  { id: 'learning-loop', file: 'learning-loop.test.ts', title: 'learning loop: a verified run with reflection enabled yields a candidate that is charged and shown by momonga cost, is never recalled until memory review accept, then reaches the next run, and the sweeper of the started runtime also marks a duplicate and stops on shutdown', needsBash: false },
   { id: 'memory-secret-and-data', file: 'memory.test.ts', title: 'memory: a secret is refused before any approval and a recalled note cannot break out of its data block', needsBash: false },
   { id: 'mcp-oauth-login', file: 'mcp-complete.test.ts', title: 'mcp: a server that needs authorization surfaces a typed event, the client logs in through the Run API and the next run succeeds', needsBash: false },
   { id: 'mcp-elicitation', file: 'mcp-complete.test.ts', title: 'mcp: an elicitation reaches the Run API as an event, the answer resumes the multi round-trip request and the run completes', needsBash: false },

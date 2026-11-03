@@ -31,7 +31,12 @@ import type { GatewayClient } from '../gateway-client.ts';
 import { createTracerPort } from '../tracer.ts';
 import { createRunNotifier } from '../service/notifier.ts';
 import type { RunNotifier } from '../service/notifier.ts';
-import { createRunService } from '../service/service.ts';
+import { startMemorySweeper } from '../service/memory-sweeper.ts';
+import { SWEEP_INTERVAL_MS, createRunService } from '../service/service.ts';
+import { createReflector } from '../memory/reflection.ts';
+import { createMemoryUpkeepSchedule } from '../memory/upkeep-schedule.ts';
+import { DAY_MS } from '@momonga/memory';
+import { createRecordViews } from '../memory/views.ts';
 import { runTraceOf } from '../service/trace-view.ts';
 import type { RunService } from '../service/service.ts';
 import { systemTimers } from '../service/timers.ts';
@@ -48,6 +53,8 @@ import {
   GATEWAY_CANCEL_TIMEOUT_MS,
   IDEMPOTENCY_PURGE_MS,
   MARKER_REAP_KILL_GRACE_MS,
+  MEMORY_UPKEEP_BATCH_MARKS,
+  MEMORY_UPKEEP_PAGE_ROWS,
   RUNTIME_ABORT_BUDGET_MS,
   RUNTIME_TEARDOWN_BUDGET_MS,
   SANDBOX_KILL_GRACE_MS,
@@ -546,6 +553,35 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
 
     await step('timers', () => {
+      const memoryViews = createRecordViews({ store, evidenceRun: evidenceRunFor });
+      const reflector = createReflector({
+        store,
+        gateway: gatewayClient,
+        settings: settingsComposition.settings,
+        clock,
+        isIdle: () => phase === 'running' && !store.hasActiveRun(),
+        evidenceRun: evidenceRunFor,
+        maxAttempts: STORE_MAX_ATTEMPTS,
+        random: Math.random,
+      });
+      const upkeepSchedule = createMemoryUpkeepSchedule({
+        store,
+        clock,
+        views: memoryViews,
+        batchSize: MEMORY_UPKEEP_BATCH_MARKS,
+        pageRows: MEMORY_UPKEEP_PAGE_ROWS,
+        passIntervalMs: DAY_MS,
+        forgetAfterDays: async (project) =>
+          (project === null ? settingsComposition.takeUserSnapshot().settings.memory : await settingsComposition.settings.memory({ cwd: project })).forgetAfterDays,
+        onSkipped: (project) => logger.warn(`memory upkeep skipped the project ${project}: the folder no longer exists`),
+      });
+      const memorySweeper = startMemorySweeper({
+        timers,
+        intervalMs: SWEEP_INTERVAL_MS,
+        upkeep: (sweepSignal) => upkeepSchedule.tick(sweepSignal),
+        reflect: (sweepSignal) => reflector.runOne(sweepSignal),
+        onError: report,
+      });
       periodics.push(
         startPeriodic({ intervalMs: IDEMPOTENCY_PURGE_MS, run: () => {
             store.idempotency.purgeExpired(clock.now());
@@ -583,7 +619,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           report,
         }),
       );
-      cleanups.push({ name: 'timers', run: async () => void (await Promise.all(periodics.map((periodic) => periodic.stop()))) });
+      cleanups.push({
+        name: 'timers',
+        run: async () => void (await Promise.all([memorySweeper.close(), ...periodics.map((periodic) => periodic.stop())])),
+      });
     });
 
     const ready: ReadyFields = await step('ready', () => {

@@ -28,14 +28,13 @@ import { settleCalls } from './tool-step.ts';
 import type { WorkerOptions } from './types.ts';
 import type { TraceSpan } from '../ports.ts';
 import { modelKey } from '../model-key.ts';
+import { REQUEUE_BASE_MS, REQUEUE_MAX_MS } from '../process/constants.ts';
 import { buildSystemPrompt } from '../system-prompt.ts';
 import { summaryStopReason } from './wrap-up.ts';
 import { reportError } from './report.ts';
 import { GatewayRequestError } from '../gateway-client.ts';
 
 const DEFAULT_CANCEL_POLL_MS = 250;
-const REQUEUE_BASE_MS = 1000;
-const REQUEUE_MAX_MS = 60_000;
 const TOOLS_CHANGED_NOTICE = 'The available tools changed since this run started; the run continues with the current tool set.';
 
 export type ClaimHost = {

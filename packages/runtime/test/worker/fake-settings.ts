@@ -1,5 +1,5 @@
-import { DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS, parseRule } from '@momonga/config';
-import type { PermissionRule, ResolvedContextSettings, ResolvedVerificationSettings } from '@momonga/config';
+import { DEFAULT_FORGET_AFTER_DAYS, DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS, parseRule } from '@momonga/config';
+import type { PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedVerificationSettings } from '@momonga/config';
 import type { HooksSettings } from '@momonga/protocol';
 import type { SettingsPort } from '@momonga/runtime';
 import type { Session } from '@momonga/store';
@@ -13,6 +13,7 @@ export type FakeSettings = SettingsPort & {
   trustedValue: boolean;
   hooksValue: HooksSettings;
   verificationValue: ResolvedVerificationSettings;
+  memoryValue: ResolvedMemorySettings;
   contextValue: ResolvedContextSettings;
   context: (session: Session) => Promise<ResolvedContextSettings>;
   classifierAlias: string | undefined;
@@ -30,10 +31,12 @@ export const createFakeSettings = (layout: { home: string; project: string }): F
     trustedValue: true,
     hooksValue: {},
     verificationValue: { commands: [...DEFAULT_VERIFICATION_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS] },
+    memoryValue: { reflection: { enabled: false }, forgetAfterDays: DEFAULT_FORGET_AFTER_DAYS },
     contextValue: { adaptiveBudget: false, autoCompact: true },
     classifierAlias: undefined,
     hooks: async () => settings.hooksValue,
     verification: async () => settings.verificationValue,
+    memory: async () => settings.memoryValue,
     context: async () => settings.contextValue,
     autoModeClassifier: () => settings.classifierAlias,
     rules: async (session) => {

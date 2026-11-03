@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import type { CostReportView, GatewayHealth, ModelList, MomongaModelList } from '@momonga/protocol';
+import type { GatewayCostReportView, GatewayHealth, ModelList, MomongaModelList } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, invalidRequest, notFound } from '../core/errors.ts';
 import type { ResponsesService, SubmitHeaders } from '../core/responses-service.ts';
 import type { Services } from '../core/services.ts';
@@ -18,7 +18,7 @@ export type AppDependencies = {
   startedAtSeconds: number;
   startedAt: string;
   version: string;
-  costReport: ((runs: readonly { runId: string; sessionId: string }[]) => Promise<{ report: CostReportView; text: string }>) | undefined;
+  costReport: ((runs: readonly { runId: string; sessionId: string }[]) => Promise<{ report: GatewayCostReportView; text: string }>) | undefined;
   onError: ((error: unknown) => void) | undefined;
 };
 

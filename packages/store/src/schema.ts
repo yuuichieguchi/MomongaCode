@@ -291,7 +291,7 @@ CREATE TABLE memories_rebuilt (
   kind TEXT NOT NULL DEFAULT 'fact' CHECK (kind IN ('fact', 'episode', 'procedure')),
   duplicate_of TEXT,
   state TEXT NOT NULL DEFAULT 'active' CHECK (
-    state IN ('active', 'candidate', 'archived', 'duplicate') AND ((state = 'duplicate') = (duplicate_of IS NOT NULL))
+    state IN ('active', 'candidate', 'archived', 'duplicate', 'rejected') AND ((state = 'duplicate') = (duplicate_of IS NOT NULL))
   ),
   supersedes_json TEXT NOT NULL DEFAULT '[]',
   retired_at INTEGER,
@@ -320,6 +320,7 @@ ALTER TABLE memories_rebuilt RENAME TO memories;
 CREATE INDEX memories_by_project ON memories (project);
 CREATE INDEX memories_by_recency ON memories (last_used_at DESC, created_at DESC);
 CREATE INDEX memories_by_state ON memories (state, project);
+CREATE INDEX memories_by_created ON memories (created_at, id);
 
 CREATE TRIGGER memories_reject_replace BEFORE INSERT ON memories WHEN EXISTS (
   SELECT 1 FROM memories WHERE id = NEW.id OR (source_run_id = NEW.source_run_id AND source_call_id = NEW.source_call_id)
@@ -342,6 +343,20 @@ END;
 CREATE TRIGGER memories_index_update AFTER UPDATE OF text ON memories BEGIN
   DELETE FROM memories_index WHERE memory_id = OLD.id;
   INSERT INTO memories_index (memory_id, text) VALUES (NEW.id, NEW.text);
+END;
+
+CREATE TABLE memory_replacements (
+  replaced_id TEXT NOT NULL,
+  successor_id TEXT NOT NULL REFERENCES memories (id) ON DELETE CASCADE,
+  PRIMARY KEY (replaced_id, successor_id)
+) WITHOUT ROWID;
+CREATE INDEX memory_replacements_by_successor ON memory_replacements (successor_id);
+CREATE TRIGGER memories_replacements_insert AFTER INSERT ON memories BEGIN
+  INSERT OR IGNORE INTO memory_replacements (replaced_id, successor_id) SELECT value, NEW.id FROM json_each(NEW.supersedes_json);
+END;
+CREATE TRIGGER memories_replacements_update AFTER UPDATE OF supersedes_json ON memories BEGIN
+  DELETE FROM memory_replacements WHERE successor_id = OLD.id;
+  INSERT OR IGNORE INTO memory_replacements (replaced_id, successor_id) SELECT value, NEW.id FROM json_each(NEW.supersedes_json);
 END;
 
 CREATE TABLE memory_evidence (

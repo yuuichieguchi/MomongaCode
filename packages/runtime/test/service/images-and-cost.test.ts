@@ -78,7 +78,7 @@ describe('GET /v1/cost', () => {
     const response = await env.http('GET', '/v1/cost');
 
     expect(response.status).toBe(200);
-    expect(response.json).toEqual({ runs: [], sessions: [], total: totals });
+    expect(response.json).toEqual({ runs: [], sessions: [], total: totals, contextCharges: { charges: [], totalTokens: 0 } });
     expect(asked).toEqual([[{ runId: run.id, sessionId: session.id }]]);
   });
 

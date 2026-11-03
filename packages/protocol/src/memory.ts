@@ -17,7 +17,7 @@ export const DEFAULT_MEMORY_KIND = 'fact' as const satisfies (typeof MEMORY_KIND
 
 export type MemoryKind = (typeof MEMORY_KINDS)[number];
 
-export const MEMORY_STATES = ['active', 'candidate', 'archived', 'duplicate'] as const;
+export const MEMORY_STATES = ['active', 'candidate', 'archived', 'duplicate', 'rejected'] as const;
 
 export type MemoryState = (typeof MEMORY_STATES)[number];
 
@@ -76,3 +76,7 @@ export type AddMemoryRequest = {
 export type MemoriesResponse = { memories: MemoryView[] };
 
 export type MemoryResponse = { memory: MemoryView };
+
+export type PromoteMemoryRequest = { skill: string };
+
+export type PromoteMemoryResponse = { path: string };

@@ -12,7 +12,9 @@ import { StoreIdentityError, isFatalStoreError } from './fatal.ts';
 import { createIdempotencyStore } from './idempotency.ts';
 import { decodeJob, prepareJobStatements } from './jobs.ts';
 import { createGoverningFactStore } from './governing.ts';
+import { createContextChargeStore } from './context-charges.ts';
 import { createMemoryStore } from './memories.ts';
+import { createReflectionStore } from './reflection.ts';
 import { InheritanceError, applyInheritance, projectInheritance, retractsTask } from './inherit.ts';
 import type { InheritanceOutcome, InheritedPayload } from './inherit.ts';
 import { corrupt, expectOneOf, expectRecord, isRecord, readerFor } from './rows.ts';
@@ -328,6 +330,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const sql = statements;
   const approvalOps = createApprovalStore(db, clock);
   const memories = createMemoryStore(db, clock);
+  const reflection = createReflectionStore(db, clock);
   const governing = createGoverningFactStore(db, clock);
   const trust = createTrustStore(db, clock, home);
   const originOf = (cwd: string): 'trusted' | 'untrusted' => (trust.decisionFor(cwd).decision === 'trusted' ? 'trusted' : 'untrusted');
@@ -502,6 +505,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     const withdrawal = isTerminal(to) || to === 'CANCELLING' ? withdrawPendingApprovals(run.id) : [];
     const contribution = isTerminal(to) ? settleContribution(run, to) : [];
     const appended = appendPayloads(run, [...leadingEvents, ...withdrawal, ...contribution, statusEvent]);
+    if (to === 'COMPLETED' && run.parentRunId === null) reflection.enqueue(run.id);
     const keepsLease = to === 'RUNNING' || to === 'CANCELLING';
     const wakesNow = to === 'QUEUED' || (to === 'CANCELLING' && run.leaseOwner === null);
     const availableAt = change.availableAt ?? (wakesNow ? clock.now() : run.availableAt);
@@ -1418,6 +1422,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     blobs: createBlobStore(db, clock, blobDirectory),
     trust,
     memories,
+    reflection,
+    contextCharges: createContextChargeStore(db, clock),
     governing,
     search: createSearchStore(db),
 

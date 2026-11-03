@@ -22,6 +22,8 @@ type Location = { scope: SkillScope; directory: string };
 
 const VALID_NAME = /^(?!-)(?!.*--)[\p{Ll}\p{Nd}-]+(?<!-)$/u;
 
+export const isValidSkillName = (name: string): boolean => name.length <= NAME_MAX_LENGTH && VALID_NAME.test(name);
+
 const locationsOf = ({ home, projectRoot }: ScanRequest): Location[] => [
   { scope: 'project', directory: path.join(projectRoot, SKILL_DIRECTORY_SEGMENTS.native) },
   { scope: 'project', directory: path.join(projectRoot, SKILL_DIRECTORY_SEGMENTS.crossClient) },
@@ -111,7 +113,7 @@ const skillOf = async (
   if (typeof declaredName === 'string' && declaredName.trim() !== '') {
     name = declaredName.trim();
     if (name !== directoryName) warnings.push(`Skill ${JSON.stringify(name)} at ${location} does not match its directory name ${JSON.stringify(directoryName)}`);
-    if (name.length > NAME_MAX_LENGTH || !VALID_NAME.test(name)) {
+    if (!isValidSkillName(name)) {
       warnings.push(`Skill name ${JSON.stringify(name)} at ${location} should be at most ${NAME_MAX_LENGTH} lowercase letters, digits and single hyphens that neither start nor end the name`);
     }
   } else {

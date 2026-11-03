@@ -5,10 +5,10 @@ import { ConfigError, assertSessionMcpServers, stripCredentialEnv } from '@momon
 import { canonicalDirectory, canonicalJson, canonicalPath, comparableContains, comparablePath, isTransientErrno, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { AUTO_MODE_UNAVAILABLE, RUN_STATUSES } from '@momonga/protocol';
-import type { Capabilities, CostReportView, PermissionMode, RunStatus, RunTraceView } from '@momonga/protocol';
+import type { Capabilities, GatewayCostReportView, PermissionMode, RunStatus, RunTraceView } from '@momonga/protocol';
 import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
 import { sameRunRequest } from '@momonga/store';
-import type { Run, RuntimeStore, Session } from '@momonga/store';
+import type { ContextCharge, Run, RuntimeStore, Session } from '@momonga/store';
 import { GatewayRequestError } from '../gateway-client.ts';
 import type { AgentCatalogPort, SkillsPort } from '../ports.ts';
 import type { SandboxKind } from '../process/sandbox-kind.ts';
@@ -35,6 +35,7 @@ import { JSON_MEDIA_TYPES, PATCH_MEDIA_TYPES, parseCursor, parseIdempotencyKey, 
 import type { CreateRunBody, CreateSessionBody, PatchSessionBody, ResolveApprovalBody } from './request.ts';
 import { createRecordViews } from '../memory/views.ts';
 import type { EvidenceRun } from '../memory/evidence.ts';
+import { contextChargesText, contextChargesView } from './context-charges.ts';
 import { registerMemoryRoutes } from './memories.ts';
 import { registerRuleRoutes } from './rules.ts';
 import { registerInputRoutes } from './input-routes.ts';
@@ -58,6 +59,7 @@ export type SessionCreateSettings = {
 export type RunAppDeps = {
   store: RuntimeStore;
   clock: Clock;
+  home: string;
   version: string;
   modelAliases: () => Promise<readonly string[]>;
   modelCapabilities: (alias: string, signal: AbortSignal) => Promise<Capabilities>;
@@ -78,7 +80,7 @@ export type RunAppDeps = {
   cancelUpstream?: (runId: string) => Promise<void>;
   releaseStopped(runId: string, signal: AbortSignal): Promise<void>;
   runTrace: (runId: string) => Promise<RunTraceView | undefined>;
-  runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal) => Promise<{ report: CostReportView; text: string }>;
+  runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal) => Promise<{ report: GatewayCostReportView; text: string }>;
   mcp: McpAdminPort;
   onError: (error: unknown) => void;
 };
@@ -400,11 +402,14 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     if (given.length > 1) throw invalidRequest('pass at most one of run, session and cwd', 'run');
     const runsOfSession = (id: string) => store.listRuns(id).map((run) => ({ runId: run.id, sessionId: run.sessionId }));
     let runs: { runId: string; sessionId: string }[];
+    let charges: ContextCharge[];
     if (runId !== undefined) {
       const run = requireRun(runId);
       runs = [{ runId: run.id, sessionId: run.sessionId }];
+      charges = store.contextCharges.list({ runIds: [run.id] });
     } else if (sessionId !== undefined) {
       runs = runsOfSession(requireSession(sessionId).id);
+      charges = store.contextCharges.list({ runIds: runs.map((run) => run.runId) });
     } else if (requestedCwd !== undefined) {
       requireAbsolute(requestedCwd, 'cwd');
       let cwd: string;
@@ -415,13 +420,18 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
         throw invalidRequest(`cwd ${requestedCwd} cannot be resolved: ${(error as Error).message}`, 'cwd');
       }
       runs = store.listSessions({ cwd }).flatMap((session) => runsOfSession(session.id));
+      charges = store.contextCharges.list({ project: cwd });
     } else {
       runs = store.listSessions().flatMap((session) => runsOfSession(session.id));
+      charges = store.contextCharges.list();
     }
     const format = context.req.query('format') ?? 'json';
     if (format !== 'json' && format !== 'text') throw invalidRequest('format must be json or text', 'format');
     const { report, text } = await deps.runCost(runs, context.req.raw.signal);
-    return format === 'json' ? json(report) : new Response(`${text}\n`, { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8' } });
+    const contextCharges = contextChargesView(charges);
+    if (format === 'json') return json({ ...report, contextCharges });
+    const chargesText = contextChargesText(contextCharges);
+    return new Response(`${text}${chargesText === '' ? '' : `\n${chargesText}`}\n`, { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8' } });
   };
 
   const listRunApprovals: Handler = (context) => {
@@ -522,6 +532,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     evidenceRun: deps.evidenceRun,
     maxBodyBytes: deps.maxBodyBytes,
     closeSignal: deps.closeSignal,
+    home: deps.home,
   });
   registerRuleRoutes(route, {
     store,

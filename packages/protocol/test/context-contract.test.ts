@@ -22,7 +22,7 @@ describe('context constants', () => {
 
   it('lists memory kinds, states, evidence kinds and statuses, statuses in recall tier order', () => {
     expect(MEMORY_KINDS).toEqual(['fact', 'episode', 'procedure']);
-    expect(MEMORY_STATES).toEqual(['active', 'candidate', 'archived', 'duplicate']);
+    expect(MEMORY_STATES).toEqual(['active', 'candidate', 'archived', 'duplicate', 'rejected']);
     expect(MEMORY_EVIDENCE_KINDS).toEqual(['file', 'commit', 'check']);
     expect(MEMORY_STATUSES).toEqual(['verified', 'unbound', 'unverifiable', 'stale']);
   });
@@ -62,7 +62,7 @@ describe('context types', () => {
 
   it('defines memory evidence and the memory view additions', () => {
     expectTypeOf<MemoryKind>().toEqualTypeOf<'fact' | 'episode' | 'procedure'>();
-    expectTypeOf<MemoryState>().toEqualTypeOf<'active' | 'candidate' | 'archived' | 'duplicate'>();
+    expectTypeOf<MemoryState>().toEqualTypeOf<'active' | 'candidate' | 'archived' | 'duplicate' | 'rejected'>();
     expectTypeOf<MemoryStatus>().toEqualTypeOf<'verified' | 'stale' | 'unverifiable' | 'unbound'>();
     expectTypeOf<SummarySource>().toEqualTypeOf<'model' | 'deterministic'>();
     expectTypeOf<MemoryEvidence>().toEqualTypeOf<

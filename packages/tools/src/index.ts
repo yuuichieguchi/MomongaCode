@@ -74,8 +74,9 @@ export {
   MEMORY_SEARCH_TOOL_NAME,
   MEMORY_TEXT_MAX_CHARS,
   createMemoryTools,
+  memoryTextProblem,
 } from './memory/index.ts';
-export type { MemoryStorePort, MemorySaveRequest, MemorySearchOptions, MemoryToolsOptions } from './memory/index.ts';
+export type { MemoryTextProblem, MemoryStorePort, MemorySaveRequest, MemorySearchOptions, MemoryToolsOptions } from './memory/index.ts';
 export { RULE_PROPOSE_TARGET_MAX_CHARS, RULE_PROPOSE_TEXT_MAX_CHARS, RULE_PROPOSE_TOOL_NAME, createGovernanceTools } from './governance/index.ts';
 export type { GovernancePort, GovernanceToolsOptions, RuleProposalInput, RuleProposalRequest } from './governance/index.ts';
 export { HISTORY_QUERY_MAX_CHARS, HISTORY_READ_TOOL_NAME, HISTORY_SEARCH_TOOL_NAME, createHistoryTools, createReadDenial } from './history/index.ts';
