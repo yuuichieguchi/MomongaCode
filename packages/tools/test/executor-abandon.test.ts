@@ -399,39 +399,50 @@ describe('executor reconcile of a PENDING call whose earlier attempt is still ru
     expect(harness.kernelLock.isHeldBy(path.join(harness.callLockDir, `${KEY_A}.lock`))).toBeUndefined();
   });
 
-  it('fails as unverifiable when a process of the earlier attempt could not be inspected, never reconciles as if it were stopped, and still names the process', async () => {
-    const unreadable = { pid: 31_340, command: 'ssh-agent', startTicks: '9' };
-    const inspector: ProcessInspector = {
-      startTimeOf: async () => ({ kind: 'gone' }),
-      holdersOf: async (_marker, report) => {
-        report?.(unreadable);
-        return { kind: 'value', value: [] };
-      },
-      groupsOf: async () => ({ kind: 'value', value: new Map() }),
-    };
-    const harness = harnessWith({ inspector, uninspectable: createUninspectableRegistry({ isAlive: () => true }), timing: fakeTiming(), killGraceMs: STUBBORN_GRACE_MS });
+  const unreadable = { pid: 31_340, command: 'ssh-agent', startTicks: '9' };
+  const unreadableInspector: ProcessInspector = {
+    startTimeOf: async () => ({ kind: 'gone' }),
+    holdersOf: async (_marker, report) => {
+      report?.(unreadable);
+      return { kind: 'value', value: [] };
+    },
+    groupsOf: async () => ({ kind: 'value', value: new Map() }),
+  };
+  const unreadableHarness = (): Harness =>
+    harnessWith({ inspector: unreadableInspector, uninspectable: createUninspectableRegistry({ isAlive: () => true }), timing: fakeTiming(), killGraceMs: STUBBORN_GRACE_MS });
+
+  it('reconciles the earlier attempt as not stopped, naming the process that could not be inspected, at the first attempt', async () => {
+    const harness = unreadableHarness();
     const marker = markerOf(harness, KEY_A);
     fs.writeFileSync(marker, '', { mode: 0o600 });
     seedPending(harness, KEY_A);
 
-    const reconciled: string[] = [];
+    const seen: unknown[] = [];
     const tool = makeTool('Bash', {
       kind: 'execute',
       sideEffect: 'exec',
-      reconcile: async () => {
-        reconciled.push('reconcile');
+      reconcile: async (_input, _record, ctx) => {
+        seen.push(ctx.earlierAttempt);
         return { outcome: 'unknown', output: 'unknown' };
       },
     });
 
-    await expect(harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('call-a', 'Bash', {}, 'allow_once')]))).rejects.toMatchObject({
-      name: 'EarlierAttemptNotStoppedError',
-      code: 'earlier_attempt_not_stopped',
-      reason: 'unverifiable',
-      message: expect.stringContaining('ssh-agent'),
-    });
-    expect(reconciled).toEqual([]);
-    expect(harness.idempotency.stateOf(KEY_A)).toBe('PENDING');
+    await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('call-a', 'Bash', {}, 'allow_once')]));
+
+    expect(seen).toEqual([{ stopped: false, uninspectable: [{ pid: 31_340, command: 'ssh-agent' }] }]);
+    expect(harness.warnings).toEqual(expect.arrayContaining([`tool marker ${marker}: process 31340 (ssh-agent) could not be inspected, so it was left alone`]));
+  });
+
+  it('abandon completes as unknown, without a failure, when a process could not be inspected', async () => {
+    const harness = unreadableHarness();
+    const marker = markerOf(harness, KEY_A);
+    fs.writeFileSync(marker, '', { mode: 0o600 });
+    seedPending(harness, KEY_A);
+
+    const outcomes = await harness.executor.abandon([{ callId: 'call-a', idemKey: KEY_A }], { signal: noSignal() });
+
+    expect(outcomes).toEqual([{ idemKey: KEY_A, callId: 'call-a', outcome: 'unknown' }]);
+    expect(harness.idempotency.stateOf(KEY_A)).toBe('UNKNOWN');
     expect(harness.warnings).toEqual(expect.arrayContaining([`tool marker ${marker}: process 31340 (ssh-agent) could not be inspected, so it was left alone`]));
   });
 });

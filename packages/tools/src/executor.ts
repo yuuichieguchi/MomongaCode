@@ -860,7 +860,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     };
   };
 
-  const reapEarlierAttempt = async (key: string, pgid: number | undefined): Promise<{ stopped: boolean }> => {
+  const reapEarlierAttempt = async (key: string, pgid: number | undefined): Promise<NonNullable<ReconcileContext['earlierAttempt']>> => {
     const marker = path.join(options.processMarkerDir, key);
     let reaped: ReapReport;
     try {
@@ -886,8 +886,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       throw new EarlierAttemptNotStoppedError(`a process of the earlier attempt of call ${key} survived the attempt to stop it`, 'survived');
     }
     if (reaped.uninspectable.length > 0) {
-      const named = reaped.uninspectable.map((process) => `${process.pid} (${process.command})`).join(', ');
-      throw new EarlierAttemptNotStoppedError(`the earlier attempt of call ${key} could not be verified as stopped: process ${named} could not be inspected`, 'unverifiable');
+      return { stopped: false, uninspectable: reaped.uninspectable.map(({ pid, command }) => ({ pid, command })) };
     }
     return { stopped: reaped.stopped };
   };

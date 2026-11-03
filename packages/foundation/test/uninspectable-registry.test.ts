@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createUninspectableRegistry, reportUninspectableOnce } from '@momonga/foundation';
+import { createLiveIdentities, createUninspectableRegistry, reportUninspectableOnce } from '@momonga/foundation';
 
 const agent = { pid: 5150, command: 'ssh-agent', startTicks: '10' };
 
@@ -54,6 +54,19 @@ describe('the uninspectable registry', () => {
     expect(registry.firstNaming('mcp marker /b', { ...agent, startTicks: '11' })).toBe(true);
     expect(registry.size()).toBe(1);
     expect(registry.firstNaming('tool marker /a', agent)).toBe(true);
+  });
+
+  it('shares its pruning with the identity set the inspector uses', () => {
+    const alive = new Set([5150]);
+    const identities = createLiveIdentities({ isAlive: (pid) => alive.has(pid) });
+    identities.add('', 5150, '10');
+    expect(identities.has('', 5150, '10')).toBe(true);
+    identities.add('', 5150, '11');
+    expect(identities.size()).toBe(1);
+    expect(identities.has('', 5150, '10')).toBe(false);
+    alive.clear();
+    expect(identities.has('', 5150, '11')).toBe(false);
+    expect(identities.size()).toBe(0);
   });
 
   it('stays bounded by the processes that are still there', () => {
