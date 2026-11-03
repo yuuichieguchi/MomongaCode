@@ -35,6 +35,7 @@ export type StoreOptions = {
   maxAttempts?: number;
   maxTotalAttempts?: number;
   onCommit?: RuntimeStoreOptions['onCommit'];
+  contribution?: RuntimeStoreOptions['contribution'];
   home?: string;
 };
 
@@ -47,6 +48,7 @@ export const openStoreAt = (dbPath: string, clock: FakeClock, options: StoreOpti
     maxAttempts: options.maxAttempts ?? 5,
     maxTotalAttempts: options.maxTotalAttempts ?? 1000,
     ...(options.onCommit === undefined ? {} : { onCommit: options.onCommit }),
+    ...(options.contribution === undefined ? {} : { contribution: options.contribution }),
   });
   registerCleanup(() => store.close());
   return store;

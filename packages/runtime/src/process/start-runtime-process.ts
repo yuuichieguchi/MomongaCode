@@ -26,6 +26,7 @@ import type { RuntimeStore } from '@momonga/store';
 import { clearCallLocks, createPolicyFilesystem, nodeShellHost } from '@momonga/tools';
 import { createFsInstructionReader } from '@momonga/context';
 import { createGatewayClient } from '../gateway-client.ts';
+import { contributionAtTerminal } from '../memory/contribution.ts';
 import type { GatewayClient } from '../gateway-client.ts';
 import { createTracerPort } from '../tracer.ts';
 import { createRunNotifier } from '../service/notifier.ts';
@@ -353,6 +354,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         maxAttempts: STORE_MAX_ATTEMPTS,
         maxTotalAttempts: STORE_MAX_TOTAL_ATTEMPTS,
         onCommit: createdNotifier.onCommit,
+        contribution: contributionAtTerminal,
       });
       return { notifier: createdNotifier, store: opened };
     });

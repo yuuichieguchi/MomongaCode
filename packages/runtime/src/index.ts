@@ -73,6 +73,7 @@ export { enforcedFactsFor, governanceRulesOf, permissionRulesFor, ruleParses } f
 export type { PermissionRuleSources } from './governance/rules.ts';
 export { MemoryEvidenceError, bindMemoryEvidence, createEvidencePorts, readGitHead } from './memory/evidence.ts';
 export type { BindMemoryEvidenceInput, EvidenceCommand, EvidenceCommandResult, EvidencePortsOptions, EvidenceRun } from './memory/evidence.ts';
+export { contributionAtTerminal } from './memory/contribution.ts';
 export { createHistoryPort } from './process/history-port.ts';
 export type { HistoryPortOptions } from './process/history-port.ts';
 export { createAgentsPort } from './process/agents-port.ts';

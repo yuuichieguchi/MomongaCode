@@ -117,6 +117,7 @@ export type BuildContextInput = {
   keepRecentSteps?: number;
   level?: number;
   itemCap?: number;
+  memoryShare?: number;
   pinnedTokens?: number;
   compactAt?: number;
   tools?: 'none';

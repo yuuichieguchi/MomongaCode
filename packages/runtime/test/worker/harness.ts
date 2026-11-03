@@ -10,7 +10,7 @@ import { computeFileRules } from '@momonga/policy';
 import { applyCapabilityOverride } from '@momonga/protocol';
 import type { Capabilities, CapabilityOverride, PermissionMode, RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { createAgentLoader } from '@momonga/agents';
-import { createSkillsPort, createWorker } from '@momonga/runtime';
+import { contributionAtTerminal, createSkillsPort, createWorker } from '@momonga/runtime';
 import type { AgentCatalogPort, EvidenceRun, GovernancePort, HistoryPort, MemoryPort, SkillsPort, ToolEnv, ToolRuntimePort, Worker, WorkerOptions } from '@momonga/runtime';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
@@ -163,6 +163,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     leaseMs: LEASE_MS,
     maxAttempts: options.maxAttempts ?? 5,
     maxTotalAttempts: options.maxTotalAttempts ?? 50,
+    contribution: contributionAtTerminal,
   });
   const gateway: FakeGateway = createFakeGateway(options.capabilities ?? capabilitiesFor(100_000));
   const settings: FakeSettings = createFakeSettings({ home, project });

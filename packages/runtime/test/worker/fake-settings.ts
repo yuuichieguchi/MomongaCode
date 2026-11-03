@@ -1,5 +1,5 @@
 import { DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS, parseRule } from '@momonga/config';
-import type { PermissionRule, ResolvedVerificationSettings } from '@momonga/config';
+import type { PermissionRule, ResolvedContextSettings, ResolvedVerificationSettings } from '@momonga/config';
 import type { HooksSettings } from '@momonga/protocol';
 import type { SettingsPort } from '@momonga/runtime';
 import type { Session } from '@momonga/store';
@@ -13,7 +13,8 @@ export type FakeSettings = SettingsPort & {
   trustedValue: boolean;
   hooksValue: HooksSettings;
   verificationValue: ResolvedVerificationSettings;
-  contextValue: { adaptiveBudget: boolean; autoCompact: boolean };
+  contextValue: ResolvedContextSettings;
+  context: (session: Session) => Promise<ResolvedContextSettings>;
   classifierAlias: string | undefined;
 };
 

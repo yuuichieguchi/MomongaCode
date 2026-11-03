@@ -43,6 +43,7 @@ export const releaseWaitingOnCancel = async ({ options, run, session, journal, c
       {
         type: 'notice',
         level: 'error',
+        code: 'waiting_calls_not_released',
         message: `Calls waiting for input could not be released before the run was cancelled: ${describeError(error)}${
           hookFailure === undefined ? '' : ` (the error hook also failed: ${hookFailure})`
         }`,
@@ -140,6 +141,7 @@ export const reconcileStartedCalls = async ({ options, claim, run, session, jour
     ...failures.slice(0, 1).map(({ error, hookFailure }) => ({
       type: 'notice' as const,
       level: 'error' as const,
+      code: 'started_calls_not_reconciled',
       message: `Started tool calls could not be reconciled before the run was cancelled: ${describeError(error)}${
         hookFailure === undefined ? '' : ` (the error hook also failed: ${hookFailure})`
       }`,
