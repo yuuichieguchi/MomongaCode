@@ -190,7 +190,7 @@ export type MemorySettings = { reflection?: { enabled?: boolean; maxTokens?: num
 
 export type VerificationSettings = { commands?: string[]; manifests?: string[] };
 
-export type ContextSettings = { adaptiveBudget?: boolean };
+export type ContextSettings = { adaptiveBudget?: boolean; autoCompact?: boolean };
 
 export type Settings = {
   permissions?: PermissionsSettings;

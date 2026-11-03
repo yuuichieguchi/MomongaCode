@@ -140,6 +140,45 @@ describe('memory store', () => {
   });
 });
 
+describe('memories added by a person', () => {
+  it('stores a memory with the origin of a person, a command source stamped with its creation time, and its evidence', () => {
+    const { store } = harness();
+    const evidence = [{ kind: 'file' as const, project: '/work/a', path: 'config.ts', sha256: 'a'.repeat(64) }];
+    const memory = store.memories.addByCommand({ scope: 'project', project: '/work/a', text: 'LIMIT is 10', evidence });
+    expect(memory).toMatchObject({ scope: 'project', origin: 'trusted', project: '/work/a', kind: 'fact', state: 'active', source: { kind: 'command', at: START_MS }, evidence });
+    expect(store.memories.get(memory.id)).toEqual(memory);
+  });
+
+  it('adds two memories with the same text, because no run or call identifies them', () => {
+    const { store } = harness();
+    const first = store.memories.addByCommand({ scope: 'user', project: null, text: 'prefers tabs', evidence: [] });
+    const second = store.memories.addByCommand({ scope: 'user', project: null, text: 'prefers tabs', evidence: [] });
+    expect(second.id).not.toBe(first.id);
+    expect(store.memories.list()).toHaveLength(2);
+  });
+
+  it('requires a project exactly for project memories', () => {
+    const { store } = harness();
+    expect(() => store.memories.addByCommand({ scope: 'project', project: null, text: 'x', evidence: [] })).toThrow(RangeError);
+    expect(() => store.memories.addByCommand({ scope: 'user', project: '/work/a', text: 'x', evidence: [] })).toThrow(RangeError);
+  });
+
+  it('recalls a trusted project memory in its project and finds it by text', () => {
+    const { store } = harness();
+    const memory = store.memories.addByCommand({ scope: 'project', project: '/work/a', text: 'migrations live in db/migrate', evidence: [] });
+    expect(store.memories.recall({ trusted: true, project: '/work/a' }).map((entry) => entry.id)).toEqual([memory.id]);
+    expect(store.memories.search({ trusted: true, project: '/work/a' }, ['migrations']).map((entry) => entry.id)).toEqual([memory.id]);
+  });
+
+  it('keeps the memory across store reopenings', () => {
+    const { store, dbPath } = harness();
+    const memory = store.memories.addByCommand({ scope: 'user', project: null, text: 'prefers tabs', evidence: [] });
+    store.close();
+    const reopened = openStoreAt(path.join(path.dirname(dbPath), 'runtime.db'), createFakeClock(START_MS + 1));
+    expect(reopened.memories.get(memory.id)).toEqual(memory);
+  });
+});
+
 describe('memory lifecycle in the store', () => {
   const setup = () => {
     const { store, dbPath } = harness();

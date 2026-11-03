@@ -1,16 +1,16 @@
 import type { Command } from 'commander';
 import { InvalidArgumentError, Option } from 'commander';
-import { CONTEXT_MODELS } from '@momonga/eval';
+import { CONTEXT_MODELS, MAX_DATASET_SEED } from '@momonga/eval';
 import type { ContextModel } from '@momonga/eval';
-import { GOVERNING_KINDS, MEMORY_SCOPES, PERMISSION_MODES } from '@momonga/protocol';
-import type { GoverningEnforcement, GoverningKind, MemoryScope, PermissionMode } from '@momonga/protocol';
+import { GOVERNING_KINDS, MEMORY_KINDS, MEMORY_SCOPES, PERMISSION_MODES } from '@momonga/protocol';
+import type { GoverningEnforcement, GoverningKind, MemoryKind, MemoryScope, PermissionMode } from '@momonga/protocol';
 import { pathsOf } from '../paths.ts';
 import type { ProgramDeps } from '../program-deps.ts';
 import { showCost } from './cost.ts';
 import { elicit } from './elicit.ts';
 import { compareContext, evaluate, evaluateContext } from './evaluate.ts';
 import { mcpList, mcpLogin } from './mcp.ts';
-import { memoryDelete, memoryHistory, memoryList, memoryShow } from './memory.ts';
+import { memoryAdd, memoryDelete, memoryHistory, memoryList, memoryShow } from './memory.ts';
 import { ruleAdd, ruleHistory, ruleList, ruleRetire } from './rule.ts';
 import { listJobs } from './jobs.ts';
 import { listModels } from './models.ts';
@@ -21,6 +21,12 @@ import { secretSet } from './secret.ts';
 export type CommandGroup = (program: Command, deps: ProgramDeps) => void;
 
 const collect = (value: string, previous: readonly string[]): string[] => [...previous, value];
+
+const seedArgument = (text: string): number => {
+  const value = Number(text);
+  if (!Number.isInteger(value) || value < 0 || value > MAX_DATASET_SEED) throw new InvalidArgumentError(`expected an integer from 0 to ${MAX_DATASET_SEED}`);
+  return value;
+};
 
 const registerElicit: CommandGroup = (program, deps) => {
   program
@@ -65,7 +71,24 @@ const registerMcp: CommandGroup = (program, deps) => {
 const memoryScopeOption = (): Option => new Option('--scope <scope>', 'only memories of this scope').choices(MEMORY_SCOPES);
 
 const registerMemory: CommandGroup = (program, deps) => {
-  const memory = program.command('memory').description('review and delete the memories the agent saved');
+  const memory = program.command('memory').description('add, review and delete the memories of this folder and of all folders');
+  memory
+    .command('add <text...>')
+    .description('add a memory as a person; --path binds it to a file of this folder, so it shows as stale once the file changes')
+    .addOption(new Option('--kind <kind>', 'the kind of memory').choices(MEMORY_KINDS))
+    .option('--path <path>', 'a file of this folder the memory is about; repeat for several', collect, [])
+    .option('--user', 'add a memory for every folder instead of this one')
+    .option('--json', 'print the memory as JSON')
+    .action(async (text: string[], options: { kind?: MemoryKind; path: string[]; user?: true; json?: true }) => {
+      deps.complete(
+        await memoryAdd(deps.ports, pathsOf(deps.ports), text.join(' '), {
+          ...(options.kind === undefined ? {} : { kind: options.kind }),
+          user: options.user === true,
+          paths: options.path,
+          json: options.json === true,
+        }),
+      );
+    });
   memory
     .command('list')
     .description('list the memories')
@@ -204,15 +227,24 @@ const registerEvaluate: CommandGroup = (program, deps) => {
     });
   evaluation
     .command('context <dataset>')
-    .description('measure a context dataset from recorded transcripts and report the metrics of Evidence-Based Context')
-    .option('--replay <directory>', 'the recorded transcripts to measure')
-    .addOption(new Option('--model <model>', 'which kind of model produced the transcripts; a fake model proves only that the machinery works').choices(CONTEXT_MODELS))
+    .description(
+      'run a context dataset live, each case in its own temporary home with its own daemon, or measure recorded transcripts with --replay, and report the metrics of Evidence-Based Context',
+    )
+    .option('--replay <directory>', 'the recorded transcripts to measure instead of running the dataset')
+    .option('--record <directory>', 'save the transcript of every measured run of a live run in this directory')
+    .addOption(new Option('--model <model>', 'which kind of model produced the runs; a fake model proves only that the machinery works').choices(CONTEXT_MODELS))
+    .option('--alias <alias>', 'the model alias every session of a live run is pinned to')
+    .option('--seed <n>', 'the seed of the noise turns of a live run; 0 when omitted', seedArgument)
     .option('--report <file>', 'store the report as JSON for eval compare')
-    .action(async (dataset: string, options: { replay?: string; model?: ContextModel; report?: string }) => {
+    .action(async (dataset: string, options: { replay?: string; record?: string; model?: ContextModel; alias?: string; seed?: number; report?: string }) => {
       deps.complete(
         await evaluateContext(deps.ports, dataset, {
+          interrupt: deps.interrupt,
           ...(options.replay === undefined ? {} : { replay: options.replay }),
+          ...(options.record === undefined ? {} : { record: options.record }),
           ...(options.model === undefined ? {} : { model: options.model }),
+          ...(options.alias === undefined ? {} : { alias: options.alias }),
+          ...(options.seed === undefined ? {} : { seed: options.seed }),
           ...(options.report === undefined ? {} : { report: options.report }),
         }),
       );

@@ -7,11 +7,11 @@ import { titleOf } from './support/cases.ts';
 import { runCli } from './support/cli.ts';
 import { createE2eHome } from './support/home.ts';
 import { baseSettings, sandboxChoiceOf, startUpstream, writeSettingsFile } from './support/stack.ts';
-import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
-import { E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
+import { chatCompletions, textReply } from './support/upstream.ts';
+import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
 const LONG_STEPS = 14;
-const LONG_TEXT_CHARS = 3000;
+const LONG_TEXT_CHARS = 1200;
 const LONG_TASK = 'Walk through long.txt step by step.';
 const RULE_TASK = 'Name the test runner.';
 const MEMORY_TASK = 'Report the value of LIMIT.';
@@ -31,8 +31,6 @@ const workspaceOf = (body: unknown): string => {
 };
 
 const asks = (body: unknown, needle: string): boolean => textsOf(body).some((message) => message.role === 'user' && message.text.includes(needle));
-
-const afterTool = (body: unknown): boolean => textsOf(body).at(-1)?.role === 'tool';
 
 const longRoute = (): FakeRoute => {
   const steps = new Map<string, number>();
@@ -61,18 +59,7 @@ const longRoute = (): FakeRoute => {
   };
 };
 
-const memoryRoutes: FakeRoute[] = [
-  {
-    match: (body) => asks(body, MEMORY_TEXT) && !asks(body, MEMORY_TASK) && !afterTool(body),
-    reply: (body) => toolCallReply('Read', { file_path: path.join(workspaceOf(body), 'config.ts') }, 'call_seed_read'),
-  },
-  {
-    match: (body) => asks(body, MEMORY_TEXT) && !asks(body, MEMORY_TASK) && textsOf(body).filter((message) => message.role === 'tool').length === 1,
-    reply: () => toolCallReply('MemorySave', { text: MEMORY_TEXT, scope: 'project', paths: ['config.ts'] }, 'call_seed_save'),
-  },
-  { match: (body) => asks(body, MEMORY_TEXT) && !asks(body, MEMORY_TASK), reply: textReply('Saved.') },
-  { match: (body) => asks(body, MEMORY_TASK), reply: textReply('LIMIT is known.') },
-];
+const memoryRoutes: FakeRoute[] = [{ match: (body) => asks(body, MEMORY_TASK), reply: textReply('LIMIT is known.') }];
 
 const ROUTES: FakeRoute[] = [
   summaryRoute(SUMMARY),
@@ -134,7 +121,9 @@ describe('momonga eval context live', () => {
     const liveFile = path.join(home.root, 'live.json');
     const replayFile = path.join(home.root, 'replay.json');
 
-    const live = await runCli(home, ['eval', 'context', dataset, '--model', 'fake', '--alias', 'default', '--seed', '7', '--record', recordings, '--report', liveFile]);
+    const live = await runCli(home, ['eval', 'context', dataset, '--model', 'fake', '--alias', 'default', '--seed', '7', '--record', recordings, '--report', liveFile], {
+      boundMs: DATASET.cases.length * E2E_RUN_COMPLETED_BOUND_MS,
+    });
 
     expect(live.stderr).toBe('');
     expect(live.stdout).toContain('model: fake');

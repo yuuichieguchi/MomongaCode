@@ -253,7 +253,7 @@ export const SETTINGS_SCHEMA = {
     },
     context: {
       type: 'object',
-      properties: { adaptiveBudget: { type: 'boolean' } },
+      properties: { adaptiveBudget: { type: 'boolean' }, autoCompact: { type: 'boolean' } },
       additionalProperties: false,
     },
     autoUpdates: { type: 'boolean' },

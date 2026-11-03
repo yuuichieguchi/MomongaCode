@@ -42,6 +42,7 @@ export type ClaimContext = {
   pinnedDigest: { value: string | undefined };
   memory: RunMemory;
   verificationCommands: readonly string[];
+  autoCompact: boolean;
 };
 
 export type RunMemory = { streak: number; interruptions: number; deadlineAt: number };

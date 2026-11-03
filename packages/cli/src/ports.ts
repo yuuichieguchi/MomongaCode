@@ -34,7 +34,7 @@ export type CliFiles = {
   writeText(file: string, text: string): Promise<void>;
   listFiles(directory: string): Promise<string[]>;
   ensureDirectory(directory: string): Promise<void>;
-  makeTempDirectory(prefix: string): Promise<string>;
+  makeTempDirectory(prefix: string, base?: string): Promise<string>;
   removeTree(directory: string): Promise<void>;
   readTextIfPresent(file: string): Promise<string | undefined>;
   appendText(file: string, text: string, modes: { directory: number; file: number }): Promise<void>;

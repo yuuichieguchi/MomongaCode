@@ -3,8 +3,8 @@ import type { ValidateFunction } from 'ajv/dist/2020.js';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { clusterBootstrap } from './bootstrap.ts';
 import type { Cluster } from './bootstrap.ts';
-import { COMPACTION_SETTINGS } from './context-dataset.ts';
-import type { CompactionSetting, ContextCase, ContextDataset } from './context-dataset.ts';
+import { COMPACTION_SETTINGS, expandContextDataset } from './context-dataset.ts';
+import type { CompactionSetting, ContextDataset, ExpandedCase } from './context-dataset.ts';
 import { compactionFactsOf, governanceCountsOf, lossSignalsOf, recalledOf, retrievalOf } from './context-metrics.ts';
 import type { CompactionFacts, GovernanceCounts, Recalled, Retrieval } from './context-metrics.ts';
 import { describeFirstError, jsonOf } from './dataset.ts';
@@ -63,16 +63,25 @@ export type ContextMetrics = {
   tokensPerSuccess: { value: number; tokens: number; successes: number; n: number } | undefined;
 };
 
+export const DEFAULT_DATASET_SEED = 0;
+
+export const MAX_DATASET_SEED = 0xffffffff;
+
+export type StoppedRun = { caseId: string; runIndex: number; reason: string };
+
 export type ContextReport = {
   format: typeof CONTEXT_REPORT_FORMAT;
   dataset: string;
   datasetDigest: string;
+  datasetSeed: number;
   model: ContextModel;
   modelAliases: string[];
   metrics: ContextMetrics;
   meaningless: ModelDependentMetric[];
   unclassifiedCompactions: number;
   governanceRunsWithoutEvent: number;
+  noiseTokens: number;
+  stopped: StoppedRun[];
   cases: ContextCaseReport[];
   passed: boolean;
 };
@@ -101,29 +110,30 @@ const sumFacts = (list: readonly CompactionFacts[]): CompactionFacts => ({
 
 const lastSeqOf = (events: Transcript['events']): number => events.reduce((last, event) => ('seq' in event ? Math.max(last, event.seq) : last), 0);
 
-const measureRun = (entry: ContextCase, transcript: Transcript): RunMeasure => {
+const measureRun = (entry: ExpandedCase, transcript: Transcript): RunMeasure => {
   const runs = [transcript.events, ...transcript.children.map((child) => child.events)];
   const facts = sumFacts(runs.map((events) => compactionFactsOf(events)));
   if (entry.compaction === 'off' && facts.compactions > 0) {
     throw new EvalError(`case ${entry.id} has compaction off but its run ${transcript.run.id} holds ${facts.compactions} compaction(s), so the pair would compare nothing`);
   }
-  const beyond = (entry.gold ?? []).find((range) => range.seqTo > lastSeqOf(transcript.events));
+  const stopped = transcript.stopped !== undefined;
+  const beyond = stopped ? undefined : (entry.gold ?? []).find((range) => range.seqTo > lastSeqOf(transcript.events));
   if (beyond !== undefined) {
     throw new EvalError(`case ${entry.id} has the gold range ${beyond.seqFrom}..${beyond.seqTo} but run ${transcript.run.id} ends at seq ${lastSeqOf(transcript.events)}`);
   }
   return {
-    passed: grade(entry.graders, transcript).passed,
+    passed: !stopped && grade(entry.graders, transcript).passed,
     tokens: transcript.run.usage.totalTokens,
     facts,
     signals: total(runs, (events) => lossSignalsOf(events).length),
-    governance: governanceCountsOf(entry.rules, transcript.events),
+    governance: governanceCountsOf(entry.rules, transcript.events, transcript.ruleIds),
     recalled: recalledOf(transcript.events),
-    retrieval: entry.gold === undefined ? undefined : retrievalOf(entry.gold, transcript.events),
+    retrieval: entry.gold === undefined || stopped ? undefined : retrievalOf(entry.gold, transcript.events),
     modelAlias: transcript.run.modelAlias,
   };
 };
 
-const caseReportOf = (entry: ContextCase, measures: readonly RunMeasure[]): ContextCaseReport => {
+const caseReportOf = (entry: ExpandedCase, measures: readonly RunMeasure[]): ContextCaseReport => {
   const passedRuns = measures.filter((measure) => measure.passed).length;
   const passRate = proportionOrUndefined(passedRuns, measures.length);
   if (passRate === undefined) throw new EvalError(`case ${entry.id} has no recorded run`);
@@ -155,7 +165,7 @@ const contrastiveFailuresOf = (cases: readonly ContextCaseReport[]): ContextMetr
   return { count: failures.length, n: measurable.length };
 };
 
-type MeasuredCase = { entry: ContextCase; measures: RunMeasure[] };
+type MeasuredCase = { entry: ExpandedCase; measures: RunMeasure[]; transcripts: Transcript[] };
 
 const clusteredOver = (measured: readonly MeasuredCase[], seed: number, pick: (measure: RunMeasure) => Cluster): ClusteredProportion | undefined => {
   const clusters = measured
@@ -201,25 +211,42 @@ const metricsOf = (cases: readonly ContextCaseReport[], measured: readonly Measu
   };
 };
 
-export const datasetDigestOf = (dataset: ContextDataset): string => sha256Hex(canonicalJson(dataset));
+export const datasetDigestOf = (dataset: ContextDataset, seed: number): string => sha256Hex(canonicalJson(expandContextDataset(dataset, seed)));
 
-export const buildContextReport = (input: { dataset: ContextDataset; transcripts: readonly Transcript[]; model: ContextModel; seed: number }): ContextReport => {
-  const measured = transcriptsByCase(input.dataset.cases, input.transcripts).map(({ golden, recorded }) => ({
+export type BuildContextReportInput = {
+  dataset: ContextDataset;
+  transcripts: readonly Transcript[];
+  model: ContextModel;
+  seed: number;
+  datasetSeed?: number;
+};
+
+export const buildContextReport = (input: BuildContextReportInput): ContextReport => {
+  const datasetSeed = input.datasetSeed ?? DEFAULT_DATASET_SEED;
+  const expanded = expandContextDataset(input.dataset, datasetSeed);
+  const measured: MeasuredCase[] = transcriptsByCase(expanded.cases, input.transcripts).map(({ golden, recorded }) => ({
     entry: golden,
     measures: recorded.map((transcript) => measureRun(golden, transcript)),
+    transcripts: recorded,
   }));
   const cases = measured.map(({ entry, measures }) => caseReportOf(entry, measures));
   const measures = measured.flatMap((item) => item.measures);
+  const transcripts = measured.flatMap((item) => item.transcripts);
   return {
     format: CONTEXT_REPORT_FORMAT,
     dataset: input.dataset.name,
-    datasetDigest: datasetDigestOf(input.dataset),
+    datasetDigest: datasetDigestOf(input.dataset, datasetSeed),
+    datasetSeed,
     model: input.model,
     modelAliases: [...new Set(measures.flatMap((measure) => (measure.modelAlias === undefined ? [] : [measure.modelAlias])))].sort(),
     metrics: metricsOf(cases, measured, input.seed),
     meaningless: input.model === 'fake' ? [...MODEL_DEPENDENT_METRICS] : [],
     unclassifiedCompactions: total(measures, (measure) => measure.facts.unclassified),
     governanceRunsWithoutEvent: measures.filter((measure) => measure.governance !== undefined && measure.governance.loads === 0).length,
+    noiseTokens: total(transcripts, (transcript) => transcript.noiseTokens ?? 0),
+    stopped: measured.flatMap(({ transcripts: recorded }) =>
+      recorded.flatMap((transcript) => (transcript.stopped === undefined ? [] : [{ caseId: transcript.caseId, runIndex: transcript.runIndex, reason: transcript.stopped }])),
+    ),
     cases,
     passed: cases.every((entry) => entry.meetsMinimum),
   };
@@ -273,6 +300,9 @@ export const formatContextReport = (report: ContextReport): string => {
   );
   lines.push(`unclassifiedCompactions ${report.unclassifiedCompactions}`);
   lines.push(`governanceRunsWithoutEvent ${report.governanceRunsWithoutEvent} (runs of cases with rules that loaded no governing set; each counts as an empty set)`);
+  lines.push(`datasetSeed ${report.datasetSeed}`);
+  lines.push(`noiseTokens ${report.noiseTokens} (spent by the noise turns before each task; counted against the dataset cap and not in tokensPerSuccess)`);
+  for (const stop of report.stopped) lines.push(`stopped ${stop.caseId} run ${stop.runIndex}: ${stop.reason} (counted as a failed run)`);
   return lines.join('\n');
 };
 
@@ -292,6 +322,7 @@ const CONTEXT_REPORT_SCHEMA = {
       format: { const: CONTEXT_REPORT_FORMAT },
       dataset: { type: 'string', minLength: 1 },
       datasetDigest: { type: 'string', pattern: '^[0-9a-f]{64}$' },
+      datasetSeed: { type: 'integer', minimum: 0, maximum: MAX_DATASET_SEED },
       model: { enum: [...CONTEXT_MODELS] },
       modelAliases: { type: 'array', items: { type: 'string', minLength: 1 } },
       metrics: closed(
@@ -314,6 +345,11 @@ const CONTEXT_REPORT_SCHEMA = {
       meaningless: { type: 'array', items: { enum: [...MODEL_DEPENDENT_METRICS] } },
       unclassifiedCompactions: count,
       governanceRunsWithoutEvent: count,
+      noiseTokens: count,
+      stopped: {
+        type: 'array',
+        items: closed({ caseId: { type: 'string', minLength: 1 }, runIndex: count, reason: { type: 'string', minLength: 1 } }, ['caseId', 'runIndex', 'reason']),
+      },
       cases: {
         type: 'array',
         items: closed(
@@ -336,7 +372,22 @@ const CONTEXT_REPORT_SCHEMA = {
       },
       passed: { type: 'boolean' },
     },
-    ['format', 'dataset', 'datasetDigest', 'model', 'modelAliases', 'metrics', 'meaningless', 'unclassifiedCompactions', 'governanceRunsWithoutEvent', 'cases', 'passed'],
+    [
+      'format',
+      'dataset',
+      'datasetDigest',
+      'datasetSeed',
+      'model',
+      'modelAliases',
+      'metrics',
+      'meaningless',
+      'unclassifiedCompactions',
+      'governanceRunsWithoutEvent',
+      'noiseTokens',
+      'stopped',
+      'cases',
+      'passed',
+    ],
   ),
 } as const;
 

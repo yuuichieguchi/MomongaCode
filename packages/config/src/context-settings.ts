@@ -4,7 +4,7 @@ export type ResolvedMemorySettings = { reflection: { enabled: boolean; maxTokens
 
 export type ResolvedVerificationSettings = { commands: string[]; manifests: string[] };
 
-export type ResolvedContextSettings = { adaptiveBudget: boolean };
+export type ResolvedContextSettings = { adaptiveBudget: boolean; autoCompact: boolean };
 
 export const DEFAULT_FORGET_AFTER_DAYS = 90;
 
@@ -36,7 +36,7 @@ export const defaultVerificationSettings = (): ResolvedVerificationSettings => (
   manifests: [...DEFAULT_VERIFICATION_MANIFESTS],
 });
 
-export const defaultContextSettings = (): ResolvedContextSettings => ({ adaptiveBudget: false });
+export const defaultContextSettings = (): ResolvedContextSettings => ({ adaptiveBudget: false, autoCompact: true });
 
 export const mergeMemorySettings = (base: ResolvedMemorySettings, layer: MemorySettings | undefined): ResolvedMemorySettings => {
   if (layer === undefined) return base;
@@ -54,5 +54,5 @@ export const mergeVerificationSettings = (base: ResolvedVerificationSettings, la
 
 export const mergeContextSettings = (base: ResolvedContextSettings, layer: ContextSettings | undefined): ResolvedContextSettings => {
   if (layer === undefined) return base;
-  return { adaptiveBudget: layer.adaptiveBudget ?? base.adaptiveBudget };
+  return { adaptiveBudget: layer.adaptiveBudget ?? base.adaptiveBudget, autoCompact: layer.autoCompact ?? base.autoCompact };
 };

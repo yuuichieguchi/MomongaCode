@@ -43,6 +43,7 @@ const ESCALATING_CODES: readonly string[] = [
 const NON_ESCALATING_4XX: readonly number[] = [401, 403, 404, 408, 409, 429];
 const NO_ADOPTED_GUIDELINE = 0;
 const MAX_NAMED_TOKENS = 5;
+const AUTO_COMPACT_OFF_REASON = 'compaction is off (context.autoCompact is false)';
 
 const escalates = (error: unknown): error is GatewayRequestError =>
   error instanceof GatewayRequestError &&
@@ -421,9 +422,9 @@ const budgetStopNotice = (ctx: ClaimContext, error: ContextOverflowError, attemp
     breakdown === undefined
       ? `${error.pinnedTokens}`
       : `${error.pinnedTokens} (system prompt ${breakdown.systemPrompt}, tool definitions ${breakdown.tools}, instructions ${breakdown.instructions}${governingShare(breakdown.governing)}, task ${breakdown.task})`;
-  const reason =
-    error.compactionBlockedBy?.message ??
-    (attempt.triedAtLastLevel ? 'the compaction at this level did not free enough room' : 'no compaction was available');
+  const reason = !ctx.autoCompact
+    ? AUTO_COMPACT_OFF_REASON
+    : (error.compactionBlockedBy?.message ?? (attempt.triedAtLastLevel ? 'the compaction at this level did not free enough room' : 'no compaction was available'));
   return (
     `The context needs ${error.inputTokens} tokens but at most ${error.ceiling} fit (window ${W}, output reserve ${R}, estimation margin ${W - R - error.ceiling}). ` +
     `The fixed prefix takes ${prefix}. ` +
@@ -476,7 +477,7 @@ export const buildNext = async (ctx: ClaimContext, options: { wrapUp?: WrapUpRea
         continue;
       }
       if (!(error instanceof ContextOverflowError)) throw error;
-      if (error.compaction !== undefined && !levelsWithCompaction.has(level)) {
+      if (error.compaction !== undefined && ctx.autoCompact && !levelsWithCompaction.has(level)) {
         levelsWithCompaction.add(level);
         if (cancelIfInterrupted(ctx) === 'done') return { kind: 'done' };
         const result = await compact(error.compaction);
@@ -506,7 +507,7 @@ export const buildNext = async (ctx: ClaimContext, options: { wrapUp?: WrapUpRea
       return { kind: 'built', built: wrapUpBuilt, wrapUp: { reason: 'context', notice: budgetStopNotice(ctx, error, attempt, 'a final summary was requested') } };
     }
     if (cancelIfInterrupted(ctx) === 'done') return { kind: 'done' };
-    if (built.compaction !== undefined && options.wrapUp === undefined && level === 0 && !proactiveDone) {
+    if (built.compaction !== undefined && ctx.autoCompact && options.wrapUp === undefined && level === 0 && !proactiveDone) {
       proactiveDone = true;
       const result = await compact(built.compaction);
       if (result === 'done') return { kind: 'done' };

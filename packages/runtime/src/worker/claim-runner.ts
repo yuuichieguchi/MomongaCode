@@ -335,6 +335,7 @@ const drive = async (
     pinnedDigest: { value: undefined },
     memory,
     verificationCommands: (await options.settings.verification(session)).commands,
+    autoCompact: (await options.settings.context(session)).autoCompact,
   };
 
   const governingFailure = await governingFailureAtStart(ctx);

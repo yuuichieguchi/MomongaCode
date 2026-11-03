@@ -14,11 +14,16 @@ const FRAMING = [
 
 const iso = (ms: number): string => new Date(ms).toISOString();
 
+const sourceAttributesOf = (source: DeepReadonly<MemoryView['source']>): string => {
+  if (source.kind === 'command') return ' source="person">';
+  return ` source_run="${escapeXmlAttribute(source.runId)}"${source.kind === 'tool' ? ` source_step="${source.step}"` : ''}>`;
+};
+
 const noteOf = (memory: DeepReadonly<MemoryView>): string =>
   [
     `<memory id="${escapeXmlAttribute(memory.id)}" scope="${memory.scope}" origin="${memory.origin}" status="${memory.status}"`,
     ` saved="${iso(memory.createdAt)}" last_used="${iso(memory.lastUsedAt)}"`,
-    ` source_run="${escapeXmlAttribute(memory.source.runId)}"${memory.source.kind === 'tool' ? ` source_step="${memory.source.step}"` : ''}>`,
+    sourceAttributesOf(memory.source),
     escapeXmlText(memory.text),
     '</memory>',
   ].join('');

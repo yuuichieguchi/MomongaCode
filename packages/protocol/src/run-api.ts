@@ -428,6 +428,7 @@ const memorySource: JsonSchema = {
       ['kind', 'sessionId', 'runId', 'step', 'callId', 'seq'],
     ),
     closed({ kind: constant('reflection'), sessionId: string, runId: string, ordinal: nonNegativeInteger }, ['kind', 'sessionId', 'runId', 'ordinal']),
+    closed({ kind: constant('command'), at: integer }, ['kind', 'at']),
   ],
 };
 
@@ -866,6 +867,18 @@ export const RUN_API_SCHEMAS = {
   MemoryView: root(memoryView),
   MemoriesResponse: root(closed({ memories: { type: 'array', items: memoryView } }, ['memories'])),
   MemoryResponse: root(closed({ memory: memoryView }, ['memory'])),
+  AddMemoryRequest: root(
+    closed(
+      {
+        text: { type: 'string', minLength: 1 },
+        scope: memoryScope,
+        project: { type: 'string', minLength: 1 },
+        kind: enumOf(MEMORY_KINDS),
+        paths: { type: 'array', items: { type: 'string', minLength: 1 } },
+      },
+      ['text', 'scope'],
+    ),
+  ),
   GoverningFactView: root(governingFactView),
   AddRuleRequest: root(
     closed(

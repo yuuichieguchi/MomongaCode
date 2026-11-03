@@ -1,5 +1,7 @@
 import path from 'node:path';
+import { loadUserModels } from '@momonga/config';
 import {
+  DEFAULT_DATASET_SEED,
   buildContextReport,
   compareContextReports,
   formatContextComparison,
@@ -14,11 +16,14 @@ import {
   saveContextReport,
   saveTranscript,
 } from '@momonga/eval';
-import type { ContextModel, EvalReport, GoldenCase, GoldenDataset, Transcript } from '@momonga/eval';
+import type { ContextDataset, ContextModel, EvalReport, GoldenCase, GoldenDataset, Transcript } from '@momonga/eval';
 import type { MomongaPaths } from '@momonga/foundation';
 import { goldenRunApi } from '../client/golden-run-api.ts';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
+import { nodeContextEffects } from '../eval/context-effects.ts';
+import { runContextLive } from '../eval/context-host.ts';
+import type { ContextHostEffects } from '../eval/context-host.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 
@@ -64,21 +69,80 @@ const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenData
   }
 };
 
-export type EvaluateContextOptions = { replay?: string; model?: ContextModel; report?: string };
+export type EvaluateContextOptions = {
+  replay?: string;
+  record?: string;
+  model?: ContextModel;
+  alias?: string;
+  seed?: number;
+  report?: string;
+  interrupt?: AbortSignal;
+};
 
-export const evaluateContext = async (ports: CliPorts, datasetFile: string, options: EvaluateContextOptions): Promise<number> => {
-  if (options.replay === undefined) {
-    throw new EvaluateUsageError(
-      'eval context replays recorded runs with --replay <directory>. The runtime cannot yet switch compaction off, load governing rules or play noise turns, so a live run could not honour the dataset. ' +
-        '`eval --record` refuses a context dataset because it requires the golden format; to record transcripts, make a golden copy of the dataset with the same case ids, input, files and graders and run `momonga eval <copy> --record <directory>`, then replay that directory here',
-    );
+const seedOfTranscripts = (transcripts: readonly Transcript[]): number | undefined => {
+  const seeds = [...new Set(transcripts.flatMap((transcript) => (transcript.datasetSeed === undefined ? [] : [transcript.datasetSeed])))];
+  if (seeds.length > 1) throw new EvaluateUsageError(`the transcripts were recorded with different dataset seeds (${seeds.join(', ')}), so they do not measure one expansion of the dataset`);
+  return seeds[0];
+};
+
+const assertLiveOptions = (options: EvaluateContextOptions): { model: ContextModel; alias: string } => {
+  if (options.model === undefined) throw new EvaluateUsageError('--model fake|real is required: a transcript does not record which kind of model produced it');
+  if (options.alias === undefined) throw new EvaluateUsageError('--alias <alias> is required for a live run: it names the model alias every session of the run is pinned to');
+  return { model: options.model, alias: options.alias };
+};
+
+const runContextLiveCommand = async (
+  ports: CliPorts,
+  hostEffects: (ports: CliPorts) => ContextHostEffects,
+  dataset: ContextDataset,
+  options: { alias: string; seed: number; record: string | undefined; interrupt: AbortSignal | undefined },
+): Promise<Transcript[]> => {
+  const { RUNTIME_DEFAULTS } = await import('@momonga/runtime');
+  if (options.record !== undefined) await ports.files.ensureDirectory(options.record);
+  const { record } = options;
+  return runContextLive(hostEffects(ports), {
+    dataset,
+    seed: options.seed,
+    alias: options.alias,
+    models: loadUserModels({ home: ports.home }),
+    limits: { maxTotalTokens: RUNTIME_DEFAULTS.limits.maxTotalTokens, defaultTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs },
+    ...(options.interrupt === undefined ? {} : { interrupt: options.interrupt }),
+    ...(record === undefined ? {} : { onTranscript: async (transcript: Transcript) => void (await saveTranscript(ports.files, record, transcript)) }),
+  });
+};
+
+export const evaluateContext = async (
+  ports: CliPorts,
+  datasetFile: string,
+  options: EvaluateContextOptions,
+  hostEffects: (ports: CliPorts) => ContextHostEffects = nodeContextEffects,
+): Promise<number> => {
+  if (options.record !== undefined && options.replay !== undefined) throw new EvaluateUsageError('--record and --replay cannot be combined');
+  const { replay } = options;
+  if (replay !== undefined && (options.alias !== undefined || options.seed !== undefined)) {
+    throw new EvaluateUsageError('--alias and --seed belong to a live run; a replay takes the aliases and the seed from the transcripts');
   }
-  if (options.model === undefined) {
-    throw new EvaluateUsageError('--model fake|real is required with --replay: a transcript does not record which kind of model produced it');
-  }
+  const live = replay === undefined ? assertLiveOptions(options) : undefined;
+  const model = live?.model ?? options.model;
+  if (model === undefined) throw new EvaluateUsageError('--model fake|real is required with --replay: a transcript does not record which kind of model produced it');
   const dataset = await loadContextDataset(ports.files, path.resolve(ports.cwd, datasetFile));
-  const transcripts = await loadTranscripts(ports.files, path.resolve(ports.cwd, options.replay));
-  const report = buildContextReport({ dataset, transcripts, model: options.model, seed: CONTEXT_BOOTSTRAP_SEED });
+  let transcripts: Transcript[];
+  let datasetSeed: number | undefined;
+  if (live === undefined && replay !== undefined) {
+    transcripts = await loadTranscripts(ports.files, path.resolve(ports.cwd, replay));
+    datasetSeed = seedOfTranscripts(transcripts);
+  } else if (live !== undefined) {
+    datasetSeed = options.seed ?? DEFAULT_DATASET_SEED;
+    transcripts = await runContextLiveCommand(ports, hostEffects, dataset, {
+      alias: live.alias,
+      seed: datasetSeed,
+      record: options.record === undefined ? undefined : path.resolve(ports.cwd, options.record),
+      interrupt: options.interrupt,
+    });
+  } else {
+    throw new EvaluateUsageError('eval context needs --replay <directory> or a live run');
+  }
+  const report = buildContextReport({ dataset, transcripts, model, seed: CONTEXT_BOOTSTRAP_SEED, ...(datasetSeed === undefined ? {} : { datasetSeed }) });
   if (options.report !== undefined) await saveContextReport(ports.files, path.resolve(ports.cwd, options.report), report);
   ports.stdout.write(`${formatContextReport(report)}\n`);
   return report.passed ? 0 : 1;

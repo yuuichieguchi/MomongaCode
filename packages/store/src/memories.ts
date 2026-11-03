@@ -11,10 +11,11 @@ import type { MemoryRecord, MemoryStore, MemoryVisibility, SaveMemoryInput } fro
 
 const REFLECTION_CALL_ID = /^reflection:(\d+)$/;
 
-const SOURCE_KINDS = ['tool', 'reflection'] as const;
+const SOURCE_KINDS = ['tool', 'reflection', 'command'] as const;
 
 const decodeSource = (identity: string, reader: RowReader): MemorySource => {
   const kind = expectOneOf('memories', identity, 'source_kind', SOURCE_KINDS, reader.string('source_kind'));
+  if (kind === 'command') return { kind, at: reader.number('created_at') };
   const sessionId = reader.string('source_session_id');
   const runId = reader.string('source_run_id');
   const callId = reader.string('source_call_id');
@@ -91,6 +92,10 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
   const insert = db.prepare(
     `INSERT INTO memories (id, scope, origin, project, text, source_session_id, source_run_id, source_step, source_call_id, source_seq, created_at, last_used_at, kind, supersedes_json)
      VALUES (:id, :scope, :origin, :project, :text, :sessionId, :runId, :step, :callId, :seq, :now, :now, :kind, :supersedesJson)`,
+  );
+  const insertByCommand = db.prepare(
+    `INSERT INTO memories (id, scope, origin, project, text, created_at, last_used_at, kind, source_kind)
+     VALUES (:id, :scope, 'trusted', :project, :text, :now, :now, :kind, 'command')`,
   );
   const insertEvidence = db.prepare(
     `INSERT INTO memory_evidence (memory_id, ordinal, kind, project, path, sha256, sha, run_id, call_id, seq, command, exit_code)
@@ -181,6 +186,18 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
         const row = bySource.get({ runId: input.runId, callId: input.callId });
         if (row === undefined) throw new Error(`memory ${input.runId}/${input.callId} vanished after it was saved`);
         return { memory: decode(row), created: true };
+      }),
+    addByCommand: (input) =>
+      immediateTx(db, () => {
+        if ((input.scope === 'project') !== (input.project !== null)) {
+          throw new RangeError(`a ${input.scope} memory ${input.scope === 'project' ? 'requires' : 'cannot carry'} a project`);
+        }
+        const id = uuidv7(clock);
+        insertByCommand.run({ id, scope: input.scope, project: input.project, text: input.text, now: clock.now(), kind: input.kind ?? DEFAULT_MEMORY_KIND });
+        input.evidence.forEach((entry, ordinal) => void insertEvidence.run(evidenceParams(id, ordinal, entry)));
+        const row = byId.get({ id });
+        if (row === undefined) throw new Error(`memory ${id} vanished after it was added`);
+        return decode(row);
       }),
     get: (id) => {
       const row = byId.get({ id });

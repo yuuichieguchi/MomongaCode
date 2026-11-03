@@ -4,6 +4,7 @@
   "cases": [
     {
       "id": "rename-module-on",
+      "description": "Measures whether a long task still finishes after twelve noise turns when automatic compaction is on: the rule 'use ES modules only' must be loaded, and the rename must happen.",
       "scenario": "rename-module",
       "compaction": "on",
       "input": "Rename src/parse.ts to src/parser.ts and update every import.",
@@ -19,6 +20,7 @@
     },
     {
       "id": "rename-module-off",
+      "description": "The same task and the same twelve noise turns with context.autoCompact false: the run keeps the full history, or stops with a budget notice when it does not fit. It is the contrast for rename-module-on.",
       "scenario": "rename-module",
       "compaction": "off",
       "input": "Rename src/parse.ts to src/parser.ts and update every import.",
@@ -34,6 +36,7 @@
     },
     {
       "id": "revised-test-runner-on",
+      "description": "Measures governance under a revision chain of depth 2 (jest, then mocha, then vitest) with a rule that is out of scope, after 25 noise turns about testing: only the last runner may govern, and the answer must name vitest and neither jest nor mocha.",
       "scenario": "revised-test-runner",
       "compaction": "on",
       "input": "Add a test for the date helper and run it with the project's test runner.",
@@ -54,6 +57,7 @@
     },
     {
       "id": "revised-test-runner-off",
+      "description": "The same revision chain and noise with context.autoCompact false; the contrast for revised-test-runner-on.",
       "scenario": "revised-test-runner",
       "compaction": "off",
       "input": "Add a test for the date helper and run it with the project's test runner.",
@@ -74,6 +78,7 @@
     },
     {
       "id": "file-changed-between-runs-on",
+      "description": "Measures stale memory: a person adds the memory 'LIMIT in config.ts is 10.' bound to config.ts, and config.ts changes to 20 before the second run, so the memory shows as stale in that run. The second run must read the file and not repeat the old value on the memory's word.",
       "scenario": "file-changed-between-runs",
       "compaction": "on",
       "input": "Report the value of LIMIT in config.ts.",
@@ -83,6 +88,7 @@
       "minPassRate": 1,
       "files": { "config.ts": "export const LIMIT = 10;\n" },
       "workspace": [{ "beforeRun": 1, "write": { "config.ts": "export const LIMIT = 20;\n" } }],
+      "memories": [{ "text": "LIMIT in config.ts is 10.", "paths": ["config.ts"] }],
       "rules": [],
       "revisionDepth": 0,
       "noise": { "level": 0, "topics": ["configuration"] },
@@ -90,6 +96,7 @@
     },
     {
       "id": "file-changed-between-runs-off",
+      "description": "The same stale memory and file change with context.autoCompact false; the contrast for file-changed-between-runs-on.",
       "scenario": "file-changed-between-runs",
       "compaction": "off",
       "input": "Report the value of LIMIT in config.ts.",
@@ -99,6 +106,7 @@
       "minPassRate": 1,
       "files": { "config.ts": "export const LIMIT = 10;\n" },
       "workspace": [{ "beforeRun": 1, "write": { "config.ts": "export const LIMIT = 20;\n" } }],
+      "memories": [{ "text": "LIMIT in config.ts is 10.", "paths": ["config.ts"] }],
       "rules": [],
       "revisionDepth": 0,
       "noise": { "level": 0, "topics": ["configuration"] },

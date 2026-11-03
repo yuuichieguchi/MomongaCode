@@ -13,11 +13,11 @@ const conversation: RunEventPayload[] = [
   responded(1, [{ type: 'function_call', id: 'fc_c1', call_id: 'c1', name: 'Read', arguments: '{"file_path":"/proj/big.txt"}' }]),
   { type: 'tool.call', callId: 'c1', providerCallId: 'c1', name: 'Read', kind: 'other', title: 'Read', rawInput: { file_path: '/proj/big.txt' } },
   { type: 'tool.completed', callId: 'c1', status: 'completed', output: 'r'.repeat(60_000), handle: HANDLE },
-  responded(2, [assistantMessage('m2', `long ${'x'.repeat(120_000)}`)]),
+  responded(2, [assistantMessage('m2', `long ${'x'.repeat(60_000)}`)]),
   { type: 'user.message', text: 'question two' },
-  responded(3, [assistantMessage('m3', 'answer two')]),
+  responded(3, [assistantMessage('m3', `answer two ${'y'.repeat(60_000)}`)]),
   { type: 'user.message', text: 'question three' },
-  responded(4, [assistantMessage('m4', 'answer three')]),
+  responded(4, [assistantMessage('m4', `answer three ${'z'.repeat(60_000)}`)]),
   { type: 'user.message', text: 'question four' },
 ];
 

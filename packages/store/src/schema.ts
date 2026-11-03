@@ -275,18 +275,50 @@ ALTER TABLE idempotency ADD COLUMN lease_token INTEGER;
 `;
 
 const EVIDENCE_BASED_CONTEXT = `
-ALTER TABLE memories ADD COLUMN kind TEXT NOT NULL DEFAULT 'fact' CHECK (kind IN ('fact', 'episode', 'procedure'));
-ALTER TABLE memories ADD COLUMN duplicate_of TEXT;
-ALTER TABLE memories ADD COLUMN state TEXT NOT NULL DEFAULT 'active' CHECK (
-  state IN ('active', 'candidate', 'archived', 'duplicate') AND ((state = 'duplicate') = (duplicate_of IS NOT NULL))
+CREATE TABLE memories_rebuilt (
+  id TEXT PRIMARY KEY,
+  scope TEXT NOT NULL CHECK (scope IN ('user', 'project')),
+  project TEXT,
+  text TEXT NOT NULL,
+  source_session_id TEXT,
+  source_run_id TEXT,
+  source_step INTEGER,
+  source_call_id TEXT,
+  source_seq INTEGER,
+  created_at INTEGER NOT NULL,
+  last_used_at INTEGER NOT NULL,
+  origin TEXT NOT NULL DEFAULT 'untrusted' CHECK (origin IN ('trusted', 'untrusted')),
+  kind TEXT NOT NULL DEFAULT 'fact' CHECK (kind IN ('fact', 'episode', 'procedure')),
+  duplicate_of TEXT,
+  state TEXT NOT NULL DEFAULT 'active' CHECK (
+    state IN ('active', 'candidate', 'archived', 'duplicate') AND ((state = 'duplicate') = (duplicate_of IS NOT NULL))
+  ),
+  supersedes_json TEXT NOT NULL DEFAULT '[]',
+  retired_at INTEGER,
+  contributed_at INTEGER,
+  source_kind TEXT NOT NULL DEFAULT 'tool',
+  CHECK ((scope = 'project') = (project IS NOT NULL)),
+  CHECK (
+    (
+      source_kind = 'command'
+      AND source_session_id IS NULL AND source_run_id IS NULL AND source_step IS NULL AND source_call_id IS NULL AND source_seq IS NULL
+    )
+    OR (
+      source_kind IN ('tool', 'reflection')
+      AND source_session_id IS NOT NULL AND source_run_id IS NOT NULL AND source_step IS NOT NULL AND source_call_id IS NOT NULL AND source_seq IS NOT NULL
+      AND ((source_kind = 'reflection') = (source_call_id GLOB 'reflection:[0-9]*' AND substr(source_call_id, 12) NOT GLOB '*[^0-9]*'))
+    )
+  ),
+  UNIQUE (source_run_id, source_call_id)
 );
-ALTER TABLE memories ADD COLUMN supersedes_json TEXT NOT NULL DEFAULT '[]';
-ALTER TABLE memories ADD COLUMN retired_at INTEGER;
-ALTER TABLE memories ADD COLUMN contributed_at INTEGER;
-ALTER TABLE memories ADD COLUMN source_kind TEXT NOT NULL DEFAULT 'tool' CHECK (
-  source_kind IN ('tool', 'reflection')
-  AND ((source_kind = 'reflection') = (source_call_id GLOB 'reflection:[0-9]*' AND substr(source_call_id, 12) NOT GLOB '*[^0-9]*'))
-);
+INSERT INTO memories_rebuilt (
+  id, scope, project, text, source_session_id, source_run_id, source_step, source_call_id, source_seq, created_at, last_used_at, origin
+)
+SELECT id, scope, project, text, source_session_id, source_run_id, source_step, source_call_id, source_seq, created_at, last_used_at, origin FROM memories;
+DROP TABLE memories;
+ALTER TABLE memories_rebuilt RENAME TO memories;
+CREATE INDEX memories_by_project ON memories (project);
+CREATE INDEX memories_by_recency ON memories (last_used_at DESC, created_at DESC);
 CREATE INDEX memories_by_state ON memories (state, project);
 
 CREATE TRIGGER memories_reject_replace BEFORE INSERT ON memories WHEN EXISTS (

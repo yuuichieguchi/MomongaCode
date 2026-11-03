@@ -65,6 +65,7 @@ export type {
   RunError,
   RunMutationResult,
   SaveMemoryInput,
+  AddMemoryByCommandInput,
   SearchStore,
   RuntimeStore,
   RuntimeStoreOptions,

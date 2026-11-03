@@ -31,7 +31,7 @@ export const nodeFiles: CliFiles = {
   ...nodeEvalFiles,
   readBytes: (file) => fs.readFile(file),
   ensureDirectory: async (directory) => void (await fs.mkdir(directory, { recursive: true })),
-  makeTempDirectory: (prefix) => fs.mkdtemp(path.join(os.tmpdir(), prefix)),
+  makeTempDirectory: (prefix, base) => fs.mkdtemp(path.join(base ?? os.tmpdir(), prefix)),
   removeTree: (directory) => fs.rm(directory, { recursive: true, force: true }),
   readTextIfPresent: async (file) => {
     try {

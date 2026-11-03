@@ -541,6 +541,49 @@ describe('memory source kinds', () => {
   });
 });
 
+describe('memory command source', () => {
+  const commandRow = (id: string, overrides: Fields = {}): Fields => ({
+    id,
+    scope: 'user',
+    origin: 'trusted',
+    project: null,
+    text: `text ${id}`,
+    created_at: START_MS,
+    last_used_at: START_MS,
+    source_kind: 'command',
+    ...overrides,
+  });
+
+  it('accepts a memory a person added, whose run and call columns are all null', () => {
+    const db = migratedDb();
+    insertRow(db, 'memories', commandRow('m-c1'));
+    insertRow(db, 'memories', commandRow('m-c2'));
+    expect(db.prepare("SELECT count(*) AS n FROM memories WHERE source_kind = 'command'").get()?.['n']).toBe(2);
+  });
+
+  it('refuses a command memory that names a run or a call', () => {
+    const db = migratedDb();
+    expect(() => insertRow(db, 'memories', commandRow('m-a', { source_run_id: 'r1' }))).toThrow(/CHECK/);
+    expect(() => insertRow(db, 'memories', commandRow('m-b', { source_call_id: 'c1' }))).toThrow(/CHECK/);
+    expect(() => insertRow(db, 'memories', commandRow('m-c', { source_session_id: 's1' }))).toThrow(/CHECK/);
+  });
+
+  it('refuses a tool memory without its run, call, step, session or event', () => {
+    const db = migratedDb();
+    const tool = (id: string, overrides: Fields): Fields => ({ ...commandRow(id), source_kind: 'tool', source_session_id: 's1', source_run_id: `r-${id}`, source_step: 1, source_call_id: `c-${id}`, source_seq: 1, ...overrides });
+    insertRow(db, 'memories', tool('m-ok', {}));
+    for (const column of ['source_session_id', 'source_run_id', 'source_step', 'source_call_id', 'source_seq']) {
+      expect(() => insertRow(db, 'memories', tool(`m-${column}`, { [column]: null }))).toThrow(/CHECK|NOT NULL/);
+    }
+  });
+
+  it('keeps the memories that existed before the migration and still refuses an unknown source kind', () => {
+    const db = migratedDb();
+    expect(db.prepare("SELECT source_kind FROM memories WHERE id = 'm-old'").get()?.['source_kind']).toBe('tool');
+    expect(() => insertRow(db, 'memories', commandRow('m-x', { source_kind: 'person' }))).toThrow(/CHECK/);
+  });
+});
+
 describe('user-scope governing facts', () => {
   it('refuses paths on a user fact and accepts them on a project fact', () => {
     const db = migratedDb();

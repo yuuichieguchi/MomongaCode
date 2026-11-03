@@ -1,5 +1,6 @@
-import type { EntryIo } from '@momonga/foundation';
+import type { EntryIo, MomongaPaths } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
+import { memoryAdd } from '../src/commands/memory.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
@@ -29,5 +30,14 @@ describe('commands', () => {
 
   it('registers memory history', () => {
     expect(subcommands('memory')).toContain('history');
+  });
+
+  it('registers memory add, which a person uses to seed a memory without a model', () => {
+    expect(subcommands('memory')).toContain('add');
+  });
+
+  it('refuses a user memory bound to a path before it contacts the daemon', async () => {
+    const ports = { cwd: '/c', stdout: { write: () => undefined } } as unknown as CliPorts;
+    await expect(memoryAdd(ports, {} as MomongaPaths, 'a note', { user: true, paths: ['a.ts'], json: false })).rejects.toThrow(/--path .* --user/);
   });
 });

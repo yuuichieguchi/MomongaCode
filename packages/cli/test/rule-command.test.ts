@@ -82,6 +82,10 @@ describe('memory formats', () => {
     expect(formatMemoryList([MEMORY])).toContain('stale');
     expect(formatMemory(MEMORY)).toContain('status: stale');
   });
+
+  it('says that a person added a memory, and when', () => {
+    expect(formatMemory({ ...MEMORY, source: { kind: 'command', at: 86_400_000 } })).toContain('source: added by a person with momonga memory add at 1970-01-02T00:00:00.000Z');
+  });
 });
 
 describe('/rule', () => {

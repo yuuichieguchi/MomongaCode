@@ -13,11 +13,18 @@ export type GovernanceScore = { fidelity: number | undefined; consistency: numbe
 
 const sameSet = (left: ReadonlySet<string>, right: ReadonlySet<string>): boolean => left.size === right.size && [...left].every((id) => right.has(id));
 
-export const governanceCountsOf = (rules: readonly ContextRule[], events: readonly PublicRunEvent[]): GovernanceCounts | undefined => {
+export const governanceCountsOf = (
+  rules: readonly ContextRule[],
+  events: readonly PublicRunEvent[],
+  ruleIds?: Readonly<Record<string, string>>,
+): GovernanceCounts | undefined => {
   if (rules.length === 0) return undefined;
   const binding = new Set(bindingRuleIds(rules));
   const defined = new Set(rules.map((rule) => rule.id));
-  const loads = eventsOfType(events, 'context.governing_loaded').map((event) => new Set(event.active.map((fact) => fact.id).filter((id) => defined.has(id))));
+  const datasetIdOf = (factId: string): string | undefined => (ruleIds === undefined ? factId : ruleIds[factId]);
+  const loads = eventsOfType(events, 'context.governing_loaded').map(
+    (event) => new Set(event.active.map((fact) => datasetIdOf(fact.id)).filter((id): id is string => id !== undefined && defined.has(id))),
+  );
   const last = loads.at(-1) ?? new Set<string>();
   return {
     binding: binding.size,

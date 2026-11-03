@@ -280,12 +280,21 @@ export type SaveMemoryInput = {
   evidence?: readonly MemoryEvidence[];
 };
 
-export type MemoryVisibility = { trusted: true; project: string } | { trusted: false };
+export type AddMemoryByCommandInput = {
+  scope: MemoryScope;
+  project: string | null;
+  text: string;
+  kind?: MemoryKind;
+  evidence: readonly MemoryEvidence[];
+};
+
+export type MemoryVisibility ={ trusted: true; project: string } | { trusted: false };
 
 export type MemoryInclude = 'live' | 'all';
 
 export type MemoryStore = {
   save(input: SaveMemoryInput): { memory: MemoryRecord; created: boolean };
+  addByCommand(input: AddMemoryByCommandInput): MemoryRecord;
   get(id: string): MemoryRecord | undefined;
   list(filter?: { scope?: MemoryScope; project?: string }): MemoryRecord[];
   recall(visibility: MemoryVisibility): MemoryRecord[];
