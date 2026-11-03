@@ -60,6 +60,7 @@ const setup = () => {
       isIdle: () => true,
       evidenceRun: () => async () => ({ exitCode: null }),
       maxAttempts: 3,
+      attemptTimeoutMs: 600_000,
       random: () => 0.5,
     });
   const verified: RunEventPayload[] = [...fileTool('w1', 'Write', { path: path.join(project, 'src/a.ts'), sha256: SHA, access: 'write' }), ...bash('t1', 'npm test', 0, 'ok')];

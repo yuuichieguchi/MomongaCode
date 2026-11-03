@@ -45,6 +45,10 @@ export const registerGuidelineRoutes = (route: RouteRegistrar, deps: GuidelineRo
 
   const recordCharge: Handler = async (context) => {
     const body = validateBody<RecordContextChargeRequest>('RecordContextChargeRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
+    const responseId = body.detail?.responseId;
+    if (responseId !== undefined && contextCharges.list({}).some((entry) => entry.detail?.responseId === responseId)) {
+      throw conflict('duplicate_charge', `the response ${responseId} is already charged, so the call is not charged twice`);
+    }
     return json({ charge: contextCharges.record({ ...body, runId: null, project: canonicalProject(body.project, 'project') }) }, 201);
   };
 

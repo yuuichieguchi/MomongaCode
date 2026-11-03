@@ -34,6 +34,7 @@ export type Transcript = {
   ruleIds?: Record<string, string>;
   datasetSeed?: number;
   noiseTokens?: number;
+  noiseReflectionsUnsettled?: number;
   stopped?: string;
 };
 
@@ -89,7 +90,7 @@ const childrenOf = (value: unknown, where: string): TranscriptChild[] => {
   });
 };
 
-type LiveFields = Pick<Transcript, 'ruleIds' | 'datasetSeed' | 'noiseTokens' | 'stopped'>;
+type LiveFields = Pick<Transcript, 'ruleIds' | 'datasetSeed' | 'noiseTokens' | 'noiseReflectionsUnsettled' | 'stopped'>;
 
 const validateReflectionView: ValidateFunction = ajv.compile(RUN_API_SCHEMAS.RunReflection);
 
@@ -118,7 +119,10 @@ const ruleIdsOf = (value: unknown, where: string): Record<string, string> => {
 };
 
 const liveFieldsOf = (header: Record<string, unknown>, where: string): LiveFields => {
-  const { ruleIds, datasetSeed, noiseTokens, stopped } = header;
+  const { ruleIds, datasetSeed, noiseTokens, noiseReflectionsUnsettled, stopped } = header;
+  if (noiseReflectionsUnsettled !== undefined && !isNonNegativeInteger(noiseReflectionsUnsettled)) {
+    throw new TranscriptError(`${where}: noiseReflectionsUnsettled must be a non-negative integer`);
+  }
   if (datasetSeed !== undefined && !isNonNegativeInteger(datasetSeed)) throw new TranscriptError(`${where}: datasetSeed must be a non-negative integer`);
   if (noiseTokens !== undefined && !isNonNegativeInteger(noiseTokens)) throw new TranscriptError(`${where}: noiseTokens must be a non-negative integer`);
   if (stopped !== undefined && (typeof stopped !== 'string' || stopped === '')) throw new TranscriptError(`${where}: stopped must be a non-empty string`);
@@ -126,6 +130,7 @@ const liveFieldsOf = (header: Record<string, unknown>, where: string): LiveField
     ...(ruleIds === undefined ? {} : { ruleIds: ruleIdsOf(ruleIds, where) }),
     ...(datasetSeed === undefined ? {} : { datasetSeed }),
     ...(noiseTokens === undefined ? {} : { noiseTokens }),
+    ...(noiseReflectionsUnsettled === undefined ? {} : { noiseReflectionsUnsettled }),
     ...(stopped === undefined ? {} : { stopped }),
   };
 };
@@ -141,6 +146,7 @@ export const encodeTranscript =(transcript: Transcript): string => {
     ...(transcript.ruleIds === undefined ? {} : { ruleIds: transcript.ruleIds }),
     ...(transcript.datasetSeed === undefined ? {} : { datasetSeed: transcript.datasetSeed }),
     ...(transcript.noiseTokens === undefined ? {} : { noiseTokens: transcript.noiseTokens }),
+    ...(transcript.noiseReflectionsUnsettled === undefined ? {} : { noiseReflectionsUnsettled: transcript.noiseReflectionsUnsettled }),
     ...(transcript.stopped === undefined ? {} : { stopped: transcript.stopped }),
   };
   const childLines = transcript.children.flatMap((child) => child.events.map((event) => ({ childRunId: child.runId, event })));

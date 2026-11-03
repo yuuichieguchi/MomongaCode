@@ -35,7 +35,7 @@ export class EvaluateUsageError extends Error {
   }
 }
 
-export type EvaluateOptions = { record?: string; replay?: string };
+export type EvaluateOptions = { record?: string; replay?: string; interrupt?: AbortSignal };
 
 const WORKSPACE_PREFIX = 'momonga-eval-';
 
@@ -47,16 +47,23 @@ const populate = async (ports: CliPorts, directory: string, golden: GoldenCase):
   }
 };
 
-const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenDataset, record: string | undefined): Promise<EvalReport> => {
+const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenDataset, record: string | undefined, interrupt: AbortSignal | undefined): Promise<EvalReport> => {
   await ensureDaemon(ports, paths, { replacement: 'when-idle' });
-  const { REFLECTION_POLL_MS, REFLECTION_SETTLE_BOUND_MS } = await import('@momonga/runtime');
+  const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } = await import('@momonga/runtime');
   const env = await environmentSnapshot(ports);
   const client = connectRuntime(paths);
   const workspaces: string[] = [];
   if (record !== undefined) await ports.files.ensureDirectory(record);
   try {
     return await runDataset(dataset, {
-      api: goldenRunApi(client, undefined, { boundMs: REFLECTION_SETTLE_BOUND_MS, pollMs: REFLECTION_POLL_MS, wait: (milliseconds) => ports.clock.sleep(milliseconds) }),
+      api: goldenRunApi(client, undefined, {
+        pendingBoundMs: REFLECTION_PICKUP_BOUND_MS,
+        attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS,
+        pollMs: REFLECTION_POLL_MS,
+        now: () => ports.clock.now(),
+        wait: (milliseconds, signal) => ports.clock.sleep(milliseconds, signal),
+        ...(interrupt === undefined ? {} : { signal: interrupt }),
+      }),
       workspace: async (golden) => {
         const cwd = await ports.files.makeTempDirectory(WORKSPACE_PREFIX);
         workspaces.push(cwd);
@@ -171,7 +178,7 @@ export const evaluate = async (ports: CliPorts, paths: MomongaPaths, datasetFile
   const dataset = await loadDataset(ports.files, path.resolve(ports.cwd, datasetFile));
   const report =
     options.replay === undefined
-      ? await runLive(ports, paths, dataset, options.record === undefined ? undefined : path.resolve(ports.cwd, options.record))
+      ? await runLive(ports, paths, dataset, options.record === undefined ? undefined : path.resolve(ports.cwd, options.record), options.interrupt)
       : replayDataset(dataset, await loadTranscripts(ports.files, path.resolve(ports.cwd, options.replay)));
   ports.stdout.write(`${formatReport(report)}\n`);
   return report.passed ? 0 : 1;

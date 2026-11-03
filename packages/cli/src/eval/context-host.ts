@@ -35,6 +35,7 @@ export type ContextHostEffects = {
   connect(paths: MomongaPaths): ContextRuntime;
   applyStep(cwd: string, step: WorkspaceStep): Promise<void>;
   after(milliseconds: number, signal: AbortSignal): Promise<void>;
+  now(): number;
   ownerPid: number;
   readSecret(name: string, signal: AbortSignal): Promise<string>;
   copyProbeRecord(target: string, paths: MomongaPaths): Promise<void>;
@@ -183,7 +184,7 @@ const BENCHMARK_GUIDELINE_REPORT = { source: 'context improve benchmark' } as co
 
 export const createContextHosts = (
   effects: ContextHostEffects,
-  options: { settings: LiveSettings; credentialValues: Readonly<Record<string, string>>; guideline?: string },
+  options: { settings: LiveSettings; credentialValues: Readonly<Record<string, string>>; guideline?: string; interrupt?: AbortSignal },
 ): ContextHosts => {
   const records: CaseRecord[] = [];
 
@@ -237,13 +238,16 @@ export const createContextHosts = (
     record.runtime = runtime;
     await runtime.setTrust(cwd, 'trusted');
     if (options.guideline !== undefined) await runtime.adoptGuideline({ text: options.guideline, parent: null, report: { ...BENCHMARK_GUIDELINE_REPORT } });
-    const { REFLECTION_POLL_MS, REFLECTION_SETTLE_BOUND_MS } = await import('@momonga/runtime');
+    const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } = await import('@momonga/runtime');
     return {
       cwd,
       api: goldenRunApi(runtime, await effects.sessionEnv(root), {
-        boundMs: REFLECTION_SETTLE_BOUND_MS,
+        pendingBoundMs: REFLECTION_PICKUP_BOUND_MS,
+        attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS,
         pollMs: REFLECTION_POLL_MS,
-        wait: (milliseconds) => effects.after(milliseconds, new AbortController().signal),
+        now: () => effects.now(),
+        wait: (milliseconds, signal) => effects.after(milliseconds, signal ?? new AbortController().signal),
+        ...(options.interrupt === undefined ? {} : { signal: options.interrupt }),
       }),
       rules: {
         add: (request) => runtime.addRule(request),
@@ -321,7 +325,12 @@ export const runContextLive = async (effects: ContextHostEffects, input: Context
   const credentialValues = await readCredentials(effects, settings.credentials, interrupt ?? new AbortController().signal);
   const swept = await sweepStaleHomes(effects);
   if (swept.unreadable > 0) input.onUnreadableHomes?.(swept.unreadable);
-  const hosts = createContextHosts(effects, { settings, credentialValues, ...(input.guideline === undefined ? {} : { guideline: input.guideline }) });
+  const hosts = createContextHosts(effects, {
+    settings,
+    credentialValues,
+    ...(input.guideline === undefined ? {} : { guideline: input.guideline }),
+    ...(interrupt === undefined ? {} : { interrupt }),
+  });
   const bounds = liveBoundsFor(input.dataset, input.limits);
   const interrupted = new Promise<never>((_resolve, reject) => {
     interrupt?.addEventListener('abort', () => reject(new ContextInterrupted()), { once: true });

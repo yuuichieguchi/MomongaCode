@@ -255,6 +255,7 @@ const registerEvaluate: CommandGroup = (program, deps) => {
     .action(async (dataset: string, options: { record?: string; replay?: string }) => {
       deps.complete(
         await evaluate(deps.ports, pathsOf(deps.ports), dataset, {
+          interrupt: deps.interrupt,
           ...(options.record === undefined ? {} : { record: options.record }),
           ...(options.replay === undefined ? {} : { replay: options.replay }),
         }),

@@ -55,7 +55,7 @@ const setup = ({ enabled = true, maxTokens, window = 100_000, structured = true,
     verification: async () => ({ commands: [...DEFAULT_VERIFICATION_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS] }),
     memory: async () => ({ reflection: { enabled, ...(maxTokens === undefined ? {} : { maxTokens }) }, forgetAfterDays: 90 }),
   };
-  const reflector = (isIdle: () => boolean = () => true, target: unknown = store): Reflector =>
+  const reflector = (isIdle: () => boolean = () => true, target: unknown = store, extra: Record<string, unknown> = {}): Reflector =>
     exported<(options: unknown) => Reflector>('createReflector')({
       store: target,
       gateway,
@@ -64,7 +64,9 @@ const setup = ({ enabled = true, maxTokens, window = 100_000, structured = true,
       isIdle,
       evidenceRun: () => async () => ({ exitCode: null }),
       maxAttempts: MAX_ATTEMPTS,
+      attemptTimeoutMs: 600_000,
       random: () => 0.5,
+      ...extra,
     });
   const job = async (runId: string): Promise<boolean> => apiOf(store).reflection.get(runId) !== undefined;
   const finishedRun = (events: readonly RunEventPayload[], outcome: 'COMPLETED' | 'FAILED' = 'COMPLETED', input = 'fix the bug') => {
@@ -563,6 +565,19 @@ describe('candidates of a reflection', () => {
     await env.reflector().runOne(SIGNAL);
     return run;
   };
+
+  it('bounds the whole attempt by one deadline: an evidence step that outlasts it fails the attempt, and no candidate is saved without its commit', async () => {
+    const env = setup();
+    const run = env.finishedRun(VERIFIED(env.project));
+    env.gateway.script.push(textStep(CANDIDATE_REPLY(['src/a.ts'])));
+    const hangsUntilAborted = (_command: unknown, signal: AbortSignal) =>
+      new Promise<{ exitCode: null }>((resolve) => signal.addEventListener('abort', () => resolve({ exitCode: null }), { once: true }));
+
+    await expect(env.reflector(() => true, env.store, { evidenceRun: () => hangsUntilAborted, attemptTimeoutMs: 40 }).runOne(SIGNAL)).rejects.toThrow();
+
+    expect(env.api.memories.candidates()).toEqual([]);
+    expect(env.api.reflection.get(run.id)?.state).not.toBe('done');
+  });
 
   it('stores a candidate bound to a journal path, with the recorded hash', async () => {
     const env = setup();

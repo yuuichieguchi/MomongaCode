@@ -13,7 +13,8 @@ import { SESSION_PATH, createRuntimeClient, framesOfType } from './support/runti
 import type { RunEventFrame, RuntimeClient } from './support/runtime-client.ts';
 import { UPSTREAM_TARGET, baseSettings, startStack } from './support/stack.ts';
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
-import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
+import { REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } from '../packages/runtime/src/memory/reflection-bound.ts';
+import { E2E_REFLECTION_ATTEMPTS_BOUND_MS, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
 const RUNS_PER_CASE = 2;
 const MEDIUM_CONFIDENCE_CASE = 'write-requested-changelog';
@@ -183,7 +184,13 @@ describe('hooks and auto mode against real processes', () => {
     const client = createCliRuntimeClient({ socketPath: home.paths.sockets.runtime });
     try {
       const report = await runDataset(dataset, {
-        api: goldenRunApi(client, undefined, { boundMs: 5000, pollMs: 100, wait: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)) }),
+        api: goldenRunApi(client, undefined, {
+          pendingBoundMs: REFLECTION_PICKUP_BOUND_MS,
+          attemptBoundMs: E2E_REFLECTION_ATTEMPTS_BOUND_MS,
+          pollMs: REFLECTION_POLL_MS,
+          now: () => Date.now(),
+          wait: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+        }),
         workspace: async (golden, runIndex) => {
           const cwd = workspaceOf(golden, runIndex);
           fs.mkdirSync(path.join(cwd, '.git', 'hooks'), { recursive: true });

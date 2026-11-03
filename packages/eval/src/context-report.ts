@@ -95,6 +95,7 @@ export type ContextReport = {
   unclassifiedCompactions: number;
   governanceRunsWithoutEvent: number;
   noiseTokens: number;
+  unsettledNoiseReflections: number;
   stopped: StoppedRun[];
   cases: ContextCaseReport[];
   passed: boolean;
@@ -282,6 +283,7 @@ export const buildContextReport = (input: BuildContextReportInput): ContextRepor
     unclassifiedCompactions: total(measures, (measure) => measure.facts.unclassified),
     governanceRunsWithoutEvent: measures.filter((measure) => measure.governance !== undefined && measure.governance.loads === 0).length,
     noiseTokens: total(transcripts, (transcript) => transcript.noiseTokens ?? 0),
+    unsettledNoiseReflections: total(transcripts, (transcript) => transcript.noiseReflectionsUnsettled ?? 0),
     stopped: measured.flatMap(({ transcripts: recorded }) =>
       recorded.flatMap((transcript) => (transcript.stopped === undefined ? [] : [{ caseId: transcript.caseId, runIndex: transcript.runIndex, reason: transcript.stopped }])),
     ),
@@ -370,7 +372,8 @@ export const formatContextReport = (report: ContextReport): string => {
   lines.push(`unclassifiedCompactions ${report.unclassifiedCompactions}`);
   lines.push(`governanceRunsWithoutEvent ${report.governanceRunsWithoutEvent} (runs of cases with rules that loaded no governing set; each counts as an empty set)`);
   lines.push(`datasetSeed ${report.datasetSeed}`);
-  lines.push(`noiseTokens ${report.noiseTokens} (spent by the noise turns before each task; counted against the dataset cap and not in tokensPerSuccess)`);
+  lines.push(`noiseTokens ${report.noiseTokens} (spent by the noise turns and their reflections before each task; counted against the dataset cap and not in tokensPerSuccess)`);
+  lines.push(`noise reflections unsettled ${report.unsettledNoiseReflections} (a reflection of a noise run still pending or running past its bound; the charges recorded so far are in noiseTokens, and the cases stay measured)`);
   for (const stop of report.stopped) lines.push(`stopped ${stop.caseId} run ${stop.runIndex}: ${stop.reason} (counted as a failed run)`);
   return lines.join('\n');
 };
@@ -436,6 +439,7 @@ const CONTEXT_REPORT_SCHEMA = {
       unclassifiedCompactions: count,
       governanceRunsWithoutEvent: count,
       noiseTokens: count,
+      unsettledNoiseReflections: count,
       stopped: {
         type: 'array',
         items: closed({ caseId: { type: 'string', minLength: 1 }, runIndex: count, reason: { type: 'string', minLength: 1 } }, ['caseId', 'runIndex', 'reason']),
@@ -475,6 +479,7 @@ const CONTEXT_REPORT_SCHEMA = {
       'unclassifiedCompactions',
       'governanceRunsWithoutEvent',
       'noiseTokens',
+      'unsettledNoiseReflections',
       'stopped',
       'cases',
       'passed',

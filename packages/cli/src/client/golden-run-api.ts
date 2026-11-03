@@ -2,7 +2,21 @@ import type { PublicRunEvent } from '@momonga/protocol';
 import type { EvalRunApi } from '@momonga/eval';
 import type { RuntimeClient } from './runtime-client.ts';
 
-export type ReflectionSettle = { boundMs: number; pollMs: number; wait(ms: number): Promise<void> };
+export type ReflectionSettle = {
+  pendingBoundMs: number;
+  attemptBoundMs: number;
+  pollMs: number;
+  now(): number;
+  wait(ms: number, signal?: AbortSignal): Promise<void>;
+  signal?: AbortSignal;
+};
+
+const abortion = (signal: AbortSignal | undefined): Promise<never> =>
+  new Promise<never>((_resolve, reject) => {
+    if (signal === undefined) return;
+    if (signal.aborted) reject(signal.reason);
+    signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+  });
 
 export const goldenRunApi = (
   client: Pick<RuntimeClient, 'createSession' | 'createRun' | 'streamEvents' | 'getRun' | 'runReflection' | 'resolveApproval' | 'cancel'>,
@@ -47,15 +61,25 @@ export const goldenRunApi = (
       };
     },
     reflectionOf: async (runId) => {
-      let waited = 0;
+      const aborted = abortion(settle.signal);
+      void aborted.catch(() => undefined);
+      const watchedAt = settle.now();
+      let attemptSeenAt: number | undefined;
       for (;;) {
+        settle.signal?.throwIfAborted();
         const { job, charges } = await client.runReflection(runId);
         const state = job === null ? 'none' : job.state;
         const answer = { state, ...(charges.length === 0 ? {} : { charges }) } as const;
         if (state !== 'pending' && state !== 'running') return answer;
-        if (waited >= settle.boundMs) return { ...answer, reason: `the reflection job was still ${state} after ${settle.boundMs} ms, the bound of its attempts` };
-        await settle.wait(settle.pollMs);
-        waited += settle.pollMs;
+        if (attemptSeenAt === undefined && job !== null && (job.state === 'running' || job.attempts > 0)) attemptSeenAt = settle.now();
+        if (attemptSeenAt === undefined) {
+          if (settle.now() - watchedAt >= settle.pendingBoundMs) {
+            return { ...answer, reason: 'the runtime was busy with other runs, so the reflection did not start' };
+          }
+        } else if (settle.now() - attemptSeenAt >= settle.attemptBoundMs) {
+          return { ...answer, reason: `the reflection job was still ${state} after ${settle.attemptBoundMs} ms, the bound of its attempts` };
+        }
+        await Promise.race([settle.wait(settle.pollMs, settle.signal), aborted]);
       }
     },
     resolveApproval: async (approvalId, optionId) => {

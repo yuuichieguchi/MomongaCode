@@ -130,6 +130,7 @@ export const nodeContextEffects = (ports: CliPorts): ContextHostEffects => ({
   remove: (directory) => ports.files.removeTree(directory),
   connect: (paths) => connectRuntime(paths),
   applyStep: (cwd, step) => applyWorkspaceStep(cwd, step),
+  now: () => ports.clock.now(),
   after: (milliseconds, signal) =>
     new Promise<void>((resolve) => {
       if (milliseconds > MAX_TIMER_MS) return;

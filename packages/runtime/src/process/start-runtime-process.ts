@@ -582,6 +582,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         isIdle: () => phase === 'running' && !store.hasActiveRun(),
         evidenceRun: evidenceRunFor,
         maxAttempts: STORE_MAX_ATTEMPTS,
+        attemptTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs,
         random: Math.random,
       });
       const upkeepSchedule = createMemoryUpkeepSchedule({

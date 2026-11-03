@@ -105,6 +105,19 @@ describe('the context charge route', () => {
     expect(env.store.contextCharges.list({})).toMatchObject([{ purpose: 'guideline', detail }]);
     expect((await env.http('POST', '/v1/context-charges', { body: { ...body, detail: { timing: { durationMs: -1 } } } })).status).toBe(400);
   });
+
+  it('refuses a second charge for a response id that already has one, with the reason, so one call is never charged twice', async () => {
+    const env = await startService();
+    const body = { purpose: 'guideline', project: env.layout.project, model: 'opus', inputTokens: 7, outputTokens: 3, totalTokens: 10, detail: { responseId: 'resp_1' } };
+    expect((await env.http('POST', '/v1/context-charges', { body })).status).toBe(201);
+
+    const again = await env.http('POST', '/v1/context-charges', { body });
+
+    expect(again.status).toBe(409);
+    expect(JSON.stringify(again.json)).toContain('resp_1');
+    expect(env.store.contextCharges.list({})).toHaveLength(1);
+    expect((await env.http('POST', '/v1/context-charges', { body: { ...body, detail: { responseId: 'resp_2' } } })).status).toBe(201);
+  });
 });
 
 describe('the model has no way to adopt a guideline', () => {

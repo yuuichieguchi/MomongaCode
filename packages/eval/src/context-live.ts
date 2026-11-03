@@ -173,6 +173,7 @@ const runCase = async (
     for (const step of (entry.workspace ?? []).filter((candidate) => candidate.beforeRun === runIndex)) await host.applyStep(step);
     const session = await host.api.createSession({ cwd: host.cwd, permissionMode: entry.permissionMode, modelAlias: ports.modelAlias });
     let noiseTokens = 0;
+    let noiseReflectionsUnsettled = 0;
     for (const turn of entry.noiseTurns) {
       stop = refusal();
       if (stop !== undefined) break;
@@ -180,7 +181,11 @@ const runCase = async (
       started = true;
       const outcome = await driveWithin(noise.id);
       noiseTokens += (await measure(noise.id)).usage.totalTokens;
-      await host.api.reflectionOf(noise.id);
+      const reflected = await host.api.reflectionOf(noise.id);
+      const reflectionTokens = (reflected.charges ?? []).reduce((sum, charge) => sum + charge.totalTokens, 0);
+      noiseTokens += reflectionTokens;
+      state.spent += reflectionTokens;
+      if (reflected.state === 'pending' || reflected.state === 'running') noiseReflectionsUnsettled += 1;
       if (outcome.expired) stop = DEADLINE_REASON;
       if (stop !== undefined) break;
     }
@@ -191,7 +196,7 @@ const runCase = async (
     const outcome = await driveWithin(run.id);
     const info = await measure(run.id);
     const reflection = await host.api.reflectionOf(run.id);
-    const noise = entry.noiseTurns.length === 0 ? {} : { noiseTokens };
+    const noise = entry.noiseTurns.length === 0 ? {} : { noiseTokens, noiseReflectionsUnsettled };
     if (!outcome.expired) return emit({ caseId: entry.id, runIndex, run: info, ...outcome.driven, reflection, ...tagged(), ...noise });
     stop = DEADLINE_REASON;
     const { stopReason: _cancelled, ...rest } = info;

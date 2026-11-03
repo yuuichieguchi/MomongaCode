@@ -26,6 +26,7 @@ export type ReflectorOptions = {
   isIdle(): boolean;
   evidenceRun: (project: string) => EvidenceRun;
   maxAttempts: number;
+  attemptTimeoutMs: number;
   random: () => number;
 };
 
@@ -59,7 +60,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     const startedAt = clock.now();
     const events = gateway.stream(body, {
       idempotencyKey: sha256Hex(canonicalJson([runId, 'reflect'])),
-      deadlineAt: clock.now() + RUNTIME_DEFAULTS.runTimeoutMs,
+      deadlineAt: clock.now() + options.attemptTimeoutMs,
       signal,
       role: 'reflection',
     });
@@ -182,6 +183,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
         dropped.push({ ordinal, text: candidate.text, cause: 'evidence', reason: error.message });
       }
     }
+    signal.throwIfAborted();
     const nothingKept = accepted.length === 0;
     const reason = !nothingKept ? undefined : parsed.candidates.length === 0 ? NO_CANDIDATES_REASON : ALL_DROPPED_REASON;
     settle(
@@ -211,7 +213,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       running = true;
       const ledger: ChargeLedger = {};
       try {
-        await reflect(job.runId, signal, ledger);
+        await reflect(job.runId, AbortSignal.any([signal, AbortSignal.timeout(options.attemptTimeoutMs)]), ledger);
         retryAt.delete(job.runId);
         return 'ran';
       } catch (error) {

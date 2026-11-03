@@ -85,7 +85,7 @@ export { createMemoryUpkeepSchedule } from './memory/upkeep-schedule.ts';
 export type { MemoryUpkeepSchedule, MemoryUpkeepScheduleOptions } from './memory/upkeep-schedule.ts';
 export { contributionAtTerminal } from './memory/contribution.ts';
 export { pinnedDigestOf } from './worker/pinned-digest.ts';
-export { REFLECTION_POLL_MS, REFLECTION_SETTLE_BOUND_MS } from './memory/reflection-bound.ts';
+export { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS, reflectionAttemptsBoundMs } from './memory/reflection-bound.ts';
 export { billedDetailOf, carriesOutput } from './worker/model-stream.ts';
 export { createHistoryPort } from './process/history-port.ts';
 export type { HistoryPortOptions } from './process/history-port.ts';

@@ -195,6 +195,7 @@ const harness = (behaviour: Behaviour = {}) => {
     connect: (paths) => runtimeFor(paths.root.replace(/\/\.momonga$/, '')),
     applyStep: async () => undefined,
     after: async () => new Promise<void>(() => undefined),
+    now: () => 0,
   };
   for (const stale of behaviour.staleRoots ?? []) {
     files.set(`${stale.root}/.momonga-eval-owner`, String(stale.owner));
