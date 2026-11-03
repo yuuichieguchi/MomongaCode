@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { pinnedFloorFor } from '@momonga/context';
 import type { Capabilities } from '@momonga/protocol';
 import {
   ACCEPTANCE_MAX_OUTPUT,
@@ -33,9 +34,11 @@ import { chatCompletions } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
 const PLANNED_CASE_TIMEOUT_MS = 4 * E2E_TEST_TIMEOUT_MS;
+const MEMORY_DENY = ['MemorySave', 'MemorySearch'] as const;
+const HISTORY_DENY = ['HistorySearch', 'HistoryRead'] as const;
 const FULL_DENY = [] as const;
-const LEAN_DENY = ['Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob', 'HistorySearch', 'HistoryRead'] as const;
-const CONSTRAINED_DENY = ['Read', 'Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob'] as const;
+const LEAN_DENY = ['Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob', ...MEMORY_DENY, ...HISTORY_DENY] as const;
+const CONSTRAINED_DENY = ['Read', 'Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob', ...MEMORY_DENY, ...HISTORY_DENY] as const;
 const LEAN_ESCALATION_NOTICE = 'recent steps of the current turn were reduced from 4 to 1 because the context budget was exceeded';
 const FULL_LINE_CHARS = [90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200] as const;
 const EXPECTED_OUTPUT_RESERVE = 1024;
@@ -203,9 +206,13 @@ const assertAcceptance = async (
   expect(journal.filter((event) => event.type === 'run.status' && event.data['to'] === 'STOPPED')).toEqual([]);
 };
 
-const assertLeanProperties = (observed: Observed, haystack: Haystack, plan: Plan): void => {
+const assertLeanProperties = (observed: Observed, haystack: Haystack, plan: Plan, capabilities: Capabilities): void => {
   const notices = ofType(observed.journal, 'notice');
-  expect(notices.map((event) => String(event.data['message']))).toEqual([LEAN_ESCALATION_NOTICE]);
+  const floor = pinnedFloorFor(capabilities);
+  expect(
+    notices.map((event) => String(event.data['message'])),
+    `the tool-room rule offers a tool only while the pinned prefix stays within the floor ${floor} (ceiling ${plan.sizing.ceiling} minus the larger of the minimum room and a quarter of the ceiling); the measured pinned prefix is ${plan.sizing.pinned}, so any offered tool that does not fit in the remaining ${floor - plan.sizing.pinned} tokens is dropped with a notice and the deny list must name it`,
+  ).toEqual([LEAN_ESCALATION_NOTICE]);
   const escalatedBefore = observed.journal.find((event) => event.type === 'model.requested' && event.seq > (notices[0] as JournalEvent).seq);
   const planned = plan.runs.find((run) => run.perturbation === 0);
   expect(planned?.facts.escalationStep).toBeDefined();
@@ -245,7 +252,7 @@ describe('a: within-turn truncation and compaction at W=4096', () => {
     const observed = observe(stack, runId);
 
     await assertAcceptance(observed, { stack, haystack, summary, capabilities, count, plan });
-    if (id === 'a-compaction-lean') assertLeanProperties(observed, haystack, plan);
+    if (id === 'a-compaction-lean') assertLeanProperties(observed, haystack, plan, capabilities);
     if (spec.toolCalling === 'constrained') assertConstrainedWire(observed);
   });
 
