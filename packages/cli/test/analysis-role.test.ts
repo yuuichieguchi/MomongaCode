@@ -30,6 +30,20 @@ const analysisModelFor = (): AnalysisModelFor => {
   return found as AnalysisModelFor;
 };
 
+type ImproveInputFor = (input: {
+  seed: number;
+  model: 'fake' | 'real';
+  analysis: { alias: string; capabilities: Capabilities };
+  datasetTokens: number;
+  current: undefined;
+}) => { alias: string };
+
+const improveInputFor = (): ImproveInputFor => {
+  const found = (contextCommand as Record<string, unknown>)['improveInputFor'];
+  if (typeof found !== 'function') throw new Error('commands/context.ts does not export improveInputFor');
+  return found as ImproveInputFor;
+};
+
 describe('the analysis role of context improve', () => {
   it('guards a role that is ignored: the analysis and candidate calls go to the analysis alias with its capabilities', async () => {
     asked.length = 0;
@@ -49,6 +63,12 @@ describe('the analysis role of context improve', () => {
     await expect(failure).rejects.toThrow('models.roles.analysis');
     await expect(failure).rejects.toThrow('plain');
     await expect(failure).rejects.toThrow('structured output');
+  });
+
+  it('guards a report that names the wrong alias: the improve input names the analysis role alias the calls used, not the --alias of the command', async () => {
+    const analysis = await analysisModelFor()({ roles: { analysis: 'cheap' }, alias: 'opus', capabilitiesOf });
+    const input = improveInputFor()({ seed: 7, model: 'real', analysis, datasetTokens: 10, current: undefined });
+    expect(input.alias).toBe('cheap');
   });
 
   it('refuses an --alias without structured output when no role is set, naming the alias and the capability', async () => {

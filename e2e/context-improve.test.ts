@@ -201,13 +201,15 @@ describe('momonga context improve', () => {
     expect(improved.code).toBe(0);
     expect(improved.stdout).toContain('model: real');
     expect(improved.stdout).toMatch(/declared by the operator/);
+    expect(improved.stdout).toContain(`the analysis and candidate calls used the alias ${ANALYSIS_ALIAS}`);
     expect(improved.stdout).toContain('gate: PASS');
     expect(improved.stdout).toContain(`text of the winner:\n  ${WINNER}`);
     expect(improved.stdout).toContain(`+ ${WINNER}`);
     expect(improved.stdout).toMatch(/nothing was adopted/i);
     expect(improved.stdout).not.toContain('adopted version');
     expect((await runCli(home, ['context', 'guideline', 'list'], options)).stdout).not.toContain(WINNER);
-    const written = JSON.parse(fs.readFileSync(realOutcome, 'utf8')) as { digest: string; outcome: { winner: { text: string; parent: number | null }; parent: number | null; dataset: { digest: string }; candidates: unknown[]; report: unknown } };
+    const written = JSON.parse(fs.readFileSync(realOutcome, 'utf8')) as { digest: string; outcome: { alias: string; winner: { text: string; parent: number | null }; parent: number | null; dataset: { digest: string }; candidates: unknown[]; report: unknown } };
+    expect(written.outcome.alias).toBe(ANALYSIS_ALIAS);
     expect(written.outcome.winner).toMatchObject({ text: WINNER, parent: null });
     expect(written.outcome.parent).toBeNull();
     expect(written.outcome.dataset.digest).toMatch(/^[0-9a-f]{64}$/);

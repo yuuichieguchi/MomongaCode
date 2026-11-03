@@ -17,7 +17,7 @@ import {
   outcomeFileOf,
   parseOutcomeFile,
 } from '@momonga/eval';
-import type { BenchmarkResult, ContextModel, GuidelineCompletion, GuidelineCompletionRequest, Transcript } from '@momonga/eval';
+import type { BenchmarkResult, ContextModel, GuidelineCompletion, GuidelineCompletionRequest, ImproveInput, Transcript } from '@momonga/eval';
 import type { MomongaPaths } from '@momonga/foundation';
 import { ESTIMATED_CHARACTERS_PER_TOKEN, LOWEST_REASONING_EFFORT, assistantTextOf, requireStructuredOutput, summaryTokenCapFor } from '@momonga/protocol';
 import type { Capabilities, CreateResponseBody, GuidelineView, GuidelinesResponse, StreamEvent } from '@momonga/protocol';
@@ -118,6 +118,24 @@ export const analysisModelFor = async (input: AnalysisModelInput): Promise<{ ali
   return { alias, capabilities };
 };
 
+export type ImproveInputSource = {
+  seed: number;
+  model: ContextModel;
+  analysis: { alias: string; capabilities: Capabilities };
+  datasetTokens: number;
+  current: ImproveInput['current'];
+};
+
+export const improveInputFor = ({ seed, model, analysis, datasetTokens, current }: ImproveInputSource): ImproveInput => ({
+  seed,
+  bootstrapSeed: CONTEXT_BOOTSTRAP_SEED,
+  model,
+  alias: analysis.alias,
+  capTokens: datasetTokens * (1 + GUIDELINE_CANDIDATES),
+  current,
+  recordChars: recordCharsFor(analysis.capabilities),
+});
+
 export const contextImprove = async (
   ports: CliPorts,
   paths: MomongaPaths,
@@ -133,21 +151,12 @@ export const contextImprove = async (
     const limits = { maxTotalTokens: RUNTIME_DEFAULTS.limits.maxTotalTokens, defaultTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs };
     const models = loadUserModels({ home: ports.home });
     const analysis = await analysisModelFor({ roles: models.resolved.roles, alias: options.alias, capabilitiesOf: (alias) => gatewayInfo.capabilitiesOf(alias) });
-    const { capabilities } = analysis;
     const adopted = (await client.guidelines()).current;
     const current = adopted === null ? undefined : { version: adopted.version, text: adopted.text };
-    const completer = await completerFor(ports, paths, analysis.alias, capabilities, options.interrupt);
+    const completer = await completerFor(ports, paths, analysis.alias, analysis.capabilities, options.interrupt);
     try {
       const outcome = await improveGuideline(
-        {
-          seed: options.seed,
-          bootstrapSeed: CONTEXT_BOOTSTRAP_SEED,
-          model: options.model,
-          alias: options.alias,
-          capTokens: liveBoundsFor(dataset, limits).datasetTokens * (1 + GUIDELINE_CANDIDATES),
-          current,
-          recordChars: recordCharsFor(capabilities),
-        },
+        improveInputFor({ seed: options.seed, model: options.model, analysis, datasetTokens: liveBoundsFor(dataset, limits).datasetTokens, current }),
         {
           benchmark: async (guideline): Promise<BenchmarkResult> => {
             const transcripts = await runContextLive(hostEffects(ports), {
