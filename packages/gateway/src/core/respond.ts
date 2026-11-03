@@ -42,6 +42,7 @@ export type ResponseJob = {
   parent: TraceParent | undefined;
   runId: string | undefined;
   step: number | undefined;
+  role: string;
   connection?: ConnectionResponses;
 };
 
@@ -86,7 +87,7 @@ const adapterRequestFor = (job: ResponseJob, resolved: ResolvedInput, target: Ta
   };
 };
 
-const errorTypeOf = (failure: unknown): string => {
+export const errorTypeOf = (failure: unknown): string => {
   if (failure instanceof UpstreamFailure) return failure.classified.error.type;
   if (failure instanceof GatewayError) return failure.body.type;
   return 'cancelled';
@@ -94,7 +95,7 @@ const errorTypeOf = (failure: unknown): string => {
 
 const thrownSpanType = (error: unknown): string => (error instanceof GatewayError ? error.body.type : 'server_error');
 
-const messageOf = (failure: unknown): string => (failure instanceof Error ? failure.message : String(failure));
+export const messageOf = (failure: unknown): string => (failure instanceof Error ? failure.message : String(failure));
 
 const openAttempt = async (
   services: Services,
@@ -117,6 +118,7 @@ const openAttempt = async (
     step: job.step,
     attempt: attemptNumber,
     targetName: target.name,
+    role: job.role,
     request: { input: resolved.forAdapter, instructions: job.body.instructions, tools: job.body.tools },
   });
   try {

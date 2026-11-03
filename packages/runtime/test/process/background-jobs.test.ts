@@ -369,7 +369,9 @@ describe('background jobs', () => {
     const started = store.start({ id: 'bash_orphan000000', idemKey: 'k'.repeat(64), sessionId: t.run.sessionId, runId: t.run.id, callId: 'c', command: 'sleep 99' });
     store.attachProcess(started.job.id, 5151);
     t.store.idempotency.begin('k'.repeat(64), { expiresAt: START_MS + 1000, meta: { job: true } });
+    expect(store.listForSession(t.run.sessionId).some((job) => job.status === 'running')).toBe(true);
     await t.jobs.reconcileOrphans();
+    expect(store.listForSession(t.run.sessionId).some((job) => job.status === 'running')).toBe(false);
     expect(t.reaped).toEqual([{ marker: path.join(t.markerDir, 'k'.repeat(64)), pgid: 5151 }]);
     expect(store.get('bash_orphan000000')).toMatchObject({ status: 'unknown' });
     expect(store.get('bash_orphan000000')?.exitCode).toBeUndefined();

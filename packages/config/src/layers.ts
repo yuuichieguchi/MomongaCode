@@ -50,9 +50,10 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
   const restricted: Settings = { ...settings };
 
   if (settings.models !== undefined) {
-    const { targets, aliases, ...remaining } = settings.models;
+    const { targets, aliases, roles, ...remaining } = settings.models;
     if (targets !== undefined) warnings.push(`${source}: models.targets is only honored in user settings; discarded`);
     if (aliases !== undefined) warnings.push(`${source}: models.aliases is only honored in user settings; discarded`);
+    if (roles !== undefined) warnings.push(`${source}: models.roles is only honored in user settings; discarded`);
     if (Object.keys(remaining).length === 0) delete restricted.models;
     else restricted.models = remaining;
   }

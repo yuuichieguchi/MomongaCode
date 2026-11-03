@@ -18,7 +18,7 @@ describe('executor and skills', () => {
     const harness = makeHarness();
     const skillDirectory = path.join(harness.layout.outside, 'skills', 'pdf');
     const target = path.join(skillDirectory, 'REFERENCE.md');
-    const tool = makeTool('Read', { subject: () => ({ kind: 'path', tool: 'Read', paths: [target], access: 'read' }) });
+    const tool = makeTool('Read', { sideEffect: 'read_only', subjectKind: 'path', subject: () => ({ kind: 'path', tool: 'Read', paths: [target], access: 'read' }) });
     const set = await toolSetOf(tool);
 
     const [asked] = await harness.executor.runBatch(harness.input(set, [call('c1', 'Read')]));

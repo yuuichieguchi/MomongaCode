@@ -2,7 +2,7 @@ import type { ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
 import type { CapabilitiesCore, HooksSettings, ImageCapability, ImageTokenModel, TargetBilling, PermissionMode } from '@momonga/protocol';
-import { MCP_SERVERS_FILE_SCHEMA, MCP_SERVER_SCHEMA, SETTINGS_SCHEMA } from './settings-schema.ts';
+import { MCP_SERVERS_FILE_SCHEMA, MCP_SERVER_SCHEMA, MODEL_ROLES, SETTINGS_SCHEMA } from './settings-schema.ts';
 
 export type PermissionsSettings = {
   defaultMode?: PermissionMode;
@@ -160,9 +160,14 @@ export type ResolvedModelTarget =
 
 export type ModelAlias = string | string[];
 
+export type ModelRole = (typeof MODEL_ROLES)[number];
+
+export type ModelRoles = Partial<Record<ModelRole, string>>;
+
 export type ModelsSettings = {
   aliases?: Record<string, ModelAlias>;
   targets?: Record<string, ModelTarget>;
+  roles?: ModelRoles;
 };
 
 export type SandboxSetting = 'seatbelt' | 'bubblewrap' | 'none';

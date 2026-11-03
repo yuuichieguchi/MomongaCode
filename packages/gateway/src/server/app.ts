@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { STREAM_IDLE_HEADER } from '@momonga/protocol';
+import { ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER } from '@momonga/protocol';
 import { MAX_BILLED_CALLS_PAGE } from '@momonga/observability';
 import type { BilledCallsCursorView, BilledCallsPageView, GatewayCostReportView, GatewayHealth, ModelList, MomongaModelList } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, invalidRequest, notFound } from '../core/errors.ts';
 import type { ResponsesService, SubmitHeaders } from '../core/responses-service.ts';
+import { roleOfHeader } from '../core/role.ts';
 import type { Services } from '../core/services.ts';
 import type { UnaryService } from '../core/unary.ts';
 import { readJsonBody } from './body.ts';
@@ -20,8 +21,8 @@ export type AppDependencies = {
   startedAtSeconds: number;
   startedAt: string;
   version: string;
-  costReport: ((runs: readonly { runId: string; sessionId: string }[]) => Promise<{ report: GatewayCostReportView; text: string }>) | undefined;
-  billedCalls: ((runIds: readonly string[], cursor: BilledCallsCursorView, limit: number) => Promise<BilledCallsPageView>) | undefined;
+  costReport: ((runs: readonly { runId: string; sessionId: string }[], includeRunless: boolean) => Promise<{ report: GatewayCostReportView; text: string }>) | undefined;
+  billedCalls: ((runIds: readonly string[], cursor: BilledCallsCursorView, limit: number, includeRunless: boolean) => Promise<BilledCallsPageView>) | undefined;
   onError: ((error: unknown) => void) | undefined;
 };
 
@@ -40,6 +41,7 @@ const submitHeadersOf = (context: Context): SubmitHeaders => ({
   deadlineMs: context.req.header('momonga-deadline-ms'),
   traceparent: context.req.header('traceparent'),
   tracestate: context.req.header('tracestate'),
+  role: roleOfHeader(context.req.header(ROLE_HEADER)),
 });
 
 const KEEP_ALIVES_PER_IDLE_BOUND = 3;
@@ -110,7 +112,11 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     let streaming = false;
     try {
       const idleBoundMs = streamIdleBoundOf(context.req.header(STREAM_IDLE_HEADER));
-      const work = unary.compact(raw, context.req.raw.signal, context.req.header('momonga-deadline-ms'), context.req.header('idempotency-key'));
+      const work = unary.compact(raw, context.req.raw.signal, context.req.header('momonga-deadline-ms'), context.req.header('idempotency-key'), {
+        runId: context.req.header(RUN_ID_HEADER),
+        traceparent: context.req.header('traceparent'),
+        tracestate: context.req.header('tracestate'),
+      });
       if (idleBoundMs === undefined) return context.json(await work);
       streaming = true;
       return compactSseResponse(work, {
@@ -197,13 +203,16 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     ) {
       throw invalidRequest('invalid_body', 'runs must be a list of { runId, sessionId }', 'runs');
     }
-    return context.json(await dependencies.costReport(runs));
+    const includeRunless = (raw as { includeRunless?: unknown }).includeRunless;
+    if (typeof includeRunless !== 'boolean') throw invalidRequest('invalid_body', 'includeRunless must be a boolean', 'includeRunless');
+    return context.json(await dependencies.costReport(runs, includeRunless));
   });
 
   app.post('/v1/momonga/cost/calls', async (context) => {
     if (dependencies.billedCalls === undefined) throw notFound('cost_unavailable', 'this gateway keeps no trace store to price runs from');
     const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
-    const { runIds, cursor, limit } = isRecord(raw) ? raw : { runIds: undefined, cursor: undefined, limit: undefined };
+    const { runIds, cursor, limit, includeRunless } = isRecord(raw) ? raw : { runIds: undefined, cursor: undefined, limit: undefined, includeRunless: undefined };
+    if (typeof includeRunless !== 'boolean') throw invalidRequest('invalid_body', 'includeRunless must be a boolean', 'includeRunless');
     if (!Array.isArray(runIds) || !runIds.every((runId): runId is string => typeof runId === 'string') || new Set(runIds).size !== runIds.length) {
       throw invalidRequest('invalid_body', 'runIds must be a list of distinct run ids', 'runIds');
     }
@@ -213,7 +222,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     if (!isCount(limit) || limit < 1 || limit > MAX_BILLED_CALLS_PAGE) {
       throw invalidRequest('invalid_body', `limit must be an integer from 1 to ${MAX_BILLED_CALLS_PAGE}`, 'limit');
     }
-    return context.json(await dependencies.billedCalls(runIds, { run: cursor['run'], offset: cursor['offset'] }, limit));
+    return context.json(await dependencies.billedCalls(runIds, { run: cursor['run'], offset: cursor['offset'] }, limit, includeRunless));
   });
 
   return app;

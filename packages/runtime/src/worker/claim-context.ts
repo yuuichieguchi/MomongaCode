@@ -1,3 +1,4 @@
+import type { ModelRoles } from '@momonga/config';
 import type { TokenMeter } from '@momonga/context';
 import type { Capabilities, FunctionTool } from '@momonga/protocol';
 import type { SkillSet } from '@momonga/skills';
@@ -24,6 +25,7 @@ export type ClaimContext = {
   run: Run;
   alias: string;
   capabilities: Capabilities;
+  roles: ModelRoles;
   memoryShare?: number;
   guideline?: { version: number; text: string };
   limits: RunLimits;
@@ -33,6 +35,7 @@ export type ClaimContext = {
   usedMemoryIds: Set<string>;
   env: ToolEnv;
   functionTools(): FunctionTool[];
+  companions(): { hostOf: Readonly<Record<string, string>>; keepWithoutHost: boolean };
   systemPrompt: string;
   inlineLimitForReconcile: number;
   inlineLimitForExecution: () => Promise<number>;

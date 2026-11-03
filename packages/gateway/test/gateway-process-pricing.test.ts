@@ -48,7 +48,7 @@ const costOfRun = async (client: ReturnType<typeof createUdsClient>) => {
     method: 'POST',
     path: '/v1/momonga/cost',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ runs: [{ runId: 'run-1', sessionId: 'session-1' }] }),
+    body: JSON.stringify({ runs: [{ runId: 'run-1', sessionId: 'session-1' }], includeRunless: false }),
   });
   expect(cost.status).toBe(200);
   return (await cost.json()) as { report: { total: Record<string, unknown> } };

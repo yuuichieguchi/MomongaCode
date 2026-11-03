@@ -14,7 +14,7 @@ const decideCommand = (layout: Layout, rules: readonly PermissionRule[], command
   const roots = [layout.project];
   const fileSystem = caseSensitiveFs();
   return decide({
-    tool: { name: 'Bash', kind: 'execute', sideEffect: 'exec' },
+    tool: { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' },
     subject: { kind: 'command', tool: 'Bash', command },
     mode: 'default',
     rules: [...rules],

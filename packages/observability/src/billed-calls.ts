@@ -28,6 +28,8 @@ export type BilledCallsPage = { calls: BilledCallWire[]; next?: BilledCallsCurso
 
 export const MAX_BILLED_CALLS_PAGE = 500;
 
+export const RUNLESS = '';
+
 export const isBilledChat = (span: SpanRecord): boolean =>
   span.attributes[A.ATTR_GEN_AI_OPERATION_NAME] === OPERATIONS.chat && span.attributes[A.ATTR_GEN_AI_USAGE_INPUT_TOKENS] !== undefined;
 
@@ -102,6 +104,7 @@ export const pageBilledCalls = (
   table: PriceTable,
   cursor: BilledCallsCursor,
   limit: number,
+  includeRunless: boolean,
 ): BilledCallsPage => {
   if (!Number.isInteger(limit) || limit < 1 || limit > MAX_BILLED_CALLS_PAGE) {
     throw new RangeError(`a page holds 1 to ${MAX_BILLED_CALLS_PAGE} calls, received ${limit}`);
@@ -109,9 +112,18 @@ export const pageBilledCalls = (
   const calls: BilledCallWire[] = [];
   let run = cursor.run;
   let offset = cursor.offset;
-  while (run < runIds.length && calls.length < limit) {
-    const runId = runIds[run] as string;
-    const rest = billedCallsOfRun(store, runId, table).slice(offset);
+  const slots = runIds.length + (includeRunless ? 1 : 0);
+  while (run < slots && calls.length < limit) {
+    const runId = runIds[run];
+    const all =
+      runId === undefined
+        ? store
+            .spansWithoutRun()
+            .filter(isBilledChat)
+            .toSorted((left, right) => left.startMs - right.startMs || (left.spanId < right.spanId ? -1 : 1))
+            .map((span) => billedCallOf(RUNLESS, span, table))
+        : billedCallsOfRun(store, runId, table);
+    const rest = all.slice(offset);
     const taken = rest.slice(0, limit - calls.length);
     calls.push(...taken.map(wireOf));
     if (taken.length < rest.length) {
@@ -121,5 +133,5 @@ export const pageBilledCalls = (
       offset = 0;
     }
   }
-  return run < runIds.length ? { calls, next: { run, offset } } : { calls };
+  return run < slots ? { calls, next: { run, offset } } : { calls };
 };

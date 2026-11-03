@@ -194,7 +194,7 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
       const innerConfig = path.join(repositoryRoot, 'inner', 'config');
       expect(isProtectedWrite(set, innerConfig, probes())).toBe(true);
       const decision = decide({
-        tool: { name: 'Write', kind: 'edit', sideEffect: 'write' },
+        tool: { name: 'Write', kind: 'edit', sideEffect: 'write', subjectKind: 'path' },
         subject: { kind: 'path', tool: 'Write', paths: [innerConfig], access: 'write' },
         mode: 'default',
         rules: [],

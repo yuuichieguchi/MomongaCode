@@ -122,6 +122,7 @@ export type BuildContextInput = {
   pinnedTokens?: number;
   compactAt?: number;
   tools?: 'none';
+  companions?: { hostOf: Readonly<Record<string, string>>; keepWithoutHost: boolean };
   trailing?: readonly InputItem[];
 };
 

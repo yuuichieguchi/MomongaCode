@@ -509,12 +509,12 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           const trace = runTraceOf(traceStore, runId);
           return trace === undefined ? undefined : { ...trace, calls: traceCallsOf(store.readModelCallEvents(runId)) };
         },
-        runCost: (runs, signal) => gatewayClient.cost(runs, signal),
-        runCostBreakdown: (runs, signal) =>
+        runCost: (runs, signal, includeRunless) => gatewayClient.cost(runs, signal, includeRunless),
+        runCostBreakdown: (runs, signal, includeRunless) =>
           costBreakdownOf({
             runIds: runs.map((run) => run.runId),
             recordsOf: (runId) => store.readModelCallEvents(runId),
-            fetchPage: (runIds, cursor, limit) => gatewayClient.billedCalls(runIds, cursor, limit, signal),
+            fetchPage: (runIds, cursor, limit) => gatewayClient.billedCalls(runIds, cursor, limit, includeRunless, signal),
           }),
         mcp: toolRuntime.mcpAdmin,
         onError: (error) => logger.error('service error', { err: asError(error) }),

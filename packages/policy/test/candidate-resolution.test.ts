@@ -9,7 +9,7 @@ import type { Layout } from './helpers.ts';
 
 const RUNNING_AS_ROOT = process.getuid?.() === 0;
 
-const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write' };
+const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write', subjectKind: 'path' };
 const READ: PolicyTool = { name: 'Read', kind: 'read', sideEffect: 'read_only' };
 
 const withLockedDirectory = <T>(action: (layout: Layout, locked: string) => T): T => {

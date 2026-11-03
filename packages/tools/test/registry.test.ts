@@ -120,7 +120,7 @@ describe('ToolSet snapshot', () => {
   it('computes the digest from name, description, kind, sideEffect and inputSchema in order', async () => {
     const registry = createToolRegistry();
     const read = makeTool('Read');
-    const write = makeTool('Write', { kind: 'edit', sideEffect: 'write' });
+    const write = makeTool('Write', { kind: 'edit', sideEffect: 'write', subjectKind: 'none' });
     registry.register(read);
     registry.register(write);
     const set = await registry.snapshot();
@@ -141,7 +141,7 @@ describe('ToolSet snapshot', () => {
     ['description', { description: 'changed' }],
     ['schema', { inputSchema: { type: 'object', properties: { other: { type: 'string' } } } }],
     ['kind', { kind: 'search' as const }],
-    ['sideEffect', { sideEffect: 'exec' as const }],
+    ['sideEffect', { sideEffect: 'exec' as const, subjectKind: 'none' as const }],
   ])('changes the digest when the %s changes', async (_label, overrides) => {
     const base = createToolRegistry();
     const changed = createToolRegistry();
@@ -177,8 +177,8 @@ describe('ToolSet forModel', () => {
   const build = async () => {
     const registry = createToolRegistry();
     registry.register(makeTool('Read'));
-    registry.register(makeTool('Write', { kind: 'edit', sideEffect: 'write' }));
-    registry.register(makeTool('Bash', { kind: 'execute', sideEffect: 'exec' }));
+    registry.register(makeTool('Write', { kind: 'edit', sideEffect: 'write', subjectKind: 'none' }));
+    registry.register(makeTool('Bash', { kind: 'execute', sideEffect: 'exec', subjectKind: 'command', subject: () => ({ kind: 'command', tool: 'Bash', command: 'true' }) }));
     return registry.snapshot();
   };
 

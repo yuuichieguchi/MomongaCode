@@ -7,7 +7,7 @@ import { ruleFor } from './helpers.ts';
 const mcpTool = (server: string, tool: string): AnyTool =>
   makeTool(`mcp__${server}__${tool}`, {
     kind: 'other',
-    sideEffect: 'write',
+    sideEffect: 'write', subjectKind: 'mcp',
     subject: () => ({ kind: 'mcp', server, tool }),
   });
 

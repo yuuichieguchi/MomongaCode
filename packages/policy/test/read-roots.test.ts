@@ -9,7 +9,7 @@ import { BASH } from './decision-rows.ts';
 import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout, ruleIn } from './helpers.ts';
 
 const READ = { name: 'Read', kind: 'read', sideEffect: 'read_only' } as const;
-const EDIT = { name: 'Edit', kind: 'edit', sideEffect: 'write' } as const;
+const EDIT = { name: 'Edit', kind: 'edit', sideEffect: 'write', subjectKind: 'path' } as const;
 
 const setup = () => {
   const layout = makeLayout();

@@ -61,12 +61,6 @@ export type CostBreakdownView = {
 
 export type UnjoinedView = { runId: string; step?: number; reason: string };
 
-export const MODEL_ROLES = ['run', 'compaction', 'reflection', 'analysis', 'classifier'] as const;
-
-export type ModelRole = (typeof MODEL_ROLES)[number];
-
-export const MAIN_MODEL_ROLE: ModelRole = 'run';
-
 export type BilledCallView = {
   runId: string;
   step?: number;

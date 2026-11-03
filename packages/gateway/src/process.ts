@@ -461,14 +461,14 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       ...(options.debugTcp === undefined ? {} : { debugTcp: { host: DEBUG_TCP_HOST, port: options.debugTcp.port, token: files.readDebugToken(options.debugTcp.tokenFile) } }),
       telemetry,
       priceTable,
-      costReport: async (runs) => {
+      costReport: async (runs, includeRunless) => {
         await telemetry.forceFlush();
-        const report = buildCostReport(traceStore, runs, { table: priceTable });
+        const report = buildCostReport(traceStore, runs, { table: priceTable, includeRunless });
         return { report, text: formatCostReport(report) };
       },
-      billedCalls: async (runIds, cursor, limit) => {
+      billedCalls: async (runIds, cursor, limit, includeRunless) => {
         await telemetry.forceFlush();
-        return pageBilledCalls(traceStore, runIds, priceTable, cursor, limit);
+        return pageBilledCalls(traceStore, runIds, priceTable, cursor, limit, includeRunless);
       },
       version: options.version,
       onError: (error) => logger.error('unhandled gateway error', { err: toError(error) }),

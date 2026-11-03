@@ -41,7 +41,7 @@ describe.runIf(HAS_REAL_SANDBOX)('every approvable command form prints the same 
     const subject = { kind: 'command', tool: 'Bash', command } as const;
     const globs = await prepareGlobs({ expand: filesystem.expandGlob, platform: filesystem.platform, subject, cwd: project, home, deadline: createGlobDeadline(GLOB_BUDGET_MS), signal: new AbortController().signal });
     return decide({
-      tool: { name: 'Bash', kind: 'execute', sideEffect: 'exec' },
+      tool: { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' },
       subject,
       mode: 'default',
       rules: [],

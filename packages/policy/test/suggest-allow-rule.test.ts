@@ -6,10 +6,10 @@ import type { PermissionSubject, PolicyTool } from '@momonga/policy';
 import { fileRulesFor, makeLayout, touch } from './helpers.ts';
 import type { Layout } from './helpers.ts';
 
-const BASH: PolicyTool = { name: 'Bash', kind: 'execute', sideEffect: 'exec' };
+const BASH: PolicyTool = { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' };
 const READ: PolicyTool = { name: 'Read', kind: 'read', sideEffect: 'read_only' };
-const EDIT: PolicyTool = { name: 'Edit', kind: 'edit', sideEffect: 'write' };
-const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write' };
+const EDIT: PolicyTool = { name: 'Edit', kind: 'edit', sideEffect: 'write', subjectKind: 'path' };
+const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write', subjectKind: 'path' };
 const MCP: PolicyTool = { name: 'mcp__files__list', kind: 'other', sideEffect: 'read_only' };
 const PLAN: PolicyTool = { name: 'UpdatePlan', kind: 'think', sideEffect: 'read_only' };
 

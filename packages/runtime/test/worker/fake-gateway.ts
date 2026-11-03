@@ -9,7 +9,7 @@ import type {
   ItemField,
   StreamEvent,
 } from '@momonga/protocol';
-import type { GatewayPort } from '@momonga/runtime';
+import type { GatewayCallOptions, GatewayPort } from '@momonga/runtime';
 import { fixtureCompactionContent, usageOf } from '@momonga/testkit';
 import { deferred } from './deferred.ts';
 import type { Deferred } from './deferred.ts';
@@ -22,6 +22,7 @@ export type RecordedStream = {
   deadlineAt: number;
   signal: AbortSignal;
   deduplicated: boolean;
+  role: GatewayCallOptions['role'];
 };
 
 export type RecordedCompact = {
@@ -30,6 +31,7 @@ export type RecordedCompact = {
   deadlineAt: number;
   traceparent: string | undefined;
   signal: AbortSignal;
+  runId: string | undefined;
 };
 
 export type RecordedCount = { request: CountTokensRequest; signal: AbortSignal | undefined };
@@ -114,6 +116,7 @@ export type FakeGateway = GatewayPort & {
   generations: Map<string, number>;
   compactSummaries: string[];
   capabilitiesValue: Capabilities;
+  capabilitiesByAlias: Record<string, Capabilities>;
   rewriteCallIds: boolean;
   issuedCallIds(scriptId: string): string[];
   callId(scriptId: string, occurrence?: number): string;
@@ -225,6 +228,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
     generations: new Map(),
     compactSummaries: [],
     capabilitiesValue: capabilities,
+    capabilitiesByAlias: {},
     rewriteCallIds: true,
 
     issuedCallIds: (scriptId) => [...(issued.get(scriptId) ?? [])],
@@ -247,6 +251,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
         deadlineAt: options.deadlineAt,
         signal: options.signal,
         deduplicated: cached !== undefined || running !== undefined,
+        role: options.role,
       };
       gateway.streams.push(record);
       waiterFor(record.index).resolve(record);
@@ -262,6 +267,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
         deadlineAt: options.deadlineAt,
         traceparent: options.traceparent,
         signal: options.signal,
+        runId: options.runId,
       });
       await gateway.compactHook?.(request, options.signal);
       const summary = gateway.compactSummaries.shift() ?? `summary ${gateway.compacts.length}`;
@@ -295,7 +301,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
       gateway.capabilityRequests.push(alias);
       gateway.capabilitiesCalls.push({ alias, signal: options?.signal });
       await gateway.capabilitiesHook?.(alias, options?.signal);
-      return gateway.capabilitiesValue;
+      return gateway.capabilitiesByAlias[alias] ?? gateway.capabilitiesValue;
     },
 
     cancel: async (idempotencyKey, options) => {

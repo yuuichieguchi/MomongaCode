@@ -20,7 +20,7 @@ const gate = (): Gate => {
 const execTool = (execute: (ctx: ToolContext) => Promise<ToolResult>) =>
   makeTool('Bash', {
     kind: 'execute',
-    sideEffect: 'exec',
+    sideEffect: 'exec', subjectKind: 'none',
     execute: async (_input, ctx) => execute(ctx),
   });
 
@@ -127,7 +127,7 @@ describe('executor: inFlightKeys (§8)', () => {
     let zombieLeaseLost = false;
     const tool = makeTool('Edit', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'none',
       execute: async () => {
         zombieRunning.open();
         await zombieRelease.opened;

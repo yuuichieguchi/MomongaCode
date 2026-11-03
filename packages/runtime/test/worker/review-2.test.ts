@@ -20,6 +20,7 @@ const stall = defineTool<Record<string, unknown>>({
   description: 'A tool whose reconcile never settles',
   kind: 'edit',
   sideEffect: 'write',
+  subjectKind: 'none',
   inputSchema: { type: 'object', properties: { value: { type: 'string' } }, required: ['value'], additionalProperties: false },
   timeoutMs: 60_000,
   title: () => 'Stall',

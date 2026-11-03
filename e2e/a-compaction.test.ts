@@ -37,9 +37,8 @@ const PLANNED_CASE_TIMEOUT_MS = 4 * E2E_TEST_TIMEOUT_MS;
 const MEMORY_DENY = ['MemorySave', 'MemorySearch'] as const;
 const HISTORY_DENY = ['HistorySearch', 'HistoryRead'] as const;
 const FULL_DENY = [] as const;
-const LEAN_DENY = ['Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob', ...MEMORY_DENY, ...HISTORY_DENY] as const;
+const LEAN_DENY = ['Write', 'Edit', 'Bash', ...MEMORY_DENY, ...HISTORY_DENY] as const;
 const CONSTRAINED_DENY = ['Read', 'Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob', ...MEMORY_DENY, ...HISTORY_DENY] as const;
-const LEAN_ESCALATION_NOTICE = 'recent steps of the current turn were reduced from 4 to 1 because the context budget was exceeded';
 const FULL_LINE_CHARS = [90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200] as const;
 const EXPECTED_OUTPUT_RESERVE = 1024;
 const EXPECTED_CEILING_AT_4096 = 2300;
@@ -144,7 +143,7 @@ const assertAcceptance = async (
   const { journal, row, posts, modelPosts, requested, compacted } = observed;
   const { stack, haystack, summary, capabilities, count, plan } = context;
 
-  expect({ status: row.status, stopReason: row.stop_reason }).toEqual({ status: 'COMPLETED', stopReason: null });
+  expect({ status: row.status, stopReason: row.stop_reason }, `the run ended with the error ${row.error_json} on the shape ${JSON.stringify(plan.shape)}`).toEqual({ status: 'COMPLETED', stopReason: null });
   expect(row.attempts).toBe(1);
 
   const postKinds = posts.map((post) => (isCompactionRequest(post.body) ? 'compact' : 'model'));
@@ -209,14 +208,25 @@ const assertAcceptance = async (
 const assertLeanProperties = (observed: Observed, haystack: Haystack, plan: Plan, capabilities: Capabilities): void => {
   const notices = ofType(observed.journal, 'notice');
   const floor = pinnedFloorFor(capabilities);
-  expect(
-    notices.map((event) => String(event.data['message'])),
-    `the tool-room rule offers a tool only while the pinned prefix stays within the floor ${floor} (ceiling ${plan.sizing.ceiling} minus the larger of the minimum room and a quarter of the ceiling); the measured pinned prefix is ${plan.sizing.pinned}, so any offered tool that does not fit in the remaining ${floor - plan.sizing.pinned} tokens is dropped with a notice and the deny list must name it`,
-  ).toEqual([LEAN_ESCALATION_NOTICE]);
-  const escalatedBefore = observed.journal.find((event) => event.type === 'model.requested' && event.seq > (notices[0] as JournalEvent).seq);
   const planned = plan.runs.find((run) => run.perturbation === 0);
-  expect(planned?.facts.escalationStep).toBeDefined();
-  expect(escalatedBefore?.data['step']).toBe(planned?.facts.escalationStep);
+  expect(planned).toBeDefined();
+  const messages = notices.map((event) => String(event.data['message']));
+  expect(
+    messages.filter((message) => message.startsWith('Tools ') && message.includes('were left out')),
+    `Bash is denied and no background job runs, so BashOutput and KillBash are not offered; the measured pinned prefix is ${plan.sizing.pinned} tokens against the floor ${floor} (ceiling ${plan.sizing.ceiling} minus the larger of the minimum room and a quarter of the ceiling), so every offered tool fits and none is left out`,
+  ).toEqual([]);
+  const before = planned?.facts.requestsBeforeEscalation ?? 0;
+  const wireCounts = planned?.wireCounts ?? [];
+  const growth = Math.max(0, ...wireCounts.slice(1, before).map((count, index) => count - (wireCounts[index] as number)));
+  const shape = plan.shape.tool === 'Read' ? `Read with ${plan.shape.lineChars}-character lines` : `ReadOutput with limit ${plan.shape.limit}`;
+  expect(
+    planned?.facts.escalationNotices,
+    `Bash is denied and no background job runs, so BashOutput and KillBash are not offered and the lean deny list leaves Glob and UpdatePlan offered, so the pinned prefix is ${plan.sizing.pinned} tokens against the ceiling ${plan.sizing.ceiling}, which leaves ${plan.sizing.ceiling - plan.sizing.pinned} tokens of room; the planner took ${shape}, the first shape in the grid whose step growth of ${growth} tokens makes the request before the escalation (${wireCounts[before - 1]} tokens) plus one more step exceed the ceiling while the recent steps are kept whole, and reducing them to one is then journaled exactly once`,
+  ).toHaveLength(1);
+  expect(messages, "the real run journals exactly the notices of the planner's dry run, which offers the same tools under the same deny list").toEqual(planned?.facts.notices);
+  const escalation = notices.find((event) => String(event.data['message']) === planned?.facts.escalationNotices[0]) as JournalEvent;
+  const escalatedBefore = observed.journal.find((event) => event.type === 'model.requested' && event.seq > escalation.seq);
+  expect(escalatedBefore?.data['step'], 'the first model request after the escalation notice is the step the planner journaled after it').toBe(planned?.facts.escalationStep);
   const firstCompaction = observed.compacted[0] as JournalEvent;
   const firstEviction = ofType(observed.journal, 'context.truncated').find((event) => event.data['kind'] === 'omitted' && event.data['handle'] === haystack.handle);
   expect(firstEviction).toBeDefined();

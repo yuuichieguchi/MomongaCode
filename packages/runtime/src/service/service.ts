@@ -52,8 +52,8 @@ export type RunServiceOptions = {
   cancelUpstream?: (runId: string) => Promise<void>;
   releaseStopped(runId: string, signal: AbortSignal): Promise<void>;
   runTrace: (runId: string) => Promise<RunTraceView | undefined>;
-  runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal) => Promise<{ report: GatewayCostReportView; text: string }>;
-  runCostBreakdown: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal) => Promise<{ breakdown: CostBreakdownView; text: string }>;
+  runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ report: GatewayCostReportView; text: string }>;
+  runCostBreakdown: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ breakdown: CostBreakdownView; text: string }>;
   mcp: McpAdminPort;
   onError?: (error: unknown) => void;
   onFatal?: (error: Error) => void;

@@ -107,9 +107,9 @@ describe('pageBilledCalls', () => {
     await record('run-c', [{ step: 1, input: 4 }, { step: 2, input: 5 }], h);
     const runIds = ['run-a', 'run-b', 'run-c'];
 
-    const first = pageBilledCalls(h.store, runIds, TABLE, { run: 0, offset: 0 }, 2);
-    const second = pageBilledCalls(h.store, runIds, TABLE, first.next ?? { run: 99, offset: 0 }, 2);
-    const third = pageBilledCalls(h.store, runIds, TABLE, second.next ?? { run: 99, offset: 0 }, 2);
+    const first = pageBilledCalls(h.store, runIds, TABLE, { run: 0, offset: 0 }, 2, false);
+    const second = pageBilledCalls(h.store, runIds, TABLE, first.next ?? { run: 99, offset: 0 }, 2, false);
+    const third = pageBilledCalls(h.store, runIds, TABLE, second.next ?? { run: 99, offset: 0 }, 2, false);
 
     expect(first.calls.map((call) => call.usage.inputTokens)).toEqual([1, 2]);
     expect(first.next).toEqual({ run: 1, offset: 0 });
@@ -119,9 +119,24 @@ describe('pageBilledCalls', () => {
     expect(third.next).toBeUndefined();
   });
 
+  it('adds the calls that belong to no run after the listed runs only when asked', async () => {
+    const h = harness();
+    await record('run-a', [{ step: 1, input: 1 }], h);
+    const chat = startChatSpan(h.telemetry.tracer, { providerName: 'acme', billing: 'metered', requestModel: 'm1', stream: false, attempt: 1 });
+    recordChatResponse(chat, { finishReasons: ['stop'], usage: { inputTokens: 9, outputTokens: 1 } });
+    chat.end(h.clock.now());
+    await h.telemetry.forceFlush();
+
+    const without = pageBilledCalls(h.store, ['run-a'], TABLE, { run: 0, offset: 0 }, 10, false);
+    const withRunless = pageBilledCalls(h.store, ['run-a'], TABLE, { run: 0, offset: 0 }, 10, true);
+
+    expect(without.calls.map((call) => call.usage.inputTokens)).toEqual([1]);
+    expect(withRunless.calls.map((call) => [call.runId, call.usage.inputTokens])).toEqual([['run-a', 1], ['', 9]]);
+  });
+
   it('refuses a page larger than the bound', () => {
     const h = harness();
-    expect(() => pageBilledCalls(h.store, [], TABLE, { run: 0, offset: 0 }, 100_000)).toThrow(RangeError);
+    expect(() => pageBilledCalls(h.store, [], TABLE, { run: 0, offset: 0 }, 100_000, false)).toThrow(RangeError);
   });
 });
 

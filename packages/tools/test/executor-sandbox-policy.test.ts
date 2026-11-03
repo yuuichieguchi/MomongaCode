@@ -13,6 +13,7 @@ const pathTool = (access: 'read' | 'write', target: string, runs: string[]) =>
   makeTool('PathTool', {
     kind: access === 'read' ? 'read' : 'edit',
     sideEffect: access === 'read' ? 'read_only' : 'write',
+    subjectKind: 'path',
     subject: () => ({ kind: 'path', tool: 'PathTool', paths: [target], access }),
     execute: async () => {
       runs.push(target);
@@ -24,6 +25,7 @@ const execTool = (runs: string[], sideEffect: SideEffect = 'exec') =>
   makeTool('Bash', {
     kind: 'execute',
     sideEffect,
+    subjectKind: 'command',
     subject: () => ({ kind: 'command', tool: 'Bash', command: 'echo hi' }),
     execute: async () => {
       runs.push('ran');

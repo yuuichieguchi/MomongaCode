@@ -10,7 +10,8 @@ export type {
   ToolCallingMode,
   ToolCallingSetting,
 } from './capabilities.ts';
-export { COMPACTION_RESULT_EVENT, STREAM_IDLE_HEADER } from './headers.ts';
+export { COMPACTION_RESULT_EVENT, HEADER_ROLES, ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER } from './headers.ts';
+export type { HeaderRole } from './headers.ts';
 export {
   COMPACTION_INSTRUCTIONS_VERSION,
   ESTIMATED_CHARACTERS_PER_TOKEN,
@@ -95,6 +96,7 @@ export type {
   CostReportView,
   CostFallbackView,
   CostTotalsView,
+  RoleCostView,
   FallbackCauseView,
   GatewayCostReportView,
   JsonSchema,
@@ -115,14 +117,13 @@ export type {
   SkillsResponse,
 } from './run-api.ts';
 export { assistantTextOf } from './assistant-text.ts';
-export { ANATOMY_FLAT_LAYERS, ANATOMY_HISTORY_LAYERS, MAIN_MODEL_ROLE, MODEL_ROLES, anatomyLayerEntries } from './token-anatomy.ts';
+export { ANATOMY_FLAT_LAYERS, ANATOMY_HISTORY_LAYERS, anatomyLayerEntries } from './token-anatomy.ts';
 export type {
   BilledCallsCursorView,
   BilledCallsPageView,
   BilledCallView,
   BilledTokensView,
   CallTiming,
-  ModelRole,
   UnjoinedView,
   CostBreakdownView,
   ModelCost,

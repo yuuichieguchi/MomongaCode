@@ -45,6 +45,7 @@ export type BodyRecord = {
 export type TraceStore = {
   writeSpans(records: readonly SpanRecord[], bodies?: readonly BodyRecord[]): void;
   spansForRun(runId: string): SpanRecord[];
+  spansWithoutRun(): SpanRecord[];
   spansForTrace(traceId: string): SpanRecord[];
   bodiesForSpan(spanId: string): BodyRecord[];
   purgeBodies(nowMs: number): number;
@@ -225,6 +226,7 @@ const prepareStatements = (db: DatabaseSync) => ({
     `INSERT INTO bodies (trace_id, span_id, kind, content, created_at_ms, expires_at_ms) VALUES (?, ?, ?, ?, ?, ?)`,
   ),
   spansForRun: db.prepare('SELECT * FROM spans WHERE run_id = ? ORDER BY start_ms, end_ms DESC, rowid'),
+  spansWithoutRun: db.prepare('SELECT * FROM spans WHERE run_id IS NULL ORDER BY start_ms, end_ms DESC, rowid'),
   spansForTrace: db.prepare('SELECT * FROM spans WHERE trace_id = ? ORDER BY start_ms, end_ms DESC, rowid'),
   bodiesForSpan: db.prepare('SELECT * FROM bodies WHERE span_id = ? AND expires_at_ms > ? ORDER BY id'),
   purgeBodies: db.prepare('DELETE FROM bodies WHERE expires_at_ms <= ?'),
@@ -300,6 +302,7 @@ const createStore = (db: DatabaseSync, statements: Statements, clock: Clock): Tr
       });
     },
     spansForRun: (runId) => all(statements.spansForRun, runId).map(decodeSpan),
+    spansWithoutRun: () => all(statements.spansWithoutRun).map(decodeSpan),
     spansForTrace: (traceId) => all(statements.spansForTrace, traceId).map(decodeSpan),
     bodiesForSpan: (spanId) => all(statements.bodiesForSpan, spanId, clock.now()).map(decodeBody),
     purgeBodies,

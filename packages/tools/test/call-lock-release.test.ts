@@ -93,7 +93,7 @@ describe('a call lock whose file cannot be removed', () => {
     const harness = makeHarness({ executor: { onWarning: (message: string) => warned.resolve(message) } });
     const tool = makeTool('Write', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'none',
       execute: async () => {
         fs.chmodSync(harness.callLockDir, READ_AND_ENTER_ONLY);
         return { status: 'completed', output: 'ran' };
@@ -115,7 +115,7 @@ describe('a call lock whose file cannot be removed', () => {
     const harness = makeHarness({ executor: { onWarning: (message: string) => warned.resolve(message) } });
     const tool = makeTool('Bash', {
       kind: 'execute',
-      sideEffect: 'exec',
+      sideEffect: 'exec', subjectKind: 'none',
       execute: async () => {
         fs.chmodSync(harness.markerDir, READ_AND_ENTER_ONLY);
         return { status: 'completed', output: 'ran' };
@@ -137,7 +137,7 @@ describe('a call lock whose file cannot be removed', () => {
     harness.idempotency.seed(KEY, 'PENDING', { tool: 'Edit' });
     const tool = makeTool('Edit', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'none',
       reconcile: async () => {
         fs.chmodSync(harness.callLockDir, READ_AND_ENTER_ONLY);
         return { outcome: 'already_applied', output: 'reconciled' };

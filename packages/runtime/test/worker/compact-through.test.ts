@@ -56,6 +56,7 @@ const contextFor = (options: { failAppendOnce?: boolean; summaryText?: string; h
     },
     run: { id: 'run_compact', deadlineAt: 2_000_000_000_000 },
     alias: 'fm',
+    roles: {},
     capabilities: capabilitiesFor(40_000),
     verificationCommands: [],
     systemPrompt: 'You are the compact-through test agent.',

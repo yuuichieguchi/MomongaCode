@@ -1,6 +1,5 @@
-import { MAX_BILLED_CALLS_PAGE, buildCostBreakdown, formatCostBreakdown } from '@momonga/observability';
+import { MAX_BILLED_CALLS_PAGE, RUNLESS, RUN_ROLE, buildCostBreakdown, formatCostBreakdown } from '@momonga/observability';
 import type { BreakdownCall, CostBreakdown, UnjoinedRecord } from '@momonga/observability';
-import { MAIN_MODEL_ROLE } from '@momonga/protocol';
 import type { BilledCallsCursorView, BilledCallsPageView, BilledCallView, RunTraceCall } from '@momonga/protocol';
 import type { ModelCallRecord } from '@momonga/store';
 
@@ -42,7 +41,7 @@ const breakdownCallOf = (call: BilledCallView, joined: Partial<Response>): Break
   ...(joined.timing === undefined ? {} : { timing: joined.timing }),
 });
 
-const isMain = (call: BilledCallView): boolean => (call.role ?? MAIN_MODEL_ROLE) === MAIN_MODEL_ROLE;
+const isMain = (call: BilledCallView): boolean => (call.role ?? RUN_ROLE) === RUN_ROLE;
 
 export const joinRunCalls = (runId: string, billed: readonly BilledCallView[], records: readonly ModelCallRecord[]): { calls: BreakdownCall[]; unjoined: UnjoinedRecord[] } => {
   const responses = responsesOf(records);
@@ -88,8 +87,9 @@ export const costBreakdownOf = async (sources: CostBreakdownSources): Promise<{ 
       sources.recordsOf(runId),
     ),
   );
+  const runless = billed.filter((call) => call.runId === RUNLESS).map((call) => breakdownCallOf(call, {}));
   const breakdown = buildCostBreakdown(
-    joined.flatMap((entry) => entry.calls),
+    [...joined.flatMap((entry) => entry.calls), ...runless],
     { unjoined: joined.flatMap((entry) => entry.unjoined) },
   );
   return { breakdown, text: formatCostBreakdown(breakdown) };

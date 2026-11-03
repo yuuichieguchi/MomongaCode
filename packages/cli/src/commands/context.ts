@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { loadUserModels } from '@momonga/config';
+import type { ModelRoles } from '@momonga/config';
 import {
   GUIDELINE_CANDIDATES,
   adoptionOf,
@@ -84,7 +85,7 @@ const completerFor = async (ports: CliPorts, paths: MomongaPaths, alias: string,
       metadata: { purpose: 'guideline', ...(request.seed === undefined ? {} : { seed: String(request.seed) }) },
     };
     const events: StreamEvent[] = [];
-    for await (const event of gateway.stream(body, { idempotencyKey: randomUUID(), deadlineAt: ports.clock.now() + RUNTIME_DEFAULTS.runTimeoutMs, signal })) events.push(event);
+    for await (const event of gateway.stream(body, { idempotencyKey: randomUUID(), deadlineAt: ports.clock.now() + RUNTIME_DEFAULTS.runTimeoutMs, signal, role: 'analysis' })) events.push(event);
     const response = terminalResponseOf(events);
     if (response.usage === null) throw new ContextImproveError('the model response carries no usage, so its tokens cannot be charged');
     return {
@@ -93,6 +94,22 @@ const completerFor = async (ports: CliPorts, paths: MomongaPaths, alias: string,
     };
   };
   return { complete, close: () => gateway.destroy() };
+};
+
+export type AnalysisModelInput = {
+  roles: ModelRoles;
+  alias: string;
+  capabilitiesOf: (alias: string) => Promise<Capabilities>;
+};
+
+export const analysisModelFor = async (input: AnalysisModelInput): Promise<{ alias: string; capabilities: Capabilities }> => {
+  const roleAlias = input.roles.analysis;
+  if (roleAlias === undefined) return { alias: input.alias, capabilities: await input.capabilitiesOf(input.alias) };
+  const capabilities = await input.capabilitiesOf(roleAlias);
+  if (capabilities.structuredOutput !== 'json_schema') {
+    throw new ContextImproveError(`models.roles.analysis names alias ${roleAlias}, which has no structured output to hold the analysis schema`);
+  }
+  return { alias: roleAlias, capabilities };
 };
 
 export const contextImprove = async (
@@ -108,11 +125,12 @@ export const contextImprove = async (
   try {
     const { RUNTIME_DEFAULTS } = await import('@momonga/runtime');
     const limits = { maxTotalTokens: RUNTIME_DEFAULTS.limits.maxTotalTokens, defaultTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs };
-    const capabilities = await gatewayInfo.capabilitiesOf(options.alias);
+    const models = loadUserModels({ home: ports.home });
+    const analysis = await analysisModelFor({ roles: models.resolved.roles, alias: options.alias, capabilitiesOf: (alias) => gatewayInfo.capabilitiesOf(alias) });
+    const { capabilities } = analysis;
     const adopted = (await client.guidelines()).current;
     const current = adopted === null ? undefined : { version: adopted.version, text: adopted.text };
-    const models = loadUserModels({ home: ports.home });
-    const completer = await completerFor(ports, paths, options.alias, capabilities, options.interrupt);
+    const completer = await completerFor(ports, paths, analysis.alias, capabilities, options.interrupt);
     try {
       const outcome = await improveGuideline(
         {
@@ -142,7 +160,7 @@ export const contextImprove = async (
           },
           complete: completer.complete,
           charge: async (usage) => {
-            await client.recordContextCharge({ purpose: 'guideline', project: ports.cwd, model: options.alias, ...usage });
+            await client.recordContextCharge({ purpose: 'guideline', project: ports.cwd, model: analysis.alias, ...usage });
           },
         },
       );

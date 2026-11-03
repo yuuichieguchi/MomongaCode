@@ -42,6 +42,9 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
   const { gateway } = ctx.options;
   const judge = async (request: AutoClassifierRequest, classifier: string): Promise<Outcome> => {
     const capabilities = await gateway.capabilities(classifier, { signal: ctx.control.signal });
+    if (capabilities.structuredOutput !== 'json_schema') {
+      return asked({ alias: classifier, failure: `autoMode.classifier names alias ${classifier}, which has no structured output to hold the verdict schema` });
+    }
     const input = [{ type: 'message' as const, role: 'user' as const, content: [{ type: 'input_text' as const, text: userPromptOf(ctx, cwd, request) }] }];
     const counted = await gateway.countTokens({ model: classifier, input, instructions: CLASSIFIER_INSTRUCTIONS }, { signal: ctx.control.signal });
     if (counted.input_tokens > budgetFor(capabilities, counted.error_bound).I) {
@@ -64,6 +67,7 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
       deadlineAt: ctx.run.deadlineAt,
       signal: ctx.control.signal,
       traceparent: ctx.agentSpan.traceparent,
+      role: 'classifier',
     });
     for await (const event of events) terminal = terminalResultOf(event) ?? terminal;
     if (terminal === undefined) return asked({ alias: classifier, failure: 'the classifier stream ended without a terminal event' });

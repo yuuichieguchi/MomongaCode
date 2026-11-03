@@ -448,7 +448,8 @@ const costTotalsProperties: Record<string, JsonSchema> = {
   currency: constant('USD'),
   priceVersions: { type: 'array', items: string },
 };
-const costTotalsRequired = Object.keys(costTotalsProperties);
+const roleCostRequired = Object.keys(costTotalsProperties);
+const costTotalsRequired = [...roleCostRequired, 'roles'];
 
 const fallbackCauseSchema = closed({ target: string, code: nullable(string), message: string }, ['target', 'code', 'message']);
 
@@ -463,7 +464,12 @@ const costFallbackProperties: Record<string, JsonSchema> = {
   },
 };
 
-const costTotalsSchemaProperties: Record<string, JsonSchema> = { ...costTotalsProperties, ...costFallbackProperties };
+const roleCostSchemaProperties: Record<string, JsonSchema> = { ...costTotalsProperties, ...costFallbackProperties };
+
+const costTotalsSchemaProperties: Record<string, JsonSchema> = {
+  ...roleCostSchemaProperties,
+  roles: { type: 'object', additionalProperties: closed(roleCostSchemaProperties, roleCostRequired) },
+};
 
 const contextChargeView = closed(
   {
@@ -751,7 +757,7 @@ export type FallbackCauseView = { target: string; code: string | null; message: 
 
 export type CostFallbackView = { answeredBy: string; calls: number; failed: FallbackCauseView[] };
 
-export type CostTotalsView = {
+export type RoleCostView = {
   fallbackCalls?: number;
   fallbacks?: CostFallbackView[];
   calls: number;
@@ -765,6 +771,8 @@ export type CostTotalsView = {
   currency: 'USD';
   priceVersions: string[];
 };
+
+export type CostTotalsView = RoleCostView & { roles: Record<string, RoleCostView> };
 
 export type GatewayCostReportView = {
   runs: (CostTotalsView & { runId: string; sessionId: string })[];

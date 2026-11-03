@@ -111,6 +111,7 @@ export const contextInputOf = (ctx: ClaimContext, wrapUp: WrapUpReason | undefin
       ...(workingState === undefined ? {} : { workingState }),
       ...(projectedWorkingState === undefined ? {} : { projectedWorkingState }),
     },
+    companions: ctx.companions(),
     evicted: new Set(state.evicted),
     ...(ctx.memoryShare === undefined ? {} : { memoryShare: ctx.memoryShare }),
     touchedPaths,
@@ -232,8 +233,9 @@ const deterministicCompaction = (ctx: ClaimContext, plan: CompactionSource, guid
 
 export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource): Promise<void> => {
   const { journal, options } = ctx;
+  const roleAlias = ctx.roles.compaction;
   const request: CompactRequest = {
-    model: ctx.alias,
+    model: roleAlias ?? ctx.alias,
     input: plan.input,
     momonga: { max_summary_tokens: plan.summaryTokenCap, retains_user_request: true, ...(ctx.guideline === undefined ? {} : { guideline: ctx.guideline.text }) },
   };
@@ -248,13 +250,17 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
         deadlineAt: ctx.run.deadlineAt,
         signal: ctx.control.signal,
         traceparent: ctx.agentSpan.traceparent,
+        runId: ctx.run.id,
       }),
     );
   } catch (error) {
     if (!escalates(error)) throw error;
     delete ctx.control.inFlight.compactionKey;
     journal.append([
-      noticeOf('compaction_failed', `Compaction summary failed (${error.code}): ${error.message}; the deterministic summary was used`),
+      noticeOf(
+        'compaction_failed',
+        `Compaction summary failed (${error.code}): ${error.message}${roleAlias === undefined ? '' : ` [models.roles.compaction names alias ${roleAlias}]`}; the deterministic summary was used`,
+      ),
       deterministicCompaction(ctx, plan, NO_ADOPTED_GUIDELINE),
     ]);
     return;

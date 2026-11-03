@@ -46,8 +46,8 @@ export type GatewayOptions = {
   socketPath: string;
   telemetry?: Telemetry;
   priceTable?: PriceTable;
-  costReport?: (runs: readonly { runId: string; sessionId: string }[]) => Promise<{ report: GatewayCostReportView; text: string }>;
-  billedCalls?: (runIds: readonly string[], cursor: BilledCallsCursorView, limit: number) => Promise<BilledCallsPageView>;
+  costReport?: (runs: readonly { runId: string; sessionId: string }[], includeRunless: boolean) => Promise<{ report: GatewayCostReportView; text: string }>;
+  billedCalls?: (runIds: readonly string[], cursor: BilledCallsCursorView, limit: number, includeRunless: boolean) => Promise<BilledCallsPageView>;
   debugTcp?: DebugTcpOptions;
   random: () => number;
   version: string;
