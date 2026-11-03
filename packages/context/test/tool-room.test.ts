@@ -90,6 +90,30 @@ describe('the tools a target is offered', () => {
       expect(namesOf(built.tools)).not.toContain('F');
       expect(namesOf(built.tools)).toContain('G');
     });
+
+    it('follow the tool they serve by the relation, not by the order the candidates come in', async () => {
+      const capabilities = capabilitiesFor(1_536, { maxOutputTokens: 1024 });
+      const { ports } = harness(capabilities);
+      const companionFirst = [toolNamed('G', 1), ...TOOLS];
+      const built = await buildContext(
+        inputFor(capabilities, { sources: sourcesWith({ tools: companionFirst }), companions: { hostOf: { G: 'A' }, keepWithoutHost: false } }),
+        ports,
+      );
+      expect(namesOf(built.tools)).toContain('A');
+      expect(namesOf(built.tools)).toContain('G');
+      expect(namesOf(built.tools)[0]).toBe('G');
+    });
+
+    it('are dropped with a host that comes later in the candidates when the floor drops that host', async () => {
+      const capabilities = capabilitiesFor(1_536, { maxOutputTokens: 1024 });
+      const { ports } = harness(capabilities);
+      const built = await buildContext(
+        inputFor(capabilities, { sources: sourcesWith({ tools: [toolNamed('G', 1), ...TOOLS] }), companions: { hostOf: { G: 'F' }, keepWithoutHost: false } }),
+        ports,
+      );
+      expect(namesOf(built.tools)).not.toContain('F');
+      expect(namesOf(built.tools)).not.toContain('G');
+    });
   });
 
   it('leave a task that does not fit to the overflow path instead of dropping tools to make room for it', async () => {

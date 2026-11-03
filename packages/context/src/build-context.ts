@@ -74,6 +74,17 @@ const holdsHandles = (input: BuildContextInput): boolean =>
 const requiredToolsOf = (input: BuildContextInput, candidates: readonly FunctionTool[]): FunctionTool[] =>
   holdsHandles(input) ? candidates.filter((tool) => tool.name === HANDLE_READER_TOOL) : [];
 
+const hostsFirst = (tools: readonly FunctionTool[], hostOf: Readonly<Record<string, string>>): FunctionTool[] => {
+  const depthOf = (name: string, seen: ReadonlySet<string>): number => {
+    const host = hostOf[name];
+    return host === undefined || seen.has(host) ? 0 : 1 + depthOf(host, new Set([...seen, name]));
+  };
+  return tools
+    .map((tool, index) => ({ tool, index, depth: depthOf(tool.name, new Set<string>()) }))
+    .sort((left, right) => left.depth - right.depth || left.index - right.index)
+    .map(({ tool }) => tool);
+};
+
 const metering = (input: BuildContextInput, ports: BuildContextPorts, tools: readonly FunctionTool[]) => {
   const { capabilities } = input;
   const budgetOf = (counted: MeterCount) => budgetFor(capabilities, counted.errorBound);
@@ -146,7 +157,7 @@ const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): 
       const required = requiredToolsOf(input, eligible);
       const kept: FunctionTool[] = [...required];
       const droppedForRoom: string[] = [];
-      for (const tool of eligible) {
+      for (const tool of hostsFirst(eligible, input.companions?.hostOf ?? {})) {
         if (required.includes(tool) || !standsWith(tool, kept)) continue;
         if (await stableFitsFloor([...kept, tool])) kept.push(tool);
         else droppedForRoom.push(tool.name);
