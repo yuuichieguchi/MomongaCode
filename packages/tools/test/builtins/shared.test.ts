@@ -5,6 +5,8 @@ import type { ProtectedSet } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
 import { buildSandboxPolicy, createBuiltinTools, createToolRegistry } from '@momonga/tools';
 import type { AnyTool } from '@momonga/tools';
+import type { PermissionRule } from '@momonga/policy';
+import { makeLayout, ruleFor } from '../helpers.ts';
 import { makeBuiltins } from './fixtures.ts';
 
 const NAMES = ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash', 'BashOutput', 'KillBash', 'ReadOutput', 'UpdatePlan'];
@@ -47,6 +49,38 @@ describe('createBuiltinTools', () => {
     const toolSet = await registry.snapshot();
     expect(toolSet.tools.map((tool: AnyTool) => tool.name)).toEqual(OFFERED);
     expect(toolSet.forModel({ mode: 'default', rules: [] }).map((tool) => tool.name)).toEqual(OFFERED);
+  });
+
+  describe('offering the job tools', () => {
+    const JOB_TOOLS = ['BashOutput', 'KillBash'];
+    const offered = async (rules: PermissionRule[], jobsRunning: boolean): Promise<string[]> => {
+      const registry = createToolRegistry();
+      for (const tool of createBuiltinTools()) registry.register(tool);
+      const toolSet = await registry.snapshot();
+      return toolSet.forModel({ mode: 'default', rules, jobsRunning }).map((tool) => tool.name);
+    };
+
+    it('offers neither when Bash is denied and no job runs', async () => {
+      const names = await offered([ruleFor(makeLayout())('deny', 'Bash')], false);
+      expect(names).not.toContain('Bash');
+      expect(names.filter((name) => JOB_TOOLS.includes(name))).toEqual([]);
+    });
+
+    it('offers both when Bash is denied and a job runs', async () => {
+      const names = await offered([ruleFor(makeLayout())('deny', 'Bash')], true);
+      expect(names).not.toContain('Bash');
+      expect(names.filter((name) => JOB_TOOLS.includes(name))).toEqual(JOB_TOOLS);
+    });
+
+    it('hides KillBash under its own deny rule', async () => {
+      const names = await offered([ruleFor(makeLayout())('deny', 'KillBash')], true);
+      expect(names).toContain('BashOutput');
+      expect(names).not.toContain('KillBash');
+    });
+
+    it('offers both with Bash', async () => {
+      expect((await offered([], false)).filter((name) => JOB_TOOLS.includes(name))).toEqual(JOB_TOOLS);
+    });
   });
 
   it('uses Claude Code input property names', () => {

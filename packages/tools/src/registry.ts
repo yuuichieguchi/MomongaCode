@@ -26,7 +26,7 @@ export type ToolSet = {
   readonly notices: readonly string[];
   readonly authorizationRequired: readonly string[];
   get(name: string): AnyTool | undefined;
-  forModel(options: { mode: PermissionMode; rules: PermissionRule[] }): FunctionTool[];
+  forModel(options: { mode: PermissionMode; rules: PermissionRule[]; jobsRunning?: boolean }): FunctionTool[];
 };
 
 export type ToolRegistry = {
@@ -56,8 +56,8 @@ const buildToolSet = (tools: readonly AnyTool[], notices: readonly string[], aut
     notices: frozenNotices,
     authorizationRequired: Object.freeze([...authorizationRequired]),
     get: (name) => byName.get(name),
-    forModel: ({ mode, rules }) => {
-      const visible = new Set(modelVisibleTools([...frozenTools], { mode, rules }).map((tool) => tool.name));
+    forModel: ({ mode, rules, jobsRunning }) => {
+      const visible = new Set(modelVisibleTools([...frozenTools], { mode, rules, ...(jobsRunning === undefined ? {} : { jobsRunning }) }).map((tool) => tool.name));
       return frozenTools
         .filter((tool) => visible.has(tool.name))
         .map((tool) => ({ type: 'function', name: tool.name, description: tool.description, parameters: tool.inputSchema, strict: false }));

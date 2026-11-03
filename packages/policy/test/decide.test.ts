@@ -17,6 +17,8 @@ const EDIT: PolicyTool = { name: 'Edit', kind: 'edit', sideEffect: 'write' };
 const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write' };
 const BASH: PolicyTool = { name: 'Bash', kind: 'execute', sideEffect: 'exec' };
 const PLAN: PolicyTool = { name: 'UpdatePlan', kind: 'think', sideEffect: 'read_only' };
+const BASH_OUTPUT: PolicyTool = { name: 'BashOutput', kind: 'execute', sideEffect: 'read_only' };
+const KILL_BASH: PolicyTool = { name: 'KillBash', kind: 'execute', sideEffect: 'write' };
 const MEMORY_SAVE: PolicyTool = { name: 'MemorySave', kind: 'other', sideEffect: 'write' };
 const MCP_EXEC: PolicyTool = { name: 'mcp__srv__run', kind: 'other', sideEffect: 'exec' };
 const MCP_READ: PolicyTool = { name: 'mcp__srv__list', kind: 'other', sideEffect: 'read_only' };
@@ -39,6 +41,8 @@ const CASES: Array<Case & { defaults: Record<(typeof MODES)[number], DecisionKin
   { label: 'Edit outside roots', tool: EDIT, subject: pathSubject('Edit', 'outside', 'write'), ruleText: 'Edit', defaults: { default: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'deny', bypassPermissions: 'allow' } },
   { label: 'Bash', tool: BASH, subject: () => ({ kind: 'command', tool: 'Bash', command: 'make build' }), ruleText: 'Bash(make build)', defaults: { default: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'ask', bypassPermissions: 'allow' } },
   { label: 'UpdatePlan', tool: PLAN, subject: () => ({ kind: 'none', tool: 'UpdatePlan' }), ruleText: 'UpdatePlan', defaults: { default: 'allow', auto: 'allow', acceptEdits: 'allow', plan: 'allow', bypassPermissions: 'allow' } },
+  { label: 'BashOutput', tool: BASH_OUTPUT, subject: () => ({ kind: 'none', tool: 'BashOutput' }), ruleText: 'BashOutput', defaults: { default: 'allow', auto: 'allow', acceptEdits: 'allow', plan: 'allow', bypassPermissions: 'allow' } },
+  { label: 'KillBash', tool: KILL_BASH, subject: () => ({ kind: 'none', tool: 'KillBash' }), ruleText: 'KillBash', defaults: { default: 'allow', auto: 'allow', acceptEdits: 'allow', plan: 'deny', bypassPermissions: 'allow' } },
   { label: 'MemorySave to the user scope', tool: MEMORY_SAVE, subject: () => ({ kind: 'memory', tool: 'MemorySave', scope: 'user', text: 'a note', memoryKind: 'fact', paths: [], supersedes: [] }), ruleText: 'MemorySave', defaults: { default: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'deny', bypassPermissions: 'allow' } },
   { label: 'MemorySave to the project scope', tool: MEMORY_SAVE, subject: () => ({ kind: 'memory', tool: 'MemorySave', scope: 'project', text: 'a note', memoryKind: 'fact', paths: [], supersedes: [] }), ruleText: 'MemorySave', defaults: { default: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'deny', bypassPermissions: 'allow' } },
   { label: 'MCP exec tool', tool: MCP_EXEC, subject: () => ({ kind: 'mcp', server: 'srv', tool: 'run' }), ruleText: 'mcp__srv__run', defaults: { default: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'deny', bypassPermissions: 'allow' } },

@@ -39,7 +39,6 @@ const HISTORY_DENY = ['HistorySearch', 'HistoryRead'] as const;
 const FULL_DENY = [] as const;
 const LEAN_DENY = ['Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob', ...MEMORY_DENY, ...HISTORY_DENY] as const;
 const CONSTRAINED_DENY = ['Read', 'Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob', ...MEMORY_DENY, ...HISTORY_DENY] as const;
-const LEAN_ESCALATION_NOTICE = 'recent steps of the current turn were reduced from 4 to 1 because the context budget was exceeded';
 const FULL_LINE_CHARS = [90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200] as const;
 const EXPECTED_OUTPUT_RESERVE = 1024;
 const EXPECTED_CEILING_AT_4096 = 2300;
@@ -56,7 +55,7 @@ const PLANNED_CASES: readonly PlannedCase[] = [
   {
     id: 'a-compaction-lean',
     title: titleOf('a-compaction-lean'),
-    spec: { name: 'a-compaction-lean', toolCalling: 'native', deny: LEAN_DENY, grid: [{ tool: 'Read', lineChars: 90 }], probeFillers: 16, escalates: true },
+    spec: { name: 'a-compaction-lean', toolCalling: 'native', deny: LEAN_DENY, grid: [{ tool: 'Read', lineChars: 90 }], probeFillers: 16 },
   },
   {
     id: 'a-compaction-constrained',
@@ -209,14 +208,18 @@ const assertAcceptance = async (
 const assertLeanProperties = (observed: Observed, haystack: Haystack, plan: Plan, capabilities: Capabilities): void => {
   const notices = ofType(observed.journal, 'notice');
   const floor = pinnedFloorFor(capabilities);
-  expect(
-    notices.map((event) => String(event.data['message'])),
-    `the tool-room rule offers a tool only while the pinned prefix stays within the floor ${floor} (ceiling ${plan.sizing.ceiling} minus the larger of the minimum room and a quarter of the ceiling); the measured pinned prefix is ${plan.sizing.pinned}, so any offered tool that does not fit in the remaining ${floor - plan.sizing.pinned} tokens is dropped with a notice and the deny list must name it`,
-  ).toEqual([LEAN_ESCALATION_NOTICE]);
-  const escalatedBefore = observed.journal.find((event) => event.type === 'model.requested' && event.seq > (notices[0] as JournalEvent).seq);
   const planned = plan.runs.find((run) => run.perturbation === 0);
-  expect(planned?.facts.escalationStep).toBeDefined();
-  expect(escalatedBefore?.data['step']).toBe(planned?.facts.escalationStep);
+  expect(planned).toBeDefined();
+  const messages = notices.map((event) => String(event.data['message']));
+  expect(
+    messages.filter((message) => message.startsWith('Tools ') && message.includes('were left out')),
+    `Bash is denied and no background job runs, so BashOutput and KillBash are not offered; the measured pinned prefix is ${plan.sizing.pinned} tokens against the floor ${floor} (ceiling ${plan.sizing.ceiling} minus the larger of the minimum room and a quarter of the ceiling), so every offered tool fits and none is left out`,
+  ).toEqual([]);
+  expect(
+    planned?.facts.escalationNotices,
+    `Bash is denied and no background job runs, so BashOutput and KillBash are not offered; with the remaining room of ${plan.sizing.ceiling - plan.sizing.pinned} tokens the planner's dry run reaches a steady state under the ceiling without reducing the recent steps`,
+  ).toEqual([]);
+  expect(messages, "the real run journals exactly the notices of the planner's dry run, which offers the same tools under the same deny list").toEqual(planned?.facts.notices);
   const firstCompaction = observed.compacted[0] as JournalEvent;
   const firstEviction = ofType(observed.journal, 'context.truncated').find((event) => event.data['kind'] === 'omitted' && event.data['handle'] === haystack.handle);
   expect(firstEviction).toBeDefined();

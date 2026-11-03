@@ -92,6 +92,7 @@ export type ToolDefinition<Input> = {
   inputSchema: Record<string, unknown>;
   pagesOutput?: true;
   tier?: ToolTier;
+  companionOf?: string;
   schemaMode?: 'strict' | 'lenient';
   timeoutMs: number | ((input: Input) => number);
   title(input: Input): string;

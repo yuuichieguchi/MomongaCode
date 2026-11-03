@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
-import { createToolRegistry } from '@momonga/tools';
+import { createToolRegistry, defineTool } from '@momonga/tools';
 import { START_MS, makeEnv, toolKey } from './harness.ts';
 import { callsStep, functionCallItem, textStep } from './scripts.ts';
 
@@ -117,5 +117,84 @@ describe('worker recovery of a started call with an existing record', () => {
     expect(env.ofType(run.id, 'tool.reconciled')).toEqual([expect.objectContaining({ callId: 'call_w_1', outcome: 'unknown' })]);
     expect(env.toolbox.executions).toEqual([]);
     expect(env.run(run.id).status).toBe('COMPLETED');
+  });
+});
+
+const jobTool = (name: string, sideEffect: 'read_only' | 'write') =>
+  defineTool<Record<string, unknown>>({
+    name,
+    description: `${name} test tool`,
+    kind: 'execute',
+    sideEffect,
+    companionOf: 'Bash',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    timeoutMs: 1000,
+    title: () => name,
+    subject: () => ({ kind: 'none', tool: name }),
+    execute: async () => ({ status: 'completed', output: 'ok' }),
+  });
+
+const JOB_TOOLS = ['BashOutput', 'KillBash'];
+
+describe('worker offering of the job tools', () => {
+  const namesOf = (env: Awaited<ReturnType<typeof makeEnv>>, index: number): string[] =>
+    (env.gateway.streams[index]?.body.tools ?? []).flatMap((tool) => (tool.type === 'function' ? [tool.name] : []));
+
+  const withJobTools = (env: Awaited<ReturnType<typeof makeEnv>>) => () => [...env.toolbox.tools(), jobTool('BashOutput', 'read_only'), jobTool('KillBash', 'write')];
+
+  const startJob = (env: Awaited<ReturnType<typeof makeEnv>>, runId: string): string => {
+    const id = 'bash_aaaaaaaaaaaa';
+    env.store.jobs.start({ id, idemKey: 'k'.repeat(64), sessionId: env.session.id, runId, callId: 'c', command: 'sleep 100' });
+    return id;
+  };
+
+  it('offers neither job tool when Bash is denied and the session has no job', async () => {
+    const env = await makeEnv();
+    env.settings.extraRules.push({ effect: 'deny', rule: 'Bash' });
+    env.gateway.script.push(textStep('done'));
+    env.enqueue('Work');
+
+    await env.runOnce(env.worker('w1', { toolList: withJobTools(env) }));
+
+    expect(namesOf(env, 0)).toContain('Echo');
+    expect(namesOf(env, 0).filter((name) => name === 'Bash' || JOB_TOOLS.includes(name))).toEqual([]);
+  });
+
+  it('offers both job tools when Bash is denied and a job runs, also after recovery by another worker', async () => {
+    const env = await makeEnv();
+    env.settings.extraRules.push({ effect: 'deny', rule: 'Bash' });
+    const first = path.join(env.project, 'first.txt');
+    env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: first, content: 'one' } }]));
+    const run = env.enqueue('Write a file');
+    startJob(env, run.id);
+    await env.runOnce(env.worker('w1', { toolList: withJobTools(env) }));
+    env.resolveApproval(run.id, 'allow_once');
+    env.gateway.script.push(textStep('Written.'));
+
+    await env.runOnce(env.worker('w2', { toolList: withJobTools(env) }));
+
+    for (const index of [0, 1]) {
+      expect(namesOf(env, index)).not.toContain('Bash');
+      expect(namesOf(env, index).filter((name) => JOB_TOOLS.includes(name))).toEqual(JOB_TOOLS);
+    }
+    expect(env.ofType(run.id, 'notice').filter((notice) => notice.code === 'tools_changed')).toEqual([]);
+  });
+
+  it('stops offering both job tools once the job has ended, also after recovery by another worker', async () => {
+    const env = await makeEnv();
+    env.settings.extraRules.push({ effect: 'deny', rule: 'Bash' });
+    const first = path.join(env.project, 'first.txt');
+    env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: first, content: 'one' } }]));
+    const run = env.enqueue('Write a file');
+    const jobId = startJob(env, run.id);
+    await env.runOnce(env.worker('w1', { toolList: withJobTools(env) }));
+    env.store.jobs.finish(jobId, { status: 'exited', exitCode: 0 });
+    env.resolveApproval(run.id, 'allow_once');
+    env.gateway.script.push(textStep('Written.'));
+
+    await env.runOnce(env.worker('w2', { toolList: withJobTools(env) }));
+
+    expect(namesOf(env, 0).filter((name) => JOB_TOOLS.includes(name))).toEqual(JOB_TOOLS);
+    expect(namesOf(env, 1).filter((name) => JOB_TOOLS.includes(name))).toEqual([]);
   });
 });

@@ -49,3 +49,43 @@ describe('modelVisibleTools', () => {
     expect(names(modelVisibleTools(TOOLS, { mode: 'bypassPermissions', rules: [ruleIn(layout)('deny', 'Edit')] }))).not.toContain('Edit');
   });
 });
+
+describe('modelVisibleTools for tools that serve another tool', () => {
+  const WITH_JOB_TOOLS: PolicyTool[] = [
+    ...TOOLS,
+    { name: 'BashOutput', kind: 'execute', sideEffect: 'read_only', companionOf: 'Bash' },
+    { name: 'KillBash', kind: 'execute', sideEffect: 'write', companionOf: 'Bash' },
+  ];
+  const ONLY_JOB_TOOLS = ['BashOutput', 'KillBash'];
+  const jobToolsIn = (visible: PolicyTool[]): string[] => names(visible).filter((name) => ONLY_JOB_TOOLS.includes(name));
+
+  it('offers them with the tool they serve', () => {
+    expect(jobToolsIn(modelVisibleTools(WITH_JOB_TOOLS, { mode: 'default', rules: [], jobsRunning: false }))).toEqual(ONLY_JOB_TOOLS);
+  });
+
+  it('offers neither when the served tool is denied and no job runs', () => {
+    const rules = [ruleIn(makeLayout())('deny', 'Bash')];
+    expect(jobToolsIn(modelVisibleTools(WITH_JOB_TOOLS, { mode: 'default', rules, jobsRunning: false }))).toEqual([]);
+  });
+
+  it('offers both when the served tool is denied and a job runs', () => {
+    const rules = [ruleIn(makeLayout())('deny', 'Bash')];
+    const visible = modelVisibleTools(WITH_JOB_TOOLS, { mode: 'default', rules, jobsRunning: true });
+    expect(jobToolsIn(visible)).toEqual(ONLY_JOB_TOOLS);
+    expect(names(visible)).not.toContain('Bash');
+  });
+
+  it('hides one of them under its own deny rule even when a job runs', () => {
+    const rules = [ruleIn(makeLayout())('deny', 'KillBash')];
+    expect(jobToolsIn(modelVisibleTools(WITH_JOB_TOOLS, { mode: 'default', rules, jobsRunning: true }))).toEqual(['BashOutput']);
+  });
+
+  it('offers neither when the served tool does not exist and no job runs', () => {
+    const withoutBash = WITH_JOB_TOOLS.filter((tool) => tool.name !== 'Bash');
+    expect(jobToolsIn(modelVisibleTools(withoutBash, { mode: 'default', rules: [], jobsRunning: false }))).toEqual([]);
+  });
+
+  it('follows the served tool in plan mode', () => {
+    expect(jobToolsIn(modelVisibleTools(WITH_JOB_TOOLS, { mode: 'plan', rules: [], jobsRunning: false }))).toEqual(ONLY_JOB_TOOLS);
+  });
+});
