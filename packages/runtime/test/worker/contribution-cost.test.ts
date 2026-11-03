@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
+import { pinnedDigestOf } from '@momonga/runtime';
 import { foldRunState, initialRunState } from '@momonga/store';
 import { makeEnv } from './harness.ts';
 import { functionCallItem } from './scripts.ts';
@@ -27,6 +28,7 @@ const outputOf = (step: number): string => {
 };
 
 const HISTORY_IN_REQUEST = 8;
+const LARGE_HISTORY_IN_REQUEST = 27;
 const TOOL_COUNT = 30;
 
 const SYSTEM_PROMPT = Array.from({ length: 120 }, (_unused, line) => `Rule ${line}: keep the change small and verify it before you answer.`).join('\n');
@@ -37,17 +39,13 @@ const TOOLS = Array.from({ length: TOOL_COUNT }, (_unused, index) => ({
   parameters: { type: 'object', properties: { file_path: { type: 'string', description: 'absolute path of the file' } } },
 }));
 
-const requestOf = (step: number): RunEventPayload => ({
-  type: 'model.requested',
-  step,
-  attempt: 1,
-  digest: `digest-${step}`,
-  body: {
+const requestOf = (step: number, historyInRequest: number): RunEventPayload => {
+  const body = {
     model: 'fm',
     input: [
       { type: 'message', role: 'system', content: SYSTEM_PROMPT },
       { type: 'message', role: 'developer', content: 'Instruction file: prefer small commits.' },
-      ...Array.from({ length: Math.min(HISTORY_IN_REQUEST, step - 1) }, (_unused, offset) => ({
+      ...Array.from({ length: Math.min(historyInRequest, step - 1) }, (_unused, offset) => ({
         type: 'function_call_output',
         call_id: `call_${step - 1 - offset}`,
         output: outputOf(step - 1 - offset),
@@ -55,21 +53,22 @@ const requestOf = (step: number): RunEventPayload => ({
     ],
     tools: TOOLS,
     tool_choice: 'auto',
-  },
-});
+  };
+  return { type: 'model.requested', step, attempt: 1, digest: `digest-${step}`, pinnedDigest: pinnedDigestOf(body), body };
+};
 
-const stepEvents = (step: number): RunEventPayload[] => {
+const stepEvents = (step: number, historyInRequest: number): RunEventPayload[] => {
   const callId = `call_${step}`;
   const args = { value: `step ${step} zorpWord${step % MEMORIES}` };
   return [
-    requestOf(step),
+    requestOf(step, historyInRequest),
     { type: 'model.responded', step, attempt: 1, response: { status: 'completed', output: [functionCallItem({ callId, name: 'Echo', args })], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } },
     { type: 'tool.call', callId, providerCallId: callId, name: 'Echo', kind: 'read', title: 'Echo', rawInput: args },
     { type: 'tool.completed', callId, status: 'completed', output: outputOf(step) },
   ];
 };
 
-const terminalMillis = async (snapshotFirst: boolean): Promise<{ elapsed: number; prepareMillis: number; bytes: number }> => {
+const terminalMillis = async (snapshotFirst: boolean, historyInRequest: number): Promise<{ elapsed: number; prepareMillis: number; bytes: number }> => {
   {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     const saver = env.enqueue('Save notes', { history: 'fresh' });
@@ -90,7 +89,7 @@ const terminalMillis = async (snapshotFirst: boolean): Promise<{ elapsed: number
       { type: 'context.memories_loaded', memories: memoryIds.map((id) => ({ id, status: 'unbound' as const })) },
     ];
     for (let step = 1; step <= STEPS; step += 1) {
-      events.push(...stepEvents(step));
+      events.push(...stepEvents(step, historyInRequest));
       if (step === middle) events.push({ type: 'context.compacted', item: { type: 'message', role: 'user', content: 'summary' }, summary: 'summary', replacedThroughSeq: 1 + 2 * middle });
     }
     const claim = env.seed(run.id, events, 'hold');
@@ -100,9 +99,13 @@ const terminalMillis = async (snapshotFirst: boolean): Promise<{ elapsed: number
       expect(env.store.writeSnapshot(claim, state.lastSeq, state).kind).toBe('ok');
     }
 
-    const prepareStarted = performance.now();
+    const cpuBefore = process.cpuUsage();
+    const wallBefore = performance.now();
     env.store.prepareTerminal(run.id);
-    const prepareMillis = performance.now() - prepareStarted;
+    const wallMillis = performance.now() - wallBefore;
+    const cpu = process.cpuUsage(cpuBefore);
+    const prepareMillis = (cpu.user + cpu.system) / 1000;
+    console.info(`prepared in ${wallMillis.toFixed(1)} ms of wall time`);
     const started = performance.now();
     const result = env.store.transition(claim, ['RUNNING'], 'COMPLETED');
     const elapsed = performance.now() - started;
@@ -117,15 +120,24 @@ const terminalMillis = async (snapshotFirst: boolean): Promise<{ elapsed: number
 
 describe('the cost of the contribution hook in the terminal transition', () => {
   it('stays within the pause budget for a worker terminal over a run at the output cap, half of it Japanese', async () => {
-    const { elapsed, prepareMillis, bytes } = await terminalMillis(true);
+    const { elapsed, prepareMillis, bytes } = await terminalMillis(true, HISTORY_IN_REQUEST);
     console.info(`worker terminal over ${bytes} output bytes: prepared outside the lock in ${prepareMillis.toFixed(1)} ms, transaction ${elapsed.toFixed(1)} ms`);
     expect(bytes).toBeGreaterThan(4_000_000);
     expect(elapsed).toBeLessThan(PAUSE_BUDGET_MS);
+    expect(prepareMillis).toBeLessThan(PAUSE_BUDGET_MS);
   }, SETUP_TIMEOUT_MS);
 
   it('stays within the pause budget for a terminal over a journal with no snapshot', async () => {
-    const { elapsed, prepareMillis, bytes } = await terminalMillis(false);
+    const { elapsed, prepareMillis, bytes } = await terminalMillis(false, HISTORY_IN_REQUEST);
     console.info(`terminal without a snapshot over ${bytes} output bytes: prepared outside the lock in ${prepareMillis.toFixed(1)} ms, transaction ${elapsed.toFixed(1)} ms`);
     expect(elapsed).toBeLessThan(PAUSE_BUDGET_MS);
+    expect(prepareMillis).toBeLessThan(PAUSE_BUDGET_MS);
+  }, SETUP_TIMEOUT_MS);
+
+  it('stays within the pause budget when every recorded request is 800 KB', async () => {
+    const { elapsed, prepareMillis } = await terminalMillis(false, LARGE_HISTORY_IN_REQUEST);
+    console.info(`terminal over requests of ${LARGE_HISTORY_IN_REQUEST * OUTPUT_CHARS} characters: prepared outside the lock in ${prepareMillis.toFixed(1)} ms, transaction ${elapsed.toFixed(1)} ms`);
+    expect(elapsed).toBeLessThan(PAUSE_BUDGET_MS);
+    expect(prepareMillis).toBeLessThan(PAUSE_BUDGET_MS);
   }, SETUP_TIMEOUT_MS);
 });

@@ -1,5 +1,5 @@
 import { isRecord } from '@momonga/foundation';
-import { escapeXmlText } from '@momonga/protocol';
+import { escapeXmlAttribute } from '@momonga/protocol';
 import type { ContributionKind, RunEvent } from '@momonga/protocol';
 
 export type InjectedItem = { kind: ContributionKind; id: string; text: string; fromSeq: number; untilSeq?: number };
@@ -124,10 +124,14 @@ const pinnedLayersOf = (body: unknown): string[] => {
   return body['tools'] === undefined ? messages : [...messages, jsonWordsOf(body['tools']).join('\n')];
 };
 
-const withoutInjectedTexts = (text: string, injected: readonly InjectedItem[]): string =>
-  injected
-    .filter((item) => (item.kind === 'memory' || item.kind === 'governing') && item.text.length > 0)
-    .reduce((rest, item) => rest.replaceAll(escapeXmlText(item.text), '').replaceAll(item.text, ''), text);
+const regexSource = (literal: string): string => literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const withoutInjectedBlocks = (layer: string, injected: readonly InjectedItem[]): string =>
+  injected.reduce((rest, item) => {
+    if (item.kind === 'memory') return rest.replace(new RegExp(`<memory id="${regexSource(escapeXmlAttribute(item.id))}"[^>]*>[^<]*</memory>`, 'g'), '');
+    if (item.kind === 'governing') return rest.replace(new RegExp(`(^|\\n)\\[${regexSource(item.id)}\\] [^\\n]*?: ${regexSource(item.text)}(?=\\n|$)`, 'g'), '$1');
+    return rest;
+  }, layer);
 
 const ownerOf = (item: InjectedItem): string => (item.kind === 'summary' ? item.id : item.kind === 'working_state' ? item.kind : '');
 
@@ -163,7 +167,7 @@ export const measureContribution = ({
     for (const layer of pinnedLayersOf(body)) {
       if (pinnedSeen.has(layer)) continue;
       pinnedSeen.add(layer);
-      pinned.push(withoutInjectedTexts(layer, injected));
+      pinned.push(withoutInjectedBlocks(layer, injected));
     }
   };
 

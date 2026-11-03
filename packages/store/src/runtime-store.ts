@@ -211,8 +211,8 @@ const prepareStatements = (db: DatabaseSync) => ({
   insertRun: db.prepare(RUN_INSERT_SQL),
   writeRun: db.prepare(RUN_WRITE_SQL),
   insertEvent: db.prepare(
-    `INSERT INTO events (run_id, session_id, seq, step, lease_token, created_at, type, payload_json)
-     VALUES (:runId, :sessionId, :seq, :step, :leaseToken, :createdAt, :type, :payload)`,
+    `INSERT INTO events (run_id, session_id, seq, step, lease_token, created_at, type, payload_json, pinned_digest)
+     VALUES (:runId, :sessionId, :seq, :step, :leaseToken, :createdAt, :type, :payload, :pinnedDigest)`,
   ),
   dueWaitingRuns: db.prepare(
     `SELECT r.id FROM runs r
@@ -236,6 +236,7 @@ const prepareStatements = (db: DatabaseSync) => ({
   elicitationRequestedEvent: db.prepare(
     "SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.elicitation.requested' AND json_extract(payload_json, '$.inputId') = :approvalId LIMIT 1",
   ),
+  pinnedDigests: db.prepare("SELECT seq, pinned_digest FROM events WHERE run_id = :runId AND type = 'model.requested' ORDER BY seq"),
   runEvents: db.prepare('SELECT * FROM events WHERE run_id = :runId AND seq > :after ORDER BY seq LIMIT :limit'),
   lastTerminalRootRuns: db.prepare(
     `SELECT r.* FROM runs r JOIN sessions s ON s.id = r.session_id
@@ -295,19 +296,19 @@ type StatusChange = {
   refundAttempt?: boolean;
 };
 
-const PINNED_ROLES = "'system', 'developer'";
+const PINNED_ROLES ="'system', 'developer'";
 
-const PINNED_REQUEST_PAYLOAD = `json_object(
+const PINNED_REQUEST_PAYLOAD = `(SELECT json_object(
   'type', 'model.requested',
-  'step', json_extract(e.payload_json, '$.step'),
-  'attempt', json_extract(e.payload_json, '$.attempt'),
-  'digest', json_extract(e.payload_json, '$.digest'),
+  'step', json_extract(x.j, '$.step'),
+  'attempt', json_extract(x.j, '$.attempt'),
+  'digest', json_extract(x.j, '$.digest'),
   'body', json_object(
-    'input', json((SELECT json_group_array(json(json_extract(e.payload_json, t.path))) FROM json_tree(e.payload_json, '$.body.input') AS t WHERE t.key = 'role' AND t.atom IN (${PINNED_ROLES}) AND t.path GLOB '$.body.input[[]*]' AND t.path NOT GLOB '*.*.*.*')),
-    'tools', json_extract(e.payload_json, '$.body.tools'),
-    'tool_choice', json_extract(e.payload_json, '$.body.tool_choice')
+    'input', json((SELECT json_group_array(json(json_extract(x.j, t.path))) FROM json_tree(x.j, '$.body.input') AS t WHERE t.key = 'role' AND t.atom IN (${PINNED_ROLES}) AND t.path GLOB '$.body.input[[]*]' AND t.path NOT GLOB '*.*.*.*')),
+    'tools', json_extract(x.j, '$.body.tools'),
+    'tool_choice', json_extract(x.j, '$.body.tool_choice')
   )
-)`;
+) FROM (SELECT jsonb(e.payload_json) AS j) AS x)`;
 
 const HOOK_EVENT_COLUMNS = `e.id, e.run_id, e.session_id, e.seq, e.step, e.lease_token, e.created_at, e.type,
   CASE WHEN e.type = 'model.requested' THEN ${PINNED_REQUEST_PAYLOAD} ELSE e.payload_json END AS payload_json`;
@@ -398,6 +399,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       createdAt: event.createdAt,
       type: event.payload.type,
       payload: canonicalJson(event.payload),
+      pinnedDigest: event.payload.type === 'model.requested' ? (event.payload.pinnedDigest ?? null) : null,
     });
     recordTouch(event.sessionId, event.runId);
   };
@@ -464,17 +466,42 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return decodeRunEvents(db.prepare(`SELECT * FROM events WHERE run_id = :runId AND type IN (${placeholders}) ORDER BY seq`).all({ runId, ...bound }));
   };
 
+  const seqsOfNewPinnedLayers = (runId: string): number[] => {
+    const known = new Set<string>();
+    const wanted: number[] = [];
+    for (const row of sql.pinnedDigests.all({ runId })) {
+      const reader = readerFor('events', runId, row);
+      const digest = reader.nullableString('pinned_digest');
+      if (digest !== null && known.has(digest)) continue;
+      if (digest !== null) known.add(digest);
+      wanted.push(reader.number('seq'));
+    }
+    return wanted;
+  };
+
   const hookEventsOfTypes = (runId: string, types: readonly RunEventPayload['type'][]): RunEvent[] => {
-    const placeholders = types.map((_type, index) => `:type${index}`).join(', ');
-    const bound = Object.fromEntries(types.map((type, index) => [`type${index}`, type]));
-    return decodeRunEvents(db.prepare(`SELECT ${HOOK_EVENT_COLUMNS} FROM events e WHERE e.run_id = :runId AND e.type IN (${placeholders}) ORDER BY e.seq`).all({ runId, ...bound }));
+    const plain = types.filter((type) => type !== 'model.requested');
+    const placeholders = plain.map((_type, index) => `:type${index}`).join(', ');
+    const bound = Object.fromEntries(plain.map((type, index) => [`type${index}`, type]));
+    const events = decodeRunEvents(db.prepare(`SELECT * FROM events WHERE run_id = :runId AND type IN (${placeholders}) ORDER BY seq`).all({ runId, ...bound }));
+    if (plain.length === types.length) return events;
+    const requests = decodeRunEvents(
+      db
+        .prepare(`SELECT ${HOOK_EVENT_COLUMNS} FROM events e WHERE e.run_id = :runId AND e.type = 'model.requested' AND e.seq IN (SELECT value FROM json_each(:seqs)) ORDER BY e.seq`)
+        .all({ runId, seqs: JSON.stringify(seqsOfNewPinnedLayers(runId)) }),
+    );
+    return [...events, ...requests].sort((a, b) => a.seq - b.seq);
   };
 
   const measureContribution = (hook: TerminalContribution, run: Run): Measured => {
     const events = hookEventsOfTypes(run.id, [...hook.eventTypes, 'context.contribution']);
     const recorded = events.find((event): event is Extract<RunEvent, { type: 'context.contribution' }> => event.type === 'context.contribution');
     if (recorded !== undefined) return { lastSeq: run.lastSeq, journaled: true, contribution: recorded };
-    return { lastSeq: run.lastSeq, journaled: false, contribution: hook.measure({ run, events, replay: (visit) => replayRun(run, visit), memories, governing }) };
+    return {
+      lastSeq: run.lastSeq,
+      journaled: false,
+      contribution: hook.measure({ run, events, replay: (visit) => replayRun(run, events, visit), memories, governing }),
+    };
   };
 
   const prepareTerminal = (runId: string): void => {
@@ -824,10 +851,14 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return { snapshot: { seq, state }, tail: decodeRunEvents(sql.runEvents.all({ runId, after: seq, limit: -1 })) };
   };
 
-  const replayRun = (run: Run, visit: (state: RunState, event: RunEvent) => void): void => {
+  const replayRun = (run: Run, readEvents: readonly RunEvent[], visit: (state: RunState, event: RunEvent) => void): void => {
+    const readTypes = [...new Set<string>([...readEvents.map((event) => event.type), 'model.requested'])];
+    const placeholders = readTypes.map((_type, index) => `:type${index}`).join(', ');
+    const bound = Object.fromEntries(readTypes.map((type, index) => [`type${index}`, type]));
+    const rest = decodeRunEvents(db.prepare(`SELECT * FROM events WHERE run_id = :runId AND type NOT IN (${placeholders})`).all({ runId: run.id, ...bound }));
+    const journal = [...readEvents.filter((event) => event.type !== 'model.requested'), ...rest].sort((a, b) => a.seq - b.seq);
     let state = initialRunState({ runId: run.id, sessionId: run.sessionId });
-    const rows = db.prepare("SELECT * FROM events WHERE run_id = :runId AND type <> 'model.requested' ORDER BY seq").all({ runId: run.id });
-    for (const event of decodeRunEvents(rows)) {
+    for (const event of journal) {
       state = foldRunState(state, event);
       visit(state, event);
     }

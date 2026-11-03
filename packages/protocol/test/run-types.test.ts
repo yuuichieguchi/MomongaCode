@@ -141,6 +141,7 @@ describe('run event payloads', () => {
       step: number;
       attempt: number;
       digest: string;
+      pinnedDigest?: string;
       body: unknown;
     }>();
     expectTypeOf<Payload<'model.responded'>>().toEqualTypeOf<{

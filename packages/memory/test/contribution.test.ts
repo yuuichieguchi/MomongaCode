@@ -202,6 +202,29 @@ describe('what the model was shown before the step', () => {
     expect(contributedOf([requested(1, [system]), said(1, '設定を変更します')], item('設定ファイルを確認すること'))).toBe(true);
   });
 
+  it('cuts only the block of the injected memory and leaves the same words elsewhere in the layer', () => {
+    const rendered = layer(
+      'developer',
+      'Prefer hermetic builds.\n<recalled_memories>\n<memory id="q1" scope="user" status="unbound">hermetic</memory>\n<memory id="q2" scope="user" status="unbound">other note</memory>\n</recalled_memories>',
+    );
+    expect(contributedOf([requested(1, [rendered]), said(1, 'hermetic')], item('hermetic', { id: 'q1' }))).toBe(false);
+    const onlyInTheBlock = layer('developer', '<recalled_memories>\n<memory id="q1" scope="user" status="unbound">hermetic</memory>\n</recalled_memories>');
+    expect(contributedOf([requested(1, [onlyInTheBlock]), said(1, 'hermetic')], item('hermetic', { id: 'q1' }))).toBe(true);
+  });
+
+  it('cuts only the line of the injected governing fact and leaves the same words elsewhere in the layer', () => {
+    const rendered = layer('developer', 'Governing facts. Keep builds hermetic.\n\n[g1] rule about build: hermetic\n[g2] rule about test: other fact');
+    expect(contributedOf([requested(1, [rendered]), said(1, 'hermetic')], item('hermetic', { kind: 'governing', id: 'g1' }))).toBe(false);
+    const onlyInTheLine = layer('developer', 'Governing facts.\n\n[g1] rule about build: hermetic');
+    expect(contributedOf([requested(1, [onlyInTheLine]), said(1, 'hermetic')], item('hermetic', { kind: 'governing', id: 'g1' }))).toBe(true);
+  });
+
+  it('cuts a governing fact that spans several lines', () => {
+    const text = 'use zorpLauncher\nand then stop';
+    const rendered = layer('developer', `Governing facts.\n\n[g1] rule about build: ${text}\n[g2] rule about test: other fact`);
+    expect(contributedOf([requested(1, [rendered]), said(1, 'zorpLauncher')], item(text, { kind: 'governing', id: 'g1' }))).toBe(true);
+  });
+
   it('rejects a recorded request that has no input list', () => {
     const malformed = { type: 'model.requested', step: 1, attempt: 1, digest: 'd', body: { model: 'fm' } } as RunEventPayload;
     expect(() => contributedOf([malformed, said(1, 'zorpLauncher')], item('use zorpLauncher'))).toThrow(/model\.requested/);
