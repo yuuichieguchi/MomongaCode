@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createUdsClient } from '@momonga/foundation';
-import { ESTIMATED_CHARACTERS_PER_TOKEN } from '@momonga/protocol';
+import { inputCeilingFor } from '@momonga/context';
+import { ESTIMATED_CHARACTERS_PER_TOKEN, tokensForText } from '@momonga/protocol';
+import type { Capabilities } from '@momonga/protocol';
 import { isCompactionRequest, journalOfRows, ofType, summaryRoute } from './support/budget.ts';
 import type { JournalEvent } from './support/budget.ts';
 import { skipCase, titleOf } from './support/cases.ts';
@@ -12,7 +14,7 @@ import type { E2eHome } from './support/home.ts';
 import { SESSION_PATH, createRuntimeClient } from './support/runtime-client.ts';
 import { seatbeltOrSkip } from './support/sandbox.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
-import { contextWindowOf, startStack } from './support/stack.ts';
+import { startStack } from './support/stack.ts';
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
@@ -20,7 +22,8 @@ const BODY_MARKER = 'PDF-SKILL-BODY-MARKER-4f7a';
 const GUIDE_MARKER = 'PDF-GUIDE-RESOURCE-MARKER-9c1e';
 const SUMMARY = 'The user asked about a pdf. The pdf skill was activated and several small files were read. Next step: report the result.';
 const LONG_REQUESTS = 3;
-const REQUEST_WINDOW_SHARE = 8;
+const REQUESTS_PER_ROOM = 2;
+const FIRST_TASK = 'Read the pdf';
 
 type EventRow = { seq: number; type: string; payload_json: string };
 
@@ -46,6 +49,30 @@ const statusOf = (home: E2eHome, runId: string): { status: string; stopReason: s
   ).map((row) => ({ status: row.status, stopReason: row.stop_reason, error: row.error_json }))[0] ?? { status: 'missing', stopReason: null, error: null };
 
 const occurrences = (haystack: string, needle: string): number => haystack.split(needle).length - 1;
+
+type LongRequestSizing = { prefix: number; ceiling: number; room: number; requestTokens: number; requests: string[] };
+
+const longRequestText = (index: number, tokens: number): string => {
+  const chars = ESTIMATED_CHARACTERS_PER_TOKEN * tokens;
+  return `Request ${index + 1}. ${`filler words about unrelated subjects ${index} `.repeat(chars)}`.slice(0, chars);
+};
+
+const longRequestSizing = (home: E2eHome, firstRunId: string, firstRequestBody: unknown): LongRequestSizing => {
+  expect(firstRequestBody, `the first run made no model request (${JSON.stringify(statusOf(home, firstRunId))}), so the fixed prefix no longer fits the ceiling`).toBeDefined();
+  const started = ofType(journalOf(home, firstRunId), 'run.started')[0];
+  const capabilities = (started?.data['pins'] as { capabilities: Capabilities }).capabilities;
+  const ceiling = inputCeilingFor(capabilities);
+  const prefix = tokensForText(JSON.stringify(firstRequestBody)) - tokensForText(FIRST_TASK);
+  const room = ceiling - prefix;
+  const premise = `the ${prefix}-token fixed prefix leaves ${room} of the ${ceiling}-token ceiling`;
+  expect(room, `the room must be positive: ${premise}`).toBeGreaterThan(0);
+  const requestTokens = Math.floor(room / REQUESTS_PER_ROOM);
+  const requests = Array.from({ length: LONG_REQUESTS }, (_, index) => longRequestText(index, requestTokens));
+  const measured = requests.map((request) => tokensForText(request));
+  expect(Math.max(...measured), `one request fits: ${premise}`).toBeLessThan(room);
+  expect(measured.reduce((sum, tokens) => sum + tokens, 0), `${LONG_REQUESTS} requests exceed the room: ${premise}`).toBeGreaterThan(room);
+  return { prefix, ceiling, room, requestTokens, requests };
+};
 
 const runToEnd = async (runtime: RuntimeClient, runId: string): Promise<void> => {
   const stream = runtime.events(runId);
@@ -98,8 +125,6 @@ const createSession = async (home: E2eHome, permissionMode: string): Promise<str
 describe('g: agent skills', () => {
   it(titleOf('g-skills'), { timeout: 4 * E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
-    const window = contextWindowOf(home);
-    const longRequestChars = ESTIMATED_CHARACTERS_PER_TOKEN * Math.ceil(window / REQUEST_WINDOW_SHARE);
     writeSkill(path.join(home.project, '.agents', 'skills'), 'pdf', 'Extract PDF text. Use when: the user mentions PDFs', { 'scripts/extract.py': 'print(1)' });
     const script = [toolCallReply('activate_skill', { name: 'pdf' }, 'call_skill'), textReply('The pdf skill is active.')];
     for (let index = 0; index < LONG_REQUESTS; index += 1) script.push(textReply(`Noted ${index + 1}.`));
@@ -113,11 +138,11 @@ describe('g: agent skills', () => {
     const runtime = createRuntimeClient(home);
     try {
       const { session } = await runtime.createSession();
-      const first = (await runtime.createRun(session.id, 'Read the pdf')).run;
+      const first = (await runtime.createRun(session.id, FIRST_TASK)).run;
       await runToEnd(runtime, first.id);
+      const sizing = longRequestSizing(home, first.id, chatCompletions(stack.fake)[0]?.body);
       const later: string[] = [];
-      for (let index = 0; index < LONG_REQUESTS; index += 1) {
-        const long = `Request ${index + 1}. ${`filler words about unrelated subjects ${index} `.repeat(longRequestChars)}`.slice(0, longRequestChars);
+      for (const long of sizing.requests) {
         const { run } = await runtime.createRun(session.id, long);
         await runToEnd(runtime, run.id);
         later.push(run.id);
@@ -145,7 +170,7 @@ describe('g: agent skills', () => {
       for (const runId of later) expect(ofType(journalOf(home, runId), 'skill.activated')).toEqual([]);
 
       const compactions = later.flatMap((runId) => ofType(journalOf(home, runId), 'context.compacted'));
-      expect(compactions.length, `each of ${LONG_REQUESTS} requests holds 1/${REQUEST_WINDOW_SHARE} of the ${window}-token window: together they pass the compaction threshold`).toBeGreaterThanOrEqual(1);
+      expect(compactions.length, `each of ${LONG_REQUESTS} requests holds ${sizing.requestTokens} tokens, 1/${REQUESTS_PER_ROOM} of the ${sizing.room}-token room left by the ${sizing.prefix}-token prefix: together they pass the compaction threshold`).toBeGreaterThanOrEqual(1);
       const firstCompactionPost = posts.findIndex((post) => isCompactionRequest(post.body));
       expect(firstCompactionPost).toBeGreaterThan(1);
       const afterCompaction = posts.slice(firstCompactionPost + 1).filter((post) => !isCompactionRequest(post.body));
