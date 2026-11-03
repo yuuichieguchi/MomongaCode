@@ -7,7 +7,8 @@ import {
   recordFallbackCauses,
   startChatSpan,
 } from '@momonga/observability';
-import type { ChatBilling, FallbackCause, Telemetry } from '@momonga/observability';
+import type { FallbackCause } from '@momonga/foundation';
+import type { ChatBilling, Telemetry } from '@momonga/observability';
 import type { AdapterInputItem, FunctionTool, ItemField, Usage } from '@momonga/protocol';
 import { chatRequestContentOf, chatResponseMessagesOf } from './chat-content.ts';
 

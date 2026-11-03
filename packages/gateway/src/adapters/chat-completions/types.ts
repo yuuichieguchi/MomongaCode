@@ -14,7 +14,8 @@ import type { KeywordSupport } from '../../probe/envelope.ts';
 export type ChatCompletionsEndpoint = UpstreamEndpoint;
 
 export type ChatCompletionsAdapterOptions = {
-  resolveEndpoint: (target: AdapterTarget) => Promise<ChatCompletionsEndpoint>;
+  resolveEndpoint: (target: AdapterTarget, signal: AbortSignal) => Promise<ChatCompletionsEndpoint>;
+  onSummaryReasoning?: (target: AdapterTarget, hiddenReasoningTokens: number) => Promise<void>;
   toolCalling: (target: AdapterTarget) => ToolCallingMode;
   keywordSupport?: (target: AdapterTarget) => KeywordSupport;
   apiKey?: (target: AdapterTarget, signal: AbortSignal) => string | undefined | Promise<string | undefined>;

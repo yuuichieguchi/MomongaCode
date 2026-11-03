@@ -1,8 +1,8 @@
 import type { Capabilities, ToolCallingMode } from '@momonga/protocol';
 import type { UpstreamEndpoint } from '../adapters/shared/http-client.ts';
-import { PreconditionFailedError } from '../adapters/shared/failures.ts';
+import { PreconditionFailedError, StreamFailure, UpstreamHttpError } from '../adapters/shared/failures.ts';
 import type { KeywordSupport } from './envelope.ts';
-import { createProbeClient } from './client.ts';
+import { ProbeTimeoutError, createProbeClient } from './client.ts';
 import type { ProbeEndpoint } from './client.ts';
 import { capabilitiesFromProbe, decideToolCalling } from './decide.ts';
 import { endpointIdentityOf } from './endpoint-record.ts';
@@ -19,16 +19,33 @@ export const probeEndpointOf = (upstream: UpstreamEndpoint, apiKey: string | und
     ? { kind: 'unix', socketPath: upstream.socketPath }
     : { kind: 'tcp', baseUrl: upstream.baseUrl, ...(apiKey === undefined ? {} : { headers: { authorization: `Bearer ${apiKey}` } }) };
 
-export const readEndpointIdentity = async (endpoint: ProbeEndpoint, model: string, signal: AbortSignal): Promise<string> => {
-  const client = createProbeClient(endpoint, signal, IDENTITY_READ_TIMEOUT_MS);
+export const readModelsListing = async (
+  endpoint: ProbeEndpoint,
+  signal: AbortSignal,
+  timeoutMs: number = IDENTITY_READ_TIMEOUT_MS,
+): Promise<unknown> => {
+  const client = createProbeClient(endpoint, signal, timeoutMs);
   try {
     const result = await client.get('models');
-    if (result.status !== 200) throw new Error(`GET models answered HTTP ${result.status}: ${result.text.slice(0, 200)}`);
-    return endpointIdentityOf(parseJson(result.text), model);
+    if (result.status !== 200) throw new UpstreamHttpError(result.status, null, 'the model listing was refused', undefined, false);
+    return parseJson(result.text);
+  } catch (error) {
+    if (error instanceof ProbeTimeoutError) {
+      throw new StreamFailure('provider_unavailable', 'server_error', `the model listing did not answer within ${error.timeoutMs} ms`);
+    }
+    throw error;
   } finally {
     await client.close();
   }
 };
+
+export const readEndpointIdentity = async (
+  endpoint: ProbeEndpoint,
+  model: string,
+  fields: readonly string[],
+  signal: AbortSignal,
+  timeoutMs: number = IDENTITY_READ_TIMEOUT_MS,
+): Promise<string> => endpointIdentityOf(await readModelsListing(endpoint, signal, timeoutMs), model, fields);
 
 export type ProbedEndpointTargetOptions = {
   targetName: string;
@@ -36,21 +53,47 @@ export type ProbedEndpointTargetOptions = {
   model: string;
   declared: Capabilities;
   record: EndpointRecord | null;
-  readIdentity: () => Promise<string>;
+  readIdentity: (fields: readonly string[], signal: AbortSignal) => Promise<string>;
+  saveRecord: (record: EndpointRecord) => Promise<void>;
 };
 
 export type ProbedEndpointTarget = {
   toolCalling: () => ToolCallingMode;
   keywordSupport: () => KeywordSupport;
   capabilities: () => Promise<Capabilities>;
-  verify: () => Promise<void>;
+  verify: (signal: AbortSignal) => Promise<void>;
+  raiseHeadroom: (hiddenReasoningTokens: number) => Promise<void>;
 };
 
 const remedyOf = (targetName: string): string => `run \`momonga gateway probe ${targetName}\``;
 
+type Verification = { starter: AbortSignal; done: Promise<void> };
+
+const untilAborted = <T>(work: Promise<T>, signal: AbortSignal): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => reject(signal.reason);
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener('abort', onAbort, { once: true });
+    work.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(error);
+      },
+    );
+  });
+
 export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions): ProbedEndpointTarget => {
-  const { targetName, endpoint, model, declared, record } = options;
-  let verified: Promise<void> | undefined;
+  const { targetName, endpoint, model, declared } = options;
+  let record = options.record;
+  let verification: Verification | undefined;
+  let saving: Promise<void> = Promise.resolve();
 
   const requireRecord = (): EndpointRecord => {
     if (record === null) {
@@ -63,9 +106,9 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
     return record;
   };
 
-  const verifyOnce = async (): Promise<void> => {
+  const verifyOnce = async (signal: AbortSignal): Promise<void> => {
     const found = requireRecord();
-    const identity = await options.readIdentity();
+    const identity = await options.readIdentity(found.identityFields, signal);
     if (identity !== found.identity) {
       throw new PreconditionFailedError(
         `the probe record of the target "${targetName}" is stale`,
@@ -75,32 +118,68 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
     }
   };
 
+  const beginVerification = (signal: AbortSignal): Verification => {
+    const started: Verification = {
+      starter: signal,
+      done: verifyOnce(signal).catch((error: unknown) => {
+        if (verification === started) verification = undefined;
+        throw error;
+      }),
+    };
+    return started;
+  };
+
+  const verify = async (signal: AbortSignal): Promise<void> => {
+    for (;;) {
+      signal.throwIfAborted();
+      verification ??= beginVerification(signal);
+      const current = verification;
+      try {
+        return await untilAborted(current.done, signal);
+      } catch (error) {
+        if (current.starter.aborted && !signal.aborted) continue;
+        throw error;
+      }
+    }
+  };
+
+  const raiseHeadroom = (hiddenReasoningTokens: number): Promise<void> => {
+    const found = requireRecord();
+    const { reasoning } = found.report;
+    if (reasoning?.control === 'reasoning_effort') return Promise.resolve();
+    const recorded = reasoning?.headroomTokens ?? 0;
+    if (hiddenReasoningTokens <= recorded) return Promise.resolve();
+    const raised: EndpointRecord = {
+      ...found,
+      report: { ...found.report, reasoning: { control: 'none', headroomTokens: hiddenReasoningTokens } },
+    };
+    record = raised;
+    saving = saving.catch(() => undefined).then(() => options.saveRecord(raised));
+    return saving;
+  };
+
   return {
     toolCalling: () => decideToolCalling(requireRecord().report).mode,
     keywordSupport: () => requireRecord().report.keywordSupport,
+    verify,
+    raiseHeadroom,
     capabilities: async () => {
       if (record === null) return { ...declared, source: 'unprobed' };
       const decision = decideToolCalling(record.report);
       const probed = capabilitiesFromProbe(record.report, decision);
+      const { parallelToolCalls: _declaredParallel, ...declaredRest } = declared;
       return {
-        ...declared,
+        ...declaredRest,
         toolCalling: decision.mode,
         structuredOutput: probed.structuredOutput,
         streaming: probed.streaming,
         stopSequences: probed.stopSequences,
-        parallelToolCalls: probed.parallelToolCalls,
+        ...(probed.parallelToolCalls === undefined ? {} : { parallelToolCalls: probed.parallelToolCalls }),
         usageReported: probed.usageReported,
         ...(probed.reasoning === undefined ? {} : { reasoning: probed.reasoning }),
         source: 'probed',
         probedAt: record.report.probedAt,
       };
-    },
-    verify: () => {
-      verified ??= verifyOnce().catch((error: unknown) => {
-        verified = undefined;
-        throw error;
-      });
-      return verified;
     },
   };
 };

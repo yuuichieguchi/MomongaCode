@@ -11,6 +11,7 @@ import type {
   StreamEvent,
 } from '@momonga/protocol';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
+import { hiddenReasoningTokens } from '../../core/hidden-reasoning.ts';
 import { classifyChatCompletionsError, matchesGuardrailCode } from './classify.ts';
 import { boundedSseBytes } from '../shared/body-reading.ts';
 import { buildConstrainedBody } from './constrained-request.ts';
@@ -93,7 +94,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     try {
-      const endpoint = await options.resolveEndpoint(ctx.target);
+      const endpoint = await options.resolveEndpoint(ctx.target, signal);
       const apiKey = await options.apiKey?.(ctx.target, signal);
       const response = await pool.clientFor(endpoint).post({
         headers: {
@@ -157,6 +158,15 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
     for await (const event of create(summaryRequest, ctx)) {
       const collected = summaryOfTerminal(event, cap);
       if (collected === undefined) continue;
+      if (collected.usage !== null && options.onSummaryReasoning !== undefined) {
+        const hidden = hiddenReasoningTokens({
+          reportedReasoningTokens: collected.usage.output_tokens_details.reasoning_tokens > 0 ? collected.usage.output_tokens_details.reasoning_tokens : undefined,
+          reasoningText: undefined,
+          completionTokens: collected.usage.output_tokens,
+          visibleText: collected.summary,
+        });
+        if (hidden !== undefined && hidden > 0) await options.onSummaryReasoning(ctx.target, hidden);
+      }
       const usage =
         collected.usage ??
         estimatedUsage(wireTokensOf(renderWire(summaryRequest, ctx.target), capabilities.imageTokens), tokensForText(collected.summary));

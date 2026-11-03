@@ -7,6 +7,8 @@ export { systemClock } from './clock.ts';
 export type { Clock } from './clock.ts';
 export { Deadline, realDeadlineTiming } from './deadline.ts';
 export type { DeadlineTiming } from './deadline.ts';
+export { describeFallbackCause } from './fallback-cause.ts';
+export type { FallbackCause } from './fallback-cause.ts';
 export { isRecord, parseJsonOrText } from './json.ts';
 export { MAX_REDACTED_CHARS, MIN_CREDENTIAL_CHARS, REDACTED_MARKER, createRedactor } from './redaction.ts';
 export type { Redactor, RedactorOptions } from './redaction.ts';

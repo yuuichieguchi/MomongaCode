@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
+import { STREAM_IDLE_HEADER } from '@momonga/protocol';
 import type { GatewayCostReportView, GatewayHealth, ModelList, MomongaModelList } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, invalidRequest, notFound } from '../core/errors.ts';
 import type { ResponsesService, SubmitHeaders } from '../core/responses-service.ts';
@@ -7,7 +8,7 @@ import type { Services } from '../core/services.ts';
 import type { UnaryService } from '../core/unary.ts';
 import { readJsonBody } from './body.ts';
 import { collectTerminalResource } from './response-body.ts';
-import { sseResponse } from './sse.ts';
+import { compactSseResponse, sseResponse } from './sse.ts';
 import type { RequestTracker } from './tracker.ts';
 
 export type AppDependencies = {
@@ -35,7 +36,6 @@ const submitHeadersOf = (context: Context): SubmitHeaders => ({
   tracestate: context.req.header('tracestate'),
 });
 
-const STREAM_IDLE_HEADER = 'momonga-stream-idle-ms';
 const KEEP_ALIVES_PER_IDLE_BOUND = 3;
 
 const streamIdleBoundOf = (value: string | undefined): number | undefined => {
@@ -49,6 +49,8 @@ const streamIdleBoundOf = (value: string | undefined): number | undefined => {
 export const createApp = (dependencies: AppDependencies): Hono => {
   const { services, responses, unary, tracker } = dependencies;
   const requestSignalOf = (context: Context): AbortSignal => AbortSignal.any([context.req.raw.signal, services.closeSignal]);
+  const keepAliveMsFor = (idleBoundMs: number): number =>
+    Math.min(services.config.sseKeepAliveMs, Math.max(1, Math.floor(idleBoundMs / KEEP_ALIVES_PER_IDLE_BOUND)));
   const app = new Hono();
 
   app.notFound(() => errorResponse(notFound('route_not_found', 'no such route')));
@@ -74,13 +76,11 @@ export const createApp = (dependencies: AppDependencies): Hono => {
         readerStallMs: services.config.limits.readerStallMs,
         signal: AbortSignal.any([context.req.raw.signal, services.forceCloseSignal, submission.events.evicted]),
         onEnd: release,
+        onError: (error: unknown): void => dependencies.onError?.(error),
       };
       if (submission.stream && idleBoundMs !== undefined) {
         streaming = true;
-        return sseResponse(undefined, submission.events, {
-          ...streamOptions,
-          keepAliveMs: Math.min(services.config.sseKeepAliveMs, Math.max(1, Math.floor(idleBoundMs / KEEP_ALIVES_PER_IDLE_BOUND))),
-        });
+        return sseResponse(undefined, submission.events, { ...streamOptions, keepAliveMs: keepAliveMsFor(idleBoundMs) });
       }
       const first = await submission.events.next();
       if (first.done === true) throw new ClientDisconnectedError();
@@ -101,12 +101,21 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   app.post('/v1/responses/compact', async (context) => {
     const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
     const release = tracker.begin();
+    let streaming = false;
     try {
-      return context.json(
-        await unary.compact(raw, context.req.raw.signal, context.req.header('momonga-deadline-ms'), context.req.header('idempotency-key')),
-      );
+      const idleBoundMs = streamIdleBoundOf(context.req.header(STREAM_IDLE_HEADER));
+      const work = unary.compact(raw, context.req.raw.signal, context.req.header('momonga-deadline-ms'), context.req.header('idempotency-key'));
+      if (idleBoundMs === undefined) return context.json(await work);
+      streaming = true;
+      return compactSseResponse(work, {
+        timers: services.timers,
+        keepAliveMs: keepAliveMsFor(idleBoundMs),
+        signal: AbortSignal.any([context.req.raw.signal, services.forceCloseSignal]),
+        onEnd: release,
+        onError: (error: unknown): void => dependencies.onError?.(error),
+      });
     } finally {
-      release();
+      if (!streaming) release();
     }
   });
 

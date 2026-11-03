@@ -10,6 +10,7 @@ export type {
   ToolCallingMode,
   ToolCallingSetting,
 } from './capabilities.ts';
+export { COMPACTION_RESULT_EVENT, STREAM_IDLE_HEADER } from './headers.ts';
 export {
   COMPACTION_INSTRUCTIONS_VERSION,
   ESTIMATED_CHARACTERS_PER_TOKEN,
@@ -32,6 +33,7 @@ export {
   marginFloorFor,
   outputReserveFor,
   sizingRatioFor,
+  summaryInputLimitFor,
   summaryItemTokensFor,
   summaryTokenCapFor,
 } from './budget-constants.ts';
