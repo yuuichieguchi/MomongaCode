@@ -23,14 +23,12 @@ const recordPath = (dir: string, target: string): string => {
 
 const PRIVATE_DIRECTORY_MODE = 0o700;
 
-export const saveProbeRecord = async (dir: string, key: ProbeRecordKey, report: ProbeReport): Promise<void> => {
-  const file = recordPath(dir, key.target);
+export const writePrivateRecord = async (dir: string, file: string, content: string): Promise<void> => {
   await fs.promises.mkdir(dir, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
   if (!modeIsPrivate(await fs.promises.stat(dir), 'directory')) {
     await fs.promises.chmod(dir, PRIVATE_DIRECTORY_MODE);
   }
   const temporary = `${file}.${process.pid}.tmp`;
-  const content = JSON.stringify({ binarySha256: key.binarySha256, osBuild: key.osBuild, report });
   try {
     await fs.promises.writeFile(temporary, content, { mode: 0o600 });
     await fs.promises.rename(temporary, file);
@@ -38,6 +36,10 @@ export const saveProbeRecord = async (dir: string, key: ProbeRecordKey, report: 
     await fs.promises.rm(temporary, { force: true });
     throw error;
   }
+};
+
+export const saveProbeRecord = async (dir: string, key: ProbeRecordKey, report: ProbeReport): Promise<void> => {
+  await writePrivateRecord(dir, recordPath(dir, key.target), JSON.stringify({ binarySha256: key.binarySha256, osBuild: key.osBuild, report }));
 };
 
 const corruptRecord = (file: string, key: ProbeRecordKey, problem: string, cause: unknown): Error =>

@@ -1,4 +1,4 @@
-import type { HealthResult, ImageTokenModel } from './capabilities.ts';
+import type { HealthResult, ImageTokenModel, ReasoningCapability } from './capabilities.ts';
 
 export const PROBE_KEYWORDS = [
   'enum',
@@ -23,6 +23,8 @@ export type ProbeReport = {
   constrained: { accepted: boolean; validRate: number };
   keywordSupport: Record<ProbeKeyword, boolean>;
   stopSequences: boolean;
+  parallelToolCalls?: { accepted: boolean; multiCallRate: number };
+  reasoning?: ReasoningCapability;
   maxConcurrency: number;
   imageInputAccepted: boolean;
   imageTokens?: ImageTokenModel;

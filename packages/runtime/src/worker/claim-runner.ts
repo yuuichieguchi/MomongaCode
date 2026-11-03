@@ -180,6 +180,16 @@ const requeueOrStop = (
     terminals.finish('STOPPED', { stopReason: 'timeout' });
     return;
   }
+  const attempts = (options.store.getRun(claim.runId)?.attempts ?? 0) - (disposition.refund ? 1 : 0);
+  if (attempts >= options.store.maxTotalAttempts) {
+    terminals.finish('FAILED', {
+      error: {
+        code: 'max_total_attempts',
+        message: `run ${claim.runId} exceeded ${options.store.maxTotalAttempts} total attempts; the last attempt failed with: ${describeError(cause)}`,
+      },
+    });
+    return;
+  }
   const now = options.clock.now();
   const backoff = computeBackoff({ attempt: memory.streak, baseMs: REQUEUE_BASE_MS, maxMs: REQUEUE_MAX_MS, random: options.random });
   const availableAt = now + Math.max(backoff, disposition.retryAfterMs);
@@ -293,7 +303,7 @@ const drive = async (
   if (toolNotices.length > 0) journal.append([...new Set(toolNotices)].map((message) => ({ type: 'notice', level: 'warning', message })));
   for (const server of toolSet.authorizationRequired) {
     const message = `MCP server "${server}" requires authorization before its tools can be listed`;
-    if (journal.state.notes.some((note) => note.message === message)) continue;
+    if (journal.state.notes.some((note) => note.code === 'mcp_authorization_required' && note.message === message)) continue;
     journal.append([{ type: 'notice', level: 'warning', message, code: 'mcp_authorization_required' }, { type: 'mcp.authorization.required', server }]);
   }
 
@@ -304,7 +314,7 @@ const drive = async (
       });
       return;
     }
-    if (pins.toolSetDigest !== toolSet.digest && !journal.state.notes.some((note) => note.message === TOOLS_CHANGED_NOTICE)) {
+    if (pins.toolSetDigest !== toolSet.digest && !journal.state.notes.some((note) => note.code === 'tools_changed')) {
       journal.append([{ type: 'notice', level: 'warning', message: TOOLS_CHANGED_NOTICE, code: 'tools_changed' }]);
     }
   }

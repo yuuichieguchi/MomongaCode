@@ -70,6 +70,9 @@ export const MOMONGA_ATTRIBUTES = {
   step: 'momonga.step',
   attempt: 'momonga.attempt',
   billing: 'momonga.billing',
+  target: 'momonga.target',
+  failureMessage: 'momonga.failure_message',
+  fallbackCauses: 'momonga.fallback_causes',
 } as const;
 
 export const UNKNOWN_BILLING = 'unknown';

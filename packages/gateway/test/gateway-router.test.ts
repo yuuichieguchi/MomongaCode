@@ -34,7 +34,14 @@ describe('router fallback', () => {
     expect(b.calls).toHaveLength(1);
     expect(outputText(response.body)).toBe('from b');
     expect(response.body.model).toBe('model-b');
-    expect(response.body.momonga).toEqual({ alias: 'fast', target: 'b', attempts: 3, fallbackFrom: ['a'], usageSource: 'reported' });
+    expect(response.body.momonga).toEqual({
+      alias: 'fast',
+      target: 'b',
+      attempts: 3,
+      fallbackFrom: ['a'],
+      fallbackCauses: [{ target: 'a', code: 'upstream_error', message: 'a still down' }],
+      usageSource: 'reported',
+    });
     expect(b.calls[0]?.request.model).toBe('model-b');
   });
 

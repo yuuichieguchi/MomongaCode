@@ -10,6 +10,8 @@ export type ChatRequestBody = {
   stream_options: { include_usage: true };
   tools?: unknown[];
   tool_choice?: unknown;
+  parallel_tool_calls?: boolean;
+  reasoning_effort?: string;
   response_format?: unknown;
   max_tokens?: number;
   temperature?: number;

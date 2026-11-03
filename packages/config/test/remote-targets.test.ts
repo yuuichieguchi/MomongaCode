@@ -206,6 +206,44 @@ describe('secretNames and credentialEnvNames', () => {
   });
 });
 
+const chatCompletionsTarget = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+  adapter: 'chat-completions',
+  provider: 'ollama',
+  model: 'qwen',
+  baseUrl: 'http://127.0.0.1:11434/v1',
+  capabilities: CAPABILITIES,
+  ...overrides,
+});
+
+describe('chat-completions target', () => {
+  it.each(['auto', 'native', 'constrained'] as const)('accepts toolCalling %s and keeps it unresolved', async (toolCalling) => {
+    const { result } = await loadWithTargets({ local: chatCompletionsTarget({ toolCalling }) });
+    expect(result.settings.models.targets['local']).toMatchObject({ adapter: 'chat-completions', toolCalling });
+  });
+
+  it('keeps native as the default tool calling', async () => {
+    const { result } = await loadWithTargets({ local: chatCompletionsTarget() });
+    expect(result.settings.models.targets['local']).toMatchObject({ toolCalling: 'native' });
+  });
+
+  it('rejects toolCalling auto for an open-responses target', async () => {
+    await expectRejected({ local: openResponsesTarget({ toolCalling: 'auto' }) });
+  });
+
+  it('accepts a declared reasoning capability', async () => {
+    const capabilities = { ...CAPABILITIES, reasoning: { control: 'reasoning_effort', lowest: 'low' } };
+    const { result } = await loadWithTargets({ local: chatCompletionsTarget({ capabilities }) });
+    expect(result.settings.models.targets['local']).toMatchObject({ capabilities: { reasoning: { control: 'reasoning_effort', lowest: 'low' } } });
+  });
+
+  it('accepts a declared headroom for a target that cannot control reasoning, and rejects a malformed declaration', async () => {
+    const accepted = await loadWithTargets({ local: chatCompletionsTarget({ capabilities: { ...CAPABILITIES, reasoning: { control: 'none', headroomTokens: 400 } } }) });
+    expect(accepted.result.settings.models.targets['local']).toMatchObject({ capabilities: { reasoning: { control: 'none', headroomTokens: 400 } } });
+    await expectRejected({ local: chatCompletionsTarget({ capabilities: { ...CAPABILITIES, reasoning: { control: 'reasoning_effort' } } }) });
+    await expectRejected({ local: chatCompletionsTarget({ capabilities: { ...CAPABILITIES, reasoning: { control: 'magic' } } }) });
+  });
+});
+
 describe('targets are user settings only', () => {
   it('discards anthropic and open-responses targets from project settings with a warning', async () => {
     const tree = makeTree();

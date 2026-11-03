@@ -6,7 +6,7 @@ import { GOVERNING_KINDS, MEMORY_KINDS, MEMORY_SCOPES, PERMISSION_MODES } from '
 import type { GoverningEnforcement, GoverningKind, MemoryKind, MemoryScope, PermissionMode } from '@momonga/protocol';
 import { pathsOf } from '../paths.ts';
 import type { ProgramDeps } from '../program-deps.ts';
-import { contextImprove, guidelineList, guidelineRollback } from './context.ts';
+import { contextImprove, guidelineAdopt, guidelineList, guidelineRollback } from './context.ts';
 import { showCost } from './cost.ts';
 import { elicit } from './elicit.ts';
 import { compareContext, evaluate, evaluateContext } from './evaluate.ts';
@@ -301,26 +301,33 @@ const registerContext: CommandGroup = (program, deps) => {
   context
     .command('improve')
     .description(
-      'analyse the scenarios that pass without compaction and fail with it, sample candidate guidelines for the compaction summary, benchmark each against the guideline in force and print the winner; --adopt stores it',
+      'analyse the scenarios that pass without compaction and fail with it, sample candidate guidelines for the compaction summary, benchmark each against the guideline in force, print the winner and its full text, and write the outcome to a file; nothing is stored',
     )
     .requiredOption('--dataset <file>', 'the context dataset to benchmark')
     .addOption(new Option('--model <model>', 'which kind of model produced the runs; a fake model proves only that the machinery works, and no candidate can pass the gate with it').choices(CONTEXT_MODELS).makeOptionMandatory())
     .requiredOption('--alias <alias>', 'the model alias of the benchmark sessions and of the analysis and candidate calls')
     .option('--seed <n>', 'the seed of the noise turns and of the candidate draws; 0 when omitted', seedArgument)
-    .option('--adopt', 'store the winner as the guideline in force; without it nothing changes')
-    .action(async (options: { dataset: string; model: ContextModel; alias: string; seed?: number; adopt?: true }) => {
+    .requiredOption('--outcome <file>', 'the file the outcome is written to: the candidates, the text of the winner, its report, the dataset digest, the parent version and a digest of the whole')
+    .action(async (options: { dataset: string; model: ContextModel; alias: string; seed?: number; outcome: string }) => {
       deps.complete(
         await contextImprove(deps.ports, pathsOf(deps.ports), {
           dataset: options.dataset,
           model: options.model,
           alias: options.alias,
           seed: options.seed ?? DEFAULT_DATASET_SEED,
-          adopt: options.adopt === true,
+          outcome: options.outcome,
           interrupt: deps.interrupt,
         }),
       );
     });
-  const guideline = context.command('guideline').description('inspect and roll back the compaction guideline');
+  const guideline = context.command('guideline').description('inspect, adopt and roll back the compaction guideline');
+  guideline
+    .command('adopt')
+    .description('store the winner of an outcome file that context improve wrote, after checking its digest and its parent and showing its full text')
+    .argument('<outcome-file>', 'the outcome file written by context improve --outcome')
+    .action(async (outcomeFile: string) => {
+      deps.complete(await guidelineAdopt(deps.ports, pathsOf(deps.ports), outcomeFile));
+    });
   guideline
     .command('list')
     .description('list the adopted guidelines, oldest first')

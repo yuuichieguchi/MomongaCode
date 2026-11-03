@@ -2,12 +2,15 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import { decodeSse } from '@momonga/foundation';
 import { PROBE_KEYWORDS, type ImageTokenModel, type ProbeKeyword, type ProbeReport } from '@momonga/protocol';
 import { solidPngDataUrl } from './solid-png.ts';
-import { ProbeTimeoutError, createProbeClient, systemSleep, type HttpResult, type ProbeClient } from './client.ts';
+import { ProbeTimeoutError, createProbeClient, systemSleep, type HttpResult, type ProbeClient, type ProbeEndpoint } from './client.ts';
 import { buildToolCallEnvelope, keywordProbeSchemas, type KeywordSupport, type ProbeTool } from './envelope.ts';
 import { field, firstOf, isRecord, parseJson } from './json.ts';
 
 export interface ProbeOptions {
-  socketPath: string;
+  socketPath?: string;
+  baseUrl?: string;
+  headers?: Record<string, string>;
+  managedHealthRoute?: boolean;
   model?: string;
   samples?: number;
   countTokens?: (text: string) => Promise<number>;
@@ -122,12 +125,15 @@ const responseFormat = (schema: unknown): unknown => ({
   json_schema: { name: 'probe', strict: true, schema },
 });
 
+const endpointOf = (options: ProbeOptions): ProbeEndpoint => {
+  const { socketPath, baseUrl } = options;
+  if ((socketPath === undefined) === (baseUrl === undefined)) throw new Error('A probe needs exactly one of socketPath and baseUrl');
+  if (socketPath !== undefined) return { kind: 'unix', socketPath };
+  return { kind: 'tcp', baseUrl: baseUrl as string, ...(options.headers === undefined ? {} : { headers: options.headers }) };
+};
+
 export const runProbe = async (options: ProbeOptions): Promise<ProbeReport> => {
-  const client = createProbeClient(
-    options.socketPath,
-    options.signal,
-    options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS,
-  );
+  const client = createProbeClient(endpointOf(options), options.signal, options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS, options.managedHealthRoute === true);
   try {
     return await probeWith(client, options);
   } finally {
@@ -139,10 +145,10 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
   const samples = options.samples ?? DEFAULT_SAMPLES;
   const now = options.now ?? (() => new Date());
 
-  const healthResult = await client.get('/health');
+  const healthResult: HttpResult = client.hasHealthRoute ? await client.get('health') : { status: 200, text: '', headers: {} };
   expectStatus(healthResult, [200], 'health');
 
-  const modelsResult = await client.get('/v1/models');
+  const modelsResult = await client.get('models');
   expectStatus(modelsResult, [200], 'models');
   const modelsBody = parseJson(modelsResult.text);
   const listedModel = firstOf(field(modelsBody, 'data'));
@@ -151,7 +157,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
   if (typeof model !== 'string') throw new Error('Probe could not determine a model id from /v1/models');
 
   const post = (body: Record<string, unknown>): Promise<HttpResult> =>
-    client.post('/v1/chat/completions', { model, ...body });
+    client.post('chat', { model, ...body });
   const stepTimeoutMs = options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS;
   const sleep = options.sleep ?? systemSleep;
   const chat: Chat = async (body) => {
@@ -209,6 +215,8 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
     ? { accepted: true, validRate: await sampleConstrained(chat, samples, keywordSupport) }
     : { accepted: false, validRate: 0 };
   const roundTripOk = native.firstValidCall === undefined ? false : await roundTrip(chat, native.firstValidCall);
+  const parallelToolCalls = native.accepted ? await sampleParallel(chat, samples) : { accepted: false, multiCallRate: 0 };
+  const reasoning = await measureReasoning(chat);
 
   const tokenCalibration =
     usageReported && options.countTokens !== undefined ? await calibrate(chat, options.countTokens) : undefined;
@@ -229,6 +237,8 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
     constrained,
     keywordSupport,
     stopSequences,
+    parallelToolCalls,
+    reasoning,
     maxConcurrency,
     imageInputAccepted,
     ...(imageTokens === undefined ? {} : { imageTokens }),
@@ -337,7 +347,7 @@ const measureImageTokens = async (chat: Chat): Promise<ImageTokenModel | undefin
 };
 
 const probeStreaming = async (client: ProbeClient, model: string): Promise<ProbeReport['streaming']> => {
-  const { status, chunks } = await client.stream('/v1/chat/completions', {
+  const { status, chunks } = await client.stream('chat', {
     model,
     messages: [{ role: 'user', content: PLAIN_PROMPT }],
     stream: true,
@@ -441,6 +451,67 @@ const roundTrip = async (chat: Chat, call: NativeCall): Promise<boolean> => {
   expectStatus(result, [200], 'native round trip');
   const content = field(assistantMessage(parseJson(result.text)), 'content');
   return typeof content === 'string' && content.length > 0;
+};
+
+const PARALLEL_TOOL_PROMPT = `Please call ${PROBE_TOOL.name} for Tokyo for 3 days and also for Osaka for 2 days, both at once`;
+const REASONING_PROMPT = 'What is 17 times 23? Think it through, then answer in one short sentence.';
+const REASONING_BASELINE_SAMPLES = 2;
+const PROBED_REASONING_EFFORTS = ['none', 'minimal', 'low'] as const;
+
+const nativeToolSpec = { type: 'function', function: { name: PROBE_TOOL.name, description: 'Get the weather', parameters: PROBE_TOOL.parameters } };
+
+const toolCallCount = (body: unknown): number => {
+  const calls = field(assistantMessage(body), 'tool_calls');
+  return Array.isArray(calls) && calls.every((call) => field(field(call, 'function'), 'name') === PROBE_TOOL.name) ? calls.length : 0;
+};
+
+const sampleParallel = async (chat: Chat, samples: number): Promise<NonNullable<ProbeReport['parallelToolCalls']>> => {
+  let several = 0;
+  for (let index = 0; index < samples; index += 1) {
+    const result = await sampleRequest(chat, {
+      messages: [{ role: 'user', content: PARALLEL_TOOL_PROMPT }],
+      tools: [nativeToolSpec],
+      parallel_tool_calls: true,
+    });
+    if (index === 0) {
+      if (result === undefined) throw new Error('Probe step "parallel tool calls" timed out on its first sample');
+      expectStatus(result, [200, 400], 'parallel tool calls');
+      if (result.status === 400) return { accepted: false, multiCallRate: 0 };
+    }
+    if (result === undefined || result.status !== 200) continue;
+    if (toolCallCount(parseJson(result.text)) >= 2) several += 1;
+  }
+  return { accepted: true, multiCallRate: samples === 0 ? 0 : several / samples };
+};
+
+const reasoningTokensOf = (body: unknown): number | undefined => {
+  const tokens = field(field(field(body, 'usage'), 'completion_tokens_details'), 'reasoning_tokens');
+  return typeof tokens === 'number' ? tokens : undefined;
+};
+
+const measureReasoning = async (chat: Chat): Promise<NonNullable<ProbeReport['reasoning']>> => {
+  const reasoningOf = async (extra: Record<string, unknown>): Promise<HttpResult> => {
+    const result = await chat({ messages: [{ role: 'user', content: REASONING_PROMPT }], ...extra });
+    expectStatus(result, [200, 400], 'reasoning');
+    return result;
+  };
+  const baseline: number[] = [];
+  for (let index = 0; index < REASONING_BASELINE_SAMPLES; index += 1) {
+    const result = await reasoningOf({});
+    expectStatus(result, [200], 'reasoning baseline');
+    const spent = reasoningTokensOf(parseJson(result.text));
+    if (spent !== undefined) baseline.push(spent);
+  }
+  const headroomTokens = baseline.length === 0 ? undefined : Math.max(...baseline);
+  for (const effort of PROBED_REASONING_EFFORTS) {
+    const result = await reasoningOf({ reasoning_effort: effort });
+    if (result.status !== 200) continue;
+    const spent = reasoningTokensOf(parseJson(result.text));
+    if (headroomTokens === undefined || spent === undefined || headroomTokens === 0 || spent < headroomTokens) {
+      return { control: 'reasoning_effort', lowest: effort };
+    }
+  }
+  return { control: 'none', ...(headroomTokens === undefined ? {} : { headroomTokens }) };
 };
 
 const calibrate = async (

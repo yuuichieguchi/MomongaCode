@@ -26,6 +26,7 @@ import { buildNativeBody } from './native-request.ts';
 import type { ChatRequestBody } from './native-request.ts';
 import { createNativeSink } from './native-sink.ts';
 import { nativeHistoryOf, plainHistoryOf } from './plain-history.ts';
+import { withCapabilityOptions } from './request-options.ts';
 import { ResponseEmitter } from '../shared/response-emitter.ts';
 import { StreamDriver } from './stream-driver.ts';
 import type { ChatCompletionsAdapter, ChatCompletionsAdapterOptions } from './types.ts';
@@ -86,7 +87,9 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
 
   async function* create(request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
     if (closed) throw new Error('the chat-completions adapter is closed');
-    const { body, envelope } = bodyFor(request, ctx.target);
+    const planned = bodyFor(request, ctx.target);
+    const { envelope } = planned;
+    const body = withCapabilityOptions(planned.body, request, await options.capabilities(ctx.target));
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     try {

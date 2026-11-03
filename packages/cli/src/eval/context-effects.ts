@@ -8,7 +8,7 @@ import { daemonStopBoundMs, ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import { pathsOf } from '../paths.ts';
-import { OWNER_FILE, ROOT_PREFIX } from './context-host.ts';
+import { OWNER_FILE, ROOT_PREFIX, caseEnvironment } from './context-host.ts';
 import type { ContextHostEffects } from './context-host.ts';
 
 export const SHORT_TEMP_BASE = '/tmp';
@@ -48,7 +48,50 @@ export const copyProbeRecord = async (files: Pick<CliPorts['files'], 'readTextIf
   return true;
 };
 
+export const copyEndpointProbeRecord = async (
+  files: Pick<CliPorts['files'], 'readTextIfPresent' | 'writeText'>,
+  from: string,
+  to: string,
+  key: { endpoint: string; model: string },
+): Promise<boolean> => {
+  const { endpointRecordFileName } = await import('@momonga/gateway');
+  const name = endpointRecordFileName(key);
+  const text = await files.readTextIfPresent(path.join(from, name));
+  if (text === undefined) return false;
+  await fs.mkdir(to, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
+  await files.writeText(path.join(to, name), text);
+  return true;
+};
+
 const ownerOf = (text: string | undefined): number | undefined => (text !== undefined && /^\d+$/.test(text.trim()) ? Number(text.trim()) : undefined);
+
+const UNREADABLE_CODES: ReadonlySet<string | undefined> = new Set(['EACCES', 'EPERM', 'ENOTDIR', 'ELOOP']);
+
+const VANISHED_CODES: ReadonlySet<string | undefined> = new Set(['ENOENT', 'ENOTDIR']);
+
+export const readEvalOwner = async (files: Pick<CliPorts['files'], 'readTextIfPresent'>, root: string): Promise<number | 'unreadable' | undefined> => {
+  try {
+    return ownerOf(await files.readTextIfPresent(path.join(root, OWNER_FILE)));
+  } catch (error) {
+    if (UNREADABLE_CODES.has((error as NodeJS.ErrnoException).code)) return 'unreadable';
+    throw error;
+  }
+};
+
+export const listEvalRoots = async (base: string, uid: number | undefined): Promise<string[]> => {
+  const roots: string[] = [];
+  for (const name of await fs.readdir(base)) {
+    if (!name.startsWith(ROOT_PREFIX)) continue;
+    const entry = path.join(base, name);
+    try {
+      const stat = await fs.lstat(entry);
+      if (stat.isDirectory() && (uid === undefined || stat.uid === uid)) roots.push(entry);
+    } catch (error) {
+      if (!VANISHED_CODES.has((error as NodeJS.ErrnoException).code)) throw error;
+    }
+  }
+  return roots;
+};
 
 export const nodeContextEffects = (ports: CliPorts): ContextHostEffects => ({
   platform: ports.platform,
@@ -56,13 +99,14 @@ export const nodeContextEffects = (ports: CliPorts): ContextHostEffects => ({
   ownerPid: process.pid,
   isAlive: isProcessAlive,
   readSecret: (name, signal) => ports.secretStore().read(name, signal),
-  copyProbeRecord: async (target, paths) => void (await copyProbeRecord(ports.files, pathsOf(ports).probe, paths.probe, target)),
-  listRoots: async () => {
-    const base = shortTempBase(ports.platform);
-    return (await ports.files.listFiles(base)).filter((entry) => path.basename(entry).startsWith(ROOT_PREFIX));
+  copyEndpointProbeRecord: async (probe, paths) => {
+    const { endpointKeyOf } = await import('@momonga/gateway');
+    await copyEndpointProbeRecord(ports.files, pathsOf(ports).probe, paths.probe, { endpoint: endpointKeyOf(probe.upstream), model: probe.model });
   },
-  readOwner: async (root) => ownerOf(await ports.files.readTextIfPresent(path.join(root, OWNER_FILE))),
-  sessionEnv: () => environmentSnapshot(ports),
+  copyProbeRecord: async (target, paths) => void (await copyProbeRecord(ports.files, pathsOf(ports).probe, paths.probe, target)),
+  listRoots: () => listEvalRoots(shortTempBase(ports.platform), ports.platform === 'win32' ? undefined : process.getuid?.()),
+  readOwner: (root) => readEvalOwner(ports.files, root),
+  sessionEnv: (root) => environmentSnapshot({ home: ports.home, env: caseEnvironment(ports.env, root, ports.platform) }),
   makeRoot: () => ports.files.makeTempDirectory(ROOT_PREFIX, shortTempBase(ports.platform)),
   prepare: (paths) => ensureMomongaDirs(paths),
   writeFile: async (file, text) => {

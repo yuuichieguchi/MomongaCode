@@ -22,7 +22,7 @@ import { goldenRunApi } from '../client/golden-run-api.ts';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import { nodeContextEffects } from '../eval/context-effects.ts';
-import { runContextLive } from '../eval/context-host.ts';
+import { runContextLive, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects } from '../eval/context-host.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
@@ -106,6 +106,7 @@ const runContextLiveCommand = async (
     alias: options.alias,
     models: loadUserModels({ home: ports.home }),
     limits: { maxTotalTokens: RUNTIME_DEFAULTS.limits.maxTotalTokens, defaultTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs },
+    onUnreadableHomes: (count) => ports.stderr.write(unreadableHomesNotice(count)),
     ...(options.interrupt === undefined ? {} : { interrupt: options.interrupt }),
     ...(record === undefined ? {} : { onTranscript: async (transcript: Transcript) => void (await saveTranscript(ports.files, record, transcript)) }),
   });
@@ -122,25 +123,23 @@ export const evaluateContext = async (
   if (replay !== undefined && (options.alias !== undefined || options.seed !== undefined)) {
     throw new EvaluateUsageError('--alias and --seed belong to a live run; a replay takes the aliases and the seed from the transcripts');
   }
-  const live = replay === undefined ? assertLiveOptions(options) : undefined;
-  const model = live?.model ?? options.model;
+  const mode = replay === undefined ? ({ kind: 'live', ...assertLiveOptions(options) } as const) : ({ kind: 'replay', directory: replay } as const);
+  const model = mode.kind === 'live' ? mode.model : options.model;
   if (model === undefined) throw new EvaluateUsageError('--model fake|real is required with --replay: a transcript does not record which kind of model produced it');
   const dataset = await loadContextDataset(ports.files, path.resolve(ports.cwd, datasetFile));
   let transcripts: Transcript[];
   let datasetSeed: number | undefined;
-  if (live === undefined && replay !== undefined) {
-    transcripts = await loadTranscripts(ports.files, path.resolve(ports.cwd, replay));
+  if (mode.kind === 'replay') {
+    transcripts = await loadTranscripts(ports.files, path.resolve(ports.cwd, mode.directory));
     datasetSeed = seedOfTranscripts(transcripts);
-  } else if (live !== undefined) {
+  } else {
     datasetSeed = options.seed ?? DEFAULT_DATASET_SEED;
     transcripts = await runContextLiveCommand(ports, hostEffects, dataset, {
-      alias: live.alias,
+      alias: mode.alias,
       seed: datasetSeed,
       record: options.record === undefined ? undefined : path.resolve(ports.cwd, options.record),
       interrupt: options.interrupt,
     });
-  } else {
-    throw new EvaluateUsageError('eval context needs --replay <directory> or a live run');
   }
   const report = buildContextReport({ dataset, transcripts, model, seed: CONTEXT_BOOTSTRAP_SEED, ...(datasetSeed === undefined ? {} : { datasetSeed }) });
   if (options.report !== undefined) await saveContextReport(ports.files, path.resolve(ports.cwd, options.report), report);

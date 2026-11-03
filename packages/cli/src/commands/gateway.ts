@@ -8,21 +8,83 @@ export const DEFAULT_FM_BINARY = '/usr/bin/fm';
 
 export const FM_PROBE_SOCKET_NAME = 'fm-probe.sock';
 
-export class NotAnFmTarget extends Error {
+type ChatCompletionsConfig = Extract<Awaited<ReturnType<typeof loadUserSettings>>['settings']['models']['targets'][string], { adapter: 'chat-completions' }>;
+
+export class NotAProbeableTarget extends Error {
   constructor(target: string, known: Readonly<Record<string, { adapter: string }>>) {
     const described = Object.entries(known).map(([name, entry]) => `${name} (${entry.adapter})`);
-    super(`model target ${target} is not an fm target; configured targets: ${described.length === 0 ? 'none' : described.join(', ')}`);
-    this.name = 'NotAnFmTarget';
+    super(`model target ${target} is not an fm or chat-completions target; configured targets: ${described.length === 0 ? 'none' : described.join(', ')}`);
+    this.name = 'NotAProbeableTarget';
   }
 }
 
 export type ProbeOptions = { fmBinary: string; samples?: number; interrupt: AbortSignal };
 
+const restartDaemon = async (ports: CliPorts, paths: MomongaPaths): Promise<void> => {
+  const { stopped } = await stopDaemon(ports, paths);
+  if (stopped) {
+    await ensureDaemon(ports, paths);
+    ports.stdout.write('restarted the daemon so that the gateway reads the record\n');
+  }
+};
+
+export const probeTarget = async (ports: CliPorts, paths: MomongaPaths, target: string, options: ProbeOptions): Promise<number> => {
+  const { settings } = await loadUserSettings({ home: ports.home });
+  const targets = settings.models.targets;
+  const configured = targets[target];
+  if (configured?.adapter === 'fm') return probeFm(ports, paths, target, options);
+  if (configured?.adapter === 'chat-completions') return probeChatCompletions(ports, paths, target, configured, options);
+  throw new NotAProbeableTarget(target, targets);
+};
+
+const apiKeyOf = async (ports: CliPorts, target: ChatCompletionsConfig, interrupt: AbortSignal): Promise<string | undefined> => {
+  if (target.apiKeySecret !== undefined) return ports.secretStore().read(target.apiKeySecret, interrupt);
+  if (target.apiKeyEnv === undefined) return undefined;
+  const value = ports.env[target.apiKeyEnv];
+  if (value === undefined || value === '') throw new Error(`the environment variable ${target.apiKeyEnv} is unset or empty, so the target cannot be probed`);
+  return value;
+};
+
+const probeChatCompletions = async (
+  ports: CliPorts,
+  paths: MomongaPaths,
+  name: string,
+  target: ChatCompletionsConfig,
+  options: ProbeOptions,
+): Promise<number> => {
+  const { probeEndpointTarget } = await import('@momonga/gateway');
+  const upstream =
+    target.socketPath !== undefined ? ({ kind: 'unix', socketPath: target.socketPath } as const) : ({ kind: 'tcp', baseUrl: target.baseUrl as string } as const);
+  const { report, toolCalling, key } = await probeEndpointTarget({
+    probeRecordDir: paths.probe,
+    upstream,
+    model: target.model,
+    apiKey: await apiKeyOf(ports, target, options.interrupt),
+    signal: options.interrupt,
+    ...(options.samples === undefined ? {} : { samples: options.samples }),
+  });
+  const reasoning = report.reasoning;
+  const parallel = report.parallelToolCalls;
+  ports.stdout.write(
+    [
+      `probed ${name}: model ${report.modelId} at ${key.endpoint}, context window ${report.contextWindow.value} (${report.contextWindow.method})`,
+      `  tool calling: ${toolCalling} (native ${report.nativeTools.validRate}, constrained ${report.constrained.validRate})`,
+      `  structured output: ${report.constrained.accepted ? 'json_schema' : 'none'}, stop sequences: ${report.stopSequences}, usage reported: ${report.usageReported}`,
+      `  parallel tool calls: ${parallel === undefined ? 'not measured' : `${parallel.accepted && parallel.multiCallRate >= 0.9} (${parallel.multiCallRate} of replies carried several calls)`}`,
+      `  reasoning: ${reasoning === undefined ? 'not measured' : reasoning.control === 'reasoning_effort' ? `reasoning_effort, lowest ${reasoning.lowest}` : `cannot be controlled${reasoning.headroomTokens === undefined ? '' : `, leaves room for ${reasoning.headroomTokens} tokens`}`}`,
+      `  max concurrency: ${report.maxConcurrency}`,
+      `  recorded in ${paths.probe}`,
+    ].join('\n') + '\n',
+  );
+  await restartDaemon(ports, paths);
+  return 0;
+};
+
 export const probeFm = async (ports: CliPorts, paths: MomongaPaths, target: string, options: ProbeOptions): Promise<number> => {
   const { settings } = await loadUserSettings({ home: ports.home });
   const targets = settings.models.targets;
   const configured = targets[target];
-  if (configured?.adapter !== 'fm') throw new NotAnFmTarget(target, targets);
+  if (configured?.adapter !== 'fm') throw new NotAProbeableTarget(target, targets);
   const { probeManagedFm } = await import('@momonga/gateway');
   const { report, toolCalling } = await probeManagedFm({
     paths,
@@ -42,10 +104,6 @@ export const probeFm = async (ports: CliPorts, paths: MomongaPaths, target: stri
       `  recorded in ${paths.probe}`,
     ].join('\n') + '\n',
   );
-  const { stopped } = await stopDaemon(ports, paths);
-  if (stopped) {
-    await ensureDaemon(ports, paths);
-    ports.stdout.write('restarted the daemon so that the gateway reads the record\n');
-  }
+  await restartDaemon(ports, paths);
   return 0;
 };

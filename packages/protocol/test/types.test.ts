@@ -32,6 +32,7 @@ describe('protocol capability types', () => {
         maxConcurrency: number;
         source: 'declared' | 'probed' | 'config' | 'unprobed';
         probedAt?: string;
+        reasoning?: { control: 'none'; headroomTokens?: number } | { control: 'reasoning_effort'; lowest: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' };
       } & (
         | { imageInput: false; imageTokens?: undefined }
         | { imageInput: true; imageTokens: { pixelsPerToken: number; maxTokens: number; minTokens: number } }
@@ -68,6 +69,8 @@ describe('protocol capability types', () => {
       constrained: { accepted: boolean; validRate: number };
       keywordSupport: Record<ProbeKeyword, boolean>;
       stopSequences: boolean;
+      parallelToolCalls?: { accepted: boolean; multiCallRate: number };
+      reasoning?: { control: 'none'; headroomTokens?: number } | { control: 'reasoning_effort'; lowest: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' };
       maxConcurrency: number;
       imageInputAccepted: boolean;
       imageTokens?: { pixelsPerToken: number; maxTokens: number; minTokens: number };

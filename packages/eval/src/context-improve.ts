@@ -1,4 +1,4 @@
-import { MIN_SUMMARY_TOKENS, tokensForText } from '@momonga/protocol';
+import { MIN_SUMMARY_TOKENS, escapeGuidelineText, tokensForText } from '@momonga/protocol';
 import { compareContextReports } from './context-compare.ts';
 import type { ContextComparison } from './context-compare.ts';
 import { contrastiveCasesOf } from './context-report.ts';
@@ -193,7 +193,7 @@ export const improveGuideline = async (input: ImproveInput, ports: ImprovePorts)
   return winner === undefined ? outcome('no_winner') : outcome('winner', { winner });
 };
 
-const linesOf = (text: string): string[] => (text === '' ? [] : text.split('\n'));
+const linesOf = (text: string): string[] => (text === '' ? [] : escapeGuidelineText(text).split('\n'));
 
 const itemAt = <T>(items: readonly T[], index: number): T => {
   const item = items[index];
@@ -231,7 +231,13 @@ export const guidelineDiff = (before: string, after: string): string => {
   return lines.join('\n');
 };
 
-const candidateLines = (candidate: ImproveCandidate): string[] => {
+export const formatGuidelineText = (text: string): string =>
+  escapeGuidelineText(text)
+    .split('\n')
+    .map((line) => `  ${line}`)
+    .join('\n');
+
+const candidateLines =(candidate: ImproveCandidate): string[] => {
   if (candidate.skipped !== undefined) return [`candidate ${candidate.index}: skipped: ${candidate.skipped}`];
   const { comparison } = candidate;
   if (comparison === undefined) return [`candidate ${candidate.index}: not benchmarked`];
@@ -256,7 +262,13 @@ const verdictLines = (outcome: ImproveOutcome): string[] => {
     case 'winner': {
       const { winner } = outcome;
       if (winner === undefined) throw new Error('an outcome with the status winner holds no winner');
-      return [`winner: candidate ${winner.index} with contrastiveFailures ${winner.contrastiveFailures}`, 'change:', guidelineDiff(outcome.current?.text ?? '', winner.text)];
+      return [
+        `winner: candidate ${winner.index} with contrastiveFailures ${winner.contrastiveFailures}`,
+        'text of the winner:',
+        formatGuidelineText(winner.text),
+        'change:',
+        guidelineDiff(outcome.current?.text ?? '', winner.text),
+      ];
     }
   }
 };

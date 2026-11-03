@@ -41,6 +41,18 @@ describe('context-overflow wrap-up (path 3)', () => {
     expect(together[0]?.map((payload) => payload.type)).toEqual(['notice', 'model.requested']);
   });
 
+  it('asks the final summary for the lowest reasoning effort and no other step', async () => {
+    const env = await makeEnv({ capabilities: capabilitiesFor(4000) });
+    env.gateway.script.push(...overflowScript(), { events: [], error: gatewayError(400, 'invalid_request', 'invalid_request') });
+    const run = env.enqueue('Fill the context');
+
+    await env.runOnce(env.worker('worker-1', withinTurnWorker(LONG_DESCRIPTION)));
+
+    const requested = env.ofType(run.id, 'model.requested');
+    expect(requested.find((event) => event.step === 2)?.body).toMatchObject({ reasoning: { effort: 'none' } });
+    expect(requested.find((event) => event.step === 1)?.body).not.toHaveProperty('reasoning');
+  });
+
   it('ends STOPPED budget with the gateway code when the wrap-up call is rejected with a 400', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(4000) });
     env.gateway.script.push(...overflowScript(), { events: [], error: gatewayError(400, 'invalid_request', 'invalid_request') });

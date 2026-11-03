@@ -232,8 +232,9 @@ const compactOnce = async (
       counterFailure = error;
       continue;
     }
+    const reasoningHeadroom = capabilities.reasoning?.control === 'none' ? (capabilities.reasoning.headroomTokens ?? 0) : 0;
     const limit = Math.min(
-      capabilities.contextWindow - cap - marginFloorFor(capabilities.contextWindow),
+      capabilities.contextWindow - cap - reasoningHeadroom - marginFloorFor(capabilities.contextWindow),
       capabilities.contextWindow - outputReserveFor(capabilities),
     );
     if (counted.input_tokens + counted.error_bound <= limit) sized.push(target);

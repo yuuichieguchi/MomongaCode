@@ -17,7 +17,9 @@ import {
 import type { Clock, JsonLogger, MomongaPaths, ProcessLock, ReadyFields, SecretStore, TextStream } from '@momonga/foundation';
 import { buildCostReport, closeTelemetry, definePriceTable, formatCostReport, createTelemetry, exportersFor, openTraceStore } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
-import type { AdapterTarget, Capabilities, ProviderAdapter } from '@momonga/protocol';
+import type { AdapterTarget, Capabilities, ProviderAdapter, ToolCallingMode } from '@momonga/protocol';
+import { loadEndpointRecord } from './probe/endpoint-record.ts';
+import { IDENTITY_READ_TIMEOUT_MS, createProbedEndpointTarget, endpointKeyOf, probeEndpointOf, readEndpointIdentity } from './probe/endpoint-target.ts';
 import { createSecretResolver } from './secrets.ts';
 import type { SecretResolver } from './secrets.ts';
 import { createAnthropicAdapter } from './adapters/anthropic/adapter.ts';
@@ -112,7 +114,7 @@ const endpointOf = (target: RemoteTarget): UpstreamEndpoint => {
   throw new Error(`${target.adapter} target has neither socketPath nor baseUrl`);
 };
 
-const capabilitiesOf = (target: RemoteTarget): Capabilities => ({ ...target.capabilities, toolCalling: target.toolCalling });
+const capabilitiesOf = (target: RemoteTarget, mode: ToolCallingMode): Capabilities => ({ ...target.capabilities, toolCalling: mode });
 
 const startupFailureOf = (error: unknown): Error | undefined =>
   error instanceof SecretUnavailableError || error instanceof SecretEmptyError ? error : undefined;
@@ -199,6 +201,40 @@ const createFmAdapter = async (name: string, target: Extract<ResolvedTarget, { a
     toolCallingSetting: target.toolCalling,
   });
   return createChatCompletionsAdapter({ ...withBinaryGuard(managed, context.binary, files), clock });
+};
+
+const createAutoChatCompletionsAdapter = async (
+  name: string,
+  target: Extract<RemoteTarget, { adapter: 'chat-completions' }>,
+  readKey: ReturnType<typeof apiKeyReader>,
+  probeRecordDir: string,
+  clock: Clock,
+) => {
+  const upstream = endpointOf(target);
+  const endpoint = endpointKeyOf(upstream);
+  const probed = createProbedEndpointTarget({
+    targetName: name,
+    endpoint,
+    model: target.model,
+    declared: capabilitiesOf(target, 'native'),
+    record: await loadEndpointRecord(probeRecordDir, { endpoint, model: target.model }),
+    readIdentity: async () => {
+      const signal = AbortSignal.timeout(IDENTITY_READ_TIMEOUT_MS);
+      const apiKey = await readKey({ name, model: target.model }, signal);
+      return readEndpointIdentity(probeEndpointOf(upstream, apiKey), target.model, signal);
+    },
+  });
+  return createChatCompletionsAdapter({
+    resolveEndpoint: async () => {
+      await probed.verify();
+      return upstream;
+    },
+    toolCalling: () => probed.toolCalling(),
+    keywordSupport: () => probed.keywordSupport(),
+    capabilities: () => probed.capabilities(),
+    apiKey: readKey,
+    clock,
+  });
 };
 
 const DEBUG_TCP_HOST = '127.0.0.1';
@@ -377,10 +413,15 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         continue;
       }
       const readKey = apiKeyReader(options.env, secretResolver, target);
-      const common = { resolveEndpoint: async () => endpointOf(target), capabilities: async () => capabilitiesOf(target), clock };
+      if (target.adapter === 'chat-completions' && target.toolCalling === 'auto') {
+        adapters[name] = await createAutoChatCompletionsAdapter(name, target, readKey, paths.probe, clock);
+        continue;
+      }
+      const mode: ToolCallingMode = target.toolCalling === 'auto' ? 'native' : target.toolCalling;
+      const common = { resolveEndpoint: async () => endpointOf(target), capabilities: async () => capabilitiesOf(target, mode), clock };
       switch (target.adapter) {
         case 'chat-completions':
-          adapters[name] = createChatCompletionsAdapter({ ...common, toolCalling: () => target.toolCalling, apiKey: readKey });
+          adapters[name] = createChatCompletionsAdapter({ ...common, toolCalling: () => mode, apiKey: readKey });
           break;
         case 'open-responses':
           adapters[name] = createOpenResponsesAdapter({ ...common, apiKey: readKey });

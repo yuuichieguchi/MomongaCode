@@ -298,16 +298,43 @@ describe('the journaled contribution and the contributed_at stamp', () => {
     expect(h.store.memories.get(named)?.contributedAt).toBe(START_MS + 7);
   });
 
-  it('keeps the first stamp when the stamp is applied again', () => {
+  it('moves contributed_at to the terminal time of a later run that contributed again', () => {
     const h = harness();
     const run = enqueue(h.store, newSession(h.store).id);
     const id = savedMemory(h, run.id, 'call_1', 'used note');
 
-    h.store.memories.stampContributed([id]);
-    h.clock.advance(10);
-    h.store.memories.stampContributed([id, 'unknown-id']);
+    h.store.memories.stampContributed([id], START_MS + 3);
+    h.store.memories.stampContributed([id, 'unknown-id'], START_MS + 10);
 
-    expect(h.store.memories.get(id)?.contributedAt).toBe(START_MS);
+    expect(h.store.memories.get(id)?.contributedAt).toBe(START_MS + 10);
+  });
+
+  it('keeps the later time when an earlier run is stamped again, and when the same run is stamped twice', () => {
+    const h = harness();
+    const run = enqueue(h.store, newSession(h.store).id);
+    const id = savedMemory(h, run.id, 'call_1', 'used note');
+    h.store.memories.stampContributed([id], START_MS + 10);
+
+    h.store.memories.stampContributed([id], START_MS + 3);
+    expect(h.store.memories.get(id)?.contributedAt).toBe(START_MS + 10);
+    h.store.memories.stampContributed([id], START_MS + 10);
+    expect(h.store.memories.get(id)?.contributedAt).toBe(START_MS + 10);
+  });
+
+  it('stamps a memory again with the terminal time of each completed run that contributed', () => {
+    let named = '';
+    const h = harness({ contribution: { eventTypes: ['user.message'], measure: () => contributionFor(named) } });
+    const first = enqueue(h.store, newSession(h.store).id);
+    named = savedMemory(h, first.id, 'call_1', 'used note');
+    h.clock.advance(5);
+    expect(h.store.transition(mustClaim(h.store, 'w2'), ['RUNNING'], 'COMPLETED').kind).toBe('ok');
+    expect(h.store.memories.get(named)?.contributedAt).toBe(START_MS + 5);
+    h.clock.advance(20);
+    enqueue(h.store, newSession(h.store).id);
+
+    expect(h.store.transition(mustClaim(h.store, 'w3'), ['RUNNING'], 'COMPLETED').kind).toBe('ok');
+
+    expect(h.store.memories.get(named)?.contributedAt).toBe(START_MS + 25);
   });
 });
 

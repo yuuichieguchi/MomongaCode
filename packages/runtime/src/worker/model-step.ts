@@ -1,4 +1,5 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import { LOWEST_REASONING_EFFORT } from '@momonga/protocol';
 import type { CreateResponseBody, ResponseResource, RunState } from '@momonga/protocol';
 import type { ClaimContext, Flow } from './claim-context.ts';
 import { modelKey } from '../model-key.ts';
@@ -11,6 +12,7 @@ import type { ModelResult } from './model-stream.ts';
 import { summaryStopReason } from './wrap-up.ts';
 import { runStopHooks } from './hook-step.ts';
 import { recordCalls, settleCalls } from './tool-step.ts';
+import { pinnedDigestOf } from './pinned-digest.ts';
 
 const MODEL_ATTEMPT = 1;
 const DEADLINE_CODE = 'deadline_exceeded';
@@ -124,6 +126,18 @@ const handleResult = async (
   ]);
   ctx.memory.streak = 0;
   ctx.memory.interruptions = 0;
+  const fallback = response.momonga;
+  if (fallback?.fallbackCauses !== undefined && fallback.fallbackCauses.length > 0) {
+    const failed = fallback.fallbackCauses.map((cause) => `${cause.target} failed (${cause.code === null ? cause.message : `${cause.code}: ${cause.message}`})`);
+    journal.append([
+      {
+        type: 'notice',
+        level: 'warning',
+        message: `The model call was answered by the fallback target ${fallback.target} because ${failed.join(' and ')}.`,
+        code: 'fallback_target',
+      },
+    ]);
+  }
   if (observation !== undefined) {
     const reported = response.momonga?.contextInputTokens ?? usage.input_tokens;
     ctx.meter.observe({ inputDigest: observation.inputDigest, inputTokens: reported });
@@ -194,6 +208,7 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
     tools: built.tools,
     tool_choice: summarising ? 'none' : 'auto',
     parallel_tool_calls: ctx.capabilities.parallelToolCalls,
+    ...(summarising ? { reasoning: { effort: LOWEST_REASONING_EFFORT } } : {}),
     max_output_tokens: built.maxOutputTokens,
     store: false,
     stream: true,
@@ -203,7 +218,7 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   const position = { step, attempt: MODEL_ATTEMPT };
   journal.append([
     ...(wrapUp === undefined ? [] : [{ type: 'notice' as const, level: 'error' as const, message: wrapUp.notice, code: 'context_wrap_up' }]),
-    { type: 'model.requested', step: position.step, attempt: position.attempt, digest: sha256Hex(canonicalJson(body)), body },
+    { type: 'model.requested', step: position.step, attempt: position.attempt, digest: sha256Hex(canonicalJson(body)), pinnedDigest: pinnedDigestOf(body), body },
   ]);
   const streamed = await streamRecovering(ctx, body, position);
   return streamed.kind === 'flow'

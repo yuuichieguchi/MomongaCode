@@ -12,7 +12,7 @@ import type {
   StreamEvent,
   UsageSource,
 } from '@momonga/protocol';
-import { TERMINAL_STREAM_EVENT_TYPES } from '@momonga/protocol';
+import { TERMINAL_STREAM_EVENT_TYPES, isReasoningEffort } from '@momonga/protocol';
 import { startAttemptSpan } from './attempt-span.ts';
 import type { AttemptSpan, TraceParent } from './attempt-span.ts';
 import { applyBreakerVerdict, breakerVerdictOf } from './breaker-verdict.ts';
@@ -80,6 +80,7 @@ const adapterRequestFor = (job: ResponseJob, resolved: ResolvedInput, target: Ta
     ...(body.max_output_tokens === undefined ? {} : { max_output_tokens: body.max_output_tokens }),
     ...(body.temperature === undefined ? {} : { temperature: body.temperature }),
     ...(body.top_p === undefined ? {} : { top_p: body.top_p }),
+    ...(isReasoningEffort(body.reasoning?.effort) ? { reasoning_effort: body.reasoning.effort } : {}),
   };
 };
 
@@ -113,6 +114,7 @@ const openAttempt = async (
     runId: job.runId,
     step: job.step,
     attempt: attemptNumber,
+    targetName: target.name,
     request: { input: resolved.forAdapter, instructions: job.body.instructions, tools: job.body.tools },
   });
   try {
@@ -239,7 +241,7 @@ async function* relaySteps(
   progress: RelayProgress,
 ): AsyncGenerator<StreamEvent> {
   const { signal } = control;
-  const { value: opened, target, attempts, fallbackFrom } = outcome;
+  const { value: opened, target, attempts, fallbackFrom, fallbackCauses } = outcome;
   const { clock } = services;
   const responseId = `resp_${uuidv7(clock).replaceAll('-', '')}`;
   const base = baseResource(job.body, { id: responseId, model: target.model, createdAtSeconds: Math.floor(clock.now() / 1000) });
@@ -329,7 +331,7 @@ async function* relaySteps(
     alias: job.alias,
     target: target.name,
     attempts,
-    ...(fallbackFrom.length === 0 ? {} : { fallbackFrom }),
+    ...(fallbackFrom.length === 0 ? {} : { fallbackFrom, fallbackCauses }),
     usageSource,
     ...(contextInputTokens === undefined ? {} : { contextInputTokens }),
   });
@@ -349,6 +351,7 @@ async function* relaySteps(
 
   if (interruption !== undefined) {
     applyBreakerVerdict(target.breaker, interruption.verdict);
+    if (interruption.verdict === 'failure') target.lastFailure = { code: interruption.code, message: interruption.message };
     opened.span.fail(interruption.spanType, interruption.error, interruption.message);
     progress.concluded = true;
     yield failedTerminal({ code: interruption.code, message: interruption.message, type: interruption.type }, orderedItems(doneItems));
@@ -444,7 +447,7 @@ async function* relaySteps(
   }
   job.connection?.remember(responseId, { input: resolved.stored, output: resource.output });
   target.breaker.onSuccess();
-  opened.span.succeed({ responseModel: target.model, responseId, finishReason: finishReasonOf(resource), usage, output: resource.output });
+  opened.span.succeed({ responseModel: target.model, responseId, finishReason: finishReasonOf(resource), usage, output: resource.output, fallbackCauses });
   progress.concluded = true;
   yield terminal;
 }

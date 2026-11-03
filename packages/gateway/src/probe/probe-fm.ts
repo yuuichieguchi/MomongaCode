@@ -48,6 +48,7 @@ export const probeManagedFm = async (options: ProbeManagedFmOptions): Promise<Pr
     const signal = options.signal ?? new AbortController().signal;
     const report = await runProbe({
       socketPath: endpoint.socketPath,
+      managedHealthRoute: true,
       countTokens: async (text) => parseCount(await execWithStdin(options.binary, ['count-tokens', '-q'], text, signal)),
       ...(options.samples === undefined ? {} : { samples: options.samples }),
       ...(options.signal === undefined ? {} : { signal: options.signal }),

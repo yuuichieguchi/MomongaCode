@@ -22,7 +22,7 @@ export type ContextRuntime = Pick<
 export type ContextHostEffects = {
   platform: NodeJS.Platform;
   env: Readonly<Record<string, string | undefined>>;
-  sessionEnv(): Promise<Record<string, string>>;
+  sessionEnv(root: string): Promise<Record<string, string>>;
   makeRoot(): Promise<string>;
   prepare(paths: MomongaPaths): Promise<void>;
   writeFile(file: string, text: string): Promise<void>;
@@ -38,8 +38,9 @@ export type ContextHostEffects = {
   ownerPid: number;
   readSecret(name: string, signal: AbortSignal): Promise<string>;
   copyProbeRecord(target: string, paths: MomongaPaths): Promise<void>;
+  copyEndpointProbeRecord(probe: EndpointProbe, paths: MomongaPaths): Promise<void>;
   listRoots(): Promise<string[]>;
-  readOwner(root: string): Promise<number | undefined>;
+  readOwner(root: string): Promise<number | 'unreadable' | undefined>;
   isAlive(pid: number): boolean;
 };
 
@@ -72,7 +73,10 @@ const membersOf = (models: ResolvedModels, alias: string): string[] => {
 
 export type SecretCredential = { envName: string; secretName: string };
 
+export type EndpointProbe = { upstream: { kind: 'unix'; socketPath: string } | { kind: 'tcp'; baseUrl: string }; model: string };
+
 export type LiveSettings = {
+  endpointProbes: EndpointProbe[];
   models: ModelsSettings;
   sandbox?: SandboxSetting;
   credentials: SecretCredential[];
@@ -88,6 +92,7 @@ export const liveSettingsFor = (user: UserModels, alias: string): LiveSettings =
   const targets: NonNullable<ModelsSettings['targets']> = {};
   const credentials: SecretCredential[] = [];
   const fmTargets: string[] = [];
+  const endpointProbes: EndpointProbe[] = [];
   for (const name of members) {
     const resolved = user.resolved.targets[name];
     if (resolved === undefined) throw new ContextHostError(`the alias ${alias} names the target ${name}, which is not defined`);
@@ -98,6 +103,10 @@ export const liveSettingsFor = (user: UserModels, alias: string): LiveSettings =
       fmTargets.push(name);
       targets[name] = declared;
       continue;
+    }
+    if (resolved.adapter === 'chat-completions' && resolved.toolCalling === 'auto') {
+      const upstream = resolved.socketPath !== undefined ? ({ kind: 'unix', socketPath: resolved.socketPath } as const) : ({ kind: 'tcp', baseUrl: resolved.baseUrl as string } as const);
+      endpointProbes.push({ upstream, model: resolved.model });
     }
     if (resolved.adapter !== 'fm' && resolved.apiKeySecret !== undefined) {
       const envName = `${GENERATED_KEY_PREFIX}${credentials.length}`;
@@ -113,6 +122,7 @@ export const liveSettingsFor = (user: UserModels, alias: string): LiveSettings =
     ...(user.sandbox === undefined ? {} : { sandbox: user.sandbox }),
     credentials,
     fmTargets,
+    endpointProbes,
   };
 };
 
@@ -137,19 +147,29 @@ export const readCredentials = async (
 
 export const OWNER_FILE = '.momonga-eval-owner';
 
-export const ROOT_PREFIX = 'mc-';
+export const ROOT_PREFIX = 'momonga-eval-';
 
-export const sweepStaleHomes = async (effects: ContextHostEffects): Promise<string[]> => {
+export const unreadableHomesNotice = (count: number): string =>
+  `${count} temporary ${count === 1 ? 'entry' : 'entries'} of an earlier run could not be read and ${count === 1 ? 'was' : 'were'} skipped\n`;
+
+export type SweepResult = { removed: string[]; unreadable: number };
+
+export const sweepStaleHomes = async (effects: ContextHostEffects): Promise<SweepResult> => {
   const removed: string[] = [];
+  let unreadable = 0;
   for (const root of await effects.listRoots()) {
     const owner = await effects.readOwner(root);
+    if (owner === 'unreadable') {
+      unreadable += 1;
+      continue;
+    }
     if (owner === undefined || effects.isAlive(owner)) continue;
     const holder = await effects.daemonHolder(momongaLayout(root, effects.platform, {}));
     if (holder !== undefined) await effects.terminate(holder);
     await effects.remove(root);
     removed.push(root);
   }
-  return removed;
+  return { removed, unreadable };
 };
 
 type CaseRecord = { root: string; paths: MomongaPaths | undefined; pid: number | undefined; runtime: ContextRuntime | undefined; released: boolean };
@@ -193,14 +213,15 @@ export const createContextHosts = (
   const prepared = async (entry: ExpandedCase, record: CaseRecord): Promise<ContextCaseHost> => {
     const { root } = record;
     await effects.writeFile(path.join(root, OWNER_FILE), String(effects.ownerPid));
-    assertSocketsFit(root, effects.platform);
+    assertSocketsFit(await effects.canonical(root), effects.platform);
     const paths = momongaLayout(root, effects.platform, {});
     record.paths = paths;
     await effects.prepare(paths);
-    const { models, sandbox, fmTargets } = options.settings;
+    const { models, sandbox, fmTargets, endpointProbes } = options.settings;
     const base = { models, ...(sandbox === undefined ? {} : { sandbox }) };
     await effects.writeFile(paths.settingsFile, `${JSON.stringify(caseSettingsFor(base, { compaction: entry.compaction }), null, 2)}\n`);
     for (const target of fmTargets) await effects.copyProbeRecord(target, paths);
+    for (const probe of endpointProbes) await effects.copyEndpointProbeRecord(probe, paths);
     const workspace = path.join(root, WORKSPACE_DIRECTORY);
     await effects.makeDirectory(workspace);
     for (const [name, content] of Object.entries(entry.files ?? {})) await effects.writeFile(path.join(workspace, name), content);
@@ -218,7 +239,7 @@ export const createContextHosts = (
     if (options.guideline !== undefined) await runtime.adoptGuideline({ text: options.guideline, parent: null, report: { ...BENCHMARK_GUIDELINE_REPORT } });
     return {
       cwd,
-      api: goldenRunApi(runtime, await effects.sessionEnv()),
+      api: goldenRunApi(runtime, await effects.sessionEnv(root)),
       rules: {
         add: (request) => runtime.addRule(request),
         retire: async (id) => void (await runtime.retireRule(id)),
@@ -285,6 +306,7 @@ export type ContextLiveInput = {
   guideline?: string;
   interrupt?: AbortSignal;
   onTranscript?(transcript: Transcript): Promise<void>;
+  onUnreadableHomes?(count: number): void;
 };
 
 export const runContextLive = async (effects: ContextHostEffects, input: ContextLiveInput): Promise<Transcript[]> => {
@@ -292,7 +314,8 @@ export const runContextLive = async (effects: ContextHostEffects, input: Context
   interrupt?.throwIfAborted();
   const settings = liveSettingsFor(input.models, input.alias);
   const credentialValues = await readCredentials(effects, settings.credentials, interrupt ?? new AbortController().signal);
-  await sweepStaleHomes(effects);
+  const swept = await sweepStaleHomes(effects);
+  if (swept.unreadable > 0) input.onUnreadableHomes?.(swept.unreadable);
   const hosts = createContextHosts(effects, { settings, credentialValues, ...(input.guideline === undefined ? {} : { guideline: input.guideline }) });
   const bounds = liveBoundsFor(input.dataset, input.limits);
   const interrupted = new Promise<never>((_resolve, reject) => {

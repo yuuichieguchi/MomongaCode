@@ -174,6 +174,7 @@ export type MomongaResponseExtension = {
   target: string;
   attempts: number;
   fallbackFrom?: string[];
+  fallbackCauses?: { target: string; code: string | null; message: string }[];
   usageSource: 'reported' | 'estimated';
   contextInputTokens?: number;
 };
@@ -321,7 +322,7 @@ export type StreamEvent =
       output_index: number;
       arguments: string;
     }
-  | { type: 'error'; sequence_number: number; error: ErrorBody };
+  | { type: 'error'; sequence_number: number; error: ErrorBody; status?: number; retry_after_ms?: number };
 
 export type CompactMomongaExtension = { max_summary_tokens?: number; retains_user_request?: boolean; guideline?: string };
 

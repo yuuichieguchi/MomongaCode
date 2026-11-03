@@ -335,7 +335,7 @@ export type MemoryStore = {
   retire(id: string): { retired: boolean; memory: MemoryRecord } | undefined;
   history(id: string): MemoryRecord[];
   markUsed(ids: readonly string[]): void;
-  stampContributed(ids: readonly string[]): void;
+  stampContributed(ids: readonly string[], at: number): void;
   delete(id: string): boolean;
 };
 
@@ -486,6 +486,7 @@ export type RuntimeStore = {
   findRunByIdempotencyKey(sessionId: string, key: string): { run: Run; requestDigest: string | null } | undefined;
   sessionActivity(sessionId: string): { lastActivityAt: number; hasActiveRun: boolean } | undefined;
   checkIdentity(): void;
+  readonly maxTotalAttempts: number;
   getRun(id: string): Run | undefined;
   claim(workerId: string): Claim | null;
   heartbeat(claim: Claim): HeartbeatResult;
@@ -573,7 +574,7 @@ export type TerminalContribution = {
   measure(input: {
     run: Run;
     events: readonly RunEvent[];
-    state(): RunState;
+    replay(visit: (state: RunState, event: RunEvent) => void): void;
     memories: Pick<MemoryStore, 'get'>;
     governing: Pick<GoverningFactStore, 'get'>;
   }): ContributionPayload | undefined;

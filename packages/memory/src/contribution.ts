@@ -1,7 +1,10 @@
 import { isRecord } from '@momonga/foundation';
+import { escapeXmlAttribute } from '@momonga/protocol';
 import type { ContributionKind, RunEvent } from '@momonga/protocol';
 
-export type InjectedItem = { kind: ContributionKind; id: string; text: string; fromSeq: number };
+export type InjectedItem = { kind: ContributionKind; id: string; text: string; fromSeq: number; untilSeq?: number };
+
+export type RenderedWorkingState = { seq: number; text: string };
 
 export type ItemContribution = { kind: ContributionKind; id: string; contributed: boolean };
 
@@ -104,18 +107,55 @@ const stepTextOf = (output: readonly unknown[]): string =>
     })
     .join('\n');
 
+const jsonWordsOf = (value: unknown): string[] =>
+  typeof value === 'string'
+    ? [value]
+    : Array.isArray(value)
+      ? value.flatMap(jsonWordsOf)
+      : isRecord(value)
+        ? Object.entries(value).flatMap(([key, entry]) => [key, ...jsonWordsOf(entry)])
+        : [];
+
+const pinnedLayersOf = (body: unknown): string[] => {
+  if (!isRecord(body) || !Array.isArray(body['input'])) throw new Error('a model.requested event holds a body without an input list');
+  const messages = body['input'].flatMap((entry: unknown): string[] =>
+    isRecord(entry) && entry['type'] === 'message' && (entry['role'] === 'system' || entry['role'] === 'developer') ? [stringsOf(entry['content']).join('\n')] : [],
+  );
+  return body['tools'] === undefined ? messages : [...messages, jsonWordsOf(body['tools']).join('\n')];
+};
+
+const regexSource = (literal: string): string => literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const withoutInjectedBlocks = (layer: string, injected: readonly InjectedItem[]): string =>
+  injected.reduce((rest, item) => {
+    if (item.kind === 'memory') return rest.replace(new RegExp(`<memory id="${regexSource(escapeXmlAttribute(item.id))}"[^>]*>[^<]*</memory>`, 'g'), '');
+    if (item.kind === 'governing') return rest.replace(new RegExp(`(^|\\n)\\[${regexSource(item.id)}\\] [^\\n]*?: ${regexSource(item.text)}(?=\\n|$)`, 'g'), '$1');
+    return rest;
+  }, layer);
+
+const ownerOf = (item: InjectedItem): string => (item.kind === 'summary' ? item.id : item.kind === 'working_state' ? item.kind : '');
+
+type OnScreen = { owner: string; text: string };
+
 export const measureContribution = ({
   events,
   task,
   injected,
+  workingStates = [],
 }: {
   events: readonly RunEvent[];
   task: string;
   injected: readonly InjectedItem[];
+  workingStates?: readonly RenderedWorkingState[];
 }): ItemContribution[] => {
   const identifiers = injected.map(identifiersOf);
   const credited = new Set<number>();
+  const renderedAt = new Map(workingStates.map((state) => [state.seq, state.text]));
+  const pinned: string[] = [];
+  const pinnedSeen = new Set<string>();
   let segments: Segment[] = [];
+  let summaryOnScreen: OnScreen | undefined;
+  let workingStateOnScreen: string | undefined;
   let nextItemSeq = 1;
 
   const retain = (text: string): void => {
@@ -123,12 +163,22 @@ export const measureContribution = ({
     nextItemSeq += 1;
   };
 
-  const retainedBefore = (identifier: string): boolean => {
+  const pinLayers = (body: unknown): void => {
+    for (const layer of pinnedLayersOf(body)) {
+      if (pinnedSeen.has(layer)) continue;
+      pinnedSeen.add(layer);
+      pinned.push(withoutInjectedBlocks(layer, injected));
+    }
+  };
+
+  const retainedBefore = (identifier: string, owner: string): boolean => {
     if (hasToken(task, identifier)) return true;
     for (let index = segments.length - 1; index >= 0; index -= 1) {
       if (hasToken((segments[index] as Segment).text, identifier)) return true;
     }
-    return false;
+    if (summaryOnScreen !== undefined && summaryOnScreen.owner !== owner && hasToken(summaryOnScreen.text, identifier)) return true;
+    if (workingStateOnScreen !== undefined && owner !== 'working_state' && hasToken(workingStateOnScreen, identifier)) return true;
+    return pinned.some((layer) => hasToken(layer, identifier));
   };
 
   for (const event of events) {
@@ -142,6 +192,11 @@ export const measureContribution = ({
         break;
       case 'context.compacted':
         segments = segments.filter((segment) => segment.itemSeq > event.replacedThroughSeq);
+        summaryOnScreen = { owner: `summary-${event.seq}`, text: event.summary };
+        workingStateOnScreen = renderedAt.get(event.seq);
+        break;
+      case 'model.requested':
+        pinLayers(event.body);
         break;
       case 'context.inherited':
         segments = [
@@ -153,16 +208,18 @@ export const measureContribution = ({
       case 'model.responded': {
         const step = [tokensOf(stepTextOf(event.response.output))];
         const known = new Map<string, boolean>();
-        const isNew = (identifier: string): boolean => {
-          const cached = known.get(identifier);
+        const isNew = (identifier: string, owner: string): boolean => {
+          const key = `${owner}\n${identifier}`;
+          const cached = known.get(key);
           if (cached !== undefined) return cached;
-          const fresh = occursIn(step, identifier) && !retainedBefore(identifier);
-          known.set(identifier, fresh);
+          const fresh = occursIn(step, identifier) && !retainedBefore(identifier, owner);
+          known.set(key, fresh);
           return fresh;
         };
         injected.forEach((item, index) => {
-          if (credited.has(index) || event.seq < item.fromSeq) return;
-          if (identifiers[index]?.some(isNew) === true) credited.add(index);
+          if (credited.has(index) || event.seq < item.fromSeq || (item.untilSeq !== undefined && event.seq >= item.untilSeq)) return;
+          const owner = ownerOf(item);
+          if (identifiers[index]?.some((identifier) => isNew(identifier, owner)) === true) credited.add(index);
         });
         for (const output of event.response.output) retain(stringsOf(output).join('\n'));
         break;
@@ -172,5 +229,11 @@ export const measureContribution = ({
     }
   }
 
-  return injected.map((item, index) => ({ kind: item.kind, id: item.id, contributed: credited.has(index) }));
+  const reported = new Map<string, ItemContribution>();
+  injected.forEach((item, index) => {
+    const key = `${item.kind}\n${item.id}`;
+    const earlier = reported.get(key);
+    reported.set(key, { kind: item.kind, id: item.id, contributed: credited.has(index) || earlier?.contributed === true });
+  });
+  return [...reported.values()];
 };

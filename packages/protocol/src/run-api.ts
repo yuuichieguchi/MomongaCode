@@ -1,4 +1,5 @@
 import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
+import { GUIDELINE_TEXT_PATTERN } from './guideline-text.ts';
 import { HOOK_EVENTS, HOOK_OUTCOMES, HOOK_PRE_TOOL_DECISIONS } from './hooks.ts';
 import { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
 import { MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES, REFLECTION_DROP_CAUSES, REFLECTION_JOB_STATES } from './memory.ts';
@@ -408,6 +409,21 @@ const costTotalsProperties: Record<string, JsonSchema> = {
 };
 const costTotalsRequired = Object.keys(costTotalsProperties);
 
+const fallbackCauseSchema = closed({ target: string, code: nullable(string), message: string }, ['target', 'code', 'message']);
+
+const costFallbackProperties: Record<string, JsonSchema> = {
+  fallbackCalls: nonNegativeInteger,
+  fallbacks: {
+    type: 'array',
+    items: closed(
+      { answeredBy: string, calls: nonNegativeInteger, failed: { type: 'array', items: fallbackCauseSchema } },
+      ['answeredBy', 'calls', 'failed'],
+    ),
+  },
+};
+
+const costTotalsSchemaProperties: Record<string, JsonSchema> = { ...costTotalsProperties, ...costFallbackProperties };
+
 const contextChargeView = closed(
   {
     id: integer,
@@ -437,12 +453,12 @@ const guidelineView = closed(
 
 const costReportView = closed(
   {
-    runs: { type: 'array', items: closed({ runId: string, sessionId: string, ...costTotalsProperties }, ['runId', 'sessionId', ...costTotalsRequired]) },
+    runs: { type: 'array', items: closed({ runId: string, sessionId: string, ...costTotalsSchemaProperties }, ['runId', 'sessionId', ...costTotalsRequired]) },
     sessions: {
       type: 'array',
-      items: closed({ sessionId: string, runIds: { type: 'array', items: string }, ...costTotalsProperties }, ['sessionId', 'runIds', ...costTotalsRequired]),
+      items: closed({ sessionId: string, runIds: { type: 'array', items: string }, ...costTotalsSchemaProperties }, ['sessionId', 'runIds', ...costTotalsRequired]),
     },
-    total: closed(costTotalsProperties, costTotalsRequired),
+    total: closed(costTotalsSchemaProperties, costTotalsRequired),
     contextCharges: closed({ charges: { type: 'array', items: contextChargeView }, totalTokens: nonNegativeInteger }, ['charges', 'totalTokens']),
   },
   ['runs', 'sessions', 'total', 'contextCharges'],
@@ -651,7 +667,13 @@ export type JobView = {
 };
 
 export type JobsResponse = { jobs: JobView[] };
+export type FallbackCauseView = { target: string; code: string | null; message: string };
+
+export type CostFallbackView = { answeredBy: string; calls: number; failed: FallbackCauseView[] };
+
 export type CostTotalsView = {
+  fallbackCalls?: number;
+  fallbacks?: CostFallbackView[];
   calls: number;
   localCalls: number;
   unpricedCalls: number;
@@ -977,7 +999,7 @@ export const RUN_API_SCHEMAS = {
   GuidelinesResponse: root(closed({ current: nullable(guidelineView), guidelines: { type: 'array', items: guidelineView } }, ['current', 'guidelines'])),
   GuidelineResponse: root(closed({ guideline: guidelineView }, ['guideline'])),
   AdoptGuidelineRequest: root(
-    closed({ text: { type: 'string', minLength: 1 }, parent: nullable({ type: 'integer', minimum: 1 }), report: { type: 'object' } }, ['text', 'parent', 'report']),
+    closed({ text: { type: 'string', minLength: 1, pattern: GUIDELINE_TEXT_PATTERN }, parent: nullable({ type: 'integer', minimum: 1 }), report: { type: 'object' } }, ['text', 'parent', 'report']),
   ),
   RecordContextChargeRequest: root(
     closed(

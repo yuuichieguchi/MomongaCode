@@ -1,5 +1,13 @@
-import { recordChatRequestContent, recordChatResponse, recordChatResponseContent, recordError, startChatSpan } from '@momonga/observability';
-import type { ChatBilling, Telemetry } from '@momonga/observability';
+import {
+  recordChatFailure,
+  recordChatRequestContent,
+  recordChatResponse,
+  recordChatResponseContent,
+  recordError,
+  recordFallbackCauses,
+  startChatSpan,
+} from '@momonga/observability';
+import type { ChatBilling, FallbackCause, Telemetry } from '@momonga/observability';
 import type { AdapterInputItem, FunctionTool, ItemField, Usage } from '@momonga/protocol';
 import { chatRequestContentOf, chatResponseMessagesOf } from './chat-content.ts';
 
@@ -16,12 +24,20 @@ export type AttemptSpanInput = {
   runId: string | undefined;
   step: number | undefined;
   attempt: number;
+  targetName: string;
   request: { input: readonly AdapterInputItem[]; instructions: string | null | undefined; tools: readonly FunctionTool[] | null | undefined };
 };
 
 export type AttemptSpan = {
   note(name: string, message: string): void;
-  succeed(info: { responseModel: string; responseId: string; finishReason: string; usage: Usage; output: readonly ItemField[] }): void;
+  succeed(info: {
+    responseModel: string;
+    responseId: string;
+    finishReason: string;
+    usage: Usage;
+    output: readonly ItemField[];
+    fallbackCauses: readonly FallbackCause[];
+  }): void;
   fail(errorType: string, error: unknown, message: string): void;
 };
 
@@ -37,6 +53,7 @@ export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
       requestModel: input.requestModel,
       stream: input.stream,
       attempt: input.attempt,
+      target: input.targetName,
       ...(input.maxTokens === undefined ? {} : { maxTokens: input.maxTokens }),
       ...(input.runId === undefined ? {} : { runId: input.runId }),
       ...(input.step === undefined ? {} : { step: input.step }),
@@ -70,12 +87,14 @@ export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
           reasoningTokens: info.usage.output_tokens_details.reasoning_tokens,
         },
       });
+      recordFallbackCauses(span, info.fallbackCauses);
       if (telemetry.captureMessageContent) recordChatResponseContent(span, chatResponseMessagesOf(info.output, info.finishReason));
       end();
     },
     fail: (errorType, error, message) => {
       if (ended) return;
       recordError(span, error, errorType, message);
+      recordChatFailure(span, message);
       end();
     },
   };
