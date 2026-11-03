@@ -1,4 +1,4 @@
-import { SUMMARY_ACCEPT_RATIO } from '@momonga/protocol';
+import { LOWEST_REASONING_EFFORT, SUMMARY_ACCEPT_RATIO } from '@momonga/protocol';
 import type { AdapterCompactRequest, AdapterInputItem, AdapterRequest, ContentPart, InputImagePart, ResponseResource, StreamEvent } from '@momonga/protocol';
 import { tokensForText } from '../../core/estimate.ts';
 import { CompactionReplyError, StreamFailure } from './failures.ts';
@@ -99,6 +99,7 @@ export const summaryRequestOf = (request: AdapterCompactRequest, cap: number): A
     instructions,
     input: [{ type: 'message', role: 'user', content: transcriptOf(request.input) }],
     max_output_tokens: cap,
+    reasoning_effort: LOWEST_REASONING_EFFORT,
   };
 };
 

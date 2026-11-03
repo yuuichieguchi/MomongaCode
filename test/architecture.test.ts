@@ -444,7 +444,7 @@ const runProbeImporters = (): string[] =>
 
 describe('architecture: the probe runs only on request', () => {
   it('runProbe is imported only by the explicit probe command of the gateway package', () => {
-    expect(runProbeImporters()).toEqual(['packages/gateway/src/probe/probe-fm.ts']);
+    expect(runProbeImporters()).toEqual(['packages/gateway/src/probe/probe-endpoint.ts', 'packages/gateway/src/probe/probe-fm.ts']);
   });
 });
 

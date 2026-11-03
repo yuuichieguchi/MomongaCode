@@ -29,6 +29,9 @@ export interface FakeChatCompletionsOptions {
   rateLimitSizedImages?: { count: number; retryAfter: string };
   guardrailTrigger?: string;
   latencyMs?: number;
+  reasoning?: { tokens: number; effort: 'honoured' | 'ignored' | 'rejected'; reportsUsage?: boolean };
+  parallelToolCalls?: boolean;
+  models?: Array<Record<string, unknown>>;
   failNativeSamples?: number[];
   failConstrainedSamples?: number[];
   stallNativeSamples?: number[];
@@ -52,7 +55,12 @@ export type FakeScriptedReply =
   | {
       kind: 'stream';
       chunks: FakeStreamChunk[];
-      usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+      usage?: {
+        prompt_tokens: number;
+        completion_tokens: number;
+        total_tokens: number;
+        completion_tokens_details?: { reasoning_tokens: number };
+      };
       done?: boolean;
     }
   | { kind: 'error'; status: number; body: unknown; headers?: Record<string, string> }
@@ -308,9 +316,14 @@ export const startFakeChatCompletions = async (
       serialized = mutated === undefined ? '{"broken": ' : JSON.stringify(mutated);
       nativeInvalidCount += 1;
     }
+    const callCount = options.parallelToolCalls === true && body['parallel_tool_calls'] === true ? 2 : 1;
     return {
       content: null,
-      toolCalls: [{ id: `call_${completionCount}_0`, type: 'function', function: { name, arguments: serialized } }],
+      toolCalls: Array.from({ length: callCount }, (_, index) => ({
+        id: `call_${completionCount}_${index}`,
+        type: 'function' as const,
+        function: { name, arguments: serialized },
+      })),
       finishReason: 'tool_calls',
       ...(stallNativeSamples.includes(sampleIndex) ? { delayMs: stallMs } : {}),
     };
@@ -386,6 +399,9 @@ export const startFakeChatCompletions = async (
     ) {
       throw new HttpFailure(400, structuredClone(FAKE_GUARDRAIL_ERROR) as unknown as Json);
     }
+    if (options.reasoning?.effort === 'rejected' && body['reasoning_effort'] !== undefined) {
+      throw invalidRequest('Unrecognized request argument supplied: reasoning_effort', null, 'reasoning_effort');
+    }
     if (Array.isArray(body['tools']) && body['tools'].length > 0 && !toolsAccepted) {
       throw invalidRequest(TOOLS_UNSUPPORTED_MESSAGE, null, 'tools');
     }
@@ -438,8 +454,25 @@ export const startFakeChatCompletions = async (
     const messages = Array.isArray(body['messages']) ? (body['messages'] as ChatMessage[]) : [];
     const promptTokens = countFakePromptTokens(messages, options.imageTokens);
     const completionText = out.content ?? out.toolCalls.map((call) => call.function.arguments).join(' ');
-    const completionTokens = Math.max(1, countFakeTokens(completionText));
-    return { prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: promptTokens + completionTokens };
+    const visibleTokens = Math.max(1, countFakeTokens(completionText));
+    const reasoningTokens = reasoningTokensFor(body);
+    const completionTokens = visibleTokens + reasoningTokens;
+    return {
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: promptTokens + completionTokens,
+      ...(options.reasoning === undefined || options.reasoning.reportsUsage === false ? {} : { completion_tokens_details: { reasoning_tokens: reasoningTokens } }),
+    };
+  };
+
+  const REASONING_SHARE: Record<string, number> = { none: 0, minimal: 0.1, low: 0.25, medium: 0.5, high: 1, xhigh: 1 };
+
+  const reasoningTokensFor = (body: Json): number => {
+    const reasoning = options.reasoning;
+    if (reasoning === undefined) return 0;
+    const effort = body['reasoning_effort'];
+    if (reasoning.effort !== 'honoured' || typeof effort !== 'string') return reasoning.tokens;
+    return Math.round(reasoning.tokens * (REASONING_SHARE[effort] ?? 1));
   };
 
   const writeJson = (response: http.ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}): void => {
@@ -569,7 +602,7 @@ export const startFakeChatCompletions = async (
         const entry: Json = { id: modelId, object: 'model', created: 0, owned_by: 'system' };
         if (exposure === 'models') entry['context_window'] = contextWindow;
         if (exposure === 'models-nested') entry['metadata'] = { limits: { contextSize: contextWindow } };
-        writeJson(response, 200, { object: 'list', data: [entry] });
+        writeJson(response, 200, { object: 'list', data: options.models ?? [entry] });
         return;
       }
       if (request.method === 'POST' && requestPath === '/v1/chat/completions') {

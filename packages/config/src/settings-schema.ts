@@ -1,5 +1,5 @@
 import { SECRET_NAME_PATTERN } from '@momonga/foundation';
-import { HOOK_COMMAND_TYPE, PERMISSION_MODES, TARGET_BILLINGS } from '@momonga/protocol';
+import { HOOK_COMMAND_TYPE, PERMISSION_MODES, REASONING_EFFORTS, TARGET_BILLINGS } from '@momonga/protocol';
 
 const STRING_ARRAY = { type: 'array', items: { type: 'string' } } as const;
 const NON_EMPTY_STRING_ARRAY = { type: 'array', items: { type: 'string', minLength: 1 } } as const;
@@ -81,6 +81,22 @@ const TARGET_CAPABILITIES_SCHEMA = {
     tokenCounting: { enum: ['exact', 'calibrated', 'estimated'] },
     tokenErrorRatio: { type: 'number', minimum: 0 },
     usageReported: { type: 'boolean' },
+    reasoning: {
+      oneOf: [
+        {
+          type: 'object',
+          properties: { control: { const: 'none' }, headroomTokens: NON_NEGATIVE_INTEGER },
+          required: ['control'],
+          additionalProperties: false,
+        },
+        {
+          type: 'object',
+          properties: { control: { const: 'reasoning_effort' }, lowest: { enum: [...REASONING_EFFORTS] } },
+          required: ['control', 'lowest'],
+          additionalProperties: false,
+        },
+      ],
+    },
     source: { enum: ['declared', 'probed', 'config', 'unprobed'] },
   },
   required: ['contextWindow', 'maxOutputTokens'],
@@ -114,7 +130,7 @@ const CHAT_COMPLETIONS_TARGET_SCHEMA = {
     socketPath: { type: 'string', minLength: 1 },
     ...API_KEY_PROPERTIES,
     provider: { type: 'string', pattern: PROVIDER_NAME_PATTERN },
-    toolCalling: { enum: ['native', 'constrained'] },
+    toolCalling: { enum: ['auto', 'native', 'constrained'] },
     billing: BILLING_SCHEMA,
     capabilities: TARGET_CAPABILITIES_SCHEMA,
     maxConcurrency: POSITIVE_INTEGER,

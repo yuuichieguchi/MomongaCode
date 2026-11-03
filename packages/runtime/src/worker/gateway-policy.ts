@@ -24,6 +24,7 @@ export const dispositionOf = (error: unknown, interruptions: number): FailureDis
   if (!(error instanceof GatewayRequestError)) return { kind: 'requeue', refund: false, retryAfterMs: 0, interrupted: false };
   const retryAfterMs = error.retryAfterMs ?? 0;
   if (error.code === 'deadline_exceeded') return { kind: 'timeout' };
+  if (error.status === 503 && error.code === 'all_targets_unreachable') return { kind: 'fail', code: error.code, message: error.message };
   if (isClientError(error.status) && !NOT_FATAL_4XX.includes(error.status)) {
     return { kind: 'fail', code: error.code, message: error.message };
   }

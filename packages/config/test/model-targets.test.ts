@@ -339,13 +339,13 @@ describe('chat-completions target schema', () => {
     await expectRejected({ targets: { remote: chatTarget({ apiKeyEnv }) } });
   });
 
-  it.each(['native', 'constrained'])('accepts toolCalling %j', async (toolCalling) => {
+  it.each(['auto', 'native', 'constrained'])('accepts toolCalling %j', async (toolCalling) => {
     const models = await expectAccepted({ targets: { remote: chatTarget({ toolCalling }) }, aliases: { default: 'remote' } });
     expect(models.targets['remote']).toMatchObject({ toolCalling });
   });
 
   it.each([
-    ['toolCalling auto', { toolCalling: 'auto' }],
+    ['toolCalling none', { toolCalling: 'none' }],
     ['capabilities.toolCalling', { capabilities: { ...CAPABILITIES, toolCalling: 'native' } }],
     ['capabilities without contextWindow', { capabilities: { maxOutputTokens: 4096 } }],
     ['capabilities without maxOutputTokens', { capabilities: { contextWindow: 128000 } }],

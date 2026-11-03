@@ -1,5 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import type { RunTraceSpan, RunTraceView, UsageReport } from '@momonga/protocol';
+import type { FallbackCauseView, RunTraceSpan, RunTraceView, UsageReport } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
@@ -9,9 +9,39 @@ import { latestRunIdOf } from './targets.ts';
 const childrenOf = (spans: readonly RunTraceSpan[], parent: string | null): RunTraceSpan[] =>
   spans.filter((span) => span.parentSpanId === parent).sort((left, right) => left.startMs - right.startMs);
 
+const TARGET_ATTRIBUTE = 'momonga.target';
+const ATTEMPT_ATTRIBUTE = 'momonga.attempt';
+const FAILURE_MESSAGE_ATTRIBUTE = 'momonga.failure_message';
+const FALLBACK_CAUSES_ATTRIBUTE = 'momonga.fallback_causes';
+const ERROR_TYPE_ATTRIBUTE = 'error.type';
+
+const describeCause = (cause: FallbackCauseView): string =>
+  `${cause.target} failed (${cause.code === null ? cause.message : `${cause.code}: ${cause.message}`})`;
+
+const fallbackCausesOf = (span: RunTraceSpan): FallbackCauseView[] => {
+  const value = span.attributes[FALLBACK_CAUSES_ATTRIBUTE];
+  if (value === undefined) return [];
+  if (typeof value !== 'string') throw new TypeError(`span ${span.spanId} attribute ${FALLBACK_CAUSES_ATTRIBUTE} must be a string`);
+  return JSON.parse(value) as FallbackCauseView[];
+};
+
+const chatDetail = (span: RunTraceSpan): string => {
+  const target = span.attributes[TARGET_ATTRIBUTE];
+  if (typeof target !== 'string') return '';
+  const attempt = span.attributes[ATTEMPT_ATTRIBUTE];
+  const where = `target ${target}${typeof attempt === 'number' ? `, attempt ${attempt}` : ''}`;
+  const failure = span.attributes[FAILURE_MESSAGE_ATTRIBUTE];
+  if (typeof failure === 'string') {
+    const errorType = span.attributes[ERROR_TYPE_ATTRIBUTE];
+    return `  ${where}: ${typeof errorType === 'string' ? `${errorType}: ` : ''}${failure}`;
+  }
+  const causes = fallbackCausesOf(span);
+  return `  ${where}${causes.length === 0 ? '' : `, answered after ${causes.map(describeCause).join('; ')}`}`;
+};
+
 const spanLines = (spans: readonly RunTraceSpan[], parent: string | null, depth: number): string[] =>
   childrenOf(spans, parent).flatMap((span) => [
-    `${'  '.repeat(depth)}${span.name}  ${span.endMs - span.startMs} ms  ${span.status}`,
+    `${'  '.repeat(depth)}${span.name}  ${span.endMs - span.startMs} ms  ${span.status}${chatDetail(span)}`,
     ...spanLines(spans, span.spanId, depth + 1),
   ]);
 

@@ -1,5 +1,7 @@
 import { setTimeout as setTimeoutPromise } from 'node:timers/promises';
+import { Agent, request } from 'undici';
 import { Deadline, createUdsClient } from '@momonga/foundation';
+import type { UdsClient } from '@momonga/foundation';
 
 export interface HttpResult {
   status: number;
@@ -10,12 +12,53 @@ export interface HttpResult {
 export const systemSleep = (ms: number, signal: AbortSignal | undefined): Promise<void> =>
   setTimeoutPromise(ms, undefined, signal === undefined ? {} : { signal });
 
+export type ProbeEndpoint =
+  | { kind: 'unix'; socketPath: string }
+  | { kind: 'tcp'; baseUrl: string; headers?: Record<string, string> };
+
+export type ProbeRoute = 'health' | 'models' | 'chat';
+
 export interface ProbeClient {
-  get(path: string): Promise<HttpResult>;
-  post(path: string, body: unknown): Promise<HttpResult>;
-  stream(path: string, body: unknown): Promise<{ status: number; chunks: AsyncIterable<Uint8Array> }>;
+  readonly hasHealthRoute: boolean;
+  get(route: 'health' | 'models'): Promise<HttpResult>;
+  post(route: 'chat', body: unknown): Promise<HttpResult>;
+  stream(route: 'chat', body: unknown): Promise<{ status: number; chunks: AsyncIterable<Uint8Array> }>;
   close(): Promise<void>;
 }
+
+const UNIX_PATHS: Record<ProbeRoute, string> = { health: '/health', models: '/v1/models', chat: '/v1/chat/completions' };
+
+const tcpPathsOf = (baseUrl: string): Record<ProbeRoute, string> => {
+  const prefix = new URL(baseUrl).pathname.replace(/\/+$/, '');
+  return { health: `${prefix}/health`, models: `${prefix}/models`, chat: `${prefix}/chat/completions` };
+};
+
+const transportOf = (endpoint: ProbeEndpoint): { uds: UdsClient; paths: Record<ProbeRoute, string>; headers: Record<string, string> } => {
+  if (endpoint.kind === 'unix') return { uds: createUdsClient(endpoint.socketPath), paths: UNIX_PATHS, headers: {} };
+  return { uds: createTcpClient(new URL(endpoint.baseUrl).origin), paths: tcpPathsOf(endpoint.baseUrl), headers: endpoint.headers ?? {} };
+};
+
+const createTcpClient = (origin: string): UdsClient => {
+  const agent = new Agent();
+  return {
+    request: async (options) => {
+      const response = await request(`${origin}${options.path}`, {
+        dispatcher: agent,
+        method: options.method as 'GET',
+        ...(options.headers === undefined ? {} : { headers: options.headers }),
+        ...(options.body === undefined ? {} : { body: options.body }),
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+      });
+      const headers: Record<string, string> = {};
+      for (const [name, value] of Object.entries(response.headers)) {
+        if (value !== undefined) headers[name.toLowerCase()] = Array.isArray(value) ? value.join(', ') : value;
+      }
+      return { status: response.statusCode, headers, body: response.body, text: () => response.body.text(), json: () => response.body.json() };
+    },
+    close: () => agent.close(),
+    destroy: () => agent.destroy().then(() => undefined),
+  };
+};
 
 export class ProbeTimeoutError extends Error {
   readonly timeoutMs: number;
@@ -28,11 +71,11 @@ export class ProbeTimeoutError extends Error {
 }
 
 export const createProbeClient = (
-  socketPath: string,
+  endpoint: ProbeEndpoint,
   signal: AbortSignal | undefined,
   stepTimeoutMs: number,
 ): ProbeClient => {
-  const uds = createUdsClient(socketPath);
+  const { uds, paths, headers: authHeaders } = transportOf(endpoint);
 
   const withTimeout = async <T>(
     method: string,
@@ -58,24 +101,26 @@ export const createProbeClient = (
     uds.request({
       method: 'POST',
       path,
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...authHeaders },
       body: JSON.stringify(body),
       signal: requestSignal,
     });
 
   return {
-    get: (path) =>
-      withTimeout('GET', path, async (requestSignal) => {
-        const response = await uds.request({ method: 'GET', path, signal: requestSignal });
+    hasHealthRoute: endpoint.kind === 'unix',
+    get: (route) =>
+      withTimeout('GET', paths[route], async (requestSignal) => {
+        const response = await uds.request({ method: 'GET', path: paths[route], headers: authHeaders, signal: requestSignal });
         return { status: response.status, text: await response.text(), headers: response.headers };
       }),
-    post: (path, body) =>
-      withTimeout('POST', path, async (requestSignal) => {
-        const response = await jsonPost(path, body, requestSignal);
+    post: (route, body) =>
+      withTimeout('POST', paths[route], async (requestSignal) => {
+        const response = await jsonPost(paths[route], body, requestSignal);
         return { status: response.status, text: await response.text(), headers: response.headers };
       }),
-    stream: (path, body) =>
-      withTimeout(
+    stream: (route, body) => {
+      const path = paths[route];
+      return withTimeout(
         'POST',
         path,
         async (requestSignal, timedOut, dispose) => {
@@ -93,7 +138,8 @@ export const createProbeClient = (
           return { status: response.status, chunks: chunks() };
         },
         true,
-      ),
+      );
+    },
     close: () => uds.close(),
   };
 };

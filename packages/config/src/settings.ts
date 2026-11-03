@@ -60,7 +60,7 @@ export type ChatCompletionsTarget = {
   apiKeyEnv?: string;
   apiKeySecret?: string;
   provider: string;
-  toolCalling?: 'native' | 'constrained';
+  toolCalling?: FmToolCalling;
   billing?: TargetBilling;
   capabilities: DeclaredTargetCapabilities;
   maxConcurrency?: number;
@@ -116,7 +116,7 @@ export type ResolvedChatCompletionsTarget = {
   apiKeyEnv?: string;
   apiKeySecret?: string;
   provider: string;
-  toolCalling: 'native' | 'constrained';
+  toolCalling: FmToolCalling;
   billing: TargetBilling;
   capabilities: TargetCapabilities & { maxConcurrency: number };
   maxConcurrency: number;

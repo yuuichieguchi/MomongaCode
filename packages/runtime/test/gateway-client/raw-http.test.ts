@@ -329,23 +329,60 @@ describe('gateway client bounds', () => {
     expectGatewayError(error, { status: 0, type: 'transport', code: 'stream_interrupted' });
   });
 
-  it('does not apply streamIdleTimeoutMs while the gateway has not answered the request yet', async () => {
+  it('interrupts a gateway that does not answer the request within streamIdleTimeoutMs', async () => {
     const fake = await startRawHttpFake();
-    let answer: () => void = () => {};
-    fake.respond((_request, response) => {
-      answer = () => {
-        openSse(response);
-        response.end(sseFrame(createdEvent) + sseFrame(completedEvent));
-      };
-    });
+    fake.respond(() => {});
     const clock = fakeClock();
     const timers = createFakeTimers(clock);
     const client = makeClient(fake.socketPath, clock, { streamIdleTimeoutMs: 150, timers });
 
-    const seen = collect(client.stream(streamBody(), callOptions(clock)));
+    const pending = settle(collect(client.stream(streamBody(), callOptions(clock))));
     await waitFor(() => fake.requests.length === 1, { description: 'the request to arrive' });
-    timers.advance(400);
-    answer();
+    timers.advance(150);
+
+    expectGatewayError(await pending, { status: 0, type: 'transport', code: 'stream_interrupted' });
+  });
+
+  it('interrupts a gateway that opens the stream and then stays silent for streamIdleTimeoutMs', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond((_request, response) => {
+      openSse(response);
+      response.write(': open\n\n');
+    });
+    const clock = fakeClock();
+    const timers = spiedTimers(clock);
+    const client = makeClient(fake.socketPath, clock, { streamIdleTimeoutMs: 150, timers });
+
+    const pending = settle(collect(client.stream(streamBody(), callOptions(clock))));
+    await waitFor(() => fake.requests.length === 1, { description: 'the request to arrive' });
+    await timers.untilArmed(3);
+    timers.advance(150);
+
+    expectGatewayError(await pending, { status: 0, type: 'transport', code: 'stream_interrupted' });
+  });
+
+  it('completes when the gateway keeps the stream alive with comments longer than streamIdleTimeoutMs before its first event', async () => {
+    const fake = await startRawHttpFake();
+    let open: ServerResponse | undefined;
+    fake.respond((_request, response) => {
+      open = response;
+      openSse(response);
+      response.write(': keep-alive\n\n');
+    });
+    const clock = fakeClock();
+    const timers = spiedTimers(clock);
+    const client = makeClient(fake.socketPath, clock, { streamIdleTimeoutMs: 150, timers });
+
+    const seen = collect(client.stream(streamBody(), callOptions(clock)));
+    await waitFor(() => open !== undefined, { description: 'the stream to open' });
+    await timers.untilArmed(3);
+    for (let round = 0; round < 4; round += 1) {
+      const armedBefore = timers.armed();
+      (open as ServerResponse).write(': keep-alive\n\n');
+      await timers.untilArmed(armedBefore + 1);
+      timers.advance(100);
+    }
+    (open as ServerResponse).end(sseFrame(createdEvent) + sseFrame(completedEvent));
 
     expect(await seen).toEqual([createdEvent, completedEvent]);
   });
@@ -357,11 +394,42 @@ describe('gateway client bounds', () => {
     const timers = createFakeTimers(clock);
     const client = makeClient(fake.socketPath, clock, { streamIdleTimeoutMs: 150, timers });
 
-    const pending = settle(collect(client.stream(streamBody(), callOptions(clock, { deadlineInMs: 400 }))));
+    const pending = settle(collect(client.stream(streamBody(), callOptions(clock, { deadlineInMs: 100 }))));
     await waitFor(() => fake.requests.length === 1, { description: 'the request to arrive' });
-    timers.advance(400);
+    timers.advance(100);
 
     expectGatewayError(await pending, { status: 0, type: 'transport', code: 'deadline_exceeded' });
+  });
+
+  it('turns an error event that carries a status into the same error an HTTP reply of that status gives', async () => {
+    const fake = await startRawHttpFake();
+    const errorEvent = {
+      type: 'error',
+      sequence_number: 0,
+      status: 429,
+      retry_after_ms: 7000,
+      error: { type: 'too_many_requests', code: 'rate_limited', message: 'slow down', param: null },
+    };
+    fake.respond(sseReply([': open\n\n', sseFrame(errorEvent)]));
+    const client = makeClient(fake.socketPath, fakeClock());
+
+    const error = await settle(collect(client.stream(streamBody(), callOptions(fakeClock()))));
+
+    expectGatewayError(error, { status: 429, type: 'too_many_requests', code: 'rate_limited', retryAfterMs: 7000 });
+  });
+
+  it('tells the gateway its idle bound in the momonga-stream-idle-ms header', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond((_request, response) => {
+      openSse(response);
+      response.end(sseFrame(createdEvent) + sseFrame(completedEvent));
+    });
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock, { streamIdleTimeoutMs: 4321 });
+
+    await collect(client.stream(streamBody(), callOptions(clock)));
+
+    expect(fake.requests[0]?.headers['momonga-stream-idle-ms']).toBe('4321');
   });
 
   it('treats keep-alive comments as activity', async () => {

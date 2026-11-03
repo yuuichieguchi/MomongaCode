@@ -1,4 +1,15 @@
-export type { Capabilities, CapabilitiesCore, CapabilityOverride, HealthResult, ImageCapability, ImageTokenModel, ToolCallingMode, ToolCallingSetting } from './capabilities.ts';
+export type {
+  Capabilities,
+  CapabilitiesCore,
+  CapabilityOverride,
+  HealthResult,
+  ImageCapability,
+  ImageTokenModel,
+  ReasoningCapability,
+  ReasoningEffort,
+  ToolCallingMode,
+  ToolCallingSetting,
+} from './capabilities.ts';
 export {
   COMPACTION_INSTRUCTIONS_VERSION,
   ESTIMATED_CHARACTERS_PER_TOKEN,
@@ -24,7 +35,15 @@ export {
   summaryItemTokensFor,
   summaryTokenCapFor,
 } from './budget-constants.ts';
-export { TARGET_BILLINGS, applyCapabilityOverride, imageCapability } from './capabilities.ts';
+export {
+  LOWEST_REASONING_EFFORT,
+  REASONING_EFFORTS,
+  TARGET_BILLINGS,
+  applyCapabilityOverride,
+  imageCapability,
+  isReasoningEffort,
+  reasoningEffortToSend,
+} from './capabilities.ts';
 export type { TargetBilling } from './capabilities.ts';
 export { tokensForText } from './estimate-tokens.ts';
 export {
@@ -71,7 +90,9 @@ export type {
   GuidelineView,
   RecordContextChargeRequest,
   CostReportView,
+  CostFallbackView,
   CostTotalsView,
+  FallbackCauseView,
   GatewayCostReportView,
   JsonSchema,
   McpAuthState,

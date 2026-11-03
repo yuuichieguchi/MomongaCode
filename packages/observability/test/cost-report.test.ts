@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ROOT_CONTEXT, trace } from '@opentelemetry/api';
-import { buildCostReport, definePriceTable, formatCostReport, recordChatResponse, recordError, startAgentSpan, startChatSpan } from '@momonga/observability';
+import { buildCostReport, definePriceTable, formatCostReport, recordChatResponse, recordError, recordFallbackCauses, startAgentSpan, startChatSpan } from '@momonga/observability';
 import { harness } from './helpers.ts';
 
 const TABLE = definePriceTable([
@@ -114,6 +114,39 @@ describe('buildCostReport', () => {
     await recordCalls('run-a', [{ provider: 'acme', model: 'm1', input: 1_000_000, output: 0, at: AT_JULY, billing: 'local' }], h);
     const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
     expect(report.total).toMatchObject({ calls: 1, localCalls: 1, unpricedCalls: 0, amount: 0, priceVersions: [] });
+  });
+
+  it('counts the calls answered by a fallback target and names the target that failed and why, in the report and in its text', async () => {
+    const h = harness();
+    const agent = startAgentSpan(h.telemetry.tracer, { agentName: 'momonga', agentId: 'momonga', conversationId: 's', runId: 'run-a' });
+    const parent = trace.setSpan(ROOT_CONTEXT, agent);
+    const causes = [{ target: 'primary', code: 'provider_unavailable', message: 'the chat-completions upstream is unreachable' }];
+    for (const [index, fallback] of [true, true, false].entries()) {
+      h.clock.set(AT_JULY);
+      const chat = startChatSpan(
+        h.telemetry.tracer,
+        { providerName: 'acme', billing: 'metered', requestModel: 'm1', stream: true, runId: 'run-a', step: index + 1, attempt: 1, target: fallback ? 'secondary' : 'primary' },
+        parent,
+      );
+      recordChatResponse(chat, { finishReasons: ['stop'], usage: { inputTokens: 10, outputTokens: 5 } });
+      if (fallback) recordFallbackCauses(chat, causes);
+      chat.end(h.clock.now());
+    }
+    agent.end(h.clock.now());
+    await h.telemetry.forceFlush();
+
+    const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
+
+    expect(report.total).toMatchObject({ calls: 3, fallbackCalls: 2, fallbacks: [{ answeredBy: 'secondary', calls: 2, failed: causes }] });
+    expect(formatCostReport(report)).toContain('2 of 3 call(s) were answered by fallback target secondary after primary failed (provider_unavailable: the chat-completions upstream is unreachable)');
+  });
+
+  it('reports no fallback fields when every call was answered by the first target', async () => {
+    const h = harness();
+    await recordCalls('run-a', [{ provider: 'acme', model: 'm1', input: 1, output: 1, at: AT_JULY }], h);
+    const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
+    expect('fallbackCalls' in report.total).toBe(false);
+    expect(formatCostReport(report)).not.toContain('fallback');
   });
 
   it('refuses a run listed twice', () => {

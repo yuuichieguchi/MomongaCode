@@ -1,5 +1,6 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { JSONSchemaType } from 'ajv';
+import { REASONING_EFFORTS } from '@momonga/protocol';
 import type { ProbeReport } from '@momonga/protocol';
 
 const bool = { type: 'boolean' } as const;
@@ -75,6 +76,13 @@ const reportSchema: JSONSchemaType<ProbeReport> = {
       },
     },
     stopSequences: bool,
+    parallelToolCalls: {
+      type: 'object',
+      nullable: true,
+      required: ['accepted', 'multiCallRate'],
+      properties: { accepted: bool, multiCallRate: rate },
+    },
+    reasoning: anyJson,
     maxConcurrency: { type: 'integer', minimum: 1 },
     imageInputAccepted: bool,
     imageTokens: {
@@ -99,4 +107,24 @@ const reportSchema: JSONSchemaType<ProbeReport> = {
 
 const validate = new Ajv2020.default({ strict: false }).compile(reportSchema);
 
-export const isProbeReport = (value: unknown): value is ProbeReport => validate(value);
+const reasoningSchema = {
+  oneOf: [
+    {
+      type: 'object',
+      properties: { control: { const: 'none' }, headroomTokens: { type: 'integer', minimum: 0 } },
+      required: ['control'],
+      additionalProperties: false,
+    },
+    {
+      type: 'object',
+      properties: { control: { const: 'reasoning_effort' }, lowest: { enum: [...REASONING_EFFORTS] } },
+      required: ['control', 'lowest'],
+      additionalProperties: false,
+    },
+  ],
+};
+
+const validateReasoning = new Ajv2020.default({ strict: false }).compile(reasoningSchema);
+
+export const isProbeReport = (value: unknown): value is ProbeReport =>
+  validate(value) && ((value as ProbeReport).reasoning === undefined || validateReasoning((value as ProbeReport).reasoning));

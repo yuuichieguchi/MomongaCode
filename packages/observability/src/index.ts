@@ -8,7 +8,9 @@ export type { CostReport, CostReportOptions, CostTotals, CostedRun, RunCost, Ses
 export type { ClockedSpan, ClockedTracer } from './clocked-tracer.ts';
 export { GENAI_CONTENT_SEMCONV, GENAI_SEMCONV } from './semconv.ts';
 export {
+  recordChatFailure,
   recordChatRequestContent,
+  recordFallbackCauses,
   recordChatResponse,
   recordChatResponseContent,
   recordError,
@@ -24,6 +26,7 @@ export type {
   ChatResponse,
   ChatSpanInput,
   ChatUsage,
+  FallbackCause,
   GenAiMessage,
   GenAiPart,
   GenAiToolDefinition,

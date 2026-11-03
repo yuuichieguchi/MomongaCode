@@ -1,7 +1,7 @@
 import { canonicalJson, computeBackoff, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { normalizeMemoryText } from '@momonga/memory';
-import { assistantTextOf, summaryTokenCapFor } from '@momonga/protocol';
+import { LOWEST_REASONING_EFFORT, assistantTextOf, summaryTokenCapFor } from '@momonga/protocol';
 import type { CreateResponseBody, Usage } from '@momonga/protocol';
 import { memoryTextProblem } from '@momonga/tools';
 import type { ContextChargeInput, RuntimeStore, SaveCandidateInput } from '@momonga/store';
@@ -90,6 +90,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: reflectionInputFor(events, project, capabilities) }] }],
       ...(structured ? { text: { format: { type: 'json_schema', name: 'memory_candidates', schema: { ...REFLECTION_REPLY_SCHEMA }, strict: true } } } : {}),
       tool_choice: 'none',
+      reasoning: { effort: LOWEST_REASONING_EFFORT },
       max_output_tokens: Math.min(memorySettings.reflection.maxTokens ?? Number.POSITIVE_INFINITY, summaryTokenCapFor(capabilities)),
       store: false,
       stream: true,

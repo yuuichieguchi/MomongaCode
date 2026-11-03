@@ -71,6 +71,7 @@ type TimeoutCode = 'deadline_exceeded' | 'gateway_timeout' | 'stream_interrupted
 const DEFAULT_UNARY_TIMEOUT_MS = 5000;
 const DEFAULT_CANCEL_TIMEOUT_MS = 1000;
 const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 60_000;
+const STREAM_IDLE_HEADER = 'momonga-stream-idle-ms';
 
 const NEVER_SENT_CODES: ReadonlySet<string> = new Set(['ENOENT', 'ECONNREFUSED']);
 const CONNECTION_LOST_CODES: ReadonlySet<string> = new Set(['ECONNRESET', 'EPIPE', 'UND_ERR_SOCKET', 'UND_ERR_CLOSED']);
@@ -126,6 +127,21 @@ const errorFromBody = (response: UdsResponse, text: string, nowMs: number): Gate
     message: body['message'],
     ...(typeof body['param'] === 'string' ? { param: body['param'] } : {}),
     ...retry,
+  });
+};
+
+const errorFromEvent = (event: Extract<StreamEvent, { type: 'error' }>): GatewayRequestError => {
+  const { error } = event;
+  if (event.status === undefined || !isRecord(error) || typeof error.message !== 'string' || typeof error.code !== 'string' || !isErrorType(error.type)) {
+    throw invalidResponse('an error event does not carry a status, a typed error and a code');
+  }
+  return new GatewayRequestError({
+    status: event.status,
+    type: error.type,
+    code: error.code,
+    message: error.message,
+    ...(typeof error.param === 'string' ? { param: error.param } : {}),
+    ...(event.retry_after_ms === undefined ? {} : { retryAfterMs: event.retry_after_ms }),
   });
 };
 
@@ -260,10 +276,11 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
     let finished = false;
     try {
       guard.armDeadline(call.deadlineAt - clock.now());
+      guard.arm(streamIdleTimeoutMs, 'stream_interrupted');
       const response = await send(guard, {
         method: 'POST',
         path: '/v1/responses',
-        headers: callHeaders(call),
+        headers: { ...callHeaders(call), [STREAM_IDLE_HEADER]: String(streamIdleTimeoutMs) },
         body: JSON.stringify(body),
       });
       guard.disarm();
@@ -298,6 +315,7 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
           throw invalidResponse('a stream frame is not JSON');
         }
         if (!isStreamEvent(event)) throw invalidResponse('a stream event has no string type');
+        if (event.type === 'error' && event.status !== undefined) throw errorFromEvent(event);
         yield event;
       }
       if (call.signal.aborted) throw call.signal.reason;

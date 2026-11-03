@@ -1,4 +1,5 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import { LOWEST_REASONING_EFFORT } from '@momonga/protocol';
 import type { CreateResponseBody, ResponseResource, RunState } from '@momonga/protocol';
 import type { ClaimContext, Flow } from './claim-context.ts';
 import { modelKey } from '../model-key.ts';
@@ -117,6 +118,18 @@ const handleResult = async (
   ]);
   ctx.memory.streak = 0;
   ctx.memory.interruptions = 0;
+  const fallback = response.momonga;
+  if (fallback?.fallbackCauses !== undefined && fallback.fallbackCauses.length > 0) {
+    const failed = fallback.fallbackCauses.map((cause) => `${cause.target} failed (${cause.code === null ? cause.message : `${cause.code}: ${cause.message}`})`);
+    journal.append([
+      {
+        type: 'notice',
+        level: 'warning',
+        message: `The model call was answered by the fallback target ${fallback.target} because ${failed.join(' and ')}.`,
+        code: 'fallback_target',
+      },
+    ]);
+  }
   if (observation !== undefined) ctx.meter.observe({ inputDigest: observation.inputDigest, inputTokens: response.momonga?.contextInputTokens ?? usage.input_tokens });
   return decideAfterResponse(ctx);
 };
@@ -181,6 +194,7 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
     tools: built.tools,
     tool_choice: summarising ? 'none' : 'auto',
     parallel_tool_calls: ctx.capabilities.parallelToolCalls,
+    ...(summarising ? { reasoning: { effort: LOWEST_REASONING_EFFORT } } : {}),
     max_output_tokens: built.maxOutputTokens,
     store: false,
     stream: true,

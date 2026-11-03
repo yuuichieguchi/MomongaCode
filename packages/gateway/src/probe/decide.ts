@@ -36,7 +36,12 @@ const probedImageCapability = (report: ProbeReport): ImageCapability =>
     ? imageCapability(true, report.imageTokens)
     : imageCapability(false, undefined);
 
-export const capabilitiesFromProbe = (report: ProbeReport, decision: ToolCallingDecision): Capabilities => {
+const parallelCallsDecision = (report: ProbeReport, thresholds: DecideThresholds): boolean => {
+  const parallel = report.parallelToolCalls;
+  return parallel !== undefined && parallel.accepted && atLeast(parallel.multiCallRate, thresholds.minValidRate ?? 0.9);
+};
+
+export const capabilitiesFromProbe = (report: ProbeReport, decision: ToolCallingDecision, thresholds: DecideThresholds = {}): Capabilities => {
   const contextWindow = report.contextWindow.value;
   return {
     contextWindow,
@@ -46,7 +51,8 @@ export const capabilitiesFromProbe = (report: ProbeReport, decision: ToolCalling
     streaming: report.streaming.supported,
     stopSequences: report.stopSequences,
     ...probedImageCapability(report),
-    parallelToolCalls: false,
+    parallelToolCalls: parallelCallsDecision(report, thresholds),
+    ...(report.reasoning === undefined ? {} : { reasoning: report.reasoning }),
     schemaDialect: 'json-schema-2020-12',
     tokenCounting: report.tokenCalibration === undefined ? 'estimated' : 'calibrated',
     ...(report.tokenCalibration === undefined ? {} : { tokenErrorRatio: report.tokenCalibration.errorBound }),

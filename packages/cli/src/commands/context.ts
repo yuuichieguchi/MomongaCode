@@ -11,7 +11,7 @@ import {
 } from '@momonga/eval';
 import type { BenchmarkResult, ContextModel, GuidelineCompletion, GuidelineCompletionRequest, ImproveOutcome, Transcript } from '@momonga/eval';
 import type { MomongaPaths } from '@momonga/foundation';
-import { ESTIMATED_CHARACTERS_PER_TOKEN, assistantTextOf, summaryTokenCapFor } from '@momonga/protocol';
+import { ESTIMATED_CHARACTERS_PER_TOKEN, LOWEST_REASONING_EFFORT, assistantTextOf, summaryTokenCapFor } from '@momonga/protocol';
 import type { Capabilities, CreateResponseBody, GuidelineView, StreamEvent } from '@momonga/protocol';
 import type { RuntimeClient } from '../client/runtime-client.ts';
 import { createGatewayClient as createCliGatewayClient } from '../client/gateway-client.ts';
@@ -70,6 +70,7 @@ const completerFor = async (ports: CliPorts, paths: MomongaPaths, alias: string,
       input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: request.input }] }],
       ...(request.format === undefined ? {} : { text: { format: request.format } }),
       tool_choice: 'none',
+      reasoning: { effort: LOWEST_REASONING_EFFORT },
       max_output_tokens: summaryTokenCapFor(capabilities),
       store: false,
       stream: true,

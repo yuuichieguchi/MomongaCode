@@ -100,6 +100,14 @@ describe('job creation and the decision to call', () => {
     expect(env.api.reflection.get(failed.id)).toBeUndefined();
   });
 
+  it('asks the model for the lowest reasoning effort, because its reply is a bounded artefact', async () => {
+    const on = setup({ enabled: true });
+    on.finishedRun(VERIFIED(on.project));
+    on.gateway.script.push(textStep(CANDIDATE_REPLY([])));
+    expect(await on.reflector().runOne(SIGNAL)).toBe('ran');
+    expect(on.gateway.streams[0]?.body).toMatchObject({ reasoning: { effort: 'none' } });
+  });
+
   it('makes a model call for a verified success of a trusted-origin run only when reflection is enabled', async () => {
     const off = setup({ enabled: false });
     const skipped = off.finishedRun(VERIFIED(off.project));

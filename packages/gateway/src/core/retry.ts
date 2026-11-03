@@ -38,11 +38,14 @@ export type RetryPolicy = {
   timers: GatewayTimers;
 };
 
+export type FallbackCause = { target: string; code: string | null; message: string };
+
 export type RetryOutcome<T> = {
   value: T;
   target: TargetRuntime;
   attempts: number;
   fallbackFrom: string[];
+  fallbackCauses: FallbackCause[];
 };
 
 export type RetryRequest<T> = {
@@ -69,31 +72,45 @@ const sleep = (timers: GatewayTimers, ms: number, signal: AbortSignal): Promise<
 const retryAfterHeader = (classified: ClassifiedError): Record<string, string> =>
   classified.retryAfterMs === undefined ? {} : { 'retry-after': String(Math.max(1, Math.ceil(classified.retryAfterMs / 1000))) };
 
-const isSkipCode = (code: string | null): boolean => code !== null && SKIPPABLE_CODES.has(code);
+const UNREACHABLE_CODE = 'provider_unavailable';
+
+const openBreakerCause =(target: TargetRuntime): FallbackCause => ({
+  target: target.name,
+  code: target.lastFailure?.code ?? null,
+  message: target.lastFailure?.message ?? 'its circuit breaker is open',
+});
+
+const isSkipCode =(code: string | null): boolean => code !== null && SKIPPABLE_CODES.has(code);
 
 type LastFailure = { kind: 'upstream'; failure: UpstreamFailure } | { kind: 'skip'; error: unknown };
 
 export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOutcome<T>> => {
   const { candidates, policy, signal, deadlineAt } = request;
   const fallbackFrom: string[] = [];
+  const fallbackCauses: FallbackCause[] = [];
   let attempts = 0;
   let lastFailure: LastFailure | undefined;
   for (const target of candidates) {
+    let causeHere: FallbackCause | undefined;
     for (let attemptNumber = 1; attemptNumber <= policy.maxAttempts; attemptNumber += 1) {
       if (signal.aborted) throw signal.reason;
       if (!target.breaker.canPass()) break;
       attempts += 1;
       try {
         const value = await request.attempt(target, attemptNumber);
-        return { value, target, attempts, fallbackFrom };
+        return { value, target, attempts, fallbackFrom, fallbackCauses };
       } catch (error) {
         if (error instanceof GatewayError && isSkipCode(error.body.code)) {
           target.breaker.onNeutral();
+          target.lastFailure = { code: error.body.code, message: error.message };
+          causeHere = { target: target.name, ...target.lastFailure };
           lastFailure = { kind: 'skip', error };
           break;
         }
         if (!(error instanceof UpstreamFailure)) throw error;
         const { classified } = error;
+        target.lastFailure = { code: classified.error.code, message: classified.error.message };
+        causeHere = { target: target.name, ...target.lastFailure };
         if (isSkipCode(classified.error.code)) {
           target.breaker.onNeutral();
           lastFailure = { kind: 'skip', error: gatewayErrorFromBody(classified.error, retryAfterHeader(classified)) };
@@ -118,10 +135,17 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
       }
     }
     fallbackFrom.push(target.name);
+    fallbackCauses.push(causeHere ?? openBreakerCause(target));
   }
   if (lastFailure?.kind === 'skip') throw lastFailure.error;
   if (lastFailure?.kind === 'upstream') {
     throw gatewayErrorFromBody(lastFailure.failure.classified.error, retryAfterHeader(lastFailure.failure.classified));
   }
-  throw serverError(503, 'all_targets_unavailable', 'every candidate target is unavailable because its circuit breaker is open');
+  const causes = fallbackCauses.map((cause) => `${cause.target}: ${cause.message}`).join('; ');
+  const unreachable = fallbackCauses.length > 0 && fallbackCauses.every((cause) => cause.code === UNREACHABLE_CODE);
+  throw serverError(
+    503,
+    unreachable ? 'all_targets_unreachable' : 'all_targets_unavailable',
+    `every candidate target is unavailable because its circuit breaker is open (${causes})`,
+  );
 };

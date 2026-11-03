@@ -1,4 +1,4 @@
-import type { Capabilities, HealthResult } from './capabilities.ts';
+import type { Capabilities, HealthResult, ReasoningEffort } from './capabilities.ts';
 import type { CountTokensRequest, CountTokensResult } from './gateway-api.ts';
 import type { CompactMomongaExtension, ErrorBody, FunctionTool, InputItem, StreamEvent, ToolChoice, Usage } from './open-responses.ts';
 
@@ -28,6 +28,7 @@ export type AdapterRequest = {
   max_output_tokens?: number | null;
   temperature?: number | null;
   top_p?: number | null;
+  reasoning_effort?: ReasoningEffort;
 };
 
 export type AdapterContext = {

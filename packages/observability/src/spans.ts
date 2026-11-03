@@ -25,7 +25,10 @@ export type ChatSpanInput = {
   runId?: string;
   step?: number;
   attempt: number;
+  target?: string;
 };
+
+export type FallbackCause = { target: string; code: string | null; message: string };
 
 export type ToolSpanInput = {
   toolName: string;
@@ -100,12 +103,21 @@ export const startChatSpan = (tracer: Tracer, input: ChatSpanInput, parent?: Con
         ...(input.runId === undefined ? {} : { [MOMONGA_ATTRIBUTES.runId]: input.runId }),
         ...(input.step === undefined ? {} : { [MOMONGA_ATTRIBUTES.step]: input.step }),
         [MOMONGA_ATTRIBUTES.attempt]: input.attempt,
+        ...(input.target === undefined ? {} : { [MOMONGA_ATTRIBUTES.target]: input.target }),
       },
     },
     parent,
   );
 
-export const recordChatResponse = (span: Span, response: ChatResponse): void => {
+export const recordChatFailure = (span: Span, message: string): void => {
+  span.setAttribute(MOMONGA_ATTRIBUTES.failureMessage, message);
+};
+
+export const recordFallbackCauses = (span: Span, causes: readonly FallbackCause[]): void => {
+  if (causes.length > 0) span.setAttribute(MOMONGA_ATTRIBUTES.fallbackCauses, JSON.stringify(causes));
+};
+
+export const recordChatResponse =(span: Span, response: ChatResponse): void => {
   span.setAttributes({
     ...(response.responseModel === undefined ? {} : { [A.ATTR_GEN_AI_RESPONSE_MODEL]: response.responseModel }),
     ...(response.responseId === undefined ? {} : { [A.ATTR_GEN_AI_RESPONSE_ID]: response.responseId }),

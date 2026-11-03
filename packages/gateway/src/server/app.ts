@@ -35,6 +35,17 @@ const submitHeadersOf = (context: Context): SubmitHeaders => ({
   tracestate: context.req.header('tracestate'),
 });
 
+const STREAM_IDLE_HEADER = 'momonga-stream-idle-ms';
+const KEEP_ALIVES_PER_IDLE_BOUND = 3;
+
+const streamIdleBoundOf = (value: string | undefined): number | undefined => {
+  if (value === undefined) return undefined;
+  if (!/^[1-9]\d{0,15}$/.test(value)) {
+    throw invalidRequest('invalid_stream_idle', `the ${STREAM_IDLE_HEADER} header must be a positive integer number of milliseconds`);
+  }
+  return Number(value);
+};
+
 export const createApp = (dependencies: AppDependencies): Hono => {
   const { services, responses, unary, tracker } = dependencies;
   const requestSignalOf = (context: Context): AbortSignal => AbortSignal.any([context.req.raw.signal, services.closeSignal]);
@@ -56,18 +67,26 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     const release = tracker.begin();
     let streaming = false;
     try {
+      const idleBoundMs = streamIdleBoundOf(context.req.header(STREAM_IDLE_HEADER));
       const submission = responses.submit(raw, submitHeadersOf(context), context.req.raw.signal);
+      const streamOptions = {
+        timers: services.timers,
+        readerStallMs: services.config.limits.readerStallMs,
+        signal: AbortSignal.any([context.req.raw.signal, services.forceCloseSignal, submission.events.evicted]),
+        onEnd: release,
+      };
+      if (submission.stream && idleBoundMs !== undefined) {
+        streaming = true;
+        return sseResponse(undefined, submission.events, {
+          ...streamOptions,
+          keepAliveMs: Math.min(services.config.sseKeepAliveMs, Math.max(1, Math.floor(idleBoundMs / KEEP_ALIVES_PER_IDLE_BOUND))),
+        });
+      }
       const first = await submission.events.next();
       if (first.done === true) throw new ClientDisconnectedError();
       if (submission.stream) {
         streaming = true;
-        return sseResponse(first.value, submission.events, {
-          timers: services.timers,
-          keepAliveMs: services.config.sseKeepAliveMs,
-          readerStallMs: services.config.limits.readerStallMs,
-          signal: AbortSignal.any([context.req.raw.signal, services.forceCloseSignal, submission.events.evicted]),
-          onEnd: release,
-        });
+        return sseResponse(first.value, submission.events, { ...streamOptions, keepAliveMs: services.config.sseKeepAliveMs });
       }
       try {
         return context.json(await collectTerminalResource(first.value, submission.events));

@@ -79,6 +79,34 @@ describe('the margin term of the summary input bound', () => {
   });
 });
 
+describe('the reasoning headroom term of the summary input bound', () => {
+  const W = 4096;
+  const CAP = 100;
+  const HEADROOM = 500;
+  const LIMIT = W - CAP - HEADROOM - 82;
+
+  it.for([
+    [LIMIT, 200],
+    [LIMIT + 1, 400],
+  ] as const)('a counted request of %i tokens answers %i when the room kept for reasoning is subtracted', async ([tokens, status]) => {
+    const fake = await startFake({ scenario: 'tools-ok', script: [textReply('note')] });
+    const adapter = makeAdapter(fake, {
+      capabilities: async () => ({
+        ...CC_CAPABILITIES,
+        contextWindow: W,
+        maxOutputTokens: 64,
+        tokenCounting: 'calibrated',
+        reasoning: { control: 'none', headroomTokens: HEADROOM },
+      }),
+      countTokens: async (): Promise<CountTokensResult> => ({ input_tokens: tokens, method: 'calibrated', error_bound: 0 }),
+    });
+    const harness = await startCcGateway({ fm: adapter });
+    const response = await compact(harness, { momonga: { max_summary_tokens: CAP } });
+    expect(response.status).toBe(status);
+    if (status === 400) expect(response.body.error.code).toBe('compaction_input_too_large');
+  });
+});
+
 describe('error precedence when every candidate is dropped', () => {
   const tooLarge = async () => {
     const fake = await startFake({ scenario: 'tools-ok', script: [textReply('never')] });

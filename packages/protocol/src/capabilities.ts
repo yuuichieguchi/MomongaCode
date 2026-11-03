@@ -23,7 +23,22 @@ export const imageCapability = (imageInput: boolean, imageTokens: ImageTokenMode
   return { imageInput: true, imageTokens };
 };
 
+export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const;
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+
+export const LOWEST_REASONING_EFFORT: ReasoningEffort = 'none';
+
+export type ReasoningCapability =
+  | { control: 'none'; headroomTokens?: number }
+  | { control: 'reasoning_effort'; lowest: ReasoningEffort };
+
+export const isReasoningEffort = (value: unknown): value is ReasoningEffort => REASONING_EFFORTS.some((effort) => effort === value);
+
+export const reasoningEffortToSend = (requested: ReasoningEffort, lowest: ReasoningEffort): ReasoningEffort =>
+  REASONING_EFFORTS.indexOf(requested) >= REASONING_EFFORTS.indexOf(lowest) ? requested : lowest;
+
 export type CapabilitiesCore = {
+  reasoning?: ReasoningCapability;
   contextWindow: number;
   maxOutputTokens: number;
   toolCalling: ToolCallingMode;

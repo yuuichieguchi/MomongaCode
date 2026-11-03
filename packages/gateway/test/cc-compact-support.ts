@@ -30,7 +30,10 @@ export const instructionsFor = (cap: number, clause: string): string =>
 
 export const TRANSCRIPT_TAIL = '</transcript>\nWrite the handoff note now.';
 
-export const textReply = (text: string, usage = { prompt_tokens: 300, completion_tokens: 12, total_tokens: 312 }): FakeScriptedReply => ({
+export const textReply = (
+  text: string,
+  usage: Extract<FakeScriptedReply, { kind: 'stream' }>['usage'] = { prompt_tokens: 300, completion_tokens: 12, total_tokens: 312 },
+): FakeScriptedReply => ({
   kind: 'stream',
   chunks: [{ delta: { role: 'assistant', content: text } }, { delta: {}, finishReason: 'stop' }],
   usage,

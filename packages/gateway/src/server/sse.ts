@@ -1,3 +1,4 @@
+import { encodeSse } from '@momonga/foundation';
 import type { StreamEvent } from '@momonga/protocol';
 import { frameOf } from '../core/frame.ts';
 import { GatewayError, readerStalledError } from '../core/errors.ts';
@@ -14,8 +15,21 @@ export type SseOptions = {
   onEnd: () => void;
 };
 
-export const sseResponse = (first: StreamEvent, rest: AsyncIterator<StreamEvent>, options: SseOptions): Response => {
+const errorFrameOf = (error: GatewayError): Uint8Array => {
+  const retryAfterSeconds = Number(error.headers['retry-after']);
+  const event: StreamEvent = {
+    type: 'error',
+    sequence_number: 0,
+    error: error.body,
+    status: error.status,
+    ...(Number.isFinite(retryAfterSeconds) ? { retry_after_ms: retryAfterSeconds * 1000 } : {}),
+  };
+  return encoder.encode(encodeSse({ event: 'error', data: JSON.stringify(event) }));
+};
+
+export const sseResponse = (first: StreamEvent | undefined, rest: AsyncIterator<StreamEvent>, options: SseOptions): Response => {
   const { timers, keepAliveMs, readerStallMs, signal } = options;
+  let emitted = first !== undefined;
   let ended = false;
   let streamDone = false;
   let timer: unknown;
@@ -76,10 +90,10 @@ export const sseResponse = (first: StreamEvent, rest: AsyncIterator<StreamEvent>
   const body = new ReadableStream<Uint8Array>({
     start: (controller) => {
       streamController = controller;
-      controller.enqueue(frameOf(first));
+      controller.enqueue(first === undefined ? KEEP_ALIVE_FRAME : frameOf(first));
       signal.addEventListener('abort', onAbort, { once: true });
       schedule();
-      armStallTimer();
+      if (first !== undefined) armStallTimer();
     },
     pull: async (controller) => {
       if (ended) return;
@@ -95,11 +109,17 @@ export const sseResponse = (first: StreamEvent, rest: AsyncIterator<StreamEvent>
           return;
         }
         controller.enqueue(frameOf(step.value));
+        emitted = true;
         armStallTimer();
       } catch (error) {
         if (!streamDone) {
           streamDone = true;
-          controller.error(error);
+          if (!emitted && error instanceof GatewayError) {
+            controller.enqueue(errorFrameOf(error));
+            controller.close();
+          } else {
+            controller.error(error);
+          }
         }
         end();
       }

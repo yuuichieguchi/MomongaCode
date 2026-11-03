@@ -407,6 +407,21 @@ const costTotalsProperties: Record<string, JsonSchema> = {
 };
 const costTotalsRequired = Object.keys(costTotalsProperties);
 
+const fallbackCauseSchema = closed({ target: string, code: nullable(string), message: string }, ['target', 'code', 'message']);
+
+const costFallbackProperties: Record<string, JsonSchema> = {
+  fallbackCalls: nonNegativeInteger,
+  fallbacks: {
+    type: 'array',
+    items: closed(
+      { answeredBy: string, calls: nonNegativeInteger, failed: { type: 'array', items: fallbackCauseSchema } },
+      ['answeredBy', 'calls', 'failed'],
+    ),
+  },
+};
+
+const costTotalsSchemaProperties: Record<string, JsonSchema> = { ...costTotalsProperties, ...costFallbackProperties };
+
 const contextChargeView = closed(
   {
     id: integer,
@@ -436,12 +451,12 @@ const guidelineView = closed(
 
 const costReportView = closed(
   {
-    runs: { type: 'array', items: closed({ runId: string, sessionId: string, ...costTotalsProperties }, ['runId', 'sessionId', ...costTotalsRequired]) },
+    runs: { type: 'array', items: closed({ runId: string, sessionId: string, ...costTotalsSchemaProperties }, ['runId', 'sessionId', ...costTotalsRequired]) },
     sessions: {
       type: 'array',
-      items: closed({ sessionId: string, runIds: { type: 'array', items: string }, ...costTotalsProperties }, ['sessionId', 'runIds', ...costTotalsRequired]),
+      items: closed({ sessionId: string, runIds: { type: 'array', items: string }, ...costTotalsSchemaProperties }, ['sessionId', 'runIds', ...costTotalsRequired]),
     },
-    total: closed(costTotalsProperties, costTotalsRequired),
+    total: closed(costTotalsSchemaProperties, costTotalsRequired),
     contextCharges: closed({ charges: { type: 'array', items: contextChargeView }, totalTokens: nonNegativeInteger }, ['charges', 'totalTokens']),
   },
   ['runs', 'sessions', 'total', 'contextCharges'],
@@ -632,7 +647,13 @@ export type JobView = {
 };
 
 export type JobsResponse = { jobs: JobView[] };
+export type FallbackCauseView = { target: string; code: string | null; message: string };
+
+export type CostFallbackView = { answeredBy: string; calls: number; failed: FallbackCauseView[] };
+
 export type CostTotalsView = {
+  fallbackCalls?: number;
+  fallbacks?: CostFallbackView[];
   calls: number;
   localCalls: number;
   unpricedCalls: number;

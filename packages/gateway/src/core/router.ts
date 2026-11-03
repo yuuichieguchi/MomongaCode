@@ -19,6 +19,7 @@ export type TargetRuntime = {
   breaker: CircuitBreaker;
   gate: AdmissionGate;
   capabilityOverride: CapabilityOverride | undefined;
+  lastFailure: { code: string | null; message: string } | undefined;
 };
 
 export type CandidateRequirements = { tools?: boolean; images?: boolean };
@@ -109,6 +110,7 @@ export const createRouter = (options: RouterOptions): Router => {
         timers,
       }),
       capabilityOverride: target.capabilities,
+      lastFailure: undefined,
     });
   }
   const targetsByName = Object.fromEntries(targets);
