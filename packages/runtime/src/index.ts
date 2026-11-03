@@ -31,10 +31,12 @@ export {
   createRunNotifier,
   createRunService,
   startApprovalSweeper,
+  startMemorySweeper,
   startSearchSweeper,
 } from './service/index.ts';
 export type {
   ApprovalSweeperOptions,
+  MemorySweeperOptions,
   RunAppDeps,
   RunNotifier,
   RunService,
@@ -73,6 +75,12 @@ export { enforcedFactsFor, governanceRulesOf, permissionRulesFor, ruleParses } f
 export type { PermissionRuleSources } from './governance/rules.ts';
 export { MemoryEvidenceError, bindMemoryEvidence, createEvidencePorts, readGitHead } from './memory/evidence.ts';
 export type { BindMemoryEvidenceInput, EvidenceCommand, EvidenceCommandResult, EvidencePortsOptions, EvidenceRun } from './memory/evidence.ts';
+export { createReflector } from './memory/reflection.ts';
+export type { Reflector, ReflectorOptions, ReflectorTurn } from './memory/reflection.ts';
+export { runMemoryUpkeep } from './memory/upkeep.ts';
+export type { MemoryUpkeepOptions, MemoryUpkeepResult } from './memory/upkeep.ts';
+export { enqueueReflection, isRunVerified } from './memory/verified-run.ts';
+export type { EnqueueReflectionDeps, VerifiedRunDeps } from './memory/verified-run.ts';
 export { createHistoryPort } from './process/history-port.ts';
 export type { HistoryPortOptions } from './process/history-port.ts';
 export { createAgentsPort } from './process/agents-port.ts';

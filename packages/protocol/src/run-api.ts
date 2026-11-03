@@ -1,8 +1,8 @@
 import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
 import { HOOK_EVENTS, HOOK_OUTCOMES, HOOK_PRE_TOOL_DECISIONS } from './hooks.ts';
-import { CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
+import { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
 import { MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES } from './memory.ts';
-import type { SummaryFidelity, SummarySource } from './context-record.ts';
+import type { ContextChargePurpose, SummaryFidelity, SummarySource } from './context-record.ts';
 import { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES } from './permission-denial.ts';
 import { FILE_ACCESSES } from './working-facts.ts';
 import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
@@ -415,8 +415,31 @@ const costReportView = closed(
       items: closed({ sessionId: string, runIds: { type: 'array', items: string }, ...costTotalsProperties }, ['sessionId', 'runIds', ...costTotalsRequired]),
     },
     total: closed(costTotalsProperties, costTotalsRequired),
+    contextCharges: closed(
+      {
+        charges: {
+          type: 'array',
+          items: closed(
+            {
+              id: integer,
+              purpose: enumOf(CONTEXT_CHARGE_PURPOSES),
+              runId: nullable(string),
+              project: string,
+              model: string,
+              inputTokens: nonNegativeInteger,
+              outputTokens: nonNegativeInteger,
+              totalTokens: nonNegativeInteger,
+              createdAt: integer,
+            },
+            ['id', 'purpose', 'runId', 'project', 'model', 'inputTokens', 'outputTokens', 'totalTokens', 'createdAt'],
+          ),
+        },
+        totalTokens: nonNegativeInteger,
+      },
+      ['charges', 'totalTokens'],
+    ),
   },
-  ['runs', 'sessions', 'total'],
+  ['runs', 'sessions', 'total', 'contextCharges'],
 );
 
 const memoryScope = enumOf(MEMORY_SCOPES);
@@ -616,11 +639,27 @@ export type CostTotalsView = {
   priceVersions: string[];
 };
 
-export type CostReportView = {
+export type GatewayCostReportView = {
   runs: (CostTotalsView & { runId: string; sessionId: string })[];
   sessions: (CostTotalsView & { sessionId: string; runIds: string[] })[];
   total: CostTotalsView;
 };
+
+export type ContextChargeView = {
+  id: number;
+  purpose: ContextChargePurpose;
+  runId: string | null;
+  project: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  createdAt: number;
+};
+
+export type ContextChargesView = { charges: ContextChargeView[]; totalTokens: number };
+
+export type CostReportView = GatewayCostReportView & { contextCharges: ContextChargesView };
 
 export type RunHealth = {
   status: 'ok';
@@ -866,6 +905,8 @@ export const RUN_API_SCHEMAS = {
   MemoryView: root(memoryView),
   MemoriesResponse: root(closed({ memories: { type: 'array', items: memoryView } }, ['memories'])),
   MemoryResponse: root(closed({ memory: memoryView }, ['memory'])),
+  PromoteMemoryRequest: root(closed({ skill: string }, ['skill'])),
+  PromoteMemoryResponse: root(closed({ path: string }, ['path'])),
   GoverningFactView: root(governingFactView),
   AddRuleRequest: root(
     closed(

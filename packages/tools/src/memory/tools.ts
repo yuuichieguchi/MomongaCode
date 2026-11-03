@@ -1,4 +1,3 @@
-import { createRedactor } from '@momonga/foundation';
 import { DEFAULT_MEMORY_KIND, MEMORY_KINDS, MEMORY_SCOPES, describeMemoryValidity } from '@momonga/protocol';
 import type { MemoryKind, MemoryScope, MemoryView } from '@momonga/protocol';
 import { defineTool, ToolExecutionError, ToolInputError } from '../types.ts';
@@ -12,11 +11,10 @@ import {
   MEMORY_TOOL_TIMEOUT_MS,
 } from './constants.ts';
 import type { MemoryToolsOptions } from './port.ts';
+import { memoryTextProblem } from './rules.ts';
 
 type SaveInput = { text: string; scope: MemoryScope; kind?: MemoryKind; paths?: string[]; supersedes?: string[] };
 type SearchInput = { query: string; include?: 'live' | 'all' };
-
-const redactor = createRedactor({ credentials: [] });
 
 const describeMemory = (memory: MemoryView): string =>
   `[${memory.id}] (${memory.scope} memory, ${memory.origin} origin, status ${memory.status}${describeMemoryValidity(memory)}, saved ${new Date(memory.createdAt).toISOString()} in run ${memory.source.runId}${memory.source.kind === 'tool' ? ` step ${memory.source.step}` : ''}, last used ${new Date(memory.lastUsedAt).toISOString()}) ${memory.text}`;
@@ -51,13 +49,12 @@ export const createMemoryTools = ({ port, trusted }: MemoryToolsOptions): AnyToo
         ...(input.paths === undefined || input.paths.length === 0 ? [] : [`bound to ${input.paths.join(', ')}`]),
       ].join(' '),
     subject: (input) => {
-      if (input.text.trim() === '') throw new ToolInputError('text must contain more than whitespace');
+      const problem = memoryTextProblem(input.text);
+      if (problem?.code === 'blank') throw new ToolInputError(problem.message);
       if (input.scope === 'project' && !trusted) {
         throw new ToolExecutionError('Project memories are only available in trusted folders. Trust this folder first, or save the memory with scope "user"; a user memory saved in an untrusted folder is recalled only in untrusted folders.');
       }
-      if (redactor.text(input.text) !== input.text) {
-        throw new ToolExecutionError('The memory was not saved because it looks like it contains a credential or secret. State the fact without the secret.');
-      }
+      if (problem?.code === 'credential') throw new ToolExecutionError(problem.message);
       return {
         kind: 'memory',
         tool: MEMORY_SAVE_TOOL_NAME,

@@ -1,11 +1,14 @@
 import type { Context } from 'hono';
-import { MEMORY_SCOPES } from '@momonga/protocol';
-import type { MemoryScope } from '@momonga/protocol';
-import type { RuntimeStore } from '@momonga/store';
+import { MEMORY_SCOPES, MEMORY_STATES } from '@momonga/protocol';
+import type { MemoryScope, MemoryState, PromoteMemoryRequest } from '@momonga/protocol';
+import { isValidSkillName } from '@momonga/skills';
+import type { MemoryChange, RuntimeStore } from '@momonga/store';
+import { writeSkillFile } from '../memory/skill-promotion.ts';
 import type { RecordViews } from '../memory/views.ts';
-import { invalidRequest, notFound } from './errors.ts';
+import { conflict, invalidRequest, notFound } from './errors.ts';
 import type { Handler, RouteRegistrar } from './app.ts';
 import { canonicalProject } from './project-query.ts';
+import { JSON_MEDIA_TYPES, readJson, validateBody } from './request.ts';
 
 const json = (body: unknown, status: number): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -17,9 +20,24 @@ const scopeOf = (raw: string | undefined): MemoryScope | undefined => {
   return scope;
 };
 
+const stateOf = (raw: string | undefined): MemoryState | undefined => {
+  if (raw === undefined) return undefined;
+  const state = MEMORY_STATES.find((candidate) => candidate === raw);
+  if (state === undefined) throw invalidRequest(`state must be one of ${MEMORY_STATES.join(', ')}`, 'state');
+  return state;
+};
+
 const projectOf = (raw: string | undefined): string | undefined => (raw === undefined ? undefined : canonicalProject(raw, 'project'));
 
-export const registerMemoryRoutes = (route: RouteRegistrar, deps: { store: Pick<RuntimeStore, 'memories'>; views: RecordViews; closeSignal: AbortSignal }): void => {
+export type MemoryRoutesDeps = {
+  store: Pick<RuntimeStore, 'memories'>;
+  views: RecordViews;
+  closeSignal: AbortSignal;
+  maxBodyBytes: number;
+  home: string;
+};
+
+export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDeps): void => {
   const { memories } = deps.store;
   const { views } = deps;
   const boundOf = (context: Context): AbortSignal => AbortSignal.any([deps.closeSignal, context.req.raw.signal]);
@@ -35,8 +53,39 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: { store: Pick<
     const scope = scopeOf(context.req.query('scope'));
     const project = projectOf(context.req.query('project'));
     if (project !== undefined && scope === 'user') throw invalidRequest('a project filter cannot be combined with the user scope', 'project');
-    const found = memories.list({ ...(scope === undefined ? {} : { scope }), ...(project === undefined ? {} : { project }) });
+    const state = stateOf(context.req.query('state'));
+    const found = memories
+      .list({ ...(scope === undefined ? {} : { scope }), ...(project === undefined ? {} : { project }) })
+      .filter((memory) => (state === undefined ? memory.state !== 'candidate' : memory.state === state));
     return json({ memories: await views.viewsOf(found, boundOf(context)) }, 200);
+  };
+
+  const changed = async (context: Context, result: MemoryChange<string, string>, done: string, requirement: string): Promise<Response> => {
+    const id = context.req.param('id') ?? '';
+    if (result.memory === undefined) throw notFound(`memory ${id} does not exist`);
+    if (result.kind !== done) throw conflict('memory_state', `memory ${id} is ${result.memory.state}, not ${requirement}`);
+    return json({ memory: await views.viewOf(result.memory, boundOf(context)) }, 200);
+  };
+
+  const acceptMemory: Handler = (context) => changed(context, memories.accept(context.req.param('id') ?? ''), 'accepted', 'a candidate');
+
+  const rejectMemory: Handler = (context) => changed(context, memories.reject(context.req.param('id') ?? ''), 'rejected', 'a candidate');
+
+  const restoreMemory: Handler = (context) => changed(context, memories.restore(context.req.param('id') ?? ''), 'restored', 'archived');
+
+  const promoteMemory: Handler = async (context) => {
+    const memory = requireMemory(context);
+    const body = validateBody<PromoteMemoryRequest>('PromoteMemoryRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
+    if (!isValidSkillName(body.skill)) {
+      throw invalidRequest('skill must be 1 to 64 lowercase letters, digits and single hyphens that neither start nor end the name', 'skill');
+    }
+    if (memory.state !== 'active' || memory.retiredAt !== null) throw conflict('memory_state', `memory ${memory.id} is ${memory.state}, and only an accepted memory can become a skill`);
+    if (memory.kind !== 'procedure') throw conflict('memory_state', `memory ${memory.id} is a ${memory.kind}, and only a procedure can become a skill`);
+    const written = await writeSkillFile({ root: memory.project ?? deps.home, name: body.skill, text: memory.text });
+    if (written.kind === 'written') return json({ path: written.path }, 201);
+    if (written.kind === 'exists') throw conflict('skill_target', `${written.path} already exists, so it is not overwritten`);
+    if (written.kind === 'symlink') throw conflict('skill_target', `${written.path} is a symbolic link, so nothing is written through it`);
+    throw conflict('skill_target', `${written.path} is not a directory, so the skill cannot be written there`);
   };
 
   const getMemory: Handler = async (context) => json({ memory: await views.viewOf(requireMemory(context), boundOf(context)) }, 200);
@@ -55,4 +104,8 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: { store: Pick<
   route('/v1/memories', { GET: listMemories });
   route('/v1/memories/:id', { GET: getMemory, DELETE: deleteMemory });
   route('/v1/memories/:id/history', { GET: memoryHistory });
+  route('/v1/memories/:id/accept', { POST: acceptMemory });
+  route('/v1/memories/:id/reject', { POST: rejectMemory });
+  route('/v1/memories/:id/restore', { POST: restoreMemory });
+  route('/v1/memories/:id/promote', { POST: promoteMemory });
 };

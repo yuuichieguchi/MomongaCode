@@ -44,6 +44,15 @@ describe('reviewing candidates', () => {
     expectSchema('MemoriesResponse', listed.json);
   });
 
+  it('keeps candidates out of the plain list and refuses an unknown state', async () => {
+    const env = await startService({ fakeTimers: true });
+    const { candidate, accepted } = await seeded(env);
+    candidate('waiting');
+    const active = accepted('kept');
+    expect((await env.http('GET', '/v1/memories')).json.memories.map((entry: { id: string }) => entry.id)).toEqual([active.id]);
+    expect((await env.http('GET', '/v1/memories?state=nonsense')).status).toBe(400);
+  });
+
   it('accepts a candidate and answers the view', async () => {
     const env = await startService({ fakeTimers: true });
     const { candidate } = await seeded(env);
@@ -127,6 +136,46 @@ describe('promoting to a skill', () => {
     expect((await promote(env, accepted('text').id, name)).status).toBe(400);
     expect(fs.existsSync(path.join(session.cwd, '.momonga', 'skills'))).toBe(false);
     expect(fs.existsSync(path.join(session.cwd, '.momonga', 'escape'))).toBe(false);
+  });
+
+  it('writes a project memory under its project and a user memory under the home of the user, by the service', async () => {
+    const env = await startService({ fakeTimers: true });
+    const { accepted, run, session } = await seeded(env);
+    const project = accepted('Run the seed script, then npm test.');
+    const userCandidate = lifecycleOf(env.store).saveCandidate({
+      scope: 'user',
+      origin: 'trusted',
+      project: null,
+      text: 'Prefer small commits.',
+      runId: run.id,
+      ordinal: 99,
+      kind: 'procedure',
+      evidence: [],
+    }).memory;
+    lifecycleOf(env.store).accept(userCandidate.id);
+    expect((await promote(env, project.id, 'project-skill')).json).toEqual({ path: skillFile(session.cwd, 'project-skill') });
+    const userFile = path.join(env.layout.home, '.momonga', 'skills', 'user-skill', 'SKILL.md');
+    expect((await promote(env, userCandidate.id, 'user-skill')).json).toEqual({ path: userFile });
+    expect(parseSkillFile(fs.readFileSync(userFile, 'utf8'))).toMatchObject({ kind: 'parsed', fields: { name: 'user-skill' }, body: 'Prefer small commits.' });
+    expect(fs.existsSync(skillFile(session.cwd, 'user-skill'))).toBe(false);
+  });
+
+  it('refuses to write through a symbolic link the repository planted, and creates nothing', async () => {
+    const env = await startService({ fakeTimers: true });
+    const { accepted, session } = await seeded(env);
+    const elsewhere = fs.mkdtempSync(path.join(env.layout.root, 'elsewhere-'));
+    fs.symlinkSync(elsewhere, path.join(session.cwd, '.momonga'));
+    expect((await promote(env, accepted('text').id, 'planted')).status).toBe(409);
+    expect(fs.readdirSync(elsewhere)).toEqual([]);
+  });
+
+  it('refuses a project folder that no longer exists instead of creating it', async () => {
+    const env = await startService({ fakeTimers: true });
+    const { accepted, session } = await seeded(env);
+    const memory = accepted('text');
+    fs.rmSync(session.cwd, { recursive: true, force: true });
+    expect((await promote(env, memory.id, 'gone-project')).status).toBe(409);
+    expect(fs.existsSync(session.cwd)).toBe(false);
   });
 
   it('refuses a candidate, since only an accepted memory may become a skill', async () => {

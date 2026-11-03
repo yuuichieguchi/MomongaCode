@@ -278,7 +278,7 @@ const EVIDENCE_BASED_CONTEXT = `
 ALTER TABLE memories ADD COLUMN kind TEXT NOT NULL DEFAULT 'fact' CHECK (kind IN ('fact', 'episode', 'procedure'));
 ALTER TABLE memories ADD COLUMN duplicate_of TEXT;
 ALTER TABLE memories ADD COLUMN state TEXT NOT NULL DEFAULT 'active' CHECK (
-  state IN ('active', 'candidate', 'archived', 'duplicate') AND ((state = 'duplicate') = (duplicate_of IS NOT NULL))
+  state IN ('active', 'candidate', 'archived', 'duplicate', 'rejected') AND ((state = 'duplicate') = (duplicate_of IS NOT NULL))
 );
 ALTER TABLE memories ADD COLUMN supersedes_json TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE memories ADD COLUMN retired_at INTEGER;

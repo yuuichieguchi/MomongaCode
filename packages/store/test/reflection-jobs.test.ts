@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { RuntimeStore } from '@momonga/store';
-import { START_MS, enqueue, harness, newSession } from './helpers.ts';
+import { START_MS, enqueue, harness, makeStoreDir, newSession } from './helpers.ts';
 
 type Job = { runId: string; state: string; attempts: number; lastError: string | null; createdAt: number; updatedAt: number };
 
 type Jobs = {
+  runOrigin(runId: string): string | undefined;
   enqueue(runId: string): boolean;
   get(runId: string): Job | undefined;
   next(): Job | undefined;
@@ -31,6 +32,16 @@ describe('reflection jobs', () => {
     expect(jobs.enqueue(first.id)).toBe(true);
     expect(jobs.enqueue(first.id)).toBe(false);
     expect(jobs.get(first.id)).toEqual({ runId: first.id, state: 'pending', attempts: 0, lastError: null, createdAt: START_MS, updatedAt: START_MS });
+  });
+
+  it('reports the origin recorded when the run was created', () => {
+    const { store, jobs, first } = setup();
+    expect(jobs.runOrigin(first.id)).toBe('untrusted');
+    const folder = makeStoreDir();
+    store.trust.set(folder, 'trusted');
+    const trustedRun = enqueue(store, newSession(store, folder).id, 'two');
+    expect(jobs.runOrigin(trustedRun.id)).toBe('trusted');
+    expect(jobs.runOrigin('missing')).toBeUndefined();
   });
 
   it('counts an attempt when a job begins', () => {

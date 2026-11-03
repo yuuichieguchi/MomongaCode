@@ -90,6 +90,36 @@ describe('isVerifiedSuccess', () => {
     expect(verdict([write('Makefile'), write('src/a.ts'), pass()])).toBe(false);
   });
 
+  it('matches a manifest by base name at any depth, because a nested one changes what the command does', () => {
+    expect(verdict([write('packages/web/package.json'), pass()])).toBe(false);
+    expect(verdict([write('tools/build/Makefile'), pass()])).toBe(false);
+    expect(verdict([write('src/package.json.bak'), pass()])).toBe(true);
+    expect(verdict([write('docs/my-package.json'), pass()])).toBe(true);
+  });
+
+  const reconciled = (outcome: 'already_applied' | 'not_applied' | 'unknown', file = 'src/a.ts'): RunEvent[] =>
+    [
+      { type: 'tool.call', seq: 1, callId: 'r1', name: 'Write', kind: 'edit', rawInput: { file_path: `${PROJECT}/${file}` }, locations: [{ path: `${PROJECT}/${file}` }] },
+      { type: 'tool.reconciled', seq: 2, callId: 'r1', outcome, output: 'interrupted' },
+    ] as unknown as RunEvent[];
+
+  const checked = (events: RunEvent[]): boolean => isVerifiedSuccess({ status: 'COMPLETED', events, project: PROJECT, commands: COMMANDS, manifests: MANIFESTS });
+
+  it('counts a reconciled write as a write, because its outcome is unknown and a later check is needed', () => {
+    expect(checked([...journal([pass()]), ...reconciled('unknown')])).toBe(false);
+    expect(checked([...journal([pass()]), ...reconciled('already_applied')])).toBe(false);
+    expect(checked([...reconciled('unknown'), ...journal([pass()])])).toBe(true);
+    expect(checked([...reconciled('already_applied'), ...journal([pass()])])).toBe(true);
+  });
+
+  it('does not count a reconciled write that was not applied', () => {
+    expect(checked([...journal([pass()]), ...reconciled('not_applied')])).toBe(true);
+  });
+
+  it('refuses a run whose reconciled write may have changed a manifest', () => {
+    expect(checked([...reconciled('unknown', 'package.json'), ...journal([pass()])])).toBe(false);
+  });
+
   it('accepts a run that only read a manifest', () => {
     expect(verdict([{ name: 'Read', files: [{ path: `${PROJECT}/package.json`, sha256: 'aa', access: 'read' }] }, pass()])).toBe(true);
   });

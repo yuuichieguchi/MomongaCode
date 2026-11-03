@@ -8,6 +8,7 @@ import { buildNext, cancelIfInterrupted, recoverRejectedCompaction } from './con
 import { isLoop } from './loop-detection.ts';
 import { streamModel } from './model-stream.ts';
 import type { ModelResult } from './model-stream.ts';
+import { queueReflection } from './queue-reflection.ts';
 import { summaryStopReason } from './wrap-up.ts';
 import { runStopHooks } from './hook-step.ts';
 import { recordCalls, settleCalls } from './tool-step.ts';
@@ -56,7 +57,9 @@ export const decideAfterResponse = async (ctx: ClaimContext): Promise<Flow> => {
   if (response.callIds.length === 0) {
     if (response.incomplete) return incompleteFailure(response.incompleteReason, terminals);
     if ((await runStopHooks(ctx)) === 'continue') return 'continue';
-    return terminals.finish('COMPLETED');
+    const completed = terminals.finish('COMPLETED');
+    await queueReflection(ctx);
+    return completed;
   }
   if (isLoop(journal.state, ctx.limits.loopThreshold)) {
     journal.append([

@@ -10,7 +10,7 @@ import { showCost } from './cost.ts';
 import { elicit } from './elicit.ts';
 import { compareContext, evaluate, evaluateContext } from './evaluate.ts';
 import { mcpList, mcpLogin } from './mcp.ts';
-import { memoryDelete, memoryHistory, memoryList, memoryShow } from './memory.ts';
+import { memoryAccept, memoryDelete, memoryHistory, memoryList, memoryPromote, memoryReject, memoryRestore, memoryReview, memoryShow } from './memory.ts';
 import { ruleAdd, ruleHistory, ruleList, ruleRetire } from './rule.ts';
 import { listJobs } from './jobs.ts';
 import { listModels } from './models.ts';
@@ -100,6 +100,38 @@ const registerMemory: CommandGroup = (program, deps) => {
     .description('delete a memory')
     .action(async (id: string) => {
       deps.complete(await memoryDelete(deps.ports, pathsOf(deps.ports), id));
+    });
+  const review = memory
+    .command('review')
+    .description('list the memories the agent proposed in this folder and wait for your decision')
+    .option('--json', 'print the memories as JSON')
+    .action(async (options: { json?: true }) => {
+      deps.complete(await memoryReview(deps.ports, pathsOf(deps.ports), { json: options.json === true }));
+    });
+  review
+    .command('accept <id>')
+    .description('accept a proposed memory, so later sessions recall it')
+    .action(async (id: string) => {
+      deps.complete(await memoryAccept(deps.ports, pathsOf(deps.ports), id));
+    });
+  review
+    .command('reject <id>')
+    .description('reject a proposed memory, so it is never recalled and never proposed again')
+    .action(async (id: string) => {
+      deps.complete(await memoryReject(deps.ports, pathsOf(deps.ports), id));
+    });
+  memory
+    .command('restore <id>')
+    .description('bring an archived memory back')
+    .action(async (id: string) => {
+      deps.complete(await memoryRestore(deps.ports, pathsOf(deps.ports), id));
+    });
+  memory
+    .command('promote <id>')
+    .description('write an accepted procedure memory as a skill')
+    .requiredOption('--skill <name>', 'the name of the skill to write')
+    .action(async (id: string, options: { skill: string }) => {
+      deps.complete(await memoryPromote(deps.ports, pathsOf(deps.ports), id, options.skill));
     });
 };
 

@@ -19,11 +19,11 @@ const setup = (calls = 12) => {
   const callIds = Array.from({ length: calls }, (_unused, index) => `c${index}`);
   expect(store.append(mustClaim(store, 'w1'), callIds.map(callEvent)).kind).toBe('ok');
   const free = [...callIds];
-  const save = (text: string, evidence: MemoryEvidence[] = []) => {
+  const save = (text: string, evidence: MemoryEvidence[] = [], origin: 'trusted' | 'untrusted' = 'trusted') => {
     const callId = free.shift();
     if (callId === undefined) throw new Error('out of calls');
     clock.advance(1);
-    return store.memories.save({ origin: 'trusted', scope: 'project', project, text, runId: run.id, step: 1, callId, evidence }).memory;
+    return store.memories.save({ origin, scope: 'project', project, text, runId: run.id, step: 1, callId, evidence }).memory;
   };
   const views = createRecordViews({ store, evidenceRun: () => async () => ({ exitCode: null }) });
   const upkeep = (batchSize = 100): Promise<{ duplicates: number; archived: number }> =>
@@ -43,6 +43,46 @@ describe('runMemoryUpkeep', () => {
     expect(await upkeep()).toMatchObject({ duplicates: 1 });
     expect(store.memories.get(newer.id)).toMatchObject({ state: 'duplicate', duplicateOf: older.id });
     expect(store.memories.get(older.id)).toMatchObject({ state: 'active', duplicateOf: null });
+  });
+
+  it('never lets an untrusted copy replace a trusted one, whichever is older', async () => {
+    const { store, project, save, upkeep } = setup();
+    const untrusted = save('run the seed script first', [], 'untrusted');
+    const trusted = save('run the seed script first');
+    expect(await upkeep()).toMatchObject({ duplicates: 0 });
+    expect(store.memories.get(untrusted.id)?.state).toBe('active');
+    expect(store.memories.get(trusted.id)?.state).toBe('active');
+    expect(store.memories.recall({ trusted: true, project })).toHaveLength(2);
+  });
+
+  it('merges notes whose text differs only in Unicode form, case-sensitively', async () => {
+    const { store, save, upkeep } = setup();
+    const first = save('use the café fixture');
+    const second = save('use  the café fixture ');
+    const third = save('Use the café fixture');
+    expect(await upkeep()).toMatchObject({ duplicates: 1 });
+    expect(store.memories.get(second.id)).toMatchObject({ state: 'duplicate', duplicateOf: first.id });
+    expect(store.memories.get(third.id)?.state).toBe('active');
+  });
+
+  it('leaves a note a newer note replaced as it is, since recall already skips it', async () => {
+    const { store, clock, project, save, upkeep } = setup();
+    const kept = save('kept note');
+    const replaced = save('old wording');
+    const replacement = store.memories.save({
+      origin: 'trusted',
+      scope: 'project',
+      project,
+      text: 'new wording',
+      runId: kept.source.runId,
+      step: 1,
+      callId: 'c11',
+      supersedes: [replaced.id],
+    }).memory;
+    clock.advance(FORGET_MS);
+    store.memories.markUsed([kept.id, replacement.id]);
+    expect(await upkeep()).toMatchObject({ duplicates: 0, archived: 0 });
+    expect(store.memories.get(replaced.id)?.state).toBe('active');
   });
 
   it('does not merge use X with do not use X', async () => {
@@ -148,6 +188,84 @@ describe('startMemorySweeper', () => {
     await afterMicrotasks();
     expect(seen.filter((entry) => entry === 'upkeep')).toHaveLength(2);
     expect(timers.pending()).toEqual([]);
+  });
+
+  it('aborts the call in flight on close, which resolves without waiting for the model and reports no error', async () => {
+    const clock = createFakeClock(START_MS);
+    const timers = createFakeTimers(clock);
+    const errors: unknown[] = [];
+    const signals: AbortSignal[] = [];
+    const sweeper = start({
+      timers,
+      intervalMs: 1000,
+      upkeep: async () => undefined,
+      reflect: (signal: AbortSignal) =>
+        new Promise((_resolve, reject) => {
+          signals.push(signal);
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+        }),
+      onError: (error: unknown) => errors.push(error),
+    });
+    timers.advance(1000);
+    await afterMicrotasks();
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.aborted).toBe(false);
+    await sweeper.close();
+    expect(signals[0]?.aborted).toBe(true);
+    expect(errors).toEqual([]);
+    expect(timers.pending()).toEqual([]);
+  });
+
+  it('starts no second turn while one is still running', async () => {
+    const clock = createFakeClock(START_MS);
+    const timers = createFakeTimers(clock);
+    let release: () => void = () => undefined;
+    let started = 0;
+    const sweeper = start({
+      timers,
+      intervalMs: 1000,
+      upkeep: async () => {
+        started += 1;
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      },
+      reflect: async () => 'idle',
+      onError: () => undefined,
+    });
+    timers.advance(1000);
+    await afterMicrotasks();
+    timers.advance(5000);
+    await afterMicrotasks();
+    expect(started).toBe(1);
+    release();
+    await sweeper.close();
+  });
+
+  it('reports a failure of the reflection turn too, and goes on', async () => {
+    const clock = createFakeClock(START_MS);
+    const timers = createFakeTimers(clock);
+    const errors: unknown[] = [];
+    const failure = new Error('reflection failed');
+    let turns = 0;
+    const sweeper = start({
+      timers,
+      intervalMs: 1000,
+      upkeep: async () => undefined,
+      reflect: async () => {
+        turns += 1;
+        if (turns === 1) throw failure;
+        return 'idle';
+      },
+      onError: (error: unknown) => errors.push(error),
+    });
+    timers.advance(1000);
+    await afterMicrotasks();
+    timers.advance(1000);
+    await afterMicrotasks();
+    expect(turns).toBe(2);
+    expect(errors).toEqual([failure]);
+    await sweeper.close();
   });
 });
 

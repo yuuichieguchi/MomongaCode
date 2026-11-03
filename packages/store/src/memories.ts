@@ -2,12 +2,16 @@ import type { DatabaseSync } from 'node:sqlite';
 import { immediateTx, uuidv7 } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { DEFAULT_MEMORY_KIND, MEMORY_EVIDENCE_KINDS, MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES } from '@momonga/protocol';
-import type { MemoryEvidence, MemoryOrigin, MemoryScope, MemorySource } from '@momonga/protocol';
+import type { MemoryEvidence, MemoryOrigin, MemoryScope, MemorySource, MemoryState } from '@momonga/protocol';
 import { corrupt, expectOneOf, readerFor } from './rows.ts';
 import type { Row, RowReader } from './rows.ts';
 import { revisionChain } from './revision-chain.ts';
 import { asciiLower, instrFilters, partitionTerms, quoted } from './search-terms.ts';
-import type { MemoryRecord, MemoryStore, MemoryVisibility, SaveMemoryInput } from './types.ts';
+import type { MemoryChange, MemoryRecord, MemoryStore, MemoryVisibility, SaveMemoryInput } from './types.ts';
+
+const REFLECTION_SOURCE_STEP = 0;
+
+const REFLECTION_SOURCE_SEQ = 0;
 
 const REFLECTION_CALL_ID = /^reflection:(\d+)$/;
 
@@ -119,6 +123,35 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
   };
   const touch = db.prepare('UPDATE memories SET last_used_at = :now WHERE id = :id');
   const remove = db.prepare('DELETE FROM memories WHERE id = :id');
+  const supersededIds = db.prepare(
+    "SELECT DISTINCT replaced.value AS id FROM memories AS successor, json_each(successor.supersedes_json) AS replaced WHERE successor.state <> 'candidate'",
+  );
+  const activeRows = db.prepare("SELECT * FROM memories WHERE state = 'active' AND retired_at IS NULL ORDER BY created_at, id");
+  const insertCandidate = db.prepare(
+    `INSERT INTO memories (id, scope, origin, project, text, source_session_id, source_run_id, source_step, source_call_id, source_seq, created_at, last_used_at, kind, state, source_kind)
+     VALUES (:id, :scope, :origin, :project, :text, :sessionId, :runId, ${REFLECTION_SOURCE_STEP}, :callId, ${REFLECTION_SOURCE_SEQ}, :now, :now, :kind, 'candidate', 'reflection')`,
+  );
+  const sessionOfRun = db.prepare('SELECT session_id FROM runs WHERE id = :runId');
+  const candidateRows = db.prepare("SELECT * FROM memories WHERE state = 'candidate' ORDER BY created_at, id");
+  const candidateRowsOfProject = db.prepare("SELECT * FROM memories WHERE state = 'candidate' AND project = :project ORDER BY created_at, id");
+  const moveState = db.prepare(
+    'UPDATE memories SET state = :to, duplicate_of = :duplicateOf, last_used_at = CASE WHEN :touched = 1 THEN :now ELSE last_used_at END WHERE id = :id AND state = :from',
+  );
+
+  const change = <Done extends string, Refused extends string>(
+    id: string,
+    from: MemoryState,
+    to: MemoryState,
+    outcome: { done: Done; refused: Refused },
+    options: { duplicateOf?: string; touched?: boolean } = {},
+  ): MemoryChange<Done, Refused> =>
+    immediateTx(db, () => {
+      if (byId.get({ id }) === undefined) return { kind: 'not_found' };
+      const moved = Number(moveState.run({ id, from, to, duplicateOf: options.duplicateOf ?? null, touched: options.touched === true ? 1 : 0, now: clock.now() }).changes) === 1;
+      const row = byId.get({ id });
+      if (row === undefined) throw new Error(`memory ${id} vanished after it was changed`);
+      return moved ? { kind: outcome.done, memory: decode(row) } : { kind: outcome.refused, memory: decode(row) };
+    });
 
   const requireSource = (input: SaveMemoryInput): { seq: number; sessionId: string } => {
     const row = toolCallEvent.get({ runId: input.runId, callId: input.callId });
@@ -182,6 +215,53 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
         if (row === undefined) throw new Error(`memory ${input.runId}/${input.callId} vanished after it was saved`);
         return { memory: decode(row), created: true };
       }),
+    saveCandidate: (input) =>
+      immediateTx(db, () => {
+        if ((input.scope === 'project') !== (input.project !== null)) {
+          throw new RangeError(`a ${input.scope} memory ${input.scope === 'project' ? 'requires' : 'cannot carry'} a project`);
+        }
+        const callId = `reflection:${input.ordinal}`;
+        const existing = bySource.get({ runId: input.runId, callId });
+        if (existing !== undefined) return { memory: decode(existing), created: false };
+        const session = sessionOfRun.get({ runId: input.runId });
+        if (session === undefined) throw new Error(`memory source run ${input.runId} does not exist`);
+        const id = uuidv7(clock);
+        insertCandidate.run({
+          id,
+          scope: input.scope,
+          origin: input.origin,
+          project: input.project,
+          text: input.text,
+          sessionId: readerFor('runs', input.runId, session).string('session_id'),
+          runId: input.runId,
+          callId,
+          now: clock.now(),
+          kind: input.kind,
+        });
+        input.evidence.forEach((entry, ordinal) => void insertEvidence.run(evidenceParams(id, ordinal, entry)));
+        const row = bySource.get({ runId: input.runId, callId });
+        if (row === undefined) throw new Error(`memory ${input.runId}/${callId} vanished after it was saved`);
+        return { memory: decode(row), created: true };
+      }),
+    live: () => {
+      const superseded = new Set(supersededIds.all().map((row) => String(row['id'])));
+      return activeRows
+        .all()
+        .filter((row) => !superseded.has(String(row['id'])))
+        .map((row) => {
+          const id = String(row['id']);
+          return decodeMemory(row, evidenceOf.all({ id }).map((evidenceRow) => decodeEvidence(id, evidenceRow)), []);
+        });
+    },
+    candidates: (filter = {}) => (filter.project === undefined ? candidateRows.all() : candidateRowsOfProject.all({ project: filter.project })).map(decode),
+    accept: (id) => change(id, 'candidate', 'active', { done: 'accepted', refused: 'not_candidate' }, { touched: true }),
+    reject: (id) => change(id, 'candidate', 'rejected', { done: 'rejected', refused: 'not_candidate' }),
+    markDuplicate: (id, of) => {
+      if (byId.get({ id: of }) === undefined) throw new RangeError(`memory ${of} cannot be the original of ${id}: it does not exist`);
+      return change(id, 'active', 'duplicate', { done: 'marked', refused: 'not_active' }, { duplicateOf: of });
+    },
+    archive: (id) => change(id, 'active', 'archived', { done: 'archived', refused: 'not_active' }),
+    restore: (id) => change(id, 'archived', 'active', { done: 'restored', refused: 'not_archived' }, { touched: true }),
     get: (id) => {
       const row = byId.get({ id });
       return row === undefined ? undefined : decode(row);

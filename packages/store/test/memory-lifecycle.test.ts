@@ -87,6 +87,26 @@ describe('accept and reject', () => {
     expect(memories.accept(memory.id).kind).not.toBe('accepted');
   });
 
+  it('keeps a rejected candidate out of recall and plain search, finds it with all, and never restores it', () => {
+    const { store, memories, candidate } = started();
+    const { memory } = candidate(0, 'seeded fixture note');
+    memories.reject(memory.id);
+    expect(memories.get(memory.id)?.state).toBe('rejected');
+    expect(store.memories.recall(VISIBLE)).toEqual([]);
+    expect(store.memories.search(VISIBLE, ['seeded'])).toEqual([]);
+    expect(ids(store.memories.search(VISIBLE, ['seeded'], { include: 'all' }))).toEqual([memory.id]);
+    expect(memories.restore(memory.id).kind).toBe('not_archived');
+    expect(memories.archive(memory.id).kind).toBe('not_active');
+    expect(memories.get(memory.id)?.state).toBe('rejected');
+  });
+
+  it('counts an acceptance as a use, so a candidate that waited is not archived at once', () => {
+    const { clock, memories, candidate } = started();
+    const { memory } = candidate(0, 'waiting');
+    clock.advance(5000);
+    expect(memories.accept(memory.id).memory?.lastUsedAt).toBe(clock.now());
+  });
+
   it('accepts only a candidate', () => {
     const { memories, saved } = started();
     expect(memories.accept(saved('c1', 'active note').id).kind).toBe('not_candidate');

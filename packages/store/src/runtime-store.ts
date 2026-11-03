@@ -12,7 +12,9 @@ import { StoreIdentityError, isFatalStoreError } from './fatal.ts';
 import { createIdempotencyStore } from './idempotency.ts';
 import { decodeJob, prepareJobStatements } from './jobs.ts';
 import { createGoverningFactStore } from './governing.ts';
+import { createContextChargeStore } from './context-charges.ts';
 import { createMemoryStore } from './memories.ts';
+import { createReflectionStore } from './reflection.ts';
 import { InheritanceError, applyInheritance, projectInheritance, retractsTask } from './inherit.ts';
 import type { InheritanceOutcome, InheritedPayload } from './inherit.ts';
 import { corrupt, expectOneOf, expectRecord, isRecord, readerFor } from './rows.ts';
@@ -1312,6 +1314,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     blobs: createBlobStore(db, clock, blobDirectory),
     trust,
     memories: createMemoryStore(db, clock),
+    reflection: createReflectionStore(db, clock),
+    contextCharges: createContextChargeStore(db, clock),
     governing: createGoverningFactStore(db, clock),
     search: createSearchStore(db),
 

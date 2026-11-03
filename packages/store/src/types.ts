@@ -11,6 +11,7 @@ import type {
   RunState,
   RunStatus,
   SessionEvent,
+  ContextChargePurpose,
   GoverningEnforcement,
   GoverningFactView,
   GoverningKind,
@@ -284,8 +285,32 @@ export type MemoryVisibility = { trusted: true; project: string } | { trusted: f
 
 export type MemoryInclude = 'live' | 'all';
 
+export type SaveCandidateInput = {
+  scope: MemoryScope;
+  origin: MemoryOrigin;
+  project: string | null;
+  text: string;
+  runId: string;
+  ordinal: number;
+  kind: MemoryKind;
+  evidence: readonly MemoryEvidence[];
+};
+
+export type MemoryChange<Done extends string, Refused extends string> =
+  | { kind: Done; memory: MemoryRecord }
+  | { kind: Refused; memory: MemoryRecord }
+  | { kind: 'not_found'; memory?: undefined };
+
 export type MemoryStore = {
   save(input: SaveMemoryInput): { memory: MemoryRecord; created: boolean };
+  saveCandidate(input: SaveCandidateInput): { memory: MemoryRecord; created: boolean };
+  candidates(filter?: { project?: string }): MemoryRecord[];
+  live(): MemoryRecord[];
+  accept(id: string): MemoryChange<'accepted', 'not_candidate'>;
+  reject(id: string): MemoryChange<'rejected', 'not_candidate'>;
+  markDuplicate(id: string, of: string): MemoryChange<'marked', 'not_active'>;
+  archive(id: string): MemoryChange<'archived', 'not_active'>;
+  restore(id: string): MemoryChange<'restored', 'not_archived'>;
   get(id: string): MemoryRecord | undefined;
   list(filter?: { scope?: MemoryScope; project?: string }): MemoryRecord[];
   recall(visibility: MemoryVisibility): MemoryRecord[];
@@ -366,6 +391,41 @@ export type SearchStore = {
   projectOf(visibility: HistoryVisibility, runId: string): string | undefined;
 };
 
+export type ReflectionJob = {
+  runId: string;
+  state: 'pending' | 'running' | 'done' | 'failed';
+  attempts: number;
+  lastError: string | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ReflectionStore = {
+  runOrigin(runId: string): MemoryOrigin | undefined;
+  enqueue(runId: string): boolean;
+  get(runId: string): ReflectionJob | undefined;
+  next(): ReflectionJob | undefined;
+  begin(runId: string): ReflectionJob;
+  finish(runId: string, reason?: string): ReflectionJob;
+};
+
+export type ContextChargeInput = {
+  purpose: ContextChargePurpose;
+  runId: string | null;
+  project: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+};
+
+export type ContextCharge = ContextChargeInput & { id: number; createdAt: number };
+
+export type ContextChargeStore = {
+  record(input: ContextChargeInput): ContextCharge;
+  list(filter?: { runIds?: readonly string[]; project?: string }): ContextCharge[];
+};
+
 export type RuntimeStore = {
   createSession(input: CreateSessionInput): Session;
   getSession(id: string): Session | undefined;
@@ -431,6 +491,8 @@ export type RuntimeStore = {
   blobs: BlobStore;
   trust: TrustStore;
   memories: MemoryStore;
+  reflection: ReflectionStore;
+  contextCharges: ContextChargeStore;
   governing: GoverningFactStore;
   search: SearchStore;
   close(): void;

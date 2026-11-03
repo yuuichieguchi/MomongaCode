@@ -1,4 +1,4 @@
-import type { PermissionRule, ResolvedVerificationSettings } from '@momonga/config';
+import type { PermissionRule, ResolvedMemorySettings, ResolvedVerificationSettings } from '@momonga/config';
 import type { Clock } from '@momonga/foundation';
 import type {
   Capabilities,
@@ -40,6 +40,7 @@ export type SettingsPort = {
   rules(session: Session): Promise<PermissionRule[]>;
   hooks(session: Session): Promise<HooksSettings>;
   verification(session: Session): Promise<ResolvedVerificationSettings>;
+  memory(target: Pick<Session, 'cwd'>): Promise<ResolvedMemorySettings>;
   autoModeClassifier(): string | undefined;
   appendRule(session: Session, entry: AppendedRule): Promise<void>;
   trusted(session: Session): boolean;

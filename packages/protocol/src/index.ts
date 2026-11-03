@@ -62,8 +62,11 @@ export { MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES } from './run-api.ts';
 export type {
   JobView,
   JobsResponse,
+  ContextChargeView,
+  ContextChargesView,
   CostReportView,
   CostTotalsView,
+  GatewayCostReportView,
   JsonSchema,
   McpAuthState,
   McpAuthorizationView,
@@ -95,6 +98,8 @@ export type {
   MemoryState,
   MemoryStatus,
   MemoryView,
+  PromoteMemoryRequest,
+  PromoteMemoryResponse,
 } from './memory.ts';
 export { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
 export type {

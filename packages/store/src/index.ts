@@ -5,7 +5,15 @@ export { StoreIdentityError, isFatalStoreError } from './fatal.ts';
 export { sameRunRequest } from './run-request.ts';
 export { CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from './transitions.ts';
 export { openRuntimeStore } from './runtime-store.ts';
-export { HISTORY_CANDIDATE_LIMIT, HISTORY_INDEX_BATCH_CHARS, HISTORY_READ_PAGE_EVENTS, HISTORY_SCAN_LIMIT, HISTORY_SNIPPET_MAX_CHARS } from './search-constants.ts';
+export {
+  HISTORY_CANDIDATE_LIMIT,
+  HISTORY_INDEX_BATCH_CHARS,
+  HISTORY_OUTPUT_HEAD_CHARS,
+  HISTORY_OUTPUT_TAIL_CHARS,
+  HISTORY_READ_PAGE_EVENTS,
+  HISTORY_SCAN_LIMIT,
+  HISTORY_SNIPPET_MAX_CHARS,
+} from './search-constants.ts';
 export type {
   Approval,
   ApprovalView,
@@ -54,9 +62,16 @@ export type {
   LoadedRun,
   AddGoverningFactInput,
   GoverningFactStore,
+  ContextCharge,
+  ContextChargeInput,
+  ContextChargeStore,
+  MemoryChange,
   MemoryInclude,
   MemoryRecord,
   MemoryStore,
+  ReflectionJob,
+  ReflectionStore,
+  SaveCandidateInput,
   MemoryVisibility,
   NotFound,
   RequestCancelResult,

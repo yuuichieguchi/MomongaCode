@@ -30,7 +30,11 @@ import type { GatewayClient } from '../gateway-client.ts';
 import { createTracerPort } from '../tracer.ts';
 import { createRunNotifier } from '../service/notifier.ts';
 import type { RunNotifier } from '../service/notifier.ts';
-import { createRunService } from '../service/service.ts';
+import { startMemorySweeper } from '../service/memory-sweeper.ts';
+import { SWEEP_INTERVAL_MS, createRunService } from '../service/service.ts';
+import { createReflector } from '../memory/reflection.ts';
+import { runMemoryUpkeep } from '../memory/upkeep.ts';
+import { createRecordViews } from '../memory/views.ts';
 import { runTraceOf } from '../service/trace-view.ts';
 import type { RunService } from '../service/service.ts';
 import { systemTimers } from '../service/timers.ts';
@@ -47,6 +51,7 @@ import {
   GATEWAY_CANCEL_TIMEOUT_MS,
   IDEMPOTENCY_PURGE_MS,
   MARKER_REAP_KILL_GRACE_MS,
+  MEMORY_UPKEEP_BATCH_MARKS,
   RUNTIME_ABORT_BUDGET_MS,
   RUNTIME_TEARDOWN_BUDGET_MS,
   SANDBOX_KILL_GRACE_MS,
@@ -544,6 +549,31 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
 
     await step('timers', () => {
+      const memoryViews = createRecordViews({ store, evidenceRun: evidenceRunFor });
+      const reflector = createReflector({
+        store,
+        gateway: gatewayClient,
+        settings: settingsComposition.settings,
+        clock,
+        isIdle: () => phase === 'running' && !store.hasActiveRun(),
+        evidenceRun: evidenceRunFor,
+      });
+      const memorySweeper = startMemorySweeper({
+        timers,
+        intervalMs: SWEEP_INTERVAL_MS,
+        upkeep: (sweepSignal) =>
+          runMemoryUpkeep({
+            store,
+            clock,
+            views: memoryViews,
+            batchSize: MEMORY_UPKEEP_BATCH_MARKS,
+            signal: sweepSignal,
+            forgetAfterDays: async (project) =>
+              (project === null ? settingsComposition.takeUserSnapshot().settings.memory : await settingsComposition.settings.memory({ cwd: project })).forgetAfterDays,
+          }),
+        reflect: (sweepSignal) => reflector.runOne(sweepSignal),
+        onError: report,
+      });
       periodics.push(
         startPeriodic({ intervalMs: IDEMPOTENCY_PURGE_MS, run: () => {
             store.idempotency.purgeExpired(clock.now());
@@ -581,7 +611,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           report,
         }),
       );
-      cleanups.push({ name: 'timers', run: async () => void (await Promise.all(periodics.map((periodic) => periodic.stop()))) });
+      cleanups.push({
+        name: 'timers',
+        run: async () => void (await Promise.all([memorySweeper.close(), ...periodics.map((periodic) => periodic.stop())])),
+      });
     });
 
     const ready: ReadyFields = await step('ready', () => {

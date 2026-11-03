@@ -3,7 +3,7 @@ import path from 'node:path';
 import { getRequestListener } from '@hono/node-server';
 import { canonicalPath, comparableContains, listenUnix } from '@momonga/foundation';
 import type { Clock, Redactor } from '@momonga/foundation';
-import type { Capabilities, CostReportView, RunTraceView } from '@momonga/protocol';
+import type { Capabilities, GatewayCostReportView, RunTraceView } from '@momonga/protocol';
 import { isFatalStoreError } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import { asError } from '../process/as-error.ts';
@@ -19,6 +19,8 @@ import { SEARCH_INDEX_BATCH_RUNS, startSearchSweeper } from './search-sweeper.ts
 import { releaseStoppedRunsAtStartup, startApprovalSweeper } from './sweeper.ts';
 import { systemTimers } from './timers.ts';
 import type { ServiceTimers } from './timers.ts';
+
+export const SWEEP_INTERVAL_MS = 1000;
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 const TWO_MIB = 2 * 1024 * 1024;
@@ -50,7 +52,7 @@ export type RunServiceOptions = {
   cancelUpstream?: (runId: string) => Promise<void>;
   releaseStopped(runId: string, signal: AbortSignal): Promise<void>;
   runTrace: (runId: string) => Promise<RunTraceView | undefined>;
-  runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal) => Promise<{ report: CostReportView; text: string }>;
+  runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal) => Promise<{ report: GatewayCostReportView; text: string }>;
   mcp: McpAdminPort;
   onError?: (error: unknown) => void;
   onFatal?: (error: Error) => void;
@@ -96,6 +98,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
   const app = createRunApp({
     store: options.store,
     clock: options.clock,
+    home: options.home,
     version: options.version,
     modelAliases: options.modelAliases,
     modelCapabilities: options.modelCapabilities,
@@ -150,14 +153,14 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
       store: options.store,
       clock: options.clock,
       timers,
-      intervalMs: options.sweepIntervalMs ?? 1000,
+      intervalMs: options.sweepIntervalMs ?? SWEEP_INTERVAL_MS,
       releaseStopped: options.releaseStopped,
       onError: report,
     });
     searchSweeper = startSearchSweeper({
       store: options.store,
       timers,
-      intervalMs: options.sweepIntervalMs ?? 1000,
+      intervalMs: options.sweepIntervalMs ?? SWEEP_INTERVAL_MS,
       batchSize: SEARCH_INDEX_BATCH_RUNS,
       redactor: options.redactor,
       onError: report,

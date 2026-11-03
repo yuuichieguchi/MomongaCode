@@ -530,9 +530,25 @@ describe('PublicRunEvent projection', () => {
   it('counts calls of unknown billing in every cost total', () => {
     const totals = { calls: 1, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 1, inputTokens: 2, outputTokens: 3, cachedInputTokens: 0, amount: 0, currency: 'USD', priceVersions: [] };
     const { unknownBillingCalls: _unknownBillingCalls, ...withoutUnknown } = totals;
-    const report = (entry: typeof withoutUnknown) => ({ runs: [{ runId: 'r', sessionId: 's', ...entry }], sessions: [{ sessionId: 's', runIds: ['r'], ...entry }], total: entry });
+    const report = (entry: typeof withoutUnknown) => ({
+      runs: [{ runId: 'r', sessionId: 's', ...entry }],
+      sessions: [{ sessionId: 's', runIds: ['r'], ...entry }],
+      total: entry,
+      contextCharges: { charges: [], totalTokens: 0 },
+    });
     expect(accepts('CostReport', report(totals))).toBe(true);
     expect(accepts('CostReport', report(withoutUnknown))).toBe(false);
+  });
+
+  it('carries the model calls made for context purposes beside the cost totals', () => {
+    const totals = { calls: 0, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 0, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, amount: 0, currency: 'USD', priceVersions: [] };
+    const charge = { id: 1, purpose: 'reflection', runId: null, project: '/work/a', model: 'fm', inputTokens: 100, outputTokens: 20, totalTokens: 120, createdAt: 1 };
+    const report = (contextCharges: unknown) => ({ runs: [], sessions: [], total: totals, contextCharges });
+    expect(accepts('CostReport', report({ charges: [charge], totalTokens: 120 }))).toBe(true);
+    expect(accepts('CostReport', report({ charges: [{ ...charge, purpose: 'compaction' }], totalTokens: 120 }))).toBe(false);
+    expect(accepts('CostReport', report({ charges: [{ ...charge, inputTokens: -1 }], totalTokens: 120 }))).toBe(false);
+    expect(accepts('CostReport', report({ charges: [] }))).toBe(false);
+    expect(accepts('CostReport', { runs: [], sessions: [], total: totals })).toBe(false);
   });
 
   it('rejects an unknown event type', () => {

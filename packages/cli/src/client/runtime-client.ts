@@ -1,7 +1,7 @@
 import type { McpServerConfig } from '@momonga/config';
 import { createUdsClient, decodeSse, isRecord } from '@momonga/foundation';
 import type { UdsResponse } from '@momonga/foundation';
-import type { AddRuleRequest, AgentsResponse, CostReportView, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, RuleAddResponse, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
+import type { AddRuleRequest, AgentsResponse, CostReportView, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, RuleAddResponse, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
 import {
   ContractViolation,
   checkAgents,
@@ -16,6 +16,7 @@ import {
   checkMemories,
   checkMemory,
   checkPolicyGovernance,
+  checkPromoted,
   checkRule,
   checkRuleAdd,
   checkRules,
@@ -76,7 +77,7 @@ export type CreateRunOptions = {
   images?: readonly ImageAttachment[];
 };
 
-export type MemoryFilter = { scope?: MemoryScope; project?: string };
+export type MemoryFilter = { scope?: MemoryScope; state?: MemoryState; project?: string };
 
 export type CostFilter = { run: string } | { session: string } | { cwd: string } | Record<string, never>;
 
@@ -117,6 +118,10 @@ export type RuntimeClient = {
   memory(id: string): Promise<MemoryView>;
   deleteMemory(id: string): Promise<void>;
   memoryHistory(id: string): Promise<MemoryView[]>;
+  acceptMemory(id: string): Promise<MemoryView>;
+  rejectMemory(id: string): Promise<MemoryView>;
+  restoreMemory(id: string): Promise<MemoryView>;
+  promoteMemory(id: string, skill: string): Promise<string>;
   rules(project: string): Promise<GoverningFactView[]>;
   addRule(request: AddRuleRequest): Promise<RuleAddResponse>;
   retireRule(id: string): Promise<GoverningFactView>;
@@ -368,6 +373,7 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
   const memoriesQueryOf = (filter: MemoryFilter): string => {
     const query = new URLSearchParams();
     if (filter.scope !== undefined) query.set('scope', filter.scope);
+    if (filter.state !== undefined) query.set('state', filter.state);
     if (filter.project !== undefined) query.set('project', filter.project);
     const text = query.toString();
     return text === '' ? '' : `?${text}`;
@@ -393,6 +399,18 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     const path = `/v1/memories/${encodeURIComponent(id)}/history`;
     const { body } = await send('GET', path, [200]);
     return checkMemories(body, `GET ${path}`).memories;
+  };
+
+  const changeMemory = (action: 'accept' | 'reject' | 'restore') => async (id: string): Promise<MemoryView> => {
+    const path = `/v1/memories/${encodeURIComponent(id)}/${action}`;
+    const { body } = await send('POST', path, [200]);
+    return checkMemory(body, `POST ${path}`).memory;
+  };
+
+  const promoteMemory = async (id: string, skill: string): Promise<string> => {
+    const path = `/v1/memories/${encodeURIComponent(id)}/promote`;
+    const { body } = await send('POST', path, [201], { body: { skill } });
+    return checkPromoted(body, `POST ${path}`).path;
   };
 
   const rules = async (project: string): Promise<GoverningFactView[]> => {
@@ -498,6 +516,10 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     memory,
     deleteMemory,
     memoryHistory,
+    acceptMemory: changeMemory('accept'),
+    rejectMemory: changeMemory('reject'),
+    restoreMemory: changeMemory('restore'),
+    promoteMemory,
     rules,
     addRule,
     retireRule,

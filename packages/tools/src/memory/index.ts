@@ -6,4 +6,6 @@ export {
   MEMORY_TEXT_MAX_CHARS,
 } from './constants.ts';
 export type { MemoryStorePort, MemorySaveRequest, MemorySearchOptions, MemoryToolsOptions } from './port.ts';
+export { memoryTextProblem } from './rules.ts';
+export type { MemoryTextProblem } from './rules.ts';
 export { createMemoryTools } from './tools.ts';

@@ -11,11 +11,12 @@ type Note = {
   text: string;
   scope: 'user' | 'project';
   project: string | null;
+  origin: 'trusted' | 'untrusted';
   createdAt: number;
   lastUsedAt: number;
   contributedAt: number | null;
   status: 'verified' | 'unbound' | 'unverifiable' | 'stale';
-  state: 'active' | 'candidate' | 'archived' | 'duplicate';
+  state: 'active' | 'candidate' | 'archived' | 'duplicate' | 'rejected';
 };
 
 const note = (id: string, overrides: Partial<Note> = {}): Note => ({
@@ -23,6 +24,7 @@ const note = (id: string, overrides: Partial<Note> = {}): Note => ({
   text: `text of ${id}`,
   scope: 'project',
   project: '/work/a',
+  origin: 'trusted',
   createdAt: 1,
   lastUsedAt: 1,
   contributedAt: null,
@@ -70,6 +72,20 @@ describe('duplicateMarks', () => {
     expect(duplicates(notes)).toEqual([]);
   });
 
+  it('never merges across origins, so an untrusted copy can never replace a trusted one', () => {
+    const notes = [note('trusted', { text: 'same', createdAt: 2, origin: 'trusted' }), note('untrusted', { text: 'same', createdAt: 1, origin: 'untrusted' })];
+    expect(duplicates(notes)).toEqual([]);
+  });
+
+  it('merges notes whose normalised text is equal and keeps case significant', () => {
+    const notes = [
+      note('a', { text: 'use  X\n', createdAt: 1 }),
+      note('b', { text: '  use X', createdAt: 2 }),
+      note('c', { text: 'use x', createdAt: 3 }),
+    ];
+    expect(duplicates(notes)).toEqual([{ id: 'b', duplicateOf: 'a' }]);
+  });
+
   it('ignores a candidate, which is a proposal and not a live memory', () => {
     expect(duplicates([note('a', { text: 'same', createdAt: 1 }), note('b', { text: 'same', createdAt: 2, state: 'candidate' })])).toEqual([]);
   });
@@ -92,11 +108,15 @@ describe('archivableIds', () => {
     expect(archivable([note('a', idle({ contributedAt: NOW - DAY_MS }))])).toEqual([]);
   });
 
+  it('keeps a note used inside the window whose contribution is older, since the window needs neither alone', () => {
+    expect(archivable([note('a', { lastUsedAt: NOW - DAY_MS, contributedAt: NOW - 2 * FORGET_MS })])).toEqual([]);
+  });
+
   it('archives a note whose contribution is older than the window', () => {
     expect(archivable([note('a', idle({ contributedAt: NOW - FORGET_MS }))])).toEqual(['a']);
   });
 
-  it.each(['candidate', 'duplicate', 'archived'] as const)('leaves a %s note alone', (state) => {
+  it.each(['candidate', 'duplicate', 'archived', 'rejected'] as const)('leaves a %s note alone', (state) => {
     expect(archivable([note('a', idle({ state }))])).toEqual([]);
   });
 });
