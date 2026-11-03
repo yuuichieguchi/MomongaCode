@@ -8,8 +8,8 @@ import { daemonStopBoundMs, ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import { pathsOf } from '../paths.ts';
-import { OWNER_FILE, ROOT_PREFIX, caseEnvironment } from './context-host.ts';
-import type { ContextHostEffects } from './context-host.ts';
+import { OWNER_FILE, ROOT_PREFIX, caseEnvironment, parseEvalOwner } from './context-host.ts';
+import type { ContextHostEffects, EvalOwner } from './context-host.ts';
 
 export const SHORT_TEMP_BASE = '/tmp';
 
@@ -63,15 +63,14 @@ export const copyEndpointProbeRecord = async (
   return true;
 };
 
-const ownerOf = (text: string | undefined): number | undefined => (text !== undefined && /^\d+$/.test(text.trim()) ? Number(text.trim()) : undefined);
-
 const UNREADABLE_CODES: ReadonlySet<string | undefined> = new Set(['EACCES', 'EPERM', 'ENOTDIR', 'ELOOP']);
 
 const VANISHED_CODES: ReadonlySet<string | undefined> = new Set(['ENOENT', 'ENOTDIR']);
 
-export const readEvalOwner = async (files: Pick<CliPorts['files'], 'readTextIfPresent'>, root: string): Promise<number | 'unreadable' | undefined> => {
+export const readEvalOwner = async (files: Pick<CliPorts['files'], 'readTextIfPresent'>, root: string): Promise<EvalOwner | 'unreadable' | undefined> => {
   try {
-    return ownerOf(await files.readTextIfPresent(path.join(root, OWNER_FILE)));
+    const text = await files.readTextIfPresent(path.join(root, OWNER_FILE));
+    return text === undefined ? undefined : parseEvalOwner(text);
   } catch (error) {
     if (UNREADABLE_CODES.has((error as NodeJS.ErrnoException).code)) return 'unreadable';
     throw error;
@@ -97,6 +96,7 @@ export const nodeContextEffects = (ports: CliPorts): ContextHostEffects => ({
   platform: ports.platform,
   env: ports.env,
   ownerPid: process.pid,
+  ownerHome: ports.home,
   isAlive: isProcessAlive,
   readSecret: (name, signal) => ports.secretStore().read(name, signal),
   copyEndpointProbeRecord: async (probe, paths) => {
@@ -132,9 +132,19 @@ export const nodeContextEffects = (ports: CliPorts): ContextHostEffects => ({
   applyStep: (cwd, step) => applyWorkspaceStep(cwd, step),
   now: () => ports.clock.now(),
   after: (milliseconds, signal) =>
-    new Promise<void>((resolve) => {
-      if (milliseconds > MAX_TIMER_MS) return;
-      const timer = setTimeout(resolve, milliseconds);
-      signal.addEventListener('abort', () => clearTimeout(timer), { once: true });
+    new Promise<void>((resolve, reject) => {
+      signal.throwIfAborted();
+      const onAbort = (): void => {
+        clearTimeout(timer);
+        reject(signal.reason);
+      };
+      const timer =
+        milliseconds > MAX_TIMER_MS
+          ? undefined
+          : setTimeout(() => {
+              signal.removeEventListener('abort', onAbort);
+              resolve();
+            }, milliseconds);
+      signal.addEventListener('abort', onAbort, { once: true });
     }),
 });

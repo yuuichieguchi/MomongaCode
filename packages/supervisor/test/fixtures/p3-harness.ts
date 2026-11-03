@@ -71,6 +71,7 @@ export type ChildBehaviour = {
   onTerm: TermReaction;
   onInt: TermReaction;
   onKill: KillReaction;
+  readyVersion?: string;
 };
 
 export const DEFAULT_BEHAVIOUR: ChildBehaviour = { autoReady: true, holdPipes: false, onTerm: 'exit0', onInt: 'exit0', onKill: 'die' };
@@ -89,7 +90,7 @@ export type FakeChild = {
   groupKills: number;
   behaviour: ChildBehaviour;
   exited: ChildExit | undefined;
-  ready(fields?: { service?: string; pid?: number }): void;
+  ready(fields?: { service?: string; pid?: number; version?: string }): void;
   exit(code: number | null, signal?: NodeJS.Signals | null): void;
   writeStdout(line: string): void;
   writeStderr(line: string): void;
@@ -190,7 +191,7 @@ export const createFakeSpawn = (options: FakeSpawnOptions = {}): FakeSpawn => {
       exited: undefined,
       ready: (fields = {}) => {
         scoped(() => stdout.write(
-          `${JSON.stringify({ event: 'ready', service: fields.service ?? role, pid: fields.pid ?? pid, version: TEST_VERSION, socketPath: `/fake/run/${role}.sock`, startedAt: new Date(T0).toISOString() })}\n`,
+          `${JSON.stringify({ event: 'ready', service: fields.service ?? role, pid: fields.pid ?? pid, version: fields.version ?? child.behaviour.readyVersion ?? TEST_VERSION, socketPath: `/fake/run/${role}.sock`, startedAt: new Date(T0).toISOString() })}\n`,
         ));
       },
       exit: (code, signal = null) => scoped(() => {

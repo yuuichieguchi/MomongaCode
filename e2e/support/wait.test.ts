@@ -14,6 +14,7 @@ import {
   E2E_SETTINGS_SEEN_BOUND_MS,
   E2E_SUPERVISOR_CLOSE_BOUND_MS,
   E2E_TEST_TIMEOUT_MS,
+  abortableWait,
   until,
   withinBound,
 } from './wait.ts';
@@ -83,6 +84,28 @@ describe('until', () => {
 
   it('rejects at the deadline with the description when the predicate stays falsy', async () => {
     await expect(until(() => false, { deadlineMs: UNTIL_TEST_DEADLINE_MS, intervalMs: 5, description: 'never true' })).rejects.toThrow('never true');
+  });
+});
+
+describe('abortableWait', () => {
+  it('resolves once the time has passed, with or without a signal', async () => {
+    await expect(abortableWait(1)).resolves.toBeUndefined();
+    await expect(abortableWait(1, new AbortController().signal)).resolves.toBeUndefined();
+  });
+
+  it('rejects with the reason of the signal when it is aborted while waiting', async () => {
+    const controller = new AbortController();
+    const reason = new Error('stop waiting');
+    const waiting = abortableWait(60_000, controller.signal);
+    controller.abort(reason);
+    await expect(waiting).rejects.toBe(reason);
+  });
+
+  it('rejects with the reason of a signal that is already aborted', async () => {
+    const controller = new AbortController();
+    const reason = new Error('already stopped');
+    controller.abort(reason);
+    await expect(abortableWait(60_000, controller.signal)).rejects.toBe(reason);
   });
 });
 

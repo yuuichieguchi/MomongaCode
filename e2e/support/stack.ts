@@ -29,6 +29,7 @@ export const SUPERVISOR_ENV_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 export const STDERR_TAIL_BYTES = 64 * 1024;
 export const UPSTREAM_MODEL = 'system';
 export const UPSTREAM_TARGET = 'primary';
+export const CLASSIFIER_TARGET = 'classifier';
 export const UPSTREAM_CONTEXT_WINDOW = 8192;
 
 export const DEFAULT_E2E_DEPS: E2eDeps = {
@@ -113,7 +114,22 @@ export const baseSettings = (home: E2eHome, sandbox: StackSandbox): Record<strin
   sandbox,
 });
 
-export const contextWindowOf = (home: E2eHome): number => {
+export const withClassifierAlias = (settings: Readonly<Record<string, unknown>>, alias: string): Record<string, unknown> => {
+  const models = settings['models'] as { aliases: Record<string, unknown>; targets: Record<string, { capabilities: Record<string, unknown> }> };
+  const upstream = models.targets[UPSTREAM_TARGET];
+  if (upstream === undefined) throw new Error(`withClassifierAlias: no ${UPSTREAM_TARGET} target to derive ${CLASSIFIER_TARGET} from`);
+  return {
+    ...settings,
+    models: {
+      ...models,
+      aliases: { ...models.aliases, [alias]: [CLASSIFIER_TARGET] },
+      targets: { ...models.targets, [CLASSIFIER_TARGET]: { ...upstream, capabilities: { ...upstream.capabilities, structuredOutput: 'json_schema' } } },
+    },
+    autoMode: { classifier: alias },
+  };
+};
+
+export const contextWindowOf =(home: E2eHome): number => {
   const models = baseSettings(home, 'none')['models'] as { targets: Record<string, { capabilities: { contextWindow: number } }> };
   return (models.targets[UPSTREAM_TARGET] as { capabilities: { contextWindow: number } }).capabilities.contextWindow;
 };

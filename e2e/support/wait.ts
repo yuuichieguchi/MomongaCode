@@ -41,7 +41,19 @@ export type Truthy<T> = Exclude<T, false | null | undefined | 0 | ''>;
 
 export type UntilOptions = { deadlineMs: number; intervalMs?: number; description: string; signal?: AbortSignal };
 
-const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+export const abortableWait = (milliseconds: number, signal?: AbortSignal): Promise<void> =>
+  new Promise<void>((resolve, reject) => {
+    signal?.throwIfAborted();
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, milliseconds);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 
 const describeFailure = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -70,6 +82,6 @@ export const until = async <T>(predicate: () => T | Promise<T>, options: UntilOp
       const suffix = lastFailure === undefined ? '' : `; last error: ${describeFailure(lastFailure.error)}`;
       throw new Error(`timed out after ${deadlineMs} ms waiting for ${description}${suffix}`, lastFailure === undefined ? undefined : { cause: lastFailure.error });
     }
-    await pause(Math.min(intervalMs, remaining));
+    await abortableWait(Math.min(intervalMs, remaining));
   }
 };

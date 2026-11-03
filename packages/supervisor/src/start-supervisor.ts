@@ -2,6 +2,7 @@ import path from 'node:path';
 import type fs from 'node:fs';
 import { createUserSettingsCache, userSettingsChangeKey } from '@momonga/config';
 import {
+  EXIT_VERSION_MISMATCH,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
   acquireProcessLock,
   announceReady,
@@ -66,7 +67,7 @@ export type SupervisorOptions = {
   onShutdownRequested?: () => void;
 };
 
-export type SupervisorCloseResult = { clean: boolean; killed: ChildRole[]; leaked: ChildRole[]; fatal?: Error };
+export type SupervisorCloseResult = { clean: boolean; killed: ChildRole[]; leaked: ChildRole[]; fatal?: Error; exitCode?: number };
 
 export type SupervisorProcess = {
   ready: ReadyFields;
@@ -114,6 +115,8 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
     let launchPromise: Promise<void> = Promise.resolve();
     let planPromise: Promise<void> = Promise.resolve();
     let settingsWatcher: SettingsWatch | undefined;
+    let versionMismatch = false;
+    let requestShutdown: () => void = () => undefined;
     const launchController = new AbortController();
     const planController = new AbortController();
     const reportedSources = new Set<string>();
@@ -174,7 +177,12 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         startupTimeoutMs,
         heldRetryMs: options.heldRetryMs ?? HELD_RETRY_MS,
         lockWaitMs: options.lockWaitMs ?? LOCK_WAIT_DEADLINE_MS,
+        version: options.version,
         isDraining: () => draining,
+        onVersionMismatch: () => {
+          versionMismatch = true;
+          requestShutdown();
+        },
         onBackgroundError: reportBackground,
         onTransientError: reportTransient,
         ...omitUndefined({ runtime: options.runtime, gateway: options.gateway, lockMechanism: options.lockMechanism, markerPorts: options.markerPorts }),
@@ -321,6 +329,25 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       onFatal: (error) => reportBackground(error, 'shutdown'),
     });
 
+    const withExitCode = async (closing: Promise<SupervisorCloseResult>): Promise<SupervisorCloseResult> => {
+      const result = await closing;
+      return versionMismatch ? { ...result, exitCode: EXIT_VERSION_MISMATCH } : result;
+    };
+    const closedWithExitCode = withExitCode(shutdown.closed);
+    const closeWithExitCode = (): Promise<SupervisorCloseResult> => {
+      void shutdown.close();
+      return closedWithExitCode;
+    };
+    const abortWithExitCode = (): Promise<SupervisorCloseResult> => {
+      void shutdown.abort();
+      return closedWithExitCode;
+    };
+
+    requestShutdown = (): void => {
+      if (options.onShutdownRequested === undefined) void closeWithExitCode();
+      else options.onShutdownRequested();
+    };
+
     options.signal?.throwIfAborted();
     server = await startControlServer({
       socketPath: paths.sockets.supervisor,
@@ -328,10 +355,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       health,
       shutdownIfIdle: () =>
         phase === 'draining' ? Promise.resolve({ kind: 'accepted' }) : shutdownIfIdle({ runtime: runtime.health(), runtimeSocketPath: paths.sockets.runtime }),
-      onShutdownRequested: () => {
-        if (options.onShutdownRequested === undefined) void shutdown.close();
-        else options.onShutdownRequested();
-      },
+      onShutdownRequested: () => requestShutdown(),
       onError: (error) => reportBackground(error, 'control-server'),
       ...lockOptions,
     });
@@ -363,7 +387,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       evaluate,
     }).catch((error: unknown) => reportBackground(error, 'launch-task'));
 
-    return { ready, health, close: shutdown.close, abort: shutdown.abort, closed: shutdown.closed, fatal };
+    return { ready, health, close: closeWithExitCode, abort: abortWithExitCode, closed: closedWithExitCode, fatal };
   } catch (error) {
     try {
       await server?.close();

@@ -33,7 +33,7 @@ export type EntryIo = {
   exit(code: number): void;
 };
 
-export type DaemonCloseResult = { clean: boolean };
+export type DaemonCloseResult = { clean: boolean; exitCode?: number };
 
 export type DaemonHandle = {
   close(): Promise<DaemonCloseResult>;
@@ -209,8 +209,11 @@ export const runDaemonEntry = async <F extends FlagSpec>(io: EntryIo, definition
 
   const settleShutdown = (result: DaemonCloseResult | Error, method: 'close' | 'abort'): void => {
     if (result instanceof Error) logger.error('entry.shutdown_failed', { err: result });
-    const clean = !(result instanceof Error) && result.clean;
-    finish(clean && !failureForced ? EXIT_OK : EXIT_FAILURE, method);
+    if (result instanceof Error || !result.clean || failureForced) {
+      finish(EXIT_FAILURE, method);
+      return;
+    }
+    finish(result.exitCode ?? EXIT_OK, method);
   };
 
   const invocations: Array<{ method: 'close' | 'abort'; pending: Promise<DaemonCloseResult> }> = [];

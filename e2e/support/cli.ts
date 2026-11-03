@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { registerE2eCleanup } from './home.ts';
 import type { E2eHome } from './home.ts';
@@ -39,9 +40,13 @@ export const startCli = (home: E2eHome, args: readonly string[], options: RunCli
   child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
     stderr += chunk;
   });
-  const closed = new Promise<CliResult>((resolve, reject) => {
+  const exited = new Promise<CliResult>((resolve, reject) => {
     child.once('error', reject);
     child.once('close', (code, signal) => resolve({ code, signal, stdout, stderr }));
+  });
+  const closed = exited.then(async (finished) => {
+    await home.ledger.collect({});
+    return finished;
   });
   registerE2eCleanup(() => {
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
@@ -60,7 +65,11 @@ export const fakePortsEnv = (home: E2eHome): Record<string, string> => ({
   MOMONGA_E2E_SECRETS_FILE: path.join(home.root, SECRETS_FILE_NAME),
 });
 
-export const cliVersionEnv = (version: string): Record<string, string> => ({ MOMONGA_E2E_CLI_VERSION: version });
+export const CLI_VERSION_FILE_NAME = 'e2e-cli-version';
+
+export const setFakeCliVersion = (home: E2eHome, version: string): void => {
+  fs.writeFileSync(path.join(home.root, CLI_VERSION_FILE_NAME), version, { mode: 0o600 });
+};
 
 export const startCliWithFakes = (home: E2eHome, args: readonly string[], options: RunCliOptions = {}): RunningCli =>
   startCli(home, args, { ...options, bundle: CLI_FAKES_BUNDLE, env: { ...fakePortsEnv(home), ...options.env } });

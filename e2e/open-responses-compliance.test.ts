@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { startFakeChatCompletions } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
 import { createE2eHome, registerE2eCleanup } from './support/home.ts';
-import { ROLE_BIN_PATHS } from './support/launcher.ts';
+import { SUPERVISOR_APP_VERSION } from './support/app-version.ts';
+import { roleMainOverride } from './support/launcher.ts';
 import { readLog } from './support/log-reader.ts';
 import { DEFAULT_E2E_DEPS, startStack } from './support/stack.ts';
 import { toolCallReply } from './support/upstream.ts';
@@ -89,7 +90,7 @@ describe('Open Responses compliance suite against the supervised gateway debug l
       },
       deps: {
         ...DEFAULT_E2E_DEPS,
-        launcherOverrides: { gateway: { script: ROLE_BIN_PATHS.gateway, args: ['--debug-tcp-port=0', `--debug-tcp-token-file=${tokenFile}`] } },
+        launcherOverrides: { gateway: roleMainOverride('gateway', SUPERVISOR_APP_VERSION, ['--debug-tcp-port=0', `--debug-tcp-token-file=${tokenFile}`]) },
       },
     });
     const port = await waitForDebugPort(home.paths.logFiles.gateway);

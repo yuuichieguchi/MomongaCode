@@ -28,6 +28,7 @@ import {
   childReadyIgnored,
   childReadyMismatch,
   childSpawn,
+  childVersionMismatch,
   childStop,
   childUnkillable,
   settingsReadFailed,
@@ -75,8 +76,11 @@ export type HeldSource = 'child-exit' | 'settings';
 
 export type ChildStopResult = { killed: boolean; leaked: boolean };
 
+export type ChildVersionMismatch = { role: ChildRole; childVersion: string };
+
 export type ChildManagerOptions = {
   role: ChildRole;
+  version: string;
   home: string;
   paths: MomongaPaths;
   launcher: Launcher;
@@ -99,6 +103,7 @@ export type ChildManagerOptions = {
   isDraining(): boolean;
   onBackgroundError(error: unknown, source: string): void;
   onTransientError(error: unknown, source: string): void;
+  onVersionMismatch(mismatch: ChildVersionMismatch): void;
 };
 
 export type ChildManager = {
@@ -415,6 +420,11 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     const fields = parseReadyLine(line);
     if (fields === undefined) return false;
     if (fields.service === role && fields.pid === life.pid) {
+      if (fields.version !== options.version) {
+        log(childVersionMismatch({ child: role, childPid: life.pid ?? null, childVersion: fields.version, supervisorVersion: options.version }));
+        options.onVersionMismatch({ role, childVersion: fields.version });
+        return true;
+      }
       becomeReady(life, fields);
       return true;
     }

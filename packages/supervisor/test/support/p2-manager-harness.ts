@@ -88,6 +88,7 @@ export type ManagerHarness = {
   transients: { error: unknown; source: string }[];
   draining: { value: boolean };
   backgroundErrors: { error: unknown; source: string }[];
+  versionMismatches: { role: ChildRole; childVersion: string }[];
   logLines(): JsonLine[];
   events(msg: string): JsonLine[];
   spawnInitial(): void;
@@ -134,10 +135,12 @@ export const createManagerHarness = (context: CleanupContext, options: ManagerHa
   const draining = { value: false };
   const backgroundErrors: { error: unknown; source: string }[] = [];
   const transients: { error: unknown; source: string }[] = [];
+  const versionMismatches: { role: ChildRole; childVersion: string }[] = [];
   const lock = createFakeKernelLock({ inheritable: false });
   const harness = {
     lock,
     transients,
+    versionMismatches,
     home,
     paths,
     clock,
@@ -154,6 +157,10 @@ export const createManagerHarness = (context: CleanupContext, options: ManagerHa
   const launcher: Launcher = options.launcher ?? (() => ({ command: process.execPath, args: [FIXTURE_BIN] }));
   const managerOptions: ChildManagerOptions = {
     role,
+    version: '1.2.3',
+    onVersionMismatch: (mismatch) => {
+      versionMismatches.push(mismatch);
+    },
     home,
     paths,
     launcher,

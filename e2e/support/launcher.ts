@@ -6,19 +6,20 @@ export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url
 
 export const BUNDLE_SCRIPT = path.join(REPO_ROOT, 'scripts', 'bundle.ts');
 
-export const ROLE_BIN_PATHS: Readonly<Record<ChildRole, string>> = {
-  runtime: path.join(REPO_ROOT, 'packages', 'runtime', 'src', 'bin.ts'),
-  gateway: path.join(REPO_ROOT, 'packages', 'gateway', 'src', 'bin.ts'),
-};
+export const ROLE_MAIN_PATH = path.join(REPO_ROOT, 'e2e', 'support', 'role-main.ts');
 
 export type LauncherOverride = { script: string; args?: string[] };
 
 export type LauncherOverrides = Partial<Record<ChildRole, LauncherOverride>>;
 
+export const roleMainOverride = (role: ChildRole, version: string, args: readonly string[] = []): LauncherOverride => ({
+  script: ROLE_MAIN_PATH,
+  args: [role, version, ...args],
+});
+
 export const entryFileLauncher =
-  (overrides: LauncherOverrides = {}): Launcher =>
+  (version: string, overrides: LauncherOverrides = {}): Launcher =>
   (role) => {
-    const override = overrides[role];
-    if (override === undefined) return { command: process.execPath, args: [ROLE_BIN_PATHS[role]] };
+    const override = overrides[role] ?? roleMainOverride(role, version);
     return { command: process.execPath, args: [override.script, ...(override.args ?? [])] };
   };

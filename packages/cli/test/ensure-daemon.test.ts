@@ -108,35 +108,40 @@ describe('ensureDaemon', () => {
     expect(spawned).toHaveLength(1);
   });
 
-  it('leaves an older daemon with an active run alone when the caller only replaces an idle daemon', async (context) => {
+  it('fails with the version message on a busy daemon of another version when the caller only replaces an idle daemon', async (context) => {
     const { paths, start, portsWith } = await setup(context);
     const old = await start({ version: '0.0.1', activeRunIds: [null, 'run-7'] });
     const { spawn, spawned } = recordingSpawn(() => undefined);
 
-    const health = await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS, replacement: 'when-idle' });
+    const failure = await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS, replacement: 'when-idle' }).catch((error: unknown) => error);
 
-    expect(health.version).toBe('0.0.1');
+    expect(failure).toBeInstanceOf(DaemonStartError);
+    expect((failure as DaemonStartError).message).toContain(`runs version 0.0.1, not ${VERSION}; run \`momonga daemon stop\``);
     expect(old.shutdowns).toBe(0);
     expect(spawned).toEqual([]);
   });
 
-  it('does not replace an older daemon whose runtime cannot prove it is idle', async (context) => {
+  it('fails with the version message when the runtime of an older daemon cannot prove it is idle', async (context) => {
     const { paths, start, portsWith } = await setup(context);
     const old = await start({ version: '0.0.1', children: [readyChildren()[0] as ReturnType<typeof readyChildren>[number], { role: 'runtime', state: 'starting', restarts: 1, consecutiveFailures: 0 }] });
     const { spawn } = recordingSpawn(() => undefined);
 
-    await expect(ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS, replacement: 'when-idle' })).rejects.toThrow('timed out after 500 ms waiting for the daemon to become ready');
+    const failure = await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS, replacement: 'when-idle' }).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(DaemonStartError);
+    expect((failure as DaemonStartError).message).toContain(`runs version 0.0.1, not ${VERSION}`);
     expect(old.shutdowns).toBe(0);
   });
 
-  it('never replaces a daemon for a caller that does not ask for replacement', async (context) => {
+  it('fails with the version message for a caller that does not ask for replacement', async (context) => {
     const { paths, start, portsWith } = await setup(context);
     const old = await start({ version: '0.0.1', activeRunIds: [null] });
     const { spawn, spawned } = recordingSpawn(() => undefined);
 
-    const health = await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS });
+    const failure = await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS }).catch((error: unknown) => error);
 
-    expect(health.version).toBe('0.0.1');
+    expect(failure).toBeInstanceOf(DaemonStartError);
+    expect((failure as DaemonStartError).message).toContain(`runs version 0.0.1, not ${VERSION}`);
     expect(old.shutdowns).toBe(0);
     expect(spawned).toEqual([]);
   });
@@ -165,26 +170,28 @@ describe('ensureDaemon', () => {
     expect(spawned).toEqual([]);
   });
 
-  it('never replaces a newer daemon, even when the caller asks for it unconditionally', async (context) => {
+  it('never replaces a newer daemon, even when the caller asks for it unconditionally, and fails with the version message', async (context) => {
     const { paths, start, portsWith } = await setup(context);
     const newer = await start({ version: '1.2.4', activeRunIds: [null] });
     const { spawn, spawned } = recordingSpawn(() => undefined);
 
-    const health = await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS, replacement: 'always' });
+    const failure = await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS, replacement: 'always' }).catch((error: unknown) => error);
 
-    expect(health.version).toBe('1.2.4');
+    expect(failure).toBeInstanceOf(DaemonStartError);
+    expect((failure as DaemonStartError).message).toContain(`runs version 1.2.4, not ${VERSION}`);
     expect(newer.shutdowns).toBe(0);
     expect(spawned).toEqual([]);
   });
 
-  it('never replaces a daemon whose version cannot be ordered against this one', async (context) => {
+  it('never replaces a daemon whose version cannot be ordered against this one, and fails with the version message', async (context) => {
     const { paths, start, portsWith } = await setup(context);
     const unordered = await start({ version: 'e2e', activeRunIds: [null] });
     const { spawn } = recordingSpawn(() => undefined);
 
-    const health = await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS, replacement: 'always' });
+    const failure = await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS, replacement: 'always' }).catch((error: unknown) => error);
 
-    expect(health.version).toBe('e2e');
+    expect(failure).toBeInstanceOf(DaemonStartError);
+    expect((failure as DaemonStartError).message).toContain('runs version e2e');
     expect(unordered.shutdowns).toBe(0);
   });
 

@@ -48,6 +48,20 @@ describe('ready parsing', () => {
     expect(harness.spawnCount()).toBe(2);
   });
 
+  it('ready line of another version is not ready and is reported to the supervisor', async (context) => {
+    const harness = createManagerHarness(context);
+    harness.spawnInitial();
+    harness.port.last().ready({ version: '9.9.9' });
+    await waitFor(() => harness.versionMismatches.length === 1);
+    expect(harness.versionMismatches).toEqual([{ role: 'runtime', childVersion: '9.9.9' }]);
+    expect(harness.manager.state()).toBe('starting');
+    expect(harness.manager.health().readyAt).toBeUndefined();
+    expect(harness.events('child.ready')).toEqual([]);
+    expect(harness.events('child.version.mismatch')).toEqual([
+      expect.objectContaining({ level: 'error', child: 'runtime', childPid: 41_000, childVersion: '9.9.9', supervisorVersion: '1.2.3' }),
+    ]);
+  });
+
   it('ready line of another service is a mismatch', async (context) => {
     const harness = createManagerHarness(context);
     harness.spawnInitial();

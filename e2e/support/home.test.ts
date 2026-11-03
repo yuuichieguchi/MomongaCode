@@ -4,8 +4,8 @@ import { DatabaseSync } from 'node:sqlite';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { SOCKET_PATH_LIMIT } from '@momonga/foundation';
-import { registerCleanup, spawnTracked, withTempDir } from '@momonga/testkit';
+import { SOCKET_PATH_LIMIT, isProcessAlive } from '@momonga/foundation';
+import { registerCleanup, spawnTracked, startLockHolder, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { OVERLAP_MESSAGE, assertInside, createE2eHome, disposeAll, registerE2eCleanup } from './home.ts';
 import { parsePidsFile } from './ledger.ts';
@@ -158,6 +158,23 @@ describe('the ledger of an e2e home', () => {
     const pidsFile = created.ledger.pidsFile;
     const persisted = fs.existsSync(pidsFile) ? parsePidsFile(fs.readFileSync(pidsFile, 'utf8')) : [];
     expect(persisted.filter((entry) => entry.pgid === toolGroup)).toEqual([{ pgid: toolGroup, startTime: undefined, source: 'db' }]);
+  });
+});
+
+describe('disposing a home whose daemon appeared after the ledger was swept', () => {
+  it('stops the process that holds the supervisor lock before it removes the home', async (context) => {
+    ownMarkerCleanup(context);
+    const created = await createE2eHome();
+    let holderPid: number | undefined;
+    registerE2eCleanup(async () => {
+      holderPid = (await startLockHolder(context, created.paths.locks.supervisor)).pid;
+    });
+
+    await disposeAll();
+
+    expect(holderPid).toBeDefined();
+    expect(isProcessAlive(holderPid as number)).toBe(false);
+    expect(fs.existsSync(created.root)).toBe(false);
   });
 });
 

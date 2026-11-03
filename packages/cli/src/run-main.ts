@@ -1,11 +1,11 @@
 import { nodeEntryIo } from '@momonga/foundation';
-import { escapeTerminalBlock } from '@momonga/protocol';
 import { daemonEntries } from './daemon/entries.ts';
 import { describeFailure } from './failure.ts';
 import { nodePorts } from './node-ports.ts';
 import type { CliPorts } from './ports.ts';
 import { pathsOf } from './paths.ts';
 import { buildProgram } from './program.ts';
+import { terminalSink } from './terminal-writer.ts';
 import type { UpdateWiring } from './update/background.ts';
 import { nodeUpdateWiring } from './update/wiring.ts';
 import { nodePolicyVerifyHost } from './verify/host.ts';
@@ -32,7 +32,7 @@ export const runMain = async (version: string, overrides: Partial<CliPorts> = {}
     });
     await program.parseAsync();
   } catch (error) {
-    process.stderr.write(escapeTerminalBlock(`momonga: ${describeFailure(error)}\n`));
+    terminalSink(() => process.stderr).write(`momonga: ${describeFailure(error)}\n`);
     process.exitCode = 1;
   }
 };

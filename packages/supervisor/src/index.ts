@@ -87,6 +87,7 @@ export {
   childReady,
   childReadyIgnored,
   childReadyMismatch,
+  childVersionMismatch,
   childSpawn,
   childStderr,
   childStdout,

@@ -100,7 +100,7 @@ const awaitReady = async (ports: DaemonPorts, paths: MomongaPaths, client: Super
     async () => {
       const health = await probeSupervisor(client);
       if (health !== undefined) {
-        if (spawned !== undefined && health.version !== ports.version) {
+        if (health.version !== ports.version) {
           throw new DaemonStartError(`the daemon (pid ${health.pid}) runs version ${health.version}, not ${ports.version}; run \`momonga daemon stop\``, paths.logFiles.supervisor);
         }
         const held = heldFailure(health);

@@ -11,10 +11,10 @@ import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { SESSION_PATH, createRuntimeClient, framesOfType } from './support/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from './support/runtime-client.ts';
-import { UPSTREAM_TARGET, baseSettings, startStack } from './support/stack.ts';
+import { baseSettings, startStack, withClassifierAlias } from './support/stack.ts';
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
 import { REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } from '../packages/runtime/src/memory/reflection-bound.ts';
-import { E2E_REFLECTION_ATTEMPTS_BOUND_MS, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
+import { E2E_REFLECTION_ATTEMPTS_BOUND_MS, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, abortableWait } from './support/wait.ts';
 
 const RUNS_PER_CASE = 2;
 const MEDIUM_CONFIDENCE_CASE = 'write-requested-changelog';
@@ -24,13 +24,7 @@ const CLASSIFIER_ALIAS = 'guard';
 const verdictReply = (verdict: 'safe' | 'unsafe', confidence: 'high' | 'medium' | 'low'): FakeScriptedReply =>
   textReply(JSON.stringify({ verdict, confidence, rationale: `scripted ${verdict}/${confidence}` }));
 
-const autoSettings = (home: E2eHome): Record<string, unknown> => {
-  const models = baseSettings(home, 'none')['models'] as { aliases: Record<string, unknown>; targets: Record<string, unknown> };
-  return {
-    models: { ...models, aliases: { ...models.aliases, [CLASSIFIER_ALIAS]: [UPSTREAM_TARGET] } },
-    autoMode: { classifier: CLASSIFIER_ALIAS },
-  };
-};
+const autoSettings = (home: E2eHome): Record<string, unknown> => withClassifierAlias({ models: baseSettings(home, 'none')['models'] }, CLASSIFIER_ALIAS);
 
 const runToEnd = async (runtime: RuntimeClient, runId: string): Promise<RunEventFrame[]> => {
   const stream = runtime.events(runId);
@@ -189,19 +183,7 @@ describe('hooks and auto mode against real processes', () => {
           attemptBoundMs: E2E_REFLECTION_ATTEMPTS_BOUND_MS,
           pollMs: REFLECTION_POLL_MS,
           now: () => Date.now(),
-          wait: (milliseconds, signal) =>
-            new Promise<void>((resolve, reject) => {
-              signal?.throwIfAborted();
-              const timer = setTimeout(resolve, milliseconds);
-              signal?.addEventListener(
-                'abort',
-                () => {
-                  clearTimeout(timer);
-                  reject(signal.reason);
-                },
-                { once: true },
-              );
-            }),
+          wait: abortableWait,
         }),
         workspace: async (golden, runIndex) => {
           const cwd = workspaceOf(golden, runIndex);

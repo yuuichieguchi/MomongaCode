@@ -117,7 +117,8 @@ export const supervisorMain = async (): Promise<void> => {
     refuse(error instanceof Error ? error.message : String(error));
     return;
   }
-  const { launcherOverrides, ...rest } = loaded;  const finished = runSupervise({ ...nodeEntryIo(), env: withoutHarnessVariables(process.env) }, { launcher: entryFileLauncher(launcherOverrides), deps: rest });
+  const { launcherOverrides, ...rest } = loaded;
+  const finished = runSupervise({ ...nodeEntryIo(), env: withoutHarnessVariables(process.env) }, { launcher: entryFileLauncher(loaded.version, launcherOverrides), deps: rest });
   watchParentDeath();
   await finished;
 };
