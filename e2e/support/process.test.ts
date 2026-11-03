@@ -1,14 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { hostPidOf } from './process.ts';
+import { hostPidOf, readIfReadable } from './process.ts';
 import type { ProcView } from './process.ts';
 
 const HOST = 'pid:[1]';
 const SANDBOX = 'pid:[2]';
 
-const viewOf = (processes: Record<number, { namespace: string; innermost: number }>, own: string | null = HOST): ProcView => ({
+const viewOf = (processes: Record<number, { namespace: string | undefined; innermost: number }>, own: string | null = HOST): ProcView => ({
   pids: () => Object.keys(processes).map(Number),
-  pidNamespaceOf: (pid) => (pid === process.pid ? (own ?? undefined) : processes[pid]?.namespace),
+  ownPidNamespace: () => own ?? undefined,
+  pidNamespaceOf: (pid) => processes[pid]?.namespace,
   innermostPidOf: (pid) => processes[pid]?.innermost,
+});
+
+const failingWith = (code: string) => (): never => {
+  throw Object.assign(new Error(code), { code });
+};
+
+describe('readIfReadable', () => {
+  it.each(['EACCES', 'EPERM', 'ENOENT', 'ESRCH'])('treats %s, a /proc entry of another user or of a process that is gone, as unreadable', (code) => {
+    expect(readIfReadable(failingWith(code))).toBeUndefined();
+  });
+
+  it('propagates any other failure', () => {
+    expect(() => readIfReadable(failingWith('EIO'))).toThrow('EIO');
+  });
 });
 
 describe('hostPidOf', () => {
@@ -27,6 +42,15 @@ describe('hostPidOf', () => {
 
   it('never matches a process of another pid namespace that has the same inner pid', () => {
     expect(hostPidOf(2, 13882, sandboxed)).not.toBe(20002);
+  });
+
+  it('passes over a process whose pid namespace it cannot read, such as root-owned init, and still finds the sandboxed one', () => {
+    const withUnreadable = viewOf({
+      1: { namespace: undefined, innermost: 2 },
+      13880: { namespace: SANDBOX, innermost: 1 },
+      13881: { namespace: SANDBOX, innermost: 2 },
+    });
+    expect(hostPidOf(2, 13880, withUnreadable)).toBe(13881);
   });
 
   it('answers undefined while no process of the sandbox has that inner pid', () => {
