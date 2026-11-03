@@ -6,7 +6,7 @@ import { HOST_RULE_ENFORCEMENT, protectedSetFor } from '@momonga/foundation';
 import { parseRule } from '@momonga/policy';
 import type { PermissionRule, PolicyFilesystem, RuleEffect } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
-import { fakePolicyFilesystem, hostFilesystemOf } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, hostFilesystemOf } from '@momonga/testkit';
 import { openZ3, resolveInstalledZ3, verifyPermissions } from '../src/index.ts';
 import type { SecretLocation, VerificationReport, Z3Engine } from '../src/index.ts';
 
@@ -26,6 +26,11 @@ export const makeLayout = (): Layout => {
   for (const dir of [layout.home, layout.project, layout.outside]) fs.mkdirSync(dir, { mode: 0o700 });
   return layout;
 };
+
+export const SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS = 4 * REAL_PROCESS_TEST_TIMEOUT_MS;
+export const SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS = 6 * REAL_PROCESS_TEST_TIMEOUT_MS;
+export const SOLVER_ENCODING_SWEEP_TEST_TIMEOUT_MS = 10 * REAL_PROCESS_TEST_TIMEOUT_MS;
+export const SOLVER_EXHAUSTIVE_SWEEP_TEST_TIMEOUT_MS = 20 * REAL_PROCESS_TEST_TIMEOUT_MS;
 
 let engine: Z3Engine | undefined;
 

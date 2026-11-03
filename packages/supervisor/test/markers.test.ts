@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { isProcessAlive, momongaPaths } from '@momonga/foundation';
-import { afterMicrotasks, registerCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, registerCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import { openDaemonMarker } from '../src/orphans.ts';
 import { errnoError } from './support/p2-fake-spawn-port.ts';
 import { createManagerHarness } from './support/p2-manager-harness.ts';
@@ -89,7 +89,7 @@ describe('openDaemonMarker', () => {
   });
 });
 
-describe('daemon markers at spawn', () => {
+describe('daemon markers at spawn', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('marker is created 0600 before spawn and its fd is passed read-only as stdio[4]', (context) => {
     const harness = createManagerHarness(context);
     const scratchDir = withTempDir(context);
@@ -127,7 +127,7 @@ describe('daemon markers at spawn', () => {
     const childPid = port.spawned[0]?.pid as number;
     await pollUntil(() => lsofHolders(marker).includes(childPid), 5000, 'child holds the marker');
     expect(lsofHolders(marker)).toEqual([childPid]);
-  }, 15_000);
+  });
 
   it('the supervisor process does not retain the marker fd', async (context) => {
     const markerHolders = async (leak: boolean): Promise<{ listed: boolean; errors: string }> => {
@@ -153,7 +153,7 @@ describe('daemon markers at spawn', () => {
     };
     expect((await markerHolders(false)).listed).toBe(false);
     expect((await markerHolders(true)).listed).toBe(true);
-  }, 30_000);
+  });
 
   it('spawn error removes the marker', async (context) => {
     for (const failure of [
@@ -170,7 +170,7 @@ describe('daemon markers at spawn', () => {
   });
 });
 
-describe('daemon markers at child exit', () => {
+describe('daemon markers at child exit', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('reap failure at child exit is a warning and the role still restarts', async (context) => {
     const rejections = trackUnhandled(context);
     for (const error of [new Error('lsof failed with status 2'), errnoError('ENOENT', 'spawn /usr/sbin/lsof ENOENT')]) {
@@ -198,7 +198,7 @@ describe('daemon markers at child exit', () => {
     await pollUntil(() => harness.manager.state() === 'backoff', 5000, 'exit handled');
     expect(fs.existsSync(marker)).toBe(false);
     expect(harness.manager.unreapedMarkers()).toEqual([]);
-  }, 15_000);
+  });
 
   it('a leaked holder is killed at child exit', async (context) => {
     const port = trackedSpawnPort(context);
@@ -213,7 +213,7 @@ describe('daemon markers at child exit', () => {
     const grandchild = reportedPid(harness, 'grandchild') as number;
     port.trackGroup(grandchild);
     await pollUntil(() => !isProcessAlive(grandchild) && !fs.existsSync(marker), 5000, 'holder killed and marker removed');
-  }, 15_000);
+  });
 
   it('a grandchild spawned without explicit mapping does not hold the marker', async (context) => {
     const port = trackedSpawnPort(context);
@@ -227,5 +227,5 @@ describe('daemon markers at child exit', () => {
     await pollUntil(() => lsofHolders(marker).includes(childPid), 5000, 'child holds the marker');
     expect(isProcessAlive(grandchild)).toBe(true);
     expect(lsofHolders(marker)).toEqual([childPid]);
-  }, 15_000);
+  });
 });

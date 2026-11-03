@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ProcessLockHeldError, parseReadyLine, inspectProcessLock } from '@momonga/foundation';
-import { createFakeKernelLock, createFakeClock, createFakeTimers, spawnTracked, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, spawnTracked, waitFor } from '@momonga/testkit';
 import { startSupervisor } from '../src/start-supervisor.ts';
 import {
   INVALID_SETTINGS_TEXT,
@@ -25,7 +25,7 @@ import {
 
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
-describe('startSupervisor', () => {
+describe('startSupervisor', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('startup order', async (context) => {
     const watch = fakeSettingsWatch();
     const order: string[] = [];

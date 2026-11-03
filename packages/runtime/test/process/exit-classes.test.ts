@@ -6,9 +6,9 @@ import { EXIT_ALREADY_RUNNING, EXIT_CONFIG, EXIT_FAILURE, ProcessLockHeldError, 
 import { trackGroup, writeInvalidUserSettings, writeUserSettings } from './helpers.ts';
 import { RUNTIME_VERSION, captureStream, failureOf, hookLogger, launchRuntime, makeRunHome, runtimeAlreadyRunningError, startRuntimeProcess, startStack } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
-import { startLockHolder } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, startLockHolder } from '@momonga/testkit';
 
-const PROCESS_TIMEOUT = { timeout: 60_000 };
+const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 
 const exitClassOf = (error: unknown): number => {
   if (error instanceof ConfigError) return EXIT_CONFIG;

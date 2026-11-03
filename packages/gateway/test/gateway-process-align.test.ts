@@ -134,7 +134,7 @@ const heldRequest = async (context: CleanupContext, fake: Awaited<ReturnType<typ
 const waitForGraceTimer = (timers: FakeTimers): Promise<void> =>
   until(() => timers.pending().some((timer) => timer.delayMs === GRACE_MS), `the ${GRACE_MS} ms close grace timer`);
 
-describe('startGatewayProcess startup unwind (§4.3)', { timeout: 30_000 }, () => {
+describe('startGatewayProcess startup unwind (§4.3)', () => {
   it('startup failure rethrows the original error and logs the cleanup failure, with no AggregateError', async (context) => {
     const { home, paths } = await prepareHome(context);
     const original = new Error('createGateway failed (injected)');
@@ -219,7 +219,7 @@ describe('startGatewayProcess startup unwind (§4.3)', { timeout: 30_000 }, () =
   });
 });
 
-describe('GatewayProcess close and abort (§4.2, §4.3)', { timeout: 30_000 }, () => {
+describe('GatewayProcess close and abort (§4.2, §4.3)', () => {
   it('close returns a clean result', async (context) => {
     const { home, paths } = await prepareHome(context);
     const handle = await start(context, { home, env: baseEnv(home), version: PROCESS_VERSION });
@@ -296,7 +296,7 @@ describe('GatewayProcess close and abort (§4.2, §4.3)', { timeout: 30_000 }, (
   });
 });
 
-describe('gateway fatal (§4.2, §4.3)', { timeout: 30_000 }, () => {
+describe('gateway fatal (§4.2, §4.3)', () => {
   it('createGateway keeps a permanent server error listener that forwards to onFatal after listen', async (context) => {
     const dir = withTempDir(context);
     const clock = createFakeClock(START_MS);
@@ -361,7 +361,7 @@ describe('gateway fatal (§4.2, §4.3)', { timeout: 30_000 }, () => {
   });
 });
 
-describe('minimalChildEnv moved to foundation (§2.3, §4)', { timeout: 30_000 }, () => {
+describe('minimalChildEnv moved to foundation (§2.3, §4)', () => {
   it('the gateway builds its child env with the foundation minimalChildEnv, from options.env as given', async (context) => {
     const { home } = await prepareHome(context);
     const env = baseEnv(home, { FOO: 'kept-out-of-children', LC_ALL: 'C' });

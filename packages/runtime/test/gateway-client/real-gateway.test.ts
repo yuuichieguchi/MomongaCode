@@ -53,7 +53,7 @@ beforeAll(async () => {
   expect(Buffer.byteLength(gateway.socketPath)).toBeLessThan(104);
   const client = createGatewayClient({ socketPath: gateway.socketPath, clock: fakeClock(), version: CLIENT_VERSION });
   context = { home, fake, gateway, client, restoreStdout: () => stdout.mockRestore() };
-}, 30_000);
+});
 
 afterAll(async () => {
   if (context === undefined) return;
@@ -62,9 +62,9 @@ afterAll(async () => {
   await context.fake.close();
   context.restoreStdout();
   fs.rmSync(context.home, { recursive: true, force: true });
-}, 30_000);
+});
 
-describe('gateway client against a real gateway', { timeout: 30_000 }, () => {
+describe('gateway client against a real gateway', () => {
   it('streams the response events in order and the fake receives the user input', async () => {
     const clock = fakeClock();
     const events = await collect(context.client.stream(streamBody(), callOptions(clock, { idempotencyKey: 'real-stream-1' })));

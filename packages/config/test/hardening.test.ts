@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { ConfigError, appendPermissionRule, systemFileLockPorts, loadMcpServers, loadSettings } from '@momonga/config';
 import type { FileLockPorts } from '@momonga/config';
 import { hostKernelLock } from '@momonga/foundation';
-import { startLockHolder } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder } from '@momonga/testkit';
 import { settingsLockPath } from '../src/file-lock.ts';
 import {
   localSettingsDir,
@@ -129,7 +129,7 @@ const steppedFileLockPorts = (): FileLockPorts => {
   };
 };
 
-describe('B8 lock hardening', () => {
+describe('B8 lock hardening', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   const lockPathOf = (tree: ReturnType<typeof makeTree>): string => settingsLockPath(tree.home, localSettingsPath(tree));
   const fileLock = hostKernelLock().name === 'file-lock';
 

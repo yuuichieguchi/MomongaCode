@@ -6,7 +6,7 @@ import { canonicalJson, ensureMomongaDirs, sha256Hex } from '@momonga/foundation
 import type { McpPoolOptions } from '@momonga/mcp';
 import type { RunEventPayload } from '@momonga/protocol';
 import { openRuntimeStore } from '@momonga/store';
-import { MCP_MODERN_SERVER_PATH, createFakeClock } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, MCP_MODERN_SERVER_PATH, createFakeClock } from '@momonga/testkit';
 import { START_MS, trackGroup } from './helpers.ts';
 import { eventTypes, launchRuntime, readDb, sessionEnvFor, startStack, waitForStatus } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
@@ -62,7 +62,7 @@ vi.mock('@momonga/mcp', async (importOriginal) => {
   };
 });
 
-const PROCESS_TIMEOUT = { timeout: 60_000 };
+const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 const SEED_MS = START_MS;
 const RUNTIME_MS = START_MS + 3_600_000;
 const USAGE = { input_tokens: 50, output_tokens: 5, total_tokens: 55 };

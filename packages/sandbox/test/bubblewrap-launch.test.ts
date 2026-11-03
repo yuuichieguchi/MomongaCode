@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { SandboxPolicyError, createBubblewrapSandbox, createPlaceholderJournal } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
-import { waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, waitFor } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
 
 const FAKE_BWRAP = `#!/bin/sh
@@ -49,7 +49,7 @@ const journal = () => createPlaceholderJournal(path.join(base, 'journal'));
 
 const sandbox = () => createBubblewrapSandbox({ bwrapPath: bwrap, tmpRoot: path.join(base, 'tmp'), killGraceMs: 300, journal: journal(), holders: () => new Set() });
 
-describe('bubblewrap launch (a stand-in bwrap that creates the /dev/null mount points; the real bwrap is exercised in bubblewrap-real.test.ts)', () => {
+describe('bubblewrap launch (a stand-in bwrap that creates the /dev/null mount points; the real bwrap is exercised in bubblewrap-real.test.ts)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('refuses to start a command in a workspace whose protected .git is a symlink loop, with a typed error that names it', () => {
     const git = path.join(work, '.git');
     fs.symlinkSync('.git', git);

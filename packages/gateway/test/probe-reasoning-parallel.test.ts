@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { capabilitiesFromProbe, decideToolCalling, runProbe } from '@momonga/gateway';
 import { ESTIMATED_ERROR_BOUND_RATIO, summaryInputLimitFor, summaryTokenCapFor, tokensForText } from '@momonga/protocol';
 import type { ProbeReport } from '@momonga/protocol';
-import { FAKE_DETERMINISTIC_REPLY, FAKE_REASONING_WORD, startFakeChatCompletions } from '@momonga/testkit';
+import { FAKE_DETERMINISTIC_REPLY, FAKE_REASONING_WORD, countFakeTokens, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsOptions, FakeChatCompletionsServer } from '@momonga/testkit';
 import { COMPACTION_INSTRUCTIONS_MARKER } from '../src/adapters/shared/compact.ts';
 import { maxOutputTokensFor } from '../src/probe/decide.ts';
@@ -36,9 +36,10 @@ describe('probe of reasoning control', () => {
     expect(report.reasoning).toEqual({ control: 'none', headroomTokens: 200 });
   });
 
-  it('measures hidden reasoning from the completion tokens when the usage does not break it out: 209 completion tokens for a five-word answer', async () => {
+  it('measures hidden reasoning from the completion tokens when the usage does not break it out: the visible answer is subtracted from the completion tokens', async () => {
     const { report } = await probe({ scenario: 'tools-ok', reasoning: { tokens: 204, effort: 'ignored', reportsUsage: false } });
-    expect(report.reasoning).toEqual({ control: 'none', headroomTokens: 209 - tokensForText(FAKE_DETERMINISTIC_REPLY) });
+    const completionTokens = countFakeTokens(FAKE_DETERMINISTIC_REPLY) + 204;
+    expect(report.reasoning).toEqual({ control: 'none', headroomTokens: completionTokens - tokensForText(FAKE_DETERMINISTIC_REPLY) });
   });
 
   it('still finds a control the server honours when only the completion tokens show it', async () => {

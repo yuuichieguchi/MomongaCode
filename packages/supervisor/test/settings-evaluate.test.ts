@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { SHUTDOWN_MARGIN_MS, runtimeMaxCloseMs } from '@momonga/foundation';
-import { createFakeKernelLock, spawnTracked, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, spawnTracked, waitFor } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { KILL_CONFIRM_MS, SETTINGS_DEBOUNCE_MS } from '../src/constants.ts';
 import {
@@ -51,7 +51,7 @@ const planCount = (h: Harness): number => h.log.withMsg('plan.begin').length;
 
 const after = (order: readonly string[], from: number): string[] => order.slice(from).filter((entry) => !entry.startsWith('ready') && entry !== 'reapMarkedProcesses');
 
-describe('supervisor-level settings evaluation', () => {
+describe('supervisor-level settings evaluation', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('a settings watch that cannot be established is one settings.warning, not a fatal', async (context) => {
     const throwingWatch = (() => {
       throw Object.assign(new Error('watch EMFILE'), { code: 'EMFILE' });

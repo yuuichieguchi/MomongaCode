@@ -1,10 +1,11 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { ConfigError } from '@momonga/config';
 import { writeUserSettings } from './helpers.ts';
 import { RUNTIME_VERSION, captureStream, hookLogger, makeRunHome, startRuntimeProcess } from './run-helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: 60_000 };
+const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 
 const failureOrClose = async (started: ReturnType<typeof startRuntimeProcess>): Promise<unknown> =>
   started.then(

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { afterMicrotasks, waitFor } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, waitFor } from '@momonga/testkit';
 import { launchRuntime, startStack, waitForStatus } from './run-helpers.ts';
 import type { Stack } from './run-helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: 60_000 };
+const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 const RUNTIME_RESOURCE_KINDS = new Set(['Timeout', 'PipeServerWrap', 'PipeWrap', 'ProcessWrap']);
 
 const counts = (): Map<string, number> => {

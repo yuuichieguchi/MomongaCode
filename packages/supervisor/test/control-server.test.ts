@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ProcessLockHeldError, listenUnix, momongaPaths, parseReadyLine, inspectProcessLock } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { LSOF_PATH, createFakeClock, createFakeTimers, registerCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
+import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, registerCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { createControlRequestHandler, respondShutdown, startControlServer } from '../src/control-server.ts';
 import type { ControlServer, IdleShutdownOutcome } from '../src/control-server.ts';
@@ -508,7 +508,7 @@ const firstStdoutLine = (child: ChildProcess, predicate: (line: string) => boole
     child.once('exit', (code, signal) => reject(new Error(`${description}: exited ${String(code)} ${String(signal)} before the line: ${errors}`)));
   });
 
-describe('control API transport', () => {
+describe('control API transport', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('no TCP listener', async (context) => {
     const listener = spawnTracked(context, process.execPath, [TCP_LISTENER_FIXTURE], { stdio: ['ignore', 'pipe', 'pipe'] });
     const listening = JSON.parse(await firstStdoutLine(listener, (line) => line.includes('"listening"'), 'tcp listener')) as { listening: number };
@@ -529,5 +529,5 @@ describe('control API transport', () => {
     expect([0, 1]).toContain(probe.status);
     if (probe.status === 1) expect(probe.stdout).toBe('');
     expect(probe.names).toEqual([]);
-  }, 30_000);
+  });
 });

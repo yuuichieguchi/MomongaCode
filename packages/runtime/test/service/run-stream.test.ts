@@ -108,7 +108,7 @@ describe('run stream under concurrent writes', () => {
     expect(seqsOf(await early.toEnd(20_000))).toEqual(range(1, finalSeq));
     expect(seqsOf(await atEnd.toEnd(20_000))).toEqual(range(initial + 1, finalSeq));
     expect(seqsOf(await lateStream.toEnd(20_000))).toEqual(range(lateCursor + 1, finalSeq));
-  }, 30_000);
+  });
 });
 
 describe('run stream termination', () => {

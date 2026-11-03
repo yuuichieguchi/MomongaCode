@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_SETSID_GRANDCHILD_ENV, killPidsForCleanup } from '@momonga/testkit';
+import { MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_SETSID_GRANDCHILD_ENV, REAL_PROCESS_TEST_TIMEOUT_MS, killPidsForCleanup } from '@momonga/testkit';
 import { createTransport, eventually, makeDir, onCleanup, pidAlive, rawConfig, trackPid } from './raw-transport.ts';
 
 const control = vi.hoisted(() => ({
@@ -33,7 +33,7 @@ vi.mock('@momonga/foundation', async (importOriginal) => {
   };
 });
 
-const PROCESS_TIMEOUT = { timeout: 30_000 };
+const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 
 const markerSetup = () => {
   const dir = path.join(makeDir(), 'markers');

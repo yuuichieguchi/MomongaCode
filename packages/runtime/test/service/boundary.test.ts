@@ -5,7 +5,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
 import type { SandboxedProcess } from '@momonga/sandbox';
-import { killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
 import { buildSandboxPolicy } from '@momonga/tools';
 import { START_MS, onCleanup, requestManualApproval, startService, toolCallPayload } from './helpers.ts';
 
@@ -20,7 +20,7 @@ const collect = async (stream: AsyncIterable<Uint8Array>): Promise<string> => {
 
 const quote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 
-describe.skipIf(!fs.existsSync(SANDBOX_EXEC))('run API boundary under real Seatbelt', () => {
+describe.skipIf(!fs.existsSync(SANDBOX_EXEC))('run API boundary under real Seatbelt', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it.each([
     { network: 'allow' as const, controlLine: 'control-ok control=0', controlRequests: ['GET /control'] },
     { network: 'deny' as const, controlLine: ' control=7', controlRequests: [] },
@@ -81,6 +81,6 @@ describe.skipIf(!fs.existsSync(SANDBOX_EXEC))('run API boundary under real Seatb
       expect((await env.http('GET', `/v1/approvals/${approvalId}`)).json.approval.status).toBe('pending');
       expect((await env.getRun(run.id)).status).toBe('WAITING_HUMAN');
     },
-    30_000,
+    REAL_PROCESS_TEST_TIMEOUT_MS,
   );
 });

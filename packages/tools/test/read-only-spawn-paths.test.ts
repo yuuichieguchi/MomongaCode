@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import type { BackgroundJobs, ToolHooks } from '@momonga/tools';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { makeBuiltins, resultOf } from './builtins/fixtures.ts';
@@ -26,7 +27,7 @@ const expectReadOnlyCall = (spawn: RecordedSpawn | undefined): void => {
   expect(spawn?.command.tmpDir).toBeUndefined();
 };
 
-describe('rule 2: the sandbox policy of each path that approves a Bash call', () => {
+describe('rule 2: the sandbox policy of each path that approves a Bash call', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it.each(['default', 'plan', 'acceptEdits'] as const)('a read-only analysis in %s mode leaves no path writable but the scratch directory of the spawn', async (mode) => {
     const built = await setup();
     resultOf(await built.run('Bash', { command: 'pwd' }, { mode }));

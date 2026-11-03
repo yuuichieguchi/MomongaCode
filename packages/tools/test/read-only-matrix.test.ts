@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { HOST_RULE_ENFORCEMENT, protectedSetFor } from '@momonga/foundation';
 import { EMPTY_GLOB_TABLE, computeFileRules, createGlobDeadline, decide, prepareGlobs, settleGlobs } from '@momonga/policy';
 import type { Sandbox } from '@momonga/sandbox';
-import { TEST_SEARCH_PATH, isWritableFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_SEARCH_PATH, isWritableFor } from '@momonga/testkit';
 import { buildSandboxPolicy, createPolicyFilesystem } from '@momonga/tools';
 import { makeBuiltins, resultOf } from './builtins/fixtures.ts';
 import { collect } from './read-only-collect.ts';
@@ -21,7 +21,7 @@ const PLAIN_OUTPUT_LIMIT_BYTES = 64 * 1024 * 1024;
 const FORMS = approvableForms(process.platform);
 const OTHER_PLATFORM: NodeJS.Platform = process.platform === 'darwin' ? 'linux' : 'darwin';
 
-describe.runIf(HAS_REAL_SANDBOX)('every approvable command form prints the same under the read-only sandbox', () => {
+describe.runIf(HAS_REAL_SANDBOX)('every approvable command form prints the same under the read-only sandbox', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   let base = '';
   let project = '';
   let home = '';

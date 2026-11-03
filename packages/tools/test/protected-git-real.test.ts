@@ -7,7 +7,7 @@ import { HOST_RULE_ENFORCEMENT, isProtectedWrite, protectedSetFor } from '@momon
 import type { ProtectedSet } from '@momonga/foundation';
 import { EMPTY_GLOB_TABLE, computeFileRules, decide, settleGlobs } from '@momonga/policy';
 import type { SandboxedProcess } from '@momonga/sandbox';
-import { TEST_SEARCH_PATH, isWritableFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_SEARCH_PATH, isWritableFor } from '@momonga/testkit';
 import { buildSandboxPolicy, createPolicyFilesystem } from '@momonga/tools';
 import { createHostSandbox } from './helpers.ts';
 
@@ -60,7 +60,7 @@ const finish = async (proc: SandboxedProcess) => {
   return { stdout, stderr, code: exit.code };
 };
 
-describe('real git: a linked worktree, a submodule and the missing-target sequence (5.13)', () => {
+describe('real git: a linked worktree, a submodule and the missing-target sequence (5.13)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   let main = '';
   let worktree = '';
   let submodule = '';

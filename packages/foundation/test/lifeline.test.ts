@@ -4,7 +4,7 @@ import type { Readable, Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { EntryUsageError, isProcessAlive, watchLifeline } from '@momonga/foundation';
-import { LSOF_PATH, registerCleanup, spawnTracked, withTempDir } from '@momonga/testkit';
+import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, spawnTracked, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { TrackedChild } from '@momonga/testkit';
 
@@ -56,7 +56,7 @@ const watching = async (child: TrackedChild, output: Output, marker = 'watching'
   if (!output.lines().includes(marker)) throw new Error(`the lifeline child exited with ${child.exitCode} before printing ${marker}: ${output.stderr()}`);
 };
 
-describe('watchLifeline with real processes', { timeout: 20_000 }, () => {
+describe('watchLifeline with real processes', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('EOF when the parent end closes', async (context) => {
     const { child, output, lifeline } = startChild(context);
     await watching(child, output);

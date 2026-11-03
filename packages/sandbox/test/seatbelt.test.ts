@@ -5,13 +5,13 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createSeatbeltSandbox, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
 import { collect, isAlive, makeTempDir, run, waitUntilDead } from './helpers.ts';
 
 const KILL_GRACE_MS = 300;
 const BASE_ENV = { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' };
 
-describe.runIf(process.platform === 'darwin')('seatbelt sandbox (real sandbox-exec)', () => {
+describe.runIf(process.platform === 'darwin')('seatbelt sandbox (real sandbox-exec)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   let created: string[] = [];
   let spawned: SandboxedProcess[] = [];
   let servers: net.Server[] = [];

@@ -5,7 +5,7 @@ import { volumeIsCaseInsensitive, EMPTY_PROTECTED_SET } from '@momonga/foundatio
 import type { FileRuleSet, FileRuleSpec } from '@momonga/foundation';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
 import type { SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
 import { fileRulesOf, fileSpec } from './file-rule-specs.ts';
 import type { FileSpecOptions } from './file-rule-specs.ts';
 import { makeTempDir, run } from './helpers.ts';
@@ -23,7 +23,7 @@ const python3 = (): string => {
 
 type Fixture = { base: string; root: string; home: string; outside: string; tmpRoot: string };
 
-describe.runIf(process.platform === 'darwin')('user file rules under real Seatbelt', () => {
+describe.runIf(process.platform === 'darwin')('user file rules under real Seatbelt', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   let created: string[] = [];
   let spawned: SandboxedProcess[] = [];
 

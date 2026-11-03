@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { FAKE_DETERMINISTIC_REPLY, FAKE_OS_BUILD, LSOF_PATH, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
+import { FAKE_DETERMINISTIC_REPLY, FAKE_OS_BUILD, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, countFakeTokens, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 
 const MINIMAL_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 const TESTKIT_SRC_URL = pathToFileURL(path.resolve(import.meta.dirname, '..', 'src')).href;
@@ -30,7 +30,7 @@ const minimalEnv = (dir: string, extra: Record<string, string> = {}): Record<str
 });
 
 const runFm = (binary: string, args: string[], env: Record<string, string>, input?: string) =>
-  spawnSync(binary, args, { env, input: input ?? '', encoding: 'utf8', timeout: 20_000 });
+  spawnSync(binary, args, { env, input: input ?? '', encoding: 'utf8', timeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -69,7 +69,7 @@ const startServe = async (binary: string, socketPath: string, env: Record<string
 
 const completionBody = { model: 'system', messages: [{ role: 'user', content: 'hello there' }] };
 
-describe('createFakeFm script file', { timeout: 30_000 }, () => {
+describe('createFakeFm script file', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('writes an executable regular file whose shebang is the absolute node binary', async () => {
     const dir = makeDir();
     const fm = await createFakeFm({ dir });
@@ -98,7 +98,7 @@ describe('createFakeFm script file', { timeout: 30_000 }, () => {
   });
 });
 
-describe('createFakeFm under the minimal env', { timeout: 30_000 }, () => {
+describe('createFakeFm under the minimal env', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('exits 0 for license --status', async () => {
     const dir = makeDir();
     const fm = await createFakeFm({ dir });
@@ -117,9 +117,10 @@ describe('createFakeFm under the minimal env', { timeout: 30_000 }, () => {
   it('prints the token count of stdin for count-tokens', async () => {
     const dir = makeDir();
     const fm = await createFakeFm({ dir });
-    const result = runFm(fm.binaryPath, ['count-tokens', '-q'], minimalEnv(dir), 'alpha beta  gamma\ndelta');
+    const text = 'alpha beta  gamma\ndelta';
+    const result = runFm(fm.binaryPath, ['count-tokens', '-q'], minimalEnv(dir), text);
     expect(result.status).toBe(0);
-    expect(result.stdout.trim()).toBe('4');
+    expect(result.stdout.trim()).toBe(String(countFakeTokens(text)));
   });
 
   it('prints zero for empty stdin', async () => {
@@ -200,7 +201,7 @@ describe('createFakeFm under the minimal env', { timeout: 30_000 }, () => {
   });
 });
 
-describe('fakeExec', { timeout: 30_000 }, () => {
+describe('fakeExec', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it.each(['/usr/bin/sw_vers', 'sw_vers'])('answers %s -buildVersion with the fake build', async (file) => {
     expect(await fakeExec(file, ['-buildVersion'])).toEqual({ exitCode: 0, stdout: `${FAKE_OS_BUILD}\n`, stderr: '' });
   });
@@ -237,7 +238,7 @@ const holdersOf = (file: string): number[] => {
     .sort((a, b) => a - b);
 };
 
-describe('createFakeFm serveSurvivorPidFile', { timeout: 30_000 }, () => {
+describe('createFakeFm serveSurvivorPidFile', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('forks a SIGTERM-ignoring child in the serve group that keeps the marker fd 3', async () => {
     const dir = makeDir();
     const fm = await createFakeFm({ dir });
@@ -281,7 +282,7 @@ describe('createFakeFm serveSurvivorPidFile', { timeout: 30_000 }, () => {
   });
 });
 
-describe('createFakeFm serveDetachedHelperPidFile', { timeout: 30_000 }, () => {
+describe('createFakeFm serveDetachedHelperPidFile', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('forks a SIGTERM-ignoring helper in the serve group that does not hold the marker', async () => {
     const dir = makeDir();
     const fm = await createFakeFm({ dir });
