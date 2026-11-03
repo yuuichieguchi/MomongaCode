@@ -4,6 +4,7 @@ import type net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { tokensForText } from '@momonga/protocol';
 import { collectAllowedNames, findUsedKeywords, generateInstance } from './schema-instance.ts';
 
 export type FakeScenario = 'tools-ok' | 'tools-400' | 'tools-ignored' | 'json-schema-only' | 'none';
@@ -154,13 +155,13 @@ const invalidRequest = (message: string, code: string | null = null, param: stri
 const isRecord = (value: unknown): value is Json =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-export const countFakeTokens = (text: string): number => text.split(/\s+/).filter((word) => word.length > 0).length;
+export const countFakeTokens = (text: string): number => (text.length === 0 ? 0 : tokensForText(text));
 
 const messageText = (message: ChatMessage): string => {
   if (typeof message.content === 'string') return message.content;
   if (Array.isArray(message.content)) {
     return message.content
-      .map((part: unknown) => (isRecord(part) && typeof part['text'] === 'string' ? part['text'] : ''))
+      .flatMap((part: unknown) => (isRecord(part) && typeof part['text'] === 'string' ? [part['text']] : []))
       .join(' ');
   }
   return '';
@@ -202,12 +203,10 @@ const fakeMessageImageTokens = (message: ChatMessage, model: FakeImageTokenModel
 export const countFakePromptTokens = (messages: readonly ChatMessage[], imageModel?: FakeImageTokenModel): number =>
   messages.reduce((total, message) => total + countFakeTokens(messageText(message)) + 4 + fakeMessageImageTokens(message, imageModel), 0);
 
-const FAKE_CHARACTERS_PER_PROMPT_TOKEN = 4;
-
 export const countFakeRequestTokens = (body: unknown): number => {
   const messages = isRecord(body) ? body['messages'] : undefined;
   const tools = isRecord(body) ? body['tools'] : undefined;
-  return Math.ceil(JSON.stringify([messages ?? [], tools ?? []]).length / FAKE_CHARACTERS_PER_PROMPT_TOKEN);
+  return tokensForText(JSON.stringify([messages ?? [], tools ?? []]));
 };
 
 const resolvedUsage = (usage: FakeFixedUsage | FakeRequestUsage, body: unknown): FakeFixedUsage => {

@@ -71,6 +71,21 @@ describe('fake Open Responses upstream', () => {
     expect(usage.input_tokens).toBeGreaterThanOrEqual(tokensForText(JSON.stringify(JSON.parse(body))));
   });
 
+  it('sizes a reply that was cloned after it was built', async () => {
+    const server = await startFakeOpenResponses({ respond: () => structuredClone(openResponsesTextReply(['a'])) });
+    servers.push(server);
+    const usage = await completedUsage(await postBody(server, JSON.stringify({ model: 'm', input: ['x'.repeat(4000)] })));
+    expect(usage.input_tokens).toBeGreaterThanOrEqual(1000);
+  });
+
+  it('keeps an explicit null usage', async () => {
+    const server = await startFakeOpenResponses({ script: [openResponsesTextReply(['a'], null)] });
+    servers.push(server);
+    const frames = await postBody(server, JSON.stringify({ model: 'm', input: [] }));
+    const terminal = frames.find((frame) => frame.event === 'response.completed');
+    expect((JSON.parse(terminal?.data ?? '{}') as { response: { usage: unknown } }).response.usage).toBeNull();
+  });
+
   it('keeps an explicit usage whatever the request size', async () => {
     const server = await startFakeOpenResponses({ script: [openResponsesTextReply(['a'], usageOf(11, 3))] });
     servers.push(server);

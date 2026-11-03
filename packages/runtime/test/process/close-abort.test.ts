@@ -3,7 +3,7 @@ import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import type { GatewayClient, GatewayClientOptions, Worker, WorkerOptions } from '@momonga/runtime';
-import { MCP_MODERN_SERVER_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
+import { BUILT_BINARY_TEST_TIMEOUT_MS, MCP_MODERN_SERVER_PATH, createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
 import { START_MS, trackGroup } from './helpers.ts';
 import {
   ABORT_BUDGET_MS,
@@ -96,7 +96,7 @@ vi.mock('../../src/gateway-client.ts', async (importOriginal) => {
   };
 });
 
-const PROCESS_TIMEOUT = { timeout: 3 * REAL_PROCESS_TEST_TIMEOUT_MS };
+const PROCESS_TIMEOUT = { timeout: BUILT_BINARY_TEST_TIMEOUT_MS };
 const DRAIN_MS = 60_000;
 const CLEAN = { clean: true, abandoned: [], stragglers: [] };
 

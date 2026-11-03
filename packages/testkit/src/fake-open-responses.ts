@@ -3,6 +3,7 @@ import type { Usage } from '@momonga/protocol';
 import type { FakeSseFrame, FakeUpstreamOptions, FakeUpstreamReply, FakeUpstreamServer } from './fake-sse-upstream.ts';
 import { startFakeSseUpstream } from './fake-sse-upstream.ts';
 import { responseResource, usageOf } from './open-responses-fixtures.ts';
+import type { ResponseResourceInput } from './open-responses-fixtures.ts';
 
 export const FAKE_OPEN_RESPONSES_PATH = '/v1/responses';
 
@@ -13,8 +14,8 @@ export type FakeOpenResponsesOptions = {
   socketPath?: string;
 };
 
-const UNSIZED_OUTPUT_TOKENS = 3;
-const UNSIZED_USAGE: Usage = usageOf(0, UNSIZED_OUTPUT_TOKENS);
+const SIZED_OUTPUT_TOKENS = 3;
+const USAGE_BEARING_TERMINALS = ['response.completed', 'response.incomplete'];
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -24,8 +25,9 @@ const withInputTokens = (reply: FakeUpstreamReply, inputTokens: number): FakeUps
     ...reply,
     frames: reply.frames.map((frame) => {
       const data = frame.data;
-      if (!isRecord(data) || !isRecord(data['response']) || data['response']['usage'] !== UNSIZED_USAGE) return frame;
-      return { ...frame, data: { ...data, response: { ...data['response'], usage: usageOf(inputTokens, UNSIZED_OUTPUT_TOKENS) } } };
+      if (!isRecord(data) || !USAGE_BEARING_TERMINALS.includes(String(data['type'])) || !isRecord(data['response'])) return frame;
+      if (data['response']['usage'] !== undefined) return frame;
+      return { ...frame, data: { ...data, response: { ...data['response'], usage: usageOf(inputTokens, SIZED_OUTPUT_TOKENS) } } };
     }),
   };
 };
@@ -147,16 +149,22 @@ export type TerminalSpec =
   | { kind: 'incomplete'; reason: string; usage?: Usage | null }
   | { kind: 'failed'; code: string; message: string; errorType?: string };
 
+const resourceWithOptionalUsage = (input: Omit<ResponseResourceInput, 'usage'>, usage: Usage | null | undefined): Record<string, unknown> => {
+  const resource: Record<string, unknown> = { ...responseResource({ ...input, ...(usage === undefined ? {} : { usage }) }) };
+  if (usage === undefined) delete resource['usage'];
+  return resource;
+};
+
 export const terminalEvent = (spec: TerminalSpec, output: readonly unknown[]): EventBody => {
   const base = { id: RESPONSE_ID, model: MODEL, output: output as never };
   if (spec.kind === 'completed') {
-    return { type: 'response.completed', response: responseResource({ ...base, status: 'completed', usage: spec.usage === undefined ? UNSIZED_USAGE : spec.usage, completedAt: 1_800_000_001 }) };
+    return { type: 'response.completed', response: resourceWithOptionalUsage({ ...base, status: 'completed', completedAt: 1_800_000_001 }, spec.usage) };
   }
   if (spec.kind === 'incomplete') {
     return {
       type: 'response.incomplete',
       response: {
-        ...responseResource({ ...base, status: 'incomplete', usage: spec.usage === undefined ? UNSIZED_USAGE : spec.usage, completedAt: 1_800_000_001 }),
+        ...resourceWithOptionalUsage({ ...base, status: 'incomplete', completedAt: 1_800_000_001 }, spec.usage),
         incomplete_details: { reason: spec.reason },
       },
     };

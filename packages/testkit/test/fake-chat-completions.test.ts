@@ -5,6 +5,8 @@ import {
   FAKE_DETERMINISTIC_REPLY,
   FAKE_GUARDRAIL_ERROR,
   FAKE_PAYLOAD_TOO_LARGE_ERROR,
+  countFakePromptTokens,
+  countFakeTokens,
   generateInstance,
   isValidAtIndex,
   startFakeChatCompletions,
@@ -231,21 +233,22 @@ describe('startFakeChatCompletions endpoints', () => {
 });
 
 describe('plain completions and usage', () => {
-  it('returns a deterministic reply with usage computed from whitespace tokens plus 4 per message', async () => {
+  it('returns a deterministic reply with usage computed by the estimator plus 4 per message', async () => {
     const fake = await start({ scenario: 'none' });
-    const response = await chat(fake.socketPath, {
-      messages: [
-        { role: 'system', content: 'be brief' },
-        { role: 'user', content: 'one two three' },
-      ],
-    });
+    const messages = [
+      { role: 'system', content: 'be brief' },
+      { role: 'user', content: 'one two three' },
+    ];
+    const response = await chat(fake.socketPath, { messages });
     expect(response.status).toBe(200);
     const body = json(response);
     expect(body.object).toBe('chat.completion');
     expect(body.model).toBe('system');
     expect(body.choices[0].message).toEqual({ role: 'assistant', content: FAKE_DETERMINISTIC_REPLY });
     expect(body.choices[0].finish_reason).toBe('stop');
-    expect(body.usage).toEqual({ prompt_tokens: 13, completion_tokens: 5, total_tokens: 18 });
+    const promptTokens = countFakePromptTokens(messages);
+    const completionTokens = Math.max(1, countFakeTokens(FAKE_DETERMINISTIC_REPLY));
+    expect(body.usage).toEqual({ prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: promptTokens + completionTokens });
   });
 
   it('omits usage when usageReported is false', async () => {
@@ -303,8 +306,9 @@ describe('universal rejections', () => {
   it('rejects requests exceeding the context window with context_length_exceeded', async () => {
     const fake = await start({ scenario: 'none', contextWindow: 100 });
     const messages = [{ role: 'user', content: 'a b c d e f' }];
-    expect((await chat(fake.socketPath, { messages, max_tokens: 90 })).status).toBe(200);
-    const rejected = await chat(fake.socketPath, { messages, max_tokens: 91 });
+    const room = 100 - countFakePromptTokens(messages);
+    expect((await chat(fake.socketPath, { messages, max_tokens: room })).status).toBe(200);
+    const rejected = await chat(fake.socketPath, { messages, max_tokens: room + 1 });
     expect(rejected.status).toBe(400);
     expect(json(rejected).error.code).toBe('context_length_exceeded');
   });
@@ -477,7 +481,9 @@ describe('streaming', () => {
     );
     const usageChunk = JSON.parse(withUsage.at(-2) as string);
     expect(usageChunk.choices).toEqual([]);
-    expect(usageChunk.usage).toEqual({ prompt_tokens: 5, completion_tokens: 5, total_tokens: 10 });
+    const promptTokens = countFakePromptTokens([{ role: 'user', content: 'x' }]);
+    const completionTokens = Math.max(1, countFakeTokens(FAKE_DETERMINISTIC_REPLY));
+    expect(usageChunk.usage).toEqual({ prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: promptTokens + completionTokens });
     const without = parseSse((await chat(fake.socketPath, { messages: [{ role: 'user', content: 'x' }], stream: true })).text);
     expect(without.slice(0, -1).some((event) => JSON.parse(event).usage !== undefined)).toBe(false);
   });

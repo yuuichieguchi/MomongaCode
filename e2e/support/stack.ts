@@ -29,6 +29,7 @@ export const SUPERVISOR_ENV_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 export const STDERR_TAIL_BYTES = 64 * 1024;
 export const UPSTREAM_MODEL = 'system';
 export const UPSTREAM_TARGET = 'primary';
+export const UPSTREAM_CONTEXT_WINDOW = 8192;
 
 export const DEFAULT_E2E_DEPS: E2eDeps = {
   runtime: { leaseMs: E2E_LEASE_MS, drainTimeoutMs: E2E_DRAIN_TIMEOUT_MS, workerCount: 1 },
@@ -105,7 +106,7 @@ export const baseSettings = (home: E2eHome, sandbox: StackSandbox): Record<strin
         provider: 'fake',
         model: UPSTREAM_MODEL,
         socketPath: home.upstreamSocket,
-        capabilities: { contextWindow: 8192, maxOutputTokens: 1024 },
+        capabilities: { contextWindow: UPSTREAM_CONTEXT_WINDOW, maxOutputTokens: 1024 },
       },
     },
   },
@@ -269,6 +270,7 @@ export const startUpstream = async (home: E2eHome, options: StartStackOptions): 
   }
   const fake = await startFakeChatCompletions({
     scenario: 'tools-ok',
+    contextWindow: options.target?.capabilities?.contextWindow ?? UPSTREAM_CONTEXT_WINDOW,
     maxConcurrency: 8,
     socketPath: home.upstreamSocket,
     ...(options.upstreamImageInput === undefined ? {} : { imageInput: options.upstreamImageInput }),
