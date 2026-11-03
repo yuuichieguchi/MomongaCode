@@ -52,6 +52,82 @@ describe('the tools a target is offered', () => {
     expect(longer.notices.filter((notice) => notice.code === 'tools_dropped')).toEqual(short.notices.filter((notice) => notice.code === 'tools_dropped'));
   });
 
+  describe('that serve another tool', () => {
+    const SERVING = [...TOOLS, toolNamed('G', 1)];
+    const hostOf = { G: 'F' };
+    const builtFor = async (contextWindow: number, tools: readonly FunctionTool[], keepWithoutHost: boolean) => {
+      const capabilities = capabilitiesFor(contextWindow, { maxOutputTokens: 1024 });
+      const { ports } = harness(capabilities);
+      return buildContext(inputFor(capabilities, { sources: sourcesWith({ tools }), companions: { hostOf, keepWithoutHost } }), ports);
+    };
+    const namesOf = (tools: readonly FunctionTool[]): string[] => tools.map((tool) => tool.name);
+
+    it('are offered with the tool they serve', async () => {
+      expect(namesOf((await builtFor(128_000, SERVING, false)).tools)).toEqual(namesOf(SERVING));
+    });
+
+    it('are not offered when the tool they serve is not a candidate and nothing keeps them', async () => {
+      const withoutHost = SERVING.filter((tool) => tool.name !== 'F');
+      expect(namesOf((await builtFor(128_000, withoutHost, false)).tools)).toEqual(['A', 'B', 'C', 'D', 'E']);
+    });
+
+    it('are offered without the tool they serve when something keeps them', async () => {
+      const withoutHost = SERVING.filter((tool) => tool.name !== 'F');
+      expect(namesOf((await builtFor(128_000, withoutHost, true)).tools)).toEqual(['A', 'B', 'C', 'D', 'E', 'G']);
+    });
+
+    it('are not offered when the declared window leaves no room for the tool they serve, although they would fit', async () => {
+      const built = await builtFor(1_536, SERVING, false);
+      expect(namesOf(built.tools)).not.toContain('F');
+      expect(namesOf(built.tools)).not.toContain('G');
+      expect(built.notices.filter((notice) => notice.code === 'tools_dropped').map((notice) => notice.message)).toEqual([
+        expect.not.stringContaining('G'),
+      ]);
+    });
+
+    it('stay offered when the declared window leaves no room for the tool they serve and something keeps them', async () => {
+      const built = await builtFor(1_536, SERVING, true);
+      expect(namesOf(built.tools)).not.toContain('F');
+      expect(namesOf(built.tools)).toContain('G');
+    });
+
+    it('follow the tool they serve by the relation, not by the order the candidates come in', async () => {
+      const capabilities = capabilitiesFor(1_536, { maxOutputTokens: 1024 });
+      const { ports } = harness(capabilities);
+      const companionFirst = [toolNamed('G', 1), ...TOOLS];
+      const built = await buildContext(
+        inputFor(capabilities, { sources: sourcesWith({ tools: companionFirst }), companions: { hostOf: { G: 'A' }, keepWithoutHost: false } }),
+        ports,
+      );
+      expect(namesOf(built.tools)).toContain('A');
+      expect(namesOf(built.tools)).toContain('G');
+    });
+
+    it('keep the order the candidates came in, because the offered order is the cached prefix', async () => {
+      const capabilities = capabilitiesFor(1_536, { maxOutputTokens: 1024 });
+      const { ports } = harness(capabilities);
+      const companionFirst = [toolNamed('G', 1), ...TOOLS];
+      const built = await buildContext(
+        inputFor(capabilities, { sources: sourcesWith({ tools: companionFirst }), companions: { hostOf: { G: 'A' }, keepWithoutHost: false } }),
+        ports,
+      );
+      const offered = namesOf(built.tools);
+      expect(offered).toEqual(namesOf(companionFirst).filter((name) => offered.includes(name)));
+      expect(offered[0]).toBe('G');
+    });
+
+    it('are dropped with a host that comes later in the candidates when the floor drops that host', async () => {
+      const capabilities = capabilitiesFor(1_536, { maxOutputTokens: 1024 });
+      const { ports } = harness(capabilities);
+      const built = await buildContext(
+        inputFor(capabilities, { sources: sourcesWith({ tools: [toolNamed('G', 1), ...TOOLS] }), companions: { hostOf: { G: 'F' }, keepWithoutHost: false } }),
+        ports,
+      );
+      expect(namesOf(built.tools)).not.toContain('F');
+      expect(namesOf(built.tools)).not.toContain('G');
+    });
+  });
+
   it('leave a task that does not fit to the overflow path instead of dropping tools to make room for it', async () => {
     const capabilities = capabilitiesFor(8_000, { maxOutputTokens: 1024 });
     const { ports } = harness(capabilities);

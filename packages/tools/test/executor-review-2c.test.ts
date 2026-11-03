@@ -43,7 +43,7 @@ describe('executor defers later calls after a post-reconcile needs_approval', ()
     });
     const mark = makeTool('Mark', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'none',
       execute: async (_input, ctx) => {
         executed.push(ctx.callId);
         return { status: 'completed', output: 'marked' };
@@ -69,7 +69,7 @@ describe('executor distrusts a reconcile that settled after the cap', () => {
     let executed = 0;
     const tool = makeTool('Mark', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'none',
       reconcile: async () => {
         await after(60);
         return { outcome: 'not_applied', output: '' };
@@ -101,7 +101,7 @@ describe('executor closes the tool context of an abandoned reconcile', () => {
     const updates: string[] = [];
     const tool = makeTool('Mark', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'none',
       reconcile: (_input, _record, ctx) =>
         new Promise(() => {
           setTimeout(() => {
@@ -137,7 +137,7 @@ describe('executor post-reconcile gate applies readDenied', () => {
     let executed = 0;
     const tool = makeTool('Edit', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'path',
       subject: () => ({ kind: 'path', tool: 'Edit', paths: [secret], access: 'write' }),
       reconcile: async () => ({ outcome: 'not_applied', output: '' }),
       execute: async () => {

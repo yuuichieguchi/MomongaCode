@@ -5,7 +5,7 @@ import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import { keyFor } from './helpers.ts';
 
 const REQUESTS = [{ key: 'who', mode: 'form' as const, message: 'Who?', requestedSchema: { type: 'object' } }];
-const WRITE = { sideEffect: 'write' as const, kind: 'other' as const };
+const WRITE = { sideEffect: 'write' as const, subjectKind: 'none' as const, kind: 'other' as const };
 
 describe('tools that wait for a person', () => {
   it('reports needs_input, keeps the record pending and stores the checkpoint', async () => {

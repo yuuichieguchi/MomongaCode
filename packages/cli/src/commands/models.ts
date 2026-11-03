@@ -8,7 +8,7 @@ const yesNo = (value: boolean): string => (value ? 'yes' : 'no');
 
 const describeCapabilities = (capabilities: Capabilities): string[] => [
   `    context window: ${capabilities.contextWindow}, max output: ${capabilities.maxOutputTokens}`,
-  `    tool calling: ${capabilities.toolCalling}, parallel tool calls: ${yesNo(capabilities.parallelToolCalls)}, structured output: ${capabilities.structuredOutput}`,
+  `    tool calling: ${capabilities.toolCalling}, parallel tool calls: ${capabilities.parallelToolCalls === undefined ? 'unknown' : yesNo(capabilities.parallelToolCalls)}, structured output: ${capabilities.structuredOutput}`,
   `    image input: ${yesNo(capabilities.imageInput)}, streaming: ${yesNo(capabilities.streaming)}, stop sequences: ${yesNo(capabilities.stopSequences)}`,
   `    token counting: ${capabilities.tokenCounting}, usage reported: ${yesNo(capabilities.usageReported)}, max concurrency: ${capabilities.maxConcurrency}`,
   `    schema dialect: ${capabilities.schemaDialect}, source: ${capabilities.source}${capabilities.probedAt === undefined ? '' : ` (probed ${capabilities.probedAt})`}`,

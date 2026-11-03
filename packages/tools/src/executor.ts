@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { canonicalJson, canonicalPath, comparableFromParts, containsByComponents, computeBackoff, fileRuleFingerprint, hostKernelLock, hostReapTiming, locateThroughFiles, momongaLayout, reapMarkedProcessesWithReport, sha256Hex, writableAreaOf, writableCheckOf } from '@momonga/foundation';
-import type { Clock, FileRuleProvenance, KernelLockMechanism, PathResolution, ReapTiming, SignalSender } from '@momonga/foundation';
+import type { Clock, FileRuleProvenance, KernelLockMechanism, PathResolution, ProcessInspector, ReapReport, ReapTiming, SignalSender, UninspectableRegistry } from '@momonga/foundation';
 import { absoluteFrom, createGlobDeadline, decide, fileRuleSpecsOf, globBudgetMs, prepareGlobs, settleGlobs, suggestAllowRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject, PolicyHostFilesystem } from '@momonga/policy';
 import { permissionDeniedOutput } from '@momonga/protocol';
@@ -139,7 +139,7 @@ export type ToolExecutorOptions = {
   reconcileCapMs?: number;
   reconcileGraceMs?: number;
   onWarning(message: string): void;
-  reap?: { kill?: SignalSender; timing?: ReapTiming; killGraceMs?: number };
+  reap?: { kill?: SignalSender; timing?: ReapTiming; killGraceMs?: number; inspector?: ProcessInspector; uninspectable?: UninspectableRegistry };
 };
 
 export type AbandonTarget = { callId: string; idemKey: string };
@@ -513,7 +513,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     });
     if (batch.signal.aborted) return { outcome: failedOutcome(call.callId, `${tool.name} was cancelled`) };
     const decision = decide({
-      tool: { name: tool.name, kind: tool.kind, sideEffect: tool.sideEffect },
+      tool,
       subject,
       mode: batch.mode,
       rules: batch.rules,
@@ -542,7 +542,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     stage: GateStage = 'enforce',
   ): Promise<CallOutcome | undefined> => {
     const cwd = batch.session.cwd;
-    const policyTool = { name: tool.name, kind: tool.kind, sideEffect: tool.sideEffect };
+    const policyTool = tool;
     const first = await evaluatePolicy(call, tool, target.subject, access, batch);
     if ('outcome' in first) return first.outcome;
     let decision = first.decision;
@@ -860,9 +860,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     };
   };
 
-  const reapEarlierAttempt = async (key: string, pgid: number | undefined): Promise<{ stopped: boolean }> => {
+  const reapEarlierAttempt = async (key: string, pgid: number | undefined): Promise<NonNullable<ReconcileContext['earlierAttempt']>> => {
     const marker = path.join(options.processMarkerDir, key);
-    let reaped: { removed: boolean; stopped: boolean };
+    let reaped: ReapReport;
     try {
       reaped = await reapMarkedProcessesWithReport({
         marker,
@@ -872,6 +872,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         onWarning: options.onWarning,
         timing: reapTiming,
         ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
+        ...(options.reap?.inspector === undefined ? {} : { inspector: options.reap.inspector }),
+        ...(options.reap?.uninspectable === undefined ? {} : { uninspectable: options.reap.uninspectable }),
       });
     } catch (error) {
       throw new EarlierAttemptNotStoppedError(
@@ -882,6 +884,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     }
     if (!reaped.removed) {
       throw new EarlierAttemptNotStoppedError(`a process of the earlier attempt of call ${key} survived the attempt to stop it`, 'survived');
+    }
+    if (reaped.uninspectable.length > 0) {
+      return { stopped: false, uninspectable: reaped.uninspectable.map(({ pid, command }) => ({ pid, command })) };
     }
     return { stopped: reaped.stopped };
   };

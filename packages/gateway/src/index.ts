@@ -2,7 +2,7 @@ export { capabilitiesFromProbe, decideToolCalling } from './probe/decide.ts';
 export type { DecideThresholds, ToolCallingDecision } from './probe/decide.ts';
 export { loadProbeRecord, resolveToolCalling, saveProbeRecord } from './probe/record.ts';
 export type { ProbeRecordKey, ResolvedToolCalling } from './probe/record.ts';
-export { endpointIdentityOf, endpointRecordFileName, loadEndpointRecord, saveEndpointRecord } from './probe/endpoint-record.ts';
+export { endpointIdentityOf, endpointRecordFileName, loadEndpointRecord, saveEndpointRecord, stableIdentityFieldsOf } from './probe/endpoint-record.ts';
 export type { EndpointKey, EndpointRecord } from './probe/endpoint-record.ts';
 export { probeEndpointTarget } from './probe/probe-endpoint.ts';
 export type { ProbeEndpointTargetOptions, ProbeEndpointTargetResult } from './probe/probe-endpoint.ts';

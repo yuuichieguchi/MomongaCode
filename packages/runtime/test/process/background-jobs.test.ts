@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { createUninspectableRegistry } from '@momonga/foundation';
 import type { SandboxExit, SandboxedProcess } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { Run, RuntimeStore } from '@momonga/store';
@@ -96,6 +97,7 @@ const setup = (probes: Parameters<typeof createBackgroundJobs>[0]['probes'] = {}
     reapTiming: { now: () => clock.now(), sleep: async () => undefined },
     onWarning: (message) => warnings.push(message),
     report: (error) => reports.push(error),
+    uninspectable: createUninspectableRegistry({ isAlive: () => true }),
     probes: {
       findHolders: async () => holders,
       reconcileProcessGroup: async ({ pgid }) => {
@@ -254,21 +256,36 @@ describe('background jobs', () => {
     expect((await t.jobs.read(t.run.id, jobId, { call: 'read-7' })).output).toContain('Terminated 1 process(es) that outlived the job.');
   });
 
-  it('names a process that could not be inspected through the warning path, once across jobs', async () => {
-    const t = setup({
-      findHolders: async (_marker, _inspector, onUninspectable) => {
-        onUninspectable?.({ pid: 31_338, command: 'sshd', startTicks: '515151' });
-        return [];
-      },
-    });
+  const reportingSshd = {
+    findHolders: async (_marker: string, _inspector?: unknown, onUninspectable?: (process: { pid: number; command: string; startTicks: string }) => void): Promise<number[]> => {
+      onUninspectable?.({ pid: 31_338, command: 'sshd', startTicks: '515151' });
+      return [];
+    },
+  };
+
+  it('names a process that could not be inspected through the warning path, once for each job', async () => {
+    const t = setup(reportingSshd);
+    const jobIds: string[] = [];
     for (const key of ['call-1', 'call-2']) {
       const { jobId } = await t.start(key);
+      jobIds.push(jobId);
       t.spawned.at(-1)?.exit({ code: 0, signal: null });
       await t.settled(jobId);
     }
-    expect(t.warnings.filter((message) => message.includes('could not be inspected'))).toEqual([
-      expect.stringMatching(/^background job .+: process 31338 \(sshd\) could not be inspected, so it was left alone$/),
-    ]);
+    expect(t.warnings.filter((message) => message.includes('could not be inspected'))).toEqual(
+      jobIds.map((jobId) => `background job ${jobId}: process 31338 (sshd) could not be inspected, so it was left alone`),
+    );
+  });
+
+  it('finishes a job as unknown, never as exited, when a process could not be inspected, and does not count it as terminated', async () => {
+    const t = setup(reportingSshd);
+    const { jobId } = await t.start('call-1');
+    t.spawned[0]?.exit({ code: 0, signal: null });
+    await t.settled(jobId);
+    expect(t.store.jobs.get(jobId)).toMatchObject({ status: 'unknown', exitCode: 0 });
+    expect(t.reconciled).toEqual([]);
+    expect((await t.jobs.read(t.run.id, jobId, { call: 'read-1' })).output).not.toContain('Terminated');
+    expect(t.reports).toEqual([]);
   });
 
   it.each([
@@ -352,7 +369,9 @@ describe('background jobs', () => {
     const started = store.start({ id: 'bash_orphan000000', idemKey: 'k'.repeat(64), sessionId: t.run.sessionId, runId: t.run.id, callId: 'c', command: 'sleep 99' });
     store.attachProcess(started.job.id, 5151);
     t.store.idempotency.begin('k'.repeat(64), { expiresAt: START_MS + 1000, meta: { job: true } });
+    expect(store.listForSession(t.run.sessionId).some((job) => job.status === 'running')).toBe(true);
     await t.jobs.reconcileOrphans();
+    expect(store.listForSession(t.run.sessionId).some((job) => job.status === 'running')).toBe(false);
     expect(t.reaped).toEqual([{ marker: path.join(t.markerDir, 'k'.repeat(64)), pgid: 5151 }]);
     expect(store.get('bash_orphan000000')).toMatchObject({ status: 'unknown' });
     expect(store.get('bash_orphan000000')?.exitCode).toBeUndefined();

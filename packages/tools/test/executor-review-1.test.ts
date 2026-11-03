@@ -28,7 +28,7 @@ const reconcilingTool = (outcome: 'already_applied' | 'not_applied' | 'unknown')
   const seen = { reconciled: 0, executed: 0 };
   const tool = makeTool('Mark', {
     kind: 'edit',
-    sideEffect: 'write',
+    sideEffect: 'write', subjectKind: 'none',
     reconcile: async () => {
       seen.reconciled += 1;
       return { outcome, output: `reconciled ${outcome}` };
@@ -48,7 +48,7 @@ describe('executor lease loss', () => {
     let lost = false;
     const tool = makeTool('Shell', {
       kind: 'execute',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'none',
       execute: async (_input, ctx) => {
         lost = true;
         controller.abort('lease_lost');
@@ -73,7 +73,7 @@ describe('executor lease loss', () => {
     const signals: AbortSignal[] = [];
     const tool = makeTool('Shell', {
       kind: 'execute',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'none',
       execute: async (_input, ctx) => {
         signals.push(ctx.signal);
         lost = true;
@@ -98,7 +98,7 @@ describe('executor lease loss', () => {
     const successorOutcome = { callId: 'c1', kind: 'result', result: { status: 'completed', output: 'successor result' } };
     const tool = makeTool('Shell', {
       kind: 'execute',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'none',
       execute: async (_input, ctx) => {
         lost = true;
         harness.idempotency.records.set(KEY, { kind: 'completed', result: successorOutcome });
@@ -179,7 +179,7 @@ describe('executor admission of a call with an existing record', () => {
     const seen = { reconciled: 0, executed: 0 };
     const tool = makeTool('Edit', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'path',
       subject: () => ({ kind: 'path', tool: 'Edit', paths: [target], access: 'write' }),
       reconcile: async () => {
         seen.reconciled += 1;
@@ -207,7 +207,7 @@ describe('executor admission of a call with an existing record', () => {
     const seen = { reconciled: 0, executed: 0 };
     const tool = makeTool('Edit', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'path',
       subject: () => ({ kind: 'path', tool: 'Edit', paths: [target], access: 'write' }),
       reconcile: async () => {
         seen.reconciled += 1;
@@ -232,7 +232,7 @@ describe('executor onOutcome', () => {
   it('reports each call after its onStarted, in call order, for sequential tools', async () => {
     const harness = makeHarness();
     const order: string[] = [];
-    const tool = makeTool('Mark', { kind: 'edit', sideEffect: 'write' });
+    const tool = makeTool('Mark', { kind: 'edit', sideEffect: 'write', subjectKind: 'none' });
 
     await harness.executor.runBatch(
       harness.input(await toolSetOf(tool), [call('c1', 'Mark'), call('c2', 'Mark')], {
@@ -273,7 +273,7 @@ describe('executor onOutcome', () => {
   });
 
   it.each([
-    ['a sequential', makeTool('Mark', { kind: 'edit', sideEffect: 'write' }), 'Mark'],
+    ['a sequential', makeTool('Mark', { kind: 'edit', sideEffect: 'write', subjectKind: 'none' }), 'Mark'],
     ['a read-only', makeTool('Look'), 'Look'],
   ] as const)('rejects the batch with the onOutcome error for %s tool', async (_label, tool, name) => {
     const harness = makeHarness();

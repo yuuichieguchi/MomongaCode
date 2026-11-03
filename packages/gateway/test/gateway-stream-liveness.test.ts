@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest';
+import type { StreamEvent } from '@momonga/protocol';
 import { createFakeClock, createFakeTimers, createScriptedAdapter, textResponseEvents, waitFor } from '@momonga/testkit';
+import { sseResponse } from '../src/server/sse.ts';
 import { START_MS, postJson, startGateway, userInput } from './gateway-helpers.ts';
 
 const IDLE_HEADER = 'momonga-stream-idle-ms';
 const request = { model: 'fast', input: userInput('hi'), stream: true };
 const decoder = new TextDecoder();
+
+const errorEventOf = (text: string): unknown => {
+  const frame = text.split('\n\n').find((part) => part.includes('event: error'));
+  if (frame === undefined) throw new Error(`no error frame in: ${text}`);
+  return JSON.parse(frame.split('\n').find((line) => line.startsWith('data: '))?.slice(6) as string);
+};
 
 type Chunks = AsyncIterator<Uint8Array | string>;
 
@@ -57,6 +65,9 @@ describe('gateway stream liveness before the first upstream event', () => {
     const chunks = response.body[Symbol.asyncIterator]();
     await nextText(chunks);
     await waitFor(() => timers.pending().some((timer) => timer.delayMs === 2500), { description: 'the keep-alive timer' });
+    timers.advance(2500);
+    expect(await nextText(chunks)).toMatch(/^:/);
+    expect(primary.calls[0]?.emitted).toBe(0);
     primary.release('g');
     await drain(chunks);
   });
@@ -117,5 +128,145 @@ describe('gateway stream liveness before the first upstream event', () => {
     const event = JSON.parse((frame as string).split('\n').find((line) => line.startsWith('data: '))?.slice(6) as string);
     expect(event).toMatchObject({ type: 'error', status: 400, error: { type: 'invalid_request', code: 'upstream_rejected' } });
     expect(timers.pending()).toEqual([]);
+  });
+
+  it('carries retry_after_ms in the error event of a rate-limited call', async () => {
+    const primary = createScriptedAdapter({ calls: [{ failure: { status: 429, message: 'slow down', retryAfterMs: 4000 } }] });
+    const { client } = await startGateway({ adapters: { primary }, config: { retry: { maxAttempts: 1, baseMs: 100, maxMs: 10_000 } } });
+
+    const response = await postJson(client, '/v1/responses', request, { [IDLE_HEADER]: '3000' });
+
+    expect(errorEventOf(await drain(response.body[Symbol.asyncIterator]()))).toMatchObject({ type: 'error', status: 429, retry_after_ms: 4000 });
+  });
+
+  it('carries the remaining cooldown in the error event when every breaker is open', async () => {
+    const primary = createScriptedAdapter({ calls: [{ failure: { status: 500, message: 'down' } }] });
+    const { client } = await startGateway({
+      adapters: { primary },
+      config: { retry: { maxAttempts: 1, baseMs: 100, maxMs: 10_000 }, breaker: { failureThreshold: 1, openMs: 30_000 } },
+    });
+    await (await postJson(client, '/v1/responses', request, { [IDLE_HEADER]: '3000' })).text();
+
+    const response = await postJson(client, '/v1/responses', request, { [IDLE_HEADER]: '3000' });
+
+    expect(errorEventOf(await drain(response.body[Symbol.asyncIterator]()))).toMatchObject({
+      type: 'error',
+      status: 503,
+      retry_after_ms: 30_000,
+      error: { code: 'all_targets_unavailable' },
+    });
+  });
+});
+
+describe('compaction liveness', () => {
+  const compactRequest = { model: 'fast', input: userInput('hi') };
+
+  const frameOf = (text: string, name: string): { event: string; data: unknown } | undefined => {
+    const frame = text.split('\n\n').find((part) => part.includes(`event: ${name}`));
+    if (frame === undefined) return undefined;
+    return { event: name, data: JSON.parse(frame.split('\n').find((line) => line.startsWith('data: '))?.slice(6) as string) };
+  };
+
+  it('opens at once and writes comment lines while the compaction runs, then sends the result as its final event', async () => {
+    const primary = createScriptedAdapter({ calls: [], compactSummary: 'GOAL: x', compactGate: 'g' });
+    const { client, timers } = await startGateway({ adapters: { primary }, config: { sseKeepAliveMs: 15_000 } });
+
+    const response = await postJson(client, '/v1/responses/compact', compactRequest, { [IDLE_HEADER]: '3000' });
+
+    expect(response.status).toBe(200);
+    expect(response.headers['content-type']).toMatch(/^text\/event-stream/);
+    const chunks = response.body[Symbol.asyncIterator]();
+    expect(await nextText(chunks)).toMatch(/^:/);
+    await waitFor(() => timers.pending().some((timer) => timer.delayMs === 1000), { description: 'the keep-alive timer' });
+    timers.advance(1000);
+    expect(await nextText(chunks)).toMatch(/^:/);
+
+    primary.release('g');
+    const rest = await drain(chunks);
+    expect(frameOf(rest, 'compaction')?.data).toMatchObject({ object: 'response.compaction', output: [{ type: 'compaction' }] });
+    expect(rest.trimEnd().split('\n\n').at(-1)).toContain('event: compaction');
+    expect(timers.pending()).toEqual([]);
+  });
+
+  it('answers a compaction without the header as one JSON body, as before', async () => {
+    const primary = createScriptedAdapter({ calls: [], compactSummary: 'GOAL: x' });
+    const { client } = await startGateway({ adapters: { primary } });
+
+    const response = await postJson(client, '/v1/responses/compact', compactRequest);
+
+    expect(response.status).toBe(200);
+    expect(response.headers['content-type']).toMatch(/^application\/json/);
+    expect(((await response.json()) as { object: string }).object).toBe('response.compaction');
+  });
+
+  it('still rejects a malformed compaction request with its HTTP status when the header is present', async () => {
+    const primary = createScriptedAdapter({ calls: [], compactSummary: 'GOAL: x' });
+    const { client } = await startGateway({ adapters: { primary } });
+
+    const response = await postJson(client, '/v1/responses/compact', { input: userInput('hi') }, { [IDLE_HEADER]: '3000' });
+
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { error: { code: string } }).error.code).toBe('invalid_body');
+  });
+
+  it('rejects an idle bound that is not a positive integer on a compaction too', async () => {
+    const primary = createScriptedAdapter({ calls: [], compactSummary: 'GOAL: x' });
+    const { client } = await startGateway({ adapters: { primary } });
+
+    const response = await postJson(client, '/v1/responses/compact', compactRequest, { [IDLE_HEADER]: 'soon' });
+
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { error: { code: string } }).error.code).toBe('invalid_stream_idle');
+  });
+
+  it('reports a failed compaction as an error event carrying the HTTP status', async () => {
+    const primary = createScriptedAdapter({ calls: [] });
+    const { client, timers } = await startGateway({ adapters: { primary } });
+
+    const response = await postJson(client, '/v1/responses/compact', compactRequest, { [IDLE_HEADER]: '3000' });
+
+    expect(response.status).toBe(200);
+    const text = await drain(response.body[Symbol.asyncIterator]());
+    expect(frameOf(text, 'error')?.data).toMatchObject({ type: 'error', status: 400, error: { code: 'capability_unsupported' } });
+    expect(timers.pending()).toEqual([]);
+  });
+});
+
+describe('sseResponse before the first event', () => {
+  const quietOptions = { readerStallMs: 30_000, signal: new AbortController().signal, onEnd: () => undefined };
+
+  it('answers an error that is not a GatewayError with a 500 error event and reports it', async () => {
+    const timers = createFakeTimers(createFakeClock(START_MS));
+    const failure = new Error('store exploded');
+    const reported: unknown[] = [];
+    const rest: AsyncIterator<StreamEvent> = {
+      next: () => Promise.reject(failure),
+      return: async () => ({ done: true, value: undefined }),
+    };
+
+    const response = sseResponse(undefined, rest, { ...quietOptions, timers, keepAliveMs: 1000, onError: (error) => reported.push(error) });
+
+    expect(errorEventOf(await response.text())).toMatchObject({
+      type: 'error',
+      status: 500,
+      error: { type: 'server_error', code: 'internal_error', message: 'store exploded' },
+    });
+    expect(reported).toEqual([failure]);
+  });
+
+  it('keeps erroring the stream once an event was written', async () => {
+    const timers = createFakeTimers(createFakeClock(START_MS));
+    const failure = new Error('late failure');
+    const reported: unknown[] = [];
+    const first = textResponseEvents({ model: 'm', chunks: ['x'] })[0] as StreamEvent;
+    const rest: AsyncIterator<StreamEvent> = {
+      next: () => Promise.reject(failure),
+      return: async () => ({ done: true, value: undefined }),
+    };
+
+    const response = sseResponse(first, rest, { ...quietOptions, timers, keepAliveMs: 1000, onError: (error) => reported.push(error) });
+
+    await expect(response.text()).rejects.toBe(failure);
+    expect(reported).toEqual([]);
   });
 });

@@ -1,6 +1,6 @@
 import { createUdsClient, decodeSse, parseRetryAfter } from '@momonga/foundation';
 import type { UdsClient, UdsResponse } from '@momonga/foundation';
-import { ERROR_TYPES } from '@momonga/protocol';
+import { COMPACTION_RESULT_EVENT, ERROR_TYPES, STREAM_IDLE_HEADER } from '@momonga/protocol';
 import type { GatewayCostReportView } from '@momonga/protocol';
 import type {
   Capabilities,
@@ -71,7 +71,6 @@ type TimeoutCode = 'deadline_exceeded' | 'gateway_timeout' | 'stream_interrupted
 const DEFAULT_UNARY_TIMEOUT_MS = 5000;
 const DEFAULT_CANCEL_TIMEOUT_MS = 1000;
 const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 60_000;
-const STREAM_IDLE_HEADER = 'momonga-stream-idle-ms';
 
 const NEVER_SENT_CODES: ReadonlySet<string> = new Set(['ENOENT', 'ECONNREFUSED']);
 const CONNECTION_LOST_CODES: ReadonlySet<string> = new Set(['ECONNRESET', 'EPIPE', 'UND_ERR_SOCKET', 'UND_ERR_CLOSED']);
@@ -229,8 +228,6 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
 
   const unaryBound = (): { ms: number; code: TimeoutCode } => ({ ms: unaryTimeoutMs, code: 'gateway_timeout' });
 
-  const deadlineBound = (deadlineAt: number): { ms: number; code: TimeoutCode } => ({ ms: deadlineAt - clock.now(), code: 'deadline_exceeded' });
-
   const unary = async (
     spec: { method: 'GET' | 'POST'; path: string; headers: Record<string, string>; body?: string },
     signal: AbortSignal,
@@ -269,6 +266,44 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
     });
   };
 
+  const timedChunksOf = async function* (guard: Guard, response: UdsResponse): AsyncGenerator<Uint8Array> {
+    const iterator = response.body[Symbol.asyncIterator]();
+    for (;;) {
+      guard.arm(streamIdleTimeoutMs, 'stream_interrupted');
+      let step: IteratorResult<Uint8Array>;
+      try {
+        step = await iterator.next();
+      } catch (error) {
+        throw guard.translate(error, true);
+      }
+      guard.disarm();
+      if (step.done === true) return;
+      yield step.value;
+    }
+  };
+
+  const isEventStream = (response: UdsResponse): boolean => (response.headers['content-type'] ?? '').toLowerCase().startsWith('text/event-stream');
+
+  const compactFromStream = async (guard: Guard, response: UdsResponse): Promise<CompactResource> => {
+    let resource: CompactResource | undefined;
+    for await (const frame of decodeSse(timedChunksOf(guard, response))) {
+      let data: unknown;
+      try {
+        data = JSON.parse(frame.data);
+      } catch {
+        throw invalidResponse('a compact stream frame is not JSON');
+      }
+      if (frame.event === COMPACTION_RESULT_EVENT) {
+        if (!isRecord(data)) throw invalidResponse('the compact reply is not an object');
+        resource = data as CompactResource;
+      } else if (isStreamEvent(data) && data.type === 'error' && data.status !== undefined) {
+        throw errorFromEvent(data);
+      }
+    }
+    if (resource === undefined) throw transportError('stream_interrupted', 'the gateway ended the compact stream without a result');
+    return resource;
+  };
+
   async function* stream(body: CreateResponseBody, call: GatewayCallOptions): AsyncGenerator<StreamEvent> {
     call.signal.throwIfAborted();
     assertDeadlineOpen(call.deadlineAt);
@@ -288,26 +323,10 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
         guard.arm(streamIdleTimeoutMs, 'stream_interrupted');
         throw errorFromBody(response, await response.text(), clock.now());
       }
-      const contentType = response.headers['content-type'] ?? '';
-      if (!contentType.toLowerCase().startsWith('text/event-stream')) {
-        throw transportError('unexpected_content_type', `expected text/event-stream but received "${contentType}"`);
+      if (!isEventStream(response)) {
+        throw transportError('unexpected_content_type', `expected text/event-stream but received "${response.headers['content-type'] ?? ''}"`);
       }
-      const iterator = response.body[Symbol.asyncIterator]();
-      const timedChunks = async function* (): AsyncGenerator<Uint8Array> {
-        for (;;) {
-          guard.arm(streamIdleTimeoutMs, 'stream_interrupted');
-          let step: IteratorResult<Uint8Array>;
-          try {
-            step = await iterator.next();
-          } catch (error) {
-            throw guard.translate(error, true);
-          }
-          guard.disarm();
-          if (step.done === true) return;
-          yield step.value;
-        }
-      };
-      for await (const frame of decodeSse(timedChunks())) {
+      for await (const frame of decodeSse(timedChunksOf(guard, response))) {
         let event: unknown;
         try {
           event = JSON.parse(frame.data);
@@ -334,13 +353,38 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
     compact: async (request: CompactRequest, call: GatewayCallOptions): Promise<CompactResource> => {
       call.signal.throwIfAborted();
       assertDeadlineOpen(call.deadlineAt);
-      const parsed = await unary(
-        { method: 'POST', path: '/v1/responses/compact', headers: callHeaders(call), body: JSON.stringify(request) },
-        call.signal,
-        deadlineBound(call.deadlineAt),
-      );
-      if (!isRecord(parsed)) throw invalidResponse('the compact reply is not an object');
-      return parsed as CompactResource;
+      const guard = createGuard(call.signal);
+      try {
+        guard.armDeadline(call.deadlineAt - clock.now());
+        guard.arm(streamIdleTimeoutMs, 'stream_interrupted');
+        const response = await send(guard, {
+          method: 'POST',
+          path: '/v1/responses/compact',
+          headers: { ...callHeaders(call), [STREAM_IDLE_HEADER]: String(streamIdleTimeoutMs) },
+          body: JSON.stringify(request),
+        });
+        guard.disarm();
+        if (response.status >= 400) {
+          guard.arm(streamIdleTimeoutMs, 'stream_interrupted');
+          throw errorFromBody(response, await response.text(), clock.now());
+        }
+        if (isEventStream(response)) return await compactFromStream(guard, response);
+        guard.arm(streamIdleTimeoutMs, 'stream_interrupted');
+        const text = await response.text();
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          throw invalidResponse('the body is not JSON');
+        }
+        if (!isRecord(parsed)) throw invalidResponse('the compact reply is not an object');
+        return parsed as CompactResource;
+      } catch (error) {
+        guard.abort();
+        throw guard.translate(error);
+      } finally {
+        guard.dispose();
+      }
     },
 
     countTokens: async (request: CountTokensRequest, callOptions: { signal: AbortSignal }): Promise<CountTokensResult> => {

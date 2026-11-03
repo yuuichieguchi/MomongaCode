@@ -119,6 +119,37 @@ describe('alias capabilities on /v1/momonga/models', () => {
   });
 });
 
+describe('alias parallel tool call capability on /v1/momonga/models', () => {
+  const withParallel = (parallelToolCalls: boolean | undefined): Capabilities => {
+    const { parallelToolCalls: _declared, ...rest } = strong;
+    return parallelToolCalls === undefined ? rest : { ...rest, parallelToolCalls };
+  };
+
+  const parallelOf = async (first: Capabilities, second: Capabilities): Promise<boolean | undefined> => {
+    const { client } = await startGateway({
+      adapters: { first: createScriptedAdapter({ calls: [], capabilities: first }), second: createScriptedAdapter({ calls: [], capabilities: second }) },
+      config: {
+        aliases: { both: ['first', 'second'] },
+        targets: { first: { model: 'model-first' }, second: { model: 'model-second' } },
+      },
+    });
+    const response = await getJson(client, '/v1/momonga/models');
+    return response.body.data.find((entry: { id: string }) => entry.id === 'both').capabilities.parallelToolCalls;
+  };
+
+  it('stays unknown when no target knows and none says false', async () => {
+    expect(await parallelOf(withParallel(undefined), withParallel(true))).toBeUndefined();
+  });
+
+  it('is false as soon as one target says false', async () => {
+    expect(await parallelOf(withParallel(undefined), withParallel(false))).toBe(false);
+  });
+
+  it('is true when every target says true', async () => {
+    expect(await parallelOf(withParallel(true), withParallel(true))).toBe(true);
+  });
+});
+
 describe('alias image token model on /v1/momonga/models', () => {
   const sees = (imageTokens: Capabilities['imageTokens']): Capabilities => {
     const { imageInput: _imageInput, imageTokens: _imageTokens, ...core } = strong;

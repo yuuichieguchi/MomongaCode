@@ -6,12 +6,12 @@ import { makeLayout, ruleIn } from './helpers.ts';
 const TOOLS: PolicyTool[] = [
   { name: 'Read', kind: 'read', sideEffect: 'read_only' },
   { name: 'Grep', kind: 'search', sideEffect: 'read_only' },
-  { name: 'Edit', kind: 'edit', sideEffect: 'write' },
-  { name: 'Bash', kind: 'execute', sideEffect: 'exec' },
+  { name: 'Edit', kind: 'edit', sideEffect: 'write', subjectKind: 'path' },
+  { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' },
   { name: 'UpdatePlan', kind: 'think', sideEffect: 'read_only' },
-  { name: 'mcp__srv__run', kind: 'other', sideEffect: 'exec' },
+  { name: 'mcp__srv__run', kind: 'other', sideEffect: 'exec', subjectKind: 'mcp' },
   { name: 'mcp__srv__list', kind: 'other', sideEffect: 'read_only' },
-  { name: 'mcp__other__x', kind: 'other', sideEffect: 'exec' },
+  { name: 'mcp__other__x', kind: 'other', sideEffect: 'exec', subjectKind: 'mcp' },
 ];
 
 const names = (tools: PolicyTool[]): string[] => tools.map((t) => t.name);
@@ -47,5 +47,30 @@ describe('modelVisibleTools', () => {
   it('still hides denied tools in bypassPermissions', () => {
     const layout = makeLayout();
     expect(names(modelVisibleTools(TOOLS, { mode: 'bypassPermissions', rules: [ruleIn(layout)('deny', 'Edit')] }))).not.toContain('Edit');
+  });
+});
+
+describe('modelVisibleTools in plan mode for tools that decide refuses there', () => {
+  const OTHERS: PolicyTool[] = [
+    { name: 'BashOutput', kind: 'execute', sideEffect: 'read_only', subjectKind: 'none' },
+    { name: 'KillBash', kind: 'execute', sideEffect: 'write', subjectKind: 'none' },
+    { name: 'RulePropose', kind: 'other', sideEffect: 'write', subjectKind: 'governance' },
+    { name: 'MemorySave', kind: 'other', sideEffect: 'write', subjectKind: 'memory' },
+  ];
+
+  it('hides a tool whose subject is never a command and whose side effect is not read-only, whatever its kind', () => {
+    const visible = names(modelVisibleTools([...TOOLS, ...OTHERS], { mode: 'plan', rules: [] }));
+    expect(visible).not.toContain('KillBash');
+    expect(visible).not.toContain('MemorySave');
+    expect(visible).toContain('BashOutput');
+    expect(visible).toContain('Bash');
+  });
+
+  it('shows a tool that decide leaves to a person in plan mode instead of refusing it', () => {
+    expect(names(modelVisibleTools([...TOOLS, ...OTHERS], { mode: 'plan', rules: [] }))).toContain('RulePropose');
+  });
+
+  it('shows KillBash outside plan mode', () => {
+    expect(names(modelVisibleTools([...TOOLS, ...OTHERS], { mode: 'default', rules: [] }))).toContain('KillBash');
   });
 });

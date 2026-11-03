@@ -14,6 +14,7 @@ const touchTool = (runs: string[]) =>
     description: 'A write without a reconcile hook',
     kind: 'edit',
     sideEffect: 'write',
+    subjectKind: 'none',
     inputSchema: { type: 'object', properties: { value: { type: 'string' } }, required: ['value'], additionalProperties: false },
     timeoutMs: 60_000,
     title: () => 'Touch',

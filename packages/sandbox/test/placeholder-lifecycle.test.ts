@@ -194,6 +194,90 @@ describe('the life of a placeholder (stand-in bwrap)', () => {
       expect(journal.records()).toEqual([]);
     });
 
+    it('never sweeps a kept file that a command planned after it was kept has reserved but bwrap has not mounted yet', async () => {
+      const journal = real();
+      const sandbox = sandboxWith(journal);
+      const command = { argv: ['/bin/sh', '-c', 'true'], cwd: work, env: { PATH: '/usr/bin:/bin' } };
+      held = new Set([mcp()]);
+      await run(sandbox.spawn(command, policy(), new AbortController().signal));
+      expect(fs.existsSync(mcp())).toBe(true);
+      held = new Set();
+      const planned = sandbox.spawn({ ...command, argv: ['/bin/sh', '-c', 'sleep 0.2'] }, { ...policy(), writeDenied: [mcp()] }, new AbortController().signal);
+      sandbox.sweep?.();
+      expect(fs.existsSync(mcp())).toBe(true);
+      expect(journal.records().map((record) => record.path)).toEqual([mcp()]);
+      await run(planned);
+      expect(fs.existsSync(mcp())).toBe(false);
+      expect(journal.records()).toEqual([]);
+    });
+
+    it('reports a failing sweep once per distinct failure until it changes or clears, and keeps the file meanwhile', async () => {
+      const journal = real();
+      let failure: Error | undefined;
+      const sandbox = createBubblewrapSandbox({
+        bwrapPath: path.join(base, 'bwrap'),
+        tmpRoot,
+        killGraceMs: 300,
+        journal,
+        holders: () => held,
+        filesystem: {
+          ...nodeFilesystemPort,
+          removePlaceholder: (target, identity) => {
+            if (failure !== undefined) throw failure;
+            nodeFilesystemPort.removePlaceholder(target, identity);
+          },
+        },
+      });
+      held = new Set([mcp()]);
+      await run(sandbox.spawn({ argv: ['/bin/sh', '-c', 'true'], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy(), new AbortController().signal));
+      held = new Set();
+      failure = new Error('the placeholder could not be removed');
+      expect(() => sandbox.sweep?.()).toThrow('the placeholder could not be removed');
+      expect(() => sandbox.sweep?.()).not.toThrow();
+      expect(() => sandbox.sweep?.()).not.toThrow();
+      failure = new Error('the journal is read-only');
+      expect(() => sandbox.sweep?.()).toThrow('the journal is read-only');
+      expect(() => sandbox.sweep?.()).not.toThrow();
+      expect(fs.existsSync(mcp())).toBe(true);
+      failure = undefined;
+      sandbox.sweep?.();
+      expect(fs.existsSync(mcp())).toBe(false);
+    });
+
+    it('reports a failing sweep again when it recurs after it cleared', async () => {
+      const journal = real();
+      let failing = false;
+      const sandbox = createBubblewrapSandbox({
+        bwrapPath: path.join(base, 'bwrap'),
+        tmpRoot,
+        killGraceMs: 300,
+        journal,
+        holders: () => held,
+        filesystem: {
+          ...nodeFilesystemPort,
+          removePlaceholder: (target, identity) => {
+            if (failing) throw new Error('the placeholder could not be removed');
+            nodeFilesystemPort.removePlaceholder(target, identity);
+          },
+        },
+      });
+      const command = { argv: ['/bin/sh', '-c', 'true'], cwd: work, env: { PATH: '/usr/bin:/bin' } };
+      held = new Set([mcp()]);
+      await run(sandbox.spawn(command, policy(), new AbortController().signal));
+      held = new Set();
+      failing = true;
+      expect(() => sandbox.sweep?.()).toThrow('the placeholder could not be removed');
+      expect(() => sandbox.sweep?.()).not.toThrow();
+      failing = false;
+      sandbox.sweep?.();
+      expect(fs.existsSync(mcp())).toBe(false);
+      held = new Set([mcp()]);
+      await run(sandbox.spawn(command, policy(), new AbortController().signal));
+      held = new Set();
+      failing = true;
+      expect(() => sandbox.sweep?.()).toThrow('the placeholder could not be removed');
+    });
+
     it('reports a sweep that cannot remove the file, and keeps it for the next sweep', async () => {
       const journal = real();
       const failure = new Error('the placeholder could not be removed');

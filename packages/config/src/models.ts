@@ -71,7 +71,6 @@ const CHAT_COMPLETIONS_CAPABILITY_DEFAULTS: CapabilityDefaults = {
   streaming: true,
   stopSequences: true,
   imageInput: false,
-  parallelToolCalls: false,
   schemaDialect: 'json-schema-2020-12',
   tokenCounting: 'estimated',
   usageReported: true,

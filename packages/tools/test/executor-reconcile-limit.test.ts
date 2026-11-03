@@ -10,7 +10,7 @@ const LONG = Array.from({ length: 100 }, (_unused, index) => `line-${String(inde
 const editTool = (outcome: 'already_applied' | 'not_applied' | 'unknown', budgets: number[]) =>
   makeTool('Edit', {
     kind: 'edit',
-    sideEffect: 'write',
+    sideEffect: 'write', subjectKind: 'none',
     prepare: async () => STORED,
     reconcile: async () => ({ outcome, output: LONG }),
     execute: async (_input, ctx: ToolContext) => {

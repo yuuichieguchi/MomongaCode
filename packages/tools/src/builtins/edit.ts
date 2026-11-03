@@ -75,6 +75,7 @@ export const editTool = defineTool<EditInput>({
     'Replaces text in an existing file. file_path must be absolute. The file must have been read with Read first and must be unchanged since. old_string must match exactly once (include surrounding context to make it unique) unless replace_all is true.',
   kind: 'edit',
   sideEffect: 'write',
+  subjectKind: 'path',
   inputSchema: {
     type: 'object',
     properties: {

@@ -20,7 +20,7 @@ const tracked = (name: string, overrides: Parameters<typeof makeTool>[1] = {}) =
 describe('idempotency NEW and COMPLETED', () => {
   it('replays a completed call with the identical outcome and without execute or onStarted', async () => {
     const harness = makeHarness();
-    const { tool, executions } = tracked('Write', { kind: 'edit', sideEffect: 'write' });
+    const { tool, executions } = tracked('Write', { kind: 'edit', sideEffect: 'write', subjectKind: 'none' });
     const set = await toolSetOf(tool);
     const first = await harness.executor.runBatch(harness.input(set, [call('c1', 'Write')]));
     const second = await harness.executor.runBatch(harness.input(set, [call('c1', 'Write')]));
@@ -71,7 +71,7 @@ describe('idempotency PENDING and UNKNOWN reconcile', () => {
     ['Bash', 'exec', 'UNKNOWN'],
   ] as const)('does not re-run %s (%s) from %s and reports an unknown effect', async (name, sideEffect, state) => {
     const harness = makeHarness();
-    const { tool, executions } = tracked(name, { sideEffect, kind: sideEffect === 'exec' ? 'execute' : 'edit' });
+    const { tool, executions } = tracked(name, { sideEffect, subjectKind: 'none', kind: sideEffect === 'exec' ? 'execute' : 'edit' });
     harness.idempotency.seed(KEY, state, { tool: name });
     const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', name, {}, 'allow_once')]));
     expect(executions).toEqual([]);
@@ -92,7 +92,7 @@ describe('idempotency PENDING and UNKNOWN reconcile', () => {
     const seen: ToolIdempotencyRecord[] = [];
     const { tool, executions } = tracked('Write', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'none',
       reconcile: async (_input, record) => {
         seen.push(record);
         return { outcome: 'already_applied', output: 'file already has the new content' };
@@ -117,7 +117,7 @@ describe('idempotency PENDING and UNKNOWN reconcile', () => {
   it('returns a tool-reported unknown reconcile as failed and completes the record', async () => {
     const harness = makeHarness();
     const reconcile = async (): Promise<ReconcileResult> => ({ outcome: 'unknown', output: 'cannot tell whether the command ran' });
-    const { tool, executions } = tracked('Bash', { kind: 'execute', sideEffect: 'exec', reconcile });
+    const { tool, executions } = tracked('Bash', { kind: 'execute', sideEffect: 'exec', subjectKind: 'none', reconcile });
     harness.idempotency.seed(KEY, 'UNKNOWN', { tool: 'Bash' });
     const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Bash')]));
     expect(executions).toEqual([]);
@@ -133,7 +133,7 @@ describe('idempotency PENDING and UNKNOWN reconcile', () => {
     const harness = makeHarness();
     const { tool, executions } = tracked('Write', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'none',
       reconcile: async () => ({ outcome: 'not_applied', output: 'file unchanged' }),
     });
     harness.idempotency.seed(KEY, 'PENDING', { tool: 'Write' });
@@ -154,7 +154,7 @@ describe('idempotency PENDING and UNKNOWN reconcile', () => {
 });
 
 describe('idempotency lookup before decide', () => {
-  const writeTool = () => tracked('Write', { kind: 'edit', sideEffect: 'write' });
+  const writeTool = () => tracked('Write', { kind: 'edit', sideEffect: 'write', subjectKind: 'none' });
 
   it.each([
     ['a deny rule', { rules: 'deny' as const }],
@@ -180,7 +180,7 @@ describe('idempotency lookup before decide', () => {
     const harness = makeHarness();
     const { tool, executions } = tracked('Bash', {
       kind: 'execute',
-      sideEffect: 'exec',
+      sideEffect: 'exec', subjectKind: 'command',
       subject: () => ({ kind: 'command', tool: 'Bash', command: 'make build' }),
     });
     const set = await toolSetOf(tool);

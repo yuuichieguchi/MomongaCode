@@ -29,7 +29,7 @@ const advancingTiming = (onAdvance: (now: number) => void = () => undefined): Re
 const reconcilingEdit = () =>
   makeTool('Edit', {
     kind: 'edit',
-    sideEffect: 'write',
+    sideEffect: 'write', subjectKind: 'none',
     reconcile: async () => ({ outcome: 'already_applied', output: 'reconciled' }),
   });
 

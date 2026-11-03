@@ -1,5 +1,5 @@
 import { canonicalJson, sha256Hex, uuidv7 } from '@momonga/foundation';
-import { marginFloorFor, outputReserveFor, summaryTokenCapFor } from '@momonga/protocol';
+import { summaryInputLimitFor, summaryTokenCapFor } from '@momonga/protocol';
 import type {
   AdapterCompactRequest,
   AdapterInputItem,
@@ -238,10 +238,7 @@ const compactOnce = async (
       continue;
     }
     const reasoningHeadroom = capabilities.reasoning?.control === 'none' ? (capabilities.reasoning.headroomTokens ?? 0) : 0;
-    const limit = Math.min(
-      capabilities.contextWindow - cap - reasoningHeadroom - marginFloorFor(capabilities.contextWindow),
-      capabilities.contextWindow - outputReserveFor(capabilities),
-    );
+    const limit = summaryInputLimitFor(capabilities, cap, reasoningHeadroom);
     if (counted.input_tokens + counted.error_bound <= limit) sized.push(target);
   }
   if (sized.length === 0 && counterFailure !== undefined) throw counterFailure;
@@ -390,7 +387,7 @@ export const createUnaryService = (services: Services, validator: RequestValidat
 
   return {
     countTokens: (rawBody, signal, deadlineHeader) => countTokens(services, validator, rawBody, signal, deadlineHeader),
-    compact: async (rawBody, signal, deadlineHeader, idempotencyKeyHeader) => {
+    compact: (rawBody, signal, deadlineHeader, idempotencyKeyHeader) => {
       const key = parseIdempotencyKey(idempotencyKeyHeader);
       if (key !== undefined) return compactKeyed(rawBody, key, signal, deadlineHeader);
       const request = validator.parseCompact(rawBody);

@@ -29,9 +29,10 @@ export interface FakeChatCompletionsOptions {
   rateLimitSizedImages?: { count: number; retryAfter: string };
   guardrailTrigger?: string;
   latencyMs?: number;
-  reasoning?: { tokens: number; effort: 'honoured' | 'ignored' | 'rejected'; reportsUsage?: boolean };
+  reasoning?: { tokens: number; effort: 'honoured' | 'ignored' | 'rejected'; reportsUsage?: boolean; field?: 'reasoning_content' | 'reasoning' };
   parallelToolCalls?: boolean;
-  models?: Array<Record<string, unknown>>;
+  models?: Array<Record<string, unknown>> | (() => Array<Record<string, unknown>>);
+  modelsReply?: { kind: 'error'; status: number; body: unknown } | { kind: 'hang' };
   failNativeSamples?: number[];
   failConstrainedSamples?: number[];
   stallNativeSamples?: number[];
@@ -134,6 +135,7 @@ export const TOOLS_UNSUPPORTED_MESSAGE = 'tools are not supported by this model.
 export const JSON_SCHEMA_UNSUPPORTED_MESSAGE = "response_format type 'json_schema' is not supported.";
 export const IMAGE_UNSUPPORTED_MESSAGE = 'image input is not supported by this model.';
 export const FAKE_DETERMINISTIC_REPLY = 'This is a deterministic reply.';
+export const FAKE_REASONING_WORD = 'step ';
 export const FAKE_PAYLOAD_TOO_LARGE_ERROR = {
   error: { message: 'Request entity too large.', type: 'invalid_request_error', param: null, code: null },
 } as const;
@@ -580,6 +582,7 @@ export const startFakeChatCompletions = async (
       return;
     }
     const message: Json = { role: 'assistant', content: out.content };
+    if (options.reasoning?.field !== undefined) message[options.reasoning.field] = FAKE_REASONING_WORD.repeat(reasoningTokensFor(body)).trimEnd();
     if (out.toolCalls.length > 0) message['tool_calls'] = out.toolCalls;
     const payload: Json = {
       id,
@@ -617,10 +620,22 @@ export const startFakeChatCompletions = async (
         return;
       }
       if (request.method === 'GET' && requestPath === '/v1/models') {
+        const reply = options.modelsReply;
+        if (reply?.kind === 'error') {
+          writeJson(response, reply.status, reply.body);
+          return;
+        }
+        if (reply?.kind === 'hang') {
+          response.once('close', () => {
+            if (!response.writableFinished) disconnectCount += 1;
+          });
+          return;
+        }
         const entry: Json = { id: modelId, object: 'model', created: 0, owned_by: 'system' };
         if (exposure === 'models') entry['context_window'] = contextWindow;
         if (exposure === 'models-nested') entry['metadata'] = { limits: { contextSize: contextWindow } };
-        writeJson(response, 200, { object: 'list', data: options.models ?? [entry] });
+        const listed = typeof options.models === 'function' ? options.models() : options.models;
+        writeJson(response, 200, { object: 'list', data: listed ?? [entry] });
         return;
       }
       if (request.method === 'POST' && requestPath === '/v1/chat/completions') {
