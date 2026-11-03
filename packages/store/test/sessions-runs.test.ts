@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RUN_PINS, START_MS, enqueue, harness, mustRun, newSession, rawDb } from './helpers.ts';
+import { START_MS, enqueue, harness, mustRun, newSession, rawDb } from './helpers.ts';
 
 describe('sessions', () => {
   it('creates, gets and lists sessions, filtered by cwd', () => {
@@ -44,7 +44,7 @@ describe('createRunAndEnqueue', () => {
       deadLetter: false,
       deadlineAt: START_MS + 10 + 3_600_000,
       limits: { maxSteps: 10 },
-      pins: RUN_PINS,
+      pins: { model: 'fm' },
       step: 0,
       lastSeq: 1,
       usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },

@@ -1,7 +1,14 @@
 import type { RunEventPayload, ToolFile } from '@momonga/protocol';
 import * as runtime from '@momonga/runtime';
 import type { RuntimeStore } from '@momonga/store';
-import { RUN_PINS, mustClaim } from '../../../store/test/helpers.ts';
+import { mustClaim } from '../../../store/test/helpers.ts';
+
+const RUN_PINS = {
+  modelAlias: 'fm',
+  systemPromptDigest: 'system-prompt-digest',
+  toolSetDigest: 'tool-set-digest',
+  capabilities: { contextWindow: 100_000, maxOutputTokens: 4096, parallelToolCalls: false, streaming: true, tokenCounting: 'exact', toolCalling: 'native' },
+} as const;
 
 export const exported = <T>(name: string): T => {
   const found = (runtime as Record<string, unknown>)[name];
