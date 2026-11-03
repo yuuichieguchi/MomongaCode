@@ -1,7 +1,8 @@
 import { encodeSse } from '@momonga/foundation';
-import type { StreamEvent } from '@momonga/protocol';
+import { COMPACTION_RESULT_EVENT } from '@momonga/protocol';
+import type { CompactResource, StreamEvent } from '@momonga/protocol';
 import { frameOf } from '../core/frame.ts';
-import { GatewayError, readerStalledError } from '../core/errors.ts';
+import { ClientDisconnectedError, GatewayError, readerStalledError } from '../core/errors.ts';
 import type { GatewayTimers } from '../types.ts';
 
 const encoder = new TextEncoder();
@@ -13,18 +14,94 @@ export type SseOptions = {
   readerStallMs: number;
   signal: AbortSignal;
   onEnd: () => void;
+  onError: (error: unknown) => void;
 };
 
-const errorFrameOf = (error: GatewayError): Uint8Array => {
+export const errorEventOf = (error: GatewayError): StreamEvent => {
   const retryAfterSeconds = Number(error.headers['retry-after']);
-  const event: StreamEvent = {
+  return {
     type: 'error',
     sequence_number: 0,
     error: error.body,
     status: error.status,
     ...(Number.isFinite(retryAfterSeconds) ? { retry_after_ms: retryAfterSeconds * 1000 } : {}),
   };
-  return encoder.encode(encodeSse({ event: 'error', data: JSON.stringify(event) }));
+};
+
+export const gatewayErrorOf = (error: unknown, onError: (error: unknown) => void): GatewayError => {
+  if (error instanceof GatewayError) return error;
+  onError(error);
+  return new GatewayError({
+    status: 500,
+    type: 'server_error',
+    code: 'internal_error',
+    message: error instanceof Error ? error.message : String(error),
+  });
+};
+
+export type CompactSseOptions = {
+  timers: GatewayTimers;
+  keepAliveMs: number;
+  signal: AbortSignal;
+  onEnd: () => void;
+  onError: (error: unknown) => void;
+};
+
+const SSE_HEADERS = { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' };
+
+export const compactSseResponse = (work: Promise<CompactResource>, options: CompactSseOptions): Response => {
+  const { timers, keepAliveMs, signal } = options;
+  let timer: unknown;
+  let finished = false;
+  let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
+
+  const stopTimer = (): void => {
+    timers.clearTimeout(timer);
+    timer = undefined;
+  };
+  const end = (): void => {
+    if (finished) return;
+    finished = true;
+    stopTimer();
+    options.onEnd();
+  };
+  const schedule = (): void => {
+    timer = timers.setTimeout(() => {
+      if (finished) return;
+      if ((streamController?.desiredSize ?? 0) > 0) streamController?.enqueue(KEEP_ALIVE_FRAME);
+      schedule();
+    }, keepAliveMs);
+  };
+  const conclude = (frame: Uint8Array): void => {
+    if (finished) return;
+    streamController?.enqueue(frame);
+    streamController?.close();
+    end();
+  };
+
+  const body = new ReadableStream<Uint8Array>({
+    start: (controller) => {
+      streamController = controller;
+      controller.enqueue(KEEP_ALIVE_FRAME);
+      schedule();
+      work.then(
+        (resource) => conclude(encoder.encode(encodeSse({ event: COMPACTION_RESULT_EVENT, data: JSON.stringify(resource) }))),
+        (error: unknown) => {
+          if (finished) return;
+          if (signal.aborted || error instanceof ClientDisconnectedError) {
+            streamController?.error(error);
+            end();
+            return;
+          }
+          conclude(frameOf(errorEventOf(gatewayErrorOf(error, options.onError))));
+        },
+      );
+    },
+    cancel: () => {
+      end();
+    },
+  });
+  return new Response(body, { status: 200, headers: SSE_HEADERS });
 };
 
 export const sseResponse = (first: StreamEvent | undefined, rest: AsyncIterator<StreamEvent>, options: SseOptions): Response => {
@@ -114,8 +191,8 @@ export const sseResponse = (first: StreamEvent | undefined, rest: AsyncIterator<
       } catch (error) {
         if (!streamDone) {
           streamDone = true;
-          if (!emitted && error instanceof GatewayError) {
-            controller.enqueue(errorFrameOf(error));
+          if (!emitted && !signal.aborted && !(error instanceof ClientDisconnectedError)) {
+            controller.enqueue(frameOf(errorEventOf(gatewayErrorOf(error, options.onError))));
             controller.close();
           } else {
             controller.error(error);
@@ -134,8 +211,5 @@ export const sseResponse = (first: StreamEvent | undefined, rest: AsyncIterator<
       }
     },
   });
-  return new Response(body, {
-    status: 200,
-    headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' },
-  });
+  return new Response(body, { status: 200, headers: SSE_HEADERS });
 };

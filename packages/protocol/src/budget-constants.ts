@@ -25,14 +25,24 @@ const MAX_OUTPUT_WINDOW_RATIO = 0.5;
 
 export const marginFloorFor = (contextWindow: number): number => Math.max(Math.ceil(MARGIN_RATIO * contextWindow), MIN_MARGIN);
 
-export const outputReserveFor = (capabilities: Capabilities): number =>
+export const outputReserveFor = (capabilities: Pick<Capabilities, 'contextWindow' | 'maxOutputTokens'>): number =>
   Math.min(
     capabilities.maxOutputTokens,
     Math.max(MIN_OUTPUT_RESERVE, Math.ceil(OUTPUT_RESERVE_RATIO * capabilities.contextWindow)),
     Math.floor(MAX_OUTPUT_WINDOW_RATIO * capabilities.contextWindow),
   );
 
-export const summaryTokenCapFor = (capabilities: Capabilities, room?: number): number => {
+export const summaryInputLimitFor = (
+  capabilities: Pick<Capabilities, 'contextWindow' | 'maxOutputTokens'>,
+  summaryCap: number,
+  reasoningHeadroom: number,
+): number =>
+  Math.min(
+    capabilities.contextWindow - summaryCap - reasoningHeadroom - marginFloorFor(capabilities.contextWindow),
+    capabilities.contextWindow - outputReserveFor(capabilities),
+  );
+
+export const summaryTokenCapFor = (capabilities: Pick<Capabilities, 'contextWindow'>, room?: number): number => {
   const base = Math.min(
     MAX_SUMMARY_TOKENS,
     Math.max(MIN_SUMMARY_TOKENS, Math.ceil(SUMMARY_WINDOW_RATIO * capabilities.contextWindow)),

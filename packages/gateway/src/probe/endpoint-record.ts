@@ -8,7 +8,7 @@ import { isProbeReport } from './report-schema.ts';
 
 export type EndpointKey = { endpoint: string; model: string };
 
-export type EndpointRecord = { identity: string; report: ProbeReport };
+export type EndpointRecord = { identity: string; identityFields: string[]; report: ProbeReport };
 
 const FILE_NAME_HASH_CHARS = 32;
 
@@ -17,14 +17,39 @@ export const endpointRecordFileName = (key: EndpointKey): string =>
 
 const fileOf = (dir: string, key: EndpointKey): string => path.join(dir, endpointRecordFileName(key));
 
-export const endpointIdentityOf = (modelsBody: unknown, model: string): string => {
+const listedEntryOf = (modelsBody: unknown, model: string): Record<string, unknown> | undefined => {
   const data = field(modelsBody, 'data');
-  const listed = Array.isArray(data) ? data.find((entry) => field(entry, 'id') === model) : undefined;
-  return listed === undefined ? '' : sha256Hex(canonicalJson(listed));
+  const listed: unknown = Array.isArray(data) ? data.find((entry) => field(entry, 'id') === model) : undefined;
+  return isRecord(listed) ? listed : undefined;
 };
 
-export const saveEndpointRecord = async (dir: string, key: EndpointKey, identity: string, report: ProbeReport): Promise<void> => {
-  await writePrivateRecord(dir, fileOf(dir, key), JSON.stringify({ endpoint: key.endpoint, model: key.model, identity, report }));
+export const stableIdentityFieldsOf = (firstBody: unknown, secondBody: unknown, model: string): string[] => {
+  const first = listedEntryOf(firstBody, model);
+  const second = listedEntryOf(secondBody, model);
+  if (first === undefined || second === undefined) return [];
+  return Object.keys(first)
+    .filter((name) => name in second && canonicalJson(first[name]) === canonicalJson(second[name]))
+    .sort();
+};
+
+export const endpointIdentityOf = (modelsBody: unknown, model: string, fields: readonly string[]): string => {
+  const listed = listedEntryOf(modelsBody, model);
+  if (listed === undefined) return '';
+  return sha256Hex(canonicalJson(Object.fromEntries(fields.filter((name) => name in listed).map((name) => [name, listed[name]]))));
+};
+
+export const saveEndpointRecord = async (
+  dir: string,
+  key: EndpointKey,
+  identity: string,
+  identityFields: readonly string[],
+  report: ProbeReport,
+): Promise<void> => {
+  await writePrivateRecord(
+    dir,
+    fileOf(dir, key),
+    JSON.stringify({ endpoint: key.endpoint, model: key.model, identity, identityFields, report }),
+  );
 };
 
 const unusable = (file: string, problem: string): Error =>
@@ -45,7 +70,11 @@ export const loadEndpointRecord = async (dir: string, key: EndpointKey): Promise
   }
   if (!isRecord(parsed) || typeof parsed['identity'] !== 'string') throw unusable(file, 'missing key fields');
   if (parsed['endpoint'] !== key.endpoint || parsed['model'] !== key.model) throw unusable(file, 'it belongs to another endpoint or model');
+  const identityFields = parsed['identityFields'];
+  if (!Array.isArray(identityFields) || !identityFields.every((name): name is string => typeof name === 'string')) {
+    throw unusable(file, 'identityFields is not a list of field names');
+  }
   const report = parsed['report'];
   if (!isProbeReport(report)) throw unusable(file, 'invalid report');
-  return { identity: parsed['identity'], report };
+  return { identity: parsed['identity'], identityFields, report };
 };

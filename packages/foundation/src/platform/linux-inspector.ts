@@ -3,11 +3,12 @@ import { failureOfError, isErrno, probeFailed } from './inspector-types.ts';
 import type { ProbeFailure, ProbeResult, ProcessInspector, UninspectableProcess } from './inspector-types.ts';
 import { auxvLayoutOf, isPidDirectoryName, parseBootTimeSeconds, parseClockTicksPerSecond, parseProcStat, parseRealUid } from './linux-parsers.ts';
 import type { AuxvLayout } from './linux-parsers.ts';
+import { createLiveIdentities } from './live-identities.ts';
 import { PS_PROBE_TIMEOUT_MS, REAP_POLL_INTERVAL_MS, hostProbeTiming } from './probe-timing.ts';
 import type { ProbeTiming } from './probe-timing.ts';
 import type { FileIdentity, ProcFs } from './procfs.ts';
 
-export type LinuxInspectorPorts = { procfs: ProcFs; uid: number; layout?: AuxvLayout; timing?: ProbeTiming };
+export type LinuxInspectorPorts = { procfs: ProcFs; uid: number; layout?: AuxvLayout; timing?: ProbeTiming; isAlive?: (pid: number) => boolean };
 
 const hostLayout = (): AuxvLayout => auxvLayoutOf(process.arch, os.endianness());
 
@@ -34,9 +35,9 @@ const parsed = <T>(read: () => T): T => {
 const failureOf = (error: unknown): ProbeFailure =>
   error instanceof UnparseableProcfs ? probeFailed({ kind: 'unparseable', detail: error.message }) : failureOfError(error);
 
-export const createLinuxInspector = ({ procfs, uid, layout, timing = hostProbeTiming }: LinuxInspectorPorts): ProcessInspector => {
+export const createLinuxInspector = ({ procfs, uid, layout, timing = hostProbeTiming, isAlive }: LinuxInspectorPorts): ProcessInspector => {
   let clock: ClockParameters | undefined;
-  const uninspected = new Set<string>();
+  const uninspected = createLiveIdentities(isAlive === undefined ? {} : { isAlive });
   const clockParameters = async (): Promise<ClockParameters> => {
     if (clock !== undefined) return clock;
     const resolvedLayout = layout ?? hostLayout();
@@ -87,10 +88,10 @@ export const createLinuxInspector = ({ procfs, uid, layout, timing = hostProbeTi
         const owner = await realUidOf(pid);
         if (owner === undefined || owner !== uid) return absent;
         if (await startedBeforeMarker(pid, scan.markerBirthMs)) return absent;
-        const identity = `${pid}:${stat.startTicks}`;
-        if (uninspected.has(identity) || timing.now() >= deadline) {
-          uninspected.add(identity);
-          scan.report?.({ pid, command: stat.command, startTicks: String(stat.startTicks) });
+        const startTicks = String(stat.startTicks);
+        if (uninspected.has('', pid, startTicks) || timing.now() >= deadline) {
+          uninspected.add('', pid, startTicks);
+          scan.report?.({ pid, command: stat.command, startTicks });
           return absent;
         }
         await timing.sleep(REAP_POLL_INTERVAL_MS);

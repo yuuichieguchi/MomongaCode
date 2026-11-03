@@ -68,6 +68,11 @@ const mergedImageCapability = (all: readonly Capabilities[]): ImageCapability =>
   });
 };
 
+const mergedParallelToolCalls = (all: readonly Capabilities[]): Pick<Capabilities, 'parallelToolCalls'> => {
+  if (all.some((entry) => entry.parallelToolCalls === false)) return { parallelToolCalls: false };
+  return all.every((entry) => entry.parallelToolCalls === true) ? { parallelToolCalls: true } : {};
+};
+
 const mergeCapabilities = (all: readonly [Capabilities, ...Capabilities[]]): Capabilities => {
   const [first] = all;
   return {
@@ -78,7 +83,7 @@ const mergeCapabilities = (all: readonly [Capabilities, ...Capabilities[]]): Cap
     streaming: all.every((entry) => entry.streaming),
     stopSequences: all.every((entry) => entry.stopSequences),
     ...mergedImageCapability(all),
-    parallelToolCalls: all.every((entry) => entry.parallelToolCalls),
+    ...mergedParallelToolCalls(all),
     schemaDialect: all.some((entry) => entry.schemaDialect === 'guided-generation') ? 'guided-generation' : 'json-schema-2020-12',
     tokenCounting: weakest(all.map((entry) => entry.tokenCounting), TOKEN_COUNTING_RANK),
     ...mergedErrorRatio(all),

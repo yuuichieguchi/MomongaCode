@@ -7,7 +7,7 @@ import { startGatewayProcess } from '@momonga/gateway';
 import { startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { createGatewayClient } from '../../src/gateway-client.ts';
-import { CLIENT_VERSION, callOptions, collect, expectGatewayError, fakeClock, settle, streamBody } from './fixtures.ts';
+import { CLIENT_VERSION, callOptions, collect, expectGatewayError, fakeClock, settle, streamBody, userInput } from './fixtures.ts';
 
 const IDLE_BOUND_MS = 300;
 const SILENCE_MS = 900;
@@ -100,6 +100,25 @@ describe('a silent upstream behind a real gateway and the real gateway client', 
     const completed = events.at(-1);
     expect(completed?.type).toBe('response.completed');
     expect(completed?.type === 'response.completed' ? completed.response.momonga?.fallbackFrom : undefined).toEqual(['primary']);
+  });
+
+  it('completes a compaction whose upstream is silent for longer than the client idle bound', async () => {
+    const hold = context.primary.hold();
+    const pending = context.client.compact({ model: 'default', input: userInput('a long conversation') }, callOptions(fakeClock(), { idempotencyKey: 'silent-4' }));
+    await hold.waitForRequest();
+    await delay(SILENCE_MS);
+    hold.release();
+
+    expect(await pending).toMatchObject({ object: 'response.compaction', output: [{ type: 'compaction' }] });
+  });
+
+  it('streams the summary call to the upstream, so its liveness is per chunk', async () => {
+    const before = context.primary.requests.length;
+    await context.client.compact({ model: 'default', input: userInput('another long conversation') }, callOptions(fakeClock(), { idempotencyKey: 'silent-5' }));
+
+    const sent = context.primary.requests.slice(before).filter((request) => request.path === '/v1/chat/completions');
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.body).toMatchObject({ stream: true });
   });
 
   it('still answers a request the gateway rejects before it opens the stream with that HTTP status', async () => {

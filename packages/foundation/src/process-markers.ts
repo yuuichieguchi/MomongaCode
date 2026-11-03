@@ -9,6 +9,8 @@ import { REAP_POLL_INTERVAL_MS, hostProbeTiming } from './platform/probe-timing.
 import type { ProbeTiming } from './platform/probe-timing.ts';
 import type { ProcessInspector, UninspectableProcess } from './platform/inspector-types.ts';
 import { defaultProcessInspector } from './platform/process-inspector.ts';
+import { defaultUninspectableRegistry } from './uninspectable-registry.ts';
+import type { UninspectableRegistry } from './uninspectable-registry.ts';
 
 export type ReapTiming = ProbeTiming;
 
@@ -39,22 +41,13 @@ export const findHolders = async (
   onUninspectable?: (process: UninspectableProcess) => void,
 ): Promise<number[]> => valueOrThrow(`listing the holders of ${marker}`, await inspector.holdersOf(marker, onUninspectable), []).filter((pid) => pid !== process.pid);
 
-const namedUninspectable = new Set<string>();
-
-const isFirstNaming = (process: UninspectableProcess): boolean => {
-  const identity = `${process.pid}:${process.startTicks}`;
-  if (namedUninspectable.has(identity)) return false;
-  namedUninspectable.add(identity);
-  return true;
-};
-
 const uninspectableWarning = (context: string, processes: readonly UninspectableProcess[]): string =>
   `${context}: process ${processes.map((process) => `${process.pid} (${process.command})`).join(', ')} could not be inspected, so it was left alone`;
 
 export const reportUninspectableOnce =
-  (onWarning: (message: string) => void, context: string) =>
+  (onWarning: (message: string) => void, context: string, registry: UninspectableRegistry = defaultUninspectableRegistry) =>
   (process: UninspectableProcess): void => {
-    if (isFirstNaming(process)) onWarning(uninspectableWarning(context, [process]));
+    if (registry.firstNaming(context, process)) onWarning(uninspectableWarning(context, [process]));
   };
 
 const groupsByHolder = async (holders: readonly number[], candidateGroups: readonly number[], inspector: ProcessInspector): Promise<Map<number, number>> =>
@@ -176,6 +169,7 @@ export type ReapMarkedProcessesOptions = {
   timing?: ReapTiming;
   signal?: AbortSignal;
   inspector?: ProcessInspector;
+  uninspectable?: UninspectableRegistry;
 };
 
 const MARKER_CONTENT = /^\d+\n?$/;
@@ -298,8 +292,10 @@ export const reapMarkedProcessesWithReport = async (options: ReapMarkedProcesses
   const found = new Map<number, UninspectableProcess>();
   const outcome = await reapObserved({ ...options, inspector: observing(options.inspector ?? defaultProcessInspector(), found) });
   const uninspectable = [...found.values()];
-  const unnamed = uninspectable.filter(isFirstNaming);
-  if (unnamed.length > 0) options.onWarning(uninspectableWarning(`${options.label} marker ${options.marker}`, unnamed));
+  const context = `${options.label} marker ${options.marker}`;
+  const registry = options.uninspectable ?? defaultUninspectableRegistry;
+  const unnamed = uninspectable.filter((process) => registry.firstNaming(context, process));
+  if (unnamed.length > 0) options.onWarning(uninspectableWarning(context, unnamed));
   return { ...outcome, uninspectable };
 };
 

@@ -153,6 +153,14 @@ export const bashTool = defineTool<BashInput>({
         output: `Started background job ${job.id}. The call was interrupted after the job started, so ${describeJobStatus(job)}.`,
       };
     }
+    const unreadable = ctx.earlierAttempt?.uninspectable ?? [];
+    if (unreadable.length > 0) {
+      const named = unreadable.map(({ pid, command }) => `${pid} (${command})`).join(', ');
+      return {
+        outcome: 'unknown',
+        output: `Process ${named} could not be inspected, so it was left alone and may still be running from the interrupted command. The effect of the interrupted command is unknown; inspect the current state before retrying it.`,
+      };
+    }
     if (ctx.earlierAttempt?.stopped === true) return stoppedCommandResult();
     if (record.pgid !== undefined && ctx.processMarker !== undefined) {
       return reconcileProcessGroup({ pgid: record.pgid, marker: ctx.processMarker });

@@ -1,5 +1,5 @@
 import { computeBackoff } from '@momonga/foundation';
-import type { Clock } from '@momonga/foundation';
+import type { Clock, FallbackCause } from '@momonga/foundation';
 import type { ClassifiedError } from '@momonga/protocol';
 import { applyBreakerVerdict, breakerVerdictOf } from './breaker-verdict.ts';
 import { GatewayError, SKIPPABLE_CODES, deadlineExceededError, gatewayErrorFromBody, serverError } from './errors.ts';
@@ -38,8 +38,6 @@ export type RetryPolicy = {
   timers: GatewayTimers;
 };
 
-export type FallbackCause = { target: string; code: string | null; message: string };
-
 export type RetryOutcome<T> = {
   value: T;
   target: TargetRuntime;
@@ -74,13 +72,13 @@ const retryAfterHeader = (classified: ClassifiedError): Record<string, string> =
 
 const UNREACHABLE_CODE = 'provider_unavailable';
 
-const openBreakerCause =(target: TargetRuntime): FallbackCause => ({
+const openBreakerCause = (target: TargetRuntime): FallbackCause => ({
   target: target.name,
   code: target.lastFailure?.code ?? null,
   message: target.lastFailure?.message ?? 'its circuit breaker is open',
 });
 
-const isSkipCode =(code: string | null): boolean => code !== null && SKIPPABLE_CODES.has(code);
+const isSkipCode = (code: string | null): boolean => code !== null && SKIPPABLE_CODES.has(code);
 
 type LastFailure = { kind: 'upstream'; failure: UpstreamFailure } | { kind: 'skip'; error: unknown };
 
