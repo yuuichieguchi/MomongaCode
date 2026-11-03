@@ -6,7 +6,7 @@ import { ruleFor } from './helpers.ts';
 
 const PATH_SCHEMA = { type: 'object', properties: { file_path: { type: 'string' } }, required: ['file_path'], additionalProperties: false } as const;
 
-const writeSubject = (input: Record<string, unknown>): PermissionSubject => ({ kind: 'path', tool: 'Write', paths: [String(input['file_path'])], access: 'write' });
+const writeSubject = (input: Record<string, unknown>): Extract<PermissionSubject, { kind: 'path' }> => ({ kind: 'path', tool: 'Write', paths: [String(input['file_path'])], access: 'write' });
 
 describe('executor asks for every call that needs approval in one batch', () => {
   it('returns needs_approval for each asking call and defers the allowed and denied ones without executing or recording anything', async () => {
@@ -15,6 +15,7 @@ describe('executor asks for every call that needs approval in one batch', () => 
     const write = makeTool('Write', {
       kind: 'edit',
       sideEffect: 'write',
+      subjectKind: 'path',
       inputSchema: PATH_SCHEMA,
       subject: writeSubject,
       execute: async (_input, ctx) => {
@@ -58,7 +59,7 @@ describe('executor asks for every call that needs approval in one batch', () => 
   it('defers a read-only call that would be allowed after an asking Write', async () => {
     const harness = makeHarness();
     const executed: string[] = [];
-    const write = makeTool('Write', { kind: 'edit', sideEffect: 'write', inputSchema: PATH_SCHEMA, subject: writeSubject });
+    const write = makeTool('Write', { kind: 'edit', sideEffect: 'write', subjectKind: 'path', inputSchema: PATH_SCHEMA, subject: writeSubject });
     const read = makeTool('Read', {
       execute: async (_input, ctx) => {
         executed.push(ctx.callId);

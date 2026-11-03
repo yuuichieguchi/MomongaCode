@@ -2,13 +2,51 @@ import path from 'node:path';
 import { EMPTY_FILE_RULES, defaultProtectedPaths, momongaLayout } from '@momonga/foundation';
 import { protectedSetWith } from '@momonga/testkit';
 import type { ProtectedSet } from '@momonga/foundation';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import { buildSandboxPolicy, createBuiltinTools, createToolRegistry } from '@momonga/tools';
-import type { AnyTool } from '@momonga/tools';
+import type { AnyTool, ToolDefinition } from '@momonga/tools';
+import type { PermissionRule } from '@momonga/policy';
+import { makeLayout, ruleFor } from '../helpers.ts';
 import { makeBuiltins } from './fixtures.ts';
 
 const NAMES = ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash', 'BashOutput', 'KillBash', 'ReadOutput', 'UpdatePlan'];
 const OFFERED = ['Read', 'Glob', 'Grep', 'ReadOutput', 'Write', 'Edit', 'Bash', 'UpdatePlan', 'BashOutput', 'KillBash'];
+
+type Definition = ToolDefinition<Record<string, unknown>>;
+
+const body = {
+  name: 'T',
+  description: 'd',
+  kind: 'other',
+  inputSchema: { type: 'object' },
+  timeoutMs: 1,
+  title: (): string => 't',
+  execute: async (): Promise<{ status: 'completed'; output: string }> => ({ status: 'completed', output: '' }),
+} as const;
+
+const noneSubject = (): { kind: 'none'; tool: string } => ({ kind: 'none', tool: 'T' });
+
+describe('the subject a tool declares', () => {
+  it('is accepted when it is the kind that subject() returns', () => {
+    const declared = { ...body, sideEffect: 'write', subjectKind: 'none', subject: noneSubject } as const;
+    expectTypeOf(declared).toExtend<Definition>();
+  });
+
+  it('is rejected when it differs from the kind that subject() returns', () => {
+    const mismatched = { ...body, sideEffect: 'write', subjectKind: 'path', subject: noneSubject } as const;
+    expectTypeOf(mismatched).not.toExtend<Definition>();
+  });
+
+  it('is required of a tool that is not read-only', () => {
+    const missing = { ...body, sideEffect: 'write', subject: noneSubject } as const;
+    expectTypeOf(missing).not.toExtend<Definition>();
+  });
+
+  it('may be left out by a read-only tool', () => {
+    const readOnly = { ...body, sideEffect: 'read_only', subject: noneSubject } as const;
+    expectTypeOf(readOnly).toExtend<Definition>();
+  });
+});
 
 describe('createBuiltinTools', () => {
   it('returns the ten tools in order', () => {
@@ -47,6 +85,38 @@ describe('createBuiltinTools', () => {
     const toolSet = await registry.snapshot();
     expect(toolSet.tools.map((tool: AnyTool) => tool.name)).toEqual(OFFERED);
     expect(toolSet.forModel({ mode: 'default', rules: [] }).map((tool) => tool.name)).toEqual(OFFERED);
+  });
+
+  describe('offering the job tools', () => {
+    const JOB_TOOLS = ['BashOutput', 'KillBash'];
+    const snapshot = async () => {
+      const registry = createToolRegistry();
+      for (const tool of createBuiltinTools()) registry.register(tool);
+      return registry.snapshot();
+    };
+    const offered = async (mode: 'default' | 'plan', rules: PermissionRule[]): Promise<string[]> =>
+      (await snapshot()).forModel({ mode, rules }).map((tool) => tool.name);
+
+    it('declares the tool they serve', async () => {
+      expect((await snapshot()).companions).toEqual(new Map([['BashOutput', 'Bash'], ['KillBash', 'Bash']]));
+    });
+
+    it('are offered with Bash', async () => {
+      expect((await offered('default', [])).filter((name) => JOB_TOOLS.includes(name))).toEqual(JOB_TOOLS);
+    });
+
+    it('hides KillBash under its own deny rule', async () => {
+      const names = await offered('default', [ruleFor(makeLayout())('deny', 'KillBash')]);
+      expect(names).toContain('BashOutput');
+      expect(names).not.toContain('KillBash');
+    });
+
+    it('hides KillBash in plan mode, where every call of it is refused, and keeps BashOutput and Bash', async () => {
+      const names = await offered('plan', []);
+      expect(names).not.toContain('KillBash');
+      expect(names).toContain('BashOutput');
+      expect(names).toContain('Bash');
+    });
   });
 
   it('uses Claude Code input property names', () => {

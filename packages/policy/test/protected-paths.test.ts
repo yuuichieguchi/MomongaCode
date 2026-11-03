@@ -8,9 +8,9 @@ import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout, prot
 import type { Layout } from './helpers.ts';
 
 const READ: PolicyTool = { name: 'Read', kind: 'read', sideEffect: 'read_only' };
-const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write' };
-const EDIT: PolicyTool = { name: 'Edit', kind: 'edit', sideEffect: 'write' };
-const BASH: PolicyTool = { name: 'Bash', kind: 'execute', sideEffect: 'exec' };
+const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write', subjectKind: 'path' };
+const EDIT: PolicyTool = { name: 'Edit', kind: 'edit', sideEffect: 'write', subjectKind: 'path' };
+const BASH: PolicyTool = { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' };
 
 const setup = () => {
   const layout = makeLayout();

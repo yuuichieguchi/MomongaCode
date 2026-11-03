@@ -1,6 +1,9 @@
 import type { GoverningEnforcement, GoverningFactView, GoverningKind, MemoryKind, MemoryScope, SideEffect, ToolKind } from '@momonga/protocol';
 
-export type PolicyTool = { name: string; kind: ToolKind; sideEffect: SideEffect };
+export type PolicyTool = { name: string; kind: ToolKind } & (
+  | { sideEffect: 'read_only'; subjectKind?: PermissionSubject['kind'] }
+  | { sideEffect: Exclude<SideEffect, 'read_only'>; subjectKind: PermissionSubject['kind'] }
+);
 
 export type PermissionSubject =
   | { kind: 'path'; tool: string; paths: readonly string[]; access: 'read' | 'write' }

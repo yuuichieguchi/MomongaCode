@@ -102,6 +102,7 @@ const buildTool = (
     description: describe(tool),
     kind: readOnly ? 'read' : 'other',
     sideEffect: readOnly && annotations?.destructiveHint !== true ? 'read_only' : 'write',
+    subjectKind: 'mcp',
     inputSchema,
     schemaMode: 'lenient',
     timeoutMs: options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,

@@ -17,6 +17,7 @@ describe('worker recovery of a not_applied call under the current policy', () =>
       description: 'Patch a file',
       kind: 'edit',
       sideEffect: 'write',
+      subjectKind: 'path',
       inputSchema: { type: 'object', properties: { file_path: { type: 'string' } }, required: ['file_path'], additionalProperties: false },
       timeoutMs: 60_000,
       title: () => 'Patch',

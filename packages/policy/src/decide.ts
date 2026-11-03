@@ -16,6 +16,7 @@ import { changedBefore, judgedAfter, locateTargets, locateWrites, sedResolution 
 import type { PathPlan } from './step-plan.ts';
 import { describeReason, markRelativeUnresolvable, targetOfText } from './targets.ts';
 import type { DecisionKind, PermissionSubject, PolicyTool } from './types.ts';
+import { planModeRefuses } from './visible-tools.ts';
 
 export type DecideInput = {
   tool: PolicyTool;
@@ -42,7 +43,7 @@ export type Decision = {
   basis?: ApprovalBasis;
 };
 
-const WRITE_TOOL: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write' };
+const WRITE_TOOL: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write', subjectKind: 'path' };
 const READ_TOOL: PolicyTool = { name: 'Read', kind: 'read', sideEffect: 'read_only' };
 
 const HARMLESS_WRITE_TARGETS: ReadonlySet<string> = new Set(['/dev/null']);
@@ -159,7 +160,7 @@ const decideSubject = (input: DecideInput, tool: PolicyTool, subject: Permission
 
   if (subject.kind === 'governance') return modeDefault(input, subject);
 
-  if (!commandDerived && mode === 'plan' && tool.sideEffect !== 'read_only' && subject.kind !== 'command') {
+  if (!commandDerived && mode === 'plan' && planModeRefuses(tool)) {
     return byMode('deny', `plan mode only allows read-only tools; ${tool.name} has side effect ${tool.sideEffect}`);
   }
 

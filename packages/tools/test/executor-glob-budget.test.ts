@@ -5,7 +5,7 @@ import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 const commandTool = (command: string, runs: string[]) =>
   makeTool('Bash', {
     kind: 'execute',
-    sideEffect: 'exec',
+    sideEffect: 'exec', subjectKind: 'command',
     subject: () => ({ kind: 'command', tool: 'Bash', command }),
     execute: async () => {
       runs.push(command);

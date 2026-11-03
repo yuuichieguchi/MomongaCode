@@ -11,6 +11,8 @@ describe('path subject digest fails closed', () => {
     fs.mkdirSync(path.dirname(target), { recursive: true });
     const runs: string[] = [];
     const tool = makeTool('PathTool', {
+      sideEffect: 'read_only',
+      subjectKind: 'path',
       subject: () => ({ kind: 'path', tool: 'PathTool', paths: [target], access: 'read' }),
       execute: async () => {
         runs.push('ran');
@@ -43,6 +45,8 @@ describe('path subject digest fails closed', () => {
     fs.mkdirSync(path.dirname(target), { recursive: true });
     const runs: string[] = [];
     const tool = makeTool('PathTool', {
+      sideEffect: 'read_only',
+      subjectKind: 'path',
       subject: () => ({ kind: 'path', tool: 'PathTool', paths: [target], access: 'read' }),
       execute: async () => {
         runs.push('ran');

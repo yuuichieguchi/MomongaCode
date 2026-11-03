@@ -14,6 +14,7 @@ const controllable = (name: string, sideEffect: 'read_only' | 'write' | 'exec' =
   let maxActive = 0;
   const tool: AnyTool = makeTool(name, {
     sideEffect,
+    subjectKind: 'none',
     kind: sideEffect === 'read_only' ? 'read' : sideEffect === 'write' ? 'edit' : 'execute',
     execute: async (_input, ctx) => {
       const gate = deferred<ToolResult>();
@@ -39,6 +40,7 @@ const controllable = (name: string, sideEffect: 'read_only' | 'write' | 'exec' =
 const instant = (name: string, sideEffect: 'read_only' | 'write' | 'exec', log: string[]) =>
   makeTool(name, {
     sideEffect,
+    subjectKind: 'none',
     kind: sideEffect === 'read_only' ? 'read' : 'edit',
     execute: async (_input, ctx) => {
       log.push(ctx.callId);
@@ -124,7 +126,7 @@ describe('batch scheduling', () => {
     const harness = makeHarness();
     const log: string[] = [];
     const bash = makeTool('Bash', {
-      sideEffect: 'exec',
+      sideEffect: 'exec', subjectKind: 'command',
       kind: 'execute',
       subject: () => ({ kind: 'command', tool: 'Bash', command: 'make build' }),
       execute: async () => {
@@ -155,6 +157,8 @@ describe('batch scheduling', () => {
     const harness = makeHarness();
     const log: string[] = [];
     const reader = makeTool('Read', {
+      sideEffect: 'read_only',
+      subjectKind: 'path',
       inputSchema: { type: 'object', properties: { where: { type: 'string' } }, additionalProperties: false },
       subject: (input) => ({ kind: 'path', tool: 'Read', paths: [String(input['where'])], access: 'read' }),
       execute: async (_input, ctx) => {
@@ -179,7 +183,7 @@ describe('batch scheduling', () => {
     const harness = makeHarness();
     const log: string[] = [];
     const bash = makeTool('Bash', {
-      sideEffect: 'exec',
+      sideEffect: 'exec', subjectKind: 'command',
       kind: 'execute',
       inputSchema: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'], additionalProperties: false },
       subject: (input) => ({ kind: 'command', tool: 'Bash', command: String(input['command']) }),
@@ -212,7 +216,7 @@ describe('batch scheduling', () => {
     fs.mkdirSync(subDir);
     const seenCwd: string[] = [];
     const mover = makeTool('Bash', {
-      sideEffect: 'exec',
+      sideEffect: 'exec', subjectKind: 'none',
       kind: 'execute',
       execute: async (_input, ctx) => {
         ctx.session.cwd = subDir;
@@ -220,6 +224,8 @@ describe('batch scheduling', () => {
       },
     });
     const reader = makeTool('Read', {
+      sideEffect: 'read_only',
+      subjectKind: 'none',
       subject: (_input, ctx) => {
         seenCwd.push(ctx.cwd);
         return { kind: 'none', tool: 'Read' };

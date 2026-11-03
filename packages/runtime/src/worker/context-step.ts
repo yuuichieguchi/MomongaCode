@@ -111,6 +111,7 @@ export const contextInputOf = (ctx: ClaimContext, wrapUp: WrapUpReason | undefin
       ...(workingState === undefined ? {} : { workingState }),
       ...(projectedWorkingState === undefined ? {} : { projectedWorkingState }),
     },
+    companions: ctx.companions(),
     evicted: new Set(state.evicted),
     ...(ctx.memoryShare === undefined ? {} : { memoryShare: ctx.memoryShare }),
     touchedPaths,

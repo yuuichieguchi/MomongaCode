@@ -170,6 +170,17 @@ describe('rule sets with a known escape', () => {
   }, 180_000);
 });
 
+describe('rules naming the background job tools', () => {
+  it('are accepted and leave every property proved', async () => {
+    const { report } = await run([
+      ['deny', 'KillBash'],
+      ['deny', 'BashOutput'],
+    ]);
+
+    expect(Object.values(statuses(report)).every((status) => status === 'proved')).toBe(true);
+  }, 120_000);
+});
+
 describe('rules that cannot take effect or that contradict', () => {
   it('flags an allow rule that lies entirely inside a deny rule', async () => {
     const { report } = await run([

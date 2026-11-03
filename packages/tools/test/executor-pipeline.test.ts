@@ -20,12 +20,12 @@ const counting = () => {
   };
 };
 
-const BASH = { kind: 'execute' as const, sideEffect: 'exec' as const };
+const BASH = { kind: 'execute' as const, sideEffect: 'exec' as const, subjectKind: 'command' as const };
 
 describe('executor pipeline early exits', () => {
   it('fails an unknown tool listing available tools, without a record', async () => {
     const harness = makeHarness();
-    const set = await toolSetOf(makeTool('Read'), makeTool('Write', { kind: 'edit', sideEffect: 'write' }));
+    const set = await toolSetOf(makeTool('Read'), makeTool('Write', { kind: 'edit', sideEffect: 'write', subjectKind: 'none' }));
     const outcomes = await harness.executor.runBatch(harness.input(set, [call('c1', 'Nope')]));
     expect(outcomes).toEqual([
       { callId: 'c1', kind: 'result', result: { status: 'failed', output: 'Unknown tool "Nope". Available tools: Read, Write' } },
@@ -38,6 +38,8 @@ describe('executor pipeline early exits', () => {
     const harness = makeHarness();
     const probe = counting();
     const tool = makeTool('Read', {
+      sideEffect: 'read_only',
+      subjectKind: 'none',
       subject: () => {
         throw new ToolInputError('file_path must be absolute');
       },
@@ -195,7 +197,7 @@ describe('executor pipeline early exits', () => {
     fs.mkdirSync(path.dirname(target));
     const tool = makeTool('Write', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'path',
       subject: () => ({ kind: 'path', tool: 'Write', paths: [target], access: 'write' }),
     });
     const [outcome] = await harness.executor.runBatch(
@@ -264,7 +266,7 @@ describe('executor pipeline early exits', () => {
     const error = makeError();
     const tool = makeTool('Edit', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'none',
       prepare: async () => {
         throw error;
       },
@@ -304,7 +306,7 @@ describe('executor execution', () => {
     const seen: unknown[] = [];
     const tool = makeTool('Edit', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'none',
       prepare: async () => ({ before: 'abc' }),
       execute: async (_input, _ctx, prepared) => {
         seen.push(prepared);
@@ -328,7 +330,7 @@ describe('executor execution', () => {
     const seen: Array<[string, string]> = [];
     const tool = makeTool('Edit', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'none',
       prepare: async (_input, ctx) => {
         seen.push(['prepare', ctx.idemKey]);
         return {};
@@ -404,7 +406,7 @@ describe('executor execution', () => {
     });
     const tool = makeTool('Write', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'none',
       execute: async () => {
         order.push('execute');
         return { status: 'completed', output: 'w' };
@@ -456,6 +458,7 @@ describe('executor execution', () => {
     const harness = makeHarness();
     const tool = makeTool('Bash', {
       ...BASH,
+      subject: () => ({ kind: 'command', tool: 'Bash', command: 'true' }),
       execute: async (_input, ctx) => {
         ctx.attachProcess({ pgid: 4242, startedAt: 1_234_567 });
         return { status: 'completed', output: 'ran' };

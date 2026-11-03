@@ -35,6 +35,7 @@ export type ClaimContext = {
   usedMemoryIds: Set<string>;
   env: ToolEnv;
   functionTools(): FunctionTool[];
+  companions(): { hostOf: Readonly<Record<string, string>>; keepWithoutHost: boolean };
   systemPrompt: string;
   inlineLimitForReconcile: number;
   inlineLimitForExecution: () => Promise<number>;

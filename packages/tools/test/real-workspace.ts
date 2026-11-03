@@ -64,7 +64,7 @@ export const makeRealWorkspace = (): RealWorkspace => {
     );
     const roots = [project];
     return decide({
-      tool: { name: 'Bash', kind: 'execute', sideEffect: 'exec' },
+      tool: { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' },
       subject: { kind: 'command', tool: 'Bash', command },
       mode: options.mode ?? 'default',
       rules,

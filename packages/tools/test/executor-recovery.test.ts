@@ -11,7 +11,7 @@ const recordingTool = (outcome: 'already_applied' | 'not_applied' | 'unknown') =
   const seen = { prepares: 0, reconciled: [] as ToolIdempotencyRecord[], executed: [] as Array<Record<string, unknown> | undefined> };
   const tool = makeTool('Edit', {
     kind: 'edit',
-    sideEffect: 'write',
+    sideEffect: 'write', subjectKind: 'none',
     prepare: async () => {
       seen.prepares += 1;
       return FRESH;

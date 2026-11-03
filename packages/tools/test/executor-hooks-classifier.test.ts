@@ -3,7 +3,7 @@ import type { AutoClassifier, AutoClassifierRequest, PostToolHookResult, PreTool
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import { policyFor, ruleFor, sessionTmpDirOf } from './helpers.ts';
 
-const BASH = { kind: 'execute' as const, sideEffect: 'exec' as const };
+const BASH = { kind: 'execute' as const, sideEffect: 'exec' as const, subjectKind: 'command' as const };
 const subject = { kind: 'command' as const, tool: 'Bash', command: 'make build' };
 
 const fakeHooks = (verdict: PreToolHookVerdict | undefined, post: PostToolHookResult | undefined = undefined) => {
