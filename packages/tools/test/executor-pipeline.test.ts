@@ -20,7 +20,7 @@ const counting = () => {
   };
 };
 
-const BASH = { kind: 'execute' as const, sideEffect: 'exec' as const };
+const BASH = { kind: 'execute' as const, sideEffect: 'exec' as const, subjectKind: 'command' as const };
 
 describe('executor pipeline early exits', () => {
   it('fails an unknown tool listing available tools, without a record', async () => {

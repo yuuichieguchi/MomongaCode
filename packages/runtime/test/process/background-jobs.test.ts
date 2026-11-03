@@ -369,7 +369,9 @@ describe('background jobs', () => {
     const started = store.start({ id: 'bash_orphan000000', idemKey: 'k'.repeat(64), sessionId: t.run.sessionId, runId: t.run.id, callId: 'c', command: 'sleep 99' });
     store.attachProcess(started.job.id, 5151);
     t.store.idempotency.begin('k'.repeat(64), { expiresAt: START_MS + 1000, meta: { job: true } });
+    expect(store.listForSession(t.run.sessionId).some((job) => job.status === 'running')).toBe(true);
     await t.jobs.reconcileOrphans();
+    expect(store.listForSession(t.run.sessionId).some((job) => job.status === 'running')).toBe(false);
     expect(t.reaped).toEqual([{ marker: path.join(t.markerDir, 'k'.repeat(64)), pgid: 5151 }]);
     expect(store.get('bash_orphan000000')).toMatchObject({ status: 'unknown' });
     expect(store.get('bash_orphan000000')?.exitCode).toBeUndefined();
@@ -378,5 +380,13 @@ describe('background jobs', () => {
     expect(events).toMatchObject([{ jobId: 'bash_orphan000000', status: 'unknown' }]);
     await t.jobs.reconcileOrphans();
     expect(t.reaped).toHaveLength(1);
+  });
+
+  it('reconciles the jobs of a dead runtime at startup, before the service and the workers can offer or run anything', () => {
+    const startup = fs.readFileSync(new URL('../../src/process/start-runtime-process.ts', import.meta.url), 'utf8');
+    const reconciled = startup.indexOf("step('background-jobs'");
+    expect(reconciled).toBeGreaterThan(-1);
+    expect(reconciled).toBeLessThan(startup.indexOf("step('service'"));
+    expect(reconciled).toBeLessThan(startup.indexOf("step('workers'"));
   });
 });

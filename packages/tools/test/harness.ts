@@ -27,7 +27,7 @@ export const makeTool = (name: string, overrides: Partial<ToolDefinition<Input>>
     subject: () => ({ kind: 'none', tool: name }),
     execute: async () => ({ status: 'completed', output: `${name} ok` }),
     ...overrides,
-  });
+  } as ToolDefinition<Input>);
 
 export const toolSetOf = async (...tools: AnyTool[]): Promise<ToolSet> => {
   const registry = createToolRegistry();

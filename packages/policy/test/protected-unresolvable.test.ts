@@ -5,7 +5,7 @@ import { decide } from '@momonga/policy';
 import type { DecideInput, PermissionSubject, PolicyTool } from '@momonga/policy';
 import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout, protectedSetWith } from './helpers.ts';
 
-const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write' };
+const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write', subjectKind: 'path' };
 
 const loopGuard = () => {
   const layout = makeLayout();

@@ -5,7 +5,7 @@ import type { PermissionMode } from '@momonga/protocol';
 import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout, ruleIn } from './helpers.ts';
 
-const BASH: PolicyTool = { name: 'Bash', kind: 'execute', sideEffect: 'exec' };
+const BASH: PolicyTool = { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' };
 
 type Spec = { allow?: string[]; ask?: string[]; deny?: string[]; mode?: PermissionMode };
 

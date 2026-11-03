@@ -101,7 +101,19 @@ describe('the tools a target is offered', () => {
       );
       expect(namesOf(built.tools)).toContain('A');
       expect(namesOf(built.tools)).toContain('G');
-      expect(namesOf(built.tools)[0]).toBe('G');
+    });
+
+    it('keep the order the candidates came in, because the offered order is the cached prefix', async () => {
+      const capabilities = capabilitiesFor(1_536, { maxOutputTokens: 1024 });
+      const { ports } = harness(capabilities);
+      const companionFirst = [toolNamed('G', 1), ...TOOLS];
+      const built = await buildContext(
+        inputFor(capabilities, { sources: sourcesWith({ tools: companionFirst }), companions: { hostOf: { G: 'A' }, keepWithoutHost: false } }),
+        ports,
+      );
+      const offered = namesOf(built.tools);
+      expect(offered).toEqual(namesOf(companionFirst).filter((name) => offered.includes(name)));
+      expect(offered[0]).toBe('G');
     });
 
     it('are dropped with a host that comes later in the candidates when the floor drops that host', async () => {

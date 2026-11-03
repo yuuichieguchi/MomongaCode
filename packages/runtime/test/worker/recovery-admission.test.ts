@@ -126,6 +126,7 @@ const jobTool = (name: string, sideEffect: 'read_only' | 'write') =>
     description: `${name} test tool`,
     kind: 'execute',
     sideEffect,
+    subjectKind: 'none',
     companionOf: 'Bash',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     timeoutMs: 1000,
@@ -178,6 +179,24 @@ describe('worker offering of the job tools', () => {
       expect(namesOf(env, index).filter((name) => JOB_TOOLS.includes(name))).toEqual(JOB_TOOLS);
     }
     expect(env.ofType(run.id, 'notice').filter((notice) => notice.code === 'tools_changed')).toEqual([]);
+  });
+
+  it('offers both job tools in a later run of the same session while a job of the session is still running and Bash is denied', async () => {
+    const env = await makeEnv();
+    env.settings.extraRules.push({ effect: 'deny', rule: 'Bash' });
+    env.gateway.script.push(textStep('first done'));
+    const earlier = env.enqueue('Start the job');
+    startJob(env, earlier.id);
+    await env.runOnce(env.worker('w1', { toolList: withJobTools(env) }));
+    expect(env.run(earlier.id).status).toBe('COMPLETED');
+    env.gateway.script.push(textStep('second done'));
+    const later = env.enqueue('Look at the job');
+
+    await env.runOnce(env.worker('w2', { toolList: withJobTools(env) }));
+
+    expect(env.run(later.id).status).toBe('COMPLETED');
+    expect(namesOf(env, 1)).not.toContain('Bash');
+    expect(namesOf(env, 1).filter((name) => JOB_TOOLS.includes(name))).toEqual(JOB_TOOLS);
   });
 
   it('stops offering both job tools once the job has ended, also after recovery by another worker', async () => {

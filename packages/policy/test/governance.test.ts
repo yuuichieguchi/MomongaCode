@@ -8,9 +8,9 @@ import { PERMISSION_MODES } from '@momonga/protocol';
 import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout, ruleIn, touch } from './helpers.ts';
 import type { Layout } from './helpers.ts';
 
-const BASH: PolicyTool = { name: 'Bash', kind: 'execute', sideEffect: 'exec' };
+const BASH: PolicyTool = { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' };
 const READ: PolicyTool = { name: 'Read', kind: 'read', sideEffect: 'read_only' };
-const PROPOSE: PolicyTool = { name: 'RulePropose', kind: 'other', sideEffect: 'write' };
+const PROPOSE: PolicyTool = { name: 'RulePropose', kind: 'other', sideEffect: 'write', subjectKind: 'governance' };
 const GOVERNANCE: PermissionSubject = {
   kind: 'governance',
   tool: 'RulePropose',

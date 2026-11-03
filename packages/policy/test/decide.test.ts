@@ -13,14 +13,14 @@ const MODES = ['default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions'] as
 
 const READ: PolicyTool = { name: 'Read', kind: 'read', sideEffect: 'read_only' };
 const GREP: PolicyTool = { name: 'Grep', kind: 'search', sideEffect: 'read_only' };
-const EDIT: PolicyTool = { name: 'Edit', kind: 'edit', sideEffect: 'write' };
-const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write' };
-const BASH: PolicyTool = { name: 'Bash', kind: 'execute', sideEffect: 'exec' };
+const EDIT: PolicyTool = { name: 'Edit', kind: 'edit', sideEffect: 'write', subjectKind: 'path' };
+const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write', subjectKind: 'path' };
+const BASH: PolicyTool = { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' };
 const PLAN: PolicyTool = { name: 'UpdatePlan', kind: 'think', sideEffect: 'read_only' };
 const BASH_OUTPUT: PolicyTool = { name: 'BashOutput', kind: 'execute', sideEffect: 'read_only' };
-const KILL_BASH: PolicyTool = { name: 'KillBash', kind: 'execute', sideEffect: 'write' };
-const MEMORY_SAVE: PolicyTool = { name: 'MemorySave', kind: 'other', sideEffect: 'write' };
-const MCP_EXEC: PolicyTool = { name: 'mcp__srv__run', kind: 'other', sideEffect: 'exec' };
+const KILL_BASH: PolicyTool = { name: 'KillBash', kind: 'execute', sideEffect: 'write', subjectKind: 'none' };
+const MEMORY_SAVE: PolicyTool = { name: 'MemorySave', kind: 'other', sideEffect: 'write', subjectKind: 'memory' };
+const MCP_EXEC: PolicyTool = { name: 'mcp__srv__run', kind: 'other', sideEffect: 'exec', subjectKind: 'mcp' };
 const MCP_READ: PolicyTool = { name: 'mcp__srv__list', kind: 'other', sideEffect: 'read_only' };
 
 const pathSubject =
@@ -90,6 +90,16 @@ describe('decide rule effects', () => {
       }
     }
   }
+});
+
+describe('decide plan-mode refusal', () => {
+  it('follows the declaration of the tool, the same one the offering reads, whatever subject a call computes', () => {
+    const layout = makeLayout();
+    const declaredNone: Case = { label: 'declared none', tool: KILL_BASH, subject: () => ({ kind: 'command', tool: 'KillBash', command: 'echo' }), ruleText: 'KillBash' };
+    expect(run(layout, declaredNone, 'plan', []).kind).toBe('deny');
+    const declaredCommand: Case = { label: 'declared command', tool: BASH, subject: () => ({ kind: 'none', tool: 'Bash' }), ruleText: 'Bash' };
+    expect(run(layout, declaredCommand, 'plan', []).kind).toBe('allow');
+  });
 });
 
 describe('decide precedence', () => {

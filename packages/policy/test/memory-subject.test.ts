@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { suggestAllowRule } from '@momonga/policy';
 import type { PolicyTool } from '@momonga/policy';
 
-const MEMORY_SAVE: PolicyTool = { name: 'MemorySave', kind: 'other', sideEffect: 'write' };
+const MEMORY_SAVE: PolicyTool = { name: 'MemorySave', kind: 'other', sideEffect: 'write', subjectKind: 'memory' };
 
 describe('memory subjects', () => {
   it('suggests no allow rule, because a bare tool rule would let injected saves in every scope pass silently', () => {

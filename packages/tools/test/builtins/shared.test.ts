@@ -2,15 +2,51 @@ import path from 'node:path';
 import { EMPTY_FILE_RULES, defaultProtectedPaths, momongaLayout } from '@momonga/foundation';
 import { protectedSetWith } from '@momonga/testkit';
 import type { ProtectedSet } from '@momonga/foundation';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import { buildSandboxPolicy, createBuiltinTools, createToolRegistry } from '@momonga/tools';
-import type { AnyTool } from '@momonga/tools';
+import type { AnyTool, ToolDefinition } from '@momonga/tools';
 import type { PermissionRule } from '@momonga/policy';
 import { makeLayout, ruleFor } from '../helpers.ts';
 import { makeBuiltins } from './fixtures.ts';
 
 const NAMES = ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash', 'BashOutput', 'KillBash', 'ReadOutput', 'UpdatePlan'];
 const OFFERED = ['Read', 'Glob', 'Grep', 'ReadOutput', 'Write', 'Edit', 'Bash', 'UpdatePlan', 'BashOutput', 'KillBash'];
+
+type Definition = ToolDefinition<Record<string, unknown>>;
+
+const body = {
+  name: 'T',
+  description: 'd',
+  kind: 'other',
+  inputSchema: { type: 'object' },
+  timeoutMs: 1,
+  title: (): string => 't',
+  execute: async (): Promise<{ status: 'completed'; output: string }> => ({ status: 'completed', output: '' }),
+} as const;
+
+const noneSubject = (): { kind: 'none'; tool: string } => ({ kind: 'none', tool: 'T' });
+
+describe('the subject a tool declares', () => {
+  it('is accepted when it is the kind that subject() returns', () => {
+    const declared = { ...body, sideEffect: 'write', subjectKind: 'none', subject: noneSubject } as const;
+    expectTypeOf(declared).toExtend<Definition>();
+  });
+
+  it('is rejected when it differs from the kind that subject() returns', () => {
+    const mismatched = { ...body, sideEffect: 'write', subjectKind: 'path', subject: noneSubject } as const;
+    expectTypeOf(mismatched).not.toExtend<Definition>();
+  });
+
+  it('is required of a tool that is not read-only', () => {
+    const missing = { ...body, sideEffect: 'write', subject: noneSubject } as const;
+    expectTypeOf(missing).not.toExtend<Definition>();
+  });
+
+  it('may be left out by a read-only tool', () => {
+    const readOnly = { ...body, sideEffect: 'read_only', subject: noneSubject } as const;
+    expectTypeOf(readOnly).toExtend<Definition>();
+  });
+});
 
 describe('createBuiltinTools', () => {
   it('returns the ten tools in order', () => {

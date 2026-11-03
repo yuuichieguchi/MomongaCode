@@ -144,9 +144,10 @@ const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): 
   const fitsFloor = (counted: MeterCount): boolean => metering(input, ports, candidates).fits(counted) && counted.inputTokens <= toolFloor;
   const stableFitsFloor = async (offered: readonly FunctionTool[]): Promise<boolean> =>
     fitsFloor(await ports.meter.count({ input: [...pinnedLayers, ...governing], tools: offered }));
+  const hostOf = input.companions === undefined || input.companions.keepWithoutHost ? {} : input.companions.hostOf;
   const standsWith = (tool: FunctionTool, offered: readonly FunctionTool[]): boolean => {
-    const host = input.companions?.hostOf[tool.name];
-    return host === undefined || input.companions?.keepWithoutHost === true || offered.some((other) => other.name === host);
+    const host = hostOf[tool.name];
+    return host === undefined || offered.some((other) => other.name === host);
   };
   const eligible = candidates.filter((tool) => standsWith(tool, candidates));
   let tools = eligible;
@@ -157,7 +158,7 @@ const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): 
       const required = requiredToolsOf(input, eligible);
       const kept: FunctionTool[] = [...required];
       const droppedForRoom: string[] = [];
-      for (const tool of hostsFirst(eligible, input.companions?.hostOf ?? {})) {
+      for (const tool of hostsFirst(eligible, hostOf)) {
         if (required.includes(tool) || !standsWith(tool, kept)) continue;
         if (await stableFitsFloor([...kept, tool])) kept.push(tool);
         else droppedForRoom.push(tool.name);

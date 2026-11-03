@@ -8,9 +8,9 @@ import { EMPTY_PROTECTED_SET, HOST_RULE_ENFORCEMENT } from '@momonga/foundation'
 import { commandRow, kindIn } from './decision-rows.ts';
 import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout, ruleIn, touch } from './helpers.ts';
 
-const BASH: PolicyTool = { name: 'Bash', kind: 'execute', sideEffect: 'exec' };
+const BASH: PolicyTool = { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' };
 const READ: PolicyTool = { name: 'Read', kind: 'read', sideEffect: 'read_only' };
-const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write' };
+const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write', subjectKind: 'path' };
 
 type Spec = { allow?: string[]; ask?: string[]; deny?: string[]; mode?: PermissionMode };
 

@@ -11,8 +11,8 @@ import type { FakeFsLayout, Layout } from './helpers.ts';
 export const MODES = ['default', 'acceptEdits', 'plan', 'bypassPermissions'] as const;
 export const RULE_MODES = ['default', 'acceptEdits', 'bypassPermissions'] as const;
 
-export const BASH: PolicyTool = { name: 'Bash', kind: 'execute', sideEffect: 'exec' };
-export const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write' };
+export const BASH: PolicyTool = { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' };
+export const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write', subjectKind: 'path' };
 
 export type Cell = 'allow' | 'ask' | 'deny' | 'prot';
 

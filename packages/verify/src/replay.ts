@@ -23,8 +23,8 @@ const TOOLS: Readonly<Record<Exclude<SubjectTool, 'mcp'>, PolicyTool>> = {
   Read: { name: 'Read', kind: 'read', sideEffect: 'read_only' },
   Glob: { name: 'Glob', kind: 'search', sideEffect: 'read_only' },
   Grep: { name: 'Grep', kind: 'search', sideEffect: 'read_only' },
-  Write: { name: 'Write', kind: 'edit', sideEffect: 'write' },
-  Bash: { name: 'Bash', kind: 'execute', sideEffect: 'exec' },
+  Write: { name: 'Write', kind: 'edit', sideEffect: 'write', subjectKind: 'path' },
+  Bash: { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' },
 };
 
 const inputFor = (env: ReplayEnvironment, tool: SubjectTool, witness: Witness): Omit<DecideInput, 'fs'> => {
@@ -50,7 +50,11 @@ const inputFor = (env: ReplayEnvironment, tool: SubjectTool, witness: Witness): 
     }
     case 'mcp': {
       const subject: PermissionSubject = { kind: 'mcp', server: witness.server, tool: witness.tool };
-      return { ...base, tool: { name: `mcp__${witness.server}__${witness.tool}`, kind: 'other', sideEffect: witness.readOnly ? 'read_only' : 'write' }, subject };
+      const name = `mcp__${witness.server}__${witness.tool}`;
+      const tool: PolicyTool = witness.readOnly
+        ? { name, kind: 'other', sideEffect: 'read_only', subjectKind: 'mcp' }
+        : { name, kind: 'other', sideEffect: 'write', subjectKind: 'mcp' };
+      return { ...base, tool, subject };
     }
   }
 };
