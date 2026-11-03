@@ -337,12 +337,11 @@ const drive = async (
     recalled,
     usedMemoryIds: new Set<string>(),
     env,
-    functionTools: () =>
-      toolSet.forModel({
-        mode: session.permissionMode,
-        rules: composeRules(),
-        jobsRunning: options.store.jobs.listForSession(session.id).some((job) => job.status === 'running'),
-      }),
+    functionTools: () => toolSet.forModel({ mode: session.permissionMode, rules: composeRules() }),
+    companions: () => ({
+      hostOf: Object.fromEntries(toolSet.companions),
+      keepWithoutHost: options.store.jobs.listForSession(session.id).some((job) => job.status === 'running'),
+    }),
     systemPrompt,
     inlineLimitForReconcile: inlineOutputLimitFor(pins.capabilities),
     inlineLimitForExecution: () => {

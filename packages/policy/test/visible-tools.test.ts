@@ -6,12 +6,12 @@ import { makeLayout, ruleIn } from './helpers.ts';
 const TOOLS: PolicyTool[] = [
   { name: 'Read', kind: 'read', sideEffect: 'read_only' },
   { name: 'Grep', kind: 'search', sideEffect: 'read_only' },
-  { name: 'Edit', kind: 'edit', sideEffect: 'write' },
-  { name: 'Bash', kind: 'execute', sideEffect: 'exec' },
+  { name: 'Edit', kind: 'edit', sideEffect: 'write', subjectKind: 'path' },
+  { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' },
   { name: 'UpdatePlan', kind: 'think', sideEffect: 'read_only' },
-  { name: 'mcp__srv__run', kind: 'other', sideEffect: 'exec' },
+  { name: 'mcp__srv__run', kind: 'other', sideEffect: 'exec', subjectKind: 'mcp' },
   { name: 'mcp__srv__list', kind: 'other', sideEffect: 'read_only' },
-  { name: 'mcp__other__x', kind: 'other', sideEffect: 'exec' },
+  { name: 'mcp__other__x', kind: 'other', sideEffect: 'exec', subjectKind: 'mcp' },
 ];
 
 const names = (tools: PolicyTool[]): string[] => tools.map((t) => t.name);
@@ -50,42 +50,27 @@ describe('modelVisibleTools', () => {
   });
 });
 
-describe('modelVisibleTools for tools that serve another tool', () => {
-  const WITH_JOB_TOOLS: PolicyTool[] = [
-    ...TOOLS,
-    { name: 'BashOutput', kind: 'execute', sideEffect: 'read_only', companionOf: 'Bash' },
-    { name: 'KillBash', kind: 'execute', sideEffect: 'write', companionOf: 'Bash' },
+describe('modelVisibleTools in plan mode for tools that decide refuses there', () => {
+  const OTHERS: PolicyTool[] = [
+    { name: 'BashOutput', kind: 'execute', sideEffect: 'read_only', subjectKind: 'none' },
+    { name: 'KillBash', kind: 'execute', sideEffect: 'write', subjectKind: 'none' },
+    { name: 'RulePropose', kind: 'other', sideEffect: 'write', subjectKind: 'governance' },
+    { name: 'MemorySave', kind: 'other', sideEffect: 'write', subjectKind: 'memory' },
   ];
-  const ONLY_JOB_TOOLS = ['BashOutput', 'KillBash'];
-  const jobToolsIn = (visible: PolicyTool[]): string[] => names(visible).filter((name) => ONLY_JOB_TOOLS.includes(name));
 
-  it('offers them with the tool they serve', () => {
-    expect(jobToolsIn(modelVisibleTools(WITH_JOB_TOOLS, { mode: 'default', rules: [], jobsRunning: false }))).toEqual(ONLY_JOB_TOOLS);
+  it('hides a tool whose subject is never a command and whose side effect is not read-only, whatever its kind', () => {
+    const visible = names(modelVisibleTools([...TOOLS, ...OTHERS], { mode: 'plan', rules: [] }));
+    expect(visible).not.toContain('KillBash');
+    expect(visible).not.toContain('MemorySave');
+    expect(visible).toContain('BashOutput');
+    expect(visible).toContain('Bash');
   });
 
-  it('offers neither when the served tool is denied and no job runs', () => {
-    const rules = [ruleIn(makeLayout())('deny', 'Bash')];
-    expect(jobToolsIn(modelVisibleTools(WITH_JOB_TOOLS, { mode: 'default', rules, jobsRunning: false }))).toEqual([]);
+  it('shows a tool that decide leaves to a person in plan mode instead of refusing it', () => {
+    expect(names(modelVisibleTools([...TOOLS, ...OTHERS], { mode: 'plan', rules: [] }))).toContain('RulePropose');
   });
 
-  it('offers both when the served tool is denied and a job runs', () => {
-    const rules = [ruleIn(makeLayout())('deny', 'Bash')];
-    const visible = modelVisibleTools(WITH_JOB_TOOLS, { mode: 'default', rules, jobsRunning: true });
-    expect(jobToolsIn(visible)).toEqual(ONLY_JOB_TOOLS);
-    expect(names(visible)).not.toContain('Bash');
-  });
-
-  it('hides one of them under its own deny rule even when a job runs', () => {
-    const rules = [ruleIn(makeLayout())('deny', 'KillBash')];
-    expect(jobToolsIn(modelVisibleTools(WITH_JOB_TOOLS, { mode: 'default', rules, jobsRunning: true }))).toEqual(['BashOutput']);
-  });
-
-  it('offers neither when the served tool does not exist and no job runs', () => {
-    const withoutBash = WITH_JOB_TOOLS.filter((tool) => tool.name !== 'Bash');
-    expect(jobToolsIn(modelVisibleTools(withoutBash, { mode: 'default', rules: [], jobsRunning: false }))).toEqual([]);
-  });
-
-  it('follows the served tool in plan mode', () => {
-    expect(jobToolsIn(modelVisibleTools(WITH_JOB_TOOLS, { mode: 'plan', rules: [], jobsRunning: false }))).toEqual(ONLY_JOB_TOOLS);
+  it('shows KillBash outside plan mode', () => {
+    expect(names(modelVisibleTools([...TOOLS, ...OTHERS], { mode: 'default', rules: [] }))).toContain('KillBash');
   });
 });

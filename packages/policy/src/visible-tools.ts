@@ -1,16 +1,17 @@
 import type { PermissionRule } from '@momonga/config';
 import type { PermissionMode } from '@momonga/protocol';
 import { ruleCoversToolName } from './match-rule.ts';
-import type { PolicyTool } from './types.ts';
+import type { PermissionSubject, PolicyTool } from './types.ts';
 
-export type VisibleToolsOptions = { mode: PermissionMode; rules: PermissionRule[]; jobsRunning?: boolean };
+export type VisibleToolsOptions = { mode: PermissionMode; rules: PermissionRule[] };
 
-export const modelVisibleTools = (tools: PolicyTool[], { mode, rules, jobsRunning = false }: VisibleToolsOptions): PolicyTool[] => {
+export const planModeRefuses = (sideEffect: PolicyTool['sideEffect'], subjectKind: PermissionSubject['kind'] | undefined): boolean =>
+  sideEffect !== 'read_only' && subjectKind !== 'command' && subjectKind !== 'governance';
+
+export const modelVisibleTools = (tools: PolicyTool[], { mode, rules }: VisibleToolsOptions): PolicyTool[] => {
   const blanketDenies = rules.filter((rule) => rule.effect === 'deny' && rule.specifier === undefined);
-  const permitted = (tool: PolicyTool): boolean => {
-    if (mode === 'plan' && tool.sideEffect !== 'read_only' && tool.kind !== 'execute') return false;
+  return tools.filter((tool) => {
+    if (mode === 'plan' && planModeRefuses(tool.sideEffect, tool.subjectKind)) return false;
     return !blanketDenies.some((rule) => ruleCoversToolName(rule, tool.name));
-  };
-  const permittedNames = new Set(tools.filter(permitted).map((tool) => tool.name));
-  return tools.filter((tool) => permittedNames.has(tool.name) && (tool.companionOf === undefined || jobsRunning || permittedNames.has(tool.companionOf)));
+  });
 };

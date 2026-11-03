@@ -14,6 +14,7 @@ export const writeTool = defineTool<WriteInput>({
     'Writes a file, creating missing parent directories. file_path must be absolute. An existing file must have been read with Read first and must be unchanged since. Replaces the whole file; prefer Edit for partial changes.',
   kind: 'edit',
   sideEffect: 'write',
+  subjectKind: 'path',
   inputSchema: {
     type: 'object',
     properties: {

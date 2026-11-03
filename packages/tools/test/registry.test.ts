@@ -178,7 +178,7 @@ describe('ToolSet forModel', () => {
     const registry = createToolRegistry();
     registry.register(makeTool('Read'));
     registry.register(makeTool('Write', { kind: 'edit', sideEffect: 'write' }));
-    registry.register(makeTool('Bash', { kind: 'execute', sideEffect: 'exec' }));
+    registry.register(makeTool('Bash', { kind: 'execute', sideEffect: 'exec', subjectKind: 'command' }));
     return registry.snapshot();
   };
 

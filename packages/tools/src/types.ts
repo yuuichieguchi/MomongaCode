@@ -93,6 +93,7 @@ export type ToolDefinition<Input> = {
   pagesOutput?: true;
   tier?: ToolTier;
   companionOf?: string;
+  subjectKind?: PermissionSubject['kind'];
   schemaMode?: 'strict' | 'lenient';
   timeoutMs: number | ((input: Input) => number);
   title(input: Input): string;

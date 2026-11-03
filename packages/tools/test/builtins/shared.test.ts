@@ -53,33 +53,33 @@ describe('createBuiltinTools', () => {
 
   describe('offering the job tools', () => {
     const JOB_TOOLS = ['BashOutput', 'KillBash'];
-    const offered = async (rules: PermissionRule[], jobsRunning: boolean): Promise<string[]> => {
+    const snapshot = async () => {
       const registry = createToolRegistry();
       for (const tool of createBuiltinTools()) registry.register(tool);
-      const toolSet = await registry.snapshot();
-      return toolSet.forModel({ mode: 'default', rules, jobsRunning }).map((tool) => tool.name);
+      return registry.snapshot();
     };
+    const offered = async (mode: 'default' | 'plan', rules: PermissionRule[]): Promise<string[]> =>
+      (await snapshot()).forModel({ mode, rules }).map((tool) => tool.name);
 
-    it('offers neither when Bash is denied and no job runs', async () => {
-      const names = await offered([ruleFor(makeLayout())('deny', 'Bash')], false);
-      expect(names).not.toContain('Bash');
-      expect(names.filter((name) => JOB_TOOLS.includes(name))).toEqual([]);
+    it('declares the tool they serve', async () => {
+      expect((await snapshot()).companions).toEqual(new Map([['BashOutput', 'Bash'], ['KillBash', 'Bash']]));
     });
 
-    it('offers both when Bash is denied and a job runs', async () => {
-      const names = await offered([ruleFor(makeLayout())('deny', 'Bash')], true);
-      expect(names).not.toContain('Bash');
-      expect(names.filter((name) => JOB_TOOLS.includes(name))).toEqual(JOB_TOOLS);
+    it('are offered with Bash', async () => {
+      expect((await offered('default', [])).filter((name) => JOB_TOOLS.includes(name))).toEqual(JOB_TOOLS);
     });
 
     it('hides KillBash under its own deny rule', async () => {
-      const names = await offered([ruleFor(makeLayout())('deny', 'KillBash')], true);
+      const names = await offered('default', [ruleFor(makeLayout())('deny', 'KillBash')]);
       expect(names).toContain('BashOutput');
       expect(names).not.toContain('KillBash');
     });
 
-    it('offers both with Bash', async () => {
-      expect((await offered([], false)).filter((name) => JOB_TOOLS.includes(name))).toEqual(JOB_TOOLS);
+    it('hides KillBash in plan mode, where every call of it is refused, and keeps BashOutput and Bash', async () => {
+      const names = await offered('plan', []);
+      expect(names).not.toContain('KillBash');
+      expect(names).toContain('BashOutput');
+      expect(names).toContain('Bash');
     });
   });
 

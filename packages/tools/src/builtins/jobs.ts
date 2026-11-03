@@ -83,6 +83,7 @@ export const killBashTool = defineTool<KillBashInput>({
   description: 'Stops a background job started with Bash run_in_background, together with every process it started. Stopping a job that has already ended reports how it ended.',
   kind: 'execute',
   sideEffect: 'write',
+  subjectKind: 'none',
   inputSchema: {
     type: 'object',
     properties: { shell_id: { type: 'string', minLength: 1, description: 'The job id returned by Bash' } },
