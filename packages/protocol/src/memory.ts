@@ -8,7 +8,8 @@ export type MemoryOrigin = (typeof MEMORY_ORIGINS)[number];
 
 export type MemorySource =
   | { kind: 'tool'; sessionId: string; runId: string; step: number; callId: string; seq: number }
-  | { kind: 'reflection'; sessionId: string; runId: string; ordinal: number };
+  | { kind: 'reflection'; sessionId: string; runId: string; ordinal: number }
+  | { kind: 'command'; at: number };
 
 export const MEMORY_KINDS = ['fact', 'episode', 'procedure'] as const;
 
@@ -63,6 +64,14 @@ export const describeMemoryValidity = (memory: Pick<MemoryRecord, 'state' | 'ret
   ]
     .map((part) => `, ${part}`)
     .join('');
+
+export type AddMemoryRequest = {
+  text: string;
+  scope: MemoryScope;
+  project?: string;
+  kind?: MemoryKind;
+  paths?: string[];
+};
 
 export type MemoriesResponse = { memories: MemoryView[] };
 

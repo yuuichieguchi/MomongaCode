@@ -1,8 +1,10 @@
 import type { Context } from 'hono';
 import { MEMORY_SCOPES, MEMORY_STATES } from '@momonga/protocol';
-import type { MemoryScope, MemoryState, PromoteMemoryRequest } from '@momonga/protocol';
+import type { AddMemoryRequest, MemoryScope, MemoryState, PromoteMemoryRequest } from '@momonga/protocol';
 import { isValidSkillName } from '@momonga/skills';
 import type { MemoryChange, RuntimeStore } from '@momonga/store';
+import { MemoryAddRefusal, prepareCommandMemory } from '../memory/add-memory.ts';
+import type { EvidenceRun } from '../memory/evidence.ts';
 import { writeSkillFile } from '../memory/skill-promotion.ts';
 import type { RecordViews } from '../memory/views.ts';
 import { conflict, invalidRequest, notFound } from './errors.ts';
@@ -30,15 +32,16 @@ const stateOf = (raw: string | undefined): MemoryState | undefined => {
 const projectOf = (raw: string | undefined): string | undefined => (raw === undefined ? undefined : canonicalProject(raw, 'project'));
 
 export type MemoryRoutesDeps = {
-  store: Pick<RuntimeStore, 'memories'>;
+  store: Pick<RuntimeStore, 'memories' | 'trust'>;
   views: RecordViews;
-  closeSignal: AbortSignal;
+  evidenceRun: (project: string) => EvidenceRun;
   maxBodyBytes: number;
+  closeSignal: AbortSignal;
   home: string;
 };
 
 export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDeps): void => {
-  const { memories } = deps.store;
+  const { memories, trust } = deps.store;
   const { views } = deps;
   const boundOf = (context: Context): AbortSignal => AbortSignal.any([deps.closeSignal, context.req.raw.signal]);
 
@@ -88,6 +91,22 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDe
     throw conflict('skill_target', `${written.path} is not a directory, so the skill cannot be written there`);
   };
 
+  const addMemory: Handler = async (context) => {
+    const body = validateBody<AddMemoryRequest>('AddMemoryRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
+    const request: AddMemoryRequest = body.project === undefined ? body : { ...body, project: canonicalProject(body.project, 'project') };
+    try {
+      const prepared = await prepareCommandMemory(request, {
+        trusted: (project) => trust.decisionFor(project).decision === 'trusted',
+        evidenceRun: deps.evidenceRun,
+        signal: boundOf(context),
+      });
+      return json({ memory: await views.viewOf(memories.addByCommand(prepared), boundOf(context)) }, 201);
+    } catch (error) {
+      if (error instanceof MemoryAddRefusal) throw invalidRequest(error.message, error.param);
+      throw error;
+    }
+  };
+
   const getMemory: Handler = async (context) => json({ memory: await views.viewOf(requireMemory(context), boundOf(context)) }, 200);
 
   const memoryHistory: Handler = async (context) => {
@@ -101,7 +120,7 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDe
     return new Response(null, { status: 204 });
   };
 
-  route('/v1/memories', { GET: listMemories });
+  route('/v1/memories', { GET: listMemories, POST: addMemory });
   route('/v1/memories/:id', { GET: getMemory, DELETE: deleteMemory });
   route('/v1/memories/:id/history', { GET: memoryHistory });
   route('/v1/memories/:id/accept', { POST: acceptMemory });

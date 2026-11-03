@@ -26,11 +26,17 @@ export type WorkspaceStep = { beforeRun: number; write?: Record<string, string>;
 
 export type GoldRange = { seqFrom: number; seqTo: number };
 
+export type ContextMemory = { text: string; paths: string[] };
+
+export type RevisionChain = { id: string; kind: GoverningKind; target: string; text: string };
+
 export type ContextCase = GoldenCase & {
   scenario: string;
   compaction: CompactionSetting;
   rules: ContextRule[];
   revisionDepth: number;
+  revisionChain?: RevisionChain;
+  memories?: ContextMemory[];
   noise: { level: number; topics: string[] };
   workspace?: WorkspaceStep[];
   gold?: GoldRange[];
@@ -39,6 +45,12 @@ export type ContextCase = GoldenCase & {
 export type ContextDataset = { format: typeof CONTEXT_DATASET_FORMAT; name: string; cases: ContextCase[] };
 
 export type NoiseTurn = { user: string; assistant: string };
+
+export type ExpandedCase = Omit<ContextCase, 'rules' | 'revisionChain'> & { rules: ContextRule[]; noiseTurns: NoiseTurn[] };
+
+export type ExpandedContextDataset = { format: typeof CONTEXT_DATASET_FORMAT; name: string; seed: number; cases: ExpandedCase[] };
+
+export const REVISION_PLACEHOLDER = '{revision}';
 
 const string = { type: 'string', minLength: 1 } as const;
 
@@ -54,6 +66,20 @@ const ruleSchema = {
     supersedes: { type: 'array', items: string },
   },
   required: ['id', 'kind', 'target', 'text', 'inScope', 'live', 'supersedes'],
+  additionalProperties: false,
+} as const;
+
+const revisionChainSchema = {
+  type: 'object',
+  properties: { id: string, kind: { enum: [...GOVERNING_KINDS] }, target: string, text: string },
+  required: ['id', 'kind', 'target', 'text'],
+  additionalProperties: false,
+} as const;
+
+const memorySchema = {
+  type: 'object',
+  properties: { text: string, paths: { type: 'array', items: string } },
+  required: ['text', 'paths'],
   additionalProperties: false,
 } as const;
 
@@ -77,6 +103,8 @@ export const CONTEXT_DATASET_SCHEMA = {
           compaction: { enum: [...COMPACTION_SETTINGS] },
           rules: { type: 'array', items: ruleSchema },
           revisionDepth: { type: 'integer', minimum: 0 },
+          revisionChain: revisionChainSchema,
+          memories: { type: 'array', items: memorySchema },
           noise: {
             type: 'object',
             properties: { level: { type: 'integer', minimum: 0 }, topics: { type: 'array', minItems: 1, items: string } },
@@ -123,9 +151,36 @@ export const bindingRuleIds = (rules: readonly ContextRule[]): string[] => {
   return rules.filter((rule) => rule.live && rule.inScope && !superseded.has(rule.id)).map((rule) => rule.id);
 };
 
+export const chainRulesOf = (chain: RevisionChain, depth: number): ContextRule[] =>
+  Array.from({ length: depth + 1 }, (_unused, revision) => ({
+    id: `${chain.id}-${revision}`,
+    kind: chain.kind,
+    target: chain.target,
+    text: chain.text.replaceAll(REVISION_PLACEHOLDER, String(revision)),
+    inScope: true,
+    live: true,
+    supersedes: revision === 0 ? [] : [`${chain.id}-${revision - 1}`],
+  }));
+
+export const rulesOf = (entry: Pick<ContextCase, 'rules' | 'revisionChain' | 'revisionDepth'>): ContextRule[] => [
+  ...(entry.revisionChain === undefined ? [] : chainRulesOf(entry.revisionChain, entry.revisionDepth)),
+  ...entry.rules,
+];
+
+const assertMemoryPaths = (entry: ContextCase, source: string): void => {
+  for (const memory of entry.memories ?? []) {
+    for (const name of memory.paths) {
+      if (!isInsideWorkspace(name)) {
+        throw new DatasetError(`${source}: case ${entry.id}: the memory path ${JSON.stringify(name)} must be a relative path inside the workspace`);
+      }
+    }
+  }
+};
+
 const assertRevisions = (entry: ContextCase, source: string): void => {
+  const rules = rulesOf(entry);
   const byId = new Map<string, ContextRule>();
-  for (const rule of entry.rules) {
+  for (const rule of rules) {
     if (byId.has(rule.id)) throw new DatasetError(`${source}: case ${entry.id} has duplicate rule id ${rule.id}`);
     byId.set(rule.id, rule);
   }
@@ -149,7 +204,7 @@ const assertRevisions = (entry: ContextCase, source: string): void => {
     depths.set(rule.id, depth);
     return depth;
   };
-  const longest = Math.max(0, ...entry.rules.map(depthOf));
+  const longest = Math.max(0, ...rules.map(depthOf));
   if (entry.revisionDepth !== longest) {
     throw new DatasetError(`${source}: case ${entry.id} declares revisionDepth ${entry.revisionDepth} but its rules give longest chain ${longest}`);
   }
@@ -195,7 +250,7 @@ const ASSISTANT_TEMPLATES: readonly ((topic: string) => string)[] = [
 ];
 
 const assertNoiseNamesNoTarget = (entry: ContextCase, source: string): void => {
-  const targets = entry.rules.map((rule) => ({ rule: rule.id, tokens: new Set(tokensOf(rule.target)) }));
+  const targets = rulesOf(entry).map((rule) => ({ rule: rule.id, tokens: new Set(tokensOf(rule.target)) }));
   for (const topic of entry.noise.topics) {
     for (const render of [...USER_TEMPLATES, ...ASSISTANT_TEMPLATES]) {
       const text = render(topic);
@@ -209,7 +264,7 @@ const assertNoiseNamesNoTarget = (entry: ContextCase, source: string): void => {
   }
 };
 
-const PAIR_FIELDS = ['input', 'permissionMode', 'onAsk', 'runs', 'timeoutMs', 'files', 'workspace', 'rules', 'revisionDepth', 'noise', 'graders'] as const;
+const PAIR_FIELDS = ['input', 'permissionMode', 'onAsk', 'runs', 'timeoutMs', 'files', 'workspace', 'rules', 'revisionDepth', 'revisionChain', 'memories', 'noise', 'graders'] as const;
 
 const assertPairs = (dataset: ContextDataset, source: string): void => {
   const scenarios = [...new Set(dataset.cases.map((entry) => entry.scenario))];
@@ -238,14 +293,24 @@ export const parseContextDataset = (text: string, source: string): ContextDatase
     assertRevisions(entry, source);
     assertWorkspace(entry, source);
     assertGold(entry, source);
+    assertMemoryPaths(entry, source);
     assertNoiseNamesNoTarget(entry, source);
   }
   assertPairs(value, source);
   return value;
 };
 
-export const noiseTurnsFor = (entry: ContextCase, seed: number): NoiseTurn[] => {
-  const random = seededRandom(seed);
+const FNV_OFFSET = 0x811c9dc5;
+const FNV_PRIME = 0x01000193;
+
+const hashOf = (text: string): number => {
+  let hash = FNV_OFFSET;
+  for (let index = 0; index < text.length; index += 1) hash = Math.imul(hash ^ text.charCodeAt(index), FNV_PRIME) >>> 0;
+  return hash;
+};
+
+export const noiseTurnsFor = (entry: Pick<ContextCase, 'scenario' | 'noise'>, seed: number): NoiseTurn[] => {
+  const random = seededRandom((seed ^ hashOf(entry.scenario)) >>> 0);
   return Array.from({ length: entry.noise.level }, () => {
     const topic = pickFrom(random, entry.noise.topics);
     const user = pickFrom(random, USER_TEMPLATES);
@@ -253,3 +318,13 @@ export const noiseTurnsFor = (entry: ContextCase, seed: number): NoiseTurn[] => 
     return { user: user(topic), assistant: assistant(topic) };
   });
 };
+
+export const expandContextDataset = (dataset: ContextDataset, seed: number): ExpandedContextDataset => ({
+  format: dataset.format,
+  name: dataset.name,
+  seed,
+  cases: dataset.cases.map((entry) => {
+    const { revisionChain: _chain, rules: _rules, ...rest } = entry;
+    return { ...rest, rules: rulesOf(entry), noiseTurns: noiseTurnsFor(entry, seed) };
+  }),
+});

@@ -132,13 +132,13 @@ describe('paging for upkeep', () => {
   });
 
   it('leaves out what is not active or was retired, and names what a newer note replaced', () => {
-    const { store, memories, candidate, saved } = started();
+    const { store, run, memories, candidate, saved } = started();
     const kept = saved('c1', 'kept');
     const archived = saved('c2', 'archived');
     memories.archive(archived.id);
     candidate(0, 'waiting');
     const replaced = saved('c3', 'old wording');
-    const replacement = store.memories.save({ origin: 'trusted', scope: 'project', project: PROJECT, text: 'new', runId: replaced.source.runId, step: 1, callId: 'c4', supersedes: [replaced.id] });
+    const replacement = store.memories.save({ origin: 'trusted', scope: 'project', project: PROJECT, text: 'new', runId: run.id, step: 1, callId: 'c4', supersedes: [replaced.id] });
     expect(replacement).toBeDefined();
     expect(ids(memories.activePage(null, -1))).toEqual([kept.id, replaced.id, replacement.memory.id]);
     expect([...memories.supersededIds()]).toEqual([replaced.id]);

@@ -529,8 +529,9 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   registerMemoryRoutes(route, {
     store,
     views: createRecordViews({ store, evidenceRun: deps.evidenceRun }),
-    closeSignal: deps.closeSignal,
+    evidenceRun: deps.evidenceRun,
     maxBodyBytes: deps.maxBodyBytes,
+    closeSignal: deps.closeSignal,
     home: deps.home,
   });
   registerRuleRoutes(route, {

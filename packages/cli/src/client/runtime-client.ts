@@ -1,7 +1,7 @@
 import type { McpServerConfig } from '@momonga/config';
 import { createUdsClient, decodeSse, isRecord } from '@momonga/foundation';
 import type { UdsResponse } from '@momonga/foundation';
-import type { AddRuleRequest, AgentsResponse, CostReportView, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, RuleAddResponse, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
+import type { AddMemoryRequest, AddRuleRequest, AgentsResponse, CostReportView, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, RuleAddResponse, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
 import {
   ContractViolation,
   checkAgents,
@@ -116,6 +116,7 @@ export type RuntimeClient = {
   cancelMcpAuthorization(sessionId: string, server: string): Promise<void>;
   memories(filter?: MemoryFilter): Promise<MemoryView[]>;
   memory(id: string): Promise<MemoryView>;
+  addMemory(request: AddMemoryRequest): Promise<MemoryView>;
   deleteMemory(id: string): Promise<void>;
   memoryHistory(id: string): Promise<MemoryView[]>;
   acceptMemory(id: string): Promise<MemoryView>;
@@ -391,6 +392,11 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     return checkMemory(body, `GET ${path}`).memory;
   };
 
+  const addMemory = async (request: AddMemoryRequest): Promise<MemoryView> => {
+    const { body } = await send('POST', '/v1/memories', [201], { body: request });
+    return checkMemory(body, 'POST /v1/memories').memory;
+  };
+
   const deleteMemory = async (id: string): Promise<void> => {
     await send('DELETE', `/v1/memories/${encodeURIComponent(id)}`, [204]);
   };
@@ -514,6 +520,7 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     cancelMcpAuthorization,
     memories,
     memory,
+    addMemory,
     deleteMemory,
     memoryHistory,
     acceptMemory: changeMemory('accept'),

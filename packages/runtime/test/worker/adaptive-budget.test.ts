@@ -39,7 +39,7 @@ const shareOf = (env: Env, runId: string): unknown => env.ofType(runId, 'run.sta
 
 const adaptiveEnv = async (): Promise<Env> => {
   const env = await makeEnv({ mode: 'bypassPermissions' });
-  env.settings.contextValue = { adaptiveBudget: true };
+  env.settings.contextValue = { adaptiveBudget: true, autoCompact: true };
   return env;
 };
 
@@ -213,7 +213,7 @@ describe('a pinned share', () => {
     const created = env.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {} });
     if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
     expect(env.store.releaseLease(claim, { availableAt: env.clock.now() + 3_600_000 }).kind).toBe('ok');
-    env.settings.contextValue = { adaptiveBudget: false };
+    env.settings.contextValue = { adaptiveBudget: false, autoCompact: true };
     env.gateway.script.push(textStep('Child done.'));
 
     await env.runOnce(memoryWorker(env, 'worker-child'));
@@ -229,7 +229,7 @@ describe('a pinned share', () => {
       env.enqueue('Remember this', { history: 'fresh' });
       await env.runOnce(memoryWorker(env, 'saver'));
       expect(env.store.memories.list()).toHaveLength(4);
-      env.settings.contextValue = { adaptiveBudget: adaptive };
+      env.settings.contextValue = { adaptiveBudget: adaptive, autoCompact: true };
       finishPasts(env, 20, { injected: 1, used: 0 });
       const next = env.gateway.streams.length;
       await startRun(env);

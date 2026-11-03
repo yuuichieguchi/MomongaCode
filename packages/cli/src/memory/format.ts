@@ -28,10 +28,16 @@ const evidenceLine = (entry: MemoryView['evidence'][number]): string => {
   }
 };
 
-const sourceLine = (source: MemoryView['source']): string =>
-  source.kind === 'tool'
-    ? `source: session ${source.sessionId}, run ${source.runId}, step ${source.step}, call ${source.callId}, event ${source.seq}`
-    : `source: session ${source.sessionId}, run ${source.runId}, reflection candidate ${source.ordinal}`;
+const sourceLine = (source: MemoryView['source']): string => {
+  switch (source.kind) {
+    case 'tool':
+      return `source: session ${source.sessionId}, run ${source.runId}, step ${source.step}, call ${source.callId}, event ${source.seq}`;
+    case 'reflection':
+      return `source: session ${source.sessionId}, run ${source.runId}, reflection candidate ${source.ordinal}`;
+    case 'command':
+      return `source: added by a person with momonga memory add at ${new Date(source.at).toISOString()}`;
+  }
+};
 
 export const formatMemory =(memory: MemoryView): string =>
   [

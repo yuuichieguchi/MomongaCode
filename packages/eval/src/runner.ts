@@ -7,8 +7,10 @@ import type { Transcript, TranscriptChild, TranscriptRun } from './transcript.ts
 
 export type EvalWorkspace = { cwd: string; env: Record<string, string> };
 
+export type EvalSessionInput = { cwd: string; env?: Record<string, string>; permissionMode: GoldenCase['permissionMode']; modelAlias?: string };
+
 export type EvalRunApi = {
-  createSession(input: EvalWorkspace & { permissionMode: GoldenCase['permissionMode'] }): Promise<{ id: string }>;
+  createSession(input: EvalSessionInput): Promise<{ id: string }>;
   createRun(sessionId: string, input: { input: string; timeoutMs?: number }): Promise<{ id: string }>;
   events(runId: string): AsyncIterable<PublicRunEvent>;
   getRun(runId: string): Promise<TranscriptRun>;
@@ -29,15 +31,15 @@ export class EvalError extends Error {
   }
 }
 
-const optionIdFor = (event: Extract<PublicRunEvent, { type: 'tool.permission.requested' }>, golden: GoldenCase): string => {
+const optionIdFor = (event: Extract<PublicRunEvent, { type: 'tool.permission.requested' }>, golden: Pick<GoldenCase, 'id' | 'onAsk'>): string => {
   const option = event.options.find((candidate) => candidate.kind === golden.onAsk);
   if (option === undefined) throw new EvalError(`case ${golden.id}: approval ${event.approvalId} offers no ${golden.onAsk} option`);
   return option.optionId;
 };
 
-type Driven = { events: PublicRunEvent[]; children: TranscriptChild[] };
+export type Driven = { events: PublicRunEvent[]; children: TranscriptChild[] };
 
-const driveRun = async (ports: EvalPorts, golden: GoldenCase, rootRunId: string): Promise<Driven> => {
+export const driveRun = async (api: EvalRunApi, golden: Pick<GoldenCase, 'id' | 'onAsk'>, rootRunId: string): Promise<Driven> => {
   const events: PublicRunEvent[] = [];
   const children: TranscriptChild[] = [];
   const followed = new Set<string>([rootRunId]);
@@ -47,16 +49,16 @@ const driveRun = async (ports: EvalPorts, golden: GoldenCase, rootRunId: string)
   const abandon = async (error: unknown): Promise<void> => {
     failures.push(error);
     try {
-      await ports.api.cancelRun(rootRunId);
+      await api.cancelRun(rootRunId);
     } catch (cancelError) {
       failures.push(new EvalError(`case ${golden.id}: cancelling run ${rootRunId} after a run failed also failed: ${cancelError instanceof Error ? cancelError.message : String(cancelError)}`, { cause: cancelError }));
     }
   };
 
   const follow = async (runId: string, sink: PublicRunEvent[]): Promise<void> => {
-    for await (const event of ports.api.events(runId)) {
+    for await (const event of api.events(runId)) {
       sink.push(event);
-      if (event.type === 'tool.permission.requested') await ports.api.resolveApproval(event.approvalId, optionIdFor(event, golden));
+      if (event.type === 'tool.permission.requested') await api.resolveApproval(event.approvalId, optionIdFor(event, golden));
       if (event.type === 'tool.waiting' && event.awaits.kind === 'run' && !followed.has(event.awaits.runId)) {
         followed.add(event.awaits.runId);
         const child: TranscriptChild = { runId: event.awaits.runId, agent: event.awaits.agent, events: [] };
@@ -82,7 +84,7 @@ const runOnce = async (ports: EvalPorts, golden: GoldenCase, runIndex: number): 
   const workspace = await ports.workspace(golden, runIndex);
   const session = await ports.api.createSession({ ...workspace, permissionMode: golden.permissionMode });
   const run = await ports.api.createRun(session.id, { input: golden.input, ...(golden.timeoutMs === undefined ? {} : { timeoutMs: golden.timeoutMs }) });
-  const { events, children } = await driveRun(ports, golden, run.id);
+  const { events, children } = await driveRun(ports.api, golden, run.id);
   const transcript: Transcript = { caseId: golden.id, runIndex, run: await ports.api.getRun(run.id), events, children };
   if (ports.onTranscript !== undefined) await ports.onTranscript(transcript);
   return transcript;

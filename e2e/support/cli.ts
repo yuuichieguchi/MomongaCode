@@ -23,7 +23,7 @@ export const cliEnv = (home: E2eHome, extra: Readonly<Record<string, string>> = 
   ...extra,
 });
 
-export type RunningCli = { readonly result: Promise<CliResult>; interrupt(): void; partialStdout(): string; partialStderr(): string };
+export type RunningCli = { readonly result: Promise<CliResult>; readonly pid: number; kill(signal: NodeJS.Signals): void; interrupt(): void; partialStdout(): string; partialStderr(): string };
 
 export const startCli = (home: E2eHome, args: readonly string[], options: RunCliOptions = {}): RunningCli => {
   const child = spawn(process.execPath, [options.bundle ?? CLI_BUNDLE, ...args], {
@@ -49,7 +49,8 @@ export const startCli = (home: E2eHome, args: readonly string[], options: RunCli
   const result = withinBound(closed, options.boundMs ?? E2E_RUN_COMPLETED_BOUND_MS, `momonga ${args.join(' ')}`).catch((error: unknown) => {
     throw new Error(`${error instanceof Error ? error.message : String(error)}\nstdout so far:\n${stdout}\nstderr so far:\n${stderr}`, { cause: error });
   });
-  return { result, interrupt: () => void child.kill('SIGINT'), partialStdout: () => stdout, partialStderr: () => stderr };
+  if (child.pid === undefined) throw new Error(`momonga ${args.join(' ')} did not start`);
+  return { result, pid: child.pid, kill: (signal) => void child.kill(signal), interrupt: () => void child.kill('SIGINT'), partialStdout: () => stdout, partialStderr: () => stderr };
 };
 
 export const runCli = (home: E2eHome, args: readonly string[], options: RunCliOptions = {}): Promise<CliResult> => startCli(home, args, options).result;

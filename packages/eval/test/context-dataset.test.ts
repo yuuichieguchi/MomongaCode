@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
-import { CONTEXT_DATASET_FORMAT, DatasetError, bindingRuleIds, buildContextReport, noiseTurnsFor, parseContextDataset, parseDataset } from '@momonga/eval';
+import { CONTEXT_DATASET_FORMAT, DatasetError, bindingRuleIds, buildContextReport, expandContextDataset, noiseTurnsFor, parseContextDataset, parseDataset, rulesOf } from '@momonga/eval';
 import type { ContextCase, Transcript } from '@momonga/eval';
 import { answer, contextCase, fidelity, governing, read, recorded, summarized } from './context-fixtures.ts';
 
@@ -90,10 +90,29 @@ describe('noiseTurnsFor', () => {
 describe('the starter dataset', () => {
   const load = async () => parseContextDataset(await fs.readFile(new URL('../datasets/context.json', import.meta.url), 'utf8'), 'context.json');
 
-  it('pairs three coding scenarios', async () => {
+  it('pairs three pinned coding scenarios and, after them, the scenarios that use a generated revision chain and a second stale memory', async () => {
     const dataset = await load();
-    expect(dataset.cases).toHaveLength(6);
-    expect([...new Set(dataset.cases.map((entry) => entry.scenario))]).toEqual(['rename-module', 'revised-test-runner', 'file-changed-between-runs']);
+    expect(dataset.cases).toHaveLength(12);
+    expect([...new Set(dataset.cases.map((entry) => entry.scenario))]).toEqual([
+      'rename-module',
+      'revised-test-runner',
+      'file-changed-between-runs',
+      'lint-chain',
+      'report-chain',
+      'stale-retries',
+    ]);
+  });
+
+  it('generates revision chains of depth 1 and 3 from revisionChain, and plays noise in every pair that asks for it', async () => {
+    const dataset = await load();
+    const expanded = expandContextDataset(dataset, 5).cases;
+    const chain = (id: string) => expanded.find((entry) => entry.id === id)!;
+    expect(chain('lint-chain-on').rules.map((rule) => rule.id)).toEqual(['lint-0', 'lint-1']);
+    expect(chain('report-chain-off').rules.map((rule) => rule.id)).toEqual(['format-0', 'format-1', 'format-2', 'format-3']);
+    expect(bindingRuleIds(chain('report-chain-on').rules)).toEqual(['format-3']);
+    expect(expanded.map((entry) => entry.noiseTurns.length)).toEqual([12, 12, 25, 25, 0, 0, 8, 8, 16, 16, 4, 4]);
+    expect(chain('stale-retries-on').memories).toEqual([{ text: 'RETRIES in flags.ts is 3.', paths: ['flags.ts'] }]);
+    expect(chain('lint-chain-on').noiseTurns).toEqual(chain('lint-chain-off').noiseTurns);
   });
 
   it('has a depth 2 revision chain whose only binding rule is the last', async () => {
@@ -112,6 +131,9 @@ describe('the starter dataset', () => {
     'rename-module': () => 'Renamed src/parse.ts to src/parser.ts and updated the import in src/main.ts.',
     'revised-test-runner': () => 'Added the date test and ran it with vitest.',
     'file-changed-between-runs': (runIndex) => `LIMIT is ${runIndex === 0 ? 10 : 20}.`,
+    'lint-chain': () => 'Checked src/util.ts with lint-1.',
+    'report-chain': () => 'Summarised src/util.ts as format-3.',
+    'stale-retries': (runIndex) => `RETRIES is ${runIndex === 0 ? 3 : 5}.`,
   };
 
   const replayOf = async (answerFor: (entry: ContextCase, runIndex: number) => string) => {
@@ -120,7 +142,7 @@ describe('the starter dataset', () => {
       Array.from({ length: entry.runs }, (_unused, runIndex) => {
         const content = `export const LIMIT = ${runIndex === 0 ? 10 : 20};\n`;
         const payloads = [
-          governing(...bindingRuleIds(entry.rules)),
+          governing(...bindingRuleIds(rulesOf(entry))),
           ...read('rd', 'config.ts', content),
           ...(entry.compaction === 'on' ? [summarized(4, fidelity([], 2, 2))] : []),
           answer(answerFor(entry, runIndex)),
@@ -136,21 +158,28 @@ describe('the starter dataset', () => {
     expect(report.passed).toBe(true);
     expect(report.model).toBe('fake');
     expect(report.modelAliases).toEqual(['alias-1']);
-    expect(report.metrics.continuationRate).toMatchObject({ successes: 4, trials: 4 });
-    expect(report.metrics.contrastiveFailures).toEqual({ count: 0, n: 3 });
-    expect(report.metrics.governanceFidelity).toMatchObject({ successes: 4, trials: 4 });
-    expect(report.metrics.governanceConsistency).toMatchObject({ successes: 4, trials: 4 });
-    expect(report.metrics.governanceMinimality).toMatchObject({ successes: 4, trials: 4 });
-    expect(report.metrics.fabricationRate).toMatchObject({ successes: 0, trials: 4 });
-    expect(report.metrics.tokensPerSuccess).toMatchObject({ value: 50, n: 8 });
+    expect(report.metrics.continuationRate).toMatchObject({ successes: 8, trials: 8 });
+    expect(report.metrics.contrastiveFailures).toEqual({ count: 0, n: 6 });
+    expect(report.metrics.governanceFidelity).toMatchObject({ successes: 8, trials: 8 });
+    expect(report.metrics.governanceConsistency).toMatchObject({ successes: 8, trials: 8 });
+    expect(report.metrics.governanceMinimality).toMatchObject({ successes: 8, trials: 8 });
+    expect(report.metrics.fabricationRate).toMatchObject({ successes: 0, trials: 8 });
+    expect(report.metrics.tokensPerSuccess).toMatchObject({ value: 50, n: 16 });
   });
 
   it('tells a wrong answer from a right one: the superseded runner, a rename that never happened, and no value', async () => {
-    const wrong: Record<string, string> = { 'rename-module': 'Done.', 'revised-test-runner': 'Ran the tests with jest.', 'file-changed-between-runs': 'It is set.' };
+    const wrong: Record<string, string> = {
+      'rename-module': 'Done.',
+      'revised-test-runner': 'Ran the tests with jest.',
+      'file-changed-between-runs': 'It is set.',
+      'lint-chain': 'Checked src/util.ts with lint-0.',
+      'report-chain': 'Summarised src/util.ts as format-1.',
+      'stale-retries': 'It is set.',
+    };
     const report = await replayOf((entry, runIndex) => (entry.compaction === 'on' ? wrong[entry.scenario]! : answers[entry.scenario]!(runIndex)));
     expect(report.passed).toBe(false);
-    expect(report.metrics.contrastiveFailures).toEqual({ count: 3, n: 3 });
-    expect(report.metrics.continuationRate).toMatchObject({ successes: 0, trials: 4 });
+    expect(report.metrics.contrastiveFailures).toEqual({ count: 6, n: 6 });
+    expect(report.metrics.continuationRate).toMatchObject({ successes: 0, trials: 8 });
   });
 });
 

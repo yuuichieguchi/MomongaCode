@@ -1,11 +1,33 @@
 import path from 'node:path';
+import { InvalidArgumentError } from 'commander';
 import type { MomongaPaths } from '@momonga/foundation';
-import type { MemoryScope, MemoryView } from '@momonga/protocol';
+import type { MemoryKind, MemoryScope, MemoryView } from '@momonga/protocol';
 import type { RuntimeClient } from '../client/runtime-client.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import { formatMemory, formatMemoryHistory, formatMemoryList } from '../memory/format.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
+
+export type MemoryAddOptions = { kind?: MemoryKind; user: boolean; paths: readonly string[]; json: boolean };
+
+export const memoryAdd = async (ports: CliPorts, paths: MomongaPaths, text: string, options: MemoryAddOptions): Promise<number> => {
+  if (options.user && options.paths.length > 0) throw new InvalidArgumentError('--path binds a memory to files of this folder, so it cannot be combined with --user');
+  await ensureDaemon(ports, paths);
+  const client = connectRuntime(paths);
+  try {
+    const memory = await client.addMemory({
+      text,
+      scope: options.user ? 'user' : 'project',
+      ...(options.user ? {} : { project: ports.cwd }),
+      ...(options.kind === undefined ? {} : { kind: options.kind }),
+      ...(options.paths.length === 0 ? {} : { paths: options.paths.map((given) => path.relative(ports.cwd, path.resolve(ports.cwd, given)) || '.') }),
+    });
+    ports.stdout.write(`${options.json ? JSON.stringify(memory) : `added memory ${memory.id} (${memory.scope}, ${memory.status})`}\n`);
+    return 0;
+  } finally {
+    await client.close();
+  }
+};
 
 export type MemoryListOptions = { scope?: MemoryScope; project?: string; json: boolean };
 

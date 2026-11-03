@@ -281,7 +281,15 @@ export type SaveMemoryInput = {
   evidence?: readonly MemoryEvidence[];
 };
 
-export type MemoryVisibility = { trusted: true; project: string } | { trusted: false };
+export type AddMemoryByCommandInput = {
+  scope: MemoryScope;
+  project: string | null;
+  text: string;
+  kind?: MemoryKind;
+  evidence: readonly MemoryEvidence[];
+};
+
+export type MemoryVisibility ={ trusted: true; project: string } | { trusted: false };
 
 export type MemoryInclude = 'live' | 'all';
 
@@ -303,6 +311,7 @@ export type MemoryChange<Done extends string, Refused extends string> =
 
 export type MemoryStore = {
   save(input: SaveMemoryInput): { memory: MemoryRecord; created: boolean };
+  addByCommand(input: AddMemoryByCommandInput): MemoryRecord;
   saveCandidate(input: SaveCandidateInput): { memory: MemoryRecord; created: boolean };
   candidates(filter?: { project?: string }): MemoryRecord[];
   revision(): number;

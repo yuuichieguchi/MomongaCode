@@ -6,6 +6,8 @@ import { readUserLayer } from './layers.ts';
 import type { UserLayer } from './layers.ts';
 import { mergeLayers, parseLayerRules } from './load-settings.ts';
 import type { ResolvedSettings } from './load-settings.ts';
+import type { ResolvedModels } from './models.ts';
+import type { ModelsSettings, SandboxSetting } from './settings.ts';
 
 export type LoadUserSettingsOptions = { home: string };
 
@@ -32,7 +34,20 @@ const loadUserSettingsSync = (home: string): LoadUserSettingsResult => {
   return { settings, warnings, files: user.layer === undefined ? [] : [user.layer.source] };
 };
 
-export const loadUserSettings = async ({ home }: LoadUserSettingsOptions): Promise<LoadUserSettingsResult> => loadUserSettingsSync(home);
+export type UserModels = { declared: ModelsSettings; resolved: ResolvedModels; sandbox?: SandboxSetting };
+
+export const loadUserModels = ({ home }: LoadUserSettingsOptions): UserModels => {
+  try {
+    const user = readUserLayer(home);
+    const sandbox = user.layer?.settings.sandbox;
+    return { declared: user.layer?.settings.models ?? {}, resolved: user.models, ...(sandbox === undefined ? {} : { sandbox }) };
+  } catch (error) {
+    rethrowIfTransient(error);
+    throw toConfigError(error);
+  }
+};
+
+export const loadUserSettings =async ({ home }: LoadUserSettingsOptions): Promise<LoadUserSettingsResult> => loadUserSettingsSync(home);
 
 export type UserSettingsCacheOptions = { home: string; onWarning: (message: string) => void };
 

@@ -301,6 +301,7 @@ export const fakeRuntime = (): FakeRuntime => {
     cancelMcpAuthorization: unexpected('cancelMcpAuthorization'),
     memories: unexpected('memories'),
     memory: unexpected('memory'),
+    addMemory: unexpected('addMemory'),
     deleteMemory: unexpected('deleteMemory'),
     memoryHistory: unexpected('memoryHistory'),
     acceptMemory: unexpected('acceptMemory'),

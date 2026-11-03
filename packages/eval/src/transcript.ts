@@ -27,6 +27,10 @@ export type Transcript = {
   run: TranscriptRun;
   events: PublicRunEvent[];
   children: TranscriptChild[];
+  ruleIds?: Record<string, string>;
+  datasetSeed?: number;
+  noiseTokens?: number;
+  stopped?: string;
 };
 
 export class TranscriptError extends Error {
@@ -79,13 +83,39 @@ const childrenOf = (value: unknown, where: string): TranscriptChild[] => {
   });
 };
 
-export const encodeTranscript = (transcript: Transcript): string => {
+type LiveFields = Pick<Transcript, 'ruleIds' | 'datasetSeed' | 'noiseTokens' | 'stopped'>;
+
+const ruleIdsOf = (value: unknown, where: string): Record<string, string> => {
+  if (!isRecord(value) || Object.values(value).some((entry) => typeof entry !== 'string' || entry === '')) {
+    throw new TranscriptError(`${where}: ruleIds must map product rule ids to dataset rule ids`);
+  }
+  return value as Record<string, string>;
+};
+
+const liveFieldsOf = (header: Record<string, unknown>, where: string): LiveFields => {
+  const { ruleIds, datasetSeed, noiseTokens, stopped } = header;
+  if (datasetSeed !== undefined && !isNonNegativeInteger(datasetSeed)) throw new TranscriptError(`${where}: datasetSeed must be a non-negative integer`);
+  if (noiseTokens !== undefined && !isNonNegativeInteger(noiseTokens)) throw new TranscriptError(`${where}: noiseTokens must be a non-negative integer`);
+  if (stopped !== undefined && (typeof stopped !== 'string' || stopped === '')) throw new TranscriptError(`${where}: stopped must be a non-empty string`);
+  return {
+    ...(ruleIds === undefined ? {} : { ruleIds: ruleIdsOf(ruleIds, where) }),
+    ...(datasetSeed === undefined ? {} : { datasetSeed }),
+    ...(noiseTokens === undefined ? {} : { noiseTokens }),
+    ...(stopped === undefined ? {} : { stopped }),
+  };
+};
+
+export const encodeTranscript =(transcript: Transcript): string => {
   const header = {
     format: TRANSCRIPT_FORMAT,
     caseId: transcript.caseId,
     runIndex: transcript.runIndex,
     run: transcript.run,
     children: transcript.children.map(({ runId, agent }) => ({ runId, agent })),
+    ...(transcript.ruleIds === undefined ? {} : { ruleIds: transcript.ruleIds }),
+    ...(transcript.datasetSeed === undefined ? {} : { datasetSeed: transcript.datasetSeed }),
+    ...(transcript.noiseTokens === undefined ? {} : { noiseTokens: transcript.noiseTokens }),
+    ...(transcript.stopped === undefined ? {} : { stopped: transcript.stopped }),
   };
   const childLines = transcript.children.flatMap((child) => child.events.map((event) => ({ childRunId: child.runId, event })));
   const end = { end: true, events: transcript.events.length, childEvents: childLines.length };
@@ -146,5 +176,5 @@ export const decodeTranscript = (text: string, source: string): Transcript => {
   if (events.length !== end.events || childEvents !== end.childEvents) {
     throw new TranscriptError(`${source}: the end record counts ${end.events} run events and ${end.childEvents} child events but the file holds ${events.length} and ${childEvents}`);
   }
-  return { caseId, runIndex, run, events, children };
+  return { caseId, runIndex, run, events, children, ...liveFieldsOf(header, `${source}:1`) };
 };

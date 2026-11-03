@@ -35,7 +35,7 @@ const setup = (calls = 12) => {
     fs.writeFileSync(path.join(project, name), 'current');
     return [{ kind: 'file', project, path: name, sha256: sha256Hex(recordedText) }];
   };
-  return { store, clock, project, save, saveAt, upkeep, fileEvidence, views };
+  return { store, clock, project, run, save, saveAt, upkeep, fileEvidence, views };
 };
 
 describe('runMemoryUpkeep', () => {
@@ -69,7 +69,7 @@ describe('runMemoryUpkeep', () => {
   });
 
   it('leaves a note a newer note replaced as it is, since recall already skips it', async () => {
-    const { store, clock, project, save, upkeep } = setup();
+    const { store, clock, project, run, save, upkeep } = setup();
     const kept = save('kept note');
     const replaced = save('old wording');
     const replacement = store.memories.save({
@@ -77,7 +77,7 @@ describe('runMemoryUpkeep', () => {
       scope: 'project',
       project,
       text: 'new wording',
-      runId: kept.source.runId,
+      runId: run.id,
       step: 1,
       callId: 'c11',
       supersedes: [replaced.id],

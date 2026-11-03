@@ -32,7 +32,7 @@ export const createFakeSettings = (layout: { home: string; project: string }): F
     hooksValue: {},
     verificationValue: { commands: [...DEFAULT_VERIFICATION_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS] },
     memoryValue: { reflection: { enabled: false }, forgetAfterDays: DEFAULT_FORGET_AFTER_DAYS },
-    contextValue: { adaptiveBudget: false },
+    contextValue: { adaptiveBudget: false, autoCompact: true },
     classifierAlias: undefined,
     hooks: async () => settings.hooksValue,
     verification: async () => settings.verificationValue,

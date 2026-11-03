@@ -86,6 +86,7 @@ export type {
 export { assistantTextOf } from './assistant-text.ts';
 export { DEFAULT_MEMORY_KIND, describeMemoryValidity, MEMORY_EVIDENCE_KINDS, MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES } from './memory.ts';
 export type {
+  AddMemoryRequest,
   MemoriesResponse,
   MemoryEvidence,
   MemoryEvidenceKind,

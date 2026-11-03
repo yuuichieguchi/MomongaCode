@@ -84,6 +84,7 @@ describe('context types', () => {
     expectTypeOf<MemorySource>().toEqualTypeOf<
       | { kind: 'tool'; sessionId: string; runId: string; step: number; callId: string; seq: number }
       | { kind: 'reflection'; sessionId: string; runId: string; ordinal: number }
+      | { kind: 'command'; at: number }
     >();
   });
 });

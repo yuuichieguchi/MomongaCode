@@ -38,7 +38,8 @@ type RequestSchemaName =
   | 'ResolveElicitationRequest'
   | 'PutTrustRequest'
   | 'AddRuleRequest'
-  | 'PromoteMemoryRequest';
+  | 'PromoteMemoryRequest'
+  | 'AddMemoryRequest';
 
 const ajv = new Ajv2020.default({ strict: false, allErrors: true });
 
@@ -51,6 +52,7 @@ const validators: Record<RequestSchemaName, ValidateFunction> = {
   PutTrustRequest: ajv.compile(RUN_API_SCHEMAS.PutTrustRequest),
   AddRuleRequest: ajv.compile(RUN_API_SCHEMAS.AddRuleRequest),
   PromoteMemoryRequest: ajv.compile(RUN_API_SCHEMAS.PromoteMemoryRequest),
+  AddMemoryRequest: ajv.compile(RUN_API_SCHEMAS.AddMemoryRequest),
 };
 
 export const JSON_MEDIA_TYPES = ['application/json'] as const;

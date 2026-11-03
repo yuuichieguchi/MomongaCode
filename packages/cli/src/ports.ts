@@ -12,9 +12,10 @@ export type DetachedSpawn = {
   args: readonly string[];
   env: Readonly<Record<string, string | undefined>>;
   cwd: string;
+  lifeline?: boolean;
 };
 
-export type DetachedChild = { exit: Promise<DetachedExit> };
+export type DetachedChild = { exit: Promise<DetachedExit>; releaseLifeline?: () => void };
 
 export type SpawnDetached = (spec: DetachedSpawn) => DetachedChild;
 
@@ -34,7 +35,7 @@ export type CliFiles = {
   writeText(file: string, text: string): Promise<void>;
   listFiles(directory: string): Promise<string[]>;
   ensureDirectory(directory: string): Promise<void>;
-  makeTempDirectory(prefix: string): Promise<string>;
+  makeTempDirectory(prefix: string, base?: string): Promise<string>;
   removeTree(directory: string): Promise<void>;
   readTextIfPresent(file: string): Promise<string | undefined>;
   appendText(file: string, text: string, modes: { directory: number; file: number }): Promise<void>;

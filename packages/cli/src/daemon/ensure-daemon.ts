@@ -1,4 +1,4 @@
-import { EXIT_ALREADY_RUNNING, ENTRY_HARD_EXIT_MARGIN_MS, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, inspectProcessLock, supervisorMaxCloseMs } from '@momonga/foundation';
+import { EXIT_ALREADY_RUNNING, ENTRY_HARD_EXIT_MARGIN_MS, LIFELINE_FD, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, inspectProcessLock, supervisorMaxCloseMs } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { createSupervisorClient } from '../client/supervisor-client.ts';
@@ -49,7 +49,11 @@ export const daemonStopBoundMs = (): number => supervisorMaxCloseMs(RUNTIME_DEFA
 
 export const defaultDaemonBounds = async (): Promise<DaemonBounds> => ({ readyMs: await daemonReadyBoundMs(), stopMs: daemonStopBoundMs() });
 
-const superviseFlags = (ports: DaemonPorts): string[] => [`--home=${ports.home}`, '--log-target=file'];
+const superviseFlags = (ports: DaemonPorts, lifeline: boolean): string[] => [
+  `--home=${ports.home}`,
+  '--log-target=file',
+  ...(lifeline ? [`--lifeline-fd=${LIFELINE_FD}`] : []),
+];
 
 const unready = (health: SupervisorHealth): string | undefined => {
   if (health.phase !== 'running') return `supervisor phase ${health.phase}`;
@@ -113,9 +117,16 @@ const awaitReady = async (ports: DaemonPorts, paths: MomongaPaths, client: Super
     { boundMs: readyMs, intervalMs: DAEMON_POLL_INTERVAL_MS, description: 'the daemon to become ready', ...(signal === undefined ? {} : { signal }) },
   );
 
-const startDaemon = async (ports: DaemonPorts, paths: MomongaPaths, client: SupervisorClient, readyMs: number, signal?: AbortSignal): Promise<SupervisorHealth> => {
-  const invocation = selfInvocation(ports.self, INTERNAL_COMMANDS.supervise, superviseFlags(ports));
-  const child = ports.spawnDetached({ command: invocation.command, args: invocation.args, env: ports.env, cwd: ports.home });
+const startDaemon = async (
+  ports: DaemonPorts,
+  paths: MomongaPaths,
+  client: SupervisorClient,
+  readyMs: number,
+  lifeline: boolean,
+  signal?: AbortSignal,
+): Promise<SupervisorHealth> => {
+  const invocation = selfInvocation(ports.self, INTERNAL_COMMANDS.supervise, superviseFlags(ports, lifeline));
+  const child = ports.spawnDetached({ command: invocation.command, args: invocation.args, env: ports.env, cwd: ports.home, ...(lifeline ? { lifeline } : {}) });
   let outcome: SpawnOutcome | undefined;
   void child.exit.then(
     (exit) => {
@@ -130,7 +141,7 @@ const startDaemon = async (ports: DaemonPorts, paths: MomongaPaths, client: Supe
 
 export type DaemonReplacement = 'never' | 'when-idle' | 'always';
 
-export type EnsureDaemonOptions = { bounds?: DaemonBounds; replacement?: DaemonReplacement; signal?: AbortSignal };
+export type EnsureDaemonOptions = { bounds?: DaemonBounds; replacement?: DaemonReplacement; signal?: AbortSignal; lifeline?: boolean };
 
 const isStrictlyNewerThan = (clientVersion: string, daemonVersion: string): boolean => {
   const client = tryParseVersion(clientVersion);
@@ -166,14 +177,14 @@ export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, opti
   const client = createSupervisorClient({ socketPath: paths.sockets.supervisor });
   try {
     const current = await probeSupervisor(client);
-    if (current === undefined) return await startDaemon(ports, paths, client, readyMs, signal);
+    if (current === undefined) return await startDaemon(ports, paths, client, readyMs, options.lifeline === true, signal);
     if (current.phase === 'draining') {
       await waitForSupervisorGone(ports, paths, stopMs, signal);
-      return await startDaemon(ports, paths, client, readyMs, signal);
+      return await startDaemon(ports, paths, client, readyMs, options.lifeline === true, signal);
     }
     if (await replaceOlder(ports, client, current, options.replacement ?? 'never', signal)) {
       await waitForSupervisorGone(ports, paths, stopMs, signal);
-      return await startDaemon(ports, paths, client, readyMs, signal);
+      return await startDaemon(ports, paths, client, readyMs, options.lifeline === true, signal);
     }
     return await awaitReady(ports, paths, client, readyMs, signal);
   } finally {

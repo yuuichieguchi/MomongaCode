@@ -16,8 +16,13 @@ import { memoryTextProblem } from './rules.ts';
 type SaveInput = { text: string; scope: MemoryScope; kind?: MemoryKind; paths?: string[]; supersedes?: string[] };
 type SearchInput = { query: string; include?: 'live' | 'all' };
 
+const describeOrigin = (source: MemoryView['source']): string => {
+  if (source.kind === 'command') return 'added by a person';
+  return `in run ${source.runId}${source.kind === 'tool' ? ` step ${source.step}` : ''}`;
+};
+
 const describeMemory = (memory: MemoryView): string =>
-  `[${memory.id}] (${memory.scope} memory, ${memory.origin} origin, status ${memory.status}${describeMemoryValidity(memory)}, saved ${new Date(memory.createdAt).toISOString()} in run ${memory.source.runId}${memory.source.kind === 'tool' ? ` step ${memory.source.step}` : ''}, last used ${new Date(memory.lastUsedAt).toISOString()}) ${memory.text}`;
+  `[${memory.id}] (${memory.scope} memory, ${memory.origin} origin, status ${memory.status}${describeMemoryValidity(memory)}, saved ${new Date(memory.createdAt).toISOString()} ${describeOrigin(memory.source)}, last used ${new Date(memory.lastUsedAt).toISOString()}) ${memory.text}`;
 
 const termsOf = (query: string): string[] => query.split(/\s+/).filter((term) => term !== '');
 

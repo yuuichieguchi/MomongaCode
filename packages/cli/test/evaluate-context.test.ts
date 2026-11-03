@@ -125,9 +125,36 @@ describe('momonga eval context', () => {
     expect(completed).toEqual([1]);
   });
 
-  it('says why a live run is refused and how to record transcripts to replay', async () => {
+  it('requires the provenance of a live run', async () => {
     const { program } = harness();
-    await expect(run(program, 'eval', 'context', 'context.json', '--model', 'real')).rejects.toThrow(/golden copy.*momonga eval <copy> --record/s);
+    await expect(run(program, 'eval', 'context', 'context.json', '--alias', 'default')).rejects.toThrow(/--model fake\|real is required/);
+  });
+
+  it('requires the alias of a live run', async () => {
+    const { program } = harness();
+    await expect(run(program, 'eval', 'context', 'context.json', '--model', 'fake')).rejects.toThrow(/--alias <alias> is required/);
+  });
+
+  it('refuses --record together with --replay', async () => {
+    const { program } = harness();
+    await expect(run(program, 'eval', 'context', 'context.json', '--replay', 't', '--record', 'r', '--model', 'fake')).rejects.toThrow(/--record and --replay cannot be combined/);
+  });
+
+  it('refuses a seed that is not an integer', async () => {
+    const { program } = harness();
+    await expect(run(program, 'eval', 'context', 'context.json', '--model', 'fake', '--alias', 'default', '--seed', 'x')).rejects.toThrow(/--seed/);
+  });
+
+  it('takes the seed of a replay from the transcripts', async () => {
+    const context = harness();
+    for (const scenario of SCENARIOS) {
+      for (const suffix of ['on', 'off']) {
+        const caseId = `${scenario}-${suffix}`;
+        context.stored.set(`/w/t/${caseId}.0.transcript.jsonl`, encodeTranscript({ ...transcript(caseId), datasetSeed: 7 }));
+      }
+    }
+    await run(context.program, 'eval', 'context', 'context.json', '--replay', 't', '--model', 'fake', '--report', 'seeded.json');
+    expect(JSON.parse(context.stored.get('/w/seeded.json') ?? '{}')).toMatchObject({ datasetSeed: 7 });
   });
 
   it('requires the provenance of a replay instead of guessing it', async () => {

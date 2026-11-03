@@ -20,8 +20,30 @@ describe('context settings defaults', () => {
     expect((await resolvedWith({})).verification).toEqual({ commands: DEFAULT_COMMANDS, manifests: DEFAULT_MANIFESTS });
   });
 
-  it('keeps the adaptive budget off', async () => {
-    expect((await resolvedWith({})).context).toEqual({ adaptiveBudget: false });
+  it('keeps the adaptive budget off and automatic compaction on', async () => {
+    expect((await resolvedWith({})).context).toEqual({ adaptiveBudget: false, autoCompact: true });
+  });
+});
+
+describe('context.autoCompact', () => {
+  it('resolves false from the user settings', async () => {
+    expect((await resolvedWith({ context: { autoCompact: false } })).context).toEqual({ adaptiveBudget: false, autoCompact: false });
+  });
+
+  it('lets a later layer win without touching the other key', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { context: { autoCompact: false, adaptiveBudget: true } });
+    writeJson(projectSettingsPath(tree), { context: { autoCompact: true } });
+    const { settings } = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    expect(settings.context).toEqual({ adaptiveBudget: true, autoCompact: true });
+  });
+
+  it('keeps a lower layer when a later layer does not set it', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { context: { autoCompact: false } });
+    writeJson(projectSettingsPath(tree), { context: { adaptiveBudget: true } });
+    const { settings } = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    expect(settings.context).toEqual({ adaptiveBudget: true, autoCompact: false });
   });
 });
 
@@ -34,7 +56,7 @@ describe('context settings values', () => {
     });
     expect(settings.memory).toEqual({ reflection: { enabled: true, maxTokens: 512 }, forgetAfterDays: 30 });
     expect(settings.verification).toEqual({ commands: ['just check'], manifests: ['justfile'] });
-    expect(settings.context).toEqual({ adaptiveBudget: true });
+    expect(settings.context).toEqual({ adaptiveBudget: true, autoCompact: true });
   });
 
   it('keeps the other defaults when one nested key is set', async () => {
@@ -82,6 +104,7 @@ describe('context settings rejection', () => {
     [{ verification: { manifests: 'Makefile' } }, '/verification/manifests'],
     [{ verification: { manifests: [''] } }, '/verification/manifests/0'],
     [{ context: { adaptiveBudget: 'no' } }, '/context/adaptiveBudget'],
+    [{ context: { autoCompact: 'no' } }, '/context/autoCompact'],
   ])('rejects %j at its pointer', async (settings, pointer) => {
     const tree = makeTree();
     const file = writeJson(userSettingsPath(tree), settings);
