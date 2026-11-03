@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { createUninspectableRegistry } from '@momonga/foundation';
 import type { ReapMarkedProcessesOptions } from '@momonga/foundation';
 import type { IdempotencyLookup } from '@momonga/store';
 import { reapToolMarkers } from '../../src/process/tool-markers.ts';
@@ -66,9 +67,10 @@ describe('reapToolMarkers with a failing holder check (system timers, none used;
     holderState.byMarker.set(held, [999_999]);
     holderState.unreadable = [{ pid: 31_337, command: 'ssh-agent', startTicks: '424242' }];
     const store = { idempotency: { get: (): IdempotencyLookup | undefined => undefined } } as never;
+    const uninspectable = createUninspectableRegistry({ isAlive: () => true });
 
     for (let sweep = 0; sweep < 3; sweep += 1) {
-      await reapToolMarkers({ dir: s.temp.paths.markers.tools, store, killGraceMs: 2000, onWarning: s.onWarning, reap: s.reap as never });
+      await reapToolMarkers({ dir: s.temp.paths.markers.tools, store, killGraceMs: 2000, onWarning: s.onWarning, reap: s.reap as never, uninspectable });
     }
 
     expect(s.messages).toEqual([`tool marker ${held}: process 31337 (ssh-agent) could not be inspected, so it was left alone`]);

@@ -371,6 +371,7 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
   const { journal, holders } = options;
   const owned = new Map<string, PlaceholderIdentity | undefined>();
   const kept = new Map<string, PlaceholderIdentity | undefined>();
+  const sweepFailures = new Map<string, string>();
 
   const attemptAll = (steps: ReadonlyArray<() => void>): unknown[] => {
     const failures: unknown[] = [];
@@ -405,19 +406,35 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
     if (kept.size === 0) return;
     const stillHeld = holders();
     const releasable = [...kept].filter(([placeholder]) => !stillHeld.has(placeholder));
-    throwAll(
-      attemptAll(
-        releasable.map(([placeholder, identity]) => () => {
-          remove(placeholder, identity);
-          kept.delete(placeholder);
-        }),
-      ),
-    );
+    const newFailures: unknown[] = [];
+    for (const [placeholder, identity] of releasable) {
+      try {
+        remove(placeholder, identity);
+        kept.delete(placeholder);
+        sweepFailures.delete(placeholder);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (sweepFailures.get(placeholder) !== message) {
+          sweepFailures.set(placeholder, message);
+          newFailures.push(error);
+        }
+      }
+    }
+    throwAll(newFailures);
   };
   const hold = (plan: BubblewrapPlan): void => {
     const begun: string[] = [];
+    const adopted: Array<[string, PlaceholderIdentity | undefined]> = [];
     try {
       for (const placeholder of plan.placeholders.filter((candidate) => !held.has(candidate))) {
+        if (kept.has(placeholder)) {
+          const identity = kept.get(placeholder);
+          kept.delete(placeholder);
+          sweepFailures.delete(placeholder);
+          owned.set(placeholder, identity);
+          adopted.push([placeholder, identity]);
+          continue;
+        }
         journal.intend(placeholder, Date.now());
         begun.push(placeholder);
         owned.set(placeholder, undefined);
@@ -428,6 +445,10 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
     } catch (error) {
       const failures = attemptAll(begun.map((placeholder) => () => remove(placeholder, owned.get(placeholder))));
       for (const placeholder of begun) owned.delete(placeholder);
+      for (const [placeholder, identity] of adopted) {
+        owned.delete(placeholder);
+        kept.set(placeholder, identity);
+      }
       throwAll([error, ...failures]);
     }
     for (const placeholder of plan.placeholders) held.set(placeholder, (held.get(placeholder) ?? 0) + 1);
@@ -472,7 +493,7 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
     sweep: sweepKept,
     spawn(command: SandboxCommand, policy: SandboxPolicy, signal: AbortSignal): SandboxedProcess {
       for (const root of policy.writableRoots) assertExistingDirectory(root, directories);
-      const planned = { heldPlaceholders: new Set(held.keys()), cwd: command.cwd };
+      const planned = { heldPlaceholders: new Set([...held.keys(), ...kept.keys()]), cwd: command.cwd };
       if (command.tmpDir !== undefined) {
         assertExistingDirectory(command.tmpDir, directories);
         return launchWith(command, planBubblewrap(policy, { ...planned, tmpDir: command.tmpDir }, filesystem), command.tmpDir, signal, () => undefined);

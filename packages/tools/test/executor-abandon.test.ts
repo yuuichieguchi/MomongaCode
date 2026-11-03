@@ -2,8 +2,8 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { REAP_POLL_INTERVAL_MS, findHolders } from '@momonga/foundation';
-import type { ReapTiming, SignalSender } from '@momonga/foundation';
+import { REAP_POLL_INTERVAL_MS, createUninspectableRegistry, findHolders } from '@momonga/foundation';
+import type { ProcessInspector, ReapTiming, SignalSender, UninspectableRegistry } from '@momonga/foundation';
 import { killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness, HarnessOptions } from './harness.ts';
@@ -100,7 +100,7 @@ const fakeTiming = (overlapTarget = 1): ReapTiming & { active: number; maxActive
   return timing;
 };
 
-const harnessWith = (reap: { kill?: SignalSender; timing?: ReapTiming; killGraceMs?: number }): Harness =>
+const harnessWith = (reap: { kill?: SignalSender; timing?: ReapTiming; killGraceMs?: number; inspector?: ProcessInspector; uninspectable?: UninspectableRegistry }): Harness =>
   makeHarness({ executor: { reap } } as HarnessOptions);
 
 describe('executor abandon', () => {
@@ -397,5 +397,41 @@ describe('executor reconcile of a PENDING call whose earlier attempt is still ru
     expect(pidAlive(stubborn)).toBe(true);
     expect(harness.idempotency.stateOf(KEY_A)).toBe('PENDING');
     expect(harness.kernelLock.isHeldBy(path.join(harness.callLockDir, `${KEY_A}.lock`))).toBeUndefined();
+  });
+
+  it('fails as unverifiable when a process of the earlier attempt could not be inspected, never reconciles as if it were stopped, and still names the process', async () => {
+    const unreadable = { pid: 31_340, command: 'ssh-agent', startTicks: '9' };
+    const inspector: ProcessInspector = {
+      startTimeOf: async () => ({ kind: 'gone' }),
+      holdersOf: async (_marker, report) => {
+        report?.(unreadable);
+        return { kind: 'value', value: [] };
+      },
+      groupsOf: async () => ({ kind: 'value', value: new Map() }),
+    };
+    const harness = harnessWith({ inspector, uninspectable: createUninspectableRegistry({ isAlive: () => true }), timing: fakeTiming(), killGraceMs: STUBBORN_GRACE_MS });
+    const marker = markerOf(harness, KEY_A);
+    fs.writeFileSync(marker, '', { mode: 0o600 });
+    seedPending(harness, KEY_A);
+
+    const reconciled: string[] = [];
+    const tool = makeTool('Bash', {
+      kind: 'execute',
+      sideEffect: 'exec',
+      reconcile: async () => {
+        reconciled.push('reconcile');
+        return { outcome: 'unknown', output: 'unknown' };
+      },
+    });
+
+    await expect(harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('call-a', 'Bash', {}, 'allow_once')]))).rejects.toMatchObject({
+      name: 'EarlierAttemptNotStoppedError',
+      code: 'earlier_attempt_not_stopped',
+      reason: 'unverifiable',
+      message: expect.stringContaining('ssh-agent'),
+    });
+    expect(reconciled).toEqual([]);
+    expect(harness.idempotency.stateOf(KEY_A)).toBe('PENDING');
+    expect(harness.warnings).toEqual(expect.arrayContaining([`tool marker ${marker}: process 31340 (ssh-agent) could not be inspected, so it was left alone`]));
   });
 });
