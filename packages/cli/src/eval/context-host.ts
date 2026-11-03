@@ -22,7 +22,7 @@ export type ContextRuntime = Pick<
 export type ContextHostEffects = {
   platform: NodeJS.Platform;
   env: Readonly<Record<string, string | undefined>>;
-  sessionEnv(): Promise<Record<string, string>>;
+  sessionEnv(root: string): Promise<Record<string, string>>;
   makeRoot(): Promise<string>;
   prepare(paths: MomongaPaths): Promise<void>;
   writeFile(file: string, text: string): Promise<void>;
@@ -39,7 +39,7 @@ export type ContextHostEffects = {
   readSecret(name: string, signal: AbortSignal): Promise<string>;
   copyProbeRecord(target: string, paths: MomongaPaths): Promise<void>;
   listRoots(): Promise<string[]>;
-  readOwner(root: string): Promise<number | undefined>;
+  readOwner(root: string): Promise<number | 'unreadable' | undefined>;
   isAlive(pid: number): boolean;
 };
 
@@ -137,19 +137,29 @@ export const readCredentials = async (
 
 export const OWNER_FILE = '.momonga-eval-owner';
 
-export const ROOT_PREFIX = 'mc-';
+export const ROOT_PREFIX = 'momonga-eval-';
 
-export const sweepStaleHomes = async (effects: ContextHostEffects): Promise<string[]> => {
+export const unreadableHomesNotice = (count: number): string =>
+  `${count} temporary ${count === 1 ? 'entry' : 'entries'} of an earlier run could not be read and ${count === 1 ? 'was' : 'were'} skipped\n`;
+
+export type SweepResult = { removed: string[]; unreadable: number };
+
+export const sweepStaleHomes = async (effects: ContextHostEffects): Promise<SweepResult> => {
   const removed: string[] = [];
+  let unreadable = 0;
   for (const root of await effects.listRoots()) {
     const owner = await effects.readOwner(root);
+    if (owner === 'unreadable') {
+      unreadable += 1;
+      continue;
+    }
     if (owner === undefined || effects.isAlive(owner)) continue;
     const holder = await effects.daemonHolder(momongaLayout(root, effects.platform, {}));
     if (holder !== undefined) await effects.terminate(holder);
     await effects.remove(root);
     removed.push(root);
   }
-  return removed;
+  return { removed, unreadable };
 };
 
 type CaseRecord = { root: string; paths: MomongaPaths | undefined; pid: number | undefined; runtime: ContextRuntime | undefined; released: boolean };
@@ -193,7 +203,7 @@ export const createContextHosts = (
   const prepared = async (entry: ExpandedCase, record: CaseRecord): Promise<ContextCaseHost> => {
     const { root } = record;
     await effects.writeFile(path.join(root, OWNER_FILE), String(effects.ownerPid));
-    assertSocketsFit(root, effects.platform);
+    assertSocketsFit(await effects.canonical(root), effects.platform);
     const paths = momongaLayout(root, effects.platform, {});
     record.paths = paths;
     await effects.prepare(paths);
@@ -218,7 +228,7 @@ export const createContextHosts = (
     if (options.guideline !== undefined) await runtime.adoptGuideline({ text: options.guideline, parent: null, report: { ...BENCHMARK_GUIDELINE_REPORT } });
     return {
       cwd,
-      api: goldenRunApi(runtime, await effects.sessionEnv()),
+      api: goldenRunApi(runtime, await effects.sessionEnv(root)),
       rules: {
         add: (request) => runtime.addRule(request),
         retire: async (id) => void (await runtime.retireRule(id)),
@@ -285,6 +295,7 @@ export type ContextLiveInput = {
   guideline?: string;
   interrupt?: AbortSignal;
   onTranscript?(transcript: Transcript): Promise<void>;
+  onUnreadableHomes?(count: number): void;
 };
 
 export const runContextLive = async (effects: ContextHostEffects, input: ContextLiveInput): Promise<Transcript[]> => {
@@ -292,7 +303,8 @@ export const runContextLive = async (effects: ContextHostEffects, input: Context
   interrupt?.throwIfAborted();
   const settings = liveSettingsFor(input.models, input.alias);
   const credentialValues = await readCredentials(effects, settings.credentials, interrupt ?? new AbortController().signal);
-  await sweepStaleHomes(effects);
+  const swept = await sweepStaleHomes(effects);
+  if (swept.unreadable > 0) input.onUnreadableHomes?.(swept.unreadable);
   const hosts = createContextHosts(effects, { settings, credentialValues, ...(input.guideline === undefined ? {} : { guideline: input.guideline }) });
   const bounds = liveBoundsFor(input.dataset, input.limits);
   const interrupted = new Promise<never>((_resolve, reject) => {

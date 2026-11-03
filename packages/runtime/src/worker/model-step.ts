@@ -12,6 +12,7 @@ import type { ModelResult } from './model-stream.ts';
 import { summaryStopReason } from './wrap-up.ts';
 import { runStopHooks } from './hook-step.ts';
 import { recordCalls, settleCalls } from './tool-step.ts';
+import { pinnedDigestOf } from './pinned-digest.ts';
 
 const MODEL_ATTEMPT = 1;
 const DEADLINE_CODE = 'deadline_exceeded';
@@ -204,7 +205,7 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   const position = { step, attempt: MODEL_ATTEMPT };
   journal.append([
     ...(wrapUp === undefined ? [] : [{ type: 'notice' as const, level: 'error' as const, message: wrapUp.notice, code: 'context_wrap_up' }]),
-    { type: 'model.requested', step: position.step, attempt: position.attempt, digest: sha256Hex(canonicalJson(body)), body },
+    { type: 'model.requested', step: position.step, attempt: position.attempt, digest: sha256Hex(canonicalJson(body)), pinnedDigest: pinnedDigestOf(body), body },
   ]);
   const streamed = await streamRecovering(ctx, body, position);
   return streamed.kind === 'flow' ? streamed.flow : handleResult(ctx, streamed.result, position, summarising ? undefined : { inputDigest: built.inputDigest });

@@ -1,4 +1,5 @@
 import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
+import { GUIDELINE_TEXT_PATTERN } from './guideline-text.ts';
 import { HOOK_EVENTS, HOOK_OUTCOMES, HOOK_PRE_TOOL_DECISIONS } from './hooks.ts';
 import { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
 import { MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES } from './memory.ts';
@@ -978,7 +979,7 @@ export const RUN_API_SCHEMAS = {
   GuidelinesResponse: root(closed({ current: nullable(guidelineView), guidelines: { type: 'array', items: guidelineView } }, ['current', 'guidelines'])),
   GuidelineResponse: root(closed({ guideline: guidelineView }, ['guideline'])),
   AdoptGuidelineRequest: root(
-    closed({ text: { type: 'string', minLength: 1 }, parent: nullable({ type: 'integer', minimum: 1 }), report: { type: 'object' } }, ['text', 'parent', 'report']),
+    closed({ text: { type: 'string', minLength: 1, pattern: GUIDELINE_TEXT_PATTERN }, parent: nullable({ type: 'integer', minimum: 1 }), report: { type: 'object' } }, ['text', 'parent', 'report']),
   ),
   RecordContextChargeRequest: root(
     closed(

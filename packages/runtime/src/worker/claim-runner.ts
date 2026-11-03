@@ -293,7 +293,7 @@ const drive = async (
   if (toolNotices.length > 0) journal.append([...new Set(toolNotices)].map((message) => ({ type: 'notice', level: 'warning', message })));
   for (const server of toolSet.authorizationRequired) {
     const message = `MCP server "${server}" requires authorization before its tools can be listed`;
-    if (journal.state.notes.some((note) => note.message === message)) continue;
+    if (journal.state.notes.some((note) => note.code === 'mcp_authorization_required' && note.message === message)) continue;
     journal.append([{ type: 'notice', level: 'warning', message, code: 'mcp_authorization_required' }, { type: 'mcp.authorization.required', server }]);
   }
 
@@ -305,7 +305,7 @@ const drive = async (
       });
       return;
     }
-    if (pins.toolSetDigest !== toolSet.digest && !journal.state.notes.some((note) => note.message === TOOLS_CHANGED_NOTICE)) {
+    if (pins.toolSetDigest !== toolSet.digest && !journal.state.notes.some((note) => note.code === 'tools_changed')) {
       journal.append([{ type: 'notice', level: 'warning', message: TOOLS_CHANGED_NOTICE, code: 'tools_changed' }]);
     }
   }

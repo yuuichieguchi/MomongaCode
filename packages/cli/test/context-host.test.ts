@@ -3,6 +3,7 @@ import type { ResolvedChatCompletionsTarget, UserModels } from '@momonga/config'
 import fs from 'node:fs';
 import { CONTEXT_DATASET_FORMAT, buildContextReport, expandContextDataset, parseContextDataset } from '@momonga/eval';
 import type { Transcript } from '@momonga/eval';
+import { momongaLayout, socketPathLimit } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { ContextHostError, ContextInterrupted, assertSocketsFit, caseEnvironment, liveSettingsFor, runContextLive, sweepStaleHomes } from '../src/eval/context-host.ts';
@@ -69,6 +70,8 @@ type Behaviour = {
   rootLength?: number;
   secrets?: Record<string, string>;
   staleRoots?: { root: string; owner: number; holder?: number }[];
+  unreadableRoots?: string[];
+  canonicalPrefix?: string;
 };
 
 const OWNER = 7;
@@ -90,6 +93,7 @@ const harness = (behaviour: Behaviour = {}) => {
   const memories: unknown[] = [];
   const trusted: string[] = [];
   const holders = new Map<string, number>();
+  const sessionRoots: string[] = [];
   let counter = 0;
   let nextPid = 4000;
   const runtimeFor = (root: string): ContextRuntime => {
@@ -129,7 +133,10 @@ const harness = (behaviour: Behaviour = {}) => {
   const effects: ContextHostEffects = {
     platform: 'darwin',
     env: { PATH: '/usr/bin', HOME: '/home/person', XDG_CACHE_HOME: '/home/person/cache', UPSTREAM_KEY: 'k' },
-    sessionEnv: async () => ({ PATH: '/usr/bin' }),
+    sessionEnv: async (root) => {
+      sessionRoots.push(root);
+      return { PATH: '/usr/bin' };
+    },
     makeRoot: async () => {
       const root = `/tmp/mc-${'x'.repeat(behaviour.rootLength ?? 6)}${roots.size}`;
       roots.set(root, { removed: false });
@@ -144,8 +151,9 @@ const harness = (behaviour: Behaviour = {}) => {
       return value;
     },
     copyProbeRecord: async (target, paths) => void probeCopies.push(`${target} -> ${paths.probe}`),
-    listRoots: async () => [...roots.keys(), ...(behaviour.staleRoots ?? []).map((stale) => stale.root)],
+    listRoots: async () => [...roots.keys(), ...(behaviour.staleRoots ?? []).map((stale) => stale.root), ...(behaviour.unreadableRoots ?? [])],
     readOwner: async (root) => {
+      if (behaviour.unreadableRoots?.includes(root) === true) return 'unreadable';
       const text = files.get(`${root}/.momonga-eval-owner`);
       return text === undefined ? undefined : Number(text);
     },
@@ -155,7 +163,7 @@ const harness = (behaviour: Behaviour = {}) => {
       for (const [root, state] of roots) if (file === `${root}/.momonga/settings.json`) state.settings = text;
     },
     makeDirectory: async () => undefined,
-    canonical: async (directory) => directory,
+    canonical: async (directory) => `${behaviour.canonicalPrefix ?? ''}${directory}`,
     startDaemon: async (root, _paths, env) => {
       startEnvs.push({ ...env });
       const state = roots.get(root);
@@ -192,7 +200,7 @@ const harness = (behaviour: Behaviour = {}) => {
       holders.set(stale.root, stale.holder);
     }
   }
-  return { effects, roots, alive, terminated, stopped, memories, trusted, files, startEnvs, probeCopies, secretReads, removedDirectories, inputs, addedRules, adopted, order };
+  return { effects, sessionRoots, roots, alive, terminated, stopped, memories, trusted, files, startEnvs, probeCopies, secretReads, removedDirectories, inputs, addedRules, adopted, order };
 };
 
 const input = (extra: Partial<Parameters<typeof runContextLive>[1]> = {}): Parameters<typeof runContextLive>[1] => ({
@@ -287,6 +295,26 @@ describe('a live context run', () => {
     expect(context.roots.size).toBe(0);
   });
 
+  it('asks for the session environment of every case with the root of that case', async () => {
+    const context = harness();
+    await runContextLive(context.effects, input());
+    expect(context.sessionRoots).toEqual(['/tmp/mc-xxxxxx0', '/tmp/mc-xxxxxx1']);
+  });
+
+  it('measures the sockets on the canonical path of the home, the one the supervisor builds them from', async () => {
+    const limit = socketPathLimit('darwin');
+    const probe = '/tmp/mc-0';
+    const suffix = Math.max(...Object.values(momongaLayout(probe, 'darwin', {}).sockets).map((socket) => Buffer.byteLength(socket))) - Buffer.byteLength(probe);
+    const canonicalPrefix = '/private';
+    const rootLength = limit - 1 - suffix - Buffer.byteLength('/tmp/mc-') - 1;
+    const plain = harness({ rootLength });
+    await runContextLive(plain.effects, input());
+    expect(plain.roots.size).toBe(2);
+    const canonical = harness({ rootLength, canonicalPrefix });
+    await expect(runContextLive(canonical.effects, input())).rejects.toThrow(new RegExp(`${canonicalPrefix}/tmp/mc-.*must be shorter than ${limit} bytes`));
+    noDaemonLeft(canonical);
+  });
+
   it('refuses a temporary home whose sockets would not fit and removes it', async () => {
     const context = harness({ rootLength: 90 });
     await expect(runContextLive(context.effects, input())).rejects.toThrow(/must be shorter than 104 bytes/);
@@ -368,15 +396,29 @@ describe('the shipped context dataset with the fake model', () => {
 describe('a home left by a CLI that was killed', () => {
   it('is removed at the next start, with its daemon, when the owner is gone', async () => {
     const context = harness({ staleRoots: [{ root: '/tmp/mc-stale0', owner: 99, holder: 5000 }] });
-    expect(await sweepStaleHomes(context.effects)).toEqual(['/tmp/mc-stale0']);
+    expect(await sweepStaleHomes(context.effects)).toEqual({ removed: ['/tmp/mc-stale0'], unreadable: 0 });
     expect(context.terminated).toEqual([5000]);
     expect(context.removedDirectories).toEqual(['/tmp/mc-stale0']);
+  });
+
+  it('skips and counts an entry it cannot read, and still removes the stale home beside it', async () => {
+    const context = harness({ staleRoots: [{ root: '/tmp/mc-stale0', owner: 99 }], unreadableRoots: ['/tmp/mc-locked', '/tmp/mc-file'] });
+    expect(await sweepStaleHomes(context.effects)).toEqual({ removed: ['/tmp/mc-stale0'], unreadable: 2 });
+    expect(context.removedDirectories).toEqual(['/tmp/mc-stale0']);
+  });
+
+  it('reports the unreadable entries to the caller of a live run and starts its cases', async () => {
+    const context = harness({ unreadableRoots: ['/tmp/mc-locked'] });
+    const counts: number[] = [];
+    await runContextLive(context.effects, input({ onUnreadableHomes: (count) => void counts.push(count) }));
+    expect(counts).toEqual([1]);
+    expect(context.roots.size).toBe(2);
   });
 
   it('is left alone when its owner is still running, or when it names no owner', async () => {
     const context = harness({ staleRoots: [{ root: '/tmp/mc-live', owner: OWNER, holder: 5000 }, { root: '/tmp/mc-foreign', owner: 99 }] });
     context.files.delete('/tmp/mc-foreign/.momonga-eval-owner');
-    expect(await sweepStaleHomes(context.effects)).toEqual([]);
+    expect(await sweepStaleHomes(context.effects)).toEqual({ removed: [], unreadable: 0 });
     expect(context.removedDirectories).toEqual([]);
     expect(context.terminated).toEqual([]);
   });
