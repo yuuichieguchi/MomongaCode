@@ -1,11 +1,10 @@
 import { describeFallbackCause } from '@momonga/foundation';
 import type { FallbackCause } from '@momonga/foundation';
-import { GENAI_SEMCONV, MOMONGA_ATTRIBUTES, OPERATIONS, UNKNOWN_BILLING } from './semconv.ts';
-import { amountOfUnits, computeCostUnits } from './cost.ts';
+import { MOMONGA_ATTRIBUTES, UNKNOWN_BILLING } from './semconv.ts';
+import { billedCallOf, isBilledChat } from './billed-calls.ts';
+import { LOCAL_PRICE_VERSION, amountOfUnits } from './cost.ts';
 import type { PriceTable } from './cost.ts';
 import type { SpanRecord, TraceStore } from './trace-store.ts';
-
-const A = GENAI_SEMCONV.attributes;
 
 export type CostedRun = { runId: string; sessionId: string };
 
@@ -113,51 +112,24 @@ const stringAttribute = (span: SpanRecord, key: string): string => {
   return value;
 };
 
-const tokenAttribute = (span: SpanRecord, key: string, required: boolean): number => {
-  const value = span.attributes[key];
-  if (value === undefined && !required) return 0;
-  if (typeof value !== 'number') throw new TypeError(`chat span ${span.spanId} attribute ${key} must be a number`);
-  return value;
-};
-
-const isBilledChat = (span: SpanRecord): boolean =>
-  span.attributes[A.ATTR_GEN_AI_OPERATION_NAME] === OPERATIONS.chat && span.attributes[A.ATTR_GEN_AI_USAGE_INPUT_TOKENS] !== undefined;
-
 const accumulateRun = (store: TraceStore, runId: string, table: PriceTable): Accumulator => {
   const accumulator = emptyAccumulator();
   for (const span of store.spansForRun(runId).filter(isBilledChat)) {
-    const usage = {
-      inputTokens: tokenAttribute(span, A.ATTR_GEN_AI_USAGE_INPUT_TOKENS, true),
-      outputTokens: tokenAttribute(span, A.ATTR_GEN_AI_USAGE_OUTPUT_TOKENS, true),
-      cachedInputTokens: tokenAttribute(span, A.ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS, false),
-    };
+    const call = billedCallOf(runId, span, table);
     accumulator.calls += 1;
     const causes = fallbackCausesOf(span);
     if (causes !== undefined) addFallback(accumulator, stringAttribute(span, MOMONGA_ATTRIBUTES.target), causes, 1);
-    accumulator.inputTokens += usage.inputTokens;
-    accumulator.outputTokens += usage.outputTokens;
-    accumulator.cachedInputTokens += usage.cachedInputTokens;
-    const billing = stringAttribute(span, MOMONGA_ATTRIBUTES.billing);
-    if (billing === 'local') {
-      accumulator.localCalls += 1;
-      continue;
-    }
-    if (billing === UNKNOWN_BILLING) {
+    accumulator.inputTokens += call.usage.inputTokens;
+    accumulator.outputTokens += call.usage.outputTokens;
+    accumulator.cachedInputTokens += call.usage.cachedInputTokens;
+    if (call.billing === 'local') accumulator.localCalls += 1;
+    if (call.billing === UNKNOWN_BILLING) {
       accumulator.unknownBillingCalls += 1;
-      continue;
-    }
-    const priced = computeCostUnits({
-      provider: stringAttribute(span, A.ATTR_GEN_AI_PROVIDER_NAME),
-      model: stringAttribute(span, A.ATTR_GEN_AI_REQUEST_MODEL),
-      usage,
-      at: new Date(span.startMs),
-      table,
-    });
-    if (priced === null) {
+    } else if (call.price.kind === 'unpriced') {
       accumulator.unpricedCalls += 1;
     } else {
-      accumulator.units += priced.units;
-      accumulator.priceVersions.add(priced.priceVersion);
+      accumulator.units += call.price.units;
+      if (call.price.priceVersion !== LOCAL_PRICE_VERSION) accumulator.priceVersions.add(call.price.priceVersion);
     }
   }
   return accumulator;

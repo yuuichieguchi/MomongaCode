@@ -1,7 +1,7 @@
 import { createUdsClient, decodeSse, parseRetryAfter } from '@momonga/foundation';
 import type { UdsClient, UdsResponse } from '@momonga/foundation';
 import { COMPACTION_RESULT_EVENT, ERROR_TYPES, STREAM_IDLE_HEADER } from '@momonga/protocol';
-import type { BreakdownCallInput, CostBreakdownView, GatewayCostReportView } from '@momonga/protocol';
+import type { BilledCallsCursorView, BilledCallsPageView, GatewayCostReportView } from '@momonga/protocol';
 import type {
   Capabilities,
   CompactRequest,
@@ -63,7 +63,7 @@ export type GatewayClient = GatewayPort & {
   models(): Promise<GatewayModel[]>;
   health(): Promise<GatewayHealth>;
   cost(runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal): Promise<{ report: GatewayCostReportView; text: string }>;
-  costBreakdown(runIds: readonly string[], calls: readonly BreakdownCallInput[], signal: AbortSignal): Promise<{ breakdown: CostBreakdownView; text: string }>;
+  billedCalls(runIds: readonly string[], cursor: BilledCallsCursorView, limit: number, signal: AbortSignal): Promise<BilledCallsPageView>;
   destroy(): Promise<void>;
 };
 
@@ -423,10 +423,10 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
       return { report: parsed['report'] as GatewayCostReportView, text: parsed['text'] };
     },
 
-    costBreakdown: async (runIds, calls, signal) => {
-      const parsed = await unary({ method: 'POST', path: '/v1/momonga/cost/breakdown', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ runIds, calls }) }, signal, unaryBound());
-      if (!isRecord(parsed) || !isRecord(parsed['breakdown']) || typeof parsed['text'] !== 'string') throw invalidResponse('the cost breakdown answer has no breakdown and text');
-      return { breakdown: parsed['breakdown'] as CostBreakdownView, text: parsed['text'] };
+    billedCalls: async (runIds, cursor, limit, signal) => {
+      const parsed = await unary({ method: 'POST', path: '/v1/momonga/cost/calls', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ runIds, cursor, limit }) }, signal, unaryBound());
+      if (!isRecord(parsed) || !Array.isArray(parsed['calls'])) throw invalidResponse('the billed calls answer has no calls list');
+      return parsed as BilledCallsPageView;
     },
 
     health: async (): Promise<GatewayHealth> => {

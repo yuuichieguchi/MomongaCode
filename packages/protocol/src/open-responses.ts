@@ -346,4 +346,5 @@ export type CompactResource = {
   output: ItemField[];
   created_at: number;
   usage: Usage;
+  momonga?: { cost?: ModelCost };
 };

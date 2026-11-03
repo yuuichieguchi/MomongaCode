@@ -16,16 +16,14 @@ import {
 } from '@momonga/foundation';
 import type { Clock, JsonLogger, MomongaPaths, ProcessLock, ReadyFields, SecretStore, TextStream } from '@momonga/foundation';
 import {
-  buildCostBreakdown,
   buildCostReport,
   closeTelemetry,
   definePriceTable,
-  formatCostBreakdown,
   formatCostReport,
   createTelemetry,
   exportersFor,
-  joinBreakdownCalls,
   openTraceStore,
+  pageBilledCalls,
 } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import type { AdapterTarget, Capabilities, ProviderAdapter, ToolCallingMode } from '@momonga/protocol';
@@ -468,10 +466,9 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         const report = buildCostReport(traceStore, runs, { table: priceTable });
         return { report, text: formatCostReport(report) };
       },
-      costBreakdown: async (runIds, calls) => {
+      billedCalls: async (runIds, cursor, limit) => {
         await telemetry.forceFlush();
-        const breakdown = buildCostBreakdown(joinBreakdownCalls(traceStore, runIds, calls), { table: priceTable });
-        return { breakdown, text: formatCostBreakdown(breakdown) };
+        return pageBilledCalls(traceStore, runIds, priceTable, cursor, limit);
       },
       version: options.version,
       onError: (error) => logger.error('unhandled gateway error', { err: toError(error) }),

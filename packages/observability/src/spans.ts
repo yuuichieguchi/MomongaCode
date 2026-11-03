@@ -25,7 +25,6 @@ export type ChatSpanInput = {
   stream: boolean;
   runId?: string;
   step?: number;
-  purpose?: string;
   attempt: number;
   target?: string;
 };
@@ -103,7 +102,6 @@ export const startChatSpan = (tracer: Tracer, input: ChatSpanInput, parent?: Con
         [A.ATTR_GEN_AI_REQUEST_STREAM]: input.stream,
         ...(input.runId === undefined ? {} : { [MOMONGA_ATTRIBUTES.runId]: input.runId }),
         ...(input.step === undefined ? {} : { [MOMONGA_ATTRIBUTES.step]: input.step }),
-        ...(input.purpose === undefined ? {} : { [MOMONGA_ATTRIBUTES.purpose]: input.purpose }),
         [MOMONGA_ATTRIBUTES.attempt]: input.attempt,
         ...(input.target === undefined ? {} : { [MOMONGA_ATTRIBUTES.target]: input.target }),
       },

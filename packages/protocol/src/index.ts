@@ -115,11 +115,15 @@ export type {
   SkillsResponse,
 } from './run-api.ts';
 export { assistantTextOf } from './assistant-text.ts';
-export { ANATOMY_FLAT_LAYERS, ANATOMY_HISTORY_LAYERS, anatomyLayerEntries } from './token-anatomy.ts';
+export { ANATOMY_FLAT_LAYERS, ANATOMY_HISTORY_LAYERS, MAIN_MODEL_ROLE, MODEL_ROLES, anatomyLayerEntries } from './token-anatomy.ts';
 export type {
+  BilledCallsCursorView,
+  BilledCallsPageView,
+  BilledCallView,
   BilledTokensView,
-  BreakdownCallInput,
   CallTiming,
+  ModelRole,
+  UnjoinedView,
   CostBreakdownView,
   ModelCost,
   TimingSummaryView,

@@ -93,6 +93,7 @@ const carriesOutput = (event: StreamEvent): boolean =>
   event.type === 'response.output_text.delta' ||
   event.type === 'response.reasoning.delta' ||
   event.type === 'response.reasoning_summary_text.delta' ||
+  event.type === 'response.refusal.delta' ||
   event.type === 'response.function_call_arguments.delta' ||
   (event.type === 'response.output_item.added' && event.item.type === 'function_call');
 

@@ -120,6 +120,7 @@ describe('buildNext in wrap-up mode', () => {
     expect(built.input.filter((item) => item.type === 'message' && item.role === 'developer')).toEqual([]);
     const counted = counts.filter((request) => Array.isArray(request.input) && request.input.length > 0 && canonicalJson(request.input.at(-1)) === canonicalJson(instruction));
     expect(counted.length).toBeGreaterThan(0);
+    expect(counts.some((request) => canonicalJson(request.input) === canonicalJson(built.input))).toBe(true);
     for (const request of counts) expect(request.tools ?? []).toEqual([]);
   });
 

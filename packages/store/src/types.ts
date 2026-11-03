@@ -1,5 +1,7 @@
 import type { Clock, Redactor } from '@momonga/foundation';
 import type {
+  CallTiming,
+  TokenAnatomy,
   ElicitationAnswerRecord,
   ElicitationRequestView,
   JobStatus,
@@ -126,7 +128,11 @@ export type ResolveApprovalResult =
   | { kind: 'run_cancelled' }
   | { kind: 'option_not_offered' };
 
-export type HeartbeatResult = { kind: 'ok'; cancelRequested: boolean; status: ClaimStatus } | LeaseLost;
+export type ModelCallRecord =
+  | { kind: 'requested'; seq: number; step: number; attempt: number; anatomy?: TokenAnatomy }
+  | { kind: 'responded'; seq: number; step: number; attempt: number; timing?: CallTiming };
+
+export type HeartbeatResult ={ kind: 'ok'; cancelRequested: boolean; status: ClaimStatus } | LeaseLost;
 export type AppendResult = { kind: 'ok'; lastSeq: number } | LeaseLost;
 export type RunMutationResult = { kind: 'ok'; run: Run } | LeaseLost | Conflict;
 export type ServiceMutationResult = { kind: 'ok'; run: Run } | Conflict;
@@ -508,7 +514,7 @@ export type RuntimeStore = {
   ): ServiceMutationResult;
   readRunEvents(runId: string, afterSeq: number, limit: number): RunEvent[];
   readRunEventsOfTypes(runId: string, types: readonly RunEventPayload['type'][]): RunEvent[];
-  readModelCallEvents(runId: string): RunEvent[];
+  readModelCallEvents(runId: string): ModelCallRecord[];
   prepareTerminal(runId: string): void;
   lastTerminalRootRuns(project: string, limit: number): Run[];
   readSessionEvents(sessionId: string, afterId: number, limit: number): (RunEvent | SessionEvent)[];

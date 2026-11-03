@@ -50,13 +50,23 @@ export const tokenFactsOf = (runs: readonly (readonly PublicRunEvent[])[]): Toke
       anatomyTotal += requested.anatomy.total;
       for (const [name, tokens] of anatomyLayerEntries(requested.anatomy.layers)) layers.set(name, (layers.get(name) ?? 0) + tokens);
     }
-    return eventsOfType(events, 'model.responded').map(({ response }): CallFacts => ({
+    const responded = eventsOfType(events, 'model.responded').map(({ response }): CallFacts => ({
       inputTokens: response.usage.input_tokens,
       cachedInputTokens: response.usage.input_tokens_details?.cached_tokens,
       cacheWriteInputTokens: response.momonga?.cacheWriteInputTokens ?? 0,
       cost: response.momonga?.cost?.amount,
       durationMs: response.timing?.durationMs,
     }));
+    const charged = eventsOfType(events, 'usage.charged').map(
+      (event): CallFacts => ({
+        inputTokens: event.inputTokens,
+        cachedInputTokens: event.cachedInputTokens,
+        cacheWriteInputTokens: event.cacheWriteInputTokens ?? 0,
+        cost: event.cost?.amount,
+        durationMs: undefined,
+      }),
+    );
+    return [...responded, ...charged];
   });
   return { calls, layers, anatomyTotal };
 };

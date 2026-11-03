@@ -1,3 +1,5 @@
+import { UNKNOWN_BILLING } from './semconv.ts';
+
 export type PriceEntry = {
   provider: string;
   model: string;
@@ -117,15 +119,55 @@ export const computeCostUnits = (input: CostInput): CostUnits | null => {
     if (entry.cacheWritePerMTok === undefined) return null;
     cacheWriteUnits = BigInt(cacheWriteInputTokens) * scaledPrice(entry.cacheWritePerMTok);
   }
+  let cachedUnits = 0n;
+  if (cachedInputTokens > 0) {
+    if (entry.cachedInputPerMTok === undefined) return null;
+    cachedUnits = BigInt(cachedInputTokens) * scaledPrice(entry.cachedInputPerMTok);
+  }
   const inputRate = scaledPrice(entry.inputPerMTok);
-  const cachedRate = scaledPrice(entry.cachedInputPerMTok ?? entry.inputPerMTok);
   const outputRate = scaledPrice(entry.outputPerMTok);
   const units =
     BigInt(usage.inputTokens - cachedInputTokens - cacheWriteInputTokens) * inputRate +
-    BigInt(cachedInputTokens) * cachedRate +
+    cachedUnits +
     cacheWriteUnits +
     BigInt(usage.outputTokens) * outputRate;
   return { units, currency: entry.currency, priceVersion: entry.effectiveFrom };
+};
+
+export const LOCAL_PRICE_VERSION = 'local';
+
+export type CallBilling = 'metered' | 'local' | typeof UNKNOWN_BILLING;
+
+export type PriceCallInput = CostInput & { billing: CallBilling };
+
+export type PricedCall = { kind: 'priced'; units: bigint; currency: 'USD'; priceVersion: string } | { kind: 'unpriced'; reason: string };
+
+const isCount = (value: number | undefined): boolean => value === undefined || (Number.isSafeInteger(value) && value >= 0);
+
+export const priceCall = (input: PriceCallInput): PricedCall => {
+  const { usage, billing } = input;
+  const cached = usage.cachedInputTokens ?? 0;
+  const written = usage.cacheWriteInputTokens ?? 0;
+  if (![usage.inputTokens, usage.outputTokens, usage.cachedInputTokens, usage.cacheWriteInputTokens].every(isCount)) {
+    return { kind: 'unpriced', reason: 'a token count of the call is not a non-negative integer' };
+  }
+  if (cached + written > usage.inputTokens) {
+    return { kind: 'unpriced', reason: `cached input (${cached}) and written input (${written}) together exceed the input (${usage.inputTokens})` };
+  }
+  if (billing === UNKNOWN_BILLING) return { kind: 'unpriced', reason: 'the billing of the target is unknown' };
+  if (billing === 'local') return { kind: 'priced', units: 0n, currency: 'USD', priceVersion: LOCAL_PRICE_VERSION };
+  if (Number.isNaN(input.at.getTime())) return { kind: 'unpriced', reason: 'the time of the call is not a valid date' };
+  const entry = findPriceEntry(input.table, input.provider, input.model, input.at.getTime());
+  if (entry === undefined) return { kind: 'unpriced', reason: 'no price entry' };
+  if (cached > 0 && entry.cachedInputPerMTok === undefined) {
+    return { kind: 'unpriced', reason: `${cached} cached input token(s) and the price entry has no cachedInputPerMTok` };
+  }
+  if (written > 0 && entry.cacheWritePerMTok === undefined) {
+    return { kind: 'unpriced', reason: `${written} cache write token(s) and the price entry has no cacheWritePerMTok` };
+  }
+  const units = computeCostUnits(input);
+  if (units === null) return { kind: 'unpriced', reason: 'no price entry' };
+  return { kind: 'priced', units: units.units, currency: units.currency, priceVersion: units.priceVersion };
 };
 
 export const computeCost = (input: CostInput): Cost | null => {

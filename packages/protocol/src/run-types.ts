@@ -155,7 +155,16 @@ export type RunEventPayload =
       entries: { content: string; priority: 'high' | 'medium' | 'low'; status: 'pending' | 'in_progress' | 'completed' }[];
     }
   | { type: 'usage.updated'; inputTokens: number; outputTokens: number; totalTokens: number }
-  | { type: 'usage.charged'; purpose: UsageChargePurpose; inputTokens: number; outputTokens: number; totalTokens: number }
+  | {
+      type: 'usage.charged';
+      purpose: UsageChargePurpose;
+      inputTokens: number;
+      outputTokens: number;
+      totalTokens: number;
+      cachedInputTokens?: number;
+      cacheWriteInputTokens?: number;
+      cost?: ModelCost;
+    }
   | {
       type: 'context.compacted';
       item: CompactionInputItem | MessageInputItem;

@@ -13,7 +13,7 @@ import type {
   Usage,
   UsageSource,
 } from '@momonga/protocol';
-import { computeCost } from '@momonga/observability';
+import { modelCostOf } from './model-cost.ts';
 import { TERMINAL_STREAM_EVENT_TYPES, isReasoningEffort } from '@momonga/protocol';
 import { startAttemptSpan } from './attempt-span.ts';
 import type { AttemptSpan, TraceParent } from './attempt-span.ts';
@@ -115,7 +115,6 @@ const openAttempt = async (
     stream: job.body.stream === true,
     runId: job.runId,
     step: job.step,
-    purpose: job.body.metadata?.['purpose'],
     attempt: attemptNumber,
     targetName: target.name,
     request: { input: resolved.forAdapter, instructions: job.body.instructions, tools: job.body.tools },
@@ -334,16 +333,13 @@ async function* relaySteps(
     const cost =
       billed === undefined || services.priceTable === undefined
         ? null
-        : computeCost({
+        : modelCostOf({
             provider: target.provider,
             model: target.model,
-            usage: {
-              inputTokens: billed.usage.input_tokens,
-              outputTokens: billed.usage.output_tokens,
-              cachedInputTokens: billed.usage.input_tokens_details.cached_tokens,
-              ...(billed.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: billed.cacheWriteInputTokens }),
-            },
-            at: new Date(clock.now()),
+            billing: target.billing,
+            usage: billed.usage,
+            cacheWriteInputTokens: billed.cacheWriteInputTokens,
+            at: clock.now(),
             table: services.priceTable,
           });
     return {

@@ -57,7 +57,7 @@ export const startAnthropicGateway = async (
 };
 
 export const startOpenResponsesGateway = async (
-  options: FakeOpenResponsesOptions & { sentKey?: string; config?: ConfigOverrides; capabilities?: Capabilities },
+  options: FakeOpenResponsesOptions & { sentKey?: string; config?: ConfigOverrides; capabilities?: Capabilities; priceTable?: PriceTable },
 ): Promise<UpstreamGateway> => {
   const fake = await startFakeOpenResponses(options);
   registerCleanup(() => fake.close());
@@ -68,7 +68,11 @@ export const startOpenResponsesGateway = async (
     clock: createFakeClock(START_MS),
   });
   registerCleanup(() => adapter.close());
-  const harness = await startGateway({ adapters: { remote: adapter }, config: { ...singleTarget, ...options.config } });
+  const harness = await startGateway({
+    adapters: { remote: adapter },
+    config: { ...singleTarget, ...options.config },
+    ...(options.priceTable === undefined ? {} : { priceTable: options.priceTable }),
+  });
   return { ...harness, fake };
 };
 

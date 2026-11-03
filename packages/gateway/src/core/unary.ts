@@ -17,6 +17,7 @@ import { errorBoundFor, estimateInputTokens, imageTokensOfWire, wireTokensOf } f
 import { ClientDisconnectedError, GatewayError, detachedRunExpiredError, gatewayErrorFromBody, gatewayClosedError, invalidRequest, isRunCancelled, runCancelledError } from './errors.ts';
 import { parseIdempotencyKey, reusedError } from './idempotency.ts';
 import { inputHasImages, normalizeInput, resolveInput } from './input.ts';
+import { modelCostOf } from './model-cost.ts';
 import { failureFrom, runWithRetry } from './retry.ts';
 import type { RetryOutcome } from './retry.ts';
 import type { TargetRuntime } from './router.ts';
@@ -264,12 +265,25 @@ const compactOnce = async (
     id: identifier(services, 'cmp'),
     encrypted_content: services.codec.encode(outcome.value.summary),
   };
+  const cost =
+    services.priceTable === undefined
+      ? null
+      : modelCostOf({
+          provider: outcome.target.provider,
+          model: outcome.target.model,
+          billing: outcome.target.billing,
+          usage: outcome.value.usage,
+          cacheWriteInputTokens: undefined,
+          at: services.clock.now(),
+          table: services.priceTable,
+        });
   return {
     id: identifier(services, 'resp'),
     object: 'response.compaction',
     output: [item],
     created_at: Math.floor(services.clock.now() / 1000),
     usage: outcome.value.usage,
+    ...(cost === null ? {} : { momonga: { cost } }),
   };
 };
 

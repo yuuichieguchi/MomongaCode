@@ -345,6 +345,9 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
       inputTokens: nonNegativeInteger,
       outputTokens: nonNegativeInteger,
       totalTokens: nonNegativeInteger,
+      cachedInputTokens: nonNegativeInteger,
+      cacheWriteInputTokens: nonNegativeInteger,
+      cost: modelCost,
     },
     required: ['purpose', 'inputTokens', 'outputTokens', 'totalTokens'],
   },
@@ -534,8 +537,9 @@ const costBreakdownView = closed(
       type: 'array',
       items: closed({ runId: string, provider: string, model: string, step: nonNegativeInteger, reason: string }, ['runId', 'provider', 'model', 'reason']),
     },
+    unjoined: { type: 'array', items: closed({ runId: string, step: nonNegativeInteger, reason: string }, ['runId', 'reason']) },
   },
-  ['calls', 'layers', 'billed', 'cacheHitRatio', 'timeToFirstToken', 'duration', 'cost', 'unpriced'],
+  ['calls', 'layers', 'billed', 'cacheHitRatio', 'timeToFirstToken', 'duration', 'cost', 'unpriced', 'unjoined'],
 );
 
 const memoryScope = enumOf(MEMORY_SCOPES);

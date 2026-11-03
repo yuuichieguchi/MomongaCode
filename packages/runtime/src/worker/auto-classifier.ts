@@ -76,6 +76,9 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
       inputTokens: usage.input_tokens,
       outputTokens: usage.output_tokens,
       totalTokens: usage.total_tokens,
+      cachedInputTokens: usage.input_tokens_details.cached_tokens,
+      ...(terminal.response.momonga?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: terminal.response.momonga.cacheWriteInputTokens }),
+      ...(terminal.response.momonga?.cost === undefined ? {} : { cost: terminal.response.momonga.cost }),
     };
     if (terminal.incomplete) return { ...asked({ alias: classifier, failure: 'the classifier reply was incomplete' }), spend };
     const verdict = parseClassifierVerdict(outputTextOf(terminal.response));

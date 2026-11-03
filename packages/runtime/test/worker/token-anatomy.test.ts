@@ -16,7 +16,8 @@ const DETAILED_USAGE: Usage = {
   output_tokens_details: { reasoning_tokens: 25 },
 };
 
-const FIRST_EVENT_DELAY_MS = 150;
+const BEFORE_CREATED_MS = 40;
+const BEFORE_FIRST_OUTPUT_MS = 110;
 const REST_OF_STREAM_MS = 250;
 
 const isTerminal = (event: StreamEvent): boolean => event.type === 'response.completed' || event.type === 'response.incomplete';
@@ -34,9 +35,12 @@ const pacedGateway = (env: Env): GatewayPort => ({
     const inner = env.gateway.stream(body, options);
     return (async function* () {
       let first = true;
+      let output = true;
       for await (const event of inner) {
-        if (first) env.clock.advance(FIRST_EVENT_DELAY_MS);
+        if (first) env.clock.advance(BEFORE_CREATED_MS);
         first = false;
+        if (output && event.type === 'response.output_text.delta') env.clock.advance(BEFORE_FIRST_OUTPUT_MS);
+        if (event.type === 'response.output_text.delta') output = false;
         if (isTerminal(event)) env.clock.advance(REST_OF_STREAM_MS);
         yield event;
       }
@@ -65,6 +69,8 @@ describe('every model call records what its request was made of and what it cost
     expect(layerSum(anatomy as TokenAnatomy)).toBe(inputTokensOf(body));
     expect(anatomy?.tools).toEqual(Object.fromEntries((body.tools ?? []).map((tool) => [(tool as { name: string }).name, tokensOfText(canonicalJson(tool))])));
     expect(Object.keys(anatomy?.tools ?? {}).length).toBeGreaterThan(0);
+    expect(anatomy?.layers.system).toBeGreaterThan(0);
+    expect(anatomy?.layers.history.user).toBeGreaterThan(0);
   });
 
   it('records on model.responded the cached input, reasoning and cache write the provider reported, beside the totals', async () => {
@@ -106,6 +112,9 @@ describe('every model call records what its request was made of and what it cost
     await env.runOnce(env.worker('worker-1', { gateway: pacedGateway(env) }));
 
     const [responded] = env.ofType(run.id, 'model.responded');
-    expect((responded?.response as { timing?: unknown }).timing).toEqual({ firstEventMs: FIRST_EVENT_DELAY_MS, durationMs: FIRST_EVENT_DELAY_MS + REST_OF_STREAM_MS });
+    expect((responded?.response as { timing?: unknown }).timing).toEqual({
+      firstEventMs: BEFORE_CREATED_MS + BEFORE_FIRST_OUTPUT_MS,
+      durationMs: BEFORE_CREATED_MS + BEFORE_FIRST_OUTPUT_MS + REST_OF_STREAM_MS,
+    });
   });
 });

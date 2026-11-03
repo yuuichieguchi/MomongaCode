@@ -59,14 +59,15 @@ export const anatomyOf = async (
   total: MeterCount,
   contextOf: (item: InputItem) => ItemCountContext,
 ): Promise<TokenAnatomy> => {
-  const empty = (await meter.count({ input: [], tools: [] })).inputTokens;
-  const units: { layer: LayerName; tool?: string; tokens: number }[] = [];
-  for (const tool of tools) {
-    units.push({ layer: 'tools', tool: tool.name, tokens: bodyOf((await meter.count({ input: [], tools: [tool] })).inputTokens, empty) });
-  }
-  for (const { item, layer } of tagged) {
-    units.push({ layer, tokens: await meter.countItem(item, contextOf(item)) });
-  }
+  const [empty, toolCounts, itemCounts] = await Promise.all([
+    meter.count({ input: [], tools: [] }).then((counted) => counted.inputTokens),
+    Promise.all(tools.map((tool) => meter.count({ input: [], tools: [tool] }).then((counted) => counted.inputTokens))),
+    Promise.all(tagged.map(({ item }) => meter.countItem(item, contextOf(item)))),
+  ]);
+  const units: { layer: LayerName; tool?: string; tokens: number }[] = [
+    ...tools.map((tool, index) => ({ layer: 'tools' as const, tool: tool.name, tokens: bodyOf(toolCounts[index] as number, empty) })),
+    ...tagged.map(({ layer }, index) => ({ layer, tokens: itemCounts[index] as number })),
+  ];
   const isolated = units.reduce((sum, unit) => sum + unit.tokens, 0);
   const overshoot = isolated > total.inputTokens;
   const emptyShare = Math.min(empty, total.inputTokens);

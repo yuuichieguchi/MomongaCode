@@ -166,7 +166,11 @@ const primaryTerm: Term = ({ pairs, primary }) => {
   if (pairs.length < MINIMUM_PAIRS) {
     return { name: metric, passed: false, detail: `too few pairs: ${pairs.length} of the ${MINIMUM_PAIRS} needed for a real interval; ${described}${reason}` };
   }
-  return { name: metric, passed: interval.high < 0, detail: `${described}; the candidate must be lower, the whole interval below 0${reason}` };
+  return {
+    name: metric,
+    passed: interval.high < 0,
+    detail: `${described}; the candidate must be lower, the whole interval below 0; resamples with no success in either report are skipped, so the ${MINIMUM_PAIRS}-pair tail holds only while few are skipped${reason}`,
+  };
 };
 
 const GATE_TERMS: Record<GateName, readonly Term[]> = {

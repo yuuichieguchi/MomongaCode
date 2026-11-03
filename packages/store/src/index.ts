@@ -92,6 +92,7 @@ export type {
   RuntimeStore,
   RuntimeStoreOptions,
   ServiceMutationResult,
+  ModelCallRecord,
   Session,
   SessionMcpServers,
   SetModelAliasResult,

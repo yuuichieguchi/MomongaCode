@@ -24,7 +24,6 @@ export type AttemptSpanInput = {
   stream: boolean;
   runId: string | undefined;
   step: number | undefined;
-  purpose: string | undefined;
   attempt: number;
   targetName: string;
   request: { input: readonly AdapterInputItem[]; instructions: string | null | undefined; tools: readonly FunctionTool[] | null | undefined };
@@ -60,7 +59,6 @@ export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
       ...(input.maxTokens === undefined ? {} : { maxTokens: input.maxTokens }),
       ...(input.runId === undefined ? {} : { runId: input.runId }),
       ...(input.step === undefined ? {} : { step: input.step }),
-      ...(input.purpose === undefined ? {} : { purpose: input.purpose }),
     },
     input.parent,
   );

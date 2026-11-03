@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { definePriceTable } from '@momonga/observability';
-import { anthropicMessageEnd, anthropicMessageStart, anthropicStream, anthropicTextBlock } from '@momonga/testkit';
-import { startAnthropicGateway, streamResponse, terminalOf } from './upstream-gateway-support.ts';
+import { anthropicMessageEnd, anthropicMessageStart, anthropicStream, anthropicTextBlock, messageEvents, openResponsesStream, openingEvents, terminalEvent } from '@momonga/testkit';
+import { startAnthropicGateway, startOpenResponsesGateway, streamResponse, terminalOf } from './upstream-gateway-support.ts';
 
 const ENTRY = { provider: 'scripted', model: 'upstream-model', effectiveFrom: '1970-01-01', inputPerMTok: 2, cachedInputPerMTok: 0.5, cacheWritePerMTok: 2.5, outputPerMTok: 8, currency: 'USD' as const };
 
@@ -45,7 +45,28 @@ describe('the cost of a call reaches the response as a momonga extension', () =>
     expect(terminal.response.momonga.cost).toEqual({ amount: 0.000076, currency: 'USD', priceVersion: '1970-01-01' });
   });
 
-  it('counts a local target priced at 0 in the table as priced, and a local target without an entry as unpriced', async () => {
+  it('leaves the cost out and still answers when the provider reports more cached input than input, and when cached input has no cached rate', async () => {
+    const message = messageEvents(['hi']);
+    const inconsistent = { input_tokens: 10, output_tokens: 2, total_tokens: 12, input_tokens_details: { cached_tokens: 20 }, output_tokens_details: { reasoning_tokens: 0 } };
+    const gateway = await startOpenResponsesGateway({
+      script: [openResponsesStream([...openingEvents(), ...message.events, terminalEvent({ kind: 'completed', usage: inconsistent }, [message.item])])],
+      priceTable: definePriceTable([ENTRY]),
+    });
+    const terminal = terminalOf(await streamResponse(gateway));
+
+    expect(terminal.type).toBe('response.completed');
+    expect('cost' in terminal.response.momonga).toBe(false);
+
+    const { cachedInputPerMTok: _noCachedRate, ...withoutCachedRate } = ENTRY;
+    const cached = { input_tokens: 10, output_tokens: 2, total_tokens: 12, input_tokens_details: { cached_tokens: 4 }, output_tokens_details: { reasoning_tokens: 0 } };
+    const second = await startOpenResponsesGateway({
+      script: [openResponsesStream([...openingEvents(), ...message.events, terminalEvent({ kind: 'completed', usage: cached }, [message.item])])],
+      priceTable: definePriceTable([withoutCachedRate]),
+    });
+    expect('cost' in terminalOf(await streamResponse(second)).response.momonga).toBe(false);
+  });
+
+  it('prices a local target at nothing whether or not the table has an entry for it, like the cost report', async () => {
     const local = { targets: { remote: { model: 'upstream-model', kind: 'remote', billing: 'local' as const } }, aliases: { fast: ['remote'] } };
     const priced = terminalOf(
       await streamResponse(
@@ -54,7 +75,7 @@ describe('the cost of a call reaches the response as a momonga extension', () =>
     );
     const unpriced = terminalOf(await streamResponse(await startAnthropicGateway({ script: [plainTurn()], config: local, priceTable: definePriceTable([]) })));
 
-    expect(priced.response.momonga.cost).toEqual({ amount: 0, currency: 'USD', priceVersion: '1970-01-01' });
-    expect('cost' in unpriced.response.momonga).toBe(false);
+    expect(priced.response.momonga.cost).toEqual({ amount: 0, currency: 'USD', priceVersion: 'local' });
+    expect(unpriced.response.momonga.cost).toEqual({ amount: 0, currency: 'USD', priceVersion: 'local' });
   });
 });

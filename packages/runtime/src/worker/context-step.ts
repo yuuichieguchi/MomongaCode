@@ -279,6 +279,8 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
     inputTokens: resource.usage.input_tokens,
     outputTokens: resource.usage.output_tokens,
     totalTokens: resource.usage.total_tokens,
+    cachedInputTokens: resource.usage.input_tokens_details.cached_tokens,
+    ...(resource.momonga?.cost === undefined ? {} : { cost: resource.momonga.cost }),
   };
   const unreadableNotices =
     region.unreadable.length === 0

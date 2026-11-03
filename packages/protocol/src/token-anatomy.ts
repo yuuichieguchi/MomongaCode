@@ -56,11 +56,29 @@ export type CostBreakdownView = {
   duration: TimingSummaryView | null;
   cost: { amount: number | null; currency: 'USD'; unpricedCalls: number };
   unpriced: UnpricedCallView[];
+  unjoined: UnjoinedView[];
 };
 
-export type BreakdownCallInput = {
+export type UnjoinedView = { runId: string; step?: number; reason: string };
+
+export const MODEL_ROLES = ['run', 'compaction', 'reflection', 'analysis', 'classifier'] as const;
+
+export type ModelRole = (typeof MODEL_ROLES)[number];
+
+export const MAIN_MODEL_ROLE: ModelRole = 'run';
+
+export type BilledCallView = {
   runId: string;
-  step: number;
-  anatomy?: TokenAnatomy;
-  timing?: CallTiming;
+  step?: number;
+  role?: string;
+  provider: string;
+  model: string;
+  billing: 'metered' | 'local' | 'unknown';
+  startMs: number;
+  usage: { inputTokens: number; cachedInputTokens: number; cacheWriteInputTokens: number; outputTokens: number; reasoningTokens: number };
+  price: { kind: 'priced'; units: string; priceVersion: string } | { kind: 'unpriced'; reason: string };
 };
+
+export type BilledCallsCursorView = { run: number; offset: number };
+
+export type BilledCallsPageView = { calls: BilledCallView[]; next?: BilledCallsCursorView };

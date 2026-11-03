@@ -23,10 +23,11 @@ describe('computeCost', () => {
     });
   });
 
-  it('switches to the newer entry exactly at its effectiveFrom (UTC) and prices cached tokens at the input rate when no cached rate exists', () => {
+  it('switches to the newer entry exactly at its effectiveFrom (UTC) and leaves cached tokens unpriced when the entry in effect has no cached rate', () => {
     const usage = { inputTokens: 1_000_000, cachedInputTokens: 400_000, outputTokens: 500_000 };
     expect(cost('m1', '2025-12-31T23:59:59.999Z', usage)).toEqual({ amount: 6.6, currency: 'USD', priceVersion: '2025-01-01' });
-    expect(cost('m1', '2026-01-01T00:00:00Z', usage)).toEqual({ amount: 3.75, currency: 'USD', priceVersion: '2026-01-01' });
+    expect(cost('m1', '2026-01-01T00:00:00Z', usage)).toBeNull();
+    expect(cost('m1', '2026-01-01T00:00:00Z', { inputTokens: 1_000_000, outputTokens: 500_000 })).toEqual({ amount: 3.75, currency: 'USD', priceVersion: '2026-01-01' });
   });
 
   it('treats absent cachedInputTokens as zero', () => {
