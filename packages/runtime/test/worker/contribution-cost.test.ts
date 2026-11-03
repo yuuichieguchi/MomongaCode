@@ -5,6 +5,7 @@ import { makeEnv } from './harness.ts';
 import { functionCallItem } from './scripts.ts';
 
 const PAUSE_BUDGET_MS = 100;
+const SETUP_TIMEOUT_MS = 120_000;
 const OUTPUT_CHARS = 30_000;
 const STEPS = 150;
 const MEMORIES = 40;
@@ -15,13 +16,56 @@ const ascii = (seed: number): string =>
 const japanese = (seed: number): string =>
   Array.from({ length: Math.ceil(OUTPUT_CHARS / 2 / 20) }, (_unused, line) => `設定ファイル${seed}の読み込み${line}に失敗しました。`).join('\n').slice(0, OUTPUT_CHARS / 2);
 
+const outputs = new Map<number, string>();
+
+const outputOf = (step: number): string => {
+  const cached = outputs.get(step);
+  if (cached !== undefined) return cached;
+  const output = `${ascii(step)}\n${japanese(step)}`;
+  outputs.set(step, output);
+  return output;
+};
+
+const HISTORY_IN_REQUEST = 8;
+const TOOL_COUNT = 30;
+
+const SYSTEM_PROMPT = Array.from({ length: 120 }, (_unused, line) => `Rule ${line}: keep the change small and verify it before you answer.`).join('\n');
+const TOOLS = Array.from({ length: TOOL_COUNT }, (_unused, index) => ({
+  type: 'function',
+  name: `Tool${index}`,
+  description: `Tool number ${index} reads or changes something in the workspace and reports what it found. `.repeat(8),
+  parameters: { type: 'object', properties: { file_path: { type: 'string', description: 'absolute path of the file' } } },
+}));
+
+const requestOf = (step: number): RunEventPayload => ({
+  type: 'model.requested',
+  step,
+  attempt: 1,
+  digest: `digest-${step}`,
+  body: {
+    model: 'fm',
+    input: [
+      { type: 'message', role: 'system', content: SYSTEM_PROMPT },
+      { type: 'message', role: 'developer', content: 'Instruction file: prefer small commits.' },
+      ...Array.from({ length: Math.min(HISTORY_IN_REQUEST, step - 1) }, (_unused, offset) => ({
+        type: 'function_call_output',
+        call_id: `call_${step - 1 - offset}`,
+        output: outputOf(step - 1 - offset),
+      })),
+    ],
+    tools: TOOLS,
+    tool_choice: 'auto',
+  },
+});
+
 const stepEvents = (step: number): RunEventPayload[] => {
   const callId = `call_${step}`;
   const args = { value: `step ${step} zorpWord${step % MEMORIES}` };
   return [
+    requestOf(step),
     { type: 'model.responded', step, attempt: 1, response: { status: 'completed', output: [functionCallItem({ callId, name: 'Echo', args })], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } },
     { type: 'tool.call', callId, providerCallId: callId, name: 'Echo', kind: 'read', title: 'Echo', rawInput: args },
-    { type: 'tool.completed', callId, status: 'completed', output: `${ascii(step)}\n${japanese(step)}` },
+    { type: 'tool.completed', callId, status: 'completed', output: outputOf(step) },
   ];
 };
 
@@ -77,11 +121,11 @@ describe('the cost of the contribution hook in the terminal transition', () => {
     console.info(`worker terminal over ${bytes} output bytes: prepared outside the lock in ${prepareMillis.toFixed(1)} ms, transaction ${elapsed.toFixed(1)} ms`);
     expect(bytes).toBeGreaterThan(4_000_000);
     expect(elapsed).toBeLessThan(PAUSE_BUDGET_MS);
-  });
+  }, SETUP_TIMEOUT_MS);
 
   it('stays within the pause budget for a terminal over a journal with no snapshot', async () => {
     const { elapsed, prepareMillis, bytes } = await terminalMillis(false);
     console.info(`terminal without a snapshot over ${bytes} output bytes: prepared outside the lock in ${prepareMillis.toFixed(1)} ms, transaction ${elapsed.toFixed(1)} ms`);
     expect(elapsed).toBeLessThan(PAUSE_BUDGET_MS);
-  });
+  }, SETUP_TIMEOUT_MS);
 });

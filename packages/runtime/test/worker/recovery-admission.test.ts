@@ -27,6 +27,26 @@ describe('worker tool-set notice', () => {
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.ofType(run.id, 'notice').filter((notice) => notice.message.startsWith(TOOLS_CHANGED))).toHaveLength(1);
   });
+
+  it('recognises the changed-tools notice by its code, whatever its text was', async () => {
+    const env = await makeEnv();
+    const first = path.join(env.project, 'first.txt');
+    const second = path.join(env.project, 'second.txt');
+    const reduced = () => env.toolbox.tools().filter((tool) => tool.name !== 'Probe');
+    env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: first, content: 'one' } }]));
+    const run = env.enqueue('Write two files');
+    await env.runOnce(env.worker('worker-1'));
+    const appended = env.store.appendAsService(run.id, env.run(run.id).version, null, [
+      { type: 'notice', level: 'warning', message: 'The tool set differs from the one this run started with.', code: 'tools_changed' },
+    ]);
+    expect(appended.kind).toBe('ok');
+    env.resolveApproval(run.id, 'allow_once');
+    env.gateway.script.push(callsStep([{ callId: 'call_w_2', name: 'Write', args: { file_path: second, content: 'two' } }]));
+
+    await env.runOnce(env.worker('worker-2', { toolList: reduced }));
+
+    expect(env.ofType(run.id, 'notice').filter((notice) => notice.code === 'tools_changed')).toHaveLength(1);
+  });
 });
 
 describe('worker recovery of a started call with an existing record', () => {

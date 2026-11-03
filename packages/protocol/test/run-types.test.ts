@@ -365,7 +365,7 @@ describe('RunState', () => {
         }
       >;
       inFlightModelRequest?: { step: number; attempt: number; digest: string; body: unknown; requestedSeq: number };
-      notes: { level: 'info' | 'warning' | 'error'; message: string }[];
+      notes: { level: 'info' | 'warning' | 'error'; message: string; code?: string }[];
       toolCallCounts: Record<string, number>;
       steps: Record<number, { toolChoice: string; summary: boolean }>;
       lastResponse?: { step: number; incomplete: boolean; incompleteReason?: string; refusal: boolean; callIds: string[] };

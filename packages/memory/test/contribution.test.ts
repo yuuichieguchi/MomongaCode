@@ -24,7 +24,12 @@ const called = (step: number, args: Record<string, unknown>): RunEventPayload =>
 
 const toolOutput = (output: string): RunEventPayload => ({ type: 'tool.completed', callId: 'c0', status: 'completed', output });
 
-const compaction = (replacedThroughSeq: number): RunEventPayload => ({ type: 'context.compacted', item: { type: 'message', role: 'user', content: 's' }, summary: 's', replacedThroughSeq });
+const compaction = (replacedThroughSeq: number, summary = 's'): RunEventPayload => ({ type: 'context.compacted', item: { type: 'message', role: 'user', content: summary }, summary, replacedThroughSeq });
+
+const layer = (role: 'system' | 'developer' | 'user', content: string): unknown => ({ type: 'message', role, content });
+
+const requested = (step: number, input: readonly unknown[], tools: readonly unknown[] = []): RunEventPayload =>
+  ({ type: 'model.requested', step, attempt: 1, digest: `d${step}`, body: { model: 'fm', input, tools } }) as RunEventPayload;
 
 const item = (text: string, overrides: Partial<InjectedItem> = {}): InjectedItem => ({ kind: 'memory', id: 'q1', text, fromSeq: 0, ...overrides });
 
@@ -138,6 +143,122 @@ describe('measureContribution', () => {
       expect(withDecoy.slice(0, 2)).toEqual(without);
       expect(withDecoy[2]).toEqual({ kind: 'working_state', id: 'q3', contributed: false });
     }
+  });
+});
+
+describe('what the model was shown before the step', () => {
+  const SYSTEM = layer('system', 'Be careful. You should run the checks before you answer, and return the result.');
+
+  it('earns nothing for plain words that the system prompt already showed', () => {
+    const payloads = [requested(1, [SYSTEM, layer('user', 'Fix it')]), said(1, 'I will run the checks before I answer, as I should')];
+    expect(contributedOf(payloads, item('Always run tests before pushing, you should'))).toBe(false);
+  });
+
+  it('still earns credit for a word that only the memory carried', () => {
+    const payloads = [requested(1, [SYSTEM]), said(1, 'zorpLauncher is the thing to run before I answer')];
+    expect(contributedOf(payloads, item('use zorpLauncher before pushing'))).toBe(true);
+  });
+
+  it('earns nothing for words of a tool definition', () => {
+    const tools = [{ type: 'function', name: 'Read', description: 'Reads a file from the filesystem', parameters: { type: 'object', properties: { file_path: { type: 'string', description: 'absolute pathname' } } } }];
+    expect(contributedOf([requested(1, [SYSTEM], tools), said(1, 'filesystem pathname')], item('filesystem pathname'))).toBe(false);
+  });
+
+  it('counts an instruction file loaded as a developer layer', () => {
+    const payloads = [requested(1, [SYSTEM, layer('developer', 'Instruction file: prefer hermetic builds')]), said(1, 'a hermetic build')];
+    expect(contributedOf(payloads, item('hermetic mode, please'))).toBe(false);
+  });
+
+  it('counts a layer of a later request only from that request on', () => {
+    const payloads = [requested(1, [SYSTEM]), said(1, 'hermetic'), requested(2, [SYSTEM, layer('developer', 'prefer hermetic builds')])];
+    expect(contributedOf(payloads, item('hermetic mode, please'))).toBe(true);
+  });
+
+  it('leaves the text of the injected memory out of what was shown, and keeps the framing around it', () => {
+    const memory = item('use zorpLauncher before pushing');
+    const rendered = layer('developer', 'Verify a note before relying on it.\n<recalled_memories>\n<memory id="q1">use zorpLauncher before pushing</memory>\n</recalled_memories>');
+    expect(contributedOf([requested(1, [SYSTEM, rendered]), said(1, 'zorpLauncher')], memory)).toBe(true);
+    expect(contributedOf([requested(1, [rendered]), said(1, 'before')], item('use zorpLauncher before pushing'))).toBe(false);
+  });
+
+  it('leaves the escaped text of the injected memory out as well', () => {
+    const memory = item('keep <zorpLauncher> & friends');
+    const rendered = layer('developer', '<memory id="q1">keep &lt;zorpLauncher&gt; &amp; friends</memory>');
+    expect(contributedOf([requested(1, [rendered]), said(1, 'zorpLauncher')], memory)).toBe(true);
+  });
+
+  it('leaves the text of an injected governing fact out of what was shown', () => {
+    const rendered = layer('developer', 'Governing facts.\n\n[g1] rule about build: run zorpLauncher');
+    expect(contributedOf([requested(1, [rendered]), said(1, 'zorpLauncher')], item('run zorpLauncher', { kind: 'governing', id: 'g1' }))).toBe(true);
+  });
+
+  it('earns nothing for plain Japanese words that the system prompt already showed', () => {
+    const system = layer('system', 'ユーザーの依頼を必ず確認してください。');
+    expect(contributedOf([requested(1, [system]), said(1, '確認してから進めます')], item('設定ファイルを確認すること'))).toBe(false);
+  });
+
+  it('still earns credit for a Japanese word that only the memory carried', () => {
+    const system = layer('system', 'ユーザーの依頼を必ず確認してください。');
+    expect(contributedOf([requested(1, [system]), said(1, '設定を変更します')], item('設定ファイルを確認すること'))).toBe(true);
+  });
+
+  it('rejects a recorded request that has no input list', () => {
+    const malformed = { type: 'model.requested', step: 1, attempt: 1, digest: 'd', body: { model: 'fm' } } as RunEventPayload;
+    expect(() => contributedOf([malformed, said(1, 'zorpLauncher')], item('use zorpLauncher'))).toThrow(/model\.requested/);
+  });
+});
+
+describe('the summary and the working state on screen after a compaction', () => {
+  const summaryKeeping = compaction(1, 'The run touched parseLockfile in the loader');
+
+  it('counts the summary text as on screen for an item injected after the compaction', () => {
+    const governing = item('parse with parseLockfile', { kind: 'governing', id: 'g1', fromSeq: 2 });
+    expect(contributedOf([toolOutput('x'), summaryKeeping, said(3, 'parseLockfile')], governing)).toBe(false);
+    expect(contributedOf([toolOutput('x'), compaction(1, 'nothing here'), said(3, 'parseLockfile')], governing)).toBe(true);
+  });
+
+  it('lets the summary earn credit for its own text', () => {
+    const summary = item('The run touched parseLockfile in the loader', { kind: 'summary', id: 'summary-2', fromSeq: 2 });
+    expect(contributedOf([toolOutput('x'), summaryKeeping, said(3, 'parseLockfile')], summary)).toBe(true);
+  });
+
+  it('counts the working state rendered at the compaction as on screen for the other items', () => {
+    const events = journal([toolOutput('x'), compaction(1), said(3, 'src/app/lockfile.ts')]);
+    const workingStates = [{ seq: 2, text: 'src/app/lockfile.ts' }];
+    const memory = item('see src/app/lockfile.ts', { fromSeq: 2 });
+    const workingState = item('src/app/lockfile.ts', { kind: 'working_state', id: 'working-state', fromSeq: 2 });
+    expect(measureContribution({ events, task: TASK, injected: [memory, workingState], workingStates })).toEqual([
+      { kind: 'memory', id: 'q1', contributed: false },
+      { kind: 'working_state', id: 'working-state', contributed: true },
+    ]);
+  });
+
+  it('replaces the working state of an earlier compaction with the one of the next', () => {
+    const events = journal([compaction(0), compaction(0), said(3, 'src/app/lockfile.ts')]);
+    const workingStates = [
+      { seq: 1, text: 'src/app/lockfile.ts' },
+      { seq: 2, text: 'src/app/other.ts' },
+    ];
+    expect(measureContribution({ events, task: TASK, injected: [item('see src/app/lockfile.ts', { fromSeq: 2 })], workingStates })[0]?.contributed).toBe(true);
+  });
+});
+
+describe('items with their own window', () => {
+  it('credits a step inside the window and not a step after it', () => {
+    const window = (untilSeq: number): InjectedItem => item('src/app/lockfile.ts', { kind: 'working_state', id: 'working-state', fromSeq: 1, untilSeq });
+    expect(contributedOf([said(1, 'src/app/lockfile.ts')], window(3))).toBe(true);
+    expect(contributedOf([toolOutput('x'), toolOutput('y'), toolOutput('z'), said(2, 'src/app/lockfile.ts')], window(3))).toBe(false);
+  });
+
+  it('reports items that share a kind and an id once, credited when any of them is', () => {
+    const early = item('src/early.ts', { kind: 'working_state', id: 'working-state', fromSeq: 1, untilSeq: 2 });
+    const late = item('src/late.ts', { kind: 'working_state', id: 'working-state', fromSeq: 2 });
+    expect(measureContribution({ events: journal([toolOutput('x'), said(2, 'src/late.ts')]), task: TASK, injected: [early, late] })).toEqual([
+      { kind: 'working_state', id: 'working-state', contributed: true },
+    ]);
+    expect(measureContribution({ events: journal([toolOutput('x'), said(2, 'nothing')]), task: TASK, injected: [early, late] })).toEqual([
+      { kind: 'working_state', id: 'working-state', contributed: false },
+    ]);
   });
 });
 
