@@ -211,11 +211,9 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
     if (deadlineAt - clock.now() <= 0) throw transportError('deadline_exceeded', 'the run deadline has already passed');
   };
 
-  const unaryBound = (deadlineAt?: number): { ms: number; code: TimeoutCode } => {
-    if (deadlineAt === undefined) return { ms: unaryTimeoutMs, code: 'gateway_timeout' };
-    const remaining = deadlineAt - clock.now();
-    return remaining <= unaryTimeoutMs ? { ms: remaining, code: 'deadline_exceeded' } : { ms: unaryTimeoutMs, code: 'gateway_timeout' };
-  };
+  const unaryBound = (): { ms: number; code: TimeoutCode } => ({ ms: unaryTimeoutMs, code: 'gateway_timeout' });
+
+  const deadlineBound = (deadlineAt: number): { ms: number; code: TimeoutCode } => ({ ms: deadlineAt - clock.now(), code: 'deadline_exceeded' });
 
   const unary = async (
     spec: { method: 'GET' | 'POST'; path: string; headers: Record<string, string>; body?: string },
@@ -321,7 +319,7 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
       const parsed = await unary(
         { method: 'POST', path: '/v1/responses/compact', headers: callHeaders(call), body: JSON.stringify(request) },
         call.signal,
-        unaryBound(call.deadlineAt),
+        deadlineBound(call.deadlineAt),
       );
       if (!isRecord(parsed)) throw invalidResponse('the compact reply is not an object');
       return parsed as CompactResource;
