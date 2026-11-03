@@ -45,7 +45,7 @@ export type GatewayOptions = {
   hmacKey: Uint8Array;
   socketPath: string;
   telemetry?: Telemetry;
-  costReport?: (runs: readonly { runId: string; sessionId: string }[]) => Promise<{ report: GatewayCostReportView; text: string }>;
+  costReport?: (runs: readonly { runId: string; sessionId: string }[], includeRunless: boolean) => Promise<{ report: GatewayCostReportView; text: string }>;
   debugTcp?: DebugTcpOptions;
   random: () => number;
   version: string;

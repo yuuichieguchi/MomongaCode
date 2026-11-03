@@ -85,7 +85,7 @@ const completerFor = async (ports: CliPorts, paths: MomongaPaths, alias: string,
       metadata: { purpose: 'guideline', ...(request.seed === undefined ? {} : { seed: String(request.seed) }) },
     };
     const events: StreamEvent[] = [];
-    for await (const event of gateway.stream(body, { idempotencyKey: randomUUID(), deadlineAt: ports.clock.now() + RUNTIME_DEFAULTS.runTimeoutMs, signal })) events.push(event);
+    for await (const event of gateway.stream(body, { idempotencyKey: randomUUID(), deadlineAt: ports.clock.now() + RUNTIME_DEFAULTS.runTimeoutMs, signal, role: 'analysis' })) events.push(event);
     const response = terminalResponseOf(events);
     if (response.usage === null) throw new ContextImproveError('the model response carries no usage, so its tokens cannot be charged');
     return {

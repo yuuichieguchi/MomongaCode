@@ -451,9 +451,9 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       socketPath: paths.sockets.gateway,
       ...(options.debugTcp === undefined ? {} : { debugTcp: { host: DEBUG_TCP_HOST, port: options.debugTcp.port, token: files.readDebugToken(options.debugTcp.tokenFile) } }),
       telemetry,
-      costReport: async (runs) => {
+      costReport: async (runs, includeRunless) => {
         await telemetry.forceFlush();
-        const report = buildCostReport(traceStore, runs, { table: priceTable });
+        const report = buildCostReport(traceStore, runs, { table: priceTable, includeRunless });
         return { report, text: formatCostReport(report) };
       },
       version: options.version,

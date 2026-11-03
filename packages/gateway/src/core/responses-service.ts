@@ -6,7 +6,6 @@ import { gatewayClosedError, invalidRequest, runCancelledError } from './errors.
 import { createIdempotencyRegistry, parseIdempotencyKey } from './idempotency.ts';
 import { normalizeInput } from './input.ts';
 import type { ConnectionResponses } from './input.ts';
-import { roleOfMetadata } from './role.ts';
 import { executeResponse } from './respond.ts';
 import type { ResponseJob } from './respond.ts';
 import { NEVER_EVICTED, startBufferedRun, startDirectRun } from './run.ts';
@@ -20,6 +19,7 @@ export type SubmitHeaders = {
   deadlineMs: string | undefined;
   traceparent: string | undefined;
   tracestate: string | undefined;
+  role: string;
 };
 
 export type Submission = {
@@ -134,7 +134,7 @@ export const createResponsesService = (services: Services, validator: RequestVal
         ...(connection === undefined ? {} : { connection }),
         runId: body.metadata?.['run_id'],
         step: parseStep(body.metadata?.['step']),
-        role: roleOfMetadata(body.metadata),
+        role: headers.role,
       };
       const onSettled = (): void => {
         active.delete(run);

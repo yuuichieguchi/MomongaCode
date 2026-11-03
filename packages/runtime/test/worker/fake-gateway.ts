@@ -9,7 +9,7 @@ import type {
   ItemField,
   StreamEvent,
 } from '@momonga/protocol';
-import type { GatewayPort } from '@momonga/runtime';
+import type { GatewayCallOptions, GatewayPort } from '@momonga/runtime';
 import { fixtureCompactionContent, usageOf } from '@momonga/testkit';
 import { deferred } from './deferred.ts';
 import type { Deferred } from './deferred.ts';
@@ -22,6 +22,7 @@ export type RecordedStream = {
   deadlineAt: number;
   signal: AbortSignal;
   deduplicated: boolean;
+  role: GatewayCallOptions['role'];
 };
 
 export type RecordedCompact = {
@@ -30,6 +31,7 @@ export type RecordedCompact = {
   deadlineAt: number;
   traceparent: string | undefined;
   signal: AbortSignal;
+  runId: string | undefined;
 };
 
 export type RecordedCount = { request: CountTokensRequest; signal: AbortSignal | undefined };
@@ -249,6 +251,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
         deadlineAt: options.deadlineAt,
         signal: options.signal,
         deduplicated: cached !== undefined || running !== undefined,
+        role: options.role,
       };
       gateway.streams.push(record);
       waiterFor(record.index).resolve(record);
@@ -264,6 +267,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
         deadlineAt: options.deadlineAt,
         traceparent: options.traceparent,
         signal: options.signal,
+        runId: options.runId,
       });
       await gateway.compactHook?.(request, options.signal);
       const summary = gateway.compactSummaries.shift() ?? `summary ${gateway.compacts.length}`;

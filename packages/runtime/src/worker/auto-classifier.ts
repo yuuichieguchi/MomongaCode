@@ -67,6 +67,7 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
       deadlineAt: ctx.run.deadlineAt,
       signal: ctx.control.signal,
       traceparent: ctx.agentSpan.traceparent,
+      role: 'classifier',
     });
     for await (const event of events) terminal = terminalResultOf(event) ?? terminal;
     if (terminal === undefined) return asked({ alias: classifier, failure: 'the classifier stream ended without a terminal event' });

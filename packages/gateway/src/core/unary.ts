@@ -219,7 +219,7 @@ const compactOnce = async (
   let counterFailure: GatewayError | undefined;
   for (const target of supporting) {
     const capabilities = await services.router.capabilitiesOf(target);
-    const maximum = summaryTokenCapFor(capabilities);
+    const maximum = Math.min(summaryTokenCapFor(capabilities), capabilities.maxOutputTokens);
     const cap = request.momonga?.max_summary_tokens ?? maximum;
     if (cap > maximum) continue;
     withinCap += 1;
@@ -248,7 +248,7 @@ const compactOnce = async (
   if (withinCap === 0) {
     throw invalidRequest(
       'invalid_summary_cap',
-      'momonga.max_summary_tokens exceeds the largest summary any target of the model alias accepts',
+      'momonga.max_summary_tokens exceeds the largest summary any target of the model alias accepts: the smaller of its summary cap and its maxOutputTokens',
       'momonga.max_summary_tokens',
     );
   }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { InMemorySpanExporter } from '@opentelemetry/sdk-trace';
 import { createTelemetry } from '@momonga/observability';
-import { RUN_ID_HEADER } from '@momonga/protocol';
+import { ROLE_HEADER, RUN_ID_HEADER } from '@momonga/protocol';
 import { createFakeClock, createScriptedAdapter, textResponseEvents, usageOf } from '@momonga/testkit';
 import { START_MS, postJson, readJson, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
 
@@ -34,15 +34,34 @@ describe('the role of a model call on its chat span', () => {
   it.each([
     [undefined, 'run'],
     ['reflection', 'reflection'],
-    ['guideline', 'analysis'],
-    ['permission_classifier', 'classifier'],
-  ])('guards a call billed to the wrong role: metadata purpose %s is recorded as role %s', async (purpose, role) => {
+    ['analysis', 'analysis'],
+    ['classifier', 'classifier'],
+  ])('guards a call billed to the wrong role: the %s value of the momonga-role header is recorded as role %s', async (header, role) => {
     const { client, chats } = await tracedGateway(1);
-    const metadata = { run_id: 'run-1', step: '1', ...(purpose === undefined ? {} : { purpose }) };
-    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), metadata }));
+    const response = await readJson(
+      await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), metadata: { run_id: 'run-1', step: '1' } }, header === undefined ? {} : { [ROLE_HEADER]: header }),
+    );
     expect(response.status).toBe(200);
     const spans = await chats();
     expect(spans.map((span) => span.attributes['momonga.role'])).toEqual([role]);
+  });
+
+  it.each(['guideline', 'reflection', 'permission_classifier', 'anything the client likes'])(
+    'guards a client map the gateway interprets: metadata.purpose %s is accepted and leaves the role at run',
+    async (purpose) => {
+      const { client, chats } = await tracedGateway(1);
+      const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), metadata: { run_id: 'run-1', step: '1', purpose } }));
+      expect(response.status).toBe(200);
+      expect((await chats()).map((span) => span.attributes['momonga.role'])).toEqual(['run']);
+    },
+  );
+
+  it.each(['compaction', 'run', 'Reflection', 'planner', ''])('guards a role nobody defined: the %j value of the momonga-role header is refused as a 400 invalid_request', async (header) => {
+    const { client, chats } = await tracedGateway(1);
+    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') }, { [ROLE_HEADER]: header }));
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatchObject({ type: 'invalid_request', code: 'invalid_role' });
+    expect(await chats()).toEqual([]);
   });
 
   it('guards a compaction that never reaches the cost report: a compaction call is recorded as a chat span of role compaction with its usage', async () => {

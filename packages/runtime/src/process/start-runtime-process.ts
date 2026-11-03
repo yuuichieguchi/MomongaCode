@@ -507,7 +507,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           await telemetry.forceFlush();
           return runTraceOf(traceStore, runId);
         },
-        runCost: (runs, signal) => gatewayClient.cost(runs, signal),
+        runCost: (runs, signal, includeRunless) => gatewayClient.cost(runs, signal, includeRunless),
         mcp: toolRuntime.mcpAdmin,
         onError: (error) => logger.error('service error', { err: asError(error) }),
         onFatal: latchFatal,

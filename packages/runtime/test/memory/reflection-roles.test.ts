@@ -79,6 +79,7 @@ describe('the reflection role', () => {
     env.gateway.script.push(textStep(REPLY, { usage: usageOf(100, 20) }));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
     expect(env.gateway.streams.map((stream) => stream.body.model)).toEqual(['cheap']);
+    expect(env.gateway.streams.map((stream) => stream.role)).toEqual(['reflection']);
     expect(env.gateway.capabilityRequests).toEqual(['cheap']);
     expect(env.api.contextCharges.list()).toMatchObject([{ purpose: 'reflection', runId: run.id, model: 'cheap', inputTokens: 100, outputTokens: 20, totalTokens: 120 }]);
   });

@@ -61,10 +61,10 @@ describe('the margin term of the summary input bound', () => {
     [LIMIT, 200],
     [LIMIT + 1, 400],
   ] as const)('a counted request of %i tokens answers %i when W - cap - marginFloorFor(W) is the smaller term', async ([tokens, status]) => {
-    expect(LIMIT).toBeLessThan(W - 64);
+    expect(LIMIT).toBeLessThan(W - CAP);
     const fake = await startFake({ scenario: 'tools-ok', script: [textReply('note')] });
     const adapter = makeAdapter(fake, {
-      capabilities: async () => ({ ...CC_CAPABILITIES, contextWindow: W, maxOutputTokens: 64, tokenCounting: 'calibrated' }),
+      capabilities: async () => ({ ...CC_CAPABILITIES, contextWindow: W, maxOutputTokens: CAP, tokenCounting: 'calibrated' }),
       countTokens: async (): Promise<CountTokensResult> => ({ input_tokens: tokens, method: 'calibrated', error_bound: 0 }),
     });
     const harness = await startCcGateway({ fm: adapter });
@@ -94,7 +94,7 @@ describe('the reasoning headroom term of the summary input bound', () => {
       capabilities: async () => ({
         ...CC_CAPABILITIES,
         contextWindow: W,
-        maxOutputTokens: 64,
+        maxOutputTokens: CAP,
         tokenCounting: 'calibrated',
         reasoning: { control: 'none', headroomTokens: HEADROOM },
       }),

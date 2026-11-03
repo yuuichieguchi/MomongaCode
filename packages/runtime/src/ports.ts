@@ -7,6 +7,7 @@ import type {
   CountTokensRequest,
   CountTokensResult,
   CreateResponseBody,
+  HeaderRole,
   HooksSettings,
   StreamEvent,
 } from '@momonga/protocol';
@@ -25,6 +26,7 @@ export type GatewayCallOptions = {
   signal: AbortSignal;
   traceparent?: string;
   runId?: string;
+  role?: HeaderRole;
 };
 
 export type GatewayPort = {

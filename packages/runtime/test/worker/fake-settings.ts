@@ -1,5 +1,5 @@
 import { DEFAULT_FORGET_AFTER_DAYS, DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS, parseRule } from '@momonga/config';
-import type { PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedVerificationSettings } from '@momonga/config';
+import type { ModelRoles, PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedVerificationSettings } from '@momonga/config';
 import type { HooksSettings } from '@momonga/protocol';
 import type { SettingsPort } from '@momonga/runtime';
 import type { Session } from '@momonga/store';
@@ -17,8 +17,8 @@ export type FakeSettings = SettingsPort & {
   contextValue: ResolvedContextSettings;
   context: (session: Session) => Promise<ResolvedContextSettings>;
   classifierAlias: string | undefined;
-  rolesValue: Partial<Record<'compaction' | 'reflection' | 'analysis', string>>;
-  modelRoles: () => Partial<Record<'compaction' | 'reflection' | 'analysis', string>>;
+  rolesValue: ModelRoles;
+  modelRoles: () => ModelRoles;
 };
 
 export const createFakeSettings = (layout: { home: string; project: string }): FakeSettings => {

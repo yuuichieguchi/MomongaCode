@@ -30,6 +30,20 @@ describe('GET /v1/cost with context charges', () => {
     expectSchema('CostReport', response.json);
   });
 
+  it('guards calls without a run that vanish or leak: only the unfiltered report asks the gateway to count them', async () => {
+    const asked: boolean[] = [];
+    const env = await startService({
+      runCost: async (_runs, _signal, includeRunless) => {
+        asked.push(includeRunless);
+        return runCost();
+      },
+    });
+    const session = await env.createSession();
+    const run = await env.createRun(session.id, { input: 'x' });
+    for (const query of ['', `?run=${run.id}`, `?session=${session.id}`, `?cwd=${encodeURIComponent(session.cwd)}`]) await env.http('GET', `/v1/cost${query}`);
+    expect(asked).toEqual([true, false, false, false]);
+  });
+
   it('narrows to the run, the session and the working directory', async () => {
     const { env, session, run } = await seeded();
     for (const query of [`run=${run.id}`, `session=${session.id}`, `cwd=${encodeURIComponent(session.cwd)}`]) {

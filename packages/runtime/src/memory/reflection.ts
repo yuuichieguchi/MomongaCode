@@ -53,6 +53,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       idempotencyKey: sha256Hex(canonicalJson([runId, 'reflect'])),
       deadlineAt: clock.now() + RUNTIME_DEFAULTS.runTimeoutMs,
       signal,
+      role: 'reflection',
     });
     for await (const event of events) {
       terminal = terminalResultOf(event) ?? terminal;

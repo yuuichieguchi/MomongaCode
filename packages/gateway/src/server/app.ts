@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { RUN_ID_HEADER, STREAM_IDLE_HEADER } from '@momonga/protocol';
+import { ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER } from '@momonga/protocol';
+import { roleOfHeader } from '../core/role.ts';
 import type { GatewayCostReportView, GatewayHealth, ModelList, MomongaModelList } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, invalidRequest, notFound } from '../core/errors.ts';
 import type { ResponsesService, SubmitHeaders } from '../core/responses-service.ts';
@@ -19,7 +20,7 @@ export type AppDependencies = {
   startedAtSeconds: number;
   startedAt: string;
   version: string;
-  costReport: ((runs: readonly { runId: string; sessionId: string }[]) => Promise<{ report: GatewayCostReportView; text: string }>) | undefined;
+  costReport: ((runs: readonly { runId: string; sessionId: string }[], includeRunless: boolean) => Promise<{ report: GatewayCostReportView; text: string }>) | undefined;
   onError: ((error: unknown) => void) | undefined;
 };
 
@@ -34,6 +35,7 @@ const submitHeadersOf = (context: Context): SubmitHeaders => ({
   deadlineMs: context.req.header('momonga-deadline-ms'),
   traceparent: context.req.header('traceparent'),
   tracestate: context.req.header('tracestate'),
+  role: roleOfHeader(context.req.header(ROLE_HEADER)),
 });
 
 const KEEP_ALIVES_PER_IDLE_BOUND = 3;
@@ -195,7 +197,9 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     ) {
       throw invalidRequest('invalid_body', 'runs must be a list of { runId, sessionId }', 'runs');
     }
-    return context.json(await dependencies.costReport(runs));
+    const includeRunless = (raw as { includeRunless?: unknown }).includeRunless;
+    if (typeof includeRunless !== 'boolean') throw invalidRequest('invalid_body', 'includeRunless must be a boolean', 'includeRunless');
+    return context.json(await dependencies.costReport(runs, includeRunless));
   });
 
   return app;

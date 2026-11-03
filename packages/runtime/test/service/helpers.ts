@@ -418,7 +418,7 @@ export type ServiceOverrides = {
   runTrace?: (runId: string) => Promise<unknown>;
   imageInput?: boolean;
   beforeCapabilities?: () => Promise<void>;
-  runCost?: (runs: readonly { runId: string; sessionId: string }[]) => Promise<unknown>;
+  runCost?: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<unknown>;
   onFatal?: boolean;
   sandboxKind?: 'seatbelt' | 'none';
   protectedRootAreas?: readonly string[];

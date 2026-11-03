@@ -34,7 +34,7 @@ export type RunCost = CostTotals & { runId: string; sessionId: string };
 export type SessionCost = CostTotals & { sessionId: string; runIds: string[] };
 export type CostReport = { runs: RunCost[]; sessions: SessionCost[]; total: CostTotals };
 
-export type CostReportOptions = { table: PriceTable };
+export type CostReportOptions = { table: PriceTable; includeRunless?: boolean };
 
 type Accumulator = {
   calls: number;
@@ -182,9 +182,9 @@ const addSpan = (accumulator: Accumulator, span: SpanRecord, table: PriceTable):
   }
 };
 
-const accumulateRun = (store: TraceStore, runId: string, table: PriceTable): Accumulator => {
+const accumulateSpans = (spans: readonly SpanRecord[], table: PriceTable): Accumulator => {
   const accumulator = emptyAccumulator();
-  for (const span of store.spansForRun(runId).filter(isBilledChat)) {
+  for (const span of spans.filter(isBilledChat)) {
     addSpan(accumulator, span, table);
     const role = roleOf(span);
     const forRole = accumulator.roles.get(role) ?? emptyAccumulator();
@@ -200,10 +200,11 @@ export const buildCostReport = (store: TraceStore, runs: readonly CostedRun[], o
   const perRun: { run: CostedRun; accumulator: Accumulator }[] = runs.map((run) => {
     if (seenRuns.has(run.runId)) throw new Error(`buildCostReport: run ${run.runId} is listed twice`);
     seenRuns.add(run.runId);
-    return { run, accumulator: accumulateRun(store, run.runId, table) };
+    return { run, accumulator: accumulateSpans(store.spansForRun(run.runId), table) };
   });
   const sessions = new Map<string, { runIds: string[]; accumulator: Accumulator }>();
   const total = emptyAccumulator();
+  if (options.includeRunless === true) merge(total, accumulateSpans(store.spansWithoutRun(), table));
   for (const { run, accumulator } of perRun) {
     const session = sessions.get(run.sessionId) ?? { runIds: [], accumulator: emptyAccumulator() };
     session.runIds.push(run.runId);

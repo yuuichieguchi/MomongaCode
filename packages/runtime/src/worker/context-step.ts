@@ -233,19 +233,6 @@ const deterministicCompaction = (ctx: ClaimContext, plan: CompactionSource, guid
 export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource): Promise<void> => {
   const { journal, options } = ctx;
   const roleAlias = ctx.roles.compaction;
-  if (roleAlias !== undefined) {
-    const { maxOutputTokens } = await options.gateway.capabilities(roleAlias, { signal: ctx.control.signal });
-    if (plan.summaryTokenCap > maxOutputTokens) {
-      journal.append([
-        noticeOf(
-          'compaction_failed',
-          `Compaction summary failed: models.roles.compaction names alias ${roleAlias}, whose maxOutputTokens ${maxOutputTokens} cannot hold the summary cap of ${plan.summaryTokenCap} tokens; the deterministic summary was used`,
-        ),
-        deterministicCompaction(ctx, plan, NO_ADOPTED_GUIDELINE),
-      ]);
-      return;
-    }
-  }
   const request: CompactRequest = {
     model: roleAlias ?? ctx.alias,
     input: plan.input,
@@ -269,7 +256,10 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
     if (!escalates(error)) throw error;
     delete ctx.control.inFlight.compactionKey;
     journal.append([
-      noticeOf('compaction_failed', `Compaction summary failed (${error.code}): ${error.message}; the deterministic summary was used`),
+      noticeOf(
+        'compaction_failed',
+        `Compaction summary failed (${error.code}): ${error.message}${roleAlias === undefined ? '' : ` [models.roles.compaction names alias ${roleAlias}]`}; the deterministic summary was used`,
+      ),
       deterministicCompaction(ctx, plan, NO_ADOPTED_GUIDELINE),
     ]);
     return;

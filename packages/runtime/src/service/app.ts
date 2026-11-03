@@ -81,7 +81,7 @@ export type RunAppDeps = {
   cancelUpstream?: (runId: string) => Promise<void>;
   releaseStopped(runId: string, signal: AbortSignal): Promise<void>;
   runTrace: (runId: string) => Promise<RunTraceView | undefined>;
-  runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal) => Promise<{ report: GatewayCostReportView; text: string }>;
+  runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ report: GatewayCostReportView; text: string }>;
   mcp: McpAdminPort;
   onError: (error: unknown) => void;
 };
@@ -434,7 +434,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     }
     const format = context.req.query('format') ?? 'json';
     if (format !== 'json' && format !== 'text') throw invalidRequest('format must be json or text', 'format');
-    const { report, text } = await deps.runCost(runs, context.req.raw.signal);
+    const { report, text } = await deps.runCost(runs, context.req.raw.signal, given.length === 0);
     const contextCharges = contextChargesView(charges);
     if (format === 'json') return json({ ...report, contextCharges });
     const chargesText = contextChargesText(contextCharges, report.total.inputTokens + report.total.outputTokens);

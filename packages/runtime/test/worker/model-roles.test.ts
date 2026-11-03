@@ -62,7 +62,9 @@ describe('the compaction role', () => {
     await drive(env, run.id);
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.gateway.compacts.map((compact) => compact.request.model)).toEqual(['cheap']);
+    expect(env.gateway.compacts.map((compact) => compact.runId)).toEqual([run.id]);
     expect(new Set(env.gateway.streams.map((stream) => stream.body.model))).toEqual(new Set(['fm']));
+    expect(env.gateway.streams.map((stream) => stream.role)).toEqual(env.gateway.streams.map(() => undefined));
   });
 
   it('guards a default that moves: with no compaction role the compaction goes to the run alias', async () => {
@@ -77,18 +79,32 @@ describe('the compaction role', () => {
     expect(env.gateway.compacts.map((compact) => compact.request.model)).toEqual(['fm']);
   });
 
-  it('guards a summary cap the role alias cannot hold: no call is made, the deterministic summary is used, and the notice names the role and the capability', async () => {
+  it('guards a summary cap the role alias cannot hold: the gateway refuses it, the deterministic summary is used, and the notice names the role and the alias', async () => {
     const { env, run } = await prepared({ compaction: 'tiny' });
-    env.gateway.capabilitiesByAlias['tiny'] = capabilitiesFor(200_000, { maxOutputTokens: 32 });
+    env.gateway.compactHook = async (request) => {
+      if (request.model !== 'tiny') return;
+      throw new GatewayRequestError({ status: 400, type: 'invalid_request', code: 'invalid_summary_cap', message: 'the summary cap exceeds what any target accepts' });
+    };
     await drive(env, run.id);
     expect(env.run(run.id).status).toBe('COMPLETED');
-    expect(env.gateway.compacts.map((compact) => compact.request.model)).toEqual([]);
+    expect(env.gateway.compacts.map((compact) => compact.request.model)).toEqual(['tiny']);
     expect(env.ofType(run.id, 'context.compacted').map((event) => event.source)).toEqual(['deterministic']);
     const notices = env.ofType(run.id, 'notice').filter((notice) => notice.code === 'compaction_failed');
     expect(notices).toHaveLength(1);
     expect(notices[0]?.message).toContain('models.roles.compaction');
     expect(notices[0]?.message).toContain('tiny');
-    expect(notices[0]?.message).toContain('maxOutputTokens');
+    expect(notices[0]?.message).toContain('invalid_summary_cap');
+  });
+
+  it('guards a notice that blames the role when none is set: a failure of the run alias does not mention models.roles.compaction', async () => {
+    const { env, run } = await prepared();
+    env.gateway.compactHook = async () => {
+      throw new GatewayRequestError({ status: 400, type: 'invalid_request', code: 'invalid_summary_cap', message: 'the summary cap exceeds what any target accepts' });
+    };
+    await drive(env, run.id);
+    const notices = env.ofType(run.id, 'notice').filter((notice) => notice.code === 'compaction_failed');
+    expect(notices).toHaveLength(1);
+    expect(notices[0]?.message).not.toContain('models.roles.compaction');
   });
 });
 
@@ -142,17 +158,23 @@ describe('the pinned roles', () => {
     if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
     expect(env.store.releaseLease(claim, { availableAt: env.clock.now() + 3_600_000 }).kind).toBe('ok');
     env.settings.rolesValue = { compaction: 'other' };
+    env.seed(created.run.id, conversation(), 'release');
+    env.gateway.compactSummaries.push(CLEAN);
     env.gateway.script.push(textStep('Child done.'));
-    await env.runOnce(env.worker('worker-child'));
-    return env.ofType(created.run.id, 'run.started').map((event) => event.pins['roles']);
+    await drive(env, created.run.id);
+    expect(env.run(created.run.id).status).toBe('COMPLETED');
+    return {
+      pins: env.ofType(created.run.id, 'run.started').map((event) => event.pins['roles']),
+      compactions: env.gateway.compacts.map((compact) => compact.request.model),
+    };
   };
 
   it('guards a child that drifts from its parent: it compacts with the roles its parent pinned, not the settings of the moment', async () => {
-    expect(await childOf({ roles: { compaction: 'cheap' } })).toEqual([{ compaction: 'cheap' }]);
+    expect(await childOf({ roles: { compaction: 'cheap' } })).toEqual({ pins: [{ compaction: 'cheap' }], compactions: ['cheap'] });
   });
 
   it('guards a child that picks up a role its parent never had: a parent with no roles gives the child none, so it compacts with its own alias', async () => {
-    expect(await childOf({ roles: {} })).toEqual([{}]);
+    expect(await childOf({ roles: {} })).toEqual({ pins: [{}], compactions: ['fm'] });
   });
 });
 
@@ -174,6 +196,7 @@ describe('the capability check of autoMode.classifier', () => {
     const run = env.enqueue('Write out.txt');
     await env.runOnce(env.worker());
     expect(env.gateway.streams[1]?.body.model).toBe('judge');
+    expect(env.gateway.streams.map((stream) => stream.role)).toEqual([undefined, 'classifier', undefined]);
     expect(env.ofType(run.id, 'tool.permission.classified')).toMatchObject([{ outcome: 'allow', alias: 'judge' }]);
     expect(fs.readFileSync(target, 'utf8')).toBe('x');
   });

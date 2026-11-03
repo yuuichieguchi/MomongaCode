@@ -1,6 +1,7 @@
 import type http from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer } from 'ws';
+import { RUN_ROLE } from '@momonga/observability';
 import type { RawData, WebSocket } from 'ws';
 import type { StreamEvent } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, invalidRequest, readerStalledError } from '../core/errors.ts';
@@ -185,7 +186,7 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
         previousId = typeof body['previous_response_id'] === 'string' ? body['previous_response_id'] : undefined;
         submission = responses.submit(
           { ...body, stream: true },
-          { idempotencyKey: undefined, deadlineMs: this.deadlineMs, traceparent: undefined, tracestate: undefined },
+          { idempotencyKey: undefined, deadlineMs: this.deadlineMs, traceparent: undefined, tracestate: undefined, role: RUN_ROLE },
           this.lifetime.signal,
           this.state,
         );
