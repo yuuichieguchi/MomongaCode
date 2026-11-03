@@ -4,7 +4,7 @@ import { MIN_ROOM_TOKENS, budgetFor, inputCeilingFor, itemCapFor, memoryBudgetFo
 import { anatomyOf, historyLayerOf } from './anatomy.ts';
 import type { TaggedItem } from './anatomy.ts';
 import { chainTail, digestChain, frozenItem } from './digests.ts';
-import { ContextOverflowError, PinnedOverflowError, PinnedRoomError, PrefixChangedError } from './errors.ts';
+import { ContextOverflowError, PinnedBoundError, PinnedOverflowError, PinnedRoomError, PrefixChangedError } from './errors.ts';
 import { governingMessageOf, governingNoticesOf, loadedGoverningOf } from './governing.ts';
 import { discoverInstructions } from './instructions.ts';
 import type { DiscoveredInstructions, LoadedInstructionFile } from './instructions.ts';
@@ -66,6 +66,25 @@ type Head = {
   pinnedTokens: number;
   ceiling: number;
   room: number;
+};
+
+export type MaxInputBounds = {
+  ceiling: number;
+  inputBudget: number;
+  errorBoundAt(tokens: number): number;
+};
+
+export const maxInputFor = ({ ceiling, inputBudget, errorBoundAt }: MaxInputBounds): number | undefined => {
+  const fitsWithItsBound = (tokens: number): boolean => tokens + errorBoundAt(tokens) <= inputBudget;
+  if (ceiling < 0 || !fitsWithItsBound(0)) return undefined;
+  let low = 0;
+  let high = Math.floor(ceiling);
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (fitsWithItsBound(middle)) low = middle;
+    else high = middle - 1;
+  }
+  return low;
 };
 
 const candidateToolsOf = (input: BuildContextInput): FunctionTool[] => (input.tools === 'none' ? [] : [...input.sources.tools]);
@@ -580,8 +599,19 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
   }
 
   if (!fits(total)) {
-    const deficit = Math.max(total.inputTokens - ceiling, total.inputTokens + total.errorBound - budgetFor(capabilities, 0).I);
-    const outcome = await compactionFor('forced', deficit);
+    const inputBudget = budgetFor(capabilities, 0).I;
+    const maxInput = maxInputFor({ ceiling, inputBudget, errorBoundAt: total.errorBoundAt });
+    if (maxInput === undefined || maxInput < pinnedTokens) {
+      throw new PinnedBoundError({
+        pinnedTokens,
+        ceiling,
+        breakdown: await breakdownOf(ports, systemMessage, layers, head.governing, task, tools),
+        inputBudget,
+        boundAtZero: total.errorBoundAt(0),
+        maxInput,
+      });
+    }
+    const outcome = await compactionFor('forced', total.inputTokens - maxInput);
     if (lastLevel) await persistEvictions(slots.length);
     throw new ContextOverflowError({
       inputTokens: total.inputTokens,

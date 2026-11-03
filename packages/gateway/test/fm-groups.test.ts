@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createFmServe } from '@momonga/gateway';
 import { createGroupSpawn } from '../src/managed/fm-processes.ts';
 import type { FmServe } from '@momonga/gateway';
-import { LSOF_PATH, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { registerCleanup } from './gateway-helpers.ts';
 import { MINIMAL_PATH, isAlive, makeHome, pause, until } from './gateway-process-helpers.ts';
 
@@ -98,7 +98,7 @@ const spawnDetached = (args: string[], stdio: Array<'ignore' | number> = ['ignor
   return pid;
 };
 
-describe('fm serve group lifetime', { timeout: 60_000 }, () => {
+describe('fm serve group lifetime', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('stop() leaves no process of the fm group alive, then removes the marker', async () => {
     const context = await setup();
     reapAll(context);
@@ -165,7 +165,7 @@ describe('fm serve group lifetime', { timeout: 60_000 }, () => {
   });
 });
 
-describe('stale fm marker reaping', { timeout: 60_000 }, () => {
+describe('stale fm marker reaping', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
   const plantHolderInForeignGroup = (markers: string, content: string): { marker: string; groupLeader: number; holder: number; holderPidFile: string } => {
     const marker = path.join(markers, 'stale-marker');
     fs.writeFileSync(marker, content, { mode: 0o600 });
@@ -208,7 +208,7 @@ describe('stale fm marker reaping', { timeout: 60_000 }, () => {
   });
 });
 
-describe('finalize of a spawned fm group', { timeout: 30_000 }, () => {
+describe('finalize of a spawned fm group', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('signals nothing but warns when the recorded group lives on without holding the marker, and removes the marker', async () => {
     const dir = makeHome();
     const markers = path.join(dir, 'markers');
@@ -270,7 +270,7 @@ const waitForHolder = async (marker: string, pid: number): Promise<void> => {
   }, 'the holder to open the marker');
 };
 
-describe('group cleanup outcome', { timeout: 60_000 }, () => {
+describe('group cleanup outcome', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('keeps a stale marker and warns once when its holder survives the reaper', async () => {
     const context = await setup();
     reapAll(context);
@@ -336,7 +336,7 @@ describe('group cleanup outcome', { timeout: 60_000 }, () => {
   });
 });
 
-describe('reaper warnings for a recorded group it could not verify', { timeout: 60_000 }, () => {
+describe('reaper warnings for a recorded group it could not verify', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('warns once naming the marker and the recorded pgid, and leaves the group alone', async () => {
     const context = await setup();
     const helperPidFile = path.join(context.dir, 'helper.pid');
@@ -376,7 +376,7 @@ describe('reaper warnings for a recorded group it could not verify', { timeout: 
   });
 });
 
-describe('reaper warnings for a live stale leader whose helper outlives it', { timeout: 60_000 }, () => {
+describe('reaper warnings for a live stale leader whose helper outlives it', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('kills the leader, leaves the helper alone, removes the marker and warns once naming the marker and pgid', async () => {
     const context = await setup();
     const helperFmDir = path.join(context.dir, 'live-fm');

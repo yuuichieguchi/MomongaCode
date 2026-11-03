@@ -9,14 +9,17 @@ import { startGatewayProcess } from '@momonga/gateway';
 import * as runtime from '@momonga/runtime';
 import type { ServiceTimers } from '@momonga/runtime';
 import type { ShellHost } from '@momonga/tools';
-import { afterMicrotasks, startFakeChatCompletions } from '@momonga/testkit';
-import type { FakeChatCompletionsOptions, FakeChatCompletionsServer, FakeFixedUsage, FakeRequestUsage, FakeResponseHold, FakeTimers } from '@momonga/testkit';
+import { afterMicrotasks, fakeUsageOfRequest, startFakeChatCompletions } from '@momonga/testkit';
+
+import type { FakeChatCompletionsOptions, FakeChatCompletionsServer, FakeFixedUsage, FakeResponseHold, FakeTimers, FakeUsageOfRequest } from '@momonga/testkit';
 import { makeLogger, onCleanup, writeUserSettings } from './helpers.ts';
 import type { LogEntry, RecordingLogger } from './helpers.ts';
 import { openEventStream, sendJson } from '../service/helpers.ts';
 import type { EventStream, JsonResponse, RequestInit } from '../service/helpers.ts';
 
-export const RUNTIME_VERSION = '1.10.0-runtime-test';
+const SCRIPTED_COMPLETION_TOKENS = 5;
+
+export const RUNTIME_VERSION ='1.10.0-runtime-test';
 export const GATEWAY_VERSION = '1.10.0-gateway-test';
 export const MINIMAL_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 export const STARTUP_STEPS = [
@@ -121,11 +124,13 @@ export const sessionEnvFor = (tempHome: string): Readonly<Record<string, string>
   return Object.freeze({ HOME: tempHome, PATH: MINIMAL_PATH, TMPDIR: tmp });
 };
 
+const TARGET_CONTEXT_WINDOW = 8192;
+
 export const modelSettings = (fakeSocketPath: string): Record<string, unknown> => ({
   models: {
     aliases: { default: ['primary'] },
     targets: {
-      primary: { adapter: 'chat-completions', provider: 'fake', model: 'system', socketPath: fakeSocketPath, capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } },
+      primary: { adapter: 'chat-completions', provider: 'fake', model: 'system', socketPath: fakeSocketPath, capabilities: { contextWindow: TARGET_CONTEXT_WINDOW, maxOutputTokens: 1024 } },
     },
   },
 });
@@ -139,7 +144,7 @@ export type Stack = {
 };
 
 export const startFake = async (options: Partial<FakeChatCompletionsOptions> = {}): Promise<FakeChatCompletionsServer> => {
-  const fake = await startFakeChatCompletions({ scenario: 'tools-ok', maxConcurrency: 8, ...options });
+  const fake = await startFakeChatCompletions({ scenario: 'tools-ok', maxConcurrency: 8, contextWindow: TARGET_CONTEXT_WINDOW, ...options });
   onCleanup(() => fake.close());
   return fake;
 };
@@ -364,7 +369,7 @@ export const scriptedToolCall = (
   name: string,
   args: Record<string, unknown>,
   callId = 'call_1',
-  usage: FakeFixedUsage | FakeRequestUsage = { prompt: 'request', completion_tokens: 5 },
+  usage: FakeFixedUsage | FakeUsageOfRequest = (body) => fakeUsageOfRequest(body, SCRIPTED_COMPLETION_TOKENS),
 ) => ({
   kind: 'stream' as const,
   chunks: [

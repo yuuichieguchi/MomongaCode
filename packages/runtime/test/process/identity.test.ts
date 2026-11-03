@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { StoreIdentityError } from '@momonga/store';
-import { afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { START_MS, errnoError } from './helpers.ts';
 import {
   RUNTIME_VERSION,
@@ -19,7 +19,7 @@ import {
 } from './run-helpers.ts';
 import type { Launched, RunHome } from './run-helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: 60_000 };
+const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 
 const fakeTime = () => {
   const clock = createFakeClock(START_MS);

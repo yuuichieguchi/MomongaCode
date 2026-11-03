@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Worker, WorkerOptions } from '@momonga/runtime';
 import { RUNTIME_VERSION, captureStream, hookLogger, isLockFree, startRuntimeProcess, startStack } from './run-helpers.ts';
-import { waitFor } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, waitFor } from '@momonga/testkit';
 import type { RuntimeProcess } from './run-helpers.ts';
 
 const control = vi.hoisted(() => ({ onFatal: [] as ((error: Error) => void)[], aborts: 0 }));
@@ -24,7 +24,7 @@ vi.mock('../../src/worker/worker.ts', async (importOriginal) => {
   };
 });
 
-const PROCESS_TIMEOUT = { timeout: 60_000 };
+const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 
 beforeEach(() => {
   control.onFatal = [];
@@ -65,6 +65,6 @@ describe('fatal at the ready line (system timers, in-process gateway)', () => {
       expect(result).toMatchObject({ clean: false, fatal });
       expect(await isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
     },
-    60_000,
+    DAEMON_PROCESS_TEST_TIMEOUT_MS,
   );
 });

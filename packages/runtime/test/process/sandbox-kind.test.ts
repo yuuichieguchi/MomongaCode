@@ -4,10 +4,10 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { createUnsandboxed } from '@momonga/sandbox';
-import { waitFor } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, waitFor } from '@momonga/testkit';
 import { createRun, createSession, makeRuntimeFixture, makeTempHome, runBashThroughPort, signalNever, trackGroup, writeUserSettings } from './helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: 60_000 };
+const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 
 const groupExists = (pgid: number): boolean => {
   try {

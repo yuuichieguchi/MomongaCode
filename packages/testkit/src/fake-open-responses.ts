@@ -1,7 +1,10 @@
+import { canonicalJson } from '@momonga/foundation';
+import { tokensForText } from '@momonga/protocol';
 import type { Usage } from '@momonga/protocol';
-import type { FakeSseFrame, FakeUpstreamReply, FakeUpstreamServer } from './fake-sse-upstream.ts';
+import type { FakeSseFrame, FakeUpstreamOptions, FakeUpstreamReply, FakeUpstreamServer } from './fake-sse-upstream.ts';
 import { startFakeSseUpstream } from './fake-sse-upstream.ts';
 import { responseResource, usageOf } from './open-responses-fixtures.ts';
+import type { ResponseResourceInput } from './open-responses-fixtures.ts';
 
 export const FAKE_OPEN_RESPONSES_PATH = '/v1/responses';
 
@@ -10,6 +13,24 @@ export type FakeOpenResponsesOptions = {
   script?: FakeUpstreamReply[];
   respond?: Parameters<typeof startFakeSseUpstream>[0]['respond'];
   socketPath?: string;
+};
+
+const USAGE_BEARING_TERMINALS = ['response.completed', 'response.incomplete'];
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const withInputTokens = (reply: FakeUpstreamReply, inputTokens: number): FakeUpstreamReply => {
+  if (reply.kind !== 'stream') return reply;
+  return {
+    ...reply,
+    frames: reply.frames.map((frame) => {
+      const data = frame.data;
+      if (!isRecord(data) || !USAGE_BEARING_TERMINALS.includes(String(data['type'])) || !isRecord(data['response'])) return frame;
+      if (data['response']['usage'] !== undefined) return frame;
+      const outputTokens = tokensForText(canonicalJson(data['response']['output']));
+      return { ...frame, data: { ...data, response: { ...data['response'], usage: usageOf(inputTokens, outputTokens) } } };
+    }),
+  };
 };
 
 export const openResponsesErrorBody = (type: string, code: string | null, message: string): { error: { type: string; code: string | null; message: string; param: null } } => ({
@@ -29,11 +50,22 @@ export const openResponsesErrorReply = (
   ...(headers === undefined ? {} : { headers }),
 });
 
-export const startFakeOpenResponses = (options: FakeOpenResponsesOptions): Promise<FakeUpstreamServer> =>
-  startFakeSseUpstream({
+const responderOf = (options: FakeOpenResponsesOptions): NonNullable<FakeUpstreamOptions['respond']> => {
+  if (options.script !== undefined && options.respond !== undefined) throw new Error('startFakeOpenResponses takes a script or respond, not both');
+  const script = [...(options.script ?? [])];
+  const inner = options.respond ?? (() => script.shift());
+  return (request) => {
+    const reply = inner(request);
+    if (reply === undefined) return reply;
+    return withInputTokens(reply, tokensForText(JSON.stringify(request.body)));
+  };
+};
+
+export const startFakeOpenResponses = (options: FakeOpenResponsesOptions): Promise<FakeUpstreamServer> => {
+  const respond = responderOf(options);
+  return startFakeSseUpstream({
     path: FAKE_OPEN_RESPONSES_PATH,
-    ...(options.script === undefined ? {} : { script: options.script }),
-    ...(options.respond === undefined ? {} : { respond: options.respond }),
+    respond,
     ...(options.socketPath === undefined ? {} : { socketPath: options.socketPath }),
     ...(options.apiKey === undefined
       ? {}
@@ -44,6 +76,7 @@ export const startFakeOpenResponses = (options: FakeOpenResponsesOptions): Promi
               : openResponsesErrorReply(401, 'invalid_request', 'invalid_api_key', 'the bearer token is not valid'),
         }),
   });
+};
 
 const MODEL = 'open-responses-fake';
 const RESPONSE_ID = 'resp_fake_1';
@@ -117,16 +150,22 @@ export type TerminalSpec =
   | { kind: 'incomplete'; reason: string; usage?: Usage | null }
   | { kind: 'failed'; code: string; message: string; errorType?: string };
 
+const resourceWithOptionalUsage = (input: Omit<ResponseResourceInput, 'usage'>, usage: Usage | null | undefined): Record<string, unknown> => {
+  const resource: Record<string, unknown> = { ...responseResource({ ...input, ...(usage === undefined ? {} : { usage }) }) };
+  if (usage === undefined) delete resource['usage'];
+  return resource;
+};
+
 export const terminalEvent = (spec: TerminalSpec, output: readonly unknown[]): EventBody => {
   const base = { id: RESPONSE_ID, model: MODEL, output: output as never };
   if (spec.kind === 'completed') {
-    return { type: 'response.completed', response: responseResource({ ...base, status: 'completed', usage: spec.usage === undefined ? usageOf(11, 3) : spec.usage, completedAt: 1_800_000_001 }) };
+    return { type: 'response.completed', response: resourceWithOptionalUsage({ ...base, status: 'completed', completedAt: 1_800_000_001 }, spec.usage) };
   }
   if (spec.kind === 'incomplete') {
     return {
       type: 'response.incomplete',
       response: {
-        ...responseResource({ ...base, status: 'incomplete', usage: spec.usage === undefined ? usageOf(11, 3) : spec.usage, completedAt: 1_800_000_001 }),
+        ...resourceWithOptionalUsage({ ...base, status: 'incomplete', completedAt: 1_800_000_001 }, spec.usage),
         incomplete_details: { reason: spec.reason },
       },
     };

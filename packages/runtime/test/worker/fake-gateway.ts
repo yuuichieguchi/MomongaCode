@@ -299,7 +299,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
           ? tokensOfText(request.input)
           : request.input.reduce((sum, item) => sum + tokensOfText(canonicalJson(item)), 0);
       const tools = (request.tools ?? []).reduce((sum, tool) => sum + tokensOfText(canonicalJson(tool)), 0);
-      const result: CountTokensResult = { input_tokens: instructions + input + tools, method: 'exact', error_bound: 0 };
+      const result: CountTokensResult = { input_tokens: instructions + input + tools, method: 'exact', error_bound: 0, error_shape: { ratio: 0, minimum: 0 } };
       gateway.countResults.push(result);
       return result;
     },

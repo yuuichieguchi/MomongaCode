@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { nodeFiles } from '../src/node-ports.ts';
 import { OWNER_FILE, ROOT_PREFIX, caseEnvironment } from '../src/eval/context-host.ts';
 import { endpointRecordFileName } from '@momonga/gateway';
@@ -66,7 +67,7 @@ describe('the homes a sweep may consider', () => {
   });
 });
 
-describe('the environment of a session inside a case', () => {
+describe('the environment of a session inside a case', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   const portsWith = (home: string, env: Record<string, string>): CliPorts => ({ platform: 'linux', env, home, files: nodeFiles }) as unknown as CliPorts;
 
   const personEnv = {

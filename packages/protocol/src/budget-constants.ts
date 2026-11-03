@@ -1,4 +1,5 @@
 import type { Capabilities } from './capabilities.ts';
+import type { CountTokensMethod, CountTokensResult } from './gateway-api.ts';
 
 export const MARGIN_RATIO = 0.02;
 export const MIN_MARGIN = 32;
@@ -22,6 +23,21 @@ export const WORKING_FACT_TEXT_CHARS = ESTIMATED_CHARACTERS_PER_TOKEN * WORKING_
 const MIN_OUTPUT_RESERVE = 256;
 const OUTPUT_RESERVE_RATIO = 0.25;
 const MAX_OUTPUT_WINDOW_RATIO = 0.5;
+
+export type ErrorShape = { readonly ratio: number; readonly minimum: number };
+
+export const EXACT_ERROR_SHAPE: ErrorShape = { ratio: 0, minimum: 0 };
+
+export const ESTIMATED_ERROR_SHAPE: ErrorShape = { ratio: ESTIMATED_ERROR_BOUND_RATIO, minimum: 1 };
+
+export const errorBoundOfShape = (shape: ErrorShape, tokens: number): number => Math.max(shape.minimum, Math.ceil(shape.ratio * tokens));
+
+export const countReplyOf = (tokens: number, method: CountTokensMethod, shape: ErrorShape): CountTokensResult => ({
+  input_tokens: tokens,
+  method,
+  error_bound: errorBoundOfShape(shape, tokens),
+  error_shape: shape,
+});
 
 export const marginFloorFor = (contextWindow: number): number => Math.max(Math.ceil(MARGIN_RATIO * contextWindow), MIN_MARGIN);
 

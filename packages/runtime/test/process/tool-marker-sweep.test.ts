@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { canonicalJson, ensureMomongaDirs, momongaPaths, sha256Hex } from '@momonga/foundation';
-import { createFakeClock, createFakeTimers, withTempDir } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { createToolRegistry, defineTool } from '@momonga/tools';
 import { TOOL_MARKER_SWEEP_MS } from '../../src/process/constants.ts';
@@ -36,7 +36,7 @@ beforeEach(() => {
   sandboxSweeps.failure = undefined;
 });
 
-const PROCESS_TIMEOUT = { timeout: 60_000 };
+const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 const NON_SWEEP_LEASE_MS = 7000;
 
 const trackedTempHome = async (context: CleanupContext): Promise<TempHome> => {

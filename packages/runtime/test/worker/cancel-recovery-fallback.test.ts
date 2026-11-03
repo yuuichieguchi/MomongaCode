@@ -15,9 +15,9 @@ import {
   seedStartedCalls,
   spawnMarkerHolder,
 } from './cancel-fixture.ts';
-import { afterMicrotasks } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks } from '@momonga/testkit';
 
-const PROCESS_TIMEOUT = { timeout: 30_000 };
+const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 
 const BASH = { callId: 'call_b_1', name: 'Bash', kind: 'execute' as const, args: { command: 'sleep 30' } };
 const MARK = { callId: 'call_m_1', name: 'Mark', args: { value: 'one' } };

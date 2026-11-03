@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { DEFAULT_BWRAP_PATH, createPlaceholderJournal, heldMountPoints, identityOf, recoverPlaceholders } from '@momonga/sandbox';
 import { makeTempDir } from './helpers.ts';
 
@@ -242,7 +243,7 @@ describe('the placeholder journal and the recovery at runtime start', () => {
     });
   });
 
-  describe.runIf(HAS_BWRAP)('after a real host SIGKILL, with real bwrap', () => {
+  describe.runIf(HAS_BWRAP)('after a real host SIGKILL, with real bwrap', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     const startHost = async () => {
       const work = tempDir();
       const control = tempDir();

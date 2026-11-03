@@ -63,7 +63,7 @@ beforeAll(async () => {
   });
   const client = createGatewayClient({ socketPath: gateway.socketPath, clock: fakeClock(), version: CLIENT_VERSION, streamIdleTimeoutMs: IDLE_BOUND_MS });
   context = { home, primary, secondary, gateway, client, restoreStdout: () => stdout.mockRestore() };
-}, 30_000);
+});
 
 afterAll(async () => {
   if (context === undefined) return;
@@ -73,9 +73,9 @@ afterAll(async () => {
   await context.secondary.close();
   context.restoreStdout();
   fs.rmSync(context.home, { recursive: true, force: true });
-}, 30_000);
+});
 
-describe('a silent upstream behind a real gateway and the real gateway client', { timeout: 30_000 }, () => {
+describe('a silent upstream behind a real gateway and the real gateway client', () => {
   it('completes a call whose upstream is silent for longer than the client idle bound', async () => {
     const hold = context.primary.hold();
     const pending = collect(context.client.stream(streamBody(), callOptions(fakeClock(), { idempotencyKey: 'silent-1' })));

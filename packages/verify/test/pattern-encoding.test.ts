@@ -5,7 +5,7 @@ import { hostFilesystemOf } from '@momonga/testkit';
 import type { Witness } from '../src/decision-model.ts';
 import { buildQueryContext } from '../src/verify.ts';
 import { UnsupportedRegexError, parseRegexSource } from '../src/regex-source.ts';
-import { caseInsensitiveFs, caseSensitiveFs, makeLayout, rulesOf, sshLocation, useZ3 } from './harness.ts';
+import { SOLVER_ENCODING_SWEEP_TEST_TIMEOUT_MS, caseInsensitiveFs, caseSensitiveFs, makeLayout, rulesOf, sshLocation, useZ3 } from './harness.ts';
 import type { Layout } from './harness.ts';
 
 const z3 = useZ3();
@@ -100,7 +100,7 @@ describe('file patterns encode the regular language the product matches', () => 
     }
     expect(failures).toEqual([]);
     expect(compared).toBeGreaterThan(SPECIFIERS.length * 20);
-  }, 300_000);
+  }, SOLVER_ENCODING_SWEEP_TEST_TIMEOUT_MS);
 
   it('agrees on rules with exceptions carved out of a broader pattern', async () => {
     const layout = makeLayout();
@@ -113,7 +113,7 @@ describe('file patterns encode the regular language the product matches', () => 
       failures.push(...(await modelMatches(layout, specifier, caseInsensitiveFs(), exceptions)).disagreements);
     }
     expect(failures).toEqual([]);
-  }, 300_000);
+  }, SOLVER_ENCODING_SWEEP_TEST_TIMEOUT_MS);
 });
 
 describe('the regular expression subset', () => {

@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { makeRealWorkspace } from './real-workspace.ts';
 import type { RealWorkspace } from './real-workspace.ts';
 
@@ -17,7 +18,7 @@ const gitdirLayout = (workspace: RealWorkspace, name: string, commondir: string,
   return path.join(workspace.project, name, 'sub');
 };
 
-describe('a NUL byte in a pointer file ends the text, as it does for real git (item 9)', () => {
+describe('a NUL byte in a pointer file ends the text, as it does for real git (item 9)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('follows a commondir cut at the NUL to a valid git directory, and decides as for the same text without the NUL', () => {
     const workspace = makeRealWorkspace();
     const cwd = gitdirLayout(workspace, 'with-nul', '../with-nul-real\0x', true);

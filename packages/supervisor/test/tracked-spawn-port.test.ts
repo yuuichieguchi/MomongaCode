@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { createUdsClient, isProcessAlive, momongaPaths } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { killGroupsForCleanup, killPidsForCleanup, registerCleanup, spawnTracked, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, registerCleanup, spawnTracked, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { trackSupervisorChildren } from './support/track-supervisor-children.ts';
 import { trackedSpawnPort } from './support/tracked-spawn-port.ts';
@@ -36,7 +36,7 @@ const firstGrandchild = (output: () => string): number | undefined => {
   return match === null ? undefined : Number(match[1]);
 };
 
-describe('trackedSpawnPort', () => {
+describe('trackedSpawnPort', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('cleanup kills an unfinished child, its group and a registered grandchild', async (context) => {
     const markerFd = readOnlyScratchFd(context);
     const tracked: number[] = [];
@@ -73,7 +73,7 @@ describe('trackedSpawnPort', () => {
     for (const pid of tracked) expect(isProcessAlive(pid)).toBe(true);
     await captured.run();
     for (const pid of tracked) expect(isProcessAlive(pid), `pid ${pid}`).toBe(false);
-  }, 15_000);
+  });
 
   it('cleanup of a child that already exited passes', async (context) => {
     const markerFd = readOnlyScratchFd(context);
@@ -86,10 +86,10 @@ describe('trackedSpawnPort', () => {
     child.stderr.resume();
     await exited;
     await expect(captured.run()).resolves.toBeUndefined();
-  }, 15_000);
+  });
 });
 
-describe('trackSupervisorChildren', () => {
+describe('trackSupervisorChildren', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('cleanup kills the children of a fixture supervisor that is left running', async (context) => {
     const home = withTempDir(context, { asHome: true });
     const socketPath = momongaPaths(home, process.platform, {}).sockets.supervisor;
@@ -136,5 +136,5 @@ describe('trackSupervisorChildren', () => {
     await captured.run();
     for (const pid of childPids) expect(isProcessAlive(pid), `pid ${pid}`).toBe(false);
     expect(isProcessAlive(supervisor.pid)).toBe(true);
-  }, 20_000);
+  });
 });

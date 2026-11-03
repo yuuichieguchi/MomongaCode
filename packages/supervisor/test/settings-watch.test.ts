@@ -259,5 +259,5 @@ describe('watchSettings', () => {
     await pollUntil(() => calls > 0, 8000, 'onChange after rename');
     expect(calls).toBe(1);
     expect(errors).toEqual([]);
-  }, 15_000);
+  });
 });

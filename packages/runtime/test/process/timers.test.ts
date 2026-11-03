@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ensureMomongaDirs } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
-import { afterMicrotasks, createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
 import { START_MS } from './helpers.ts';
 import {
@@ -20,7 +20,7 @@ import {
 } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: 60_000 };
+const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 const DAY_MS = 86_400_000;
 const SESSION_STATE_IDLE_MS = 1_800_000;
 const EXPIRED_KEY = 'a'.repeat(64);

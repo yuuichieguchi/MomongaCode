@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { HOST_RULE_ENFORCEMENT, ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
 import { SandboxPolicyError, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxCommand, SandboxPolicy } from '@momonga/sandbox';
-import { fakePolicyFilesystem, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, withTempDir } from '@momonga/testkit';
 import { createEvidenceRunner } from '../../src/process/evidence-run.ts';
 
 const bytes = async function* (text: string): AsyncGenerator<Uint8Array> {
@@ -22,7 +22,7 @@ const sandboxAnswering = (stdout: string, code: number | null) => {
   return { sandbox, spawned };
 };
 
-describe('the evidence runner', () => {
+describe('the evidence runner', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('runs the command in the sandbox with the project as the only writable root and no network, and returns the exit code and the output', async (context) => {
     const home = withTempDir(context, { asHome: true });
     const paths = momongaPaths(home);

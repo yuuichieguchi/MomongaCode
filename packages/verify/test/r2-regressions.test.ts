@@ -9,7 +9,17 @@ import type { SecretLocation } from '../src/properties.ts';
 import type { QueryContext } from '../src/queries.ts';
 import type { SolveResult } from '../src/smt.ts';
 import { buildQueryContext } from '../src/verify.ts';
-import { caseSensitiveFs, makeLayout, rulesOf, sshLocation, useZ3, verifyScenario } from './harness.ts';
+import {
+  SOLVER_EXHAUSTIVE_SWEEP_TEST_TIMEOUT_MS,
+  SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS,
+  SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  caseSensitiveFs,
+  makeLayout,
+  rulesOf,
+  sshLocation,
+  useZ3,
+  verifyScenario,
+} from './harness.ts';
 import type { Layout, RuleSpec } from './harness.ts';
 
 const z3 = useZ3();
@@ -35,14 +45,14 @@ describe('round 2, finding 8: secret locations are compared by their real locati
     expect(witness?.kind === 'path' ? witness.resolved.startsWith(path.join(layout.home, 'dotfiles', 'ssh')) : false).toBe(true);
     expect(finding?.counterexample?.replay).toMatchObject({ agrees: true, actual: 'allow' });
     expect(report.exitCode).toBe(1);
-  }, 180_000);
+  }, SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS);
 
   it('does not report a route through the link path itself, which no real access can resolve to', async () => {
     const layout = linkedSsh();
     const report = await verifyScenario(z3.engine().api, layout, rulesOf(layout, [['allow', 'Read(~/.ssh/**)']]));
 
     expect(resultOf(report, 'secret-reach').verdict.status).toBe('refuted');
-  }, 180_000);
+  }, SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS);
 
   it('reports unknown, never proved, when a secret location cannot be resolved', async () => {
     const layout = makeLayout();
@@ -54,7 +64,7 @@ describe('round 2, finding 8: secret locations are compared by their real locati
     expect(reach.verdict.status).toBe('unknown');
     expect(reach.verdict.status === 'unknown' ? reach.verdict.reason : '').toContain('~/loop');
     expect(report.exitCode).toBe(1);
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 });
 
 describe('round 2, finding 14: a word with = is inside the command alphabet', () => {
@@ -64,7 +74,7 @@ describe('round 2, finding 14: a word with = is inside the command alphabet', ()
 
     expect(report.outsideProof.join('\n')).not.toContain('make CC=gcc');
     expect(resultOf(report, 'rule-consistency').verdict.status).toBe('proved');
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 });
 
 const forceUnknownAt =(context: QueryContext, site: number): { calls: () => number } => {
@@ -143,5 +153,5 @@ describe('round 2, finding 9: a query the solver cannot decide never leaves a pr
       statuses.push(result.verdict.status);
     }
     expect(statuses).toEqual(Array.from({ length: sites }, () => 'unknown'));
-  }, 600_000);
+  }, SOLVER_EXHAUSTIVE_SWEEP_TEST_TIMEOUT_MS);
 });

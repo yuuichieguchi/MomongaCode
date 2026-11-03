@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { writeInvalidUserSettings } from './helpers.ts';
 import { launchRuntime, sessionEnvFor, startStack, waitForStatus } from './run-helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: 60_000 };
+const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 
 describe('fail-closed user settings under a running runtime (system timers, in-process gateway)', () => {
   it('after the user settings file becomes invalid, session create answers 422 config_error', PROCESS_TIMEOUT, async () => {

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { MAX_POINTER_FILE_BYTES } from '@momonga/foundation';
 import { createPolicyFilesystem } from '@momonga/tools';
 
@@ -265,7 +266,7 @@ describe('readNoFollow', () => {
   });
 });
 
-describe('expandGlob', () => {
+describe('expandGlob', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   const noAbort = new AbortController().signal;
   const filesystem = () => {
     const host = createPolicyFilesystem();

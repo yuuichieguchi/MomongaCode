@@ -4,6 +4,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { makeBuiltins, resultOf } from './builtins/fixtures.ts';
 import { makeLayout } from './helpers.ts';
 import { makeRealWorkspace } from './real-workspace.ts';
@@ -199,7 +200,7 @@ const VARIABLE_ROWS: readonly Row[] = [
   { id: 'an inherited GIT_CONFIG_COUNT', plant: (_w, p) => ({ GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.fsmonitor', GIT_CONFIG_VALUE_0: p.script }), args: () => ['status'] },
 ];
 
-describe.runIf(HAS_REAL_SANDBOX)('rule 3: the environment of a read-only call, with decide forced to approve', () => {
+describe.runIf(HAS_REAL_SANDBOX)('rule 3: the environment of a read-only call, with decide forced to approve', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('sets every key of the rule, optional locks off and prompts off', async () => {
     const env = await callEnvironment();
     expect(configuredKeys(env)).toEqual(expect.arrayContaining([...REQUIRED_GIT_KEYS]));

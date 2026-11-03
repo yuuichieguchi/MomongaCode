@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { capabilitiesFromProbe, ProbeTimeoutError, runProbe } from '@momonga/gateway';
 import { Deadline } from '@momonga/foundation';
+import { tokensForText } from '@momonga/protocol';
 import type { ProbeReport } from '@momonga/protocol';
 import {
   FAKE_GUARDRAIL_ERROR,
@@ -29,6 +30,8 @@ const probe = async (
 };
 
 const SLOW_MS = 150;
+const IMAGE_WRAPPER_TOKENS = tokensForText(`,${JSON.stringify({ type: 'image_url' })}`);
+const WINDOW_HOLDING_THE_LARGEST_IMAGE = 200_000;
 
 const words = (text: string): number => text.split(/\s+/).filter((word) => word.length > 0).length;
 
@@ -140,16 +143,22 @@ describe('runProbe server features', () => {
   it('measures the image token model of a target that accepts images and reports usage', async () => {
     const { report } = await probe({ scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600 } });
     expect(report.imageInputAccepted).toBe(true);
-    expect(report.imageTokens?.maxTokens).toBe(1600);
-    expect(report.imageTokens?.minTokens).toBe(1);
-    expect(report.imageTokens?.pixelsPerToken).toBeGreaterThan(740);
+    expect(report.imageTokens?.maxTokens).toBe(1600 + IMAGE_WRAPPER_TOKENS);
+    expect(report.imageTokens?.minTokens).toBe(1 + IMAGE_WRAPPER_TOKENS);
+    expect(report.imageTokens?.pixelsPerToken).toBeGreaterThan(730);
     expect(report.imageTokens?.pixelsPerToken).toBeLessThan(760);
   });
 
   it('models an endpoint that caps no image within the probe range, with the measured cost of the largest image as a floor for the cap', async () => {
-    const { report } = await probe({ scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 100_000 } });
+    const { report } = await probe({
+      scenario: 'tools-ok',
+      imageInput: true,
+      imageTokens: { pixelsPerToken: 750, maxTokens: 100_000 },
+      contextWindow: WINDOW_HOLDING_THE_LARGEST_IMAGE,
+      contextSizeExposure: 'models',
+    });
     expect(report.imageInputAccepted).toBe(true);
-    expect(report.imageTokens?.pixelsPerToken).toBeGreaterThan(740);
+    expect(report.imageTokens?.pixelsPerToken).toBeGreaterThan(730);
     expect(report.imageTokens?.pixelsPerToken).toBeLessThan(760);
     expect(report.imageTokens?.maxTokens).toBeGreaterThanOrEqual(5593);
     expect(report.imageTokens?.maxTokens).toBeLessThanOrEqual(100_000);
@@ -158,7 +167,13 @@ describe('runProbe server features', () => {
   });
 
   it('keeps doubling past 2048 px while the cost still grows, so a linear endpoint is not recorded with the cost of 2048 px as its cap', async () => {
-    const { report } = await probe({ scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 100_000 } });
+    const { report } = await probe({
+      scenario: 'tools-ok',
+      imageInput: true,
+      imageTokens: { pixelsPerToken: 750, maxTokens: 100_000 },
+      contextWindow: WINDOW_HOLDING_THE_LARGEST_IMAGE,
+      contextSizeExposure: 'models',
+    });
     expect(report.imageTokens?.maxTokens).toBeGreaterThanOrEqual(Math.ceil(8192 ** 2 / 750));
   });
 
@@ -176,8 +191,8 @@ describe('runProbe server features', () => {
 
   it('takes pixelsPerToken from a size below the plateau when the cap is reached below the 512 px reference', async () => {
     const { report } = await probe({ scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 328, maxTokens: 200 } });
-    expect(report.imageTokens?.maxTokens).toBe(200);
-    expect(report.imageTokens?.pixelsPerToken).toBeGreaterThan(320);
+    expect(report.imageTokens?.maxTokens).toBe(200 + IMAGE_WRAPPER_TOKENS);
+    expect(report.imageTokens?.pixelsPerToken).toBeGreaterThan(285);
     expect(report.imageTokens?.pixelsPerToken).toBeLessThan(336);
   });
 
@@ -210,7 +225,7 @@ describe('runProbe server features', () => {
     );
     expect(waits).toEqual([3000, 3000]);
     expect(report.contextWindow).toEqual({ value: 8192, method: 'reported' });
-    expect(report.imageTokens?.maxTokens).toBe(1600);
+    expect(report.imageTokens?.maxTokens).toBe(1600 + IMAGE_WRAPPER_TOKENS);
   });
 
   it('does not wait for a Retry-After longer than a step may take, and fails the step', async () => {
@@ -235,7 +250,7 @@ describe('runProbe server features', () => {
     });
     expect(report.contextWindow).toEqual({ value: 8192, method: 'reported' });
     expect(report.imageInputAccepted).toBe(true);
-    expect(report.imageTokens?.pixelsPerToken).toBeGreaterThan(740);
+    expect(report.imageTokens?.pixelsPerToken).toBeGreaterThan(730);
     expect(report.imageTokens?.pixelsPerToken).toBeLessThan(760);
     expect(report.imageTokens?.maxTokens).toBeGreaterThanOrEqual(1345);
     expect(report.imageTokens?.maxTokens).toBeLessThanOrEqual(1399);
@@ -252,13 +267,13 @@ describe('runProbe server features', () => {
     });
     expect(report.contextWindow).toEqual({ value: 8192, method: 'reported' });
     expect(report.imageInputAccepted).toBe(true);
-    expect(report.imageTokens?.maxTokens).toBeLessThanOrEqual(88);
+    expect(report.imageTokens?.maxTokens).toBeLessThanOrEqual(88 + IMAGE_WRAPPER_TOKENS);
   });
 
   it('measures a per-image minimum, so a fixed cost per image is estimated at that cost for a small image', async () => {
     const { report } = await probe({ scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 576, minTokens: 576 } });
-    expect(report.imageTokens?.minTokens).toBe(576);
-    expect(report.imageTokens?.maxTokens).toBe(576);
+    expect(report.imageTokens?.minTokens).toBe(576 + IMAGE_WRAPPER_TOKENS);
+    expect(report.imageTokens?.maxTokens).toBe(576 + IMAGE_WRAPPER_TOKENS);
     expect(isProbeReport(report)).toBe(true);
   });
 

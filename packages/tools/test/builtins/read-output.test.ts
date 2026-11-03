@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { catN, makeBuiltins, range, resultOf } from './fixtures.ts';
 
 const UNKNOWN_HANDLE = 'a'.repeat(64);
 
 describe('ReadOutput', () => {
-  it.runIf(process.platform === 'darwin')('reads back a truncated Bash output exactly', { timeout: 30_000 }, async () => {
+  it.runIf(process.platform === 'darwin')('reads back a truncated Bash output exactly', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const tools = await makeBuiltins({ maxInlineOutputChars: 2000, realSandbox: true });
     const bashResult = resultOf(await tools.run('Bash', { command: 'seq 1 3000' }, {}, 'allow_once'));
     expect(bashResult).toMatchObject({ status: 'completed', truncated: true });

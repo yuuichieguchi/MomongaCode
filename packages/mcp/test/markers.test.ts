@@ -3,10 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { PS_PROBE_TIMEOUT_MS, findHolders } from '@momonga/foundation';
-import { MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_SETSID_GRANDCHILD_ENV } from '@momonga/testkit';
+import { MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_SETSID_GRANDCHILD_ENV, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { createTransport, descriptorPath, eventually, groupExists, makeDir, pidAlive, rawConfig, startRaw, trackPid } from './raw-transport.ts';
 
-const PROCESS_TIMEOUT = { timeout: 30_000 };
+const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 const SSH_AGENT = '/usr/bin/ssh-agent';
 const AGENT_CLOSE_BOUND_MS = 2 * PS_PROBE_TIMEOUT_MS;
 

@@ -7,7 +7,7 @@ import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
 import type { McpStdioServerConfig } from '@momonga/config';
 import { createStdioTransport, type StdioTransport } from '@momonga/mcp';
 import type { TerminateOutcome } from '@momonga/foundation';
-import { MCP_RAW_STDIO_SERVER_PATH, killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
+import { MCP_RAW_STDIO_SERVER_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
@@ -159,7 +159,7 @@ const trackGrandchild = (pid: number): void => {
   });
 };
 
-describe('createStdioTransport spawn', () => {
+describe('createStdioTransport spawn', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('spawns the server detached in its own process group and exposes the pgid', async () => {
     const { transport, request } = await harness();
     const { pid } = (await request('pid')) as { pid: number };
@@ -233,7 +233,7 @@ describe('createStdioTransport spawn', () => {
   });
 });
 
-describe('createStdioTransport framing', () => {
+describe('createStdioTransport framing', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('exchanges newline-delimited JSON-RPC in both directions', async () => {
     const { request, messages, transport } = await harness();
     expect(await request('echo', { text: 'line one', nested: { n: 1 } })).toEqual({ text: 'line one', nested: { n: 1 } });
@@ -274,7 +274,7 @@ describe('createStdioTransport framing', () => {
   });
 });
 
-describe('createStdioTransport stderr', () => {
+describe('createStdioTransport stderr', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('keeps only the last 64 KiB of stderr in diagnostics and never forwards it to onmessage', async () => {
     const { request, transport, messages } = await harness();
     const head = 'a'.repeat(40 * 1024);
@@ -296,7 +296,7 @@ describe('createStdioTransport stderr', () => {
   });
 });
 
-describe('createStdioTransport close', () => {
+describe('createStdioTransport close', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('ends stdin and lets a cooperative server exit on its own, then reaps the grandchild', async () => {
     const { request, transport, closeCount } = await harness({ closeGraceMs: 10000 });
     const pgid = transport.pgid;
@@ -348,7 +348,7 @@ describe('createStdioTransport close', () => {
   });
 });
 
-describe('createStdioTransport unexpected exit', () => {
+describe('createStdioTransport unexpected exit', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('fires onclose once and records the exit code', async () => {
     const { transport, closeCount } = await harness();
     await transport.send({ jsonrpc: '2.0', id: 1, method: 'exit', params: { code: 5 } });
@@ -399,7 +399,7 @@ const failingTerminate = (calls: number[]) => (pgid: number): Promise<TerminateO
   return Promise.reject(new Error('terminate failed for test'));
 };
 
-describe('createStdioTransport env value filter', () => {
+describe('createStdioTransport env value filter', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('drops inherited values that start with "()" but passes the same value from config.env', async () => {
     const baseEnv = { ...baseEnvWith('/usr/bin:/bin'), SHELL: SHELLSHOCK_VALUE };
     const { request } = await harness({ baseEnv, config: { env: { TERM: SHELLSHOCK_VALUE } } });
@@ -410,7 +410,7 @@ describe('createStdioTransport env value filter', () => {
   });
 });
 
-describe('createStdioTransport relative PATH entries', () => {
+describe('createStdioTransport relative PATH entries', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('ignores relative PATH entries and picks the command from an absolute directory', async () => {
     const projectDir = makeDir();
     const marker = path.join(projectDir, 'hostile-ran');
@@ -449,7 +449,7 @@ describe('createStdioTransport relative PATH entries', () => {
   });
 });
 
-describe('createStdioTransport blank lines', () => {
+describe('createStdioTransport blank lines', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('skips empty and carriage-return-only lines silently', async () => {
     const { request, errors, messages } = await harness();
     expect(await request('blank_lines')).toEqual({ afterBlank: true });
@@ -459,7 +459,7 @@ describe('createStdioTransport blank lines', () => {
   });
 });
 
-describe('createStdioTransport stdout drain on unexpected exit', () => {
+describe('createStdioTransport stdout drain on unexpected exit', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('delivers every complete message written before stdout EOF ahead of onclose', async () => {
     const { transport, messages, events, closeCount } = await harness({ closeGraceMs: 10000 });
     await transport.send({ jsonrpc: '2.0', id: 1, method: 'late_write', params: { count: 3, bytes: 200 * 1024 } });
@@ -472,7 +472,7 @@ describe('createStdioTransport stdout drain on unexpected exit', () => {
   });
 });
 
-describe('createStdioTransport terminate failures on internal close paths', () => {
+describe('createStdioTransport terminate failures on internal close paths', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('fires onclose once and reports the error on unexpected exit without an unhandled rejection', async () => {
     const unhandled = collectUnhandledRejections();
     const calls: number[] = [];
@@ -527,7 +527,7 @@ const readEscapedPid = async (readyFile: string): Promise<number> => {
 const ESCAPED_HOST_PATH = path.join(import.meta.dirname, 'fixtures', 'escaped-grandchild-host.ts');
 const QUIET_WINDOW_MS = 300;
 
-describe('createStdioTransport pipes after close', () => {
+describe('createStdioTransport pipes after close', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('stops reading stdout and stderr once onclose fires even if an escaped grandchild holds the pipes', async () => {
     const dir = makeDir();
     const readyFile = path.join(dir, 'escaped.pid');
@@ -572,7 +572,7 @@ describe('createStdioTransport pipes after close', () => {
   });
 });
 
-describe('createStdioTransport terminate failure reporting', () => {
+describe('createStdioTransport terminate failure reporting', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('reports a terminate failure through onerror exactly once when oversize and leader exit both close', async () => {
     const calls: number[] = [];
     const { transport, errors, closeCount } = await harness({ terminate: failingTerminate(calls) });

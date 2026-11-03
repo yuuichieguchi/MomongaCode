@@ -12,9 +12,9 @@ const renderingCounter = (): RecordingCounter => {
     count: async (request) => {
       calls.push(request);
       const lenient = request.momonga?.lenient_items;
-      if (lenient === undefined) return { input_tokens: 1000, method: 'exact', error_bound: 0 };
+      if (lenient === undefined) return { input_tokens: 1000, method: 'exact', error_bound: 0, error_shape: { ratio: 0, minimum: 0 } };
       const names = Object.values(lenient.call_names).join(',');
-      return { input_tokens: (lenient.with_tools ? 10 : 20) + names.length, method: 'exact', error_bound: 0 };
+      return { input_tokens: (lenient.with_tools ? 10 : 20) + names.length, method: 'exact', error_bound: 0, error_shape: { ratio: 0, minimum: 0 } };
     },
   };
 };

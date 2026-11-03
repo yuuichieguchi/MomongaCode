@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { HOST_RULE_ENFORCEMENT, ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, heldMountPoints } from '@momonga/sandbox';
 import type { Sandbox } from '@momonga/sandbox';
-import { fakePolicyFilesystem, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, withTempDir } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import { createEvidencePorts, readGitHead } from '../../src/memory/evidence.ts';
 import { createEvidenceRunner } from '../../src/process/evidence-run.ts';
@@ -51,7 +51,7 @@ const setup = async (context: TestContext) => {
   return { home, paths, root, project, git, gitEnv };
 };
 
-describe.runIf(HAS_REAL_SANDBOX)('the evidence runner on the real sandbox of this host', () => {
+describe.runIf(HAS_REAL_SANDBOX)('the evidence runner on the real sandbox of this host', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('answers git rev-parse HEAD and git merge-base --is-ancestor in a temporary repository', async (context) => {
     const { home, paths, root, project, git } = await setup(context);
     const first = git('rev-parse', 'HEAD');

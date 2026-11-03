@@ -1,5 +1,6 @@
 import {
   ContextOverflowError,
+  PinnedBoundError,
   PinnedOverflowError,
   PinnedRoomError,
   budgetFor,
@@ -389,6 +390,17 @@ const namedFacts = (error: PinnedOverflowError, ids: readonly string[]): string 
 
 export const pinnedOverflowFailure = (ctx: Pick<ClaimContext, 'capabilities'>, error: PinnedOverflowError, governingIds: readonly string[] = []): { code: 'pinned_overflow'; message: string } => {
   const { W, R } = budgetFor(ctx.capabilities, 0);
+  if (error instanceof PinnedBoundError) {
+    const limits = `the input budget of ${error.inputBudget} (window ${W}, output reserve ${R})`;
+    const remedy = 'Raise contextWindow, lower maxOutputTokens, or calibrate the token counter.';
+    return {
+      code: 'pinned_overflow',
+      message:
+        error.maxInput === undefined
+          ? `No input size fits: the token counter's error bound is ${error.boundAtZero} tokens even for an empty input, more than ${limits}. ${remedy}`
+          : `The pinned context needs ${error.pinnedTokens} tokens, but with the token counter's error bound at most ${error.maxInput} fit ${limits}, so no compaction can make room. ${remedy}`,
+    };
+  }
   if (error instanceof PinnedRoomError) {
     return {
       code: 'pinned_overflow',

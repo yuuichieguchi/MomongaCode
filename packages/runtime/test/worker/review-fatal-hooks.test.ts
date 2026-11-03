@@ -7,12 +7,10 @@ import { RECONCILE_FAILURE_PREFIX, fatalStoreError, seedStartedCalls } from './c
 import { gated, textStep } from './scripts.ts';
 import { afterMicrotasks } from '@momonga/testkit';
 
-const SLOW = { timeout: 30_000 };
-
 const serverError = (): ScriptStep => ({ events: [], error: new GatewayRequestError({ status: 500, type: 'server_error', code: 'internal_error', message: 'boom' }) });
 
 describe('worker onFatal containment', () => {
-  it('a throwing onFatal hook is contained and never becomes an unhandled rejection', SLOW, async () => {
+  it('a throwing onFatal hook is contained and never becomes an unhandled rejection', async () => {
     const env = await makeEnv();
     const fatal = fatalStoreError();
     const unhandled: unknown[] = [];
@@ -53,7 +51,7 @@ describe('worker onFatal containment', () => {
 });
 
 describe('worker onFatal containment when the poll loop dies', () => {
-  it('a throwing onFatal hook for a dying poll loop never becomes an unhandled rejection', SLOW, async () => {
+  it('a throwing onFatal hook for a dying poll loop never becomes an unhandled rejection', async () => {
     const env = await makeEnv();
     const unhandled: unknown[] = [];
     const listener = (reason: unknown): void => {
@@ -89,7 +87,7 @@ describe('worker onFatal containment when the poll loop dies', () => {
 });
 
 describe('worker poll loop after stop', () => {
-  it('does not sweep memories after stop() was called while pollOnce was in flight', SLOW, async () => {
+  it('does not sweep memories after stop() was called while pollOnce was in flight', async () => {
     const env = await makeEnv();
     env.gateway.script.push(serverError());
     const requeued = env.enqueue('Requeued');
@@ -139,7 +137,7 @@ describe('cancel recovery error hook failure', () => {
 
 
 describe('worker start after a fatal error', () => {
-  it('start() throws an error naming the fatal state once onFatal has fired', SLOW, async () => {
+  it('start() throws an error naming the fatal state once onFatal has fired', async () => {
     const env = await makeEnv();
     const fatal = fatalStoreError();
     let claims = 0;

@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { signHead } from './differential/fixture.ts';
 import { makeRealWorkspace } from './real-workspace.ts';
 import type { RealWorkspace } from './real-workspace.ts';
@@ -31,7 +32,7 @@ const withRelocatableLink = (workspace: RealWorkspace): void => {
   workspace.write('a', 'a\n');
 };
 
-describe('finding 1: an option value never hides a later option word', () => {
+describe('finding 1: an option value never hides a later option word', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('git log --format --output=tracked truncates a tracked file and needs approval', () => {
     const workspace = makeRealWorkspace();
     workspace.initRepository();
@@ -58,7 +59,7 @@ describe('finding 1: an option value never hides a later option word', () => {
   });
 });
 
-describe('finding 2: cd falls back to the physical path', () => {
+describe('finding 2: cd falls back to the physical path', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   const layout = (workspace: RealWorkspace): ReturnType<typeof hookIn> => {
     const hook = hookIn(workspace);
     workspace.initRepository();
@@ -86,7 +87,7 @@ describe('finding 2: cd falls back to the physical path', () => {
   });
 });
 
-describe('finding 3: a glob after a relocation is not judged against the old tree', () => {
+describe('finding 3: a glob after a relocation is not judged against the old tree', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('bash prints the secret through the moved link, and the glob needs approval', async () => {
     const workspace = makeRealWorkspace();
     withRelocatableLink(workspace);
@@ -115,7 +116,7 @@ describe('finding 3: a glob after a relocation is not judged against the old tre
   });
 });
 
-describe('finding 4: concurrent segments see each other, independent of timing', () => {
+describe('finding 4: concurrent segments see each other, independent of timing', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('a FIFO holds the read back until after the move, so bash prints the secret, and approval is needed', () => {
     const workspace = makeRealWorkspace();
     withRelocatableLink(workspace);
@@ -139,7 +140,7 @@ describe('finding 4: concurrent segments see each other, independent of timing',
   });
 });
 
-describe('finding 4 (second review): a background job inside a substitution outlives it', () => {
+describe('finding 4 (second review): a background job inside a substitution outlives it', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('a FIFO holds the job back until after the move, so out holds the secret, and approval is needed', () => {
     const workspace = makeRealWorkspace();
     withRelocatableLink(workspace);
@@ -172,7 +173,7 @@ describe('finding 4 (second review): a background job inside a substitution outl
   });
 });
 
-describe('finding 6 (second review): a populated submodule is judged like a discovered repository', () => {
+describe('finding 6 (second review): a populated submodule is judged like a discovered repository', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   const withSubmodule = (workspace: RealWorkspace): ReturnType<typeof hookIn> => {
     const hook = hookIn(workspace);
     workspace.initRepository();
@@ -233,7 +234,7 @@ describe('finding 6 (second review): a populated submodule is judged like a disc
   });
 });
 
-describe('finding 5: --show-signature runs gpg from the search path', () => {
+describe('finding 5: --show-signature runs gpg from the search path', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   const signed = (workspace: RealWorkspace): { hook: ReturnType<typeof hookIn>; searchPath: string; executionPath: string } => {
     const hook = hookIn(workspace);
     workspace.initRepository();
@@ -312,7 +313,7 @@ describe('finding 5: --show-signature runs gpg from the search path', () => {
   });
 });
 
-describe('finding 11: HEAD whitespace is git isspace, without vertical tab or form feed', () => {
+describe('finding 11: HEAD whitespace is git isspace, without vertical tab or form feed', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   const nested = (workspace: RealWorkspace, head: string): { hook: ReturnType<typeof hookIn>; cwd: string } => {
     const hook = hookIn(workspace);
     workspace.initRepository();

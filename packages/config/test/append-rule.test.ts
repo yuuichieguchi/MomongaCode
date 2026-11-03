@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { appendPermissionRule, systemFileLockPorts } from '@momonga/config';
 import { settingsLockPath } from '../src/file-lock.ts';
-import { startLockHolder } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder } from '@momonga/testkit';
 import { localSettingsDir, localSettingsPath, makeDir, makeTree, registerCleanup, writeText } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 
@@ -14,7 +14,7 @@ const CONFIG_ENTRY = pathToFileURL(path.resolve(import.meta.dirname, '../src/ind
 const readLocal = (tree: Tree): Record<string, unknown> =>
   JSON.parse(fs.readFileSync(localSettingsPath(tree), 'utf8')) as Record<string, unknown>;
 
-describe('appendPermissionRule', () => {
+describe('appendPermissionRule', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('creates settings.local.json with 0600 in a 0700 directory', async () => {
     const tree = makeTree();
     await appendPermissionRule({ ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(npm run test:*)', effect: 'allow' });
