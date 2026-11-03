@@ -200,13 +200,31 @@ describe('linux inspector through an injected procfs', () => {
       '/proc/12/stat': { text: STAT_SLEEP },
     });
     const timing = fakeTiming();
-    const inspector = createLinuxInspector({ procfs, layout: LAYOUT, uid: UID, timing });
+    const inspector = createLinuxInspector({ procfs, layout: LAYOUT, uid: UID, timing, isAlive: () => true });
     await inspector.holdersOf('/marker');
     const afterFirst = timing.slept();
     const found = gapsOf();
     expect(await inspector.holdersOf('/marker', found.report)).toEqual({ kind: 'value', value: [] });
     expect(timing.slept()).toBe(afterFirst);
     expect(found.processes).toEqual([{ pid: 12, command: 'sleep', startTicks: '987654' }]);
+  });
+
+  it('forgets a process it reported once that process is gone, so the remembered set stays bounded', async () => {
+    const procfs = fakeProcfs({
+      '/marker': { identity: { dev: 1n, ino: 1n } },
+      '/proc': { children: ['12'] },
+      '/proc/12/fd': { failure: 'EACCES' },
+      '/proc/12/status': statusOwnedBy(UID),
+      '/proc/12/stat': { text: STAT_SLEEP },
+    });
+    const timing = fakeTiming();
+    let alive = true;
+    const inspector = createLinuxInspector({ procfs, layout: LAYOUT, uid: UID, timing, isAlive: () => alive });
+    await inspector.holdersOf('/marker');
+    const afterFirst = timing.slept();
+    alive = false;
+    await inspector.holdersOf('/marker');
+    expect(timing.slept()).toBeGreaterThan(afterFirst);
   });
 
   it('waits for a same-user process to become readable and then reads it', async () => {

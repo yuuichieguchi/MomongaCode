@@ -18,8 +18,8 @@ import type { Clock, JsonLogger, MomongaPaths, ProcessLock, ReadyFields, SecretS
 import { buildCostReport, closeTelemetry, definePriceTable, formatCostReport, createTelemetry, exportersFor, openTraceStore } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import type { AdapterTarget, Capabilities, ProviderAdapter, ToolCallingMode } from '@momonga/protocol';
-import { loadEndpointRecord } from './probe/endpoint-record.ts';
-import { IDENTITY_READ_TIMEOUT_MS, createProbedEndpointTarget, endpointKeyOf, probeEndpointOf, readEndpointIdentity } from './probe/endpoint-target.ts';
+import { loadEndpointRecord, saveEndpointRecord } from './probe/endpoint-record.ts';
+import { createProbedEndpointTarget, endpointKeyOf, probeEndpointOf, readEndpointIdentity } from './probe/endpoint-target.ts';
 import { createSecretResolver } from './secrets.ts';
 import type { SecretResolver } from './secrets.ts';
 import { createAnthropicAdapter } from './adapters/anthropic/adapter.ts';
@@ -218,20 +218,22 @@ const createAutoChatCompletionsAdapter = async (
     model: target.model,
     declared: capabilitiesOf(target, 'native'),
     record: await loadEndpointRecord(probeRecordDir, { endpoint, model: target.model }),
-    readIdentity: async () => {
-      const signal = AbortSignal.timeout(IDENTITY_READ_TIMEOUT_MS);
+    readIdentity: async (fields, signal) => {
       const apiKey = await readKey({ name, model: target.model }, signal);
-      return readEndpointIdentity(probeEndpointOf(upstream, apiKey), target.model, signal);
+      return readEndpointIdentity(probeEndpointOf(upstream, apiKey), target.model, fields, signal);
     },
+    saveRecord: (record) =>
+      saveEndpointRecord(probeRecordDir, { endpoint, model: target.model }, record.identity, record.identityFields, record.report),
   });
   return createChatCompletionsAdapter({
-    resolveEndpoint: async () => {
-      await probed.verify();
+    resolveEndpoint: async (_target, signal) => {
+      await probed.verify(signal);
       return upstream;
     },
     toolCalling: () => probed.toolCalling(),
     keywordSupport: () => probed.keywordSupport(),
     capabilities: () => probed.capabilities(),
+    onSummaryReasoning: (_target, hiddenReasoningTokens) => probed.raiseHeadroom(hiddenReasoningTokens),
     apiKey: readKey,
     clock,
   });

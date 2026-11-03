@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { findHolders, reapMarkedProcesses, reportUninspectableOnce } from '@momonga/foundation';
-import type { ReapTiming } from '@momonga/foundation';
+import type { ReapTiming, UninspectableRegistry } from '@momonga/foundation';
 import { TERMINAL_STATUSES } from '@momonga/protocol';
 import type { IdempotencyLookup, RuntimeStore } from '@momonga/store';
 import { asError } from './as-error.ts';
@@ -26,6 +26,7 @@ export type ReapToolMarkersOptions = {
   timing?: ReapTiming;
   reap?: typeof reapMarkedProcesses;
   files?: RuntimeFiles;
+  uninspectable?: UninspectableRegistry;
 };
 
 export const reapToolMarkers = async ({
@@ -37,6 +38,7 @@ export const reapToolMarkers = async ({
   reap = reapMarkedProcesses,
   scope = 'all',
   files = nodeRuntimeFiles,
+  uninspectable,
 }: ReapToolMarkersOptions): Promise<void> => {
   let names: string[];
   try {
@@ -73,7 +75,7 @@ export const reapToolMarkers = async ({
     const marker = path.join(dir, name);
     let holders: number[];
     try {
-      holders = await findHolders(marker, undefined, reportUninspectableOnce(onWarning, `tool marker ${marker}`));
+      holders = await findHolders(marker, undefined, reportUninspectableOnce(onWarning, `tool marker ${marker}`, uninspectable));
     } catch (error) {
       onWarning(`tool marker ${marker} holders could not be determined: ${asError(error).message}`);
       return undefined;
@@ -101,7 +103,7 @@ export const reapToolMarkers = async ({
 
   const outcomes = await Promise.allSettled(
     plans.map(({ marker, pgid }) =>
-      reap({ marker, ...(pgid === undefined ? {} : { pgid }), killGraceMs, label: 'tool', onWarning, ...(timing === undefined ? {} : { timing }) }),
+      reap({ marker, ...(pgid === undefined ? {} : { pgid }), killGraceMs, label: 'tool', onWarning, ...(timing === undefined ? {} : { timing }), ...(uninspectable === undefined ? {} : { uninspectable }) }),
     ),
   );
   outcomes.forEach((outcome, index) => {

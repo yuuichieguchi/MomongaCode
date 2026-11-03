@@ -207,7 +207,7 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
     input: built.input,
     tools: built.tools,
     tool_choice: summarising ? 'none' : 'auto',
-    parallel_tool_calls: ctx.capabilities.parallelToolCalls,
+    ...(ctx.capabilities.parallelToolCalls === undefined ? {} : { parallel_tool_calls: ctx.capabilities.parallelToolCalls }),
     ...(summarising ? { reasoning: { effort: LOWEST_REASONING_EFFORT } } : {}),
     max_output_tokens: built.maxOutputTokens,
     store: false,

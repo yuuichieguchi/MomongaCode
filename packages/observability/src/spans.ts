@@ -1,5 +1,6 @@
 import { SpanKind, SpanStatusCode } from '@opentelemetry/api';
 import type { Context, Span, Tracer } from '@opentelemetry/api';
+import type { FallbackCause } from '@momonga/foundation';
 import { EXCEPTION_EVENT, GENAI_CONTENT_SEMCONV, GENAI_SEMCONV, MOMONGA_ATTRIBUTES, OPERATIONS } from './semconv.ts';
 
 const A = GENAI_SEMCONV.attributes;
@@ -27,8 +28,6 @@ export type ChatSpanInput = {
   attempt: number;
   target?: string;
 };
-
-export type FallbackCause = { target: string; code: string | null; message: string };
 
 export type ToolSpanInput = {
   toolName: string;
@@ -117,7 +116,7 @@ export const recordFallbackCauses = (span: Span, causes: readonly FallbackCause[
   if (causes.length > 0) span.setAttribute(MOMONGA_ATTRIBUTES.fallbackCauses, JSON.stringify(causes));
 };
 
-export const recordChatResponse =(span: Span, response: ChatResponse): void => {
+export const recordChatResponse = (span: Span, response: ChatResponse): void => {
   span.setAttributes({
     ...(response.responseModel === undefined ? {} : { [A.ATTR_GEN_AI_RESPONSE_MODEL]: response.responseModel }),
     ...(response.responseId === undefined ? {} : { [A.ATTR_GEN_AI_RESPONSE_ID]: response.responseId }),

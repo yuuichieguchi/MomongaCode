@@ -36,22 +36,25 @@ const probedImageCapability = (report: ProbeReport): ImageCapability =>
     ? imageCapability(true, report.imageTokens)
     : imageCapability(false, undefined);
 
-const parallelCallsDecision = (report: ProbeReport, thresholds: DecideThresholds): boolean => {
+const parallelCallsDecision = (report: ProbeReport, thresholds: DecideThresholds): Pick<Capabilities, 'parallelToolCalls'> => {
   const parallel = report.parallelToolCalls;
-  return parallel !== undefined && parallel.accepted && atLeast(parallel.multiCallRate, thresholds.minValidRate ?? 0.9);
+  if (parallel === undefined || !parallel.accepted) return {};
+  return { parallelToolCalls: atLeast(parallel.multiCallRate, thresholds.minValidRate ?? 0.9) };
 };
+
+export const maxOutputTokensFor = (contextWindow: number): number => Math.min(contextWindow, Math.max(256, Math.ceil(contextWindow / 4)));
 
 export const capabilitiesFromProbe = (report: ProbeReport, decision: ToolCallingDecision, thresholds: DecideThresholds = {}): Capabilities => {
   const contextWindow = report.contextWindow.value;
   return {
     contextWindow,
-    maxOutputTokens: Math.min(contextWindow, Math.max(256, Math.ceil(contextWindow / 4))),
+    maxOutputTokens: maxOutputTokensFor(contextWindow),
     toolCalling: decision.mode,
     structuredOutput: report.constrained.accepted ? 'json_schema' : 'none',
     streaming: report.streaming.supported,
     stopSequences: report.stopSequences,
     ...probedImageCapability(report),
-    parallelToolCalls: parallelCallsDecision(report, thresholds),
+    ...parallelCallsDecision(report, thresholds),
     ...(report.reasoning === undefined ? {} : { reasoning: report.reasoning }),
     schemaDialect: 'json-schema-2020-12',
     tokenCounting: report.tokenCalibration === undefined ? 'estimated' : 'calibrated',

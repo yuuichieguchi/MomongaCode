@@ -14,6 +14,6 @@ const reasoningOptions = (body: ChatRequestBody, request: AdapterRequest, capabi
 
 export const withCapabilityOptions = (body: ChatRequestBody, request: AdapterRequest, capabilities: Capabilities): ChatRequestBody => {
   const hasNativeTools = body.tools !== undefined;
-  const forbidParallel = hasNativeTools && (!capabilities.parallelToolCalls || request.parallel_tool_calls === false);
+  const forbidParallel = hasNativeTools && (capabilities.parallelToolCalls === false || request.parallel_tool_calls === false);
   return { ...body, ...(forbidParallel ? { parallel_tool_calls: false } : {}), ...reasoningOptions(body, request, capabilities) };
 };

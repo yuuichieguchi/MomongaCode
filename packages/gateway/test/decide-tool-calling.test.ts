@@ -44,6 +44,7 @@ describe('capabilitiesFromProbe', () => {
     report.imageInputAccepted = true;
     report.imageTokens = { pixelsPerToken: 700, maxTokens: 1500, minTokens: 1 };
     report.maxConcurrency = 2;
+    report.parallelToolCalls = { accepted: true, multiCallRate: 0 };
     report.streaming = { supported: true, doneSentinel: true, usageInStream: true };
     const capabilities = capabilitiesFromProbe(report, { mode: 'native' });
     expect(capabilities).toMatchObject({
@@ -64,6 +65,14 @@ describe('capabilitiesFromProbe', () => {
     });
     expect(capabilities.maxOutputTokens).toBeGreaterThan(0);
     expect(capabilities.maxOutputTokens).toBeLessThanOrEqual(4096);
+  });
+
+  it('leaves parallel tool calls unknown when the probe measured nothing or the server refused the setting', () => {
+    const unmeasured = makeReport(1, 1);
+    expect('parallelToolCalls' in capabilitiesFromProbe(unmeasured, { mode: 'native' })).toBe(false);
+    const refused = makeReport(1, 1);
+    refused.parallelToolCalls = { accepted: false, multiCallRate: 0 };
+    expect('parallelToolCalls' in capabilitiesFromProbe(refused, { mode: 'native' })).toBe(false);
   });
 
   it('refuses image input when the probe accepted an image but measured no token model', () => {

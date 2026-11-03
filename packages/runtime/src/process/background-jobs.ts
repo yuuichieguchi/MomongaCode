@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { canonicalJson, findHolders, reapMarkedProcesses, reconcileProcessGroup, reportUninspectableOnce, sha256Hex } from '@momonga/foundation';
-import type { Clock, ReapTiming } from '@momonga/foundation';
+import type { Clock, ReapTiming, UninspectableProcess, UninspectableRegistry } from '@momonga/foundation';
 import type { SandboxedProcess } from '@momonga/sandbox';
 import type { Job, JobResult, RuntimeStore } from '@momonga/store';
 import { ToolExecutionError } from '@momonga/tools';
@@ -24,6 +24,7 @@ export type BackgroundJobsOptions = {
   onWarning(message: string): void;
   report(error: unknown): void;
   probes?: Partial<ProcessProbes>;
+  uninspectable?: UninspectableRegistry;
 };
 
 export type ProcessProbes = {
@@ -98,7 +99,12 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
     try {
       const exit = await process.exited;
       timers.clearTimeout(timer);
-      const holders = await probes.findHolders(marker, undefined, reportUninspectableOnce(onWarning, `background job ${job.id}`));
+      const uninspectable: UninspectableProcess[] = [];
+      const reportOnce = reportUninspectableOnce(onWarning, `background job ${job.id}`, options.uninspectable);
+      const holders = await probes.findHolders(marker, undefined, (unreadable) => {
+        uninspectable.push(unreadable);
+        reportOnce(unreadable);
+      });
       if (holders.length > 0) {
         await probes.reconcileProcessGroup({ pgid: process.pgid, marker }, { killGraceMs, timing: reapTiming });
         entry.output.push(Buffer.from(`\nTerminated ${holders.length} process(es) that outlived the job.\n`));
@@ -107,7 +113,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       const window = entry.output.window();
       const stored = window.bytes.length === 0 ? undefined : store.blobs.put(window.bytes, { mediaType: 'text/plain', runId: job.runId });
       const result: JobResult = {
-        status: entry.stopReason === undefined ? 'exited' : 'killed',
+        status: uninspectable.length > 0 ? 'unknown' : entry.stopReason === undefined ? 'exited' : 'killed',
         ...(exit.code === null ? {} : { exitCode: exit.code }),
         ...(exit.signal === null ? {} : { signal: exit.signal }),
         ...(stored === undefined ? {} : { output: { handle: stored.handle, start: window.start, total: window.total } }),

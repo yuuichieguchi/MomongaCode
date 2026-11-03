@@ -1,3 +1,4 @@
+import { describeFallbackCause } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { FallbackCauseView, RunTraceSpan, RunTraceView, UsageReport } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
@@ -14,9 +15,6 @@ const ATTEMPT_ATTRIBUTE = 'momonga.attempt';
 const FAILURE_MESSAGE_ATTRIBUTE = 'momonga.failure_message';
 const FALLBACK_CAUSES_ATTRIBUTE = 'momonga.fallback_causes';
 const ERROR_TYPE_ATTRIBUTE = 'error.type';
-
-const describeCause = (cause: FallbackCauseView): string =>
-  `${cause.target} failed (${cause.code === null ? cause.message : `${cause.code}: ${cause.message}`})`;
 
 const fallbackCausesOf = (span: RunTraceSpan): FallbackCauseView[] => {
   const value = span.attributes[FALLBACK_CAUSES_ATTRIBUTE];
@@ -36,7 +34,7 @@ const chatDetail = (span: RunTraceSpan): string => {
     return `  ${where}: ${typeof errorType === 'string' ? `${errorType}: ` : ''}${failure}`;
   }
   const causes = fallbackCausesOf(span);
-  return `  ${where}${causes.length === 0 ? '' : `, answered after ${causes.map(describeCause).join('; ')}`}`;
+  return `  ${where}${causes.length === 0 ? '' : `, answered after ${causes.map(describeFallbackCause).join('; ')}`}`;
 };
 
 const spanLines = (spans: readonly RunTraceSpan[], parent: string | null, depth: number): string[] =>

@@ -14,7 +14,7 @@ const isCapabilities = (value: unknown): value is Capabilities =>
   isRecord(value) &&
   typeof value['contextWindow'] === 'number' &&
   typeof value['maxOutputTokens'] === 'number' &&
-  typeof value['parallelToolCalls'] === 'boolean' &&
+  (value['parallelToolCalls'] === undefined || typeof value['parallelToolCalls'] === 'boolean') &&
   typeof value['streaming'] === 'boolean' &&
   typeof value['tokenCounting'] === 'string' &&
   typeof value['toolCalling'] === 'string';
