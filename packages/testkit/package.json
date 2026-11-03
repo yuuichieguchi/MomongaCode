@@ -7,11 +7,11 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@hono/node-server": "2.1.5",
+    "@hono/node-server": "2.1.6",
     "@modelcontextprotocol/server": "2.4.0",
     "@momonga/foundation": "*",
     "@momonga/protocol": "*",
-    "hono": "4.13.13"
+    "hono": "4.13.16"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "2.4.0",

@@ -9,7 +9,7 @@
     "./bin": "./src/bin.ts"
   },
   "dependencies": {
-    "@hono/node-server": "2.1.5",
+    "@hono/node-server": "2.1.6",
     "@momonga/agents": "*",
     "@momonga/config": "*",
     "@momonga/context": "*",
@@ -25,7 +25,7 @@
     "@momonga/tools": "*",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
-    "hono": "4.13.13"
+    "hono": "4.13.16"
   },
   "devDependencies": {
     "@momonga/gateway": "*"

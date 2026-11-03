@@ -27,7 +27,7 @@ import {
 } from '@opentelemetry/semantic-conventions/incubating';
 import { ATTR_ERROR_TYPE } from '@opentelemetry/semantic-conventions';
 
-const NPM_VERSION = '1.43.0';
+const NPM_VERSION = '1.44.0';
 
 export const GENAI_SEMCONV = {
   npmVersion: NPM_VERSION,

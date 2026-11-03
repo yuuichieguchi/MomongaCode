@@ -13,7 +13,7 @@
     "@momonga/sandbox": "*",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
-    "ignore": "7.0.13",
+    "ignore": "7.0.14",
     "picomatch": "4.0.7"
   }
 }

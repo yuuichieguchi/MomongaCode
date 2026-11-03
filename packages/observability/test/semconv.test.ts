@@ -38,7 +38,7 @@ const installedSemconvVersion = (): string => {
 
 describe('GENAI_SEMCONV', () => {
   it('pins the semconv npm version that is actually installed', () => {
-    expect(GENAI_SEMCONV.npmVersion).toBe('1.43.0');
+    expect(GENAI_SEMCONV.npmVersion).toBe('1.44.0');
     expect(installedSemconvVersion()).toBe(GENAI_SEMCONV.npmVersion);
   });
 
