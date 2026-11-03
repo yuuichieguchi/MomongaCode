@@ -33,11 +33,10 @@ export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOpt
     return capabilities.tokenCounting === 'estimated' ? Math.max(ESTIMATED_ERROR_FLOOR, observed) : observed;
   };
 
-  const errorBoundOf = (record: CountedRecord): number => {
-    const relativeBound = Math.ceil(relativeError() * record.inputTokens);
-    return capabilities.tokenCounting === 'estimated'
-      ? Math.max(relativeBound, record.counterBound)
-      : relativeBound + record.counterBound;
+  const errorBoundAtSize = (record: CountedRecord, relative: number, tokens: number): number => {
+    const relativeBound = Math.ceil(relative * tokens);
+    const counterBound = record.inputTokens === 0 ? record.counterBound : Math.ceil((record.counterBound * tokens) / record.inputTokens);
+    return capabilities.tokenCounting === 'estimated' ? Math.max(relativeBound, counterBound) : relativeBound + counterBound;
   };
 
   const requestOf = (
@@ -65,11 +64,11 @@ export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOpt
     const chain = digestChain({ instructions: instructions ?? null, tools }, input);
     const digestAt = (length: number): string => chain[length] as string;
     const inputDigest = digestAt(input.length);
-    const withBound = (record: CountedRecord): MeterCount => ({
-      inputTokens: record.inputTokens,
-      inputDigest,
-      errorBound: errorBoundOf(record),
-    });
+    const withBound = (record: CountedRecord): MeterCount => {
+      const relative = relativeError();
+      const errorBoundAt = (tokens: number): number => errorBoundAtSize(record, relative, tokens);
+      return { inputTokens: record.inputTokens, inputDigest, errorBound: errorBoundAt(record.inputTokens), errorBoundAt };
+    };
 
     const known = counted.get(inputDigest);
     if (known !== undefined) return withBound(known);

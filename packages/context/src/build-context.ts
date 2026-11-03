@@ -65,7 +65,25 @@ type Head = {
   room: number;
 };
 
-const candidateToolsOf = (input: BuildContextInput): FunctionTool[] => (input.tools === 'none' ? [] : [...input.sources.tools]);
+export type MaxInputBounds = {
+  ceiling: number;
+  inputBudget: number;
+  errorBoundAt(tokens: number): number;
+};
+
+export const maxInputFor = ({ ceiling, inputBudget, errorBoundAt }: MaxInputBounds): number => {
+  const fitsWithItsBound = (tokens: number): boolean => tokens + errorBoundAt(tokens) <= inputBudget;
+  let low = 0;
+  let high = Math.max(0, Math.floor(ceiling));
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (fitsWithItsBound(middle)) low = middle;
+    else high = middle - 1;
+  }
+  return low;
+};
+
+const candidateToolsOf =(input: BuildContextInput): FunctionTool[] => (input.tools === 'none' ? [] : [...input.sources.tools]);
 
 const holdsHandles = (input: BuildContextInput): boolean =>
   input.evicted.size > 0 ||
@@ -575,7 +593,7 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
   }
 
   if (!fits(total)) {
-    const deficit = Math.max(total.inputTokens - ceiling, total.inputTokens + total.errorBound - budgetFor(capabilities, 0).I);
+    const deficit = total.inputTokens - maxInputFor({ ceiling, inputBudget: budgetFor(capabilities, 0).I, errorBoundAt: total.errorBoundAt });
     const outcome = await compactionFor('forced', deficit);
     if (lastLevel) await persistEvictions(slots.length);
     throw new ContextOverflowError({

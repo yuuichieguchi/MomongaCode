@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { budgetFor, buildContext, createTokenMeter, measurePinned } from '@momonga/context';
+import { budgetFor, buildContext, createTokenMeter, maxInputFor, measurePinned } from '@momonga/context';
 import type { BuildContextPorts, TokenMeter } from '@momonga/context';
-import type { Capabilities, InputItem } from '@momonga/protocol';
+import type { Capabilities, CountTokensResult, InputItem } from '@momonga/protocol';
 import {
   MODEL,
   buildThroughLevels,
@@ -14,6 +14,7 @@ import {
   output,
   overflowOf,
   ratioCounter,
+  seeded,
   sourcesWith,
 } from './helpers.ts';
 import type { FakeCounter } from './helpers.ts';
@@ -93,11 +94,12 @@ describe('forced deficit against the ceiling and the live bound', () => {
     } else {
       expect(error.compaction).toBeUndefined();
       expect(error.compactionBlockedBy?.reason).toBe('deficit_not_closed');
+      expect(error.compactionBlockedBy?.message).toMatch(/, but 1013 are needed$/);
     }
   });
 
   it.for([
-    { label: 'region closes only the deficit against the ceiling', chars: [1699, 1699, 3871, 3871, 3871, 3870], closes: false },
+    { label: 'region frees less than the live deficit', chars: [1699, 1699, 3871, 3871, 3871, 3870], closes: false },
     { label: 'region closes the live deficit', chars: [2499, 2499, 3471, 3471, 3471, 3470], closes: true },
   ])('measures against the live bound when the observed error exceeds the sizing ratio: $label', async ({ chars, closes }) => {
     const meter = await meterWithObservedError(W8192, fakeCounter(0), 0.5);
@@ -110,6 +112,83 @@ describe('forced deficit against the ceiling and the live bound', () => {
     } else {
       expect(error.compaction).toBeUndefined();
       expect(error.compactionBlockedBy?.reason).toBe('deficit_not_closed');
+      expect(error.compactionBlockedBy?.message).toMatch(/, but 331 are needed$/);
+    }
+  });
+});
+
+describe('forced deficit with the gateway bound of 0.3 x tokens', () => {
+  const W8192_ESTIMATED_INPUT = budgetFor(W8192, 0).I;
+  const gatewayBound = (tokens: number): number => Math.ceil(0.3 * tokens);
+
+  it('accepts the compaction of the skills e2e run: 6049 tokens, region 1061, summary 262', () => {
+    const maxInput = maxInputFor({ ceiling: 5387, inputBudget: W8192_ESTIMATED_INPUT, errorBoundAt: gatewayBound });
+
+    expect(W8192_ESTIMATED_INPUT).toBe(7004);
+    expect(maxInput).toBe(5387);
+    expect(6049 - maxInput).toBe(662);
+    expect(1061 - 262).toBeGreaterThanOrEqual(6049 - maxInput);
+  });
+
+  it('evaluates the meter bound of a 6049-token count at the size after compaction', async () => {
+    const counter = { count: async (): Promise<CountTokensResult> => ({ input_tokens: 6049, method: 'estimated', error_bound: gatewayBound(6049) }) };
+    const meter = createTokenMeter({ counter, model: MODEL, capabilities: W8192 });
+    const counted = await meter.count({ input: [{ type: 'message', role: 'user', content: 'x' }], tools: [] });
+
+    expect(counted.errorBound).toBe(1815);
+    expect(counted.errorBoundAt(6049)).toBe(1815);
+    expect(counted.errorBoundAt(5387)).toBe(1617);
+    expect(maxInputFor({ ceiling: 5387, inputBudget: W8192_ESTIMATED_INPUT, errorBoundAt: counted.errorBoundAt })).toBe(5387);
+  });
+
+  it('compacts a region that closes the excess over the ceiling although it frees less than T + bound(T) - I', async () => {
+    const meter = createTokenMeter({ counter: ratioCounter(0.3), model: MODEL, capabilities: W8192 });
+    const error = await overflowOf(
+      inputFor(W8192, { sources: sourcesWith({ history: argsSteps([3499, 3499, 4371, 4371, 4371, 4370]) }), level: 0 }),
+      portsWith(meter),
+    );
+
+    expect(error.inputTokens).toBe(6400);
+    expect(error.inputBudget).toBe(7004 - 1920);
+    expect(error.compactionBlockedBy).toBeUndefined();
+    expect(error.compaction?.throughSeq).toBe(4);
+  });
+
+  it('lets an observed error above 0.3 decide, with a deficit above the excess over the ceiling', async () => {
+    const meter = await meterWithObservedError(W8192, ratioCounter(0.3), 0.5);
+    const error = await overflowOf(
+      inputFor(W8192, { sources: sourcesWith({ history: argsSteps([1699, 1699, 3871, 3871, 3871, 3870]) }), level: 0 }),
+      portsWith(meter),
+    );
+
+    expect(error.inputTokens).toBe(5000);
+    expect(error.ceiling).toBe(5387);
+    expect(error.inputBudget).toBe(7004 - 2500);
+    expect(error.compactionBlockedBy?.reason).toBe('deficit_not_closed');
+    expect(error.compactionBlockedBy?.message).toMatch(/, but 331 are needed$/);
+  });
+});
+
+describe('maxInputFor over random bounds', () => {
+  it('returns the largest size within the ceiling whose own bound fits, so one token more fails', () => {
+    const random = seeded(8192);
+    for (let trial = 0; trial < 2000; trial += 1) {
+      const ceiling = random.int(0, 20000);
+      const inputBudget = random.int(0, 30000);
+      const relative = random.int(0, 150) / 100;
+      const counterRatio = random.int(0, 100) / 100;
+      const summed = random.next() < 0.5;
+      const errorBoundAt = (tokens: number): number =>
+        summed ? Math.ceil(relative * tokens) + Math.ceil(counterRatio * tokens) : Math.max(Math.ceil(relative * tokens), Math.ceil(counterRatio * tokens));
+      const total = random.int(0, 40000);
+      const deficit = total - maxInputFor({ ceiling, inputBudget, errorBoundAt });
+      const remaining = total - deficit;
+      const label = JSON.stringify({ ceiling, inputBudget, relative, counterRatio, summed, total });
+
+      expect(remaining, label).toBeLessThanOrEqual(ceiling);
+      expect(remaining + errorBoundAt(remaining), label).toBeLessThanOrEqual(inputBudget);
+      const oneMore = remaining + 1;
+      expect(oneMore > ceiling || oneMore + errorBoundAt(oneMore) > inputBudget, label).toBe(true);
     }
   });
 });

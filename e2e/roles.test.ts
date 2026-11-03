@@ -9,7 +9,7 @@ import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
-import { UPSTREAM_MODEL, UPSTREAM_TARGET, baseSettings, startStack } from './support/stack.ts';
+import { UPSTREAM_MODEL, UPSTREAM_TARGET, baseSettings, contextWindowOf, startStack } from './support/stack.ts';
 import { chatCompletions, reportedTokensOfRequest, textReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
@@ -34,11 +34,6 @@ const roleSettings = (home: E2eHome): Record<string, unknown> => {
       roles: { compaction: SUMMARY_ALIAS },
     },
   };
-};
-
-const contextWindowOf = (home: E2eHome): number => {
-  const models = baseSettings(home, 'none')['models'] as { targets: Record<string, { capabilities: { contextWindow: number } }> };
-  return (models.targets[UPSTREAM_TARGET] as { capabilities: { contextWindow: number } }).capabilities.contextWindow;
 };
 
 const journalOf =(home: E2eHome, runId: string): JournalEvent[] =>
