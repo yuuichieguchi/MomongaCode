@@ -7,6 +7,7 @@ import { createFakeClock } from '@momonga/testkit';
 
 const START_MS = 1_000;
 const WINNER = { gate: 'PASS' };
+const BIDIRECTIONAL_CONTROLS = ['061C', '200E', '200F', '202A', '202B', '202C', '202D', '202E', '2066', '2067', '2068', '2069'];
 
 const open = () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-guideline-'));
@@ -58,6 +59,13 @@ describe('adopting a guideline', () => {
     ['a vertical tab', 'keep\u000bnames'],
   ])('guards a text that hides itself on a terminal: refuses %s and stores nothing', (_label, text) => {
     const { store } = open();
+    expect(() => store.guidelines.adopt({ text, parent: null, report: WINNER })).toThrow(GuidelineTextError);
+    expect(store.guidelines.list()).toEqual([]);
+  });
+
+  it.each(BIDIRECTIONAL_CONTROLS)('guards a text that reorders itself on a terminal: refuses U+%s and stores nothing', (hex) => {
+    const { store } = open();
+    const text = `keep${String.fromCodePoint(Number.parseInt(hex, 16))}names`;
     expect(() => store.guidelines.adopt({ text, parent: null, report: WINNER })).toThrow(GuidelineTextError);
     expect(store.guidelines.list()).toEqual([]);
   });

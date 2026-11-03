@@ -6,6 +6,7 @@ import { createBuiltinTools, createGovernanceTools, createHistoryTools, createMe
 import { expectSchema, startService } from './helpers.ts';
 
 const REPORT = { gate: 'PASS' };
+const BIDIRECTIONAL_CONTROLS = ['061C', '200E', '200F', '202A', '202B', '202C', '202D', '202E', '2066', '2067', '2068', '2069'];
 
 describe('the guideline routes', () => {
   it('lists nothing before the first adoption', async () => {
@@ -52,6 +53,14 @@ describe('the guideline routes', () => {
     ['a C1 control', 'keep\u009bnames'],
   ])('guards a text that hides itself on a terminal: %s is a 400 and stores nothing', async (_label, text) => {
     const env = await startService();
+    const response = await env.http('POST', '/v1/guidelines', { body: { text, parent: null, report: REPORT } });
+    expect(response.status).toBe(400);
+    expect(env.store.guidelines.list()).toEqual([]);
+  });
+
+  it.each(BIDIRECTIONAL_CONTROLS)('guards a text that reorders itself on a terminal: U+%s is a 400 and stores nothing', async (hex) => {
+    const env = await startService();
+    const text = `keep${String.fromCodePoint(Number.parseInt(hex, 16))}names`;
     const response = await env.http('POST', '/v1/guidelines', { body: { text, parent: null, report: REPORT } });
     expect(response.status).toBe(400);
     expect(env.store.guidelines.list()).toEqual([]);

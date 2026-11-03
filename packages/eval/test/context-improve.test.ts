@@ -431,6 +431,15 @@ describe('the outcome file', () => {
     expect(() => parseOutcomeFile(hiding)).toThrow(/outcome file/);
   });
 
+  it.each(['061C', '200E', '200F', '202A', '202B', '202C', '202D', '202E', '2066', '2067', '2068', '2069'])('guards the outcome file schema: refuses the bidirectional control U+%s even with a recomputed digest', async (hex) => {
+    const { outcome } = await winning();
+    const hiding = rewritten(outcomeFileOf(outcome, DATASET), (raw) => {
+      (raw.outcome['winner'] as { text: string }).text = `keep${String.fromCodePoint(Number.parseInt(hex, 16))}names`;
+      raw.digest = sha256Hex(canonicalJson(raw.outcome));
+    });
+    expect(() => parseOutcomeFile(hiding)).toThrow(/outcome file/);
+  });
+
   it.each([
     ['text that is not JSON', 'nonsense'],
     ['another format', JSON.stringify({ digest: 'a'.repeat(64), outcome: { format: 'other/1' } })],
@@ -447,6 +456,8 @@ describe('the outcome file', () => {
   });
 });
 
+const BIDIRECTIONAL_CONTROLS = ['061C', '200E', '200F', '202A', '202B', '202C', '202D', '202E', '2066', '2067', '2068', '2069'];
+
 describe('guideline text that hides itself', () => {
   const HIDING = 'keep names\u001b[2K\rtidy';
 
@@ -457,6 +468,20 @@ describe('guideline text that hides itself', () => {
     ['a C1 control', 'a\u009bb'],
   ])('guards the candidate schema: refuses %s', (_label, guideline) => {
     expect(parseGuidelineCandidate(JSON.stringify({ guideline }))).toEqual({ error: expect.any(String) });
+  });
+
+  it.each(BIDIRECTIONAL_CONTROLS)('guards the candidate schema: refuses the bidirectional control U+%s', (hex) => {
+    const guideline = `keep${String.fromCodePoint(Number.parseInt(hex, 16))}names`;
+    expect(parseGuidelineCandidate(JSON.stringify({ guideline }))).toEqual({ error: expect.any(String) });
+  });
+
+  it.each(BIDIRECTIONAL_CONTROLS)('guards the printing: U+%s is escaped in the diff and the text', (hex) => {
+    const character = String.fromCodePoint(Number.parseInt(hex, 16));
+    const diff = guidelineDiff(`old${character}line`, `new${character}line`);
+    expect(diff).toContain(`- old\\u${hex.toLowerCase()}line`);
+    expect(diff).toContain(`+ new\\u${hex.toLowerCase()}line`);
+    expect(diff).not.toContain(character);
+    expect(formatGuidelineText(`one${character}two`)).toBe(`  one\\u${hex.toLowerCase()}two`);
   });
 
   it('accepts a newline and a tab in a candidate', () => {

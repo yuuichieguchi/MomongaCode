@@ -180,6 +180,14 @@ describe('listing guidelines', () => {
     expect(printed).toContain('keep names\\u001b[2K\\u000dhidden');
     expect(printed).toContain('  second');
   });
+
+  it.each(['061C', '200E', '200F', '202A', '202B', '202C', '202D', '202E', '2066', '2067', '2068', '2069'])('prints the bidirectional control U+%s as an escape', (hex) => {
+    const character = String.fromCodePoint(Number.parseInt(hex, 16));
+    const view = { version: 1, text: `keep${character}names`, parent: null, createdAt: 1, adoptedAt: 1, report: {} };
+    const printed = formatGuidelines({ current: view, guidelines: [view] });
+    expect(printed).not.toContain(character);
+    expect(printed).toContain(`keep\\u${hex.toLowerCase()}names`);
+  });
 });
 
 describe('momonga context guideline rollback', () => {
