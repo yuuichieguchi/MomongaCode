@@ -119,6 +119,7 @@ const openAttempt = async (
     attempt: attemptNumber,
     targetName: target.name,
     role: job.role,
+    startedAtMs: services.clock.now(),
     request: { input: resolved.forAdapter, instructions: job.body.instructions, tools: job.body.tools },
   });
   try {
@@ -341,7 +342,7 @@ async function* relaySteps(
             billing: target.billing,
             usage: billed.usage,
             cacheWriteInputTokens: billed.cacheWriteInputTokens,
-            at: clock.now(),
+            at: opened.span.startedAtMs,
             table: services.priceTable,
           });
     return {

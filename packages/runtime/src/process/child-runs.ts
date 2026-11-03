@@ -4,6 +4,7 @@ import { TERMINAL_STATUSES, assistantTextOf } from '@momonga/protocol';
 import type { InputItem, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import type { Run, RuntimeStore } from '@momonga/store';
+import { parentPinsOf } from '../worker/pins.ts';
 
 export type ChildRunsOptions = {
   store: Pick<RuntimeStore, 'createChildRun' | 'getRun' | 'listChildRuns' | 'load' | 'readRunEventsOfTypes'>;
@@ -26,14 +27,6 @@ export const finalTextOf = (state: RunState): string => {
     if (text !== undefined) return text;
   }
   return '';
-};
-
-const pinnedAliasOf = (store: Pick<RuntimeStore, 'readRunEventsOfTypes'>, runId: string): string => {
-  const started = store.readRunEventsOfTypes(runId, ['run.started'])[0];
-  if (started === undefined || started.type !== 'run.started') throw new Error(`run ${runId} has not recorded run.started, so it has pinned no model alias for a child run`);
-  const alias = started.pins['modelAlias'];
-  if (typeof alias !== 'string') throw new Error(`run ${runId} recorded run.started without a model alias pin`);
-  return alias;
 };
 
 export const createChildRuns = ({ store, modelAliases }: ChildRunsOptions): ChildRuns => {
@@ -76,7 +69,7 @@ export const createChildRuns = ({ store, modelAliases }: ChildRunsOptions): Chil
         parentCallId,
         input: prompt,
         pins: { agent: pinOf(agent) },
-        modelAlias: agent.model ?? pinnedAliasOf(store, parentRunId),
+        modelAlias: agent.model ?? parentPinsOf(store, parentRunId).modelAlias,
       });
       if (created.kind === 'parent_not_active') throw new ChildRunError(`A subagent cannot start because the run is ${created.status}`);
       return outcomeOf(created.run);

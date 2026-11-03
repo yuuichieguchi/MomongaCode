@@ -153,7 +153,7 @@ describe('the pinned roles', () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
     env.settings.rolesValue = { compaction: 'cheap' };
     const parent = createdRun(env.store.createRunAndEnqueue(env.session.id, { input: 'Parent', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
-    const claim = env.seed(parent.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: parentPins, mode: 'default' }], 'hold');
+    const claim = env.seed(parent.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { modelAlias: 'fm', ...parentPins }, mode: 'default' }], 'hold');
     const created = env.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, modelAlias: 'fm' });
     if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
     expect(env.store.releaseLease(claim, { availableAt: env.clock.now() + 3_600_000 }).kind).toBe('ok');

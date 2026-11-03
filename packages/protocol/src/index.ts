@@ -10,7 +10,8 @@ export type {
   ToolCallingMode,
   ToolCallingSetting,
 } from './capabilities.ts';
-export { COMPACTION_RESULT_EVENT, HEADER_ROLES, ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER } from './headers.ts';
+export { CALL_ROLES, COMPACTION_RESULT_EVENT, COMPACTION_ROLE, HEADER_ROLES, ROLE_HEADER, RUN_ID_HEADER, RUN_ROLE, STREAM_IDLE_HEADER } from './headers.ts';
+export type { CallRole } from './headers.ts';
 export type { HeaderRole } from './headers.ts';
 export {
   COMPACTION_INSTRUCTIONS_VERSION,
@@ -51,8 +52,9 @@ export {
   imageCapability,
   isReasoningEffort,
   reasoningEffortToSend,
+  requireStructuredOutput,
 } from './capabilities.ts';
-export type { TargetBilling } from './capabilities.ts';
+export type { StructuredOutputVerdict, TargetBilling } from './capabilities.ts';
 export { tokensForText } from './estimate-tokens.ts';
 export { GUIDELINE_TEXT_PATTERN, hasForbiddenGuidelineCharacter } from './guideline-text.ts';
 export { escapeTerminalBlock, escapeTerminalLine } from './terminal-text.ts';

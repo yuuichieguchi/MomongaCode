@@ -106,10 +106,15 @@ UPDATE spans SET ingest_seq = rowid;
 CREATE UNIQUE INDEX spans_by_ingest ON spans (ingest_seq);
 `;
 
+const RUN_INGEST_INDEX = `
+CREATE INDEX spans_by_run_ingest ON spans (run_id, ingest_seq);
+`;
+
 export const TRACE_STORE_MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial', sql: INITIAL_SCHEMA },
   { version: 2, name: 'chat-span-billing', sql: RECORD_BILLING_OF_EARLIER_CHAT_SPANS },
   { version: 3, name: 'span-ingest-sequence', sql: INGEST_SEQUENCE },
+  { version: 4, name: 'run-ingest-index', sql: RUN_INGEST_INDEX },
 ];
 
 type Row = Record<string, SQLOutputValue>;

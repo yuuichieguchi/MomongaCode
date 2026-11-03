@@ -157,18 +157,20 @@ describe('forced deficit with the gateway bound max(1, ceil(0.3 x tokens))', () 
     expect(maxInputFor({ ceiling: 5387, inputBudget: budgetFor(W8192, 0).I, errorBoundAt: counted.errorBoundAt })).toBe(5387);
   });
 
-  it('evaluates a suffix count at the bound of a fresh count, not at the bound of its suffix', async () => {
+  it('evaluates a suffix count at the bound of its estimated part, which grows above the observed prefix', async () => {
     const meter = createTokenMeter({ counter: gatewayCounter(), model: MODEL, capabilities: W8192 });
     const head: InputItem = { type: 'message', role: 'user', content: 'h'.repeat(16000) };
     const tail: InputItem = { type: 'message', role: 'user', content: 't'.repeat(400) };
     const observed = await meter.count({ input: [head], tools: [] });
     meter.observe({ inputDigest: observed.inputDigest, inputTokens: observed.inputTokens });
     const counted = await meter.count({ input: [head, tail], tools: [] });
-    const fresh = (tokens: number): number => Math.max(Math.ceil(0.1 * tokens), errorBoundOfShape(ESTIMATED_ERROR_SHAPE, tokens));
+    const part = (tokens: number): number => Math.max(0, tokens - observed.inputTokens);
+    const bound = (tokens: number): number => Math.max(Math.ceil(0.1 * tokens), errorBoundOfShape(ESTIMATED_ERROR_SHAPE, part(tokens)));
 
-    expect(counted.errorBound).toBeLessThan(fresh(counted.inputTokens));
-    expect(counted.errorBoundAt(counted.inputTokens)).toBe(fresh(counted.inputTokens));
-    expect(counted.errorBoundAt(3000)).toBe(fresh(3000));
+    expect(counted.errorBound).toBe(bound(counted.inputTokens));
+    expect(counted.errorBoundAt(counted.inputTokens)).toBe(counted.errorBound);
+    expect(counted.errorBoundAt(3000)).toBe(bound(3000));
+    expect(counted.errorBoundAt(6000)).toBe(bound(6000));
   });
 
   it('compacts a region that closes the excess over the ceiling although it frees less than T + bound(T) - I', async () => {

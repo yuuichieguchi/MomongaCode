@@ -1,5 +1,6 @@
 import { describeFallbackCause } from '@momonga/foundation';
 import type { FallbackCause } from '@momonga/foundation';
+import { RUN_ROLE } from '@momonga/protocol';
 import { MOMONGA_ATTRIBUTES, UNKNOWN_BILLING } from './semconv.ts';
 import { billedCallOf, isBilledChat } from './billed-calls.ts';
 import type { BilledCall } from './billed-calls.ts';
@@ -10,8 +11,6 @@ import type { SpanRecord, TraceStore } from './trace-store.ts';
 export type CostedRun = { runId: string; sessionId: string };
 
 export type CostFallback = { answeredBy: string; calls: number; failed: FallbackCause[] };
-
-export const RUN_ROLE = 'run';
 
 export type RoleCost = {
   fallbackCalls?: number;

@@ -243,14 +243,16 @@ describe('the reflection call', () => {
     expect(env.gateway.streams[0]?.body.text?.format).toMatchObject({ type: 'json_schema' });
   });
 
-  it('asks for plain text where it does not, and still reads the JSON', async () => {
+  it('makes no call and ends the job when the run alias has no structured output', async () => {
     const env = setup({ structured: false });
-    await queued(env);
+    const run = await queued(env);
     env.gateway.script.push(textStep(CANDIDATE_REPLY([])));
-    await env.reflector().runOne(SIGNAL);
-    expect(env.gateway.streams).toHaveLength(1);
-    expect((env.gateway.streams[0]?.body.text?.format as { type?: string } | undefined)?.type).not.toBe('json_schema');
-    expect(env.api.memories.candidates().map((memory) => memory.text)).toEqual(['the fixture needs a seed']);
+    expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
+    expect(env.gateway.streams).toHaveLength(0);
+    const job = env.api.reflection.get(run.id);
+    expect(job?.state).toBe('done');
+    expect(job?.lastError).toContain('structured output');
+    expect(env.api.memories.candidates()).toEqual([]);
   });
 
   it('records the cached input and the measured timing of the reflection call on its charge', async () => {

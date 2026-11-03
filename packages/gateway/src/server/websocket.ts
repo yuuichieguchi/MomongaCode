@@ -1,8 +1,8 @@
 import type http from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer } from 'ws';
-import { RUN_ROLE } from '@momonga/observability';
 import type { RawData, WebSocket } from 'ws';
+import { RUN_ROLE } from '@momonga/protocol';
 import type { StreamEvent } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, invalidRequest, readerStalledError } from '../core/errors.ts';
 import type { ConnectionResponses } from '../core/input.ts';

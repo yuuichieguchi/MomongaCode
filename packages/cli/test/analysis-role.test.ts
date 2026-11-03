@@ -51,8 +51,10 @@ describe('the analysis role of context improve', () => {
     await expect(failure).rejects.toThrow('structured output');
   });
 
-  it('guards the existing fallback: without a role, an --alias without structured output is still used and answers in plain text', async () => {
-    const chosen = await analysisModelFor()({ roles: {}, alias: 'plain', capabilitiesOf });
-    expect(chosen).toEqual({ alias: 'plain', capabilities: CAPABILITIES['plain'] });
+  it('refuses an --alias without structured output when no role is set, naming the alias and the capability', async () => {
+    const failure = analysisModelFor()({ roles: {}, alias: 'plain', capabilitiesOf });
+    await expect(failure).rejects.toBeInstanceOf(contextCommand.ContextImproveError);
+    await expect(failure).rejects.toThrow('plain');
+    await expect(failure).rejects.toThrow('structured output');
   });
 });

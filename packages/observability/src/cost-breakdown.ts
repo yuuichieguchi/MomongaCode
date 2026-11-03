@@ -1,6 +1,6 @@
-import { amountOfUnits, priceCall } from './cost.ts';
-import type { CallBilling, PriceTable, PricedCall } from './cost.ts';
-import { RUN_ROLE } from './cost-report.ts';
+import { amountOfUnits } from './cost.ts';
+import type { CallBilling, PricedCall } from './cost.ts';
+import { RUN_ROLE } from '@momonga/protocol';
 
 export type BreakdownAnatomy = {
   layers: Readonly<Record<string, number | Readonly<Record<string, number>> | undefined>>;
@@ -14,7 +14,7 @@ export type BreakdownCall = {
   model: string;
   billing: CallBilling;
   at: Date;
-  price?: PricedCall;
+  price: PricedCall;
   anatomy?: BreakdownAnatomy;
   usage: { inputTokens: number; cachedInputTokens: number; cacheWriteInputTokens: number; outputTokens: number; reasoningTokens: number };
   timing?: { firstEventMs?: number; durationMs: number };
@@ -56,7 +56,7 @@ export type CostBreakdown = {
 
 export type UnjoinedRecord = { runId: string; step?: number; reason: string };
 
-export type CostBreakdownOptions = { table?: PriceTable; unjoined?: readonly UnjoinedRecord[]; callsWithoutResponseId?: number };
+export type CostBreakdownOptions = { unjoined?: readonly UnjoinedRecord[]; callsWithoutResponseId?: number };
 
 const roleOf = (call: BreakdownCall): string => call.role ?? RUN_ROLE;
 
@@ -78,26 +78,7 @@ const layerEntriesOf = (anatomy: BreakdownAnatomy): [string, number][] =>
     return Object.entries(value).map(([inner, tokens]): [string, number] => [`${name}.${inner}`, tokens]);
   });
 
-const priceOf = (call: BreakdownCall, table: PriceTable | undefined): PricedCall => {
-  if (call.price !== undefined) return call.price;
-  if (table === undefined) throw new TypeError(`the call of run ${call.runId} carries no price and no price table was given`);
-  return priceCall({
-    provider: call.provider,
-    model: call.model,
-    billing: call.billing,
-    usage: {
-      inputTokens: call.usage.inputTokens,
-      outputTokens: call.usage.outputTokens,
-      cachedInputTokens: call.usage.cachedInputTokens,
-      cacheWriteInputTokens: call.usage.cacheWriteInputTokens,
-    },
-    at: call.at,
-    table,
-  });
-};
-
 export const buildCostBreakdown = (calls: readonly BreakdownCall[], options: CostBreakdownOptions): CostBreakdown => {
-  const { table } = options;
   const layerTokens = new Map<string, number>();
   let callsWithoutAnatomy = 0;
   const billed = { inputTokens: 0, uncachedInputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0 };
@@ -136,7 +117,7 @@ export const buildCostBreakdown = (calls: readonly BreakdownCall[], options: Cos
       if (call.timing.firstEventMs !== undefined) group.firstEvents.push(call.timing.firstEventMs);
       group.durations.push(call.timing.durationMs);
     }
-    const priced = priceOf(call, table);
+    const priced = call.price;
     if (priced.kind === 'unpriced') {
       unpriced.push({ ...identity, reason: priced.reason });
       continue;

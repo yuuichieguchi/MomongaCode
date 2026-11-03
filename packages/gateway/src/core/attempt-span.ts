@@ -27,10 +27,12 @@ export type AttemptSpanInput = {
   attempt: number;
   targetName: string;
   role: string;
+  startedAtMs: number;
   request: { input: readonly AdapterInputItem[]; instructions: string | null | undefined; tools: readonly FunctionTool[] | null | undefined };
 };
 
 export type AttemptSpan = {
+  readonly startedAtMs: number;
   note(name: string, message: string): void;
   succeed(info: {
     responseModel: string;
@@ -44,10 +46,8 @@ export type AttemptSpan = {
   fail(errorType: string, error: unknown, message: string): void;
 };
 
-const inactive: AttemptSpan = { note: () => undefined, succeed: () => undefined, fail: () => undefined };
-
 export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
-  if (input.telemetry === undefined) return inactive;
+  if (input.telemetry === undefined) return { startedAtMs: input.startedAtMs, note: () => undefined, succeed: () => undefined, fail: () => undefined };
   const span = startChatSpan(
     input.telemetry.tracer,
     {
@@ -61,6 +61,7 @@ export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
       ...(input.maxTokens === undefined ? {} : { maxTokens: input.maxTokens }),
       ...(input.runId === undefined ? {} : { runId: input.runId }),
       ...(input.step === undefined ? {} : { step: input.step }),
+      startTimeMs: input.startedAtMs,
     },
     input.parent,
   );
@@ -75,6 +76,7 @@ export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
     span.end();
   };
   return {
+    startedAtMs: input.startedAtMs,
     note: (name, message) => {
       if (!ended) span.addEvent(name, { message });
     },

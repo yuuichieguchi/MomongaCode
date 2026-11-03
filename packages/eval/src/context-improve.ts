@@ -5,7 +5,7 @@ import type { ContextComparison } from './context-compare.ts';
 import { contrastiveCasesOf } from './context-report.ts';
 import type { ContextModel, ContextReport } from './context-report.ts';
 import { GUIDELINE_CANDIDATES, analysisRequestOf, candidateRequestOf, parseGuidelineAnalysis, parseGuidelineCandidate } from './guideline-prompts.ts';
-import type { GuidelineAnalysis, GuidelineCompletion, GuidelineCompletionRequest, StructuredOutput } from './guideline-prompts.ts';
+import type { GuidelineAnalysis, GuidelineCompletion, GuidelineCompletionRequest } from './guideline-prompts.ts';
 import type { Transcript } from './transcript.ts';
 
 export const GUIDELINE_CAP_REASON = 'the command reached its token cap, counting the benchmark runs and the model calls together';
@@ -19,7 +19,6 @@ export type ImproveInput = {
   alias: string;
   capTokens: number;
   current: AdoptedGuideline | undefined;
-  structuredOutput: StructuredOutput;
   recordChars?: number;
 };
 
@@ -143,7 +142,6 @@ export const improveGuideline = async (input: ImproveInput, ports: ImprovePorts)
         off: entry.off,
         on: entry.on,
         guideline: input.current?.text,
-        structuredOutput: input.structuredOutput,
         seed: input.seed,
         ...(input.recordChars === undefined ? {} : { recordChars: input.recordChars }),
       }),
@@ -163,7 +161,6 @@ export const improveGuideline = async (input: ImproveInput, ports: ImprovePorts)
         guideline: input.current?.text,
         index,
         count: GUIDELINE_CANDIDATES,
-        structuredOutput: input.structuredOutput,
         seed: input.seed,
         ...(input.recordChars === undefined ? {} : { analysisChars: input.recordChars }),
       }),

@@ -500,7 +500,7 @@ export type RuntimeStore = {
   claim(workerId: string): Claim | null;
   heartbeat(claim: Claim): HeartbeatResult;
   append(claim: Claim, events: readonly RunEventPayload[]): AppendResult;
-  transition(claim: Claim, from: readonly RunStatus[], to: RunStatus, patch?: StatusPatch): RunMutationResult;
+  transition(claim: Claim, from: readonly RunStatus[], to: RunStatus, patch?: StatusPatch, preceding?: readonly RunEventPayload[]): RunMutationResult;
   release(claim: Claim, to: RunStatus, availableAt?: number, options?: { refundAttempt?: boolean; awaits?: WaitTargets }): RunMutationResult;
   releaseLease(claim: Claim, options: { availableAt: number; refundAttempt?: boolean }): RunMutationResult;
   requestCancel(runId: string): RequestCancelResult;

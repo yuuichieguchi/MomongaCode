@@ -1,6 +1,6 @@
 import { budgetFor } from '@momonga/context';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import { CLASSIFIER_VERDICT_SCHEMA, assistantTextOf, classifierAllows, escapeXmlText, outputReserveFor, parseClassifierVerdict } from '@momonga/protocol';
+import { CLASSIFIER_VERDICT_SCHEMA, assistantTextOf, classifierAllows, escapeXmlText, outputReserveFor, parseClassifierVerdict, requireStructuredOutput } from '@momonga/protocol';
 import type { CreateResponseBody, ResponseResource, RunEventPayload } from '@momonga/protocol';
 import type { AutoClassifier, AutoClassifierRequest } from '@momonga/tools';
 import { GatewayRequestError } from '../gateway-client.ts';
@@ -42,9 +42,8 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
   const { gateway } = ctx.options;
   const judge = async (request: AutoClassifierRequest, classifier: string): Promise<Outcome> => {
     const capabilities = await gateway.capabilities(classifier, { signal: ctx.control.signal });
-    if (capabilities.structuredOutput !== 'json_schema') {
-      return asked({ alias: classifier, failure: `autoMode.classifier names alias ${classifier}, which has no structured output to hold the verdict schema` });
-    }
+    const structured = requireStructuredOutput(capabilities, 'autoMode.classifier', classifier);
+    if (!structured.ok) return asked({ alias: classifier, failure: structured.reason });
     const input = [{ type: 'message' as const, role: 'user' as const, content: [{ type: 'input_text' as const, text: userPromptOf(ctx, cwd, request) }] }];
     const counted = await gateway.countTokens({ model: classifier, input, instructions: CLASSIFIER_INSTRUCTIONS }, { signal: ctx.control.signal });
     if (counted.input_tokens > budgetFor(capabilities, counted.error_bound).I) {

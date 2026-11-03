@@ -15,7 +15,7 @@ type Past = { injected: number; used: number; dropped?: boolean; share?: number 
 const DROPPED_NOTICE = '1 of 2 saved memories were left out of the context because of its budget';
 
 const pastEvents = ({ injected, used, dropped = false, share = 1 / 4 }: Past, now: number): RunEventPayload[] => [
-  { type: 'run.started', attempt: 1, now, pins: { memoryShare: share }, mode: 'default' },
+  { type: 'run.started', attempt: 1, now, pins: { modelAlias: 'fm', memoryShare: share }, mode: 'default' },
   ...(dropped ? [{ type: 'notice', level: 'warning', message: DROPPED_NOTICE, code: 'memories_dropped' } as RunEventPayload] : []),
   {
     type: 'context.contribution',

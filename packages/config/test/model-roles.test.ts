@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { loadSettings, loadUserModels } from '@momonga/config';
+import { MODEL_ROLES, loadSettings, loadUserModels } from '@momonga/config';
+import { CALL_ROLES } from '@momonga/protocol';
 import { localSettingsPath, makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 
@@ -14,6 +15,12 @@ const chatTarget = (model: string): Record<string, unknown> => ({
 const TWO_TARGETS = { main: chatTarget('big'), small: chatTarget('little') };
 const ALIASES = { default: 'main', cheap: 'small', judge: ['small', 'main'] };
 const ALL_ROLES = { compaction: 'cheap', reflection: 'judge', analysis: 'default' };
+
+describe('the roles a setting can pin', () => {
+  it('are a subset of the roles of a model call', () => {
+    expect(MODEL_ROLES.every((role) => (CALL_ROLES as readonly string[]).includes(role))).toBe(true);
+  });
+});
 
 const load = (tree: Tree) => loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
 

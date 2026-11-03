@@ -1,5 +1,5 @@
 import { canonicalJson, sha256Hex, uuidv7 } from '@momonga/foundation';
-import { summaryInputLimitFor, summaryTokenCapFor } from '@momonga/protocol';
+import { COMPACTION_ROLE, summaryInputLimitFor, summaryTokenCapFor } from '@momonga/protocol';
 import type {
   AdapterCompactRequest,
   AdapterInputItem,
@@ -21,7 +21,6 @@ import { modelCostOf } from './model-cost.ts';
 import { startAttemptSpan } from './attempt-span.ts';
 import type { AttemptSpan } from './attempt-span.ts';
 import { errorTypeOf, messageOf } from './respond.ts';
-import { COMPACTION_ROLE } from './role.ts';
 import { failureFrom, runWithRetry } from './retry.ts';
 import type { RetryOutcome } from './retry.ts';
 import type { TargetRuntime } from './router.ts';
@@ -287,6 +286,7 @@ const compactOnce = async (
       attempt: attemptNumber,
       targetName: target.name,
       role: COMPACTION_ROLE,
+      startedAtMs: services.clock.now(),
       request: { input: resolved.forAdapter, instructions: request.instructions, tools: undefined },
     });
     try {
@@ -305,7 +305,9 @@ const compactOnce = async (
   });
   outcome.target.breaker.onSuccess();
   const resourceId = identifier(services, 'resp');
-  spans.get(outcome.target)?.succeed({
+  const attempt = spans.get(outcome.target);
+  if (attempt === undefined) throw new TypeError(`target "${outcome.target.name}" answered the compaction without an attempt span`);
+  attempt.succeed({
     responseModel: outcome.target.model,
     responseId: resourceId,
     finishReason: 'stop',
@@ -328,7 +330,7 @@ const compactOnce = async (
           billing: outcome.target.billing,
           usage: outcome.value.usage,
           cacheWriteInputTokens: outcome.value.cacheWriteInputTokens,
-          at: services.clock.now(),
+          at: attempt.startedAtMs,
           table: services.priceTable,
         });
   return {

@@ -46,7 +46,7 @@ const MATRIX: Record<string, PackageRule> = {
   foundation: rule([]),
   config: rule(['protocol', 'foundation']),
   store: rule(['protocol', 'foundation']),
-  observability: rule(['foundation']),
+  observability: rule(['protocol', 'foundation']),
   gateway: rule(['protocol', 'foundation', 'config', 'observability']),
   policy: rule(['protocol', 'foundation', 'config']),
   sandbox: rule(['foundation']),

@@ -1,7 +1,8 @@
 import { SECRET_NAME_PATTERN } from '@momonga/foundation';
 import { HOOK_COMMAND_TYPE, PERMISSION_MODES, REASONING_EFFORTS, TARGET_BILLINGS } from '@momonga/protocol';
+import type { CallRole } from '@momonga/protocol';
 
-export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const;
+export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const satisfies readonly CallRole[];
 
 const STRING_ARRAY = { type: 'array', items: { type: 'string' } } as const;
 const NON_EMPTY_STRING_ARRAY = { type: 'array', items: { type: 'string', minLength: 1 } } as const;

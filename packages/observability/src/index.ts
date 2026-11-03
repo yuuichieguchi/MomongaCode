@@ -7,7 +7,7 @@ export { MAX_BILLED_CALLS_PAGE, RUNLESS, billedCallsOfRun, pageBilledCalls } fro
 export type { BilledCall, BilledCallWire, BilledCallsCursor, BilledCallsPage } from './billed-calls.ts';
 export { LOCAL_PRICE_VERSION, amountOfUnits, definePriceTable, findPriceEntry, priceCall } from './cost.ts';
 export type { CallBilling, CostInput, CostUsage, PriceCallInput, PriceEntry, PriceTable, PricedCall } from './cost.ts';
-export { RUN_ROLE, buildCostReport, formatCostReport } from './cost-report.ts';
+export { buildCostReport, formatCostReport } from './cost-report.ts';
 export type { CostReport, CostReportOptions, CostTotals, CostedRun, RoleCost, RunCost, SessionCost } from './cost-report.ts';
 export type { ClockedSpan, ClockedTracer } from './clocked-tracer.ts';
 export { GENAI_CONTENT_SEMCONV, GENAI_SEMCONV } from './semconv.ts';

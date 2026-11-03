@@ -109,20 +109,17 @@ export const parseGuidelineCandidate = (text: string): { guideline: string } | {
   return { guideline: parsed.value.guideline };
 };
 
-export type StructuredOutput = 'json_schema' | 'none';
-
 export type GuidelineCompletionRequest = {
   purpose: 'analysis' | 'candidate';
   instructions: string;
   input: string;
-  format?: { type: 'json_schema'; name: string; strict: true; schema: Record<string, unknown> };
+  format: { type: 'json_schema'; name: string; strict: true; schema: Record<string, unknown> };
   seed?: number;
 };
 
 export type GuidelineCompletion = { text: string; usage: { inputTokens: number; outputTokens: number; totalTokens: number }; detail?: BilledDetail };
 
-const formatFor = (structuredOutput: StructuredOutput, name: string, schema: Record<string, unknown>): Pick<GuidelineCompletionRequest, 'format'> =>
-  structuredOutput === 'json_schema' ? { format: { type: 'json_schema', name, strict: true, schema } } : {};
+const formatFor = (name: string, schema: Record<string, unknown>): GuidelineCompletionRequest['format'] => ({ type: 'json_schema', name, strict: true, schema });
 
 const guidelineBlock = (guideline: string | undefined): string[] =>
   guideline === undefined ? ['No guideline is in force.'] : ['The guideline in force, written by a person:', `<guideline>${escapeXmlText(guideline)}</guideline>`];
@@ -132,7 +129,6 @@ export type AnalysisRequestInput = {
   off: readonly Transcript[];
   on: readonly Transcript[];
   guideline: string | undefined;
-  structuredOutput: StructuredOutput;
   seed?: number;
   recordChars?: number;
 };
@@ -146,7 +142,7 @@ export const analysisRequestOf = (input: AnalysisRequestInput): GuidelineComplet
     ...input.off.map((transcript) => recordOf(transcript, 'without compaction', input.recordChars)),
     ...input.on.map((transcript) => recordOf(transcript, 'with compaction', input.recordChars)),
   ].join('\n'),
-  ...formatFor(input.structuredOutput, 'compaction_failure_analysis', GUIDELINE_ANALYSIS_SCHEMA),
+  format: formatFor('compaction_failure_analysis', GUIDELINE_ANALYSIS_SCHEMA),
   ...(input.seed === undefined ? {} : { seed: input.seed }),
 });
 
@@ -157,7 +153,6 @@ export type CandidateRequestInput = {
   guideline: string | undefined;
   index: number;
   count: number;
-  structuredOutput: StructuredOutput;
   seed: number;
   analysisChars?: number;
 };
@@ -186,6 +181,6 @@ export const candidateRequestOf = (input: CandidateRequestInput): GuidelineCompl
     ...guidelineBlock(input.guideline),
     ...analysisBlocks(input.analyses, input.analysisChars),
   ].join('\n'),
-  ...formatFor(input.structuredOutput, 'compaction_guideline', GUIDELINE_CANDIDATE_SCHEMA),
+  format: formatFor('compaction_guideline', GUIDELINE_CANDIDATE_SCHEMA),
   seed: candidateSeedOf(input.seed, input.index),
 });

@@ -92,6 +92,20 @@ describe('auto mode in the worker', () => {
     expect(env.gateway.streams).toHaveLength(1);
   });
 
+  it('asks the person, with no classifier call, when the classifier alias has no structured output', async () => {
+    const { env, write } = await setup();
+    env.gateway.capabilitiesByAlias['guard'] = capabilitiesFor(env.gateway.capabilitiesValue.contextWindow, { structuredOutput: 'none' });
+    env.gateway.script.push(write);
+    const run = env.enqueue('Write out.txt');
+    await env.runOnce(env.worker());
+    expect(env.run(run.id).status).toBe('WAITING_HUMAN');
+    const [classified] = env.ofType(run.id, 'tool.permission.classified');
+    expect(classified).toMatchObject({ outcome: 'ask', alias: 'guard' });
+    expect(classified?.failure).toContain('autoMode.classifier');
+    expect(classified?.failure).toContain('structured output');
+    expect(env.gateway.streams).toHaveLength(1);
+  });
+
   it('does not use the classifier for a deny rule', async () => {
     const { env, target, write } = await setup();
     env.settings.extraRules.push({ effect: 'deny', rule: 'Write' });

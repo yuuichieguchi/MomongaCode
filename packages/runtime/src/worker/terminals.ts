@@ -37,9 +37,12 @@ export const createTerminals = ({ store, claim, journal, control, clock }: Termi
   };
 
   return {
-    finish: (to, patch) => {
+    finish: (to, patch, preceding = []) => {
       journal.snapshot();
-      return settle(store.transition(claim, ['RUNNING'], to, patch), cancel);
+      return settle(store.transition(claim, ['RUNNING'], to, patch, preceding), () => {
+        if (preceding.length > 0) journal.append(preceding);
+        return cancel();
+      });
     },
     yieldTo: (to, availableAt, options) => {
       journal.snapshot();

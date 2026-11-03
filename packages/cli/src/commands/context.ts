@@ -19,7 +19,7 @@ import {
 } from '@momonga/eval';
 import type { BenchmarkResult, ContextModel, GuidelineCompletion, GuidelineCompletionRequest, Transcript } from '@momonga/eval';
 import type { MomongaPaths } from '@momonga/foundation';
-import { ESTIMATED_CHARACTERS_PER_TOKEN, LOWEST_REASONING_EFFORT, assistantTextOf, summaryTokenCapFor } from '@momonga/protocol';
+import { ESTIMATED_CHARACTERS_PER_TOKEN, LOWEST_REASONING_EFFORT, assistantTextOf, requireStructuredOutput, summaryTokenCapFor } from '@momonga/protocol';
 import type { Capabilities, CreateResponseBody, GuidelineView, GuidelinesResponse, StreamEvent } from '@momonga/protocol';
 import type { RuntimeClient } from '../client/runtime-client.ts';
 import { createGatewayClient as createCliGatewayClient } from '../client/gateway-client.ts';
@@ -76,7 +76,7 @@ const completerFor = async (ports: CliPorts, paths: MomongaPaths, alias: string,
       model: alias,
       instructions: request.instructions,
       input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: request.input }] }],
-      ...(request.format === undefined ? {} : { text: { format: request.format } }),
+      text: { format: request.format },
       tool_choice: 'none',
       reasoning: { effort: LOWEST_REASONING_EFFORT },
       max_output_tokens: summaryTokenCapFor(capabilities),
@@ -111,12 +111,11 @@ export type AnalysisModelInput = {
 
 export const analysisModelFor = async (input: AnalysisModelInput): Promise<{ alias: string; capabilities: Capabilities }> => {
   const roleAlias = input.roles.analysis;
-  if (roleAlias === undefined) return { alias: input.alias, capabilities: await input.capabilitiesOf(input.alias) };
-  const capabilities = await input.capabilitiesOf(roleAlias);
-  if (capabilities.structuredOutput !== 'json_schema') {
-    throw new ContextImproveError(`models.roles.analysis names alias ${roleAlias}, which has no structured output to hold the analysis schema`);
-  }
-  return { alias: roleAlias, capabilities };
+  const alias = roleAlias ?? input.alias;
+  const capabilities = await input.capabilitiesOf(alias);
+  const structured = requireStructuredOutput(capabilities, roleAlias === undefined ? 'the --alias option' : 'models.roles.analysis', alias);
+  if (!structured.ok) throw new ContextImproveError(structured.reason);
+  return { alias, capabilities };
 };
 
 export const contextImprove = async (
@@ -147,7 +146,6 @@ export const contextImprove = async (
           alias: options.alias,
           capTokens: liveBoundsFor(dataset, limits).datasetTokens * (1 + GUIDELINE_CANDIDATES),
           current,
-          structuredOutput: capabilities.structuredOutput,
           recordChars: recordCharsFor(capabilities),
         },
         {

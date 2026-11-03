@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCostBreakdown, definePriceTable, formatCostBreakdown } from '@momonga/observability';
+import { buildCostBreakdown, definePriceTable, formatCostBreakdown, priceCall } from '@momonga/observability';
 import type { BreakdownCall } from '@momonga/observability';
 import type { TokenAnatomy } from '@momonga/protocol';
 
@@ -28,14 +28,25 @@ const anatomyOf = (layers: Partial<Omit<TokenAnatomy['layers'], 'history'>> & { 
   return { estimated: true, total, layers: filled, tools: { Read: filled.tools } };
 };
 
-const callOf = (overrides: Partial<BreakdownCall> & Pick<BreakdownCall, 'usage'>): BreakdownCall => ({
-  runId: 'run-a',
-  provider: 'acme',
-  model: 'm1',
-  billing: 'metered',
-  at: AT,
-  ...overrides,
-});
+const callOf = (overrides: Partial<BreakdownCall> & Pick<BreakdownCall, 'usage'>): BreakdownCall => {
+  const identity = { runId: 'run-a', provider: 'acme', model: 'm1', billing: 'metered' as const, at: AT, ...overrides };
+  return {
+    price: priceCall({
+      provider: identity.provider,
+      model: identity.model,
+      billing: identity.billing,
+      usage: {
+        inputTokens: identity.usage.inputTokens,
+        outputTokens: identity.usage.outputTokens,
+        cachedInputTokens: identity.usage.cachedInputTokens,
+        cacheWriteInputTokens: identity.usage.cacheWriteInputTokens,
+      },
+      at: identity.at,
+      table: TABLE,
+    }),
+    ...identity,
+  };
+};
 
 const THREE_CALLS: BreakdownCall[] = [
   callOf({
@@ -57,7 +68,7 @@ const THREE_CALLS: BreakdownCall[] = [
 
 describe('buildCostBreakdown', () => {
   it('reports the share of each layer weighted by tokens over every call, so one large call is not averaged away', () => {
-    const breakdown = buildCostBreakdown(THREE_CALLS, { table: TABLE });
+    const breakdown = buildCostBreakdown(THREE_CALLS, {});
 
     expect(breakdown.calls).toBe(3);
     expect(breakdown.layers.estimated).toBe(true);
@@ -71,26 +82,26 @@ describe('buildCostBreakdown', () => {
   });
 
   it('splits the billed tokens by kind, uncached input being what is neither read from nor written to the cache', () => {
-    const breakdown = buildCostBreakdown(THREE_CALLS, { table: TABLE });
+    const breakdown = buildCostBreakdown(THREE_CALLS, {});
 
     expect(breakdown.billed).toEqual({ inputTokens: 3000, uncachedInputTokens: 1400, cacheReadTokens: 1400, cacheWriteTokens: 200, outputTokens: 100, reasoningTokens: 15 });
     expect(breakdown.cacheHitRatio).toBeCloseTo(7 / 15, 10);
   });
 
   it('reports the median and the 95th percentile of time to first token and of duration by nearest rank', () => {
-    const breakdown = buildCostBreakdown(THREE_CALLS, { table: TABLE });
+    const breakdown = buildCostBreakdown(THREE_CALLS, {});
 
     expect(breakdown.timeToFirstToken).toEqual({ median: 200, p95: 300, n: 3 });
     expect(breakdown.duration).toEqual({ median: 2000, p95: 3000, n: 3 });
   });
 
   it('prices every call with its own cache rates and sums the cost exactly', () => {
-    expect(buildCostBreakdown(THREE_CALLS, { table: TABLE }).cost).toEqual({ amount: 0.0048, currency: 'USD', unpricedCalls: 0 });
+    expect(buildCostBreakdown(THREE_CALLS, {}).cost).toEqual({ amount: 0.0048, currency: 'USD', unpricedCalls: 0 });
   });
 
   it('says the cost is unknown when a call has no price, and still reports its tokens', () => {
     const calls = [...THREE_CALLS, callOf({ model: 'unlisted', usage: { inputTokens: 10, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 1, reasoningTokens: 0 } })];
-    const breakdown = buildCostBreakdown(calls, { table: TABLE });
+    const breakdown = buildCostBreakdown(calls, {});
 
     expect(breakdown.cost).toEqual({ amount: null, currency: 'USD', unpricedCalls: 1 });
     expect(breakdown.billed.inputTokens).toBe(3010);
@@ -99,7 +110,7 @@ describe('buildCostBreakdown', () => {
 
   it('leaves a call with more cached and written than input out of the by-kind sums, lists it with the reason and never clamps it', () => {
     const inconsistent = callOf({ step: 4, usage: { inputTokens: 100, cachedInputTokens: 60, cacheWriteInputTokens: 50, outputTokens: 7, reasoningTokens: 0 } });
-    const breakdown = buildCostBreakdown([...THREE_CALLS, inconsistent], { table: TABLE });
+    const breakdown = buildCostBreakdown([...THREE_CALLS, inconsistent], {});
 
     expect(breakdown.billed).toMatchObject({ inputTokens: 3000, uncachedInputTokens: 1400, cacheReadTokens: 1400, cacheWriteTokens: 200 });
     expect(breakdown.billed.outputTokens).toBe(107);
@@ -118,7 +129,7 @@ describe('buildCostBreakdown', () => {
       callOf({ role, usage: { inputTokens: 10, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 1, reasoningTokens: 0 }, ...(timing === undefined ? {} : { timing }) });
     const calls = [...THREE_CALLS, side('compaction', { durationMs: 60_000 }), side('compaction', { firstEventMs: 4000, durationMs: 30_000 }), side('compaction'), side('classifier', { durationMs: 700 })];
 
-    const breakdown = buildCostBreakdown(calls, { table: TABLE });
+    const breakdown = buildCostBreakdown(calls, {});
 
     expect(breakdown.timeToFirstToken).toEqual({ median: 200, p95: 300, n: 3 });
     expect(breakdown.duration).toEqual({ median: 2000, p95: 3000, n: 3 });
@@ -137,17 +148,17 @@ describe('buildCostBreakdown', () => {
   });
 
   it('counts the calls recorded before response ids once, with their layers and timing not recorded', () => {
-    const breakdown = buildCostBreakdown(THREE_CALLS, { table: TABLE, callsWithoutResponseId: 2 });
+    const breakdown = buildCostBreakdown(THREE_CALLS, { callsWithoutResponseId: 2 });
 
     expect(breakdown.callsWithoutResponseId).toBe(2);
     expect(breakdown.unjoined).toEqual([]);
     expect(formatCostBreakdown(breakdown)).toContain('2 calls recorded before response ids: layers and timing not recorded');
-    expect(formatCostBreakdown(buildCostBreakdown(THREE_CALLS, { table: TABLE }))).not.toContain('before response ids');
+    expect(formatCostBreakdown(buildCostBreakdown(THREE_CALLS, {}))).not.toContain('before response ids');
   });
 
   it('measures layer shares over the calls that recorded an anatomy and counts the older ones without it', () => {
     const older = callOf({ usage: { inputTokens: 5000, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 5, reasoningTokens: 0 } });
-    const breakdown = buildCostBreakdown([...THREE_CALLS, older], { table: TABLE });
+    const breakdown = buildCostBreakdown([...THREE_CALLS, older], {});
 
     expect(breakdown.layers.callsWithoutAnatomy).toBe(1);
     expect(breakdown.layers.shares['tools']).toBeCloseTo(0.4, 10);
@@ -155,14 +166,14 @@ describe('buildCostBreakdown', () => {
   });
 
   it('gives no ratio and no timing for a run without calls instead of dividing by zero', () => {
-    const breakdown = buildCostBreakdown([], { table: TABLE });
+    const breakdown = buildCostBreakdown([], {});
     expect(breakdown).toMatchObject({ calls: 0, cacheHitRatio: null, timeToFirstToken: null, duration: null, cost: { amount: 0, currency: 'USD', unpricedCalls: 0 } });
   });
 });
 
 describe('formatCostBreakdown', () => {
   it('prints layer shares, billed tokens by kind, the cache hit ratio, calls, timing and cost', () => {
-    const text = formatCostBreakdown(buildCostBreakdown(THREE_CALLS, { table: TABLE }));
+    const text = formatCostBreakdown(buildCostBreakdown(THREE_CALLS, {}));
 
     expect(text).toContain('calls: 3');
     expect(text).toContain('tools 40.0%');

@@ -1,6 +1,10 @@
 export const STREAM_IDLE_HEADER = 'momonga-stream-idle-ms';
 export const RUN_ID_HEADER = 'momonga-run-id';
 export const ROLE_HEADER = 'momonga-role';
-export const HEADER_ROLES = ['reflection', 'analysis', 'classifier'] as const;
-export type HeaderRole = (typeof HEADER_ROLES)[number];
+export const CALL_ROLES = ['run', 'compaction', 'classifier', 'reflection', 'analysis'] as const;
+export type CallRole = (typeof CALL_ROLES)[number];
+export const RUN_ROLE = CALL_ROLES[0];
+export const COMPACTION_ROLE = CALL_ROLES[1];
+export type HeaderRole = Exclude<CallRole, typeof RUN_ROLE | typeof COMPACTION_ROLE>;
+export const HEADER_ROLES: readonly HeaderRole[] = CALL_ROLES.filter((role): role is HeaderRole => role !== RUN_ROLE && role !== COMPACTION_ROLE);
 export const COMPACTION_RESULT_EVENT = 'compaction';

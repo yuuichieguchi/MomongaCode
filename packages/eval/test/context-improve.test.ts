@@ -84,7 +84,7 @@ const improve = async (fixture: Fixture = {}) => {
   const benchmarked: (string | undefined)[] = [];
   const charges: unknown[] = [];
   const outcome = await improveGuideline(
-    { seed: 42, bootstrapSeed: 1, model: 'real', alias: 'opus', capTokens: 1_000_000, current: undefined, structuredOutput: 'json_schema', ...fixture.input },
+    { seed: 42, bootstrapSeed: 1, model: 'real', alias: 'opus', capTokens: 1_000_000, current: undefined, ...fixture.input },
     {
       benchmark: async (guideline) => {
         benchmarked.push(guideline);
@@ -167,24 +167,20 @@ describe('the analysis call', () => {
 
   it('guards a one-sided comparison: both traces reach the call', () => {
     const [off, on] = [recorded('a-off', 0, read('r0', '/p/off.ts', 'OFF-OUTPUT')), recorded('a-on', 0, read('r0', '/p/on.ts', 'ON-OUTPUT'))];
-    const { input } = analysisRequestOf({ scenario: 'a', off: [off as Transcript], on: [on as Transcript], guideline: undefined, structuredOutput: 'none' });
+    const { input } = analysisRequestOf({ scenario: 'a', off: [off as Transcript], on: [on as Transcript], guideline: undefined });
     expect(input).toContain('OFF-OUTPUT');
     expect(input).toContain('ON-OUTPUT');
   });
 
-  it('guards the format: json_schema with a closed schema where the target allows it', () => {
-    const request = analysisRequestOf({ scenario: 'a', off: [], on: [], guideline: undefined, structuredOutput: 'json_schema' });
+  it('guards the format: json_schema with a closed schema', () => {
+    const request = analysisRequestOf({ scenario: 'a', off: [], on: [], guideline: undefined });
     expect(request.format).toMatchObject({ type: 'json_schema', strict: true, schema: { additionalProperties: false } });
-  });
-
-  it('guards a refused request: plain text with no format where the target has none', () => {
-    expect(analysisRequestOf({ scenario: 'a', off: [], on: [], guideline: undefined, structuredOutput: 'none' }).format).toBeUndefined();
   });
 
   it('guards R7: recorded content sits escaped inside the data frame, and the instructions never change', () => {
     const hostile = [recorded('a-on', 0, read('r0', '/p/a.ts', INJECTION))];
-    const clean = analysisRequestOf({ scenario: 'a', off: [], on: [], guideline: undefined, structuredOutput: 'none' });
-    const framed = analysisRequestOf({ scenario: 'a', off: [], on: hostile, guideline: undefined, structuredOutput: 'none' });
+    const clean = analysisRequestOf({ scenario: 'a', off: [], on: [], guideline: undefined });
+    const framed = analysisRequestOf({ scenario: 'a', off: [], on: hostile, guideline: undefined });
     expect(framed.instructions).toBe(clean.instructions);
     expect(framed.instructions).not.toContain('OBEY-ME');
     expect(GUIDELINE_ANALYSIS_INSTRUCTIONS).toMatch(/data/);
@@ -220,7 +216,7 @@ describe('the analysis call', () => {
   it('hands the billed detail of every completion to the charge, so the charge can record the cost and timing of the call', async () => {
     const detail = { responseId: 'resp_1', cachedInputTokens: 3, timing: { firstEventMs: 5, durationMs: 90 } };
     const details: unknown[] = [];
-    const base = { seed: 42, bootstrapSeed: 1, model: 'real' as const, alias: 'opus', capTokens: 1_000_000, current: undefined, structuredOutput: 'json_schema' as const };
+    const base = { seed: 42, bootstrapSeed: 1, model: 'real' as const, alias: 'opus', capTokens: 1_000_000, current: undefined };
     await improveGuideline(base, {
       benchmark: async (guideline) => failingBaseline(guideline),
       complete: async (request) => ({ text: request.purpose === 'analysis' ? analysis() : candidateReply(0), usage: USAGE, detail }),

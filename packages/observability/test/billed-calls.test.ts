@@ -77,6 +77,7 @@ const asBreakdownCall = (call: BilledCall): BreakdownCall => ({
   model: call.model,
   billing: call.billing,
   at: new Date(call.startMs),
+  price: call.price,
   usage: call.usage,
 });
 
@@ -183,12 +184,12 @@ describe('one pricing rule', () => {
     );
 
     const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
-    const breakdown = buildCostBreakdown(billedCallsOfRun(h.store, 'run-a', TABLE).map(asBreakdownCall), { table: TABLE });
+    const breakdown = buildCostBreakdown(billedCallsOfRun(h.store, 'run-a', TABLE).map(asBreakdownCall), {});
 
     expect(report.total.unpricedCalls).toBe(1);
     expect(breakdown.cost.unpricedCalls).toBe(1);
     expect(breakdown.cost.amount).toBeNull();
-    const pricedOnly = buildCostBreakdown(billedCallsOfRun(h.store, 'run-a', TABLE).slice(0, 3).map(asBreakdownCall), { table: TABLE });
+    const pricedOnly = buildCostBreakdown(billedCallsOfRun(h.store, 'run-a', TABLE).slice(0, 3).map(asBreakdownCall), {});
     expect(pricedOnly.cost.amount).toBe(report.total.amount);
     expect(report.total.amount).toBe(0.001466);
   });

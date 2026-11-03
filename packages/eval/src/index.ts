@@ -88,7 +88,6 @@ export type {
   GuidelineCompletion,
   GuidelineCompletionRequest,
   GuidelineRootCause,
-  StructuredOutput,
 } from './guideline-prompts.ts';
 export { GUIDELINE_CAP_REASON, formatGuidelineText, formatImproveOutcome, guidelineDiff, improveGuideline } from './context-improve.ts';
 export { GUIDELINE_OUTCOME_FORMAT, adoptionOf, encodeOutcomeFile, outcomeFileOf, parseOutcomeFile } from './guideline-outcome.ts';

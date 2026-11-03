@@ -677,12 +677,13 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     from: readonly RunStatus[],
     to: RunStatus,
     change: Omit<StatusChange, 'edges' | 'resetFailures'>,
+    preceding: readonly RunEventPayload[] = [],
   ): RunMutationResult => {
     if (!from.includes(run.status)) {
       return conflict(`run ${run.id} is ${run.status}, expected one of ${from.join(', ')}`);
     }
     if (!WORKER_TRANSITIONS[run.status].includes(to)) return conflict(`run ${run.id} cannot move from ${run.status} to ${to}`);
-    return { kind: 'ok', run: changeStatus(run, to, { ...change, edges: WORKER_TRANSITIONS, resetFailures: true }) };
+    return { kind: 'ok', run: changeStatus(run, to, { ...change, edges: WORKER_TRANSITIONS, resetFailures: true }, preceding) };
   };
 
   const workerTransition = (
@@ -690,10 +691,11 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     from: readonly RunStatus[],
     to: RunStatus,
     change: Omit<StatusChange, 'edges' | 'resetFailures'>,
+    preceding: readonly RunEventPayload[],
   ): RunMutationResult =>
     transaction<RunMutationResult>(() => {
       const run = fenced(claim);
-      return run === undefined ? leaseLost : moveWorker(run, from, to, change);
+      return run === undefined ? leaseLost : moveWorker(run, from, to, change, preceding);
     });
 
   const expireApproval = (runId: string, approval: Approval): RunEventPayload[] => {
@@ -1336,12 +1338,12 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         return { kind: 'ok', lastSeq: next.lastSeq } as const;
       }),
 
-    transition: (claim, from, to, patch) =>
+    transition: (claim, from, to, patch, preceding = []) =>
       afterPreparing(
         () => {
           if (isTerminal(to)) prepareTree(claim.runId);
         },
-        () => workerTransition(claim, from, to, patch === undefined ? {} : { patch }),
+        () => workerTransition(claim, from, to, patch === undefined ? {} : { patch }, preceding),
       ),
 
     prepareTerminal,

@@ -1,6 +1,7 @@
 import { MODEL_ROLES } from '@momonga/config';
 import type { ModelRoles } from '@momonga/config';
 import type { Capabilities } from '@momonga/protocol';
+import type { RuntimeStore } from '@momonga/store';
 import { isRecord } from './json.ts';
 
 export type RunPins = {
@@ -26,7 +27,15 @@ export const readRoles = (value: unknown): ModelRoles => {
   return roles;
 };
 
-const isCapabilities = (value: unknown): value is Capabilities =>
+export const parentPinsOf = (store: Pick<RuntimeStore, 'readRunEventsOfTypes'>, runId: string): { modelAlias: string; roles: ModelRoles } => {
+  const started = store.readRunEventsOfTypes(runId, ['run.started'])[0];
+  if (started === undefined || started.type !== 'run.started') throw new Error(`run ${runId} has not recorded run.started, so it has pinned no model alias and no roles`);
+  const modelAlias = started.pins['modelAlias'];
+  if (typeof modelAlias !== 'string') throw new Error(`run ${runId} recorded run.started without a model alias pin`);
+  return { modelAlias, roles: readRoles(started.pins['roles']) };
+};
+
+const isCapabilities =(value: unknown): value is Capabilities =>
   isRecord(value) &&
   typeof value['contextWindow'] === 'number' &&
   typeof value['maxOutputTokens'] === 'number' &&

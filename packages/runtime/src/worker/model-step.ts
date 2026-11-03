@@ -1,7 +1,7 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { TokenMeter } from '@momonga/context';
-import { ESTIMATED_ERROR_BOUND_RATIO, LOWEST_REASONING_EFFORT, marginFloorFor } from '@momonga/protocol';
-import type { CreateResponseBody, FunctionTool, InputItem, ModelResponse, MomongaResponseExtension, ResponseResource, RunState } from '@momonga/protocol';
+import { LOWEST_REASONING_EFFORT, marginFloorFor } from '@momonga/protocol';
+import type { CreateResponseBody, FunctionTool, InputItem, ModelResponse, MomongaResponseExtension, ResponseResource, RunEventPayload, RunState } from '@momonga/protocol';
 import type { ClaimContext, Flow } from './claim-context.ts';
 import { modelKey } from '../model-key.ts';
 import { GatewayFailureError } from './errors.ts';
@@ -82,7 +82,7 @@ const estimateFor = async (ctx: ClaimContext, observation: InputObservation, ans
     meter: answered.meter,
     inputDigest: counted.inputDigest,
     estimatedTokens: counted.inputTokens,
-    marginTokens: marginFloorFor(answered.capabilities.contextWindow) + Math.ceil(ESTIMATED_ERROR_BOUND_RATIO * counted.estimatedTokens),
+    marginTokens: marginFloorFor(answered.capabilities.contextWindow) + counted.errorBound,
   };
 };
 
@@ -135,7 +135,10 @@ const handleResult = async (
   const estimate = observation === undefined ? undefined : await estimateFor(ctx, observation, fallbackTargetOf(response));
   const before = journal.state.usage;
   const billed = billedExtensionOf(response.momonga);
-  journal.append([
+  const reported = response.momonga?.contextInputTokens ?? usage.input_tokens;
+  const truncation = estimate !== undefined && reported < estimate.estimatedTokens - estimate.marginTokens ? truncationFailure(reported, estimate) : undefined;
+  const fallback = response.momonga;
+  const recorded: RunEventPayload[] = [
     {
       type: 'model.responded',
       step: position.step,
@@ -162,28 +165,21 @@ const handleResult = async (
       outputTokens: before.outputTokens + usage.output_tokens,
       totalTokens: before.totalTokens + usage.total_tokens,
     },
-  ]);
-  ctx.memory.streak = 0;
-  ctx.memory.interruptions = 0;
-  const fallback = response.momonga;
+  ];
   if (fallback?.fallbackCauses !== undefined && fallback.fallbackCauses.length > 0) {
     const failed = fallback.fallbackCauses.map((cause) => `${cause.target} failed (${cause.code === null ? cause.message : `${cause.code}: ${cause.message}`})`);
-    journal.append([
-      {
-        type: 'notice',
-        level: 'warning',
-        message: `The model call was answered by the fallback target ${fallback.target} because ${failed.join(' and ')}.`,
-        code: 'fallback_target',
-      },
-    ]);
+    recorded.push({
+      type: 'notice',
+      level: 'warning',
+      message: `The model call was answered by the fallback target ${fallback.target} because ${failed.join(' and ')}.`,
+      code: 'fallback_target',
+    });
   }
-  if (estimate !== undefined) {
-    const reported = response.momonga?.contextInputTokens ?? usage.input_tokens;
-    estimate.meter.observe({ inputDigest: estimate.inputDigest, inputTokens: reported });
-    if (reported < estimate.estimatedTokens - estimate.marginTokens) {
-      return terminals.finish('FAILED', { error: truncationFailure(reported, estimate) });
-    }
-  }
+  if (estimate !== undefined) estimate.meter.observe({ inputDigest: estimate.inputDigest, inputTokens: reported });
+  if (truncation !== undefined) return terminals.finish('FAILED', { error: truncation }, recorded);
+  journal.append(recorded);
+  ctx.memory.streak = 0;
+  ctx.memory.interruptions = 0;
   return decideAfterResponse(ctx);
 };
 
@@ -228,12 +224,14 @@ export const resumeInFlight = async (ctx: ClaimContext): Promise<Flow> => {
   if (ctx.control.yieldRequested()) return ctx.terminals.yieldLease();
   if (streamedBeforeRestart(ctx.journal.state, position)) ctx.journal.append([{ type: 'model.stream.restarted', step: position.step, attempt: position.attempt }]);
   const outcome = await streamRecovering(ctx, inFlight.body, position);
-  return outcome.kind === 'flow' ? outcome.flow : handleResult(ctx, outcome.streamed, position, observationOfRecorded(inFlight.body));
+  return outcome.kind === 'flow' ? outcome.flow : handleResult(ctx, outcome.streamed, position, observationOf(inFlight.body));
 };
 
-const observationOfRecorded = (body: CreateResponseBody): InputObservation | undefined => {
-  if (body.tool_choice === 'none') return undefined;
-  if (!Array.isArray(body.input)) throw new Error('the recorded model request carries no input items to check the reported tokens against');
+export const isSummaryRequest = (body: CreateResponseBody): boolean => body.tool_choice === 'none';
+
+const observationOf = (body: CreateResponseBody): InputObservation | undefined => {
+  if (isSummaryRequest(body)) return undefined;
+  if (!Array.isArray(body.input)) throw new Error('the model request carries no input items to check the reported tokens against');
   return { input: body.input, tools: body.tools ?? [] };
 };
 
@@ -268,5 +266,5 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   const streamed = await streamRecovering(ctx, body, position);
   return streamed.kind === 'flow'
     ? streamed.flow
-    : handleResult(ctx, streamed.streamed, position, summarising ? undefined : { input: built.input, tools: built.tools });
+    : handleResult(ctx, streamed.streamed, position, observationOf(body));
 };

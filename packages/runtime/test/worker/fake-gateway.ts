@@ -1,4 +1,5 @@
 import { canonicalJson, uuidv7 } from '@momonga/foundation';
+import { ESTIMATED_ERROR_SHAPE, EXACT_ERROR_SHAPE, countReplyOf } from '@momonga/protocol';
 import type {
   Capabilities,
   CompactRequest,
@@ -310,12 +311,8 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
       const base = instructions + input + tools;
       const target = request.momonga?.target;
       const scale = target === undefined ? undefined : gateway.countScaleByTarget.get(target);
-      const result: CountTokensResult = {
-        input_tokens: scale === undefined ? base : Math.ceil(base * scale),
-        method: (target === undefined ? undefined : gateway.countMethodByTarget.get(target)) ?? gateway.countMethod,
-        error_bound: 0,
-        error_shape: { ratio: 0, minimum: 0 },
-      };
+      const method = (target === undefined ? undefined : gateway.countMethodByTarget.get(target)) ?? gateway.countMethod;
+      const result = countReplyOf(scale === undefined ? base : Math.ceil(base * scale), method, method === 'estimated' ? ESTIMATED_ERROR_SHAPE : EXACT_ERROR_SHAPE);
       gateway.countResults.push(result);
       return result;
     },

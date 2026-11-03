@@ -28,6 +28,7 @@ export type ChatSpanInput = {
   attempt: number;
   target?: string;
   role?: string;
+  startTimeMs?: number;
 };
 
 export type ToolSpanInput = {
@@ -94,6 +95,7 @@ export const startChatSpan = (tracer: Tracer, input: ChatSpanInput, parent?: Con
     `${OPERATIONS.chat} ${input.requestModel}`,
     {
       kind: SpanKind.CLIENT,
+      ...(input.startTimeMs === undefined ? {} : { startTime: input.startTimeMs }),
       attributes: {
         [A.ATTR_GEN_AI_OPERATION_NAME]: OPERATIONS.chat,
         [A.ATTR_GEN_AI_PROVIDER_NAME]: input.providerName,

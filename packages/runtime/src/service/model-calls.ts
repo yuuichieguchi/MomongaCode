@@ -1,5 +1,6 @@
-import { MAX_BILLED_CALLS_PAGE, RUNLESS, RUN_ROLE, buildCostBreakdown, formatCostBreakdown } from '@momonga/observability';
+import { MAX_BILLED_CALLS_PAGE, RUNLESS, buildCostBreakdown, formatCostBreakdown } from '@momonga/observability';
 import type { BreakdownCall, CostBreakdown, UnjoinedRecord } from '@momonga/observability';
+import { RUN_ROLE } from '@momonga/protocol';
 import type { BilledCallsCursorView, BilledCallsPageView, BilledCallView, CallTiming, RunTraceCall } from '@momonga/protocol';
 import type { ModelCallRecord, RuntimeStore } from '@momonga/store';
 import { gatewayProtocolError } from '../gateway-client.ts';

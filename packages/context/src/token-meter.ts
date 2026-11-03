@@ -1,5 +1,5 @@
 import { canonicalJson } from '@momonga/foundation';
-import { errorBoundOfShape } from '@momonga/protocol';
+import { EXACT_ERROR_SHAPE, errorBoundOfShape } from '@momonga/protocol';
 import type { CountTokensRequest, CountTokensResult, ErrorShape, FunctionTool, InputItem } from '@momonga/protocol';
 import { digestChain, itemDigest } from './digests.ts';
 import type { ItemCountContext, MeterCount, MeterRequest, TokenMeter, TokenMeterOptions, UsageObservation } from './types.ts';
@@ -11,7 +11,7 @@ const MAX_COUNTED = 1024;
 const MAX_OBSERVATIONS = 64;
 const MAX_ITEM_COUNTS = 8192;
 
-type CountedRecord = { itemCount: number; inputTokens: number; counterBound: number; counterShape: ErrorShape; estimatedTokens: number };
+type CountedRecord = { itemCount: number; inputTokens: number; counterShape: ErrorShape; estimatedTokens: number };
 
 const estimatedPartOf = (result: CountTokensResult): number => (result.method === 'estimated' ? result.input_tokens : 0);
 
@@ -66,12 +66,16 @@ export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOpt
     const inputDigest = digestAt(input.length);
     const withBound = (record: CountedRecord): MeterCount => {
       const relative = relativeError();
+      const estimatedTokens = Math.min(record.estimatedTokens, record.inputTokens);
+      const observedPrefix = record.inputTokens - estimatedTokens;
+      const errorBoundAt = (tokens: number): number =>
+        combined(Math.ceil(relative * tokens), errorBoundOfShape(record.counterShape, Math.max(0, tokens - observedPrefix)));
       return {
         inputTokens: record.inputTokens,
         inputDigest,
-        errorBound: combined(Math.ceil(relative * record.inputTokens), record.counterBound),
-        errorBoundAt: (tokens) => combined(Math.ceil(relative * tokens), errorBoundOfShape(record.counterShape, tokens)),
-        estimatedTokens: Math.min(record.estimatedTokens, record.inputTokens),
+        errorBound: errorBoundAt(record.inputTokens),
+        errorBoundAt,
+        estimatedTokens,
       };
     };
 
@@ -93,7 +97,6 @@ export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOpt
         record = {
           itemCount: input.length,
           inputTokens: observation.inputTokens + suffix.input_tokens - baseline,
-          counterBound: suffix.error_bound,
           counterShape: suffix.error_shape,
           estimatedTokens: observation.estimatedTokens + Math.max(0, estimatedPartOf(suffix) - baseline),
         };
@@ -102,7 +105,7 @@ export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOpt
     }
     if (record === undefined) {
       const result = await counter.count(requestOf(input, tools, instructions));
-      record = { itemCount: input.length, inputTokens: result.input_tokens, counterBound: result.error_bound, counterShape: result.error_shape, estimatedTokens: estimatedPartOf(result) };
+      record = { itemCount: input.length, inputTokens: result.input_tokens, counterShape: result.error_shape, estimatedTokens: estimatedPartOf(result) };
     }
     remember(counted, inputDigest, record, MAX_COUNTED);
     return withBound(record);
@@ -129,7 +132,13 @@ export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOpt
     errors.push(Math.min(underEstimate, MAX_RELATIVE_ERROR));
     if (errors.length > ERROR_WINDOW) errors.shift();
     const conservative = Math.max(estimate, inputTokens);
-    const kept = { ...record, inputTokens: conservative, estimatedTokens: inputTokens >= estimate ? 0 : record.estimatedTokens };
+    const confirmed = inputTokens >= estimate;
+    const kept = {
+      ...record,
+      inputTokens: conservative,
+      counterShape: confirmed ? EXACT_ERROR_SHAPE : record.counterShape,
+      estimatedTokens: confirmed ? 0 : record.estimatedTokens,
+    };
     remember(counted, inputDigest, kept, MAX_COUNTED);
     remember(observations, inputDigest, kept, MAX_OBSERVATIONS);
   };

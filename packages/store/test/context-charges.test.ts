@@ -54,19 +54,30 @@ describe('context charges', () => {
     expect(charges.list({ runIds: [] })).toEqual([]);
   });
 
-  it('refuses a second charge for one response id from any writer, names the id, and leaves charges without an id free to repeat', () => {
+  it('records one response id once: the same charge again returns the stored one, a different charge for the id fails naming it, and charges without an id repeat freely', () => {
     const { run, charges } = setup();
-    const withId = (responseId: string, runId: string | null = null) => ({ ...charge({ runId }), detail: { responseId } });
-    charges.record(withId('resp_1') as never);
+    const withId = (responseId: string, runId: string | null = null, extra: Record<string, unknown> = {}) => ({ ...charge({ runId }), detail: { responseId, ...extra } });
+    const first = charges.record(withId('resp_1') as never);
 
+    expect(charges.record(withId('resp_1') as never)).toEqual(first);
+    expect(charges.record(withId('resp_1', null, { timing: { durationMs: 9 } }) as never)).toEqual(first);
     expect(() => charges.record(withId('resp_1', run.id) as never)).toThrow(/resp_1/);
-    expect(() => charges.record(withId('resp_1') as never)).toThrowError(expect.objectContaining({ name: 'DuplicateChargeError' }));
+    expect(() => charges.record(withId('resp_1', run.id) as never)).toThrowError(expect.objectContaining({ name: 'DuplicateChargeError' }));
+    expect(() => charges.record({ ...withId('resp_1'), inputTokens: 101 } as never)).toThrowError(expect.objectContaining({ name: 'DuplicateChargeError' }));
+    expect(() => charges.record(withId('resp_1', null, { cachedInputTokens: 5 }) as never)).toThrowError(expect.objectContaining({ name: 'DuplicateChargeError' }));
     expect(charges.list()).toHaveLength(1);
 
     charges.record(withId('resp_2') as never);
     charges.record(charge());
     charges.record(charge());
     expect(charges.list()).toHaveLength(4);
+  });
+
+  it('does not take another constraint failure of a charge with a response id for a duplicate', () => {
+    const { charges } = setup();
+    expect(() => charges.record({ ...charge({ inputTokens: -1 }), detail: { responseId: 'resp_9' } } as never)).toThrowError(
+      expect.not.objectContaining({ name: 'DuplicateChargeError' }),
+    );
   });
 
   it('refuses an unknown purpose and a negative count', () => {

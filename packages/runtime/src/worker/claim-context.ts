@@ -1,6 +1,6 @@
 import type { ModelRoles } from '@momonga/config';
 import type { TokenMeter } from '@momonga/context';
-import type { Capabilities, FunctionTool } from '@momonga/protocol';
+import type { Capabilities, FunctionTool, RunEventPayload } from '@momonga/protocol';
 import type { SkillSet } from '@momonga/skills';
 import type { Claim, Run, StatusPatch, WaitTargets } from '@momonga/store';
 import type { ToolSet } from '@momonga/tools';
@@ -13,7 +13,7 @@ import type { WorkerOptions } from './types.ts';
 export type Flow = 'continue' | 'done';
 
 export type Terminals = {
-  finish(to: 'COMPLETED' | 'STOPPED' | 'FAILED', patch?: StatusPatch): 'done';
+  finish(to: 'COMPLETED' | 'STOPPED' | 'FAILED', patch?: StatusPatch, preceding?: readonly RunEventPayload[]): 'done';
   yieldTo(to: 'WAITING_HUMAN' | 'WAITING_TOOL' | 'QUEUED', availableAt?: number, options?: { refundAttempt?: true; awaits?: WaitTargets }): 'done';
   cancel(): 'done';
   yieldLease(): 'done';

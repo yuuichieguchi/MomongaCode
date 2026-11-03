@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
+import { canonicalJson } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { CONTEXT_CHARGE_PURPOSES } from '@momonga/protocol';
 import type { BilledDetail } from '@momonga/protocol';
@@ -28,11 +29,30 @@ export class DuplicateChargeError extends Error {
   readonly responseId: string;
 
   constructor(responseId: string, options?: ErrorOptions) {
-    super(`the response ${responseId} is already charged, so the call is not charged twice`, options);
+    super(`the response ${responseId} is already charged with different fields, so the call is not charged twice`, options);
     this.name = 'DuplicateChargeError';
     this.responseId = responseId;
   }
 }
+
+const SQLITE_CONSTRAINT_UNIQUE = 2067;
+
+const isUniqueViolation = (error: unknown): boolean =>
+  typeof error === 'object' && error !== null && 'errcode' in error && error.errcode === SQLITE_CONSTRAINT_UNIQUE;
+
+const billedFieldsOf = (input: ContextChargeInput | ContextCharge): string => {
+  const { timing: _timing, ...detail } = input.detail ?? {};
+  return canonicalJson({
+    purpose: input.purpose,
+    runId: input.runId,
+    project: input.project,
+    model: input.model,
+    inputTokens: input.inputTokens,
+    outputTokens: input.outputTokens,
+    totalTokens: input.totalTokens,
+    detail,
+  });
+};
 
 export const createContextChargeStore = (db: DatabaseSync, clock: Clock): ContextChargeStore => {
   const insert = db.prepare(
@@ -40,6 +60,7 @@ export const createContextChargeStore = (db: DatabaseSync, clock: Clock): Contex
      VALUES (:purpose, :runId, :project, :model, :inputTokens, :outputTokens, :totalTokens, :now, :detailJson)`,
   );
   const select = db.prepare('SELECT * FROM context_charges WHERE id = :id');
+  const selectByResponse = db.prepare("SELECT * FROM context_charges WHERE json_extract(detail_json, '$.responseId') = :responseId");
   return {
     record: (input: ContextChargeInput) => {
       expectOneOf('context_charges', 'new', 'purpose', CONTEXT_CHARGE_PURPOSES, input.purpose);
@@ -48,10 +69,12 @@ export const createContextChargeStore = (db: DatabaseSync, clock: Clock): Contex
       try {
         ({ lastInsertRowid } = insert.run({ ...columns, now: clock.now(), detailJson: detail === undefined ? null : JSON.stringify(detail) }));
       } catch (error) {
-        if (detail?.responseId !== undefined && error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
-          throw new DuplicateChargeError(detail.responseId, { cause: error });
-        }
-        throw error;
+        if (detail?.responseId === undefined || !isUniqueViolation(error)) throw error;
+        const row = selectByResponse.get({ responseId: detail.responseId });
+        if (row === undefined) throw error;
+        const stored = decodeCharge(row);
+        if (billedFieldsOf(stored) !== billedFieldsOf(input)) throw new DuplicateChargeError(detail.responseId, { cause: error });
+        return stored;
       }
       const row = select.get({ id: Number(lastInsertRowid) });
       if (row === undefined) throw new Error('a context charge vanished after it was recorded');

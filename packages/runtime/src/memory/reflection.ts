@@ -1,7 +1,7 @@
 import { canonicalJson, computeBackoff, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { normalizeMemoryText } from '@momonga/memory';
-import { LOWEST_REASONING_EFFORT, assistantTextOf, summaryTokenCapFor } from '@momonga/protocol';
+import { LOWEST_REASONING_EFFORT, assistantTextOf, requireStructuredOutput, summaryTokenCapFor } from '@momonga/protocol';
 import type { BilledDetail, CallTiming, CreateResponseBody, MomongaResponseExtension, ReflectionDrop, Usage } from '@momonga/protocol';
 import { memoryTextProblem } from '@momonga/tools';
 import type { ContextChargeInput, RuntimeStore, SaveCandidateInput } from '@momonga/store';
@@ -106,16 +106,16 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     const pins = readPins(started.pins);
     const alias = pins.roles.reflection ?? pins.modelAlias;
     const [capabilities, verification] = await Promise.all([gateway.capabilities(alias, { signal }), settings.verification(session)]);
-    const structured = capabilities.structuredOutput === 'json_schema';
-    if (pins.roles.reflection !== undefined && !structured) {
-      store.reflection.finish(runId, `models.roles.reflection names alias ${alias}, which has no structured output to hold the reflection schema`);
+    const structured = requireStructuredOutput(capabilities, pins.roles.reflection === undefined ? 'the model of the run' : 'models.roles.reflection', alias);
+    if (!structured.ok) {
+      store.reflection.finish(runId, structured.reason);
       return;
     }
     const body: CreateResponseBody = {
       model: alias,
       instructions: REFLECTION_INSTRUCTIONS,
       input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: reflectionInputFor(events, project, capabilities) }] }],
-      ...(structured ? { text: { format: { type: 'json_schema', name: 'memory_candidates', schema: { ...REFLECTION_REPLY_SCHEMA }, strict: true } } } : {}),
+      text: { format: { type: 'json_schema', name: 'memory_candidates', schema: { ...REFLECTION_REPLY_SCHEMA }, strict: true } },
       tool_choice: 'none',
       reasoning: { effort: LOWEST_REASONING_EFFORT },
       max_output_tokens: Math.min(memorySettings.reflection.maxTokens ?? Number.POSITIVE_INFINITY, summaryTokenCapFor(capabilities)),
@@ -124,8 +124,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       metadata: { run_id: runId, purpose: 'reflection' },
     };
     const { terminal, usage, detail } = await complete(runId, body, signal);
-    const replayed = detail.responseId !== undefined && store.contextCharges.list({ runIds: [runId] }).some((charge) => charge.detail?.responseId === detail.responseId);
-    if (usage !== null && !replayed) {
+    if (usage !== null) {
       ledger.unrecorded = {
         detail,
         purpose: 'reflection',

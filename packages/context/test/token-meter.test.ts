@@ -213,7 +213,7 @@ describe('TokenMeter directional error correction', () => {
     const first = await meter.count({ input: prefix, tools: [] });
     meter.observe({ inputDigest: first.inputDigest, inputTokens: first.inputTokens * 2 });
     const cached = await meter.count({ input: prefix, tools: [] });
-    expect(cached.errorBound).toBe(first.inputTokens * 2 + 13);
+    expect(cached.errorBound).toBe(first.inputTokens * 2);
     for (let index = 0; index < 1100; index += 1) {
       await meter.count({ input: [message(`filler${index}`, `f${index}`)], tools: [] });
     }
