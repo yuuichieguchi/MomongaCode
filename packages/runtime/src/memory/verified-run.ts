@@ -8,11 +8,6 @@ export type VerifiedRunDeps = {
   settings: Pick<SettingsPort, 'verification'>;
 };
 
-export type EnqueueReflectionDeps = {
-  store: VerifiedRunDeps['store'] & Pick<RuntimeStore, 'reflection'>;
-  settings: Pick<SettingsPort, 'verification' | 'memory'>;
-};
-
 const sessionOfRun = (store: VerifiedRunDeps['store'], runId: string) => {
   const run = store.getRun(runId);
   if (run === undefined) throw new Error(`run ${runId} does not exist`);
@@ -25,12 +20,4 @@ export const isRunVerified = async ({ store, settings }: VerifiedRunDeps, runId:
   const { run, session } = sessionOfRun(store, runId);
   const verification = await settings.verification(session);
   return isVerifiedSuccess({ status: run.status, events: readAllRunEvents(store, runId), commands: verification.commands, manifests: verification.manifests });
-};
-
-export const enqueueReflection = async (deps: EnqueueReflectionDeps, runId: string): Promise<boolean> => {
-  if (deps.store.reflection.runOrigin(runId) !== 'trusted') return false;
-  const { session } = sessionOfRun(deps.store, runId);
-  if (!(await deps.settings.memory(session)).reflection.enabled) return false;
-  if (!(await isRunVerified(deps, runId))) return false;
-  return deps.store.reflection.enqueue(runId);
 };

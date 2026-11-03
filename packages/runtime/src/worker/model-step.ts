@@ -8,7 +8,6 @@ import { buildNext, cancelIfInterrupted, recoverRejectedCompaction } from './con
 import { isLoop } from './loop-detection.ts';
 import { streamModel } from './model-stream.ts';
 import type { ModelResult } from './model-stream.ts';
-import { queueReflection } from './queue-reflection.ts';
 import { summaryStopReason } from './wrap-up.ts';
 import { runStopHooks } from './hook-step.ts';
 import { recordCalls, settleCalls } from './tool-step.ts';
@@ -57,13 +56,11 @@ export const decideAfterResponse = async (ctx: ClaimContext): Promise<Flow> => {
   if (response.callIds.length === 0) {
     if (response.incomplete) return incompleteFailure(response.incompleteReason, terminals);
     if ((await runStopHooks(ctx)) === 'continue') return 'continue';
-    const completed = terminals.finish('COMPLETED');
-    await queueReflection(ctx);
-    return completed;
+    return terminals.finish('COMPLETED');
   }
   if (isLoop(journal.state, ctx.limits.loopThreshold)) {
     journal.append([
-      { type: 'notice', level: 'warning', message: `The model repeated the same tool call with the same results ${ctx.limits.loopThreshold} times in a row, so the run stops.` },
+      { type: 'notice', level: 'warning', message: `The model repeated the same tool call with the same results ${ctx.limits.loopThreshold} times in a row, so the run stops.`, code: 'tool_loop_detected' },
     ]);
     return terminals.finish('STOPPED', { stopReason: 'loop' });
   }
@@ -80,7 +77,7 @@ const handleResult = async (
   const { journal, terminals } = ctx;
   if (result.kind === 'failed') {
     if (result.code !== null && REFUSAL_CODES.includes(result.code)) {
-      journal.append([{ type: 'notice', level: 'warning', message: `The model refused the request: ${result.message}` }]);
+      journal.append([{ type: 'notice', level: 'warning', message: `The model refused the request: ${result.message}`, code: 'model_refused' }]);
       return terminals.finish('STOPPED', { stopReason: 'refusal' });
     }
     if (result.code === DEADLINE_CODE) return terminals.finish('STOPPED', { stopReason: 'timeout' });
@@ -94,7 +91,7 @@ const handleResult = async (
     const message = `The model response reuses the tool call id ${reusedCallId}, which the gateway must issue fresh for every call, so the run stops.`;
     journal.append([
       { type: 'model.stream.restarted', step: position.step, attempt: position.attempt },
-      { type: 'notice', level: 'error', message },
+      { type: 'notice', level: 'error', message, code: 'call_id_reused' },
     ]);
     return terminals.finish('FAILED', { error: { code: 'call_id_reused', message } });
   }
@@ -192,7 +189,7 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   if (cancelIfInterrupted(ctx) === 'done') return 'done';
   const position = { step, attempt: MODEL_ATTEMPT };
   journal.append([
-    ...(wrapUp === undefined ? [] : [{ type: 'notice' as const, level: 'error' as const, message: wrapUp.notice }]),
+    ...(wrapUp === undefined ? [] : [{ type: 'notice' as const, level: 'error' as const, message: wrapUp.notice, code: 'context_wrap_up' }]),
     { type: 'model.requested', step: position.step, attempt: position.attempt, digest: sha256Hex(canonicalJson(body)), body },
   ]);
   const streamed = await streamRecovering(ctx, body, position);

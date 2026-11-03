@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
 import { TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
-import type { ElicitationAnswerRecord, ElicitationRequestView, PermissionMode, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
+import type { ElicitationAnswerRecord, ElicitationRequestView, PermissionMode, RunEvent, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
 import { createApprovalStore } from './approvals.ts';
 import { createBlobStore, prepareBlobDirectory } from './blobs.ts';
 import { addUsage, foldRunState, initialRunState, spendOf } from './fold.ts';
@@ -30,6 +30,8 @@ import type {
   Claim,
   ClaimStatus,
   Conflict,
+  ContributionPayload,
+  TerminalContribution,
   CreateChildRunResult,
   CreateRunResult,
   ElicitationView,
@@ -234,6 +236,12 @@ const prepareStatements = (db: DatabaseSync) => ({
     "SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.elicitation.requested' AND json_extract(payload_json, '$.inputId') = :approvalId LIMIT 1",
   ),
   runEvents: db.prepare('SELECT * FROM events WHERE run_id = :runId AND seq > :after ORDER BY seq LIMIT :limit'),
+  lastTerminalRootRuns: db.prepare(
+    `SELECT r.* FROM runs r JOIN sessions s ON s.id = r.session_id
+     WHERE s.cwd = :project AND r.parent_run_id IS NULL AND r.status IN (${TERMINAL_LIST})
+       AND EXISTS (SELECT 1 FROM events e WHERE e.run_id = r.id AND e.type = 'run.started')
+     ORDER BY r.created_at DESC, r.rowid DESC LIMIT :limit`,
+  ),
   sessionEvents: db.prepare('SELECT * FROM events WHERE session_id = :sessionId AND id > :after ORDER BY id LIMIT :limit'),
   selectExhausted: db.prepare(
     `SELECT r.* FROM runs r WHERE ${CLAIMABLE} AND ${EXHAUSTED} ${CLAIM_ORDER} LIMIT 1`,
@@ -285,7 +293,9 @@ type StatusChange = {
   refundAttempt?: boolean;
 };
 
-const payloadStep = (payload: RunEventPayload): number => ('step' in payload ? payload.step : 0);
+type Measured = { lastSeq: number; journaled: boolean; contribution: Pick<ContributionPayload, 'items'> | undefined };
+
+const payloadStep =(payload: RunEventPayload): number => ('step' in payload ? payload.step : 0);
 
 const assertPositiveInteger = (name: string, value: number): void => {
   if (!Number.isInteger(value) || value < 1) throw new RangeError(`openRuntimeStore: ${name} must be a positive integer, got ${value}`);
@@ -319,9 +329,13 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   }
   const sql = statements;
   const approvalOps = createApprovalStore(db, clock);
+  const memories = createMemoryStore(db, clock);
+  const reflection = createReflectionStore(db, clock);
+  const governing = createGoverningFactStore(db, clock);
   const trust = createTrustStore(db, clock, home);
   const originOf = (cwd: string): 'trusted' | 'untrusted' => (trust.decisionFor(cwd).decision === 'trusted' ? 'trusted' : 'untrusted');
   const touched = new Map<string, { runId?: string; sessionId: string }>();
+  const prepared = new Map<string, Measured>();
 
   const recordTouch = (sessionId: string, runId: string | null): void => {
     if (options.onCommit === undefined) return;
@@ -425,13 +439,73 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return approvalAnnounced(runId, approval.id) ? [cancelledEvent(approval, 'withdrawn')] : [];
     });
 
+  const eventsOfTypes = (runId: string, types: readonly RunEventPayload['type'][]): RunEvent[] => {
+    const placeholders = types.map((_type, index) => `:type${index}`).join(', ');
+    const bound = Object.fromEntries(types.map((type, index) => [`type${index}`, type]));
+    return decodeRunEvents(db.prepare(`SELECT * FROM events WHERE run_id = :runId AND type IN (${placeholders}) ORDER BY seq`).all({ runId, ...bound }));
+  };
+
+  const measureContribution = (hook: TerminalContribution, run: Run): Measured => {
+    const events = eventsOfTypes(run.id, [...hook.eventTypes, 'context.contribution']);
+    const recorded = events.find((event): event is Extract<RunEvent, { type: 'context.contribution' }> => event.type === 'context.contribution');
+    if (recorded !== undefined) return { lastSeq: run.lastSeq, journaled: true, contribution: recorded };
+    return { lastSeq: run.lastSeq, journaled: false, contribution: hook.measure({ run, events, state: () => foldedRun(run), memories, governing }) };
+  };
+
+  const prepareTerminal = (runId: string): void => {
+    const hook = options.contribution;
+    const row = sql.selectRun.get({ id: runId });
+    if (hook === undefined || row === undefined) return;
+    const run = decodeRun(row);
+    if (isTerminal(run.status) || prepared.get(runId)?.lastSeq === run.lastSeq) return;
+    prepared.set(runId, measureContribution(hook, run));
+  };
+
+  const prepareChildren = (runId: string): void => {
+    for (const row of sql.childRuns.all({ runId })) {
+      const child = decodeRun(row);
+      if (child.status === 'QUEUED' || child.status === 'WAITING_HUMAN') {
+        prepareTerminal(child.id);
+        prepareChildren(child.id);
+      }
+    }
+  };
+
+  const prepareTree = (runId: string): void => {
+    prepareTerminal(runId);
+    prepareChildren(runId);
+  };
+
+  const settleContribution = (run: Run, to: TerminalStatus): RunEventPayload[] => {
+    const hook = options.contribution;
+    if (hook === undefined) return [];
+    const ready = prepared.get(run.id);
+    prepared.delete(run.id);
+    const { journaled, contribution } = ready !== undefined && ready.lastSeq === run.lastSeq ? ready : measureContribution(hook, run);
+    if (contribution !== undefined && to === 'COMPLETED') {
+      memories.stampContributed(contribution.items.filter((item) => item.kind === 'memory' && item.contributed).map((item) => item.id));
+    }
+    return !journaled && contribution !== undefined ? [{ type: 'context.contribution', items: contribution.items }] : [];
+  };
+
+  const afterPreparing = <T>(prepare: () => void, operation: () => T): T => {
+    prepare();
+    try {
+      return operation();
+    } finally {
+      prepared.clear();
+    }
+  };
+
   const changeStatus = (run: Run, to: RunStatus, change: StatusChange, leadingEvents: readonly RunEventPayload[] = []): Run => {
     if (!change.edges[run.status].includes(to)) throw new Error(`run ${run.id} has no permitted edge ${run.status} -> ${to}`);
     const patch = change.patch ?? {};
     const reason = patch.stopReason ?? patch.error?.code;
     const statusEvent: RunEventPayload = { type: 'run.status', from: run.status, to, ...(reason === undefined ? {} : { reason }) };
     const withdrawal = isTerminal(to) || to === 'CANCELLING' ? withdrawPendingApprovals(run.id) : [];
-    const appended = appendPayloads(run, [...leadingEvents, ...withdrawal, statusEvent]);
+    const contribution = isTerminal(to) ? settleContribution(run, to) : [];
+    const appended = appendPayloads(run, [...leadingEvents, ...withdrawal, ...contribution, statusEvent]);
+    if (to === 'COMPLETED' && run.parentRunId === null) reflection.enqueue(run.id);
     const keepsLease = to === 'RUNNING' || to === 'CANCELLING';
     const wakesNow = to === 'QUEUED' || (to === 'CANCELLING' && run.leaseOwner === null);
     const availableAt = change.availableAt ?? (wakesNow ? clock.now() : run.availableAt);
@@ -530,6 +604,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     const notice: RunEventPayload = {
       type: 'notice',
       level: 'warning',
+      code: 'approval_expired',
       message: `The ${approval.kind === 'elicitation' ? 'request for input' : 'approval'} for ${approval.callId} expired.`,
     };
     return approvalAnnounced(runId, approval.id)
@@ -1128,7 +1203,15 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         return { kind: 'ok', lastSeq: next.lastSeq } as const;
       }),
 
-    transition: (claim, from, to, patch) => workerTransition(claim, from, to, patch === undefined ? {} : { patch }),
+    transition: (claim, from, to, patch) =>
+      afterPreparing(
+        () => {
+          if (isTerminal(to)) prepareTree(claim.runId);
+        },
+        () => workerTransition(claim, from, to, patch === undefined ? {} : { patch }),
+      ),
+
+    prepareTerminal,
 
     release: (claim, to, availableAt, options) =>
       transaction<RunMutationResult>(() => {
@@ -1160,34 +1243,53 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       }),
 
     requestCancel: (runId) =>
-      transaction<RequestCancelResult>(() => {
-        const row = sql.selectRun.get({ id: runId });
-        if (row === undefined) return { kind: 'not_found' };
-        const run = decodeRun(row);
-        if (isTerminal(run.status) || run.status === 'CANCELLING') return { kind: 'ok', run, changed: false };
-        const to = cancelTargetOf(run.status);
-        if (!SERVICE_TRANSITIONS[run.status].includes(to)) throw new Error(`run ${runId} in status ${run.status} cannot be cancelled`);
-        return { kind: 'ok', run: changeStatus(run, to, { edges: SERVICE_TRANSITIONS }), changed: true };
-      }),
+      afterPreparing(
+        () => {
+          const status = sql.selectRun.get({ id: runId }) === undefined ? undefined : requireRun(runId).status;
+          if (status === undefined || isTerminal(status) || status === 'CANCELLING') return;
+          if (cancelTargetOf(status) === 'CANCELLED') prepareTree(runId);
+          else prepareChildren(runId);
+        },
+        () =>
+          transaction<RequestCancelResult>(() => {
+            const row = sql.selectRun.get({ id: runId });
+            if (row === undefined) return { kind: 'not_found' };
+            const run = decodeRun(row);
+            if (isTerminal(run.status) || run.status === 'CANCELLING') return { kind: 'ok', run, changed: false };
+            const to = cancelTargetOf(run.status);
+            if (!SERVICE_TRANSITIONS[run.status].includes(to)) throw new Error(`run ${runId} in status ${run.status} cannot be cancelled`);
+            return { kind: 'ok', run: changeStatus(run, to, { edges: SERVICE_TRANSITIONS }), changed: true };
+          }),
+      ),
 
     appendAsService: (runId, expectedVersion, to, events, patch) =>
-      transaction<ServiceMutationResult>( () => {
-        const run = requireRun(runId);
-        if (run.version !== expectedVersion) {
-          return conflict(`run ${runId} is at version ${run.version}, expected ${expectedVersion}`);
-        }
-        if (isTerminal(run.status)) return conflict(`run ${runId} is ${run.status} and immutable`);
-        if (to === null) {
-          const appended = appendPayloads(run, events);
-          writeRun({ ...appended, version: run.version + 1 });
-          return { kind: 'ok', run: requireRun(runId) };
-        }
-        if (!SERVICE_TRANSITIONS[run.status].includes(to)) return conflict(`run ${runId} cannot move from ${run.status} to ${to}`);
-        const change: StatusChange = { edges: SERVICE_TRANSITIONS, ...(patch === undefined ? {} : { patch }) };
-        return { kind: 'ok', run: changeStatus(run, to, change, events) };
-      }),
+      afterPreparing(
+        () => {
+          if (to !== null && isTerminal(to)) prepareTree(runId);
+        },
+        () =>
+          transaction<ServiceMutationResult>(() => {
+            const run = requireRun(runId);
+            if (run.version !== expectedVersion) {
+              return conflict(`run ${runId} is at version ${run.version}, expected ${expectedVersion}`);
+            }
+            if (isTerminal(run.status)) return conflict(`run ${runId} is ${run.status} and immutable`);
+            if (to === null) {
+              const appended = appendPayloads(run, events);
+              writeRun({ ...appended, version: run.version + 1 });
+              return { kind: 'ok', run: requireRun(runId) };
+            }
+            if (!SERVICE_TRANSITIONS[run.status].includes(to)) return conflict(`run ${runId} cannot move from ${run.status} to ${to}`);
+            const change: StatusChange = { edges: SERVICE_TRANSITIONS, ...(patch === undefined ? {} : { patch }) };
+            return { kind: 'ok', run: changeStatus(run, to, change, events) };
+          }),
+      ),
 
     readRunEvents: (runId, afterSeq, limit) => decodeRunEvents(sql.runEvents.all({ runId, after: afterSeq, limit })),
+
+    readRunEventsOfTypes: eventsOfTypes,
+
+    lastTerminalRootRuns: (project, limit) => sql.lastTerminalRootRuns.all({ project, limit }).map(decodeRun),
 
     readSessionEvents: (sessionId, afterId, limit) =>
       sql.sessionEvents.all({ sessionId, after: afterId, limit }).map(decodeEvent),
@@ -1280,7 +1382,13 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       const stopped: string[] = [];
       for (const row of sql.dueWaitingRuns.all({ nowMs })) {
         const runId = readerFor('runs', 'due', row).string('id');
-        const didStop = transaction(() => stopWaitingRun(requireRun(runId), nowMs));
+        const didStop = afterPreparing(
+          () => {
+            const status = requireRun(runId).status;
+            if (status === 'QUEUED' || status === 'WAITING_HUMAN') prepareTree(runId);
+          },
+          () => transaction(() => stopWaitingRun(requireRun(runId), nowMs)),
+        );
         if (didStop) stopped.push(runId);
       }
       return stopped;
@@ -1313,10 +1421,10 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     approvals: approvalOps.store,
     blobs: createBlobStore(db, clock, blobDirectory),
     trust,
-    memories: createMemoryStore(db, clock),
-    reflection: createReflectionStore(db, clock),
+    memories,
+    reflection,
     contextCharges: createContextChargeStore(db, clock),
-    governing: createGoverningFactStore(db, clock),
+    governing,
     search: createSearchStore(db),
 
     dataVersion: () => {

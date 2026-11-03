@@ -1,4 +1,4 @@
-import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, computeBackoff, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { normalizeMemoryText } from '@momonga/memory';
 import { assistantTextOf, summaryTokenCapFor } from '@momonga/protocol';
@@ -6,7 +6,10 @@ import type { CreateResponseBody } from '@momonga/protocol';
 import { memoryTextProblem } from '@momonga/tools';
 import type { RuntimeStore } from '@momonga/store';
 import type { GatewayPort, SettingsPort } from '../ports.ts';
+import { REQUEUE_BASE_MS, REQUEUE_MAX_MS } from '../process/constants.ts';
 import { RUNTIME_DEFAULTS } from '../process/defaults.ts';
+import { readPins } from '../worker/pins.ts';
+import { isRunVerified } from './verified-run.ts';
 import { readAllRunEvents } from '../process/run-events.ts';
 import { terminalResultOf } from '../worker/model-stream.ts';
 import type { ModelResult } from '../worker/model-stream.ts';
@@ -22,6 +25,8 @@ export type ReflectorOptions = {
   clock: Clock;
   isIdle(): boolean;
   evidenceRun: (project: string) => EvidenceRun;
+  maxAttempts: number;
+  random: () => number;
 };
 
 export type ReflectorTurn = 'idle' | 'busy' | 'ran';
@@ -33,6 +38,7 @@ const DEDUPLICATED_STATES: readonly string[] = ['active', 'candidate', 'rejected
 export const createReflector = (options: ReflectorOptions): Reflector => {
   const { store, gateway, settings, clock } = options;
   let running = false;
+  const retryAt = new Map<string, number>();
 
   const complete = async (runId: string, body: CreateResponseBody, signal: AbortSignal): Promise<ModelResult> => {
     let terminal: ModelResult | undefined;
@@ -47,19 +53,30 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
   };
 
   const reflect = async (runId: string, signal: AbortSignal): Promise<void> => {
+    store.reflection.begin(runId);
     const run = store.getRun(runId);
     if (run === undefined) throw new Error(`run ${runId} of a reflection job does not exist`);
     const session = store.getSession(run.sessionId);
     if (session === undefined) throw new Error(`session ${run.sessionId} of run ${runId} does not exist`);
-    if (store.reflection.runOrigin(runId) !== 'trusted') throw new Error(`run ${runId} was not recorded as trusted, so it cannot be reflected on`);
-    store.reflection.begin(runId);
-    const { cwd: project, modelAlias: alias } = session;
-    const [capabilities, memorySettings, verification] = await Promise.all([
-      gateway.capabilities(alias, { signal }),
-      settings.memory(session),
-      settings.verification(session),
-    ]);
+    const memorySettings = await settings.memory(session);
+    const declined =
+      store.reflection.runOrigin(runId) !== 'trusted'
+        ? 'the run was not made in a trusted folder'
+        : !memorySettings.reflection.enabled
+          ? 'reflection is off'
+          : !(await isRunVerified({ store, settings }, runId))
+            ? 'the run is not a verified success'
+            : undefined;
+    if (declined !== undefined) {
+      store.reflection.finish(runId, declined);
+      return;
+    }
+    const { cwd: project } = session;
     const events = readAllRunEvents(store, runId);
+    const started = events.find((event) => event.type === 'run.started');
+    if (started === undefined) throw new Error(`run ${runId} has no run.started event`);
+    const { modelAlias: alias } = readPins(started.pins);
+    const [capabilities, verification] = await Promise.all([gateway.capabilities(alias, { signal }), settings.verification(session)]);
     const structured = capabilities.structuredOutput === 'json_schema';
     const body: CreateResponseBody = {
       model: alias,
@@ -130,12 +147,26 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     runOne: async (signal) => {
       if (running) return 'busy';
       if (!options.isIdle()) return 'busy';
-      const job = store.reflection.next();
+      const now = clock.now();
+      const waiting = new Set([...retryAt].filter(([, due]) => due > now).map(([runId]) => runId));
+      const job = store.reflection.next(waiting);
       if (job === undefined) return 'idle';
       running = true;
       try {
         await reflect(job.runId, signal);
+        retryAt.delete(job.runId);
         return 'ran';
+      } catch (error) {
+        if (signal.aborted) throw error;
+        const attempts = store.reflection.get(job.runId)?.attempts ?? job.attempts;
+        const reason = error instanceof Error ? error.message : String(error);
+        if (attempts >= options.maxAttempts) {
+          retryAt.delete(job.runId);
+          store.reflection.fail(job.runId, reason);
+        } else {
+          retryAt.set(job.runId, clock.now() + computeBackoff({ attempt: attempts - 1, baseMs: REQUEUE_BASE_MS, maxMs: REQUEUE_MAX_MS, random: options.random }));
+        }
+        throw error;
       } finally {
         running = false;
       }

@@ -9,6 +9,7 @@ import { SOCKET_PATH_LIMIT, forceKillGroup, isProcessAlive, momongaLayout } from
 export const TEST_RUN_ENV = 'MOMONGA_TEST_RUN';
 export const TEMP_DIR_PREFIX = 'mmt-';
 export const TEST_HEARTBEAT_MS = 10_000;
+export const REAL_PROCESS_TEST_TIMEOUT_MS = 30_000;
 
 const PROCESS_KILL_DEADLINE_MS = 5000;
 

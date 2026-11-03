@@ -78,8 +78,8 @@ const decodeMemory = (row: Row, evidence: MemoryEvidence[], supersededBy: string
 const RECENCY = 'ORDER BY last_used_at DESC, created_at DESC, id';
 
 const RECALLABLE = `state = 'active' AND retired_at IS NULL AND NOT EXISTS (
-  SELECT 1 FROM memories AS successor, json_each(successor.supersedes_json) AS replaced
-  WHERE replaced.value = memories.id AND successor.state <> 'candidate'
+  SELECT 1 FROM memory_replacements AS r JOIN memories AS successor ON successor.id = r.successor_id
+  WHERE r.replaced_id = memories.id AND successor.state <> 'candidate'
 )`;
 
 const VISIBLE_TRUSTED = "((scope = 'user' AND origin = 'trusted') OR project = :project)";
@@ -100,7 +100,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
     `INSERT INTO memory_evidence (memory_id, ordinal, kind, project, path, sha256, sha, run_id, call_id, seq, command, exit_code)
      VALUES (:memoryId, :ordinal, :kind, :project, :path, :sha256, :sha, :runId, :callId, :seq, :command, :exitCode)`,
   );
-  const successors = db.prepare('SELECT m.* FROM memories m, json_each(m.supersedes_json) AS replaced WHERE replaced.value = :id');
+  const successors = db.prepare('SELECT m.* FROM memory_replacements r JOIN memories m ON m.id = r.successor_id WHERE r.replaced_id = :id');
   const retireOnce = db.prepare('UPDATE memories SET retired_at = :now WHERE id = :id AND retired_at IS NULL');
   const bySource = db.prepare('SELECT * FROM memories WHERE source_run_id = :runId AND source_call_id = :callId');
   const byId = db.prepare('SELECT * FROM memories WHERE id = :id');
@@ -111,7 +111,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
   const visibleUntrusted = db.prepare(`SELECT * FROM memories WHERE ${VISIBLE_UNTRUSTED} AND ${RECALLABLE} ${RECENCY}`);
   const evidenceOf = db.prepare('SELECT * FROM memory_evidence WHERE memory_id = :id ORDER BY ordinal');
   const replacedBy = db.prepare(
-    "SELECT m.id FROM memories m, json_each(m.supersedes_json) AS replaced WHERE replaced.value = :id AND m.state <> 'candidate' ORDER BY m.created_at, m.id",
+    "SELECT m.id FROM memory_replacements r JOIN memories m ON m.id = r.successor_id WHERE r.replaced_id = :id AND m.state <> 'candidate' ORDER BY m.created_at, m.id",
   );
   const decode = (row: Row): MemoryRecord => {
     const id = String(row['id']);
@@ -122,11 +122,15 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
     );
   };
   const touch = db.prepare('UPDATE memories SET last_used_at = :now WHERE id = :id');
+  const stamp = db.prepare('UPDATE memories SET contributed_at = :now WHERE id = :id AND contributed_at IS NULL');
   const remove = db.prepare('DELETE FROM memories WHERE id = :id');
   const supersededIds = db.prepare(
-    "SELECT DISTINCT replaced.value AS id FROM memories AS successor, json_each(successor.supersedes_json) AS replaced WHERE successor.state <> 'candidate'",
+    "SELECT DISTINCT r.replaced_id AS id FROM memory_replacements r JOIN memories successor ON successor.id = r.successor_id WHERE successor.state <> 'candidate'",
   );
-  const activeRows = db.prepare("SELECT * FROM memories WHERE state = 'active' AND retired_at IS NULL ORDER BY created_at, id");
+  const activePage = db.prepare(
+    "SELECT * FROM memories WHERE state = 'active' AND retired_at IS NULL AND (created_at, id) > (:createdAt, :id) ORDER BY created_at, id LIMIT :limit",
+  );
+  let revision = 0;
   const insertCandidate = db.prepare(
     `INSERT INTO memories (id, scope, origin, project, text, source_session_id, source_run_id, source_step, source_call_id, source_seq, created_at, last_used_at, kind, state, source_kind)
      VALUES (:id, :scope, :origin, :project, :text, :sessionId, :runId, ${REFLECTION_SOURCE_STEP}, :callId, ${REFLECTION_SOURCE_SEQ}, :now, :now, :kind, 'candidate', 'reflection')`,
@@ -150,6 +154,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
       const moved = Number(moveState.run({ id, from, to, duplicateOf: options.duplicateOf ?? null, touched: options.touched === true ? 1 : 0, now: clock.now() }).changes) === 1;
       const row = byId.get({ id });
       if (row === undefined) throw new Error(`memory ${id} vanished after it was changed`);
+      if (moved) revision += 1;
       return moved ? { kind: outcome.done, memory: decode(row) } : { kind: outcome.refused, memory: decode(row) };
     });
 
@@ -213,6 +218,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
         (input.evidence ?? []).forEach((entry, ordinal) => void insertEvidence.run(evidenceParams(id, ordinal, entry)));
         const row = bySource.get({ runId: input.runId, callId: input.callId });
         if (row === undefined) throw new Error(`memory ${input.runId}/${input.callId} vanished after it was saved`);
+        revision += 1;
         return { memory: decode(row), created: true };
       }),
     saveCandidate: (input) =>
@@ -241,18 +247,16 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
         input.evidence.forEach((entry, ordinal) => void insertEvidence.run(evidenceParams(id, ordinal, entry)));
         const row = bySource.get({ runId: input.runId, callId });
         if (row === undefined) throw new Error(`memory ${input.runId}/${callId} vanished after it was saved`);
+        revision += 1;
         return { memory: decode(row), created: true };
       }),
-    live: () => {
-      const superseded = new Set(supersededIds.all().map((row) => String(row['id'])));
-      return activeRows
-        .all()
-        .filter((row) => !superseded.has(String(row['id'])))
-        .map((row) => {
-          const id = String(row['id']);
-          return decodeMemory(row, evidenceOf.all({ id }).map((evidenceRow) => decodeEvidence(id, evidenceRow)), []);
-        });
-    },
+    revision: () => revision,
+    supersededIds: () => new Set(supersededIds.all().map((row) => String(row['id']))),
+    activePage: (after, limit) =>
+      activePage.all({ createdAt: after?.createdAt ?? -1, id: after?.id ?? '', limit }).map((row) => {
+        const id = String(row['id']);
+        return decodeMemory(row, evidenceOf.all({ id }).map((evidenceRow) => decodeEvidence(id, evidenceRow)), []);
+      }),
     candidates: (filter = {}) => (filter.project === undefined ? candidateRows.all() : candidateRowsOfProject.all({ project: filter.project })).map(decode),
     accept: (id) => change(id, 'candidate', 'active', { done: 'accepted', refused: 'not_candidate' }, { touched: true }),
     reject: (id) => change(id, 'candidate', 'rejected', { done: 'rejected', refused: 'not_candidate' }),
@@ -307,6 +311,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
         const retired = Number(retireOnce.run({ id, now: clock.now() }).changes) === 1;
         const row = byId.get({ id });
         if (row === undefined) throw new Error(`memory ${id} vanished after it was retired`);
+        if (retired) revision += 1;
         return { retired, memory: decode(row) };
       }),
     history: (id) => {
@@ -327,6 +332,14 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
         for (const id of ids) touch.run({ id, now });
       });
     },
-    delete: (id) => Number(remove.run({ id }).changes) === 1,
+    stampContributed: (ids) => {
+      const now = clock.now();
+      for (const id of ids) stamp.run({ id, now });
+    },
+    delete: (id) => {
+      const removed = Number(remove.run({ id }).changes) === 1;
+      if (removed) revision += 1;
+      return removed;
+    },
   };
 };

@@ -181,7 +181,7 @@ export type RunEventPayload =
   | { type: 'instructions.loaded'; path: string; content: string }
   | { type: 'skill.activated'; name: string; content: string }
   | { type: 'approval.rule.persisted'; approvalId: string; effect: 'allow' | 'deny'; rule: string }
-  | { type: 'notice'; level: 'info' | 'warning' | 'error'; message: string };
+  | { type: 'notice'; level: 'info' | 'warning' | 'error'; message: string; code?: string };
 
 export type SessionEventPayload = { type: 'mode.changed'; mode: PermissionMode };
 

@@ -17,7 +17,7 @@ type Json = Record<string, any>;
 
 const RECALL_OPEN = '<recalled_memories>';
 const NOTE = 'The answer constant lives in answer.ts and is 42.';
-const SWEEP_BOUND_MS = 15_000;
+const SWEEP_BOUND_MS = E2E_RUN_COMPLETED_BOUND_MS;
 
 const rawClient = (home: E2eHome) => {
   const client = createUdsClient(home.paths.sockets.runtime);

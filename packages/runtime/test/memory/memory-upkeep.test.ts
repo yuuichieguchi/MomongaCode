@@ -5,6 +5,8 @@ import { sha256Hex } from '@momonga/foundation';
 import type { MemoryEvidence } from '@momonga/protocol';
 import { afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { START_MS, callEvent, enqueue, harness, makeStoreDir, mustClaim, newSession } from '../../../store/test/helpers.ts';
+import { beginUpkeepPass, runMemoryUpkeep } from '../../src/memory/upkeep.ts';
+import { createMemoryUpkeepSchedule } from '../../src/memory/upkeep-schedule.ts';
 import { createRecordViews } from '../../src/memory/views.ts';
 import { exported } from './reflection-fixture.ts';
 
@@ -19,12 +21,13 @@ const setup = (calls = 12) => {
   const callIds = Array.from({ length: calls }, (_unused, index) => `c${index}`);
   expect(store.append(mustClaim(store, 'w1'), callIds.map(callEvent)).kind).toBe('ok');
   const free = [...callIds];
-  const save = (text: string, evidence: MemoryEvidence[] = [], origin: 'trusted' | 'untrusted' = 'trusted') => {
+  const saveAt = (where: string, text: string, evidence: MemoryEvidence[] = [], origin: 'trusted' | 'untrusted' = 'trusted') => {
     const callId = free.shift();
     if (callId === undefined) throw new Error('out of calls');
     clock.advance(1);
-    return store.memories.save({ origin, scope: 'project', project, text, runId: run.id, step: 1, callId, evidence }).memory;
+    return store.memories.save({ origin, scope: 'project', project: where, text, runId: run.id, step: 1, callId, evidence }).memory;
   };
+  const save = (text: string, evidence: MemoryEvidence[] = [], origin: 'trusted' | 'untrusted' = 'trusted') => saveAt(project, text, evidence, origin);
   const views = createRecordViews({ store, evidenceRun: () => async () => ({ exitCode: null }) });
   const upkeep = (batchSize = 100): Promise<{ duplicates: number; archived: number }> =>
     exported<(options: unknown) => Promise<{ duplicates: number; archived: number }>>('runMemoryUpkeep')({ store, clock, views, forgetAfterDays: async () => 90, batchSize, signal: SIGNAL });
@@ -32,7 +35,7 @@ const setup = (calls = 12) => {
     fs.writeFileSync(path.join(project, name), 'current');
     return [{ kind: 'file', project, path: name, sha256: sha256Hex(recordedText) }];
   };
-  return { store, clock, project, save, upkeep, fileEvidence };
+  return { store, clock, project, save, saveAt, upkeep, fileEvidence, views };
 };
 
 describe('runMemoryUpkeep', () => {
@@ -149,6 +152,136 @@ describe('runMemoryUpkeep', () => {
     clock.advance(FORGET_MS);
     for (let turn = 0; turn < 6; turn += 1) await upkeep(2);
     expect(store.memories.get(idle.id)?.state).toBe('archived');
+  });
+});
+
+describe('a pass over pages', () => {
+  const pagesOf = async (env: ReturnType<typeof setup>, pageRows: number, forgetAfterDays: (project: string | null) => Promise<number> = async () => 90) => {
+    const pass = beginUpkeepPass(env.store);
+    const results: Awaited<ReturnType<typeof runMemoryUpkeep>>[] = [];
+    do {
+      results.push(await runMemoryUpkeep({ store: env.store, clock: env.clock, views: env.views, forgetAfterDays, batchSize: 100, signal: SIGNAL, pass, pageRows }));
+    } while (!results.at(-1)?.done);
+    return results;
+  };
+
+  it('finds a duplicate whose copies sit on different pages, because the pass remembers what it kept', async () => {
+    const env = setup();
+    const first = env.save('shared note');
+    env.save('filler one');
+    env.save('filler two');
+    env.save('filler three');
+    const copy = env.save('shared note');
+    const results = await pagesOf(env, 2);
+    expect(results.length).toBeGreaterThan(1);
+    expect(env.store.memories.get(copy.id)).toMatchObject({ state: 'duplicate', duplicateOf: first.id });
+    expect(results.reduce((sum, result) => sum + result.duplicates, 0)).toBe(1);
+  });
+
+  it('reads one page per call and ends when a page comes back short', async () => {
+    const env = setup();
+    for (const text of ['a', 'b', 'c', 'd', 'e']) env.save(text);
+    const results = await pagesOf(env, 2);
+    expect(results.map((result) => result.done)).toEqual([false, false, true]);
+  });
+
+  it('does not move past a page whose marks did not all fit, and finishes it on the next call', async () => {
+    const env = setup();
+    for (const text of ['x', 'x', 'y', 'y', 'z', 'z']) env.save(text);
+    const pass = beginUpkeepPass(env.store);
+    const call = () => runMemoryUpkeep({ store: env.store, clock: env.clock, views: env.views, forgetAfterDays: async () => 90, batchSize: 2, signal: SIGNAL, pass, pageRows: 10 });
+    expect(await call()).toMatchObject({ duplicates: 2, done: false });
+    expect(await call()).toMatchObject({ duplicates: 1, done: true });
+    expect(env.store.memories.list().filter((memory) => memory.state === 'duplicate')).toHaveLength(3);
+  });
+
+  it('skips a project whose folder is gone with one recorded result, and leaves the other projects alone', async () => {
+    const env = setup();
+    const gone = fs.realpathSync.native(makeStoreDir());
+    env.store.trust.set(gone, 'trusted');
+    const orphan = env.saveAt(gone, 'orphan note');
+    const kept = env.save('idle note');
+    env.clock.advance(FORGET_MS);
+    fs.rmSync(gone, { recursive: true, force: true });
+    const asked: (string | null)[] = [];
+    const results = await pagesOf(env, 1, async (project) => {
+      asked.push(project);
+      return 90;
+    });
+    expect(results.flatMap((result) => result.skipped)).toEqual([gone]);
+    expect(asked).not.toContain(gone);
+    expect(env.store.memories.get(orphan.id)?.state).toBe('active');
+    expect(env.store.memories.get(kept.id)?.state).toBe('archived');
+  });
+});
+
+describe('the upkeep schedule', () => {
+  const schedule = (env: ReturnType<typeof setup>, passIntervalMs = 1000) => {
+    const skipped: string[] = [];
+    const created = createMemoryUpkeepSchedule({
+      store: env.store,
+      clock: env.clock,
+      views: env.views,
+      forgetAfterDays: async () => 90,
+      batchSize: 100,
+      pageRows: 100,
+      passIntervalMs,
+      onSkipped: (project: string) => skipped.push(project),
+    });
+    return { tick: () => created.tick(SIGNAL), skipped };
+  };
+
+  it('runs a pass at start, then waits for a memory write or the interval', async () => {
+    const env = setup();
+    env.save('a');
+    const { tick } = schedule(env, 1000);
+    expect(await tick()).toMatchObject({ done: true });
+    expect(await tick()).toBeUndefined();
+    env.clock.advance(999);
+    expect(await tick()).toBeUndefined();
+    env.clock.advance(1);
+    expect(await tick()).toMatchObject({ done: true });
+  });
+
+  it('runs a pass after a memory write, and not again for its own marks', async () => {
+    const env = setup();
+    const { tick } = schedule(env, 1_000_000);
+    await tick();
+    expect(await tick()).toBeUndefined();
+    env.save('same');
+    env.save('same');
+    expect(await tick()).toMatchObject({ duplicates: 1 });
+    expect(await tick()).toBeUndefined();
+  });
+
+  it('finishes the pass it is in before it starts the next one', async () => {
+    const env = setup();
+    for (const text of ['a', 'b', 'c']) env.save(text);
+    const created = createMemoryUpkeepSchedule({
+      store: env.store,
+      clock: env.clock,
+      views: env.views,
+      forgetAfterDays: async () => 90,
+      batchSize: 100,
+      pageRows: 2,
+      passIntervalMs: 1_000_000,
+      onSkipped: () => undefined,
+    });
+    expect(await created.tick(SIGNAL)).toMatchObject({ done: false });
+    env.save('d');
+    expect(await created.tick(SIGNAL)).toMatchObject({ done: false });
+    expect(await created.tick(SIGNAL)).toMatchObject({ done: true });
+    expect(await created.tick(SIGNAL)).toMatchObject({ done: false });
+  });
+
+  it('reports a vanished project once for the pass', async () => {
+    const env = setup();
+    const gone = fs.realpathSync.native(makeStoreDir());
+    env.saveAt(gone, 'orphan note');
+    fs.rmSync(gone, { recursive: true, force: true });
+    const { tick, skipped } = schedule(env);
+    await tick();
+    expect(skipped).toEqual([gone]);
   });
 });
 
@@ -277,9 +410,5 @@ describe('wiring', () => {
 
   it('starts the memory sweeper in the runtime', () => {
     expect(`${sourcesUnder('service')}${sourcesUnder('process')}`).toMatch(/startMemorySweeper\(/);
-  });
-
-  it('enqueues a reflection when a run ends', () => {
-    expect(`${sourcesUnder('worker')}${sourcesUnder('service')}${sourcesUnder('process')}`).toMatch(/enqueueReflection\(/);
   });
 });

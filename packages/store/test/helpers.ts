@@ -35,6 +35,7 @@ export type StoreOptions = {
   maxAttempts?: number;
   maxTotalAttempts?: number;
   onCommit?: RuntimeStoreOptions['onCommit'];
+  contribution?: RuntimeStoreOptions['contribution'];
   home?: string;
 };
 
@@ -47,6 +48,7 @@ export const openStoreAt = (dbPath: string, clock: FakeClock, options: StoreOpti
     maxAttempts: options.maxAttempts ?? 5,
     maxTotalAttempts: options.maxTotalAttempts ?? 1000,
     ...(options.onCommit === undefined ? {} : { onCommit: options.onCommit }),
+    ...(options.contribution === undefined ? {} : { contribution: options.contribution }),
   });
   registerCleanup(() => store.close());
   return store;
@@ -74,6 +76,13 @@ export const rawDb = (dbPath: string): DatabaseSync => {
 export const newSession = (store: RuntimeStore, cwd = '/work/a') =>
   store.createSession({ cwd, env: { PATH: '/usr/bin' }, permissionMode: 'default', modelAlias: 'fm' });
 
+export const RUN_PINS = {
+  modelAlias: 'fm',
+  systemPromptDigest: 'system-prompt-digest',
+  toolSetDigest: 'tool-set-digest',
+  capabilities: { contextWindow: 100_000, maxOutputTokens: 4096, parallelToolCalls: false, streaming: true, tokenCounting: 'exact', toolCalling: 'native' },
+} as const;
+
 export const TIMEOUT_MS = 3_600_000;
 export const DEADLINE_MS = START_MS + TIMEOUT_MS;
 
@@ -83,7 +92,7 @@ export const enqueue = (store: RuntimeStore, sessionId: string, input = 'hello',
     ...(idempotencyKey === undefined ? {} : { idempotencyKey, requestDigest: sha256Hex(canonicalJson({ input })) }),
     timeoutMs: TIMEOUT_MS,
     limits: { maxSteps: 10 },
-    pins: { model: 'fm' },
+    pins: RUN_PINS,
   });
   if (result.kind !== 'created' && result.kind !== 'existing') throw new Error(`expected a run, got ${result.kind}`);
   return result.run;

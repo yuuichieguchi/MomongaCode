@@ -288,6 +288,7 @@ ALTER TABLE memories ADD COLUMN source_kind TEXT NOT NULL DEFAULT 'tool' CHECK (
   AND ((source_kind = 'reflection') = (source_call_id GLOB 'reflection:[0-9]*' AND substr(source_call_id, 12) NOT GLOB '*[^0-9]*'))
 );
 CREATE INDEX memories_by_state ON memories (state, project);
+CREATE INDEX memories_by_created ON memories (created_at, id);
 
 CREATE TRIGGER memories_reject_replace BEFORE INSERT ON memories WHEN EXISTS (
   SELECT 1 FROM memories WHERE id = NEW.id OR (source_run_id = NEW.source_run_id AND source_call_id = NEW.source_call_id)
@@ -310,6 +311,20 @@ END;
 CREATE TRIGGER memories_index_update AFTER UPDATE OF text ON memories BEGIN
   DELETE FROM memories_index WHERE memory_id = OLD.id;
   INSERT INTO memories_index (memory_id, text) VALUES (NEW.id, NEW.text);
+END;
+
+CREATE TABLE memory_replacements (
+  replaced_id TEXT NOT NULL,
+  successor_id TEXT NOT NULL REFERENCES memories (id) ON DELETE CASCADE,
+  PRIMARY KEY (replaced_id, successor_id)
+) WITHOUT ROWID;
+CREATE INDEX memory_replacements_by_successor ON memory_replacements (successor_id);
+CREATE TRIGGER memories_replacements_insert AFTER INSERT ON memories BEGIN
+  INSERT OR IGNORE INTO memory_replacements (replaced_id, successor_id) SELECT value, NEW.id FROM json_each(NEW.supersedes_json);
+END;
+CREATE TRIGGER memories_replacements_update AFTER UPDATE OF supersedes_json ON memories BEGIN
+  DELETE FROM memory_replacements WHERE successor_id = OLD.id;
+  INSERT OR IGNORE INTO memory_replacements (replaced_id, successor_id) SELECT value, NEW.id FROM json_each(NEW.supersedes_json);
 END;
 
 CREATE TABLE memory_evidence (

@@ -26,6 +26,7 @@ import type { RuntimeStore } from '@momonga/store';
 import { clearCallLocks, createPolicyFilesystem, nodeShellHost } from '@momonga/tools';
 import { createFsInstructionReader } from '@momonga/context';
 import { createGatewayClient } from '../gateway-client.ts';
+import { contributionAtTerminal } from '../memory/contribution.ts';
 import type { GatewayClient } from '../gateway-client.ts';
 import { createTracerPort } from '../tracer.ts';
 import { createRunNotifier } from '../service/notifier.ts';
@@ -33,7 +34,8 @@ import type { RunNotifier } from '../service/notifier.ts';
 import { startMemorySweeper } from '../service/memory-sweeper.ts';
 import { SWEEP_INTERVAL_MS, createRunService } from '../service/service.ts';
 import { createReflector } from '../memory/reflection.ts';
-import { runMemoryUpkeep } from '../memory/upkeep.ts';
+import { createMemoryUpkeepSchedule } from '../memory/upkeep-schedule.ts';
+import { DAY_MS } from '@momonga/memory';
 import { createRecordViews } from '../memory/views.ts';
 import { runTraceOf } from '../service/trace-view.ts';
 import type { RunService } from '../service/service.ts';
@@ -52,6 +54,7 @@ import {
   IDEMPOTENCY_PURGE_MS,
   MARKER_REAP_KILL_GRACE_MS,
   MEMORY_UPKEEP_BATCH_MARKS,
+  MEMORY_UPKEEP_PAGE_ROWS,
   RUNTIME_ABORT_BUDGET_MS,
   RUNTIME_TEARDOWN_BUDGET_MS,
   SANDBOX_KILL_GRACE_MS,
@@ -358,6 +361,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         maxAttempts: STORE_MAX_ATTEMPTS,
         maxTotalAttempts: STORE_MAX_TOTAL_ATTEMPTS,
         onCommit: createdNotifier.onCommit,
+        contribution: contributionAtTerminal,
       });
       return { notifier: createdNotifier, store: opened };
     });
@@ -557,20 +561,24 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         clock,
         isIdle: () => phase === 'running' && !store.hasActiveRun(),
         evidenceRun: evidenceRunFor,
+        maxAttempts: STORE_MAX_ATTEMPTS,
+        random: Math.random,
+      });
+      const upkeepSchedule = createMemoryUpkeepSchedule({
+        store,
+        clock,
+        views: memoryViews,
+        batchSize: MEMORY_UPKEEP_BATCH_MARKS,
+        pageRows: MEMORY_UPKEEP_PAGE_ROWS,
+        passIntervalMs: DAY_MS,
+        forgetAfterDays: async (project) =>
+          (project === null ? settingsComposition.takeUserSnapshot().settings.memory : await settingsComposition.settings.memory({ cwd: project })).forgetAfterDays,
+        onSkipped: (project) => logger.warn(`memory upkeep skipped the project ${project}: the folder no longer exists`),
       });
       const memorySweeper = startMemorySweeper({
         timers,
         intervalMs: SWEEP_INTERVAL_MS,
-        upkeep: (sweepSignal) =>
-          runMemoryUpkeep({
-            store,
-            clock,
-            views: memoryViews,
-            batchSize: MEMORY_UPKEEP_BATCH_MARKS,
-            signal: sweepSignal,
-            forgetAfterDays: async (project) =>
-              (project === null ? settingsComposition.takeUserSnapshot().settings.memory : await settingsComposition.settings.memory({ cwd: project })).forgetAfterDays,
-          }),
+        upkeep: (sweepSignal) => upkeepSchedule.tick(sweepSignal),
         reflect: (sweepSignal) => reflector.runOne(sweepSignal),
         onError: report,
       });

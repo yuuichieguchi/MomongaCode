@@ -6,6 +6,7 @@ export type RunPins = {
   systemPromptDigest: string;
   toolSetDigest: string;
   capabilities: Capabilities;
+  memoryShare?: number;
 };
 
 const isCapabilities = (value: unknown): value is Capabilities =>
@@ -18,9 +19,15 @@ const isCapabilities = (value: unknown): value is Capabilities =>
   typeof value['toolCalling'] === 'string';
 
 export const readPins = (value: Record<string, unknown>): RunPins => {
-  const { modelAlias, systemPromptDigest, toolSetDigest, capabilities } = value;
-  if (typeof modelAlias !== 'string' || typeof systemPromptDigest !== 'string' || typeof toolSetDigest !== 'string' || !isCapabilities(capabilities)) {
+  const { modelAlias, systemPromptDigest, toolSetDigest, capabilities, memoryShare } = value;
+  if (
+    typeof modelAlias !== 'string' ||
+    typeof systemPromptDigest !== 'string' ||
+    typeof toolSetDigest !== 'string' ||
+    !isCapabilities(capabilities) ||
+    (memoryShare !== undefined && typeof memoryShare !== 'number')
+  ) {
     throw new Error('the pins recorded for this run are malformed');
   }
-  return { modelAlias, systemPromptDigest, toolSetDigest, capabilities };
+  return { modelAlias, systemPromptDigest, toolSetDigest, capabilities, ...(memoryShare === undefined ? {} : { memoryShare }) };
 };

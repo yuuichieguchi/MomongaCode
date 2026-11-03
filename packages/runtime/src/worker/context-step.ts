@@ -111,6 +111,7 @@ export const contextInputOf = (ctx: ClaimContext, wrapUp: WrapUpReason | undefin
       ...(projectedWorkingState === undefined ? {} : { projectedWorkingState }),
     },
     evicted: new Set(state.evicted),
+    ...(ctx.memoryShare === undefined ? {} : { memoryShare: ctx.memoryShare }),
     touchedPaths,
     trusted: options.settings.trusted(session),
     projectRoot: session.cwd,
@@ -172,7 +173,7 @@ const replacedRegionText = async (ctx: ClaimContext, plan: CompactionSource): Pr
   return { text: [...recorded, ...plan.input.map((item) => textOfItem(item))].join('\n'), unreadable };
 };
 
-const noticeOf = (message: string): RunEventPayload => ({ type: 'notice', level: 'warning', message });
+const noticeOf = (code: string, message: string): RunEventPayload => ({ type: 'notice', level: 'warning', message, code });
 
 const fittingHead = (text: string, maxTokens: number): string => {
   if (tokensForText(text) <= maxTokens) return text;
@@ -251,7 +252,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
     if (!escalates(error)) throw error;
     delete ctx.control.inFlight.compactionKey;
     journal.append([
-      noticeOf(`Compaction summary failed (${error.code}): ${error.message}; the deterministic summary was used`),
+      noticeOf('compaction_failed', `Compaction summary failed (${error.code}): ${error.message}; the deterministic summary was used`),
       deterministicCompaction(ctx, plan),
     ]);
     return;
@@ -282,6 +283,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
       ? []
       : [
           noticeOf(
+            'compaction_outputs_unreadable',
             `Compaction fidelity check could not read ${region.unreadable.length} recorded output(s): ${region.unreadable.map((blob) => `${blob.handle} (${blob.reason})`).join('; ')}; a token found only there cannot be verified`,
           ),
         ];
@@ -291,7 +293,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
     ...unreadableNotices,
     ...(accepted
       ? []
-      : [noticeOf(`Compaction summary rejected: ${fidelity.fabricated.length} token(s) found nowhere in the replaced history or the pinned context (${fidelity.fabricated.slice(0, MAX_NAMED_TOKENS).join(', ')}); the deterministic summary was used`)]),
+      : [noticeOf('compaction_rejected', `Compaction summary rejected: ${fidelity.fabricated.length} token(s) found nowhere in the replaced history or the pinned context (${fidelity.fabricated.slice(0, MAX_NAMED_TOKENS).join(', ')}); the deterministic summary was used`)]),
     accepted
       ? { type: 'context.compacted', item, summary, replacedThroughSeq: plan.throughSeq, source: 'model', fidelity, guidelineVersion: NO_ADOPTED_GUIDELINE }
       : deterministicCompaction(ctx, plan, fidelity),
@@ -314,7 +316,7 @@ const recordContextFacts = (ctx: ClaimContext, built: BuiltContext): void => {
   for (const notice of built.notices) {
     if (known.has(notice.message)) continue;
     known.add(notice.message);
-    payloads.push({ type: 'notice', level: 'warning', message: notice.message });
+    payloads.push({ type: 'notice', level: 'warning', message: notice.message, code: notice.code });
   }
   for (const instruction of built.loadedInstructions) {
     const recorded = ctx.journal.state.loadedInstructions.find((entry) => entry.path === instruction.path);
@@ -456,7 +458,7 @@ export const buildNext = async (ctx: ClaimContext, options: { wrapUp?: WrapUpRea
   };
 
   const stop = (error: ContextOverflowError, clause: string): BuildOutcome => {
-    ctx.journal.append([{ type: 'notice', level: 'error', message: budgetStopNotice(ctx, error, attempt, clause) }]);
+    ctx.journal.append([{ type: 'notice', level: 'error', message: budgetStopNotice(ctx, error, attempt, clause), code: 'context_budget_stop' }]);
     ctx.terminals.finish('STOPPED', { stopReason: 'budget' });
     return { kind: 'done' };
   };

@@ -59,9 +59,9 @@ const reflectInRepository = async (context: TestContext, options: { trusted: boo
     ...fileTool('w1', 'Write', { path: path.join(project, 'a.ts'), sha256: 'a'.repeat(64), access: 'write' }),
     ...bash('t1', 'npm test', 0, 'ok'),
   ]);
-  expect(await exported<(deps: unknown, runId: string) => Promise<boolean>>('enqueueReflection')({ store, settings }, run.id)).toBe(true);
+  expect(store.reflection.get(run.id)?.state).toBe('pending');
   const evidenceRun = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), enforcement: HOST_RULE_ENFORCEMENT, sandbox: realSandbox(path.join(root, 'scratch')), env: { PATH: '/usr/bin:/bin' } });
-  const reflector = exported<(options: unknown) => Reflector>('createReflector')({ store, gateway, settings, clock, isIdle: () => true, evidenceRun });
+  const reflector = exported<(options: unknown) => Reflector>('createReflector')({ store, gateway, settings, clock, isIdle: () => true, evidenceRun, maxAttempts: 3, random: () => 0.5 });
   gateway.script.push(textStep(JSON.stringify({ candidates: [{ text: 'a.ts is the entry point', kind: 'fact', paths: ['a.ts'] }] })));
   expect(await reflector.runOne(SIGNAL)).toBe('ran');
   const candidates = (store.memories as RuntimeStore['memories'] & { candidates(): MemoryRecord[] }).candidates();

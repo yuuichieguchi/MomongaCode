@@ -16,6 +16,9 @@ type Lifecycle = MemoryStore & {
   markDuplicate(id: string, of: string): Outcome;
   archive(id: string): Outcome;
   restore(id: string): Outcome;
+  revision(): number;
+  supersededIds(): Set<string>;
+  activePage(after: { createdAt: number; id: string } | null, limit: number): MemoryRecord[];
 };
 
 const lifecycleOf = (store: RuntimeStore): Lifecycle => store.memories as Lifecycle;
@@ -25,7 +28,7 @@ const started = () => {
   const session = newSession(store, PROJECT);
   const run = enqueue(store, session.id);
   const claim = mustClaim(store, 'w1');
-  expect(store.append(claim, ['c1', 'c2', 'c3'].map(callEvent)).kind).toBe('ok');
+  expect(store.append(claim, ['c1', 'c2', 'c3', 'c4', 'c5', 'c6'].map(callEvent)).kind).toBe('ok');
   const memories = lifecycleOf(store);
   const candidate = (ordinal: number, text: string, kind: MemoryKind = 'fact') =>
     memories.saveCandidate({ scope: 'project', origin: 'trusted', project: PROJECT, text, runId: run.id, ordinal, kind, evidence: [] });
@@ -111,6 +114,52 @@ describe('accept and reject', () => {
     const { memories, saved } = started();
     expect(memories.accept(saved('c1', 'active note').id).kind).toBe('not_candidate');
     expect(memories.accept('missing').kind).toBe('not_found');
+  });
+});
+
+describe('paging for upkeep', () => {
+  it('pages the active memories by creation order and id, from a cursor', () => {
+    const { clock, memories, saved } = started();
+    const notes = ['a', 'b', 'c', 'd', 'e'].map((text, index) => {
+      clock.advance(1);
+      return saved(`c${index + 1}`, text);
+    });
+    const first = memories.activePage(null, 2);
+    expect(ids(first)).toEqual(ids(notes.slice(0, 2)));
+    const second = memories.activePage({ createdAt: first[1]?.createdAt ?? 0, id: first[1]?.id ?? '' }, 2);
+    expect(ids(second)).toEqual(ids(notes.slice(2, 4)));
+    expect(ids(memories.activePage(null, -1))).toEqual(ids(notes));
+  });
+
+  it('leaves out what is not active or was retired, and names what a newer note replaced', () => {
+    const { store, memories, candidate, saved } = started();
+    const kept = saved('c1', 'kept');
+    const archived = saved('c2', 'archived');
+    memories.archive(archived.id);
+    candidate(0, 'waiting');
+    const replaced = saved('c3', 'old wording');
+    const replacement = store.memories.save({ origin: 'trusted', scope: 'project', project: PROJECT, text: 'new', runId: replaced.source.runId, step: 1, callId: 'c4', supersedes: [replaced.id] });
+    expect(replacement).toBeDefined();
+    expect(ids(memories.activePage(null, -1))).toEqual([kept.id, replaced.id, replacement.memory.id]);
+    expect([...memories.supersededIds()]).toEqual([replaced.id]);
+  });
+
+  it('counts every write of a memory in its revision, and a read or a refused change not at all', () => {
+    const { store, memories, candidate, saved } = started();
+    const start = memories.revision();
+    const note = saved('c1', 'one');
+    expect(memories.revision()).toBe(start + 1);
+    store.memories.markUsed([note.id]);
+    memories.restore(note.id);
+    expect(memories.revision()).toBe(start + 1);
+    memories.archive(note.id);
+    memories.restore(note.id);
+    expect(memories.revision()).toBe(start + 3);
+    const proposed = candidate(0, 'two');
+    memories.accept(proposed.memory.id);
+    expect(memories.revision()).toBe(start + 5);
+    expect(store.memories.delete(note.id)).toBe(true);
+    expect(memories.revision()).toBe(start + 6);
   });
 });
 

@@ -305,7 +305,9 @@ export type MemoryStore = {
   save(input: SaveMemoryInput): { memory: MemoryRecord; created: boolean };
   saveCandidate(input: SaveCandidateInput): { memory: MemoryRecord; created: boolean };
   candidates(filter?: { project?: string }): MemoryRecord[];
-  live(): MemoryRecord[];
+  revision(): number;
+  supersededIds(): Set<string>;
+  activePage(after: { createdAt: number; id: string } | null, limit: number): MemoryRecord[];
   accept(id: string): MemoryChange<'accepted', 'not_candidate'>;
   reject(id: string): MemoryChange<'rejected', 'not_candidate'>;
   markDuplicate(id: string, of: string): MemoryChange<'marked', 'not_active'>;
@@ -319,6 +321,7 @@ export type MemoryStore = {
   retire(id: string): { retired: boolean; memory: MemoryRecord } | undefined;
   history(id: string): MemoryRecord[];
   markUsed(ids: readonly string[]): void;
+  stampContributed(ids: readonly string[]): void;
   delete(id: string): boolean;
 };
 
@@ -404,9 +407,10 @@ export type ReflectionStore = {
   runOrigin(runId: string): MemoryOrigin | undefined;
   enqueue(runId: string): boolean;
   get(runId: string): ReflectionJob | undefined;
-  next(): ReflectionJob | undefined;
+  next(exclude?: ReadonlySet<string>): ReflectionJob | undefined;
   begin(runId: string): ReflectionJob;
   finish(runId: string, reason?: string): ReflectionJob;
+  fail(runId: string, reason: string): ReflectionJob;
 };
 
 export type ContextChargeInput = {
@@ -453,6 +457,9 @@ export type RuntimeStore = {
     patch?: StatusPatch,
   ): ServiceMutationResult;
   readRunEvents(runId: string, afterSeq: number, limit: number): RunEvent[];
+  readRunEventsOfTypes(runId: string, types: readonly RunEventPayload['type'][]): RunEvent[];
+  prepareTerminal(runId: string): void;
+  lastTerminalRootRuns(project: string, limit: number): Run[];
   readSessionEvents(sessionId: string, afterId: number, limit: number): (RunEvent | SessionEvent)[];
   sessionMaxEventId(sessionId: string): number;
   load(runId: string): LoadedRun;
@@ -506,6 +513,20 @@ export type RuntimeStoreOptions = {
   maxAttempts: number;
   maxTotalAttempts: number;
   onCommit?: (touched: { runId?: string; sessionId: string }[]) => void;
+  contribution?: TerminalContribution;
+};
+
+export type ContributionPayload = Extract<RunEventPayload, { type: 'context.contribution' }>;
+
+export type TerminalContribution = {
+  eventTypes: readonly RunEventPayload['type'][];
+  measure(input: {
+    run: Run;
+    events: readonly RunEvent[];
+    state(): RunState;
+    memories: Pick<MemoryStore, 'get'>;
+    governing: Pick<GoverningFactStore, 'get'>;
+  }): ContributionPayload | undefined;
 };
 
 export type Job = {

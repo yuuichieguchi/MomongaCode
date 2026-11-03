@@ -276,7 +276,7 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
   let memoryCount = 0;
   if (memoryCandidates.length > 0) {
     const baseTokens = layersCounted.inputTokens;
-    const memoryBudget = memoryBudgetFor(ceiling - baseTokens);
+    const memoryBudget = memoryBudgetFor(ceiling - baseTokens, input.memoryShare);
     const fitsWith = async (count: number): Promise<boolean> => {
       memoryMessage = {
         type: 'message',

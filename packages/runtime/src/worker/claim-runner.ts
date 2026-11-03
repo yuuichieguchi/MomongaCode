@@ -19,6 +19,7 @@ import { openJournal } from './journal.ts';
 import type { Journal } from './journal.ts';
 import { readRunLimits } from './limits.ts';
 import { decideAfterResponse, responsePending, resumeInFlight, runModelStep } from './model-step.ts';
+import { memoryShareFor } from './memory-share.ts';
 import { readPins } from './pins.ts';
 import type { RunPins } from './pins.ts';
 import { createSkillAdmission } from './skill-admission.ts';
@@ -27,14 +28,13 @@ import { settleCalls } from './tool-step.ts';
 import type { WorkerOptions } from './types.ts';
 import type { TraceSpan } from '../ports.ts';
 import { modelKey } from '../model-key.ts';
+import { REQUEUE_BASE_MS, REQUEUE_MAX_MS } from '../process/constants.ts';
 import { buildSystemPrompt } from '../system-prompt.ts';
 import { summaryStopReason } from './wrap-up.ts';
 import { reportError } from './report.ts';
 import { GatewayRequestError } from '../gateway-client.ts';
 
 const DEFAULT_CANCEL_POLL_MS = 250;
-const REQUEUE_BASE_MS = 1000;
-const REQUEUE_MAX_MS = 60_000;
 const TOOLS_CHANGED_NOTICE = 'The available tools changed since this run started; the run continues with the current tool set.';
 
 export type ClaimHost = {
@@ -66,7 +66,7 @@ const cancelUpstream = async (options: WorkerOptions, control: ClaimControl, key
 
 const recordUpstreamFailures = (journal: Journal, failures: readonly string[]): void => {
   if (failures.length === 0) return;
-  journal.append(failures.map((message) => ({ type: 'notice', level: 'warning', message: `Cancelling the upstream model request failed: ${message}` })));
+  journal.append(failures.map((message) => ({ type: 'notice', level: 'warning', message: `Cancelling the upstream model request failed: ${message}`, code: 'upstream_cancel_failed' })));
 };
 
 export const runClaim = async (options: WorkerOptions, claim: Claim, host: ClaimHost): Promise<void> => {
@@ -111,7 +111,7 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
       }
       if (control.cancelRequested() && control.failure() === undefined) {
         if (!control.raisedDuringCancel(cause)) {
-          journal.append([{ type: 'notice', level: 'error', message: `The run was cancelled after an error: ${describeError(cause)}` }]);
+          journal.append([{ type: 'notice', level: 'error', message: `The run was cancelled after an error: ${describeError(cause)}`, code: 'cancelled_after_error' }]);
         }
         const keys = [control.inFlight.modelKey, control.inFlight.compactionKey].filter((key): key is string => key !== undefined);
         const failures = await cancelUpstream(options, control, keys);
@@ -155,7 +155,7 @@ const stopRejectedWrapUp = (options: WorkerOptions, claim: Claim, journal: Journ
   if (run === undefined) throw new Error(`unknown run ${claim.runId}`);
   const { maxSteps } = readRunLimits(run.limits, options.defaults);
   journal.append([
-    { type: 'notice', level: 'error', message: `The gateway rejected the final summary request (${cause.code}): ${cause.message}` },
+    { type: 'notice', level: 'error', message: `The gateway rejected the final summary request (${cause.code}): ${cause.message}`, code: 'final_summary_rejected' },
   ]);
   terminals.finish('STOPPED', { stopReason: summaryStopReason(inFlight.step, maxSteps) });
   return true;
@@ -189,7 +189,7 @@ const requeueOrStop = (
   }
   if (deadlineAt !== undefined) memory.deadlineAt = deadlineAt;
   if (memory.streak === 0) {
-    journal.append([{ type: 'notice', level: 'error', message: `The attempt failed and will be retried: ${describeError(cause)}` }]);
+    journal.append([{ type: 'notice', level: 'error', message: `The attempt failed and will be retried: ${describeError(cause)}`, code: 'attempt_retried' }]);
   }
   memory.streak += 1;
   if (disposition.interrupted) memory.interruptions += 1;
@@ -273,6 +273,7 @@ const drive = async (
     return;
   }
   const recorded = journal.state.pins;
+  const newMemoryShare = recorded === undefined ? await memoryShareFor({ store: options.store, settings: options.settings, session, run }) : undefined;
   const pins: RunPins =
     recorded === undefined
       ? {
@@ -280,6 +281,7 @@ const drive = async (
           systemPromptDigest,
           toolSetDigest: toolSet.digest,
           capabilities: await gateway.capabilities(session.modelAlias, { signal: control.signal }),
+          ...(newMemoryShare === undefined ? {} : { memoryShare: newMemoryShare }),
         }
       : readPins(recorded);
   journal.append([{ type: 'run.started', attempt: claim.attempt, now: clock.now(), pins: { ...pins }, mode: session.permissionMode }]);
@@ -289,7 +291,7 @@ const drive = async (
   for (const server of toolSet.authorizationRequired) {
     const message = `MCP server "${server}" requires authorization before its tools can be listed`;
     if (journal.state.notes.some((note) => note.message === message)) continue;
-    journal.append([{ type: 'notice', level: 'warning', message }, { type: 'mcp.authorization.required', server }]);
+    journal.append([{ type: 'notice', level: 'warning', message, code: 'mcp_authorization_required' }, { type: 'mcp.authorization.required', server }]);
   }
 
   if (recorded !== undefined) {
@@ -301,7 +303,7 @@ const drive = async (
       return;
     }
     if (pins.toolSetDigest !== toolSet.digest && !journal.state.notes.some((note) => note.message === TOOLS_CHANGED_NOTICE)) {
-      journal.append([{ type: 'notice', level: 'warning', message: TOOLS_CHANGED_NOTICE }]);
+      journal.append([{ type: 'notice', level: 'warning', message: TOOLS_CHANGED_NOTICE, code: 'tools_changed' }]);
     }
   }
 
@@ -314,6 +316,7 @@ const drive = async (
     run,
     alias: pins.modelAlias,
     capabilities: pins.capabilities,
+    ...(pins.memoryShare === undefined ? {} : { memoryShare: pins.memoryShare }),
     limits,
     toolSet,
     skills,

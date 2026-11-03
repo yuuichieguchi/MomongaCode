@@ -1,7 +1,7 @@
 import type { RunEventPayload, ToolFile } from '@momonga/protocol';
 import * as runtime from '@momonga/runtime';
 import type { RuntimeStore } from '@momonga/store';
-import { mustClaim } from '../../../store/test/helpers.ts';
+import { RUN_PINS, mustClaim } from '../../../store/test/helpers.ts';
 
 export const exported = <T>(name: string): T => {
   const found = (runtime as Record<string, unknown>)[name];
@@ -21,7 +21,7 @@ export const fileTool = (callId: string, name: string, file: ToolFile, output = 
 
 export const finishClaimed = (store: RuntimeStore, events: readonly RunEventPayload[], outcome: 'COMPLETED' | 'FAILED' = 'COMPLETED'): void => {
   const claim = mustClaim(store, 'w1');
-  const appended = store.append(claim, [...events]);
+  const appended = store.append(claim, [{ type: 'run.started', attempt: claim.attempt, now: 0, pins: { ...RUN_PINS } }, ...events]);
   if (appended.kind !== 'ok') throw new Error(`append failed: ${appended.kind}`);
   const patch = outcome === 'FAILED' ? { error: { code: 'fixture', message: 'fixture failure' } } : {};
   const finished = store.transition(claim, ['RUNNING'], outcome, patch);
