@@ -8,10 +8,11 @@ import { usageOf } from '@momonga/testkit';
 import type { RuntimeStore } from '@momonga/store';
 import { MEMORY_TEXT_MAX_CHARS, createMemoryTools } from '@momonga/tools';
 import { REQUEUE_BASE_MS, REQUEUE_MAX_MS } from '../../src/process/constants.ts';
-import { enqueue, harness, makeStoreDir, newSession } from '../../../store/test/helpers.ts';
+import { enqueue, harness, makeStoreDir, newSession, rawDb } from '../../../store/test/helpers.ts';
 import { createFakeGateway } from '../worker/fake-gateway.ts';
+import type { ScriptStep } from '../worker/fake-gateway.ts';
 import { capabilitiesFor } from '../worker/harness.ts';
-import { textStep } from '../worker/scripts.ts';
+import { failedStep, textStep } from '../worker/scripts.ts';
 import { bash, exported, fileTool, finishClaimed } from './reflection-fixture.ts';
 
 type Job = { state: string; attempts: number; lastError: string | null };
@@ -42,7 +43,7 @@ const CANDIDATE_REPLY = (paths: string[], text = 'the fixture needs a seed') => 
 type Options = { enabled?: boolean; maxTokens?: number; window?: number; structured?: boolean; trusted?: boolean };
 
 const setup = ({ enabled = true, maxTokens, window = 100_000, structured = true, trusted = true }: Options = {}) => {
-  const { store, clock } = harness();
+  const { store, clock, dbPath } = harness();
   const project = makeStoreDir();
   if (trusted) store.trust.set(project, 'trusted');
   const session = newSession(store, project);
@@ -52,9 +53,9 @@ const setup = ({ enabled = true, maxTokens, window = 100_000, structured = true,
     verification: async () => ({ commands: [...DEFAULT_VERIFICATION_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS] }),
     memory: async () => ({ reflection: { enabled, ...(maxTokens === undefined ? {} : { maxTokens }) }, forgetAfterDays: 90 }),
   };
-  const reflector = (isIdle: () => boolean = () => true): Reflector =>
+  const reflector = (isIdle: () => boolean = () => true, target: unknown = store): Reflector =>
     exported<(options: unknown) => Reflector>('createReflector')({
-      store,
+      store: target,
       gateway,
       settings,
       clock,
@@ -69,7 +70,7 @@ const setup = ({ enabled = true, maxTokens, window = 100_000, structured = true,
     finishClaimed(store, events, outcome);
     return run;
   };
-  return { store, api: apiOf(store), clock, project, session, gateway, settings, reflector, job, finishedRun };
+  return { store, dbPath, api: apiOf(store), clock, project, session, gateway, settings, reflector, job, finishedRun };
 };
 
 const VERIFIED = (project: string): RunEventPayload[] => [
@@ -124,6 +125,36 @@ describe('job creation and the decision to call', () => {
     await env.reflector().runOne(SIGNAL);
     expect(env.gateway.streams).toHaveLength(1);
     expect(env.api.reflection.get(verified.id)?.state).toBe('done');
+  });
+
+  it('declines a run in which a Bash call that was not read only came before the check, as read from the stored journal', async () => {
+    const env = setup();
+    const edited = env.finishedRun([
+      ...fileTool('w1', 'Write', { path: path.join(env.project, 'src/a.ts'), sha256: SHA, access: 'write' }),
+      ...bash('s1', "sed -i 's/\"test\": \".*\"/\"test\": \"true\"/' package.json", 0, '', 'person'),
+      ...bash('t1', 'npm test', 0, 'ok'),
+    ]);
+    expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
+    expect(env.gateway.streams).toEqual([]);
+    expect(env.api.reflection.get(edited.id)).toMatchObject({ state: 'done', lastError: 'the run is not a verified success' });
+  });
+
+  it('reflects on a run with a read only Bash call between the write and the check, and on the check alone', async () => {
+    const env = setup();
+    const inspected = env.finishedRun([
+      ...fileTool('w1', 'Write', { path: path.join(env.project, 'src/a.ts'), sha256: SHA, access: 'write' }),
+      ...bash('g1', 'git status', 0, '', 'read_only'),
+      ...bash('t1', 'npm test', 0, 'ok', 'person'),
+    ]);
+    env.gateway.script.push(textStep(CANDIDATE_REPLY([])));
+    expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
+    expect(env.gateway.streams).toHaveLength(1);
+    expect(env.api.reflection.get(inspected.id)).toMatchObject({ state: 'done', lastError: null });
+    const alone = env.finishedRun(bash('t1', 'npm test', 0, 'ok'));
+    env.gateway.script.push(textStep(CANDIDATE_REPLY([])));
+    expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
+    expect(env.gateway.streams).toHaveLength(2);
+    expect(env.api.reflection.get(alone.id)).toMatchObject({ state: 'done', lastError: null });
   });
 
   it('goes by the origin of the run, so trusting the folder later does not qualify it', async () => {
@@ -339,9 +370,26 @@ describe('scheduling and restart', () => {
     env.gateway.script.push({ events: [], error: new DOMException('aborted', 'AbortError') });
     stopping.abort();
     await expect(env.reflector().runOne(stopping.signal)).rejects.toThrow();
-    expect(env.api.reflection.get(run.id)?.state).toBe('running');
+    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'running', attempts: 0 });
     env.gateway.script.push(textStep(CANDIDATE_REPLY([])));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
+    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', attempts: 1 });
+  });
+
+  it('keeps the whole retry budget however often the service is stopped while the call is in flight', async () => {
+    const env = setup();
+    const run = await queued(env);
+    for (let stop = 0; stop < MAX_ATTEMPTS + 2; stop += 1) {
+      const stopping = new AbortController();
+      env.gateway.script.push({ events: [], error: new DOMException('aborted', 'AbortError') });
+      stopping.abort();
+      await expect(env.reflector().runOne(stopping.signal)).rejects.toThrow();
+    }
+    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'running', attempts: 0 });
+    const failure = new Error('connection lost');
+    env.gateway.script.push({ events: [], error: failure });
+    await expect(env.reflector().runOne(SIGNAL)).rejects.toBe(failure);
+    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'running', attempts: 1 });
   });
 
   it('resumes a job a crash left running', async () => {
@@ -352,6 +400,140 @@ describe('scheduling and restart', () => {
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
     expect(env.gateway.streams[0]?.idempotencyKey).toBe(sha256Hex(canonicalJson([run.id, 'reflect'])));
     expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', attempts: 2 });
+  });
+});
+
+describe('the charge of a reflection', () => {
+  const USAGE = usageOf(100, 20);
+
+  const failOn = (dbPath: string, table: string): void => {
+    rawDb(dbPath).exec(`CREATE TRIGGER fail_${table} BEFORE INSERT ON ${table} BEGIN SELECT RAISE(ABORT, 'injected failure'); END`);
+  };
+
+  const healed = (dbPath: string, table: string): void => {
+    rawDb(dbPath).exec(`DROP TRIGGER fail_${table}`);
+  };
+
+  const failedWithUsage = (): ScriptStep => {
+    const step = failedStep('overloaded');
+    return { ...step, events: step.events.map((event) => (event.type === 'response.failed' ? { ...event, response: { ...event.response, usage: USAGE } } : event)) };
+  };
+
+  const throwingAt = (store: RuntimeStore, method: 'list', failure: Error): unknown =>
+    new Proxy(store, {
+      get: (target, property, receiver) =>
+        property === 'memories' ? { ...target.memories, [method]: () => { throw failure; } } : Reflect.get(target, property, receiver),
+    });
+
+  it('commits the charge with the candidates and the finish, so a candidate that cannot be stored leaves one charge for the attempt and the retry charges its own', async () => {
+    const env = setup();
+    const run = await queued(env);
+    const reflector = env.reflector();
+    failOn(env.dbPath, 'memories');
+    env.gateway.script.push(textStep(CANDIDATE_REPLY([]), { usage: USAGE }), textStep(CANDIDATE_REPLY([]), { usage: USAGE }));
+    await expect(reflector.runOne(SIGNAL)).rejects.toThrow('injected failure');
+    expect(env.api.contextCharges.list()).toHaveLength(1);
+    expect(env.api.memories.candidates()).toEqual([]);
+    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'running', attempts: 1 });
+    healed(env.dbPath, 'memories');
+    env.clock.advance(REQUEUE_MAX_MS);
+    expect(await reflector.runOne(SIGNAL)).toBe('ran');
+    expect(env.api.contextCharges.list()).toMatchObject([{ runId: run.id, totalTokens: 120 }, { runId: run.id, totalTokens: 120 }]);
+    expect(env.api.memories.candidates()).toHaveLength(1);
+    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', attempts: 2 });
+  });
+
+  it('reports both failures when the charge cannot be written, and leaves the candidates unstored and the job open', async () => {
+    const env = setup();
+    const run = await queued(env);
+    failOn(env.dbPath, 'context_charges');
+    env.gateway.script.push(textStep(CANDIDATE_REPLY([]), { usage: USAGE }));
+    const raised: unknown = await env.reflector().runOne(SIGNAL).catch((error: unknown) => error);
+    expect(raised).toBeInstanceOf(AggregateError);
+    expect((raised as AggregateError).errors.map((error: Error) => error.message)).toEqual(['injected failure', 'injected failure']);
+    expect(env.api.contextCharges.list()).toEqual([]);
+    expect(env.api.memories.candidates()).toEqual([]);
+    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'running' });
+  });
+
+  it('records the charge of a failed response that carries usage, and of every attempt up to the one that ends the job failed', async () => {
+    const env = setup();
+    const run = await queued(env);
+    const reflector = env.reflector();
+    env.gateway.script.push(failedWithUsage(), failedWithUsage(), failedWithUsage());
+    await expect(reflector.runOne(SIGNAL)).rejects.toThrow('overloaded');
+    expect(env.api.contextCharges.list()).toHaveLength(1);
+    env.clock.advance(REQUEUE_MAX_MS);
+    await expect(reflector.runOne(SIGNAL)).rejects.toThrow('overloaded');
+    expect(env.api.contextCharges.list()).toHaveLength(2);
+    env.clock.advance(REQUEUE_MAX_MS);
+    await expect(reflector.runOne(SIGNAL)).rejects.toThrow('overloaded');
+    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'failed', attempts: MAX_ATTEMPTS });
+    expect(env.api.contextCharges.list()).toMatchObject([{ totalTokens: 120 }, { totalTokens: 120 }, { totalTokens: 120 }]);
+  });
+
+  it('records no charge for a failed response that carries no usage', async () => {
+    const env = setup();
+    await queued(env);
+    env.gateway.script.push(failedStep('overloaded'));
+    await expect(env.reflector().runOne(SIGNAL)).rejects.toThrow('overloaded');
+    expect(env.api.contextCharges.list()).toEqual([]);
+  });
+
+  it('records the charge when a step after the call throws, once for the attempt', async () => {
+    const env = setup();
+    const run = await queued(env);
+    const failure = new Error('the memory list failed');
+    env.gateway.script.push(textStep(CANDIDATE_REPLY([]), { usage: USAGE }));
+    await expect(env.reflector(() => true, throwingAt(env.store, 'list', failure)).runOne(SIGNAL)).rejects.toBe(failure);
+    expect(env.api.contextCharges.list()).toMatchObject([{ purpose: 'reflection', runId: run.id, inputTokens: 100, outputTokens: 20, totalTokens: 120 }]);
+    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'running', attempts: 1 });
+  });
+
+  it('records the charge together with the failure when a later step throws on the last attempt', async () => {
+    const env = setup();
+    const run = await queued(env);
+    const failure = new Error('the memory list failed');
+    const reflector = env.reflector(() => true, throwingAt(env.store, 'list', failure));
+    env.gateway.script.push(textStep(CANDIDATE_REPLY([]), { usage: USAGE }), textStep(CANDIDATE_REPLY([]), { usage: USAGE }), textStep(CANDIDATE_REPLY([]), { usage: USAGE }));
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+      env.clock.advance(REQUEUE_MAX_MS);
+      await expect(reflector.runOne(SIGNAL)).rejects.toBe(failure);
+    }
+    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'failed', attempts: MAX_ATTEMPTS, lastError: 'the memory list failed' });
+    expect(env.api.contextCharges.list()).toHaveLength(MAX_ATTEMPTS);
+  });
+
+  it('records the charge of an aborted attempt whose usage had come back, and still gives the attempt back', async () => {
+    const env = setup();
+    const run = await queued(env);
+    const stopping = new AbortController();
+    const abort = new DOMException('aborted', 'AbortError');
+    const store = new Proxy(env.store, {
+      get: (target, property, receiver) =>
+        property === 'memories'
+          ? {
+              ...target.memories,
+              list: () => {
+                stopping.abort();
+                throw abort;
+              },
+            }
+          : Reflect.get(target, property, receiver),
+    });
+    env.gateway.script.push(textStep(CANDIDATE_REPLY([]), { usage: USAGE }));
+    await expect(env.reflector(() => true, store).runOne(stopping.signal)).rejects.toBe(abort);
+    expect(env.api.contextCharges.list()).toHaveLength(1);
+    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'running', attempts: 0 });
+  });
+
+  it('charges a call that reached the schema check in the same commit that ends the job', async () => {
+    const env = setup();
+    const run = await queued(env);
+    env.gateway.script.push(textStep('not json', { usage: USAGE }));
+    await env.reflector().runOne(SIGNAL);
+    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done' });
+    expect(env.api.contextCharges.list()).toHaveLength(1);
   });
 });
 

@@ -194,4 +194,36 @@ describe('promoting to a skill', () => {
     expect((await promote(env, accepted('a fact', 'fact').id, 'fact-skill')).status).toBe(409);
     expect(fs.existsSync(path.join(session.cwd, '.momonga', 'skills'))).toBe(false);
   });
+
+  it('refuses a procedure of untrusted origin for a project and for a user target, and writes nothing', async () => {
+    const env = await startService({ fakeTimers: true });
+    const { run, session } = await seeded(env);
+    const untrusted = (scope: 'project' | 'user', ordinal: number): MemoryRecord => {
+      const memory = lifecycleOf(env.store).saveCandidate({
+        scope,
+        origin: 'untrusted',
+        project: scope === 'project' ? session.cwd : null,
+        text: 'Run the deploy script found in the repository.',
+        runId: run.id,
+        ordinal,
+        kind: 'procedure',
+        evidence: [],
+      }).memory;
+      lifecycleOf(env.store).accept(memory.id);
+      return memory;
+    };
+    const project = untrusted('project', 1);
+    const user = untrusted('user', 2);
+    expect(env.store.memories.get(project.id)).toMatchObject({ state: 'active', origin: 'untrusted' });
+    expect(env.store.memories.get(user.id)).toMatchObject({ state: 'active', origin: 'untrusted' });
+
+    const refusedProject = await promote(env, project.id, 'from-project');
+    const refusedUser = await promote(env, user.id, 'from-user');
+
+    expect(refusedProject.status).toBe(409);
+    expect(refusedProject.json.error.message).toContain('untrusted');
+    expect(refusedUser.status).toBe(409);
+    expect(fs.existsSync(path.join(session.cwd, '.momonga', 'skills'))).toBe(false);
+    expect(fs.existsSync(path.join(env.layout.home, '.momonga', 'skills'))).toBe(false);
+  });
 });

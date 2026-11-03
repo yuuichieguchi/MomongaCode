@@ -42,10 +42,12 @@ export const createGovernancePort = ({ store, settings }: GovernancePortOptions)
           enforcement,
           source,
         };
-        const checked = checkGoverningFact(candidate, { existing: store.governing.list({ project: session.cwd }), parses: ruleParses });
-        if (!checked.ok) throw new ToolExecutionError(checked.message);
-        const { fact, created } = store.governing.add({ kind: request.kind, target, text: request.text, scope, validUntil: null, supersedes, enforcement, source });
-        return { factId: fact.id, created };
+        const added = store.governing.addAdmitted(
+          { kind: request.kind, target, text: request.text, scope, validUntil: null, supersedes, enforcement, source },
+          (existing) => checkGoverningFact(candidate, { existing, parses: ruleParses }),
+        );
+        if (added.kind === 'refused') throw new ToolExecutionError(added.message);
+        return { factId: added.fact.id, created: added.created };
       },
     };
     return { tools: createGovernanceTools({ port: toolPort, trusted: settings.trusted(session) }) };

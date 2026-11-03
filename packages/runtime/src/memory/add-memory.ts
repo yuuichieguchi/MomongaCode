@@ -1,8 +1,8 @@
 import path from 'node:path';
-import { createRedactor, lexicallyWithin } from '@momonga/foundation';
+import { lexicallyWithin } from '@momonga/foundation';
 import { EvidenceOutsideRootError, EvidenceUnreadableError } from '@momonga/memory';
 import type { AddMemoryRequest, MemoryEvidence } from '@momonga/protocol';
-import { MEMORY_TEXT_MAX_CHARS } from '@momonga/tools';
+import { MEMORY_TEXT_MAX_CHARS, memoryTextProblem } from '@momonga/tools';
 import type { AddMemoryByCommandInput } from '@momonga/store';
 import { createEvidencePorts, readGitHead } from './evidence.ts';
 import type { EvidenceRun } from './evidence.ts';
@@ -23,8 +23,6 @@ export type MemoryAddContext = {
   signal: AbortSignal;
 };
 
-const redactor = createRedactor({ credentials: [] });
-
 const fileEvidenceOf = async (project: string, given: string, ports: ReturnType<typeof createEvidencePorts>): Promise<MemoryEvidence> => {
   const resolved = path.resolve(project, given);
   if (!lexicallyWithin(resolved, project)) throw new MemoryAddRefusal(`${given} is outside the project, so a memory cannot be bound to it`, 'paths');
@@ -41,11 +39,9 @@ const fileEvidenceOf = async (project: string, given: string, ports: ReturnType<
 };
 
 export const prepareCommandMemory = async (request: AddMemoryRequest, context: MemoryAddContext): Promise<AddMemoryByCommandInput> => {
-  if (request.text.trim() === '') throw new MemoryAddRefusal('text must contain more than whitespace', 'text');
+  const problem = memoryTextProblem(request.text);
+  if (problem !== undefined) throw new MemoryAddRefusal(problem.message, 'text');
   if (request.text.length > MEMORY_TEXT_MAX_CHARS) throw new MemoryAddRefusal(`text is longer than ${MEMORY_TEXT_MAX_CHARS} characters`, 'text');
-  if (redactor.text(request.text) !== request.text) {
-    throw new MemoryAddRefusal('the memory was not added because its text looks like it contains a credential or secret; state the fact without the secret', 'text');
-  }
   const kind = request.kind === undefined ? {} : { kind: request.kind };
   const paths = request.paths ?? [];
   if (request.scope === 'user') {

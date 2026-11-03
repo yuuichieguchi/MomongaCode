@@ -62,6 +62,36 @@ describe('rules api', () => {
     expect(listed.json.facts).toHaveLength(1);
   });
 
+  it('adds one fact when the same rule arrives twice while the gateway size call is held, and refuses the retry with the id of the first', async () => {
+    const aliasesPerRequest = 2;
+    const requests = 2;
+    let reached = 0;
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const env = await startService({
+      fakeTimers: true,
+      beforeCapabilities: async () => {
+        reached += 1;
+        if (reached === aliasesPerRequest * requests) release();
+        await held;
+      },
+    });
+    const [first, second] = await Promise.all([
+      env.http('POST', '/v1/rules', { body: textRule(env.layout.project) }),
+      env.http('POST', '/v1/rules', { body: textRule(env.layout.project) }),
+    ]);
+    const statuses = [first.status, second.status].sort();
+    expect(statuses).toEqual([201, 400]);
+    const added = first.status === 201 ? first : second;
+    const refused = first.status === 201 ? second : first;
+    expectError(refused, 400, 'invalid_request');
+    expect(JSON.stringify(refused.json)).toContain(added.json.fact.id);
+    const listed = await env.http('GET', `/v1/rules?project=${encodeURIComponent(env.layout.project)}`);
+    expect(listed.json.facts).toHaveLength(1);
+  });
+
   it('refuses an absolute path glob', async () => {
     const env = await startService({ fakeTimers: true });
     expectError(await env.http('POST', '/v1/rules', { body: textRule(env.layout.project, { scope: { level: 'project', project: env.layout.project, paths: ['/abs/**'] } }) }), 400, 'invalid_request');

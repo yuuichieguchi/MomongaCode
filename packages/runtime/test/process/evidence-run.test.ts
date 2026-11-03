@@ -114,36 +114,75 @@ describe('the evidence runner', () => {
     expect(gone(pids[0] ?? 0)).toBe(true);
   });
 
-  it('answers that a project that is not a folder cannot be checked, and starts nothing', async (context) => {
+  it('starts nothing for a project that is not a folder', async (context) => {
     const home = withTempDir(context, { asHome: true });
     const paths = momongaPaths(home);
     await ensureMomongaDirs(paths);
     const { sandbox, spawned } = sandboxAnswering('', 0);
-    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), enforcement: HOST_RULE_ENFORCEMENT,sandbox, env: {} })('/no/such/project');
-    await expect(run({ argv: ['git', 'status'], cwd: '/no/such/project', env: {}, network: 'deny' }, new AbortController().signal)).resolves.toEqual({ exitCode: null });
+    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), enforcement: HOST_RULE_ENFORCEMENT, sandbox, env: {} })('/no/such/project');
+    await run({ argv: ['git', 'status'], cwd: '/no/such/project', env: {}, network: 'deny' }, new AbortController().signal);
     expect(spawned).toEqual([]);
   });
 
-  it('answers that a command the sandbox refuses cannot be checked, but lets any other failure through', async (context) => {
+  describe('a spawn that could not start', () => {
+    const errno = (code: string, message: string): Error => Object.assign(new Error(message), { code });
+
+    const failures: [string, () => Error][] = [
+      ['a refusal of the sandbox policy', () => new SandboxPolicyError('writable_root_not_absolute', 'refused')],
+      ['a journal that cannot be written', () => errno('ENOSPC', 'no space left on device')],
+      ['too many open files', () => errno('EMFILE', 'too many open files')],
+      ['a plain error', () => new Error('the placeholder journal failed')],
+      ['a type error', () => new TypeError('a defect')],
+    ];
+
+    for (const [label, make] of failures) {
+      it(`is answered as a command that cannot be checked at the boundary of the runner, for ${label}`, async (context) => {
+        const home = withTempDir(context, { asHome: true });
+        const paths = momongaPaths(home);
+        await ensureMomongaDirs(paths);
+        const project = fs.realpathSync(withTempDir(context));
+        const failure = make();
+        const sandbox: Sandbox = {
+          kind: 'none',
+          spawn: () => {
+            throw failure;
+          },
+        };
+        const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), enforcement: HOST_RULE_ENFORCEMENT, sandbox, env: {} })(project);
+        await expect(run({ argv: ['git', 'status'], cwd: project, env: {}, network: 'deny' }, new AbortController().signal)).resolves.toEqual({ exitCode: null, notStarted: failure.message });
+      });
+    }
+
+    it('answers a project that is not a folder the same way', async (context) => {
+      const home = withTempDir(context, { asHome: true });
+      const paths = momongaPaths(home);
+      await ensureMomongaDirs(paths);
+      const { sandbox } = sandboxAnswering('', 0);
+      const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), enforcement: HOST_RULE_ENFORCEMENT, sandbox, env: {} })('/no/such/project');
+      const result = await run({ argv: ['git', 'status'], cwd: '/no/such/project', env: {}, network: 'deny' }, new AbortController().signal);
+      expect(result).toEqual({ exitCode: null, notStarted: expect.stringContaining('/no/such/project') });
+    });
+  });
+
+  it('lets an error of our own after the process ran stay an error', async (context) => {
     const home = withTempDir(context, { asHome: true });
     const paths = momongaPaths(home);
     await ensureMomongaDirs(paths);
     const project = fs.realpathSync(withTempDir(context));
-    const refusing: Sandbox = {
+    const sandbox: Sandbox = {
       kind: 'none',
-      spawn: () => {
-        throw new SandboxPolicyError('writable_root_not_absolute', 'refused');
-      },
+      spawn: () => ({
+        pid: 1,
+        pgid: 1,
+        stdout: (async function* (): AsyncGenerator<Uint8Array> {
+          yield new TextEncoder().encode('partial');
+          throw new TypeError('reading the output failed');
+        })(),
+        stderr: bytes(''),
+        exited: Promise.resolve({ code: 0, signal: null }),
+      }),
     };
-    const broken: Sandbox = {
-      kind: 'none',
-      spawn: () => {
-        throw new TypeError('a defect');
-      },
-    };
-    const command = { argv: ['git', 'status'], cwd: project, env: {}, network: 'deny' as const };
-    const signal = new AbortController().signal;
-    await expect(createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), enforcement: HOST_RULE_ENFORCEMENT,sandbox: refusing, env: {} })(project)(command, signal)).resolves.toEqual({ exitCode: null });
-    await expect(createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), enforcement: HOST_RULE_ENFORCEMENT,sandbox: broken, env: {} })(project)(command, signal)).rejects.toThrow('a defect');
+    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), enforcement: HOST_RULE_ENFORCEMENT, sandbox, env: {} })(project);
+    await expect(run({ argv: ['git', 'status'], cwd: project, env: {}, network: 'deny' }, new AbortController().signal)).rejects.toThrow('reading the output failed');
   });
 });

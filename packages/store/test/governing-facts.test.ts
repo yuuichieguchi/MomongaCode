@@ -44,6 +44,22 @@ describe('governing fact store', () => {
     expect(store.governing.get(fact.id)).toMatchObject({ scope: { level: 'user' }, validUntil: START_MS + 9, supersedes: [first.id], source: PROPOSAL });
   });
 
+  it('reads the facts and decides in the same transaction as the insert, and stores nothing when the decision refuses', () => {
+    const { store } = harness();
+    let seen = -1;
+    const refused = store.governing.addAdmitted(commandFact(), (existing) => {
+      seen = existing.length;
+      return { ok: false, message: 'refused here' };
+    });
+    expect(refused).toEqual({ kind: 'refused', message: 'refused here' });
+    expect(seen).toBe(0);
+    expect(store.governing.list()).toEqual([]);
+    const added = store.governing.addAdmitted(commandFact(), (existing) => (existing.length === 0 ? { ok: true } : { ok: false, message: 'late' }));
+    expect(added).toMatchObject({ kind: 'added', created: true });
+    expect(store.governing.addAdmitted(commandFact(), (existing) => (existing.length === 0 ? { ok: true } : { ok: false, message: 'late' }))).toEqual({ kind: 'refused', message: 'late' });
+    expect(store.governing.list()).toHaveLength(1);
+  });
+
   it('adds a replayed proposal once and returns the first fact, also with changed input', () => {
     const { store, clock } = harness();
     const first = store.governing.add(commandFact({ source: PROPOSAL }));

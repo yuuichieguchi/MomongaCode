@@ -6,7 +6,7 @@ import type { GoverningFactView } from '@momonga/protocol';
 import { corrupt, expectOneOf, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
 import { revisionChain } from './revision-chain.ts';
-import type { GoverningFactStore } from './types.ts';
+import type { AddGoverningFactInput, GoverningAdmissionResult, GoverningFactStore } from './types.ts';
 
 const SOURCE_KINDS = ['command', 'proposal'] as const;
 
@@ -68,39 +68,51 @@ export const createGoverningFactStore = (db: DatabaseSync, clock: Clock): Govern
     return row === undefined ? undefined : decodeFact(row);
   };
 
+  const insertFact = (input: AddGoverningFactInput): { fact: GoverningFactView; created: boolean } => {
+    const now = clock.now();
+    const { source } = input;
+    if (source.kind === 'proposal') {
+      const existing = byProposal.get({ runId: source.runId, callId: source.callId });
+      if (existing !== undefined) return { fact: decodeFact(existing), created: false };
+    }
+    const id = uuidv7(clock);
+    insert.run({
+      id,
+      kind: input.kind,
+      target: input.target,
+      text: input.text,
+      level: input.scope.level,
+      project: input.scope.level === 'project' ? input.scope.project : null,
+      pathsJson: JSON.stringify(input.scope.level === 'project' ? input.scope.paths : []),
+      now,
+      validUntil: input.validUntil,
+      supersedesJson: JSON.stringify(input.supersedes),
+      behavior: input.enforcement?.behavior ?? null,
+      rule: input.enforcement?.rule ?? null,
+      sourceKind: source.kind,
+      sourceAt: source.kind === 'command' ? now : null,
+      sessionId: source.kind === 'proposal' ? source.sessionId : null,
+      runId: source.kind === 'proposal' ? source.runId : null,
+      seq: source.kind === 'proposal' ? source.seq : null,
+      callId: source.kind === 'proposal' ? source.callId : null,
+    });
+    const fact = get(id);
+    if (fact === undefined) throw new Error(`governing fact ${id} vanished after it was added`);
+    return { fact, created: true };
+  };
+
   return {
-    add: (input) =>
-      immediateTx(db, () => {
-        const now = clock.now();
+    add: (input) => immediateTx(db, () => insertFact(input)),
+    addAdmitted: (input, admit) =>
+      immediateTx(db, (): GoverningAdmissionResult => {
         const { source } = input;
         if (source.kind === 'proposal') {
-          const existing = byProposal.get({ runId: source.runId, callId: source.callId });
-          if (existing !== undefined) return { fact: decodeFact(existing), created: false };
+          const replayed = byProposal.get({ runId: source.runId, callId: source.callId });
+          if (replayed !== undefined) return { kind: 'added', fact: decodeFact(replayed), created: false };
         }
-        const id = uuidv7(clock);
-        insert.run({
-          id,
-          kind: input.kind,
-          target: input.target,
-          text: input.text,
-          level: input.scope.level,
-          project: input.scope.level === 'project' ? input.scope.project : null,
-          pathsJson: JSON.stringify(input.scope.level === 'project' ? input.scope.paths : []),
-          now,
-          validUntil: input.validUntil,
-          supersedesJson: JSON.stringify(input.supersedes),
-          behavior: input.enforcement?.behavior ?? null,
-          rule: input.enforcement?.rule ?? null,
-          sourceKind: source.kind,
-          sourceAt: source.kind === 'command' ? now : null,
-          sessionId: source.kind === 'proposal' ? source.sessionId : null,
-          runId: source.kind === 'proposal' ? source.runId : null,
-          seq: source.kind === 'proposal' ? source.seq : null,
-          callId: source.kind === 'proposal' ? source.callId : null,
-        });
-        const fact = get(id);
-        if (fact === undefined) throw new Error(`governing fact ${id} vanished after it was added`);
-        return { fact, created: true };
+        const admission = admit(all.all().map(decodeFact));
+        if (!admission.ok) return { kind: 'refused', message: admission.message };
+        return { kind: 'added', ...insertFact(input) };
       }),
     get,
     list: (filter) => (filter === undefined ? all.all() : ofProject.all({ project: filter.project })).map(decodeFact),

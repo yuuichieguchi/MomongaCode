@@ -2,7 +2,6 @@ import { canonicalDirectory, protectedSetFor } from '@momonga/foundation';
 import type { MomongaPaths, RuleEnforcement } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
 import type { PolicyPorts } from '@momonga/policy';
-import { SandboxPolicyError } from '@momonga/sandbox';
 import type { Sandbox, SandboxedProcess } from '@momonga/sandbox';
 import { buildSandboxPolicy, readOnlyEnvironment, readOnlySandboxPolicy } from '@momonga/tools';
 import type { EvidenceRun } from '../memory/evidence.ts';
@@ -27,7 +26,7 @@ export const createEvidenceRunner =
   (project: string): EvidenceRun =>
   async (command, signal) => {
     const root = canonicalDirectory(project);
-    if (!root.ok) return { exitCode: null };
+    if (!root.ok) return { exitCode: null, notStarted: `${project} is not a folder` };
     const roots = [root.path];
     let child: SandboxedProcess;
     try {
@@ -43,8 +42,7 @@ export const createEvidenceRunner =
       );
       child = sandbox.spawn({ argv: command.argv, cwd: command.cwd, env: readOnlyEnvironment({ ...env, ...command.env }) }, policy, signal);
     } catch (error) {
-      if (error instanceof SandboxPolicyError) return { exitCode: null };
-      throw error;
+      return { exitCode: null, notStarted: error instanceof Error ? error.message : String(error) };
     }
     const [stdout, , exit] = await Promise.all([textOf(child.stdout), textOf(child.stderr), child.exited]);
     return { exitCode: exit.code, stdout };

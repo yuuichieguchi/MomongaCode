@@ -73,11 +73,15 @@ export const registerRuleRoutes = (route: RouteRegistrar, deps: RuleRoutesDeps):
       enforcement: body.enforcement ?? null,
       source: { kind: 'command' as const },
     };
-    const existing = governing.list();
-    const checked = checkGoverningFact({ ...input, id: '', validFrom: 0, retiredAt: null, source: { kind: 'command', at: 0 } }, { existing, parses: ruleParses });
-    if (!checked.ok) throw invalidRequest(checked.message);
     const sized = await sizeOrWarning(tokensForText(input.text));
-    const { fact } = governing.add(input);
+    const candidate: GoverningFactView = { ...input, id: '', validFrom: 0, retiredAt: null, source: { kind: 'command', at: 0 } };
+    let existing: readonly GoverningFactView[] = [];
+    const added = governing.addAdmitted(input, (facts) => {
+      existing = facts;
+      return checkGoverningFact(candidate, { existing: facts, parses: ruleParses });
+    });
+    if (added.kind === 'refused') throw invalidRequest(added.message);
+    const { fact } = added;
     const applicable = existing.filter((other) => other.scope.level === 'user' || (scope.level === 'project' && other.scope.project === scope.project));
     const warnings = [...overlappingEnforced(fact, applicable).map(overlapWarning), ...sized.warnings];
     return json({ fact, size: sized.size, warnings } satisfies RuleAddResponse, 201);

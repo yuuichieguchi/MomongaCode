@@ -13,7 +13,7 @@ import { computeFileRules } from '@momonga/policy';
 import * as protocol from '@momonga/protocol';
 import type { PermissionMode, PermissionOption, RunEvent, RunEventPayload } from '@momonga/protocol';
 import * as runtime from '@momonga/runtime';
-import type { ToolRuntimePort, Worker, WorkerOptions } from '@momonga/runtime';
+import type { EvidenceRun, ToolRuntimePort, Worker, WorkerOptions } from '@momonga/runtime';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { Claim, RuntimeStore, Session } from '@momonga/store';
@@ -426,6 +426,7 @@ export type ServiceOverrides = {
   agents?: runtime.AgentCatalogPort;
   skillsTrusted?: () => boolean;
   mcp?: McpAdminPort;
+  evidenceRun?: (project: string) => EvidenceRun;
 };
 
 export type Notifier = { onCommit(touched: { runId?: string; sessionId: string }[]): void; subscriberCount(): number };
@@ -490,7 +491,7 @@ export const serviceOptions = (
   sessionCreateSettings: base.ports.sessionCreateSettings,
   skills: overrides.skills ?? diskSkillsPort(base.home, overrides.skillsTrusted),
   agents: overrides.agents ?? diskAgentCatalog(base.home, overrides.skillsTrusted),
-  evidenceRun: unavailableEvidenceRun,
+  evidenceRun: overrides.evidenceRun ?? unavailableEvidenceRun,
   mcp: overrides.mcp ?? unusedMcpAdmin,
   defaults: { modelAlias: MODEL_ALIAS, runTimeoutMs: DEFAULT_TIMEOUT_MS, limits: { ...DEFAULT_LIMITS } },
   notifier: base.notifier,

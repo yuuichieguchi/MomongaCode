@@ -101,6 +101,8 @@ export const immediateTx = <T>(db: DatabaseSync, fn: () => T): T => {
   }
 };
 
+export const joinedTx = <T>(db: DatabaseSync, fn: () => T): T => (db.isTransaction ? fn() : immediateTx(db, fn));
+
 const pinReadSnapshot = (db: DatabaseSync): void => {
   db.prepare('SELECT 1 FROM sqlite_master LIMIT 1').get();
 };

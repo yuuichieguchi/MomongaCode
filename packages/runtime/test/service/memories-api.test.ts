@@ -1,6 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { HOST_RULE_ENFORCEMENT, momongaPaths } from '@momonga/foundation';
+import { SandboxPolicyError } from '@momonga/sandbox';
+import type { Sandbox } from '@momonga/sandbox';
+import { fakePolicyFilesystem, withTempDir } from '@momonga/testkit';
+import { memoryTextProblem } from '@momonga/tools';
+import { createEvidenceRunner } from '../../src/process/evidence-run.ts';
 import { expectError, expectSchema, startService } from './helpers.ts';
 import type { ServiceEnv } from './helpers.ts';
 
@@ -94,6 +100,79 @@ describe('memory api', () => {
     const item = await env.http('PUT', '/v1/memories/x', { body: {} });
     expect(item.status).toBe(405);
     expect(item.headers['allow']).toBe('GET, DELETE, HEAD');
+  });
+});
+
+describe('reading memories when the evidence process cannot start', () => {
+  const COMMIT = '0123456789abcdef0123456789abcdef01234567';
+
+  const failingSandbox = (failure: Error): Sandbox => ({
+    kind: 'none',
+    spawn: () => {
+      throw failure;
+    },
+  });
+
+  const failures: [string, () => Error][] = [
+    ['a placeholder journal that cannot be written', () => Object.assign(new Error('the placeholder journal failed'), { code: 'ENOSPC' })],
+    ['too many open files', () => Object.assign(new Error('spawn EMFILE'), { code: 'EMFILE' })],
+    ['a refusal of the sandbox policy', () => new SandboxPolicyError('writable_root_not_absolute', 'refused')],
+  ];
+
+  for (const [label, make] of failures) {
+    it(`answers unverifiable and not 500 when the spawn fails for ${label}`, async (context) => {
+      const home = withTempDir(context, { asHome: true });
+      const sandbox = failingSandbox(make());
+      const env = await startService({
+        fakeTimers: true,
+        evidenceRun: createEvidenceRunner({ paths: momongaPaths(home), home, fs: fakePolicyFilesystem(), sandbox, env: {}, enforcement: HOST_RULE_ENFORCEMENT }),
+      });
+      const { session, run } = await seedCalls(env);
+      expect((await env.http('PUT', '/v1/trust', { body: { path: session.cwd, decision: 'trusted' } })).status).toBe(200);
+      const saved = env.store.memories.save({
+        origin: 'trusted',
+        scope: 'project',
+        project: session.cwd,
+        text: 'tests live in test/',
+        runId: run.id,
+        step: 1,
+        callId: 'c1',
+        evidence: [{ kind: 'commit', sha: COMMIT }],
+      }).memory;
+
+      const listed = await env.http('GET', '/v1/memories');
+      const read = await env.http('GET', `/v1/memories/${saved.id}`);
+
+      expect(listed.status).toBe(200);
+      expect(listed.json.memories).toMatchObject([{ id: saved.id, status: 'unverifiable' }]);
+      expect(read.status).toBe(200);
+      expect(read.json.memory.status).toBe('unverifiable');
+    });
+  }
+
+  it('keeps answering 500 for an error of our own after the process ran', async (context) => {
+    const home = withTempDir(context, { asHome: true });
+    const sandbox: Sandbox = {
+      kind: 'none',
+      spawn: () => ({
+        pid: 1,
+        pgid: 1,
+        stdout: (async function* (): AsyncGenerator<Uint8Array> {
+          throw new TypeError('reading the output failed');
+        })(),
+        stderr: (async function* (): AsyncGenerator<Uint8Array> {})(),
+        exited: Promise.resolve({ code: 0, signal: null }),
+      }),
+    };
+    const env = await startService({
+      fakeTimers: true,
+      evidenceRun: createEvidenceRunner({ paths: momongaPaths(home), home, fs: fakePolicyFilesystem(), sandbox, env: {}, enforcement: HOST_RULE_ENFORCEMENT }),
+    });
+    const { session, run } = await seedCalls(env);
+    expect((await env.http('PUT', '/v1/trust', { body: { path: session.cwd, decision: 'trusted' } })).status).toBe(200);
+    env.store.memories.save({ origin: 'trusted', scope: 'project', project: session.cwd, text: 'tests live in test/', runId: run.id, step: 1, callId: 'c1', evidence: [{ kind: 'commit', sha: COMMIT }] });
+
+    expect((await env.http('GET', '/v1/memories')).status).toBe(500);
   });
 });
 
@@ -200,6 +279,18 @@ describe('adding a memory as a person', () => {
     expectError(response, 400, 'invalid_request');
     expect(response.json.error).toMatchObject({ param: 'text', message: expect.stringContaining('credential') });
     expect(env.store.memories.list()).toEqual([]);
+  });
+
+  it.each(['the key is sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789', '   \n  '])('answers with the refusal of memoryTextProblem for %j, the one MemorySave and reflection use', async (text) => {
+    const env = await startService({ fakeTimers: true });
+    const project = await trusted(env);
+    const problem = memoryTextProblem(text);
+
+    const response = await add(env, { text, scope: 'project', project });
+
+    expectError(response, 400, 'invalid_request');
+    expect(problem).toBeDefined();
+    expect(response.json.error).toMatchObject({ param: 'text', message: problem?.message });
   });
 
   it('refuses a user memory that names a project or a path', async () => {

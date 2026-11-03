@@ -84,6 +84,7 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDe
     }
     if (memory.state !== 'active' || memory.retiredAt !== null) throw conflict('memory_state', `memory ${memory.id} is ${memory.state}, and only an accepted memory can become a skill`);
     if (memory.kind !== 'procedure') throw conflict('memory_state', `memory ${memory.id} is a ${memory.kind}, and only a procedure can become a skill`);
+    if (memory.origin !== 'trusted') throw conflict('memory_state', `memory ${memory.id} was saved at an untrusted origin, and only a memory of a trusted origin can become a skill`);
     const written = await writeSkillFile({ root: memory.project ?? deps.home, name: body.skill, text: memory.text });
     if (written.kind === 'written') return json({ path: written.path }, 201);
     if (written.kind === 'exists') throw conflict('skill_target', `${written.path} already exists, so it is not overwritten`);

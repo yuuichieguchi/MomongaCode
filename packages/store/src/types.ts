@@ -346,8 +346,13 @@ export type AddGoverningFactInput = {
   source: { kind: 'command' } | { kind: 'proposal'; sessionId: string; runId: string; seq: number; callId: string };
 };
 
+export type GoverningAdmission = { ok: true } | { ok: false; message: string };
+
+export type GoverningAdmissionResult = { kind: 'added'; fact: GoverningFactView; created: boolean } | { kind: 'refused'; message: string };
+
 export type GoverningFactStore = {
   add(input: AddGoverningFactInput): { fact: GoverningFactView; created: boolean };
+  addAdmitted(input: AddGoverningFactInput, admit: (existing: readonly GoverningFactView[]) => GoverningAdmission): GoverningAdmissionResult;
   get(id: string): GoverningFactView | undefined;
   list(filter?: { project: string }): GoverningFactView[];
   retire(id: string): { retired: boolean; fact: GoverningFactView } | undefined;
@@ -413,16 +418,6 @@ export type ReflectionJob = {
   updatedAt: number;
 };
 
-export type ReflectionStore = {
-  runOrigin(runId: string): MemoryOrigin | undefined;
-  enqueue(runId: string): boolean;
-  get(runId: string): ReflectionJob | undefined;
-  next(exclude?: ReadonlySet<string>): ReflectionJob | undefined;
-  begin(runId: string): ReflectionJob;
-  finish(runId: string, reason?: string): ReflectionJob;
-  fail(runId: string, reason: string): ReflectionJob;
-};
-
 export type ContextChargeInput = {
   purpose: ContextChargePurpose;
   runId: string | null;
@@ -431,6 +426,25 @@ export type ContextChargeInput = {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+};
+
+export type ReflectionCompletion = {
+  runId: string;
+  charge: ContextChargeInput | null;
+  candidates: readonly SaveCandidateInput[];
+  reason?: string;
+};
+
+export type ReflectionStore = {
+  runOrigin(runId: string): MemoryOrigin | undefined;
+  enqueue(runId: string): boolean;
+  get(runId: string): ReflectionJob | undefined;
+  next(exclude?: ReadonlySet<string>): ReflectionJob | undefined;
+  begin(runId: string): ReflectionJob;
+  release(runId: string): ReflectionJob;
+  finish(runId: string, reason?: string): ReflectionJob;
+  complete(completion: ReflectionCompletion): ReflectionJob;
+  fail(runId: string, reason: string, charge?: ContextChargeInput): ReflectionJob;
 };
 
 export type ContextCharge = ContextChargeInput & { id: number; createdAt: number };

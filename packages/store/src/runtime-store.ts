@@ -331,7 +331,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const sql = statements;
   const approvalOps = createApprovalStore(db, clock);
   const memories = createMemoryStore(db, clock);
-  const reflection = createReflectionStore(db, clock);
+  const contextCharges = createContextChargeStore(db, clock);
+  const reflection = createReflectionStore(db, clock, { memories, contextCharges });
   const governing = createGoverningFactStore(db, clock);
   const trust = createTrustStore(db, clock, home);
   const originOf = (cwd: string): 'trusted' | 'untrusted' => (trust.decisionFor(cwd).decision === 'trusted' ? 'trusted' : 'untrusted');
@@ -1424,7 +1425,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     trust,
     memories,
     reflection,
-    contextCharges: createContextChargeStore(db, clock),
+    contextCharges,
     guidelines: createGuidelineStore(db, clock),
     governing,
     search: createSearchStore(db),

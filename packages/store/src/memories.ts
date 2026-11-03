@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { immediateTx, uuidv7 } from '@momonga/foundation';
+import { immediateTx, joinedTx, uuidv7 } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { DEFAULT_MEMORY_KIND, MEMORY_EVIDENCE_KINDS, MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES } from '@momonga/protocol';
 import type { MemoryEvidence, MemoryOrigin, MemoryScope, MemorySource, MemoryState } from '@momonga/protocol';
@@ -240,7 +240,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
         return decode(row);
       }),
     saveCandidate: (input) =>
-      immediateTx(db, () => {
+      joinedTx(db, () => {
         if ((input.scope === 'project') !== (input.project !== null)) {
           throw new RangeError(`a ${input.scope} memory ${input.scope === 'project' ? 'requires' : 'cannot carry'} a project`);
         }

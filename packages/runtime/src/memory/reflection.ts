@@ -2,9 +2,9 @@ import { canonicalJson, computeBackoff, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { normalizeMemoryText } from '@momonga/memory';
 import { assistantTextOf, summaryTokenCapFor } from '@momonga/protocol';
-import type { CreateResponseBody } from '@momonga/protocol';
+import type { CreateResponseBody, Usage } from '@momonga/protocol';
 import { memoryTextProblem } from '@momonga/tools';
-import type { RuntimeStore } from '@momonga/store';
+import type { ContextChargeInput, RuntimeStore, SaveCandidateInput } from '@momonga/store';
 import type { GatewayPort, SettingsPort } from '../ports.ts';
 import { REQUEUE_BASE_MS, REQUEUE_MAX_MS } from '../process/constants.ts';
 import { RUNTIME_DEFAULTS } from '../process/defaults.ts';
@@ -35,24 +35,30 @@ export type Reflector = { runOne(signal: AbortSignal): Promise<ReflectorTurn> };
 
 const DEDUPLICATED_STATES: readonly string[] = ['active', 'candidate', 'rejected'];
 
+type ChargeLedger = { unrecorded?: ContextChargeInput };
+
 export const createReflector = (options: ReflectorOptions): Reflector => {
   const { store, gateway, settings, clock } = options;
   let running = false;
   const retryAt = new Map<string, number>();
 
-  const complete = async (runId: string, body: CreateResponseBody, signal: AbortSignal): Promise<ModelResult> => {
+  const complete = async (runId: string, body: CreateResponseBody, signal: AbortSignal): Promise<{ terminal: ModelResult; usage: Usage | null }> => {
     let terminal: ModelResult | undefined;
+    let usage: Usage | null = null;
     const events = gateway.stream(body, {
       idempotencyKey: sha256Hex(canonicalJson([runId, 'reflect'])),
       deadlineAt: clock.now() + RUNTIME_DEFAULTS.runTimeoutMs,
       signal,
     });
-    for await (const event of events) terminal = terminalResultOf(event) ?? terminal;
+    for await (const event of events) {
+      terminal = terminalResultOf(event) ?? terminal;
+      if (event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed') usage = event.response.usage;
+    }
     if (terminal === undefined) throw new Error(`the reflection call of run ${runId} ended without a terminal event`);
-    return terminal;
+    return { terminal, usage };
   };
 
-  const reflect = async (runId: string, signal: AbortSignal): Promise<void> => {
+  const reflect = async (runId: string, signal: AbortSignal, ledger: ChargeLedger): Promise<void> => {
     store.reflection.begin(runId);
     const run = store.getRun(runId);
     if (run === undefined) throw new Error(`run ${runId} of a reflection job does not exist`);
@@ -89,12 +95,9 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       stream: true,
       metadata: { run_id: runId, purpose: 'reflection' },
     };
-    const terminal = await complete(runId, body, signal);
-    if (terminal.kind === 'failed') throw new Error(`the reflection call of run ${runId} failed: ${terminal.code ?? 'error'}: ${terminal.message}`);
-    const { usage } = terminal.response;
-    if (usage === null) throw new Error(`the reflection response of run ${runId} carries no usage`);
-    const charge = () =>
-      store.contextCharges.record({
+    const { terminal, usage } = await complete(runId, body, signal);
+    if (usage !== null) {
+      ledger.unrecorded = {
         purpose: 'reflection',
         runId,
         project,
@@ -102,11 +105,17 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
         inputTokens: usage.input_tokens,
         outputTokens: usage.output_tokens,
         totalTokens: usage.total_tokens,
-      });
+      };
+    }
+    if (terminal.kind === 'failed') throw new Error(`the reflection call of run ${runId} failed: ${terminal.code ?? 'error'}: ${terminal.message}`);
+    if (usage === null) throw new Error(`the reflection response of run ${runId} carries no usage`);
+    const settle = (candidates: readonly SaveCandidateInput[], reason?: string): void => {
+      store.reflection.complete({ runId, charge: ledger.unrecorded ?? null, candidates, ...(reason === undefined ? {} : { reason }) });
+      delete ledger.unrecorded;
+    };
     const parsed = parseReflectionReply(assistantTextOf(terminal.response.output));
     if ('error' in parsed) {
-      charge();
-      store.reflection.finish(runId, parsed.error);
+      settle([], parsed.error);
       return;
     }
     const trusted = settings.trusted(session);
@@ -136,11 +145,16 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
         if (!(error instanceof MemoryEvidenceError)) throw error;
       }
     }
-    charge();
-    for (const { ordinal, candidate, evidence } of accepted) {
-      store.memories.saveCandidate({ scope: 'project', origin: 'trusted', project, text: candidate.text, runId, ordinal, kind: candidate.kind, evidence });
+    settle(accepted.map(({ ordinal, candidate, evidence }) => ({ scope: 'project', origin: 'trusted', project, text: candidate.text, runId, ordinal, kind: candidate.kind, evidence })));
+  };
+
+  const recordUnrecorded = (ledger: ChargeLedger, cause: unknown): void => {
+    if (ledger.unrecorded === undefined) return;
+    try {
+      store.contextCharges.record(ledger.unrecorded);
+    } catch (chargeError) {
+      throw new AggregateError([cause, chargeError], 'the reflection failed and the charge of its call could not be recorded');
     }
-    store.reflection.finish(runId);
   };
 
   return {
@@ -152,18 +166,24 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       const job = store.reflection.next(waiting);
       if (job === undefined) return 'idle';
       running = true;
+      const ledger: ChargeLedger = {};
       try {
-        await reflect(job.runId, signal);
+        await reflect(job.runId, signal, ledger);
         retryAt.delete(job.runId);
         return 'ran';
       } catch (error) {
-        if (signal.aborted) throw error;
+        if (signal.aborted) {
+          recordUnrecorded(ledger, error);
+          store.reflection.release(job.runId);
+          throw error;
+        }
         const attempts = store.reflection.get(job.runId)?.attempts ?? job.attempts;
         const reason = error instanceof Error ? error.message : String(error);
         if (attempts >= options.maxAttempts) {
           retryAt.delete(job.runId);
-          store.reflection.fail(job.runId, reason);
+          store.reflection.fail(job.runId, reason, ledger.unrecorded);
         } else {
+          recordUnrecorded(ledger, error);
           retryAt.set(job.runId, clock.now() + computeBackoff({ attempt: attempts - 1, baseMs: REQUEUE_BASE_MS, maxMs: REQUEUE_MAX_MS, random: options.random }));
         }
         throw error;

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { isRecord } from '@momonga/foundation';
-import type { RunEvent } from '@momonga/protocol';
+import type { ApprovalBasis, RunEvent } from '@momonga/protocol';
 
 export type VerifiedSuccessInput = {
   status: string;
@@ -31,8 +31,9 @@ const writtenPaths = (call: CallEvent, event: Extract<RunEvent, { type: 'tool.co
   return written.length === 0 ? undefined : written;
 };
 
-export const isVerifiedSuccess =(input: VerifiedSuccessInput): boolean => {
+export const isVerifiedSuccess = (input: VerifiedSuccessInput): boolean => {
   const calls = new Map<string, CallEvent>();
+  const bases = new Map<string, ApprovalBasis | undefined>();
   const manifests = new Set(input.manifests);
   let manifestWritten = false;
   let latestCheckPassed: boolean | undefined;
@@ -40,18 +41,37 @@ export const isVerifiedSuccess =(input: VerifiedSuccessInput): boolean => {
     latestCheckPassed = undefined;
     if (paths.some((written) => manifests.has(path.basename(written)))) manifestWritten = true;
   };
+  const wroteUnknownPaths = (): void => {
+    latestCheckPassed = undefined;
+    manifestWritten = true;
+  };
+  const mayHaveWritten = (call: CallEvent): boolean => {
+    const command = commandOf(call);
+    return command !== undefined && !input.commands.includes(command) && bases.get(call.callId) !== 'read_only';
+  };
   for (const event of input.events) {
     if (event.type === 'tool.call') {
       calls.set(event.callId, event);
       continue;
     }
+    if (event.type === 'tool.started') {
+      bases.set(event.callId, event.basis);
+      continue;
+    }
     const call = calls.get(event.type === 'tool.completed' || event.type === 'tool.reconciled' ? event.callId : '');
     if (call === undefined) continue;
     if (event.type === 'tool.reconciled') {
-      if (event.outcome !== 'not_applied' && WRITING_KINDS.includes(call.kind)) wrote(pathsNamedBy(call));
+      if (event.outcome === 'not_applied') continue;
+      if (WRITING_KINDS.includes(call.kind)) wrote(pathsNamedBy(call));
+      else if (mayHaveWritten(call)) wroteUnknownPaths();
       continue;
     }
-    if (event.type !== 'tool.completed' || event.status !== 'completed' || event.denial !== undefined) continue;
+    if (event.type !== 'tool.completed' || event.denial !== undefined) continue;
+    if (mayHaveWritten(call)) {
+      wroteUnknownPaths();
+      continue;
+    }
+    if (event.status !== 'completed') continue;
     const written = writtenPaths(call, event);
     if (written !== undefined) {
       wrote(written);
