@@ -240,6 +240,11 @@ const prepareStatements = (db: DatabaseSync) => ({
   ),
   pinnedDigests: db.prepare("SELECT seq, pinned_digest FROM events WHERE run_id = :runId AND type = 'model.requested' ORDER BY seq"),
   runEvents: db.prepare('SELECT * FROM events WHERE run_id = :runId AND seq > :after ORDER BY seq LIMIT :limit'),
+  modelCallEvents: db.prepare(
+    `SELECT id, run_id, session_id, seq, step, lease_token, created_at, type,
+      CASE type WHEN 'model.requested' THEN json_remove(payload_json, '$.body') ELSE json_remove(payload_json, '$.response.output') END AS payload_json
+     FROM events WHERE run_id = :runId AND type IN ('model.requested', 'model.responded') ORDER BY seq`,
+  ),
   lastTerminalRootRuns: db.prepare(
     `SELECT r.* FROM runs r JOIN sessions s ON s.id = r.session_id
      WHERE s.cwd = :project AND r.parent_run_id IS NULL AND r.status IN (${TERMINAL_LIST})
@@ -1395,6 +1400,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     readRunEvents: (runId, afterSeq, limit) => decodeRunEvents(sql.runEvents.all({ runId, after: afterSeq, limit })),
 
     readRunEventsOfTypes: eventsOfTypes,
+
+    readModelCallEvents: (runId) => decodeRunEvents(sql.modelCallEvents.all({ runId })),
 
     lastTerminalRootRuns: (project, limit) => sql.lastTerminalRootRuns.all({ project, limit }).map(decodeRun),
 

@@ -1,7 +1,9 @@
 export { createBodyQueue } from './body-queue.ts';
 export type { BodyQueue, BodyQueueLimits } from './body-queue.ts';
 export { installOtelErrorHandler } from './errors.ts';
-export { amountOfUnits, computeCost, computeCostUnits, definePriceTable } from './cost.ts';
+export { buildCostBreakdown, formatCostBreakdown, joinBreakdownCalls } from './cost-breakdown.ts';
+export type { BreakdownAnatomy, BreakdownCall, CostBreakdown, CostBreakdownOptions, RecordedCall, TimingSummary, UnpricedCall } from './cost-breakdown.ts';
+export { amountOfUnits, computeCost, computeCostUnits, definePriceTable, findPriceEntry } from './cost.ts';
 export type { Cost, CostInput, CostUnits, CostUsage, PriceEntry, PriceTable } from './cost.ts';
 export { buildCostReport, formatCostReport } from './cost-report.ts';
 export type { CostReport, CostReportOptions, CostTotals, CostedRun, RunCost, SessionCost } from './cost-report.ts';

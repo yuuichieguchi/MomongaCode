@@ -118,7 +118,7 @@ describe('buildNext in wrap-up mode', () => {
     expect(built.tools).toEqual([]);
     expect(built.input.at(-1)).toEqual(instruction);
     expect(built.input.filter((item) => item.type === 'message' && item.role === 'developer')).toEqual([]);
-    const counted = counts.filter((request) => Array.isArray(request.input) && canonicalJson(request.input.at(-1)) === canonicalJson(instruction));
+    const counted = counts.filter((request) => Array.isArray(request.input) && request.input.length > 0 && canonicalJson(request.input.at(-1)) === canonicalJson(instruction));
     expect(counted.length).toBeGreaterThan(0);
     for (const request of counts) expect(request.tools ?? []).toEqual([]);
   });

@@ -180,6 +180,7 @@ export type PriceEntrySettings = {
   effectiveFrom: string;
   inputPerMTok: number;
   cachedInputPerMTok?: number;
+  cacheWritePerMTok?: number;
   outputPerMTok: number;
   currency: 'USD';
 };

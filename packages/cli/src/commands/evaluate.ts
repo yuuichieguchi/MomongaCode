@@ -2,6 +2,7 @@ import path from 'node:path';
 import { loadUserModels } from '@momonga/config';
 import {
   DEFAULT_DATASET_SEED,
+  GATE_NAMES,
   buildContextReport,
   compareContextReports,
   formatContextComparison,
@@ -16,7 +17,7 @@ import {
   saveContextReport,
   saveTranscript,
 } from '@momonga/eval';
-import type { ContextDataset, ContextModel, EvalReport, GoldenCase, GoldenDataset, Transcript } from '@momonga/eval';
+import type { ContextDataset, ContextModel, EvalReport, GateName, GoldenCase, GoldenDataset, Transcript } from '@momonga/eval';
 import type { MomongaPaths } from '@momonga/foundation';
 import { goldenRunApi } from '../client/golden-run-api.ts';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
@@ -147,12 +148,19 @@ export const evaluateContext = async (
   return report.passed ? 0 : 1;
 };
 
-export const compareContext = async (ports: CliPorts, baselineFile: string, candidateFile: string): Promise<number> => {
+const gateOf = (name: string): GateName => {
+  const known = GATE_NAMES.find((gate) => gate === name);
+  if (known === undefined) throw new EvaluateUsageError(`--gate must be ${GATE_NAMES.join(' or ')}, received ${name}`);
+  return known;
+};
+
+export const compareContext = async (ports: CliPorts, baselineFile: string, candidateFile: string, gate: string): Promise<number> => {
+  const gateName = gateOf(gate);
   const [baseline, candidate] = await Promise.all([
     loadContextReport(ports.files, path.resolve(ports.cwd, baselineFile)),
     loadContextReport(ports.files, path.resolve(ports.cwd, candidateFile)),
   ]);
-  const comparison = compareContextReports(baseline, candidate, { seed: CONTEXT_BOOTSTRAP_SEED });
+  const comparison = compareContextReports(baseline, candidate, { seed: CONTEXT_BOOTSTRAP_SEED, gate: gateName });
   ports.stdout.write(`${formatContextComparison(comparison)}\n`);
   return comparison.gate.passed ? 0 : 1;
 };

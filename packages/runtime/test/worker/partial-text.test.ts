@@ -155,6 +155,7 @@ describe('partial assistant text on an interrupted stream', () => {
         recordingRaised: <T>(pending: Promise<T>): Promise<T> => pending,
       },
       options: {
+        clock: env.clock,
         gateway: {
           ...env.gateway,
           stream: () =>

@@ -1,5 +1,6 @@
 import { expect } from 'vitest';
 import { createAnthropicAdapter, createOpenResponsesAdapter } from '@momonga/gateway';
+import type { PriceTable } from '@momonga/observability';
 import type { Capabilities, StreamEvent } from '@momonga/protocol';
 import { createFakeClock, startFakeAnthropic, startFakeOpenResponses } from '@momonga/testkit';
 import type { FakeAnthropicOptions, FakeOpenResponsesOptions, FakeUpstreamServer } from '@momonga/testkit';
@@ -36,7 +37,7 @@ export type UpstreamGateway = Harness & { fake: FakeUpstreamServer };
 const singleTarget = { aliases: { fast: ['remote'] }, targets: { remote: { model: 'upstream-model', kind: 'remote' } } };
 
 export const startAnthropicGateway = async (
-  options: Omit<FakeAnthropicOptions, 'apiKey'> & { apiKey?: string; sentKey?: string; config?: ConfigOverrides; capabilities?: Capabilities },
+  options: Omit<FakeAnthropicOptions, 'apiKey'> & { apiKey?: string; sentKey?: string; config?: ConfigOverrides; capabilities?: Capabilities; priceTable?: PriceTable },
 ): Promise<UpstreamGateway> => {
   const fake = await startFakeAnthropic({ apiKey: options.apiKey ?? FAKE_API_KEY, ...options });
   registerCleanup(() => fake.close());
@@ -47,7 +48,11 @@ export const startAnthropicGateway = async (
     clock: createFakeClock(START_MS),
   });
   registerCleanup(() => adapter.close());
-  const harness = await startGateway({ adapters: { remote: adapter }, config: { ...singleTarget, ...options.config } });
+  const harness = await startGateway({
+    adapters: { remote: adapter },
+    config: { ...singleTarget, ...options.config },
+    ...(options.priceTable === undefined ? {} : { priceTable: options.priceTable }),
+  });
   return { ...harness, fake };
 };
 

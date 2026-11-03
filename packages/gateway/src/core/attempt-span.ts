@@ -24,6 +24,7 @@ export type AttemptSpanInput = {
   stream: boolean;
   runId: string | undefined;
   step: number | undefined;
+  purpose: string | undefined;
   attempt: number;
   targetName: string;
   request: { input: readonly AdapterInputItem[]; instructions: string | null | undefined; tools: readonly FunctionTool[] | null | undefined };
@@ -36,6 +37,7 @@ export type AttemptSpan = {
     responseId: string;
     finishReason: string;
     usage: Usage;
+    cacheWriteInputTokens?: number;
     output: readonly ItemField[];
     fallbackCauses: readonly FallbackCause[];
   }): void;
@@ -58,6 +60,7 @@ export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
       ...(input.maxTokens === undefined ? {} : { maxTokens: input.maxTokens }),
       ...(input.runId === undefined ? {} : { runId: input.runId }),
       ...(input.step === undefined ? {} : { step: input.step }),
+      ...(input.purpose === undefined ? {} : { purpose: input.purpose }),
     },
     input.parent,
   );
@@ -85,6 +88,7 @@ export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
           inputTokens: info.usage.input_tokens,
           outputTokens: info.usage.output_tokens,
           cachedInputTokens: info.usage.input_tokens_details.cached_tokens,
+          ...(info.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: info.cacheWriteInputTokens }),
           reasoningTokens: info.usage.output_tokens_details.reasoning_tokens,
         },
       });

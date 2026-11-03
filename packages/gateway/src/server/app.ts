@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { STREAM_IDLE_HEADER } from '@momonga/protocol';
-import type { GatewayCostReportView, GatewayHealth, ModelList, MomongaModelList } from '@momonga/protocol';
+import type { BreakdownCallInput, CostBreakdownView, GatewayCostReportView, GatewayHealth, ModelList, MomongaModelList } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, invalidRequest, notFound } from '../core/errors.ts';
 import type { ResponsesService, SubmitHeaders } from '../core/responses-service.ts';
 import type { Services } from '../core/services.ts';
@@ -20,8 +20,18 @@ export type AppDependencies = {
   startedAt: string;
   version: string;
   costReport: ((runs: readonly { runId: string; sessionId: string }[]) => Promise<{ report: GatewayCostReportView; text: string }>) | undefined;
+  costBreakdown: ((runIds: readonly string[], calls: readonly BreakdownCallInput[]) => Promise<{ breakdown: CostBreakdownView; text: string }>) | undefined;
   onError: ((error: unknown) => void) | undefined;
 };
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isBreakdownCall = (value: unknown): value is BreakdownCallInput =>
+  isRecord(value) &&
+  typeof value['runId'] === 'string' &&
+  Number.isInteger(value['step']) &&
+  (value['anatomy'] === undefined || isRecord(value['anatomy'])) &&
+  (value['timing'] === undefined || isRecord(value['timing']));
 
 const errorResponse = (error: GatewayError): Response =>
   new Response(JSON.stringify({ error: error.body }), {
@@ -192,6 +202,19 @@ export const createApp = (dependencies: AppDependencies): Hono => {
       throw invalidRequest('invalid_body', 'runs must be a list of { runId, sessionId }', 'runs');
     }
     return context.json(await dependencies.costReport(runs));
+  });
+
+  app.post('/v1/momonga/cost/breakdown', async (context) => {
+    if (dependencies.costBreakdown === undefined) throw notFound('cost_unavailable', 'this gateway keeps no trace store to price runs from');
+    const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
+    const { runIds, calls } = raw as { runIds?: unknown; calls?: unknown };
+    if (!Array.isArray(runIds) || !runIds.every((runId): runId is string => typeof runId === 'string')) {
+      throw invalidRequest('invalid_body', 'runIds must be a list of run ids', 'runIds');
+    }
+    if (!Array.isArray(calls) || !calls.every(isBreakdownCall)) {
+      throw invalidRequest('invalid_body', 'calls must be a list of { runId, step } records', 'calls');
+    }
+    return context.json(await dependencies.costBreakdown(runIds, calls));
   });
 
   return app;

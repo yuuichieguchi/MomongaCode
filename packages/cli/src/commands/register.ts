@@ -230,14 +230,16 @@ const registerCost: CommandGroup = (program, deps) => {
     .description('show the model cost of a run, of a session, or of the sessions of this folder')
     .option('--session <id>', 'the cost of one session')
     .option('--all', 'the cost of every session')
+    .option('--breakdown', 'show what the requests were made of, the billed tokens by kind, the cache hit ratio, the timing and the cost')
     .option('--json', 'print the report as JSON')
-    .action(async (runId: string | undefined, options: { session?: string; all?: true; json?: true }) => {
+    .action(async (runId: string | undefined, options: { session?: string; all?: true; breakdown?: true; json?: true }) => {
       deps.complete(
         await showCost(deps.ports, pathsOf(deps.ports), {
           ...(runId === undefined ? {} : { runId }),
           ...(options.session === undefined ? {} : { session: options.session }),
           all: options.all === true,
           json: options.json === true,
+          breakdown: options.breakdown === true,
         }),
       );
     });
@@ -285,8 +287,9 @@ const registerEvaluate: CommandGroup = (program, deps) => {
   evaluation
     .command('compare <baseline> <candidate>')
     .description('print the paired differences of two context reports and pass or fail the candidate against the gate')
-    .action(async (baseline: string, candidate: string) => {
-      deps.complete(await compareContext(deps.ports, baseline, candidate));
+    .option('--gate <name>', 'the terms the candidate is judged on: context (the default) or token', 'context')
+    .action(async (baseline: string, candidate: string, options: { gate: string }) => {
+      deps.complete(await compareContext(deps.ports, baseline, candidate, options.gate));
     });
 };
 

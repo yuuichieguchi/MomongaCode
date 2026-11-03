@@ -15,7 +15,18 @@ import {
   secretKeyFile,
 } from '@momonga/foundation';
 import type { Clock, JsonLogger, MomongaPaths, ProcessLock, ReadyFields, SecretStore, TextStream } from '@momonga/foundation';
-import { buildCostReport, closeTelemetry, definePriceTable, formatCostReport, createTelemetry, exportersFor, openTraceStore } from '@momonga/observability';
+import {
+  buildCostBreakdown,
+  buildCostReport,
+  closeTelemetry,
+  definePriceTable,
+  formatCostBreakdown,
+  formatCostReport,
+  createTelemetry,
+  exportersFor,
+  joinBreakdownCalls,
+  openTraceStore,
+} from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import type { AdapterTarget, Capabilities, ProviderAdapter, ToolCallingMode } from '@momonga/protocol';
 import { loadEndpointRecord, saveEndpointRecord } from './probe/endpoint-record.ts';
@@ -451,10 +462,16 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       socketPath: paths.sockets.gateway,
       ...(options.debugTcp === undefined ? {} : { debugTcp: { host: DEBUG_TCP_HOST, port: options.debugTcp.port, token: files.readDebugToken(options.debugTcp.tokenFile) } }),
       telemetry,
+      priceTable,
       costReport: async (runs) => {
         await telemetry.forceFlush();
         const report = buildCostReport(traceStore, runs, { table: priceTable });
         return { report, text: formatCostReport(report) };
+      },
+      costBreakdown: async (runIds, calls) => {
+        await telemetry.forceFlush();
+        const breakdown = buildCostBreakdown(joinBreakdownCalls(traceStore, runIds, calls), { table: priceTable });
+        return { breakdown, text: formatCostBreakdown(breakdown) };
       },
       version: options.version,
       onError: (error) => logger.error('unhandled gateway error', { err: toError(error) }),

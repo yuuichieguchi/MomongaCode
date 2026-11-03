@@ -508,6 +508,7 @@ export type RuntimeStore = {
   ): ServiceMutationResult;
   readRunEvents(runId: string, afterSeq: number, limit: number): RunEvent[];
   readRunEventsOfTypes(runId: string, types: readonly RunEventPayload['type'][]): RunEvent[];
+  readModelCallEvents(runId: string): RunEvent[];
   prepareTerminal(runId: string): void;
   lastTerminalRootRuns(project: string, limit: number): Run[];
   readSessionEvents(sessionId: string, afterId: number, limit: number): (RunEvent | SessionEvent)[];

@@ -1,7 +1,7 @@
 import { createUdsClient, decodeSse, parseRetryAfter } from '@momonga/foundation';
 import type { UdsClient, UdsResponse } from '@momonga/foundation';
 import { COMPACTION_RESULT_EVENT, ERROR_TYPES, STREAM_IDLE_HEADER } from '@momonga/protocol';
-import type { GatewayCostReportView } from '@momonga/protocol';
+import type { BreakdownCallInput, CostBreakdownView, GatewayCostReportView } from '@momonga/protocol';
 import type {
   Capabilities,
   CompactRequest,
@@ -63,6 +63,7 @@ export type GatewayClient = GatewayPort & {
   models(): Promise<GatewayModel[]>;
   health(): Promise<GatewayHealth>;
   cost(runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal): Promise<{ report: GatewayCostReportView; text: string }>;
+  costBreakdown(runIds: readonly string[], calls: readonly BreakdownCallInput[], signal: AbortSignal): Promise<{ breakdown: CostBreakdownView; text: string }>;
   destroy(): Promise<void>;
 };
 
@@ -420,6 +421,12 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
       const parsed = await unary({ method: 'POST', path: '/v1/momonga/cost', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ runs }) }, signal, unaryBound());
       if (!isRecord(parsed) || !isRecord(parsed['report']) || typeof parsed['text'] !== 'string') throw invalidResponse('the cost answer has no report and text');
       return { report: parsed['report'] as GatewayCostReportView, text: parsed['text'] };
+    },
+
+    costBreakdown: async (runIds, calls, signal) => {
+      const parsed = await unary({ method: 'POST', path: '/v1/momonga/cost/breakdown', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ runIds, calls }) }, signal, unaryBound());
+      if (!isRecord(parsed) || !isRecord(parsed['breakdown']) || typeof parsed['text'] !== 'string') throw invalidResponse('the cost breakdown answer has no breakdown and text');
+      return { breakdown: parsed['breakdown'] as CostBreakdownView, text: parsed['text'] };
     },
 
     health: async (): Promise<GatewayHealth> => {

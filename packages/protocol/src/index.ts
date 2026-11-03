@@ -103,6 +103,7 @@ export type {
   McpServerView,
   PublicRunEvent,
   RunHealth,
+  RunTraceCall,
   RunTraceSpan,
   RunTraceSummary,
   RunTraceView,
@@ -114,6 +115,18 @@ export type {
   SkillsResponse,
 } from './run-api.ts';
 export { assistantTextOf } from './assistant-text.ts';
+export { ANATOMY_FLAT_LAYERS, ANATOMY_HISTORY_LAYERS, anatomyLayerEntries } from './token-anatomy.ts';
+export type {
+  BilledTokensView,
+  BreakdownCallInput,
+  CallTiming,
+  CostBreakdownView,
+  ModelCost,
+  TimingSummaryView,
+  TokenAnatomy,
+  TokenAnatomyLayers,
+  UnpricedCallView,
+} from './token-anatomy.ts';
 export {
   DEFAULT_MEMORY_KIND,
   describeMemoryValidity,

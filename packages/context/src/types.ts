@@ -8,6 +8,7 @@ import type {
   InputItem,
   MemoryView,
   MessageInputItem,
+  TokenAnatomy,
 } from '@momonga/protocol';
 
 export type DeepReadonly<T> = T extends (...args: never[]) => unknown
@@ -175,6 +176,7 @@ export type BuiltContext = {
   tools: FunctionTool[];
   maxOutputTokens: number;
   inputTokens: number;
+  anatomy: TokenAnatomy;
   budget: ContextBudget;
   prefixDigest: string;
   pinnedDigest: string;

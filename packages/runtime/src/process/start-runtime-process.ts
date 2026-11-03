@@ -38,6 +38,7 @@ import { createReflector } from '../memory/reflection.ts';
 import { createMemoryUpkeepSchedule } from '../memory/upkeep-schedule.ts';
 import { DAY_MS } from '@momonga/memory';
 import { createRecordViews } from '../memory/views.ts';
+import { breakdownInputsOf, traceCallsOf } from '../service/model-calls.ts';
 import { runTraceOf } from '../service/trace-view.ts';
 import type { RunService } from '../service/service.ts';
 import { systemTimers } from '../service/timers.ts';
@@ -505,9 +506,16 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         releaseStopped: createStoppedRunReleaser({ store, tools: toolRuntime.port }),
         runTrace: async (runId) => {
           await telemetry.forceFlush();
-          return runTraceOf(traceStore, runId);
+          const trace = runTraceOf(traceStore, runId);
+          return trace === undefined ? undefined : { ...trace, calls: traceCallsOf(store.readModelCallEvents(runId)) };
         },
         runCost: (runs, signal) => gatewayClient.cost(runs, signal),
+        runCostBreakdown: (runs, signal) =>
+          gatewayClient.costBreakdown(
+            runs.map((run) => run.runId),
+            runs.flatMap((run) => breakdownInputsOf(run.runId, store.readModelCallEvents(run.runId))),
+            signal,
+          ),
         mcp: toolRuntime.mcpAdmin,
         onError: (error) => logger.error('service error', { err: asError(error) }),
         onFatal: latchFatal,

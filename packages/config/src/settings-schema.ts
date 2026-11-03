@@ -283,6 +283,7 @@ export const SETTINGS_SCHEMA = {
           effectiveFrom: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
           inputPerMTok: { type: 'number', minimum: 0 },
           cachedInputPerMTok: { type: 'number', minimum: 0 },
+          cacheWritePerMTok: { type: 'number', minimum: 0 },
           outputPerMTok: { type: 'number', minimum: 0 },
           currency: { const: 'USD' },
         },

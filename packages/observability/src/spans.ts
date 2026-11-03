@@ -25,6 +25,7 @@ export type ChatSpanInput = {
   stream: boolean;
   runId?: string;
   step?: number;
+  purpose?: string;
   attempt: number;
   target?: string;
 };
@@ -41,6 +42,7 @@ export type ChatUsage = {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens?: number;
+  cacheWriteInputTokens?: number;
   reasoningTokens?: number;
 };
 
@@ -101,6 +103,7 @@ export const startChatSpan = (tracer: Tracer, input: ChatSpanInput, parent?: Con
         [A.ATTR_GEN_AI_REQUEST_STREAM]: input.stream,
         ...(input.runId === undefined ? {} : { [MOMONGA_ATTRIBUTES.runId]: input.runId }),
         ...(input.step === undefined ? {} : { [MOMONGA_ATTRIBUTES.step]: input.step }),
+        ...(input.purpose === undefined ? {} : { [MOMONGA_ATTRIBUTES.purpose]: input.purpose }),
         [MOMONGA_ATTRIBUTES.attempt]: input.attempt,
         ...(input.target === undefined ? {} : { [MOMONGA_ATTRIBUTES.target]: input.target }),
       },
@@ -126,6 +129,9 @@ export const recordChatResponse = (span: Span, response: ChatResponse): void => 
     ...(response.usage.cachedInputTokens === undefined
       ? {}
       : { [A.ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS]: response.usage.cachedInputTokens }),
+    ...(response.usage.cacheWriteInputTokens === undefined
+      ? {}
+      : { [MOMONGA_ATTRIBUTES.cacheWriteInputTokens]: response.usage.cacheWriteInputTokens }),
     ...(response.usage.reasoningTokens === undefined
       ? {}
       : { [A.ATTR_GEN_AI_USAGE_REASONING_OUTPUT_TOKENS]: response.usage.reasoningTokens }),

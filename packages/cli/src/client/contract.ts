@@ -1,7 +1,7 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import { RUN_API_SCHEMAS } from '@momonga/protocol';
-import type { AgentsResponse, ContextChargeResponse, CostReportView, GuidelineResponse, GuidelinesResponse, JobsResponse, MemoriesResponse, MemoryResponse, McpAuthorizationView, McpServerView, PolicyGovernanceResponse, PromoteMemoryResponse, PublicRunEvent, ReflectionResponse, RuleAddResponse, RuleResponse, RulesResponse, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
+import type { AgentsResponse, ContextChargeResponse, CostBreakdownView, CostReportView, GuidelineResponse, GuidelinesResponse, JobsResponse, MemoriesResponse, MemoryResponse, McpAuthorizationView, McpServerView, PolicyGovernanceResponse, PromoteMemoryResponse, PublicRunEvent, ReflectionResponse, RuleAddResponse, RuleResponse, RulesResponse, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
 import type { ApprovalView, ElicitationView, ErrorBody, RunView, SessionView, TrustView } from './views.ts';
 
 export class ContractViolation extends Error {
@@ -44,6 +44,7 @@ export const checkRule = guard<RuleResponse>(RUN_API_SCHEMAS.RuleResponse);
 export const checkRules = guard<RulesResponse>(RUN_API_SCHEMAS.RulesResponse);
 export const checkPolicyGovernance = guard<PolicyGovernanceResponse>(RUN_API_SCHEMAS.PolicyGovernanceResponse);
 export const checkCostReport = guard<CostReportView>(RUN_API_SCHEMAS.CostReport);
+export const checkCostBreakdown = guard<CostBreakdownView>(RUN_API_SCHEMAS.CostBreakdown);
 export const checkGuidelines = guard<GuidelinesResponse>(RUN_API_SCHEMAS.GuidelinesResponse);
 export const checkGuideline = guard<GuidelineResponse>(RUN_API_SCHEMAS.GuidelineResponse);
 export const checkContextCharge = guard<ContextChargeResponse>(RUN_API_SCHEMAS.ContextChargeResponse);

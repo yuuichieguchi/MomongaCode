@@ -1,6 +1,8 @@
 import { SUMMARY_PROMPT_TOKENS, findDanglingOutput, findUnpairedCalls, summaryItemTokensFor, summaryTokenCapFor } from '@momonga/protocol';
 import type { FunctionCallOutputInputItem, FunctionTool, InputItem, MessageInputItem } from '@momonga/protocol';
 import { MIN_ROOM_TOKENS, budgetFor, inputCeilingFor, itemCapFor, memoryBudgetFor, summaryInputCeilingFor, pinnedFloorFor } from './budget.ts';
+import { anatomyOf, historyLayerOf } from './anatomy.ts';
+import type { TaggedItem } from './anatomy.ts';
 import { chainTail, digestChain, frozenItem } from './digests.ts';
 import { ContextOverflowError, PinnedOverflowError, PinnedRoomError, PrefixChangedError } from './errors.ts';
 import { governingMessageOf, governingNoticesOf, loadedGoverningOf } from './governing.ts';
@@ -58,6 +60,7 @@ type Head = {
   systemMessage: MessageInputItem;
   task: InputItem;
   pinnedLayers: InputItem[];
+  catalogMessages: MessageInputItem[];
   governing: MessageInputItem[];
   pinnedDigest: string;
   pinnedTokens: number;
@@ -176,6 +179,7 @@ const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): 
     systemMessage,
     task,
     pinnedLayers,
+    catalogMessages,
     governing,
     pinnedDigest,
     pinnedTokens,
@@ -185,6 +189,7 @@ const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): 
 };
 
 type FittedLayers = {
+  skillMessages: MessageInputItem[];
   nested: LoadedInstructionFile[];
   layers: InputItem[];
   counted: MeterCount;
@@ -241,7 +246,7 @@ const fitLayers = async (input: BuildContextInput, ports: BuildContextPorts, hea
       breakdown: await breakdownOf(ports, systemMessage, layers, governing, task, tools),
     });
   }
-  return { nested, layers, counted, layersWith, floorOf, exceeds };
+  return { skillMessages, nested, layers, counted, layersWith, floorOf, exceeds };
 };
 
 export const measureLayers = async (input: BuildContextInput, ports: BuildContextPorts): Promise<void> => {
@@ -274,7 +279,7 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
   const { discovered, notices, systemMessage, task, pinnedDigest, pinnedTokens, ceiling } = head;
 
   const fitted = await fitLayers(input, ports, head);
-  const { nested, layersWith, floorOf, exceeds } = fitted;
+  const { nested, skillMessages, layersWith, floorOf, exceeds } = fitted;
   let layers = fitted.layers;
   let layersCounted = fitted.counted;
   let memoryMessage: MessageInputItem | undefined;
@@ -589,8 +594,24 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
   }
 
   const hint = levelIndex === 0 && total.inputTokens > highMark ? await compactionFor('proactive', 0) : undefined;
+  const finalInput = assemble();
+  const layerByItem = new Map<InputItem, TaggedItem['layer']>();
+  layerByItem.set(task, 'history.user');
+  for (const message of [...head.catalogMessages, ...skillMessages]) layerByItem.set(message, 'skills');
+  for (const file of [discovered.user, discovered.root, ...nested]) if (file !== undefined) layerByItem.set(file.message, 'instructions');
+  for (const message of head.governing) layerByItem.set(message, 'governing');
+  if (memoryMessage !== undefined) layerByItem.set(memoryMessage, 'memories');
+  for (const item of summaryItems) layerByItem.set(item, 'summary');
+  for (const item of workingStateItems) layerByItem.set(item, 'workingState');
+  for (const item of trailing) layerByItem.set(item, 'notices');
+  layerByItem.set(systemMessage, 'system');
+  const tagged = finalInput.map((item): TaggedItem => ({ item, layer: layerByItem.get(item) ?? historyLayerOf(item) }));
+  const anatomy = await anatomyOf(meter, tools, tagged, total, (item) =>
+    countContextFor(item.type === 'function_call_output' ? item.call_id : ''),
+  );
   return {
-    input: assemble(),
+    input: finalInput,
+    anatomy,
     tools,
     maxOutputTokens: budgetOf(total).R,
     inputTokens: total.inputTokens,

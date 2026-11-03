@@ -63,8 +63,9 @@ export {
   parseContextReport,
 } from './context-report.ts';
 export type { BuildContextReportInput, ClusteredProportion, ContextCaseReport, ContextMetrics, ContextModel, ContextReport, ModelDependentMetric, StoppedRun } from './context-report.ts';
-export { GATE_CHECKS, compareContextReports, formatContextComparison } from './context-compare.ts';
-export type { ContextComparison, GateCheck, GateCheckName } from './context-compare.ts';
+export { GATE_CHECKS, GATE_NAMES, TOKEN_PRIMARY_METRICS, compareContextReports, formatContextComparison } from './context-compare.ts';
+export type { ContextComparison, GateCheck, GateCheckName, GateName, TokenPrimaryMetric } from './context-compare.ts';
+export type { RatioMetric } from './token-metrics.ts';
 export { contrastiveCasesOf } from './context-report.ts';
 export type { ContrastiveCase } from './context-report.ts';
 export {

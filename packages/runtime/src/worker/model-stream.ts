@@ -1,5 +1,5 @@
 import { isFatalStoreError } from '@momonga/store';
-import type { CreateResponseBody, ResponseResource, StreamEvent } from '@momonga/protocol';
+import type { CallTiming, CreateResponseBody, ResponseResource, StreamEvent } from '@momonga/protocol';
 import type { RunEventPayload } from '@momonga/protocol';
 import type { ClaimContext } from './claim-context.ts';
 import { GatewayFailureError } from './errors.ts';
@@ -89,16 +89,28 @@ export const terminalResultOf = (event: StreamEvent): ModelResult | undefined =>
   }
 };
 
+const carriesOutput = (event: StreamEvent): boolean =>
+  event.type === 'response.output_text.delta' ||
+  event.type === 'response.reasoning.delta' ||
+  event.type === 'response.reasoning_summary_text.delta' ||
+  event.type === 'response.function_call_arguments.delta' ||
+  (event.type === 'response.output_item.added' && event.item.type === 'function_call');
+
+export type StreamedModel = { result: ModelResult; timing: CallTiming };
+
 export const streamModel = async (
   ctx: ClaimContext,
   body: CreateResponseBody,
   idempotencyKey: string,
   position: { step: number; attempt: number },
-): Promise<ModelResult> => {
+): Promise<StreamedModel> => {
   const buffer = createDeltaBuffer((payloads) => ctx.journal.append(payloads), position, (error) => ctx.control.fail(error));
   let terminal: ModelResult | undefined;
+  let firstEventMs: number | undefined;
+  const { clock } = ctx.options;
   ctx.journal.verifyLease();
   ctx.control.inFlight.modelKey = idempotencyKey;
+  const startedAt = clock.now();
   try {
     await ctx.control.recordingRaised(
       (async (): Promise<void> => {
@@ -109,6 +121,7 @@ export const streamModel = async (
           traceparent: ctx.agentSpan.traceparent,
         });
         for await (const event of events) {
+          if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = clock.now() - startedAt;
           switch (event.type) {
             case 'response.output_text.delta':
               buffer.add('agent.message.delta', event.item_id, event.delta);
@@ -138,5 +151,5 @@ export const streamModel = async (
   delete ctx.control.inFlight.modelKey;
   if (terminal === undefined) throw new GatewayFailureError('the model stream ended without a terminal event');
   buffer.flush();
-  return terminal;
+  return { result: terminal, timing: { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: clock.now() - startedAt } };
 };

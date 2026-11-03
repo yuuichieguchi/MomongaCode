@@ -4,7 +4,7 @@ import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
 
-export type CostOptions = { runId?: string; session?: string; all: boolean; json: boolean };
+export type CostOptions = { runId?: string; session?: string; all: boolean; json: boolean; breakdown?: boolean };
 
 export class CostUsageError extends Error {
   constructor(message: string) {
@@ -26,6 +26,10 @@ export const showCost = async (ports: CliPorts, paths: MomongaPaths, options: Co
   await ensureDaemon(ports, paths);
   const client = connectRuntime(paths);
   try {
+    if (options.breakdown === true) {
+      ports.stdout.write(options.json ? `${JSON.stringify(await client.costBreakdown(filter))}\n` : await client.costBreakdownText(filter));
+      return 0;
+    }
     ports.stdout.write(options.json ? `${JSON.stringify(await client.cost(filter))}\n` : await client.costText(filter));
     return 0;
   } finally {

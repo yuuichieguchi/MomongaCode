@@ -115,6 +115,7 @@ export type HarnessOptions = {
   onError?: GatewayOptions['onError'];
   credentials?: readonly string[];
   credentialFeed?: GatewayOptions['credentialFeed'];
+  priceTable?: GatewayOptions['priceTable'];
 };
 
 export const startGateway = async (options: HarnessOptions): Promise<Harness> => {
@@ -138,6 +139,7 @@ export const startGateway = async (options: HarnessOptions): Promise<Harness> =>
     ...(options.onError === undefined ? {} : { onError: options.onError }),
     ...(options.telemetry === undefined ? {} : { telemetry: options.telemetry }),
     ...(options.debugTcp === undefined ? {} : { debugTcp: options.debugTcp }),
+    ...(options.priceTable === undefined ? {} : { priceTable: options.priceTable }),
   });
   registerCleanup(() => gateway.close());
   const client = createUdsClient(socketPath);

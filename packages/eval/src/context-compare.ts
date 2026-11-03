@@ -1,5 +1,5 @@
-import { MINIMUM_PAIRS, pairedBootstrap } from './bootstrap.ts';
-import type { BootstrapInterval } from './bootstrap.ts';
+import { MINIMUM_PAIRS, pairedBootstrap, pairedRatioBootstrap } from './bootstrap.ts';
+import type { BootstrapInterval, Cluster } from './bootstrap.ts';
 import { describeClustered } from './context-report.ts';
 import type { ClusteredProportion, ContextCaseReport, ContextReport } from './context-report.ts';
 import { percent } from './report.ts';
@@ -15,16 +15,29 @@ export const GATE_CHECKS = [
   'overallPasses',
   'unclassifiedCompactions',
 ] as const;
-export type GateCheckName = (typeof GATE_CHECKS)[number];
+
+export const GATE_NAMES = ['context', 'token'] as const;
+export type GateName = (typeof GATE_NAMES)[number];
+
+export const TOKEN_PRIMARY_METRICS = ['costPerSuccess', 'uncachedInputPerSuccess'] as const;
+export type TokenPrimaryMetric = (typeof TOKEN_PRIMARY_METRICS)[number];
+
+export type GateCheckName = (typeof GATE_CHECKS)[number] | 'passRate' | TokenPrimaryMetric;
 
 export type GateCheck = { name: GateCheckName; passed: boolean; detail: string };
 
 export type ContextComparison = {
+  gateName: GateName;
   baseline: { dataset: string; model: ContextReport['model'] };
   candidate: { dataset: string; model: ContextReport['model'] };
   contrastiveFailures: { baseline: number; candidate: number; n: number };
   fabricationRate: { baseline: ClusteredProportion | undefined; candidate: ClusteredProportion | undefined };
-  differences: { lossSignalsPerCompaction: BootstrapInterval | undefined; tokensPerSuccess: BootstrapInterval | undefined };
+  differences: {
+    lossSignalsPerCompaction: BootstrapInterval | undefined;
+    tokensPerSuccess: BootstrapInterval | undefined;
+    passRate?: BootstrapInterval | undefined;
+    primary?: { metric: TokenPrimaryMetric; interval: BootstrapInterval | undefined };
+  };
   gate: { passed: boolean; checks: GateCheck[] };
 };
 
@@ -92,7 +105,107 @@ const fabricationCheck = (baseline: ClusteredProportion | undefined, candidate: 
   };
 };
 
-export const compareContextReports = (baseline: ContextReport, candidate: ContextReport, options: { seed: number }): ContextComparison => {
+type Terms = {
+  baseline: ContextReport;
+  candidate: ContextReport;
+  pairs: CasePair[];
+  compacted: CasePair[];
+  loss: BootstrapInterval | undefined;
+  tokens: BootstrapInterval | undefined;
+  passRate: BootstrapInterval | undefined;
+  primary: { metric: TokenPrimaryMetric; interval: BootstrapInterval | undefined; why: string | undefined };
+};
+
+type Term = (terms: Terms) => GateCheck;
+
+const realModelTerm: Term = ({ baseline, candidate }) => {
+  const bothReal = baseline.model === 'real' && candidate.model === 'real';
+  return {
+    name: 'real_model',
+    passed: bothReal,
+    detail: `baseline model ${baseline.model}, candidate model ${candidate.model}, both declared by the operator${bothReal ? '' : '; a fake model proves only that the machinery works, so it cannot pass the gate'}`,
+  };
+};
+
+const lossTerm: Term = ({ compacted, loss }) => pairedCheck('lossSignalsPerCompaction', compacted.length, loss, 3);
+
+const fabricationTerm: Term = ({ baseline, candidate }) => fabricationCheck(baseline.metrics.fabricationRate, candidate.metrics.fabricationRate);
+
+const contrastiveTerm: Term = ({ baseline, candidate }) => contrastiveCheck(baseline, candidate);
+
+const tokensTerm: Term = ({ compacted, tokens }) => pairedCheck('tokensPerSuccess', compacted.length, tokens, 1);
+
+const offCasesTerm: Term = ({ baseline, candidate }) => {
+  const offCases = (report: ContextReport) => report.cases.filter((entry) => entry.compaction === 'off');
+  return noWorseCount('offCases', 'runs passed by the off cases', passedRunsOf(offCases(baseline)), passedRunsOf(offCases(candidate)));
+};
+
+const overallTerm: Term = ({ baseline, candidate }) => noWorseCount('overallPasses', 'runs passed overall', passedRunsOf(baseline.cases), passedRunsOf(candidate.cases));
+
+const unclassifiedTerm: Term = ({ baseline, candidate }) => ({
+  name: 'unclassifiedCompactions',
+  passed: baseline.unclassifiedCompactions + candidate.unclassifiedCompactions === 0,
+  detail: `${baseline.unclassifiedCompactions} in the baseline and ${candidate.unclassifiedCompactions} in the candidate; a compaction with no source or fidelity lies outside the fabrication term`,
+});
+
+const passRateTerm: Term = ({ pairs, passRate }) => {
+  const name = 'passRate';
+  if (passRate === undefined) return { name, passed: false, detail: `${NO_MEASURE}: no case is recorded in both reports` };
+  const described = `paired difference ${describeInterval(passRate, 3)}`;
+  if (pairs.length < MINIMUM_PAIRS) return { name, passed: false, detail: `too few pairs: ${pairs.length} of the ${MINIMUM_PAIRS} needed for a real interval; ${described}` };
+  return { name, passed: !(passRate.high < 0), detail: `${described}; the candidate is worse only when the whole interval lies below 0` };
+};
+
+const primaryTerm: Term = ({ pairs, primary }) => {
+  const { metric, interval, why } = primary;
+  const reason = why === undefined ? '' : `; judged on uncached input because ${why}`;
+  if (interval === undefined) {
+    return { name: metric, passed: false, detail: `${NO_MEASURE}: ${metric} is not recorded for every case of both reports${why === undefined ? '' : `; ${why}`}` };
+  }
+  const described = `paired difference per success ${describeInterval(interval, metric === 'costPerSuccess' ? 6 : 1)}`;
+  if (pairs.length < MINIMUM_PAIRS) {
+    return { name: metric, passed: false, detail: `too few pairs: ${pairs.length} of the ${MINIMUM_PAIRS} needed for a real interval; ${described}${reason}` };
+  }
+  return { name: metric, passed: interval.high < 0, detail: `${described}; the candidate must be lower, the whole interval below 0${reason}` };
+};
+
+const GATE_TERMS: Record<GateName, readonly Term[]> = {
+  context: [realModelTerm, contrastiveTerm, fabricationTerm, lossTerm, tokensTerm, offCasesTerm, overallTerm, unclassifiedTerm],
+  token: [realModelTerm, passRateTerm, primaryTerm, lossTerm, fabricationTerm],
+};
+
+const sideNames = ['baseline', 'candidate'] as const;
+
+const tokenPrimaryOf = (baseline: ContextReport, candidate: ContextReport, pairs: readonly CasePair[], seed: number): Terms['primary'] => {
+  const reports = { baseline, candidate };
+  const costMissing = sideNames.flatMap((side) => (reports[side].metrics.costPerSuccess === undefined ? [side] : []));
+  const costFree = sideNames.flatMap((side) => (reports[side].metrics.costPerSuccess?.numerator === 0 ? [side] : []));
+  const metric: TokenPrimaryMetric = costMissing.length === 0 && costFree.length === 0 ? 'costPerSuccess' : 'uncachedInputPerSuccess';
+  const why =
+    metric === 'costPerSuccess'
+      ? undefined
+      : costMissing.length > 0
+        ? `cost per success is not measured in the ${costMissing.join(' and the ')} (a call carries no price, or no run succeeded)`
+        : `the total cost of the ${costFree.join(' and the ')} is 0, which a cost per success cannot rank`;
+  const clusters = pairs.map((pair) => {
+    const pick = (entry: ContextCaseReport): Cluster | undefined => {
+      const totals = entry.tokens;
+      const numerator = metric === 'costPerSuccess' ? totals?.cost : totals?.uncachedInputTokens;
+      return numerator === undefined ? undefined : { numerator, denominator: entry.passedRuns };
+    };
+    return { baseline: pick(pair.baseline), candidate: pick(pair.candidate) };
+  });
+  const complete = clusters.flatMap((pair) => (pair.baseline === undefined || pair.candidate === undefined ? [] : [{ baseline: pair.baseline, candidate: pair.candidate }]));
+  const measured = complete.length === clusters.length && baseline.metrics[metric] !== undefined && candidate.metrics[metric] !== undefined;
+  return { metric, interval: measured ? pairedRatioBootstrap(complete, { seed }) : undefined, why };
+};
+
+export const compareContextReports = (
+  baseline: ContextReport,
+  candidate: ContextReport,
+  options: { seed: number; gate?: GateName },
+): ContextComparison => {
+  const gateName = options.gate ?? 'context';
   const pairs = pairCases(baseline, candidate);
   const compacted = pairs.filter((pair) => pair.baseline.compaction === 'on' && pair.baseline.compactions > 0 && pair.candidate.compactions > 0);
   const loss = intervalOf(
@@ -103,35 +216,24 @@ export const compareContextReports = (baseline: ContextReport, candidate: Contex
     compacted.map((pair) => pair.candidate.totalTokens - pair.baseline.totalTokens),
     options.seed,
   );
-  const baselineFabrication = baseline.metrics.fabricationRate;
-  const candidateFabrication = candidate.metrics.fabricationRate;
-  const bothReal = baseline.model === 'real' && candidate.model === 'real';
-  const offCases = (report: ContextReport) => report.cases.filter((entry) => entry.compaction === 'off');
-  const unclassified = baseline.unclassifiedCompactions + candidate.unclassifiedCompactions;
-  const checks: GateCheck[] = [
-    {
-      name: 'real_model',
-      passed: bothReal,
-      detail: `baseline model ${baseline.model}, candidate model ${candidate.model}, both declared by the operator${bothReal ? '' : '; a fake model proves only that the machinery works, so it cannot pass the gate'}`,
-    },
-    contrastiveCheck(baseline, candidate),
-    fabricationCheck(baselineFabrication, candidateFabrication),
-    pairedCheck('lossSignalsPerCompaction', compacted.length, loss, 3),
-    pairedCheck('tokensPerSuccess', compacted.length, tokens, 1),
-    noWorseCount('offCases', 'runs passed by the off cases', passedRunsOf(offCases(baseline)), passedRunsOf(offCases(candidate))),
-    noWorseCount('overallPasses', 'runs passed overall', passedRunsOf(baseline.cases), passedRunsOf(candidate.cases)),
-    {
-      name: 'unclassifiedCompactions',
-      passed: unclassified === 0,
-      detail: `${baseline.unclassifiedCompactions} in the baseline and ${candidate.unclassifiedCompactions} in the candidate; a compaction with no source or fidelity lies outside the fabrication term`,
-    },
-  ];
+  const passRate = intervalOf(
+    pairs.map((pair) => pair.candidate.passRate.rate - pair.baseline.passRate.rate),
+    options.seed,
+  );
+  const primary = tokenPrimaryOf(baseline, candidate, pairs, options.seed);
+  const terms: Terms = { baseline, candidate, pairs, compacted, loss, tokens, passRate, primary };
+  const checks = GATE_TERMS[gateName].map((term) => term(terms));
   return {
+    gateName,
     baseline: { dataset: baseline.dataset, model: baseline.model },
     candidate: { dataset: candidate.dataset, model: candidate.model },
     contrastiveFailures: { baseline: baseline.metrics.contrastiveFailures.count, candidate: candidate.metrics.contrastiveFailures.count, n: baseline.metrics.contrastiveFailures.n },
-    fabricationRate: { baseline: baselineFabrication, candidate: candidateFabrication },
-    differences: { lossSignalsPerCompaction: loss, tokensPerSuccess: tokens },
+    fabricationRate: { baseline: baseline.metrics.fabricationRate, candidate: candidate.metrics.fabricationRate },
+    differences: {
+      lossSignalsPerCompaction: loss,
+      tokensPerSuccess: tokens,
+      ...(gateName === 'token' ? { passRate, primary: { metric: primary.metric, interval: primary.interval } } : {}),
+    },
     gate: { passed: checks.every((check) => check.passed), checks },
   };
 };
@@ -141,16 +243,33 @@ const describeDifference = (name: string, interval: BootstrapInterval | undefine
 
 const describeFabrication = (value: ClusteredProportion | undefined): string => (value === undefined ? 'n/a' : describeClustered(value));
 
+const gateLines = (comparison: ContextComparison): string[] => [
+  `gate: ${comparison.gate.passed ? 'PASS' : 'FAIL'}`,
+  ...comparison.gate.checks.map((check) => `  ${check.passed ? 'ok  ' : 'FAIL'} ${check.name}: ${check.detail}`),
+];
+
 export const formatContextComparison = (comparison: ContextComparison): string => {
-  const lines = [
+  const heading = [
     `baseline: dataset ${comparison.baseline.dataset}, model ${comparison.baseline.model}`,
     `candidate: dataset ${comparison.candidate.dataset}, model ${comparison.candidate.model}`,
+  ];
+  if (comparison.gateName === 'token') {
+    const { primary } = comparison.differences;
+    return [
+      ...heading,
+      describeDifference('passRate', comparison.differences.passRate, 3),
+      primary === undefined ? 'primary n/a' : describeDifference(primary.metric, primary.interval, primary.metric === 'costPerSuccess' ? 6 : 1),
+      describeDifference('lossSignalsPerCompaction', comparison.differences.lossSignalsPerCompaction, 3),
+      `fabricationRate baseline ${describeFabrication(comparison.fabricationRate.baseline)}, candidate ${describeFabrication(comparison.fabricationRate.candidate)}`,
+      ...gateLines(comparison),
+    ].join('\n');
+  }
+  return [
+    ...heading,
     `contrastiveFailures baseline ${comparison.contrastiveFailures.baseline}, candidate ${comparison.contrastiveFailures.candidate}, n=${comparison.contrastiveFailures.n}`,
     `fabricationRate baseline ${describeFabrication(comparison.fabricationRate.baseline)}, candidate ${describeFabrication(comparison.fabricationRate.candidate)}`,
     describeDifference('lossSignalsPerCompaction', comparison.differences.lossSignalsPerCompaction, 3),
     describeDifference('tokensPerSuccess', comparison.differences.tokensPerSuccess, 1),
-    `gate: ${comparison.gate.passed ? 'PASS' : 'FAIL'}`,
-  ];
-  for (const check of comparison.gate.checks) lines.push(`  ${check.passed ? 'ok  ' : 'FAIL'} ${check.name}: ${check.detail}`);
-  return lines.join('\n');
+    ...gateLines(comparison),
+  ].join('\n');
 };

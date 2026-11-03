@@ -10,8 +10,10 @@ import type {
   ResponseError,
   ResponseResource,
   StreamEvent,
+  Usage,
   UsageSource,
 } from '@momonga/protocol';
+import { computeCost } from '@momonga/observability';
 import { TERMINAL_STREAM_EVENT_TYPES, isReasoningEffort } from '@momonga/protocol';
 import { startAttemptSpan } from './attempt-span.ts';
 import type { AttemptSpan, TraceParent } from './attempt-span.ts';
@@ -113,6 +115,7 @@ const openAttempt = async (
     stream: job.body.stream === true,
     runId: job.runId,
     step: job.step,
+    purpose: job.body.metadata?.['purpose'],
     attempt: attemptNumber,
     targetName: target.name,
     request: { input: resolved.forAdapter, instructions: job.body.instructions, tools: job.body.tools },
@@ -327,14 +330,33 @@ async function* relaySteps(
     }
   }
 
-  const momongaFor = (usageSource: UsageSource, contextInputTokens?: number): MomongaResponseExtension => ({
-    alias: job.alias,
-    target: target.name,
-    attempts,
-    ...(fallbackFrom.length === 0 ? {} : { fallbackFrom, fallbackCauses }),
-    usageSource,
-    ...(contextInputTokens === undefined ? {} : { contextInputTokens }),
-  });
+  const momongaFor = (usageSource: UsageSource, contextInputTokens?: number, billed?: { usage: Usage; cacheWriteInputTokens: number | undefined }): MomongaResponseExtension => {
+    const cost =
+      billed === undefined || services.priceTable === undefined
+        ? null
+        : computeCost({
+            provider: target.provider,
+            model: target.model,
+            usage: {
+              inputTokens: billed.usage.input_tokens,
+              outputTokens: billed.usage.output_tokens,
+              cachedInputTokens: billed.usage.input_tokens_details.cached_tokens,
+              ...(billed.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: billed.cacheWriteInputTokens }),
+            },
+            at: new Date(clock.now()),
+            table: services.priceTable,
+          });
+    return {
+      alias: job.alias,
+      target: target.name,
+      attempts,
+      ...(fallbackFrom.length === 0 ? {} : { fallbackFrom, fallbackCauses }),
+      usageSource,
+      ...(contextInputTokens === undefined ? {} : { contextInputTokens }),
+      ...(billed?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: billed.cacheWriteInputTokens }),
+      ...(cost === null ? {} : { cost }),
+    };
+  };
   const completedAt = Math.floor(clock.now() / 1000);
 
   const failedTerminal = (error: ResponseError, output: ItemField[]): StreamEvent => {
@@ -390,7 +412,11 @@ async function* relaySteps(
     incomplete_details: upstream.incomplete_details,
     output: upstreamOutput,
     usage,
-    momonga: momongaFor(usageSource, upstream.contextInputTokens),
+    momonga: momongaFor(
+      usageSource,
+      upstream.contextInputTokens,
+      reported === null ? undefined : { usage: reported, cacheWriteInputTokens: upstream.cacheWriteInputTokens },
+    ),
   };
   const terminal: StreamEvent = {
     type: terminalEvent.type,
@@ -447,7 +473,15 @@ async function* relaySteps(
   }
   job.connection?.remember(responseId, { input: resolved.stored, output: resource.output });
   target.breaker.onSuccess();
-  opened.span.succeed({ responseModel: target.model, responseId, finishReason: finishReasonOf(resource), usage, output: resource.output, fallbackCauses });
+  opened.span.succeed({
+    responseModel: target.model,
+    responseId,
+    finishReason: finishReasonOf(resource),
+    usage,
+    ...(upstream.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: upstream.cacheWriteInputTokens }),
+    output: resource.output,
+    fallbackCauses,
+  });
   progress.concluded = true;
   yield terminal;
 }

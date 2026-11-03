@@ -4,6 +4,7 @@ export type PriceEntry = {
   effectiveFrom: string;
   inputPerMTok: number;
   cachedInputPerMTok?: number;
+  cacheWritePerMTok?: number;
   outputPerMTok: number;
   currency: 'USD';
 };
@@ -14,6 +15,7 @@ export type CostUsage = {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens?: number;
+  cacheWriteInputTokens?: number;
 };
 
 export type CostInput = {
@@ -62,6 +64,7 @@ export const definePriceTable = (entries: readonly PriceEntry[]): PriceTable => 
     assertPrice(entry, 'inputPerMTok', entry.inputPerMTok);
     assertPrice(entry, 'outputPerMTok', entry.outputPerMTok);
     if (entry.cachedInputPerMTok !== undefined) assertPrice(entry, 'cachedInputPerMTok', entry.cachedInputPerMTok);
+    if (entry.cacheWritePerMTok !== undefined) assertPrice(entry, 'cacheWritePerMTok', entry.cacheWritePerMTok);
   }
   return Object.freeze(entries.map((entry) => Object.freeze({ ...entry })));
 };
@@ -80,7 +83,7 @@ const toAmount = (units: bigint): number => {
   return Number(`${whole}.${fraction}`);
 };
 
-const findEntry = (table: PriceTable, provider: string, model: string, atMs: number): PriceEntry | undefined =>
+export const findPriceEntry = (table: PriceTable, provider: string, model: string, atMs: number): PriceEntry | undefined =>
   table
     .filter((entry) => entry.provider === provider && entry.model === model && effectiveFromMs(entry) <= atMs)
     .reduce<PriceEntry | undefined>(
@@ -95,22 +98,32 @@ export const amountOfUnits = (units: bigint): number => toAmount(units);
 export const computeCostUnits = (input: CostInput): CostUnits | null => {
   const { usage } = input;
   const cachedInputTokens = usage.cachedInputTokens ?? 0;
+  const cacheWriteInputTokens = usage.cacheWriteInputTokens ?? 0;
   assertTokenCount('inputTokens', usage.inputTokens);
   assertTokenCount('outputTokens', usage.outputTokens);
   assertTokenCount('cachedInputTokens', cachedInputTokens);
-  if (cachedInputTokens > usage.inputTokens) {
-    throw new RangeError(`cachedInputTokens (${cachedInputTokens}) exceeds inputTokens (${usage.inputTokens})`);
+  assertTokenCount('cacheWriteInputTokens', cacheWriteInputTokens);
+  if (cachedInputTokens + cacheWriteInputTokens > usage.inputTokens) {
+    throw new RangeError(
+      `cachedInputTokens (${cachedInputTokens}) and cacheWriteInputTokens (${cacheWriteInputTokens}) together exceed inputTokens (${usage.inputTokens})`,
+    );
   }
   const atMs = input.at.getTime();
   if (Number.isNaN(atMs)) throw new RangeError('computeCost: at must be a valid Date');
-  const entry = findEntry(input.table, input.provider, input.model, atMs);
+  const entry = findPriceEntry(input.table, input.provider, input.model, atMs);
   if (entry === undefined) return null;
+  let cacheWriteUnits = 0n;
+  if (cacheWriteInputTokens > 0) {
+    if (entry.cacheWritePerMTok === undefined) return null;
+    cacheWriteUnits = BigInt(cacheWriteInputTokens) * scaledPrice(entry.cacheWritePerMTok);
+  }
   const inputRate = scaledPrice(entry.inputPerMTok);
   const cachedRate = scaledPrice(entry.cachedInputPerMTok ?? entry.inputPerMTok);
   const outputRate = scaledPrice(entry.outputPerMTok);
   const units =
-    BigInt(usage.inputTokens - cachedInputTokens) * inputRate +
+    BigInt(usage.inputTokens - cachedInputTokens - cacheWriteInputTokens) * inputRate +
     BigInt(cachedInputTokens) * cachedRate +
+    cacheWriteUnits +
     BigInt(usage.outputTokens) * outputRate;
   return { units, currency: entry.currency, priceVersion: entry.effectiveFrom };
 };
