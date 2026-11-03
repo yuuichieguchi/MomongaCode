@@ -1,6 +1,7 @@
 import type { ServerResponse } from 'node:http';
 import { describe, expect, it } from 'vitest';
 import { createFakeTimers, waitFor } from '@momonga/testkit';
+import { dispositionOf } from '../../src/worker/gateway-policy.ts';
 import {
   START_MS,
   TRACEPARENT,
@@ -24,6 +25,8 @@ import {
 
 const COUNT_REQUEST = { model: 'default', input: [{ type: 'message' as const, role: 'user' as const, content: [{ type: 'input_text' as const, text: 'hi' }] }] };
 const COMPACT_REQUEST = { model: 'default', input: COUNT_REQUEST.input };
+const COMPACT_RESOURCE = { id: 'cmp_1', object: 'response.compaction', output: [] };
+const compactFrame = (resource: unknown): string => `event: compaction\ndata: ${JSON.stringify(resource)}\n\n`;
 
 const sseReply = (frames: string[]) => (_request: unknown, response: ServerResponse) => {
   openSse(response);
@@ -418,6 +421,27 @@ describe('gateway client bounds', () => {
     expectGatewayError(error, { status: 429, type: 'too_many_requests', code: 'rate_limited', retryAfterMs: 7000 });
   });
 
+  it.for([
+    { code: 'all_targets_unavailable', retryAfterMs: 30_000, expected: { kind: 'requeue', refund: false, retryAfterMs: 30_000, interrupted: false } },
+    { code: 'all_targets_unreachable', retryAfterMs: undefined, expected: { kind: 'fail', code: 'all_targets_unreachable' } },
+  ])('lets the worker requeue or fail a $code error event exactly as it does an HTTP reply', async ({ code, retryAfterMs, expected }) => {
+    const fake = await startRawHttpFake();
+    const errorEvent = {
+      type: 'error',
+      sequence_number: 0,
+      status: 503,
+      ...(retryAfterMs === undefined ? {} : { retry_after_ms: retryAfterMs }),
+      error: { type: 'server_error', code, message: 'no target answers', param: null },
+    };
+    fake.respond(sseReply([': keep-alive\n\n', sseFrame(errorEvent)]));
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock);
+
+    const error = await settle(collect(client.stream(streamBody(), callOptions(clock))));
+
+    expect(dispositionOf(error, 0)).toMatchObject(expected);
+  });
+
   it('tells the gateway its idle bound in the momonga-stream-idle-ms header', async () => {
     const fake = await startRawHttpFake();
     fake.respond((_request, response) => {
@@ -430,6 +454,107 @@ describe('gateway client bounds', () => {
     await collect(client.stream(streamBody(), callOptions(clock)));
 
     expect(fake.requests[0]?.headers['momonga-stream-idle-ms']).toBe('4321');
+  });
+
+  it('tells the gateway its idle bound on a compaction too', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond((_request, response) => {
+      openSse(response);
+      response.end(compactFrame(COMPACT_RESOURCE));
+    });
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock, { streamIdleTimeoutMs: 4321 });
+
+    await client.compact(COMPACT_REQUEST, callOptions(clock));
+
+    expect(fake.requests[0]?.headers['momonga-stream-idle-ms']).toBe('4321');
+  });
+
+  it('interrupts a compaction whose gateway stays silent for streamIdleTimeoutMs', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond(() => {});
+    const clock = fakeClock();
+    const timers = createFakeTimers(clock);
+    const client = makeClient(fake.socketPath, clock, { streamIdleTimeoutMs: 150, timers });
+
+    const pending = settle(client.compact(COMPACT_REQUEST, callOptions(clock)));
+    await waitFor(() => fake.requests.length === 1, { description: 'the request to arrive' });
+    timers.advance(150);
+
+    expectGatewayError(await pending, { status: 0, type: 'transport', code: 'stream_interrupted' });
+  });
+
+  it('interrupts a compaction whose gateway opens the stream and then goes silent', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond((_request, response) => {
+      openSse(response);
+      response.write(': keep-alive\n\n');
+    });
+    const clock = fakeClock();
+    const timers = spiedTimers(clock);
+    const client = makeClient(fake.socketPath, clock, { streamIdleTimeoutMs: 150, timers });
+
+    const pending = settle(client.compact(COMPACT_REQUEST, callOptions(clock)));
+    await waitFor(() => fake.requests.length === 1, { description: 'the request to arrive' });
+    await timers.untilArmed(3);
+    timers.advance(150);
+
+    expectGatewayError(await pending, { status: 0, type: 'transport', code: 'stream_interrupted' });
+  });
+
+  it('completes a compaction that the gateway keeps alive with comments for longer than streamIdleTimeoutMs', async () => {
+    const fake = await startRawHttpFake();
+    let open: ServerResponse | undefined;
+    fake.respond((_request, response) => {
+      open = response;
+      openSse(response);
+      response.write(': keep-alive\n\n');
+    });
+    const clock = fakeClock();
+    const timers = spiedTimers(clock);
+    const client = makeClient(fake.socketPath, clock, { streamIdleTimeoutMs: 150, timers });
+
+    const pending = client.compact(COMPACT_REQUEST, callOptions(clock));
+    await waitFor(() => open !== undefined, { description: 'the stream to open' });
+    await timers.untilArmed(3);
+    for (let round = 0; round < 4; round += 1) {
+      const armedBefore = timers.armed();
+      (open as ServerResponse).write(': keep-alive\n\n');
+      await timers.untilArmed(armedBefore + 1);
+      timers.advance(100);
+    }
+    (open as ServerResponse).end(compactFrame(COMPACT_RESOURCE));
+
+    expect(await pending).toEqual(COMPACT_RESOURCE);
+  });
+
+  it('turns an error event of a compaction into the same error an HTTP reply of that status gives', async () => {
+    const fake = await startRawHttpFake();
+    const errorEvent = {
+      type: 'error',
+      sequence_number: 0,
+      status: 503,
+      retry_after_ms: 30_000,
+      error: { type: 'server_error', code: 'all_targets_unavailable', message: 'every target is cooling down', param: null },
+    };
+    fake.respond(sseReply([': keep-alive\n\n', sseFrame(errorEvent)]));
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock);
+
+    const error = await settle(client.compact(COMPACT_REQUEST, callOptions(clock)));
+
+    expectGatewayError(error, { status: 503, type: 'server_error', code: 'all_targets_unavailable', retryAfterMs: 30_000 });
+  });
+
+  it('reports a compaction stream that ends without a result as interrupted', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond(sseReply([': keep-alive\n\n']));
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock);
+
+    const error = await settle(client.compact(COMPACT_REQUEST, callOptions(clock)));
+
+    expectGatewayError(error, { status: 0, type: 'transport', code: 'stream_interrupted' });
   });
 
   it('treats keep-alive comments as activity', async () => {

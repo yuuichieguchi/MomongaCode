@@ -26,7 +26,6 @@ export type {
   ChatResponse,
   ChatSpanInput,
   ChatUsage,
-  FallbackCause,
   GenAiMessage,
   GenAiPart,
   GenAiToolDefinition,

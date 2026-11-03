@@ -134,7 +134,6 @@ describe('open-responses target', () => {
         streaming: true,
         stopSequences: false,
         imageInput: false,
-        parallelToolCalls: false,
         schemaDialect: 'json-schema-2020-12',
         tokenCounting: 'estimated',
         usageReported: true,

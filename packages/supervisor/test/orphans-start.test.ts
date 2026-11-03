@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ProbeFailedError, probeFailed, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
+import { ProbeFailedError, createUninspectableRegistry, probeFailed, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import type { ReapMarkerDirectoryOptions } from '@momonga/foundation';
 import { createFakeKernelLock, createFakeClock, createFakeTimers, fakeReapTiming, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
@@ -86,7 +86,7 @@ describe('reapOrphans', () => {
     expect(log.withMsg('orphans.waiting')).toEqual([expect.objectContaining({ markers: 1, holders: 0 })]);
   });
 
-  it('names a process that cannot be inspected as a warning, once for the life of the process', async (context) => {
+  it('names a process that cannot be inspected as a warning, once for each marker it may hold', async (context) => {
     const dir = markersDir(context);
     fs.writeFileSync(path.join(dir, 'runtime-03'), '', { mode: 0o600 });
     fs.writeFileSync(path.join(dir, 'runtime-04'), '', { mode: 0o600 });
@@ -97,9 +97,12 @@ describe('reapOrphans', () => {
       },
       reapMarkerDirectory: async () => ({ reaped: 2, kept: 0 }),
     };
-    const { options, log } = reapSetup(dir, { markerPorts: ports });
+    const { options, log } = reapSetup(dir, { markerPorts: ports, uninspectable: createUninspectableRegistry({ isAlive: () => true }) });
     await reapOrphans(options);
-    expect(log.withMsg('orphans.warning')).toEqual([expect.objectContaining({ detail: expect.stringContaining('process 31339 (ssh-agent) could not be inspected, so it was left alone') })]);
+    expect(log.withMsg('orphans.warning')).toEqual([
+      expect.objectContaining({ detail: `marker ${path.join(dir, 'runtime-03')}: process 31339 (ssh-agent) could not be inspected, so it was left alone` }),
+      expect.objectContaining({ detail: `marker ${path.join(dir, 'runtime-04')}: process 31339 (ssh-agent) could not be inspected, so it was left alone` }),
+    ]);
   });
 
   it('phase 1 waits for a holder that exits on its own and then reaps without a signal request', async (context) => {

@@ -1,7 +1,8 @@
+import { describeFallbackCause } from '@momonga/foundation';
+import type { FallbackCause } from '@momonga/foundation';
 import { GENAI_SEMCONV, MOMONGA_ATTRIBUTES, OPERATIONS, UNKNOWN_BILLING } from './semconv.ts';
 import { amountOfUnits, computeCostUnits } from './cost.ts';
 import type { PriceTable } from './cost.ts';
-import type { FallbackCause } from './spans.ts';
 import type { SpanRecord, TraceStore } from './trace-store.ts';
 
 const A = GENAI_SEMCONV.attributes;
@@ -193,12 +194,10 @@ const describeTotals = (totals: CostTotals): string => {
   const unknown = totals.unknownBillingCalls === 0 ? '' : `, ${totals.unknownBillingCalls} of ${totals.calls} call(s) have unknown billing and are not counted`;
   const fallback = (totals.fallbacks ?? []).map(
     (entry) =>
-      `, ${entry.calls} of ${totals.calls} call(s) were answered by fallback target ${entry.answeredBy} after ${entry.failed.map(describeCause).join('; ')}`,
+      `, ${entry.calls} of ${totals.calls} call(s) were answered by fallback target ${entry.answeredBy} after ${entry.failed.map(describeFallbackCause).join('; ')}`,
   );
   return `${totals.calls} call(s), ${totals.inputTokens} input (${totals.cachedInputTokens} cached) + ${totals.outputTokens} output tokens, ${totals.amount} ${totals.currency} at price version ${versions}${local}${unpriced}${unknown}${fallback.join('')}`;
 };
-
-const describeCause = (cause: FallbackCause): string => `${cause.target} failed (${cause.code === null ? cause.message : `${cause.code}: ${cause.message}`})`;
 
 export const formatCostReport = (report: CostReport): string => {
   const lines = ['cost report'];
