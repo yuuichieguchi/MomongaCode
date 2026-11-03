@@ -17,6 +17,8 @@ export type FakeSettings = SettingsPort & {
   contextValue: ResolvedContextSettings;
   context: (session: Session) => Promise<ResolvedContextSettings>;
   classifierAlias: string | undefined;
+  rolesValue: Partial<Record<'compaction' | 'reflection' | 'analysis' | 'classifier', string>>;
+  modelRoles: () => Partial<Record<'compaction' | 'reflection' | 'analysis' | 'classifier', string>>;
 };
 
 export const createFakeSettings = (layout: { home: string; project: string }): FakeSettings => {
@@ -34,6 +36,8 @@ export const createFakeSettings = (layout: { home: string; project: string }): F
     memoryValue: { reflection: { enabled: false }, forgetAfterDays: DEFAULT_FORGET_AFTER_DAYS },
     contextValue: { adaptiveBudget: false, autoCompact: true },
     classifierAlias: undefined,
+    rolesValue: {},
+    modelRoles: () => ({ ...settings.rolesValue }),
     hooks: async () => settings.hooksValue,
     verification: async () => settings.verificationValue,
     memory: async () => settings.memoryValue,

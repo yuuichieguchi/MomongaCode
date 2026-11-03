@@ -114,6 +114,7 @@ export type FakeGateway = GatewayPort & {
   generations: Map<string, number>;
   compactSummaries: string[];
   capabilitiesValue: Capabilities;
+  capabilitiesByAlias: Record<string, Capabilities>;
   rewriteCallIds: boolean;
   issuedCallIds(scriptId: string): string[];
   callId(scriptId: string, occurrence?: number): string;
@@ -225,6 +226,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
     generations: new Map(),
     compactSummaries: [],
     capabilitiesValue: capabilities,
+    capabilitiesByAlias: {},
     rewriteCallIds: true,
 
     issuedCallIds: (scriptId) => [...(issued.get(scriptId) ?? [])],
@@ -295,7 +297,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
       gateway.capabilityRequests.push(alias);
       gateway.capabilitiesCalls.push({ alias, signal: options?.signal });
       await gateway.capabilitiesHook?.(alias, options?.signal);
-      return gateway.capabilitiesValue;
+      return gateway.capabilitiesByAlias[alias] ?? gateway.capabilitiesValue;
     },
 
     cancel: async (idempotencyKey, options) => {
