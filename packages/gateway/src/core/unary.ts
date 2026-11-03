@@ -13,7 +13,7 @@ import type {
   LenientItems,
 } from '@momonga/protocol';
 import { armDeadline, parseDeadlineHeader, withDeadline } from './deadline.ts';
-import { errorBoundFor, estimateInputTokens, imageTokensOfWire, wireTokensOf } from './estimate.ts';
+import { estimateInputTokens, estimatedCountOf, imageTokensOfWire, wireTokensOf } from './estimate.ts';
 import { ClientDisconnectedError, GatewayError, detachedRunExpiredError, gatewayErrorFromBody, gatewayClosedError, invalidRequest, isRunCancelled, runCancelledError } from './errors.ts';
 import { parseIdempotencyKey, reusedError } from './idempotency.ts';
 import { inputHasImages, normalizeInput, resolveInput } from './input.ts';
@@ -118,7 +118,7 @@ const countWire = async (
   const adapterCountTokens = target.adapter.countTokens;
   if (adapterCountTokens === undefined) {
     const tokens = wireTokensOf(wire, imageModel);
-    return { input_tokens: tokens, method: 'estimated', error_bound: errorBoundFor(tokens) };
+    return estimatedCountOf(tokens);
   }
   const outcome = await callTargets(services, [target], signal, deadlineAt, (chosen, attemptNumber, guarded) =>
     adapterCountTokens.call(
@@ -131,7 +131,7 @@ const countWire = async (
   const imageTokens = imageTokensOfWire(wire, imageModel);
   if (imageTokens === 0) return outcome.value;
   const total = outcome.value.input_tokens + imageTokens;
-  return { input_tokens: total, method: 'estimated', error_bound: errorBoundFor(total) };
+  return estimatedCountOf(total);
 };
 
 const countTokens = async (
@@ -173,7 +173,7 @@ const countTokens = async (
       { input: resolved.forAdapter, instructions: request.instructions, tools: request.tools },
       (await services.router.capabilitiesOf(target)).imageTokens,
     );
-    return { input_tokens: inputTokens, method: 'estimated', error_bound: errorBoundFor(inputTokens) };
+    return estimatedCountOf(inputTokens);
   }
   const outcome = await callTargets(services, [target], signal, deadlineAt, (chosen, attemptNumber, guarded) =>
     adapterCountTokens.call(

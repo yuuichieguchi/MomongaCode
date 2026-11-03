@@ -397,6 +397,10 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
         unaryBound(),
       );
       if (!isRecord(parsed)) throw invalidResponse('the count_tokens reply is not an object');
+      const shape = parsed['error_shape'];
+      if (!isRecord(shape) || typeof shape['ratio'] !== 'number' || typeof shape['minimum'] !== 'number') {
+        throw invalidResponse('the count_tokens reply has no error_shape with a numeric ratio and minimum');
+      }
       return parsed as CountTokensResult;
     },
 

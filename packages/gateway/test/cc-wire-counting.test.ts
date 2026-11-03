@@ -138,7 +138,7 @@ describe('POST /v1/momonga/count_tokens counts the chat-completions wire', () =>
     const counted = await count(harness, body);
     expect(counted.status).toBe(200);
     const tokens = tokensOfWire(wire);
-    expect(counted.body).toEqual({ input_tokens: tokens, method: 'estimated', error_bound: boundOf(tokens) });
+    expect(counted.body).toEqual({ input_tokens: tokens, method: 'estimated', error_bound: boundOf(tokens), error_shape: { ratio: 0.3, minimum: 1 } });
   });
 
   it('counts the constrained tool listing and envelope, so the same request costs more than in native mode', async () => {
@@ -329,14 +329,14 @@ describe('a target with its own counter', () => {
       capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: 'constrained', tokenCounting: 'calibrated' }),
       countTokens: async (_target, request): Promise<CountTokensResult> => {
         seen.push(request);
-        return { input_tokens: 777, method: 'calibrated', error_bound: 11 };
+        return { input_tokens: 777, method: 'calibrated', error_bound: 11, error_shape: { ratio: 0, minimum: 11 } };
       },
     });
     const harness = await startCcGateway({ fm: adapter });
     const body = { instructions: 'Be terse.', input: [userText('count these words')], tools };
     const wire = (await sentWire(harness, fake, body)) as { messages: Array<{ content: string }>; response_format: unknown };
     const counted = await count(harness, body);
-    expect(counted.body).toEqual({ input_tokens: 777, method: 'calibrated', error_bound: 11 });
+    expect(counted.body).toEqual({ input_tokens: 777, method: 'calibrated', error_bound: 11, error_shape: { ratio: 0, minimum: 11 } });
     expect(seen).toHaveLength(1);
     const text = seen[0]?.input;
     expect(typeof text).toBe('string');

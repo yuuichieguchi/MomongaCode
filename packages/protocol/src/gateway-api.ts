@@ -1,3 +1,4 @@
+import type { ErrorShape } from './budget-constants.ts';
 import type { Capabilities, HealthResult } from './capabilities.ts';
 import type { FunctionTool, InputItem, ToolChoice } from './open-responses.ts';
 
@@ -24,6 +25,7 @@ export type CountTokensResult = {
   input_tokens: number;
   method: CountTokensMethod;
   error_bound: number;
+  error_shape: ErrorShape;
 };
 
 export type TargetHealth = {

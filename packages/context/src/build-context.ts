@@ -71,10 +71,11 @@ export type MaxInputBounds = {
   errorBoundAt(tokens: number): number;
 };
 
-export const maxInputFor = ({ ceiling, inputBudget, errorBoundAt }: MaxInputBounds): number => {
+export const maxInputFor = ({ ceiling, inputBudget, errorBoundAt }: MaxInputBounds): number | undefined => {
   const fitsWithItsBound = (tokens: number): boolean => tokens + errorBoundAt(tokens) <= inputBudget;
+  if (ceiling < 0 || !fitsWithItsBound(0)) return undefined;
   let low = 0;
-  let high = Math.max(0, Math.floor(ceiling));
+  let high = Math.floor(ceiling);
   while (low < high) {
     const middle = Math.ceil((low + high) / 2);
     if (fitsWithItsBound(middle)) low = middle;
@@ -83,7 +84,7 @@ export const maxInputFor = ({ ceiling, inputBudget, errorBoundAt }: MaxInputBoun
   return low;
 };
 
-const candidateToolsOf =(input: BuildContextInput): FunctionTool[] => (input.tools === 'none' ? [] : [...input.sources.tools]);
+const candidateToolsOf = (input: BuildContextInput): FunctionTool[] => (input.tools === 'none' ? [] : [...input.sources.tools]);
 
 const holdsHandles = (input: BuildContextInput): boolean =>
   input.evicted.size > 0 ||
@@ -593,8 +594,11 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
   }
 
   if (!fits(total)) {
-    const deficit = total.inputTokens - maxInputFor({ ceiling, inputBudget: budgetFor(capabilities, 0).I, errorBoundAt: total.errorBoundAt });
-    const outcome = await compactionFor('forced', deficit);
+    const maxInput = maxInputFor({ ceiling, inputBudget: budgetFor(capabilities, 0).I, errorBoundAt: total.errorBoundAt });
+    if (maxInput === undefined) {
+      throw new PinnedOverflowError({ pinnedTokens, ceiling: 0, breakdown: await breakdownOf(ports, systemMessage, layers, head.governing, task, tools) });
+    }
+    const outcome = await compactionFor('forced', total.inputTokens - maxInput);
     if (lastLevel) await persistEvictions(slots.length);
     throw new ContextOverflowError({
       inputTokens: total.inputTokens,

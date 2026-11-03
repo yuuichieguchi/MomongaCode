@@ -213,6 +213,7 @@ describe('momonga extension shapes', () => {
       input_tokens: number;
       method: 'exact' | 'calibrated' | 'estimated';
       error_bound: number;
+      error_shape: { readonly ratio: number; readonly minimum: number };
     }>();
   });
 

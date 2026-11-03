@@ -1,6 +1,6 @@
 import { canonicalJson } from '@momonga/foundation';
-import { ESTIMATED_ERROR_BOUND_RATIO, tokensForText } from '@momonga/protocol';
-import type { AdapterInputItem, FunctionTool, ImageTokenModel, ItemField, Usage } from '@momonga/protocol';
+import { ESTIMATED_ERROR_SHAPE, errorBoundOfShape, tokensForText } from '@momonga/protocol';
+import type { AdapterInputItem, CountTokensResult, FunctionTool, ImageTokenModel, ItemField, Usage } from '@momonga/protocol';
 import { withoutImages } from './image-tokens.ts';
 
 export { tokensForText };
@@ -23,7 +23,14 @@ export const wireTokensOf = (wire: unknown, imageModel?: ImageTokenModel): numbe
   return tokensForText(JSON.stringify(value)) + imageTokens;
 };
 
-export const errorBoundFor = (tokens: number): number => Math.max(1, Math.ceil(tokens * ESTIMATED_ERROR_BOUND_RATIO));
+export const errorBoundFor = (tokens: number): number => errorBoundOfShape(ESTIMATED_ERROR_SHAPE, tokens);
+
+export const estimatedCountOf = (tokens: number): CountTokensResult => ({
+  input_tokens: tokens,
+  method: 'estimated',
+  error_bound: errorBoundFor(tokens),
+  error_shape: ESTIMATED_ERROR_SHAPE,
+});
 
 export const estimateOutputTokens = (output: readonly ItemField[]): number => tokensForText(canonicalJson(output));
 

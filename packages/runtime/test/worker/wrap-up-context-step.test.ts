@@ -78,7 +78,7 @@ const contextFor = (state: RunState) => {
           counts.push(request);
           const input = typeof request.input === 'string' ? Math.ceil(request.input.length / 4) : request.input.reduce((sum, item) => sum + tokensOf(item), 0);
           const tools = (request.tools ?? []).reduce((sum, tool) => sum + tokensOf(tool), 0);
-          return { input_tokens: input + tools, method: 'exact', error_bound: 0 };
+          return { input_tokens: input + tools, method: 'exact', error_bound: 0, error_shape: { ratio: 0, minimum: 0 } };
         },
       },
       model: 'fm',

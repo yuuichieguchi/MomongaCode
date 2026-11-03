@@ -483,7 +483,7 @@ describe('architecture: a large-window target gets the whole tool set', () => {
       model: 'large',
       capabilities: LARGE_WINDOW_TARGET,
       counter: {
-        count: async (request) => ({ input_tokens: Math.ceil(JSON.stringify(request).length / 4), method: 'exact', error_bound: 0 }),
+        count: async (request) => ({ input_tokens: Math.ceil(JSON.stringify(request).length / 4), method: 'exact', error_bound: 0, error_shape: { ratio: 0, minimum: 0 } }),
       },
     });
     const blobs = {

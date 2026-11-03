@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { budgetFor, buildContext, createTokenMeter, maxInputFor, measurePinned } from '@momonga/context';
+import { ContextOverflowError, PinnedOverflowError, budgetFor, buildContext, createTokenMeter, maxInputFor, measurePinned } from '@momonga/context';
 import type { BuildContextPorts, TokenMeter } from '@momonga/context';
+import { ESTIMATED_ERROR_SHAPE, errorBoundOfShape } from '@momonga/protocol';
 import type { Capabilities, CountTokensResult, InputItem } from '@momonga/protocol';
 import {
   MODEL,
@@ -15,6 +16,7 @@ import {
   overflowOf,
   ratioCounter,
   seeded,
+  shapeCounter,
   sourcesWith,
 } from './helpers.ts';
 import type { FakeCounter } from './helpers.ts';
@@ -117,28 +119,47 @@ describe('forced deficit against the ceiling and the live bound', () => {
   });
 });
 
-describe('forced deficit with the gateway bound of 0.3 x tokens', () => {
-  const W8192_ESTIMATED_INPUT = budgetFor(W8192, 0).I;
-  const gatewayBound = (tokens: number): number => Math.ceil(0.3 * tokens);
+describe('forced deficit with the gateway bound max(1, ceil(0.3 x tokens))', () => {
+  const gatewayCounter = (): FakeCounter => shapeCounter(() => ESTIMATED_ERROR_SHAPE);
 
-  it('accepts the compaction of the skills e2e run: 6049 tokens, region 1061, summary 262', () => {
-    const maxInput = maxInputFor({ ceiling: 5387, inputBudget: W8192_ESTIMATED_INPUT, errorBoundAt: gatewayBound });
+  it('compacts the skills e2e state at 6049 tokens: the region frees less than T + bound(T) - I but closes the excess over the ceiling', async () => {
+    const meter = createTokenMeter({ counter: gatewayCounter(), model: MODEL, capabilities: W8192 });
+    const error = await overflowOf(
+      inputFor(W8192, { sources: sourcesWith({ history: argsSteps([2659, 2659, 4442, 4442, 4442, 4445]) }), level: 0 }),
+      portsWith(meter),
+    );
 
-    expect(W8192_ESTIMATED_INPUT).toBe(7004);
-    expect(maxInput).toBe(5387);
-    expect(6049 - maxInput).toBe(662);
-    expect(1061 - 262).toBeGreaterThanOrEqual(6049 - maxInput);
+    expect(error.inputTokens).toBe(6049);
+    expect(error.ceiling).toBe(5387);
+    expect(error.inputBudget).toBe(budgetFor(W8192, 0).I - errorBoundOfShape(ESTIMATED_ERROR_SHAPE, 6049));
+    expect(error.compactionBlockedBy).toBeUndefined();
+    expect(error.compaction?.throughSeq).toBe(4);
   });
 
-  it('evaluates the meter bound of a 6049-token count at the size after compaction', async () => {
-    const counter = { count: async (): Promise<CountTokensResult> => ({ input_tokens: 6049, method: 'estimated', error_bound: gatewayBound(6049) }) };
+  it('evaluates the bound of a fresh count at the size after compaction', async () => {
+    const counter = { count: async (): Promise<CountTokensResult> => ({ input_tokens: 6049, method: 'estimated', error_bound: errorBoundOfShape(ESTIMATED_ERROR_SHAPE, 6049), error_shape: ESTIMATED_ERROR_SHAPE }) };
     const meter = createTokenMeter({ counter, model: MODEL, capabilities: W8192 });
     const counted = await meter.count({ input: [{ type: 'message', role: 'user', content: 'x' }], tools: [] });
 
     expect(counted.errorBound).toBe(1815);
     expect(counted.errorBoundAt(6049)).toBe(1815);
     expect(counted.errorBoundAt(5387)).toBe(1617);
-    expect(maxInputFor({ ceiling: 5387, inputBudget: W8192_ESTIMATED_INPUT, errorBoundAt: counted.errorBoundAt })).toBe(5387);
+    expect(counted.errorBoundAt(0)).toBe(1);
+    expect(maxInputFor({ ceiling: 5387, inputBudget: budgetFor(W8192, 0).I, errorBoundAt: counted.errorBoundAt })).toBe(5387);
+  });
+
+  it('evaluates a suffix count at the bound of a fresh count, not at the bound of its suffix', async () => {
+    const meter = createTokenMeter({ counter: gatewayCounter(), model: MODEL, capabilities: W8192 });
+    const head: InputItem = { type: 'message', role: 'user', content: 'h'.repeat(16000) };
+    const tail: InputItem = { type: 'message', role: 'user', content: 't'.repeat(400) };
+    const observed = await meter.count({ input: [head], tools: [] });
+    meter.observe({ inputDigest: observed.inputDigest, inputTokens: observed.inputTokens });
+    const counted = await meter.count({ input: [head, tail], tools: [] });
+    const fresh = (tokens: number): number => Math.max(Math.ceil(0.1 * tokens), errorBoundOfShape(ESTIMATED_ERROR_SHAPE, tokens));
+
+    expect(counted.errorBound).toBeLessThan(fresh(counted.inputTokens));
+    expect(counted.errorBoundAt(counted.inputTokens)).toBe(fresh(counted.inputTokens));
+    expect(counted.errorBoundAt(3000)).toBe(fresh(3000));
   });
 
   it('compacts a region that closes the excess over the ceiling although it frees less than T + bound(T) - I', async () => {
@@ -172,24 +193,55 @@ describe('forced deficit with the gateway bound of 0.3 x tokens', () => {
 describe('maxInputFor over random bounds', () => {
   it('returns the largest size within the ceiling whose own bound fits, so one token more fails', () => {
     const random = seeded(8192);
-    for (let trial = 0; trial < 2000; trial += 1) {
+    let found = 0;
+    for (let trial = 0; trial < 4000; trial += 1) {
       const ceiling = random.int(0, 20000);
       const inputBudget = random.int(0, 30000);
       const relative = random.int(0, 150) / 100;
       const counterRatio = random.int(0, 100) / 100;
+      const offset = random.int(0, 400);
       const summed = random.next() < 0.5;
       const errorBoundAt = (tokens: number): number =>
-        summed ? Math.ceil(relative * tokens) + Math.ceil(counterRatio * tokens) : Math.max(Math.ceil(relative * tokens), Math.ceil(counterRatio * tokens));
-      const total = random.int(0, 40000);
-      const deficit = total - maxInputFor({ ceiling, inputBudget, errorBoundAt });
-      const remaining = total - deficit;
-      const label = JSON.stringify({ ceiling, inputBudget, relative, counterRatio, summed, total });
+        offset + (summed ? Math.ceil(relative * tokens) + Math.ceil(counterRatio * tokens) : Math.max(Math.ceil(relative * tokens), Math.ceil(counterRatio * tokens)));
+      const label = JSON.stringify({ ceiling, inputBudget, relative, counterRatio, offset, summed });
+      const largest = maxInputFor({ ceiling, inputBudget, errorBoundAt });
 
-      expect(remaining, label).toBeLessThanOrEqual(ceiling);
-      expect(remaining + errorBoundAt(remaining), label).toBeLessThanOrEqual(inputBudget);
-      const oneMore = remaining + 1;
+      if (largest === undefined) {
+        expect(errorBoundAt(0), label).toBeGreaterThan(inputBudget);
+        continue;
+      }
+      found += 1;
+      expect(largest, label).toBeGreaterThanOrEqual(0);
+      expect(largest, label).toBeLessThanOrEqual(ceiling);
+      expect(largest + errorBoundAt(largest), label).toBeLessThanOrEqual(inputBudget);
+      const oneMore = largest + 1;
       expect(oneMore > ceiling || oneMore + errorBoundAt(oneMore) > inputBudget, label).toBe(true);
     }
+    expect(found).toBeGreaterThan(3000);
+  });
+
+  it('returns undefined when even an empty input does not fit its bound', () => {
+    expect(maxInputFor({ ceiling: 5387, inputBudget: 7004, errorBoundAt: (tokens) => 7005 + Math.ceil(0.3 * tokens) })).toBeUndefined();
+    expect(maxInputFor({ ceiling: 5387, inputBudget: -1, errorBoundAt: () => 0 })).toBeUndefined();
+    expect(maxInputFor({ ceiling: -1, inputBudget: 7004, errorBoundAt: () => 0 })).toBeUndefined();
+    expect(maxInputFor({ ceiling: 0, inputBudget: 0, errorBoundAt: () => 0 })).toBe(0);
+  });
+});
+
+describe('a bound that no input size satisfies', () => {
+  it('fails as a pinned overflow without planning a compaction', async () => {
+    const inputBudget = budgetFor(W8192, 0).I;
+    const counter = shapeCounter((request) =>
+      Array.isArray(request.input) && request.input.length > 2 ? { ratio: 0.3, minimum: inputBudget + 1 } : ESTIMATED_ERROR_SHAPE,
+    );
+    const meter = createTokenMeter({ counter, model: MODEL, capabilities: W8192 });
+    const error = await buildContext(inputFor(W8192, { sources: sourcesWith({ history: argsSteps([400, 400, 400, 400, 400, 400]) }), level: 0 }), portsWith(meter)).catch(
+      (caught: unknown) => caught,
+    );
+
+    expect(error).toBeInstanceOf(PinnedOverflowError);
+    expect(error).not.toBeInstanceOf(ContextOverflowError);
+    expect((error as PinnedOverflowError).ceiling).toBe(0);
   });
 });
 

@@ -117,7 +117,7 @@ export const contextWindowOf = (home: E2eHome): number => {
   return (models.targets[UPSTREAM_TARGET] as { capabilities: { contextWindow: number } }).capabilities.contextWindow;
 };
 
-export const settingsWithTarget =(settings: Readonly<Record<string, unknown>>, target: StackTarget): Record<string, unknown> => {
+export const settingsWithTarget = (settings: Readonly<Record<string, unknown>>, target: StackTarget): Record<string, unknown> => {
   const models = settings['models'] as { aliases: unknown; targets: Record<string, Record<string, unknown>> };
   const primary = models.targets[UPSTREAM_TARGET];
   if (primary === undefined) throw new Error(`settingsWithTarget: no ${UPSTREAM_TARGET} target to override`);

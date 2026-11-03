@@ -1,4 +1,5 @@
 import { canonicalJson } from '@momonga/foundation';
+import { errorBoundOfShape } from '@momonga/protocol';
 import type {
   AdapterTarget,
   Capabilities,
@@ -12,7 +13,7 @@ import type {
 } from '@momonga/protocol';
 import type { ChatCompletionsEndpoint } from '../adapters/chat-completions/types.ts';
 import { matchesGuardrailCode } from '../adapters/chat-completions/classify.ts';
-import { errorBoundFor } from '../core/estimate.ts';
+import { estimatedCountOf } from '../core/estimate.ts';
 import { capabilitiesFromProbe } from '../probe/decide.ts';
 import type { KeywordSupport } from '../probe/envelope.ts';
 import { loadProbeRecord, resolveToolCalling } from '../probe/record.ts';
@@ -122,13 +123,15 @@ export const parseCount = (result: ExecResult): number => {
 const countResultOf = (counted: number, report: ProbeReport | null): CountTokensResult => {
   const calibration = report?.tokenCalibration;
   if (calibration === undefined) {
-    return { input_tokens: counted, method: 'estimated', error_bound: errorBoundFor(counted) };
+    return estimatedCountOf(counted);
   }
   const calibrated = Math.ceil(counted * calibration.ratio - CEIL_TOLERANCE);
+  const shape = { ratio: calibration.errorBound, minimum: 1 };
   return {
     input_tokens: calibrated,
     method: 'calibrated',
-    error_bound: Math.max(1, Math.ceil(calibrated * calibration.errorBound)),
+    error_bound: errorBoundOfShape(shape, calibrated),
+    error_shape: shape,
   };
 };
 

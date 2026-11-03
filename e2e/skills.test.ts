@@ -22,7 +22,7 @@ const BODY_MARKER = 'PDF-SKILL-BODY-MARKER-4f7a';
 const GUIDE_MARKER = 'PDF-GUIDE-RESOURCE-MARKER-9c1e';
 const SUMMARY = 'The user asked about a pdf. The pdf skill was activated and several small files were read. Next step: report the result.';
 const LONG_REQUESTS = 3;
-const REQUESTS_PER_ROOM = 2;
+const REQUESTS_PER_ROOM = LONG_REQUESTS - 1;
 const FIRST_TASK = 'Read the pdf';
 
 type EventRow = { seq: number; type: string; payload_json: string };
@@ -64,13 +64,15 @@ const longRequestSizing = (home: E2eHome, firstRunId: string, firstRequestBody: 
   const ceiling = inputCeilingFor(capabilities);
   const prefix = tokensForText(JSON.stringify(firstRequestBody)) - tokensForText(FIRST_TASK);
   const room = ceiling - prefix;
-  const premise = `the ${prefix}-token fixed prefix leaves ${room} of the ${ceiling}-token ceiling`;
+  const premise =
+    `the ${prefix}-token fixed prefix leaves ${room} of the ${ceiling}-token ceiling; the prefix is the first request measured with tokensForText(JSON.stringify(body)), ` +
+    `the estimate the gateway applies to a chat wire, less the first task; each long request holds floor(room / (${LONG_REQUESTS} - 1)) tokens`;
   expect(room, `the room must be positive: ${premise}`).toBeGreaterThan(0);
   const requestTokens = Math.floor(room / REQUESTS_PER_ROOM);
   const requests = Array.from({ length: LONG_REQUESTS }, (_, index) => longRequestText(index, requestTokens));
   const measured = requests.map((request) => tokensForText(request));
   expect(Math.max(...measured), `one request fits: ${premise}`).toBeLessThan(room);
-  expect(measured.reduce((sum, tokens) => sum + tokens, 0), `${LONG_REQUESTS} requests exceed the room: ${premise}`).toBeGreaterThan(room);
+  expect(measured.reduce((sum, tokens) => sum + tokens, 0), `all ${LONG_REQUESTS} requests exceed the room: ${premise}`).toBeGreaterThan(room);
   return { prefix, ceiling, room, requestTokens, requests };
 };
 
@@ -175,9 +177,8 @@ describe('g: agent skills', () => {
       expect(firstCompactionPost).toBeGreaterThan(1);
       const afterCompaction = posts.slice(firstCompactionPost + 1).filter((post) => !isCompactionRequest(post.body));
       expect(afterCompaction.length).toBeGreaterThanOrEqual(1);
-      for (const post of afterCompaction) expect(occurrences(JSON.stringify(post.body), BODY_MARKER), 'the activated skill survives the compaction').toBe(1);
       for (const post of posts.slice(1)) {
-        expect(occurrences(JSON.stringify(post.body), BODY_MARKER)).toBe(isCompactionRequest(post.body) ? 0 : 1);
+        expect(occurrences(JSON.stringify(post.body), BODY_MARKER), 'the activated skill survives the compaction and stays out of the summary request').toBe(isCompactionRequest(post.body) ? 0 : 1);
       }
       for (const post of posts.filter((candidate) => !isCompactionRequest(candidate.body))) {
         const tools = (post.body as { tools?: { function?: { name?: string } }[] }).tools ?? [];

@@ -23,7 +23,15 @@ const MIN_OUTPUT_RESERVE = 256;
 const OUTPUT_RESERVE_RATIO = 0.25;
 const MAX_OUTPUT_WINDOW_RATIO = 0.5;
 
-export const marginFloorFor = (contextWindow: number): number => Math.max(Math.ceil(MARGIN_RATIO * contextWindow), MIN_MARGIN);
+export type ErrorShape = { readonly ratio: number; readonly minimum: number };
+
+export const EXACT_ERROR_SHAPE: ErrorShape = { ratio: 0, minimum: 0 };
+
+export const ESTIMATED_ERROR_SHAPE: ErrorShape = { ratio: ESTIMATED_ERROR_BOUND_RATIO, minimum: 1 };
+
+export const errorBoundOfShape = (shape: ErrorShape, tokens: number): number => Math.max(shape.minimum, Math.ceil(shape.ratio * tokens));
+
+export const marginFloorFor =(contextWindow: number): number => Math.max(Math.ceil(MARGIN_RATIO * contextWindow), MIN_MARGIN);
 
 export const outputReserveFor = (capabilities: Pick<Capabilities, 'contextWindow' | 'maxOutputTokens'>): number =>
   Math.min(

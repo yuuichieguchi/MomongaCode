@@ -439,7 +439,7 @@ describe('anthropic adapter through the gateway: count_tokens', () => {
     const gateway = await startAnthropicGateway({ script: [anthropicCountTokensReply(321)] });
     const response = await count(gateway, { instructions: 'be brief', input: userInput('hello'), tools: [readFileTool] });
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ input_tokens: 321, method: 'exact', error_bound: 0 });
+    expect(response.body).toEqual({ input_tokens: 321, method: 'exact', error_bound: 0, error_shape: { ratio: 0, minimum: 0 } });
     const [request] = gateway.fake.requests;
     expect(request?.path).toBe('/v1/messages/count_tokens');
     expect(request?.headers['x-api-key']).toBe(FAKE_API_KEY);

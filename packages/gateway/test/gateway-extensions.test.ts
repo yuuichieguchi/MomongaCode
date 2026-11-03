@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest';
+import { ESTIMATED_ERROR_SHAPE, errorBoundOfShape } from '@momonga/protocol';
 import { DEFAULT_SCRIPTED_CAPABILITIES, createScriptedAdapter, textResponseEvents, usageOf } from '@momonga/testkit';
 import { expectErrorBody, getJson, postJson, readJson, startGateway, userInput } from './gateway-helpers.ts';
 
 describe('POST /v1/momonga/count_tokens', () => {
   it('uses adapter.countTokens when available and reports its method', async () => {
-    const primary = createScriptedAdapter({ calls: [], countTokens: { input_tokens: 42, method: 'calibrated', error_bound: 3 } });
+    const primary = createScriptedAdapter({ calls: [], countTokens: { input_tokens: 42, method: 'calibrated', error_bound: 3, error_shape: { ratio: 0, minimum: 3 } } });
     const { client } = await startGateway({ adapters: { primary } });
     const request = { model: 'fast', input: userInput('count me') };
     const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', request));
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ input_tokens: 42, method: 'calibrated', error_bound: 3 });
+    expect(response.body).toEqual({ input_tokens: 42, method: 'calibrated', error_bound: 3, error_shape: { ratio: 0, minimum: 3 } });
     expect(primary.countCalls).toHaveLength(1);
     expect(primary.countCalls[0]?.request.input).toEqual(request.input);
     expect(primary.countCalls[0]?.target).toEqual({ name: 'primary', model: 'scripted-primary' });
@@ -28,10 +29,14 @@ describe('POST /v1/momonga/count_tokens', () => {
     expect(first.error_bound).toBeGreaterThan(0);
     expect(again).toEqual(first);
     expect(bigger.input_tokens).toBeGreaterThan(first.input_tokens);
+    for (const counted of [first, bigger]) {
+      expect(counted.error_shape).toEqual(ESTIMATED_ERROR_SHAPE);
+      expect(counted.error_bound).toBe(errorBoundOfShape(ESTIMATED_ERROR_SHAPE, counted.input_tokens));
+    }
   });
 
   it('passes tools through to adapter.countTokens', async () => {
-    const primary = createScriptedAdapter({ calls: [], countTokens: { input_tokens: 42, method: 'calibrated', error_bound: 3 } });
+    const primary = createScriptedAdapter({ calls: [], countTokens: { input_tokens: 42, method: 'calibrated', error_bound: 3, error_shape: { ratio: 0, minimum: 3 } } });
     const { client } = await startGateway({ adapters: { primary } });
     const tools = [{ type: 'function', name: 'Read', description: 'Read a file', parameters: { type: 'object', properties: {} } }];
     const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'fast', input: userInput('count me'), tools }));
@@ -55,7 +60,7 @@ describe('POST /v1/momonga/count_tokens', () => {
     ['wrong type', [{ type: 'web_search', name: 'Read' }]],
     ['non-object parameters', [{ type: 'function', name: 'Read', parameters: 'x' }]],
   ])('rejects invalid tools (%s) with 400 invalid_request', async (_label, tools) => {
-    const primary = createScriptedAdapter({ calls: [], countTokens: { input_tokens: 42, method: 'calibrated', error_bound: 3 } });
+    const primary = createScriptedAdapter({ calls: [], countTokens: { input_tokens: 42, method: 'calibrated', error_bound: 3, error_shape: { ratio: 0, minimum: 3 } } });
     const { client } = await startGateway({ adapters: { primary } });
     const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'fast', input: 'x', tools }));
     expect(response.status).toBe(400);
@@ -65,7 +70,7 @@ describe('POST /v1/momonga/count_tokens', () => {
   });
 
   const countWithTools = async (tools: unknown) => {
-    const primary = createScriptedAdapter({ calls: [], countTokens: { input_tokens: 42, method: 'calibrated', error_bound: 3 } });
+    const primary = createScriptedAdapter({ calls: [], countTokens: { input_tokens: 42, method: 'calibrated', error_bound: 3, error_shape: { ratio: 0, minimum: 3 } } });
     const { client } = await startGateway({ adapters: { primary } });
     const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'fast', input: 'x', tools }));
     return { response, primary };
