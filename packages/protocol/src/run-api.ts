@@ -8,7 +8,8 @@ import { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES } from './permission-denial.t
 import { FILE_ACCESSES } from './working-facts.ts';
 import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
 import type { ImageMediaType, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent } from './run-types.ts';
-import type { TokenAnatomy } from './token-anatomy.ts';
+import type { ReflectionJobView } from './memory.ts';
+import type { BilledDetail, TokenAnatomy } from './token-anatomy.ts';
 
 const DRAFT_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
 const DAY_MS = 86_400_000;
@@ -171,6 +172,13 @@ const tokenAnatomy = closed(
 
 const modelCost = closed({ amount: { type: 'number', minimum: 0 }, currency: constant('USD'), priceVersion: string }, ['amount', 'currency', 'priceVersion']);
 
+const callTiming = closed({ firstEventMs: nonNegativeInteger, durationMs: nonNegativeInteger }, ['durationMs']);
+
+const billedDetail = closed(
+  { cachedInputTokens: nonNegativeInteger, cacheWriteInputTokens: nonNegativeInteger, cost: modelCost, timing: callTiming },
+  [],
+);
+
 const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { properties: Record<string, JsonSchema>; required: readonly string[] }> = {
   'user.message': { properties: { text: string, images: { type: 'array', items: imageSummary } }, required: ['text'] },
   'run.started': { properties: { attempt: integer }, required: ['attempt'] },
@@ -188,6 +196,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
       attempt: integer,
       response: closed(
         {
+          id: string,
           status: enumOf(['completed', 'incomplete']),
           incompleteReason: string,
           output: { type: 'array' },
@@ -202,7 +211,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
             ['input_tokens', 'output_tokens', 'total_tokens'],
           ),
           momonga: closed({ cacheWriteInputTokens: nonNegativeInteger, cost: modelCost }, []),
-          timing: closed({ firstEventMs: nonNegativeInteger, durationMs: nonNegativeInteger }, ['durationMs']),
+          timing: callTiming,
         },
         ['status', 'output', 'usage'],
       ),
@@ -348,6 +357,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
       cachedInputTokens: nonNegativeInteger,
       cacheWriteInputTokens: nonNegativeInteger,
       cost: modelCost,
+      timing: callTiming,
     },
     required: ['purpose', 'inputTokens', 'outputTokens', 'totalTokens'],
   },
@@ -482,6 +492,7 @@ const contextChargeView = closed(
     outputTokens: nonNegativeInteger,
     totalTokens: nonNegativeInteger,
     createdAt: integer,
+    detail: billedDetail,
   },
   ['id', 'purpose', 'runId', 'project', 'model', 'inputTokens', 'outputTokens', 'totalTokens', 'createdAt'],
 );
@@ -543,9 +554,13 @@ const costBreakdownView = closed(
       type: 'array',
       items: closed({ runId: string, provider: string, model: string, step: nonNegativeInteger, reason: string }, ['runId', 'provider', 'model', 'reason']),
     },
+    inconsistentUsage: {
+      type: 'array',
+      items: closed({ runId: string, provider: string, model: string, step: nonNegativeInteger, reason: string }, ['runId', 'provider', 'model', 'reason']),
+    },
     unjoined: { type: 'array', items: closed({ runId: string, step: nonNegativeInteger, reason: string }, ['runId', 'reason']) },
   },
-  ['calls', 'layers', 'billed', 'cacheHitRatio', 'timeToFirstToken', 'duration', 'cost', 'unpriced', 'unjoined'],
+  ['calls', 'layers', 'billed', 'cacheHitRatio', 'timeToFirstToken', 'duration', 'cost', 'unpriced', 'inconsistentUsage', 'unjoined'],
 );
 
 const memoryScope = enumOf(MEMORY_SCOPES);
@@ -790,7 +805,10 @@ export type ContextChargeView = {
   outputTokens: number;
   totalTokens: number;
   createdAt: number;
+  detail?: BilledDetail;
 };
+
+export type RunReflectionView = { job: ReflectionJobView | null; charge: ContextChargeView | null };
 
 export type ContextChargesView = { charges: ContextChargeView[]; totalTokens: number };
 
@@ -1074,6 +1092,7 @@ export const RUN_API_SCHEMAS = {
   MemoriesResponse: root(closed({ memories: { type: 'array', items: memoryView } }, ['memories'])),
   MemoryResponse: root(closed({ memory: memoryView }, ['memory'])),
   ReflectionResponse: root(closed({ job: nullable(reflectionJobView) }, ['job'])),
+  RunReflection: root(closed({ job: nullable(reflectionJobView), charge: nullable(contextChargeView) }, ['job', 'charge'])),
   PromoteMemoryRequest: root(closed({ skill: string }, ['skill'])),
   PromoteMemoryResponse: root(closed({ path: string }, ['path'])),
   AddMemoryRequest: root(

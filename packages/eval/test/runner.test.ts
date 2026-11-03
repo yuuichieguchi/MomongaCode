@@ -26,6 +26,7 @@ const scriptedApi = (transcripts: Transcript[]): Scripted => {
     events: async function* (runId) {
       for (const event of byRun.get(runId)?.events ?? childEvents.get(runId) ?? []) yield event;
     },
+    reflectionOf: async () => ({ state: 'none' }),
     getRun: async (runId) => {
       const found = byRun.get(runId);
       if (found === undefined) throw new Error(`unknown run ${runId}`);

@@ -96,6 +96,8 @@ const transportError = (code: string, message: string, provenNotSent?: boolean):
 
 const invalidResponse = (detail: string): GatewayRequestError => transportError('invalid_response', `the gateway sent a malformed reply: ${detail}`);
 
+export const gatewayProtocolError = invalidResponse;
+
 const sfString = (value: string): string => {
   if (!/^[\x20-\x7e]*$/.test(value)) throw new TypeError('the idempotency key must be printable ASCII to be an sf-string');
   return `"${value.replace(/[\\"]/g, '\\$&')}"`;

@@ -123,6 +123,7 @@ const handleResult = async (
       step: position.step,
       attempt: position.attempt,
       response: {
+        id: response.id,
         status: incomplete ? 'incomplete' : 'completed',
         ...(incomplete && response.incomplete_details?.reason !== undefined ? { incompleteReason: response.incomplete_details.reason } : {}),
         output: response.output,

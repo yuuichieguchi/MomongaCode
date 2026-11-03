@@ -3,6 +3,7 @@ import type { PublicRunEvent } from '@momonga/protocol';
 import { ratioBootstrap } from './bootstrap.ts';
 import type { Cluster } from './bootstrap.ts';
 import { eventsOfType } from './observe.ts';
+import type { TranscriptReflection } from './transcript.ts';
 
 export type CallFacts = {
   inputTokens: number;
@@ -16,10 +17,12 @@ export type TokenFacts = {
   calls: CallFacts[];
   layers: Map<string, number>;
   anatomyTotal: number;
+  unsettledReflections: number;
 };
 
 export type CaseTokenTotals = {
   calls: number;
+  unsettledReflections: number;
   inputTokens?: number;
   cachedInputTokens?: number;
   uncachedInputTokens?: number;
@@ -41,7 +44,24 @@ export type TokenMetrics = {
   layerShares: Record<string, RatioMetric> | undefined;
 };
 
-export const tokenFactsOf = (runs: readonly (readonly PublicRunEvent[])[]): TokenFacts => {
+const reflectionCallOf = (reflection: TranscriptReflection | undefined): { call?: CallFacts; unsettled: boolean } => {
+  if (reflection === undefined) return { unsettled: true };
+  const { state, charge } = reflection;
+  if (state === 'pending' || state === 'running') return { unsettled: true };
+  if (charge === undefined) return { unsettled: state === 'done' };
+  return {
+    unsettled: false,
+    call: {
+      inputTokens: charge.inputTokens,
+      cachedInputTokens: charge.detail?.cachedInputTokens,
+      cacheWriteInputTokens: charge.detail?.cacheWriteInputTokens ?? 0,
+      cost: charge.detail?.cost?.amount,
+      durationMs: charge.detail?.timing?.durationMs,
+    },
+  };
+};
+
+export const tokenFactsOf = (runs: readonly (readonly PublicRunEvent[])[], reflection: TranscriptReflection | undefined): TokenFacts => {
   const layers = new Map<string, number>();
   let anatomyTotal = 0;
   const calls = runs.flatMap((events) => {
@@ -63,12 +83,13 @@ export const tokenFactsOf = (runs: readonly (readonly PublicRunEvent[])[]): Toke
         cachedInputTokens: event.cachedInputTokens,
         cacheWriteInputTokens: event.cacheWriteInputTokens ?? 0,
         cost: event.cost?.amount,
-        durationMs: undefined,
+        durationMs: event.timing?.durationMs,
       }),
     );
     return [...responded, ...charged];
   });
-  return { calls, layers, anatomyTotal };
+  const settled = reflectionCallOf(reflection);
+  return { calls: settled.call === undefined ? calls : [...calls, settled.call], layers, anatomyTotal, unsettledReflections: settled.unsettled ? 1 : 0 };
 };
 
 const sumOver = <T>(items: readonly T[], pick: (item: T) => number | undefined): number | undefined => {
@@ -83,13 +104,17 @@ const sumOver = <T>(items: readonly T[], pick: (item: T) => number | undefined):
 
 export const caseTotalsOf = (facts: readonly TokenFacts[]): CaseTokenTotals => {
   const calls = facts.flatMap((entry) => entry.calls);
+  const unsettledReflections = facts.reduce((sum, entry) => sum + entry.unsettledReflections, 0);
+  if (unsettledReflections > 0) return { calls: calls.length, unsettledReflections };
+  const consistent = (call: CallFacts): boolean => call.cachedInputTokens === undefined || call.cachedInputTokens + call.cacheWriteInputTokens <= call.inputTokens;
   const inputTokens = sumOver(calls, (call) => call.inputTokens);
-  const cachedInputTokens = sumOver(calls, (call) => call.cachedInputTokens);
-  const uncachedInputTokens = sumOver(calls, (call) => (call.cachedInputTokens === undefined ? undefined : call.inputTokens - call.cachedInputTokens - call.cacheWriteInputTokens));
+  const cachedInputTokens = sumOver(calls, (call) => (consistent(call) ? call.cachedInputTokens : undefined));
+  const uncachedInputTokens = sumOver(calls, (call) => (call.cachedInputTokens === undefined || !consistent(call) ? undefined : call.inputTokens - call.cachedInputTokens - call.cacheWriteInputTokens));
   const cost = sumOver(calls, (call) => call.cost);
   const latencyMs = sumOver(calls, (call) => call.durationMs);
   return {
     calls: calls.length,
+    unsettledReflections,
     ...(inputTokens === undefined ? {} : { inputTokens }),
     ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
     ...(uncachedInputTokens === undefined ? {} : { uncachedInputTokens }),
@@ -116,6 +141,7 @@ const ratioOf = (clusters: readonly Cluster[], seed: number): RatioMetric | unde
 const perSuccess = (cases: readonly CaseForMetrics[], numeratorOf: (totals: CaseTokenTotals) => number | undefined, seed: number): RatioMetric | undefined => {
   const clusters: Cluster[] = [];
   for (const entry of cases) {
+    if (entry.totals.unsettledReflections > 0) return undefined;
     const numerator = numeratorOf(entry.totals);
     if (numerator === undefined) return undefined;
     clusters.push({ numerator, denominator: entry.passedRuns });

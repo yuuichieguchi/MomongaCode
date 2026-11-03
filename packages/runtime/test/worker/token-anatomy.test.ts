@@ -91,6 +91,20 @@ describe('every model call records what its request was made of and what it cost
     expect((responded?.response as { momonga?: unknown }).momonga).toEqual({ cacheWriteInputTokens: 120 });
   });
 
+  it('records the gateway response id on model.responded, which the store hands to the breakdown join', async () => {
+    const env = await makeEnv();
+    env.gateway.script.push(textStep('Hello.'));
+    const run = env.enqueue('Say hello');
+
+    await env.runOnce(env.worker());
+
+    const [responded] = env.ofType(run.id, 'model.responded');
+    expect(responded?.response.id).toEqual(expect.stringMatching(/\S/));
+    expect(env.store.readModelCallEvents(run.id).filter((record) => record.kind === 'responded')).toEqual([
+      expect.objectContaining({ responseId: responded?.response.id }),
+    ]);
+  });
+
   it('records no cache write when the provider reported none', async () => {
     const env = await makeEnv();
     env.gateway.script.push(withExtension(textStep('Hello.', { usage: DETAILED_USAGE }), {}));

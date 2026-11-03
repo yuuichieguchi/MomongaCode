@@ -134,6 +134,7 @@ describe('run event payloads', () => {
 
   it('defines the model payloads with a loose response that 1.4 can tighten', () => {
     expectTypeOf<ModelResponse>().toEqualTypeOf<{
+      id?: string;
       status: 'completed' | 'incomplete';
       incompleteReason?: string;
       output: unknown[];

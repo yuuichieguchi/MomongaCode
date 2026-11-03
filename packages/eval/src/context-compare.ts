@@ -201,7 +201,9 @@ const tokenPrimaryOf = (baseline: ContextReport, candidate: ContextReport, pairs
   });
   const complete = clusters.flatMap((pair) => (pair.baseline === undefined || pair.candidate === undefined ? [] : [{ baseline: pair.baseline, candidate: pair.candidate }]));
   const measured = complete.length === clusters.length && baseline.metrics[metric] !== undefined && candidate.metrics[metric] !== undefined;
-  return { metric, interval: measured ? pairedRatioBootstrap(complete, { seed }) : undefined, why };
+  const unsettled = pairs.reduce((sum, pair) => sum + (pair.baseline.tokens?.unsettledReflections ?? 0) + (pair.candidate.tokens?.unsettledReflections ?? 0), 0);
+  const reflectionNote = unsettled === 0 ? undefined : `${unsettled} run(s) have a reflection that is pending, running, finished without a charge or not recorded, so their token cost is not final`;
+  return { metric, interval: measured ? pairedRatioBootstrap(complete, { seed }) : undefined, why: [why, reflectionNote].filter((part) => part !== undefined).join('; ') || undefined };
 };
 
 export const compareContextReports = (

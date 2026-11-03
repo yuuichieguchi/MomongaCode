@@ -105,7 +105,7 @@ export const summaryRequestOf = (request: AdapterCompactRequest, cap: number): A
 
 export const acceptedSummaryTokens = (cap: number): number => Math.ceil(SUMMARY_ACCEPT_RATIO * cap);
 
-export type CollectedSummary = { summary: string; usage: ResponseResource['usage'] };
+export type CollectedSummary = { summary: string; usage: ResponseResource['usage']; cacheWriteInputTokens?: number };
 
 export const summaryOfTerminal = (event: StreamEvent, cap: number): CollectedSummary | undefined => {
   if (event.type === 'response.failed') {
@@ -133,5 +133,5 @@ export const summaryOfTerminal = (event: StreamEvent, cap: number): CollectedSum
   if (tokensForText(summary) > accepted) {
     throw new CompactionReplyError('compaction_summary_too_long', false, `the summary exceeds the accepted ${accepted} estimated tokens`);
   }
-  return { summary, usage: response.usage };
+  return { summary, usage: response.usage, ...(response.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: response.cacheWriteInputTokens }) };
 };

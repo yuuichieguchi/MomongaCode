@@ -189,11 +189,12 @@ const runCase = async (
     started = true;
     const outcome = await driveWithin(run.id);
     const info = await measure(run.id);
+    const reflection = await host.api.reflectionOf(run.id);
     const noise = entry.noiseTurns.length === 0 ? {} : { noiseTokens };
-    if (!outcome.expired) return emit({ caseId: entry.id, runIndex, run: info, ...outcome.driven, ...tagged(), ...noise });
+    if (!outcome.expired) return emit({ caseId: entry.id, runIndex, run: info, ...outcome.driven, reflection, ...tagged(), ...noise });
     stop = DEADLINE_REASON;
     const { stopReason: _cancelled, ...rest } = info;
-    return emit({ caseId: entry.id, runIndex, run: { ...rest, status: 'FAILED' }, ...outcome.driven, stopped: stop, ...tagged(), ...noise });
+    return emit({ caseId: entry.id, runIndex, run: { ...rest, status: 'FAILED' }, ...outcome.driven, reflection, stopped: stop, ...tagged(), ...noise });
   };
 
   try {

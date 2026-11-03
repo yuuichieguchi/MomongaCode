@@ -29,13 +29,17 @@ type Spec = {
   input: number;
   cached?: number;
   cacheWrite?: number;
+  at?: number;
+  responseId?: string;
 };
+
+const START = { run: 0, after: 0 };
 
 const record = async (runId: string, specs: readonly Spec[], h: ReturnType<typeof harness>): Promise<void> => {
   const agent = startAgentSpan(h.telemetry.tracer, { agentName: 'momonga', agentId: 'momonga', conversationId: 's', runId });
   const parent = trace.setSpan(ROOT_CONTEXT, agent);
   for (const [index, spec] of specs.entries()) {
-    h.clock.set(AT + index);
+    h.clock.set(AT + (spec.at ?? index));
     const chat = startChatSpan(
       h.telemetry.tracer,
       {
@@ -51,6 +55,7 @@ const record = async (runId: string, specs: readonly Spec[], h: ReturnType<typeo
     );
     if (spec.role !== undefined) chat.setAttribute('momonga.role', spec.role);
     recordChatResponse(chat, {
+      ...(spec.responseId === undefined ? {} : { responseId: spec.responseId }),
       finishReasons: ['stop'],
       usage: {
         inputTokens: spec.input,
@@ -107,16 +112,39 @@ describe('pageBilledCalls', () => {
     await record('run-c', [{ step: 1, input: 4 }, { step: 2, input: 5 }], h);
     const runIds = ['run-a', 'run-b', 'run-c'];
 
-    const first = pageBilledCalls(h.store, runIds, TABLE, { run: 0, offset: 0 }, 2, false);
-    const second = pageBilledCalls(h.store, runIds, TABLE, first.next ?? { run: 99, offset: 0 }, 2, false);
-    const third = pageBilledCalls(h.store, runIds, TABLE, second.next ?? { run: 99, offset: 0 }, 2, false);
+    const first = pageBilledCalls(h.store, runIds, TABLE, START, 2, false);
+    const second = pageBilledCalls(h.store, runIds, TABLE, first.next ?? { run: 99, after: 0 }, 2, false);
+    const third = pageBilledCalls(h.store, runIds, TABLE, second.next ?? { run: 99, after: 0 }, 2, false);
 
     expect(first.calls.map((call) => call.usage.inputTokens)).toEqual([1, 2]);
-    expect(first.next).toEqual({ run: 1, offset: 0 });
+    expect(first.next).toEqual({ run: 1, after: 0 });
     expect(second.calls.map((call) => call.usage.inputTokens)).toEqual([3, 4]);
-    expect(second.next).toEqual({ run: 2, offset: 1 });
+    expect(second.next?.run).toBe(2);
+    expect(second.next?.after).toBeGreaterThan(0);
     expect(third.calls.map((call) => call.usage.inputTokens)).toEqual([5]);
     expect(third.next).toBeUndefined();
+  });
+
+  it('keys the cursor on the order the store ingested the spans, so a span with an earlier start arriving between pages is returned exactly once', async () => {
+    const h = harness();
+    await record('run-a', [{ step: 1, input: 1, at: 100 }, { step: 2, input: 2, at: 200 }], h);
+
+    const first = pageBilledCalls(h.store, ['run-a'], TABLE, START, 1, false);
+    await record('run-a', [{ step: 3, input: 3, at: 10 }], h);
+    const second = pageBilledCalls(h.store, ['run-a'], TABLE, first.next ?? { run: 99, after: 0 }, 1, false);
+    const third = pageBilledCalls(h.store, ['run-a'], TABLE, second.next ?? { run: 99, after: 0 }, 1, false);
+
+    expect([first, second, third].flatMap((page) => page.calls.map((call) => call.usage.inputTokens))).toEqual([1, 2, 3]);
+    expect(third.next).toBeUndefined();
+  });
+
+  it('carries the response id of each billed call', async () => {
+    const h = harness();
+    await record('run-a', [{ step: 1, input: 1, responseId: 'resp_a' }, { step: 2, input: 2 }], h);
+
+    const page = pageBilledCalls(h.store, ['run-a'], TABLE, START, 10, false);
+
+    expect(page.calls.map((call) => call.responseId)).toEqual(['resp_a', undefined]);
   });
 
   it('adds the calls that belong to no run after the listed runs only when asked', async () => {
@@ -127,8 +155,8 @@ describe('pageBilledCalls', () => {
     chat.end(h.clock.now());
     await h.telemetry.forceFlush();
 
-    const without = pageBilledCalls(h.store, ['run-a'], TABLE, { run: 0, offset: 0 }, 10, false);
-    const withRunless = pageBilledCalls(h.store, ['run-a'], TABLE, { run: 0, offset: 0 }, 10, true);
+    const without = pageBilledCalls(h.store, ['run-a'], TABLE, START, 10, false);
+    const withRunless = pageBilledCalls(h.store, ['run-a'], TABLE, START, 10, true);
 
     expect(without.calls.map((call) => call.usage.inputTokens)).toEqual([1]);
     expect(withRunless.calls.map((call) => [call.runId, call.usage.inputTokens])).toEqual([['run-a', 1], ['', 9]]);
@@ -136,7 +164,7 @@ describe('pageBilledCalls', () => {
 
   it('refuses a page larger than the bound', () => {
     const h = harness();
-    expect(() => pageBilledCalls(h.store, [], TABLE, { run: 0, offset: 0 }, 100_000, false)).toThrow(RangeError);
+    expect(() => pageBilledCalls(h.store, [], TABLE, START, 100_000, false)).toThrow(RangeError);
   });
 });
 

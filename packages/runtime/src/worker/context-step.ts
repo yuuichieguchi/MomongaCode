@@ -243,6 +243,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
   const idempotencyKey = sha256Hex(canonicalJson([ctx.run.id, 'compact', sha256Hex(canonicalJson(request))]));
   ctx.control.inFlight.compactionKey = idempotencyKey;
   let resource: CompactResource;
+  const startedAt = options.clock.now();
   try {
     resource = await ctx.control.recordingRaised(
       options.gateway.compact(request, {
@@ -286,7 +287,9 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
     outputTokens: resource.usage.output_tokens,
     totalTokens: resource.usage.total_tokens,
     cachedInputTokens: resource.usage.input_tokens_details.cached_tokens,
+    ...(resource.momonga?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: resource.momonga.cacheWriteInputTokens }),
     ...(resource.momonga?.cost === undefined ? {} : { cost: resource.momonga.cost }),
+    timing: { durationMs: options.clock.now() - startedAt },
   };
   const unreadableNotices =
     region.unreadable.length === 0

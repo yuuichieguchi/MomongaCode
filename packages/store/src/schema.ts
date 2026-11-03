@@ -278,6 +278,10 @@ const REFLECTION_DROPPED_CANDIDATES = `
 ALTER TABLE reflection_jobs ADD COLUMN dropped_json TEXT;
 `;
 
+const CONTEXT_CHARGE_DETAIL = `
+ALTER TABLE context_charges ADD COLUMN detail_json TEXT;
+`;
+
 const EVIDENCE_BASED_CONTEXT = `
 CREATE TABLE memories_rebuilt (
   id TEXT PRIMARY KEY,
@@ -564,4 +568,5 @@ export const MIGRATIONS: readonly Migration[] = [
   },
   { version: 14, name: 'copy the pinned-layer digest of a recorded model request into a column, so a terminal can find the distinct layers without reading the bodies', sql: EVENT_PINNED_DIGEST },
   { version: 15, name: 'record the candidates a reflection dropped and why', sql: REFLECTION_DROPPED_CANDIDATES },
+  { version: 16, name: 'record the cache, cost and timing of a context charge', sql: CONTEXT_CHARGE_DETAIL },
 ];

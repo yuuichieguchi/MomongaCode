@@ -65,6 +65,7 @@ const harness = (script: Script = {}) => {
         if (script.hang === true) await new Promise<void>((resolve) => release.push(resolve));
         for (const event of script.events?.(cwd) ?? []) yield event;
       },
+      reflectionOf: async () => ({ state: 'none' }),
       getRun: async (runId) => ({ id: runId, status: 'COMPLETED', step: 1, usage: { inputTokens: 0, outputTokens: 0, totalTokens: script.tokens ?? 10 }, modelAlias: 'gamma' }),
       resolveApproval: async () => undefined,
       cancelRun: async (runId) => {

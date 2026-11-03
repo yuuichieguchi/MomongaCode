@@ -61,6 +61,7 @@ export type ElicitationAnswerRecord =
   | { action: 'cancel' };
 
 export type ModelResponse = {
+  id?: string;
   status: 'completed' | 'incomplete';
   incompleteReason?: string;
   output: unknown[];
@@ -164,6 +165,7 @@ export type RunEventPayload =
       cachedInputTokens?: number;
       cacheWriteInputTokens?: number;
       cost?: ModelCost;
+      timing?: CallTiming;
     }
   | {
       type: 'context.compacted';

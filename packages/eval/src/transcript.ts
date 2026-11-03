@@ -1,8 +1,8 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import { isRecord } from '@momonga/foundation';
-import { MEMORY_ORIGINS, RUN_API_SCHEMAS, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
-import type { MemoryOrigin, PublicRunEvent, RunStatus, StopReason } from '@momonga/protocol';
+import { MEMORY_ORIGINS, REFLECTION_JOB_STATES, RUN_API_SCHEMAS, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
+import type { ContextChargeView, MemoryOrigin, PublicRunEvent, ReflectionJobState, RunStatus, StopReason } from '@momonga/protocol';
 
 export const TRANSCRIPT_FORMAT = 'momonga-transcript/3';
 const RETIRED_TRANSCRIPT_FORMATS: Readonly<Record<string, string>> = {
@@ -22,12 +22,15 @@ export type TranscriptRun = {
 
 export type TranscriptChild = { runId: string; agent: string; events: PublicRunEvent[] };
 
+export type TranscriptReflection = { state: 'none' | ReflectionJobState; charge?: ContextChargeView };
+
 export type Transcript = {
   caseId: string;
   runIndex: number;
   run: TranscriptRun;
   events: PublicRunEvent[];
   children: TranscriptChild[];
+  reflection?: TranscriptReflection;
   ruleIds?: Record<string, string>;
   datasetSeed?: number;
   noiseTokens?: number;
@@ -88,6 +91,20 @@ const childrenOf = (value: unknown, where: string): TranscriptChild[] => {
 
 type LiveFields = Pick<Transcript, 'ruleIds' | 'datasetSeed' | 'noiseTokens' | 'stopped'>;
 
+const validateReflectionView: ValidateFunction = ajv.compile(RUN_API_SCHEMAS.RunReflection);
+
+const reflectionOf = (value: unknown, where: string): TranscriptReflection => {
+  if (!isRecord(value)) throw new TranscriptError(`${where}: reflection must be an object`);
+  const { state, charge } = value;
+  if (state !== 'none' && (typeof state !== 'string' || !(REFLECTION_JOB_STATES as readonly string[]).includes(state))) {
+    throw new TranscriptError(`${where}: reflection.state must be none or a reflection job state`);
+  }
+  if (charge !== undefined && !validateReflectionView({ job: null, charge })) {
+    throw new TranscriptError(`${where}: reflection.charge is not a context charge: ${ajv.errorsText(validateReflectionView.errors, { dataVar: 'reflection' })}`);
+  }
+  return { state: state as TranscriptReflection['state'], ...(charge === undefined ? {} : { charge: charge as ContextChargeView }) };
+};
+
 const ruleIdsOf = (value: unknown, where: string): Record<string, string> => {
   if (!isRecord(value) || Object.values(value).some((entry) => typeof entry !== 'string' || entry === '')) {
     throw new TranscriptError(`${where}: ruleIds must map product rule ids to dataset rule ids`);
@@ -115,6 +132,7 @@ export const encodeTranscript =(transcript: Transcript): string => {
     runIndex: transcript.runIndex,
     run: transcript.run,
     children: transcript.children.map(({ runId, agent }) => ({ runId, agent })),
+    ...(transcript.reflection === undefined ? {} : { reflection: transcript.reflection }),
     ...(transcript.ruleIds === undefined ? {} : { ruleIds: transcript.ruleIds }),
     ...(transcript.datasetSeed === undefined ? {} : { datasetSeed: transcript.datasetSeed }),
     ...(transcript.noiseTokens === undefined ? {} : { noiseTokens: transcript.noiseTokens }),
@@ -179,5 +197,13 @@ export const decodeTranscript = (text: string, source: string): Transcript => {
   if (events.length !== end.events || childEvents !== end.childEvents) {
     throw new TranscriptError(`${source}: the end record counts ${end.events} run events and ${end.childEvents} child events but the file holds ${events.length} and ${childEvents}`);
   }
-  return { caseId, runIndex, run, events, children, ...liveFieldsOf(header, `${source}:1`) };
+  return {
+    caseId,
+    runIndex,
+    run,
+    events,
+    children,
+    ...(header['reflection'] === undefined ? {} : { reflection: reflectionOf(header['reflection'], `${source}:1`) }),
+    ...liveFieldsOf(header, `${source}:1`),
+  };
 };

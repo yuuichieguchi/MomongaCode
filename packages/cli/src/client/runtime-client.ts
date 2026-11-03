@@ -1,7 +1,7 @@
 import type { McpServerConfig } from '@momonga/config';
 import { createUdsClient, decodeSse, isRecord } from '@momonga/foundation';
 import type { UdsResponse } from '@momonga/foundation';
-import type { AddMemoryRequest, AddRuleRequest, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RuleAddResponse, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
+import type { AddMemoryRequest, AddRuleRequest, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunReflectionView, RuleAddResponse, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
 import {
   ContractViolation,
   checkAgents,
@@ -22,6 +22,7 @@ import {
   checkPolicyGovernance,
   checkPromoted,
   checkReflection,
+  checkRunReflection,
   checkRule,
   checkRuleAdd,
   checkRules,
@@ -122,6 +123,7 @@ export type RuntimeClient = {
   cancelMcpAuthorization(sessionId: string, server: string): Promise<void>;
   memories(filter?: MemoryFilter): Promise<MemoryView[]>;
   lastReflection(project: string): Promise<ReflectionJobView | null>;
+  runReflection(runId: string): Promise<RunReflectionView>;
   memory(id: string): Promise<MemoryView>;
   addMemory(request: AddMemoryRequest): Promise<MemoryView>;
   deleteMemory(id: string): Promise<void>;
@@ -411,6 +413,12 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     return checkReflection(body, `GET ${path}`).job;
   };
 
+  const runReflection = async (runId: string): Promise<RunReflectionView> => {
+    const path = `/v1/runs/${encodeURIComponent(runId)}/reflection`;
+    const { body } = await send('GET', path, [200]);
+    return checkRunReflection(body, `GET ${path}`);
+  };
+
   const memory = async (id: string): Promise<MemoryView> => {
     const path = `/v1/memories/${encodeURIComponent(id)}`;
     const { body } = await send('GET', path, [200]);
@@ -583,6 +591,7 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     cancelMcpAuthorization,
     memories,
     lastReflection,
+    runReflection,
     memory,
     addMemory,
     deleteMemory,

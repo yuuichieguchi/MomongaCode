@@ -88,6 +88,7 @@ export type {
   AdoptGuidelineRequest,
   ContextChargeResponse,
   ContextChargeView,
+  RunReflectionView,
   ContextChargesView,
   GuidelineResponse,
   GuidelinesResponse,
@@ -119,6 +120,7 @@ export type {
 export { assistantTextOf } from './assistant-text.ts';
 export { ANATOMY_FLAT_LAYERS, ANATOMY_HISTORY_LAYERS, anatomyLayerEntries } from './token-anatomy.ts';
 export type {
+  BilledDetail,
   BilledCallsCursorView,
   BilledCallsPageView,
   BilledCallView,

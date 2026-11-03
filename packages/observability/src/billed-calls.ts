@@ -10,6 +10,7 @@ export type BilledCall = {
   spanId: string;
   step?: number;
   role?: string;
+  responseId?: string;
   provider: string;
   model: string;
   billing: CallBilling;
@@ -22,7 +23,7 @@ export type BilledCallWire = Omit<BilledCall, 'price' | 'spanId'> & {
   price: { kind: 'priced'; units: string; priceVersion: string } | { kind: 'unpriced'; reason: string };
 };
 
-export type BilledCallsCursor = { run: number; offset: number };
+export type BilledCallsCursor = { run: number; after: number };
 
 export type BilledCallsPage = { calls: BilledCallWire[]; next?: BilledCallsCursor };
 
@@ -65,11 +66,13 @@ export const billedCallOf = (runId: string, span: SpanRecord, table: PriceTable)
   };
   const step = span.attributes[MOMONGA_ATTRIBUTES.step];
   const role = optionalString(span, MOMONGA_ATTRIBUTES.role);
+  const responseId = optionalString(span, A.ATTR_GEN_AI_RESPONSE_ID);
   return {
     runId,
     spanId: span.spanId,
     ...(typeof step === 'number' ? { step } : {}),
     ...(role === undefined ? {} : { role }),
+    ...(responseId === undefined ? {} : { responseId }),
     provider,
     model,
     billing,
@@ -111,27 +114,21 @@ export const pageBilledCalls = (
   }
   const calls: BilledCallWire[] = [];
   let run = cursor.run;
-  let offset = cursor.offset;
+  let after = cursor.after;
   const slots = runIds.length + (includeRunless ? 1 : 0);
   while (run < slots && calls.length < limit) {
     const runId = runIds[run];
-    const all =
-      runId === undefined
-        ? store
-            .spansWithoutRun()
-            .filter(isBilledChat)
-            .toSorted((left, right) => left.startMs - right.startMs || (left.spanId < right.spanId ? -1 : 1))
-            .map((span) => billedCallOf(RUNLESS, span, table))
-        : billedCallsOfRun(store, runId, table);
-    const rest = all.slice(offset);
-    const taken = rest.slice(0, limit - calls.length);
-    calls.push(...taken.map(wireOf));
-    if (taken.length < rest.length) {
-      offset += taken.length;
+    const want = limit - calls.length;
+    const found = store.billedChatSpansAfter(runId ?? null, after, want + 1);
+    const taken = found.slice(0, want);
+    calls.push(...taken.map(({ span }) => wireOf(billedCallOf(runId ?? RUNLESS, span, table))));
+    const last = taken.at(-1);
+    if (found.length > want && last !== undefined) {
+      after = last.seq;
     } else {
       run += 1;
-      offset = 0;
+      after = 0;
     }
   }
-  return run < slots ? { calls, next: { run, offset } } : { calls };
+  return run < slots ? { calls, next: { run, after } } : { calls };
 };

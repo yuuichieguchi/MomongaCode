@@ -74,6 +74,14 @@ describe('the role of a model call on its chat span', () => {
     expect(spans[0]?.attributes['momonga.target']).toBe('primary');
     expect(spans[0]?.attributes['gen_ai.usage.input_tokens']).toBe(response.body.usage.input_tokens);
     expect(spans[0]?.attributes['gen_ai.usage.output_tokens']).toBe(response.body.usage.output_tokens);
+    expect(spans[0]?.attributes['gen_ai.response.id']).toBe(response.body.id);
+  });
+
+  it('records the response id the caller received on the chat span, the key the cost breakdown joins on', async () => {
+    const { client, chats } = await tracedGateway(1);
+    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    expect(response.status).toBe(200);
+    expect((await chats()).map((span) => span.attributes['gen_ai.response.id'])).toEqual([response.body.id]);
   });
 
   it('guards a compaction charged to no run: the run id header puts the compaction span on its run', async () => {

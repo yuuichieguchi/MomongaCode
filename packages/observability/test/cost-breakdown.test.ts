@@ -97,6 +97,21 @@ describe('buildCostBreakdown', () => {
     expect(formatCostBreakdown(breakdown)).toMatch(/cost: unknown \(1 of 4 call\(s\) have no price\)/);
   });
 
+  it('leaves a call with more cached and written than input out of the by-kind sums, lists it with the reason and never clamps it', () => {
+    const inconsistent = callOf({ step: 4, usage: { inputTokens: 100, cachedInputTokens: 60, cacheWriteInputTokens: 50, outputTokens: 7, reasoningTokens: 0 } });
+    const breakdown = buildCostBreakdown([...THREE_CALLS, inconsistent], { table: TABLE });
+
+    expect(breakdown.billed).toMatchObject({ inputTokens: 3000, uncachedInputTokens: 1400, cacheReadTokens: 1400, cacheWriteTokens: 200 });
+    expect(breakdown.billed.outputTokens).toBe(107);
+    expect(breakdown.calls).toBe(4);
+    expect(breakdown.cacheHitRatio).toBeCloseTo(1400 / 3000, 10);
+    expect(breakdown.inconsistentUsage).toEqual([expect.objectContaining({ runId: 'run-a', step: 4, reason: expect.stringContaining('exceed') })]);
+    expect(breakdown.cost.unpricedCalls).toBe(1);
+    const text = formatCostBreakdown(breakdown);
+    expect(text).toContain('billed tokens by kind are incomplete: 1 of 4 call(s) report more cached and written input than input and are excluded');
+    expect(text).toContain('inconsistent usage: acme/m1 (run run-a, step 4)');
+  });
+
   it('measures layer shares over the calls that recorded an anatomy and counts the older ones without it', () => {
     const older = callOf({ usage: { inputTokens: 5000, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 5, reasoningTokens: 0 } });
     const breakdown = buildCostBreakdown([...THREE_CALLS, older], { table: TABLE });

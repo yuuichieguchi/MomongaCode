@@ -38,6 +38,7 @@ export type CostBreakdown = {
   duration: TimingSummary | null;
   cost: { amount: number | null; currency: 'USD'; unpricedCalls: number };
   unpriced: UnpricedCall[];
+  inconsistentUsage: UnpricedCall[];
   unjoined: UnjoinedRecord[];
 };
 
@@ -89,6 +90,7 @@ export const buildCostBreakdown = (calls: readonly BreakdownCall[], options: Cos
   const firstEvents: number[] = [];
   const durations: number[] = [];
   const unpriced: UnpricedCall[] = [];
+  const inconsistentUsage: UnpricedCall[] = [];
   let units = 0n;
   for (const call of calls) {
     if (call.anatomy === undefined) {
@@ -97,10 +99,18 @@ export const buildCostBreakdown = (calls: readonly BreakdownCall[], options: Cos
       for (const [name, tokens] of layerEntriesOf(call.anatomy)) layerTokens.set(name, (layerTokens.get(name) ?? 0) + tokens);
     }
     const { usage } = call;
-    billed.inputTokens += usage.inputTokens;
-    billed.cacheReadTokens += usage.cachedInputTokens;
-    billed.cacheWriteTokens += usage.cacheWriteInputTokens;
-    billed.uncachedInputTokens += usage.inputTokens - usage.cachedInputTokens - usage.cacheWriteInputTokens;
+    const identity = { runId: call.runId, provider: call.provider, model: call.model, ...(call.step === undefined ? {} : { step: call.step }) };
+    if (usage.cachedInputTokens + usage.cacheWriteInputTokens > usage.inputTokens) {
+      inconsistentUsage.push({
+        ...identity,
+        reason: `cached input (${usage.cachedInputTokens}) and written input (${usage.cacheWriteInputTokens}) together exceed the input (${usage.inputTokens})`,
+      });
+    } else {
+      billed.inputTokens += usage.inputTokens;
+      billed.cacheReadTokens += usage.cachedInputTokens;
+      billed.cacheWriteTokens += usage.cacheWriteInputTokens;
+      billed.uncachedInputTokens += usage.inputTokens - usage.cachedInputTokens - usage.cacheWriteInputTokens;
+    }
     billed.outputTokens += usage.outputTokens;
     billed.reasoningTokens += usage.reasoningTokens;
     if (call.timing !== undefined) {
@@ -109,7 +119,7 @@ export const buildCostBreakdown = (calls: readonly BreakdownCall[], options: Cos
     }
     const priced = priceOf(call, table);
     if (priced.kind === 'unpriced') {
-      unpriced.push({ runId: call.runId, provider: call.provider, model: call.model, ...(call.step === undefined ? {} : { step: call.step }), reason: priced.reason });
+      unpriced.push({ ...identity, reason: priced.reason });
       continue;
     }
     units += priced.units;
@@ -129,6 +139,7 @@ export const buildCostBreakdown = (calls: readonly BreakdownCall[], options: Cos
     duration: summarize(durations),
     cost: { amount: unpriced.length === 0 ? amountOfUnits(units) : null, currency: 'USD', unpricedCalls: unpriced.length },
     unpriced,
+    inconsistentUsage,
     unjoined: [...(options.unjoined ?? [])],
   };
 };
@@ -154,6 +165,9 @@ export const formatCostBreakdown = (breakdown: CostBreakdown): string => {
   return [
     `calls: ${breakdown.calls}`,
     `${layerLine}${withoutAnatomy}`,
+    ...(breakdown.inconsistentUsage.length === 0
+      ? []
+      : [`billed tokens by kind are incomplete: ${breakdown.inconsistentUsage.length} of ${breakdown.calls} call(s) report more cached and written input than input and are excluded from the input figures`]),
     `billed tokens: input ${billed.inputTokens} = uncached ${billed.uncachedInputTokens} + cache read ${billed.cacheReadTokens} + cache write ${billed.cacheWriteTokens}; output ${billed.outputTokens} (reasoning ${billed.reasoningTokens})`,
     breakdown.cacheHitRatio === null ? 'cache hit ratio: none (no input)' : `cache hit ratio: ${percent(breakdown.cacheHitRatio)}`,
     timingLine('time to first token', breakdown.timeToFirstToken),
@@ -161,6 +175,9 @@ export const formatCostBreakdown = (breakdown: CostBreakdown): string => {
     cost,
     ...breakdown.unpriced.map(
       (entry) => `unpriced: ${entry.provider}/${entry.model} (run ${entry.runId}${entry.step === undefined ? '' : `, step ${entry.step}`}): ${entry.reason}`,
+    ),
+    ...breakdown.inconsistentUsage.map(
+      (entry) => `inconsistent usage: ${entry.provider}/${entry.model} (run ${entry.runId}${entry.step === undefined ? '' : `, step ${entry.step}`}): ${entry.reason}`,
     ),
     ...breakdown.unjoined.map((entry) => `unjoined: run ${entry.runId}${entry.step === undefined ? '' : `, step ${entry.step}`}: ${entry.reason}`),
   ].join('\n');

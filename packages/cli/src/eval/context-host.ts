@@ -16,7 +16,7 @@ export class ContextHostError extends Error {
 
 export type ContextRuntime = Pick<
   RuntimeClient,
-  'createSession' | 'createRun' | 'streamEvents' | 'getRun' | 'resolveApproval' | 'cancel' | 'addRule' | 'retireRule' | 'addMemory' | 'adoptGuideline' | 'setTrust' | 'close'
+  'createSession' | 'createRun' | 'streamEvents' | 'getRun' | 'runReflection' | 'resolveApproval' | 'cancel' | 'addRule' | 'retireRule' | 'addMemory' | 'adoptGuideline' | 'setTrust' | 'close'
 >;
 
 export type ContextHostEffects = {

@@ -250,6 +250,14 @@ describe('the reflection call', () => {
     expect(env.api.memories.candidates().map((memory) => memory.text)).toEqual(['the fixture needs a seed']);
   });
 
+  it('records the cached input and the measured timing of the reflection call on its charge', async () => {
+    const env = setup();
+    await queued(env);
+    env.gateway.script.push(textStep(CANDIDATE_REPLY([]), { usage: { ...usageOf(100, 20), input_tokens_details: { cached_tokens: 40 } } }));
+    await env.reflector().runOne(SIGNAL);
+    expect(env.api.contextCharges.list()).toMatchObject([{ purpose: 'reflection', detail: { cachedInputTokens: 40, timing: { durationMs: expect.any(Number) } } }]);
+  });
+
   it('charges context_charges and leaves the terminal run untouched', async () => {
     const env = setup();
     const run = await queued(env);

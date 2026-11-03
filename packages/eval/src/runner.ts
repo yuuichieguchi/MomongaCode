@@ -3,7 +3,7 @@ import type { GoldenCase, GoldenDataset } from './dataset.ts';
 import { grade } from './graders.ts';
 import { buildReport } from './report.ts';
 import type { CaseResult, EvalReport } from './report.ts';
-import type { Transcript, TranscriptChild, TranscriptRun } from './transcript.ts';
+import type { Transcript, TranscriptChild, TranscriptReflection, TranscriptRun } from './transcript.ts';
 
 export type EvalWorkspace = { cwd: string; env: Record<string, string> };
 
@@ -14,6 +14,7 @@ export type EvalRunApi = {
   createRun(sessionId: string, input: { input: string; timeoutMs?: number }): Promise<{ id: string }>;
   events(runId: string): AsyncIterable<PublicRunEvent>;
   getRun(runId: string): Promise<TranscriptRun>;
+  reflectionOf(runId: string): Promise<TranscriptReflection>;
   resolveApproval(approvalId: string, optionId: string): Promise<void>;
   cancelRun(runId: string): Promise<void>;
 };
@@ -85,7 +86,7 @@ const runOnce = async (ports: EvalPorts, golden: GoldenCase, runIndex: number): 
   const session = await ports.api.createSession({ ...workspace, permissionMode: golden.permissionMode });
   const run = await ports.api.createRun(session.id, { input: golden.input, ...(golden.timeoutMs === undefined ? {} : { timeoutMs: golden.timeoutMs }) });
   const { events, children } = await driveRun(ports.api, golden, run.id);
-  const transcript: Transcript = { caseId: golden.id, runIndex, run: await ports.api.getRun(run.id), events, children };
+  const transcript: Transcript = { caseId: golden.id, runIndex, run: await ports.api.getRun(run.id), events, children, reflection: await ports.api.reflectionOf(run.id) };
   if (ports.onTranscript !== undefined) await ports.onTranscript(transcript);
   return transcript;
 };

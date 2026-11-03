@@ -1,5 +1,5 @@
 import { isFatalStoreError } from '@momonga/store';
-import type { CallTiming, CreateResponseBody, ResponseResource, StreamEvent } from '@momonga/protocol';
+import type { BilledDetail, CallTiming, CreateResponseBody, MomongaResponseExtension, ResponseResource, StreamEvent, Usage } from '@momonga/protocol';
 import type { RunEventPayload } from '@momonga/protocol';
 import type { ClaimContext } from './claim-context.ts';
 import { GatewayFailureError } from './errors.ts';
@@ -89,7 +89,14 @@ export const terminalResultOf = (event: StreamEvent): ModelResult | undefined =>
   }
 };
 
-const carriesOutput = (event: StreamEvent): boolean =>
+export const billedDetailOf = (usage: Usage | null, extension: MomongaResponseExtension | undefined, timing: CallTiming): BilledDetail => ({
+  ...(usage === null ? {} : { cachedInputTokens: usage.input_tokens_details.cached_tokens }),
+  ...(extension?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: extension.cacheWriteInputTokens }),
+  ...(extension?.cost === undefined ? {} : { cost: extension.cost }),
+  timing,
+});
+
+export const carriesOutput = (event: StreamEvent): boolean =>
   event.type === 'response.output_text.delta' ||
   event.type === 'response.reasoning.delta' ||
   event.type === 'response.reasoning_summary_text.delta' ||

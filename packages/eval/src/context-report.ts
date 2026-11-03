@@ -145,7 +145,7 @@ const measureRun = (entry: ExpandedCase, transcript: Transcript): RunMeasure => 
     recalled: recalledOf(transcript.events),
     retrieval: entry.gold === undefined || stopped ? undefined : retrievalOf(entry.gold, transcript.events),
     modelAlias: transcript.run.modelAlias,
-    token: tokenFactsOf(runs),
+    token: tokenFactsOf(runs, stopped ? { state: 'none' } : transcript.reflection),
   };
 };
 
@@ -306,9 +306,17 @@ const describeRatio = (name: string, metric: RatioMetric | undefined, absence: s
 
 const decimals = (digits: number) => (value: number): string => value.toFixed(digits);
 
-const tokenLines = (metrics: ContextMetrics): string[] => {
+const unsettledLine = (cases: readonly ContextCaseReport[]): string[] => {
+  const unsettled = cases.filter((entry) => (entry.tokens?.unsettledReflections ?? 0) > 0);
+  if (unsettled.length === 0) return [];
+  const runs = unsettled.reduce((sum, entry) => sum + (entry.tokens?.unsettledReflections ?? 0), 0);
+  return [`reflection: ${runs} run(s) in ${unsettled.map((entry) => entry.id).join(', ')} have a reflection that is pending, running, finished without a charge or not recorded, so the per-success token metrics and cacheHitRatio are n/a`];
+};
+
+const tokenLines = (metrics: ContextMetrics, cases: readonly ContextCaseReport[]): string[] => {
   const shares = Object.entries(metrics.layerShares ?? {}).map(([name, share]) => `${name} ${percent(share.value)}`);
   return [
+    ...unsettledLine(cases),
     describeRatio('costPerSuccess', metrics.costPerSuccess, 'a call has no price or no run succeeded', decimals(6), ''),
     describeRatio('uncachedInputPerSuccess', metrics.uncachedInputPerSuccess, 'a call reports no cached input or no run succeeded', decimals(1), ''),
     describeRatio('callsPerSuccess', metrics.callsPerSuccess, 'no call was recorded or no run succeeded', decimals(3), ''),
@@ -358,7 +366,7 @@ export const formatContextReport = (report: ContextReport): string => {
       ? 'tokensPerSuccess n/a (no passing run)'
       : `tokensPerSuccess ${tokens.value.toFixed(1)} (${tokens.tokens} tokens / ${tokens.successes} successes), n=${tokens.n}`,
   );
-  lines.push(...tokenLines(metrics));
+  lines.push(...tokenLines(metrics, report.cases));
   lines.push(`unclassifiedCompactions ${report.unclassifiedCompactions}`);
   lines.push(`governanceRunsWithoutEvent ${report.governanceRunsWithoutEvent} (runs of cases with rules that loaded no governing set; each counts as an empty set)`);
   lines.push(`datasetSeed ${report.datasetSeed}`);
@@ -381,13 +389,14 @@ const ratioMetricSchema = closed({ value: rate, numerator: rate, denominator: ra
 const caseTokensSchema = closed(
   {
     calls: count,
+    unsettledReflections: count,
     inputTokens: count,
     cachedInputTokens: count,
     uncachedInputTokens: { type: 'number' },
     cost: rate,
     latencyMs: rate,
   },
-  ['calls'],
+  ['calls', 'unsettledReflections'],
 );
 
 const CONTEXT_REPORT_SCHEMA = {

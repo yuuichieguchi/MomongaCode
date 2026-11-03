@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { computeCost, definePriceTable } from '@momonga/observability';
-import type { PriceEntry } from '@momonga/observability';
+import { amountOfUnits, definePriceTable, priceCall } from '@momonga/observability';
+import type { CostInput, PriceEntry } from '@momonga/observability';
+
+const metered = (input: CostInput) => priceCall({ ...input, billing: 'metered' });
 
 const CACHING: PriceEntry = {
   provider: 'acme',
@@ -18,16 +20,20 @@ const AT = new Date('2026-06-01T00:00:00Z');
 describe('the price of a cache write', () => {
   it('bills uncached input, cache read, cache write and output each at its own rate', () => {
     const table = definePriceTable([CACHING]);
-    expect(
-      computeCost({ provider: 'acme', model: 'm1', usage: { inputTokens: 1_000_000, cachedInputTokens: 400_000, cacheWriteInputTokens: 100_000, outputTokens: 500_000 }, at: AT, table }),
-    ).toEqual({ amount: 6.6625, currency: 'USD', priceVersion: '2026-01-01' });
+    const priced = metered({ provider: 'acme', model: 'm1', usage: { inputTokens: 1_000_000, cachedInputTokens: 400_000, cacheWriteInputTokens: 100_000, outputTokens: 500_000 }, at: AT, table });
+    expect(priced.kind === 'priced' ? { amount: amountOfUnits(priced.units), currency: priced.currency, priceVersion: priced.priceVersion } : priced).toEqual({
+      amount: 6.6625,
+      currency: 'USD',
+      priceVersion: '2026-01-01',
+    });
   });
 
-  it('refuses a usage whose cached and written input together exceed the input', () => {
+  it('leaves a usage whose cached and written input together exceed the input unpriced, with the reason', () => {
     const table = definePriceTable([CACHING]);
-    expect(() =>
-      computeCost({ provider: 'acme', model: 'm1', usage: { inputTokens: 100, cachedInputTokens: 60, cacheWriteInputTokens: 41, outputTokens: 0 }, at: AT, table }),
-    ).toThrow(RangeError);
+    expect(metered({ provider: 'acme', model: 'm1', usage: { inputTokens: 100, cachedInputTokens: 60, cacheWriteInputTokens: 41, outputTokens: 0 }, at: AT, table })).toEqual({
+      kind: 'unpriced',
+      reason: expect.stringContaining('exceed'),
+    });
   });
 
   it('validates cacheWritePerMTok like the other prices, naming the entry', () => {

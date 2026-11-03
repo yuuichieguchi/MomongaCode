@@ -108,8 +108,8 @@ const memoryIds = (db: DatabaseSync, term: string): string[] =>
   db.prepare('SELECT memory_id FROM memories_index WHERE memories_index MATCH ? ORDER BY memory_id').all(`"${term}"`).map((row) => String(row['memory_id']));
 
 describe('migration v13', () => {
-  it('is followed only by the pinned-digest column and the migration that records dropped reflection candidates', () => {
-    expect(MIGRATIONS.map((migration) => migration.version).slice(12)).toEqual([13, 14, 15]);
+  it('is followed only by the pinned-digest column, the migration that records dropped reflection candidates and the one that records the detail of a context charge', () => {
+    expect(MIGRATIONS.map((migration) => migration.version).slice(12)).toEqual([13, 14, 15, 16]);
   });
 
   it('preserves an existing memory and gives it the defaults of the new columns', () => {
@@ -495,6 +495,7 @@ describe('context charges', () => {
       'output_tokens',
       'total_tokens',
       'created_at',
+      'detail_json',
     ]);
   });
 

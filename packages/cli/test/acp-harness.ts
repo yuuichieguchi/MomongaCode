@@ -331,6 +331,7 @@ export const fakeRuntime = (): FakeRuntime => {
     recordContextCharge: unexpected('recordContextCharge'),
     cost: unexpected('cost'),
     costText: unexpected('costText'),
+    runReflection: unexpected('runReflection'),
     costBreakdown: unexpected('costBreakdown'),
     costBreakdownText: unexpected('costBreakdownText'),
     trust: unexpected('trust'),

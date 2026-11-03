@@ -305,6 +305,7 @@ const compactOnce = async (
     responseId: resourceId,
     finishReason: 'stop',
     usage: outcome.value.usage,
+    ...(outcome.value.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: outcome.value.cacheWriteInputTokens }),
     output: [],
     fallbackCauses: outcome.fallbackCauses,
   });
@@ -321,7 +322,7 @@ const compactOnce = async (
           model: outcome.target.model,
           billing: outcome.target.billing,
           usage: outcome.value.usage,
-          cacheWriteInputTokens: undefined,
+          cacheWriteInputTokens: outcome.value.cacheWriteInputTokens,
           at: services.clock.now(),
           table: services.priceTable,
         });
@@ -331,7 +332,14 @@ const compactOnce = async (
     output: [item],
     created_at: Math.floor(services.clock.now() / 1000),
     usage: outcome.value.usage,
-    ...(cost === null ? {} : { momonga: { cost } }),
+    ...(cost === null && outcome.value.cacheWriteInputTokens === undefined
+      ? {}
+      : {
+          momonga: {
+            ...(outcome.value.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: outcome.value.cacheWriteInputTokens }),
+            ...(cost === null ? {} : { cost }),
+          },
+        }),
   };
 };
 

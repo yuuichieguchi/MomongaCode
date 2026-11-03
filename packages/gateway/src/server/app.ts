@@ -216,13 +216,13 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     if (!Array.isArray(runIds) || !runIds.every((runId): runId is string => typeof runId === 'string') || new Set(runIds).size !== runIds.length) {
       throw invalidRequest('invalid_body', 'runIds must be a list of distinct run ids', 'runIds');
     }
-    if (!isRecord(cursor) || !isCount(cursor['run']) || !isCount(cursor['offset']) || cursor['run'] > runIds.length) {
-      throw invalidRequest('invalid_body', 'cursor must be { run, offset } with run no larger than the number of runIds', 'cursor');
+    if (!isRecord(cursor) || !isCount(cursor['run']) || !isCount(cursor['after']) || cursor['run'] > runIds.length) {
+      throw invalidRequest('invalid_body', 'cursor must be { run, after } with run no larger than the number of runIds', 'cursor');
     }
     if (!isCount(limit) || limit < 1 || limit > MAX_BILLED_CALLS_PAGE) {
       throw invalidRequest('invalid_body', `limit must be an integer from 1 to ${MAX_BILLED_CALLS_PAGE}`, 'limit');
     }
-    return context.json(await dependencies.billedCalls(runIds, { run: cursor['run'], offset: cursor['offset'] }, limit, includeRunless));
+    return context.json(await dependencies.billedCalls(runIds, { run: cursor['run'], after: cursor['after'] }, limit, includeRunless));
   });
 
   return app;

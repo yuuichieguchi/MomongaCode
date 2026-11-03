@@ -56,7 +56,7 @@ export type LenientItems = { callNames: Record<string, string>; withTools: boole
 
 export type RenderWireOptions = { lenientItems?: LenientItems };
 
-export type AdapterCompactResult = { summary: string; usage: Usage };
+export type AdapterCompactResult = { summary: string; usage: Usage; cacheWriteInputTokens?: number };
 
 export type ProviderAdapter = {
   readonly kind: string;

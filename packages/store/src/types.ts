@@ -1,5 +1,6 @@
 import type { Clock, Redactor } from '@momonga/foundation';
 import type {
+  BilledDetail,
   CallTiming,
   TokenAnatomy,
   ElicitationAnswerRecord,
@@ -130,9 +131,9 @@ export type ResolveApprovalResult =
 
 export type ModelCallRecord =
   | { kind: 'requested'; seq: number; step: number; attempt: number; anatomy?: TokenAnatomy }
-  | { kind: 'responded'; seq: number; step: number; attempt: number; timing?: CallTiming };
+  | { kind: 'responded'; seq: number; step: number; attempt: number; responseId?: string; timing?: CallTiming };
 
-export type HeartbeatResult ={ kind: 'ok'; cancelRequested: boolean; status: ClaimStatus } | LeaseLost;
+export type HeartbeatResult = { kind: 'ok'; cancelRequested: boolean; status: ClaimStatus } | LeaseLost;
 export type AppendResult = { kind: 'ok'; lastSeq: number } | LeaseLost;
 export type RunMutationResult = { kind: 'ok'; run: Run } | LeaseLost | Conflict;
 export type ServiceMutationResult = { kind: 'ok'; run: Run } | Conflict;
@@ -437,6 +438,7 @@ export type ContextChargeInput = {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  detail?: BilledDetail;
 };
 
 export type ReflectionCompletion = {

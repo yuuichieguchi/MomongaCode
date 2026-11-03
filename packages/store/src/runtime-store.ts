@@ -245,6 +245,7 @@ const prepareStatements = (db: DatabaseSync) => ({
     `SELECT seq, step, type,
       json_extract(payload_json, '$.attempt') AS attempt,
       json_extract(payload_json, '$.anatomy') AS anatomy,
+      json_extract(payload_json, '$.response.id') AS response_id,
       json_extract(payload_json, '$.response.timing') AS timing
      FROM events WHERE run_id = :runId AND type IN ('model.requested', 'model.responded') ORDER BY seq`,
   ),
@@ -335,7 +336,8 @@ const decodeModelCallRecord = (row: Row): ModelCallRecord => {
     return { kind: 'requested', seq, step, attempt, ...(anatomy === null ? {} : { anatomy: anatomy as TokenAnatomy }) };
   }
   const timing = reader.nullableJson('timing');
-  return { kind: 'responded', seq, step, attempt, ...(timing === null ? {} : { timing: expectRecord('events', identity, 'timing', timing) as CallTiming }) };
+  const responseId = reader.nullableString('response_id');
+  return { kind: 'responded', seq, step, attempt, ...(responseId === null ? {} : { responseId }), ...(timing === null ? {} : { timing: expectRecord('events', identity, 'timing', timing) as CallTiming }) };
 };
 
 type Measured = { lastSeq: number; journaled: boolean; contribution: Pick<ContributionPayload, 'items'> | undefined };

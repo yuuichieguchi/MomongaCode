@@ -2,13 +2,14 @@ import { MAX_BILLED_CALLS_PAGE, RUNLESS, RUN_ROLE, buildCostBreakdown, formatCos
 import type { BreakdownCall, CostBreakdown, UnjoinedRecord } from '@momonga/observability';
 import type { BilledCallsCursorView, BilledCallsPageView, BilledCallView, RunTraceCall } from '@momonga/protocol';
 import type { ModelCallRecord } from '@momonga/store';
+import { gatewayProtocolError } from '../gateway-client.ts';
 
 export const traceCallsOf = (records: readonly ModelCallRecord[]): RunTraceCall[] =>
   records.flatMap((record) =>
     record.kind === 'requested' ? [{ step: record.step, attempt: record.attempt, ...(record.anatomy === undefined ? {} : { anatomy: record.anatomy }) }] : [],
   );
 
-type Response = Pick<BreakdownCall, 'anatomy' | 'timing'> & { step: number };
+type Response = Pick<BreakdownCall, 'anatomy' | 'timing'> & { step: number; id?: string };
 
 const responsesOf = (records: readonly ModelCallRecord[]): Response[] => {
   const requests = new Map<string, ModelCallRecord>();
@@ -20,7 +21,12 @@ const responsesOf = (records: readonly ModelCallRecord[]): Response[] => {
     }
     const request = requests.get(`${record.step}:${record.attempt}`);
     const anatomy = request?.kind === 'requested' ? request.anatomy : undefined;
-    responses.push({ step: record.step, ...(anatomy === undefined ? {} : { anatomy }), ...(record.timing === undefined ? {} : { timing: record.timing }) });
+    responses.push({
+      step: record.step,
+      ...(record.responseId === undefined ? {} : { id: record.responseId }),
+      ...(anatomy === undefined ? {} : { anatomy }),
+      ...(record.timing === undefined ? {} : { timing: record.timing }),
+    });
   }
   return responses;
 };
@@ -45,24 +51,40 @@ const isMain = (call: BilledCallView): boolean => (call.role ?? RUN_ROLE) === RU
 
 export const joinRunCalls = (runId: string, billed: readonly BilledCallView[], records: readonly ModelCallRecord[]): { calls: BreakdownCall[]; unjoined: UnjoinedRecord[] } => {
   const responses = responsesOf(records);
-  const calls: BreakdownCall[] = billed.filter((call) => !isMain(call)).map((call) => breakdownCallOf(call, {}));
+  const firstById = new Map<string, Response>();
+  for (const response of responses) {
+    if (response.id !== undefined && !firstById.has(response.id)) firstById.set(response.id, response);
+  }
+  const matched = new Set<string>();
+  const calls: BreakdownCall[] = [];
   const unjoined: UnjoinedRecord[] = [];
-  const main = billed.filter(isMain);
-  const steps = [...new Set([...main.map((call) => call.step), ...responses.map((response) => response.step)])];
-  for (const step of steps) {
-    const spans = main.filter((call) => call.step === step);
-    const answers = responses.filter((response) => response.step === step);
-    const stepField = step === undefined ? {} : { step };
-    spans.forEach((span, index) => {
-      calls.push(breakdownCallOf(span, answers[index] ?? {}));
-      if (answers[index] === undefined) unjoined.push({ runId, ...stepField, reason: 'a billed model call has no recorded model response' });
-    });
-    for (const _extra of answers.slice(spans.length)) {
-      unjoined.push({ runId, ...stepField, reason: 'a recorded model response has no billed model call' });
+  for (const call of billed) {
+    const stepField = call.step === undefined ? {} : { step: call.step };
+    if (!isMain(call)) {
+      calls.push(breakdownCallOf(call, {}));
+    } else if (call.responseId === undefined) {
+      calls.push(breakdownCallOf(call, {}));
+      unjoined.push({ runId, ...stepField, reason: 'a billed model call records no response id' });
+    } else {
+      const answer = firstById.get(call.responseId);
+      calls.push(breakdownCallOf(call, answer ?? {}));
+      if (answer === undefined) unjoined.push({ runId, ...stepField, reason: 'a billed model call has no recorded model response' });
+      else matched.add(call.responseId);
+    }
+  }
+  for (const response of responses) {
+    if (response.id === undefined) {
+      unjoined.push({ runId, step: response.step, reason: 'a recorded model response has no id' });
+    } else if (!matched.has(response.id) && firstById.get(response.id) === response) {
+      unjoined.push({ runId, step: response.step, reason: 'a recorded model response has no billed model call' });
     }
   }
   return { calls, unjoined };
 };
+
+const isCursorNumber = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+
+const advances = (from: BilledCallsCursorView, to: BilledCallsCursorView): boolean => to.run > from.run || (to.run === from.run && to.after > from.after);
 
 export type CostBreakdownSources = {
   runIds: readonly string[];
@@ -74,11 +96,21 @@ export type CostBreakdownSources = {
 export const costBreakdownOf = async (sources: CostBreakdownSources): Promise<{ breakdown: CostBreakdown; text: string }> => {
   const { runIds } = sources;
   const billed: BilledCallView[] = [];
-  let cursor: BilledCallsCursorView | undefined = { run: 0, offset: 0 };
+  let cursor: BilledCallsCursorView | undefined = { run: 0, after: 0 };
   while (cursor !== undefined) {
     const page: BilledCallsPageView = await sources.fetchPage(runIds, cursor, sources.pageSize ?? MAX_BILLED_CALLS_PAGE);
     billed.push(...page.calls);
-    cursor = page.next;
+    const { next } = page;
+    if (next !== undefined) {
+      if (!isCursorNumber(next.run) || !isCursorNumber(next.after)) {
+        throw gatewayProtocolError('the billed calls page names a cursor that is not a pair of non-negative integers');
+      }
+      if (!advances(cursor, next)) {
+        throw gatewayProtocolError(`the billed calls page names the cursor ${JSON.stringify(next)}, which does not advance past ${JSON.stringify(cursor)}`);
+      }
+      if (page.calls.length === 0) throw gatewayProtocolError('the billed calls page is an empty page that names a next cursor');
+    }
+    cursor = next;
   }
   const joined = runIds.map((runId) =>
     joinRunCalls(

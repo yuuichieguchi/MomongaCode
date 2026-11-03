@@ -28,8 +28,6 @@ export type CostInput = {
   table: PriceTable;
 };
 
-export type Cost = { amount: number; currency: 'USD'; priceVersion: string };
-
 const PRICE_SCALE_DIGITS = 9;
 const PRICE_SCALE = 10 ** PRICE_SCALE_DIGITS;
 const TOKENS_PER_MTOK_DIGITS = 6;
@@ -71,12 +69,6 @@ export const definePriceTable = (entries: readonly PriceEntry[]): PriceTable => 
   return Object.freeze(entries.map((entry) => Object.freeze({ ...entry })));
 };
 
-const assertTokenCount = (field: string, tokens: number): void => {
-  if (!Number.isSafeInteger(tokens) || tokens < 0) {
-    throw new RangeError(`${field} must be a non-negative integer, got ${tokens}`);
-  }
-};
-
 const scaledPrice = (price: number): bigint => BigInt(Math.round(price * PRICE_SCALE));
 
 const toAmount = (units: bigint): number => {
@@ -93,46 +85,7 @@ export const findPriceEntry = (table: PriceTable, provider: string, model: strin
       undefined,
     );
 
-export type CostUnits = { units: bigint; currency: 'USD'; priceVersion: string };
-
 export const amountOfUnits = (units: bigint): number => toAmount(units);
-
-export const computeCostUnits = (input: CostInput): CostUnits | null => {
-  const { usage } = input;
-  const cachedInputTokens = usage.cachedInputTokens ?? 0;
-  const cacheWriteInputTokens = usage.cacheWriteInputTokens ?? 0;
-  assertTokenCount('inputTokens', usage.inputTokens);
-  assertTokenCount('outputTokens', usage.outputTokens);
-  assertTokenCount('cachedInputTokens', cachedInputTokens);
-  assertTokenCount('cacheWriteInputTokens', cacheWriteInputTokens);
-  if (cachedInputTokens + cacheWriteInputTokens > usage.inputTokens) {
-    throw new RangeError(
-      `cachedInputTokens (${cachedInputTokens}) and cacheWriteInputTokens (${cacheWriteInputTokens}) together exceed inputTokens (${usage.inputTokens})`,
-    );
-  }
-  const atMs = input.at.getTime();
-  if (Number.isNaN(atMs)) throw new RangeError('computeCost: at must be a valid Date');
-  const entry = findPriceEntry(input.table, input.provider, input.model, atMs);
-  if (entry === undefined) return null;
-  let cacheWriteUnits = 0n;
-  if (cacheWriteInputTokens > 0) {
-    if (entry.cacheWritePerMTok === undefined) return null;
-    cacheWriteUnits = BigInt(cacheWriteInputTokens) * scaledPrice(entry.cacheWritePerMTok);
-  }
-  let cachedUnits = 0n;
-  if (cachedInputTokens > 0) {
-    if (entry.cachedInputPerMTok === undefined) return null;
-    cachedUnits = BigInt(cachedInputTokens) * scaledPrice(entry.cachedInputPerMTok);
-  }
-  const inputRate = scaledPrice(entry.inputPerMTok);
-  const outputRate = scaledPrice(entry.outputPerMTok);
-  const units =
-    BigInt(usage.inputTokens - cachedInputTokens - cacheWriteInputTokens) * inputRate +
-    cachedUnits +
-    cacheWriteUnits +
-    BigInt(usage.outputTokens) * outputRate;
-  return { units, currency: entry.currency, priceVersion: entry.effectiveFrom };
-};
 
 export const LOCAL_PRICE_VERSION = 'local';
 
@@ -165,12 +118,10 @@ export const priceCall = (input: PriceCallInput): PricedCall => {
   if (written > 0 && entry.cacheWritePerMTok === undefined) {
     return { kind: 'unpriced', reason: `${written} cache write token(s) and the price entry has no cacheWritePerMTok` };
   }
-  const units = computeCostUnits(input);
-  if (units === null) return { kind: 'unpriced', reason: 'no price entry' };
-  return { kind: 'priced', units: units.units, currency: units.currency, priceVersion: units.priceVersion };
-};
-
-export const computeCost = (input: CostInput): Cost | null => {
-  const priced = computeCostUnits(input);
-  return priced === null ? null : { amount: toAmount(priced.units), currency: priced.currency, priceVersion: priced.priceVersion };
+  const units =
+    BigInt(usage.inputTokens - cached - written) * scaledPrice(entry.inputPerMTok) +
+    BigInt(cached) * scaledPrice(entry.cachedInputPerMTok ?? 0) +
+    BigInt(written) * scaledPrice(entry.cacheWritePerMTok ?? 0) +
+    BigInt(usage.outputTokens) * scaledPrice(entry.outputPerMTok);
+  return { kind: 'priced', units, currency: entry.currency, priceVersion: entry.effectiveFrom };
 };

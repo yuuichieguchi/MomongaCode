@@ -2,7 +2,7 @@ import { canonicalJson, computeBackoff, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { normalizeMemoryText } from '@momonga/memory';
 import { LOWEST_REASONING_EFFORT, assistantTextOf, summaryTokenCapFor } from '@momonga/protocol';
-import type { CreateResponseBody, ReflectionDrop, Usage } from '@momonga/protocol';
+import type { BilledDetail, CallTiming, CreateResponseBody, MomongaResponseExtension, ReflectionDrop, Usage } from '@momonga/protocol';
 import { memoryTextProblem } from '@momonga/tools';
 import type { ContextChargeInput, RuntimeStore, SaveCandidateInput } from '@momonga/store';
 import type { GatewayPort, SettingsPort } from '../ports.ts';
@@ -11,7 +11,7 @@ import { RUNTIME_DEFAULTS } from '../process/defaults.ts';
 import { readPins } from '../worker/pins.ts';
 import { isRunVerified } from './verified-run.ts';
 import { readAllRunEvents } from '../process/run-events.ts';
-import { terminalResultOf } from '../worker/model-stream.ts';
+import { billedDetailOf, carriesOutput, terminalResultOf } from '../worker/model-stream.ts';
 import type { ModelResult } from '../worker/model-stream.ts';
 import { MemoryEvidenceError, bindMemoryEvidence, readGitHead } from './evidence.ts';
 import type { EvidenceRun } from './evidence.ts';
@@ -46,9 +46,16 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
   let running = false;
   const retryAt = new Map<string, number>();
 
-  const complete = async (runId: string, body: CreateResponseBody, signal: AbortSignal): Promise<{ terminal: ModelResult; usage: Usage | null }> => {
+  const complete = async (
+    runId: string,
+    body: CreateResponseBody,
+    signal: AbortSignal,
+  ): Promise<{ terminal: ModelResult; usage: Usage | null; detail: BilledDetail }> => {
     let terminal: ModelResult | undefined;
     let usage: Usage | null = null;
+    let extension: MomongaResponseExtension | undefined;
+    let firstEventMs: number | undefined;
+    const startedAt = clock.now();
     const events = gateway.stream(body, {
       idempotencyKey: sha256Hex(canonicalJson([runId, 'reflect'])),
       deadlineAt: clock.now() + RUNTIME_DEFAULTS.runTimeoutMs,
@@ -56,11 +63,16 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       role: 'reflection',
     });
     for await (const event of events) {
+      if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = clock.now() - startedAt;
       terminal = terminalResultOf(event) ?? terminal;
-      if (event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed') usage = event.response.usage;
+      if (event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed') {
+        usage = event.response.usage;
+        extension = event.response.momonga;
+      }
     }
     if (terminal === undefined) throw new Error(`the reflection call of run ${runId} ended without a terminal event`);
-    return { terminal, usage };
+    const timing: CallTiming = { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: clock.now() - startedAt };
+    return { terminal, usage, detail: billedDetailOf(usage, extension, timing) };
   };
 
   const reflect = async (runId: string, signal: AbortSignal, ledger: ChargeLedger): Promise<void> => {
@@ -106,9 +118,10 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       stream: true,
       metadata: { run_id: runId, purpose: 'reflection' },
     };
-    const { terminal, usage } = await complete(runId, body, signal);
+    const { terminal, usage, detail } = await complete(runId, body, signal);
     if (usage !== null) {
       ledger.unrecorded = {
+        detail,
         purpose: 'reflection',
         runId,
         project,

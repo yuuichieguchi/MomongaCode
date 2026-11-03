@@ -204,7 +204,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
           wireTokensOf(buildMessagesBody(summaryRequest, cap, { cacheBreakpoints: false }), capabilities.imageTokens),
           tokensForText(collected.summary),
         );
-      return { summary: collected.summary, usage };
+      return { summary: collected.summary, usage, ...(collected.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: collected.cacheWriteInputTokens }) };
     }
     throw new StreamFailure('upstream_protocol_error', 'model_error', 'the upstream ended without a terminal event');
   };

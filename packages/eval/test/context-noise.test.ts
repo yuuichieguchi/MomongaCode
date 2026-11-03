@@ -39,6 +39,7 @@ const host = (tokensOf: (input: string) => number, hangOn?: string): { open: () 
     events: async function* (runId) {
       if (inputOfRun.get(runId) === hangOn) await new Promise<void>((resolve) => releases.push(resolve));
     },
+    reflectionOf: async () => ({ state: 'none' }),
     getRun: async (runId) => ({ id: runId, status: 'COMPLETED', step: 1, usage: { inputTokens: 0, outputTokens: 0, totalTokens: tokensOf(inputOfRun.get(runId) ?? '') } }),
     resolveApproval: async () => undefined,
     cancelRun: async (runId) => {

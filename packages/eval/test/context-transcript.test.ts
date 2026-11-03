@@ -33,6 +33,14 @@ describe('transcripts and the context events', () => {
     expect(decodeTranscript(encodeTranscript(original), 'new.jsonl')).toEqual(original);
   });
 
+  it('round-trips the reflection of a run and refuses a charge that is not a context charge', () => {
+    const charge = { id: 1, purpose: 'reflection' as const, runId: 'r1', project: '/w', model: 'm', inputTokens: 5, outputTokens: 1, totalTokens: 6, createdAt: 1, detail: { timing: { durationMs: 9 } } };
+    const original: Transcript = { ...toolRoundTripTranscript('c1', 2), reflection: { state: 'done', charge } };
+    expect(decodeTranscript(encodeTranscript(original), 'r.jsonl')).toEqual(original);
+    const broken = { ...original, reflection: { state: 'done', charge: { ...charge, inputTokens: -1 } } } as Transcript;
+    expect(() => decodeTranscript(encodeTranscript(broken), 'r.jsonl')).toThrow(/reflection.charge/);
+  });
+
   it('ends a transcript with a record that counts its events, so a file cut at a line boundary is refused', () => {
     const lines = encodeTranscript(toolRoundTripTranscript('c1', 2)).split('\n').filter((line) => line !== '');
     expect(JSON.parse(lines.at(-1)!)).toMatchObject({ end: true });
