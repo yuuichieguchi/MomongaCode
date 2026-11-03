@@ -11,7 +11,7 @@ type Layout = 'plain' | 'symlinked';
 const writeTool = (target: string, runs: string[]) =>
   makeTool('PathTool', {
     kind: 'edit',
-    sideEffect: 'write',
+    sideEffect: 'write', subjectKind: 'path',
     subject: () => ({ kind: 'path', tool: 'PathTool', paths: [target], access: 'write' }),
     execute: async () => {
       runs.push(target);

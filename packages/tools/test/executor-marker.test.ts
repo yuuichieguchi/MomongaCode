@@ -19,7 +19,7 @@ const observe = (ctx: ToolContext): Seen => {
 const execTool = (seen: Seen[], behavior: (ctx: ToolContext) => Promise<{ status: 'completed'; output: string }> = async () => ({ status: 'completed', output: 'ran' })) =>
   makeTool('Bash', {
     kind: 'execute',
-    sideEffect: 'exec',
+    sideEffect: 'exec', subjectKind: 'none',
     execute: async (_input, ctx) => {
       seen.push(observe(ctx));
       return behavior(ctx);
@@ -54,7 +54,7 @@ describe('process marker', () => {
     const seen: Seen[] = [];
     const tool = makeTool('Bash', {
       kind: 'execute',
-      sideEffect: 'exec',
+      sideEffect: 'exec', subjectKind: 'none',
       timeoutMs: 30,
       execute: (_input, ctx) => {
         seen.push(observe(ctx));
@@ -76,7 +76,7 @@ describe('process marker', () => {
     let executions = 0;
     const tool = makeTool('Bash', {
       kind: 'execute',
-      sideEffect: 'exec',
+      sideEffect: 'exec', subjectKind: 'none',
       execute: async () => {
         executions += 1;
         return { status: 'completed', output: 'ran' };
@@ -103,6 +103,7 @@ describe('process marker', () => {
     const tool = makeTool('Tool', {
       kind,
       sideEffect,
+      subjectKind: 'none',
       execute: async (_input, ctx) => {
         seen.push(ctx.processMarker);
         return { status: 'completed', output: 'ok' };

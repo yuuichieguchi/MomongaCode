@@ -358,7 +358,7 @@ describe('one compilation per batch: every reader uses batch.sandboxPolicy.fileR
     const rules = [
       parseRule('Read(.env)', { effect: 'deny', origin: 'user', source: SOURCE, settingsRoot: harness.layout.project, home: harness.layout.home, cwd: harness.layout.project }),
     ];
-    const pathTool = makeTool('PathTool', { subject: () => ({ kind: 'path', tool: 'PathTool', paths: [target], access: 'read' }) });
+    const pathTool = makeTool('PathTool', { sideEffect: 'read_only', subjectKind: 'path', subject: () => ({ kind: 'path', tool: 'PathTool', paths: [target], access: 'read' }) });
     const input = harness.input(await toolSetOf(pathTool), [call('c1', 'PathTool')], { rules, mode: 'bypassPermissions', sandboxPolicy: minimalPolicyFor({ layout: harness.layout, rules }) });
     const [outcome] = await harness.executor.runBatch(input);
     expect(failedWith(outcome)).toBe(blockedMessage(target, 'Read(.env)'));

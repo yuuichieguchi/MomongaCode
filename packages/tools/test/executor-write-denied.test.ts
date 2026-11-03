@@ -92,7 +92,7 @@ describe('executor write guard while a placeholder changes during the batch (HIG
   const flippingTool = (flip: () => void) =>
     makeTool('Flip', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'path',
       subject: () => ({ kind: 'path', tool: 'Flip', paths: ['flip.txt'], access: 'write' }),
       execute: async () => {
         flip();

@@ -39,7 +39,7 @@ const setup = (reconcileOutcome: 'not_applied' | 'unknown' = 'not_applied') => {
   let prepareCalls = 0;
   const tool = makeTool('Write', {
     kind: 'edit',
-    sideEffect: 'write',
+    sideEffect: 'write', subjectKind: 'path',
     subject: () => subject,
     reconcile: async () => ({ outcome: reconcileOutcome, output: '' }),
     prepare: async () => {

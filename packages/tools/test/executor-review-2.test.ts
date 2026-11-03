@@ -47,7 +47,7 @@ describe('executor bounded reconcile', () => {
     let executed = 0;
     const tool = makeTool('Stall', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'none',
       reconcile: () => new Promise(() => undefined),
       execute: async () => {
         executed += 1;
@@ -85,7 +85,7 @@ describe('executor admission of a call with an existing record', () => {
     let executed = 0;
     const tool = makeTool('Edit', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'path',
       subject: () => subject,
       reconcile: async () => ({ outcome: 'not_applied', output: '' }),
       execute: async () => {
@@ -109,7 +109,7 @@ describe('executor admission of a call with an existing record', () => {
     let reconciled = 0;
     const tool = makeTool('Write', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'none',
       reconcile: async () => {
         reconciled += 1;
         return { outcome: 'already_applied', output: 'already marked' };
@@ -130,7 +130,7 @@ describe('executor admission of a call with an existing record', () => {
     let executed = 0;
     const tool = makeTool('Write', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'none',
       reconcile: async () => ({ outcome: 'not_applied', output: '' }),
       execute: async () => {
         executed += 1;

@@ -92,13 +92,13 @@ type DeclaredSubject<Input> = {
 
 type UndeclaredSubject<Input> = { subjectKind?: never; subject(input: Input, ctx: SubjectContext): PermissionSubject };
 
-type SideEffectBinding<Input> =
+export type SideEffectBinding<Input> =
   | ({ sideEffect: 'read_only' } & (DeclaredSubject<Input> | UndeclaredSubject<Input>))
   | ({ sideEffect: Exclude<SideEffect, 'read_only'> } & DeclaredSubject<Input>);
 
 export type ToolDefinition<Input> = SideEffectBinding<Input> & ToolBody<Input>;
 
-type ToolBody<Input> = {
+export type ToolBody<Input> = {
   name: string;
   description: string;
   kind: ToolKind;

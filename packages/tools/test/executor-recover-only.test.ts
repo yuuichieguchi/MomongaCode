@@ -14,7 +14,7 @@ const reconcilingTool = (outcome: 'already_applied' | 'not_applied' | 'unknown' 
   const seen = { subjects: 0, reconciled: 0, executed: 0 };
   const tool = makeTool('Mark', {
     kind: 'edit',
-    sideEffect: 'write',
+    sideEffect: 'write', subjectKind: 'path',
     subject: () => {
       seen.subjects += 1;
       return { kind: 'path', tool: 'Mark', paths: ['/somewhere/else'], access: 'write' };
@@ -99,7 +99,7 @@ describe('executor recoverOnly batches skip policy validation', () => {
     harness.idempotency.seed(KEY, 'PENDING', { tool: 'Mark' });
     const tool = makeTool('Mark', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'none',
       subject: () => {
         throw new Error('subject must not be computed during recovery');
       },
@@ -198,7 +198,7 @@ describe('recovery reaches only reconcile, with a context that names no sandbox 
     const contexts: Array<Record<string, unknown>> = [];
     const tool = makeTool('Mark', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'none',
       subject: () => {
         throw new Error('subject must not run during recovery');
       },

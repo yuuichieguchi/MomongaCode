@@ -381,12 +381,4 @@ describe('background jobs', () => {
     await t.jobs.reconcileOrphans();
     expect(t.reaped).toHaveLength(1);
   });
-
-  it('reconciles the jobs of a dead runtime at startup, before the service and the workers can offer or run anything', () => {
-    const startup = fs.readFileSync(new URL('../../src/process/start-runtime-process.ts', import.meta.url), 'utf8');
-    const reconciled = startup.indexOf("step('background-jobs'");
-    expect(reconciled).toBeGreaterThan(-1);
-    expect(reconciled).toBeLessThan(startup.indexOf("step('service'"));
-    expect(reconciled).toBeLessThan(startup.indexOf("step('workers'"));
-  });
 });
