@@ -3,24 +3,31 @@ import path from 'node:path';
 import { loadUserModels } from '@momonga/config';
 import {
   GUIDELINE_CANDIDATES,
+  adoptionOf,
   buildContextReport,
+  datasetDigestOf,
+  encodeOutcomeFile,
+  formatGuidelineText,
   formatImproveOutcome,
+  guidelineDiff,
   improveGuideline,
   liveBoundsFor,
   loadContextDataset,
+  outcomeFileOf,
+  parseOutcomeFile,
 } from '@momonga/eval';
-import type { BenchmarkResult, ContextModel, GuidelineCompletion, GuidelineCompletionRequest, ImproveOutcome, Transcript } from '@momonga/eval';
+import type { BenchmarkResult, ContextModel, GuidelineCompletion, GuidelineCompletionRequest, Transcript } from '@momonga/eval';
 import type { MomongaPaths } from '@momonga/foundation';
 import { ESTIMATED_CHARACTERS_PER_TOKEN, assistantTextOf, summaryTokenCapFor } from '@momonga/protocol';
-import type { Capabilities, CreateResponseBody, GuidelineView, StreamEvent } from '@momonga/protocol';
+import type { Capabilities, CreateResponseBody, GuidelineView, GuidelinesResponse, StreamEvent } from '@momonga/protocol';
 import type { RuntimeClient } from '../client/runtime-client.ts';
 import { createGatewayClient as createCliGatewayClient } from '../client/gateway-client.ts';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import { nodeContextEffects } from '../eval/context-effects.ts';
-import { runContextLive } from '../eval/context-host.ts';
+import { runContextLive, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects } from '../eval/context-host.ts';
-import type { CliPorts } from '../ports.ts';
+import type { CliPorts, Sink } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
 
 export class ContextImproveError extends Error {
@@ -35,7 +42,7 @@ export type ContextImproveOptions = {
   model: ContextModel;
   alias: string;
   seed: number;
-  adopt: boolean;
+  outcome: string;
   interrupt?: AbortSignal;
 };
 
@@ -87,24 +94,6 @@ const completerFor = async (ports: CliPorts, paths: MomongaPaths, alias: string,
   return { complete, close: () => gateway.destroy() };
 };
 
-const adoptionReport = (outcome: ImproveOutcome, dataset: string): Record<string, unknown> => {
-  const { winner } = outcome;
-  if (winner === undefined) throw new ContextImproveError('there is no winner to describe');
-  return {
-    source: 'context improve',
-    dataset,
-    model: outcome.model,
-    alias: outcome.alias,
-    seed: outcome.seed,
-    candidateIndex: winner.index,
-    contrastive: outcome.contrastive,
-    baseline: outcome.baseline,
-    contrastiveFailures: winner.contrastiveFailures,
-    gate: winner.comparison.gate,
-    tokens: outcome.tokens,
-  };
-};
-
 export const contextImprove = async (
   ports: CliPorts,
   paths: MomongaPaths,
@@ -144,6 +133,7 @@ export const contextImprove = async (
               models,
               limits,
               ...(guideline === undefined ? {} : { guideline }),
+              onUnreadableHomes: (count) => ports.stderr.write(unreadableHomesNotice(count)),
               ...(options.interrupt === undefined ? {} : { interrupt: options.interrupt }),
             });
             const report = buildContextReport({ dataset, transcripts, model: options.model, seed: CONTEXT_BOOTSTRAP_SEED, datasetSeed: options.seed });
@@ -155,16 +145,15 @@ export const contextImprove = async (
           },
         },
       );
+      const outcomeFile = path.resolve(ports.cwd, options.outcome);
+      await ports.files.writeText(outcomeFile, encodeOutcomeFile(outcomeFileOf(outcome, { name: dataset.name, digest: datasetDigestOf(dataset, options.seed) })));
       ports.stdout.write(`${formatImproveOutcome(outcome)}\n`);
-      const { winner } = outcome;
-      if (winner !== undefined && options.adopt) {
-        const row = await client.adoptGuideline({ text: winner.text, parent: winner.parent, report: adoptionReport(outcome, dataset.name) });
-        ports.stdout.write(`adopted version ${row.version}\n`);
-      } else if (winner !== undefined) {
-        ports.stdout.write('nothing was adopted: this was a preview; run again with --adopt to store the winner\n');
-      } else {
-        ports.stdout.write('nothing was adopted\n');
-      }
+      ports.stdout.write(`the outcome was written to ${outcomeFile}\n`);
+      ports.stdout.write(
+        outcome.winner === undefined
+          ? 'nothing was adopted\n'
+          : `nothing was adopted: read the text of the winner above, then store exactly that text with: momonga context guideline adopt ${outcomeFile}\n`,
+      );
       return outcome.status === 'winner' || outcome.status === 'empty' ? 0 : 1;
     } finally {
       await completer.close();
@@ -176,15 +165,46 @@ export const contextImprove = async (
 };
 
 const formatGuideline = (row: GuidelineView, current: boolean): string =>
-  [`version ${row.version}${current ? ' (current)' : ''}, parent ${row.parent ?? 'none'}, adopted ${new Date(row.adoptedAt).toISOString()}`, ...row.text.split('\n').map((line) => `  ${line}`)].join('\n');
+  [`version ${row.version}${current ? ' (current)' : ''}, parent ${row.parent ?? 'none'}, adopted ${new Date(row.adoptedAt).toISOString()}`, formatGuidelineText(row.text)].join('\n');
+
+export const formatGuidelines = ({ current, guidelines }: GuidelinesResponse): string =>
+  guidelines.length === 0 ? 'no guideline has been adopted' : guidelines.map((row) => formatGuideline(row, row.version === current?.version)).join('\n');
 
 export const guidelineList = async (ports: CliPorts, paths: MomongaPaths): Promise<number> => {
   await ensureDaemon(ports, paths);
   const client: RuntimeClient = connectRuntime(paths);
   try {
-    const { current, guidelines } = await client.guidelines();
-    ports.stdout.write(`${guidelines.length === 0 ? 'no guideline has been adopted' : guidelines.map((row) => formatGuideline(row, row.version === current?.version)).join('\n')}\n`);
+    ports.stdout.write(`${formatGuidelines(await client.guidelines())}\n`);
     return 0;
+  } finally {
+    await client.close();
+  }
+};
+
+const describeParent = (version: number | null): string => (version === null ? 'no guideline' : `version ${version}`);
+
+export const adoptOutcome = async (stdout: Sink, client: Pick<RuntimeClient, 'guidelines' | 'adoptGuideline'>, outcomeText: string): Promise<number> => {
+  const adoption = adoptionOf(parseOutcomeFile(outcomeText));
+  const { current } = await client.guidelines();
+  const head = current?.version ?? null;
+  if (head !== adoption.parent) {
+    throw new ContextImproveError(`the outcome was made against ${describeParent(adoption.parent)}, but ${head === null ? 'no guideline is adopted' : `version ${head} is current`}; run context improve again`);
+  }
+  if ((current?.text ?? null) !== adoption.parentText) {
+    throw new ContextImproveError(`the text of version ${head} is not the text the outcome was made against; run context improve again`);
+  }
+  stdout.write(`adopting this guideline on ${describeParent(head)}:\n${formatGuidelineText(adoption.text)}\nchange:\n${guidelineDiff(current?.text ?? '', adoption.text)}\n`);
+  const row = await client.adoptGuideline({ text: adoption.text, parent: adoption.parent, report: adoption.report });
+  stdout.write(`adopted version ${row.version}\n`);
+  return 0;
+};
+
+export const guidelineAdopt = async (ports: CliPorts, paths: MomongaPaths, outcomeFile: string): Promise<number> => {
+  const outcomeText = await ports.files.readText(path.resolve(ports.cwd, outcomeFile));
+  await ensureDaemon(ports, paths);
+  const client: RuntimeClient = connectRuntime(paths);
+  try {
+    return await adoptOutcome(ports.stdout, client, outcomeText);
   } finally {
     await client.close();
   }
