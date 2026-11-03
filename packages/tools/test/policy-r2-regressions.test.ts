@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { makeDifferentialWorkspace } from './differential/fixture.ts';
 
 const CAT = [['allow', 'Bash(cat:*)']] as const;
@@ -6,7 +7,7 @@ const CAT = [['allow', 'Bash(cat:*)']] as const;
 const expandedBy = (workspace: ReturnType<typeof makeDifferentialWorkspace>, word: string, cwd: string): string[] =>
   workspace.runBash(`shopt -s nullglob; printf '%s\\n' ${word}`, cwd).stdout.split('\n').filter((entry) => entry !== '');
 
-describe('round 2, finding 1: a backtick substitution inside double quotes is read as bash reads it', () => {
+describe('round 2, finding 1: a backtick substitution inside double quotes is read as bash reads it', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   const attack = (name: string): string => `echo "\`echo \\"'\\"; touch ${name}; echo \\"'\\"\`"`;
 
   it('real bash runs the hidden command, so the policy has to see it', () => {
@@ -28,7 +29,7 @@ describe('round 2, finding 1: a backtick substitution inside double quotes is re
   });
 });
 
-describe('round 2, finding 2: a dot-led glob reaches whatever the real bash makes it reach', () => {
+describe('round 2, finding 2: a dot-led glob reaches whatever the real bash makes it reach', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('asks for .*/name when bash expands .* to ..', async () => {
     const workspace = makeDifferentialWorkspace();
     const reaches = expandedBy(workspace, '.*', workspace.project).includes('..');
@@ -54,7 +55,7 @@ describe('round 2, finding 2: a dot-led glob reaches whatever the real bash make
   });
 });
 
-describe('round 2, finding 3: quoted glob characters stay literal, classes and ranges are bash', () => {
+describe('round 2, finding 3: quoted glob characters stay literal, classes and ranges are bash', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it.each([
     ['a POSIX class that finds the repository-shipped link', 'cat l[[:alpha:]]k'],
     ['a quoted bracket that matches a shipped link named [a]b', 'cat "[a]"*'],
@@ -78,7 +79,7 @@ describe('round 2, finding 3: quoted glob characters stay literal, classes and r
   });
 });
 
-describe('round 2, finding 4: a directory is a git directory exactly as git decides', () => {
+describe('round 2, finding 4: a directory is a git directory exactly as git decides', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it.each([
     ['u40', 'HEAD of 40 uppercase hex digits'],
     ['g40', 'HEAD of 40 hex digits followed by garbage'],
@@ -110,7 +111,7 @@ describe('round 2, finding 4: a directory is a git directory exactly as git deci
   });
 });
 
-describe('a .git file that names a directory which is not a git directory', () => {
+describe('a .git file that names a directory which is not a git directory', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('stops real git with a fatal error before it reads the configuration of the layout above, so decide allows', () => {
     const workspace = makeDifferentialWorkspace();
     const cwd = `${workspace.project}/gf/sub`;
@@ -122,7 +123,7 @@ describe('a .git file that names a directory which is not a git directory', () =
   });
 });
 
-describe('round 2, finding 5: cd -P and a cd through a link are resolved', () => {
+describe('round 2, finding 5: cd -P and a cd through a link are resolved', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('lands in the physical parent of the link target with cd -P', () => {
     const workspace = makeDifferentialWorkspace();
     workspace.runBash('cd -P pl/.. && git status');
@@ -146,7 +147,7 @@ describe('round 2, finding 5: cd -P and a cd through a link are resolved', () =>
   });
 });
 
-describe('round 2, finding 6: a repository created earlier in the same command is modelled', () => {
+describe('round 2, finding 6: a repository created earlier in the same command is modelled', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   const create = (workspace: ReturnType<typeof makeDifferentialWorkspace>, directory: string): string =>
     [
       `mkdir -p ${directory}/objects ${directory}/refs`,
@@ -182,7 +183,7 @@ describe('round 2, finding 6: a repository created earlier in the same command i
   });
 });
 
-describe('round 2, finding 7: git reflog is approved by an allowlist of read forms', () => {
+describe('round 2, finding 7: git reflog is approved by an allowlist of read forms', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   const written = 'git reflog write HEAD $(git rev-parse HEAD) $(git rev-parse HEAD) evil';
 
   it('real git writes the reflog entry, so the form is not read-only', () => {

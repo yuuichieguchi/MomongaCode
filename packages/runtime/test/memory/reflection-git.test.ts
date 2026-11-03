@@ -8,7 +8,7 @@ import type { MemoryRecord } from '@momonga/protocol';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, heldMountPoints } from '@momonga/sandbox';
 import type { Sandbox } from '@momonga/sandbox';
 import type { RuntimeStore } from '@momonga/store';
-import { fakePolicyFilesystem, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, withTempDir } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import { enqueue, harness, newSession } from '../../../store/test/helpers.ts';
 import { createEvidenceRunner } from '../../src/process/evidence-run.ts';
@@ -68,7 +68,7 @@ const reflectInRepository = async (context: TestContext, options: { trusted: boo
   return { head, candidates };
 };
 
-describe.runIf(HAS_REAL_SANDBOX)('a candidate and the real evidence runner', () => {
+describe.runIf(HAS_REAL_SANDBOX)('a candidate and the real evidence runner', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('binds the commit that git reports for HEAD, beside the file and the passing check', async (context) => {
     const { head, candidates } = await reflectInRepository(context, { trusted: true });
     expect(candidates).toHaveLength(1);

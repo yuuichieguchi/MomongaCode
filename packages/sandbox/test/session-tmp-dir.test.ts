@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createSeatbeltSandbox, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
 
 const KILL_GRACE_MS = 300;
@@ -30,7 +30,7 @@ afterEach(async () => {
   }
 });
 
-describe.runIf(HAS_SEATBELT)('seatbelt session tmp dir (real sandbox-exec)', () => {
+describe.runIf(HAS_SEATBELT)('seatbelt session tmp dir (real sandbox-exec)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   let work = '';
   let sessions = '';
   let mine = '';
@@ -132,7 +132,7 @@ describe.runIf(HAS_SEATBELT)('seatbelt session tmp dir (real sandbox-exec)', () 
   });
 });
 
-describe.runIf(HAS_SEATBELT)('seatbelt rejects an invalid command tmpDir (real sandbox-exec)', () => {
+describe.runIf(HAS_SEATBELT)('seatbelt rejects an invalid command tmpDir (real sandbox-exec)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   const fixture = () => {
     const base = tempDir();
     const home = path.join(base, 'home');

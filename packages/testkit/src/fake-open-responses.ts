@@ -1,5 +1,5 @@
 import type { Usage } from '@momonga/protocol';
-import type { FakeSseFrame, FakeUpstreamReply, FakeUpstreamServer } from './fake-sse-upstream.ts';
+import type { FakeSseFrame, FakeUpstreamOptions, FakeUpstreamReply, FakeUpstreamServer } from './fake-sse-upstream.ts';
 import { startFakeSseUpstream } from './fake-sse-upstream.ts';
 import { responseResource, usageOf } from './open-responses-fixtures.ts';
 
@@ -10,6 +10,26 @@ export type FakeOpenResponsesOptions = {
   script?: FakeUpstreamReply[];
   respond?: Parameters<typeof startFakeSseUpstream>[0]['respond'];
   socketPath?: string;
+  reportRequestSize?: boolean;
+};
+
+const CHARACTERS_PER_TOKEN = 4;
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const withInputTokens = (reply: FakeUpstreamReply, inputTokens: number): FakeUpstreamReply => {
+  if (reply.kind !== 'stream') return reply;
+  return {
+    ...reply,
+    frames: reply.frames.map((frame) => {
+      const data = frame.data;
+      if (!isRecord(data) || !isRecord(data['response']) || !isRecord(data['response']['usage'])) return frame;
+      const usage = data['response']['usage'];
+      const outputTokens = usage['output_tokens'];
+      if (typeof outputTokens !== 'number') return frame;
+      return { ...frame, data: { ...data, response: { ...data['response'], usage: usageOf(inputTokens, outputTokens) } } };
+    }),
+  };
 };
 
 export const openResponsesErrorBody = (type: string, code: string | null, message: string): { error: { type: string; code: string | null; message: string; param: null } } => ({
@@ -29,11 +49,23 @@ export const openResponsesErrorReply = (
   ...(headers === undefined ? {} : { headers }),
 });
 
-export const startFakeOpenResponses = (options: FakeOpenResponsesOptions): Promise<FakeUpstreamServer> =>
-  startFakeSseUpstream({
+const responderOf = (options: FakeOpenResponsesOptions): FakeUpstreamOptions['respond'] => {
+  if (options.reportRequestSize !== true) return options.respond;
+  const script = [...(options.script ?? [])];
+  const inner = options.respond ?? (() => script.shift());
+  return (request) => {
+    const reply = inner(request);
+    if (reply === undefined) return reply;
+    return withInputTokens(reply, Math.ceil(JSON.stringify(request.body).length / CHARACTERS_PER_TOKEN));
+  };
+};
+
+export const startFakeOpenResponses = (options: FakeOpenResponsesOptions): Promise<FakeUpstreamServer> => {
+  const respond = responderOf(options);
+  return startFakeSseUpstream({
     path: FAKE_OPEN_RESPONSES_PATH,
-    ...(options.script === undefined ? {} : { script: options.script }),
-    ...(options.respond === undefined ? {} : { respond: options.respond }),
+    ...(options.reportRequestSize === true || options.script === undefined ? {} : { script: options.script }),
+    ...(respond === undefined ? {} : { respond }),
     ...(options.socketPath === undefined ? {} : { socketPath: options.socketPath }),
     ...(options.apiKey === undefined
       ? {}
@@ -44,6 +76,7 @@ export const startFakeOpenResponses = (options: FakeOpenResponsesOptions): Promi
               : openResponsesErrorReply(401, 'invalid_request', 'invalid_api_key', 'the bearer token is not valid'),
         }),
   });
+};
 
 const MODEL = 'open-responses-fake';
 const RESPONSE_ID = 'resp_fake_1';

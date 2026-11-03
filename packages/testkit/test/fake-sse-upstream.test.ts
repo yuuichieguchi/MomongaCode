@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createUdsClient, decodeSse } from '@momonga/foundation';
-import { anthropicErrorReply, anthropicTextReply, startFakeAnthropic, startFakeOpenResponses, openResponsesTextReply } from '../src/index.ts';
+import { anthropicErrorReply, anthropicTextReply, startFakeAnthropic, startFakeOpenResponses, openResponsesTextReply, usageOf } from '../src/index.ts';
 import type { FakeUpstreamServer } from '../src/index.ts';
 
 const servers: FakeUpstreamServer[] = [];
@@ -49,4 +49,41 @@ describe('fake Open Responses upstream', () => {
     expect(served.frames.at(-1)?.data).toBe('[DONE]');
     expect(served.frames.filter((frame) => frame.event === 'response.output_text.delta')).toHaveLength(2);
   });
+
+  it('reports input tokens in proportion to the request it answers when asked to', async () => {
+    const server = await startFakeOpenResponses({ reportRequestSize: true, script: [openResponsesTextReply(['a'], usageOf(11, 3)), openResponsesTextReply(['a'], usageOf(11, 3))] });
+    servers.push(server);
+    const small = await completedUsage(await postBody(server, JSON.stringify({ model: 'm', input: [] })));
+    const large = await completedUsage(await postBody(server, JSON.stringify({ model: 'm', input: ['x'.repeat(4000)] })));
+    expect(small.output_tokens).toBe(3);
+    expect(large.output_tokens).toBe(3);
+    expect(small.input_tokens).toBeLessThan(20);
+    expect(large.input_tokens).toBeGreaterThanOrEqual(1000);
+    expect(large.total_tokens).toBe(large.input_tokens + 3);
+  });
+
+  it('keeps the scripted usage when not asked to', async () => {
+    const server = await startFakeOpenResponses({ script: [openResponsesTextReply(['a'], usageOf(11, 3))] });
+    servers.push(server);
+    const usage = await completedUsage(await postBody(server, JSON.stringify({ model: 'm', input: ['x'.repeat(4000)] })));
+    expect(usage.input_tokens).toBe(11);
+  });
 });
+
+const postBody = async (server: FakeUpstreamServer, body: string): Promise<Array<{ event: string | undefined; data: string }>> => {
+  const client = createUdsClient(server.socketPath);
+  try {
+    const response = await client.request({ method: 'POST', path: '/v1/responses', headers: { 'content-type': 'application/json' }, body });
+    const frames: Array<{ event: string | undefined; data: string }> = [];
+    for await (const frame of decodeSse(response.body)) frames.push({ event: frame.event, data: frame.data });
+    return frames;
+  } finally {
+    await client.close();
+  }
+};
+
+const completedUsage = async (frames: Array<{ event: string | undefined; data: string }>): Promise<{ input_tokens: number; output_tokens: number; total_tokens: number }> => {
+  const terminal = frames.find((frame) => frame.event === 'response.completed');
+  if (terminal === undefined) throw new Error('the stream has no response.completed frame');
+  return (JSON.parse(terminal.data) as { response: { usage: { input_tokens: number; output_tokens: number; total_tokens: number } } }).response.usage;
+};

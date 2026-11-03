@@ -4,12 +4,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { fileRuleBlocks, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
 import type { SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
 import { PARITY_CANDIDATES, PARITY_SPECS } from '../../policy/test/parity-table.ts';
 import { fileRulesOf, fileSpec } from './file-rule-specs.ts';
 import { makeTempDir, run } from './helpers.ts';
 
-describe.runIf(process.platform === 'darwin')('kernel parity with the exact matcher under real Seatbelt', () => {
+describe.runIf(process.platform === 'darwin')('kernel parity with the exact matcher under real Seatbelt', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   let created: string[] = [];
   let spawned: SandboxedProcess[] = [];
 

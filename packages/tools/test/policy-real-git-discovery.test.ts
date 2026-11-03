@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { makeRealWorkspace } from './real-workspace.ts';
 import type { RealWorkspace } from './real-workspace.ts';
 
@@ -20,7 +21,7 @@ const bareLayout = (workspace: RealWorkspace, directory: string, config: string)
 
 const fsmonitorConfig = (script: string): string => `[core]\n\trepositoryformatversion = 0\n\tbare = false\n\tworktree = ..\n\tfsmonitor = ${script}\n`;
 
-describe('git discovery as git performs it (real git 2.54, real /bin/bash)', () => {
+describe('git discovery as git performs it (real git 2.54, real /bin/bash)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('git --bare takes the working directory as the git directory even when a valid .git is beside it', () => {
     const workspace = makeRealWorkspace();
     const hook = hookIn(workspace);
