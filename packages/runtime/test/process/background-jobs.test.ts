@@ -254,6 +254,23 @@ describe('background jobs', () => {
     expect((await t.jobs.read(t.run.id, jobId, { call: 'read-7' })).output).toContain('Terminated 1 process(es) that outlived the job.');
   });
 
+  it('names a process that could not be inspected through the warning path, once across jobs', async () => {
+    const t = setup({
+      findHolders: async (_marker, _inspector, onUninspectable) => {
+        onUninspectable?.({ pid: 31_338, command: 'sshd', startTicks: '515151' });
+        return [];
+      },
+    });
+    for (const key of ['call-1', 'call-2']) {
+      const { jobId } = await t.start(key);
+      t.spawned.at(-1)?.exit({ code: 0, signal: null });
+      await t.settled(jobId);
+    }
+    expect(t.warnings.filter((message) => message.includes('could not be inspected'))).toEqual([
+      expect.stringMatching(/^background job .+: process 31338 \(sshd\) could not be inspected, so it was left alone$/),
+    ]);
+  });
+
   it.each([
     ['looking up the holders of the marker', { findHolders: async () => { throw new Error('lsof is unavailable'); } }, 'lsof is unavailable'],
     ['storing the output', {}, 'the blob store is full'],

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileRuleBlocks } from '@momonga/foundation';
 import type { FileRuleEntry, FileRuleSet } from '@momonga/foundation';
 import { canonicalizePath } from './canonical-path.ts';
-import { launch } from './process.ts';
+import { SANDBOX_STOP_BOUND_MS, launch } from './process.ts';
 import type { LaunchOptions } from './process.ts';
 import { SandboxPolicyError } from './policy-error.ts';
 import { validateSandboxPolicy } from './profile.ts';
@@ -310,7 +310,9 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
   return { args, placeholders: unique(placeholders) };
 }
 
-export const BWRAP_PROBE_ARGUMENTS: readonly string[] = [
+export const BWRAP_PROBE_TIMEOUT_MS = SANDBOX_STOP_BOUND_MS;
+
+export const bwrapProbeArguments = (shell: string): string[] => [
   '--unshare-pid',
   '--unshare-ipc',
   '--unshare-net',
@@ -325,21 +327,26 @@ export const BWRAP_PROBE_ARGUMENTS: readonly string[] = [
   '--tmpfs',
   '/run',
   '--',
-  '/bin/true',
+  shell,
+  '-c',
+  ':',
 ];
 
-export type ProbeRunner = (file: string, args: readonly string[]) => { status: number | null; stderr: string };
+export type ProbeRunner = (file: string, args: readonly string[], timeoutMs: number) => { status: number | null; stderr: string; timedOut: boolean };
 
 export type BubblewrapProbe = { ok: true } | { ok: false; stderr: string };
 
-const nodeProbeRunner: ProbeRunner = (file, args) => {
-  const done = spawnSync(file, [...args], { encoding: 'utf8' });
-  if (done.error !== undefined) throw done.error;
-  return { status: done.status, stderr: done.stderr };
+export type BubblewrapProbeOptions = { timeoutMs?: number; run?: ProbeRunner };
+
+const nodeProbeRunner: ProbeRunner = (file, args, timeoutMs) => {
+  const done = spawnSync(file, [...args], { encoding: 'utf8', timeout: timeoutMs, killSignal: 'SIGKILL' });
+  if (done.error !== undefined && (done.error as NodeJS.ErrnoException).code !== 'ETIMEDOUT') throw done.error;
+  return { status: done.status, stderr: done.stderr, timedOut: done.error !== undefined };
 };
 
-export const probeBubblewrap = (bwrapPath: string, run: ProbeRunner = nodeProbeRunner): BubblewrapProbe => {
-  const { status, stderr } = run(bwrapPath, BWRAP_PROBE_ARGUMENTS);
+export const probeBubblewrap = (bwrapPath: string, shell: string, { timeoutMs = BWRAP_PROBE_TIMEOUT_MS, run = nodeProbeRunner }: BubblewrapProbeOptions = {}): BubblewrapProbe => {
+  const { status, stderr, timedOut } = run(bwrapPath, bwrapProbeArguments(shell), timeoutMs);
+  if (timedOut) return { ok: false, stderr: `bwrap did not finish within ${timeoutMs} ms` };
   if (status === 0) return { ok: true };
   return { ok: false, stderr: status === null ? 'bwrap ended without an exit status' : stderr.trim() };
 };
@@ -397,11 +404,15 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
   const sweepKept = (): void => {
     if (kept.size === 0) return;
     const stillHeld = holders();
-    for (const [placeholder, identity] of [...kept]) {
-      if (stillHeld.has(placeholder)) continue;
-      kept.delete(placeholder);
-      remove(placeholder, identity);
-    }
+    const releasable = [...kept].filter(([placeholder]) => !stillHeld.has(placeholder));
+    throwAll(
+      attemptAll(
+        releasable.map(([placeholder, identity]) => () => {
+          remove(placeholder, identity);
+          kept.delete(placeholder);
+        }),
+      ),
+    );
   };
   const hold = (plan: BubblewrapPlan): void => {
     const begun: string[] = [];
@@ -458,6 +469,7 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
 
   return {
     kind: 'bubblewrap',
+    sweep: sweepKept,
     spawn(command: SandboxCommand, policy: SandboxPolicy, signal: AbortSignal): SandboxedProcess {
       for (const root of policy.writableRoots) assertExistingDirectory(root, directories);
       const planned = { heldPlaceholders: new Set(held.keys()), cwd: command.cwd };

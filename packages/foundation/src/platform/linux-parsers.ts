@@ -1,10 +1,11 @@
-export type ProcStat = { state: string; parentPid: number; groupId: number; startTicks: bigint };
+export type ProcStat = { command: string; state: string; parentPid: number; groupId: number; startTicks: bigint };
 
 const FIELDS_AFTER_COMM_BEFORE_STARTTIME = 19;
 
 export const parseProcStat = (content: string): ProcStat => {
   const commEnd = content.lastIndexOf(')');
   if (commEnd === -1) throw new Error(`/proc/<pid>/stat has no closing parenthesis for comm: ${JSON.stringify(content)}`);
+  const commStart = content.indexOf('(');
   const fields = content
     .slice(commEnd + 1)
     .trim()
@@ -17,7 +18,7 @@ export const parseProcStat = (content: string): ProcStat => {
   if (!/^\d+$/.test(startTicks) || !/^-?\d+$/.test(parentPid) || !/^-?\d+$/.test(groupId)) {
     throw new Error(`/proc/<pid>/stat has non-numeric ppid, pgrp or starttime: ${JSON.stringify(content)}`);
   }
-  return { state, parentPid: Number(parentPid), groupId: Number(groupId), startTicks: BigInt(startTicks) };
+  return { command: content.slice(commStart + 1, commEnd), state, parentPid: Number(parentPid), groupId: Number(groupId), startTicks: BigInt(startTicks) };
 };
 
 export const parseRealUid = (content: string): number => {

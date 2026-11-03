@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BOOT_TIME_RESOLUTION_MS, createLinuxInspector } from '../../src/platform/linux-inspector.ts';
 import { auxvLayoutOf, isPidDirectoryName, parseBootTimeSeconds, parseRealUid, parseClockTicksPerSecond, parseProcStat } from '../../src/platform/linux-parsers.ts';
 import { PS_PROBE_TIMEOUT_MS, REAP_POLL_INTERVAL_MS } from '../../src/platform/probe-timing.ts';
+import type { UninspectableProcess } from '../../src/platform/inspector-types.ts';
 import type { FileIdentity, ProcFs } from '../../src/platform/procfs.ts';
 
 const STAT_SLEEP = '4242 (sleep) S 4200 4242 4200 34816 4242 4194304 120 0 0 0 0 0 0 0 20 0 1 0 987654 5517312 189 18446744073709551615 1 1 0 0 0 0 0 0 0 0 0 0 17 3 0 0 0 0 0';
@@ -51,6 +52,11 @@ const fakeTiming = () => {
   };
 };
 
+const gapsOf = () => {
+  const processes: UninspectableProcess[] = [];
+  return { processes, report: (process: UninspectableProcess): void => void processes.push(process) };
+};
+
 const LAYOUT = auxvLayoutOf('x64', 'LE');
 const UID = 1000;
 const BASE_ENTRIES: Record<string, FakeEntry> = {
@@ -59,12 +65,12 @@ const BASE_ENTRIES: Record<string, FakeEntry> = {
 };
 
 describe('proc parsers (formats from proc_pid_stat(5), proc_stat(5), getauxval(3))', () => {
-  it('reads state, parent, group and starttime from the field after comm', () => {
-    expect(parseProcStat(STAT_SLEEP)).toEqual({ state: 'S', parentPid: 4200, groupId: 4242, startTicks: 987654n });
+  it('reads command, state, parent, group and starttime from the field after comm', () => {
+    expect(parseProcStat(STAT_SLEEP)).toEqual({ command: 'sleep', state: 'S', parentPid: 4200, groupId: 4242, startTicks: 987654n });
   });
 
   it('splits after the last closing parenthesis when comm contains parentheses and spaces', () => {
-    expect(parseProcStat(STAT_AWKWARD_COMM)).toEqual({ state: 'R', parentPid: 1, groupId: 77, startTicks: 5000n });
+    expect(parseProcStat(STAT_AWKWARD_COMM)).toEqual({ command: 'a) b (c)', state: 'R', parentPid: 1, groupId: 77, startTicks: 5000n });
   });
 
   it('rejects a stat line without comm parentheses, with too few fields, or with a non-numeric starttime', () => {
@@ -169,7 +175,7 @@ describe('linux inspector through an injected procfs', () => {
     expect(await inspector.holdersOf('/marker')).toEqual({ kind: 'value', value: [10, 13] });
   });
 
-  it('does not call a same-user process with unreadable descriptors "not a holder": the answer is unknown now and may be known after its exec completes', async () => {
+  it('does not call a same-user process with unreadable descriptors "not a holder": it waits for its exec to complete, then reports it by pid and command', async () => {
     const procfs = fakeProcfs({
       '/marker': { identity: { dev: 1n, ino: 1n } },
       '/proc': { children: ['12'] },
@@ -178,10 +184,29 @@ describe('linux inspector through an injected procfs', () => {
       '/proc/12/stat': { text: STAT_SLEEP },
     });
     const timing = fakeTiming();
-    const result = await createLinuxInspector({ procfs, layout: LAYOUT, uid: UID, timing }).holdersOf('/marker');
-    expect(result).toMatchObject({ kind: 'failed', cause: 'deterministic', evidence: { kind: 'opaque' } });
-    expect(result.kind === 'failed' ? result.evidence.detail : '').toContain('process 12 belongs to the current user');
+    const found = gapsOf();
+    const result = await createLinuxInspector({ procfs, layout: LAYOUT, uid: UID, timing }).holdersOf('/marker', found.report);
+    expect(result).toEqual({ kind: 'value', value: [] });
+    expect(found.processes).toEqual([{ pid: 12, command: 'sleep', startTicks: '987654' }]);
     expect(timing.slept()).toBe(Math.ceil(PS_PROBE_TIMEOUT_MS / REAP_POLL_INTERVAL_MS) * REAP_POLL_INTERVAL_MS);
+  });
+
+  it('does not wait again for a process it already reported when the same inspector scans once more', async () => {
+    const procfs = fakeProcfs({
+      '/marker': { identity: { dev: 1n, ino: 1n } },
+      '/proc': { children: ['12'] },
+      '/proc/12/fd': { failure: 'EACCES' },
+      '/proc/12/status': statusOwnedBy(UID),
+      '/proc/12/stat': { text: STAT_SLEEP },
+    });
+    const timing = fakeTiming();
+    const inspector = createLinuxInspector({ procfs, layout: LAYOUT, uid: UID, timing });
+    await inspector.holdersOf('/marker');
+    const afterFirst = timing.slept();
+    const found = gapsOf();
+    expect(await inspector.holdersOf('/marker', found.report)).toEqual({ kind: 'value', value: [] });
+    expect(timing.slept()).toBe(afterFirst);
+    expect(found.processes).toEqual([{ pid: 12, command: 'sleep', startTicks: '987654' }]);
   });
 
   it('waits for a same-user process to become readable and then reads it', async () => {
@@ -235,7 +260,7 @@ describe('linux inspector through an injected procfs', () => {
     expect(await createLinuxInspector({ procfs, layout: LAYOUT, uid: UID }).holdersOf('/marker')).toEqual({ kind: 'value', value: [] });
   });
 
-  it('keeps a denied descriptor of a live same-user process an unknown answer and skips one of another user', async () => {
+  it('reports a denied descriptor of a live same-user process as not inspected and skips one of another user without a word', async () => {
     const entries = (uid: number): Record<string, FakeEntry> => ({
       '/marker': { identity: { dev: 1n, ino: 1n } },
       '/proc': { children: ['12'] },
@@ -244,12 +269,12 @@ describe('linux inspector through an injected procfs', () => {
       '/proc/12/stat': { text: STAT_SLEEP },
       '/proc/12/status': statusOwnedBy(uid),
     });
-    expect(await createLinuxInspector({ procfs: fakeProcfs(entries(UID)), layout: LAYOUT, uid: UID, timing: fakeTiming() }).holdersOf('/marker')).toMatchObject({
-      kind: 'failed',
-      cause: 'deterministic',
-      evidence: { kind: 'opaque' },
-    });
-    expect(await createLinuxInspector({ procfs: fakeProcfs(entries(0)), layout: LAYOUT, uid: UID, timing: fakeTiming() }).holdersOf('/marker')).toEqual({ kind: 'value', value: [] });
+    const own = gapsOf();
+    expect(await createLinuxInspector({ procfs: fakeProcfs(entries(UID)), layout: LAYOUT, uid: UID, timing: fakeTiming() }).holdersOf('/marker', own.report)).toEqual({ kind: 'value', value: [] });
+    expect(own.processes).toEqual([{ pid: 12, command: 'sleep', startTicks: '987654' }]);
+    const other = gapsOf();
+    expect(await createLinuxInspector({ procfs: fakeProcfs(entries(0)), layout: LAYOUT, uid: UID, timing: fakeTiming() }).holdersOf('/marker', other.report)).toEqual({ kind: 'value', value: [] });
+    expect(other.processes).toEqual([]);
   });
 
   describe('a same-user process that stays non-dumpable (ssh-agent, a setuid helper that kept the real uid)', () => {
@@ -264,29 +289,36 @@ describe('linux inspector through an injected procfs', () => {
       '/proc/12/status': statusOwnedBy(UID),
     });
 
-    it('holds nothing when it started before the marker existed, and the probe does not wait for it', async () => {
+    it('holds nothing when it started before the marker existed, and the probe neither waits for it nor reports it', async () => {
       const timing = fakeTiming();
+      const found = gapsOf();
       const inspector = createLinuxInspector({ procfs: fakeProcfs(entriesFor(SLEEP_STARTED_MS + BOOT_TIME_RESOLUTION_MS + TICK_MS + 1)), layout: LAYOUT, uid: UID, timing });
-      expect(await inspector.holdersOf('/marker')).toEqual({ kind: 'value', value: [] });
+      expect(await inspector.holdersOf('/marker', found.report)).toEqual({ kind: 'value', value: [] });
       expect(timing.slept()).toBe(0);
+      expect(found.processes).toEqual([]);
     });
 
     it('is not skipped when the marker is younger by less than the resolution of btime and of the clock tick', async () => {
       const timing = fakeTiming();
+      const found = gapsOf();
       const inspector = createLinuxInspector({ procfs: fakeProcfs(entriesFor(SLEEP_STARTED_MS + BOOT_TIME_RESOLUTION_MS + TICK_MS - 1)), layout: LAYOUT, uid: UID, timing });
-      expect(await inspector.holdersOf('/marker')).toMatchObject({ kind: 'failed', evidence: { kind: 'opaque' } });
+      expect(await inspector.holdersOf('/marker', found.report)).toEqual({ kind: 'value', value: [] });
+      expect(found.processes).toEqual([{ pid: 12, command: 'sleep', startTicks: '987654' }]);
       expect(timing.slept()).toBeGreaterThanOrEqual(PS_PROBE_TIMEOUT_MS);
     });
 
-    it('stays unreadable, named by its pid, when it started after the marker', async () => {
-      const result = await createLinuxInspector({ procfs: fakeProcfs(entriesFor(SLEEP_STARTED_MS - 1)), layout: LAYOUT, uid: UID, timing: fakeTiming() }).holdersOf('/marker');
-      expect(result).toMatchObject({ kind: 'failed', cause: 'deterministic', evidence: { kind: 'opaque' } });
-      expect(JSON.stringify(result)).toContain('process 12 ');
+    it('does not fail the scan when it started after the marker: it is reported by pid and command as one that could not be inspected', async () => {
+      const found = gapsOf();
+      const result = await createLinuxInspector({ procfs: fakeProcfs(entriesFor(SLEEP_STARTED_MS - 1)), layout: LAYOUT, uid: UID, timing: fakeTiming() }).holdersOf('/marker', found.report);
+      expect(result).toEqual({ kind: 'value', value: [] });
+      expect(found.processes).toEqual([{ pid: 12, command: 'sleep', startTicks: '987654' }]);
     });
 
-    it('is not skipped when the file system gives no birth time', async () => {
-      const result = await createLinuxInspector({ procfs: fakeProcfs(entriesFor(0)), layout: LAYOUT, uid: UID, timing: fakeTiming() }).holdersOf('/marker');
-      expect(result).toMatchObject({ kind: 'failed', evidence: { kind: 'opaque' } });
+    it('is reported the same way when the file system gives no birth time', async () => {
+      const found = gapsOf();
+      const result = await createLinuxInspector({ procfs: fakeProcfs(entriesFor(0)), layout: LAYOUT, uid: UID, timing: fakeTiming() }).holdersOf('/marker', found.report);
+      expect(result).toEqual({ kind: 'value', value: [] });
+      expect(found.processes).toEqual([{ pid: 12, command: 'sleep', startTicks: '987654' }]);
     });
   });
 

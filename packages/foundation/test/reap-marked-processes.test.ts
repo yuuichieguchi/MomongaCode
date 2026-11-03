@@ -424,7 +424,7 @@ describe('reapMarkedProcesses', () => {
     const fake = fakeTiming();
     const { kill } = recordingKill(fake.now);
     const result = await reapMarkedProcessesWithReport({ marker: path.join(dir, 'gone'), killGraceMs: 200, label: 'tool', onWarning: () => {}, kill, timing: fake.timing });
-    expect(result).toEqual({ removed: true, stopped: false });
+    expect(result).toEqual({ removed: true, stopped: false, uninspectable: [] });
   });
 
   it('reports that a recorded group was stopped', { timeout: 30_000 }, async () => {
@@ -435,7 +435,7 @@ describe('reapMarkedProcesses', () => {
     const fake = fakeTiming();
     const { kill } = recordingKill(fake.now);
     const result = await reapMarkedProcessesWithReport({ marker, killGraceMs: 10_000, label: 'tool', onWarning: () => {}, kill, timing: fake.timing });
-    expect(result).toEqual({ removed: true, stopped: true });
+    expect(result).toEqual({ removed: true, stopped: true, uninspectable: [] });
     await group.leaderReaped;
   });
 
@@ -444,7 +444,7 @@ describe('reapMarkedProcesses', () => {
     const marker = makeMarker(dir);
     const holder = await startHolder(marker, { ignoreTerm: false });
     const result = await reapMarkedProcessesWithReport({ marker, killGraceMs: 300, label: 'tool', onWarning: () => {} });
-    expect(result).toEqual({ removed: true, stopped: true });
+    expect(result).toEqual({ removed: true, stopped: true, uninspectable: [] });
     expect(await waitUntil(() => !alive(holder))).toBe(true);
   });
 

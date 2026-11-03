@@ -21,7 +21,7 @@ const NESTED_GIT_DIRECTORY_PATTERNS = [
 ] as const;
 const PATTERN_PROVENANCE = { ruleText: 'protected set', layer: 'protected', source: 'momonga' } as const;
 const PATTERN_ENFORCEMENT = 'exact-paths' as const;
-const GLOB_CHARACTERS =/[\\*?[]/g;
+const GLOB_CHARACTERS = /[\\*?[]/g;
 
 export type EntryRead =
   | { kind: 'absent' }

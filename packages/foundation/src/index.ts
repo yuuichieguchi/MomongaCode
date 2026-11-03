@@ -121,8 +121,8 @@ export {
   supervisorMaxCloseMs,
 } from './process-contract.ts';
 export type { JsonLogger, JsonLoggerOptions, LogFields, LogLevel, LogLineInput, ReadyFields, TextStream } from './process-contract.ts';
-export { MarkerReapError, REAP_POLL_INTERVAL_MS, findHolders, holderGroups, hostReapTiming, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, reconcileProcessGroup, stoppedCommandResult } from './process-markers.ts';
-export type { MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirectoryOptions, ReapTiming } from './process-markers.ts';
+export { MarkerReapError, REAP_POLL_INTERVAL_MS, findHolders, holderGroups, hostReapTiming, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, reconcileProcessGroup, reportUninspectableOnce, stoppedCommandResult } from './process-markers.ts';
+export type { MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirectoryOptions, ReapReport, ReapTiming } from './process-markers.ts';
 export { isProcessAlive } from './process-alive.ts';
 export type { SignalSender } from './process-alive.ts';
 export { LINUX_SOCKET_PATH_LIMIT, PIPE_NAME_LIMIT, SOCKET_PATH_LIMIT, assertSocketPathLength, isPipePath, pipePathFor, socketPathLimit } from './socket-path.ts';
@@ -156,7 +156,7 @@ export type { FileRuleAccess, FileRuleEffect, FileRuleEntry, FileRuleException, 
 export { nodeCommandRunner, nodeSyncCommandRunner } from './platform/command-runner.ts';
 export type { CommandOptions, CommandResult, CommandRunner, SyncCommandRunner } from './platform/command-runner.ts';
 export { ProbeFailedError, classifyProbeCause, failureOfError, isTransientFailure, probeFailed, valueOrThrow } from './platform/inspector-types.ts';
-export type { ProbeCause, ProbeEvidence, ProbeFailure, ProbeResult, ProcessInspector } from './platform/inspector-types.ts';
+export type { ProbeCause, ProbeEvidence, ProbeFailure, ProbeResult, ProcessInspector, UninspectableProcess } from './platform/inspector-types.ts';
 export { PS_PROBE_TIMEOUT_MS, UnsupportedPlatformError, createProcessInspector, defaultProcessInspector, hostInspectorPorts } from './platform/process-inspector.ts';
 export type { InspectorPorts } from './platform/process-inspector.ts';
 export { createProcessGroupPort, createSignalSender, hostProcessGroupPort, hostSignalSender, posixGroupPort } from './platform/group-port.ts';

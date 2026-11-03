@@ -311,6 +311,39 @@ describe('startRuntimeProcess startup (system timers)', () => {
     });
   });
 
+  describe('the shell that the bwrap probe runs', () => {
+    const recordingBwrap = (temp: RunHome): { file: string; log: string } => {
+      const file = path.join(temp.root, 'recording-bwrap');
+      const log = path.join(temp.root, 'bwrap-arguments');
+      fs.writeFileSync(file, `#!/bin/sh\nprintf '%s\\n' "$@" > ${log}\nexit 0\n`, { mode: 0o755 });
+      return { file, log };
+    };
+
+    it('is the shell that Bash runs commands with, found through the same candidates', PROCESS_TIMEOUT, async () => {
+      const stack = await prepareStack();
+      stack.settings({ sandbox: 'bubblewrap' });
+      const { file, log } = recordingBwrap(stack.temp);
+      const shellHost = { platform: 'linux' as const, isExecutable: (candidate: string) => candidate === '/usr/bin/bash' };
+      await launchRuntime(stack.temp, { sandboxExecPath: file, platform: 'linux', shellHost });
+      const lines = fs.readFileSync(log, 'utf8').trimEnd().split('\n');
+      expect(lines.slice(-3)).toEqual(['/usr/bin/bash', '-c', ':']);
+      expect(lines).not.toContain('/bin/true');
+    });
+
+    it('stops the start with a ConfigError when no shell is found, before bwrap runs', PROCESS_TIMEOUT, async () => {
+      const temp = makeRunHome();
+      writeUserSettings(temp.home, { sandbox: 'bubblewrap' });
+      const { file, log } = recordingBwrap(temp);
+      const shellHost = { platform: 'linux' as const, isExecutable: () => false };
+      const { started } = startBare(temp, { sandboxExecPath: file, platform: 'linux', shellHost });
+      const error = await failureOf(started);
+      expect(error).toBeInstanceOf(ConfigError);
+      expect((error as Error).message).toContain('/bin/bash or /usr/bin/bash');
+      expect(fs.existsSync(log)).toBe(false);
+      expect(await isLockFree(temp.paths.locks.runtime)).toBe(true);
+    });
+  });
+
   it('a sandbox kind from another operating system is a ConfigError', PROCESS_TIMEOUT, async () => {
     const temp = makeRunHome();
     writeUserSettings(temp.home, { sandbox: 'seatbelt' });

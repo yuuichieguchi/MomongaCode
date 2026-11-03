@@ -86,6 +86,22 @@ describe('reapOrphans', () => {
     expect(log.withMsg('orphans.waiting')).toEqual([expect.objectContaining({ markers: 1, holders: 0 })]);
   });
 
+  it('names a process that cannot be inspected as a warning, once for the life of the process', async (context) => {
+    const dir = markersDir(context);
+    fs.writeFileSync(path.join(dir, 'runtime-03'), '', { mode: 0o600 });
+    fs.writeFileSync(path.join(dir, 'runtime-04'), '', { mode: 0o600 });
+    const ports: MarkerPorts = {
+      findHolders: async (_marker, _inspector, onUninspectable) => {
+        onUninspectable?.({ pid: 31_339, command: 'ssh-agent', startTicks: '616161' });
+        return [];
+      },
+      reapMarkerDirectory: async () => ({ reaped: 2, kept: 0 }),
+    };
+    const { options, log } = reapSetup(dir, { markerPorts: ports });
+    await reapOrphans(options);
+    expect(log.withMsg('orphans.warning')).toEqual([expect.objectContaining({ detail: expect.stringContaining('process 31339 (ssh-agent) could not be inspected, so it was left alone') })]);
+  });
+
   it('phase 1 waits for a holder that exits on its own and then reaps without a signal request', async (context) => {
     const dir = markersDir(context);
     fs.writeFileSync(path.join(dir, 'runtime-02'), '', { mode: 0o600 });

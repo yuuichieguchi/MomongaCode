@@ -62,7 +62,7 @@ export type { ValidationResult } from './validate.ts';
 export { buildSandboxPolicy, createBuiltinTools } from './builtins/index.ts';
 export { readOnlyEnvironment, readOnlySandboxPolicy } from './read-only-call.ts';
 export type { SandboxPolicyOptions } from './builtins/index.ts';
-export { nodeShellHost } from './builtins/shell.ts';
+export { ShellNotFoundError, nodeShellHost, resolveBashPath } from './builtins/shell.ts';
 export type { ShellHost } from './builtins/shell.ts';
 export { compileUntrustedSchema, untrustedSchemaCacheSize } from './untrusted-schema.ts';
 export { createGlobExpander, createPolicyFilesystem, nodeGlobPorts } from './policy-filesystem.ts';

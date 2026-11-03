@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { findHolders, reapMarkedProcesses } from '@momonga/foundation';
+import { findHolders, reapMarkedProcesses, reportUninspectableOnce } from '@momonga/foundation';
 import type { ReapTiming } from '@momonga/foundation';
 import { TERMINAL_STATUSES } from '@momonga/protocol';
 import type { IdempotencyLookup, RuntimeStore } from '@momonga/store';
@@ -73,7 +73,7 @@ export const reapToolMarkers = async ({
     const marker = path.join(dir, name);
     let holders: number[];
     try {
-      holders = await findHolders(marker);
+      holders = await findHolders(marker, undefined, reportUninspectableOnce(onWarning, `tool marker ${marker}`));
     } catch (error) {
       onWarning(`tool marker ${marker} holders could not be determined: ${asError(error).message}`);
       return undefined;
