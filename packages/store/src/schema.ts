@@ -540,6 +540,10 @@ ALTER TABLE events ADD COLUMN pinned_digest TEXT;
 CREATE INDEX events_model_requests ON events (run_id, seq, pinned_digest) WHERE type = 'model.requested';
 `;
 
+const MODEL_CHANGE_INDEX = `
+CREATE INDEX events_model_changes ON events (session_id, id) WHERE type = 'model.changed';
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -564,4 +568,5 @@ export const MIGRATIONS: readonly Migration[] = [
   },
   { version: 14, name: 'copy the pinned-layer digest of a recorded model request into a column, so a terminal can find the distinct layers without reading the bodies', sql: EVENT_PINNED_DIGEST },
   { version: 15, name: 'record the candidates a reflection dropped and why', sql: REFLECTION_DROPPED_CANDIDATES },
+  { version: 16, name: 'index the model switches of a session, so a resume reads them without scanning the events of the session', sql: MODEL_CHANGE_INDEX },
 ];

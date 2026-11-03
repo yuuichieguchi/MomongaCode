@@ -246,6 +246,7 @@ const prepareStatements = (db: DatabaseSync) => ({
        AND EXISTS (SELECT 1 FROM events e WHERE e.run_id = r.id AND e.type = 'run.started')
      ORDER BY r.created_at DESC, r.rowid DESC LIMIT :limit`,
   ),
+  modelChanges: db.prepare("SELECT * FROM events WHERE session_id = :sessionId AND type = 'model.changed' AND id > :after ORDER BY id"),
   sessionEvents: db.prepare('SELECT * FROM events WHERE session_id = :sessionId AND id > :after ORDER BY id LIMIT :limit'),
   selectExhausted: db.prepare(
     `SELECT r.* FROM runs r WHERE ${CLAIMABLE} AND ${EXHAUSTED} ${CLAIM_ORDER} LIMIT 1`,
@@ -1400,6 +1401,13 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     readSessionEvents: (sessionId, afterId, limit) =>
       sql.sessionEvents.all({ sessionId, after: afterId, limit }).map(decodeEvent),
+
+    readModelChanges: (sessionId, afterId) =>
+      sql.modelChanges.all({ sessionId, after: afterId }).map((row) => {
+        const event = decodeEvent(row);
+        if (event.type !== 'model.changed') throw new Error(`event ${event.id} of session ${sessionId} is not a model.changed event`);
+        return event;
+      }),
 
     sessionMaxEventId: (sessionId) => {
       const row = sql.sessionMaxEventId.get({ sessionId });

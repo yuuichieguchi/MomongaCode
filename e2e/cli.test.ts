@@ -11,7 +11,7 @@ import { supervisorLog } from './support/log-reader.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { DEFAULT_E2E_DEPS, baseSettings, sandboxChoiceOf, startStack, startUpstream, writeSettingsFile } from './support/stack.ts';
-import { chatCompletions, hangReply, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
+import { SCRIPTED_USAGE, chatCompletions, hangReply, messagesOf, reportedTokensOfRequest, textReply, toolCallReply } from './support/upstream.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
 import { pidOf } from './support/supervisor-client.ts';
 import { E2E_RESTART_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
@@ -196,7 +196,7 @@ describe('cli: momonga -p', () => {
   });
 
   it(titleOf('cli-attach'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
-    const { home } = await prepare(editTask);
+    const { home, fake } = await prepare(editTask);
     const first = await runCli(home, ['-p', 'Update the greeting', '--permission-mode', 'acceptEdits', '--output-format', 'stream-json']);
     const events = jsonLines(first.stdout).slice(1, -1);
     const runId = String(events[0]?.['runId']);
@@ -218,8 +218,9 @@ describe('cli: momonga -p', () => {
     expect(trace.code).toBe(0);
     expect(trace.stdout).toContain(`run ${runId}: `);
     expect(trace.stdout).toMatch(/4 model calls, 3 tool calls/);
+    const reportedTotal = chatCompletions(fake).reduce((sum, request) => sum + reportedTokensOfRequest(request.body) + SCRIPTED_USAGE.completion_tokens, 0);
     const traceJson = jsonLines((await runCli(home, ['trace', runId, '--json'])).stdout)[0];
-    expect(traceJson).toMatchObject({ runId, summary: { toolCalls: 3 }, usage: { total: { total_tokens: 60 } } });
+    expect(traceJson).toMatchObject({ runId, summary: { toolCalls: 3 }, usage: { total: { total_tokens: reportedTotal } } });
   });
 
   it(titleOf('cli-interrupt'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {

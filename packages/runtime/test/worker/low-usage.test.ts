@@ -181,7 +181,7 @@ describe('worker with an estimated token count', () => {
   });
 });
 
-const answeredByFallback =(step: ScriptStep, target: string): ScriptStep => ({
+const answeredByFallback = (step: ScriptStep, target: string): ScriptStep => ({
   ...step,
   events: step.events.map(
     (event): StreamEvent =>
@@ -202,6 +202,73 @@ const answeredByFallback =(step: ScriptStep, target: string): ScriptStep => ({
           }
         : event,
   ),
+});
+
+describe('the estimate of a step is read from the meter, not counted again', () => {
+  it('sends no identical count request twice across several steps', async () => {
+    const env = await makeEnv({ capabilities: capabilities() });
+    env.gateway.script.push(
+      callsStep([{ callId: 'call_c_1', name: 'Echo', args: { value: 'a' } }]),
+      callsStep([{ callId: 'call_c_2', name: 'Echo', args: { value: 'b' } }]),
+      textStep('Done.'),
+    );
+    const run = env.enqueue(TASK);
+
+    await env.runOnce(env.worker());
+
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(env.gateway.streams).toHaveLength(3);
+    const requests = env.gateway.counts.map((request) => JSON.stringify(request));
+    expect(new Set(requests).size).toBe(requests.length);
+  });
+
+  it('sends no identical count request twice across several steps of an estimated count either', async () => {
+    const env = await makeEnv({ capabilities: capabilities() });
+    env.gateway.countMethod = 'estimated';
+    env.gateway.script.push(
+      callsStep([{ callId: 'call_c_1', name: 'Echo', args: { value: 'a' } }]),
+      callsStep([{ callId: 'call_c_2', name: 'Echo', args: { value: 'b' } }]),
+      textStep('Done.'),
+    );
+    const run = env.enqueue(TASK);
+
+    await env.runOnce(env.worker());
+
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    const requests = env.gateway.counts.map((request) => JSON.stringify(request));
+    expect(new Set(requests).size).toBe(requests.length);
+  });
+});
+
+describe('the margin after a fallback step follows the counting method of the target that answered', () => {
+  const estimateOf = async (): Promise<number> => {
+    const env = await makeEnv({ capabilities: capabilities() });
+    env.gateway.script.push(textStep('Done.'));
+    env.enqueue(LARGE_TASK);
+    await env.runOnce(env.worker());
+    const first = env.gateway.streams[0];
+    if (first === undefined) throw new Error('the measuring run made no model call');
+    return inputTokensOf(first.body);
+  };
+
+  const runWith = async (secondary: 'exact' | 'estimated', share: number) => {
+    const estimate = await estimateOf();
+    const env = await makeEnv({ capabilities: capabilities() });
+    env.gateway.countMethod = 'estimated';
+    env.gateway.countMethodByTarget.set('secondary', secondary);
+    env.gateway.script.push(answeredByFallback(textStep('Done.', { usage: usageOf(Math.floor(estimate * share), 5) }), 'secondary'));
+    const run = env.enqueue(LARGE_TASK);
+    await env.runOnce(env.worker());
+    return env.run(run.id);
+  };
+
+  it('stops at 85 percent of the estimate when the target that answered counts exactly, although the alias counts by estimate', async () => {
+    expect(await runWith('exact', 0.85)).toMatchObject({ status: 'FAILED', error: { code: 'input_truncated' } });
+  });
+
+  it('completes at 85 percent of the estimate when the target that answered counts by estimate', async () => {
+    expect((await runWith('estimated', 0.85)).status).toBe('COMPLETED');
+  });
 });
 
 describe('worker with a fallback target that answered', () => {

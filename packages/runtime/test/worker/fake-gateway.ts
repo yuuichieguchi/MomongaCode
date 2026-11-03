@@ -105,6 +105,7 @@ export type FakeGateway = GatewayPort & {
   countResults: CountTokensResult[];
   countScaleByTarget: Map<string, number>;
   countMethod: CountTokensResult['method'];
+  countMethodByTarget: Map<string, CountTokensResult['method']>;
   countHook: GatewayHook<CountTokensRequest> | undefined;
   compactHook: GatewayHook<CompactRequest> | undefined;
   capabilityRequests: string[];
@@ -218,6 +219,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
     countResults: [],
     countScaleByTarget: new Map(),
     countMethod: 'exact',
+    countMethodByTarget: new Map(),
     countHook: undefined,
     compactHook: undefined,
     capabilityRequests: [],
@@ -293,7 +295,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
       const base = instructions + input + tools;
       const target = request.momonga?.target;
       const scale = target === undefined ? undefined : gateway.countScaleByTarget.get(target);
-      const result: CountTokensResult = { input_tokens: scale === undefined ? base : Math.ceil(base * scale), method: gateway.countMethod, error_bound: 0 };
+      const result: CountTokensResult = { input_tokens: scale === undefined ? base : Math.ceil(base * scale), method: (target === undefined ? undefined : gateway.countMethodByTarget.get(target)) ?? gateway.countMethod, error_bound: 0 };
       gateway.countResults.push(result);
       return result;
     },
