@@ -1,9 +1,9 @@
-import { describeMemoryValidity } from '@momonga/protocol';
+import { describeMemoryValidity, escapeTerminalBlock, escapeTerminalLine } from '@momonga/protocol';
 import type { MemoryView, ReflectionDrop, ReflectionJobView } from '@momonga/protocol';
 
-const firstLine = (text: string): string => text.split('\n')[0] ?? '';
+const firstLine = (text: string): string => escapeTerminalLine(text.split('\n')[0] ?? '');
 
-const placeOf = (memory: MemoryView): string => (memory.project === null ? memory.scope : `${memory.scope} ${memory.project}`);
+const placeOf = (memory: MemoryView): string => (memory.project === null ? memory.scope : `${memory.scope} ${escapeTerminalLine(memory.project)}`);
 
 const statusOf = (memory: MemoryView): string => (memory.status === 'unbound' ? '' : `${memory.status}  `);
 
@@ -20,11 +20,11 @@ export const formatMemoryHistory = (memories: readonly MemoryView[]): string =>
 const evidenceLine = (entry: MemoryView['evidence'][number]): string => {
   switch (entry.kind) {
     case 'file':
-      return `evidence: file ${entry.path} (${entry.sha256})`;
+      return `evidence: file ${escapeTerminalLine(entry.path)} (${escapeTerminalLine(entry.sha256)})`;
     case 'commit':
-      return `evidence: commit ${entry.sha}`;
+      return `evidence: commit ${escapeTerminalLine(entry.sha)}`;
     case 'check':
-      return `evidence: check ${entry.command} exited ${entry.exitCode} (run ${entry.runId}, event ${entry.seq})`;
+      return `evidence: check ${escapeTerminalLine(entry.command)} exited ${entry.exitCode} (run ${entry.runId}, event ${entry.seq})`;
   }
 };
 
@@ -46,27 +46,27 @@ const DROP_CAUSE_LABELS: Record<ReflectionDrop['cause'], string> = {
 };
 
 const droppedLine = (drop: ReflectionDrop): string =>
-  `  candidate ${drop.ordinal} dropped, ${DROP_CAUSE_LABELS[drop.cause]}: ${drop.reason}${drop.text === null ? '' : `\n    ${JSON.stringify(firstLine(drop.text))}`}`;
+  `  candidate ${drop.ordinal} dropped, ${DROP_CAUSE_LABELS[drop.cause]}: ${escapeTerminalLine(drop.reason)}${drop.text === null ? '' : `\n    "${firstLine(drop.text)}"`}`;
 
 export const formatReflection = (job: ReflectionJobView | null): string => {
   if (job === null) return 'no reflection has run in this folder yet';
   const headline = `the last reflection of this folder (run ${job.runId}, ${iso(job.updatedAt)}) is ${job.state}`;
-  const reason = job.reason === null ? [] : [`  ${job.reason}`];
+  const reason = job.reason === null ? [] : [`  ${escapeTerminalLine(job.reason)}`];
   return [headline, ...reason, ...job.dropped.map(droppedLine)].join('\n');
 };
 
-export const formatMemory =(memory: MemoryView): string =>
+export const formatMemory = (memory: MemoryView): string =>
   [
     `id: ${memory.id}`,
     `scope: ${memory.scope}`,
     `origin: ${memory.origin}`,
     `kind: ${memory.kind}`,
     `status: ${memory.status}`,
-    ...(memory.project === null ? [] : [`project: ${memory.project}`]),
+    ...(memory.project === null ? [] : [`project: ${escapeTerminalLine(memory.project)}`]),
     `created: ${iso(memory.createdAt)}`,
     `last used: ${iso(memory.lastUsedAt)}`,
     sourceLine(memory.source),
     ...memory.evidence.map(evidenceLine),
     '',
-    memory.text,
+    escapeTerminalBlock(memory.text),
   ].join('\n');

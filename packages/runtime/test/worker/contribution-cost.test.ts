@@ -99,11 +99,11 @@ const terminalMillis = async (snapshotFirst: boolean, historyInRequest: number):
       expect(env.store.writeSnapshot(claim, state.lastSeq, state).kind).toBe('ok');
     }
 
-    const cpuBefore = process.cpuUsage();
+    const cpuBefore = process.threadCpuUsage();
     const wallBefore = performance.now();
     env.store.prepareTerminal(run.id);
     const wallMillis = performance.now() - wallBefore;
-    const cpu = process.cpuUsage(cpuBefore);
+    const cpu = process.threadCpuUsage(cpuBefore);
     const prepareMillis = (cpu.user + cpu.system) / 1000;
     console.info(`prepared in ${wallMillis.toFixed(1)} ms of wall time`);
     const started = performance.now();

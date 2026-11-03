@@ -1,6 +1,7 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import { LOWEST_REASONING_EFFORT } from '@momonga/protocol';
-import type { CreateResponseBody, ResponseResource, RunState } from '@momonga/protocol';
+import type { TokenMeter } from '@momonga/context';
+import { ESTIMATED_ERROR_BOUND_RATIO, LOWEST_REASONING_EFFORT, marginFloorFor } from '@momonga/protocol';
+import type { CreateResponseBody, FunctionTool, InputItem, ResponseResource, RunState } from '@momonga/protocol';
 import type { ClaimContext, Flow } from './claim-context.ts';
 import { modelKey } from '../model-key.ts';
 import { GatewayFailureError } from './errors.ts';
@@ -70,9 +71,28 @@ export const decideAfterResponse = async (ctx: ClaimContext): Promise<Flow> => {
   return settleCalls(ctx);
 };
 
-type InputObservation = { inputDigest: string; estimatedTokens: number; marginTokens: number };
+type InputObservation = {
+  inputDigest: string;
+  estimatedTokens: number;
+  marginTokens: number;
+  input: readonly InputItem[];
+  tools: readonly FunctionTool[];
+};
 
-const truncationFailure = (reported: number, observation: InputObservation): { code: 'input_truncated'; message: string } => ({
+type InputEstimate = { meter: TokenMeter; inputDigest: string; estimatedTokens: number; marginTokens: number };
+
+const estimateFor = async (ctx: ClaimContext, observation: InputObservation, answeredByFallback: string | undefined): Promise<InputEstimate> => {
+  const meter = answeredByFallback === undefined ? ctx.meter : ctx.meterOfTarget(answeredByFallback);
+  const counted = await meter.count({ input: observation.input, tools: observation.tools });
+  return {
+    meter,
+    inputDigest: counted.inputDigest,
+    estimatedTokens: counted.inputTokens,
+    marginTokens: marginFloorFor(ctx.capabilities.contextWindow) + Math.ceil(ESTIMATED_ERROR_BOUND_RATIO * counted.estimatedTokens),
+  };
+};
+
+const truncationFailure = (reported: number, observation: Pick<InputObservation, 'estimatedTokens' | 'marginTokens'>): { code: 'input_truncated'; message: string } => ({
   code: 'input_truncated',
   message: `The server reported ${reported} input tokens for a context the token meter counts as ${observation.estimatedTokens} tokens, which is more than the estimation margin of ${observation.marginTokens} tokens below it. The server likely truncated the input without saying so. Set the server's context length to the target's context window, or lower the target's contextWindow to what the server serves.`,
 });
@@ -140,9 +160,11 @@ const handleResult = async (
   }
   if (observation !== undefined) {
     const reported = response.momonga?.contextInputTokens ?? usage.input_tokens;
-    ctx.meter.observe({ inputDigest: observation.inputDigest, inputTokens: reported });
-    if (reported < observation.estimatedTokens - observation.marginTokens) {
-      return terminals.finish('FAILED', { error: truncationFailure(reported, observation) });
+    const answeredByFallback = fallback?.fallbackCauses !== undefined && fallback.fallbackCauses.length > 0 ? fallback.target : undefined;
+    const estimate = await estimateFor(ctx, observation, answeredByFallback);
+    estimate.meter.observe({ inputDigest: estimate.inputDigest, inputTokens: reported });
+    if (reported < estimate.estimatedTokens - estimate.marginTokens) {
+      return terminals.finish('FAILED', { error: truncationFailure(reported, estimate) });
     }
   }
   return decideAfterResponse(ctx);
@@ -223,5 +245,10 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   const streamed = await streamRecovering(ctx, body, position);
   return streamed.kind === 'flow'
     ? streamed.flow
-    : handleResult(ctx, streamed.result, position, summarising ? undefined : { inputDigest: built.inputDigest, estimatedTokens: built.inputTokens, marginTokens: built.budget.margin });
+    : handleResult(
+        ctx,
+        streamed.result,
+        position,
+        summarising ? undefined : { inputDigest: built.inputDigest, estimatedTokens: built.inputTokens, marginTokens: built.budget.margin, input: built.input, tools: built.tools },
+      );
 };

@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useReducer, useRef, useState } from 'react';
 import { Box, Static, Text, useApp, useInput, usePaste, useStdout, useWindowSize } from 'ink';
+import { escapeTerminalBlock } from '@momonga/protocol';
 import type { Capabilities, ImageAttachment, MomongaModelEntry, PermissionMode, PermissionOption } from '@momonga/protocol';
 import { currentField, currentRequest, decide, enterValue, leaveFields, withError } from '../elicit/flow.ts';
 import type { ElicitationDecision, ElicitationFlow } from '../elicit/flow.ts';
@@ -128,7 +129,7 @@ function DiffView({ lines, max }: { lines: readonly DiffLine[]; max: number }) {
       {clipped.lines.map((line, index) => (
         <Text key={index} {...colorProps(diffColor(line))}>
           {diffPrefix(line)}
-          {line.text}
+          {shown(line.text)}
         </Text>
       ))}
       {clipped.omitted > 0 ? <Text dimColor>… {clipped.omitted} more lines</Text> : null}
@@ -136,35 +137,39 @@ function DiffView({ lines, max }: { lines: readonly DiffLine[]; max: number }) {
   );
 }
 
+const shown = (text: string): string => escapeTerminalBlock(text.replaceAll('\r\n', '\n'));
+
 function EntryView({ entry }: { entry: Entry }) {
   switch (entry.kind) {
     case 'user':
       return <Text color="cyan">{`> ${entry.text}`}</Text>;
     case 'assistant':
-      return <Text>{entry.text}</Text>;
+      return <Text>{shown(entry.text)}</Text>;
     case 'tool':
       return (
         <Box flexDirection="column">
           <Text>
-            {toolMark(entry.status)} {entry.title}
+            {toolMark(entry.status)} {shown(entry.title)}
           </Text>
-          {entry.status === 'failed' && entry.denial !== undefined ? <Text color="red">{describeDenial(entry.denial)}</Text> : null}
-          {entry.status === 'failed' && entry.denial === undefined && entry.output !== undefined ? <Text color="red">{entry.output.split('\n').slice(0, 3).join('\n')}</Text> : null}
-          {entry.status === 'unknown' && entry.output !== undefined ? <Text color="yellow">{entry.output}</Text> : null}
+          {entry.status === 'failed' && entry.denial !== undefined ? <Text color="red">{shown(describeDenial(entry.denial))}</Text> : null}
+          {entry.status === 'failed' && entry.denial === undefined && entry.output !== undefined ? (
+            <Text color="red">{shown(entry.output.split('\n').slice(0, 3).join('\n'))}</Text>
+          ) : null}
+          {entry.status === 'unknown' && entry.output !== undefined ? <Text color="yellow">{shown(entry.output)}</Text> : null}
         </Box>
       );
     case 'plan':
       return (
         <Box flexDirection="column">
           {entry.entries.map((item, index) => (
-            <Text key={index}>{`${item.status === 'completed' ? '[x]' : item.status === 'in_progress' ? '[~]' : '[ ]'} ${item.content}`}</Text>
+            <Text key={index}>{shown(`${item.status === 'completed' ? '[x]' : item.status === 'in_progress' ? '[~]' : '[ ]'} ${item.content}`)}</Text>
           ))}
         </Box>
       );
     case 'notice':
-      return <Text color={entry.level === 'error' ? 'red' : entry.level === 'warning' ? 'yellow' : 'gray'}>{entry.text}</Text>;
+      return <Text color={entry.level === 'error' ? 'red' : entry.level === 'warning' ? 'yellow' : 'gray'}>{shown(entry.text)}</Text>;
     case 'info':
-      return <Text dimColor>{entry.text}</Text>;
+      return <Text dimColor>{shown(entry.text)}</Text>;
   }
 }
 
@@ -173,10 +178,10 @@ function ApprovalPrompt({ approval, tool, selected }: { approval: PendingApprova
   const diff = tool === undefined ? undefined : diffOfToolInput(tool.name, tool.rawInput);
   return (
     <Box flexDirection="column" borderStyle="round" paddingX={1}>
-      <Text bold>{`Permission requested: ${tool?.title ?? approval.callId}`}</Text>
+      <Text bold>{shown(`Permission requested: ${tool?.title ?? approval.callId}`)}</Text>
       {diff === undefined ? null : <DiffView lines={diff} max={maxDiffLines(rows, approval.options.length)} />}
       {approval.options.map((option: PermissionOption, index) => (
-        <Text key={option.optionId} inverse={index === selected}>{`${index + 1}. ${option.name}`}</Text>
+        <Text key={option.optionId} inverse={index === selected}>{shown(`${index + 1}. ${option.name}`)}</Text>
       ))}
       <Text dimColor>1-{approval.options.length} or up/down and enter to choose, esc to cancel the run</Text>
     </Box>
@@ -225,15 +230,15 @@ function ElicitationPrompt({ elicitation, title, editor, selected }: { elicitati
   return (
     <Box flexDirection="column">
       <Box flexDirection="column" borderStyle="round" paddingX={1}>
-        <Text bold>{`MCP server ${elicitation.server} asks for input (${title}) ${flow.index + 1}/${flow.requests.length}`}</Text>
-        <Text>{request.message}</Text>
-        {request.mode === 'url' ? <Text>{`URL: ${request.url}`}</Text> : null}
+        <Text bold>{shown(`MCP server ${elicitation.server} asks for input (${title}) ${flow.index + 1}/${flow.requests.length}`)}</Text>
+        <Text>{shown(request.message)}</Text>
+        {request.mode === 'url' ? <Text>{shown(`URL: ${request.url}`)}</Text> : null}
         {flow.stage === 'fields' && field !== undefined ? (
           <Box flexDirection="column">
-            <Text bold>{`${field.title} (${field.name}, ${field.kind}${field.required ? ', required' : ', optional: leave empty to skip'})`}</Text>
-            {field.description === undefined ? null : <Text dimColor>{field.description}</Text>}
+            <Text bold>{shown(`${field.title} (${field.name}, ${field.kind}${field.required ? ', required' : ', optional: leave empty to skip'})`)}</Text>
+            {field.description === undefined ? null : <Text dimColor>{shown(field.description)}</Text>}
             {field.options.map((option, index) => (
-              <Text key={option.value}>{`  ${index + 1}. ${option.label}`}</Text>
+              <Text key={option.value}>{shown(`  ${index + 1}. ${option.label}`)}</Text>
             ))}
           </Box>
         ) : null}
@@ -242,7 +247,7 @@ function ElicitationPrompt({ elicitation, title, editor, selected }: { elicitati
               <Text key={choice.decision} inverse={index === selected}>{`${index + 1}. ${choice.label}`}</Text>
             ))
           : null}
-        {flow.error === undefined ? null : <Text color="red">{flow.error}</Text>}
+        {flow.error === undefined ? null : <Text color="red">{shown(flow.error)}</Text>}
         {elicitation.submitted ? <Text dimColor>sending the answer…</Text> : null}
         <Text dimColor>
           {flow.stage === 'fields'

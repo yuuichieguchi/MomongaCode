@@ -1184,7 +1184,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           cwd: parentSession.cwd,
           env: canonicalJson(parentSession.env),
           permissionMode: parentSession.permissionMode,
-          modelAlias: input.modelAlias ?? parentSession.modelAlias,
+          modelAlias: input.modelAlias,
           bypassAllowed: parentSession.bypassAllowed ? 1 : 0,
           additionalDirectories: canonicalJson(parentSession.additionalDirectories),
           mcpServers: canonicalJson(parentSession.mcpServers),

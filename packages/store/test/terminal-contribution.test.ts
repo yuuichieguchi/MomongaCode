@@ -127,7 +127,7 @@ describe('context.contribution at every terminal transition of the store', () =>
     const h = harness({ contribution: hook });
     const parent = enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w-parent');
-    const created = h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {} });
+    const created = h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, modelAlias: 'fm' });
     if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
 
     cancel(h.store, parent.id);
@@ -366,7 +366,7 @@ describe('lastTerminalRootRuns', () => {
     const parent = enqueue(h.store, newSession(h.store, '/work/a').id);
     const claim = mustClaim(h.store, 'w-parent');
     expect(h.store.append(claim, [{ type: 'run.started', attempt: 1, now: h.clock.now(), pins: {} }]).kind).toBe('ok');
-    const created = h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {} });
+    const created = h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, modelAlias: 'fm' });
     if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
 
     expect(h.store.lastTerminalRootRuns('/work/a', 10).map((run) => run.id)).toEqual([done]);

@@ -1,3 +1,4 @@
+import { escapeTerminalBlock } from '@momonga/protocol';
 import type { ElicitationRequestView } from '@momonga/protocol';
 import { fieldsOf } from './form.ts';
 import type { FormField } from './form.ts';
@@ -23,11 +24,13 @@ export const describeElicitation = (inputId: string, server: string, title: stri
     requests.length === 1 && only !== undefined
       ? [`  accept:  ${elicitCommand(inputId, acceptFlags(only))}${only.mode === 'url' ? '   (opens the URL in your browser)' : ''}`]
       : [`  accept:  ${elicitCommand(inputId, "--responses '<json: request key -> {\"action\":\"accept\",\"content\":{...}}>'")}`];
-  return [
-    `${inputId}  MCP server ${server} asks for input (${title})`,
-    ...requests.flatMap(describeRequest),
-    ...accept,
-    `  decline: ${elicitCommand(inputId, '--decline')}`,
-    `  cancel:  ${elicitCommand(inputId, '--cancel')}`,
-  ].join('\n');
+  return escapeTerminalBlock(
+    [
+      `${inputId}  MCP server ${server} asks for input (${title})`,
+      ...requests.flatMap(describeRequest),
+      ...accept,
+      `  decline: ${elicitCommand(inputId, '--decline')}`,
+      `  cancel:  ${elicitCommand(inputId, '--cancel')}`,
+    ].join('\n'),
+  );
 };

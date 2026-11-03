@@ -46,7 +46,8 @@ export {
 } from './capabilities.ts';
 export type { TargetBilling } from './capabilities.ts';
 export { tokensForText } from './estimate-tokens.ts';
-export { GUIDELINE_TEXT_PATTERN, escapeGuidelineText, hasForbiddenGuidelineCharacter } from './guideline-text.ts';
+export { GUIDELINE_TEXT_PATTERN, hasForbiddenGuidelineCharacter } from './guideline-text.ts';
+export { escapeTerminalBlock, escapeTerminalLine } from './terminal-text.ts';
 export {
   FILE_ACCESSES,
   INHERITED_FACT_SEQ,

@@ -440,6 +440,68 @@ describe('the outcome file', () => {
     expect(() => parseOutcomeFile(hiding)).toThrow(/outcome file/);
   });
 
+  type Raw = { digest: string; outcome: Record<string, unknown>; [key: string]: unknown };
+
+  const redigested = (raw: Raw): void => {
+    raw.digest = sha256Hex(canonicalJson(raw.outcome));
+  };
+
+  it('guards the closed schema: refuses a top-level key next to digest and outcome', async () => {
+    const { outcome } = await winning();
+    const extended = rewritten(outcomeFileOf(outcome, DATASET), (raw) => {
+      (raw as Raw)['note'] = 'not covered by the digest';
+    });
+    expect(() => parseOutcomeFile(extended)).toThrow(/outcome file/);
+  });
+
+  it.each([
+    ['outcome', (raw: Raw) => (raw.outcome['extra'] = 1)],
+    ['dataset', (raw: Raw) => ((raw.outcome['dataset'] as Record<string, unknown>)['extra'] = 1)],
+    ['winner', (raw: Raw) => ((raw.outcome['winner'] as Record<string, unknown>)['extra'] = 1)],
+    ['report', (raw: Raw) => ((raw.outcome['report'] as Record<string, unknown>)['extra'] = 1)],
+    ['report baseline', (raw: Raw) => (((raw.outcome['report'] as Record<string, unknown>)['baseline'] as Record<string, unknown>)['extra'] = 1)],
+    ['report gate', (raw: Raw) => (((raw.outcome['report'] as Record<string, unknown>)['gate'] as Record<string, unknown>)['extra'] = 1)],
+    ['candidate', (raw: Raw) => ((raw.outcome['candidates'] as Record<string, unknown>[])[0]!['extra'] = 1)],
+    ['candidate gate', (raw: Raw) => (((raw.outcome['candidates'] as Record<string, unknown>[])[0]!['gate'] as Record<string, unknown>)['extra'] = 1)],
+    ['tokens', (raw: Raw) => ((raw.outcome['tokens'] as Record<string, unknown>)['extra'] = 1)],
+  ])('guards the closed schema: refuses an extra key in the %s even with a recomputed digest', async (_label, change) => {
+    const { outcome } = await winning();
+    const extended = rewritten(outcomeFileOf(outcome, DATASET), (raw) => {
+      change(raw as Raw);
+      redigested(raw as Raw);
+    });
+    expect(() => parseOutcomeFile(extended)).toThrow(/outcome file/);
+  });
+
+  it.each(['status', 'model', 'alias', 'seed', 'candidateCount', 'contrastive', 'skipped', 'tokens'])(
+    'guards the closed schema: refuses an outcome without %s even with a recomputed digest',
+    async (key) => {
+      const { outcome } = await winning();
+      const hollow = rewritten(outcomeFileOf(outcome, DATASET), (raw) => {
+        delete raw.outcome[key];
+        redigested(raw as Raw);
+      });
+      expect(() => parseOutcomeFile(hollow)).toThrow(/outcome file/);
+    },
+  );
+
+  it.each(['source', 'dataset', 'model', 'alias', 'seed', 'candidateIndex', 'contrastive', 'baseline', 'contrastiveFailures', 'gate', 'tokens'])(
+    'guards the closed schema: refuses a report without %s even with a recomputed digest',
+    async (key) => {
+      const { outcome } = await winning();
+      const hollow = rewritten(outcomeFileOf(outcome, DATASET), (raw) => {
+        delete (raw.outcome['report'] as Record<string, unknown>)[key];
+        redigested(raw as Raw);
+      });
+      expect(() => parseOutcomeFile(hollow)).toThrow(/outcome file/);
+    },
+  );
+
+  it('accepts the file of an outcome with no winner and a skipped candidate', async () => {
+    const { outcome } = await improve();
+    expect(() => parseOutcomeFile(encodeOutcomeFile(outcomeFileOf(outcome, DATASET)))).not.toThrow();
+  });
+
   it.each([
     ['text that is not JSON', 'nonsense'],
     ['another format', JSON.stringify({ digest: 'a'.repeat(64), outcome: { format: 'other/1' } })],

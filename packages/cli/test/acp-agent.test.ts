@@ -892,6 +892,65 @@ describe('model selection', () => {
     await harness.peer.close();
   });
 
+  describe('when the model list cannot be read', () => {
+    const unreadable = (): Promise<readonly string[]> => Promise.reject(new Error('the gateway is down'));
+
+    const warningTexts = (harness: Harness): string[] =>
+      updatesOf(harness.peer.received).flatMap(({ sessionUpdate, content }) =>
+        sessionUpdate === 'agent_message_chunk' && typeof content === 'object' && content !== null && 'text' in content && typeof content.text === 'string' ? [content.text] : [],
+      );
+
+    it('creates the session without the model option and says why in a notice', async () => {
+      const harness = startAgent({ modelAliases: unreadable });
+      await harness.peer.request('initialize', INITIALIZE);
+
+      const result = resultOf(await harness.peer.request('session/new', NEW_SESSION)) as { sessionId: string; configOptions: unknown };
+
+      expect(result.sessionId).toBe(SESSION.id);
+      expect(result.configOptions).toEqual([]);
+      await harness.peer.untilReceived((message) => updatesOf([message])[0]?.sessionUpdate === 'agent_message_chunk');
+      expect(warningTexts(harness)).toEqual(['momonga warning: the model option is not offered because the model list could not be read: the gateway is down\n']);
+      await harness.peer.close();
+    });
+
+    it('loads the session without the model option and says why in a notice', async () => {
+      const harness = startAgent({ modelAliases: unreadable });
+      await harness.peer.request('initialize', INITIALIZE);
+
+      const result = resultOf(await harness.peer.request('session/load', { sessionId: SESSION.id, ...NEW_SESSION })) as { configOptions: unknown };
+
+      expect(result.configOptions).toEqual([]);
+      await harness.peer.untilReceived((message) => updatesOf([message])[0]?.sessionUpdate === 'agent_message_chunk');
+      expect(warningTexts(harness)).toEqual(['momonga warning: the model option is not offered because the model list could not be read: the gateway is down\n']);
+      await harness.peer.close();
+    });
+
+    it('removes the option and says why when a model.changed event arrives and the list can no longer be read', async () => {
+      let readable = true;
+      const harness = startAgent({ modelAliases: () => (readable ? Promise.resolve(MODEL_ALIASES) : unreadable()) });
+      await open(harness);
+      readable = false;
+
+      harness.emitSessionEvent(modelChangedFrame(5, 'fm-large', SESSION.modelAlias));
+      await harness.peer.untilReceived((message) => updatesOf([message])[0]?.sessionUpdate === 'agent_message_chunk');
+
+      expect(configUpdates(harness)).toEqual([{ sessionUpdate: 'config_option_update', configOptions: [] }]);
+      expect(warningTexts(harness)).toEqual(['momonga warning: the model option is not offered because the model list could not be read: the gateway is down\n']);
+      await harness.peer.close();
+    });
+
+    it('offers the option as before when the list can be read', async () => {
+      const harness = startAgent();
+      await harness.peer.request('initialize', INITIALIZE);
+
+      const result = resultOf(await harness.peer.request('session/new', NEW_SESSION)) as { configOptions: unknown };
+
+      expect(result.configOptions).toEqual([modelOption(SESSION.modelAlias)]);
+      expect(warningTexts(harness)).toEqual([]);
+      await harness.peer.close();
+    });
+  });
+
   it('switches the alias of the Run API session on session/set_config_option and answers the full option list', async () => {
     const harness = startAgent();
     const sessionId = await open(harness);

@@ -138,7 +138,12 @@ const countTokens = async (
 ): Promise<CountTokensResult> => {
   const request = validator.parseCountTokens(rawBody);
   const deadlineAt = parseDeadlineHeader(deadlineHeader, services.clock.now());
-  const target = services.router.targetsOf(request.model)[0];
+  const aliasTargets = services.router.targetsOf(request.model);
+  const named = request.momonga?.target;
+  const target = named === undefined ? aliasTargets[0] : aliasTargets.find((candidate) => candidate.name === named);
+  if (named !== undefined && target === undefined) {
+    throw invalidRequest('invalid_target', `target "${named}" is not a target of model alias "${request.model}"`, 'momonga.target');
+  }
   if (target === undefined) throw new Error(`model alias "${request.model}" has no targets`);
   const resolved = resolveInput(services.store, services.codec, undefined, normalizeInput(request.input));
   await services.router.narrow(request.model, [target], { images: inputHasImages(resolved.forAdapter) });

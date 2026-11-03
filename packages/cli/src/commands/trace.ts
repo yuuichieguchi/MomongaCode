@@ -1,4 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
+import { escapeTerminalBlock } from '@momonga/protocol';
 import type { FallbackCauseView, RunTraceSpan, RunTraceView, UsageReport } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
@@ -49,13 +50,15 @@ export const renderTrace = (trace: RunTraceView, usage: UsageReport): string => 
   const known = new Set(trace.spans.map((span) => span.spanId));
   const roots = trace.spans.filter((span) => span.parentSpanId === null || !known.has(span.parentSpanId));
   const { summary } = trace;
-  return [
-    `run ${trace.runId}: ${summary.steps} steps, ${usage.responses.length} model calls, ${summary.toolCalls} tool calls, ${summary.errorCount} errors, ${summary.durationMs} ms`,
-    `tokens: ${usage.total.input_tokens} in, ${usage.total.output_tokens} out`,
-    ...roots
-      .sort((left, right) => left.startMs - right.startMs)
-      .flatMap((root) => [`${root.name}  ${root.endMs - root.startMs} ms  ${root.status}`, ...spanLines(trace.spans, root.spanId, 1)]),
-  ].join('\n');
+  return escapeTerminalBlock(
+    [
+      `run ${trace.runId}: ${summary.steps} steps, ${usage.responses.length} model calls, ${summary.toolCalls} tool calls, ${summary.errorCount} errors, ${summary.durationMs} ms`,
+      `tokens: ${usage.total.input_tokens} in, ${usage.total.output_tokens} out`,
+      ...roots
+        .sort((left, right) => left.startMs - right.startMs)
+        .flatMap((root) => [`${root.name}  ${root.endMs - root.startMs} ms  ${root.status}`, ...spanLines(trace.spans, root.spanId, 1)]),
+    ].join('\n'),
+  );
 };
 
 export const showTrace = async (ports: CliPorts, paths: MomongaPaths, runId: string | undefined, json: boolean): Promise<number> => {

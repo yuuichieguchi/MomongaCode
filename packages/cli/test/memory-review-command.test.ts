@@ -144,6 +144,58 @@ describe('momonga memory review', () => {
     expect(out.join('')).toContain('the model proposed no candidates');
   });
 
+  const HOSTILE = 'x\u001b]0;pwn\u0007\u009b2J‮y';
+  const ESCAPED = 'x\\u001b]0;pwn\\u0007\\u009b2J\\u202ey';
+  const UNSAFE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f‪-‮]/u;
+
+  it('prints the text and the paths of a candidate with the control characters escaped', async (context) => {
+    const hostile = memory('m1', { text: `first\n${HOSTILE}`, project: HOSTILE, evidence: [{ kind: 'file', project: '/p', path: HOSTILE, sha256: 'a'.repeat(64) }] });
+    const { paths, ports, out } = await setup(context, () => ({ status: 200, body: { memories: [hostile] } }));
+    await command('memoryReview')(ports, paths, { json: false });
+    const text = out.join('');
+    expect(text).not.toMatch(UNSAFE);
+    expect(text.split(ESCAPED).length - 1).toBe(3);
+  });
+
+  it('prints the reasons, the job reason and the candidate text of the last reflection with the control characters escaped', async (context) => {
+    const { paths, ports, out } = await setup(
+      context,
+      answerBy(
+        jobView({
+          reason: HOSTILE,
+          dropped: [
+            { ordinal: 0, text: HOSTILE, cause: 'evidence', reason: `${HOSTILE} was not read or written in this run` },
+            { ordinal: 1, text: null, cause: 'text_rule', reason: HOSTILE },
+          ],
+        }),
+      ),
+    );
+    await command('memoryReview')(ports, paths, { json: false });
+    const text = out.join('');
+    expect(text).not.toMatch(UNSAFE);
+    expect(text.split(ESCAPED).length - 1).toBe(4);
+  });
+
+  it('keeps the JSON output as recorded', async (context) => {
+    const { paths, ports, out } = await setup(context, () => ({ status: 200, body: { memories: [memory('m1', { text: HOSTILE })] } }));
+    await command('memoryReview')(ports, paths, { json: true });
+    expect(JSON.parse(out.join(''))[0].text).toBe(HOSTILE);
+  });
+
+  it('prints memory list with the control characters of a memory text escaped', async (context) => {
+    const { paths, ports, out } = await setup(context, () => ({ status: 200, body: { memories: [memory('m1', { text: HOSTILE })] } }));
+    await command('memoryList')(ports, paths, { json: false });
+    expect(out.join('')).not.toMatch(UNSAFE);
+    expect(out.join('')).toContain(ESCAPED);
+  });
+
+  it('prints memory history with the control characters of a memory text escaped', async (context) => {
+    const { paths, ports, out } = await setup(context, () => ({ status: 200, body: { memories: [memory('m1', { text: HOSTILE })] } }));
+    await command('memoryHistory')(ports, paths, 'm1', false);
+    expect(out.join('')).not.toMatch(UNSAFE);
+    expect(out.join('')).toContain(ESCAPED);
+  });
+
   it('does not ask for the reflection while candidates wait', async (context) => {
     const { paths, ports, seen } = await setup(context, () => ({ status: 200, body: { memories: [memory('m1')] } }));
     await command('memoryReview')(ports, paths, { json: false });

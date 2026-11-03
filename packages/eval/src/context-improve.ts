@@ -1,4 +1,4 @@
-import { MIN_SUMMARY_TOKENS, escapeGuidelineText, tokensForText } from '@momonga/protocol';
+import { MIN_SUMMARY_TOKENS, escapeTerminalBlock, tokensForText } from '@momonga/protocol';
 import { compareContextReports } from './context-compare.ts';
 import type { ContextComparison } from './context-compare.ts';
 import { contrastiveCasesOf } from './context-report.ts';
@@ -32,7 +32,8 @@ export type ImprovePorts = {
   charge(usage: TokenUsage): void | Promise<void>;
 };
 
-export type ImproveStatus = 'empty' | 'no_analysis' | 'no_winner' | 'winner' | 'stopped';
+export const IMPROVE_STATUSES = ['empty', 'no_analysis', 'no_winner', 'winner', 'stopped'] as const;
+export type ImproveStatus = (typeof IMPROVE_STATUSES)[number];
 
 export type SkippedScenario = { scenario: string; reason: string };
 
@@ -193,7 +194,7 @@ export const improveGuideline = async (input: ImproveInput, ports: ImprovePorts)
   return winner === undefined ? outcome('no_winner') : outcome('winner', { winner });
 };
 
-const linesOf = (text: string): string[] => (text === '' ? [] : escapeGuidelineText(text).split('\n'));
+const linesOf = (text: string): string[] => (text === '' ? [] : escapeTerminalBlock(text).split('\n'));
 
 const itemAt = <T>(items: readonly T[], index: number): T => {
   const item = items[index];
@@ -232,7 +233,7 @@ export const guidelineDiff = (before: string, after: string): string => {
 };
 
 export const formatGuidelineText = (text: string): string =>
-  escapeGuidelineText(text)
+  escapeTerminalBlock(text)
     .split('\n')
     .map((line) => `  ${line}`)
     .join('\n');

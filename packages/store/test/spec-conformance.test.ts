@@ -109,7 +109,7 @@ describe('facts that specs/tla/RunRecovery.tla relies on', () => {
     const parent = enqueue(h.store, session.id);
     const parentClaim = mustClaim(h.store, 'w-parent');
     h.store.append(parentClaim, [callEvent('c1')]);
-    const created = h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'c1', input: 'task', pins: {} });
+    const created = h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'c1', input: 'task', pins: {}, modelAlias: 'fm' });
     if (created.kind !== 'created') throw new Error(`expected a child run, got ${created.kind}`);
     const childClaim = mustClaim(h.store, 'w-child');
     expect(childClaim.runId).toBe(created.run.id);
@@ -123,7 +123,7 @@ describe('facts that specs/tla/RunRecovery.tla relies on', () => {
     const session = newSession(h.store);
     const parent = enqueue(h.store, session.id);
     const parentClaim = mustClaim(h.store, 'w-parent');
-    const created = h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'c1', input: 'task', pins: {} });
+    const created = h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'c1', input: 'task', pins: {}, modelAlias: 'fm' });
     if (created.kind !== 'created') throw new Error(`expected a child run, got ${created.kind}`);
     h.store.release(parentClaim, 'WAITING_TOOL', DEADLINE_MS, { awaits: { runIds: [created.run.id], jobIds: [] } });
     expect(mustRun(h.store, parent.id).status).toBe('WAITING_TOOL');

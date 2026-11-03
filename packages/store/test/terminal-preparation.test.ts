@@ -50,7 +50,7 @@ const outsideTheTransaction = (measurements: readonly Measurement[], runIds: rea
 const contributionsOf = (store: RuntimeStore, runId: string): number => store.readRunEvents(runId, 0, 1000).filter((event) => event.type === 'context.contribution').length;
 
 const spawn = (store: RuntimeStore, parentRunId: string, callId: string): Run => {
-  const created = store.createChildRun({ parentRunId, parentCallId: callId, input: 'Child', pins: {} });
+  const created = store.createChildRun({ parentRunId, parentCallId: callId, input: 'Child', pins: {}, modelAlias: 'fm' });
   if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
   return created.run;
 };

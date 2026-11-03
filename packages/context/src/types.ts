@@ -75,6 +75,7 @@ export type MeterCount = {
   inputTokens: number;
   inputDigest: string;
   errorBound: number;
+  estimatedTokens: number;
 };
 
 export type UsageObservation = {

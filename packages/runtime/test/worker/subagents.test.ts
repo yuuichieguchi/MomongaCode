@@ -73,6 +73,27 @@ describe('worker subagents', () => {
     expect(env.gateway.streams).toHaveLength(3);
   });
 
+  it('starts the child on the alias the parent pinned when the session alias is switched while the parent runs', async () => {
+    const env = await makeEnv();
+    writeAgent(env, 'reviewer');
+    const parent = env.enqueue('Write then review');
+    env.gateway.script.push(
+      callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: path.join(env.project, 'out.txt'), content: 'x' } }]),
+      delegate('call-a'),
+    );
+    await env.runOnce(env.worker('w1', { agents: agentsPortOf(env, ['fm', 'other-model']) }));
+    expect(env.run(parent.id).status).toBe('WAITING_HUMAN');
+
+    env.store.setModelAlias(env.session.id, 'other-model');
+    env.resolveApproval(parent.id, 'allow_once');
+    await env.runOnce(env.worker('w2', { agents: agentsPortOf(env, ['fm', 'other-model']) }));
+
+    const [child] = env.store.listChildRuns(parent.id);
+    if (child === undefined) throw new Error('the parent did not create a child run');
+    expect(env.store.getSession(env.session.id)?.modelAlias).toBe('other-model');
+    expect(env.store.getSession(child.sessionId)?.modelAlias).toBe('fm');
+  });
+
   it('runs the child of a plan-mode parent in plan mode, so a Write it attempts is denied and nothing is written', async () => {
     const env = await makeEnv({ mode: 'plan' });
     writeAgent(env, 'writer', 'tools: Write\n', 'You write files.');

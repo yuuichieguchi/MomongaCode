@@ -1,8 +1,11 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { GUIDELINE_TEXT_PATTERN } from '@momonga/protocol';
+import { GATE_CHECKS } from './context-compare.ts';
 import type { ContextComparison } from './context-compare.ts';
+import { CONTEXT_MODELS } from './context-report.ts';
 import type { ContextModel } from './context-report.ts';
+import { IMPROVE_STATUSES } from './context-improve.ts';
 import type { ImproveOutcome, ImproveStatus, SkippedScenario } from './context-improve.ts';
 import { describeFirstError } from './dataset.ts';
 import { EvalError } from './runner.ts';
@@ -92,6 +95,68 @@ const nullableVersion = { anyOf: [{ type: 'integer', minimum: 1 }, { type: 'null
 
 const nullableString = { anyOf: [{ type: 'string' }, { type: 'null' }] } as const;
 
+const count = { type: 'integer', minimum: 0 } as const;
+
+const tokens = {
+  type: 'object',
+  properties: { benchmark: { type: 'number', minimum: 0 }, charged: { type: 'number', minimum: 0 } },
+  required: ['benchmark', 'charged'],
+  additionalProperties: false,
+} as const;
+
+const gate = {
+  type: 'object',
+  properties: {
+    passed: { type: 'boolean' },
+    checks: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { name: { enum: [...GATE_CHECKS] }, passed: { type: 'boolean' }, detail: { type: 'string' } },
+        required: ['name', 'passed', 'detail'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['passed', 'checks'],
+  additionalProperties: false,
+} as const;
+
+const modelKind = { enum: [...CONTEXT_MODELS] } as const;
+
+const stringList = { type: 'array', items: { type: 'string' } } as const;
+
+const REPORT_SCHEMA = {
+  type: 'object',
+  properties: {
+    source: { const: 'context improve' },
+    dataset: { type: 'string' },
+    model: modelKind,
+    alias: { type: 'string' },
+    seed: { type: 'integer' },
+    candidateIndex: count,
+    contrastive: stringList,
+    baseline: {
+      type: 'object',
+      properties: { contrastiveFailures: count, compactedScenarios: count, tokens: { type: 'number', minimum: 0 } },
+      required: ['contrastiveFailures', 'compactedScenarios', 'tokens'],
+      additionalProperties: false,
+    },
+    contrastiveFailures: count,
+    gate,
+    tokens,
+  },
+  required: ['source', 'dataset', 'model', 'alias', 'seed', 'candidateIndex', 'contrastive', 'baseline', 'contrastiveFailures', 'gate', 'tokens'],
+  additionalProperties: false,
+} as const;
+
+const CANDIDATE_SCHEMA = {
+  type: 'object',
+  properties: { index: count, text: { type: 'string' }, skipped: { type: 'string' }, contrastiveFailures: count, gate },
+  required: ['index'],
+  additionalProperties: false,
+} as const;
+
 const OUTCOME_FILE_SCHEMA = {
   type: 'object',
   properties: {
@@ -100,10 +165,25 @@ const OUTCOME_FILE_SCHEMA = {
       type: 'object',
       properties: {
         format: { const: GUIDELINE_OUTCOME_FORMAT },
-        dataset: { type: 'object', properties: { name: { type: 'string' }, digest: { type: 'string', pattern: HEX_DIGEST } }, required: ['name', 'digest'] },
+        status: { enum: [...IMPROVE_STATUSES] },
+        model: modelKind,
+        alias: { type: 'string' },
+        seed: { type: 'integer' },
+        candidateCount: count,
+        dataset: {
+          type: 'object',
+          properties: { name: { type: 'string' }, digest: { type: 'string', pattern: HEX_DIGEST } },
+          required: ['name', 'digest'],
+          additionalProperties: false,
+        },
         parent: nullableVersion,
         parentText: nullableString,
-        candidates: { type: 'array', items: { type: 'object' } },
+        contrastive: stringList,
+        skipped: {
+          type: 'array',
+          items: { type: 'object', properties: { scenario: { type: 'string' }, reason: { type: 'string' } }, required: ['scenario', 'reason'], additionalProperties: false },
+        },
+        candidates: { type: 'array', items: CANDIDATE_SCHEMA },
         winner: {
           type: 'object',
           properties: {
@@ -113,13 +193,17 @@ const OUTCOME_FILE_SCHEMA = {
             contrastiveFailures: { type: 'integer', minimum: 0 },
           },
           required: ['index', 'text', 'parent', 'contrastiveFailures'],
+          additionalProperties: false,
         },
-        report: { type: 'object' },
+        report: REPORT_SCHEMA,
+        tokens,
       },
-      required: ['format', 'dataset', 'parent', 'parentText', 'candidates'],
+      required: ['format', 'status', 'model', 'alias', 'seed', 'candidateCount', 'dataset', 'parent', 'parentText', 'contrastive', 'skipped', 'candidates', 'tokens'],
+      additionalProperties: false,
     },
   },
   required: ['digest', 'outcome'],
+  additionalProperties: false,
 } as const;
 
 const ajv = new Ajv2020.default({ strict: true });

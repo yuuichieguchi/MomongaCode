@@ -5,7 +5,7 @@ const spawnChild = async (env: Awaited<ReturnType<typeof startService>>) => {
   const session = await env.createSession();
   const run = await env.createRun(session.id);
   env.claimRun(run.id);
-  const created = env.store.createChildRun({ parentRunId: run.id, parentCallId: 'call-1', input: 'child task', pins: { agent: { name: 'helper', description: 'd', prompt: 'p' } } });
+  const created = env.store.createChildRun({ parentRunId: run.id, parentCallId: 'call-1', input: 'child task', pins: { agent: { name: 'helper', description: 'd', prompt: 'p' } }, modelAlias: 'fm' });
   if (created.kind !== 'created') throw new Error('expected a child');
   return { session, run, child: created.run, childSession: created.session };
 };

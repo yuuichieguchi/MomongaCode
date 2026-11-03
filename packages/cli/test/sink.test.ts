@@ -114,6 +114,43 @@ describe('hooks, auto mode and denials', () => {
   });
 });
 
+describe('text a person did not write', () => {
+  const HOSTILE = 'x\u001b]0;pwn\u0007\u009b2J‮y';
+  const ESCAPED = 'x\\u001b]0;pwn\\u0007\\u009b2J\\u202ey';
+  const UNSAFE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f‪-‮]/u;
+
+  it('is escaped in the assistant text on stdout, keeping its line breaks', () => {
+    const { sink, out } = sinkFor('text');
+    sink.handle(delta('a', `first\n${HOSTILE}`));
+    expect(out.join('')).toBe(`first\n${ESCAPED}`);
+  });
+
+  it('stays as recorded in the JSON formats', () => {
+    const { sink, out } = sinkFor('stream-json');
+    const hostile = delta('a', HOSTILE);
+    sink.handle(hostile);
+    expect(out).toEqual([`${JSON.stringify(hostile.data)}\n`]);
+    expect(sink.finalText()).toBe(HOSTILE);
+  });
+
+  it('is escaped in the notes on stderr: a notice, a tool title, an approval title and a hook message', () => {
+    const { sink, err } = sinkFor('text');
+    sink.handle(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p', name: 'Bash', kind: 'execute', title: HOSTILE, rawInput: {} }));
+    sink.handle(frame({ type: 'tool.completed', callId: 'c1', status: 'failed', output: 'no' }));
+    sink.handle(frame({ type: 'notice', level: 'warning', message: HOSTILE }));
+    sink.handle(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }] }));
+    sink.handle(frame({ type: 'hook.completed', hookEvent: 'PreToolUse', command: 'check.sh', outcome: 'blocked', exitCode: 2, decision: 'deny', message: HOSTILE, callId: 'c1', durationMs: 3 }));
+    expect(err.join('')).not.toMatch(UNSAFE);
+    expect(err.join('').split(ESCAPED).length - 1).toBe(4);
+  });
+
+  it('is escaped in the reason a run ended with', () => {
+    const printed = describeEnd(runView({ status: 'FAILED', error: { code: 'model_error', message: HOSTILE } }));
+    expect(printed).not.toMatch(UNSAFE);
+    expect(printed).toContain(ESCAPED);
+  });
+});
+
 describe('json formats', () => {
   it('prints nothing while the run goes on for json, so stdout holds only the result', () => {
     const { sink, out } = sinkFor('json');

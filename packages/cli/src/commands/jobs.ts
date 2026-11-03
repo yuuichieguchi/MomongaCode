@@ -1,4 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
+import { escapeTerminalLine } from '@momonga/protocol';
 import type { JobView } from '@momonga/protocol';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
@@ -11,7 +12,7 @@ const endOf = (job: JobView): string => {
   return job.exitCode === undefined ? '' : `  exit ${job.exitCode}`;
 };
 
-const jobLine = (job: JobView): string => `${job.id}  ${job.status}${endOf(job)}  run ${job.runId}  ${job.command}`;
+export const jobLine = (job: JobView): string => `${job.id}  ${job.status}${endOf(job)}  run ${job.runId}  ${escapeTerminalLine(job.command)}`;
 
 export const listJobs = async (ports: CliPorts, paths: MomongaPaths, sessionId: string | undefined, json: boolean): Promise<number> => {
   await ensureDaemon(ports, paths);

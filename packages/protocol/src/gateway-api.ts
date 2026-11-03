@@ -9,6 +9,7 @@ export type CountTokensMethod = 'exact' | 'calibrated' | 'estimated';
 
 export type CountTokensMomongaExtension = {
   lenient_items?: { call_names: Record<string, string>; with_tools: boolean };
+  target?: string;
 };
 
 export type CountTokensRequest = {

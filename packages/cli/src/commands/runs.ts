@@ -1,4 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
+import { escapeTerminalLine } from '@momonga/protocol';
 import type { PermissionOption } from '@momonga/protocol';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
@@ -41,11 +42,13 @@ export const cancelRun = async (ports: CliPorts, paths: MomongaPaths, runId: str
   }
 };
 
-const pendingLines = (approvalId: string, title: string, options: readonly PermissionOption[], agent?: string): string =>
+export const pendingLines = (approvalId: string, title: string, options: readonly PermissionOption[], agent?: string): string =>
   [
-    `${approvalId}  ${title}${agent === undefined ? '' : `  (subagent ${agent})`}`,
-    ...options.map((option) => `    ${option.kind}${option.name === option.kind ? '' : `  (${option.name})`}`),
+    `${approvalId}  ${escapeTerminalLine(title)}${agent === undefined ? '' : `  (subagent ${escapeTerminalLine(agent)})`}`,
+    ...options.map((option) => `    ${option.kind}${option.name === option.kind ? '' : `  (${escapeTerminalLine(option.name)})`}`),
   ].join('\n');
+
+export const approvalLine = (depth: number, approvalId: string, title: string): string => `${'  '.repeat(depth)}approval ${approvalId}  ${escapeTerminalLine(title)}`;
 
 export const approve = async (ports: CliPorts, paths: MomongaPaths, approvalId: string | undefined, option: string | undefined): Promise<number> => {
   await ensureDaemon(ports, paths);
@@ -84,7 +87,7 @@ export const approve = async (ports: CliPorts, paths: MomongaPaths, approvalId: 
 };
 
 const runLine = ({ run, depth }: { run: RunView; depth: number }): string =>
-  `${'  '.repeat(depth)}${run.id}  ${run.status}${run.agent === undefined ? '' : `  (subagent ${run.agent})`}`;
+  `${'  '.repeat(depth)}${run.id}  ${run.status}${run.agent === undefined ? '' : `  (subagent ${escapeTerminalLine(run.agent)})`}`;
 
 export const showStatus = async (ports: CliPorts, paths: MomongaPaths, runId: string | undefined, json: boolean): Promise<number> => {
   await ensureDaemon(ports, paths);
@@ -100,7 +103,7 @@ export const showStatus = async (ports: CliPorts, paths: MomongaPaths, runId: st
     }
     ports.stdout.write(
       `${pending
-        .flatMap((node) => [runLine(node), ...node.approvals.map((approval) => `${'  '.repeat(node.depth + 1)}approval ${approval.id}  ${approval.toolCall.title}`)])
+        .flatMap((node) => [runLine(node), ...node.approvals.map((approval) => approvalLine(node.depth + 1, approval.id, approval.toolCall.title))])
         .join('\n')}\n`,
     );
     return 0;

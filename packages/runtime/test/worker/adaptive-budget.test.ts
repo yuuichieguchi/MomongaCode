@@ -127,7 +127,7 @@ describe('adaptive memory budget at run start', () => {
     env.clock.advance(1);
     const parent = createdRun(env.store.createRunAndEnqueue(env.session.id, { input: 'Parent', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
     const parentClaim = env.seed(parent.id, pastEvents({ injected: 1, used: 0 }, env.clock.now()), 'hold');
-    const created = env.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {} });
+    const created = env.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, modelAlias: 'fm' });
     if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
     const childClaim = env.seed(created.run.id, pastEvents({ injected: 10, used: 10 }, env.clock.now()), 'hold');
     expect(env.store.transition(childClaim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
@@ -210,7 +210,7 @@ describe('a pinned share', () => {
     finishPasts(env, 20, { injected: 1, used: 0 });
     const parent = createdRun(env.store.createRunAndEnqueue(env.session.id, { input: 'Parent', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
     const claim = env.seed(parent.id, pastEvents({ injected: 0, used: 0, share: 1 / 8 }, env.clock.now()), 'hold');
-    const created = env.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {} });
+    const created = env.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, modelAlias: 'fm' });
     if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
     expect(env.store.releaseLease(claim, { availableAt: env.clock.now() + 3_600_000 }).kind).toBe('ok');
     env.settings.contextValue = { adaptiveBudget: false, autoCompact: true };

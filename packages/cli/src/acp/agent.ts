@@ -3,6 +3,7 @@ import type { AgentApp, AgentConnection, RequestPermissionRequest, SessionConfig
 import type { ElicitationAnswerRecord } from '@momonga/protocol';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import { RunApiError } from '../client/runtime-client.ts';
+import { describeFailure } from '../failure.ts';
 import type { RunView, SessionView } from '../client/views.ts';
 import { availableCommandsOf } from './commands.ts';
 import { elicitationAnswerOf, elicitationRequestOf } from './elicitation.ts';
@@ -65,6 +66,8 @@ type BridgeSession = {
 
 const REQUEST_CANCELLED = -32800;
 
+type ModelListing = { kind: 'listed'; aliases: readonly string[] } | { kind: 'unreadable'; reason: string };
+
 const asRequestError = (error: unknown): unknown => {
   if (error instanceof RunApiError && error.status >= 400 && error.status < 500) {
     return RequestError.invalidParams({ status: error.status, ...(error.code === undefined ? {} : { code: error.code }) }, error.message);
@@ -123,7 +126,21 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
     session.contextWindow = undefined;
   };
 
-  const configOptionsOf = async (session: BridgeSession): Promise<SessionConfigOption[]> => [modelOptionOf(await deps.modelAliases(), session.modelAlias)];
+  const listModels = async (): Promise<ModelListing> => {
+    try {
+      return { kind: 'listed', aliases: await deps.modelAliases() };
+    } catch (error) {
+      return { kind: 'unreadable', reason: describeFailure(error) };
+    }
+  };
+
+  const configOptionsOf = (listing: ModelListing, session: BridgeSession): SessionConfigOption[] =>
+    listing.kind === 'listed' ? [modelOptionOf(listing.aliases, session.modelAlias)] : [];
+
+  const unreadableNoticeOf = (session: BridgeSession, listing: ModelListing): SessionUpdate[] =>
+    listing.kind === 'listed'
+      ? []
+      : [noticeUpdate(clientFeatures(), `${session.id}/model-list`, 'warning', `the model option is not offered because the model list could not be read: ${listing.reason}`)];
 
   const durably = <T>(session: BridgeSession, operation: () => Promise<T>): Promise<T> => deps.retryAfterRestore(operation, session.lifetime.signal);
 
@@ -204,7 +221,9 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
       case 'model':
         session.queue.enqueue(async () => {
           applyModel(session, effect.modelAlias);
-          await peer().notify('session/update', { sessionId: session.id, update: { sessionUpdate: 'config_option_update', configOptions: await configOptionsOf(session) } });
+          const listing = await listModels();
+          await peer().notify('session/update', { sessionId: session.id, update: { sessionUpdate: 'config_option_update', configOptions: configOptionsOf(listing, session) } });
+          for (const update of unreadableNoticeOf(session, listing)) await peer().notify('session/update', { sessionId: session.id, update });
         });
         return;
       case 'permission':
@@ -295,15 +314,16 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
     return session;
   };
 
-  const announceCommands = async (session: BridgeSession): Promise<void> => {
+  const announceCommands = async (session: BridgeSession, listing: ModelListing): Promise<void> => {
     const { skills } = await durably(session, () => deps.runtime.skills(session.id));
     session.skillNames = skills.map((skill) => skill.name);
     send(session, { sessionUpdate: 'available_commands_update', availableCommands: availableCommandsOf(skills) });
+    for (const update of unreadableNoticeOf(session, listing)) send(session, update);
     await session.queue.settled();
   };
 
-  const announceAfterResponse = (session: BridgeSession): void => {
-    session.tasks.run(() => announceCommands(session));
+  const announceAfterResponse = (session: BridgeSession, listing: ModelListing): void => {
+    session.tasks.run(() => announceCommands(session, listing));
   };
 
   const cancelTurnOf = async (session: BridgeSession, turn: Turn): Promise<void> => {
@@ -342,9 +362,10 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
     const mcpServers = mcpServersOf(params.mcpServers);
     await deps.daemonReady();
     const created = await viaRunApi(deps.runtime.createSession({ cwd: params.cwd, env: await deps.environment(), mcpServers }));
+    const listing = await listModels();
     const session = register(created.session, await deps.autoModeAvailable());
-    announceAfterResponse(session);
-    return { sessionId: session.id, modes: modeStateOf({ ...session, permissionMode: created.session.permissionMode }), configOptions: await configOptionsOf(session) };
+    announceAfterResponse(session, listing);
+    return { sessionId: session.id, modes: modeStateOf({ ...session, permissionMode: created.session.permissionMode }), configOptions: configOptionsOf(listing, session) };
   });
 
   app.onRequest('session/load', async ({ params }) => {
@@ -359,6 +380,7 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
       throw RequestError.invalidParams({ cwd: params.cwd, sessionCwd: existing.cwd }, `session ${existing.id} belongs to ${existing.cwd}, not ${params.cwd}`);
     }
     const view = await viaRunApi(deps.runtime.setMcpServers(existing.id, mcpServers));
+    const listing = await listModels();
     const session = register(view, await deps.autoModeAvailable());
     try {
       for (const run of await deps.runtime.listRuns(view.id)) await replayRun(session, run);
@@ -368,8 +390,8 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
       session.lifetime.abort(error);
       throw error;
     }
-    announceAfterResponse(session);
-    return { modes: modeStateOf({ ...session, permissionMode: view.permissionMode }), configOptions: await configOptionsOf(session) };
+    announceAfterResponse(session, listing);
+    return { modes: modeStateOf({ ...session, permissionMode: view.permissionMode }), configOptions: configOptionsOf(listing, session) };
   });
 
   app.onRequest('session/set_mode', async ({ params }) => {

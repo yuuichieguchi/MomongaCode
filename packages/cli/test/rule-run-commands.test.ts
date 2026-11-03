@@ -137,6 +137,14 @@ describe('momonga rule', () => {
     expect(JSON.parse(seen[0]?.body ?? '')).toMatchObject({ scope: { level: 'user' }, validUntil: 86_400_000, enforcement: null });
   });
 
+  it('lists the rules with the control characters of their text and target escaped', async (context) => {
+    const hostile = 'x\u001b]0;pwn\u0007\u009b2J‮y';
+    const { paths, ports, out } = await setup(context, () => ({ status: 200, body: { facts: [fact('g1', { text: hostile, target: hostile })] } }));
+    await ruleList(ports, paths, false);
+    expect(out.join('')).not.toMatch(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f‪-‮]/u);
+    expect(out.join('').split('x\\u001b]0;pwn\\u0007\\u009b2J\\u202ey').length - 1).toBe(2);
+  });
+
   it('lists the rules of this folder, enforced or text-only', async (context) => {
     const { paths, ports, project, seen, out } = await setup(context, () => ({
       status: 200,

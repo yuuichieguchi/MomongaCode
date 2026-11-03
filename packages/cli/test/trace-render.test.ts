@@ -52,6 +52,17 @@ describe('renderTrace', () => {
     expect(text).toContain('chat m  10 ms  OK  target secondary, attempt 1, answered after primary failed (upstream_error: primary is down)');
   });
 
+  it('escapes the control characters of a span name and of a failure message', () => {
+    const hostile = 'x\u001b]0;pwn\u0007\u009b2J‮y';
+    const text = renderTrace(
+      view([span({ spanId: 'a', name: `execute_tool ${hostile}`, status: 'ERROR', attributes: { 'momonga.target': 'primary', 'momonga.failure_message': hostile } })]),
+      usage,
+    );
+
+    expect(text).not.toMatch(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f‪-‮]/u);
+    expect(text.split('x\\u001b]0;pwn\\u0007\\u009b2J\\u202ey').length - 1).toBe(2);
+  });
+
   it('leaves a call answered by the first target without a fallback note', () => {
     const text = renderTrace(view([span({ spanId: 'a', name: 'chat m', attributes: { 'momonga.target': 'primary', 'momonga.attempt': 1 } })]), usage);
 

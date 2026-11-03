@@ -274,7 +274,11 @@ const validateCompactMomonga = (value: unknown): void => {
 const validateCountMomonga = (value: unknown): void => {
   const momonga = momongaRecord(value);
   if (momonga === undefined) return;
-  requireKnownKeys(momonga, ['lenient_items'], ['momonga']);
+  requireKnownKeys(momonga, ['lenient_items', 'target'], ['momonga']);
+  const target = momonga['target'];
+  if (target !== undefined && (typeof target !== 'string' || target === '')) {
+    throwIssue({ segments: ['momonga', 'target'], message: 'must be a non-empty string naming a target of the alias' });
+  }
   const lenient = momonga['lenient_items'];
   if (lenient === undefined) return;
   const at = ['momonga', 'lenient_items'];

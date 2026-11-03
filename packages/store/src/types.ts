@@ -624,7 +624,7 @@ export type ChildRunInput = {
   parentCallId: string;
   input: string;
   pins: Record<string, unknown>;
-  modelAlias?: string;
+  modelAlias: string;
 };
 
 export type CreateChildRunResult =

@@ -320,6 +320,48 @@ describe('lenient lone-item counts', () => {
   });
 });
 
+describe('counting for a named target of the alias', () => {
+  const counterAdapter = (fake: FakeChatCompletionsServer, inputTokens: number) =>
+    makeAdapter(fake, {
+      toolCalling: () => 'constrained',
+      capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: 'constrained', tokenCounting: 'calibrated' }),
+      countTokens: async (): Promise<CountTokensResult> => ({ input_tokens: inputTokens, method: 'calibrated', error_bound: 3 }),
+    });
+
+  const twoTargets = async (): Promise<Harness> => {
+    const firstFake = await startFake({ scenario: 'json-schema-only' });
+    const secondFake = await startFake({ scenario: 'json-schema-only' });
+    return startCcGateway({ first: counterAdapter(firstFake, 777), second: counterAdapter(secondFake, 55) });
+  };
+
+  it('counts for the first target of the alias when no target is named', async () => {
+    const harness = await twoTargets();
+    const counted = await count(harness, { input: [userText('count these words')] });
+    expect(counted.body).toEqual({ input_tokens: 777, method: 'calibrated', error_bound: 3 });
+  });
+
+  it('counts for the target the request names', async () => {
+    const harness = await twoTargets();
+    const counted = await count(harness, { input: [userText('count these words')], momonga: { target: 'second' } });
+    expect(counted.body).toEqual({ input_tokens: 55, method: 'calibrated', error_bound: 3 });
+  });
+
+  it('refuses a target that is not one of the alias, as 400 invalid_request on momonga.target', async () => {
+    const harness = await twoTargets();
+    const counted = await count(harness, { input: [userText('x')], momonga: { target: 'elsewhere' } });
+    expect(counted.status).toBe(400);
+    expect(counted.body.error.type).toBe('invalid_request');
+    expect(counted.body.error.param).toBe('momonga.target');
+  });
+
+  it.for([['an empty target', ''], ['a non-string target', 3]] as const)('rejects %s as 400 invalid_request', async ([, target]) => {
+    const harness = await twoTargets();
+    const counted = await count(harness, { input: [userText('x')], momonga: { target } });
+    expect(counted.status).toBe(400);
+    expect(String(counted.body.error.param)).toMatch(/^momonga/);
+  });
+});
+
 describe('a target with its own counter', () => {
   it('receives the text parts of the wire, not the Responses-form JSON', async () => {
     const fake = await startFake({ scenario: 'json-schema-only' });

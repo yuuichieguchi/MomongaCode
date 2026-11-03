@@ -2,6 +2,7 @@ import { agentSystemPrompt, readAgentPin } from '@momonga/agents';
 import { permissionRulesComposerFor } from '../governance/rules.ts';
 import { signalUntil } from '../memory/deadline-signal.ts';
 import { createTokenMeter } from '@momonga/context';
+import type { TokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex } from '@momonga/foundation';
 import { isFatalStoreError } from '@momonga/store';
 import type { Claim } from '@momonga/store';
@@ -21,6 +22,7 @@ import { readRunLimits } from './limits.ts';
 import { decideAfterResponse, responsePending, resumeInFlight, runModelStep } from './model-step.ts';
 import { guidelineOf, guidelineVersionFor } from './guideline-pin.ts';
 import { memoryShareFor } from './memory-share.ts';
+import { aliasChainReaches } from './model-switch.ts';
 import { readPins } from './pins.ts';
 import type { RunPins } from './pins.ts';
 import { createSkillAdmission } from './skill-admission.ts';
@@ -308,6 +310,12 @@ const drive = async (
   }
 
   if (recorded !== undefined) {
+    if (!aliasChainReaches(options.store, { runId: run.id, sessionId: session.id, pinned: pins.modelAlias, current: session.modelAlias })) {
+      terminals.finish('FAILED', {
+        error: { code: 'pins_mismatch', message: 'the model alias changed without a recorded model switch since this run started, so it cannot be resumed' },
+      });
+      return;
+    }
     if (pins.systemPromptDigest !== systemPromptDigest) {
       terminals.finish('FAILED', {
         error: { code: 'pins_mismatch', message: 'the system prompt changed since this run started, so it cannot be resumed' },
@@ -323,6 +331,7 @@ const drive = async (
   const limits = readRunLimits(run.limits, options.defaults);
   const composeRules = await permissionRulesComposerFor(options, session);
   let measuredInlineLimit: Promise<number> | undefined;
+  const targetMeters = new Map<string, TokenMeter>();
   const ctx: ClaimContext = {
     options,
     claim,
@@ -349,6 +358,17 @@ const drive = async (
     terminals,
     agentSpan,
     meter: createTokenMeter({ counter: { count: (request) => control.recordingRaised(gateway.countTokens(request, { signal: control.signal })) }, model: pins.modelAlias, capabilities: pins.capabilities }),
+    meterOfTarget: (target) => {
+      const known = targetMeters.get(target);
+      if (known !== undefined) return known;
+      const created = createTokenMeter({
+        counter: { count: (request) => control.recordingRaised(gateway.countTokens({ ...request, momonga: { ...request.momonga, target } }, { signal: control.signal })) },
+        model: pins.modelAlias,
+        capabilities: pins.capabilities,
+      });
+      targetMeters.set(target, created);
+      return created;
+    },
     pinnedDigest: { value: undefined },
     memory,
     verificationCommands: (await options.settings.verification(session)).commands,

@@ -20,7 +20,7 @@ import type { Claim, RuntimeStore, Session } from '@momonga/store';
 import { FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
-import type { ToolSessionState } from '@momonga/tools';
+import type { AnyTool, ToolSessionState } from '@momonga/tools';
 import { within } from '../worker/deferred.ts';
 import { createFakeGateway } from '../worker/fake-gateway.ts';
 import type { FakeGateway } from '../worker/fake-gateway.ts';
@@ -709,14 +709,15 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
     await within(Promise.allSettled(pendingRuns), 10_000, 'worker runs to settle');
     await within(Promise.allSettled(workers.map((worker) => worker.stop())), 10_000, 'workers to stop');
   });
-  const snapshotToolbox = async () => {
+  const snapshotToolbox = async (additionalTools: readonly AnyTool[] = [], only?: readonly string[]) => {
     const registry = createToolRegistry();
-    for (const tool of toolbox.tools()) registry.register(tool);
-    return registry.snapshot();
+    for (const tool of [...toolbox.tools(), ...additionalTools]) registry.register(tool);
+    return registry.snapshot(only === undefined ? {} : { only });
   };
   const tools: ToolRuntimePort = {
     envFor: (target: Session) => ({ ...target.env }),
-    toolSet: async () => snapshotToolbox(),
+    toolSet: async (_runId: string, toolSetOptions: { additionalTools?: readonly AnyTool[]; only?: readonly string[] }) =>
+      snapshotToolbox(toolSetOptions.additionalTools, toolSetOptions.only),
     recoveryToolSet: async () => snapshotToolbox(),
     executor,
     sandbox: fakeSandbox,

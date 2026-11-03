@@ -51,10 +51,37 @@ describe('worker pins across attempts', () => {
     expect(env.gateway.streams).toHaveLength(1);
   });
 
-  it('keeps the alias the run pinned when the session alias changes before a later attempt', async () => {
+  it('fails with pins_mismatch when the session alias changed without a model.changed event', async () => {
     const env = await makeEnv();
     const run = await waitForApproval(env);
     env.setModelAlias('other-model');
+    env.gateway.script.push(textStep('Written.'));
+
+    await env.runOnce(env.worker('worker-2'));
+
+    const failed = env.run(run.id);
+    expect(failed.status).toBe('FAILED');
+    expect(failed.error?.code).toBe('pins_mismatch');
+    expect(env.gateway.streams).toHaveLength(1);
+  });
+
+  it('fails with pins_mismatch when the recorded model.changed events do not lead from the pinned alias to the session alias', async () => {
+    const env = await makeEnv();
+    const run = await waitForApproval(env);
+    env.store.setModelAlias(env.session.id, 'other-model');
+    env.setModelAlias('third-model');
+    env.gateway.script.push(textStep('Written.'));
+
+    await env.runOnce(env.worker('worker-2'));
+
+    expect(env.run(run.id).error?.code).toBe('pins_mismatch');
+  });
+
+  it('keeps the pinned alias when the switch is recorded by a model.changed event and the chain ends at the session alias', async () => {
+    const env = await makeEnv();
+    const run = await waitForApproval(env);
+    env.store.setModelAlias(env.session.id, 'other-model');
+    env.store.setModelAlias(env.session.id, 'third-model');
     env.gateway.script.push(textStep('Written.'));
 
     await env.runOnce(env.worker('worker-2'));
