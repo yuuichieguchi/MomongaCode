@@ -302,6 +302,7 @@ describe('run event payloads', () => {
       type: 'notice';
       level: 'info' | 'warning' | 'error';
       message: string;
+      code?: string;
     }>();
   });
 
@@ -310,6 +311,7 @@ describe('run event payloads', () => {
       type: 'notice';
       level: 'info' | 'warning' | 'error';
       message: string;
+      code?: string;
       id: number;
       runId: string;
       sessionId: string;

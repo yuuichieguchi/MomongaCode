@@ -294,6 +294,7 @@ export type MemoryStore = {
   retire(id: string): { retired: boolean; memory: MemoryRecord } | undefined;
   history(id: string): MemoryRecord[];
   markUsed(ids: readonly string[]): void;
+  stampContributed(ids: readonly string[]): void;
   delete(id: string): boolean;
 };
 
@@ -393,6 +394,8 @@ export type RuntimeStore = {
     patch?: StatusPatch,
   ): ServiceMutationResult;
   readRunEvents(runId: string, afterSeq: number, limit: number): RunEvent[];
+  readRunEventsOfTypes(runId: string, types: readonly RunEventPayload['type'][]): RunEvent[];
+  lastTerminalRootRuns(project: string, limit: number): Run[];
   readSessionEvents(sessionId: string, afterId: number, limit: number): (RunEvent | SessionEvent)[];
   sessionMaxEventId(sessionId: string): number;
   load(runId: string): LoadedRun;
@@ -444,6 +447,19 @@ export type RuntimeStoreOptions = {
   maxAttempts: number;
   maxTotalAttempts: number;
   onCommit?: (touched: { runId?: string; sessionId: string }[]) => void;
+  contribution?: TerminalContribution;
+};
+
+export type ContributionPayload = Extract<RunEventPayload, { type: 'context.contribution' }>;
+
+export type TerminalContribution = {
+  eventTypes: readonly RunEventPayload['type'][];
+  measure(input: {
+    run: Run;
+    events: readonly RunEvent[];
+    memories: Pick<MemoryStore, 'get'>;
+    governing: Pick<GoverningFactStore, 'get'>;
+  }): ContributionPayload | undefined;
 };
 
 export type Job = {

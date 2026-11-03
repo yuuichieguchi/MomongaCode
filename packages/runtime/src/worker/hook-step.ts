@@ -61,7 +61,7 @@ const alreadyRan = (ctx: ClaimContext, event: HookExecution['hookEvent']): boole
 
 export const haltRun = (ctx: ClaimContext, event: string, reason: string | undefined): Flow => {
   const message = reason === undefined || reason === '' ? `a ${event} hook stopped the run` : reason;
-  ctx.journal.append([{ type: 'notice', level: 'warning', message: `Stopped by a ${event} hook: ${message}` }]);
+  ctx.journal.append([{ type: 'notice', level: 'warning', message: `Stopped by a ${event} hook: ${message}`, code: 'hook_stopped' }]);
   return ctx.terminals.finish('FAILED', { error: { code: HOOK_STOPPED_CODE, message } });
 };
 
@@ -108,7 +108,7 @@ export const runStopHooks = async (ctx: ClaimContext): Promise<'continue' | 'all
   const continuations = ctx.journal.countWhere((recorded) => recorded.type === 'user.message' && recorded.text.startsWith(STOP_HOOK_FEEDBACK_PREFIX));
   if (continuations >= STOP_HOOK_MAX_CONTINUATIONS) {
     ctx.journal.append([
-      { type: 'notice', level: 'warning', message: `Stop hooks asked the agent to continue ${STOP_HOOK_MAX_CONTINUATIONS} times; the run stops now.` },
+      { type: 'notice', level: 'warning', message: `Stop hooks asked the agent to continue ${STOP_HOOK_MAX_CONTINUATIONS} times; the run stops now.`, code: 'stop_hook_continuations_exhausted' },
     ]);
     return 'allow';
   }
@@ -117,7 +117,7 @@ export const runStopHooks = async (ctx: ClaimContext): Promise<'continue' | 'all
   if (result.halt !== undefined) {
     ctx.journal.append([
       ...lifecycle.executions.map(hookCompleted),
-      { type: 'notice', level: 'info', message: `A Stop hook ended the run: ${result.halt.reason ?? 'no reason given'}` },
+      { type: 'notice', level: 'info', message: `A Stop hook ended the run: ${result.halt.reason ?? 'no reason given'}`, code: 'stop_hook_ended_run' },
     ]);
     return 'allow';
   }

@@ -128,7 +128,7 @@ const persistRule = async (
   await options.settings.appendRule(session, { effect, rule });
   const persisted: RunEventPayload = { type: 'approval.rule.persisted', approvalId, effect, rule };
   journal.append(
-    effect === 'allow' ? [persisted, { type: 'notice', level: 'info', message: `Saved the allow rule ${rule} to the local settings.` }] : [persisted],
+    effect === 'allow' ? [persisted, { type: 'notice', level: 'info', message: `Saved the allow rule ${rule} to the local settings.`, code: 'allow_rule_saved' }] : [persisted],
   );
 };
 

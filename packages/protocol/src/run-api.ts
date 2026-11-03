@@ -367,7 +367,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
     required: ['approvalId', 'effect', 'rule'],
   },
   notice: {
-    properties: { level: enumOf(['info', 'warning', 'error']), message: string },
+    properties: { level: enumOf(['info', 'warning', 'error']), message: string, code: string },
     required: ['level', 'message'],
   },
 };

@@ -118,6 +118,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
     );
   };
   const touch = db.prepare('UPDATE memories SET last_used_at = :now WHERE id = :id');
+  const stamp = db.prepare('UPDATE memories SET contributed_at = :now WHERE id = :id AND contributed_at IS NULL');
   const remove = db.prepare('DELETE FROM memories WHERE id = :id');
 
   const requireSource = (input: SaveMemoryInput): { seq: number; sessionId: string } => {
@@ -246,6 +247,10 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
       immediateTx(db, () => {
         for (const id of ids) touch.run({ id, now });
       });
+    },
+    stampContributed: (ids) => {
+      const now = clock.now();
+      for (const id of ids) stamp.run({ id, now });
     },
     delete: (id) => Number(remove.run({ id }).changes) === 1,
   };

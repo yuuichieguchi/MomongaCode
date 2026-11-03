@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
 import { TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
-import type { ElicitationAnswerRecord, ElicitationRequestView, PermissionMode, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
+import type { ElicitationAnswerRecord, ElicitationRequestView, PermissionMode, RunEvent, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
 import { createApprovalStore } from './approvals.ts';
 import { createBlobStore, prepareBlobDirectory } from './blobs.ts';
 import { addUsage, foldRunState, initialRunState, spendOf } from './fold.ts';
@@ -232,6 +232,12 @@ const prepareStatements = (db: DatabaseSync) => ({
     "SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.elicitation.requested' AND json_extract(payload_json, '$.inputId') = :approvalId LIMIT 1",
   ),
   runEvents: db.prepare('SELECT * FROM events WHERE run_id = :runId AND seq > :after ORDER BY seq LIMIT :limit'),
+  lastTerminalRootRuns: db.prepare(
+    `SELECT r.* FROM runs r JOIN sessions s ON s.id = r.session_id
+     WHERE s.cwd = :project AND r.parent_run_id IS NULL AND r.status IN (${TERMINAL_LIST})
+       AND EXISTS (SELECT 1 FROM events e WHERE e.run_id = r.id AND e.type = 'run.started')
+     ORDER BY r.created_at DESC, r.rowid DESC LIMIT :limit`,
+  ),
   sessionEvents: db.prepare('SELECT * FROM events WHERE session_id = :sessionId AND id > :after ORDER BY id LIMIT :limit'),
   selectExhausted: db.prepare(
     `SELECT r.* FROM runs r WHERE ${CLAIMABLE} AND ${EXHAUSTED} ${CLAIM_ORDER} LIMIT 1`,
@@ -317,6 +323,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   }
   const sql = statements;
   const approvalOps = createApprovalStore(db, clock);
+  const memories = createMemoryStore(db, clock);
+  const governing = createGoverningFactStore(db, clock);
   const trust = createTrustStore(db, clock, home);
   const originOf = (cwd: string): 'trusted' | 'untrusted' => (trust.decisionFor(cwd).decision === 'trusted' ? 'trusted' : 'untrusted');
   const touched = new Map<string, { runId?: string; sessionId: string }>();
@@ -423,13 +431,32 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return approvalAnnounced(runId, approval.id) ? [cancelledEvent(approval, 'withdrawn')] : [];
     });
 
+  const eventsOfTypes = (runId: string, types: readonly RunEventPayload['type'][]): RunEvent[] => {
+    const placeholders = types.map((_type, index) => `:type${index}`).join(', ');
+    const bound = Object.fromEntries(types.map((type, index) => [`type${index}`, type]));
+    return decodeRunEvents(db.prepare(`SELECT * FROM events WHERE run_id = :runId AND type IN (${placeholders}) ORDER BY seq`).all({ runId, ...bound }));
+  };
+
+  const settleContribution = (run: Run, to: TerminalStatus): RunEventPayload[] => {
+    const hook = options.contribution;
+    if (hook === undefined) return [];
+    const events = eventsOfTypes(run.id, [...hook.eventTypes, 'context.contribution']);
+    const recorded = events.find((event): event is Extract<RunEvent, { type: 'context.contribution' }> => event.type === 'context.contribution');
+    const contribution = recorded ?? hook.measure({ run, events, memories, governing });
+    if (contribution !== undefined && to === 'COMPLETED') {
+      memories.stampContributed(contribution.items.filter((item) => item.kind === 'memory' && item.contributed).map((item) => item.id));
+    }
+    return recorded === undefined && contribution !== undefined ? [{ type: 'context.contribution', items: contribution.items }] : [];
+  };
+
   const changeStatus = (run: Run, to: RunStatus, change: StatusChange, leadingEvents: readonly RunEventPayload[] = []): Run => {
     if (!change.edges[run.status].includes(to)) throw new Error(`run ${run.id} has no permitted edge ${run.status} -> ${to}`);
     const patch = change.patch ?? {};
     const reason = patch.stopReason ?? patch.error?.code;
     const statusEvent: RunEventPayload = { type: 'run.status', from: run.status, to, ...(reason === undefined ? {} : { reason }) };
     const withdrawal = isTerminal(to) || to === 'CANCELLING' ? withdrawPendingApprovals(run.id) : [];
-    const appended = appendPayloads(run, [...leadingEvents, ...withdrawal, statusEvent]);
+    const contribution = isTerminal(to) ? settleContribution(run, to) : [];
+    const appended = appendPayloads(run, [...leadingEvents, ...withdrawal, ...contribution, statusEvent]);
     const keepsLease = to === 'RUNNING' || to === 'CANCELLING';
     const wakesNow = to === 'QUEUED' || (to === 'CANCELLING' && run.leaseOwner === null);
     const availableAt = change.availableAt ?? (wakesNow ? clock.now() : run.availableAt);
@@ -528,6 +555,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     const notice: RunEventPayload = {
       type: 'notice',
       level: 'warning',
+      code: 'approval_expired',
       message: `The ${approval.kind === 'elicitation' ? 'request for input' : 'approval'} for ${approval.callId} expired.`,
     };
     return approvalAnnounced(runId, approval.id)
@@ -1187,6 +1215,10 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     readRunEvents: (runId, afterSeq, limit) => decodeRunEvents(sql.runEvents.all({ runId, after: afterSeq, limit })),
 
+    readRunEventsOfTypes: eventsOfTypes,
+
+    lastTerminalRootRuns: (project, limit) => sql.lastTerminalRootRuns.all({ project, limit }).map(decodeRun),
+
     readSessionEvents: (sessionId, afterId, limit) =>
       sql.sessionEvents.all({ sessionId, after: afterId, limit }).map(decodeEvent),
 
@@ -1311,8 +1343,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     approvals: approvalOps.store,
     blobs: createBlobStore(db, clock, blobDirectory),
     trust,
-    memories: createMemoryStore(db, clock),
-    governing: createGoverningFactStore(db, clock),
+    memories,
+    governing,
     search: createSearchStore(db),
 
     dataVersion: () => {

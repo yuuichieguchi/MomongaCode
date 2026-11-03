@@ -16,7 +16,7 @@ const DROPPED_NOTICE = '1 of 2 saved memories were left out of the context becau
 
 const pastEvents = ({ injected, used, dropped = false, share = 1 / 4 }: Past, now: number): RunEventPayload[] => [
   { type: 'run.started', attempt: 1, now, pins: { memoryShare: share }, mode: 'default' },
-  ...(dropped ? [{ type: 'notice', level: 'warning', message: DROPPED_NOTICE } as RunEventPayload] : []),
+  ...(dropped ? [{ type: 'notice', level: 'warning', message: DROPPED_NOTICE, code: 'memories_dropped' } as RunEventPayload] : []),
   {
     type: 'context.contribution',
     items: Array.from({ length: injected }, (_unused, index) => ({ kind: 'memory' as const, id: `past-${index}`, contributed: index < used })),
@@ -133,6 +133,49 @@ describe('adaptive memory budget at run start', () => {
     expect(env.store.transition(childClaim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
     expect(env.store.transition(parentClaim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
 
+    expect(shareOf(env, await startRun(env))).toBe(1 / 8);
+  });
+});
+
+describe('a window of runs pinned at the current share', () => {
+  it('halves once after twenty low runs, then holds until twenty runs exist at the new share', async () => {
+    const env = await adaptiveEnv();
+    finishPasts(env, 20, { injected: 1, used: 0 });
+    expect(shareOf(env, await startRun(env))).toBe(1 / 8);
+
+    finishPasts(env, 18, { injected: 1, used: 0, share: 1 / 8 });
+    expect(shareOf(env, await startRun(env))).toBe(1 / 8);
+
+    expect(shareOf(env, await startRun(env))).toBe(1 / 16);
+  });
+
+  it('doubles once after twenty well-used runs with drops, then holds until twenty runs exist at the new share', async () => {
+    const env = await adaptiveEnv();
+    finishPasts(env, 19, { injected: 1, used: 1, share: 1 / 8 });
+    finishPast(env, { injected: 1, used: 1, dropped: true, share: 1 / 8 });
+    expect(shareOf(env, await startRun(env))).toBe(1 / 4);
+
+    finishPasts(env, 18, { injected: 1, used: 1, dropped: true, share: 1 / 4 });
+    expect(shareOf(env, await startRun(env))).toBe(1 / 4);
+
+    expect(shareOf(env, await startRun(env))).toBe(1 / 2);
+  });
+
+  it('reads a run with no pinned share as the default quarter', async () => {
+    const env = await adaptiveEnv();
+    for (let index = 0; index < 20; index += 1) {
+      env.clock.advance(1);
+      const run = createdRun(env.store.createRunAndEnqueue(env.session.id, { input: 'Past work', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
+      const claim = env.seed(
+        run.id,
+        [
+          { type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' },
+          { type: 'context.contribution', items: [{ kind: 'memory', id: `past-${index}`, contributed: false }] },
+        ],
+        'hold',
+      );
+      expect(env.store.transition(claim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
+    }
     expect(shareOf(env, await startRun(env))).toBe(1 / 8);
   });
 });
