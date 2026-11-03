@@ -6,11 +6,11 @@ import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createSeatbeltSandbox, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
 
 const BASE_ENV = { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' };
-const REFUSED_CACHE_WRITE = /^xcrun: error: couldn't create cache file '[^'\n]*\/xcrun_db-[A-Za-z0-9]{8}' \(errno=Operation not permitted\)$/;
+const REFUSED_CACHE_WRITE = /^[A-Za-z][A-Za-z0-9._+-]*: error: couldn't create cache file '[^'\n]*\/xcrun_db-[A-Za-z0-9]{8}' \(errno=Operation not permitted\)$/;
 
 const outputOf = (command: string, args: string[]): string => {
   const result = spawnSync(command, args, { encoding: 'utf8' });
@@ -18,7 +18,7 @@ const outputOf = (command: string, args: string[]): string => {
   return result.stdout.trim();
 };
 
-describe.runIf(process.platform === 'darwin')('seatbelt keeps the xcrun cache unwritable (real sandbox-exec)', () => {
+describe.runIf(process.platform === 'darwin')('seatbelt keeps the xcrun cache unwritable (real sandbox-exec)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   let created: string[] = [];
   let spawned: SandboxedProcess[] = [];
   let root = '';

@@ -395,6 +395,7 @@ export type RuntimeStore = {
   ): ServiceMutationResult;
   readRunEvents(runId: string, afterSeq: number, limit: number): RunEvent[];
   readRunEventsOfTypes(runId: string, types: readonly RunEventPayload['type'][]): RunEvent[];
+  prepareTerminal(runId: string): void;
   lastTerminalRootRuns(project: string, limit: number): Run[];
   readSessionEvents(sessionId: string, afterId: number, limit: number): (RunEvent | SessionEvent)[];
   sessionMaxEventId(sessionId: string): number;
@@ -457,6 +458,7 @@ export type TerminalContribution = {
   measure(input: {
     run: Run;
     events: readonly RunEvent[];
+    state(): RunState;
     memories: Pick<MemoryStore, 'get'>;
     governing: Pick<GoverningFactStore, 'get'>;
   }): ContributionPayload | undefined;

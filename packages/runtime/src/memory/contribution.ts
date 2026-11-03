@@ -3,7 +3,9 @@ import type { InjectedItem } from '@momonga/memory';
 import type { RunEvent } from '@momonga/protocol';
 import type { TerminalContribution } from '@momonga/store';
 
-const injectedOf = (events: readonly RunEvent[], lookup: Parameters<TerminalContribution['measure']>[0]): InjectedItem[] => {
+const WORKING_STATE_ID = 'working-state';
+
+const injectedOf =(events: readonly RunEvent[], lookup: Parameters<TerminalContribution['measure']>[0]): InjectedItem[] => {
   const known = new Set<string>();
   const injected: InjectedItem[] = [];
   const add = (item: InjectedItem): void => {
@@ -26,6 +28,11 @@ const injectedOf = (events: readonly RunEvent[], lookup: Parameters<TerminalCont
     } else if (event.type === 'context.compacted') {
       add({ kind: 'summary', id: `summary-${event.seq}`, text: event.summary, fromSeq: event.seq });
     }
+  }
+  const firstCompaction = events.find((event) => event.type === 'context.compacted');
+  if (firstCompaction !== undefined) {
+    const { written, commands } = lookup.state().workingFacts;
+    add({ kind: 'working_state', id: WORKING_STATE_ID, text: [...written.map((fact) => fact.path), ...commands.map((fact) => fact.command)].join('\n'), fromSeq: firstCompaction.seq });
   }
   return injected;
 };

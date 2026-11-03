@@ -181,6 +181,61 @@ describe('context.contribution at every terminal transition of the store', () =>
   });
 });
 
+describe('measuring before the write transaction', () => {
+  it('measures a transition once, ahead of the transaction, and again when the journal moved on', () => {
+    const { hook, seen } = recording();
+    const h = harness({ contribution: hook });
+    const run = enqueue(h.store, newSession(h.store).id);
+    const claim = mustClaim(h.store, 'w1');
+
+    h.store.prepareTerminal(run.id);
+    expect(seen).toHaveLength(1);
+    h.store.prepareTerminal(run.id);
+    expect(seen).toHaveLength(1);
+    expect(h.store.transition(claim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
+
+    expect(seen).toHaveLength(1);
+    expect(countOf(h.store, run.id)).toBe(1);
+  });
+
+  it('measures again when an event arrived between the preparation and the transition', () => {
+    const { hook, seen } = recording();
+    const h = harness({ contribution: hook });
+    const run = enqueue(h.store, newSession(h.store).id);
+    const claim = mustClaim(h.store, 'w1');
+
+    h.store.prepareTerminal(run.id);
+    expect(h.store.append(claim, [{ type: 'user.message', text: 'late' }]).kind).toBe('ok');
+    expect(h.store.transition(claim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
+
+    expect(seen.map((events) => events.length)).toEqual([1, 2]);
+    expect(countOf(h.store, run.id)).toBe(1);
+  });
+
+  it('measures once for a transition that was not prepared by hand', () => {
+    const { hook, seen } = recording();
+    const h = harness({ contribution: hook });
+    enqueue(h.store, newSession(h.store).id);
+    const claim = mustClaim(h.store, 'w1');
+
+    expect(h.store.transition(claim, ['RUNNING'], 'FAILED').kind).toBe('ok');
+
+    expect(seen).toHaveLength(1);
+  });
+
+  it('prepares nothing for a run that is already terminal', () => {
+    const { hook, seen } = recording();
+    const h = harness({ contribution: hook });
+    const run = enqueue(h.store, newSession(h.store).id);
+    h.store.transition(mustClaim(h.store, 'w1'), ['RUNNING'], 'COMPLETED');
+    seen.length = 0;
+
+    h.store.prepareTerminal(run.id);
+
+    expect(seen).toEqual([]);
+  });
+});
+
 describe('the journaled contribution and the contributed_at stamp', () => {
   it('keeps the event a crash left in the journal, adds no second one and still stamps a completed run', () => {
     const { hook, seen } = recording();

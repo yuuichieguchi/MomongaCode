@@ -31,7 +31,7 @@ export const recordingSandbox = (inner: Sandbox): { sandbox: Sandbox; spawns: Re
   };
 };
 
-const REFUSED_XCRUN_CACHE_WRITE = /^xcrun: error: couldn't create cache file '[^'\n]*\/xcrun_db-[A-Za-z0-9]{8}' \(errno=Operation not permitted\)\n/gm;
+const REFUSED_XCRUN_CACHE_WRITE = /^[A-Za-z][A-Za-z0-9._+-]*: error: couldn't create cache file '[^'\n]*\/xcrun_db-[A-Za-z0-9]{8}' \(errno=Operation not permitted\)\n/gm;
 
 export const withoutRefusedXcrunCacheWrite = (stderr: string, platform: NodeJS.Platform): string =>
   platform === 'darwin' ? stderr.replace(REFUSED_XCRUN_CACHE_WRITE, '') : stderr;

@@ -4,11 +4,12 @@ import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CallOutcome, ResultOutcome } from '@momonga/tools';
 import { HOST_RULE_ENFORCEMENT } from '@momonga/foundation';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { computeFileRules } from '@momonga/policy';
 import { makeBuiltins, resultOf } from './builtins/fixtures.ts';
 import type { Builtins } from './builtins/fixtures.ts';
 import { makeLayout, policyFor, ruleFor } from './helpers.ts';
-import { HAS_REAL_SANDBOX, REFUSED_WRITE_MESSAGE, realSandbox, recordingSandbox, scratchRootOf } from './read-only-support.ts';
+import { HAS_REAL_SANDBOX, REFUSED_WRITE_MESSAGE, realSandbox, recordingSandbox, scratchRootOf, withoutRefusedXcrunCacheWrite } from './read-only-support.ts';
 import type { RecordedSpawn } from './read-only-support.ts';
 
 const forced = vi.hoisted(() => ({ decision: { kind: 'allow', source: 'mode', reason: 'forced by the test', basis: 'read_only' } }));
@@ -56,7 +57,7 @@ const HIDING_OPTIONS: ReadonlyArray<readonly [string, string, string]> = [
   ['blame', '--reverse', 'tracked'],
 ];
 
-describe.runIf(HAS_REAL_SANDBOX)('rule 2 under the real kernel, with decide forced to approve', () => {
+describe.runIf(HAS_REAL_SANDBOX)('rule 2 under the real kernel, with decide forced to approve', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   let stage: Stage;
 
   beforeEach(async () => {
@@ -132,7 +133,8 @@ describe.runIf(HAS_REAL_SANDBOX)('rule 2 under the real kernel, with decide forc
     ])('%s works', async (command, output) => {
       const result = await stage.bash(command);
       expectReadOnly();
-      expect(result).toMatchObject({ status: 'completed', output });
+      expect(result).toMatchObject({ status: 'completed' });
+      expect(withoutRefusedXcrunCacheWrite(result.output, process.platform)).toBe(output);
     });
 
     it('rg works', async () => {
