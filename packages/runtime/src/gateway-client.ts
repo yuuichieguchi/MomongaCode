@@ -262,7 +262,6 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
     let finished = false;
     try {
       guard.armDeadline(call.deadlineAt - clock.now());
-      guard.arm(streamIdleTimeoutMs, 'stream_interrupted');
       const response = await send(guard, {
         method: 'POST',
         path: '/v1/responses',

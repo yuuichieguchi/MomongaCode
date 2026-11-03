@@ -328,6 +328,41 @@ describe('gateway client bounds', () => {
     expectGatewayError(error, { status: 0, type: 'transport', code: 'stream_interrupted' });
   });
 
+  it('does not apply streamIdleTimeoutMs while the gateway has not answered the request yet', async () => {
+    const fake = await startRawHttpFake();
+    let answer: () => void = () => {};
+    fake.respond((_request, response) => {
+      answer = () => {
+        openSse(response);
+        response.end(sseFrame(createdEvent) + sseFrame(completedEvent));
+      };
+    });
+    const clock = fakeClock();
+    const timers = createFakeTimers(clock);
+    const client = makeClient(fake.socketPath, clock, { streamIdleTimeoutMs: 150, timers });
+
+    const seen = collect(client.stream(streamBody(), callOptions(clock)));
+    await waitFor(() => fake.requests.length === 1, { description: 'the request to arrive' });
+    timers.advance(400);
+    answer();
+
+    expect(await seen).toEqual([createdEvent, completedEvent]);
+  });
+
+  it('still bounds the wait for the first answer by the call deadline', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond(() => {});
+    const clock = fakeClock();
+    const timers = createFakeTimers(clock);
+    const client = makeClient(fake.socketPath, clock, { streamIdleTimeoutMs: 150, timers });
+
+    const pending = settle(collect(client.stream(streamBody(), callOptions(clock, { deadlineInMs: 400 }))));
+    await waitFor(() => fake.requests.length === 1, { description: 'the request to arrive' });
+    timers.advance(400);
+
+    expectGatewayError(await pending, { status: 0, type: 'transport', code: 'deadline_exceeded' });
+  });
+
   it('treats keep-alive comments as activity', async () => {
     const fake = await startRawHttpFake();
     let open: ServerResponse | undefined;
