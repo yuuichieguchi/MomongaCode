@@ -513,7 +513,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     });
     if (batch.signal.aborted) return { outcome: failedOutcome(call.callId, `${tool.name} was cancelled`) };
     const decision = decide({
-      tool: { name: tool.name, kind: tool.kind, sideEffect: tool.sideEffect },
+      tool,
       subject,
       mode: batch.mode,
       rules: batch.rules,
@@ -542,7 +542,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     stage: GateStage = 'enforce',
   ): Promise<CallOutcome | undefined> => {
     const cwd = batch.session.cwd;
-    const policyTool = { name: tool.name, kind: tool.kind, sideEffect: tool.sideEffect };
+    const policyTool = tool;
     const first = await evaluatePolicy(call, tool, target.subject, access, batch);
     if ('outcome' in first) return first.outcome;
     let decision = first.decision;

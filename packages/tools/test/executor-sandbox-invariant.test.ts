@@ -30,7 +30,7 @@ const recordingSandbox = (kind: Sandbox['kind']) => {
 const bashLike = () =>
   makeTool('Bash', {
     kind: 'execute',
-    sideEffect: 'exec',
+    sideEffect: 'exec', subjectKind: 'command',
     inputSchema: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'], additionalProperties: false },
     subject: (input) => ({ kind: 'command', tool: 'Bash', command: String(input['command']) }),
     execute: async (input, ctx) => {
@@ -209,7 +209,7 @@ describe('recovery batches', () => {
     const reconciled: string[] = [];
     const tool = makeTool('Bash', {
       kind: 'execute',
-      sideEffect: 'exec',
+      sideEffect: 'exec', subjectKind: 'none',
       reconcile: async () => {
         reconciled.push(key);
         return { outcome: 'already_applied', output: 'reconciled' };

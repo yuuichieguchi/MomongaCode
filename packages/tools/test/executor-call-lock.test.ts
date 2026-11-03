@@ -77,6 +77,7 @@ const reconcilingTool = (name: string, sideEffect: 'write' | 'exec', trace: Trac
   makeTool(name, {
     kind: sideEffect === 'exec' ? 'execute' : 'edit',
     sideEffect,
+    subjectKind: 'none',
     execute: async () => {
       trace.note('execute');
       return { status: 'completed', output: 'ran' };
@@ -146,7 +147,7 @@ describe('the per-call lock of the executor', () => {
   it('does not take the lock for a read only tool', async () => {
     const harness = makeHarness();
     harness.kernelLock.holdExternally(lockPathOf(harness), HOLDER_PID);
-    const tool = makeTool('Read', { sideEffect: 'read_only', execute: async () => ({ status: 'completed', output: 'read' }) });
+    const tool = makeTool('Read', { sideEffect: 'read_only', subjectKind: 'none', execute: async () => ({ status: 'completed', output: 'read' }) });
 
     const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
 
@@ -232,6 +233,7 @@ describe('the per-call lock of the executor', () => {
     const tool = makeTool(name, {
       kind: sideEffect === 'exec' ? 'execute' : 'edit',
       sideEffect,
+      subjectKind: 'none',
       execute: async () => {
         trace.note('effect-start');
         effectRunning.resolve();

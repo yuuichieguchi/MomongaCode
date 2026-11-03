@@ -46,7 +46,7 @@ const effectTool = (outcome: 'not_applied' | 'already_applied' = 'not_applied') 
   let watched: number | undefined;
   const tool = makeTool('Edit', {
     kind: 'edit',
-    sideEffect: 'write',
+    sideEffect: 'write', subjectKind: 'none',
     reconcile: async () => {
       seen.reconciles += 1;
       if (watched !== undefined) seen.groupAliveAtReconcile.push(groupExists(watched));
@@ -135,7 +135,7 @@ describe('a superseded worker starts no external effect', () => {
     let executions = 0;
     const tool = makeTool('Edit', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'none',
       reconcile: async () => {
         harness.idempotency.lease.held = false;
         return { outcome: 'not_applied', output: '' };
@@ -158,7 +158,7 @@ describe('a superseded worker starts no external effect', () => {
     const lostNotices: number[] = [];
     const tool = makeTool('Edit', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'none',
       execute: async () => {
         harness.idempotency.lease.held = false;
         return { status: 'completed', output: 'executed' };

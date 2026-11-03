@@ -142,7 +142,7 @@ describe('expandGlob stays inside the decision budget (HIGH-1)', () => {
     expect(children).toHaveLength(1);
     const roots = [workspace.project];
     const input: DecideInput = {
-      tool: { name: 'Bash', kind: 'execute', sideEffect: 'exec' },
+      tool: { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' },
       subject: { kind: 'command', tool: 'Bash', command: 'cat a*' },
       mode: 'default',
       rules: [],

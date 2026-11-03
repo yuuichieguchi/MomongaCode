@@ -11,7 +11,7 @@ const TOOLS: Record<string, PolicyTool> = {
   Read: { name: 'Read', kind: 'read', sideEffect: 'read_only' },
   Grep: { name: 'Grep', kind: 'search', sideEffect: 'read_only' },
   Glob: { name: 'Glob', kind: 'search', sideEffect: 'read_only' },
-  Write: { name: 'Write', kind: 'edit', sideEffect: 'write' },
+  Write: { name: 'Write', kind: 'edit', sideEffect: 'write', subjectKind: 'path' },
 };
 
 type Fixture = Layout & { extra: string };

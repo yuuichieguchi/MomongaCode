@@ -124,6 +124,30 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
     expect(fs.readdirSync(markers).sort()).toEqual([keyOf('d')]);
   });
 
+  it('marks a job a dead runtime left running unknown, and reaps its process group, before the service and the workers start', PROCESS_TIMEOUT, async () => {
+    const stack = await prepareStack();
+    await ensureMomongaDirs(stack.temp.paths);
+    const jobId = 'bash_dead00000000';
+    const idemKey = keyOf('j');
+    let pgid: number | undefined;
+    await seedStore(stack.temp, (store) => {
+      store.idempotency.begin(idemKey, { expiresAt: SEED_MS + 30 * 86_400_000, meta: { job: true } });
+      const session = createSession(store, stack.temp.project);
+      store.jobs.start({ id: jobId, idemKey, sessionId: session.id, runId: createRun(store, session.id), callId: 'c', command: 'sleep 30' });
+      pgid = spawnHolder(path.join(stack.temp.paths.markers.tools, idemKey));
+      store.jobs.attachProcess(jobId, pgid);
+    });
+    const seen: Record<string, { status: string | undefined; alive: boolean }> = {};
+    const logger = hookLogger((step, msg) => {
+      if (msg !== 'startup.step' || (step !== 'service' && step !== 'workers')) return;
+      seen[step] = { status: readDb<{ status: string }>(stack.temp.paths.databases.runtime, 'SELECT status FROM jobs WHERE id = ?', jobId)[0]?.status, alive: groupExists(pgid as number) };
+    });
+
+    await launchRuntime(stack.temp, { logger });
+
+    expect(seen).toEqual({ service: { status: 'unknown', alive: false }, workers: { status: 'unknown', alive: false } });
+  });
+
   it('a store error during tool-marker reaping fails startup before any process is signalled and unwinds', PROCESS_TIMEOUT, async () => {
     const stack = await prepareStack();
     await ensureMomongaDirs(stack.temp.paths);

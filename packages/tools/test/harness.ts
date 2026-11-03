@@ -5,9 +5,9 @@ import { absoluteFrom } from '@momonga/policy';
 import { FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf } from '@momonga/testkit';
 import type { PermissionSubject } from '@momonga/policy';
 import { createToolExecutor, createToolRegistry, defineTool, validateToolInput } from '@momonga/tools';
-import type { AnyTool, ExecutionBatchInput, ToolCall, ToolContext, ToolDefinition, ToolExecutorOptions, ToolSet } from '@momonga/tools';
+import type { AnyTool, ExecutionBatchInput, SideEffectBinding, ToolBody, ToolCall, ToolContext, ToolDefinition, ToolExecutorOptions, ToolSet } from '@momonga/tools';
 import type { PermissionRule } from '@momonga/policy';
-import type { PermissionMode } from '@momonga/protocol';
+import type { PermissionMode, SideEffect } from '@momonga/protocol';
 import { fakeSandbox, makeBlobs, makeClock, makeIdempotency, makeLayout, minimalPolicyFor } from './helpers.ts';
 import type { Layout } from './helpers.ts';
 
@@ -15,7 +15,11 @@ export type Input = Record<string, unknown>;
 
 export const OPEN_SCHEMA = { type: 'object', properties: { value: { type: 'string' } }, additionalProperties: false } as const;
 
-export const makeTool = (name: string, overrides: Partial<ToolDefinition<Input>> = {}): AnyTool =>
+type KeepsBinding = { sideEffect?: never; subjectKind?: never; subject?: never };
+
+type KeepsNoneSubject = { sideEffect: SideEffect; subjectKind: 'none'; subject?: never };
+
+export const makeTool = (name: string, overrides: Partial<ToolBody<Input>> & (KeepsBinding | KeepsNoneSubject | SideEffectBinding<Input>) = {}): AnyTool =>
   defineTool<Input>({
     name,
     description: `${name} test tool`,

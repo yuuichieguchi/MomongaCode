@@ -6,7 +6,7 @@ import type { PolicyTool } from '@momonga/policy';
 import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout } from './helpers.ts';
 
-const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write' };
+const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write', subjectKind: 'path' };
 
 describe.runIf(volumeIsCaseInsensitive(os.tmpdir()))('roots compare case-insensitively on a case-insensitive volume', () => {
   it('allows a differently cased target under a root that does not exist yet in acceptEdits', () => {

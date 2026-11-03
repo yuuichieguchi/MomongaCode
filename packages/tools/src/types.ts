@@ -84,19 +84,32 @@ export const TOOL_TIERS = ['essential', 'common', 'optional'] as const;
 
 export type ToolTier = (typeof TOOL_TIERS)[number];
 
-export type ToolDefinition<Input> = {
+type SubjectKind = PermissionSubject['kind'];
+
+type DeclaredSubject<Input> = {
+  [Kind in SubjectKind]: { subjectKind: Kind; subject(input: Input, ctx: SubjectContext): Extract<PermissionSubject, { kind: Kind }> };
+}[SubjectKind];
+
+type UndeclaredSubject<Input> = { subjectKind?: never; subject(input: Input, ctx: SubjectContext): PermissionSubject };
+
+export type SideEffectBinding<Input> =
+  | ({ sideEffect: 'read_only' } & (DeclaredSubject<Input> | UndeclaredSubject<Input>))
+  | ({ sideEffect: Exclude<SideEffect, 'read_only'> } & DeclaredSubject<Input>);
+
+export type ToolDefinition<Input> = SideEffectBinding<Input> & ToolBody<Input>;
+
+export type ToolBody<Input> = {
   name: string;
   description: string;
   kind: ToolKind;
-  sideEffect: SideEffect;
   inputSchema: Record<string, unknown>;
   pagesOutput?: true;
   tier?: ToolTier;
+  companionOf?: string;
   schemaMode?: 'strict' | 'lenient';
   timeoutMs: number | ((input: Input) => number);
   title(input: Input): string;
   locations?(input: Input): { path: string; line?: number }[];
-  subject(input: Input, ctx: SubjectContext): PermissionSubject;
   prepare?(input: Input, ctx: ToolContext): Promise<Record<string, unknown>>;
   execute(input: Input, ctx: ToolContext, prepared: Record<string, unknown> | undefined): Promise<ToolResult | ToolPending>;
   reconcile?(input: Input, record: ToolIdempotencyRecord, ctx: ReconcileContext): Promise<ReconcileResult>;

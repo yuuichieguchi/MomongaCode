@@ -26,6 +26,7 @@ export type ToolSet = {
   readonly notices: readonly string[];
   readonly authorizationRequired: readonly string[];
   get(name: string): AnyTool | undefined;
+  readonly companions: ReadonlyMap<string, string>;
   forModel(options: { mode: PermissionMode; rules: PermissionRule[] }): FunctionTool[];
 };
 
@@ -56,6 +57,7 @@ const buildToolSet = (tools: readonly AnyTool[], notices: readonly string[], aut
     notices: frozenNotices,
     authorizationRequired: Object.freeze([...authorizationRequired]),
     get: (name) => byName.get(name),
+    companions: new Map(frozenTools.flatMap((tool) => (tool.companionOf === undefined ? [] : [[tool.name, tool.companionOf] as const]))),
     forModel: ({ mode, rules }) => {
       const visible = new Set(modelVisibleTools([...frozenTools], { mode, rules }).map((tool) => tool.name));
       return frozenTools

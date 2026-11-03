@@ -58,7 +58,7 @@ describe('timeouts', () => {
     ['Bash', 'exec'],
   ] as const)('warns that side effects of a timed out %s are unknown', async (name, sideEffect) => {
     const harness = makeHarness();
-    const tool = makeTool(name, { sideEffect, kind: 'edit', timeoutMs: 30, execute: (_input, ctx) => waitForAbort(ctx) });
+    const tool = makeTool(name, { sideEffect, subjectKind: 'none', kind: 'edit', timeoutMs: 30, execute: (_input, ctx) => waitForAbort(ctx) });
     const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', name, {}, 'allow_once')]));
     const output = outputOf(outcomes[0]);
     expect(output.startsWith(`${name} timed out after 30 ms`)).toBe(true);
@@ -87,7 +87,7 @@ describe('timeouts', () => {
     const harness = makeHarness();
     let executions = 0;
     const tool = makeTool('Bash', {
-      sideEffect: 'exec',
+      sideEffect: 'exec', subjectKind: 'none',
       kind: 'execute',
       timeoutMs: 30,
       execute: (_input, ctx) => {
@@ -140,7 +140,7 @@ describe('cancellation', () => {
     const executions: string[] = [];
     const tool = makeTool('Write', {
       kind: 'edit',
-      sideEffect: 'write',
+      sideEffect: 'write', subjectKind: 'none',
       execute: (_input, ctx) => {
         executions.push(ctx.callId);
         return waitForAbort(ctx);
@@ -221,6 +221,7 @@ describe('transient retry', () => {
     let attempts = 0;
     const tool = makeTool(name, {
       sideEffect,
+      subjectKind: 'none',
       kind: 'edit',
       execute: async () => {
         attempts += 1;

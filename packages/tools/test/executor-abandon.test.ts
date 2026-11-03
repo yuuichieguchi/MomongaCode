@@ -385,7 +385,7 @@ describe('executor reconcile of a PENDING call whose earlier attempt is still ru
     const reconciled: string[] = [];
     const tool = makeTool('Bash', {
       kind: 'execute',
-      sideEffect: 'exec',
+      sideEffect: 'exec', subjectKind: 'none',
       reconcile: async () => {
         reconciled.push('reconcile');
         return { outcome: 'unknown', output: 'unknown' };
@@ -420,7 +420,7 @@ describe('executor reconcile of a PENDING call whose earlier attempt is still ru
     const seen: unknown[] = [];
     const tool = makeTool('Bash', {
       kind: 'execute',
-      sideEffect: 'exec',
+      sideEffect: 'exec', subjectKind: 'none',
       reconcile: async (_input, _record, ctx) => {
         seen.push(ctx.earlierAttempt);
         return { outcome: 'unknown', output: 'unknown' };
