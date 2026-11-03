@@ -144,7 +144,21 @@ describe('buildContextReport', () => {
   it('marks the provenance and what is meaningless for a fake model', () => {
     const fake = buildContextReport({ dataset, transcripts: transcriptsOf(), model: 'fake', seed: 1 });
     expect(fake.model).toBe('fake');
-    expect(fake.meaningless).toEqual(['continuationRate', 'contrastiveFailures', 'fabricationRate', 'identifierRetention', 'lossSignalsPerCompaction', 'retrievalPrecision', 'retrievalRecall', 'tokensPerSuccess']);
+    expect(fake.meaningless).toEqual([
+      'cacheHitRatio',
+      'callsPerSuccess',
+      'continuationRate',
+      'contrastiveFailures',
+      'costPerSuccess',
+      'fabricationRate',
+      'identifierRetention',
+      'latencyPerSuccess',
+      'lossSignalsPerCompaction',
+      'retrievalPrecision',
+      'retrievalRecall',
+      'tokensPerSuccess',
+      'uncachedInputPerSuccess',
+    ]);
     expect(report.model).toBe('real');
     expect(report.meaningless).toEqual([]);
   });

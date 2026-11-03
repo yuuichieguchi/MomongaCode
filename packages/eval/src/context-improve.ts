@@ -1,4 +1,5 @@
 import { MIN_SUMMARY_TOKENS, escapeTerminalBlock, tokensForText } from '@momonga/protocol';
+import type { BilledDetail } from '@momonga/protocol';
 import { compareContextReports } from './context-compare.ts';
 import type { ContextComparison } from './context-compare.ts';
 import { contrastiveCasesOf } from './context-report.ts';
@@ -29,7 +30,7 @@ export type TokenUsage = GuidelineCompletion['usage'];
 export type ImprovePorts = {
   benchmark(guideline: string | undefined): Promise<BenchmarkResult>;
   complete(request: GuidelineCompletionRequest): Promise<GuidelineCompletion>;
-  charge(usage: TokenUsage): void | Promise<void>;
+  charge(usage: TokenUsage, detail: BilledDetail | undefined): void | Promise<void>;
 };
 
 export const IMPROVE_STATUSES = ['empty', 'no_analysis', 'no_winner', 'winner', 'stopped'] as const;
@@ -107,7 +108,7 @@ export const improveGuideline = async (input: ImproveInput, ports: ImprovePorts)
 
   const spend = async (request: GuidelineCompletionRequest): Promise<GuidelineCompletion> => {
     const completion = await ports.complete(request);
-    await ports.charge(completion.usage);
+    await ports.charge(completion.usage, completion.detail);
     tokens.charged += completion.usage.totalTokens;
     return completion;
   };

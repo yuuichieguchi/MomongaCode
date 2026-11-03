@@ -40,7 +40,7 @@ const declaredTarget = { adapter: 'chat-completions', model: 'm', provider: 'p',
 
 const userModels = (): UserModels => ({
   declared: { aliases: { default: ['t'], other: ['u'] }, targets: { t: declaredTarget, u: { ...declaredTarget, model: 'other' } } },
-  resolved: { aliases: { default: ['t'], other: ['u'] }, targets: { t: target(), u: target({ model: 'other' }) } },
+  resolved: { aliases: { default: ['t'], other: ['u'] }, targets: { t: target(), u: target({ model: 'other' }) }, roles: {} },
 });
 
 const caseOf = (id: string, compaction: 'on' | 'off') => ({
@@ -113,6 +113,7 @@ const harness = (behaviour: Behaviour = {}) => {
         if (behaviour.hang === true) await new Promise<void>(() => undefined);
       },
       getRun: async (id: string) => ({ id, sessionId: `s${counter}`, status: 'COMPLETED', step: 1, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 1 } }),
+      runReflection: async () => ({ job: null, charges: [], queuedAhead: 0 }),
       resolveApproval: async () => ({}),
       cancel: async () => ({ status: 200, run: {} }),
       addRule: async (request: unknown) => {
@@ -194,6 +195,7 @@ const harness = (behaviour: Behaviour = {}) => {
     connect: (paths) => runtimeFor(paths.root.replace(/\/\.momonga$/, '')),
     applyStep: async () => undefined,
     after: async () => new Promise<void>(() => undefined),
+    now: () => 0,
   };
   for (const stale of behaviour.staleRoots ?? []) {
     files.set(`${stale.root}/.momonga-eval-owner`, String(stale.owner));

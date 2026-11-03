@@ -32,6 +32,41 @@ describe('the last reflection job of a folder', () => {
     expectSchema('ReflectionResponse', answer.json);
   });
 
+  it('answers the job and the charge of one run, with the detail of the billed call', async () => {
+    const env = await startService({ fakeTimers: true });
+    const session = await env.createSession();
+    const run = await env.createRun(session.id);
+    const none = await env.http('GET', `/v1/runs/${run.id}/reflection`);
+    expect(none.status).toBe(200);
+    expect(none.json).toEqual({ job: null, charges: [], queuedAhead: 0 });
+    expectSchema('RunReflection', none.json);
+
+    const jobs = env.store.reflection as unknown as Settling;
+    const other = await env.createRun(session.id);
+    jobs.enqueue(other.id);
+    env.clock.advance(5);
+    jobs.enqueue(run.id);
+    const queued = await env.http('GET', `/v1/runs/${run.id}/reflection`);
+    expect(queued.json).toMatchObject({ job: { state: 'pending' }, queuedAhead: 1 });
+    expectSchema('RunReflection', queued.json);
+    jobs.begin(run.id);
+    const detail = { cachedInputTokens: 40, cost: { amount: 0.5, currency: 'USD', priceVersion: '2026-01-01' }, timing: { firstEventMs: 3, durationMs: 9 } };
+    jobs.complete({
+      runId: run.id,
+      charge: { purpose: 'reflection', runId: run.id, project: session.cwd, model: 'fm', inputTokens: 100, outputTokens: 20, totalTokens: 120, detail },
+      candidates: [],
+    });
+    const settled = await env.http('GET', `/v1/runs/${run.id}/reflection`);
+    expect(settled.json.job).toMatchObject({ runId: run.id, state: 'done' });
+    expect(settled.json.charges).toMatchObject([{ purpose: 'reflection', runId: run.id, totalTokens: 120, detail }]);
+
+    env.store.contextCharges.record({ purpose: 'reflection', runId: run.id, project: session.cwd, model: 'fm', inputTokens: 50, outputTokens: 5, totalTokens: 55 });
+    const retried = await env.http('GET', `/v1/runs/${run.id}/reflection`);
+    expect(retried.json.charges.map((entry: { totalTokens: number }) => entry.totalTokens)).toEqual([120, 55]);
+    expectSchema('RunReflection', retried.json);
+    expectSchema('RunReflection', settled.json);
+  });
+
   it('requires an absolute project', async () => {
     const env = await startService({ fakeTimers: true });
     expect((await env.http('GET', '/v1/reflection')).status).toBe(400);

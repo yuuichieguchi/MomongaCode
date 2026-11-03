@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import type { HooksSettings } from '@momonga/protocol';
 import { createUnsandboxed } from '@momonga/sandbox';
 import { STOP_HOOK_FEEDBACK_PREFIX } from '../../src/worker/hook-step.ts';
@@ -13,7 +14,7 @@ const hooks = (event: keyof HooksSettings, command: string, matcher?: string): H
 
 const workerWithProcesses = (env: Awaited<ReturnType<typeof makeEnv>>) => env.worker('worker-1', { tools: { sandbox: createUnsandboxed({ killGraceMs: 200 }) } });
 
-describe('worker hooks', () => {
+describe('worker hooks', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('fails the run with a typed code when a UserPromptSubmit hook blocks the prompt, without calling the model', async () => {
     const env = await makeEnv();
     env.settings.hooksValue = hooks('UserPromptSubmit', 'echo "no secrets in prompts" >&2; exit 2');

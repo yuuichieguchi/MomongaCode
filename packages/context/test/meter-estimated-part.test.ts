@@ -1,14 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { createTokenMeter } from '@momonga/context';
+import { ESTIMATED_ERROR_SHAPE, countReplyOf } from '@momonga/protocol';
+import type { ErrorShape } from '@momonga/protocol';
 import type { CountTokensRequest, CountTokensResult, FunctionTool, InputItem } from '@momonga/protocol';
 import { MODEL, capabilitiesFor } from './helpers.ts';
 
-const countingAs = (method: CountTokensResult['method']) => ({
-  count: async (request: CountTokensRequest): Promise<CountTokensResult> => ({
-    input_tokens: (Array.isArray(request.input) ? request.input.length : 1) * 100,
-    method,
-    error_bound: method === 'estimated' ? 30 : 0,
-  }),
+
+const NO_ERROR: ErrorShape = { ratio: 0, minimum: 0 };
+
+const countingAs =(method: CountTokensResult['method']) => ({
+  count: async (request: CountTokensRequest): Promise<CountTokensResult> =>
+    countReplyOf((Array.isArray(request.input) ? request.input.length : 1) * 100, method, method === 'estimated' ? ESTIMATED_ERROR_SHAPE : NO_ERROR),
 });
 
 const items = (count: number): InputItem[] =>
@@ -37,11 +39,8 @@ describe('the part of a count that is estimated', () => {
   it('leaves out the tools the server already confirmed when only the suffix is counted with them', async () => {
     const tools = [{ type: 'function', name: 'Read', description: 'reads', parameters: { type: 'object' } }] as unknown as FunctionTool[];
     const counter = {
-      count: async (request: CountTokensRequest): Promise<CountTokensResult> => ({
-        input_tokens: (Array.isArray(request.input) ? request.input.length : 1) * 100 + (request.tools === undefined ? 0 : 5000),
-        method: 'estimated',
-        error_bound: 0,
-      }),
+      count: async (request: CountTokensRequest): Promise<CountTokensResult> =>
+        countReplyOf((Array.isArray(request.input) ? request.input.length : 1) * 100 + (request.tools === undefined ? 0 : 5000), 'estimated', NO_ERROR),
     };
     const meter = createTokenMeter({ counter, model: MODEL, capabilities: capabilitiesFor(200000) });
     const prefix = await meter.count({ input: items(2), tools });

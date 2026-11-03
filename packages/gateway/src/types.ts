@@ -1,6 +1,6 @@
 import type { Clock } from '@momonga/foundation';
-import type { Telemetry } from '@momonga/observability';
-import type { CapabilityOverride, GatewayCostReportView, ProviderAdapter, TargetBilling } from '@momonga/protocol';
+import type { PriceTable, Telemetry } from '@momonga/observability';
+import type { BilledCallsCursorView, BilledCallsPageView, CapabilityOverride, GatewayCostReportView, ProviderAdapter, TargetBilling } from '@momonga/protocol';
 
 export type GatewayTargetConfig = {
   kind: string;
@@ -45,7 +45,9 @@ export type GatewayOptions = {
   hmacKey: Uint8Array;
   socketPath: string;
   telemetry?: Telemetry;
-  costReport?: (runs: readonly { runId: string; sessionId: string }[]) => Promise<{ report: GatewayCostReportView; text: string }>;
+  priceTable?: PriceTable;
+  costReport?: (runs: readonly { runId: string; sessionId: string }[], includeRunless: boolean) => Promise<{ report: GatewayCostReportView; text: string }>;
+  billedCalls?: (runIds: readonly string[], cursor: BilledCallsCursorView, limit: number, includeRunless: boolean) => Promise<BilledCallsPageView>;
   debugTcp?: DebugTcpOptions;
   random: () => number;
   version: string;

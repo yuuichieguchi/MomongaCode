@@ -10,6 +10,7 @@ import {
   saveProbeRecord,
 } from '@momonga/gateway';
 import type { ExecResult, FmServe, FmServeTimers, ManagedFmTarget, ProbeRecordKey } from '@momonga/gateway';
+import { ESTIMATED_ERROR_SHAPE, errorBoundOfShape } from '@momonga/protocol';
 import type { ProbeReport } from '@momonga/protocol';
 import { FAKE_DETERMINISTIC_REPLY, createFakeClock, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeClock } from '@momonga/testkit';
@@ -179,7 +180,8 @@ describe('createManagedFmTarget token counting', () => {
     const report = { ...makeReport(1, 1), tokenCalibration: { ratio: 1.25, errorBound: 0.25 } };
     const { managed, execCalls } = await setup({ report, countStdout: '20\n' });
     const result = await managed.countTokens(TARGET, { model: 'fast', instructions: 'Be terse.', input: [userText('count these words')] }, new AbortController().signal);
-    expect(result).toEqual({ input_tokens: 25, method: 'calibrated', error_bound: 7 });
+    expect(result).toEqual({ input_tokens: 25, method: 'calibrated', error_bound: 7, error_shape: { ratio: 0.25, minimum: 1 } });
+    expect(result.error_bound).toBe(errorBoundOfShape(result.error_shape, result.input_tokens));
     expect(execCalls).toHaveLength(1);
     expect(execCalls[0]?.file).toBe(BINARY);
     expect(execCalls[0]?.args.slice(0, 2)).toEqual(['count-tokens', '-q']);
@@ -190,7 +192,8 @@ describe('createManagedFmTarget token counting', () => {
   it('reports an estimated count without a calibration', async () => {
     const { managed } = await setup({ countStdout: '20\n' });
     const result = await managed.countTokens(TARGET, { model: 'fast', input: 'count these words' }, new AbortController().signal);
-    expect(result).toEqual({ input_tokens: 20, method: 'estimated', error_bound: 6 });
+    expect(result).toEqual({ input_tokens: 20, method: 'estimated', error_bound: 6, error_shape: ESTIMATED_ERROR_SHAPE });
+    expect(result.error_bound).toBe(errorBoundOfShape(result.error_shape, result.input_tokens));
   });
 
   it('counts each tool as canonical JSON on its own line between instructions and input items', async () => {

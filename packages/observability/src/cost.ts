@@ -1,9 +1,12 @@
+import { UNKNOWN_BILLING } from './semconv.ts';
+
 export type PriceEntry = {
   provider: string;
   model: string;
   effectiveFrom: string;
   inputPerMTok: number;
   cachedInputPerMTok?: number;
+  cacheWritePerMTok?: number;
   outputPerMTok: number;
   currency: 'USD';
 };
@@ -14,6 +17,7 @@ export type CostUsage = {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens?: number;
+  cacheWriteInputTokens?: number;
 };
 
 export type CostInput = {
@@ -23,8 +27,6 @@ export type CostInput = {
   at: Date;
   table: PriceTable;
 };
-
-export type Cost = { amount: number; currency: 'USD'; priceVersion: string };
 
 const PRICE_SCALE_DIGITS = 9;
 const PRICE_SCALE = 10 ** PRICE_SCALE_DIGITS;
@@ -62,14 +64,9 @@ export const definePriceTable = (entries: readonly PriceEntry[]): PriceTable => 
     assertPrice(entry, 'inputPerMTok', entry.inputPerMTok);
     assertPrice(entry, 'outputPerMTok', entry.outputPerMTok);
     if (entry.cachedInputPerMTok !== undefined) assertPrice(entry, 'cachedInputPerMTok', entry.cachedInputPerMTok);
+    if (entry.cacheWritePerMTok !== undefined) assertPrice(entry, 'cacheWritePerMTok', entry.cacheWritePerMTok);
   }
   return Object.freeze(entries.map((entry) => Object.freeze({ ...entry })));
-};
-
-const assertTokenCount = (field: string, tokens: number): void => {
-  if (!Number.isSafeInteger(tokens) || tokens < 0) {
-    throw new RangeError(`${field} must be a non-negative integer, got ${tokens}`);
-  }
 };
 
 const scaledPrice = (price: number): bigint => BigInt(Math.round(price * PRICE_SCALE));
@@ -80,7 +77,7 @@ const toAmount = (units: bigint): number => {
   return Number(`${whole}.${fraction}`);
 };
 
-const findEntry = (table: PriceTable, provider: string, model: string, atMs: number): PriceEntry | undefined =>
+export const findPriceEntry = (table: PriceTable, provider: string, model: string, atMs: number): PriceEntry | undefined =>
   table
     .filter((entry) => entry.provider === provider && entry.model === model && effectiveFromMs(entry) <= atMs)
     .reduce<PriceEntry | undefined>(
@@ -88,34 +85,43 @@ const findEntry = (table: PriceTable, provider: string, model: string, atMs: num
       undefined,
     );
 
-export type CostUnits = { units: bigint; currency: 'USD'; priceVersion: string };
-
 export const amountOfUnits = (units: bigint): number => toAmount(units);
 
-export const computeCostUnits = (input: CostInput): CostUnits | null => {
-  const { usage } = input;
-  const cachedInputTokens = usage.cachedInputTokens ?? 0;
-  assertTokenCount('inputTokens', usage.inputTokens);
-  assertTokenCount('outputTokens', usage.outputTokens);
-  assertTokenCount('cachedInputTokens', cachedInputTokens);
-  if (cachedInputTokens > usage.inputTokens) {
-    throw new RangeError(`cachedInputTokens (${cachedInputTokens}) exceeds inputTokens (${usage.inputTokens})`);
-  }
-  const atMs = input.at.getTime();
-  if (Number.isNaN(atMs)) throw new RangeError('computeCost: at must be a valid Date');
-  const entry = findEntry(input.table, input.provider, input.model, atMs);
-  if (entry === undefined) return null;
-  const inputRate = scaledPrice(entry.inputPerMTok);
-  const cachedRate = scaledPrice(entry.cachedInputPerMTok ?? entry.inputPerMTok);
-  const outputRate = scaledPrice(entry.outputPerMTok);
-  const units =
-    BigInt(usage.inputTokens - cachedInputTokens) * inputRate +
-    BigInt(cachedInputTokens) * cachedRate +
-    BigInt(usage.outputTokens) * outputRate;
-  return { units, currency: entry.currency, priceVersion: entry.effectiveFrom };
-};
+export const LOCAL_PRICE_VERSION = 'local';
 
-export const computeCost = (input: CostInput): Cost | null => {
-  const priced = computeCostUnits(input);
-  return priced === null ? null : { amount: toAmount(priced.units), currency: priced.currency, priceVersion: priced.priceVersion };
+export type CallBilling = 'metered' | 'local' | typeof UNKNOWN_BILLING;
+
+export type PriceCallInput = CostInput & { billing: CallBilling };
+
+export type PricedCall = { kind: 'priced'; units: bigint; currency: 'USD'; priceVersion: string } | { kind: 'unpriced'; reason: string };
+
+const isCount = (value: number | undefined): boolean => value === undefined || (Number.isSafeInteger(value) && value >= 0);
+
+export const priceCall = (input: PriceCallInput): PricedCall => {
+  const { usage, billing } = input;
+  const cached = usage.cachedInputTokens ?? 0;
+  const written = usage.cacheWriteInputTokens ?? 0;
+  if (![usage.inputTokens, usage.outputTokens, usage.cachedInputTokens, usage.cacheWriteInputTokens].every(isCount)) {
+    return { kind: 'unpriced', reason: 'a token count of the call is not a non-negative integer' };
+  }
+  if (cached + written > usage.inputTokens) {
+    return { kind: 'unpriced', reason: `cached input (${cached}) and written input (${written}) together exceed the input (${usage.inputTokens})` };
+  }
+  if (billing === UNKNOWN_BILLING) return { kind: 'unpriced', reason: 'the billing of the target is unknown' };
+  if (billing === 'local') return { kind: 'priced', units: 0n, currency: 'USD', priceVersion: LOCAL_PRICE_VERSION };
+  if (Number.isNaN(input.at.getTime())) return { kind: 'unpriced', reason: 'the time of the call is not a valid date' };
+  const entry = findPriceEntry(input.table, input.provider, input.model, input.at.getTime());
+  if (entry === undefined) return { kind: 'unpriced', reason: 'no price entry' };
+  if (cached > 0 && entry.cachedInputPerMTok === undefined) {
+    return { kind: 'unpriced', reason: `${cached} cached input token(s) and the price entry has no cachedInputPerMTok` };
+  }
+  if (written > 0 && entry.cacheWritePerMTok === undefined) {
+    return { kind: 'unpriced', reason: `${written} cache write token(s) and the price entry has no cacheWritePerMTok` };
+  }
+  const units =
+    BigInt(usage.inputTokens - cached - written) * scaledPrice(entry.inputPerMTok) +
+    BigInt(cached) * scaledPrice(entry.cachedInputPerMTok ?? 0) +
+    BigInt(written) * scaledPrice(entry.cacheWritePerMTok ?? 0) +
+    BigInt(usage.outputTokens) * scaledPrice(entry.outputPerMTok);
+  return { kind: 'priced', units, currency: entry.currency, priceVersion: entry.effectiveFrom };
 };

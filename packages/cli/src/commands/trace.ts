@@ -1,6 +1,7 @@
 import { describeFallbackCause } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import type { FallbackCauseView, RunTraceSpan, RunTraceView, UsageReport } from '@momonga/protocol';
+import { anatomyLayerEntries } from '@momonga/protocol';
+import type { FallbackCauseView, RunTraceCall, RunTraceSpan, RunTraceView, TokenAnatomy, UsageReport } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
@@ -43,6 +44,22 @@ const spanLines = (spans: readonly RunTraceSpan[], parent: string | null, depth:
     ...spanLines(spans, span.spanId, depth + 1),
   ]);
 
+const layerText = (anatomy: TokenAnatomy, name: string, tokens: number): string => {
+  if (name !== 'tools') return `${name} ${tokens}`;
+  const perTool = Object.entries(anatomy.tools).map(([tool, count]) => `${tool} ${count}`);
+  return `tools ${tokens} (${perTool.join(', ')})`;
+};
+
+const callLine = (call: RunTraceCall): string => {
+  const prefix = `step ${call.step}, attempt ${call.attempt}:`;
+  const { anatomy } = call;
+  if (anatomy === undefined) return `${prefix} layers not recorded`;
+  const layers = anatomyLayerEntries(anatomy.layers)
+    .filter(([, tokens]) => tokens > 0)
+    .map(([name, tokens]) => layerText(anatomy, name, tokens));
+  return `${prefix} ${anatomy.total} tokens (estimated) ${layers.join(', ')}`;
+};
+
 export const renderTrace = (trace: RunTraceView, usage: UsageReport): string => {
   const known = new Set(trace.spans.map((span) => span.spanId));
   const roots = trace.spans.filter((span) => span.parentSpanId === null || !known.has(span.parentSpanId));
@@ -50,6 +67,7 @@ export const renderTrace = (trace: RunTraceView, usage: UsageReport): string => 
   return [
     `run ${trace.runId}: ${summary.steps} steps, ${usage.responses.length} model calls, ${summary.toolCalls} tool calls, ${summary.errorCount} errors, ${summary.durationMs} ms`,
     `tokens: ${usage.total.input_tokens} in, ${usage.total.output_tokens} out`,
+    ...(trace.calls ?? []).map(callLine),
     ...roots
       .sort((left, right) => left.startMs - right.startMs)
       .flatMap((root) => [`${root.name}  ${root.endMs - root.startMs} ms  ${root.status}`, ...spanLines(trace.spans, root.spanId, 1)]),

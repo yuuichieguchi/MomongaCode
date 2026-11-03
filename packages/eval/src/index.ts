@@ -63,8 +63,9 @@ export {
   parseContextReport,
 } from './context-report.ts';
 export type { BuildContextReportInput, ClusteredProportion, ContextCaseReport, ContextMetrics, ContextModel, ContextReport, ModelDependentMetric, StoppedRun } from './context-report.ts';
-export { GATE_CHECKS, compareContextReports, formatContextComparison } from './context-compare.ts';
-export type { ContextComparison, GateCheck, GateCheckName } from './context-compare.ts';
+export { GATE_CHECKS, GATE_NAMES, TOKEN_PRIMARY_METRICS, compareContextReports, formatContextComparison } from './context-compare.ts';
+export type { ContextComparison, GateCheck, GateCheckName, GateName, TokenPrimaryMetric } from './context-compare.ts';
+export type { RatioMetric } from './token-metrics.ts';
 export { contrastiveCasesOf } from './context-report.ts';
 export type { ContrastiveCase } from './context-report.ts';
 export {
@@ -105,6 +106,6 @@ export type {
   TokenUsage,
 } from './context-improve.ts';
 export { TRANSCRIPT_FORMAT, TranscriptError, decodeTranscript, encodeTranscript, parsePublicRunEvent } from './transcript.ts';
-export type { Transcript, TranscriptChild, TranscriptRun } from './transcript.ts';
+export type { Transcript, TranscriptChild, TranscriptReflection, TranscriptRun } from './transcript.ts';
 export { loadContextDataset, loadContextReport, loadDataset, loadTranscripts, nodeEvalFiles, saveContextReport, saveTranscript, transcriptFileName } from './files.ts';
 export type { EvalFiles } from './files.ts';

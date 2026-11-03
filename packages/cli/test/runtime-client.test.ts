@@ -222,6 +222,45 @@ describe('runs', () => {
   });
 });
 
+describe('the token anatomy endpoints', () => {
+  const breakdown = {
+    calls: 1,
+    layers: { estimated: true, shares: {}, tokens: {}, callsWithoutAnatomy: 1 },
+    billed: { inputTokens: 0, uncachedInputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 3, reasoningTokens: 0 },
+    cacheHitRatio: null,
+    timeToFirstToken: null,
+    duration: null,
+    roles: { run: { calls: 1, timeToFirstToken: null, duration: null, totalDurationMs: null, timingNotRecorded: 1 } },
+    callsWithoutResponseId: 0,
+    cost: { amount: null, currency: 'USD', unpricedCalls: 1 },
+    unpriced: [],
+    inconsistentUsage: [{ runId: 'run-1', provider: 'acme', model: 'm1', step: 2, reason: 'cached input (60) and written input (50) together exceed the input (100)' }],
+    unjoined: [],
+  };
+
+  it('accepts a breakdown that lists the calls with inconsistent usage', async (context) => {
+    const { client } = await serve(context, () => json(200, breakdown));
+
+    expect((await client.costBreakdown({ run: 'run-1' })).inconsistentUsage).toHaveLength(1);
+  });
+
+  it('refuses a breakdown that does not say which calls were left out of the by-kind sums', async (context) => {
+    const { inconsistentUsage: _omitted, ...incomplete } = breakdown;
+    const { client } = await serve(context, () => json(200, incomplete));
+
+    await expect(client.costBreakdown({ run: 'run-1' })).rejects.toBeInstanceOf(ContractViolation);
+  });
+
+  it('reads the reflection job and every charge of a run and refuses a body that still names a single charge', async (context) => {
+    const good = await serve(context, () => json(200, { job: null, charges: [], queuedAhead: 0 }));
+    expect(await good.client.runReflection('run-1')).toEqual({ job: null, charges: [], queuedAhead: 0 });
+    expect(good.seen[0]?.url).toBe('/v1/runs/run-1/reflection');
+
+    const bad = await serve(context, () => json(200, { job: null, charge: null }));
+    await expect(bad.client.runReflection('run-1')).rejects.toBeInstanceOf(ContractViolation);
+  });
+});
+
 describe('streamEvents', () => {
   const event = (id: number, extra: Record<string, unknown> = {}): string =>
     `id: ${id}\nevent: agent.message.delta\ndata: ${JSON.stringify({ id, runId: 'run-1', sessionId: 'session-1', seq: id, step: 1, createdAt: 1, type: 'agent.message.delta', attempt: 0, itemId: 'm', text: String(id), ...extra })}\n\n`;

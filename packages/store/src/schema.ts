@@ -278,6 +278,12 @@ const REFLECTION_DROPPED_CANDIDATES = `
 ALTER TABLE reflection_jobs ADD COLUMN dropped_json TEXT;
 `;
 
+const CONTEXT_CHARGE_DETAIL = `
+ALTER TABLE context_charges ADD COLUMN detail_json TEXT;
+CREATE UNIQUE INDEX context_charges_by_response ON context_charges (json_extract(detail_json, '$.responseId'))
+  WHERE json_extract(detail_json, '$.responseId') IS NOT NULL;
+`;
+
 const EVIDENCE_BASED_CONTEXT = `
 CREATE TABLE memories_rebuilt (
   id TEXT PRIMARY KEY,
@@ -568,5 +574,6 @@ export const MIGRATIONS: readonly Migration[] = [
   },
   { version: 14, name: 'copy the pinned-layer digest of a recorded model request into a column, so a terminal can find the distinct layers without reading the bodies', sql: EVENT_PINNED_DIGEST },
   { version: 15, name: 'record the candidates a reflection dropped and why', sql: REFLECTION_DROPPED_CANDIDATES },
-  { version: 16, name: 'index the model switches of a session, so a resume reads them without scanning the events of the session', sql: MODEL_CHANGE_INDEX },
+  { version: 16, name: 'record the cache, cost and timing of a context charge', sql: CONTEXT_CHARGE_DETAIL },
+  { version: 17, name: 'index the model switches of a session, so a resume reads them without scanning the events of the session', sql: MODEL_CHANGE_INDEX },
 ];

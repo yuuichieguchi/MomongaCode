@@ -1,5 +1,6 @@
 import { canonicalJson } from '@momonga/foundation';
-import type { CountTokensRequest, CountTokensResult, FunctionTool, InputItem } from '@momonga/protocol';
+import { errorBoundOfShape } from '@momonga/protocol';
+import type { CountTokensRequest, CountTokensResult, ErrorShape, FunctionTool, InputItem } from '@momonga/protocol';
 import { digestChain, itemDigest } from './digests.ts';
 import type { ItemCountContext, MeterCount, MeterRequest, TokenMeter, TokenMeterOptions, UsageObservation } from './types.ts';
 
@@ -10,7 +11,7 @@ const MAX_COUNTED = 1024;
 const MAX_OBSERVATIONS = 64;
 const MAX_ITEM_COUNTS = 8192;
 
-type CountedRecord = { itemCount: number; inputTokens: number; counterBound: number; estimatedTokens: number };
+type CountedRecord = { itemCount: number; inputTokens: number; counterBound: number; counterShape: ErrorShape; estimatedTokens: number };
 
 const estimatedPartOf = (result: CountTokensResult): number => (result.method === 'estimated' ? result.input_tokens : 0);
 
@@ -35,12 +36,8 @@ export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOpt
     return capabilities.tokenCounting === 'estimated' ? Math.max(ESTIMATED_ERROR_FLOOR, observed) : observed;
   };
 
-  const errorBoundOf = (record: CountedRecord): number => {
-    const relativeBound = Math.ceil(relativeError() * record.inputTokens);
-    return capabilities.tokenCounting === 'estimated'
-      ? Math.max(relativeBound, record.counterBound)
-      : relativeBound + record.counterBound;
-  };
+  const combined = (relativeBound: number, counterBound: number): number =>
+    capabilities.tokenCounting === 'estimated' ? Math.max(relativeBound, counterBound) : relativeBound + counterBound;
 
   const requestOf = (
     input: readonly InputItem[],
@@ -67,12 +64,16 @@ export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOpt
     const chain = digestChain({ instructions: instructions ?? null, tools }, input);
     const digestAt = (length: number): string => chain[length] as string;
     const inputDigest = digestAt(input.length);
-    const withBound = (record: CountedRecord): MeterCount => ({
-      inputTokens: record.inputTokens,
-      inputDigest,
-      errorBound: errorBoundOf(record),
-      estimatedTokens: Math.min(record.estimatedTokens, record.inputTokens),
-    });
+    const withBound = (record: CountedRecord): MeterCount => {
+      const relative = relativeError();
+      return {
+        inputTokens: record.inputTokens,
+        inputDigest,
+        errorBound: combined(Math.ceil(relative * record.inputTokens), record.counterBound),
+        errorBoundAt: (tokens) => combined(Math.ceil(relative * tokens), errorBoundOfShape(record.counterShape, tokens)),
+        estimatedTokens: Math.min(record.estimatedTokens, record.inputTokens),
+      };
+    };
 
     const known = counted.get(inputDigest);
     if (known !== undefined) return withBound(known);
@@ -93,6 +94,7 @@ export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOpt
           itemCount: input.length,
           inputTokens: observation.inputTokens + suffix.input_tokens - baseline,
           counterBound: suffix.error_bound,
+          counterShape: suffix.error_shape,
           estimatedTokens: observation.estimatedTokens + Math.max(0, estimatedPartOf(suffix) - baseline),
         };
       }
@@ -100,7 +102,7 @@ export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOpt
     }
     if (record === undefined) {
       const result = await counter.count(requestOf(input, tools, instructions));
-      record = { itemCount: input.length, inputTokens: result.input_tokens, counterBound: result.error_bound, estimatedTokens: estimatedPartOf(result) };
+      record = { itemCount: input.length, inputTokens: result.input_tokens, counterBound: result.error_bound, counterShape: result.error_shape, estimatedTokens: estimatedPartOf(result) };
     }
     remember(counted, inputDigest, record, MAX_COUNTED);
     return withBound(record);

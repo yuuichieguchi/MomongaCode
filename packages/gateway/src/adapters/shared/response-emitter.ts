@@ -34,6 +34,9 @@ const newId = (prefix: string, clock: Clock): string => `${prefix}_${uuidv7(cloc
 const contextHint = (contextInputTokens: number | undefined): { contextInputTokens?: number } =>
   contextInputTokens === undefined ? {} : { contextInputTokens };
 
+const cacheWriteHint = (cacheWriteInputTokens: number | undefined): { cacheWriteInputTokens?: number } =>
+  cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens };
+
 export class ResponseEmitter {
   private readonly options: ResponseEmitterOptions;
   private readonly responseId: string;
@@ -154,16 +157,20 @@ export class ResponseEmitter {
     this.closeItem(this.callOf(key), 'completed');
   }
 
-  complete(usage: Usage | undefined, contextInputTokens?: number): void {
+  complete(usage: Usage | undefined, contextInputTokens?: number, cacheWriteInputTokens?: number): void {
     this.closeOpenItems('completed');
     this.emit({
       type: 'response.completed',
-      response: { ...this.resource({ status: 'completed', output: this.doneItems, usage: usage ?? null }), ...contextHint(contextInputTokens) },
+      response: {
+        ...this.resource({ status: 'completed', output: this.doneItems, usage: usage ?? null }),
+        ...contextHint(contextInputTokens),
+        ...cacheWriteHint(cacheWriteInputTokens),
+      },
     });
     this.ended = true;
   }
 
-  incomplete(reason: 'max_output_tokens' | 'content_filter', usage: Usage | undefined, contextInputTokens?: number): void {
+  incomplete(reason: 'max_output_tokens' | 'content_filter', usage: Usage | undefined, contextInputTokens?: number, cacheWriteInputTokens?: number): void {
     this.closeOpenItems('incomplete');
     this.emit({
       type: 'response.incomplete',
@@ -171,6 +178,7 @@ export class ResponseEmitter {
         ...this.resource({ status: 'incomplete', output: this.doneItems, usage: usage ?? null }),
         incomplete_details: { reason },
         ...contextHint(contextInputTokens),
+        ...cacheWriteHint(cacheWriteInputTokens),
       },
     });
     this.ended = true;

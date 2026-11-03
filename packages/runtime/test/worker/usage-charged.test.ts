@@ -49,6 +49,7 @@ describe('token spend outside the main model calls counts against the run', () =
   it('stops a run at its token budget when the classifier spend alone exhausts it', async () => {
     const env = await makeEnv({ mode: 'auto' });
     env.settings.classifierAlias = 'guard';
+    env.gateway.capabilitiesByAlias['guard'] = capabilitiesFor(100_000, { structuredOutput: 'json_schema' });
     const target = path.join(env.project, 'out.txt');
     env.gateway.script.push(
       callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'x' } }], usageOf(100, 10)),

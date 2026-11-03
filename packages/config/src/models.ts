@@ -8,6 +8,8 @@ import type {
   ChatCompletionsTarget,
   FmTarget,
   ModelAlias,
+  ModelRole,
+  ModelRoles,
   ModelTarget,
   ModelsSettings,
   OpenResponsesTarget,
@@ -24,6 +26,7 @@ import type {
 export type ResolvedModels = {
   aliases: Record<string, ModelAlias>;
   targets: Record<string, ResolvedModelTarget>;
+  roles: ModelRoles;
 };
 
 export type ResolveModelsOptions = { source: string; home: string; warnings: string[] };
@@ -173,7 +176,14 @@ export const resolveModels = (models: ModelsSettings | undefined, { source, home
       warnings.push(`${source}: models.aliases has no "default" alias; using the first target ${JSON.stringify(first)}`);
     }
   }
-  return { aliases, targets };
+  const roles: ModelRoles = {};
+  for (const [role, alias] of Object.entries(models?.roles ?? {})) {
+    if (!Object.hasOwn(aliases, alias)) {
+      throw new Error(`${source}: models.roles.${role} names alias ${JSON.stringify(alias)}, which is not defined in models.aliases`);
+    }
+    roles[role as ModelRole] = alias;
+  }
+  return { aliases, targets, roles };
 };
 
 type ResolvedTargets = { models: { targets: Record<string, ResolvedModelTarget> } };

@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import { MEMORY_SCOPES, MEMORY_STATES } from '@momonga/protocol';
-import type { AddMemoryRequest, MemoryScope, MemoryState, PromoteMemoryRequest, ReflectionResponse } from '@momonga/protocol';
+import type { AddMemoryRequest, MemoryScope, MemoryState, PromoteMemoryRequest, ReflectionResponse, RunReflectionView } from '@momonga/protocol';
 import { isValidSkillName } from '@momonga/skills';
 import type { MemoryChange, RuntimeStore } from '@momonga/store';
 import { MemoryAddRefusal, prepareCommandMemory } from '../memory/add-memory.ts';
@@ -32,7 +32,7 @@ const stateOf = (raw: string | undefined): MemoryState | undefined => {
 const projectOf = (raw: string | undefined): string | undefined => (raw === undefined ? undefined : canonicalProject(raw, 'project'));
 
 export type MemoryRoutesDeps = {
-  store: Pick<RuntimeStore, 'memories' | 'reflection' | 'trust'>;
+  store: Pick<RuntimeStore, 'memories' | 'reflection' | 'trust' | 'contextCharges'>;
   views: RecordViews;
   evidenceRun: (project: string) => EvidenceRun;
   maxBodyBytes: number;
@@ -131,7 +131,19 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDe
     return json(view, 200);
   };
 
+  const reflectionOfRun: Handler = (context) => {
+    const runId = context.req.param('id') ?? '';
+    const job = reflection.get(runId);
+    const view: RunReflectionView = {
+      job: job === undefined ? null : { runId: job.runId, state: job.state, attempts: job.attempts, reason: job.lastError, dropped: job.dropped, updatedAt: job.updatedAt },
+      charges: deps.store.contextCharges.list({ runIds: [runId] }).filter((entry) => entry.purpose === 'reflection'),
+      queuedAhead: job === undefined ? 0 : reflection.aheadOf(runId),
+    };
+    return json(view, 200);
+  };
+
   route('/v1/reflection', { GET: latestReflection });
+  route('/v1/runs/:id/reflection', { GET: reflectionOfRun });
   route('/v1/memories', { GET: listMemories, POST: addMemory });
   route('/v1/memories/:id', { GET: getMemory, DELETE: deleteMemory });
   route('/v1/memories/:id/history', { GET: memoryHistory });

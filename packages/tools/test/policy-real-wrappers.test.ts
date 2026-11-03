@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { makeRealWorkspace } from './real-workspace.ts';
 import type { RealWorkspace } from './real-workspace.ts';
 
@@ -8,7 +9,7 @@ const plantProgram = (workspace: RealWorkspace, name: string): string => {
   return `${path.join(workspace.project, 'bin')}:/usr/bin:/bin`;
 };
 
-describe('builtins and keywords run as programs behind a program wrapper (real /bin/bash)', () => {
+describe('builtins and keywords run as programs behind a program wrapper (real /bin/bash)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it.each(['nice echo hi', 'nohup pwd', 'nice time ls', 'nice command echo hi'])(
     'asks for %s when a planted program of that name comes first on PATH, and the planted program runs',
     (command) => {

@@ -54,6 +54,21 @@ describe('context charges', () => {
     expect(charges.list({ runIds: [] })).toEqual([]);
   });
 
+  it('refuses a second charge for one response id from any writer, names the id, and leaves charges without an id free to repeat', () => {
+    const { run, charges } = setup();
+    const withId = (responseId: string, runId: string | null = null) => ({ ...charge({ runId }), detail: { responseId } });
+    charges.record(withId('resp_1') as never);
+
+    expect(() => charges.record(withId('resp_1', run.id) as never)).toThrow(/resp_1/);
+    expect(() => charges.record(withId('resp_1') as never)).toThrowError(expect.objectContaining({ name: 'DuplicateChargeError' }));
+    expect(charges.list()).toHaveLength(1);
+
+    charges.record(withId('resp_2') as never);
+    charges.record(charge());
+    charges.record(charge());
+    expect(charges.list()).toHaveLength(4);
+  });
+
   it('refuses an unknown purpose and a negative count', () => {
     const { charges } = setup();
     expect(() => charges.record(charge({ purpose: 'compaction' }))).toThrow();

@@ -61,11 +61,11 @@ describe('the margin term of the summary input bound', () => {
     [LIMIT, 200],
     [LIMIT + 1, 400],
   ] as const)('a counted request of %i tokens answers %i when W - cap - marginFloorFor(W) is the smaller term', async ([tokens, status]) => {
-    expect(LIMIT).toBeLessThan(W - 64);
+    expect(LIMIT).toBeLessThan(W - CAP);
     const fake = await startFake({ scenario: 'tools-ok', script: [textReply('note')] });
     const adapter = makeAdapter(fake, {
-      capabilities: async () => ({ ...CC_CAPABILITIES, contextWindow: W, maxOutputTokens: 64, tokenCounting: 'calibrated' }),
-      countTokens: async (): Promise<CountTokensResult> => ({ input_tokens: tokens, method: 'calibrated', error_bound: 0 }),
+      capabilities: async () => ({ ...CC_CAPABILITIES, contextWindow: W, maxOutputTokens: CAP, tokenCounting: 'calibrated' }),
+      countTokens: async (): Promise<CountTokensResult> => ({ input_tokens: tokens, method: 'calibrated', error_bound: 0, error_shape: { ratio: 0, minimum: 0 } }),
     });
     const harness = await startCcGateway({ fm: adapter });
     const response = await compact(harness, { momonga: { max_summary_tokens: CAP } });
@@ -94,11 +94,11 @@ describe('the reasoning headroom term of the summary input bound', () => {
       capabilities: async () => ({
         ...CC_CAPABILITIES,
         contextWindow: W,
-        maxOutputTokens: 64,
+        maxOutputTokens: CAP,
         tokenCounting: 'calibrated',
         reasoning: { control: 'none', headroomTokens: HEADROOM },
       }),
-      countTokens: async (): Promise<CountTokensResult> => ({ input_tokens: tokens, method: 'calibrated', error_bound: 0 }),
+      countTokens: async (): Promise<CountTokensResult> => ({ input_tokens: tokens, method: 'calibrated', error_bound: 0, error_shape: { ratio: 0, minimum: 0 } }),
     });
     const harness = await startCcGateway({ fm: adapter });
     const response = await compact(harness, { momonga: { max_summary_tokens: CAP } });
@@ -115,7 +115,7 @@ describe('error precedence when every candidate is dropped', () => {
       capabilities: async () => ({ ...CC_CAPABILITIES, tokenCounting: 'calibrated' }),
       countTokens: async (_target, request): Promise<CountTokensResult> => {
         counts.push(request);
-        return { input_tokens: 100_000, method: 'calibrated', error_bound: 0 };
+        return { input_tokens: 100_000, method: 'calibrated', error_bound: 0, error_shape: { ratio: 0, minimum: 0 } };
       },
     });
     return { fake, adapter, counts };
@@ -167,7 +167,7 @@ describe('a dead request stops sizing instead of dropping the candidate', () => 
       },
       countTokens: async (_target, request): Promise<CountTokensResult> => {
         calls.push(request);
-        return { input_tokens: 100, method: 'calibrated', error_bound: 0 };
+        return { input_tokens: 100, method: 'calibrated', error_bound: 0, error_shape: { ratio: 0, minimum: 0 } };
       },
     });
     const render = adapter.renderCompactWire;

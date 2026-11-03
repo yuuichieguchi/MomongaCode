@@ -44,6 +44,71 @@ export const pairedBootstrap = (differences: readonly number[], options: { seed:
   return { mean, ...percentileInterval(means), n };
 };
 
+export type RatioInterval = { value: number; low: number; high: number; clusters: number };
+
+const tailIntervalOf = (statistics: Float64Array, count: number): { low: number; high: number } | undefined => {
+  if (count === 0) return undefined;
+  const sorted = statistics.slice(0, count).sort();
+  const rank = Math.max(1, Math.ceil(((count + 1) * BOOTSTRAP_TAIL_RANK) / (BOOTSTRAP_RESAMPLES + 1)));
+  return { low: pickRank(sorted, rank), high: pickRank(sorted, count + 1 - rank) };
+};
+
+export const ratioBootstrap = (clusters: readonly Cluster[], options: { seed: number }): RatioInterval | undefined => {
+  if (clusters.length === 0) throw new RangeError('ratioBootstrap: at least one cluster is needed');
+  const denominator = clusters.reduce((sum, cluster) => sum + cluster.denominator, 0);
+  if (!(denominator > 0)) return undefined;
+  const random = seededRandom(options.seed);
+  const ratios = new Float64Array(BOOTSTRAP_RESAMPLES);
+  let valid = 0;
+  for (let resample = 0; resample < BOOTSTRAP_RESAMPLES; resample += 1) {
+    let drawnNumerator = 0;
+    let drawnDenominator = 0;
+    for (let draw = 0; draw < clusters.length; draw += 1) {
+      const cluster = pickFrom(random, clusters);
+      drawnNumerator += cluster.numerator;
+      drawnDenominator += cluster.denominator;
+    }
+    if (drawnDenominator > 0) {
+      ratios[valid] = drawnNumerator / drawnDenominator;
+      valid += 1;
+    }
+  }
+  const tails = tailIntervalOf(ratios, valid);
+  if (tails === undefined) return undefined;
+  return { value: clusters.reduce((sum, cluster) => sum + cluster.numerator, 0) / denominator, ...tails, clusters: clusters.length };
+};
+
+export type ClusterPair = { baseline: Cluster; candidate: Cluster };
+
+export const pairedRatioBootstrap = (pairs: readonly ClusterPair[], options: { seed: number }): BootstrapInterval | undefined => {
+  if (pairs.length === 0) throw new RangeError('pairedRatioBootstrap: at least one pair is needed');
+  const sums = (pick: (pair: ClusterPair) => Cluster): Cluster =>
+    pairs.reduce((total, pair) => ({ numerator: total.numerator + pick(pair).numerator, denominator: total.denominator + pick(pair).denominator }), { numerator: 0, denominator: 0 });
+  const whole = { baseline: sums((pair) => pair.baseline), candidate: sums((pair) => pair.candidate) };
+  if (!(whole.baseline.denominator > 0) || !(whole.candidate.denominator > 0)) return undefined;
+  const random = seededRandom(options.seed);
+  const differences = new Float64Array(BOOTSTRAP_RESAMPLES);
+  let valid = 0;
+  for (let resample = 0; resample < BOOTSTRAP_RESAMPLES; resample += 1) {
+    const baseline = { numerator: 0, denominator: 0 };
+    const candidate = { numerator: 0, denominator: 0 };
+    for (let draw = 0; draw < pairs.length; draw += 1) {
+      const pair = pickFrom(random, pairs);
+      baseline.numerator += pair.baseline.numerator;
+      baseline.denominator += pair.baseline.denominator;
+      candidate.numerator += pair.candidate.numerator;
+      candidate.denominator += pair.candidate.denominator;
+    }
+    if (baseline.denominator > 0 && candidate.denominator > 0) {
+      differences[valid] = candidate.numerator / candidate.denominator - baseline.numerator / baseline.denominator;
+      valid += 1;
+    }
+  }
+  const tails = tailIntervalOf(differences, valid);
+  if (tails === undefined) return undefined;
+  return { mean: whole.candidate.numerator / whole.candidate.denominator - whole.baseline.numerator / whole.baseline.denominator, ...tails, n: pairs.length };
+};
+
 export const clusterBootstrap = (clusters: readonly Cluster[], options: { seed: number }): ClusterInterval => {
   if (clusters.length === 0) throw new RangeError('clusterBootstrap: at least one cluster is needed');
   if (clusters.some((cluster) => !(cluster.denominator > 0))) throw new RangeError('clusterBootstrap: every cluster needs a positive denominator');

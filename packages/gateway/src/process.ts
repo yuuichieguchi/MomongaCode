@@ -15,7 +15,16 @@ import {
   secretKeyFile,
 } from '@momonga/foundation';
 import type { Clock, JsonLogger, MomongaPaths, ProcessLock, ReadyFields, SecretStore, TextStream } from '@momonga/foundation';
-import { buildCostReport, closeTelemetry, definePriceTable, formatCostReport, createTelemetry, exportersFor, openTraceStore } from '@momonga/observability';
+import {
+  buildCostReport,
+  closeTelemetry,
+  definePriceTable,
+  formatCostReport,
+  createTelemetry,
+  exportersFor,
+  openTraceStore,
+  pageBilledCalls,
+} from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import type { AdapterTarget, Capabilities, ProviderAdapter, ToolCallingMode } from '@momonga/protocol';
 import { loadEndpointRecord, saveEndpointRecord } from './probe/endpoint-record.ts';
@@ -451,10 +460,15 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       socketPath: paths.sockets.gateway,
       ...(options.debugTcp === undefined ? {} : { debugTcp: { host: DEBUG_TCP_HOST, port: options.debugTcp.port, token: files.readDebugToken(options.debugTcp.tokenFile) } }),
       telemetry,
-      costReport: async (runs) => {
+      priceTable,
+      costReport: async (runs, includeRunless) => {
         await telemetry.forceFlush();
-        const report = buildCostReport(traceStore, runs, { table: priceTable });
+        const report = buildCostReport(traceStore, runs, { table: priceTable, includeRunless });
         return { report, text: formatCostReport(report) };
+      },
+      billedCalls: async (runIds, cursor, limit, includeRunless) => {
+        await telemetry.forceFlush();
+        return pageBilledCalls(traceStore, runIds, priceTable, cursor, limit, includeRunless);
       },
       version: options.version,
       onError: (error) => logger.error('unhandled gateway error', { err: toError(error) }),

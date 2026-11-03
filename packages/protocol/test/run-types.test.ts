@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import { RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES } from '@momonga/protocol';
 import type {
   ApprovalBasis,
+  CallTiming,
   CompactionInputItem,
   ContributionKind,
   ElicitationAnswerRecord,
@@ -10,6 +11,7 @@ import type {
   InputItem,
   MemoryStatus,
   MessageInputItem,
+  ModelCost,
   ModelResponse,
   PermissionMode,
   PermissionOption,
@@ -20,6 +22,7 @@ import type {
   StopReason,
   SummaryFidelity,
   TerminalStatus,
+  TokenAnatomy,
   ToolAwait,
   ToolKind,
   WorkingFacts,
@@ -131,10 +134,19 @@ describe('run event payloads', () => {
 
   it('defines the model payloads with a loose response that 1.4 can tighten', () => {
     expectTypeOf<ModelResponse>().toEqualTypeOf<{
+      id?: string;
       status: 'completed' | 'incomplete';
       incompleteReason?: string;
       output: unknown[];
-      usage: { input_tokens: number; output_tokens: number; total_tokens: number };
+      usage: {
+        input_tokens: number;
+        output_tokens: number;
+        total_tokens: number;
+        input_tokens_details?: { cached_tokens: number };
+        output_tokens_details?: { reasoning_tokens: number };
+      };
+      momonga?: { cacheWriteInputTokens?: number; cost?: ModelCost };
+      timing?: CallTiming;
     }>();
     expectTypeOf<Payload<'model.requested'>>().toEqualTypeOf<{
       type: 'model.requested';
@@ -143,6 +155,7 @@ describe('run event payloads', () => {
       digest: string;
       pinnedDigest?: string;
       body: unknown;
+      anatomy?: TokenAnatomy;
     }>();
     expectTypeOf<Payload<'model.responded'>>().toEqualTypeOf<{
       type: 'model.responded';

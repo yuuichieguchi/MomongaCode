@@ -102,7 +102,7 @@ describe('count_tokens uses the breaker and admission gate', () => {
           release = resolve;
         });
         running -= 1;
-        return { input_tokens: 3, method: 'exact', error_bound: 0 };
+        return { input_tokens: 3, method: 'exact', error_bound: 0, error_shape: { ratio: 0, minimum: 0 } };
       },
     };
     const { client } = await startGateway({

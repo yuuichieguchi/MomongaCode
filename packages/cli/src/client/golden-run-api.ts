@@ -2,9 +2,34 @@ import type { PublicRunEvent } from '@momonga/protocol';
 import type { EvalRunApi } from '@momonga/eval';
 import type { RuntimeClient } from './runtime-client.ts';
 
+export type ReflectionSettle = {
+  pendingBoundMs: number;
+  attemptBoundMs: number;
+  pollMs: number;
+  now(): number;
+  wait(ms: number, signal?: AbortSignal): Promise<void>;
+  signal?: AbortSignal;
+};
+
+const pause = async (settle: ReflectionSettle): Promise<void> => {
+  const { signal } = settle;
+  if (signal === undefined) return settle.wait(settle.pollMs);
+  let onAbort: (() => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+  try {
+    await Promise.race([settle.wait(settle.pollMs, signal), aborted]);
+  } finally {
+    if (onAbort !== undefined) signal.removeEventListener('abort', onAbort);
+  }
+};
+
 export const goldenRunApi = (
-  client: Pick<RuntimeClient, 'createSession' | 'createRun' | 'streamEvents' | 'getRun' | 'resolveApproval' | 'cancel'>,
-  sessionEnv?: Readonly<Record<string, string>>,
+  client: Pick<RuntimeClient, 'createSession' | 'createRun' | 'streamEvents' | 'getRun' | 'runReflection' | 'resolveApproval' | 'cancel'>,
+  sessionEnv: Readonly<Record<string, string>> | undefined,
+  settle: ReflectionSettle,
 ): EvalRunApi => {
   async function* events(runId: string): AsyncGenerator<PublicRunEvent> {
     for await (const frame of client.streamEvents(runId)) yield frame.data;
@@ -42,6 +67,31 @@ export const goldenRunApi = (
         origin: run.origin,
         ...(modelAlias === undefined ? {} : { modelAlias }),
       };
+    },
+    reflectionOf: async (runId) => {
+      let watchedAt = settle.now();
+      let queueSeen = Number.POSITIVE_INFINITY;
+      let attemptSeenAt: number | undefined;
+      for (;;) {
+        settle.signal?.throwIfAborted();
+        const { job, charges, queuedAhead } = await client.runReflection(runId);
+        if (queuedAhead < queueSeen) {
+          if (queueSeen !== Number.POSITIVE_INFINITY) watchedAt = settle.now();
+          queueSeen = queuedAhead;
+        }
+        const state = job === null ? 'none' : job.state;
+        const answer = { state, ...(charges.length === 0 ? {} : { charges }) } as const;
+        if (state !== 'pending' && state !== 'running') return answer;
+        if (attemptSeenAt === undefined && job !== null && (job.state === 'running' || job.attempts > 0)) attemptSeenAt = settle.now();
+        if (attemptSeenAt === undefined) {
+          if (settle.now() - watchedAt >= settle.pendingBoundMs + queuedAhead * settle.attemptBoundMs) {
+            return { ...answer, reason: 'the runtime was busy with other runs, so the reflection did not start' };
+          }
+        } else if (settle.now() - attemptSeenAt >= settle.attemptBoundMs) {
+          return { ...answer, reason: `the reflection job was still ${state} after ${settle.attemptBoundMs} ms, the bound of its attempts` };
+        }
+        await pause(settle);
+      }
     },
     resolveApproval: async (approvalId, optionId) => {
       await client.resolveApproval(approvalId, optionId);

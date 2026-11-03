@@ -31,7 +31,9 @@ export type E2eCaseFile =
   | 'agents.test.ts'
   | 'acp.test.ts'
   | 'hooks-auto.test.ts'
-  | 'hooks-auto-cli.test.ts';
+  | 'hooks-auto-cli.test.ts'
+  | 'token-anatomy.test.ts'
+  | 'roles.test.ts';
 
 export const E2E_CASES = [
   { id: 'b1-join', file: 'b1-model-call.test.ts', title: 'b1 join: restarted runtime joins the in-flight upstream call', needsBash: false },
@@ -138,6 +140,12 @@ export const E2E_CASES = [
   { id: 'cli-models', file: 'product-cli.test.ts', title: 'cli: momonga models lists the aliases with the capabilities the gateway declares, as text and as JSON', needsBash: false },
   { id: 'cli-policy-verify', file: 'product-cli.test.ts', title: 'cli: momonga policy verify proves a clean rule set and states what it does not prove, and exits non-zero with a counterexample when an allow rule admits a denied subcommand or reaches a secret', needsBash: false },
   { id: 'cli-cost', file: 'product-cli.test.ts', title: 'cli: momonga cost reports the calls and tokens of a run, of its session and of the folder, as text and as JSON', needsBash: false },
+  {
+    id: 'cost-breakdown',
+    file: 'token-anatomy.test.ts',
+    title: 'token anatomy: a two-step run against an upstream that reports cached and reasoning tokens, then momonga cost --breakdown shows its layers, billed tokens, cache hit ratio, timing and cost for the run and the session',
+    needsBash: false,
+  },
   { id: 'cli-memory', file: 'product-cli.test.ts', title: 'cli: momonga memory lists, shows and deletes a memory the agent saved, with its source', needsBash: false },
   { id: 'cli-skill-print', file: 'product-cli.test.ts', title: 'cli: momonga -p runs a skill through a leading /skill-name and through --skill, and sends any other slash text as plain text', needsBash: false },
   { id: 'cli-image-print', file: 'product-cli.test.ts', title: 'cli: momonga -p --image sends the image to a model that declares image input and fails with image_input_unsupported for one that does not', needsBash: false },
@@ -167,6 +175,7 @@ export const E2E_CASES = [
   { id: 'cli-hook-denial', file: 'hooks-auto-cli.test.ts', title: 'cli: a -p run whose PreToolUse hook blocks a write prints the hook run and the denial by its source, and the file is not written', needsBash: true },
   { id: 'cli-auto-print', file: 'hooks-auto-cli.test.ts', title: 'cli: a -p run in auto mode prints the classifier verdict that allowed the write and the file changes', needsBash: false },
   { id: 'cli-auto-unavailable', file: 'hooks-auto-cli.test.ts', title: 'cli: a -p run in auto mode without a configured classifier fails with mode_unavailable stated plainly and never calls the model', needsBash: false },
+  { id: 'roles-compaction', file: 'roles.test.ts', title: 'roles: with models.roles.compaction set, compaction goes to the target of the role alias, the steps of the run go to the target of the run alias, and the cost report shows both roles', needsBash: false },
   { id: 'cli-user-prompt-blocked', file: 'hooks-auto-cli.test.ts', title: 'cli: a -p run whose UserPromptSubmit hook blocks the prompt prints the hook run and states that the prompt was blocked', needsBash: true },
 ] as const satisfies readonly { id: string; file: E2eCaseFile; title: string; needsBash: boolean }[];
 

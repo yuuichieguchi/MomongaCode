@@ -1,8 +1,10 @@
 import { SUMMARY_PROMPT_TOKENS, findDanglingOutput, findUnpairedCalls, summaryItemTokensFor, summaryTokenCapFor } from '@momonga/protocol';
 import type { FunctionCallOutputInputItem, FunctionTool, InputItem, MessageInputItem } from '@momonga/protocol';
 import { MIN_ROOM_TOKENS, budgetFor, inputCeilingFor, itemCapFor, memoryBudgetFor, summaryInputCeilingFor, pinnedFloorFor } from './budget.ts';
+import { anatomyOf, historyLayerOf } from './anatomy.ts';
+import type { TaggedItem } from './anatomy.ts';
 import { chainTail, digestChain, frozenItem } from './digests.ts';
-import { ContextOverflowError, PinnedOverflowError, PinnedRoomError, PrefixChangedError } from './errors.ts';
+import { ContextOverflowError, PinnedBoundError, PinnedOverflowError, PinnedRoomError, PrefixChangedError } from './errors.ts';
 import { governingMessageOf, governingNoticesOf, loadedGoverningOf } from './governing.ts';
 import { discoverInstructions } from './instructions.ts';
 import type { DiscoveredInstructions, LoadedInstructionFile } from './instructions.ts';
@@ -58,11 +60,31 @@ type Head = {
   systemMessage: MessageInputItem;
   task: InputItem;
   pinnedLayers: InputItem[];
+  catalogMessages: MessageInputItem[];
   governing: MessageInputItem[];
   pinnedDigest: string;
   pinnedTokens: number;
   ceiling: number;
   room: number;
+};
+
+export type MaxInputBounds = {
+  ceiling: number;
+  inputBudget: number;
+  errorBoundAt(tokens: number): number;
+};
+
+export const maxInputFor = ({ ceiling, inputBudget, errorBoundAt }: MaxInputBounds): number | undefined => {
+  const fitsWithItsBound = (tokens: number): boolean => tokens + errorBoundAt(tokens) <= inputBudget;
+  if (ceiling < 0 || !fitsWithItsBound(0)) return undefined;
+  let low = 0;
+  let high = Math.floor(ceiling);
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (fitsWithItsBound(middle)) low = middle;
+    else high = middle - 1;
+  }
+  return low;
 };
 
 const candidateToolsOf = (input: BuildContextInput): FunctionTool[] => (input.tools === 'none' ? [] : [...input.sources.tools]);
@@ -199,6 +221,7 @@ const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): 
     systemMessage,
     task,
     pinnedLayers,
+    catalogMessages,
     governing,
     pinnedDigest,
     pinnedTokens,
@@ -208,6 +231,7 @@ const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): 
 };
 
 type FittedLayers = {
+  skillMessages: MessageInputItem[];
   nested: LoadedInstructionFile[];
   layers: InputItem[];
   counted: MeterCount;
@@ -264,7 +288,7 @@ const fitLayers = async (input: BuildContextInput, ports: BuildContextPorts, hea
       breakdown: await breakdownOf(ports, systemMessage, layers, governing, task, tools),
     });
   }
-  return { nested, layers, counted, layersWith, floorOf, exceeds };
+  return { skillMessages, nested, layers, counted, layersWith, floorOf, exceeds };
 };
 
 export const measureLayers = async (input: BuildContextInput, ports: BuildContextPorts): Promise<void> => {
@@ -297,7 +321,7 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
   const { discovered, notices, systemMessage, task, pinnedDigest, pinnedTokens, ceiling } = head;
 
   const fitted = await fitLayers(input, ports, head);
-  const { nested, layersWith, floorOf, exceeds } = fitted;
+  const { nested, skillMessages, layersWith, floorOf, exceeds } = fitted;
   let layers = fitted.layers;
   let layersCounted = fitted.counted;
   let memoryMessage: MessageInputItem | undefined;
@@ -575,8 +599,19 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
   }
 
   if (!fits(total)) {
-    const deficit = Math.max(total.inputTokens - ceiling, total.inputTokens + total.errorBound - budgetFor(capabilities, 0).I);
-    const outcome = await compactionFor('forced', deficit);
+    const inputBudget = budgetFor(capabilities, 0).I;
+    const maxInput = maxInputFor({ ceiling, inputBudget, errorBoundAt: total.errorBoundAt });
+    if (maxInput === undefined || maxInput < pinnedTokens) {
+      throw new PinnedBoundError({
+        pinnedTokens,
+        ceiling,
+        breakdown: await breakdownOf(ports, systemMessage, layers, head.governing, task, tools),
+        inputBudget,
+        boundAtZero: total.errorBoundAt(0),
+        maxInput,
+      });
+    }
+    const outcome = await compactionFor('forced', total.inputTokens - maxInput);
     if (lastLevel) await persistEvictions(slots.length);
     throw new ContextOverflowError({
       inputTokens: total.inputTokens,
@@ -612,8 +647,24 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
   }
 
   const hint = levelIndex === 0 && total.inputTokens > highMark ? await compactionFor('proactive', 0) : undefined;
+  const finalInput = assemble();
+  const layerByItem = new Map<InputItem, TaggedItem['layer']>();
+  layerByItem.set(task, 'history.user');
+  for (const message of [...head.catalogMessages, ...skillMessages]) layerByItem.set(message, 'skills');
+  for (const file of [discovered.user, discovered.root, ...nested]) if (file !== undefined) layerByItem.set(file.message, 'instructions');
+  for (const message of head.governing) layerByItem.set(message, 'governing');
+  if (memoryMessage !== undefined) layerByItem.set(memoryMessage, 'memories');
+  for (const item of summaryItems) layerByItem.set(item, 'summary');
+  for (const item of workingStateItems) layerByItem.set(item, 'workingState');
+  for (const item of trailing) layerByItem.set(item, 'notices');
+  layerByItem.set(systemMessage, 'system');
+  const tagged = finalInput.map((item): TaggedItem => ({ item, layer: layerByItem.get(item) ?? historyLayerOf(item) }));
+  const anatomy = await anatomyOf(meter, tools, tagged, total, (item) =>
+    countContextFor(item.type === 'function_call_output' ? item.call_id : ''),
+  );
   return {
-    input: assemble(),
+    input: finalInput,
+    anatomy,
     tools,
     maxOutputTokens: budgetOf(total).R,
     inputTokens: total.inputTokens,

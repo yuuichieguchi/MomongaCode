@@ -1,5 +1,5 @@
 import type { Clock } from '@momonga/foundation';
-import type { Telemetry } from '@momonga/observability';
+import type { PriceTable, Telemetry } from '@momonga/observability';
 import type { CompactionCodec } from './compaction.ts';
 import type { Router } from './router.ts';
 import type { GatewayStore } from './store.ts';
@@ -14,6 +14,7 @@ export type Services = {
   store: GatewayStore;
   codec: CompactionCodec;
   telemetry: Telemetry | undefined;
+  priceTable: PriceTable | undefined;
   closeSignal: AbortSignal;
   forceCloseSignal: AbortSignal;
 };

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { saveProbeRecord } from '@momonga/gateway';
-import { FAKE_OS_BUILD, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { getJson, makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { makeReport } from './report-fixture.ts';
 import {
@@ -54,7 +54,7 @@ const reapServeGroups = (dumpFile: string): void => {
   registerCleanup(() => killGroupsForCleanup(servePids(dumpFile)));
 };
 
-describe('managed fm under startGatewayProcess', { timeout: 60_000 }, () => {
+describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('gives every fm invocation exactly the minimal env', async () => {
     const { fm, dumpFile, home } = await fakeFmSetup();
     reapServeGroups(dumpFile);

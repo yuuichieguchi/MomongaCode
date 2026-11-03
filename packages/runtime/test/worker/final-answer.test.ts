@@ -106,6 +106,7 @@ describe('worker final answer', () => {
       systemPromptDigest: sha256Hex(testSystemPrompt({ cwd: env.project, platform: process.platform })),
       toolSetDigest: toolSet.digest,
       capabilities: env.gateway.capabilitiesValue,
+      roles: {},
     });
     expect(env.fold(run.id).pins).toEqual(started?.pins);
   });

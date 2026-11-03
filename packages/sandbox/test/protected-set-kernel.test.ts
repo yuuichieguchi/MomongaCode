@@ -5,7 +5,7 @@ import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, protectedSetFor } from '@momonga
 import type { ProtectedSet } from '@momonga/foundation';
 import { buildSeatbeltProfile, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, heldMountPoints, planBubblewrap } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { fakePolicyFilesystem, killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, killGroupsForCleanup } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
 
 const KILL_GRACE_MS = 300;
@@ -27,7 +27,7 @@ const startRefusal = (policy: SandboxPolicy, cwd: string): unknown => {
   }
 };
 
-describe('protected set in the kernel (real sandbox-exec on Darwin, real bwrap on Linux, 5.13)', () => {
+describe('protected set in the kernel (real sandbox-exec on Darwin, real bwrap on Linux, 5.13)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   let created: string[] = [];
   let unlock: string[] = [];
   let spawned: SandboxedProcess[] = [];

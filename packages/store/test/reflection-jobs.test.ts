@@ -36,6 +36,24 @@ describe('reflection jobs', () => {
     expect(jobs.get(first.id)).toEqual({ runId: first.id, state: 'pending', attempts: 0, lastError: null, dropped: [], createdAt: START_MS, updatedAt: START_MS });
   });
 
+  it('counts the open jobs created before a job, pending or running and not finished, as the jobs ahead of it', () => {
+    const { store, clock, session, first, jobs } = setup();
+    const second = enqueue(store, session.id, 'two');
+    const third = enqueue(store, session.id, 'three');
+    const aheadOf = (runId: string): number => (jobs as unknown as { aheadOf(runId: string): number }).aheadOf(runId);
+    jobs.enqueue(first.id);
+    clock.advance(10);
+    jobs.enqueue(second.id);
+    jobs.enqueue(third.id);
+
+    expect([first.id, second.id, third.id].map(aheadOf)).toEqual([0, 1, 2]);
+
+    jobs.begin(first.id);
+    expect(aheadOf(third.id)).toBe(2);
+    jobs.finish(first.id, 'a fixture run that is not under test');
+    expect([second.id, third.id].map(aheadOf)).toEqual([0, 1]);
+  });
+
   it('is written in the terminal transition of a completed root run, in the same step as the status', () => {
     const { store, jobs, first } = setup();
     const claim = mustClaim(store, 'w1');

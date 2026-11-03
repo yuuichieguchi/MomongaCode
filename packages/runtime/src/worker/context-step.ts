@@ -1,5 +1,6 @@
 import {
   ContextOverflowError,
+  PinnedBoundError,
   PinnedOverflowError,
   PinnedRoomError,
   budgetFor,
@@ -233,8 +234,9 @@ const deterministicCompaction = (ctx: ClaimContext, plan: CompactionSource, guid
 
 export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource): Promise<void> => {
   const { journal, options } = ctx;
+  const roleAlias = ctx.roles.compaction;
   const request: CompactRequest = {
-    model: ctx.alias,
+    model: roleAlias ?? ctx.alias,
     input: plan.input,
     momonga: { max_summary_tokens: plan.summaryTokenCap, retains_user_request: true, ...(ctx.guideline === undefined ? {} : { guideline: ctx.guideline.text }) },
   };
@@ -242,6 +244,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
   const idempotencyKey = sha256Hex(canonicalJson([ctx.run.id, 'compact', sha256Hex(canonicalJson(request))]));
   ctx.control.inFlight.compactionKey = idempotencyKey;
   let resource: CompactResource;
+  const startedAt = options.clock.now();
   try {
     resource = await ctx.control.recordingRaised(
       options.gateway.compact(request, {
@@ -249,13 +252,17 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
         deadlineAt: ctx.run.deadlineAt,
         signal: ctx.control.signal,
         traceparent: ctx.agentSpan.traceparent,
+        runId: ctx.run.id,
       }),
     );
   } catch (error) {
     if (!escalates(error)) throw error;
     delete ctx.control.inFlight.compactionKey;
     journal.append([
-      noticeOf('compaction_failed', `Compaction summary failed (${error.code}): ${error.message}; the deterministic summary was used`),
+      noticeOf(
+        'compaction_failed',
+        `Compaction summary failed (${error.code}): ${error.message}${roleAlias === undefined ? '' : ` [models.roles.compaction names alias ${roleAlias}]`}; the deterministic summary was used`,
+      ),
       deterministicCompaction(ctx, plan, NO_ADOPTED_GUIDELINE),
     ]);
     return;
@@ -280,6 +287,11 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
     inputTokens: resource.usage.input_tokens,
     outputTokens: resource.usage.output_tokens,
     totalTokens: resource.usage.total_tokens,
+    responseId: resource.id,
+    cachedInputTokens: resource.usage.input_tokens_details.cached_tokens,
+    ...(resource.momonga?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: resource.momonga.cacheWriteInputTokens }),
+    ...(resource.momonga?.cost === undefined ? {} : { cost: resource.momonga.cost }),
+    timing: { durationMs: options.clock.now() - startedAt },
   };
   const unreadableNotices =
     region.unreadable.length === 0
@@ -378,6 +390,17 @@ const namedFacts = (error: PinnedOverflowError, ids: readonly string[]): string 
 
 export const pinnedOverflowFailure = (ctx: Pick<ClaimContext, 'capabilities'>, error: PinnedOverflowError, governingIds: readonly string[] = []): { code: 'pinned_overflow'; message: string } => {
   const { W, R } = budgetFor(ctx.capabilities, 0);
+  if (error instanceof PinnedBoundError) {
+    const limits = `the input budget of ${error.inputBudget} (window ${W}, output reserve ${R})`;
+    const remedy = 'Raise contextWindow, lower maxOutputTokens, or calibrate the token counter.';
+    return {
+      code: 'pinned_overflow',
+      message:
+        error.maxInput === undefined
+          ? `No input size fits: the token counter's error bound is ${error.boundAtZero} tokens even for an empty input, more than ${limits}. ${remedy}`
+          : `The pinned context needs ${error.pinnedTokens} tokens, but with the token counter's error bound at most ${error.maxInput} fit ${limits}, so no compaction can make room. ${remedy}`,
+    };
+  }
   if (error instanceof PinnedRoomError) {
     return {
       code: 'pinned_overflow',

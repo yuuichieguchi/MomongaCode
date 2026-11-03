@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { makeRealWorkspace } from './real-workspace.ts';
 
 const HIDDEN_TOUCH = "echo $(ls # ) '\ntouch pwn\n) # '";
 const HIDDEN_TOUCH_QUOTED = 'echo "$(ls # ) \'\nrm -rf src\n) # \'"';
 
-describe('one scanner: a comment inside $() ends at the newline, as in real /bin/bash', () => {
+describe('one scanner: a comment inside $() ends at the newline, as in real /bin/bash', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('bash runs the command hidden behind a comment that contains a parenthesis', () => {
     const workspace = makeRealWorkspace();
     workspace.runBash(HIDDEN_TOUCH);

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { SECRET_CONTENT, SECRET_ENTRY, buildSymlinkLayout, symlinkReadLinesFor } from './symlink-layout.ts';
 import type { SymlinkReadLine } from './symlink-layout.ts';
 
@@ -47,7 +48,7 @@ describe('the symlink-read fixtures', () => {
   });
 });
 
-describe.each(['darwin', 'linux'] as const)('recursive and link-following options against the real %s tools (5.2a)', (platform) => {
+describe.each(['darwin', 'linux'] as const)('recursive and link-following options against the real %s tools (5.2a)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, (platform) => {
   const hosted = process.platform === platform;
   let dir = '';
 

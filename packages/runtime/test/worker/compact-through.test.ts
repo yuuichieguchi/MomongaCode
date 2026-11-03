@@ -23,8 +23,10 @@ const contextFor = (options: { failAppendOnce?: boolean; summaryText?: string; h
   const produced = new Map<string, CompactResource>();
   const readScopes: unknown[] = [];
   let appendFailures = options.failAppendOnce === true ? 1 : 0;
+  let tick = 0;
   const ctx = {
     options: {
+      clock: { now: () => (tick += 40) },
       blobs: {
         read: async (handle: string, _range: unknown, scope: unknown) => {
           readScopes.push(scope);
@@ -56,6 +58,7 @@ const contextFor = (options: { failAppendOnce?: boolean; summaryText?: string; h
     },
     run: { id: 'run_compact', deadlineAt: 2_000_000_000_000 },
     alias: 'fm',
+    roles: {},
     capabilities: capabilitiesFor(40_000),
     verificationCommands: [],
     systemPrompt: 'You are the compact-through test agent.',
@@ -103,6 +106,14 @@ describe('compactThrough', () => {
       expect.objectContaining({ type: 'usage.charged', purpose: 'compaction' }),
       expect.objectContaining({ type: 'context.compacted', replacedThroughSeq: 3, summary: 'S1', source: 'model' }),
     ]);
+  });
+
+  it('records the measured duration of the compaction call on its charge', async () => {
+    const { ctx, appended } = contextFor();
+
+    await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText });
+
+    expect(appended[0]).toMatchObject({ type: 'usage.charged', purpose: 'compaction', timing: { durationMs: 40 }, responseId: 'compaction_1' });
   });
 
   it('derives a new key when only the cap differs', async () => {

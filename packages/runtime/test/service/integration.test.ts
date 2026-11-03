@@ -37,7 +37,7 @@ describe('service and worker over the real socket', () => {
     expect(frames.map((event) => event.seq)).toEqual(Array.from({ length: frames.length }, (_, index) => index + 1));
     expect(await env.getRun(run.id)).toMatchObject({ status: 'COMPLETED', lastSeq: frames.length });
     expect(kit.gateway.streams).toHaveLength(1);
-  }, 20_000);
+  });
 
   it('returns a reject_once decision to the model through an HTTP approval round trip', async () => {
     const env = await startService();
@@ -63,7 +63,7 @@ describe('service and worker over the real socket', () => {
     expect(fs.existsSync(target)).toBe(false);
     const input = kit.gateway.streams[1]?.body.input;
     expect(Array.isArray(input) && input.some((item) => item.type === 'function_call_output' && item.call_id === kit.gateway.callId('call_w_1') && item.output === REJECTED)).toBe(true);
-  }, 20_000);
+  });
 
   it('persists an allow_always rule so the next run gets no prompt', async () => {
     const env = await startService();
@@ -88,7 +88,7 @@ describe('service and worker over the real socket', () => {
     expect(secondFrames.at(-1)).toMatchObject({ type: 'run.status', to: 'COMPLETED' });
     expect(secondFrames.map((event) => event.type)).not.toContain('tool.permission.requested');
     expect(fs.readFileSync(target, 'utf8')).toBe('second');
-  }, 30_000);
+  });
 
   it('cancels a run during a long tool within 3 s, ends the stream and makes no further gateway call', async () => {
     const env = await startService();
@@ -112,5 +112,5 @@ describe('service and worker over the real socket', () => {
     expect(kit.toolbox.waitSignals.every((signal) => signal.aborted)).toBe(true);
     await kit.live.stop();
     expect(kit.gateway.streams).toHaveLength(gatewayCallsAtCancel);
-  }, 20_000);
+  });
 });

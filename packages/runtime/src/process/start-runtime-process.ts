@@ -38,6 +38,7 @@ import { createReflector } from '../memory/reflection.ts';
 import { createMemoryUpkeepSchedule } from '../memory/upkeep-schedule.ts';
 import { DAY_MS } from '@momonga/memory';
 import { createRecordViews } from '../memory/views.ts';
+import { costBreakdownOf, runlessTimingsOf, sideTimingsOfRun, traceCallsOf } from '../service/model-calls.ts';
 import { runTraceOf } from '../service/trace-view.ts';
 import type { RunService } from '../service/service.ts';
 import { systemTimers } from '../service/timers.ts';
@@ -505,9 +506,18 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         releaseStopped: createStoppedRunReleaser({ store, tools: toolRuntime.port }),
         runTrace: async (runId) => {
           await telemetry.forceFlush();
-          return runTraceOf(traceStore, runId);
+          const trace = runTraceOf(traceStore, runId);
+          return trace === undefined ? undefined : { ...trace, calls: traceCallsOf(store.readModelCallEvents(runId)) };
         },
-        runCost: (runs, signal) => gatewayClient.cost(runs, signal),
+        runCost: (runs, signal, includeRunless) => gatewayClient.cost(runs, signal, includeRunless),
+        runCostBreakdown: (runs, signal, includeRunless) =>
+          costBreakdownOf({
+            runIds: runs.map((run) => run.runId),
+            recordsOf: (runId) => store.readModelCallEvents(runId),
+            sideTimingsOf: (runId) => sideTimingsOfRun(store, runId),
+            runlessTimingsOf: () => runlessTimingsOf(store),
+            fetchPage: (runIds, cursor, limit) => gatewayClient.billedCalls(runIds, cursor, limit, includeRunless, signal),
+          }),
         mcp: toolRuntime.mcpAdmin,
         onError: (error) => logger.error('service error', { err: asError(error) }),
         onFatal: latchFatal,
@@ -572,6 +582,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         isIdle: () => phase === 'running' && !store.hasActiveRun(),
         evidenceRun: evidenceRunFor,
         maxAttempts: STORE_MAX_ATTEMPTS,
+        attemptTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs,
+        timers,
         random: Math.random,
       });
       const upkeepSchedule = createMemoryUpkeepSchedule({

@@ -1,11 +1,12 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import { applyCapabilityOverride } from '@momonga/protocol';
+import { applyCapabilityOverride, errorBoundOfShape } from '@momonga/protocol';
 import type {
   Capabilities,
   CapabilityOverride,
   ContentPart,
   CountTokensRequest,
   CountTokensResult,
+  ErrorShape,
   FunctionTool,
   InputItem,
   MessageInputItem,
@@ -75,28 +76,23 @@ const requestTokens = (request: CountTokensRequest): number => {
   return instructionTokens + toolTokens + inputTokens;
 };
 
-export const fakeCounter = (errorBound = 0, method: CountTokensResult['method'] = 'exact'): FakeCounter => {
-  const calls: CountTokensRequest[] = [];
-  return {
-    calls,
-    count: async (request) => {
-      calls.push(request);
-      return { input_tokens: requestTokens(request), method, error_bound: errorBound };
-    },
-  };
-};
-
-export const ratioCounter = (ratio: number): FakeCounter => {
+export const shapeCounter = (shapeOf: (request: CountTokensRequest) => ErrorShape, method: CountTokensResult['method'] = 'estimated'): FakeCounter => {
   const calls: CountTokensRequest[] = [];
   return {
     calls,
     count: async (request) => {
       calls.push(request);
       const tokens = requestTokens(request);
-      return { input_tokens: tokens, method: 'estimated', error_bound: Math.ceil(ratio * tokens) };
+      const shape = shapeOf(request);
+      return { input_tokens: tokens, method, error_bound: errorBoundOfShape(shape, tokens), error_shape: shape };
     },
   };
 };
+
+export const fakeCounter = (errorBound = 0, method: CountTokensResult['method'] = 'exact'): FakeCounter =>
+  shapeCounter(() => ({ ratio: 0, minimum: errorBound }), method);
+
+export const ratioCounter = (ratio: number): FakeCounter => shapeCounter(() => ({ ratio, minimum: 0 }));
 
 export const handleOf = (text: string): string => sha256Hex(text).slice(0, 6);
 

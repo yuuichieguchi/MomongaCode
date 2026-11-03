@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createManagedConnection, createMcpPool, createMcpToolSource } from '@momonga/mcp';
 import type { McpConnectionOptions, McpPoolOptions, McpServerConnection } from '@momonga/mcp';
-import { MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_TOOL_NAMES, createFakeClock } from '@momonga/testkit';
+import { MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_TOOL_NAMES, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock } from '@momonga/testkit';
 import { BASE_ENV, groupExists, makeDir, onCleanup } from './raw-transport.ts';
 
 const transportCalls = vi.hoisted(() => [] as Array<Record<string, unknown>>);
@@ -19,7 +19,7 @@ vi.mock('../src/stdio-transport.ts', async (importOriginal) => {
   };
 });
 
-const PROCESS_TIMEOUT = { timeout: 30_000 };
+const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 
 const modernServer = { command: process.execPath, args: [MCP_MODERN_SERVER_PATH] };
 

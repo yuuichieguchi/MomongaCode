@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
 import { TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
-import type { ElicitationAnswerRecord, ElicitationRequestView, PermissionMode, RunEvent, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
+import type { CallTiming, ElicitationAnswerRecord, ElicitationRequestView, PermissionMode, RunEvent, TokenAnatomy, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
 import { createApprovalStore } from './approvals.ts';
 import { createBlobStore, prepareBlobDirectory } from './blobs.ts';
 import { addUsage, foldRunState, initialRunState, spendOf } from './fold.ts';
@@ -38,6 +38,7 @@ import type {
   ElicitationView,
   FinishJobResult,
   HeartbeatResult,
+  ModelCallRecord,
   InheritContextResult,
   JobStore,
   LeaseFence,
@@ -240,6 +241,14 @@ const prepareStatements = (db: DatabaseSync) => ({
   ),
   pinnedDigests: db.prepare("SELECT seq, pinned_digest FROM events WHERE run_id = :runId AND type = 'model.requested' ORDER BY seq"),
   runEvents: db.prepare('SELECT * FROM events WHERE run_id = :runId AND seq > :after ORDER BY seq LIMIT :limit'),
+  modelCallEvents: db.prepare(
+    `SELECT seq, step, type,
+      json_extract(payload_json, '$.attempt') AS attempt,
+      json_extract(payload_json, '$.anatomy') AS anatomy,
+      json_extract(payload_json, '$.response.id') AS response_id,
+      json_extract(payload_json, '$.response.timing') AS timing
+     FROM events WHERE run_id = :runId AND type IN ('model.requested', 'model.responded') ORDER BY seq`,
+  ),
   lastTerminalRootRuns: db.prepare(
     `SELECT r.* FROM runs r JOIN sessions s ON s.id = r.session_id
      WHERE s.cwd = :project AND r.parent_run_id IS NULL AND r.status IN (${TERMINAL_LIST})
@@ -315,6 +324,22 @@ const PINNED_REQUEST_PAYLOAD = `(SELECT json_object(
 
 const HOOK_EVENT_COLUMNS = `e.id, e.run_id, e.session_id, e.seq, e.step, e.lease_token, e.created_at, e.type,
   CASE WHEN e.type = 'model.requested' THEN ${PINNED_REQUEST_PAYLOAD} ELSE e.payload_json END AS payload_json`;
+
+const decodeModelCallRecord = (row: Row): ModelCallRecord => {
+  const seq = readerFor('events', 'model call', row).number('seq');
+  const identity = `seq ${seq}`;
+  const reader = readerFor('events', identity, row);
+  const step = reader.number('step');
+  const attempt = reader.number('attempt');
+  const type = reader.string('type');
+  if (type === 'model.requested') {
+    const anatomy = reader.nullableJson('anatomy');
+    return { kind: 'requested', seq, step, attempt, ...(anatomy === null ? {} : { anatomy: anatomy as TokenAnatomy }) };
+  }
+  const timing = reader.nullableJson('timing');
+  const responseId = reader.nullableString('response_id');
+  return { kind: 'responded', seq, step, attempt, ...(responseId === null ? {} : { responseId }), ...(timing === null ? {} : { timing: expectRecord('events', identity, 'timing', timing) as CallTiming }) };
+};
 
 type Measured = { lastSeq: number; journaled: boolean; contribution: Pick<ContributionPayload, 'items'> | undefined };
 
@@ -1396,6 +1421,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     readRunEvents: (runId, afterSeq, limit) => decodeRunEvents(sql.runEvents.all({ runId, after: afterSeq, limit })),
 
     readRunEventsOfTypes: eventsOfTypes,
+
+    readModelCallEvents: (runId) => sql.modelCallEvents.all({ runId }).map(decodeModelCallRecord),
 
     lastTerminalRootRuns: (project, limit) => sql.lastTerminalRootRuns.all({ project, limit }).map(decodeRun),
 

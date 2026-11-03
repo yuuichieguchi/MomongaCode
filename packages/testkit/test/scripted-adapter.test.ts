@@ -104,11 +104,11 @@ describe('createScriptedAdapter', () => {
     expect(bare.compact).toBeUndefined();
     const full = createScriptedAdapter({
       calls: [],
-      countTokens: { input_tokens: 42, method: 'exact', error_bound: 0 },
+      countTokens: { input_tokens: 42, method: 'exact', error_bound: 0, error_shape: { ratio: 0, minimum: 0 } },
       compactSummary: 'summary text',
     });
     const ctx = { signal: new AbortController().signal, target, attempt: 1 };
-    expect(await full.countTokens?.({ model: 'fast', input: 'hi' }, ctx)).toEqual({ input_tokens: 42, method: 'exact', error_bound: 0 });
+    expect(await full.countTokens?.({ model: 'fast', input: 'hi' }, ctx)).toEqual({ input_tokens: 42, method: 'exact', error_bound: 0, error_shape: { ratio: 0, minimum: 0 } });
     expect((await full.compact?.({ model: 'scripted-model', input: [] }, ctx))?.summary).toBe('summary text');
     expect(full.countCalls).toHaveLength(1);
     expect(full.compactCalls).toHaveLength(1);

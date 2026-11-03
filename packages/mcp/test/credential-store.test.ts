@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ensureMomongaDirs, momongaLayout } from '@momonga/foundation';
 import type { FileLockPorts } from '@momonga/foundation';
-import { startLockHolder } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder } from '@momonga/testkit';
 import { createFileCredentialStore, createMemoryCredentialStore, mcpCredentialDirectory } from '@momonga/mcp';
 import { makeDir } from './mcp-harness.ts';
 
@@ -82,7 +82,7 @@ describe('file credential store updates', () => {
   });
 });
 
-describe('file credential store while another process holds the key lock', () => {
+describe('file credential store while another process holds the key lock', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   const steppedPorts = (): FileLockPorts => {
     let now = 1_000_000;
     return {

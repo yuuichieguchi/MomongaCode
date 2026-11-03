@@ -70,7 +70,9 @@ export const MOMONGA_ATTRIBUTES = {
   step: 'momonga.step',
   attempt: 'momonga.attempt',
   billing: 'momonga.billing',
+  cacheWriteInputTokens: 'momonga.usage.cache_write_input_tokens',
   target: 'momonga.target',
+  role: 'momonga.role',
   failureMessage: 'momonga.failure_message',
   fallbackCauses: 'momonga.fallback_causes',
 } as const;

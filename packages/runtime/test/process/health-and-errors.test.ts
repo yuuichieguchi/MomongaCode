@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { launchRuntime, readDb, startStack } from './run-helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: 60_000 };
+const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 
 describe('health through startRuntimeProcess (system timers, in-process gateway)', () => {
   it('health startedAt equals the ready line', PROCESS_TIMEOUT, async () => {

@@ -9,7 +9,7 @@ import type {
   ItemField,
   StreamEvent,
 } from '@momonga/protocol';
-import type { GatewayPort } from '@momonga/runtime';
+import type { GatewayCallOptions, GatewayPort } from '@momonga/runtime';
 import { fixtureCompactionContent, usageOf } from '@momonga/testkit';
 import { deferred } from './deferred.ts';
 import type { Deferred } from './deferred.ts';
@@ -22,6 +22,7 @@ export type RecordedStream = {
   deadlineAt: number;
   signal: AbortSignal;
   deduplicated: boolean;
+  role: GatewayCallOptions['role'];
 };
 
 export type RecordedCompact = {
@@ -30,6 +31,7 @@ export type RecordedCompact = {
   deadlineAt: number;
   traceparent: string | undefined;
   signal: AbortSignal;
+  runId: string | undefined;
 };
 
 export type RecordedCount = { request: CountTokensRequest; signal: AbortSignal | undefined };
@@ -118,6 +120,7 @@ export type FakeGateway = GatewayPort & {
   generations: Map<string, number>;
   compactSummaries: string[];
   capabilitiesValue: Capabilities;
+  capabilitiesByAlias: Record<string, Capabilities>;
   rewriteCallIds: boolean;
   issuedCallIds(scriptId: string): string[];
   callId(scriptId: string, occurrence?: number): string;
@@ -167,11 +170,18 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
     });
   };
 
+  let generationCount = 0;
   const startGeneration = (key: string, body: CreateResponseBody): Generation => {
     const scripted = gateway.script.shift();
     if (scripted === undefined) throw new Error(`fake gateway: no scripted step left for key ${key}`);
     const observed: ScriptStep = scripted.autoUsage === true ? { ...scripted, events: withObservedUsage(scripted.events, body) } : scripted;
-    const step: ScriptStep = gateway.rewriteCallIds ? { ...observed, events: withIssuedCallIds(observed.events) } : observed;
+    generationCount += 1;
+    const issuedId = `resp_generation_${generationCount}`;
+    const identified: ScriptStep = {
+      ...observed,
+      events: observed.events.map((event) => ('response' in event && typeof event.response === 'object' && event.response !== null ? ({ ...event, response: { ...event.response, id: issuedId } } as StreamEvent) : event)),
+    };
+    const step: ScriptStep = gateway.rewriteCallIds ? { ...identified, events: withIssuedCallIds(identified.events) } : identified;
     gateway.generations.set(key, (gateway.generations.get(key) ?? 0) + 1);
     if (step.gate !== undefined) gates.push(step.gate.release);
     const outcome = (async () => {
@@ -233,6 +243,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
     generations: new Map(),
     compactSummaries: [],
     capabilitiesValue: capabilities,
+    capabilitiesByAlias: {},
     rewriteCallIds: true,
 
     issuedCallIds: (scriptId) => [...(issued.get(scriptId) ?? [])],
@@ -255,6 +266,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
         deadlineAt: options.deadlineAt,
         signal: options.signal,
         deduplicated: cached !== undefined || running !== undefined,
+        role: options.role,
       };
       gateway.streams.push(record);
       waiterFor(record.index).resolve(record);
@@ -270,6 +282,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
         deadlineAt: options.deadlineAt,
         traceparent: options.traceparent,
         signal: options.signal,
+        runId: options.runId,
       });
       await gateway.compactHook?.(request, options.signal);
       const summary = gateway.compactSummaries.shift() ?? `summary ${gateway.compacts.length}`;
@@ -297,7 +310,12 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
       const base = instructions + input + tools;
       const target = request.momonga?.target;
       const scale = target === undefined ? undefined : gateway.countScaleByTarget.get(target);
-      const result: CountTokensResult = { input_tokens: scale === undefined ? base : Math.ceil(base * scale), method: (target === undefined ? undefined : gateway.countMethodByTarget.get(target)) ?? gateway.countMethod, error_bound: 0 };
+      const result: CountTokensResult = {
+        input_tokens: scale === undefined ? base : Math.ceil(base * scale),
+        method: (target === undefined ? undefined : gateway.countMethodByTarget.get(target)) ?? gateway.countMethod,
+        error_bound: 0,
+        error_shape: { ratio: 0, minimum: 0 },
+      };
       gateway.countResults.push(result);
       return result;
     },
@@ -307,7 +325,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
       gateway.capabilitiesCalls.push({ alias, signal: options?.signal });
       await gateway.capabilitiesHook?.(alias, options?.signal);
       const target = options?.target;
-      return (target === undefined ? undefined : gateway.capabilitiesByTarget.get(target)) ?? gateway.capabilitiesValue;
+      return (target === undefined ? undefined : gateway.capabilitiesByTarget.get(target)) ?? gateway.capabilitiesByAlias[alias] ?? gateway.capabilitiesValue;
     },
 
     cancel: async (idempotencyKey, options) => {

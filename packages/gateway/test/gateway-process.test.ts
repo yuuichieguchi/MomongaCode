@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ConfigError } from '@momonga/config';
 import { FM_SERVE_DEFAULTS, GATEWAY_CONFIG_DEFAULTS } from '@momonga/gateway';
-import { FAKE_DETERMINISTIC_REPLY, createFakeClock, createFakeTimers, startLockHolder } from '@momonga/testkit';
+import { FAKE_DETERMINISTIC_REPLY, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, startLockHolder } from '@momonga/testkit';
 import { START_MS, expectErrorBody, getJson, outputText, postJson, readJson, userInput } from './gateway-helpers.ts';
 import { startFake } from './cc-support.ts';
 import {
@@ -33,7 +33,7 @@ const ccHome = async () => {
   return { fake, home };
 };
 
-describe('startGatewayProcess', { timeout: 30_000 }, () => {
+describe('startGatewayProcess', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('listens on run/gateway.sock and prints exactly one ready line', async () => {
     const { home } = await ccHome();
     const stdout = captureStdout();
@@ -145,7 +145,7 @@ describe('startGatewayProcess', { timeout: 30_000 }, () => {
   });
 });
 
-describe('startGatewayProcess credentials', { timeout: 30_000 }, () => {
+describe('startGatewayProcess credentials', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('sends the apiKeyEnv value upstream as a bearer token', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     const home = makeHome();

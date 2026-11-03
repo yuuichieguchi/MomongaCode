@@ -8,7 +8,7 @@ import type { MemoryRecord } from '@momonga/protocol';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, heldMountPoints } from '@momonga/sandbox';
 import type { Sandbox } from '@momonga/sandbox';
 import type { RuntimeStore } from '@momonga/store';
-import { fakePolicyFilesystem, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeTimers, fakePolicyFilesystem, withTempDir } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import { enqueue, harness, newSession } from '../../../store/test/helpers.ts';
 import { createEvidenceRunner } from '../../src/process/evidence-run.ts';
@@ -61,14 +61,14 @@ const reflectInRepository = async (context: TestContext, options: { trusted: boo
   ]);
   expect(store.reflection.get(run.id)?.state).toBe('pending');
   const evidenceRun = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), enforcement: HOST_RULE_ENFORCEMENT, sandbox: realSandbox(path.join(root, 'scratch')), env: { PATH: '/usr/bin:/bin' } });
-  const reflector = exported<(options: unknown) => Reflector>('createReflector')({ store, gateway, settings, clock, isIdle: () => true, evidenceRun, maxAttempts: 3, random: () => 0.5 });
+  const reflector = exported<(options: unknown) => Reflector>('createReflector')({ store, gateway, settings, clock, isIdle: () => true, evidenceRun, maxAttempts: 3, attemptTimeoutMs: 600_000, timers: createFakeTimers(clock), random: () => 0.5 });
   gateway.script.push(textStep(JSON.stringify({ candidates: [{ text: 'a.ts is the entry point', kind: 'fact', paths: ['a.ts'] }] })));
   expect(await reflector.runOne(SIGNAL)).toBe('ran');
   const candidates = (store.memories as RuntimeStore['memories'] & { candidates(): MemoryRecord[] }).candidates();
   return { head, candidates };
 };
 
-describe.runIf(HAS_REAL_SANDBOX)('a candidate and the real evidence runner', () => {
+describe.runIf(HAS_REAL_SANDBOX)('a candidate and the real evidence runner', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('binds the commit that git reports for HEAD, beside the file and the passing check', async (context) => {
     const { head, candidates } = await reflectInRepository(context, { trusted: true });
     expect(candidates).toHaveLength(1);

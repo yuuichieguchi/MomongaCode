@@ -2,16 +2,16 @@ import { canonicalJson, computeBackoff, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { normalizeMemoryText } from '@momonga/memory';
 import { LOWEST_REASONING_EFFORT, assistantTextOf, summaryTokenCapFor } from '@momonga/protocol';
-import type { CreateResponseBody, ReflectionDrop, Usage } from '@momonga/protocol';
+import type { BilledDetail, CallTiming, CreateResponseBody, MomongaResponseExtension, ReflectionDrop, Usage } from '@momonga/protocol';
 import { memoryTextProblem } from '@momonga/tools';
 import type { ContextChargeInput, RuntimeStore, SaveCandidateInput } from '@momonga/store';
 import type { GatewayPort, SettingsPort } from '../ports.ts';
 import { REQUEUE_BASE_MS, REQUEUE_MAX_MS } from '../process/constants.ts';
-import { RUNTIME_DEFAULTS } from '../process/defaults.ts';
+import type { ServiceTimers } from '../service/timers.ts';
 import { readPins } from '../worker/pins.ts';
 import { isRunVerified } from './verified-run.ts';
 import { readAllRunEvents } from '../process/run-events.ts';
-import { terminalResultOf } from '../worker/model-stream.ts';
+import { billedDetailOf, carriesOutput, terminalResultOf } from '../worker/model-stream.ts';
 import type { ModelResult } from '../worker/model-stream.ts';
 import { MemoryEvidenceError, bindMemoryEvidence, readGitHead } from './evidence.ts';
 import type { EvidenceRun } from './evidence.ts';
@@ -26,6 +26,8 @@ export type ReflectorOptions = {
   isIdle(): boolean;
   evidenceRun: (project: string) => EvidenceRun;
   maxAttempts: number;
+  attemptTimeoutMs: number;
+  timers: ServiceTimers;
   random: () => number;
 };
 
@@ -46,20 +48,36 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
   let running = false;
   const retryAt = new Map<string, number>();
 
-  const complete = async (runId: string, body: CreateResponseBody, signal: AbortSignal): Promise<{ terminal: ModelResult; usage: Usage | null }> => {
+  const complete = async (
+    runId: string,
+    body: CreateResponseBody,
+    signal: AbortSignal,
+  ): Promise<{ terminal: ModelResult; usage: Usage | null; detail: BilledDetail }> => {
     let terminal: ModelResult | undefined;
     let usage: Usage | null = null;
+    let extension: MomongaResponseExtension | undefined;
+    let responseId: string | undefined;
+    let firstEventMs: number | undefined;
+    const startedAt = clock.now();
     const events = gateway.stream(body, {
       idempotencyKey: sha256Hex(canonicalJson([runId, 'reflect'])),
-      deadlineAt: clock.now() + RUNTIME_DEFAULTS.runTimeoutMs,
+      deadlineAt: clock.now() + options.attemptTimeoutMs,
       signal,
+      role: 'reflection',
     });
     for await (const event of events) {
+      if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = clock.now() - startedAt;
       terminal = terminalResultOf(event) ?? terminal;
-      if (event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed') usage = event.response.usage;
+      if (event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed') {
+        usage = event.response.usage;
+        extension = event.response.momonga;
+        responseId = event.response.id;
+      }
     }
     if (terminal === undefined) throw new Error(`the reflection call of run ${runId} ended without a terminal event`);
-    return { terminal, usage };
+    const timing: CallTiming = { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: clock.now() - startedAt };
+    if (responseId === undefined) throw new Error(`the reflection call of run ${runId} ended without a response`);
+    return { terminal, usage, detail: billedDetailOf(usage, extension, timing, responseId) };
   };
 
   const reflect = async (runId: string, signal: AbortSignal, ledger: ChargeLedger): Promise<void> => {
@@ -85,9 +103,14 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     const events = readAllRunEvents(store, runId);
     const started = events.find((event) => event.type === 'run.started');
     if (started === undefined) throw new Error(`run ${runId} has no run.started event`);
-    const { modelAlias: alias } = readPins(started.pins);
+    const pins = readPins(started.pins);
+    const alias = pins.roles.reflection ?? pins.modelAlias;
     const [capabilities, verification] = await Promise.all([gateway.capabilities(alias, { signal }), settings.verification(session)]);
     const structured = capabilities.structuredOutput === 'json_schema';
+    if (pins.roles.reflection !== undefined && !structured) {
+      store.reflection.finish(runId, `models.roles.reflection names alias ${alias}, which has no structured output to hold the reflection schema`);
+      return;
+    }
     const body: CreateResponseBody = {
       model: alias,
       instructions: REFLECTION_INSTRUCTIONS,
@@ -100,9 +123,11 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       stream: true,
       metadata: { run_id: runId, purpose: 'reflection' },
     };
-    const { terminal, usage } = await complete(runId, body, signal);
-    if (usage !== null) {
+    const { terminal, usage, detail } = await complete(runId, body, signal);
+    const replayed = detail.responseId !== undefined && store.contextCharges.list({ runIds: [runId] }).some((charge) => charge.detail?.responseId === detail.responseId);
+    if (usage !== null && !replayed) {
       ledger.unrecorded = {
+        detail,
         purpose: 'reflection',
         runId,
         project,
@@ -160,6 +185,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
         dropped.push({ ordinal, text: candidate.text, cause: 'evidence', reason: error.message });
       }
     }
+    signal.throwIfAborted();
     const nothingKept = accepted.length === 0;
     const reason = !nothingKept ? undefined : parsed.candidates.length === 0 ? NO_CANDIDATES_REASON : ALL_DROPPED_REASON;
     settle(
@@ -189,7 +215,13 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       running = true;
       const ledger: ChargeLedger = {};
       try {
-        await reflect(job.runId, signal, ledger);
+        const deadline = new AbortController();
+        const timer = options.timers.setTimeout(() => deadline.abort(new Error(`the reflection attempt passed its deadline of ${options.attemptTimeoutMs} ms`)), options.attemptTimeoutMs);
+        try {
+          await reflect(job.runId, AbortSignal.any([signal, deadline.signal]), ledger);
+        } finally {
+          options.timers.clearTimeout(timer);
+        }
         retryAt.delete(job.runId);
         return 'ran';
       } catch (error) {

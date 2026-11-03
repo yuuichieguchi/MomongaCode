@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { SandboxPolicyError, buildSeatbeltProfile } from '@momonga/sandbox';
 import type { SandboxPolicy, SeatbeltProfile } from '@momonga/sandbox';
@@ -109,7 +110,7 @@ const sandboxExec = (profile: SeatbeltProfile, script: string, cwd: string): num
   return result.status ?? -1;
 };
 
-describe.runIf(process.platform === 'darwin')('guarded ancestors inside a widening allow area under real Seatbelt', () => {
+describe.runIf(process.platform === 'darwin')('guarded ancestors inside a widening allow area under real Seatbelt', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('refuses a sandboxed mv of an ancestor of the launcher literal, which succeeds without the area guards', () => {
     const guarded = area();
     const bin = path.dirname(guarded.literal);

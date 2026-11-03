@@ -106,6 +106,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       store,
       codec: createCompactionCodec(options.hmacKey),
       telemetry: options.telemetry,
+      priceTable: options.priceTable,
       closeSignal: closeController.signal,
       forceCloseSignal: forceCloseController.signal,
     };
@@ -121,6 +122,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       tracker,
       startedAtSeconds: Math.floor(startedAtMs / 1000),
       costReport: options.costReport,
+      billedCalls: options.billedCalls,
       startedAt,
       version: options.version,
       onError: options.onError,

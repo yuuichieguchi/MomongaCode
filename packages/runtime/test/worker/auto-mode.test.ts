@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CLASSIFIER_INSTRUCTIONS, createAutoClassifier } from '../../src/worker/auto-classifier.ts';
 import type { ClaimContext } from '../../src/worker/claim-context.ts';
-import { makeEnv } from './harness.ts';
+import { capabilitiesFor, makeEnv } from './harness.ts';
 import type { BatchInput, Env } from './harness.ts';
 import { GatewayRequestError } from '../../src/gateway-client.ts';
 import { callsStep, failedStep, textStep } from './scripts.ts';
@@ -14,6 +14,7 @@ const verdict = (overrides: Record<string, unknown> = {}): string =>
 const setup = async (classifier: string | null = 'guard') => {
   const env = await makeEnv({ mode: 'auto' });
   env.settings.classifierAlias = classifier ?? undefined;
+  if (classifier !== null) env.gateway.capabilitiesByAlias[classifier] = capabilitiesFor(env.gateway.capabilitiesValue.contextWindow, { structuredOutput: 'json_schema' });
   const target = path.join(env.project, 'out.txt');
   const write = callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'x' } }]);
   return { env, target, write };

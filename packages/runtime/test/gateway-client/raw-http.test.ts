@@ -54,6 +54,21 @@ describe('gateway client request headers', () => {
     expect(JSON.parse(request?.body ?? '')).toMatchObject({ model: 'default', input: streamBody().input });
   });
 
+  it('sends the role and the run id as plain momonga headers, and sends neither when none is given', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond(sseReply([sseFrame(completedEvent)]));
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock);
+
+    await collect(client.stream(streamBody(), { ...callOptions(clock), role: 'reflection', runId: 'run-9' }));
+    await collect(client.stream(streamBody(), callOptions(clock, { idempotencyKey: 'key-2' })));
+
+    expect(fake.requests[0]?.headers['momonga-role']).toBe('reflection');
+    expect(fake.requests[0]?.headers['momonga-run-id']).toBe('run-9');
+    expect(fake.requests[1]?.headers['momonga-role']).toBeUndefined();
+    expect(fake.requests[1]?.headers['momonga-run-id']).toBeUndefined();
+  });
+
   it('serialises the idempotency key as an sf-string, escaping quotes and backslashes', async () => {
     const fake = await startRawHttpFake();
     fake.respond(sseReply([sseFrame(completedEvent)]));

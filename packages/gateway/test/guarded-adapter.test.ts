@@ -47,7 +47,7 @@ const baseAdapter = (overrides: Partial<ProviderAdapter> = {}): ProviderAdapter 
 const optionalImplementations = (record: (member: string, self: unknown) => void): Required<Pick<ProviderAdapter, OptionalMember>> => ({
   countTokens: async function (this: unknown) {
     record('countTokens', this);
-    return { input_tokens: 3, method: 'estimated', error_bound: 1 };
+    return { input_tokens: 3, method: 'estimated', error_bound: 1, error_shape: { ratio: 0, minimum: 1 } };
   },
   renderWire: function (this: unknown) {
     record('renderWire', this);

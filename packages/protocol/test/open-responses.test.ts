@@ -1,7 +1,10 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   ERROR_TYPES,
+  ESTIMATED_ERROR_SHAPE,
+  EXACT_ERROR_SHAPE,
   MOMONGA_EVENT_PREFIX,
+  countReplyOf,
   OPEN_RESPONSES_STREAM_EVENT_TYPES,
   OPEN_RESPONSES_VERSION,
   TERMINAL_STREAM_EVENT_TYPES,
@@ -213,7 +216,15 @@ describe('momonga extension shapes', () => {
       input_tokens: number;
       method: 'exact' | 'calibrated' | 'estimated';
       error_bound: number;
+      error_shape: { readonly ratio: number; readonly minimum: number };
     }>();
+  });
+
+  it('builds a count reply whose error_bound comes from its shape', () => {
+    expect(countReplyOf(10, 'estimated', ESTIMATED_ERROR_SHAPE)).toEqual({ input_tokens: 10, method: 'estimated', error_bound: 3, error_shape: ESTIMATED_ERROR_SHAPE });
+    expect(countReplyOf(0, 'estimated', ESTIMATED_ERROR_SHAPE).error_bound).toBe(1);
+    expect(countReplyOf(25, 'calibrated', { ratio: 0.25, minimum: 1 }).error_bound).toBe(7);
+    expect(countReplyOf(321, 'exact', EXACT_ERROR_SHAPE)).toEqual({ input_tokens: 321, method: 'exact', error_bound: 0, error_shape: EXACT_ERROR_SHAPE });
   });
 
   it('defines health and usage report shapes', () => {

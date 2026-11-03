@@ -3,7 +3,7 @@ import path from 'node:path';
 import { getRequestListener } from '@hono/node-server';
 import { canonicalPath, comparableContains, listenUnix } from '@momonga/foundation';
 import type { Clock, Redactor } from '@momonga/foundation';
-import type { Capabilities, GatewayCostReportView, RunTraceView } from '@momonga/protocol';
+import type { Capabilities, CostBreakdownView, GatewayCostReportView, RunTraceView } from '@momonga/protocol';
 import { isFatalStoreError } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import { asError } from '../process/as-error.ts';
@@ -52,7 +52,8 @@ export type RunServiceOptions = {
   cancelUpstream?: (runId: string) => Promise<void>;
   releaseStopped(runId: string, signal: AbortSignal): Promise<void>;
   runTrace: (runId: string) => Promise<RunTraceView | undefined>;
-  runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal) => Promise<{ report: GatewayCostReportView; text: string }>;
+  runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ report: GatewayCostReportView; text: string }>;
+  runCostBreakdown: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ breakdown: CostBreakdownView; text: string }>;
   mcp: McpAdminPort;
   onError?: (error: unknown) => void;
   onFatal?: (error: Error) => void;
@@ -121,6 +122,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     releaseStopped: options.releaseStopped,
     runTrace: options.runTrace,
     runCost: options.runCost,
+    runCostBreakdown: options.runCostBreakdown,
     mcp: options.mcp,
     ...(options.cancelUpstream === undefined ? {} : { cancelUpstream: options.cancelUpstream }),
     onError: report,

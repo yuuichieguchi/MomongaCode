@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { createSeatbeltSandbox, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
-import { killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
 
 const BASE_ENV = { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' };
@@ -13,7 +13,7 @@ const variants: Array<[string, (tmpRoot: string) => Sandbox]> = [
   ['unsandboxed', () => createUnsandboxed({ killGraceMs: 300 })],
 ];
 
-describe.runIf(process.platform === 'darwin').each(variants)('stdin (%s)', (_kind, make) => {
+describe.runIf(process.platform === 'darwin').each(variants)('stdin (%s)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, (_kind, make) => {
   let created: string[] = [];
   let spawned: SandboxedProcess[] = [];
   let root = '';

@@ -19,6 +19,7 @@ export type SubmitHeaders = {
   deadlineMs: string | undefined;
   traceparent: string | undefined;
   tracestate: string | undefined;
+  role: string;
 };
 
 export type Submission = {
@@ -133,6 +134,7 @@ export const createResponsesService = (services: Services, validator: RequestVal
         ...(connection === undefined ? {} : { connection }),
         runId: body.metadata?.['run_id'],
         step: parseStep(body.metadata?.['step']),
+        role: headers.role,
       };
       const onSettled = (): void => {
         active.delete(run);

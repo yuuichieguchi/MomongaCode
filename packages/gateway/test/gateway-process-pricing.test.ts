@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createUdsClient, createJsonLogger, systemClock } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
-import { openResponsesTextReply, registerCleanup, startFakeOpenResponses, withTempDir } from '@momonga/testkit';
+import { openResponsesTextReply, registerCleanup, startFakeOpenResponses, usageOf, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { PROCESS_VERSION, baseEnv, writeSettings } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
@@ -10,7 +10,7 @@ const CAPABILITIES = { contextWindow: 8192, maxOutputTokens: 1024 };
 const PRICE = { provider: 'acme', model: 'local-fake', effectiveFrom: '2026-01-01', inputPerMTok: 1_000_000, outputPerMTok: 2_000_000, currency: 'USD' };
 
 const startPricedGateway = async (context: CleanupContext, pricing: unknown[] | undefined, billing?: 'local') => {
-  const upstream = await startFakeOpenResponses({ script: [openResponsesTextReply(['priced'])] });
+  const upstream = await startFakeOpenResponses({ script: [openResponsesTextReply(['priced'], usageOf(11, 3))] });
   registerCleanup(context, () => upstream.close());
   const home = withTempDir(context, { asHome: true });
   writeSettings(home, {
@@ -48,7 +48,7 @@ const costOfRun = async (client: ReturnType<typeof createUdsClient>) => {
     method: 'POST',
     path: '/v1/momonga/cost',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ runs: [{ runId: 'run-1', sessionId: 'session-1' }] }),
+    body: JSON.stringify({ runs: [{ runId: 'run-1', sessionId: 'session-1' }], includeRunless: false }),
   });
   expect(cost.status).toBe(200);
   return (await cost.json()) as { report: { total: Record<string, unknown> } };

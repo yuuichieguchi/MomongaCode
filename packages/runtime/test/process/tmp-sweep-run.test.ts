@@ -3,12 +3,12 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ensureMomongaDirs } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
-import { createFakeClock } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeClock } from '@momonga/testkit';
 import { START_MS } from './helpers.ts';
 import { launchRuntime, sessionEnvFor, startStack, stepsLogged } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: 60_000 };
+const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 const DAY_MS = 86_400_000;
 const RUNTIME_MS = START_MS + 8 * DAY_MS;
 

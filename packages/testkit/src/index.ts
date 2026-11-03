@@ -8,8 +8,8 @@ export {
   JSON_SCHEMA_UNSUPPORTED_MESSAGE,
   STOP_UNSUPPORTED_MESSAGE,
   TOOLS_UNSUPPORTED_MESSAGE,
-  countFakePromptTokens,
   countFakeRequestTokens,
+  fakeUsageOfRequest,
   countFakeTokens,
   isValidAtIndex,
   startFakeChatCompletions,
@@ -18,7 +18,7 @@ export type {
   FakeChatCompletionsOptions,
   FakeChatCompletionsServer,
   FakeFixedUsage,
-  FakeRequestUsage,
+  FakeUsageOfRequest,
   FakeRoute,
   FakeScenario,
   FakeResponseHold,
@@ -110,6 +110,8 @@ export { killGroupsForCleanup, killPidsForCleanup } from './process-groups.ts';
 export { FAKE_OS_BUILD, createFakeFm, fakeExec } from './fake-fm.ts';
 export type { CreateFakeFmOptions, FakeExecResult, FakeFm, FakeFmConfig } from './fake-fm.ts';
 export {
+  BUILT_BINARY_TEST_TIMEOUT_MS,
+  DAEMON_PROCESS_TEST_TIMEOUT_MS,
   REAL_PROCESS_TEST_TIMEOUT_MS,
   TEMP_DIR_PREFIX,
   TEST_HEARTBEAT_MS,

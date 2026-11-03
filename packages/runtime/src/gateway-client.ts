@@ -1,7 +1,7 @@
 import { createUdsClient, decodeSse, parseRetryAfter } from '@momonga/foundation';
 import type { UdsClient, UdsResponse } from '@momonga/foundation';
-import { COMPACTION_RESULT_EVENT, ERROR_TYPES, STREAM_IDLE_HEADER } from '@momonga/protocol';
-import type { GatewayCostReportView } from '@momonga/protocol';
+import { COMPACTION_RESULT_EVENT, ERROR_TYPES, ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER } from '@momonga/protocol';
+import type { BilledCallsCursorView, BilledCallsPageView, GatewayCostReportView, HeaderRole } from '@momonga/protocol';
 import type {
   Capabilities,
   CompactRequest,
@@ -62,7 +62,8 @@ export type GatewayModel = { id: string; capabilities: Capabilities; targetCapab
 export type GatewayClient = GatewayPort & {
   models(): Promise<GatewayModel[]>;
   health(): Promise<GatewayHealth>;
-  cost(runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal): Promise<{ report: GatewayCostReportView; text: string }>;
+  cost(runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean): Promise<{ report: GatewayCostReportView; text: string }>;
+  billedCalls(runIds: readonly string[], cursor: BilledCallsCursorView, limit: number, includeRunless: boolean, signal: AbortSignal): Promise<BilledCallsPageView>;
   destroy(): Promise<void>;
 };
 
@@ -94,6 +95,8 @@ const transportError = (code: string, message: string, provenNotSent?: boolean):
   new GatewayRequestError({ status: 0, type: 'transport', code, message, ...(provenNotSent === undefined ? {} : { provenNotSent }) });
 
 const invalidResponse = (detail: string): GatewayRequestError => transportError('invalid_response', `the gateway sent a malformed reply: ${detail}`);
+
+export const gatewayProtocolError = invalidResponse;
 
 const sfString = (value: string): string => {
   if (!/^[\x20-\x7e]*$/.test(value)) throw new TypeError('the idempotency key must be printable ASCII to be an sf-string');
@@ -216,10 +219,12 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
     });
   };
 
-  const callHeaders = (call: { idempotencyKey: string; deadlineAt: number; traceparent?: string }): Record<string, string> => ({
+  const callHeaders = (call: { idempotencyKey: string; deadlineAt: number; traceparent?: string; runId?: string; role?: HeaderRole }): Record<string, string> => ({
     'idempotency-key': sfString(call.idempotencyKey),
     'momonga-deadline-ms': String(Math.max(1, call.deadlineAt - clock.now())),
     ...(call.traceparent === undefined ? {} : { traceparent: call.traceparent }),
+    ...(call.runId === undefined ? {} : { [RUN_ID_HEADER]: call.runId }),
+    ...(call.role === undefined ? {} : { [ROLE_HEADER]: call.role }),
   });
 
   const assertDeadlineOpen = (deadlineAt: number): void => {
@@ -394,6 +399,15 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
         unaryBound(),
       );
       if (!isRecord(parsed)) throw invalidResponse('the count_tokens reply is not an object');
+      const shape = parsed['error_shape'];
+      if (shape === undefined) {
+        throw invalidResponse(
+          'the count_tokens reply has no error_shape, so the gateway runs an older version than this runtime (an update replaced the binary while the daemon kept running); run `momonga daemon stop`, then start momonga again',
+        );
+      }
+      if (!isRecord(shape) || typeof shape['ratio'] !== 'number' || typeof shape['minimum'] !== 'number') {
+        throw invalidResponse('the count_tokens reply has an error_shape without a numeric ratio and minimum');
+      }
       return parsed as CountTokensResult;
     },
 
@@ -421,10 +435,16 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
     },
 
     models: () => listModels(noSignal),
-    cost: async (runs, signal) => {
-      const parsed = await unary({ method: 'POST', path: '/v1/momonga/cost', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ runs }) }, signal, unaryBound());
+    cost: async (runs, signal, includeRunless) => {
+      const parsed = await unary({ method: 'POST', path: '/v1/momonga/cost', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ runs, includeRunless }) }, signal, unaryBound());
       if (!isRecord(parsed) || !isRecord(parsed['report']) || typeof parsed['text'] !== 'string') throw invalidResponse('the cost answer has no report and text');
       return { report: parsed['report'] as GatewayCostReportView, text: parsed['text'] };
+    },
+
+    billedCalls: async (runIds, cursor, limit, includeRunless, signal) => {
+      const parsed = await unary({ method: 'POST', path: '/v1/momonga/cost/calls', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ runIds, cursor, limit, includeRunless }) }, signal, unaryBound());
+      if (!isRecord(parsed) || !Array.isArray(parsed['calls'])) throw invalidResponse('the billed calls answer has no calls list');
+      return parsed as BilledCallsPageView;
     },
 
     health: async (): Promise<GatewayHealth> => {

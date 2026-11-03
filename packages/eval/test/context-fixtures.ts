@@ -94,7 +94,7 @@ export const recorded = (
   caseId: string,
   runIndex: number,
   payloads: readonly RunEventPayload[],
-  options: { status?: RunStatus; totalTokens?: number; children?: Transcript['children']; modelAlias?: string } = {},
+  options: { status?: RunStatus; totalTokens?: number; children?: Transcript['children']; modelAlias?: string; reflection?: Transcript['reflection'] } = {},
 ): Transcript => {
   const totalTokens = options.totalTokens ?? 100;
   return {
@@ -103,6 +103,7 @@ export const recorded = (
     run: { id: `run-${caseId}-${runIndex}`, status: options.status ?? 'COMPLETED', step: 1, usage: { inputTokens: totalTokens - 1, outputTokens: 1, totalTokens }, ...(options.modelAlias === undefined ? {} : { modelAlias: options.modelAlias }) },
     events: publicEventsOf(payloads),
     children: options.children ?? [],
+    reflection: options.reflection ?? { state: 'none' },
   };
 };
 

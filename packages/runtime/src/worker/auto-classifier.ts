@@ -6,7 +6,7 @@ import type { AutoClassifier, AutoClassifierRequest } from '@momonga/tools';
 import { GatewayRequestError } from '../gateway-client.ts';
 import { GatewayFailureError } from './errors.ts';
 import type { ClaimContext } from './claim-context.ts';
-import { terminalResultOf } from './model-stream.ts';
+import { billedDetailOf, carriesOutput, terminalResultOf } from './model-stream.ts';
 import type { ModelResult } from './model-stream.ts';
 
 export const CLASSIFIER_INSTRUCTIONS = [
@@ -42,6 +42,9 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
   const { gateway } = ctx.options;
   const judge = async (request: AutoClassifierRequest, classifier: string): Promise<Outcome> => {
     const capabilities = await gateway.capabilities(classifier, { signal: ctx.control.signal });
+    if (capabilities.structuredOutput !== 'json_schema') {
+      return asked({ alias: classifier, failure: `autoMode.classifier names alias ${classifier}, which has no structured output to hold the verdict schema` });
+    }
     const input = [{ type: 'message' as const, role: 'user' as const, content: [{ type: 'input_text' as const, text: userPromptOf(ctx, cwd, request) }] }];
     const counted = await gateway.countTokens({ model: classifier, input, instructions: CLASSIFIER_INSTRUCTIONS }, { signal: ctx.control.signal });
     if (counted.input_tokens > budgetFor(capabilities, counted.error_bound).I) {
@@ -59,13 +62,21 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
       metadata: { run_id: ctx.run.id, step: String(step), purpose: 'permission_classifier' },
     };
     let terminal: ModelResult | undefined;
+    let firstEventMs: number | undefined;
+    const { clock } = ctx.options;
+    const startedAt = clock.now();
     const events = gateway.stream(body, {
       idempotencyKey: sha256Hex(canonicalJson(['permission_classifier', ctx.run.id, step, request.callId, request.subjectDigest, classifier])),
       deadlineAt: ctx.run.deadlineAt,
       signal: ctx.control.signal,
       traceparent: ctx.agentSpan.traceparent,
+      role: 'classifier',
     });
-    for await (const event of events) terminal = terminalResultOf(event) ?? terminal;
+    for await (const event of events) {
+      if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = clock.now() - startedAt;
+      terminal = terminalResultOf(event) ?? terminal;
+    }
+    const timing = { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: clock.now() - startedAt };
     if (terminal === undefined) return asked({ alias: classifier, failure: 'the classifier stream ended without a terminal event' });
     if (terminal.kind === 'failed') return asked({ alias: classifier, failure: `${terminal.code ?? 'error'}: ${terminal.message}` });
     const { usage } = terminal.response;
@@ -76,6 +87,7 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
       inputTokens: usage.input_tokens,
       outputTokens: usage.output_tokens,
       totalTokens: usage.total_tokens,
+      ...billedDetailOf(usage, terminal.response.momonga, timing, terminal.response.id),
     };
     if (terminal.incomplete) return { ...asked({ alias: classifier, failure: 'the classifier reply was incomplete' }), spend };
     const verdict = parseClassifierVerdict(outputTextOf(terminal.response));

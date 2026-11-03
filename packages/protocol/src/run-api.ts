@@ -8,6 +8,8 @@ import { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES } from './permission-denial.t
 import { FILE_ACCESSES } from './working-facts.ts';
 import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
 import type { ImageMediaType, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent } from './run-types.ts';
+import type { ReflectionJobView } from './memory.ts';
+import type { BilledDetail, TokenAnatomy } from './token-anatomy.ts';
 
 const DRAFT_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
 const DAY_MS = 86_400_000;
@@ -140,6 +142,43 @@ const summaryFidelity = closed(
   ['fabricated', 'identifiers', 'retained', 'sections'],
 );
 
+const tokenAnatomy = closed(
+  {
+    estimated: { type: 'boolean', const: true },
+    total: nonNegativeInteger,
+    layers: closed(
+      {
+        system: nonNegativeInteger,
+        tools: nonNegativeInteger,
+        instructions: nonNegativeInteger,
+        skills: nonNegativeInteger,
+        governing: nonNegativeInteger,
+        memories: nonNegativeInteger,
+        summary: nonNegativeInteger,
+        workingState: nonNegativeInteger,
+        history: closed(
+          { user: nonNegativeInteger, assistant: nonNegativeInteger, toolCalls: nonNegativeInteger, toolOutputs: nonNegativeInteger },
+          ['user', 'assistant', 'toolCalls', 'toolOutputs'],
+        ),
+        notices: nonNegativeInteger,
+        framing: nonNegativeInteger,
+      },
+      ['system', 'tools', 'instructions', 'skills', 'governing', 'memories', 'summary', 'workingState', 'history', 'notices'],
+    ),
+    tools: { type: 'object', additionalProperties: nonNegativeInteger },
+  },
+  ['estimated', 'total', 'layers', 'tools'],
+);
+
+const modelCost = closed({ amount: { type: 'number', minimum: 0 }, currency: constant('USD'), priceVersion: string }, ['amount', 'currency', 'priceVersion']);
+
+const callTiming = closed({ firstEventMs: nonNegativeInteger, durationMs: nonNegativeInteger }, ['durationMs']);
+
+const billedDetail = closed(
+  { responseId: string, cachedInputTokens: nonNegativeInteger, cacheWriteInputTokens: nonNegativeInteger, cost: modelCost, timing: callTiming },
+  [],
+);
+
 const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { properties: Record<string, JsonSchema>; required: readonly string[] }> = {
   'user.message': { properties: { text: string, images: { type: 'array', items: imageSummary } }, required: ['text'] },
   'run.started': { properties: { attempt: integer }, required: ['attempt'] },
@@ -148,7 +187,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
     required: ['from', 'to'],
   },
   'model.requested': {
-    properties: { step: nonNegativeInteger, attempt: integer, digest: string },
+    properties: { step: nonNegativeInteger, attempt: integer, digest: string, anatomy: tokenAnatomy },
     required: ['step', 'attempt', 'digest'],
   },
   'model.responded': {
@@ -157,14 +196,22 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
       attempt: integer,
       response: closed(
         {
+          id: string,
           status: enumOf(['completed', 'incomplete']),
           incompleteReason: string,
           output: { type: 'array' },
-          usage: closed({ input_tokens: nonNegativeInteger, output_tokens: nonNegativeInteger, total_tokens: nonNegativeInteger }, [
-            'input_tokens',
-            'output_tokens',
-            'total_tokens',
-          ]),
+          usage: closed(
+            {
+              input_tokens: nonNegativeInteger,
+              output_tokens: nonNegativeInteger,
+              total_tokens: nonNegativeInteger,
+              input_tokens_details: closed({ cached_tokens: nonNegativeInteger }, ['cached_tokens']),
+              output_tokens_details: closed({ reasoning_tokens: nonNegativeInteger }, ['reasoning_tokens']),
+            },
+            ['input_tokens', 'output_tokens', 'total_tokens'],
+          ),
+          momonga: closed({ cacheWriteInputTokens: nonNegativeInteger, cost: modelCost }, []),
+          timing: callTiming,
         },
         ['status', 'output', 'usage'],
       ),
@@ -307,6 +354,11 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
       inputTokens: nonNegativeInteger,
       outputTokens: nonNegativeInteger,
       totalTokens: nonNegativeInteger,
+      responseId: string,
+      cachedInputTokens: nonNegativeInteger,
+      cacheWriteInputTokens: nonNegativeInteger,
+      cost: modelCost,
+      timing: callTiming,
     },
     required: ['purpose', 'inputTokens', 'outputTokens', 'totalTokens'],
   },
@@ -407,7 +459,8 @@ const costTotalsProperties: Record<string, JsonSchema> = {
   currency: constant('USD'),
   priceVersions: { type: 'array', items: string },
 };
-const costTotalsRequired = Object.keys(costTotalsProperties);
+const roleCostRequired = Object.keys(costTotalsProperties);
+const costTotalsRequired = [...roleCostRequired, 'roles'];
 
 const fallbackCauseSchema = closed({ target: string, code: nullable(string), message: string }, ['target', 'code', 'message']);
 
@@ -422,7 +475,12 @@ const costFallbackProperties: Record<string, JsonSchema> = {
   },
 };
 
-const costTotalsSchemaProperties: Record<string, JsonSchema> = { ...costTotalsProperties, ...costFallbackProperties };
+const roleCostSchemaProperties: Record<string, JsonSchema> = { ...costTotalsProperties, ...costFallbackProperties };
+
+const costTotalsSchemaProperties: Record<string, JsonSchema> = {
+  ...roleCostSchemaProperties,
+  roles: { type: 'object', additionalProperties: closed(roleCostSchemaProperties, roleCostRequired) },
+};
 
 const contextChargeView = closed(
   {
@@ -435,6 +493,7 @@ const contextChargeView = closed(
     outputTokens: nonNegativeInteger,
     totalTokens: nonNegativeInteger,
     createdAt: integer,
+    detail: billedDetail,
   },
   ['id', 'purpose', 'runId', 'project', 'model', 'inputTokens', 'outputTokens', 'totalTokens', 'createdAt'],
 );
@@ -462,6 +521,55 @@ const costReportView = closed(
     contextCharges: closed({ charges: { type: 'array', items: contextChargeView }, totalTokens: nonNegativeInteger }, ['charges', 'totalTokens']),
   },
   ['runs', 'sessions', 'total', 'contextCharges'],
+);
+
+const numberMap: JsonSchema = { type: 'object', additionalProperties: { type: 'number' } };
+
+const timingSummary = nullable(
+  closed({ median: { type: 'number' }, p95: { type: 'number' }, n: nonNegativeInteger }, ['median', 'p95', 'n']),
+);
+
+const costBreakdownView = closed(
+  {
+    calls: nonNegativeInteger,
+    layers: closed(
+      { estimated: { type: 'boolean', const: true }, shares: numberMap, tokens: numberMap, callsWithoutAnatomy: nonNegativeInteger },
+      ['estimated', 'shares', 'tokens', 'callsWithoutAnatomy'],
+    ),
+    billed: closed(
+      {
+        inputTokens: nonNegativeInteger,
+        uncachedInputTokens: nonNegativeInteger,
+        cacheReadTokens: nonNegativeInteger,
+        cacheWriteTokens: nonNegativeInteger,
+        outputTokens: nonNegativeInteger,
+        reasoningTokens: nonNegativeInteger,
+      },
+      ['inputTokens', 'uncachedInputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'outputTokens', 'reasoningTokens'],
+    ),
+    cacheHitRatio: nullable({ type: 'number' }),
+    timeToFirstToken: timingSummary,
+    duration: timingSummary,
+    roles: {
+      type: 'object',
+      additionalProperties: closed(
+        { calls: nonNegativeInteger, timeToFirstToken: timingSummary, duration: timingSummary, totalDurationMs: nullable(nonNegativeInteger), timingNotRecorded: nonNegativeInteger },
+        ['calls', 'timeToFirstToken', 'duration', 'totalDurationMs', 'timingNotRecorded'],
+      ),
+    },
+    cost: closed({ amount: nullable({ type: 'number' }), currency: constant('USD'), unpricedCalls: nonNegativeInteger }, ['amount', 'currency', 'unpricedCalls']),
+    unpriced: {
+      type: 'array',
+      items: closed({ runId: string, provider: string, model: string, step: nonNegativeInteger, reason: string }, ['runId', 'provider', 'model', 'reason']),
+    },
+    inconsistentUsage: {
+      type: 'array',
+      items: closed({ runId: string, provider: string, model: string, step: nonNegativeInteger, reason: string }, ['runId', 'provider', 'model', 'reason']),
+    },
+    callsWithoutResponseId: nonNegativeInteger,
+    unjoined: { type: 'array', items: closed({ runId: string, step: nonNegativeInteger, reason: string }, ['runId', 'reason']) },
+  },
+  ['calls', 'layers', 'billed', 'cacheHitRatio', 'timeToFirstToken', 'duration', 'roles', 'cost', 'unpriced', 'inconsistentUsage', 'callsWithoutResponseId', 'unjoined'],
 );
 
 const memoryScope = enumOf(MEMORY_SCOPES);
@@ -626,7 +734,9 @@ export type RunTraceSummary = {
   chatResults: { step: number; attempt: number; finishReasons: string[] }[];
 };
 
-export type RunTraceView = { runId: string; summary: RunTraceSummary; spans: RunTraceSpan[] };
+export type RunTraceCall = { step: number; attempt: number; anatomy?: TokenAnatomy };
+
+export type RunTraceView = { runId: string; summary: RunTraceSummary; spans: RunTraceSpan[]; calls?: RunTraceCall[] };
 
 export const MCP_AUTH_STATES = ['not_applicable', 'static_header', 'not_required', 'authorized', 'required', 'refused', 'unreachable'] as const;
 
@@ -671,7 +781,7 @@ export type FallbackCauseView = { target: string; code: string | null; message: 
 
 export type CostFallbackView = { answeredBy: string; calls: number; failed: FallbackCauseView[] };
 
-export type CostTotalsView = {
+export type RoleCostView = {
   fallbackCalls?: number;
   fallbacks?: CostFallbackView[];
   calls: number;
@@ -685,6 +795,8 @@ export type CostTotalsView = {
   currency: 'USD';
   priceVersions: string[];
 };
+
+export type CostTotalsView = RoleCostView & { roles: Record<string, RoleCostView> };
 
 export type GatewayCostReportView = {
   runs: (CostTotalsView & { runId: string; sessionId: string })[];
@@ -702,7 +814,10 @@ export type ContextChargeView = {
   outputTokens: number;
   totalTokens: number;
   createdAt: number;
+  detail?: BilledDetail;
 };
+
+export type RunReflectionView = { job: ReflectionJobView | null; charges: ContextChargeView[]; queuedAhead: number };
 
 export type ContextChargesView = { charges: ContextChargeView[]; totalTokens: number };
 
@@ -713,6 +828,7 @@ export type RecordContextChargeRequest = {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  detail?: BilledDetail;
 };
 
 export type ContextChargeResponse = { charge: ContextChargeView };
@@ -972,15 +1088,21 @@ export const RUN_API_SCHEMAS = {
             ['traceId', 'spanId', 'parentSpanId', 'name', 'kind', 'startMs', 'endMs', 'status', 'attributes'],
           ),
         },
+        calls: {
+          type: 'array',
+          items: closed({ step: nonNegativeInteger, attempt: integer, anatomy: tokenAnatomy }, ['step', 'attempt']),
+        },
       },
       ['runId', 'summary', 'spans'],
     ),
   ),
   CostReport: root(costReportView),
+  CostBreakdown: root(costBreakdownView),
   MemoryView: root(memoryView),
   MemoriesResponse: root(closed({ memories: { type: 'array', items: memoryView } }, ['memories'])),
   MemoryResponse: root(closed({ memory: memoryView }, ['memory'])),
   ReflectionResponse: root(closed({ job: nullable(reflectionJobView) }, ['job'])),
+  RunReflection: root(closed({ job: nullable(reflectionJobView), charges: { type: 'array', items: contextChargeView }, queuedAhead: nonNegativeInteger }, ['job', 'charges', 'queuedAhead'])),
   PromoteMemoryRequest: root(closed({ skill: string }, ['skill'])),
   PromoteMemoryResponse: root(closed({ path: string }, ['path'])),
   AddMemoryRequest: root(
@@ -1010,6 +1132,7 @@ export const RUN_API_SCHEMAS = {
         inputTokens: nonNegativeInteger,
         outputTokens: nonNegativeInteger,
         totalTokens: nonNegativeInteger,
+        detail: billedDetail,
       },
       ['purpose', 'project', 'model', 'inputTokens', 'outputTokens', 'totalTokens'],
     ),
@@ -1061,7 +1184,7 @@ type ReducedEventType =
 type PublicPayload =
   | Exclude<RunEventPayload, { type: ReducedEventType }>
   | { type: 'user.message'; text: string; images?: { mediaType: ImageMediaType; byteLength: number }[] }
-  | { type: 'model.requested'; step: number; attempt: number; digest: string }
+  | { type: 'model.requested'; step: number; attempt: number; digest: string; anatomy?: TokenAnatomy }
   | { type: 'run.started'; attempt: number }
   | { type: 'context.compacted'; summary: string; replacedThroughSeq: number; source?: SummarySource; fidelity?: SummaryFidelity; guidelineVersion?: number }
   | { type: 'context.compaction_rejected'; step?: number; attempt?: number }
@@ -1099,7 +1222,14 @@ export const toPublicRunEvent = (event: RunEvent | SessionEvent): PublicRunEvent
         ...(event.images === undefined ? {} : { images: event.images.map((image) => ({ mediaType: image.mediaType, byteLength: base64ByteLength(image.data) })) }),
       };
     case 'model.requested':
-      return { ...envelope, type: event.type, step: event.step, attempt: event.attempt, digest: event.digest };
+      return {
+        ...envelope,
+        type: event.type,
+        step: event.step,
+        attempt: event.attempt,
+        digest: event.digest,
+        ...(event.anatomy === undefined ? {} : { anatomy: event.anatomy }),
+      };
     case 'run.started':
       return { ...envelope, type: event.type, attempt: event.attempt };
     case 'context.compacted':

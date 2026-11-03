@@ -25,6 +25,7 @@ import { guidelineOf, guidelineVersionFor } from './guideline-pin.ts';
 import { memoryShareFor } from './memory-share.ts';
 import { aliasChainReaches } from './model-switch.ts';
 import { readPins } from './pins.ts';
+import { rolesFor } from './role-pin.ts';
 import type { RunPins } from './pins.ts';
 import { createSkillAdmission } from './skill-admission.ts';
 import { createTerminals } from './terminals.ts';
@@ -296,6 +297,7 @@ const drive = async (
           systemPromptDigest,
           toolSetDigest: toolSet.digest,
           capabilities: await gateway.capabilities(session.modelAlias, { signal: control.signal }),
+          roles: rolesFor({ store: options.store, settings: options.settings, run }),
           ...(newMemoryShare === undefined ? {} : { memoryShare: newMemoryShare }),
           ...(newGuidelineVersion === undefined ? {} : { guidelineVersion: newGuidelineVersion }),
         }
@@ -339,6 +341,7 @@ const drive = async (
     run,
     alias: pins.modelAlias,
     capabilities: pins.capabilities,
+    roles: pins.roles,
     ...(pins.memoryShare === undefined ? {} : { memoryShare: pins.memoryShare }),
     ...(pinnedGuideline === undefined ? {} : { guideline: pinnedGuideline }),
     limits,

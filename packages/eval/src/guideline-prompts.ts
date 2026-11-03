@@ -2,6 +2,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import { sha256Hex } from '@momonga/foundation';
 import { GUIDELINE_TEXT_PATTERN, MIN_SUMMARY_TOKENS, escapeXmlAttribute, escapeXmlText } from '@momonga/protocol';
+import type { BilledDetail } from '@momonga/protocol';
 import { describeFirstError } from './dataset.ts';
 import { recordOf } from './guideline-record.ts';
 import type { Transcript } from './transcript.ts';
@@ -118,7 +119,7 @@ export type GuidelineCompletionRequest = {
   seed?: number;
 };
 
-export type GuidelineCompletion = { text: string; usage: { inputTokens: number; outputTokens: number; totalTokens: number } };
+export type GuidelineCompletion = { text: string; usage: { inputTokens: number; outputTokens: number; totalTokens: number }; detail?: BilledDetail };
 
 const formatFor = (structuredOutput: StructuredOutput, name: string, schema: Record<string, unknown>): Pick<GuidelineCompletionRequest, 'format'> =>
   structuredOutput === 'json_schema' ? { format: { type: 'json_schema', name, strict: true, schema } } : {};

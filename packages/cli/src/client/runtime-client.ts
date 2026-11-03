@@ -1,12 +1,13 @@
 import type { McpServerConfig } from '@momonga/config';
 import { createUdsClient, decodeSse, isRecord } from '@momonga/foundation';
 import type { UdsResponse } from '@momonga/foundation';
-import type { AddMemoryRequest, AddRuleRequest, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RuleAddResponse, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
+import type { AddMemoryRequest, AddRuleRequest, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunReflectionView, RuleAddResponse, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
 import {
   ContractViolation,
   checkAgents,
   checkApproval,
   checkContextCharge,
+  checkCostBreakdown,
   checkCostReport,
   checkElicitation,
   checkGuideline,
@@ -21,6 +22,7 @@ import {
   checkPolicyGovernance,
   checkPromoted,
   checkReflection,
+  checkRunReflection,
   checkRule,
   checkRuleAdd,
   checkRules,
@@ -121,6 +123,7 @@ export type RuntimeClient = {
   cancelMcpAuthorization(sessionId: string, server: string): Promise<void>;
   memories(filter?: MemoryFilter): Promise<MemoryView[]>;
   lastReflection(project: string): Promise<ReflectionJobView | null>;
+  runReflection(runId: string): Promise<RunReflectionView>;
   memory(id: string): Promise<MemoryView>;
   addMemory(request: AddMemoryRequest): Promise<MemoryView>;
   deleteMemory(id: string): Promise<void>;
@@ -140,6 +143,8 @@ export type RuntimeClient = {
   recordContextCharge(request: RecordContextChargeRequest): Promise<ContextChargeView>;
   cost(filter?: CostFilter): Promise<CostReportView>;
   costText(filter?: CostFilter): Promise<string>;
+  costBreakdown(filter?: CostFilter): Promise<CostBreakdownView>;
+  costBreakdownText(filter?: CostFilter): Promise<string>;
   trust(path: string): Promise<TrustView>;
   setTrust(path: string, decision: 'trusted' | 'untrusted'): Promise<TrustView>;
   streamEvents(runId: string, options?: EventsOptions): AsyncGenerator<RunEventFrame>;
@@ -408,6 +413,12 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     return checkReflection(body, `GET ${path}`).job;
   };
 
+  const runReflection = async (runId: string): Promise<RunReflectionView> => {
+    const path = `/v1/runs/${encodeURIComponent(runId)}/reflection`;
+    const { body } = await send('GET', path, [200]);
+    return checkRunReflection(body, `GET ${path}`);
+  };
+
   const memory = async (id: string): Promise<MemoryView> => {
     const path = `/v1/memories/${encodeURIComponent(id)}`;
     const { body } = await send('GET', path, [200]);
@@ -505,6 +516,22 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     return body;
   };
 
+  const breakdownPath = (filter: CostFilter, format: 'json' | 'text'): string =>
+    `/v1/cost?${new URLSearchParams({ ...filter, format, breakdown: '1' }).toString()}`;
+
+  const costBreakdown = async (filter: CostFilter = {}): Promise<CostBreakdownView> => {
+    const path = breakdownPath(filter, 'json');
+    const { body } = await send('GET', path, [200]);
+    return checkCostBreakdown(body, `GET ${path}`);
+  };
+
+  const costBreakdownText = async (filter: CostFilter = {}): Promise<string> => {
+    const path = breakdownPath(filter, 'text');
+    const { body } = await send('GET', path, [200], { raw: true });
+    if (typeof body !== 'string') throw new ContractViolation(`GET ${path}`, 'the text breakdown is not text');
+    return body;
+  };
+
   const trust = async (path: string): Promise<TrustView> => {
     const description = 'GET /v1/trust';
     const { body } = await send('GET', `/v1/trust?path=${encodeURIComponent(path)}`, [200]);
@@ -564,6 +591,7 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     cancelMcpAuthorization,
     memories,
     lastReflection,
+    runReflection,
     memory,
     addMemory,
     deleteMemory,
@@ -583,6 +611,8 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     recordContextCharge,
     cost,
     costText,
+    costBreakdown,
+    costBreakdownText,
     trust,
     setTrust,
     streamEvents,

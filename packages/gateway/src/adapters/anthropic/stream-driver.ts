@@ -182,27 +182,29 @@ export class AnthropicStreamDriver {
   }
 
   private conclude(): void {
-    const usage = usageOf(this.accumulatedUsage());
+    const accumulated = this.accumulatedUsage();
+    const usage = usageOf(accumulated);
+    const cacheWrite = accumulated.cache_creation_input_tokens;
     switch (this.stopReason) {
       case undefined:
         throw new UpstreamProtocolError('the upstream sent message_stop without a stop_reason');
       case 'end_turn':
       case 'stop_sequence':
       case 'tool_use':
-        this.emitter.complete(usage, this.firstInputTokens);
+        this.emitter.complete(usage, this.firstInputTokens, cacheWrite);
         return;
       case 'pause_turn':
         if (this.recorder.unfinished > 0) throw new UpstreamProtocolError('the upstream paused the turn with a content block still open');
         this.pausedTurn = true;
         return;
       case 'max_tokens':
-        this.emitter.incomplete('max_output_tokens', usage, this.firstInputTokens);
+        this.emitter.incomplete('max_output_tokens', usage, this.firstInputTokens, cacheWrite);
         return;
       case 'model_context_window_exceeded':
         this.emitter.fail('context_window_exceeded', 'invalid_request', 'the model stopped because the conversation exceeded its context window');
         return;
       case 'refusal':
-        this.emitter.incomplete('content_filter', usage, this.firstInputTokens);
+        this.emitter.incomplete('content_filter', usage, this.firstInputTokens, cacheWrite);
         return;
       default:
         throw new UpstreamProtocolError(`the upstream sent the unsupported stop_reason ${JSON.stringify(this.stopReason)}`);

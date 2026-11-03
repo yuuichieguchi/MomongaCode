@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { LOCK_DATABASE_SUFFIX, ProcessLockHeldError, acquireProcessLock, createKernelLockMechanism, inspectProcessLock, sqliteFileLock } from '@momonga/foundation';
-import { registerCleanup, startLockHolder, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, startLockHolder, withTempDir } from '@momonga/testkit';
 import { exitOf } from './support/lock-processes.ts';
 
 const claimOrThrow = async (lockPath: string) => {
@@ -67,7 +67,7 @@ describe('the lock used on Linux and Windows', () => {
   });
 });
 
-describe('the lock used on Linux and Windows, held by another process', () => {
+describe('the lock used on Linux and Windows, held by another process', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('is held and names the holder while the process lives, and is free the moment a killed holder is gone', async (context) => {
     const lockPath = path.join(withTempDir(context), 'runtime.lock');
     const holder = await startLockHolder(context, lockPath, 'linux');

@@ -7,7 +7,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Agent } from 'undici';
 import { createFmServe, type ExecResult, type FmServe, type FmServeTimers } from '@momonga/gateway';
-import { startFakeChatCompletions, type FakeChatCompletionsServer } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, startFakeChatCompletions, type FakeChatCompletionsServer } from '@momonga/testkit';
 
 interface FakeChildOptions {
   manualServe?: boolean;
@@ -419,7 +419,7 @@ describe('createFmServe start', () => {
   });
 });
 
-describe('createFmServe socket ownership', () => {
+describe('createFmServe socket ownership', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('rejects start as unhealthy when another live server owns the socket path', async () => {
     const socketPath = makeSocketPath();
     const owner = await startFakeChatCompletions({ scenario: 'tools-ok', socketPath });

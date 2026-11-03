@@ -4,6 +4,7 @@ import type net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { tokensForText } from '@momonga/protocol';
 import { collectAllowedNames, findUsedKeywords, generateInstance } from './schema-instance.ts';
 
 export type FakeScenario = 'tools-ok' | 'tools-400' | 'tools-ignored' | 'json-schema-only' | 'none';
@@ -59,13 +60,13 @@ export type FakeFixedUsage = {
   completion_tokens_details?: { reasoning_tokens: number };
 };
 
-export type FakeRequestUsage = { prompt: 'request'; completion_tokens: number; tokensOf?: (requestBody: unknown) => number };
+export type FakeUsageOfRequest = (requestBody: unknown) => FakeFixedUsage;
 
 export type FakeScriptedReply =
   | {
       kind: 'stream';
       chunks: FakeStreamChunk[];
-      usage?: FakeFixedUsage | FakeRequestUsage;
+      usage?: FakeFixedUsage | FakeUsageOfRequest;
       done?: boolean;
     }
   | { kind: 'error'; status: number; body: unknown; headers?: Record<string, string> }
@@ -154,13 +155,13 @@ const invalidRequest = (message: string, code: string | null = null, param: stri
 const isRecord = (value: unknown): value is Json =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-export const countFakeTokens = (text: string): number => text.split(/\s+/).filter((word) => word.length > 0).length;
+export const countFakeTokens = (text: string): number => (text.length === 0 ? 0 : tokensForText(text));
 
 const messageText = (message: ChatMessage): string => {
   if (typeof message.content === 'string') return message.content;
   if (Array.isArray(message.content)) {
     return message.content
-      .map((part: unknown) => (isRecord(part) && typeof part['text'] === 'string' ? part['text'] : ''))
+      .flatMap((part: unknown) => (isRecord(part) && typeof part['text'] === 'string' ? [part['text']] : []))
       .join(' ');
   }
   return '';
@@ -194,27 +195,33 @@ const fakeImageTokens = (part: unknown, model: FakeImageTokenModel): number => {
   return Math.max(model.minTokens ?? 0, Math.min(model.maxTokens, linear));
 };
 
-const fakeMessageImageTokens = (message: ChatMessage, model: FakeImageTokenModel | undefined): number =>
-  model === undefined || !Array.isArray(message.content)
-    ? 0
-    : message.content.reduce((total: number, part: unknown) => total + fakeImageTokens(part, model), 0);
+const withoutFakeImages = (value: unknown, model: FakeImageTokenModel | undefined): { value: unknown; imageTokens: number } => {
+  let imageTokens = 0;
+  const strip = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(strip);
+    if (!isRecord(node)) return node;
+    if (model !== undefined && node['type'] === 'image_url' && isRecord(node['image_url'])) {
+      imageTokens += fakeImageTokens(node, model);
+      return { type: node['type'] };
+    }
+    return Object.fromEntries(Object.entries(node).map(([key, child]) => [key, strip(child)]));
+  };
+  return { value: strip(value), imageTokens };
+};
 
-export const countFakePromptTokens = (messages: readonly ChatMessage[], imageModel?: FakeImageTokenModel): number =>
-  messages.reduce((total, message) => total + countFakeTokens(messageText(message)) + 4 + fakeMessageImageTokens(message, imageModel), 0);
-
-const FAKE_CHARACTERS_PER_PROMPT_TOKEN = 4;
-
-export const countFakeRequestTokens = (body: unknown): number => {
+export const countFakeRequestTokens = (body: unknown, imageModel?: FakeImageTokenModel): number => {
   const messages = isRecord(body) ? body['messages'] : undefined;
   const tools = isRecord(body) ? body['tools'] : undefined;
-  return Math.ceil(JSON.stringify([messages ?? [], tools ?? []]).length / FAKE_CHARACTERS_PER_PROMPT_TOKEN);
+  const { value, imageTokens } = withoutFakeImages([messages ?? [], tools ?? []], imageModel);
+  return tokensForText(JSON.stringify(value)) + imageTokens;
 };
 
-const resolvedUsage = (usage: FakeFixedUsage | FakeRequestUsage, body: unknown): FakeFixedUsage => {
-  if (!('prompt' in usage)) return usage;
-  const promptTokens = (usage.tokensOf ?? countFakeRequestTokens)(body);
-  return { prompt_tokens: promptTokens, completion_tokens: usage.completion_tokens, total_tokens: promptTokens + usage.completion_tokens };
+export const fakeUsageOfRequest = (body: unknown, completionTokens: number, imageModel?: FakeImageTokenModel): FakeFixedUsage => {
+  const promptTokens = countFakeRequestTokens(body, imageModel);
+  return { prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: promptTokens + completionTokens };
 };
+
+const resolvedUsage = (usage: FakeFixedUsage | FakeUsageOfRequest, body: unknown): FakeFixedUsage => (typeof usage === 'function' ? usage(body) : usage);
 
 export const isValidAtIndex = (index: number, rate: number): boolean => {
   const percent = Math.round(rate * 100);
@@ -434,7 +441,7 @@ export const startFakeChatCompletions = async (
       }
     }
     const maxTokens = body['max_tokens'] ?? body['max_completion_tokens'];
-    const requested = countFakePromptTokens(messages) + (typeof maxTokens === 'number' ? maxTokens : 0);
+    const requested = countFakeRequestTokens(body, options.imageTokens) + (typeof maxTokens === 'number' ? maxTokens : 0);
     if (requested > contextWindow) {
       if (options.contextOverflowStatus === 500) {
         throw new HttpFailure(500, { error: { message: 'Internal server error.', type: 'server_error', param: null, code: null } });
@@ -472,7 +479,7 @@ export const startFakeChatCompletions = async (
 
   const usageFor = (body: Json, out: CompletionOut): Json => {
     const messages = Array.isArray(body['messages']) ? (body['messages'] as ChatMessage[]) : [];
-    const promptTokens = countFakePromptTokens(messages, options.imageTokens);
+    const promptTokens = countFakeRequestTokens(body, options.imageTokens);
     const completionText = out.content ?? out.toolCalls.map((call) => call.function.arguments).join(' ');
     const visibleTokens = Math.max(1, countFakeTokens(completionText));
     const reasoningTokens = reasoningTokensFor(body);

@@ -1,7 +1,7 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { TokenMeter } from '@momonga/context';
 import { ESTIMATED_ERROR_BOUND_RATIO, LOWEST_REASONING_EFFORT, marginFloorFor } from '@momonga/protocol';
-import type { CreateResponseBody, FunctionTool, InputItem, ResponseResource, RunState } from '@momonga/protocol';
+import type { CreateResponseBody, FunctionTool, InputItem, ModelResponse, MomongaResponseExtension, ResponseResource, RunState } from '@momonga/protocol';
 import type { ClaimContext, Flow } from './claim-context.ts';
 import { modelKey } from '../model-key.ts';
 import { GatewayFailureError } from './errors.ts';
@@ -9,7 +9,7 @@ import { isRecord } from './json.ts';
 import { buildNext, cancelIfInterrupted, recoverRejectedCompaction } from './context-step.ts';
 import { isLoop } from './loop-detection.ts';
 import { streamModel } from './model-stream.ts';
-import type { ModelResult } from './model-stream.ts';
+import type { StreamedModel } from './model-stream.ts';
 import { summaryStopReason } from './wrap-up.ts';
 import { runStopHooks } from './hook-step.ts';
 import { recordCalls, settleCalls } from './tool-step.ts';
@@ -94,12 +94,23 @@ const truncationFailure = (reported: number, observation: Pick<InputEstimate, 'e
   message: `The server reported ${reported} input tokens for a context the token meter counts as ${observation.estimatedTokens} tokens, which is more than the estimation margin of ${observation.marginTokens} tokens below it. The server likely truncated the input without saying so. Set the server's context length to the target's context window, or lower the target's contextWindow to what the server serves.`,
 });
 
+const billedExtensionOf = (extension: MomongaResponseExtension | undefined): ModelResponse['momonga'] => {
+  if (extension === undefined) return undefined;
+  const { cacheWriteInputTokens, cost } = extension;
+  if (cacheWriteInputTokens === undefined && cost === undefined) return undefined;
+  return {
+    ...(cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens }),
+    ...(cost === undefined ? {} : { cost }),
+  };
+};
+
 const handleResult = async (
   ctx: ClaimContext,
-  result: ModelResult,
+  streamed: StreamedModel,
   position: { step: number; attempt: number },
   observation: InputObservation | undefined,
 ): Promise<Flow> => {
+  const { result, timing } = streamed;
   const { journal, terminals } = ctx;
   if (result.kind === 'failed') {
     if (result.code !== null && REFUSAL_CODES.includes(result.code)) {
@@ -123,16 +134,26 @@ const handleResult = async (
   }
   const estimate = observation === undefined ? undefined : await estimateFor(ctx, observation, fallbackTargetOf(response));
   const before = journal.state.usage;
+  const billed = billedExtensionOf(response.momonga);
   journal.append([
     {
       type: 'model.responded',
       step: position.step,
       attempt: position.attempt,
       response: {
+        id: response.id,
         status: incomplete ? 'incomplete' : 'completed',
         ...(incomplete && response.incomplete_details?.reason !== undefined ? { incompleteReason: response.incomplete_details.reason } : {}),
         output: response.output,
-        usage: { input_tokens: usage.input_tokens, output_tokens: usage.output_tokens, total_tokens: usage.total_tokens },
+        usage: {
+          input_tokens: usage.input_tokens,
+          output_tokens: usage.output_tokens,
+          total_tokens: usage.total_tokens,
+          input_tokens_details: { cached_tokens: usage.input_tokens_details.cached_tokens },
+          output_tokens_details: { reasoning_tokens: usage.output_tokens_details.reasoning_tokens },
+        },
+        ...(billed === undefined ? {} : { momonga: billed }),
+        timing,
       },
     },
     {
@@ -183,7 +204,7 @@ const reusedCallIdOf = (state: RunState, output: ResponseResource['output']): st
   return undefined;
 };
 
-type StreamOutcome = { kind: 'result'; result: ModelResult } | { kind: 'flow'; flow: Flow };
+type StreamOutcome = { kind: 'result'; streamed: StreamedModel } | { kind: 'flow'; flow: Flow };
 
 const streamRecovering = async (
   ctx: ClaimContext,
@@ -191,7 +212,7 @@ const streamRecovering = async (
   position: { step: number; attempt: number },
 ): Promise<StreamOutcome> => {
   try {
-    return { kind: 'result', result: await streamModel(ctx, body, modelKey(ctx.run.id, position.step, position.attempt), position) };
+    return { kind: 'result', streamed: await streamModel(ctx, body, modelKey(ctx.run.id, position.step, position.attempt), position) };
   } catch (error) {
     const recovery = recoverRejectedCompaction(ctx, error, position);
     delete ctx.control.inFlight.modelKey;
@@ -207,7 +228,7 @@ export const resumeInFlight = async (ctx: ClaimContext): Promise<Flow> => {
   if (ctx.control.yieldRequested()) return ctx.terminals.yieldLease();
   if (streamedBeforeRestart(ctx.journal.state, position)) ctx.journal.append([{ type: 'model.stream.restarted', step: position.step, attempt: position.attempt }]);
   const outcome = await streamRecovering(ctx, inFlight.body, position);
-  return outcome.kind === 'flow' ? outcome.flow : handleResult(ctx, outcome.result, position, observationOfRecorded(inFlight.body));
+  return outcome.kind === 'flow' ? outcome.flow : handleResult(ctx, outcome.streamed, position, observationOfRecorded(inFlight.body));
 };
 
 const observationOfRecorded = (body: CreateResponseBody): InputObservation | undefined => {
@@ -242,10 +263,10 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   const position = { step, attempt: MODEL_ATTEMPT };
   journal.append([
     ...(wrapUp === undefined ? [] : [{ type: 'notice' as const, level: 'error' as const, message: wrapUp.notice, code: 'context_wrap_up' }]),
-    { type: 'model.requested', step: position.step, attempt: position.attempt, digest: sha256Hex(canonicalJson(body)), pinnedDigest: pinnedDigestOf(body), body },
+    { type: 'model.requested', step: position.step, attempt: position.attempt, digest: sha256Hex(canonicalJson(body)), pinnedDigest: pinnedDigestOf(body), body, anatomy: built.anatomy },
   ]);
   const streamed = await streamRecovering(ctx, body, position);
   return streamed.kind === 'flow'
     ? streamed.flow
-    : handleResult(ctx, streamed.result, position, summarising ? undefined : { input: built.input, tools: built.tools });
+    : handleResult(ctx, streamed.streamed, position, summarising ? undefined : { input: built.input, tools: built.tools });
 };

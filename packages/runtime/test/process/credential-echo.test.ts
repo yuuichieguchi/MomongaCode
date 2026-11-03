@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { createJsonLogger, systemClock } from '@momonga/foundation';
 import type { FakeScriptedReply } from '@momonga/testkit';
 import { captureStream, launchRuntime, modelSettings, prepareStack, readDb, runStatus, startGateway, waitForCondition, waitForStatus } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: 60_000 };
+const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 const TEST_API_KEY = 'momonga-test-api-key';
 const TEST_API_KEY_ENV = 'MOMONGA_TEST_KEY';
 const REDACTED = '[REDACTED]';

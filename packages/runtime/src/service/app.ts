@@ -5,7 +5,7 @@ import { ConfigError, assertSessionMcpServers, stripCredentialEnv } from '@momon
 import { canonicalDirectory, canonicalJson, canonicalPath, comparableContains, comparablePath, isTransientErrno, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { AUTO_MODE_UNAVAILABLE, RUN_STATUSES } from '@momonga/protocol';
-import type { Capabilities, GatewayCostReportView, PermissionMode, RunStatus, RunTraceView } from '@momonga/protocol';
+import type { Capabilities, CostBreakdownView, GatewayCostReportView, PermissionMode, RunStatus, RunTraceView } from '@momonga/protocol';
 import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
 import { sameRunRequest } from '@momonga/store';
 import type { ContextCharge, Run, RuntimeStore, Session } from '@momonga/store';
@@ -81,7 +81,8 @@ export type RunAppDeps = {
   cancelUpstream?: (runId: string) => Promise<void>;
   releaseStopped(runId: string, signal: AbortSignal): Promise<void>;
   runTrace: (runId: string) => Promise<RunTraceView | undefined>;
-  runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal) => Promise<{ report: GatewayCostReportView; text: string }>;
+  runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ report: GatewayCostReportView; text: string }>;
+  runCostBreakdown: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ breakdown: CostBreakdownView; text: string }>;
   mcp: McpAdminPort;
   onError: (error: unknown) => void;
 };
@@ -434,7 +435,14 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     }
     const format = context.req.query('format') ?? 'json';
     if (format !== 'json' && format !== 'text') throw invalidRequest('format must be json or text', 'format');
-    const { report, text } = await deps.runCost(runs, context.req.raw.signal);
+    const breakdownParam = context.req.query('breakdown');
+    if (breakdownParam !== undefined && breakdownParam !== '1') throw invalidRequest('breakdown must be 1 when given', 'breakdown');
+    if (breakdownParam === '1') {
+      const { breakdown, text: breakdownText } = await deps.runCostBreakdown(runs, context.req.raw.signal, given.length === 0);
+      if (format === 'json') return json(breakdown);
+      return new Response(`${breakdownText}\n`, { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8' } });
+    }
+    const { report, text } = await deps.runCost(runs, context.req.raw.signal, given.length === 0);
     const contextCharges = contextChargesView(charges);
     if (format === 'json') return json({ ...report, contextCharges });
     const chargesText = contextChargesText(contextCharges, report.total.inputTokens + report.total.outputTokens);

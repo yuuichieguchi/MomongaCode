@@ -2,11 +2,12 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { makeTempDir } from './helpers.ts';
 
 const GIT = process.platform === 'darwin' ? '/usr/bin/git' : 'git';
 
-describe('what git itself adopts from a planted nested git directory (real git)', () => {
+describe('what git itself adopts from a planted nested git directory (real git)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   let created: string[] = [];
 
   afterEach(() => {

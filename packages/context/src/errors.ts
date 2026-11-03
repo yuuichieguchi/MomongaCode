@@ -35,6 +35,36 @@ export class PinnedRoomError extends PinnedOverflowError {
   }
 }
 
+export const BOUND_REMEDIATION = 'raise contextWindow, lower maxOutputTokens, or calibrate the token counter';
+
+export type PinnedBoundFacts = {
+  pinnedTokens: number;
+  ceiling: number;
+  breakdown: PinnedBreakdown;
+  inputBudget: number;
+  boundAtZero: number;
+  maxInput: number | undefined;
+};
+
+export class PinnedBoundError extends PinnedOverflowError {
+  readonly inputBudget: number;
+  readonly boundAtZero: number;
+  readonly maxInput: number | undefined;
+
+  constructor(facts: PinnedBoundFacts) {
+    super(
+      facts,
+      facts.maxInput === undefined
+        ? `no input size fits: the token counter's error bound is ${facts.boundAtZero} tokens even for an empty input, more than the input budget of ${facts.inputBudget}; ${BOUND_REMEDIATION}`
+        : `the pinned context needs ${facts.pinnedTokens} tokens, but with the token counter's error bound at most ${facts.maxInput} fit the input budget of ${facts.inputBudget}; ${BOUND_REMEDIATION}`,
+    );
+    this.name = 'PinnedBoundError';
+    this.inputBudget = facts.inputBudget;
+    this.boundAtZero = facts.boundAtZero;
+    this.maxInput = facts.maxInput;
+  }
+}
+
 export type ContextOverflowFacts = {
   inputTokens: number;
   inputBudget: number;

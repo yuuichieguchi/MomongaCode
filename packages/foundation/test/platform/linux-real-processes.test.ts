@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import type { UninspectableProcess } from '../../src/platform/inspector-types.ts';
 import { BOOT_TIME_RESOLUTION_MS, createLinuxInspector } from '../../src/platform/linux-inspector.ts';
 import { nodeProcFs } from '../../src/platform/procfs.ts';
@@ -30,7 +31,7 @@ const until = async (condition: () => boolean, what: string): Promise<void> => {
   }
 };
 
-describe.runIf(ON_LINUX)('the Linux inspector against real processes', () => {
+describe.runIf(ON_LINUX)('the Linux inspector against real processes', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   let directory = '';
   let children: ChildProcess[] = [];
   const inspector = () => createLinuxInspector({ procfs: nodeProcFs, uid: process.getuid?.() as number });

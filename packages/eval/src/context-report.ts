@@ -12,6 +12,8 @@ import { grade } from './graders.ts';
 import { describeProportion, percent, proportionOrUndefined } from './report.ts';
 import { EvalError, transcriptsByCase } from './runner.ts';
 import type { Proportion } from './stats.ts';
+import { caseTotalsOf, tokenFactsOf, tokenMetricsOf } from './token-metrics.ts';
+import type { CaseTokenTotals, RatioMetric, TokenFacts } from './token-metrics.ts';
 import type { Transcript } from './transcript.ts';
 
 export const CONTEXT_REPORT_FORMAT = 'momonga-eval-context-report/1';
@@ -20,14 +22,19 @@ export const CONTEXT_MODELS = ['fake', 'real'] as const;
 export type ContextModel = (typeof CONTEXT_MODELS)[number];
 
 export const MODEL_DEPENDENT_METRICS = [
+  'cacheHitRatio',
+  'callsPerSuccess',
   'continuationRate',
   'contrastiveFailures',
+  'costPerSuccess',
   'fabricationRate',
   'identifierRetention',
+  'latencyPerSuccess',
   'lossSignalsPerCompaction',
   'retrievalPrecision',
   'retrievalRecall',
   'tokensPerSuccess',
+  'uncachedInputPerSuccess',
 ] as const;
 export type ModelDependentMetric = (typeof MODEL_DEPENDENT_METRICS)[number];
 
@@ -44,6 +51,7 @@ export type ContextCaseReport = {
   totalTokens: number;
   compactions: number;
   lossSignals: number;
+  tokens?: CaseTokenTotals;
 };
 
 export type ClusteredProportion = Proportion & { clusters: number };
@@ -61,6 +69,12 @@ export type ContextMetrics = {
   retrievalPrecision: ClusteredProportion | undefined;
   retrievalRecall: ClusteredProportion | undefined;
   tokensPerSuccess: { value: number; tokens: number; successes: number; n: number } | undefined;
+  costPerSuccess?: RatioMetric;
+  uncachedInputPerSuccess?: RatioMetric;
+  callsPerSuccess?: RatioMetric;
+  latencyPerSuccess?: RatioMetric;
+  cacheHitRatio?: RatioMetric;
+  layerShares?: Record<string, RatioMetric>;
 };
 
 export const DEFAULT_DATASET_SEED = 0;
@@ -81,6 +95,7 @@ export type ContextReport = {
   unclassifiedCompactions: number;
   governanceRunsWithoutEvent: number;
   noiseTokens: number;
+  unsettledNoiseReflections: number;
   stopped: StoppedRun[];
   cases: ContextCaseReport[];
   passed: boolean;
@@ -95,6 +110,7 @@ type RunMeasure = {
   recalled: Recalled;
   retrieval: Retrieval | undefined;
   modelAlias: string | undefined;
+  token: TokenFacts;
 };
 
 const total = <T>(items: readonly T[], pick: (item: T) => number): number => items.reduce((sum, item) => sum + pick(item), 0);
@@ -130,6 +146,7 @@ const measureRun = (entry: ExpandedCase, transcript: Transcript): RunMeasure => 
     recalled: recalledOf(transcript.events),
     retrieval: entry.gold === undefined || stopped ? undefined : retrievalOf(entry.gold, transcript.events),
     modelAlias: transcript.run.modelAlias,
+    token: tokenFactsOf(runs, stopped ? { state: 'none' } : transcript.reflection),
   };
 };
 
@@ -150,6 +167,7 @@ const caseReportOf = (entry: ExpandedCase, measures: readonly RunMeasure[]): Con
     totalTokens: total(measures, (measure) => measure.tokens),
     compactions: total(measures, (measure) => measure.facts.compactions),
     lossSignals: total(measures, (measure) => measure.signals),
+    tokens: caseTotalsOf(measures.map((measure) => measure.token)),
   };
 };
 
@@ -191,6 +209,9 @@ const clusteredOver = (measured: readonly MeasuredCase[], seed: number, pick: (m
   };
 };
 
+const definedOnly = <T extends object>(values: T): { [K in keyof T]?: Exclude<T[K], undefined> } =>
+  Object.fromEntries(Object.entries(values).filter(([, value]) => value !== undefined)) as { [K in keyof T]?: Exclude<T[K], undefined> };
+
 const metricsOf = (cases: readonly ContextCaseReport[], measured: readonly MeasuredCase[], seed: number): ContextMetrics => {
   const measures = measured.flatMap((entry) => entry.measures);
   const compactedRuns = measures.filter((measure) => measure.facts.compactions > 0);
@@ -216,6 +237,16 @@ const metricsOf = (cases: readonly ContextCaseReport[], measured: readonly Measu
     retrievalPrecision: cluster((measure) => (measure.retrieval === undefined ? none : { numerator: measure.retrieval.relevant, denominator: measure.retrieval.retrieved })),
     retrievalRecall: cluster((measure) => (measure.retrieval === undefined ? none : { numerator: measure.retrieval.relevant, denominator: measure.retrieval.gold })),
     tokensPerSuccess: successes === 0 ? undefined : { value: tokens / successes, tokens, successes, n: successes },
+    ...definedOnly(
+      tokenMetricsOf(
+        measured.map(({ measures: caseMeasures }) => ({
+          totals: caseTotalsOf(caseMeasures.map((measure) => measure.token)),
+          passedRuns: caseMeasures.filter((measure) => measure.passed).length,
+          facts: caseMeasures.map((measure) => measure.token),
+        })),
+        seed,
+      ),
+    ),
   };
 };
 
@@ -252,6 +283,7 @@ export const buildContextReport = (input: BuildContextReportInput): ContextRepor
     unclassifiedCompactions: total(measures, (measure) => measure.facts.unclassified),
     governanceRunsWithoutEvent: measures.filter((measure) => measure.governance !== undefined && measure.governance.loads === 0).length,
     noiseTokens: total(transcripts, (transcript) => transcript.noiseTokens ?? 0),
+    unsettledNoiseReflections: total(transcripts, (transcript) => transcript.noiseReflectionsUnsettled ?? 0),
     stopped: measured.flatMap(({ transcripts: recorded }) =>
       recorded.flatMap((transcript) => (transcript.stopped === undefined ? [] : [{ caseId: transcript.caseId, runIndex: transcript.runIndex, reason: transcript.stopped }])),
     ),
@@ -266,6 +298,36 @@ export const describeClustered = (value: ClusteredProportion): string =>
 const describeOptional = (name: string, value: Proportion | ClusteredProportion | undefined, absence: string): string => {
   if (value === undefined) return `${name} n/a (${absence})`;
   return `${name} ${'clusters' in value ? describeClustered(value) : describeProportion(value)}`;
+};
+
+const describeRatio = (name: string, metric: RatioMetric | undefined, absence: string, render: (value: number) => string, unit: string): string => {
+  if (metric === undefined) return `${name} n/a (${absence})`;
+  const interval = `95% bootstrap ${render(metric.low)}..${render(metric.high)}`;
+  return `${name} ${render(metric.value)}${unit} (${interval} over ${metric.clusters} case(s); ${metric.numerator} / ${metric.denominator}), n=${metric.clusters}`;
+};
+
+const decimals = (digits: number) => (value: number): string => value.toFixed(digits);
+
+const unsettledLine = (cases: readonly ContextCaseReport[]): string[] => {
+  const unsettled = cases.filter((entry) => (entry.tokens?.unsettledReflections ?? 0) > 0);
+  if (unsettled.length === 0) return [];
+  const runs = unsettled.reduce((sum, entry) => sum + (entry.tokens?.unsettledReflections ?? 0), 0);
+  return [`reflection: ${runs} run(s) in ${unsettled.map((entry) => entry.id).join(', ')} have a reflection that is pending, running past its bound or not recorded, so the per-success token metrics and cacheHitRatio are n/a`];
+};
+
+const tokenLines = (metrics: ContextMetrics, cases: readonly ContextCaseReport[]): string[] => {
+  const shares = Object.entries(metrics.layerShares ?? {}).map(([name, share]) => `${name} ${percent(share.value)}`);
+  return [
+    ...unsettledLine(cases),
+    describeRatio('costPerSuccess', metrics.costPerSuccess, 'a call has no price or no run succeeded', decimals(6), ''),
+    describeRatio('uncachedInputPerSuccess', metrics.uncachedInputPerSuccess, 'a call reports no cached input or no run succeeded', decimals(1), ''),
+    describeRatio('callsPerSuccess', metrics.callsPerSuccess, 'no call was recorded or no run succeeded', decimals(3), ''),
+    describeRatio('latencyPerSuccess', metrics.latencyPerSuccess, 'a call has no timing or no run succeeded', decimals(1), ' ms'),
+    metrics.cacheHitRatio === undefined
+      ? 'cacheHitRatio n/a (a call reports no cached input or no input was sent)'
+      : `cacheHitRatio ${percent(metrics.cacheHitRatio.value)} (95% bootstrap ${percent(metrics.cacheHitRatio.low)}..${percent(metrics.cacheHitRatio.high)} over ${metrics.cacheHitRatio.clusters} case(s); ${metrics.cacheHitRatio.numerator} / ${metrics.cacheHitRatio.denominator}), n=${metrics.cacheHitRatio.clusters}`,
+    shares.length === 0 ? 'layerShares n/a (no request recorded its layers)' : `layerShares ${shares.join(', ')} (estimated)`,
+  ];
 };
 
 export const formatContextReport = (report: ContextReport): string => {
@@ -306,10 +368,12 @@ export const formatContextReport = (report: ContextReport): string => {
       ? 'tokensPerSuccess n/a (no passing run)'
       : `tokensPerSuccess ${tokens.value.toFixed(1)} (${tokens.tokens} tokens / ${tokens.successes} successes), n=${tokens.n}`,
   );
+  lines.push(...tokenLines(metrics, report.cases));
   lines.push(`unclassifiedCompactions ${report.unclassifiedCompactions}`);
   lines.push(`governanceRunsWithoutEvent ${report.governanceRunsWithoutEvent} (runs of cases with rules that loaded no governing set; each counts as an empty set)`);
   lines.push(`datasetSeed ${report.datasetSeed}`);
-  lines.push(`noiseTokens ${report.noiseTokens} (spent by the noise turns before each task; counted against the dataset cap and not in tokensPerSuccess)`);
+  lines.push(`noiseTokens ${report.noiseTokens} (spent by the noise turns and their reflections before each task; counted against the dataset cap and not in tokensPerSuccess)`);
+  lines.push(`noise reflections unsettled ${report.unsettledNoiseReflections} (a reflection of a noise run still pending or running past its bound; the charges recorded so far are in noiseTokens, and the cases stay measured)`);
   for (const stop of report.stopped) lines.push(`stopped ${stop.caseId} run ${stop.runIndex}: ${stop.reason} (counted as a failed run)`);
   return lines.join('\n');
 };
@@ -322,6 +386,21 @@ const closed = (properties: Record<string, unknown>, required: readonly string[]
 const proportionSchema = closed({ successes: count, trials: count, rate, low: rate, high: rate }, ['successes', 'trials', 'rate', 'low', 'high']);
 
 const clusteredSchema = closed({ successes: count, trials: count, rate, low: rate, high: rate, clusters: count }, ['successes', 'trials', 'rate', 'low', 'high', 'clusters']);
+
+const ratioMetricSchema = closed({ value: rate, numerator: rate, denominator: rate, low: rate, high: rate, clusters: count }, ['value', 'numerator', 'denominator', 'low', 'high', 'clusters']);
+
+const caseTokensSchema = closed(
+  {
+    calls: count,
+    unsettledReflections: count,
+    inputTokens: count,
+    cachedInputTokens: count,
+    uncachedInputTokens: { type: 'number' },
+    cost: rate,
+    latencyMs: rate,
+  },
+  ['calls', 'unsettledReflections'],
+);
 
 const CONTEXT_REPORT_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
@@ -347,6 +426,12 @@ const CONTEXT_REPORT_SCHEMA = {
           retrievalPrecision: clusteredSchema,
           retrievalRecall: clusteredSchema,
           tokensPerSuccess: closed({ value: rate, tokens: count, successes: count, n: count }, ['value', 'tokens', 'successes', 'n']),
+          costPerSuccess: ratioMetricSchema,
+          uncachedInputPerSuccess: ratioMetricSchema,
+          callsPerSuccess: ratioMetricSchema,
+          latencyPerSuccess: ratioMetricSchema,
+          cacheHitRatio: ratioMetricSchema,
+          layerShares: { type: 'object', additionalProperties: ratioMetricSchema },
         },
         ['contrastiveFailures'],
       ),
@@ -354,6 +439,7 @@ const CONTEXT_REPORT_SCHEMA = {
       unclassifiedCompactions: count,
       governanceRunsWithoutEvent: count,
       noiseTokens: count,
+      unsettledNoiseReflections: count,
       stopped: {
         type: 'array',
         items: closed({ caseId: { type: 'string', minLength: 1 }, runIndex: count, reason: { type: 'string', minLength: 1 } }, ['caseId', 'runIndex', 'reason']),
@@ -374,6 +460,7 @@ const CONTEXT_REPORT_SCHEMA = {
             totalTokens: count,
             compactions: count,
             lossSignals: count,
+            tokens: caseTokensSchema,
           },
           ['id', 'scenario', 'compaction', 'runs', 'passedRuns', 'passed', 'passRate', 'minPassRate', 'meetsMinimum', 'totalTokens', 'compactions', 'lossSignals'],
         ),
@@ -392,6 +479,7 @@ const CONTEXT_REPORT_SCHEMA = {
       'unclassifiedCompactions',
       'governanceRunsWithoutEvent',
       'noiseTokens',
+      'unsettledNoiseReflections',
       'stopped',
       'cases',
       'passed',

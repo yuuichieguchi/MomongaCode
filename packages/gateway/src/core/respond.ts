@@ -10,8 +10,10 @@ import type {
   ResponseError,
   ResponseResource,
   StreamEvent,
+  Usage,
   UsageSource,
 } from '@momonga/protocol';
+import { modelCostOf } from './model-cost.ts';
 import { TERMINAL_STREAM_EVENT_TYPES, isReasoningEffort } from '@momonga/protocol';
 import { startAttemptSpan } from './attempt-span.ts';
 import type { AttemptSpan, TraceParent } from './attempt-span.ts';
@@ -40,6 +42,7 @@ export type ResponseJob = {
   parent: TraceParent | undefined;
   runId: string | undefined;
   step: number | undefined;
+  role: string;
   connection?: ConnectionResponses;
 };
 
@@ -84,7 +87,7 @@ const adapterRequestFor = (job: ResponseJob, resolved: ResolvedInput, target: Ta
   };
 };
 
-const errorTypeOf = (failure: unknown): string => {
+export const errorTypeOf = (failure: unknown): string => {
   if (failure instanceof UpstreamFailure) return failure.classified.error.type;
   if (failure instanceof GatewayError) return failure.body.type;
   return 'cancelled';
@@ -92,7 +95,7 @@ const errorTypeOf = (failure: unknown): string => {
 
 const thrownSpanType = (error: unknown): string => (error instanceof GatewayError ? error.body.type : 'server_error');
 
-const messageOf = (failure: unknown): string => (failure instanceof Error ? failure.message : String(failure));
+export const messageOf = (failure: unknown): string => (failure instanceof Error ? failure.message : String(failure));
 
 const openAttempt = async (
   services: Services,
@@ -115,6 +118,7 @@ const openAttempt = async (
     step: job.step,
     attempt: attemptNumber,
     targetName: target.name,
+    role: job.role,
     request: { input: resolved.forAdapter, instructions: job.body.instructions, tools: job.body.tools },
   });
   try {
@@ -327,14 +331,30 @@ async function* relaySteps(
     }
   }
 
-  const momongaFor = (usageSource: UsageSource, contextInputTokens?: number): MomongaResponseExtension => ({
-    alias: job.alias,
-    target: target.name,
-    attempts,
-    ...(fallbackFrom.length === 0 ? {} : { fallbackFrom, fallbackCauses }),
-    usageSource,
-    ...(contextInputTokens === undefined ? {} : { contextInputTokens }),
-  });
+  const momongaFor = (usageSource: UsageSource, contextInputTokens?: number, billed?: { usage: Usage; cacheWriteInputTokens: number | undefined }): MomongaResponseExtension => {
+    const cost =
+      billed === undefined || services.priceTable === undefined
+        ? null
+        : modelCostOf({
+            provider: target.provider,
+            model: target.model,
+            billing: target.billing,
+            usage: billed.usage,
+            cacheWriteInputTokens: billed.cacheWriteInputTokens,
+            at: clock.now(),
+            table: services.priceTable,
+          });
+    return {
+      alias: job.alias,
+      target: target.name,
+      attempts,
+      ...(fallbackFrom.length === 0 ? {} : { fallbackFrom, fallbackCauses }),
+      usageSource,
+      ...(contextInputTokens === undefined ? {} : { contextInputTokens }),
+      ...(billed?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: billed.cacheWriteInputTokens }),
+      ...(cost === null ? {} : { cost }),
+    };
+  };
   const completedAt = Math.floor(clock.now() / 1000);
 
   const failedTerminal = (error: ResponseError, output: ItemField[]): StreamEvent => {
@@ -390,7 +410,11 @@ async function* relaySteps(
     incomplete_details: upstream.incomplete_details,
     output: upstreamOutput,
     usage,
-    momonga: momongaFor(usageSource, upstream.contextInputTokens),
+    momonga: momongaFor(
+      usageSource,
+      upstream.contextInputTokens,
+      reported === null ? undefined : { usage: reported, cacheWriteInputTokens: upstream.cacheWriteInputTokens },
+    ),
   };
   const terminal: StreamEvent = {
     type: terminalEvent.type,
@@ -447,7 +471,15 @@ async function* relaySteps(
   }
   job.connection?.remember(responseId, { input: resolved.stored, output: resource.output });
   target.breaker.onSuccess();
-  opened.span.succeed({ responseModel: target.model, responseId, finishReason: finishReasonOf(resource), usage, output: resource.output, fallbackCauses });
+  opened.span.succeed({
+    responseModel: target.model,
+    responseId,
+    finishReason: finishReasonOf(resource),
+    usage,
+    ...(upstream.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: upstream.cacheWriteInputTokens }),
+    output: resource.output,
+    fallbackCauses,
+  });
   progress.concluded = true;
   yield terminal;
 }

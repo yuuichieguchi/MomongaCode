@@ -13,7 +13,7 @@ import {
   inspectProcessLock,
 } from '@momonga/foundation';
 import type { ReapMarkerDirectoryOptions } from '@momonga/foundation';
-import { createFakeKernelLock, registerCleanup, spawnTracked, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, registerCleanup, spawnTracked, waitFor } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { GATEWAY_ABORT_BUDGET_MS, KILL_CONFIRM_MS, SHUTDOWN_REAP_BOUND_MS, SHUTDOWN_RELEASE_BOUND_MS, STDIO_FLUSH_MS } from '../src/constants.ts';
 import { childCloseBudgetMs } from '../src/shutdown.ts';
@@ -64,7 +64,7 @@ describe('childCloseBudgetMs', () => {
   });
 });
 
-describe('shutdown order and bounds', () => {
+describe('shutdown order and bounds', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('runtime stops before the gateway is signalled', async (context) => {
     const h = await running(context);
     h.fake.setBehaviour('runtime', { onTerm: 'ignore' });

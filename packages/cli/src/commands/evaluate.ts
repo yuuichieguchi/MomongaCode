@@ -2,6 +2,7 @@ import path from 'node:path';
 import { loadUserModels } from '@momonga/config';
 import {
   DEFAULT_DATASET_SEED,
+  GATE_NAMES,
   buildContextReport,
   compareContextReports,
   formatContextComparison,
@@ -16,7 +17,7 @@ import {
   saveContextReport,
   saveTranscript,
 } from '@momonga/eval';
-import type { ContextDataset, ContextModel, EvalReport, GoldenCase, GoldenDataset, Transcript } from '@momonga/eval';
+import type { ContextDataset, ContextModel, EvalReport, GateName, GoldenCase, GoldenDataset, Transcript } from '@momonga/eval';
 import type { MomongaPaths } from '@momonga/foundation';
 import { goldenRunApi } from '../client/golden-run-api.ts';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
@@ -34,7 +35,7 @@ export class EvaluateUsageError extends Error {
   }
 }
 
-export type EvaluateOptions = { record?: string; replay?: string };
+export type EvaluateOptions = { record?: string; replay?: string; interrupt?: AbortSignal };
 
 const WORKSPACE_PREFIX = 'momonga-eval-';
 
@@ -46,15 +47,23 @@ const populate = async (ports: CliPorts, directory: string, golden: GoldenCase):
   }
 };
 
-const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenDataset, record: string | undefined): Promise<EvalReport> => {
+const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenDataset, record: string | undefined, interrupt: AbortSignal | undefined): Promise<EvalReport> => {
   await ensureDaemon(ports, paths, { replacement: 'when-idle' });
+  const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } = await import('@momonga/runtime');
   const env = await environmentSnapshot(ports);
   const client = connectRuntime(paths);
   const workspaces: string[] = [];
   if (record !== undefined) await ports.files.ensureDirectory(record);
   try {
     return await runDataset(dataset, {
-      api: goldenRunApi(client),
+      api: goldenRunApi(client, undefined, {
+        pendingBoundMs: REFLECTION_PICKUP_BOUND_MS,
+        attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS,
+        pollMs: REFLECTION_POLL_MS,
+        now: () => ports.clock.now(),
+        wait: (milliseconds, signal) => ports.clock.sleep(milliseconds, signal),
+        ...(interrupt === undefined ? {} : { signal: interrupt }),
+      }),
       workspace: async (golden) => {
         const cwd = await ports.files.makeTempDirectory(WORKSPACE_PREFIX);
         workspaces.push(cwd);
@@ -147,12 +156,19 @@ export const evaluateContext = async (
   return report.passed ? 0 : 1;
 };
 
-export const compareContext = async (ports: CliPorts, baselineFile: string, candidateFile: string): Promise<number> => {
+const gateOf = (name: string): GateName => {
+  const known = GATE_NAMES.find((gate) => gate === name);
+  if (known === undefined) throw new EvaluateUsageError(`--gate must be ${GATE_NAMES.join(' or ')}, received ${name}`);
+  return known;
+};
+
+export const compareContext = async (ports: CliPorts, baselineFile: string, candidateFile: string, gate: string): Promise<number> => {
+  const gateName = gateOf(gate);
   const [baseline, candidate] = await Promise.all([
     loadContextReport(ports.files, path.resolve(ports.cwd, baselineFile)),
     loadContextReport(ports.files, path.resolve(ports.cwd, candidateFile)),
   ]);
-  const comparison = compareContextReports(baseline, candidate, { seed: CONTEXT_BOOTSTRAP_SEED });
+  const comparison = compareContextReports(baseline, candidate, { seed: CONTEXT_BOOTSTRAP_SEED, gate: gateName });
   ports.stdout.write(`${formatContextComparison(comparison)}\n`);
   return comparison.gate.passed ? 0 : 1;
 };
@@ -162,7 +178,7 @@ export const evaluate = async (ports: CliPorts, paths: MomongaPaths, datasetFile
   const dataset = await loadDataset(ports.files, path.resolve(ports.cwd, datasetFile));
   const report =
     options.replay === undefined
-      ? await runLive(ports, paths, dataset, options.record === undefined ? undefined : path.resolve(ports.cwd, options.record))
+      ? await runLive(ports, paths, dataset, options.record === undefined ? undefined : path.resolve(ports.cwd, options.record), options.interrupt)
       : replayDataset(dataset, await loadTranscripts(ports.files, path.resolve(ports.cwd, options.replay)));
   ports.stdout.write(`${formatReport(report)}\n`);
   return report.passed ? 0 : 1;

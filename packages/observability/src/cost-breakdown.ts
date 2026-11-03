@@ -1,0 +1,228 @@
+import { amountOfUnits, priceCall } from './cost.ts';
+import type { CallBilling, PriceTable, PricedCall } from './cost.ts';
+import { RUN_ROLE } from './cost-report.ts';
+
+export type BreakdownAnatomy = {
+  layers: Readonly<Record<string, number | Readonly<Record<string, number>> | undefined>>;
+};
+
+export type BreakdownCall = {
+  runId: string;
+  step?: number;
+  role?: string;
+  provider: string;
+  model: string;
+  billing: CallBilling;
+  at: Date;
+  price?: PricedCall;
+  anatomy?: BreakdownAnatomy;
+  usage: { inputTokens: number; cachedInputTokens: number; cacheWriteInputTokens: number; outputTokens: number; reasoningTokens: number };
+  timing?: { firstEventMs?: number; durationMs: number };
+};
+
+export type TimingSummary = { median: number; p95: number; n: number };
+
+export type RoleBreakdown = {
+  calls: number;
+  timeToFirstToken: TimingSummary | null;
+  duration: TimingSummary | null;
+  totalDurationMs: number | null;
+  timingNotRecorded: number;
+};
+
+export type UnpricedCall = { runId: string; provider: string; model: string; step?: number; reason: string };
+
+export type CostBreakdown = {
+  calls: number;
+  layers: { estimated: true; shares: Record<string, number>; tokens: Record<string, number>; callsWithoutAnatomy: number };
+  billed: {
+    inputTokens: number;
+    uncachedInputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+    outputTokens: number;
+    reasoningTokens: number;
+  };
+  cacheHitRatio: number | null;
+  timeToFirstToken: TimingSummary | null;
+  duration: TimingSummary | null;
+  roles: Record<string, RoleBreakdown>;
+  cost: { amount: number | null; currency: 'USD'; unpricedCalls: number };
+  unpriced: UnpricedCall[];
+  inconsistentUsage: UnpricedCall[];
+  callsWithoutResponseId: number;
+  unjoined: UnjoinedRecord[];
+};
+
+export type UnjoinedRecord = { runId: string; step?: number; reason: string };
+
+export type CostBreakdownOptions = { table?: PriceTable; unjoined?: readonly UnjoinedRecord[]; callsWithoutResponseId?: number };
+
+const roleOf = (call: BreakdownCall): string => call.role ?? RUN_ROLE;
+
+const MEDIAN_RANK = 0.5;
+const P95_RANK = 0.95;
+
+const nearestRank = (sorted: readonly number[], rank: number): number => sorted[Math.ceil(rank * sorted.length) - 1] as number;
+
+const summarize = (values: readonly number[]): TimingSummary | null => {
+  if (values.length === 0) return null;
+  const sorted = values.toSorted((left, right) => left - right);
+  return { median: nearestRank(sorted, MEDIAN_RANK), p95: nearestRank(sorted, P95_RANK), n: sorted.length };
+};
+
+const layerEntriesOf = (anatomy: BreakdownAnatomy): [string, number][] =>
+  Object.entries(anatomy.layers).flatMap(([name, value]): [string, number][] => {
+    if (value === undefined) return [];
+    if (typeof value === 'number') return [[name, value]];
+    return Object.entries(value).map(([inner, tokens]): [string, number] => [`${name}.${inner}`, tokens]);
+  });
+
+const priceOf = (call: BreakdownCall, table: PriceTable | undefined): PricedCall => {
+  if (call.price !== undefined) return call.price;
+  if (table === undefined) throw new TypeError(`the call of run ${call.runId} carries no price and no price table was given`);
+  return priceCall({
+    provider: call.provider,
+    model: call.model,
+    billing: call.billing,
+    usage: {
+      inputTokens: call.usage.inputTokens,
+      outputTokens: call.usage.outputTokens,
+      cachedInputTokens: call.usage.cachedInputTokens,
+      cacheWriteInputTokens: call.usage.cacheWriteInputTokens,
+    },
+    at: call.at,
+    table,
+  });
+};
+
+export const buildCostBreakdown = (calls: readonly BreakdownCall[], options: CostBreakdownOptions): CostBreakdown => {
+  const { table } = options;
+  const layerTokens = new Map<string, number>();
+  let callsWithoutAnatomy = 0;
+  const billed = { inputTokens: 0, uncachedInputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0 };
+  const byRole = new Map<string, { calls: number; firstEvents: number[]; durations: number[]; notRecorded: number }>();
+  const unpriced: UnpricedCall[] = [];
+  const inconsistentUsage: UnpricedCall[] = [];
+  let units = 0n;
+  for (const call of calls) {
+    if (call.anatomy === undefined) {
+      callsWithoutAnatomy += 1;
+    } else {
+      for (const [name, tokens] of layerEntriesOf(call.anatomy)) layerTokens.set(name, (layerTokens.get(name) ?? 0) + tokens);
+    }
+    const { usage } = call;
+    const identity = { runId: call.runId, provider: call.provider, model: call.model, ...(call.step === undefined ? {} : { step: call.step }) };
+    if (usage.cachedInputTokens + usage.cacheWriteInputTokens > usage.inputTokens) {
+      inconsistentUsage.push({
+        ...identity,
+        reason: `cached input (${usage.cachedInputTokens}) and written input (${usage.cacheWriteInputTokens}) together exceed the input (${usage.inputTokens})`,
+      });
+    } else {
+      billed.inputTokens += usage.inputTokens;
+      billed.cacheReadTokens += usage.cachedInputTokens;
+      billed.cacheWriteTokens += usage.cacheWriteInputTokens;
+      billed.uncachedInputTokens += usage.inputTokens - usage.cachedInputTokens - usage.cacheWriteInputTokens;
+    }
+    billed.outputTokens += usage.outputTokens;
+    billed.reasoningTokens += usage.reasoningTokens;
+    const role = roleOf(call);
+    const group = byRole.get(role) ?? { calls: 0, firstEvents: [], durations: [], notRecorded: 0 };
+    byRole.set(role, group);
+    group.calls += 1;
+    if (call.timing === undefined) {
+      group.notRecorded += 1;
+    } else {
+      if (call.timing.firstEventMs !== undefined) group.firstEvents.push(call.timing.firstEventMs);
+      group.durations.push(call.timing.durationMs);
+    }
+    const priced = priceOf(call, table);
+    if (priced.kind === 'unpriced') {
+      unpriced.push({ ...identity, reason: priced.reason });
+      continue;
+    }
+    units += priced.units;
+  }
+  const roles: Record<string, RoleBreakdown> = Object.fromEntries(
+    [...byRole].map(([role, group]) => [
+      role,
+      {
+        calls: group.calls,
+        timeToFirstToken: summarize(group.firstEvents),
+        duration: summarize(group.durations),
+        totalDurationMs: group.durations.length === 0 ? null : group.durations.reduce((sum, value) => sum + value, 0),
+        timingNotRecorded: group.notRecorded,
+      },
+    ]),
+  );
+  const main = roles[RUN_ROLE];
+  const layerTotal = [...layerTokens.values()].reduce((sum, tokens) => sum + tokens, 0);
+  return {
+    calls: calls.length,
+    layers: {
+      estimated: true,
+      shares: layerTotal === 0 ? {} : Object.fromEntries([...layerTokens].map(([name, tokens]) => [name, tokens / layerTotal])),
+      tokens: Object.fromEntries(layerTokens),
+      callsWithoutAnatomy,
+    },
+    billed,
+    cacheHitRatio: billed.inputTokens === 0 || inconsistentUsage.length > 0 ? null : billed.cacheReadTokens / billed.inputTokens,
+    timeToFirstToken: main?.timeToFirstToken ?? null,
+    duration: main?.duration ?? null,
+    roles,
+    cost: { amount: unpriced.length === 0 ? amountOfUnits(units) : null, currency: 'USD', unpricedCalls: unpriced.length },
+    unpriced,
+    inconsistentUsage,
+    callsWithoutResponseId: options.callsWithoutResponseId ?? 0,
+    unjoined: [...(options.unjoined ?? [])],
+  };
+};
+
+const percent = (share: number): string => `${(share * 100).toFixed(1)}%`;
+
+const roleLine = (role: string, entry: RoleBreakdown): string => {
+  const total = entry.totalDurationMs === null ? 'not recorded' : `${entry.totalDurationMs} ms`;
+  const notRecorded = entry.timingNotRecorded === 0 ? '' : `; ${entry.timingNotRecorded} call(s) with no timing recorded`;
+  return `role ${role}: ${entry.calls} call(s), total duration ${total}, ${timingLine('time to first token', entry.timeToFirstToken)}, ${timingLine('duration', entry.duration)}${notRecorded}`;
+};
+
+const timingLine = (label: string, summary: TimingSummary | null): string =>
+  summary === null ? `${label}: not recorded` : `${label}: median ${summary.median} ms, p95 ${summary.p95} ms (n=${summary.n})`;
+
+export const formatCostBreakdown = (breakdown: CostBreakdown): string => {
+  const { billed } = breakdown;
+  const shares = Object.entries(breakdown.layers.shares).filter(([, tokens]) => tokens > 0);
+  const layerLine =
+    shares.length === 0
+      ? 'layers (estimated): not recorded'
+      : `layers (estimated): ${shares.map(([name, share]) => `${name} ${percent(share)}`).join(', ')}`;
+  const withoutAnatomy =
+    breakdown.layers.callsWithoutAnatomy === 0 ? '' : `, ${breakdown.layers.callsWithoutAnatomy} of ${breakdown.calls} call(s) have no recorded layers`;
+  const cost =
+    breakdown.cost.amount === null
+      ? `cost: unknown (${breakdown.cost.unpricedCalls} of ${breakdown.calls} call(s) have no price)`
+      : `cost: ${breakdown.cost.amount} ${breakdown.cost.currency}`;
+  return [
+    `calls: ${breakdown.calls}`,
+    `${layerLine}${withoutAnatomy}`,
+    ...(breakdown.inconsistentUsage.length === 0
+      ? []
+      : [`billed tokens by kind are incomplete: ${breakdown.inconsistentUsage.length} of ${breakdown.calls} call(s) report more cached and written input than input and are excluded from the input figures`]),
+    `billed tokens: input ${billed.inputTokens} = uncached ${billed.uncachedInputTokens} + cache read ${billed.cacheReadTokens} + cache write ${billed.cacheWriteTokens}; output ${billed.outputTokens} (reasoning ${billed.reasoningTokens})`,
+    breakdown.cacheHitRatio === null ? `cache hit ratio: none (${breakdown.inconsistentUsage.length > 0 ? 'a call has inconsistent usage' : 'no input'})` : `cache hit ratio: ${percent(breakdown.cacheHitRatio)}`,
+    timingLine('time to first token', breakdown.timeToFirstToken),
+    timingLine('duration', breakdown.duration),
+    ...Object.entries(breakdown.roles).map(([role, entry]) => roleLine(role, entry)),
+    ...(breakdown.callsWithoutResponseId === 0
+      ? []
+      : [`${breakdown.callsWithoutResponseId} calls recorded before response ids: layers and timing not recorded`]),
+    cost,
+    ...breakdown.unpriced.map(
+      (entry) => `unpriced: ${entry.provider}/${entry.model} (run ${entry.runId}${entry.step === undefined ? '' : `, step ${entry.step}`}): ${entry.reason}`,
+    ),
+    ...breakdown.inconsistentUsage.map(
+      (entry) => `inconsistent usage: ${entry.provider}/${entry.model} (run ${entry.runId}${entry.step === undefined ? '' : `, step ${entry.step}`}): ${entry.reason}`,
+    ),
+    ...breakdown.unjoined.map((entry) => `unjoined: run ${entry.runId}${entry.step === undefined ? '' : `, step ${entry.step}`}: ${entry.reason}`),
+  ].join('\n');
+};

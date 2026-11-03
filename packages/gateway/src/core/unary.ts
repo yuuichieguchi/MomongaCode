@@ -13,10 +13,15 @@ import type {
   LenientItems,
 } from '@momonga/protocol';
 import { armDeadline, parseDeadlineHeader, withDeadline } from './deadline.ts';
-import { errorBoundFor, estimateInputTokens, imageTokensOfWire, wireTokensOf } from './estimate.ts';
+import { estimateInputTokens, estimatedCountOf, imageTokensOfWire, wireTokensOf } from './estimate.ts';
 import { ClientDisconnectedError, GatewayError, detachedRunExpiredError, gatewayErrorFromBody, gatewayClosedError, invalidRequest, isRunCancelled, runCancelledError } from './errors.ts';
 import { parseIdempotencyKey, reusedError } from './idempotency.ts';
 import { inputHasImages, normalizeInput, resolveInput } from './input.ts';
+import { modelCostOf } from './model-cost.ts';
+import { startAttemptSpan } from './attempt-span.ts';
+import type { AttemptSpan } from './attempt-span.ts';
+import { errorTypeOf, messageOf } from './respond.ts';
+import { COMPACTION_ROLE } from './role.ts';
 import { failureFrom, runWithRetry } from './retry.ts';
 import type { RetryOutcome } from './retry.ts';
 import type { TargetRuntime } from './router.ts';
@@ -31,6 +36,7 @@ export type UnaryService = {
     signal: AbortSignal,
     deadlineHeader: string | undefined,
     idempotencyKeyHeader: string | undefined,
+    trace: CompactTrace,
   ): Promise<CompactResource>;
   cancel(idempotencyKeyHeader: string | undefined): boolean;
   abortAll(reason: unknown): void;
@@ -113,7 +119,7 @@ const countWire = async (
   const adapterCountTokens = target.adapter.countTokens;
   if (adapterCountTokens === undefined) {
     const tokens = wireTokensOf(wire, imageModel);
-    return { input_tokens: tokens, method: 'estimated', error_bound: errorBoundFor(tokens) };
+    return estimatedCountOf(tokens);
   }
   const outcome = await callTargets(services, [target], signal, deadlineAt, (chosen, attemptNumber, guarded) =>
     adapterCountTokens.call(
@@ -126,7 +132,7 @@ const countWire = async (
   const imageTokens = imageTokensOfWire(wire, imageModel);
   if (imageTokens === 0) return outcome.value;
   const total = outcome.value.input_tokens + imageTokens;
-  return { input_tokens: total, method: 'estimated', error_bound: errorBoundFor(total) };
+  return estimatedCountOf(total);
 };
 
 const countTokens = async (
@@ -173,7 +179,7 @@ const countTokens = async (
       { input: resolved.forAdapter, instructions: request.instructions, tools: request.tools },
       (await services.router.capabilitiesOf(target)).imageTokens,
     );
-    return { input_tokens: inputTokens, method: 'estimated', error_bound: errorBoundFor(inputTokens) };
+    return estimatedCountOf(inputTokens);
   }
   const outcome = await callTargets(services, [target], signal, deadlineAt, (chosen, attemptNumber, guarded) =>
     adapterCountTokens.call(
@@ -191,11 +197,14 @@ const countTokens = async (
   return outcome.value;
 };
 
+export type CompactTrace = { runId: string | undefined; traceparent: string | undefined; tracestate: string | undefined };
+
 const compactOnce = async (
   services: Services,
   request: CompactRequest,
   signal: AbortSignal,
   deadlineAt: number | undefined,
+  trace: CompactTrace,
 ): Promise<CompactResource> => {
   const targets = services.router.targetsOf(request.model);
   const resolved = resolveInput(services.store, services.codec, request.previous_response_id, normalizeInput(request.input));
@@ -216,7 +225,7 @@ const compactOnce = async (
   let counterFailure: GatewayError | undefined;
   for (const target of supporting) {
     const capabilities = await services.router.capabilitiesOf(target);
-    const maximum = summaryTokenCapFor(capabilities);
+    const maximum = Math.min(summaryTokenCapFor(capabilities), capabilities.maxOutputTokens);
     const cap = request.momonga?.max_summary_tokens ?? maximum;
     if (cap > maximum) continue;
     withinCap += 1;
@@ -245,36 +254,97 @@ const compactOnce = async (
   if (withinCap === 0) {
     throw invalidRequest(
       'invalid_summary_cap',
-      'momonga.max_summary_tokens exceeds the largest summary any target of the model alias accepts',
+      'momonga.max_summary_tokens exceeds the largest summary any target of the model alias accepts: the smaller of its summary cap and its maxOutputTokens',
       'momonga.max_summary_tokens',
     );
   }
   if (sized.length === 0) {
     throw invalidRequest('compaction_input_too_large', 'the conversation to summarise does not fit the context window of any target', 'input');
   }
-  const outcome = await callTargets(services, sized, signal, deadlineAt, (target, attemptNumber, guarded) => {
+  const parent =
+    services.telemetry === undefined || trace.traceparent === undefined
+      ? undefined
+      : services.telemetry.propagation.extract({
+          traceparent: trace.traceparent,
+          ...(trace.tracestate === undefined ? {} : { tracestate: trace.tracestate }),
+        });
+  const spans = new Map<TargetRuntime, AttemptSpan>();
+  const outcome = await callTargets(services, sized, signal, deadlineAt, async (target, attemptNumber, guarded) => {
     const compact = target.adapter.compact;
     if (compact === undefined) throw new TypeError(`target "${target.name}" lost its compact capability`);
     const cap = capsByTarget.get(target);
     if (cap === undefined) throw new TypeError(`target "${target.name}" has no summary cap`);
-    return compact.call(target.adapter, compactRequestFor(target, cap), {
-      signal: guarded,
-      target: { name: target.name, model: target.model },
+    const span = startAttemptSpan({
+      telemetry: services.telemetry,
+      parent,
+      providerName: target.provider,
+      billing: target.billing,
+      requestModel: target.model,
+      maxTokens: cap,
+      stream: false,
+      runId: trace.runId,
+      step: undefined,
       attempt: attemptNumber,
+      targetName: target.name,
+      role: COMPACTION_ROLE,
+      request: { input: resolved.forAdapter, instructions: request.instructions, tools: undefined },
     });
+    try {
+      const result = await compact.call(target.adapter, compactRequestFor(target, cap), {
+        signal: guarded,
+        target: { name: target.name, model: target.model },
+        attempt: attemptNumber,
+      });
+      spans.set(target, span);
+      return result;
+    } catch (error) {
+      const failure = failureFrom(target.adapter, error, guarded);
+      span.fail(errorTypeOf(failure), failure, messageOf(failure));
+      throw failure;
+    }
   });
   outcome.target.breaker.onSuccess();
+  const resourceId = identifier(services, 'resp');
+  spans.get(outcome.target)?.succeed({
+    responseModel: outcome.target.model,
+    responseId: resourceId,
+    finishReason: 'stop',
+    usage: outcome.value.usage,
+    ...(outcome.value.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: outcome.value.cacheWriteInputTokens }),
+    output: [],
+    fallbackCauses: outcome.fallbackCauses,
+  });
   const item: CompactionItem = {
     type: 'compaction',
     id: identifier(services, 'cmp'),
     encrypted_content: services.codec.encode(outcome.value.summary),
   };
+  const cost =
+    services.priceTable === undefined
+      ? null
+      : modelCostOf({
+          provider: outcome.target.provider,
+          model: outcome.target.model,
+          billing: outcome.target.billing,
+          usage: outcome.value.usage,
+          cacheWriteInputTokens: outcome.value.cacheWriteInputTokens,
+          at: services.clock.now(),
+          table: services.priceTable,
+        });
   return {
-    id: identifier(services, 'resp'),
+    id: resourceId,
     object: 'response.compaction',
     output: [item],
     created_at: Math.floor(services.clock.now() / 1000),
     usage: outcome.value.usage,
+    ...(cost === null && outcome.value.cacheWriteInputTokens === undefined
+      ? {}
+      : {
+          momonga: {
+            ...(outcome.value.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: outcome.value.cacheWriteInputTokens }),
+            ...(cost === null ? {} : { cost }),
+          },
+        }),
   };
 };
 
@@ -335,6 +405,7 @@ export const createUnaryService = (services: Services, validator: RequestValidat
     key: string,
     signal: AbortSignal,
     deadlineHeader: string | undefined,
+    trace: CompactTrace,
   ): Promise<CompactResource> => {
     if (services.closeSignal.aborted) throw gatewayClosedError();
     const request = validator.parseCompact(rawBody);
@@ -360,7 +431,7 @@ export const createUnaryService = (services: Services, validator: RequestValidat
       settled: false,
       promise: Promise.resolve().then(async () => {
         try {
-          const resource = await compactOnce(services, request, controller.signal, deadlineAt);
+          const resource = await compactOnce(services, request, controller.signal, deadlineAt, trace);
           if (isRunCancelled(controller.signal.reason)) throw controller.signal.reason;
           const now = services.clock.now();
           services.store.commitCompaction({ key, digest, resource, createdAtMs: now, expiresAtMs: now + services.config.idempotency.ttlMs });
@@ -387,12 +458,12 @@ export const createUnaryService = (services: Services, validator: RequestValidat
 
   return {
     countTokens: (rawBody, signal, deadlineHeader) => countTokens(services, validator, rawBody, signal, deadlineHeader),
-    compact: (rawBody, signal, deadlineHeader, idempotencyKeyHeader) => {
+    compact: (rawBody, signal, deadlineHeader, idempotencyKeyHeader, trace) => {
       const key = parseIdempotencyKey(idempotencyKeyHeader);
-      if (key !== undefined) return compactKeyed(rawBody, key, signal, deadlineHeader);
+      if (key !== undefined) return compactKeyed(rawBody, key, signal, deadlineHeader, trace);
       const request = validator.parseCompact(rawBody);
       const deadlineAt = parseDeadlineHeader(deadlineHeader, services.clock.now());
-      return compactOnce(services, request, AbortSignal.any([signal, services.closeSignal]), deadlineAt);
+      return compactOnce(services, request, AbortSignal.any([signal, services.closeSignal]), deadlineAt, trace);
     },
     cancel: (idempotencyKeyHeader) => {
       const key = parseIdempotencyKey(idempotencyKeyHeader);

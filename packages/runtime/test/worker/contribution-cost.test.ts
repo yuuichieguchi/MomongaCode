@@ -6,7 +6,8 @@ import { makeEnv } from './harness.ts';
 import { functionCallItem } from './scripts.ts';
 
 const PAUSE_BUDGET_MS = 100;
-const SETUP_TIMEOUT_MS = 120_000;
+const VITEST_DEFAULT_TEST_TIMEOUT_MS = 5_000;
+const LARGE_RUN_SETUP_TEST_TIMEOUT_MS = 24 * VITEST_DEFAULT_TEST_TIMEOUT_MS;
 const OUTPUT_CHARS = 30_000;
 const STEPS = 150;
 const MEMORIES = 40;
@@ -125,19 +126,19 @@ describe('the cost of the contribution hook in the terminal transition', () => {
     expect(bytes).toBeGreaterThan(4_000_000);
     expect(elapsed).toBeLessThan(PAUSE_BUDGET_MS);
     expect(prepareMillis).toBeLessThan(PAUSE_BUDGET_MS);
-  }, SETUP_TIMEOUT_MS);
+  }, LARGE_RUN_SETUP_TEST_TIMEOUT_MS);
 
   it('stays within the pause budget for a terminal over a journal with no snapshot', async () => {
     const { elapsed, prepareMillis, bytes } = await terminalMillis(false, HISTORY_IN_REQUEST);
     console.info(`terminal without a snapshot over ${bytes} output bytes: prepared outside the lock in ${prepareMillis.toFixed(1)} ms, transaction ${elapsed.toFixed(1)} ms`);
     expect(elapsed).toBeLessThan(PAUSE_BUDGET_MS);
     expect(prepareMillis).toBeLessThan(PAUSE_BUDGET_MS);
-  }, SETUP_TIMEOUT_MS);
+  }, LARGE_RUN_SETUP_TEST_TIMEOUT_MS);
 
   it('stays within the pause budget when every recorded request is 800 KB', async () => {
     const { elapsed, prepareMillis } = await terminalMillis(false, LARGE_HISTORY_IN_REQUEST);
     console.info(`terminal over requests of ${LARGE_HISTORY_IN_REQUEST * OUTPUT_CHARS} characters: prepared outside the lock in ${prepareMillis.toFixed(1)} ms, transaction ${elapsed.toFixed(1)} ms`);
     expect(elapsed).toBeLessThan(PAUSE_BUDGET_MS);
     expect(prepareMillis).toBeLessThan(PAUSE_BUDGET_MS);
-  }, SETUP_TIMEOUT_MS);
+  }, LARGE_RUN_SETUP_TEST_TIMEOUT_MS);
 });

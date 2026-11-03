@@ -2,6 +2,7 @@ export { foldRunState, initialRunState } from './fold.ts';
 export { InheritanceError, applyInheritance, projectInheritance } from './inherit.ts';
 export type { InheritanceErrorCode, InheritanceKind, InheritanceOutcome, InheritedPayload } from './inherit.ts';
 export { StoreIdentityError, isFatalStoreError } from './fatal.ts';
+export { DuplicateChargeError } from './context-charges.ts';
 export { sameRunRequest } from './run-request.ts';
 export { CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from './transitions.ts';
 export { openRuntimeStore } from './runtime-store.ts';
@@ -92,6 +93,7 @@ export type {
   RuntimeStore,
   RuntimeStoreOptions,
   ServiceMutationResult,
+  ModelCallRecord,
   Session,
   SessionMcpServers,
   SetModelAliasResult,

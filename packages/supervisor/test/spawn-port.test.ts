@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { isProcessAlive } from '@momonga/foundation';
-import { afterMicrotasks } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks } from '@momonga/testkit';
 import { pollUntil, processGroupOf } from './support/p2-poll.ts';
 import { CHILD_FIXTURE, portOptions, readOnlyScratchFd, watch } from './support/p2-real-children.ts';
 import { trackedSpawnPort } from './support/tracked-spawn-port.ts';
 
-describe('real SpawnPort', () => {
+describe('real SpawnPort', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('spawns a detached child with piped output and a lifeline', async (context) => {
     const markerFd = readOnlyScratchFd(context);
     const port = trackedSpawnPort(context);
@@ -17,7 +17,7 @@ describe('real SpawnPort', () => {
     expect(processGroupOf(pid)).toBe(pid);
     child.handle.kill('SIGTERM');
     await expect(child.exit).resolves.toEqual({ code: null, signal: 'SIGTERM' });
-  }, 15_000);
+  });
 
   it('a missing executable is reported through onSpawnError and never through onExit', async (context) => {
     const markerFd = readOnlyScratchFd(context);
@@ -30,7 +30,7 @@ describe('real SpawnPort', () => {
     expect(error.code).toBe('ENOENT');
     await afterMicrotasks();
     expect(exits).toEqual([]);
-  }, 15_000);
+  });
 
   it('killGroup kills the child and a grandchild in its group', async (context) => {
     const markerFd = readOnlyScratchFd(context);
@@ -42,7 +42,7 @@ describe('real SpawnPort', () => {
     child.handle.killGroup();
     await expect(child.exit).resolves.toEqual({ code: null, signal: 'SIGKILL' });
     await pollUntil(() => !isProcessAlive(grandchild), 5000, 'grandchild gone');
-  }, 15_000);
+  });
 
   it('on Windows a stop closes the lifeline so the child closes gracefully, instead of a signal that would terminate it', async (context) => {
     const markerFd = readOnlyScratchFd(context);
@@ -52,7 +52,7 @@ describe('real SpawnPort', () => {
     await pollUntil(() => child.output().includes(`"started":${pid}`), 5000, 'child output');
     child.handle.kill('SIGTERM');
     await expect(child.exit).resolves.toEqual({ code: 0, signal: null });
-  }, 15_000);
+  });
 
   it('on Windows a child without a lifeline cannot be stopped gracefully and the stop says so', async (context) => {
     const port = trackedSpawnPort(context, 'win32');
@@ -60,5 +60,5 @@ describe('real SpawnPort', () => {
     const child = watch(port(process.execPath, [CHILD_FIXTURE], { ...portOptions(markerFd), stdio: ['ignore', 'pipe', 'pipe', 'ignore', markerFd] as never }));
     await pollUntil(() => child.output().includes('"started"'), 5000, 'child output');
     expect(() => child.handle.kill('SIGTERM')).toThrow('has no lifeline');
-  }, 15_000);
+  });
 });

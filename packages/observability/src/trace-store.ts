@@ -3,7 +3,11 @@ import type { AttributeValue } from '@opentelemetry/api';
 import { immediateTx, migrate, openDatabase, isRecord } from '@momonga/foundation';
 import type { Clock, Migration } from '@momonga/foundation';
 import { reportError } from './errors.ts';
-import { UNKNOWN_BILLING } from './semconv.ts';
+import { GENAI_SEMCONV, OPERATIONS, UNKNOWN_BILLING } from './semconv.ts';
+
+const A = GENAI_SEMCONV.attributes;
+
+const jsonPath = (key: string): string => `$."${key}"`;
 
 export const SPAN_KINDS = ['INTERNAL', 'SERVER', 'CLIENT', 'PRODUCER', 'CONSUMER'] as const;
 export const SPAN_STATUSES = ['UNSET', 'OK', 'ERROR'] as const;
@@ -33,6 +37,8 @@ export type SpanRecord = {
   runId: string | null;
 };
 
+export type IngestedSpan = { seq: number; span: SpanRecord };
+
 export type BodyRecord = {
   traceId: string;
   spanId: string;
@@ -45,6 +51,8 @@ export type BodyRecord = {
 export type TraceStore = {
   writeSpans(records: readonly SpanRecord[], bodies?: readonly BodyRecord[]): void;
   spansForRun(runId: string): SpanRecord[];
+  spansWithoutRun(): SpanRecord[];
+  billedChatSpansAfter(runId: string | null, afterSeq: number, limit: number): IngestedSpan[];
   spansForTrace(traceId: string): SpanRecord[];
   bodiesForSpan(spanId: string): BodyRecord[];
   purgeBodies(nowMs: number): number;
@@ -92,9 +100,16 @@ WHERE json_extract(attributes_json, '$."gen_ai.operation.name"') = 'chat'
   AND json_extract(attributes_json, '$."momonga.billing"') IS NULL;
 `;
 
+const INGEST_SEQUENCE = `
+ALTER TABLE spans ADD COLUMN ingest_seq INTEGER;
+UPDATE spans SET ingest_seq = rowid;
+CREATE UNIQUE INDEX spans_by_ingest ON spans (ingest_seq);
+`;
+
 export const TRACE_STORE_MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial', sql: INITIAL_SCHEMA },
   { version: 2, name: 'chat-span-billing', sql: RECORD_BILLING_OF_EARLIER_CHAT_SPANS },
+  { version: 3, name: 'span-ingest-sequence', sql: INGEST_SEQUENCE },
 ];
 
 type Row = Record<string, SQLOutputValue>;
@@ -217,14 +232,27 @@ const decodeBody = (row: Row): BodyRecord => {
 const prepareStatements = (db: DatabaseSync) => ({
   insertSpan: db.prepare(
     `INSERT INTO spans (
-       trace_id, span_id, parent_span_id, name, kind, start_ms, end_ms, status, attributes_json, events_json, run_id
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       trace_id, span_id, parent_span_id, name, kind, start_ms, end_ms, status, attributes_json, events_json, run_id, ingest_seq
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(ingest_seq), 0) + 1 FROM spans))
      ON CONFLICT (trace_id, span_id) DO NOTHING`,
+  ),
+  billedChatSpansOfRun: db.prepare(
+    `SELECT * FROM spans
+     WHERE run_id = ? AND ingest_seq > ?
+       AND json_extract(attributes_json, ?) = ? AND json_extract(attributes_json, ?) IS NOT NULL
+     ORDER BY ingest_seq LIMIT ?`,
+  ),
+  billedChatSpansWithoutRun: db.prepare(
+    `SELECT * FROM spans
+     WHERE run_id IS NULL AND ingest_seq > ?
+       AND json_extract(attributes_json, ?) = ? AND json_extract(attributes_json, ?) IS NOT NULL
+     ORDER BY ingest_seq LIMIT ?`,
   ),
   insertBody: db.prepare(
     `INSERT INTO bodies (trace_id, span_id, kind, content, created_at_ms, expires_at_ms) VALUES (?, ?, ?, ?, ?, ?)`,
   ),
   spansForRun: db.prepare('SELECT * FROM spans WHERE run_id = ? ORDER BY start_ms, end_ms DESC, rowid'),
+  spansWithoutRun: db.prepare('SELECT * FROM spans WHERE run_id IS NULL ORDER BY start_ms, end_ms DESC, rowid'),
   spansForTrace: db.prepare('SELECT * FROM spans WHERE trace_id = ? ORDER BY start_ms, end_ms DESC, rowid'),
   bodiesForSpan: db.prepare('SELECT * FROM bodies WHERE span_id = ? AND expires_at_ms > ? ORDER BY id'),
   purgeBodies: db.prepare('DELETE FROM bodies WHERE expires_at_ms <= ?'),
@@ -300,6 +328,15 @@ const createStore = (db: DatabaseSync, statements: Statements, clock: Clock): Tr
       });
     },
     spansForRun: (runId) => all(statements.spansForRun, runId).map(decodeSpan),
+    spansWithoutRun: () => all(statements.spansWithoutRun).map(decodeSpan),
+    billedChatSpansAfter: (runId, afterSeq, limit) => {
+      const filter = [jsonPath(A.ATTR_GEN_AI_OPERATION_NAME), OPERATIONS.chat, jsonPath(A.ATTR_GEN_AI_USAGE_INPUT_TOKENS), limit] as const;
+      const rows =
+        runId === null
+          ? all(statements.billedChatSpansWithoutRun, afterSeq, ...filter)
+          : all(statements.billedChatSpansOfRun, runId, afterSeq, ...filter);
+      return rows.map((row) => ({ seq: readInteger('spans', String(row['span_id']), row, 'ingest_seq'), span: decodeSpan(row) }));
+    },
     spansForTrace: (traceId) => all(statements.spansForTrace, traceId).map(decodeSpan),
     bodiesForSpan: (spanId) => all(statements.bodiesForSpan, spanId, clock.now()).map(decodeBody),
     purgeBodies,

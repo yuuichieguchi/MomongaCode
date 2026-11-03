@@ -43,7 +43,7 @@ export const methodNotAllowed = (allowed: readonly string[]): ApiError =>
   });
 
 export const conflict = (
-  code: 'approval_not_pending' | 'child_session' | 'guideline_conflict' | 'memory_state' | 'mode_unavailable' | 'not_idle' | 'run_cancelled' | 'skill_target',
+  code: 'approval_not_pending' | 'child_session' | 'duplicate_charge' | 'guideline_conflict' | 'memory_state' | 'mode_unavailable' | 'not_idle' | 'run_cancelled' | 'skill_target',
   message: string,
 ): ApiError =>
   new ApiError({ status: 409, type: 'conflict', code, message });

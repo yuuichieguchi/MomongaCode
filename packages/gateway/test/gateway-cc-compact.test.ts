@@ -182,7 +182,7 @@ describe('the summary request must fit the target', () => {
       capabilities: async () => ({ ...CC_CAPABILITIES, tokenCounting: 'calibrated' }),
       countTokens: async (_target, request): Promise<CountTokensResult> => {
         counted.push(request.input);
-        return { input_tokens: 4000, method: 'calibrated', error_bound: 0 };
+        return { input_tokens: 4000, method: 'calibrated', error_bound: 0, error_shape: { ratio: 0, minimum: 0 } };
       },
     });
     const harness = await startCcGateway({ fm: adapter });

@@ -10,11 +10,14 @@ export type {
   ToolCallingMode,
   ToolCallingSetting,
 } from './capabilities.ts';
-export { COMPACTION_RESULT_EVENT, STREAM_IDLE_HEADER } from './headers.ts';
+export { COMPACTION_RESULT_EVENT, HEADER_ROLES, ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER } from './headers.ts';
+export type { HeaderRole } from './headers.ts';
 export {
   COMPACTION_INSTRUCTIONS_VERSION,
   ESTIMATED_CHARACTERS_PER_TOKEN,
   ESTIMATED_ERROR_BOUND_RATIO,
+  ESTIMATED_ERROR_SHAPE,
+  EXACT_ERROR_SHAPE,
   MARGIN_RATIO,
   MAX_COMPACTION_GUIDELINE_CHARS,
   MAX_JOURNAL_SEQ_DIGITS,
@@ -30,6 +33,8 @@ export {
   WORKING_FACTS_KEPT,
   WORKING_FACT_TEXT_CHARS,
   WORKING_STATE_SUMMARY_RATIO,
+  countReplyOf,
+  errorBoundOfShape,
   marginFloorFor,
   outputReserveFor,
   sizingRatioFor,
@@ -37,6 +42,7 @@ export {
   summaryItemTokensFor,
   summaryTokenCapFor,
 } from './budget-constants.ts';
+export type { ErrorShape } from './budget-constants.ts';
 export {
   LOWEST_REASONING_EFFORT,
   REASONING_EFFORTS,
@@ -88,6 +94,7 @@ export type {
   AdoptGuidelineRequest,
   ContextChargeResponse,
   ContextChargeView,
+  RunReflectionView,
   ContextChargesView,
   GuidelineResponse,
   GuidelinesResponse,
@@ -96,6 +103,7 @@ export type {
   CostReportView,
   CostFallbackView,
   CostTotalsView,
+  RoleCostView,
   FallbackCauseView,
   GatewayCostReportView,
   JsonSchema,
@@ -104,6 +112,7 @@ export type {
   McpServerView,
   PublicRunEvent,
   RunHealth,
+  RunTraceCall,
   RunTraceSpan,
   RunTraceSummary,
   RunTraceView,
@@ -115,6 +124,23 @@ export type {
   SkillsResponse,
 } from './run-api.ts';
 export { assistantTextOf } from './assistant-text.ts';
+export { ANATOMY_FLAT_LAYERS, ANATOMY_HISTORY_LAYERS, anatomyLayerEntries } from './token-anatomy.ts';
+export type {
+  BilledDetail,
+  BilledCallsCursorView,
+  BilledCallsPageView,
+  BilledCallView,
+  BilledTokensView,
+  CallTiming,
+  UnjoinedView,
+  CostBreakdownView,
+  ModelCost,
+  RoleBreakdownView,
+  TimingSummaryView,
+  TokenAnatomy,
+  TokenAnatomyLayers,
+  UnpricedCallView,
+} from './token-anatomy.ts';
 export {
   DEFAULT_MEMORY_KIND,
   describeMemoryValidity,

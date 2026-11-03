@@ -27,6 +27,7 @@ export type ChatSpanInput = {
   step?: number;
   attempt: number;
   target?: string;
+  role?: string;
 };
 
 export type ToolSpanInput = {
@@ -41,6 +42,7 @@ export type ChatUsage = {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens?: number;
+  cacheWriteInputTokens?: number;
   reasoningTokens?: number;
 };
 
@@ -103,6 +105,7 @@ export const startChatSpan = (tracer: Tracer, input: ChatSpanInput, parent?: Con
         ...(input.step === undefined ? {} : { [MOMONGA_ATTRIBUTES.step]: input.step }),
         [MOMONGA_ATTRIBUTES.attempt]: input.attempt,
         ...(input.target === undefined ? {} : { [MOMONGA_ATTRIBUTES.target]: input.target }),
+        ...(input.role === undefined ? {} : { [MOMONGA_ATTRIBUTES.role]: input.role }),
       },
     },
     parent,
@@ -126,6 +129,9 @@ export const recordChatResponse = (span: Span, response: ChatResponse): void => 
     ...(response.usage.cachedInputTokens === undefined
       ? {}
       : { [A.ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS]: response.usage.cachedInputTokens }),
+    ...(response.usage.cacheWriteInputTokens === undefined
+      ? {}
+      : { [MOMONGA_ATTRIBUTES.cacheWriteInputTokens]: response.usage.cacheWriteInputTokens }),
     ...(response.usage.reasoningTokens === undefined
       ? {}
       : { [A.ATTR_GEN_AI_USAGE_REASONING_OUTPUT_TOKENS]: response.usage.reasoningTokens }),

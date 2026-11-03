@@ -1,3 +1,5 @@
+import type { ModelCost } from './token-anatomy.ts';
+
 export const OPEN_RESPONSES_VERSION = '2026-04-24' as const;
 
 export const OPEN_RESPONSES_STREAM_EVENT_TYPES = [
@@ -177,6 +179,8 @@ export type MomongaResponseExtension = {
   fallbackCauses?: { target: string; code: string | null; message: string }[];
   usageSource: 'reported' | 'estimated';
   contextInputTokens?: number;
+  cacheWriteInputTokens?: number;
+  cost?: ModelCost;
 };
 
 export type ResponseResource = {
@@ -213,6 +217,7 @@ export type ResponseResource = {
   prompt_cache_key: string | null;
   momonga?: MomongaResponseExtension;
   contextInputTokens?: number;
+  cacheWriteInputTokens?: number;
 };
 
 export type CreateResponseBody = {
@@ -341,4 +346,5 @@ export type CompactResource = {
   output: ItemField[];
   created_at: number;
   usage: Usage;
+  momonga?: { cacheWriteInputTokens?: number; cost?: ModelCost };
 };
