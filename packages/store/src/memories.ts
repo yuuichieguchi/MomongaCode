@@ -127,7 +127,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
     );
   };
   const touch = db.prepare('UPDATE memories SET last_used_at = :now WHERE id = :id');
-  const stamp = db.prepare('UPDATE memories SET contributed_at = :now WHERE id = :id AND contributed_at IS NULL');
+  const stamp = db.prepare('UPDATE memories SET contributed_at = :at WHERE id = :id AND (contributed_at IS NULL OR contributed_at < :at)');
   const remove = db.prepare('DELETE FROM memories WHERE id = :id');
   const supersededIds = db.prepare(
     "SELECT DISTINCT r.replaced_id AS id FROM memory_replacements r JOIN memories successor ON successor.id = r.successor_id WHERE successor.state <> 'candidate'",
@@ -350,9 +350,8 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
         for (const id of ids) touch.run({ id, now });
       });
     },
-    stampContributed: (ids) => {
-      const now = clock.now();
-      for (const id of ids) stamp.run({ id, now });
+    stampContributed: (ids, at) => {
+      for (const id of ids) stamp.run({ id, at });
     },
     delete: (id) => {
       const removed = Number(remove.run({ id }).changes) === 1;

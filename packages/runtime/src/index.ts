@@ -84,6 +84,7 @@ export type { VerifiedRunDeps } from './memory/verified-run.ts';
 export { createMemoryUpkeepSchedule } from './memory/upkeep-schedule.ts';
 export type { MemoryUpkeepSchedule, MemoryUpkeepScheduleOptions } from './memory/upkeep-schedule.ts';
 export { contributionAtTerminal } from './memory/contribution.ts';
+export { pinnedDigestOf } from './worker/pinned-digest.ts';
 export { createHistoryPort } from './process/history-port.ts';
 export type { HistoryPortOptions } from './process/history-port.ts';
 export { createAgentsPort } from './process/agents-port.ts';
