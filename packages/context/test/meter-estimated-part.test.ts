@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createTokenMeter } from '@momonga/context';
-import type { CountTokensRequest, CountTokensResult, InputItem } from '@momonga/protocol';
+import type { CountTokensRequest, CountTokensResult, FunctionTool, InputItem } from '@momonga/protocol';
 import { MODEL, capabilitiesFor } from './helpers.ts';
 
 const countingAs = (method: CountTokensResult['method']) => ({
@@ -31,6 +31,26 @@ describe('the part of a count that is estimated', () => {
     const prefix = await meter.count({ input: items(2), tools: [] });
     meter.observe({ inputDigest: prefix.inputDigest, inputTokens: 200 });
     const longer = await meter.count({ input: items(3), tools: [] });
+    expect(longer.estimatedTokens).toBe(100);
+  });
+
+  it('leaves out the tools the server already confirmed when only the suffix is counted with them', async () => {
+    const tools = [{ type: 'function', name: 'Read', description: 'reads', parameters: { type: 'object' } }] as unknown as FunctionTool[];
+    const counter = {
+      count: async (request: CountTokensRequest): Promise<CountTokensResult> => ({
+        input_tokens: (Array.isArray(request.input) ? request.input.length : 1) * 100 + (request.tools === undefined ? 0 : 5000),
+        method: 'estimated',
+        error_bound: 0,
+      }),
+    };
+    const meter = createTokenMeter({ counter, model: MODEL, capabilities: capabilitiesFor(200000) });
+    const prefix = await meter.count({ input: items(2), tools });
+    expect(prefix.estimatedTokens).toBe(5200);
+    meter.observe({ inputDigest: prefix.inputDigest, inputTokens: 5200 });
+
+    const longer = await meter.count({ input: items(3), tools });
+
+    expect(longer.inputTokens).toBe(5300);
     expect(longer.estimatedTokens).toBe(100);
   });
 

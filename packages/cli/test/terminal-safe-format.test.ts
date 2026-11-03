@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GoverningFactView, MemoryView, ReflectionJobView } from '@momonga/protocol';
+import { terminalSink } from '../src/terminal-writer.ts';
 import { formatMemory, formatMemoryHistory, formatMemoryList, formatReflection } from '../src/memory/format.ts';
 import { formatGovernanceVerification, formatRuleAdded, formatRuleHistory, formatRuleList } from '../src/rule/format.ts';
 
@@ -70,7 +71,9 @@ describe('memory text that a person did not write is printed escaped', () => {
   });
 
   it('escapes the whole text of a memory in show and review, keeping its line breaks', () => {
-    const printed = formatMemory(memory({ text: `first\n${HOSTILE}` }));
+    const written: string[] = [];
+    terminalSink(() => ({ write: (chunk) => void written.push(chunk) })).write(formatMemory(memory({ text: `first\n${HOSTILE}` })));
+    const printed = written.join('');
     expectSafe(printed);
     expect(printed).toContain('first\nx');
   });

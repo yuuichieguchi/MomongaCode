@@ -1,4 +1,4 @@
-import { describeMemoryValidity, escapeTerminalBlock, escapeTerminalLine } from '@momonga/protocol';
+import { describeMemoryValidity, escapeTerminalLine } from '@momonga/protocol';
 import type { MemoryView, ReflectionDrop, ReflectionJobView } from '@momonga/protocol';
 
 const firstLine = (text: string): string => escapeTerminalLine(text.split('\n')[0] ?? '');
@@ -68,5 +68,5 @@ export const formatMemory = (memory: MemoryView): string =>
     sourceLine(memory.source),
     ...memory.evidence.map(evidenceLine),
     '',
-    escapeTerminalBlock(memory.text),
+    memory.text,
   ].join('\n');

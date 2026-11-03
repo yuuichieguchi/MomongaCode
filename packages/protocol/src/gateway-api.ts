@@ -86,6 +86,7 @@ export type MomongaModelEntry = {
   object: 'model';
   targets: string[];
   capabilities: Capabilities;
+  targetCapabilities: Record<string, Capabilities>;
 };
 
 export type MomongaModelList = { object: 'list'; data: MomongaModelEntry[] };

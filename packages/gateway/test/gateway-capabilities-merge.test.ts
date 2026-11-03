@@ -119,6 +119,17 @@ describe('alias capabilities on /v1/momonga/models', () => {
   });
 });
 
+describe('target capabilities on /v1/momonga/models', () => {
+  it('lists the own capabilities of every target of the alias, next to the merged ones', async () => {
+    const { client } = await startWith();
+    const response = await getJson(client, '/v1/momonga/models');
+    const merged = response.body.data.find((entry: { id: string }) => entry.id === 'merged');
+
+    expect(merged.targetCapabilities).toEqual({ strong, middle, weak });
+    expect(merged.capabilities.contextWindow).toBe(4096);
+  });
+});
+
 describe('alias parallel tool call capability on /v1/momonga/models', () => {
   const withParallel = (parallelToolCalls: boolean | undefined): Capabilities => {
     const { parallelToolCalls: _declared, ...rest } = strong;

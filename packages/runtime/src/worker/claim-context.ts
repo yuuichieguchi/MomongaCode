@@ -42,7 +42,7 @@ export type ClaimContext = {
   terminals: Terminals;
   agentSpan: TraceSpan;
   meter: TokenMeter;
-  meterOfTarget(target: string): TokenMeter;
+  targetFacts(target: string): Promise<{ meter: TokenMeter; capabilities: Capabilities }>;
   pinnedDigest: { value: string | undefined };
   memory: RunMemory;
   verificationCommands: readonly string[];

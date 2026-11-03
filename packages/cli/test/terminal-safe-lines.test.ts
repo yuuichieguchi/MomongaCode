@@ -3,6 +3,7 @@ import type { ElicitationRequestView, JobView, PermissionOption } from '@momonga
 import { approvalLine, pendingLines } from '../src/commands/runs.ts';
 import { jobLine } from '../src/commands/jobs.ts';
 import { describeElicitation } from '../src/elicit/describe.ts';
+import { terminalSink } from '../src/terminal-writer.ts';
 
 const HOSTILE = 'x\u001b]0;pwn\u0007\u009b2J‮y';
 const ESCAPED = 'x\\u001b]0;pwn\\u0007\\u009b2J\\u202ey';
@@ -31,7 +32,9 @@ describe('lines that show text a person did not write', () => {
 
   it('escapes the server, the title, the message, the URL and the field text of an elicitation, keeping its lines', () => {
     const requests: ElicitationRequestView[] = [{ mode: 'url', key: 'k', message: HOSTILE, url: `https://example.test/${HOSTILE}` }];
-    const printed = describeElicitation('in1', HOSTILE, HOSTILE, requests);
+    const written: string[] = [];
+    terminalSink(() => ({ write: (chunk) => void written.push(chunk) })).write(describeElicitation('in1', HOSTILE, HOSTILE, requests));
+    const printed = written.join('');
     expect(printed).not.toMatch(UNSAFE);
     expect(printed.split(ESCAPED).length - 1).toBe(4);
     expect(printed.split('\n').length).toBeGreaterThan(4);

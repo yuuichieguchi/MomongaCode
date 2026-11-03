@@ -10,6 +10,7 @@ import { memoryHistory } from '../src/commands/memory.ts';
 import { policyVerify } from '../src/commands/policy.ts';
 import { ruleAdd, ruleHistory, ruleList, ruleRetire } from '../src/commands/rule.ts';
 import type { CliPorts } from '../src/ports.ts';
+import { terminalPorts } from '../src/terminal-writer.ts';
 import type { PolicyVerifyHost } from '../src/verify/host.ts';
 import { startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
 
@@ -93,7 +94,7 @@ const setup = async (context: TestContext, answer: (seen: Seen) => Answer) => {
     stdout: { write: (text: string) => void out.push(text) },
     stderr: { write: (text: string) => void err.push(text) },
   } as unknown as CliPorts;
-  return { paths, ports, project, seen, out, err };
+  return { paths, ports: terminalPorts(ports), project, seen, out, err };
 };
 
 describe('momonga rule', () => {

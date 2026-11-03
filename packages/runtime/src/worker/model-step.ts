@@ -71,28 +71,25 @@ export const decideAfterResponse = async (ctx: ClaimContext): Promise<Flow> => {
   return settleCalls(ctx);
 };
 
-type InputObservation = {
-  inputDigest: string;
-  estimatedTokens: number;
-  marginTokens: number;
-  input: readonly InputItem[];
-  tools: readonly FunctionTool[];
-};
+type InputObservation = { input: readonly InputItem[]; tools: readonly FunctionTool[] };
 
 type InputEstimate = { meter: TokenMeter; inputDigest: string; estimatedTokens: number; marginTokens: number };
 
 const estimateFor = async (ctx: ClaimContext, observation: InputObservation, answeredByFallback: string | undefined): Promise<InputEstimate> => {
-  const meter = answeredByFallback === undefined ? ctx.meter : ctx.meterOfTarget(answeredByFallback);
-  const counted = await meter.count({ input: observation.input, tools: observation.tools });
+  const answered = answeredByFallback === undefined ? { meter: ctx.meter, capabilities: ctx.capabilities } : await ctx.targetFacts(answeredByFallback);
+  const counted = await answered.meter.count({ input: observation.input, tools: observation.tools });
   return {
-    meter,
+    meter: answered.meter,
     inputDigest: counted.inputDigest,
     estimatedTokens: counted.inputTokens,
-    marginTokens: marginFloorFor(ctx.capabilities.contextWindow) + Math.ceil(ESTIMATED_ERROR_BOUND_RATIO * counted.estimatedTokens),
+    marginTokens: marginFloorFor(answered.capabilities.contextWindow) + Math.ceil(ESTIMATED_ERROR_BOUND_RATIO * counted.estimatedTokens),
   };
 };
 
-const truncationFailure = (reported: number, observation: Pick<InputObservation, 'estimatedTokens' | 'marginTokens'>): { code: 'input_truncated'; message: string } => ({
+const fallbackTargetOf = (response: ResponseResource): string | undefined =>
+  response.momonga?.fallbackCauses !== undefined && response.momonga.fallbackCauses.length > 0 ? response.momonga.target : undefined;
+
+const truncationFailure = (reported: number, observation: Pick<InputEstimate, 'estimatedTokens' | 'marginTokens'>): { code: 'input_truncated'; message: string } => ({
   code: 'input_truncated',
   message: `The server reported ${reported} input tokens for a context the token meter counts as ${observation.estimatedTokens} tokens, which is more than the estimation margin of ${observation.marginTokens} tokens below it. The server likely truncated the input without saying so. Set the server's context length to the target's context window, or lower the target's contextWindow to what the server serves.`,
 });
@@ -124,6 +121,7 @@ const handleResult = async (
     ]);
     return terminals.finish('FAILED', { error: { code: 'call_id_reused', message } });
   }
+  const estimate = observation === undefined ? undefined : await estimateFor(ctx, observation, fallbackTargetOf(response));
   const before = journal.state.usage;
   journal.append([
     {
@@ -158,10 +156,8 @@ const handleResult = async (
       },
     ]);
   }
-  if (observation !== undefined) {
+  if (estimate !== undefined) {
     const reported = response.momonga?.contextInputTokens ?? usage.input_tokens;
-    const answeredByFallback = fallback?.fallbackCauses !== undefined && fallback.fallbackCauses.length > 0 ? fallback.target : undefined;
-    const estimate = await estimateFor(ctx, observation, answeredByFallback);
     estimate.meter.observe({ inputDigest: estimate.inputDigest, inputTokens: reported });
     if (reported < estimate.estimatedTokens - estimate.marginTokens) {
       return terminals.finish('FAILED', { error: truncationFailure(reported, estimate) });
@@ -211,7 +207,13 @@ export const resumeInFlight = async (ctx: ClaimContext): Promise<Flow> => {
   if (ctx.control.yieldRequested()) return ctx.terminals.yieldLease();
   if (streamedBeforeRestart(ctx.journal.state, position)) ctx.journal.append([{ type: 'model.stream.restarted', step: position.step, attempt: position.attempt }]);
   const outcome = await streamRecovering(ctx, inFlight.body, position);
-  return outcome.kind === 'flow' ? outcome.flow : handleResult(ctx, outcome.result, position, undefined);
+  return outcome.kind === 'flow' ? outcome.flow : handleResult(ctx, outcome.result, position, observationOfRecorded(inFlight.body));
+};
+
+const observationOfRecorded = (body: CreateResponseBody): InputObservation | undefined => {
+  if (body.tool_choice === 'none') return undefined;
+  if (!Array.isArray(body.input)) throw new Error('the recorded model request carries no input items to check the reported tokens against');
+  return { input: body.input, tools: body.tools ?? [] };
 };
 
 export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
@@ -245,10 +247,5 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   const streamed = await streamRecovering(ctx, body, position);
   return streamed.kind === 'flow'
     ? streamed.flow
-    : handleResult(
-        ctx,
-        streamed.result,
-        position,
-        summarising ? undefined : { inputDigest: built.inputDigest, estimatedTokens: built.inputTokens, marginTokens: built.budget.margin, input: built.input, tools: built.tools },
-      );
+    : handleResult(ctx, streamed.result, position, summarising ? undefined : { input: built.input, tools: built.tools });
 };

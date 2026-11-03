@@ -4,6 +4,7 @@ import { signalUntil } from '../memory/deadline-signal.ts';
 import { createTokenMeter } from '@momonga/context';
 import type { TokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex } from '@momonga/foundation';
+import type { Capabilities } from '@momonga/protocol';
 import { isFatalStoreError } from '@momonga/store';
 import type { Claim } from '@momonga/store';
 import type { ClaimContext, Flow, RunMemory, Terminals } from './claim-context.ts';
@@ -331,7 +332,7 @@ const drive = async (
   const limits = readRunLimits(run.limits, options.defaults);
   const composeRules = await permissionRulesComposerFor(options, session);
   let measuredInlineLimit: Promise<number> | undefined;
-  const targetMeters = new Map<string, TokenMeter>();
+  const targetFacts = new Map<string, { meter: TokenMeter; capabilities: Capabilities }>();
   const ctx: ClaimContext = {
     options,
     claim,
@@ -362,15 +363,19 @@ const drive = async (
     terminals,
     agentSpan,
     meter: createTokenMeter({ counter: { count: (request) => control.recordingRaised(gateway.countTokens(request, { signal: control.signal })) }, model: pins.modelAlias, capabilities: pins.capabilities }),
-    meterOfTarget: (target) => {
-      const known = targetMeters.get(target);
+    targetFacts: async (target) => {
+      const known = targetFacts.get(target);
       if (known !== undefined) return known;
-      const created = createTokenMeter({
-        counter: { count: (request) => control.recordingRaised(gateway.countTokens({ ...request, momonga: { ...request.momonga, target } }, { signal: control.signal })) },
-        model: pins.modelAlias,
-        capabilities: pins.capabilities,
-      });
-      targetMeters.set(target, created);
+      const capabilities = await control.recordingRaised(gateway.capabilities(pins.modelAlias, { signal: control.signal, target }));
+      const created = {
+        capabilities,
+        meter: createTokenMeter({
+          counter: { count: (request) => control.recordingRaised(gateway.countTokens({ ...request, momonga: { ...request.momonga, target } }, { signal: control.signal })) },
+          model: pins.modelAlias,
+          capabilities,
+        }),
+      };
+      targetFacts.set(target, created);
       return created;
     },
     pinnedDigest: { value: undefined },

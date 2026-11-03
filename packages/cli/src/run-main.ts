@@ -1,4 +1,5 @@
 import { nodeEntryIo } from '@momonga/foundation';
+import { escapeTerminalBlock } from '@momonga/protocol';
 import { daemonEntries } from './daemon/entries.ts';
 import { describeFailure } from './failure.ts';
 import { nodePorts } from './node-ports.ts';
@@ -31,7 +32,7 @@ export const runMain = async (version: string, overrides: Partial<CliPorts> = {}
     });
     await program.parseAsync();
   } catch (error) {
-    process.stderr.write(`momonga: ${describeFailure(error)}\n`);
+    process.stderr.write(escapeTerminalBlock(`momonga: ${describeFailure(error)}\n`));
     process.exitCode = 1;
   }
 };

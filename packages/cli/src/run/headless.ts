@@ -1,5 +1,4 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import { escapeTerminalBlock } from '@momonga/protocol';
 import type { PermissionMode, PublicRunEvent } from '@momonga/protocol';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView } from '../client/views.ts';
@@ -64,7 +63,7 @@ export const resultOf = (run: RunView, result: string): RunResult => ({
 
 export const describeEnd = (run: RunView): string => {
   const reason = run.error === undefined ? run.stopReason : describeRunError(run.error);
-  return escapeTerminalBlock(`momonga: run ${run.id} ${run.status}${reason === undefined ? '' : ` (${reason})`}`);
+  return `momonga: run ${run.id} ${run.status}${reason === undefined ? '' : ` (${reason})`}`;
 };
 
 export type FrameSink = { absorb(frame: RunEventFrame): void; handle(frame: RunEventFrame): void; handleChild(frame: RunEventFrame, agent: string): void; finalText(): string };
@@ -79,7 +78,7 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
   let needsNewline = false;
 
   const note = (text: string): void => {
-    ports.stderr.write(`${escapeTerminalBlock(text)}\n`);
+    ports.stderr.write(`${text}\n`);
   };
 
   const present = (event: PublicRunEvent, agent: string | undefined): void => {
@@ -143,7 +142,7 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
     if (format !== 'text') return;
     if (lastItem !== undefined && lastItem !== event.itemId && needsNewline) ports.stdout.write('\n');
     lastItem = event.itemId;
-    ports.stdout.write(escapeTerminalBlock(event.text));
+    ports.stdout.write(event.text);
     needsNewline = !event.text.endsWith('\n');
   };
 

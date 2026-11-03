@@ -3,6 +3,8 @@ import type { PublicRunEvent } from '@momonga/protocol';
 import type { RunEventFrame } from '../src/client/runtime-client.ts';
 import { createFrameSink, describeEnd, resultOf } from '../src/run/headless.ts';
 import type { OutputFormat } from '../src/run/headless.ts';
+import type { CliPorts } from '../src/ports.ts';
+import { terminalPorts, terminalSink } from '../src/terminal-writer.ts';
 import { runView } from './fake-backend.ts';
 
 let sequence = 0;
@@ -14,10 +16,12 @@ const frame = (event: Record<string, unknown>): RunEventFrame => {
 
 const delta = (itemId: string, text: string): RunEventFrame => frame({ type: 'agent.message.delta', attempt: 0, itemId, text });
 
-const sinkFor = (format: OutputFormat, verbose = false) => {
+const sinkFor = (format: OutputFormat, verbose = false, throughWriter = false) => {
   const out: string[] = [];
   const err: string[] = [];
-  return { out, err, sink: createFrameSink({ stdout: { write: (text) => void out.push(text) }, stderr: { write: (text) => void err.push(text) } }, format, verbose) };
+  const raw = { stdout: { write: (text: string) => void out.push(text) }, stderr: { write: (text: string) => void err.push(text) } };
+  const ports = throughWriter ? terminalPorts(raw as unknown as CliPorts) : raw;
+  return { out, err, sink: createFrameSink(ports, format, verbose) };
 };
 
 describe('text format', () => {
@@ -120,7 +124,7 @@ describe('text a person did not write', () => {
   const UNSAFE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f‪-‮]/u;
 
   it('is escaped in the assistant text on stdout, keeping its line breaks', () => {
-    const { sink, out } = sinkFor('text');
+    const { sink, out } = sinkFor('text', false, true);
     sink.handle(delta('a', `first\n${HOSTILE}`));
     expect(out.join('')).toBe(`first\n${ESCAPED}`);
   });
@@ -134,7 +138,7 @@ describe('text a person did not write', () => {
   });
 
   it('is escaped in the notes on stderr: a notice, a tool title, an approval title and a hook message', () => {
-    const { sink, err } = sinkFor('text');
+    const { sink, err } = sinkFor('text', false, true);
     sink.handle(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p', name: 'Bash', kind: 'execute', title: HOSTILE, rawInput: {} }));
     sink.handle(frame({ type: 'tool.completed', callId: 'c1', status: 'failed', output: 'no' }));
     sink.handle(frame({ type: 'notice', level: 'warning', message: HOSTILE }));
@@ -145,9 +149,10 @@ describe('text a person did not write', () => {
   });
 
   it('is escaped in the reason a run ended with', () => {
-    const printed = describeEnd(runView({ status: 'FAILED', error: { code: 'model_error', message: HOSTILE } }));
-    expect(printed).not.toMatch(UNSAFE);
-    expect(printed).toContain(ESCAPED);
+    const written: string[] = [];
+    terminalSink(() => ({ write: (text) => void written.push(text) })).write(`${describeEnd(runView({ status: 'FAILED', error: { code: 'model_error', message: HOSTILE } }))}\n`);
+    expect(written.join('')).not.toMatch(UNSAFE);
+    expect(written.join('')).toContain(ESCAPED);
   });
 });
 

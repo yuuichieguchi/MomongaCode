@@ -93,7 +93,7 @@ export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOpt
           itemCount: input.length,
           inputTokens: observation.inputTokens + suffix.input_tokens - baseline,
           counterBound: suffix.error_bound,
-          estimatedTokens: observation.estimatedTokens + estimatedPartOf(suffix),
+          estimatedTokens: observation.estimatedTokens + Math.max(0, estimatedPartOf(suffix) - baseline),
         };
       }
       break;

@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import * as commands from '../src/commands/memory.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
+import { terminalPorts } from '../src/terminal-writer.ts';
 import * as notices from '../src/tui/notices.ts';
 import type { NoticeSource } from '../src/tui/notices.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
@@ -81,7 +82,7 @@ const setup = async (context: TestContext, answer: (seen: Seen) => Answer) => {
     stdout: { write: (text: string) => void out.push(text) },
     stderr: { write: () => undefined },
   } as unknown as CliPorts;
-  return { paths, ports, project, seen, out };
+  return { paths, ports: terminalPorts(ports), project, seen, out };
 };
 
 const command = (name: string): ((...args: unknown[]) => Promise<number>) => {

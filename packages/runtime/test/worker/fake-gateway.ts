@@ -106,6 +106,7 @@ export type FakeGateway = GatewayPort & {
   countScaleByTarget: Map<string, number>;
   countMethod: CountTokensResult['method'];
   countMethodByTarget: Map<string, CountTokensResult['method']>;
+  capabilitiesByTarget: Map<string, Capabilities>;
   countHook: GatewayHook<CountTokensRequest> | undefined;
   compactHook: GatewayHook<CompactRequest> | undefined;
   capabilityRequests: string[];
@@ -220,6 +221,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
     countScaleByTarget: new Map(),
     countMethod: 'exact',
     countMethodByTarget: new Map(),
+    capabilitiesByTarget: new Map(),
     countHook: undefined,
     compactHook: undefined,
     capabilityRequests: [],
@@ -304,7 +306,8 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
       gateway.capabilityRequests.push(alias);
       gateway.capabilitiesCalls.push({ alias, signal: options?.signal });
       await gateway.capabilitiesHook?.(alias, options?.signal);
-      return gateway.capabilitiesValue;
+      const target = options?.target;
+      return (target === undefined ? undefined : gateway.capabilitiesByTarget.get(target)) ?? gateway.capabilitiesValue;
     },
 
     cancel: async (idempotencyKey, options) => {

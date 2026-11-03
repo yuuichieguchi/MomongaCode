@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { CommanderError } from 'commander';
-import { encodeOutcomeFile, outcomeFileOf } from '@momonga/eval';
+import { encodeOutcomeFile, formatImproveOutcome, outcomeFileOf, parseGuidelineCandidate } from '@momonga/eval';
 import type { ImproveOutcome } from '@momonga/eval';
 import type { EntryIo } from '@momonga/foundation';
 import { adoptOutcome, formatGuidelines } from '../src/commands/context.ts';
 import type { DaemonEntries } from '../src/daemon/entries.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
+import { terminalPorts } from '../src/terminal-writer.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
 import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
 import { nodePolicyVerifyHost } from '../src/verify/host.ts';
@@ -85,6 +86,37 @@ describe('momonga context improve and adopt', () => {
 
   it('guards an adoption of nothing: adopt takes an outcome file', async () => {
     await assertRejected(['context', 'guideline', 'adopt'], /outcome-file/);
+  });
+});
+
+describe('what a model reply puts in the text of context improve', () => {
+  const REPLY = '\u001b[2K\u001b]0;pwn\u0007‮ not json';
+
+  it('reaches stdout escaped when the parse error of a candidate reply carries the reply', () => {
+    const parsed = parseGuidelineCandidate(REPLY);
+    if (!('error' in parsed)) throw new Error('the reply must not parse');
+    expect(parsed.error).toMatch(/\u001b|‮/u);
+    const outcome: ImproveOutcome = {
+      status: 'no_winner',
+      model: 'real',
+      alias: 'opus',
+      seed: 1,
+      candidateCount: 1,
+      current: undefined,
+      baseline: { contrastiveFailures: 1, compactedScenarios: 1, tokens: 1 },
+      contrastive: ['a'],
+      skipped: [{ scenario: 's', reason: parsed.error }],
+      analyses: 1,
+      candidates: [{ index: 0, skipped: parsed.error }],
+      tokens: { benchmark: 1, charged: 1 },
+    };
+    const written: string[] = [];
+    const ports = terminalPorts({ stdout: { write: (text: string) => void written.push(text) }, stderr: { write: () => undefined } } as unknown as CliPorts);
+
+    ports.stdout.write(`${formatImproveOutcome(outcome)}\n`);
+
+    expect(written.join('')).not.toMatch(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f‪-‮]/u);
+    expect(written.join('')).toContain('\\u001b[2K');
   });
 });
 

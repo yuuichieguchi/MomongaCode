@@ -4,7 +4,8 @@ import type { StreamEvent } from '@momonga/protocol';
 import { usageOf } from '@momonga/testkit';
 import { inputTokensOf } from './fake-gateway.ts';
 import type { ScriptStep } from './fake-gateway.ts';
-import { capabilitiesFor, makeEnv } from './harness.ts';
+import { GatewayRequestError } from '@momonga/runtime';
+import { capabilitiesFor, makeEnv, modelKey } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 
 const WINDOW = 8192;
@@ -268,6 +269,94 @@ describe('the margin after a fallback step follows the counting method of the ta
 
   it('completes at 85 percent of the estimate when the target that answered counts by estimate', async () => {
     expect((await runWith('estimated', 0.85)).status).toBe('COMPLETED');
+  });
+});
+
+describe('the margin floor after a fallback step comes from the context window of the target that answered', () => {
+  const runWith = async (window: number | undefined) => {
+    const estimate = await (async () => {
+      const env = await makeEnv({ capabilities: capabilities() });
+      env.gateway.script.push(textStep('Done.'));
+      env.enqueue(TASK);
+      await env.runOnce(env.worker());
+      const first = env.gateway.streams[0];
+      if (first === undefined) throw new Error('the measuring run made no model call');
+      return inputTokensOf(first.body);
+    })();
+    const env = await makeEnv({ capabilities: capabilities() });
+    if (window !== undefined) env.gateway.capabilitiesByTarget.set('secondary', capabilitiesFor(window, { maxOutputTokens: 512 }));
+    const reported = estimate - marginFloorFor(window ?? WINDOW) - 1;
+    env.gateway.script.push(answeredByFallback(textStep('Done.', { usage: usageOf(reported, 5) }), 'secondary'));
+    const run = env.enqueue(TASK);
+    await env.runOnce(env.worker());
+    return { run: env.run(run.id), env };
+  };
+
+  it('stops one token below the estimate less the floor of the smaller window of the target that answered', async () => {
+    const { run } = await runWith(2000);
+    expect(run).toMatchObject({ status: 'FAILED', error: { code: 'input_truncated' } });
+  });
+
+  it('completes at the same report when the target that answered has the window of the alias less the floor of the alias would allow', async () => {
+    const estimate = await (async () => {
+      const env = await makeEnv({ capabilities: capabilities() });
+      env.gateway.script.push(textStep('Done.'));
+      env.enqueue(TASK);
+      await env.runOnce(env.worker());
+      return inputTokensOf((env.gateway.streams[0] as NonNullable<(typeof env.gateway.streams)[number]>).body);
+    })();
+    const env = await makeEnv({ capabilities: capabilities() });
+    env.gateway.capabilitiesByTarget.set('secondary', capabilitiesFor(2000, { maxOutputTokens: 512 }));
+    env.gateway.script.push(answeredByFallback(textStep('Done.', { usage: usageOf(estimate - marginFloorFor(2000), 5) }), 'secondary'));
+    const run = env.enqueue(TASK);
+    await env.runOnce(env.worker());
+    expect(env.run(run.id).status).toBe('COMPLETED');
+  });
+});
+
+describe('the truncation check completes before the response is journalled', () => {
+  const failingOnce = (env: Awaited<ReturnType<typeof makeEnv>>) => {
+    let failed = false;
+    env.gateway.countHook = async (request) => {
+      if (request.momonga?.target === undefined || failed) return;
+      failed = true;
+      throw new GatewayRequestError({ status: 0, type: 'transport', code: 'gateway_unavailable', message: 'the gateway socket is unavailable' });
+    };
+  };
+
+  it('retries from the replayed response when the count for the answering target fails, with one upstream call, and still runs the check', async () => {
+    const env = await makeEnv({ capabilities: capabilities() });
+    failingOnce(env);
+    env.gateway.script.push(answeredByFallback(textStep('Done.', { usage: usageOf(10, 5) }), 'secondary'));
+    const run = env.enqueue(TASK);
+
+    expect(await env.runOnce(env.worker())).toBe('yielded');
+
+    const released = env.run(run.id);
+    expect(released.status).toBe('QUEUED');
+    expect(env.ofType(run.id, 'model.responded')).toEqual([]);
+    env.clock.set(Math.max(env.clock.now(), released.availableAt));
+
+    await env.runOnce(env.worker('worker-2'));
+
+    expect(env.run(run.id)).toMatchObject({ status: 'FAILED', error: { code: 'input_truncated' } });
+    expect(env.gateway.generations.get(modelKey(run.id, 1, 1))).toBe(1);
+    expect(env.gateway.streams.map((stream) => stream.deduplicated)).toEqual([false, true]);
+    expect(env.ofType(run.id, 'model.responded')).toHaveLength(1);
+  });
+
+  it('completes the run after the retry when the report is within the margin', async () => {
+    const env = await makeEnv({ capabilities: capabilities() });
+    failingOnce(env);
+    env.gateway.script.push(answeredByFallback(textStep('Done.'), 'secondary'));
+    const run = env.enqueue(TASK);
+
+    await env.runOnce(env.worker());
+    env.clock.set(Math.max(env.clock.now(), env.run(run.id).availableAt));
+    await env.runOnce(env.worker('worker-2'));
+
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(env.gateway.generations.get(modelKey(run.id, 1, 1))).toBe(1);
   });
 });
 

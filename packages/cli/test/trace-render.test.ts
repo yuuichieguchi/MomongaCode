@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RunTraceSpan, RunTraceView, UsageReport } from '@momonga/protocol';
 import { renderTrace } from '../src/commands/trace.ts';
+import { terminalSink } from '../src/terminal-writer.ts';
 
 const span = (overrides: Partial<RunTraceSpan> & Pick<RunTraceSpan, 'spanId' | 'name'>): RunTraceSpan => ({
   traceId: 't',
@@ -59,8 +60,10 @@ describe('renderTrace', () => {
       usage,
     );
 
-    expect(text).not.toMatch(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f‪-‮]/u);
-    expect(text.split('x\\u001b]0;pwn\\u0007\\u009b2J\\u202ey').length - 1).toBe(2);
+    const written: string[] = [];
+    terminalSink(() => ({ write: (chunk) => void written.push(chunk) })).write(`${text}\n`);
+    expect(written.join('')).not.toMatch(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f‪-‮]/u);
+    expect(written.join('').split('x\\u001b]0;pwn\\u0007\\u009b2J\\u202ey').length - 1).toBe(2);
   });
 
   it('leaves a call answered by the first target without a fallback note', () => {

@@ -81,7 +81,14 @@ describe('gateway client against a real gateway', { timeout: 30_000 }, () => {
     const models = await context.client.models();
     expect(models.map((model) => model.id)).toEqual(['default']);
     expect(models[0]?.capabilities).toMatchObject({ contextWindow: 4096, maxOutputTokens: 1024 });
-    expect(Object.keys(models[0] ?? {}).sort()).toEqual(['capabilities', 'id']);
+    expect(Object.keys(models[0] ?? {}).sort()).toEqual(['capabilities', 'id', 'targetCapabilities']);
+    expect(Object.keys(models[0]?.targetCapabilities ?? {})).toHaveLength(1);
+  });
+
+  it('looks up the capabilities of a target of the alias', async () => {
+    const [target] = Object.keys((await context.client.models())[0]?.targetCapabilities ?? {});
+    const capabilities = await context.client.capabilities('default', { signal: new AbortController().signal, target: String(target) });
+    expect(capabilities).toMatchObject({ contextWindow: 4096, maxOutputTokens: 1024 });
   });
 
   it('looks up capabilities by alias', async () => {

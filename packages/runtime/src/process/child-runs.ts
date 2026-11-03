@@ -36,7 +36,7 @@ const pinnedAliasOf = (store: Pick<RuntimeStore, 'readRunEventsOfTypes'>, runId:
   return alias;
 };
 
-export const createChildRuns =({ store, modelAliases }: ChildRunsOptions): ChildRuns => {
+export const createChildRuns = ({ store, modelAliases }: ChildRunsOptions): ChildRuns => {
   const foldedFinalText = (run: Run): string => {
     const loaded = store.load(run.id);
     const state = loaded.tail.reduce(foldRunState, loaded.snapshot?.state ?? initialRunState({ runId: run.id, sessionId: run.sessionId }));

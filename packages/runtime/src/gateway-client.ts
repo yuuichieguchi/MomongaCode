@@ -57,7 +57,7 @@ export type GatewayClientOptions = {
   streamIdleTimeoutMs?: number;
 };
 
-export type GatewayModel = { id: string; capabilities: Capabilities };
+export type GatewayModel = { id: string; capabilities: Capabilities; targetCapabilities: Record<string, Capabilities> };
 
 export type GatewayClient = GatewayPort & {
   models(): Promise<GatewayModel[]>;
@@ -259,10 +259,10 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
     const data = isRecord(parsed) ? parsed['data'] : undefined;
     if (!Array.isArray(data)) throw invalidResponse('the model list has no data array');
     return data.map((entry: unknown): GatewayModel => {
-      if (!isRecord(entry) || typeof entry['id'] !== 'string' || !isRecord(entry['capabilities'])) {
+      if (!isRecord(entry) || typeof entry['id'] !== 'string' || !isRecord(entry['capabilities']) || !isRecord(entry['targetCapabilities'])) {
         throw invalidResponse('the model list holds a malformed entry');
       }
-      return { id: entry['id'], capabilities: entry['capabilities'] as Capabilities };
+      return { id: entry['id'], capabilities: entry['capabilities'] as Capabilities, targetCapabilities: entry['targetCapabilities'] as Record<string, Capabilities> };
     });
   };
 
@@ -397,12 +397,17 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
       return parsed as CountTokensResult;
     },
 
-    capabilities: async (alias: string, callOptions: { signal: AbortSignal }): Promise<Capabilities> => {
+    capabilities: async (alias: string, callOptions: { signal: AbortSignal; target?: string }): Promise<Capabilities> => {
       const found = (await listModels(callOptions.signal)).find((model) => model.id === alias);
       if (found === undefined) {
         throw new GatewayRequestError({ status: 404, type: 'not_found', code: 'model_not_found', message: `the gateway does not list the model "${alias}"`, param: 'model' });
       }
-      return found.capabilities;
+      if (callOptions.target === undefined) return found.capabilities;
+      const own = Object.hasOwn(found.targetCapabilities, callOptions.target) ? found.targetCapabilities[callOptions.target] : undefined;
+      if (own === undefined) {
+        throw new GatewayRequestError({ status: 404, type: 'not_found', code: 'invalid_target', message: `the gateway lists no target "${callOptions.target}" for the model "${alias}"`, param: 'target' });
+      }
+      return own;
     },
 
     cancel: async (idempotencyKey: string, callOptions: { signal: AbortSignal }): Promise<boolean> => {

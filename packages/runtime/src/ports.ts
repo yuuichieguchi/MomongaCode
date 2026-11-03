@@ -30,7 +30,7 @@ export type GatewayPort = {
   stream(body: CreateResponseBody, options: GatewayCallOptions): AsyncIterable<StreamEvent>;
   compact(request: CompactRequest, options: GatewayCallOptions): Promise<CompactResource>;
   countTokens(request: CountTokensRequest, options: { signal: AbortSignal }): Promise<CountTokensResult>;
-  capabilities(alias: string, options: { signal: AbortSignal }): Promise<Capabilities>;
+  capabilities(alias: string, options: { signal: AbortSignal; target?: string }): Promise<Capabilities>;
   cancel(idempotencyKey: string, options: { signal: AbortSignal }): Promise<boolean>;
 };
 
