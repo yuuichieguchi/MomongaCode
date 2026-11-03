@@ -8,7 +8,7 @@ export type { WorkingStateOptions } from './working-state.ts';
 export { buildContext, maxInputFor, measureLayers, measurePinned } from './build-context.ts';
 export type { MaxInputBounds } from './build-context.ts';
 export { HANDLE_READER_TOOL } from './tool-output.ts';
-export { ContextOverflowError, PinnedOverflowError, PinnedRoomError, PrefixChangedError } from './errors.ts';
+export { ContextOverflowError, PinnedBoundError, PinnedOverflowError, PinnedRoomError, PrefixChangedError } from './errors.ts';
 export { createFsInstructionReader } from './fs-instruction-reader.ts';
 export { INSTRUCTION_FILE_LIMIT_BYTES } from './instructions.ts';
 export { createTokenMeter } from './token-meter.ts';

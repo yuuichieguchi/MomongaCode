@@ -398,8 +398,13 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
       );
       if (!isRecord(parsed)) throw invalidResponse('the count_tokens reply is not an object');
       const shape = parsed['error_shape'];
+      if (shape === undefined) {
+        throw invalidResponse(
+          'the count_tokens reply has no error_shape, so the gateway runs an older version than this runtime (an update replaced the binary while the daemon kept running); run `momonga daemon stop`, then start momonga again',
+        );
+      }
       if (!isRecord(shape) || typeof shape['ratio'] !== 'number' || typeof shape['minimum'] !== 'number') {
-        throw invalidResponse('the count_tokens reply has no error_shape with a numeric ratio and minimum');
+        throw invalidResponse('the count_tokens reply has an error_shape without a numeric ratio and minimum');
       }
       return parsed as CountTokensResult;
     },

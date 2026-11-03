@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { sha256Hex } from '@momonga/foundation';
 import { pinnedOverflowFailure } from '../../src/worker/context-step.ts';
-import { PinnedOverflowError } from '@momonga/context';
+import { PinnedBoundError, PinnedOverflowError, budgetFor } from '@momonga/context';
 import type { AddGoverningFactInput } from '@momonga/store';
 import { createGovernancePort, createMemoryPort } from '@momonga/runtime';
 import { capabilitiesFor, makeEnv, textOf, unavailableEvidenceRun } from './harness.ts';
@@ -261,6 +261,29 @@ describe('pinnedOverflowFailure', () => {
     const { message } = pinnedOverflowFailure({ capabilities: capabilitiesFor(1000) } as never, error);
     expect(message).toContain('instructions 30');
     expect(message).toContain('governing facts 777');
+  });
+
+  it('names the counter bound and what to change when no input size fits', () => {
+    const capabilities = capabilitiesFor(1000);
+    const { W, R } = budgetFor(capabilities, 0);
+    const breakdown = { systemPrompt: 10, tools: 20, instructions: 30, governing: 0, task: 40 };
+    const error = new PinnedBoundError({ pinnedTokens: 100, ceiling: 500, breakdown, inputBudget: 700, boundAtZero: 701, maxInput: undefined });
+    const { code, message } = pinnedOverflowFailure({ capabilities } as never, error);
+    expect(code).toBe('pinned_overflow');
+    expect(message).toBe(
+      `No input size fits: the token counter's error bound is 701 tokens even for an empty input, more than the input budget of 700 (window ${W}, output reserve ${R}). Raise contextWindow, lower maxOutputTokens, or calibrate the token counter.`,
+    );
+  });
+
+  it('names the counter bound and what to change when the pinned context exceeds what fits with its bound', () => {
+    const capabilities = capabilitiesFor(1000);
+    const { W, R } = budgetFor(capabilities, 0);
+    const breakdown = { systemPrompt: 10, tools: 20, instructions: 30, governing: 0, task: 40 };
+    const error = new PinnedBoundError({ pinnedTokens: 100, ceiling: 500, breakdown, inputBudget: 700, boundAtZero: 650, maxInput: 50 });
+    const { message } = pinnedOverflowFailure({ capabilities } as never, error);
+    expect(message).toBe(
+      `The pinned context needs 100 tokens, but with the token counter's error bound at most 50 fit the input budget of 700 (window ${W}, output reserve ${R}), so no compaction can make room. Raise contextWindow, lower maxOutputTokens, or calibrate the token counter.`,
+    );
   });
 });
 

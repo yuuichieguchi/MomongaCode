@@ -2,7 +2,7 @@ import { SUMMARY_PROMPT_TOKENS, findDanglingOutput, findUnpairedCalls, summaryIt
 import type { FunctionCallOutputInputItem, FunctionTool, InputItem, MessageInputItem } from '@momonga/protocol';
 import { MIN_ROOM_TOKENS, budgetFor, inputCeilingFor, itemCapFor, memoryBudgetFor, summaryInputCeilingFor, pinnedFloorFor } from './budget.ts';
 import { chainTail, digestChain, frozenItem } from './digests.ts';
-import { ContextOverflowError, PinnedOverflowError, PinnedRoomError, PrefixChangedError } from './errors.ts';
+import { ContextOverflowError, PinnedBoundError, PinnedOverflowError, PinnedRoomError, PrefixChangedError } from './errors.ts';
 import { governingMessageOf, governingNoticesOf, loadedGoverningOf } from './governing.ts';
 import { discoverInstructions } from './instructions.ts';
 import type { DiscoveredInstructions, LoadedInstructionFile } from './instructions.ts';
@@ -594,9 +594,17 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
   }
 
   if (!fits(total)) {
-    const maxInput = maxInputFor({ ceiling, inputBudget: budgetFor(capabilities, 0).I, errorBoundAt: total.errorBoundAt });
-    if (maxInput === undefined) {
-      throw new PinnedOverflowError({ pinnedTokens, ceiling: 0, breakdown: await breakdownOf(ports, systemMessage, layers, head.governing, task, tools) });
+    const inputBudget = budgetFor(capabilities, 0).I;
+    const maxInput = maxInputFor({ ceiling, inputBudget, errorBoundAt: total.errorBoundAt });
+    if (maxInput === undefined || maxInput < pinnedTokens) {
+      throw new PinnedBoundError({
+        pinnedTokens,
+        ceiling,
+        breakdown: await breakdownOf(ports, systemMessage, layers, head.governing, task, tools),
+        inputBudget,
+        boundAtZero: total.errorBoundAt(0),
+        maxInput,
+      });
     }
     const outcome = await compactionFor('forced', total.inputTokens - maxInput);
     if (lastLevel) await persistEvictions(slots.length);

@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { ContextOverflowError, PinnedOverflowError, budgetFor, buildContext, createTokenMeter, maxInputFor, measurePinned } from '@momonga/context';
+import { ContextOverflowError, PinnedBoundError, budgetFor, buildContext, createTokenMeter, maxInputFor, measurePinned } from '@momonga/context';
 import type { BuildContextPorts, TokenMeter } from '@momonga/context';
-import { ESTIMATED_ERROR_SHAPE, errorBoundOfShape } from '@momonga/protocol';
-import type { Capabilities, CountTokensResult, InputItem } from '@momonga/protocol';
+import { ESTIMATED_ERROR_SHAPE, countReplyOf, errorBoundOfShape, summaryItemTokensFor } from '@momonga/protocol';
+import type { Capabilities, ErrorShape, InputItem } from '@momonga/protocol';
 import {
   MODEL,
+  TASK,
   buildThroughLevels,
   call,
   capabilitiesFor,
@@ -129,15 +130,23 @@ describe('forced deficit with the gateway bound max(1, ceil(0.3 x tokens))', () 
       portsWith(meter),
     );
 
-    expect(error.inputTokens).toBe(6049);
+    const total = error.inputTokens;
+    expect(total).toBe(6049);
     expect(error.ceiling).toBe(5387);
-    expect(error.inputBudget).toBe(budgetFor(W8192, 0).I - errorBoundOfShape(ESTIMATED_ERROR_SHAPE, 6049));
+    expect(error.inputBudget).toBe(budgetFor(W8192, 0).I - errorBoundOfShape(ESTIMATED_ERROR_SHAPE, total));
     expect(error.compactionBlockedBy).toBeUndefined();
-    expect(error.compaction?.throughSeq).toBe(4);
+    const plan = error.compaction;
+    expect(plan?.throughSeq).toBe(4);
+    const planned = (await meter.count({ input: plan?.input ?? [], tools: [] })).inputTokens;
+    const task = (await meter.count({ input: [TASK], tools: [] })).inputTokens;
+    const freed = planned - task - summaryItemTokensFor(plan?.summaryTokenCap ?? 0);
+
+    expect(freed).toBeLessThan(total + errorBoundOfShape(ESTIMATED_ERROR_SHAPE, total) - budgetFor(W8192, 0).I);
+    expect(freed).toBeGreaterThanOrEqual(total - error.ceiling);
   });
 
   it('evaluates the bound of a fresh count at the size after compaction', async () => {
-    const counter = { count: async (): Promise<CountTokensResult> => ({ input_tokens: 6049, method: 'estimated', error_bound: errorBoundOfShape(ESTIMATED_ERROR_SHAPE, 6049), error_shape: ESTIMATED_ERROR_SHAPE }) };
+    const counter = { count: async () => countReplyOf(6049, 'estimated', ESTIMATED_ERROR_SHAPE) };
     const meter = createTokenMeter({ counter, model: MODEL, capabilities: W8192 });
     const counted = await meter.count({ input: [{ type: 'message', role: 'user', content: 'x' }], tools: [] });
 
@@ -228,20 +237,42 @@ describe('maxInputFor over random bounds', () => {
   });
 });
 
-describe('a bound that no input size satisfies', () => {
-  it('fails as a pinned overflow without planning a compaction', async () => {
-    const inputBudget = budgetFor(W8192, 0).I;
-    const counter = shapeCounter((request) =>
-      Array.isArray(request.input) && request.input.length > 2 ? { ratio: 0.3, minimum: inputBudget + 1 } : ESTIMATED_ERROR_SHAPE,
-    );
+describe('a counter bound that leaves no room for the pinned context', () => {
+  const inputBudget = budgetFor(W8192, 0).I;
+  const boundFailureOf = async (historyShape: ErrorShape): Promise<unknown> => {
+    const counter = shapeCounter((request) => (Array.isArray(request.input) && request.input.length > 2 ? historyShape : ESTIMATED_ERROR_SHAPE));
     const meter = createTokenMeter({ counter, model: MODEL, capabilities: W8192 });
-    const error = await buildContext(inputFor(W8192, { sources: sourcesWith({ history: argsSteps([400, 400, 400, 400, 400, 400]) }), level: 0 }), portsWith(meter)).catch(
+    return buildContext(inputFor(W8192, { sources: sourcesWith({ history: argsSteps([400, 400, 400, 400, 400, 400]) }), level: 0 }), portsWith(meter)).catch(
       (caught: unknown) => caught,
     );
+  };
 
-    expect(error).toBeInstanceOf(PinnedOverflowError);
+  it('fails before planning a compaction when even an empty input exceeds the budget with its bound', async () => {
+    const error = await boundFailureOf({ ratio: 0.3, minimum: inputBudget + 1 });
+
+    expect(error).toBeInstanceOf(PinnedBoundError);
     expect(error).not.toBeInstanceOf(ContextOverflowError);
-    expect((error as PinnedOverflowError).ceiling).toBe(0);
+    const failure = error as PinnedBoundError;
+    expect(failure.ceiling).toBe(5387);
+    expect(failure.inputBudget).toBe(inputBudget);
+    expect(failure.boundAtZero).toBe(inputBudget + 1);
+    expect(failure.maxInput).toBeUndefined();
+    expect(failure.message).toBe(
+      `no input size fits: the token counter's error bound is ${inputBudget + 1} tokens even for an empty input, more than the input budget of ${inputBudget}; raise contextWindow, lower maxOutputTokens, or calibrate the token counter`,
+    );
+  });
+
+  it('fails the same way when the largest size that fits with its bound is below the pinned tokens', async () => {
+    const error = await boundFailureOf({ ratio: 0, minimum: inputBudget - 10 });
+
+    expect(error).toBeInstanceOf(PinnedBoundError);
+    const failure = error as PinnedBoundError;
+    expect(failure.ceiling).toBe(5387);
+    expect(failure.maxInput).toBe(10);
+    expect(failure.pinnedTokens).toBeGreaterThan(10);
+    expect(failure.message).toBe(
+      `the pinned context needs ${failure.pinnedTokens} tokens, but with the token counter's error bound at most 10 fit the input budget of ${inputBudget}; raise contextWindow, lower maxOutputTokens, or calibrate the token counter`,
+    );
   });
 });
 

@@ -33,6 +33,7 @@ export {
   WORKING_FACTS_KEPT,
   WORKING_FACT_TEXT_CHARS,
   WORKING_STATE_SUMMARY_RATIO,
+  countReplyOf,
   errorBoundOfShape,
   marginFloorFor,
   outputReserveFor,

@@ -1,5 +1,5 @@
 import { canonicalJson } from '@momonga/foundation';
-import { errorBoundOfShape } from '@momonga/protocol';
+import { countReplyOf } from '@momonga/protocol';
 import type {
   AdapterTarget,
   Capabilities,
@@ -126,13 +126,7 @@ const countResultOf = (counted: number, report: ProbeReport | null): CountTokens
     return estimatedCountOf(counted);
   }
   const calibrated = Math.ceil(counted * calibration.ratio - CEIL_TOLERANCE);
-  const shape = { ratio: calibration.errorBound, minimum: 1 };
-  return {
-    input_tokens: calibrated,
-    method: 'calibrated',
-    error_bound: errorBoundOfShape(shape, calibrated),
-    error_shape: shape,
-  };
+  return countReplyOf(calibrated, 'calibrated', { ratio: calibration.errorBound, minimum: 1 });
 };
 
 const errorOf = (body: unknown): Record<string, unknown> | undefined => {

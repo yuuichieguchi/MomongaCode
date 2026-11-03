@@ -1,5 +1,5 @@
 import { decodeSse } from '@momonga/foundation';
-import { EXACT_ERROR_SHAPE, summaryTokenCapFor } from '@momonga/protocol';
+import { EXACT_ERROR_SHAPE, countReplyOf, summaryTokenCapFor } from '@momonga/protocol';
 import type {
   AdapterCompactRequest,
   AdapterCompactResult,
@@ -159,7 +159,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
       if (response.status !== 200) throw await httpErrorOf(response, options.clock, anthropicErrorDetail, neverGuardrail);
       const { text, truncated } = await readTextLimited(response.body, MAX_UNARY_BODY_BYTES);
       if (truncated) throw new UpstreamProtocolError(`the upstream count_tokens reply exceeds ${MAX_UNARY_BODY_BYTES} bytes`);
-      return { input_tokens: countTokensOf(text), method: 'exact', error_bound: 0, error_shape: EXACT_ERROR_SHAPE };
+      return countReplyOf(countTokensOf(text), 'exact', EXACT_ERROR_SHAPE);
     } finally {
       upstream.abort();
     }

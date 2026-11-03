@@ -98,6 +98,15 @@ describe('gateway client malformed replies', () => {
     expectGatewayError(await settle(client.countTokens(COMPACT_REQUEST, { signal: new AbortController().signal })), INVALID);
   });
 
+  it('names an older gateway when a countTokens reply has no error_shape', async () => {
+    const { client } = await clientReplying(jsonReply(200, JSON.stringify({ input_tokens: 10, method: 'estimated', error_bound: 3 })));
+    const error = await settle(client.countTokens(COMPACT_REQUEST, { signal: new AbortController().signal }));
+    expectGatewayError(error, INVALID);
+    expect((error as Error).message).toBe(
+      'the gateway sent a malformed reply: the count_tokens reply has no error_shape, so the gateway runs an older version than this runtime (an update replaced the binary while the daemon kept running); run `momonga daemon stop`, then start momonga again',
+    );
+  });
+
   it('rejects a health reply that is not an object', async () => {
     const { client } = await clientReplying(jsonReply(200, '[]'));
     expectGatewayError(await settle(client.health()), INVALID);
