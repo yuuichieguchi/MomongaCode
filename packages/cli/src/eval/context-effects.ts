@@ -7,6 +7,8 @@ import { DAEMON_POLL_INTERVAL_MS } from '../constants.ts';
 import { daemonStopBoundMs, ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
+import { pathsOf } from '../paths.ts';
+import { OWNER_FILE, ROOT_PREFIX } from './context-host.ts';
 import type { ContextHostEffects } from './context-host.ts';
 
 export const SHORT_TEMP_BASE = '/tmp';
@@ -36,11 +38,32 @@ const gone = async (ports: Pick<CliPorts, 'clock'>, pid: number, boundMs: number
   return true;
 };
 
+const PRIVATE_DIRECTORY_MODE = 0o700;
+
+export const copyProbeRecord = async (files: Pick<CliPorts['files'], 'readTextIfPresent' | 'writeText'>, from: string, to: string, target: string): Promise<boolean> => {
+  const text = await files.readTextIfPresent(path.join(from, `${target}.json`));
+  if (text === undefined) return false;
+  await fs.mkdir(to, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
+  await files.writeText(path.join(to, `${target}.json`), text);
+  return true;
+};
+
+const ownerOf = (text: string | undefined): number | undefined => (text !== undefined && /^\d+$/.test(text.trim()) ? Number(text.trim()) : undefined);
+
 export const nodeContextEffects = (ports: CliPorts): ContextHostEffects => ({
   platform: ports.platform,
   env: ports.env,
+  ownerPid: process.pid,
+  isAlive: isProcessAlive,
+  readSecret: (name, signal) => ports.secretStore().read(name, signal),
+  copyProbeRecord: async (target, paths) => void (await copyProbeRecord(ports.files, pathsOf(ports).probe, paths.probe, target)),
+  listRoots: async () => {
+    const base = shortTempBase(ports.platform);
+    return (await ports.files.listFiles(base)).filter((entry) => path.basename(entry).startsWith(ROOT_PREFIX));
+  },
+  readOwner: async (root) => ownerOf(await ports.files.readTextIfPresent(path.join(root, OWNER_FILE))),
   sessionEnv: () => environmentSnapshot(ports),
-  makeRoot: () => ports.files.makeTempDirectory('mc-', shortTempBase(ports.platform)),
+  makeRoot: () => ports.files.makeTempDirectory(ROOT_PREFIX, shortTempBase(ports.platform)),
   prepare: (paths) => ensureMomongaDirs(paths),
   writeFile: async (file, text) => {
     await ports.files.ensureDirectory(path.dirname(file));
@@ -48,7 +71,7 @@ export const nodeContextEffects = (ports: CliPorts): ContextHostEffects => ({
   },
   makeDirectory: (directory) => ports.files.ensureDirectory(directory),
   canonical: (directory) => fs.realpath(directory),
-  startDaemon: async (root, paths, env) => (await ensureDaemon({ ...ports, home: root, env }, paths)).pid,
+  startDaemon: async (root, paths, env) => (await ensureDaemon({ ...ports, home: root, env }, paths, { lifeline: true })).pid,
   daemonHolder: async (paths) => {
     const lock = await inspectProcessLock(paths.locks.supervisor);
     return lock.state === 'held' ? lock.pid : undefined;

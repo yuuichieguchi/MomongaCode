@@ -38,6 +38,7 @@ export type {
   ResolvedOpenResponsesTarget,
   TargetCapabilities,
   ContextSettings,
+  SandboxSetting,
   MemorySettings,
   VerificationSettings,
   OtlpSettings,

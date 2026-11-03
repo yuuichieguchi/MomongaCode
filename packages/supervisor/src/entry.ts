@@ -1,5 +1,5 @@
 import {
-  BASE_ENTRY_FLAGS,
+  COMMON_ENTRY_FLAGS,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
   canonicalPath,
   momongaPaths,
@@ -22,7 +22,7 @@ export const runSupervisorEntry = (io: EntryIo, deps: SupervisorEntryDeps): Prom
   runDaemonEntry(io, {
     service: SUPERVISOR_SERVICE,
     version: deps.version,
-    flags: BASE_ENTRY_FLAGS,
+    flags: COMMON_ENTRY_FLAGS,
     maxCloseMs: () => supervisorMaxCloseMs(deps.runtime?.drainTimeoutMs ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS),
     ownLockPath: (home) => pathsOf(home).locks.supervisor,
     logPath: (home) => pathsOf(home).logFiles.supervisor,

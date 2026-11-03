@@ -12,9 +12,10 @@ export type DetachedSpawn = {
   args: readonly string[];
   env: Readonly<Record<string, string | undefined>>;
   cwd: string;
+  lifeline?: boolean;
 };
 
-export type DetachedChild = { exit: Promise<DetachedExit> };
+export type DetachedChild = { exit: Promise<DetachedExit>; releaseLifeline?: () => void };
 
 export type SpawnDetached = (spec: DetachedSpawn) => DetachedChild;
 

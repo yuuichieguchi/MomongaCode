@@ -1,5 +1,5 @@
 import path from 'node:path';
-import type { ModelsSettings, ResolvedModels, UserModels } from '@momonga/config';
+import type { ModelsSettings, ResolvedModels, SandboxSetting, UserModels } from '@momonga/config';
 import { caseSettingsFor, expandContextDataset, liveBoundsFor, runContextDataset } from '@momonga/eval';
 import type { ContextCaseHost, ContextDataset, ExpandedCase, Transcript, WorkspaceStep } from '@momonga/eval';
 import { momongaLayout, socketPathLimit } from '@momonga/foundation';
@@ -35,6 +35,12 @@ export type ContextHostEffects = {
   connect(paths: MomongaPaths): ContextRuntime;
   applyStep(cwd: string, step: WorkspaceStep): Promise<void>;
   after(milliseconds: number, signal: AbortSignal): Promise<void>;
+  ownerPid: number;
+  readSecret(name: string, signal: AbortSignal): Promise<string>;
+  copyProbeRecord(target: string, paths: MomongaPaths): Promise<void>;
+  listRoots(): Promise<string[]>;
+  readOwner(root: string): Promise<number | undefined>;
+  isAlive(pid: number): boolean;
 };
 
 const WORKSPACE_DIRECTORY = 'w';
@@ -64,27 +70,86 @@ const membersOf = (models: ResolvedModels, alias: string): string[] => {
   return [value].flat();
 };
 
-export const liveModelsFor = (user: UserModels, alias: string): ModelsSettings => {
+export type SecretCredential = { envName: string; secretName: string };
+
+export type LiveSettings = {
+  models: ModelsSettings;
+  sandbox?: SandboxSetting;
+  credentials: SecretCredential[];
+  fmTargets: string[];
+};
+
+const GENERATED_KEY_PREFIX = 'MOMONGA_EVAL_KEY_';
+
+const PROBE_TARGET_NAME = /^[A-Za-z0-9._-]+$/;
+
+export const liveSettingsFor = (user: UserModels, alias: string): LiveSettings => {
   const members = membersOf(user.resolved, alias);
   const targets: NonNullable<ModelsSettings['targets']> = {};
+  const credentials: SecretCredential[] = [];
+  const fmTargets: string[] = [];
   for (const name of members) {
     const resolved = user.resolved.targets[name];
     if (resolved === undefined) throw new ContextHostError(`the alias ${alias} names the target ${name}, which is not defined`);
-    if (resolved.adapter === 'fm') {
-      throw new ContextHostError(
-        `the alias ${alias} reaches the fm target ${name}. Its probe record lives in the home that measured it, and each case runs in a temporary home, so the benchmark cannot reach it; use a remote target`,
-      );
-    }
-    if (resolved.apiKeySecret !== undefined) {
-      throw new ContextHostError(
-        `the alias ${alias} reaches the target ${name}, whose key is the platform secret ${resolved.apiKeySecret}. Each case runs in a temporary home that cannot reach the person's secret store, so the benchmark cannot start it; give the target an apiKeyEnv and export the key instead`,
-      );
-    }
     const declared = user.declared.targets?.[name];
-    if (declared === undefined) throw new ContextHostError(`the target ${name} is not declared in the user settings`);
+    if (declared === undefined) throw new ContextHostError(`the target ${name} is not declared in the user settings, so it cannot be copied into a case`);
+    if (declared.adapter === 'fm') {
+      if (!PROBE_TARGET_NAME.test(name)) throw new ContextHostError(`the fm target ${name} has a name its probe record cannot be keyed by`);
+      fmTargets.push(name);
+      targets[name] = declared;
+      continue;
+    }
+    if (resolved.adapter !== 'fm' && resolved.apiKeySecret !== undefined) {
+      const envName = `${GENERATED_KEY_PREFIX}${credentials.length}`;
+      const { apiKeySecret: _secret, ...rest } = declared;
+      credentials.push({ envName, secretName: resolved.apiKeySecret });
+      targets[name] = { ...rest, apiKeyEnv: envName };
+      continue;
+    }
     targets[name] = declared;
   }
-  return { aliases: { [alias]: members }, targets };
+  return {
+    models: { aliases: { [alias]: members }, targets },
+    ...(user.sandbox === undefined ? {} : { sandbox: user.sandbox }),
+    credentials,
+    fmTargets,
+  };
+};
+
+export const readCredentials = async (
+  effects: Pick<ContextHostEffects, 'readSecret'>,
+  credentials: readonly SecretCredential[],
+  signal: AbortSignal,
+): Promise<Record<string, string>> => {
+  const values: Record<string, string> = {};
+  for (const credential of credentials) {
+    try {
+      values[credential.envName] = await effects.readSecret(credential.secretName, signal);
+    } catch (error) {
+      throw new ContextHostError(
+        `the key of a target is the secret ${credential.secretName} in the platform secret store, and it could not be read: ${error instanceof Error ? error.message : String(error)}. The benchmark reads it with the same store the gateway uses; store it with momonga secret set ${credential.secretName}`,
+        { cause: error },
+      );
+    }
+  }
+  return values;
+};
+
+export const OWNER_FILE = '.momonga-eval-owner';
+
+export const ROOT_PREFIX = 'mc-';
+
+export const sweepStaleHomes = async (effects: ContextHostEffects): Promise<string[]> => {
+  const removed: string[] = [];
+  for (const root of await effects.listRoots()) {
+    const owner = await effects.readOwner(root);
+    if (owner === undefined || effects.isAlive(owner)) continue;
+    const holder = await effects.daemonHolder(momongaLayout(root, effects.platform, {}));
+    if (holder !== undefined) await effects.terminate(holder);
+    await effects.remove(root);
+    removed.push(root);
+  }
+  return removed;
 };
 
 type CaseRecord = { root: string; paths: MomongaPaths | undefined; pid: number | undefined; runtime: ContextRuntime | undefined; released: boolean };
@@ -94,7 +159,7 @@ export type ContextHosts = {
   dispose(): Promise<void>;
 };
 
-export const createContextHosts = (effects: ContextHostEffects, options: { models: ModelsSettings }): ContextHosts => {
+export const createContextHosts = (effects: ContextHostEffects, options: { settings: LiveSettings; credentialValues: Readonly<Record<string, string>> }): ContextHosts => {
   const records: CaseRecord[] = [];
 
   const release = async (record: CaseRecord): Promise<void> => {
@@ -122,17 +187,21 @@ export const createContextHosts = (effects: ContextHostEffects, options: { model
 
   const prepared = async (entry: ExpandedCase, record: CaseRecord): Promise<ContextCaseHost> => {
     const { root } = record;
+    await effects.writeFile(path.join(root, OWNER_FILE), String(effects.ownerPid));
     assertSocketsFit(root, effects.platform);
     const paths = momongaLayout(root, effects.platform, {});
     record.paths = paths;
     await effects.prepare(paths);
-    await effects.writeFile(paths.settingsFile, `${JSON.stringify(caseSettingsFor({ models: options.models }, { compaction: entry.compaction }), null, 2)}\n`);
+    const { models, sandbox, fmTargets } = options.settings;
+    const base = { models, ...(sandbox === undefined ? {} : { sandbox }) };
+    await effects.writeFile(paths.settingsFile, `${JSON.stringify(caseSettingsFor(base, { compaction: entry.compaction }), null, 2)}\n`);
+    for (const target of fmTargets) await effects.copyProbeRecord(target, paths);
     const workspace = path.join(root, WORKSPACE_DIRECTORY);
     await effects.makeDirectory(workspace);
     for (const [name, content] of Object.entries(entry.files ?? {})) await effects.writeFile(path.join(workspace, name), content);
     const cwd = await effects.canonical(workspace);
     if (record.released) throw new ContextInterrupted();
-    const pid = await effects.startDaemon(root, paths, caseEnvironment(effects.env, root, effects.platform));
+    const pid = await effects.startDaemon(root, paths, { ...caseEnvironment(effects.env, root, effects.platform), ...options.credentialValues });
     record.pid = pid;
     if (record.released) {
       await effects.terminate(pid);
@@ -214,8 +283,10 @@ export type ContextLiveInput = {
 export const runContextLive = async (effects: ContextHostEffects, input: ContextLiveInput): Promise<Transcript[]> => {
   const { interrupt } = input;
   interrupt?.throwIfAborted();
-  const models = liveModelsFor(input.models, input.alias);
-  const hosts = createContextHosts(effects, { models });
+  const settings = liveSettingsFor(input.models, input.alias);
+  const credentialValues = await readCredentials(effects, settings.credentials, interrupt ?? new AbortController().signal);
+  await sweepStaleHomes(effects);
+  const hosts = createContextHosts(effects, { settings, credentialValues });
   const bounds = liveBoundsFor(input.dataset, input.limits);
   const interrupted = new Promise<never>((_resolve, reject) => {
     interrupt?.addEventListener('abort', () => reject(new ContextInterrupted()), { once: true });

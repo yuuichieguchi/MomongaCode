@@ -15,6 +15,7 @@ export type E2eCaseFile =
   | 'skills.test.ts'
   | 'eval-runner.test.ts'
   | 'eval-context.test.ts'
+  | 'eval-context-kill.test.ts'
   | 'otlp-export.test.ts'
   | 'open-responses-compliance.test.ts'
   | 'providers.test.ts'
@@ -82,6 +83,7 @@ export const E2E_CASES = [
   { id: 'eval-starter', file: 'eval-runner.test.ts', title: 'eval: momonga eval runs the starter dataset through the daemon against the fake upstream, records transcripts and replays them to the same report', needsBash: false },
   { id: 'eval-false-allow', file: 'eval-runner.test.ts', title: 'eval: momonga eval exits 1 and counts a write allowed by acceptEdits and labelled ask as a false allow, while a blocked read labelled deny is observed as deny', needsBash: false },
   { id: 'eval-context-live', file: 'eval-context.test.ts', title: 'eval context: a live run through the real stack compacts the on case only, loads the revised rule, sees the stale memory, reports the numbers and replays to the same report', needsBash: false },
+  { id: 'eval-context-kill', file: 'eval-context-kill.test.ts', title: 'eval context: a case daemon stops when the CLI that started it is killed with SIGKILL, and the next eval context removes the home it left', needsBash: false },
   { id: 'otlp-export', file: 'otlp-export.test.ts', title: 'otlp: a run exports GenAI spans from the gateway and the runtime to a loopback collector when settings opt in', needsBash: false },
   { id: 'cost-report', file: 'otlp-export.test.ts', title: 'cost: per-run and per-session cost comes from the usage the gateway recorded in its trace store', needsBash: false },
   { id: 'open-responses-compliance', file: 'open-responses-compliance.test.ts', title: 'open responses: the official compliance suite runs against the gateway TCP debug listener and matches the declared support matrix', needsBash: false },

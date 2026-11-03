@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { ResolvedChatCompletionsTarget, UserModels } from '@momonga/config';
-import { CONTEXT_DATASET_FORMAT, parseContextDataset } from '@momonga/eval';
+import fs from 'node:fs';
+import { CONTEXT_DATASET_FORMAT, buildContextReport, expandContextDataset, parseContextDataset } from '@momonga/eval';
 import type { Transcript } from '@momonga/eval';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { PublicRunEvent } from '@momonga/protocol';
-import { ContextHostError, ContextInterrupted, assertSocketsFit, caseEnvironment, liveModelsFor, runContextLive } from '../src/eval/context-host.ts';
+import { ContextHostError, ContextInterrupted, assertSocketsFit, caseEnvironment, liveSettingsFor, runContextLive, sweepStaleHomes } from '../src/eval/context-host.ts';
 import type { ContextHostEffects, ContextRuntime } from '../src/eval/context-host.ts';
 
 const target = (overrides: Partial<ResolvedChatCompletionsTarget> = {}): ResolvedChatCompletionsTarget => ({
@@ -66,9 +67,20 @@ type Behaviour = {
   hang?: boolean;
   failStartOnRoot?: number;
   rootLength?: number;
+  secrets?: Record<string, string>;
+  staleRoots?: { root: string; owner: number; holder?: number }[];
 };
 
+const OWNER = 7;
+
 const harness = (behaviour: Behaviour = {}) => {
+  const files = new Map<string, string>();
+  const startEnvs: Record<string, string>[] = [];
+  const probeCopies: string[] = [];
+  const secretReads: string[] = [];
+  const removedDirectories: string[] = [];
+  const inputs: string[] = [];
+  const addedRules: unknown[] = [];
   const roots = new Map<string, { removed: boolean; settings?: string; pid?: number; cwd?: string }>();
   const alive = new Set<number>();
   const terminated: number[] = [];
@@ -85,14 +97,20 @@ const harness = (behaviour: Behaviour = {}) => {
         if (behaviour.failSessionOnRoot === counter) throw new Error('the runtime refused the session');
         return { session: { id: `s${counter}`, modelAlias: 'default' } };
       },
-      createRun: async () => ({ run: { id: `r${counter}` }, location: '' }),
+      createRun: async (_session: string, text: string) => {
+        inputs.push(text);
+        return { run: { id: `r${counter}` }, location: '' };
+      },
       streamEvents: async function* (): AsyncGenerator<{ data: PublicRunEvent }> {
         if (behaviour.hang === true) await new Promise<void>(() => undefined);
       },
       getRun: async (id: string) => ({ id, sessionId: `s${counter}`, status: 'COMPLETED', step: 1, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 1 } }),
       resolveApproval: async () => ({}),
       cancel: async () => ({ status: 200, run: {} }),
-      addRule: async () => ({ fact: { id: 'fact' }, size: [], warnings: [] }),
+      addRule: async (request: unknown) => {
+        addedRules.push(request);
+        return { fact: { id: `fact-${addedRules.length}` }, size: [], warnings: [] };
+      },
       retireRule: async () => ({ id: 'fact' }),
       addMemory: async (request: unknown) => void memories.push(request),
       setTrust: async (path: string) => void trusted.push(path),
@@ -109,13 +127,29 @@ const harness = (behaviour: Behaviour = {}) => {
       roots.set(root, { removed: false });
       return root;
     },
+    ownerPid: OWNER,
+    isAlive: (pid) => pid === OWNER || alive.has(pid),
+    readSecret: async (name) => {
+      secretReads.push(name);
+      const value = behaviour.secrets?.[name];
+      if (value === undefined) throw new Error(`no such secret ${name}`);
+      return value;
+    },
+    copyProbeRecord: async (target, paths) => void probeCopies.push(`${target} -> ${paths.probe}`),
+    listRoots: async () => [...roots.keys(), ...(behaviour.staleRoots ?? []).map((stale) => stale.root)],
+    readOwner: async (root) => {
+      const text = files.get(`${root}/.momonga-eval-owner`);
+      return text === undefined ? undefined : Number(text);
+    },
     prepare: async () => undefined,
     writeFile: async (file, text) => {
+      files.set(file, text);
       for (const [root, state] of roots) if (file === `${root}/.momonga/settings.json`) state.settings = text;
     },
     makeDirectory: async () => undefined,
     canonical: async (directory) => directory,
-    startDaemon: async (root) => {
+    startDaemon: async (root, _paths, env) => {
+      startEnvs.push({ ...env });
       const state = roots.get(root);
       if (state === undefined) throw new Error('unknown root');
       nextPid += 1;
@@ -134,6 +168,7 @@ const harness = (behaviour: Behaviour = {}) => {
       alive.delete(pid);
     },
     remove: async (directory) => {
+      removedDirectories.push(directory);
       const state = roots.get(directory);
       if (state !== undefined) state.removed = true;
     },
@@ -141,7 +176,15 @@ const harness = (behaviour: Behaviour = {}) => {
     applyStep: async () => undefined,
     after: async () => new Promise<void>(() => undefined),
   };
-  return { effects, roots, alive, terminated, stopped, memories, trusted };
+  for (const stale of behaviour.staleRoots ?? []) {
+    files.set(`${stale.root}/.momonga-eval-owner`, String(stale.owner));
+    nextPid += 1;
+    if (stale.holder !== undefined) {
+      alive.add(stale.holder);
+      holders.set(stale.root, stale.holder);
+    }
+  }
+  return { effects, roots, alive, terminated, stopped, memories, trusted, files, startEnvs, probeCopies, secretReads, removedDirectories, inputs, addedRules };
 };
 
 const input = (extra: Partial<Parameters<typeof runContextLive>[1]> = {}): Parameters<typeof runContextLive>[1] => ({
@@ -227,23 +270,134 @@ describe('a live context run', () => {
   });
 });
 
-describe('the models of a live run', () => {
-  it('copies only the target definitions the alias reaches', () => {
-    expect(liveModelsFor(userModels(), 'other')).toEqual({ aliases: { other: ['u'] }, targets: { u: userModels().declared.targets?.['u'] } });
-  });
+describe('the settings, credentials and probe records of a live run', () => {
+  const SECRET_VALUE = 'sk-secret-value-0123456789abcdef';
 
-  it('refuses a target whose key lives in the platform secret store, naming the reason', () => {
+  const secretModels = (): UserModels => {
     const models = userModels();
     models.resolved.targets['t'] = target({ apiKeySecret: 'work-key' });
-    expect(() => liveModelsFor(models, 'default')).toThrow(/platform secret work-key.*temporary home that cannot reach the person's secret store/);
-    expect(() => liveModelsFor(models, 'default')).toThrow(ContextHostError);
+    models.declared.targets = { ...models.declared.targets, t: { ...declaredTarget, apiKeyEnv: undefined, apiKeySecret: 'work-key' } as never };
+    return models;
+  };
+
+  it('writes the sandbox of the person into every case settings file', async () => {
+    const context = harness();
+    await runContextLive(context.effects, input({ models: { ...userModels(), sandbox: 'none' } }));
+    const settings = [...context.roots.values()].map((state) => JSON.parse(state.settings ?? '{}'));
+    expect(settings.map((entry) => entry.sandbox)).toEqual(['none', 'none']);
   });
 
-  it('refuses an fm target and an unknown alias', () => {
+  it('reads the secret once with the store of the person and puts it only in the environment of each daemon start', async () => {
+    const context = harness({ secrets: { 'work-key': SECRET_VALUE } });
+    const stored: Transcript[] = [];
+    await runContextLive(context.effects, input({ models: secretModels(), onTranscript: async (transcript) => void stored.push(transcript) }));
+    expect(context.secretReads).toEqual(['work-key']);
+    expect(context.startEnvs.map((env) => env['MOMONGA_EVAL_KEY_0'])).toEqual([SECRET_VALUE, SECRET_VALUE]);
+    const written = [...context.files.values(), JSON.stringify(stored), JSON.stringify(context.memories)];
+    expect(written.some((text) => text.includes(SECRET_VALUE))).toBe(false);
+    expect([...context.roots.values()].every((state) => (state.settings ?? '').includes('"apiKeyEnv": "MOMONGA_EVAL_KEY_0"'))).toBe(true);
+  });
+
+  it('starts nothing and says why when the secret cannot be read', async () => {
+    const context = harness();
+    await expect(runContextLive(context.effects, input({ models: secretModels() }))).rejects.toThrow(/secret work-key.*could not be read.*momonga secret set work-key/);
+    expect(context.roots.size).toBe(0);
+  });
+
+  it('copies the probe record of an fm target into every case home', async () => {
     const models = userModels();
     models.resolved.targets['t'] = { adapter: 'fm', model: 'system', toolCalling: 'native', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 1000 } as unknown as ResolvedChatCompletionsTarget;
-    expect(() => liveModelsFor(models, 'default')).toThrow(/fm target t/);
-    expect(() => liveModelsFor(userModels(), 'missing')).toThrow(/alias missing is not defined/);
+    models.declared.targets = { ...models.declared.targets, t: { adapter: 'fm' } };
+    const context = harness();
+    await runContextLive(context.effects, input({ models }));
+    expect(context.probeCopies).toEqual(['t -> /tmp/mc-xxxxxx0/.momonga/state/probe', 't -> /tmp/mc-xxxxxx1/.momonga/state/probe']);
+  });
+});
+
+describe('the shipped context dataset with the fake model', () => {
+  it('expands, validates and runs end to end: every run is recorded, the rules and memories reach the case, and the noise is played', async () => {
+    const text = fs.readFileSync(new URL('../../eval/datasets/context.json', import.meta.url), 'utf8');
+    const shipped = parseContextDataset(text, 'context.json');
+    const context = harness();
+    const transcripts = await runContextLive(context.effects, input({ dataset: shipped, seed: 11 }));
+    const expected = shipped.cases.reduce((sum, entry) => sum + entry.runs, 0);
+    expect(transcripts).toHaveLength(expected);
+    expect(transcripts.every((transcript) => transcript.stopped === undefined && transcript.datasetSeed === 11)).toBe(true);
+    const expandedCases = expandContextDataset(shipped, 11).cases;
+    const ruleCount = expandedCases.reduce((sum, entry) => sum + entry.rules.length, 0);
+    const memoryCount = expandedCases.reduce((sum, entry) => sum + (entry.memories ?? []).length, 0);
+    const noiseRuns = expandedCases.reduce((sum, entry) => sum + entry.noiseTurns.length * entry.runs, 0);
+    expect(context.addedRules).toHaveLength(ruleCount);
+    expect(context.memories).toHaveLength(memoryCount);
+    expect(context.inputs).toHaveLength(expected + noiseRuns);
+    const lint = transcripts.find((transcript) => transcript.caseId === 'lint-chain-on');
+    expect(Object.values(lint?.ruleIds ?? {}).sort()).toEqual(['lint-0', 'lint-1']);
+    const report = buildContextReport({ dataset: shipped, transcripts, model: 'fake', seed: 1, datasetSeed: 11 });
+    expect(report.stopped).toEqual([]);
+    expect(report.cases.map((entry) => entry.id)).toEqual(shipped.cases.map((entry) => entry.id));
+    expect(report.noiseTokens).toBe(noiseRuns);
+    noDaemonLeft(context);
+  });
+});
+
+describe('a home left by a CLI that was killed', () => {
+  it('is removed at the next start, with its daemon, when the owner is gone', async () => {
+    const context = harness({ staleRoots: [{ root: '/tmp/mc-stale0', owner: 99, holder: 5000 }] });
+    expect(await sweepStaleHomes(context.effects)).toEqual(['/tmp/mc-stale0']);
+    expect(context.terminated).toEqual([5000]);
+    expect(context.removedDirectories).toEqual(['/tmp/mc-stale0']);
+  });
+
+  it('is left alone when its owner is still running, or when it names no owner', async () => {
+    const context = harness({ staleRoots: [{ root: '/tmp/mc-live', owner: OWNER, holder: 5000 }, { root: '/tmp/mc-foreign', owner: 99 }] });
+    context.files.delete('/tmp/mc-foreign/.momonga-eval-owner');
+    expect(await sweepStaleHomes(context.effects)).toEqual([]);
+    expect(context.removedDirectories).toEqual([]);
+    expect(context.terminated).toEqual([]);
+  });
+
+  it('is swept by a live run before its own cases start, and the marker of each case names this process', async () => {
+    const context = harness({ staleRoots: [{ root: '/tmp/mc-stale0', owner: 99 }] });
+    await runContextLive(context.effects, input());
+    expect(context.removedDirectories).toContain('/tmp/mc-stale0');
+    expect(context.files.get('/tmp/mc-xxxxxx0/.momonga-eval-owner')).toBe(String(OWNER));
+  });
+});
+
+describe('the models of a live run', () => {
+  it('copies only the target definitions the alias reaches', () => {
+    expect(liveSettingsFor(userModels(), 'other').models).toEqual({ aliases: { other: ['u'] }, targets: { u: userModels().declared.targets?.['u'] } });
+  });
+
+  it('replaces the secret of a target by a generated environment variable name and keeps the secret name out of the settings', () => {
+    const models = userModels();
+    models.resolved.targets['t'] = target({ apiKeySecret: 'work-key' });
+    models.declared.targets = { ...models.declared.targets, t: { ...declaredTarget, apiKeySecret: 'work-key' } as never };
+    const settings = liveSettingsFor(models, 'default');
+    expect(settings.credentials).toEqual([{ envName: 'MOMONGA_EVAL_KEY_0', secretName: 'work-key' }]);
+    expect(JSON.stringify(settings.models)).not.toContain('work-key');
+    expect(settings.models.targets?.['t']).toMatchObject({ apiKeyEnv: 'MOMONGA_EVAL_KEY_0' });
+  });
+
+  it('names the fm targets whose probe record a case needs', () => {
+    const models = userModels();
+    models.resolved.targets['t'] = { adapter: 'fm', model: 'system', toolCalling: 'native', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 1000 } as unknown as ResolvedChatCompletionsTarget;
+    models.declared.targets = { ...models.declared.targets, t: { adapter: 'fm' } };
+    const settings = liveSettingsFor(models, 'default');
+    expect(settings.fmTargets).toEqual(['t']);
+    expect(settings.models.targets?.['t']).toEqual({ adapter: 'fm' });
+  });
+
+  it('carries the sandbox the person set, and none when the person set none', () => {
+    expect(liveSettingsFor({ ...userModels(), sandbox: 'none' }, 'default').sandbox).toBe('none');
+    expect(liveSettingsFor(userModels(), 'default')).not.toHaveProperty('sandbox');
+  });
+
+  it('refuses an unknown alias and a target that is not declared', () => {
+    expect(() => liveSettingsFor(userModels(), 'missing')).toThrow(/alias missing is not defined/);
+    const models = userModels();
+    models.declared.targets = {};
+    expect(() => liveSettingsFor(models, 'default')).toThrow(ContextHostError);
   });
 });
 
