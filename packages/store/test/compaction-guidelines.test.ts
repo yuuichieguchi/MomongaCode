@@ -78,10 +78,10 @@ describe('rolling back', () => {
 describe('context charges', () => {
   it('guards an unrecorded spend: a guideline charge has no run and belongs to its folder', () => {
     const { store } = open();
-    store.contextCharges.record({ purpose: 'guideline', project: '/p', model: 'opus', inputTokens: 7, outputTokens: 3, totalTokens: 10 });
-    store.contextCharges.record({ purpose: 'guideline', project: '/q', model: 'opus', inputTokens: 1, outputTokens: 1, totalTokens: 2 });
+    store.contextCharges.record({ purpose: 'guideline', runId: null, project: '/p', model: 'opus', inputTokens: 7, outputTokens: 3, totalTokens: 10 });
+    store.contextCharges.record({ purpose: 'guideline', runId: null, project: '/q', model: 'opus', inputTokens: 1, outputTokens: 1, totalTokens: 2 });
     expect(store.contextCharges.list({ project: '/p' })).toEqual([
-      { purpose: 'guideline', runId: null, project: '/p', model: 'opus', inputTokens: 7, outputTokens: 3, totalTokens: 10, createdAt: START_MS },
+      { id: 1, purpose: 'guideline', runId: null, project: '/p', model: 'opus', inputTokens: 7, outputTokens: 3, totalTokens: 10, createdAt: START_MS },
     ]);
     expect(store.contextCharges.list({})).toHaveLength(2);
   });

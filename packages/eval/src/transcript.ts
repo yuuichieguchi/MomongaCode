@@ -1,8 +1,8 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import { isRecord } from '@momonga/foundation';
-import { RUN_API_SCHEMAS, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
-import type { PublicRunEvent, RunStatus, StopReason } from '@momonga/protocol';
+import { MEMORY_ORIGINS, RUN_API_SCHEMAS, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
+import type { MemoryOrigin, PublicRunEvent, RunStatus, StopReason } from '@momonga/protocol';
 
 export const TRANSCRIPT_FORMAT = 'momonga-transcript/3';
 const RETIRED_TRANSCRIPT_FORMATS: Readonly<Record<string, string>> = {
@@ -17,6 +17,7 @@ export type TranscriptRun = {
   step: number;
   usage: { inputTokens: number; outputTokens: number; totalTokens: number };
   modelAlias?: string;
+  origin?: MemoryOrigin;
 };
 
 export type TranscriptChild = { runId: string; agent: string; events: PublicRunEvent[] };
@@ -54,7 +55,8 @@ const isNonNegativeInteger = (value: unknown): value is number => Number.isInteg
 
 const runOf = (value: unknown, where: string): TranscriptRun => {
   if (!isRecord(value)) throw new TranscriptError(`${where}: run must be an object`);
-  const { id, status, stopReason, step, usage, modelAlias } = value;
+  const { id, status, stopReason, step, usage, modelAlias, origin } = value;
+  if (origin !== undefined && (typeof origin !== 'string' || !(MEMORY_ORIGINS as readonly string[]).includes(origin))) throw new TranscriptError(`${where}: run.origin must be trusted or untrusted`);
   if (modelAlias !== undefined && (typeof modelAlias !== 'string' || modelAlias === '')) throw new TranscriptError(`${where}: run.modelAlias must be a non-empty string`);
   if (typeof id !== 'string' || id === '') throw new TranscriptError(`${where}: run.id must be a non-empty string`);
   if (typeof status !== 'string' || !(RUN_STATUSES as readonly string[]).includes(status)) throw new TranscriptError(`${where}: run.status is not a run status`);
@@ -72,6 +74,7 @@ const runOf = (value: unknown, where: string): TranscriptRun => {
     step,
     usage: { inputTokens: usage['inputTokens'], outputTokens: usage['outputTokens'], totalTokens: usage['totalTokens'] },
     ...(modelAlias === undefined ? {} : { modelAlias }),
+    ...(origin === undefined ? {} : { origin: origin as MemoryOrigin }),
   };
 };
 

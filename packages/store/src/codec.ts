@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { FILE_ACCESSES, LOOP_GROUPS_KEPT, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
+import { FILE_ACCESSES, LOOP_GROUPS_KEPT, MEMORY_ORIGINS, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
 import type { RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload } from '@momonga/protocol';
 import { hasConsistentSeqs } from './seqs.ts';
 import { corrupt, expectOneOf, expectRecord, expectStringRecord, isRecord, readerFor } from './rows.ts';
@@ -91,6 +91,7 @@ export const decodeRun = (row: Row): Run => {
     history: expectOneOf('runs', identity, 'history_mode', HISTORY_MODES, reader.string('history_mode')),
     parentRunId: reader.nullableString('parent_run_id'),
     parentCallId: reader.nullableString('parent_call_id'),
+    origin: expectOneOf('runs', identity, 'origin', MEMORY_ORIGINS, reader.string('origin')),
   };
   if (stopReason !== null) run.stopReason = expectOneOf('runs', identity, 'stop_reason', STOP_REASONS, stopReason);
   if (errorJson !== null) run.error = decodeRunError(identity, errorJson);

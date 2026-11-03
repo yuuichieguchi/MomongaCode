@@ -25,6 +25,7 @@ export type ClaimContext = {
   alias: string;
   capabilities: Capabilities;
   memoryShare?: number;
+  guideline?: { version: number; text: string };
   limits: RunLimits;
   toolSet: ToolSet;
   skills: SkillSet;

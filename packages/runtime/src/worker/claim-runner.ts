@@ -19,6 +19,7 @@ import { openJournal } from './journal.ts';
 import type { Journal } from './journal.ts';
 import { readRunLimits } from './limits.ts';
 import { decideAfterResponse, responsePending, resumeInFlight, runModelStep } from './model-step.ts';
+import { guidelineOf, guidelineVersionFor } from './guideline-pin.ts';
 import { memoryShareFor } from './memory-share.ts';
 import { readPins } from './pins.ts';
 import type { RunPins } from './pins.ts';
@@ -274,6 +275,7 @@ const drive = async (
   }
   const recorded = journal.state.pins;
   const newMemoryShare = recorded === undefined ? await memoryShareFor({ store: options.store, settings: options.settings, session, run }) : undefined;
+  const newGuidelineVersion = recorded === undefined ? guidelineVersionFor(options.store, run) : undefined;
   const pins: RunPins =
     recorded === undefined
       ? {
@@ -282,6 +284,7 @@ const drive = async (
           toolSetDigest: toolSet.digest,
           capabilities: await gateway.capabilities(session.modelAlias, { signal: control.signal }),
           ...(newMemoryShare === undefined ? {} : { memoryShare: newMemoryShare }),
+          ...(newGuidelineVersion === undefined ? {} : { guidelineVersion: newGuidelineVersion }),
         }
       : readPins(recorded);
   journal.append([{ type: 'run.started', attempt: claim.attempt, now: clock.now(), pins: { ...pins }, mode: session.permissionMode }]);
@@ -307,6 +310,7 @@ const drive = async (
     }
   }
 
+  const pinnedGuideline = guidelineOf(options.store, pins.guidelineVersion);
   const limits = readRunLimits(run.limits, options.defaults);
   const composeRules = await permissionRulesComposerFor(options, session);
   let measuredInlineLimit: Promise<number> | undefined;
@@ -317,6 +321,7 @@ const drive = async (
     alias: pins.modelAlias,
     capabilities: pins.capabilities,
     ...(pins.memoryShare === undefined ? {} : { memoryShare: pins.memoryShare }),
+    ...(pinnedGuideline === undefined ? {} : { guideline: pinnedGuideline }),
     limits,
     toolSet,
     skills,

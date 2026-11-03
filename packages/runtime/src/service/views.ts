@@ -43,6 +43,7 @@ export const toRunView = (run: Run) => ({
   history: run.history,
   parentRunId: run.parentRunId,
   parentCallId: run.parentCallId,
+  origin: run.origin,
   ...agentNameOf(run),
 });
 

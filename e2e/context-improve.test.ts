@@ -12,7 +12,8 @@ import { chatCompletions, textReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
 const STEPS = 14;
-const FILE_LINES = 1200;
+const FILE_LINES = 100;
+const UNTRUSTED_FILE_LINES = 1200;
 const FRAGILE_TASK = 'Walk fragile.txt step by step.';
 const STURDY_TASKS = ['Walk first.txt step by step.', 'Walk second.txt step by step.', 'Walk third.txt step by step.'];
 const WINNER = 'Always keep the word keepsake in STATE.';
@@ -70,16 +71,14 @@ const walkRoute = (task: string, file: string, fragile: boolean): FakeRoute => {
   };
 };
 
-const candidates = (): FakeRoute => {
-  let drawn = 0;
-  return {
-    match: (body) => bodyText(body).includes(JSON.stringify(GUIDELINE_CANDIDATE_INSTRUCTIONS).slice(1, -1)),
-    reply: () => {
-      drawn += 1;
-      return textReply(JSON.stringify({ guideline: drawn === 1 ? WINNER : `${LOSER} Variant ${drawn}.` }));
-    },
-  };
-};
+const candidates = (): FakeRoute => ({
+  match: (body) => bodyText(body).includes(JSON.stringify(GUIDELINE_CANDIDATE_INSTRUCTIONS).slice(1, -1)),
+  reply: (body) => {
+    const drawn = Number(/This is candidate (\d+) of/.exec(bodyText(body))?.[1]);
+    if (!Number.isInteger(drawn)) throw new Error('the candidate request does not say which candidate it is');
+    return textReply(JSON.stringify({ guideline: drawn === 1 ? WINNER : `${LOSER} Variant ${drawn}.` }));
+  },
+});
 
 const ROUTES: FakeRoute[] = [
   { match: (body) => isCompactionRequest(body) && bodyText(body).includes(WINNER), reply: textReply(KEEPING_SUMMARY) },
@@ -155,9 +154,11 @@ describe('momonga context improve', () => {
     expect(listed.stdout).toContain(WINNER);
 
     const cost = JSON.parse((await runCli(home, ['cost', '--json'], options)).stdout);
-    expect(cost.contextCharges.length).toBeGreaterThan(0);
-    expect(cost.contextCharges.every((charge: { purpose: string; project: string }) => charge.purpose === 'guideline' && charge.project === home.project)).toBe(true);
+    expect(cost.contextCharges.charges.length).toBeGreaterThan(0);
+    expect(cost.contextCharges.charges.every((charge: { purpose: string; project: string }) => charge.purpose === 'guideline' && charge.project === home.project)).toBe(true);
+    expect(cost.contextCharges.totalTokens).toBeGreaterThan(0);
 
+    fs.writeFileSync(path.join(home.project, 'fragile.txt'), 'line of the walk\n'.repeat(UNTRUSTED_FILE_LINES));
     const before = chatCompletions(fake).length;
     const following = await runCli(home, ['-p', FRAGILE_TASK, '--output-format', 'stream-json'], options);
     expect(following.code).toBe(0);

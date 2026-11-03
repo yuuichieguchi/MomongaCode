@@ -16,6 +16,7 @@ export type E2eCaseFile =
   | 'eval-runner.test.ts'
   | 'eval-context.test.ts'
   | 'eval-context-kill.test.ts'
+  | 'context-improve.test.ts'
   | 'otlp-export.test.ts'
   | 'open-responses-compliance.test.ts'
   | 'providers.test.ts'

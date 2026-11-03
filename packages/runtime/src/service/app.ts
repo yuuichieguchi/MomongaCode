@@ -36,6 +36,7 @@ import type { CreateRunBody, CreateSessionBody, PatchSessionBody, ResolveApprova
 import { createRecordViews } from '../memory/views.ts';
 import type { EvidenceRun } from '../memory/evidence.ts';
 import { contextChargesText, contextChargesView } from './context-charges.ts';
+import { registerGuidelineRoutes } from './guidelines.ts';
 import { registerMemoryRoutes } from './memories.ts';
 import { registerRuleRoutes } from './rules.ts';
 import { registerInputRoutes } from './input-routes.ts';
@@ -430,7 +431,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const { report, text } = await deps.runCost(runs, context.req.raw.signal);
     const contextCharges = contextChargesView(charges);
     if (format === 'json') return json({ ...report, contextCharges });
-    const chargesText = contextChargesText(contextCharges);
+    const chargesText = contextChargesText(contextCharges, report.total.inputTokens + report.total.outputTokens);
     return new Response(`${text}${chargesText === '' ? '' : `\n${chargesText}`}\n`, { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8' } });
   };
 
@@ -534,6 +535,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     closeSignal: deps.closeSignal,
     home: deps.home,
   });
+  registerGuidelineRoutes(route, { store, maxBodyBytes: deps.maxBodyBytes });
   registerRuleRoutes(route, {
     store,
     clock: deps.clock,

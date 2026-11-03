@@ -16,7 +16,7 @@ export class ContextHostError extends Error {
 
 export type ContextRuntime = Pick<
   RuntimeClient,
-  'createSession' | 'createRun' | 'streamEvents' | 'getRun' | 'resolveApproval' | 'cancel' | 'addRule' | 'retireRule' | 'addMemory' | 'setTrust' | 'close'
+  'createSession' | 'createRun' | 'streamEvents' | 'getRun' | 'resolveApproval' | 'cancel' | 'addRule' | 'retireRule' | 'addMemory' | 'adoptGuideline' | 'setTrust' | 'close'
 >;
 
 export type ContextHostEffects = {
@@ -159,7 +159,12 @@ export type ContextHosts = {
   dispose(): Promise<void>;
 };
 
-export const createContextHosts = (effects: ContextHostEffects, options: { settings: LiveSettings; credentialValues: Readonly<Record<string, string>> }): ContextHosts => {
+const BENCHMARK_GUIDELINE_REPORT = { source: 'context improve benchmark' } as const;
+
+export const createContextHosts = (
+  effects: ContextHostEffects,
+  options: { settings: LiveSettings; credentialValues: Readonly<Record<string, string>>; guideline?: string },
+): ContextHosts => {
   const records: CaseRecord[] = [];
 
   const release = async (record: CaseRecord): Promise<void> => {
@@ -210,6 +215,7 @@ export const createContextHosts = (effects: ContextHostEffects, options: { setti
     const runtime = effects.connect(paths);
     record.runtime = runtime;
     await runtime.setTrust(cwd, 'trusted');
+    if (options.guideline !== undefined) await runtime.adoptGuideline({ text: options.guideline, parent: null, report: { ...BENCHMARK_GUIDELINE_REPORT } });
     return {
       cwd,
       api: goldenRunApi(runtime, await effects.sessionEnv()),
@@ -276,6 +282,7 @@ export type ContextLiveInput = {
   alias: string;
   models: UserModels;
   limits: { maxTotalTokens: number; defaultTimeoutMs: number };
+  guideline?: string;
   interrupt?: AbortSignal;
   onTranscript?(transcript: Transcript): Promise<void>;
 };
@@ -286,7 +293,7 @@ export const runContextLive = async (effects: ContextHostEffects, input: Context
   const settings = liveSettingsFor(input.models, input.alias);
   const credentialValues = await readCredentials(effects, settings.credentials, interrupt ?? new AbortController().signal);
   await sweepStaleHomes(effects);
-  const hosts = createContextHosts(effects, { settings, credentialValues });
+  const hosts = createContextHosts(effects, { settings, credentialValues, ...(input.guideline === undefined ? {} : { guideline: input.guideline }) });
   const bounds = liveBoundsFor(input.dataset, input.limits);
   const interrupted = new Promise<never>((_resolve, reject) => {
     interrupt?.addEventListener('abort', () => reject(new ContextInterrupted()), { once: true });

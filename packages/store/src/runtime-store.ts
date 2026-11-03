@@ -12,6 +12,7 @@ import { StoreIdentityError, isFatalStoreError } from './fatal.ts';
 import { createIdempotencyStore } from './idempotency.ts';
 import { decodeJob, prepareJobStatements } from './jobs.ts';
 import { createGoverningFactStore } from './governing.ts';
+import { createGuidelineStore } from './guidelines.ts';
 import { createContextChargeStore } from './context-charges.ts';
 import { createMemoryStore } from './memories.ts';
 import { createReflectionStore } from './reflection.ts';
@@ -1424,6 +1425,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     memories,
     reflection,
     contextCharges: createContextChargeStore(db, clock),
+    guidelines: createGuidelineStore(db, clock),
     governing,
     search: createSearchStore(db),
 

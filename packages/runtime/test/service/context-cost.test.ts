@@ -46,4 +46,11 @@ describe('GET /v1/cost with context charges', () => {
     expect(response.text).toContain('120');
     expect(response.text).toContain('guideline');
   });
+
+  it('adds the charges of both purposes to the printed token total, whatever their purpose', async () => {
+    const { env } = await seeded();
+    const response = await env.http('GET', '/v1/cost?format=text');
+    expect(response.text).toContain('context charges total: 130 tokens');
+    expect(response.text).toContain('all model calls: 135 tokens (runs 5, context charges 130)');
+  });
 });

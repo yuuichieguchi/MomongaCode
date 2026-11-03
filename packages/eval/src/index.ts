@@ -65,6 +65,43 @@ export {
 export type { BuildContextReportInput, ClusteredProportion, ContextCaseReport, ContextMetrics, ContextModel, ContextReport, ModelDependentMetric, StoppedRun } from './context-report.ts';
 export { GATE_CHECKS, compareContextReports, formatContextComparison } from './context-compare.ts';
 export type { ContextComparison, GateCheck, GateCheckName } from './context-compare.ts';
+export { contrastiveCasesOf } from './context-report.ts';
+export type { ContrastiveCase } from './context-report.ts';
+export {
+  GUIDELINE_ANALYSIS_INSTRUCTIONS,
+  GUIDELINE_ANALYSIS_SCHEMA,
+  GUIDELINE_CANDIDATES,
+  GUIDELINE_CANDIDATE_INSTRUCTIONS,
+  GUIDELINE_CANDIDATE_SCHEMA,
+  GUIDELINE_ROOT_CAUSES,
+  analysisRequestOf,
+  candidateRequestOf,
+  candidateSeedOf,
+  parseGuidelineAnalysis,
+  parseGuidelineCandidate,
+} from './guideline-prompts.ts';
+export type {
+  AnalysisRequestInput,
+  CandidateRequestInput,
+  GuidelineAnalysis,
+  GuidelineCompletion,
+  GuidelineCompletionRequest,
+  GuidelineRootCause,
+  StructuredOutput,
+} from './guideline-prompts.ts';
+export { GUIDELINE_CAP_REASON, formatImproveOutcome, guidelineDiff, improveGuideline } from './context-improve.ts';
+export type {
+  AdoptedGuideline,
+  BenchmarkResult,
+  ImproveCandidate,
+  ImproveInput,
+  ImproveOutcome,
+  ImprovePorts,
+  ImproveStatus,
+  ImproveWinner,
+  SkippedScenario,
+  TokenUsage,
+} from './context-improve.ts';
 export { TRANSCRIPT_FORMAT, TranscriptError, decodeTranscript, encodeTranscript, parsePublicRunEvent } from './transcript.ts';
 export type { Transcript, TranscriptChild, TranscriptRun } from './transcript.ts';
 export { loadContextDataset, loadContextReport, loadDataset, loadTranscripts, nodeEvalFiles, saveContextReport, saveTranscript, transcriptFileName } from './files.ts';

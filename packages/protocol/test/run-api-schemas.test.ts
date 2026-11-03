@@ -280,8 +280,12 @@ describe('response schemas', () => {
       history: 'inherit',
       parentRunId: null,
       parentCallId: null,
+      origin: 'trusted',
     };
     expect(accepts('RunView', view)).toBe(true);
+    const { origin: _origin, ...withoutOrigin } = view;
+    expect(accepts('RunView', withoutOrigin)).toBe(false);
+    expect(accepts('RunView', { ...view, origin: 'elsewhere' })).toBe(false);
     expect(accepts('RunView', { ...view, error: { code: 'max_attempts', message: 'x' } })).toBe(true);
     expect(accepts('RunView', { ...view, leaseToken: 3 })).toBe(false);
     expect(accepts('RunView', { ...view, leaseOwner: 'w1' })).toBe(false);
@@ -304,6 +308,7 @@ describe('response schemas', () => {
       history: 'inherit',
       parentRunId: null,
       parentCallId: null,
+      origin: 'untrusted',
     };
     expect(accepts('RunView', view)).toBe(true);
     expect(accepts('RunView', { ...view, previousRunId: null, history: 'fresh' })).toBe(true);

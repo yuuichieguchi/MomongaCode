@@ -153,16 +153,24 @@ const caseReportOf = (entry: ExpandedCase, measures: readonly RunMeasure[]): Con
   };
 };
 
-const contrastiveFailuresOf = (cases: readonly ContextCaseReport[]): ContextMetrics['contrastiveFailures'] => {
+export type ContrastiveCase = { scenario: string; onId: string; offId: string };
+
+const contrastiveCasesOfCases = (cases: readonly ContextCaseReport[]): ContrastiveCase[] => {
   const scenarios = [...new Set(cases.map((entry) => entry.scenario))];
-  const failures = scenarios.filter((scenario) => {
+  return scenarios.flatMap((scenario) => {
     const on = cases.find((entry) => entry.scenario === scenario && entry.compaction === 'on');
     const off = cases.find((entry) => entry.scenario === scenario && entry.compaction === 'off');
     if (on === undefined || off === undefined) throw new EvalError(`scenario ${scenario} has no on and off pair`);
-    return on.compactions > 0 && off.passed && !on.passed;
+    return on.compactions > 0 && off.passed && !on.passed ? [{ scenario, onId: on.id, offId: off.id }] : [];
   });
+};
+
+export const contrastiveCasesOf = (report: Pick<ContextReport, 'cases'>): ContrastiveCase[] => contrastiveCasesOfCases(report.cases);
+
+const contrastiveFailuresOf = (cases: readonly ContextCaseReport[]): ContextMetrics['contrastiveFailures'] => {
+  const scenarios = [...new Set(cases.map((entry) => entry.scenario))];
   const measurable = scenarios.filter((scenario) => cases.some((entry) => entry.scenario === scenario && entry.compaction === 'on' && entry.compactions > 0));
-  return { count: failures.length, n: measurable.length };
+  return { count: contrastiveCasesOfCases(cases).length, n: measurable.length };
 };
 
 type MeasuredCase = { entry: ExpandedCase; measures: RunMeasure[]; transcripts: Transcript[] };

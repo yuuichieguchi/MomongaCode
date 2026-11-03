@@ -78,6 +78,7 @@ export type Run = {
   history: HistoryMode;
   parentRunId: string | null;
   parentCallId: string | null;
+  origin: MemoryOrigin;
   error?: RunError;
 };
 
@@ -439,6 +440,23 @@ export type ContextChargeStore = {
   list(filter?: { runIds?: readonly string[]; project?: string }): ContextCharge[];
 };
 
+export type Guideline = {
+  version: number;
+  text: string;
+  parent: number | null;
+  createdAt: number;
+  adoptedAt: number;
+  report: Readonly<Record<string, unknown>>;
+};
+
+export type GuidelineStore = {
+  current(): Guideline | undefined;
+  get(version: number): Guideline | undefined;
+  list(): Guideline[];
+  adopt(input: { text: string; parent: number | null; report: Guideline['report'] }): Guideline;
+  rollback(version: number): Guideline;
+};
+
 export type RuntimeStore = {
   createSession(input: CreateSessionInput): Session;
   getSession(id: string): Session | undefined;
@@ -509,6 +527,7 @@ export type RuntimeStore = {
   memories: MemoryStore;
   reflection: ReflectionStore;
   contextCharges: ContextChargeStore;
+  guidelines: GuidelineStore;
   governing: GoverningFactStore;
   search: SearchStore;
   close(): void;

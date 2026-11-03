@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { CompactRequest, RunEventPayload } from '@momonga/protocol';
 import { GatewayRequestError } from '@momonga/runtime';
-import { capabilitiesFor, makeEnv } from './harness.ts';
+import { DEADLINE_MS, capabilitiesFor, createdRun, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { assistantMessage, textStep } from './scripts.ts';
 
@@ -94,7 +94,7 @@ describe('a run with no adopted guideline', () => {
     const request = compact?.request as CompactRequest;
     const today: CompactRequest = {
       model: request.model,
-      input: request.input,
+      ...(request.input === undefined ? {} : { input: request.input }),
       momonga: { max_summary_tokens: request.momonga?.max_summary_tokens as number, retains_user_request: true },
     };
     expect(JSON.stringify(request)).toBe(JSON.stringify(today));
@@ -119,6 +119,28 @@ describe('the pinned guideline version', () => {
     expect(new Set(env.gateway.compacts.map((compact) => compact.idempotencyKey)).size).toBe(1);
     expect(env.ofType(run.id, 'context.compacted').map((event) => event.guidelineVersion)).toEqual([1]);
     expect(new Set(env.ofType(run.id, 'run.started').map((event) => event.pins['guidelineVersion']))).toEqual(new Set([1]));
+  });
+
+  const childOf = async (pinned: Record<string, unknown>) => {
+    const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
+    env.store.guidelines.adopt({ text: FIRST, parent: null, report: { source: 'test' } });
+    const parent = createdRun(env.store.createRunAndEnqueue(env.session.id, { input: 'Parent', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
+    const claim = env.seed(parent.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: pinned, mode: 'default' }], 'hold');
+    const created = env.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {} });
+    if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
+    expect(env.store.releaseLease(claim, { availableAt: env.clock.now() + 3_600_000 }).kind).toBe('ok');
+    env.store.guidelines.adopt({ text: SECOND, parent: 1, report: { source: 'test' } });
+    env.gateway.script.push(textStep('Child done.'));
+    await env.runOnce(env.worker('worker-child'));
+    return env.ofType(created.run.id, 'run.started').map((event) => event.pins['guidelineVersion']);
+  };
+
+  it('guards a child that drifts from its parent: it takes the version its parent pinned, not the one adopted since', async () => {
+    expect(await childOf({ guidelineVersion: 1 })).toEqual([1]);
+  });
+
+  it('guards a child that picks up a guideline its parent never had: a parent with none gives the child none', async () => {
+    expect(await childOf({})).toEqual([undefined]);
   });
 
   it('guards a late guideline: a run that started with none stays with none across a recovery', async () => {

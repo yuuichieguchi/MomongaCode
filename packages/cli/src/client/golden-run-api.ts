@@ -39,6 +39,7 @@ export const goldenRunApi = (
         ...(run.stopReason === undefined ? {} : { stopReason: run.stopReason }),
         step: run.step,
         usage: run.usage,
+        origin: run.origin,
         ...(modelAlias === undefined ? {} : { modelAlias }),
       };
     },

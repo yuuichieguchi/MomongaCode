@@ -33,6 +33,7 @@ export type RunView = {
   readonly previousRunId: string | null;
   readonly parentRunId: string | null;
   readonly parentCallId: string | null;
+  readonly origin: 'trusted' | 'untrusted';
   readonly agent?: string;
   readonly history: 'inherit' | 'fresh';
 };

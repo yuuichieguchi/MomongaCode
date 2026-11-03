@@ -5,6 +5,7 @@ export { StoreIdentityError, isFatalStoreError } from './fatal.ts';
 export { sameRunRequest } from './run-request.ts';
 export { CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from './transitions.ts';
 export { openRuntimeStore } from './runtime-store.ts';
+export { GuidelineConflictError } from './guidelines.ts';
 export {
   HISTORY_CANDIDATE_LIMIT,
   HISTORY_INDEX_BATCH_CHARS,
@@ -63,6 +64,8 @@ export type {
   AddGoverningFactInput,
   ContributionPayload,
   GoverningFactStore,
+  Guideline,
+  GuidelineStore,
   ContextCharge,
   ContextChargeInput,
   ContextChargeStore,

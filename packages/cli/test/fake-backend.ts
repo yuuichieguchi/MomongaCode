@@ -33,6 +33,7 @@ export const runView = (overrides: Partial<RunView> = {}): RunView => ({
   previousRunId: null,
   parentRunId: null,
   parentCallId: null,
+  origin: 'trusted',
   history: 'inherit',
   ...overrides,
 });

@@ -213,7 +213,7 @@ const renderedFacts = (ctx: ClaimContext, projected: RunState, capTokens: number
   return text;
 };
 
-const deterministicCompaction = (ctx: ClaimContext, plan: CompactionSource, fidelity?: SummaryFidelity): CompactedPayload => {
+const deterministicCompaction = (ctx: ClaimContext, plan: CompactionSource, guidelineVersion: number, fidelity?: SummaryFidelity): CompactedPayload => {
   const projected = projectCompaction(ctx, plan.throughSeq, compactionSummaryMessage(''), '');
   const facts = renderedFacts(ctx, projected, Math.min(plan.summaryTokenCap, workingStateCapFor(ctx.capabilities)));
   const previous = ctx.journal.state.summary?.summary ?? '';
@@ -226,7 +226,7 @@ const deterministicCompaction = (ctx: ClaimContext, plan: CompactionSource, fide
     replacedThroughSeq: plan.throughSeq,
     source: 'deterministic',
     ...(fidelity === undefined ? {} : { fidelity }),
-    guidelineVersion: NO_ADOPTED_GUIDELINE,
+    guidelineVersion,
   };
 };
 
@@ -235,8 +235,9 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
   const request: CompactRequest = {
     model: ctx.alias,
     input: plan.input,
-    momonga: { max_summary_tokens: plan.summaryTokenCap, retains_user_request: true },
+    momonga: { max_summary_tokens: plan.summaryTokenCap, retains_user_request: true, ...(ctx.guideline === undefined ? {} : { guideline: ctx.guideline.text }) },
   };
+  const guidelineVersion = ctx.guideline?.version ?? NO_ADOPTED_GUIDELINE;
   const idempotencyKey = sha256Hex(canonicalJson([ctx.run.id, 'compact', sha256Hex(canonicalJson(request))]));
   ctx.control.inFlight.compactionKey = idempotencyKey;
   let resource: CompactResource;
@@ -254,7 +255,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
     delete ctx.control.inFlight.compactionKey;
     journal.append([
       noticeOf('compaction_failed', `Compaction summary failed (${error.code}): ${error.message}; the deterministic summary was used`),
-      deterministicCompaction(ctx, plan),
+      deterministicCompaction(ctx, plan, NO_ADOPTED_GUIDELINE),
     ]);
     return;
   }
@@ -296,8 +297,8 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
       ? []
       : [noticeOf('compaction_rejected', `Compaction summary rejected: ${fidelity.fabricated.length} token(s) found nowhere in the replaced history or the pinned context (${fidelity.fabricated.slice(0, MAX_NAMED_TOKENS).join(', ')}); the deterministic summary was used`)]),
     accepted
-      ? { type: 'context.compacted', item, summary, replacedThroughSeq: plan.throughSeq, source: 'model', fidelity, guidelineVersion: NO_ADOPTED_GUIDELINE }
-      : deterministicCompaction(ctx, plan, fidelity),
+      ? { type: 'context.compacted', item, summary, replacedThroughSeq: plan.throughSeq, source: 'model', fidelity, guidelineVersion }
+      : deterministicCompaction(ctx, plan, guidelineVersion, fidelity),
   ]);
 };
 

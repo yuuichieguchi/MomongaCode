@@ -1,0 +1,106 @@
+import { describe, expect, it } from 'vitest';
+import { momongaPaths } from '@momonga/foundation';
+import { MIN_SUMMARY_TOKENS } from '@momonga/protocol';
+import { protectedRootAreasOf } from '@momonga/runtime';
+import { createBuiltinTools, createGovernanceTools, createHistoryTools, createMemoryTools } from '@momonga/tools';
+import { expectSchema, startService } from './helpers.ts';
+
+const REPORT = { gate: 'PASS' };
+
+describe('the guideline routes', () => {
+  it('lists nothing before the first adoption', async () => {
+    const env = await startService();
+    const listed = await env.http('GET', '/v1/guidelines');
+    expect(listed.status).toBe(200);
+    expect(listed.json).toEqual({ current: null, guidelines: [] });
+    expectSchema('GuidelinesResponse', listed.json);
+  });
+
+  it('adopts a first guideline on no parent, then a second on the first, and lists both', async () => {
+    const env = await startService();
+    const first = await env.http('POST', '/v1/guidelines', { body: { text: 'keep names', parent: null, report: REPORT } });
+    expect(first.status).toBe(201);
+    expectSchema('GuidelineResponse', first.json);
+    expect(first.json.guideline).toMatchObject({ version: 1, text: 'keep names', parent: null, report: REPORT });
+    const second = await env.http('POST', '/v1/guidelines', { body: { text: 'keep paths', parent: 1, report: REPORT } });
+    expect(second.json.guideline).toMatchObject({ version: 2, parent: 1 });
+    const listed = await env.http('GET', '/v1/guidelines');
+    expect(listed.json.current.version).toBe(2);
+    expect(listed.json.guidelines.map((entry: { text: string }) => entry.text)).toEqual(['keep names', 'keep paths']);
+    expectSchema('GuidelinesResponse', listed.json);
+  });
+
+  it('guards a lost update: an adoption on a stale parent is a 409 and stores nothing', async () => {
+    const env = await startService();
+    await env.http('POST', '/v1/guidelines', { body: { text: 'a', parent: null, report: REPORT } });
+    const stale = await env.http('POST', '/v1/guidelines', { body: { text: 'b', parent: null, report: REPORT } });
+    expect(stale.status).toBe(409);
+    expect(stale.json.error.code).toBe('guideline_conflict');
+    expect(env.store.guidelines.list()).toHaveLength(1);
+  });
+
+  it('guards a guideline the summariser would refuse: text over the token cap is a 400 and stores nothing', async () => {
+    const env = await startService();
+    const response = await env.http('POST', '/v1/guidelines', { body: { text: 'あ'.repeat(MIN_SUMMARY_TOKENS + 1), parent: null, report: REPORT } });
+    expect(response.status).toBe(400);
+    expect(env.store.guidelines.list()).toEqual([]);
+  });
+
+  it('rolls back to an earlier version as a new row, and refuses a version that does not exist', async () => {
+    const env = await startService();
+    await env.http('POST', '/v1/guidelines', { body: { text: 'a', parent: null, report: REPORT } });
+    await env.http('POST', '/v1/guidelines', { body: { text: 'b', parent: 1, report: REPORT } });
+    const back = await env.http('POST', '/v1/guidelines/1/rollback');
+    expect(back.status).toBe(201);
+    expect(back.json.guideline).toMatchObject({ version: 3, text: 'a', parent: 2, report: { rollbackTo: 1 } });
+    expect((await env.http('POST', '/v1/guidelines/9/rollback')).status).toBe(404);
+    expect((await env.http('POST', '/v1/guidelines/latest/rollback')).status).toBe(400);
+  });
+});
+
+describe('the context charge route', () => {
+  it('records a guideline charge with no run, under the canonical folder, and refuses another purpose', async () => {
+    const env = await startService();
+    const body = { purpose: 'guideline', project: env.layout.project, model: 'opus', inputTokens: 7, outputTokens: 3, totalTokens: 10 };
+    const recorded = await env.http('POST', '/v1/context-charges', { body });
+    expect(recorded.status).toBe(201);
+    expectSchema('ContextChargeResponse', recorded.json);
+    expect(env.store.contextCharges.list({})).toMatchObject([{ purpose: 'guideline', runId: null, model: 'opus', totalTokens: 10 }]);
+    expect((await env.http('POST', '/v1/context-charges', { body: { ...body, purpose: 'reflection' } })).status).toBe(400);
+  });
+});
+
+describe('the model has no way to adopt a guideline', () => {
+  it('covers the builtin, memory, history and governance tools of this repository: none is named or described after a guideline or a charge', () => {
+    const unused = () => Promise.reject(new Error('unused'));
+    const tools = [
+      ...createBuiltinTools(),
+      ...createMemoryTools({ port: { save: unused, search: async () => [] }, trusted: true }),
+      ...createHistoryTools({
+        port: { search: unused, read: () => null, projectOf: () => undefined, readDenial: unused, redact: (text) => text },
+        trusted: true,
+        project: '/p',
+      }),
+      ...createGovernanceTools({
+        port: {
+          propose: () => {
+            throw new Error('unused');
+          },
+          find: () => undefined,
+        },
+        trusted: true,
+      }),
+    ];
+    expect(tools.length).toBeGreaterThan(createBuiltinTools().length);
+    for (const tool of tools) {
+      expect(tool.name).not.toMatch(/guideline|charge/i);
+      expect(JSON.stringify(tool.inputSchema)).not.toMatch(/guideline|charge/i);
+    }
+  });
+
+  it('keeps the adoption route behind the runtime socket, which the sandbox protects from the model', () => {
+    const paths = momongaPaths('/home/user');
+    const areas = protectedRootAreasOf(paths, '/home/user');
+    expect(areas.some((area) => paths.sockets.runtime.startsWith(`${area}/`) || paths.sockets.runtime === area)).toBe(true);
+  });
+});

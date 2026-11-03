@@ -1,11 +1,12 @@
 import type { Command } from 'commander';
 import { InvalidArgumentError, Option } from 'commander';
-import { CONTEXT_MODELS, MAX_DATASET_SEED } from '@momonga/eval';
+import { CONTEXT_MODELS, DEFAULT_DATASET_SEED, MAX_DATASET_SEED } from '@momonga/eval';
 import type { ContextModel } from '@momonga/eval';
 import { GOVERNING_KINDS, MEMORY_KINDS, MEMORY_SCOPES, PERMISSION_MODES } from '@momonga/protocol';
 import type { GoverningEnforcement, GoverningKind, MemoryKind, MemoryScope, PermissionMode } from '@momonga/protocol';
 import { pathsOf } from '../paths.ts';
 import type { ProgramDeps } from '../program-deps.ts';
+import { contextImprove, guidelineList, guidelineRollback } from './context.ts';
 import { showCost } from './cost.ts';
 import { elicit } from './elicit.ts';
 import { compareContext, evaluate, evaluateContext } from './evaluate.ts';
@@ -289,6 +290,52 @@ const registerEvaluate: CommandGroup = (program, deps) => {
     });
 };
 
+const versionArgument = (text: string): number => {
+  const value = Number(text);
+  if (!Number.isInteger(value) || value < 1) throw new InvalidArgumentError('expected an integer of at least 1');
+  return value;
+};
+
+const registerContext: CommandGroup = (program, deps) => {
+  const context = program.command('context').description('improve how the context is compacted, from the failures a benchmark shows');
+  context
+    .command('improve')
+    .description(
+      'analyse the scenarios that pass without compaction and fail with it, sample candidate guidelines for the compaction summary, benchmark each against the guideline in force and print the winner; --adopt stores it',
+    )
+    .requiredOption('--dataset <file>', 'the context dataset to benchmark')
+    .addOption(new Option('--model <model>', 'which kind of model produced the runs; a fake model proves only that the machinery works, and no candidate can pass the gate with it').choices(CONTEXT_MODELS).makeOptionMandatory())
+    .requiredOption('--alias <alias>', 'the model alias of the benchmark sessions and of the analysis and candidate calls')
+    .option('--seed <n>', 'the seed of the noise turns and of the candidate draws; 0 when omitted', seedArgument)
+    .option('--adopt', 'store the winner as the guideline in force; without it nothing changes')
+    .action(async (options: { dataset: string; model: ContextModel; alias: string; seed?: number; adopt?: true }) => {
+      deps.complete(
+        await contextImprove(deps.ports, pathsOf(deps.ports), {
+          dataset: options.dataset,
+          model: options.model,
+          alias: options.alias,
+          seed: options.seed ?? DEFAULT_DATASET_SEED,
+          adopt: options.adopt === true,
+          interrupt: deps.interrupt,
+        }),
+      );
+    });
+  const guideline = context.command('guideline').description('inspect and roll back the compaction guideline');
+  guideline
+    .command('list')
+    .description('list the adopted guidelines, oldest first')
+    .action(async () => {
+      deps.complete(await guidelineList(deps.ports, pathsOf(deps.ports)));
+    });
+  guideline
+    .command('rollback')
+    .description('return to the text of an earlier version, recorded as a new version')
+    .argument('<version>', 'the version to return to', versionArgument)
+    .action(async (version: number) => {
+      deps.complete(await guidelineRollback(deps.ports, pathsOf(deps.ports), version));
+    });
+};
+
 const registerSecret: CommandGroup = (program, deps) => {
   const secret = program.command('secret').description('store the secrets that model targets refer to');
   secret
@@ -345,7 +392,7 @@ const registerRunTree: CommandGroup = (program, deps) => {
     });
 };
 
-export const PRODUCT_COMMAND_GROUPS: readonly CommandGroup[] = [registerElicit, registerMcp, registerRunTree, registerMemory, registerRule, registerCost, registerEvaluate, registerSecret, registerModels, registerPolicy];
+export const PRODUCT_COMMAND_GROUPS: readonly CommandGroup[] = [registerElicit, registerMcp, registerRunTree, registerMemory, registerRule, registerCost, registerEvaluate, registerContext, registerSecret, registerModels, registerPolicy];
 
 export const registerProductCommands = (program: Command, deps: ProgramDeps): void => {
   for (const group of PRODUCT_COMMAND_GROUPS) group(program, deps);

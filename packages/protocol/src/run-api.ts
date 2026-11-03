@@ -407,6 +407,33 @@ const costTotalsProperties: Record<string, JsonSchema> = {
 };
 const costTotalsRequired = Object.keys(costTotalsProperties);
 
+const contextChargeView = closed(
+  {
+    id: integer,
+    purpose: enumOf(CONTEXT_CHARGE_PURPOSES),
+    runId: nullable(string),
+    project: string,
+    model: string,
+    inputTokens: nonNegativeInteger,
+    outputTokens: nonNegativeInteger,
+    totalTokens: nonNegativeInteger,
+    createdAt: integer,
+  },
+  ['id', 'purpose', 'runId', 'project', 'model', 'inputTokens', 'outputTokens', 'totalTokens', 'createdAt'],
+);
+
+const guidelineView = closed(
+  {
+    version: { type: 'integer', minimum: 1 },
+    text: string,
+    parent: nullable({ type: 'integer', minimum: 1 }),
+    createdAt: integer,
+    adoptedAt: integer,
+    report: { type: 'object' },
+  },
+  ['version', 'text', 'parent', 'createdAt', 'adoptedAt', 'report'],
+);
+
 const costReportView = closed(
   {
     runs: { type: 'array', items: closed({ runId: string, sessionId: string, ...costTotalsProperties }, ['runId', 'sessionId', ...costTotalsRequired]) },
@@ -415,29 +442,7 @@ const costReportView = closed(
       items: closed({ sessionId: string, runIds: { type: 'array', items: string }, ...costTotalsProperties }, ['sessionId', 'runIds', ...costTotalsRequired]),
     },
     total: closed(costTotalsProperties, costTotalsRequired),
-    contextCharges: closed(
-      {
-        charges: {
-          type: 'array',
-          items: closed(
-            {
-              id: integer,
-              purpose: enumOf(CONTEXT_CHARGE_PURPOSES),
-              runId: nullable(string),
-              project: string,
-              model: string,
-              inputTokens: nonNegativeInteger,
-              outputTokens: nonNegativeInteger,
-              totalTokens: nonNegativeInteger,
-              createdAt: integer,
-            },
-            ['id', 'purpose', 'runId', 'project', 'model', 'inputTokens', 'outputTokens', 'totalTokens', 'createdAt'],
-          ),
-        },
-        totalTokens: nonNegativeInteger,
-      },
-      ['charges', 'totalTokens'],
-    ),
+    contextCharges: closed({ charges: { type: 'array', items: contextChargeView }, totalTokens: nonNegativeInteger }, ['charges', 'totalTokens']),
   },
   ['runs', 'sessions', 'total', 'contextCharges'],
 );
@@ -660,6 +665,32 @@ export type ContextChargeView = {
 
 export type ContextChargesView = { charges: ContextChargeView[]; totalTokens: number };
 
+export type RecordContextChargeRequest = {
+  purpose: 'guideline';
+  project: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+};
+
+export type ContextChargeResponse = { charge: ContextChargeView };
+
+export type GuidelineView = {
+  version: number;
+  text: string;
+  parent: number | null;
+  createdAt: number;
+  adoptedAt: number;
+  report: Record<string, unknown>;
+};
+
+export type GuidelinesResponse = { current: GuidelineView | null; guidelines: GuidelineView[] };
+
+export type GuidelineResponse = { guideline: GuidelineView };
+
+export type AdoptGuidelineRequest = { text: string; parent: number | null; report: Record<string, unknown> };
+
 export type CostReportView = GatewayCostReportView & { contextCharges: ContextChargesView };
 
 export type RunHealth = {
@@ -691,6 +722,7 @@ const runView = closed(
     history: historyMode,
     parentRunId: nullable(string),
     parentCallId: nullable(string),
+    origin: enumOf(MEMORY_ORIGINS),
     agent: string,
   },
   [
@@ -709,6 +741,7 @@ const runView = closed(
     'history',
     'parentRunId',
     'parentCallId',
+    'origin',
   ],
 );
 
@@ -920,6 +953,26 @@ export const RUN_API_SCHEMAS = {
       ['text', 'scope'],
     ),
   ),
+  GuidelineView: root(guidelineView),
+  GuidelinesResponse: root(closed({ current: nullable(guidelineView), guidelines: { type: 'array', items: guidelineView } }, ['current', 'guidelines'])),
+  GuidelineResponse: root(closed({ guideline: guidelineView }, ['guideline'])),
+  AdoptGuidelineRequest: root(
+    closed({ text: { type: 'string', minLength: 1 }, parent: nullable({ type: 'integer', minimum: 1 }), report: { type: 'object' } }, ['text', 'parent', 'report']),
+  ),
+  RecordContextChargeRequest: root(
+    closed(
+      {
+        purpose: constant('guideline'),
+        project: { type: 'string', minLength: 1 },
+        model: { type: 'string', minLength: 1 },
+        inputTokens: nonNegativeInteger,
+        outputTokens: nonNegativeInteger,
+        totalTokens: nonNegativeInteger,
+      },
+      ['purpose', 'project', 'model', 'inputTokens', 'outputTokens', 'totalTokens'],
+    ),
+  ),
+  ContextChargeResponse: root(closed({ charge: contextChargeView }, ['charge'])),
   GoverningFactView: root(governingFactView),
   AddRuleRequest: root(
     closed(

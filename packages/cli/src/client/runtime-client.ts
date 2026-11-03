@@ -1,13 +1,16 @@
 import type { McpServerConfig } from '@momonga/config';
 import { createUdsClient, decodeSse, isRecord } from '@momonga/foundation';
 import type { UdsResponse } from '@momonga/foundation';
-import type { AddMemoryRequest, AddRuleRequest, AgentsResponse, CostReportView, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, RuleAddResponse, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
+import type { AddMemoryRequest, AddRuleRequest, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, RuleAddResponse, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
 import {
   ContractViolation,
   checkAgents,
   checkApproval,
+  checkContextCharge,
   checkCostReport,
   checkElicitation,
+  checkGuideline,
+  checkGuidelines,
   checkErrorBody,
   checkHealth,
   checkJobs,
@@ -128,6 +131,10 @@ export type RuntimeClient = {
   retireRule(id: string): Promise<GoverningFactView>;
   ruleHistory(id: string): Promise<GoverningFactView[]>;
   policyGovernance(project: string): Promise<PolicyGovernanceResponse>;
+  guidelines(): Promise<GuidelinesResponse>;
+  adoptGuideline(request: AdoptGuidelineRequest): Promise<GuidelineView>;
+  rollbackGuideline(version: number): Promise<GuidelineView>;
+  recordContextCharge(request: RecordContextChargeRequest): Promise<ContextChargeView>;
   cost(filter?: CostFilter): Promise<CostReportView>;
   costText(filter?: CostFilter): Promise<string>;
   trust(path: string): Promise<TrustView>;
@@ -450,6 +457,27 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
 
   const costPath = (filter: CostFilter, format: 'json' | 'text'): string => `/v1/cost?${new URLSearchParams({ ...filter, format }).toString()}`;
 
+  const guidelines = async (): Promise<GuidelinesResponse> => {
+    const { body } = await send('GET', '/v1/guidelines', [200]);
+    return checkGuidelines(body, 'GET /v1/guidelines');
+  };
+
+  const adoptGuideline = async (request: AdoptGuidelineRequest): Promise<GuidelineView> => {
+    const { body } = await send('POST', '/v1/guidelines', [201], { body: request });
+    return checkGuideline(body, 'POST /v1/guidelines').guideline;
+  };
+
+  const rollbackGuideline = async (version: number): Promise<GuidelineView> => {
+    const path = `/v1/guidelines/${version}/rollback`;
+    const { body } = await send('POST', path, [201]);
+    return checkGuideline(body, `POST ${path}`).guideline;
+  };
+
+  const recordContextCharge = async (request: RecordContextChargeRequest): Promise<ContextChargeView> => {
+    const { body } = await send('POST', '/v1/context-charges', [201], { body: request });
+    return checkContextCharge(body, 'POST /v1/context-charges').charge;
+  };
+
   const cost = async (filter: CostFilter = {}): Promise<CostReportView> => {
     const path = costPath(filter, 'json');
     const { body } = await send('GET', path, [200]);
@@ -532,6 +560,10 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     retireRule,
     ruleHistory,
     policyGovernance,
+    guidelines,
+    adoptGuideline,
+    rollbackGuideline,
+    recordContextCharge,
     cost,
     costText,
     trust,
