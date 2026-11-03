@@ -13,7 +13,7 @@ export type ProbeFailure = { kind: 'failed'; cause: ProbeCause; evidence: ProbeE
 
 export type ProbeResult<T> = { kind: 'gone' } | { kind: 'value'; value: T } | ProbeFailure;
 
-export type UninspectableProcess = { pid: number; command: string };
+export type UninspectableProcess = { pid: number; command: string; startTicks: string };
 
 export interface ProcessInspector {
   startTimeOf(pid: number): Promise<ProbeResult<number>>;

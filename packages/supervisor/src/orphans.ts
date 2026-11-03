@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, findHolders, isTransientFailure, reapMarkedProcesses, reapMarkerDirectory, runtimeMaxCloseMs, uuidv7 } from '@momonga/foundation';
+import { RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, findHolders, isTransientFailure, reapMarkedProcesses, reapMarkerDirectory, reportUninspectableOnce, runtimeMaxCloseMs, uuidv7 } from '@momonga/foundation';
 import type { JsonLogger, ReapTiming } from '@momonga/foundation';
 import { DAEMON_MARKER_KILL_GRACE_MS } from './constants.ts';
 import type { SupervisorTimers } from './constants.ts';
@@ -125,7 +125,7 @@ export const reapOrphans = async (options: OrphanReapOptions): Promise<OrphanRea
   const warn = (detail: string): void => writeEvent(logger, orphansWarning({ detail }));
 
   const countHolders = async (markers: readonly string[]): Promise<number> => {
-    const lists = await Promise.all(markers.map((marker) => holdersOf(marker)));
+    const lists = await Promise.all(markers.map((marker) => holdersOf(marker, undefined, reportUninspectableOnce(warn, `marker ${marker}`))));
     return lists.reduce((total, list) => total + list.length, 0);
   };
 

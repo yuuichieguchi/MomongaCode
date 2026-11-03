@@ -90,7 +90,7 @@ export const createLinuxInspector = ({ procfs, uid, layout, timing = hostProbeTi
         const identity = `${pid}:${stat.startTicks}`;
         if (uninspected.has(identity) || timing.now() >= deadline) {
           uninspected.add(identity);
-          scan.report?.({ pid, command: stat.command });
+          scan.report?.({ pid, command: stat.command, startTicks: String(stat.startTicks) });
           return absent;
         }
         await timing.sleep(REAP_POLL_INTERVAL_MS);

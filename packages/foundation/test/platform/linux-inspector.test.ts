@@ -187,7 +187,7 @@ describe('linux inspector through an injected procfs', () => {
     const found = gapsOf();
     const result = await createLinuxInspector({ procfs, layout: LAYOUT, uid: UID, timing }).holdersOf('/marker', found.report);
     expect(result).toEqual({ kind: 'value', value: [] });
-    expect(found.processes).toEqual([{ pid: 12, command: 'sleep' }]);
+    expect(found.processes).toEqual([{ pid: 12, command: 'sleep', startTicks: '987654' }]);
     expect(timing.slept()).toBe(Math.ceil(PS_PROBE_TIMEOUT_MS / REAP_POLL_INTERVAL_MS) * REAP_POLL_INTERVAL_MS);
   });
 
@@ -206,7 +206,7 @@ describe('linux inspector through an injected procfs', () => {
     const found = gapsOf();
     expect(await inspector.holdersOf('/marker', found.report)).toEqual({ kind: 'value', value: [] });
     expect(timing.slept()).toBe(afterFirst);
-    expect(found.processes).toEqual([{ pid: 12, command: 'sleep' }]);
+    expect(found.processes).toEqual([{ pid: 12, command: 'sleep', startTicks: '987654' }]);
   });
 
   it('waits for a same-user process to become readable and then reads it', async () => {
@@ -271,7 +271,7 @@ describe('linux inspector through an injected procfs', () => {
     });
     const own = gapsOf();
     expect(await createLinuxInspector({ procfs: fakeProcfs(entries(UID)), layout: LAYOUT, uid: UID, timing: fakeTiming() }).holdersOf('/marker', own.report)).toEqual({ kind: 'value', value: [] });
-    expect(own.processes).toEqual([{ pid: 12, command: 'sleep' }]);
+    expect(own.processes).toEqual([{ pid: 12, command: 'sleep', startTicks: '987654' }]);
     const other = gapsOf();
     expect(await createLinuxInspector({ procfs: fakeProcfs(entries(0)), layout: LAYOUT, uid: UID, timing: fakeTiming() }).holdersOf('/marker', other.report)).toEqual({ kind: 'value', value: [] });
     expect(other.processes).toEqual([]);
@@ -303,7 +303,7 @@ describe('linux inspector through an injected procfs', () => {
       const found = gapsOf();
       const inspector = createLinuxInspector({ procfs: fakeProcfs(entriesFor(SLEEP_STARTED_MS + BOOT_TIME_RESOLUTION_MS + TICK_MS - 1)), layout: LAYOUT, uid: UID, timing });
       expect(await inspector.holdersOf('/marker', found.report)).toEqual({ kind: 'value', value: [] });
-      expect(found.processes).toEqual([{ pid: 12, command: 'sleep' }]);
+      expect(found.processes).toEqual([{ pid: 12, command: 'sleep', startTicks: '987654' }]);
       expect(timing.slept()).toBeGreaterThanOrEqual(PS_PROBE_TIMEOUT_MS);
     });
 
@@ -311,14 +311,14 @@ describe('linux inspector through an injected procfs', () => {
       const found = gapsOf();
       const result = await createLinuxInspector({ procfs: fakeProcfs(entriesFor(SLEEP_STARTED_MS - 1)), layout: LAYOUT, uid: UID, timing: fakeTiming() }).holdersOf('/marker', found.report);
       expect(result).toEqual({ kind: 'value', value: [] });
-      expect(found.processes).toEqual([{ pid: 12, command: 'sleep' }]);
+      expect(found.processes).toEqual([{ pid: 12, command: 'sleep', startTicks: '987654' }]);
     });
 
     it('is reported the same way when the file system gives no birth time', async () => {
       const found = gapsOf();
       const result = await createLinuxInspector({ procfs: fakeProcfs(entriesFor(0)), layout: LAYOUT, uid: UID, timing: fakeTiming() }).holdersOf('/marker', found.report);
       expect(result).toEqual({ kind: 'value', value: [] });
-      expect(found.processes).toEqual([{ pid: 12, command: 'sleep' }]);
+      expect(found.processes).toEqual([{ pid: 12, command: 'sleep', startTicks: '987654' }]);
     });
   });
 

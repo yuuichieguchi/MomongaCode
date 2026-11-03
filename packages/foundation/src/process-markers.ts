@@ -33,8 +33,29 @@ const graceSleep = async (timing: ReapTiming, ms: number, signal: AbortSignal | 
   }
 };
 
-export const findHolders = async (marker: string, inspector: ProcessInspector = defaultProcessInspector()): Promise<number[]> =>
-  valueOrThrow(`listing the holders of ${marker}`, await inspector.holdersOf(marker), []).filter((pid) => pid !== process.pid);
+export const findHolders = async (
+  marker: string,
+  inspector: ProcessInspector = defaultProcessInspector(),
+  onUninspectable?: (process: UninspectableProcess) => void,
+): Promise<number[]> => valueOrThrow(`listing the holders of ${marker}`, await inspector.holdersOf(marker, onUninspectable), []).filter((pid) => pid !== process.pid);
+
+const namedUninspectable = new Set<string>();
+
+const isFirstNaming = (process: UninspectableProcess): boolean => {
+  const identity = `${process.pid}:${process.startTicks}`;
+  if (namedUninspectable.has(identity)) return false;
+  namedUninspectable.add(identity);
+  return true;
+};
+
+const uninspectableWarning = (context: string, processes: readonly UninspectableProcess[]): string =>
+  `${context}: process ${processes.map((process) => `${process.pid} (${process.command})`).join(', ')} could not be inspected, so it was left alone`;
+
+export const reportUninspectableOnce =
+  (onWarning: (message: string) => void, context: string) =>
+  (process: UninspectableProcess): void => {
+    if (isFirstNaming(process)) onWarning(uninspectableWarning(context, [process]));
+  };
 
 const groupsByHolder = async (holders: readonly number[], candidateGroups: readonly number[], inspector: ProcessInspector): Promise<Map<number, number>> =>
   valueOrThrow(`reading the process groups of ${holders.join(',')}`, await inspector.groupsOf(holders, candidateGroups), new Map<number, number>());
@@ -267,21 +288,18 @@ const reapObserved = async ({
 
 export type ReapReport = { removed: boolean; stopped: boolean; uninspectable: UninspectableProcess[] };
 
-const observing = (inspector: ProcessInspector, found: Map<number, string>): ProcessInspector => ({
+const observing = (inspector: ProcessInspector, found: Map<number, UninspectableProcess>): ProcessInspector => ({
   startTimeOf: (pid) => inspector.startTimeOf(pid),
-  holdersOf: (marker) => inspector.holdersOf(marker, (process) => void found.set(process.pid, process.command)),
+  holdersOf: (marker) => inspector.holdersOf(marker, (process) => void found.set(process.pid, process)),
   groupsOf: (pids, candidateGroups) => inspector.groupsOf(pids, candidateGroups),
 });
 
 export const reapMarkedProcessesWithReport = async (options: ReapMarkedProcessesOptions): Promise<ReapReport> => {
-  const found = new Map<number, string>();
+  const found = new Map<number, UninspectableProcess>();
   const outcome = await reapObserved({ ...options, inspector: observing(options.inspector ?? defaultProcessInspector(), found) });
-  const uninspectable = [...found].map(([pid, command]) => ({ pid, command }));
-  if (uninspectable.length > 0) {
-    options.onWarning(
-      `${options.label} marker ${options.marker}: process ${uninspectable.map((process) => `${process.pid} (${process.command})`).join(', ')} could not be inspected, so it was left alone`,
-    );
-  }
+  const uninspectable = [...found.values()];
+  const unnamed = uninspectable.filter(isFirstNaming);
+  if (unnamed.length > 0) options.onWarning(uninspectableWarning(`${options.label} marker ${options.marker}`, unnamed));
   return { ...outcome, uninspectable };
 };
 

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ProbeFailedError, findHolders, probeFailed, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory } from '@momonga/foundation';
+import { ProbeFailedError, findHolders, probeFailed, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, reportUninspectableOnce } from '@momonga/foundation';
 import type { ProbeResult, ProcessInspector, UninspectableProcess } from '@momonga/foundation';
 import { createFakeClock, createFakeTimers, drivenReapTiming, fakeReapTiming, waitFor, withTempDir } from '@momonga/testkit';
 
@@ -53,7 +53,31 @@ const inspectorReporting = (processes: readonly UninspectableProcess[]): Process
   groupsOf: async () => ({ kind: 'value', value: new Map() }),
 });
 
-const ssh = { pid: 77, command: 'ssh-agent' };
+const ssh = { pid: 77, command: 'ssh-agent', startTicks: '1001' };
+const otherSsh = { pid: 77, command: 'ssh-agent', startTicks: '1002' };
+
+describe('findHolders and reportUninspectableOnce with a process that cannot be inspected', () => {
+  it('hands the process to the callback and still lists the holders', async () => {
+    const seen: UninspectableProcess[] = [];
+    const inspector = inspectorReporting([ssh]);
+    expect(await findHolders('/m', inspector, (process) => void seen.push(process))).toEqual([]);
+    expect(seen).toEqual([ssh]);
+  });
+
+  it('warns once per pid and start tick for the life of the process, and again for a new process with the same pid', () => {
+    const warnings: string[] = [];
+    const report = reportUninspectableOnce((message) => void warnings.push(message), 'tool marker /m');
+    const fresh = { pid: 9001, command: 'sshd', startTicks: '5' };
+    report(fresh);
+    report(fresh);
+    reportUninspectableOnce((message) => void warnings.push(message), 'background job j1')(fresh);
+    report({ ...fresh, startTicks: '6' });
+    expect(warnings).toEqual([
+      'tool marker /m: process 9001 (sshd) could not be inspected, so it was left alone',
+      'tool marker /m: process 9001 (sshd) could not be inspected, so it was left alone',
+    ]);
+  });
+});
 
 describe('reapMarkedProcessesWithReport with a process that cannot be inspected', () => {
   it('completes, removes the marker, and names the process once as one that could not be inspected', async (context) => {
@@ -86,10 +110,25 @@ describe('reapMarkedProcessesWithReport with a process that cannot be inspected'
       kill: () => {
         throw gone;
       },
-      inspector: inspectorReporting([ssh]),
+      inspector: inspectorReporting([otherSsh]),
     });
-    expect(result).toEqual({ removed: true, stopped: false, uninspectable: [ssh] });
+    expect(result).toEqual({ removed: true, stopped: false, uninspectable: [otherSsh] });
     expect(warnings).toEqual([`mcp marker ${file}: process 77 (ssh-agent) could not be inspected, so it was left alone`]);
+  });
+
+  it('does not repeat the warning for a process it already named', async (context) => {
+    const warnings: string[] = [];
+    for (let round = 0; round < 2; round += 1) {
+      await reapMarkedProcessesWithReport({
+        marker: marker(context),
+        killGraceMs: 1000,
+        label: 'tool',
+        onWarning: (message) => void warnings.push(message),
+        timing: timing(),
+        inspector: inspectorReporting([{ pid: 4242, command: 'ssh-agent', startTicks: '77' }]),
+      });
+    }
+    expect(warnings).toHaveLength(1);
   });
 
   it('says nothing when every process could be inspected', async (context) => {
