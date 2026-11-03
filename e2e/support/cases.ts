@@ -31,7 +31,8 @@ export type E2eCaseFile =
   | 'agents.test.ts'
   | 'acp.test.ts'
   | 'hooks-auto.test.ts'
-  | 'hooks-auto-cli.test.ts';
+  | 'hooks-auto-cli.test.ts'
+  | 'token-anatomy.test.ts';
 
 export const E2E_CASES = [
   { id: 'b1-join', file: 'b1-model-call.test.ts', title: 'b1 join: restarted runtime joins the in-flight upstream call', needsBash: false },
@@ -138,6 +139,12 @@ export const E2E_CASES = [
   { id: 'cli-models', file: 'product-cli.test.ts', title: 'cli: momonga models lists the aliases with the capabilities the gateway declares, as text and as JSON', needsBash: false },
   { id: 'cli-policy-verify', file: 'product-cli.test.ts', title: 'cli: momonga policy verify proves a clean rule set and states what it does not prove, and exits non-zero with a counterexample when an allow rule admits a denied subcommand or reaches a secret', needsBash: false },
   { id: 'cli-cost', file: 'product-cli.test.ts', title: 'cli: momonga cost reports the calls and tokens of a run, of its session and of the folder, as text and as JSON', needsBash: false },
+  {
+    id: 'cost-breakdown',
+    file: 'token-anatomy.test.ts',
+    title: 'token anatomy: a two-step run against an upstream that reports cached and reasoning tokens, then momonga cost --breakdown shows its layers, billed tokens, cache hit ratio, timing and cost for the run and the session',
+    needsBash: false,
+  },
   { id: 'cli-memory', file: 'product-cli.test.ts', title: 'cli: momonga memory lists, shows and deletes a memory the agent saved, with its source', needsBash: false },
   { id: 'cli-skill-print', file: 'product-cli.test.ts', title: 'cli: momonga -p runs a skill through a leading /skill-name and through --skill, and sends any other slash text as plain text', needsBash: false },
   { id: 'cli-image-print', file: 'product-cli.test.ts', title: 'cli: momonga -p --image sends the image to a model that declares image input and fails with image_input_unsupported for one that does not', needsBash: false },

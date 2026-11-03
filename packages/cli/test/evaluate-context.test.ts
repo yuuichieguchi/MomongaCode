@@ -199,6 +199,31 @@ describe('momonga eval compare', () => {
     expect(completed).toEqual([1]);
   });
 
+  it('judges the token terms with --gate token and prints why a term with no measure fails', async () => {
+    const context = harness();
+    context.stored.set('/w/a.json', await reportFile('a.json', 0, 'real'));
+    context.stored.set('/w/b.json', await reportFile('b.json', 0, 'real'));
+    await run(context.program, 'eval', 'compare', 'a.json', 'b.json', '--gate', 'token');
+    const text = context.stdout.join('');
+    expect(text).toContain('gate: FAIL');
+    expect(text).toMatch(/FAIL (costPerSuccess|uncachedInputPerSuccess): no measure: /);
+    expect(text).toContain('passRate');
+    expect(text).not.toContain('contrastiveFailures:');
+    expect(context.completed).toEqual([1]);
+  });
+
+  it('refuses a gate it does not know', async () => {
+    const context = harness();
+    context.stored.set('/w/a.json', await reportFile('a.json', 0, 'real'));
+    context.stored.set('/w/b.json', await reportFile('b.json', 0, 'real'));
+    await expect(run(context.program, 'eval', 'compare', 'a.json', 'b.json', '--gate', 'speed')).rejects.toThrow(/--gate.*context.*token/);
+    const named = harness();
+    named.stored.set('/w/a.json', await reportFile('a.json', 0, 'real'));
+    named.stored.set('/w/b.json', await reportFile('b.json', 0, 'real'));
+    await run(named.program, 'eval', 'compare', 'a.json', 'b.json', '--gate', 'context');
+    expect(named.stdout.join('')).toContain('contrastiveFailures');
+  });
+
   it('refuses a file that is not a context report', async () => {
     const context = harness();
     context.stored.set('/w/a.json', '{}');
