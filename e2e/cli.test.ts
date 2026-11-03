@@ -5,7 +5,7 @@ import { createFakeFm, startFakeChatCompletions } from '@momonga/testkit';
 import cliPackage from '../packages/cli/package.json' with { type: 'json' };
 import type { FakeScriptedReply } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
-import { CLI_FAKES_BUNDLE, cliVersionEnv, runCli, runCliWithFakes, startCli } from './support/cli.ts';
+import { CLI_FAKES_BUNDLE, runCli, runCliWithFakes, setFakeCliVersion, startCli } from './support/cli.ts';
 import { readDb } from './support/db.ts';
 import { supervisorLog } from './support/log-reader.ts';
 import { createE2eHome } from './support/home.ts';
@@ -278,12 +278,13 @@ describe('cli: momonga -p', () => {
     const oldPid = stack.supervisor.pid;
     expect(stack.health.version).toBe('1.0.0');
 
-    const result = await runCliWithFakes(home, ['-p', 'hello'], { env: cliVersionEnv('2.0.0') });
+    setFakeCliVersion(home, '2.0.0');
+    const result = await runCliWithFakes(home, ['-p', 'hello']);
 
     expect(result.code).toBe(0);
     expect(result.stdout).toBe('from the new daemon\n');
     expect((await stack.supervisor.exited).code).toBe(0);
-    const status = await runCliWithFakes(home, ['daemon', 'status'], { env: cliVersionEnv('2.0.0') });
+    const status = await runCliWithFakes(home, ['daemon', 'status']);
     expect(status.stdout).toMatch(/version 2\.0\.0/);
     expect(Number(/pid (\d+)/.exec(status.stdout)?.[1])).not.toBe(oldPid);
   });
@@ -297,25 +298,31 @@ describe('cli: momonga -p', () => {
     const held = (await runtime.createRun(session.session.id, 'work in progress')).run;
     await hold.waitForRequest();
 
-    const status = await runCliWithFakes(home, ['status', held.id], { env: cliVersionEnv('2.0.0') });
-    const blocked = startCli(home, ['-p', 'another'], { bundle: CLI_FAKES_BUNDLE, env: cliVersionEnv('2.0.0') });
+    setFakeCliVersion(home, '2.0.0');
+    const status = await runCliWithFakes(home, ['status', held.id]);
+    const another = await runCliWithFakes(home, ['-p', 'another']);
 
-    expect(status.code).toBe(0);
-    expect(status.stdout).toContain(held.id);
+    for (const refused of [status, another]) {
+      expect(refused.code).toBe(1);
+      expect(refused.stderr).toContain('the daemon (pid');
+      expect(refused.stderr).toContain(`runs version 1.0.0, not 2.0.0; run \`momonga daemon stop\``);
+    }
     expect(process.kill(stack.supervisor.pid, 0)).toBe(true);
+    expect(stack.supervisor.exitState()).toBeUndefined();
     expect((await stack.client.health()).version).toBe('1.0.0');
     hold.release();
-    expect((await blocked.result).code).toBe(0);
   });
 
   it(titleOf('cli-newer-daemon'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const stack = await startStack({ home, script: [textReply('served by the newer daemon')], version: '3.0.0' });
 
-    const result = await runCliWithFakes(home, ['-p', 'hello'], { env: cliVersionEnv('2.0.0') });
+    setFakeCliVersion(home, '2.0.0');
+    const result = await runCliWithFakes(home, ['-p', 'hello']);
 
-    expect(result.code).toBe(0);
-    expect(result.stdout).toBe('served by the newer daemon\n');
+    expect(result.code).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain(`runs version 3.0.0, not 2.0.0; run \`momonga daemon stop\``);
     expect(process.kill(stack.supervisor.pid, 0)).toBe(true);
     expect((await stack.client.health()).version).toBe('3.0.0');
   });

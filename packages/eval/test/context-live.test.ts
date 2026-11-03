@@ -35,7 +35,10 @@ const datasetOf = (cases: unknown[]) => parseContextDataset(JSON.stringify({ for
 
 type Script = { tokens?: number; hang?: boolean; events?: (caseCwd: string) => PublicRunEvent[] };
 
-const NEVER = (): Promise<void> => new Promise(() => undefined);
+const NEVER = (_caseId: string, signal: AbortSignal): Promise<void> =>
+  new Promise<void>((_resolve, reject) => {
+    signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+  });
 
 const harness = (script: Script = {}) => {
   const log: string[] = [];

@@ -69,12 +69,16 @@ type Behaviour = {
   failStartOnRoot?: number;
   rootLength?: number;
   secrets?: Record<string, string>;
-  staleRoots?: { root: string; owner: number; holder?: number }[];
+  staleRoots?: { root: string; owner: number; home?: string; holder?: number }[];
   unreadableRoots?: string[];
   canonicalPrefix?: string;
 };
 
 const OWNER = 7;
+
+const OWNER_HOME = '/home/person';
+
+const OTHER_HOME = '/home/someone-else';
 
 const harness = (behaviour: Behaviour = {}) => {
   const files = new Map<string, string>();
@@ -145,6 +149,7 @@ const harness = (behaviour: Behaviour = {}) => {
       return root;
     },
     ownerPid: OWNER,
+    ownerHome: OWNER_HOME,
     isAlive: (pid) => pid === OWNER || alive.has(pid),
     readSecret: async (name) => {
       secretReads.push(name);
@@ -159,7 +164,7 @@ const harness = (behaviour: Behaviour = {}) => {
     readOwner: async (root) => {
       if (behaviour.unreadableRoots?.includes(root) === true) return 'unreadable';
       const text = files.get(`${root}/.momonga-eval-owner`);
-      return text === undefined ? undefined : Number(text);
+      return text === undefined ? undefined : (JSON.parse(text) as { pid: number; home: string });
     },
     prepare: async () => undefined,
     writeFile: async (file, text) => {
@@ -194,11 +199,14 @@ const harness = (behaviour: Behaviour = {}) => {
     },
     connect: (paths) => runtimeFor(paths.root.replace(/\/\.momonga$/, '')),
     applyStep: async () => undefined,
-    after: async () => new Promise<void>(() => undefined),
+    after: (_milliseconds, signal) =>
+      new Promise<void>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      }),
     now: () => 0,
   };
   for (const stale of behaviour.staleRoots ?? []) {
-    files.set(`${stale.root}/.momonga-eval-owner`, String(stale.owner));
+    files.set(`${stale.root}/.momonga-eval-owner`, JSON.stringify({ pid: stale.owner, home: stale.home ?? OWNER_HOME }));
     nextPid += 1;
     if (stale.holder !== undefined) {
       alive.add(stale.holder);
@@ -453,7 +461,19 @@ describe('a home left by a CLI that was killed', () => {
     const context = harness({ staleRoots: [{ root: '/tmp/mc-stale0', owner: 99 }] });
     await runContextLive(context.effects, input());
     expect(context.removedDirectories).toContain('/tmp/mc-stale0');
-    expect(context.files.get('/tmp/mc-xxxxxx0/.momonga-eval-owner')).toBe(String(OWNER));
+    expect(JSON.parse(context.files.get('/tmp/mc-xxxxxx0/.momonga-eval-owner') ?? 'null')).toEqual({ pid: OWNER, home: OWNER_HOME });
+  });
+
+  it('survives the sweep of a run of another momonga home, with its daemon', async () => {
+    const context = harness({
+      staleRoots: [
+        { root: '/tmp/mc-theirs', owner: 99, home: OTHER_HOME, holder: 5000 },
+        { root: '/tmp/mc-mine', owner: 98, holder: 5001 },
+      ],
+    });
+    expect(await sweepStaleHomes(context.effects)).toEqual({ removed: ['/tmp/mc-mine'], unreadable: 0 });
+    expect(context.removedDirectories).toEqual(['/tmp/mc-mine']);
+    expect(context.terminated).toEqual([5001]);
   });
 });
 

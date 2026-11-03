@@ -48,8 +48,16 @@ describe('the homes a sweep may consider', () => {
   it('reads the owner marker of a home, and says nothing when there is none', async () => {
     const root = temporary();
     expect(await readEvalOwner(nodeFiles, root)).toBeUndefined();
+    fs.writeFileSync(path.join(root, OWNER_FILE), JSON.stringify({ pid: 4242, home: '/home/person' }));
+    expect(await readEvalOwner(nodeFiles, root)).toEqual({ pid: 4242, home: '/home/person' });
+  });
+
+  it('names no owner for a marker that does not record a home', async () => {
+    const root = temporary();
     fs.writeFileSync(path.join(root, OWNER_FILE), '4242');
-    expect(await readEvalOwner(nodeFiles, root)).toBe(4242);
+    expect(await readEvalOwner(nodeFiles, root)).toBeUndefined();
+    fs.writeFileSync(path.join(root, OWNER_FILE), JSON.stringify({ pid: 4242 }));
+    expect(await readEvalOwner(nodeFiles, root)).toBeUndefined();
   });
 
   it('reports a directory it cannot read as unreadable instead of throwing', async () => {
@@ -64,6 +72,29 @@ describe('the homes a sweep may consider', () => {
     const file = path.join(base, `${ROOT_PREFIX}file`);
     fs.writeFileSync(file, '');
     expect(await readEvalOwner(nodeFiles, file)).toBe('unreadable');
+  });
+});
+
+describe('the timer of a case', () => {
+  const effects = (): ReturnType<typeof nodeContextEffects> => nodeContextEffects({ platform: 'linux', env: {}, home: '/home/person', files: nodeFiles } as unknown as CliPorts);
+
+  it('resolves when the time has passed', async () => {
+    await expect(effects().after(1, new AbortController().signal)).resolves.toBeUndefined();
+  });
+
+  it('rejects with the reason of the signal when it is aborted while waiting', async () => {
+    const controller = new AbortController();
+    const reason = new Error('case closed');
+    const waiting = effects().after(60_000, controller.signal);
+    controller.abort(reason);
+    await expect(waiting).rejects.toBe(reason);
+  });
+
+  it('rejects with the reason of a signal that was already aborted, without starting a timer', async () => {
+    const controller = new AbortController();
+    const reason = new Error('already closed');
+    controller.abort(reason);
+    await expect(effects().after(60_000, controller.signal)).rejects.toBe(reason);
   });
 });
 

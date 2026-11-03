@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { hostKernelLock, inspectProcessLock, parseReadyLine } from '@momonga/foundation';
+import { EXIT_ALREADY_RUNNING, EXIT_VERSION_MISMATCH, hostKernelLock, inspectProcessLock, parseReadyLine } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeEntryIo, createFakeTimers, fakeReapTiming, parseJsonLines, registerCleanup, startLockHolder, waitFor } from '@momonga/testkit';
@@ -22,7 +22,7 @@ import {
   writeMarker,
   writeSettings,
 } from './fixtures/p3-harness.ts';
-import type { FakeSpawn, MarkerCalls, RealWorkScope } from './fixtures/p3-harness.ts';
+import type { FakeSpawn, FakeSpawnOptions, MarkerCalls, RealWorkScope } from './fixtures/p3-harness.ts';
 import type { MarkerPorts } from '../src/orphans.ts';
 
 type EntryRun = {
@@ -46,6 +46,7 @@ type EntryOptions = {
   prepared?: { home: string; paths: MomongaPaths };
   lockMechanism?: KernelLockMechanism;
   argvHome?: boolean;
+  behaviours?: FakeSpawnOptions['behaviours'];
 };
 
 const cancelOnClaim = (target: string, cancel: () => void): KernelLockMechanism => {
@@ -75,7 +76,7 @@ const startEntry = (context: CleanupContext, options: EntryOptions = {}): EntryR
   });
   const markers = recordingMarkerPorts(options.markerPorts ?? {});
   const realWork = createRealWorkScope();
-  const fake = createFakeSpawn({ realWork });
+  const fake = createFakeSpawn({ realWork, ...(options.behaviours === undefined ? {} : { behaviours: options.behaviours }) });
   const code = realWork.run(() => runSupervisorEntry(io, {
     version: TEST_VERSION,
     launcher: fakeLauncher,
@@ -155,6 +156,20 @@ describe('runSupervisorEntry', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => 
     expect(run.fake.latest('runtime').signals).toEqual(['SIGTERM']);
     expect(run.fake.latest('gateway').signals).toEqual(['SIGTERM']);
     expect(run.io.exits).toEqual([0]);
+  });
+
+  it('a child that reports another version is never ready: the supervisor drains and exits with the version-mismatch code', async (context) => {
+    const run = startEntry(context, { behaviours: { runtime: { readyVersion: `${TEST_VERSION}-other` } } });
+    await ready(run);
+    expect(await exitOf(run)).toBe(EXIT_VERSION_MISMATCH);
+    expect(EXIT_VERSION_MISMATCH).not.toBe(EXIT_ALREADY_RUNNING);
+    expect(lastLine(run)).toMatchObject({ msg: 'entry.exit', path: 'close', clean: false, code: EXIT_VERSION_MISMATCH });
+    const mismatches = run.supervisorLog().filter((line) => line.msg === 'child.version.mismatch');
+    expect(mismatches).toEqual([expect.objectContaining({ child: 'runtime', childVersion: `${TEST_VERSION}-other`, supervisorVersion: TEST_VERSION })]);
+    expect(run.supervisorLog().filter((line) => line.msg === 'child.ready' && line['child'] === 'runtime')).toEqual([]);
+    expect(run.fake.latest('runtime').signals).toEqual(['SIGTERM']);
+    expect(run.fake.latest('gateway').signals).toEqual(['SIGTERM']);
+    expect(run.io.exits).toEqual([EXIT_VERSION_MISMATCH]);
   });
 
   it('exit codes: a killed child gives 1', async (context) => {

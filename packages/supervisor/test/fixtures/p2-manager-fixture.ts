@@ -21,6 +21,10 @@ fs.mkdirSync(paths.markers.daemons, { recursive: true });
 const logger = createJsonLogger({ service: 'supervisor', clock: systemClock, stream: process.stderr });
 const manager = createChildManager({
   role: 'runtime',
+  version: '0.0.0-fixture',
+  onVersionMismatch: (mismatch) => {
+    process.stderr.write(`version mismatch: ${mismatch.childVersion}\n`);
+  },
   home,
   paths,
   launcher: () => ({ command: process.execPath, args: [child, ...flag('child-arg')] }),

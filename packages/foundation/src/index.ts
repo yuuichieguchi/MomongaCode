@@ -85,6 +85,7 @@ export { isLoopbackHost, redactedUrl, transportUrlMessage, transportUrlProblem }
 export type { TransportUrlProblem } from './loopback.ts';
 export {
   EXIT_ALREADY_RUNNING,
+  EXIT_VERSION_MISMATCH,
   EXIT_CONFIG,
   EXIT_FAILURE,
   EXIT_OK,

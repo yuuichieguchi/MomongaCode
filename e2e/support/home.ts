@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach } from 'vitest';
 import { SOCKET_PATH_LIMIT, ensureMomongaDirs, isProcessAlive, momongaLayout, momongaPaths } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
+import { stopSupervisorHolder } from '@momonga/testkit';
 import { createProcessLedger } from './ledger.ts';
 import type { ProcessLedger } from './ledger.ts';
 import { groupAlive } from './process.ts';
@@ -142,7 +143,8 @@ const stopProcessesOf = async (home: E2eHome): Promise<void> => {
   await home.ledger.sweep({});
 };
 
-const removeHome = (home: E2eHome): void => {
+const removeHome = async (home: E2eHome): Promise<void> => {
+  await stopSupervisorHolder(home.root);
   removeTree(home.root);
   fs.rmSync(liveMarkerPath(home.tmpRoot, home.run), { force: true });
   if (fs.existsSync(home.root)) throw new Error(`e2e root ${home.root} still exists after removal`);

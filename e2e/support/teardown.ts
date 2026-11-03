@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { TEMP_DIR_PREFIX } from '@momonga/testkit';
+import { TEMP_DIR_PREFIX, stopSupervisorHolder } from '@momonga/testkit';
+import { OWNER_FILE, ROOT_PREFIX, parseEvalOwner } from '../../packages/cli/src/eval/context-host.ts';
+import { shortTempBase } from '../../packages/cli/src/eval/context-effects.ts';
 import { defaultLedgerPorts, killSelectedGroups, parsePidsFile, selectGroupsToSignal } from './ledger.ts';
 import type { LedgerPorts } from './ledger.ts';
 import { removeTree } from './remove-tree.ts';
@@ -8,7 +10,7 @@ import { LIVE_MARKER_SUFFIX, PIDS_FILE_SUFFIX, e2eEntryPrefix, harnessFilePath }
 
 export type TeardownPorts = Pick<LedgerPorts, 'startTimeOf' | 'groupAlive' | 'pidAlive' | 'killGroups'>;
 
-export type E2eTeardownOptions = { tmpRoot: string; run: string; ports?: TeardownPorts; report?: (line: string) => void };
+export type E2eTeardownOptions = { tmpRoot: string; run: string; evalBase?: string; ports?: TeardownPorts; report?: (line: string) => void };
 
 const HARNESS_SUFFIXES: readonly string[] = [PIDS_FILE_SUFFIX, LIVE_MARKER_SUFFIX];
 
@@ -33,15 +35,41 @@ export const killListedGroups = async (pidsFile: string, ports: TeardownPorts = 
   return signal;
 };
 
+const ABSENT_CODES: ReadonlySet<string | undefined> = new Set(['ENOENT', 'ENOTDIR']);
+
+export const evalRootsOfRun = (base: string, tmpRoot: string, run: string): string[] => {
+  const homePrefix = e2eEntryPrefix(run);
+  const roots: string[] = [];
+  for (const name of fs.readdirSync(base)) {
+    if (!name.startsWith(ROOT_PREFIX)) continue;
+    const root = path.join(base, name);
+    let text: string;
+    try {
+      text = fs.readFileSync(path.join(root, OWNER_FILE), 'utf8');
+    } catch (error) {
+      if (ABSENT_CODES.has((error as NodeJS.ErrnoException).code)) continue;
+      throw error;
+    }
+    const owner = parseEvalOwner(text);
+    if (owner !== undefined && path.dirname(owner.home) === tmpRoot && path.basename(owner.home).startsWith(homePrefix)) roots.push(root);
+  }
+  return roots;
+};
+
 export const runE2eTeardown = async (options: E2eTeardownOptions): Promise<void> => {
-  const { tmpRoot, run, ports = defaultLedgerPorts, report = (line: string) => console.error(line) } = options;
+  const { tmpRoot, run, ports = defaultLedgerPorts, report = (line: string) => console.error(line), evalBase = shortTempBase(process.platform) } = options;
   const killed = await killListedGroups(harnessFilePath(tmpRoot, run, PIDS_FILE_SUFFIX), ports);
-  const leaked = leftoverEntries(fs.readdirSync(tmpRoot), run);
+  const leaked = leftoverEntries(fs.readdirSync(tmpRoot), run).map((entry) => path.join(tmpRoot, entry));
+  const leakedEval = evalRootsOfRun(evalBase, tmpRoot, run);
   if (killed.length > 0) report(`e2e teardown: killed process groups left by run ${run}: ${killed.join(', ')}`);
-  for (const entry of leaked) report(`e2e teardown: leaked directory ${entry} in ${tmpRoot}`);
-  for (const entry of leaked) removeTree(path.join(tmpRoot, entry));
+  for (const directory of [...leaked, ...leakedEval]) report(`e2e teardown: leaked directory ${directory}`);
+  for (const directory of [...leaked, ...leakedEval]) {
+    await stopSupervisorHolder(directory);
+    removeTree(directory);
+  }
   for (const suffix of HARNESS_SUFFIXES) fs.rmSync(harnessFilePath(tmpRoot, run, suffix), { force: true });
-  if (killed.length > 0 || leaked.length > 0) {
-    throw new Error(`e2e leak guard: run ${run} left ${killed.length} process group(s) and ${leaked.length} director(ies)`);
+  const directories = leaked.length + leakedEval.length;
+  if (killed.length > 0 || directories > 0) {
+    throw new Error(`e2e leak guard: run ${run} left ${killed.length} process group(s) and ${directories} director(ies)`);
   }
 };

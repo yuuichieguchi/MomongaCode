@@ -6,7 +6,7 @@ import { skipCase, titleOf } from './support/cases.ts';
 import { runCli } from './support/cli.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
-import { UPSTREAM_TARGET, baseSettings, sandboxChoiceOf, startUpstream, writeSettingsFile } from './support/stack.ts';
+import { baseSettings, sandboxChoiceOf, startUpstream, withClassifierAlias, writeSettingsFile } from './support/stack.ts';
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
@@ -15,14 +15,7 @@ const CLASSIFIER_ALIAS = 'guard';
 const verdictReply = (verdict: 'safe' | 'unsafe', confidence: 'high' | 'medium' | 'low'): FakeScriptedReply =>
   textReply(JSON.stringify({ verdict, confidence, rationale: `scripted ${verdict}/${confidence}` }));
 
-const withClassifier = (settings: Record<string, unknown>): Record<string, unknown> => {
-  const models = settings['models'] as { aliases: Record<string, unknown>; targets: Record<string, unknown> };
-  return {
-    ...settings,
-    models: { ...models, aliases: { ...models.aliases, [CLASSIFIER_ALIAS]: [UPSTREAM_TARGET] } },
-    autoMode: { classifier: CLASSIFIER_ALIAS },
-  };
-};
+const withClassifier = (settings: Record<string, unknown>): Record<string, unknown> => withClassifierAlias(settings, CLASSIFIER_ALIAS);
 
 const blockingHook = (event: 'PreToolUse' | 'UserPromptSubmit', message: string) => ({
   [event]: [{ ...(event === 'PreToolUse' ? { matcher: 'Write' } : {}), hooks: [{ type: 'command', command: `echo "${message}" >&2; exit 2` }] }],

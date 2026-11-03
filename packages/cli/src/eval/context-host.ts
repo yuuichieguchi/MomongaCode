@@ -37,11 +37,12 @@ export type ContextHostEffects = {
   after(milliseconds: number, signal: AbortSignal): Promise<void>;
   now(): number;
   ownerPid: number;
+  ownerHome: string;
   readSecret(name: string, signal: AbortSignal): Promise<string>;
   copyProbeRecord(target: string, paths: MomongaPaths): Promise<void>;
   copyEndpointProbeRecord(probe: EndpointProbe, paths: MomongaPaths): Promise<void>;
   listRoots(): Promise<string[]>;
-  readOwner(root: string): Promise<number | 'unreadable' | undefined>;
+  readOwner(root: string): Promise<EvalOwner | 'unreadable' | undefined>;
   isAlive(pid: number): boolean;
 };
 
@@ -148,6 +149,23 @@ export const readCredentials = async (
 
 export const OWNER_FILE = '.momonga-eval-owner';
 
+export type EvalOwner = { pid: number; home: string };
+
+export const ownerRecord = (owner: EvalOwner): string => JSON.stringify({ pid: owner.pid, home: owner.home });
+
+export const parseEvalOwner = (text: string): EvalOwner | undefined => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
+  const { pid, home } = parsed as Record<string, unknown>;
+  if (typeof pid !== 'number' || !Number.isInteger(pid) || typeof home !== 'string') return undefined;
+  return { pid, home };
+};
+
 export const ROOT_PREFIX = 'momonga-eval-';
 
 export const unreadableHomesNotice = (count: number): string =>
@@ -164,7 +182,7 @@ export const sweepStaleHomes = async (effects: ContextHostEffects): Promise<Swee
       unreadable += 1;
       continue;
     }
-    if (owner === undefined || effects.isAlive(owner)) continue;
+    if (owner === undefined || owner.home !== effects.ownerHome || effects.isAlive(owner.pid)) continue;
     const holder = await effects.daemonHolder(momongaLayout(root, effects.platform, {}));
     if (holder !== undefined) await effects.terminate(holder);
     await effects.remove(root);
@@ -213,7 +231,7 @@ export const createContextHosts = (
 
   const prepared = async (entry: ExpandedCase, record: CaseRecord): Promise<ContextCaseHost> => {
     const { root } = record;
-    await effects.writeFile(path.join(root, OWNER_FILE), String(effects.ownerPid));
+    await effects.writeFile(path.join(root, OWNER_FILE), ownerRecord({ pid: effects.ownerPid, home: effects.ownerHome }));
     assertSocketsFit(await effects.canonical(root), effects.platform);
     const paths = momongaLayout(root, effects.platform, {});
     record.paths = paths;

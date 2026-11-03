@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { inspectProcessLock, isProcessAlive, momongaLayout } from '@momonga/foundation';
 import type { FakeRoute } from '@momonga/testkit';
-import { OWNER_FILE, ROOT_PREFIX } from '../packages/cli/src/eval/context-host.ts';
+import { OWNER_FILE, ROOT_PREFIX, parseEvalOwner } from '../packages/cli/src/eval/context-host.ts';
 import { SHORT_TEMP_BASE } from '../packages/cli/src/eval/context-effects.ts';
 import { titleOf } from './support/cases.ts';
 import { startCli, runCli } from './support/cli.ts';
@@ -52,7 +52,7 @@ const rootOwnedBy = (pid: number): string | undefined =>
     .map((name) => path.join(SHORT_TEMP_BASE, name))
     .find((root) => {
       try {
-        return fs.readFileSync(path.join(root, OWNER_FILE), 'utf8').trim() === String(pid);
+        return parseEvalOwner(fs.readFileSync(path.join(root, OWNER_FILE), 'utf8'))?.pid === pid;
       } catch {
         return false;
       }

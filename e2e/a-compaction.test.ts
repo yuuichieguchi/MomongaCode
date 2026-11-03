@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { pinnedFloorFor } from '@momonga/context';
 import type { Capabilities } from '@momonga/protocol';
+import { DEFAULT_KEEP_RECENT_STEPS, DEFAULT_KEEP_RECENT_TURNS, protectionRungsOf } from '../packages/context/src/levels.ts';
+import type { HistoryShape } from '../packages/context/src/levels.ts';
 import {
   ACCEPTANCE_MAX_OUTPUT,
   ACCEPTANCE_TASK,
   ACCEPTANCE_WINDOW,
+  ESCALATION_NOTICE_PREFIX,
   acceptanceTarget,
   budgetFor,
   dryRun,
@@ -205,7 +208,7 @@ const assertAcceptance = async (
   expect(journal.filter((event) => event.type === 'run.status' && event.data['to'] === 'STOPPED')).toEqual([]);
 };
 
-const assertLeanProperties = (observed: Observed, haystack: Haystack, plan: Plan, capabilities: Capabilities): void => {
+const assertLeanProperties =(observed: Observed, haystack: Haystack, plan: Plan, capabilities: Capabilities): void => {
   const notices = ofType(observed.journal, 'notice');
   const floor = pinnedFloorFor(capabilities);
   const planned = plan.runs.find((run) => run.perturbation === 0);
@@ -224,6 +227,14 @@ const assertLeanProperties = (observed: Observed, haystack: Haystack, plan: Plan
     `Bash is denied and no background job runs, so BashOutput and KillBash are not offered and the lean deny list leaves Glob and UpdatePlan offered, so the pinned prefix is ${plan.sizing.pinned} tokens against the ceiling ${plan.sizing.ceiling}, which leaves ${plan.sizing.ceiling - plan.sizing.pinned} tokens of room; the planner took ${shape}, the first shape in the grid whose step growth of ${growth} tokens makes the request before the escalation (${wireCounts[before - 1]} tokens) plus one more step exceed the ceiling while the recent steps are kept whole, and reducing them to one is then journaled exactly once`,
   ).toHaveLength(1);
   expect(messages, "the real run journals exactly the notices of the planner's dry run, which offers the same tools under the same deny list").toEqual(planned?.facts.notices);
+  const plannedShape: HistoryShape = { positions: Array.from({ length: before }, (_unused, step) => ({ turn: 0, step })), turnCount: 1, currentTurn: 0, lastStep: before - 1 };
+  const rungs = protectionRungsOf(plannedShape, DEFAULT_KEEP_RECENT_TURNS, DEFAULT_KEEP_RECENT_STEPS);
+  const keptWhole = rungs[0]?.protection.keepSteps;
+  const reducedTo = rungs.at(-1)?.protection.keepSteps;
+  expect(rungs, `the ${before} planned requests before the escalation leave the default recent steps to reduce`).toHaveLength(2);
+  const escalationText = `${ESCALATION_NOTICE_PREFIX} ${keptWhole} to ${reducedTo} because the context budget was exceeded`;
+  expect(planned?.facts.escalationNotices, 'the planner kept the default recent steps whole and the escalation reduced them to the lowest rung').toEqual([escalationText]);
+  expect(messages.filter((message) => message.startsWith(ESCALATION_NOTICE_PREFIX)), 'the real run journals the escalation notice with the step counts of the plan').toEqual([escalationText]);
   const escalation = notices.find((event) => String(event.data['message']) === planned?.facts.escalationNotices[0]) as JournalEvent;
   const escalatedBefore = observed.journal.find((event) => event.type === 'model.requested' && event.seq > escalation.seq);
   expect(escalatedBefore?.data['step'], 'the first model request after the escalation notice is the step the planner journaled after it').toBe(planned?.facts.escalationStep);

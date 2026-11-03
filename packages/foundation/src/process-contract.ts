@@ -3,6 +3,7 @@ import type { Clock } from './clock.ts';
 export const EXIT_OK = 0;
 export const EXIT_FAILURE = 1;
 export const EXIT_ALREADY_RUNNING = 75;
+export const EXIT_VERSION_MISMATCH = 76;
 export const EXIT_CONFIG = 78;
 
 export const MINIMAL_CHILD_ENV_NAMES = ['PATH', 'HOME', 'LANG', 'TMPDIR'] as const;

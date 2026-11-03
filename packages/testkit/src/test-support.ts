@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { TestContext } from 'vitest';
 import { SOCKET_PATH_LIMIT, forceKillGroup, isProcessAlive, momongaLayout } from '@momonga/foundation';
+import { stopSupervisorHolder } from './process-groups.ts';
 
 export const TEST_RUN_ENV = 'MOMONGA_TEST_RUN';
 export const TEMP_DIR_PREFIX = 'mmt-';
@@ -73,10 +74,14 @@ export type TempDirOptions = { asHome?: boolean };
 export const withTempDir = (context: CleanupContext | undefined, options: TempDirOptions = {}): string => {
   assertTestContext(context, 'withTempDir');
   const created = fs.mkdtempSync(path.join(os.tmpdir(), tempDirPrefixFor(testRunToken())));
-  context.onTestFinished(() => removeTempDir(created));
+  const asHome = options.asHome === true;
+  context.onTestFinished(async () => {
+    if (asHome) await stopSupervisorHolder(created);
+    removeTempDir(created);
+  });
   const dir = fs.realpathSync(created);
   fs.chmodSync(dir, 0o700);
-  if (options.asHome === true) assertHomeSocketBudget(dir);
+  if (asHome) assertHomeSocketBudget(dir);
   return dir;
 };
 

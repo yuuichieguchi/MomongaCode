@@ -208,6 +208,9 @@ const runCase = async (
     for (let runIndex = 0; runIndex < entry.runs; runIndex += 1) await playRun(runIndex);
   } finally {
     watch.abort();
+    await expired.catch((error: unknown) => {
+      if (error !== watch.signal.reason) throw error;
+    });
   }
 };
 
