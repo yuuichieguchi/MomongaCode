@@ -13,9 +13,11 @@ export type ProbeFailure = { kind: 'failed'; cause: ProbeCause; evidence: ProbeE
 
 export type ProbeResult<T> = { kind: 'gone' } | { kind: 'value'; value: T } | ProbeFailure;
 
+export type UninspectableProcess = { pid: number; command: string };
+
 export interface ProcessInspector {
   startTimeOf(pid: number): Promise<ProbeResult<number>>;
-  holdersOf(marker: string): Promise<ProbeResult<number[]>>;
+  holdersOf(marker: string, onUninspectable?: (process: UninspectableProcess) => void): Promise<ProbeResult<number[]>>;
   groupsOf(pids: readonly number[], candidateGroups: readonly number[]): Promise<ProbeResult<Map<number, number>>>;
 }
 

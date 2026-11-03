@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
-import { createBubblewrapSandbox, createPlaceholderJournal, recoverPlaceholders } from '@momonga/sandbox';
+import { createBubblewrapSandbox, createPlaceholderJournal, nodeFilesystemPort, recoverPlaceholders } from '@momonga/sandbox';
 import type { PlaceholderJournal, SandboxPolicy } from '@momonga/sandbox';
 import { makeTempDir, run } from './helpers.ts';
 
@@ -178,6 +178,48 @@ describe('the life of a placeholder (stand-in bwrap)', () => {
       await run(sandbox.spawn({ ...command, argv: ['/bin/sh', '-c', 'true'] }, { ...policy(), writeDenied: [envrc()] }, new AbortController().signal));
       expect(fs.existsSync(mcp())).toBe(false);
       expect(journal.records()).toEqual([]);
+    });
+
+    it('removes a kept file when the sweep runs after nobody holds it, with no further command', async () => {
+      const journal = real();
+      const sandbox = sandboxWith(journal);
+      held = new Set([mcp()]);
+      await run(sandbox.spawn({ argv: ['/bin/sh', '-c', 'true'], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy(), new AbortController().signal));
+      sandbox.sweep?.();
+      expect(fs.existsSync(mcp())).toBe(true);
+      expect(journal.records().map((record) => record.path)).toEqual([mcp()]);
+      held = new Set();
+      sandbox.sweep?.();
+      expect(fs.existsSync(mcp())).toBe(false);
+      expect(journal.records()).toEqual([]);
+    });
+
+    it('reports a sweep that cannot remove the file, and keeps it for the next sweep', async () => {
+      const journal = real();
+      const failure = new Error('the placeholder could not be removed');
+      let failing = false;
+      const sandbox = createBubblewrapSandbox({
+        bwrapPath: path.join(base, 'bwrap'),
+        tmpRoot,
+        killGraceMs: 300,
+        journal,
+        holders: () => held,
+        filesystem: {
+          ...nodeFilesystemPort,
+          removePlaceholder: (target, identity) => {
+            if (failing) throw failure;
+            nodeFilesystemPort.removePlaceholder(target, identity);
+          },
+        },
+      });
+      held = new Set([mcp()]);
+      await run(sandbox.spawn({ argv: ['/bin/sh', '-c', 'true'], cwd: work, env: { PATH: '/usr/bin:/bin' } }, policy(), new AbortController().signal));
+      held = new Set();
+      failing = true;
+      expect(() => sandbox.sweep?.()).toThrow(failure);
+      failing = false;
+      sandbox.sweep?.();
+      expect(fs.existsSync(mcp())).toBe(false);
     });
   });
 });

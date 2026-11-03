@@ -7,7 +7,7 @@ import { ProbeFailedError, valueOrThrow } from './platform/inspector-types.ts';
 import { noFollowFlag } from './platform/privacy.ts';
 import { REAP_POLL_INTERVAL_MS, hostProbeTiming } from './platform/probe-timing.ts';
 import type { ProbeTiming } from './platform/probe-timing.ts';
-import type { ProcessInspector } from './platform/inspector-types.ts';
+import type { ProcessInspector, UninspectableProcess } from './platform/inspector-types.ts';
 import { defaultProcessInspector } from './platform/process-inspector.ts';
 
 export type ReapTiming = ProbeTiming;
@@ -208,7 +208,7 @@ const signalHoldersOnly = async (
 
 const joinPids = (pids: readonly number[]): string => pids.join(', ');
 
-export const reapMarkedProcessesWithReport = async ({
+const reapObserved = async ({
   marker,
   pgid,
   killGraceMs,
@@ -263,6 +263,26 @@ export const reapMarkedProcessesWithReport = async ({
   }
   await fs.promises.rm(marker, { force: true });
   return { removed: true, stopped };
+};
+
+export type ReapReport = { removed: boolean; stopped: boolean; uninspectable: UninspectableProcess[] };
+
+const observing = (inspector: ProcessInspector, found: Map<number, string>): ProcessInspector => ({
+  startTimeOf: (pid) => inspector.startTimeOf(pid),
+  holdersOf: (marker) => inspector.holdersOf(marker, (process) => void found.set(process.pid, process.command)),
+  groupsOf: (pids, candidateGroups) => inspector.groupsOf(pids, candidateGroups),
+});
+
+export const reapMarkedProcessesWithReport = async (options: ReapMarkedProcessesOptions): Promise<ReapReport> => {
+  const found = new Map<number, string>();
+  const outcome = await reapObserved({ ...options, inspector: observing(options.inspector ?? defaultProcessInspector(), found) });
+  const uninspectable = [...found].map(([pid, command]) => ({ pid, command }));
+  if (uninspectable.length > 0) {
+    options.onWarning(
+      `${options.label} marker ${options.marker}: process ${uninspectable.map((process) => `${process.pid} (${process.command})`).join(', ')} could not be inspected, so it was left alone`,
+    );
+  }
+  return { ...outcome, uninspectable };
 };
 
 export const reapMarkedProcesses = async (options: ReapMarkedProcessesOptions): Promise<{ removed: boolean }> => {

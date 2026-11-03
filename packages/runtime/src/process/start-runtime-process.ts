@@ -23,7 +23,8 @@ import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import type { Sandbox } from '@momonga/sandbox';
 import { isFatalStoreError, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { clearCallLocks, createPolicyFilesystem, nodeShellHost } from '@momonga/tools';
+import { ShellNotFoundError, clearCallLocks, createPolicyFilesystem, nodeShellHost, resolveBashPath } from '@momonga/tools';
+import type { ShellHost } from '@momonga/tools';
 import { createFsInstructionReader } from '@momonga/context';
 import { createGatewayClient } from '../gateway-client.ts';
 import { contributionAtTerminal } from '../memory/contribution.ts';
@@ -96,6 +97,7 @@ export type StartRuntimeProcessOptions = {
   stdout?: TextStream;
   gatewaySocketPath?: string;
   sandboxExecPath?: string;
+  shellHost?: ShellHost;
   platform?: NodeJS.Platform;
   workerCount?: number;
   leaseMs?: number;
@@ -148,6 +150,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     throw new RangeError(`drainTimeoutMs must be a non-negative integer, got ${drainTimeoutMs}`);
   }
   const sandboxExecPath = options.sandboxExecPath;
+  const shellHost = options.shellHost ?? nodeShellHost();
   const clock = options.clock ?? systemClock;
   const redactor = createRedactor({ credentials: [] });
   const timers = options.timers ?? systemTimers;
@@ -336,7 +339,14 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         );
       }
       if (kind === 'bubblewrap') {
-        const probe = probeBubblewrap(launcherPath);
+        let shell: string;
+        try {
+          shell = resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env: process.env });
+        } catch (error) {
+          if (!(error instanceof ShellNotFoundError)) throw error;
+          throw new ConfigError(error.message, { cause: error });
+        }
+        const probe = probeBubblewrap(launcherPath, shell);
         if (!probe.ok) {
           throw new ConfigError(
             `bwrap at ${launcherPath} cannot create a sandbox on this host: ${probe.stderr}; set "sandbox": "none" in ${paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
@@ -418,7 +428,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         logger,
         report,
         sandbox,
-        shellHost: nodeShellHost(),
+        shellHost,
         settings: composition,
         reapTiming,
         leaseMs,
@@ -606,15 +616,28 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         startPeriodic({ intervalMs: STORE_IDENTITY_CHECK_MS, run: () => store.checkIdentity(), timers, report }),
         startPeriodic({
           intervalMs: TOOL_MARKER_SWEEP_MS,
-          run: () =>
-            reapToolMarkers({
-              dir: paths.markers.tools,
-              store,
-              killGraceMs: MARKER_REAP_KILL_GRACE_MS,
-              onWarning,
-              timing: reapTiming,
-              scope: { deadLetterOnly: true, skipKeys: toolRuntime.inFlightKeys() },
-            }),
+          run: async () => {
+            const failures: unknown[] = [];
+            try {
+              sandbox.sweep?.();
+            } catch (error) {
+              failures.push(error);
+            }
+            try {
+              await reapToolMarkers({
+                dir: paths.markers.tools,
+                store,
+                killGraceMs: MARKER_REAP_KILL_GRACE_MS,
+                onWarning,
+                timing: reapTiming,
+                scope: { deadLetterOnly: true, skipKeys: toolRuntime.inFlightKeys() },
+              });
+            } catch (error) {
+              failures.push(error);
+            }
+            if (failures.length === 1) throw failures[0];
+            if (failures.length > 1) throw new AggregateError(failures, 'the sandbox sweep and the tool marker sweep both failed');
+          },
           timers,
           report,
         }),

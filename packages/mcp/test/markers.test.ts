@@ -1,11 +1,14 @@
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { findHolders } from '@momonga/foundation';
+import { PS_PROBE_TIMEOUT_MS, findHolders } from '@momonga/foundation';
 import { MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_SETSID_GRANDCHILD_ENV } from '@momonga/testkit';
 import { createTransport, descriptorPath, eventually, groupExists, makeDir, pidAlive, rawConfig, startRaw, trackPid } from './raw-transport.ts';
 
 const PROCESS_TIMEOUT = { timeout: 30_000 };
+const SSH_AGENT = '/usr/bin/ssh-agent';
+const AGENT_CLOSE_BOUND_MS = 2 * PS_PROBE_TIMEOUT_MS;
 
 const markerSetup = () => {
   const dir = path.join(makeDir(), 'markers');
@@ -87,6 +90,29 @@ describe('MCP stdio transport markers', () => {
     expect(pidAlive(grandchild)).toBe(false);
     expect(groupExists(leader)).toBe(false);
     expect(fs.readdirSync(dir)).toEqual([]);
+  });
+
+  describe.runIf(process.platform === 'linux' && fs.existsSync(SSH_AGENT))('with a real ssh-agent, which is non-dumpable and belongs to the current user', () => {
+    it('close completes and names an agent that started after the marker as one that could not be inspected', PROCESS_TIMEOUT, async () => {
+      const { dir, markers, warnings } = markerSetup();
+      const { transport, request } = await startRaw({ config: rawConfig(), markers, closeGraceMs: 200 });
+      const { pid } = (await request('pid')) as { pid: number };
+      expect(markerFiles(dir)).toHaveLength(1);
+      const socket = path.join(makeDir(), 'agent.sock');
+      const agent = spawn(SSH_AGENT, ['-D', '-a', socket], { stdio: 'ignore' });
+      if (agent.pid === undefined) throw new Error('ssh-agent did not start');
+      trackPid(agent.pid);
+      await eventually(() => fs.existsSync(socket), 'ssh-agent to listen');
+      const [marker] = markerFiles(dir) as [string];
+
+      const started = Date.now();
+      await transport.close();
+
+      expect(Date.now() - started).toBeLessThan(AGENT_CLOSE_BOUND_MS);
+      expect(groupExists(pid)).toBe(false);
+      expect(fs.existsSync(marker)).toBe(false);
+      expect(warnings).toEqual([`mcp marker ${marker}: process ${agent.pid} (ssh-agent) could not be inspected, so it was left alone`]);
+    });
   });
 
   it('a server that exits on its own has its marker removed', PROCESS_TIMEOUT, async () => {

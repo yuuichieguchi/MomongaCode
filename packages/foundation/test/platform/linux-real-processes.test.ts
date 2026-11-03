@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { UninspectableProcess } from '../../src/platform/inspector-types.ts';
 import { BOOT_TIME_RESOLUTION_MS, createLinuxInspector } from '../../src/platform/linux-inspector.ts';
 import { nodeProcFs } from '../../src/platform/procfs.ts';
 
@@ -78,13 +79,14 @@ describe.runIf(ON_LINUX)('the Linux inspector against real processes', () => {
       expect(Date.now() - started).toBeLessThan(1000);
     });
 
-    it('stays unreadable, named by its pid, when it started after the marker', async () => {
+    it('is reported by pid and command, without failing the scan, when it started after the marker', async () => {
       const marker = path.join(directory, 'marker');
       fs.writeFileSync(marker, '');
       const agent = await startAgent();
-      const result = await inspector().holdersOf(marker);
-      expect(result).toMatchObject({ kind: 'failed', evidence: { kind: 'opaque' } });
-      expect(JSON.stringify(result)).toContain(`process ${agent.pid} `);
+      const holder = await startHolder(marker);
+      const found: UninspectableProcess[] = [];
+      expect(await inspector().holdersOf(marker, (process) => void found.push(process))).toEqual({ kind: 'value', value: [holder.pid] });
+      expect(found).toEqual([{ pid: agent.pid, command: 'ssh-agent' }]);
     });
   });
 

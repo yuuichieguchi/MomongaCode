@@ -8,6 +8,7 @@ import type { Clock, JsonLogger, MomongaPaths, ReadyFields, TextStream, UdsClien
 import { startGatewayProcess } from '@momonga/gateway';
 import * as runtime from '@momonga/runtime';
 import type { ServiceTimers } from '@momonga/runtime';
+import type { ShellHost } from '@momonga/tools';
 import { afterMicrotasks, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsOptions, FakeChatCompletionsServer, FakeResponseHold, FakeTimers } from '@momonga/testkit';
 import { makeLogger, onCleanup, writeUserSettings } from './helpers.ts';
@@ -66,6 +67,8 @@ export type StartRuntimeProcessOptions = {
   stdout?: TextStream;
   gatewaySocketPath?: string;
   sandboxExecPath?: string;
+  shellHost?: ShellHost;
+  platform?: NodeJS.Platform;
   workerCount?: number;
   leaseMs?: number;
   drainTimeoutMs?: number;

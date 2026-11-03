@@ -461,6 +461,29 @@ describe('planBubblewrap', () => {
         expect(positionOf(args, '--ro-bind', path.join(admin, 'config.worktree'))).toBeGreaterThan(0);
         expect(positionOf(args, '--bind', admin)).toBeGreaterThan(0);
       });
+
+      it('reserves the config.worktree that an existing module worktree lacks, with a placeholder mounted over its name', () => {
+        const module = path.join(modules(), 'a');
+        moduleAt(module);
+        const admin = path.join(module, 'worktrees', 't');
+        fs.mkdirSync(admin, { recursive: true });
+        fs.writeFileSync(path.join(admin, 'HEAD'), 'ref: refs/heads/t\n');
+        const target = path.join(admin, 'config.worktree');
+        const plan = planBubblewrap(anchored(), { cwd: work });
+        expect(plan.placeholders).toContain(target);
+        expect(plan.args.findIndex((value, index) => value === '--ro-bind' && plan.args[index + 1] === '/dev/null' && plan.args[index + 2] === target)).toBeGreaterThan(0);
+        expect(positionOf(plan.args, '--ro-bind', path.join(module, 'worktrees'))).toBe(-1);
+      });
+
+      it('leaves a module without a worktrees directory alone: nothing is mounted or reserved there, because git never adopts a worktree administrative directory', () => {
+        const module = path.join(modules(), 'a');
+        moduleAt(module);
+        const missing = path.join(module, 'worktrees');
+        const plan = planBubblewrap(anchored(), { cwd: work });
+        expect(plan.placeholders.filter((placeholder) => placeholder.startsWith(missing))).toEqual([]);
+        expect(plan.args.filter((value) => value.startsWith(missing))).toEqual([]);
+        expect(plan.placeholders).toEqual(expect.arrayContaining([path.join(module, 'config.worktree'), path.join(module, 'hooks')]));
+      });
     });
 
     it('ignores an anchor that lies outside every writable root', () => {
