@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+
 export const MANIFEST_FORMAT = 'momonga-tla-manifest/1';
 
 export type Tier = 'every-run' | 'deep';
@@ -40,4 +42,106 @@ export type TlcRunOptions = {
   readonly args: readonly string[];
   readonly budgetSeconds: number;
   readonly env?: Readonly<Record<string, string>>;
+};
+
+export { TLC_WORKERS, runTlc } from './runner.ts';
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const fail = (where: string, expectation: string): never => {
+  throw new Error(`the TLA manifest is invalid: ${where} must be ${expectation}`);
+};
+
+const positiveNumber = (value: unknown, where: string): number => (typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fail(where, 'a positive number'));
+
+const positiveInteger = (value: unknown, where: string): number => (typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : fail(where, 'a positive whole number'));
+
+const textOf = (value: unknown, where: string): string => (typeof value === 'string' && value.length > 0 ? value : fail(where, 'a non-empty string'));
+
+const expectationOf = (value: unknown, where: string): Expectation => {
+  if (value === 'holds') return value;
+  if (!isRecord(value)) return fail(where, '"holds" or { violates, exitCode }');
+  const exitCode = value['exitCode'];
+  if (exitCode !== 12 && exitCode !== 13) return fail(`${where}.exitCode`, '12 or 13');
+  return { violates: textOf(value['violates'], `${where}.violates`), exitCode };
+};
+
+const entryOf = (value: unknown, index: number): ManifestEntry => {
+  const where = `entries[${index}]`;
+  if (!isRecord(value)) return fail(where, 'an object');
+  const { role, tier, args } = value;
+  if (role !== 'check' && role !== 'evidence') return fail(`${where}.role`, '"check" or "evidence"');
+  if (tier !== 'every-run' && tier !== 'deep') return fail(`${where}.tier`, '"every-run" or "deep"');
+  if (!Array.isArray(args) || !args.every((arg) => typeof arg === 'string')) return fail(`${where}.args`, 'an array of strings');
+  return {
+    config: textOf(value['config'], `${where}.config`),
+    role,
+    expect: expectationOf(value['expect'], `${where}.expect`),
+    args: args as string[],
+    tier,
+    distinctStates: positiveInteger(value['distinctStates'], `${where}.distinctStates`),
+    measuredSeconds: positiveNumber(value['measuredSeconds'], `${where}.measuredSeconds`),
+    budgetSeconds: positiveInteger(value['budgetSeconds'], `${where}.budgetSeconds`),
+  };
+};
+
+export const readManifest = (file: string): Manifest => {
+  const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (!isRecord(parsed)) return fail('the document', 'an object');
+  if (parsed['format'] !== MANIFEST_FORMAT) return fail('format', `"${MANIFEST_FORMAT}"`);
+  const entries = parsed['entries'];
+  if (!Array.isArray(entries)) return fail('entries', 'an array');
+  return { format: MANIFEST_FORMAT, unitSuiteSeconds: positiveNumber(parsed['unitSuiteSeconds'], 'unitSuiteSeconds'), entries: entries.map(entryOf) };
+};
+
+const moduleOf = (config: string): string => config.split('.')[0] as string;
+
+export const discoveryProblems = (specDir: string, manifest: Manifest): string[] => {
+  const files = fs.readdirSync(specDir);
+  const onDisk = files.filter((file) => file.endsWith('.cfg')).map((file) => file.slice(0, -'.cfg'.length));
+  const modules = new Set(files.filter((file) => file.endsWith('.tla')).map((file) => file.slice(0, -'.tla'.length)));
+  const listed = manifest.entries.map((entry) => entry.config);
+  const problems: string[] = [];
+  for (const config of new Set(listed.filter((name, index) => listed.indexOf(name) !== index))) problems.push(`${config} is listed more than once in the manifest`);
+  for (const config of onDisk) if (!listed.includes(config)) problems.push(`${config}.cfg is on disk but not listed in the manifest`);
+  for (const config of new Set(listed)) if (!onDisk.includes(config)) problems.push(`${config} is listed in the manifest but ${config}.cfg is not on disk`);
+  for (const config of onDisk) if (!modules.has(moduleOf(config))) problems.push(`${config}.cfg names the module ${moduleOf(config)}, but ${moduleOf(config)}.tla is not on disk`);
+  for (const module of modules) if (!onDisk.some((config) => moduleOf(config) === module)) problems.push(`${module}.tla has no configuration`);
+  return problems;
+};
+
+const COMPLETION_LINE = 'Model checking completed. No error has been found.';
+const DISTINCT_STATES = /(\d[\d,]*) states generated, (\d[\d,]*) distinct states found, 0 states left on queue\./g;
+const TEMPORAL_LINE = 'Temporal properties were violated';
+const SCRIPT_FAILURE_CODES: readonly number[] = [2, 3, 4, 5];
+
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+export const verdictProblems = (entry: ManifestEntry, run: TlcRun): string[] => {
+  const label = entry.config;
+  if (run.killedAtBudget) return [`${label} was killed at its budget of ${entry.budgetSeconds} s`];
+  const scriptFailure = run.exitCode !== null && SCRIPT_FAILURE_CODES.includes(run.exitCode) ? [`${label}: tlc.sh exited ${run.exitCode}:\n${run.stderr.trim()}`] : [];
+  if (entry.expect === 'holds') {
+    if (scriptFailure.length > 0) return scriptFailure;
+    if (run.exitCode !== 0) return [`${label} was expected to hold but TLC exited ${run.exitCode ?? run.signal}\n${run.stderr.trim()}`];
+    const problems: string[] = [];
+    if (!run.stdout.includes(COMPLETION_LINE)) problems.push(`${label} exited 0 without the line "${COMPLETION_LINE}"`);
+    const distinct = [...run.stdout.matchAll(DISTINCT_STATES)].at(-1);
+    const found = distinct === undefined ? undefined : Number((distinct[2] as string).replaceAll(',', ''));
+    if (found !== entry.distinctStates) problems.push(`${label} found ${found ?? 'no count of'} distinct states, the manifest records ${entry.distinctStates}`);
+    return problems;
+  }
+  if (scriptFailure.length > 0) return scriptFailure;
+  const { violates, exitCode } = entry.expect;
+  if (run.exitCode !== exitCode) return [`${label} was expected to violate ${violates} with exit ${exitCode} but TLC exited ${run.exitCode ?? run.signal}`];
+  if (exitCode === 13) return run.stdout.includes(TEMPORAL_LINE) ? [] : [`${label} exited 13 without the line "${TEMPORAL_LINE}"`];
+  return new RegExp(`Invariant ${escapeRegExp(violates)} is violated`).test(run.stdout) ? [] : [`${label} exited ${exitCode} without the line "Invariant ${violates} is violated"`];
+};
+
+export const everyRunBudgetSeconds = (manifest: Manifest): number =>
+  manifest.entries.filter((entry) => entry.tier === 'every-run').reduce((total, entry) => total + entry.budgetSeconds, 0);
+
+export const tierBudgetProblem = (manifest: Manifest): string | undefined => {
+  const total = everyRunBudgetSeconds(manifest);
+  return total > manifest.unitSuiteSeconds ? `the every-run budgets sum to ${total} s, over unitSuiteSeconds ${manifest.unitSuiteSeconds} s` : undefined;
 };

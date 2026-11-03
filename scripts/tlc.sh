@@ -11,8 +11,10 @@ jar="$root/.cache/tla/tla2tools.jar"
 spec_dir="$root/specs/tla"
 
 usage() {
-  echo "usage: scripts/tlc.sh <config-name> [extra TLC args]" >&2
-  echo "  config-name: a file specs/tla/<config-name>.cfg, for example RunRecovery" >&2
+  echo "usage: scripts/tlc.sh <config-name> [extra TLC args, for example -workers 4]" >&2
+  echo "  config-name: a file specs/tla/<config-name>.cfg, for example RunRecovery;" >&2
+  echo "  the module is the part of the name before the first dot: RunRecovery.children checks RunRecovery.tla" >&2
+  echo "  TLC_METADIR: the state directory; when set, the caller owns it and the script does not remove it" >&2
   echo "  expected jar: $jar" >&2
   echo "  pinned sha256: $JAR_SHA256" >&2
   echo "  pinned version: $JAR_VERSION" >&2
@@ -27,26 +29,49 @@ fi
 config="$1"
 shift
 
+java_properties="$(java -XshowSettings:properties -version 2>&1 || true)"
+java_specification="$(printf '%s\n' "$java_properties" | awk -F' = ' '/java\.specification\.version/ { print $2; exit }')"
+java_major="${java_specification#1.}"
+java_major="${java_major%%.*}"
+case "$java_major" in
+  '' | *[!0-9]*) java_major=0 ;;
+esac
+if [ "$java_major" -lt 8 ]; then
+  echo "java.specification.version 1.8 or later is required (found: ${java_specification:-no java})" >&2
+  echo "  install a JDK on macOS, or openjdk-17-jre-headless on Debian" >&2
+  exit 5
+fi
+
 if [ ! -f "$jar" ]; then
   echo "tla2tools.jar is missing" >&2
   usage
   exit 3
 fi
 
-actual="$(shasum -a 256 "$jar" | cut -d' ' -f1)"
+if command -v shasum > /dev/null 2>&1; then
+  actual="$(shasum -a 256 "$jar" | cut -d' ' -f1)"
+else
+  actual="$(sha256sum "$jar" | cut -d' ' -f1)"
+fi
 if [ "$actual" != "$JAR_SHA256" ]; then
   echo "tla2tools.jar sha256 mismatch: expected $JAR_SHA256, got $actual" >&2
   exit 4
 fi
 
-work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT
+module="${config%%.*}"
+module_file="$spec_dir/$module.tla"
 
-java -cp "$jar" tla2sany.SANY "$spec_dir/RunRecovery.tla"
+if [ -n "${TLC_METADIR:-}" ]; then
+  work="$TLC_METADIR"
+else
+  work="$(mktemp -d)"
+  trap 'rm -rf "$work"' EXIT
+fi
+
+java -cp "$jar" tla2sany.SANY "$module_file"
 
 java -XX:+UseParallelGC -cp "$jar" tlc2.TLC \
-  -workers auto \
   -metadir "$work" \
   -config "$spec_dir/$config.cfg" \
   "$@" \
-  "$spec_dir/RunRecovery.tla"
+  "$module_file"
