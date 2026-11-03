@@ -12,7 +12,7 @@ import { readDb } from './support/db.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { SESSION_PATH, createRuntimeClient } from './support/runtime-client.ts';
-import { seatbeltOrSkip } from './support/sandbox.ts';
+import { REFUSED_READ_TEXT, platformSandbox, productSandbox, sandboxOrSkip } from './support/sandbox.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
 import { startStack } from './support/stack.ts';
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
@@ -275,7 +275,7 @@ describe('g: agent skills', () => {
   });
 
   it.skipIf(skipCase('g-skills-bash-resource'))(titleOf('g-skills-bash-resource'), { timeout: 2 * E2E_TEST_TIMEOUT_MS }, async (context) => {
-    seatbeltOrSkip(context);
+    sandboxOrSkip(context);
     const home = await createE2eHome();
     const directory = writeSkill(home.paths.skills, 'pdf', 'Extract PDF text', { 'references/guide.md': `${GUIDE_MARKER}\n` });
     const guide = path.join(directory, 'references', 'guide.md');
@@ -289,10 +289,10 @@ describe('g: agent skills', () => {
         textReply('Read the guide.'),
       ],
     });
-    expect(stack.sandbox).toBe('seatbelt');
+    expect(stack.sandbox).toBe(platformSandbox());
     const runtime = createRuntimeClient(home);
     try {
-      expect((await runtime.health()).sandbox).toBe('seatbelt');
+      expect((await runtime.health()).sandbox).toBe(platformSandbox());
       const { session } = await runtime.createSession();
       const { run } = await runtime.createRun(session.id, 'Use the pdf guide');
       await runToEnd(runtime, run.id);
@@ -302,7 +302,7 @@ describe('g: agent skills', () => {
       expect(completed).toHaveLength(3);
       expect(String(completed[1]?.data['output'])).toContain(GUIDE_MARKER);
       expect(String(completed[1]?.data['output'])).toContain('rc=0');
-      expect(String(completed[2]?.data['output'])).toContain('Operation not permitted');
+      expect(String(completed[2]?.data['output'])).toContain(REFUSED_READ_TEXT[productSandbox()]);
       expect(String(completed[2]?.data['output'])).toContain('rc=1');
       expect(chatCompletions(stack.fake)).toHaveLength(4);
     } finally {

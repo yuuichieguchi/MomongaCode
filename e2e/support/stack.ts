@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { ChildProcessByStdio } from 'node:child_process';
 import type { Readable, Writable } from 'node:stream';
 import { expect } from 'vitest';
+import type { SandboxSetting } from '@momonga/config';
 import { parseReadyLine } from '@momonga/foundation';
 import type { ReadyFields } from '@momonga/foundation';
 import type { SupervisorChildState, SupervisorHealth, SupervisorPhase } from '@momonga/protocol';
@@ -36,7 +37,7 @@ export const DEFAULT_E2E_DEPS: E2eDeps = {
   runtime: { leaseMs: E2E_LEASE_MS, drainTimeoutMs: E2E_DRAIN_TIMEOUT_MS, workerCount: 1 },
 };
 
-export type StackSandbox = 'seatbelt' | 'none';
+export type StackSandbox = SandboxSetting;
 
 export type StackReadiness = { phase: SupervisorPhase; children: Readonly<Record<ChildRole, SupervisorChildState>> };
 
@@ -283,7 +284,7 @@ export const sandboxChoiceOf = (options: StartStackOptions): SandboxChoice => {
   const resolution = resolveSandbox({ needsBash: options.needsBash ?? false });
   if (resolution.kind === 'skip') throw new Error(resolution.reason);
   if (resolution.kind === 'none') return { kind: 'none', sandboxFallback: resolution.sandboxFallback };
-  return { kind: 'seatbelt' };
+  return { kind: resolution.kind };
 };
 
 export const settingsOf = (home: E2eHome, kind: StackSandbox, options: StartStackOptions): Readonly<Record<string, unknown>> | string => {

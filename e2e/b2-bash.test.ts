@@ -9,7 +9,7 @@ import type { E2eHome } from './support/home.ts';
 import { TOOL_GROUPS_SQL } from './support/ledger.ts';
 import { groupAlive, isAlive } from './support/process.ts';
 import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
-import { seatbeltOrSkip } from './support/sandbox.ts';
+import { REFUSED_WRITE_TEXT, platformSandbox, productSandbox, sandboxOrSkip } from './support/sandbox.ts';
 import { DEFAULT_E2E_DEPS, startStack } from './support/stack.ts';
 import { childOf } from './support/supervisor-client.ts';
 import { chatCompletions, messagesOf, precedingAssistantCallId, textReply, toolCallReply } from './support/upstream.ts';
@@ -47,8 +47,8 @@ const pidIn = (file: string): number | undefined => {
 
 const ESCAPE_GROUP = `perl -e 'use POSIX qw(setsid); setsid(); exec "sleep", "60"'`;
 
-const killRuntimeDuringBash = async (command: (files: { effect: string; shell: string; background: string; escaped: string }) => string, context: Parameters<typeof seatbeltOrSkip>[0]) => {
-  seatbeltOrSkip(context);
+const killRuntimeDuringBash = async (command: (files: { effect: string; shell: string; background: string; escaped: string }) => string, context: Parameters<typeof sandboxOrSkip>[0]) => {
+  sandboxOrSkip(context);
   const home = await createE2eHome();
   const files = {
     effect: path.join(home.project, 'effect.log'),
@@ -83,9 +83,9 @@ const killRuntimeDuringBash = async (command: (files: { effect: string; shell: s
   return { home, files, pgid, runId: run.id, runtime, stack, kill, completed };
 };
 
-describe('b2: Bash under seatbelt', () => {
+describe('b2: Bash under the platform sandbox', () => {
   it.skipIf(skipCase('b2-seatbelt'))(titleOf('b2-seatbelt'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
-    seatbeltOrSkip(context);
+    sandboxOrSkip(context);
     const home = await createE2eHome();
     const outside = path.join(home.root, 'outside.txt');
     const stack = await startStack({
@@ -93,10 +93,10 @@ describe('b2: Bash under seatbelt', () => {
       needsBash: true,
       script: [toolCallReply('Bash', { command: `echo x > ${outside}; echo rc=$?` }), textReply('done')],
     });
-    expect(stack.sandbox).toBe('seatbelt');
+    expect(stack.sandbox).toBe(platformSandbox());
     const runtime = createRuntimeClient(home);
     try {
-      expect((await runtime.health()).sandbox).toBe('seatbelt');
+      expect((await runtime.health()).sandbox).toBe(platformSandbox());
       const { session } = await runtime.createSession();
       const { run } = await runtime.createRun(session.id, 'Say hello');
       const stream = runtime.events(run.id);
@@ -116,7 +116,7 @@ describe('b2: Bash under seatbelt', () => {
       expect(assistantCallId).toMatch(/^call_[0-9a-f]{32}$/);
       expect(toolMessages[0]?.tool_call_id).toBe(assistantCallId);
       const toolText = textOf(toolMessages[0]?.content);
-      expect(toolText).toContain('Operation not permitted');
+      expect(toolText).toContain(REFUSED_WRITE_TEXT[productSandbox()]);
       expect(toolText).toContain('rc=1');
       expect(toolText).not.toContain('rc=0');
       expect(fs.existsSync(outside)).toBe(false);
@@ -128,7 +128,7 @@ describe('b2: Bash under seatbelt', () => {
   });
 
   it.skipIf(skipCase('b2-recovery'))(titleOf('b2-recovery'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
-    seatbeltOrSkip(context);
+    sandboxOrSkip(context);
     const home = await createE2eHome();
     const effectLog = path.join(home.project, 'effect.log');
     const stack = await startStack({
@@ -137,10 +137,10 @@ describe('b2: Bash under seatbelt', () => {
       deps: { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY },
       script: [toolCallReply('Bash', { command: `echo effect >> ${effectLog}; sleep 30` }), textReply('done')],
     });
-    expect(stack.sandbox).toBe('seatbelt');
+    expect(stack.sandbox).toBe(platformSandbox());
     const runtime = createRuntimeClient(home);
     try {
-      expect((await runtime.health()).sandbox).toBe('seatbelt');
+      expect((await runtime.health()).sandbox).toBe(platformSandbox());
       const { session } = await runtime.createSession();
       const { run } = await runtime.createRun(session.id, 'Say hello');
 

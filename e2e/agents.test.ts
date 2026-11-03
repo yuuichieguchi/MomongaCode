@@ -12,7 +12,7 @@ import { TOOL_GROUPS_SQL } from './support/ledger.ts';
 import { groupAlive } from './support/process.ts';
 import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
-import { seatbeltOrSkip } from './support/sandbox.ts';
+import { sandboxOrSkip } from './support/sandbox.ts';
 import { DEFAULT_E2E_DEPS, shutdownBarrier, startStack } from './support/stack.ts';
 import { childOf } from './support/supervisor-client.ts';
 import { chatCompletions, hangReply, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
@@ -260,7 +260,7 @@ const jobRoutesIn = (jobIdNow: () => string | undefined, second: (jobId: string)
 
 describe('agents: background bash', () => {
   it.skipIf(skipCase('bg-output'))(titleOf('bg-output'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
-    seatbeltOrSkip(context);
+    sandboxOrSkip(context);
     const home = await createE2eHome();
     const stack = await startStack({
       home,
@@ -304,7 +304,7 @@ describe('agents: background bash', () => {
   });
 
   it.skipIf(skipCase('bg-kill'))(titleOf('bg-kill'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
-    seatbeltOrSkip(context);
+    sandboxOrSkip(context);
     const home = await createE2eHome();
     const stack = await startStack({
       home,
@@ -336,7 +336,7 @@ describe('agents: background bash', () => {
   });
 
   it.skipIf(skipCase('bg-runtime-kill'))(titleOf('bg-runtime-kill'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
-    seatbeltOrSkip(context);
+    sandboxOrSkip(context);
     const home = await createE2eHome();
     const stack = await startStack({
       home,
@@ -381,7 +381,7 @@ describe('agents: background bash', () => {
   });
 
   it.skipIf(skipCase('cli-job-list'))(titleOf('cli-job-list'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
-    seatbeltOrSkip(context);
+    sandboxOrSkip(context);
     const command = 'while [ ! -f release-job ]; do sleep 0.1; done';
     const opened: { home?: E2eHome } = {};
     const { home } = await prepareProduct({

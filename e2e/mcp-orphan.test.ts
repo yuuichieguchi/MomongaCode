@@ -7,7 +7,7 @@ import { skipCase, titleOf } from './support/cases.ts';
 import { GRANDCHILD_READY_FILE_NAME, MCP_RECORD_FILE_NAME, createE2eHome } from './support/home.ts';
 import { isAlive } from './support/process.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
-import { seatbeltOrSkip } from './support/sandbox.ts';
+import { platformSandbox, sandboxOrSkip } from './support/sandbox.ts';
 import { DEFAULT_E2E_DEPS, startStack } from './support/stack.ts';
 import { childOf } from './support/supervisor-client.ts';
 import { chatCompletions, messagesOf, precedingAssistantCallId, textReply, toolCallReply } from './support/upstream.ts';
@@ -25,7 +25,7 @@ const pidOfRecord = (records: readonly ModernFixtureRecord[], type: 'ready' | 'g
 
 describe('mcp: orphaned MCP server tree', () => {
   it.skipIf(skipCase('mcp-orphan'))(titleOf('mcp-orphan'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
-    seatbeltOrSkip(context);
+    sandboxOrSkip(context);
     const home = await createE2eHome();
     const recordFile = path.join(home.root, MCP_RECORD_FILE_NAME);
     const grandchildReady = path.join(home.root, GRANDCHILD_READY_FILE_NAME);
@@ -44,7 +44,7 @@ describe('mcp: orphaned MCP server tree', () => {
       },
       script: [toolCallReply('mcp__fx__echo', { text: 'hi' }), textReply('done')],
     });
-    expect(stack.sandbox).toBe('seatbelt');
+    expect(stack.sandbox).toBe(platformSandbox());
     const runtime = createRuntimeClient(home);
     try {
       const { session } = await runtime.createSession();

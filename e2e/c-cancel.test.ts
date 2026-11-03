@@ -8,7 +8,7 @@ import { TOOL_GROUPS_SQL } from './support/ledger.ts';
 import { groupAlive } from './support/process.ts';
 import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
-import { seatbeltOrSkip } from './support/sandbox.ts';
+import { platformSandbox, sandboxOrSkip } from './support/sandbox.ts';
 import { shutdownBarrier, startStack } from './support/stack.ts';
 import { chatCompletions, hangReply, toolCallReply } from './support/upstream.ts';
 import {
@@ -36,7 +36,7 @@ const untilStatus = async (runtime: RuntimeClient, runId: string, status: string
 const cancelDuringBash = async (command: string, cancelBoundMs: number): Promise<number> => {
   const home = await createE2eHome();
   const stack = await startStack({ home, needsBash: true, script: [toolCallReply('Bash', { command })] });
-  expect(stack.sandbox).toBe('seatbelt');
+  expect(stack.sandbox).toBe(platformSandbox());
   const runtime = createRuntimeClient(home);
   try {
     const { session } = await runtime.createSession();
@@ -73,13 +73,13 @@ const cancelDuringBash = async (command: string, cancelBoundMs: number): Promise
 
 describe('c: cancel', () => {
   it.skipIf(skipCase('c1'))(titleOf('c1'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
-    seatbeltOrSkip(context);
+    sandboxOrSkip(context);
     const elapsed = await cancelDuringBash('sleep 30', E2E_CANCEL_TERM_BOUND_MS);
     expect(elapsed).toBeLessThan(SANDBOX_KILL_GRACE_MS);
   });
 
   it.skipIf(skipCase('c1b'))(titleOf('c1b'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
-    seatbeltOrSkip(context);
+    sandboxOrSkip(context);
     const elapsed = await cancelDuringBash("trap '' TERM; sleep 30", E2E_CANCEL_KILL_BOUND_MS);
     expect(elapsed).toBeGreaterThanOrEqual(SANDBOX_KILL_GRACE_MS);
     expect(elapsed).toBeLessThan(E2E_CANCEL_KILL_BOUND_MS);

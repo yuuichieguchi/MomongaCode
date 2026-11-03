@@ -16,6 +16,7 @@ import type { LogRecord } from './support/log-reader.ts';
 import { isAlive } from './support/process.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
+import { LAUNCHER_PATH, productSandbox } from './support/sandbox.ts';
 import { DEFAULT_E2E_DEPS, baseSettings, spawnSupervisor, startStack, writeSettingsFile } from './support/stack.ts';
 import type { SpawnedSupervisor, SupervisorExit } from './support/stack.ts';
 import { childOf, createSupervisorClient, pidOf } from './support/supervisor-client.ts';
@@ -337,9 +338,9 @@ describe('supervisor cases', () => {
 
   it.skipIf(skipCase('s2'))(titleOf('s2'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
-    const stack = await startStack({ home, needsBash: true, sandbox: 'seatbelt' });
+    const stack = await startStack({ home, needsBash: true, sandbox: productSandbox() });
     const runtime = openRuntimeClient(home);
-    expect((await runtime.health()).sandbox).toBe('seatbelt');
+    expect((await runtime.health()).sandbox).toBe(productSandbox());
     const before = await stack.client.health();
     const runtimePid = pidOf(before, 'runtime');
     const gatewayPid = pidOf(before, 'gateway');
@@ -482,7 +483,7 @@ describe('supervisor cases', () => {
     const stack = await startStack({
       home,
       needsBash: true,
-      sandbox: 'seatbelt',
+      sandbox: productSandbox(),
       deps: { ...DEFAULT_E2E_DEPS, heldRetryMs: E2E_HELD_RETRY_MS, runtime: { ...DEFAULT_E2E_DEPS.runtime, sandboxExecPath } },
       readiness: { phase: 'running', children: { runtime: 'held-config', gateway: 'ready' } },
     });
@@ -491,12 +492,12 @@ describe('supervisor cases', () => {
     const gatewayPid = pidOf(await stack.client.health(), 'gateway');
     const settingsBefore = fs.readFileSync(home.paths.settingsFile, 'utf8');
 
-    fs.symlinkSync('/usr/bin/sandbox-exec', sandboxExecPath);
+    fs.symlinkSync(LAUNCHER_PATH[productSandbox()], sandboxExecPath);
     const ready = await stack.client.untilChild('runtime', (child) => child.state === 'ready', E2E_HELD_RETRY_MS + E2E_RESTART_BOUND_MS);
     expect(ready).toMatchObject({ restarts: 1, consecutiveFailures: 0 });
     expect(fs.readFileSync(home.paths.settingsFile, 'utf8')).toBe(settingsBefore);
     const runtime = openRuntimeClient(home);
-    expect((await runtime.health()).sandbox).toBe('seatbelt');
+    expect((await runtime.health()).sandbox).toBe(productSandbox());
 
     const after = await stack.client.health();
     expect(pidOf(after, 'gateway')).toBe(gatewayPid);

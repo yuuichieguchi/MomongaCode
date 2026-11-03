@@ -201,7 +201,7 @@ describe('supervisor-main lifeline and pipes', () => {
     const fake = await startFakeChatCompletions({ scenario: 'tools-ok', maxConcurrency: 8, socketPath: home.upstreamSocket });
     registerE2eCleanup(() => fake.close());
     const resolution = resolveSandbox({ needsBash: false });
-    writeSettingsFile(home, baseSettings(home, resolution.kind === 'seatbelt' ? 'seatbelt' : 'none'));
+    writeSettingsFile(home, baseSettings(home, resolution.kind === 'skip' ? 'none' : resolution.kind));
     const depsFile = writeDepsFile(home, DEFAULT_E2E_DEPS, 1);
     const request: StackParentRequest = { args: [SUPERVISOR_MAIN_PATH, ...supervisorArgv(home)], env: supervisorEnv(home, depsFile) };
     const parent = spawnTracked(context, process.execPath, [STACK_PARENT_PATH, JSON.stringify(request)], { stdio: ['ignore', 'pipe', 'ignore'] });
