@@ -18,11 +18,12 @@ import {
   stepTokensToOverflowTheRoom,
 } from './support/context-window.ts';
 import { createE2eHome } from './support/home.ts';
-import { baseSettings, sandboxChoiceOf, startUpstream, writeSettingsFile } from './support/stack.ts';
+import { baseSettings, sandboxChoiceOf, startUpstream, withStructuredRole, writeSettingsFile } from './support/stack.ts';
 import { SCRIPTED_USAGE, chatCompletions, reportedTokensOfRequest, textReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
 const STEPS = 14;
+const ANALYSIS_ALIAS = 'analyst';
 const WALK_LINE = CALIBRATION_LINE;
 const FRAGILE_TASK = 'Walk fragile.txt step by step.';
 const FOLLOW_UP_TASK = 'Walk follow-up.txt step by step.';
@@ -155,7 +156,7 @@ describe('momonga context improve', () => {
         }),
       ],
     });
-    writeSettingsFile(home, baseSettings(home, sandboxChoiceOf({ home }).kind));
+    writeSettingsFile(home, withStructuredRole(baseSettings(home, sandboxChoiceOf({ home }).kind), 'analysis', ANALYSIS_ALIAS));
     expect(
       STEPS,
       'STEPS cannot be derived from the window: it only has to exceed the steps the context builder protects (DEFAULT_KEEP_RECENT_STEPS), so that some steps fall outside the protection and can be compacted',

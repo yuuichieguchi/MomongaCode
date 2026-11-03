@@ -29,7 +29,7 @@ export const SUPERVISOR_ENV_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 export const STDERR_TAIL_BYTES = 64 * 1024;
 export const UPSTREAM_MODEL = 'system';
 export const UPSTREAM_TARGET = 'primary';
-export const CLASSIFIER_TARGET = 'classifier';
+export const STRUCTURED_TARGET = 'structured';
 export const UPSTREAM_CONTEXT_WINDOW = 8192;
 
 export const DEFAULT_E2E_DEPS: E2eDeps = {
@@ -114,19 +114,31 @@ export const baseSettings = (home: E2eHome, sandbox: StackSandbox): Record<strin
   sandbox,
 });
 
-export const withClassifierAlias = (settings: Readonly<Record<string, unknown>>, alias: string): Record<string, unknown> => {
+export const withStructuredAlias = (settings: Readonly<Record<string, unknown>>, alias: string): Record<string, unknown> => {
   const models = settings['models'] as { aliases: Record<string, unknown>; targets: Record<string, { capabilities: Record<string, unknown> }> };
   const upstream = models.targets[UPSTREAM_TARGET];
-  if (upstream === undefined) throw new Error(`withClassifierAlias: no ${UPSTREAM_TARGET} target to derive ${CLASSIFIER_TARGET} from`);
+  if (upstream === undefined) throw new Error(`withStructuredAlias: no ${UPSTREAM_TARGET} target to derive ${STRUCTURED_TARGET} from`);
   return {
     ...settings,
     models: {
       ...models,
-      aliases: { ...models.aliases, [alias]: [CLASSIFIER_TARGET] },
-      targets: { ...models.targets, [CLASSIFIER_TARGET]: { ...upstream, capabilities: { ...upstream.capabilities, structuredOutput: 'json_schema' } } },
+      aliases: { ...models.aliases, [alias]: [STRUCTURED_TARGET] },
+      targets: { ...models.targets, [STRUCTURED_TARGET]: { ...upstream, capabilities: { ...upstream.capabilities, structuredOutput: 'json_schema' } } },
     },
-    autoMode: { classifier: alias },
   };
+};
+
+export const withClassifierAlias = (settings: Readonly<Record<string, unknown>>, alias: string): Record<string, unknown> => ({
+  ...withStructuredAlias(settings, alias),
+  autoMode: { classifier: alias },
+});
+
+export type StructuredRole = 'reflection' | 'analysis';
+
+export const withStructuredRole = (settings: Readonly<Record<string, unknown>>, role: StructuredRole, alias: string): Record<string, unknown> => {
+  const structured = withStructuredAlias(settings, alias);
+  const models = structured['models'] as { roles?: Record<string, unknown> };
+  return { ...structured, models: { ...models, roles: { ...models.roles, [role]: alias } } };
 };
 
 export const contextWindowOf = (home: E2eHome): number => {

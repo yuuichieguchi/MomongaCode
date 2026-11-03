@@ -9,7 +9,7 @@ import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
-import { shutdownBarrier, startStack } from './support/stack.ts';
+import { baseSettings, shutdownBarrier, startStack, withStructuredRole } from './support/stack.ts';
 import { chatCompletions, messagesOf, reportedTokensOfRequest, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
 
@@ -18,6 +18,7 @@ type Json = Record<string, any>;
 const RECALL_OPEN = '<recalled_memories>';
 const NOTE = 'The answer constant lives in answer.ts and is 42.';
 const SWEEP_BOUND_MS = E2E_RUN_COMPLETED_BOUND_MS;
+const REFLECTION_ALIAS = 'reflector';
 
 const rawClient = (home: E2eHome) => {
   const client = createUdsClient(home.paths.sockets.runtime);
@@ -64,7 +65,11 @@ describe('learning loop', () => {
       home,
       sandbox: 'none',
       version: cliPackage.version,
-      settings: { memory: { reflection: { enabled: true } }, verification: { commands: ['echo verified'] } },
+      settings: withStructuredRole(
+        { models: baseSettings(home, 'none')['models'], memory: { reflection: { enabled: true } }, verification: { commands: ['echo verified'] } },
+        'reflection',
+        REFLECTION_ALIAS,
+      ),
       script: [
         toolCallReply('Write', { file_path: path.join(project, 'answer.ts'), content: 'export const answer = 42;\n' }, 'call_write'),
         toolCallReply('Bash', { command: 'echo verified' }, 'call_check'),
