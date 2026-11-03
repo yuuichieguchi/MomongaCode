@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createUdsClient, decodeSse } from '@momonga/foundation';
 import { anthropicErrorReply, anthropicTextReply, startFakeAnthropic, startFakeOpenResponses, openResponsesTextReply, openResponsesToolCallReply, usageOf } from '../src/index.ts';
+import { canonicalJson } from '@momonga/foundation';
 import { tokensForText } from '@momonga/protocol';
 import type { FakeUpstreamServer } from '../src/index.ts';
 
@@ -56,11 +57,11 @@ describe('fake Open Responses upstream', () => {
     servers.push(server);
     const small = await completedUsage(await postBody(server, JSON.stringify({ model: 'm', input: [] })));
     const large = await completedUsage(await postBody(server, JSON.stringify({ model: 'm', input: ['x'.repeat(4000)] })));
-    expect(small.output_tokens).toBe(3);
-    expect(large.output_tokens).toBe(3);
+    expect(small.output_tokens).toBe(small.estimated_output_tokens);
+    expect(large.output_tokens).toBe(large.estimated_output_tokens);
     expect(small.input_tokens).toBeLessThan(20);
     expect(large.input_tokens).toBeGreaterThanOrEqual(1000);
-    expect(large.total_tokens).toBe(large.input_tokens + 3);
+    expect(large.total_tokens).toBe(large.input_tokens + large.output_tokens);
   });
 
   it('sizes a CJK request at least as large as the project estimator counts it', async () => {
@@ -110,8 +111,11 @@ const postBody = async (server: FakeUpstreamServer, body: string): Promise<Array
   }
 };
 
-const completedUsage = async (frames: Array<{ event: string | undefined; data: string }>): Promise<{ input_tokens: number; output_tokens: number; total_tokens: number }> => {
+const completedUsage = async (
+  frames: Array<{ event: string | undefined; data: string }>,
+): Promise<{ input_tokens: number; output_tokens: number; total_tokens: number; estimated_output_tokens: number }> => {
   const terminal = frames.find((frame) => frame.event === 'response.completed');
   if (terminal === undefined) throw new Error('the stream has no response.completed frame');
-  return (JSON.parse(terminal.data) as { response: { usage: { input_tokens: number; output_tokens: number; total_tokens: number } } }).response.usage;
+  const { response } = JSON.parse(terminal.data) as { response: { output: unknown; usage: { input_tokens: number; output_tokens: number; total_tokens: number } } };
+  return { ...response.usage, estimated_output_tokens: tokensForText(canonicalJson(response.output)) };
 };

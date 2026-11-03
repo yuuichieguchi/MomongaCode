@@ -103,7 +103,7 @@ describe('timeouts', () => {
     expect(executions).toBe(1);
   });
 
-  it('stops waiting for a tool that ignores the abort after at most 2000 ms', { timeout: 15_000 }, async () => {
+  it('stops waiting for a tool that ignores the abort after at most 2000 ms', async () => {
     const harness = makeHarness();
     const tool = makeTool('Read', { timeoutMs: 20, execute: () => new Promise(() => undefined) });
     const started = Date.now();

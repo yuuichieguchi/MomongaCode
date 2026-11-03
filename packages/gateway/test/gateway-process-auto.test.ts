@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';import { momongaPaths } from '@momonga/foundation';
+import { describe, expect, it } from 'vitest';
+import { momongaPaths } from '@momonga/foundation';
 import { endpointIdentityOf, loadEndpointRecord, probeEndpointTarget, saveEndpointRecord } from '@momonga/gateway';
 import { tokensForText } from '@momonga/protocol';
 import type { FakeChatCompletionsOptions } from '@momonga/testkit';
@@ -41,7 +42,7 @@ const probedSetup = async (models: () => Array<Record<string, unknown>>) => {
   return { fake, home };
 };
 
-describe('chat-completions target with toolCalling auto', { timeout: 30_000 }, () => {
+describe('chat-completions target with toolCalling auto', () => {
   it('fails a call with a message that names the target and the probe command when no record exists', async () => {
     const { home, fake } = await autoSetup();
     const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });

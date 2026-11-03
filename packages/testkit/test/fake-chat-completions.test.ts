@@ -5,8 +5,9 @@ import {
   FAKE_DETERMINISTIC_REPLY,
   FAKE_GUARDRAIL_ERROR,
   FAKE_PAYLOAD_TOO_LARGE_ERROR,
-  countFakePromptTokens,
+  countFakeRequestTokens,
   countFakeTokens,
+  fakeUsageOfRequest,
   generateInstance,
   isValidAtIndex,
   startFakeChatCompletions,
@@ -246,9 +247,36 @@ describe('plain completions and usage', () => {
     expect(body.model).toBe('system');
     expect(body.choices[0].message).toEqual({ role: 'assistant', content: FAKE_DETERMINISTIC_REPLY });
     expect(body.choices[0].finish_reason).toBe('stop');
-    const promptTokens = countFakePromptTokens(messages);
+    const promptTokens = countFakeRequestTokens({ messages });
     const completionTokens = Math.max(1, countFakeTokens(FAKE_DETERMINISTIC_REPLY));
     expect(body.usage).toEqual({ prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: promptTokens + completionTokens });
+  });
+
+  it('counts the tools of the request in the prompt tokens', async () => {
+    const fake = await start({ scenario: 'tools-ok' });
+    const messages = [{ role: 'user', content: 'hello' }];
+    const tools = [weatherTool];
+    const withTools = json(await chat(fake.socketPath, { messages, tools }));
+    const without = json(await chat(fake.socketPath, { messages }));
+    expect(withTools.usage.prompt_tokens).toBe(countFakeRequestTokens({ messages, tools }));
+    expect(withTools.usage.prompt_tokens).toBeGreaterThan(without.usage.prompt_tokens);
+  });
+
+  it('counts an image by the image model and not by the bytes of its data URL', async () => {
+    const imageTokens = { pixelsPerToken: 750, maxTokens: 1600 };
+    const fake = await start({ scenario: 'none', imageInput: true, imageTokens });
+    const pngUrl = (padding: number): string => {
+      const header = Buffer.alloc(24);
+      header.writeUInt32BE(512, 16);
+      header.writeUInt32BE(512, 20);
+      return `data:image/png;base64,${header.toString('base64')}${'A'.repeat(padding)}`;
+    };
+    const messageWith = (padding: number) => ({ role: 'user', content: [{ type: 'text', text: 'describe' }, { type: 'image_url', image_url: { url: pngUrl(padding) } }] });
+    const small = json(await chat(fake.socketPath, { messages: [messageWith(8)] }));
+    const large = json(await chat(fake.socketPath, { messages: [messageWith(40_000)] }));
+    expect(large.usage.prompt_tokens).toBe(small.usage.prompt_tokens);
+    expect(small.usage.prompt_tokens).toBe(countFakeRequestTokens({ messages: [messageWith(8)] }, imageTokens));
+    expect(small.usage.prompt_tokens).toBeGreaterThanOrEqual(Math.ceil((512 * 512) / imageTokens.pixelsPerToken));
   });
 
   it('omits usage when usageReported is false', async () => {
@@ -306,7 +334,7 @@ describe('universal rejections', () => {
   it('rejects requests exceeding the context window with context_length_exceeded', async () => {
     const fake = await start({ scenario: 'none', contextWindow: 100 });
     const messages = [{ role: 'user', content: 'a b c d e f' }];
-    const room = 100 - countFakePromptTokens(messages);
+    const room = 100 - countFakeRequestTokens({ messages });
     expect((await chat(fake.socketPath, { messages, max_tokens: room })).status).toBe(200);
     const rejected = await chat(fake.socketPath, { messages, max_tokens: room + 1 });
     expect(rejected.status).toBe(400);
@@ -481,7 +509,7 @@ describe('streaming', () => {
     );
     const usageChunk = JSON.parse(withUsage.at(-2) as string);
     expect(usageChunk.choices).toEqual([]);
-    const promptTokens = countFakePromptTokens([{ role: 'user', content: 'x' }]);
+    const promptTokens = countFakeRequestTokens({ messages: [{ role: 'user', content: 'x' }] });
     const completionTokens = Math.max(1, countFakeTokens(FAKE_DETERMINISTIC_REPLY));
     expect(usageChunk.usage).toEqual({ prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: promptTokens + completionTokens });
     const without = parseSse((await chat(fake.socketPath, { messages: [{ role: 'user', content: 'x' }], stream: true })).text);
@@ -592,6 +620,18 @@ describe('scripted replies', () => {
     expect(payloads[2].choices[0].finish_reason).toBe('length');
     expect(payloads[3].usage).toEqual({ prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 });
     expect(server.requests).toHaveLength(1);
+  });
+
+  it('sizes the usage of a scripted reply from the request when the script gives a function of it', async () => {
+    const server = await start({
+      scenario: 'tools-ok',
+      script: [{ kind: 'stream', chunks: [{ delta: { content: 'x' } }, { delta: {}, finishReason: 'stop' }], usage: (body) => fakeUsageOfRequest(body, 5) }],
+    });
+    const messages = [{ role: 'user', content: 'a request that is sized' }];
+    const response = await send(server.socketPath, 'POST', '/v1/chat/completions', { model: 'system', messages, stream: true });
+    const usage = streamFrames(response.text).slice(0, -1).map((frame) => JSON.parse(frame)).find((payload) => payload.usage !== undefined)?.usage;
+    const promptTokens = countFakeRequestTokens({ messages });
+    expect(usage).toEqual({ prompt_tokens: promptTokens, completion_tokens: 5, total_tokens: promptTokens + 5 });
   });
 
   it('omits [DONE] when the scripted stream sets done to false', async () => {

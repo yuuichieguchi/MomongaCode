@@ -8,7 +8,7 @@ import { predictDecision } from '../src/queries.ts';
 import { isMismatch } from '../src/report.ts';
 import { replayWitness } from '../src/replay.ts';
 import { buildQueryContext } from '../src/verify.ts';
-import { caseInsensitiveFs, caseSensitiveFs, makeLayout, rulesOf, sshLocation, useZ3 } from './harness.ts';
+import { SOLVER_EXHAUSTIVE_SWEEP_TEST_TIMEOUT_MS, caseInsensitiveFs, caseSensitiveFs, makeLayout, rulesOf, sshLocation, useZ3 } from './harness.ts';
 import type { Layout, RuleSpec } from './harness.ts';
 
 const z3 = useZ3();
@@ -202,7 +202,7 @@ describe('the model agrees with the decision code', () => {
     }
     expect(agreed).toBe(compared);
     expect(compared).toBeGreaterThan(TRIALS * 3);
-  }, 600_000);
+  }, SOLVER_EXHAUSTIVE_SWEEP_TEST_TIMEOUT_MS);
 
   it('uses a project-relative layout so the generated paths sit under the compiled roots', () => {
     const layout = makeLayout();

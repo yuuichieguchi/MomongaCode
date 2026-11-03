@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';import { startFake } from './cc-support.ts';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { startFake } from './cc-support.ts';
 import { postJson, readJson, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, captureStdout, ccTarget, clientFor, homePaths, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { startGatewayProcess } from '../src/process.ts';
@@ -22,7 +23,7 @@ beforeEach(() => {
   control.serviceNames = [];
 });
 
-describe('gateway process telemetry name (system timers)', { timeout: 30_000 }, () => {
+describe('gateway process telemetry name (system timers)', () => {
   it('the gateway process records spans with service.name momonga-gateway', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     const home = makeHome();

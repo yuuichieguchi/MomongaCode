@@ -50,7 +50,7 @@ const startRawNetFake = async (onData: (socket: net.Socket, received: string) =>
 const staleSocketPath = (): string => {
   const socketPath = socketPathIn(shortDir('gr-'));
   const script = `require('node:net').createServer().listen(${JSON.stringify(socketPath)}, () => process.exit(0))`;
-  const result = spawnSync(process.execPath, ['-e', script], { stdio: 'ignore', timeout: 10_000 });
+  const result = spawnSync(process.execPath, ['-e', script], { stdio: 'ignore', timeout: REAL_PROCESS_TEST_TIMEOUT_MS });
   expect(result.status).toBe(0);
   expect(fs.lstatSync(socketPath).isSocket()).toBe(true);
   return socketPath;

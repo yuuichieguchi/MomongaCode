@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { PropertyId, PropertyResult, VerificationReport } from '../src/index.ts';
-import { makeLayout, rulesOf, sshLocation, useZ3, verifyScenario } from './harness.ts';
+import { SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, makeLayout, rulesOf, sshLocation, useZ3, verifyScenario } from './harness.ts';
 import type { RuleSpec, VerifyOptions } from './harness.ts';
 
 const z3 = useZ3();
@@ -53,7 +53,7 @@ describe('a clean rule set', () => {
     expect(limitsOf('bash-admission')).toContain('open yes or no');
     expect(report.outsideProof.join('\n')).toContain('arbitrary shell command');
     expect(report.solver).toMatch(/^Z3 \d+\.\d+\.\d+/);
-  }, 180_000);
+  }, SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS);
 
   it('does not call a deny rule for a wrapper or shell program dead, and lists it as outside the model', async () => {
     const { report } = await run([
@@ -69,7 +69,7 @@ describe('a clean rule set', () => {
     expect(note).toContain('Bash(sudo:*)');
     expect(note).toContain('Bash(bash:*)');
     expect(note).not.toContain('Bash(rm:*)');
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('reports rule-consistency as unknown, never proved, for an allow rule on a wrapper program the model cannot follow', async () => {
     const { report } = await run([
@@ -83,7 +83,7 @@ describe('a clean rule set', () => {
     expect(report.exitCode).toBe(1);
     const note = report.outsideProof.find((item) => item.startsWith('Bash rules the model cannot follow')) ?? '';
     expect(note).toContain('Bash(sudo ls:*)');
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('records where an allow rule overlaps a deny rule and which side wins there', async () => {
     const { report } = await run([
@@ -94,7 +94,7 @@ describe('a clean rule set', () => {
     const precedence = resultOf(report, 'deny-precedence');
     expect(precedence.verdict.status).toBe('proved');
     expect(precedence.verdict.notes.join('\n')).toContain('the outcome there is deny');
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 });
 
 describe('rule sets with a known escape', () => {
@@ -114,7 +114,7 @@ describe('rule sets with a known escape', () => {
     expect(finding?.counterexample?.replay).toMatchObject({ agrees: true, actual: 'allow' });
     expect(report.exitCode).toBe(1);
     expect(report.mismatches).toEqual([]);
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('finds a route to a secret that an allow rule opens and names the rule', async () => {
     const { layout, report } = await run([['allow', 'Read(~/**)']]);
@@ -127,7 +127,7 @@ describe('rule sets with a known escape', () => {
     expect(finding?.counterexample?.cause).toContain('Read(~/**)');
     expect(finding?.counterexample?.replay).toMatchObject({ agrees: true, actual: 'allow' });
     expect(report.exitCode).toBe(1);
-  }, 180_000);
+  }, SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS);
 
   it('finds a route through a symbolic link that the rule was compiled against, with the requested and resolved paths apart', async () => {
     const layout = makeLayout();
@@ -143,7 +143,7 @@ describe('rule sets with a known escape', () => {
     const witness = findingsOf(reach).find((candidate) => candidate.subject.startsWith('~/.ssh'))?.counterexample?.witness;
     expect(witness?.kind === 'path' ? [witness.requested.startsWith(link), witness.resolved.startsWith(layout.home)] : []).toEqual([true, true]);
     expect(report.mismatches).toEqual([]);
-  }, 180_000);
+  }, SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS);
 
   it('reports that the mode default, not a rule, reaches a secret when the workspace contains it', async () => {
     const layout = makeLayout();
@@ -153,13 +153,13 @@ describe('rule sets with a known escape', () => {
     expect(reach.verdict.status).toBe('refuted');
     expect(findingsOf(reach)[0]?.counterexample?.cause).toContain('mode default');
     expect(report.exitCode).toBe(1);
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('proves a protected path cannot be written without approval even when an allow rule covers it', async () => {
     const { report } = await run([['allow', 'Edit(./.git/**)']]);
 
     expect(resultOf(report, 'secret-reach').verdict.status).toBe('proved');
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('shows that bypassPermissions leaves a secret open until a deny rule closes it', async () => {
     const open = await run([], { mode: 'bypassPermissions' });
@@ -167,7 +167,7 @@ describe('rule sets with a known escape', () => {
 
     const closed = await run([['deny', 'Read(~/.ssh/**)']], { mode: 'bypassPermissions' });
     expect(resultOf(closed.report, 'secret-reach').verdict.status).toBe('proved');
-  }, 180_000);
+  }, SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS);
 });
 
 describe('rules that cannot take effect or that contradict', () => {
@@ -182,7 +182,7 @@ describe('rules that cannot take effect or that contradict', () => {
     const messages = findingsOf(consistency).map((finding) => `${finding.subject}: ${finding.message}`);
     expect(messages.some((message) => message.includes('Read(./a/b/**)') && message.includes('contradicts the deny rule'))).toBe(true);
     expect(messages.some((message) => message.startsWith('Read(./a/b/**)') && message.includes('can never take effect'))).toBe(true);
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('flags a duplicated allow rule, whose removal changes nothing', async () => {
     const { report } = await run([
@@ -191,7 +191,7 @@ describe('rules that cannot take effect or that contradict', () => {
     ]);
 
     expect(findingsOf(resultOf(report, 'rule-consistency'))).toHaveLength(2);
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('flags an allow edit rule that plan mode never lets take effect, and not in default mode', async () => {
     const plan = await run([['allow', 'Edit(./src/**)']], { mode: 'plan' });
@@ -199,14 +199,14 @@ describe('rules that cannot take effect or that contradict', () => {
 
     const normal = await run([['allow', 'Edit(./src/**)']]);
     expect(resultOf(normal.report, 'rule-consistency').verdict.status).toBe('proved');
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('flags a read allow rule that the workspace default already grants', async () => {
     const { report } = await run([['allow', 'Read(./src/**)']]);
 
     const finding = findingsOf(resultOf(report, 'rule-consistency'))[0];
     expect(finding?.message).toContain('mode default');
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('treats an ask rule that a deny rule fully covers as one that cannot take effect', async () => {
     const { report } = await run([
@@ -215,7 +215,7 @@ describe('rules that cannot take effect or that contradict', () => {
     ]);
 
     expect(findingsOf(resultOf(report, 'rule-consistency')).map((finding) => finding.subject)).toEqual([expect.stringContaining('mcp__srv__tool')]);
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 });
 
 describe('solver limits', () => {
@@ -234,7 +234,7 @@ describe('solver limits', () => {
     expect(unknown.length).toBeGreaterThan(0);
     for (const result of unknown) expect(result.verdict.status === 'unknown' ? result.verdict.reason : '').not.toBe('');
     expect(report.exitCode).toBe(1);
-  }, 180_000);
+  }, SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS);
 });
 
 describe('the decision code failing on a modelled input', () => {
@@ -242,5 +242,5 @@ describe('the decision code failing on a modelled input', () => {
     const { report } = await run([['allow', 'Bash']]);
 
     expect(report.mismatches).toEqual([]);
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 });

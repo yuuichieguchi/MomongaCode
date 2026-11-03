@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';import { inheritedEnvOf } from '@momonga/mcp';
+import { describe, expect, it } from 'vitest';
+import { inheritedEnvOf } from '@momonga/mcp';
 import { rawConfig, startRaw } from './raw-transport.ts';
 
 const PLATFORM_INJECTED_ENV_KEYS = new Set(['__CF_USER_TEXT_ENCODING']);
@@ -29,7 +30,7 @@ describe('inheritedEnvOf', () => {
     expect(inheritedEnvOf({ LANG: 'C', OPENAI_API_KEY: FAKE_SECRET })).toEqual({});
   });
 
-  it('the server env equals inheritedEnvOf(baseEnv) overlaid with config.env', { timeout: 30_000 }, async () => {
+  it('the server env equals inheritedEnvOf(baseEnv) overlaid with config.env', async () => {
     const baseEnv = { HOME: '/home/fixture-user', PATH: '/usr/bin:/bin', USER: 'fixture-user', TERM: '() { evil; }', OPENAI_API_KEY: FAKE_SECRET };
     const overlay = { FIXTURE_FLAG: 'on', HOME: '/override-home', TERM: 'xterm-from-config' };
     const { request } = await startRaw({ config: rawConfig([], { env: overlay }), baseEnv });

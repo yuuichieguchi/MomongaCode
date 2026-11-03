@@ -391,7 +391,7 @@ describe('createUdsClient timeouts', () => {
     const limited = createUdsClient(socketPath, { headersTimeoutMs: 100 });
     cleanups.push(() => limited.close());
     await expect(limited.request({ method: 'GET', path: '/' })).rejects.toMatchObject({ code: 'UND_ERR_HEADERS_TIMEOUT' });
-  }, 10_000);
+  });
 
   it('disables the headers timeout with headersTimeoutMs 0', async () => {
     const socketPath = await slowServer(100);

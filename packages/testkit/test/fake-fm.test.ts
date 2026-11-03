@@ -30,7 +30,7 @@ const minimalEnv = (dir: string, extra: Record<string, string> = {}): Record<str
 });
 
 const runFm = (binary: string, args: string[], env: Record<string, string>, input?: string) =>
-  spawnSync(binary, args, { env, input: input ?? '', encoding: 'utf8', timeout: 20_000 });
+  spawnSync(binary, args, { env, input: input ?? '', encoding: 'utf8', timeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 

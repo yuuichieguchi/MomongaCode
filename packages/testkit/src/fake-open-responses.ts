@@ -1,3 +1,4 @@
+import { canonicalJson } from '@momonga/foundation';
 import { tokensForText } from '@momonga/protocol';
 import type { Usage } from '@momonga/protocol';
 import type { FakeSseFrame, FakeUpstreamOptions, FakeUpstreamReply, FakeUpstreamServer } from './fake-sse-upstream.ts';
@@ -14,7 +15,6 @@ export type FakeOpenResponsesOptions = {
   socketPath?: string;
 };
 
-const SIZED_OUTPUT_TOKENS = 3;
 const USAGE_BEARING_TERMINALS = ['response.completed', 'response.incomplete'];
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -27,7 +27,8 @@ const withInputTokens = (reply: FakeUpstreamReply, inputTokens: number): FakeUps
       const data = frame.data;
       if (!isRecord(data) || !USAGE_BEARING_TERMINALS.includes(String(data['type'])) || !isRecord(data['response'])) return frame;
       if (data['response']['usage'] !== undefined) return frame;
-      return { ...frame, data: { ...data, response: { ...data['response'], usage: usageOf(inputTokens, SIZED_OUTPUT_TOKENS) } } };
+      const outputTokens = tokensForText(canonicalJson(data['response']['output']));
+      return { ...frame, data: { ...data, response: { ...data['response'], usage: usageOf(inputTokens, outputTokens) } } };
     }),
   };
 };

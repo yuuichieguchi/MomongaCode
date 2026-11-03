@@ -3,7 +3,7 @@ import { computeFileRules, decide } from '@momonga/policy';
 import type { PermissionRule } from '@momonga/policy';
 import { describe, expect, it } from 'vitest';
 import type { PropertyId, VerificationReport } from '../src/index.ts';
-import { caseSensitiveFs, makeLayout, rulesOf, useZ3, verifyScenario } from './harness.ts';
+import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, caseSensitiveFs, makeLayout, rulesOf, useZ3, verifyScenario } from './harness.ts';
 import type { Layout } from './harness.ts';
 
 const z3 = useZ3();
@@ -39,7 +39,7 @@ describe('finding 6: an unmodelled deny or ask rule never leaves a proof standin
     expect(statusOf(report, 'bash-admission')).toBe('unknown');
     expect(statusOf(report, 'rule-consistency')).toBe('unknown');
     expect(report.exitCode).toBe(1);
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('a dead unmodelled deny rule is not reported as proved consistent', async () => {
     const layout = makeLayout();
@@ -47,7 +47,7 @@ describe('finding 6: an unmodelled deny or ask rule never leaves a proof standin
 
     expect(statusOf(report, 'rule-consistency')).toBe('unknown');
     expect(report.exitCode).toBe(1);
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('the outside-proof note no longer claims no proved result depends on the rule', async () => {
     const layout = makeLayout();
@@ -55,7 +55,7 @@ describe('finding 6: an unmodelled deny or ask rule never leaves a proof standin
 
     expect(report.outsideProof.join('\n')).toContain('git push origin~1');
     expect(report.outsideProof.join('\n')).not.toContain('no proved result depends on it');
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('an unmodelled allow rule against a modelled deny rule makes bash-admission unknown and names the rule', async () => {
     const layout = makeLayout();
@@ -65,7 +65,7 @@ describe('finding 6: an unmodelled deny or ask rule never leaves a proof standin
     expect(result?.verdict.status).toBe('unknown');
     expect(result?.verdict.status === 'unknown' ? result.verdict.reason : '').toContain('Bash(sudo ls:*)');
     expect(report.exitCode).toBe(1);
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it.each(['Bash(sudo:*)', 'Bash(bash:*)', 'Bash(env:*)', 'Bash(sudo rm:*)', 'Bash(eval:*)'])('deny %s is modelled: rule-consistency is proved against decide, without mismatches', async (text) => {
     const layout = makeLayout();
@@ -74,7 +74,7 @@ describe('finding 6: an unmodelled deny or ask rule never leaves a proof standin
     expect(statusOf(report, 'rule-consistency')).toBe('proved');
     expect(report.mismatches).toEqual([]);
     expect(report.exitCode).toBe(0);
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('a duplicated wrapper deny rule is not proved: no input shows either one changing a decision', async () => {
     const layout = makeLayout();
@@ -82,7 +82,7 @@ describe('finding 6: an unmodelled deny or ask rule never leaves a proof standin
 
     expect(statusOf(report, 'rule-consistency')).not.toBe('proved');
     expect(report.exitCode).toBe(1);
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('a wrapper deny rule of several words leaves bash-admission unknown while an allow rule exists', async () => {
     const layout = makeLayout();
@@ -91,7 +91,7 @@ describe('finding 6: an unmodelled deny or ask rule never leaves a proof standin
 
     expect(result?.verdict.status).toBe('unknown');
     expect(result?.verdict.status === 'unknown' ? result.verdict.reason : '').toContain('Bash(sudo rm:*)');
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('a wrapper deny rule of one word does not disturb bash-admission', async () => {
     const layout = makeLayout();
@@ -99,7 +99,7 @@ describe('finding 6: an unmodelled deny or ask rule never leaves a proof standin
 
     expect(statusOf(report, 'bash-admission')).toBe('proved');
     expect(report.exitCode).toBe(0);
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('a wrapper ask rule stays unknown and is named', async () => {
     const layout = makeLayout();
@@ -108,7 +108,7 @@ describe('finding 6: an unmodelled deny or ask rule never leaves a proof standin
 
     expect(result?.verdict.status).toBe('unknown');
     expect(result?.verdict.status === 'unknown' ? result.verdict.reason : '').toContain('Bash(sudo:*)');
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('a tool-wide allow Bash is seen by bash-admission: allow Bash with deny git push is refuted', async () => {
     const layout = makeLayout();
@@ -120,7 +120,7 @@ describe('finding 6: an unmodelled deny or ask rule never leaves a proof standin
     expect(statusOf(report, 'bash-admission')).toBe('refuted');
     expect(report.exitCode).toBe(1);
     expect(report.mismatches).toEqual([]);
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('the subject line counts a tool-wide allow rule', async () => {
     const layout = makeLayout();
@@ -128,7 +128,7 @@ describe('finding 6: an unmodelled deny or ask rule never leaves a proof standin
     const result = report.results.find((item) => item.id === 'bash-admission');
 
     expect(result?.subject).toContain('1 Bash allow rule(s)');
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('the modelled deny rule stays refuted', async () => {
     const layout = makeLayout();
@@ -136,5 +136,5 @@ describe('finding 6: an unmodelled deny or ask rule never leaves a proof standin
 
     expect(statusOf(report, 'bash-admission')).toBe('refuted');
     expect(report.exitCode).toBe(1);
-  }, 120_000);
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 });

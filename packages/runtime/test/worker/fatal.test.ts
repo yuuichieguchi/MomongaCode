@@ -1,11 +1,10 @@
-import { describe, expect, it } from 'vitest';import type { RuntimeStore } from '@momonga/store';
+import { describe, expect, it } from 'vitest';
+import type { RuntimeStore } from '@momonga/store';
 import { waitUntil, within } from './deferred.ts';
 import { makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { fatalStoreError } from './cancel-fixture.ts';
 import { gated, textStep } from './scripts.ts';
-
-const SLOW = { timeout: 30_000 };
 
 type Counting = RuntimeStore & { calls: Record<string, number> };
 
@@ -32,7 +31,7 @@ const countingStore = (env: Env, overrides: Partial<RuntimeStore>): Counting => 
 };
 
 describe('worker fatal store errors', () => {
-  it('a fatal store error from claim stops the loop and calls onFatal once', SLOW, async () => {
+  it('a fatal store error from claim stops the loop and calls onFatal once', async () => {
     const env = await makeEnv();
     const fatal = fatalStoreError();
     const fatals: Error[] = [];
@@ -58,7 +57,7 @@ describe('worker fatal store errors', () => {
     expect(errors).toEqual([]);
   });
 
-  it('a fatal store error inside a claim is rethrown before any recovery write', SLOW, async () => {
+  it('a fatal store error inside a claim is rethrown before any recovery write', async () => {
     const env = await makeEnv();
     const fatal = fatalStoreError();
     const fatals: Error[] = [];
@@ -94,7 +93,7 @@ describe('worker fatal store errors', () => {
     expect(env.run(run.id).status).toBe('RUNNING');
   });
 
-  it('a fatal heartbeat error reaches onFatal', SLOW, async () => {
+  it('a fatal heartbeat error reaches onFatal', async () => {
     const env = await makeEnv();
     const fatal = fatalStoreError();
     const fatals: Error[] = [];
@@ -123,7 +122,7 @@ describe('worker fatal store errors', () => {
     expect(store.calls['transition'] ?? 0).toBe(0);
   });
 
-  it('a dying poll loop calls onFatal', SLOW, async () => {
+  it('a dying poll loop calls onFatal', async () => {
     const env = await makeEnv();
     const failure = new Error('the clock exploded');
     const fatals: Error[] = [];
@@ -144,7 +143,7 @@ describe('worker fatal store errors', () => {
     expect(fatals).toEqual([failure]);
   });
 
-  it('a non-fatal claim error keeps the loop alive', SLOW, async () => {
+  it('a non-fatal claim error keeps the loop alive', async () => {
     const env = await makeEnv();
     const fatals: Error[] = [];
     const errors: unknown[] = [];
