@@ -1,10 +1,10 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER } from '@momonga/protocol';
-import { roleOfHeader } from '../core/role.ts';
 import type { GatewayCostReportView, GatewayHealth, ModelList, MomongaModelList } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, invalidRequest, notFound } from '../core/errors.ts';
 import type { ResponsesService, SubmitHeaders } from '../core/responses-service.ts';
+import { roleOfHeader } from '../core/role.ts';
 import type { Services } from '../core/services.ts';
 import type { UnaryService } from '../core/unary.ts';
 import { readJsonBody } from './body.ts';
