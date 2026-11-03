@@ -1,0 +1,420 @@
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createTempRoot, removeTempRoot } from '../../scripts/support/temp.ts';
+import { MANIFEST_FORMAT, TLC_WORKERS, discoveryProblems, readManifest, runTlc, verdictProblems } from './manifest.ts';
+import type { Manifest, ManifestEntry, TlcRun } from './manifest.ts';
+
+const repoRoot = path.resolve(import.meta.dirname, '..', '..');
+const specDir = path.join(repoRoot, 'specs', 'tla');
+const manifestPath = path.join(specDir, 'manifest.json');
+const tlcScript = path.join(repoRoot, 'scripts', 'tlc.sh');
+const jarPath = path.join(repoRoot, '.cache', 'tla', 'tla2tools.jar');
+const REAP_SLACK_MS = 5000;
+const FETCH_COMMAND = 'curl -L -o .cache/tla/tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar';
+const LIVENESS_ARGS = ['-lncheck', 'final'];
+
+const loadManifest = (): { manifest: Manifest } | { error: unknown } => {
+  try {
+    return { manifest: readManifest(manifestPath) };
+  } catch (error) {
+    return { error };
+  }
+};
+
+const loaded = loadManifest();
+const manifestOrThrow = (): Manifest => {
+  if ('error' in loaded) throw loaded.error;
+  return loaded.manifest;
+};
+
+const selectedTier = process.env['MOMONGA_TLC_TIER'] === 'deep' ? 'deep' : 'every-run';
+const tierEntries = 'manifest' in loaded ? loaded.manifest.entries.filter((entry) => entry.tier === selectedTier) : [];
+
+const holdsEntry: ManifestEntry = {
+  config: 'Tiny',
+  role: 'check',
+  expect: 'holds',
+  args: [],
+  tier: 'every-run',
+  distinctStates: 3,
+  measuredSeconds: 1,
+  budgetSeconds: 2,
+};
+
+const invariantEntry: ManifestEntry = {
+  ...holdsEntry,
+  config: 'Tiny.broken',
+  role: 'evidence',
+  expect: { violates: 'Small', exitCode: 12 },
+};
+
+const temporalEntry: ManifestEntry = {
+  ...holdsEntry,
+  config: 'Tiny.live',
+  role: 'evidence',
+  expect: { violates: 'Settles', exitCode: 13 },
+  args: LIVENESS_ARGS,
+};
+
+const completedOutput = (distinct: number): string =>
+  [
+    'TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)',
+    'Model checking completed. No error has been found.',
+    `${distinct} states generated, ${distinct} distinct states found, 0 states left on queue.`,
+    'Finished in 01s at (2026-11-03 10:00:00)',
+  ].join('\n');
+
+const invariantViolationOutput = (invariant: string): string =>
+  ['TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)', `Error: Invariant ${invariant} is violated.`, 'Error: The behavior up to this point is:'].join('\n');
+
+const temporalViolationOutput = ['TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)', 'Error: Temporal properties were violated.', 'Error: The following behavior constitutes a counter-example:'].join('\n');
+
+const runOf = (exitCode: number, stdout: string, stderr = ''): TlcRun => ({ pid: 4242, exitCode, signal: null, killedAtBudget: false, stdout, stderr });
+
+const writeFile = (file: string, text: string): void => {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, text);
+};
+
+const tinySpec = ['---- MODULE Tiny ----', 'EXTENDS Naturals', 'VARIABLE x', 'Init == x = 0', "Next == (x < 2 /\\ x' = x + 1) \\/ (x = 2 /\\ x' = x)", 'Spec == Init /\\ [][Next]_x', 'Small == x <= 2', '===='].join('\n');
+
+const endlessSpec = ['---- MODULE Endless ----', 'EXTENDS Naturals', 'VARIABLE x', 'Init == x = 0', 'Next == x\' = x + 1', 'Spec == Init /\\ [][Next]_x', 'Fine == x >= 0', '===='].join('\n');
+
+const cfgFor = (invariant: string): string => ['SPECIFICATION Spec', '', 'INVARIANTS', `    ${invariant}`, ''].join('\n');
+
+const discoveryManifest = (configs: readonly string[]): Manifest => ({
+  format: MANIFEST_FORMAT,
+  unitSuiteSeconds: 100,
+  entries: configs.map((config) => ({ ...holdsEntry, config })),
+});
+
+const groupMembers = (pgid: number): number[] =>
+  spawnSync('ps', ['-A', '-o', 'pid=,pgid='], { encoding: 'utf8' })
+    .stdout.split('\n')
+    .map((line) => line.trim().split(/\s+/).map(Number))
+    .filter(([pid, group]) => group === pgid && pid !== undefined)
+    .map(([pid]) => pid as number);
+
+const groupGoneWithin = async (pgid: number, deadlineMs: number): Promise<number[]> => {
+  const deadline = Date.now() + deadlineMs;
+  let members = groupMembers(pgid);
+  while (members.length > 0 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    members = groupMembers(pgid);
+  }
+  return members;
+};
+
+const tlcMetadirsLeft = (): string[] => {
+  const token = process.env['MOMONGA_TEST_RUN'] as string;
+  return fs.readdirSync(os.tmpdir()).filter((entry) => entry.startsWith(`mmt-${token}-tlc-`));
+};
+
+const sandboxWithScript = (root: string, specs: Readonly<Record<string, string>>, withJar: boolean): string => {
+  const script = path.join(root, 'scripts', 'tlc.sh');
+  fs.mkdirSync(path.dirname(script), { recursive: true });
+  fs.copyFileSync(tlcScript, script);
+  fs.chmodSync(script, 0o755);
+  for (const [name, text] of Object.entries(specs)) writeFile(path.join(root, 'specs', 'tla', name), text);
+  if (withJar) {
+    fs.mkdirSync(path.join(root, '.cache', 'tla'), { recursive: true });
+    fs.symlinkSync(jarPath, path.join(root, '.cache', 'tla', 'tla2tools.jar'));
+  }
+  return script;
+};
+
+const pathWithoutJava = (root: string): string => {
+  const bin = path.join(root, 'bin');
+  fs.mkdirSync(bin);
+  for (const dir of ['/usr/bin', '/bin']) {
+    for (const name of fs.readdirSync(dir)) {
+      if (name === 'java' || fs.existsSync(path.join(bin, name))) continue;
+      fs.symlinkSync(path.join(dir, name), path.join(bin, name));
+    }
+  }
+  return bin;
+};
+
+const pathWithOldJava = (root: string): string => {
+  const bin = path.join(root, 'old-java-bin');
+  writeFile(
+    path.join(bin, 'java'),
+    ['#!/bin/sh', 'echo "Property settings:" >&2', 'echo "    java.specification.version = 1.7" >&2', 'echo "java version \\"1.7.0_80\\"" >&2', 'exit 0', ''].join('\n'),
+  );
+  fs.chmodSync(path.join(bin, 'java'), 0o755);
+  return `${bin}:/usr/bin:/bin`;
+};
+
+describe('the manifest of specs/tla', () => {
+  it('is readable and declares its format', () => {
+    expect(manifestOrThrow().format).toBe('momonga-tla-manifest/1');
+  });
+
+  it('lists exactly the configurations on disk, each module exists, and every module has a configuration', () => {
+    expect(discoveryProblems(specDir, manifestOrThrow())).toEqual([]);
+  });
+
+  it('records the role, expectation, arguments and tier of every RunRecovery configuration as the design states', () => {
+    const recorded = Object.fromEntries(
+      manifestOrThrow()
+        .entries.filter((entry) => entry.config.startsWith('RunRecovery'))
+        .map((entry) => [entry.config, { role: entry.role, expect: entry.expect, args: [...entry.args], tier: entry.tier }]),
+    );
+    const evidenceAtMostOnce = { role: 'evidence', expect: { violates: 'AtMostOnceEffect', exitCode: 12 }, args: [], tier: 'every-run' };
+    expect(recorded).toEqual({
+      RunRecovery: { role: 'check', expect: 'holds', args: [], tier: 'every-run' },
+      'RunRecovery.children': { role: 'check', expect: 'holds', args: [], tier: 'deep' },
+      'RunRecovery.childrenSmall': { role: 'check', expect: 'holds', args: [], tier: 'every-run' },
+      'RunRecovery.liveNone': { role: 'check', expect: 'holds', args: LIVENESS_ARGS, tier: 'every-run' },
+      'RunRecovery.liveSpawn': { role: 'check', expect: 'holds', args: LIVENESS_ARGS, tier: 'deep' },
+      'RunRecovery.liveSpawnSmall': { role: 'check', expect: 'holds', args: LIVENESS_ARGS, tier: 'every-run' },
+      'RunRecovery.lockOnly': { role: 'evidence', expect: 'holds', args: [], tier: 'every-run' },
+      'RunRecovery.unfixed': evidenceAtMostOnce,
+      'RunRecovery.fenceOnly': evidenceAtMostOnce,
+      'RunRecovery.unlocked': evidenceAtMostOnce,
+      'RunRecovery.reapOnly': evidenceAtMostOnce,
+      'RunRecovery.noReap': { role: 'evidence', expect: { violates: 'ReconcileSeesStoppedEffect', exitCode: 12 }, args: [], tier: 'every-run' },
+    });
+  });
+
+  it('records the measured distinct states of lockOnly', () => {
+    expect(manifestOrThrow().entries.find((entry) => entry.config === 'RunRecovery.lockOnly')?.distinctStates).toBe(1065330);
+  });
+
+  it('derives every budget as twice the measured seconds, rounded up', () => {
+    for (const entry of manifestOrThrow().entries) {
+      expect(entry.measuredSeconds, entry.config).toBeGreaterThan(0);
+      expect(entry.budgetSeconds, entry.config).toBe(Math.ceil(2 * entry.measuredSeconds));
+    }
+  });
+
+  it('records a positive whole number of distinct states for every configuration', () => {
+    for (const entry of manifestOrThrow().entries) {
+      expect(Number.isInteger(entry.distinctStates) && entry.distinctStates > 0, entry.config).toBe(true);
+    }
+  });
+});
+
+describe('discovery against a spec directory', () => {
+  let root = '';
+
+  beforeEach(() => {
+    root = createTempRoot();
+    writeFile(path.join(root, 'Tiny.tla'), tinySpec);
+    writeFile(path.join(root, 'Tiny.cfg'), cfgFor('Small'));
+    writeFile(path.join(root, 'Tiny.broken.cfg'), cfgFor('Small'));
+  });
+
+  afterEach(() => {
+    removeTempRoot(root);
+  });
+
+  it('finds no problem when the manifest and the disk agree', () => {
+    expect(discoveryProblems(root, discoveryManifest(['Tiny', 'Tiny.broken']))).toEqual([]);
+  });
+
+  it('fails on a configuration file the manifest does not list', () => {
+    writeFile(path.join(root, 'Tiny.extra.cfg'), cfgFor('Small'));
+    const problems = discoveryProblems(root, discoveryManifest(['Tiny', 'Tiny.broken']));
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('Tiny.extra');
+  });
+
+  it('fails on a manifest entry with no configuration file on disk', () => {
+    const problems = discoveryProblems(root, discoveryManifest(['Tiny', 'Tiny.broken', 'Tiny.gone']));
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('Tiny.gone');
+  });
+
+  it('fails on a configuration whose module does not exist', () => {
+    writeFile(path.join(root, 'Ghost.cfg'), cfgFor('Small'));
+    const problems = discoveryProblems(root, discoveryManifest(['Tiny', 'Tiny.broken', 'Ghost']));
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('Ghost');
+  });
+
+  it('fails on a module that has no configuration', () => {
+    writeFile(path.join(root, 'Lonely.tla'), tinySpec.replace('MODULE Tiny', 'MODULE Lonely'));
+    const problems = discoveryProblems(root, discoveryManifest(['Tiny', 'Tiny.broken']));
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('Lonely');
+  });
+
+  it('fails when the same configuration is listed twice', () => {
+    const problems = discoveryProblems(root, discoveryManifest(['Tiny', 'Tiny.broken', 'Tiny']));
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('Tiny');
+  });
+});
+
+describe('the verdict on one TLC run', () => {
+  it('accepts a holding run with exit 0, the completion line and the exact distinct states', () => {
+    expect(verdictProblems(holdsEntry, runOf(0, completedOutput(3)))).toEqual([]);
+  });
+
+  it('fails a holding entry when TLC exits with a violation code', () => {
+    expect(verdictProblems(holdsEntry, runOf(12, invariantViolationOutput('Small')))).not.toEqual([]);
+  });
+
+  it('fails a holding entry when the distinct states differ from the record', () => {
+    expect(verdictProblems(holdsEntry, runOf(0, completedOutput(4)))).not.toEqual([]);
+  });
+
+  it('fails a holding entry when exit 0 comes without the completion line', () => {
+    expect(verdictProblems(holdsEntry, runOf(0, '3 states generated, 3 distinct states found, 0 states left on queue.'))).not.toEqual([]);
+  });
+
+  it('accepts an invariant violation with the declared exit code and the named invariant', () => {
+    expect(verdictProblems(invariantEntry, runOf(12, invariantViolationOutput('Small')))).toEqual([]);
+  });
+
+  it('fails an expected violation when TLC exits 0', () => {
+    expect(verdictProblems(invariantEntry, runOf(0, completedOutput(3)))).not.toEqual([]);
+  });
+
+  it('fails an expected violation when TLC exits with a different code', () => {
+    expect(verdictProblems(invariantEntry, runOf(13, invariantViolationOutput('Small')))).not.toEqual([]);
+  });
+
+  it('fails an expected violation when a different invariant is violated', () => {
+    expect(verdictProblems(invariantEntry, runOf(12, invariantViolationOutput('Other')))).not.toEqual([]);
+  });
+
+  it('accepts a temporal violation with exit 13 and the temporal line', () => {
+    expect(verdictProblems(temporalEntry, runOf(13, temporalViolationOutput))).toEqual([]);
+  });
+
+  it('fails a temporal expectation when TLC exits 12', () => {
+    expect(verdictProblems(temporalEntry, runOf(12, temporalViolationOutput))).not.toEqual([]);
+  });
+
+  it('fails a run killed at its budget', () => {
+    const killed: TlcRun = { ...runOf(0, ''), exitCode: null, signal: 'SIGKILL', killedAtBudget: true };
+    expect(verdictProblems(holdsEntry, killed)).not.toEqual([]);
+  });
+
+  it.each([
+    [3, `tla2tools.jar is missing\n  fetch: ${FETCH_COMMAND}\n`],
+    [5, 'java.specification.version 1.8 or later is required; install a JDK on macOS or openjdk-17-jre-headless on Debian\n'],
+  ])('fails with the script stderr when the script exits %i', (code, stderr) => {
+    const problems = verdictProblems(holdsEntry, runOf(code, '', stderr));
+    expect(problems).not.toEqual([]);
+    expect(problems.join('\n')).toContain(stderr.trim());
+  });
+});
+
+describe('running tlc.sh under the harness', () => {
+  let root = '';
+
+  beforeEach(() => {
+    root = createTempRoot();
+  });
+
+  afterEach(() => {
+    removeTempRoot(root);
+  });
+
+  it('runs TLC on half the cores, rounded up', () => {
+    expect(TLC_WORKERS).toBe(Math.ceil(os.availableParallelism() / 2));
+  });
+
+  it('passes the config, its args and the worker count, and owns a leak-guarded metadir that it removes', async () => {
+    const script = path.join(root, 'echo-tlc.sh');
+    writeFile(script, ['#!/bin/sh', 'echo "ARGS $*"', 'echo "METADIR $TLC_METADIR"', 'test -d "$TLC_METADIR" && echo "METADIR_EXISTS"', 'exit 0', ''].join('\n'));
+    fs.chmodSync(script, 0o755);
+    const run = await runTlc({ script, config: 'RunRecovery.liveNone', args: LIVENESS_ARGS, budgetSeconds: 30 });
+    expect(run.exitCode).toBe(0);
+    const argsLine = run.stdout.split('\n').find((line) => line.startsWith('ARGS ')) ?? '';
+    const argv = argsLine.slice('ARGS '.length).split(' ');
+    expect(argv[0]).toBe('RunRecovery.liveNone');
+    expect(argv.slice(1).join(' ')).toContain('-lncheck final');
+    expect(argv.slice(1).join(' ')).toContain(`-workers ${TLC_WORKERS}`);
+    const metadir = (run.stdout.split('\n').find((line) => line.startsWith('METADIR ')) ?? '').slice('METADIR '.length);
+    expect(path.dirname(metadir)).toBe(os.tmpdir());
+    expect(path.basename(metadir).startsWith(`mmt-${process.env['MOMONGA_TEST_RUN']}-tlc-`)).toBe(true);
+    expect(run.stdout).toContain('METADIR_EXISTS');
+    expect(fs.existsSync(metadir)).toBe(false);
+    expect(tlcMetadirsLeft()).toEqual([]);
+  });
+
+  it(
+    'fails a missing jar with the fetch command, never a skip',
+    async () => {
+      const script = sandboxWithScript(root, { 'Tiny.tla': tinySpec, 'Tiny.cfg': cfgFor('Small') }, false);
+      const run = await runTlc({ script, config: 'Tiny', args: [], budgetSeconds: 30 });
+      expect(run.exitCode).toBe(3);
+      const problems = verdictProblems(holdsEntry, run);
+      expect(problems).not.toEqual([]);
+      expect(problems.join('\n')).toContain('https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar');
+      expect(problems.join('\n')).toContain('curl -L -o');
+    },
+    30000 + REAP_SLACK_MS,
+  );
+
+  it(
+    'fails a missing java with the requirement and the install hints, never a skip',
+    async () => {
+      const script = sandboxWithScript(root, { 'Tiny.tla': tinySpec, 'Tiny.cfg': cfgFor('Small') }, true);
+      const run = await runTlc({ script, config: 'Tiny', args: [], budgetSeconds: 30, env: { PATH: pathWithoutJava(root) } });
+      expect(run.exitCode).toBe(5);
+      const problems = verdictProblems(holdsEntry, run).join('\n');
+      expect(problems).toContain('java.specification.version');
+      expect(problems).toContain('1.8');
+      expect(problems).toContain('openjdk-17-jre-headless');
+    },
+    30000 + REAP_SLACK_MS,
+  );
+
+  it(
+    'fails a java older than 1.8 with the requirement and the install hints',
+    async () => {
+      const script = sandboxWithScript(root, { 'Tiny.tla': tinySpec, 'Tiny.cfg': cfgFor('Small') }, true);
+      const run = await runTlc({ script, config: 'Tiny', args: [], budgetSeconds: 30, env: { PATH: pathWithOldJava(root) } });
+      expect(run.exitCode).toBe(5);
+      const problems = verdictProblems(holdsEntry, run).join('\n');
+      expect(problems).toContain('1.8');
+      expect(problems).toContain('openjdk-17-jre-headless');
+    },
+    30000 + REAP_SLACK_MS,
+  );
+
+  it(
+    'kills the script and its JVM as one process group at the budget and leaves no JVM',
+    async () => {
+      const budgetSeconds = 8;
+      const script = sandboxWithScript(root, { 'Endless.tla': endlessSpec, 'Endless.cfg': cfgFor('Fine') }, true);
+      const startedAt = Date.now();
+      const run = await runTlc({ script, config: 'Endless', args: [], budgetSeconds });
+      expect(Date.now() - startedAt).toBeLessThan(budgetSeconds * 1000 + REAP_SLACK_MS);
+      expect(run.killedAtBudget).toBe(true);
+      expect(run.signal).toBe('SIGKILL');
+      expect(run.stdout).toContain('TLC2 Version');
+      expect(await groupGoneWithin(run.pid, REAP_SLACK_MS)).toEqual([]);
+      expect(tlcMetadirsLeft()).toEqual([]);
+      expect(verdictProblems({ ...holdsEntry, config: 'Endless', budgetSeconds }, run)).not.toEqual([]);
+    },
+    8000 + 3 * REAP_SLACK_MS,
+  );
+});
+
+describe(`TLC over every ${selectedTier} configuration in the manifest`, () => {
+  it('has configurations in this tier', () => {
+    manifestOrThrow();
+    expect(tierEntries.length).toBeGreaterThan(0);
+  });
+
+  for (const entry of tierEntries) {
+    it(
+      `${entry.config} ${entry.expect === 'holds' ? 'holds' : `violates ${entry.expect.violates}`}`,
+      async () => {
+        const run = await runTlc({ script: tlcScript, config: entry.config, args: entry.args, budgetSeconds: entry.budgetSeconds });
+        expect(verdictProblems(entry, run)).toEqual([]);
+        expect(await groupGoneWithin(run.pid, REAP_SLACK_MS)).toEqual([]);
+      },
+      entry.budgetSeconds * 1000 + REAP_SLACK_MS,
+    );
+  }
+});
