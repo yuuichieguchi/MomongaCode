@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { DAEMON_MARKER_FD, LIFELINE_FD, isProcessAlive } from '@momonga/foundation';
-import { killGroupsForCleanup, registerCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, registerCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import { childStdio, contractArgs, resolveLaunch } from '../src/launcher.ts';
 import { createManagerHarness } from './support/p2-manager-harness.ts';
 import { pollUntil, processGroupOf } from './support/p2-poll.ts';
@@ -99,7 +99,7 @@ describe('stdio layout', () => {
   });
 });
 
-describe('spawn options', () => {
+describe('spawn options', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('children are spawned detached', (context) => {
     const harness = createManagerHarness(context);
     harness.spawnInitial();
@@ -119,7 +119,7 @@ describe('spawn options', () => {
     const childPid = pid as number;
     expect(processGroupOf(childPid)).toBe(childPid);
     expect(processGroupOf(childPid)).not.toBe(processGroupOf(process.pid));
-  }, 15_000);
+  });
 
   it('relative command is rejected and handled as a spawn failure', async (context) => {
     const harness = createManagerHarness(context, { launcher: () => ({ command: 'node', args: [] }) });
@@ -153,7 +153,7 @@ describe('spawn options', () => {
   });
 });
 
-describe('signals with real processes', () => {
+describe('signals with real processes', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('a group SIGTERM to the supervisor\'s group does not reach a child', async (context) => {
     const home = withTempDir(context, { asHome: true });
     const termFile = path.join(home, 'terms.log');
@@ -203,7 +203,7 @@ describe('signals with real processes', () => {
     process.kill(-supervisor.pid, 'SIGTERM');
     await pollUntil(() => !isProcessAlive(childPid), 5000, 'child exits after the supervisor stops it');
     expect(fs.readFileSync(termFile, 'utf8')).toBe('TERM\n');
-  }, 15_000);
+  });
 
   it('the SIGKILL stage kills the child\'s group', async (context) => {
     const port = trackedSpawnPort(context);
@@ -221,5 +221,5 @@ describe('signals with real processes', () => {
     harness.timers.advance(50_000);
     await pollUntil(() => !isProcessAlive(childPid) && !isProcessAlive(grandchild), 5000, 'child and grandchild are gone');
     await expect(stopped).resolves.toMatchObject({ killed: true, leaked: false });
-  }, 15_000);
+  });
 });

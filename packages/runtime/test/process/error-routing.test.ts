@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
-import { afterMicrotasks, createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
 import { START_MS } from './helpers.ts';
 import { HOUR_MS, entriesNamed, launchRuntime, settledState, startStack } from './run-helpers.ts';
 
@@ -68,7 +68,7 @@ vi.mock('@momonga/mcp', async (importOriginal) => {
   };
 });
 
-const PROCESS_TIMEOUT = { timeout: 60_000 };
+const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 const POOL_REFERENCE_AUDIT_MS = 300_000;
 
 beforeEach(() => {

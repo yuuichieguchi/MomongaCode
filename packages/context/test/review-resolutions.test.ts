@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { sha256Hex } from '@momonga/foundation';
 import type { CompactionInputItem, InputItem } from '@momonga/protocol';
 import { PrefixChangedError, buildContext, createFsInstructionReader } from '@momonga/context';
@@ -141,7 +142,7 @@ describe('expectedPinnedDigest', () => {
   });
 });
 
-describe('fs reader rejects non-regular files', () => {
+describe('fs reader rejects non-regular files', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('treats a FIFO named AGENTS.md as absent without blocking', async () => {
     const dir = makeDir();
     const fifo = path.join(dir, 'AGENTS.md');

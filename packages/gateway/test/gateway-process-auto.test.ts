@@ -1,5 +1,4 @@
-import { describe, expect, it } from 'vitest';
-import { momongaPaths } from '@momonga/foundation';
+import { describe, expect, it } from 'vitest';import { momongaPaths } from '@momonga/foundation';
 import { endpointIdentityOf, loadEndpointRecord, probeEndpointTarget, saveEndpointRecord } from '@momonga/gateway';
 import { tokensForText } from '@momonga/protocol';
 import type { FakeChatCompletionsOptions } from '@momonga/testkit';

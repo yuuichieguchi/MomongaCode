@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
 import { describe, expect, it } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import {
   callOptions,
   collect,
@@ -58,7 +59,7 @@ const staleSocketPath = (): string => {
 const SSE_HEAD = 'HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\n\r\n';
 const chunked = (text: string): string => `${Buffer.byteLength(text).toString(16)}\r\n${text}\r\n`;
 
-describe('gateway client transport faults', () => {
+describe('gateway client transport faults', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('reports gateway_unavailable, proven not sent, when the socket does not exist', async () => {
     const socketPath = socketPathIn(shortDir('gn-'), 'missing.sock');
     const clock = fakeClock();

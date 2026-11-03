@@ -1,13 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { STORE_MAX_TOTAL_ATTEMPTS } from '../../src/process/constants.ts';
 import type { FakeScriptedReply } from '@momonga/testkit';
 import { approveOnce, launchRuntime, readDb, runStatus, scriptedToolCall, startStack, waitForCondition, waitForStatus } from './run-helpers.ts';
 import type { Launched, RunHome, Stack } from './run-helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: 60_000 };
+const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 
 const MAX_STEPS_INSTRUCTION =
   'You have reached the max_steps limit. Summarize what you accomplished, what remains, and any state the user must know. Do not call tools.';

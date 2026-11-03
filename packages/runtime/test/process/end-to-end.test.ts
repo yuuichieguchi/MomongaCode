@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { FAKE_DETERMINISTIC_REPLY } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_DETERMINISTIC_REPLY } from '@momonga/testkit';
 import { launchRuntime, readDb, startStack } from './run-helpers.ts';
 
 const control = vi.hoisted(() => ({ serviceNames: [] as string[] }));
@@ -15,7 +15,7 @@ vi.mock('@momonga/observability', async (importOriginal) => {
   };
 });
 
-const PROCESS_TIMEOUT = { timeout: 60_000 };
+const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 
 beforeEach(() => {
   control.serviceNames = [];

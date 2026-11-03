@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { LOG_KEEP, LOG_MAX_BYTES, createRotatingLogFile } from '@momonga/foundation';
-import { spawnTracked, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, spawnTracked, withTempDir } from '@momonga/testkit';
 
 const APPEND = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'append-lines.ts');
 
@@ -252,7 +252,7 @@ describe('createRotatingLogFile', () => {
     expect(tagsIn(file)).toEqual(['a1']);
   });
 
-  it('two real processes append without tearing', { timeout: 30_000 }, async (context) => {
+  it('two real processes append without tearing', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async (context) => {
     const file = path.join(withTempDir(context), 'shared.log');
     const runs = ['p', 'q'].map((tag) => {
       const child = spawnTracked(context, process.execPath, [APPEND, file, tag, '2000'], { stdio: ['ignore', 'ignore', 'pipe'] });

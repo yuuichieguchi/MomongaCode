@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { corruptSchema, entriesNamed, isLockFree, launchRuntime, settledState, startStack } from './run-helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: 60_000 };
+const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 
 describe('fatal errors under a running runtime (system timers, in-process gateway)', () => {
   it('a malformed schema under a running runtime resolves fatal after abort, close afterwards is a no-op and returns the same result with fatal set', PROCESS_TIMEOUT, async () => {

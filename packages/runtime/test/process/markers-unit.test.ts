@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { findHolders } from '@momonga/foundation';
 import type { ReapMarkedProcessesOptions } from '@momonga/foundation';
 import type { IdempotencyLookup, IdempotencyRecord, Run } from '@momonga/store';
-import { createFakeClock, createFakeTimers, fakeReapTiming, killGroupsForCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, fakeReapTiming, killGroupsForCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { reapToolMarkers } from '../../src/process/tool-markers.ts';
 import { START_MS, makeTempHome } from './helpers.ts';
@@ -120,7 +120,7 @@ describe('reapToolMarkers on hook markers', () => {
   });
 });
 
-describe('reapToolMarkers (real processes, system timers, except where fake timers are stated)', () => {
+describe('reapToolMarkers (real processes, system timers, except where fake timers are stated)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('a store error propagates and no reap is called (D2: every lookup happens before any reap)', async () => {
     const temp = await makeTempHome();
     const first = markerOf(temp, keyOf(1));

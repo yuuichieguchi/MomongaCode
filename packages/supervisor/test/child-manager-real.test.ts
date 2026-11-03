@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { isProcessAlive } from '@momonga/foundation';
-import { afterMicrotasks, registerCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, registerCleanup } from '@momonga/testkit';
 import { errnoError } from './support/p2-fake-spawn-port.ts';
 import { createManagerHarness } from './support/p2-manager-harness.ts';
 import { pollUntil } from './support/p2-poll.ts';
 import { CHILD_FIXTURE, portOptions, readOnlyScratchFd, watch } from './support/p2-real-children.ts';
 import { trackedSpawnPort } from './support/tracked-spawn-port.ts';
 
-describe('child manager with the real SpawnPort', () => {
+describe('child manager with the real SpawnPort', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('error event after spawn does not become an uncaught exception', async (context) => {
     const uncaught: unknown[] = [];
     const onUncaught = (error: unknown): void => {
@@ -33,7 +33,7 @@ describe('child manager with the real SpawnPort', () => {
     expect(harness.manager.health().lastExit).toMatchObject({ code: 0, signal: null, reason: 'unexpected-clean' });
     await afterMicrotasks();
     expect(uncaught).toEqual([]);
-  }, 15_000);
+  });
 
   it('lifelines are not shared between children', async (context) => {
     const markerFd = readOnlyScratchFd(context);
@@ -47,7 +47,7 @@ describe('child manager with the real SpawnPort', () => {
     expect(isProcessAlive(b.handle.pid as number)).toBe(true);
     b.handle.lifeline?.destroy();
     await expect(b.exit).resolves.toEqual({ code: 0, signal: null });
-  }, 15_000);
+  });
 
   it('a process the supervisor spawns for other purposes holds no lifeline write end', async (context) => {
     const markerFd = readOnlyScratchFd(context);
@@ -61,5 +61,5 @@ describe('child manager with the real SpawnPort', () => {
     await expect(watcher.exit).resolves.toEqual({ code: 0, signal: null });
     expect(Date.now() - destroyedAt).toBeLessThan(2000);
     expect(isProcessAlive(sleeper.handle.pid as number)).toBe(true);
-  }, 15_000);
+  });
 });

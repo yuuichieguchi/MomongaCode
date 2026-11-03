@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import type { Claim } from '@momonga/store';
 import { LEASE_MS, START_MS, enqueue, harness, makeStoreDir, mustClaim, newSession, registerCleanup } from './helpers.ts';
 
@@ -72,7 +73,7 @@ const startChild = async (dbPath: string): Promise<Child> => {
   };
 };
 
-describe('claims across processes', () => {
+describe('claims across processes', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('hands a single queued run to exactly one process per round, with both sides winning', async () => {
     const { dbPath, store } = harness();
     const child = await startChild(dbPath);
@@ -103,7 +104,7 @@ describe('claims across processes', () => {
     }
     expect(wins.parent).toBeGreaterThan(0);
     expect(wins.child).toBeGreaterThan(0);
-  }, 60_000);
+  });
 
   it('rejects every write from a stale worker after another process reclaimed the run', async () => {
     const { dbPath, store } = harness();
@@ -120,5 +121,5 @@ describe('claims across processes', () => {
     expect(store.release(stale, 'QUEUED')).toEqual({ kind: 'lease_lost' });
     expect(store.readRunEvents(run.id, 0, 100)).toHaveLength(before);
     expect(store.append(reclaimed!, [{ type: 'notice', level: 'info', message: 'fresh' }]).kind).toBe('ok');
-  }, 60_000);
+  });
 });

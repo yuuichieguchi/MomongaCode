@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_GRANDCHILD_ENV, MODERN_FIXTURE_RECORD_ENV, MODERN_FIXTURE_STDERR_ENV } from '@momonga/testkit';
+import { MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_GRANDCHILD_ENV, MODERN_FIXTURE_RECORD_ENV, MODERN_FIXTURE_STDERR_ENV, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import {
   entry,
   groupExists,
@@ -33,7 +33,7 @@ const makeLauncher = (recordFile: string) => {
   return { config: { command: script, env: { [MODERN_FIXTURE_RECORD_ENV]: recordFile } }, healthy, broken, launches };
 };
 
-describe('createMcpPool sources', () => {
+describe('createMcpPool sources', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('creates one source per server named mcp__<server>', () => {
     const harness = makePool([entry('modern', modernConfig(makeRecordFile())), entry('legacy', legacyConfig())]);
     expect(harness.pool.sources.map((source) => source.id)).toEqual(['mcp__modern', 'mcp__legacy']);
@@ -73,7 +73,7 @@ describe('createMcpPool sources', () => {
   });
 });
 
-describe('createMcpPool diagnostics and close', () => {
+describe('createMcpPool diagnostics and close', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('reports idle before the first listing and connected details after it', async () => {
     const harness = makePool([entry('modern', modernConfig(makeRecordFile())), entry('legacy', legacyConfig())]);
     expect(harness.pool.diagnostics()).toEqual([
@@ -111,10 +111,10 @@ describe('createMcpPool diagnostics and close', () => {
     for (const pgid of pgids) expect(groupExists(pgid)).toBe(false);
     await waitUntil(() => !pidAlive(grandchildPid), 'grandchild is gone', 2000);
     expect(harness.pool.diagnostics().map((diagnostics) => diagnostics.state)).toEqual(['closed', 'closed']);
-  }, 20_000);
+  });
 });
 
-describe('createMcpPool crash and reconnect', () => {
+describe('createMcpPool crash and reconnect', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('reports a crash naming the server and exit code, then reconnects on the next call', async () => {
     const recordFile = makeRecordFile();
     const harness = makePool([entry('modern', modernConfig(recordFile))]);
@@ -131,7 +131,7 @@ describe('createMcpPool crash and reconnect', () => {
     expect(echoed.output).toBe('again');
     expect(readRecords(recordFile).filter((record) => record.type === 'ready')).toHaveLength(2);
     expect(harness.pool.diagnostics()[0]?.state).toBe('connected');
-  }, 20_000);
+  });
 
   it('gives up after three failed reconnects, fails fast while open, and recovers after resetAfterMs', async () => {
     const recordFile = makeRecordFile();
@@ -167,5 +167,5 @@ describe('createMcpPool crash and reconnect', () => {
     expect((await executor.resultOf(set, 'mcp__modern__echo', { text: 'recovered' })).output).toBe('recovered');
     expect(launcher.launches()).toBe(5);
     expect(harness.pool.diagnostics()[0]?.state).toBe('connected');
-  }, 20_000);
+  });
 });

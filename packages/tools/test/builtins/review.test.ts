@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { afterMicrotasks } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks } from '@momonga/testkit';
 import { createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxedProcess } from '@momonga/sandbox';
 import { keyFor } from '../helpers.ts';
@@ -84,7 +84,7 @@ describe('review 1: ripgrep excludes readDenied entries inside the search target
       expect(result.output).not.toContain('deeper');
     });
 
-    it('adds no unreadable-path note for readDenied entries under Seatbelt', { timeout: 20_000 }, async () => {
+    it('adds no unreadable-path note for readDenied entries under Seatbelt', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
       const { tools, visible, vault } = await makeVaultTree(true);
       const result = resultOf(await tools.run('Grep', { pattern: 'alpha', output_mode: outputMode }, { sandboxPolicy: withReadDenied(tools, vault), env: { PATH: RG_PATH } }));
       expect(result.output).toContain(visible);
@@ -97,7 +97,7 @@ describe('review 1: ripgrep excludes readDenied entries inside the search target
 describe('review 2: non-regular files are refused without opening them', () => {
   const PROMPT_MS = 3000;
 
-  it('Read refuses a FIFO promptly', { timeout: 20_000 }, async () => {
+  it('Read refuses a FIFO promptly', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const tools = await makeBuiltins();
     const fifo = makeFifo(tools.layout.project, 'pipe');
     const outcome = await runWithin(tools, 'Read', { file_path: fifo }, {}, PROMPT_MS, () => unblockFifo(fifo));
@@ -106,7 +106,7 @@ describe('review 2: non-regular files are refused without opening them', () => {
     expect(outcome.result?.output).toContain(`${fifo} is not a regular file`);
   });
 
-  it('Edit refuses a FIFO promptly', { timeout: 20_000 }, async () => {
+  it('Edit refuses a FIFO promptly', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const tools = await makeBuiltins();
     const fifo = makeFifo(tools.layout.project, 'pipe');
     tools.session.readLedger.set(fifo, { sha256: sha256(''), mtimeMs: fs.statSync(fifo).mtimeMs });
@@ -116,7 +116,7 @@ describe('review 2: non-regular files are refused without opening them', () => {
     expect(outcome.result?.output).toContain(`${fifo} is not a regular file`);
   });
 
-  it('Write refuses to overwrite a FIFO promptly', { timeout: 20_000 }, async () => {
+  it('Write refuses to overwrite a FIFO promptly', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const tools = await makeBuiltins();
     const fifo = makeFifo(tools.layout.project, 'pipe');
     tools.session.readLedger.set(fifo, { sha256: sha256(''), mtimeMs: fs.statSync(fifo).mtimeMs });
@@ -127,7 +127,7 @@ describe('review 2: non-regular files are refused without opening them', () => {
     expect(fs.lstatSync(fifo).isFIFO()).toBe(true);
   });
 
-  it('Grep with the JS backend refuses a FIFO path promptly', { timeout: 20_000 }, async () => {
+  it('Grep with the JS backend refuses a FIFO path promptly', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const tools = await makeBuiltins();
     const fifo = makeFifo(tools.layout.project, 'pipe');
     const outcome = await runWithin(tools, 'Grep', { pattern: 'alpha', path: fifo }, { env: { PATH: JS_BACKEND_PATH } }, PROMPT_MS, () => unblockFifo(fifo));
@@ -376,7 +376,7 @@ describe('review 9: Grep parity for type and .rgignore', () => {
       expect(result.output).toContain('swift');
     });
 
-    it.runIf(available)('honors .rgignore over .ignore over .gitignore', { timeout: 20_000 }, async () => {
+    it.runIf(available)('honors .rgignore over .ignore over .gitignore', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
       const tools = await makeBuiltins({ realSandbox });
       const tree = makeIgnoreTree(tools);
       const result = resultOf(await tools.run('Grep', { pattern: 'alpha' }, { env: { PATH: envPath } }));

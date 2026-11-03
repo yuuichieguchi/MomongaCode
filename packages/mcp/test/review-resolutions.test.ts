@@ -8,6 +8,7 @@ import {
   FIXTURE_HOSTILE_TITLE,
   MCP_MODERN_SERVER_PATH,
   MODERN_FIXTURE_RECORD_ENV,
+  REAL_PROCESS_TEST_TIMEOUT_MS,
   killPidsForCleanup,
 } from '@momonga/testkit';
 import {
@@ -149,7 +150,7 @@ describe('deterministic hashed names', () => {
   });
 });
 
-describe('close during backoff and connect', () => {
+describe('close during backoff and connect', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('resolves promptly during a reconnect backoff and spawns nothing after close began', async () => {
     const launcher = makeLauncher(() => 'exit 1');
     const harness = makePool([entry('flaky', launcher.config)], { random: () => 0.999 });
@@ -184,10 +185,10 @@ describe('close during backoff and connect', () => {
     expect(performance.now() - startedAt).toBeLessThan(5000);
     expect(await pending).toBe('rejected');
     expect(pidAlive(launcher.pids()[0] as number)).toBe(false);
-  }, 20_000);
+  });
 });
 
-describe('close aborting the first connect', () => {
+describe('close aborting the first connect', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('leaves no abort error and no failure behind in diagnostics', async () => {
     const launcher = makeLauncher(() => 'exec sleep 600');
     const harness = makePool([entry('stuck', launcher.config)], { connectTimeoutMs: 60_000 });
@@ -197,10 +198,10 @@ describe('close aborting the first connect', () => {
     await harness.pool.close();
     await pending;
     expect(harness.pool.diagnostics()[0]).toMatchObject({ server: 'stuck', state: 'closed', lastError: null });
-  }, 20_000);
+  });
 });
 
-describe('lastError after reconnect', () => {
+describe('lastError after reconnect', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('clears lastError once the server reconnects successfully', async () => {
     const recordFile = makeRecordFile();
     const harness = makePool([entry('modern', modernConfig(recordFile))]);

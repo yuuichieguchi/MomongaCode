@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { launchRuntime, startStack, waitForStatus } from './run-helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: 60_000 };
+const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 const TOOL_INPUT = 'Use the Read tool';
 
 describe('policyFor failures at run level (system timers, in-process gateway)', () => {

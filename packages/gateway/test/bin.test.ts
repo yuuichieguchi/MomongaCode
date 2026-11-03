@@ -3,13 +3,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { createUdsClient, momongaPaths } from '@momonga/foundation';
-import { readJsonLinesFile, registerCleanup, startDaemonBin, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, readJsonLinesFile, registerCleanup, startDaemonBin, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import packageJson from '../package.json' with { type: 'json' };
 import { MINIMAL_PATH, ccTarget, writeSettings } from './gateway-process-helpers.ts';
 
 const BIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/bin.ts');
-const PROCESS_TIMEOUT = { timeout: 90_000 };
+const PROCESS_TIMEOUT = { timeout: 3 * REAL_PROCESS_TEST_TIMEOUT_MS };
 
 const prepare = (context: CleanupContext) => {
   const home = withTempDir(context, { asHome: true });

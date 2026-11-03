@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
-import { withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, withTempDir } from '@momonga/testkit';
 
 const tempDirs: string[] = [];
 
@@ -120,7 +120,7 @@ describe('ensureMomongaDirs under concurrency', () => {
     for (const dir of directoriesOf(paths)) expect(modeOf(dir), dir).toBe(0o700);
   });
 
-  it('lets concurrent child processes create a fresh home', { timeout: 30_000 }, async () => {
+  it('lets concurrent child processes create a fresh home', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const home = makeHome();
     const entry = pathToFileURL(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index.ts')).href;
     const script = `const f = await import(${JSON.stringify(entry)}); await f.ensureMomongaDirs(f.momongaPaths(${JSON.stringify(home)}, 'darwin', {}));`;

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { fakePolicyFilesystem } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem } from '@momonga/testkit';
 import { ConfigError } from '@momonga/config';
 import { HOST_RULE_ENFORCEMENT, ensureSessionTmpDir, momongaLayout, protectedSetFor } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
@@ -154,7 +154,7 @@ describe('policyFor (system timers, none used)', () => {
   });
 
   describe.runIf(HAS_SEATBELT)('real Seatbelt', () => {
-    it('Bash $TMPDIR persists between calls of a session', { timeout: 30_000 }, async () => {
+    it('Bash $TMPDIR persists between calls of a session', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
       const { temp, store, policyFor } = await setup();
       const session = createSession(store, temp.project);
       const sandbox = createSeatbeltSandbox({ tmpRoot: temp.paths.tmp.spawn, killGraceMs: 300 });
@@ -170,7 +170,7 @@ describe('policyFor (system timers, none used)', () => {
       expect(read).toMatchObject({ code: 0, stdout: 'kept' });
     });
 
-    it("another session's tmp dir is unreadable", { timeout: 30_000 }, async () => {
+    it("another session's tmp dir is unreadable", { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
       const { temp, store, policyFor } = await setup();
       const mine = createSession(store, temp.project);
       const other = createSession(store, temp.project);

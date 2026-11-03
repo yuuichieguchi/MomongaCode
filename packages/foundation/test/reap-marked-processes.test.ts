@@ -4,10 +4,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { LSOF_PATH, killGroupsForCleanup, killPidsForCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
+import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, TrackedChild } from '@momonga/testkit';
 import { MarkerReapError, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, reconcileProcessGroup } from '@momonga/foundation';
 import type { ReapTiming } from '@momonga/foundation';
+
+const ABORTED_REAP_TEST_TIMEOUT_MS = 2 * REAL_PROCESS_TEST_TIMEOUT_MS;
+const MARKER_FAN_OUT_TEST_TIMEOUT_MS = 4 * REAL_PROCESS_TEST_TIMEOUT_MS;
 
 const spawnedGroups: number[] = [];
 const spawnedPids: number[] = [];
@@ -145,7 +148,7 @@ const MEMBER_WITHOUT_FD_SCRIPT = `/bin/sh -c 'exec 3<&-; echo $$ > "$DIR/member.
 const nonZero = (signals: readonly Signalled[]): Array<[number, NodeJS.Signals | 0]> => signals.map(({ pid, signal }) => [pid, signal]);
 
 describe('reapMarkedProcesses', () => {
-  it('reaps the recorded group and removes the marker', { timeout: 30_000 }, async () => {
+  it('reaps the recorded group and removes the marker', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, TERM_MARKER_SCRIPT, { fd3: marker });
@@ -163,7 +166,7 @@ describe('reapMarkedProcesses', () => {
     expect(warnings).toEqual([]);
   });
 
-  it('prefers the pgid option over the marker content', { timeout: 30_000 }, async () => {
+  it('prefers the pgid option over the marker content', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const dir = makeDir();
     const decoyDir = makeDir();
     const marker = makeMarker(dir);
@@ -180,7 +183,7 @@ describe('reapMarkedProcesses', () => {
     expect(fs.existsSync(path.join(decoyDir, 'term'))).toBe(false);
   });
 
-  it('with an empty marker and no pgid signals only the holders', { timeout: 30_000 }, async () => {
+  it('with an empty marker and no pgid signals only the holders', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, MEMBER_WITHOUT_FD_SCRIPT, { fd3: marker, readyFiles: ['ready', 'member.pid'] });
@@ -202,7 +205,7 @@ describe('reapMarkedProcesses', () => {
     ['pgid 1', () => 1],
     ['a negative pgid', () => -5],
     ['its own group', ownGroup],
-  ])('never signals %s', { timeout: 30_000 }, async (_name, pgidOf) => {
+  ])('never signals %s', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async (_name, pgidOf) => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const holder = await startHolder(marker);
@@ -215,7 +218,7 @@ describe('reapMarkedProcesses', () => {
     expect(signals.every(({ pid }) => pid === holder)).toBe(true);
   });
 
-  it('never signals a recorded own group read from the marker content', { timeout: 30_000 }, async () => {
+  it('never signals a recorded own group read from the marker content', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const holder = await startHolder(marker);
@@ -227,7 +230,7 @@ describe('reapMarkedProcesses', () => {
     expect(signals.every(({ pid }) => pid === holder)).toBe(true);
   });
 
-  it('escalates a SIGTERM-ignoring holder to SIGKILL once the injected clock passes killGraceMs', { timeout: 30_000 }, async () => {
+  it('escalates a SIGTERM-ignoring holder to SIGKILL once the injected clock passes killGraceMs', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, IGNORING_GROUP_SCRIPT, { fd3: marker });
@@ -245,7 +248,7 @@ describe('reapMarkedProcesses', () => {
     expect(fs.existsSync(marker)).toBe(false);
   });
 
-  it('escalates a SIGTERM-ignoring holder to SIGKILL on the holders-only path once the injected clock passes killGraceMs', { timeout: 30_000 }, async () => {
+  it('escalates a SIGTERM-ignoring holder to SIGKILL on the holders-only path once the injected clock passes killGraceMs', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const holder = await startHolder(marker, { ignoreTerm: true });
@@ -261,7 +264,7 @@ describe('reapMarkedProcesses', () => {
     expect(await waitUntil(() => !alive(holder))).toBe(true);
   });
 
-  it('keeps the marker and warns with the label when a holder remains', { timeout: 30_000 }, async () => {
+  it('keeps the marker and warns with the label when a holder remains', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const stubborn = await startHolder(marker);
@@ -279,7 +282,7 @@ describe('reapMarkedProcesses', () => {
   });
 
   describe('prefixes the leftAloneGroup, leftAlonePids and unsignalled warnings with the label', () => {
-    it('leftAloneGroup', { timeout: 30_000 }, async () => {
+    it('leftAloneGroup', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
       const dir = makeDir();
       const marker = makeMarker(dir);
       const group = await startGroup(dir, CLOSED_FD_SCRIPT, { fd3: marker });
@@ -293,7 +296,7 @@ describe('reapMarkedProcesses', () => {
       expect(alive(-group.pgid)).toBe(true);
     });
 
-    it('leftAlonePids', { timeout: 30_000 }, async () => {
+    it('leftAlonePids', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
       const dir = makeDir();
       const marker = makeMarker(dir);
       const fd = fs.openSync(marker, 'r');
@@ -323,7 +326,7 @@ describe('reapMarkedProcesses', () => {
       expect(alive(pid)).toBe(true);
     });
 
-    it('unsignalled', { timeout: 30_000 }, async () => {
+    it('unsignalled', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
       const dir = makeDir();
       const marker = makeMarker(dir);
       const blocked = await startHolder(marker);
@@ -347,7 +350,7 @@ describe('reapMarkedProcesses', () => {
       ['the recorded-group path', true],
     ] as const;
 
-    it.each(paths)('collects EPERM on %s and warns could not signal', { timeout: 30_000 }, async (_name, recordGroup) => {
+    it.each(paths)('collects EPERM on %s and warns could not signal', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async (_name, recordGroup) => {
       const dir = makeDir();
       const marker = makeMarker(dir);
       const blocked = await startHolder(marker);
@@ -362,7 +365,7 @@ describe('reapMarkedProcesses', () => {
       expect(warnings.find((m) => m.includes('could not signal'))).toContain(String(blocked));
     });
 
-    it.each(paths)('ignores ESRCH on %s', { timeout: 30_000 }, async (_name, recordGroup) => {
+    it.each(paths)('ignores ESRCH on %s', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async (_name, recordGroup) => {
       const dir = makeDir();
       const marker = makeMarker(dir);
       const holder = await startHolder(marker);
@@ -378,7 +381,7 @@ describe('reapMarkedProcesses', () => {
       expect(warnings).toContain(`tool marker ${marker} kept: process ${holder} still hold it after cleanup; the next start will retry`);
     });
 
-    it.each(paths)('throws any other signalling error on %s', { timeout: 30_000 }, async (_name, recordGroup) => {
+    it.each(paths)('throws any other signalling error on %s', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async (_name, recordGroup) => {
       const dir = makeDir();
       const marker = makeMarker(dir);
       const holder = await startHolder(marker);
@@ -393,7 +396,7 @@ describe('reapMarkedProcesses', () => {
     });
   });
 
-  it('unlinks a symlink marker without following it', { timeout: 30_000 }, async () => {
+  it('unlinks a symlink marker without following it', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const dir = makeDir();
     const target = makeMarker(dir, 'target', 'keep me');
     const marker = path.join(dir, 'marker');
@@ -410,7 +413,7 @@ describe('reapMarkedProcesses', () => {
     expect(signals).toEqual([]);
   });
 
-  it('reports a missing marker as removed', { timeout: 30_000 }, async () => {
+  it('reports a missing marker as removed', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const dir = makeDir();
     const fake = fakeTiming();
     const { signals, kill } = recordingKill(fake.now);
@@ -419,7 +422,7 @@ describe('reapMarkedProcesses', () => {
     expect(signals).toEqual([]);
   });
 
-  it('reports that nothing was stopped for a missing marker', { timeout: 30_000 }, async () => {
+  it('reports that nothing was stopped for a missing marker', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const dir = makeDir();
     const fake = fakeTiming();
     const { kill } = recordingKill(fake.now);
@@ -427,7 +430,7 @@ describe('reapMarkedProcesses', () => {
     expect(result).toEqual({ removed: true, stopped: false, uninspectable: [] });
   });
 
-  it('reports that a recorded group was stopped', { timeout: 30_000 }, async () => {
+  it('reports that a recorded group was stopped', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, TERM_MARKER_SCRIPT, { fd3: marker });
@@ -439,7 +442,7 @@ describe('reapMarkedProcesses', () => {
     await group.leaderReaped;
   });
 
-  it('reports that a holder without a recorded group was stopped', { timeout: 30_000 }, async () => {
+  it('reports that a holder without a recorded group was stopped', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const holder = await startHolder(marker, { ignoreTerm: false });
@@ -448,7 +451,7 @@ describe('reapMarkedProcesses', () => {
     expect(await waitUntil(() => !alive(holder))).toBe(true);
   });
 
-  it('waits only through timing.sleep', { timeout: 30_000 }, async () => {
+  it('waits only through timing.sleep', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, IGNORING_GROUP_SCRIPT, { fd3: marker });
@@ -461,7 +464,7 @@ describe('reapMarkedProcesses', () => {
     expect(signals.find(({ signal }) => signal === 'SIGKILL')?.at).toBeGreaterThanOrEqual(hour);
   });
 
-  it('smoke (real time)', { timeout: 30_000 }, async () => {
+  it('smoke (real time)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const holder = await startHolder(marker, { ignoreTerm: true });
@@ -475,7 +478,7 @@ describe('reapMarkedProcesses', () => {
 });
 
 describe('reapMarkerDirectory', () => {
-  it('reapMarkerDirectory reaps markers concurrently', { timeout: 30_000 }, async () => {
+  it('reapMarkerDirectory reaps markers concurrently', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const dir = makeDir();
     const markerDir = path.join(dir, 'markers');
     fs.mkdirSync(markerDir);
@@ -527,7 +530,7 @@ describe('reapMarkerDirectory', () => {
     expect(warnings).toEqual([]);
   });
 
-  it('reapMarkerDirectory on a missing directory reaps nothing', { timeout: 30_000 }, async () => {
+  it('reapMarkerDirectory on a missing directory reaps nothing', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const dir = makeDir();
     const warnings: string[] = [];
     const result = await reapMarkerDirectory({ dir: path.join(dir, 'missing'), killGraceMs: 200, label: 'tool', onWarning: (m) => warnings.push(m), timing: fakeTiming().timing });
@@ -535,7 +538,7 @@ describe('reapMarkerDirectory', () => {
     expect(warnings).toEqual([]);
   });
 
-  it('counts a marker whose holder remains as kept', { timeout: 30_000 }, async () => {
+  it('counts a marker whose holder remains as kept', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const dir = makeDir();
     const markerDir = path.join(dir, 'markers');
     fs.mkdirSync(markerDir);
@@ -553,7 +556,7 @@ describe('reapMarkerDirectory', () => {
     expect(await waitUntil(() => !alive(other))).toBe(true);
   });
 
-  it('reaps the other markers when one target fails, then reports the failure instead of counting it', { timeout: 30_000 }, async () => {
+  it('reaps the other markers when one target fails, then reports the failure instead of counting it', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const dir = makeDir();
     const markerDir = path.join(dir, 'markers');
     fs.mkdirSync(markerDir);
@@ -580,7 +583,7 @@ describe('reapMarkerDirectory', () => {
     for (const holder of holders) expect(await waitUntil(() => !alive(holder))).toBe(true);
   });
 
-  it('propagates a readdir error other than ENOENT', { timeout: 30_000 }, async () => {
+  it('propagates a readdir error other than ENOENT', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const dir = makeDir();
     const notADirectory = makeMarker(dir, 'file');
     await expect(reapMarkerDirectory({ dir: notADirectory, killGraceMs: 200, label: 'tool', onWarning: () => undefined, timing: fakeTiming().timing })).rejects.toMatchObject({ code: 'ENOTDIR' });
@@ -660,7 +663,7 @@ const signalRecorder = (now: () => number, intercept: (pid: number, signal: Node
 const firstAt = (signals: readonly SignalRecord[], signal: NodeJS.Signals): number | undefined => signals.find((entry) => entry.signal === signal)?.at;
 
 describe('marker reap: AbortSignal', () => {
-  it('abort during the grace sends SIGKILL at once', { timeout: 60_000 }, async (context) => {
+  it('abort during the grace sends SIGKILL at once', { timeout: ABORTED_REAP_TEST_TIMEOUT_MS }, async (context) => {
     const dir = withTempDir(context);
     const marker = markerFile(dir);
     const holder = await spawnOnMarker(context, dir, marker, TERM_IGNORING_HOLDER);
@@ -679,7 +682,7 @@ describe('marker reap: AbortSignal', () => {
     expect(fs.existsSync(marker)).toBe(false);
   });
 
-  it('abort during the grace on the recorded-group path', { timeout: 60_000 }, async (context) => {
+  it('abort during the grace on the recorded-group path', { timeout: ABORTED_REAP_TEST_TIMEOUT_MS }, async (context) => {
     const dir = withTempDir(context);
     const marker = markerFile(dir);
     const group = await spawnOnMarker(context, dir, marker, TERM_IGNORING_GROUP);
@@ -716,7 +719,7 @@ describe('marker reap: AbortSignal', () => {
     expect(firstAt(plainRecorder.signals, 'SIGKILL')).toBe(1000);
   });
 
-  it('abort before the call SIGTERMs and then SIGKILLs without waiting', { timeout: 60_000 }, async (context) => {
+  it('abort before the call SIGTERMs and then SIGKILLs without waiting', { timeout: ABORTED_REAP_TEST_TIMEOUT_MS }, async (context) => {
     const dir = withTempDir(context);
     const marker = markerFile(dir);
     const holder = await spawnOnMarker(context, dir, marker, TERM_IGNORING_HOLDER);
@@ -735,7 +738,7 @@ describe('marker reap: AbortSignal', () => {
     expect(fs.existsSync(marker)).toBe(false);
   });
 
-  it('abort does not shorten the SIGKILL confirmation', { timeout: 60_000 }, async (context) => {
+  it('abort does not shorten the SIGKILL confirmation', { timeout: ABORTED_REAP_TEST_TIMEOUT_MS }, async (context) => {
     const dir = withTempDir(context);
     const marker = markerFile(dir);
     const holder = await spawnOnMarker(context, dir, marker, TERM_IGNORING_HOLDER);
@@ -753,7 +756,7 @@ describe('marker reap: AbortSignal', () => {
     expect(fs.existsSync(marker)).toBe(true);
   });
 
-  it('abort during the confirmation or after the reap has no effect', { timeout: 60_000 }, async (context) => {
+  it('abort during the confirmation or after the reap has no effect', { timeout: ABORTED_REAP_TEST_TIMEOUT_MS }, async (context) => {
     const run = async (abortWhen: 'confirmation' | 'after' | 'never') => {
       const dir = withTempDir(context);
       const marker = markerFile(dir);
@@ -774,7 +777,7 @@ describe('marker reap: AbortSignal', () => {
     expect(await run('after')).toEqual(baseline);
   });
 
-  it('abort never throws', { timeout: 60_000 }, async (context) => {
+  it('abort never throws', { timeout: ABORTED_REAP_TEST_TIMEOUT_MS }, async (context) => {
     const dir = withTempDir(context);
     const marker = markerFile(dir);
     const holder = await spawnOnMarker(context, dir, marker, TERM_IGNORING_HOLDER);
@@ -797,7 +800,7 @@ describe('marker reap: AbortSignal', () => {
       ['an abort during the grace', 'grace'],
       ['a pre-aborted signal', 'pre-aborted'],
       ['a kill that throws EIO', 'eio'],
-    ] as const)('%s', { timeout: 60_000 }, async ([, variant], context) => {
+    ] as const)('%s', { timeout: ABORTED_REAP_TEST_TIMEOUT_MS }, async ([, variant], context) => {
       const dir = withTempDir(context);
       const marker = markerFile(dir);
       const script = variant === 'normal' ? `trap 'exit 0' TERM; touch "$READY"; exec /bin/sleep 60` : TERM_IGNORING_HOLDER;
@@ -821,7 +824,7 @@ describe('marker reap: AbortSignal', () => {
     });
   });
 
-  it('reapMarkerDirectory forwards the signal to every marker', { timeout: 120_000 }, async (context) => {
+  it('reapMarkerDirectory forwards the signal to every marker', { timeout: MARKER_FAN_OUT_TEST_TIMEOUT_MS }, async (context) => {
     const reapThree = async (withSignal: boolean) => {
       const dir = withTempDir(context);
       const markerDir = path.join(dir, 'markers');
@@ -857,7 +860,7 @@ describe('marker reap: AbortSignal', () => {
   });
 
   describe('no signal behaves as before', () => {
-    it('the holders-only path polls in slices and SIGKILLs at the grace', { timeout: 60_000 }, async (context) => {
+    it('the holders-only path polls in slices and SIGKILLs at the grace', { timeout: ABORTED_REAP_TEST_TIMEOUT_MS }, async (context) => {
       const dir = withTempDir(context);
       const marker = markerFile(dir);
       const holder = await spawnOnMarker(context, dir, marker, TERM_IGNORING_HOLDER);
@@ -873,7 +876,7 @@ describe('marker reap: AbortSignal', () => {
       expect(result).toEqual({ removed: true });
     });
 
-    it('an options object without signal sleeps once on the recorded-group path', { timeout: 60_000 }, async (context) => {
+    it('an options object without signal sleeps once on the recorded-group path', { timeout: ABORTED_REAP_TEST_TIMEOUT_MS }, async (context) => {
       const dir = withTempDir(context);
       const marker = markerFile(dir);
       const group = await spawnOnMarker(context, dir, marker, TERM_IGNORING_GROUP);
@@ -889,7 +892,7 @@ describe('marker reap: AbortSignal', () => {
       expect(result.output.startsWith('The interrupted command was stopped.')).toBe(true);
     });
 
-    it('the single-argument form that bash.ts uses still reaps the group', { timeout: 60_000 }, async (context) => {
+    it('the single-argument form that bash.ts uses still reaps the group', { timeout: ABORTED_REAP_TEST_TIMEOUT_MS }, async (context) => {
       const dir = withTempDir(context);
       const marker = markerFile(dir);
       const group = await spawnOnMarker(context, dir, marker, TERM_EXITING_GROUP);

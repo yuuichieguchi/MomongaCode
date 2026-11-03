@@ -1,5 +1,4 @@
-import { describe, expect, it } from 'vitest';
-import { inheritedEnvOf } from '@momonga/mcp';
+import { describe, expect, it } from 'vitest';import { inheritedEnvOf } from '@momonga/mcp';
 import { rawConfig, startRaw } from './raw-transport.ts';
 
 const PLATFORM_INJECTED_ENV_KEYS = new Set(['__CF_USER_TEXT_ENCODING']);

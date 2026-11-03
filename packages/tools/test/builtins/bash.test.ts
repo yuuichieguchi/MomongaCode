@@ -3,12 +3,12 @@ import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { LSOF_PATH } from '@momonga/testkit';
+import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { HAS_REAL_SANDBOX, keyFor, noneSandbox } from '../helpers.ts';
 import { approvalOf, isAlive, makeBuiltins, onCleanup, resultOf, trackGroup, trackPid, waitFor } from './fixtures.ts';
 import type { Builtins } from './fixtures.ts';
 
-const PROCESS_TIMEOUT = { timeout: 30_000 };
+const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 
 const bash = async (tools: Builtins, command: string, extra: Parameters<Builtins['run']>[2] = {}, callId?: string) =>
   tools.run('Bash', { command }, extra, 'allow_once', callId);

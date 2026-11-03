@@ -1,7 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { startFake } from './cc-support.ts';
+import { beforeEach, describe, expect, it, vi } from 'vitest';import { startFake } from './cc-support.ts';
 import { postJson, readJson, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, captureStdout, ccTarget, clientFor, homePaths, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { startGatewayProcess } from '../src/process.ts';

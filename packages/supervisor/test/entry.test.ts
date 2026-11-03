@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { hostKernelLock, inspectProcessLock, parseReadyLine } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { createFakeKernelLock, createFakeClock, createFakeEntryIo, createFakeTimers, fakeReapTiming, parseJsonLines, registerCleanup, startLockHolder, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeEntryIo, createFakeTimers, fakeReapTiming, parseJsonLines, registerCleanup, startLockHolder, waitFor } from '@momonga/testkit';
 import type { CleanupContext, FakeEntryIo, JsonLine } from '@momonga/testkit';
 import type { MomongaPaths } from '@momonga/foundation';
 import { runSupervisorEntry } from '../src/entry.ts';
@@ -137,7 +137,7 @@ const exitOf = async (run: EntryRun, maxMs = 200_000): Promise<number> => {
 
 const lastLine = (run: EntryRun): JsonLine | undefined => run.supervisorLog().at(-1);
 
-describe('runSupervisorEntry', () => {
+describe('runSupervisorEntry', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('ready line goes to stdout only and carries the control socket', async (context) => {
     const run = startEntry(context);
     await ready(run);

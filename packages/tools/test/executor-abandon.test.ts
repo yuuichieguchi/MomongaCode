@@ -4,12 +4,12 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { REAP_POLL_INTERVAL_MS, createUninspectableRegistry, findHolders } from '@momonga/foundation';
 import type { ProcessInspector, ReapTiming, SignalSender, UninspectableRegistry } from '@momonga/foundation';
-import { killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness, HarnessOptions } from './harness.ts';
 import { deferred, keyFor } from './helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: 30_000 };
+const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 const STUBBORN_GRACE_MS = 100;
 const KEY_A = keyFor('run-1', 1, 'call-a');
 const KEY_B = keyFor('run-1', 1, 'call-b');

@@ -15,7 +15,7 @@ import {
   inspectProcessLock,
 } from '@momonga/foundation';
 import type { InheritedLockRequest, KernelLockMechanism } from '@momonga/foundation';
-import { createFakeKernelLock, registerCleanup, spawnTracked, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, registerCleanup, spawnTracked, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, TrackedChild } from '@momonga/testkit';
 import { ADOPTER_FIXTURE, exitOf, firstLine, spawnFixture } from './support/lock-processes.ts';
 
@@ -67,7 +67,7 @@ describe('the hand-off goes through the lock mechanism on both sides', () => {
   });
 });
 
-describe.skipIf(!INHERITABLE)('lock hand-off to a child with real processes', () => {
+describe.skipIf(!INHERITABLE)('lock hand-off to a child with real processes', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('puts the claim in the child: the parent copy is closed after spawn and the child adopts, records its pid and scrubs its env', async (context) => {
     const lockPath = path.join(withTempDir(context), 'runtime.lock');
     const handoff = claimed(lockPath);

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { momongaLayout, EMPTY_PROTECTED_SET, HOST_RULE_ENFORCEMENT } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
@@ -8,7 +9,7 @@ import { HAS_REAL_SANDBOX } from '../helpers.ts';
 import { makeBuiltins, resultOf } from './fixtures.ts';
 import type { Builtins, RunExtra } from './fixtures.ts';
 
-const PROCESS_TIMEOUT = { timeout: 30_000 };
+const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 
 const escapeFixture = async (realSandbox: boolean) => {
   const tools = await makeBuiltins({ realSandbox });

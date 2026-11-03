@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { spawnTracked, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, spawnTracked, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 
 const DAEMON = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fd-hygiene-daemon.ts');
@@ -32,7 +32,7 @@ const runDaemon = async (context: CleanupContext): Promise<Probe> => {
   return { variants: JSON.parse(lastLine) as Record<string, string>, inherit: (inherit as RegExpExecArray)[1] as string };
 };
 
-describe('daemon fd hygiene', { timeout: 20_000 }, () => {
+describe('daemon fd hygiene', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('fd hygiene: grandchildren do not inherit fds 3 and 4', async (context) => {
     const probe = await runDaemon(context);
     expect(probe.variants['execFile']).toBe('');

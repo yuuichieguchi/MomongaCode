@@ -143,7 +143,6 @@ describe('providers through real processes', () => {
     writeSecrets(home, { [SECRET_NAME]: SECRET_VALUE });
     const upstream = await startFakeOpenResponses({
       apiKey: SECRET_VALUE,
-      reportRequestSize: true,
       socketPath: path.join(home.root, 'o.sock'),
       script: [openResponsesToolCallReply('call_e2e_1', 'UpdatePlan', PLAN_ARGUMENT_FRAGMENTS), openResponsesTextReply(['plan recorded, ', 'all done'])],
     });

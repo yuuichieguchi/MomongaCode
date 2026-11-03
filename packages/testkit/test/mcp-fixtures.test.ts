@@ -15,6 +15,7 @@ import {
   MODERN_FIXTURE_PROTOCOL_VERSION,
   MODERN_FIXTURE_RECORD_ENV,
   MODERN_FIXTURE_TOOL_NAMES,
+  REAL_PROCESS_TEST_TIMEOUT_MS,
   type ModernFixtureRecord,
 } from '@momonga/testkit';
 
@@ -86,7 +87,7 @@ const textOf = (result: { content?: unknown }): string =>
     .map((block) => block.text)
     .join('\n');
 
-describe('mcp-modern-server fixture over the SDK StdioClientTransport', () => {
+describe('mcp-modern-server fixture over the SDK StdioClientTransport', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('negotiates 2026-07-28 in the modern era and reports its server info', async () => {
     const { client } = await connect(MCP_MODERN_SERVER_PATH, { [MODERN_FIXTURE_RECORD_ENV]: makeRecordFile() });
     expect(client.getNegotiatedProtocolVersion()).toBe(MODERN_FIXTURE_PROTOCOL_VERSION);
@@ -207,7 +208,7 @@ describe('mcp-modern-server fixture over the SDK StdioClientTransport', () => {
   });
 });
 
-describe('mcp-legacy-server fixture over the SDK StdioClientTransport', () => {
+describe('mcp-legacy-server fixture over the SDK StdioClientTransport', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('negotiates 2025-11-25 in the legacy era even when the client probes for modern', async () => {
     const { client } = await connect(MCP_LEGACY_SERVER_PATH, {});
     expect(client.getNegotiatedProtocolVersion()).toBe(LEGACY_FIXTURE_PROTOCOL_VERSION);

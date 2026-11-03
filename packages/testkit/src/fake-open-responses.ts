@@ -1,3 +1,4 @@
+import { tokensForText } from '@momonga/protocol';
 import type { Usage } from '@momonga/protocol';
 import type { FakeSseFrame, FakeUpstreamOptions, FakeUpstreamReply, FakeUpstreamServer } from './fake-sse-upstream.ts';
 import { startFakeSseUpstream } from './fake-sse-upstream.ts';
@@ -10,10 +11,10 @@ export type FakeOpenResponsesOptions = {
   script?: FakeUpstreamReply[];
   respond?: Parameters<typeof startFakeSseUpstream>[0]['respond'];
   socketPath?: string;
-  reportRequestSize?: boolean;
 };
 
-const CHARACTERS_PER_TOKEN = 4;
+const UNSIZED_OUTPUT_TOKENS = 3;
+const UNSIZED_USAGE: Usage = usageOf(0, UNSIZED_OUTPUT_TOKENS);
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -23,11 +24,8 @@ const withInputTokens = (reply: FakeUpstreamReply, inputTokens: number): FakeUps
     ...reply,
     frames: reply.frames.map((frame) => {
       const data = frame.data;
-      if (!isRecord(data) || !isRecord(data['response']) || !isRecord(data['response']['usage'])) return frame;
-      const usage = data['response']['usage'];
-      const outputTokens = usage['output_tokens'];
-      if (typeof outputTokens !== 'number') return frame;
-      return { ...frame, data: { ...data, response: { ...data['response'], usage: usageOf(inputTokens, outputTokens) } } };
+      if (!isRecord(data) || !isRecord(data['response']) || data['response']['usage'] !== UNSIZED_USAGE) return frame;
+      return { ...frame, data: { ...data, response: { ...data['response'], usage: usageOf(inputTokens, UNSIZED_OUTPUT_TOKENS) } } };
     }),
   };
 };
@@ -49,14 +47,14 @@ export const openResponsesErrorReply = (
   ...(headers === undefined ? {} : { headers }),
 });
 
-const responderOf = (options: FakeOpenResponsesOptions): FakeUpstreamOptions['respond'] => {
-  if (options.reportRequestSize !== true) return options.respond;
+const responderOf = (options: FakeOpenResponsesOptions): NonNullable<FakeUpstreamOptions['respond']> => {
+  if (options.script !== undefined && options.respond !== undefined) throw new Error('startFakeOpenResponses takes a script or respond, not both');
   const script = [...(options.script ?? [])];
   const inner = options.respond ?? (() => script.shift());
   return (request) => {
     const reply = inner(request);
     if (reply === undefined) return reply;
-    return withInputTokens(reply, Math.ceil(JSON.stringify(request.body).length / CHARACTERS_PER_TOKEN));
+    return withInputTokens(reply, tokensForText(JSON.stringify(request.body)));
   };
 };
 
@@ -64,8 +62,7 @@ export const startFakeOpenResponses = (options: FakeOpenResponsesOptions): Promi
   const respond = responderOf(options);
   return startFakeSseUpstream({
     path: FAKE_OPEN_RESPONSES_PATH,
-    ...(options.reportRequestSize === true || options.script === undefined ? {} : { script: options.script }),
-    ...(respond === undefined ? {} : { respond }),
+    respond,
     ...(options.socketPath === undefined ? {} : { socketPath: options.socketPath }),
     ...(options.apiKey === undefined
       ? {}
@@ -153,13 +150,13 @@ export type TerminalSpec =
 export const terminalEvent = (spec: TerminalSpec, output: readonly unknown[]): EventBody => {
   const base = { id: RESPONSE_ID, model: MODEL, output: output as never };
   if (spec.kind === 'completed') {
-    return { type: 'response.completed', response: responseResource({ ...base, status: 'completed', usage: spec.usage === undefined ? usageOf(11, 3) : spec.usage, completedAt: 1_800_000_001 }) };
+    return { type: 'response.completed', response: responseResource({ ...base, status: 'completed', usage: spec.usage === undefined ? UNSIZED_USAGE : spec.usage, completedAt: 1_800_000_001 }) };
   }
   if (spec.kind === 'incomplete') {
     return {
       type: 'response.incomplete',
       response: {
-        ...responseResource({ ...base, status: 'incomplete', usage: spec.usage === undefined ? usageOf(11, 3) : spec.usage, completedAt: 1_800_000_001 }),
+        ...responseResource({ ...base, status: 'incomplete', usage: spec.usage === undefined ? UNSIZED_USAGE : spec.usage, completedAt: 1_800_000_001 }),
         incomplete_details: { reason: spec.reason },
       },
     };

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadProbeRecord, probeManagedFm } from '@momonga/gateway';
-import { createFakeFm, fakeExec } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec } from '@momonga/testkit';
 import { makeHome } from './gateway-process-helpers.ts';
 
 const setup = async (): Promise<{ dir: string; binary: string; probeDir: string; socketPath: string }> => {
@@ -23,7 +23,7 @@ const options = (paths: Awaited<ReturnType<typeof setup>>, warnings: string[] = 
   onWarning: (message: string) => void warnings.push(message),
 });
 
-describe('probeManagedFm', () => {
+describe('probeManagedFm', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('serves fm on its own socket, probes it and records the report under the binary and the OS build', async () => {
     const paths = await setup();
 

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createUdsClient, decodeSse } from '@momonga/foundation';
-import { anthropicErrorReply, anthropicTextReply, startFakeAnthropic, startFakeOpenResponses, openResponsesTextReply, usageOf } from '../src/index.ts';
+import { anthropicErrorReply, anthropicTextReply, startFakeAnthropic, startFakeOpenResponses, openResponsesTextReply, openResponsesToolCallReply, usageOf } from '../src/index.ts';
+import { tokensForText } from '@momonga/protocol';
 import type { FakeUpstreamServer } from '../src/index.ts';
 
 const servers: FakeUpstreamServer[] = [];
@@ -50,8 +51,8 @@ describe('fake Open Responses upstream', () => {
     expect(served.frames.filter((frame) => frame.event === 'response.output_text.delta')).toHaveLength(2);
   });
 
-  it('reports input tokens in proportion to the request it answers when asked to', async () => {
-    const server = await startFakeOpenResponses({ reportRequestSize: true, script: [openResponsesTextReply(['a'], usageOf(11, 3)), openResponsesTextReply(['a'], usageOf(11, 3))] });
+  it('sizes the input tokens of a reply without usage by the request it answers', async () => {
+    const server = await startFakeOpenResponses({ script: [openResponsesTextReply(['a']), openResponsesTextReply(['a'])] });
     servers.push(server);
     const small = await completedUsage(await postBody(server, JSON.stringify({ model: 'm', input: [] })));
     const large = await completedUsage(await postBody(server, JSON.stringify({ model: 'm', input: ['x'.repeat(4000)] })));
@@ -62,11 +63,23 @@ describe('fake Open Responses upstream', () => {
     expect(large.total_tokens).toBe(large.input_tokens + 3);
   });
 
-  it('keeps the scripted usage when not asked to', async () => {
+  it('sizes a CJK request at least as large as the project estimator counts it', async () => {
+    const server = await startFakeOpenResponses({ script: [openResponsesToolCallReply('call_1', 'T', ['{}'])] });
+    servers.push(server);
+    const body = JSON.stringify({ model: 'm', input: ['日本語のテキスト'.repeat(200)] });
+    const usage = await completedUsage(await postBody(server, body));
+    expect(usage.input_tokens).toBeGreaterThanOrEqual(tokensForText(JSON.stringify(JSON.parse(body))));
+  });
+
+  it('keeps an explicit usage whatever the request size', async () => {
     const server = await startFakeOpenResponses({ script: [openResponsesTextReply(['a'], usageOf(11, 3))] });
     servers.push(server);
     const usage = await completedUsage(await postBody(server, JSON.stringify({ model: 'm', input: ['x'.repeat(4000)] })));
     expect(usage.input_tokens).toBe(11);
+  });
+
+  it('refuses a script and a responder together', () => {
+    expect(() => startFakeOpenResponses({ script: [], respond: () => undefined })).toThrow('a script or respond, not both');
   });
 });
 

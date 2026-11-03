@@ -1,5 +1,4 @@
-import { describe, expect, it } from 'vitest';
-import type { RuntimeStore } from '@momonga/store';
+import { describe, expect, it } from 'vitest';import type { RuntimeStore } from '@momonga/store';
 import { waitUntil, within } from './deferred.ts';
 import { makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
