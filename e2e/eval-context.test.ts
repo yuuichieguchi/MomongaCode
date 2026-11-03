@@ -2,16 +2,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { FakeRoute } from '@momonga/testkit';
+import { ROOT_PREFIX } from '../packages/cli/src/eval/context-host.ts';
+import { DEFAULT_KEEP_RECENT_STEPS } from '../packages/context/src/levels.ts';
 import { summaryRoute } from './support/budget.ts';
 import { titleOf } from './support/cases.ts';
 import { runCli } from './support/cli.ts';
+import { calibrationRoute, compactableTokens, fillerOfTokens, measureWindow, prefixProbeRoute, stepTokensToOverflowTheRoom } from './support/context-window.ts';
 import { createE2eHome } from './support/home.ts';
 import { baseSettings, sandboxChoiceOf, startUpstream, writeSettingsFile } from './support/stack.ts';
-import { chatCompletions, textReply } from './support/upstream.ts';
+import { chatCompletions, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
 const LONG_STEPS = 14;
-const LONG_TEXT_CHARS = 1200;
+const LONG_FILE_LINES = LONG_STEPS + 1;
+const SHELL_TASK = 'Report the home directory.';
 const LONG_TASK = 'Walk through long.txt step by step.';
 const RULE_TASK = 'Name the test runner.';
 const MEMORY_TASK = 'Report the value of LIMIT.';
@@ -32,7 +36,13 @@ const workspaceOf = (body: unknown): string => {
 
 const asks = (body: unknown, needle: string): boolean => textsOf(body).some((message) => message.role === 'user' && message.text.includes(needle));
 
-const longRoute = (): FakeRoute => {
+const shellRoute: FakeRoute = {
+  match: (body) => asks(body, SHELL_TASK),
+  reply: (body) =>
+    textsOf(body).some((message) => message.role === 'tool') ? textReply('The home is reported.') : toolCallReply('Bash', { command: 'printf %s "$HOME"', description: 'print HOME' }),
+};
+
+const longRoute = (stepText: () => string): FakeRoute => {
   const steps = new Map<string, number>();
   return {
     match: (body) => asks(body, LONG_TASK),
@@ -47,7 +57,7 @@ const longRoute = (): FakeRoute => {
           {
             delta: {
               role: 'assistant',
-              content: `Step ${step}: ${'w'.repeat(LONG_TEXT_CHARS)}`,
+              content: `Step ${step}: ${stepText()}`,
               tool_calls: [{ index: 0, id: `call_${step}`, type: 'function', function: { name: 'Read', arguments: JSON.stringify({ file_path: path.join(workspace, 'long.txt'), offset: step }) } }],
             },
             finishReason: 'tool_calls',
@@ -61,9 +71,12 @@ const longRoute = (): FakeRoute => {
 
 const memoryRoutes: FakeRoute[] = [{ match: (body) => asks(body, MEMORY_TASK), reply: textReply('LIMIT is known.') }];
 
-const ROUTES: FakeRoute[] = [
+const routesWith = (stepText: () => string): FakeRoute[] => [
+  prefixProbeRoute,
+  calibrationRoute,
   summaryRoute(SUMMARY),
-  longRoute(),
+  shellRoute,
+  longRoute(stepText),
   { match: (body) => asks(body, RULE_TASK), reply: textReply('The runner is vitest.') },
   ...memoryRoutes,
 ];
@@ -90,7 +103,8 @@ const DATASET = {
   format: 'momonga-eval-context/1',
   name: 'context-e2e',
   cases: [
-    ...paired('long', { input: LONG_TASK, files: { 'long.txt': `${'line\n'.repeat(40)}` } }),
+    ...paired('shell', { input: SHELL_TASK }),
+    ...paired('long', { input: LONG_TASK, files: { 'long.txt': `${'line\n'.repeat(LONG_FILE_LINES)}` } }),
     ...paired('revised', {
       input: RULE_TASK,
       rules: [rule('runner-1', 'Run tests with jest.', []), rule('runner-2', 'Run tests with vitest.', ['runner-1'])],
@@ -113,8 +127,27 @@ const metricCounts = (metric: { successes: number; trials: number } | undefined)
 describe('momonga eval context live', () => {
   it(titleOf('eval-context-live'), { timeout: 8 * E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
-    const fake = await startUpstream(home, { home, routes: ROUTES });
+    let stepText: string | undefined;
+    const fake = await startUpstream(home, {
+      home,
+      routes: routesWith(() => {
+        if (stepText === undefined) throw new Error('the text of a step was asked for before the window was measured');
+        return stepText;
+      }),
+    });
     writeSettingsFile(home, baseSettings(home, sandboxChoiceOf({ home }).kind));
+    const sizing = (await measureWindow(home, fake, 4 * E2E_RUN_COMPLETED_BOUND_MS)).benchmark;
+    expect(
+      LONG_STEPS,
+      'LONG_STEPS cannot be derived from the window: it only has to exceed the steps the context builder protects (DEFAULT_KEEP_RECENT_STEPS), so that some steps fall outside the protection and can be compacted',
+    ).toBeGreaterThan(DEFAULT_KEEP_RECENT_STEPS);
+    const stepTokens = stepTokensToOverflowTheRoom(sizing, LONG_STEPS);
+    expect(LONG_STEPS * stepTokens, 'the walk must exceed the room of the window, so that the case without compaction cannot fit it').toBeGreaterThan(sizing.room);
+    expect(
+      compactableTokens(LONG_STEPS, DEFAULT_KEEP_RECENT_STEPS, stepTokens),
+      'the steps older than the protected recent steps must be worth a compaction (the gain rule of the context builder)',
+    ).toBeGreaterThanOrEqual(sizing.gainThreshold);
+    stepText = fillerOfTokens(stepTokens);
     const dataset = path.join(home.root, 'context.json');
     fs.writeFileSync(dataset, JSON.stringify(DATASET));
     const recordings = path.join(home.root, 'recordings');
@@ -133,7 +166,18 @@ describe('momonga eval context live', () => {
     expect(report).toMatchObject({ model: 'fake', modelAliases: ['default'], datasetSeed: 7, stopped: [] });
     const cases = report.cases as CaseLine[];
     const byId = new Map(cases.map((entry) => [entry.id, entry]));
-    expect(cases.map((entry) => entry.id)).toEqual(['long-on', 'long-off', 'revised-on', 'revised-off', 'stale-on', 'stale-off']);
+    expect(cases.map((entry) => entry.id)).toEqual(['shell-on', 'shell-off', 'long-on', 'long-off', 'revised-on', 'revised-off', 'stale-on', 'stale-off']);
+    expect(byId.get('shell-on')).toMatchObject({ runs: 1, passedRuns: 1 });
+    expect(byId.get('shell-off')).toMatchObject({ runs: 1, passedRuns: 1 });
+    const homesSeen = chatCompletions(fake)
+      .filter((request) => asks(request.body, SHELL_TASK))
+      .flatMap((request) => messagesOf(request).filter((message) => message.role === 'tool').map((message) => ({ output: String(message.content), workspace: workspaceOf(request.body) })));
+    expect(homesSeen).toHaveLength(2);
+    for (const seen of homesSeen) {
+      expect(seen.output).not.toBe(home.home);
+      expect(path.basename(seen.output).startsWith(ROOT_PREFIX)).toBe(true);
+      expect(seen.workspace.endsWith(`${path.basename(seen.output)}/w`)).toBe(true);
+    }
     expect(byId.get('long-on')?.compactions).toBeGreaterThanOrEqual(1);
     expect(byId.get('long-on')?.passedRuns).toBe(1);
     expect(byId.get('long-off')).toMatchObject({ compactions: 0, runs: 1, passedRuns: 0 });
@@ -151,7 +195,7 @@ describe('momonga eval context live', () => {
     expect(metricCounts(report.metrics.memoryStaleRate)).toEqual([2, 4]);
 
     const names = fs.readdirSync(recordings).sort();
-    expect(names).toHaveLength(8);
+    expect(names).toHaveLength(10);
     const header = JSON.parse(fs.readFileSync(path.join(recordings, 'long-on.0.transcript.jsonl'), 'utf8').split('\n')[0] ?? '{}');
     expect(header).toMatchObject({ format: 'momonga-transcript/3', datasetSeed: 7, run: { modelAlias: 'default' } });
 

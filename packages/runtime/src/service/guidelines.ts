@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { MIN_SUMMARY_TOKENS, tokensForText } from '@momonga/protocol';
 import type { AdoptGuidelineRequest, RecordContextChargeRequest } from '@momonga/protocol';
-import { GuidelineConflictError } from '@momonga/store';
+import { GuidelineConflictError, GuidelineTextError } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import { conflict, invalidRequest, notFound } from './errors.ts';
 import type { Handler, RouteRegistrar } from './app.ts';
@@ -30,6 +30,7 @@ export const registerGuidelineRoutes = (route: RouteRegistrar, deps: GuidelineRo
       return json({ guideline: guidelines.adopt(body) }, 201);
     } catch (error) {
       if (error instanceof GuidelineConflictError) throw conflict('guideline_conflict', error.message);
+      if (error instanceof GuidelineTextError) throw invalidRequest(error.message, 'text');
       throw error;
     }
   };

@@ -1,7 +1,7 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import { sha256Hex } from '@momonga/foundation';
-import { MIN_SUMMARY_TOKENS, escapeXmlAttribute, escapeXmlText } from '@momonga/protocol';
+import { GUIDELINE_TEXT_PATTERN, MIN_SUMMARY_TOKENS, escapeXmlAttribute, escapeXmlText } from '@momonga/protocol';
 import { describeFirstError } from './dataset.ts';
 import { recordOf } from './guideline-record.ts';
 import type { Transcript } from './transcript.ts';
@@ -70,7 +70,7 @@ export const GUIDELINE_ANALYSIS_SCHEMA = closed(
   ],
 );
 
-export const GUIDELINE_CANDIDATE_SCHEMA = closed({ guideline: { type: 'string', minLength: 1 } }, ['guideline']);
+export const GUIDELINE_CANDIDATE_SCHEMA = closed({ guideline: { type: 'string', minLength: 1, pattern: GUIDELINE_TEXT_PATTERN } }, ['guideline']);
 
 export type GuidelineAnalysis = {
   divergence_step_description: string;

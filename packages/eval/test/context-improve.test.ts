@@ -5,16 +5,24 @@ import {
   GUIDELINE_ANALYSIS_INSTRUCTIONS,
   GUIDELINE_CANDIDATES,
   GUIDELINE_CAP_REASON,
+  GUIDELINE_OUTCOME_FORMAT,
   GUIDELINE_ROOT_CAUSES,
+  adoptionOf,
   analysisRequestOf,
   buildContextReport,
   contrastiveCasesOf,
+  encodeOutcomeFile,
+  formatGuidelineText,
   formatImproveOutcome,
   guidelineDiff,
   improveGuideline,
+  outcomeFileOf,
   parseContextDataset,
   parseGuidelineAnalysis,
+  parseGuidelineCandidate,
+  parseOutcomeFile,
 } from '@momonga/eval';
+import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { ContextReport, GuidelineCompletion, GuidelineCompletionRequest, ImproveInput, Transcript } from '@momonga/eval';
 import { MIN_SUMMARY_TOKENS } from '@momonga/protocol';
 import { bash, contextCase, fidelity, read, recorded, summarized } from './context-fixtures.ts';
@@ -359,6 +367,126 @@ describe('the dataset cap', () => {
     expect(outcome.status).toBe('stopped');
     expect(outcome.winner).toBeUndefined();
     expect(benchmarked.length).toBeLessThan(1 + GUIDELINE_CANDIDATES);
+  });
+});
+
+describe('the outcome file', () => {
+  const DATASET = { name: 'improve', digest: 'a'.repeat(64) };
+
+  const winning = () =>
+    improve({
+      input: { current: { version: 1, text: 'adopted' } },
+      byGuideline: (guideline) => (guideline === 'candidate 0' ? measured() : measured({ failingOn: ['a'] })),
+    });
+
+  const rewritten = (file: ReturnType<typeof outcomeFileOf>, change: (raw: { digest: string; outcome: Record<string, unknown> }) => void): string => {
+    const raw = JSON.parse(encodeOutcomeFile(file)) as { digest: string; outcome: Record<string, unknown> };
+    change(raw);
+    return JSON.stringify(raw);
+  };
+
+  it('holds the candidates, the winner text, the report, the dataset digest, the parent version and a digest of the whole', async () => {
+    const { outcome } = await winning();
+    const file = parseOutcomeFile(encodeOutcomeFile(outcomeFileOf(outcome, DATASET)));
+    expect(file.digest).toMatch(/^[0-9a-f]{64}$/);
+    expect(file.outcome).toMatchObject({
+      format: GUIDELINE_OUTCOME_FORMAT,
+      dataset: DATASET,
+      parent: 1,
+      parentText: 'adopted',
+      winner: { index: 0, text: 'candidate 0', parent: 1 },
+      report: { source: 'context improve', dataset: 'improve', candidateIndex: 0, seed: 42 },
+    });
+    expect(file.outcome.candidates.map((candidate) => candidate.text)).toEqual([0, 1, 2, 3, 4].map((index) => `candidate ${index}`));
+    expect(file.outcome.candidates[0]?.gate?.passed).toBe(true);
+  });
+
+  it('is made for an outcome with no winner too, and then there is nothing to adopt', async () => {
+    const { outcome } = await improve();
+    const file = outcomeFileOf(outcome, DATASET);
+    expect(file.outcome.winner).toBeUndefined();
+    expect(() => adoptionOf(parseOutcomeFile(encodeOutcomeFile(file)))).toThrow(/no winner/);
+  });
+
+  it('gives the adoption exactly the text of the winner, the parent it was measured against and the report', async () => {
+    const { outcome } = await winning();
+    const file = parseOutcomeFile(encodeOutcomeFile(outcomeFileOf(outcome, DATASET)));
+    expect(adoptionOf(file)).toEqual({ text: 'candidate 0', parent: 1, parentText: 'adopted', report: file.outcome.report });
+  });
+
+  it('guards a text changed after improve wrote it: the digest no longer matches', async () => {
+    const { outcome } = await winning();
+    const changed = rewritten(outcomeFileOf(outcome, DATASET), (raw) => {
+      (raw.outcome['winner'] as { text: string }).text = 'something the person never read';
+    });
+    expect(() => parseOutcomeFile(changed)).toThrow(/digest/);
+  });
+
+  it('guards a digest recomputed over a text with a control character: the schema refuses it too', async () => {
+    const { outcome } = await winning();
+    const hiding = rewritten(outcomeFileOf(outcome, DATASET), (raw) => {
+      (raw.outcome['winner'] as { text: string }).text = 'keep names\u001b[2K';
+      raw.digest = sha256Hex(canonicalJson(raw.outcome));
+    });
+    expect(() => parseOutcomeFile(hiding)).toThrow(/outcome file/);
+  });
+
+  it.each([
+    ['text that is not JSON', 'nonsense'],
+    ['another format', JSON.stringify({ digest: 'a'.repeat(64), outcome: { format: 'other/1' } })],
+    ['a missing digest', JSON.stringify({ outcome: {} })],
+  ])('refuses %s', (_label, text) => {
+    expect(() => parseOutcomeFile(text)).toThrow(/outcome file/);
+  });
+
+  it('prints the full winner text with its control characters escaped, before the change', async () => {
+    const { outcome } = await winning();
+    const printed = formatImproveOutcome(outcome);
+    expect(printed).toContain('text of the winner:\n  candidate 0');
+    expect(formatGuidelineText('one\n\ttwo\u001b[1m')).toBe('  one\n  \ttwo\\u001b[1m');
+  });
+});
+
+describe('guideline text that hides itself', () => {
+  const HIDING = 'keep names\u001b[2K\rtidy';
+
+  it.each([
+    ['an escape sequence', HIDING],
+    ['a carriage return', 'a\rb'],
+    ['a null', 'a\u0000b'],
+    ['a C1 control', 'a\u009bb'],
+  ])('guards the candidate schema: refuses %s', (_label, guideline) => {
+    expect(parseGuidelineCandidate(JSON.stringify({ guideline }))).toEqual({ error: expect.any(String) });
+  });
+
+  it('accepts a newline and a tab in a candidate', () => {
+    expect(parseGuidelineCandidate(JSON.stringify({ guideline: 'a\n\tb' }))).toEqual({ guideline: 'a\n\tb' });
+  });
+
+  it('guards a candidate that reaches the benchmark with a control character: it is skipped with a reason and never benchmarked', async () => {
+    const { outcome, benchmarked } = await improve({
+      reply: (request, index) => ({ text: request.purpose === 'analysis' ? analysis() : JSON.stringify({ guideline: index === 0 ? HIDING : `candidate ${index}` }), usage: USAGE }),
+    });
+    expect(outcome.candidates[0]).toMatchObject({ index: 0, skipped: expect.stringMatching(/^output failed the schema: /) });
+    expect(benchmarked).not.toContain(HIDING);
+  });
+
+  it('guards the diff: control characters of either side are printed as escapes, in depth', () => {
+    const diff = guidelineDiff(`old\u001b[1m\rline`, `new\u0085line\nsecond`);
+    expect(diff).not.toMatch(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/);
+    expect(diff).toContain('- old\\u001b[1m\\u000dline');
+    expect(diff).toContain('+ new\\u0085line');
+    expect(diff).toContain('+ second');
+  });
+
+  it('guards the report: a guideline in force with a control character is escaped in the printed change', async () => {
+    const { outcome } = await improve({
+      input: { current: { version: 1, text: 'adopted\u001b[2K' } },
+      byGuideline: (guideline) => (guideline === 'candidate 0' ? measured() : measured({ failingOn: ['a'] })),
+    });
+    const text = formatImproveOutcome(outcome);
+    expect(text).not.toMatch(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/);
+    expect(text).toContain('adopted\\u001b[2K');
   });
 });
 

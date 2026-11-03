@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { GuidelineConflictError, openRuntimeStore } from '@momonga/store';
+import { GuidelineConflictError, GuidelineTextError, openRuntimeStore } from '@momonga/store';
 import { createFakeClock } from '@momonga/testkit';
 
 const START_MS = 1_000;
@@ -47,6 +47,24 @@ describe('adopting a guideline', () => {
     const { store } = open();
     store.guidelines.adopt({ text: 'a', parent: null, report: WINNER });
     expect(() => store.guidelines.adopt({ text: 'b', parent: null, report: WINNER })).toThrow(GuidelineConflictError);
+  });
+
+  it.each([
+    ['an escape sequence', 'keep names\u001b[2K'],
+    ['a carriage return', 'keep names\rhide it'],
+    ['a null', 'keep\u0000names'],
+    ['a delete', 'keep\u007fnames'],
+    ['a C1 control', 'keep\u0085names'],
+    ['a vertical tab', 'keep\u000bnames'],
+  ])('guards a text that hides itself on a terminal: refuses %s and stores nothing', (_label, text) => {
+    const { store } = open();
+    expect(() => store.guidelines.adopt({ text, parent: null, report: WINNER })).toThrow(GuidelineTextError);
+    expect(store.guidelines.list()).toEqual([]);
+  });
+
+  it('accepts a newline and a tab, which a person writes on purpose', () => {
+    const { store } = open();
+    expect(store.guidelines.adopt({ text: 'keep names\n\tkeep paths', parent: null, report: WINNER }).text).toBe('keep names\n\tkeep paths');
   });
 
   it('has no current guideline before the first adoption', () => {

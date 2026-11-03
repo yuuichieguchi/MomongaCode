@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { immediateTx } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
+import { hasForbiddenGuidelineCharacter } from '@momonga/protocol';
 import { expectRecord, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
 import type { Guideline, GuidelineStore } from './types.ts';
@@ -12,7 +13,14 @@ export class GuidelineConflictError extends Error {
   }
 }
 
-const decodeGuideline = (row: Row): Guideline => {
+export class GuidelineTextError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GuidelineTextError';
+  }
+}
+
+const decodeGuideline =(row: Row): Guideline => {
   const identity = String(row['version']);
   const reader = readerFor('compaction_guidelines', identity, row);
   return {
@@ -60,7 +68,12 @@ export const createGuidelineStore = (db: DatabaseSync, clock: Clock): GuidelineS
       return row === undefined ? undefined : decodeGuideline(row);
     },
     list: () => all.all().map(decodeGuideline),
-    adopt: (input) => immediateTx(db, () => append(input.text, input.parent, input.report)),
+    adopt: (input) => {
+      if (hasForbiddenGuidelineCharacter(input.text)) {
+        throw new GuidelineTextError('a guideline holds no control character except a newline and a tab, because it could hide itself when printed');
+      }
+      return immediateTx(db, () => append(input.text, input.parent, input.report));
+    },
     rollback: (version) =>
       immediateTx(db, () => {
         const row = byVersion.get({ version });

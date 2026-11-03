@@ -46,6 +46,23 @@ describe('the guideline routes', () => {
     expect(env.store.guidelines.list()).toEqual([]);
   });
 
+  it.each([
+    ['an escape sequence', 'keep names\u001b[2K'],
+    ['a carriage return', 'keep names\rhide it'],
+    ['a C1 control', 'keep\u009bnames'],
+  ])('guards a text that hides itself on a terminal: %s is a 400 and stores nothing', async (_label, text) => {
+    const env = await startService();
+    const response = await env.http('POST', '/v1/guidelines', { body: { text, parent: null, report: REPORT } });
+    expect(response.status).toBe(400);
+    expect(env.store.guidelines.list()).toEqual([]);
+  });
+
+  it('accepts a newline and a tab', async () => {
+    const env = await startService();
+    const response = await env.http('POST', '/v1/guidelines', { body: { text: 'keep names\n\tkeep paths', parent: null, report: REPORT } });
+    expect(response.status).toBe(201);
+  });
+
   it('rolls back to an earlier version as a new row, and refuses a version that does not exist', async () => {
     const env = await startService();
     await env.http('POST', '/v1/guidelines', { body: { text: 'a', parent: null, report: REPORT } });
