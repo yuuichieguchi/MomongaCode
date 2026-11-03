@@ -12,12 +12,9 @@ export type ShutdownResponseWriter = {
   end(body: string): unknown;
 };
 
-export type IdleShutdownOutcome = { kind: 'accepted' } | { kind: 'busy'; reason: string };
-
 export type ControlHandlerOptions = {
   health(): SupervisorHealth;
   onShutdownRequested(): void;
-  shutdownIfIdle(): Promise<IdleShutdownOutcome>;
 };
 
 export type ControlServerOptions = ControlHandlerOptions & {
@@ -92,35 +89,6 @@ export const createControlRequestHandler = (options: ControlHandlerOptions): ((r
         request,
         SHUTDOWN_BODY_LIMIT_BYTES,
         () => respondShutdown(response, options.onShutdownRequested),
-        () =>
-          respondError(
-            request,
-            response,
-            413,
-            { message: `request body exceeds ${SHUTDOWN_BODY_LIMIT_BYTES} bytes`, type: 'invalid_request', code: 'payload_too_large' },
-            { connection: 'close' },
-          ),
-      );
-      return;
-    }
-    if (pathname === '/v1/shutdown-if-idle') {
-      if (method !== 'POST') {
-        respondError(request, response, 405, { message: `${method} is not allowed on ${pathname}`, type: 'invalid_request', code: 'method_not_allowed' }, { allow: 'POST' });
-        return;
-      }
-      readLimitedBody(
-        request,
-        SHUTDOWN_BODY_LIMIT_BYTES,
-        () => {
-          options.shutdownIfIdle().then(
-            (outcome) => {
-              if (outcome.kind === 'accepted') respondShutdown(response, options.onShutdownRequested);
-              else respondError(request, response, 409, { message: outcome.reason, type: 'invalid_request', code: 'not_idle' });
-            },
-            (error: unknown) =>
-              respondError(request, response, 500, { message: error instanceof Error ? error.message : String(error), type: 'server_error', code: 'idle_check_failed' }),
-          );
-        },
         () =>
           respondError(
             request,

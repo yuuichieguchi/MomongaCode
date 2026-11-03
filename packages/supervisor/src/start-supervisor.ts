@@ -22,7 +22,6 @@ import { HELD_RETRY_MS, LOCK_WAIT_DEADLINE_MS, ORPHAN_REAP_GRACE_MS, STARTUP_TIM
 import type { SupervisorIntervals, SupervisorTimers } from './constants.ts';
 import { startControlServer } from './control-server.ts';
 import type { ControlServer } from './control-server.ts';
-import { shutdownIfIdle } from './idle-shutdown.ts';
 import { runLaunchTask } from './launch.ts';
 import type { ChildRole, GatewayTuning, Launcher, RuntimeTuning } from './launcher.ts';
 import { phaseChange, planBegin, planEnd, settingsChanged, settingsEvaluated, settingsInvalid, settingsReadFailed, settingsWarning, supervisorBackgroundFailed, supervisorBackgroundTransient, writeEvent } from './log-events.ts';
@@ -353,8 +352,6 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       socketPath: paths.sockets.supervisor,
       timers,
       health,
-      shutdownIfIdle: () =>
-        phase === 'draining' ? Promise.resolve({ kind: 'accepted' }) : shutdownIfIdle({ runtime: runtime.health(), runtimeSocketPath: paths.sockets.runtime }),
       onShutdownRequested: () => requestShutdown(),
       onError: (error) => reportBackground(error, 'control-server'),
       ...lockOptions,

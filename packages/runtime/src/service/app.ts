@@ -171,15 +171,6 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     sandbox: deps.health.sandbox,
   });
 
-  const drainIfIdle: Handler = () => {
-    if (!deps.isDraining()) {
-      if (deps.store.hasActiveRun()) throw conflict('not_idle', 'a run is active, so the service keeps accepting work');
-      if (deps.store.jobs.listRunning().length > 0) throw conflict('not_idle', 'a background job is running, so the service keeps accepting work');
-      deps.beginDraining();
-    }
-    return json({ state: 'draining' }, 202);
-  };
-
   const drainingError = () => serviceUnavailable('draining', 'the service is draining and accepts no new work');
 
   const gatewayAliases = async (): Promise<readonly string[]> => {
@@ -524,7 +515,6 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   };
 
   route('/v1/health', { GET: health });
-  route('/v1/drain-if-idle', { POST: drainIfIdle });
   route('/v1/sessions', { GET: listSessions, POST: createSession });
   route('/v1/sessions/:id', { GET: getSession, PATCH: patchSession });
   route('/v1/sessions/:id/runs', { GET: listRuns, POST: createRun });

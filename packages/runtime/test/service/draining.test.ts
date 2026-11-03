@@ -11,52 +11,11 @@ const expectDraining = (response: JsonResponse): void => {
   });
 };
 
-describe('POST /v1/drain-if-idle (fake timers)', () => {
-  it('begins draining when no run is active, so a later session or run is refused', async () => {
+describe('draining while admission checks are pending (fake timers)', () => {
+  it('no longer routes /v1/drain-if-idle', async () => {
     const env = await startService({ fakeTimers: true });
-    const session = await env.createSession();
-
-    const drained = await env.http('POST', '/v1/drain-if-idle');
-    expect({ status: drained.status, body: drained.json }).toEqual({ status: 202, body: { state: 'draining' } });
-
-    expectDraining(await env.http('POST', `/v1/sessions/${session.id}/runs`, { body: { input: 'hello' } }));
-    expect((await env.http('GET', '/v1/health')).json).toMatchObject({ state: 'draining' });
-  });
-
-  it('answers 409 not_idle and keeps accepting work while a run is active', async () => {
-    const env = await startService({ fakeTimers: true });
-    const session = await env.createSession();
-    const created = await env.http('POST', `/v1/sessions/${session.id}/runs`, { body: { input: 'hello' } });
-    expect(created.status).toBe(202);
-
-    const refused = await env.http('POST', '/v1/drain-if-idle');
-    expect({ status: refused.status, body: refused.json }).toEqual({
-      status: 409,
-      body: { error: { type: 'conflict', code: 'not_idle', message: expect.any(String) } },
-    });
+    expect((await env.http('POST', '/v1/drain-if-idle')).status).toBe(404);
     expect((await env.http('GET', '/v1/health')).json).toMatchObject({ state: 'running' });
-  });
-
-  it('answers 409 not_idle while a background job runs after its run ended, and drains once the job finished', async () => {
-    const env = await startService({ fakeTimers: true });
-    const session = await env.createSession();
-    expect((await env.http('POST', `/v1/sessions/${session.id}/runs`, { body: { input: 'hello' } })).status).toBe(202);
-    const run = env.store.listRuns(session.id)[0];
-    if (run === undefined) throw new Error('the run was not stored');
-    env.store.requestCancel(run.id);
-    expect(env.store.hasActiveRun()).toBe(false);
-    const { job } = env.store.jobs.start({ id: 'bash_aaaaaaaaaaaa', idemKey: 'job-key', sessionId: session.id, runId: run.id, callId: 'call-1', command: 'sleep 30' });
-
-    const refused = await env.http('POST', '/v1/drain-if-idle');
-    expect({ status: refused.status, body: refused.json }).toEqual({
-      status: 409,
-      body: { error: { type: 'conflict', code: 'not_idle', message: expect.any(String) } },
-    });
-    expect((await env.http('GET', '/v1/health')).json).toMatchObject({ state: 'running' });
-
-    env.store.jobs.finish(job.id, { status: 'exited', exitCode: 0 });
-    const drained = await env.http('POST', '/v1/drain-if-idle');
-    expect({ status: drained.status, body: drained.json }).toEqual({ status: 202, body: { state: 'draining' } });
   });
 
   it('refuses a run whose admission checks were still pending when draining began, and stores no run', async () => {
@@ -75,22 +34,11 @@ describe('POST /v1/drain-if-idle (fake timers)', () => {
 
     const pending = env.http('POST', `/v1/sessions/${session.id}/runs`, { body: { input: 'what is this', images: [image] } });
     await reached.promise;
-    const drained = await env.http('POST', '/v1/drain-if-idle');
-    expect(drained.status).toBe(202);
+    env.service.beginDraining();
     gate.resolve();
 
     expectDraining(await pending);
     expect(env.store.listRuns(session.id)).toEqual([]);
-  });
-
-  it('answers 202 again once draining has begun, even with a run that was admitted before', async () => {
-    const env = await startService({ fakeTimers: true });
-    const session = await env.createSession();
-    await env.http('POST', `/v1/sessions/${session.id}/runs`, { body: { input: 'hello' } });
-    env.service.beginDraining();
-
-    const again = await env.http('POST', '/v1/drain-if-idle');
-    expect({ status: again.status, body: again.json }).toEqual({ status: 202, body: { state: 'draining' } });
   });
 });
 
