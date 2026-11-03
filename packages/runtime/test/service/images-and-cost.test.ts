@@ -51,6 +51,19 @@ describe('GET /v1/cost', () => {
   });
 
 
+  it('guards an invisible spend: guideline charges appear in the report and in its text, by folder', async () => {
+    const env = await startService({ runCost: async () => ({ report: { runs: [], sessions: [], total: totals }, text: 'the text report' }) });
+    env.store.contextCharges.record({ purpose: 'guideline', project: '/p', model: 'opus', inputTokens: 7, outputTokens: 3, totalTokens: 10 });
+
+    const inFolder = await env.http('GET', `/v1/cost?cwd=${encodeURIComponent('/p')}`);
+    const elsewhere = await env.http('GET', `/v1/cost?cwd=${encodeURIComponent('/q')}`);
+    const text = await env.http('GET', '/v1/cost?format=text');
+
+    expect(inFolder.json.contextCharges).toEqual([{ purpose: 'guideline', runId: null, project: '/p', model: 'opus', inputTokens: 7, outputTokens: 3, totalTokens: 10, createdAt: expect.any(Number) }]);
+    expect(elsewhere.json.contextCharges ?? []).toEqual([]);
+    expect(text.text).toMatch(/guideline.*10/);
+  });
+
   it('prices every run when no filter is given and answers what the cost port returns', async () => {
     const asked: unknown[] = [];
     const env = await startService({

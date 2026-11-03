@@ -80,6 +80,8 @@ const harness = (behaviour: Behaviour = {}) => {
   const secretReads: string[] = [];
   const removedDirectories: string[] = [];
   const inputs: string[] = [];
+  const adopted: { root: string; request: { text: string } }[] = [];
+  const order: string[] = [];
   const addedRules: unknown[] = [];
   const roots = new Map<string, { removed: boolean; settings?: string; pid?: number; cwd?: string }>();
   const alive = new Set<number>();
@@ -98,6 +100,7 @@ const harness = (behaviour: Behaviour = {}) => {
         return { session: { id: `s${counter}`, modelAlias: 'default' } };
       },
       createRun: async (_session: string, text: string) => {
+        order.push('run');
         inputs.push(text);
         return { run: { id: `r${counter}` }, location: '' };
       },
@@ -114,6 +117,11 @@ const harness = (behaviour: Behaviour = {}) => {
       retireRule: async () => ({ id: 'fact' }),
       addMemory: async (request: unknown) => void memories.push(request),
       setTrust: async (path: string) => void trusted.push(path),
+      adoptGuideline: async (request: { text: string }) => {
+        order.push('adopt');
+        adopted.push({ root, request });
+        return { version: adopted.length, text: request.text };
+      },
       close: async () => void stopped.push(`close ${root}`),
     };
     return runtime as unknown as ContextRuntime;
@@ -184,7 +192,7 @@ const harness = (behaviour: Behaviour = {}) => {
       holders.set(stale.root, stale.holder);
     }
   }
-  return { effects, roots, alive, terminated, stopped, memories, trusted, files, startEnvs, probeCopies, secretReads, removedDirectories, inputs, addedRules };
+  return { effects, roots, alive, terminated, stopped, memories, trusted, files, startEnvs, probeCopies, secretReads, removedDirectories, inputs, addedRules, adopted, order };
 };
 
 const input = (extra: Partial<Parameters<typeof runContextLive>[1]> = {}): Parameters<typeof runContextLive>[1] => ({
@@ -200,6 +208,23 @@ const noDaemonLeft = (context: ReturnType<typeof harness>): void => {
   expect([...context.alive]).toEqual([]);
   expect([...context.roots.values()].map((state) => state.removed)).not.toContain(false);
 };
+
+describe('a live context run with a guideline', () => {
+  it('guards a door for tests: every case adopts it through the run api of its own daemon, before its first run', async () => {
+    const context = harness();
+    await runContextLive(context.effects, input({ guideline: 'keep test names' }));
+    expect(context.adopted.map((entry) => [entry.root, entry.request.text])).toEqual([
+      ['/tmp/mc-xxxxxx0', 'keep test names'],
+      ['/tmp/mc-xxxxxx1', 'keep test names'],
+    ]);
+    expect(context.order[0]).toBe('adopt');
+    expect(context.order.indexOf('adopt', 1)).toBeGreaterThan(context.order.indexOf('run'));
+    expect([...context.files.values()].join('\n')).not.toContain('keep test names');
+    const baseline = harness();
+    await runContextLive(baseline.effects, input());
+    expect(baseline.adopted).toEqual([]);
+  });
+});
 
 describe('a live context run', () => {
   it('gives every case its own home, daemon and settings, and stops each daemon by pid and removes each home', async () => {
