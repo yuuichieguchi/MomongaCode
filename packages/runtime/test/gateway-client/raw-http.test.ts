@@ -246,7 +246,7 @@ describe('gateway client bounds', () => {
     expectGatewayError(await pending, { status: 0, type: 'transport', code: 'gateway_timeout' });
   });
 
-  it('bounds a unary call by the deadline when it is sooner than unaryTimeoutMs', async () => {
+  it('bounds a compaction by the call deadline', async () => {
     const fake = await startRawHttpFake();
     fake.respond(() => {});
     const clock = fakeClock();
@@ -274,24 +274,25 @@ describe('gateway client bounds', () => {
     expectGatewayError(await pending, { status: 0, type: 'transport', code: 'gateway_timeout' });
   });
 
-  it('lets the smaller of the deadline and unaryTimeoutMs decide the timeout code', async () => {
+  it('lets a compaction, which is a model call, run until the deadline instead of unaryTimeoutMs', async () => {
     const fake = await startRawHttpFake();
-    fake.respond(() => {});
+    let answer: () => void = () => {};
+    fake.respond((_request, response) => {
+      answer = () => {
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ id: 'cmp_1', object: 'response.compaction', output: [] }));
+      };
+    });
     const clock = fakeClock();
     const timers = createFakeTimers(clock);
-    const capFirst = makeClient(fake.socketPath, clock, { unaryTimeoutMs: 100, timers });
-    const deadlineFirst = makeClient(fake.socketPath, clock, { unaryTimeoutMs: 400, timers });
+    const client = makeClient(fake.socketPath, clock, { unaryTimeoutMs: 100, timers });
 
-    const pending = Promise.all([
-      settle(capFirst.compact(COMPACT_REQUEST, callOptions(clock, { idempotencyKey: 'cap', deadlineInMs: 400 }))),
-      settle(deadlineFirst.compact(COMPACT_REQUEST, callOptions(clock, { idempotencyKey: 'dl', deadlineInMs: 100 }))),
-    ]);
-    await awaitingRequests(fake, 2);
-    timers.advance(100);
-    const [capError, deadlineError] = await pending;
+    const pending = client.compact(COMPACT_REQUEST, callOptions(clock, { deadlineInMs: 600_000 }));
+    await awaitingRequests(fake, 1);
+    timers.advance(400);
+    answer();
 
-    expectGatewayError(capError, { status: 0, type: 'transport', code: 'gateway_timeout' });
-    expectGatewayError(deadlineError, { status: 0, type: 'transport', code: 'deadline_exceeded' });
+    expect(await pending).toMatchObject({ id: 'cmp_1' });
   });
 
   it('interrupts a stream that stays silent for streamIdleTimeoutMs', async () => {
@@ -326,6 +327,41 @@ describe('gateway client bounds', () => {
 
     expect(seen).toEqual([createdEvent]);
     expectGatewayError(error, { status: 0, type: 'transport', code: 'stream_interrupted' });
+  });
+
+  it('does not apply streamIdleTimeoutMs while the gateway has not answered the request yet', async () => {
+    const fake = await startRawHttpFake();
+    let answer: () => void = () => {};
+    fake.respond((_request, response) => {
+      answer = () => {
+        openSse(response);
+        response.end(sseFrame(createdEvent) + sseFrame(completedEvent));
+      };
+    });
+    const clock = fakeClock();
+    const timers = createFakeTimers(clock);
+    const client = makeClient(fake.socketPath, clock, { streamIdleTimeoutMs: 150, timers });
+
+    const seen = collect(client.stream(streamBody(), callOptions(clock)));
+    await waitFor(() => fake.requests.length === 1, { description: 'the request to arrive' });
+    timers.advance(400);
+    answer();
+
+    expect(await seen).toEqual([createdEvent, completedEvent]);
+  });
+
+  it('still bounds the wait for the first answer by the call deadline', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond(() => {});
+    const clock = fakeClock();
+    const timers = createFakeTimers(clock);
+    const client = makeClient(fake.socketPath, clock, { streamIdleTimeoutMs: 150, timers });
+
+    const pending = settle(collect(client.stream(streamBody(), callOptions(clock, { deadlineInMs: 400 }))));
+    await waitFor(() => fake.requests.length === 1, { description: 'the request to arrive' });
+    timers.advance(400);
+
+    expectGatewayError(await pending, { status: 0, type: 'transport', code: 'deadline_exceeded' });
   });
 
   it('treats keep-alive comments as activity', async () => {
