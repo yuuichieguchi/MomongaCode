@@ -8,7 +8,7 @@ import { MODEL, capabilitiesFor } from './helpers.ts';
 
 const NO_ERROR: ErrorShape = { ratio: 0, minimum: 0 };
 
-const countingAs =(method: CountTokensResult['method']) => ({
+const countingAs = (method: CountTokensResult['method']) => ({
   count: async (request: CountTokensRequest): Promise<CountTokensResult> =>
     countReplyOf((Array.isArray(request.input) ? request.input.length : 1) * 100, method, method === 'estimated' ? ESTIMATED_ERROR_SHAPE : NO_ERROR),
 });

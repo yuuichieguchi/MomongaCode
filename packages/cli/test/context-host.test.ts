@@ -6,7 +6,7 @@ import type { Transcript } from '@momonga/eval';
 import { momongaLayout, socketPathLimit } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { PublicRunEvent } from '@momonga/protocol';
-import { ContextHostError, ContextInterrupted, assertSocketsFit, caseEnvironment, liveSettingsFor, runContextLive, sweepStaleHomes } from '../src/eval/context-host.ts';
+import { ContextHostError, ContextInterrupted, assertSocketsFit, caseEnvironment, liveSettingsFor, runContextLive, sweepStaleHomes, unownedHomesNotice } from '../src/eval/context-host.ts';
 import type { ContextHostEffects, ContextRuntime } from '../src/eval/context-host.ts';
 
 const target = (overrides: Partial<ResolvedChatCompletionsTarget> = {}): ResolvedChatCompletionsTarget => ({
@@ -71,6 +71,7 @@ type Behaviour = {
   secrets?: Record<string, string>;
   staleRoots?: { root: string; owner: number; home?: string; holder?: number }[];
   unreadableRoots?: string[];
+  legacyRoots?: string[];
   canonicalPrefix?: string;
 };
 
@@ -160,9 +161,10 @@ const harness = (behaviour: Behaviour = {}) => {
     copyProbeRecord: async (target, paths) => void probeCopies.push(`${target} -> ${paths.probe}`),
     copyEndpointProbeRecord: async (probe, paths) =>
       void endpointProbeCopies.push(`${probe.upstream.kind === 'unix' ? probe.upstream.socketPath : probe.upstream.baseUrl} ${probe.model} -> ${paths.probe}`),
-    listRoots: async () => [...roots.keys(), ...(behaviour.staleRoots ?? []).map((stale) => stale.root), ...(behaviour.unreadableRoots ?? [])],
+    listRoots: async () => [...roots.keys(), ...(behaviour.staleRoots ?? []).map((stale) => stale.root), ...(behaviour.unreadableRoots ?? []), ...(behaviour.legacyRoots ?? [])],
     readOwner: async (root) => {
       if (behaviour.unreadableRoots?.includes(root) === true) return 'unreadable';
+      if (behaviour.legacyRoots?.includes(root) === true) return 'legacy';
       const text = files.get(`${root}/.momonga-eval-owner`);
       return text === undefined ? undefined : (JSON.parse(text) as { pid: number; home: string });
     },
@@ -430,15 +432,35 @@ describe('the shipped context dataset with the fake model', () => {
 describe('a home left by a CLI that was killed', () => {
   it('is removed at the next start, with its daemon, when the owner is gone', async () => {
     const context = harness({ staleRoots: [{ root: '/tmp/mc-stale0', owner: 99, holder: 5000 }] });
-    expect(await sweepStaleHomes(context.effects)).toEqual({ removed: ['/tmp/mc-stale0'], unreadable: 0 });
+    expect(await sweepStaleHomes(context.effects)).toEqual({ removed: ['/tmp/mc-stale0'], unreadable: 0, unowned: [] });
     expect(context.terminated).toEqual([5000]);
     expect(context.removedDirectories).toEqual(['/tmp/mc-stale0']);
   });
 
   it('skips and counts an entry it cannot read, and still removes the stale home beside it', async () => {
     const context = harness({ staleRoots: [{ root: '/tmp/mc-stale0', owner: 99 }], unreadableRoots: ['/tmp/mc-locked', '/tmp/mc-file'] });
-    expect(await sweepStaleHomes(context.effects)).toEqual({ removed: ['/tmp/mc-stale0'], unreadable: 2 });
+    expect(await sweepStaleHomes(context.effects)).toEqual({ removed: ['/tmp/mc-stale0'], unreadable: 2, unowned: [] });
     expect(context.removedDirectories).toEqual(['/tmp/mc-stale0']);
+  });
+
+  it('never removes a home with an old plain-pid marker, and names it as unowned', async () => {
+    const context = harness({ staleRoots: [{ root: '/tmp/mc-stale0', owner: 99 }], legacyRoots: ['/tmp/mc-old1', '/tmp/mc-old2'] });
+    expect(await sweepStaleHomes(context.effects)).toEqual({ removed: ['/tmp/mc-stale0'], unreadable: 0, unowned: ['/tmp/mc-old1', '/tmp/mc-old2'] });
+    expect(context.removedDirectories).toEqual(['/tmp/mc-stale0']);
+  });
+
+  it('reports the unowned homes to the caller of a live run and starts its cases', async () => {
+    const context = harness({ legacyRoots: ['/tmp/mc-old1'] });
+    const reported: string[][] = [];
+    await runContextLive(context.effects, input({ onUnownedHomes: (roots) => void reported.push([...roots]) }));
+    expect(reported).toEqual([['/tmp/mc-old1']]);
+    expect(context.roots.size).toBe(2);
+  });
+
+  it('words the notice so that it names every unowned home', () => {
+    expect(unownedHomesNotice(['/tmp/mc-old1', '/tmp/mc-old2'])).toContain('/tmp/mc-old1');
+    expect(unownedHomesNotice(['/tmp/mc-old1', '/tmp/mc-old2'])).toContain('/tmp/mc-old2');
+    expect(unownedHomesNotice(['/tmp/mc-old1']).endsWith('\n')).toBe(true);
   });
 
   it('reports the unreadable entries to the caller of a live run and starts its cases', async () => {
@@ -452,7 +474,7 @@ describe('a home left by a CLI that was killed', () => {
   it('is left alone when its owner is still running, or when it names no owner', async () => {
     const context = harness({ staleRoots: [{ root: '/tmp/mc-live', owner: OWNER, holder: 5000 }, { root: '/tmp/mc-foreign', owner: 99 }] });
     context.files.delete('/tmp/mc-foreign/.momonga-eval-owner');
-    expect(await sweepStaleHomes(context.effects)).toEqual({ removed: [], unreadable: 0 });
+    expect(await sweepStaleHomes(context.effects)).toEqual({ removed: [], unreadable: 0, unowned: [] });
     expect(context.removedDirectories).toEqual([]);
     expect(context.terminated).toEqual([]);
   });
@@ -471,7 +493,7 @@ describe('a home left by a CLI that was killed', () => {
         { root: '/tmp/mc-mine', owner: 98, holder: 5001 },
       ],
     });
-    expect(await sweepStaleHomes(context.effects)).toEqual({ removed: ['/tmp/mc-mine'], unreadable: 0 });
+    expect(await sweepStaleHomes(context.effects)).toEqual({ removed: ['/tmp/mc-mine'], unreadable: 0, unowned: [] });
     expect(context.removedDirectories).toEqual(['/tmp/mc-mine']);
     expect(context.terminated).toEqual([5001]);
   });

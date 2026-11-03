@@ -65,5 +65,5 @@ export const describeWitness = (witness: Witness): string => {
   }
 };
 
-export const exitCodeOf =(results: readonly PropertyResult[], mismatches: readonly ModelMismatch[]): 0 | 1 =>
+export const exitCodeOf = (results: readonly PropertyResult[], mismatches: readonly ModelMismatch[]): 0 | 1 =>
   mismatches.length === 0 && results.every((result) => result.verdict.status === 'proved') ? 0 : 1;

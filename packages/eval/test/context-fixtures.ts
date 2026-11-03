@@ -37,7 +37,7 @@ export const marked = (payloads: readonly RunEventPayload[], callId: string): { 
   return { seqFrom: start.seq, seqTo: end.seq };
 };
 
-export const fidelity =(fabricated: string[], identifiers: number, retained: number): SummaryFidelity => ({ fabricated, identifiers, retained, sections: 'complete' });
+export const fidelity = (fabricated: string[], identifiers: number, retained: number): SummaryFidelity => ({ fabricated, identifiers, retained, sections: 'complete' });
 
 export const governing = (...ids: string[]): RunEventPayload => ({
   type: 'context.governing_loaded',
@@ -85,7 +85,7 @@ export const deniedHistoryRead = (callId: string, seqFrom: number, seqTo: number
   { type: 'tool.completed', callId, status: 'failed', output: 'denied', denial: { source: 'rule', reason: 'denied' } },
 ];
 
-export const denied =(callId: string, command: string): RunEventPayload[] => [
+export const denied = (callId: string, command: string): RunEventPayload[] => [
   call(callId, 'Bash', { command }),
   { type: 'tool.completed', callId, status: 'failed', output: 'denied', denial: { source: 'rule', reason: 'denied' } },
 ];

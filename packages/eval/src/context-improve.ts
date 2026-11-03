@@ -236,7 +236,7 @@ export const formatGuidelineText = (text: string): string =>
     .map((line) => `  ${line}`)
     .join('\n');
 
-const candidateLines =(candidate: ImproveCandidate): string[] => {
+const candidateLines = (candidate: ImproveCandidate): string[] => {
   if (candidate.skipped !== undefined) return [`candidate ${candidate.index}: skipped: ${candidate.skipped}`];
   const { comparison } = candidate;
   if (comparison === undefined) return [`candidate ${candidate.index}: not benchmarked`];

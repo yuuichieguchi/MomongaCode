@@ -36,7 +36,7 @@ const roleSettings = (home: E2eHome): Record<string, unknown> => {
   };
 };
 
-const journalOf =(home: E2eHome, runId: string): JournalEvent[] =>
+const journalOf = (home: E2eHome, runId: string): JournalEvent[] =>
   journalOfRows(readDb<EventRow>(home.paths.databases.runtime, 'SELECT seq, type, payload_json FROM events WHERE run_id = ? ORDER BY seq', runId));
 
 const runToEnd = async (runtime: RuntimeClient, runId: string): Promise<void> => {

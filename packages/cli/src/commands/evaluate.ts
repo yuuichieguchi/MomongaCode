@@ -23,7 +23,7 @@ import { goldenRunApi } from '../client/golden-run-api.ts';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import { nodeContextEffects } from '../eval/context-effects.ts';
-import { runContextLive, unreadableHomesNotice } from '../eval/context-host.ts';
+import { runContextLive, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects } from '../eval/context-host.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
@@ -48,7 +48,7 @@ const populate = async (ports: CliPorts, directory: string, golden: GoldenCase):
 };
 
 const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenDataset, record: string | undefined, interrupt: AbortSignal | undefined): Promise<EvalReport> => {
-  await ensureDaemon(ports, paths, { replacement: 'when-idle' });
+  await ensureDaemon(ports, paths);
   const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } = await import('@momonga/runtime');
   const env = await environmentSnapshot(ports);
   const client = connectRuntime(paths);
@@ -116,6 +116,7 @@ const runContextLiveCommand = async (
     models: loadUserModels({ home: ports.home }),
     limits: { maxTotalTokens: RUNTIME_DEFAULTS.limits.maxTotalTokens, defaultTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs },
     onUnreadableHomes: (count) => ports.stderr.write(unreadableHomesNotice(count)),
+    onUnownedHomes: (roots) => ports.stderr.write(unownedHomesNotice(roots)),
     ...(options.interrupt === undefined ? {} : { interrupt: options.interrupt }),
     ...(record === undefined ? {} : { onTranscript: async (transcript: Transcript) => void (await saveTranscript(ports.files, record, transcript)) }),
   });

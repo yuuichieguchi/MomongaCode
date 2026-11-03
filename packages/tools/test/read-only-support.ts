@@ -36,7 +36,7 @@ const REFUSED_XCRUN_CACHE_WRITE = /^[A-Za-z][A-Za-z0-9._+-]*: error: couldn't cr
 export const withoutRefusedXcrunCacheWrite = (stderr: string, platform: NodeJS.Platform): string =>
   platform === 'darwin' ? stderr.replace(REFUSED_XCRUN_CACHE_WRITE, '') : stderr;
 
-export const scratchRootOf =(layoutRoot: string): string => path.join(layoutRoot, 'recording-tmp');
+export const scratchRootOf = (layoutRoot: string): string => path.join(layoutRoot, 'recording-tmp');
 
 export const REQUIRED_GIT_KEYS: readonly string[] = [
   'core.fsmonitor',

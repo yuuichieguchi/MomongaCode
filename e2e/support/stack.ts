@@ -129,7 +129,7 @@ export const withClassifierAlias = (settings: Readonly<Record<string, unknown>>,
   };
 };
 
-export const contextWindowOf =(home: E2eHome): number => {
+export const contextWindowOf = (home: E2eHome): number => {
   const models = baseSettings(home, 'none')['models'] as { targets: Record<string, { capabilities: { contextWindow: number } }> };
   return (models.targets[UPSTREAM_TARGET] as { capabilities: { contextWindow: number } }).capabilities.contextWindow;
 };

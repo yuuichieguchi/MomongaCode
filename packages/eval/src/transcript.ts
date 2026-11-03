@@ -135,7 +135,7 @@ const liveFieldsOf = (header: Record<string, unknown>, where: string): LiveField
   };
 };
 
-export const encodeTranscript =(transcript: Transcript): string => {
+export const encodeTranscript = (transcript: Transcript): string => {
   const header = {
     format: TRANSCRIPT_FORMAT,
     caseId: transcript.caseId,

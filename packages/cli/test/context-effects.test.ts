@@ -52,10 +52,16 @@ describe('the homes a sweep may consider', () => {
     expect(await readEvalOwner(nodeFiles, root)).toEqual({ pid: 4242, home: '/home/person' });
   });
 
-  it('names no owner for a marker that does not record a home', async () => {
+  it('names an old plain-pid marker as legacy', async () => {
     const root = temporary();
     fs.writeFileSync(path.join(root, OWNER_FILE), '4242');
-    expect(await readEvalOwner(nodeFiles, root)).toBeUndefined();
+    expect(await readEvalOwner(nodeFiles, root)).toBe('legacy');
+    fs.writeFileSync(path.join(root, OWNER_FILE), '4242\n');
+    expect(await readEvalOwner(nodeFiles, root)).toBe('legacy');
+  });
+
+  it('names no owner for a marker that does not record a home', async () => {
+    const root = temporary();
     fs.writeFileSync(path.join(root, OWNER_FILE), JSON.stringify({ pid: 4242 }));
     expect(await readEvalOwner(nodeFiles, root)).toBeUndefined();
   });

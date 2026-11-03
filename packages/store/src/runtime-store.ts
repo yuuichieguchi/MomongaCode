@@ -522,14 +522,18 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return [...events, ...requests].sort((a, b) => a.seq - b.seq);
   };
 
-  const measureContribution = (hook: TerminalContribution, run: Run): Measured => {
-    const events = hookEventsOfTypes(run.id, [...hook.eventTypes, 'context.contribution']);
+  const measureContribution = (hook: TerminalContribution, run: Run, leadingEvents: readonly RunEventPayload[] = []): Measured => {
+    const types: readonly RunEventPayload['type'][] = [...hook.eventTypes, 'context.contribution'];
+    const leading = leadingEvents.map(
+      (payload, index): RunEvent => ({ ...payload, id: 0, runId: run.id, sessionId: run.sessionId, seq: run.lastSeq + 1 + index, step: Math.max(run.step, payloadStep(payload)), leaseToken: run.leaseToken ?? 0, createdAt: clock.now() }),
+    );
+    const events = [...hookEventsOfTypes(run.id, types), ...leading.filter((event) => types.includes(event.type))];
     const recorded = events.find((event): event is Extract<RunEvent, { type: 'context.contribution' }> => event.type === 'context.contribution');
     if (recorded !== undefined) return { lastSeq: run.lastSeq, journaled: true, contribution: recorded };
     return {
       lastSeq: run.lastSeq,
       journaled: false,
-      contribution: hook.measure({ run, events, replay: (visit) => replayRun(run, events, visit), memories, governing }),
+      contribution: hook.measure({ run, events, replay: (visit) => replayRun(run, events, visit, leading), memories, governing }),
     };
   };
 
@@ -570,12 +574,15 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     for (const row of sql.listExhausted.all({ now: clock.now(), maxAttempts, maxTotalAttempts })) prepareTree(decodeRun(row).id);
   };
 
-  const settleContribution = (run: Run, to: TerminalStatus): RunEventPayload[] => {
+  const settleContribution = (run: Run, to: TerminalStatus, leadingEvents: readonly RunEventPayload[]): RunEventPayload[] => {
     const hook = options.contribution;
     if (hook === undefined) return [];
     const ready = prepared.get(run.id);
     prepared.delete(run.id);
-    const { journaled, contribution } = ready !== undefined && ready.lastSeq === run.lastSeq ? ready : measureContribution(hook, run);
+    const { journaled, contribution } =
+      ready !== undefined && ready.lastSeq === run.lastSeq && !leadingEvents.some((event) => hook.eventTypes.includes(event.type))
+        ? ready
+        : measureContribution(hook, run, leadingEvents);
     if (contribution !== undefined && to === 'COMPLETED') {
       memories.stampContributed(
         contribution.items.filter((item) => item.kind === 'memory' && item.contributed).map((item) => item.id),
@@ -600,7 +607,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     const reason = patch.stopReason ?? patch.error?.code;
     const statusEvent: RunEventPayload = { type: 'run.status', from: run.status, to, ...(reason === undefined ? {} : { reason }) };
     const withdrawal = isTerminal(to) || to === 'CANCELLING' ? withdrawPendingApprovals(run.id) : [];
-    const contribution = isTerminal(to) ? settleContribution(run, to) : [];
+    const contribution = isTerminal(to) ? settleContribution(run, to, leadingEvents) : [];
     const appended = appendPayloads(run, [...leadingEvents, ...withdrawal, ...contribution, statusEvent]);
     if (to === 'COMPLETED' && run.parentRunId === null) reflection.enqueue(run.id);
     const keepsLease = to === 'RUNNING' || to === 'CANCELLING';
@@ -882,12 +889,13 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return { snapshot: { seq, state }, tail: decodeRunEvents(sql.runEvents.all({ runId, after: seq, limit: -1 })) };
   };
 
-  const replayRun = (run: Run, readEvents: readonly RunEvent[], visit: (state: RunState, event: RunEvent) => void): void => {
+  const replayRun = (run: Run, readEvents: readonly RunEvent[], visit: (state: RunState, event: RunEvent) => void, leading: readonly RunEvent[] = []): void => {
     const readTypes = [...new Set<string>([...readEvents.map((event) => event.type), 'model.requested'])];
     const placeholders = readTypes.map((_type, index) => `:type${index}`).join(', ');
     const bound = Object.fromEntries(readTypes.map((type, index) => [`type${index}`, type]));
     const rest = decodeRunEvents(db.prepare(`SELECT * FROM events WHERE run_id = :runId AND type NOT IN (${placeholders})`).all({ runId: run.id, ...bound }));
-    const journal = [...readEvents.filter((event) => event.type !== 'model.requested'), ...rest].sort((a, b) => a.seq - b.seq);
+    const unread = leading.filter((event) => !readEvents.includes(event) && event.type !== 'model.requested');
+    const journal = [...readEvents.filter((event) => event.type !== 'model.requested'), ...rest, ...unread].sort((a, b) => a.seq - b.seq);
     let state = initialRunState({ runId: run.id, sessionId: run.sessionId });
     for (const event of journal) {
       state = foldRunState(state, event);

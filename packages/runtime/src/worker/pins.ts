@@ -35,7 +35,7 @@ export const parentPinsOf = (store: Pick<RuntimeStore, 'readRunEventsOfTypes'>, 
   return { modelAlias, roles: readRoles(started.pins['roles']) };
 };
 
-const isCapabilities =(value: unknown): value is Capabilities =>
+const isCapabilities = (value: unknown): value is Capabilities =>
   isRecord(value) &&
   typeof value['contextWindow'] === 'number' &&
   typeof value['maxOutputTokens'] === 'number' &&

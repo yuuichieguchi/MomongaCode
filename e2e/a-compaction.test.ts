@@ -208,7 +208,7 @@ const assertAcceptance = async (
   expect(journal.filter((event) => event.type === 'run.status' && event.data['to'] === 'STOPPED')).toEqual([]);
 };
 
-const assertLeanProperties =(observed: Observed, haystack: Haystack, plan: Plan, capabilities: Capabilities): void => {
+const assertLeanProperties = (observed: Observed, haystack: Haystack, plan: Plan, capabilities: Capabilities): void => {
   const notices = ofType(observed.journal, 'notice');
   const floor = pinnedFloorFor(capabilities);
   const planned = plan.runs.find((run) => run.perturbation === 0);

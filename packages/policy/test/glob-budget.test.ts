@@ -9,7 +9,7 @@ const CONTEXT = { cwd: '/work/project', home: '/home/user' };
 
 const PREPARING = { ...CONTEXT, signal: new AbortController().signal };
 
-const fixedDeadline =(remaining: number): GlobDeadline => ({ remainingMs: () => remaining });
+const fixedDeadline = (remaining: number): GlobDeadline => ({ remainingMs: () => remaining });
 
 describe('globBudgetMs: one budget per policy decision, derived from the lease', () => {
   it.each([

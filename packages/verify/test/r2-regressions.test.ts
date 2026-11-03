@@ -77,7 +77,7 @@ describe('round 2, finding 14: a word with = is inside the command alphabet', ()
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 });
 
-const forceUnknownAt =(context: QueryContext, site: number): { calls: () => number } => {
+const forceUnknownAt = (context: QueryContext, site: number): { calls: () => number } => {
   const original = context.models.smt.solve.bind(context.models.smt);
   let calls = 0;
   context.models.smt.solve = async (constraints, timeoutMs): Promise<SolveResult> => {

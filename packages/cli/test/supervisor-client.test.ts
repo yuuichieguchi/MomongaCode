@@ -17,6 +17,6 @@ describe('supervisor client response bound', () => {
     const client = createSupervisorClient({ socketPath: paths.sockets.supervisor, responseBoundMs: 50 });
     registerCleanup(context, () => client.close());
 
-    await expect(client.shutdownIfIdle()).rejects.toMatchObject({ code: 'UND_ERR_HEADERS_TIMEOUT' });
+    await expect(client.shutdown()).rejects.toMatchObject({ code: 'UND_ERR_HEADERS_TIMEOUT' });
   });
 });

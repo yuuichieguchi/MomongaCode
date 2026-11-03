@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { RunEvent } from '@momonga/protocol';
+import type { RunEvent, RunEventPayload } from '@momonga/protocol';
 import type { ContributionPayload, RuntimeStore, TerminalContribution } from '@momonga/store';
 import { EXPIRES_MS, awaitingApproval } from './approval-fixture.ts';
 import { DEADLINE_MS, LEASE_MS, START_MS, callEvent, cancel, enqueue, harness, mustClaim, mustRun, newSession, payloadOf } from './helpers.ts';
@@ -233,6 +233,57 @@ describe('measuring before the write transaction', () => {
     h.store.prepareTerminal(run.id);
 
     expect(seen).toEqual([]);
+  });
+});
+
+describe('measuring over the journal as it stands after the transaction', () => {
+  const finalResponse: RunEventPayload = {
+    type: 'model.responded',
+    step: 1,
+    attempt: 1,
+    response: { status: 'completed', output: [], usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12 } },
+  };
+
+  const citing = (seen: RunEvent[][], replayed: string[]): TerminalContribution => ({
+    eventTypes: ['model.responded'],
+    measure: ({ events, replay }) => {
+      seen.push([...events]);
+      replay((_state, event) => replayed.push(event.type));
+      return contributionFor(events.some((event) => event.type === 'model.responded') ? 'cited' : 'uncited');
+    },
+  });
+
+  const recordedItems = (store: RuntimeStore, runId: string): unknown[] =>
+    store
+      .readRunEvents(runId, 0, 1000)
+      .flatMap((event) => (event.type === 'context.contribution' ? [event.items] : []))
+      .flat();
+
+  it('hands the hook the events that lead the transition and records what they cite', () => {
+    const seen: RunEvent[][] = [];
+    const replayed: string[] = [];
+    const h = harness({ contribution: citing(seen, replayed) });
+    const run = enqueue(h.store, newSession(h.store).id);
+    const claim = mustClaim(h.store, 'w1');
+
+    expect(h.store.transition(claim, ['RUNNING'], 'FAILED', { error: { code: 'input_truncated', message: 'truncated' } }, [finalResponse]).kind).toBe('ok');
+
+    expect(seen.map((events) => events.map((event) => event.type))).toEqual([[], ['model.responded']]);
+    expect(replayed).toContain('model.responded');
+    expect(recordedItems(h.store, run.id)).toEqual([{ kind: 'memory', id: 'cited', contributed: true }]);
+  });
+
+  it('measures again over the leading events when the transition was prepared first', () => {
+    const seen: RunEvent[][] = [];
+    const h = harness({ contribution: citing(seen, []) });
+    const run = enqueue(h.store, newSession(h.store).id);
+    const claim = mustClaim(h.store, 'w1');
+
+    h.store.prepareTerminal(run.id);
+    expect(h.store.transition(claim, ['RUNNING'], 'FAILED', { error: { code: 'input_truncated', message: 'truncated' } }, [finalResponse]).kind).toBe('ok');
+
+    expect(seen.map((events) => events.length)).toEqual([0, 1]);
+    expect(recordedItems(h.store, run.id)).toEqual([{ kind: 'memory', id: 'cited', contributed: true }]);
   });
 });
 

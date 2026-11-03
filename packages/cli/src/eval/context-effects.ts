@@ -8,7 +8,7 @@ import { daemonStopBoundMs, ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import { pathsOf } from '../paths.ts';
-import { OWNER_FILE, ROOT_PREFIX, caseEnvironment, parseEvalOwner } from './context-host.ts';
+import { OWNER_FILE, ROOT_PREFIX, caseEnvironment, isLegacyOwnerMarker, parseEvalOwner } from './context-host.ts';
 import type { ContextHostEffects, EvalOwner } from './context-host.ts';
 
 export const SHORT_TEMP_BASE = '/tmp';
@@ -67,10 +67,11 @@ const UNREADABLE_CODES: ReadonlySet<string | undefined> = new Set(['EACCES', 'EP
 
 const VANISHED_CODES: ReadonlySet<string | undefined> = new Set(['ENOENT', 'ENOTDIR']);
 
-export const readEvalOwner = async (files: Pick<CliPorts['files'], 'readTextIfPresent'>, root: string): Promise<EvalOwner | 'unreadable' | undefined> => {
+export const readEvalOwner = async (files: Pick<CliPorts['files'], 'readTextIfPresent'>, root: string): Promise<EvalOwner | 'legacy' | 'unreadable' | undefined> => {
   try {
     const text = await files.readTextIfPresent(path.join(root, OWNER_FILE));
-    return text === undefined ? undefined : parseEvalOwner(text);
+    if (text === undefined) return undefined;
+    return isLegacyOwnerMarker(text) ? 'legacy' : parseEvalOwner(text);
   } catch (error) {
     if (UNREADABLE_CODES.has((error as NodeJS.ErrnoException).code)) return 'unreadable';
     throw error;

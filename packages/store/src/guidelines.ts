@@ -20,7 +20,7 @@ export class GuidelineTextError extends Error {
   }
 }
 
-const decodeGuideline =(row: Row): Guideline => {
+const decodeGuideline = (row: Row): Guideline => {
   const identity = String(row['version']);
   const reader = readerFor('compaction_guidelines', identity, row);
   return {

@@ -17,7 +17,7 @@ const keychainAncestors = (home: string): string[] => {
   return [...found, canonicalHome];
 };
 
-const sortedUnique =(values: readonly string[]): string[] => [...new Set(values)].sort();
+const sortedUnique = (values: readonly string[]): string[] => [...new Set(values)].sort();
 
 const paramsOfRule = (profile: string, params: Record<string, string>, rule: string): string[] => {
   const pattern = new RegExp(`^\\(deny ${rule.replace('*', '\\*')} \\(literal \\(param "([^"]+)"\\)\\)\\)$`, 'gm');

@@ -17,7 +17,7 @@ const unusedPort = (name: string): never =>
     get: () => unusedPort(name),
   }) as never;
 
-const cliPortsFor =(home: string): CliPorts =>
+const cliPortsFor = (home: string): CliPorts =>
   ({
     version: '1.0.0',
     platform: 'linux',

@@ -42,7 +42,7 @@ export type ContextHostEffects = {
   copyProbeRecord(target: string, paths: MomongaPaths): Promise<void>;
   copyEndpointProbeRecord(probe: EndpointProbe, paths: MomongaPaths): Promise<void>;
   listRoots(): Promise<string[]>;
-  readOwner(root: string): Promise<EvalOwner | 'unreadable' | undefined>;
+  readOwner(root: string): Promise<EvalOwner | 'legacy' | 'unreadable' | undefined>;
   isAlive(pid: number): boolean;
 };
 
@@ -153,6 +153,8 @@ export type EvalOwner = { pid: number; home: string };
 
 export const ownerRecord = (owner: EvalOwner): string => JSON.stringify({ pid: owner.pid, home: owner.home });
 
+export const isLegacyOwnerMarker = (text: string): boolean => /^\d+\s*$/.test(text);
+
 export const parseEvalOwner = (text: string): EvalOwner | undefined => {
   let parsed: unknown;
   try {
@@ -171,15 +173,23 @@ export const ROOT_PREFIX = 'momonga-eval-';
 export const unreadableHomesNotice = (count: number): string =>
   `${count} temporary ${count === 1 ? 'entry' : 'entries'} of an earlier run could not be read and ${count === 1 ? 'was' : 'were'} skipped\n`;
 
-export type SweepResult = { removed: string[]; unreadable: number };
+export const unownedHomesNotice = (roots: readonly string[]): string =>
+  `${roots.length} temporary ${roots.length === 1 ? 'entry' : 'entries'} of an earlier run carry${roots.length === 1 ? 'es' : ''} an old owner marker that names no owner and ${roots.length === 1 ? 'was' : 'were'} left in place: ${roots.join(', ')}\n`;
+
+export type SweepResult = { removed: string[]; unreadable: number; unowned: string[] };
 
 export const sweepStaleHomes = async (effects: ContextHostEffects): Promise<SweepResult> => {
   const removed: string[] = [];
+  const unowned: string[] = [];
   let unreadable = 0;
   for (const root of await effects.listRoots()) {
     const owner = await effects.readOwner(root);
     if (owner === 'unreadable') {
       unreadable += 1;
+      continue;
+    }
+    if (owner === 'legacy') {
+      unowned.push(root);
       continue;
     }
     if (owner === undefined || owner.home !== effects.ownerHome || effects.isAlive(owner.pid)) continue;
@@ -188,7 +198,7 @@ export const sweepStaleHomes = async (effects: ContextHostEffects): Promise<Swee
     await effects.remove(root);
     removed.push(root);
   }
-  return { removed, unreadable };
+  return { removed, unreadable, unowned };
 };
 
 type CaseRecord = { root: string; paths: MomongaPaths | undefined; pid: number | undefined; runtime: ContextRuntime | undefined; released: boolean };
@@ -334,6 +344,7 @@ export type ContextLiveInput = {
   interrupt?: AbortSignal;
   onTranscript?(transcript: Transcript): Promise<void>;
   onUnreadableHomes?(count: number): void;
+  onUnownedHomes?(roots: readonly string[]): void;
 };
 
 export const runContextLive = async (effects: ContextHostEffects, input: ContextLiveInput): Promise<Transcript[]> => {
@@ -343,6 +354,7 @@ export const runContextLive = async (effects: ContextHostEffects, input: Context
   const credentialValues = await readCredentials(effects, settings.credentials, interrupt ?? new AbortController().signal);
   const swept = await sweepStaleHomes(effects);
   if (swept.unreadable > 0) input.onUnreadableHomes?.(swept.unreadable);
+  if (swept.unowned.length > 0) input.onUnownedHomes?.(swept.unowned);
   const hosts = createContextHosts(effects, {
     settings,
     credentialValues,

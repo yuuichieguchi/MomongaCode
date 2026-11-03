@@ -45,7 +45,11 @@ export const startCli = (home: E2eHome, args: readonly string[], options: RunCli
     child.once('close', (code, signal) => resolve({ code, signal, stdout, stderr }));
   });
   const closed = exited.then(async (finished) => {
-    await home.ledger.collect({});
+    try {
+      await home.ledger.collect({});
+    } catch (collectFailure) {
+      throw new AggregateError([collectFailure], `momonga ${args.join(' ')} ended with code ${finished.code} and signal ${finished.signal}, and the ledger collection failed\nstderr:\n${finished.stderr}`, { cause: finished });
+    }
     return finished;
   });
   registerE2eCleanup(() => {

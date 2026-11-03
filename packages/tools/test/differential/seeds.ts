@@ -111,7 +111,7 @@ export const separateWordSweep = (subcommand: (typeof SEPARATE_WORD_SUBCOMMANDS)
   );
 };
 
-export const editSeeds =(workspace: SeedPaths): Case[] => {
+export const editSeeds = (workspace: SeedPaths): Case[] => {
   const hook = (name: string): string => workspace.hookScript(name);
   const create = (directory: string): string => `mkdir -p ${directory}/objects ${directory}/refs && echo 'ref: refs/heads/main' > ${directory}/HEAD && ${configLines(directory, hook('bare'))}`;
   return [

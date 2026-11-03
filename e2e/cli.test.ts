@@ -291,25 +291,27 @@ describe('cli: momonga -p', () => {
 
   it(titleOf('cli-older-daemon-active-run'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
-    const stack = await startStack({ home, script: [textReply('held run'), textReply('second run')], version: '1.0.0' });
+    const stack = await startStack({ home, script: [textReply('held run'), textReply('resumed run'), textReply('another run')], version: '1.0.0' });
     const hold = stack.fake.hold();
     const runtime = createRuntimeClient(home);
     const session = await runtime.createSession();
     const held = (await runtime.createRun(session.session.id, 'work in progress')).run;
     await hold.waitForRequest();
+    const oldPid = stack.supervisor.pid;
 
     setFakeCliVersion(home, '2.0.0');
-    const status = await runCliWithFakes(home, ['status', held.id]);
     const another = await runCliWithFakes(home, ['-p', 'another']);
 
-    for (const refused of [status, another]) {
-      expect(refused.code).toBe(1);
-      expect(refused.stderr).toContain('the daemon (pid');
-      expect(refused.stderr).toContain(`runs version 1.0.0, not 2.0.0; run \`momonga daemon stop\``);
-    }
-    expect(process.kill(stack.supervisor.pid, 0)).toBe(true);
-    expect(stack.supervisor.exitState()).toBeUndefined();
-    expect((await stack.client.health()).version).toBe('1.0.0');
+    expect(another.code).toBe(0);
+    expect((await stack.supervisor.exited).code).toBe(0);
+    const status = await runCliWithFakes(home, ['daemon', 'status']);
+    expect(status.stdout).toMatch(/version 2\.0\.0/);
+    expect(Number(/pid (\d+)/.exec(status.stdout)?.[1])).not.toBe(oldPid);
+    const completed = await until(
+      () => readDb<{ status: string }>(home.paths.databases.runtime, 'SELECT status FROM runs WHERE id = ?', held.id).find((row) => row.status === 'COMPLETED'),
+      { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the run that was active in the older daemon to complete in the new daemon' },
+    );
+    expect(completed.status).toBe('COMPLETED');
     hold.release();
   });
 
@@ -322,7 +324,8 @@ describe('cli: momonga -p', () => {
 
     expect(result.code).toBe(1);
     expect(result.stdout).toBe('');
-    expect(result.stderr).toContain(`runs version 3.0.0, not 2.0.0; run \`momonga daemon stop\``);
+    expect(result.stderr).toContain('runs version 3.0.0, not 2.0.0');
+    expect(result.stderr).toContain('update or restart this CLI');
     expect(process.kill(stack.supervisor.pid, 0)).toBe(true);
     expect((await stack.client.health()).version).toBe('3.0.0');
   });

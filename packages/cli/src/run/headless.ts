@@ -203,7 +203,6 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
 const openInterruptibleSession = async (ports: CliPorts, paths: MomongaPaths, options: HeadlessOptions): Promise<CliSession | undefined> => {
   try {
     return await openSession(ports, paths, {
-      daemonReplacement: 'when-idle',
       signal: options.interrupt,
       ...(options.permissionMode === undefined ? {} : { permissionMode: options.permissionMode }),
       ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),

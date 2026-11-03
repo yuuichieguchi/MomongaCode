@@ -26,7 +26,7 @@ import { createGatewayClient as createCliGatewayClient } from '../client/gateway
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import { nodeContextEffects } from '../eval/context-effects.ts';
-import { runContextLive, unreadableHomesNotice } from '../eval/context-host.ts';
+import { runContextLive, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects } from '../eval/context-host.ts';
 import type { CliPorts, Sink } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
@@ -158,6 +158,7 @@ export const contextImprove = async (
               limits,
               ...(guideline === undefined ? {} : { guideline }),
               onUnreadableHomes: (count) => ports.stderr.write(unreadableHomesNotice(count)),
+              onUnownedHomes: (roots) => ports.stderr.write(unownedHomesNotice(roots)),
               ...(options.interrupt === undefined ? {} : { interrupt: options.interrupt }),
             });
             const report = buildContextReport({ dataset, transcripts, model: options.model, seed: CONTEXT_BOOTSTRAP_SEED, datasetSeed: options.seed });

@@ -1,4 +1,4 @@
-import { EXIT_ALREADY_RUNNING, ENTRY_HARD_EXIT_MARGIN_MS, LIFELINE_FD, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, inspectProcessLock, supervisorMaxCloseMs } from '@momonga/foundation';
+import { EXIT_ALREADY_RUNNING, EXIT_VERSION_MISMATCH, ENTRY_HARD_EXIT_MARGIN_MS, LIFELINE_FD, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, inspectProcessLock, supervisorMaxCloseMs } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { createSupervisorClient } from '../client/supervisor-client.ts';
@@ -94,6 +94,17 @@ type SpawnOutcome = { exit: DetachedExit } | { error: unknown };
 
 type SpawnedSupervisor = { outcome(): SpawnOutcome | undefined };
 
+const isStrictlyNewerThan = (clientVersion: string, daemonVersion: string): boolean => {
+  const client = tryParseVersion(clientVersion);
+  const daemon = tryParseVersion(daemonVersion);
+  return client !== undefined && daemon !== undefined && compareVersions(client, daemon) === 1;
+};
+
+const versionMismatchMessage = (ports: DaemonPorts, health: SupervisorHealth): string =>
+  isStrictlyNewerThan(ports.version, health.version)
+    ? `the daemon (pid ${health.pid}) runs version ${health.version}, not ${ports.version}; run \`momonga daemon stop\``
+    : `the daemon (pid ${health.pid}) runs version ${health.version}, not ${ports.version}, and it may be in use by newer clients; update or restart this CLI`;
+
 const awaitReady = async (ports: DaemonPorts, paths: MomongaPaths, client: SupervisorClient, readyMs: number, signal?: AbortSignal, spawned?: SpawnedSupervisor): Promise<SupervisorHealth> =>
   pollUntil(
     ports.clock,
@@ -101,7 +112,7 @@ const awaitReady = async (ports: DaemonPorts, paths: MomongaPaths, client: Super
       const health = await probeSupervisor(client);
       if (health !== undefined) {
         if (health.version !== ports.version) {
-          throw new DaemonStartError(`the daemon (pid ${health.pid}) runs version ${health.version}, not ${ports.version}; run \`momonga daemon stop\``, paths.logFiles.supervisor);
+          throw new DaemonStartError(versionMismatchMessage(ports, health), paths.logFiles.supervisor);
         }
         const held = heldFailure(health);
         if (held !== undefined) throw new DaemonStartError(held, paths.logFiles.supervisor);
@@ -109,6 +120,9 @@ const awaitReady = async (ports: DaemonPorts, paths: MomongaPaths, client: Super
       }
       const outcome = spawned?.outcome();
       if (outcome !== undefined && 'error' in outcome) throw outcome.error;
+      if (outcome !== undefined && 'exit' in outcome && outcome.exit.code === EXIT_VERSION_MISMATCH) {
+        throw new DaemonStartError(`the supervisor exited before it was ready because a component of the daemon runs another version than this CLI (${ports.version}); update or restart this CLI`, paths.logFiles.supervisor);
+      }
       if (outcome !== undefined && outcome.exit.code !== EXIT_ALREADY_RUNNING) {
         throw new DaemonStartError(`the supervisor exited (${exitDescription(outcome.exit)}) before it was ready`, paths.logFiles.supervisor);
       }
@@ -139,30 +153,8 @@ const startDaemon = async (
   return awaitReady(ports, paths, client, readyMs, signal, { outcome: () => outcome });
 };
 
-export type DaemonReplacement = 'never' | 'when-idle' | 'always';
+export type EnsureDaemonOptions = { bounds?: DaemonBounds; signal?: AbortSignal; lifeline?: boolean };
 
-export type EnsureDaemonOptions = { bounds?: DaemonBounds; replacement?: DaemonReplacement; signal?: AbortSignal; lifeline?: boolean };
-
-const isStrictlyNewerThan = (clientVersion: string, daemonVersion: string): boolean => {
-  const client = tryParseVersion(clientVersion);
-  const daemon = tryParseVersion(daemonVersion);
-  return client !== undefined && daemon !== undefined && compareVersions(client, daemon) === 1;
-};
-
-const replaceOlder = async (
-  ports: DaemonPorts,
-  client: SupervisorClient,
-  current: SupervisorHealth,
-  replacement: DaemonReplacement,
-  signal: AbortSignal | undefined,
-): Promise<boolean> => {
-  if (replacement === 'never' || !isStrictlyNewerThan(ports.version, current.version)) return false;
-  if (replacement === 'always') {
-    await client.shutdown(signal);
-    return true;
-  }
-  return (await client.shutdownIfIdle(signal)).accepted;
-};
 
 export const restoreDaemon =
   (ports: DaemonPorts, paths: MomongaPaths) =>
@@ -182,7 +174,8 @@ export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, opti
       await waitForSupervisorGone(ports, paths, stopMs, signal);
       return await startDaemon(ports, paths, client, readyMs, options.lifeline === true, signal);
     }
-    if (await replaceOlder(ports, client, current, options.replacement ?? 'never', signal)) {
+    if (current.version !== ports.version && isStrictlyNewerThan(ports.version, current.version)) {
+      await client.shutdown(signal);
       await waitForSupervisorGone(ports, paths, stopMs, signal);
       return await startDaemon(ports, paths, client, readyMs, options.lifeline === true, signal);
     }

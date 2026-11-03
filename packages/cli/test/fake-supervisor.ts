@@ -9,7 +9,6 @@ export type FakeSupervisorOptions = {
   version: string;
   children?: SupervisorChildHealth[];
   phase?: SupervisorHealth['phase'];
-  activeRunIds?: readonly (string | null)[];
   unresponsiveShutdown?: { onRequest(): void };
 };
 
@@ -27,30 +26,9 @@ export const startFakeSupervisor = async (options: FakeSupervisorOptions): Promi
   const { paths } = options;
   let phase = options.phase ?? 'running';
   let shutdowns = 0;
-  const idleRefusal = (): string | undefined => {
-    const runtime = (options.children ?? readyChildren()).find((child) => child.role === 'runtime');
-    if (runtime?.state !== 'ready') return `the runtime is ${runtime?.state}, so the supervisor cannot show it is idle`;
-    return (options.activeRunIds ?? []).some((runId) => runId !== null) ? 'the runtime has an active run' : undefined;
-  };
   const server = http.createServer((request, response) => {
-    if (request.method === 'POST' && (request.url === '/v1/shutdown-if-idle' || request.url === '/v1/shutdown') && options.unresponsiveShutdown !== undefined) {
+    if (request.method === 'POST' && request.url === '/v1/shutdown' && options.unresponsiveShutdown !== undefined) {
       options.unresponsiveShutdown.onRequest();
-      return;
-    }
-    if (request.method === 'POST' && request.url === '/v1/shutdown-if-idle') {
-      const refusal = idleRefusal();
-      if (refusal !== undefined) {
-        response
-          .writeHead(409, { 'content-type': 'application/json' })
-          .end(JSON.stringify({ error: { message: refusal, type: 'invalid_request', param: null, code: 'not_idle' } }));
-        return;
-      }
-      shutdowns += 1;
-      phase = 'draining';
-      response.writeHead(202, { 'content-type': 'application/json' }).end(JSON.stringify({ phase: 'draining' }));
-      setImmediate(() => {
-        void stop();
-      });
       return;
     }
     if (request.method === 'GET' && request.url === '/v1/health') {

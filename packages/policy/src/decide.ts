@@ -48,7 +48,7 @@ const READ_TOOL: PolicyTool = { name: 'Read', kind: 'read', sideEffect: 'read_on
 
 const HARMLESS_WRITE_TARGETS: ReadonlySet<string> = new Set(['/dev/null']);
 
-const describeRule =(rule: PermissionRule): string => `${rule.text} (${rule.origin}: ${rule.source})`;
+const describeRule = (rule: PermissionRule): string => `${rule.text} (${rule.origin}: ${rule.source})`;
 
 const basisOf = (kind: DecisionKind, basis: ApprovalBasis): { basis?: ApprovalBasis } => (kind === 'allow' ? { basis } : {});
 

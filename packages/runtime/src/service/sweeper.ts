@@ -32,7 +32,7 @@ export const releaseStoppedRunsAtStartup = async ({ store, releaseStopped, signa
   }
 };
 
-export const startApprovalSweeper =(options: ApprovalSweeperOptions): { close(): Promise<void> } => {
+export const startApprovalSweeper = (options: ApprovalSweeperOptions): { close(): Promise<void> } => {
   const { store, clock, timers, intervalMs, releaseStopped, onError } = options;
   const closing = new AbortController();
   const releasing = new Set<Promise<void>>();

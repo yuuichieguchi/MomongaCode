@@ -54,7 +54,7 @@ export const removeFilesThenRelease = (files: readonly string[], release: () => 
   }
 };
 
-export const readHolderFromDescriptor =(descriptor: number): string => {
+export const readHolderFromDescriptor = (descriptor: number): string => {
   const buffer = Buffer.alloc(HOLDER_READ_MAX_BYTES);
   const bytesRead = fs.readSync(descriptor, buffer, 0, HOLDER_READ_MAX_BYTES, 0);
   return buffer.toString('utf8', 0, bytesRead);

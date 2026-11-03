@@ -76,7 +76,7 @@ export const createTuiBackend = (
   return {
     cwd: ports.cwd,
     boot: async () => {
-      await ensureDaemon(ports, paths, { replacement: 'when-idle', signal: closing.signal });
+      await ensureDaemon(ports, paths, { signal: closing.signal });
       client = connectRuntime(paths);
       return client.trust(ports.cwd);
     },

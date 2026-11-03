@@ -38,7 +38,7 @@ export const candidatePathOf = (flavour: PathFlavour, native: string): string =>
   return flavour === 'posix' ? pattern : pattern.split('/').map(windowsNameIdentity).join('/');
 };
 
-export const nativePathOf =(flavour: PathFlavour, pattern: string): string => {
+export const nativePathOf = (flavour: PathFlavour, pattern: string): string => {
   if (flavour === 'posix') return pattern;
   const unc = PATTERN_UNC.exec(pattern);
   if (unc !== null) return `\\\\${unc[1] as string}\\${unc[2] as string}${unc[3] === undefined || unc[3] === '' ? '' : `\\${unc[3].replace(/\//g, '\\')}`}`;

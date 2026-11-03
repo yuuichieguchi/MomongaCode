@@ -38,7 +38,7 @@ const transcriptsOf = ({ s1On = 'FAILED', tokens = {}, extra = [], summary = fid
 
 const bareTranscripts = (): Transcript[] => dataset.cases.map((entry) => recorded(entry.id, 0, entry.gold === undefined ? [] : padding(4)));
 
-const realReport =(variant: Variant = {}) => buildContextReport({ dataset, transcripts: transcriptsOf(variant), model: 'real', seed: 1 });
+const realReport = (variant: Variant = {}) => buildContextReport({ dataset, transcripts: transcriptsOf(variant), model: 'real', seed: 1 });
 
 describe('pairedBootstrap', () => {
   const spread = [1, -2, 3, 0, 5, -1, 2, 2, 7, -3];

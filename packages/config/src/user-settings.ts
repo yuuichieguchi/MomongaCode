@@ -47,7 +47,7 @@ export const loadUserModels = ({ home }: LoadUserSettingsOptions): UserModels =>
   }
 };
 
-export const loadUserSettings =async ({ home }: LoadUserSettingsOptions): Promise<LoadUserSettingsResult> => loadUserSettingsSync(home);
+export const loadUserSettings = async ({ home }: LoadUserSettingsOptions): Promise<LoadUserSettingsResult> => loadUserSettingsSync(home);
 
 export type UserSettingsCacheOptions = { home: string; onWarning: (message: string) => void };
 

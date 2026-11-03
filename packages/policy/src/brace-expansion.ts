@@ -67,7 +67,7 @@ const nextOpenBrace = (text: string, from: number): number => {
   return -1;
 };
 
-const expandWithin =(text: string, limit: number): string[] => {
+const expandWithin = (text: string, limit: number): string[] => {
   for (let open = nextOpenBrace(text, 0); open !== -1; open = nextOpenBrace(text, open + 1)) {
     const close = closingBrace(text, open);
     if (close === -1) continue;

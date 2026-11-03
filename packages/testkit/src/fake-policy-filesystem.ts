@@ -147,7 +147,7 @@ const isRealSearchable = (absolute: string): boolean =>
     return true;
   }, false);
 
-const noFollowFromEntry =(entry: EntryRead): StepRead => {
+const noFollowFromEntry = (entry: EntryRead): StepRead => {
   if ('unresolvable' in entry) return entry;
   if (entry.kind === 'directory') return { kind: 'directory' };
   if (entry.kind === 'absent') return { kind: 'missing' };

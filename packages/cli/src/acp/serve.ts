@@ -23,7 +23,7 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
     autoModeAvailable: () => autoModeConfigured(ports),
     canonicalCwd: canonicalPath,
     daemonReady: async () => {
-      await ensureDaemon(ports, paths, { replacement: 'when-idle', signal: interrupt });
+      await ensureDaemon(ports, paths, { signal: interrupt });
     },
     retryAfterRestore: (operation, signal) =>
       retryAfterRestore(
