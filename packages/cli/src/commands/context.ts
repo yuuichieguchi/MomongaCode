@@ -68,7 +68,7 @@ const tokensOf = (transcripts: readonly Transcript[]): number =>
 type Completer = (request: GuidelineCompletionRequest) => Promise<GuidelineCompletion>;
 
 const completerFor = async (ports: CliPorts, paths: MomongaPaths, alias: string, capabilities: Capabilities, interrupt: AbortSignal | undefined): Promise<{ complete: Completer; close(): Promise<void> }> => {
-  const { RUNTIME_DEFAULTS, createGatewayClient } = await import('@momonga/runtime');
+  const { RUNTIME_DEFAULTS, billedDetailOf, carriesOutput, createGatewayClient } = await import('@momonga/runtime');
   const gateway = createGatewayClient({ socketPath: paths.sockets.gateway, clock: ports.clock, version: ports.version });
   const signal = interrupt ?? new AbortController().signal;
   const complete: Completer = async (request) => {
@@ -85,12 +85,19 @@ const completerFor = async (ports: CliPorts, paths: MomongaPaths, alias: string,
       metadata: { purpose: 'guideline', ...(request.seed === undefined ? {} : { seed: String(request.seed) }) },
     };
     const events: StreamEvent[] = [];
-    for await (const event of gateway.stream(body, { idempotencyKey: randomUUID(), deadlineAt: ports.clock.now() + RUNTIME_DEFAULTS.runTimeoutMs, signal, role: 'analysis' })) events.push(event);
+    const startedAt = ports.clock.now();
+    let firstEventMs: number | undefined;
+    for await (const event of gateway.stream(body, { idempotencyKey: randomUUID(), deadlineAt: startedAt + RUNTIME_DEFAULTS.runTimeoutMs, signal, role: 'analysis' })) {
+      if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = ports.clock.now() - startedAt;
+      events.push(event);
+    }
+    const timing = { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: ports.clock.now() - startedAt };
     const response = terminalResponseOf(events);
     if (response.usage === null) throw new ContextImproveError('the model response carries no usage, so its tokens cannot be charged');
     return {
       text: assistantTextOf(response.output),
       usage: { inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens, totalTokens: response.usage.total_tokens },
+      detail: billedDetailOf(response.usage, response.momonga, timing, response.id),
     };
   };
   return { complete, close: () => gateway.destroy() };
@@ -159,8 +166,8 @@ export const contextImprove = async (
             return { report, transcripts, tokens: tokensOf(transcripts) };
           },
           complete: completer.complete,
-          charge: async (usage) => {
-            await client.recordContextCharge({ purpose: 'guideline', project: ports.cwd, model: analysis.alias, ...usage });
+          charge: async (usage, detail) => {
+            await client.recordContextCharge({ purpose: 'guideline', project: ports.cwd, model: analysis.alias, ...usage, ...(detail === undefined ? {} : { detail }) });
           },
         },
       );

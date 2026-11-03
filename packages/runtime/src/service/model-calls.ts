@@ -52,6 +52,11 @@ const isMain = (call: BilledCallView): boolean => (call.role ?? RUN_ROLE) === RU
 
 export type SideTiming = { responseId: string; timing: CallTiming };
 
+export const runlessTimingsOf = (store: Pick<RuntimeStore, 'contextCharges'>): SideTiming[] =>
+  store.contextCharges
+    .list({})
+    .flatMap((charge) => (charge.runId === null && charge.detail?.responseId !== undefined && charge.detail.timing !== undefined ? [{ responseId: charge.detail.responseId, timing: charge.detail.timing }] : []));
+
 export const sideTimingsOfRun = (store: Pick<RuntimeStore, 'readRunEventsOfTypes' | 'contextCharges'>, runId: string): SideTiming[] => {
   const charged = store.readRunEventsOfTypes(runId, ['usage.charged']).flatMap((event) =>
     event.type === 'usage.charged' && event.responseId !== undefined && event.timing !== undefined ? [{ responseId: event.responseId, timing: event.timing }] : [],
@@ -110,6 +115,7 @@ export type CostBreakdownSources = {
   recordsOf: (runId: string) => readonly ModelCallRecord[];
   fetchPage: (runIds: readonly string[], cursor: BilledCallsCursorView, limit: number) => Promise<BilledCallsPageView>;
   sideTimingsOf?: (runId: string) => readonly SideTiming[];
+  runlessTimingsOf?: () => readonly SideTiming[];
   pageSize?: number;
 };
 
@@ -140,7 +146,13 @@ export const costBreakdownOf = async (sources: CostBreakdownSources): Promise<{ 
       sources.sideTimingsOf === undefined ? [] : sources.sideTimingsOf(runId),
     ),
   );
-  const runless = billed.filter((call) => call.runId === RUNLESS).map((call) => breakdownCallOf(call, {}));
+  const runlessTimings = new Map((sources.runlessTimingsOf === undefined ? [] : sources.runlessTimingsOf()).map((entry) => [entry.responseId, entry.timing]));
+  const runless = billed
+    .filter((call) => call.runId === RUNLESS)
+    .map((call) => {
+      const timing = call.responseId === undefined ? undefined : runlessTimings.get(call.responseId);
+      return breakdownCallOf(call, timing === undefined ? {} : { timing });
+    });
   const breakdown = buildCostBreakdown(
     [...joined.flatMap((entry) => entry.calls), ...runless],
     { unjoined: joined.flatMap((entry) => entry.unjoined), callsWithoutResponseId: joined.reduce((sum, entry) => sum + entry.withoutResponseId, 0) },

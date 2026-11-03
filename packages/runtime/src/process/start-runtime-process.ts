@@ -38,7 +38,7 @@ import { createReflector } from '../memory/reflection.ts';
 import { createMemoryUpkeepSchedule } from '../memory/upkeep-schedule.ts';
 import { DAY_MS } from '@momonga/memory';
 import { createRecordViews } from '../memory/views.ts';
-import { costBreakdownOf, sideTimingsOfRun, traceCallsOf } from '../service/model-calls.ts';
+import { costBreakdownOf, runlessTimingsOf, sideTimingsOfRun, traceCallsOf } from '../service/model-calls.ts';
 import { runTraceOf } from '../service/trace-view.ts';
 import type { RunService } from '../service/service.ts';
 import { systemTimers } from '../service/timers.ts';
@@ -515,6 +515,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             runIds: runs.map((run) => run.runId),
             recordsOf: (runId) => store.readModelCallEvents(runId),
             sideTimingsOf: (runId) => sideTimingsOfRun(store, runId),
+            runlessTimingsOf: () => runlessTimingsOf(store),
             fetchPage: (runIds, cursor, limit) => gatewayClient.billedCalls(runIds, cursor, limit, includeRunless, signal),
           }),
         mcp: toolRuntime.mcpAdmin,

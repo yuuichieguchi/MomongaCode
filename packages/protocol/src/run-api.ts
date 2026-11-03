@@ -817,7 +817,7 @@ export type ContextChargeView = {
   detail?: BilledDetail;
 };
 
-export type RunReflectionView = { job: ReflectionJobView | null; charge: ContextChargeView | null };
+export type RunReflectionView = { job: ReflectionJobView | null; charges: ContextChargeView[] };
 
 export type ContextChargesView = { charges: ContextChargeView[]; totalTokens: number };
 
@@ -828,6 +828,7 @@ export type RecordContextChargeRequest = {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  detail?: BilledDetail;
 };
 
 export type ContextChargeResponse = { charge: ContextChargeView };
@@ -1101,7 +1102,7 @@ export const RUN_API_SCHEMAS = {
   MemoriesResponse: root(closed({ memories: { type: 'array', items: memoryView } }, ['memories'])),
   MemoryResponse: root(closed({ memory: memoryView }, ['memory'])),
   ReflectionResponse: root(closed({ job: nullable(reflectionJobView) }, ['job'])),
-  RunReflection: root(closed({ job: nullable(reflectionJobView), charge: nullable(contextChargeView) }, ['job', 'charge'])),
+  RunReflection: root(closed({ job: nullable(reflectionJobView), charges: { type: 'array', items: contextChargeView } }, ['job', 'charges'])),
   PromoteMemoryRequest: root(closed({ skill: string }, ['skill'])),
   PromoteMemoryResponse: root(closed({ path: string }, ['path'])),
   AddMemoryRequest: root(
@@ -1131,6 +1132,7 @@ export const RUN_API_SCHEMAS = {
         inputTokens: nonNegativeInteger,
         outputTokens: nonNegativeInteger,
         totalTokens: nonNegativeInteger,
+        detail: billedDetail,
       },
       ['purpose', 'project', 'model', 'inputTokens', 'outputTokens', 'totalTokens'],
     ),

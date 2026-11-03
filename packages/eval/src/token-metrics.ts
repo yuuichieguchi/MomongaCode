@@ -44,20 +44,20 @@ export type TokenMetrics = {
   layerShares: Record<string, RatioMetric> | undefined;
 };
 
-const reflectionCallOf = (reflection: TranscriptReflection | undefined): { call?: CallFacts; unsettled: boolean } => {
-  if (reflection === undefined) return { unsettled: true };
-  const { state, charge } = reflection;
-  if (state === 'pending' || state === 'running') return { unsettled: true };
-  if (charge === undefined) return { unsettled: state === 'done' };
+const reflectionCallsOf = (reflection: TranscriptReflection | undefined): { calls: CallFacts[]; unsettled: boolean } => {
+  if (reflection === undefined) return { calls: [], unsettled: true };
+  const { state, charges = [] } = reflection;
   return {
-    unsettled: false,
-    call: {
-      inputTokens: charge.inputTokens,
-      cachedInputTokens: charge.detail?.cachedInputTokens,
-      cacheWriteInputTokens: charge.detail?.cacheWriteInputTokens ?? 0,
-      cost: charge.detail?.cost?.amount,
-      durationMs: charge.detail?.timing?.durationMs,
-    },
+    unsettled: state === 'pending' || state === 'running',
+    calls: charges.map(
+      (charge): CallFacts => ({
+        inputTokens: charge.inputTokens,
+        cachedInputTokens: charge.detail?.cachedInputTokens,
+        cacheWriteInputTokens: charge.detail?.cacheWriteInputTokens ?? 0,
+        cost: charge.detail?.cost?.amount,
+        durationMs: charge.detail?.timing?.durationMs,
+      }),
+    ),
   };
 };
 
@@ -88,8 +88,8 @@ export const tokenFactsOf = (runs: readonly (readonly PublicRunEvent[])[], refle
     );
     return [...responded, ...charged];
   });
-  const settled = reflectionCallOf(reflection);
-  return { calls: settled.call === undefined ? calls : [...calls, settled.call], layers, anatomyTotal, unsettledReflections: settled.unsettled ? 1 : 0 };
+  const settled = reflectionCallsOf(reflection);
+  return { calls: [...calls, ...settled.calls], layers, anatomyTotal, unsettledReflections: settled.unsettled ? 1 : 0 };
 };
 
 const sumOver = <T>(items: readonly T[], pick: (item: T) => number | undefined): number | undefined => {

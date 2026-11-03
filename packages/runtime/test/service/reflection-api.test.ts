@@ -38,7 +38,7 @@ describe('the last reflection job of a folder', () => {
     const run = await env.createRun(session.id);
     const none = await env.http('GET', `/v1/runs/${run.id}/reflection`);
     expect(none.status).toBe(200);
-    expect(none.json).toEqual({ job: null, charge: null });
+    expect(none.json).toEqual({ job: null, charges: [] });
     expectSchema('RunReflection', none.json);
 
     const jobs = env.store.reflection as unknown as Settling;
@@ -52,7 +52,12 @@ describe('the last reflection job of a folder', () => {
     });
     const settled = await env.http('GET', `/v1/runs/${run.id}/reflection`);
     expect(settled.json.job).toMatchObject({ runId: run.id, state: 'done' });
-    expect(settled.json.charge).toMatchObject({ purpose: 'reflection', runId: run.id, totalTokens: 120, detail });
+    expect(settled.json.charges).toMatchObject([{ purpose: 'reflection', runId: run.id, totalTokens: 120, detail }]);
+
+    env.store.contextCharges.record({ purpose: 'reflection', runId: run.id, project: session.cwd, model: 'fm', inputTokens: 50, outputTokens: 5, totalTokens: 55 });
+    const retried = await env.http('GET', `/v1/runs/${run.id}/reflection`);
+    expect(retried.json.charges.map((entry: { totalTokens: number }) => entry.totalTokens)).toEqual([120, 55]);
+    expectSchema('RunReflection', retried.json);
     expectSchema('RunReflection', settled.json);
   });
 

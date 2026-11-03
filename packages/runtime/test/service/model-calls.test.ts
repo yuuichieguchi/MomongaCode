@@ -110,6 +110,19 @@ describe('costBreakdownOf', () => {
     expect(breakdown.unjoined).toEqual([{ runId: 'r1', step: 1, reason: 'a recorded model response has no billed model call' }]);
   });
 
+  it('gives a call that belongs to no run, such as the analysis of context improve, the timing of the guideline charge that carries its response id', async () => {
+    const calls = [billed('', undefined, 8, { role: 'analysis', responseId: 'resp_analysis' }), billed('', undefined, 9, { role: 'analysis', responseId: 'resp_other' })];
+
+    const { breakdown } = await costBreakdownOf({
+      runIds: [],
+      recordsOf: () => [],
+      runlessTimingsOf: () => [{ responseId: 'resp_analysis', timing: { firstEventMs: 2, durationMs: 45_000 } }],
+      fetchPage: pagedOver(calls, ['']).fetchPage,
+    });
+
+    expect(breakdown.roles['analysis']).toMatchObject({ calls: 2, totalDurationMs: 45_000, timingNotRecorded: 1 });
+  });
+
   it('counts a run recorded in the old shape once, as calls recorded before response ids, and lists nothing under unjoined', async () => {
     const oldCalls = [unidentified(billed('r1', 1, 5)), unidentified(billed('r1', 2, 6))];
     const oldRecords: ModelCallRecord[] = [

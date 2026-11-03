@@ -237,9 +237,14 @@ export const createContextHosts = (
     record.runtime = runtime;
     await runtime.setTrust(cwd, 'trusted');
     if (options.guideline !== undefined) await runtime.adoptGuideline({ text: options.guideline, parent: null, report: { ...BENCHMARK_GUIDELINE_REPORT } });
+    const { REFLECTION_POLL_MS, REFLECTION_SETTLE_BOUND_MS } = await import('@momonga/runtime');
     return {
       cwd,
-      api: goldenRunApi(runtime, await effects.sessionEnv(root)),
+      api: goldenRunApi(runtime, await effects.sessionEnv(root), {
+        boundMs: REFLECTION_SETTLE_BOUND_MS,
+        pollMs: REFLECTION_POLL_MS,
+        wait: (milliseconds) => effects.after(milliseconds, new AbortController().signal),
+      }),
       rules: {
         add: (request) => runtime.addRule(request),
         retire: async (id) => void (await runtime.retireRule(id)),

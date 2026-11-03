@@ -22,7 +22,7 @@ export type TranscriptRun = {
 
 export type TranscriptChild = { runId: string; agent: string; events: PublicRunEvent[] };
 
-export type TranscriptReflection = { state: 'none' | ReflectionJobState; charge?: ContextChargeView };
+export type TranscriptReflection = { state: 'none' | ReflectionJobState; charges?: ContextChargeView[]; reason?: string };
 
 export type Transcript = {
   caseId: string;
@@ -95,14 +95,19 @@ const validateReflectionView: ValidateFunction = ajv.compile(RUN_API_SCHEMAS.Run
 
 const reflectionOf = (value: unknown, where: string): TranscriptReflection => {
   if (!isRecord(value)) throw new TranscriptError(`${where}: reflection must be an object`);
-  const { state, charge } = value;
+  const { state, charges, reason } = value;
   if (state !== 'none' && (typeof state !== 'string' || !(REFLECTION_JOB_STATES as readonly string[]).includes(state))) {
     throw new TranscriptError(`${where}: reflection.state must be none or a reflection job state`);
   }
-  if (charge !== undefined && !validateReflectionView({ job: null, charge })) {
-    throw new TranscriptError(`${where}: reflection.charge is not a context charge: ${ajv.errorsText(validateReflectionView.errors, { dataVar: 'reflection' })}`);
+  if (reason !== undefined && (typeof reason !== 'string' || reason === '')) throw new TranscriptError(`${where}: reflection.reason must be a non-empty string`);
+  if (charges !== undefined && !validateReflectionView({ job: null, charges })) {
+    throw new TranscriptError(`${where}: reflection.charges are not context charges: ${ajv.errorsText(validateReflectionView.errors, { dataVar: 'reflection' })}`);
   }
-  return { state: state as TranscriptReflection['state'], ...(charge === undefined ? {} : { charge: charge as ContextChargeView }) };
+  return {
+    state: state as TranscriptReflection['state'],
+    ...(charges === undefined ? {} : { charges: charges as ContextChargeView[] }),
+    ...(reason === undefined ? {} : { reason }),
+  };
 };
 
 const ruleIdsOf = (value: unknown, where: string): Record<string, string> => {

@@ -180,6 +180,7 @@ const runCase = async (
       started = true;
       const outcome = await driveWithin(noise.id);
       noiseTokens += (await measure(noise.id)).usage.totalTokens;
+      await host.api.reflectionOf(noise.id);
       if (outcome.expired) stop = DEADLINE_REASON;
       if (stop !== undefined) break;
     }

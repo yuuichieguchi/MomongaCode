@@ -49,13 +49,14 @@ const populate = async (ports: CliPorts, directory: string, golden: GoldenCase):
 
 const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenDataset, record: string | undefined): Promise<EvalReport> => {
   await ensureDaemon(ports, paths, { replacement: 'when-idle' });
+  const { REFLECTION_POLL_MS, REFLECTION_SETTLE_BOUND_MS } = await import('@momonga/runtime');
   const env = await environmentSnapshot(ports);
   const client = connectRuntime(paths);
   const workspaces: string[] = [];
   if (record !== undefined) await ports.files.ensureDirectory(record);
   try {
     return await runDataset(dataset, {
-      api: goldenRunApi(client),
+      api: goldenRunApi(client, undefined, { boundMs: REFLECTION_SETTLE_BOUND_MS, pollMs: REFLECTION_POLL_MS, wait: (milliseconds) => ports.clock.sleep(milliseconds) }),
       workspace: async (golden) => {
         const cwd = await ports.files.makeTempDirectory(WORKSPACE_PREFIX);
         workspaces.push(cwd);

@@ -104,7 +104,8 @@ describe('buildCostBreakdown', () => {
     expect(breakdown.billed).toMatchObject({ inputTokens: 3000, uncachedInputTokens: 1400, cacheReadTokens: 1400, cacheWriteTokens: 200 });
     expect(breakdown.billed.outputTokens).toBe(107);
     expect(breakdown.calls).toBe(4);
-    expect(breakdown.cacheHitRatio).toBeCloseTo(1400 / 3000, 10);
+    expect(breakdown.cacheHitRatio).toBeNull();
+    expect(formatCostBreakdown(breakdown)).toContain('cache hit ratio: none');
     expect(breakdown.inconsistentUsage).toEqual([expect.objectContaining({ runId: 'run-a', step: 4, reason: expect.stringContaining('exceed') })]);
     expect(breakdown.cost.unpricedCalls).toBe(1);
     const text = formatCostBreakdown(breakdown);

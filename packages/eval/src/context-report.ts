@@ -310,7 +310,7 @@ const unsettledLine = (cases: readonly ContextCaseReport[]): string[] => {
   const unsettled = cases.filter((entry) => (entry.tokens?.unsettledReflections ?? 0) > 0);
   if (unsettled.length === 0) return [];
   const runs = unsettled.reduce((sum, entry) => sum + (entry.tokens?.unsettledReflections ?? 0), 0);
-  return [`reflection: ${runs} run(s) in ${unsettled.map((entry) => entry.id).join(', ')} have a reflection that is pending, running, finished without a charge or not recorded, so the per-success token metrics and cacheHitRatio are n/a`];
+  return [`reflection: ${runs} run(s) in ${unsettled.map((entry) => entry.id).join(', ')} have a reflection that is pending, running past its bound or not recorded, so the per-success token metrics and cacheHitRatio are n/a`];
 };
 
 const tokenLines = (metrics: ContextMetrics, cases: readonly ContextCaseReport[]): string[] => {

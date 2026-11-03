@@ -100,7 +100,7 @@ describe('the token metrics count every billed call of a run', () => {
 describe('the token metrics count the reflection charge of a run', () => {
   it('adds a finished reflection to the cost, the uncached input, the calls and the latency', () => {
     const none = reportOf(undefined).metrics;
-    const done = reportOf(undefined, { state: 'done', charge: reflectionCharge }).metrics;
+    const done = reportOf(undefined, { state: 'done', charges: [reflectionCharge] }).metrics;
 
     expect(none.callsPerSuccess?.value).toBeCloseTo(1, 12);
     expect(done.callsPerSuccess?.value).toBeCloseTo(2, 12);
@@ -134,7 +134,17 @@ describe('the token metrics count the reflection charge of a run', () => {
     expect(reportOf(undefined, { state: 'failed' }).metrics.callsPerSuccess?.value).toBeCloseTo(1, 12);
   });
 
-  it('leaves a finished reflection without a charge unmeasured', () => {
-    expect(reportOf(undefined, { state: 'done' }).metrics.callsPerSuccess).toBeUndefined();
+  it('settles a finished reflection without a charge as no call, since no call is made for an untrusted folder, with reflection off, after a run that was not a verified success, or with a role alias without structured output', () => {
+    const report = reportOf(undefined, { state: 'done' });
+    expect(report.metrics.callsPerSuccess?.value).toBeCloseTo(1, 12);
+    expect(report.cases[0]?.tokens?.unsettledReflections).toBe(0);
+  });
+
+  it('adds one call per charge of a retried reflection', () => {
+    const retried = { state: 'done' as const, charges: [reflectionCharge, { ...reflectionCharge, id: 2 }] };
+    const metrics = reportOf(undefined, retried).metrics;
+    expect(metrics.callsPerSuccess?.value).toBeCloseTo(3, 12);
+    expect(metrics.costPerSuccess?.value).toBeCloseTo(0.002 + 2 * 0.003, 12);
+    expect(metrics.latencyPerSuccess?.value).toBeCloseTo(100 + 2 * 70, 9);
   });
 });

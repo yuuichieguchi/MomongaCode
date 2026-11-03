@@ -166,7 +166,7 @@ export const buildCostBreakdown = (calls: readonly BreakdownCall[], options: Cos
       callsWithoutAnatomy,
     },
     billed,
-    cacheHitRatio: billed.inputTokens === 0 ? null : billed.cacheReadTokens / billed.inputTokens,
+    cacheHitRatio: billed.inputTokens === 0 || inconsistentUsage.length > 0 ? null : billed.cacheReadTokens / billed.inputTokens,
     timeToFirstToken: main?.timeToFirstToken ?? null,
     duration: main?.duration ?? null,
     roles,
@@ -186,7 +186,7 @@ const roleLine = (role: string, entry: RoleBreakdown): string => {
   return `role ${role}: ${entry.calls} call(s), total duration ${total}, ${timingLine('time to first token', entry.timeToFirstToken)}, ${timingLine('duration', entry.duration)}${notRecorded}`;
 };
 
-const timingLine =(label: string, summary: TimingSummary | null): string =>
+const timingLine = (label: string, summary: TimingSummary | null): string =>
   summary === null ? `${label}: not recorded` : `${label}: median ${summary.median} ms, p95 ${summary.p95} ms (n=${summary.n})`;
 
 export const formatCostBreakdown = (breakdown: CostBreakdown): string => {
@@ -209,7 +209,7 @@ export const formatCostBreakdown = (breakdown: CostBreakdown): string => {
       ? []
       : [`billed tokens by kind are incomplete: ${breakdown.inconsistentUsage.length} of ${breakdown.calls} call(s) report more cached and written input than input and are excluded from the input figures`]),
     `billed tokens: input ${billed.inputTokens} = uncached ${billed.uncachedInputTokens} + cache read ${billed.cacheReadTokens} + cache write ${billed.cacheWriteTokens}; output ${billed.outputTokens} (reasoning ${billed.reasoningTokens})`,
-    breakdown.cacheHitRatio === null ? 'cache hit ratio: none (no input)' : `cache hit ratio: ${percent(breakdown.cacheHitRatio)}`,
+    breakdown.cacheHitRatio === null ? `cache hit ratio: none (${breakdown.inconsistentUsage.length > 0 ? 'a call has inconsistent usage' : 'no input'})` : `cache hit ratio: ${percent(breakdown.cacheHitRatio)}`,
     timingLine('time to first token', breakdown.timeToFirstToken),
     timingLine('duration', breakdown.duration),
     ...Object.entries(breakdown.roles).map(([role, entry]) => roleLine(role, entry)),

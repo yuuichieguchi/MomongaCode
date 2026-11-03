@@ -183,7 +183,7 @@ describe('hooks and auto mode against real processes', () => {
     const client = createCliRuntimeClient({ socketPath: home.paths.sockets.runtime });
     try {
       const report = await runDataset(dataset, {
-        api: goldenRunApi(client),
+        api: goldenRunApi(client, undefined, { boundMs: 5000, pollMs: 100, wait: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)) }),
         workspace: async (golden, runIndex) => {
           const cwd = workspaceOf(golden, runIndex);
           fs.mkdirSync(path.join(cwd, '.git', 'hooks'), { recursive: true });

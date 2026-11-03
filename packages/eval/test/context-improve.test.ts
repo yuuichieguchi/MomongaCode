@@ -217,6 +217,19 @@ describe('the analysis call', () => {
     expect(parseGuidelineAnalysis(analysis())).toMatchObject({ analysis: { root_cause_categories: ['Missing Critical Fact'] } });
   });
 
+  it('hands the billed detail of every completion to the charge, so the charge can record the cost and timing of the call', async () => {
+    const detail = { responseId: 'resp_1', cachedInputTokens: 3, timing: { firstEventMs: 5, durationMs: 90 } };
+    const details: unknown[] = [];
+    const base = { seed: 42, bootstrapSeed: 1, model: 'real' as const, alias: 'opus', capTokens: 1_000_000, current: undefined, structuredOutput: 'json_schema' as const };
+    await improveGuideline(base, {
+      benchmark: async (guideline) => failingBaseline(guideline),
+      complete: async (request) => ({ text: request.purpose === 'analysis' ? analysis() : candidateReply(0), usage: USAGE, detail }),
+      charge: (_usage, billed) => void details.push(billed),
+    });
+    expect(details.length).toBeGreaterThan(0);
+    expect(details.every((billed) => billed === detail)).toBe(true);
+  });
+
   it('guards a dropped reason: a failing reply is skipped with a recorded reason, charged, and the others go on', async () => {
     const { outcome, charges, requests } = await improve({
       reply: (request, index) => ({ text: request.purpose === 'analysis' ? (index === 0 ? 'nonsense' : analysis()) : candidateReply(index), usage: USAGE }),

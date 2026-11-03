@@ -2,9 +2,12 @@ import type { PublicRunEvent } from '@momonga/protocol';
 import type { EvalRunApi } from '@momonga/eval';
 import type { RuntimeClient } from './runtime-client.ts';
 
+export type ReflectionSettle = { boundMs: number; pollMs: number; wait(ms: number): Promise<void> };
+
 export const goldenRunApi = (
   client: Pick<RuntimeClient, 'createSession' | 'createRun' | 'streamEvents' | 'getRun' | 'runReflection' | 'resolveApproval' | 'cancel'>,
-  sessionEnv?: Readonly<Record<string, string>>,
+  sessionEnv: Readonly<Record<string, string>> | undefined,
+  settle: ReflectionSettle,
 ): EvalRunApi => {
   async function* events(runId: string): AsyncGenerator<PublicRunEvent> {
     for await (const frame of client.streamEvents(runId)) yield frame.data;
@@ -44,8 +47,16 @@ export const goldenRunApi = (
       };
     },
     reflectionOf: async (runId) => {
-      const { job, charge } = await client.runReflection(runId);
-      return { state: job === null ? 'none' : job.state, ...(charge === null ? {} : { charge }) };
+      let waited = 0;
+      for (;;) {
+        const { job, charges } = await client.runReflection(runId);
+        const state = job === null ? 'none' : job.state;
+        const answer = { state, ...(charges.length === 0 ? {} : { charges }) } as const;
+        if (state !== 'pending' && state !== 'running') return answer;
+        if (waited >= settle.boundMs) return { ...answer, reason: `the reflection job was still ${state} after ${settle.boundMs} ms, the bound of its attempts` };
+        await settle.wait(settle.pollMs);
+        waited += settle.pollMs;
+      }
     },
     resolveApproval: async (approvalId, optionId) => {
       await client.resolveApproval(approvalId, optionId);
