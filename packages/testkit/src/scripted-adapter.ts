@@ -30,6 +30,7 @@ export type ScriptedAdapterOptions = {
   capabilities?: CapabilityOverride;
   countTokens?: AdapterCountTokensResult;
   compactSummary?: string;
+  compactGate?: string;
   timers?: Pick<FakeTimers, 'setTimeout' | 'clearTimeout'>;
 };
 
@@ -72,7 +73,6 @@ export const DEFAULT_SCRIPTED_CAPABILITIES: Capabilities = {
   streaming: true,
   stopSequences: true,
   imageInput: false,
-  parallelToolCalls: false,
   schemaDialect: 'json-schema-2020-12',
   tokenCounting: 'estimated',
   usageReported: true,
@@ -210,6 +210,7 @@ export const createScriptedAdapter = (options: ScriptedAdapterOptions): Scripted
     const summary = options.compactSummary;
     adapter.compact = async (request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult> => {
       compactCalls.push({ request, target: ctx.target });
+      if (options.compactGate !== undefined) await waitForGate(options.compactGate, ctx.signal);
       return { summary, usage: { input_tokens: 40, output_tokens: 8, total_tokens: 48, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } } };
     };
   }

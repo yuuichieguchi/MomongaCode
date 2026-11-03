@@ -24,7 +24,7 @@ describe('protocol capability types', () => {
         structuredOutput: 'json_schema' | 'none';
         streaming: boolean;
         stopSequences: boolean;
-        parallelToolCalls: boolean;
+        parallelToolCalls?: boolean;
         schemaDialect: 'json-schema-2020-12' | 'guided-generation';
         tokenCounting: 'exact' | 'calibrated' | 'estimated';
         tokenErrorRatio?: number;

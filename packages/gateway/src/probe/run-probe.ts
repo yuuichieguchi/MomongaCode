@@ -1,6 +1,19 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import { decodeSse } from '@momonga/foundation';
-import { PROBE_KEYWORDS, type ImageTokenModel, type ProbeKeyword, type ProbeReport } from '@momonga/protocol';
+import {
+  ESTIMATED_ERROR_BOUND_RATIO,
+  PROBE_KEYWORDS,
+  SUMMARY_PROMPT_TOKENS,
+  summaryInputLimitFor,
+  summaryTokenCapFor,
+  tokensForText,
+  type ImageTokenModel,
+  type ProbeKeyword,
+  type ProbeReport,
+} from '@momonga/protocol';
+import { summaryRequestOf } from '../adapters/shared/compact.ts';
+import { hiddenReasoningTokens } from '../core/hidden-reasoning.ts';
+import { maxOutputTokensFor } from './decide.ts';
 import { solidPngDataUrl } from './solid-png.ts';
 import { ProbeTimeoutError, createProbeClient, systemSleep, type HttpResult, type ProbeClient, type ProbeEndpoint } from './client.ts';
 import { buildToolCallEnvelope, keywordProbeSchemas, type KeywordSupport, type ProbeTool } from './envelope.ts';
@@ -88,7 +101,7 @@ const retryAfterMs = (value: string | undefined, now: Date): number | undefined 
   return Number.isNaN(at) ? undefined : Math.max(0, at - now.getTime());
 };
 
-const wordsOf =(count: number): string => Array.from({ length: count }, () => 'word').join(' ');
+const wordsOf = (count: number): string => Array.from({ length: count }, () => 'word').join(' ');
 
 const toolArgumentsValid = (args: unknown): boolean => isRecord(args) && validateToolArguments(args);
 
@@ -216,13 +229,14 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
     : { accepted: false, validRate: 0 };
   const roundTripOk = native.firstValidCall === undefined ? false : await roundTrip(chat, native.firstValidCall);
   const parallelToolCalls = native.accepted ? await sampleParallel(chat, samples) : { accepted: false, multiCallRate: 0 };
-  const reasoning = await measureReasoning(chat);
 
   const tokenCalibration =
     usageReported && options.countTokens !== undefined ? await calibrate(chat, options.countTokens) : undefined;
 
   const contextWindow =
     reportedContextWindow(modelsBody, healthResult.text) ?? (await searchContextWindow(chat));
+
+  const reasoning = await measureReasoning(chat, contextWindow.value);
 
   const maxConcurrency = await measureConcurrency(post);
 
@@ -454,8 +468,8 @@ const roundTrip = async (chat: Chat, call: NativeCall): Promise<boolean> => {
 };
 
 const PARALLEL_TOOL_PROMPT = `Please call ${PROBE_TOOL.name} for Tokyo for 3 days and also for Osaka for 2 days, both at once`;
-const REASONING_PROMPT = 'What is 17 times 23? Think it through, then answer in one short sentence.';
 const REASONING_BASELINE_SAMPLES = 2;
+const REASONING_REDUCTION_FACTOR = 2;
 const PROBED_REASONING_EFFORTS = ['none', 'minimal', 'low'] as const;
 
 const nativeToolSpec = { type: 'function', function: { name: PROBE_TOOL.name, description: 'Get the weather', parameters: PROBE_TOOL.parameters } };
@@ -484,34 +498,65 @@ const sampleParallel = async (chat: Chat, samples: number): Promise<NonNullable<
   return { accepted: true, multiCallRate: samples === 0 ? 0 : several / samples };
 };
 
-const reasoningTokensOf = (body: unknown): number | undefined => {
-  const tokens = field(field(field(body, 'usage'), 'completion_tokens_details'), 'reasoning_tokens');
-  return typeof tokens === 'number' ? tokens : undefined;
+const numberOf = (value: unknown): number | undefined => (typeof value === 'number' ? value : undefined);
+
+const stringOf = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
+
+const hiddenReasoningOf = (body: unknown): number | undefined => {
+  const message = assistantMessage(body);
+  const usage = field(body, 'usage');
+  return hiddenReasoningTokens({
+    reportedReasoningTokens: numberOf(field(field(usage, 'completion_tokens_details'), 'reasoning_tokens')),
+    reasoningText: stringOf(field(message, 'reasoning_content')) ?? stringOf(field(message, 'reasoning')),
+    completionTokens: numberOf(field(usage, 'completion_tokens')),
+    visibleText: stringOf(field(message, 'content')) ?? '',
+  });
 };
 
-const measureReasoning = async (chat: Chat): Promise<NonNullable<ProbeReport['reasoning']>> => {
-  const reasoningOf = async (extra: Record<string, unknown>): Promise<HttpResult> => {
-    const result = await chat({ messages: [{ role: 'user', content: REASONING_PROMPT }], ...extra });
-    expectStatus(result, [200, 400], 'reasoning');
-    return result;
+const FILLER_SENTENCE = 'The build log lists every file the tool read and every command it ran. ';
+
+const summaryShapedBody = (contextWindow: number): Record<string, unknown> => {
+  const maxOutputTokens = maxOutputTokensFor(contextWindow);
+  const cap = summaryTokenCapFor({ contextWindow });
+  const limit = summaryInputLimitFor({ contextWindow, maxOutputTokens }, cap, 0);
+  const transcriptTokens = Math.max(1, Math.floor(limit / (1 + ESTIMATED_ERROR_BOUND_RATIO)) - SUMMARY_PROMPT_TOKENS);
+  const transcript = FILLER_SENTENCE.repeat(Math.ceil(transcriptTokens / tokensForText(FILLER_SENTENCE)));
+  const summary = summaryRequestOf(
+    { model: '', input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: transcript }] }] },
+    cap,
+  );
+  const content = (summary.input[0] as { content: unknown }).content;
+  return {
+    messages: [
+      { role: 'system', content: summary.instructions },
+      { role: 'user', content },
+    ],
+    max_tokens: maxOutputTokens,
   };
+};
+
+const measureReasoning = async (chat: Chat, contextWindow: number): Promise<NonNullable<ProbeReport['reasoning']>> => {
+  const body = summaryShapedBody(contextWindow);
   const baseline: number[] = [];
   for (let index = 0; index < REASONING_BASELINE_SAMPLES; index += 1) {
-    const result = await reasoningOf({});
+    const result = await chat(body);
     expectStatus(result, [200], 'reasoning baseline');
-    const spent = reasoningTokensOf(parseJson(result.text));
-    if (spent !== undefined) baseline.push(spent);
+    const spent = hiddenReasoningOf(parseJson(result.text));
+    if (spent === undefined) return { control: 'none' };
+    baseline.push(spent);
   }
-  const headroomTokens = baseline.length === 0 ? undefined : Math.max(...baseline);
+  const headroomTokens = Math.max(...baseline);
+  const lowestBaseline = Math.min(...baseline);
   for (const effort of PROBED_REASONING_EFFORTS) {
-    const result = await reasoningOf({ reasoning_effort: effort });
+    const result = await chat({ ...body, reasoning_effort: effort });
+    expectStatus(result, [200, 400], 'reasoning');
     if (result.status !== 200) continue;
-    const spent = reasoningTokensOf(parseJson(result.text));
-    if (headroomTokens === undefined || spent === undefined || headroomTokens === 0 || spent < headroomTokens) {
+    const spent = hiddenReasoningOf(parseJson(result.text));
+    if (headroomTokens === 0 || (spent !== undefined && spent * REASONING_REDUCTION_FACTOR <= lowestBaseline)) {
       return { control: 'reasoning_effort', lowest: effort };
     }
   }
-  return { control: 'none', ...(headroomTokens === undefined ? {} : { headroomTokens }) };
+  return { control: 'none', headroomTokens };
 };
 
 const calibrate = async (
