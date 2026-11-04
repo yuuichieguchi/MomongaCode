@@ -103,20 +103,27 @@ describe('the meter is a fold of the journal', () => {
     expect(splits).toBeGreaterThan(100);
   });
 
-  it('answers observe for a digest the claim has not counted with the journaled count', async () => {
+  it('refuses observe after restore until the claim counts that input, then answers as the live meter', async () => {
     const journal: Journal = [];
     const live = meterOf(pieceCounter(ESTIMATED), W, { tokenCounting: 'estimated' });
     const input = [piece('a', 100), piece('b', 50)];
     requested(journal, input, []);
     const counted = await live.count({ input, tools: [] });
-    const first = live.observe({ inputDigest: counted.inputDigest, inputTokens: 140 });
-    observed(journal, ALIAS, first);
+    observed(journal, ALIAS, live.observe({ inputDigest: counted.inputDigest, inputTokens: 140 }));
     const claimed = restored(ESTIMATED, { tokenCounting: 'estimated' }, journal, ALIAS);
+    const other = await meterOf(pieceCounter(ESTIMATED), W, { tokenCounting: 'estimated' }).count({ input: [piece('z', 30)], tools: [] });
 
-    const again = claimed.observe({ inputDigest: counted.inputDigest, inputTokens: 145 });
+    expect(() => claimed.observe({ inputDigest: counted.inputDigest, inputTokens: 250 })).toThrow(counted.inputDigest);
+    expect(() => claimed.observe({ inputDigest: other.inputDigest, inputTokens: 250 })).toThrow(other.inputDigest);
 
-    expect(again).toEqual(live.observe({ inputDigest: counted.inputDigest, inputTokens: 145 }));
-    expect(again.counted).toBe(150);
+    const claimedCount = await claimed.count({ input, tools: [] });
+    const liveCount = await live.count({ input, tools: [] });
+    expect(viewOf(claimedCount)).toEqual(viewOf(liveCount));
+    const answered = claimed.observe({ inputDigest: claimedCount.inputDigest, inputTokens: 250 });
+
+    expect(answered).toEqual(live.observe({ inputDigest: liveCount.inputDigest, inputTokens: 250 }));
+    expect(answered.reported).toBe(250);
+    expect(answered.kept).toBe(250);
   });
 });
 
