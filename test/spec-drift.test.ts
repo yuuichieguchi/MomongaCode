@@ -44,6 +44,7 @@ const UNMODELLED_EVENT_TYPES = [
   'job.finished',
   'loop.warned',
   'mcp.authorization.required',
+  'meter.observed',
   'mode.changed',
   'model.changed',
   'model.stream.restarted',

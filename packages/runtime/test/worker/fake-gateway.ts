@@ -7,6 +7,7 @@ import type {
   CountTokensRequest,
   CountTokensResult,
   CreateResponseBody,
+  ErrorShape,
   ItemField,
   StreamEvent,
 } from '@momonga/protocol';
@@ -109,6 +110,7 @@ export type FakeGateway = GatewayPort & {
   countScaleByTarget: Map<string, number>;
   countMethod: CountTokensResult['method'];
   countMethodByTarget: Map<string, CountTokensResult['method']>;
+  countShape: ErrorShape | undefined;
   capabilitiesByTarget: Map<string, Capabilities>;
   countHook: GatewayHook<CountTokensRequest> | undefined;
   compactHook: GatewayHook<CompactRequest> | undefined;
@@ -232,6 +234,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
     countScaleByTarget: new Map(),
     countMethod: 'exact',
     countMethodByTarget: new Map(),
+    countShape: undefined,
     capabilitiesByTarget: new Map(),
     countHook: undefined,
     compactHook: undefined,
@@ -312,7 +315,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
       const target = request.momonga?.target;
       const scale = target === undefined ? undefined : gateway.countScaleByTarget.get(target);
       const method = (target === undefined ? undefined : gateway.countMethodByTarget.get(target)) ?? gateway.countMethod;
-      const result = countReplyOf(scale === undefined ? base : Math.ceil(base * scale), method, method === 'estimated' ? ESTIMATED_ERROR_SHAPE : EXACT_ERROR_SHAPE);
+      const result = countReplyOf(scale === undefined ? base : Math.ceil(base * scale), method, gateway.countShape ?? (method === 'estimated' ? ESTIMATED_ERROR_SHAPE : EXACT_ERROR_SHAPE));
       gateway.countResults.push(result);
       return result;
     },
