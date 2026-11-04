@@ -47,6 +47,7 @@ const UNMODELLED_EVENT_TYPES = [
   'meter.observed',
   'mode.changed',
   'model.changed',
+  'model.rejected',
   'model.stream.restarted',
   'notice',
   'plan.updated',
