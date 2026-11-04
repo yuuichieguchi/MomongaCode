@@ -18,15 +18,15 @@ const entry = (config: string, tier: ManifestEntry['tier'], budgetSeconds: numbe
 
 const manifestOf = (unitSuiteSeconds: number, entries: readonly ManifestEntry[]): Manifest => ({ format: MANIFEST_FORMAT, unitSuiteSeconds, entries });
 
-const sample = manifestOf(20, [entry('A', 'every-run', 10), entry('A.deep', 'deep', 500), entry('B', 'every-run', 24), entry('C', 'every-run', 26)]);
+const sample = manifestOf(20, [entry('A', 'every-run', 10), entry('A.deep', 'deep', 500), entry('B', 'every-run', 24), entry('C', 'every-run', 46)]);
 
 describe('the time budget of the every-run tier', () => {
-  it('allows the every-run tier three times the unit suite time', () => {
-    expect(EVERY_RUN_BUDGET_RATIO).toBe(3);
+  it('allows the every-run tier four times the unit suite time', () => {
+    expect(EVERY_RUN_BUDGET_RATIO).toBe(4);
   });
 
   it('sums the budgets of the every-run entries only', () => {
-    expect(everyRunBudgetSeconds(sample)).toBe(60);
+    expect(everyRunBudgetSeconds(sample)).toBe(80);
   });
 
   it('accepts a sum equal to the ratio times unitSuiteSeconds', () => {
@@ -37,10 +37,10 @@ describe('the time budget of the every-run tier', () => {
     const over = manifestOf(20, [...sample.entries, entry('D', 'every-run', 1)]);
     const problem = tierBudgetProblem(over);
     expect(problem).toBeDefined();
-    expect(problem).toContain('61 s');
-    expect(problem).toContain('over 3 x 20 s = 60 s');
+    expect(problem).toContain('81 s');
+    expect(problem).toContain('over 4 x 20 s = 80 s');
     expect(problem).toContain('20');
-    expect(problem).toContain('60');
+    expect(problem).toContain('80');
   });
 
   it('does not count deep entries against the total', () => {
@@ -51,6 +51,6 @@ describe('the time budget of the every-run tier', () => {
     const manifest = readManifest(manifestPath);
     expect(manifest.unitSuiteSeconds).toBeGreaterThan(0);
     expect(tierBudgetProblem(manifest)).toBeUndefined();
-    expect(everyRunBudgetSeconds(manifest)).toBeLessThanOrEqual(3 * manifest.unitSuiteSeconds);
+    expect(everyRunBudgetSeconds(manifest)).toBeLessThanOrEqual(4 * manifest.unitSuiteSeconds);
   });
 });
