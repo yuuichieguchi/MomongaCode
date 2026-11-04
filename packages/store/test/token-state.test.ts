@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { sha256Hex } from '@momonga/foundation';
 import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import { SNAPSHOT_STATE_VERSION, decodeEvent } from '../src/codec.ts';
@@ -72,16 +73,16 @@ describe('the token state of a run', () => {
     expect(state.activatedSkills.map((skill) => [skill.name, skill.seq])).toEqual([['pdf', 3]]);
   });
 
-  it('keeps the position of an edited nested file and gives it the seq of the replacing event', () => {
+  it('keeps the position of an edited nested file at the seq of its first load and the digest of the replacing event', () => {
     const state = foldOf([
       task('work'),
       { type: 'instructions.loaded', path: '/work/a/pkg/AGENTS.md', content: 'nested rules' },
       { type: 'instructions.loaded', path: '/work/a/lib/AGENTS.md', content: 'more rules' },
       { type: 'instructions.loaded', path: '/work/a/pkg/AGENTS.md', content: 'edited rules' },
     ]);
-    expect(state.loadedInstructions.map((entry) => [entry.path, entry.seq])).toEqual([
-      ['/work/a/pkg/AGENTS.md', 4],
-      ['/work/a/lib/AGENTS.md', 3],
+    expect(state.loadedInstructions.map((entry) => [entry.path, entry.seq, entry.textSha256])).toEqual([
+      ['/work/a/pkg/AGENTS.md', 2, sha256Hex('edited rules')],
+      ['/work/a/lib/AGENTS.md', 3, sha256Hex('more rules')],
     ]);
   });
 

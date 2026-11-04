@@ -39,9 +39,9 @@ const callPayload = (ctx: ClaimContext, display: DisplayContext, item: { call_id
   };
 };
 
-export const recordCalls = (ctx: ClaimContext): void => {
+export const recordCalls = (ctx: ClaimContext, leading: readonly RunEventPayload[] = []): void => {
   const { pendingCalls } = ctx.journal.state;
-  const payloads: RunEventPayload[] = [];
+  const payloads: RunEventPayload[] = [...leading];
   const session = ctx.options.store.getSession(ctx.run.sessionId);
   if (session === undefined) throw new Error(`unknown session ${ctx.run.sessionId}`);
   const display = ctx.options.tools.sessionState(session);
@@ -253,6 +253,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
       },
       onOutcome: (outcome) => {
         journal.append(outcomePayloads(outcome));
+        if (outcome.result.toolsLoaded !== undefined) ctx.toolLoading?.rememberLoaded(outcome.result.toolsLoaded);
         recordToolContent(spans, calls, outcome);
       },
       onStarted: (callId, idemKey, basis) => journal.append([{ type: 'tool.started', callId, idemKey, basis }]),

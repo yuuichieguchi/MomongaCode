@@ -38,14 +38,14 @@ describe('fold: per-step request facts', () => {
 });
 
 describe('fold: loaded instructions', () => {
-  it('keeps the latest digest per path in load order', () => {
+  it('keeps the latest digest per path at the position of its first load', () => {
     const state = foldAll([
       { type: 'instructions.loaded', path: '/proj/AGENTS.md', content: 'v1' },
       { type: 'instructions.loaded', path: '/proj/sub/AGENTS.md', content: 'nested' },
       { type: 'instructions.loaded', path: '/proj/AGENTS.md', content: 'v2' },
     ]);
     expect(state.loadedInstructions).toEqual([
-      { path: '/proj/AGENTS.md', textSha256: sha256Hex('v2'), seq: 3 },
+      { path: '/proj/AGENTS.md', textSha256: sha256Hex('v2'), seq: 1 },
       { path: '/proj/sub/AGENTS.md', textSha256: sha256Hex('nested'), seq: 2 },
     ]);
   });

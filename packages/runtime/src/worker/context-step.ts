@@ -192,6 +192,8 @@ export const measureToolsWith = async (ctx: ClaimContext, tools: readonly Functi
   return { measure, floorTokens: first.tokens, kept: last.tools.map((tool) => tool.name) };
 };
 
+export const hasAdmittedTools = (ctx: ClaimContext): boolean => ctx.token.observedCapacity && admittedFloors.has(ctx);
+
 export const rememberAdmittedTools = (ctx: ClaimContext, tools: readonly FunctionTool[], pinnedTokens: number): void => {
   if (ctx.token.observedCapacity && admittedFloors.has(ctx)) admittedFloors.set(ctx, { pinnedTokens, tools: [...tools] });
 };

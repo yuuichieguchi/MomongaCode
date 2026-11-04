@@ -65,10 +65,11 @@ export const decideAfterResponse = async (ctx: ClaimContext): Promise<Flow> => {
     return terminals.finish('COMPLETED');
   }
   const repeatedSignature = loopSignatureOf(journal.state, ctx.limits.loopThreshold);
+  const warning: RunEventPayload[] = [];
   if (repeatedSignature !== undefined) {
     const warned = ctx.token.loopGuidance && journal.state.loopWarned?.signature !== repeatedSignature;
     if (warned) {
-      journal.append([
+      warning.push(
         { type: 'loop.warned', signature: repeatedSignature },
         {
           type: 'notice',
@@ -76,7 +77,7 @@ export const decideAfterResponse = async (ctx: ClaimContext): Promise<Flow> => {
           message: `The model repeated the same tool call with the same results ${ctx.limits.loopThreshold} times in a row, so it is warned and the next identical call stops the run.`,
           code: 'tool_loop_warned',
         },
-      ]);
+      );
     } else {
       const repeats = ctx.token.loopGuidance ? ctx.limits.loopThreshold + 1 : ctx.limits.loopThreshold;
       journal.append([
@@ -85,7 +86,7 @@ export const decideAfterResponse = async (ctx: ClaimContext): Promise<Flow> => {
       return terminals.finish('STOPPED', { stopReason: 'loop' });
     }
   }
-  recordCalls(ctx);
+  recordCalls(ctx, warning);
   return settleCalls(ctx);
 };
 
@@ -109,8 +110,12 @@ const estimateFor = async (answered: MeterFacts, observation: InputObservation):
   };
 };
 
-const fallbackTargetOf = (response: ResponseResource): string | undefined =>
-  response.momonga?.fallbackCauses !== undefined && response.momonga.fallbackCauses.length > 0 ? response.momonga.target : undefined;
+type FallbackDecision = { fallback: false } | { fallback: true; target: string | undefined };
+
+const fallbackOf = (response: ResponseResource): FallbackDecision =>
+  response.momonga?.fallbackCauses !== undefined && response.momonga.fallbackCauses.length > 0
+    ? { fallback: true, target: response.momonga.target }
+    : { fallback: false };
 
 const truncationFailure = (reported: number, observation: Pick<InputEstimate, 'estimatedTokens' | 'marginTokens'>): { code: 'input_truncated'; message: string } => ({
   code: 'input_truncated',
@@ -145,11 +150,11 @@ const handleResult = async (
   }
   const { response, incomplete } = result;
   const usage = response.usage;
-  const fallbackTarget = fallbackTargetOf(response);
+  const fallbackDecision = fallbackOf(response);
   const answered =
-    observation === undefined || (response.momonga?.fallbackCauses?.length ?? 0) > 0 && fallbackTarget === undefined
+    observation === undefined || (fallbackDecision.fallback && fallbackDecision.target === undefined)
       ? undefined
-      : await meterFactsFor(ctx, fallbackTarget);
+      : await meterFactsFor(ctx, fallbackDecision.fallback ? fallbackDecision.target : undefined);
   const answerCounter = response.momonga?.counter;
   const reject = (reason: ModelRejectionReason): never => {
     journal.append([
@@ -230,7 +235,7 @@ const handleResult = async (
       totalTokens: before.totalTokens + usage.total_tokens,
     },
   ];
-  if (fallback?.fallbackCauses !== undefined && fallback.fallbackCauses.length > 0) {
+  if (fallbackDecision.fallback && fallback?.fallbackCauses !== undefined) {
     const failed = fallback.fallbackCauses.map((cause) => `${cause.target} failed (${cause.code === null ? cause.message : `${cause.code}: ${cause.message}`})`);
     recorded.push({
       type: 'notice',
@@ -244,7 +249,7 @@ const handleResult = async (
       type: 'meter.observed',
       target: answeredBy,
       counter: estimate.counter,
-      fallback: fallbackTargetOf(response) !== undefined,
+      fallback: fallbackDecision.fallback,
       ...estimate.meter.observe({ inputDigest: estimate.inputDigest, inputTokens: reported }),
     });
   }
@@ -312,8 +317,8 @@ const loopGuidancePending = (ctx: ClaimContext): boolean => {
   const { store } = ctx.options;
   const warned = store.readRunEventsOfTypes(ctx.run.id, ['loop.warned']).at(-1);
   if (warned === undefined) throw new Error(`run ${ctx.run.id} folded a loop warning that its journal does not hold`);
-  const requested = store.readLatestRunEventBefore(ctx.run.id, 'model.requested', ctx.journal.state.lastSeq + 1);
-  return requested === undefined || requested.seq < warned.seq;
+  const responded = store.readLatestRunEventBefore(ctx.run.id, 'model.responded', ctx.journal.state.lastSeq + 1);
+  return responded === undefined || responded.seq < warned.seq;
 };
 
 const loopGuidanceTrailing = (ctx: ClaimContext): InputItem[] => {
