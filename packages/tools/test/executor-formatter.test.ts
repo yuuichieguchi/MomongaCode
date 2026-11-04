@@ -41,16 +41,29 @@ describe('the batch output formatter in finalizeResult', () => {
     expect(result.formatted).toEqual({ formatter: 'grep', version: 1 });
   });
 
-  it('stores the raw output of a short result that was formatted, so ReadOutput returns it byte for byte (T4-4)', async () => {
-    const { harness, result } = await runWith(SHORT_RAW, () => ({ output: 'short', formatter: 'log', version: 2 }));
+  it('stores the raw output of a result that fits inline and was formatted, so ReadOutput returns it byte for byte (T4-4)', async () => {
+    const inlineRaw = RAW.split('\n').slice(0, 20).join('\n');
+    expect(inlineRaw.length).toBeLessThanOrEqual(LIMIT);
+    const { harness, result } = await runWith(inlineRaw, () => ({ output: 'short', formatter: 'log', version: 2 }));
     const [header, ...rest] = result.output.split('\n');
     expect(header).toContain('log');
     expect(header).toContain(blobHandle(1));
     expect(rest.join('\n')).toBe('short');
     expect(result.truncated).toBe(false);
     expect(result.handle).toBe(blobHandle(1));
-    expect(harness.blobs.stored.get(blobHandle(1))?.text).toBe(SHORT_RAW);
+    expect(harness.blobs.stored.get(blobHandle(1))?.text).toBe(inlineRaw);
     expect(result.formatted).toEqual({ formatter: 'log', version: 2 });
+  });
+
+  it('takes the raw path with no header when header plus formatted text is not smaller than a short raw output (T4-3)', async () => {
+    let calls = 0;
+    const { harness, result } = await runWith(SHORT_RAW, () => {
+      calls += 1;
+      return { output: 'short', formatter: 'log', version: 2 };
+    });
+    expect(calls).toBe(1);
+    expect(result).toEqual({ status: 'completed', output: SHORT_RAW });
+    expect(harness.blobs.puts).toEqual([]);
   });
 
   it('cuts a formatted text over the inline limit with a marker naming the same raw handle, storing one blob', async () => {

@@ -51,7 +51,7 @@ describe('the invariants of a formatted output', () => {
   });
 
   it('T4-3: measures size in UTF-8 bytes, so fewer characters of more bytes are refused', () => {
-    const raw = 'aaaaaaa';
+    const raw = 'aaaaa';
     const formatted = 'ééé';
     expect(formatted.length).toBeLessThan(raw.length);
     expect(formattingViolations({ raw, formatted, handle: HANDLE })).toContain('T4-3');
