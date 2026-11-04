@@ -96,13 +96,21 @@ describe('displayToolPath', () => {
     expect(displayToolPath(canonical, path.join(viaTmp, 'a.txt'))).toBe('a.txt');
   });
 
-  it('shows a symlink inside the working directory that points outside by its canonical absolute location', () => {
+  it('shows a symlink inside the working directory that points outside by its own relative path without following it', () => {
     const { root, project } = makeProject();
     const outside = path.join(root, 'outside.txt');
     fs.writeFileSync(outside, 'o\n');
     const link = path.join(project, 'link.txt');
     fs.symlinkSync(outside, link);
-    expect(displayToolPath(project, link)).toBe(outside);
+    expect(displayToolPath(project, link)).toBe('link.txt');
+  });
+
+  it('shows a path under a symlinked directory inside the working directory by its own relative path', () => {
+    const { root, project } = makeProject();
+    const elsewhere = path.join(root, 'elsewhere');
+    fs.mkdirSync(elsewhere);
+    fs.symlinkSync(elsewhere, path.join(project, 'linkdir'));
+    expect(displayToolPath(project, path.join(project, 'linkdir', 'k'))).toBe('linkdir/k');
   });
 
   it('compares lexically when the working directory does not exist', () => {

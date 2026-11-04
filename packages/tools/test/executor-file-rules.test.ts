@@ -429,7 +429,7 @@ describe('symlinks under user rules (pins)', () => {
     fs.symlinkSync(path.join(secretDir, 'k'), path.join(tools.layout.project, 'k-link'));
     const rules = [ruleOf(tools, 'deny', 'Read(*.env)'), ruleOf(tools, 'deny', `Read(/${secretDir}/**)`)];
     const outcome = await tools.run('Glob', { pattern: '**/*', path: tools.layout.project }, withRules(tools, rules));
-    expect(resultOf(outcome).output).toBe(visible);
+    expect(resultOf(outcome).output).toBe('visible-link');
   });
 });
 
