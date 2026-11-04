@@ -12,7 +12,7 @@ export const EXPIRES_MS = START_MS + 60_000;
 export type Awaiting = { runId: string; sessionId: string; claim: Claim; approvals: Approval[] };
 
 export const requestFor = (store: RuntimeStore, claim: Claim, callId: string, expiresAt = EXPIRES_MS, subjectDigest = DIGEST): Approval => {
-  const result = store.requestApproval(claim, { callId, options: OPTIONS, expiresAt, event: { subjectDigest, suggestedRule: `Write(/work/a/${callId}.txt)` } });
+  const result = store.requestApproval(claim, { callId, options: OPTIONS, expiresAt, event: { subjectDigest, suggestedRule: `Write(/work/a/${callId}.txt)`, reason: 'edits require approval' } });
   if (result.kind !== 'ok') throw new Error(`expected an approval for ${callId}, got ${result.kind}`);
   return result.approval;
 };

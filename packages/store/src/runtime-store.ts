@@ -794,17 +794,18 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     };
   };
 
-  const suggestedRuleOf = (approval: Approval): string | undefined => {
+  const requestOf = (approval: Approval): { reason: string; suggestedRule?: string } => {
     const row = sql.requestedEvent.get({ runId: approval.runId, approvalId: approval.id });
-    if (row === undefined) return undefined;
+    if (row === undefined) throw corrupt('approvals', approval.id, `run ${approval.runId} has no tool.permission.requested event for approval ${approval.id}`);
     const payload = expectRecord('events', approval.id, 'payload_json', readerFor('events', approval.id, row).json('payload_json'));
-    const rule = payload['suggestedRule'];
-    if (rule !== undefined && typeof rule !== 'string') throw corrupt('events', approval.id, 'suggestedRule must be a string');
-    return rule;
+    const { reason, suggestedRule } = payload;
+    if (typeof reason !== 'string') throw corrupt('events', approval.id, 'reason must be a string');
+    if (suggestedRule !== undefined && typeof suggestedRule !== 'string') throw corrupt('events', approval.id, 'suggestedRule must be a string');
+    return { reason, ...(suggestedRule === undefined ? {} : { suggestedRule }) };
   };
 
   const viewOf = (approval: Approval): ApprovalView => {
-    const suggestedRule = suggestedRuleOf(approval);
+    const { reason, suggestedRule } = requestOf(approval);
     return {
       id: approval.id,
       runId: approval.runId,
@@ -814,6 +815,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       expiresAt: approval.expiresAt,
       createdAt: approval.createdAt,
       ...(suggestedRule === undefined ? {} : { suggestedRule }),
+      reason,
       toolCall: toolCallOf(approval),
     };
   };
@@ -1481,6 +1483,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
             callId: input.callId,
             options: input.options,
             subjectDigest: input.event.subjectDigest,
+            reason: input.event.reason,
             ...(input.event.suggestedRule === undefined ? {} : { suggestedRule: input.event.suggestedRule }),
           });
         }

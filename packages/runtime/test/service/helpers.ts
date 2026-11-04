@@ -664,7 +664,7 @@ export const requestManualApproval = (
     callId,
     options: OPTIONS,
     expiresAt,
-    event: { subjectDigest: SUBJECT_DIGEST, ...extra },
+    event: { subjectDigest: SUBJECT_DIGEST, reason: 'edits require approval', ...extra },
   });
   if (result.kind !== 'ok') throw new Error(`requestApproval failed: ${result.kind}`);
   return result.approval.id;

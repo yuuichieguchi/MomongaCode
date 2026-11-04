@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ElicitationRequestView, JobView, PermissionOption } from '@momonga/protocol';
 import { approvalLine, pendingLines } from '../src/commands/runs.ts';
+import type { ApprovalView } from '../src/client/views.ts';
 import { jobLine } from '../src/commands/jobs.ts';
 import { describeElicitation } from '../src/elicit/describe.ts';
 import { terminalSink } from '../src/terminal-writer.ts';
@@ -10,11 +11,22 @@ const ESCAPED = 'x\\u001b]0;pwn\\u0007\\u009b2J\\u202ey';
 const UNSAFE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f‪-‮]/u;
 
 describe('lines that show text a person did not write', () => {
-  it('escapes the title and the option names of a pending approval', () => {
+  it('escapes the title, the reason and the option names of a pending approval', () => {
     const options: PermissionOption[] = [{ optionId: 'o1', name: HOSTILE, kind: 'allow_once' }];
-    const printed = pendingLines('ap1', HOSTILE, options);
+    const approval: ApprovalView = {
+      id: 'ap1',
+      runId: 'run-1',
+      callId: 'c1',
+      status: 'pending',
+      options,
+      expiresAt: 2,
+      createdAt: 1,
+      reason: HOSTILE,
+      toolCall: { callId: 'c1', name: 'Write', title: HOSTILE, kind: 'edit' },
+    };
+    const printed = pendingLines(approval);
     expect(printed).not.toMatch(UNSAFE);
-    expect(printed.split(ESCAPED).length - 1).toBe(2);
+    expect(printed.split(ESCAPED).length - 1).toBe(3);
   });
 
   it('escapes the title of a pending approval in the status tree', () => {

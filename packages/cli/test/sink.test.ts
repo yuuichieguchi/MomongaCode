@@ -53,6 +53,7 @@ describe('text format', () => {
         approvalId: 'ap1',
         callId: 'c1',
         subjectDigest: 'd',
+        reason: 'edit outside the workspace requires approval',
         options: [
           { optionId: 'o1', name: 'Allow once', kind: 'allow_once' },
           { optionId: 'o2', name: 'Reject', kind: 'reject_once' },
@@ -60,7 +61,9 @@ describe('text format', () => {
       }),
     );
     expect(out).toEqual([]);
-    expect(err.join('')).toBe('momonga: waiting for approval ap1: Edit /a\n  momonga approve ap1 allow_once\n  momonga approve ap1 reject_once\n');
+    expect(err.join('')).toBe(
+      'momonga: waiting for approval ap1: Edit /a\n  edit outside the workspace requires approval\n  momonga approve ap1 allow_once\n  momonga approve ap1 reject_once\n',
+    );
   });
 
   it('keeps tool activity quiet unless verbose, but always reports a failed tool and notices', () => {
@@ -137,15 +140,15 @@ describe('text a person did not write', () => {
     expect(sink.finalText()).toBe(HOSTILE);
   });
 
-  it('is escaped in the notes on stderr: a notice, a tool title, an approval title and a hook message', () => {
+  it('is escaped in the notes on stderr: a notice, a tool title, an approval title, an approval reason and a hook message', () => {
     const { sink, err } = sinkFor('text', false, true);
     sink.handle(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p', name: 'Bash', kind: 'execute', title: HOSTILE, rawInput: {} }));
     sink.handle(frame({ type: 'tool.completed', callId: 'c1', status: 'failed', output: 'no' }));
     sink.handle(frame({ type: 'notice', level: 'warning', message: HOSTILE }));
-    sink.handle(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }] }));
+    sink.handle(frame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', reason: HOSTILE, options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }] }));
     sink.handle(frame({ type: 'hook.completed', hookEvent: 'PreToolUse', command: 'check.sh', outcome: 'blocked', exitCode: 2, decision: 'deny', message: HOSTILE, callId: 'c1', durationMs: 3 }));
     expect(err.join('')).not.toMatch(UNSAFE);
-    expect(err.join('').split(ESCAPED).length - 1).toBe(4);
+    expect(err.join('').split(ESCAPED).length - 1).toBe(5);
   });
 
   it('is escaped in the reason a run ended with', () => {
@@ -213,11 +216,11 @@ describe('runs a tool call waits on', () => {
     const { sink, out, err } = sinkFor('text');
     sink.handleChild(childFrame({ type: 'tool.call', callId: 'c1', providerCallId: 'p', name: 'Edit', kind: 'edit', title: 'Edit /a', rawInput: {} }), 'reviewer');
     sink.handleChild(
-      childFrame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], expiresAt: 10 }),
+      childFrame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', reason: 'edits require approval', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], expiresAt: 10 }),
       'reviewer',
     );
     sink.handleChild(childFrame({ type: 'agent.message.delta', attempt: 0, itemId: 'm', text: 'child text' }), 'reviewer');
-    expect(err.join('')).toBe('momonga: waiting for approval ap1 (subagent reviewer): reviewer: Edit /a\n  momonga approve ap1 allow_once\n');
+    expect(err.join('')).toBe('momonga: waiting for approval ap1 (subagent reviewer): reviewer: Edit /a\n  edits require approval\n  momonga approve ap1 allow_once\n');
     expect(out).toEqual([]);
     expect(sink.finalText()).toBe('');
   });

@@ -330,6 +330,7 @@ describe('response schemas', () => {
       expiresAt: 1_800_000_060_000,
       createdAt: 1_800_000_000_000,
       suggestedRule: 'Write(/work/a/x)',
+      reason: 'edits require approval',
       toolCall: { callId: 'call_1', name: 'Write', title: 'Write x', kind: 'edit', rawInput: { file_path: '/work/a/x' }, locations: [{ path: '/work/a/x' }] },
     };
     expect(accepts('ApprovalView', view)).toBe(true);
@@ -337,6 +338,46 @@ describe('response schemas', () => {
     expect(accepts('ApprovalView', { ...view, status: 'bogus' })).toBe(false);
     const { toolCall: _omitted, ...withoutToolCall } = view;
     expect(accepts('ApprovalView', withoutToolCall)).toBe(false);
+  });
+
+  it('carries the reason the policy asked on an ApprovalView, and requires it as a string', () => {
+    const view = {
+      id: 'appr-1',
+      runId: 'run-1',
+      callId: 'call_1',
+      status: 'pending',
+      options: OPTIONS,
+      expiresAt: 1_800_000_060_000,
+      createdAt: 1_800_000_000_000,
+      reason: 'edit outside the workspace requires approval',
+      toolCall: { callId: 'call_1', name: 'Write', title: 'Write x', kind: 'edit', rawInput: { file_path: '/elsewhere/x' } },
+    };
+    expect(accepts('ApprovalView', view)).toBe(true);
+    const { reason: _reason, ...withoutReason } = view;
+    expect(accepts('ApprovalView', withoutReason)).toBe(false);
+    expect(accepts('ApprovalView', { ...view, reason: 7 })).toBe(false);
+  });
+});
+
+describe('tool.permission.requested reason', () => {
+  const requested = {
+    ...RUN_ENVELOPE,
+    type: 'tool.permission.requested',
+    approvalId: 'a1',
+    callId: 'c1',
+    options: OPTIONS,
+    subjectDigest: 'd'.repeat(64),
+    reason: 'edit outside the workspace requires approval',
+  };
+
+  it('accepts a public request that carries the reason the policy asked', () => {
+    expect(accepts('PublicRunEvent', requested)).toBe(true);
+  });
+
+  it('rejects a public request without a reason or with a reason that is not a string', () => {
+    const { reason: _reason, ...withoutReason } = requested;
+    expect(accepts('PublicRunEvent', withoutReason)).toBe(false);
+    expect(accepts('PublicRunEvent', { ...requested, reason: 7 })).toBe(false);
   });
 });
 

@@ -24,7 +24,7 @@ const setup = () => {
 };
 
 const request = (store: RuntimeStore, claim: Claim, options: PermissionOption[], subjectDigest: string) => {
-  const result = store.requestApproval(claim, { callId: 'call_1', options, expiresAt: EXPIRES, event: { subjectDigest } });
+  const result = store.requestApproval(claim, { callId: 'call_1', options, expiresAt: EXPIRES, event: { subjectDigest, reason: 'edits require approval' } });
   if (result.kind !== 'ok') throw new Error(`expected ok, got ${result.kind}`);
   return result.approval;
 };

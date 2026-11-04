@@ -219,6 +219,7 @@ export type ApprovalView = {
   expiresAt: number;
   createdAt: number;
   suggestedRule?: string;
+  reason: string;
   toolCall: {
     callId: string;
     name: string;
@@ -530,7 +531,7 @@ export type RuntimeStore = {
       callId: string;
       options: PermissionOption[];
       expiresAt: number;
-      event: { subjectDigest: string; suggestedRule?: string };
+      event: { subjectDigest: string; reason: string; suggestedRule?: string };
     },
   ): RequestApprovalResult;
   resolveApproval(approvalId: string, optionId: string): ResolveApprovalResult;

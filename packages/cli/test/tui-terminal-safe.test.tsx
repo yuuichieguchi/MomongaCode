@@ -26,7 +26,7 @@ describe('the TUI prints text a person did not write escaped', () => {
     app.unmount();
   });
 
-  it('escapes the title and the option names of a permission prompt', async () => {
+  it('escapes the title, the reason and the option names of a permission prompt', async () => {
     const { backend, app } = await start();
     await untilFrame(app, 'mode: default');
     await runStarted(backend, app, 'go');
@@ -37,12 +37,13 @@ describe('the TUI prints text a person did not write escaped', () => {
         approvalId: 'ap1',
         callId: 'c1',
         subjectDigest: 'd',
+        reason: HOSTILE,
         options: [{ optionId: 'o1', name: HOSTILE, kind: 'allow_once' }],
       }),
     );
     const prompt = await untilFrame(app, 'Permission requested');
     expect(reachesTheTerminal(prompt)).toBe(false);
-    expect(prompt.split(ESCAPED).length - 1).toBe(3);
+    expect(prompt.split(ESCAPED).length - 1).toBe(4);
     app.unmount();
   });
 });

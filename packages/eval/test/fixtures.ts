@@ -60,7 +60,7 @@ const OPTIONS = [
 const payloadsOfCall = (call: ScriptedCall): RunEventPayload[] => [
   { type: 'tool.call', callId: call.callId, providerCallId: call.callId, name: call.name, kind: call.kind, sideEffect: sideEffectOf(call), title: call.name, rawInput: call.rawInput },
   ...(call.decision === 'ask'
-    ? [{ type: 'tool.permission.requested' as const, approvalId: `a-${call.callId}`, callId: call.callId, options: OPTIONS, subjectDigest: `digest-${call.callId}` }]
+    ? [{ type: 'tool.permission.requested' as const, approvalId: `a-${call.callId}`, callId: call.callId, options: OPTIONS, subjectDigest: `digest-${call.callId}`, reason: 'edits require approval' }]
     : call.decision === 'allow'
       ? [
           { type: 'tool.started' as const, callId: call.callId, idemKey: `k-${call.callId}` },

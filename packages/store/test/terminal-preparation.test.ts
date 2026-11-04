@@ -141,7 +141,7 @@ describe('measuring ahead of the write transaction on every terminal path', () =
       callId: 'call_w',
       options: [{ optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' }],
       expiresAt: EXPIRES_MS,
-      event: { subjectDigest: 'a'.repeat(64) },
+      event: { subjectDigest: 'a'.repeat(64), reason: 'edits require approval' },
     });
     expect(approval.kind).toBe('ok');
     expect(h.store.release(childClaim, 'WAITING_HUMAN').kind).toBe('ok');

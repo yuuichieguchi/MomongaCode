@@ -3,7 +3,7 @@ import { escapeTerminalLine } from '@momonga/protocol';
 import type { PermissionOption } from '@momonga/protocol';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
-import type { RunView } from '../client/views.ts';
+import type { ApprovalView, RunView } from '../client/views.ts';
 import { connectRuntime } from '../run/open-session.ts';
 import { watchRun } from '../run/headless.ts';
 import type { OutputFormat } from '../run/headless.ts';
@@ -42,10 +42,11 @@ export const cancelRun = async (ports: CliPorts, paths: MomongaPaths, runId: str
   }
 };
 
-export const pendingLines = (approvalId: string, title: string, options: readonly PermissionOption[], agent?: string): string =>
+export const pendingLines = (approval: ApprovalView, agent?: string): string =>
   [
-    `${approvalId}  ${escapeTerminalLine(title)}${agent === undefined ? '' : `  (subagent ${escapeTerminalLine(agent)})`}`,
-    ...options.map((option) => `    ${option.kind}${option.name === option.kind ? '' : `  (${escapeTerminalLine(option.name)})`}`),
+    `${approval.id}  ${escapeTerminalLine(approval.toolCall.title)}${agent === undefined ? '' : `  (subagent ${escapeTerminalLine(agent)})`}`,
+    `  ${escapeTerminalLine(approval.reason)}`,
+    ...approval.options.map((option) => `    ${option.kind}${option.name === option.kind ? '' : `  (${escapeTerminalLine(option.name)})`}`),
   ].join('\n');
 
 export const approvalLine = (depth: number, approvalId: string, title: string): string => `${'  '.repeat(depth)}approval ${approvalId}  ${escapeTerminalLine(title)}`;
@@ -67,13 +68,13 @@ export const approve = async (ports: CliPorts, paths: MomongaPaths, approvalId: 
       ports.stdout.write(
         pending.length === 0
           ? `run ${runId} has no pending approvals\n`
-          : `${pending.map(({ approval, agent }) => pendingLines(approval.id, approval.toolCall.title, approval.options, agent)).join('\n')}\n`,
+          : `${pending.map(({ approval, agent }) => pendingLines(approval, agent)).join('\n')}\n`,
       );
       return 0;
     }
     const approval = await client.getApproval(approvalId);
     if (option === undefined) {
-      ports.stdout.write(`${pendingLines(approval.id, approval.toolCall.title, approval.options)}\n`);
+      ports.stdout.write(`${pendingLines(approval)}\n`);
       return 0;
     }
     const offered = approval.options.find((candidate) => candidate.optionId === option || candidate.kind === option);

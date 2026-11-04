@@ -47,6 +47,17 @@ describe('approval views', () => {
     expect(single.json.approval).toEqual(approval);
   });
 
+  it('serves the reason the policy asked on the listed and the single approval, equal to the journaled request', async () => {
+    const env = await startService();
+    const { run, approvals } = await askToWrite(env);
+    const [approval] = approvals;
+
+    expect(approval?.reason).toBe('edits require approval');
+    expect(env.ofType(run.id, 'tool.permission.requested').at(-1)?.reason).toBe('edits require approval');
+    const single = await env.http('GET', `/v1/approvals/${approval.id}`);
+    expect(single.json.approval.reason).toBe('edits require approval');
+  });
+
   it('answers an unknown approval with 404', async () => {
     const env = await startService();
     expectError(await env.http('GET', '/v1/approvals/apr_missing'), 404, 'not_found');
@@ -114,7 +125,7 @@ describe('approval resolution', () => {
     const claim = env.claimRun(run.id);
     env.append(claim, [toolCallPayload('call_1', path.join(env.layout.projectReal, 'a.txt'))]);
     const first = requestManualApproval(env, claim, 'call_1', START_MS + 60_000);
-    const result = env.store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, expiresAt: START_MS + 60_000, event: { subjectDigest: 'b'.repeat(64) } });
+    const result = env.store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, expiresAt: START_MS + 60_000, event: { subjectDigest: 'b'.repeat(64), reason: 'edits require approval' } });
     expect(result.kind).toBe('ok');
     expect((await env.http('GET', `/v1/approvals/${first}`)).json.approval.status).toBe('superseded');
 

@@ -34,6 +34,7 @@ const requested = (suggestedRule?: string): RunEventPayload[] => [
     callId: 'c1',
     options: OPTIONS.map((option) => ({ ...option })),
     subjectDigest: DIGEST,
+    reason: 'edits require approval',
     ...(suggestedRule === undefined ? {} : { suggestedRule }),
   },
 ];
@@ -111,6 +112,7 @@ describe('snapshot codec for pins and suggested rules', () => {
         callId: 'c1',
         options: OPTIONS.map((option) => ({ ...option })),
         subjectDigest: DIGEST,
+        reason: 'edits require approval',
         suggestedRule: RULE,
       },
       { type: 'tool.call', callId: 'c2', providerCallId: 'c2', name: 'Bash', kind: 'execute', title: 'b', rawInput: { command: 'b' } },
@@ -120,6 +122,7 @@ describe('snapshot codec for pins and suggested rules', () => {
         callId: 'c2',
         options: OPTIONS.map((option) => ({ ...option })),
         subjectDigest: DIGEST,
+        reason: 'edits require approval',
         suggestedRule: RULE,
       },
       { type: 'tool.permission.resolved', approvalId: 'ap2', optionId: 'opt-aa' },

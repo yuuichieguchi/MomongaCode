@@ -56,6 +56,7 @@ export type ApprovalView = {
   readonly expiresAt: number;
   readonly createdAt: number;
   readonly suggestedRule?: string;
+  readonly reason: string;
   readonly toolCall: ApprovalToolCall;
 };
 

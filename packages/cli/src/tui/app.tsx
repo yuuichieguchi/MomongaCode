@@ -179,6 +179,7 @@ function ApprovalPrompt({ approval, tool, selected }: { approval: PendingApprova
   return (
     <Box flexDirection="column" borderStyle="round" paddingX={1}>
       <Text bold>{shown(`Permission requested: ${tool?.title ?? approval.callId}`)}</Text>
+      <Text>{shown(approval.reason)}</Text>
       {diff === undefined ? null : <DiffView lines={diff} max={maxDiffLines(rows, approval.options.length)} />}
       {approval.options.map((option: PermissionOption, index) => (
         <Text key={option.optionId} inverse={index === selected}>{shown(`${index + 1}. ${option.name}`)}</Text>

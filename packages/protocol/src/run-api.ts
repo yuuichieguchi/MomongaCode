@@ -244,8 +244,8 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
     required: ['callId', 'providerCallId', 'name', 'kind', 'title', 'rawInput'],
   },
   'tool.permission.requested': {
-    properties: { approvalId: string, callId: string, options: { type: 'array', items: permissionOption }, subjectDigest: string, suggestedRule: string },
-    required: ['approvalId', 'callId', 'options', 'subjectDigest'],
+    properties: { approvalId: string, callId: string, options: { type: 'array', items: permissionOption }, subjectDigest: string, reason: string, suggestedRule: string },
+    required: ['approvalId', 'callId', 'options', 'subjectDigest', 'reason'],
   },
   'tool.permission.classified': {
     properties: {
@@ -1030,6 +1030,7 @@ export const RUN_API_SCHEMAS = {
         expiresAt: integer,
         createdAt: integer,
         suggestedRule: string,
+        reason: string,
         toolCall: closed(
           {
             callId: string,
@@ -1042,7 +1043,7 @@ export const RUN_API_SCHEMAS = {
           ['callId', 'name', 'title', 'kind', 'rawInput'],
         ),
       },
-      ['id', 'runId', 'callId', 'status', 'options', 'expiresAt', 'createdAt', 'toolCall'],
+      ['id', 'runId', 'callId', 'status', 'options', 'expiresAt', 'createdAt', 'reason', 'toolCall'],
     ),
   ),
   JobView: root(jobView),

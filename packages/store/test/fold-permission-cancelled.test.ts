@@ -20,6 +20,7 @@ const asked = (approvalId: string): RunEventPayload[] => [
     callId: 'c1',
     options: [...OPTIONS],
     subjectDigest: fixtureSubjectDigest('a.txt'),
+    reason: 'edits require approval',
     suggestedRule: 'Write(/w/a.txt)',
   },
 ];
@@ -37,7 +38,7 @@ describe('tool.permission.cancelled fold', () => {
     const events = materializeEvents([
       ...asked('a1'),
       { type: 'tool.permission.cancelled', approvalId: 'a1', reason: 'superseded' },
-      { type: 'tool.permission.requested', approvalId: 'a2', callId: 'c1', options: [...OPTIONS], subjectDigest: fixtureSubjectDigest('b.txt') },
+      { type: 'tool.permission.requested', approvalId: 'a2', callId: 'c1', options: [...OPTIONS], subjectDigest: fixtureSubjectDigest('b.txt'), reason: 'edits require approval' },
     ]);
 
     expect(foldAll(events).pendingCalls['c1']).toEqual({

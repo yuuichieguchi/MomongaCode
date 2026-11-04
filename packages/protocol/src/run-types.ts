@@ -114,6 +114,7 @@ export type RunEventPayload =
       callId: string;
       options: PermissionOption[];
       subjectDigest: string;
+      reason: string;
       suggestedRule?: string;
     }
   | {

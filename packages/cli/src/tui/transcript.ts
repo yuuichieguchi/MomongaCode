@@ -20,7 +20,7 @@ export type Entry =
   | { kind: 'notice'; level: 'info' | 'warning' | 'error'; text: string }
   | { kind: 'info'; text: string };
 
-export type PendingApproval = { approvalId: string; callId: string; options: readonly PermissionOption[]; suggestedRule?: string };
+export type PendingApproval = { approvalId: string; callId: string; options: readonly PermissionOption[]; reason: string; suggestedRule?: string };
 
 export type PendingElicitation = { inputId: string; callId: string; server: string; flow: ElicitationFlow; submitted: boolean };
 
@@ -130,6 +130,7 @@ export const reduceEvent = (transcript: Transcript, event: PublicRunEvent): Tran
         approvalId: event.approvalId,
         callId: event.callId,
         options: event.options,
+        reason: event.reason,
         ...(event.suggestedRule === undefined ? {} : { suggestedRule: event.suggestedRule }),
       };
       const prompts = enqueue({ head: transcript.approval, queued: transcript.queuedApprovals }, pending, (other) => other.approvalId === event.approvalId);
