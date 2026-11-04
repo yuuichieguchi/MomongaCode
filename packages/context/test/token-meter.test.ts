@@ -258,7 +258,8 @@ describe('TokenMeter directional error correction', () => {
     expect(observed.miss).toBe(first.inputTokens);
     expect(observed.kept).toBe(first.inputTokens * 2);
     const appended = await meter.count({ input: [...prefix, ...suffix], tools: [] });
-    expect(appended.known === first.inputTokens * 2 || appended.known === 0).toBe(true);
+    expect(appended.known).toBe(0);
+    expect(appended.inputTokens).toBe(first.inputTokens + tokensOfItems(suffix));
   });
 
   it('does not cap the miss at the size of the input', async () => {
@@ -279,14 +280,19 @@ describe('TokenMeter directional error correction', () => {
     expect(appended.inputTokens).toBe(first.inputTokens + tokensOfItems(suffix));
   });
 
-  it('chooses, for a high-observed digest, the decomposition with the smaller bound on the server count', async () => {
+  it('takes the fresh count for a high-observed digest while the new items are smaller than the miss, because its bound on the server count is smaller', async () => {
+    const floor = marginFloorFor(SMALL_WINDOW);
     const meter = exactMeter();
     const first = await meter.count({ input: prefix, tools: [] });
     meter.observe({ inputDigest: first.inputDigest, inputTokens: first.inputTokens * 2 });
+    const added = tokensOfItems(suffix);
+    expect(added).toBeLessThan(first.inputTokens);
     const appended = await meter.count({ input: [...prefix, ...suffix], tools: [] });
-    const fresh = first.inputTokens + tokensOfItems(suffix);
-    expect(appended.inputTokens + appended.underAt(appended.inputTokens)).toBeLessThanOrEqual(fresh + appended.freshUnderAt(fresh));
-    expect([fresh, first.inputTokens * 2 + tokensOfItems(suffix)]).toContain(appended.inputTokens);
+    expect(appended.known).toBe(0);
+    expect(appended.inputTokens).toBe(first.inputTokens + added);
+    expect(appended.underAt(appended.inputTokens)).toBe(first.inputTokens + added - floor);
+    const splitScore = first.inputTokens * 2 + added + (first.inputTokens - floor);
+    expect(appended.inputTokens + appended.underAt(appended.inputTokens)).toBeLessThan(splitScore);
   });
 
   it('extends a low-observed digest with tools without double-counting the baseline', async () => {

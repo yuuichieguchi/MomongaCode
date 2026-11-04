@@ -346,7 +346,7 @@ describe('meter counts across in-turn builds', () => {
     const before = wholeCounts();
     const second = await buildContext(appendedInput, ports);
     expect(second.evictions).toEqual([]);
-    expect(wholeCounts() - before).toBeGreaterThan(0);
+    expect(wholeCounts() - before).toBe(5);
 
     const unchanged = wholeCounts();
     const third = await buildContext(appendedInput, ports);
