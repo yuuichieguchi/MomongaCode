@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { Capabilities } from '@momonga/protocol';
+import { canonicalJson } from '@momonga/foundation';
+import type { Capabilities, CountTokensRequest, CreateResponseBody, InputItem } from '@momonga/protocol';
 import { usageOf } from '@momonga/testkit';
-import { PRIMARY_TARGET, inputTokensOf } from './fake-gateway.ts';
+import { PRIMARY_TARGET, fakeCounterOf, inputTokensOf } from './fake-gateway.ts';
 import { capabilitiesFor, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { textStep } from './scripts.ts';
@@ -34,6 +35,40 @@ describe('every target meter is folded at claim start and read for C (4.7, M4, M
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.ofType(run.id, 'meter.observed').map((event) => event.target)).toEqual([PRIMARY_TARGET]);
     expect(env.gateway.counts.some((request) => request.momonga?.target === FALLBACK_TARGET)).toBe(true);
+  });
+});
+
+const inputOf = (body: CreateResponseBody): InputItem[] => {
+  if (!Array.isArray(body.input)) throw new Error('the request carries no input items');
+  return body.input;
+};
+
+const isSplitCountOf = (target: string, systemItem: string) => (request: CountTokensRequest): boolean => {
+  if (request.momonga?.target !== target || request.momonga.lenient_items !== undefined) return false;
+  if (typeof request.input === 'string' || request.input.length === 0) return false;
+  return canonicalJson(request.input[0]) !== systemItem;
+};
+
+describe('a fallback meter is restored at claim start from its own counter events (4.7, M4)', () => {
+  it('splits the fallback count on the report its counter journaled in an earlier run of the session', async () => {
+    const env = await makeEnv({ capabilities: estimatedTarget() });
+    env.settings.contextValue = { ...env.settings.contextValue, observedCapacity: true };
+    env.gateway.capabilitiesByTarget.set(PRIMARY_TARGET, exactTarget());
+    env.gateway.capabilitiesByTarget.set(FALLBACK_TARGET, estimatedTarget());
+    env.gateway.targetsByAlias[env.session.modelAlias] = [FALLBACK_TARGET];
+    env.gateway.script.push(textStep('Done.'), textStep('Again.'));
+    const earlier = env.enqueue('Echo something');
+    await env.runOnce(env.worker());
+    expect(env.ofType(earlier.id, 'meter.observed')).toMatchObject([{ target: FALLBACK_TARGET, counter: fakeCounterOf(FALLBACK_TARGET) }]);
+    const systemItem = canonicalJson(inputOf(env.gateway.streams[0]!.body)[0]);
+
+    env.gateway.targetsByAlias[env.session.modelAlias] = [PRIMARY_TARGET, FALLBACK_TARGET];
+    const countsBefore = env.gateway.counts.length;
+    const later = env.enqueue('Echo something else');
+    await env.runOnce(env.worker('worker-2'));
+
+    expect(env.run(later.id).status).toBe('COMPLETED');
+    expect(env.gateway.counts.slice(countsBefore).some(isSplitCountOf(FALLBACK_TARGET, systemItem))).toBe(true);
   });
 });
 

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import type { CreateResponseBody, InputItem, PromptCacheCounts } from '@momonga/protocol';
-import { makeEnv } from './harness.ts';
+import type { CreateResponseBody, InputItem, PromptCacheCounts, RunEventPayload } from '@momonga/protocol';
+import { capabilitiesFor, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
-import { callsStep, textStep } from './scripts.ts';
+import { assistantMessage, callsStep, textStep } from './scripts.ts';
 
 const ROOT_RULE = 'Indent with tabs in this project.';
 
@@ -90,6 +90,124 @@ describe.for([false, true])('the runtime sets the cache controls on every model 
     expect(requested.map(marksOf)).toHaveLength(2);
     expect(requested.map((body) => body.momonga?.cache)).toEqual(sentBodies(env).map((body) => body.momonga?.cache));
     expect(requested.map((body) => body.prompt_cache_key)).toEqual(sentBodies(env).map((body) => body.prompt_cache_key));
+  });
+});
+
+const SEEDED_HISTORY_MARK = 500;
+const SEEDED_USAGE = { input_tokens: 50, output_tokens: 5, total_tokens: 55 };
+const seededResponded = (step: number, output: unknown[]): RunEventPayload => ({
+  type: 'model.responded',
+  step,
+  attempt: 1,
+  response: { status: 'completed', output, usage: SEEDED_USAGE },
+});
+const seededRequested = (step: number): RunEventPayload => {
+  const body: CachedBody = {
+    model: 'fm',
+    input: [{ type: 'message', role: 'user', content: 'question one' }],
+    tools: [],
+    tool_choice: 'auto',
+    max_output_tokens: 100,
+    store: false,
+    stream: true,
+    momonga: { cache: { stable: 1, fixed: 1, history: SEEDED_HISTORY_MARK } },
+  };
+  return { type: 'model.requested', step, attempt: 1, digest: sha256Hex(canonicalJson(body)), body };
+};
+
+const compactingConversation: RunEventPayload[] = [
+  seededResponded(1, [{ type: 'function_call', id: 'fc_c1', call_id: 'c1', name: 'Read', arguments: '{"file_path":"/proj/big.txt"}' }]),
+  { type: 'tool.call', callId: 'c1', providerCallId: 'c1', name: 'Read', kind: 'other', title: 'Read', rawInput: { file_path: '/proj/big.txt' } },
+  { type: 'tool.completed', callId: 'c1', status: 'completed', output: 'r'.repeat(60_000), handle: 'f'.repeat(64) },
+  seededResponded(2, [assistantMessage('m2', `long ${'x'.repeat(60_000)}`)]),
+  { type: 'user.message', text: 'question two' },
+  seededResponded(3, [assistantMessage('m3', `answer two ${'y'.repeat(60_000)}`)]),
+  { type: 'user.message', text: 'question three' },
+  seededRequested(4),
+  seededResponded(4, [assistantMessage('m4', `answer three ${'z'.repeat(60_000)}`)]),
+  { type: 'user.message', text: 'question four' },
+];
+
+describe('a compaction starts a new epoch (4.5)', () => {
+  it('sends no previousHistory on the first request after context.compacted, with marks the gateway accepts', async () => {
+    const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
+    env.settings.contextValue = { ...env.settings.contextValue, adaptiveBudget: false, autoCompact: true };
+    const run = env.enqueue('question one');
+    env.seed(run.id, compactingConversation, 'release');
+    env.gateway.script.push(textStep('Done.'));
+
+    await env.runOnce(env.worker());
+
+    expect(env.ofType(run.id, 'context.compacted')).toHaveLength(1);
+    const after = sentBodies(env).at(-1)!;
+    const marks = marksOf(after);
+    expect(marks.previousHistory).toBeUndefined();
+    expect(marks.stable).toBeLessThanOrEqual(marks.fixed);
+    expect(marks.fixed).toBeLessThanOrEqual(marks.history);
+    expect(marks.history).toBeLessThanOrEqual(inputOf(after).length);
+  });
+});
+
+const seeded = (seed: number) => {
+  let state = seed >>> 0;
+  return (min: number, max: number): number => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return min + Math.floor((state / 0x100000000) * (max - min + 1));
+  };
+};
+
+type Requested = { seq: number; body: CachedBody };
+
+const epochsOf = (requests: readonly Requested[], compactedSeqs: readonly number[]): Requested[][] => {
+  const epochs = new Map<number, Requested[]>();
+  for (const request of requests) {
+    const epoch = compactedSeqs.filter((seq) => seq < request.seq).length;
+    epochs.set(epoch, [...(epochs.get(epoch) ?? []), request]);
+  }
+  return [...epochs.values()];
+};
+
+describe('the marks over generated request sequences (4.5; T2-5 has no formal model)', () => {
+  it.for(Array.from({ length: 12 }, (_, index) => index + 1))('keep their order within each epoch, seed %i', async (seed) => {
+    const draw = seeded(seed);
+    const compacting = draw(0, 1) === 1;
+    const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
+    env.settings.contextValue = { ...env.settings.contextValue, adaptiveBudget: false, autoCompact: true, cachePrefix: draw(0, 1) === 1 };
+    env.instructions.files.set(`${env.project}/AGENTS.md`, ROOT_RULE);
+    const steps = draw(0, 4);
+    for (let step = 0; step < steps; step += 1) {
+      env.gateway.script.push(callsStep([{ callId: `g${step}`, name: 'Echo', args: { value: 'v'.repeat(draw(1, 4000)) } }]));
+    }
+    env.gateway.script.push(textStep('Done.'));
+    const run = env.enqueue('question one');
+    if (compacting) env.seed(run.id, compactingConversation, 'release');
+
+    await env.runOnce(env.worker());
+
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    const seededSteps = compacting ? 1 : 0;
+    const requested = env
+      .ofType(run.id, 'model.requested')
+      .slice(seededSteps)
+      .map((event): Requested => ({ seq: event.seq, body: event.body as CachedBody }));
+    expect(requested).toHaveLength(steps + 1);
+    const compactedSeqs = env.ofType(run.id, 'context.compacted').map((event) => event.seq);
+    for (const epoch of epochsOf(requested, compactedSeqs)) {
+      epoch.forEach(({ body }, index) => {
+        const marks = marksOf(body);
+        expect(marks.stable).toBeLessThanOrEqual(marks.fixed);
+        expect(marks.fixed).toBeLessThanOrEqual(marks.history);
+        expect(marks.history).toBeLessThanOrEqual(inputOf(body).length);
+        const previous = index === 0 ? undefined : marksOf(epoch[index - 1]!.body);
+        if (previous === undefined) {
+          if (compacting) expect(marks.previousHistory).toBeUndefined();
+        } else {
+          expect(marks.previousHistory).toBe(previous.history);
+          expect(marks.history).toBeGreaterThanOrEqual(previous.history);
+        }
+        if (marks.previousHistory !== undefined) expect(marks.previousHistory).toBeLessThanOrEqual(marks.history);
+      });
+    }
   });
 });
 
