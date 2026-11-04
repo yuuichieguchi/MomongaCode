@@ -1,7 +1,7 @@
 import { defineTool, ToolExecutionError } from '../types.ts';
 import { looksBinary, recordInLedger, regularFileProblem, scanLines, statIfExists } from './files.ts';
 import { DEFAULT_LINE_LIMIT, pageNumberedLines, pastEndMessage } from './format.ts';
-import { canonicalPathOf, resolvedPathOf, shownPath } from './paths.ts';
+import { accessedPathOf, canonicalPathOf, resolvedPathOf, shownPath } from './paths.ts';
 
 type ReadInput = { file_path: string; offset?: number; limit?: number };
 
@@ -24,12 +24,12 @@ export const readTool = defineTool<ReadInput>({
   },
   pagesOutput: true,
   timeoutMs: 30_000,
-  title: (input, ctx) => `Read ${shownPath(ctx, resolvedPathOf(ctx, input.file_path))}`,
+  title: (input, ctx) => `Read ${shownPath(ctx, accessedPathOf(ctx, input.file_path))}`,
   locations: (input, ctx) => [{ path: resolvedPathOf(ctx, input.file_path), ...(input.offset === undefined ? {} : { line: input.offset }) }],
   subject: (input, ctx) => ({ kind: 'path', tool: 'Read', paths: [resolvedPathOf(ctx, input.file_path)], access: 'read' }),
   execute: async (input, ctx) => {
     const canonical = canonicalPathOf(ctx, 'file_path', input.file_path);
-    const shown = shownPath(ctx, canonical);
+    const shown = shownPath(ctx, resolvedPathOf(ctx, input.file_path));
     const stat = await statIfExists(canonical);
     if (stat === undefined) throw new ToolExecutionError(`File does not exist: ${shown}`);
     if (stat.isDirectory()) {

@@ -372,9 +372,10 @@ export const grepTool = defineTool<GrepInput>({
   },
   execute: async (input, ctx) => {
     const target = canonicalPathOf(ctx, 'path', input.path ?? '.');
+    const shown = shownPath(ctx, resolvedPathOf(ctx, input.path ?? '.'));
     const stat = await statIfExists(target);
-    if (stat === undefined) throw new ToolExecutionError(`Path does not exist: ${shownPath(ctx, target)}`);
-    const problem = stat.isDirectory() ? undefined : regularFileProblem(stat, shownPath(ctx, target));
+    if (stat === undefined) throw new ToolExecutionError(`Path does not exist: ${shown}`);
+    const problem = stat.isDirectory() ? undefined : regularFileProblem(stat, shown);
     if (problem !== undefined) throw new ToolExecutionError(problem);
     const mode = input.output_mode ?? 'files_with_matches';
     const ripgrep = resolveRipgrep(ctx.env['PATH']);

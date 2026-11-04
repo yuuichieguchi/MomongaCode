@@ -7,6 +7,12 @@ export type PathScope = Pick<SubjectContext, 'workingDirectory'>;
 
 export const resolvedPathOf = (scope: PathScope, value: string): string => resolveToolPath(scope.workingDirectory, value);
 
+export const accessedPathOf = (scope: PathScope, value: string): string => {
+  const absolute = resolvedPathOf(scope, value);
+  const resolution = resolveCanonicalPath(absolute);
+  return resolution.ok ? resolution.path : absolute;
+};
+
 export const shownPath = (scope: PathScope, absolute: string): string => displayToolPath(scope.workingDirectory, absolute);
 
 export const canonicalPathOf = (scope: PathScope, field: string, value: string): string => {

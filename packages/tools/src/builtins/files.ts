@@ -171,14 +171,14 @@ export const recordInLedger = async (session: ToolSessionState, canonical: strin
   session.readLedger.set(canonical, { sha256, mtimeMs: stat.mtimeMs });
 };
 
-export const assertReadAndUnchanged = async (session: ToolSessionState, canonical: string): Promise<string> => {
+export const assertReadAndUnchanged = async (session: ToolSessionState, canonical: string, shown: string): Promise<string> => {
   const entry = session.readLedger.get(canonical);
   if (entry === undefined) {
-    throw new ToolExecutionError(`${shownPath(session, canonical)} has not been read in this session; Read it first before modifying it`);
+    throw new ToolExecutionError(`${shown} has not been read in this session; Read it first before modifying it`);
   }
   const current = await sha256OfFile(canonical);
   if (current !== entry.sha256) {
-    throw new ToolExecutionError(`${shownPath(session, canonical)} has changed since it was last read; Read it again before modifying it`);
+    throw new ToolExecutionError(`${shown} has changed since it was last read; Read it again before modifying it`);
   }
   return current;
 };

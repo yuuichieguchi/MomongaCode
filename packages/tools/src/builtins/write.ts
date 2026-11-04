@@ -3,7 +3,7 @@ import { sha256Hex } from '@momonga/foundation';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import { assertReadAndUnchanged, assertSameLocation, newFileMode, regularFileProblem, updateLedgerAfterWrite, sha256OfFile, statIfExists, writeFileAtomically } from './files.ts';
 import { pluralize, splitLines } from './format.ts';
-import { canonicalPathOf, resolvedPathOf, shownPath } from './paths.ts';
+import { accessedPathOf, canonicalPathOf, resolvedPathOf, shownPath } from './paths.ts';
 import { parsePreparedWrite, reconcileWrite } from './prepared.ts';
 
 type WriteInput = { file_path: string; content: string };
@@ -25,23 +25,24 @@ export const writeTool = defineTool<WriteInput>({
     additionalProperties: false,
   },
   timeoutMs: 30_000,
-  title: (input, ctx) => `Write ${shownPath(ctx, resolvedPathOf(ctx, input.file_path))}`,
+  title: (input, ctx) => `Write ${shownPath(ctx, accessedPathOf(ctx, input.file_path))}`,
   locations: (input, ctx) => [{ path: resolvedPathOf(ctx, input.file_path) }],
   subject: (input, ctx) => ({ kind: 'path', tool: 'Write', paths: [resolvedPathOf(ctx, input.file_path)], access: 'write' }),
   prepare: async (input, ctx) => {
     const target = canonicalPathOf(ctx, 'file_path', input.file_path);
+    const shown = shownPath(ctx, resolvedPathOf(ctx, input.file_path));
     const stat = await statIfExists(target);
-    if (stat?.isDirectory() === true) throw new ToolExecutionError(`${shownPath(ctx, target)} is a directory, not a file`);
-    const problem = stat === undefined ? undefined : regularFileProblem(stat, shownPath(ctx, target));
+    if (stat?.isDirectory() === true) throw new ToolExecutionError(`${shown} is a directory, not a file`);
+    const problem = stat === undefined ? undefined : regularFileProblem(stat, shown);
     if (problem !== undefined) throw new ToolExecutionError(problem);
-    const preHash = stat === undefined ? null : await assertReadAndUnchanged(ctx.session, target);
+    const preHash = stat === undefined ? null : await assertReadAndUnchanged(ctx.session, target, shown);
     return { path: target, preHash, postHash: sha256Hex(input.content) };
   },
   execute: async (input, ctx, prepared) => {
     const plan = parsePreparedWrite(prepared);
     if (sha256Hex(input.content) !== plan.postHash) throw new ToolExecutionError('Write content does not match the prepared state');
     const requested = resolvedPathOf(ctx, input.file_path);
-    const shown = shownPath(ctx, plan.path);
+    const shown = shownPath(ctx, requested);
     assertSameLocation(ctx, requested, plan.path, canonicalPathOf(ctx, 'file_path', input.file_path));
     const stat = await statIfExists(plan.path);
     const problem = stat === undefined ? undefined : regularFileProblem(stat, shown);
@@ -71,5 +72,5 @@ export const writeTool = defineTool<WriteInput>({
       files: [{ path: plan.path, sha256: plan.postHash, access: 'write' }],
     };
   },
-  reconcile: async (_input, record, ctx) => reconcileWrite(record, 'Write', ctx),
+  reconcile: async (input, record, ctx) => reconcileWrite(record, 'Write', ctx, resolvedPathOf(ctx, input.file_path)),
 });

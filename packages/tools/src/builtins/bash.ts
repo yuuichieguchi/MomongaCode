@@ -7,7 +7,7 @@ import type { BackgroundJobs } from '../ports.ts';
 import type { ReconcileContext, ToolContext, ToolResult } from '../types.ts';
 import { createCapture, pumpOutput } from '../capture.ts';
 import { describeJobStatus } from './jobs.ts';
-import { canonicalDirectories, insideAny } from './paths.ts';
+import { canonicalDirectories, insideAny, shownPath } from './paths.ts';
 import { nodeShellPorts, resolveBashPath } from './shell.ts';
 
 type BashInput = { command: string; timeout?: number; description?: string; run_in_background?: boolean };
@@ -135,7 +135,7 @@ export const bashTool = defineTool<BashInput>({
       if (insideAny(extracted.cwd, canonicalDirectories(ctx.roots))) {
         ctx.session.cwd = extracted.cwd;
       } else {
-        output += `${output === '' ? '' : '\n'}Shell cwd was reset to ${ctx.session.cwd}`;
+        output += `${output === '' ? '' : '\n'}Shell cwd was reset to ${shownPath(ctx, ctx.session.cwd)}`;
       }
     }
     for (const note of notes) output += `${output === '' ? '' : '\n'}${note}`;

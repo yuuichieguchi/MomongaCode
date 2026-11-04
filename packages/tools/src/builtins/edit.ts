@@ -3,7 +3,7 @@ import { sha256Hex } from '@momonga/foundation';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import { assertReadAndUnchanged, assertSameLocation, looksBinary, regularFileProblem, updateLedgerAfterWrite, sha256OfFile, statIfExists, writeFileAtomically } from './files.ts';
 import { numberedLines, splitLines } from './format.ts';
-import { canonicalPathOf, resolvedPathOf, shownPath } from './paths.ts';
+import { accessedPathOf, canonicalPathOf, resolvedPathOf, shownPath } from './paths.ts';
 import { parsePreparedWrite, reconcileWrite } from './prepared.ts';
 
 type EditInput = { file_path: string; old_string: string; new_string: string; replace_all?: boolean };
@@ -88,28 +88,28 @@ export const editTool = defineTool<EditInput>({
     additionalProperties: false,
   },
   timeoutMs: 30_000,
-  title: (input, ctx) => `Edit ${shownPath(ctx, resolvedPathOf(ctx, input.file_path))}`,
+  title: (input, ctx) => `Edit ${shownPath(ctx, accessedPathOf(ctx, input.file_path))}`,
   locations: (input, ctx) => [{ path: resolvedPathOf(ctx, input.file_path) }],
   subject: (input, ctx) => ({ kind: 'path', tool: 'Edit', paths: [resolvedPathOf(ctx, input.file_path)], access: 'write' }),
   prepare: async (input, ctx) => {
     if (input.old_string === '') throw new ToolExecutionError('old_string must not be empty; use Write to create or replace a file');
     if (input.old_string === input.new_string) throw new ToolExecutionError('old_string and new_string are identical; nothing to change');
     const target = canonicalPathOf(ctx, 'file_path', input.file_path);
-    const shown = shownPath(ctx, target);
+    const shown = shownPath(ctx, resolvedPathOf(ctx, input.file_path));
     const stat = await statIfExists(target);
     if (stat === undefined) throw new ToolExecutionError(`File does not exist: ${shown}`);
     if (stat.isDirectory()) throw new ToolExecutionError(`${shown} is a directory, not a file`);
     const problem = regularFileProblem(stat, shown);
     if (problem !== undefined) throw new ToolExecutionError(problem);
     if (await looksBinary(target)) throw new ToolExecutionError(`${shown} is a binary file and cannot be edited as text`);
-    const preHash = await assertReadAndUnchanged(ctx.session, target);
+    const preHash = await assertReadAndUnchanged(ctx.session, target, shown);
     const replacement = computeReplacement(await fs.promises.readFile(target, 'utf8'), input, shown);
     return { path: target, preHash, postHash: sha256Hex(replacement.updated) };
   },
   execute: async (input, ctx, prepared) => {
     const plan = parsePreparedWrite(prepared);
     const requested = resolvedPathOf(ctx, input.file_path);
-    const shown = shownPath(ctx, plan.path);
+    const shown = shownPath(ctx, requested);
     assertSameLocation(ctx, requested, plan.path, canonicalPathOf(ctx, 'file_path', input.file_path));
     const stat = await statIfExists(plan.path);
     const problem = stat === undefined ? undefined : regularFileProblem(stat, shown);
@@ -135,5 +135,5 @@ export const editTool = defineTool<EditInput>({
       files: [{ path: plan.path, sha256: plan.postHash, access: 'write' }],
     };
   },
-  reconcile: async (_input, record, ctx) => reconcileWrite(record, 'Edit', ctx),
+  reconcile: async (input, record, ctx) => reconcileWrite(record, 'Edit', ctx, resolvedPathOf(ctx, input.file_path)),
 });

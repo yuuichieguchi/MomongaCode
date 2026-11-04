@@ -230,14 +230,21 @@ const underExemption = (set: FileRuleSet, entry: FileRuleEntry, resolved: string
   return target === exempt || target.startsWith(`${exempt}/`);
 };
 
-export const fileRuleBlocks = (set: FileRuleSet, entry: FileRuleEntry, requestedNative: string, resolvedNative: string): boolean => {
+export type FileRuleForm = 'requested' | 'resolved';
+
+export const fileRuleBlockingForm = (set: FileRuleSet, entry: FileRuleEntry, requestedNative: string, resolvedNative: string): FileRuleForm | undefined => {
   const requested = candidatePathOf(set.flavour, requestedNative);
   const resolved = candidatePathOf(set.flavour, resolvedNative);
-  if (entry.unresolved !== null || underExemption(set, entry, resolved)) return false;
+  if (entry.unresolved !== null || underExemption(set, entry, resolved)) return undefined;
   const requestedHit = matcherBlocks(entry, entry.exactLexical ?? entry.exact, requested);
   const resolvedHit = matcherBlocks(entry, entry.exact, resolved);
-  return entry.effect === 'allow' ? requestedHit && resolvedHit : requestedHit || resolvedHit;
+  if (entry.effect === 'allow') return requestedHit && resolvedHit ? 'requested' : undefined;
+  if (requestedHit) return 'requested';
+  return resolvedHit ? 'resolved' : undefined;
 };
+
+export const fileRuleBlocks = (set: FileRuleSet, entry: FileRuleEntry, requestedNative: string, resolvedNative: string): boolean =>
+  fileRuleBlockingForm(set, entry, requestedNative, resolvedNative) !== undefined;
 
 export type WritableArea = { roots: readonly string[]; widening: readonly Expression[] };
 

@@ -218,7 +218,11 @@ const storedOutcome = (stored: unknown): ResultOutcome => {
 
 const readDeniedPath = (subject: PermissionSubject, access: ReadAccessMatcher, cwd: string): string | undefined => {
   if (subject.kind !== 'path' || !access.deniesAnything) return undefined;
-  return subject.paths.find((target) => access.blocks(target, cwd));
+  const target = subject.paths.find((candidate) => access.blocks(candidate, cwd));
+  if (target === undefined) return undefined;
+  const matched = access.blockedForm(target, cwd);
+  if (matched === undefined) throw new Error(`${target} is read-denied but no matching form was found`);
+  return matched;
 };
 
 const readRuleToolOf = (subjectTool: string): ReadFamilyTool => (subjectTool === 'Grep' || subjectTool === 'Glob' ? subjectTool : 'Read');
@@ -227,8 +231,8 @@ const ruleBlock = (subject: PermissionSubject, access: BatchAccess, cwd: string)
   if (subject.kind !== 'path') return undefined;
   const tool = readRuleToolOf(subject.tool);
   for (const target of subject.paths) {
-    const provenance = access.blockedBy(target, cwd, tool) ?? (subject.access === 'write' ? access.writeBlockedBy(target, cwd) : undefined);
-    if (provenance !== undefined) return { target, provenance };
+    const block = access.blockedMatch(target, cwd, tool) ?? (subject.access === 'write' ? access.writeBlockedMatch(target, cwd) : undefined);
+    if (block !== undefined) return { target: block.matched, provenance: block.provenance };
   }
   return undefined;
 };
@@ -323,28 +327,32 @@ const subjectContextOf = (batch: BatchCore): SubjectContext => ({
   roots: rootsOf(batch),
 });
 
-const digestSubject = (subject: PermissionSubject, cwd: string, canonicalise: (absolute: string) => PathResolution): unknown => {
+const digestSubject = (subject: PermissionSubject, cwd: string, canonicalise: (absolute: string) => PathResolution, show: (absolute: string) => string): unknown => {
   if (subject.kind === 'path') {
     return {
       ...subject,
       paths: subject.paths.map((target) => {
         const absolute = absoluteFrom(target, cwd);
         const real = canonicalise(absolute);
-        if (!real.ok) throw new Error(`${absolute} cannot be resolved to a real location`);
+        if (!real.ok) throw new Error(`${show(absolute)} cannot be resolved to a real location`);
         return real.path;
       }),
     };
   }
   if (subject.kind === 'command') {
     const canonicalCwd = canonicalise(cwd);
-    if (!canonicalCwd.ok) throw new Error(`session cwd ${cwd} cannot be resolved to a real location`);
+    if (!canonicalCwd.ok) throw new Error(`session cwd ${show(cwd)} cannot be resolved to a real location`);
     return { subject, cwd: canonicalCwd.path };
   }
   return subject;
 };
 
-export const subjectDigestOf = (subject: PermissionSubject, cwd: string, canonicalise: (absolute: string) => PathResolution): string =>
-  sha256Hex(canonicalJson(digestSubject(subject, cwd, canonicalise)));
+export const subjectDigestOf = (
+  subject: PermissionSubject,
+  cwd: string,
+  canonicalise: (absolute: string) => PathResolution,
+  show: (absolute: string) => string = (absolute) => absolute,
+): string => sha256Hex(canonicalJson(digestSubject(subject, cwd, canonicalise, show)));
 
 const failedOutcome = (callId: string, output: string): ResultOutcome => ({
   callId,
@@ -599,7 +607,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     if ((decision.kind === 'ask' || unsandboxedExec)) {
       let subjectDigest: string;
       try {
-        subjectDigest = subjectDigestOf(subject, cwd, options.fs.canonicalise);
+        subjectDigest = subjectDigestOf(subject, cwd, options.fs.canonicalise, (absolute) => displayToolPath(batch.session.workingDirectory, absolute));
       } catch (error) {
         return failedOutcome(call.callId, `Permission check failed: ${error instanceof Error ? error.message : String(error)}`);
       }

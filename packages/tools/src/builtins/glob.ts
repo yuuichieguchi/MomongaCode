@@ -43,9 +43,10 @@ export const globTool = defineTool<GlobInput>({
   }),
   execute: async (input, ctx) => {
     const root = canonicalPathOf(ctx, 'path', input.path ?? '.');
+    const shown = shownPath(ctx, resolvedPathOf(ctx, input.path ?? '.'));
     const stat = await statIfExists(root);
-    if (stat === undefined) throw new ToolExecutionError(`Directory does not exist: ${shownPath(ctx, root)}`);
-    if (!stat.isDirectory()) throw new ToolExecutionError(`${shownPath(ctx, root)} is not a directory`);
+    if (stat === undefined) throw new ToolExecutionError(`Directory does not exist: ${shown}`);
+    if (!stat.isDirectory()) throw new ToolExecutionError(`${shown} is not a directory`);
     const isMatch = picomatch(input.pattern, { dot: true });
     const matches: string[] = [];
     for await (const entry of walkFiles({
@@ -62,7 +63,7 @@ export const globTool = defineTool<GlobInput>({
     }
     if (matches.length === 0) return { status: 'completed', output: 'No files found' };
     const sorted = await sortByMtimeThenPath(matches);
-    const shown = sorted.slice(0, MAX_RESULTS).map((file) => shownPath(ctx, file));
-    return { status: 'completed', output: [...shown, ...(sorted.length > MAX_RESULTS ? [TRUNCATION_NOTICE] : [])].join('\n') };
+    const listed = sorted.slice(0, MAX_RESULTS).map((file) => shownPath(ctx, file));
+    return { status: 'completed', output: [...listed, ...(sorted.length > MAX_RESULTS ? [TRUNCATION_NOTICE] : [])].join('\n') };
   },
 });
