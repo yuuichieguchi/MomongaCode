@@ -26,7 +26,7 @@ fi`,
 : > "$last"`,
   xcrun: `printf '{"id":"fake-submission","status":"%s"}\\n' "\${STUB_NOTARY_STATUS:-Accepted}"`,
   spctl: `exit "\${STUB_SPCTL_EXIT:-0}"`,
-  codesign: `if [ "$1" = "--display" ]; then printf 'Authority=Developer ID\\nTeamIdentifier=%s\\n' "\${STUB_TEAM_ID:-FAKE000000}" >&2; fi`,
+  codesign: `if [ "$1" = "--display" ]; then printf 'Authority=Developer ID\\nTeamIdentifier=%s\\n' "\${STUB_TEAM_ID:-PQQBSRKD72}" >&2; fi`,
   'ssh-keygen': `case " $* " in *" verify "*)
   signers=''
   while [ $# -gt 0 ]; do if [ "$1" = -f ]; then signers=$2; fi; shift; done
@@ -61,9 +61,13 @@ const gitEnv = (): NodeJS.ProcessEnv => ({
 
 const PINNED_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl';
 
-const installers = (key: string): Record<string, string> => ({
-  'scripts/install.sh': `#!/bin/bash\nreadonly EMBEDDED_RELEASE_PUBLIC_KEY="${key}"\n`,
-  'scripts/install.ps1': `$embeddedReleasePublicKey = '${key}'\n`,
+const EMBEDDED_REPO = 'fake-owner/fake-repo';
+const SIGNING_IDENTITY = 'Developer ID Application: Yuuichi Eguchi (PQQBSRKD72)';
+const TEAM_ID = 'PQQBSRKD72';
+
+const installers = (key: string, shellRepo = EMBEDDED_REPO, powershellRepo = shellRepo): Record<string, string> => ({
+  'scripts/install.sh': `#!/bin/bash\nreadonly EMBEDDED_RELEASE_PUBLIC_KEY="${key}"\nreadonly EMBEDDED_RELEASE_REPO="${shellRepo}"\n`,
+  'scripts/install.ps1': `$embeddedReleasePublicKey = '${key}'\n$embeddedReleaseRepo = '${powershellRepo}'\n`,
 });
 
 const CHECKS = ['npm', 'npm', 'npm', 'npm'];
@@ -76,6 +80,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
   let origin = '';
   let log = '';
   let keyFile = '';
+  let home = '';
   let signingKey = '';
 
   const commitLocally = (subject: string): void => {
@@ -94,13 +99,10 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     PATH: `${stubs}:${path.dirname(process.execPath)}:/usr/bin:/bin`,
     STUB_LOG: log,
     STUB_ORIGIN: origin,
-    SIGNING_IDENTITY: 'Developer ID Application: Fake Person (FAKE000000)',
+    HOME: home,
     APPLE_API_KEY: keyFile,
-    RELEASE_SIGNING_KEY: signingKey,
     APPLE_API_KEY_ID: 'FAKEKEYID1',
     APPLE_API_ISSUER: '00000000-0000-0000-0000-000000000000',
-    MOMONGA_REPO: 'fake-owner/fake-repo',
-    MOMONGA_TEAM_ID: 'FAKE000000',
     ...extra,
   });
 
@@ -124,7 +126,9 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     }
     keyFile = path.join(root, 'AuthKey_FAKEKEYID1.p8');
     fs.writeFileSync(keyFile, 'fake key material');
-    signingKey = path.join(root, 'release_signing_key');
+    home = path.join(root, 'home');
+    fs.mkdirSync(path.join(home, '.ssh'), { recursive: true });
+    signingKey = path.join(home, '.ssh/momonga-release');
     fs.writeFileSync(signingKey, 'fake ssh key');
   });
 
@@ -227,10 +231,10 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
       'gh release',
     ]);
     expect(calls.slice(0, 4)).toEqual(['npm run typecheck ', 'npm test ', 'npm run test:e2e ', 'npm run test:packaging ']);
-    const updateSourceFlags = `--repo fake-owner/fake-repo --team-id FAKE000000 --release-public-key ${PINNED_KEY} `;
+    const updateSourceFlags = `--repo fake-owner/fake-repo --team-id ${TEAM_ID} --release-public-key ${PINNED_KEY} `;
     expect(calls[4]).toBe(`npm run sea -- --unsigned --output ${binary} ${updateSourceFlags}`);
     expect(calls[5]).toBe(
-      `codesign --sign Developer ID Application: Fake Person (FAKE000000) --force --timestamp --options runtime --entitlements ${work}/scripts/sea-entitlements.plist ${binary} `,
+      `codesign --sign ${SIGNING_IDENTITY} --force --timestamp --options runtime --entitlements ${work}/scripts/sea-entitlements.plist ${binary} `,
     );
     expect(calls[6]).toBe(`codesign --verify --strict --verbose=2 ${binary} `);
     expect(calls[7]).toBe(`codesign --display --verbose=4 ${binary} `);
@@ -334,30 +338,89 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     commit('second change');
     const result = release({ STUB_TEAM_ID: 'OTHER00000' });
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toBe('release.sh: the signed binary does not carry TeamIdentifier=FAKE000000\n');
+    expect(result.stderr).toBe(`release.sh: the signed binary does not carry TeamIdentifier=${TEAM_ID}\n`);
     expect(loggedNames()).toEqual([...BUILT, 'codesign', 'codesign', 'codesign']);
     expect(originTags()).toBe('');
   });
 
-  it('refuses to start without a Team ID', () => {
-    const result = release({ MOMONGA_TEAM_ID: '' });
+  it('uses the signing identity, Team ID and signing key path written in release.sh and ignores the old environment variables', () => {
+    commit('second change');
+    const decoyKey = path.join(root, 'decoy_signing_key');
+    fs.writeFileSync(decoyKey, 'decoy ssh key');
+    const result = release({
+      SIGNING_IDENTITY: 'Developer ID Application: Fake Person (FAKE000000)',
+      MOMONGA_TEAM_ID: 'FAKE000000',
+      RELEASE_SIGNING_KEY: decoyKey,
+      MOMONGA_REPO: 'env-owner/env-repo',
+    });
+    expect(result.status, result.stderr).toBe(0);
+    const calls = loggedCalls();
+    const binary = `${work}/dist/release/momonga-darwin-arm64`;
+    expect(calls[4]).toBe(`npm run sea -- --unsigned --output ${binary} --repo fake-owner/fake-repo --team-id ${TEAM_ID} --release-public-key ${PINNED_KEY} `);
+    expect(calls[5]).toContain(`codesign --sign ${SIGNING_IDENTITY} --force`);
+    expect(calls[14]).toBe(`ssh-keygen -Y sign -f ${signingKey} -n momonga-release ${work}/dist/release/SHA256SUMS `);
+    expect(calls.join('\n')).not.toContain('env-owner/env-repo');
+    expect(calls.join('\n')).not.toContain('FAKE000000');
+  });
+
+  it('gets past the environment check with only APPLE_API_KEY, APPLE_API_KEY_ID and APPLE_API_ISSUER set', () => {
+    commit('second change');
+    const env = releaseEnv();
+    for (const name of ['SIGNING_IDENTITY', 'MOMONGA_TEAM_ID', 'RELEASE_SIGNING_KEY', 'MOMONGA_REPO']) delete env[name];
+    const result = spawnSync('/bin/bash', [path.join(work, 'scripts/release.sh')], { cwd: work, encoding: 'utf8', env });
+    expect(result.stderr).not.toContain('is not set');
+    expect(result.status, result.stderr).toBe(0);
+    expect(loggedCalls().slice(0, 4)).toEqual(['npm run typecheck ', 'npm test ', 'npm run test:e2e ', 'npm run test:packaging ']);
+  });
+
+  it('refuses to start when the release signing key is not at $HOME/.ssh/momonga-release', () => {
+    const emptyHome = fs.mkdtempSync(path.join(root, 'empty-home-'));
+    const result = release({ HOME: emptyHome });
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toBe('release.sh: MOMONGA_TEAM_ID is not set\n');
+    expect(result.stderr).toContain(`${emptyHome}/.ssh/momonga-release`);
     expect(loggedCalls()).toEqual([]);
   });
 
-  it('refuses a malformed Team ID and a malformed repository before any command', () => {
-    const teamId = release({ MOMONGA_TEAM_ID: 'lower-case' });
-    expect(teamId.stderr).toBe("release.sh: MOMONGA_TEAM_ID must be a 10-character Apple Team ID, got 'lower-case'\n");
-    const repo = release({ MOMONGA_REPO: 'no-slash' });
-    expect(repo.stderr).toBe("release.sh: MOMONGA_REPO must be <owner>/<repo>, got 'no-slash'\n");
+  it('refuses to build or publish when neither installer names the repository, and says what to do', () => {
+    for (const [file, content] of Object.entries(installers(PINNED_KEY, ''))) fs.writeFileSync(path.join(work, file), content);
+    commit('forget the repository');
+
+    const result = release({ MOMONGA_REPO: 'env-owner/env-repo' });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('<owner>/<repo>');
+    expect(result.stderr).toContain('scripts/install.sh');
+    expect(result.stderr).toContain('scripts/install.ps1');
+    expect(result.stderr).toContain('commit');
     expect(loggedCalls()).toEqual([]);
+    expect(originTags()).toBe('');
+    expect(fs.existsSync(`${work}/dist/release`)).toBe(false);
   });
 
-  it('refuses to start without a release signing key file', () => {
-    const result = release({ RELEASE_SIGNING_KEY: path.join(root, 'missing-key') });
+  it.each([
+    ['different repositories', 'fake-owner/fake-repo', 'other-owner/other-repo'],
+    ['a repository in only one installer', 'fake-owner/fake-repo', ''],
+  ])('refuses to build when the installers name %s', (_label, shellRepo, powershellRepo) => {
+    for (const [file, content] of Object.entries(installers(PINNED_KEY, shellRepo, powershellRepo))) fs.writeFileSync(path.join(work, file), content);
+    commit('diverge the repositories');
+
+    const result = release();
+
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toBe(`release.sh: RELEASE_SIGNING_KEY must be the path of the ssh private key that signs SHA256SUMS\n`);
+    expect(result.stderr).toContain('scripts/install.sh');
+    expect(result.stderr).toContain('scripts/install.ps1');
+    expect(loggedCalls()).toEqual([]);
+    expect(originTags()).toBe('');
+  });
+
+  it('refuses a malformed repository in the installers before any command', () => {
+    for (const [file, content] of Object.entries(installers(PINNED_KEY, 'no-slash'))) fs.writeFileSync(path.join(work, file), content);
+    commit('malformed repository');
+
+    const result = release();
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toBe("release.sh: MOMONGA_REPO must be <owner>/<repo>, got 'no-slash'\n");
     expect(loggedCalls()).toEqual([]);
   });
 
