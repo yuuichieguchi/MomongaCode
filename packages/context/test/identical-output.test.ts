@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildContext } from '@momonga/context';
 import type { HistoryItem } from '@momonga/context';
+import type { FunctionCallOutputInputItem, InputItem } from '@momonga/protocol';
 import {
   assistant,
   call,
@@ -11,6 +12,8 @@ import {
   output,
   outputTextOf,
   sourcesWith,
+  textOf,
+  tokensOfItem,
   tokensOfItems,
   user,
 } from './helpers.ts';
@@ -149,6 +152,12 @@ const buildPressured = async (history: HistoryItem[], overrides: Parameters<type
   );
 };
 
+const outputItemOf = (items: readonly InputItem[], callId: string): FunctionCallOutputInputItem => {
+  const found = items.find((item): item is FunctionCallOutputInputItem => item.type === 'function_call_output' && item.call_id === callId);
+  if (found === undefined) throw new Error(`no output for ${callId}`);
+  return found;
+};
+
 const omittedIds = (evictions: readonly { callId: string; kind: string }[]): string[] =>
   evictions.filter((eviction) => eviction.kind === 'omitted').map((eviction) => eviction.callId);
 
@@ -172,10 +181,29 @@ describe('identicalOutput under eviction pressure', () => {
     expect(result.inputTokens).toBe(tokensOfItems(result.input));
   });
 
-  it('never selects an unprotected reference rendering as an eviction candidate', async () => {
+  it('evicts an unprotected referent exactly when the measured gain rule drops tokens, and never selects the reference rendering itself', async () => {
+    const pair = pressuredHistory(false).filter((entry) => entry.seq <= 5);
+    const unpressured = await buildPressured(pair, { evicted: new Set(['c1']) });
+    const omittedItem = outputItemOf(unpressured.input, 'c1');
+    const rerenderedItem = outputItemOf(unpressured.input, 'c2');
+    const referentFull = tokensOfItem({ ...omittedItem, output: BIG });
+    const referenceMarker = tokensOfItem({ ...rerenderedItem, output: referenceTo('c1', handleOf(BIG)) });
+    const evictionDrops = tokensOfItem(omittedItem) + tokensOfItem(rerenderedItem) < referentFull + referenceMarker;
+    expect(unpressured.evictions.filter((eviction) => eviction.callId === 'c2')).toEqual([]);
+
     const result = await buildPressured(pressuredHistory(false));
-    expect(outputTextOf(result.input, 'c1')).toBe(BIG);
-    expect(outputTextOf(result.input, 'c2')).toBe(referenceTo('c1', handleOf(BIG)));
-    expect(omittedIds(result.evictions)).toEqual(['f1', 'f2', 'f3']);
+    const omitted = omittedIds(result.evictions);
+    const ordinaryCandidates = evictionDrops ? ['c2', 'f1', 'f2', 'f3'] : ['f1', 'f2', 'f3'];
+    if (evictionDrops) {
+      expect(omitted[0]).toBe('c1');
+      expect(outputTextOf(result.input, 'c1')).toBe(textOf(omittedItem.output));
+      expect([textOf(rerenderedItem.output), outputTextOf(result.input, 'c1')]).toContain(outputTextOf(result.input, 'c2'));
+    } else {
+      expect(outputTextOf(result.input, 'c1')).toBe(BIG);
+      expect(outputTextOf(result.input, 'c2')).toBe(referenceTo('c1', handleOf(BIG)));
+    }
+    const afterReferent = evictionDrops ? omitted.slice(1) : omitted;
+    expect(afterReferent).toEqual(ordinaryCandidates.slice(0, afterReferent.length));
+    expect(result.inputTokens).toBe(tokensOfItems(result.input));
   });
 });
