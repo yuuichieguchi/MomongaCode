@@ -25,6 +25,9 @@ const submit = async (pty: PtySession, text: string): Promise<void> => {
   pty.write(KEYS.enter);
 };
 
+const untilRunEnds = (pty: PtySession, mode: string): Promise<void> =>
+  pty.waitFor(new RegExp(`mode: ${mode} \\(shift\\+tab\\) · tokens: [\\d.]+k?( · context: \\d+%)?\\s*$`));
+
 const leave = async (pty: PtySession): Promise<void> => {
   pty.write(KEYS.ctrlD);
   expect(await pty.exit()).toEqual({ code: 0, signal: null });
@@ -158,6 +161,7 @@ describe('MCP input in the terminal', () => {
       await pty.waitFor('1. Submit');
       pty.write('1');
       await pty.waitFor('form done');
+      await untilRunEnds(pty, 'bypassPermissions');
       expect(requestText(chatCompletions(fake)[1])).toContain('hello Ada');
 
       await submit(pty, 'connect my account');
