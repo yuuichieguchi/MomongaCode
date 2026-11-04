@@ -507,6 +507,7 @@ describe('architecture: a large-window target gets the whole tool set', () => {
           history: [],
         },
         evicted: new Set(),
+        recordedReferences: new Set(),
         touchedPaths: [],
         trusted: false,
         projectRoot: root,

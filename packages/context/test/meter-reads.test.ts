@@ -14,13 +14,13 @@ const argsSteps = (chars: readonly number[]): HistoryItem[] =>
     output(2 * index + 2, `c${index}`, 'ok'),
   ]);
 
-const withBounds = (historyShape: ErrorShape, bounds: Pick<MeterCount, 'underAt' | 'freshUnderAt'>): TokenMeter => {
+const withBounds = (historyShape: ErrorShape, bounds: Pick<MeterCount, 'underAt' | 'freshUnderAt'>, partsToo = false): TokenMeter => {
   const inner = createTokenMeter({ counter: shapeCounter((request) => (Array.isArray(request.input) && request.input.length > 2 ? historyShape : ESTIMATED_ERROR_SHAPE)), model: MODEL, capabilities: W8192 });
   return {
     ...inner,
     count: async (request) => {
       const counted = await inner.count(request);
-      return request.input.length > 2 ? { ...counted, ...bounds } : counted;
+      return request.input.length > 2 || (partsToo && (request.frozen?.length ?? 0) > 2) ? { ...counted, ...bounds } : counted;
     },
   };
 };
@@ -29,7 +29,7 @@ const portsWith = (meter: TokenMeter): BuildContextPorts => ({ meter, blobs: fak
 
 describe('which bound each reader of the build takes', () => {
   it('fits the input by the bound of its own count, not by the fresh bound', async () => {
-    const meter = withBounds({ ratio: 0.3, minimum: inputBudget + 1 }, { underAt: () => 0, freshUnderAt: () => inputBudget + 1 });
+    const meter = withBounds({ ratio: 0.3, minimum: inputBudget + 1 }, { underAt: () => 0, freshUnderAt: () => inputBudget + 1 }, true);
     const built = await buildContext(inputFor(W8192, { sources: sourcesWith({ history: argsSteps([400, 400]) }), level: 0 }), portsWith(meter));
     expect(built.inputTokens).toBeGreaterThan(0);
   });

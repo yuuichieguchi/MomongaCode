@@ -20,6 +20,7 @@ const observedInput = (capabilities: Capabilities, history: HistoryItem[]): Buil
     model: MODEL,
     sources: sourcesWith({ history }),
     evicted: new Set<string>(),
+    recordedReferences: new Set<string>(),
     touchedPaths: [],
     trusted: true,
     projectRoot: PROJECT,

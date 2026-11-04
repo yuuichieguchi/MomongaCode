@@ -53,6 +53,7 @@ const inputWith = (capabilities: Capabilities, { task, tools, skills, observed }
       ...(skills === undefined ? {} : { activatedSkills: [...skills] }),
     }),
     evicted: new Set<string>(),
+    recordedReferences: new Set<string>(),
     touchedPaths: [],
     trusted: true,
     projectRoot: PROJECT,

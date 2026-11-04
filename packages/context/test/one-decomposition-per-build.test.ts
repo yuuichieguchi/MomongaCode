@@ -58,6 +58,7 @@ const inputWith = (history: HistoryItem[], systemPrompt?: string): BuildContextI
   model: MODEL,
   sources: sourcesWith({ history, ...(systemPrompt === undefined ? {} : { systemPrompt }) }),
   evicted: new Set<string>(),
+  recordedReferences: new Set<string>(),
   touchedPaths: [],
   trusted: true,
   projectRoot: PROJECT,

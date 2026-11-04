@@ -217,6 +217,7 @@ export const inputFor = (
   model: MODEL,
   sources: sourcesWith(),
   evicted: new Set<string>(),
+  recordedReferences: new Set<string>(),
   touchedPaths: [],
   trusted: true,
   projectRoot: PROJECT,
