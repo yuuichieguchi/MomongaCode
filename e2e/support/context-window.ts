@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ESTIMATED_CHARACTERS_PER_TOKEN } from '@momonga/protocol';
+import type { Capabilities } from '@momonga/protocol';
 import type { FakeChatCompletionsServer, FakeRoute } from '@momonga/testkit';
-import { sizingFor, wireTokensOfBody } from './budget.ts';
+import { sizingFor, overflowStepRange, wireTokensOfBody } from './budget.ts';
 import type { Sizing } from './budget.ts';
 import { runCli } from './cli.ts';
 import { createGatewayCountClient } from './gateway-count.ts';
@@ -41,7 +42,7 @@ export const calibrationRoute: FakeRoute = {
   },
 };
 
-export type MeasuredWindow = { person: Sizing; benchmark: Sizing; readFixedTokens: number; readLineTokens: number };
+export type MeasuredWindow = { capabilities: Capabilities; person: Sizing; benchmark: Sizing; readFixedTokens: number };
 
 const calibrationDataset = (): string =>
   JSON.stringify({
@@ -91,22 +92,16 @@ export const measureWindow = async (home: E2eHome, fake: Pick<FakeChatCompletion
   const readLineTokens = (growth(large) - growth(small)) / (large.lines - small.lines);
   const capabilities = await createGatewayCountClient(home.paths.sockets.gateway).capabilities();
   return {
+    capabilities,
     person: sizingFor(capabilities, wireTokensOfBody(personRequest.body)),
     benchmark: sizingFor(capabilities, small.first),
     readFixedTokens: growth(small) - small.lines * readLineTokens,
-    readLineTokens,
   };
 };
 
 export const fillerOfTokens = (tokens: number): string => 'w'.repeat(tokens * ESTIMATED_CHARACTERS_PER_TOKEN);
 
-export const stepTokensToOverflowTheRoom = (sizing: Sizing, steps: number): number => Math.ceil((sizing.room + sizing.summaryItem) / steps);
-
-export const readLinesWhereProtectedStepsExceedTheRoomButOneFewerFits = (window: MeasuredWindow, sizing: Sizing, protectedSteps: number, lastOffset: number): number => {
-  const lowest = sizing.room;
-  const highest = (sizing.room * protectedSteps) / (protectedSteps - 1);
-  const stepTokens = (lowest + highest) / 2 / protectedSteps;
-  return lastOffset + Math.ceil((stepTokens - window.readFixedTokens) / window.readLineTokens) - 1;
-};
+export const stepTokensToOverflowTheRoom = async (capabilities: Capabilities, sizing: Sizing, steps: number): Promise<number> =>
+  (await overflowStepRange(capabilities, sizing.pinned, steps)).lowest;
 
 export const compactableTokens = (steps: number, protectedSteps: number, stepTokens: number): number => Math.max(0, steps - protectedSteps) * stepTokens;
