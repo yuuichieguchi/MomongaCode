@@ -330,6 +330,7 @@ describe('response schemas', () => {
       expiresAt: 1_800_000_060_000,
       createdAt: 1_800_000_000_000,
       suggestedRule: 'Write(/work/a/x)',
+      reason: 'edits require approval',
       toolCall: { callId: 'call_1', name: 'Write', title: 'Write x', kind: 'edit', rawInput: { file_path: '/work/a/x' }, locations: [{ path: '/work/a/x' }] },
     };
     expect(accepts('ApprovalView', view)).toBe(true);

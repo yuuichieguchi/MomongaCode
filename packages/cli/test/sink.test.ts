@@ -216,11 +216,11 @@ describe('runs a tool call waits on', () => {
     const { sink, out, err } = sinkFor('text');
     sink.handleChild(childFrame({ type: 'tool.call', callId: 'c1', providerCallId: 'p', name: 'Edit', kind: 'edit', title: 'Edit /a', rawInput: {} }), 'reviewer');
     sink.handleChild(
-      childFrame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], expiresAt: 10 }),
+      childFrame({ type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', subjectDigest: 'd', reason: 'edits require approval', options: [{ optionId: 'o1', name: 'Allow once', kind: 'allow_once' }], expiresAt: 10 }),
       'reviewer',
     );
     sink.handleChild(childFrame({ type: 'agent.message.delta', attempt: 0, itemId: 'm', text: 'child text' }), 'reviewer');
-    expect(err.join('')).toBe('momonga: waiting for approval ap1 (subagent reviewer): reviewer: Edit /a\n  momonga approve ap1 allow_once\n');
+    expect(err.join('')).toBe('momonga: waiting for approval ap1 (subagent reviewer): reviewer: Edit /a\n  edits require approval\n  momonga approve ap1 allow_once\n');
     expect(out).toEqual([]);
     expect(sink.finalText()).toBe('');
   });

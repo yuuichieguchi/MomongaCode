@@ -162,6 +162,7 @@ export const approvalView = (overrides: Partial<ApprovalView> = {}): ApprovalVie
   options: [],
   expiresAt: 10,
   createdAt: 1,
+  reason: 'edits require approval',
   toolCall: { callId: 'call-1', name: 'Edit', title: 'Edit a.txt', kind: 'edit' },
   ...overrides,
 });

@@ -93,6 +93,7 @@ const requestApproval = (ctx: ClaimContext, outcome: NeedsApprovalOutcome): void
     expiresAt: Math.min(options.clock.now() + ctx.limits.approvalTtlMs, ctx.run.deadlineAt),
     event: {
       subjectDigest: outcome.subjectDigest,
+      reason: outcome.decision.reason,
       ...(outcome.suggestedRule === undefined ? {} : { suggestedRule: outcome.suggestedRule }),
     },
   });

@@ -125,7 +125,7 @@ describe('approval resolution', () => {
     const claim = env.claimRun(run.id);
     env.append(claim, [toolCallPayload('call_1', path.join(env.layout.projectReal, 'a.txt'))]);
     const first = requestManualApproval(env, claim, 'call_1', START_MS + 60_000);
-    const result = env.store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, expiresAt: START_MS + 60_000, event: { subjectDigest: 'b'.repeat(64) } });
+    const result = env.store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, expiresAt: START_MS + 60_000, event: { subjectDigest: 'b'.repeat(64), reason: 'edits require approval' } });
     expect(result.kind).toBe('ok');
     expect((await env.http('GET', `/v1/approvals/${first}`)).json.approval.status).toBe('superseded');
 

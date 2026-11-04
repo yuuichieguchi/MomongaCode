@@ -201,6 +201,7 @@ describe('approval diff size', () => {
         approvalId: 'ap1',
         callId: 'c1',
         subjectDigest: 'd',
+        reason: 'edits require approval',
         options: [
           { optionId: 'o1', name: 'Allow once', kind: 'allow_once' },
           { optionId: 'o3', name: 'Reject once', kind: 'reject_once' },

@@ -124,7 +124,7 @@ describe('worker recovery of pending calls', () => {
       ],
       'hold',
     );
-    const created = env.store.requestApproval(seeder, { callId: 'call_w_1', options, expiresAt: START_MS + 1_800_000, event: { subjectDigest: 'a'.repeat(64) } });
+    const created = env.store.requestApproval(seeder, { callId: 'call_w_1', options, expiresAt: START_MS + 1_800_000, event: { subjectDigest: 'a'.repeat(64), reason: 'edits require approval' } });
     if (created.kind !== 'ok') throw new Error('expected an approval');
     env.clock.advance(LEASE_MS + 1);
 

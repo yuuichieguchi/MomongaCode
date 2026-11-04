@@ -102,6 +102,7 @@ describe('App run rendering', () => {
         approvalId: 'ap1',
         callId: 'c1',
         subjectDigest: 'd',
+        reason: 'edits require approval',
         options: [
           { optionId: 'o1', name: 'Allow once', kind: 'allow_once' },
           { optionId: 'o2', name: 'Always allow', kind: 'allow_always' },
@@ -153,6 +154,7 @@ describe('App run rendering', () => {
         approvalId: 'ap1',
         callId: 'c1',
         subjectDigest: 'd',
+        reason: 'edits require approval',
         options: [
           { optionId: 'o1', name: 'Allow once', kind: 'allow_once' },
           { optionId: 'o3', name: 'Reject once', kind: 'reject_once' },
@@ -176,7 +178,7 @@ describe('App run rendering', () => {
     ];
     for (const [callId, approvalId] of [['c1', 'ap1'], ['c2', 'ap2']] as const) {
       backend.emit(frame({ type: 'tool.call', callId, providerCallId: callId, name: 'Bash', kind: 'execute', title: `Bash ${callId}`, rawInput: { command: 'ls' } }));
-      backend.emit(frame({ type: 'tool.permission.requested', approvalId, callId, subjectDigest: 'd', options }));
+      backend.emit(frame({ type: 'tool.permission.requested', approvalId, callId, subjectDigest: 'd', reason: 'edits require approval', options }));
     }
     await untilFrame(app, 'Permission requested: Bash c1');
     app.stdin.write(KEYS.down);

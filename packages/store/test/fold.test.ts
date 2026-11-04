@@ -333,6 +333,7 @@ describe('foldRunState details', () => {
         callId: 'run-call-2',
         options: [{ optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' }],
         subjectDigest: fixtureSubjectDigest('read b'),
+        reason: 'edits require approval',
       },
       { type: 'tool.permission.resolved', approvalId: 'ap2', optionId: 'allow_once' },
       { type: 'tool.started', callId: 'run-call-2', idemKey: 'k2' },
@@ -529,6 +530,7 @@ describe('output handles and evictions', () => {
           callId: 'c9',
           options: [{ optionId: 'ok', name: 'Allow once', kind: 'allow_once' }],
           subjectDigest: fixtureSubjectDigest('c9'),
+          reason: 'edits require approval',
         },
       ] as RunEventPayload[],
     ],
@@ -643,7 +645,7 @@ describe('approval resolution', () => {
 
   const requested = (): RunEventPayload[] => [
     { type: 'tool.call', callId: 'c1', providerCallId: 'c1', name: 'Bash', kind: 'execute', title: 'run', rawInput: { command: 'run' } },
-    { type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', options: OPTIONS.map((option) => ({ ...option })), subjectDigest: digest },
+    { type: 'tool.permission.requested', approvalId: 'ap1', callId: 'c1', options: OPTIONS.map((option) => ({ ...option })), subjectDigest: digest, reason: 'edits require approval' },
   ];
 
   it('stores the subject digest on the pending call when approval is requested', () => {
@@ -767,6 +769,7 @@ describe('snapshot validation', () => {
         { optionId: 'no', name: 'Reject once', kind: 'reject_once' },
       ],
       subjectDigest: fixtureSubjectDigest('b'),
+      reason: 'edits require approval',
     },
     { type: 'tool.call', callId: 'cC', providerCallId: 'cC', name: 'Bash', kind: 'execute', title: 'c', rawInput: { command: 'c' } },
     {
@@ -775,6 +778,7 @@ describe('snapshot validation', () => {
       callId: 'cC',
       options: [{ optionId: 'yes', name: 'Allow once', kind: 'allow_once' }],
       subjectDigest: fixtureSubjectDigest('c'),
+      reason: 'edits require approval',
     },
     { type: 'tool.permission.resolved', approvalId: 'apC', optionId: 'yes' },
   ];

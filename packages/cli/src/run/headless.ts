@@ -107,6 +107,7 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
         note(
           [
             `momonga: waiting for approval ${event.approvalId}${by}: ${titles.get(event.callId) ?? event.callId}`,
+            `  ${event.reason}`,
             ...event.options.map((option) => `  momonga approve ${event.approvalId} ${option.kind}`),
           ].join('\n'),
         );
