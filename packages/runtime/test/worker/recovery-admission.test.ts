@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
 import { createToolRegistry, defineTool } from '@momonga/tools';
 import { START_MS, makeEnv, toolKey } from './harness.ts';
-import { callsStep, functionCallItem, textStep } from './scripts.ts';
+import { callsStep, functionCallItem, requestedOffering, textStep } from './scripts.ts';
 
 const TOOLS_CHANGED = 'The available tools changed since this run started';
 
@@ -92,6 +92,7 @@ describe('worker recovery of a started call with an existing record', () => {
     const run = env.enqueue('Write the file');
     const key = toolKey(run.id, 1, 'call_w_1');
     const payloads: RunEventPayload[] = [
+      requestedOffering(1, ['Write']),
       {
         type: 'model.responded',
         step: 1,

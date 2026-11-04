@@ -7,7 +7,7 @@ import type { RuntimeStore } from '@momonga/store';
 import { killGroupsForCleanup } from '@momonga/testkit';
 import { START_MS, toolKey } from './harness.ts';
 import type { Env } from './harness.ts';
-import { functionCallItem } from './scripts.ts';
+import { functionCallItem, requestedOffering } from './scripts.ts';
 
 const USAGE = { input_tokens: 50, output_tokens: 5, total_tokens: 55 };
 
@@ -36,6 +36,7 @@ export const seedStartedCalls = (env: Env, calls: readonly StartedCall[], option
   const run = env.enqueue('Work');
   const keys = Object.fromEntries(calls.map((call) => [call.callId, toolKey(run.id, 1, call.callId)]));
   const payloads: RunEventPayload[] = [
+    requestedOffering(1, [...new Set(calls.map((call) => call.name))]),
     {
       type: 'model.responded',
       step: 1,

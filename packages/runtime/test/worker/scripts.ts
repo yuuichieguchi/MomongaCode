@@ -1,4 +1,5 @@
-import type { FunctionCallItem, ItemField, MessageItem, ResponseResource, StreamEvent, Usage } from '@momonga/protocol';
+import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import type { FunctionCallItem, ItemField, MessageItem, ResponseResource, RunEventPayload, StreamEvent, Usage } from '@momonga/protocol';
 import { responseResource, textResponseEvents, usageOf } from '@momonga/testkit';
 import { deferred } from './deferred.ts';
 import type { ScriptStep } from './fake-gateway.ts';
@@ -15,6 +16,17 @@ export const functionCallItem = (call: ScriptedCall): FunctionCallItem => ({
   arguments: JSON.stringify(call.args),
   status: 'completed',
 });
+
+export const requestedOffering = (step: number, toolNames: readonly string[]): RunEventPayload => {
+  const body = {
+    model: MODEL_ALIAS,
+    input: [],
+    tools: toolNames.map((name) => ({ type: 'function', name, description: name, parameters: { type: 'object', properties: {} } })),
+    store: false,
+    stream: true,
+  };
+  return { type: 'model.requested', step, attempt: 1, digest: sha256Hex(canonicalJson(body)), body };
+};
 
 export const assistantMessage = (id: string, text: string): MessageItem => ({
   type: 'message',

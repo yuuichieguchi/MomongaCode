@@ -4,7 +4,7 @@ import type { RuntimeStore } from '@momonga/store';
 import type { ExecutionBatchInput } from '@momonga/tools';
 import { waitUntil, within } from './deferred.ts';
 import { EXTRA_ROOT, START_MS, makeEnv, toolKey } from './harness.ts';
-import { callsStep, functionCallItem, textStep } from './scripts.ts';
+import { callsStep, functionCallItem, requestedOffering, textStep } from './scripts.ts';
 
 describe('worker tool-set notices', () => {
   it('appends tool-set notices after run.started and skips messages already in the folded notes', async () => {
@@ -135,6 +135,7 @@ describe('worker policyFor', () => {
     env.seed(
       run.id,
       [
+        requestedOffering(1, ['Mark']),
         {
           type: 'model.responded',
           step: 1,

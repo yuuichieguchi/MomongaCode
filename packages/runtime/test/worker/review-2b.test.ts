@@ -5,7 +5,7 @@ import type { RuntimeStore } from '@momonga/store';
 import { defineTool } from '@momonga/tools';
 import { waitUntil, within } from './deferred.ts';
 import { DEADLINE_MS, START_MS, makeEnv, toolKey, createdRun } from './harness.ts';
-import { MODEL_ALIAS, functionCallItem, textStep } from './scripts.ts';
+import { MODEL_ALIAS, functionCallItem, requestedOffering, textStep } from './scripts.ts';
 
 describe('worker recovery of a not_applied call under the current policy', () => {
   it('asks for approval before re-executing, then executes exactly once after allow_once', async () => {
@@ -32,6 +32,7 @@ describe('worker recovery of a not_applied call under the current policy', () =>
     const run = env.enqueue('Patch the file');
     const key = toolKey(run.id, 1, 'call_p_1');
     const payloads: RunEventPayload[] = [
+      requestedOffering(1, ['Patch']),
       {
         type: 'model.responded',
         step: 1,

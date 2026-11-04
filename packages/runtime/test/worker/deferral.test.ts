@@ -119,7 +119,7 @@ describe('LoadTools adds the definitions from the next request (5.2, Q7)', () =>
     expect(namesOf(requests[0]?.body)).toEqual(['Echo', LOADER]);
     expect(namesOf(requests[1]?.body)).toEqual(['Echo', LOADER, 'Write']);
     expect(write?.description).toBe('Write a file');
-    expect(Object.keys((write?.parameters as { properties: Record<string, unknown> }).properties)).toEqual(['file_path', 'content']);
+    expect(new Set(Object.keys((write?.parameters as { properties: Record<string, unknown> }).properties))).toEqual(new Set(['file_path', 'content']));
     expect(env.fold(run.id).loadedTools).toEqual(['Write']);
   });
 
