@@ -18,6 +18,7 @@ export interface FakeChatCompletionsOptions {
   contextWindow?: number;
   contextSizeExposure?: 'models' | 'health' | 'models-nested' | 'health-nested' | 'none';
   contextOverflowStatus?: 400 | 413 | 500;
+  wire?: 'openai' | 'fm';
   modelId?: string;
   streamUsage?: boolean;
   usageReported?: boolean;
@@ -116,6 +117,8 @@ interface CompletionOut {
   delayMs?: number;
 }
 
+class FmStreamedOverflow extends Error {}
+
 class HttpFailure extends Error {
   readonly status: number;
   readonly body: Json;
@@ -139,6 +142,9 @@ export const FAKE_DETERMINISTIC_REPLY = 'This is a deterministic reply.';
 export const FAKE_REASONING_WORD = 'step ';
 export const FAKE_PAYLOAD_TOO_LARGE_ERROR = {
   error: { message: 'Request entity too large.', type: 'invalid_request_error', param: null, code: null },
+} as const;
+export const FM_CONTEXT_OVERFLOW_ERROR = {
+  error: { type: 'server_error', code: '500', message: "The session's transcript exceeded the model's context size." },
 } as const;
 export const FAKE_GUARDRAIL_ERROR = {
   error: {
@@ -443,6 +449,7 @@ export const startFakeChatCompletions = async (
     const maxTokens = body['max_tokens'] ?? body['max_completion_tokens'];
     const requested = countFakeRequestTokens(body, options.imageTokens) + (typeof maxTokens === 'number' ? maxTokens : 0);
     if (requested > contextWindow) {
+      if (options.wire === 'fm') throw new FmStreamedOverflow();
       if (options.contextOverflowStatus === 500) {
         throw new HttpFailure(500, { error: { message: 'Internal server error.', type: 'server_error', param: null, code: null } });
       }
@@ -529,10 +536,18 @@ export const startFakeChatCompletions = async (
     });
     chunk({}, out.finishReason);
     const streamOptions = isRecord(body['stream_options']) ? body['stream_options'] : {};
-    if (streamOptions['include_usage'] === true && options.streamUsage === true) {
+    if (options.wire === 'fm' || (streamOptions['include_usage'] === true && options.streamUsage === true)) {
       send({ ...base, choices: [], usage: usageFor(body, out) });
     }
     response.write('data: [DONE]\n\n');
+    response.end();
+  };
+
+  const writeFmOverflow = (response: http.ServerResponse, id: string): void => {
+    response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+    const roleChunk = { id, object: 'chat.completion.chunk', created: 0, model: modelId, choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }] };
+    response.write(`data: ${JSON.stringify(roleChunk)}\n\n`);
+    response.write(`event: error\ndata: ${JSON.stringify(FM_CONTEXT_OVERFLOW_ERROR)}\n\n`);
     response.end();
   };
 
@@ -584,7 +599,7 @@ export const startFakeChatCompletions = async (
     const out = complete(body);
     if (out.delayMs !== undefined) await delay(out.delayMs, undefined, { signal });
     const id = `chatcmpl-fake-${completionCount}`;
-    if (body['stream'] === true) {
+    if (body['stream'] === true || options.wire === 'fm') {
       writeStream(response, body, out, id);
       return;
     }
@@ -700,7 +715,8 @@ export const startFakeChatCompletions = async (
           await handleCompletion(body, response, disconnected.signal);
         } catch (error) {
           if (disconnected.signal.aborted) return;
-          if (error instanceof HttpFailure) writeJson(response, error.status, error.body, error.headers);
+          if (error instanceof FmStreamedOverflow) writeFmOverflow(response, `chatcmpl-fake-${completionCount}`);
+          else if (error instanceof HttpFailure) writeJson(response, error.status, error.body, error.headers);
           else writeJson(response, 500, { error: { message: String(error), type: 'server_error', param: null, code: null } });
         } finally {
           releaseSlot();

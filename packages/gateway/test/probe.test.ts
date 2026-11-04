@@ -6,6 +6,8 @@ import type { ProbeReport } from '@momonga/protocol';
 import {
   FAKE_GUARDRAIL_ERROR,
   FAKE_PAYLOAD_TOO_LARGE_ERROR,
+  FM_CONTEXT_OVERFLOW_ERROR,
+  countFakeRequestTokens,
   startFakeChatCompletions,
   type FakeChatCompletionsOptions,
   type FakeChatCompletionsServer,
@@ -121,6 +123,26 @@ describe('runProbe context window', () => {
     const { report } = await probe({ scenario: 'tools-ok', contextWindow: 3000, contextSizeExposure: 'none' });
     expect(report.contextWindow.method).toBe('searched');
     expect(Math.abs(report.contextWindow.value - 3000)).toBeLessThanOrEqual(60);
+  });
+
+  it('reads an overflow that fm reports as an error event in a 200 stream as a rejection, and stops doubling at the first one', async () => {
+    const window = 3000;
+    const searchPrompt = (count: number) => ({ messages: [{ role: 'user', content: Array.from({ length: count }, () => 'word').join(' ') }] });
+    let firstRejectedSize = 64;
+    while (countFakeRequestTokens(searchPrompt(firstRejectedSize)) + 1 <= window) firstRejectedSize *= 2;
+
+    const { report, fake } = await probe({ scenario: 'tools-ok', contextWindow: window, contextSizeExposure: 'none', wire: 'fm' });
+
+    const searchSizes = fake.requests
+      .filter((request) => request.path === '/v1/chat/completions')
+      .map((request) => (request.body as { messages?: Array<{ content?: unknown }> }).messages?.[0]?.content)
+      .filter((content): content is string => typeof content === 'string' && /^word( word)*$/.test(content))
+      .map(words);
+    expect(report.contextWindow.method).toBe('searched');
+    expect(Math.abs(report.contextWindow.value - window)).toBeLessThanOrEqual(window * 0.02);
+    expect(report.contextWindow.overflowErrorShape).toEqual(FM_CONTEXT_OVERFLOW_ERROR);
+    expect(Math.max(...searchSizes)).toBe(firstRejectedSize);
+    expect(searchSizes).not.toContain(262144);
   });
 });
 
