@@ -316,7 +316,7 @@ describe('anthropic adapter through the gateway: failures', () => {
     const gateway = await startAnthropicGateway({ script: [anthropicErrorReply(400, 'invalid_request_error', 'max_tokens: too large')] });
     const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
     expect(response.status).toBe(400);
-    expectErrorBody(response.body, { type: 'invalid_request', code: 'invalid_request_error' });
+    expectErrorBody(response.body, { type: 'invalid_request', code: 'unsupported_request' });
     expect(gateway.fake.requests).toHaveLength(1);
   });
 
