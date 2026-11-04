@@ -57,6 +57,25 @@ describe('worker approval request', () => {
     expect(request).not.toHaveProperty('suggestedRule');
   });
 
+  it('journals the reason the policy asked for a Write inside the workspace', async () => {
+    const env = await makeEnv();
+    const { run } = await askToWrite(env);
+
+    const [request] = env.ofType(run.id, 'tool.permission.requested');
+    expect(request?.reason).toBe('edits require approval');
+  });
+
+  it('journals the reason the policy asked for a Write outside the workspace', async () => {
+    const env = await makeEnv();
+    const outside = path.join(path.dirname(env.project), 'elsewhere', 'out.txt');
+    const { run } = await askToWrite(env, outside);
+
+    const requests = env.ofType(run.id, 'tool.permission.requested');
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.reason).toBe('edit outside the workspace requires approval');
+    expect(fs.existsSync(outside)).toBe(false);
+  });
+
   it('uses approvalTtlMs from run.limits for the approval expiry', async () => {
     const env = await makeEnv();
     const { run } = await askToWrite(env, undefined, { approvalTtlMs: 123_000 });

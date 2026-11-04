@@ -47,6 +47,17 @@ describe('approval views', () => {
     expect(single.json.approval).toEqual(approval);
   });
 
+  it('serves the reason the policy asked on the listed and the single approval, equal to the journaled request', async () => {
+    const env = await startService();
+    const { run, approvals } = await askToWrite(env);
+    const [approval] = approvals;
+
+    expect(approval?.reason).toBe('edits require approval');
+    expect(env.ofType(run.id, 'tool.permission.requested').at(-1)?.reason).toBe('edits require approval');
+    const single = await env.http('GET', `/v1/approvals/${approval.id}`);
+    expect(single.json.approval.reason).toBe('edits require approval');
+  });
+
   it('answers an unknown approval with 404', async () => {
     const env = await startService();
     expectError(await env.http('GET', '/v1/approvals/apr_missing'), 404, 'not_found');

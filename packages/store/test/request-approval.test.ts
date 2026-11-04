@@ -48,6 +48,25 @@ describe('store.requestApproval', () => {
     });
   });
 
+  it('journals the reason the policy asked and reads it back on the event and on the approval view', () => {
+    const { store } = harness();
+    const { runId, claim } = claimWithCall(store);
+    const reason = 'edit outside the workspace requires approval';
+
+    const result = store.requestApproval(claim, {
+      callId: 'call_1',
+      options: OPTIONS,
+      expiresAt: START_MS + 60_000,
+      event: { subjectDigest: DIGEST, reason },
+    });
+
+    if (result.kind !== 'ok') throw new Error(`expected ok, got ${result.kind}`);
+    const last = store.readRunEvents(runId, 0, 100).at(-1);
+    expect(last).toMatchObject({ type: 'tool.permission.requested', approvalId: result.approval.id, reason });
+    expect(store.approvalView(result.approval.id)?.reason).toBe(reason);
+    expect(store.pendingApprovalViews(runId).map((view) => view.reason)).toEqual([reason]);
+  });
+
   it('returns lease_lost for a stale claim, creating no approval and appending no event', () => {
     const { clock, store } = harness();
     const { runId, claim } = claimWithCall(store);

@@ -262,6 +262,7 @@ describe('approval views', () => {
       expiresAt: EXPIRES_MS,
       createdAt: START_MS,
       suggestedRule: 'Write(/work/a/call_1.txt)',
+      reason: 'edits require approval',
       toolCall: {
         callId: 'call_1',
         name: 'Write',

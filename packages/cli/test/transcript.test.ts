@@ -69,6 +69,19 @@ describe('reduceEvent', () => {
     expect(next.queuedElicitations).toEqual([]);
   });
 
+  it('holds the reason the policy asked on the pending approval', () => {
+    const requested = {
+      type: 'tool.permission.requested',
+      approvalId: 'ap',
+      callId: 'c1',
+      subjectDigest: 'd',
+      reason: 'edit outside the workspace requires approval',
+      options: [{ optionId: 'o', name: 'Allow', kind: 'allow_once' }],
+    };
+
+    expect(apply([call, requested]).approval?.reason).toBe('edit outside the workspace requires approval');
+  });
+
   it('does not queue an approval it already holds', () => {
     const requested = { type: 'tool.permission.requested', approvalId: 'ap', callId: 'c1', subjectDigest: 'd', options: [] };
 

@@ -119,6 +119,29 @@ describe('App run rendering', () => {
     app.unmount();
   });
 
+  it('shows why the policy asked in the approval prompt', async () => {
+    const { backend, app } = await start();
+    await untilFrame(app, 'mode: default');
+    await runStarted(backend, app, 'x');
+    backend.emit(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'Write', kind: 'edit', title: 'Write /elsewhere/out.txt', rawInput: { file_path: '/elsewhere/out.txt', content: 'x' } }));
+    backend.emit(
+      frame({
+        type: 'tool.permission.requested',
+        approvalId: 'ap1',
+        callId: 'c1',
+        subjectDigest: 'd',
+        reason: 'edit outside the workspace requires approval',
+        options: [
+          { optionId: 'o1', name: 'Allow once', kind: 'allow_once' },
+          { optionId: 'o3', name: 'Reject once', kind: 'reject_once' },
+        ],
+      }),
+    );
+    const prompt = await untilFrame(app, 'Permission requested: Write /elsewhere/out.txt');
+    expect(prompt).toContain('edit outside the workspace requires approval');
+    app.unmount();
+  });
+
   it('confirms the highlighted option with enter after moving with the arrow keys', async () => {
     const { backend, app } = await start();
     await untilFrame(app, 'mode: default');

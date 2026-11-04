@@ -203,6 +203,7 @@ describe('run event payloads', () => {
       options: PermissionOption[];
       subjectDigest: string;
       suggestedRule?: string;
+      reason: string;
     }>();
     expectTypeOf<Payload<'tool.permission.resolved'>>().toEqualTypeOf<{
       type: 'tool.permission.resolved';
