@@ -3,12 +3,13 @@ import type { UpstreamEndpoint } from '../adapters/shared/http-client.ts';
 import { decideToolCalling } from './decide.ts';
 import { endpointIdentityOf, saveEndpointRecord, stableIdentityFieldsOf } from './endpoint-record.ts';
 import type { EndpointKey } from './endpoint-record.ts';
-import { endpointKeyOf, probeEndpointOf, readModelsListing } from './endpoint-target.ts';
+import { probeEndpointOf, readModelsListing } from './endpoint-target.ts';
 import { runProbe } from './run-probe.ts';
 
 export type ProbeEndpointTargetOptions = {
   probeRecordDir: string;
   upstream: UpstreamEndpoint;
+  key: EndpointKey;
   model: string;
   apiKey: string | undefined;
   samples?: number;
@@ -36,7 +37,7 @@ export const probeEndpointTarget = async (options: ProbeEndpointTargetOptions): 
   const secondListing = await readModelsListing(endpoint, signal);
   const identityFields = stableIdentityFieldsOf(firstListing, secondListing, options.model);
   const identity = endpointIdentityOf(firstListing, options.model, identityFields);
-  const key: EndpointKey = { endpoint: endpointKeyOf(options.upstream), model: options.model };
+  const { key } = options;
   await saveEndpointRecord(options.probeRecordDir, key, identity, identityFields, report);
   return { report, toolCalling: decideToolCalling(report).mode, key, identity, identityFields };
 };

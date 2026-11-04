@@ -136,6 +136,17 @@ const validateReasoning = new Ajv2020.default({ strict: false }).compile(reasoni
 export const isProbeReport = (value: unknown): value is ProbeReport =>
   validate(value) && ((value as ProbeReport).reasoning === undefined || validateReasoning((value as ProbeReport).reasoning));
 
+const imageTokensSchema = {
+  type: 'object',
+  required: ['pixelsPerToken', 'maxTokens', 'minTokens'],
+  additionalProperties: false,
+  properties: {
+    pixelsPerToken: { type: 'number', exclusiveMinimum: 0 },
+    maxTokens: { type: 'integer', minimum: 1 },
+    minTokens: { type: 'integer', minimum: 1 },
+  },
+} as const;
+
 const ollamaReportSchema = {
   type: 'object',
   required: ['kind', 'probedAt', 'serverVersion', 'modelId', 'contextWindow', 'nativeTools', 'imageInputAccepted', 'thinkingSupported'],
@@ -153,6 +164,7 @@ const ollamaReportSchema = {
     },
     nativeTools: { type: 'object', required: ['accepted'], additionalProperties: false, properties: { accepted: bool } },
     imageInputAccepted: bool,
+    imageTokens: imageTokensSchema,
     thinkingSupported: bool,
     promptCache: {
       type: 'object',

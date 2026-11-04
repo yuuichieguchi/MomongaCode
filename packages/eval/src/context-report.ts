@@ -1,11 +1,11 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
-import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, isRecord, sha256Hex } from '@momonga/foundation';
 import { escapeTerminalLine } from '@momonga/protocol';
 import { clusterBootstrap } from './bootstrap.ts';
 import type { Cluster } from './bootstrap.ts';
 import { COMPACTION_SETTINGS, expandContextDataset } from './context-dataset.ts';
-import { POLICY_OVERLAY_SCHEMA } from './context-policy.ts';
+import { POLICY_OVERLAY_SCHEMA, normalisePolicyOverlay } from './context-policy.ts';
 import type { PolicyOverlay } from './context-policy.ts';
 import type { CompactionSetting, ContextDataset, ExpandedCase } from './context-dataset.ts';
 import { compactionFactsOf, governanceCountsOf, lossSignalsOf, recalledOf, retrievalOf } from './context-metrics.ts';
@@ -19,7 +19,10 @@ import { caseTotalsOf, tokenFactsOf, tokenMetricsOf } from './token-metrics.ts';
 import type { CaseTokenTotals, RatioMetric, TokenFacts } from './token-metrics.ts';
 import type { Transcript } from './transcript.ts';
 
-export const CONTEXT_REPORT_FORMAT = 'momonga-eval-context-report/1';
+export const CONTEXT_REPORT_FORMAT = 'momonga-eval-context-report/2';
+const RETIRED_CONTEXT_REPORT_FORMATS: Readonly<Record<string, string>> = {
+  'momonga-eval-context-report/1': 'the policy and the code digest of the runs',
+};
 
 export const CONTEXT_MODELS = ['fake', 'real'] as const;
 export type ContextModel = (typeof CONTEXT_MODELS)[number];
@@ -93,8 +96,8 @@ export type ContextReport = {
   datasetSeed: number;
   model: ContextModel;
   modelAliases: string[];
-  policy: PolicyOverlay;
-  codeDigest: string;
+  policy: PolicyOverlay | null;
+  codeDigest: string | null;
   metrics: ContextMetrics;
   meaningless: ModelDependentMetric[];
   unclassifiedCompactions: number;
@@ -265,14 +268,21 @@ export type BuildContextReportInput = {
   datasetSeed?: number;
 };
 
-const identityOf = (transcripts: readonly Transcript[]): { policy: PolicyOverlay; codeDigest: string } => {
-  const [first] = transcripts;
-  if (first === undefined) throw new EvalError('the report has no transcript to take the policy and the code digest from');
-  const policies = new Set(transcripts.map((transcript) => canonicalJson(transcript.policy)));
+type RunIdentity = { policy: PolicyOverlay; codeDigest: string };
+
+const identityOf = (transcripts: readonly Transcript[]): { policy: PolicyOverlay | null; codeDigest: string | null } => {
+  if (transcripts.length === 0) throw new EvalError('the report has no transcript to take the policy and the code digest from');
+  const known = transcripts.flatMap(({ policy, codeDigest }): RunIdentity[] => (policy === null || codeDigest === null ? [] : [{ policy: normalisePolicyOverlay(policy), codeDigest }]));
+  const [first] = known;
+  if (first === undefined) return { policy: null, codeDigest: null };
+  if (known.length < transcripts.length) {
+    throw new EvalError(`${transcripts.length - known.length} of ${transcripts.length} transcripts record no policy and no code digest, so the report would mix runs of known and unknown identity`);
+  }
+  const policies = new Set(known.map((identity) => canonicalJson(identity.policy)));
   if (policies.size > 1) throw new EvalError('the transcripts record different policy overlays, so they do not measure one run configuration');
-  const digests = new Set(transcripts.map((transcript) => transcript.codeDigest));
+  const digests = new Set(known.map((identity) => identity.codeDigest));
   if (digests.size > 1) throw new EvalError(`the transcripts record different codeDigest values (${[...digests].join(', ')}), so they were not produced by one build`);
-  return { policy: first.policy, codeDigest: first.codeDigest };
+  return first;
 };
 
 export const buildContextReport = (input: BuildContextReportInput): ContextReport => {
@@ -432,8 +442,8 @@ const CONTEXT_REPORT_SCHEMA = {
       datasetSeed: { type: 'integer', minimum: 0, maximum: MAX_DATASET_SEED },
       model: { enum: [...CONTEXT_MODELS] },
       modelAliases: { type: 'array', items: { type: 'string', minLength: 1 } },
-      policy: policySchema,
-      codeDigest: { type: 'string', pattern: '^[0-9a-f]{64}$' },
+      policy: { anyOf: [policySchema, { type: 'null' }] },
+      codeDigest: { anyOf: [{ type: 'string', pattern: '^[0-9a-f]{64}$' }, { type: 'null' }] },
       metrics: closed(
         {
           continuationRate: proportionSchema,
@@ -516,6 +526,11 @@ const validateContextReport: ValidateFunction<ContextReport> = ajv.compile<Conte
 
 export const parseContextReport = (text: string, source: string): ContextReport => {
   const value = jsonOf(text, source);
+  if (isRecord(value) && typeof value['format'] === 'string' && Object.hasOwn(RETIRED_CONTEXT_REPORT_FORMATS, value['format'])) {
+    throw new EvalError(
+      `${source}: ${value['format']} reports do not record ${RETIRED_CONTEXT_REPORT_FORMATS[value['format']]}, so they cannot be compared as ${CONTEXT_REPORT_FORMAT}; run eval context again`,
+    );
+  }
   if (!validateContextReport(value)) throw new EvalError(`${source}: not a context report (${describeFirstError(validateContextReport)})`);
   return value;
 };

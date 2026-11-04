@@ -2,7 +2,8 @@ import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.t
 import { GUIDELINE_TEXT_PATTERN } from './guideline-text.ts';
 import { HOOK_EVENTS, HOOK_OUTCOMES, HOOK_PRE_TOOL_DECISIONS } from './hooks.ts';
 import { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
-import { PREFIX_EVENTS } from './prefix-events.ts';
+import { CACHE_MISS_CAUSES, PREFIX_EVENTS } from './prefix-events.ts';
+import type { PrefixEvent } from './prefix-events.ts';
 import { MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES, REFLECTION_DROP_CAUSES, REFLECTION_JOB_STATES } from './memory.ts';
 import type { ContextChargePurpose, SummaryFidelity, SummarySource } from './context-record.ts';
 import { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES } from './permission-denial.ts';
@@ -498,6 +499,11 @@ const costTotalsProperties: Record<string, JsonSchema> = {
 const roleCostRequired = Object.keys(costTotalsProperties);
 const costTotalsRequired = [...roleCostRequired, 'roles'];
 
+const runTracePrefix = closed(
+  { preservedItems: nonNegativeInteger, toolsChanged: boolean, causes: { type: 'array', items: enumOf(PREFIX_EVENTS) } },
+  ['preservedItems', 'toolsChanged', 'causes'],
+);
+
 const fallbackCauseSchema = closed({ target: string, code: nullable(string), message: string }, ['target', 'code', 'message']);
 
 const costFallbackProperties: Record<string, JsonSchema> = {
@@ -565,6 +571,11 @@ const timingSummary = nullable(
   closed({ median: { type: 'number' }, p95: { type: 'number' }, n: nonNegativeInteger }, ['median', 'p95', 'n']),
 );
 
+const causeCounts = closed(
+  Object.fromEntries(CACHE_MISS_CAUSES.map((cause) => [cause, nonNegativeInteger])),
+  [],
+);
+
 const costBreakdownView = closed(
   {
     calls: nonNegativeInteger,
@@ -584,6 +595,8 @@ const costBreakdownView = closed(
       ['inputTokens', 'uncachedInputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'outputTokens', 'reasoningTokens'],
     ),
     cacheHitRatio: nullable({ type: 'number' }),
+    cacheBreaks: causeCounts,
+    cacheMissCauses: causeCounts,
     timeToFirstToken: timingSummary,
     duration: timingSummary,
     roles: {
@@ -605,7 +618,7 @@ const costBreakdownView = closed(
     callsWithoutResponseId: nonNegativeInteger,
     unjoined: { type: 'array', items: closed({ runId: string, step: nonNegativeInteger, reason: string }, ['runId', 'reason']) },
   },
-  ['calls', 'layers', 'billed', 'cacheHitRatio', 'timeToFirstToken', 'duration', 'roles', 'cost', 'unpriced', 'inconsistentUsage', 'callsWithoutResponseId', 'unjoined'],
+  ['calls', 'layers', 'billed', 'cacheHitRatio', 'cacheBreaks', 'cacheMissCauses', 'timeToFirstToken', 'duration', 'roles', 'cost', 'unpriced', 'inconsistentUsage', 'callsWithoutResponseId', 'unjoined'],
 );
 
 const memoryScope = enumOf(MEMORY_SCOPES);
@@ -770,9 +783,13 @@ export type RunTraceSummary = {
   chatResults: { step: number; attempt: number; finishReasons: string[] }[];
 };
 
-export type RunTraceCall = { step: number; attempt: number; anatomy?: TokenAnatomy };
+export type RunTracePrefix = { preservedItems: number; toolsChanged: boolean; causes: PrefixEvent[] };
 
-export type RunTraceView = { runId: string; summary: RunTraceSummary; spans: RunTraceSpan[]; calls?: RunTraceCall[] };
+export type RunTraceCall = { step: number; attempt: number; anatomy?: TokenAnatomy; prefix?: RunTracePrefix };
+
+export type RunTraceEvent = { step: number; type: 'tool.loaded'; names: string[] } | { step: number; type: 'loop.warned'; signature: string };
+
+export type RunTraceView = { runId: string; summary: RunTraceSummary; spans: RunTraceSpan[]; calls?: RunTraceCall[]; events?: RunTraceEvent[] };
 
 export const MCP_AUTH_STATES = ['not_applicable', 'static_header', 'not_required', 'authorized', 'required', 'refused', 'unreachable'] as const;
 
@@ -1127,7 +1144,16 @@ export const RUN_API_SCHEMAS = {
         },
         calls: {
           type: 'array',
-          items: closed({ step: nonNegativeInteger, attempt: integer, anatomy: tokenAnatomy }, ['step', 'attempt']),
+          items: closed({ step: nonNegativeInteger, attempt: integer, anatomy: tokenAnatomy, prefix: runTracePrefix }, ['step', 'attempt']),
+        },
+        events: {
+          type: 'array',
+          items: {
+            oneOf: [
+              closed({ step: nonNegativeInteger, type: { const: 'tool.loaded' }, names: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 } } }, ['step', 'type', 'names']),
+              closed({ step: nonNegativeInteger, type: { const: 'loop.warned' }, signature: string }, ['step', 'type', 'signature']),
+            ],
+          },
         },
       },
       ['runId', 'summary', 'spans'],

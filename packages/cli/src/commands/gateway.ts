@@ -1,5 +1,6 @@
 import path from 'node:path';
-import { loadUserSettings } from '@momonga/config';
+import { loadUserSettings, probeRecordKeyOf, upstreamEndpointOf } from '@momonga/config';
+import type { EndpointProbeKey } from '@momonga/config';
 import type { MomongaPaths } from '@momonga/foundation';
 import { ensureDaemon, stopDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
@@ -67,11 +68,17 @@ export const probeEndpointText = (name: string, endpoint: string, recordPath: st
 
 type OllamaProbe = Awaited<ReturnType<typeof import('@momonga/gateway').probeOllamaTarget>>;
 
+const imageInputTextOf = (report: OllamaProbe['report']): string => {
+  if (!report.imageInputAccepted) return 'false';
+  if (report.imageTokens === undefined) return 'true (vision reported, but the image token cost could not be measured, so image input stays off unless imageTokens is declared)';
+  return `true (${report.imageTokens.pixelsPerToken.toFixed(1)} pixels per token, ${report.imageTokens.minTokens} to ${report.imageTokens.maxTokens} tokens)`;
+};
+
 export const probeOllamaText = (name: string, endpoint: string, recordPath: string, report: OllamaProbe['report'], contextWindow: number): string =>
   `${escapedLines([
     `probed ${name}: model ${report.modelId} at ${endpoint}, Ollama ${report.serverVersion}`,
     `  trained context length ${report.contextWindow.value} (${report.contextWindow.method}), configured context window ${contextWindow}`,
-    `  tool calling: ${report.nativeTools.accepted ? 'native' : 'none'}, image input: ${report.imageInputAccepted}, thinking: ${report.thinkingSupported}`,
+    `  tool calling: ${report.nativeTools.accepted ? 'native' : 'none'}, image input: ${imageInputTextOf(report)}, thinking: ${report.thinkingSupported}`,
     `  recorded in ${recordPath}`,
   ])}\n`;
 
@@ -83,6 +90,12 @@ export const probeFmText = (target: string, recordPath: string, report: Endpoint
     `  recorded in ${recordPath}`,
   ])}\n`;
 
+const endpointRecordKeyOf = (name: string, target: OllamaConfig | ChatCompletionsConfig): EndpointProbeKey => {
+  const key = probeRecordKeyOf(name, target.adapter === 'chat-completions' ? { ...target, toolCalling: 'auto' } : target);
+  if (key?.kind !== 'endpoint') throw new Error(`the target ${name} has no endpoint probe record key`);
+  return key.key;
+};
+
 const probeChatCompletions = async (
   ports: CliPorts,
   paths: MomongaPaths,
@@ -91,11 +104,10 @@ const probeChatCompletions = async (
   options: ProbeOptions,
 ): Promise<number> => {
   const { probeEndpointTarget } = await import('@momonga/gateway');
-  const upstream =
-    target.socketPath !== undefined ? ({ kind: 'unix', socketPath: target.socketPath } as const) : ({ kind: 'tcp', baseUrl: target.baseUrl as string } as const);
   const { report, toolCalling, key } = await probeEndpointTarget({
     probeRecordDir: paths.probe,
-    upstream,
+    upstream: upstreamEndpointOf(target),
+    key: endpointRecordKeyOf(name, target),
     model: target.model,
     apiKey: await apiKeyOf(ports, target, options.interrupt),
     signal: options.interrupt,
@@ -108,11 +120,10 @@ const probeChatCompletions = async (
 
 const probeOllama = async (ports: CliPorts, paths: MomongaPaths, name: string, target: OllamaConfig, options: ProbeOptions): Promise<number> => {
   const { probeOllamaTarget } = await import('@momonga/gateway');
-  const upstream =
-    target.socketPath !== undefined ? ({ kind: 'unix', socketPath: target.socketPath } as const) : ({ kind: 'tcp', baseUrl: target.baseUrl as string } as const);
   const { report, key } = await probeOllamaTarget({
     probeRecordDir: paths.probe,
-    upstream,
+    upstream: upstreamEndpointOf(target),
+    key: endpointRecordKeyOf(name, target),
     model: target.model,
     contextWindow: target.capabilities.contextWindow,
     signal: options.interrupt,

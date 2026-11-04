@@ -79,8 +79,8 @@ export {
 export type { StructuredOutputVerdict, TargetBilling } from './capabilities.ts';
 export { OUTPUT_FORMATTERS } from './output-formatters.ts';
 export type { OutputFormatterName } from './output-formatters.ts';
-export { PREFIX_EVENTS } from './prefix-events.ts';
-export type { PrefixEvent } from './prefix-events.ts';
+export { CACHE_MISS_CAUSES, PREFIX_EVENTS } from './prefix-events.ts';
+export type { CacheMissCause, PrefixEvent } from './prefix-events.ts';
 export { MIN_INDEXED_TERM_CHARS, asciiLower, partitionTerms, termsOf } from './search-terms.ts';
 export type { PartitionedTerms } from './search-terms.ts';
 export { tokensForText } from './estimate-tokens.ts';
@@ -143,6 +143,8 @@ export type {
   PublicRunEvent,
   RunHealth,
   RunTraceCall,
+  RunTraceEvent,
+  RunTracePrefix,
   RunTraceSpan,
   RunTraceSummary,
   RunTraceView,

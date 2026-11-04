@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadEndpointRecord, probeOllamaTarget } from '@momonga/gateway';
+import { endpointKeyOf, loadEndpointRecord, probeOllamaTarget } from '@momonga/gateway';
 import type { Capabilities } from '@momonga/protocol';
 import { isOllamaProbeReport } from '../src/probe/report-schema.ts';
 import { createProbedOllamaTarget } from '../src/probe/ollama-target.ts';
@@ -9,7 +9,7 @@ import { OLLAMA_CAPABILITIES, OLLAMA_MODEL, startFakeOllama } from './ollama-sup
 const probeWith = async (cacheProbe: 'automatic' | 'none' | 'unreported') => {
   const fake = await startFakeOllama({ cacheProbe });
   const dir = makeDir();
-  const result = await probeOllamaTarget({ probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: fake.origin }, model: OLLAMA_MODEL, contextWindow: 32768 });
+  const result = await probeOllamaTarget({ probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: fake.origin }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL, contextWindow: 32768 });
   return { fake, dir, result };
 };
 
@@ -32,6 +32,21 @@ describe('the Ollama probe measures the prompt cache from a repeated /api/chat',
     const { dir, result } = await probeWith('unreported');
     expect(result.report).not.toHaveProperty('promptCache');
     expect((await loadEndpointRecord(dir, result.key))?.report).toEqual(result.report);
+  });
+});
+
+describe('the Ollama cache probe builds its chat body with the adapter body builder (S2)', () => {
+  it('sends truncate false, num_ctx equal to the context window and an output limit of one token', async () => {
+    const { fake } = await probeWith('automatic');
+    const bodies = fake.chatBodies();
+    expect(bodies).toHaveLength(2);
+    for (const body of bodies) {
+      expect(body.model).toBe(OLLAMA_MODEL);
+      expect(body.stream).toBe(false);
+      expect(body.truncate).toBe(false);
+      expect(body.options.num_ctx).toBe(32768);
+      expect(body.options.num_predict).toBe(1);
+    }
   });
 });
 

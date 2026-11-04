@@ -8,6 +8,7 @@ export type OpenResponsesRequestBody = {
   input: InputItem[];
   stream: true;
   store: false;
+  include: ['reasoning.encrypted_content'];
   instructions?: string;
   tools?: AdapterRequest['tools'];
   tool_choice?: AdapterRequest['tool_choice'];
@@ -36,12 +37,12 @@ const USER_PART_TYPES: ReadonlySet<ContentPart['type']> = new Set([...TEXT_PART_
 const itemOf = (item: AdapterInputItem): InputItem | undefined => {
   switch (item.type) {
     case 'reasoning':
+      if (item.encrypted_content === undefined || item.encrypted_content === null) return undefined;
       return {
         type: 'reasoning',
-        ...(item.id === undefined || item.id === null ? {} : { id: item.id }),
         summary: item.summary,
         ...(item.content === undefined || item.content === null ? {} : { content: item.content }),
-        ...(item.encrypted_content === undefined || item.encrypted_content === null ? {} : { encrypted_content: item.encrypted_content }),
+        encrypted_content: item.encrypted_content,
       };
     case 'compaction_summary':
       return compactionSummaryMessage(item.summary);
@@ -61,6 +62,7 @@ export const buildResponsesBody = (request: AdapterRequest): OpenResponsesReques
     input: request.input.flatMap((item) => itemOf(item) ?? []),
     stream: true,
     store: false,
+    include: ['reasoning.encrypted_content'],
     ...(request.instructions === undefined || request.instructions === null || request.instructions === '' ? {} : { instructions: request.instructions }),
     ...(tools.length === 0 ? {} : { tools }),
     ...(tools.length === 0 || request.tool_choice === undefined ? {} : { tool_choice: request.tool_choice }),

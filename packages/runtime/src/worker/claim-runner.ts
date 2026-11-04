@@ -391,14 +391,17 @@ const drive = async (
   const visibleNow = (): FunctionTool[] =>
     toolSet.forModel({ mode: session.permissionMode, rules: composeRules(), conciseDescriptions: token.conciseDescriptions });
   const claimVisible = token.cachePrefix ? visibleNow() : undefined;
-  const keepCompanionsWithoutHost = options.store.jobs.listForSession(session.id).some((job) => job.status === 'running');
+  const jobRunningNow = (): boolean => options.store.jobs.listForSession(session.id).some((job) => job.status === 'running');
+  const claimKeepsCompanions = token.cachePrefix ? jobRunningNow() : undefined;
+  const keepCompanionsWithoutHost = (): boolean => claimKeepsCompanions ?? jobRunningNow();
+  const loading = token.deferred === undefined ? undefined : createToolLoading(() => ctx);
   const offerNow = (loaded: readonly string[] = journal.state.loadedTools): ToolOffer =>
     offerFor({
       toolSet,
       visible: claimVisible === undefined ? visibleNow() : [...claimVisible],
       deferred: token.deferred,
       loaded,
-      keepCompanionsWithoutHost,
+      keepCompanionsWithoutHost: keepCompanionsWithoutHost(),
     });
   const ctx: ClaimContext = {
     options,
@@ -410,14 +413,15 @@ const drive = async (
     ...(pins.memoryShare === undefined ? {} : { memoryShare: pins.memoryShare }),
     ...(pinnedGuideline === undefined ? {} : { guideline: pinnedGuideline }),
     limits,
-    toolSet: token.deferred === undefined ? toolSet : withLoadTools(toolSet, createLoadToolsTool(createToolLoading(() => ctx))),
+    toolSet: loading === undefined ? toolSet : withLoadTools(toolSet, createLoadToolsTool(loading)),
+    ...(loading === undefined ? {} : { toolLoading: loading }),
     skills,
     recalled,
     usedMemoryIds: new Set<string>(),
     env,
     functionTools: () => offerNow().tools,
     toolOffer: offerNow,
-    companions: () => ({ hostOf: Object.fromEntries(toolSet.companions), keepWithoutHost: keepCompanionsWithoutHost }),
+    companions: () => ({ hostOf: Object.fromEntries(toolSet.companions), keepWithoutHost: keepCompanionsWithoutHost() }),
     systemPrompt,
     inlineLimitForReconcile: inlineOutputLimitFor(pins.capabilities),
     inlineLimitForExecution: () => {

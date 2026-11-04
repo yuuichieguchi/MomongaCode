@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { escapeTerminalLine } from '@momonga/protocol';
-import { probeRecordKeyOf, upstreamEndpointOf } from '@momonga/config';
+import { probeRecordKeyOf } from '@momonga/config';
+import type { EndpointProbeKey } from '@momonga/config';
 import type { ModelsSettings, ResolvedModels, SandboxSetting, UserModels } from '@momonga/config';
 import { caseSettingsFor, expandContextDataset, liveBoundsFor, runContextDataset } from '@momonga/eval';
 import type { ContextCaseHost, ContextDataset, ExpandedCase, PolicyOverlay, Transcript, WorkspaceStep } from '@momonga/eval';
@@ -77,7 +78,7 @@ const membersOf = (models: ResolvedModels, alias: string): string[] => {
 
 export type SecretCredential = { envName: string; secretName: string };
 
-export type EndpointProbe = { upstream: { kind: 'unix'; socketPath: string } | { kind: 'tcp'; baseUrl: string }; model: string };
+export type EndpointProbe = EndpointProbeKey;
 
 export type LiveSettings = {
   endpointProbes: EndpointProbe[];
@@ -104,14 +105,13 @@ export const liveSettingsFor = (user: UserModels, alias: string): LiveSettings =
     if (declared === undefined) throw new ContextHostError(`the target ${name} is not declared in the user settings, so it cannot be copied into a case`);
     const recordKey = probeRecordKeyOf(name, resolved);
     if (declared.adapter === 'fm' || resolved.adapter === 'fm') {
-      if (recordKey?.kind !== 'target') throw new ContextHostError(`the fm target ${name} has no probe record key`);
       if (!PROBE_TARGET_NAME.test(name)) throw new ContextHostError(`the fm target ${name} has a name its probe record cannot be keyed by`);
-      fmTargets.push(recordKey.target);
+      fmTargets.push(name);
       targets[name] = declared;
       continue;
     }
     if (recordKey?.kind === 'endpoint') {
-      endpointProbes.push({ upstream: upstreamEndpointOf(resolved), model: recordKey.key.model });
+      endpointProbes.push(recordKey.key);
     }
     if (resolved.adapter !== 'ollama' && declared.adapter !== 'ollama' && resolved.apiKeySecret !== undefined) {
       const envName = `${GENERATED_KEY_PREFIX}${credentials.length}`;

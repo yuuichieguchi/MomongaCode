@@ -116,7 +116,7 @@ describe('auto mode in the worker', () => {
     expect(env.ofType(run.id, 'tool.permission.classified')).toEqual([]);
     expect(env.ofType(run.id, 'tool.permission.requested')).toEqual([]);
     const completed = env.ofType(run.id, 'tool.completed');
-    expect(completed).toMatchObject([{ status: 'failed', output: 'Tool "Write" was not offered in the request that produced this call, so it cannot run' }]);
+    expect(completed).toMatchObject([{ status: 'failed', output: 'Tool "Write" was not offered in the request that produced this call, so it cannot run. Available tools: Echo, Counter, Bash, UpdatePlan, Wait, Mark, Probe' }]);
     expect(completed[0]).not.toHaveProperty('denial');
     expect(fs.existsSync(target)).toBe(false);
   });
@@ -130,7 +130,6 @@ describe('auto mode in the worker', () => {
     await env.runOnce(env.worker('worker-2'));
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.ofType(run.id, 'tool.permission.classified')).toHaveLength(1);
-    console.log(JSON.stringify(env.events(run.id).filter((e) => e.type.startsWith('tool')).map((e) => [e.type, (e as any).output, (e as any).status])));
     expect(fs.readFileSync(target, 'utf8')).toBe('x');
   });
 });

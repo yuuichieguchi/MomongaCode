@@ -1,3 +1,5 @@
+import type { CacheMissCause } from './prefix-events.ts';
+
 export const ANATOMY_FLAT_LAYERS = ['system', 'tools', 'instructions', 'skills', 'governing', 'memories', 'summary', 'workingState'] as const;
 
 export const ANATOMY_HISTORY_LAYERS = ['user', 'assistant', 'toolCalls', 'toolOutputs'] as const;
@@ -62,6 +64,8 @@ export type CostBreakdownView = {
   layers: { estimated: true; shares: Record<string, number>; tokens: Record<string, number>; callsWithoutAnatomy: number };
   billed: BilledTokensView;
   cacheHitRatio: number | null;
+  cacheBreaks: Partial<Record<CacheMissCause, number>>;
+  cacheMissCauses: Partial<Record<CacheMissCause, number>>;
   timeToFirstToken: TimingSummaryView | null;
   duration: TimingSummaryView | null;
   roles: Record<string, RoleBreakdownView>;
@@ -79,6 +83,7 @@ export type BilledCallView = {
   step?: number;
   role?: string;
   responseId?: string;
+  target?: string;
   provider: string;
   model: string;
   billing: 'metered' | 'local' | 'unknown';

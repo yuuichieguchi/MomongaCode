@@ -19,7 +19,6 @@ import {
   saveTranscript,
 } from '@momonga/eval';
 import type { ContextDataset, ContextModel, EvalReport, GateName, GoldenCase, GoldenDataset, PolicyOverlay, RecordedRun, Transcript } from '@momonga/eval';
-import { codeDigestOfRunningProcess } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { goldenRunApi } from '../client/golden-run-api.ts';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
@@ -56,7 +55,6 @@ const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenData
   const client = connectRuntime(paths);
   const workspaces: string[] = [];
   if (record !== undefined) await ports.files.ensureDirectory(record);
-  const codeDigest = record === undefined ? undefined : await codeDigestOfRunningProcess();
   try {
     return await runDataset(dataset, {
       api: goldenRunApi(client, undefined, {
@@ -73,9 +71,7 @@ const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenData
         await populate(ports, cwd, golden);
         return { cwd, env };
       },
-      ...(record === undefined || codeDigest === undefined
-        ? {}
-        : { onTranscript: async (run: RecordedRun) => void (await saveTranscript(ports.files, record, { ...run, policy: {}, codeDigest })) }),
+      ...(record === undefined ? {} : { onTranscript: async (run: RecordedRun) => void (await saveTranscript(ports.files, record, { ...run, policy: null, codeDigest: null })) }),
     });
   } finally {
     await Promise.all(workspaces.map((directory) => ports.files.removeTree(directory)));

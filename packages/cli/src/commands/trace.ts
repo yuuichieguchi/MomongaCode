@@ -1,7 +1,7 @@
 import { describeFallbackCause } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { anatomyLayerEntries } from '@momonga/protocol';
-import type { FallbackCauseView, RunTraceCall, RunTraceSpan, RunTraceView, TokenAnatomy, UsageReport } from '@momonga/protocol';
+import type { FallbackCauseView, RunTraceCall, RunTraceEvent, RunTraceSpan, RunTraceView, TokenAnatomy, UsageReport } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
@@ -52,7 +52,8 @@ const layerText = (anatomy: TokenAnatomy, name: string, tokens: number): string 
 };
 
 const callLine = (call: RunTraceCall): string => {
-  const prefix = `step ${call.step}, attempt ${call.attempt}:`;
+  const causes = call.prefix === undefined || call.prefix.causes.length === 0 ? '' : ` [prefix broken by ${call.prefix.causes.join(', ')}]`;
+  const prefix = `step ${call.step}, attempt ${call.attempt}:${causes}`;
   const { anatomy } = call;
   if (anatomy === undefined) return `${prefix} layers not recorded`;
   const layers = anatomyLayerEntries(anatomy.layers)
@@ -60,6 +61,9 @@ const callLine = (call: RunTraceCall): string => {
     .map(([name, tokens]) => layerText(anatomy, name, tokens));
   return `${prefix} ${anatomy.total} tokens (estimated) ${layers.join(', ')}`;
 };
+
+const eventLine = (event: RunTraceEvent): string =>
+  event.type === 'tool.loaded' ? `step ${event.step}: loaded tools: ${event.names.join(', ')}` : `step ${event.step}: loop warned: ${event.signature}`;
 
 export const renderTrace = (trace: RunTraceView, usage: UsageReport): string => {
   const known = new Set(trace.spans.map((span) => span.spanId));
@@ -69,6 +73,7 @@ export const renderTrace = (trace: RunTraceView, usage: UsageReport): string => 
     `run ${trace.runId}: ${summary.steps} steps, ${usage.responses.length} model calls, ${summary.toolCalls} tool calls, ${summary.errorCount} errors, ${summary.durationMs} ms`,
     `tokens: ${usage.total.input_tokens} in, ${usage.total.output_tokens} out`,
     ...(trace.calls ?? []).map(callLine),
+    ...(trace.events ?? []).map(eventLine),
     ...roots
       .sort((left, right) => left.startMs - right.startMs)
       .flatMap((root) => [`${root.name}  ${root.endMs - root.startMs} ms  ${root.status}`, ...spanLines(trace.spans, root.spanId, 1)]),

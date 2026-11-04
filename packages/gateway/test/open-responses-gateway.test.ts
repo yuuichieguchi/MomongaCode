@@ -42,6 +42,7 @@ describe('open-responses relay through the gateway: text', () => {
       input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hello' }] }],
       stream: true,
       store: false,
+      include: ['reasoning.encrypted_content'],
       instructions: 'be brief',
       temperature: 0.2,
       max_output_tokens: 300,

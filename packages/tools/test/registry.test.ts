@@ -6,7 +6,11 @@ import { makeTool } from './harness.ts';
 import { makeLayout, ruleFor } from './helpers.ts';
 
 const digestOf = (tools: AnyTool[]): string =>
-  sha256Hex(canonicalJson(tools.map((tool) => [tool.name, tool.description, tool.kind, tool.sideEffect, tool.inputSchema])));
+  sha256Hex(
+    canonicalJson(
+      tools.map((tool) => [tool.name, tool.description, tool.kind, tool.sideEffect, tool.inputSchema, tool.conciseDescription ?? null, tool.conciseParameterDescriptions ?? null]),
+    ),
+  );
 
 const source = (id: string, tools: AnyTool[]): ToolSource => ({ id, list: async () => tools });
 
@@ -117,7 +121,16 @@ describe('createToolRegistry sources', () => {
 });
 
 describe('ToolSet snapshot', () => {
-  it('computes the digest from name, description, kind, sideEffect and inputSchema in order', async () => {
+  it('computes the digest of a tool with a concise variant and of one without from the same seven fields', async () => {
+    const registry = createToolRegistry();
+    const read = makeTool('Read');
+    const grep = { ...makeTool('Grep'), conciseDescription: 'Searches.', conciseParameterDescriptions: { pattern: 'Regex.' } } as AnyTool;
+    registry.register(read);
+    registry.register(grep);
+    expect((await registry.snapshot()).digest).toBe(digestOf([read, grep]));
+  });
+
+  it('computes the digest from name, description, kind, sideEffect, inputSchema and the concise variant in order', async () => {
     const registry = createToolRegistry();
     const read = makeTool('Read');
     const write = makeTool('Write', { kind: 'edit', sideEffect: 'write', subjectKind: 'none' });
