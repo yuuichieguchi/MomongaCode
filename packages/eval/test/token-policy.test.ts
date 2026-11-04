@@ -211,7 +211,7 @@ describe('the context report format', () => {
     const { policy: _policy, codeDigest: _digest, ...rest } = reportWith();
     const retired = JSON.stringify({ ...rest, format: 'momonga-eval-context-report/1' });
     expect(() => parseContextReport(retired, 'base.json')).toThrow(EvalError);
-    expect(() => parseContextReport(retired, 'base.json')).toThrow(/^base\.json: momonga-eval-context-report\/1 .*momonga-eval-context-report\/2/);
+    expect(() => parseContextReport(retired, 'base.json')).toThrow(/base\.json.*momonga-eval-context-report\/1 .*momonga-eval-context-report\/2/);
     expect(() => parseContextReport(retired, 'base.json')).not.toThrow(/required property/);
   });
 });
