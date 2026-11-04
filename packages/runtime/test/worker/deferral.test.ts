@@ -218,8 +218,7 @@ describe('only offered tools run (5.3, 0.2 #11, Q8)', () => {
 
     expect(enumOf(requests[0]?.body)).toEqual(['Counter']);
     expect(completed?.status).toBe('failed');
-    expect(completed?.output).toMatch(/not offered/i);
-    expect(completed?.output).not.toContain('LoadTools');
+    expect(completed?.output).toBe('Tool "Write" was not offered in the request that produced this call, so it cannot run. Available tools: Echo, LoadTools');
     expect(env.ofType(run.id, 'tool.permission.requested')).toEqual([]);
     expect(env.toolbox.executions.filter((execution) => execution.name === 'Write')).toEqual([]);
   });

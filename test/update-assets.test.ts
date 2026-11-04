@@ -3,7 +3,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { RELEASE_SIGNATURE_ASSET, RELEASE_SIGNATURE_NAMESPACE } from '@momonga/foundation';
 import { SEA_TARGETS } from '../scripts/node-runtime.ts';
-import { CHECKSUMS_ASSET, assetNameFor } from '../packages/cli/src/update/source.ts';
+import { CHECKSUMS_ASSET, GITHUB_ENDPOINTS, assetNameFor } from '../packages/cli/src/update/source.ts';
+import { parseReleaseTag } from '../packages/cli/src/update/version.ts';
 
 const root = path.resolve(import.meta.dirname, '..');
 
@@ -34,6 +35,18 @@ describe('the updater consumes the assets the release script publishes', () => {
   });
 
   it('fetches from the same release URL layout as install.sh', () => {
-    expect(fs.readFileSync(path.join(root, 'scripts/install.sh'), 'utf8')).toContain('https://github.com/$MOMONGA_REPO/releases/download/v$MOMONGA_VERSION');
+    const updaterTemplate = /const releaseUrl = [^`]*`([^`]+)`/.exec(fs.readFileSync(path.join(root, 'packages/cli/src/update/install.ts'), 'utf8'))?.[1];
+    const installerTemplate = /base_url="(https:\/\/[^"]*\/releases\/download\/[^"]*)"/.exec(fs.readFileSync(path.join(root, 'scripts/install.sh'), 'utf8'))?.[1];
+
+    const updaterLayout = updaterTemplate
+      ?.replace('${source.endpoints.downloadBaseUrl}', GITHUB_ENDPOINTS.downloadBaseUrl)
+      .replace('${source.repo}', '<repo>')
+      .replace('${release.tag}', '<tag>')
+      .replace('/${name}', '');
+    const installerLayout = installerTemplate?.replace('$repo', '<repo>').replace('v$MOMONGA_VERSION', '<tag>');
+
+    expect(updaterLayout).toBe('https://github.com/<repo>/releases/download/<tag>');
+    expect(installerLayout).toBe(updaterLayout);
+    expect(parseReleaseTag('v1.2.3').text).toBe('1.2.3');
   });
 });
