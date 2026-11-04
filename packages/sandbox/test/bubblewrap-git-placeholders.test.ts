@@ -83,6 +83,15 @@ describe.runIf(HAS_BWRAP)('git in a normal repository with bubblewrap placeholde
     expect(commonDir.stdout.trim()).toBe('.git');
   });
 
+  it('shows the sandbox a commondir that holds a dot, and git status exits 0', async () => {
+    const commondir = await run(sh('cat .git/commondir'));
+    expect(commondir.stdout).toBe('.\n');
+    expect(commondir.code).toBe(0);
+    const status = await run(sh('git status --porcelain'));
+    expect(status.stderr).toBe('');
+    expect(status.code).toBe(0);
+  });
+
   it('lets git status run on the host while a sandboxed command runs, and leaves no placeholder after release', async () => {
     const controller = new AbortController();
     const ready = path.join(outside, 'ready');
@@ -95,5 +104,86 @@ describe.runIf(HAS_BWRAP)('git in a normal repository with bubblewrap placeholde
     await run(proc);
     expect(fs.existsSync(path.join(repo, '.git', 'commondir'))).toBe(false);
     expect(fs.existsSync(path.join(repo, '.git', 'config.worktree'))).toBe(false);
+  });
+});
+
+describe.runIf(HAS_BWRAP)('git in a root that is not a repository, inside a parent repository (real bwrap)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+  let created: string[] = [];
+  let spawned: SandboxedProcess[] = [];
+  let parent = '';
+  let child = '';
+  let outside = '';
+  let sandbox: Sandbox;
+
+  const tempDir = (): string => {
+    const dir = fs.realpathSync(makeTempDir());
+    created.push(dir);
+    return dir;
+  };
+
+  const gitEnv = (): Record<string, string> => ({ ...BASE_ENV, HOME: outside, GIT_CONFIG_NOSYSTEM: '1' });
+
+  const git = (cwd: string, ...args: string[]) => spawnSync('git', args, { cwd, env: gitEnv(), encoding: 'utf8' });
+
+  const policy = (): SandboxPolicy => {
+    const roots = [child, outside];
+    const protectedSet = protectedSetFor(roots, fakePolicyFilesystem({ platform: 'linux' }));
+    return {
+      writableRoots: roots,
+      writeDenied: [...protectedSet.paths],
+      writeDeniedLiterals: [],
+      readDenied: [],
+      network: 'deny',
+      fileRules: EMPTY_FILE_RULES,
+      protectedSet,
+    };
+  };
+
+  const sh = (script: string, signal: AbortSignal = new AbortController().signal): SandboxedProcess => {
+    const proc = sandbox.spawn({ argv: ['/bin/sh', '-c', script], cwd: child, env: gitEnv() }, policy(), signal);
+    spawned.push(proc);
+    return proc;
+  };
+
+  beforeEach(() => {
+    parent = tempDir();
+    outside = tempDir();
+    child = path.join(parent, 'sub');
+    fs.mkdirSync(child);
+    sandbox = createBubblewrapSandbox({ tmpRoot: tempDir(), killGraceMs: KILL_GRACE_MS, journal: createPlaceholderJournal(path.join(tempDir(), 'journal')), holders: heldMountPoints });
+    expect(git(parent, 'init', '-q').status).toBe(0);
+    expect(fs.existsSync(path.join(child, '.git'))).toBe(false);
+  });
+
+  afterEach(async () => {
+    try {
+      await killGroupsForCleanup(spawned.map((proc) => proc.pgid));
+    } finally {
+      for (const dir of created) fs.rmSync(dir, { recursive: true, force: true });
+      created = [];
+      spawned = [];
+    }
+  });
+
+  it('finds the parent top level inside the sandbox', async () => {
+    const toplevel = await run(sh('git rev-parse --show-toplevel'));
+    expect(toplevel.stderr).not.toContain('invalid gitfile format');
+    expect(toplevel.stderr).toBe('');
+    expect(toplevel.code).toBe(0);
+    expect(toplevel.stdout.trim()).toBe(parent);
+  });
+
+  it('finds the parent top level on the host while a sandboxed command runs, and leaves no .git in the root after release', async () => {
+    const controller = new AbortController();
+    const ready = path.join(outside, 'ready');
+    const proc = sh(`: > ${ready}; sleep 30`, controller.signal);
+    await waitFor(() => fs.existsSync(ready), { description: 'the sandboxed command is running' });
+    const toplevel = git(child, 'rev-parse', '--show-toplevel');
+    expect(toplevel.stderr).not.toContain('invalid gitfile format');
+    expect(toplevel.status).toBe(0);
+    expect(toplevel.stdout.trim()).toBe(parent);
+    controller.abort();
+    await run(proc);
+    expect(fs.existsSync(path.join(child, '.git'))).toBe(false);
   });
 });
