@@ -401,6 +401,18 @@ describe('the settings, credentials and probe records of a live run', () => {
       'https://upstream.invalid/v1 m -> /tmp/mc-xxxxxx1/.momonga/state/probe',
     ]);
   });
+
+  it('copies the endpoint probe record of an ollama target into every case home', async () => {
+    const models = userModels();
+    models.resolved.targets['t'] = { ...target(), adapter: 'ollama', baseUrl: 'http://127.0.0.1:11434', model: 'qwen3' } as never;
+    models.declared.targets = { ...models.declared.targets, t: { adapter: 'ollama', model: 'qwen3', baseUrl: 'http://127.0.0.1:11434', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } } as never };
+    const context = harness();
+    await runContextLive(context.effects, input({ models }));
+    expect(context.endpointProbeCopies).toEqual([
+      'http://127.0.0.1:11434 qwen3 -> /tmp/mc-xxxxxx0/.momonga/state/probe',
+      'http://127.0.0.1:11434 qwen3 -> /tmp/mc-xxxxxx1/.momonga/state/probe',
+    ]);
+  });
 });
 
 describe('the shipped context dataset with the fake model', () => {
