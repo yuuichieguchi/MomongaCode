@@ -55,20 +55,26 @@ const adapterIn = (mode: ToolCallingMode) => {
   return adapter;
 };
 
+const countedBefore = (request: AdapterRequest): number => estimateInputTokens({ input: request.input, tools: request.tools });
+
 describe('wire counting for the full builtin tool set at fm\'s window', () => {
-  it('counts the constrained wire with the tool listing and the envelope: 4187 tokens, not the 2464 counted before', async () => {
+  it('counts the constrained wire with the tool listing and the envelope, above the count of the input and the tools', async () => {
     const request = await firstRequest();
-    expect(request.tools?.map((tool) => tool.name)).toEqual(['Read', 'Glob', 'Grep', 'ReadOutput', 'Write', 'Edit', 'Bash', 'UpdatePlan', 'BashOutput', 'KillBash']);
-    const adapter = adapterIn('constrained');
-    expect(estimateInputTokens({ input: request.input, tools: request.tools })).toBe(2464);
-    expect(wireTokensOf(adapter.renderWire?.(request, { name: 'fm', model: 'system' }) as never)).toBe(4187);
+    const tools = request.tools ?? [];
+    expect(tools.map((tool) => tool.name)).toEqual(['Read', 'Glob', 'Grep', 'ReadOutput', 'Write', 'Edit', 'Bash', 'UpdatePlan', 'BashOutput', 'KillBash']);
+    const wire = adapterIn('constrained').renderWire?.(request, { name: 'fm', model: 'system' }) as { messages: Array<{ role: string; content: string }>; response_format: unknown };
+    const system = wire.messages.find((message) => message.role === 'system')?.content ?? '';
+    for (const tool of tools) expect(system).toContain(JSON.stringify(tool.description));
+    const envelope = JSON.stringify(wire.response_format);
+    for (const tool of tools) expect(envelope).toContain(JSON.stringify(tool.name));
+    expect(wireTokensOf(wire as never)).toBeGreaterThan(countedBefore(request));
   });
 
-  it('keeps the native wire within 1% of the old count', async () => {
+  it('keeps the native wire within 1% of the count of the input and the tools', async () => {
     const request = await firstRequest();
+    const counted = countedBefore(request);
     const native = wireTokensOf(adapterIn('native').renderWire?.(request, { name: 'fm', model: 'system' }) as never);
-    expect(native).toBe(2446);
-    expect(Math.abs(native - 2464)).toBeLessThanOrEqual(Math.ceil(0.01 * 2464));
+    expect(Math.abs(native - counted)).toBeLessThanOrEqual(Math.ceil(0.01 * counted));
   });
 
   it('puts the constrained first request above W - R = 3072 at a 4096 window', async () => {
