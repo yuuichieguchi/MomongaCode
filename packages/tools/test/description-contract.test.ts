@@ -35,8 +35,27 @@ const descriptionOf = (tools: Map<string, FunctionTool>, name: string): string =
   return tool.description ?? '';
 };
 
-const withoutDescription = (tools: Map<string, FunctionTool>): Omit<FunctionTool, 'description'>[] =>
-  [...tools.values()].map(({ description: _description, ...rest }) => rest);
+const stripDescriptions = (value: unknown, key?: string): unknown => {
+  if (Array.isArray(value)) return value.map((entry) => stripDescriptions(entry));
+  if (value === null || typeof value !== 'object') return value;
+  const insideProperties = key === 'properties';
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([name, entry]) => insideProperties || name !== 'description' || typeof entry !== 'string')
+      .map(([name, entry]) => [name, stripDescriptions(entry, insideProperties ? undefined : name)]),
+  );
+};
+
+const withoutDescriptions = (tools: Map<string, FunctionTool>): unknown[] => [...tools.values()].map((tool) => stripDescriptions(tool));
+
+const parameterDescriptionsOf = (tools: Map<string, FunctionTool>, name: string): Record<string, string> => {
+  const tool = tools.get(name);
+  if (tool === undefined) throw new Error(`${name} is not offered`);
+  const properties = ((tool.parameters as { properties?: Record<string, { description?: unknown }> }).properties ?? {});
+  return Object.fromEntries(
+    Object.entries(properties).flatMap(([field, schema]) => (typeof schema.description === 'string' ? [[field, schema.description]] : [])),
+  );
+};
 
 const plainTool = (name: string, variant: Record<string, unknown> = {}): AnyTool =>
   ({
@@ -75,16 +94,40 @@ describe('concise tool descriptions (T3-6)', () => {
     expect(descriptionOf(offered(set, false), name)).toBe(tool?.description);
   });
 
-  it('changes only the descriptions between the two variants', async () => {
+  it('changes nothing but description strings between the two variants', async () => {
     const set = await snapshotOf(allOwnedTools());
-    expect(withoutDescription(offered(set, true))).toEqual(withoutDescription(offered(set, false)));
+    expect(withoutDescriptions(offered(set, true))).toEqual(withoutDescriptions(offered(set, false)));
   });
 
-  it.each(FILE_TOOLS)('%s concise description still says a relative path is resolved against the working directory', async (name) => {
-    const concise = descriptionOf(offered(await snapshotOf(allOwnedTools()), true), name);
-    expect(concise).not.toMatch(/must be (an )?absolute/i);
-    expect(concise).not.toMatch(/^absolute/i);
+  it.each(OWNED_NAMES)('%s gives each parameter a non-empty concise description no longer than its full one', async (name) => {
+    const set = await snapshotOf(allOwnedTools());
+    const full = parameterDescriptionsOf(offered(set, false), name);
+    const concise = parameterDescriptionsOf(offered(set, true), name);
+    expect(Object.keys(concise).sort()).toEqual(Object.keys(full).sort());
+    for (const [field, text] of Object.entries(full)) {
+      const short = concise[field] ?? '';
+      expect(short.trim().length).toBeGreaterThan(0);
+      expect(short.length).toBeLessThanOrEqual(text.length);
+    }
+  });
+
+  it.each([
+    ['Read', 'file_path'],
+    ['Write', 'file_path'],
+    ['Edit', 'file_path'],
+    ['Glob', 'path'],
+    ['Grep', 'path'],
+  ])('%s concise texts still say a relative %s is resolved against the working directory', async (name, field) => {
+    const tools = offered(await snapshotOf(allOwnedTools()), true);
+    const concise = descriptionOf(tools, name);
+    const fieldDescription = parameterDescriptionsOf(tools, name)[field] ?? '';
+    for (const text of [concise, fieldDescription]) {
+      expect(text).not.toMatch(/must be (an )?absolute/i);
+      expect(text).not.toMatch(/^absolute/i);
+      expect(text).not.toMatch(/absolute path required/i);
+    }
     expect(concise).toMatch(/relative .*resolved against the working directory/i);
+    expect(fieldDescription).toMatch(/relative .*resolved against the working directory/i);
   });
 
   it('falls back to the full description for a tool without a concise variant', async () => {
