@@ -286,6 +286,9 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
   const client = createGatewayClient({ socketPath: plan.gatewaySocket, clock: env.clock, version: SUPERVISOR_APP_VERSION });
   try {
     const fake = env.gateway;
+    const listing = await client.model(E2E_MODEL_ALIAS, { signal: AbortSignal.timeout(30_000) });
+    fake.targetsByAlias[E2E_MODEL_ALIAS] = [...listing.targets];
+    for (const [target, counter] of Object.entries(listing.targetCounters)) fake.countersByTarget.set(target, counter);
     fake.script = dryRunStepsOf(steps, plan.spec.toolCalling);
     const counts: CountTokensResult[] = [];
     const observedCounts: number[] = [];
