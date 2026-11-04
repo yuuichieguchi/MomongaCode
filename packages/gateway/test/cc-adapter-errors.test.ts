@@ -55,11 +55,11 @@ describe('chat-completions error classification', () => {
     expect(result.error).toMatchObject({ type: 'invalid_request', code: 'payload_too_large' });
   });
 
-  it('maps context_length_exceeded to a non-retryable invalid_request with that code', async () => {
+  it('maps an OpenAI-style context_length_exceeded rejection to the unified context_window_exceeded invalid_request', async () => {
     const fake = await startFake({ scenario: 'tools-ok', contextWindow: 8 });
     const result = await classified(fake, { model: 'system', input: [userText('one two three four five six seven eight nine ten')] });
     expect(result.retryable).toBe(false);
-    expect(result.error).toMatchObject({ type: 'invalid_request', code: 'context_length_exceeded' });
+    expect(result.error).toMatchObject({ type: 'invalid_request', code: 'context_window_exceeded' });
   });
 
   it('maps a guardrail rejection to a neutral model_error guardrail_violation', async () => {

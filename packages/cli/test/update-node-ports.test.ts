@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
-import { momongaPaths } from '@momonga/foundation';
+import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
 import { registerCleanup, withTempDir } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import type { CliPorts } from '../src/ports.ts';
@@ -66,7 +66,9 @@ describe('autoUpdates', () => {
 describe('update state store', () => {
   it('reads undefined before the first write and returns what was written afterwards', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const store = nodeUpdateState(momongaPaths(home));
+    const paths = momongaPaths(home);
+    await ensureMomongaDirs(paths);
+    const store = nodeUpdateState(paths);
     expect(await store.read()).toBeUndefined();
 
     await store.write({ checkedAt: 7, outcome: { kind: 'up_to_date' }, announced: true });
@@ -78,6 +80,7 @@ describe('update state store', () => {
   it('fails on a file that is not JSON', async (context) => {
     const home = withTempDir(context, { asHome: true });
     const paths = momongaPaths(home);
+    await ensureMomongaDirs(paths);
     const store = nodeUpdateState(paths);
     await store.write({});
     fs.writeFileSync(path.join(paths.state, 'update.json'), '{ nope');
@@ -89,7 +92,9 @@ describe('update state store', () => {
 describe('update lock', () => {
   it('hands the lock to one holder at a time', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const lock = nodeUpdateLock(momongaPaths(home));
+    const paths = momongaPaths(home);
+    await ensureMomongaDirs(paths);
+    const lock = nodeUpdateLock(paths);
 
     const first = await lock.acquire();
     expect(first).toBeDefined();
@@ -103,7 +108,9 @@ describe('update lock', () => {
 
   it('reports a held lock without taking it', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const lock = nodeUpdateLock(momongaPaths(home));
+    const paths = momongaPaths(home);
+    await ensureMomongaDirs(paths);
+    const lock = nodeUpdateLock(paths);
     expect(await lock.isHeld()).toBe(false);
 
     const held = await lock.acquire();

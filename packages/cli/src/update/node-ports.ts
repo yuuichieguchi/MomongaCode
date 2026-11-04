@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { loadUserSettings } from '@momonga/config';
-import { ProcessLockHeldError, acquireProcessLock, ensureMomongaDirs, inspectProcessLock, nodeCommandRunner } from '@momonga/foundation';
+import { ProcessLockHeldError, acquireProcessLock, inspectProcessLock, nodeCommandRunner } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { Agent, interceptors, request } from 'undici';
 import { createSupervisorClient } from '../client/supervisor-client.ts';
@@ -67,7 +67,6 @@ export const nodeUpdateLock = (paths: MomongaPaths): UpdateLock => {
   const lockPath = path.join(paths.run, UPDATE_LOCK_FILE);
   return {
     acquire: async () => {
-      await ensureMomongaDirs(paths);
       try {
         const lock = await acquireProcessLock(lockPath);
         return { release: () => lock.release() };
@@ -95,7 +94,6 @@ export const nodeUpdateState = (paths: MomongaPaths): UpdateStateStore => {
       return parsed;
     },
     write: async (state) => {
-      await ensureMomongaDirs(paths);
       const temporary = `${file}.${process.pid}.tmp`;
       await fs.writeFile(temporary, JSON.stringify(state), { mode: 0o600 });
       await fs.rename(temporary, file);

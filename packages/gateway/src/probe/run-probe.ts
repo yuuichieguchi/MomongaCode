@@ -11,6 +11,9 @@ import {
   type ProbeKeyword,
   type ProbeReport,
 } from '@momonga/protocol';
+import { matchesContextOverflow } from '../adapters/chat-completions/classify.ts';
+import { decodeUpstreamReply } from '../adapters/chat-completions/upstream-reply.ts';
+import type { UpstreamReply } from '../adapters/chat-completions/upstream-reply.ts';
 import { summaryRequestOf } from '../adapters/shared/compact.ts';
 import { hiddenReasoningTokens } from '../core/hidden-reasoning.ts';
 import { maxOutputTokensFor } from './decide.ts';
@@ -55,7 +58,6 @@ const CONTEXT_FIELDS = [
   'resolvedContextSize',
   'context_size',
 ] as const;
-const NON_OVERFLOW_CLIENT_ERRORS = new Set([408, 429]);
 
 const PROBE_TOOL: ProbeTool = {
   name: 'probe_weather',
@@ -76,8 +78,12 @@ const TINY_PNG =
 const ajv = new Ajv2020.default({ strict: false });
 const validateToolArguments = ajv.compile(PROBE_TOOL.parameters);
 
-const expectStatus = (result: HttpResult, allowed: readonly number[], what: string): void => {
-  if (!allowed.includes(result.status)) {
+type ChatResult = HttpResult & { reply: UpstreamReply };
+
+const reportsError = (result: HttpResult | ChatResult): boolean => 'reply' in result && result.reply.kind === 'error';
+
+const expectStatus = (result: HttpResult | ChatResult, allowed: readonly number[], what: string): void => {
+  if (!allowed.includes(result.status) || (result.status < 400 && reportsError(result))) {
     throw new Error(`Probe step "${what}" failed with HTTP ${result.status}: ${result.text.slice(0, 500)}`);
   }
 };
@@ -169,8 +175,10 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
   const model = options.model ?? listedId;
   if (typeof model !== 'string') throw new Error('Probe could not determine a model id from /v1/models');
 
-  const post = (body: Record<string, unknown>): Promise<HttpResult> =>
-    client.post('chat', { model, ...body });
+  const post = async (body: Record<string, unknown>): Promise<ChatResult> => {
+    const result = await client.post('chat', { model, ...body });
+    return { ...result, reply: await decodeUpstreamReply(result.status, result.text) };
+  };
   const stepTimeoutMs = options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS;
   const sleep = options.sleep ?? systemSleep;
   const chat: Chat = async (body) => {
@@ -261,7 +269,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
   };
 };
 
-type Chat = (body: Record<string, unknown>) => Promise<HttpResult>;
+type Chat = (body: Record<string, unknown>) => Promise<ChatResult>;
 
 type ImageCost = { rejected: true } | { rejected: false; promptTokens: number | undefined };
 
@@ -269,7 +277,7 @@ type MeasuredImage = { side: number; tokens: number };
 
 type Measurement = MeasuredImage | 'rejected' | 'unusable';
 
-const imagePromptRequest = (chat: Chat, imageUrl: string | undefined): Promise<HttpResult> => {
+const imagePromptRequest = (chat: Chat, imageUrl: string | undefined): Promise<ChatResult> => {
   const parts: unknown[] = [{ type: 'text', text: IMAGE_PROMPT }];
   if (imageUrl !== undefined) parts.push({ type: 'image_url', image_url: { url: imageUrl } });
   return chat({ messages: [{ role: 'user', content: parts }], max_tokens: 1 });
@@ -396,7 +404,7 @@ const probeKeyword = async (chat: Chat, keyword: ProbeKeyword): Promise<boolean>
     `keyword ${keyword}`,
   );
 
-const sampleRequest = async (chat: Chat, body: Record<string, unknown>): Promise<HttpResult | undefined> => {
+const sampleRequest = async (chat: Chat, body: Record<string, unknown>): Promise<ChatResult | undefined> => {
   try {
     return await chat(body);
   } catch (error) {
@@ -613,13 +621,14 @@ const searchContextWindow = async (chat: Chat): Promise<ProbeReport['contextWind
 
   const attempt = async (words: number): Promise<{ ok: boolean; promptTokens: number }> => {
     const result = await chat({ messages: [{ role: 'user', content: wordsOf(words) }], max_tokens: 1 });
-    if (result.status === 200) return { ok: true, promptTokens: promptTokensOf(parseJson(result.text)) ?? words };
-    const rejectedAsTooLarge =
-      result.status >= 400 && result.status < 500 && !NON_OVERFLOW_CLIENT_ERRORS.has(result.status);
-    if (!rejectedAsTooLarge) expectStatus(result, [200], 'context window search');
+    const { reply } = result;
+    if (reply.kind === 'completion') return { ok: true, promptTokens: promptTokensOf({ usage: reply.usage }) ?? words };
+    if (!matchesContextOverflow(result.status, reply.body)) {
+      throw new Error(`Probe step "context window search" failed with HTTP ${result.status}: ${result.text.slice(0, 500)}`);
+    }
     if (!overflowRecorded) {
       overflowRecorded = true;
-      overflowErrorShape = parseJson(result.text) ?? result.text;
+      overflowErrorShape = reply.body;
     }
     return { ok: false, promptTokens: 0 };
   };
@@ -654,7 +663,7 @@ const searchContextWindow = async (chat: Chat): Promise<ProbeReport['contextWind
 };
 
 const measureConcurrency = async (chat: Chat): Promise<number> => {
-  const request = (): Promise<HttpResult> => chat({ messages: [{ role: 'user', content: PLAIN_PROMPT }] });
+  const request = (): Promise<ChatResult> => chat({ messages: [{ role: 'user', content: PLAIN_PROMPT }] });
   expectStatus(await request(), [200], 'concurrency warm-up');
   const singleStartedAt = performance.now();
   expectStatus(await request(), [200], 'concurrency baseline');

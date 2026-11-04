@@ -1,5 +1,7 @@
 import type { ErrorType } from '@momonga/protocol';
 
+export const CONTEXT_WINDOW_EXCEEDED = 'context_window_exceeded';
+
 export class StreamFailure extends Error {
   readonly code: string;
   readonly errorType: ErrorType;
@@ -44,6 +46,7 @@ export class UpstreamHttpError extends Error {
   readonly upstreamMessage: string;
   readonly retryAfterMs: number | undefined;
   readonly guardrail: boolean;
+  readonly contextOverflow: boolean;
   readonly retryHint: boolean | undefined;
 
   constructor(
@@ -53,6 +56,7 @@ export class UpstreamHttpError extends Error {
     retryAfterMs: number | undefined,
     guardrail: boolean,
     retryHint?: boolean,
+    contextOverflow = false,
   ) {
     super(`the upstream responded with HTTP ${status}: ${upstreamMessage}`);
     this.name = 'UpstreamHttpError';
@@ -61,6 +65,7 @@ export class UpstreamHttpError extends Error {
     this.upstreamMessage = upstreamMessage;
     this.retryAfterMs = retryAfterMs;
     this.guardrail = guardrail;
+    this.contextOverflow = contextOverflow;
     this.retryHint = retryHint;
   }
 }

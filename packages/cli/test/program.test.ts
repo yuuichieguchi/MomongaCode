@@ -1,5 +1,6 @@
 import type { EntryIo } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
+import { freshHome } from './fresh-home.ts';
 import type { DaemonEntries } from '../src/daemon/entries.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
@@ -18,7 +19,7 @@ const harness = () => {
     return 7;
   };
   const entries: DaemonEntries = { supervise: entryFor('supervise'), gateway: entryFor('gateway'), runtime: entryFor('runtime') };
-  const ports = { version: '9.9.9', home: '/h', cwd: '/c', terminal: undefined } as unknown as CliPorts;
+  const ports = { version: '9.9.9', home: freshHome(), cwd: '/c', terminal: undefined } as unknown as CliPorts;
   const program = buildProgram({
     ports,
     policyVerify: () => nodePolicyVerifyHost(ports, { cacheBase: '/c/cache' }),

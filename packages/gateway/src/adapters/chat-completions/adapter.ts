@@ -12,7 +12,7 @@ import type {
 } from '@momonga/protocol';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
 import { hiddenReasoningTokens } from '../../core/hidden-reasoning.ts';
-import { classifyChatCompletionsError, matchesGuardrailCode } from './classify.ts';
+import { classifyChatCompletionsError, matchesContextOverflow, matchesGuardrailCode } from './classify.ts';
 import { boundedSseBytes } from '../shared/body-reading.ts';
 import { buildConstrainedBody } from './constrained-request.ts';
 import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
@@ -30,6 +30,7 @@ import { nativeHistoryOf, plainHistoryOf } from './plain-history.ts';
 import { withCapabilityOptions } from './request-options.ts';
 import { ResponseEmitter } from '../shared/response-emitter.ts';
 import { StreamDriver } from './stream-driver.ts';
+import { upstreamErrorEventBody, upstreamErrorFailure } from './upstream-reply.ts';
 import type { ChatCompletionsAdapter, ChatCompletionsAdapterOptions } from './types.ts';
 import { wireOf } from './wire.ts';
 import type { ChatWire } from './wire.ts';
@@ -106,9 +107,10 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
         signal,
       });
       if (response.status !== 200) {
-        throw await httpErrorOf(response, options.clock, nestedErrorDetail, (status, parsed) =>
-          isGuardrail === undefined ? matchesGuardrailCode(parsed) : isGuardrail(ctx.target, status, parsed),
-        );
+        throw await httpErrorOf(response, options.clock, nestedErrorDetail, {
+          guardrail: (status, parsed) => (isGuardrail === undefined ? matchesGuardrailCode(parsed) : isGuardrail(ctx.target, status, parsed)),
+          contextOverflow: matchesContextOverflow,
+        });
       }
 
       const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request });
@@ -119,6 +121,8 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
       try {
         for await (const message of decodeSse(boundedSseBytes(response.body, MAX_SSE_EVENT_BYTES))) {
           ctx.signal.throwIfAborted();
+          const errorEvent = upstreamErrorEventBody(message);
+          if (errorEvent !== undefined) throw upstreamErrorFailure(response.status, errorEvent.body);
           if (message.data === DONE_MARKER) break;
           if (opening !== undefined) {
             const events = opening;
