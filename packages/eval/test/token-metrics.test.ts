@@ -12,7 +12,7 @@ import {
 } from '@momonga/eval';
 import type { ContextReport, Transcript } from '@momonga/eval';
 import type { RunEventPayload, TokenAnatomy } from '@momonga/protocol';
-import { bash, contextCase, fidelity, recorded, summarized } from './context-fixtures.ts';
+import { TEST_CODE_DIGEST, bash, contextCase, fidelity, recorded, summarized } from './context-fixtures.ts';
 
 const SCENARIOS = ['a', 'b', 'c', 'd'] as const;
 const CASE_IDS = SCENARIOS.flatMap((scenario) => [`${scenario}-on`, `${scenario}-off`]);
@@ -85,9 +85,10 @@ const transcriptsOf = ({ failing = [], calls = {}, every = {}, silent = false }:
     return recorded(caseId, 0, [...modelCalls, ...compaction], { status: failing.includes(caseId) ? 'FAILED' : 'COMPLETED' });
   });
 
-const reportOf = (variant: Variant = {}): ContextReport => buildContextReport({ dataset, transcripts: transcriptsOf(variant), model: variant.model ?? 'real', seed: 1 });
+const reportOf = (variant: Variant = {}): ContextReport => buildContextReport({ codeDigest: TEST_CODE_DIGEST, dataset, transcripts: transcriptsOf(variant), model: variant.model ?? 'real', seed: 1 });
 
-const tokenGate = (baseline: ContextReport, candidate: ContextReport) => compareContextReports(baseline, candidate, { seed: 1, gate: 'token' });
+const tokenGate = (baseline: ContextReport, candidate: ContextReport) =>
+  compareContextReports(baseline, { ...candidate, policy: { context: { cachePrefix: true } } }, { seed: 1, gate: 'token' });
 
 const checkOf = (comparison: ReturnType<typeof tokenGate>, name: string) => comparison.gate.checks.find((check) => check.name === name);
 
@@ -202,7 +203,7 @@ describe('eval compare --gate token', () => {
 
   it('fails when the candidate loses more after compaction or fabricates more, however cheap', () => {
     const lossy = reportOf({ ...cheaper });
-    const losing = buildContextReport({
+    const losing = buildContextReport({ codeDigest: TEST_CODE_DIGEST,
       dataset,
       transcripts: transcriptsOf(cheaper).map((transcript) =>
         transcript.caseId.endsWith('-on') ? recorded(transcript.caseId, 0, [...callEvents({ cost: 0.001 }, 1), ...bash('b0', 'npm test', 'failed'), summarized(3, fidelity([], 2, 2)), ...bash('b1', 'npm test', 'failed')]) : transcript,
@@ -216,7 +217,7 @@ describe('eval compare --gate token', () => {
     expect(checkOf(comparison, 'costPerSuccess')?.passed).toBe(true);
     expect(checkOf(comparison, 'lossSignalsPerCompaction')?.passed).toBe(false);
     expect(comparison.gate.passed).toBe(false);
-    const fabricating = buildContextReport({
+    const fabricating = buildContextReport({ codeDigest: TEST_CODE_DIGEST,
       dataset,
       transcripts: transcriptsOf(cheaper).map((transcript) =>
         transcript.caseId.endsWith('-on') ? recorded(transcript.caseId, 0, [...callEvents({ cost: 0.001 }, 1), ...bash('b0', 'npm test', 'failed'), summarized(3, fidelity(['ghost.ts'], 2, 2))]) : transcript,

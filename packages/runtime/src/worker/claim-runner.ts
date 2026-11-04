@@ -26,6 +26,7 @@ import { memoryShareFor } from './memory-share.ts';
 import { aliasChainReaches } from './model-switch.ts';
 import { readPins } from './pins.ts';
 import { rolesFor } from './role-pin.ts';
+import { tokenPinFor, tokenPolicyOf } from './token-pin.ts';
 import type { RunPins } from './pins.ts';
 import { createSkillAdmission } from './skill-admission.ts';
 import { createTerminals } from './terminals.ts';
@@ -300,6 +301,7 @@ const drive = async (
           roles: rolesFor({ store: options.store, settings: options.settings, run }),
           ...(newMemoryShare === undefined ? {} : { memoryShare: newMemoryShare }),
           ...(newGuidelineVersion === undefined ? {} : { guidelineVersion: newGuidelineVersion }),
+          token: await tokenPinFor({ store: options.store, settings: options.settings, session, run }),
         }
       : readPins(recorded);
   journal.append([{ type: 'run.started', attempt: claim.attempt, now: clock.now(), pins: { ...pins }, mode: session.permissionMode }]);
@@ -385,6 +387,7 @@ const drive = async (
     memory,
     verificationCommands: (await options.settings.verification(session)).commands,
     autoCompact: (await options.settings.context(session)).autoCompact,
+    token: tokenPolicyOf(pins.token),
   };
 
   const governingFailure = await governingFailureAtStart(ctx);

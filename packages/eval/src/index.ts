@@ -47,6 +47,8 @@ export {
   runContextDataset,
 } from './context-live.ts';
 export type { ContextCaseHost, ContextRunPorts, ContextRunResult, LiveBounds, LiveLimits } from './context-live.ts';
+export { parsePolicyOverlay } from './context-policy.ts';
+export type { PolicyOverlay } from './context-policy.ts';
 export { compactionFactsOf, governanceCountsOf, governanceOf, lossSignalsOf, recalledOf, retrievalOf } from './context-metrics.ts';
 export type { CompactionFacts, GovernanceCounts, GovernanceScore, LossSignal, Recalled, Retrieval } from './context-metrics.ts';
 export {

@@ -49,8 +49,8 @@ describe('skill.activated in the fold', () => {
       { type: 'skill.activated', name: 'a', content: 'second' },
     ]);
     expect(state.activatedSkills).toEqual([
-      { name: 'a', content: 'first' },
-      { name: 'b', content: 'other' },
+      { name: 'a', content: 'first', seq: 1 },
+      { name: 'b', content: 'other', seq: 2 },
     ]);
   });
 
@@ -69,7 +69,7 @@ describe('explicit skill activation at run creation', () => {
     expect(store.readRunEvents(run.id, 0, 10).map((event) => event.type)).toEqual(['user.message', 'skill.activated']);
     const loaded = store.load(run.id);
     const state = loaded.tail.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }));
-    expect(state.activatedSkills).toEqual([{ name: 'pdf', content: '<skill_content name="pdf">x</skill_content>' }]);
+    expect(state.activatedSkills).toEqual([{ name: 'pdf', content: '<skill_content name="pdf">x</skill_content>', seq: 2 }]);
   });
 
   it('appends nothing extra without a skill', () => {
@@ -95,8 +95,8 @@ describe('skill inheritance across runs of a session', () => {
     expect(inherited).toMatchObject({ activatedSkills: [{ name: 'pdf', content: 'pdf body' }] });
     const state = events.reduce(foldRunState, initialRunState({ runId: second.id, sessionId: second.sessionId }));
     expect(state.activatedSkills).toEqual([
-      { name: 'pdf', content: 'pdf body' },
-      { name: 'review', content: 'review body' },
+      { name: 'pdf', content: 'pdf body', seq: 3 },
+      { name: 'review', content: 'review body', seq: 2 },
     ]);
   });
 
@@ -108,7 +108,7 @@ describe('skill inheritance across runs of a session', () => {
     const second = createRun(store, session.id, { name: 'pdf', content: 'changed body' });
     store.inheritContext(mustClaim(store, 'w1'), { mode: 'default' });
     const state = store.readRunEvents(second.id, 0, 100).reduce(foldRunState, initialRunState({ runId: second.id, sessionId: second.sessionId }));
-    expect(state.activatedSkills).toEqual([{ name: 'pdf', content: 'pdf body' }]);
+    expect(state.activatedSkills).toEqual([{ name: 'pdf', content: 'pdf body', seq: 3 }]);
   });
 
   it('does not add the field when no skill was activated', () => {
@@ -132,6 +132,6 @@ describe('skill snapshots', () => {
     const events = store.readRunEvents(run.id, 0, 100);
     const state = events.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }));
     expect(store.writeSnapshot(claim, state.lastSeq, state)).toEqual({ kind: 'ok' });
-    expect(store.load(run.id).snapshot?.state.activatedSkills).toEqual([{ name: 'pdf', content: 'pdf body' }]);
+    expect(store.load(run.id).snapshot?.state.activatedSkills).toEqual([{ name: 'pdf', content: 'pdf body', seq: 2 }]);
   });
 });

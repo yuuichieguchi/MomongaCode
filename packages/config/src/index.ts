@@ -17,7 +17,7 @@ export type { GovernanceRuleEntry, ParseRuleOptions, PathToolName, PermissionRul
 export { SETTINGS_SCHEMA } from './settings-schema.ts';
 export { defaultSandboxSetting } from './settings.ts';
 export { DEFAULT_FORGET_AFTER_DAYS, DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS } from './context-settings.ts';
-export type { ResolvedContextSettings, ResolvedMemorySettings, ResolvedVerificationSettings } from './context-settings.ts';
+export type { ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from './context-settings.ts';
 export type { TrustOracle, UserLayer } from './layers.ts';
 export type {
   McpOAuthConfig,
@@ -42,6 +42,7 @@ export type {
   ResolvedOpenResponsesTarget,
   TargetCapabilities,
   ContextSettings,
+  ToolsSettings,
   SandboxSetting,
   MemorySettings,
   VerificationSettings,

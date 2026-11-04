@@ -4,6 +4,8 @@ import { fixtureCompactionItem } from '@momonga/testkit';
 import type { Transcript } from '@momonga/eval';
 import { publicEventsOf } from './fixtures.ts';
 
+export const TEST_CODE_DIGEST = 'c'.repeat(64);
+
 export const compacted = (replacedThroughSeq: number, source?: SummarySource, fidelity?: SummaryFidelity): RunEventPayload => ({
   type: 'context.compacted',
   item: fixtureCompactionItem(`cmp-${replacedThroughSeq}`, 'summary'),

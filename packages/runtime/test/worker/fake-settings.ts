@@ -1,5 +1,5 @@
 import { DEFAULT_FORGET_AFTER_DAYS, DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS, parseRule } from '@momonga/config';
-import type { ModelRoles, PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedVerificationSettings } from '@momonga/config';
+import type { ModelRoles, PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from '@momonga/config';
 import type { HooksSettings } from '@momonga/protocol';
 import type { SettingsPort } from '@momonga/runtime';
 import type { Session } from '@momonga/store';
@@ -16,6 +16,7 @@ export type FakeSettings = SettingsPort & {
   memoryValue: ResolvedMemorySettings;
   contextValue: ResolvedContextSettings;
   context: (session: Session) => Promise<ResolvedContextSettings>;
+  toolsValue: ResolvedToolsSettings;
   classifierAlias: string | undefined;
   rolesValue: ModelRoles;
   modelRoles: () => ModelRoles;
@@ -33,8 +34,9 @@ export const createFakeSettings = (layout: { home: string; project: string }): F
     trustedValue: true,
     hooksValue: {},
     verificationValue: { commands: [...DEFAULT_VERIFICATION_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS] },
-    memoryValue: { reflection: { enabled: false }, forgetAfterDays: DEFAULT_FORGET_AFTER_DAYS },
-    contextValue: { adaptiveBudget: false, autoCompact: true },
+    memoryValue: { reflection: { enabled: false }, forgetAfterDays: DEFAULT_FORGET_AFTER_DAYS, repositoryFacts: false },
+    contextValue: { adaptiveBudget: false, autoCompact: true, cachePrefix: false, outputFormatters: [], loopGuidance: false, observedCapacity: false },
+    toolsValue: { deferral: false, conciseDescriptions: false },
     classifierAlias: undefined,
     rolesValue: {},
     modelRoles: () => ({ ...settings.rolesValue }),
@@ -42,6 +44,7 @@ export const createFakeSettings = (layout: { home: string; project: string }): F
     verification: async () => settings.verificationValue,
     memory: async () => settings.memoryValue,
     context: async () => settings.contextValue,
+    tools: async () => settings.toolsValue,
     autoModeClassifier: () => settings.classifierAlias,
     rules: async (session) => {
       settings.ruleReads += 1;

@@ -5,6 +5,7 @@ export type {
   HealthResult,
   ImageCapability,
   ImageTokenModel,
+  PromptCacheCapability,
   ReasoningCapability,
   ReasoningEffort,
   ToolCallingMode,
@@ -76,6 +77,12 @@ export {
   requireStructuredOutput,
 } from './capabilities.ts';
 export type { StructuredOutputVerdict, TargetBilling } from './capabilities.ts';
+export { OUTPUT_FORMATTERS } from './output-formatters.ts';
+export type { OutputFormatterName } from './output-formatters.ts';
+export { PREFIX_EVENTS } from './prefix-events.ts';
+export type { PrefixEvent } from './prefix-events.ts';
+export { MIN_INDEXED_TERM_CHARS, asciiLower, partitionTerms, termsOf } from './search-terms.ts';
+export type { PartitionedTerms } from './search-terms.ts';
 export { tokensForText } from './estimate-tokens.ts';
 export { GUIDELINE_TEXT_PATTERN, hasForbiddenGuidelineCharacter } from './guideline-text.ts';
 export { escapeTerminalBlock, escapeTerminalLine } from './terminal-text.ts';
@@ -246,6 +253,7 @@ export { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES, permissionDeniedOutput } fro
 export type { ApprovalBasis, PermissionDenial, PermissionDenialSource } from './permission-denial.ts';
 export { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
 export type {
+  ActivatedSkillEntry,
   ActivatedSkillRecord,
   ApprovalStatus,
   ElicitationAnswerRecord,
@@ -300,6 +308,7 @@ export type {
   MessageInputItem,
   MessageItem,
   OutputTextPart,
+  PromptCacheCounts,
   ReasoningConfig,
   ReasoningInputItem,
   ReasoningItem,

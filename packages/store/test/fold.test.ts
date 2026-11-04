@@ -73,6 +73,7 @@ describe('initialRunState', () => {
       steps: {},
       loadedInstructions: [],
       activatedSkills: [],
+      loadedTools: [],
       loopGroups: [],
       lastSeq: 0,
     });
@@ -121,7 +122,7 @@ describe('foldRunState on recorded runs', () => {
       pins: { model: 'fm' },
       lastResponse: { step: 2, incomplete: false, refusal: false, callIds: [] },
       steps: {},
-      loadedInstructions: [{ path: '/w/AGENTS.md', textSha256: 'b0d336336bae9756708102764ccc977778d8c408df38d7050d69f9e4d22c9a43' }],
+      loadedInstructions: [{ path: '/w/AGENTS.md', textSha256: 'b0d336336bae9756708102764ccc977778d8c408df38d7050d69f9e4d22c9a43', seq: 4 }],
       usage: { inputTokens: 50, outputTokens: 9, totalTokens: 59 },
       history: [
         entry(1, userItem('read a.txt')),

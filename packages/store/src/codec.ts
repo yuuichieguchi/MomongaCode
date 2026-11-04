@@ -135,6 +135,8 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   'context.truncated': true,
   'instructions.loaded': true,
   'skill.activated': true,
+  'tool.loaded': true,
+  'loop.warned': true,
   'approval.rule.persisted': true,
   notice: true,
 };
@@ -291,7 +293,7 @@ const isInherited = (value: unknown): boolean =>
   isRecord(value) && typeof value['fromRunId'] === 'string' && Number.isInteger(value['fromLastSeq']) && typeof value['digest'] === 'string';
 
 const isLoadedInstruction = (value: unknown): boolean =>
-  isRecord(value) && typeof value['path'] === 'string' && typeof value['textSha256'] === 'string';
+  isRecord(value) && typeof value['path'] === 'string' && typeof value['textSha256'] === 'string' && Number.isInteger(value['seq']);
 
 const isGoverningLoaded = (value: unknown): boolean =>
   isRecord(value) &&
@@ -303,7 +305,9 @@ const isGoverningLoaded = (value: unknown): boolean =>
 const isMemoryLoaded = (value: unknown): boolean => isRecord(value) && typeof value['id'] === 'string' && MEMORY_STATUSES.some((status) => status === value['status']);
 
 const isActivatedSkill = (value: unknown): boolean =>
-  isRecord(value) && typeof value['name'] === 'string' && typeof value['content'] === 'string';
+  isRecord(value) && typeof value['name'] === 'string' && typeof value['content'] === 'string' && Number.isInteger(value['seq']);
+
+const isLoopWarned = (value: unknown): boolean => isRecord(value) && typeof value['signature'] === 'string';
 
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 
@@ -364,7 +368,7 @@ const isWorkingFacts = (value: unknown): boolean =>
   isArrayOf(value['itemEvents'], (entry) => isRecord(entry) && Number.isInteger(entry['itemSeq']) && Number.isInteger(entry['eventSeq'])) &&
   (value['replacedThroughEventSeq'] === undefined || Number.isInteger(value['replacedThroughEventSeq']));
 
-export const SNAPSHOT_STATE_VERSION = 12;
+export const SNAPSHOT_STATE_VERSION = 13;
 
 export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
 
@@ -410,6 +414,8 @@ export const decodeRunState = (identity: string, value: unknown): RunState | und
     (state['memoriesLoaded'] === undefined || isArrayOf(state['memoriesLoaded'], isMemoryLoaded)) &&
     Array.isArray(state['activatedSkills']) &&
     state['activatedSkills'].every(isActivatedSkill) &&
+    isArrayOf(state['loadedTools'], (name) => typeof name === 'string') &&
+    (state['loopWarned'] === undefined || isLoopWarned(state['loopWarned'])) &&
     (state['streaming'] === undefined || isStreaming(state['streaming'])) &&
     (state['mode'] === undefined || PERMISSION_MODES.some((mode) => mode === state['mode'])) &&
     Number.isInteger(state['taskSeq']) &&

@@ -152,7 +152,7 @@ export type NoticeCode =
 
 export type ContextNotice = { code: NoticeCode; message: string };
 
-export type EvictionKind = 'omitted' | 'truncated';
+export type EvictionKind = 'omitted' | 'truncated' | 'reference';
 
 export type ContextEviction = { callId: string; handle: string; kind: EvictionKind };
 

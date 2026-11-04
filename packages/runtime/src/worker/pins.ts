@@ -1,8 +1,18 @@
 import { MODEL_ROLES } from '@momonga/config';
 import type { ModelRoles } from '@momonga/config';
-import type { Capabilities } from '@momonga/protocol';
+import { OUTPUT_FORMATTERS } from '@momonga/protocol';
+import type { Capabilities, OutputFormatterName } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 import { isRecord } from './json.ts';
+
+export type TokenPin = {
+  cachePrefix?: boolean;
+  deferred?: string[];
+  conciseDescriptions?: boolean;
+  outputFormatters?: OutputFormatterName[];
+  loopGuidance?: boolean;
+  observedCapacity?: boolean;
+};
 
 export type RunPins = {
   modelAlias: string;
@@ -12,6 +22,7 @@ export type RunPins = {
   roles: ModelRoles;
   memoryShare?: number;
   guidelineVersion?: number;
+  token?: TokenPin;
 };
 
 export const readRoles = (value: unknown): ModelRoles => {
@@ -25,6 +36,35 @@ export const readRoles = (value: unknown): ModelRoles => {
     roles[role as keyof ModelRoles] = alias;
   }
   return roles;
+};
+
+const TOKEN_PIN_KEYS = ['cachePrefix', 'deferred', 'conciseDescriptions', 'outputFormatters', 'loopGuidance', 'observedCapacity'] as const;
+
+const TOKEN_PIN_BOOLEANS = ['cachePrefix', 'conciseDescriptions', 'loopGuidance', 'observedCapacity'] as const;
+
+const isFormatter = (value: unknown): value is OutputFormatterName => (OUTPUT_FORMATTERS as readonly unknown[]).includes(value);
+
+const isStringArray = (value: unknown): value is string[] => Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+
+const isFormatterArray = (value: unknown): value is OutputFormatterName[] => Array.isArray(value) && value.every(isFormatter);
+
+export const readTokenPin = (value: unknown): TokenPin => {
+  if (!isRecord(value) || Object.keys(value).some((key) => !(TOKEN_PIN_KEYS as readonly string[]).includes(key))) {
+    throw new Error('the token pin recorded for this run is malformed');
+  }
+  const { deferred, outputFormatters } = value;
+  if (
+    TOKEN_PIN_BOOLEANS.some((key) => value[key] !== undefined && typeof value[key] !== 'boolean') ||
+    (deferred !== undefined && !isStringArray(deferred)) ||
+    (outputFormatters !== undefined && !isFormatterArray(outputFormatters))
+  ) {
+    throw new Error('the token pin recorded for this run is malformed');
+  }
+  return {
+    ...Object.fromEntries(TOKEN_PIN_BOOLEANS.filter((key) => value[key] !== undefined).map((key) => [key, value[key]])),
+    ...(deferred === undefined ? {} : { deferred: [...deferred] }),
+    ...(outputFormatters === undefined ? {} : { outputFormatters: [...outputFormatters] }),
+  };
 };
 
 export const parentPinsOf = (store: Pick<RuntimeStore, 'readRunEventsOfTypes'>, runId: string): { modelAlias: string; roles: ModelRoles } => {
@@ -45,7 +85,7 @@ const isCapabilities = (value: unknown): value is Capabilities =>
   typeof value['toolCalling'] === 'string';
 
 export const readPins = (value: Record<string, unknown>): RunPins => {
-  const { modelAlias, systemPromptDigest, toolSetDigest, capabilities, memoryShare, guidelineVersion } = value;
+  const { modelAlias, systemPromptDigest, toolSetDigest, capabilities, memoryShare, guidelineVersion, token } = value;
   if (
     typeof modelAlias !== 'string' ||
     typeof systemPromptDigest !== 'string' ||
@@ -64,5 +104,6 @@ export const readPins = (value: Record<string, unknown>): RunPins => {
     roles: readRoles(value['roles']),
     ...(memoryShare === undefined ? {} : { memoryShare }),
     ...(guidelineVersion === undefined ? {} : { guidelineVersion }),
+    ...(token === undefined ? {} : { token: readTokenPin(token) }),
   };
 };

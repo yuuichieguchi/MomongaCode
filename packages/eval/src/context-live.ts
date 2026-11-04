@@ -3,6 +3,7 @@ import path from 'node:path';
 import { isRecord, lexicallyWithin } from '@momonga/foundation';
 import type { AddRuleRequest } from '@momonga/protocol';
 import type { CompactionSetting, ContextDataset, ContextMemory, ContextRule, ExpandedCase, ExpandedContextDataset, WorkspaceStep } from './context-dataset.ts';
+import type { PolicyOverlay } from './context-policy.ts';
 import { isInsideWorkspace } from './dataset.ts';
 import { EvalError, driveRun } from './runner.ts';
 import type { Driven, EvalRunApi } from './runner.ts';
@@ -48,10 +49,24 @@ export const liveBoundsFor = (dataset: ContextDataset, limits: LiveLimits): Live
   };
 };
 
-export const caseSettingsFor = (base: Readonly<Record<string, unknown>>, setting: { compaction: CompactionSetting }): Record<string, unknown> => {
-  const context = base['context'];
-  if (context !== undefined && !isRecord(context)) throw new EvalError('the base settings hold a context section that is not an object');
-  return { ...base, context: { ...context, autoCompact: setting.compaction === 'on' } };
+const POLICY_SECTIONS = ['context', 'tools', 'memory'] as const;
+
+const sectionOf = (base: Readonly<Record<string, unknown>>, name: string): Record<string, unknown> | undefined => {
+  const section = base[name];
+  if (section !== undefined && !isRecord(section)) throw new EvalError(`the base settings hold a ${name} section that is not an object`);
+  return section;
+};
+
+export const caseSettingsFor = (
+  base: Readonly<Record<string, unknown>>,
+  setting: { compaction: CompactionSetting; policy?: PolicyOverlay },
+): Record<string, unknown> => {
+  const merged: Record<string, unknown> = { ...base };
+  for (const name of POLICY_SECTIONS) {
+    const overlay = setting.policy?.[name];
+    if (overlay !== undefined) merged[name] = { ...sectionOf(base, name), ...overlay };
+  }
+  return { ...merged, context: { ...sectionOf(merged, 'context'), autoCompact: setting.compaction === 'on' } };
 };
 
 const outsideMessage = (root: string, name: string): string => `workspace step names ${JSON.stringify(name)}, which resolves outside ${root}`;

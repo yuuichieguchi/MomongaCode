@@ -311,9 +311,12 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
       denial: closed({ source: enumOf(PERMISSION_DENIAL_SOURCES), reason: string }, ['source', 'reason']),
       files: { type: 'array', items: closed({ path: string, sha256: string, access: enumOf(FILE_ACCESSES) }, ['path', 'sha256', 'access']) },
       exitCode: integer,
+      formatted: closed({ formatter: string, version: integer }, ['formatter', 'version']),
     },
     required: ['callId', 'status', 'output'],
   },
+  'tool.loaded': { properties: { names: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 } } }, required: ['names'] },
+  'loop.warned': { properties: { signature: string }, required: ['signature'] },
   'tool.reconciled': {
     properties: { callId: string, outcome: enumOf(['already_applied', 'not_applied', 'unknown']), output: string },
     required: ['callId', 'outcome', 'output'],
@@ -411,7 +414,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
     required: ['fromRunId', 'fromLastSeq', 'itemCount', 'nextItemSeq', 'closures', 'partialMessage', 'markers', 'digest'],
   },
   'context.truncated': {
-    properties: { callId: string, handle: string, kind: enumOf(['omitted', 'truncated']) },
+    properties: { callId: string, handle: string, kind: enumOf(['omitted', 'truncated', 'reference']) },
     required: ['callId', 'handle', 'kind'],
   },
   'instructions.loaded': { properties: { path: string }, required: ['path'] },

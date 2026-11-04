@@ -8,6 +8,7 @@ import type { MemorySet, ToolEnv, TraceSpan } from '../ports.ts';
 import type { ClaimControl } from './claim-control.ts';
 import type { Journal } from './journal.ts';
 import type { RunLimits } from './limits.ts';
+import type { TokenPolicy } from './token-pin.ts';
 import type { WorkerOptions } from './types.ts';
 
 export type Flow = 'continue' | 'done';
@@ -49,6 +50,7 @@ export type ClaimContext = {
   memory: RunMemory;
   verificationCommands: readonly string[];
   autoCompact: boolean;
+  token: TokenPolicy;
 };
 
 export type RunMemory = { streak: number; interruptions: number; deadlineAt: number };

@@ -421,7 +421,7 @@ describe('the shipped context dataset with the fake model', () => {
     expect(context.inputs).toHaveLength(expected + noiseRuns);
     const lint = transcripts.find((transcript) => transcript.caseId === 'lint-chain-on');
     expect(Object.values(lint?.ruleIds ?? {}).sort()).toEqual(['lint-0', 'lint-1']);
-    const report = buildContextReport({ dataset: shipped, transcripts, model: 'fake', seed: 1, datasetSeed: 11 });
+    const report = buildContextReport({ codeDigest: 'c'.repeat(64), dataset: shipped, transcripts, model: 'fake', seed: 1, datasetSeed: 11 });
     expect(report.stopped).toEqual([]);
     expect(report.cases.map((entry) => entry.id)).toEqual(shipped.cases.map((entry) => entry.id));
     expect(report.noiseTokens).toBe(noiseRuns);

@@ -13,7 +13,7 @@ const assistant = (text: string): AdapterInputItem => ({ type: 'message', role: 
 const call = (id: string, name: string, args: string): AdapterInputItem => ({ type: 'function_call', call_id: id, name, arguments: args });
 const output = (id: string, text: string): AdapterInputItem => ({ type: 'function_call_output', call_id: id, output: text });
 
-const bodyOf = (input: AdapterInputItem[], extra: Partial<AdapterRequest> = {}) => buildMessagesBody({ model: 'm', input, ...extra }, MAX_TOKENS, { cacheBreakpoints: false });
+const bodyOf = (input: AdapterInputItem[], extra: Partial<AdapterRequest> = {}) => buildMessagesBody({ model: 'm', input, ...extra }, MAX_TOKENS, { cache: undefined });
 
 const tool = { type: 'function', name: 'read_file', description: 'Read', parameters: { type: 'object', properties: {} } } as const;
 
@@ -173,7 +173,7 @@ describe('buildMessagesBody', () => {
 
 describe('cache breakpoints', () => {
   const cached = (input: AdapterInputItem[], extra: Partial<AdapterRequest> = {}) =>
-    buildMessagesBody({ model: 'm', input, ...extra }, MAX_TOKENS, { cacheBreakpoints: true });
+    buildMessagesBody({ model: 'm', input, ...extra }, MAX_TOKENS, { cache: { maxBreakpoints: 4 } });
   const marker = { type: 'ephemeral' };
   const secondTool = { ...tool, name: 'write_file' };
   const summary: AdapterInputItem = { type: 'compaction_summary', summary: 'earlier' };
@@ -215,7 +215,7 @@ describe('cache breakpoints', () => {
   });
 
   it('marks nothing when breakpoints are disabled', () => {
-    const body = buildMessagesBody({ model: 'm', input: [summary, user('x')], tools: [tool] }, MAX_TOKENS, { cacheBreakpoints: false });
+    const body = buildMessagesBody({ model: 'm', input: [summary, user('x')], tools: [tool] }, MAX_TOKENS, { cache: undefined });
     expect(breakpoints(body as ReturnType<typeof cached>)).toEqual([]);
   });
 

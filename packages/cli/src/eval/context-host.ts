@@ -1,7 +1,7 @@
 import path from 'node:path';
 import type { ModelsSettings, ResolvedModels, SandboxSetting, UserModels } from '@momonga/config';
 import { caseSettingsFor, expandContextDataset, liveBoundsFor, runContextDataset } from '@momonga/eval';
-import type { ContextCaseHost, ContextDataset, ExpandedCase, Transcript, WorkspaceStep } from '@momonga/eval';
+import type { ContextCaseHost, ContextDataset, ExpandedCase, PolicyOverlay, Transcript, WorkspaceStep } from '@momonga/eval';
 import { momongaLayout, socketPathLimit } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { goldenRunApi } from '../client/golden-run-api.ts';
@@ -212,7 +212,7 @@ const BENCHMARK_GUIDELINE_REPORT = { source: 'context improve benchmark' } as co
 
 export const createContextHosts = (
   effects: ContextHostEffects,
-  options: { settings: LiveSettings; credentialValues: Readonly<Record<string, string>>; guideline?: string; interrupt?: AbortSignal },
+  options: { settings: LiveSettings; credentialValues: Readonly<Record<string, string>>; policy?: PolicyOverlay; guideline?: string; interrupt?: AbortSignal },
 ): ContextHosts => {
   const records: CaseRecord[] = [];
 
@@ -248,7 +248,7 @@ export const createContextHosts = (
     await effects.prepare(paths);
     const { models, sandbox, fmTargets, endpointProbes } = options.settings;
     const base = { models, ...(sandbox === undefined ? {} : { sandbox }) };
-    await effects.writeFile(paths.settingsFile, `${JSON.stringify(caseSettingsFor(base, { compaction: entry.compaction }), null, 2)}\n`);
+    await effects.writeFile(paths.settingsFile, `${JSON.stringify(caseSettingsFor(base, { compaction: entry.compaction, ...(options.policy === undefined ? {} : { policy: options.policy }) }), null, 2)}\n`);
     for (const target of fmTargets) await effects.copyProbeRecord(target, paths);
     for (const probe of endpointProbes) await effects.copyEndpointProbeRecord(probe, paths);
     const workspace = path.join(root, WORKSPACE_DIRECTORY);
@@ -340,6 +340,7 @@ export type ContextLiveInput = {
   alias: string;
   models: UserModels;
   limits: { maxTotalTokens: number; defaultTimeoutMs: number };
+  policy?: PolicyOverlay;
   guideline?: string;
   interrupt?: AbortSignal;
   onTranscript?(transcript: Transcript): Promise<void>;
@@ -358,6 +359,7 @@ export const runContextLive = async (effects: ContextHostEffects, input: Context
   const hosts = createContextHosts(effects, {
     settings,
     credentialValues,
+    ...(input.policy === undefined ? {} : { policy: input.policy }),
     ...(input.guideline === undefined ? {} : { guideline: input.guideline }),
     ...(interrupt === undefined ? {} : { interrupt }),
   });

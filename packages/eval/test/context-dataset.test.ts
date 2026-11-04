@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import { CONTEXT_DATASET_FORMAT, DatasetError, bindingRuleIds, buildContextReport, expandContextDataset, noiseTurnsFor, parseContextDataset, parseDataset, rulesOf } from '@momonga/eval';
 import type { ContextCase, Transcript } from '@momonga/eval';
-import { answer, contextCase, fidelity, governing, read, recorded, summarized } from './context-fixtures.ts';
+import { TEST_CODE_DIGEST, answer, contextCase, fidelity, governing, read, recorded, summarized } from './context-fixtures.ts';
 
 const pair = (scenario: string, overrides: Record<string, unknown> = {}) => [
   { ...contextCase(`${scenario}-on`, scenario, 'on'), ...overrides },
@@ -150,7 +150,7 @@ describe('the starter dataset', () => {
         return recorded(entry.id, runIndex, payloads, { totalTokens: 50, modelAlias: 'alias-1' });
       }),
     );
-    return buildContextReport({ dataset, transcripts, model: 'fake', seed: 1 });
+    return buildContextReport({ codeDigest: TEST_CODE_DIGEST, dataset, transcripts, model: 'fake', seed: 1 });
   };
 
   it('replays end to end: the right answers pass every case, compaction and governance included', async () => {

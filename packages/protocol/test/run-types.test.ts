@@ -15,6 +15,7 @@ import type {
   ModelResponse,
   PermissionMode,
   PermissionOption,
+  PrefixEvent,
   RunEvent,
   RunEventPayload,
   RunState,
@@ -110,6 +111,8 @@ describe('run event payloads', () => {
       | 'context.truncated'
       | 'instructions.loaded'
       | 'skill.activated'
+      | 'tool.loaded'
+      | 'loop.warned'
       | 'approval.rule.persisted'
       | 'notice'
     >();
@@ -156,6 +159,7 @@ describe('run event payloads', () => {
       pinnedDigest?: string;
       body: unknown;
       anatomy?: TokenAnatomy;
+      prefix?: { preservedItems: number; toolsChanged: boolean; causes: PrefixEvent[] };
     }>();
     expectTypeOf<Payload<'model.responded'>>().toEqualTypeOf<{
       type: 'model.responded';
@@ -228,6 +232,7 @@ describe('run event payloads', () => {
       denial?: { source: 'sandbox' | 'rule' | 'mode' | 'hook'; reason: string };
       files?: { path: string; sha256: string; access: 'read' | 'write' }[];
       exitCode?: number;
+      formatted?: { formatter: string; version: number };
     }>();
     expectTypeOf<Payload<'tool.permission.classified'>>().toEqualTypeOf<{
       type: 'tool.permission.classified';
@@ -308,10 +313,12 @@ describe('run event payloads', () => {
       type: 'context.truncated';
       callId: string;
       handle: string;
-      kind: 'omitted' | 'truncated';
+      kind: 'omitted' | 'truncated' | 'reference';
     }>();
     expectTypeOf<Payload<'instructions.loaded'>>().toEqualTypeOf<{ type: 'instructions.loaded'; path: string; content: string }>();
     expectTypeOf<Payload<'skill.activated'>>().toEqualTypeOf<{ type: 'skill.activated'; name: string; content: string }>();
+    expectTypeOf<Payload<'tool.loaded'>>().toEqualTypeOf<{ type: 'tool.loaded'; names: string[] }>();
+    expectTypeOf<Payload<'loop.warned'>>().toEqualTypeOf<{ type: 'loop.warned'; signature: string }>();
     expectTypeOf<Payload<'notice'>>().toEqualTypeOf<{
       type: 'notice';
       level: 'info' | 'warning' | 'error';
@@ -383,10 +390,12 @@ describe('RunState', () => {
       toolCallCounts: Record<string, number>;
       steps: Record<number, { toolChoice: string; summary: boolean }>;
       lastResponse?: { step: number; incomplete: boolean; incompleteReason?: string; refusal: boolean; callIds: string[] };
-      loadedInstructions: { path: string; textSha256: string }[];
+      loadedInstructions: { path: string; textSha256: string; seq: number }[];
       governingLoaded?: { active: { id: string; textSha256: string }[]; conflicts: { target: string; ids: string[] }[] };
       memoriesLoaded?: { id: string; status: MemoryStatus }[];
-      activatedSkills: { name: string; content: string }[];
+      activatedSkills: { name: string; content: string; seq: number }[];
+      loadedTools: string[];
+      loopWarned?: { signature: string };
       streaming?: { step: number; attempt: number; seen: boolean; items: { itemId: string; text: string }[] };
       mode?: PermissionMode;
       loopGroups: { signature: string; outputSignature?: string }[];

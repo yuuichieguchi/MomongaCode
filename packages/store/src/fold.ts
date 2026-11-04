@@ -38,6 +38,7 @@ export const initialRunState = (ids: { runId: string; sessionId: string }): RunS
   steps: {},
   loadedInstructions: [],
   activatedSkills: [],
+  loadedTools: [],
   loopGroups: [],
   taskSeq: 1,
   lastSeq: 0,
@@ -303,10 +304,15 @@ const withStep = (steps: RunState['steps'], step: number, body: unknown): RunSta
   return typeof toolChoice === 'string' ? { ...steps, [step]: { toolChoice, summary: toolChoice === 'none' } } : steps;
 };
 
-const withInstruction = (current: RunState['loadedInstructions'], path: string, textSha256: string): RunState['loadedInstructions'] =>
+const withInstruction = (current: RunState['loadedInstructions'], path: string, textSha256: string, seq: number): RunState['loadedInstructions'] =>
   current.some((entry) => entry.path === path)
-    ? current.map((entry) => (entry.path === path ? { path, textSha256 } : entry))
-    : [...current, { path, textSha256 }];
+    ? current.map((entry) => (entry.path === path ? { path, textSha256, seq } : entry))
+    : [...current, { path, textSha256, seq }];
+
+const withLoadedTools = (current: readonly string[], names: readonly string[]): string[] => [
+  ...current,
+  ...names.filter((name, index) => !current.includes(name) && names.indexOf(name) === index),
+];
 
 const withSkill = (current: RunState['activatedSkills'], skill: RunState['activatedSkills'][number]): RunState['activatedSkills'] =>
   current.some((entry) => entry.name === skill.name) ? current : [...current, skill];
@@ -473,9 +479,13 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
     case 'context.memories_loaded':
       return { ...state, memoriesLoaded: event.memories };
     case 'instructions.loaded':
-      return { ...state, loadedInstructions: withInstruction(state.loadedInstructions, event.path, sha256Hex(event.content)) };
+      return { ...state, loadedInstructions: withInstruction(state.loadedInstructions, event.path, sha256Hex(event.content), event.seq) };
     case 'skill.activated':
-      return { ...state, activatedSkills: withSkill(state.activatedSkills, { name: event.name, content: event.content }) };
+      return { ...state, activatedSkills: withSkill(state.activatedSkills, { name: event.name, content: event.content, seq: event.seq }) };
+    case 'tool.loaded':
+      return { ...state, loadedTools: withLoadedTools(state.loadedTools, event.names) };
+    case 'loop.warned':
+      return { ...state, loopWarned: { signature: event.signature } };
     case 'approval.rule.persisted': {
       const entry = Object.entries(state.pendingCalls).find(([, call]) => call.approvalId === event.approvalId);
       if (entry === undefined) throw new Error(`run ${state.runId}: ${event.type} refers to unknown approval ${event.approvalId}`);

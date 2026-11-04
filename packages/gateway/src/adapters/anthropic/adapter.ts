@@ -33,7 +33,7 @@ import { anthropicErrorDetail } from './errors.ts';
 import { parseAnthropicEvent } from './events.ts';
 import type { AnthropicUsageFields } from './events.ts';
 import { assertCountable, buildCountTokensBody, buildMessagesBody } from './request.ts';
-import type { AnthropicCountTokensBody } from './request.ts';
+import type { AnthropicCountTokensBody, CachePlan } from './request.ts';
 import type { AnthropicRequestBody } from './request.ts';
 import { AnthropicStreamDriver, inputTokensOf } from './stream-driver.ts';
 import type { AnthropicAdapter, AnthropicAdapterOptions } from './types.ts';
@@ -98,10 +98,10 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
     }
   }
 
-  async function* stream(request: AdapterRequest, ctx: AdapterContext, cacheBreakpoints: boolean): AsyncGenerator<StreamEvent> {
+  async function* stream(request: AdapterRequest, ctx: AdapterContext, cache: CachePlan | undefined): AsyncGenerator<StreamEvent> {
     if (closed) throw new Error('the anthropic adapter is closed');
     const capabilities = await options.capabilities(ctx.target);
-    const base = buildMessagesBody(request, capabilities.maxOutputTokens, { cacheBreakpoints });
+    const base = buildMessagesBody(request, capabilities.maxOutputTokens, { cache });
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     try {
@@ -140,7 +140,14 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
     }
   }
 
-  const create = (request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> => stream(request, ctx, true);
+  async function* create(request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
+    const { promptCache } = await options.capabilities(ctx.target);
+    const cache: CachePlan | undefined =
+      promptCache?.kind === 'breakpoints'
+        ? { maxBreakpoints: promptCache.maxBreakpoints, ...(request.cacheMarks === undefined ? {} : { marks: request.cacheMarks }) }
+        : undefined;
+    yield* stream(request, ctx, cache);
+  }
 
   const postCount = async (body: AnthropicCountTokensBody, ctx: AdapterContext): Promise<AdapterCountTokensResult> => {
     if (closed) throw new Error('the anthropic adapter is closed');
@@ -195,13 +202,13 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
     const capabilities = await options.capabilities(ctx.target);
     const cap = request.momonga?.max_summary_tokens ?? summaryTokenCapFor(capabilities);
     const summaryRequest = summaryRequestOf(request, cap);
-    for await (const event of stream(summaryRequest, ctx, false)) {
+    for await (const event of stream(summaryRequest, ctx, undefined)) {
       const collected = summaryOfTerminal(event, cap);
       if (collected === undefined) continue;
       const usage =
         collected.usage ??
         estimatedUsage(
-          wireTokensOf(buildMessagesBody(summaryRequest, cap, { cacheBreakpoints: false }), capabilities.imageTokens),
+          wireTokensOf(buildMessagesBody(summaryRequest, cap, { cache: undefined }), capabilities.imageTokens),
           tokensForText(collected.summary),
         );
       return { summary: collected.summary, usage, ...(collected.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: collected.cacheWriteInputTokens }) };
@@ -210,7 +217,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
   };
 
   const renderCompactWire = (request: AdapterCompactRequest, _target: AdapterTarget, cap: number): Record<string, unknown> => {
-    const { model: _model, stream: _stream, max_tokens: _maxTokens, ...wire } = buildMessagesBody(summaryRequestOf(request, cap), cap, { cacheBreakpoints: false });
+    const { model: _model, stream: _stream, max_tokens: _maxTokens, ...wire } = buildMessagesBody(summaryRequestOf(request, cap), cap, { cache: undefined });
     return wire;
   };
 

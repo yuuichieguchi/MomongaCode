@@ -15,13 +15,17 @@ import {
   anthropicToolUseReply,
   waitFor,
 } from '@momonga/testkit';
+import type { Capabilities } from '@momonga/protocol';
 import { MAX_PAUSE_CONTINUATIONS } from '../src/adapters/anthropic/constants.ts';
 import { expectErrorBody, postJson, readJson, userInput } from './gateway-helpers.ts';
 import { FAKE_API_KEY, REMOTE_CAPABILITIES, readFileTool, startAnthropicGateway, streamResponse, terminalOf, textOf, typesOf } from './upstream-gateway-support.ts';
 
+const BREAKPOINTS: Capabilities = { ...REMOTE_CAPABILITIES, promptCache: { kind: 'breakpoints', maxBreakpoints: 4 } };
+
 describe('anthropic adapter through the gateway: text', () => {
   it('streams text deltas and completes with usage that includes the cache fields', async () => {
     const gateway = await startAnthropicGateway({
+      capabilities: BREAKPOINTS,
       script: [
         anthropicStream([
           anthropicMessageStart({ input_tokens: 10, cache_creation_input_tokens: 100, cache_read_input_tokens: 50, output_tokens: 1 }),
@@ -103,6 +107,7 @@ describe('anthropic adapter through the gateway: text', () => {
 describe('anthropic adapter through the gateway: tool calls', () => {
   it('relays a tool_use whose JSON arguments arrive in split deltas', async () => {
     const gateway = await startAnthropicGateway({
+      capabilities: BREAKPOINTS,
       script: [
         anthropicStream([
           anthropicMessageStart(),
@@ -144,7 +149,7 @@ describe('anthropic adapter through the gateway: tool calls', () => {
   });
 
   it('sends tool history as tool_use and tool_result blocks and honours tool_choice', async () => {
-    const gateway = await startAnthropicGateway({ script: [anthropicTextReply(['done'])] });
+    const gateway = await startAnthropicGateway({ script: [anthropicTextReply(['done'])], capabilities: BREAKPOINTS });
     await streamResponse(gateway, {
       tools: [readFileTool],
       tool_choice: 'required',

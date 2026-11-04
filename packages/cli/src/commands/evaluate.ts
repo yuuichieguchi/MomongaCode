@@ -12,16 +12,18 @@ import {
   loadContextReport,
   loadDataset,
   loadTranscripts,
+  parsePolicyOverlay,
   replayDataset,
   runDataset,
   saveContextReport,
   saveTranscript,
 } from '@momonga/eval';
-import type { ContextDataset, ContextModel, EvalReport, GateName, GoldenCase, GoldenDataset, Transcript } from '@momonga/eval';
+import type { ContextDataset, ContextModel, EvalReport, GateName, GoldenCase, GoldenDataset, PolicyOverlay, Transcript } from '@momonga/eval';
 import type { MomongaPaths } from '@momonga/foundation';
 import { goldenRunApi } from '../client/golden-run-api.ts';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
+import { codeDigestOfRunningCli } from '../eval/code-digest.ts';
 import { nodeContextEffects } from '../eval/context-effects.ts';
 import { runContextLive, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects } from '../eval/context-host.ts';
@@ -85,6 +87,8 @@ export type EvaluateContextOptions = {
   alias?: string;
   seed?: number;
   report?: string;
+  settings?: string;
+  codeDigest?: string;
   interrupt?: AbortSignal;
 };
 
@@ -104,7 +108,7 @@ const runContextLiveCommand = async (
   ports: CliPorts,
   hostEffects: (ports: CliPorts) => ContextHostEffects,
   dataset: ContextDataset,
-  options: { alias: string; seed: number; record: string | undefined; interrupt: AbortSignal | undefined },
+  options: { alias: string; seed: number; policy: PolicyOverlay; record: string | undefined; interrupt: AbortSignal | undefined },
 ): Promise<Transcript[]> => {
   const { RUNTIME_DEFAULTS } = await import('@momonga/runtime');
   if (options.record !== undefined) await ports.files.ensureDirectory(options.record);
@@ -113,6 +117,7 @@ const runContextLiveCommand = async (
     dataset,
     seed: options.seed,
     alias: options.alias,
+    policy: options.policy,
     models: loadUserModels({ home: ports.home }),
     limits: { maxTotalTokens: RUNTIME_DEFAULTS.limits.maxTotalTokens, defaultTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs },
     onUnreadableHomes: (count) => ports.stderr.write(unreadableHomesNotice(count)),
@@ -133,6 +138,10 @@ export const evaluateContext = async (
   if (replay !== undefined && (options.alias !== undefined || options.seed !== undefined)) {
     throw new EvaluateUsageError('--alias and --seed belong to a live run; a replay takes the aliases and the seed from the transcripts');
   }
+  if (replay !== undefined && options.settings !== undefined) {
+    throw new EvaluateUsageError('--settings belongs to a live run; a replayed transcript was produced under a policy this command cannot know');
+  }
+  const policy = options.settings === undefined ? {} : parsePolicyOverlay(await ports.files.readText(path.resolve(ports.cwd, options.settings)), options.settings);
   const mode = replay === undefined ? ({ kind: 'live', ...assertLiveOptions(options) } as const) : ({ kind: 'replay', directory: replay } as const);
   const model = mode.kind === 'live' ? mode.model : options.model;
   if (model === undefined) throw new EvaluateUsageError('--model fake|real is required with --replay: a transcript does not record which kind of model produced it');
@@ -147,11 +156,20 @@ export const evaluateContext = async (
     transcripts = await runContextLiveCommand(ports, hostEffects, dataset, {
       alias: mode.alias,
       seed: datasetSeed,
+      policy,
       record: options.record === undefined ? undefined : path.resolve(ports.cwd, options.record),
       interrupt: options.interrupt,
     });
   }
-  const report = buildContextReport({ dataset, transcripts, model, seed: CONTEXT_BOOTSTRAP_SEED, ...(datasetSeed === undefined ? {} : { datasetSeed }) });
+  const report = buildContextReport({
+    dataset,
+    transcripts,
+    model,
+    seed: CONTEXT_BOOTSTRAP_SEED,
+    policy,
+    codeDigest: options.codeDigest ?? (await codeDigestOfRunningCli()),
+    ...(datasetSeed === undefined ? {} : { datasetSeed }),
+  });
   if (options.report !== undefined) await saveContextReport(ports.files, path.resolve(ports.cwd, options.report), report);
   ports.stdout.write(`${formatContextReport(report)}\n`);
   return report.passed ? 0 : 1;

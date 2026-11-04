@@ -1,5 +1,5 @@
 import { compactionSummaryMessage } from '@momonga/protocol';
-import type { AdapterInputItem, AdapterRequest, ContentPart, FunctionTool, ToolChoice } from '@momonga/protocol';
+import type { AdapterInputItem, AdapterRequest, ContentPart, FunctionTool, PromptCacheCounts, ToolChoice } from '@momonga/protocol';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { hasImagePart, imageSourceOf } from '../shared/image-part.ts';
 import { textOfContent } from '../shared/input-text.ts';
@@ -46,7 +46,9 @@ export type AnthropicRequestBody = {
 
 export type AnthropicCountTokensBody = Pick<AnthropicRequestBody, 'model' | 'system' | 'tools' | 'tool_choice'> & { messages: AnthropicMessage[] };
 
-export type BodyOptions = { cacheBreakpoints: boolean };
+export type CachePlan = { maxBreakpoints: number; marks?: PromptCacheCounts };
+
+export type BodyOptions = { cache: CachePlan | undefined };
 
 const EPHEMERAL: CacheControl = { type: 'ephemeral' };
 const EMPTY_OBJECT_SCHEMA = { type: 'object', properties: {} } as const;
@@ -152,25 +154,22 @@ const toolChoiceOf = (choice: ToolChoice | undefined, parallelToolCalls: boolean
   return { type: 'tool', name: choice.name, ...serial };
 };
 
-const markBreakpoint = (block: Cacheable | undefined, marked: Set<Cacheable>): void => {
-  if (block === undefined || marked.has(block)) return;
-  block.cache_control = EPHEMERAL;
-  marked.add(block);
-};
-
-const withBreakpoints = (tools: AnthropicTool[], system: AnthropicTextBlock[], converted: ConvertedMessages): void => {
+const withBreakpoints = (tools: AnthropicTool[], system: AnthropicTextBlock[], converted: ConvertedMessages, maxBreakpoints: number): void => {
+  const candidates = [converted.messages.at(-1)?.content.at(-1), converted.stablePrefixEnd, system.at(-1), tools.at(-1)];
   const marked = new Set<Cacheable>();
-  markBreakpoint(tools.at(-1), marked);
-  markBreakpoint(system.at(-1), marked);
-  markBreakpoint(converted.stablePrefixEnd, marked);
-  markBreakpoint(converted.messages.at(-1)?.content.at(-1), marked);
+  for (const block of candidates) {
+    if (marked.size >= maxBreakpoints) return;
+    if (block === undefined || marked.has(block)) continue;
+    block.cache_control = EPHEMERAL;
+    marked.add(block);
+  }
 };
 
 const requestParts = (request: AdapterRequest, options: BodyOptions) => {
   const tools = (request.tools ?? []).map(toolOf);
   const system = systemTextOf(request.instructions, request.input).map((text): AnthropicTextBlock => ({ type: 'text', text }));
   const converted = convertMessages(request.input);
-  if (options.cacheBreakpoints) withBreakpoints(tools, system, converted);
+  if (options.cache !== undefined) withBreakpoints(tools, system, converted, options.cache.maxBreakpoints);
   const toolChoice = tools.length === 0 ? undefined : toolChoiceOf(request.tool_choice, request.parallel_tool_calls);
   return { tools, system, messages: converted.messages, toolChoice };
 };
@@ -191,7 +190,7 @@ export const buildMessagesBody = (request: AdapterRequest, maxTokens: number, op
 };
 
 export const buildCountTokensBody = (request: AdapterRequest): AnthropicCountTokensBody => {
-  const { tools, system, messages, toolChoice } = requestParts(request, { cacheBreakpoints: false });
+  const { tools, system, messages, toolChoice } = requestParts(request, { cache: undefined });
   return {
     model: request.model,
     ...(system.length === 0 ? {} : { system }),

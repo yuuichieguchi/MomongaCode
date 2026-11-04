@@ -1,6 +1,7 @@
 import type { ContributionKind, SummaryFidelity, SummarySource } from './context-record.ts';
 import type { ToolFile, WorkingFacts } from './working-facts.ts';
 import type { HookExecution } from './hooks.ts';
+import type { PrefixEvent } from './prefix-events.ts';
 import type { MemoryStatus } from './memory.ts';
 import type { CompactionInputItem, InputItem, MessageInputItem } from './open-responses.ts';
 import type { ApprovalBasis, PermissionDenial } from './permission-denial.ts';
@@ -78,6 +79,8 @@ export type ModelResponse = {
 
 export type ActivatedSkillRecord = { name: string; content: string };
 
+export type ActivatedSkillEntry = { name: string; content: string; seq: number };
+
 export const USAGE_CHARGE_PURPOSES = ['compaction', 'permission_classifier'] as const;
 
 export type UsageChargePurpose = (typeof USAGE_CHARGE_PURPOSES)[number];
@@ -92,7 +95,16 @@ export type RunEventPayload =
   | { type: 'user.message'; text: string; images?: ImageAttachment[] }
   | { type: 'run.started'; attempt: number; now: number; pins: Record<string, unknown>; mode?: PermissionMode }
   | { type: 'run.status'; from: RunStatus; to: RunStatus; reason?: string }
-  | { type: 'model.requested'; step: number; attempt: number; digest: string; pinnedDigest?: string; body: unknown; anatomy?: TokenAnatomy }
+  | {
+      type: 'model.requested';
+      step: number;
+      attempt: number;
+      digest: string;
+      pinnedDigest?: string;
+      body: unknown;
+      anatomy?: TokenAnatomy;
+      prefix?: { preservedItems: number; toolsChanged: boolean; causes: PrefixEvent[] };
+    }
   | { type: 'model.responded'; step: number; attempt: number; response: ModelResponse }
   | { type: 'agent.message.delta'; step: number; attempt: number; itemId: string; text: string }
   | { type: 'agent.thought.delta'; step: number; attempt: number; itemId: string; text: string }
@@ -147,7 +159,10 @@ export type RunEventPayload =
       denial?: PermissionDenial;
       files?: ToolFile[];
       exitCode?: number;
+      formatted?: { formatter: string; version: number };
     }
+  | { type: 'tool.loaded'; names: string[] }
+  | { type: 'loop.warned'; signature: string }
   | { type: 'tool.reconciled'; callId: string; outcome: 'already_applied' | 'not_applied' | 'unknown'; output: string }
   | { type: 'tool.waiting'; callId: string; awaits: ToolAwait; wakeAt?: number }
   | { type: 'job.finished'; jobId: string; status: Exclude<JobStatus, 'running'>; exitCode?: number; signal?: string }
@@ -198,7 +213,7 @@ export type RunEventPayload =
       activatedSkills?: ActivatedSkillRecord[];
       digest: string;
     }
-  | { type: 'context.truncated'; callId: string; handle: string; kind: 'omitted' | 'truncated' }
+  | { type: 'context.truncated'; callId: string; handle: string; kind: 'omitted' | 'truncated' | 'reference' }
   | { type: 'instructions.loaded'; path: string; content: string }
   | { type: 'skill.activated'; name: string; content: string }
   | { type: 'approval.rule.persisted'; approvalId: string; effect: 'allow' | 'deny'; rule: string }
@@ -262,10 +277,12 @@ export type RunState = {
   toolCallCounts: Record<string, number>;
   steps: Record<number, { toolChoice: string; summary: boolean }>;
   lastResponse?: { step: number; incomplete: boolean; incompleteReason?: string; refusal: boolean; callIds: string[] };
-  loadedInstructions: { path: string; textSha256: string }[];
+  loadedInstructions: { path: string; textSha256: string; seq: number }[];
   governingLoaded?: { active: { id: string; textSha256: string }[]; conflicts: { target: string; ids: string[] }[] };
   memoriesLoaded?: { id: string; status: MemoryStatus }[];
-  activatedSkills: ActivatedSkillRecord[];
+  activatedSkills: ActivatedSkillEntry[];
+  loadedTools: string[];
+  loopWarned?: { signature: string };
   streaming?: { step: number; attempt: number; seen: boolean; items: { itemId: string; text: string }[] };
   mode?: PermissionMode;
   taskSeq: number;

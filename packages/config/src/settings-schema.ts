@@ -1,5 +1,5 @@
 import { SECRET_NAME_PATTERN } from '@momonga/foundation';
-import { HOOK_COMMAND_TYPE, PERMISSION_MODES, REASONING_EFFORTS, TARGET_BILLINGS } from '@momonga/protocol';
+import { HOOK_COMMAND_TYPE, MAX_BUDGET_COUNT, OUTPUT_FORMATTERS, PERMISSION_MODES, REASONING_EFFORTS, TARGET_BILLINGS } from '@momonga/protocol';
 import type { CallRole } from '@momonga/protocol';
 
 export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const satisfies readonly CallRole[];
@@ -67,7 +67,7 @@ const FM_TARGET_SCHEMA = {
 const TARGET_CAPABILITIES_SCHEMA = {
   type: 'object',
   properties: {
-    contextWindow: POSITIVE_INTEGER,
+    contextWindow: { type: 'integer', minimum: 1, maximum: MAX_BUDGET_COUNT },
     maxOutputTokens: POSITIVE_INTEGER,
     structuredOutput: { enum: ['json_schema', 'none'] },
     streaming: { type: 'boolean' },
@@ -264,6 +264,7 @@ export const SETTINGS_SCHEMA = {
           additionalProperties: false,
         },
         forgetAfterDays: POSITIVE_INTEGER,
+        repositoryFacts: { type: 'boolean' },
       },
       additionalProperties: false,
     },
@@ -277,7 +278,19 @@ export const SETTINGS_SCHEMA = {
     },
     context: {
       type: 'object',
-      properties: { adaptiveBudget: { type: 'boolean' }, autoCompact: { type: 'boolean' } },
+      properties: {
+        adaptiveBudget: { type: 'boolean' },
+        autoCompact: { type: 'boolean' },
+        cachePrefix: { type: 'boolean' },
+        outputFormatters: { type: 'array', items: { enum: [...OUTPUT_FORMATTERS] } },
+        loopGuidance: { type: 'boolean' },
+        observedCapacity: { type: 'boolean' },
+      },
+      additionalProperties: false,
+    },
+    tools: {
+      type: 'object',
+      properties: { deferral: { type: 'boolean' }, conciseDescriptions: { type: 'boolean' } },
       additionalProperties: false,
     },
     autoUpdates: { type: 'boolean' },
