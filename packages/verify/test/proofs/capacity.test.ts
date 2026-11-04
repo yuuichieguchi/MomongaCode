@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ESTIMATED_ERROR } from '@momonga/protocol';
 import { proofArith } from '../../src/proofs/arith.ts';
 import type { ErrorBound, ProofArith, ProofInt } from '../../src/proofs/arith.ts';
-import { prove } from '../../src/proofs/prove.ts';
+import { expectRefuted, prove } from '../../src/proofs/prove.ts';
 import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, useZ3 } from '../harness.ts';
 import {
   b1Goal,
@@ -30,6 +30,9 @@ const shapes: readonly Shape[] = [
   { label: 'estimated with configured ratio 2^20/2^20', ratio: () => ({ num: QUANTUM, den: QUANTUM }), minimum: 1 },
   { label: 'calibrated with ratio 314573/2^20, configured or written by the probe', ratio: () => ({ num: 314_573, den: QUANTUM }), minimum: 1 },
   { label: 'calibrated with ratio 1/2^20, configured or written by the probe', ratio: () => ({ num: 1, den: QUANTUM }), minimum: 1 },
+  { label: 'exact with configured ratio 1/2^20 and the exact minimum 0', ratio: () => ({ num: 1, den: QUANTUM }), minimum: 0 },
+  { label: 'exact with configured ratio 314573/2^20 and the exact minimum 0', ratio: () => ({ num: 314_573, den: QUANTUM }), minimum: 0 },
+  { label: 'exact with configured ratio 2^20/2^20 and the exact minimum 0', ratio: () => ({ num: QUANTUM, den: QUANTUM }), minimum: 0 },
 ];
 
 const shapeAt = (arith: ProofArith, shape: Shape, point: ProofInt): ProofInt => {
@@ -64,6 +67,20 @@ describe('B9: the observed capacity C', () => {
       const capacity = largestFitting(arith, window, 'C', (point) => shapeAt(arith, shape, point));
       expect(await hypothesesSatisfiable(arith)).toBe(true);
       expect(await prove(arith, capacity.eq(sizedCeiling(arith, window, shape.ratio())))).toEqual({ status: 'proved' });
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'evidence: the earlier rule "an exact reply stays exact" gives C_t = I0 for an exact target with configured ratio 314573/2^20, refuting equality with floor(I0 / (1 + sizingRatioFor))',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'B9-exact-stays-exact');
+      const window = windowOf(arith);
+      const capacity = named(arith, 'C', window.I0);
+      const sized = named(arith, 'sized', sizedCeiling(arith, window, { num: 314_573, den: QUANTUM }));
+      expect(await hypothesesSatisfiable(arith)).toBe(true);
+      const model = await expectRefuted(arith, capacity.eq(sized));
+      expect(BigInt(model.C as string)).toBeGreaterThan(BigInt(model.sized as string));
     },
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );

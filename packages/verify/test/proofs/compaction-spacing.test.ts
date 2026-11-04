@@ -156,28 +156,67 @@ describe('B2w: no low mark guarantees one admissible step without eviction (evid
   );
 });
 
-describe('B5: two proactive compactions are separated by at least summaryItemTokensFor(cap) new tokens', () => {
+describe('B5: two proactive compactions are separated by at least summaryItemTokensFor(cap2) new tokens, for every pair of caps', () => {
   const z3 = useZ3();
 
   const summaryItemTokens = (arith: ProofArith, cap: ProofInt): ProofInt =>
     ceilOf(arith, SUMMARY_ACCEPT, cap).add(arith.ctx.Int.val(SUMMARY_ITEM_OVERHEAD));
 
+  const twoCompactions = (arith: ProofArith) => {
+    const cap1 = arith.int('cap1');
+    const cap2 = arith.int('cap2');
+    const previousSummary = arith.int('previousSummary');
+    const fresh = arith.int('fresh');
+    const growth = arith.int('workingStateGrowth');
+    for (const cap of [cap1, cap2]) arith.given(cap.ge(MIN_SUMMARY_TOKENS), cap.le(MAX_SUMMARY_TOKENS));
+    arith.given(growth.ge(0), fresh.ge(0), previousSummary.ge(0));
+    const firstItem = named(arith, 'item1Tokens', summaryItemTokens(arith, cap1));
+    const secondItem = named(arith, 'item2Tokens', summaryItemTokens(arith, cap2));
+    const item = named(arith, 'item', secondItem.add(growth));
+    const region = named(arith, 'region', previousSummary.add(fresh));
+    const gained = ceilOf(arith, COMPACTION_MIN_GAIN, item);
+    return { cap1, cap2, previousSummary, fresh, growth, firstItem, secondItem, item, region, gained };
+  };
+
   it(
-    'proves N >= summaryItemTokensFor(cap) when the second proactive region holds the accepted first summary and N new tokens',
+    'B5 proves at least item >= summaryItemTokensFor(cap2) new tokens under region >= max(COMPACTION_MIN_GAIN x item, item + previousSummary)',
     async () => {
       const arith = proofArith(z3.engine().api, 'B5');
-      const cap = arith.int('cap');
-      const previousSummary = arith.int('previousSummary');
-      const fresh = arith.int('fresh');
-      const workingStateGrowth = arith.int('workingStateGrowth');
-      arith.given(cap.ge(MIN_SUMMARY_TOKENS), cap.le(MAX_SUMMARY_TOKENS), workingStateGrowth.ge(0), fresh.ge(0));
-      const threshold = summaryItemTokens(arith, cap);
-      arith.given(previousSummary.ge(0), previousSummary.le(threshold));
-      const item = named(arith, 'item', threshold.add(workingStateGrowth));
-      const region = named(arith, 'region', previousSummary.add(fresh));
-      arith.given(region.ge(ceilOf(arith, COMPACTION_MIN_GAIN, item)));
+      const { ctx } = arith;
+      const model = twoCompactions(arith);
+      arith.given(model.region.ge(arith.max(model.gained, model.item.add(model.previousSummary))));
       expect(await hypothesesSatisfiable(arith)).toBe(true);
-      expect(await prove(arith, fresh.ge(threshold))).toEqual({ status: 'proved' });
+      expect(await prove(arith, ctx.And(model.fresh.ge(model.item), model.item.ge(model.secondItem)))).toEqual({ status: 'proved' });
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'B5 proves the rule equals today\'s region >= COMPACTION_MIN_GAIN x item whenever previousSummary <= (COMPACTION_MIN_GAIN - 1) x item',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'B5-reduces');
+      const model = twoCompactions(arith);
+      arith.given(model.previousSummary.le(model.gained.sub(model.item)));
+      const revised = model.region.ge(arith.max(model.gained, model.item.add(model.previousSummary)));
+      const today = model.region.ge(model.gained);
+      expect(await hypothesesSatisfiable(arith)).toBe(true);
+      expect(await prove(arith, revised.eq(today))).toEqual({ status: 'proved' });
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'B5w (evidence) refutes today\'s region >= COMPACTION_MIN_GAIN x item for a falling cap: caps 65 then 64 accept 103 new tokens, below 104',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'B5w');
+      const model = twoCompactions(arith);
+      arith.given(model.previousSummary.le(model.firstItem), model.region.ge(model.gained));
+      arith.given(model.cap1.eq(65), model.cap2.eq(64), model.growth.eq(0), model.previousSummary.eq(model.firstItem), model.fresh.eq(103));
+      expect(await hypothesesSatisfiable(arith)).toBe(true);
+      const found = await expectRefuted(arith, model.fresh.ge(model.secondItem));
+      expect(found.item1Tokens).toBe('105');
+      expect(found.item2Tokens).toBe('104');
+      expect(found.fresh).toBe('103');
     },
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { ESTIMATED_ERROR } from '@momonga/protocol';
+import { ESTIMATED_ERROR, MAX_OUTPUT_WINDOW, MIN_MARGIN } from '@momonga/protocol';
 import { proofArith } from '../../src/proofs/arith.ts';
 import type { ErrorBound, ProofArith, ProofBool, ProofInt } from '../../src/proofs/arith.ts';
 import { expectRefuted, prove } from '../../src/proofs/prove.ts';
 import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, useZ3 } from '../harness.ts';
-import { ceilOf, hypothesesSatisfiable, named, windowOf } from './budget-model.ts';
+import { ceilOf, floorOf, hypothesesSatisfiable, named, windowOf } from './budget-model.ts';
 import type { Window } from './budget-model.ts';
 
 type KeptRule = 'reported' | 'conservative' | 'fresh';
@@ -185,7 +185,7 @@ describe('B8: the meter has two sides, each sound per part', () => {
   );
 
   it(
-    'B8 (v) the split for any j under an equal root with K >= 0 and the fresh count are both sound, so whichever attains under_t passes (i) and (ii)',
+    'B8 (v) either decomposition used alone for the build, the split for any j under an equal root with K >= 0 or the fresh count, satisfies (i) and (ii) with its own count',
     async () => {
       const arith = proofArith(z3.engine().api, 'B8-v');
       const { ctx } = arith;
@@ -218,7 +218,7 @@ describe('B8: the meter has two sides, each sound per part', () => {
   );
 
   it(
-    'B8 (v) under_t(m) = min(splitUnder(m), freshUnder(m)) is non-decreasing in m for non-decreasing sigma and E with sigma(0) = 0',
+    'B8 (v) the bound of the decomposition chosen for the build, splitUnder(m) or freshUnder(m), is non-decreasing in m for non-decreasing sigma and E with sigma(0) = 0',
     async () => {
       const arith = proofArith(z3.engine().api, 'B8-v-monotone');
       const { ctx } = arith;
@@ -228,18 +228,124 @@ describe('B8: the meter has two sides, each sound per part', () => {
       const restA = arith.int('restA');
       const first = arith.int('m1');
       const second = arith.int('m2');
+      const useSplit = ctx.Bool.const('useSplit');
       arith.given(K.ge(0), restA.ge(0), first.ge(0), first.le(second));
       const zero = ctx.Int.val(0);
       const newPart = (m: ProofInt): ProofInt => arith.max(zero, m.sub(K));
       const splitUnder = (m: ProofInt): ProofInt => sigma.at(restA).add(sigma.at(newPart(m))).add(excess.at(restA.add(newPart(m))));
       const freshUnder = (m: ProofInt): ProofInt => sigma.at(m).add(excess.at(m));
-      const underT = (m: ProofInt): ProofInt => arith.min(splitUnder(m), freshUnder(m));
+      const underT = (m: ProofInt): ProofInt => ctx.If(useSplit, splitUnder(m), freshUnder(m)) as ProofInt;
       sigma.monotone(newPart(first), newPart(second));
       excess.monotone(restA.add(newPart(first)), restA.add(newPart(second)));
       sigma.monotone(first, second);
       excess.monotone(first, second);
       expect(await hypothesesSatisfiable(arith)).toBe(true);
       expect(await prove(arith, underT(first).le(underT(second)))).toEqual({ status: 'proved' });
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+});
+
+describe('B8 domain lemma: W - R >= marginFloorFor(W)', () => {
+  const z3 = useZ3();
+
+  it(
+    'holds for every W from 63 to 2^33 and every maxOutputTokens >= 1',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'B8-domain');
+      const window = windowOf(arith);
+      arith.given(window.W.ge(63));
+      expect(await hypothesesSatisfiable(arith)).toBe(true);
+      expect(await prove(arith, window.W.sub(window.R).ge(window.margin))).toEqual({ status: 'proved' });
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'for W <= 62 fails exactly when W - min(maxOutputTokens, floor(W/2)) < 32, and then I0 = 0',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'B8-domain-range');
+      const { ctx } = arith;
+      const window = windowOf(arith);
+      arith.given(window.W.le(62));
+      const half = floorOf(arith, MAX_OUTPUT_WINDOW, window.W);
+      const fails = window.W.sub(window.R).lt(window.margin);
+      const predicted = window.W.sub(arith.min(window.maxOutput, half)).lt(ctx.Int.val(MIN_MARGIN));
+      expect(await hypothesesSatisfiable(arith)).toBe(true);
+      expect(await prove(arith, ctx.And(fails.eq(predicted), ctx.Implies(fails, window.I0.eq(0))))).toEqual({ status: 'proved' });
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'evidence: is refuted at W = 62 with maxOutputTokens = 62, where R = 31, the margin floor is 32 and I0 = 0',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'B8-domain-evidence');
+      const window = windowOf(arith);
+      arith.given(window.W.eq(62), window.maxOutput.eq(62));
+      const model = await expectRefuted(arith, window.W.sub(window.R).ge(window.margin));
+      expect(model.R).toBe('31');
+      expect(model.margin).toBe('32');
+      expect(model.I0).toBe('0');
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+});
+
+describe('B8m: a minimum of the split and the fresh bound over one size is unsound (evidence)', () => {
+  const z3 = useZ3();
+
+  it(
+    'refutes the fit test m + min(splitUnder(m), freshUnder(m)) <= I0 at m = the split count, with the estimated shape (3/10, minimum 1) as sigma and E = 0',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'B8m');
+      const { ctx } = arith;
+      const zero = ctx.Int.val(0);
+      const sigma = (point: ProofInt): ProofInt =>
+        ctx.If(point.eq(zero), zero, arith.max(ctx.Int.val(1), ceilOf(arith, ESTIMATED_ERROR, point))) as ProofInt;
+      const window = workingWindow(arith);
+      const reportedA = arith.int('reportedA');
+      const restA = arith.int('restA');
+      const restB = arith.int('restB');
+      const cFresh = arith.int('cFresh');
+      const server = arith.int('server');
+      const sA = arith.int('sA');
+      const sB = arith.int('sB');
+      arith.given(reportedA.ge(0), restA.ge(0), restB.ge(0), cFresh.ge(0), sA.ge(0), sB.ge(0));
+      const K = named(arith, 'K', reportedA.sub(restA));
+      arith.given(K.ge(0));
+      const cSplit = named(arith, 'cSplit', K.add(restB));
+      const eA = sA.sub(restA);
+      const eB = sB.sub(restB);
+      const margin = window.margin;
+      arith.given(
+        eB.sub(eA).le(sigma(restA).add(sigma(restB)).add(margin)),
+        eA.sub(eB).le(sigma(restA).add(sigma(restB)).add(margin)),
+        server.eq(reportedA.sub(sA).add(sB)),
+        server.sub(cFresh).le(sigma(cFresh).add(margin)),
+        cFresh.sub(server).le(sigma(cFresh).add(margin)),
+      );
+      const splitUnder = sigma(restA).add(sigma(restB));
+      const freshUnder = sigma(cSplit);
+      arith.given(cSplit.add(arith.min(splitUnder, freshUnder)).le(window.I0));
+      arith.given(
+        window.W.eq(76),
+        window.maxOutput.eq(39),
+        reportedA.eq(1),
+        restA.eq(1),
+        restB.eq(4),
+        cFresh.eq(5),
+        sA.eq(0),
+        sB.eq(38),
+      );
+      expect(await hypothesesSatisfiable(arith)).toBe(true);
+      const model = await expectRefuted(arith, server.le(window.W.sub(window.R)));
+      expect(model.W).toBe('76');
+      expect(model.R).toBe('38');
+      expect(model.I0).toBe('6');
+      expect(model.cSplit).toBe('4');
+      expect(model.server).toBe('39');
+      expect(await prove(arith, cSplit.add(splitUnder).gt(window.I0))).toEqual({ status: 'proved' });
     },
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );
