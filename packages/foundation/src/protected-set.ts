@@ -10,9 +10,10 @@ import type { PathResolution, Unresolved, UnresolvableReason } from './path-reso
 export const MAX_POINTER_FILE_BYTES = 1033;
 
 const GIT_NAME = '.git';
+const COMMONDIR_NAME = 'commondir';
 const GITDIR_PREFIX = 'gitdir: ';
 const WORKSPACE_CONTROL_NAMES = ['.momonga', '.mcp.json', '.envrc', '.vscode', '.idea'] as const;
-const GIT_DIRECTORY_ENTRIES = ['hooks', 'config', 'config.worktree', 'commondir'] as const;
+const GIT_DIRECTORY_ENTRIES = ['hooks', 'config', 'config.worktree', COMMONDIR_NAME] as const;
 const NESTED_GIT_DIRECTORY_PATTERNS = [
   { anchor: 'modules', pattern: 'modules/**/hooks' },
   { anchor: 'modules', pattern: 'modules/**/config' },
@@ -21,6 +22,9 @@ const NESTED_GIT_DIRECTORY_PATTERNS = [
 ] as const;
 const PATTERN_PROVENANCE = { ruleText: 'protected set', layer: 'protected', source: 'momonga' } as const;
 const PATTERN_ENFORCEMENT = 'exact-paths' as const;
+const EMPTY_FILE_FORM: PlaceholderForm = { kind: 'file', bytes: '' };
+const COMMONDIR_FORM: PlaceholderForm = { kind: 'file', bytes: '.\n' };
+const DIRECTORY_FORM: PlaceholderForm = { kind: 'directory' };
 const GLOB_CHARACTERS = /[\\*?[]/g;
 
 export type EntryRead =
@@ -47,7 +51,10 @@ export type GitPointerIssue = {
   reason?: UnresolvableReason;
 };
 
+export type PlaceholderForm = { kind: 'file'; bytes: string } | { kind: 'directory' };
+
 export type ProtectedSet = {
+  forms: Readonly<Record<string, PlaceholderForm>>;
   roots: readonly string[];
   paths: readonly string[];
   lexicalPaths: readonly string[];
@@ -60,6 +67,7 @@ export type ProtectedSet = {
 };
 
 export const EMPTY_PROTECTED_SET: ProtectedSet = {
+  forms: {},
   roots: [],
   paths: [],
   lexicalPaths: [],
@@ -80,6 +88,7 @@ export const defaultProtectedPaths = (root: string): string[] => [
 ];
 
 type Collected = {
+  forms: Map<string, PlaceholderForm>;
   paths: Set<string>;
   lexicalPaths: Set<string>;
   literals: Set<string>;
@@ -108,6 +117,13 @@ const lexicallyContains = (base: string, candidate: string, fold: boolean, flavo
   containsByComponents({ existing: '/', tail: componentsOf(base, flavour) }, { existing: '/', tail: componentsOf(candidate, flavour) }, fold);
 
 const entriesOf = (directory: string, names: readonly string[]): string[] => names.map((name) => path.join(directory, name));
+
+const declareEntries = (collected: Collected, directory: string, names: readonly string[]): void => {
+  for (const entry of entriesOf(directory, names)) {
+    collected.paths.add(entry);
+    collected.forms.set(entry, path.basename(entry) === COMMONDIR_NAME ? COMMONDIR_FORM : EMPTY_FILE_FORM);
+  }
+};
 
 const parentCanonicalForm = (entry: string, canonicalise: (absolute: string) => PathResolution): string => {
   const parent = canonicalise(path.dirname(entry));
@@ -183,7 +199,7 @@ type PointerContext = {
 
 const readCommonDirectory = (context: PointerContext, gitDir: string): string | undefined => {
   const { roots, ports, collected, root } = context;
-  const commonFile = path.join(gitDir, 'commondir');
+  const commonFile = path.join(gitDir, COMMONDIR_NAME);
   const read = ports.readEntry(commonFile);
   if ('unresolvable' in read) {
     collected.issues.push({ root, file: commonFile, problem: 'unresolvable', reason: read.unresolvable });
@@ -250,16 +266,16 @@ const followGitFile = (context: PointerContext, pointer: string, text: string): 
     return;
   }
   const gitDir = read.canonical;
-  for (const entry of entriesOf(gitDir, ['config.worktree', 'commondir', 'gitdir'])) collected.paths.add(entry);
+  declareEntries(collected, gitDir, ['config.worktree', COMMONDIR_NAME, 'gitdir']);
   const commonDir = readCommonDirectory(context, gitDir);
   if (commonDir === undefined) return;
-  for (const entry of entriesOf(commonDir, ['hooks', 'config'])) collected.paths.add(entry);
+  declareEntries(collected, commonDir, ['hooks', 'config']);
   registerCommonDirectory(roots, ports, collected, { root, file: pointer }, commonDir);
 };
 
 const collectRoot = (roots: readonly string[], ports: ProtectedSetPorts, collected: Collected, root: string): void => {
   const pointer = path.join(root, GIT_NAME);
-  for (const entry of controlPathsOf(root)) collected.paths.add(entry);
+  declareEntries(collected, root, WORKSPACE_CONTROL_NAMES);
   const read = ports.readEntry(pointer);
   if ('unresolvable' in read) {
     protectUnresolvable(roots, ports, collected, { root, file: pointer }, pointer, read.unresolvable);
@@ -272,7 +288,8 @@ const collectRoot = (roots: readonly string[], ports: ProtectedSetPorts, collect
     case 'directory': {
       const gitDir = read.kind === 'directory' ? read.canonical : pointer;
       if (read.kind === 'directory') pinObstacles(roots, ports, collected, pointer);
-      for (const entry of entriesOf(gitDir, GIT_DIRECTORY_ENTRIES)) collected.paths.add(entry);
+      declareEntries(collected, gitDir, GIT_DIRECTORY_ENTRIES);
+      collected.forms.set(pointer, DIRECTORY_FORM);
       registerCommonDirectory(roots, ports, collected, { root, file: pointer }, gitDir);
       return;
     }
@@ -304,6 +321,7 @@ const patternSpecsOf = (specifiers: readonly string[], roots: readonly string[])
 
 export const protectedSetFor = (roots: readonly string[], ports: ProtectedSetPorts): ProtectedSet => {
   const collected: Collected = {
+    forms: new Map(),
     paths: new Set(),
     lexicalPaths: new Set(),
     literals: new Set(),
@@ -314,7 +332,9 @@ export const protectedSetFor = (roots: readonly string[], ports: ProtectedSetPor
   };
   for (const root of roots) collectRoot(roots, ports, collected, root);
   const patterns = compileFileRuleSet(patternSpecsOf([...collected.patternSpecifiers], roots), roots, null, ports.canonicalise, ports.volumeProbe, flavourOf(ports.platform), PATTERN_ENFORCEMENT);
+  const forms: Record<string, PlaceholderForm> = Object.fromEntries([...[...collected.paths].map((entry): [string, PlaceholderForm] => [entry, EMPTY_FILE_FORM]), ...collected.forms]);
   return {
+    forms,
     roots: [...roots],
     paths: [...collected.paths],
     lexicalPaths: [...collected.lexicalPaths],

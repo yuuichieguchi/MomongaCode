@@ -321,7 +321,7 @@ describe('planBubblewrap', () => {
       fs.mkdirSync(gitDir());
       const plan = planBubblewrap(anchored(), { cwd: work });
       expect(plan.placeholders).toContain(modules());
-      expect(indexOfTriple(plan.args, '--ro-bind', modules())).toBe(-1);
+      expect(indexOfTriple(plan.args, '--ro-bind', '/dev/null', modules())).toBe(-1);
       expect(plan.args.findIndex((value, index) => value === '--ro-bind' && plan.args[index + 1] === modules() && plan.args[index + 2] === modules())).toBeGreaterThan(0);
     });
 

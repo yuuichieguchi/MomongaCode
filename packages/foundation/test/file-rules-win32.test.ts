@@ -28,6 +28,7 @@ const blocks = (specifier: string, candidate: string): boolean => {
 
 describe('the protected set judges Windows paths component by component', () => {
   const set = {
+    forms: {},
     roots: ['C:\\proj'],
     paths: ['C:\\proj\\.git\\hooks'],
     lexicalPaths: [],

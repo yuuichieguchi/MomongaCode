@@ -11,7 +11,6 @@ import { makeTempDir, run } from './helpers.ts';
 
 const STAND_IN_BWRAP = `#!/bin/sh
 while [ "$1" != "--" ]; do
-  if [ "$1" = "--ro-bind" ] && [ "$2" = "/dev/null" ] && [ ! -e "$3" ]; then : > "$3"; fi
   shift
 done
 shift
@@ -34,7 +33,7 @@ const failingJournal = (inner: PlaceholderJournal, failure: Failure): Placeholde
     return act();
   };
   return {
-    intend: (target, intentMs) => guard('intend', () => inner.intend(target, intentMs)),
+    intend: (target, intentMs, form) => guard('intend', () => inner.intend(target, intentMs, form)),
     complete: (target, identity) => guard('complete', () => inner.complete(target, identity)),
     forget: (target) => guard('forget', () => inner.forget(target)),
     records: () => inner.records(),
@@ -223,9 +222,9 @@ describe('the life of a placeholder (stand-in bwrap)', { timeout: REAL_PROCESS_T
         holders: () => held,
         filesystem: {
           ...nodeFilesystemPort,
-          removePlaceholder: (target, identity) => {
+          removePlaceholder: (target, identity, form) => {
             if (failure !== undefined) throw failure;
-            nodeFilesystemPort.removePlaceholder(target, identity);
+            nodeFilesystemPort.removePlaceholder(target, identity, form);
           },
         },
       });
@@ -256,9 +255,9 @@ describe('the life of a placeholder (stand-in bwrap)', { timeout: REAL_PROCESS_T
         holders: () => held,
         filesystem: {
           ...nodeFilesystemPort,
-          removePlaceholder: (target, identity) => {
+          removePlaceholder: (target, identity, form) => {
             if (failing) throw new Error('the placeholder could not be removed');
-            nodeFilesystemPort.removePlaceholder(target, identity);
+            nodeFilesystemPort.removePlaceholder(target, identity, form);
           },
         },
       });
@@ -291,9 +290,9 @@ describe('the life of a placeholder (stand-in bwrap)', { timeout: REAL_PROCESS_T
         holders: () => held,
         filesystem: {
           ...nodeFilesystemPort,
-          removePlaceholder: (target, identity) => {
+          removePlaceholder: (target, identity, form) => {
             if (failing) throw failure;
-            nodeFilesystemPort.removePlaceholder(target, identity);
+            nodeFilesystemPort.removePlaceholder(target, identity, form);
           },
         },
       });

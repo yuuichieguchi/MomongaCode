@@ -2,13 +2,13 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileRuleBlocks, procGroupMembers, signalGroup, signalGroupExceptLeader } from '@momonga/foundation';
-import type { FileRuleEntry, FileRuleSet, GroupMembersReader } from '@momonga/foundation';
+import type { FileRuleEntry, FileRuleSet, GroupMembersReader, PlaceholderForm } from '@momonga/foundation';
 import { canonicalizePath } from './canonical-path.ts';
 import { SANDBOX_STOP_BOUND_MS, launch } from './process.ts';
 import type { LaunchOptions } from './process.ts';
 import { SandboxPolicyError } from './policy-error.ts';
 import { validateSandboxPolicy } from './profile.ts';
-import { identityOf, isStillThePlaceholder } from './placeholder-journal.ts';
+import { EMPTY_FILE_FORM, identityOf, isStillThePlaceholder, removePlaceholderEntry } from './placeholder-journal.ts';
 import type { PlaceholderIdentity, PlaceholderJournal } from './placeholder-journal.ts';
 import { assertExistingDirectory, removePrivateTmpDir } from './scratch.ts';
 import type { DirectoryPort } from './scratch.ts';
@@ -25,8 +25,8 @@ export type FilesystemPort = {
   isSymbolicLink(target: string): boolean;
   realpath(target: string): string;
   children(directory: string): Array<{ path: string; kind: EntryKind | 'other' }> | Unreachable;
-  createPlaceholder(target: string): PlaceholderIdentity;
-  removePlaceholder(target: string, identity: PlaceholderIdentity): void;
+  createPlaceholder(target: string, form: PlaceholderForm): PlaceholderIdentity;
+  removePlaceholder(target: string, identity: PlaceholderIdentity, form: PlaceholderForm): void;
   requireExecutable(file: string): void;
   makeTempDirectory(parent: string, prefix: string): string;
   removePrivateDirectory(directory: string): void;
@@ -55,12 +55,21 @@ export const nodeFilesystemPort: FilesystemPort = {
     }),
   isSymbolicLink: (target) => inspected(false, () => fs.lstatSync(target, { throwIfNoEntry: false })?.isSymbolicLink() ?? false) === true,
   realpath: (target) => fs.realpathSync(target),
-  createPlaceholder: (target) => {
-    fs.closeSync(fs.openSync(target, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL, PLACEHOLDER_MODE));
+  createPlaceholder: (target, form) => {
+    if (form.kind === 'directory') {
+      fs.mkdirSync(target, { mode: PLACEHOLDER_DIRECTORY_MODE });
+    } else {
+      const descriptor = fs.openSync(target, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL, PLACEHOLDER_MODE);
+      try {
+        fs.writeFileSync(descriptor, Buffer.from(form.bytes, 'latin1'));
+      } finally {
+        fs.closeSync(descriptor);
+      }
+    }
     return identityOf(target);
   },
-  removePlaceholder: (target, identity) => {
-    if (isStillThePlaceholder(target, identity)) fs.unlinkSync(target);
+  removePlaceholder: (target, identity, form) => {
+    if (isStillThePlaceholder(target, identity, form)) removePlaceholderEntry(target, form);
   },
   children: (directory) =>
     inspected<Array<{ path: string; kind: EntryKind | 'other' }>>([], () =>
@@ -73,7 +82,9 @@ export const nodeFilesystemPort: FilesystemPort = {
 
 export type BubblewrapOptions = { tmpDir?: string; scratchDir?: string; cwd: string; heldPlaceholders?: ReadonlySet<string> };
 
-export type BubblewrapPlan = { args: string[]; placeholders: string[] };
+export type BubblewrapPlan = { args: string[]; placeholders: string[]; forms: Readonly<Record<string, PlaceholderForm>> };
+
+type Ownership = { form: PlaceholderForm; identity?: PlaceholderIdentity };
 
 type Mount = { depth: number; args: string[] };
 
@@ -85,6 +96,8 @@ const byDepth = (mounts: readonly Mount[]): string[] => [...mounts].sort((left, 
 
 const PLACEHOLDER_MODE = 0o644;
 
+const PLACEHOLDER_DIRECTORY_MODE = 0o755;
+
 const MODULE_PINNED_ENTRIES = ['hooks', 'config', 'config.worktree'] as const;
 
 const SYSTEMD_RESOLVE_DIRECTORY = '/run/systemd/resolve';
@@ -92,7 +105,7 @@ const SYSTEMD_RESOLVE_DIRECTORY = '/run/systemd/resolve';
 const isUserDeny = (entry: FileRuleEntry): boolean =>
   entry.effect === 'deny' && entry.unresolved === null && (entry.tool === 'Read' || entry.tool === 'Edit');
 
-const forms = (entry: FileRuleEntry): Array<{ directory: string }> => [
+const directoriesOf = (entry: FileRuleEntry): Array<{ directory: string }> => [
   { directory: entry.anchorDirectory },
   ...(entry.denyLexical === null ? [] : [{ directory: entry.lexicalDirectory }]),
 ];
@@ -112,7 +125,7 @@ const blockedPaths = (set: FileRuleSet, entry: FileRuleEntry, port: Inspector): 
     if (wholeDirectoryBlocked) return;
     for (const child of port.children(candidate)) visit(child.path, child.kind);
   };
-  for (const { directory } of forms(entry)) {
+  for (const { directory } of directoriesOf(entry)) {
     const kind = port.kindOf(directory);
     if (kind !== 'directory') continue;
     visit(directory, 'directory');
@@ -184,7 +197,7 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
     let missing = target;
     for (let parent = path.dirname(missing); parent !== missing; parent = path.dirname(missing)) {
       const kind = kindOf(parent);
-      if (kind === 'directory') return missing;
+      if (kind === 'directory') return heldPlaceholders.has(parent) ? parent : missing;
       if (kind === 'file') return heldPlaceholders.has(parent) ? parent : undefined;
       missing = parent;
     }
@@ -195,7 +208,7 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
     const missing = firstMissingComponent(target);
     if (missing === undefined || !insideRoots(missing) || placeholders.includes(missing)) return;
     placeholders.push(missing);
-    mounts.push({ depth: depthOf(missing), args: ['--ro-bind', '/dev/null', missing] });
+    mounts.push({ depth: depthOf(missing), args: ['--ro-bind', missing, missing] });
   };
 
   const mounted: string[] = [];
@@ -307,7 +320,8 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
     '--chdir',
     options.cwd,
   ];
-  return { args, placeholders: unique(placeholders) };
+  const reserved = unique(placeholders);
+  return { args, placeholders: reserved, forms: Object.fromEntries(reserved.map((placeholder): [string, PlaceholderForm] => [placeholder, policy.protectedSet.forms[placeholder] ?? EMPTY_FILE_FORM])) };
 }
 
 export const BWRAP_PROBE_TIMEOUT_MS = SANDBOX_STOP_BOUND_MS;
@@ -374,8 +388,8 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
   const directories: DirectoryPort = { isDirectory: (target) => filesystem.kindOf(target) === 'directory' };
   const held = new Map<string, number>();
   const { journal, holders } = options;
-  const owned = new Map<string, PlaceholderIdentity | undefined>();
-  const kept = new Map<string, PlaceholderIdentity | undefined>();
+  const owned = new Map<string, Ownership>();
+  const kept = new Map<string, Ownership>();
   const sweepFailures = new Map<string, string>();
 
   const attemptAll = (steps: ReadonlyArray<() => void>): unknown[] => {
@@ -394,27 +408,27 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
     if (failures.length > 1) throw new AggregateError(failures, failures.map((failure) => (failure as Error).message).join('; '));
   };
 
-  const remove = (placeholder: string, identity: PlaceholderIdentity | undefined): void => {
-    if (identity !== undefined) filesystem.removePlaceholder(placeholder, identity);
+  const remove = (placeholder: string, ownership: Ownership): void => {
+    if (ownership.identity !== undefined) filesystem.removePlaceholder(placeholder, ownership.identity, ownership.form);
     journal.forget(placeholder);
   };
   const discard = (placeholder: string): void => {
-    const identity = owned.get(placeholder);
+    const ownership = owned.get(placeholder) as Ownership;
     owned.delete(placeholder);
     if (holders().has(placeholder)) {
-      kept.set(placeholder, identity);
+      kept.set(placeholder, ownership);
       return;
     }
-    remove(placeholder, identity);
+    remove(placeholder, ownership);
   };
   const sweepKept = (): void => {
     if (kept.size === 0) return;
     const stillHeld = holders();
     const releasable = [...kept].filter(([placeholder]) => !stillHeld.has(placeholder));
     const newFailures: unknown[] = [];
-    for (const [placeholder, identity] of releasable) {
+    for (const [placeholder, ownership] of releasable) {
       try {
-        remove(placeholder, identity);
+        remove(placeholder, ownership);
         kept.delete(placeholder);
         sweepFailures.delete(placeholder);
       } catch (error) {
@@ -429,30 +443,31 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
   };
   const hold = (plan: BubblewrapPlan): void => {
     const begun: string[] = [];
-    const adopted: Array<[string, PlaceholderIdentity | undefined]> = [];
+    const adopted: Array<[string, Ownership]> = [];
     try {
       for (const placeholder of plan.placeholders.filter((candidate) => !held.has(candidate))) {
         if (kept.has(placeholder)) {
-          const identity = kept.get(placeholder);
+          const ownership = kept.get(placeholder) as Ownership;
           kept.delete(placeholder);
           sweepFailures.delete(placeholder);
-          owned.set(placeholder, identity);
-          adopted.push([placeholder, identity]);
+          owned.set(placeholder, ownership);
+          adopted.push([placeholder, ownership]);
           continue;
         }
-        journal.intend(placeholder, Date.now());
+        const form = plan.forms[placeholder] as PlaceholderForm;
+        journal.intend(placeholder, Date.now(), form);
         begun.push(placeholder);
-        owned.set(placeholder, undefined);
-        const identity = filesystem.createPlaceholder(placeholder);
-        owned.set(placeholder, identity);
+        owned.set(placeholder, { form });
+        const identity = filesystem.createPlaceholder(placeholder, form);
+        owned.set(placeholder, { form, identity });
         journal.complete(placeholder, identity);
       }
     } catch (error) {
-      const failures = attemptAll(begun.map((placeholder) => () => remove(placeholder, owned.get(placeholder))));
+      const failures = attemptAll(begun.map((placeholder) => () => remove(placeholder, owned.get(placeholder) as Ownership)));
       for (const placeholder of begun) owned.delete(placeholder);
-      for (const [placeholder, identity] of adopted) {
+      for (const [placeholder, ownership] of adopted) {
         owned.delete(placeholder);
-        kept.set(placeholder, identity);
+        kept.set(placeholder, ownership);
       }
       throwAll([error, ...failures]);
     }

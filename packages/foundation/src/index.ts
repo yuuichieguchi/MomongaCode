@@ -154,7 +154,7 @@ export type { GitlinkRead } from './git-index.ts';
 export { programKeysOfConfig } from './git-config-programs.ts';
 export type { ConfigPrograms } from './git-config-programs.ts';
 export { EMPTY_PROTECTED_SET, MAX_POINTER_FILE_BYTES, commondirTarget, defaultProtectedPaths, gitFileTarget, isProtectedWrite, protectedSetFor } from './protected-set.ts';
-export type { EntryRead, GitEntryReader, GitPointerIssue, ProtectedSet, ProtectedSetPorts } from './protected-set.ts';
+export type { EntryRead, GitEntryReader, GitPointerIssue, PlaceholderForm, ProtectedSet, ProtectedSetPorts } from './protected-set.ts';
 export { anchorFormOf, checkExceptionGrammar, checkFilePatternGrammar, fileMatcherOf, parseExceptionPattern, parseFilePattern, testFileMatcher } from './file-pattern.ts';
 export type { Expression, FileMatcher, FilePattern, FilePatternContext, GlobSegment, MatcherForm } from './file-pattern.ts';
 export { HOST_FLAVOUR, flavourOf, nativePathOf, patternPathOf, specifierOf } from './path-flavour.ts';
