@@ -196,6 +196,20 @@ describe('createManagedFmTarget token counting', () => {
     expect(result.error_bound).toBe(errorBoundOfShape(result.error_shape, result.input_tokens));
   });
 
+  it('counts a request with no text as zero tokens without running fm count-tokens', async () => {
+    const { managed, execCalls } = await setup({ countStdout: '20\n' });
+    const result = await managed.countTokens(TARGET, { model: 'fast', input: [], tools: [] }, new AbortController().signal);
+    expect(result.input_tokens).toBe(0);
+    expect(execCalls.filter((call) => call.args[0] === 'count-tokens')).toEqual([]);
+  });
+
+  it('still runs fm count-tokens with the text of a non-empty request', async () => {
+    const { managed, execCalls } = await setup({ countStdout: '20\n' });
+    const result = await managed.countTokens(TARGET, { model: 'fast', input: [userText('hello')] }, new AbortController().signal);
+    expect(result.input_tokens).toBe(20);
+    expect(execCalls).toEqual([{ file: BINARY, args: ['count-tokens', '-q'], stdin: 'hello' }]);
+  });
+
   it('counts each tool as canonical JSON on its own line between instructions and input items', async () => {
     const { managed, execCalls } = await setup({ countStdout: '20\n' });
     const tools = [
@@ -306,5 +320,17 @@ describe('createManagedFmTarget compaction and wire counting', () => {
     expect(stdin).toContain('count these words');
     expect(stdin).toContain('"function":{');
     expect(stdin).not.toContain('{"description":"Read a file","name":"Read","parameters"');
+  });
+
+  it('counts an empty wire request as zero tokens through /v1/momonga/count_tokens without running fm count-tokens', async () => {
+    const { managed, clock, execCalls } = await setup({ countStdout: '20\n' });
+    const { client } = await startGateway({
+      adapters: { fm: adapterFor(managed, clock) },
+      config: { aliases: { fast: ['fm'] }, targets: { fm: { model: 'system' } } },
+    });
+    const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'fast', input: [], tools: [] }));
+    expect(response.status).toBe(200);
+    expect(response.body.input_tokens).toBe(0);
+    expect(execCalls.filter((call) => call.args[0] === 'count-tokens')).toEqual([]);
   });
 });
