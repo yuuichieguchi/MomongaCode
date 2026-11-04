@@ -1,3 +1,4 @@
+import { escapeTerminalLine } from '@momonga/protocol';
 import type { GoldenCase, GoldenDataset, PermissionDecision } from './dataset.ts';
 import type { DecisionObservation, GradeOutcome, Graded } from './graders.ts';
 import { proportionOf } from './stats.ts';
@@ -108,5 +109,5 @@ export const formatReport = (report: EvalReport): string => {
   lines.push(`false-allow rate ${falseAllow === undefined ? 'n/a (no decision labelled ask or deny was observed)' : describeProportion(falseAllow)}`);
   lines.push(`false-block rate ${falseBlock === undefined ? 'n/a (no decision labelled allow was observed)' : describeProportion(falseBlock)}`);
   lines.push(`unobserved decisions ${unobserved}`);
-  return lines.join('\n');
+  return lines.map(escapeTerminalLine).join('\n');
 };

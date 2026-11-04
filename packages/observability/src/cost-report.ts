@@ -1,6 +1,6 @@
 import { describeFallbackCause } from '@momonga/foundation';
 import type { FallbackCause } from '@momonga/foundation';
-import { RUN_ROLE } from '@momonga/protocol';
+import { RUN_ROLE, escapeTerminalLine } from '@momonga/protocol';
 import { MOMONGA_ATTRIBUTES, UNKNOWN_BILLING } from './semconv.ts';
 import { billedCallOf, isBilledChat } from './billed-calls.ts';
 import type { BilledCall } from './billed-calls.ts';
@@ -216,5 +216,5 @@ export const formatCostReport = (report: CostReport): string => {
     }
   }
   lines.push(`  total: ${describeTotals(report.total)}`, ...roleLines(report.total, '    '));
-  return lines.join('\n');
+  return lines.map(escapeTerminalLine).join('\n');
 };

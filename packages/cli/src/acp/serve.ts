@@ -6,7 +6,10 @@ import { daemonReadyBoundMs, ensureDaemon, restoreDaemon } from '../daemon/ensur
 import type { CliPorts } from '../ports.ts';
 import { DaemonUnreachable, followRun, followSession, retryAfterRestore } from '../run/follow.ts';
 import { autoModeConfigured, connectRuntime, environmentSnapshot } from '../run/open-session.ts';
+import { escapedLines } from '../terminal-writer.ts';
 import { createAcpAgent } from './agent.ts';
+
+export const acpDiagnosticText = (message: string): string => `${escapedLines([`momonga: ${message}`])}\n`;
 
 export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: AbortSignal): Promise<number> => {
   if (ports.acpStdio === undefined) throw new Error('this build has no standard streams to speak the Agent Client Protocol on');
@@ -64,7 +67,7 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
         onReconnecting: (attempt) => ports.stderr.write(`momonga: lost the session event stream, reconnecting (attempt ${attempt + 1})\n`),
         signal,
       }),
-    report: (message) => ports.stderr.write(`momonga: ${message}\n`),
+    report: (message) => ports.stderr.write(acpDiagnosticText(message)),
   });
   const connection = app.connect(ndJsonStream(stdio.output, stdio.input));
   const closeOnInterrupt = (): void => connection.close();

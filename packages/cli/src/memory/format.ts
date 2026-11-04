@@ -68,5 +68,5 @@ export const formatMemory = (memory: MemoryView): string =>
     sourceLine(memory.source),
     ...memory.evidence.map(evidenceLine),
     '',
-    memory.text,
+    ...memory.text.split('\n').map((line) => `  ${escapeTerminalLine(line)}`),
   ].join('\n');

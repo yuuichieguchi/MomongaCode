@@ -1,3 +1,4 @@
+import { escapeTerminalLine } from '@momonga/protocol';
 import type { ContextChargesView } from '@momonga/protocol';
 import type { ContextCharge } from '@momonga/store';
 
@@ -17,4 +18,6 @@ export const contextChargesText = (view: ContextChargesView, runTokens: number):
         ),
         `context charges total: ${view.totalTokens} tokens`,
         `all model calls: ${runTokens + view.totalTokens} tokens (runs ${runTokens}, context charges ${view.totalTokens})`,
-      ].join('\n');
+      ]
+        .map(escapeTerminalLine)
+        .join('\n');

@@ -3,6 +3,7 @@ import { loadUserSettings } from '@momonga/config';
 import type { MomongaPaths } from '@momonga/foundation';
 import { ensureDaemon, stopDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
+import { escapedLines } from '../terminal-writer.ts';
 
 export const DEFAULT_FM_BINARY = '/usr/bin/fm';
 
@@ -45,6 +46,30 @@ const apiKeyOf = async (ports: CliPorts, target: ChatCompletionsConfig, interrup
   return value;
 };
 
+type EndpointProbe = Awaited<ReturnType<typeof import('@momonga/gateway').probeEndpointTarget>>;
+
+export const probeEndpointText = (name: string, endpoint: string, recordPath: string, report: EndpointProbe['report'], toolCalling: EndpointProbe['toolCalling']): string => {
+  const reasoning = report.reasoning;
+  const parallel = report.parallelToolCalls;
+  return `${escapedLines([
+    `probed ${name}: model ${report.modelId} at ${endpoint}, context window ${report.contextWindow.value} (${report.contextWindow.method})`,
+    `  tool calling: ${toolCalling} (native ${report.nativeTools.validRate}, constrained ${report.constrained.validRate})`,
+    `  structured output: ${report.constrained.accepted ? 'json_schema' : 'none'}, stop sequences: ${report.stopSequences}, usage reported: ${report.usageReported}`,
+    `  parallel tool calls: ${parallel === undefined ? 'not measured' : `${parallel.accepted && parallel.multiCallRate >= 0.9} (${parallel.multiCallRate} of replies carried several calls)`}`,
+    `  reasoning: ${reasoning === undefined ? 'not measured' : reasoning.control === 'reasoning_effort' ? `reasoning_effort, lowest ${reasoning.lowest}` : `cannot be controlled${reasoning.headroomTokens === undefined ? '' : `, leaves room for ${reasoning.headroomTokens} tokens`}`}`,
+    `  max concurrency: ${report.maxConcurrency}`,
+    `  recorded in ${recordPath}`,
+  ])}\n`;
+};
+
+export const probeFmText = (target: string, recordPath: string, report: EndpointProbe['report'], toolCalling: EndpointProbe['toolCalling']): string =>
+  `${escapedLines([
+    `probed ${target}: model ${report.modelId}, context window ${report.contextWindow.value} (${report.contextWindow.method})`,
+    `  tool calling: ${toolCalling} (native ${report.nativeTools.validRate}, constrained ${report.constrained.validRate})`,
+    `  stop sequences: ${report.stopSequences}, usage reported: ${report.usageReported}, max concurrency: ${report.maxConcurrency}`,
+    `  recorded in ${recordPath}`,
+  ])}\n`;
+
 const probeChatCompletions = async (
   ports: CliPorts,
   paths: MomongaPaths,
@@ -63,19 +88,7 @@ const probeChatCompletions = async (
     signal: options.interrupt,
     ...(options.samples === undefined ? {} : { samples: options.samples }),
   });
-  const reasoning = report.reasoning;
-  const parallel = report.parallelToolCalls;
-  ports.stdout.write(
-    [
-      `probed ${name}: model ${report.modelId} at ${key.endpoint}, context window ${report.contextWindow.value} (${report.contextWindow.method})`,
-      `  tool calling: ${toolCalling} (native ${report.nativeTools.validRate}, constrained ${report.constrained.validRate})`,
-      `  structured output: ${report.constrained.accepted ? 'json_schema' : 'none'}, stop sequences: ${report.stopSequences}, usage reported: ${report.usageReported}`,
-      `  parallel tool calls: ${parallel === undefined ? 'not measured' : `${parallel.accepted && parallel.multiCallRate >= 0.9} (${parallel.multiCallRate} of replies carried several calls)`}`,
-      `  reasoning: ${reasoning === undefined ? 'not measured' : reasoning.control === 'reasoning_effort' ? `reasoning_effort, lowest ${reasoning.lowest}` : `cannot be controlled${reasoning.headroomTokens === undefined ? '' : `, leaves room for ${reasoning.headroomTokens} tokens`}`}`,
-      `  max concurrency: ${report.maxConcurrency}`,
-      `  recorded in ${paths.probe}`,
-    ].join('\n') + '\n',
-  );
+  ports.stdout.write(probeEndpointText(name, key.endpoint, paths.probe, report, toolCalling));
   await restartDaemon(ports, paths);
   return 0;
 };
@@ -93,17 +106,10 @@ export const probeFm = async (ports: CliPorts, paths: MomongaPaths, target: stri
     socketPath: path.join(paths.run, FM_PROBE_SOCKET_NAME),
     env: ports.env,
     signal: options.interrupt,
-    onWarning: (message) => ports.stderr.write(`momonga: ${message}\n`),
+    onWarning: (message) => ports.stderr.write(`${escapedLines([`momonga: ${message}`])}\n`),
     ...(options.samples === undefined ? {} : { samples: options.samples }),
   });
-  ports.stdout.write(
-    [
-      `probed ${target}: model ${report.modelId}, context window ${report.contextWindow.value} (${report.contextWindow.method})`,
-      `  tool calling: ${toolCalling} (native ${report.nativeTools.validRate}, constrained ${report.constrained.validRate})`,
-      `  stop sequences: ${report.stopSequences}, usage reported: ${report.usageReported}, max concurrency: ${report.maxConcurrency}`,
-      `  recorded in ${paths.probe}`,
-    ].join('\n') + '\n',
-  );
+  ports.stdout.write(probeFmText(target, paths.probe, report, toolCalling));
   await restartDaemon(ports, paths);
   return 0;
 };

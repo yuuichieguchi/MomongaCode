@@ -3,23 +3,33 @@ import type { UpdateWiring } from '../update/background.ts';
 import { installRelease, resolveUpdateTarget } from '../update/install.ts';
 import { checkForUpdate } from '../update/release.ts';
 import type { Sink } from '../ports.ts';
+import { escapedLines } from '../terminal-writer.ts';
+import type { UpdateCheck } from '../update/release.ts';
 
 export type UpdateCommandOptions = { checkOnly: boolean; interrupt: AbortSignal };
+
+export const checkOnlyText = (check: Exclude<UpdateCheck, { kind: 'up_to_date' }>): string =>
+  `${escapedLines([
+    check.kind === 'ahead'
+      ? `momonga ${check.current.text} is newer than the latest release ${check.latest.tag}`
+      : `momonga ${check.latest.version.text} is available (running ${check.current.text}); run \`momonga update\` to install it`,
+  ])}\n`;
+
+export const installedText = (result: { from: string; to: string; target: string; daemonRestarted: boolean }): string =>
+  `${escapedLines([`updated momonga ${result.from} -> ${result.to} (${result.target})`, ...(result.daemonRestarted ? ['restarted the daemon on the new version'] : [])])}\n`;
+
+export const upToDateText = (currentText: string): string => `${escapedLines([`momonga ${currentText} is up to date`])}\n`;
 
 export const runUpdate = async (wiring: UpdateWiring, stdout: Sink, options: UpdateCommandOptions): Promise<number> => {
   const { ports } = wiring;
   const target = resolveUpdateTarget(ports, wiring.build, wiring.endpoints);
   const check = await checkForUpdate(ports, target.source, options.interrupt);
   if (check.kind === 'up_to_date') {
-    stdout.write(`momonga ${check.current.text} is up to date\n`);
+    stdout.write(upToDateText(check.current.text));
     return 0;
   }
   if (options.checkOnly) {
-    stdout.write(
-      check.kind === 'ahead'
-        ? `momonga ${check.current.text} is newer than the latest release ${check.latest.tag}\n`
-        : `momonga ${check.latest.version.text} is available (running ${check.current.text}); run \`momonga update\` to install it\n`,
-    );
+    stdout.write(checkOnlyText(check));
     return 0;
   }
   if (check.kind === 'ahead') {
@@ -28,7 +38,6 @@ export const runUpdate = async (wiring: UpdateWiring, stdout: Sink, options: Upd
     });
   }
   const result = await installRelease(ports, target, check.latest, { restartDaemon: true, signal: options.interrupt });
-  stdout.write(`updated momonga ${result.from} -> ${result.to} (${result.target})\n`);
-  if (result.daemonRestarted) stdout.write('restarted the daemon on the new version\n');
+  stdout.write(installedText(result));
   return 0;
 };

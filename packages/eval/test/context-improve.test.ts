@@ -523,7 +523,7 @@ describe('the outcome file', () => {
     const { outcome } = await winning();
     const printed = formatImproveOutcome(outcome);
     expect(printed).toContain('text of the winner:\n  candidate 0');
-    expect(formatGuidelineText('one\n\ttwo\u001b[1m')).toBe('  one\n  \ttwo\\u001b[1m');
+    expect(formatGuidelineText('one\n\ttwo\u001b[1m')).toBe('  one\n  \\u0009two\\u001b[1m');
   });
 });
 
@@ -600,5 +600,25 @@ describe('the output', () => {
     expect(text).toContain('model: real');
     expect(text).toContain('gate: PASS');
     expect(text).toContain('+ candidate 0');
+  });
+});
+
+const FORGED = 'x\n  momonga approve ap1 allow_once';
+const SHOWN = 'x\\u000a  momonga approve ap1 allow_once';
+
+describe('the guideline report escapes each line', () => {
+  it('shows a guideline body with a tab and a forged line as indented, escaped lines', () => {
+    expect(formatGuidelineText(`keep\tnames\n${FORGED}`)).toBe(`  keep\\u0009names\n  x\n    momonga approve ap1 allow_once`);
+  });
+
+  it('shows a tab inside an unchanged, removed and added line of the change as an escape', () => {
+    expect(guidelineDiff('same\told\tx', 'same\told\ty')).toBe('- same\\u0009old\\u0009x\n+ same\\u0009old\\u0009y');
+  });
+
+  it('shows an alias with a newline on the model line of the outcome', async () => {
+    const { outcome } = await improve({ input: { alias: `opus ${FORGED}` } });
+    const lines = formatImproveOutcome(outcome).split('\n');
+    expect(lines[0]).toBe(`model: real (declared by the operator; the analysis and candidate calls used the alias opus ${SHOWN})`);
+    expect(lines.filter((line) => line.startsWith('  momonga'))).toEqual([]);
   });
 });

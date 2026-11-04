@@ -1,6 +1,7 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import { escapeTerminalLine } from '@momonga/protocol';
 import { clusterBootstrap } from './bootstrap.ts';
 import type { Cluster } from './bootstrap.ts';
 import { COMPACTION_SETTINGS, expandContextDataset } from './context-dataset.ts';
@@ -375,7 +376,7 @@ export const formatContextReport = (report: ContextReport): string => {
   lines.push(`noiseTokens ${report.noiseTokens} (spent by the noise turns and their reflections before each task; counted against the dataset cap and not in tokensPerSuccess)`);
   lines.push(`noise reflections unsettled ${report.unsettledNoiseReflections} (a reflection of a noise run still pending or running past its bound; the charges recorded so far are in noiseTokens, and the cases stay measured)`);
   for (const stop of report.stopped) lines.push(`stopped ${stop.caseId} run ${stop.runIndex}: ${stop.reason} (counted as a failed run)`);
-  return lines.join('\n');
+  return lines.map(escapeTerminalLine).join('\n');
 };
 
 const count = { type: 'integer', minimum: 0 } as const;

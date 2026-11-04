@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { RELEASE_SIGNATURE_ASSET, RELEASE_SIGNATURE_TOOL, parseChecksumListing, verifyReleaseSignature } from '@momonga/foundation';
 import type { PlaceFile, ReleaseSignatureVerdict } from '@momonga/foundation';
+import { escapedLines } from '../terminal-writer.ts';
 import { UpdateError } from './errors.ts';
 import type { StagedFile, UpdatePorts } from './ports.ts';
 import { readText, requestOrFail } from './release.ts';
@@ -29,8 +30,8 @@ const releaseUrl = (source: UpdateSource, release: Release, name: string): strin
 
 const SIGNING_FILE_MODE = 0o600;
 
-const reportUnremoved = (ports: UpdatePorts, file: string, cleanup: unknown): void => {
-  ports.stderr.write(`momonga: the staging file ${file} could not be removed: ${cleanup instanceof Error ? cleanup.message : String(cleanup)}\n`);
+export const reportUnremoved = (ports: Pick<UpdatePorts, 'stderr'>, file: string, cleanup: unknown): void => {
+  ports.stderr.write(`${escapedLines([`momonga: the staging file ${file} could not be removed: ${cleanup instanceof Error ? cleanup.message : String(cleanup)}`])}\n`);
 };
 
 const placeSigningFile =

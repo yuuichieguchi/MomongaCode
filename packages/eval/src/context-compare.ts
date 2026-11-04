@@ -1,3 +1,4 @@
+import { escapeTerminalLine } from '@momonga/protocol';
 import { MINIMUM_PAIRS, pairedBootstrap, pairedRatioBootstrap } from './bootstrap.ts';
 import type { BootstrapInterval, Cluster } from './bootstrap.ts';
 import { describeClustered } from './context-report.ts';
@@ -268,7 +269,9 @@ export const formatContextComparison = (comparison: ContextComparison): string =
       describeDifference('lossSignalsPerCompaction', comparison.differences.lossSignalsPerCompaction, 3),
       `fabricationRate baseline ${describeFabrication(comparison.fabricationRate.baseline)}, candidate ${describeFabrication(comparison.fabricationRate.candidate)}`,
       ...gateLines(comparison),
-    ].join('\n');
+    ]
+      .map(escapeTerminalLine)
+      .join('\n');
   }
   return [
     ...heading,
@@ -277,5 +280,7 @@ export const formatContextComparison = (comparison: ContextComparison): string =
     describeDifference('lossSignalsPerCompaction', comparison.differences.lossSignalsPerCompaction, 3),
     describeDifference('tokensPerSuccess', comparison.differences.tokensPerSuccess, 1),
     ...gateLines(comparison),
-  ].join('\n');
+  ]
+    .map(escapeTerminalLine)
+    .join('\n');
 };

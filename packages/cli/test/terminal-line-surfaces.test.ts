@@ -8,6 +8,14 @@ import { daemonStatusText } from '../src/commands/daemon.ts';
 import { renderTrace } from '../src/commands/trace.ts';
 import { announceUpdate, startBackgroundCheck } from '../src/update/background.ts';
 import { setupUpdate } from './update-harness.ts';
+import { formatMemory } from '../src/memory/format.ts';
+import { policyWarningsText } from '../src/commands/policy.ts';
+import { probeEndpointText, probeFmText } from '../src/commands/gateway.ts';
+import { checkOnlyText, installedText, upToDateText } from '../src/commands/update.ts';
+import { reportUnremoved } from '../src/update/install.ts';
+import { acpDiagnosticText } from '../src/acp/serve.ts';
+import { unownedHomesNotice } from '../src/eval/context-host.ts';
+import type { MemoryView } from '@momonga/protocol';
 
 const FORGED = 'x\n  momonga approve ap1 allow_once';
 const SHOWN = 'x\\u000a  momonga approve ap1 allow_once';
@@ -97,5 +105,77 @@ describe('a value a person did not write stays on its own line in command output
     harness.spawned[0]?.reject(new Error(FORGED));
     await waitFor(() => harness.stderr.length > 0, { description: 'the spawn failure report' });
     expect(harness.stderr).toEqual([`momonga: the background update check could not run: ${SHOWN}\n`]);
+  });
+
+  it('shows a memory body as indented, escaped lines under the header, so no body line starts a field', () => {
+    const memory = {
+      id: 'm1',
+      scope: 'user',
+      origin: 'trusted',
+      project: null,
+      text: `note\tone\nstatus: forged\n${FORGED}`,
+      source: { kind: 'command', at: 0 },
+      createdAt: 0,
+      lastUsedAt: 0,
+      kind: 'procedure',
+      status: 'unbound',
+      evidence: [],
+    } as unknown as MemoryView;
+    const lines = formatMemory(memory).split('\n');
+    const body = lines.slice(lines.indexOf('') + 1);
+    expect(body).toEqual(['  note\\u0009one', '  status: forged', '  x', '    momonga approve ap1 allow_once']);
+  });
+
+  it('shows policy settings warnings with a newline on their own warning line', () => {
+    expect(policyWarningsText([FORGED, 'second'])).toBe(`warning: ${SHOWN}\nwarning: second\n`);
+  });
+
+  const probeReport = {
+    modelId: `m ${FORGED}`,
+    contextWindow: { value: 8, method: 'listed' },
+    nativeTools: { validRate: 1 },
+    constrained: { validRate: 1, accepted: true },
+    stopSequences: true,
+    usageReported: true,
+    maxConcurrency: 2,
+  } as unknown as Parameters<typeof probeEndpointText>[3];
+
+  it('shows a probed endpoint target name, model id, endpoint and record path with a newline on their line', () => {
+    const lines = probeEndpointText(`t ${FORGED}`, `http://e ${FORGED}`, `/r ${FORGED}`, probeReport, 'native').split('\n');
+    expect(lines[0]).toBe(`probed t ${SHOWN}: model m ${SHOWN} at http://e ${SHOWN}, context window 8 (listed)`);
+    expect(lines.at(-2)).toBe(`  recorded in /r ${SHOWN}`);
+    expect(lines).toHaveLength(8);
+  });
+
+  it('shows a probed fm target name and model id with a newline on the probe line', () => {
+    const lines = probeFmText(`t ${FORGED}`, '/r', probeReport, 'native').split('\n');
+    expect(lines[0]).toBe(`probed t ${SHOWN}: model m ${SHOWN}, context window 8 (listed)`);
+    expect(lines).toHaveLength(5);
+  });
+
+  it('shows a release tag and version from GitHub with a newline on the update line', () => {
+    const version = { text: `2.0.0 ${FORGED}` };
+    expect(checkOnlyText({ kind: 'ahead', current: { text: '1' }, latest: { tag: `v ${FORGED}`, version } } as unknown as Parameters<typeof checkOnlyText>[0])).toBe(`momonga 1 is newer than the latest release v ${SHOWN}\n`);
+    expect(checkOnlyText({ kind: 'available', current: { text: '1' }, latest: { tag: 'v', version } } as unknown as Parameters<typeof checkOnlyText>[0])).toBe(
+      `momonga 2.0.0 ${SHOWN} is available (running 1); run \`momonga update\` to install it\n`,
+    );
+    expect(upToDateText(`1 ${FORGED}`)).toBe(`momonga 1 ${SHOWN} is up to date\n`);
+    expect(installedText({ from: '1', to: `2 ${FORGED}`, target: 't', daemonRestarted: true })).toBe(`updated momonga 1 -> 2 ${SHOWN} (t)\nrestarted the daemon on the new version\n`);
+  });
+
+  it('shows an unremoved staging file and its error with a newline on one line', () => {
+    const written: string[] = [];
+    reportUnremoved({ stderr: { write: (text: string) => void written.push(text) } }, `/s ${FORGED}`, new Error(FORGED));
+    expect(written).toEqual([`momonga: the staging file /s ${SHOWN} could not be removed: ${SHOWN}\n`]);
+  });
+
+  it('shows an ACP diagnostic message with a newline on one line', () => {
+    expect(acpDiagnosticText(FORGED)).toBe(`momonga: ${SHOWN}\n`);
+  });
+
+  it('shows the roots of unowned temporary homes with a newline on the notice line', () => {
+    expect(unownedHomesNotice([`/a ${FORGED}`])).toBe(
+      `1 temporary entry of an earlier run carryes an old owner marker that names no owner and was left in place: /a ${SHOWN}\n`,
+    );
   });
 });

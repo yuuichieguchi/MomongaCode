@@ -7,7 +7,10 @@ import { formatGovernanceVerification } from '../rule/format.ts';
 import { connectRuntime } from '../run/open-session.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
+import { escapedLines } from '../terminal-writer.ts';
 import type { PolicyVerifyHost } from '../verify/host.ts';
+
+export const policyWarningsText = (warnings: readonly string[]): string => `${escapedLines(warnings.map((warning) => `warning: ${warning}`))}\n`;
 
 export const VERIFY_BUDGET_MS = 60_000;
 
@@ -77,7 +80,7 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
         ? `${JSON.stringify(hasGovernance ? { ...report, governance } : report)}\n`
         : `${verifier.formatReport(report)}\n${hasGovernance ? `${formatGovernanceVerification(governance, report.exitCode === 0)}\n` : ''}`,
     );
-    for (const warning of loaded.warnings) ports.stderr.write(`warning: ${warning}\n`);
+    if (loaded.warnings.length > 0) ports.stderr.write(policyWarningsText(loaded.warnings));
     return report.exitCode;
   } finally {
     await engine.close();
