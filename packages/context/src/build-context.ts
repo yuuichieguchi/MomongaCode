@@ -25,6 +25,7 @@ import { textOfItem } from './item-text.ts';
 import { renderMemories } from './memory.ts';
 import { workingStateMessage } from './working-state.ts';
 import { heldSkillOf, pointToHeldSkill } from './skill-output.ts';
+import { identicalMarker, identicalReferents } from './formatters/identical.ts';
 import { HANDLE_READER_TOOL, headAndTail, omittedMarker, outputTextOf, truncatedMarker, withOutput } from './tool-output.ts';
 import type {
   BuildContextInput,
@@ -52,11 +53,15 @@ type OutputState = {
   tokens: number;
   handle: string | undefined;
   persisted: boolean;
+  recordedHandle: string | undefined;
+  reference: OutputReference | undefined;
   mode: 'full' | 'truncated' | 'omitted';
   renderedTokens: number;
   frozen: boolean;
   keptChars: number | undefined;
 };
+
+type OutputReference = { to: string; item: FunctionCallOutputInputItem; tokens: number };
 
 type Slot = {
   seq: number;
@@ -478,7 +483,13 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     return { callNames: name === undefined ? {} : { [callId]: name }, withTools: input.tools !== 'none' };
   };
   const reports = new Map<string, { eviction: ContextEviction; state: OutputState }>();
-  const reported = (): ContextEviction[] => [...reports.values()].filter(({ state }) => state.persisted).map(({ eviction }) => eviction);
+  const referenceReports: ContextEviction[] = [];
+  const reported = (): ContextEviction[] => [
+    ...[...reports.values()].filter(({ state }) => state.persisted).map(({ eviction }) => eviction),
+    ...referenceReports,
+  ];
+  const identicalActive = input.outputFormatters?.includes('identicalOutput') === true;
+  const shown = (slot: Slot): InputItem => slot.output?.reference?.item ?? slot.item;
 
   const ensureHandle = async (state: OutputState): Promise<boolean> => {
     if (state.persisted) return false;
@@ -494,19 +505,60 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     return rendered;
   };
 
-  const truncate = async (state: OutputState, handle: string): Promise<InputItem> => {
+  const truncation = async (state: OutputState, handle: string): Promise<{ rendered: InputItem; tokens: number; kept: number }> => {
     const marker = truncatedMarker(state.tokens, handle);
     let kept = Math.floor((state.text.length * itemCap) / state.tokens);
     for (;;) {
       const rendered = withOutput(state.original, headAndTail(state.text, kept, marker));
       const tokens = await meter.countItem(rendered, countContextFor(state.callId));
-      if (tokens <= itemCap || kept === 0) {
-        state.renderedTokens = tokens;
-        state.keptChars = kept;
-        return rendered;
-      }
+      if (tokens <= itemCap || kept === 0) return { rendered, tokens, kept };
       kept = Math.max(0, Math.min(kept - 1, Math.floor((kept * itemCap) / tokens)));
     }
+  };
+
+  const truncate = async (state: OutputState, handle: string): Promise<InputItem> => {
+    const { rendered, tokens, kept } = await truncation(state, handle);
+    state.renderedTokens = tokens;
+    state.keptChars = kept;
+    return rendered;
+  };
+
+  const refreshReferences = async (): Promise<void> => {
+    if (!identicalActive) return;
+    const states = slots.flatMap((slot) => (slot.output === undefined ? [] : [slot.output]));
+    const referents = identicalReferents(states.map((state) => ({ callId: state.callId, text: state.text, full: state.mode === 'full' })));
+    for (const state of states) {
+      const referent = referents.get(state.callId);
+      if (referent === undefined) {
+        state.reference = undefined;
+        continue;
+      }
+      if (state.reference?.to === referent) continue;
+      const item = withOutput(state.original, identicalMarker(referent, blobs.handleFor(state.text)));
+      state.reference = { to: referent, item, tokens: await meter.countItem(item, countContextFor(state.callId)) };
+    }
+  };
+
+  const measureAssembled = async (): Promise<MeterCount> => {
+    await refreshReferences();
+    return countInput(assemble());
+  };
+
+  const referrersAfterEviction = async (referrers: readonly OutputState[]): Promise<number> => {
+    let referent: string | undefined;
+    let tokens = 0;
+    for (const referrer of referrers) {
+      if (referrer.tokens > itemCap) {
+        tokens += (await truncation(referrer, referrer.handle ?? blobs.handleFor(referrer.text))).tokens;
+      } else if (referent === undefined) {
+        referent = referrer.callId;
+        tokens += referrer.tokens;
+      } else {
+        const item = withOutput(referrer.original, identicalMarker(referent, blobs.handleFor(referrer.text)));
+        tokens += await meter.countItem(item, countContextFor(referrer.callId));
+      }
+    }
+    return tokens;
   };
 
   const truncateSlot = async (slot: Slot, state: OutputState): Promise<void> => {
@@ -578,6 +630,8 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
         tokens,
         handle: 'handle' in entry ? entry.handle : undefined,
         persisted: 'handle' in entry,
+        recordedHandle: 'handle' in entry ? entry.handle : undefined,
+        reference: undefined,
         mode: 'full',
         renderedTokens: tokens,
         frozen: false,
@@ -612,7 +666,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   const { protection, protectedSlots } = rungs[levelIndex] as (typeof rungs)[number];
 
   const assemble = (): InputItem[] => {
-    const items = slots.map((slot) => slot.item);
+    const items = slots.map(shown);
     const taskIndex = slots.findIndex((slot) => slot.seq > sources.taskSeq);
     const ordered = taskIndex < 0 ? [...items, task] : [...items.slice(0, taskIndex), task, ...items.slice(taskIndex)];
     return [...layers, ...summaryItems, ...ordered, ...workingStateItems, ...trailing];
@@ -621,12 +675,16 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   let firstEvicted: number | undefined;
 
   const evictOldest = async (): Promise<boolean> => {
+    await refreshReferences();
     for (const [index, slot] of slots.entries()) {
       const state = slot.output;
-      if (state === undefined || state.mode === 'omitted' || protectedSlots.has(index)) continue;
+      if (state === undefined || state.mode === 'omitted' || state.reference !== undefined || protectedSlots.has(index)) continue;
       const handle = state.handle ?? blobs.handleFor(state.text);
       const probe = withOutput(state.original, omittedMarker(state.tokens, handle));
-      if ((await meter.countItem(probe, countContextFor(state.callId))) >= state.renderedTokens) continue;
+      const referrers = slots.flatMap((other) => (other.output?.reference?.to === state.callId ? [other.output] : []));
+      const tokensBefore = state.renderedTokens + referrers.reduce((sum, referrer) => sum + (referrer.reference as OutputReference).tokens, 0);
+      const tokensAfter = (await meter.countItem(probe, countContextFor(state.callId))) + (await referrersAfterEviction(referrers));
+      if (tokensAfter >= tokensBefore) continue;
       state.handle = handle;
       slot.item = probe;
       state.mode = 'omitted';
@@ -636,6 +694,17 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
       return true;
     }
     return false;
+  };
+
+  const persistReferences = async (): Promise<void> => {
+    for (const slot of slots) {
+      const state = slot.output;
+      if (state?.reference === undefined) continue;
+      const handle = blobs.handleFor(state.text);
+      if (state.recordedHandle === handle) continue;
+      await blobs.put(state.text, { mediaType: BLOB_MEDIA_TYPE });
+      referenceReports.push({ callId: state.callId, handle, kind: 'reference' });
+    }
   };
 
   const persistEvictions = async (throughIndex: number): Promise<void> => {
@@ -670,7 +739,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   ): Promise<{ plan: CompactionPlan } | { blocked: CompactionBlock } | { declined: true }> => {
     const cuts = cutIndexes();
     if (cuts.length === 0) {
-      const lastStepItems = slots.filter((slot) => slot.turn === currentTurn && slot.step === lastStep).map((slot) => slot.item);
+      const lastStepItems = slots.filter((slot) => slot.turn === currentTurn && slot.step === lastStep).map(shown);
       const protectedCounted = await countInput([...layers, task, ...lastStepItems]);
       return lastStepItems.length > 0 && protectedCounted.inputTokens > ceiling
         ? {
@@ -695,7 +764,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     for (const cutIndex of cuts.toReversed()) {
       const prefix = slots.slice(0, cutIndex + 1);
       const taskInside = prefix.some((slot) => slot.seq > sources.taskSeq);
-      const counted = await countInput([...layers, ...summaryItems, ...prefix.map((slot) => slot.item)]);
+      const counted = await countInput([...layers, ...summaryItems, ...prefix.map(shown)]);
       const region = counted.inputTokens - layersOnly;
       const regionWithTask = region + (taskInside ? taskTokens : 0);
       if (regionWithTask + SUMMARY_PROMPT_TOKENS + summaryCap > summaryCeiling) {
@@ -722,7 +791,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
       }
       await persistEvictions(cutIndex);
       const throughSeq = (slots[cutIndex] as Slot).seq;
-      const items = prefix.map((slot) => slot.item);
+      const items = prefix.map(shown);
       const taskAt = prefix.findIndex((slot) => slot.seq > sources.taskSeq);
       const compactionInput = taskAt < 0 ? items : [...items.slice(0, taskAt), task, ...items.slice(taskAt)];
       return {
@@ -739,7 +808,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
 
   const cachePrefix = input.layout === 'cachePrefix';
   const admitted = admittedFloor(input);
-  let total = await countInput(assemble());
+  let total = await measureAssembled();
   if (input.observedCapacity === true) {
     ceiling = capacityFor(sized, total.underAt);
     roomLeft = ceiling - floorTokens;
@@ -748,7 +817,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     if (observedItemCap !== itemCap) {
       itemCap = observedItemCap;
       await rerenderFrom(0, true);
-      total = await countInput(assemble());
+      total = await measureAssembled();
     }
   }
   const inputBudgetAtZero = budgetFor(capabilities, 0).I;
@@ -778,12 +847,12 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     } else {
       while ((total.inputTokens > lowMark() || !fits(total)) && (await evictOldest())) {
         if (input.forms !== undefined || input.renderedFull !== undefined) await rerenderFrom(firstEvicted as number, false);
-        total = await countInput(assemble());
+        total = await measureAssembled();
       }
     }
     if (cachePrefix) {
       if (firstEvicted !== undefined && (input.forms !== undefined || input.renderedFull !== undefined)) await rerenderFrom(firstEvicted, false);
-      total = await countInput(assemble());
+      total = await measureAssembled();
     }
     highMark = await highMarkNow();
   }
@@ -810,6 +879,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     });
   }
 
+  await persistReferences();
   await persistEvictions(slots.length);
 
   if (levelIndex > 0) {

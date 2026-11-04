@@ -154,6 +154,7 @@ export const contextInputOf = (
           ...(rendered === undefined ? {} : { forms: rendered.forms, renderedFull: rendered.renderedFull }),
         }
       : {}),
+    outputFormatters: ctx.token.outputFormatters,
   };
 };
 
@@ -409,10 +410,18 @@ const recordContextFacts = (ctx: ClaimContext, built: BuiltContext): void => {
 const recordEvictions = (ctx: ClaimContext, evictions: readonly ContextEviction[]): void => {
   const state = ctx.journal.state;
   const recordedForms = ctx.token.observedCapacity ? formsSinceCompaction(ctx.options.store.readRunEventsOfTypes(ctx.run.id, [...FORM_EVENT_TYPES])) : undefined;
+  const referenced = evictions.some((eviction) => eviction.kind === 'reference')
+    ? new Set(
+        ctx.options.store
+          .readRunEventsOfTypes(ctx.run.id, ['context.truncated'])
+          .flatMap((event) => (event.type === 'context.truncated' && event.kind === 'reference' ? [event.callId] : [])),
+      )
+    : new Set<string>();
   const unreflected = evictions.filter((eviction) => {
     const entry = state.history.find((candidate) => candidate.callId === eviction.callId && candidate.item.type === 'function_call_output');
     if (entry === undefined) return false;
     if (eviction.kind === 'omitted') return !state.evicted.includes(eviction.callId);
+    if (eviction.kind === 'reference') return !referenced.has(eviction.callId);
     return entry.handle === undefined || (recordedForms !== undefined && recordedForms.get(eviction.callId) !== eviction.keptChars);
   });
   if (unreflected.length === 0) return;
