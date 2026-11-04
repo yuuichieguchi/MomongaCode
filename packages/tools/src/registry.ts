@@ -27,7 +27,7 @@ export type ToolSet = {
   readonly authorizationRequired: readonly string[];
   get(name: string): AnyTool | undefined;
   readonly companions: ReadonlyMap<string, string>;
-  forModel(options: { mode: PermissionMode; rules: PermissionRule[] }): FunctionTool[];
+  forModel(options: { mode: PermissionMode; rules: PermissionRule[]; conciseDescriptions?: boolean }): FunctionTool[];
 };
 
 export type ToolRegistry = {
@@ -42,8 +42,26 @@ const assertRegistrable = (tool: AnyTool): void => {
   compileInputSchema(tool);
 };
 
-const digestOf = (tools: readonly AnyTool[]): string =>
-  sha256Hex(canonicalJson(tools.map((tool) => [tool.name, tool.description, tool.kind, tool.sideEffect, tool.inputSchema])));
+const digestEntryOf = (tool: AnyTool): unknown[] => {
+  const base = [tool.name, tool.description, tool.kind, tool.sideEffect, tool.inputSchema];
+  if (tool.conciseDescription === undefined && tool.conciseParameterDescriptions === undefined) return base;
+  return [...base, tool.conciseDescription ?? null, tool.conciseParameterDescriptions ?? null];
+};
+
+const digestOf = (tools: readonly AnyTool[]): string => sha256Hex(canonicalJson(tools.map(digestEntryOf)));
+
+const conciseSchemaOf = (tool: AnyTool): Record<string, unknown> => {
+  const concise = tool.conciseParameterDescriptions;
+  const properties = tool.inputSchema['properties'];
+  if (concise === undefined || properties === undefined || properties === null || typeof properties !== 'object') return tool.inputSchema;
+  const replaced = Object.fromEntries(
+    Object.entries(properties).map(([field, schema]) => {
+      const text = concise[field];
+      return [field, text === undefined ? schema : { ...(schema as Record<string, unknown>), description: text }];
+    }),
+  );
+  return { ...tool.inputSchema, properties: replaced };
+};
 
 const tierRankOf = (tool: AnyTool): number => TOOL_TIERS.indexOf(tool.tier ?? 'common');
 
@@ -58,11 +76,18 @@ const buildToolSet = (tools: readonly AnyTool[], notices: readonly string[], aut
     authorizationRequired: Object.freeze([...authorizationRequired]),
     get: (name) => byName.get(name),
     companions: new Map(frozenTools.flatMap((tool) => (tool.companionOf === undefined ? [] : [[tool.name, tool.companionOf] as const]))),
-    forModel: ({ mode, rules }) => {
+    forModel: ({ mode, rules, conciseDescriptions }) => {
       const visible = new Set(modelVisibleTools([...frozenTools], { mode, rules }).map((tool) => tool.name));
+      const concise = conciseDescriptions === true;
       return frozenTools
         .filter((tool) => visible.has(tool.name))
-        .map((tool) => ({ type: 'function', name: tool.name, description: tool.description, parameters: tool.inputSchema, strict: false }));
+        .map((tool) => ({
+          type: 'function',
+          name: tool.name,
+          description: concise ? (tool.conciseDescription ?? tool.description) : tool.description,
+          parameters: concise ? conciseSchemaOf(tool) : tool.inputSchema,
+          strict: false,
+        }));
     },
   };
 };

@@ -255,6 +255,7 @@ const prepareStatements = (db: DatabaseSync) => ({
        AND EXISTS (SELECT 1 FROM events e WHERE e.run_id = r.id AND e.type = 'run.started')
      ORDER BY r.created_at DESC, r.rowid DESC LIMIT :limit`,
   ),
+  toolCallNames: db.prepare("SELECT DISTINCT json_extract(payload_json, '$.name') AS name FROM events WHERE run_id = :runId AND type = 'tool.call' ORDER BY name"),
   modelChanges: db.prepare("SELECT * FROM events WHERE session_id = :sessionId AND type = 'model.changed' AND id > :after ORDER BY id"),
   sessionEvents: db.prepare('SELECT * FROM events WHERE session_id = :sessionId AND id > :after ORDER BY id LIMIT :limit'),
   selectExhausted: db.prepare(
@@ -1444,6 +1445,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     readModelCallEvents: (runId) => sql.modelCallEvents.all({ runId }).map(decodeModelCallRecord),
 
     lastTerminalRootRuns: (project, limit) => sql.lastTerminalRootRuns.all({ project, limit }).map(decodeRun),
+
+    toolCallNames: (runId) => sql.toolCallNames.all({ runId }).map((row) => String(row.name)),
 
     readSessionEvents: (sessionId, afterId, limit) =>
       sql.sessionEvents.all({ sessionId, after: afterId, limit }).map(decodeEvent),

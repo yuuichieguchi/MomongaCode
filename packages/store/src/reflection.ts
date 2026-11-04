@@ -112,9 +112,10 @@ export const createReflectionStore = (
         for (const candidate of candidates) writers.memories.saveCandidate(candidate);
         return finishJob(runId, reason, dropped);
       }),
-    fail: (runId, reason, charge) =>
+    fail: (runId, reason, charge, candidates = []) =>
       immediateTx(db, () => {
         if (charge !== undefined) writers.contextCharges.record(charge);
+        for (const candidate of candidates) writers.memories.saveCandidate(candidate);
         if (Number(fail.run({ runId, reason, now: clock.now() }).changes) !== 1) throw new Error(`reflection job ${runId} cannot fail: it is not running`);
         return required(runId);
       }),

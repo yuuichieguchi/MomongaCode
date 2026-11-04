@@ -461,7 +461,7 @@ export type ReflectionStore = {
   release(runId: string): ReflectionJob;
   finish(runId: string, reason?: string): ReflectionJob;
   complete(completion: ReflectionCompletion): ReflectionJob;
-  fail(runId: string, reason: string, charge?: ContextChargeInput): ReflectionJob;
+  fail(runId: string, reason: string, charge?: ContextChargeInput, candidates?: readonly SaveCandidateInput[]): ReflectionJob;
 };
 
 export type ContextCharge = ContextChargeInput & { id: number; createdAt: number };
@@ -522,6 +522,7 @@ export type RuntimeStore = {
   readModelCallEvents(runId: string): ModelCallRecord[];
   prepareTerminal(runId: string): void;
   lastTerminalRootRuns(project: string, limit: number): Run[];
+  toolCallNames(runId: string): string[];
   readSessionEvents(sessionId: string, afterId: number, limit: number): (RunEvent | SessionEvent)[];
   readModelChanges(sessionId: string, afterId: number): Extract<SessionEvent, { type: 'model.changed' }>[];
   sessionMaxEventId(sessionId: string): number;

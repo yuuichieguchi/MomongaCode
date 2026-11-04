@@ -1,6 +1,6 @@
 import { canonicalJson, computeBackoff, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import { normalizeMemoryText } from '@momonga/memory';
+import { isVerifiedSuccess, normalizeMemoryText, repositoryFactsOf } from '@momonga/memory';
 import { LOWEST_REASONING_EFFORT, assistantTextOf, requireStructuredOutput, summaryTokenCapFor } from '@momonga/protocol';
 import type { BilledDetail, CallTiming, CreateResponseBody, MomongaResponseExtension, ReflectionDrop, Usage } from '@momonga/protocol';
 import { memoryTextProblem } from '@momonga/tools';
@@ -9,7 +9,6 @@ import type { GatewayPort, SettingsPort } from '../ports.ts';
 import { REQUEUE_BASE_MS, REQUEUE_MAX_MS } from '../process/constants.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { readPins } from '../worker/pins.ts';
-import { isRunVerified } from './verified-run.ts';
 import { readAllRunEvents } from '../process/run-events.ts';
 import { billedDetailOf, carriesOutput, terminalResultOf } from '../worker/model-stream.ts';
 import type { ModelResult } from '../worker/model-stream.ts';
@@ -41,7 +40,7 @@ const NO_CANDIDATES_REASON = 'the model proposed no candidates';
 const ALL_DROPPED_REASON = 'every candidate the model proposed was dropped';
 const DUPLICATE_REASON = 'the same text is already a live memory, a candidate waiting for review, or a candidate a person rejected';
 
-type ChargeLedger = { unrecorded?: ContextChargeInput };
+type ChargeLedger = { unrecorded?: ContextChargeInput; facts?: readonly SaveCandidateInput[] };
 
 export const createReflector = (options: ReflectorOptions): Reflector => {
   const { store, gateway, settings, clock } = options;
@@ -87,28 +86,94 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     const session = store.getSession(run.sessionId);
     if (session === undefined) throw new Error(`session ${run.sessionId} of run ${runId} does not exist`);
     const memorySettings = await settings.memory(session);
-    const declined =
-      store.reflection.runOrigin(runId) !== 'trusted'
-        ? 'the run was not made in a trusted folder'
-        : !memorySettings.reflection.enabled
-          ? 'reflection is off'
-          : !(await isRunVerified({ store, settings }, runId))
-            ? 'the run is not a verified success'
-            : undefined;
-    if (declined !== undefined) {
-      store.reflection.finish(runId, declined);
+    const { cwd: project } = session;
+    const factsOn = memorySettings.repositoryFacts;
+    const needsVerdict = memorySettings.reflection.enabled || factsOn;
+    const declinedEarly =
+      store.reflection.runOrigin(runId) !== 'trusted' ? 'the run was not made in a trusted folder' : !needsVerdict ? 'reflection is off' : undefined;
+    if (declinedEarly !== undefined) {
+      store.reflection.finish(runId, declinedEarly);
       return;
     }
-    const { cwd: project } = session;
     const events = readAllRunEvents(store, runId);
+    const verification = await settings.verification(session);
+    const verdictInput = { status: run.status, events, commands: verification.commands, manifests: verification.manifests };
+    const verified = isVerifiedSuccess(verdictInput);
+    const trusted = settings.trusted(session);
+    const knownTexts = (): Set<string> =>
+      new Set(
+        store.memories
+          .list({ project })
+          .filter((memory) => memory.origin === 'trusted' && DEDUPLICATED_STATES.includes(memory.state))
+          .map((memory) => normalizeMemoryText(memory.text)),
+      );
+    let known: Set<string> | undefined;
+    let head: Promise<string | undefined> | undefined;
+    const readHead = (): Promise<string | undefined> => {
+      head ??= readGitHead({ project, trusted, run: options.evidenceRun(project), signal });
+      return head;
+    };
+    const dropped: ReflectionDrop[] = [];
+    const screen = async (
+      ordinal: number,
+      text: string,
+      kind: SaveCandidateInput['kind'],
+      paths: readonly string[],
+      onlyCommand?: string,
+    ): Promise<SaveCandidateInput | undefined> => {
+      known ??= knownTexts();
+      const normalized = normalizeMemoryText(text);
+      const problem = memoryTextProblem(text);
+      if (problem !== undefined) {
+        dropped.push({ ordinal, text: null, cause: 'text_rule', reason: problem.message });
+        return undefined;
+      }
+      if (known.has(normalized)) {
+        dropped.push({ ordinal, text, cause: 'duplicate', reason: DUPLICATE_REASON });
+        return undefined;
+      }
+      try {
+        const evidence = await bindMemoryEvidence({
+          runId,
+          events,
+          paths,
+          project,
+          trusted,
+          verificationCommands: verification.commands,
+          ...(onlyCommand === undefined ? {} : { onlyCommand }),
+          head: readHead,
+        });
+        known.add(normalized);
+        return { scope: 'project', origin: 'trusted', project, text, runId, ordinal, kind, evidence };
+      } catch (error) {
+        if (!(error instanceof MemoryEvidenceError)) throw error;
+        dropped.push({ ordinal, text, cause: 'evidence', reason: error.message });
+        return undefined;
+      }
+    };
+    const facts = factsOn && verified ? repositoryFactsOf(verdictInput) : [];
+    const keptFacts: SaveCandidateInput[] = [];
+    for (const [ordinal, fact] of facts.entries()) {
+      const screened = await screen(ordinal, fact.text, fact.kind, fact.manifestPaths, fact.command);
+      if (screened !== undefined) keptFacts.push(screened);
+    }
+    ledger.facts = keptFacts;
+    if (!memorySettings.reflection.enabled) {
+      store.reflection.complete({ runId, charge: null, candidates: keptFacts, dropped, reason: 'reflection is off' });
+      return;
+    }
+    if (!verified) {
+      store.reflection.finish(runId, 'the run is not a verified success');
+      return;
+    }
     const started = events.find((event) => event.type === 'run.started');
     if (started === undefined) throw new Error(`run ${runId} has no run.started event`);
     const pins = readPins(started.pins);
     const alias = pins.roles.reflection ?? pins.modelAlias;
-    const [capabilities, verification] = await Promise.all([gateway.capabilities(alias, { signal }), settings.verification(session)]);
+    const capabilities = await gateway.capabilities(alias, { signal });
     const structured = requireStructuredOutput(capabilities, pins.roles.reflection === undefined ? 'the model of the run' : 'models.roles.reflection', alias);
     if (!structured.ok) {
-      store.reflection.finish(runId, structured.reason);
+      store.reflection.complete({ runId, charge: null, candidates: keptFacts, dropped, reason: structured.reason });
       return;
     }
     const body: CreateResponseBody = {
@@ -138,8 +203,8 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     }
     if (terminal.kind === 'failed') throw new Error(`the reflection call of run ${runId} failed: ${terminal.code ?? 'error'}: ${terminal.message}`);
     if (usage === null) throw new Error(`the reflection response of run ${runId} carries no usage`);
-    const settle = (candidates: readonly SaveCandidateInput[], reason?: string, dropped: readonly ReflectionDrop[] = []): void => {
-      store.reflection.complete({ runId, charge: ledger.unrecorded ?? null, candidates, dropped, ...(reason === undefined ? {} : { reason }) });
+    const settle = (candidates: readonly SaveCandidateInput[], reason?: string): void => {
+      store.reflection.complete({ runId, charge: ledger.unrecorded ?? null, candidates: [...keptFacts, ...candidates], dropped, ...(reason === undefined ? {} : { reason }) });
       delete ledger.unrecorded;
     };
     const parsed = parseReflectionReply(assistantTextOf(terminal.response.output));
@@ -147,51 +212,17 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       settle([], parsed.error);
       return;
     }
-    const trusted = settings.trusted(session);
-    const known = new Set(
-      store.memories
-        .list({ project })
-        .filter((memory) => memory.origin === 'trusted' && DEDUPLICATED_STATES.includes(memory.state))
-        .map((memory) => normalizeMemoryText(memory.text)),
-    );
-    const accepted: { ordinal: number; candidate: (typeof parsed.candidates)[number]; evidence: Awaited<ReturnType<typeof bindMemoryEvidence>> }[] = [];
-    const dropped: ReflectionDrop[] = [];
-    for (const [ordinal, candidate] of parsed.candidates.entries()) {
-      const normalized = normalizeMemoryText(candidate.text);
-      const problem = memoryTextProblem(candidate.text);
-      if (problem !== undefined) {
-        dropped.push({ ordinal, text: null, cause: 'text_rule', reason: problem.message });
-        continue;
-      }
-      if (known.has(normalized)) {
-        dropped.push({ ordinal, text: candidate.text, cause: 'duplicate', reason: DUPLICATE_REASON });
-        continue;
-      }
-      try {
-        const evidence = await bindMemoryEvidence({
-          runId,
-          events,
-          paths: candidate.paths,
-          project,
-          trusted,
-          verificationCommands: verification.commands,
-          head: () => readGitHead({ project, trusted, run: options.evidenceRun(project), signal }),
-        });
-        known.add(normalized);
-        accepted.push({ ordinal, candidate, evidence });
-      } catch (error) {
-        if (!(error instanceof MemoryEvidenceError)) throw error;
-        dropped.push({ ordinal, text: candidate.text, cause: 'evidence', reason: error.message });
-      }
+    known = knownTexts();
+    for (const fact of keptFacts) known.add(normalizeMemoryText(fact.text));
+    const accepted: SaveCandidateInput[] = [];
+    for (const [index, candidate] of parsed.candidates.entries()) {
+      const screened = await screen(facts.length + index, candidate.text, candidate.kind, candidate.paths);
+      if (screened !== undefined) accepted.push(screened);
     }
     signal.throwIfAborted();
-    const nothingKept = accepted.length === 0;
+    const nothingKept = keptFacts.length + accepted.length === 0;
     const reason = !nothingKept ? undefined : parsed.candidates.length === 0 ? NO_CANDIDATES_REASON : ALL_DROPPED_REASON;
-    settle(
-      accepted.map(({ ordinal, candidate, evidence }) => ({ scope: 'project', origin: 'trusted', project, text: candidate.text, runId, ordinal, kind: candidate.kind, evidence })),
-      reason,
-      dropped,
-    );
+    settle(accepted, reason);
   };
 
   const recordUnrecorded = (ledger: ChargeLedger, cause: unknown): void => {
@@ -233,7 +264,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
         const reason = error instanceof Error ? error.message : String(error);
         if (attempts >= options.maxAttempts) {
           retryAt.delete(job.runId);
-          store.reflection.fail(job.runId, reason, ledger.unrecorded);
+          store.reflection.fail(job.runId, reason, ledger.unrecorded, ledger.facts);
         } else {
           recordUnrecorded(ledger, error);
           retryAt.set(job.runId, clock.now() + computeBackoff({ attempt: attempts - 1, baseMs: REQUEUE_BASE_MS, maxMs: REQUEUE_MAX_MS, random: options.random }));

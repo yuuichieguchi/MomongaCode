@@ -6,8 +6,13 @@ type ReadOutputInput = { handle: string; offset?: number; limit?: number };
 export const readOutputTool = defineTool<ReadOutputInput>({
   name: 'ReadOutput',
   tier: 'essential',
-  description:
-    'Reads a saved tool output by the handle reported when the output was truncated. Returns at most 2000 lines by default in cat -n format; use offset (1-based line) and limit to page.',
+  description: `Reads a saved tool output by the handle reported when the output was truncated. Returns at most ${DEFAULT_LINE_LIMIT} lines by default in cat -n format; use offset (1-based line) and limit to page.`,
+  conciseDescription: `Reads a saved output by its handle, up to ${DEFAULT_LINE_LIMIT} lines (cat -n); page with offset and limit.`,
+  conciseParameterDescriptions: {
+    handle: 'Handle from a truncated result',
+    offset: 'First line, 1-based',
+    limit: 'Number of lines',
+  },
   kind: 'read',
   sideEffect: 'read_only',
   inputSchema: {

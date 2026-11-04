@@ -47,7 +47,7 @@ const isPathToken = (token: string): boolean => {
   return anchored || FILE_EXTENSION.test(token) || segments.length >= 3;
 };
 
-const checkedTokens = (text: string): string[] => {
+export const checkedTokens = (text: string): string[] => {
   const tokens: string[] = [];
   const outsideBackticks = text.replace(BACKTICKED, (_match, inner: string) => {
     tokens.push(inner.trim());
@@ -71,7 +71,7 @@ const normalisedSegments = (token: string): string[] =>
     .split('/')
     .filter((segment) => segment !== '');
 
-const occursIn = (token: string, haystack: string): boolean => {
+export const occursIn = (token: string, haystack: string): boolean => {
   const haystacks = [haystack, forwardSlashes(haystack)];
   if (haystacks.some((text) => text.includes(token) || text.includes(forwardSlashes(token)))) return true;
   if (!/[/\\]/.test(token)) return false;

@@ -7,6 +7,8 @@ export { WORKING_STATE_MESSAGE_MIN_TOKENS, criticalIdentifiersOf, renderWorkingS
 export type { WorkingStateOptions } from './working-state.ts';
 export { buildContext, maxInputFor, measureLayers, measurePinned } from './build-context.ts';
 export type { MaxInputBounds } from './build-context.ts';
+export { FAILURE_MARKERS, FORMATTER_VERSIONS, formatGrep, formatJson, formatLog, formatToolOutput, formattingViolations } from './formatters/index.ts';
+export type { FormattedOutput, FormattingViolation } from './formatters/index.ts';
 export { HANDLE_READER_TOOL } from './tool-output.ts';
 export { ContextOverflowError, PinnedBoundError, PinnedOverflowError, PinnedRoomError, PrefixChangedError } from './errors.ts';
 export { createFsInstructionReader } from './fs-instruction-reader.ts';

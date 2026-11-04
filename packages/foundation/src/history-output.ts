@@ -1,0 +1,5 @@
+import { MAX_REDACTED_CHARS } from './redaction.ts';
+
+export const HISTORY_OUTPUT_HEAD_CHARS = MAX_REDACTED_CHARS;
+
+export const HISTORY_OUTPUT_TAIL_CHARS = 2 * MAX_REDACTED_CHARS;
