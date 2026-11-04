@@ -50,7 +50,6 @@ const IMAGE_PROMPT = 'Describe this image.';
 const IMAGE_PROBE_SMALL_SIDE = 512;
 const IMAGE_PROBE_LARGE_SIDE = 2048;
 const IMAGE_PROBE_MAX_SIDE = 8192;
-const IMAGE_REJECTION_STATUSES = [400, 413] as const;
 const CALIBRATION_WORD_COUNTS = [20, 80, 320] as const;
 const CONTEXT_FIELDS = [
   'context_window',
@@ -309,8 +308,8 @@ const baselinePromptTokens = async (chat: Chat): Promise<number | undefined> => 
 
 const imageCost = async (chat: Chat, imageUrl: string): Promise<ImageCost> => {
   const result = await imagePromptRequest(chat, imageUrl);
-  expectStatus(result, [200, ...IMAGE_REJECTION_STATUSES], 'image token measurement');
-  if (result.status !== 200) return { rejected: true };
+  if (result.outcome === 'unsupported' || result.outcome === 'overflow') return { rejected: true };
+  if (result.outcome !== 'accepted') return failProbeStep(result, 'image token measurement');
   return { rejected: false, promptTokens: promptTokensOf(parseJson(result.text)) };
 };
 
@@ -573,8 +572,7 @@ const measureReasoning = async (chat: Chat, contextWindow: number): Promise<NonN
   const lowestBaseline = Math.min(...baseline);
   for (const effort of PROBED_REASONING_EFFORTS) {
     const result = await chat({ ...body, reasoning_effort: effort });
-    expectStatus(result, [200, 400], 'reasoning');
-    if (result.status !== 200) continue;
+    if (!isAcceptedOrRejected(result, 'reasoning')) continue;
     const spent = hiddenReasoningOf(parseJson(result.text));
     if (headroomTokens === 0 || (spent !== undefined && spent * REASONING_REDUCTION_FACTOR <= lowestBaseline)) {
       return { control: 'reasoning_effort', lowest: effort };

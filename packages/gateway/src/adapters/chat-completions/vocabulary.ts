@@ -1,4 +1,5 @@
 import { isRecord } from '@momonga/foundation';
+import type { ErrorVerdicts } from '../shared/http-error.ts';
 
 export type UpstreamErrorKind = 'context_overflow' | 'unsupported' | 'failure';
 
@@ -41,3 +42,11 @@ export const FM_VOCABULARY: ErrorVocabulary = {
     return message === FM_UNSUPPORTED_GUIDE_MESSAGE ? 'unsupported' : 'failure';
   },
 };
+
+export const HTTP_TRANSPORT_VOCABULARY: ErrorVocabulary = { kindOf: (status) => transportKindOf(status) };
+
+export const verdictsOf = (vocabulary: ErrorVocabulary, guardrail: ErrorVerdicts['guardrail']): ErrorVerdicts => ({
+  guardrail,
+  contextOverflow: (status, body) => vocabulary.kindOf(status, body) === 'context_overflow',
+  unsupported: (status, body) => vocabulary.kindOf(status, body) === 'unsupported',
+});

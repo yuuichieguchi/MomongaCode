@@ -13,7 +13,6 @@ export type ErrorVerdicts = {
   unsupported: (status: number, body: unknown) => boolean;
 };
 
-export const NO_VERDICTS: ErrorVerdicts = { guardrail: () => false, contextOverflow: () => false, unsupported: () => false };
 
 export type ErrorDetailReader = (parsed: unknown) => UpstreamErrorDetail;
 

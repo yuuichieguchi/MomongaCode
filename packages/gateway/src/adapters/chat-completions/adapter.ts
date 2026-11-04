@@ -13,7 +13,7 @@ import type {
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
 import { hiddenReasoningTokens } from '../../core/hidden-reasoning.ts';
 import { classifyChatCompletionsError, matchesGuardrailCode } from './classify.ts';
-import { CHAT_COMPLETIONS_VOCABULARY } from './vocabulary.ts';
+import { CHAT_COMPLETIONS_VOCABULARY, verdictsOf } from './vocabulary.ts';
 import { boundedSseBytes } from '../shared/body-reading.ts';
 import { buildConstrainedBody } from './constrained-request.ts';
 import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
@@ -109,11 +109,12 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
         signal,
       });
       if (response.status !== 200) {
-        throw await httpErrorOf(response, options.clock, nestedErrorDetail, {
-          guardrail: (status, parsed) => (isGuardrail === undefined ? matchesGuardrailCode(parsed) : isGuardrail(ctx.target, status, parsed)),
-          contextOverflow: (status, parsed) => vocabulary.kindOf(status, parsed) === 'context_overflow',
-          unsupported: (status, parsed) => vocabulary.kindOf(status, parsed) === 'unsupported',
-        });
+        throw await httpErrorOf(
+          response,
+          options.clock,
+          nestedErrorDetail,
+          verdictsOf(vocabulary, (status, parsed) => (isGuardrail === undefined ? matchesGuardrailCode(parsed) : isGuardrail(ctx.target, status, parsed))),
+        );
       }
 
       const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request });
