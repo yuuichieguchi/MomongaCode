@@ -4,7 +4,7 @@ import { termsOf } from '@momonga/protocol';
 import type { PermissionOption, RunEventPayload, RunState, ToolAwait } from '@momonga/protocol';
 import type { BatchOutputFormatter, CallOutcome, DisplayContext, NeedsApprovalOutcome, NeedsInputOutcome, ResultOutcome, ToolCall, WaitingOutcome } from '@momonga/tools';
 import { validateToolInput } from '@momonga/tools';
-import type { Session } from '@momonga/store';
+import type { RuntimeStore, Session } from '@momonga/store';
 import { createToolHooks } from '@momonga/tools';
 import { permissionRulesFor } from '../governance/rules.ts';
 import { createAutoClassifier } from './auto-classifier.ts';
@@ -87,9 +87,10 @@ const batchFormatterOf = (ctx: ClaimContext): BatchOutputFormatter | undefined =
   return ({ output, tool }) => formatToolOutput({ output, tool, enabled, terms });
 };
 
-const offeredOfRequest = (ctx: ClaimContext): OfferedInBody | undefined => {
-  const requested = ctx.options.store.readLatestRunEventBefore(ctx.run.id, 'model.requested', ctx.journal.state.lastSeq + 1);
-  return requested === undefined || requested.type !== 'model.requested' ? undefined : offeredInBody(ctx.run.id, requested.body);
+export const offeredOfRequest = (store: Pick<RuntimeStore, 'readLatestRunEventBefore'>, runId: string, lastSeq: number): OfferedInBody => {
+  const requested = store.readLatestRunEventBefore(runId, 'model.requested', lastSeq + 1);
+  if (requested === undefined || requested.type !== 'model.requested') throw new Error(`run ${runId} has tool calls but no recorded model.requested before seq ${lastSeq}`);
+  return offeredInBody(runId, requested.body);
 };
 
 const approvalOptions = (suggestedRule: string | undefined): PermissionOption[] => [
@@ -208,13 +209,13 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   const spans = new Map<string, TraceSpan>();
   const halt: { reason?: string; hookEvent?: string } = {};
   const formatOutput = batchFormatterOf(ctx);
-  const offered = offeredOfRequest(ctx);
+  const offered = offeredOfRequest(options.store, run.id, journal.state.lastSeq);
   let outcomes: CallOutcome[];
   try {
     outcomes = await options.tools.executor.runBatch({
       calls,
       toolSet: ctx.toolSet,
-      ...(offered === undefined ? {} : { offered }),
+      offered,
       fence: ctx.claim,
       runId: run.id,
       step,

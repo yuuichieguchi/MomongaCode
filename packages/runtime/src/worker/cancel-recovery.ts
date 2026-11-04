@@ -7,7 +7,7 @@ import { describeError, LeaseLostError, ShutdownError } from './errors.ts';
 import type { Journal } from './journal.ts';
 import { reportError } from './report.ts';
 import { releaseWaitingCalls } from './release-waiting.ts';
-import { outcomePayloads } from './tool-step.ts';
+import { offeredOfRequest, outcomePayloads } from './tool-step.ts';
 import type { WorkerOptions } from './types.ts';
 
 export type CancelRecoveryInput = {
@@ -111,6 +111,7 @@ export const reconcileStartedCalls = async ({ options, claim, run, session, jour
         deadlineAt: run.deadlineAt,
         signal: control.recoverySignal,
         recoverOnly: true,
+        offered: offeredOfRequest(options.store, run.id, journal.state.lastSeq),
         leaseLost: () => control.leaseLost() || control.shuttingDown(),
         onLeaseLost: control.noteLeaseLost,
         onOutcome: (outcome) => {

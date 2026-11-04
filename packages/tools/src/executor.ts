@@ -703,7 +703,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       const available = batch.toolSet.tools.map((candidate) => candidate.name).join(', ');
       return outcome(failedOutcome(call.callId, `Unknown tool "${call.name}". Available tools: ${available}`));
     }
-    if (batch.offered !== undefined && batch.recoverOnly !== true && !batch.offered.tools.includes(call.name)) {
+    if (batch.offered !== undefined && !batch.offered.tools.includes(call.name)) {
       return outcome(
         failedOutcome(
           call.callId,
