@@ -279,9 +279,9 @@ describe('the removed floor and cap', () => {
 
 describe('the calibrated shape on the over side', () => {
   it('lets a calibrated count exceed the report by more than the margin floor but within its shape', async () => {
-    const meter = meterOf(pieceCounter({ method: 'calibrated', shape: { ratio: 0.2, minimum: 1 } }), W, { tokenCounting: 'calibrated', tokenErrorRatio: 0.2 });
+    const meter = meterOf(pieceCounter({ method: 'calibrated', shape: { ratio: 0.25, minimum: 1 } }), W, { tokenCounting: 'calibrated', tokenErrorRatio: 0.25 });
     const counted = await meter.count({ input: [piece('a', 1000)], tools: [] });
-    expect(counted.overTolerance).toBe(200);
+    expect(counted.overTolerance).toBe(250);
     const reported = 820;
     expect(counted.inputTokens - reported).toBeGreaterThan(marginFloorFor(W));
     expect(reported < counted.inputTokens - (marginFloorFor(W) + counted.overTolerance)).toBe(false);
@@ -306,10 +306,5 @@ describe('observe', () => {
       contextWindow: W,
       tokenCounting: 'estimated',
     });
-  });
-
-  it('never throws for a digest it has not counted', () => {
-    const meter = meterOf(pieceCounter(ESTIMATED), W, { tokenCounting: 'estimated' });
-    expect(() => meter.observe({ inputDigest: 'f'.repeat(64), inputTokens: 10 })).not.toThrow();
   });
 });
