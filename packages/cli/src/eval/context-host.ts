@@ -105,9 +105,8 @@ export const liveSettingsFor = (user: UserModels, alias: string): LiveSettings =
     if (declared === undefined) throw new ContextHostError(`the target ${name} is not declared in the user settings, so it cannot be copied into a case`);
     const recordKey = probeRecordKeyOf(name, resolved);
     if (declared.adapter === 'fm' || resolved.adapter === 'fm') {
-      if (recordKey?.kind !== 'target') throw new ContextHostError(`the fm target ${name} has no probe record key`);
       if (!PROBE_TARGET_NAME.test(name)) throw new ContextHostError(`the fm target ${name} has a name its probe record cannot be keyed by`);
-      fmTargets.push(recordKey.target);
+      fmTargets.push(name);
       targets[name] = declared;
       continue;
     }

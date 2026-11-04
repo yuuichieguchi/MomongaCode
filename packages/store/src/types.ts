@@ -3,6 +3,7 @@ import type {
   BilledDetail,
   CallTiming,
   TokenAnatomy,
+  RunTracePrefix,
   ElicitationAnswerRecord,
   ElicitationRequestView,
   JobStatus,
@@ -130,7 +131,7 @@ export type ResolveApprovalResult =
   | { kind: 'option_not_offered' };
 
 export type ModelCallRecord =
-  | { kind: 'requested'; seq: number; step: number; attempt: number; anatomy?: TokenAnatomy }
+  | { kind: 'requested'; seq: number; step: number; attempt: number; anatomy?: TokenAnatomy; prefix?: RunTracePrefix }
   | { kind: 'responded'; seq: number; step: number; attempt: number; responseId?: string; timing?: CallTiming };
 
 export type HeartbeatResult = { kind: 'ok'; cancelRequested: boolean; status: ClaimStatus } | LeaseLost;

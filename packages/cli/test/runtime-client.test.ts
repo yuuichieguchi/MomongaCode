@@ -228,6 +228,8 @@ describe('the token anatomy endpoints', () => {
     layers: { estimated: true, shares: {}, tokens: {}, callsWithoutAnatomy: 1 },
     billed: { inputTokens: 0, uncachedInputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 3, reasoningTokens: 0 },
     cacheHitRatio: null,
+    cacheBreaks: {},
+    cacheMissCauses: {},
     timeToFirstToken: null,
     duration: null,
     roles: { run: { calls: 1, timeToFirstToken: null, duration: null, totalDurationMs: null, timingNotRecorded: 1 } },

@@ -38,7 +38,7 @@ import { createReflector } from '../memory/reflection.ts';
 import { createMemoryUpkeepSchedule } from '../memory/upkeep-schedule.ts';
 import { DAY_MS } from '@momonga/memory';
 import { createRecordViews } from '../memory/views.ts';
-import { costBreakdownOf, runlessTimingsOf, sideTimingsOfRun, traceCallsOf } from '../service/model-calls.ts';
+import { TRACE_EVENT_TYPES, costBreakdownOf, runlessTimingsOf, sideTimingsOfRun, traceCallsOf, traceEventsOf } from '../service/model-calls.ts';
 import { runTraceOf } from '../service/trace-view.ts';
 import type { RunService } from '../service/service.ts';
 import { systemTimers } from '../service/timers.ts';
@@ -507,7 +507,9 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         runTrace: async (runId) => {
           await telemetry.forceFlush();
           const trace = runTraceOf(traceStore, runId);
-          return trace === undefined ? undefined : { ...trace, calls: traceCallsOf(store.readModelCallEvents(runId)) };
+          return trace === undefined
+            ? undefined
+            : { ...trace, calls: traceCallsOf(store.readModelCallEvents(runId)), events: traceEventsOf(store.readRunEventsOfTypes(runId, [...TRACE_EVENT_TYPES])) };
         },
         runCost: (runs, signal, includeRunless) => gatewayClient.cost(runs, signal, includeRunless),
         runCostBreakdown: (runs, signal, includeRunless) =>

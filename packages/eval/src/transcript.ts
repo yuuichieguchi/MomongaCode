@@ -33,8 +33,8 @@ export type Transcript = {
   run: TranscriptRun;
   events: PublicRunEvent[];
   children: TranscriptChild[];
-  policy: PolicyOverlay;
-  codeDigest: string;
+  policy: PolicyOverlay | null;
+  codeDigest: string | null;
   reflection?: TranscriptReflection;
   ruleIds?: Record<string, string>;
   datasetSeed?: number;
@@ -64,12 +64,14 @@ export const parsePublicRunEvent = (value: unknown, where: string): PublicRunEve
 
 const CODE_DIGEST = /^[0-9a-f]{64}$/;
 
-const policyOf = (value: unknown, where: string): PolicyOverlay => {
+const policyOf = (value: unknown, where: string): PolicyOverlay | null => {
+  if (value === null) return null;
   if (!validatePolicyOverlay(value)) throw new TranscriptError(`${where}: policy must be a token policy overlay`);
   return value;
 };
 
-const codeDigestOf = (value: unknown, where: string): string => {
+const codeDigestOf = (value: unknown, where: string): string | null => {
+  if (value === null) return null;
   if (typeof value !== 'string' || !CODE_DIGEST.test(value)) throw new TranscriptError(`${where}: codeDigest must be a sha256 hex digest`);
   return value;
 };
@@ -209,6 +211,7 @@ export const decodeTranscript = (text: string, source: string): Transcript => {
   const children = childrenOf(header['children'], `${source}:1`);
   const policy = policyOf(header['policy'], `${source}:1`);
   const codeDigest = codeDigestOf(header['codeDigest'], `${source}:1`);
+  if ((policy === null) !== (codeDigest === null)) throw new TranscriptError(`${source}:1: policy and codeDigest are both null or both recorded`);
   const end = endRecordOf(eventLines.at(-1), source);
   const events: PublicRunEvent[] = [];
   eventLines.slice(0, -1).forEach((line, index) => {

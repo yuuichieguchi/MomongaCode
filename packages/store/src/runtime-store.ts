@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
 import { TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
-import type { CallTiming, ElicitationAnswerRecord, ElicitationRequestView, PermissionMode, RunEvent, TokenAnatomy, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
+import type { CallTiming, ElicitationAnswerRecord, ElicitationRequestView, PermissionMode, RunEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
 import { createApprovalStore } from './approvals.ts';
 import { createBlobStore, prepareBlobDirectory } from './blobs.ts';
 import { addUsage, foldRunState, initialRunState, spendOf } from './fold.ts';
@@ -245,6 +245,7 @@ const prepareStatements = (db: DatabaseSync) => ({
     `SELECT seq, step, type,
       json_extract(payload_json, '$.attempt') AS attempt,
       json_extract(payload_json, '$.anatomy') AS anatomy,
+      json_extract(payload_json, '$.prefix') AS prefix,
       json_extract(payload_json, '$.response.id') AS response_id,
       json_extract(payload_json, '$.response.timing') AS timing
      FROM events WHERE run_id = :runId AND type IN ('model.requested', 'model.responded') ORDER BY seq`,
@@ -338,7 +339,8 @@ const decodeModelCallRecord = (row: Row): ModelCallRecord => {
   const type = reader.string('type');
   if (type === 'model.requested') {
     const anatomy = reader.nullableJson('anatomy');
-    return { kind: 'requested', seq, step, attempt, ...(anatomy === null ? {} : { anatomy: anatomy as TokenAnatomy }) };
+    const prefix = reader.nullableJson('prefix');
+    return { kind: 'requested', seq, step, attempt, ...(anatomy === null ? {} : { anatomy: anatomy as TokenAnatomy }), ...(prefix === null ? {} : { prefix: prefix as RunTracePrefix }) };
   }
   const timing = reader.nullableJson('timing');
   const responseId = reader.nullableString('response_id');
