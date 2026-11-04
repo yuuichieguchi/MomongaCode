@@ -1,6 +1,6 @@
 import { SUMMARY_PROMPT_TOKENS, findDanglingOutput, findUnpairedCalls, summaryItemTokensFor, summaryTokenCapFor } from '@momonga/protocol';
 import type { FunctionCallOutputInputItem, FunctionTool, InputItem, MessageInputItem } from '@momonga/protocol';
-import { MIN_ROOM_TOKENS, budgetFor, inputCeilingFor, itemCapFor, memoryBudgetFor, summaryInputCeilingFor, pinnedFloorFor } from './budget.ts';
+import { MIN_ROOM_TOKENS, budgetFor, inputCeilingFor, itemCapFor, memoryBudgetFor, summaryInputCeilingFor, pinnedFloorFor, withCalibration } from './budget.ts';
 import { anatomyOf, historyLayerOf } from './anatomy.ts';
 import type { TaggedItem } from './anatomy.ts';
 import { chainTail, digestChain, frozenItem } from './digests.ts';
@@ -109,7 +109,7 @@ const hostsFirst = (tools: readonly FunctionTool[], hostOf: Readonly<Record<stri
 
 const metering = (input: BuildContextInput, ports: BuildContextPorts, tools: readonly FunctionTool[]) => {
   const { capabilities } = input;
-  const budgetOf = (counted: MeterCount) => budgetFor(capabilities, counted.errorBound);
+  const budgetOf = (counted: MeterCount) => budgetFor(capabilities, counted.underAt(counted.inputTokens));
   const fits = (counted: MeterCount): boolean => counted.inputTokens <= budgetOf(counted).I;
   const countInput = (items: readonly InputItem[]): Promise<MeterCount> => ports.meter.count({ input: items, tools });
   return { tools: [...tools], budgetOf, fits, countInput };
@@ -159,8 +159,9 @@ const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): 
     throw new PrefixChangedError(input.expectedPinnedDigest, pinnedDigest);
   }
   const governing = governingMessageOf(sources.governing);
-  const ceiling = inputCeilingFor(capabilities);
-  const toolFloor = pinnedFloorFor(capabilities);
+  const sized = input.calibration === undefined ? capabilities : withCalibration(capabilities, input.calibration);
+  const ceiling = inputCeilingFor(sized);
+  const toolFloor = pinnedFloorFor(sized);
   const countWith = (offered: readonly FunctionTool[]): Promise<MeterCount> =>
     ports.meter.count({ input: [...pinnedLayers, ...governing, task], tools: offered });
   const fitsFloor = (counted: MeterCount): boolean => metering(input, ports, candidates).fits(counted) && counted.inputTokens <= toolFloor;
@@ -544,7 +545,7 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
     const item = summaryItemTokensFor(summaryCap) + (await workingStateGrowth());
     const layersOnly = (await countInput(layers)).inputTokens;
     const taskTokens = floorTokens - layersOnly;
-    const summaryCeiling = summaryInputCeilingFor(capabilities);
+    const summaryCeiling = summaryInputCeilingFor(input.calibration === undefined ? capabilities : withCalibration(capabilities, input.calibration));
     let overBudget: CompactionBlock | undefined;
     for (const cutIndex of cuts.toReversed()) {
       const prefix = slots.slice(0, cutIndex + 1);
@@ -600,14 +601,14 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
 
   if (!fits(total)) {
     const inputBudget = budgetFor(capabilities, 0).I;
-    const maxInput = maxInputFor({ ceiling, inputBudget, errorBoundAt: total.errorBoundAt });
+    const maxInput = maxInputFor({ ceiling, inputBudget, errorBoundAt: total.freshUnderAt });
     if (maxInput === undefined || maxInput < pinnedTokens) {
       throw new PinnedBoundError({
         pinnedTokens,
         ceiling,
         breakdown: await breakdownOf(ports, systemMessage, layers, head.governing, task, tools),
         inputBudget,
-        boundAtZero: total.errorBoundAt(0),
+        boundAtZero: total.underAt(0),
         maxInput,
       });
     }

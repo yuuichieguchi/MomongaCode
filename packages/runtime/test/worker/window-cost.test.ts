@@ -18,7 +18,7 @@ const logEvent = (index: number): RunEventPayload => ({
 describe('the cost of the adaptive budget window at run start', () => {
   it('reads the last twenty runs within the pause budget in a project with many runs and long logs', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
-    env.settings.contextValue = { adaptiveBudget: true, autoCompact: true };
+    env.settings.contextValue = { ...env.settings.contextValue, adaptiveBudget: true, autoCompact: true };
     for (let index = 0; index < RUNS; index += 1) {
       env.clock.advance(1);
       const run = createdRun(env.store.createRunAndEnqueue(env.session.id, { input: 'Past work', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));

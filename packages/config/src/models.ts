@@ -89,6 +89,7 @@ const ANTHROPIC_CAPABILITY_DEFAULTS: CapabilityDefaults = {
   ...OPEN_RESPONSES_CAPABILITY_DEFAULTS,
   parallelToolCalls: true,
   tokenCounting: 'exact',
+  promptCache: { kind: 'breakpoints', maxBreakpoints: 4 },
 };
 
 const DEFAULT_REMOTE_MAX_CONCURRENCY = 4;

@@ -174,6 +174,7 @@ export type ResponseStatus = 'in_progress' | 'completed' | 'failed' | 'incomplet
 export type MomongaResponseExtension = {
   alias: string;
   target: string;
+  counter: string;
   attempts: number;
   fallbackFrom?: string[];
   fallbackCauses?: { target: string; code: string | null; message: string }[];
@@ -220,6 +221,8 @@ export type ResponseResource = {
   cacheWriteInputTokens?: number;
 };
 
+export type PromptCacheCounts = { stable: number; fixed: number; previousHistory?: number; history: number };
+
 export type CreateResponseBody = {
   model: string;
   input?: string | InputItem[] | null;
@@ -245,6 +248,7 @@ export type CreateResponseBody = {
   safety_identifier?: string | null;
   service_tier?: string | null;
   background?: boolean;
+  momonga?: { cache?: PromptCacheCounts };
 };
 
 type ResponseEvent<T extends string> = { type: T; sequence_number: number; response: ResponseResource };

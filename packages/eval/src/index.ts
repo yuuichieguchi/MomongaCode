@@ -47,6 +47,8 @@ export {
   runContextDataset,
 } from './context-live.ts';
 export type { ContextCaseHost, ContextRunPorts, ContextRunResult, LiveBounds, LiveLimits } from './context-live.ts';
+export { parsePolicyOverlay } from './context-policy.ts';
+export type { PolicyOverlay } from './context-policy.ts';
 export { compactionFactsOf, governanceCountsOf, governanceOf, lossSignalsOf, recalledOf, retrievalOf } from './context-metrics.ts';
 export type { CompactionFacts, GovernanceCounts, GovernanceScore, LossSignal, Recalled, Retrieval } from './context-metrics.ts';
 export {
@@ -105,6 +107,6 @@ export type {
   TokenUsage,
 } from './context-improve.ts';
 export { TRANSCRIPT_FORMAT, TranscriptError, decodeTranscript, encodeTranscript, parsePublicRunEvent } from './transcript.ts';
-export type { Transcript, TranscriptChild, TranscriptReflection, TranscriptRun } from './transcript.ts';
+export type { RecordedRun, Transcript, TranscriptChild, TranscriptReflection, TranscriptRun } from './transcript.ts';
 export { loadContextDataset, loadContextReport, loadDataset, loadTranscripts, nodeEvalFiles, saveContextReport, saveTranscript, transcriptFileName } from './files.ts';
 export type { EvalFiles } from './files.ts';

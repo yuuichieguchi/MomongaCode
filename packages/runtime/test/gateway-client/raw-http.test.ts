@@ -96,7 +96,12 @@ describe('gateway client request headers', () => {
     fake.respond((request, response) => {
       response.writeHead(200, { 'content-type': 'application/json' });
       if (request.url === '/v1/momonga/models') {
-        response.end(JSON.stringify({ object: 'list', data: [{ id: 'default', object: 'model', targets: ['primary'], capabilities: { contextWindow: 8192 }, targetCapabilities: { primary: { contextWindow: 8192 } } }] }));
+        response.end(
+          JSON.stringify({
+            object: 'list',
+            data: [{ id: 'default', object: 'model', targets: ['primary'], capabilities: { contextWindow: 8192 }, targetCapabilities: { primary: { contextWindow: 8192 } }, targetCounters: { primary: 'c'.repeat(64) } }],
+          }),
+        );
       } else {
         response.end(JSON.stringify({ version: '1.0.0', apiVersion: 1, pid: 1, startedAt: 'x', state: 'running' }));
       }
@@ -104,7 +109,9 @@ describe('gateway client request headers', () => {
     const clock = fakeClock();
     const client = makeClient(fake.socketPath, clock);
 
-    expect(await client.models()).toEqual([{ id: 'default', capabilities: { contextWindow: 8192 }, targetCapabilities: { primary: { contextWindow: 8192 } } }]);
+    expect(await client.models()).toEqual([
+      { id: 'default', targets: ['primary'], capabilities: { contextWindow: 8192 }, targetCapabilities: { primary: { contextWindow: 8192 } }, targetCounters: { primary: 'c'.repeat(64) } },
+    ]);
     expect(await client.health()).toMatchObject({ version: '1.0.0', state: 'running' });
 
     expect(fake.requests.map((request) => [request.method, request.url])).toEqual([
@@ -131,6 +138,7 @@ describe('gateway client request headers', () => {
               targets: ['primary', 'small'],
               capabilities: { contextWindow: 8192 },
               targetCapabilities: { primary: { contextWindow: 8192 }, small: { contextWindow: 2000 } },
+              targetCounters: { primary: '1'.repeat(64), small: '2'.repeat(64) },
             },
           ],
         }),
@@ -142,6 +150,39 @@ describe('gateway client request headers', () => {
     expect(await client.capabilities('default', { signal })).toEqual({ contextWindow: 8192 });
     expect(await client.capabilities('default', { signal, target: 'small' })).toEqual({ contextWindow: 2000 });
     await expect(client.capabilities('default', { signal, target: 'elsewhere' })).rejects.toThrow(/elsewhere/);
+  });
+
+  it('keeps the ordered targets and the counter of each target of an alias', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(
+        JSON.stringify({
+          object: 'list',
+          data: [
+            {
+              id: 'default',
+              object: 'model',
+              targets: ['small', 'primary'],
+              capabilities: { contextWindow: 2000 },
+              targetCapabilities: { primary: { contextWindow: 8192 }, small: { contextWindow: 2000 } },
+              targetCounters: { primary: '1'.repeat(64), small: '2'.repeat(64) },
+            },
+          ],
+        }),
+      );
+    });
+    const client = makeClient(fake.socketPath, fakeClock());
+    const signal = new AbortController().signal;
+
+    expect(await client.model('default', { signal })).toEqual({
+      id: 'default',
+      targets: ['small', 'primary'],
+      capabilities: { contextWindow: 2000 },
+      targetCapabilities: { primary: { contextWindow: 8192 }, small: { contextWindow: 2000 } },
+      targetCounters: { primary: '1'.repeat(64), small: '2'.repeat(64) },
+    });
+    await expect(client.model('elsewhere', { signal })).rejects.toThrow(/elsewhere/);
   });
 
   it('sends cancel as a body-less POST with the key and returns whether the gateway cancelled', async () => {

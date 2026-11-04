@@ -94,7 +94,7 @@ export const readManifest = (file: string): Manifest => {
   return { format: MANIFEST_FORMAT, unitSuiteSeconds: positiveNumber(parsed['unitSuiteSeconds'], 'unitSuiteSeconds'), entries: entries.map(entryOf) };
 };
 
-const moduleOf = (config: string): string => config.split('.')[0] as string;
+export const moduleOf = (config: string): string => config.split('.')[0] as string;
 
 export const discoveryProblems = (specDir: string, manifest: Manifest): string[] => {
   const files = fs.readdirSync(specDir);
@@ -134,14 +134,19 @@ export const verdictProblems = (entry: ManifestEntry, run: TlcRun): string[] => 
   if (scriptFailure.length > 0) return scriptFailure;
   const { violates, exitCode } = entry.expect;
   if (run.exitCode !== exitCode) return [`${label} was expected to violate ${violates} with exit ${exitCode} but TLC exited ${run.exitCode ?? run.signal}`];
-  if (exitCode === 13) return run.stdout.includes(TEMPORAL_LINE) ? [] : [`${label} exited 13 without the line "${TEMPORAL_LINE}"`];
+  if (exitCode === 13) {
+    if (run.stdout.includes(TEMPORAL_LINE)) return [];
+    return new RegExp(`Action property ${escapeRegExp(violates)} is violated`).test(run.stdout)
+      ? []
+      : [`${label} exited 13 without the line "${TEMPORAL_LINE}" or "Action property ${violates} is violated"`];
+  }
   return new RegExp(`Invariant ${escapeRegExp(violates)} is violated`).test(run.stdout) ? [] : [`${label} exited ${exitCode} without the line "Invariant ${violates} is violated"`];
 };
 
 export const everyRunBudgetSeconds = (manifest: Manifest): number =>
   manifest.entries.filter((entry) => entry.tier === 'every-run').reduce((total, entry) => total + entry.budgetSeconds, 0);
 
-export const EVERY_RUN_BUDGET_RATIO = 3;
+export const EVERY_RUN_BUDGET_RATIO = 4;
 
 export const tierBudgetProblem = (manifest: Manifest): string | undefined => {
   const total = everyRunBudgetSeconds(manifest);

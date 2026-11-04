@@ -4,7 +4,7 @@ import type { StreamEvent, TokenAnatomy, Usage } from '@momonga/protocol';
 import type { GatewayPort } from '@momonga/runtime';
 import { makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
-import { inputTokensOf, tokensOfText } from './fake-gateway.ts';
+import { fakeCounterOf, inputTokensOf, tokensOfText } from './fake-gateway.ts';
 import { textStep } from './scripts.ts';
 import type { ScriptStep } from './fake-gateway.ts';
 
@@ -25,7 +25,7 @@ const isTerminal = (event: StreamEvent): boolean => event.type === 'response.com
 const withExtension = (step: ScriptStep, extension: Record<string, unknown>): ScriptStep => ({
   ...step,
   events: step.events.map((event) =>
-    isTerminal(event) && 'response' in event ? ({ ...event, response: { ...event.response, momonga: { alias: 'fm', target: 'primary', attempts: 1, usageSource: 'reported', ...extension } } } as StreamEvent) : event,
+    isTerminal(event) && 'response' in event ? ({ ...event, response: { ...event.response, momonga: { alias: 'fm', target: 'primary', counter: fakeCounterOf('primary'), attempts: 1, usageSource: 'reported', ...extension } } } as StreamEvent) : event,
   ),
 });
 

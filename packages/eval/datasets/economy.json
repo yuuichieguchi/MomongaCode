@@ -1,0 +1,618 @@
+{
+  "format": "momonga-eval-context/1",
+  "name": "economy",
+  "cases": [
+    {
+      "id": "repeated-reads-on",
+      "description": "Measures a task that tempts the model to read the same file twice: it reads src/config.ts, edits a neighbour, and must read src/config.ts again to confirm the value it reports; the second read returns the same bytes as the first. Automatic compaction is on.",
+      "scenario": "repeated-reads",
+      "input": "Read src/config.ts and tell me the retries value. Then add a src/retry.ts that exports that number as RETRIES, and read src/config.ts once more to confirm the value did not change before you answer with the number.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "reject_once",
+      "runs": 2,
+      "minPassRate": 1,
+      "files": {
+        "src/config.ts": "export const settings = {\n  retries: 7,\n  timeoutMs: 4500,\n  region: 'eu-north-1',\n};\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 0,
+        "topics": [
+          "planning",
+          "naming"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "Read",
+          "count": {
+            "min": 2
+          }
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "\\b7\\b"
+        }
+      ],
+      "compaction": "on"
+    },
+    {
+      "id": "repeated-reads-off",
+      "description": "Measures a task that tempts the model to read the same file twice: it reads src/config.ts, edits a neighbour, and must read src/config.ts again to confirm the value it reports; the second read returns the same bytes as the first. The same task with context.autoCompact false; the contrast for the on case.",
+      "scenario": "repeated-reads",
+      "input": "Read src/config.ts and tell me the retries value. Then add a src/retry.ts that exports that number as RETRIES, and read src/config.ts once more to confirm the value did not change before you answer with the number.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "reject_once",
+      "runs": 2,
+      "minPassRate": 1,
+      "files": {
+        "src/config.ts": "export const settings = {\n  retries: 7,\n  timeoutMs: 4500,\n  region: 'eu-north-1',\n};\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 0,
+        "topics": [
+          "planning",
+          "naming"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "Read",
+          "count": {
+            "min": 2
+          }
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "\\b7\\b"
+        }
+      ],
+      "compaction": "off"
+    },
+    {
+      "id": "test-failures-on",
+      "description": "Measures a test run whose output is long and repetitive: the failing test name sits among sixty identical stack lines, and the answer must name it. Automatic compaction is on.",
+      "scenario": "test-failures",
+      "input": "Run node test/run.js and tell me which test fails and what it expected.",
+      "permissionMode": "default",
+      "onAsk": "allow_once",
+      "runs": 2,
+      "minPassRate": 1,
+      "files": {
+        "test/run.js": "const names = ['parses empty input', 'parses a quoted field', 'keeps a trailing comma', 'rejects an unterminated quote'];\nconst failing = 'keeps a trailing comma';\nfor (const name of names) {\n  if (name === failing) {\n    console.error(`FAIL ${name}`);\n    for (let line = 0; line < 60; line += 1) console.error(`    at frame ${line} (src/csv.js:${100 + line})`);\n    console.error('expected 3 fields, received 2');\n  } else {\n    console.log(`ok ${name}`);\n  }\n}\nprocess.exit(1);\n",
+        "src/csv.js": "export const parseCsv = (text) => text.split(',');\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 0,
+        "topics": [
+          "planning",
+          "naming"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "Bash"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "keeps a trailing comma"
+        }
+      ],
+      "compaction": "on"
+    },
+    {
+      "id": "test-failures-off",
+      "description": "Measures a test run whose output is long and repetitive: the failing test name sits among sixty identical stack lines, and the answer must name it. The same task with context.autoCompact false; the contrast for the on case.",
+      "scenario": "test-failures",
+      "input": "Run node test/run.js and tell me which test fails and what it expected.",
+      "permissionMode": "default",
+      "onAsk": "allow_once",
+      "runs": 2,
+      "minPassRate": 1,
+      "files": {
+        "test/run.js": "const names = ['parses empty input', 'parses a quoted field', 'keeps a trailing comma', 'rejects an unterminated quote'];\nconst failing = 'keeps a trailing comma';\nfor (const name of names) {\n  if (name === failing) {\n    console.error(`FAIL ${name}`);\n    for (let line = 0; line < 60; line += 1) console.error(`    at frame ${line} (src/csv.js:${100 + line})`);\n    console.error('expected 3 fields, received 2');\n  } else {\n    console.log(`ok ${name}`);\n  }\n}\nprocess.exit(1);\n",
+        "src/csv.js": "export const parseCsv = (text) => text.split(',');\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 0,
+        "topics": [
+          "planning",
+          "naming"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "Bash"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "keeps a trailing comma"
+        }
+      ],
+      "compaction": "off"
+    },
+    {
+      "id": "json-api-on",
+      "description": "Measures a JSON API response of sixty items read from a file: the answer is one owner field deep inside it. Automatic compaction is on.",
+      "scenario": "json-api",
+      "input": "Read fixtures/response.json and tell me the owner of the item whose id is 1041.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "reject_once",
+      "runs": 2,
+      "minPassRate": 1,
+      "files": {
+        "fixtures/response.json": "{\n  \"data\": {\n    \"items\": [\n      {\n        \"id\": 1000,\n        \"name\": \"item-0\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-01\",\n          \"owner\": \"user-0\",\n          \"score\": 0\n        }\n      },\n      {\n        \"id\": 1001,\n        \"name\": \"item-1\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-02\",\n          \"owner\": \"user-1\",\n          \"score\": 3\n        }\n      },\n      {\n        \"id\": 1002,\n        \"name\": \"item-2\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-03\",\n          \"owner\": \"user-2\",\n          \"score\": 6\n        }\n      },\n      {\n        \"id\": 1003,\n        \"name\": \"item-3\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-04\",\n          \"owner\": \"user-3\",\n          \"score\": 9\n        }\n      },\n      {\n        \"id\": 1004,\n        \"name\": \"item-4\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-05\",\n          \"owner\": \"user-4\",\n          \"score\": 12\n        }\n      },\n      {\n        \"id\": 1005,\n        \"name\": \"item-5\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-06\",\n          \"owner\": \"user-5\",\n          \"score\": 15\n        }\n      },\n      {\n        \"id\": 1006,\n        \"name\": \"item-6\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-07\",\n          \"owner\": \"user-6\",\n          \"score\": 18\n        }\n      },\n      {\n        \"id\": 1007,\n        \"name\": \"item-7\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-08\",\n          \"owner\": \"user-0\",\n          \"score\": 21\n        }\n      },\n      {\n        \"id\": 1008,\n        \"name\": \"item-8\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-09\",\n          \"owner\": \"user-1\",\n          \"score\": 24\n        }\n      },\n      {\n        \"id\": 1009,\n        \"name\": \"item-9\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-10\",\n          \"owner\": \"user-2\",\n          \"score\": 27\n        }\n      },\n      {\n        \"id\": 1010,\n        \"name\": \"item-10\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-11\",\n          \"owner\": \"user-3\",\n          \"score\": 30\n        }\n      },\n      {\n        \"id\": 1011,\n        \"name\": \"item-11\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-12\",\n          \"owner\": \"user-4\",\n          \"score\": 33\n        }\n      },\n      {\n        \"id\": 1012,\n        \"name\": \"item-12\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-13\",\n          \"owner\": \"user-5\",\n          \"score\": 36\n        }\n      },\n      {\n        \"id\": 1013,\n        \"name\": \"item-13\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-14\",\n          \"owner\": \"user-6\",\n          \"score\": 39\n        }\n      },\n      {\n        \"id\": 1014,\n        \"name\": \"item-14\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-15\",\n          \"owner\": \"user-0\",\n          \"score\": 42\n        }\n      },\n      {\n        \"id\": 1015,\n        \"name\": \"item-15\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-16\",\n          \"owner\": \"user-1\",\n          \"score\": 45\n        }\n      },\n      {\n        \"id\": 1016,\n        \"name\": \"item-16\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-17\",\n          \"owner\": \"user-2\",\n          \"score\": 48\n        }\n      },\n      {\n        \"id\": 1017,\n        \"name\": \"item-17\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-18\",\n          \"owner\": \"user-3\",\n          \"score\": 51\n        }\n      },\n      {\n        \"id\": 1018,\n        \"name\": \"item-18\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-19\",\n          \"owner\": \"user-4\",\n          \"score\": 54\n        }\n      },\n      {\n        \"id\": 1019,\n        \"name\": \"item-19\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-20\",\n          \"owner\": \"user-5\",\n          \"score\": 57\n        }\n      },\n      {\n        \"id\": 1020,\n        \"name\": \"item-20\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-21\",\n          \"owner\": \"user-6\",\n          \"score\": 60\n        }\n      },\n      {\n        \"id\": 1021,\n        \"name\": \"item-21\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-22\",\n          \"owner\": \"user-0\",\n          \"score\": 63\n        }\n      },\n      {\n        \"id\": 1022,\n        \"name\": \"item-22\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-23\",\n          \"owner\": \"user-1\",\n          \"score\": 66\n        }\n      },\n      {\n        \"id\": 1023,\n        \"name\": \"item-23\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-24\",\n          \"owner\": \"user-2\",\n          \"score\": 69\n        }\n      },\n      {\n        \"id\": 1024,\n        \"name\": \"item-24\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-25\",\n          \"owner\": \"user-3\",\n          \"score\": 72\n        }\n      },\n      {\n        \"id\": 1025,\n        \"name\": \"item-25\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-26\",\n          \"owner\": \"user-4\",\n          \"score\": 75\n        }\n      },\n      {\n        \"id\": 1026,\n        \"name\": \"item-26\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-27\",\n          \"owner\": \"user-5\",\n          \"score\": 78\n        }\n      },\n      {\n        \"id\": 1027,\n        \"name\": \"item-27\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-28\",\n          \"owner\": \"user-6\",\n          \"score\": 81\n        }\n      },\n      {\n        \"id\": 1028,\n        \"name\": \"item-28\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-01\",\n          \"owner\": \"user-0\",\n          \"score\": 84\n        }\n      },\n      {\n        \"id\": 1029,\n        \"name\": \"item-29\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-02\",\n          \"owner\": \"user-1\",\n          \"score\": 87\n        }\n      },\n      {\n        \"id\": 1030,\n        \"name\": \"item-30\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-03\",\n          \"owner\": \"user-2\",\n          \"score\": 90\n        }\n      },\n      {\n        \"id\": 1031,\n        \"name\": \"item-31\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-04\",\n          \"owner\": \"user-3\",\n          \"score\": 93\n        }\n      },\n      {\n        \"id\": 1032,\n        \"name\": \"item-32\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-05\",\n          \"owner\": \"user-4\",\n          \"score\": 96\n        }\n      },\n      {\n        \"id\": 1033,\n        \"name\": \"item-33\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-06\",\n          \"owner\": \"user-5\",\n          \"score\": 99\n        }\n      },\n      {\n        \"id\": 1034,\n        \"name\": \"item-34\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-07\",\n          \"owner\": \"user-6\",\n          \"score\": 1\n        }\n      },\n      {\n        \"id\": 1035,\n        \"name\": \"item-35\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-08\",\n          \"owner\": \"user-0\",\n          \"score\": 4\n        }\n      },\n      {\n        \"id\": 1036,\n        \"name\": \"item-36\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-09\",\n          \"owner\": \"user-1\",\n          \"score\": 7\n        }\n      },\n      {\n        \"id\": 1037,\n        \"name\": \"item-37\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-10\",\n          \"owner\": \"user-2\",\n          \"score\": 10\n        }\n      },\n      {\n        \"id\": 1038,\n        \"name\": \"item-38\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-11\",\n          \"owner\": \"user-3\",\n          \"score\": 13\n        }\n      },\n      {\n        \"id\": 1039,\n        \"name\": \"item-39\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-12\",\n          \"owner\": \"user-4\",\n          \"score\": 16\n        }\n      },\n      {\n        \"id\": 1040,\n        \"name\": \"item-40\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-13\",\n          \"owner\": \"user-5\",\n          \"score\": 19\n        }\n      },\n      {\n        \"id\": 1041,\n        \"name\": \"item-41\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-14\",\n          \"owner\": \"user-quartz\",\n          \"score\": 22\n        }\n      },\n      {\n        \"id\": 1042,\n        \"name\": \"item-42\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-15\",\n          \"owner\": \"user-0\",\n          \"score\": 25\n        }\n      },\n      {\n        \"id\": 1043,\n        \"name\": \"item-43\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-16\",\n          \"owner\": \"user-1\",\n          \"score\": 28\n        }\n      },\n      {\n        \"id\": 1044,\n        \"name\": \"item-44\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-17\",\n          \"owner\": \"user-2\",\n          \"score\": 31\n        }\n      },\n      {\n        \"id\": 1045,\n        \"name\": \"item-45\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-18\",\n          \"owner\": \"user-3\",\n          \"score\": 34\n        }\n      },\n      {\n        \"id\": 1046,\n        \"name\": \"item-46\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-19\",\n          \"owner\": \"user-4\",\n          \"score\": 37\n        }\n      },\n      {\n        \"id\": 1047,\n        \"name\": \"item-47\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-20\",\n          \"owner\": \"user-5\",\n          \"score\": 40\n        }\n      },\n      {\n        \"id\": 1048,\n        \"name\": \"item-48\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-21\",\n          \"owner\": \"user-6\",\n          \"score\": 43\n        }\n      },\n      {\n        \"id\": 1049,\n        \"name\": \"item-49\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-22\",\n          \"owner\": \"user-0\",\n          \"score\": 46\n        }\n      },\n      {\n        \"id\": 1050,\n        \"name\": \"item-50\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-23\",\n          \"owner\": \"user-1\",\n          \"score\": 49\n        }\n      },\n      {\n        \"id\": 1051,\n        \"name\": \"item-51\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-24\",\n          \"owner\": \"user-2\",\n          \"score\": 52\n        }\n      },\n      {\n        \"id\": 1052,\n        \"name\": \"item-52\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-25\",\n          \"owner\": \"user-3\",\n          \"score\": 55\n        }\n      },\n      {\n        \"id\": 1053,\n        \"name\": \"item-53\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-26\",\n          \"owner\": \"user-4\",\n          \"score\": 58\n        }\n      },\n      {\n        \"id\": 1054,\n        \"name\": \"item-54\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-27\",\n          \"owner\": \"user-5\",\n          \"score\": 61\n        }\n      },\n      {\n        \"id\": 1055,\n        \"name\": \"item-55\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-28\",\n          \"owner\": \"user-6\",\n          \"score\": 64\n        }\n      },\n      {\n        \"id\": 1056,\n        \"name\": \"item-56\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-01\",\n          \"owner\": \"user-0\",\n          \"score\": 67\n        }\n      },\n      {\n        \"id\": 1057,\n        \"name\": \"item-57\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-02\",\n          \"owner\": \"user-1\",\n          \"score\": 70\n        }\n      },\n      {\n        \"id\": 1058,\n        \"name\": \"item-58\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-03\",\n          \"owner\": \"user-2\",\n          \"score\": 73\n        }\n      },\n      {\n        \"id\": 1059,\n        \"name\": \"item-59\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-04\",\n          \"owner\": \"user-3\",\n          \"score\": 76\n        }\n      }\n    ],\n    \"next\": null\n  },\n  \"status\": \"ok\"\n}\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 0,
+        "topics": [
+          "planning",
+          "naming"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "user-quartz"
+        }
+      ],
+      "compaction": "on"
+    },
+    {
+      "id": "json-api-off",
+      "description": "Measures a JSON API response of sixty items read from a file: the answer is one owner field deep inside it. The same task with context.autoCompact false; the contrast for the on case.",
+      "scenario": "json-api",
+      "input": "Read fixtures/response.json and tell me the owner of the item whose id is 1041.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "reject_once",
+      "runs": 2,
+      "minPassRate": 1,
+      "files": {
+        "fixtures/response.json": "{\n  \"data\": {\n    \"items\": [\n      {\n        \"id\": 1000,\n        \"name\": \"item-0\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-01\",\n          \"owner\": \"user-0\",\n          \"score\": 0\n        }\n      },\n      {\n        \"id\": 1001,\n        \"name\": \"item-1\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-02\",\n          \"owner\": \"user-1\",\n          \"score\": 3\n        }\n      },\n      {\n        \"id\": 1002,\n        \"name\": \"item-2\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-03\",\n          \"owner\": \"user-2\",\n          \"score\": 6\n        }\n      },\n      {\n        \"id\": 1003,\n        \"name\": \"item-3\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-04\",\n          \"owner\": \"user-3\",\n          \"score\": 9\n        }\n      },\n      {\n        \"id\": 1004,\n        \"name\": \"item-4\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-05\",\n          \"owner\": \"user-4\",\n          \"score\": 12\n        }\n      },\n      {\n        \"id\": 1005,\n        \"name\": \"item-5\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-06\",\n          \"owner\": \"user-5\",\n          \"score\": 15\n        }\n      },\n      {\n        \"id\": 1006,\n        \"name\": \"item-6\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-07\",\n          \"owner\": \"user-6\",\n          \"score\": 18\n        }\n      },\n      {\n        \"id\": 1007,\n        \"name\": \"item-7\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-08\",\n          \"owner\": \"user-0\",\n          \"score\": 21\n        }\n      },\n      {\n        \"id\": 1008,\n        \"name\": \"item-8\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-09\",\n          \"owner\": \"user-1\",\n          \"score\": 24\n        }\n      },\n      {\n        \"id\": 1009,\n        \"name\": \"item-9\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-10\",\n          \"owner\": \"user-2\",\n          \"score\": 27\n        }\n      },\n      {\n        \"id\": 1010,\n        \"name\": \"item-10\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-11\",\n          \"owner\": \"user-3\",\n          \"score\": 30\n        }\n      },\n      {\n        \"id\": 1011,\n        \"name\": \"item-11\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-12\",\n          \"owner\": \"user-4\",\n          \"score\": 33\n        }\n      },\n      {\n        \"id\": 1012,\n        \"name\": \"item-12\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-13\",\n          \"owner\": \"user-5\",\n          \"score\": 36\n        }\n      },\n      {\n        \"id\": 1013,\n        \"name\": \"item-13\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-14\",\n          \"owner\": \"user-6\",\n          \"score\": 39\n        }\n      },\n      {\n        \"id\": 1014,\n        \"name\": \"item-14\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-15\",\n          \"owner\": \"user-0\",\n          \"score\": 42\n        }\n      },\n      {\n        \"id\": 1015,\n        \"name\": \"item-15\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-16\",\n          \"owner\": \"user-1\",\n          \"score\": 45\n        }\n      },\n      {\n        \"id\": 1016,\n        \"name\": \"item-16\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-17\",\n          \"owner\": \"user-2\",\n          \"score\": 48\n        }\n      },\n      {\n        \"id\": 1017,\n        \"name\": \"item-17\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-18\",\n          \"owner\": \"user-3\",\n          \"score\": 51\n        }\n      },\n      {\n        \"id\": 1018,\n        \"name\": \"item-18\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-19\",\n          \"owner\": \"user-4\",\n          \"score\": 54\n        }\n      },\n      {\n        \"id\": 1019,\n        \"name\": \"item-19\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-20\",\n          \"owner\": \"user-5\",\n          \"score\": 57\n        }\n      },\n      {\n        \"id\": 1020,\n        \"name\": \"item-20\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-21\",\n          \"owner\": \"user-6\",\n          \"score\": 60\n        }\n      },\n      {\n        \"id\": 1021,\n        \"name\": \"item-21\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-22\",\n          \"owner\": \"user-0\",\n          \"score\": 63\n        }\n      },\n      {\n        \"id\": 1022,\n        \"name\": \"item-22\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-23\",\n          \"owner\": \"user-1\",\n          \"score\": 66\n        }\n      },\n      {\n        \"id\": 1023,\n        \"name\": \"item-23\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-24\",\n          \"owner\": \"user-2\",\n          \"score\": 69\n        }\n      },\n      {\n        \"id\": 1024,\n        \"name\": \"item-24\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-25\",\n          \"owner\": \"user-3\",\n          \"score\": 72\n        }\n      },\n      {\n        \"id\": 1025,\n        \"name\": \"item-25\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-26\",\n          \"owner\": \"user-4\",\n          \"score\": 75\n        }\n      },\n      {\n        \"id\": 1026,\n        \"name\": \"item-26\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-27\",\n          \"owner\": \"user-5\",\n          \"score\": 78\n        }\n      },\n      {\n        \"id\": 1027,\n        \"name\": \"item-27\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-28\",\n          \"owner\": \"user-6\",\n          \"score\": 81\n        }\n      },\n      {\n        \"id\": 1028,\n        \"name\": \"item-28\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-01\",\n          \"owner\": \"user-0\",\n          \"score\": 84\n        }\n      },\n      {\n        \"id\": 1029,\n        \"name\": \"item-29\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-02\",\n          \"owner\": \"user-1\",\n          \"score\": 87\n        }\n      },\n      {\n        \"id\": 1030,\n        \"name\": \"item-30\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-03\",\n          \"owner\": \"user-2\",\n          \"score\": 90\n        }\n      },\n      {\n        \"id\": 1031,\n        \"name\": \"item-31\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-04\",\n          \"owner\": \"user-3\",\n          \"score\": 93\n        }\n      },\n      {\n        \"id\": 1032,\n        \"name\": \"item-32\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-05\",\n          \"owner\": \"user-4\",\n          \"score\": 96\n        }\n      },\n      {\n        \"id\": 1033,\n        \"name\": \"item-33\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-06\",\n          \"owner\": \"user-5\",\n          \"score\": 99\n        }\n      },\n      {\n        \"id\": 1034,\n        \"name\": \"item-34\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-07\",\n          \"owner\": \"user-6\",\n          \"score\": 1\n        }\n      },\n      {\n        \"id\": 1035,\n        \"name\": \"item-35\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-08\",\n          \"owner\": \"user-0\",\n          \"score\": 4\n        }\n      },\n      {\n        \"id\": 1036,\n        \"name\": \"item-36\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-09\",\n          \"owner\": \"user-1\",\n          \"score\": 7\n        }\n      },\n      {\n        \"id\": 1037,\n        \"name\": \"item-37\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-10\",\n          \"owner\": \"user-2\",\n          \"score\": 10\n        }\n      },\n      {\n        \"id\": 1038,\n        \"name\": \"item-38\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-11\",\n          \"owner\": \"user-3\",\n          \"score\": 13\n        }\n      },\n      {\n        \"id\": 1039,\n        \"name\": \"item-39\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-12\",\n          \"owner\": \"user-4\",\n          \"score\": 16\n        }\n      },\n      {\n        \"id\": 1040,\n        \"name\": \"item-40\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-13\",\n          \"owner\": \"user-5\",\n          \"score\": 19\n        }\n      },\n      {\n        \"id\": 1041,\n        \"name\": \"item-41\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-14\",\n          \"owner\": \"user-quartz\",\n          \"score\": 22\n        }\n      },\n      {\n        \"id\": 1042,\n        \"name\": \"item-42\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-15\",\n          \"owner\": \"user-0\",\n          \"score\": 25\n        }\n      },\n      {\n        \"id\": 1043,\n        \"name\": \"item-43\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-16\",\n          \"owner\": \"user-1\",\n          \"score\": 28\n        }\n      },\n      {\n        \"id\": 1044,\n        \"name\": \"item-44\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-17\",\n          \"owner\": \"user-2\",\n          \"score\": 31\n        }\n      },\n      {\n        \"id\": 1045,\n        \"name\": \"item-45\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-18\",\n          \"owner\": \"user-3\",\n          \"score\": 34\n        }\n      },\n      {\n        \"id\": 1046,\n        \"name\": \"item-46\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-19\",\n          \"owner\": \"user-4\",\n          \"score\": 37\n        }\n      },\n      {\n        \"id\": 1047,\n        \"name\": \"item-47\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-20\",\n          \"owner\": \"user-5\",\n          \"score\": 40\n        }\n      },\n      {\n        \"id\": 1048,\n        \"name\": \"item-48\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-21\",\n          \"owner\": \"user-6\",\n          \"score\": 43\n        }\n      },\n      {\n        \"id\": 1049,\n        \"name\": \"item-49\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-22\",\n          \"owner\": \"user-0\",\n          \"score\": 46\n        }\n      },\n      {\n        \"id\": 1050,\n        \"name\": \"item-50\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-23\",\n          \"owner\": \"user-1\",\n          \"score\": 49\n        }\n      },\n      {\n        \"id\": 1051,\n        \"name\": \"item-51\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-24\",\n          \"owner\": \"user-2\",\n          \"score\": 52\n        }\n      },\n      {\n        \"id\": 1052,\n        \"name\": \"item-52\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-25\",\n          \"owner\": \"user-3\",\n          \"score\": 55\n        }\n      },\n      {\n        \"id\": 1053,\n        \"name\": \"item-53\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-26\",\n          \"owner\": \"user-4\",\n          \"score\": 58\n        }\n      },\n      {\n        \"id\": 1054,\n        \"name\": \"item-54\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-27\",\n          \"owner\": \"user-5\",\n          \"score\": 61\n        }\n      },\n      {\n        \"id\": 1055,\n        \"name\": \"item-55\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-28\",\n          \"owner\": \"user-6\",\n          \"score\": 64\n        }\n      },\n      {\n        \"id\": 1056,\n        \"name\": \"item-56\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-01\",\n          \"owner\": \"user-0\",\n          \"score\": 67\n        }\n      },\n      {\n        \"id\": 1057,\n        \"name\": \"item-57\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-02\",\n          \"owner\": \"user-1\",\n          \"score\": 70\n        }\n      },\n      {\n        \"id\": 1058,\n        \"name\": \"item-58\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-03\",\n          \"owner\": \"user-2\",\n          \"score\": 73\n        }\n      },\n      {\n        \"id\": 1059,\n        \"name\": \"item-59\",\n        \"tags\": [\n          \"a\",\n          \"b\",\n          \"c\"\n        ],\n        \"meta\": {\n          \"created\": \"2025-01-04\",\n          \"owner\": \"user-3\",\n          \"score\": 76\n        }\n      }\n    ],\n    \"next\": null\n  },\n  \"status\": \"ok\"\n}\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 0,
+        "topics": [
+          "planning",
+          "naming"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "user-quartz"
+        }
+      ],
+      "compaction": "off"
+    },
+    {
+      "id": "large-grep-on",
+      "description": "Measures a search whose raw output is large: forty modules all match \"helper\", and only three of them carry the TODO(migrate) marker the answer needs. Automatic compaction is on.",
+      "scenario": "large-grep",
+      "input": "Search src for TODO(migrate) and list the file names that carry it.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "reject_once",
+      "runs": 2,
+      "minPassRate": 1,
+      "files": {
+        "src/mod00.ts": "export const helper0_0 = () => 0;\nexport const helper0_1 = () => 1;\nexport const helper0_2 = () => 2;\nexport const helper0_3 = () => 3;\nexport const helper0_4 = () => 4;\nexport const helper0_5 = () => 5;\n",
+        "src/mod01.ts": "export const helper1_0 = () => 0;\nexport const helper1_1 = () => 1;\nexport const helper1_2 = () => 2;\nexport const helper1_3 = () => 3;\nexport const helper1_4 = () => 4;\nexport const helper1_5 = () => 5;\n",
+        "src/mod02.ts": "export const helper2_0 = () => 0;\nexport const helper2_1 = () => 1;\nexport const helper2_2 = () => 2;\nexport const helper2_3 = () => 3;\nexport const helper2_4 = () => 4;\nexport const helper2_5 = () => 5;\n",
+        "src/mod03.ts": "export const helper3_0 = () => 0;\nexport const helper3_1 = () => 1;\nexport const helper3_2 = () => 2;\nexport const helper3_3 = () => 3;\nexport const helper3_4 = () => 4;\nexport const helper3_5 = () => 5;\n",
+        "src/mod04.ts": "export const helper4_0 = () => 0;\nexport const helper4_1 = () => 1;\nexport const helper4_2 = () => 2;\nexport const helper4_3 = () => 3;\nexport const helper4_4 = () => 4;\nexport const helper4_5 = () => 5;\n",
+        "src/mod05.ts": "export const helper5_0 = () => 0;\nexport const helper5_1 = () => 1;\nexport const helper5_2 = () => 2;\nexport const helper5_3 = () => 3;\nexport const helper5_4 = () => 4;\nexport const helper5_5 = () => 5;\n",
+        "src/mod06.ts": "export const helper6_0 = () => 0;\nexport const helper6_1 = () => 1;\nexport const helper6_2 = () => 2;\nexport const helper6_3 = () => 3;\nexport const helper6_4 = () => 4;\nexport const helper6_5 = () => 5;\n",
+        "src/mod07.ts": "export const helper7_0 = () => 0;\nexport const helper7_1 = () => 1;\nexport const helper7_2 = () => 2;\nexport const helper7_3 = () => 3;\nexport const helper7_4 = () => 4;\nexport const helper7_5 = () => 5;\n",
+        "src/mod08.ts": "export const helper8_0 = () => 0;\nexport const helper8_1 = () => 1;\nexport const helper8_2 = () => 2;\nexport const helper8_3 = () => 3;\nexport const helper8_4 = () => 4;\nexport const helper8_5 = () => 5;\n",
+        "src/mod09.ts": "export const helper9_0 = () => 0;\nexport const helper9_1 = () => 1;\nexport const helper9_2 = () => 2;\nexport const helper9_3 = () => 3;\nexport const helper9_4 = () => 4;\nexport const helper9_5 = () => 5;\n// TODO(migrate): replace with the shared client\n",
+        "src/mod10.ts": "export const helper10_0 = () => 0;\nexport const helper10_1 = () => 1;\nexport const helper10_2 = () => 2;\nexport const helper10_3 = () => 3;\nexport const helper10_4 = () => 4;\nexport const helper10_5 = () => 5;\n",
+        "src/mod11.ts": "export const helper11_0 = () => 0;\nexport const helper11_1 = () => 1;\nexport const helper11_2 = () => 2;\nexport const helper11_3 = () => 3;\nexport const helper11_4 = () => 4;\nexport const helper11_5 = () => 5;\n",
+        "src/mod12.ts": "export const helper12_0 = () => 0;\nexport const helper12_1 = () => 1;\nexport const helper12_2 = () => 2;\nexport const helper12_3 = () => 3;\nexport const helper12_4 = () => 4;\nexport const helper12_5 = () => 5;\n",
+        "src/mod13.ts": "export const helper13_0 = () => 0;\nexport const helper13_1 = () => 1;\nexport const helper13_2 = () => 2;\nexport const helper13_3 = () => 3;\nexport const helper13_4 = () => 4;\nexport const helper13_5 = () => 5;\n",
+        "src/mod14.ts": "export const helper14_0 = () => 0;\nexport const helper14_1 = () => 1;\nexport const helper14_2 = () => 2;\nexport const helper14_3 = () => 3;\nexport const helper14_4 = () => 4;\nexport const helper14_5 = () => 5;\n",
+        "src/mod15.ts": "export const helper15_0 = () => 0;\nexport const helper15_1 = () => 1;\nexport const helper15_2 = () => 2;\nexport const helper15_3 = () => 3;\nexport const helper15_4 = () => 4;\nexport const helper15_5 = () => 5;\n",
+        "src/mod16.ts": "export const helper16_0 = () => 0;\nexport const helper16_1 = () => 1;\nexport const helper16_2 = () => 2;\nexport const helper16_3 = () => 3;\nexport const helper16_4 = () => 4;\nexport const helper16_5 = () => 5;\n",
+        "src/mod17.ts": "export const helper17_0 = () => 0;\nexport const helper17_1 = () => 1;\nexport const helper17_2 = () => 2;\nexport const helper17_3 = () => 3;\nexport const helper17_4 = () => 4;\nexport const helper17_5 = () => 5;\n",
+        "src/mod18.ts": "export const helper18_0 = () => 0;\nexport const helper18_1 = () => 1;\nexport const helper18_2 = () => 2;\nexport const helper18_3 = () => 3;\nexport const helper18_4 = () => 4;\nexport const helper18_5 = () => 5;\n",
+        "src/mod19.ts": "export const helper19_0 = () => 0;\nexport const helper19_1 = () => 1;\nexport const helper19_2 = () => 2;\nexport const helper19_3 = () => 3;\nexport const helper19_4 = () => 4;\nexport const helper19_5 = () => 5;\n",
+        "src/mod20.ts": "export const helper20_0 = () => 0;\nexport const helper20_1 = () => 1;\nexport const helper20_2 = () => 2;\nexport const helper20_3 = () => 3;\nexport const helper20_4 = () => 4;\nexport const helper20_5 = () => 5;\n",
+        "src/mod21.ts": "export const helper21_0 = () => 0;\nexport const helper21_1 = () => 1;\nexport const helper21_2 = () => 2;\nexport const helper21_3 = () => 3;\nexport const helper21_4 = () => 4;\nexport const helper21_5 = () => 5;\n",
+        "src/mod22.ts": "export const helper22_0 = () => 0;\nexport const helper22_1 = () => 1;\nexport const helper22_2 = () => 2;\nexport const helper22_3 = () => 3;\nexport const helper22_4 = () => 4;\nexport const helper22_5 = () => 5;\n",
+        "src/mod23.ts": "export const helper23_0 = () => 0;\nexport const helper23_1 = () => 1;\nexport const helper23_2 = () => 2;\nexport const helper23_3 = () => 3;\nexport const helper23_4 = () => 4;\nexport const helper23_5 = () => 5;\n// TODO(migrate): replace with the shared client\n",
+        "src/mod24.ts": "export const helper24_0 = () => 0;\nexport const helper24_1 = () => 1;\nexport const helper24_2 = () => 2;\nexport const helper24_3 = () => 3;\nexport const helper24_4 = () => 4;\nexport const helper24_5 = () => 5;\n",
+        "src/mod25.ts": "export const helper25_0 = () => 0;\nexport const helper25_1 = () => 1;\nexport const helper25_2 = () => 2;\nexport const helper25_3 = () => 3;\nexport const helper25_4 = () => 4;\nexport const helper25_5 = () => 5;\n",
+        "src/mod26.ts": "export const helper26_0 = () => 0;\nexport const helper26_1 = () => 1;\nexport const helper26_2 = () => 2;\nexport const helper26_3 = () => 3;\nexport const helper26_4 = () => 4;\nexport const helper26_5 = () => 5;\n",
+        "src/mod27.ts": "export const helper27_0 = () => 0;\nexport const helper27_1 = () => 1;\nexport const helper27_2 = () => 2;\nexport const helper27_3 = () => 3;\nexport const helper27_4 = () => 4;\nexport const helper27_5 = () => 5;\n",
+        "src/mod28.ts": "export const helper28_0 = () => 0;\nexport const helper28_1 = () => 1;\nexport const helper28_2 = () => 2;\nexport const helper28_3 = () => 3;\nexport const helper28_4 = () => 4;\nexport const helper28_5 = () => 5;\n",
+        "src/mod29.ts": "export const helper29_0 = () => 0;\nexport const helper29_1 = () => 1;\nexport const helper29_2 = () => 2;\nexport const helper29_3 = () => 3;\nexport const helper29_4 = () => 4;\nexport const helper29_5 = () => 5;\n",
+        "src/mod30.ts": "export const helper30_0 = () => 0;\nexport const helper30_1 = () => 1;\nexport const helper30_2 = () => 2;\nexport const helper30_3 = () => 3;\nexport const helper30_4 = () => 4;\nexport const helper30_5 = () => 5;\n",
+        "src/mod31.ts": "export const helper31_0 = () => 0;\nexport const helper31_1 = () => 1;\nexport const helper31_2 = () => 2;\nexport const helper31_3 = () => 3;\nexport const helper31_4 = () => 4;\nexport const helper31_5 = () => 5;\n// TODO(migrate): replace with the shared client\n",
+        "src/mod32.ts": "export const helper32_0 = () => 0;\nexport const helper32_1 = () => 1;\nexport const helper32_2 = () => 2;\nexport const helper32_3 = () => 3;\nexport const helper32_4 = () => 4;\nexport const helper32_5 = () => 5;\n",
+        "src/mod33.ts": "export const helper33_0 = () => 0;\nexport const helper33_1 = () => 1;\nexport const helper33_2 = () => 2;\nexport const helper33_3 = () => 3;\nexport const helper33_4 = () => 4;\nexport const helper33_5 = () => 5;\n",
+        "src/mod34.ts": "export const helper34_0 = () => 0;\nexport const helper34_1 = () => 1;\nexport const helper34_2 = () => 2;\nexport const helper34_3 = () => 3;\nexport const helper34_4 = () => 4;\nexport const helper34_5 = () => 5;\n",
+        "src/mod35.ts": "export const helper35_0 = () => 0;\nexport const helper35_1 = () => 1;\nexport const helper35_2 = () => 2;\nexport const helper35_3 = () => 3;\nexport const helper35_4 = () => 4;\nexport const helper35_5 = () => 5;\n",
+        "src/mod36.ts": "export const helper36_0 = () => 0;\nexport const helper36_1 = () => 1;\nexport const helper36_2 = () => 2;\nexport const helper36_3 = () => 3;\nexport const helper36_4 = () => 4;\nexport const helper36_5 = () => 5;\n",
+        "src/mod37.ts": "export const helper37_0 = () => 0;\nexport const helper37_1 = () => 1;\nexport const helper37_2 = () => 2;\nexport const helper37_3 = () => 3;\nexport const helper37_4 = () => 4;\nexport const helper37_5 = () => 5;\n",
+        "src/mod38.ts": "export const helper38_0 = () => 0;\nexport const helper38_1 = () => 1;\nexport const helper38_2 = () => 2;\nexport const helper38_3 = () => 3;\nexport const helper38_4 = () => 4;\nexport const helper38_5 = () => 5;\n",
+        "src/mod39.ts": "export const helper39_0 = () => 0;\nexport const helper39_1 = () => 1;\nexport const helper39_2 = () => 2;\nexport const helper39_3 = () => 3;\nexport const helper39_4 = () => 4;\nexport const helper39_5 = () => 5;\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 0,
+        "topics": [
+          "planning",
+          "naming"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "Grep"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "mod09"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "mod23"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "mod31"
+        }
+      ],
+      "compaction": "on"
+    },
+    {
+      "id": "large-grep-off",
+      "description": "Measures a search whose raw output is large: forty modules all match \"helper\", and only three of them carry the TODO(migrate) marker the answer needs. The same task with context.autoCompact false; the contrast for the on case.",
+      "scenario": "large-grep",
+      "input": "Search src for TODO(migrate) and list the file names that carry it.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "reject_once",
+      "runs": 2,
+      "minPassRate": 1,
+      "files": {
+        "src/mod00.ts": "export const helper0_0 = () => 0;\nexport const helper0_1 = () => 1;\nexport const helper0_2 = () => 2;\nexport const helper0_3 = () => 3;\nexport const helper0_4 = () => 4;\nexport const helper0_5 = () => 5;\n",
+        "src/mod01.ts": "export const helper1_0 = () => 0;\nexport const helper1_1 = () => 1;\nexport const helper1_2 = () => 2;\nexport const helper1_3 = () => 3;\nexport const helper1_4 = () => 4;\nexport const helper1_5 = () => 5;\n",
+        "src/mod02.ts": "export const helper2_0 = () => 0;\nexport const helper2_1 = () => 1;\nexport const helper2_2 = () => 2;\nexport const helper2_3 = () => 3;\nexport const helper2_4 = () => 4;\nexport const helper2_5 = () => 5;\n",
+        "src/mod03.ts": "export const helper3_0 = () => 0;\nexport const helper3_1 = () => 1;\nexport const helper3_2 = () => 2;\nexport const helper3_3 = () => 3;\nexport const helper3_4 = () => 4;\nexport const helper3_5 = () => 5;\n",
+        "src/mod04.ts": "export const helper4_0 = () => 0;\nexport const helper4_1 = () => 1;\nexport const helper4_2 = () => 2;\nexport const helper4_3 = () => 3;\nexport const helper4_4 = () => 4;\nexport const helper4_5 = () => 5;\n",
+        "src/mod05.ts": "export const helper5_0 = () => 0;\nexport const helper5_1 = () => 1;\nexport const helper5_2 = () => 2;\nexport const helper5_3 = () => 3;\nexport const helper5_4 = () => 4;\nexport const helper5_5 = () => 5;\n",
+        "src/mod06.ts": "export const helper6_0 = () => 0;\nexport const helper6_1 = () => 1;\nexport const helper6_2 = () => 2;\nexport const helper6_3 = () => 3;\nexport const helper6_4 = () => 4;\nexport const helper6_5 = () => 5;\n",
+        "src/mod07.ts": "export const helper7_0 = () => 0;\nexport const helper7_1 = () => 1;\nexport const helper7_2 = () => 2;\nexport const helper7_3 = () => 3;\nexport const helper7_4 = () => 4;\nexport const helper7_5 = () => 5;\n",
+        "src/mod08.ts": "export const helper8_0 = () => 0;\nexport const helper8_1 = () => 1;\nexport const helper8_2 = () => 2;\nexport const helper8_3 = () => 3;\nexport const helper8_4 = () => 4;\nexport const helper8_5 = () => 5;\n",
+        "src/mod09.ts": "export const helper9_0 = () => 0;\nexport const helper9_1 = () => 1;\nexport const helper9_2 = () => 2;\nexport const helper9_3 = () => 3;\nexport const helper9_4 = () => 4;\nexport const helper9_5 = () => 5;\n// TODO(migrate): replace with the shared client\n",
+        "src/mod10.ts": "export const helper10_0 = () => 0;\nexport const helper10_1 = () => 1;\nexport const helper10_2 = () => 2;\nexport const helper10_3 = () => 3;\nexport const helper10_4 = () => 4;\nexport const helper10_5 = () => 5;\n",
+        "src/mod11.ts": "export const helper11_0 = () => 0;\nexport const helper11_1 = () => 1;\nexport const helper11_2 = () => 2;\nexport const helper11_3 = () => 3;\nexport const helper11_4 = () => 4;\nexport const helper11_5 = () => 5;\n",
+        "src/mod12.ts": "export const helper12_0 = () => 0;\nexport const helper12_1 = () => 1;\nexport const helper12_2 = () => 2;\nexport const helper12_3 = () => 3;\nexport const helper12_4 = () => 4;\nexport const helper12_5 = () => 5;\n",
+        "src/mod13.ts": "export const helper13_0 = () => 0;\nexport const helper13_1 = () => 1;\nexport const helper13_2 = () => 2;\nexport const helper13_3 = () => 3;\nexport const helper13_4 = () => 4;\nexport const helper13_5 = () => 5;\n",
+        "src/mod14.ts": "export const helper14_0 = () => 0;\nexport const helper14_1 = () => 1;\nexport const helper14_2 = () => 2;\nexport const helper14_3 = () => 3;\nexport const helper14_4 = () => 4;\nexport const helper14_5 = () => 5;\n",
+        "src/mod15.ts": "export const helper15_0 = () => 0;\nexport const helper15_1 = () => 1;\nexport const helper15_2 = () => 2;\nexport const helper15_3 = () => 3;\nexport const helper15_4 = () => 4;\nexport const helper15_5 = () => 5;\n",
+        "src/mod16.ts": "export const helper16_0 = () => 0;\nexport const helper16_1 = () => 1;\nexport const helper16_2 = () => 2;\nexport const helper16_3 = () => 3;\nexport const helper16_4 = () => 4;\nexport const helper16_5 = () => 5;\n",
+        "src/mod17.ts": "export const helper17_0 = () => 0;\nexport const helper17_1 = () => 1;\nexport const helper17_2 = () => 2;\nexport const helper17_3 = () => 3;\nexport const helper17_4 = () => 4;\nexport const helper17_5 = () => 5;\n",
+        "src/mod18.ts": "export const helper18_0 = () => 0;\nexport const helper18_1 = () => 1;\nexport const helper18_2 = () => 2;\nexport const helper18_3 = () => 3;\nexport const helper18_4 = () => 4;\nexport const helper18_5 = () => 5;\n",
+        "src/mod19.ts": "export const helper19_0 = () => 0;\nexport const helper19_1 = () => 1;\nexport const helper19_2 = () => 2;\nexport const helper19_3 = () => 3;\nexport const helper19_4 = () => 4;\nexport const helper19_5 = () => 5;\n",
+        "src/mod20.ts": "export const helper20_0 = () => 0;\nexport const helper20_1 = () => 1;\nexport const helper20_2 = () => 2;\nexport const helper20_3 = () => 3;\nexport const helper20_4 = () => 4;\nexport const helper20_5 = () => 5;\n",
+        "src/mod21.ts": "export const helper21_0 = () => 0;\nexport const helper21_1 = () => 1;\nexport const helper21_2 = () => 2;\nexport const helper21_3 = () => 3;\nexport const helper21_4 = () => 4;\nexport const helper21_5 = () => 5;\n",
+        "src/mod22.ts": "export const helper22_0 = () => 0;\nexport const helper22_1 = () => 1;\nexport const helper22_2 = () => 2;\nexport const helper22_3 = () => 3;\nexport const helper22_4 = () => 4;\nexport const helper22_5 = () => 5;\n",
+        "src/mod23.ts": "export const helper23_0 = () => 0;\nexport const helper23_1 = () => 1;\nexport const helper23_2 = () => 2;\nexport const helper23_3 = () => 3;\nexport const helper23_4 = () => 4;\nexport const helper23_5 = () => 5;\n// TODO(migrate): replace with the shared client\n",
+        "src/mod24.ts": "export const helper24_0 = () => 0;\nexport const helper24_1 = () => 1;\nexport const helper24_2 = () => 2;\nexport const helper24_3 = () => 3;\nexport const helper24_4 = () => 4;\nexport const helper24_5 = () => 5;\n",
+        "src/mod25.ts": "export const helper25_0 = () => 0;\nexport const helper25_1 = () => 1;\nexport const helper25_2 = () => 2;\nexport const helper25_3 = () => 3;\nexport const helper25_4 = () => 4;\nexport const helper25_5 = () => 5;\n",
+        "src/mod26.ts": "export const helper26_0 = () => 0;\nexport const helper26_1 = () => 1;\nexport const helper26_2 = () => 2;\nexport const helper26_3 = () => 3;\nexport const helper26_4 = () => 4;\nexport const helper26_5 = () => 5;\n",
+        "src/mod27.ts": "export const helper27_0 = () => 0;\nexport const helper27_1 = () => 1;\nexport const helper27_2 = () => 2;\nexport const helper27_3 = () => 3;\nexport const helper27_4 = () => 4;\nexport const helper27_5 = () => 5;\n",
+        "src/mod28.ts": "export const helper28_0 = () => 0;\nexport const helper28_1 = () => 1;\nexport const helper28_2 = () => 2;\nexport const helper28_3 = () => 3;\nexport const helper28_4 = () => 4;\nexport const helper28_5 = () => 5;\n",
+        "src/mod29.ts": "export const helper29_0 = () => 0;\nexport const helper29_1 = () => 1;\nexport const helper29_2 = () => 2;\nexport const helper29_3 = () => 3;\nexport const helper29_4 = () => 4;\nexport const helper29_5 = () => 5;\n",
+        "src/mod30.ts": "export const helper30_0 = () => 0;\nexport const helper30_1 = () => 1;\nexport const helper30_2 = () => 2;\nexport const helper30_3 = () => 3;\nexport const helper30_4 = () => 4;\nexport const helper30_5 = () => 5;\n",
+        "src/mod31.ts": "export const helper31_0 = () => 0;\nexport const helper31_1 = () => 1;\nexport const helper31_2 = () => 2;\nexport const helper31_3 = () => 3;\nexport const helper31_4 = () => 4;\nexport const helper31_5 = () => 5;\n// TODO(migrate): replace with the shared client\n",
+        "src/mod32.ts": "export const helper32_0 = () => 0;\nexport const helper32_1 = () => 1;\nexport const helper32_2 = () => 2;\nexport const helper32_3 = () => 3;\nexport const helper32_4 = () => 4;\nexport const helper32_5 = () => 5;\n",
+        "src/mod33.ts": "export const helper33_0 = () => 0;\nexport const helper33_1 = () => 1;\nexport const helper33_2 = () => 2;\nexport const helper33_3 = () => 3;\nexport const helper33_4 = () => 4;\nexport const helper33_5 = () => 5;\n",
+        "src/mod34.ts": "export const helper34_0 = () => 0;\nexport const helper34_1 = () => 1;\nexport const helper34_2 = () => 2;\nexport const helper34_3 = () => 3;\nexport const helper34_4 = () => 4;\nexport const helper34_5 = () => 5;\n",
+        "src/mod35.ts": "export const helper35_0 = () => 0;\nexport const helper35_1 = () => 1;\nexport const helper35_2 = () => 2;\nexport const helper35_3 = () => 3;\nexport const helper35_4 = () => 4;\nexport const helper35_5 = () => 5;\n",
+        "src/mod36.ts": "export const helper36_0 = () => 0;\nexport const helper36_1 = () => 1;\nexport const helper36_2 = () => 2;\nexport const helper36_3 = () => 3;\nexport const helper36_4 = () => 4;\nexport const helper36_5 = () => 5;\n",
+        "src/mod37.ts": "export const helper37_0 = () => 0;\nexport const helper37_1 = () => 1;\nexport const helper37_2 = () => 2;\nexport const helper37_3 = () => 3;\nexport const helper37_4 = () => 4;\nexport const helper37_5 = () => 5;\n",
+        "src/mod38.ts": "export const helper38_0 = () => 0;\nexport const helper38_1 = () => 1;\nexport const helper38_2 = () => 2;\nexport const helper38_3 = () => 3;\nexport const helper38_4 = () => 4;\nexport const helper38_5 = () => 5;\n",
+        "src/mod39.ts": "export const helper39_0 = () => 0;\nexport const helper39_1 = () => 1;\nexport const helper39_2 = () => 2;\nexport const helper39_3 = () => 3;\nexport const helper39_4 = () => 4;\nexport const helper39_5 = () => 5;\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 0,
+        "topics": [
+          "planning",
+          "naming"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "Grep"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "mod09"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "mod23"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "mod31"
+        }
+      ],
+      "compaction": "off"
+    },
+    {
+      "id": "loop-prone-on",
+      "description": "Measures a task whose target does not exist: a model that keeps searching with the same query is repeating a call, and the run must end with the statement that the flag is not defined. Automatic compaction is on.",
+      "scenario": "loop-prone",
+      "input": "Find where the feature flag LEGACY_EXPORT_V2 is defined in this repository and tell me its default value. If it is not defined anywhere, say so.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "reject_once",
+      "runs": 2,
+      "minPassRate": 1,
+      "files": {
+        "src/flags.ts": "export const FLAGS = { newEditor: true, betaSearch: false };\n",
+        "README.md": "# Flags\n\nSee src/flags.ts.\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 0,
+        "topics": [
+          "planning",
+          "naming"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "(not (defined|found|present|declared|set)|no (definition|match|occurrence)|(does not|doesn.t|isn.t|is not|could not|couldn.t|cannot|can.t) (exist|defined|find|found)|nowhere|undefined)"
+        }
+      ],
+      "compaction": "on"
+    },
+    {
+      "id": "loop-prone-off",
+      "description": "Measures a task whose target does not exist: a model that keeps searching with the same query is repeating a call, and the run must end with the statement that the flag is not defined. The same task with context.autoCompact false; the contrast for the on case.",
+      "scenario": "loop-prone",
+      "input": "Find where the feature flag LEGACY_EXPORT_V2 is defined in this repository and tell me its default value. If it is not defined anywhere, say so.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "reject_once",
+      "runs": 2,
+      "minPassRate": 1,
+      "files": {
+        "src/flags.ts": "export const FLAGS = { newEditor: true, betaSearch: false };\n",
+        "README.md": "# Flags\n\nSee src/flags.ts.\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 0,
+        "topics": [
+          "planning",
+          "naming"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "(not (defined|found|present|declared|set)|no (definition|match|occurrence)|(does not|doesn.t|isn.t|is not|could not|couldn.t|cannot|can.t) (exist|defined|find|found)|nowhere|undefined)"
+        }
+      ],
+      "compaction": "off"
+    },
+    {
+      "id": "deferral-on",
+      "description": "Measures a task that needs one tool that twenty earlier runs of the session never used: the measured run follows twenty unmeasured noise runs, the deferral window of the usage history. Automatic compaction is on.",
+      "scenario": "deferral",
+      "input": "List the markdown files under docs and tell me how many there are.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "reject_once",
+      "runs": 1,
+      "minPassRate": 1,
+      "files": {
+        "docs/a.md": "# A\n",
+        "docs/b.md": "# B\n",
+        "docs/guide/c.md": "# C\n",
+        "src/index.ts": "export {};\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 20,
+        "topics": [
+          "planning",
+          "naming"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "Glob"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "\\b3\\b|three"
+        }
+      ],
+      "compaction": "on"
+    },
+    {
+      "id": "deferral-off",
+      "description": "Measures a task that needs one tool that twenty earlier runs of the session never used: the measured run follows twenty unmeasured noise runs, the deferral window of the usage history. The same task with context.autoCompact false; the contrast for the on case.",
+      "scenario": "deferral",
+      "input": "List the markdown files under docs and tell me how many there are.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "reject_once",
+      "runs": 1,
+      "minPassRate": 1,
+      "files": {
+        "docs/a.md": "# A\n",
+        "docs/b.md": "# B\n",
+        "docs/guide/c.md": "# C\n",
+        "src/index.ts": "export {};\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 20,
+        "topics": [
+          "planning",
+          "naming"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "Glob"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "\\b3\\b|three"
+        }
+      ],
+      "compaction": "off"
+    },
+    {
+      "id": "deferral-edit-after-read-on",
+      "description": "Measures a deferral case whose measured run needs the rarely used Edit tool after reading, following twenty unmeasured noise runs. Automatic compaction is on.",
+      "scenario": "deferral-edit-after-read",
+      "input": "Change the value of LIMIT in src/limits.ts from 10 to 25 and tell me the new line.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "reject_once",
+      "runs": 1,
+      "minPassRate": 1,
+      "files": {
+        "src/limits.ts": "export const LIMIT = 10;\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 20,
+        "topics": [
+          "planning",
+          "naming"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "Edit"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "LIMIT = 25"
+        }
+      ],
+      "compaction": "on"
+    },
+    {
+      "id": "deferral-edit-after-read-off",
+      "description": "Measures a deferral case whose measured run needs the rarely used Edit tool after reading, following twenty unmeasured noise runs. The same task with context.autoCompact false; the contrast for the on case.",
+      "scenario": "deferral-edit-after-read",
+      "input": "Change the value of LIMIT in src/limits.ts from 10 to 25 and tell me the new line.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "reject_once",
+      "runs": 1,
+      "minPassRate": 1,
+      "files": {
+        "src/limits.ts": "export const LIMIT = 10;\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 20,
+        "topics": [
+          "planning",
+          "naming"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "Edit"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "LIMIT = 25"
+        }
+      ],
+      "compaction": "off"
+    }
+  ]
+}

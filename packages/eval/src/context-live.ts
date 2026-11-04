@@ -3,6 +3,7 @@ import path from 'node:path';
 import { isRecord, lexicallyWithin } from '@momonga/foundation';
 import type { AddRuleRequest } from '@momonga/protocol';
 import type { CompactionSetting, ContextDataset, ContextMemory, ContextRule, ExpandedCase, ExpandedContextDataset, WorkspaceStep } from './context-dataset.ts';
+import type { PolicyOverlay } from './context-policy.ts';
 import { isInsideWorkspace } from './dataset.ts';
 import { EvalError, driveRun } from './runner.ts';
 import type { Driven, EvalRunApi } from './runner.ts';
@@ -25,6 +26,8 @@ export type ContextCaseHost = {
 };
 
 export type ContextRunPorts = {
+  policy: PolicyOverlay;
+  codeDigest: string;
   openCase(entry: ExpandedCase): Promise<ContextCaseHost>;
   modelAlias: string;
   deadline(caseId: string, signal: AbortSignal): Promise<void>;
@@ -48,10 +51,24 @@ export const liveBoundsFor = (dataset: ContextDataset, limits: LiveLimits): Live
   };
 };
 
-export const caseSettingsFor = (base: Readonly<Record<string, unknown>>, setting: { compaction: CompactionSetting }): Record<string, unknown> => {
-  const context = base['context'];
-  if (context !== undefined && !isRecord(context)) throw new EvalError('the base settings hold a context section that is not an object');
-  return { ...base, context: { ...context, autoCompact: setting.compaction === 'on' } };
+const POLICY_SECTIONS = ['context', 'tools', 'memory'] as const;
+
+const sectionOf = (base: Readonly<Record<string, unknown>>, name: string): Record<string, unknown> | undefined => {
+  const section = base[name];
+  if (section !== undefined && !isRecord(section)) throw new EvalError(`the base settings hold a ${name} section that is not an object`);
+  return section;
+};
+
+export const caseSettingsFor = (
+  base: Readonly<Record<string, unknown>>,
+  setting: { compaction: CompactionSetting; policy?: PolicyOverlay },
+): Record<string, unknown> => {
+  const merged: Record<string, unknown> = { ...base };
+  for (const name of POLICY_SECTIONS) {
+    const overlay = setting.policy?.[name];
+    if (overlay !== undefined) merged[name] = { ...sectionOf(base, name), ...overlay };
+  }
+  return { ...merged, context: { ...sectionOf(merged, 'context'), autoCompact: setting.compaction === 'on' } };
 };
 
 const outsideMessage = (root: string, name: string): string => `workspace step names ${JSON.stringify(name)}, which resolves outside ${root}`;
@@ -118,7 +135,9 @@ const installRules = async (entry: ExpandedCase, host: ContextCaseHost): Promise
   return Object.fromEntries([...added].map(([datasetId, productId]) => [productId, datasetId]));
 };
 
-const stoppedBeforeStart = (entry: ExpandedCase, runIndex: number, reason: string, details: Pick<Transcript, 'ruleIds' | 'datasetSeed'>, modelAlias: string): Transcript => ({
+type Measured = Omit<Transcript, 'policy' | 'codeDigest'>;
+
+const stoppedBeforeStart = (entry: ExpandedCase, runIndex: number, reason: string, details: Pick<Transcript, 'ruleIds' | 'datasetSeed'>, modelAlias: string): Measured => ({
   caseId: entry.id,
   runIndex,
   run: { id: `stopped-${entry.id}-${runIndex}`, status: 'FAILED', step: 0, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }, modelAlias },
@@ -136,7 +155,7 @@ const runCase = async (
   host: ContextCaseHost,
   ports: ContextRunPorts,
   state: CaseState,
-  emit: (transcript: Transcript) => Promise<void>,
+  emit: (transcript: Measured) => Promise<void>,
 ): Promise<void> => {
   const ruleIds = await installRules(entry, host);
   for (const memory of entry.memories ?? []) await host.seedMemory(memory);
@@ -146,7 +165,7 @@ const runCase = async (
     expiry.passed = true;
   });
   const tagged = (): Pick<Transcript, 'ruleIds' | 'datasetSeed'> => ({ ...(Object.keys(ruleIds).length === 0 ? {} : { ruleIds }), datasetSeed: expanded.seed });
-  const placeholder = (runIndex: number, reason: string): Transcript => stoppedBeforeStart(entry, runIndex, reason, tagged(), ports.modelAlias);
+  const placeholder = (runIndex: number, reason: string): Measured => stoppedBeforeStart(entry, runIndex, reason, tagged(), ports.modelAlias);
   const driveWithin = async (runId: string): Promise<{ driven: Driven; expired: boolean }> => {
     const driving = driveRun(host.api, entry, runId);
     const first = await Promise.race([driving.then(() => 'done' as const), expired.then(() => 'expired' as const)]);
@@ -217,7 +236,8 @@ const runCase = async (
 export const runContextDataset = async (expanded: ExpandedContextDataset, ports: ContextRunPorts): Promise<ContextRunResult> => {
   const transcripts: Transcript[] = [];
   const state: CaseState = { spent: 0 };
-  const emit = async (transcript: Transcript): Promise<void> => {
+  const emit = async (measured: Measured): Promise<void> => {
+    const transcript: Transcript = { ...measured, policy: ports.policy, codeDigest: ports.codeDigest };
     transcripts.push(transcript);
     if (ports.onTranscript !== undefined) await ports.onTranscript(transcript);
   };

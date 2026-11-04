@@ -5,6 +5,8 @@ import { escapeTerminalLine } from '@momonga/protocol';
 import { clusterBootstrap } from './bootstrap.ts';
 import type { Cluster } from './bootstrap.ts';
 import { COMPACTION_SETTINGS, expandContextDataset } from './context-dataset.ts';
+import { POLICY_OVERLAY_SCHEMA } from './context-policy.ts';
+import type { PolicyOverlay } from './context-policy.ts';
 import type { CompactionSetting, ContextDataset, ExpandedCase } from './context-dataset.ts';
 import { compactionFactsOf, governanceCountsOf, lossSignalsOf, recalledOf, retrievalOf } from './context-metrics.ts';
 import type { CompactionFacts, GovernanceCounts, Recalled, Retrieval } from './context-metrics.ts';
@@ -91,6 +93,8 @@ export type ContextReport = {
   datasetSeed: number;
   model: ContextModel;
   modelAliases: string[];
+  policy: PolicyOverlay;
+  codeDigest: string;
   metrics: ContextMetrics;
   meaningless: ModelDependentMetric[];
   unclassifiedCompactions: number;
@@ -261,6 +265,16 @@ export type BuildContextReportInput = {
   datasetSeed?: number;
 };
 
+const identityOf = (transcripts: readonly Transcript[]): { policy: PolicyOverlay; codeDigest: string } => {
+  const [first] = transcripts;
+  if (first === undefined) throw new EvalError('the report has no transcript to take the policy and the code digest from');
+  const policies = new Set(transcripts.map((transcript) => canonicalJson(transcript.policy)));
+  if (policies.size > 1) throw new EvalError('the transcripts record different policy overlays, so they do not measure one run configuration');
+  const digests = new Set(transcripts.map((transcript) => transcript.codeDigest));
+  if (digests.size > 1) throw new EvalError(`the transcripts record different codeDigest values (${[...digests].join(', ')}), so they were not produced by one build`);
+  return { policy: first.policy, codeDigest: first.codeDigest };
+};
+
 export const buildContextReport = (input: BuildContextReportInput): ContextReport => {
   const datasetSeed = input.datasetSeed ?? DEFAULT_DATASET_SEED;
   const expanded = expandContextDataset(input.dataset, datasetSeed);
@@ -272,6 +286,7 @@ export const buildContextReport = (input: BuildContextReportInput): ContextRepor
   const cases = measured.map(({ entry, measures }) => caseReportOf(entry, measures));
   const measures = measured.flatMap((item) => item.measures);
   const transcripts = measured.flatMap((item) => item.transcripts);
+  const identity = identityOf(transcripts);
   return {
     format: CONTEXT_REPORT_FORMAT,
     dataset: input.dataset.name,
@@ -279,6 +294,8 @@ export const buildContextReport = (input: BuildContextReportInput): ContextRepor
     datasetSeed,
     model: input.model,
     modelAliases: [...new Set(measures.flatMap((measure) => (measure.modelAlias === undefined ? [] : [measure.modelAlias])))].sort(),
+    policy: identity.policy,
+    codeDigest: identity.codeDigest,
     metrics: metricsOf(cases, measured, input.seed),
     meaningless: input.model === 'fake' ? [...MODEL_DEPENDENT_METRICS] : [],
     unclassifiedCompactions: total(measures, (measure) => measure.facts.unclassified),
@@ -403,6 +420,8 @@ const caseTokensSchema = closed(
   ['calls', 'unsettledReflections'],
 );
 
+const { $schema: _policyDialect, ...policySchema } = POLICY_OVERLAY_SCHEMA;
+
 const CONTEXT_REPORT_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
   ...closed(
@@ -413,6 +432,8 @@ const CONTEXT_REPORT_SCHEMA = {
       datasetSeed: { type: 'integer', minimum: 0, maximum: MAX_DATASET_SEED },
       model: { enum: [...CONTEXT_MODELS] },
       modelAliases: { type: 'array', items: { type: 'string', minLength: 1 } },
+      policy: policySchema,
+      codeDigest: { type: 'string', pattern: '^[0-9a-f]{64}$' },
       metrics: closed(
         {
           continuationRate: proportionSchema,
@@ -475,6 +496,8 @@ const CONTEXT_REPORT_SCHEMA = {
       'datasetSeed',
       'model',
       'modelAliases',
+      'policy',
+      'codeDigest',
       'metrics',
       'meaningless',
       'unclassifiedCompactions',

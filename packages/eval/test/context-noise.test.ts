@@ -1,3 +1,4 @@
+import { RECORDED_IDENTITY } from './fixtures.ts';
 import { describe, expect, it } from 'vitest';
 import {
   CONTEXT_DATASET_FORMAT,
@@ -66,6 +67,7 @@ const host = (
 };
 
 const ports = (open: () => Promise<ContextCaseHost>, overrides: Partial<Parameters<typeof runContextDataset>[1]> = {}) => ({
+  ...RECORDED_IDENTITY,
   openCase: open,
   modelAlias: 'gamma',
   deadline: (_caseId: string, signal: AbortSignal) =>
@@ -183,6 +185,7 @@ describe('a stopped run in a replay', () => {
     run: { id: `stopped-${caseId}`, status: 'FAILED', step: 0, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } },
     events: [],
     children: [],
+    ...RECORDED_IDENTITY,
     stopped: 'the case deadline passed',
   });
 

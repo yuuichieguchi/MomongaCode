@@ -55,6 +55,7 @@ describe('anthropic target', () => {
         stopSequences: false,
         imageInput: false,
         parallelToolCalls: true,
+        promptCache: { kind: 'breakpoints', maxBreakpoints: 4 },
         schemaDialect: 'json-schema-2020-12',
         tokenCounting: 'exact',
         usageReported: true,

@@ -37,7 +37,14 @@ export const isReasoningEffort = (value: unknown): value is ReasoningEffort => R
 export const reasoningEffortToSend = (requested: ReasoningEffort, lowest: ReasoningEffort): ReasoningEffort =>
   REASONING_EFFORTS.indexOf(requested) >= REASONING_EFFORTS.indexOf(lowest) ? requested : lowest;
 
+export type PromptCacheCapability =
+  | { kind: 'breakpoints'; maxBreakpoints: number }
+  | { kind: 'key' }
+  | { kind: 'automatic' }
+  | { kind: 'none' };
+
 export type CapabilitiesCore = {
+  promptCache?: PromptCacheCapability;
   reasoning?: ReasoningCapability;
   contextWindow: number;
   maxOutputTokens: number;

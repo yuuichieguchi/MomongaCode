@@ -18,6 +18,7 @@ describe('protocol capability types', () => {
   it('defines Capabilities', () => {
     expectTypeOf<Capabilities>().toEqualTypeOf<
       {
+        promptCache?: { kind: 'breakpoints'; maxBreakpoints: number } | { kind: 'key' } | { kind: 'automatic' } | { kind: 'none' };
         contextWindow: number;
         maxOutputTokens: number;
         toolCalling: ToolCallingMode;

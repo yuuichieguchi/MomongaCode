@@ -15,6 +15,7 @@ export type TargetRuntime = {
   provider: string;
   model: string;
   billing: TargetBilling;
+  counter: string;
   adapter: GuardedAdapter;
   breaker: CircuitBreaker;
   gate: AdmissionGate;
@@ -106,6 +107,7 @@ export const createRouter = (options: RouterOptions): Router => {
       provider: target.provider,
       model: target.model,
       billing: target.billing,
+      counter: target.counter,
       adapter: guardAdapter(requireEntry(adapters, name, 'adapter'), options.redactor),
       breaker: new CircuitBreaker({ failureThreshold: config.breaker.failureThreshold, openMs: config.breaker.openMs, clock }),
       gate: createAdmissionGate({

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ContextOverflowError, PinnedBoundError, budgetFor, buildContext, createTokenMeter, maxInputFor, measurePinned } from '@momonga/context';
 import type { BuildContextPorts, TokenMeter } from '@momonga/context';
-import { ESTIMATED_ERROR_SHAPE, countReplyOf, errorBoundOfShape, summaryItemTokensFor } from '@momonga/protocol';
+import { ESTIMATED_ERROR_SHAPE, countReplyOf, errorBoundOfShape, marginFloorFor, summaryItemTokensFor } from '@momonga/protocol';
 import type { Capabilities, ErrorShape, InputItem } from '@momonga/protocol';
 import {
   MODEL,
@@ -33,13 +33,13 @@ const argsSteps = (chars: readonly number[]): HistoryItem[] =>
 
 const portsWith = (meter: TokenMeter): BuildContextPorts => ({ meter, blobs: fakeBlobs(), instructions: fakeReader() });
 
-const meterWithObservedError = async (capabilities: Capabilities, counter: FakeCounter, relativeError: number): Promise<TokenMeter> => {
+const meterWithObservedMiss = async (capabilities: Capabilities, counter: FakeCounter, relativeError: number, shapeBound = 0): Promise<TokenMeter> => {
   const meter = createTokenMeter({ counter, model: MODEL, capabilities });
   const unrelated: InputItem = { type: 'message', role: 'user', content: 'u'.repeat(368) };
   const counted = await meter.count({ input: [unrelated], tools: [] });
   expect(counted.inputTokens).toBe(104);
-  meter.observe({ inputDigest: counted.inputDigest, inputTokens: Math.round(104 * (1 + relativeError)) });
-  expect(meter.relativeError()).toBe(relativeError);
+  const observed = meter.observe({ inputDigest: counted.inputDigest, inputTokens: Math.round(104 * (1 + relativeError)) });
+  expect(observed.miss).toBe(Math.max(0, Math.round(104 * relativeError) - shapeBound));
   return meter;
 };
 
@@ -48,7 +48,7 @@ describe('no ceiling drift between meters', () => {
     const history = argsSteps([2799, 2799, 2799, 2799, 2799, 2798]);
     const input = inputFor(W8192, { sources: sourcesWith({ history }), level: 0 });
     const fresh = createTokenMeter({ counter: fakeCounter(0), model: MODEL, capabilities: W8192 });
-    const skewed = await meterWithObservedError(W8192, fakeCounter(0), 0.5);
+    const skewed = await meterWithObservedMiss(W8192, fakeCounter(0), 0.5);
 
     const freshPinned = await measurePinned(input, portsWith(fresh));
     const skewedPinned = await measurePinned(input, portsWith(skewed));
@@ -69,7 +69,7 @@ describe('no ceiling drift between meters', () => {
     const history = argsSteps([3099, 3099, 3099, 3099, 3099, 3098]);
     const input = inputFor(W8192, { sources: sourcesWith({ history }), level: 0 });
     const fresh = createTokenMeter({ counter: fakeCounter(0), model: MODEL, capabilities: W8192 });
-    const skewed = await meterWithObservedError(W8192, fakeCounter(0), 0.5);
+    const skewed = await meterWithObservedMiss(W8192, fakeCounter(0), 0.5);
 
     const built = await buildContext(input, portsWith(fresh));
     const error = await overflowOf(input, portsWith(skewed));
@@ -77,7 +77,7 @@ describe('no ceiling drift between meters', () => {
     expect(built.inputTokens).toBe(4928);
     expect(error.inputTokens).toBe(4928);
     expect(error.ceiling).toBe(5387);
-    expect(error.inputBudget).toBe(7004 - 2464);
+    expect(error.inputBudget).toBe(7004 - (2464 - marginFloorFor(8192)));
   });
 });
 
@@ -86,7 +86,7 @@ describe('forced deficit against the ceiling and the live bound', () => {
     { label: 'region closes only the live deficit', chars: [2299, 2299, 4971, 4971, 4971, 4970], closes: false },
     { label: 'region closes the deficit against the ceiling', chars: [3499, 3499, 4371, 4371, 4371, 4370], closes: true },
   ])('measures against the ceiling when the live bound is looser: $label', async ({ chars, closes }) => {
-    const meter = createTokenMeter({ counter: fakeCounter(0), model: MODEL, capabilities: W8192 });
+    const meter = createTokenMeter({ counter: ratioCounter(0.1), model: MODEL, capabilities: W8192 });
     const error = await overflowOf(inputFor(W8192, { sources: sourcesWith({ history: argsSteps(chars) }), level: 0 }), portsWith(meter));
 
     expect(error.inputTokens).toBe(6400);
@@ -102,20 +102,21 @@ describe('forced deficit against the ceiling and the live bound', () => {
   });
 
   it.for([
-    { label: 'region frees less than the live deficit', chars: [1699, 1699, 3871, 3871, 3871, 3870], closes: false },
-    { label: 'region closes the live deficit', chars: [2499, 2499, 3471, 3471, 3471, 3470], closes: true },
-  ])('measures against the live bound when the observed error exceeds the sizing ratio: $label', async ({ chars, closes }) => {
-    const meter = await meterWithObservedError(W8192, fakeCounter(0), 0.5);
+    { label: 'region frees less than the live deficit', chars: [1099, 1099, 4171, 4171, 4171, 4170], closes: false },
+    { label: 'region closes the live deficit', chars: [1699, 1699, 3871, 3871, 3871, 3870], closes: true },
+  ])('measures against the live bound when the observed excess exceeds the sizing ratio: $label', async ({ chars, closes }) => {
+    const floor = marginFloorFor(8192);
+    const meter = await meterWithObservedMiss(W8192, fakeCounter(0), 0.5);
     const error = await overflowOf(inputFor(W8192, { sources: sourcesWith({ history: argsSteps(chars) }), level: 0 }), portsWith(meter));
 
     expect(error.inputTokens).toBe(5000);
-    expect(error.inputBudget).toBe(7004 - 2500);
+    expect(error.inputBudget).toBe(7004 - (2500 - floor));
     if (closes) {
       expect(error.compaction?.throughSeq).toBe(4);
     } else {
       expect(error.compaction).toBeUndefined();
       expect(error.compactionBlockedBy?.reason).toBe('deficit_not_closed');
-      expect(error.compactionBlockedBy?.message).toMatch(/, but 331 are needed$/);
+      expect(error.compactionBlockedBy?.message).toMatch(/, but 222 are needed$/);
     }
   });
 });
@@ -150,14 +151,14 @@ describe('forced deficit with the gateway bound max(1, ceil(0.3 x tokens))', () 
     const meter = createTokenMeter({ counter, model: MODEL, capabilities: W8192 });
     const counted = await meter.count({ input: [{ type: 'message', role: 'user', content: 'x' }], tools: [] });
 
-    expect(counted.errorBound).toBe(1815);
-    expect(counted.errorBoundAt(6049)).toBe(1815);
-    expect(counted.errorBoundAt(5387)).toBe(1617);
-    expect(counted.errorBoundAt(0)).toBe(1);
-    expect(maxInputFor({ ceiling: 5387, inputBudget: budgetFor(W8192, 0).I, errorBoundAt: counted.errorBoundAt })).toBe(5387);
+    expect(counted.underAt(6049)).toBe(1815);
+    expect(counted.freshUnderAt(6049)).toBe(1815);
+    expect(counted.freshUnderAt(5387)).toBe(1617);
+    expect(counted.freshUnderAt(0)).toBe(0);
+    expect(maxInputFor({ ceiling: 5387, inputBudget: budgetFor(W8192, 0).I, errorBoundAt: counted.freshUnderAt })).toBe(5387);
   });
 
-  it('evaluates a suffix count at the bound of its estimated part, which grows above the observed prefix', async () => {
+  it('evaluates a suffix count at the bound of its uncounted part, which grows above the known part', async () => {
     const meter = createTokenMeter({ counter: gatewayCounter(), model: MODEL, capabilities: W8192 });
     const head: InputItem = { type: 'message', role: 'user', content: 'h'.repeat(16000) };
     const tail: InputItem = { type: 'message', role: 'user', content: 't'.repeat(400) };
@@ -165,12 +166,12 @@ describe('forced deficit with the gateway bound max(1, ceil(0.3 x tokens))', () 
     meter.observe({ inputDigest: observed.inputDigest, inputTokens: observed.inputTokens });
     const counted = await meter.count({ input: [head, tail], tools: [] });
     const part = (tokens: number): number => Math.max(0, tokens - observed.inputTokens);
-    const bound = (tokens: number): number => Math.max(Math.ceil(0.1 * tokens), errorBoundOfShape(ESTIMATED_ERROR_SHAPE, part(tokens)));
+    const bound = (tokens: number): number => (part(tokens) === 0 ? 0 : errorBoundOfShape(ESTIMATED_ERROR_SHAPE, part(tokens)));
 
-    expect(counted.errorBound).toBe(bound(counted.inputTokens));
-    expect(counted.errorBoundAt(counted.inputTokens)).toBe(counted.errorBound);
-    expect(counted.errorBoundAt(3000)).toBe(bound(3000));
-    expect(counted.errorBoundAt(6000)).toBe(bound(6000));
+    expect(counted.known).toBe(observed.inputTokens);
+    expect(counted.underAt(counted.inputTokens)).toBe(bound(counted.inputTokens));
+    expect(counted.underAt(3000)).toBe(bound(3000));
+    expect(counted.underAt(6000)).toBe(bound(6000));
   });
 
   it('compacts a region that closes the excess over the ceiling although it frees less than T + bound(T) - I', async () => {
@@ -186,18 +187,24 @@ describe('forced deficit with the gateway bound max(1, ceil(0.3 x tokens))', () 
     expect(error.compaction?.throughSeq).toBe(4);
   });
 
-  it('lets an observed error above 0.3 decide, with a deficit above the excess over the ceiling', async () => {
-    const meter = await meterWithObservedError(W8192, ratioCounter(0.3), 0.5);
+  it('adds the observed excess to the shape of the counter, with a deficit above the excess over the ceiling', async () => {
+    const floor = marginFloorFor(8192);
+    const shapeBound = Math.ceil(0.3 * 104);
+    const meter = await meterWithObservedMiss(W8192, ratioCounter(0.3), 0.5, shapeBound);
+    const miss = Math.round(104 * 0.5) - shapeBound;
+    const bound = (tokens: number): number => Math.ceil(0.3 * tokens) + Math.max(0, Math.ceil(miss * Math.max(1, tokens / 104)) - floor);
+    const input = budgetFor(W8192, 0).I;
+    const largest = Array.from({ length: 5388 }, (_, tokens) => tokens).filter((tokens) => tokens + bound(tokens) <= input).at(-1) as number;
     const error = await overflowOf(
-      inputFor(W8192, { sources: sourcesWith({ history: argsSteps([1699, 1699, 3871, 3871, 3871, 3870]) }), level: 0 }),
+      inputFor(W8192, { sources: sourcesWith({ history: argsSteps([1099, 1099, 4171, 4171, 4171, 4170]) }), level: 0 }),
       portsWith(meter),
     );
 
     expect(error.inputTokens).toBe(5000);
     expect(error.ceiling).toBe(5387);
-    expect(error.inputBudget).toBe(7004 - 2500);
+    expect(error.inputBudget).toBe(input - bound(5000));
     expect(error.compactionBlockedBy?.reason).toBe('deficit_not_closed');
-    expect(error.compactionBlockedBy?.message).toMatch(/, but 331 are needed$/);
+    expect(error.compactionBlockedBy?.message).toMatch(new RegExp(`, but ${5000 - largest} are needed$`));
   });
 });
 
@@ -241,16 +248,22 @@ describe('maxInputFor over random bounds', () => {
 
 describe('a counter bound that leaves no room for the pinned context', () => {
   const inputBudget = budgetFor(W8192, 0).I;
-  const boundFailureOf = async (historyShape: ErrorShape): Promise<unknown> => {
-    const counter = shapeCounter((request) => (Array.isArray(request.input) && request.input.length > 2 ? historyShape : ESTIMATED_ERROR_SHAPE));
-    const meter = createTokenMeter({ counter, model: MODEL, capabilities: W8192 });
+  const boundFailureOf = async (historyBound: number): Promise<unknown> => {
+    const inner = createTokenMeter({ counter: shapeCounter(() => ESTIMATED_ERROR_SHAPE), model: MODEL, capabilities: W8192 });
+    const meter: TokenMeter = {
+      ...inner,
+      count: async (request) => {
+        const counted = await inner.count(request);
+        return request.input.length > 2 ? { ...counted, underAt: () => historyBound, freshUnderAt: () => historyBound } : counted;
+      },
+    };
     return buildContext(inputFor(W8192, { sources: sourcesWith({ history: argsSteps([400, 400, 400, 400, 400, 400]) }), level: 0 }), portsWith(meter)).catch(
       (caught: unknown) => caught,
     );
   };
 
   it('fails before planning a compaction when even an empty input exceeds the budget with its bound', async () => {
-    const error = await boundFailureOf({ ratio: 0.3, minimum: inputBudget + 1 });
+    const error = await boundFailureOf(inputBudget + 1);
 
     expect(error).toBeInstanceOf(PinnedBoundError);
     expect(error).not.toBeInstanceOf(ContextOverflowError);
@@ -265,7 +278,7 @@ describe('a counter bound that leaves no room for the pinned context', () => {
   });
 
   it('fails the same way when the largest size that fits with its bound is below the pinned tokens', async () => {
-    const error = await boundFailureOf({ ratio: 0, minimum: inputBudget - 10 });
+    const error = await boundFailureOf(inputBudget - 10);
 
     expect(error).toBeInstanceOf(PinnedBoundError);
     const failure = error as PinnedBoundError;
@@ -291,7 +304,7 @@ describe('accepted counts stay within I with the meter\'s own bound', () => {
     expect(first.level).toBe(1);
     expect(first.built.inputTokens).toBe(952);
     const firstCount = await meter.count({ input: first.built.input, tools: first.built.tools });
-    expect(first.built.inputTokens + firstCount.errorBound).toBeLessThanOrEqual(I);
+    expect(first.built.inputTokens + firstCount.underAt(firstCount.inputTokens)).toBeLessThanOrEqual(I);
 
     meter.observe({ inputDigest: first.built.inputDigest, inputTokens: first.built.inputTokens });
     const handles = new Map(first.built.evictions.map((eviction) => [eviction.callId, eviction.handle]));
@@ -304,12 +317,12 @@ describe('accepted counts stay within I with the meter\'s own bound', () => {
       ports,
     );
     const secondCount = await meter.count({ input: second.built.input, tools: second.built.tools });
-    expect(second.built.inputTokens + secondCount.errorBound).toBeLessThanOrEqual(I);
+    expect(second.built.inputTokens + secondCount.underAt(secondCount.inputTokens)).toBeLessThanOrEqual(I);
   });
 });
 
 describe('meter counts across in-turn builds', () => {
-  it('counts an appended step with one suffix count after an eviction batch and an unchanged rebuild with none', async () => {
+  it('counts an appended step after an eviction batch and an unchanged rebuild with no counter call', async () => {
     const capabilities = capabilitiesFor(4000);
     const counter = fakeCounter(0);
     const meter = createTokenMeter({ counter, model: MODEL, capabilities });
@@ -333,7 +346,7 @@ describe('meter counts across in-turn builds', () => {
     const before = wholeCounts();
     const second = await buildContext(appendedInput, ports);
     expect(second.evictions).toEqual([]);
-    expect(wholeCounts() - before).toBe(1);
+    expect(wholeCounts() - before).toBe(5);
 
     const unchanged = wholeCounts();
     const third = await buildContext(appendedInput, ports);

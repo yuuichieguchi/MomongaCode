@@ -149,6 +149,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
         targets: [...(options.targets ?? ['primary'])],
         capabilities: capabilitiesOf({ contextWindow: options.windows?.[id] ?? options.contextWindow ?? 8192 }),
         targetCapabilities: Object.fromEntries((options.targets ?? ['primary']).map((target) => [target, capabilitiesOf({ contextWindow: options.windows?.[id] ?? options.contextWindow ?? 8192 })])),
+        targetCounters: Object.fromEntries((options.targets ?? ['primary']).map((target) => [target, `counter of ${target}`])),
       })),
     setModel: async (modelAlias: string) => {
       record(`model:${modelAlias}`);
@@ -230,7 +231,14 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       if (options.modelPending !== undefined) await options.modelPending;
       const capabilities = capabilitiesOf({ contextWindow: options.windows?.[session.modelAlias] ?? options.contextWindow ?? 8192, ...(options.imageInput === true ? { imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } } : {}) });
       const targets = [...(options.targets ?? ['primary'])];
-      return { id: session.modelAlias, object: 'model', targets, capabilities, targetCapabilities: Object.fromEntries(targets.map((target) => [target, capabilities])) };
+      return {
+        id: session.modelAlias,
+        object: 'model',
+        targets,
+        capabilities,
+        targetCapabilities: Object.fromEntries(targets.map((target) => [target, capabilities])),
+        targetCounters: Object.fromEntries(targets.map((target) => [target, `counter of ${target}`])),
+      };
     },
     startupNotices: async () => [...(options.startupNotices ?? []), ...(options.skillWarnings ?? [])],
     readImage: async (file) => {

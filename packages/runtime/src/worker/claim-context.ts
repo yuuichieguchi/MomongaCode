@@ -1,5 +1,5 @@
 import type { ModelRoles } from '@momonga/config';
-import type { TokenMeter } from '@momonga/context';
+import type { Calibration, TokenMeter } from '@momonga/context';
 import type { Capabilities, FunctionTool, RunEventPayload } from '@momonga/protocol';
 import type { SkillSet } from '@momonga/skills';
 import type { Claim, Run, StatusPatch, WaitTargets } from '@momonga/store';
@@ -8,6 +8,7 @@ import type { MemorySet, ToolEnv, TraceSpan } from '../ports.ts';
 import type { ClaimControl } from './claim-control.ts';
 import type { Journal } from './journal.ts';
 import type { RunLimits } from './limits.ts';
+import type { TokenPolicy } from './token-pin.ts';
 import type { WorkerOptions } from './types.ts';
 
 export type Flow = 'continue' | 'done';
@@ -44,11 +45,14 @@ export type ClaimContext = {
   terminals: Terminals;
   agentSpan: TraceSpan;
   meter: TokenMeter;
-  targetFacts(target: string): Promise<{ meter: TokenMeter; capabilities: Capabilities }>;
+  counter: string;
+  calibration: Calibration;
+  targetFacts(target: string): Promise<{ meter: TokenMeter; capabilities: Capabilities; counter: string }>;
   pinnedDigest: { value: string | undefined };
   memory: RunMemory;
   verificationCommands: readonly string[];
   autoCompact: boolean;
+  token: TokenPolicy;
 };
 
 export type RunMemory = { streak: number; interruptions: number; deadlineAt: number };

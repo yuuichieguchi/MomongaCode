@@ -59,6 +59,7 @@ export const createSettingsComposition = ({ home, cache, store }: SettingsCompos
     verification: async (session) => (await loadSessionSettings(session.cwd, takeUserSnapshot())).settings.verification,
     memory: async (target) => (await loadSessionSettings(target.cwd, takeUserSnapshot())).settings.memory,
     context: async (session) => (await loadSessionSettings(session.cwd, takeUserSnapshot())).settings.context,
+    tools: async (session) => (await loadSessionSettings(session.cwd, takeUserSnapshot())).settings.tools,
     autoModeClassifier: () => takeUserSnapshot().settings.autoMode?.classifier,
     modelRoles: () => takeUserSnapshot().settings.models.roles,
     appendRule: (session, { effect, rule }) => appendPermissionRule({ ports: systemFileLockPorts, home, projectDir: session.cwd, rule, effect }),

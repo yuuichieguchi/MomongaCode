@@ -25,6 +25,7 @@ import type {
   InputItem,
   MessageItem,
   MomongaEventName,
+  MomongaModelEntry,
   MomongaResponseExtension,
   ReasoningItem,
   ResponseResource,
@@ -142,6 +143,7 @@ describe('Open Responses types conform to the vendored component schemas', () =>
     const extension: MomongaResponseExtension = {
       alias: 'fast',
       target: 'secondary',
+      counter: 'c'.repeat(64),
       attempts: 3,
       fallbackFrom: ['primary'],
       usageSource: 'reported',
@@ -153,6 +155,9 @@ describe('Open Responses types conform to the vendored component schemas', () =>
     expectValid('ResponseResource', resource);
     expectTypeOf<ResponseResource['momonga']>().toEqualTypeOf<MomongaResponseExtension | undefined>();
     expectTypeOf<MomongaResponseExtension['usageSource']>().toEqualTypeOf<'reported' | 'estimated'>();
+    expectTypeOf<MomongaResponseExtension['counter']>().toEqualTypeOf<string>();
+    expectTypeOf<MomongaModelEntry['targets']>().toEqualTypeOf<string[]>();
+    expectTypeOf<MomongaModelEntry['targetCounters']>().toEqualTypeOf<Record<string, string>>();
   });
 
   it('rejects a ResponseResource missing required fields so the check is not vacuous', () => {

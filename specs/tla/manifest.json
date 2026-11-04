@@ -13,6 +13,20 @@
     { "config": "RunRecovery.fenceOnly", "role": "evidence", "expect": { "violates": "AtMostOnceEffect", "exitCode": 12 }, "args": [], "tier": "every-run", "distinctStates": 1040252, "measuredSeconds": 29.5, "budgetSeconds": 59 },
     { "config": "RunRecovery.unlocked", "role": "evidence", "expect": { "violates": "AtMostOnceEffect", "exitCode": 12 }, "args": [], "tier": "every-run", "distinctStates": 1041366, "measuredSeconds": 18.2, "budgetSeconds": 37 },
     { "config": "RunRecovery.reapOnly", "role": "evidence", "expect": { "violates": "AtMostOnceEffect", "exitCode": 12 }, "args": [], "tier": "every-run", "distinctStates": 1126730, "measuredSeconds": 19.3, "budgetSeconds": 39 },
-    { "config": "RunRecovery.noReap", "role": "evidence", "expect": { "violates": "ReconcileSeesStoppedEffect", "exitCode": 12 }, "args": [], "tier": "every-run", "distinctStates": 979559, "measuredSeconds": 17.1, "budgetSeconds": 35 }
+    { "config": "RunRecovery.noReap", "role": "evidence", "expect": { "violates": "ReconcileSeesStoppedEffect", "exitCode": 12 }, "args": [], "tier": "every-run", "distinctStates": 979559, "measuredSeconds": 17.1, "budgetSeconds": 35 },
+    { "config": "RequestPrefix", "role": "check", "expect": "holds", "args": [], "tier": "every-run", "distinctStates": 440416, "measuredSeconds": 5.2, "budgetSeconds": 11 },
+    { "config": "RequestPrefix.noModeYield", "role": "check", "expect": "holds", "args": [], "tier": "every-run", "distinctStates": 441168, "measuredSeconds": 5.3, "budgetSeconds": 11 },
+    { "config": "RequestPrefix.parallel", "role": "check", "expect": "holds", "args": [], "tier": "every-run", "distinctStates": 357010, "measuredSeconds": 6.0, "budgetSeconds": 12 },
+    { "config": "RequestPrefix.offerPerBuild", "role": "evidence", "expect": { "violates": "PrefixStable", "exitCode": 13 }, "args": [], "tier": "every-run", "distinctStates": 174, "measuredSeconds": 1.2, "budgetSeconds": 3 },
+    { "config": "RequestPrefix.govFirst", "role": "evidence", "expect": { "violates": "PrefixStable", "exitCode": 13 }, "args": [], "tier": "every-run", "distinctStates": 401, "measuredSeconds": 1.2, "budgetSeconds": 3 },
+    { "config": "RequestPrefix.rerank", "role": "evidence", "expect": { "violates": "PrefixStable", "exitCode": 13 }, "args": [], "tier": "every-run", "distinctStates": 164, "measuredSeconds": 1.2, "budgetSeconds": 3 },
+    { "config": "RequestPrefix.rerenderPerBuild", "role": "evidence", "expect": { "violates": "PrefixStable", "exitCode": 13 }, "args": [], "tier": "every-run", "distinctStates": 130, "measuredSeconds": 1.3, "budgetSeconds": 3 },
+    { "config": "ModelResend", "role": "check", "expect": "holds", "args": [], "tier": "every-run", "distinctStates": 1500, "measuredSeconds": 1.8, "budgetSeconds": 4 },
+    { "config": "ModelResend.attemptLimit", "role": "check", "expect": "holds", "args": [], "tier": "every-run", "distinctStates": 838, "measuredSeconds": 1.4, "budgetSeconds": 3 },
+    { "config": "ModelResend.fixedAttempt", "role": "evidence", "expect": { "violates": "RejectedNeverRedelivered", "exitCode": 12 }, "args": [], "tier": "every-run", "distinctStates": 167, "measuredSeconds": 1.3, "budgetSeconds": 3 },
+    { "config": "ModelResend.attemptLimitReached", "role": "evidence", "expect": { "violates": "NotFailed", "exitCode": 12 }, "args": [], "tier": "every-run", "distinctStates": 154, "measuredSeconds": 1.3, "budgetSeconds": 3 },
+    { "config": "ModelResend.decisionCrash", "role": "evidence", "expect": { "violates": "DecidedRejectsNeverRedelivered", "exitCode": 12 }, "args": [], "tier": "every-run", "distinctStates": 510, "measuredSeconds": 1.3, "budgetSeconds": 3 },
+    { "config": "RequestPrefix.deep", "role": "check", "expect": "holds", "args": [], "tier": "deep", "distinctStates": 6675392, "measuredSeconds": 90, "budgetSeconds": 180 },
+    { "config": "RequestPrefix.deepParallel", "role": "check", "expect": "holds", "args": [], "tier": "deep", "distinctStates": 25117984, "measuredSeconds": 354, "budgetSeconds": 708 }
   ]
 }

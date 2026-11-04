@@ -219,6 +219,8 @@ export const reduceEvent = (transcript: Transcript, event: PublicRunEvent): Tran
       return appendEntry(transcript, { kind: 'notice', level: 'info', text: 'context compacted' });
     case 'notice':
       return appendEntry(transcript, { kind: 'notice', level: event.level, text: event.message });
+    case 'tool.loaded':
+      return appendEntry(transcript, { kind: 'info', text: `tools loaded: ${event.names.join(', ')}` });
     case 'tool.waiting':
       return { ...transcript, waiting: event.awaits.kind === 'run' ? `subagent ${event.awaits.agent}` : `job ${event.awaits.jobId}` };
     case 'run.status': {

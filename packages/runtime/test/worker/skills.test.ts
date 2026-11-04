@@ -118,7 +118,7 @@ describe('worker skills: activation', () => {
     const [activated] = env.ofType(run.id, 'skill.activated');
     expect(activated).toMatchObject({ name: 'pdf', content: completed?.output });
     expect(activated?.seq).toBe((completed?.seq ?? 0) + 1);
-    expect(env.fold(run.id).activatedSkills).toEqual([{ name: 'pdf', content: completed?.output }]);
+    expect(env.fold(run.id).activatedSkills).toEqual([{ name: 'pdf', content: completed?.output, seq: activated?.seq }]);
 
     const second = inputOf(env, 1);
     const holders = second.filter((item) => textOf(item).includes(PDF_BODY) || (item.type === 'function_call_output' && String(item.output).includes(PDF_BODY)));

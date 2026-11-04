@@ -1,7 +1,7 @@
 import { agentSystemPrompt, readAgentPin } from '@momonga/agents';
 import { permissionRulesComposerFor } from '../governance/rules.ts';
 import { signalUntil } from '../memory/deadline-signal.ts';
-import { createTokenMeter } from '@momonga/context';
+import { createTokenMeter, withCalibration } from '@momonga/context';
 import type { TokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex } from '@momonga/foundation';
 import type { Capabilities } from '@momonga/protocol';
@@ -23,9 +23,11 @@ import { readRunLimits } from './limits.ts';
 import { decideAfterResponse, responsePending, resumeInFlight, runModelStep } from './model-step.ts';
 import { guidelineOf, guidelineVersionFor } from './guideline-pin.ts';
 import { memoryShareFor } from './memory-share.ts';
+import { foldMeterFor, meterEventsOf } from './meter-journal.ts';
 import { aliasChainReaches } from './model-switch.ts';
 import { readPins } from './pins.ts';
 import { rolesFor } from './role-pin.ts';
+import { tokenPinFor, tokenPolicyOf } from './token-pin.ts';
 import type { RunPins } from './pins.ts';
 import { createSkillAdmission } from './skill-admission.ts';
 import { createTerminals } from './terminals.ts';
@@ -300,6 +302,7 @@ const drive = async (
           roles: rolesFor({ store: options.store, settings: options.settings, run }),
           ...(newMemoryShare === undefined ? {} : { memoryShare: newMemoryShare }),
           ...(newGuidelineVersion === undefined ? {} : { guidelineVersion: newGuidelineVersion }),
+          token: await tokenPinFor({ store: options.store, settings: options.settings, session, run }),
         }
       : readPins(recorded);
   journal.append([{ type: 'run.started', attempt: claim.attempt, now: clock.now(), pins: { ...pins }, mode: session.permissionMode }]);
@@ -334,7 +337,25 @@ const drive = async (
   const limits = readRunLimits(run.limits, options.defaults);
   const composeRules = await permissionRulesComposerFor(options, session);
   let measuredInlineLimit: Promise<number> | undefined;
-  const targetFacts = new Map<string, { meter: TokenMeter; capabilities: Capabilities }>();
+  const targetFacts = new Map<string, { meter: TokenMeter; capabilities: Capabilities; counter: string }>();
+  const listing = await control.recordingRaised(gateway.model(pins.modelAlias, { signal: control.signal }));
+  const counterOf = (target: string): string => {
+    const counter = listing.targetCounters[target];
+    if (counter === undefined) throw new Error(`the gateway lists no counter for the target ${target} of the model ${pins.modelAlias}`);
+    return counter;
+  };
+  const [firstTarget] = listing.targets;
+  const firstCapabilities = firstTarget === undefined ? undefined : listing.targetCapabilities[firstTarget];
+  if (firstTarget === undefined || firstCapabilities === undefined) throw new Error(`the gateway lists no target for the model ${pins.modelAlias}`);
+  const aliasCounter = counterOf(firstTarget);
+  const meterEvents = meterEventsOf(options.store, session.id);
+  const aliasMeterCapabilities = withCalibration(pins.capabilities, firstCapabilities);
+  const aliasMeter = createTokenMeter({
+    counter: { count: (request) => control.recordingRaised(gateway.countTokens(request, { signal: control.signal })) },
+    model: pins.modelAlias,
+    capabilities: aliasMeterCapabilities,
+  });
+  aliasMeter.restore(foldMeterFor(options.store, meterEvents, aliasMeterCapabilities, aliasCounter));
   const ctx: ClaimContext = {
     options,
     claim,
@@ -365,19 +386,21 @@ const drive = async (
     control,
     terminals,
     agentSpan,
-    meter: createTokenMeter({ counter: { count: (request) => control.recordingRaised(gateway.countTokens(request, { signal: control.signal })) }, model: pins.modelAlias, capabilities: pins.capabilities }),
+    meter: aliasMeter,
+    counter: aliasCounter,
+    calibration: listing.capabilities,
     targetFacts: async (target) => {
       const known = targetFacts.get(target);
       if (known !== undefined) return known;
       const capabilities = await control.recordingRaised(gateway.capabilities(pins.modelAlias, { signal: control.signal, target }));
-      const created = {
+      const meter = createTokenMeter({
+        counter: { count: (request) => control.recordingRaised(gateway.countTokens({ ...request, momonga: { ...request.momonga, target } }, { signal: control.signal })) },
+        model: pins.modelAlias,
         capabilities,
-        meter: createTokenMeter({
-          counter: { count: (request) => control.recordingRaised(gateway.countTokens({ ...request, momonga: { ...request.momonga, target } }, { signal: control.signal })) },
-          model: pins.modelAlias,
-          capabilities,
-        }),
-      };
+      });
+      const counter = counterOf(target);
+      meter.restore(foldMeterFor(options.store, meterEvents, capabilities, counter));
+      const created = { capabilities, meter, counter };
       targetFacts.set(target, created);
       return created;
     },
@@ -385,6 +408,7 @@ const drive = async (
     memory,
     verificationCommands: (await options.settings.verification(session)).commands,
     autoCompact: (await options.settings.context(session)).autoCompact,
+    token: tokenPolicyOf(pins.token),
   };
 
   const governingFailure = await governingFailureAtStart(ctx);

@@ -47,12 +47,16 @@ const compactionEvents = (caseId: string): Transcript['events'] =>
     { runId: `run-${caseId}` },
   ).map(toPublicRunEvent);
 
+const RECORDED_CODE = 'c'.repeat(64);
+
 const transcript = (caseId: string, status: 'COMPLETED' | 'FAILED' = 'COMPLETED'): Transcript => ({
   caseId,
   runIndex: 0,
   run: { id: `run-${caseId}`, status, step: 1, usage: { inputTokens: 9, outputTokens: 1, totalTokens: 10 } },
   events: caseId.endsWith('-on') ? compactionEvents(caseId) : [],
   children: [],
+  policy: {},
+  codeDigest: RECORDED_CODE,
 });
 
 const harness = (failingOn: number = 0) => {
@@ -203,7 +207,7 @@ describe('momonga eval compare', () => {
   it('judges the token terms with --gate token and prints why a term with no measure fails', async () => {
     const context = harness();
     context.stored.set('/w/a.json', await reportFile('a.json', 0, 'real'));
-    context.stored.set('/w/b.json', await reportFile('b.json', 0, 'real'));
+    context.stored.set('/w/b.json', JSON.stringify({ ...JSON.parse(await reportFile('b.json', 0, 'real')), codeDigest: 'f'.repeat(64) }));
     await run(context.program, 'eval', 'compare', 'a.json', 'b.json', '--gate', 'token');
     const text = context.stdout.join('');
     expect(text).toContain('gate: FAIL');
@@ -239,5 +243,65 @@ describe('momonga eval <dataset>', () => {
     await run(program, 'eval', 'golden.json', '--replay', 'g');
     expect(stdout.join('')).toContain('dataset golden: PASS');
     expect(completed).toEqual([0]);
+  });
+});
+
+describe('momonga eval context --settings', () => {
+  it('belongs to a live run, so a replay refuses it', async () => {
+    const { program, stored } = harness();
+    stored.set('/w/policy.json', JSON.stringify({ context: { cachePrefix: true } }));
+    await expect(run(program, 'eval', 'context', 'context.json', '--replay', 't', '--model', 'real', '--settings', 'policy.json')).rejects.toThrow(/--settings.*live run/);
+  });
+
+  it('refuses an overlay with a key outside the token design before any case runs, and names the file', async () => {
+    const { program, stored, completed } = harness();
+    stored.set('/w/bad.json', JSON.stringify({ context: { autoCompact: false } }));
+    await expect(run(program, 'eval', 'context', 'context.json', '--model', 'fake', '--alias', 'default', '--settings', 'bad.json')).rejects.toThrow(/bad\.json/);
+    expect(completed).toEqual([]);
+  });
+});
+
+describe('momonga eval compare --gate token, the policies and the code digests', () => {
+  it('takes the policy and the code digest of a replay report from its transcripts', async () => {
+    const context = harness();
+    const policy = { context: { cachePrefix: true } };
+    for (const scenario of SCENARIOS) {
+      for (const side of ['on', 'off'] as const) {
+        context.stored.set(`/w/t/${scenario}-${side}.0.transcript.jsonl`, encodeTranscript({ ...transcript(`${scenario}-${side}`), policy, codeDigest: 'e'.repeat(64) }));
+      }
+    }
+    await run(context.program, 'eval', 'context', 'context.json', '--replay', 't', '--model', 'real', '--report', 'r.json');
+    const report = JSON.parse(context.stored.get('/w/r.json') ?? '{}');
+    expect(report.policy).toEqual(policy);
+    expect(report.codeDigest).toBe('e'.repeat(64));
+  });
+
+  it('refuses a replay whose transcripts record different code digests', async () => {
+    const context = harness();
+    context.stored.set('/w/t/a-on.0.transcript.jsonl', encodeTranscript({ ...transcript('a-on'), codeDigest: 'f'.repeat(64) }));
+    await expect(run(context.program, 'eval', 'context', 'context.json', '--replay', 't', '--model', 'real')).rejects.toThrow(/codeDigest/);
+    expect(context.completed).toEqual([]);
+  });
+
+  it('refuses two reports with the same policy produced by the same code', async () => {
+    const context = harness();
+    context.stored.set('/w/a.json', await reportFile('a.json', 0, 'real'));
+    context.stored.set('/w/b.json', await reportFile('b.json', 0, 'real'));
+    await expect(run(context.program, 'eval', 'compare', 'a.json', 'b.json', '--gate', 'token')).rejects.toThrow(/identical/);
+    expect(context.completed).toEqual([]);
+  });
+
+  it('prints both policies when they differ', async () => {
+    const context = harness();
+    const baseline = JSON.parse(await reportFile('a.json', 0, 'real'));
+    const candidate = { ...JSON.parse(await reportFile('b.json', 0, 'real')), policy: { context: { cachePrefix: true } } };
+    context.stored.set('/w/a.json', JSON.stringify(baseline));
+    context.stored.set('/w/b.json', `${JSON.stringify(candidate, null, 2)}\n`);
+    await run(context.program, 'eval', 'compare', 'a.json', 'b.json', '--gate', 'token');
+    const text = context.stdout.join('');
+    expect(text).toContain('baseline policy: {}');
+    expect(text).toContain('candidate policy: {"context":{"cachePrefix":true}}');
+    expect(text).toMatch(/baseline codeDigest: [0-9a-f]{64}/);
+    expect(text).toContain(`candidate codeDigest: ${String(candidate.codeDigest)}`);
   });
 });

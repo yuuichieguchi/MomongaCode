@@ -3,7 +3,7 @@ import { DATASET_FORMAT, EvalError, runDataset } from '@momonga/eval';
 import type { EvalRunApi } from '@momonga/eval';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { approvalTranscript, callsTranscript, finalAnswerTranscript, goldenCase } from './fixtures.ts';
-import type { Transcript } from '@momonga/eval';
+import type { RecordedRun, Transcript } from '@momonga/eval';
 
 type Scripted = { sessions: string[]; runs: string[]; resolved: { approvalId: string; optionId: string }[]; cancelled: string[]; api: EvalRunApi };
 
@@ -90,7 +90,7 @@ describe('runDataset', () => {
       children: [{ runId: 'child-1', agent: 'writer', events: callsTranscript('child', [{ callId: 'w1', name: 'Write', kind: 'edit', rawInput: { file_path: '/w/.zshrc' }, decision: 'ask' }]).events }],
     };
     const scripted = scriptedApi([withChild]);
-    let recorded: Transcript | undefined;
+    let recorded: RecordedRun | undefined;
     const report = await runDataset(
       { format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'delegate', graders: [{ kind: 'permissionDecision', tool: 'Write', expected: 'ask' }] })] },
       {

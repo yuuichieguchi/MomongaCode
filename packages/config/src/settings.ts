@@ -1,7 +1,7 @@
 import type { ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
-import type { CapabilitiesCore, HooksSettings, ImageCapability, ImageTokenModel, TargetBilling, PermissionMode } from '@momonga/protocol';
+import type { CapabilitiesCore, HooksSettings, ImageCapability, ImageTokenModel, OutputFormatterName, TargetBilling, PermissionMode } from '@momonga/protocol';
 import { MCP_SERVERS_FILE_SCHEMA, MCP_SERVER_SCHEMA, MODEL_ROLES, SETTINGS_SCHEMA } from './settings-schema.ts';
 
 export type PermissionsSettings = {
@@ -192,11 +192,20 @@ export type PriceEntrySettings = {
 
 export type AutoModeSettings = { classifier?: string };
 
-export type MemorySettings = { reflection?: { enabled?: boolean; maxTokens?: number }; forgetAfterDays?: number };
+export type MemorySettings = { reflection?: { enabled?: boolean; maxTokens?: number }; forgetAfterDays?: number; repositoryFacts?: boolean };
 
 export type VerificationSettings = { commands?: string[]; manifests?: string[] };
 
-export type ContextSettings = { adaptiveBudget?: boolean; autoCompact?: boolean };
+export type ContextSettings = {
+  adaptiveBudget?: boolean;
+  autoCompact?: boolean;
+  cachePrefix?: boolean;
+  outputFormatters?: OutputFormatterName[];
+  loopGuidance?: boolean;
+  observedCapacity?: boolean;
+};
+
+export type ToolsSettings = { deferral?: boolean; conciseDescriptions?: boolean };
 
 export type Settings = {
   permissions?: PermissionsSettings;
@@ -215,6 +224,7 @@ export type Settings = {
   memory?: MemorySettings;
   verification?: VerificationSettings;
   context?: ContextSettings;
+  tools?: ToolsSettings;
 };
 
 export type HookGroups = NonNullable<HooksSettings[keyof HooksSettings]>;

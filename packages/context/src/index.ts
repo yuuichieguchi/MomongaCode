@@ -1,4 +1,4 @@
-export { MIN_ROOM_TOKENS, budgetFor, inputCeilingFor, itemCapFor, memoryBudgetFor, pinnedFloorFor } from './budget.ts';
+export { MIN_ITEM_CAP, MIN_ROOM_TOKENS, budgetFor, inputCeilingFor, itemCapFor, memoryBudgetFor, pinnedFloorFor, withCalibration } from './budget.ts';
 export { renderMemories } from './memory.ts';
 export { textOfContent, textOfItem } from './item-text.ts';
 export { checkSummary } from './summary-fidelity.ts';
@@ -12,12 +12,15 @@ export { ContextOverflowError, PinnedBoundError, PinnedOverflowError, PinnedRoom
 export { createFsInstructionReader } from './fs-instruction-reader.ts';
 export { INSTRUCTION_FILE_LIMIT_BYTES } from './instructions.ts';
 export { createTokenMeter } from './token-meter.ts';
+export { foldMeter } from './meter-fold.ts';
+export type { FoldedEvent, MeterFoldOptions, ObservedEvent } from './meter-fold.ts';
 export type {
   ActivatedSkill,
   BlobPort,
   BuildContextInput,
   BuildContextPorts,
   BuiltContext,
+  Calibration,
   CompactionBlock,
   CompactionBlockReason,
   CompactionPlan,
@@ -35,6 +38,10 @@ export type {
   LoadedGoverning,
   LoadedInstruction,
   MeterCount,
+  MeterMemory,
+  MeterMiss,
+  MeterObservation,
+  MeterReport,
   MeterRequest,
   NoticeCode,
   PinnedBreakdown,

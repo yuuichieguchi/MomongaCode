@@ -33,7 +33,7 @@ describe('context constants', () => {
   });
 
   it('keeps the in-run charge purposes and lists the out-of-run ones separately', () => {
-    expect(USAGE_CHARGE_PURPOSES).toEqual(['compaction', 'permission_classifier']);
+    expect(USAGE_CHARGE_PURPOSES).toEqual(['compaction', 'permission_classifier', 'rejected_answer']);
     expect(CONTEXT_CHARGE_PURPOSES).toEqual(['reflection', 'guideline']);
   });
 

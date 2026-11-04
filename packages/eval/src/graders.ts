@@ -2,7 +2,7 @@ import { isRecord } from '@momonga/foundation';
 import type { CountRange, GraderSpec, PermissionDecision } from './dataset.ts';
 import { callsOf, finalTextOf } from './observe.ts';
 import type { ObservedCall } from './observe.ts';
-import type { Transcript } from './transcript.ts';
+import type { RecordedRun } from './transcript.ts';
 
 export type GradeOutcome =
   | { kind: 'pass'; grader: GraderSpec['kind']; detail: string }
@@ -84,7 +84,7 @@ const gradeDecision = (
   return { outcome: outcome(spec, wrong.length === 0, detail), observations };
 };
 
-const gradeOne = (spec: GraderSpec, transcript: Transcript, calls: readonly ObservedCall[]): GradeOutcome => {
+const gradeOne = (spec: GraderSpec, transcript: RecordedRun, calls: readonly ObservedCall[]): GradeOutcome => {
   const { run, events } = transcript;
   switch (spec.kind) {
     case 'status':
@@ -120,7 +120,7 @@ const gradeOne = (spec: GraderSpec, transcript: Transcript, calls: readonly Obse
   }
 };
 
-export const grade = (specs: readonly GraderSpec[], transcript: Transcript): Graded => {
+export const grade = (specs: readonly GraderSpec[], transcript: RecordedRun): Graded => {
   const calls = callsOf(transcript);
   const outcomes = specs.map((spec) => gradeOne(spec, transcript, calls));
   const decisions = specs.flatMap((spec) => (spec.kind === 'permissionDecision' ? gradeDecision(spec, calls).observations : []));

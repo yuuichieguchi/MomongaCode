@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DATASET_FORMAT, EvalError, decodeTranscript, encodeTranscript, formatReport, proportionOf, replayDataset } from '@momonga/eval';
+import { DATASET_FORMAT, EvalError, TranscriptError, decodeTranscript, encodeTranscript, formatReport, proportionOf, replayDataset } from '@momonga/eval';
 import type { GoldenDataset, Transcript } from '@momonga/eval';
 import { approvalTranscript, callsTranscript, finalAnswerTranscript, goldenCase, toolRoundTripTranscript } from './fixtures.ts';
 
@@ -45,7 +45,7 @@ describe('transcript codec', () => {
   });
 
   it('rejects a file without a transcript header', () => {
-    expect(() => decodeTranscript('{"type":"user.message"}\n', 'bad.jsonl')).toThrow(/first line must be a momonga-transcript\/3 header/);
+    expect(() => decodeTranscript('{"type":"user.message"}\n', 'bad.jsonl')).toThrow(/first line must be a momonga-transcript\/4 header/);
   });
 
   it('refuses a version 1 transcript, which cannot say whether subagent runs were observed', () => {
@@ -58,8 +58,20 @@ describe('transcript codec', () => {
     expect(() => decodeTranscript(`${JSON.stringify(header)}\n`, 'old.jsonl')).toThrow(/old\.jsonl:1: momonga-transcript\/2 transcripts do not record the side effect of a tool call/);
   });
 
-  it('refuses a version 3 header without a children list instead of reading it as no subagents', () => {
-    const header = { format: 'momonga-transcript/3', caseId: 'c1', runIndex: 0, run: finalAnswerTranscript('c1', 0).run };
+  it('refuses a version 3 transcript, naming its format and the required one, because it records no policy and no code digest', () => {
+    const header = { format: 'momonga-transcript/3', caseId: 'c1', runIndex: 0, run: finalAnswerTranscript('c1', 0).run, children: [] };
+    expect(() => decodeTranscript(`${JSON.stringify(header)}\n`, 'old.jsonl')).toThrow(/old\.jsonl:1: momonga-transcript\/3 .*momonga-transcript\/4/);
+    expect(() => decodeTranscript(`${JSON.stringify(header)}\n`, 'old.jsonl')).toThrow(TranscriptError);
+  });
+
+  it.each(['policy', 'codeDigest'])('refuses a version 4 header without %s', (field) => {
+    const header: Record<string, unknown> = { format: 'momonga-transcript/4', caseId: 'c1', runIndex: 0, run: finalAnswerTranscript('c1', 0).run, children: [], policy: {}, codeDigest: 'c'.repeat(64) };
+    delete header[field];
+    expect(() => decodeTranscript(`${JSON.stringify(header)}\n{"end":true,"events":0,"childEvents":0}\n`, 'new.jsonl')).toThrow(new RegExp(`new\\.jsonl:1: ${field}`));
+  });
+
+  it('refuses a version 4 header without a children list instead of reading it as no subagents', () => {
+    const header = { format: 'momonga-transcript/4', caseId: 'c1', runIndex: 0, run: finalAnswerTranscript('c1', 0).run, policy: {}, codeDigest: 'c'.repeat(64) };
     expect(() => decodeTranscript(`${JSON.stringify(header)}\n`, 'new.jsonl')).toThrow(/new\.jsonl:1: children must be a list/);
   });
 });

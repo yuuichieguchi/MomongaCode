@@ -2,12 +2,15 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import { isRecord } from '@momonga/foundation';
 import { MEMORY_ORIGINS, REFLECTION_JOB_STATES, RUN_API_SCHEMAS, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
+import { validatePolicyOverlay } from './context-policy.ts';
+import type { PolicyOverlay } from './context-policy.ts';
 import type { ContextChargeView, MemoryOrigin, PublicRunEvent, ReflectionJobState, RunStatus, StopReason } from '@momonga/protocol';
 
-export const TRANSCRIPT_FORMAT = 'momonga-transcript/3';
+export const TRANSCRIPT_FORMAT = 'momonga-transcript/4';
 const RETIRED_TRANSCRIPT_FORMATS: Readonly<Record<string, string>> = {
   'momonga-transcript/1': 'subagent runs',
   'momonga-transcript/2': 'the side effect of a tool call',
+  'momonga-transcript/3': 'the policy and the code digest of the run',
 };
 
 export type TranscriptRun = {
@@ -30,6 +33,8 @@ export type Transcript = {
   run: TranscriptRun;
   events: PublicRunEvent[];
   children: TranscriptChild[];
+  policy: PolicyOverlay;
+  codeDigest: string;
   reflection?: TranscriptReflection;
   ruleIds?: Record<string, string>;
   datasetSeed?: number;
@@ -37,6 +42,8 @@ export type Transcript = {
   noiseReflectionsUnsettled?: number;
   stopped?: string;
 };
+
+export type RecordedRun = Omit<Transcript, 'policy' | 'codeDigest'>;
 
 export class TranscriptError extends Error {
   constructor(message: string) {
@@ -54,6 +61,18 @@ export const parsePublicRunEvent = (value: unknown, where: string): PublicRunEve
   throw new TranscriptError(`${where}: not a public run event${first === undefined ? '' : ` (${first.instancePath || '/'}: ${first.message ?? 'schema violation'})`}`);
 };
 
+
+const CODE_DIGEST = /^[0-9a-f]{64}$/;
+
+const policyOf = (value: unknown, where: string): PolicyOverlay => {
+  if (!validatePolicyOverlay(value)) throw new TranscriptError(`${where}: policy must be a token policy overlay`);
+  return value;
+};
+
+const codeDigestOf = (value: unknown, where: string): string => {
+  if (typeof value !== 'string' || !CODE_DIGEST.test(value)) throw new TranscriptError(`${where}: codeDigest must be a sha256 hex digest`);
+  return value;
+};
 
 const isNonNegativeInteger = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0;
 
@@ -142,6 +161,8 @@ export const encodeTranscript = (transcript: Transcript): string => {
     runIndex: transcript.runIndex,
     run: transcript.run,
     children: transcript.children.map(({ runId, agent }) => ({ runId, agent })),
+    policy: transcript.policy,
+    codeDigest: transcript.codeDigest,
     ...(transcript.reflection === undefined ? {} : { reflection: transcript.reflection }),
     ...(transcript.ruleIds === undefined ? {} : { ruleIds: transcript.ruleIds }),
     ...(transcript.datasetSeed === undefined ? {} : { datasetSeed: transcript.datasetSeed }),
@@ -186,6 +207,8 @@ export const decodeTranscript = (text: string, source: string): Transcript => {
   if (!isNonNegativeInteger(runIndex)) throw new TranscriptError(`${source}:1: runIndex must be a non-negative integer`);
   const run = runOf(header['run'], `${source}:1`);
   const children = childrenOf(header['children'], `${source}:1`);
+  const policy = policyOf(header['policy'], `${source}:1`);
+  const codeDigest = codeDigestOf(header['codeDigest'], `${source}:1`);
   const end = endRecordOf(eventLines.at(-1), source);
   const events: PublicRunEvent[] = [];
   eventLines.slice(0, -1).forEach((line, index) => {
@@ -214,6 +237,8 @@ export const decodeTranscript = (text: string, source: string): Transcript => {
     run,
     events,
     children,
+    policy,
+    codeDigest,
     ...(header['reflection'] === undefined ? {} : { reflection: reflectionOf(header['reflection'], `${source}:1`) }),
     ...liveFieldsOf(header, `${source}:1`),
   };

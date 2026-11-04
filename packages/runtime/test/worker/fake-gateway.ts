@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { canonicalJson, uuidv7 } from '@momonga/foundation';
 import { ESTIMATED_ERROR_SHAPE, EXACT_ERROR_SHAPE, countReplyOf } from '@momonga/protocol';
 import type {
@@ -7,10 +8,11 @@ import type {
   CountTokensRequest,
   CountTokensResult,
   CreateResponseBody,
+  ErrorShape,
   ItemField,
   StreamEvent,
 } from '@momonga/protocol';
-import type { GatewayCallOptions, GatewayPort } from '@momonga/runtime';
+import type { GatewayCallOptions, GatewayModel, GatewayPort } from '@momonga/runtime';
 import { fixtureCompactionContent, usageOf } from '@momonga/testkit';
 import { deferred } from './deferred.ts';
 import type { Deferred } from './deferred.ts';
@@ -91,6 +93,12 @@ const withObservedUsage = (events: readonly StreamEvent[], body: CreateResponseB
       : event,
   );
 
+export const PRIMARY_TARGET = 'primary';
+
+export const FALLBACK_TARGETS: readonly string[] = ['secondary'];
+
+export const fakeCounterOf = (target: string): string => createHash('sha256').update(`fake counter of ${target}`).digest('hex');
+
 const issueCallId = (): string => `call_${uuidv7().replaceAll('-', '')}`;
 
 const abortedPromise = (signal: AbortSignal): Promise<never> =>
@@ -109,6 +117,7 @@ export type FakeGateway = GatewayPort & {
   countScaleByTarget: Map<string, number>;
   countMethod: CountTokensResult['method'];
   countMethodByTarget: Map<string, CountTokensResult['method']>;
+  countShape: ErrorShape | undefined;
   capabilitiesByTarget: Map<string, Capabilities>;
   countHook: GatewayHook<CountTokensRequest> | undefined;
   compactHook: GatewayHook<CompactRequest> | undefined;
@@ -122,6 +131,10 @@ export type FakeGateway = GatewayPort & {
   compactSummaries: string[];
   capabilitiesValue: Capabilities;
   capabilitiesByAlias: Record<string, Capabilities>;
+  targetsByAlias: Record<string, string[]>;
+  countersByTarget: Map<string, string>;
+  modelCalls: RecordedCapabilities[];
+  counterOf(target: string): string;
   rewriteCallIds: boolean;
   issuedCallIds(scriptId: string): string[];
   callId(scriptId: string, occurrence?: number): string;
@@ -171,6 +184,20 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
     });
   };
 
+  const withRoute = (event: StreamEvent, body: CreateResponseBody): StreamEvent => {
+    if (event.type !== 'response.completed' && event.type !== 'response.incomplete') return event;
+    const routed = event.response.momonga ?? { alias: body.model, target: targetsOf(body.model)[0] ?? PRIMARY_TARGET, attempts: 1, usageSource: 'reported' as const };
+    const counted = 'counter' in routed ? routed : { ...routed, counter: gateway.counterOf(routed.target) };
+    return { ...event, response: { ...event.response, momonga: counted } };
+  };
+
+  const targetsOf = (alias: string): string[] => {
+    const named = gateway.targetsByAlias[alias];
+    if (named !== undefined) return [...named];
+    const known = [PRIMARY_TARGET, ...FALLBACK_TARGETS, ...gateway.capabilitiesByTarget.keys()];
+    return known.filter((target, index) => known.indexOf(target) === index);
+  };
+
   let generationCount = 0;
   const startGeneration = (key: string, body: CreateResponseBody): Generation => {
     const scripted = gateway.script.shift();
@@ -180,7 +207,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
     const issuedId = `resp_generation_${generationCount}`;
     const identified: ScriptStep = {
       ...observed,
-      events: observed.events.map((event) => ('response' in event && typeof event.response === 'object' && event.response !== null ? ({ ...event, response: { ...event.response, id: issuedId } } as StreamEvent) : event)),
+      events: observed.events.map((event) => ('response' in event && typeof event.response === 'object' && event.response !== null ? ({ ...event, response: { ...event.response, id: issuedId } } as StreamEvent) : event)).map((event) => withRoute(event, body)),
     };
     const step: ScriptStep = gateway.rewriteCallIds ? { ...identified, events: withIssuedCallIds(identified.events) } : identified;
     gateway.generations.set(key, (gateway.generations.get(key) ?? 0) + 1);
@@ -232,6 +259,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
     countScaleByTarget: new Map(),
     countMethod: 'exact',
     countMethodByTarget: new Map(),
+    countShape: undefined,
     capabilitiesByTarget: new Map(),
     countHook: undefined,
     compactHook: undefined,
@@ -245,6 +273,10 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
     compactSummaries: [],
     capabilitiesValue: capabilities,
     capabilitiesByAlias: {},
+    targetsByAlias: {},
+    countersByTarget: new Map(),
+    modelCalls: [],
+    counterOf: (target) => gateway.countersByTarget.get(target) ?? fakeCounterOf(target),
     rewriteCallIds: true,
 
     issuedCallIds: (scriptId) => [...(issued.get(scriptId) ?? [])],
@@ -312,7 +344,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
       const target = request.momonga?.target;
       const scale = target === undefined ? undefined : gateway.countScaleByTarget.get(target);
       const method = (target === undefined ? undefined : gateway.countMethodByTarget.get(target)) ?? gateway.countMethod;
-      const result = countReplyOf(scale === undefined ? base : Math.ceil(base * scale), method, method === 'estimated' ? ESTIMATED_ERROR_SHAPE : EXACT_ERROR_SHAPE);
+      const result = countReplyOf(scale === undefined ? base : Math.ceil(base * scale), method, gateway.countShape ?? (method === 'estimated' ? ESTIMATED_ERROR_SHAPE : EXACT_ERROR_SHAPE));
       gateway.countResults.push(result);
       return result;
     },
@@ -323,6 +355,19 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
       await gateway.capabilitiesHook?.(alias, options?.signal);
       const target = options?.target;
       return (target === undefined ? undefined : gateway.capabilitiesByTarget.get(target)) ?? gateway.capabilitiesByAlias[alias] ?? gateway.capabilitiesValue;
+    },
+
+    model: async (alias, options): Promise<GatewayModel> => {
+      gateway.modelCalls.push({ alias, signal: options.signal });
+      const targets = targetsOf(alias);
+      const aliasCapabilities = gateway.capabilitiesByAlias[alias] ?? gateway.capabilitiesValue;
+      return {
+        id: alias,
+        targets,
+        capabilities: aliasCapabilities,
+        targetCapabilities: Object.fromEntries(targets.map((target) => [target, gateway.capabilitiesByTarget.get(target) ?? aliasCapabilities])),
+        targetCounters: Object.fromEntries(targets.map((target) => [target, gateway.counterOf(target)])),
+      };
     },
 
     cancel: async (idempotencyKey, options) => {

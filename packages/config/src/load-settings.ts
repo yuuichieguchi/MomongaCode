@@ -6,12 +6,14 @@ import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.t
 import {
   defaultContextSettings,
   defaultMemorySettings,
+  defaultToolsSettings,
   defaultVerificationSettings,
   mergeContextSettings,
   mergeMemorySettings,
+  mergeToolsSettings,
   mergeVerificationSettings,
 } from './context-settings.ts';
-import type { ResolvedContextSettings, ResolvedMemorySettings, ResolvedVerificationSettings } from './context-settings.ts';
+import type { ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from './context-settings.ts';
 import { loadLayers, normalizeHooks } from './layers.ts';
 import type { Layer, TrustOracle, UserLayer } from './layers.ts';
 import { EDIT_TOOLS, NEGATION_PREFIX, isPathTool, parseRule, RuleParseError } from './rule.ts';
@@ -47,6 +49,7 @@ export type ResolvedSettings = {
   memory: ResolvedMemorySettings;
   verification: ResolvedVerificationSettings;
   context: ResolvedContextSettings;
+  tools: ResolvedToolsSettings;
 };
 
 export type LoadSettingsOptions = {
@@ -138,6 +141,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     memory: defaultMemorySettings(),
     verification: defaultVerificationSettings(),
     context: defaultContextSettings(),
+    tools: defaultToolsSettings(),
   };
   for (const layer of layers) {
     const {
@@ -156,10 +160,12 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
       memory,
       verification,
       context,
+      tools,
     } = layer.settings;
     merged.memory = mergeMemorySettings(merged.memory, memory);
     merged.verification = mergeVerificationSettings(merged.verification, verification);
     merged.context = mergeContextSettings(merged.context, context);
+    merged.tools = mergeToolsSettings(merged.tools, tools);
     if (permissions?.defaultMode !== undefined) {
       merged.permissions.defaultMode = permissions.defaultMode;
       merged.permissions.defaultModeOrigin = layer.origin;

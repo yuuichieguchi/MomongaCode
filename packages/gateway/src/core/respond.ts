@@ -348,6 +348,7 @@ async function* relaySteps(
     return {
       alias: job.alias,
       target: target.name,
+      counter: target.counter,
       attempts,
       ...(fallbackFrom.length === 0 ? {} : { fallbackFrom, fallbackCauses }),
       usageSource,

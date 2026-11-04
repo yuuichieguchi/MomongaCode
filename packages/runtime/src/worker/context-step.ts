@@ -95,6 +95,7 @@ export const contextInputOf = (ctx: ClaimContext, wrapUp: WrapUpReason | undefin
   const touchedPaths = touchedPathsOf(state.workingFacts.touched, session.cwd);
   return {
     capabilities: ctx.capabilities,
+    calibration: ctx.calibration,
     model: ctx.alias,
     sources: {
       systemPrompt: ctx.systemPrompt,

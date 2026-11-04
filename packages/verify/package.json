@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@momonga/config": "*",
+    "@momonga/context": "*",
     "@momonga/foundation": "*",
     "@momonga/policy": "*",
     "@momonga/protocol": "*",

@@ -24,6 +24,7 @@ import {
 import type { EvalRunApi, Transcript } from '@momonga/eval';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { publicEventsOf } from './fixtures.ts';
+import { RECORDED_IDENTITY } from './fixtures.ts';
 import { compacted, contextCase, fidelity, governing, recorded } from './context-fixtures.ts';
 
 const pair = (scenario: string, extra: Record<string, unknown> = {}) => [
@@ -95,7 +96,7 @@ const harness = (script: Script = {}) => {
       close: async () => void log.push(`close ${entry.id}`),
     };
   };
-  return { log, sessions, addedRules, retired, memories, inputs, cancelled, ports: { openCase, modelAlias: 'gamma', deadline: NEVER, bounds: { datasetTokens: 1_000_000, caseDeadlineMs: {} } } };
+  return { log, sessions, addedRules, retired, memories, inputs, cancelled, ports: { ...RECORDED_IDENTITY, openCase, modelAlias: 'gamma', deadline: NEVER, bounds: { datasetTokens: 1_000_000, caseDeadlineMs: {} } } };
 };
 
 const rule = (id: string, text: string, overrides: Record<string, unknown> = {}) => ({ id, kind: 'constraint', target: 'test-runner', text, inScope: true, live: true, supersedes: [], ...overrides });

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { UsageObservation } from '@momonga/context';
 import { usageOf } from '@momonga/testkit';
+import { fakeCounterOf } from './fake-gateway.ts';
 import { capabilitiesFor, makeEnv } from './harness.ts';
 import { textStep } from './scripts.ts';
 import { bigStep, withinTurnWorker } from './within-turn-support.ts';
@@ -42,7 +43,7 @@ describe('usage observation by the token meter', () => {
     const step = textStep('Done.', { usage: usageOf(321, 5) });
     const events = step.events.map((event) =>
       event.type === 'response.completed'
-        ? { ...event, response: { ...event.response, momonga: { alias: 'default', target: 'primary', attempts: 1, usageSource: 'reported' as const, contextInputTokens: 55 } } }
+        ? { ...event, response: { ...event.response, momonga: { alias: 'default', target: 'primary', counter: fakeCounterOf('primary'), attempts: 1, usageSource: 'reported' as const, contextInputTokens: 55 } } }
         : event,
     );
     env.gateway.script.push({ ...step, events });

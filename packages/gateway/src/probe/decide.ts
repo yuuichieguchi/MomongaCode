@@ -1,4 +1,4 @@
-import { imageCapability } from '@momonga/protocol';
+import { MAX_BUDGET_COUNT, imageCapability } from '@momonga/protocol';
 import type { Capabilities, ImageCapability, ProbeReport, ToolCallingMode } from '@momonga/protocol';
 
 export interface DecideThresholds {
@@ -46,6 +46,9 @@ export const maxOutputTokensFor = (contextWindow: number): number => Math.min(co
 
 export const capabilitiesFromProbe = (report: ProbeReport, decision: ToolCallingDecision, thresholds: DecideThresholds = {}): Capabilities => {
   const contextWindow = report.contextWindow.value;
+  if (contextWindow > MAX_BUDGET_COUNT) {
+    throw new RangeError(`probed context window ${contextWindow} is above the exact budget domain of ${MAX_BUDGET_COUNT}`);
+  }
   return {
     contextWindow,
     maxOutputTokens: maxOutputTokensFor(contextWindow),

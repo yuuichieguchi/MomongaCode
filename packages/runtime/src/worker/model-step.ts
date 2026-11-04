@@ -1,7 +1,7 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { TokenMeter } from '@momonga/context';
 import { LOWEST_REASONING_EFFORT, marginFloorFor } from '@momonga/protocol';
-import type { CreateResponseBody, FunctionTool, InputItem, ModelResponse, MomongaResponseExtension, ResponseResource, RunEventPayload, RunState } from '@momonga/protocol';
+import type { Capabilities, CreateResponseBody, ModelRejectionReason, FunctionTool, InputItem, ModelResponse, MomongaResponseExtension, ResponseResource, RunEventPayload, RunState } from '@momonga/protocol';
 import type { ClaimContext, Flow } from './claim-context.ts';
 import { modelKey } from '../model-key.ts';
 import { GatewayFailureError } from './errors.ts';
@@ -15,7 +15,6 @@ import { runStopHooks } from './hook-step.ts';
 import { recordCalls, settleCalls } from './tool-step.ts';
 import { pinnedDigestOf } from './pinned-digest.ts';
 
-const MODEL_ATTEMPT = 1;
 const DEADLINE_CODE = 'deadline_exceeded';
 const REFUSAL_CODES = ['guardrail_violation', 'refusal', 'content_filter'];
 
@@ -73,16 +72,21 @@ export const decideAfterResponse = async (ctx: ClaimContext): Promise<Flow> => {
 
 type InputObservation = { input: readonly InputItem[]; tools: readonly FunctionTool[] };
 
-type InputEstimate = { meter: TokenMeter; inputDigest: string; estimatedTokens: number; marginTokens: number };
+type MeterFacts = { meter: TokenMeter; capabilities: Capabilities; counter: string };
 
-const estimateFor = async (ctx: ClaimContext, observation: InputObservation, answeredByFallback: string | undefined): Promise<InputEstimate> => {
-  const answered = answeredByFallback === undefined ? { meter: ctx.meter, capabilities: ctx.capabilities } : await ctx.targetFacts(answeredByFallback);
+type InputEstimate = { meter: TokenMeter; counter: string; inputDigest: string; estimatedTokens: number; marginTokens: number };
+
+const meterFactsFor = async (ctx: ClaimContext, answeredByFallback: string | undefined): Promise<MeterFacts> =>
+  answeredByFallback === undefined ? { meter: ctx.meter, capabilities: ctx.capabilities, counter: ctx.counter } : ctx.targetFacts(answeredByFallback);
+
+const estimateFor = async (answered: MeterFacts, observation: InputObservation): Promise<InputEstimate> => {
   const counted = await answered.meter.count({ input: observation.input, tools: observation.tools });
   return {
     meter: answered.meter,
+    counter: answered.counter,
     inputDigest: counted.inputDigest,
     estimatedTokens: counted.inputTokens,
-    marginTokens: marginFloorFor(answered.capabilities.contextWindow) + counted.errorBound,
+    marginTokens: marginFloorFor(answered.capabilities.contextWindow) + counted.overTolerance,
   };
 };
 
@@ -122,7 +126,48 @@ const handleResult = async (
   }
   const { response, incomplete } = result;
   const usage = response.usage;
-  if (usage === null) throw new GatewayFailureError('the model response carries no usage');
+  const fallbackTarget = fallbackTargetOf(response);
+  const answered =
+    observation === undefined || (response.momonga?.fallbackCauses?.length ?? 0) > 0 && fallbackTarget === undefined
+      ? undefined
+      : await meterFactsFor(ctx, fallbackTarget);
+  const answerCounter = response.momonga?.counter;
+  const reject = (reason: ModelRejectionReason): never => {
+    journal.append([
+      {
+        type: 'model.rejected',
+        step: position.step,
+        attempt: position.attempt,
+        reason,
+        ...(answerCounter === undefined ? {} : { counter: answerCounter }),
+        ...(answered === undefined ? {} : { meterCounter: answered.counter }),
+      },
+      ...(usage === null
+        ? []
+        : [
+            {
+              type: 'usage.charged' as const,
+              purpose: 'rejected_answer' as const,
+              inputTokens: usage.input_tokens,
+              outputTokens: usage.output_tokens,
+              totalTokens: usage.total_tokens,
+              responseId: response.id,
+              cachedInputTokens: usage.input_tokens_details.cached_tokens,
+              ...(response.momonga?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: response.momonga.cacheWriteInputTokens }),
+              ...(response.momonga?.cost === undefined ? {} : { cost: response.momonga.cost }),
+              timing,
+            },
+          ]),
+    ]);
+    throw new GatewayFailureError(`the model response was rejected: ${reason}`);
+  };
+  if (usage === null) return reject('missing_usage');
+  const answeredBy = response.momonga?.target;
+  if (observation !== undefined) {
+    if (answerCounter === undefined) return reject('missing_counter');
+    if (answeredBy === undefined) return reject('missing_target');
+    if (answered !== undefined && answerCounter !== answered.counter) return reject('counter_mismatch');
+  }
   const reusedCallId = reusedCallIdOf(journal.state, response.output);
   if (reusedCallId !== undefined) {
     const message = `The model response reuses the tool call id ${reusedCallId}, which the gateway must issue fresh for every call, so the run stops.`;
@@ -132,7 +177,7 @@ const handleResult = async (
     ]);
     return terminals.finish('FAILED', { error: { code: 'call_id_reused', message } });
   }
-  const estimate = observation === undefined ? undefined : await estimateFor(ctx, observation, fallbackTargetOf(response));
+  const estimate = observation === undefined || answered === undefined ? undefined : await estimateFor(answered, observation);
   const before = journal.state.usage;
   const billed = billedExtensionOf(response.momonga);
   const reported = response.momonga?.contextInputTokens ?? usage.input_tokens;
@@ -175,7 +220,15 @@ const handleResult = async (
       code: 'fallback_target',
     });
   }
-  if (estimate !== undefined) estimate.meter.observe({ inputDigest: estimate.inputDigest, inputTokens: reported });
+  if (estimate !== undefined && answeredBy !== undefined) {
+    recorded.push({
+      type: 'meter.observed',
+      target: answeredBy,
+      counter: estimate.counter,
+      fallback: fallbackTargetOf(response) !== undefined,
+      ...estimate.meter.observe({ inputDigest: estimate.inputDigest, inputTokens: reported }),
+    });
+  }
   if (truncation !== undefined) return terminals.finish('FAILED', { error: truncation }, recorded);
   journal.append(recorded);
   ctx.memory.streak = 0;
@@ -258,7 +311,7 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
     metadata: { run_id: ctx.run.id, step: String(step) },
   };
   if (cancelIfInterrupted(ctx) === 'done') return 'done';
-  const position = { step, attempt: MODEL_ATTEMPT };
+  const position = { step, attempt: 1 };
   journal.append([
     ...(wrapUp === undefined ? [] : [{ type: 'notice' as const, level: 'error' as const, message: wrapUp.notice, code: 'context_wrap_up' }]),
     { type: 'model.requested', step: position.step, attempt: position.attempt, digest: sha256Hex(canonicalJson(body)), pinnedDigest: pinnedDigestOf(body), body, anatomy: built.anatomy },

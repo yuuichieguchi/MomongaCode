@@ -5,6 +5,7 @@ export type {
   HealthResult,
   ImageCapability,
   ImageTokenModel,
+  PromptCacheCapability,
   ReasoningCapability,
   ReasoningEffort,
   ToolCallingMode,
@@ -14,14 +15,34 @@ export { CALL_ROLES, COMPACTION_RESULT_EVENT, COMPACTION_ROLE, HEADER_ROLES, ROL
 export type { CallRole } from './headers.ts';
 export type { HeaderRole } from './headers.ts';
 export {
+  COMPACTION_MIN_GAIN,
+  COMPACT_AT,
+  ESTIMATED_ERROR,
+  EVICT_LOW_WATER,
+  ITEM_CAP,
+  ITEM_ROOM,
+  MARGIN,
+  MAX_BUDGET_COUNT,
+  MAX_OUTPUT_WINDOW,
+  OUTPUT_RESERVE,
+  RATIO_QUANTUM,
+  SUMMARY_ACCEPT,
+  SUMMARY_ROOM,
+  SUMMARY_WINDOW,
+  ceilRatio,
+  floorRatio,
+  quantizedRatioOf,
+} from './budget-ratios.ts';
+export type { Ratio } from './budget-ratios.ts';
+export {
   COMPACTION_INSTRUCTIONS_VERSION,
   ESTIMATED_CHARACTERS_PER_TOKEN,
   ESTIMATED_ERROR_BOUND_RATIO,
   ESTIMATED_ERROR_SHAPE,
   EXACT_ERROR_SHAPE,
-  MARGIN_RATIO,
   MAX_COMPACTION_GUIDELINE_CHARS,
   MAX_JOURNAL_SEQ_DIGITS,
+  MARGIN_RATIO,
   MAX_SUMMARY_TOKENS,
   MIN_MARGIN,
   MIN_SUMMARY_TOKENS,
@@ -38,6 +59,7 @@ export {
   errorBoundOfShape,
   marginFloorFor,
   outputReserveFor,
+  sizingFractionFor,
   sizingRatioFor,
   summaryInputLimitFor,
   summaryItemTokensFor,
@@ -55,6 +77,12 @@ export {
   requireStructuredOutput,
 } from './capabilities.ts';
 export type { StructuredOutputVerdict, TargetBilling } from './capabilities.ts';
+export { OUTPUT_FORMATTERS } from './output-formatters.ts';
+export type { OutputFormatterName } from './output-formatters.ts';
+export { PREFIX_EVENTS } from './prefix-events.ts';
+export type { PrefixEvent } from './prefix-events.ts';
+export { MIN_INDEXED_TERM_CHARS, asciiLower, partitionTerms, termsOf } from './search-terms.ts';
+export type { PartitionedTerms } from './search-terms.ts';
 export { tokensForText } from './estimate-tokens.ts';
 export { GUIDELINE_TEXT_PATTERN, hasForbiddenGuidelineCharacter } from './guideline-text.ts';
 export { escapeTerminalBlock, escapeTerminalLine } from './terminal-text.ts';
@@ -223,8 +251,9 @@ export {
 export type { HookCommand, HookEvent, HookExecution, HookMatcherGroup, HookOutcome, HookPreToolDecision, HooksSettings } from './hooks.ts';
 export { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES, permissionDeniedOutput } from './permission-denial.ts';
 export type { ApprovalBasis, PermissionDenial, PermissionDenialSource } from './permission-denial.ts';
-export { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
+export { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
 export type {
+  ActivatedSkillEntry,
   ActivatedSkillRecord,
   ApprovalStatus,
   ElicitationAnswerRecord,
@@ -248,6 +277,7 @@ export type {
   TerminalStatus,
   ToolAwait,
   ToolKind,
+  ModelRejectionReason,
   UsageChargePurpose,
 } from './run-types.ts';
 export { ERROR_TYPES, OPEN_RESPONSES_STREAM_EVENT_TYPES, OPEN_RESPONSES_VERSION, TERMINAL_STREAM_EVENT_TYPES } from './open-responses.ts';
@@ -279,6 +309,7 @@ export type {
   MessageInputItem,
   MessageItem,
   OutputTextPart,
+  PromptCacheCounts,
   ReasoningConfig,
   ReasoningInputItem,
   ReasoningItem,

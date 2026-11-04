@@ -11,12 +11,14 @@ import {
   itemCapFor,
   output,
   seeded,
+  shapeCounter,
   sourcesWith,
   tokensOfItems,
   tokensOfTools,
   user,
   READ_TOOL,
 } from './helpers.ts';
+import { ESTIMATED_ERROR_SHAPE } from '@momonga/protocol';
 import type { HistoryItem } from '@momonga/context';
 
 describe('budget formula', () => {
@@ -54,11 +56,11 @@ describe('budget formula', () => {
     expect(result.budget).toEqual({ W: 1024, R: 256, margin: 49, I: 719 });
   });
 
-  it('adds at least a 10% error bound to the margin in estimated mode without observations', async () => {
+  it('adds the estimated reply shape of the count to the margin in estimated mode without observations', async () => {
     const capabilities = capabilitiesFor(1024, { tokenCounting: 'estimated' });
-    const { ports } = harness(capabilities);
+    const { ports } = harness(capabilities, { counter: shapeCounter(() => ESTIMATED_ERROR_SHAPE) });
     const result = await buildContext(inputFor(capabilities), ports);
-    expect(result.budget.margin).toBeGreaterThanOrEqual(32 + Math.ceil(0.1 * result.inputTokens));
+    expect(result.budget.margin).toBe(32 + Math.ceil(0.3 * result.inputTokens));
     expect(result.budget.margin).toBeGreaterThan(32);
     expect(result.budget.I).toBe(1024 - 256 - result.budget.margin);
   });

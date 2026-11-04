@@ -39,8 +39,8 @@ describe('the memory settings port', () => {
     writeProjectSettings(f.temp.project, { memory: { reflection: { enabled: true }, forgetAfterDays: 7 } });
     const session = createSession(f.store, f.temp.project);
     const settings = f.composition.settings as unknown as { memory(session: unknown): Promise<unknown> };
-    expect(await settings.memory(session)).toEqual({ reflection: { enabled: false }, forgetAfterDays: 90 });
+    expect(await settings.memory(session)).toEqual({ reflection: { enabled: false }, forgetAfterDays: 90, repositoryFacts: false });
     f.store.trust.set(f.temp.project, 'trusted');
-    expect(await settings.memory(session)).toEqual({ reflection: { enabled: true }, forgetAfterDays: 7 });
+    expect(await settings.memory(session)).toEqual({ reflection: { enabled: true }, forgetAfterDays: 7, repositoryFacts: false });
   });
 });

@@ -1,6 +1,8 @@
 import { escapeTerminalLine } from '@momonga/protocol';
 import { MINIMUM_PAIRS, pairedBootstrap, pairedRatioBootstrap } from './bootstrap.ts';
 import type { BootstrapInterval, Cluster } from './bootstrap.ts';
+import { canonicalJson } from '@momonga/foundation';
+import type { PolicyOverlay } from './context-policy.ts';
 import { describeClustered } from './context-report.ts';
 import type { ClusteredProportion, ContextCaseReport, ContextReport } from './context-report.ts';
 import { percent } from './report.ts';
@@ -27,10 +29,12 @@ export type GateCheckName = (typeof GATE_CHECKS)[number] | 'passRate' | TokenPri
 
 export type GateCheck = { name: GateCheckName; passed: boolean; detail: string };
 
+type ReportIdentity = { dataset: string; model: ContextReport['model']; policy: PolicyOverlay; codeDigest: string };
+
 export type ContextComparison = {
   gateName: GateName;
-  baseline: { dataset: string; model: ContextReport['model'] };
-  candidate: { dataset: string; model: ContextReport['model'] };
+  baseline: ReportIdentity;
+  candidate: ReportIdentity;
   contrastiveFailures: { baseline: number; candidate: number; n: number };
   fabricationRate: { baseline: ClusteredProportion | undefined; candidate: ClusteredProportion | undefined };
   differences: {
@@ -207,12 +211,23 @@ const tokenPrimaryOf = (baseline: ContextReport, candidate: ContextReport, pairs
   return { metric, interval: measured ? pairedRatioBootstrap(complete, { seed }) : undefined, why: [why, reflectionNote].filter((part) => part !== undefined).join('; ') || undefined };
 };
 
+const identityOf = (report: ContextReport): ReportIdentity => ({ dataset: report.dataset, model: report.model, policy: report.policy, codeDigest: report.codeDigest });
+
+const assertSomethingDiffers = (baseline: ContextReport, candidate: ContextReport): void => {
+  if (canonicalJson(baseline.policy) === canonicalJson(candidate.policy) && baseline.codeDigest === candidate.codeDigest) {
+    throw new EvalError(
+      'the reports record an identical policy and an identical code digest, so nothing differs between them to measure; compare a policy off against on, or the code of main against the head',
+    );
+  }
+};
+
 export const compareContextReports = (
   baseline: ContextReport,
   candidate: ContextReport,
   options: { seed: number; gate?: GateName },
 ): ContextComparison => {
   const gateName = options.gate ?? 'context';
+  if (gateName === 'token') assertSomethingDiffers(baseline, candidate);
   const pairs = pairCases(baseline, candidate);
   const compacted = pairs.filter((pair) => pair.baseline.compaction === 'on' && pair.baseline.compactions > 0 && pair.candidate.compactions > 0);
   const loss = intervalOf(
@@ -232,8 +247,8 @@ export const compareContextReports = (
   const checks = GATE_TERMS[gateName].map((term) => term(terms));
   return {
     gateName,
-    baseline: { dataset: baseline.dataset, model: baseline.model },
-    candidate: { dataset: candidate.dataset, model: candidate.model },
+    baseline: identityOf(baseline),
+    candidate: identityOf(candidate),
     contrastiveFailures: { baseline: baseline.metrics.contrastiveFailures.count, candidate: candidate.metrics.contrastiveFailures.count, n: baseline.metrics.contrastiveFailures.n },
     fabricationRate: { baseline: baseline.metrics.fabricationRate, candidate: candidate.metrics.fabricationRate },
     differences: {
@@ -264,6 +279,10 @@ export const formatContextComparison = (comparison: ContextComparison): string =
     const { primary } = comparison.differences;
     return [
       ...heading,
+      `baseline policy: ${canonicalJson(comparison.baseline.policy)}`,
+      `candidate policy: ${canonicalJson(comparison.candidate.policy)}`,
+      `baseline codeDigest: ${comparison.baseline.codeDigest}`,
+      `candidate codeDigest: ${comparison.candidate.codeDigest}`,
       describeDifference('passRate', comparison.differences.passRate, 3),
       primary === undefined ? 'primary n/a' : describeDifference(primary.metric, primary.interval, primary.metric === 'costPerSuccess' ? 6 : 1),
       describeDifference('lossSignalsPerCompaction', comparison.differences.lossSignalsPerCompaction, 3),

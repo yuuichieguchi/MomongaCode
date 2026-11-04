@@ -26,6 +26,7 @@ describe('worker final answer', () => {
       'agent.message.delta',
       'model.responded',
       'usage.updated',
+      'meter.observed',
       'run.status',
     ]);
     expect(env.run(run.id).status).toBe('COMPLETED');
@@ -107,6 +108,7 @@ describe('worker final answer', () => {
       toolSetDigest: toolSet.digest,
       capabilities: env.gateway.capabilitiesValue,
       roles: {},
+      token: {},
     });
     expect(env.fold(run.id).pins).toEqual(started?.pins);
   });

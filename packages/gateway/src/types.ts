@@ -9,6 +9,7 @@ export type GatewayTargetConfig = {
   billing: TargetBilling;
   maxConcurrency: number;
   admissionTimeoutMs: number;
+  counter: string;
   capabilities?: CapabilityOverride;
 };
 

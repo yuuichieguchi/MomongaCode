@@ -87,7 +87,8 @@ const transcriptsOf = ({ failing = [], calls = {}, every = {}, silent = false }:
 
 const reportOf = (variant: Variant = {}): ContextReport => buildContextReport({ dataset, transcripts: transcriptsOf(variant), model: variant.model ?? 'real', seed: 1 });
 
-const tokenGate = (baseline: ContextReport, candidate: ContextReport) => compareContextReports(baseline, candidate, { seed: 1, gate: 'token' });
+const tokenGate = (baseline: ContextReport, candidate: ContextReport) =>
+  compareContextReports(baseline, { ...candidate, policy: { context: { cachePrefix: true } } }, { seed: 1, gate: 'token' });
 
 const checkOf = (comparison: ReturnType<typeof tokenGate>, name: string) => comparison.gate.checks.find((check) => check.name === name);
 
@@ -202,8 +203,7 @@ describe('eval compare --gate token', () => {
 
   it('fails when the candidate loses more after compaction or fabricates more, however cheap', () => {
     const lossy = reportOf({ ...cheaper });
-    const losing = buildContextReport({
-      dataset,
+    const losing = buildContextReport({ dataset,
       transcripts: transcriptsOf(cheaper).map((transcript) =>
         transcript.caseId.endsWith('-on') ? recorded(transcript.caseId, 0, [...callEvents({ cost: 0.001 }, 1), ...bash('b0', 'npm test', 'failed'), summarized(3, fidelity([], 2, 2)), ...bash('b1', 'npm test', 'failed')]) : transcript,
       ),
@@ -216,8 +216,7 @@ describe('eval compare --gate token', () => {
     expect(checkOf(comparison, 'costPerSuccess')?.passed).toBe(true);
     expect(checkOf(comparison, 'lossSignalsPerCompaction')?.passed).toBe(false);
     expect(comparison.gate.passed).toBe(false);
-    const fabricating = buildContextReport({
-      dataset,
+    const fabricating = buildContextReport({ dataset,
       transcripts: transcriptsOf(cheaper).map((transcript) =>
         transcript.caseId.endsWith('-on') ? recorded(transcript.caseId, 0, [...callEvents({ cost: 0.001 }, 1), ...bash('b0', 'npm test', 'failed'), summarized(3, fidelity(['ghost.ts'], 2, 2))]) : transcript,
       ),

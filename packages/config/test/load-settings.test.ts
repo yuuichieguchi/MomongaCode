@@ -35,6 +35,7 @@ describe('SETTINGS_SCHEMA', () => {
         'pricing',
         'sandbox',
         'telemetry',
+        'tools',
         'verification',
       ].sort(),
     );

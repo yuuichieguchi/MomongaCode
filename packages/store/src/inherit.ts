@@ -185,7 +185,7 @@ export const projectInheritance = (previous: RunState, outcome: InheritanceOutco
     markers,
     ...(previous.mode === undefined ? {} : { fromMode: previous.mode }),
     ...(mode === undefined ? {} : { mode }),
-    ...(activatedSkills.length === 0 ? {} : { activatedSkills: activatedSkills.map((skill) => ({ ...skill })) }),
+    ...(activatedSkills.length === 0 ? {} : { activatedSkills: activatedSkills.map(({ name, content }) => ({ name, content })) }),
   };
   return { ...unsigned, digest: digestOf(unsigned) };
 };
@@ -213,7 +213,10 @@ export const applyInheritance = (state: RunState, payload: InheritedPayload): Ru
   const carried = payload.activatedSkills ?? [];
   return {
     ...rest,
-    activatedSkills: [...carried, ...state.activatedSkills.filter((skill) => !carried.some((entry) => entry.name === skill.name))],
+    activatedSkills: [
+      ...carried.map((skill) => ({ ...skill, seq: state.lastSeq + 1 })),
+      ...state.activatedSkills.filter((skill) => !carried.some((entry) => entry.name === skill.name)),
+    ],
     history,
     workingFacts: {
       ...(payload.workingFacts ?? emptyWorkingFacts()),

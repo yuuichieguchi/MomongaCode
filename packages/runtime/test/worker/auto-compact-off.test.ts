@@ -23,7 +23,7 @@ const conversation: RunEventPayload[] = [
 
 const runSeeded = async (autoCompact: boolean) => {
   const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
-  env.settings.contextValue = { adaptiveBudget: false, autoCompact };
+  env.settings.contextValue = { ...env.settings.contextValue, adaptiveBudget: false, autoCompact };
   const run = env.enqueue('question one');
   env.seed(run.id, conversation, 'release');
   env.gateway.script.push(textStep('Done.'));

@@ -120,6 +120,16 @@ describe('gateway client malformed replies', () => {
     expectGatewayError(await settle(client.models()), INVALID);
   });
 
+  it.each([
+    ['without targets', { id: 'default', capabilities: {}, targetCapabilities: { primary: {} }, targetCounters: { primary: 'c'.repeat(64) } }],
+    ['without targetCounters', { id: 'default', targets: ['primary'], capabilities: {}, targetCapabilities: { primary: {} } }],
+    ['with a target that has no counter', { id: 'default', targets: ['primary', 'small'], capabilities: {}, targetCapabilities: { primary: {}, small: {} }, targetCounters: { primary: 'c'.repeat(64) } }],
+    ['with a counter that is not a string', { id: 'default', targets: ['primary'], capabilities: {}, targetCapabilities: { primary: {} }, targetCounters: { primary: 7 } }],
+  ])('rejects a models entry %s', async (_label, entry) => {
+    const { client } = await clientReplying(jsonReply(200, JSON.stringify({ object: 'list', data: [{ object: 'model', ...entry }] })));
+    expectGatewayError(await settle(client.models()), INVALID);
+  });
+
   it('rejects a cancel reply whose cancelled is not a boolean', async () => {
     const { client } = await clientReplying(jsonReply(200, JSON.stringify({ cancelled: 'yes' })));
     expectGatewayError(await settle(client.cancel('key-1', { signal: new AbortController().signal })), INVALID);
