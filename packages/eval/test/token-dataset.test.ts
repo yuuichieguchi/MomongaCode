@@ -24,5 +24,4 @@ describe('the token dataset', () => {
     const dataset = await load();
     expect(dataset.cases.filter((entry) => kindOf(entry.scenario) === undefined).map((entry) => entry.scenario)).toEqual([]);
   });
-
 });
