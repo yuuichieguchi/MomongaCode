@@ -18,6 +18,7 @@ import {
   parseOutcomeFile,
 } from '@momonga/eval';
 import type { BenchmarkResult, ContextModel, GuidelineCompletion, GuidelineCompletionRequest, ImproveInput, Transcript } from '@momonga/eval';
+import { codeDigestOfRunningProcess } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { ESTIMATED_CHARACTERS_PER_TOKEN, LOWEST_REASONING_EFFORT, assistantTextOf, requireStructuredOutput, summaryTokenCapFor } from '@momonga/protocol';
 import type { Capabilities, CreateResponseBody, GuidelineView, GuidelinesResponse, StreamEvent } from '@momonga/protocol';
@@ -147,8 +148,10 @@ export const contextImprove = async (
   const client = connectRuntime(paths);
   const gatewayInfo = createCliGatewayClient({ socketPath: paths.sockets.gateway });
   try {
-    const { RUNTIME_DEFAULTS } = await import('@momonga/runtime');
+    const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS, RUNTIME_DEFAULTS } = await import('@momonga/runtime');
     const limits = { maxTotalTokens: RUNTIME_DEFAULTS.limits.maxTotalTokens, defaultTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs };
+    const reflection = { pendingBoundMs: REFLECTION_PICKUP_BOUND_MS, attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS, pollMs: REFLECTION_POLL_MS };
+    const codeDigest = await codeDigestOfRunningProcess();
     const models = loadUserModels({ home: ports.home });
     const analysis = await analysisModelFor({ roles: models.resolved.roles, alias: options.alias, capabilitiesOf: (alias) => gatewayInfo.capabilitiesOf(alias) });
     const adopted = (await client.guidelines()).current;
@@ -165,6 +168,8 @@ export const contextImprove = async (
               alias: options.alias,
               models,
               limits,
+              reflection,
+              codeDigest,
               ...(guideline === undefined ? {} : { guideline }),
               onUnreadableHomes: (count) => ports.stderr.write(unreadableHomesNotice(count)),
               onUnownedHomes: (roots) => ports.stderr.write(unownedHomesNotice(roots)),

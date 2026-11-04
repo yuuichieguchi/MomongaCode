@@ -19,6 +19,7 @@ import {
   saveTranscript,
 } from '@momonga/eval';
 import type { ContextDataset, ContextModel, EvalReport, GateName, GoldenCase, GoldenDataset, PolicyOverlay, RecordedRun, Transcript } from '@momonga/eval';
+import { codeDigestOfRunningProcess } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { goldenRunApi } from '../client/golden-run-api.ts';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
@@ -87,7 +88,6 @@ export type EvaluateContextOptions = {
   seed?: number;
   report?: string;
   settings?: string;
-  codeDigest?: string;
   interrupt?: AbortSignal;
 };
 
@@ -107,9 +107,9 @@ const runContextLiveCommand = async (
   ports: CliPorts,
   hostEffects: (ports: CliPorts) => ContextHostEffects,
   dataset: ContextDataset,
-  options: { alias: string; seed: number; policy: PolicyOverlay; codeDigest: string | undefined; record: string | undefined; interrupt: AbortSignal | undefined },
+  options: { alias: string; seed: number; policy: PolicyOverlay; record: string | undefined; interrupt: AbortSignal | undefined },
 ): Promise<Transcript[]> => {
-  const { RUNTIME_DEFAULTS } = await import('@momonga/runtime');
+  const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS, RUNTIME_DEFAULTS } = await import('@momonga/runtime');
   if (options.record !== undefined) await ports.files.ensureDirectory(options.record);
   const { record } = options;
   return runContextLive(hostEffects(ports), {
@@ -117,9 +117,10 @@ const runContextLiveCommand = async (
     seed: options.seed,
     alias: options.alias,
     policy: options.policy,
-    ...(options.codeDigest === undefined ? {} : { codeDigest: options.codeDigest }),
+    codeDigest: await codeDigestOfRunningProcess(),
     models: loadUserModels({ home: ports.home }),
     limits: { maxTotalTokens: RUNTIME_DEFAULTS.limits.maxTotalTokens, defaultTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs },
+    reflection: { pendingBoundMs: REFLECTION_PICKUP_BOUND_MS, attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS, pollMs: REFLECTION_POLL_MS },
     onUnreadableHomes: (count) => ports.stderr.write(unreadableHomesNotice(count)),
     onUnownedHomes: (roots) => ports.stderr.write(unownedHomesNotice(roots)),
     ...(options.interrupt === undefined ? {} : { interrupt: options.interrupt }),
@@ -157,7 +158,6 @@ export const evaluateContext = async (
       alias: mode.alias,
       seed: datasetSeed,
       policy,
-      codeDigest: options.codeDigest,
       record: options.record === undefined ? undefined : path.resolve(ports.cwd, options.record),
       interrupt: options.interrupt,
     });
