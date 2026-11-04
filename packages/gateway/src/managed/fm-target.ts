@@ -128,7 +128,7 @@ const countResultOf = (counted: number, report: ProbeReport | null): CountTokens
   if (calibration === undefined) {
     return estimatedCountOf(counted);
   }
-  const calibrated = Math.ceil(counted * calibration.ratio - CEIL_TOLERANCE);
+  const calibrated = counted === 0 ? 0 : Math.ceil(counted * calibration.ratio - CEIL_TOLERANCE);
   return countReplyOf(calibrated, 'calibrated', { ratio: calibration.errorBound, minimum: 1 });
 };
 
@@ -160,7 +160,9 @@ export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Pr
     keywordSupport: () => keywordSupport,
     capabilities: async () => capabilities,
     countTokens: async (_target, request, signal) => {
-      const result = await options.exec(options.binary, ['count-tokens', '-q'], countedText(request), signal);
+      const text = countedText(request);
+      if (text === '') return countResultOf(0, report);
+      const result = await options.exec(options.binary, ['count-tokens', '-q'], text, signal);
       return countResultOf(parseCount(result), report);
     },
     health: () => options.fmServe.health(),
