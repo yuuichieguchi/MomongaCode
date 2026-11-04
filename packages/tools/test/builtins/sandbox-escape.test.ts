@@ -24,7 +24,7 @@ const escapeFixture = async (realSandbox: boolean) => {
   const extraFor = (roots: string[], cwd: string): RunExtra => ({
     roots,
     home,
-    session: { cwd, readLedger: new Map() },
+    session: { cwd, workingDirectory: cwd, readLedger: new Map() },
     sandboxPolicy: buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: computeFileRules([], roots, mine, HOST_RULE_ENFORCEMENT), roots, home, tmpDir: mine, sessionsTmpRoot: sessions }),
     tmpDir: mine,
   });

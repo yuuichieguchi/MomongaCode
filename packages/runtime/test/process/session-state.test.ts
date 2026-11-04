@@ -29,6 +29,16 @@ describe('session states (fake timers and fake clock)', () => {
     expect(states.size()).toBe(1);
   });
 
+  it('get fixes the working directory to the session cwd, independent of later shell moves', () => {
+    const { states } = setup();
+
+    const state = states.get({ id: 's1', cwd: '/work/project' });
+    state.cwd = '/work/project/sub';
+
+    expect(state.workingDirectory).toBe('/work/project');
+    expect(states.get({ id: 's1', cwd: '/work/project' }).workingDirectory).toBe('/work/project');
+  });
+
   it('get updates lastUsedAt on every call', () => {
     const { clock, states } = setup({ s1: idle });
     states.get({ id: 's1', cwd: '/w' });

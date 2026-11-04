@@ -103,7 +103,7 @@ describe('review 2: non-regular files are refused without opening them', () => {
     const outcome = await runWithin(tools, 'Read', { file_path: fifo }, {}, PROMPT_MS, () => unblockFifo(fifo));
     expect(outcome.hung).toBe(false);
     expect(outcome.result?.status).toBe('failed');
-    expect(outcome.result?.output).toContain(`${fifo} is not a regular file`);
+    expect(outcome.result?.output).toMatch(/^pipe is not a regular file/);
   });
 
   it('Edit refuses a FIFO promptly', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
@@ -113,7 +113,7 @@ describe('review 2: non-regular files are refused without opening them', () => {
     const outcome = await runWithin(tools, 'Edit', { file_path: fifo, old_string: 'a', new_string: 'b' }, ACCEPT, PROMPT_MS, () => unblockFifo(fifo));
     expect(outcome.hung).toBe(false);
     expect(outcome.result?.status).toBe('failed');
-    expect(outcome.result?.output).toContain(`${fifo} is not a regular file`);
+    expect(outcome.result?.output).toMatch(/^pipe is not a regular file/);
   });
 
   it('Write refuses to overwrite a FIFO promptly', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
@@ -123,7 +123,7 @@ describe('review 2: non-regular files are refused without opening them', () => {
     const outcome = await runWithin(tools, 'Write', { file_path: fifo, content: 'x' }, ACCEPT, PROMPT_MS, () => unblockFifo(fifo));
     expect(outcome.hung).toBe(false);
     expect(outcome.result?.status).toBe('failed');
-    expect(outcome.result?.output).toContain(`${fifo} is not a regular file`);
+    expect(outcome.result?.output).toMatch(/^pipe is not a regular file/);
     expect(fs.lstatSync(fifo).isFIFO()).toBe(true);
   });
 
@@ -133,7 +133,7 @@ describe('review 2: non-regular files are refused without opening them', () => {
     const outcome = await runWithin(tools, 'Grep', { pattern: 'alpha', path: fifo }, { env: { PATH: JS_BACKEND_PATH } }, PROMPT_MS, () => unblockFifo(fifo));
     expect(outcome.hung).toBe(false);
     expect(outcome.result?.status).toBe('failed');
-    expect(outcome.result?.output).toContain(`${fifo} is not a regular file`);
+    expect(outcome.result?.output).toMatch(/^pipe is not a regular file/);
   });
 });
 

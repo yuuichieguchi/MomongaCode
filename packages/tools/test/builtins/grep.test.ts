@@ -11,7 +11,7 @@ type Tree = { tools: Builtins; hidden: string; a: string; b: string; readme: str
 const put = (tools: Builtins, relative: string, content: string, secondsAfterBase: number): string => {
   const file = tools.write(relative, content);
   fs.utimesSync(file, BASE_TIME + secondsAfterBase, BASE_TIME + secondsAfterBase);
-  return file;
+  return relative;
 };
 
 const makeTree = async (realSandbox: boolean): Promise<Tree> => {
@@ -163,7 +163,7 @@ describe.each(backends)('Grep (%s backend)', (_name, envPath, available, realSan
       };
       const result = await grepIn(tree, envPath)({ pattern: 'alpha' }, { sandboxPolicy });
       expect(result.output).not.toContain('vault');
-      expect(result.output.split('\n').filter((line) => line.startsWith('/'))).toEqual([tree.hidden, tree.a, tree.b]);
+      expect(result.output.split('\n').filter((line) => !line.startsWith('('))).toEqual([tree.hidden, tree.a, tree.b]);
     });
 
     it('is denied when the search path is readDenied', async () => {
@@ -172,12 +172,12 @@ describe.each(backends)('Grep (%s backend)', (_name, envPath, available, realSan
       put(tree.tools, 'vault/secret.ts', 'alpha secret\n', 8);
       const sandboxPolicy = { ...tree.tools.sandboxPolicy, readDenied: [...tree.tools.sandboxPolicy.readDenied, vault] };
       const result = await grepIn(tree, envPath)({ pattern: 'alpha', path: vault }, { sandboxPolicy, mode: 'bypassPermissions' });
-      expect(result).toEqual({ status: 'failed', output: `Permission denied: ${vault} is blocked by the sandbox policy`, denial: { source: 'sandbox', reason: `${vault} is blocked by the sandbox policy` } });
+      expect(result).toEqual({ status: 'failed', output: 'Permission denied: vault is blocked by the sandbox policy', denial: { source: 'sandbox', reason: 'vault is blocked by the sandbox policy' } });
     });
 
     it('returns partial matches with a note when some paths could not be read', async () => {
       const tree = await makeTree(realSandbox);
-      const locked = put(tree.tools, 'locked.ts', 'alpha locked\n', 7);
+      const locked = path.join(tree.tools.layout.project, put(tree.tools, 'locked.ts', 'alpha locked\n', 7));
       fs.chmodSync(locked, 0o000);
       onCleanup(() => fs.chmodSync(locked, 0o644));
       const result = await grepIn(tree, envPath)({ pattern: 'alpha' });
@@ -186,10 +186,10 @@ describe.each(backends)('Grep (%s backend)', (_name, envPath, available, realSan
       expect(result.output).toContain('(some paths could not be read)');
     });
 
-    it('rejects a relative path', async () => {
+    it('resolves a relative path against the working directory', async () => {
       const tree = await makeTree(realSandbox);
-      const result = await grepIn(tree, envPath)({ pattern: 'alpha', path: 'docs' });
-      expect(result).toMatchObject({ status: 'failed', output: 'path must be an absolute path' });
+      const result = await grepIn(tree, envPath)({ pattern: 'alpha', path: 'docs', '-i': true });
+      expect(result).toMatchObject({ status: 'completed', output: tree.readme });
     });
   });
 });

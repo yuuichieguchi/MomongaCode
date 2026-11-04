@@ -152,13 +152,14 @@ describe('Read', () => {
     const tools = await makeBuiltins();
     const missing = path.join(tools.layout.project, 'missing.txt');
     const result = resultOf(await tools.run('Read', { file_path: missing }));
-    expect(result).toMatchObject({ status: 'failed', output: `File does not exist: ${missing}` });
+    expect(result).toMatchObject({ status: 'failed', output: 'File does not exist: missing.txt' });
   });
 
-  it('rejects a relative path', async () => {
+  it('resolves a relative path against the working directory', async () => {
     const tools = await makeBuiltins();
+    tools.write('notes.txt', 'alpha\n');
     const result = resultOf(await tools.run('Read', { file_path: 'notes.txt' }));
-    expect(result).toMatchObject({ status: 'failed', output: 'file_path must be an absolute path' });
+    expect(result).toMatchObject({ status: 'completed', output: '     1\talpha' });
   });
 
   it.each([{ offset: 0 }, { limit: 0 }, { offset: 1.5 }])('rejects invalid paging %o', async (paging) => {

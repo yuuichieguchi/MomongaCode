@@ -9,13 +9,13 @@ const BASE_TIME = 1_700_000_000;
 const touch = (tools: Builtins, relative: string, secondsAfterBase: number, content = 'x'): string => {
   const file = tools.write(relative, content);
   fs.utimesSync(file, BASE_TIME + secondsAfterBase, BASE_TIME + secondsAfterBase);
-  return file;
+  return relative;
 };
 
 const linesOf = (output: string): string[] => output.split('\n');
 
 describe('Glob', () => {
-  it('returns absolute paths sorted by mtime descending', async () => {
+  it('returns paths relative to the working directory sorted by mtime descending', async () => {
     const tools = await makeBuiltins();
     const oldest = touch(tools, 'src/a.ts', 1);
     const newest = touch(tools, 'src/deep/b.ts', 3);
@@ -44,13 +44,13 @@ describe('Glob', () => {
     expect(linesOf(result.output)).toEqual([inSrc]);
   });
 
-  it('defaults the path to the session cwd', async () => {
+  it('defaults the path to the working directory, not the shell directory', async () => {
     const tools = await makeBuiltins();
-    touch(tools, 'top.ts', 1);
-    const inner = touch(tools, 'pkg/inner.ts', 2);
+    const top = touch(tools, 'top.ts', 1);
+    touch(tools, 'pkg/inner.ts', 2);
     tools.session.cwd = path.join(tools.layout.project, 'pkg');
     const result = resultOf(await tools.run('Glob', { pattern: '*.ts' }));
-    expect(linesOf(result.output)).toEqual([inner]);
+    expect(linesOf(result.output)).toEqual([top]);
   });
 
   it('includes dotfiles and skips .git', async () => {
@@ -103,7 +103,7 @@ describe('Glob', () => {
     touch(tools, 'vault/secret.txt', 1);
     const sandboxPolicy = { ...tools.sandboxPolicy, readDenied: [...tools.sandboxPolicy.readDenied, vault] };
     const result = resultOf(await tools.run('Glob', { pattern: '**/*', path: vault }, { sandboxPolicy, mode: 'bypassPermissions' }));
-    expect(result).toEqual({ status: 'failed', output: `Permission denied: ${vault} is blocked by the sandbox policy`, denial: { source: 'sandbox', reason: `${vault} is blocked by the sandbox policy` } });
+    expect(result).toEqual({ status: 'failed', output: 'Permission denied: vault is blocked by the sandbox policy', denial: { source: 'sandbox', reason: 'vault is blocked by the sandbox policy' } });
   });
 
   it('caps results at 100 and appends the truncation notice', async () => {
@@ -134,14 +134,16 @@ describe('Glob', () => {
   it('fails when the path is not a directory', async () => {
     const tools = await makeBuiltins();
     const file = touch(tools, 'a.txt', 1);
-    expect(resultOf(await tools.run('Glob', { pattern: '*', path: file })).status).toBe('failed');
+    expect(resultOf(await tools.run('Glob', { pattern: '*', path: path.join(tools.layout.project, file) })).status).toBe('failed');
     expect(resultOf(await tools.run('Glob', { pattern: '*', path: path.join(tools.layout.project, 'nope') })).status).toBe('failed');
   });
 
-  it('rejects a relative path', async () => {
+  it('resolves a relative path against the working directory', async () => {
     const tools = await makeBuiltins();
-    const result = resultOf(await tools.run('Glob', { pattern: '*', path: 'src' }));
-    expect(result).toMatchObject({ status: 'failed', output: 'path must be an absolute path' });
+    const inSrc = touch(tools, 'src/main.ts', 1);
+    touch(tools, 'main.ts', 2);
+    const result = resultOf(await tools.run('Glob', { pattern: '*.ts', path: 'src' }));
+    expect(linesOf(result.output)).toEqual([inSrc]);
   });
 
   it('asks before searching outside the roots', async () => {

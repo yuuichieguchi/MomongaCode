@@ -58,7 +58,7 @@ describe('momonga -p with hooks and auto mode', () => {
     const result = await runCli(home, ['-p', 'Write the file', '--permission-mode', 'auto']);
 
     expect(result.code).toBe(0);
-    expect(result.stderr).toContain(`momonga: auto mode allowed Write ${target}; classifier ${CLASSIFIER_ALIAS} judged Write ${target} safe with high confidence: scripted safe/high\n`);
+    expect(result.stderr).toContain(`momonga: auto mode allowed Write allowed.txt; classifier ${CLASSIFIER_ALIAS} judged Write allowed.txt safe with high confidence: scripted safe/high\n`);
     expect(fs.readFileSync(target, 'utf8')).toBe('written\n');
   });
 

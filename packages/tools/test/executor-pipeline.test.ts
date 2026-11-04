@@ -41,12 +41,12 @@ describe('executor pipeline early exits', () => {
       sideEffect: 'read_only',
       subjectKind: 'none',
       subject: () => {
-        throw new ToolInputError('file_path must be absolute');
+        throw new ToolInputError('file_path cannot be resolved to a real location');
       },
       execute: probe.execute,
     });
     const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Read')]));
-    expect(outcomes).toEqual([{ callId: 'c1', kind: 'result', result: { status: 'failed', output: 'file_path must be absolute' } }]);
+    expect(outcomes).toEqual([{ callId: 'c1', kind: 'result', result: { status: 'failed', output: 'file_path cannot be resolved to a real location' } }]);
     expect(probe.calls).toEqual([]);
     expect(harness.idempotency.records.size).toBe(0);
   });

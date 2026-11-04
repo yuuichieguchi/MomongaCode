@@ -87,7 +87,7 @@ describe('executor guards read the user file rules', () => {
     const tools = await makeBuiltins();
     const target = tools.write('.env', 'SECRET');
     const outcome = await tools.run('Read', { file_path: target }, withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')]));
-    expect(failedWith(outcome)).toBe(blockedMessage(target, 'Read(.env)'));
+    expect(failedWith(outcome)).toBe(blockedMessage('.env', 'Read(.env)'));
   });
 
   it('blocks a Grep whose path is a read-denied file', async () => {
@@ -95,7 +95,7 @@ describe('executor guards read the user file rules', () => {
     const target = tools.write('.env', 'SECRET');
     const { sandbox, spawned } = recordingSandbox('seatbelt', () => '');
     const outcome = await tools.run('Grep', { pattern: 'SECRET', path: target }, withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { sandbox, env: { PATH: RG_PATH, LANG: 'C' } }));
-    expect(failedWith(outcome)).toBe(blockedMessage(target, 'Read(.env)'));
+    expect(failedWith(outcome)).toBe(blockedMessage('.env', 'Read(.env)'));
     expect(spawned).toEqual([]);
   });
 
@@ -104,7 +104,7 @@ describe('executor guards read the user file rules', () => {
     tools.write(path.join('secrets', 'k'), 'KEY');
     const target = path.join(tools.layout.project, 'secrets');
     const outcome = await tools.run('Glob', { pattern: '**/*', path: target }, withRules(tools, [ruleOf(tools, 'deny', 'Read(secrets/**)')]));
-    expect(failedWith(outcome)).toBe(blockedMessage(target, 'Read(secrets/**)'));
+    expect(failedWith(outcome)).toBe(blockedMessage('secrets', 'Read(secrets/**)'));
   });
 
   it('omits a denied file from a Glob over a directory that contains it', async () => {
@@ -171,7 +171,7 @@ describe('executor guards read the user file rules', () => {
     fs.symlinkSync(shared, path.join(tools.layout.project, 'cfg'));
     const target = path.join(tools.layout.project, 'cfg', '.env');
     const outcome = await tools.run('Read', { file_path: target }, withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')]));
-    expect(failedWith(outcome)).toBe(blockedMessage(target, 'Read(.env)'));
+    expect(failedWith(outcome)).toBe(blockedMessage('cfg/.env', 'Read(.env)'));
   });
 
   it('blocks a Write matched by a write deny glob and exempts the session tmp dir', async () => {
@@ -179,7 +179,7 @@ describe('executor guards read the user file rules', () => {
     const rules = [ruleOf(tools, 'deny', 'Write(*.pem)')];
     const target = path.join(tools.layout.project, 'k.pem');
     const blocked = await tools.run('Write', { file_path: target, content: 'x' }, withRules(tools, rules, { mode: 'acceptEdits' }));
-    expect(failedWith(blocked)).toBe(blockedMessage(target, 'Write(*.pem)'));
+    expect(failedWith(blocked)).toBe(blockedMessage('k.pem', 'Write(*.pem)'));
     expect(fs.existsSync(target)).toBe(false);
     const scratch = path.join(tools.tmpDir, 'k.pem');
     const allowed = await tools.run('Write', { file_path: scratch, content: 'x' }, withRules(tools, rules, { mode: 'acceptEdits' }));
@@ -194,7 +194,7 @@ describe('executor guards read the user file rules', () => {
     const target = path.join(tools.layout.project, '.env');
     fs.symlinkSync(outside, target);
     const outcome = await tools.run('Read', { file_path: target }, withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')]));
-    expect(failedWith(outcome)).toBe(blockedMessage(target, 'Read(.env)'));
+    expect(failedWith(outcome)).toBe(blockedMessage('.env', 'Read(.env)'));
   });
 
   it('blocks a path through a symlinked directory at the real location', async () => {
@@ -206,7 +206,7 @@ describe('executor guards read the user file rules', () => {
     const target = path.join(tools.layout.project, 'linkdir', 'k');
     const ruleText = `Read(/${secret}/**)`;
     const outcome = await tools.run('Read', { file_path: target }, withRules(tools, [ruleOf(tools, 'deny', ruleText)]));
-    expect(failedWith(outcome)).toBe(blockedMessage(target, ruleText));
+    expect(failedWith(outcome)).toBe(blockedMessage(path.join(secret, 'k'), ruleText));
   });
 });
 
@@ -300,9 +300,9 @@ describe('one compilation per batch: every reader uses batch.sandboxPolicy.fileR
   it('the guards read the carried set (pin)', async () => {
     const { tools, target, rules, fileRules, ruleText } = await remappedFixture('deny');
     const outcome = await tools.run('Read', { file_path: target }, withFileRules(tools, rules, fileRules));
-    expect(failedWith(outcome)).toBe(blockedMessage(target, ruleText));
+    expect(failedWith(outcome)).toBe(blockedMessage('real/k', ruleText));
     const listed = await tools.run('Glob', { pattern: '**/*', path: tools.layout.project }, withFileRules(tools, rules, fileRules));
-    expect(resultOf(listed).output).not.toContain(target);
+    expect(resultOf(listed).output.split('\n')).not.toContain('real/k');
   });
 
   const loopedFixture = async () => {
@@ -361,7 +361,7 @@ describe('one compilation per batch: every reader uses batch.sandboxPolicy.fileR
     const pathTool = makeTool('PathTool', { sideEffect: 'read_only', subjectKind: 'path', subject: () => ({ kind: 'path', tool: 'PathTool', paths: [target], access: 'read' }) });
     const input = harness.input(await toolSetOf(pathTool), [call('c1', 'PathTool')], { rules, mode: 'bypassPermissions', sandboxPolicy: minimalPolicyFor({ layout: harness.layout, rules }) });
     const [outcome] = await harness.executor.runBatch(input);
-    expect(failedWith(outcome)).toBe(blockedMessage(target, 'Read(.env)'));
+    expect(failedWith(outcome)).toBe(blockedMessage('.env', 'Read(.env)'));
   });
 });
 
@@ -406,7 +406,7 @@ describe('symlinks under user rules (pins)', () => {
     const target = path.join(tools.layout.project, '.env');
     fs.symlinkSync(outside, target);
     const outcome = await tools.run('Write', { file_path: target, content: 'x' }, withRules(tools, [ruleOf(tools, 'deny', 'Write(.env)')], { mode: 'acceptEdits' }));
-    expect(failedWith(outcome)).toBe(blockedMessage(target, 'Write(.env)'));
+    expect(failedWith(outcome)).toBe(blockedMessage('.env', 'Write(.env)'));
     expect(fs.readFileSync(outside, 'utf8')).toBe('plain');
   });
 
@@ -435,7 +435,7 @@ describe('read rules block every path subject (pins)', () => {
     const tools = await makeBuiltins();
     const target = tools.write('.env', 'SECRET');
     const outcome = await tools.run(tool, args(target), withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { mode: 'acceptEdits' }));
-    expect(failedWith(outcome)).toBe(blockedMessage(target, 'Read(.env)'));
+    expect(failedWith(outcome)).toBe(blockedMessage('.env', 'Read(.env)'));
     expect(fs.readFileSync(target, 'utf8')).toBe('SECRET');
   });
 

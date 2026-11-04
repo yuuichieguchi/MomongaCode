@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CONTEXT_LINES, clipDiff, diffOfStrings, diffOfToolInput, maxDiffLines } from '../src/tui/diff.ts';
 
@@ -34,19 +37,43 @@ describe('diffOfStrings', () => {
 });
 
 describe('diffOfToolInput', () => {
-  it('builds a diff with the file as header for Edit', () => {
-    expect(diffOfToolInput('Edit', { file_path: '/p/a.ts', old_string: 'x', new_string: 'y' })).toEqual([
-      { kind: 'header', text: '/p/a.ts' },
+  it('builds a diff with the file as header for Edit, relative to the working directory', () => {
+    expect(diffOfToolInput('Edit', { file_path: '/p/a.ts', old_string: 'x', new_string: 'y' }, '/p')).toEqual([
+      { kind: 'header', text: 'a.ts' },
       { kind: 'removed', text: 'x' },
       { kind: 'added', text: 'y' },
     ]);
   });
 
   it('shows the content of a Write as added lines', () => {
-    expect(diffOfToolInput('Write', { file_path: '/p/a.ts', content: 'hi' })).toEqual([
-      { kind: 'header', text: '/p/a.ts' },
+    expect(diffOfToolInput('Write', { file_path: '/p/a.ts', content: 'hi' }, '/p')).toEqual([
+      { kind: 'header', text: 'a.ts' },
       { kind: 'added', text: 'hi' },
     ]);
+  });
+
+  it('heads a relative path with that path resolved against the working directory', () => {
+    expect(diffOfToolInput('Write', { file_path: 'src/a.ts', content: 'hi' }, '/p')?.[0]).toEqual({ kind: 'header', text: 'src/a.ts' });
+    expect(diffOfToolInput('Write', { file_path: './src/../src/a.ts', content: 'hi' }, '/p')?.[0]).toEqual({ kind: 'header', text: 'src/a.ts' });
+  });
+
+  it('heads a path outside the working directory with its absolute path', () => {
+    expect(diffOfToolInput('Edit', { file_path: '/q/a.ts', old_string: 'x', new_string: 'y' }, '/p')?.[0]).toEqual({ kind: 'header', text: '/q/a.ts' });
+    expect(diffOfToolInput('Edit', { file_path: '../q/a.ts', old_string: 'x', new_string: 'y' }, '/p')?.[0]).toEqual({ kind: 'header', text: '/q/a.ts' });
+  });
+
+  it('heads a path in a working directory reached through a symlink relative to it', () => {
+    const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-diff-')));
+    try {
+      const project = path.join(root, 'project');
+      fs.mkdirSync(project);
+      fs.writeFileSync(path.join(project, 'a.ts'), 'x\n');
+      const alias = path.join(root, 'alias');
+      fs.symlinkSync(project, alias);
+      expect(diffOfToolInput('Edit', { file_path: path.join(project, 'a.ts'), old_string: 'x', new_string: 'y' }, alias)?.[0]).toEqual({ kind: 'header', text: 'a.ts' });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it.each([
@@ -55,7 +82,7 @@ describe('diffOfToolInput', () => {
     ['non-text strings', 'Edit', { file_path: '/p', old_string: 1, new_string: 2 }],
     ['an input that is not an object', 'Edit', 'text'],
   ])('has no diff for %s', (_label, name, input) => {
-    expect(diffOfToolInput(name, input)).toBeUndefined();
+    expect(diffOfToolInput(name, input, '/p')).toBeUndefined();
   });
 });
 

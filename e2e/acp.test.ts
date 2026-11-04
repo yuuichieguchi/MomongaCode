@@ -186,7 +186,7 @@ describe('acp: momonga acp', () => {
     expect(prompted.stopReason).toBe('end_turn');
     expect(fs.readFileSync(target, 'utf8')).toBe(EDITED);
     expect(acp.permissionRequests).toHaveLength(1);
-    expect(acp.permissionRequests[0]?.toolCall).toMatchObject({ kind: 'edit', title: `editor: Edit ${target}`, rawInput: { file_path: target } });
+    expect(acp.permissionRequests[0]?.toolCall).toMatchObject({ kind: 'edit', title: 'editor: Edit config.toml', rawInput: { file_path: target } });
     const waiting = updatesOf(acp.updates, 'tool_call_update').filter((update) => JSON.stringify(update).includes('waiting for subagent editor'));
     expect(waiting).toHaveLength(1);
     expect(messageTexts(acp.updates, 'agent_message_chunk').join('')).toBe(FINAL_TEXT);
