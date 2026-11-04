@@ -31,7 +31,7 @@ const startListing = async (): Promise<{ fake: FakeChatCompletionsServer; fmServ
   return { fake, fmServe, starts: () => starts };
 };
 
-const targetOf = async (fmServe: FmServe, extra: { declaredModel?: string; report?: ReturnType<typeof makeReport> } = {}) => {
+const targetOf = async (fmServe: FmServe, extra: { declaredModel?: string; declaredOutputBoundField?: 'max_tokens' | 'max_completion_tokens'; report?: ReturnType<typeof makeReport> } = {}) => {
   const probeRecordDir = makeDir();
   if (extra.report !== undefined) await saveProbeRecord(probeRecordDir, RECORD_KEY, extra.report);
   return createManagedFmTarget({
@@ -42,6 +42,7 @@ const targetOf = async (fmServe: FmServe, extra: { declaredModel?: string; repor
     recordKey: RECORD_KEY,
     toolCallingSetting: 'auto',
     ...(extra.declaredModel === undefined ? {} : { declaredModel: extra.declaredModel }),
+    ...(extra.declaredOutputBoundField === undefined ? {} : { declaredOutputBoundField: extra.declaredOutputBoundField }),
   });
 };
 
@@ -99,5 +100,23 @@ describe('the model id the managed fm target sends to fm serve', () => {
     await expect(target.upstreamModel(TARGET, new AbortController().signal)).rejects.toThrow('HTTP 500');
     await expect(target.upstreamModel(TARGET, new AbortController().signal)).rejects.toThrow('HTTP 500');
     expect(listings(fake)).toBe(2);
+  });
+});
+
+describe('the output bound field of the managed fm target', () => {
+  it('is the declared field for an unprobed target and over the recorded one', async () => {
+    const { fmServe } = await startListing();
+    const unprobed = await targetOf(fmServe, { declaredOutputBoundField: 'max_tokens' });
+    const probed = await targetOf(fmServe, { declaredOutputBoundField: 'max_tokens', report: { ...makeReport(1, 1), outputBoundField: 'max_completion_tokens' } });
+
+    expect((await unprobed.capabilities(TARGET)).outputBoundField).toBe('max_tokens');
+    expect((await probed.capabilities(TARGET)).outputBoundField).toBe('max_tokens');
+  });
+
+  it('is the recorded field when none is declared', async () => {
+    const { fmServe } = await startListing();
+    const target = await targetOf(fmServe, { report: { ...makeReport(1, 1), outputBoundField: 'max_tokens' } });
+
+    expect((await target.capabilities(TARGET)).outputBoundField).toBe('max_tokens');
   });
 });

@@ -1,7 +1,7 @@
 import type { ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
-import type { CapabilitiesCore, HooksSettings, ImageCapability, ImageTokenModel, OutputFormatterName, TargetBilling, PermissionMode } from '@momonga/protocol';
+import type { CapabilitiesCore, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetBilling, PermissionMode } from '@momonga/protocol';
 import { MCP_SERVERS_FILE_SCHEMA, MCP_SERVER_SCHEMA, MODEL_ROLES, SETTINGS_SCHEMA } from './settings-schema.ts';
 
 export type PermissionsSettings = {
@@ -49,6 +49,7 @@ export type DeclaredTargetCapabilities = Pick<TargetCapabilitiesCore, 'contextWi
 export type FmTarget = {
   adapter: 'fm';
   model?: string;
+  outputBoundField?: OutputBoundField;
   toolCalling?: FmToolCalling;
   maxConcurrency?: number;
   admissionTimeoutMs?: number;
@@ -115,6 +116,7 @@ export type ModelTarget = FmTarget | ChatCompletionsTarget | OpenResponsesTarget
 export type ResolvedFmTarget = {
   adapter: 'fm';
   model?: string;
+  outputBoundField?: OutputBoundField;
   toolCalling: FmToolCalling;
   billing: 'local';
   maxConcurrency: number;
