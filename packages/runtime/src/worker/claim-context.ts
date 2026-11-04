@@ -8,6 +8,7 @@ import type { MemorySet, ToolEnv, TraceSpan } from '../ports.ts';
 import type { ClaimControl } from './claim-control.ts';
 import type { Journal } from './journal.ts';
 import type { RunLimits } from './limits.ts';
+import type { ToolOffer } from './tool-offer.ts';
 import type { TokenPolicy } from './token-pin.ts';
 import type { WorkerOptions } from './types.ts';
 
@@ -36,6 +37,7 @@ export type ClaimContext = {
   usedMemoryIds: Set<string>;
   env: ToolEnv;
   functionTools(): FunctionTool[];
+  toolOffer(loaded?: readonly string[]): ToolOffer;
   companions(): { hostOf: Readonly<Record<string, string>>; keepWithoutHost: boolean };
   systemPrompt: string;
   inlineLimitForReconcile: number;

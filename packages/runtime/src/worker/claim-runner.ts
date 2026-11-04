@@ -28,10 +28,14 @@ import { foldMeterFor, meterEventsOf } from './meter-journal.ts';
 import { aliasChainReaches } from './model-switch.ts';
 import { readPins } from './pins.ts';
 import { rolesFor } from './role-pin.ts';
-import { tokenPinFor, tokenPolicyOf } from './token-pin.ts';
+import { deferredPinFor, tokenPinFor, tokenPolicyOf } from './token-pin.ts';
 import type { RunPins } from './pins.ts';
 import { createSkillAdmission } from './skill-admission.ts';
 import { createTerminals } from './terminals.ts';
+import { createLoadToolsTool, withLoadTools } from './load-tools-tool.ts';
+import { createToolLoading } from './tool-admission.ts';
+import { offerFor } from './tool-offer.ts';
+import type { ToolOffer } from './tool-offer.ts';
 import { settleCalls } from './tool-step.ts';
 import type { WorkerOptions } from './types.ts';
 import type { TraceSpan } from '../ports.ts';
@@ -303,7 +307,10 @@ const drive = async (
           roles: rolesFor({ store: options.store, settings: options.settings, run }),
           ...(newMemoryShare === undefined ? {} : { memoryShare: newMemoryShare }),
           ...(newGuidelineVersion === undefined ? {} : { guidelineVersion: newGuidelineVersion }),
-          token: await tokenPinFor({ store: options.store, settings: options.settings, session, run }),
+          token: {
+            ...(await tokenPinFor({ store: options.store, settings: options.settings, session, run })),
+            ...(await deferredPinFor({ store: options.store, settings: options.settings, session, run })),
+          },
         }
       : readPins(recorded);
   journal.append([{ type: 'run.started', attempt: claim.attempt, now: clock.now(), pins: { ...pins }, mode: session.permissionMode }]);
@@ -361,9 +368,18 @@ const drive = async (
   });
   aliasMeter.restore(foldMeterFor(options.store, meterEvents, aliasMeterCapabilities, aliasCounter));
   const token = tokenPolicyOf(pins.token);
-  const offerNow = (): FunctionTool[] =>
+  const visibleNow = (): FunctionTool[] =>
     toolSet.forModel({ mode: session.permissionMode, rules: composeRules(), conciseDescriptions: token.conciseDescriptions });
-  const claimOffer = token.cachePrefix ? offerNow() : undefined;
+  const claimVisible = token.cachePrefix ? visibleNow() : undefined;
+  const keepCompanionsWithoutHost = options.store.jobs.listForSession(session.id).some((job) => job.status === 'running');
+  const offerNow = (loaded: readonly string[] = journal.state.loadedTools): ToolOffer =>
+    offerFor({
+      toolSet,
+      visible: claimVisible === undefined ? visibleNow() : [...claimVisible],
+      deferred: token.deferred,
+      loaded,
+      keepCompanionsWithoutHost,
+    });
   const ctx: ClaimContext = {
     options,
     claim,
@@ -374,16 +390,14 @@ const drive = async (
     ...(pins.memoryShare === undefined ? {} : { memoryShare: pins.memoryShare }),
     ...(pinnedGuideline === undefined ? {} : { guideline: pinnedGuideline }),
     limits,
-    toolSet,
+    toolSet: token.deferred === undefined ? toolSet : withLoadTools(toolSet, createLoadToolsTool(createToolLoading(() => ctx))),
     skills,
     recalled,
     usedMemoryIds: new Set<string>(),
     env,
-    functionTools: () => (claimOffer === undefined ? offerNow() : [...claimOffer]),
-    companions: () => ({
-      hostOf: Object.fromEntries(toolSet.companions),
-      keepWithoutHost: options.store.jobs.listForSession(session.id).some((job) => job.status === 'running'),
-    }),
+    functionTools: () => offerNow().tools,
+    toolOffer: offerNow,
+    companions: () => ({ hostOf: Object.fromEntries(toolSet.companions), keepWithoutHost: keepCompanionsWithoutHost }),
     systemPrompt,
     inlineLimitForReconcile: inlineOutputLimitFor(pins.capabilities),
     inlineLimitForExecution: () => {

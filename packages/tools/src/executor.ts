@@ -80,6 +80,7 @@ type BatchCore = BatchCallbacks & {
   classifier?: AutoClassifier;
   onHalt?(reason: string, hookEvent: 'PreToolUse' | 'PostToolUse'): void;
   formatOutput?: BatchOutputFormatter;
+  offered?: { tools: readonly string[]; catalog: readonly string[] };
 };
 
 export type ExecutionBatchInput = BatchCore & {
@@ -498,6 +499,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       ...(result.content === undefined ? {} : { content: result.content }),
       ...(result.plan === undefined ? {} : { plan: result.plan }),
       ...(result.skill === undefined ? {} : { skill: result.skill }),
+      ...(result.toolsLoaded === undefined ? {} : { toolsLoaded: result.toolsLoaded }),
       ...(result.files === undefined ? {} : { files: result.files }),
       ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
       ...('truncated' in truncated ? { truncated: truncated.truncated, handle: truncated.handle } : {}),
@@ -700,6 +702,16 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     if (tool === undefined) {
       const available = batch.toolSet.tools.map((candidate) => candidate.name).join(', ');
       return outcome(failedOutcome(call.callId, `Unknown tool "${call.name}". Available tools: ${available}`));
+    }
+    if (batch.offered !== undefined && !batch.offered.tools.includes(call.name)) {
+      return outcome(
+        failedOutcome(
+          call.callId,
+          batch.offered.catalog.includes(call.name)
+            ? `Tool "${call.name}" is not loaded: load it with LoadTools first`
+            : `Tool "${call.name}" was not offered in the request that produced this call, so it cannot run`,
+        ),
+      );
     }
     const validation = validateToolInput(tool, call.arguments);
     if (!validation.ok) return outcome(failedOutcome(call.callId, validation.message));

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
 import { START_MS, makeEnv, toolKey } from './harness.ts';
-import { assistantMessage, functionCallItem, incompleteStep, textStep } from './scripts.ts';
+import { assistantMessage, functionCallItem, incompleteStep, requestedOffering, textStep } from './scripts.ts';
 
 const USAGE = { input_tokens: 50, output_tokens: 5, total_tokens: 55 };
 
@@ -126,6 +126,7 @@ describe('worker cancel recovery past the run deadline', () => {
     env.seed(
       run.id,
       [
+        requestedOffering(1, ['Mark']),
         responded(1, [functionCallItem({ callId: 'call_m_1', name: 'Mark', args: { value: 'one' } })]),
         { type: 'tool.call', callId: 'call_m_1', providerCallId: 'call_m_1', name: 'Mark', kind: 'edit', title: 'Mark one', rawInput: { value: 'one' } },
         { type: 'tool.started', callId: 'call_m_1', idemKey: key },
