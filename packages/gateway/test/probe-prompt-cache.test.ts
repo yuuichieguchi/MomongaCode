@@ -22,7 +22,7 @@ afterEach(async () => {
 const NOW = () => new Date('2026-11-05T12:00:00.000Z');
 
 const startFake = async (): Promise<FakeChatCompletionsServer> => {
-  const fake = await startFakeChatCompletions({ scenario: 'tools-ok' });
+  const fake = await startFakeChatCompletions({ scenario: 'tools-ok', streamUsage: true });
   closers.push(() => fake.close());
   return fake;
 };
