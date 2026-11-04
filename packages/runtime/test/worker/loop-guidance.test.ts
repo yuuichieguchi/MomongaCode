@@ -16,7 +16,7 @@ const textOf = (item: Item | undefined): string => {
   return typeof item.content === 'string' ? item.content : JSON.stringify(item.content);
 };
 
-const isGuidance = (item: Item): boolean => item.type === 'message' && item.role === 'user' && textOf(item).includes('Echo') && textOf(item).includes('same');
+const isGuidance = (item: Item): boolean => item.type === 'message' && item.role === 'user' && textOf(item).includes('Echo') && textOf(item).includes('kx7same');
 
 const guidedEnv = async (options: { cachePrefix?: boolean } = {}) => {
   const env = await makeEnv();
@@ -29,7 +29,7 @@ const repeated = (prefix: string, value: string, count: number) => Array.from({ 
 describe('loop guidance (T5, context.loopGuidance)', () => {
   it('warns at the t-th identical call, executes it, and stops at the (t+1)-th', async () => {
     const env = await guidedEnv();
-    env.gateway.script.push(...repeated('c', 'same', 4), textStep('never sent'));
+    env.gateway.script.push(...repeated('c', 'kx7same', 4), textStep('never sent'));
     const run = env.enqueue('Loop');
 
     await env.runOnce(env.worker());
@@ -38,7 +38,7 @@ describe('loop guidance (T5, context.loopGuidance)', () => {
     expect(env.toolbox.executions).toHaveLength(3);
     expect(env.gateway.streams).toHaveLength(4);
     expect(env.ofType(run.id, 'tool.started').map((event) => event.callId)).toEqual(['c1', 'c2', 'c3'].map((id) => env.gateway.callId(id)));
-    expect(env.ofType(run.id, 'loop.warned').map((event) => event.signature)).toEqual([signatureOf('same')]);
+    expect(env.ofType(run.id, 'loop.warned').map((event) => event.signature)).toEqual([signatureOf('kx7same')]);
     const warnings = env.ofType(run.id, 'notice').filter((notice) => notice.code === 'tool_loop_warned');
     expect(warnings.map((notice) => notice.level)).toEqual(['warning']);
     expect(env.ofType(run.id, 'notice').filter((notice) => notice.code === 'tool_loop_detected')).toHaveLength(1);
@@ -46,7 +46,7 @@ describe('loop guidance (T5, context.loopGuidance)', () => {
 
   it('records the warning for the same signature before the stop (T5-1)', async () => {
     const env = await guidedEnv();
-    env.gateway.script.push(...repeated('c', 'same', 4), textStep('never sent'));
+    env.gateway.script.push(...repeated('c', 'kx7same', 4), textStep('never sent'));
     const run = env.enqueue('Loop');
 
     await env.runOnce(env.worker());
@@ -60,29 +60,29 @@ describe('loop guidance (T5, context.loopGuidance)', () => {
 
   it('puts the guidance last in the request right after the warning, naming the call, its arguments and the count, never the tool output', async () => {
     const env = await guidedEnv();
-    env.gateway.script.push(...repeated('c', 'same', 4), textStep('never sent'));
-    const run = env.enqueue('Loop');
+    env.gateway.script.push(...repeated('c', 'kx7same', 6), textStep('never sent'));
+    const run = env.enqueue('Loop', { limits: { loopThreshold: 5 } });
 
     await env.runOnce(env.worker());
 
     const requests = env.ofType(run.id, 'model.requested');
-    expect(requests).toHaveLength(4);
-    for (const request of requests.slice(0, 3)) expect(inputOf(request.body).some(isGuidance)).toBe(false);
-    const guided = inputOf(requests[3]?.body);
+    expect(requests).toHaveLength(6);
+    for (const request of requests.slice(0, 5)) expect(inputOf(request.body).some(isGuidance)).toBe(false);
+    const guided = inputOf(requests[5]?.body);
     const last = guided.at(-1);
     expect(last?.type).toBe('message');
     expect(last?.role).toBe('user');
     expect(guided.filter(isGuidance)).toEqual([last]);
     const text = textOf(last);
     expect(text).toContain('Echo');
-    expect(text).toContain('same');
-    expect(text).toContain('3');
-    expect(text).not.toContain('echo:same');
+    expect(text).toContain('kx7same');
+    expect(text).toMatch(/\b5\b/);
+    expect(text).not.toContain('echo:kx7same');
   });
 
   it('carries the guidance in one request only, and the next request keeps the prefix through the history (T5-2)', async () => {
     const env = await guidedEnv({ cachePrefix: true });
-    env.gateway.script.push(...repeated('c', 'same', 3), echo('d1', 'other'), textStep('Done.'));
+    env.gateway.script.push(...repeated('c', 'kx7same', 3), echo('d1', 'w2other'), textStep('Done.'));
     const run = env.enqueue('Loop then change');
 
     await env.runOnce(env.worker());
@@ -114,7 +114,7 @@ describe('loop guidance (T5, context.loopGuidance)', () => {
 
   it('works at loopThreshold 2: a warning at the second identical call and a stop at the third', async () => {
     const env = await guidedEnv();
-    env.gateway.script.push(...repeated('c', 'same', 3), textStep('never sent'));
+    env.gateway.script.push(...repeated('c', 'kx7same', 3), textStep('never sent'));
     const run = env.enqueue('Loop', { limits: { loopThreshold: 2 } });
 
     await env.runOnce(env.worker());
@@ -122,13 +122,13 @@ describe('loop guidance (T5, context.loopGuidance)', () => {
     expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'loop' });
     expect(env.toolbox.executions).toHaveLength(2);
     expect(env.gateway.streams).toHaveLength(3);
-    expect(env.ofType(run.id, 'loop.warned').map((event) => event.signature)).toEqual([signatureOf('same')]);
-    expect(textOf(inputOf(env.ofType(run.id, 'model.requested')[2]?.body).at(-1))).toContain('2');
+    expect(env.ofType(run.id, 'loop.warned').map((event) => event.signature)).toEqual([signatureOf('kx7same')]);
+    expect(textOf(inputOf(env.ofType(run.id, 'model.requested')[2]?.body).at(-1))).toMatch(/\b2\b/);
   });
 
   it('works at loopThreshold 32: the stop needs 31 of the 32 kept groups', async () => {
     const env = await guidedEnv();
-    env.gateway.script.push(...repeated('c', 'same', 33), textStep('never sent'));
+    env.gateway.script.push(...repeated('c', 'kx7same', 33), textStep('never sent'));
     const run = env.enqueue('Loop', { limits: { loopThreshold: 32 } });
 
     await env.runOnce(env.worker());
@@ -140,7 +140,7 @@ describe('loop guidance (T5, context.loopGuidance)', () => {
 
   it('lists the distinct calls of the kept groups in the guidance, without their output', async () => {
     const env = await guidedEnv();
-    env.gateway.script.push(echo('b1', 'before'), ...repeated('c', 'same', 3), textStep('Done.'));
+    env.gateway.script.push(echo('b1', 'qz4before'), ...repeated('c', 'kx7same', 3), textStep('Done.'));
     const run = env.enqueue('Loop after another call');
 
     await env.runOnce(env.worker());
@@ -148,14 +148,14 @@ describe('loop guidance (T5, context.loopGuidance)', () => {
     const requests = env.ofType(run.id, 'model.requested');
     expect(requests).toHaveLength(5);
     const text = textOf(inputOf(requests[4]?.body).at(-1));
-    expect(text).toContain('same');
-    expect(text).toContain('before');
-    expect(text).not.toContain('echo:before');
+    expect(text).toContain('kx7same');
+    expect(text).toContain('qz4before');
+    expect(text).not.toContain('echo:qz4before');
   });
 
   it('keeps the old rule with guidance off: no warning, and a stop before the t-th call runs', async () => {
     const env = await makeEnv();
-    env.gateway.script.push(...repeated('c', 'same', 3), textStep('never sent'));
+    env.gateway.script.push(...repeated('c', 'kx7same', 3), textStep('never sent'));
     const run = env.enqueue('Loop');
 
     await env.runOnce(env.worker());
