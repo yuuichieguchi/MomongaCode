@@ -8,7 +8,6 @@ type LoadToolsInput = { names: string[] };
 const LOAD_TOOLS_TIMEOUT_MS = 30_000;
 
 export const createLoadToolsTool = (loading: ToolLoading): AnyTool => {
-  const claimed = new Set<string>();
   return defineTool<LoadToolsInput>({
     name: LOAD_TOOLS_TOOL_NAME,
     tier: 'essential',
@@ -28,14 +27,14 @@ export const createLoadToolsTool = (loading: ToolLoading): AnyTool => {
       const catalog = loading.catalog();
       const unknown = input.names.filter((name) => !catalog.includes(name));
       if (unknown.length > 0) throw new ToolExecutionError(`${unknown.join(', ')} is not in the catalog of ${LOAD_TOOLS_TOOL_NAME}`);
-      const fresh = [...new Set(input.names)].filter((name) => !loading.isLoaded(name) && !claimed.has(name));
+      const fresh = [...new Set(input.names)].filter((name) => !loading.isLoaded(name) && !loading.isClaimed(name));
       if (fresh.length === 0) return { status: 'completed', output: `${input.names.join(', ')} already loaded; the definitions are already available.` };
-      for (const name of fresh) claimed.add(name);
+      loading.claim(fresh);
       try {
         const admission = await loading.admit(fresh);
         if (!admission.admitted) throw new ToolExecutionError(admission.reason);
       } catch (error) {
-        for (const name of fresh) claimed.delete(name);
+        loading.release(fresh);
         throw error;
       }
       return { status: 'completed', output: `Loaded ${fresh.join(', ')}; the definitions are available from the next request.`, toolsLoaded: fresh };

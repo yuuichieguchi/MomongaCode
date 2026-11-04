@@ -522,7 +522,7 @@ export type RuntimeStore = {
   readModelCallEvents(runId: string): ModelCallRecord[];
   prepareTerminal(runId: string): void;
   lastTerminalRootRuns(project: string, limit: number): Run[];
-  toolCallNames(runId: string): string[];
+  toolCallNames(rootRunId: string): string[];
   readSessionEvents(sessionId: string, afterId: number, limit: number): (RunEvent | SessionEvent)[];
   readModelChanges(sessionId: string, afterId: number): Extract<SessionEvent, { type: 'model.changed' }>[];
   sessionMaxEventId(sessionId: string): number;

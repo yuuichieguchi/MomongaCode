@@ -306,7 +306,7 @@ const withStep = (steps: RunState['steps'], step: number, body: unknown): RunSta
 
 const withInstruction = (current: RunState['loadedInstructions'], path: string, textSha256: string, seq: number): RunState['loadedInstructions'] =>
   current.some((entry) => entry.path === path)
-    ? current.map((entry) => (entry.path === path ? { path, textSha256, seq } : entry))
+    ? current.map((entry) => (entry.path === path ? { path, textSha256, seq: entry.seq } : entry))
     : [...current, { path, textSha256, seq }];
 
 const withLoadedTools = (current: readonly string[], names: readonly string[]): string[] => [
