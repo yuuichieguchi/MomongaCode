@@ -20,6 +20,7 @@ export const createActivateSkillTool = ({ skills, activate, isActive, admit }: A
     tier: 'essential',
     description:
       'Loads the full instructions of an agent skill from the skill catalog. Call it when the task matches the skill description; the instructions stay in your context for the rest of the conversation, so activate each skill once.',
+    conciseDescription: 'Loads the full instructions of a skill from the catalog when the task matches its description. Activate each skill once.',
     kind: 'read',
     sideEffect: 'read_only',
     inputSchema: {

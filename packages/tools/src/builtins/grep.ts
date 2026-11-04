@@ -341,6 +341,22 @@ export const grepTool = defineTool<GrepInput>({
   tier: 'essential',
   description:
     'Searches file contents with a regular expression (ripgrep syntax when available). path is a file or directory, defaults to the working directory, and a relative path is resolved against the working directory. output_mode: files_with_matches (default, newest first), content (path:line:text with optional -A/-B/-C context), or count. Respects .gitignore and .ignore, skips .git, includes dotfiles. head_limit and offset page through the output entries.',
+  conciseDescription:
+    'Searches file contents with a regular expression. path is a file or directory; a relative path is resolved against the working directory, which is also the default. output_mode: files_with_matches (default), content, or count. Respects .gitignore, includes dotfiles. Page with head_limit and offset.',
+  conciseParameterDescriptions: {
+    pattern: 'Regular expression',
+    path: 'File or directory to search; a relative path is resolved against the working directory',
+    glob: 'File name filter, e.g. "*.js"',
+    type: 'File type, e.g. "ts"',
+    '-i': 'Ignore case',
+    '-n': 'Line numbers in content mode (default true)',
+    '-A': 'Lines after each match',
+    '-B': 'Lines before each match',
+    '-C': 'Lines before and after each match',
+    head_limit: 'Max entries (0 is unlimited)',
+    offset: 'Entries to skip first',
+    multiline: 'Match across lines',
+  },
   kind: 'search',
   sideEffect: 'read_only',
   inputSchema: {
