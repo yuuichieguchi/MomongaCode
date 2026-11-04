@@ -1,6 +1,8 @@
+import { LOWEST_REASONING_EFFORT } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
 import { PreconditionFailedError } from '../adapters/shared/failures.ts';
 import type { OllamaEndpointRecord } from './endpoint-record.ts';
+import { layerOf, mergeCapabilities } from './decide.ts';
 import { memoizedVerification, remedyOf } from './endpoint-target.ts';
 
 export type ProbedOllamaTargetOptions = {
@@ -42,13 +44,17 @@ export const createProbedOllamaTarget = (options: ProbedOllamaTargetOptions): Pr
     verify: memoizedVerification(verifyOnce),
     capabilities: async () => {
       if (record === null) return { ...declared, source: 'unprobed' };
-      return {
-        ...declared,
-        toolCalling: record.report.nativeTools.accepted ? 'native' : 'none',
-        ...(declared.promptCache !== undefined || record.report.promptCache === undefined ? {} : { promptCache: record.report.promptCache }),
-        source: 'probed',
-        probedAt: record.report.probedAt,
-      };
+      const { report } = record;
+      return mergeCapabilities({
+        defaults: declared,
+        declared: layerOf(declared),
+        probed: {
+          toolCalling: report.nativeTools.accepted ? 'native' : 'none',
+          reasoning: report.thinkingSupported ? { control: 'reasoning_effort', lowest: LOWEST_REASONING_EFFORT } : { control: 'none' },
+          ...(report.promptCache === undefined ? {} : { promptCache: report.promptCache }),
+        },
+        probedAt: report.probedAt,
+      });
     },
   };
 };

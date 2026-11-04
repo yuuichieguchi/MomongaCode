@@ -17,6 +17,7 @@ import { decodeUpstreamReply } from '../adapters/chat-completions/upstream-reply
 import type { UpstreamReply } from '../adapters/chat-completions/upstream-reply.ts';
 import { summaryRequestOf } from '../adapters/shared/compact.ts';
 import { hiddenReasoningTokens } from '../core/hidden-reasoning.ts';
+import { cachedCountOf } from './cached-count.ts';
 import { maxOutputTokensFor } from './decide.ts';
 import { solidPngDataUrl } from './solid-png.ts';
 import { ProbeTimeoutError, createProbeClient, systemSleep, type HttpResult, type ProbeClient, type ProbeEndpoint } from './client.ts';
@@ -132,8 +133,7 @@ const wordsOf = (count: number): string => Array.from({ length: count }, () => '
 
 const cachedTokensOf = (reply: UpstreamReply): number | undefined => {
   if (reply.kind !== 'completion') return undefined;
-  const cached = field(field(reply.usage, 'prompt_tokens_details'), 'cached_tokens');
-  return typeof cached === 'number' ? cached : undefined;
+  return cachedCountOf(field(field(reply.usage, 'prompt_tokens_details'), 'cached_tokens'), 'usage.prompt_tokens_details.cached_tokens');
 };
 
 const toolArgumentsValid = (args: unknown): boolean => isRecord(args) && validateToolArguments(args);

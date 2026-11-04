@@ -5,7 +5,7 @@ import { PreconditionFailedError, StreamFailure, UpstreamHttpError } from '../ad
 import type { KeywordSupport } from './envelope.ts';
 import { ProbeTimeoutError, createProbeClient } from './client.ts';
 import type { ProbeEndpoint } from './client.ts';
-import { capabilitiesFromProbe, decideToolCalling } from './decide.ts';
+import { capabilitiesFromProbe, decideToolCalling, layerOf, mergeCapabilities } from './decide.ts';
 import { endpointIdentityOf } from './endpoint-record.ts';
 import type { EndpointRecord } from './endpoint-record.ts';
 import { parseJson } from './json.ts';
@@ -178,21 +178,25 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
     capabilities: async () => {
       if (record === null) return { ...declared, source: 'unprobed' };
       const decision = decideToolCalling(record.report);
-      const probed = capabilitiesFromProbe(record.report, decision);
-      const { parallelToolCalls: _declaredParallel, ...declaredRest } = declared;
-      return {
-        ...declaredRest,
-        toolCalling: decision.mode,
-        structuredOutput: probed.structuredOutput,
-        streaming: probed.streaming,
-        stopSequences: probed.stopSequences,
-        ...(probed.parallelToolCalls === undefined ? {} : { parallelToolCalls: probed.parallelToolCalls }),
-        usageReported: probed.usageReported,
-        ...(probed.reasoning === undefined ? {} : { reasoning: probed.reasoning }),
-        ...(declared.promptCache !== undefined || probed.promptCache === undefined ? {} : { promptCache: probed.promptCache }),
-        source: 'probed',
+      const { toolCalling, structuredOutput, streaming, stopSequences, parallelToolCalls, usageReported, reasoning, promptCache } = capabilitiesFromProbe(
+        record.report,
+        decision,
+      );
+      return mergeCapabilities({
+        defaults: declared,
+        declared: layerOf(declared),
+        probed: {
+          toolCalling,
+          structuredOutput,
+          streaming,
+          stopSequences,
+          usageReported,
+          ...(parallelToolCalls === undefined ? {} : { parallelToolCalls }),
+          ...(reasoning === undefined ? {} : { reasoning }),
+          ...(promptCache === undefined ? {} : { promptCache }),
+        },
         probedAt: record.report.probedAt,
-      };
+      });
     },
   };
 };

@@ -1,16 +1,17 @@
 import http from 'node:http';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { capabilitiesFromProbe, decideToolCalling, runProbe } from '@momonga/gateway';
+import { capabilitiesFromProbe, decideToolCalling, endpointKeyOf, probeOllamaTarget, runProbe } from '@momonga/gateway';
 import type { Capabilities, ProbeReport } from '@momonga/protocol';
 import { startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { createProbedEndpointTarget } from '../src/probe/endpoint-target.ts';
 import { isProbeReport } from '../src/probe/report-schema.ts';
 import { makeDir } from './gateway-helpers.ts';
+import { OLLAMA_MODEL, startFakeOllama } from './ollama-support.ts';
 import { REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
 
-type CachingBehaviour = 'automatic' | 'none' | 'unreported';
+type CachingBehaviour = 'automatic' | 'none' | 'unreported' | 'malformed';
 
 const closers: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -27,6 +28,7 @@ const startFake = async (): Promise<FakeChatCompletionsServer> => {
 
 const cachedTokensFor = (behaviour: CachingBehaviour, repeated: boolean, promptTokens: number): Record<string, unknown> | undefined => {
   if (behaviour === 'unreported') return undefined;
+  if (behaviour === 'malformed') return { cached_tokens: 'many' };
   return { cached_tokens: behaviour === 'automatic' && repeated ? promptTokens : 0 };
 };
 
@@ -127,6 +129,39 @@ describe('the probe sends one request twice and records the prompt cache from th
     const report = await probeThrough('automatic');
     expect(report.promptCache).toEqual({ kind: 'automatic' });
     expect(isProbeReport(report)).toBe(true);
+  });
+});
+
+type CacheProbeOutcome = { kind: 'recorded'; promptCache: unknown } | { kind: 'refused' };
+
+const outcomeOf = async (probe: () => Promise<{ promptCache?: unknown }>): Promise<CacheProbeOutcome> => {
+  try {
+    const report = await probe();
+    return { kind: 'recorded', promptCache: report.promptCache };
+  } catch {
+    return { kind: 'refused' };
+  }
+};
+
+describe('both probes read the cached-token count by one rule (S1)', () => {
+  it('treats a cached count that is not a number the same way in the chat-completions and the Ollama probe', async () => {
+    const chatCompletions = await outcomeOf(() => probeThrough('malformed'));
+    const ollama = await outcomeOf(async () => {
+      const fake = await startFakeOllama({ cacheProbe: 'malformed' });
+      return (await probeOllamaTarget({ probeRecordDir: makeDir(), upstream: { kind: 'tcp', baseUrl: fake.origin }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL, contextWindow: 32768 })).report;
+    });
+    expect([{ kind: 'recorded', promptCache: undefined }, { kind: 'refused' }]).toContainEqual(chatCompletions);
+    expect(ollama).toEqual(chatCompletions);
+  });
+
+  it('records nothing in either probe when the cached count is absent', async () => {
+    const chatCompletions = await outcomeOf(() => probeThrough('unreported'));
+    const ollama = await outcomeOf(async () => {
+      const fake = await startFakeOllama({ cacheProbe: 'unreported' });
+      return (await probeOllamaTarget({ probeRecordDir: makeDir(), upstream: { kind: 'tcp', baseUrl: fake.origin }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL, contextWindow: 32768 })).report;
+    });
+    expect(chatCompletions).toEqual({ kind: 'recorded', promptCache: undefined });
+    expect(ollama).toEqual(chatCompletions);
   });
 });
 

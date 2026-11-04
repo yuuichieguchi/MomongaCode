@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadEndpointRecord, probeEndpointTarget } from '@momonga/gateway';
+import { endpointKeyOf, loadEndpointRecord, probeEndpointTarget } from '@momonga/gateway';
 import { classifyChatCompletionsError } from '../src/adapters/chat-completions/classify.ts';
 import { readEndpointIdentity } from '../src/probe/endpoint-target.ts';
 import { startFake } from './cc-support.ts';
@@ -14,8 +14,7 @@ describe('probeEndpointTarget', () => {
 
     const result = await probeEndpointTarget({
       probeRecordDir: dir,
-      upstream: { kind: 'unix', socketPath: fake.socketPath },
-      model: 'qwen-fake',
+      upstream: { kind: 'unix', socketPath: fake.socketPath }, key: { endpoint: endpointKeyOf({ kind: 'unix', socketPath: fake.socketPath }), model: 'qwen-fake' }, model: 'qwen-fake',
       apiKey: undefined,
       samples: 3,
     });
@@ -35,7 +34,7 @@ describe('probeEndpointTarget', () => {
     const fake = await startFake({ scenario: 'tools-ok', modelId: 'qwen-fake', models: () => [{ id: 'qwen-fake', object: 'model', created: (stamp += 7), owned_by: 'vllm' }] });
     const dir = makeDir();
 
-    const result = await probeEndpointTarget({ probeRecordDir: dir, upstream: { kind: 'unix', socketPath: fake.socketPath }, model: 'qwen-fake', apiKey: undefined, samples: 1 });
+    const result = await probeEndpointTarget({ probeRecordDir: dir, upstream: { kind: 'unix', socketPath: fake.socketPath }, key: { endpoint: endpointKeyOf({ kind: 'unix', socketPath: fake.socketPath }), model: 'qwen-fake' }, model: 'qwen-fake', apiKey: undefined, samples: 1 });
 
     expect(result.identityFields).toEqual(['id', 'object', 'owned_by']);
     expect((await loadEndpointRecord(dir, result.key))?.identityFields).toEqual(['id', 'object', 'owned_by']);
@@ -45,7 +44,7 @@ describe('probeEndpointTarget', () => {
     const fake = await startFake({ scenario: 'tools-ok', modelId: 'qwen-fake', models: MODELS });
     const dir = makeDir();
 
-    const result = await probeEndpointTarget({ probeRecordDir: dir, upstream: { kind: 'unix', socketPath: fake.socketPath }, model: 'qwen-fake', apiKey: undefined, samples: 1 });
+    const result = await probeEndpointTarget({ probeRecordDir: dir, upstream: { kind: 'unix', socketPath: fake.socketPath }, key: { endpoint: endpointKeyOf({ kind: 'unix', socketPath: fake.socketPath }), model: 'qwen-fake' }, model: 'qwen-fake', apiKey: undefined, samples: 1 });
 
     expect(result.identityFields).toEqual(['created', 'id', 'object', 'owned_by']);
     expect((await loadEndpointRecord(dir, result.key))?.identity).toBe(result.identity);
@@ -54,7 +53,7 @@ describe('probeEndpointTarget', () => {
   it('reads the listing twice, the second time after the measurements', async () => {
     const fake = await startFake({ scenario: 'tools-ok', modelId: 'qwen-fake', models: MODELS });
 
-    await probeEndpointTarget({ probeRecordDir: makeDir(), upstream: { kind: 'unix', socketPath: fake.socketPath }, model: 'qwen-fake', apiKey: undefined, samples: 1 });
+    await probeEndpointTarget({ probeRecordDir: makeDir(), upstream: { kind: 'unix', socketPath: fake.socketPath }, key: { endpoint: endpointKeyOf({ kind: 'unix', socketPath: fake.socketPath }), model: 'qwen-fake' }, model: 'qwen-fake', apiKey: undefined, samples: 1 });
 
     const paths = fake.requests.map((request) => request.path);
     expect(paths.at(-1)).toBe('/v1/models');
@@ -64,7 +63,7 @@ describe('probeEndpointTarget', () => {
   it('probes the model of the target, not the first one the server lists', async () => {
     const fake = await startFake({ scenario: 'tools-ok', modelId: 'qwen-fake', models: [{ id: 'listed-first' }, ...MODELS] });
 
-    await probeEndpointTarget({ probeRecordDir: makeDir(), upstream: { kind: 'unix', socketPath: fake.socketPath }, model: 'qwen-fake', apiKey: undefined, samples: 1 });
+    await probeEndpointTarget({ probeRecordDir: makeDir(), upstream: { kind: 'unix', socketPath: fake.socketPath }, key: { endpoint: endpointKeyOf({ kind: 'unix', socketPath: fake.socketPath }), model: 'qwen-fake' }, model: 'qwen-fake', apiKey: undefined, samples: 1 });
 
     const chatBodies = fake.requests.filter((request) => request.path === '/v1/chat/completions').map((request) => request.body as { model: string });
     expect(chatBodies.length).toBeGreaterThan(0);
@@ -74,7 +73,7 @@ describe('probeEndpointTarget', () => {
   it('never asks a chat-completions target for /health, whatever the transport', async () => {
     const fake = await startFake({ scenario: 'tools-ok', modelId: 'qwen-fake', models: MODELS });
 
-    await probeEndpointTarget({ probeRecordDir: makeDir(), upstream: { kind: 'unix', socketPath: fake.socketPath }, model: 'qwen-fake', apiKey: undefined, samples: 1 });
+    await probeEndpointTarget({ probeRecordDir: makeDir(), upstream: { kind: 'unix', socketPath: fake.socketPath }, key: { endpoint: endpointKeyOf({ kind: 'unix', socketPath: fake.socketPath }), model: 'qwen-fake' }, model: 'qwen-fake', apiKey: undefined, samples: 1 });
 
     expect(fake.requests.filter((request) => request.path === '/health')).toEqual([]);
     expect(fake.requests.filter((request) => request.path === '/v1/models').length).toBeGreaterThan(0);
@@ -83,7 +82,7 @@ describe('probeEndpointTarget', () => {
   it('records the constrained mode for an endpoint whose native tool calls are unreliable', async () => {
     const fake = await startFake({ scenario: 'tools-ok', modelId: 'qwen-fake', models: MODELS, nativeValidity: 0.2 });
 
-    const result = await probeEndpointTarget({ probeRecordDir: makeDir(), upstream: { kind: 'unix', socketPath: fake.socketPath }, model: 'qwen-fake', apiKey: undefined, samples: 5 });
+    const result = await probeEndpointTarget({ probeRecordDir: makeDir(), upstream: { kind: 'unix', socketPath: fake.socketPath }, key: { endpoint: endpointKeyOf({ kind: 'unix', socketPath: fake.socketPath }), model: 'qwen-fake' }, model: 'qwen-fake', apiKey: undefined, samples: 5 });
 
     expect(result.toolCalling).toBe('constrained');
   });

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ResolvedModelTarget, UserModels } from '@momonga/config';
 import { probeRecordKeyOf } from '@momonga/config';
-import { endpointKeyOf, endpointRecordFileName } from '@momonga/gateway';
+import { endpointRecordFileName } from '@momonga/gateway';
 import { nodeFiles } from '../src/node-ports.ts';
 import { copyEndpointProbeRecord } from '../src/eval/context-effects.ts';
 import { liveSettingsFor } from '../src/eval/context-host.ts';
@@ -86,7 +86,7 @@ const modelsWith = (resolved: ResolvedModelTarget, declared: Record<string, unkn
 
 const copiedRecordsOf = (models: UserModels): string[] => {
   const settings = liveSettingsFor(models, 'default');
-  return [...settings.fmTargets.map((target) => `target ${target}`), ...settings.endpointProbes.map((probe) => `endpoint ${endpointKeyOf(probe.upstream)} ${probe.model}`)];
+  return [...settings.fmTargets.map((target) => `target ${target}`), ...settings.endpointProbes.map((probe) => `endpoint ${probe.endpoint} ${probe.model}`)];
 };
 
 const gatewayRecordsOf = (resolved: ResolvedModelTarget): string[] => {
@@ -127,7 +127,7 @@ describe('the probe record of an ollama target in a case home', () => {
     const [, resolved, declared] = ollamaOverTcp;
     const settings = liveSettingsFor(modelsWith(resolved, declared), 'default');
     for (const probe of settings.endpointProbes) {
-      await copyEndpointProbeRecord(nodeFiles, owner, caseProbe, { endpoint: endpointKeyOf(probe.upstream), model: probe.model });
+      await copyEndpointProbeRecord(nodeFiles, owner, caseProbe, probe);
     }
     expect(fs.readFileSync(path.join(caseProbe, fileName), 'utf8')).toBe(text);
   });

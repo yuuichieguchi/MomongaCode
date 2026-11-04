@@ -1,5 +1,5 @@
 import { MAX_BUDGET_COUNT, imageCapability } from '@momonga/protocol';
-import type { Capabilities, ImageCapability, ProbeReport, ToolCallingMode } from '@momonga/protocol';
+import type { Capabilities, CapabilitiesCore, ImageCapability, ProbeReport, ToolCallingMode } from '@momonga/protocol';
 
 export interface DecideThresholds {
   minValidRate?: number;
@@ -68,4 +68,47 @@ export const capabilitiesFromProbe = (report: ProbeReport, decision: ToolCalling
     source: 'probed',
     probedAt: report.probedAt,
   };
+};
+
+export type CapabilityLayer = Partial<CapabilitiesCore> & { image?: ImageCapability };
+
+export const layerOf = (capabilities: Capabilities): CapabilitiesCore & { image: ImageCapability } => {
+  const { imageInput, imageTokens, ...core } = capabilities;
+  return { ...core, image: imageCapability(imageInput, imageTokens) };
+};
+
+const splitByPrecedence = (layer: CapabilityLayer) => {
+  const { toolCalling, structuredOutput, streaming, stopSequences, parallelToolCalls, usageReported, reasoning, ...declaredFirst } = layer;
+  return {
+    declaredFirst,
+    probeFirst: {
+      ...(toolCalling === undefined ? {} : { toolCalling }),
+      ...(structuredOutput === undefined ? {} : { structuredOutput }),
+      ...(streaming === undefined ? {} : { streaming }),
+      ...(stopSequences === undefined ? {} : { stopSequences }),
+      ...(parallelToolCalls === undefined ? {} : { parallelToolCalls }),
+      ...(usageReported === undefined ? {} : { usageReported }),
+      ...(reasoning === undefined ? {} : { reasoning }),
+    },
+  };
+};
+
+export type CapabilityMerge = {
+  defaults: Capabilities;
+  declared: CapabilityLayer;
+  probed: CapabilityLayer;
+  probedAt: string;
+};
+
+export const mergeCapabilities = ({ defaults, declared, probed, probedAt }: CapabilityMerge): Capabilities => {
+  const fromDeclaration = splitByPrecedence(declared);
+  const fromProbe = splitByPrecedence(probed);
+  const { image, ...merged } = {
+    ...layerOf(defaults),
+    ...fromProbe.declaredFirst,
+    ...fromDeclaration.probeFirst,
+    ...fromProbe.probeFirst,
+    ...fromDeclaration.declaredFirst,
+  };
+  return { ...merged, ...image, source: 'probed', probedAt };
 };

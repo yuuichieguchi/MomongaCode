@@ -49,7 +49,7 @@ export type FakeOllamaOptions = {
   show?: unknown;
   tags?: () => unknown;
   completions?: readonly string[];
-  cacheProbe?: 'automatic' | 'none' | 'unreported';
+  cacheProbe?: 'automatic' | 'none' | 'unreported' | 'malformed';
 };
 
 export type FakeOllama = {
@@ -113,6 +113,10 @@ export const startFakeOllama = async (options: FakeOllamaOptions = {}): Promise<
       const repeated = requests.filter((request) => request.path === '/api/chat' && isProbeChat(request.body)).length > 1;
       const behaviour = options.cacheProbe ?? 'none';
       const { prompt_eval_cached_count: _omitted, ...withoutCached } = JSON.parse(doneLine());
+      if (behaviour === 'malformed') {
+        sendJson(res, 200, { ...withoutCached, prompt_eval_cached_count: 'many' });
+        return;
+      }
       sendJson(res, 200, behaviour === 'unreported' ? withoutCached : { ...withoutCached, prompt_eval_cached_count: behaviour === 'automatic' && repeated ? 1500 : 0 });
       return;
     }
