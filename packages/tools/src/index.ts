@@ -4,6 +4,7 @@ export type {
   AbandonOutcome,
   AbandonTarget,
   BatchInput,
+  BatchOutputFormatter,
   ExecutionBatchInput,
   RecoveryBatchInput,
   CallOutcome,

@@ -1,8 +1,7 @@
-import { safeSlice } from '@momonga/foundation';
+import { HISTORY_OUTPUT_HEAD_CHARS, HISTORY_OUTPUT_TAIL_CHARS, safeSlice } from '@momonga/foundation';
 import type { Redactor } from '@momonga/foundation';
 import { assistantTextOf } from '@momonga/protocol';
 import { isRecord } from './rows.ts';
-import { HISTORY_OUTPUT_HEAD_CHARS, HISTORY_OUTPUT_TAIL_CHARS } from './search-constants.ts';
 
 export type RecordedEvent = { seq: number; step: number; type: string; payload: Record<string, unknown> };
 
