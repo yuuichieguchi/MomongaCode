@@ -21,7 +21,7 @@ export const formsSinceCompaction = (events: readonly RunEvent[]): Map<string, n
   for (const event of events) {
     if (event.seq <= afterSeq) continue;
     if (event.type === 'context.truncated' && event.kind === 'truncated' && event.keptChars !== undefined) kept.set(event.callId, event.keptChars);
-    if (event.type === 'context.truncated' && event.kind !== 'truncated') kept.delete(event.callId);
+    if (event.type === 'context.truncated' && event.kind === 'omitted') kept.delete(event.callId);
   }
   return kept;
 };

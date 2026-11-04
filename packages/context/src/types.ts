@@ -8,6 +8,7 @@ import type {
   InputItem,
   MemoryView,
   MessageInputItem,
+  OutputFormatterName,
   TokenAnatomy,
 } from '@momonga/protocol';
 
@@ -168,6 +169,7 @@ export type BuildContextInput = {
   observedCapacity?: true;
   forms?: ReadonlyMap<string, number>;
   renderedFull?: ReadonlySet<string>;
+  outputFormatters?: readonly OutputFormatterName[] | undefined;
 };
 
 export type InstructionScope = 'user' | 'root' | 'nested';

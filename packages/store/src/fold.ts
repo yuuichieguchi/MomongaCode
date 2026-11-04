@@ -285,7 +285,7 @@ const truncate = (state: RunState, event: Extract<RunEvent, { type: 'context.tru
   }
   const index = state.history.findIndex((entry) => entry.callId === event.callId && entry.item.type === 'function_call_output');
   if (index < 0) return state;
-  const history = state.history.map((entry, position) => (position === index ? { ...entry, handle: event.handle } : entry));
+  const history = state.history.map((entry, position) => (position === index ? { ...entry, handle: event.kind === 'reference' ? (entry.handle ?? event.handle) : event.handle } : entry));
   const evicted = event.kind === 'omitted' && !state.evicted.includes(event.callId) ? [...state.evicted, event.callId].sort() : state.evicted;
   return { ...state, history, evicted };
 };
