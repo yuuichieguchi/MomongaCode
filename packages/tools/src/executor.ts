@@ -18,7 +18,7 @@ import type { PreToolHookVerdict, ToolHooks } from './hooks/events.ts';
 import type { AutoClassifier, BackgroundJobs, BlobPort, IdempotencyPort, LeaseFence, LeasedIdempotencyPort, LeasedOutcome, ToolIdempotencyLookup, ToolIdempotencyRecord } from './ports.ts';
 import type { ToolSet } from './registry.ts';
 import { cancellableTimer } from './timers.ts';
-import { MINIMUM_INLINE_OUTPUT_CHARS, truncateOutput } from './truncate.ts';
+import { MINIMUM_INLINE_OUTPUT_CHARS, truncateOutput, useFormattedOutput } from './truncate.ts';
 import { ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
 import type { AnyTool, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
 import { validateToolInput } from './validate.ts';
@@ -53,6 +53,12 @@ type BatchCallbacks = {
   onUpdate?(callId: string, content: ToolContent[]): void;
 };
 
+export type BatchOutputFormatter = (input: {
+  output: string;
+  status: 'completed' | 'failed';
+  tool: { name: string; kind: ToolKind };
+}) => { output: string; formatter: string; version: number } | undefined;
+
 type BatchCore = BatchCallbacks & {
   calls: readonly ToolCall[];
   toolSet: ToolSet;
@@ -73,6 +79,7 @@ type BatchCore = BatchCallbacks & {
   hooks?: ToolHooks;
   classifier?: AutoClassifier;
   onHalt?(reason: string, hookEvent: 'PreToolUse' | 'PostToolUse'): void;
+  formatOutput?: BatchOutputFormatter;
 };
 
 export type ExecutionBatchInput = BatchCore & {
@@ -92,7 +99,7 @@ export type BatchInput = ExecutionBatchInput | RecoveryBatchInput;
 export type ResultOutcome = {
   callId: string;
   kind: 'result';
-  result: ToolResult & { truncated?: true; handle?: string; denial?: PermissionDenial };
+  result: ToolResult & { truncated?: boolean; handle?: string; denial?: PermissionDenial; formatted?: { formatter: string; version: number } };
   idemKey?: string;
   reconciled?: ReconcileResult['outcome'];
 };
@@ -457,11 +464,34 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     read: ((handle: string, range: never) => blobs.read(handle, range, { runId })) as BlobPort['read'],
   });
 
-  const finalizeResult = (result: ToolResult, tool: AnyTool, limit: number, runId: string): ResultOutcome['result'] => {
+  const formattedResult = (result: ToolResult, tool: AnyTool, limit: number, runId: string, formatOutput: BatchOutputFormatter | undefined) => {
+    if (formatOutput === undefined || tool.pagesOutput === true) return undefined;
+    let formatted: ReturnType<BatchOutputFormatter>;
+    try {
+      formatted = formatOutput({ output: result.output, status: result.status, tool: { name: tool.name, kind: tool.kind } });
+    } catch (error) {
+      options.onWarning(`the output formatter failed for ${tool.name}: ${error instanceof Error ? error.message : String(error)}`);
+      return undefined;
+    }
+    if (formatted === undefined) return undefined;
+    const used = useFormattedOutput({ raw: result.output, formatted: formatted.output, formatter: formatted.formatter, limit, blobs: scopedBlobs(runId) });
+    return used === undefined ? undefined : { ...used, formatted: { formatter: formatted.formatter, version: formatted.version } };
+  };
+
+  const finalizeResult = (
+    result: ToolResult,
+    tool: AnyTool,
+    limit: number,
+    runId: string,
+    formatOutput?: BatchOutputFormatter,
+  ): ResultOutcome['result'] => {
+    const formatted = formattedResult(result, tool, limit, runId, formatOutput);
     const truncated =
-      tool.pagesOutput === true && result.output.length <= limit
-        ? { output: result.output }
-        : truncateOutput(result.output, limit, scopedBlobs(runId));
+      formatted !== undefined
+        ? formatted
+        : tool.pagesOutput === true && result.output.length <= limit
+          ? { output: result.output }
+          : truncateOutput(result.output, limit, scopedBlobs(runId));
     return {
       status: result.status,
       output: truncated.output,
@@ -471,6 +501,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       ...(result.files === undefined ? {} : { files: result.files }),
       ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
       ...('truncated' in truncated ? { truncated: truncated.truncated, handle: truncated.handle } : {}),
+      ...(formatted === undefined ? {} : { formatted: formatted.formatted }),
     };
   };
 
@@ -1064,7 +1095,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           if (result.status === 'pending') return scope.waiting(result);
           scope.disarmTimer();
           const hooked = await applyPostToolHooks(batch, call, tool, target.input, result);
-          return scope.complete(finalizeResult(hooked, tool, outputLimit, batch.runId), reconciled);
+          return scope.complete(finalizeResult(hooked, tool, outputLimit, batch.runId, batch.formatOutput), reconciled);
         }
         await settleWithin(running, ABORT_SETTLE_LIMIT_MS);
         const output = scope.abortReason() === 'timeout' ? timedOutOutput(tool, scope.timerMs()) : cancelledOutput(tool);

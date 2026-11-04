@@ -14,7 +14,7 @@ const construct = (maxInlineOutputChars: number) => {
   return createToolExecutor({ fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE, idempotency: makeIdempotency(clock).port, blobs: makeBlobs().port, clock, maxInlineOutputChars, processMarkerDir: '/nonexistent-marker-dir', callLockDir: '/nonexistent-call-lock-dir', kernelLock: createFakeKernelLock({ inheritable: false }), onWarning: () => undefined });
 };
 
-const truncatedOutput = async (output: string, limit: number): Promise<{ output: string; truncated?: true }> => {
+const truncatedOutput = async (output: string, limit: number): Promise<{ output: string; truncated?: boolean }> => {
   const harness = makeHarness({ maxInlineOutputChars: limit });
   const set = await toolSetOf(makeTool('Read', { execute: async () => ({ status: 'completed', output }) }));
   const [outcome] = await harness.executor.runBatch(harness.input(set, [call('c1', 'Read')]));
