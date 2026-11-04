@@ -58,7 +58,7 @@ const serve = async (argv: readonly string[], config: FakeFmConfig): Promise<voi
   if (socketPath === undefined) throw new Error('fm serve requires --socket <path>');
   if (config.serveSurvivorPidFile !== undefined) forkSurvivor(config.serveSurvivorPidFile);
   if (config.serveDetachedHelperPidFile !== undefined) forkDetachedHelper(config.serveDetachedHelperPidFile);
-  const server = await startFakeChatCompletions({ scenario: 'tools-ok', ...config.serve, socketPath });
+  const server = await startFakeChatCompletions({ scenario: 'tools-ok', wire: 'fm', ...config.serve, socketPath });
   process.once('SIGTERM', () => {
     void server.close().finally(() => process.exit(0));
   });

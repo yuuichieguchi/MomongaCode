@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { credentialEnvNames, loadUserSettings, secretNames } from '@momonga/config';
+import { credentialEnvNames, loadUserSettings, probeRecordKeyOf, secretNames } from '@momonga/config';
 import {
   acquireProcessLock,
   SecretEmptyError,
@@ -15,6 +15,7 @@ import {
   momongaPaths,
   secretKeyFile,
 } from '@momonga/foundation';
+import type { EndpointProbeKey } from '@momonga/config';
 import type { Clock, JsonLogger, MomongaPaths, ProcessLock, ReadyFields, SecretStore, TextStream } from '@momonga/foundation';
 import {
   buildCostReport,
@@ -220,6 +221,12 @@ const createFmAdapter = async (name: string, target: Extract<ResolvedTarget, { a
   return createChatCompletionsAdapter({ ...withBinaryGuard(managed, context.binary, files), clock });
 };
 
+const endpointProbeKeyOf = (name: string, target: ResolvedTarget): EndpointProbeKey => {
+  const key = probeRecordKeyOf(name, target);
+  if (key?.kind !== 'endpoint') throw new Error(`the target ${name} has no endpoint probe record`);
+  return key.key;
+};
+
 const createAutoChatCompletionsAdapter = async (
   name: string,
   target: Extract<RemoteTarget, { adapter: 'chat-completions' }>,
@@ -229,8 +236,9 @@ const createAutoChatCompletionsAdapter = async (
   refusal: PreconditionFailedError | undefined,
 ) => {
   const upstream = endpointOf(target);
-  const endpoint = endpointKeyOf(upstream);
-  const loaded = chatRecordOf(await loadEndpointRecord(probeRecordDir, { endpoint, model: target.model }), { endpoint, model: target.model });
+  const key = endpointProbeKeyOf(name, target);
+  const { endpoint } = key;
+  const loaded = chatRecordOf(await loadEndpointRecord(probeRecordDir, key), key);
   const probed = createProbedEndpointTarget({
     targetName: name,
     endpoint,
@@ -262,8 +270,8 @@ const createAutoChatCompletionsAdapter = async (
 
 const createProbedOllamaAdapter = async (name: string, target: Extract<RemoteTarget, { adapter: 'ollama' }>, probeRecordDir: string, clock: Clock) => {
   const upstream = endpointOf(target);
-  const endpoint = endpointKeyOf(upstream);
-  const key = { endpoint, model: target.model };
+  const key = endpointProbeKeyOf(name, target);
+  const { endpoint } = key;
   const loaded = ollamaRecordOf(await loadEndpointRecord(probeRecordDir, key), key);
   const probed = createProbedOllamaTarget({
     targetName: name,

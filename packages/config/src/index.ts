@@ -5,6 +5,8 @@ export type { FileLockPorts } from '@momonga/foundation';
 export { isCredentialEnvName, stripCredentialEnv } from './credential-env.ts';
 export { loadSettings } from './load-settings.ts';
 export { MODEL_ROLES } from './settings-schema.ts';
+export { endpointKeyOf, probeRecordKeyOf, upstreamEndpointOf } from './probe-record-key.ts';
+export type { EndpointProbeKey, ProbeRecordKey, UpstreamEndpointKeyed } from './probe-record-key.ts';
 export { credentialEnvNames, secretNames } from './models.ts';
 export type { ResolvedModels } from './models.ts';
 export { ConfigError, createUserSettingsCache, loadUserModels, loadUserSettings, userSettingsChangeKey } from './user-settings.ts';
