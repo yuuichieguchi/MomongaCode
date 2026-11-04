@@ -13,7 +13,7 @@ describe('the Ollama probe', () => {
 
     const result = await probe(fake.origin, dir, 32768);
 
-    expect(fake.requests.map((request) => `${request.method} ${request.path}`).sort()).toEqual(['GET /api/tags', 'GET /api/version', 'POST /api/show']);
+    expect(fake.requests.map((request) => `${request.method} ${request.path}`).sort()).toEqual(['GET /api/tags', 'GET /api/version', 'POST /api/chat', 'POST /api/chat', 'POST /api/show']);
     expect(fake.requests.find((request) => request.path === '/api/show')?.body).toMatchObject({ model: OLLAMA_MODEL });
     expect(result.identity).toBe(DEVSTRAL_DIGEST);
     expect(result.key).toEqual({ endpoint: fake.origin, model: OLLAMA_MODEL });

@@ -45,6 +45,7 @@ export const createProbedOllamaTarget = (options: ProbedOllamaTargetOptions): Pr
       return {
         ...declared,
         toolCalling: record.report.nativeTools.accepted ? 'native' : 'none',
+        ...(declared.promptCache !== undefined || record.report.promptCache === undefined ? {} : { promptCache: record.report.promptCache }),
         source: 'probed',
         probedAt: record.report.probedAt,
       };

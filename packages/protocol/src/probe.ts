@@ -30,6 +30,7 @@ export type ProbeReport = {
   imageTokens?: ImageTokenModel;
   guardrail: { errorShape?: unknown };
   tokenCalibration?: { ratio: number; errorBound: number };
+  promptCache?: { kind: 'automatic' | 'none' };
 };
 
 export type OllamaProbeReport = {
@@ -41,6 +42,7 @@ export type OllamaProbeReport = {
   nativeTools: { accepted: boolean };
   imageInputAccepted: boolean;
   thinkingSupported: boolean;
+  promptCache?: { kind: 'automatic' | 'none' };
   reasoning?: undefined;
 };
 

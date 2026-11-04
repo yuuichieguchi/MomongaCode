@@ -31,7 +31,10 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
     if (capabilities.toolCalling === 'none' && (request.tools ?? []).length > 0) {
       throw new UnsupportedInputError('capability_unsupported', 'this target does not support tool calling', 'tools');
     }
-    const body = buildResponsesBody(request);
+    const body = {
+      ...buildResponsesBody(request),
+      ...(capabilities.promptCache?.kind === 'key' && request.promptCacheKey !== undefined ? { prompt_cache_key: request.promptCacheKey } : {}),
+    };
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     try {

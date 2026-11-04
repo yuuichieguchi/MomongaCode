@@ -49,6 +49,7 @@ export type FakeOllamaOptions = {
   show?: unknown;
   tags?: () => unknown;
   completions?: readonly string[];
+  cacheProbe?: 'automatic' | 'none' | 'unreported';
 };
 
 export type FakeOllama = {
@@ -58,6 +59,8 @@ export type FakeOllama = {
   closedChats(): number;
   close(): Promise<void>;
 };
+
+const isProbeChat = (body: unknown): boolean => typeof body === 'object' && body !== null && (body as { stream?: unknown }).stream === false;
 
 const writeLine = (response: http.ServerResponse, line: string): Promise<void> =>
   new Promise((resolve, reject) => {
@@ -104,6 +107,13 @@ export const startFakeOllama = async (options: FakeOllamaOptions = {}): Promise<
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       for (const data of options.completions ?? textCompletionSse('configured path')) res.write(`data: ${data}\n\n`);
       res.end('data: [DONE]\n\n');
+      return;
+    }
+    if (url.pathname === '/api/chat' && req.method === 'POST' && isProbeChat(body)) {
+      const repeated = requests.filter((request) => request.path === '/api/chat' && isProbeChat(request.body)).length > 1;
+      const behaviour = options.cacheProbe ?? 'none';
+      const { prompt_eval_cached_count: _omitted, ...withoutCached } = JSON.parse(doneLine());
+      sendJson(res, 200, behaviour === 'unreported' ? withoutCached : { ...withoutCached, prompt_eval_cached_count: behaviour === 'automatic' && repeated ? 1500 : 0 });
       return;
     }
     if (url.pathname === '/api/chat' && req.method === 'POST') {

@@ -46,6 +46,7 @@ const SEARCH_INITIAL_WORDS = 64;
 const SEARCH_MAX_WORDS = 262144;
 const DEFAULT_STEP_TIMEOUT_MS = 120000;
 const SEARCH_TOLERANCE = 0.01;
+const CACHE_PROBE_WORDS = 1536;
 const IMAGE_PROMPT = 'Describe this image.';
 const IMAGE_PROBE_SMALL_SIDE = 512;
 const IMAGE_PROBE_LARGE_SIDE = 2048;
@@ -128,6 +129,12 @@ const retryAfterMs = (value: string | undefined, now: Date): number | undefined 
 };
 
 const wordsOf = (count: number): string => Array.from({ length: count }, () => 'word').join(' ');
+
+const cachedTokensOf = (reply: UpstreamReply): number | undefined => {
+  if (reply.kind !== 'completion') return undefined;
+  const cached = field(field(reply.usage, 'prompt_tokens_details'), 'cached_tokens');
+  return typeof cached === 'number' ? cached : undefined;
+};
 
 const toolArgumentsValid = (args: unknown): boolean => isRecord(args) && validateToolArguments(args);
 
@@ -268,6 +275,8 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
 
   const reasoning = await measureReasoning(chat, contextWindow.value);
 
+  const promptCache = await measurePromptCache(chat);
+
   const maxConcurrency = await measureConcurrency(post);
 
   return {
@@ -288,6 +297,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
     ...(imageTokens === undefined ? {} : { imageTokens }),
     guardrail,
     ...(tokenCalibration === undefined ? {} : { tokenCalibration }),
+    ...(promptCache === undefined ? {} : { promptCache }),
   };
 };
 
@@ -388,6 +398,16 @@ const measureImageTokens = async (chat: Chat): Promise<ImageTokenModel | undefin
   const reference = model.minTokens === model.maxTokens ? start : await referenceBelowPlateau(chat, baseline, start, model, plateau);
   if (reference === undefined) return undefined;
   return { pixelsPerToken: reference.side ** 2 / reference.tokens, ...model };
+};
+
+const measurePromptCache = async (chat: Chat): Promise<ProbeReport['promptCache']> => {
+  const request = { messages: [{ role: 'user', content: wordsOf(CACHE_PROBE_WORDS) }], max_tokens: 1 };
+  expectStatus(await chat(request), [200], 'prompt cache first request');
+  const repeated = await chat(request);
+  expectStatus(repeated, [200], 'prompt cache repeated request');
+  const cached = cachedTokensOf(repeated.reply);
+  if (cached === undefined) return undefined;
+  return { kind: cached > 0 ? 'automatic' : 'none' };
 };
 
 const probeStreaming = async (client: ProbeClient, model: string): Promise<ProbeReport['streaming']> => {

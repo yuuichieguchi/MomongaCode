@@ -189,6 +189,7 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
         ...(probed.parallelToolCalls === undefined ? {} : { parallelToolCalls: probed.parallelToolCalls }),
         usageReported: probed.usageReported,
         ...(probed.reasoning === undefined ? {} : { reasoning: probed.reasoning }),
+        ...(declared.promptCache !== undefined || probed.promptCache === undefined ? {} : { promptCache: probed.promptCache }),
         source: 'probed',
         probedAt: record.report.probedAt,
       };

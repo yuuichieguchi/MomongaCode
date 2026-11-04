@@ -59,6 +59,7 @@ export const capabilitiesFromProbe = (report: ProbeReport, decision: ToolCalling
     ...probedImageCapability(report),
     ...parallelCallsDecision(report, thresholds),
     ...(report.reasoning === undefined ? {} : { reasoning: report.reasoning }),
+    ...(report.promptCache === undefined ? {} : { promptCache: report.promptCache }),
     schemaDialect: 'json-schema-2020-12',
     tokenCounting: report.tokenCalibration === undefined ? 'estimated' : 'calibrated',
     ...(report.tokenCalibration === undefined ? {} : { tokenErrorRatio: report.tokenCalibration.errorBound }),

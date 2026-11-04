@@ -15,6 +15,7 @@ export type OpenResponsesRequestBody = {
   max_output_tokens?: number;
   temperature?: number;
   top_p?: number;
+  prompt_cache_key?: string;
 };
 
 const TEXT_PART_TYPES: ReadonlySet<ContentPart['type']> = new Set(['input_text', 'output_text', 'summary_text', 'refusal']);
