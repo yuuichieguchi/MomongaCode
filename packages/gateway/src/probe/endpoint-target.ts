@@ -1,3 +1,4 @@
+import { endpointKeyOf } from '@momonga/config';
 import type { Capabilities, ToolCallingMode } from '@momonga/protocol';
 import type { UpstreamEndpoint } from '../adapters/shared/http-client.ts';
 import { PreconditionFailedError, StreamFailure, UpstreamHttpError } from '../adapters/shared/failures.ts';
@@ -11,8 +12,7 @@ import { parseJson } from './json.ts';
 
 export const IDENTITY_READ_TIMEOUT_MS = 10_000;
 
-export const endpointKeyOf = (upstream: UpstreamEndpoint): string =>
-  upstream.kind === 'unix' ? `unix:${upstream.socketPath}` : upstream.baseUrl.replace(/\/+$/, '');
+export { endpointKeyOf };
 
 export const probeEndpointOf = (upstream: UpstreamEndpoint, apiKey: string | undefined): ProbeEndpoint =>
   upstream.kind === 'unix'

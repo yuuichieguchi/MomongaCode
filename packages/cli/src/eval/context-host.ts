@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { escapeTerminalLine } from '@momonga/protocol';
+import { probeRecordKeyOf, upstreamEndpointOf } from '@momonga/config';
 import type { ModelsSettings, ResolvedModels, SandboxSetting, UserModels } from '@momonga/config';
 import { caseSettingsFor, expandContextDataset, liveBoundsFor, runContextDataset } from '@momonga/eval';
 import type { ContextCaseHost, ContextDataset, ExpandedCase, PolicyOverlay, Transcript, WorkspaceStep } from '@momonga/eval';
@@ -101,17 +102,18 @@ export const liveSettingsFor = (user: UserModels, alias: string): LiveSettings =
     if (resolved === undefined) throw new ContextHostError(`the alias ${alias} names the target ${name}, which is not defined`);
     const declared = user.declared.targets?.[name];
     if (declared === undefined) throw new ContextHostError(`the target ${name} is not declared in the user settings, so it cannot be copied into a case`);
-    if (declared.adapter === 'fm') {
+    const recordKey = probeRecordKeyOf(name, resolved);
+    if (declared.adapter === 'fm' || resolved.adapter === 'fm') {
+      if (recordKey?.kind !== 'target') throw new ContextHostError(`the fm target ${name} has no probe record key`);
       if (!PROBE_TARGET_NAME.test(name)) throw new ContextHostError(`the fm target ${name} has a name its probe record cannot be keyed by`);
-      fmTargets.push(name);
+      fmTargets.push(recordKey.target);
       targets[name] = declared;
       continue;
     }
-    if (resolved.adapter === 'chat-completions' && resolved.toolCalling === 'auto') {
-      const upstream = resolved.socketPath !== undefined ? ({ kind: 'unix', socketPath: resolved.socketPath } as const) : ({ kind: 'tcp', baseUrl: resolved.baseUrl as string } as const);
-      endpointProbes.push({ upstream, model: resolved.model });
+    if (recordKey?.kind === 'endpoint') {
+      endpointProbes.push({ upstream: upstreamEndpointOf(resolved), model: recordKey.key.model });
     }
-    if (resolved.adapter !== 'fm' && resolved.adapter !== 'ollama' && declared.adapter !== 'ollama' && resolved.apiKeySecret !== undefined) {
+    if (resolved.adapter !== 'ollama' && declared.adapter !== 'ollama' && resolved.apiKeySecret !== undefined) {
       const envName = `${GENERATED_KEY_PREFIX}${credentials.length}`;
       const { apiKeySecret: _secret, ...rest } = declared;
       credentials.push({ envName, secretName: resolved.apiKeySecret });
