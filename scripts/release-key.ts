@@ -9,10 +9,12 @@ const POWERSHELL_INSTALLER = 'scripts/install.ps1';
 
 const SHELL_PIN = /^readonly EMBEDDED_RELEASE_PUBLIC_KEY="([^"\n]*)"$/m;
 const POWERSHELL_PIN = /^\$embeddedReleasePublicKey = '([^'\n]*)'$/m;
+const SHELL_REPO = /^readonly EMBEDDED_RELEASE_REPO="([^"\n]*)"$/m;
+const POWERSHELL_REPO = /^\$embeddedReleaseRepo = '([^'\n]*)'$/m;
 
 const pinIn = (root: string, installer: string, pattern: RegExp): string => {
   const match = pattern.exec(fs.readFileSync(path.join(root, installer), 'utf8'));
-  if (match === null) throw new Error(`${installer} has no embedded release public key declaration`);
+  if (match === null) throw new Error(`${installer} has no embedded release declaration matching ${pattern.source}`);
   return match[1] as string;
 };
 
@@ -27,6 +29,18 @@ export const readPinnedReleaseKey = (root: string): string => {
   }
   if (shell !== powershell) throw new Error(`${SHELL_INSTALLER} and ${POWERSHELL_INSTALLER} pin different release public keys; both must hold the same key line`);
   if (!RELEASE_PUBLIC_KEY_PATTERN.test(shell)) throw new Error(`the release public key pinned in the installers is not one ssh public key line: ${JSON.stringify(shell)}`);
+  return shell;
+};
+
+export const readEmbeddedReleaseRepo = (root: string): string => {
+  const shell = pinIn(root, SHELL_INSTALLER, SHELL_REPO);
+  const powershell = pinIn(root, POWERSHELL_INSTALLER, POWERSHELL_REPO);
+  if (shell === '' && powershell === '') {
+    throw new Error(
+      `no release repository is embedded in ${SHELL_INSTALLER} and ${POWERSHELL_INSTALLER}: write <owner>/<repo> into EMBEDDED_RELEASE_REPO in ${SHELL_INSTALLER} and $embeddedReleaseRepo in ${POWERSHELL_INSTALLER}, then commit`,
+    );
+  }
+  if (shell !== powershell) throw new Error(`${SHELL_INSTALLER} and ${POWERSHELL_INSTALLER} embed different release repositories; both must hold the same <owner>/<repo>`);
   return shell;
 };
 
@@ -67,10 +81,12 @@ if (import.meta.main) {
   try {
     if (command === 'print') {
       process.stdout.write(`${readPinnedReleaseKey(root)}\n`);
+    } else if (command === 'print-repo') {
+      process.stdout.write(`${readEmbeddedReleaseRepo(root)}\n`);
     } else if (command === 'verify' && checksumsFile !== undefined && signatureFile !== undefined) {
       await verifyWithPinnedKey(root, checksumsFile, signatureFile);
     } else {
-      throw new Error('usage: release-key.ts print | release-key.ts verify <SHA256SUMS> <SHA256SUMS.sig>');
+      throw new Error('usage: release-key.ts print | release-key.ts print-repo | release-key.ts verify <SHA256SUMS> <SHA256SUMS.sig>');
     }
   } catch (error) {
     process.stderr.write(`release-key.ts: ${error instanceof Error ? error.message : String(error)}\n`);

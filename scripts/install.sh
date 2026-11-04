@@ -5,6 +5,7 @@ readonly CHECKSUMS_NAME="SHA256SUMS"
 readonly SIGNATURE_NAME="SHA256SUMS.sig"
 readonly SIGNATURE_NAMESPACE="momonga-release"
 readonly EMBEDDED_RELEASE_PUBLIC_KEY=""
+readonly EMBEDDED_RELEASE_REPO=""
 
 fail() {
   printf 'install.sh: %s\n' "$*" >&2
@@ -28,11 +29,12 @@ prefix="${MOMONGA_INSTALL_PREFIX:-$HOME/.local}"
 if [ -n "${MOMONGA_RELEASE_BASE_URL:-}" ]; then
   base_url="$MOMONGA_RELEASE_BASE_URL"
 else
-  [ -n "${MOMONGA_REPO:-}" ] || fail "set MOMONGA_REPO=<owner>/<repo> or MOMONGA_RELEASE_BASE_URL"
+  repo="${MOMONGA_REPO:-$EMBEDDED_RELEASE_REPO}"
+  [ -n "$repo" ] || fail "set MOMONGA_REPO=<owner>/<repo> or MOMONGA_RELEASE_BASE_URL"
   if [ -n "${MOMONGA_VERSION:-}" ]; then
-    base_url="https://github.com/$MOMONGA_REPO/releases/download/v$MOMONGA_VERSION"
+    base_url="https://github.com/$repo/releases/download/v$MOMONGA_VERSION"
   else
-    base_url="https://github.com/$MOMONGA_REPO/releases/latest/download"
+    base_url="https://github.com/$repo/releases/latest/download"
   fi
 fi
 

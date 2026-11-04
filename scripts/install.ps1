@@ -5,6 +5,7 @@ $checksumsName = 'SHA256SUMS'
 $signatureName = 'SHA256SUMS.sig'
 $signatureNamespace = 'momonga-release'
 $embeddedReleasePublicKey = ''
+$embeddedReleaseRepo = ''
 
 function Fail([string]$message) {
   throw "install.ps1: $message"
@@ -17,9 +18,10 @@ if ($env:MOMONGA_INSTALL_PREFIX) { $prefix = $env:MOMONGA_INSTALL_PREFIX } else 
 if ($env:MOMONGA_RELEASE_BASE_URL) {
   $baseUrl = $env:MOMONGA_RELEASE_BASE_URL
 } else {
-  if (-not $env:MOMONGA_REPO) { Fail 'set MOMONGA_REPO=<owner>/<repo> or MOMONGA_RELEASE_BASE_URL' }
-  if ($env:MOMONGA_VERSION) { $baseUrl = "https://github.com/$($env:MOMONGA_REPO)/releases/download/v$($env:MOMONGA_VERSION)" }
-  else { $baseUrl = "https://github.com/$($env:MOMONGA_REPO)/releases/latest/download" }
+  if ($env:MOMONGA_REPO) { $repo = $env:MOMONGA_REPO } else { $repo = $embeddedReleaseRepo }
+  if (-not $repo) { Fail 'set MOMONGA_REPO=<owner>/<repo> or MOMONGA_RELEASE_BASE_URL' }
+  if ($env:MOMONGA_VERSION) { $baseUrl = "https://github.com/$repo/releases/download/v$($env:MOMONGA_VERSION)" }
+  else { $baseUrl = "https://github.com/$repo/releases/latest/download" }
 }
 
 if ($env:MOMONGA_RELEASE_PUBLIC_KEY) { $publicKey = $env:MOMONGA_RELEASE_PUBLIC_KEY } else { $publicKey = $embeddedReleasePublicKey }
