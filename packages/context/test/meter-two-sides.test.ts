@@ -302,9 +302,21 @@ describe('observe', () => {
       kept: 250,
       known: 200,
       uncounted: 50,
-      shape: { ratio: 0.3, minimum: 1 },
+      miss: 240 - (250 - 30) - 0 - 15,
       contextWindow: W,
       tokenCounting: 'estimated',
     });
+    expect(observed).not.toHaveProperty('shape');
+  });
+
+  it('measures the miss with the own shape of each part when the dropped part was an image and the new part exact', async () => {
+    const meter = meterOf(pieceCounter(EXACT), W, { tokenErrorRatio: 0.125 });
+    await reportOn(meter, [piece('p', 100), imagePiece('shot', 40)], 140);
+    const counted = await meter.count({ input: [piece('p', 100), piece('q', 200)], tools: [] });
+    expect(counted.inputTokens).toBe(300);
+    expect(counted.known).toBe(100);
+    expect(counted.overTolerance).toBe(12 + 25);
+    const observed = meter.observe({ inputDigest: counted.inputDigest, inputTokens: 350 });
+    expect(observed).toMatchObject({ known: 100, uncounted: 240, miss: 350 - 300 - 12 - 25 });
   });
 });

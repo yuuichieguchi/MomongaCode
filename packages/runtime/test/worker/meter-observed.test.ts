@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ESTIMATED_ERROR_SHAPE, errorBoundOfShape, marginFloorFor } from '@momonga/protocol';
 import type { Capabilities, RunEventPayload, StreamEvent } from '@momonga/protocol';
 import { usageOf } from '@momonga/testkit';
-import { inputTokensOf } from './fake-gateway.ts';
+import { PRIMARY_TARGET, inputTokensOf } from './fake-gateway.ts';
 import type { ScriptStep } from './fake-gateway.ts';
 import { capabilitiesFor, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
@@ -158,11 +158,14 @@ describe('meter.observed is journaled with the response', () => {
       kept: 100_000,
       known: 0,
       uncounted: counted,
-      shape: { ratio: 0, minimum: 0 },
+      miss: 100_000 - counted,
+      target: PRIMARY_TARGET,
+      fallback: false,
       contextWindow: WINDOW,
       tokenCounting: 'exact',
     });
     expect(observed).not.toHaveProperty('tokenErrorRatio');
+    expect(observed).not.toHaveProperty('shape');
     expect(typeof (observed as { inputDigest?: unknown } | undefined)?.inputDigest).toBe('string');
     expect(env.ofType(run.id, 'meter.observed')).toHaveLength(1);
   });
@@ -210,7 +213,7 @@ describe('the meter of a claim is folded from the session journal', () => {
 
     expect(env.run(one.id).status).toBe('COMPLETED');
     expect(env.run(two.id).status).toBe('COMPLETED');
-    expect(env.ofType(two.id, 'meter.observed')).toMatchObject([{ known: firstCount, uncounted: secondCount - firstCount, counted: secondCount }]);
+    expect(env.ofType(two.id, 'meter.observed')).toMatchObject([{ target: PRIMARY_TARGET, fallback: false, known: firstCount, uncounted: secondCount - firstCount, counted: secondCount }]);
   });
 
   it('keeps the reports of a fallback target out of the alias meter and gives them to that target meter', async () => {
@@ -227,10 +230,10 @@ describe('the meter of a claim is folded from the session journal', () => {
     };
 
     const byAlias = await runSecond(textStep('Again.'));
-    expect(byAlias.first).toMatchObject([{ target: 'secondary', counted: firstCount, reported: firstCount - 50, kept: firstCount }]);
-    expect(byAlias.second).toMatchObject([{ known: 0, counted: secondCount }]);
+    expect(byAlias.first).toMatchObject([{ target: 'secondary', fallback: true, counted: firstCount, reported: firstCount - 50, kept: firstCount }]);
+    expect(byAlias.second).toMatchObject([{ target: PRIMARY_TARGET, fallback: false, known: 0, counted: secondCount }]);
 
     const byFallback = await runSecond(answeredBy(textStep('Again.'), 'secondary'));
-    expect(byFallback.second).toMatchObject([{ target: 'secondary', known: firstCount, counted: secondCount }]);
+    expect(byFallback.second).toMatchObject([{ target: 'secondary', fallback: true, known: firstCount, counted: secondCount }]);
   });
 });

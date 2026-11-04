@@ -46,12 +46,16 @@ const compactionEvents = (caseId: string): Transcript['events'] =>
     { runId: `run-${caseId}` },
   ).map(toPublicRunEvent);
 
+const RECORDED_CODE = 'c'.repeat(64);
+
 const transcript = (caseId: string, status: 'COMPLETED' | 'FAILED' = 'COMPLETED'): Transcript => ({
   caseId,
   runIndex: 0,
   run: { id: `run-${caseId}`, status, step: 1, usage: { inputTokens: 9, outputTokens: 1, totalTokens: 10 } },
   events: caseId.endsWith('-on') ? compactionEvents(caseId) : [],
   children: [],
+  policy: {},
+  codeDigest: RECORDED_CODE,
 });
 
 const harness = (failingOn: number = 0) => {
@@ -257,6 +261,27 @@ describe('momonga eval context --settings', () => {
 });
 
 describe('momonga eval compare --gate token, the policies and the code digests', () => {
+  it('takes the policy and the code digest of a replay report from its transcripts', async () => {
+    const context = harness();
+    const policy = { context: { cachePrefix: true } };
+    for (const scenario of SCENARIOS) {
+      for (const side of ['on', 'off'] as const) {
+        context.stored.set(`/w/t/${scenario}-${side}.0.transcript.jsonl`, encodeTranscript({ ...transcript(`${scenario}-${side}`), policy, codeDigest: 'e'.repeat(64) }));
+      }
+    }
+    await run(context.program, 'eval', 'context', 'context.json', '--replay', 't', '--model', 'real', '--report', 'r.json');
+    const report = JSON.parse(context.stored.get('/w/r.json') ?? '{}');
+    expect(report.policy).toEqual(policy);
+    expect(report.codeDigest).toBe('e'.repeat(64));
+  });
+
+  it('refuses a replay whose transcripts record different code digests', async () => {
+    const context = harness();
+    context.stored.set('/w/t/a-on.0.transcript.jsonl', encodeTranscript({ ...transcript('a-on'), codeDigest: 'f'.repeat(64) }));
+    await expect(run(context.program, 'eval', 'context', 'context.json', '--replay', 't', '--model', 'real')).rejects.toThrow(/codeDigest/);
+    expect(context.completed).toEqual([]);
+  });
+
   it('refuses two reports with the same policy produced by the same code', async () => {
     const context = harness();
     context.stored.set('/w/a.json', await reportFile('a.json', 0, 'real'));

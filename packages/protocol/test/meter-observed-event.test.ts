@@ -23,6 +23,7 @@ const ENVELOPE = { id: 7, runId: 'run-1', sessionId: 'sess-1', seq: 3, step: 2, 
 const OBSERVED = {
   type: 'meter.observed',
   target: 'primary',
+  fallback: false,
   inputDigest: 'd'.repeat(64),
   itemCount: 3,
   counted: 250,
@@ -30,7 +31,7 @@ const OBSERVED = {
   kept: 250,
   known: 200,
   uncounted: 50,
-  shape: { ratio: 0.3, minimum: 1 },
+  miss: 5,
   contextWindow: 8192,
   tokenErrorRatio: 0.25,
   tokenCounting: 'estimated',
@@ -49,7 +50,7 @@ describe('meter.observed', () => {
     expect(accepts({ ...ENVELOPE, ...withoutRatio })).toBe(true);
   });
 
-  it.each(['target', 'inputDigest', 'itemCount', 'counted', 'reported', 'kept', 'known', 'uncounted', 'shape', 'contextWindow', 'tokenCounting'])(
+  it.each(['target', 'fallback', 'inputDigest', 'itemCount', 'counted', 'reported', 'kept', 'known', 'uncounted', 'miss', 'contextWindow', 'tokenCounting'])(
     'refuses an event without %s',
     (field) => {
       const partial: Record<string, unknown> = { ...ENVELOPE, ...OBSERVED };
@@ -58,10 +59,12 @@ describe('meter.observed', () => {
     },
   );
 
-  it('refuses an unknown field, an unknown method and an open shape', () => {
-    expect(accepts({ ...ENVELOPE, ...OBSERVED, miss: 3 })).toBe(false);
+  it('refuses an unknown field, an unknown method, a shape field and a non-integer count', () => {
+    expect(accepts({ ...ENVELOPE, ...OBSERVED, extra: 3 })).toBe(false);
+    expect(accepts({ ...ENVELOPE, ...OBSERVED, fallback: 'no' })).toBe(false);
     expect(accepts({ ...ENVELOPE, ...OBSERVED, tokenCounting: 'guessed' })).toBe(false);
-    expect(accepts({ ...ENVELOPE, ...OBSERVED, shape: { ratio: 0.3, minimum: 1, extra: true } })).toBe(false);
+    expect(accepts({ ...ENVELOPE, ...OBSERVED, shape: { ratio: 0.3, minimum: 1 } })).toBe(false);
+    expect(accepts({ ...ENVELOPE, ...OBSERVED, miss: -1 })).toBe(false);
     expect(accepts({ ...ENVELOPE, ...OBSERVED, counted: 2.5 })).toBe(false);
   });
 });

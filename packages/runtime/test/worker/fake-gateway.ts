@@ -92,6 +92,13 @@ const withObservedUsage = (events: readonly StreamEvent[], body: CreateResponseB
       : event,
   );
 
+export const PRIMARY_TARGET = 'primary';
+
+const withRoute = (event: StreamEvent, body: CreateResponseBody): StreamEvent =>
+  (event.type === 'response.completed' || event.type === 'response.incomplete') && event.response.momonga === undefined
+    ? { ...event, response: { ...event.response, momonga: { alias: body.model, target: PRIMARY_TARGET, attempts: 1, usageSource: 'reported' } } }
+    : event;
+
 const issueCallId = (): string => `call_${uuidv7().replaceAll('-', '')}`;
 
 const abortedPromise = (signal: AbortSignal): Promise<never> =>
@@ -182,7 +189,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
     const issuedId = `resp_generation_${generationCount}`;
     const identified: ScriptStep = {
       ...observed,
-      events: observed.events.map((event) => ('response' in event && typeof event.response === 'object' && event.response !== null ? ({ ...event, response: { ...event.response, id: issuedId } } as StreamEvent) : event)),
+      events: observed.events.map((event) => ('response' in event && typeof event.response === 'object' && event.response !== null ? ({ ...event, response: { ...event.response, id: issuedId } } as StreamEvent) : event)).map((event) => withRoute(event, body)),
     };
     const step: ScriptStep = gateway.rewriteCallIds ? { ...identified, events: withIssuedCallIds(identified.events) } : identified;
     gateway.generations.set(key, (gateway.generations.get(key) ?? 0) + 1);
