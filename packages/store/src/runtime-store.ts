@@ -1432,6 +1432,13 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     readRunEventsOfTypes: eventsOfTypes,
 
+    readLatestRunEventBefore: <T extends RunEventPayload['type']>(runId: string, type: T, beforeSeq: number) => {
+      const [event] = decodeRunEvents(
+        db.prepare('SELECT * FROM events WHERE run_id = :runId AND type = :type AND seq < :beforeSeq ORDER BY seq DESC LIMIT 1').all({ runId, type, beforeSeq }),
+      );
+      return event as Extract<RunEvent, { type: T }> | undefined;
+    },
+
     readModelCallEvents: (runId) => sql.modelCallEvents.all({ runId }).map(decodeModelCallRecord),
 
     lastTerminalRootRuns: (project, limit) => sql.lastTerminalRootRuns.all({ project, limit }).map(decodeRun),

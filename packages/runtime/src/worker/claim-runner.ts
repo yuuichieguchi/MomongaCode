@@ -340,7 +340,7 @@ const drive = async (
   const targetFacts = new Map<string, { meter: TokenMeter; capabilities: Capabilities }>();
   const meterEvents = meterEventsOf(options.store, session.id, pins.modelAlias);
   const aliasMeter = createTokenMeter({ counter: { count: (request) => control.recordingRaised(gateway.countTokens(request, { signal: control.signal })) }, model: pins.modelAlias, capabilities: pins.capabilities });
-  aliasMeter.restore(foldMeterFor(meterEvents, pins.capabilities));
+  aliasMeter.restore(foldMeterFor(options.store, meterEvents, pins.capabilities));
   const ctx: ClaimContext = {
     options,
     claim,
@@ -381,7 +381,7 @@ const drive = async (
         model: pins.modelAlias,
         capabilities,
       });
-      meter.restore(foldMeterFor(meterEvents, capabilities, target));
+      meter.restore(foldMeterFor(options.store, meterEvents, capabilities, target));
       const created = { capabilities, meter };
       targetFacts.set(target, created);
       return created;

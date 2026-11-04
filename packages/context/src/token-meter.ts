@@ -53,7 +53,6 @@ type Latest = {
   itemCount: number;
   reported: number;
   kept: number;
-  decomposition: Decomposition;
 };
 
 const remember = <V>(map: Map<string, V>, key: string, value: V, limit: number): void => {
@@ -233,33 +232,26 @@ export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOpt
 
   const observe = ({ inputDigest, inputTokens }: UsageObservation): MeterObservation => {
     const record = counted.get(inputDigest);
-    const source =
-      record !== undefined
-        ? { input: record.input, tools: record.tools, instructions: record.instructions, chain: record.chain, decomposition: record.decomposition }
-        : latest !== undefined && latest.inputDigest === inputDigest
-          ? latest
-          : undefined;
-    if (source === undefined) throw new Error(`token meter has no count for input digest ${inputDigest}`);
-    const { decomposition } = source;
+    if (record === undefined) throw new Error(`token meter has no count for input digest ${inputDigest}`);
+    const { decomposition } = record;
     const reported = inputTokens;
     const kept = Math.max(decomposition.inputTokens, reported);
     const miss = Math.max(0, reported - (decomposition.inputTokens - decomposition.overCount) - decomposition.fixedA - decomposition.sigmaB(decomposition.restB));
     latest = {
-      input: source.input,
-      tools: source.tools,
-      instructions: source.instructions,
-      chain: source.chain,
+      input: record.input,
+      tools: record.tools,
+      instructions: record.instructions,
+      chain: record.chain,
       inputDigest,
-      itemCount: source.input.length,
+      itemCount: record.input.length,
       reported,
       kept,
-      decomposition,
     };
     misses = [...misses, { miss, uncounted: decomposition.uncounted }].slice(-ERROR_WINDOW);
     epoch += 1;
     return {
       inputDigest,
-      itemCount: source.input.length,
+      itemCount: record.input.length,
       counted: decomposition.inputTokens,
       reported,
       kept,
@@ -287,7 +279,6 @@ export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOpt
             itemCount: report.observation.itemCount,
             reported: report.observation.reported,
             kept: report.observation.kept,
-            decomposition: nothingCounted(report.observation.counted, report.observation.known, report.observation.uncounted),
           };
     epoch += 1;
   };
