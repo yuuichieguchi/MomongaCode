@@ -10,9 +10,10 @@ export type UpstreamErrorDetail = { code?: string | null; message?: string };
 export type ErrorVerdicts = {
   guardrail: (status: number, body: unknown) => boolean;
   contextOverflow: (status: number, body: unknown) => boolean;
+  unsupported: (status: number, body: unknown) => boolean;
 };
 
-export const NO_VERDICTS: ErrorVerdicts = { guardrail: () => false, contextOverflow: () => false };
+export const NO_VERDICTS: ErrorVerdicts = { guardrail: () => false, contextOverflow: () => false, unsupported: () => false };
 
 export type ErrorDetailReader = (parsed: unknown) => UpstreamErrorDetail;
 
@@ -40,6 +41,7 @@ export const httpErrorOf = async (
     verdicts.guardrail(response.status, parsed),
     shouldRetry === 'false' ? false : undefined,
     verdicts.contextOverflow(response.status, parsed),
+    verdicts.unsupported(response.status, parsed),
   );
 };
 

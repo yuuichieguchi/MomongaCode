@@ -1,5 +1,13 @@
 import type { ClassifiedError, ErrorBody } from '@momonga/protocol';
-import { CONTEXT_WINDOW_EXCEEDED, CompactionReplyError, PreconditionFailedError, StreamFailure, UnsupportedInputError, UpstreamHttpError } from './failures.ts';
+import {
+  CONTEXT_WINDOW_EXCEEDED,
+  CompactionReplyError,
+  PreconditionFailedError,
+  StreamFailure,
+  UNSUPPORTED_REQUEST,
+  UnsupportedInputError,
+  UpstreamHttpError,
+} from './failures.ts';
 
 const CONNECTION_CODES: ReadonlySet<string> = new Set([
   'ECONNREFUSED',
@@ -58,6 +66,9 @@ const classifyHttp = (error: UpstreamHttpError): ClassifiedError => {
   }
   if (error.contextOverflow) {
     return { retryable: false, error: body('invalid_request', CONTEXT_WINDOW_EXCEEDED, error.message) };
+  }
+  if (error.unsupported) {
+    return { retryable: false, error: body('invalid_request', UNSUPPORTED_REQUEST, error.message) };
   }
   if (status >= 400) {
     return { retryable: false, error: body('invalid_request', upstreamCode, error.message) };
