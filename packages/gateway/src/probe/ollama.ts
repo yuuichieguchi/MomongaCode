@@ -20,12 +20,20 @@ export type ProbeOllamaTargetOptions = {
 
 export type ProbeOllamaTargetResult = { report: OllamaProbeReport; key: EndpointKey; identity: string };
 
+const CHAT_PATH = '/api/chat';
+const CACHE_PROBE_WORDS = 1536;
+const CACHE_PROBE_TIMEOUT_MS = 120_000;
 const VERSION_PATH = '/api/version';
 const SHOW_PATH = '/api/show';
 const TAGS_PATH = '/api/tags';
 
-const withClient = async <T>(upstream: UpstreamEndpoint, signal: AbortSignal, use: (client: ProbeClient) => Promise<T>): Promise<T> => {
-  const client = createProbeClient(probeEndpointOf(upstream, undefined), signal, IDENTITY_READ_TIMEOUT_MS);
+const withClient = async <T>(
+  upstream: UpstreamEndpoint,
+  signal: AbortSignal,
+  use: (client: ProbeClient) => Promise<T>,
+  timeoutMs: number = IDENTITY_READ_TIMEOUT_MS,
+): Promise<T> => {
+  const client = createProbeClient(probeEndpointOf(upstream, undefined), signal, timeoutMs);
   try {
     return await use(client);
   } catch (error) {
@@ -97,6 +105,23 @@ const capabilitiesOf = (show: unknown, model: string): readonly string[] => {
   return capabilities;
 };
 
+const measurePromptCache = async (client: ProbeClient, model: string, contextWindow: number): Promise<OllamaProbeReport['promptCache']> => {
+  const request = {
+    model,
+    messages: [{ role: 'user', content: Array.from({ length: CACHE_PROBE_WORDS }, () => 'word').join(' ') }],
+    stream: false,
+    options: { num_ctx: contextWindow, num_predict: 1 },
+  };
+  await jsonOf(client, 'POST', CHAT_PATH, request);
+  const repeated = await jsonOf(client, 'POST', CHAT_PATH, request);
+  const cached = isRecord(repeated) ? repeated['prompt_eval_cached_count'] : undefined;
+  if (cached === undefined) return undefined;
+  if (typeof cached !== 'number' || !Number.isSafeInteger(cached) || cached < 0) {
+    throw new Error(`the Ollama server answered ${CHAT_PATH} with a prompt_eval_cached_count that is not a non-negative integer`);
+  }
+  return { kind: cached > 0 ? 'automatic' : 'none' };
+};
+
 export const probeOllamaTarget = async (options: ProbeOllamaTargetOptions): Promise<ProbeOllamaTargetResult> => {
   const { model, upstream } = options;
   const signal = options.signal ?? new AbortController().signal;
@@ -114,6 +139,7 @@ export const probeOllamaTarget = async (options: ProbeOllamaTargetOptions): Prom
   const identity = digestIn(tags, model);
   if (identity === undefined) throw new Error(`the Ollama server does not list model ${model}; pull it with \`ollama pull ${model}\``);
   const capabilities = capabilitiesOf(show, model);
+  const promptCache = await withClient(upstream, signal, (client) => measurePromptCache(client, model, options.contextWindow), CACHE_PROBE_TIMEOUT_MS);
   const report: OllamaProbeReport = {
     kind: 'ollama',
     probedAt: new Date().toISOString(),
@@ -123,6 +149,7 @@ export const probeOllamaTarget = async (options: ProbeOllamaTargetOptions): Prom
     nativeTools: { accepted: capabilities.includes('tools') },
     imageInputAccepted: capabilities.includes('vision'),
     thinkingSupported: capabilities.includes('thinking'),
+    ...(promptCache === undefined ? {} : { promptCache }),
   };
   const key: EndpointKey = { endpoint: endpointKeyOf(upstream), model };
   await saveEndpointRecord(options.probeRecordDir, key, identity, [], report);

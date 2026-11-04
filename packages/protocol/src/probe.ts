@@ -42,6 +42,7 @@ export type OllamaProbeReport = {
   nativeTools: { accepted: boolean };
   imageInputAccepted: boolean;
   thinkingSupported: boolean;
+  promptCache?: { kind: 'automatic' | 'none' };
   reasoning?: undefined;
 };
 

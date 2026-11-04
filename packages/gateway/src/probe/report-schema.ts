@@ -154,6 +154,12 @@ const ollamaReportSchema = {
     nativeTools: { type: 'object', required: ['accepted'], additionalProperties: false, properties: { accepted: bool } },
     imageInputAccepted: bool,
     thinkingSupported: bool,
+    promptCache: {
+      type: 'object',
+      required: ['kind'],
+      additionalProperties: false,
+      properties: { kind: { type: 'string', enum: ['automatic', 'none'] } },
+    },
   },
 } as const;
 
