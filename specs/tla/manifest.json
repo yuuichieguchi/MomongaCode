@@ -16,7 +16,7 @@
     { "config": "RunRecovery.noReap", "role": "evidence", "expect": { "violates": "ReconcileSeesStoppedEffect", "exitCode": 12 }, "args": [], "tier": "every-run", "distinctStates": 979559, "measuredSeconds": 17.1, "budgetSeconds": 35 },
     { "config": "RequestPrefix", "role": "check", "expect": "holds", "args": [], "tier": "every-run", "distinctStates": 440416, "measuredSeconds": 5.2, "budgetSeconds": 11 },
     { "config": "RequestPrefix.noModeYield", "role": "check", "expect": "holds", "args": [], "tier": "every-run", "distinctStates": 441168, "measuredSeconds": 5.3, "budgetSeconds": 11 },
-    { "config": "RequestPrefix.parallel", "role": "check", "expect": "holds", "args": [], "tier": "every-run", "distinctStates": 56800, "measuredSeconds": 2.4, "budgetSeconds": 5 },
+    { "config": "RequestPrefix.parallel", "role": "check", "expect": "holds", "args": [], "tier": "every-run", "distinctStates": 357010, "measuredSeconds": 6.0, "budgetSeconds": 12 },
     { "config": "RequestPrefix.offerPerBuild", "role": "evidence", "expect": { "violates": "PrefixStable", "exitCode": 13 }, "args": [], "tier": "every-run", "distinctStates": 174, "measuredSeconds": 1.2, "budgetSeconds": 3 },
     { "config": "RequestPrefix.govFirst", "role": "evidence", "expect": { "violates": "PrefixStable", "exitCode": 13 }, "args": [], "tier": "every-run", "distinctStates": 401, "measuredSeconds": 1.2, "budgetSeconds": 3 },
     { "config": "RequestPrefix.rerank", "role": "evidence", "expect": { "violates": "PrefixStable", "exitCode": 13 }, "args": [], "tier": "every-run", "distinctStates": 164, "measuredSeconds": 1.2, "budgetSeconds": 3 },
