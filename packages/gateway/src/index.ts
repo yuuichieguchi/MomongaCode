@@ -68,3 +68,8 @@ export { createAnthropicAdapter } from './adapters/anthropic/adapter.ts';
 export type { AnthropicAdapter, AnthropicAdapterOptions } from './adapters/anthropic/types.ts';
 export { createOpenResponsesAdapter } from './adapters/open-responses/adapter.ts';
 export type { OpenResponsesAdapter, OpenResponsesAdapterOptions } from './adapters/open-responses/types.ts';
+export { createOllamaAdapter } from './adapters/ollama/adapter.ts';
+export type { OllamaAdapter, OllamaAdapterOptions } from './adapters/ollama/types.ts';
+export { OLLAMA_VOCABULARY } from './adapters/ollama/vocabulary.ts';
+export { probeOllamaTarget } from './probe/ollama.ts';
+export type { ProbeOllamaTargetOptions, ProbeOllamaTargetResult } from './probe/ollama.ts';

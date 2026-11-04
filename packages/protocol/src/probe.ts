@@ -31,3 +31,17 @@ export type ProbeReport = {
   guardrail: { errorShape?: unknown };
   tokenCalibration?: { ratio: number; errorBound: number };
 };
+
+export type OllamaProbeReport = {
+  kind: 'ollama';
+  probedAt: string;
+  serverVersion: string;
+  modelId: string;
+  contextWindow: { value: number; method: 'reported' };
+  nativeTools: { accepted: boolean };
+  imageInputAccepted: boolean;
+  thinkingSupported: boolean;
+  reasoning?: undefined;
+};
+
+export type EndpointProbeReport = ProbeReport | OllamaProbeReport;

@@ -2,7 +2,7 @@ import { compactionSummaryMessage } from '@momonga/protocol';
 import type { AdapterInputItem, AdapterRequest, ContentPart, FunctionTool, PromptCacheCounts, ToolChoice } from '@momonga/protocol';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { hasImagePart, imageSourceOf } from '../shared/image-part.ts';
-import { textOfContent } from '../shared/input-text.ts';
+import { reasoningTextOf, textOfContent } from '../shared/input-text.ts';
 import { systemTextOf } from '../shared/system-text.ts';
 
 export type CacheControl = { type: 'ephemeral' };
@@ -19,7 +19,8 @@ export type AnthropicToolResultBlock = {
   tool_use_id: string;
   content?: string | Array<AnthropicTextBlock | AnthropicImageBlock>;
 } & Cacheable;
-export type AnthropicBlock = AnthropicTextBlock | AnthropicImageBlock | AnthropicToolUseBlock | AnthropicToolResultBlock;
+export type AnthropicThinkingBlock = { type: 'thinking'; thinking: string; signature: string };
+export type AnthropicBlock = AnthropicTextBlock | AnthropicImageBlock | AnthropicToolUseBlock | AnthropicToolResultBlock | AnthropicThinkingBlock;
 
 export type AnthropicMessage = { role: 'user' | 'assistant'; content: AnthropicBlock[] };
 
@@ -86,7 +87,9 @@ type Converted = { role: AnthropicMessage['role']; blocks: AnthropicBlock[] };
 const blocksOf = (item: AdapterInputItem): Converted | undefined => {
   switch (item.type) {
     case 'reasoning':
-      return undefined;
+      return item.signature === undefined || item.signature === null
+        ? undefined
+        : { role: 'assistant', blocks: [{ type: 'thinking', thinking: reasoningTextOf(item), signature: item.signature }] };
     case 'compaction_summary': {
       const summary = compactionSummaryMessage(item.summary);
       return { role: 'user', blocks: textBlocksOf(textOfContent(summary.content)) };
@@ -110,7 +113,7 @@ const toolResultsFirst = (blocks: AnthropicBlock[]): AnthropicBlock[] => [
 ];
 
 const isStablePrefixItem = (item: AdapterInputItem): boolean =>
-  item.type === 'compaction_summary' || item.type === 'reasoning' || (item.type === 'message' && (item.role === 'system' || item.role === 'developer'));
+  item.type === 'compaction_summary' || (item.type === 'message' && (item.role === 'system' || item.role === 'developer'));
 
 const stablePrefixLength = (input: readonly AdapterInputItem[]): number => {
   const first = input.findIndex((item) => !isStablePrefixItem(item));
@@ -154,12 +157,14 @@ const toolChoiceOf = (choice: ToolChoice | undefined, parallelToolCalls: boolean
   return { type: 'tool', name: choice.name, ...serial };
 };
 
+const isThinking = (block: AnthropicBlock | AnthropicTool): block is AnthropicThinkingBlock => 'type' in block && block.type === 'thinking';
+
 const withBreakpoints = (tools: AnthropicTool[], system: AnthropicTextBlock[], converted: ConvertedMessages, maxBreakpoints: number): void => {
   const candidates = [converted.messages.at(-1)?.content.at(-1), converted.stablePrefixEnd, system.at(-1), tools.at(-1)];
   const marked = new Set<Cacheable>();
   for (const block of candidates) {
     if (marked.size >= maxBreakpoints) return;
-    if (block === undefined || marked.has(block)) continue;
+    if (block === undefined || isThinking(block) || marked.has(block)) continue;
     block.cache_control = EPHEMERAL;
     marked.add(block);
   }

@@ -6,6 +6,7 @@ import { isRecord } from '@momonga/foundation';
 export type UpstreamItem =
   | { kind: 'message'; text: string; refusal: string }
   | { kind: 'function_call'; callId: string; name: string; arguments: string }
+  | { kind: 'reasoning'; content: string[]; summary: string[]; encryptedContent: string | undefined }
   | { kind: 'other' };
 
 export type UpstreamTerminal =
@@ -20,6 +21,8 @@ export type OpenResponsesStreamEvent =
   | { type: 'text_delta'; outputIndex: number; delta: string }
   | { type: 'refusal_delta'; outputIndex: number; delta: string }
   | { type: 'arguments_delta'; outputIndex: number; delta: string }
+  | { type: 'reasoning_delta'; outputIndex: number; contentIndex: number; delta: string }
+  | { type: 'reasoning_summary_delta'; outputIndex: number; summaryIndex: number; delta: string }
   | { type: 'terminal'; terminal: UpstreamTerminal }
   | { type: 'error'; code: string; message: string; errorType: ErrorType }
   | { type: 'ignored' };
@@ -43,6 +46,22 @@ const outputIndexOf = (event: Record<string, unknown>): number => {
   const { output_index: index } = event;
   if (typeof index !== 'number' || !Number.isSafeInteger(index) || index < 0) throw invalid('output_index must be a non-negative integer');
   return index;
+};
+
+const partIndexOf = (event: Record<string, unknown>, key: string): number => {
+  const index = event[key];
+  if (typeof index !== 'number' || !Number.isSafeInteger(index) || index < 0) throw invalid(`${key} must be a non-negative integer`);
+  return index;
+};
+
+const textPartsOf = (container: Record<string, unknown>, key: string, partType: string): string[] => {
+  const parts = container[key];
+  if (parts === undefined || parts === null) return [];
+  if (!Array.isArray(parts)) throw invalid(`item.${key} must be an array`);
+  return parts.flatMap((part): string[] => {
+    if (!isRecord(part)) throw invalid(`item.${key} parts must be objects`);
+    return part['type'] === partType ? [requiredString(part, 'text', 'reasoning part')] : [];
+  });
 };
 
 const tokenCount = (container: Record<string, unknown>, key: string, what: string): number => {
@@ -87,6 +106,14 @@ const itemOf = (value: unknown): UpstreamItem => {
       callId: requiredString(value, 'call_id', 'item'),
       name: requiredString(value, 'name', 'item'),
       arguments: optionalString(value, 'arguments', 'item') ?? '',
+    };
+  }
+  if (type === 'reasoning') {
+    return {
+      kind: 'reasoning',
+      content: textPartsOf(value, 'content', 'reasoning_text'),
+      summary: textPartsOf(value, 'summary', 'summary_text'),
+      encryptedContent: optionalString(value, 'encrypted_content', 'item'),
     };
   }
   if (type !== 'message') return { kind: 'other' };
@@ -143,6 +170,20 @@ export const parseOpenResponsesEvent = (data: string): OpenResponsesStreamEvent 
       return { type: 'text_delta', outputIndex: outputIndexOf(parsed), delta: requiredString(parsed, 'delta', 'event') };
     case 'response.refusal.delta':
       return { type: 'refusal_delta', outputIndex: outputIndexOf(parsed), delta: requiredString(parsed, 'delta', 'event') };
+    case 'response.reasoning.delta':
+      return {
+        type: 'reasoning_delta',
+        outputIndex: outputIndexOf(parsed),
+        contentIndex: partIndexOf(parsed, 'content_index'),
+        delta: requiredString(parsed, 'delta', 'event'),
+      };
+    case 'response.reasoning_summary_text.delta':
+      return {
+        type: 'reasoning_summary_delta',
+        outputIndex: outputIndexOf(parsed),
+        summaryIndex: partIndexOf(parsed, 'summary_index'),
+        delta: requiredString(parsed, 'delta', 'event'),
+      };
     case 'response.function_call_arguments.delta':
       return { type: 'arguments_delta', outputIndex: outputIndexOf(parsed), delta: requiredString(parsed, 'delta', 'event') };
     case 'response.completed':

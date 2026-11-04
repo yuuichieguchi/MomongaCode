@@ -11,7 +11,7 @@ const HTTP_ERROR_FROM = 400;
 const BAD_REQUEST_STATUS = 400;
 const PAYLOAD_TOO_LARGE_STATUS = 413;
 const CONTEXT_OVERFLOW_CODE = 'context_length_exceeded';
-const CONTEXT_OVERFLOW_WORDING = /\bcontext (?:length|size|window)\b/i;
+export const CONTEXT_OVERFLOW_WORDING = /\bcontext (?:length|size|window)\b/i;
 const FM_CONTEXT_OVERFLOW_MESSAGE = "The session's transcript exceeded the model's context size.";
 const FM_UNSUPPORTED_GUIDE_MESSAGE = 'An unsupported generation guide was used.';
 

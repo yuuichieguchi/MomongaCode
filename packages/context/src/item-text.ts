@@ -15,6 +15,7 @@ const textOfPart = (part: DeepReadonly<ContentPart>): string => {
     case 'input_text':
     case 'output_text':
     case 'summary_text':
+    case 'reasoning_text':
       return part.text;
     case 'refusal':
       return part.refusal;

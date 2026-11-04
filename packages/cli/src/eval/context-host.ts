@@ -111,7 +111,7 @@ export const liveSettingsFor = (user: UserModels, alias: string): LiveSettings =
       const upstream = resolved.socketPath !== undefined ? ({ kind: 'unix', socketPath: resolved.socketPath } as const) : ({ kind: 'tcp', baseUrl: resolved.baseUrl as string } as const);
       endpointProbes.push({ upstream, model: resolved.model });
     }
-    if (resolved.adapter !== 'fm' && resolved.apiKeySecret !== undefined) {
+    if (resolved.adapter !== 'fm' && resolved.adapter !== 'ollama' && declared.adapter !== 'ollama' && resolved.apiKeySecret !== undefined) {
       const envName = `${GENERATED_KEY_PREFIX}${credentials.length}`;
       const { apiKeySecret: _secret, ...rest } = declared;
       credentials.push({ envName, secretName: resolved.apiKeySecret });

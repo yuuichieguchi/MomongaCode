@@ -1,5 +1,6 @@
 import { isRecord } from '@momonga/foundation';
-import type { Usage } from '@momonga/protocol';
+import { CHAT_REASONING_FIELDS } from '@momonga/protocol';
+import type { ChatReasoningField, Usage } from '@momonga/protocol';
 import { UpstreamProtocolError } from '../shared/failures.ts';
 
 export type ToolCallFragment = {
@@ -9,8 +10,11 @@ export type ToolCallFragment = {
   arguments: string | undefined;
 };
 
+export type ChunkReasoning = { field: ChatReasoningField; text: string };
+
 export type UpstreamChunk = {
   content: string | undefined;
+  reasoning: ChunkReasoning | undefined;
   refusal: string | undefined;
   toolCalls: ToolCallFragment[];
   finishReason: string | undefined;
@@ -55,6 +59,14 @@ const usageOf = (value: unknown): Usage | undefined => {
   };
 };
 
+const reasoningOf = (delta: Record<string, unknown>): ChunkReasoning | undefined => {
+  const carried = CHAT_REASONING_FIELDS.flatMap((field): ChunkReasoning[] => {
+    const text = optionalString(delta[field], `delta.${field}`);
+    return text === undefined || text === '' ? [] : [{ field, text }];
+  });
+  return carried[0];
+};
+
 const fragmentOf = (value: unknown): ToolCallFragment => {
   if (!isRecord(value)) throw invalid('a tool_calls entry must be an object');
   const { index } = value;
@@ -83,12 +95,12 @@ export const parseUpstreamChunk = (data: string): UpstreamChunk => {
   const choices = parsed['choices'];
   if (choices === undefined) {
     if (usage === undefined) throw invalid('it has neither choices nor usage');
-    return { content: undefined, refusal: undefined, toolCalls: [], finishReason: undefined, usage };
+    return { content: undefined, reasoning: undefined, refusal: undefined, toolCalls: [], finishReason: undefined, usage };
   }
   if (!Array.isArray(choices)) throw invalid('choices must be an array');
   if (choices.length > 1) throw invalid('the upstream returned more than one choice');
   const choice: unknown = choices[0];
-  if (choice === undefined) return { content: undefined, refusal: undefined, toolCalls: [], finishReason: undefined, usage };
+  if (choice === undefined) return { content: undefined, reasoning: undefined, refusal: undefined, toolCalls: [], finishReason: undefined, usage };
   if (!isRecord(choice)) throw invalid('a choice must be an object');
   const delta = choice['delta'] ?? {};
   if (!isRecord(delta)) throw invalid('delta must be an object');
@@ -96,6 +108,7 @@ export const parseUpstreamChunk = (data: string): UpstreamChunk => {
   if (toolCalls !== undefined && toolCalls !== null && !Array.isArray(toolCalls)) throw invalid('delta.tool_calls must be an array');
   return {
     content: optionalString(delta['content'], 'delta.content'),
+    reasoning: reasoningOf(delta),
     refusal: optionalString(delta['refusal'], 'delta.refusal'),
     toolCalls: Array.isArray(toolCalls) ? toolCalls.map(fragmentOf) : [],
     finishReason: optionalString(choice['finish_reason'], 'finish_reason'),

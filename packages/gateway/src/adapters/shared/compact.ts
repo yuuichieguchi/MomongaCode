@@ -3,7 +3,7 @@ import type { AdapterCompactRequest, AdapterInputItem, AdapterRequest, ContentPa
 import { tokensForText } from '../../core/estimate.ts';
 import { CompactionReplyError, StreamFailure } from './failures.ts';
 import { hasImagePart, isImagePart } from './image-part.ts';
-import { escapeAttribute, neutralizeMarkup, textOfContent } from './input-text.ts';
+import { escapeAttribute, neutralizeMarkup, reasoningTextOf, textOfContent } from './input-text.ts';
 
 export const COMPACTION_INSTRUCTIONS_MARKER =
   'You write the handoff note for a coding agent whose earlier conversation is being removed to free space.';
@@ -55,8 +55,10 @@ const piecesOfContent = (content: string | readonly ContentPart[]): Piece[] => {
 
 const elementOf = (item: AdapterInputItem): Piece[] | undefined => {
   switch (item.type) {
-    case 'reasoning':
-      return undefined;
+    case 'reasoning': {
+      const text = reasoningTextOf(item);
+      return text === '' ? undefined : [`<reasoning>${neutralizeMarkup(text)}</reasoning>`];
+    }
     case 'compaction_summary':
       return [`<earlier_summary>${neutralizeMarkup(item.summary)}</earlier_summary>`];
     case 'function_call':

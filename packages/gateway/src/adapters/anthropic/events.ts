@@ -11,7 +11,7 @@ export type AnthropicUsageFields = {
 export type AnthropicContentBlock = { raw: Record<string, unknown> } & (
   | { kind: 'text'; text: string }
   | { kind: 'tool_use'; id: string; name: string }
-  | { kind: 'thinking' }
+  | { kind: 'thinking'; thinking: string }
   | { kind: 'other' }
 );
 
@@ -73,7 +73,7 @@ const blockOf = (value: unknown): AnthropicContentBlock => {
   if (type === 'tool_use') {
     return { raw: value, kind: 'tool_use', id: requiredString(value, 'id', 'content_block'), name: requiredString(value, 'name', 'content_block') };
   }
-  if (type === 'thinking' || type === 'redacted_thinking') return { raw: value, kind: 'thinking' };
+  if (type === 'thinking') return { raw: value, kind: 'thinking', thinking: typeof value['thinking'] === 'string' ? value['thinking'] : '' };
   return { raw: value, kind: 'other' };
 };
 

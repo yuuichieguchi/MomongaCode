@@ -77,6 +77,7 @@ type SpecKit = {
   compile(component: string): ValidateFunction;
   branches: ItemBranch[];
   branchValidators: Map<string, ValidateFunction>;
+  itemField: ValidateFunction;
   streamSchemas: Map<string, ValidateFunction>;
 };
 
@@ -118,6 +119,7 @@ const specKit = (): SpecKit => {
     compile,
     branches,
     branchValidators: new Map(branches.map((branch) => [branch.component, compile(branch.component)])),
+    itemField: compile('ItemField'),
     streamSchemas: new Map([...streamSchemaNames(spec, schemas)].map(([type, component]) => [type, compile(component)])),
   };
   return sharedKit;
@@ -147,7 +149,9 @@ const itemIssue = (kit: SpecKit, item: unknown, index: number): Issue | undefine
   const selection = selectBranch(kit, item, index);
   if ('issue' in selection) return selection.issue;
   const validate = kit.branchValidators.get(selection.branch.component) as ValidateFunction;
-  return validate(item) ? undefined : issueOf(validate.errors ?? [], ['input', String(index)]);
+  if (validate(item)) return undefined;
+  if (isRecord(item) && item['type'] === 'reasoning' && kit.itemField(item)) return undefined;
+  return issueOf(validate.errors ?? [], ['input', String(index)]);
 };
 
 export type StoredDataChecks = {

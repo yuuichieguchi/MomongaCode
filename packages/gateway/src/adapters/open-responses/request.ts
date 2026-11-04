@@ -35,7 +35,13 @@ const USER_PART_TYPES: ReadonlySet<ContentPart['type']> = new Set([...TEXT_PART_
 const itemOf = (item: AdapterInputItem): InputItem | undefined => {
   switch (item.type) {
     case 'reasoning':
-      return undefined;
+      return {
+        type: 'reasoning',
+        ...(item.id === undefined || item.id === null ? {} : { id: item.id }),
+        summary: item.summary,
+        ...(item.content === undefined || item.content === null ? {} : { content: item.content }),
+        ...(item.encrypted_content === undefined || item.encrypted_content === null ? {} : { encrypted_content: item.encrypted_content }),
+      };
     case 'compaction_summary':
       return compactionSummaryMessage(item.summary);
     case 'message':

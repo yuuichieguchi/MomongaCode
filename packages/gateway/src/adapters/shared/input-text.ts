@@ -1,4 +1,4 @@
-import type { ContentPart } from '@momonga/protocol';
+import type { AdapterInputItem, ContentPart } from '@momonga/protocol';
 import { UnsupportedInputError } from './failures.ts';
 
 const PART_SEPARATOR = '\n';
@@ -8,6 +8,7 @@ const textOfPart = (part: ContentPart): string => {
     case 'input_text':
     case 'output_text':
     case 'summary_text':
+    case 'reasoning_text':
       return part.text;
     case 'refusal':
       return part.refusal;
@@ -30,3 +31,10 @@ export const escapeAttribute = (value: string): string =>
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
     .replace(/[\r\n]/g, ' ');
+
+export type ReasoningInput = Extract<AdapterInputItem, { type: 'reasoning' }>;
+
+export const reasoningTextOf = (item: ReasoningInput): string => {
+  const content = item.content ?? [];
+  return textOfContent(content.length > 0 ? content : item.summary);
+};

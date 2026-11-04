@@ -20,6 +20,7 @@ export const UPSTREAM_LIVENESS_DEFAULTS = { headersTimeoutMs: 600_000, bodyTimeo
 
 export const FM_PROVIDER_NAME = 'apple';
 export const ANTHROPIC_PROVIDER_NAME = 'anthropic';
+export const OLLAMA_PROVIDER_NAME = 'ollama';
 
 export const FM_SERVE_DEFAULTS = {
   healthTimeoutMs: 10_000,

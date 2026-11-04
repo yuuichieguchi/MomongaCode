@@ -182,10 +182,26 @@ const ANTHROPIC_TARGET_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+const OLLAMA_TARGET_SCHEMA = {
+  type: 'object',
+  properties: {
+    adapter: { const: 'ollama' },
+    model: { type: 'string', minLength: 1 },
+    baseUrl: { type: 'string', minLength: 1 },
+    socketPath: { type: 'string', minLength: 1 },
+    billing: BILLING_SCHEMA,
+    capabilities: TARGET_CAPABILITIES_SCHEMA,
+    maxConcurrency: POSITIVE_INTEGER,
+    admissionTimeoutMs: NON_NEGATIVE_INTEGER,
+  },
+  required: ['adapter', 'model', 'capabilities'],
+  additionalProperties: false,
+} as const;
+
 const MODEL_TARGET_SCHEMA = {
   type: 'object',
   discriminator: { propertyName: 'adapter' },
-  oneOf: [FM_TARGET_SCHEMA, CHAT_COMPLETIONS_TARGET_SCHEMA, OPEN_RESPONSES_TARGET_SCHEMA, ANTHROPIC_TARGET_SCHEMA],
+  oneOf: [FM_TARGET_SCHEMA, CHAT_COMPLETIONS_TARGET_SCHEMA, OPEN_RESPONSES_TARGET_SCHEMA, ANTHROPIC_TARGET_SCHEMA, OLLAMA_TARGET_SCHEMA],
 } as const;
 
 const HOOK_COMMAND_SCHEMA = {

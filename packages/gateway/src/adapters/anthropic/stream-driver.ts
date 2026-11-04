@@ -6,7 +6,7 @@ import { AssistantRecorder } from './assistant-recorder.ts';
 import type { AnthropicStreamEvent, AnthropicUsageFields } from './events.ts';
 import { streamErrorOf } from './errors.ts';
 
-type BlockState = { kind: 'text' } | { kind: 'tool'; key: number; receivedArguments: boolean } | { kind: 'ignored' };
+type BlockState = { kind: 'text' } | { kind: 'thinking'; key: number } | { kind: 'tool'; key: number; receivedArguments: boolean } | { kind: 'ignored' };
 
 const EMPTY_ARGUMENTS = '{}';
 const USAGE_KEYS = ['input_tokens', 'output_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens'] as const;
@@ -147,6 +147,13 @@ export class AnthropicStreamDriver {
       if (block.text !== '') this.emitter.appendText(block.text);
       return;
     }
+    if (block.kind === 'thinking') {
+      const key = this.emitter.reasoningCount;
+      this.blocks.set(event.index, { kind: 'thinking', key });
+      this.emitter.beginReasoning(key);
+      this.emitter.appendReasoning(key, block.thinking);
+      return;
+    }
     if (block.kind === 'tool_use') {
       if (this.emitter.callCount >= MAX_TOOL_CALLS) throw new UpstreamProtocolError(`the upstream sent more than ${MAX_TOOL_CALLS} tool calls`);
       if (block.id === '' || block.name === '') throw new UpstreamProtocolError(`tool_use block ${event.index} lacks an id or a name`);
@@ -163,6 +170,12 @@ export class AnthropicStreamDriver {
     if (block === undefined) throw new UpstreamProtocolError(`the upstream sent a delta for the unopened content block ${event.index}`);
     const { delta } = event;
     this.recorder.apply(event.index, delta);
+    if (block.kind === 'thinking') {
+      if (delta.kind === 'thinking') this.emitter.appendReasoning(block.key, delta.thinking);
+      else if (delta.kind === 'signature') this.emitter.annotateReasoning(block.key, { signature: delta.signature });
+      else if (delta.kind !== 'other') throw new UpstreamProtocolError(`a ${delta.kind} delta arrived for the thinking block ${event.index}`);
+      return;
+    }
     if (delta.kind === 'other' || delta.kind === 'thinking' || delta.kind === 'signature' || delta.kind === 'citation' || block.kind === 'ignored') return;
     if (delta.kind === 'text') {
       if (block.kind !== 'text') throw new UpstreamProtocolError(`a text delta arrived for the tool_use block ${event.index}`);
@@ -177,6 +190,7 @@ export class AnthropicStreamDriver {
   private stopBlock(index: number): void {
     const block = this.blocks.get(index);
     if (block === undefined) throw new UpstreamProtocolError(`the upstream stopped the unopened content block ${index}`);
+    if (block.kind === 'thinking') this.emitter.completeReasoning(block.key);
     if (block.kind === 'tool' && !block.receivedArguments) this.emitter.appendCallArguments(block.key, EMPTY_ARGUMENTS);
     this.recorder.stop(index);
   }

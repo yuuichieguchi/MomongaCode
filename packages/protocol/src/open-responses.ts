@@ -46,6 +46,7 @@ export type InputTextPart = { type: 'input_text'; text: string };
 export type OutputTextPart = { type: 'output_text'; text: string; annotations?: Annotation[] };
 export type SummaryTextPart = { type: 'summary_text'; text: string };
 export type RefusalPart = { type: 'refusal'; refusal: string };
+export type ReasoningTextPart = { type: 'reasoning_text'; text: string };
 export type InputImagePart = { type: 'input_image'; image_url?: string | null; detail?: 'low' | 'high' | 'auto' };
 export type InputFilePart = {
   type: 'input_file';
@@ -53,7 +54,10 @@ export type InputFilePart = {
   file_data?: string;
   file_url?: string;
 };
-export type ContentPart = InputTextPart | OutputTextPart | SummaryTextPart | RefusalPart | InputImagePart | InputFilePart;
+export type ContentPart = InputTextPart | OutputTextPart | SummaryTextPart | ReasoningTextPart | RefusalPart | InputImagePart | InputFilePart;
+
+export const CHAT_REASONING_FIELDS = ['reasoning_content', 'reasoning', 'reasoning_text'] as const;
+export type ChatReasoningField = (typeof CHAT_REASONING_FIELDS)[number];
 
 export type ItemStatus = 'in_progress' | 'completed' | 'incomplete';
 
@@ -89,6 +93,8 @@ export type ReasoningItem = {
   summary: ContentPart[];
   content?: ContentPart[];
   encrypted_content?: string;
+  reasoning_field?: ChatReasoningField;
+  signature?: string;
 };
 
 export type CompactionItem = { type: 'compaction'; id: string; encrypted_content: string; created_by?: string };
@@ -127,6 +133,8 @@ export type ReasoningInputItem = {
   summary: ContentPart[];
   content?: ContentPart[] | null;
   encrypted_content?: string | null;
+  reasoning_field?: ChatReasoningField | null;
+  signature?: string | null;
 };
 
 export type CompactionInputItem = { type: 'compaction'; id?: string | null; encrypted_content: string };
