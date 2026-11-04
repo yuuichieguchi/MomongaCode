@@ -2,12 +2,14 @@ import { uuidv7 } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import type {
   AdapterRequest,
+  ChatReasoningField,
   ErrorType,
   FunctionCallItem,
   ItemField,
   ItemStatus,
   MessageItem,
   ContentPart,
+  ReasoningItem,
   ResponseResource,
   StreamEvent,
   Usage,
@@ -21,7 +23,19 @@ type Unsequenced<Event> = Event extends unknown ? Omit<Event, 'sequence_number'>
 type MessagePart = { kind: 'text' | 'refusal'; text: string };
 type OpenMessage = { kind: 'message'; id: string; outputIndex: number; parts: MessagePart[] };
 type OpenCall = { kind: 'call'; id: string; outputIndex: number; callId: string; name: string; args: string };
-type OpenItem = OpenMessage | OpenCall;
+type OpenReasoning = {
+  kind: 'reasoning';
+  id: string;
+  outputIndex: number;
+  content: string[];
+  summary: string[];
+  encryptedContent?: string;
+  reasoningField?: ChatReasoningField;
+  signature?: string;
+};
+type OpenItem = OpenMessage | OpenCall | OpenReasoning;
+
+export type ReasoningAnnotation = { encryptedContent?: string; reasoningField?: ChatReasoningField; signature?: string };
 
 export type ResponseEmitterOptions = {
   clock: Clock;
@@ -43,6 +57,9 @@ export class ResponseEmitter {
   private readonly createdAtSeconds: number;
   private readonly open = new Map<number, OpenItem>();
   private readonly callIndexByKey = new Map<number, number>();
+  private readonly reasoningIndexByKey = new Map<number, number>();
+  private implicitReasoningKey: number | undefined;
+  private nextImplicitReasoningKey = -1;
   private readonly doneItems: ItemField[] = [];
   private pending: StreamEvent[] = [];
   private sequence = 0;
@@ -74,6 +91,7 @@ export class ResponseEmitter {
   }
 
   openMessage(): void {
+    this.endImplicitReasoning();
     this.partOf('text');
   }
 
@@ -87,14 +105,19 @@ export class ResponseEmitter {
 
   private append(kind: MessagePart['kind'], delta: string): void {
     if (delta === '') return;
-    this.textChars += delta.length;
-    if (this.textChars > MAX_RESPONSE_TEXT_CHARS) {
-      throw new UpstreamProtocolError(`the response text exceeds ${MAX_RESPONSE_TEXT_CHARS} characters`);
-    }
+    this.countText(delta);
+    this.endImplicitReasoning();
     const { message, index } = this.partOf(kind);
     (message.parts[index] as MessagePart).text += delta;
     const base = { item_id: message.id, output_index: message.outputIndex, content_index: index, delta };
     this.emit(kind === 'text' ? { type: 'response.output_text.delta', ...base } : { type: 'response.refusal.delta', ...base });
+  }
+
+  private countText(delta: string): void {
+    this.textChars += delta.length;
+    if (this.textChars > MAX_RESPONSE_TEXT_CHARS) {
+      throw new UpstreamProtocolError(`the response text exceeds ${MAX_RESPONSE_TEXT_CHARS} characters`);
+    }
   }
 
   private partOf(kind: MessagePart['kind']): { message: OpenMessage; index: number } {
@@ -124,6 +147,13 @@ export class ResponseEmitter {
     return { message, index };
   }
 
+  endMessage(): void {
+    const message = this.message;
+    if (message === undefined) return;
+    this.message = undefined;
+    this.closeItem(message, 'completed');
+  }
+
   hasCall(key: number): boolean {
     return this.callIndexByKey.has(key);
   }
@@ -133,6 +163,7 @@ export class ResponseEmitter {
   }
 
   beginCall(key: number, callId: string, name: string): void {
+    this.endImplicitReasoning();
     const call: OpenCall = { kind: 'call', id: newId('fc', this.options.clock), outputIndex: this.allocate(), callId, name, args: '' };
     this.callIndexByKey.set(key, call.outputIndex);
     this.open.set(call.outputIndex, call);
@@ -155,6 +186,95 @@ export class ResponseEmitter {
 
   completeCall(key: number): void {
     this.closeItem(this.callOf(key), 'completed');
+  }
+
+  get reasoningCount(): number {
+    return this.reasoningIndexByKey.size;
+  }
+
+  beginReasoning(key: number, annotation: ReasoningAnnotation = {}): void {
+    if (this.reasoningIndexByKey.has(key)) throw new Error(`reasoning item ${key} is already open`);
+    const reasoning: OpenReasoning = { kind: 'reasoning', id: newId('rs', this.options.clock), outputIndex: this.allocate(), content: [], summary: [] };
+    this.reasoningIndexByKey.set(key, reasoning.outputIndex);
+    this.open.set(reasoning.outputIndex, reasoning);
+    this.annotate(reasoning, annotation);
+    this.emit({ type: 'response.output_item.added', output_index: reasoning.outputIndex, item: { type: 'reasoning', id: reasoning.id, summary: [] } });
+  }
+
+  annotateReasoning(key: number, annotation: ReasoningAnnotation): void {
+    this.annotate(this.reasoningOf(key), annotation);
+  }
+
+  appendReasoning(key: number, delta: string, contentIndex = 0): void {
+    if (delta === '') return;
+    this.countText(delta);
+    const reasoning = this.reasoningOf(key);
+    if (reasoning.content[contentIndex] === undefined) {
+      if (contentIndex !== reasoning.content.length) throw new UpstreamProtocolError(`reasoning content part ${contentIndex} was opened out of order`);
+      reasoning.content.push('');
+      this.emit({
+        type: 'response.content_part.added',
+        item_id: reasoning.id,
+        output_index: reasoning.outputIndex,
+        content_index: contentIndex,
+        part: { type: 'reasoning_text', text: '' },
+      });
+    }
+    reasoning.content[contentIndex] += delta;
+    this.emit({ type: 'response.reasoning.delta', item_id: reasoning.id, output_index: reasoning.outputIndex, content_index: contentIndex, delta });
+  }
+
+  appendReasoningSummary(key: number, delta: string, summaryIndex = 0): void {
+    if (delta === '') return;
+    this.countText(delta);
+    const reasoning = this.reasoningOf(key);
+    if (reasoning.summary[summaryIndex] === undefined) {
+      if (summaryIndex !== reasoning.summary.length) throw new UpstreamProtocolError(`reasoning summary part ${summaryIndex} was opened out of order`);
+      reasoning.summary.push('');
+      this.emit({
+        type: 'response.reasoning_summary_part.added',
+        item_id: reasoning.id,
+        output_index: reasoning.outputIndex,
+        summary_index: summaryIndex,
+        part: { type: 'summary_text', text: '' },
+      });
+    }
+    reasoning.summary[summaryIndex] += delta;
+    this.emit({ type: 'response.reasoning_summary_text.delta', item_id: reasoning.id, output_index: reasoning.outputIndex, summary_index: summaryIndex, delta });
+  }
+
+  completeReasoning(key: number): void {
+    this.closeItem(this.reasoningOf(key), 'completed');
+  }
+
+  streamReasoning(delta: string, field: ChatReasoningField | undefined): void {
+    if (delta === '') return;
+    if (this.implicitReasoningKey === undefined) {
+      this.implicitReasoningKey = this.nextImplicitReasoningKey;
+      this.nextImplicitReasoningKey -= 1;
+      this.beginReasoning(this.implicitReasoningKey, field === undefined ? {} : { reasoningField: field });
+    }
+    this.appendReasoning(this.implicitReasoningKey, delta);
+  }
+
+  private endImplicitReasoning(): void {
+    if (this.implicitReasoningKey === undefined) return;
+    const key = this.implicitReasoningKey;
+    this.implicitReasoningKey = undefined;
+    this.completeReasoning(key);
+  }
+
+  private annotate(reasoning: OpenReasoning, annotation: ReasoningAnnotation): void {
+    if (annotation.encryptedContent !== undefined) reasoning.encryptedContent = annotation.encryptedContent;
+    if (annotation.reasoningField !== undefined) reasoning.reasoningField = annotation.reasoningField;
+    if (annotation.signature !== undefined) reasoning.signature = annotation.signature;
+  }
+
+  private reasoningOf(key: number): OpenReasoning {
+    const outputIndex = this.reasoningIndexByKey.get(key);
+    const reasoning = outputIndex === undefined ? undefined : this.open.get(outputIndex);
+    if (reasoning?.kind !== 'reasoning') throw new Error(`reasoning item ${key} is not open`);
+    return reasoning;
   }
 
   complete(usage: Usage | undefined, contextInputTokens?: number, cacheWriteInputTokens?: number): void {
@@ -216,6 +336,10 @@ export class ResponseEmitter {
 
   private closeItem(item: OpenItem, status: ItemStatus): void {
     this.open.delete(item.outputIndex);
+    if (item.kind === 'reasoning') {
+      this.closeReasoning(item);
+      return;
+    }
     if (item.kind === 'call') {
       this.emit({ type: 'response.function_call_arguments.done', item_id: item.id, output_index: item.outputIndex, arguments: item.args });
       const done = this.callItem(item, status);
@@ -241,6 +365,29 @@ export class ResponseEmitter {
     };
     this.doneItems.push(done);
     this.emit({ type: 'response.output_item.done', output_index: item.outputIndex, item: done });
+  }
+
+  private closeReasoning(reasoning: OpenReasoning): void {
+    const base = { item_id: reasoning.id, output_index: reasoning.outputIndex };
+    reasoning.content.forEach((text, index) => {
+      this.emit({ type: 'response.reasoning.done', ...base, content_index: index, text });
+      this.emit({ type: 'response.content_part.done', ...base, content_index: index, part: { type: 'reasoning_text', text } });
+    });
+    reasoning.summary.forEach((text, index) => {
+      this.emit({ type: 'response.reasoning_summary_text.done', ...base, summary_index: index, text });
+      this.emit({ type: 'response.reasoning_summary_part.done', ...base, summary_index: index, part: { type: 'summary_text', text } });
+    });
+    const done: ReasoningItem = {
+      type: 'reasoning',
+      id: reasoning.id,
+      summary: reasoning.summary.map((text): ContentPart => ({ type: 'summary_text', text })),
+      ...(reasoning.content.length === 0 ? {} : { content: reasoning.content.map((text): ContentPart => ({ type: 'reasoning_text', text })) }),
+      ...(reasoning.encryptedContent === undefined ? {} : { encrypted_content: reasoning.encryptedContent }),
+      ...(reasoning.reasoningField === undefined ? {} : { reasoning_field: reasoning.reasoningField }),
+      ...(reasoning.signature === undefined ? {} : { signature: reasoning.signature }),
+    };
+    this.doneItems.push(done);
+    this.emit({ type: 'response.output_item.done', output_index: reasoning.outputIndex, item: done });
   }
 
   private contentPartOf(part: MessagePart): ContentPart {

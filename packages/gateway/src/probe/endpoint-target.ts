@@ -47,26 +47,6 @@ export const readEndpointIdentity = async (
   timeoutMs: number = IDENTITY_READ_TIMEOUT_MS,
 ): Promise<string> => endpointIdentityOf(await readModelsListing(endpoint, signal, timeoutMs), model, fields);
 
-export type ProbedEndpointTargetOptions = {
-  targetName: string;
-  endpoint: string;
-  model: string;
-  declared: Capabilities;
-  record: EndpointRecord | null;
-  readIdentity: (fields: readonly string[], signal: AbortSignal) => Promise<string>;
-  saveRecord: (record: EndpointRecord) => Promise<void>;
-};
-
-export type ProbedEndpointTarget = {
-  toolCalling: () => ToolCallingMode;
-  keywordSupport: () => KeywordSupport;
-  capabilities: () => Promise<Capabilities>;
-  verify: (signal: AbortSignal) => Promise<void>;
-  raiseHeadroom: (hiddenReasoningTokens: number) => Promise<void>;
-};
-
-const remedyOf = (targetName: string): string => `run \`momonga gateway probe ${targetName}\``;
-
 type Verification = { starter: AbortSignal; done: Promise<void> };
 
 const untilAborted = <T>(work: Promise<T>, signal: AbortSignal): Promise<T> =>
@@ -89,10 +69,65 @@ const untilAborted = <T>(work: Promise<T>, signal: AbortSignal): Promise<T> =>
     );
   });
 
+export const memoizedVerification = (verifyOnce: (signal: AbortSignal) => Promise<void>): ((signal: AbortSignal) => Promise<void>) => {
+  let verification: Verification | undefined;
+
+  const beginVerification = (signal: AbortSignal): Verification => {
+    const started: Verification = {
+      starter: signal,
+      done: verifyOnce(signal).catch((error: unknown) => {
+        if (verification === started) verification = undefined;
+        throw error;
+      }),
+    };
+    return started;
+  };
+
+  return async (signal) => {
+    for (;;) {
+      signal.throwIfAborted();
+      verification ??= beginVerification(signal);
+      const current = verification;
+      try {
+        return await untilAborted(current.done, signal);
+      } catch (error) {
+        if (current.starter.aborted && !signal.aborted) continue;
+        throw error;
+      }
+    }
+  };
+};
+
+export const remedyOf = (targetName: string): string => `run \`momonga gateway probe ${targetName}\``;
+
+export const ollamaServerRefusal = (targetName: string, adapter: string, endpoint: string): PreconditionFailedError =>
+  new PreconditionFailedError(
+    `the target "${targetName}" points at an Ollama server through the ${adapter} adapter, which loses tool calls there; set adapter: "ollama" for it`,
+    `the server at ${endpoint} answered GET /api/version in Ollama's form`,
+    'change the adapter of the target to "ollama" and run its probe',
+  );
+
+export type ProbedEndpointTargetOptions = {
+  targetName: string;
+  endpoint: string;
+  model: string;
+  declared: Capabilities;
+  record: EndpointRecord | null;
+  readIdentity: (fields: readonly string[], signal: AbortSignal) => Promise<string>;
+  saveRecord: (record: EndpointRecord) => Promise<void>;
+};
+
+export type ProbedEndpointTarget = {
+  toolCalling: () => ToolCallingMode;
+  keywordSupport: () => KeywordSupport;
+  capabilities: () => Promise<Capabilities>;
+  verify: (signal: AbortSignal) => Promise<void>;
+  raiseHeadroom: (hiddenReasoningTokens: number) => Promise<void>;
+};
+
 export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions): ProbedEndpointTarget => {
   const { targetName, endpoint, model, declared } = options;
   let record = options.record;
-  let verification: Verification | undefined;
   let saving: Promise<void> = Promise.resolve();
 
   const requireRecord = (): EndpointRecord => {
@@ -118,30 +153,7 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
     }
   };
 
-  const beginVerification = (signal: AbortSignal): Verification => {
-    const started: Verification = {
-      starter: signal,
-      done: verifyOnce(signal).catch((error: unknown) => {
-        if (verification === started) verification = undefined;
-        throw error;
-      }),
-    };
-    return started;
-  };
-
-  const verify = async (signal: AbortSignal): Promise<void> => {
-    for (;;) {
-      signal.throwIfAborted();
-      verification ??= beginVerification(signal);
-      const current = verification;
-      try {
-        return await untilAborted(current.done, signal);
-      } catch (error) {
-        if (current.starter.aborted && !signal.aborted) continue;
-        throw error;
-      }
-    }
-  };
+  const verify = memoizedVerification(verifyOnce);
 
   const raiseHeadroom = (hiddenReasoningTokens: number): Promise<void> => {
     const found = requireRecord();

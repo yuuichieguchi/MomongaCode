@@ -28,19 +28,23 @@ import {
 } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import type { AdapterTarget, Capabilities, ProviderAdapter, ToolCallingMode } from '@momonga/protocol';
-import { loadEndpointRecord, saveEndpointRecord } from './probe/endpoint-record.ts';
-import { createProbedEndpointTarget, endpointKeyOf, probeEndpointOf, readEndpointIdentity } from './probe/endpoint-target.ts';
+import { chatRecordOf, loadEndpointRecord, ollamaRecordOf, saveEndpointRecord } from './probe/endpoint-record.ts';
+import { createProbedEndpointTarget, endpointKeyOf, ollamaServerRefusal, probeEndpointOf, readEndpointIdentity } from './probe/endpoint-target.ts';
+import { answersAsOllama, readOllamaDigest } from './probe/ollama.ts';
+import { createProbedOllamaTarget } from './probe/ollama-target.ts';
 import { createSecretResolver } from './secrets.ts';
 import { targetCounterOf } from './target-counter.ts';
 import type { SecretResolver } from './secrets.ts';
 import { createAnthropicAdapter } from './adapters/anthropic/adapter.ts';
 import { createChatCompletionsAdapter } from './adapters/chat-completions/adapter.ts';
+import { createOllamaAdapter } from './adapters/ollama/adapter.ts';
 import { createOpenResponsesAdapter } from './adapters/open-responses/adapter.ts';
 import type { UpstreamEndpoint } from './adapters/shared/http-client.ts';
 import {
   ANTHROPIC_PROVIDER_NAME,
   FM_PROVIDER_NAME,
   FM_SERVE_DEFAULTS,
+  OLLAMA_PROVIDER_NAME,
   GATEWAY_CONFIG_DEFAULTS,
 } from './defaults.ts';
 import { missingApiKeyError, secretUnavailableError } from './core/errors.ts';
@@ -103,6 +107,8 @@ const DEFAULT_FM_BINARY = '/usr/bin/fm';
 type ResolvedTargets = Awaited<ReturnType<typeof loadUserSettings>>['settings']['models']['targets'];
 type ResolvedTarget = ResolvedTargets[string];
 type RemoteTarget = Exclude<ResolvedTarget, { adapter: 'fm' }>;
+type KeyedTarget = Exclude<RemoteTarget, { adapter: 'ollama' }>;
+type OllamaDetectable = Extract<RemoteTarget, { adapter: 'chat-completions' | 'open-responses' }>;
 
 const withBinaryGuard = (managed: ManagedFmTarget, binary: string, files: ProcessFilePorts): ManagedFmTarget => {
   const detail = `fm binary not found at ${binary}`;
@@ -147,7 +153,7 @@ const warmSecrets = async (resolver: SecretResolver, names: readonly string[], s
 const apiKeyReader = (
   env: StartGatewayProcessOptions['env'],
   resolver: SecretResolver,
-  target: Pick<RemoteTarget, 'apiKeyEnv' | 'apiKeySecret'>,
+  target: Pick<KeyedTarget, 'apiKeyEnv' | 'apiKeySecret'>,
 ): ((target: AdapterTarget, signal: AbortSignal) => Promise<string | undefined>) => {
   const { apiKeyEnv, apiKeySecret } = target;
   return async (_target, signal) => {
@@ -220,10 +226,11 @@ const createAutoChatCompletionsAdapter = async (
   readKey: ReturnType<typeof apiKeyReader>,
   probeRecordDir: string,
   clock: Clock,
+  refusal: PreconditionFailedError | undefined,
 ) => {
   const upstream = endpointOf(target);
   const endpoint = endpointKeyOf(upstream);
-  const loaded = await loadEndpointRecord(probeRecordDir, { endpoint, model: target.model });
+  const loaded = chatRecordOf(await loadEndpointRecord(probeRecordDir, { endpoint, model: target.model }), { endpoint, model: target.model });
   const probed = createProbedEndpointTarget({
     targetName: name,
     endpoint,
@@ -239,6 +246,7 @@ const createAutoChatCompletionsAdapter = async (
   });
   const adapter = createChatCompletionsAdapter({
     resolveEndpoint: async (_target, signal) => {
+      if (refusal !== undefined) throw refusal;
       await probed.verify(signal);
       return upstream;
     },
@@ -252,6 +260,41 @@ const createAutoChatCompletionsAdapter = async (
   return { adapter, upstreamIdentity: loaded?.identity };
 };
 
+const createProbedOllamaAdapter = async (name: string, target: Extract<RemoteTarget, { adapter: 'ollama' }>, probeRecordDir: string, clock: Clock) => {
+  const upstream = endpointOf(target);
+  const endpoint = endpointKeyOf(upstream);
+  const key = { endpoint, model: target.model };
+  const loaded = ollamaRecordOf(await loadEndpointRecord(probeRecordDir, key), key);
+  const probed = createProbedOllamaTarget({
+    targetName: name,
+    endpoint,
+    model: target.model,
+    declared: capabilitiesOf(target, 'native'),
+    record: loaded,
+    readDigest: (signal) => readOllamaDigest(upstream, target.model, signal),
+  });
+  const adapter = createOllamaAdapter({
+    resolveEndpoint: async (_target, signal) => {
+      await probed.verify(signal);
+      return upstream;
+    },
+    capabilities: () => probed.capabilities(),
+    clock,
+  });
+  return { adapter, upstreamIdentity: loaded?.identity };
+};
+
+const ollamaRefusalsOf = async (targets: ReadonlyArray<readonly [string, ResolvedTarget]>, signal: AbortSignal): Promise<Map<string, PreconditionFailedError>> => {
+  const candidates = targets.filter((entry): entry is readonly [string, OllamaDetectable] => {
+    const [, target] = entry;
+    return (target.adapter === 'chat-completions' || target.adapter === 'open-responses') && target.baseUrl !== undefined;
+  });
+  const answers = await Promise.all(candidates.map(async ([, target]) => answersAsOllama(endpointOf(target), signal)));
+  return new Map(
+    candidates.flatMap(([name, target], index) => (answers[index] === true ? [[name, ollamaServerRefusal(name, target.adapter, endpointKeyOf(endpointOf(target)))] as const] : [])),
+  );
+};
+
 const DEBUG_TCP_HOST = '127.0.0.1';
 
 const providerNameOf = (target: ResolvedTarget): string => {
@@ -263,6 +306,8 @@ const providerNameOf = (target: ResolvedTarget): string => {
     case 'chat-completions':
     case 'open-responses':
       return target.provider;
+    case 'ollama':
+      return OLLAMA_PROVIDER_NAME;
   }
 };
 
@@ -440,6 +485,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const secretFailures = await warmSecrets(secretResolver, referencedSecrets, signal ?? new AbortController().signal);
     for (const [name, failure] of secretFailures) logger.warn(`secret ${name} is unavailable: ${failure.message}`);
     signal?.throwIfAborted();
+    const ollamaRefusals = await ollamaRefusalsOf(targets, signal ?? new AbortController().signal);
+    signal?.throwIfAborted();
     for (const [name, target] of targets) {
       signal?.throwIfAborted();
       if (target.adapter === 'fm') {
@@ -448,16 +495,30 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         counters[name] = targetCounterOf({ target, codeDigest, fm: { binarySha256: fmContext.binarySha256, osBuild: fmContext.osBuild } });
         continue;
       }
+      if (target.adapter === 'ollama') {
+        const probed = await createProbedOllamaAdapter(name, target, paths.probe, clock);
+        adapters[name] = probed.adapter;
+        counters[name] = targetCounterOf({ target, codeDigest, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) });
+        continue;
+      }
       const readKey = apiKeyReader(options.env, secretResolver, target);
+      const refusal = ollamaRefusals.get(name);
       if (target.adapter === 'chat-completions' && target.toolCalling === 'auto') {
-        const probed = await createAutoChatCompletionsAdapter(name, target, readKey, paths.probe, clock);
+        const probed = await createAutoChatCompletionsAdapter(name, target, readKey, paths.probe, clock, refusal);
         adapters[name] = probed.adapter;
         counters[name] = targetCounterOf({ target, codeDigest, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) });
         continue;
       }
       counters[name] = targetCounterOf({ target, codeDigest });
       const mode: ToolCallingMode = target.toolCalling === 'auto' ? 'native' : target.toolCalling;
-      const common = { resolveEndpoint: async () => endpointOf(target), capabilities: async () => capabilitiesOf(target, mode), clock };
+      const common = {
+        resolveEndpoint: async () => {
+          if (refusal !== undefined) throw refusal;
+          return endpointOf(target);
+        },
+        capabilities: async () => capabilitiesOf(target, mode),
+        clock,
+      };
       switch (target.adapter) {
         case 'chat-completions':
           adapters[name] = createChatCompletionsAdapter({ ...common, toolCalling: () => mode, apiKey: readKey });

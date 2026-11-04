@@ -1,7 +1,7 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { JSONSchemaType } from 'ajv';
 import { REASONING_EFFORTS } from '@momonga/protocol';
-import type { ProbeReport } from '@momonga/protocol';
+import type { EndpointProbeReport, OllamaProbeReport, ProbeReport } from '@momonga/protocol';
 
 const bool = { type: 'boolean' } as const;
 const anyJson = {} as never;
@@ -128,3 +128,30 @@ const validateReasoning = new Ajv2020.default({ strict: false }).compile(reasoni
 
 export const isProbeReport = (value: unknown): value is ProbeReport =>
   validate(value) && ((value as ProbeReport).reasoning === undefined || validateReasoning((value as ProbeReport).reasoning));
+
+const ollamaReportSchema = {
+  type: 'object',
+  required: ['kind', 'probedAt', 'serverVersion', 'modelId', 'contextWindow', 'nativeTools', 'imageInputAccepted', 'thinkingSupported'],
+  additionalProperties: false,
+  properties: {
+    kind: { type: 'string', const: 'ollama' },
+    probedAt: { type: 'string' },
+    serverVersion: { type: 'string' },
+    modelId: { type: 'string' },
+    contextWindow: {
+      type: 'object',
+      required: ['value', 'method'],
+      additionalProperties: false,
+      properties: { value: { type: 'integer', minimum: 1 }, method: { type: 'string', const: 'reported' } },
+    },
+    nativeTools: { type: 'object', required: ['accepted'], additionalProperties: false, properties: { accepted: bool } },
+    imageInputAccepted: bool,
+    thinkingSupported: bool,
+  },
+} as const;
+
+const validateOllama = new Ajv2020.default({ strict: false }).compile(ollamaReportSchema);
+
+export const isOllamaProbeReport = (value: unknown): value is OllamaProbeReport => validateOllama(value);
+
+export const isEndpointProbeReport = (value: unknown): value is EndpointProbeReport => isOllamaProbeReport(value) || isProbeReport(value);

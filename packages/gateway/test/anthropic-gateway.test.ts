@@ -84,7 +84,7 @@ describe('anthropic adapter through the gateway: text', () => {
     expect(textOf(terminal.response)).toBe('x');
   });
 
-  it('keeps thinking blocks out of the output', async () => {
+  it('turns a thinking block into a reasoning item before the text, keeping its signature', async () => {
     const gateway = await startAnthropicGateway({
       script: [
         anthropicStream([
@@ -98,9 +98,12 @@ describe('anthropic adapter through the gateway: text', () => {
         ]),
       ],
     });
-    const terminal = terminalOf(await streamResponse(gateway));
-    expect(terminal.response.output).toHaveLength(1);
+    const frames = await streamResponse(gateway);
+    const terminal = terminalOf(frames);
+    expect(terminal.response.output.map((item: any) => item.type)).toEqual(['reasoning', 'message']);
     expect(textOf(terminal.response)).toBe('answer');
+    expect(frames.filter((frame) => frame.data.type === 'response.reasoning.delta').map((frame) => frame.data.delta).join('')).toBe('hmm');
+    expect(JSON.stringify(terminal.response.output[0])).toContain('"sig"');
   });
 });
 

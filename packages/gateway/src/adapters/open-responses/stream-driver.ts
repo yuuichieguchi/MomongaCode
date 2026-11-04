@@ -7,6 +7,7 @@ import type { OpenResponsesStreamEvent, UpstreamItem, UpstreamTerminal } from '.
 type ItemState =
   | { kind: 'message'; streamedText: boolean; streamedRefusal: boolean }
   | { kind: 'function_call'; streamedArguments: boolean }
+  | { kind: 'reasoning'; streamedContent: boolean; streamedSummary: boolean }
   | { kind: 'other' };
 
 export class OpenResponsesStreamDriver {
@@ -76,6 +77,18 @@ export class OpenResponsesStreamDriver {
         this.emitter.appendRefusal(event.delta);
         return;
       }
+      case 'reasoning_delta': {
+        const state = this.reasoningAt(event.outputIndex);
+        state.streamedContent = true;
+        this.emitter.appendReasoning(event.outputIndex, event.delta, event.contentIndex);
+        return;
+      }
+      case 'reasoning_summary_delta': {
+        const state = this.reasoningAt(event.outputIndex);
+        state.streamedSummary = true;
+        this.emitter.appendReasoningSummary(event.outputIndex, event.delta, event.summaryIndex);
+        return;
+      }
       case 'arguments_delta': {
         const state = this.callAt(event.outputIndex);
         state.streamedArguments = true;
@@ -106,7 +119,20 @@ export class OpenResponsesStreamDriver {
       if (item.arguments !== '') this.emitter.appendCallArguments(outputIndex, item.arguments);
       return;
     }
+    if (item.kind === 'reasoning') {
+      this.items.set(outputIndex, { kind: 'reasoning', streamedContent: false, streamedSummary: false });
+      this.emitter.beginReasoning(outputIndex);
+      return;
+    }
     this.items.set(outputIndex, { kind: 'other' });
+  }
+
+  private reasoningAt(outputIndex: number): Extract<ItemState, { kind: 'reasoning' }> {
+    const state = this.items.get(outputIndex);
+    if (state?.kind !== 'reasoning') {
+      throw new UpstreamProtocolError(`the upstream sent a reasoning delta for output item ${outputIndex}, which is not an open reasoning item`);
+    }
+    return state;
   }
 
   private messageAt(outputIndex: number): Extract<ItemState, { kind: 'message' }> {
@@ -133,6 +159,13 @@ export class OpenResponsesStreamDriver {
     }
     if (state.kind === 'function_call' && item.kind === 'function_call') {
       if (!state.streamedArguments && item.arguments !== '') this.emitter.appendCallArguments(outputIndex, item.arguments);
+      return;
+    }
+    if (state.kind === 'reasoning' && item.kind === 'reasoning') {
+      if (!state.streamedContent) item.content.forEach((text, index) => this.emitter.appendReasoning(outputIndex, text, index));
+      if (!state.streamedSummary) item.summary.forEach((text, index) => this.emitter.appendReasoningSummary(outputIndex, text, index));
+      if (item.encryptedContent !== undefined) this.emitter.annotateReasoning(outputIndex, { encryptedContent: item.encryptedContent });
+      this.emitter.completeReasoning(outputIndex);
       return;
     }
     if (state.kind !== 'other' || item.kind !== 'other') {

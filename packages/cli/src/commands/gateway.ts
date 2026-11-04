@@ -9,12 +9,14 @@ export const DEFAULT_FM_BINARY = '/usr/bin/fm';
 
 export const FM_PROBE_SOCKET_NAME = 'fm-probe.sock';
 
+type OllamaConfig = Extract<Awaited<ReturnType<typeof loadUserSettings>>['settings']['models']['targets'][string], { adapter: 'ollama' }>;
+
 type ChatCompletionsConfig = Extract<Awaited<ReturnType<typeof loadUserSettings>>['settings']['models']['targets'][string], { adapter: 'chat-completions' }>;
 
 export class NotAProbeableTarget extends Error {
   constructor(target: string, known: Readonly<Record<string, { adapter: string }>>) {
     const described = Object.entries(known).map(([name, entry]) => `${name} (${entry.adapter})`);
-    super(`model target ${target} is not an fm or chat-completions target; configured targets: ${described.length === 0 ? 'none' : described.join(', ')}`);
+    super(`model target ${target} is not an fm or chat-completions target, nor an ollama target; configured targets: ${described.length === 0 ? 'none' : described.join(', ')}`);
     this.name = 'NotAProbeableTarget';
   }
 }
@@ -35,6 +37,7 @@ export const probeTarget = async (ports: CliPorts, paths: MomongaPaths, target: 
   const configured = targets[target];
   if (configured?.adapter === 'fm') return probeFm(ports, paths, target, options);
   if (configured?.adapter === 'chat-completions') return probeChatCompletions(ports, paths, target, configured, options);
+  if (configured?.adapter === 'ollama') return probeOllama(ports, paths, target, configured, options);
   throw new NotAProbeableTarget(target, targets);
 };
 
@@ -61,6 +64,16 @@ export const probeEndpointText = (name: string, endpoint: string, recordPath: st
     `  recorded in ${recordPath}`,
   ])}\n`;
 };
+
+type OllamaProbe = Awaited<ReturnType<typeof import('@momonga/gateway').probeOllamaTarget>>;
+
+export const probeOllamaText = (name: string, endpoint: string, recordPath: string, report: OllamaProbe['report'], contextWindow: number): string =>
+  `${escapedLines([
+    `probed ${name}: model ${report.modelId} at ${endpoint}, Ollama ${report.serverVersion}`,
+    `  trained context length ${report.contextWindow.value} (${report.contextWindow.method}), configured context window ${contextWindow}`,
+    `  tool calling: ${report.nativeTools.accepted ? 'native' : 'none'}, image input: ${report.imageInputAccepted}, thinking: ${report.thinkingSupported}`,
+    `  recorded in ${recordPath}`,
+  ])}\n`;
 
 export const probeFmText = (target: string, recordPath: string, report: EndpointProbe['report'], toolCalling: EndpointProbe['toolCalling']): string =>
   `${escapedLines([
@@ -89,6 +102,22 @@ const probeChatCompletions = async (
     ...(options.samples === undefined ? {} : { samples: options.samples }),
   });
   ports.stdout.write(probeEndpointText(name, key.endpoint, paths.probe, report, toolCalling));
+  await restartDaemon(ports, paths);
+  return 0;
+};
+
+const probeOllama = async (ports: CliPorts, paths: MomongaPaths, name: string, target: OllamaConfig, options: ProbeOptions): Promise<number> => {
+  const { probeOllamaTarget } = await import('@momonga/gateway');
+  const upstream =
+    target.socketPath !== undefined ? ({ kind: 'unix', socketPath: target.socketPath } as const) : ({ kind: 'tcp', baseUrl: target.baseUrl as string } as const);
+  const { report, key } = await probeOllamaTarget({
+    probeRecordDir: paths.probe,
+    upstream,
+    model: target.model,
+    contextWindow: target.capabilities.contextWindow,
+    signal: options.interrupt,
+  });
+  ports.stdout.write(probeOllamaText(name, key.endpoint, paths.probe, report, target.capabilities.contextWindow));
   await restartDaemon(ports, paths);
   return 0;
 };

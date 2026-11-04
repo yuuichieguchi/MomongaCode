@@ -76,7 +76,7 @@ describe('open-responses relay through the gateway: text', () => {
     expect(terminal.response.output[1]).toMatchObject({ type: 'function_call', arguments: '{"path":"a"}' });
   });
 
-  it('keeps reasoning items out of the output', async () => {
+  it('keeps reasoning items in the output, before the message', async () => {
     const message = messageEvents(['answer']);
     const reasoning = { type: 'reasoning', id: 'rs_1', summary: [] };
     const gateway = await startOpenResponsesGateway({
@@ -91,7 +91,8 @@ describe('open-responses relay through the gateway: text', () => {
       ],
     });
     const terminal = terminalOf(await streamResponse(gateway));
-    expect(terminal.response.output.map((item: any) => item.type)).toEqual(['message']);
+    expect(terminal.response.output.map((item: any) => item.type)).toEqual(['reasoning', 'message']);
+    expect(textOf(terminal.response)).toBe('answer');
   });
 });
 

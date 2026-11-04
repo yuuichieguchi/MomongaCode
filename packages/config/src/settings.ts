@@ -97,7 +97,18 @@ export type AnthropicTarget = {
   admissionTimeoutMs?: number;
 };
 
-export type ModelTarget = FmTarget | ChatCompletionsTarget | OpenResponsesTarget | AnthropicTarget;
+export type OllamaTarget = {
+  adapter: 'ollama';
+  model: string;
+  baseUrl?: string;
+  socketPath?: string;
+  billing?: TargetBilling;
+  capabilities: RemoteTargetCapabilities;
+  maxConcurrency?: number;
+  admissionTimeoutMs?: number;
+};
+
+export type ModelTarget = FmTarget | ChatCompletionsTarget | OpenResponsesTarget | AnthropicTarget | OllamaTarget;
 
 export type ResolvedFmTarget = {
   adapter: 'fm';
@@ -152,11 +163,23 @@ export type ResolvedAnthropicTarget = {
   admissionTimeoutMs: number;
 };
 
+export type ResolvedOllamaTarget = {
+  adapter: 'ollama';
+  model: string;
+  baseUrl?: string;
+  socketPath?: string;
+  billing: TargetBilling;
+  capabilities: TargetCapabilities & { maxConcurrency: number };
+  maxConcurrency: number;
+  admissionTimeoutMs: number;
+};
+
 export type ResolvedModelTarget =
   | ResolvedFmTarget
   | ResolvedChatCompletionsTarget
   | ResolvedOpenResponsesTarget
-  | ResolvedAnthropicTarget;
+  | ResolvedAnthropicTarget
+  | ResolvedOllamaTarget;
 
 export type ModelAlias = string | string[];
 

@@ -28,7 +28,7 @@ const codeOf = (error: unknown): string | undefined => {
   return typeof code === 'string' ? code : undefined;
 };
 
-const isConnectionFailure = (error: unknown, depth = 0): boolean => {
+export const isConnectionFailure = (error: unknown, depth = 0): boolean => {
   if (depth > MAX_CAUSE_DEPTH || typeof error !== 'object' || error === null) return false;
   const code = codeOf(error);
   if (code === 'UND_ERR_ABORTED' || (error as { name?: unknown }).name === 'AbortError') return false;

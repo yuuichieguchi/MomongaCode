@@ -1,0 +1,9 @@
+{"model":"devstral-small-2","created_at":"2026-11-04T11:57:25.459565Z","message":{"role":"assistant","content":"README"},"done":false}
+{"model":"devstral-small-2","created_at":"2026-11-04T11:57:25.596226Z","message":{"role":"assistant","content":".md"},"done":false}
+{"model":"devstral-small-2","created_at":"2026-11-04T11:57:25.732547Z","message":{"role":"assistant","content":" を"},"done":false}
+{"model":"devstral-small-2","created_at":"2026-11-04T11:57:25.867302Z","message":{"role":"assistant","content":"作"},"done":false}
+{"model":"devstral-small-2","created_at":"2026-11-04T11:57:26.001876Z","message":{"role":"assistant","content":"成"},"done":false}
+{"model":"devstral-small-2","created_at":"2026-11-04T11:57:26.13326Z","message":{"role":"assistant","content":"します"},"done":false}
+{"model":"devstral-small-2","created_at":"2026-11-04T11:57:26.266517Z","message":{"role":"assistant","content":"。"},"done":false}
+{"model":"devstral-small-2","created_at":"2026-11-04T11:57:59.415878Z","message":{"role":"assistant","content":"","tool_calls":[{"id":"call_7g69pxvt","function":{"index":0,"name":"Write","arguments":{"file_path":"README.md","content":"# Tiny Calc\n\nTiny Calc は、基本的な四則演算を提供する軽量な計算ライブラリです。\n\n## 機能\n\n- 加算: `add(a, b)`\n- 減算: `sub(a, b)`\n- 掛け算: `mul(a, b)`\n\n## 使い方\n\n### インストール\n\n```bash\nnpm install tiny-calc\n```\n\n### 使用例\n\n```javascript\nimport { add, sub, mul } from 'tiny-calc';\n\nconsole.log(add(2, 3));  // 出力: 5\nconsole.log(sub(5, 2));  // 出力: 3\nconsole.log(mul(3, 4));  // 出力: 12\n```\n\n## ライセンス\n\nMIT License\n"}}}]},"done":false}
+{"model":"devstral-small-2","created_at":"2026-11-04T11:57:59.551419Z","message":{"role":"assistant","content":""},"done":true,"done_reason":"stop","total_duration":101691776542,"load_duration":4736208,"prompt_eval_count":3271,"prompt_eval_cached_count":36,"prompt_eval_duration":67503713000,"eval_count":222,"eval_duration":34089267000}

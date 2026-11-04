@@ -164,7 +164,7 @@ export const buildProgram = (given: ProgramDeps): Command => {
   const gateway = program.command('gateway').description('inspect and tune the model gateway');
   gateway
     .command('probe <target>')
-    .description('measure an fm or chat-completions target (tool calling, structured output, stop sequences, parallel calls, reasoning control, usage) and record the result for the gateway')
+    .description('measure an fm, chat-completions or ollama target (an ollama target: trained context length, tools, vision, thinking and model digest; the others: tool calling, structured output, stop sequences, parallel calls, reasoning control, usage) and record the result for the gateway')
     .option('--fm-binary <path>', 'the fm executable to probe (fm targets only)', DEFAULT_FM_BINARY)
     .option('--samples <count>', 'samples per measured rate', integerArgument(1))
     .action(async (target: string, options: { fmBinary: string; samples?: number }) => {

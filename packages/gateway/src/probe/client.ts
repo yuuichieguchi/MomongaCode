@@ -22,6 +22,7 @@ export interface ProbeClient {
   readonly hasHealthRoute: boolean;
   get(route: 'health' | 'models'): Promise<HttpResult>;
   post(route: 'chat', body: unknown): Promise<HttpResult>;
+  request(method: 'GET' | 'POST', path: string, body?: unknown): Promise<HttpResult>;
   stream(route: 'chat', body: unknown): Promise<{ status: number; chunks: AsyncIterable<Uint8Array> }>;
   close(): Promise<void>;
 }
@@ -117,6 +118,14 @@ export const createProbeClient = (
     post: (route, body) =>
       withTimeout('POST', paths[route], async (requestSignal) => {
         const response = await jsonPost(paths[route], body, requestSignal);
+        return { status: response.status, text: await response.text(), headers: response.headers };
+      }),
+    request: (method, path, body) =>
+      withTimeout(method, path, async (requestSignal) => {
+        const response =
+          method === 'GET'
+            ? await uds.request({ method, path, headers: authHeaders, signal: requestSignal })
+            : await jsonPost(path, body, requestSignal);
         return { status: response.status, text: await response.text(), headers: response.headers };
       }),
     stream: (route, body) => {

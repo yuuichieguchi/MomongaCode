@@ -1,6 +1,6 @@
 import type { Capabilities, HealthResult, ReasoningEffort } from './capabilities.ts';
 import type { CountTokensRequest, CountTokensResult } from './gateway-api.ts';
-import type { CompactMomongaExtension, ErrorBody, FunctionTool, InputItem, PromptCacheCounts, StreamEvent, ToolChoice, Usage } from './open-responses.ts';
+import type { CompactMomongaExtension, ErrorBody, FunctionTool, InputItem, PromptCacheCounts, StreamEvent, TextField, ToolChoice, Usage } from './open-responses.ts';
 
 export const ADAPTER_NEUTRAL_ERROR_CODES = [
   'guardrail_violation',
@@ -29,6 +29,7 @@ export type AdapterRequest = {
   temperature?: number | null;
   top_p?: number | null;
   reasoning_effort?: ReasoningEffort;
+  text?: TextField;
   promptCacheKey?: string;
   cacheMarks?: PromptCacheCounts;
 };

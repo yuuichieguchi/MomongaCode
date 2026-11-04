@@ -115,7 +115,7 @@ export { LOOP_GROUPS_KEPT } from './loop-groups.ts';
 export { findDanglingOutput, findUnpairedCalls } from './call-pairing.ts';
 export { compactionSummaryMessage, decodeCompactionSummary } from './compaction-summary.ts';
 export { PROBE_KEYWORDS } from './probe.ts';
-export type { ProbeKeyword, ProbeReport } from './probe.ts';
+export type { EndpointProbeReport, OllamaProbeReport, ProbeKeyword, ProbeReport } from './probe.ts';
 export { EVENT_TYPES, RUN_API_SCHEMAS, base64ByteLength, toPublicRunEvent } from './run-api.ts';
 export { MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES } from './run-api.ts';
 export type {
@@ -280,7 +280,7 @@ export type {
   ModelRejectionReason,
   UsageChargePurpose,
 } from './run-types.ts';
-export { ERROR_TYPES, OPEN_RESPONSES_STREAM_EVENT_TYPES, OPEN_RESPONSES_VERSION, TERMINAL_STREAM_EVENT_TYPES } from './open-responses.ts';
+export { CHAT_REASONING_FIELDS, ERROR_TYPES, OPEN_RESPONSES_STREAM_EVENT_TYPES, OPEN_RESPONSES_VERSION, TERMINAL_STREAM_EVENT_TYPES } from './open-responses.ts';
 export type {
   Annotation,
   CompactMomongaExtension,
@@ -288,6 +288,7 @@ export type {
   CompactResource,
   CompactionInputItem,
   CompactionItem,
+  ChatReasoningField,
   ContentPart,
   CreateResponseBody,
   ErrorBody,
@@ -313,6 +314,7 @@ export type {
   ReasoningConfig,
   ReasoningInputItem,
   ReasoningItem,
+  ReasoningTextPart,
   RefusalPart,
   ResponseError,
   ResponseResource,

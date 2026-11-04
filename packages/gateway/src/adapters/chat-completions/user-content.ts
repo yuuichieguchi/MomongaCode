@@ -10,6 +10,7 @@ const partOf = (part: ContentPart): ChatContentPart => {
     case 'input_text':
     case 'output_text':
     case 'summary_text':
+    case 'reasoning_text':
       return { type: 'text', text: part.text };
     case 'refusal':
       return { type: 'text', text: part.refusal };
