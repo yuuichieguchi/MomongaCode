@@ -165,6 +165,10 @@ export const FAKE_GUARDRAIL_ERROR = {
   },
 } as const;
 
+const fmUnknownModelError =(requested: unknown, listed: string) => ({
+  error: { code: '400', message: `Unknown model '${String(requested)}'. Available models: ${listed}`, type: 'invalid_request_error' },
+});
+
 const invalidRequest = (message: string, code: string | null = null, param: string | null = null): HttpFailure =>
   new HttpFailure(400, { error: { message, type: 'invalid_request_error', param, code } });
 
@@ -399,6 +403,7 @@ export const startFakeChatCompletions = async (
   };
 
   const validateCompletionRequest = (body: Json): void => {
+    if (options.wire === 'fm' && body['model'] !== modelId) throw new HttpFailure(400, fmUnknownModelError(body['model'], modelId));
     const messages = Array.isArray(body['messages']) ? (body['messages'] as ChatMessage[]) : [];
     const responseFormat = isRecord(body['response_format']) ? body['response_format'] : undefined;
     if (responseFormat?.['type'] === 'json_object') throw invalidRequest(JSON_OBJECT_UNSUPPORTED_MESSAGE, null, 'response_format');
