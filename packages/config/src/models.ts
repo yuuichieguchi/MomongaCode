@@ -36,12 +36,14 @@ export type ResolveModelsOptions = { source: string; home: string; warnings: str
 const DEFAULT_FM_NAME = 'fm';
 const DEFAULT_ALIAS = 'default';
 
+const LOCAL_SERVER_DEFAULTS = { billing: 'local', maxConcurrency: 1 } as const satisfies { billing: TargetBilling; maxConcurrency: number };
+
 const resolveFm = (target: FmTarget): ResolvedFmTarget => ({
   adapter: 'fm',
   model: target.model ?? 'default',
   toolCalling: target.toolCalling ?? 'auto',
-  billing: 'local',
-  maxConcurrency: target.maxConcurrency ?? 1,
+  billing: LOCAL_SERVER_DEFAULTS.billing,
+  maxConcurrency: target.maxConcurrency ?? LOCAL_SERVER_DEFAULTS.maxConcurrency,
   admissionTimeoutMs: target.admissionTimeoutMs ?? 30000,
 });
 
@@ -103,14 +105,20 @@ const OLLAMA_CAPABILITY_DEFAULTS: CapabilityDefaults = {
 const DEFAULT_REMOTE_MAX_CONCURRENCY = 4;
 const DEFAULT_REMOTE_BILLING: TargetBilling = 'metered';
 
-const resolveRemote = (target: RemoteTargetInput, defaults: CapabilityDefaults, home: string, where: string) => {
+const resolveRemote = (
+  target: RemoteTargetInput,
+  defaults: CapabilityDefaults,
+  home: string,
+  where: string,
+  serving: { billing: TargetBilling; maxConcurrency: number } = { billing: DEFAULT_REMOTE_BILLING, maxConcurrency: DEFAULT_REMOTE_MAX_CONCURRENCY },
+) => {
   const { baseUrl, socketPath } = target;
   if ((baseUrl === undefined) === (socketPath === undefined)) {
     throw new Error(`${where}: exactly one of baseUrl and socketPath is required`);
   }
   if (baseUrl !== undefined) checkBaseUrl(baseUrl, where);
   if (socketPath !== undefined) checkSocketPath(socketPath, home, where);
-  const maxConcurrency = target.maxConcurrency ?? DEFAULT_REMOTE_MAX_CONCURRENCY;
+  const maxConcurrency = target.maxConcurrency ?? serving.maxConcurrency;
   const { imageInput, imageTokens, ...core } = { ...defaults, ...target.capabilities, maxConcurrency };
   const capabilities = { ...core, ...imageCapability(imageInput, imageTokens, `${where}: `) };
   return {
@@ -118,7 +126,7 @@ const resolveRemote = (target: RemoteTargetInput, defaults: CapabilityDefaults, 
     ...(socketPath === undefined ? {} : { socketPath }),
     ...(target.apiKeyEnv === undefined ? {} : { apiKeyEnv: target.apiKeyEnv }),
     ...(target.apiKeySecret === undefined ? {} : { apiKeySecret: target.apiKeySecret }),
-    billing: target.billing ?? DEFAULT_REMOTE_BILLING,
+    billing: target.billing ?? serving.billing,
     capabilities,
     maxConcurrency,
     admissionTimeoutMs: target.admissionTimeoutMs ?? 30000,
@@ -151,7 +159,7 @@ const resolveAnthropic = (target: AnthropicTarget, home: string, where: string):
 const resolveOllama = (target: OllamaTarget, home: string, where: string): ResolvedOllamaTarget => ({
   adapter: 'ollama',
   model: target.model,
-  ...resolveRemote(target, OLLAMA_CAPABILITY_DEFAULTS, home, where),
+  ...resolveRemote(target, OLLAMA_CAPABILITY_DEFAULTS, home, where, LOCAL_SERVER_DEFAULTS),
 });
 
 const resolveTarget = (target: ModelTarget, home: string, where: string): ResolvedModelTarget => {
