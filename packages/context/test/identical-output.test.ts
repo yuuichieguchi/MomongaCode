@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildContext } from '@momonga/context';
 import type { HistoryItem } from '@momonga/context';
 import {
+  assistant,
   call,
   capabilitiesFor,
   handleOf,
@@ -92,9 +93,89 @@ describe('identicalOutput at build time', () => {
     expect(second).toBe(first);
   });
 
+  it('renders the same input after the reference is recorded on the referrer entry', async () => {
+    const plain = historyOf([['c1', SAME], ['c2', SAME]]);
+    const recorded = plain.map((entry) =>
+      entry.item.type === 'function_call_output' && entry.item.call_id === 'c2' ? { ...entry, handle: handleOf(SAME) } : entry,
+    );
+    const before = await build(plain);
+    const after = await build(recorded);
+    expect(after.result.input).toEqual(before.result.input);
+    expect(after.result.evictions).toEqual([]);
+  });
+
+  it('renders a recorded referrer by the ordinary rules once its referent is omitted', async () => {
+    const recorded = historyOf([['c1', SAME], ['c2', SAME]]).map((entry) =>
+      entry.item.type === 'function_call_output' && entry.item.call_id === 'c2' ? { ...entry, handle: handleOf(SAME) } : entry,
+    );
+    const { result } = await build(recorded, { evicted: new Set(['c1']) });
+    expect(outputTextOf(result.input, 'c2')).toBe(SAME);
+    expect(result.evictions.filter((eviction) => eviction.callId === 'c2')).toEqual([]);
+  });
+
   it('renders an earlier output the same whether or not a later identical output follows', async () => {
     const alone = await build(historyOf([['c1', SAME]]));
     const followed = await build(historyOf([['c1', SAME], ['c2', SAME]]));
     expect(followed.result.input.slice(0, alone.result.input.length)).toEqual(alone.result.input);
+  });
+});
+
+const PRESSURE_WINDOW = 4000;
+const BIG = 'a'.repeat(2400);
+const FILLER = (letter: string): string => letter.repeat(2400);
+
+const pressuredHistory = (referrerProtected: boolean): HistoryItem[] => [
+  user(1, 'old question'),
+  call(2, 'c1'),
+  output(3, 'c1', BIG),
+  ...(referrerProtected ? [] : [call(4, 'c2'), output(5, 'c2', BIG)]),
+  call(6, 'f1'),
+  output(7, 'f1', FILLER('b')),
+  call(8, 'f2'),
+  output(9, 'f2', FILLER('c')),
+  call(10, 'f3'),
+  output(11, 'f3', FILLER('d')),
+  assistant(12, 'old answer'),
+  user(13, 'current question'),
+  ...(referrerProtected ? [call(14, 'c2'), output(15, 'c2', BIG)] : [call(14, 'q1'), output(15, 'q1', 'ok')]),
+];
+
+const buildPressured = async (history: HistoryItem[], overrides: Parameters<typeof inputFor>[1] = {}) => {
+  const capabilities = capabilitiesFor(PRESSURE_WINDOW);
+  const { ports } = harness(capabilities);
+  return buildContext(
+    inputFor(capabilities, { sources: sourcesWith({ history }), keepRecentTurns: 1, outputFormatters: ['identicalOutput'], ...overrides }),
+    ports,
+  );
+};
+
+const omittedIds = (evictions: readonly { callId: string; kind: string }[]): string[] =>
+  evictions.filter((eviction) => eviction.kind === 'omitted').map((eviction) => eviction.callId);
+
+describe('identicalOutput under eviction pressure', () => {
+  it('keeps a referent whose eviction would not lower the tokens of it and its referrers, and keeps the protected referrer a reference', async () => {
+    const result = await buildPressured(pressuredHistory(true));
+    expect(outputTextOf(result.input, 'c1')).toBe(BIG);
+    expect(outputTextOf(result.input, 'c2')).toBe(referenceTo('c1', handleOf(BIG)));
+    expect(omittedIds(result.evictions)).toEqual(['f1', 'f2', 'f3']);
+    expect(result.inputTokens).toBe(tokensOfItems(result.input));
+  });
+
+  it('evicts a referent when its referrer re-rendered by the ordinary rules is smaller, and re-renders the referrer in the same build', async () => {
+    const result = await buildPressured(pressuredHistory(true), { itemCap: 64, renderedFull: new Set(['c1', 'f1', 'f2', 'f3']) });
+    expect(omittedIds(result.evictions)[0]).toBe('c1');
+    expect(outputTextOf(result.input, 'c1')?.startsWith('[tool output omitted:')).toBe(true);
+    const referrer = outputTextOf(result.input, 'c2') as string;
+    expect(referrer.startsWith('[identical to the output of call')).toBe(false);
+    expect(referrer).not.toBe(BIG);
+    expect(referrer).toContain(`full output stored as ${handleOf(BIG)}`);
+    expect(result.inputTokens).toBe(tokensOfItems(result.input));
+  });
+
+  it('never selects an unprotected reference rendering as an eviction candidate', async () => {
+    const result = await buildPressured(pressuredHistory(false));
+    expect(outputTextOf(result.input, 'c1')).toBe(BIG);
+    expect(outputTextOf(result.input, 'c2')).toBe(referenceTo('c1', handleOf(BIG)));
+    expect(omittedIds(result.evictions)).toEqual(['f1', 'f2', 'f3']);
   });
 });
