@@ -1,0 +1,2 @@
+{"model":"devstral-small-2","created_at":"2026-11-04T11:55:09.646823Z","message":{"role":"assistant","content":"","tool_calls":[{"id":"call_q6m8xkax","function":{"index":0,"name":"Read","arguments":{"file_path":"src/calc.js"}}}]},"done":false}
+{"model":"devstral-small-2","created_at":"2026-11-04T11:55:09.778541Z","message":{"role":"assistant","content":""},"done":true,"done_reason":"stop","total_duration":69019907625,"load_duration":12942022959,"prompt_eval_count":2772,"prompt_eval_cached_count":0,"prompt_eval_duration":54354180000,"eval_count":14,"eval_duration":1687951000}
