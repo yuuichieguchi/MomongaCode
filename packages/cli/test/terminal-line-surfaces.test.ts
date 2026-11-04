@@ -49,7 +49,7 @@ describe('a value a person did not write stays on its own line in command output
       source: 'declared',
       imageInput: false,
     } as Capabilities;
-    const entry: MomongaModelEntry = { id: `fast ${FORGED}`, object: 'model', targets: [`t ${FORGED}`], capabilities, targetCapabilities: {} };
+    const entry: MomongaModelEntry = { id: `fast ${FORGED}`, object: 'model', targets: [`t ${FORGED}`], targetCounters: { [`t ${FORGED}`]: '0123456789abcdef' }, capabilities, targetCapabilities: {} };
     const lines = formatModels([entry]).split('\n');
     expect(lines[0]).toBe(`fast ${SHOWN}  -> t ${SHOWN}`);
     expect(lines).toHaveLength(6);
