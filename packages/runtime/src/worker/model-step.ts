@@ -14,6 +14,7 @@ import { summaryStopReason } from './wrap-up.ts';
 import { runStopHooks } from './hook-step.ts';
 import { recordCalls, settleCalls } from './tool-step.ts';
 import { pinnedDigestOf } from './pinned-digest.ts';
+import { recordPrefix } from './prefix-record.ts';
 
 const DEADLINE_CODE = 'deadline_exceeded';
 const REFUSAL_CODES = ['guardrail_violation', 'refusal', 'content_filter'];
@@ -312,9 +313,20 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   };
   if (cancelIfInterrupted(ctx) === 'done') return 'done';
   const position = { step, attempt: 1 };
+  const prefixRecord = recordPrefix(ctx, built, summarising);
   journal.append([
     ...(wrapUp === undefined ? [] : [{ type: 'notice' as const, level: 'error' as const, message: wrapUp.notice, code: 'context_wrap_up' }]),
-    { type: 'model.requested', step: position.step, attempt: position.attempt, digest: sha256Hex(canonicalJson(body)), pinnedDigest: pinnedDigestOf(body), body, anatomy: built.anatomy },
+    ...(prefixRecord === undefined ? [] : prefixRecord.notices),
+    {
+      type: 'model.requested',
+      step: position.step,
+      attempt: position.attempt,
+      digest: sha256Hex(canonicalJson(body)),
+      pinnedDigest: pinnedDigestOf(body),
+      body,
+      anatomy: built.anatomy,
+      ...(prefixRecord === undefined ? {} : { prefix: prefixRecord.prefix }),
+    },
   ]);
   const streamed = await streamRecovering(ctx, body, position);
   return streamed.kind === 'flow'

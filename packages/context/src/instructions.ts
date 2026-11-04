@@ -60,6 +60,9 @@ const loadedFile = (
   };
 };
 
+export const recordedNestedFile = (filePath: string, text: string): LoadedInstructionFile =>
+  loadedFile(filePath, filePath, 'nested', `${path.posix.dirname(filePath)}/**`, text);
+
 const nestedCandidates = (roots: readonly string[], projectRoot: string, touchedPaths: readonly TouchedPath[]): string[] => {
   const candidates = new Set<string>();
   for (const touched of touchedPaths) {

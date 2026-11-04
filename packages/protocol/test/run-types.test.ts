@@ -317,6 +317,7 @@ describe('run event payloads', () => {
       callId: string;
       handle: string;
       kind: 'omitted' | 'truncated' | 'reference';
+      keptChars?: number;
     }>();
     expectTypeOf<Payload<'instructions.loaded'>>().toEqualTypeOf<{ type: 'instructions.loaded'; path: string; content: string }>();
     expectTypeOf<Payload<'skill.activated'>>().toEqualTypeOf<{ type: 'skill.activated'; name: string; content: string }>();

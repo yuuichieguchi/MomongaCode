@@ -1,4 +1,4 @@
-export { MIN_ITEM_CAP, MIN_ROOM_TOKENS, budgetFor, inputCeilingFor, itemCapFor, memoryBudgetFor, pinnedFloorFor, withCalibration } from './budget.ts';
+export { MIN_ITEM_CAP, MIN_ROOM_TOKENS, budgetFor, capacityFor, inputCeilingFor, itemCapFor, memoryBudgetFor, pinnedFloorFor, withCalibration } from './budget.ts';
 export { renderMemories } from './memory.ts';
 export { textOfContent, textOfItem } from './item-text.ts';
 export { checkSummary } from './summary-fidelity.ts';
@@ -26,12 +26,14 @@ export type {
   CompactionBlock,
   CompactionBlockReason,
   CompactionPlan,
+  ContextArrival,
   ContextBudget,
   ContextEviction,
   ContextGoverning,
   ContextNotice,
   ContextSources,
   ContextSummary,
+  ContextZones,
   DeepReadonly,
   EvictionKind,
   HistoryItem,

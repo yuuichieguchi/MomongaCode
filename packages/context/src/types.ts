@@ -137,6 +137,10 @@ export type BuildContextPorts = {
 
 export type Calibration = { tokenCounting: Capabilities['tokenCounting']; tokenErrorRatio?: number };
 
+export type ContextArrival =
+  | { kind: 'instructions'; path: string; content: string }
+  | { kind: 'skill'; name: string; content: string };
+
 export type BuildContextInput = {
   capabilities: Capabilities;
   calibration?: Calibration;
@@ -158,6 +162,12 @@ export type BuildContextInput = {
   tools?: 'none';
   companions?: { hostOf: Readonly<Record<string, string>>; keepWithoutHost: boolean };
   trailing?: readonly InputItem[];
+  layout?: 'cachePrefix';
+  pinnedMemoryIds?: readonly string[];
+  arrivals?: readonly ContextArrival[];
+  observedCapacity?: true;
+  forms?: ReadonlyMap<string, number>;
+  renderedFull?: ReadonlySet<string>;
 };
 
 export type InstructionScope = 'user' | 'root' | 'nested';
@@ -186,7 +196,7 @@ export type ContextNotice = { code: NoticeCode; message: string };
 
 export type EvictionKind = 'omitted' | 'truncated' | 'reference';
 
-export type ContextEviction = { callId: string; handle: string; kind: EvictionKind };
+export type ContextEviction = { callId: string; handle: string; kind: EvictionKind; keptChars?: number };
 
 export type ContextBudget = { W: number; R: number; I: number; margin: number };
 
@@ -206,6 +216,14 @@ export type CompactionBlock = { reason: CompactionBlockReason; message: string }
 
 export type PinnedMeasure = { pinnedTokens: number; ceiling: number; room: number; itemCap: number; summaryCap: number };
 
+export type ContextZones = {
+  arrivalsStart: number;
+  arrivalsEnd: number;
+  fixedEnd: number;
+  historyEnd: number;
+  arrivalKeys: string[];
+};
+
 export type BuiltContext = {
   input: InputItem[];
   tools: FunctionTool[];
@@ -222,6 +240,8 @@ export type BuiltContext = {
   loadedInstructions: LoadedInstruction[];
   loadedMemoryIds: string[];
   loadedGoverning: LoadedGoverning;
+  zones: ContextZones;
+  pinnedTokens: number;
 };
 
 export type LoadedGoverning = { active: { id: string; textSha256: string }[]; conflicts: { target: string; ids: string[] }[] };
