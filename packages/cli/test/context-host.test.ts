@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ResolvedChatCompletionsTarget, UserModels } from '@momonga/config';
 import fs from 'node:fs';
 import { CONTEXT_DATASET_FORMAT, buildContextReport, expandContextDataset, parseContextDataset } from '@momonga/eval';
@@ -8,6 +8,17 @@ import type { MomongaPaths } from '@momonga/foundation';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { ContextHostError, ContextInterrupted, assertSocketsFit, caseEnvironment, liveSettingsFor, runContextLive, sweepStaleHomes, unownedHomesNotice } from '../src/eval/context-host.ts';
 import type { ContextHostEffects, ContextRuntime } from '../src/eval/context-host.ts';
+
+vi.mock('@momonga/runtime', () => {
+  throw new Error('the eval host loaded the runtime; the command supplies what the host needs from it');
+});
+
+vi.mock('@momonga/foundation', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@momonga/foundation')>()),
+  codeDigestOfRunningProcess: () => Promise.reject(new Error('the eval host computed the code digest; the command supplies it')),
+}));
+
+const CALLER_CODE_DIGEST = 'a'.repeat(64);
 
 const target = (overrides: Partial<ResolvedChatCompletionsTarget> = {}): ResolvedChatCompletionsTarget => ({
   adapter: 'chat-completions',
@@ -224,6 +235,8 @@ const input = (extra: Partial<Parameters<typeof runContextLive>[1]> = {}): Param
   alias: 'default',
   models: userModels(),
   limits: { maxTotalTokens: 1000, defaultTimeoutMs: 60_000 },
+  reflection: { pendingBoundMs: 2000, attemptBoundMs: 9000, pollMs: 100 },
+  codeDigest: CALLER_CODE_DIGEST,
   ...extra,
 });
 
@@ -246,6 +259,15 @@ describe('a live context run with a guideline', () => {
     const baseline = harness();
     await runContextLive(baseline.effects, input());
     expect(baseline.adopted).toEqual([]);
+  });
+});
+
+describe('what a live context run takes from its caller', () => {
+  it('records the code digest its caller gives and computes nothing about the running process itself', async () => {
+    const context = harness();
+    const stored: Transcript[] = [];
+    await runContextLive(context.effects, input({ onTranscript: async (transcript) => void stored.push(transcript) }));
+    expect(stored.map((transcript) => transcript.codeDigest)).toEqual([CALLER_CODE_DIGEST, CALLER_CODE_DIGEST]);
   });
 });
 
