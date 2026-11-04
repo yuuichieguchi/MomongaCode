@@ -8,10 +8,12 @@
   },
   "dependencies": {
     "@momonga/config": "*",
-    "@momonga/context": "*",
     "@momonga/foundation": "*",
     "@momonga/policy": "*",
     "@momonga/protocol": "*",
     "z3-solver": "5.3.3"
+  },
+  "devDependencies": {
+    "@momonga/context": "*"
   }
 }
