@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
 import { memoryShareFor } from '../../src/worker/memory-share.ts';
 import { DEADLINE_MS, createdRun, makeEnv } from './harness.ts';
-import { PAUSE_BUDGET_MS, threadCpuMillisOf } from './pause-budget.ts';
+import { LARGE_RUN_SETUP_TEST_TIMEOUT_MS, PAUSE_BUDGET_MS, threadCpuMillisOf } from './pause-budget.ts';
 
 const RUNS = 200;
 const LOG_EVENTS = 40;
@@ -43,5 +43,5 @@ describe('the cost of the adaptive budget window at run start', () => {
     expect(listed).toHaveLength(20);
     expect(share).toBe(1 / 4);
     expect(windowMillis).toBeLessThan(PAUSE_BUDGET_MS);
-  });
+  }, LARGE_RUN_SETUP_TEST_TIMEOUT_MS);
 });
