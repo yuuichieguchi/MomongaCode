@@ -144,14 +144,19 @@ describe('buildNext in wrap-up mode', () => {
     expect(ctx.pinnedDigest.value).toBe(normal.pinnedDigest);
   });
 
-  it('throws PrefixChangedError in the wrap-up build when a pinned item changed since the seeding build', async () => {
+  it('yields the claim to QUEUED with the attempt refunded when a pinned item changed since the seeding build', async () => {
     const { ctx } = contextFor(stateWithHistory());
+    const yields: unknown[][] = [];
+    (ctx as unknown as { terminals: { yieldTo: (...args: unknown[]) => string } }).terminals.yieldTo = (...args: unknown[]) => {
+      yields.push(args);
+      return 'done';
+    };
     await builtOf(ctx);
     (ctx as { systemPrompt: string }).systemPrompt = `${SYSTEM_PROMPT} changed`;
 
-    const error = await buildNext(ctx, { wrapUp: 'max_steps' }).catch((caught: unknown) => caught);
+    const outcome = await buildNext(ctx, { wrapUp: 'max_steps' }).catch((caught: unknown) => caught);
 
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).name).toBe('PrefixChangedError');
+    expect(outcome).toEqual({ kind: 'done' });
+    expect(yields).toEqual([['QUEUED', expect.any(Number), { refundAttempt: true }]]);
   });
 });

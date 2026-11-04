@@ -147,6 +147,22 @@ describe('arrivals of F are append-only (4.1, 0.2 #4)', () => {
     ]);
   });
 
+  it('places a skill by its arrival in journal order, before a nested file that arrived after it', async () => {
+    const capabilities = capabilitiesFor(200_000);
+    const { ports } = harness(capabilities, { files: { '/proj/a/AGENTS.md': 'a rules' } });
+    const input = inputFor(capabilities, { sources: sourcesWith({ activatedSkills: [SKILL] }), touchedPaths: [touchedFile('/proj/a/x.ts')] });
+    const arrivals: Arrival[] = [
+      { kind: 'skill', ...SKILL },
+      { kind: 'instructions', path: '/proj/a/AGENTS.md', content: 'a rules' },
+    ];
+
+    const built = await buildContext(cachePrefix(input, { arrivals }), ports);
+
+    const skill = indexOfText(built.input, SKILL_TEXT);
+    expect(skill).toBeGreaterThan(0);
+    expect(indexOfText(built.input, 'a rules')).toBe(skill + 1);
+  });
+
   it('replaces an edited nested file in place among the arrivals, keeping journal order', async () => {
     const capabilities = capabilitiesFor(200_000);
     const { ports } = harness(capabilities, { files: { '/proj/a/AGENTS.md': 'a rules v2', '/proj/b/AGENTS.md': 'b rules' } });

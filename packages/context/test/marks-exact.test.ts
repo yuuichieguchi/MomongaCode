@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { COMPACT_AT, floorRatio, summaryItemTokensFor, summaryTokenCapFor } from '@momonga/protocol';
+import { COMPACT_AT, EVICT_LOW_WATER, floorRatio, summaryItemTokensFor, summaryTokenCapFor } from '@momonga/protocol';
 import type { Capabilities, InputItem } from '@momonga/protocol';
 import { buildContext, inputCeilingFor } from '@momonga/context';
 import type { HistoryItem } from '@momonga/context';
@@ -70,6 +70,66 @@ describe('the high mark is exact integer arithmetic (0.2 #7)', () => {
     const built = await buildWith(capabilities, history);
 
     expect(built.evictions.map((eviction) => eviction.callId)).toEqual(['c1']);
+  });
+});
+
+const exactLowMark = (capabilities: Capabilities): number => {
+  const highMark = exactHighMark(capabilities);
+  return floorTokens + floorRatio(EVICT_LOW_WATER, highMark - floorTokens);
+};
+
+const lowMarkDisagreeingWindow = (): Capabilities => {
+  for (let window = 4000; window < 400_000; window += 1) {
+    const capabilities = capabilitiesFor(window, { maxOutputTokens: 1024 });
+    const room = inputCeilingFor(capabilities) - floorTokens;
+    const floatHigh = floorTokens + 0.7 * room;
+    if (floorTokens + 0.5 * (floatHigh - floorTokens) < exactLowMark(capabilities) && floatHigh < exactHighMark(capabilities)) return capabilities;
+  }
+  throw new Error('no window where the floating-point low mark falls below the exact one');
+};
+
+const FIRST_TEXT = 'a'.repeat(800);
+
+const threeOutputHistory = (secondText: string, pad: number): HistoryItem[] => [
+  user(1, 'old question'),
+  call(2, 'c1'),
+  output(3, 'c1', FIRST_TEXT),
+  call(4, 'c2'),
+  output(5, 'c2', secondText),
+  call(6, 'c3'),
+  output(7, 'c3', 'q'.repeat(400)),
+  assistant(8, 'old answer'),
+  user(9, 'p'.repeat(pad)),
+];
+
+const savingOf = async (capabilities: Capabilities, secondText: string): Promise<number> => {
+  const history = threeOutputHistory(secondText, 0);
+  const built = await buildWith(capabilities, history, { evicted: new Set(['c1', 'c2']) });
+  const omitted = built.input.filter((entry) => entry.type === 'function_call_output' && entry.call_id !== 'c3');
+  return weightOf(history[2]!.item) + weightOf(history[4]!.item) - weightOfAll(omitted);
+};
+
+describe('the low mark is exact integer arithmetic (0.2 #7, baseline λ = 1/2)', () => {
+  it('stops evicting once the total equals F + floor((H − F)/2)', async () => {
+    const capabilities = lowMarkDisagreeingWindow();
+    const highMark = exactHighMark(capabilities);
+    const lowMark = exactLowMark(capabilities);
+    const saving = highMark + 1 - lowMark;
+    let secondText = 'b'.repeat(saving - FIRST_TEXT.length);
+    for (let round = 0; round < 4; round += 1) {
+      const gap = saving - (await savingOf(capabilities, secondText));
+      secondText = 'b'.repeat(secondText.length + gap);
+    }
+    expect(await savingOf(capabilities, secondText)).toBe(saving);
+    const unpadded = threeOutputHistory(secondText, 0);
+    const pad = highMark + 1 - floorTokens - weightOfAll(unpadded.map((entry) => entry.item));
+    const history = threeOutputHistory(secondText, pad);
+    expect(floorTokens + weightOfAll(history.map((entry) => entry.item))).toBe(highMark + 1);
+
+    const built = await buildWith(capabilities, history);
+
+    expect(built.evictions.map((eviction) => eviction.callId)).toEqual(['c1', 'c2']);
+    expect(built.inputTokens).toBe(lowMark);
   });
 });
 
