@@ -53,7 +53,7 @@ describe.each(CASES)('an answer replayed after a counter change, for %s', (_labe
   it('is rejected with model.rejected and its charge in one append, and the next claim resends under the next attempt to the new target and completes', async () => {
     const env = await sessionWithReports(answer, target);
     const streamsBefore = env.gateway.streams.length;
-    env.gateway.script.push(answeredWith(textStep('Stored before the restart.', { usage: REJECTED_USAGE }), answer(stale)), textStep('Answered by the new target.'));
+    env.gateway.script.push(answeredWith(textStep('Stored before the restart.', { usage: REJECTED_USAGE }), answer(stale)), answeredWith(textStep('Answered by the new target.'), answer(fakeCounterOf(target))));
     const { store, appends } = recordingStore(env);
     const run = env.enqueue('The task the restarted gateway answers');
 
@@ -168,3 +168,64 @@ describe('the charge of a rejected answer', () => {
     expect(spend.store).toBe(spend.accepted + 1290);
   });
 });
+
+const withoutCounter = (step: ScriptStep): ScriptStep => ({
+  ...step,
+  events: step.events.map((event): StreamEvent =>
+    event.type === 'response.completed'
+      ? { ...event, response: { ...event.response, momonga: { ...byPrimary(fakeCounterOf(PRIMARY_TARGET)), counter: undefined } as unknown as MomongaResponseExtension } }
+      : event,
+  ),
+});
+
+const withoutUsage = (step: ScriptStep): ScriptStep => ({
+  ...step,
+  events: step.events.map((event): StreamEvent =>
+    event.type === 'response.completed' ? ({ ...event, response: { ...event.response, usage: null, momonga: byPrimary(fakeCounterOf(PRIMARY_TARGET)) } } as unknown as StreamEvent) : event,
+  ),
+});
+
+const withoutTarget = (step: ScriptStep): ScriptStep => ({
+  ...step,
+  events: step.events.map((event): StreamEvent => {
+    if (event.type !== 'response.completed') return event;
+    const { target: _target, ...untargeted } = byPrimary(fakeCounterOf(PRIMARY_TARGET));
+    return { ...event, response: { ...event.response, momonga: untargeted as unknown as MomongaResponseExtension } };
+  }),
+});
+
+describe.each([
+  ['without a counter', 'missing_counter', withoutCounter, { meterCounter: fakeCounterOf(PRIMARY_TARGET) }, true],
+  ['without usage', 'missing_usage', withoutUsage, {}, false],
+  ['without a target', 'missing_target', withoutTarget, { counter: fakeCounterOf(PRIMARY_TARGET) }, true],
+] as const)('a complete answer %s stored under the key of the call', (_label, reason, broken, known, charged) => {
+  it('is rejected with model.rejected, and the next claim resends under the next attempt and completes instead of looping to the attempt limit', async () => {
+    const env = await makeEnv({ capabilities: exactTarget(), maxAttempts: 3, maxTotalAttempts: 3 });
+    env.gateway.script.push(broken(textStep('A broken answer.', { usage: REJECTED_USAGE })), textStep('A whole answer.'));
+    const { store, appends } = recordingStore(env);
+    const run = env.enqueue('Work');
+
+    expect(await env.runOnce(env.worker('worker-1', { store }))).toBe('yielded');
+
+    const released = env.run(run.id);
+    expect(released).toMatchObject({ status: 'QUEUED', attempts: 1 });
+    expect(env.ofType(run.id, 'model.responded')).toEqual([]);
+    expect(env.ofType(run.id, 'meter.observed')).toEqual([]);
+    expect(env.ofType(run.id, 'model.rejected')).toMatchObject([{ type: 'model.rejected', step: 1, attempt: 1, reason, ...known }]);
+    const rejecting = appends.filter((payloads) => payloads.some((payload) => payload.type === 'model.rejected'));
+    expect(rejecting).toHaveLength(1);
+    const charges = (rejecting[0] ?? []).filter((payload) => payload.type === 'usage.charged');
+    if (charged) expect(charges).toMatchObject([{ type: 'usage.charged', purpose: 'rejected_answer', inputTokens: 1234, outputTokens: 56, totalTokens: 1290 }]);
+    else expect(charges).toEqual([]);
+    expect(env.ofType(run.id, 'usage.charged')).toHaveLength(charged ? 1 : 0);
+
+    env.clock.set(Math.max(env.clock.now(), released.availableAt));
+    expect(await env.runOnce(env.worker('worker-2'))).toBe('yielded');
+
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(env.gateway.streams.map((stream) => stream.idempotencyKey)).toEqual([modelKey(run.id, 1, 1), modelKey(run.id, 1, 2)]);
+    expect(env.gateway.streams[1]?.body).toEqual(env.gateway.streams[0]?.body);
+    expect(env.ofType(run.id, 'model.responded')).toEqual([expect.objectContaining({ step: 1, attempt: 2 })]);
+  });
+});
+
