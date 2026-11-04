@@ -108,6 +108,11 @@ const isAcceptedOrRejected = (result: ChatResult, what: string): boolean => {
   return failProbeStep(result, what);
 };
 
+const isFirstSampleAccepted = (result: ChatResult | undefined, what: string): boolean => {
+  if (result === undefined) throw new Error(`Probe step "${what}" timed out on its first sample`);
+  return isAcceptedOrRejected(result, what);
+};
+
 const assistantMessage = (body: unknown): unknown => field(firstOf(field(body, 'choices')), 'message');
 
 const promptTokensOf = (body: unknown): number | undefined => {
@@ -250,7 +255,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
 
   const native = await sampleNative(chat, samples);
   const constrained = constrainedAccepted
-    ? { accepted: true, validRate: await sampleConstrained(chat, samples, keywordSupport) }
+    ? await sampleConstrained(chat, samples, keywordSupport)
     : { accepted: false, validRate: 0 };
   const roundTripOk = native.firstValidCall === undefined ? false : await roundTrip(chat, native.firstValidCall);
   const parallelToolCalls = native.accepted ? await sampleParallel(chat, samples) : { accepted: false, multiCallRate: 0 };
@@ -441,9 +446,8 @@ const sampleNative = async (
       messages: [{ role: 'user', content: TOOL_PROMPT }],
       tools: [{ type: 'function', function: { name: PROBE_TOOL.name, description: 'Get the weather', parameters: PROBE_TOOL.parameters } }],
     });
-    if (index === 0) {
-      if (result === undefined) throw new Error('Probe step "native tools" timed out on its first sample');
-      if (!isAcceptedOrRejected(result, 'native tools')) return { accepted: false, validRate: 0, firstValidCall: undefined };
+    if (index === 0 && !isFirstSampleAccepted(result, 'native tools')) {
+      return { accepted: false, validRate: 0, firstValidCall: undefined };
     }
     if (result === undefined || result.status !== 200) continue;
     const call = nativeCallOf(parseJson(result.text));
@@ -455,7 +459,11 @@ const sampleNative = async (
   return { accepted: true, validRate: samples === 0 ? 0 : valid / samples, firstValidCall };
 };
 
-const sampleConstrained = async (chat: Chat, samples: number, support: KeywordSupport): Promise<number> => {
+const sampleConstrained = async (
+  chat: Chat,
+  samples: number,
+  support: KeywordSupport,
+): Promise<NonNullable<ProbeReport['constrained']>> => {
   const format = responseFormat(buildToolCallEnvelope(PROBE_TOOL, support));
   let valid = 0;
   for (let index = 0; index < samples; index += 1) {
@@ -466,10 +474,11 @@ const sampleConstrained = async (chat: Chat, samples: number, support: KeywordSu
       ],
       response_format: format,
     });
+    if (index === 0 && !isFirstSampleAccepted(result, 'constrained samples')) return { accepted: false, validRate: 0 };
     if (result === undefined || result.status !== 200) continue;
     if (constrainedValid(parseJson(result.text))) valid += 1;
   }
-  return samples === 0 ? 0 : valid / samples;
+  return { accepted: true, validRate: samples === 0 ? 0 : valid / samples };
 };
 
 const roundTrip = async (chat: Chat, call: NativeCall): Promise<boolean> => {
@@ -511,10 +520,7 @@ const sampleParallel = async (chat: Chat, samples: number): Promise<NonNullable<
       tools: [nativeToolSpec],
       parallel_tool_calls: true,
     });
-    if (index === 0) {
-      if (result === undefined) throw new Error('Probe step "parallel tool calls" timed out on its first sample');
-      if (!isAcceptedOrRejected(result, 'parallel tool calls')) return { accepted: false, multiCallRate: 0 };
-    }
+    if (index === 0 && !isFirstSampleAccepted(result, 'parallel tool calls')) return { accepted: false, multiCallRate: 0 };
     if (result === undefined || result.status !== 200) continue;
     if (toolCallCount(parseJson(result.text)) >= 2) several += 1;
   }
