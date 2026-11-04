@@ -1,6 +1,6 @@
 import { MIN_ROOM_TOKENS, PinnedOverflowError } from '@momonga/context';
 import type { ClaimContext } from './claim-context.ts';
-import { measureToolsWith, rememberAdmittedTools } from './context-step.ts';
+import { hasAdmittedTools, measureToolsWith, rememberAdmittedTools } from './context-step.ts';
 
 export type ToolAdmission = { admitted: true } | { admitted: false; reason: string };
 
@@ -69,6 +69,7 @@ export const createToolLoading = (contextOf: () => ClaimContext): ToolLoading =>
     },
     rememberLoaded: (names) => {
       const ctx = contextOf();
+      if (!hasAdmittedTools(ctx)) return;
       const pinnedTokens = batchOf(ctx).pinnedTokens.get(keyOf(names));
       if (pinnedTokens === undefined) throw new Error(`tools ${names.join(', ')} were journaled as loaded without an admission in this batch`);
       rememberAdmittedTools(ctx, ctx.toolOffer(ctx.journal.state.loadedTools).tools, pinnedTokens);
