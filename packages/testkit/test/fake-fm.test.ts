@@ -69,6 +69,14 @@ const startServe = async (binary: string, socketPath: string, env: Record<string
 
 const completionBody = { model: 'system', messages: [{ role: 'user', content: 'hello there' }] };
 
+const streamedContentOf = (sse: string): string =>
+  sse
+    .split('\n')
+    .filter((line) => line.startsWith('data: ') && line !== 'data: [DONE]')
+    .map((line) => JSON.parse(line.slice('data: '.length)) as { choices?: Array<{ delta?: { content?: string } }> })
+    .map((chunk) => chunk.choices?.[0]?.delta?.content ?? '')
+    .join('');
+
 describe('createFakeFm script file', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('writes an executable regular file whose shebang is the absolute node binary', async () => {
     const dir = makeDir();
@@ -131,7 +139,7 @@ describe('createFakeFm under the minimal env', { timeout: REAL_PROCESS_TEST_TIME
     expect(result.stdout.trim()).toBe('0');
   });
 
-  it('serves a fake Chat Completions server on the given socket', async () => {
+  it('serves fm\'s wire on the given socket: a request without stream is answered with a Chat Completions SSE stream', async () => {
     const dir = makeDir();
     const fm = await createFakeFm({ dir });
     const socketPath = path.join(dir, 'fm.sock');
@@ -146,9 +154,11 @@ describe('createFakeFm under the minimal env', { timeout: REAL_PROCESS_TEST_TIME
       }
     })();
     expect(health.status).toBe(200);
+    expect(completionBody).not.toHaveProperty('stream');
     const completion = await send(socketPath, 'POST', '/v1/chat/completions', completionBody);
     expect(completion.status).toBe(200);
-    expect(JSON.parse(completion.text).choices[0].message.content).toBe(FAKE_DETERMINISTIC_REPLY);
+    expect(completion.text.trimEnd().endsWith('data: [DONE]')).toBe(true);
+    expect(streamedContentOf(completion.text)).toBe(FAKE_DETERMINISTIC_REPLY);
   });
 
   it('applies the serve scenario from the JSON config file', async () => {
