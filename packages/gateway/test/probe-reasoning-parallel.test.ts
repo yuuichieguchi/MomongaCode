@@ -70,12 +70,12 @@ describe('probe of reasoning control', () => {
     const bound = limit / (1 + ESTIMATED_ERROR_BOUND_RATIO);
     const summaries = fake.requests
       .filter((request) => request.path === '/v1/chat/completions')
-      .map((request) => request.body as { max_tokens?: number; messages: Array<{ role: string; content: string }> })
+      .map((request) => request.body as { max_completion_tokens?: number; messages: Array<{ role: string; content: string }> })
       .filter((body) => String(body.messages[0]?.content).includes(COMPACTION_INSTRUCTIONS_MARKER));
 
     expect(summaries.length).toBeGreaterThanOrEqual(2);
     for (const body of summaries) {
-      expect(body.max_tokens).toBe(maxOutputTokens);
+      expect(body.max_completion_tokens).toBe(maxOutputTokens);
       const tokens = body.messages.reduce((sum, message) => sum + tokensForText(message.content), 0);
       expect(tokens).toBeGreaterThan(0.9 * bound);
       expect(tokens).toBeLessThanOrEqual(bound);

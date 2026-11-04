@@ -99,13 +99,14 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
     try {
       const endpoint = await options.resolveEndpoint(ctx.target, signal);
       const apiKey = await options.apiKey?.(ctx.target, signal);
+      const upstreamModel = await options.upstreamModel?.(ctx.target, signal);
       const response = await pool.clientFor(endpoint).post({
         headers: {
           'content-type': 'application/json',
           accept: 'text/event-stream',
           ...(apiKey === undefined ? {} : { authorization: `Bearer ${apiKey}` }),
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(upstreamModel === undefined ? body : { ...body, model: upstreamModel }),
         signal,
       });
       if (response.status !== 200) {

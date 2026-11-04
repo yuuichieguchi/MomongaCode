@@ -88,7 +88,7 @@ describe('chat-completions target with toolCalling auto', () => {
     );
 
     expect(response.status).toBe(200);
-    expect((completions(fake)[0]?.body as { max_tokens?: number }).max_tokens).toBe(400);
+    expect((completions(fake)[0]?.body as { max_completion_tokens?: number }).max_completion_tokens).toBe(400);
   });
 
   it('refuses a record whose identity differs from what the server shows now, and says the record is stale', async () => {

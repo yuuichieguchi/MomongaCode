@@ -16,6 +16,7 @@ export type ChatCompletionsEndpoint = UpstreamEndpoint;
 
 export type ChatCompletionsAdapterOptions = {
   resolveEndpoint: (target: AdapterTarget, signal: AbortSignal) => Promise<ChatCompletionsEndpoint>;
+  upstreamModel?: (target: AdapterTarget, signal: AbortSignal) => Promise<string>;
   onSummaryReasoning?: (target: AdapterTarget, hiddenReasoningTokens: number) => Promise<void>;
   toolCalling: (target: AdapterTarget) => ToolCallingMode;
   keywordSupport?: (target: AdapterTarget) => KeywordSupport;

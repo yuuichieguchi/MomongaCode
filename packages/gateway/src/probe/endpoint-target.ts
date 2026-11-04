@@ -180,7 +180,7 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
     capabilities: async () => {
       if (record === null) return { ...withImageDefault(declared), source: 'unprobed' };
       const decision = decideToolCalling(record.report);
-      const { toolCalling, structuredOutput, streaming, stopSequences, parallelToolCalls, usageReported, reasoning, promptCache } = capabilitiesFromProbe(
+      const { toolCalling, structuredOutput, streaming, stopSequences, outputBoundField, parallelToolCalls, usageReported, reasoning, promptCache } = capabilitiesFromProbe(
         record.report,
         decision,
       );
@@ -192,6 +192,7 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
           structuredOutput,
           streaming,
           stopSequences,
+          ...(outputBoundField === undefined ? {} : { outputBoundField }),
           usageReported,
           ...(parallelToolCalls === undefined ? {} : { parallelToolCalls }),
           ...(reasoning === undefined ? {} : { reasoning }),

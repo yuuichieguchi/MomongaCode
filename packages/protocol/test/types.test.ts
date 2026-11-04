@@ -25,6 +25,7 @@ describe('protocol capability types', () => {
         structuredOutput: 'json_schema' | 'none';
         streaming: boolean;
         stopSequences: boolean;
+        outputBoundField?: 'max_completion_tokens' | 'max_tokens';
         parallelToolCalls?: boolean;
         schemaDialect: 'json-schema-2020-12' | 'guided-generation';
         tokenCounting: 'exact' | 'calibrated' | 'estimated';
@@ -70,6 +71,7 @@ describe('protocol capability types', () => {
       constrained: { accepted: boolean; validRate: number };
       keywordSupport: Record<ProbeKeyword, boolean>;
       stopSequences: boolean;
+      outputBoundField?: 'max_completion_tokens' | 'max_tokens' | 'none';
       parallelToolCalls?: { accepted: boolean; multiCallRate: number };
       reasoning?: { control: 'none'; headroomTokens?: number } | { control: 'reasoning_effort'; lowest: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' };
       maxConcurrency: number;

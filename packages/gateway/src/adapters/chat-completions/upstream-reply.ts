@@ -1,6 +1,7 @@
 import { decodeSse, isRecord } from '@momonga/foundation';
 import type { SseEvent } from '@momonga/foundation';
 import { CONTEXT_WINDOW_EXCEEDED, StreamFailure, UNSUPPORTED_REQUEST } from '../shared/failures.ts';
+import { errorObjectOf, upstreamErrorText } from './vocabulary.ts';
 import type { ErrorVocabulary } from './vocabulary.ts';
 
 const ERROR_EVENT = 'error';
@@ -47,8 +48,8 @@ export const decodeUpstreamReply = async (status: number, text: string): Promise
 };
 
 export const upstreamErrorMessage = (body: unknown): string => {
-  const error = isRecord(body) ? body['error'] : undefined;
-  if (isRecord(error) && typeof error['message'] === 'string') return error['message'];
+  const text = upstreamErrorText(body);
+  if (text !== undefined) return text;
   return typeof body === 'string' ? body : JSON.stringify(body);
 };
 
@@ -57,7 +58,7 @@ export const upstreamErrorFailure = (vocabulary: ErrorVocabulary, status: number
   const kind = vocabulary.kindOf(status, body);
   if (kind === 'context_overflow') return new StreamFailure(CONTEXT_WINDOW_EXCEEDED, 'invalid_request', message);
   if (kind === 'unsupported') return new StreamFailure(UNSUPPORTED_REQUEST, 'invalid_request', message);
-  const error = isRecord(body) ? body['error'] : undefined;
-  const code = isRecord(error) && typeof error['code'] === 'string' ? error['code'] : UNNAMED_UPSTREAM_ERROR;
+  const errorCode = errorObjectOf(body)?.['code'];
+  const code = typeof errorCode === 'string' ? errorCode : UNNAMED_UPSTREAM_ERROR;
   return new StreamFailure(code, 'server_error', message);
 };

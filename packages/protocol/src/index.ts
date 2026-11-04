@@ -5,6 +5,7 @@ export type {
   HealthResult,
   ImageCapability,
   ImageTokenModel,
+  OutputBoundField,
   PromptCacheCapability,
   ReasoningCapability,
   ReasoningEffort,
@@ -67,7 +68,9 @@ export {
 } from './budget-constants.ts';
 export type { ErrorShape } from './budget-constants.ts';
 export {
+  DEFAULT_OUTPUT_BOUND_FIELD,
   LOWEST_REASONING_EFFORT,
+  OUTPUT_BOUND_FIELDS,
   REASONING_EFFORTS,
   TARGET_BILLINGS,
   applyCapabilityOverride,

@@ -1,15 +1,25 @@
-import { reasoningEffortToSend } from '@momonga/protocol';
+import { DEFAULT_OUTPUT_BOUND_FIELD, reasoningEffortToSend } from '@momonga/protocol';
 import type { AdapterRequest, Capabilities } from '@momonga/protocol';
 import type { ChatRequestBody } from './native-request.ts';
+import { outputBoundFor } from './output-bound.ts';
 
-const reasoningOptions = (body: ChatRequestBody, request: AdapterRequest, capabilities: Capabilities): Partial<ChatRequestBody> => {
+const reasoningEffortOption = (request: AdapterRequest, capabilities: Capabilities): Partial<ChatRequestBody> => {
   const requested = request.reasoning_effort;
-  if (requested === undefined) return {};
   const { reasoning } = capabilities;
-  if (reasoning?.control === 'reasoning_effort') return { reasoning_effort: reasoningEffortToSend(requested, reasoning.lowest) };
-  const headroom = reasoning?.headroomTokens ?? 0;
-  if (headroom === 0 || body.max_tokens === undefined) return {};
-  return { max_tokens: Math.min(body.max_tokens + headroom, capabilities.maxOutputTokens) };
+  if (requested === undefined || reasoning?.control !== 'reasoning_effort') return {};
+  return { reasoning_effort: reasoningEffortToSend(requested, reasoning.lowest) };
+};
+
+const outputBoundTokens = (request: AdapterRequest, capabilities: Capabilities): number | undefined => {
+  const requested = request.max_output_tokens;
+  if (requested === undefined || requested === null) return undefined;
+  const headroom = request.reasoning_effort === undefined || capabilities.reasoning?.control === 'reasoning_effort' ? 0 : (capabilities.reasoning?.headroomTokens ?? 0);
+  return headroom === 0 ? requested : Math.min(requested + headroom, capabilities.maxOutputTokens);
+};
+
+const outputBoundOption = (request: AdapterRequest, capabilities: Capabilities): Partial<ChatRequestBody> => {
+  const tokens = outputBoundTokens(request, capabilities);
+  return tokens === undefined ? {} : outputBoundFor(capabilities.outputBoundField ?? DEFAULT_OUTPUT_BOUND_FIELD, tokens);
 };
 
 export const withCapabilityOptions = (body: ChatRequestBody, request: AdapterRequest, capabilities: Capabilities): ChatRequestBody => {
@@ -19,7 +29,8 @@ export const withCapabilityOptions = (body: ChatRequestBody, request: AdapterReq
   return {
     ...body,
     ...(forbidParallel ? { parallel_tool_calls: false } : {}),
-    ...reasoningOptions(body, request, capabilities),
+    ...reasoningEffortOption(request, capabilities),
+    ...outputBoundOption(request, capabilities),
     ...(sendKey ? { prompt_cache_key: request.promptCacheKey } : {}),
   };
 };
