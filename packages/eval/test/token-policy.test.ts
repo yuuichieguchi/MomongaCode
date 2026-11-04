@@ -27,8 +27,11 @@ const dataset = parseContextDataset(
 
 const transcripts: Transcript[] = SCENARIOS.flatMap((scenario) => [recorded(`${scenario}-on`, 0, []), recorded(`${scenario}-off`, 0, [])]);
 
-const reportWith = (policy?: Record<string, unknown>) =>
-  buildContextReport({ dataset, transcripts, model: 'real', seed: 1, ...(policy === undefined ? {} : { policy }) });
+const MAIN_CODE = 'a'.repeat(64);
+const HEAD_CODE = 'b'.repeat(64);
+
+const reportWith = (policy?: Record<string, unknown>, codeDigest = MAIN_CODE) =>
+  buildContextReport({ dataset, transcripts, model: 'real', seed: 1, codeDigest, ...(policy === undefined ? {} : { policy }) });
 
 const EVERY_KEY = {
   context: { cachePrefix: true, outputFormatters: ['log', 'json', 'grep', 'identicalOutput'], loopGuidance: true, observedCapacity: true },
@@ -111,8 +114,22 @@ describe('the policy recorded in a context report', () => {
   });
 });
 
-describe('compare --gate token and the policies', () => {
-  it('refuses two reports with identical policies', () => {
+describe('the code digest recorded in a context report', () => {
+  it('records the digest of the code that produced the runs', () => {
+    expect(reportWith(undefined, HEAD_CODE).codeDigest).toBe(HEAD_CODE);
+  });
+
+  it('round-trips through the stored report and refuses one without a digest or with a malformed one', () => {
+    const report = reportWith();
+    expect(parseContextReport(encodeContextReport(report), 'r.json').codeDigest).toBe(MAIN_CODE);
+    const { codeDigest: _digest, ...withoutDigest } = report;
+    expect(() => parseContextReport(JSON.stringify(withoutDigest), 'r.json')).toThrow(/not a context report/);
+    expect(() => parseContextReport(JSON.stringify({ ...report, codeDigest: 'main' }), 'r.json')).toThrow(/not a context report/);
+  });
+});
+
+describe('compare --gate token, the policies and the code digests', () => {
+  it('refuses two reports with the same policy on the same code', () => {
     const policy = { context: { cachePrefix: true } };
     expect(() => compareContextReports(reportWith(policy), reportWith(policy), { seed: 1, gate: 'token' })).toThrow(EvalError);
     expect(() => compareContextReports(reportWith(), reportWith(), { seed: 1, gate: 'token' })).toThrow(/identical/);
@@ -124,13 +141,23 @@ describe('compare --gate token and the policies', () => {
     expect(() => compareContextReports(reportWith(left), reportWith(right), { seed: 1, gate: 'token' })).toThrow(/identical/);
   });
 
-  it('prints both policies', () => {
-    const text = formatContextComparison(compareContextReports(reportWith(), reportWith({ context: { cachePrefix: true } }), { seed: 1, gate: 'token' }));
-    expect(text).toContain('baseline policy: {}');
-    expect(text).toContain('candidate policy: {"context":{"cachePrefix":true}}');
+  it('accepts the same policy on different code, the main-versus-head gate', () => {
+    expect(() => compareContextReports(reportWith({}, MAIN_CODE), reportWith({}, HEAD_CODE), { seed: 1, gate: 'token' })).not.toThrow();
   });
 
-  it('still compares identical policies under the context gate, which judges guidelines', () => {
+  it('accepts different policies on the same code', () => {
+    expect(() => compareContextReports(reportWith({}), reportWith({ context: { cachePrefix: true } }), { seed: 1, gate: 'token' })).not.toThrow();
+  });
+
+  it('prints both policies and both code digests', () => {
+    const text = formatContextComparison(compareContextReports(reportWith({}, MAIN_CODE), reportWith({ context: { cachePrefix: true } }, HEAD_CODE), { seed: 1, gate: 'token' }));
+    expect(text).toContain('baseline policy: {}');
+    expect(text).toContain('candidate policy: {"context":{"cachePrefix":true}}');
+    expect(text).toContain(`baseline codeDigest: ${MAIN_CODE}`);
+    expect(text).toContain(`candidate codeDigest: ${HEAD_CODE}`);
+  });
+
+  it('still compares identical policies on identical code under the context gate, which judges guidelines', () => {
     expect(() => compareContextReports(reportWith(), reportWith(), { seed: 1, gate: 'context' })).not.toThrow();
   });
 });

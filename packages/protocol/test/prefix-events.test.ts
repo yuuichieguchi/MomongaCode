@@ -10,6 +10,7 @@ describe('PREFIX_EVENTS', () => {
       'compaction_rejected',
       'governing_changed',
       'instructions_arrived',
+      'instructions_replaced',
       'skill_activated',
       'tools_loaded',
       'claim',

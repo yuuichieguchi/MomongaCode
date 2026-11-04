@@ -202,7 +202,7 @@ describe('momonga eval compare', () => {
   it('judges the token terms with --gate token and prints why a term with no measure fails', async () => {
     const context = harness();
     context.stored.set('/w/a.json', await reportFile('a.json', 0, 'real'));
-    context.stored.set('/w/b.json', JSON.stringify({ ...JSON.parse(await reportFile('b.json', 0, 'real')), policy: { context: { cachePrefix: true } } }));
+    context.stored.set('/w/b.json', JSON.stringify({ ...JSON.parse(await reportFile('b.json', 0, 'real')), codeDigest: 'f'.repeat(64) }));
     await run(context.program, 'eval', 'compare', 'a.json', 'b.json', '--gate', 'token');
     const text = context.stdout.join('');
     expect(text).toContain('gate: FAIL');
@@ -256,8 +256,8 @@ describe('momonga eval context --settings', () => {
   });
 });
 
-describe('momonga eval compare --gate token and the policies', () => {
-  it('refuses two reports whose policies are identical', async () => {
+describe('momonga eval compare --gate token, the policies and the code digests', () => {
+  it('refuses two reports with the same policy produced by the same code', async () => {
     const context = harness();
     context.stored.set('/w/a.json', await reportFile('a.json', 0, 'real'));
     context.stored.set('/w/b.json', await reportFile('b.json', 0, 'real'));
@@ -267,12 +267,15 @@ describe('momonga eval compare --gate token and the policies', () => {
 
   it('prints both policies when they differ', async () => {
     const context = harness();
+    const baseline = JSON.parse(await reportFile('a.json', 0, 'real'));
     const candidate = { ...JSON.parse(await reportFile('b.json', 0, 'real')), policy: { context: { cachePrefix: true } } };
-    context.stored.set('/w/a.json', await reportFile('a.json', 0, 'real'));
+    context.stored.set('/w/a.json', JSON.stringify(baseline));
     context.stored.set('/w/b.json', `${JSON.stringify(candidate, null, 2)}\n`);
     await run(context.program, 'eval', 'compare', 'a.json', 'b.json', '--gate', 'token');
     const text = context.stdout.join('');
     expect(text).toContain('baseline policy: {}');
     expect(text).toContain('candidate policy: {"context":{"cachePrefix":true}}');
+    expect(text).toMatch(/baseline codeDigest: [0-9a-f]{64}/);
+    expect(text).toContain(`candidate codeDigest: ${String(candidate.codeDigest)}`);
   });
 });

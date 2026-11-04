@@ -35,20 +35,20 @@ describe('the token pin of a root run', () => {
   });
 
   it('pins each setting that is on', async () => {
-    const context: ResolvedContextSettings = { ...OFF_CONTEXT, cachePrefix: true, outputFormatters: ['log', 'grep'], loopGuidance: true };
+    const context: ResolvedContextSettings = { ...OFF_CONTEXT, cachePrefix: true, outputFormatters: ['log', 'grep'], loopGuidance: true, observedCapacity: true };
     const pin = await tokenPinFor({ store: storeWith([]), settings: settingsOf(context, { deferral: false, conciseDescriptions: true }), session: SESSION, run: rootRun });
-    expect(pin).toEqual({ cachePrefix: true, conciseDescriptions: true, outputFormatters: ['log', 'grep'], loopGuidance: true });
+    expect(pin).toEqual({ cachePrefix: true, conciseDescriptions: true, outputFormatters: ['log', 'grep'], loopGuidance: true, observedCapacity: true });
   });
 
   it('ignores the settings that are not part of the token pin', async () => {
-    const context: ResolvedContextSettings = { ...OFF_CONTEXT, adaptiveBudget: true, autoCompact: false, observedCapacity: true };
+    const context: ResolvedContextSettings = { ...OFF_CONTEXT, adaptiveBudget: true, autoCompact: false };
     expect(await tokenPinFor({ store: storeWith([]), settings: settingsOf(context, OFF_TOOLS), session: SESSION, run: rootRun })).toEqual({});
   });
 });
 
 describe('the token pin of a child run', () => {
   it('inherits the pin of its parent, whatever the settings say now', async () => {
-    const parentPin: TokenPin = { cachePrefix: true, deferred: ['WebFetch'], outputFormatters: ['json'] };
+    const parentPin: TokenPin = { cachePrefix: true, deferred: ['WebFetch'], outputFormatters: ['json'], observedCapacity: true };
     const store = storeWith([started({ ...BASE_PINS, token: parentPin })]);
     const context: ResolvedContextSettings = { ...OFF_CONTEXT, loopGuidance: true };
     expect(await tokenPinFor({ store, settings: settingsOf(context, { deferral: true, conciseDescriptions: true }), session: SESSION, run: childRun })).toEqual(parentPin);
@@ -63,7 +63,7 @@ describe('the token pin of a child run', () => {
 
 describe('reading pins.token', () => {
   it('reads a pin with every field', () => {
-    const token: TokenPin = { cachePrefix: true, deferred: ['WebFetch', 'Glob'], conciseDescriptions: true, outputFormatters: ['log', 'identicalOutput'], loopGuidance: true };
+    const token: TokenPin = { cachePrefix: true, deferred: ['WebFetch', 'Glob'], conciseDescriptions: true, outputFormatters: ['log', 'identicalOutput'], loopGuidance: true, observedCapacity: true };
     const pins: RunPins = readPins({ ...BASE_PINS, token });
     expect(pins.token).toEqual(token);
   });
@@ -74,7 +74,8 @@ describe('reading pins.token', () => {
   });
 
   it.each([
-    ['an unknown key', { cachePrefix: true, observedCapacity: true }],
+    ['an unknown key', { cachePrefix: true, adaptiveBudget: true }],
+    ['an observedCapacity that is not a boolean', { observedCapacity: 'on' }],
     ['a cachePrefix that is not a boolean', { cachePrefix: 'yes' }],
     ['a deferred list with a non-string name', { deferred: [3] }],
     ['an unknown formatter', { outputFormatters: ['markdown'] }],
@@ -98,11 +99,11 @@ describe('the token pin recorded at run start', () => {
 
   it('records the settings that are on when the root run starts', async () => {
     const env = await makeEnv();
-    env.settings.contextValue = { ...env.settings.contextValue, cachePrefix: true, outputFormatters: ['log'] };
+    env.settings.contextValue = { ...env.settings.contextValue, cachePrefix: true, outputFormatters: ['log'], observedCapacity: true };
     env.gateway.script.push(textStep('Done.'));
     const run = env.enqueue('say done');
     await env.runOnce(env.worker());
     const [first] = env.ofType(run.id, 'run.started');
-    expect(first?.pins['token']).toEqual({ cachePrefix: true, outputFormatters: ['log'] });
+    expect(first?.pins['token']).toEqual({ cachePrefix: true, outputFormatters: ['log'], observedCapacity: true });
   });
 });

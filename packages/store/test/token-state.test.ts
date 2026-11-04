@@ -72,6 +72,19 @@ describe('the token state of a run', () => {
     expect(state.activatedSkills.map((skill) => [skill.name, skill.seq])).toEqual([['pdf', 3]]);
   });
 
+  it('keeps the position of an edited nested file and gives it the seq of the replacing event', () => {
+    const state = foldOf([
+      task('work'),
+      { type: 'instructions.loaded', path: '/work/a/pkg/AGENTS.md', content: 'nested rules' },
+      { type: 'instructions.loaded', path: '/work/a/lib/AGENTS.md', content: 'more rules' },
+      { type: 'instructions.loaded', path: '/work/a/pkg/AGENTS.md', content: 'edited rules' },
+    ]);
+    expect(state.loadedInstructions.map((entry) => [entry.path, entry.seq])).toEqual([
+      ['/work/a/pkg/AGENTS.md', 4],
+      ['/work/a/lib/AGENTS.md', 3],
+    ]);
+  });
+
   it('gives a reference its handle without evicting the referring output', () => {
     const state = foldOf([
       task('read twice'),
