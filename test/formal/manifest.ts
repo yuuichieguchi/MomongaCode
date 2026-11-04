@@ -134,7 +134,12 @@ export const verdictProblems = (entry: ManifestEntry, run: TlcRun): string[] => 
   if (scriptFailure.length > 0) return scriptFailure;
   const { violates, exitCode } = entry.expect;
   if (run.exitCode !== exitCode) return [`${label} was expected to violate ${violates} with exit ${exitCode} but TLC exited ${run.exitCode ?? run.signal}`];
-  if (exitCode === 13) return run.stdout.includes(TEMPORAL_LINE) ? [] : [`${label} exited 13 without the line "${TEMPORAL_LINE}"`];
+  if (exitCode === 13) {
+    if (run.stdout.includes(TEMPORAL_LINE)) return [];
+    return new RegExp(`Action property ${escapeRegExp(violates)} is violated`).test(run.stdout)
+      ? []
+      : [`${label} exited 13 without the line "${TEMPORAL_LINE}" or "Action property ${violates} is violated"`];
+  }
   return new RegExp(`Invariant ${escapeRegExp(violates)} is violated`).test(run.stdout) ? [] : [`${label} exited ${exitCode} without the line "Invariant ${violates} is violated"`];
 };
 

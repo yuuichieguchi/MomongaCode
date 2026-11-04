@@ -1,51 +1,5 @@
 ---------------------------- MODULE RequestPrefix ----------------------------
-(***************************************************************************)
-(* Design model of the request prefix of one MomongaCode run (token/       *)
-(* t2-t5-design.md, revision 4, sections 1, 4 and 9). A request is the    *)
-(* concatenation tools || S || F || H, modelled as a sequence of slots.    *)
-(* It describes what the design says the code does.                        *)
-(*                                                                         *)
-(* Code sources modelled                                                   *)
-(*   packages/context/src/build-context.ts  assembly, eviction,            *)
-(*       compaction, references, frozen forms                              *)
-(*   packages/runtime/src/worker/*  context-step, model-step,              *)
-(*       claim-runner (offer, recovery, the mode yield)                    *)
-(*   the loader of deferred tool definitions                               *)
-(*                                                                         *)
-(* Abstractions (a proof holds only for this model):                       *)
-(*   - token sizes: Evict takes any k >= 1 of the oldest unprotected       *)
-(*     outputs; the arithmetic is Z3's                                     *)
-(*   - item content, child runs, TTLs, the wire mapping and time           *)
-(*   - S is one constant slot; an output is "big" at every cap, so its     *)
-(*     first form is the cap of the build that renders it                  *)
-(*   - an Arrive appends one entry to F; a replacement of an entry by an   *)
-(*     edited file is not modelled                                         *)
-(*   - a call that completes appends its output to the history at once;    *)
-(*     the outputs of parallel calls complete in any order                 *)
-(*   - the duplicate of an output is the oldest earlier work output that   *)
-(*     is still shown in full                                              *)
-(*                                                                         *)
-(* Additions to the variables of section 9: id on every item, step, alive, *)
-(* wrapping, loadDirty, nextId, modeChanges, compactions, cap, form, evs,  *)
-(* sent, prefixOk; cut is the evicted flags of the items. PrefixStable is  *)
-(* the state predicate prefixOk, set by each request that is built: the    *)
-(* harness reads a refutation only from a violated invariant.              *)
-(*                                                                         *)
-(* Configurations (scripts/tlc.sh <name>, specs/tla/<name>.cfg)            *)
-(*   RequestPrefix              every property, ModeYield = TRUE: holds    *)
-(*   RequestPrefix.noModeYield  ModeYield = FALSE, OfferMatchesMode not    *)
-(*                              checked: holds                             *)
-(*   RequestPrefix.offerPerBuild   the offer recomputed at every build:    *)
-(*                              PrefixStable refuted                       *)
-(*   RequestPrefix.govFirst     the governing block first in F:            *)
-(*                              PrefixStable refuted                       *)
-(*   RequestPrefix.rerank       memories ranked at every build:            *)
-(*                              PrefixStable refuted                       *)
-(*   RequestPrefix.rerenderPerBuild  forms recomputed from cap at every    *)
-(*                              build: PrefixStable refuted                *)
-(*   RequestPrefix.deep         the next larger MaxSteps: holds            *)
-(***************************************************************************)
-EXTENDS Naturals, Sequences, FiniteSets
+EXTENDS Naturals, Sequences, FiniteSets, TLC
 
 CONSTANTS
     MaxSteps, MaxCalls, Keep, Deferred, MaxCompactions, MaxClaims,
@@ -56,14 +10,14 @@ VARIABLES
     hist, arrivals, gov, memo, offer, offerMode, mode, loaded, pending,
     claim, phase, recorded, lastReq, since, evs, sent, alive, wrapping,
     loadDirty, step, nextId, cap, loads, loadBatches, toolBreaks,
-    offerChanges, modeChanges, compactions, prefixOk
+    offerChanges, modeChanges, compactions
 
 vars == <<hist, arrivals, gov, memo, offer, offerMode, mode, loaded, pending,
           claim, phase, recorded, lastReq, since, evs, sent, alive, wrapping,
           loadDirty, step, nextId, cap, loads, loadBatches, toolBreaks,
-          offerChanges, modeChanges, compactions, prefixOk>>
+          offerChanges, modeChanges, compactions>>
 
-NamedEvents == {"eviction", "compaction", "compaction_rejected", "governing_changed", "instructions_arrived", "skill_activated", "tools_loaded", "claim", "wrap_up"}
+NamedEvents == {"eviction", "compaction", "compaction_rejected", "governing_changed", "instructions_arrived", "instructions_replaced", "skill_activated", "tools_loaded", "claim", "wrap_up"}
 
 Modes == {"normal", "plan"}
 
@@ -95,7 +49,7 @@ Render(it) ==
 
 ToolsSlot(wrap, om, of, ld) == IF wrap THEN <<"tools", "none">> ELSE <<"tools", om, of, ld>>
 
-ArrSlots(arr) == [i \in DOMAIN arr |-> <<"arr", i, arr[i]>>]
+ArrSlots(arr) == [i \in DOMAIN arr |-> <<"arr", i, arr[i].kind, arr[i].ver>>]
 
 FZone(m, arr, g) ==
     IF GovFirstInF
@@ -122,7 +76,7 @@ Rec(e, k) == /\ since' = Min2(since, k) /\ evs' = evs \cup {e}
 
 NoRec == UNCHANGED <<since, evs>>
 
-NoSend == sent' = "none" /\ prefixOk' = TRUE
+NoSend == sent' = "none"
 
 Init ==
     /\ hist = << Task >>
@@ -153,14 +107,12 @@ Init ==
     /\ offerChanges = 0
     /\ modeChanges = 0
     /\ compactions = 0
-    /\ prefixOk = TRUE
 
 MemoChoices == IF RerankMemories THEN {1, 2} ELSE {IF memo = 0 THEN 1 ELSE memo}
 
 Send(wrap, o, om, m, h) ==
     LET r == Req(wrap, om, o, loaded, m, arrivals, gov, h)
     IN /\ lastReq' = r
-       /\ prefixOk' = (CP(lastReq, r) >= Min2(Len(lastReq), Min2(since, IF wrap /\ ~IsWrapReq(lastReq) THEN 0 ELSE NoLimit)))
        /\ recorded' = r
        /\ toolBreaks' = toolBreaks + (IF lastReq # <<>> /\ lastReq[1] # r[1] THEN 1 ELSE 0)
        /\ memo' = m
@@ -274,10 +226,15 @@ RejectCompaction ==
     /\ UNCHANGED <<arrivals, gov, memo, offer, offerMode, mode, loaded, pending, claim, lastReq, alive, wrapping, loadDirty, step, nextId, cap, loads, loadBatches, toolBreaks, offerChanges, modeChanges, compactions>>
 
 Arrive ==
-    /\ alive /\ phase # "done" /\ Len(arrivals) < MaxArrivals
-    /\ \E a \in ArrivalKinds :
-        /\ arrivals' = Append(arrivals, a)
-        /\ Rec(a, 3 + Len(arrivals))
+    /\ alive /\ phase # "done"
+    /\ \/ /\ Len(arrivals) < MaxArrivals
+           /\ \E a \in ArrivalKinds :
+                /\ arrivals' = Append(arrivals, [kind |-> a, ver |-> 0])
+                /\ Rec(a, 3 + Len(arrivals))
+       \/ \E i \in DOMAIN arrivals :
+            /\ arrivals[i].kind = "instructions_arrived" /\ arrivals[i].ver = 0
+            /\ arrivals' = [arrivals EXCEPT ![i].ver = 1]
+            /\ Rec("instructions_replaced", 2 + i)
     /\ NoSend
     /\ UNCHANGED <<hist, gov, memo, offer, offerMode, mode, loaded, pending, claim, phase, recorded, lastReq, alive, wrapping, loadDirty, step, nextId, cap, loads, loadBatches, toolBreaks, offerChanges, modeChanges, compactions>>
 
@@ -335,7 +292,6 @@ Reclaim ==
     /\ IF phase = "await"
         THEN /\ lastReq' = recorded
              /\ sent' = "resend"
-             /\ prefixOk' = TRUE
         ELSE /\ UNCHANGED lastReq
              /\ NoSend
     /\ UNCHANGED <<hist, arrivals, gov, memo, mode, loaded, pending, phase, recorded, wrapping, loadDirty, step, nextId, cap, loads, loadBatches, toolBreaks, modeChanges, compactions>>
@@ -352,6 +308,8 @@ Spec == Init /\ [][Next]_vars
 
 -----------------------------------------------------------------------------
 
+DeferredSymmetry == Permutations(Deferred)
+
 TypeOK ==
     /\ phase \in {"build", "await", "tools", "done"}
     /\ sent \in {"none", "build", "wrapup", "resend"}
@@ -365,7 +323,9 @@ TypeOK ==
     /\ Len(loaded) <= Cardinality(Deferred)
     /\ \A i \in DOMAIN hist : hist[i].kind \in {"task", "sum", "resp", "load", "work"}
 
-PrefixStable == prefixOk
+PrefixStable ==
+    [][sent' \in {"build", "wrapup"} =>
+        CP(lastReq, lastReq') >= Min2(Len(lastReq), Min2(since, IF sent' = "wrapup" /\ ~IsWrapReq(lastReq) THEN 0 ELSE NoLimit))]_vars
 
 WrapBreak == IF wrapping THEN 1 ELSE 0
 
@@ -394,7 +354,9 @@ RefShowsFullReferent ==
         \E j \in 1..(i - 1) : lastReq[j][1] = "out" /\ lastReq[j][2] = lastReq[i][4] /\ lastReq[j][3] = "full"
 
 FAppendOnly ==
-    [][/\ SubSeq(arrivals', 1, Len(arrivals)) = arrivals
+    [][/\ \/ SubSeq(arrivals', 1, Len(arrivals)) = arrivals
+          \/ /\ Len(arrivals') = Len(arrivals)
+             /\ \E i \in DOMAIN arrivals : arrivals' = [arrivals EXCEPT ![i].ver = arrivals[i].ver + 1]
        /\ (memo # 0 => memo' = memo)]_vars
 
 WrapUpIsLast ==

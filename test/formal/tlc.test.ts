@@ -70,7 +70,10 @@ const completedOutput = (distinct: number): string =>
 const invariantViolationOutput = (invariant: string): string =>
   ['TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)', `Error: Invariant ${invariant} is violated.`, 'Error: The behavior up to this point is:'].join('\n');
 
-const temporalViolationOutput = ['TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)', 'Error: Temporal properties were violated.', 'Error: The following behavior constitutes a counter-example:'].join('\n');
+const actionPropertyViolationOutput = (property: string): string =>
+  ['TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)', `Error: Action property ${property} is violated.`, 'Error: The behavior up to this point is:'].join('\n');
+
+const temporalViolationOutput =['TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)', 'Error: Temporal properties were violated.', 'Error: The following behavior constitutes a counter-example:'].join('\n');
 
 const runOf = (exitCode: number, stdout: string, stderr = ''): TlcRun => ({ pid: 4242, exitCode, signal: null, killedAtBudget: false, stdout, stderr });
 
@@ -289,6 +292,14 @@ describe('the verdict on one TLC run', () => {
 
   it('fails a temporal expectation when TLC exits 12', () => {
     expect(verdictProblems(temporalEntry, runOf(12, temporalViolationOutput))).not.toEqual([]);
+  });
+
+  it('accepts an action property violation with exit 13 and the named property', () => {
+    expect(verdictProblems(temporalEntry, runOf(13, actionPropertyViolationOutput('Settles')))).toEqual([]);
+  });
+
+  it('fails an action property violation that names another property', () => {
+    expect(verdictProblems(temporalEntry, runOf(13, actionPropertyViolationOutput('Other')))).not.toEqual([]);
   });
 
   it('fails a run killed at its budget', () => {
