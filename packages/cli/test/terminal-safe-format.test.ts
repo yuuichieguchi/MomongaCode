@@ -70,12 +70,12 @@ describe('memory text that a person did not write is printed escaped', () => {
     expectSafe(formatMemoryList([memory({ project: HOSTILE })]));
   });
 
-  it('escapes the whole text of a memory in show and review, keeping its line breaks', () => {
+  it('escapes the whole text of a memory in show and review, keeping its line breaks and indenting each line', () => {
     const written: string[] = [];
     terminalSink(() => ({ write: (chunk) => void written.push(chunk) })).write(formatMemory(memory({ text: `first\n${HOSTILE}` })));
     const printed = written.join('');
     expectSafe(printed);
-    expect(printed).toContain('first\nx');
+    expect(printed).toContain(`\n  first\n  ${ESCAPED}`);
   });
 
   it('escapes the project, the evidence path and the check command of a memory in show and review', () => {
