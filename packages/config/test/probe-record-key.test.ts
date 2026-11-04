@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { ResolvedModelTarget } from '@momonga/config';
-import { probeRecordKeyOf } from '../src/probe/record-key.ts';
+import type { ResolvedModelTarget } from '../src/settings.ts';
+import { probeRecordKeyOf } from '../src/probe-record-key.ts';
 
 const capabilities = {
   contextWindow: 8192,
