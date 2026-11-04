@@ -208,7 +208,7 @@ describe('planBubblewrap', () => {
     const plan = planBubblewrap(policy({ fileRules, writeDeniedLiterals: [hooks] }), { cwd: work });
     expect(indexOfTriple(plan.args, '--bind', wide)).toBeGreaterThan(0);
     expect(plan.placeholders).toEqual([path.join(wide, '.git')]);
-    expect(indexOfTriple(plan.args, '--ro-bind', '/dev/null', path.join(wide, '.git'))).toBeGreaterThan(0);
+    expect(indexOfTriple(plan.args, '--ro-bind', path.join(wide, '.git'), path.join(wide, '.git'))).toBeGreaterThan(0);
   });
 
   it('takes a hold on a placeholder that a running command created, for the file itself and for a path below it', () => {
@@ -217,19 +217,19 @@ describe('planBubblewrap', () => {
     const held = new Set([git]);
     const below = planBubblewrap(policy({ writeDeniedLiterals: [path.join(git, 'hooks')] }), { cwd: work, heldPlaceholders: held });
     expect(below.placeholders).toEqual([git]);
-    expect(indexOfTriple(below.args, '--ro-bind', '/dev/null', git)).toBeGreaterThan(0);
+    expect(indexOfTriple(below.args, '--ro-bind', git, git)).toBeGreaterThan(0);
     const itself = planBubblewrap(policy({ writeDeniedLiterals: [git] }), { cwd: work, heldPlaceholders: held });
     expect(itself.placeholders).toEqual([git]);
     const unrelated = planBubblewrap(policy({ writeDeniedLiterals: [git] }), { cwd: work });
     expect(unrelated.placeholders).toEqual([]);
   });
 
-  it('reserves the first missing component of a protected path under a writable root with /dev/null, so nothing can create it', () => {
+  it('reserves the first missing component of a protected path under a writable root with a placeholder bound onto itself, so nothing can create it', () => {
     const hooks = path.join(work, '.git', 'hooks');
     const config = path.join(work, '.git', 'config');
     const mcp = path.join(work, '.mcp.json');
     const plan = planBubblewrap(policy({ writeDenied: [hooks], writeDeniedLiterals: [config, mcp] }), { cwd: work });
-    const reserved = plan.args.flatMap((value, index) => (value === '--ro-bind' && plan.args[index + 1] === '/dev/null' ? [plan.args[index + 2]] : []));
+    const reserved = plan.args.flatMap((value, index) => (value === '--ro-bind' && plan.args[index + 1] === plan.args[index + 2] && plan.args[index + 1] !== '/' ? [plan.args[index + 1]] : []));
     expect(reserved.sort()).toEqual([path.join(work, '.git'), mcp].sort());
     expect(plan.placeholders.sort()).toEqual([path.join(work, '.git'), mcp].sort());
     expect(indexOfTriple(plan.args, '--ro-bind', hooks)).toBe(-1);
@@ -321,8 +321,8 @@ describe('planBubblewrap', () => {
       fs.mkdirSync(gitDir());
       const plan = planBubblewrap(anchored(), { cwd: work });
       expect(plan.placeholders).toContain(modules());
-      expect(indexOfTriple(plan.args, '--ro-bind', modules())).toBe(-1);
-      expect(plan.args.findIndex((value, index) => value === '--ro-bind' && plan.args[index + 1] === '/dev/null' && plan.args[index + 2] === modules())).toBeGreaterThan(0);
+      expect(indexOfTriple(plan.args, '--ro-bind', '/dev/null', modules())).toBe(-1);
+      expect(plan.args.findIndex((value, index) => value === '--ro-bind' && plan.args[index + 1] === modules() && plan.args[index + 2] === modules())).toBeGreaterThan(0);
     });
 
     it('binds an existing modules directory read-only and each module git directory writable after it', () => {
@@ -471,7 +471,7 @@ describe('planBubblewrap', () => {
         const target = path.join(admin, 'config.worktree');
         const plan = planBubblewrap(anchored(), { cwd: work });
         expect(plan.placeholders).toContain(target);
-        expect(plan.args.findIndex((value, index) => value === '--ro-bind' && plan.args[index + 1] === '/dev/null' && plan.args[index + 2] === target)).toBeGreaterThan(0);
+        expect(plan.args.findIndex((value, index) => value === '--ro-bind' && plan.args[index + 1] === target && plan.args[index + 2] === target)).toBeGreaterThan(0);
         expect(positionOf(plan.args, '--ro-bind', path.join(module, 'worktrees'))).toBe(-1);
       });
 

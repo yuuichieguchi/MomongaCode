@@ -93,7 +93,7 @@ describe('defaultProtectedPaths (moved from sandbox)', () => {
 
 describe('EMPTY_PROTECTED_SET', () => {
   it('holds nothing and the empty file-rule set', () => {
-    expect(EMPTY_PROTECTED_SET).toEqual({ roots: [], paths: [], lexicalPaths: [], literals: [], names: [], moduleAnchors: [], worktreeAnchors: [], patterns: EMPTY_FILE_RULES, issues: [] });
+    expect(EMPTY_PROTECTED_SET).toEqual({ forms: {}, roots: [], paths: [], lexicalPaths: [], literals: [], names: [], moduleAnchors: [], worktreeAnchors: [], patterns: EMPTY_FILE_RULES, issues: [] });
   });
 });
 

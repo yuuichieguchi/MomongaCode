@@ -1,13 +1,14 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import type { PlaceholderForm } from '@momonga/foundation';
 
 export type PlaceholderIdentity = { device: string; inode: string; birthMs: number };
 
-export type PlaceholderRecord = { path: string; intentMs: number; identity: PlaceholderIdentity | null };
+export type PlaceholderRecord = { path: string; intentMs: number; form: PlaceholderForm; identity: PlaceholderIdentity | null };
 
 export type PlaceholderJournal = {
-  intend(target: string, intentMs: number): void;
+  intend(target: string, intentMs: number, form?: PlaceholderForm): void;
   complete(target: string, identity: PlaceholderIdentity): void;
   forget(target: string): void;
   records(): PlaceholderRecord[];
@@ -31,20 +32,33 @@ const NOT_OURS = new Set(['EACCES', 'EPERM']);
 
 export const FILESYSTEM_TIMESTAMP_GRANULARITY_MS = 10;
 
+export const EMPTY_FILE_FORM: PlaceholderForm = { kind: 'file', bytes: '' };
+
 export const identityOf = (target: string): PlaceholderIdentity => {
   const stat = fs.lstatSync(target, { bigint: true });
   return { device: String(stat.dev), inode: String(stat.ino), birthMs: Number(stat.birthtimeNs) / NS_PER_MS };
 };
 
-export const isStillThePlaceholder = (target: string, identity: PlaceholderIdentity): boolean => {
+const hasForm = (target: string, stat: fs.BigIntStats, form: PlaceholderForm): boolean => {
+  if (form.kind === 'directory') return stat.isDirectory() && fs.readdirSync(target).length === 0;
+  const bytes = Buffer.from(form.bytes, 'latin1');
+  return stat.isFile() && stat.size === BigInt(bytes.length) && fs.readFileSync(target).equals(bytes);
+};
+
+export const isStillThePlaceholder = (target: string, identity: PlaceholderIdentity, form: PlaceholderForm = EMPTY_FILE_FORM): boolean => {
   const stat = fs.lstatSync(target, { bigint: true, throwIfNoEntry: false });
-  if (stat === undefined || !stat.isFile() || stat.size !== 0n) return false;
+  if (stat === undefined || !hasForm(target, stat, form)) return false;
   return String(stat.dev) === identity.device && String(stat.ino) === identity.inode && Number(stat.birthtimeNs) / NS_PER_MS === identity.birthMs;
 };
 
-const wasBornAfterIntent = (target: string, intentMs: number): boolean => {
+export const removePlaceholderEntry = (target: string, form: PlaceholderForm): void => {
+  if (form.kind === 'directory') fs.rmdirSync(target);
+  else fs.unlinkSync(target);
+};
+
+const wasBornAfterIntent = (target: string, intentMs: number, form: PlaceholderForm): boolean => {
   const stat = fs.lstatSync(target, { bigint: true, throwIfNoEntry: false });
-  if (stat === undefined || !stat.isFile() || stat.size !== 0n) return false;
+  if (stat === undefined || !hasForm(target, stat, form)) return false;
   const birthMs = Number(stat.birthtimeNs) / NS_PER_MS;
   return birthMs > 0 && birthMs >= intentMs - FILESYSTEM_TIMESTAMP_GRANULARITY_MS;
 };
@@ -69,12 +83,20 @@ const parseIdentity = (file: string, value: unknown): PlaceholderIdentity | null
   return { device, inode, birthMs };
 };
 
+const parseForm = (file: string, value: unknown): PlaceholderForm => {
+  if (value === undefined) return EMPTY_FILE_FORM;
+  const { kind, bytes } = (value ?? {}) as Record<string, unknown>;
+  if (kind === 'directory') return { kind: 'directory' };
+  if (kind === 'file' && typeof bytes === 'string') return { kind: 'file', bytes };
+  throw new Error(`the placeholder record ${file} has a form that is neither a directory nor a file with bytes`);
+};
+
 const parseRecord = (file: string, text: string): PlaceholderRecord => {
   const value: unknown = JSON.parse(text);
   if (typeof value !== 'object' || value === null) throw new Error(`the placeholder record ${file} is not an object`);
-  const { path: target, intentMs, identity } = value as Record<string, unknown>;
+  const { path: target, intentMs, form, identity } = value as Record<string, unknown>;
   if (typeof target !== 'string' || typeof intentMs !== 'number') throw new Error(`the placeholder record ${file} lacks a path or an intent time`);
-  return { path: target, intentMs, identity: parseIdentity(file, identity ?? null) };
+  return { path: target, intentMs, form: parseForm(file, form), identity: parseIdentity(file, identity ?? null) };
 };
 
 export const createPlaceholderJournal = (directory: string): PlaceholderJournal => {
@@ -94,7 +116,7 @@ export const createPlaceholderJournal = (directory: string): PlaceholderJournal 
     syncDirectory(directory);
   };
   return {
-    intend: (target, intentMs) => write({ path: target, intentMs, identity: null }),
+    intend: (target, intentMs, form = EMPTY_FILE_FORM) => write({ path: target, intentMs, form, identity: null }),
     complete: (target, identity) => {
       const file = fileOf(target);
       if (!fs.existsSync(file)) throw new Error(`the placeholder journal has no intent for ${target}`);
@@ -156,7 +178,7 @@ export const heldMountPoints = (port: ProcPort = nodeProcPort): ReadonlySet<stri
 const NODE_RECOVERY_PORTS: RecoveryPorts = { holders: () => heldMountPoints() };
 
 const isRecoverable = (record: PlaceholderRecord): boolean =>
-  record.identity === null ? wasBornAfterIntent(record.path, record.intentMs) : isStillThePlaceholder(record.path, record.identity);
+  record.identity === null ? wasBornAfterIntent(record.path, record.intentMs, record.form) : isStillThePlaceholder(record.path, record.identity, record.form);
 
 export const recoverPlaceholders = (journal: PlaceholderJournal, ports: RecoveryPorts = NODE_RECOVERY_PORTS): RecoveryResult => {
   const result: RecoveryResult = { removed: [], kept: [] };
@@ -172,7 +194,7 @@ export const recoverPlaceholders = (journal: PlaceholderJournal, ports: Recovery
       result.kept.push(record.path);
       continue;
     }
-    fs.unlinkSync(record.path);
+    removePlaceholderEntry(record.path, record.form);
     journal.forget(record.path);
     result.removed.push(record.path);
   }

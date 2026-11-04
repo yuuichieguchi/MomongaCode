@@ -58,11 +58,11 @@ describe('the placeholder journal and the recovery at runtime start', () => {
       first.intend('/w/.envrc', 200);
       first.complete('/w/.envrc', { device: '1', inode: '3', birthMs: 250 });
       expect(createPlaceholderJournal(directory).records()).toEqual([
-        { path: '/w/.envrc', intentMs: 200, identity: { device: '1', inode: '3', birthMs: 250 } },
-        { path: '/w/.mcp.json', intentMs: 100, identity: null },
+        { path: '/w/.envrc', intentMs: 200, form: { kind: 'file', bytes: '' }, identity: { device: '1', inode: '3', birthMs: 250 } },
+        { path: '/w/.mcp.json', intentMs: 100, form: { kind: 'file', bytes: '' }, identity: null },
       ]);
       first.forget('/w/.envrc');
-      expect(createPlaceholderJournal(directory).records()).toEqual([{ path: '/w/.mcp.json', intentMs: 100, identity: null }]);
+      expect(createPlaceholderJournal(directory).records()).toEqual([{ path: '/w/.mcp.json', intentMs: 100, form: { kind: 'file', bytes: '' }, identity: null }]);
     });
 
     it('refuses to complete a path that has no intent', () => {
