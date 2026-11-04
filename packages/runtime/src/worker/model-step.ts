@@ -17,6 +17,7 @@ import { runStopHooks } from './hook-step.ts';
 import { recordCalls, settleCalls } from './tool-step.ts';
 import { pinnedDigestOf } from './pinned-digest.ts';
 import { recordPrefix } from './prefix-record.ts';
+import { cacheControlsOf } from './cache-controls.ts';
 
 const DEADLINE_CODE = 'deadline_exceeded';
 const REFUSAL_CODES = ['guardrail_violation', 'refusal', 'content_filter'];
@@ -361,6 +362,7 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
     store: false,
     stream: true,
     metadata: { run_id: ctx.run.id, step: String(step) },
+    ...cacheControlsOf(ctx, built),
   };
   if (cancelIfInterrupted(ctx) === 'done') return 'done';
   const position = { step, attempt: 1 };

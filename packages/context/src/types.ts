@@ -128,10 +128,12 @@ export type TokenMeterOptions = {
   counter: TokenCounter;
   model: string;
   capabilities: Capabilities;
+  observedCapacity?: boolean;
 };
 
 export type BuildContextPorts = {
   meter: TokenMeter;
+  fallbackMeters?: readonly TokenMeter[];
   blobs: BlobPort;
   instructions: InstructionReader;
 };
@@ -219,6 +221,7 @@ export type CompactionBlock = { reason: CompactionBlockReason; message: string }
 export type PinnedMeasure = { pinnedTokens: number; ceiling: number; room: number; itemCap: number; summaryCap: number };
 
 export type ContextZones = {
+  stableEnd: number;
   arrivalsStart: number;
   arrivalsEnd: number;
   fixedEnd: number;

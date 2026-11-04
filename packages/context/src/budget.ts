@@ -53,7 +53,6 @@ export const itemCapFor = (capabilities: Capabilities, room?: number): number =>
 
 export const memoryBudgetFor = (room: number, share: number = DEFAULT_MEMORY_ROOM_SHARE): number => Math.floor(share * room);
 
-export const pinnedFloorFor = (capabilities: Capabilities): number => {
-  const ceiling = inputCeilingFor(capabilities);
-  return ceiling - Math.max(MIN_ROOM_TOKENS, ceilRatio(ITEM_CAP, ceiling));
-};
+export const pinnedFloorAt = (ceiling: number): number => ceiling - Math.max(MIN_ROOM_TOKENS, ceilRatio(ITEM_CAP, ceiling));
+
+export const pinnedFloorFor = (capabilities: Capabilities): number => pinnedFloorAt(inputCeilingFor(capabilities));

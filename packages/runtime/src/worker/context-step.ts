@@ -160,6 +160,7 @@ export const contextInputOf = (
 
 const portsOf = (ctx: ClaimContext): BuildContextPorts => ({
   meter: ctx.meter,
+  fallbackMeters: ctx.fallbackMeters,
   blobs: {
     handleFor: (content) => ctx.options.blobs.handleFor(content),
     put: async (text, blobOptions) => ctx.options.blobs.put(text, { ...blobOptions, runId: ctx.run.id }),
