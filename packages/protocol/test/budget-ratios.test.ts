@@ -168,6 +168,15 @@ describe('budget ratios are exact fractions', () => {
 });
 
 describe('ratio-sweep tie: protocol budget functions equal their exact rational definitions', () => {
+  it('computes through the ratios, so a window or cap above 2^33 is refused with a RangeError', () => {
+    const above = DOMAIN + 1;
+    expect(() => marginFloorFor(above)).toThrow(RangeError);
+    expect(() => outputReserveFor(capabilitiesOf(above, 1024))).toThrow(RangeError);
+    expect(() => summaryTokenCapFor({ contextWindow: above })).toThrow(RangeError);
+    expect(() => summaryItemTokensFor(above)).toThrow(RangeError);
+    expect(() => summaryInputLimitFor(capabilitiesOf(above, 1024), 64, 128)).toThrow(RangeError);
+  });
+
   it(
     'marginFloorFor(W) = max(ceil(W/50), MIN_MARGIN)',
     () => {

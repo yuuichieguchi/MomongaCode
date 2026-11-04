@@ -83,6 +83,14 @@ const capabilitiesOf = (W: number, counting: Counting): Capabilities =>
   capabilitiesFor(W, { maxOutputTokens: MAX_OUTPUT_TOKENS, ...counting.override });
 
 describe('ratio-sweep tie: context budget functions equal their exact rational definitions', () => {
+  it('computes through the ratios, so a window above 2^33 is refused with a RangeError', () => {
+    const capabilities = capabilitiesOf(DOMAIN + 1, countings[1] as Counting);
+    expect(() => inputCeilingFor(capabilities)).toThrow(RangeError);
+    expect(() => itemCapFor(capabilities)).toThrow(RangeError);
+    expect(() => pinnedFloorFor(capabilities)).toThrow(RangeError);
+    expect(() => summaryInputCeilingFor(capabilities)).toThrow(RangeError);
+  });
+
   it.each(countings.map((counting) => [counting.label, counting] as const))(
     'inputCeilingFor = max(0, floor(I0 / (1 + sizingRatio))) for %s counting',
     (_label, counting) => {
