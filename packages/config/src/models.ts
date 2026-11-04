@@ -41,6 +41,7 @@ const LOCAL_SERVER_DEFAULTS = { billing: 'local', maxConcurrency: 1 } as const s
 const resolveFm = (target: FmTarget): ResolvedFmTarget => ({
   adapter: 'fm',
   ...(target.model === undefined ? {} : { model: target.model }),
+  ...(target.outputBoundField === undefined ? {} : { outputBoundField: target.outputBoundField }),
   toolCalling: target.toolCalling ?? 'auto',
   billing: LOCAL_SERVER_DEFAULTS.billing,
   maxConcurrency: target.maxConcurrency ?? LOCAL_SERVER_DEFAULTS.maxConcurrency,

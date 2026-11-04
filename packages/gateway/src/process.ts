@@ -216,6 +216,7 @@ const createFmAdapter = async (name: string, target: Extract<ResolvedTarget, { a
     recordKey: { target: name, binarySha256: context.binarySha256, osBuild: context.osBuild },
     toolCallingSetting: target.toolCalling,
     ...(target.model === undefined ? {} : { declaredModel: target.model }),
+    ...(target.outputBoundField === undefined ? {} : { declaredOutputBoundField: target.outputBoundField }),
   });
   return createChatCompletionsAdapter({ ...withBinaryGuard(managed, context.binary, files), clock });
 };

@@ -7,6 +7,7 @@ import type {
   CountTokensResult,
   HealthResult,
   InputItem,
+  OutputBoundField,
   ProbeReport,
   ToolCallingMode,
   ToolCallingSetting,
@@ -40,6 +41,7 @@ export type ManagedFmTargetOptions = {
   recordKey: ProbeRecordKey;
   toolCallingSetting: ToolCallingSetting;
   declaredModel?: string;
+  declaredOutputBoundField?: OutputBoundField;
 };
 
 export type ManagedFmTarget = {
@@ -168,10 +170,11 @@ export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Pr
   const report = await loadProbeRecord(options.probeRecordDir, options.recordKey);
   const { mode } = resolveToolCalling(options.toolCallingSetting, report);
   const { parallelToolCalls: _unprobedParallel, ...probedDefaults } = unprobedCapabilities(mode);
+  const declaredField = options.declaredOutputBoundField === undefined ? {} : { outputBoundField: options.declaredOutputBoundField };
   const capabilities =
     report === null
-      ? unprobedCapabilities(mode)
-      : mergeCapabilities({ defaults: layerOf(probedDefaults).core, declared: {}, probed: layerOf(capabilitiesFromProbe(report, { mode })).layer, probedAt: report.probedAt });
+      ? { ...unprobedCapabilities(mode), ...declaredField }
+      : mergeCapabilities({ defaults: layerOf(probedDefaults).core, declared: declaredField, probed: layerOf(capabilitiesFromProbe(report, { mode })).layer, probedAt: report.probedAt });
   const keywordSupport = report === null ? UNPROBED_KEYWORD_SUPPORT : report.keywordSupport;
   const isGuardrail = guardrailMatcherOf(report);
   const knownModel = options.declaredModel ?? report?.modelId;

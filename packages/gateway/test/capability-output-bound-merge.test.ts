@@ -8,8 +8,13 @@ const PROBED_AT = '2026-11-05T12:00:00.000Z';
 const declared: Capabilities = { ...OLLAMA_CAPABILITIES, outputBoundField: 'max_completion_tokens' };
 
 describe('the capability merge carries the measured output bound field', () => {
-  it('takes the probed field over the declared one, as a measured fact', () => {
+  it('keeps the declared field over the probed one', () => {
     const merged = mergeCapabilities({ defaults: layerOf(declared).core, declared: layerOf(declared).layer, probed: { outputBoundField: 'max_tokens' }, probedAt: PROBED_AT });
+    expect(merged.outputBoundField).toBe('max_completion_tokens');
+  });
+
+  it('takes the probed field over the adapter default when nothing is declared', () => {
+    const merged = mergeCapabilities({ defaults: layerOf(OLLAMA_CAPABILITIES).core, declared: {}, probed: { outputBoundField: 'max_tokens' }, probedAt: PROBED_AT });
     expect(merged.outputBoundField).toBe('max_tokens');
   });
 
