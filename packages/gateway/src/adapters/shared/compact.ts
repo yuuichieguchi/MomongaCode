@@ -1,4 +1,4 @@
-import { LOWEST_REASONING_EFFORT, SUMMARY_ACCEPT_RATIO } from '@momonga/protocol';
+import { LOWEST_REASONING_EFFORT, SUMMARY_ACCEPT, ceilRatio } from '@momonga/protocol';
 import type { AdapterCompactRequest, AdapterInputItem, AdapterRequest, ContentPart, InputImagePart, ResponseResource, StreamEvent } from '@momonga/protocol';
 import { tokensForText } from '../../core/estimate.ts';
 import { CompactionReplyError, StreamFailure } from './failures.ts';
@@ -103,7 +103,7 @@ export const summaryRequestOf = (request: AdapterCompactRequest, cap: number): A
   };
 };
 
-export const acceptedSummaryTokens = (cap: number): number => Math.ceil(SUMMARY_ACCEPT_RATIO * cap);
+export const acceptedSummaryTokens = (cap: number): number => ceilRatio(SUMMARY_ACCEPT, cap);
 
 export type CollectedSummary = { summary: string; usage: ResponseResource['usage']; cacheWriteInputTokens?: number };
 

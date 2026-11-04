@@ -1,14 +1,27 @@
+import {
+  ESTIMATED_ERROR,
+  MARGIN,
+  MAX_OUTPUT_WINDOW,
+  OUTPUT_RESERVE,
+  SUMMARY_ACCEPT,
+  SUMMARY_ROOM,
+  SUMMARY_WINDOW,
+  ceilRatio,
+  floorRatio,
+  quantizedRatioOf,
+} from './budget-ratios.ts';
+import type { Ratio } from './budget-ratios.ts';
 import type { Capabilities } from './capabilities.ts';
 import type { CountTokensMethod, CountTokensResult } from './gateway-api.ts';
 
-export const MARGIN_RATIO = 0.02;
+export const MARGIN_RATIO = MARGIN.num / MARGIN.den;
+export const SUMMARY_WINDOW_RATIO = SUMMARY_WINDOW.num / SUMMARY_WINDOW.den;
+export const SUMMARY_ROOM_RATIO = SUMMARY_ROOM.num / SUMMARY_ROOM.den;
+export const SUMMARY_ACCEPT_RATIO = SUMMARY_ACCEPT.num / SUMMARY_ACCEPT.den;
 export const MIN_MARGIN = 32;
-export const ESTIMATED_ERROR_BOUND_RATIO = 0.3;
+export const ESTIMATED_ERROR_BOUND_RATIO = ESTIMATED_ERROR.num / ESTIMATED_ERROR.den;
 export const MIN_SUMMARY_TOKENS = 64;
 export const MAX_SUMMARY_TOKENS = 4096;
-export const SUMMARY_WINDOW_RATIO = 0.06;
-export const SUMMARY_ROOM_RATIO = 0.3;
-export const SUMMARY_ACCEPT_RATIO = 1.3;
 export const SUMMARY_ITEM_OVERHEAD = 20;
 export const SUMMARY_PROMPT_TOKENS = 395;
 export const COMPACTION_INSTRUCTIONS_VERSION = 2;
@@ -21,8 +34,6 @@ export const WORKING_FACTS_KEPT = Math.ceil(WORKING_STATE_SUMMARY_RATIO * MAX_SU
 export const WORKING_FACT_TEXT_CHARS = ESTIMATED_CHARACTERS_PER_TOKEN * WORKING_FACTS_KEPT;
 
 const MIN_OUTPUT_RESERVE = 256;
-const OUTPUT_RESERVE_RATIO = 0.25;
-const MAX_OUTPUT_WINDOW_RATIO = 0.5;
 
 export type ErrorShape = { readonly ratio: number; readonly minimum: number };
 
@@ -39,13 +50,13 @@ export const countReplyOf = (tokens: number, method: CountTokensMethod, shape: E
   error_shape: shape,
 });
 
-export const marginFloorFor = (contextWindow: number): number => Math.max(Math.ceil(MARGIN_RATIO * contextWindow), MIN_MARGIN);
+export const marginFloorFor = (contextWindow: number): number => Math.max(ceilRatio(MARGIN, contextWindow), MIN_MARGIN);
 
 export const outputReserveFor = (capabilities: Pick<Capabilities, 'contextWindow' | 'maxOutputTokens'>): number =>
   Math.min(
     capabilities.maxOutputTokens,
-    Math.max(MIN_OUTPUT_RESERVE, Math.ceil(OUTPUT_RESERVE_RATIO * capabilities.contextWindow)),
-    Math.floor(MAX_OUTPUT_WINDOW_RATIO * capabilities.contextWindow),
+    Math.max(MIN_OUTPUT_RESERVE, ceilRatio(OUTPUT_RESERVE, capabilities.contextWindow)),
+    floorRatio(MAX_OUTPUT_WINDOW, capabilities.contextWindow),
   );
 
 export const summaryInputLimitFor = (
@@ -61,12 +72,19 @@ export const summaryInputLimitFor = (
 export const summaryTokenCapFor = (capabilities: Pick<Capabilities, 'contextWindow'>, room?: number): number => {
   const base = Math.min(
     MAX_SUMMARY_TOKENS,
-    Math.max(MIN_SUMMARY_TOKENS, Math.ceil(SUMMARY_WINDOW_RATIO * capabilities.contextWindow)),
+    Math.max(MIN_SUMMARY_TOKENS, ceilRatio(SUMMARY_WINDOW, capabilities.contextWindow)),
   );
-  return room === undefined ? base : Math.max(MIN_SUMMARY_TOKENS, Math.min(base, Math.floor(SUMMARY_ROOM_RATIO * room)));
+  return room === undefined ? base : Math.max(MIN_SUMMARY_TOKENS, Math.min(base, floorRatio(SUMMARY_ROOM, room)));
 };
 
-export const summaryItemTokensFor = (cap: number): number => Math.ceil(SUMMARY_ACCEPT_RATIO * cap) + SUMMARY_ITEM_OVERHEAD;
+export const summaryItemTokensFor = (cap: number): number => ceilRatio(SUMMARY_ACCEPT, cap) + SUMMARY_ITEM_OVERHEAD;
 
 export const sizingRatioFor = (capabilities: Capabilities): number =>
   capabilities.tokenErrorRatio ?? (capabilities.tokenCounting === 'exact' ? 0 : ESTIMATED_ERROR_BOUND_RATIO);
+
+export const sizingFractionFor = (capabilities: Capabilities): Ratio =>
+  capabilities.tokenErrorRatio !== undefined
+    ? quantizedRatioOf(capabilities.tokenErrorRatio)
+    : capabilities.tokenCounting === 'exact'
+      ? { num: 0, den: 1 }
+      : ESTIMATED_ERROR;

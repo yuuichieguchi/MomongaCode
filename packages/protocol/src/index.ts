@@ -14,14 +14,34 @@ export { CALL_ROLES, COMPACTION_RESULT_EVENT, COMPACTION_ROLE, HEADER_ROLES, ROL
 export type { CallRole } from './headers.ts';
 export type { HeaderRole } from './headers.ts';
 export {
+  COMPACTION_MIN_GAIN,
+  COMPACT_AT,
+  ESTIMATED_ERROR,
+  EVICT_LOW_WATER,
+  ITEM_CAP,
+  ITEM_ROOM,
+  MARGIN,
+  MAX_BUDGET_COUNT,
+  MAX_OUTPUT_WINDOW,
+  OUTPUT_RESERVE,
+  RATIO_QUANTUM,
+  SUMMARY_ACCEPT,
+  SUMMARY_ROOM,
+  SUMMARY_WINDOW,
+  ceilRatio,
+  floorRatio,
+  quantizedRatioOf,
+} from './budget-ratios.ts';
+export type { Ratio } from './budget-ratios.ts';
+export {
   COMPACTION_INSTRUCTIONS_VERSION,
   ESTIMATED_CHARACTERS_PER_TOKEN,
   ESTIMATED_ERROR_BOUND_RATIO,
   ESTIMATED_ERROR_SHAPE,
   EXACT_ERROR_SHAPE,
-  MARGIN_RATIO,
   MAX_COMPACTION_GUIDELINE_CHARS,
   MAX_JOURNAL_SEQ_DIGITS,
+  MARGIN_RATIO,
   MAX_SUMMARY_TOKENS,
   MIN_MARGIN,
   MIN_SUMMARY_TOKENS,
@@ -38,6 +58,7 @@ export {
   errorBoundOfShape,
   marginFloorFor,
   outputReserveFor,
+  sizingFractionFor,
   sizingRatioFor,
   summaryInputLimitFor,
   summaryItemTokensFor,
