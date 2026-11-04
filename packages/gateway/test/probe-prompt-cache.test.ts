@@ -12,8 +12,6 @@ import { REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
 
 type CachingBehaviour = 'automatic' | 'none' | 'unreported';
 
-type ReportWithCache = ProbeReport & { promptCache?: unknown };
-
 const closers: Array<() => Promise<void>> = [];
 afterEach(async () => {
   await Promise.all(closers.splice(0).map((close) => close()));
@@ -97,7 +95,7 @@ const startCachingServer = async (fake: FakeChatCompletionsServer, behaviour: Ca
   return socketPath;
 };
 
-const probeThrough = async (behaviour: CachingBehaviour): Promise<ReportWithCache> => {
+const probeThrough = async (behaviour: CachingBehaviour): Promise<ProbeReport> => {
   const fake = await startFake();
   const socketPath = await startCachingServer(fake, behaviour);
   return runProbe({ socketPath, samples: 2, now: NOW });
@@ -145,7 +143,7 @@ describe('a probe report records only what a probe can observe', () => {
 
 describe('the probed prompt cache becomes the target capability', () => {
   it.for(['automatic', 'none'] as const)('carries a recorded %s into the capabilities', async (kind) => {
-    const report = { ...(await plainReport()), promptCache: { kind } } as ProbeReport;
+    const report = { ...(await plainReport()), promptCache: { kind } as const };
     expect(capabilitiesFromProbe(report, decideToolCalling(report)).promptCache).toEqual({ kind });
   });
 
@@ -166,13 +164,13 @@ describe('the probed prompt cache becomes the target capability', () => {
     });
 
   it('gives a probed target the recorded cache when nothing is declared', async () => {
-    const report = { ...(await plainReport()), promptCache: { kind: 'automatic' } } as ProbeReport;
+    const report = { ...(await plainReport()), promptCache: { kind: 'automatic' as const } };
     const capabilities = await probedTarget(REMOTE_CAPABILITIES, report).capabilities();
     expect(capabilities.promptCache).toEqual({ kind: 'automatic' });
   });
 
   it('keeps a declared key over a recorded automatic, because the probe cannot observe a key', async () => {
-    const report = { ...(await plainReport()), promptCache: { kind: 'automatic' } } as ProbeReport;
+    const report = { ...(await plainReport()), promptCache: { kind: 'automatic' as const } };
     const capabilities = await probedTarget({ ...REMOTE_CAPABILITIES, promptCache: { kind: 'key' } }, report).capabilities();
     expect(capabilities.promptCache).toEqual({ kind: 'key' });
   });

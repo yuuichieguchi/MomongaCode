@@ -7,6 +7,7 @@ import type {
   InputItem,
   ItemField,
   MomongaResponseExtension,
+  PromptCacheCounts,
   ResponseError,
   ResponseResource,
   StreamEvent,
@@ -69,8 +70,21 @@ const TERMINAL_TYPES: ReadonlySet<string> = new Set(TERMINAL_STREAM_EVENT_TYPES)
 
 type TerminalEvent = Extract<StreamEvent, { response: ResponseResource }>;
 
+const cacheMarksFor = (job: ResponseJob, resolved: ResolvedInput): PromptCacheCounts | undefined => {
+  const marks = job.body.momonga?.cache;
+  if (marks === undefined) return undefined;
+  const offset = resolved.stored.length - job.clientInput.length;
+  return {
+    stable: marks.stable + offset,
+    fixed: marks.fixed + offset,
+    ...(marks.previousHistory === undefined ? {} : { previousHistory: marks.previousHistory + offset }),
+    history: marks.history + offset,
+  };
+};
+
 const adapterRequestFor = (job: ResponseJob, resolved: ResolvedInput, target: TargetRuntime): AdapterRequest => {
   const { body } = job;
+  const cacheMarks = cacheMarksFor(job, resolved);
   return {
     model: target.model,
     input: resolved.forAdapter,
@@ -85,6 +99,8 @@ const adapterRequestFor = (job: ResponseJob, resolved: ResolvedInput, target: Ta
     ...(body.top_p === undefined ? {} : { top_p: body.top_p }),
     ...(isReasoningEffort(body.reasoning?.effort) ? { reasoning_effort: body.reasoning.effort } : {}),
     ...(body.text === undefined || body.text === null ? {} : { text: body.text }),
+    ...(body.prompt_cache_key === undefined || body.prompt_cache_key === null ? {} : { promptCacheKey: body.prompt_cache_key }),
+    ...(cacheMarks === undefined ? {} : { cacheMarks }),
   };
 };
 

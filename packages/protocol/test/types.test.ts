@@ -77,6 +77,7 @@ describe('protocol capability types', () => {
       imageTokens?: { pixelsPerToken: number; maxTokens: number; minTokens: number };
       guardrail: { errorShape?: unknown };
       tokenCalibration?: { ratio: number; errorBound: number };
+      promptCache?: { kind: 'automatic' | 'none' };
     }>();
   });
 });

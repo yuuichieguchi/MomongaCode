@@ -298,6 +298,39 @@ const validateCountMomonga = (value: unknown): void => {
   }
 };
 
+const CACHE_MARK_NAMES = ['stable', 'fixed', 'previousHistory', 'history'] as const;
+
+const validateCreateMomonga = (value: unknown, inputLength: number): void => {
+  const momonga = momongaRecord(value);
+  if (momonga === undefined) return;
+  requireKnownKeys(momonga, ['cache'], ['momonga']);
+  const cache = momonga['cache'];
+  if (cache === undefined) return;
+  const at = ['momonga', 'cache'];
+  if (!isRecord(cache)) throwIssue({ segments: at, message: 'must be an object' });
+  const marks = cache as SchemaObject;
+  requireKnownKeys(marks, CACHE_MARK_NAMES, at);
+  for (const name of CACHE_MARK_NAMES) {
+    const mark = marks[name];
+    if (mark === undefined && name !== 'previousHistory') throwIssue({ segments: [...at, name], message: 'is required' });
+    if (mark !== undefined && (!Number.isInteger(mark) || (mark as number) < 0)) {
+      throwIssue({ segments: [...at, name], message: 'must be a non-negative integer' });
+    }
+  }
+  const ordered = ['stable', 'fixed', 'previousHistory', 'history'].filter((name) => marks[name] !== undefined);
+  ordered.forEach((name, index) => {
+    const previous = ordered[index - 1];
+    if (previous !== undefined && (marks[name] as number) < (marks[previous] as number)) {
+      throwIssue({ segments: [...at, name], message: `must not be below ${previous}` });
+    }
+  });
+  if ((marks['history'] as number) > inputLength) {
+    throwIssue({ segments: [...at, 'history'], message: `must not exceed the ${inputLength} input items` });
+  }
+};
+
+const inputLengthOf = (input: unknown): number => (Array.isArray(input) ? input.length : typeof input === 'string' ? 1 : 0);
+
 export type RequestValidator = {
   parseCreate(body: unknown): CreateResponseBody;
   parseCompact(body: unknown): CompactRequest;
@@ -334,6 +367,7 @@ export const createRequestValidator = (): RequestValidator => {
       if (record['background'] === true) {
         throw invalidRequest('capability_unsupported', 'background responses are not supported', 'background');
       }
+      validateCreateMomonga(record['momonga'], inputLengthOf(record['input']));
       return assertValidated<CreateResponseBody>(body);
     },
     parseCompact: (body) => {

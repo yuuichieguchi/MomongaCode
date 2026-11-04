@@ -96,6 +96,13 @@ const reportSchema: JSONSchemaType<ProbeReport> = {
       },
     },
     guardrail: { type: 'object', required: [], properties: { errorShape: anyJson } },
+    promptCache: {
+      type: 'object',
+      nullable: true,
+      required: ['kind'],
+      properties: { kind: { type: 'string', enum: ['automatic', 'none'] } },
+      additionalProperties: false,
+    },
     tokenCalibration: {
       type: 'object',
       nullable: true,

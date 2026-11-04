@@ -16,6 +16,7 @@ export type ChatRequestBody = {
   max_tokens?: number;
   temperature?: number;
   top_p?: number;
+  prompt_cache_key?: string;
 };
 
 const toolOf = (tool: FunctionTool): unknown => ({

@@ -100,6 +100,17 @@ const TARGET_CAPABILITIES_SCHEMA = {
         },
       ],
     },
+    promptCache: {
+      oneOf: [
+        {
+          type: 'object',
+          properties: { kind: { const: 'breakpoints' }, maxBreakpoints: POSITIVE_INTEGER },
+          required: ['kind', 'maxBreakpoints'],
+          additionalProperties: false,
+        },
+        { type: 'object', properties: { kind: { enum: ['key', 'automatic', 'none'] } }, required: ['kind'], additionalProperties: false },
+      ],
+    },
     source: { enum: ['declared', 'probed', 'config', 'unprobed'] },
   },
   required: ['contextWindow', 'maxOutputTokens'],
