@@ -159,6 +159,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
           id,
           object: 'model' as const,
           targets: targets.map((target) => target.name),
+          targetCounters: Object.fromEntries(targets.map((target) => [target.name, target.counter])),
           capabilities: await services.router.aliasCapabilitiesOf(id),
           targetCapabilities: Object.fromEntries(await Promise.all(targets.map(async (target) => [target.name, await services.router.capabilitiesOf(target)] as const))),
         };

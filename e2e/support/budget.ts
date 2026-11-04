@@ -305,6 +305,7 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
       cancel: (key, options) => fake.cancel(key, options),
       compact: (request, options) => client.compact(request, options),
       capabilities: (alias, options) => client.capabilities(alias, options),
+      model: (alias, options) => client.model(alias, options),
       countTokens: async (request, options) => {
         const result = await client.countTokens(request, options);
         const perturbed = { ...result, input_tokens: Math.max(0, result.input_tokens + perturbation) };

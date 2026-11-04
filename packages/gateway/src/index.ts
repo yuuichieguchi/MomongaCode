@@ -25,6 +25,8 @@ export type {
   FmServeTimers,
   SpawnFn,
 } from './managed/fm-serve.ts';
+export { targetCounterOf } from './target-counter.ts';
+export type { TargetCounterInput } from './target-counter.ts';
 export { createGateway } from './server/gateway.ts';
 export { createReplayAdapter } from './adapters/replay-adapter.ts';
 export type { ReplayAdapterOptions } from './adapters/replay-adapter.ts';

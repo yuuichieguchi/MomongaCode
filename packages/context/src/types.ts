@@ -135,8 +135,11 @@ export type BuildContextPorts = {
   instructions: InstructionReader;
 };
 
+export type Calibration = { tokenCounting: Capabilities['tokenCounting']; tokenErrorRatio?: number };
+
 export type BuildContextInput = {
   capabilities: Capabilities;
+  calibration?: Calibration;
   model: string;
   sources: ContextSources;
   evicted: ReadonlySet<string>;

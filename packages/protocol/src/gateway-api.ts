@@ -87,6 +87,7 @@ export type MomongaModelEntry = {
   id: string;
   object: 'model';
   targets: string[];
+  targetCounters: Record<string, string>;
   capabilities: Capabilities;
   targetCapabilities: Record<string, Capabilities>;
 };

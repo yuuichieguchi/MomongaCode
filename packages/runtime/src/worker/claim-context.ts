@@ -1,5 +1,5 @@
 import type { ModelRoles } from '@momonga/config';
-import type { TokenMeter } from '@momonga/context';
+import type { Calibration, TokenMeter } from '@momonga/context';
 import type { Capabilities, FunctionTool, RunEventPayload } from '@momonga/protocol';
 import type { SkillSet } from '@momonga/skills';
 import type { Claim, Run, StatusPatch, WaitTargets } from '@momonga/store';
@@ -45,7 +45,9 @@ export type ClaimContext = {
   terminals: Terminals;
   agentSpan: TraceSpan;
   meter: TokenMeter;
-  targetFacts(target: string): Promise<{ meter: TokenMeter; capabilities: Capabilities }>;
+  counter: string;
+  calibration: Calibration;
+  targetFacts(target: string): Promise<{ meter: TokenMeter; capabilities: Capabilities; counter: string }>;
   pinnedDigest: { value: string | undefined };
   memory: RunMemory;
   verificationCommands: readonly string[];

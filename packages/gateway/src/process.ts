@@ -11,6 +11,7 @@ import {
   ensureMomongaDirs,
   minimalChildEnv,
   adapterSocketPath,
+  codeDigestOfRunningProcess,
   momongaPaths,
   secretKeyFile,
 } from '@momonga/foundation';
@@ -30,6 +31,7 @@ import type { AdapterTarget, Capabilities, ProviderAdapter, ToolCallingMode } fr
 import { loadEndpointRecord, saveEndpointRecord } from './probe/endpoint-record.ts';
 import { createProbedEndpointTarget, endpointKeyOf, probeEndpointOf, readEndpointIdentity } from './probe/endpoint-target.ts';
 import { createSecretResolver } from './secrets.ts';
+import { targetCounterOf } from './target-counter.ts';
 import type { SecretResolver } from './secrets.ts';
 import { createAnthropicAdapter } from './adapters/anthropic/adapter.ts';
 import { createChatCompletionsAdapter } from './adapters/chat-completions/adapter.ts';
@@ -221,12 +223,13 @@ const createAutoChatCompletionsAdapter = async (
 ) => {
   const upstream = endpointOf(target);
   const endpoint = endpointKeyOf(upstream);
+  const loaded = await loadEndpointRecord(probeRecordDir, { endpoint, model: target.model });
   const probed = createProbedEndpointTarget({
     targetName: name,
     endpoint,
     model: target.model,
     declared: capabilitiesOf(target, 'native'),
-    record: await loadEndpointRecord(probeRecordDir, { endpoint, model: target.model }),
+    record: loaded,
     readIdentity: async (fields, signal) => {
       const apiKey = await readKey({ name, model: target.model }, signal);
       return readEndpointIdentity(probeEndpointOf(upstream, apiKey), target.model, fields, signal);
@@ -234,7 +237,7 @@ const createAutoChatCompletionsAdapter = async (
     saveRecord: (record) =>
       saveEndpointRecord(probeRecordDir, { endpoint, model: target.model }, record.identity, record.identityFields, record.report),
   });
-  return createChatCompletionsAdapter({
+  const adapter = createChatCompletionsAdapter({
     resolveEndpoint: async (_target, signal) => {
       await probed.verify(signal);
       return upstream;
@@ -246,6 +249,7 @@ const createAutoChatCompletionsAdapter = async (
     apiKey: readKey,
     clock,
   });
+  return { adapter, upstreamIdentity: loaded?.identity };
 };
 
 const DEBUG_TCP_HOST = '127.0.0.1';
@@ -262,7 +266,25 @@ const providerNameOf = (target: ResolvedTarget): string => {
   }
 };
 
-export const gatewayConfigOf = (targets: ResolvedTargets, aliases: Record<string, string | string[]>): GatewayConfig => ({
+const requiredCounter = (counters: Readonly<Record<string, string>>, name: string): string => {
+  const counter = counters[name];
+  if (counter === undefined) throw new Error(`no counter was derived for the target ${name}`);
+  return counter;
+};
+
+type UncountedGatewayConfig = Omit<GatewayConfig, 'models'> & {
+  models: { aliases: GatewayConfig['models']['aliases']; targets: Record<string, Omit<GatewayConfig['models']['targets'][string], 'counter'>> };
+};
+
+const withCounters = (config: UncountedGatewayConfig, counters: Readonly<Record<string, string>>): GatewayConfig => ({
+  ...config,
+  models: {
+    aliases: config.models.aliases,
+    targets: Object.fromEntries(Object.entries(config.models.targets).map(([name, target]) => [name, { ...target, counter: requiredCounter(counters, name) }])),
+  },
+});
+
+export const gatewayConfigOf = (targets: ResolvedTargets, aliases: Record<string, string | string[]>): UncountedGatewayConfig => ({
   models: {
     aliases: Object.fromEntries(Object.entries(aliases).map(([alias, members]) => [alias, [members].flat()])),
     targets: Object.fromEntries(
@@ -409,6 +431,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
             binarySha256: await sha256OfFile(binary),
           };
     signal?.throwIfAborted();
+    const codeDigest = await codeDigestOfRunningProcess();
+    const counters: Record<string, string> = {};
     const referencedSecrets = secretNames(settings);
     const secretStore =
       options.secretStore ?? createPlatformSecretStore(process.platform, options.execWithStdin ?? createExecWithStdin(childEnv), childEnv);
@@ -421,13 +445,17 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       if (target.adapter === 'fm') {
         if (fmContext === undefined) throw new Error('fm context is missing for an fm target');
         adapters[name] = await createFmAdapter(name, target, fmContext, clock, files);
+        counters[name] = targetCounterOf({ target, codeDigest, fm: { binarySha256: fmContext.binarySha256, osBuild: fmContext.osBuild } });
         continue;
       }
       const readKey = apiKeyReader(options.env, secretResolver, target);
       if (target.adapter === 'chat-completions' && target.toolCalling === 'auto') {
-        adapters[name] = await createAutoChatCompletionsAdapter(name, target, readKey, paths.probe, clock);
+        const probed = await createAutoChatCompletionsAdapter(name, target, readKey, paths.probe, clock);
+        adapters[name] = probed.adapter;
+        counters[name] = targetCounterOf({ target, codeDigest, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) });
         continue;
       }
+      counters[name] = targetCounterOf({ target, codeDigest });
       const mode: ToolCallingMode = target.toolCalling === 'auto' ? 'native' : target.toolCalling;
       const common = { resolveEndpoint: async () => endpointOf(target), capabilities: async () => capabilitiesOf(target, mode), clock };
       switch (target.adapter) {
@@ -445,7 +473,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
 
     signal?.throwIfAborted();
     const gateway = await createGateway({
-      config: gatewayConfigOf(settings.models.targets, settings.models.aliases),
+      config: withCounters(gatewayConfigOf(settings.models.targets, settings.models.aliases), counters),
       adapters,
       credentials: credentialValuesOf(options.env, credentialEnvNames(settings), secretResolver.resolved(), (message) => logger.warn(message)),
       credentialFeed: (add) =>

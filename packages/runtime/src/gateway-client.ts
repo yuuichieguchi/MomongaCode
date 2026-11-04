@@ -57,7 +57,13 @@ export type GatewayClientOptions = {
   streamIdleTimeoutMs?: number;
 };
 
-export type GatewayModel = { id: string; capabilities: Capabilities; targetCapabilities: Record<string, Capabilities> };
+export type GatewayModel = {
+  id: string;
+  targets: string[];
+  capabilities: Capabilities;
+  targetCapabilities: Record<string, Capabilities>;
+  targetCounters: Record<string, string>;
+};
 
 export type GatewayClient = GatewayPort & {
   models(): Promise<GatewayModel[]>;
@@ -267,8 +273,27 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
       if (!isRecord(entry) || typeof entry['id'] !== 'string' || !isRecord(entry['capabilities']) || !isRecord(entry['targetCapabilities'])) {
         throw invalidResponse('the model list holds a malformed entry');
       }
-      return { id: entry['id'], capabilities: entry['capabilities'] as Capabilities, targetCapabilities: entry['targetCapabilities'] as Record<string, Capabilities> };
+      const targets = entry['targets'];
+      const counters = entry['targetCounters'];
+      if (!Array.isArray(targets) || !targets.every((target) => typeof target === 'string') || !isRecord(counters) || !targets.every((target) => typeof counters[target] === 'string')) {
+        throw invalidResponse('the model list holds an entry without its targets and their counters');
+      }
+      return {
+        id: entry['id'],
+        targets,
+        capabilities: entry['capabilities'] as Capabilities,
+        targetCapabilities: entry['targetCapabilities'] as Record<string, Capabilities>,
+        targetCounters: counters as Record<string, string>,
+      };
     });
+  };
+
+  const modelOf = async (alias: string, callOptions: { signal: AbortSignal }): Promise<GatewayModel> => {
+    const found = (await listModels(callOptions.signal)).find((model) => model.id === alias);
+    if (found === undefined) {
+      throw new GatewayRequestError({ status: 404, type: 'not_found', code: 'model_not_found', message: `the gateway does not list the model "${alias}"`, param: 'model' });
+    }
+    return found;
   };
 
   const timedChunksOf = async function* (guard: Guard, response: UdsResponse): AsyncGenerator<Uint8Array> {
@@ -406,11 +431,10 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
       return parsed as CountTokensResult;
     },
 
+    model: modelOf,
+
     capabilities: async (alias: string, callOptions: { signal: AbortSignal; target?: string }): Promise<Capabilities> => {
-      const found = (await listModels(callOptions.signal)).find((model) => model.id === alias);
-      if (found === undefined) {
-        throw new GatewayRequestError({ status: 404, type: 'not_found', code: 'model_not_found', message: `the gateway does not list the model "${alias}"`, param: 'model' });
-      }
+      const found = await modelOf(alias, callOptions);
       if (callOptions.target === undefined) return found.capabilities;
       const own = Object.hasOwn(found.targetCapabilities, callOptions.target) ? found.targetCapabilities[callOptions.target] : undefined;
       if (own === undefined) {

@@ -2,9 +2,8 @@ import path from 'node:path';
 import type { ModelsSettings, ResolvedModels, SandboxSetting, UserModels } from '@momonga/config';
 import { caseSettingsFor, expandContextDataset, liveBoundsFor, runContextDataset } from '@momonga/eval';
 import type { ContextCaseHost, ContextDataset, ExpandedCase, PolicyOverlay, Transcript, WorkspaceStep } from '@momonga/eval';
-import { momongaLayout, socketPathLimit } from '@momonga/foundation';
+import { codeDigestOfRunningProcess, momongaLayout, socketPathLimit } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { codeDigestOfRunningCli } from './code-digest.ts';
 import { goldenRunApi } from '../client/golden-run-api.ts';
 import type { RuntimeClient } from '../client/runtime-client.ts';
 
@@ -366,7 +365,7 @@ export const runContextLive = async (effects: ContextHostEffects, input: Context
     ...(interrupt === undefined ? {} : { interrupt }),
   });
   const bounds = liveBoundsFor(input.dataset, input.limits);
-  const codeDigest = input.codeDigest ?? (await codeDigestOfRunningCli());
+  const codeDigest = input.codeDigest ?? (await codeDigestOfRunningProcess());
   const interrupted = new Promise<never>((_resolve, reject) => {
     interrupt?.addEventListener('abort', () => reject(new ContextInterrupted()), { once: true });
   });

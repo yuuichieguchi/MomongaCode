@@ -1,6 +1,6 @@
 import { SUMMARY_PROMPT_TOKENS, findDanglingOutput, findUnpairedCalls, summaryItemTokensFor, summaryTokenCapFor } from '@momonga/protocol';
 import type { FunctionCallOutputInputItem, FunctionTool, InputItem, MessageInputItem } from '@momonga/protocol';
-import { MIN_ROOM_TOKENS, budgetFor, inputCeilingFor, itemCapFor, memoryBudgetFor, summaryInputCeilingFor, pinnedFloorFor } from './budget.ts';
+import { MIN_ROOM_TOKENS, budgetFor, inputCeilingFor, itemCapFor, memoryBudgetFor, summaryInputCeilingFor, pinnedFloorFor, withCalibration } from './budget.ts';
 import { anatomyOf, historyLayerOf } from './anatomy.ts';
 import type { TaggedItem } from './anatomy.ts';
 import { chainTail, digestChain, frozenItem } from './digests.ts';
@@ -159,8 +159,9 @@ const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): 
     throw new PrefixChangedError(input.expectedPinnedDigest, pinnedDigest);
   }
   const governing = governingMessageOf(sources.governing);
-  const ceiling = inputCeilingFor(capabilities);
-  const toolFloor = pinnedFloorFor(capabilities);
+  const sized = input.calibration === undefined ? capabilities : withCalibration(capabilities, input.calibration);
+  const ceiling = inputCeilingFor(sized);
+  const toolFloor = pinnedFloorFor(sized);
   const countWith = (offered: readonly FunctionTool[]): Promise<MeterCount> =>
     ports.meter.count({ input: [...pinnedLayers, ...governing, task], tools: offered });
   const fitsFloor = (counted: MeterCount): boolean => metering(input, ports, candidates).fits(counted) && counted.inputTokens <= toolFloor;
@@ -544,7 +545,7 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
     const item = summaryItemTokensFor(summaryCap) + (await workingStateGrowth());
     const layersOnly = (await countInput(layers)).inputTokens;
     const taskTokens = floorTokens - layersOnly;
-    const summaryCeiling = summaryInputCeilingFor(capabilities);
+    const summaryCeiling = summaryInputCeilingFor(input.calibration === undefined ? capabilities : withCalibration(capabilities, input.calibration));
     let overBudget: CompactionBlock | undefined;
     for (const cutIndex of cuts.toReversed()) {
       const prefix = slots.slice(0, cutIndex + 1);

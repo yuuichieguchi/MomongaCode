@@ -12,6 +12,7 @@ import type {
   StreamEvent,
 } from '@momonga/protocol';
 import type { MemoryView } from '@momonga/protocol';
+import type { GatewayModel } from './gateway-client.ts';
 import type { AgentSet, ChildRuns } from '@momonga/agents';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { SkillSet } from '@momonga/skills';
@@ -34,6 +35,7 @@ export type GatewayPort = {
   compact(request: CompactRequest, options: GatewayCallOptions): Promise<CompactResource>;
   countTokens(request: CountTokensRequest, options: { signal: AbortSignal }): Promise<CountTokensResult>;
   capabilities(alias: string, options: { signal: AbortSignal; target?: string }): Promise<Capabilities>;
+  model(alias: string, options: { signal: AbortSignal }): Promise<GatewayModel>;
   cancel(idempotencyKey: string, options: { signal: AbortSignal }): Promise<boolean>;
 };
 

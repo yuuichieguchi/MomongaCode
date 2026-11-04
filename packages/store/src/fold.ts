@@ -368,6 +368,11 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
         usage: addUsage(state.usage, requiredSpend(event)),
       };
     }
+    case 'model.rejected': {
+      const inFlight = state.inFlightModelRequest;
+      if (inFlight === undefined || inFlight.step !== event.step || inFlight.attempt !== event.attempt) return state;
+      return { ...state, inFlightModelRequest: { ...inFlight, attempt: event.attempt + 1 } };
+    }
     case 'usage.charged':
       return { ...state, usage: addUsage(state.usage, requiredSpend(event)) };
     case 'tool.call': {

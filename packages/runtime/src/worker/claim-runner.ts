@@ -1,7 +1,7 @@
 import { agentSystemPrompt, readAgentPin } from '@momonga/agents';
 import { permissionRulesComposerFor } from '../governance/rules.ts';
 import { signalUntil } from '../memory/deadline-signal.ts';
-import { createTokenMeter } from '@momonga/context';
+import { createTokenMeter, withCalibration } from '@momonga/context';
 import type { TokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex } from '@momonga/foundation';
 import type { Capabilities } from '@momonga/protocol';
@@ -337,10 +337,25 @@ const drive = async (
   const limits = readRunLimits(run.limits, options.defaults);
   const composeRules = await permissionRulesComposerFor(options, session);
   let measuredInlineLimit: Promise<number> | undefined;
-  const targetFacts = new Map<string, { meter: TokenMeter; capabilities: Capabilities }>();
-  const meterEvents = meterEventsOf(options.store, session.id, pins.modelAlias);
-  const aliasMeter = createTokenMeter({ counter: { count: (request) => control.recordingRaised(gateway.countTokens(request, { signal: control.signal })) }, model: pins.modelAlias, capabilities: pins.capabilities });
-  aliasMeter.restore(foldMeterFor(options.store, meterEvents, pins.capabilities));
+  const targetFacts = new Map<string, { meter: TokenMeter; capabilities: Capabilities; counter: string }>();
+  const listing = await control.recordingRaised(gateway.model(pins.modelAlias, { signal: control.signal }));
+  const counterOf = (target: string): string => {
+    const counter = listing.targetCounters[target];
+    if (counter === undefined) throw new Error(`the gateway lists no counter for the target ${target} of the model ${pins.modelAlias}`);
+    return counter;
+  };
+  const [firstTarget] = listing.targets;
+  const firstCapabilities = firstTarget === undefined ? undefined : listing.targetCapabilities[firstTarget];
+  if (firstTarget === undefined || firstCapabilities === undefined) throw new Error(`the gateway lists no target for the model ${pins.modelAlias}`);
+  const aliasCounter = counterOf(firstTarget);
+  const meterEvents = meterEventsOf(options.store, session.id);
+  const aliasMeterCapabilities = withCalibration(pins.capabilities, firstCapabilities);
+  const aliasMeter = createTokenMeter({
+    counter: { count: (request) => control.recordingRaised(gateway.countTokens(request, { signal: control.signal })) },
+    model: pins.modelAlias,
+    capabilities: aliasMeterCapabilities,
+  });
+  aliasMeter.restore(foldMeterFor(options.store, meterEvents, aliasMeterCapabilities, aliasCounter));
   const ctx: ClaimContext = {
     options,
     claim,
@@ -372,6 +387,8 @@ const drive = async (
     terminals,
     agentSpan,
     meter: aliasMeter,
+    counter: aliasCounter,
+    calibration: listing.capabilities,
     targetFacts: async (target) => {
       const known = targetFacts.get(target);
       if (known !== undefined) return known;
@@ -381,8 +398,9 @@ const drive = async (
         model: pins.modelAlias,
         capabilities,
       });
-      meter.restore(foldMeterFor(options.store, meterEvents, capabilities, target));
-      const created = { capabilities, meter };
+      const counter = counterOf(target);
+      meter.restore(foldMeterFor(options.store, meterEvents, capabilities, counter));
+      const created = { capabilities, meter, counter };
       targetFacts.set(target, created);
       return created;
     },

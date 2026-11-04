@@ -3,6 +3,7 @@ export type { BackoffOptions } from './backoff.ts';
 export { canonicalJson, sha256Hex } from './canonical-json.ts';
 export { CircuitBreaker } from './circuit-breaker.ts';
 export type { CircuitBreakerOptions, CircuitState } from './circuit-breaker.ts';
+export { codeDigestOfRunningProcess } from './code-digest.ts';
 export { systemClock } from './clock.ts';
 export type { Clock } from './clock.ts';
 export { Deadline, realDeadlineTiming } from './deadline.ts';

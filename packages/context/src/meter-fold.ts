@@ -7,16 +7,16 @@ export type FoldedEvent = RunEventPayload & { runId?: string; seq?: number };
 export type ObservedEvent = Extract<FoldedEvent, { type: 'meter.observed' }>;
 
 export type MeterFoldOptions = {
+  counter: string;
   capabilities: Capabilities;
-  fallbackTarget?: string;
-  bodyOf?: (event: ObservedEvent) => unknown;
+  bodyOf: (event: ObservedEvent) => unknown;
 };
 
 const isRequestBody = (body: unknown): body is CreateResponseBody =>
   typeof body === 'object' && body !== null && 'input' in body && Array.isArray(body.input);
 
 const reportedRequestOf = (body: unknown): Pick<MeterReport, 'input' | 'tools'> => {
-  if (!isRequestBody(body)) throw new Error('a meter.observed event has no model.requested with input items before it');
+  if (!isRequestBody(body)) throw new Error('the request behind a meter.observed event carries no input items');
   return { input: body.input as InputItem[], tools: body.tools ?? [] };
 };
 
@@ -34,26 +34,20 @@ const observationOf = (event: ObservedEvent): MeterObservation => ({
   tokenCounting: event.tokenCounting,
 });
 
-export const foldMeter = (events: readonly FoldedEvent[], { capabilities, fallbackTarget, bodyOf }: MeterFoldOptions): MeterMemory => {
-  let requested: unknown;
-  let latest: { event: ObservedEvent; body: unknown } | undefined;
+export const foldMeter = (events: readonly FoldedEvent[], { counter, capabilities, bodyOf }: MeterFoldOptions): MeterMemory => {
+  let latest: ObservedEvent | undefined;
   let misses: MeterMiss[] = [];
   for (const event of events) {
-    if (event.type === 'model.requested') {
-      requested = event.body;
-      continue;
-    }
     if (event.type !== 'meter.observed') continue;
-    const routed = fallbackTarget === undefined ? !event.fallback : event.fallback && event.target === fallbackTarget;
     const current =
+      event.counter === counter &&
       event.contextWindow === capabilities.contextWindow &&
       event.tokenErrorRatio === capabilities.tokenErrorRatio &&
       event.tokenCounting === capabilities.tokenCounting;
-    if (!routed || !current) continue;
-    latest = { event, body: requested };
+    if (!current) continue;
+    latest = event;
     misses = [...misses, { miss: event.miss, uncounted: event.uncounted }].slice(-ERROR_WINDOW);
   }
   if (latest === undefined) return { misses };
-  const body = bodyOf === undefined ? latest.body : bodyOf(latest.event);
-  return { latest: { observation: observationOf(latest.event), ...reportedRequestOf(body) }, misses };
+  return { latest: { observation: observationOf(latest), ...reportedRequestOf(bodyOf(latest)) }, misses };
 };

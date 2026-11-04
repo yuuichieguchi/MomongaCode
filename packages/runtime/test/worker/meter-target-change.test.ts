@@ -17,7 +17,7 @@ const answeredFirstBy = (step: ScriptStep, target: string): ScriptStep => ({
   events: step.events.map(
     (event): StreamEvent =>
       event.type === 'response.completed'
-        ? { ...event, response: { ...event.response, momonga: { alias: 'fm', target, attempts: 1, usageSource: 'reported' } } }
+        ? { ...event, response: { ...event.response, momonga: { alias: 'fm', target, counter: fakeCounterOf(target), attempts: 1, usageSource: 'reported' } } }
         : event,
   ),
 });

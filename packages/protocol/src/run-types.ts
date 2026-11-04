@@ -81,7 +81,7 @@ export type ActivatedSkillRecord = { name: string; content: string };
 
 export type ActivatedSkillEntry = { name: string; content: string; seq: number };
 
-export const USAGE_CHARGE_PURPOSES = ['compaction', 'permission_classifier'] as const;
+export const USAGE_CHARGE_PURPOSES = ['compaction', 'permission_classifier', 'rejected_answer'] as const;
 
 export type UsageChargePurpose = (typeof USAGE_CHARGE_PURPOSES)[number];
 
@@ -163,9 +163,11 @@ export type RunEventPayload =
     }
   | { type: 'tool.loaded'; names: string[] }
   | { type: 'loop.warned'; signature: string }
+  | { type: 'model.rejected'; step: number; attempt: number; reason: 'counter_mismatch'; counter: string; meterCounter: string }
   | {
       type: 'meter.observed';
       target: string;
+      counter: string;
       fallback: boolean;
       inputDigest: string;
       itemCount: number;

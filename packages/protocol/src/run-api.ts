@@ -317,9 +317,14 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
   },
   'tool.loaded': { properties: { names: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 } } }, required: ['names'] },
   'loop.warned': { properties: { signature: string }, required: ['signature'] },
+  'model.rejected': {
+    properties: { step: nonNegativeInteger, attempt: nonNegativeInteger, reason: enumOf(['counter_mismatch']), counter: string, meterCounter: string },
+    required: ['step', 'attempt', 'reason', 'counter', 'meterCounter'],
+  },
   'meter.observed': {
     properties: {
       target: string,
+      counter: string,
       fallback: boolean,
       inputDigest: string,
       itemCount: nonNegativeInteger,
@@ -333,7 +338,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
       tokenErrorRatio: { type: 'number', minimum: 0 },
       tokenCounting: enumOf(['exact', 'calibrated', 'estimated']),
     },
-    required: ['target', 'fallback', 'inputDigest', 'itemCount', 'counted', 'reported', 'kept', 'known', 'uncounted', 'miss', 'contextWindow', 'tokenCounting'],
+    required: ['target', 'counter', 'fallback', 'inputDigest', 'itemCount', 'counted', 'reported', 'kept', 'known', 'uncounted', 'miss', 'contextWindow', 'tokenCounting'],
   },
   'tool.reconciled': {
     properties: { callId: string, outcome: enumOf(['already_applied', 'not_applied', 'unknown']), output: string },

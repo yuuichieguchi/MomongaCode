@@ -138,6 +138,7 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   'tool.loaded': true,
   'loop.warned': true,
   'meter.observed': true,
+  'model.rejected': true,
   'approval.rule.persisted': true,
   notice: true,
 };

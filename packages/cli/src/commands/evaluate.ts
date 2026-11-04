@@ -19,6 +19,7 @@ import {
   saveTranscript,
 } from '@momonga/eval';
 import type { ContextDataset, ContextModel, EvalReport, GateName, GoldenCase, GoldenDataset, PolicyOverlay, RecordedRun, Transcript } from '@momonga/eval';
+import { codeDigestOfRunningProcess } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { goldenRunApi } from '../client/golden-run-api.ts';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
@@ -27,7 +28,6 @@ import { nodeContextEffects } from '../eval/context-effects.ts';
 import { runContextLive, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects } from '../eval/context-host.ts';
 import type { CliPorts } from '../ports.ts';
-import { codeDigestOfRunningCli } from '../eval/code-digest.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 
 export class EvaluateUsageError extends Error {
@@ -56,7 +56,7 @@ const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenData
   const client = connectRuntime(paths);
   const workspaces: string[] = [];
   if (record !== undefined) await ports.files.ensureDirectory(record);
-  const codeDigest = record === undefined ? undefined : await codeDigestOfRunningCli();
+  const codeDigest = record === undefined ? undefined : await codeDigestOfRunningProcess();
   try {
     return await runDataset(dataset, {
       api: goldenRunApi(client, undefined, {

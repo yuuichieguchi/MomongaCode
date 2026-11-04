@@ -6,24 +6,15 @@ import { isRecord } from './json.ts';
 
 type ObservedRunEvent = Extract<RunEvent, { type: 'meter.observed' }>;
 
-const aliasOfRun = (store: RuntimeStore, runId: string): string | undefined => {
-  const started = store.readRunEventsOfTypes(runId, ['run.started'])[0];
-  if (started?.type !== 'run.started') return undefined;
-  const alias = started.pins['modelAlias'];
-  if (typeof alias !== 'string') throw new Error(`run ${runId} recorded run.started without a model alias pin`);
-  return alias;
-};
+export const meterEventsOf = (store: RuntimeStore, sessionId: string): ObservedRunEvent[] =>
+  store
+    .listRuns(sessionId)
+    .flatMap((run) => store.readRunEventsOfTypes(run.id, ['meter.observed']).filter((event): event is ObservedRunEvent => event.type === 'meter.observed'));
 
-export const meterEventsOf = (store: RuntimeStore, sessionId: string, alias: string): ObservedRunEvent[] =>
-  store.listRuns(sessionId).flatMap((run) => {
-    const observed = store.readRunEventsOfTypes(run.id, ['meter.observed']).filter((event): event is ObservedRunEvent => event.type === 'meter.observed');
-    return observed.length > 0 && aliasOfRun(store, run.id) === alias ? observed : [];
-  });
-
-export const foldMeterFor = (store: RuntimeStore, events: readonly ObservedRunEvent[], capabilities: Capabilities, fallbackTarget?: string): MeterMemory =>
+export const foldMeterFor = (store: RuntimeStore, events: readonly ObservedRunEvent[], capabilities: Capabilities, counter: string): MeterMemory =>
   foldMeter(events, {
+    counter,
     capabilities,
-    ...(fallbackTarget === undefined ? {} : { fallbackTarget }),
     bodyOf: (event: ObservedEvent) => {
       const { runId, seq } = event as ObservedRunEvent;
       const requested = store.readLatestRunEventBefore(runId, 'model.requested', seq);

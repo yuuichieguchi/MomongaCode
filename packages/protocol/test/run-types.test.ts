@@ -114,6 +114,7 @@ describe('run event payloads', () => {
       | 'tool.loaded'
       | 'loop.warned'
       | 'meter.observed'
+      | 'model.rejected'
       | 'approval.rule.persisted'
       | 'notice'
     >();

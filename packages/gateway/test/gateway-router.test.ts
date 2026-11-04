@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createScriptedAdapter, textResponseEvents, usageOf, waitFor } from '@momonga/testkit';
-import { expectErrorBody, getJson, outputText, postJson, readJson, readSse, startGateway, userInput, validator } from './gateway-helpers.ts';
+import { counterForTest, expectErrorBody, getJson, outputText, postJson, readJson, readSse, startGateway, userInput, validator } from './gateway-helpers.ts';
 
 const TOOLS = [
   {
@@ -37,6 +37,7 @@ describe('router fallback', () => {
     expect(response.body.momonga).toEqual({
       alias: 'fast',
       target: 'b',
+      counter: counterForTest('b'),
       attempts: 3,
       fallbackFrom: ['a'],
       fallbackCauses: [{ target: 'a', code: 'upstream_error', message: 'a still down' }],

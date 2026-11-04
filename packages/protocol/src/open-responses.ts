@@ -174,6 +174,7 @@ export type ResponseStatus = 'in_progress' | 'completed' | 'failed' | 'incomplet
 export type MomongaResponseExtension = {
   alias: string;
   target: string;
+  counter: string;
   attempts: number;
   fallbackFrom?: string[];
   fallbackCauses?: { target: string; code: string | null; message: string }[];

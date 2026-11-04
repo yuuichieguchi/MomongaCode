@@ -1,13 +1,18 @@
 import { ITEM_CAP, ITEM_ROOM, MIN_SUMMARY_TOKENS, ceilRatio, floorRatio, marginFloorFor, outputReserveFor, sizingFractionFor, summaryItemTokensFor } from '@momonga/protocol';
 import type { Ratio } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
-import type { ContextBudget } from './types.ts';
+import type { Calibration, ContextBudget } from './types.ts';
 import { WORKING_STATE_MESSAGE_MIN_TOKENS } from './working-state.ts';
 
 const DEFAULT_MEMORY_ROOM_SHARE = ITEM_ROOM.num / (ITEM_ROOM.den * 2);
 export const MIN_ITEM_CAP = 64;
 
 export const MIN_ROOM_TOKENS = MIN_ITEM_CAP + summaryItemTokensFor(MIN_SUMMARY_TOKENS) + WORKING_STATE_MESSAGE_MIN_TOKENS;
+
+export const withCalibration = (capabilities: Capabilities, calibration: Calibration): Capabilities => {
+  const { tokenErrorRatio: _replaced, ...rest } = capabilities;
+  return { ...rest, tokenCounting: calibration.tokenCounting, ...(calibration.tokenErrorRatio === undefined ? {} : { tokenErrorRatio: calibration.tokenErrorRatio }) };
+};
 
 export const budgetFor = (capabilities: Capabilities, under: number): ContextBudget => {
   const W = capabilities.contextWindow;
