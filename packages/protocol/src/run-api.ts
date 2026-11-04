@@ -6,7 +6,7 @@ import { MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STAT
 import type { ContextChargePurpose, SummaryFidelity, SummarySource } from './context-record.ts';
 import { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES } from './permission-denial.ts';
 import { FILE_ACCESSES } from './working-facts.ts';
-import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
+import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
 import type { ImageMediaType, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent } from './run-types.ts';
 import type { ReflectionJobView } from './memory.ts';
 import type { BilledDetail, TokenAnatomy } from './token-anatomy.ts';
@@ -318,8 +318,8 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
   'tool.loaded': { properties: { names: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 } } }, required: ['names'] },
   'loop.warned': { properties: { signature: string }, required: ['signature'] },
   'model.rejected': {
-    properties: { step: nonNegativeInteger, attempt: nonNegativeInteger, reason: enumOf(['counter_mismatch']), counter: string, meterCounter: string },
-    required: ['step', 'attempt', 'reason', 'counter', 'meterCounter'],
+    properties: { step: nonNegativeInteger, attempt: nonNegativeInteger, reason: enumOf(MODEL_REJECTION_REASONS), counter: string, meterCounter: string },
+    required: ['step', 'attempt', 'reason'],
   },
   'meter.observed': {
     properties: {

@@ -33,9 +33,9 @@ describe('model.rejected', () => {
       type: 'model.rejected';
       step: number;
       attempt: number;
-      reason: 'counter_mismatch';
-      counter: string;
-      meterCounter: string;
+      reason: 'counter_mismatch' | 'missing_counter' | 'missing_usage' | 'missing_target';
+      counter?: string;
+      meterCounter?: string;
     }>();
   });
 
@@ -43,7 +43,12 @@ describe('model.rejected', () => {
     expect(accepts({ ...ENVELOPE, ...REJECTED })).toBe(true);
     expect(accepts({ ...ENVELOPE, ...REJECTED, reason: 'other' })).toBe(false);
     expect(accepts({ ...ENVELOPE, ...REJECTED, extra: 1 })).toBe(false);
-    for (const field of ['attempt', 'reason', 'counter', 'meterCounter']) {
+    for (const reason of ['counter_mismatch', 'missing_counter', 'missing_usage', 'missing_target']) {
+      expect(accepts({ ...ENVELOPE, ...REJECTED, reason }), reason).toBe(true);
+    }
+    const { counter: _counter, meterCounter: _meterCounter, ...bare } = REJECTED;
+    expect(accepts({ ...ENVELOPE, ...bare })).toBe(true);
+    for (const field of ['attempt', 'reason']) {
       const partial: Record<string, unknown> = { ...ENVELOPE, ...REJECTED };
       delete partial[field];
       expect(accepts(partial), field).toBe(false);

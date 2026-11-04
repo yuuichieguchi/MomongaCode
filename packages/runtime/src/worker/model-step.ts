@@ -1,7 +1,7 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { TokenMeter } from '@momonga/context';
 import { LOWEST_REASONING_EFFORT, marginFloorFor } from '@momonga/protocol';
-import type { Capabilities, CreateResponseBody, FunctionTool, InputItem, ModelResponse, MomongaResponseExtension, ResponseResource, RunEventPayload, RunState } from '@momonga/protocol';
+import type { Capabilities, CreateResponseBody, ModelRejectionReason, FunctionTool, InputItem, ModelResponse, MomongaResponseExtension, ResponseResource, RunEventPayload, RunState } from '@momonga/protocol';
 import type { ClaimContext, Flow } from './claim-context.ts';
 import { modelKey } from '../model-key.ts';
 import { GatewayFailureError } from './errors.ts';
@@ -126,29 +126,47 @@ const handleResult = async (
   }
   const { response, incomplete } = result;
   const usage = response.usage;
-  if (usage === null) throw new GatewayFailureError('the model response carries no usage');
-  const answered = observation === undefined ? undefined : await meterFactsFor(ctx, fallbackTargetOf(response));
+  const fallbackTarget = fallbackTargetOf(response);
+  const answered =
+    observation === undefined || (response.momonga?.fallbackCauses?.length ?? 0) > 0 && fallbackTarget === undefined
+      ? undefined
+      : await meterFactsFor(ctx, fallbackTarget);
   const answerCounter = response.momonga?.counter;
-  if (answered !== undefined) {
-    if (answerCounter === undefined) throw new GatewayFailureError('the model response names no counter');
-    if (answerCounter !== answered.counter) {
-      journal.append([
-        { type: 'model.rejected', step: position.step, attempt: position.attempt, reason: 'counter_mismatch', counter: answerCounter, meterCounter: answered.counter },
-        {
-          type: 'usage.charged',
-          purpose: 'rejected_answer',
-          inputTokens: usage.input_tokens,
-          outputTokens: usage.output_tokens,
-          totalTokens: usage.total_tokens,
-          responseId: response.id,
-          cachedInputTokens: usage.input_tokens_details.cached_tokens,
-          ...(response.momonga?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: response.momonga.cacheWriteInputTokens }),
-          ...(response.momonga?.cost === undefined ? {} : { cost: response.momonga.cost }),
-          timing,
-        },
-      ]);
-      throw new GatewayFailureError(`the model response was counted by ${answerCounter}, but the token meter models ${answered.counter}`);
-    }
+  const reject = (reason: ModelRejectionReason): never => {
+    journal.append([
+      {
+        type: 'model.rejected',
+        step: position.step,
+        attempt: position.attempt,
+        reason,
+        ...(answerCounter === undefined ? {} : { counter: answerCounter }),
+        ...(answered === undefined ? {} : { meterCounter: answered.counter }),
+      },
+      ...(usage === null
+        ? []
+        : [
+            {
+              type: 'usage.charged' as const,
+              purpose: 'rejected_answer' as const,
+              inputTokens: usage.input_tokens,
+              outputTokens: usage.output_tokens,
+              totalTokens: usage.total_tokens,
+              responseId: response.id,
+              cachedInputTokens: usage.input_tokens_details.cached_tokens,
+              ...(response.momonga?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: response.momonga.cacheWriteInputTokens }),
+              ...(response.momonga?.cost === undefined ? {} : { cost: response.momonga.cost }),
+              timing,
+            },
+          ]),
+    ]);
+    throw new GatewayFailureError(`the model response was rejected: ${reason}`);
+  };
+  if (usage === null) return reject('missing_usage');
+  const answeredBy = response.momonga?.target;
+  if (observation !== undefined) {
+    if (answerCounter === undefined) return reject('missing_counter');
+    if (answeredBy === undefined) return reject('missing_target');
+    if (answered !== undefined && answerCounter !== answered.counter) return reject('counter_mismatch');
   }
   const reusedCallId = reusedCallIdOf(journal.state, response.output);
   if (reusedCallId !== undefined) {
@@ -202,12 +220,10 @@ const handleResult = async (
       code: 'fallback_target',
     });
   }
-  if (estimate !== undefined) {
-    const target = fallback?.target;
-    if (target === undefined) throw new GatewayFailureError('the model response names no answering target');
+  if (estimate !== undefined && answeredBy !== undefined) {
     recorded.push({
       type: 'meter.observed',
-      target,
+      target: answeredBy,
       counter: estimate.counter,
       fallback: fallbackTargetOf(response) !== undefined,
       ...estimate.meter.observe({ inputDigest: estimate.inputDigest, inputTokens: reported }),
