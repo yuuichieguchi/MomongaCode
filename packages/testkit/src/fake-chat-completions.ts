@@ -117,7 +117,13 @@ interface CompletionOut {
   delayMs?: number;
 }
 
-class FmStreamedOverflow extends Error {}
+class FmStreamedError extends Error {
+  readonly body: unknown;
+  constructor(body: unknown) {
+    super('fm streamed an error event');
+    this.body = body;
+  }
+}
 
 class HttpFailure extends Error {
   readonly status: number;
@@ -145,6 +151,9 @@ export const FAKE_PAYLOAD_TOO_LARGE_ERROR = {
 } as const;
 export const FM_CONTEXT_OVERFLOW_ERROR = {
   error: { type: 'server_error', code: '500', message: "The session's transcript exceeded the model's context size." },
+} as const;
+export const FM_UNSUPPORTED_GUIDE_ERROR = {
+  error: { message: 'An unsupported generation guide was used.', code: '500', type: 'server_error' },
 } as const;
 export const FAKE_GUARDRAIL_ERROR = {
   error: {
@@ -443,13 +452,14 @@ export const startFakeChatCompletions = async (
       const jsonSchema = isRecord(responseFormat['json_schema']) ? responseFormat['json_schema'] : {};
       const used = findUsedKeywords(jsonSchema['schema'], unsupportedKeywords);
       if (used.length > 0) {
+        if (options.wire === 'fm') throw new FmStreamedError(FM_UNSUPPORTED_GUIDE_ERROR);
         throw invalidRequest(`Unsupported JSON Schema keyword: ${used.join(', ')}`, 'unsupported_schema', 'response_format');
       }
     }
     const maxTokens = body['max_tokens'] ?? body['max_completion_tokens'];
     const requested = countFakeRequestTokens(body, options.imageTokens) + (typeof maxTokens === 'number' ? maxTokens : 0);
     if (requested > contextWindow) {
-      if (options.wire === 'fm') throw new FmStreamedOverflow();
+      if (options.wire === 'fm') throw new FmStreamedError(FM_CONTEXT_OVERFLOW_ERROR);
       if (options.contextOverflowStatus === 500) {
         throw new HttpFailure(500, { error: { message: 'Internal server error.', type: 'server_error', param: null, code: null } });
       }
@@ -543,11 +553,11 @@ export const startFakeChatCompletions = async (
     response.end();
   };
 
-  const writeFmOverflow = (response: http.ServerResponse, id: string): void => {
+  const writeFmError = (response: http.ServerResponse, id: string, body: unknown): void => {
     response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
     const roleChunk = { id, object: 'chat.completion.chunk', created: 0, model: modelId, choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }] };
     response.write(`data: ${JSON.stringify(roleChunk)}\n\n`);
-    response.write(`event: error\ndata: ${JSON.stringify(FM_CONTEXT_OVERFLOW_ERROR)}\n\n`);
+    response.write(`event: error\ndata: ${JSON.stringify(body)}\n\n`);
     response.end();
   };
 
@@ -715,7 +725,7 @@ export const startFakeChatCompletions = async (
           await handleCompletion(body, response, disconnected.signal);
         } catch (error) {
           if (disconnected.signal.aborted) return;
-          if (error instanceof FmStreamedOverflow) writeFmOverflow(response, `chatcmpl-fake-${completionCount}`);
+          if (error instanceof FmStreamedError) writeFmError(response, `chatcmpl-fake-${completionCount}`, error.body);
           else if (error instanceof HttpFailure) writeJson(response, error.status, error.body, error.headers);
           else writeJson(response, 500, { error: { message: String(error), type: 'server_error', param: null, code: null } });
         } finally {

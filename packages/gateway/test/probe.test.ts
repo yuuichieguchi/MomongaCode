@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { capabilitiesFromProbe, ProbeTimeoutError, runProbe } from '@momonga/gateway';
+import { FM_VOCABULARY, capabilitiesFromProbe, ProbeTimeoutError, runProbe } from '@momonga/gateway';
 import { Deadline } from '@momonga/foundation';
 import { tokensForText } from '@momonga/protocol';
 import type { ProbeReport } from '@momonga/protocol';
@@ -125,13 +125,13 @@ describe('runProbe context window', () => {
     expect(Math.abs(report.contextWindow.value - 3000)).toBeLessThanOrEqual(60);
   });
 
-  it('reads an overflow that fm reports as an error event in a 200 stream as a rejection, and stops doubling at the first one', async () => {
+  it('reads an overflow that fm reports as an error event in a 200 stream as a rejection through fm\'s vocabulary, and stops doubling at the first one', async () => {
     const window = 3000;
     const searchPrompt = (count: number) => ({ messages: [{ role: 'user', content: Array.from({ length: count }, () => 'word').join(' ') }] });
     let firstRejectedSize = 64;
     while (countFakeRequestTokens(searchPrompt(firstRejectedSize)) + 1 <= window) firstRejectedSize *= 2;
 
-    const { report, fake } = await probe({ scenario: 'tools-ok', contextWindow: window, contextSizeExposure: 'none', wire: 'fm' });
+    const { report, fake } = await probe({ scenario: 'tools-ok', contextWindow: window, contextSizeExposure: 'none', wire: 'fm' }, { vocabulary: FM_VOCABULARY });
 
     const searchSizes = fake.requests
       .filter((request) => request.path === '/v1/chat/completions' && (request.body as { max_tokens?: unknown }).max_tokens === 1)
@@ -339,6 +339,24 @@ describe('runProbe server features', () => {
       nested: true,
       additionalProperties: true,
     });
+  });
+
+  it('reads fm\'s unsupported generation guide error event as the keyword being unsupported, and completes the probe', async () => {
+    const { report } = await probe(
+      { scenario: 'tools-ok', wire: 'fm', contextSizeExposure: 'models', unsupportedKeywords: ['pattern', 'minimum'] },
+      { vocabulary: FM_VOCABULARY },
+    );
+    expect(report.keywordSupport).toEqual({
+      enum: true,
+      anyOf: true,
+      const: true,
+      pattern: false,
+      minimum: false,
+      nested: true,
+      additionalProperties: true,
+    });
+    expect(report.constrained.accepted).toBe(true);
+    expect(isProbeReport(report)).toBe(true);
   });
 
   it('marks nested objects unsupported when rejected', async () => {
