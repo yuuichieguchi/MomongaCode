@@ -5,6 +5,7 @@ import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView } from '../client/views.ts';
 import { daemonReadyBoundMs, restoreDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
+import { escapedLines } from '../terminal-writer.ts';
 import { describeElicitation } from '../elicit/describe.ts';
 import { readImageAttachment } from '../images.ts';
 import { mcpAuthorizationNotice } from '../mcp/messages.ts';
@@ -67,7 +68,7 @@ export const describeEnd = (run: RunView): string => {
   return escapeTerminalLine(`momonga: run ${run.id} ${run.status}${reason === undefined ? '' : ` (${reason})`}`);
 };
 
-const noteText = (lines: readonly string[]): string => `${lines.map(escapeTerminalLine).join('\n')}\n`;
+const noteText = (lines: readonly string[]): string => `${escapedLines(lines)}\n`;
 
 const leadWith = (prefix: string, lines: readonly string[]): string[] => lines.map((line, index) => (index === 0 ? `${prefix}${line}` : line));
 

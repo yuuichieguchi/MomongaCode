@@ -4,6 +4,7 @@ import { installLocked, resolveUpdateTarget } from './install.ts';
 import type { UpdatePorts } from './ports.ts';
 import { checkForUpdate } from './release.ts';
 import type { BuildUpdateInputs, UpdateEndpoints } from './source.ts';
+import { escapedLines } from '../terminal-writer.ts';
 import { parseUpdateState } from './state.ts';
 import type { BackgroundOutcome, UpdateState } from './state.ts';
 
@@ -40,10 +41,10 @@ const noticeOf = (ports: UpdatePorts, state: UpdateState): string | undefined =>
       return undefined;
     case 'installed':
       return state.outcome.version === ports.version
-        ? `momonga was updated to ${state.outcome.version} in the background`
-        : `momonga ${state.outcome.version} was installed in the background; you are running ${ports.version}`;
+        ? escapedLines([`momonga was updated to ${state.outcome.version} in the background`])
+        : escapedLines([`momonga ${state.outcome.version} was installed in the background; you are running ${ports.version}`]);
     case 'failed':
-      return `the background update check failed (${state.outcome.code}): ${state.outcome.message}; run \`momonga update\` for details`;
+      return escapedLines([`the background update check failed (${state.outcome.code}): ${state.outcome.message}; run \`momonga update\` for details`]);
   }
 };
 
@@ -71,7 +72,7 @@ export const startBackgroundCheck = async (wiring: UpdateWiring): Promise<void> 
   const invocation = selfInvocation(ports.self, UPDATE_CHECK_COMMAND);
   const child = ports.spawnDetached({ command: invocation.command, args: invocation.args, env: ports.env, cwd: ports.home });
   void child.exit.then(undefined, (error: unknown) => {
-    ports.stderr.write(`momonga: the background update check could not run: ${error instanceof Error ? error.message : String(error)}\n`);
+    ports.stderr.write(`${escapedLines([`momonga: the background update check could not run: ${error instanceof Error ? error.message : String(error)}`])}\n`);
   });
 };
 
