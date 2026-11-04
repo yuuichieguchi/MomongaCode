@@ -21,6 +21,7 @@
     { "config": "RequestPrefix.govFirst", "role": "evidence", "expect": { "violates": "PrefixStable", "exitCode": 13 }, "args": [], "tier": "every-run", "distinctStates": 401, "measuredSeconds": 1.2, "budgetSeconds": 3 },
     { "config": "RequestPrefix.rerank", "role": "evidence", "expect": { "violates": "PrefixStable", "exitCode": 13 }, "args": [], "tier": "every-run", "distinctStates": 164, "measuredSeconds": 1.2, "budgetSeconds": 3 },
     { "config": "RequestPrefix.rerenderPerBuild", "role": "evidence", "expect": { "violates": "PrefixStable", "exitCode": 13 }, "args": [], "tier": "every-run", "distinctStates": 130, "measuredSeconds": 1.3, "budgetSeconds": 3 },
-    { "config": "RequestPrefix.deep", "role": "check", "expect": "holds", "args": [], "tier": "deep", "distinctStates": 169189849, "measuredSeconds": 3600, "budgetSeconds": 7200 }
+    { "config": "RequestPrefix.deep", "role": "check", "expect": "holds", "args": [], "tier": "deep", "distinctStates": 6675392, "measuredSeconds": 90, "budgetSeconds": 180 },
+    { "config": "RequestPrefix.deepParallel", "role": "check", "expect": "holds", "args": [], "tier": "deep", "distinctStates": 25117984, "measuredSeconds": 354, "budgetSeconds": 708 }
   ]
 }

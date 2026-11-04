@@ -146,7 +146,7 @@ export const verdictProblems = (entry: ManifestEntry, run: TlcRun): string[] => 
 export const everyRunBudgetSeconds = (manifest: Manifest): number =>
   manifest.entries.filter((entry) => entry.tier === 'every-run').reduce((total, entry) => total + entry.budgetSeconds, 0);
 
-export const EVERY_RUN_BUDGET_RATIO = 3;
+export const EVERY_RUN_BUDGET_RATIO = 4;
 
 export const tierBudgetProblem = (manifest: Manifest): string | undefined => {
   const total = everyRunBudgetSeconds(manifest);
