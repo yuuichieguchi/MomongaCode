@@ -3,6 +3,7 @@ import type { Capabilities, MomongaModelEntry } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
+import { escapedLines } from '../terminal-writer.ts';
 
 const yesNo = (value: boolean): string => (value ? 'yes' : 'no');
 
@@ -17,7 +18,7 @@ const describeCapabilities = (capabilities: Capabilities): string[] => [
 export const formatModels = (models: readonly MomongaModelEntry[]): string =>
   models.length === 0
     ? 'the gateway lists no model aliases'
-    : models.flatMap((model) => [`${model.id}  -> ${model.targets.join(', ')}`, ...describeCapabilities(model.capabilities)]).join('\n');
+    : escapedLines(models.flatMap((model) => [`${model.id}  -> ${model.targets.join(', ')}`, ...describeCapabilities(model.capabilities)]));
 
 export const listModels = async (ports: CliPorts, paths: MomongaPaths, json: boolean): Promise<number> => {
   await ensureDaemon(ports, paths);

@@ -45,7 +45,7 @@ describe('lines that show text a person did not write', () => {
   it('escapes the server, the title, the message, the URL and the field text of an elicitation, keeping its lines', () => {
     const requests: ElicitationRequestView[] = [{ mode: 'url', key: 'k', message: HOSTILE, url: `https://example.test/${HOSTILE}` }];
     const written: string[] = [];
-    terminalSink(() => ({ write: (chunk) => void written.push(chunk) })).write(describeElicitation('in1', HOSTILE, HOSTILE, requests));
+    terminalSink(() => ({ write: (chunk) => void written.push(chunk) })).write(describeElicitation('in1', HOSTILE, HOSTILE, requests).join('\n'));
     const printed = written.join('');
     expect(printed).not.toMatch(UNSAFE);
     expect(printed.split(ESCAPED).length - 1).toBe(4);

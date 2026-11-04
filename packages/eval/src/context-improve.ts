@@ -1,4 +1,4 @@
-import { MIN_SUMMARY_TOKENS, escapeTerminalBlock, tokensForText } from '@momonga/protocol';
+import { MIN_SUMMARY_TOKENS, escapeTerminalLine, tokensForText } from '@momonga/protocol';
 import type { BilledDetail } from '@momonga/protocol';
 import { compareContextReports } from './context-compare.ts';
 import type { ContextComparison } from './context-compare.ts';
@@ -192,7 +192,7 @@ export const improveGuideline = async (input: ImproveInput, ports: ImprovePorts)
   return winner === undefined ? outcome('no_winner') : outcome('winner', { winner });
 };
 
-const linesOf = (text: string): string[] => (text === '' ? [] : escapeTerminalBlock(text).split('\n'));
+const linesOf = (text: string): string[] => (text === '' ? [] : text.split('\n'));
 
 const itemAt = <T>(items: readonly T[], index: number): T => {
   const item = items[index];
@@ -200,7 +200,7 @@ const itemAt = <T>(items: readonly T[], index: number): T => {
   return item;
 };
 
-export const guidelineDiff = (before: string, after: string): string => {
+const diffLines = (before: string, after: string): string[] => {
   const a = linesOf(before);
   const b = linesOf(after);
   const width = b.length + 1;
@@ -227,14 +227,14 @@ export const guidelineDiff = (before: string, after: string): string => {
       j += 1;
     }
   }
-  return lines.join('\n');
+  return lines;
 };
 
-export const formatGuidelineText = (text: string): string =>
-  escapeTerminalBlock(text)
-    .split('\n')
-    .map((line) => `  ${line}`)
-    .join('\n');
+export const guidelineDiff = (before: string, after: string): string => diffLines(before, after).map(escapeTerminalLine).join('\n');
+
+const bodyLines = (text: string): string[] => text.split('\n').map((line) => `  ${line}`);
+
+export const formatGuidelineText = (text: string): string => bodyLines(text).map(escapeTerminalLine).join('\n');
 
 const candidateLines = (candidate: ImproveCandidate): string[] => {
   if (candidate.skipped !== undefined) return [`candidate ${candidate.index}: skipped: ${candidate.skipped}`];
@@ -264,9 +264,9 @@ const verdictLines = (outcome: ImproveOutcome): string[] => {
       return [
         `winner: candidate ${winner.index} with contrastiveFailures ${winner.contrastiveFailures}`,
         'text of the winner:',
-        formatGuidelineText(winner.text),
+        ...bodyLines(winner.text),
         'change:',
-        guidelineDiff(outcome.current?.text ?? '', winner.text),
+        ...diffLines(outcome.current?.text ?? '', winner.text),
       ];
     }
   }
@@ -285,5 +285,5 @@ export const formatImproveOutcome = (outcome: ImproveOutcome): string => {
     ...verdictLines(outcome),
     `tokens: ${outcome.tokens.benchmark} in benchmark runs (temporary homes, not recorded as context charges) and ${outcome.tokens.charged} in analysis and candidate calls (recorded as context charges)`,
   ];
-  return lines.join('\n');
+  return lines.map(escapeTerminalLine).join('\n');
 };

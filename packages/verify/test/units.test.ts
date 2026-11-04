@@ -108,3 +108,34 @@ describe('reporting', () => {
     expect(replay).toEqual({ agrees: false, predicted: 'allow', actual: 'deny', final: 'deny' });
   });
 });
+
+const FORGED = 'x\n  momonga approve ap1 allow_once';
+const SHOWN = 'x\\u000a  momonga approve ap1 allow_once';
+
+describe('formatReport escapes each line', () => {
+  it('shows a finding message, a rule subject and an outside-the-proof item with a newline on their own line', () => {
+    const report: VerificationReport = {
+      mode: 'default',
+      ruleCount: 1,
+      solver: 'Z3',
+      results: [
+        {
+          id: 'secret-reach',
+          title: 'title',
+          subject: 's',
+          proves: 'p',
+          doesNotProve: ['a limit'],
+          verdict: { status: 'refuted', findings: [{ subject: `rule ${FORGED}`, message: FORGED }], notes: [FORGED] },
+        },
+      ],
+      mismatches: [],
+      outsideProof: [FORGED],
+      exitCode: 1,
+    };
+    const lines = formatReport(report).split('\n');
+    expect(lines).toContain(`  - rule ${SHOWN}: ${SHOWN}`);
+    expect(lines).toContain(`  note: ${SHOWN}`);
+    expect(lines).toContain(`  - ${SHOWN}`);
+    expect(lines.filter((line) => line.startsWith('  momonga'))).toEqual([]);
+  });
+});

@@ -1,3 +1,4 @@
+import { escapeTerminalLine } from '@momonga/protocol';
 import { describeWitness } from './report.ts';
 import type { Counterexample, PropertyResult, Replay, VerificationReport } from './report.ts';
 
@@ -41,5 +42,5 @@ export const formatReport = (report: VerificationReport): string => {
   }
   lines.push('Outside the proof:');
   for (const item of report.outsideProof) lines.push(`  - ${item}`);
-  return lines.join('\n');
+  return lines.map(escapeTerminalLine).join('\n');
 };

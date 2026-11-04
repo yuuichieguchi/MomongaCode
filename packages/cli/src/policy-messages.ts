@@ -31,19 +31,18 @@ const DENIAL_SOURCE_WORDS: Readonly<Record<PermissionDenialSource, string>> = {
 
 export const hookLevel = (event: HookCompleted): Level => HOOK_OUTCOME_LEVELS[event.outcome];
 
-export const describeHook = (event: HookCompleted, agent?: string): string => {
+export const describeHook = (event: HookCompleted, agent?: string): string[] => {
   const facts = [
     event.exitCode === undefined ? undefined : `exit ${event.exitCode}`,
     event.decision === undefined ? undefined : `decision ${event.decision}`,
     event.halted === true ? 'halted the run' : undefined,
   ].filter((fact): fact is string => fact !== undefined);
-  const lines = [
+  return [
     `hook ${event.hookEvent}${agent === undefined ? '' : ` of subagent ${agent}`} ${HOOK_OUTCOME_WORDS[event.outcome]}${facts.length === 0 ? '' : ` (${facts.join(', ')})`}: ${event.command}`,
     ...(event.message === undefined ? [] : [`  ${event.message}`]),
     ...(event.systemMessage === undefined ? [] : [`  ${event.systemMessage}`]),
     ...(event.stopReason === undefined ? [] : [`  stop reason: ${event.stopReason}`]),
   ];
-  return lines.join('\n');
 };
 
 export const classificationLevel = (event: Classified): Level => (event.failure === undefined ? 'info' : 'warning');

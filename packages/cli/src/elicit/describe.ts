@@ -17,7 +17,7 @@ const describeRequest = (request: ElicitationRequestView): string[] =>
 const acceptFlags = (request: ElicitationRequestView): string =>
   request.mode === 'url' ? '--accept' : ['--accept', ...fieldsOf(request.requestedSchema).map((field) => (field.required ? fieldPlaceholder(field) : `[${fieldPlaceholder(field)}]`))].join(' ');
 
-export const describeElicitation = (inputId: string, server: string, title: string, requests: readonly ElicitationRequestView[]): string => {
+export const describeElicitation = (inputId: string, server: string, title: string, requests: readonly ElicitationRequestView[]): string[] => {
   const [only] = requests;
   const accept =
     requests.length === 1 && only !== undefined
@@ -29,5 +29,5 @@ export const describeElicitation = (inputId: string, server: string, title: stri
     ...accept,
     `  decline: ${elicitCommand(inputId, '--decline')}`,
     `  cancel:  ${elicitCommand(inputId, '--cancel')}`,
-  ].join('\n');
+  ];
 };

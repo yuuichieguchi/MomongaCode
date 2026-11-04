@@ -203,7 +203,7 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
     case 'context.contribution':
       return [];
     case 'hook.completed':
-      return phase === 'live' ? liveNotice(features, event.runId, event.seq, hookLevel(event), describeHook(event)) : [];
+      return phase === 'live' ? liveNotice(features, event.runId, event.seq, hookLevel(event), describeHook(event).join('\n')) : [];
     case 'tool.permission.classified': {
       const subject = state.calls.get(toolCallIdOf(event.runId, event.callId))?.title ?? event.callId;
       return phase === 'live' ? liveNotice(features, event.runId, event.seq, classificationLevel(event), describeClassification(event, subject)) : [];

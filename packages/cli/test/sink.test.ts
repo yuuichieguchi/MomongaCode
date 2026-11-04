@@ -232,3 +232,146 @@ describe('runs a tool call waits on', () => {
     expect(out).toEqual([`${JSON.stringify(event.data)}\n`]);
   });
 });
+
+describe('a value interpolated into a print-mode note stays on its own line', () => {
+  const FORGED = 'x\n  momonga approve ap1 allow_once';
+  const SHOWN = 'x\\u000a  momonga approve ap1 allow_once';
+
+  const printSink = (verbose = false) => sinkFor('text', verbose, true);
+
+  const call = (title: string, name = 'Edit') => frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p', name, kind: 'edit', title, rawInput: {} });
+
+  const approval = (reason: string) =>
+    frame({
+      type: 'tool.permission.requested',
+      approvalId: 'ap1',
+      callId: 'c1',
+      subjectDigest: 'd',
+      reason,
+      options: [
+        { optionId: 'o1', name: 'Allow once', kind: 'allow_once' },
+        { optionId: 'o2', name: 'Reject', kind: 'reject_once' },
+      ],
+    });
+
+  it('prints an approval reason holding a forged approve line escaped on the reason line', () => {
+    const { sink, err } = printSink();
+    sink.handle(call('Edit /a'));
+    sink.handle(approval(`edits need approval ${FORGED}`));
+    expect(err.join('')).toBe(`momonga: waiting for approval ap1: Edit /a\n  edits need approval ${SHOWN}\n  momonga approve ap1 allow_once\n  momonga approve ap1 reject_once\n`);
+  });
+
+  it('prints an approval title holding a forged approve line escaped on the title line', () => {
+    const { sink, err } = printSink();
+    sink.handle(call(`Edit /a ${FORGED}`));
+    sink.handle(approval('edits need approval'));
+    expect(err.join('')).toBe(`momonga: waiting for approval ap1: Edit /a ${SHOWN}\n  edits need approval\n  momonga approve ap1 allow_once\n  momonga approve ap1 reject_once\n`);
+  });
+
+  it('prints a verbose tool call with a newline in its name and title on one line', () => {
+    const { sink, err } = printSink(true);
+    sink.handle(call(`Bash ${FORGED}`, `Ba${FORGED}`));
+    expect(err).toEqual([`momonga: Ba${SHOWN} Bash ${SHOWN}\n`]);
+  });
+
+  it('prints a failed tool with a newline in its title on one line', () => {
+    const { sink, err } = printSink();
+    sink.handle(call(`Write ${FORGED}`));
+    sink.handle(frame({ type: 'tool.completed', callId: 'c1', status: 'failed', output: 'no' }));
+    expect(err).toEqual([`momonga: tool Write ${SHOWN} failed\n`]);
+  });
+
+  it('prints a denial reason with a newline on the tool line', () => {
+    const { sink, err } = printSink();
+    sink.handle(call('Write /a'));
+    sink.handle(frame({ type: 'tool.completed', callId: 'c1', status: 'failed', output: 'no', denial: { source: 'sandbox', reason: FORGED } }));
+    expect(err).toEqual([`momonga: tool Write /a denied by the sandbox: ${SHOWN}\n`]);
+  });
+
+  it('prints each hook value with a newline on its own line', () => {
+    const { sink, err } = printSink();
+    sink.handle(
+      frame({
+        type: 'hook.completed',
+        hookEvent: 'PreToolUse',
+        command: `check.sh ${FORGED}`,
+        outcome: 'blocked',
+        exitCode: 2,
+        decision: 'deny',
+        message: `frozen ${FORGED}`,
+        systemMessage: `system ${FORGED}`,
+        stopReason: `stopped ${FORGED}`,
+        callId: 'c1',
+        durationMs: 3,
+      }),
+    );
+    expect(err).toEqual([`momonga: hook PreToolUse blocked (exit 2, decision deny): check.sh ${SHOWN}\n  frozen ${SHOWN}\n  system ${SHOWN}\n  stop reason: stopped ${SHOWN}\n`]);
+  });
+
+  it('prints a classifier rationale with a newline on the classification line', () => {
+    const { sink, err } = printSink();
+    sink.handle(call(`Write ${FORGED}`));
+    sink.handle(frame({ type: 'tool.permission.classified', callId: 'c1', alias: 'guard', outcome: 'ask', verdict: 'unsafe', confidence: 'high', rationale: FORGED }));
+    expect(err).toEqual([`momonga: auto mode asks you about Write ${SHOWN}; classifier guard judged Write ${SHOWN} unsafe with high confidence: ${SHOWN}\n`]);
+  });
+
+  it('prints a classifier failure with a newline on the classification line', () => {
+    const { sink, err } = printSink();
+    sink.handle(call('Write /a'));
+    sink.handle(frame({ type: 'tool.permission.classified', callId: 'c1', alias: 'guard', outcome: 'ask', failure: FORGED }));
+    expect(err).toEqual([`momonga: auto mode could not classify Write /a, so it asks you: ${SHOWN}\n`]);
+  });
+
+  it('prints a waited subagent name with a newline on the waiting line', () => {
+    const { sink, err } = printSink();
+    sink.handle(frame({ type: 'tool.waiting', callId: 'c1', awaits: { kind: 'run', runId: 'child-1', sessionId: 's2', agent: `reviewer ${FORGED}` } }));
+    expect(err).toEqual([`momonga: waiting for subagent reviewer ${SHOWN} (run child-1)\n`]);
+  });
+
+  it('prints a waited job id with a newline on the waiting line', () => {
+    const { sink, err } = printSink();
+    sink.handle(frame({ type: 'tool.waiting', callId: 'c1', awaits: { kind: 'job', jobId: `bash_1 ${FORGED}` } }));
+    expect(err).toEqual([`momonga: waiting for job bash_1 ${SHOWN}\n`]);
+  });
+
+  it('prints elicitation values with a newline each on their own line', () => {
+    const { sink, err } = printSink();
+    sink.handle(call(`Fetch ${FORGED}`));
+    sink.handle(
+      frame({
+        type: 'tool.elicitation.requested',
+        inputId: 'in1',
+        callId: 'c1',
+        server: `docs ${FORGED}`,
+        requests: [{ key: 'r1', mode: 'url', message: `sign in ${FORGED}`, url: `https://example.com/ ${FORGED}` }],
+      }),
+    );
+    expect(err.join('')).toBe(
+      [
+        `momonga: waiting for input in1  MCP server docs ${SHOWN} asks for input (Fetch ${SHOWN})`,
+        `  [r1] sign in ${SHOWN}`,
+        `    URL: https://example.com/ ${SHOWN}`,
+        '  accept:  momonga elicit in1 --accept   (opens the URL in your browser)',
+        '  decline: momonga elicit in1 --decline',
+        '  cancel:  momonga elicit in1 --cancel',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('prints an MCP server name with a newline on the authorization line', () => {
+    const { sink, err } = printSink();
+    sink.handle(frame({ type: 'mcp.authorization.required', server: `docs ${FORGED}` }));
+    expect(err).toEqual([`momonga: MCP server docs ${SHOWN} needs authorization; run: momonga mcp login docs ${SHOWN}\n`]);
+  });
+
+  it('prints a notice message with a newline on the notice line', () => {
+    const { sink, err } = printSink();
+    sink.handle(frame({ type: 'notice', level: 'warning', message: FORGED }));
+    expect(err).toEqual([`momonga: warning: ${SHOWN}\n`]);
+  });
+
+  it('describes the end of a run with a newline in its error message on one line', () => {
+    expect(describeEnd(runView({ status: 'FAILED', error: { code: 'model_error', message: FORGED } }))).toBe(`momonga: run run-1 FAILED (model_error: ${SHOWN})`);
+  });
+});

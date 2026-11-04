@@ -1,9 +1,11 @@
 import type { MomongaPaths } from '@momonga/foundation';
+import { escapeTerminalLine } from '@momonga/protocol';
 import type { PermissionMode, PublicRunEvent } from '@momonga/protocol';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView } from '../client/views.ts';
 import { daemonReadyBoundMs, restoreDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
+import { escapedLines } from '../terminal-writer.ts';
 import { describeElicitation } from '../elicit/describe.ts';
 import { readImageAttachment } from '../images.ts';
 import { mcpAuthorizationNotice } from '../mcp/messages.ts';
@@ -63,8 +65,12 @@ export const resultOf = (run: RunView, result: string): RunResult => ({
 
 export const describeEnd = (run: RunView): string => {
   const reason = run.error === undefined ? run.stopReason : describeRunError(run.error);
-  return `momonga: run ${run.id} ${run.status}${reason === undefined ? '' : ` (${reason})`}`;
+  return escapeTerminalLine(`momonga: run ${run.id} ${run.status}${reason === undefined ? '' : ` (${reason})`}`);
 };
+
+const noteText = (lines: readonly string[]): string => `${escapedLines(lines)}\n`;
+
+const leadWith = (prefix: string, lines: readonly string[]): string[] => lines.map((line, index) => (index === 0 ? `${prefix}${line}` : line));
 
 export type FrameSink = { absorb(frame: RunEventFrame): void; handle(frame: RunEventFrame): void; handleChild(frame: RunEventFrame, agent: string): void; finalText(): string };
 
@@ -77,8 +83,8 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
   let lastItem: string | undefined;
   let needsNewline = false;
 
-  const note = (text: string): void => {
-    ports.stderr.write(`${text}\n`);
+  const note = (lines: readonly string[]): void => {
+    ports.stderr.write(noteText(lines));
   };
 
   const present = (event: PublicRunEvent, agent: string | undefined): void => {
@@ -86,40 +92,38 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
     switch (event.type) {
       case 'tool.call':
         titles.set(event.callId, event.title);
-        if (verbose) note(`momonga: ${event.name} ${event.title}`);
+        if (verbose) note([`momonga: ${event.name} ${event.title}`]);
         break;
       case 'tool.completed':
         if (verbose || event.status === 'failed') {
           const outcome = event.denial === undefined ? event.status : describeDenial(event.denial);
-          note(`momonga: tool ${titles.get(event.callId) ?? event.callId} ${outcome}`);
+          note([`momonga: tool ${titles.get(event.callId) ?? event.callId} ${outcome}`]);
         }
         break;
       case 'hook.completed':
-        note(`momonga: ${describeHook(event, agent)}`);
+        note(leadWith('momonga: ', describeHook(event, agent)));
         break;
       case 'tool.permission.classified':
-        note(`momonga: ${describeClassification(event, titles.get(event.callId) ?? event.callId)}`);
+        note([`momonga: ${describeClassification(event, titles.get(event.callId) ?? event.callId)}`]);
         break;
       case 'tool.waiting':
-        note(`momonga: waiting for ${awaitedOf(event.awaits)}`);
+        note([`momonga: waiting for ${awaitedOf(event.awaits)}`]);
         break;
       case 'tool.permission.requested':
-        note(
-          [
-            `momonga: waiting for approval ${event.approvalId}${by}: ${titles.get(event.callId) ?? event.callId}`,
-            `  ${event.reason}`,
-            ...event.options.map((option) => `  momonga approve ${event.approvalId} ${option.kind}`),
-          ].join('\n'),
-        );
+        note([
+          `momonga: waiting for approval ${event.approvalId}${by}: ${titles.get(event.callId) ?? event.callId}`,
+          `  ${event.reason}`,
+          ...event.options.map((option) => `  momonga approve ${event.approvalId} ${option.kind}`),
+        ]);
         break;
       case 'tool.elicitation.requested':
-        note(`momonga: waiting for input${by} ${describeElicitation(event.inputId, event.server, titles.get(event.callId) ?? event.callId, event.requests)}`);
+        note(leadWith(`momonga: waiting for input${by} `, describeElicitation(event.inputId, event.server, titles.get(event.callId) ?? event.callId, event.requests)));
         break;
       case 'mcp.authorization.required':
-        note(`momonga: ${mcpAuthorizationNotice(event.server)}`);
+        note([`momonga: ${mcpAuthorizationNotice(event.server)}`]);
         break;
       case 'notice':
-        note(`momonga: ${event.level}: ${event.message}`);
+        note([`momonga: ${event.level}: ${event.message}`]);
         break;
       default:
         break;
@@ -171,7 +175,7 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
   const sink = createFrameSink(ports, options.format, options.verbose);
   const cancelOnInterrupt = (): void => {
     void client.cancel(runId).catch((error: unknown) => {
-      ports.stderr.write(`momonga: cancel failed: ${error instanceof Error ? error.message : String(error)}\n`);
+      ports.stderr.write(noteText([`momonga: cancel failed: ${error instanceof Error ? error.message : String(error)}`]));
     });
   };
   if (options.interrupt.aborted) cancelOnInterrupt();

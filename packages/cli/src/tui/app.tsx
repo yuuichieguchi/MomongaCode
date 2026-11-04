@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useReducer, useRef, useState } from 'react';
 import { Box, Static, Text, useApp, useInput, usePaste, useStdout, useWindowSize } from 'ink';
-import { escapeTerminalBlock } from '@momonga/protocol';
+import { escapeTerminalBlock, escapeTerminalLine } from '@momonga/protocol';
 import type { Capabilities, ImageAttachment, MomongaModelEntry, PermissionMode, PermissionOption } from '@momonga/protocol';
 import { currentField, currentRequest, decide, enterValue, leaveFields, withError } from '../elicit/flow.ts';
 import type { ElicitationDecision, ElicitationFlow } from '../elicit/flow.ts';
@@ -151,7 +151,7 @@ function EntryView({ entry }: { entry: Entry }) {
           <Text>
             {toolMark(entry.status)} {shown(entry.title)}
           </Text>
-          {entry.status === 'failed' && entry.denial !== undefined ? <Text color="red">{shown(describeDenial(entry.denial))}</Text> : null}
+          {entry.status === 'failed' && entry.denial !== undefined ? <Text color="red">{escapeTerminalLine(describeDenial(entry.denial))}</Text> : null}
           {entry.status === 'failed' && entry.denial === undefined && entry.output !== undefined ? (
             <Text color="red">{shown(entry.output.split('\n').slice(0, 3).join('\n'))}</Text>
           ) : null}

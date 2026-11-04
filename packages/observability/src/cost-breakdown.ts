@@ -1,6 +1,6 @@
 import { amountOfUnits } from './cost.ts';
 import type { CallBilling, PricedCall } from './cost.ts';
-import { RUN_ROLE } from '@momonga/protocol';
+import { RUN_ROLE, escapeTerminalLine } from '@momonga/protocol';
 
 export type BreakdownAnatomy = {
   layers: Readonly<Record<string, number | Readonly<Record<string, number>> | undefined>>;
@@ -205,5 +205,7 @@ export const formatCostBreakdown = (breakdown: CostBreakdown): string => {
       (entry) => `inconsistent usage: ${entry.provider}/${entry.model} (run ${entry.runId}${entry.step === undefined ? '' : `, step ${entry.step}`}): ${entry.reason}`,
     ),
     ...breakdown.unjoined.map((entry) => `unjoined: run ${entry.runId}${entry.step === undefined ? '' : `, step ${entry.step}`}: ${entry.reason}`),
-  ].join('\n');
+  ]
+    .map(escapeTerminalLine)
+    .join('\n');
 };
