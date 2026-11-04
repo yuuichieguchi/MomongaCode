@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ESTIMATED_ERROR_BOUND_RATIO, marginFloorFor } from '@momonga/protocol';
 import type { StreamEvent } from '@momonga/protocol';
 import { usageOf } from '@momonga/testkit';
-import { inputTokensOf } from './fake-gateway.ts';
+import { fakeCounterOf, inputTokensOf } from './fake-gateway.ts';
 import type { ScriptStep } from './fake-gateway.ts';
 import { GatewayRequestError } from '@momonga/runtime';
 import { capabilitiesFor, makeEnv, modelKey } from './harness.ts';
@@ -194,6 +194,7 @@ const answeredByFallback = (step: ScriptStep, target: string): ScriptStep => ({
               momonga: {
                 alias: 'fm',
                 target,
+                counter: fakeCounterOf(target),
                 attempts: 2,
                 fallbackFrom: ['primary'],
                 fallbackCauses: [{ target: 'primary', code: 'upstream_error', message: 'primary is down' }],

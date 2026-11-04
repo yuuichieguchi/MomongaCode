@@ -24,9 +24,10 @@ const resolvedTarget = async (target: Record<string, unknown>) => {
 describe('targetCounterOf', () => {
   it('is a sha256 in lowercase hex, the same for the same inputs', async () => {
     const target = await resolvedTarget(HOSTED);
+    const again = await resolvedTarget({ ...HOSTED });
     const counter = targetCounterOf({ target, codeDigest: CODE_DIGEST });
     expect(counter).toMatch(/^[0-9a-f]{64}$/);
-    expect(targetCounterOf({ target: await resolvedTarget({ ...HOSTED }), codeDigest: CODE_DIGEST })).toBe(counter);
+    expect(targetCounterOf({ target: again, codeDigest: CODE_DIGEST })).toBe(counter);
   });
 
   it.each([
@@ -39,16 +40,18 @@ describe('targetCounterOf', () => {
     ['billing, which does not change counting', { billing: 'local' }],
     ['the name of the key variable, which does not change counting', { apiKeyEnv: 'ANOTHER_KEY' }],
   ])('changes when %s of the resolved definition changes', async (_label, change) => {
-    const before = targetCounterOf({ target: await resolvedTarget({ ...HOSTED, apiKeyEnv: 'HOSTED_KEY' }), codeDigest: CODE_DIGEST });
-    const after = targetCounterOf({ target: await resolvedTarget({ ...HOSTED, apiKeyEnv: 'HOSTED_KEY', ...change }), codeDigest: CODE_DIGEST });
-    expect(after).not.toBe(before);
+    const original = await resolvedTarget({ ...HOSTED, apiKeyEnv: 'HOSTED_KEY' });
+    const changed = await resolvedTarget({ ...HOSTED, apiKeyEnv: 'HOSTED_KEY', ...change });
+    expect(changed).not.toEqual(original);
+    expect(targetCounterOf({ target: changed, codeDigest: CODE_DIGEST })).not.toBe(targetCounterOf({ target: original, codeDigest: CODE_DIGEST }));
   });
 
   it('changes when the adapter kind changes', async () => {
-    const chat = targetCounterOf({ target: await resolvedTarget(HOSTED), codeDigest: CODE_DIGEST });
     const { toolCalling: _toolCalling, ...withoutToolCalling } = HOSTED;
-    const responses = targetCounterOf({ target: await resolvedTarget({ ...withoutToolCalling, adapter: 'open-responses' }), codeDigest: CODE_DIGEST });
-    expect(responses).not.toBe(chat);
+    const chatTarget = await resolvedTarget(HOSTED);
+    const responsesTarget = await resolvedTarget({ ...withoutToolCalling, adapter: 'open-responses' });
+    expect(responsesTarget.adapter).toBe('open-responses');
+    expect(targetCounterOf({ target: responsesTarget, codeDigest: CODE_DIGEST })).not.toBe(targetCounterOf({ target: chatTarget, codeDigest: CODE_DIGEST }));
   });
 
   it('changes when the code digest of the running gateway changes', async () => {
@@ -58,6 +61,7 @@ describe('targetCounterOf', () => {
 
   it('changes for an fm target when the binary sha256 or the OS build changes', async () => {
     const target = await resolvedTarget({ adapter: 'fm' });
+    expect(target.adapter).toBe('fm');
     const base = targetCounterOf({ target, codeDigest: CODE_DIGEST, fm: FM });
     expect(base).toMatch(/^[0-9a-f]{64}$/);
     expect(targetCounterOf({ target, codeDigest: CODE_DIGEST, fm: { ...FM } })).toBe(base);

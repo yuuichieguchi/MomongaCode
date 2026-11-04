@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Capabilities, MomongaResponseExtension, StreamEvent } from '@momonga/protocol';
+import { usageOf } from '@momonga/testkit';
 import { PRIMARY_TARGET, fakeCounterOf } from './fake-gateway.ts';
 import type { ScriptStep } from './fake-gateway.ts';
 import { capabilitiesFor, makeEnv, modelKey } from './harness.ts';
@@ -69,5 +70,17 @@ describe.each([
     expect(second?.body).toEqual(first?.body);
     expect(env.ofType(run.id, 'model.requested')).toHaveLength(1);
     expect(env.ofType(run.id, 'meter.observed')).toMatchObject([{ target, counter: restarted, fallback, known: 0 }]);
+  });
+
+  it('gives it no truncation verdict: a report far below the count does not fail the run', async () => {
+    const env = await sessionWithReports(answer, target);
+    env.gateway.script.push(answeredWith(textStep('Answered by a restarted gateway.', { usage: usageOf(10, 5) }), answer(restarted)));
+    const run = env.enqueue(`The task the restarted gateway answers ${'padding '.repeat(400)}`);
+
+    expect(await env.runOnce(env.worker('worker-1'))).toBe('yielded');
+
+    expect(env.run(run.id)).toMatchObject({ status: 'QUEUED', attempts: 1 });
+    expect(env.ofType(run.id, 'meter.observed')).toEqual([]);
+    expect(env.ofType(run.id, 'model.responded')).toEqual([]);
   });
 });

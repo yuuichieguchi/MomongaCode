@@ -1,9 +1,10 @@
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { inputCeilingFor } from '@momonga/context';
 import type { Capabilities } from '@momonga/protocol';
 import { inputTokensOf, tokensOfText } from './fake-gateway.ts';
 import { capabilitiesFor, makeEnv } from './harness.ts';
-import { failedStep, textStep } from './scripts.ts';
+import { callsStep, textStep } from './scripts.ts';
 
 const WINDOW = 8192;
 const LIVE_RATIO = 0.5;
@@ -29,16 +30,19 @@ describe('the build ceiling of a claim resumed after the calibration of the alia
     expect(inputCeilingFor(liveListing())).not.toBe(liveCeiling);
     const wanted = Math.floor((pinnedCeiling + liveCeiling) / 2) - (await overheadTokens());
     const env = await makeEnv({ capabilities: pinned() });
-    env.gateway.script.push(failedStep('upstream_unavailable', 'server_error'), textStep('never sent'));
+    env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: path.join(env.project, 'out.txt'), content: 'approved' } }]));
     const run = env.enqueue('y'.repeat(4 * wanted));
 
     expect(await env.runOnce(env.worker('worker-1'))).toBe('yielded');
-    const released = env.run(run.id);
-    expect(released.status).toBe('QUEUED');
-    expect(env.gateway.streams).toHaveLength(1);
+    expect(env.run(run.id).status).toBe('WAITING_HUMAN');
+    const firstBody = env.gateway.streams[0]?.body;
+    if (firstBody === undefined) throw new Error('the first claim made no model call');
+    expect(inputTokensOf(firstBody)).toBeGreaterThan(liveCeiling);
+    expect(inputTokensOf(firstBody)).toBeLessThan(pinnedCeiling);
+    env.resolveApproval(run.id, 'allow_once');
+    env.gateway.script.push(textStep('never sent'));
 
     env.gateway.capabilitiesValue = liveListing();
-    env.clock.set(Math.max(env.clock.now(), released.availableAt));
     expect(await env.runOnce(env.worker('worker-2'))).toBe('yielded');
 
     const failed = env.run(run.id);
